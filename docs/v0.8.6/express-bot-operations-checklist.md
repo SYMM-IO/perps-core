@@ -1030,7 +1030,7 @@ Step 1 — Bot sees: user requests an express withdrawal for 1,000 USDC
 
 Step 2 — Bot sees: validator attestations gathered
   Bot reads on-chain:
-    - ISymmio(symmio).getUserNonce(user)                    = 42 (SYMMIO-side nonce)
+    - ISymmio(symmio).nonceOfPartyA(user)                    = 42 (SYMMIO-side nonce)
     - block.timestamp                                       = T_now
   Bot requests ValidatorApproval signatures from 2 independent validators registered for aff (or address(0) default):
     Each validator signs: ValidatorApproval(user, nonce=3, amount=1000e6, timestamp=T_now, symmioNonce=42)
@@ -1063,7 +1063,7 @@ Step 3 — Bot sees: user submits withdrawal (SYMMIO calls onWithdrawRequest —
      - Each signer is a registered validator (isValidator(aff, signer))?   YES
      - Each timestamp within 30s?   YES
      - Addresses sorted ascending?   YES
-     - getUserNonce(user) == symmioNonce?   42 == 42?   YES (reverts InvalidNonce otherwise)
+     - nonceOfPartyA(user) == symmioNonce?   42 == 42?   YES (reverts InvalidNonce otherwise)
   d. Lock general + affiliate pools (_lockFunds, IMMEDIATE path):
      - lockedGeneralBalance:          0 + 500 = 500
      - lockedAffiliateBalances[aff]:  0 + 300 = 300
@@ -2127,7 +2127,7 @@ sequenceDiagram
 
     Note over EP: Decode validatorData
     Note over EP: Check sig count >= minValidatorSignatures(affiliate)
-    Note over EP: Check symmioNonce matches getUserNonce(user)
+    Note over EP: Check symmioNonce matches nonceOfPartyA(user)
     Note over EP: For each sig: check freshness, isValidator, no duplicates
 ```
 
@@ -2149,13 +2149,13 @@ ValidatorApproval(address user, uint256 nonce, uint256 amount, uint256 timestamp
 - `nonce` -- same nonce as the WithdrawOption (the user's current nonce on ExpressProvider)
 - `amount` -- `expressAmount` (total fee-bearing amount)
 - `timestamp` -- when the validator signed (must be <= `block.timestamp`)
-- `symmioNonce` -- user's current nonce on SYMMIO (`getUserNonce(user)`)
+- `symmioNonce` -- user's current nonce on SYMMIO (`nonceOfPartyA(user)`)
 
 ### 9.4 Validation Rules
 
 - [ ] `signatures.length == timestamps.length` (else `ArrayLengthMismatch`)
 - [ ] `signatures.length >= minValidatorSignatures(affiliate)` (else `InsufficientValidatorSignatures`; falls back to `minValidatorSignatures(address(0))` default)
-- [ ] `symmioNonce == ISymmio(symmio).getUserNonce(user)` (else `InvalidNonce`)
+- [ ] `symmioNonce == ISymmio(symmio).nonceOfPartyA(user)` (else `InvalidNonce`)
 - [ ] For each signature:
   - [ ] `timestamps[i] <= block.timestamp` (no future-dating, else `ValidatorApprovalExpired`)
   - [ ] `block.timestamp - timestamps[i] <= validatorApprovalTimeout(affiliate)` (not stale, else `ValidatorApprovalExpired`; falls back to `validatorApprovalTimeout(address(0))` default)
@@ -2201,7 +2201,7 @@ Setup:
     V3 at 0xCCC...3
   User: 0xAlice
     nonces[Alice]          = 5  (ExpressProvider nonce)
-    getUserNonce(Alice)     = 12 (SYMMIO nonce)
+    nonceOfPartyA(Alice)     = 12 (SYMMIO nonce)
     expressAmount = 1,000e6 (1,000 USDC)
 
 Step 1 — Bot sees: Alice requests IMMEDIATE withdrawal of 1,000 USDC
@@ -2209,7 +2209,7 @@ Step 1 — Bot sees: Alice requests IMMEDIATE withdrawal of 1,000 USDC
     minValidatorSignatures(affiliate)  = 2
     validatorApprovalTimeout(affiliate) = 30s
     nonces[Alice]           = 5
-    getUserNonce(Alice)      = 12
+    nonceOfPartyA(Alice)      = 12
   Bot checks:
     IMMEDIATE requires minValidatorSignatures(affiliate) > 0? YES (2 > 0) — validators enabled
     Need >= 2 valid signatures from distinct registered validators
@@ -2222,7 +2222,7 @@ Step 2 — Bot sees: validator responses arrive
     V1 timestamp 100: is it in the past? YES (current time ~102)
     V2 timestamp 102: is it in the past? YES
     Both used nonce=5 matching nonces[Alice]? YES
-    Both used symmioNonce=12 matching getUserNonce(Alice)? YES
+    Both used symmioNonce=12 matching nonceOfPartyA(Alice)? YES
     Both used amount=1000e6 matching expressAmount? YES
     Count: 2 valid sigs >= minValidatorSignatures(affiliate) (2)? YES
   Decision: Sort by signer address for encoding
@@ -2242,10 +2242,10 @@ Step 3 — Bot checks: will sigs still be valid when user submits?
 
 Step 4 — Bot considers: what if Alice acted on SYMMIO between T=102 and submission?
   Bot reads on-chain (just before returning option to Alice):
-    getUserNonce(Alice) = 12 (unchanged) -> safe to proceed
+    nonceOfPartyA(Alice) = 12 (unchanged) -> safe to proceed
   What if Alice makes a SYMMIO action (e.g., another withdrawal) after receiving the option?
     SYMMIO nonce becomes 13
-    On submission: contract checks getUserNonce(Alice) == symmioNonce (12)
+    On submission: contract checks nonceOfPartyA(Alice) == symmioNonce (12)
     12 != 13 -> Reverts: InvalidNonce
     -> Bot must re-gather ALL attestations with symmioNonce = 13
     -> Previous validator sigs are permanently invalidated (wrong symmioNonce baked in)

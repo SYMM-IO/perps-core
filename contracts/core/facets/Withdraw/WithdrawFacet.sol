@@ -49,7 +49,7 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	/// - Marks the request as `PROVIDER_ACCEPTED`.
 	/// @param user The owner of the withdrawal request.
 	/// @param requestId ID of the withdrawal request.
-	function acceptWithdrawRequest(address user, uint256 requestId) external notSuspended(user) nonReentrant {
+	function acceptWithdrawRequest(address user, uint256 requestId) external notSuspended(user) {
 		WithdrawFacetImpl.acceptWithdrawRequest(user, requestId);
 		emit WithdrawAccepted(requestId, user);
 	}
@@ -60,7 +60,7 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	/// - Refunds the user's internal balance immediately.
 	/// @param user The owner of the withdrawal request.
 	/// @param requestId ID of the withdrawal request.
-	function rejectWithdrawRequest(address user, uint256 requestId) external notSuspended(user) nonReentrant {
+	function rejectWithdrawRequest(address user, uint256 requestId) external notSuspended(user) {
 		WithdrawFacetImpl.rejectWithdrawRequest(user, requestId);
 		emit WithdrawRejected(requestId, user);
 	}
@@ -70,7 +70,7 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	/// @param user The owner of the withdrawal request.
 	/// @param requestId ID of the withdrawal request.
 	/// @param amount Amount of collateral to advance.
-	function advanceWithdraw(address user, uint256 requestId, uint256 amount) external notSuspended(user) nonReentrant {
+	function advanceWithdraw(address user, uint256 requestId, uint256 amount) external notSuspended(user) {
 		WithdrawFacetImpl.advanceWithdraw(user, requestId, amount);
 		emit WithdrawAdvanced(requestId, user, amount);
 	}
@@ -127,7 +127,7 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	/// - This refunds the remaining provider-held parts and marks the request `CANCELLED`.
 	/// @param user The user who initiated the withdrawal.
 	/// @param requestId ID of the withdrawal request.
-	function acceptWithdrawCancelRequest(address user, uint256 requestId) external notSuspended(user) nonReentrant {
+	function acceptWithdrawCancelRequest(address user, uint256 requestId) external notSuspended(user) {
 		WithdrawFacetImpl.acceptWithdrawCancelRequest(user, requestId);
 		emit WithdrawCancelled(requestId, user);
 	}

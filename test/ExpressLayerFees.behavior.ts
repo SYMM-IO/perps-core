@@ -1,10 +1,9 @@
 import { expect } from "chai"
-import hre, { network } from "hardhat"
 
 import { deployExpressProvider } from "../tasks/deploy/expressWithdrawLayerDiamond.js"
-
-const connection = await network.connect()
-const { ethers } = connection
+import { initializeFixture } from "./Initialize.fixture.js"
+import connection, { ethers, hre } from "./helpers/hardhat-connection.js"
+import { time } from "./helpers/network-helpers.js"
 
 const OPERATOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("OPERATOR_ROLE"))
 const SIGNER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("SIGNER_ROLE"))
@@ -13,20 +12,39 @@ const UNLOCK_ROLE = ethers.keccak256(ethers.toUtf8Bytes("UNLOCK_ROLE"))
 
 export function shouldBehaveLikeExpressLayerFees(): void {
 	async function deployFixture() {
-		const [deployer, botSigner, operator, user, receiver, affiliateOwner, sponsor, user2, receiver2, locker, unlocker] = await ethers.getSigners()
+		const context = await initializeFixture()
 
-		const collateral = await ethers.deployContract("MockERC20", ["USDC", "USDC", 6])
-		const symmio = await ethers.deployContract("ExpressLayerMockSymmio", [await collateral.getAddress()])
+		const allSigners = await ethers.getSigners()
+		const deployer = context.signers.admin
+		const botSigner = allSigners[13]
+		const operator = allSigners[14]
+		const receiver = allSigners[15]
+		const affiliateOwner = allSigners[16]
+		const sponsor = allSigners[17]
+		const user = context.signers.user
+		const user2 = context.signers.user2
+		const locker = allSigners[18]
+		const unlocker = allSigners[19]
+		const receiver2 = context.signers.others[0]
 
-		// Deploy via shared deployment helpers
+		const collateral = context.collateral
+
+		// Deploy ExpressProvider diamond
 		const expressProvider = await deployExpressProvider(hre, connection, {
 			admin: deployer.address,
-			symmio: await symmio.getAddress(),
+			symmio: context.diamond,
 			collateral: await collateral.getAddress(),
 		})
 
-		// Register providers on mock SYMMIO
-		await symmio.registerExpressProvider(await expressProvider.getAddress())
+		// Register ExpressProvider on real Symmio
+		await context.controlFacet.connect(deployer).registerExpressProvider(await expressProvider.getAddress())
+
+		// Configure real Symmio withdraw settings
+		await context.controlFacet.connect(deployer).setMaxWithdrawParts(50)
+		await context.controlFacet.connect(deployer).setWithdrawCooldownPeriod(43200)
+
+		// Grant additional roles on real Symmio
+		await context.controlFacet.connect(deployer).grantRole(deployer.address, ethers.keccak256(ethers.toUtf8Bytes("WITHDRAW_FORCE_CANCEL_ROLE")))
 
 		// Configure ExpressProvider via roles
 		await expressProvider.grantRole(SIGNER_ROLE, botSigner.address)
@@ -41,16 +59,28 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		// Configure credit line on diamond
 		await expressProvider.setCreditLineMuonConfig(await muonVerifier.getAddress(), 1n, 60n)
 
-		// Fund general pool with 10,000 USDC
-		const generalFunding = 10_000n * 10n ** 6n
+		// Set up user balance in real Symmio
+		const userBalance = 100_000n * 10n ** 18n
+		await collateral.mint(user.address, userBalance)
+		await collateral.connect(user).approve(context.diamond, ethers.MaxUint256)
+		await context.accountFacet.connect(user).deposit(userBalance)
+
+		// Set up user2 balance in real Symmio
+		const user2Balance = 100_000n * 10n ** 18n
+		await collateral.mint(user2.address, user2Balance)
+		await collateral.connect(user2).approve(context.diamond, ethers.MaxUint256)
+		await context.accountFacet.connect(user2).deposit(user2Balance)
+
+		// Fund general pool with 10,000 tokens (18 decimals)
+		const generalFunding = 10_000n * 10n ** 18n
 		await collateral.mint(deployer.address, generalFunding)
-		await collateral.approve(await expressProvider.getAddress(), generalFunding)
+		await collateral.connect(deployer).approve(await expressProvider.getAddress(), generalFunding)
 		await expressProvider.depositToGeneral(generalFunding)
 
-		// Fund affiliate pool with 5,000 USDC
-		const affiliateFunding = 5_000n * 10n ** 6n
+		// Fund affiliate pool with 5,000 tokens (18 decimals)
+		const affiliateFunding = 5_000n * 10n ** 18n
 		await collateral.mint(deployer.address, affiliateFunding)
-		await collateral.approve(await expressProvider.getAddress(), affiliateFunding)
+		await collateral.connect(deployer).approve(await expressProvider.getAddress(), affiliateFunding)
 		await expressProvider.depositToAffiliate(affiliate, affiliateFunding)
 
 		return {
@@ -67,7 +97,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 			locker,
 			unlocker,
 			collateral,
-			symmio,
+			context,
 			expressProvider,
 			muonVerifier,
 			generalFunding,
@@ -180,7 +210,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		operator: any
 		user: any
 		receiver: any
-		symmio: any
+		context: any
 		affiliate: string
 		affiliateAmount: bigint
 		withdrawAmount: bigint
@@ -198,7 +228,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 			operator,
 			user,
 			receiver,
-			symmio,
+			context,
 			affiliate,
 			affiliateAmount,
 			withdrawAmount,
@@ -253,9 +283,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 			opts.maxUserFee,
 		)
 
-		const now = (await ethers.provider.getBlock("latest"))!.timestamp
-		await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-		await symmio.mockInitiateWithdraw(user.address, parts, providerData)
+		await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
 
 		if (!skipProcess) {
 			// Advance time past security window
@@ -275,7 +303,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		botSigner: any
 		user: any
 		receiver: any
-		symmio: any
+		context: any
 		affiliate: string
 		affiliateAmount: bigint
 		withdrawAmount: bigint
@@ -286,7 +314,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		creditAmount?: bigint
 		parts?: any[]
 	}) {
-		const { expressProvider, botSigner, user, receiver, symmio, affiliate, affiliateAmount, withdrawAmount, fee, operatorFee } = opts
+		const { expressProvider, botSigner, user, receiver, context, affiliate, affiliateAmount, withdrawAmount, fee, operatorFee } = opts
 		const nonce = opts.nonce ?? 0n
 		const expressAddr = await expressProvider.getAddress()
 		const creditAmount = opts.creditAmount ?? 0n
@@ -334,9 +362,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 			opts.maxUserFee,
 		)
 
-		const now = (await ethers.provider.getBlock("latest"))!.timestamp
-		await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-		await symmio.mockInitiateWithdraw(user.address, parts, providerData)
+		await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
 
 		return { parts, partsHash, requestId: nonce + 1n }
 	}
@@ -392,10 +418,10 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 
 	describe("On-Chain Fee Verification", function () {
 		it("should revert with FeeMismatch when bot fee differs from on-chain config", async function () {
-			const { botSigner, user, receiver, expressProvider, symmio, affiliate } = await deployFixture()
+			const { botSigner, user, receiver, expressProvider, context, affiliate } = await deployFixture()
 
-			const withdrawAmount = 1000n * 10n ** 6n
-			const wrongFee = 30n * 10n ** 6n // bot says 30 USDC
+			const withdrawAmount = 1000n * 10n ** 18n
+			const wrongFee = 30n * 10n ** 18n // bot says 30
 
 			// feeRate = 200 (2%) => expected fee = 1000 * 200 / 10000 = 20, not 30
 			await expressProvider.setAffiliateConfig(affiliate, 200, 0)
@@ -431,19 +457,19 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 
 			const providerData = encodeProviderData(0n, 1, 0, affiliate, 0n, 0n, wrongFee, 0n, deadline, signature)
 
-			const now = (await ethers.provider.getBlock("latest"))!.timestamp
-			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-
-			await expect(symmio.mockInitiateWithdraw(user.address, parts, providerData)).to.be.revertedWithCustomError(expressProvider, "FeeMismatch")
+			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)).to.be.revertedWithCustomError(
+				expressProvider,
+				"FeeMismatch",
+			)
 		})
 
 		it("should revert with OperatorFeeMismatch when bot operatorFee differs from config", async function () {
-			const { botSigner, user, receiver, expressProvider, symmio, affiliate } = await deployFixture()
+			const { botSigner, user, receiver, expressProvider, context, affiliate } = await deployFixture()
 
-			const withdrawAmount = 1000n * 10n ** 6n
-			const fee = 20n * 10n ** 6n
-			const wrongOpFee = 2n * 10n ** 6n // bot says 2 USDC
-			const configOpFee = 1n * 10n ** 6n // config says 1 USDC
+			const withdrawAmount = 1000n * 10n ** 18n
+			const fee = 20n * 10n ** 18n
+			const wrongOpFee = 2n * 10n ** 18n // bot says 2
+			const configOpFee = 1n * 10n ** 18n // config says 1
 
 			// feeRate = 200 (2%) => expected fee = 1000 * 200 / 10000 = 20 (matches)
 			await expressProvider.setAffiliateConfig(affiliate, 200, configOpFee)
@@ -479,20 +505,17 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 
 			const providerData = encodeProviderData(0n, 1, 0, affiliate, 0n, 0n, fee, wrongOpFee, deadline, signature)
 
-			const now = (await ethers.provider.getBlock("latest"))!.timestamp
-			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-
-			await expect(symmio.mockInitiateWithdraw(user.address, parts, providerData)).to.be.revertedWithCustomError(
+			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)).to.be.revertedWithCustomError(
 				expressProvider,
 				"OperatorFeeMismatch",
 			)
 		})
 
 		it("should accept withdrawal when fee matches on-chain config exactly", async function () {
-			const { botSigner, operator, user, receiver, expressProvider, symmio, affiliate, collateral } = await deployFixture()
+			const { botSigner, operator, user, receiver, expressProvider, context, affiliate, collateral } = await deployFixture()
 
-			const withdrawAmount = 1000n * 10n ** 6n
-			const fee = 20n * 10n ** 6n
+			const withdrawAmount = 1000n * 10n ** 18n
+			const fee = 20n * 10n ** 18n
 
 			// feeRate = 200 (2%) => expected fee = 1000 * 200 / 10000 = 20 (exact match)
 			await expressProvider.setAffiliateConfig(affiliate, 200, 0)
@@ -503,7 +526,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				operator,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
 				withdrawAmount,
@@ -524,10 +547,10 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 
 	describe("Fee Deduction - INSTANT", function () {
 		it("should deduct fee from single express-only part", async function () {
-			const { botSigner, operator, user, receiver, expressProvider, symmio, affiliate, collateral } = await deployFixture()
+			const { botSigner, operator, user, receiver, expressProvider, context, affiliate, collateral } = await deployFixture()
 
-			const withdrawAmount = 500n * 10n ** 6n
-			const fee = 5n * 10n ** 6n // 5 USDC fee
+			const withdrawAmount = 500n * 10n ** 18n
+			const fee = 5n * 10n ** 18n // 5 fee
 
 			// feeRate = 5 * 10000 / 500 = 100 (1%)
 			await expressProvider.setAffiliateConfig(affiliate, 100, 0)
@@ -538,7 +561,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				operator,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
 				withdrawAmount,
@@ -553,10 +576,10 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		})
 
 		it("should deduct fee from STANDARD withdrawal", async function () {
-			const { botSigner, operator, user, receiver, expressProvider, symmio, affiliate, collateral } = await deployFixture()
+			const { botSigner, operator, user, receiver, expressProvider, context, affiliate, collateral } = await deployFixture()
 
-			const withdrawAmount = 500n * 10n ** 6n
-			const fee = 10n * 10n ** 6n
+			const withdrawAmount = 500n * 10n ** 18n
+			const fee = 10n * 10n ** 18n
 
 			// feeRate = 10 * 10000 / 500 = 200 (2%)
 			await expressProvider.setAffiliateConfig(affiliate, 200, 0)
@@ -594,14 +617,12 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 
 			const providerData = encodeProviderData(0n, 2, 0, affiliate, 0n, 0n, fee, 0n, deadline, signature)
 
-			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-			await symmio.mockInitiateWithdraw(user.address, parts, providerData)
+			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
 
 			// Finalize STANDARD
-			await collateral.mint(await symmio.getAddress(), withdrawAmount)
 			await ethers.provider.send("evm_increaseTime", [12 * 3600])
 			await ethers.provider.send("evm_mine", [])
-			await symmio.finalizeWithdrawRequest(user.address, 1)
+			await context.withdrawFacet.finalizeWithdrawRequest(user.address, 1)
 
 			// Process
 			await expressProvider.connect(operator).processWithdraw(user.address, 1, parts)
@@ -611,9 +632,9 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		})
 
 		it("should transfer full amount when fee = 0 (backward compatibility)", async function () {
-			const { botSigner, operator, user, receiver, expressProvider, symmio, affiliate, collateral } = await deployFixture()
+			const { botSigner, operator, user, receiver, expressProvider, context, affiliate, collateral } = await deployFixture()
 
-			const withdrawAmount = 500n * 10n ** 6n
+			const withdrawAmount = 500n * 10n ** 18n
 
 			await doWithdraw({
 				expressProvider,
@@ -621,7 +642,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				operator,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
 				withdrawAmount,
@@ -634,10 +655,10 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		})
 
 		it("should allow fee equals entire withdrawal amount (user gets zero)", async function () {
-			const { botSigner, operator, user, receiver, expressProvider, symmio, affiliate, collateral } = await deployFixture()
+			const { botSigner, operator, user, receiver, expressProvider, context, affiliate, collateral } = await deployFixture()
 
-			const withdrawAmount = 100n * 10n ** 6n
-			const fee = 100n * 10n ** 6n // fee == entire amount
+			const withdrawAmount = 100n * 10n ** 18n
+			const fee = 100n * 10n ** 18n // fee == entire amount
 
 			// feeRate = 100 * 10000 / 100 = 10000 (100%)
 			await expressProvider.setAffiliateConfig(affiliate, 10000, 0)
@@ -648,7 +669,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				operator,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
 				withdrawAmount,
@@ -663,13 +684,13 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		})
 
 		it("should revert when fee + operatorFee exceeds express + virtual amount (FeesExceedExpressAmount)", async function () {
-			const { botSigner, user, receiver, expressProvider, symmio, affiliate } = await deployFixture()
+			const { botSigner, user, receiver, expressProvider, context, affiliate } = await deployFixture()
 
-			const withdrawAmount = 100n * 10n ** 6n
-			const fee = 80n * 10n ** 6n
-			const opFee = 30n * 10n ** 6n // fee + opFee = 110 > 100
+			const withdrawAmount = 100n * 10n ** 18n
+			const fee = 80n * 10n ** 18n
+			const opFee = 30n * 10n ** 18n // fee + opFee = 110 > 100
 
-			// feeRate = 80 * 10000 / 100 = 8000 (80%), operatorFee = 30 USDC
+			// feeRate = 80 * 10000 / 100 = 8000 (80%), operatorFee = 30
 			await expressProvider.setAffiliateConfig(affiliate, 8000, opFee)
 
 			const expressAddr = await expressProvider.getAddress()
@@ -704,20 +725,17 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 
 			const providerData = encodeProviderData(0n, 1, 0, affiliate, 0n, 0n, fee, opFee, deadline, signature)
 
-			const now = (await ethers.provider.getBlock("latest"))!.timestamp
-			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-
-			await expect(symmio.mockInitiateWithdraw(user.address, parts, providerData)).to.be.revertedWithCustomError(
+			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)).to.be.revertedWithCustomError(
 				expressProvider,
 				"FeesExceedExpressAmount",
 			)
 		})
 
 		it("should deduct fee on unlockAndProcess", async function () {
-			const { botSigner, operator, user, receiver, expressProvider, symmio, affiliate, collateral, locker, unlocker } = await deployFixture()
+			const { botSigner, operator, user, receiver, expressProvider, context, affiliate, collateral, locker, unlocker } = await deployFixture()
 
-			const withdrawAmount = 500n * 10n ** 6n
-			const fee = 10n * 10n ** 6n
+			const withdrawAmount = 500n * 10n ** 18n
+			const fee = 10n * 10n ** 18n
 
 			// feeRate = 10 * 10000 / 500 = 200 (2%)
 			await expressProvider.setAffiliateConfig(affiliate, 200, 0)
@@ -727,7 +745,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				botSigner,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
 				withdrawAmount,
@@ -753,11 +771,11 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 
 	describe("Multi-Part Fee Deduction", function () {
 		it("should distribute fee across two express-only parts", async function () {
-			const { botSigner, operator, user, receiver, expressProvider, symmio, affiliate, collateral } = await deployFixture()
+			const { botSigner, operator, user, receiver, expressProvider, context, affiliate, collateral } = await deployFixture()
 
-			const amount1 = 300n * 10n ** 6n
-			const amount2 = 200n * 10n ** 6n
-			const fee = 50n * 10n ** 6n // 50 USDC, less than part1
+			const amount1 = 300n * 10n ** 18n
+			const amount2 = 200n * 10n ** 18n
+			const fee = 50n * 10n ** 18n // 50, less than part1
 
 			// feeBasis = 300 + 200 = 500, feeRate = 50 * 10000 / 500 = 1000 (10%)
 			await expressProvider.setAffiliateConfig(affiliate, 1000, 0)
@@ -802,9 +820,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 
 			const providerData = encodeProviderData(0n, 1, 0, affiliate, 0n, 0n, fee, 0n, deadline, signature)
 
-			const now = (await ethers.provider.getBlock("latest"))!.timestamp
-			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-			await symmio.mockInitiateWithdraw(user.address, parts, providerData)
+			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
 
 			await ethers.provider.send("evm_increaseTime", [21])
 			await ethers.provider.send("evm_mine", [])
@@ -816,11 +832,11 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		})
 
 		it("should cascade fee to second part when it exceeds first part", async function () {
-			const { botSigner, operator, user, receiver, receiver2, expressProvider, symmio, affiliate, collateral } = await deployFixture()
+			const { botSigner, operator, user, receiver, receiver2, expressProvider, context, affiliate, collateral } = await deployFixture()
 
-			const amount1 = 100n * 10n ** 6n
-			const amount2 = 400n * 10n ** 6n
-			const fee = 150n * 10n ** 6n // exceeds first part (100), cascades 50 to second
+			const amount1 = 100n * 10n ** 18n
+			const amount2 = 400n * 10n ** 18n
+			const fee = 150n * 10n ** 18n // exceeds first part (100), cascades 50 to second
 
 			// feeBasis = 100 + 400 = 500, feeRate = 150 * 10000 / 500 = 3000 (30%)
 			await expressProvider.setAffiliateConfig(affiliate, 3000, 0)
@@ -865,9 +881,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 
 			const providerData = encodeProviderData(0n, 1, 0, affiliate, 0n, 0n, fee, 0n, deadline, signature)
 
-			const now = (await ethers.provider.getBlock("latest"))!.timestamp
-			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-			await symmio.mockInitiateWithdraw(user.address, parts, providerData)
+			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
 
 			await ethers.provider.send("evm_increaseTime", [21])
 			await ethers.provider.send("evm_mine", [])
@@ -880,11 +894,11 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		})
 
 		it("should handle fee exactly equaling first part (first receiver gets zero, second gets full)", async function () {
-			const { botSigner, operator, user, receiver, receiver2, expressProvider, symmio, affiliate, collateral } = await deployFixture()
+			const { botSigner, operator, user, receiver, receiver2, expressProvider, context, affiliate, collateral } = await deployFixture()
 
-			const amount1 = 200n * 10n ** 6n
-			const amount2 = 300n * 10n ** 6n
-			const fee = 200n * 10n ** 6n // exactly equals first part
+			const amount1 = 200n * 10n ** 18n
+			const amount2 = 300n * 10n ** 18n
+			const fee = 200n * 10n ** 18n // exactly equals first part
 
 			// feeBasis = 200 + 300 = 500, feeRate = 200 * 10000 / 500 = 4000 (40%)
 			await expressProvider.setAffiliateConfig(affiliate, 4000, 0)
@@ -929,9 +943,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 
 			const providerData = encodeProviderData(0n, 1, 0, affiliate, 0n, 0n, fee, 0n, deadline, signature)
 
-			const now = (await ethers.provider.getBlock("latest"))!.timestamp
-			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-			await symmio.mockInitiateWithdraw(user.address, parts, providerData)
+			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
 
 			await ethers.provider.send("evm_increaseTime", [21])
 			await ethers.provider.send("evm_mine", [])
@@ -944,14 +956,14 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		})
 
 		it("should handle mixed express-only + credit-backed parts with fee", async function () {
-			const { botSigner, operator, user, receiver, expressProvider, symmio, affiliate, collateral } = await deployFixture()
+			const { botSigner, operator, user, receiver, expressProvider, context, affiliate, collateral } = await deployFixture()
 
 			// feeBasis = 300 + 200 = 500, feeRate = 50 * 10000 / 500 = 1000 (10%)
 			await expressProvider.setAffiliateConfig(affiliate, 1000, 0)
 
-			const expressAmount = 300n * 10n ** 6n
-			const creditBackedAmount = 200n * 10n ** 6n
-			const fee = 50n * 10n ** 6n // taken from express-only part first
+			const expressAmount = 300n * 10n ** 18n
+			const creditBackedAmount = 200n * 10n ** 18n
+			const fee = 50n * 10n ** 18n // taken from express-only part first
 			const expressAddr = await expressProvider.getAddress()
 
 			const parts = [
@@ -992,9 +1004,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 
 			const providerData = encodeProviderData(0n, 1, 0, affiliate, 0n, 0n, fee, 0n, deadline, signature)
 
-			const now = (await ethers.provider.getBlock("latest"))!.timestamp
-			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-			await symmio.mockInitiateWithdraw(user.address, parts, providerData)
+			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
 
 			await ethers.provider.send("evm_increaseTime", [21])
 			await ethers.provider.send("evm_mine", [])
@@ -1005,14 +1015,14 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		})
 
 		it("should deduct fee from credit-backed withdrawal", async function () {
-			const { botSigner, operator, user, receiver, expressProvider, symmio, affiliate, collateral } = await deployFixture()
+			const { botSigner, operator, user, receiver, expressProvider, context, affiliate, collateral } = await deployFixture()
 
 			// feeBasis = 500, feeRate = 50 * 10000 / 500 = 1000 (10%)
 			await expressProvider.setAffiliateConfig(affiliate, 1000, 0)
 
 			// Single express-only part (credit amount reduces general pool deduction, not the part structure)
-			const withdrawAmount = 500n * 10n ** 6n
-			const fee = 50n * 10n ** 6n
+			const withdrawAmount = 500n * 10n ** 18n
+			const fee = 50n * 10n ** 18n
 			const expressAddr = await expressProvider.getAddress()
 
 			const parts = [
@@ -1045,9 +1055,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 
 			const providerData = encodeProviderData(0n, 1, 0, affiliate, 0n, 0n, fee, 0n, deadline, signature)
 
-			const now = (await ethers.provider.getBlock("latest"))!.timestamp
-			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-			await symmio.mockInitiateWithdraw(user.address, parts, providerData)
+			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
 
 			await ethers.provider.send("evm_increaseTime", [21])
 			await ethers.provider.send("evm_mine", [])
@@ -1067,10 +1075,10 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 
 	describe("Operator Fee", function () {
 		it("should deduct operator fee only (affiliate fee = 0)", async function () {
-			const { botSigner, operator, user, receiver, expressProvider, symmio, affiliate, collateral } = await deployFixture()
+			const { botSigner, operator, user, receiver, expressProvider, context, affiliate, collateral } = await deployFixture()
 
-			const withdrawAmount = 500n * 10n ** 6n
-			const opFee = 2n * 10n ** 6n
+			const withdrawAmount = 500n * 10n ** 18n
+			const opFee = 2n * 10n ** 18n
 
 			// Set operator fee on contract
 			await expressProvider.setAffiliateConfig(affiliate, 0, opFee)
@@ -1081,7 +1089,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				operator,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
 				withdrawAmount,
@@ -1095,11 +1103,11 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		})
 
 		it("should deduct both affiliate + operator fees", async function () {
-			const { botSigner, operator, user, receiver, expressProvider, symmio, affiliate, collateral } = await deployFixture()
+			const { botSigner, operator, user, receiver, expressProvider, context, affiliate, collateral } = await deployFixture()
 
-			const withdrawAmount = 500n * 10n ** 6n
-			const fee = 5n * 10n ** 6n
-			const opFee = 2n * 10n ** 6n
+			const withdrawAmount = 500n * 10n ** 18n
+			const fee = 5n * 10n ** 18n
+			const opFee = 2n * 10n ** 18n
 
 			// feeRate = 5 * 10000 / 500 = 100 (1%)
 			await expressProvider.setAffiliateConfig(affiliate, 100, opFee)
@@ -1110,7 +1118,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				operator,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
 				withdrawAmount,
@@ -1124,10 +1132,10 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		})
 
 		it("should claimOperatorFees with accumulated fees", async function () {
-			const { botSigner, operator, deployer, user, receiver, expressProvider, symmio, affiliate, collateral } = await deployFixture()
+			const { botSigner, operator, deployer, user, receiver, expressProvider, context, affiliate, collateral } = await deployFixture()
 
-			const withdrawAmount = 500n * 10n ** 6n
-			const opFee = 3n * 10n ** 6n
+			const withdrawAmount = 500n * 10n ** 18n
+			const opFee = 3n * 10n ** 18n
 			await expressProvider.setAffiliateConfig(affiliate, 0, opFee)
 
 			await doWithdraw({
@@ -1136,7 +1144,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				operator,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
 				withdrawAmount,
@@ -1168,9 +1176,9 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		})
 
 		it("should accumulate operator fees across multiple withdrawals", async function () {
-			const { botSigner, operator, deployer, user, receiver, expressProvider, symmio, affiliate, collateral } = await deployFixture()
+			const { botSigner, operator, deployer, user, receiver, expressProvider, context, affiliate, collateral } = await deployFixture()
 
-			const opFee = 1n * 10n ** 6n
+			const opFee = 1n * 10n ** 18n
 			await expressProvider.setAffiliateConfig(affiliate, 0, opFee)
 
 			// First withdrawal
@@ -1180,10 +1188,10 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				operator,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
-				withdrawAmount: 100n * 10n ** 6n,
+				withdrawAmount: 100n * 10n ** 18n,
 				fee: 0n,
 				operatorFee: opFee,
 				nonce: 0n,
@@ -1196,10 +1204,10 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				operator,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
-				withdrawAmount: 200n * 10n ** 6n,
+				withdrawAmount: 200n * 10n ** 18n,
 				fee: 0n,
 				operatorFee: opFee,
 				nonce: 1n,
@@ -1215,9 +1223,9 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 
 	describe("Fee Collection", function () {
 		it("should claimFees with accumulated fees (admin receives tokens)", async function () {
-			const { botSigner, operator, deployer, user, receiver, expressProvider, symmio, affiliate, collateral } = await deployFixture()
+			const { botSigner, operator, deployer, user, receiver, expressProvider, context, affiliate, collateral } = await deployFixture()
 
-			const fee = 10n * 10n ** 6n
+			const fee = 10n * 10n ** 18n
 
 			// feeRate = 10 * 10000 / 500 = 200 (2%)
 			await expressProvider.setAffiliateConfig(affiliate, 200, 0)
@@ -1228,10 +1236,10 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				operator,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
-				withdrawAmount: 500n * 10n ** 6n,
+				withdrawAmount: 500n * 10n ** 18n,
 				fee,
 				operatorFee: 0n,
 			})
@@ -1257,9 +1265,9 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		})
 
 		it("should revert double claim (second reverts)", async function () {
-			const { deployer, botSigner, operator, user, receiver, expressProvider, symmio, affiliate, collateral } = await deployFixture()
+			const { deployer, botSigner, operator, user, receiver, expressProvider, context, affiliate, collateral } = await deployFixture()
 
-			const fee = 10n * 10n ** 6n
+			const fee = 10n * 10n ** 18n
 
 			// feeRate = 10 * 10000 / 500 = 200 (2%)
 			await expressProvider.setAffiliateConfig(affiliate, 200, 0)
@@ -1270,10 +1278,10 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				operator,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
-				withdrawAmount: 500n * 10n ** 6n,
+				withdrawAmount: 500n * 10n ** 18n,
 				fee,
 				operatorFee: 0n,
 			})
@@ -1284,9 +1292,9 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		})
 
 		it("should accumulate fees from multiple withdrawals", async function () {
-			const { botSigner, operator, deployer, user, receiver, expressProvider, symmio, affiliate, collateral } = await deployFixture()
+			const { botSigner, operator, deployer, user, receiver, expressProvider, context, affiliate, collateral } = await deployFixture()
 
-			const fee = 5n * 10n ** 6n
+			const fee = 5n * 10n ** 18n
 
 			// feeRate = 5 * 10000 / 500 = 100 (1%)
 			await expressProvider.setAffiliateConfig(affiliate, 100, 0)
@@ -1297,10 +1305,10 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				operator,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
-				withdrawAmount: 500n * 10n ** 6n,
+				withdrawAmount: 500n * 10n ** 18n,
 				fee,
 				operatorFee: 0n,
 				nonce: 0n,
@@ -1312,10 +1320,10 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				operator,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
-				withdrawAmount: 500n * 10n ** 6n,
+				withdrawAmount: 500n * 10n ** 18n,
 				fee,
 				operatorFee: 0n,
 				nonce: 1n,
@@ -1330,9 +1338,9 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		})
 
 		it("should isolate fees per affiliate (affiliate A vs B)", async function () {
-			const { botSigner, operator, deployer, user, receiver, expressProvider, symmio, affiliate, collateral, user2 } = await deployFixture()
+			const { botSigner, operator, deployer, user, receiver, expressProvider, context, affiliate, collateral, user2 } = await deployFixture()
 
-			const fee = 5n * 10n ** 6n
+			const fee = 5n * 10n ** 18n
 
 			// feeRate for affiliate A = 5 * 10000 / 500 = 100 (1%)
 			await expressProvider.setAffiliateConfig(affiliate, 100, 0)
@@ -1344,10 +1352,10 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				operator,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
-				withdrawAmount: 500n * 10n ** 6n,
+				withdrawAmount: 500n * 10n ** 18n,
 				fee,
 				operatorFee: 0n,
 				nonce: 0n,
@@ -1364,10 +1372,10 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				operator,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate: frontendB,
 				affiliateAmount: 0n,
-				withdrawAmount: 500n * 10n ** 6n,
+				withdrawAmount: 500n * 10n ** 18n,
 				fee: fee * 2n,
 				operatorFee: 0n,
 				nonce: 1n,
@@ -1383,10 +1391,10 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		})
 
 		it("should keep operator fees separate from affiliate fees", async function () {
-			const { botSigner, operator, deployer, user, receiver, expressProvider, symmio, affiliate, collateral } = await deployFixture()
+			const { botSigner, operator, deployer, user, receiver, expressProvider, context, affiliate, collateral } = await deployFixture()
 
-			const fee = 5n * 10n ** 6n
-			const opFee = 2n * 10n ** 6n
+			const fee = 5n * 10n ** 18n
+			const opFee = 2n * 10n ** 18n
 			// feeRate = 5 * 10000 / 500 = 100 (1%)
 			await expressProvider.setAffiliateConfig(affiliate, 100, opFee)
 
@@ -1396,10 +1404,10 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				operator,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
-				withdrawAmount: 500n * 10n ** 6n,
+				withdrawAmount: 500n * 10n ** 18n,
 				fee,
 				operatorFee: opFee,
 			})
@@ -1427,7 +1435,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		it("should deposit sponsor balance", async function () {
 			const { expressProvider, affiliate, sponsor, collateral } = await deployFixture()
 
-			const amount = 1_000n * 10n ** 6n
+			const amount = 1_000n * 10n ** 18n
 			await collateral.mint(sponsor.address, amount)
 			await collateral.connect(sponsor).approve(await expressProvider.getAddress(), amount)
 
@@ -1438,16 +1446,16 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		})
 
 		it("should fully cover fee when sponsor has enough balance (user gets full amount)", async function () {
-			const { botSigner, operator, user, receiver, expressProvider, symmio, affiliate, collateral, sponsor } = await deployFixture()
+			const { botSigner, operator, user, receiver, expressProvider, context, affiliate, collateral, sponsor } = await deployFixture()
 
-			const fee = 10n * 10n ** 6n
-			const withdrawAmount = 500n * 10n ** 6n
+			const fee = 10n * 10n ** 18n
+			const withdrawAmount = 500n * 10n ** 18n
 
 			// feeRate = 10 * 10000 / 500 = 200 (2%)
 			await expressProvider.setAffiliateConfig(affiliate, 200, 0)
 
 			// Deposit sponsor balance
-			const sponsorAmount = 100n * 10n ** 6n
+			const sponsorAmount = 100n * 10n ** 18n
 			await collateral.mint(sponsor.address, sponsorAmount)
 			await collateral.connect(sponsor).approve(await expressProvider.getAddress(), sponsorAmount)
 			await expressProvider.connect(sponsor).depositSponsorBalance(affiliate, sponsorAmount)
@@ -1458,7 +1466,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				operator,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
 				withdrawAmount,
@@ -1476,11 +1484,11 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		})
 
 		it("should partially cover fee when sponsor balance insufficient (user pays remainder)", async function () {
-			const { botSigner, operator, user, receiver, expressProvider, symmio, affiliate, collateral, sponsor } = await deployFixture()
+			const { botSigner, operator, user, receiver, expressProvider, context, affiliate, collateral, sponsor } = await deployFixture()
 
-			const fee = 10n * 10n ** 6n
-			const withdrawAmount = 500n * 10n ** 6n
-			const sponsorAmount = 4n * 10n ** 6n // only 4 USDC
+			const fee = 10n * 10n ** 18n
+			const withdrawAmount = 500n * 10n ** 18n
+			const sponsorAmount = 4n * 10n ** 18n // only 4
 
 			// feeRate = 10 * 10000 / 500 = 200 (2%)
 			await expressProvider.setAffiliateConfig(affiliate, 200, 0)
@@ -1495,13 +1503,13 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				operator,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
 				withdrawAmount,
 				fee,
 				operatorFee: 0n,
-				maxUserFee: fee - sponsorAmount, // user pays 6 USDC
+				maxUserFee: fee - sponsorAmount, // user pays 6
 			})
 
 			// User pays the remainder (10 - 4 = 6)
@@ -1511,10 +1519,10 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		})
 
 		it("should make user pay full fee when sponsor balance = 0", async function () {
-			const { botSigner, operator, user, receiver, expressProvider, symmio, affiliate, collateral } = await deployFixture()
+			const { botSigner, operator, user, receiver, expressProvider, context, affiliate, collateral } = await deployFixture()
 
-			const fee = 10n * 10n ** 6n
-			const withdrawAmount = 500n * 10n ** 6n
+			const fee = 10n * 10n ** 18n
+			const withdrawAmount = 500n * 10n ** 18n
 
 			// feeRate = 10 * 10000 / 500 = 200 (2%)
 			await expressProvider.setAffiliateConfig(affiliate, 200, 0)
@@ -1526,7 +1534,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				operator,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
 				withdrawAmount,
@@ -1538,11 +1546,11 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		})
 
 		it("should refund sponsor on cancel", async function () {
-			const { botSigner, user, receiver, expressProvider, symmio, affiliate, collateral, sponsor } = await deployFixture()
+			const { botSigner, user, receiver, expressProvider, context, affiliate, collateral, sponsor } = await deployFixture()
 
-			const fee = 10n * 10n ** 6n
-			const withdrawAmount = 200n * 10n ** 6n
-			const sponsorAmount = 50n * 10n ** 6n
+			const fee = 10n * 10n ** 18n
+			const withdrawAmount = 200n * 10n ** 18n
+			const sponsorAmount = 50n * 10n ** 18n
 
 			// feeRate = 10 * 10000 / 200 = 500 (5%)
 			await expressProvider.setAffiliateConfig(affiliate, 500, 0)
@@ -1556,7 +1564,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				botSigner,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
 				withdrawAmount,
@@ -1569,18 +1577,18 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 			expect(await expressProvider.sponsorBalances(affiliate)).to.equal(sponsorAmount - fee)
 
 			// Cancel
-			await symmio.mockCancelWithdraw(user.address, requestId)
+			await context.withdrawFacet.connect(user).requestCancelWithdraw(requestId)
 
 			// Sponsor balance fully restored
 			expect(await expressProvider.sponsorBalances(affiliate)).to.equal(sponsorAmount)
 		})
 
 		it("should refund sponsor on suspend", async function () {
-			const { botSigner, user, receiver, expressProvider, symmio, affiliate, collateral, sponsor } = await deployFixture()
+			const { botSigner, user, receiver, expressProvider, context, affiliate, collateral, sponsor } = await deployFixture()
 
-			const fee = 10n * 10n ** 6n
-			const withdrawAmount = 200n * 10n ** 6n
-			const sponsorAmount = 50n * 10n ** 6n
+			const fee = 10n * 10n ** 18n
+			const withdrawAmount = 200n * 10n ** 18n
+			const sponsorAmount = 50n * 10n ** 18n
 
 			// feeRate = 10 * 10000 / 200 = 500 (5%)
 			await expressProvider.setAffiliateConfig(affiliate, 500, 0)
@@ -1594,7 +1602,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				botSigner,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
 				withdrawAmount,
@@ -1606,7 +1614,8 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 			expect(await expressProvider.sponsorBalances(affiliate)).to.equal(sponsorAmount - fee)
 
 			// Suspend
-			await symmio.mockSuspendWithdraw(user.address, requestId)
+			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(user.address)
+			await context.withdrawFacet.connect(context.signers.admin).suspendWithdrawRequest(user.address, requestId)
 
 			// Sponsor balance restored
 			expect(await expressProvider.sponsorBalances(affiliate)).to.equal(sponsorAmount)
@@ -1615,7 +1624,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		it("should allow admin to withdraw sponsor balance to sponsor", async function () {
 			const { expressProvider, affiliate, sponsor, collateral } = await deployFixture()
 
-			const amount = 1_000n * 10n ** 6n
+			const amount = 1_000n * 10n ** 18n
 			await collateral.mint(sponsor.address, amount)
 			await collateral.connect(sponsor).approve(await expressProvider.getAddress(), amount)
 			await expressProvider.connect(sponsor).depositSponsorBalance(affiliate, amount)
@@ -1631,7 +1640,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		it("should allow admin to withdraw sponsor balance to self", async function () {
 			const { deployer, expressProvider, affiliate, sponsor, collateral } = await deployFixture()
 
-			const amount = 1_000n * 10n ** 6n
+			const amount = 1_000n * 10n ** 18n
 			await collateral.mint(sponsor.address, amount)
 			await collateral.connect(sponsor).approve(await expressProvider.getAddress(), amount)
 			await expressProvider.connect(sponsor).depositSponsorBalance(affiliate, amount)
@@ -1646,7 +1655,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		it("should reject withdraw by non-admin", async function () {
 			const { expressProvider, affiliate, sponsor, collateral, user } = await deployFixture()
 
-			const amount = 1_000n * 10n ** 6n
+			const amount = 1_000n * 10n ** 18n
 			await collateral.mint(sponsor.address, amount)
 			await collateral.connect(sponsor).approve(await expressProvider.getAddress(), amount)
 			await expressProvider.connect(sponsor).depositSponsorBalance(affiliate, amount)
@@ -1657,7 +1666,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		it("should reject withdraw more than balance (InsufficientSponsorBalance)", async function () {
 			const { deployer, expressProvider, affiliate, sponsor, collateral } = await deployFixture()
 
-			const amount = 100n * 10n ** 6n
+			const amount = 100n * 10n ** 18n
 			await collateral.mint(sponsor.address, amount)
 			await collateral.connect(sponsor).approve(await expressProvider.getAddress(), amount)
 			await expressProvider.connect(sponsor).depositSponsorBalance(affiliate, amount)
@@ -1672,7 +1681,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 			const { expressProvider, affiliate, sponsor, user2, collateral } = await deployFixture()
 
 			// First sponsor deposits
-			const amount1 = 100n * 10n ** 6n
+			const amount1 = 100n * 10n ** 18n
 			await collateral.mint(sponsor.address, amount1)
 			await collateral.connect(sponsor).approve(await expressProvider.getAddress(), amount1)
 			await expressProvider.connect(sponsor).depositSponsorBalance(affiliate, amount1)
@@ -1680,7 +1689,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 			expect(await expressProvider.sponsors(affiliate)).to.equal(sponsor.address)
 
 			// Second depositor
-			const amount2 = 50n * 10n ** 6n
+			const amount2 = 50n * 10n ** 18n
 			await collateral.mint(user2.address, amount2)
 			await collateral.connect(user2).approve(await expressProvider.getAddress(), amount2)
 			await expressProvider.connect(user2).depositSponsorBalance(affiliate, amount2)
@@ -1707,11 +1716,11 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 
 	describe("Sponsor Config", function () {
 		it("should cap coverage with maxFeePerWithdraw", async function () {
-			const { botSigner, operator, user, receiver, expressProvider, symmio, affiliate, collateral, sponsor } = await deployFixture()
+			const { botSigner, operator, user, receiver, expressProvider, context, affiliate, collateral, sponsor } = await deployFixture()
 
-			const fee = 20n * 10n ** 6n
-			const sponsorAmount = 100n * 10n ** 6n
-			const maxFeePerWithdraw = 5n * 10n ** 6n // sponsor caps at 5 USDC per withdraw
+			const fee = 20n * 10n ** 18n
+			const sponsorAmount = 100n * 10n ** 18n
+			const maxFeePerWithdraw = 5n * 10n ** 18n // sponsor caps at 5 per withdraw
 
 			// feeRate = 20 * 10000 / 500 = 400 (4%)
 			await expressProvider.setAffiliateConfig(affiliate, 400, 0)
@@ -1728,24 +1737,24 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				operator,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
-				withdrawAmount: 500n * 10n ** 6n,
+				withdrawAmount: 500n * 10n ** 18n,
 				fee,
 				operatorFee: 0n,
 				maxUserFee: fee - maxFeePerWithdraw,
 			})
 
-			expect(await collateral.balanceOf(receiver.address)).to.equal(500n * 10n ** 6n - (fee - maxFeePerWithdraw))
+			expect(await collateral.balanceOf(receiver.address)).to.equal(500n * 10n ** 18n - (fee - maxFeePerWithdraw))
 			expect(await expressProvider.sponsorBalances(affiliate)).to.equal(sponsorAmount - maxFeePerWithdraw)
 		})
 
 		it("should apply no limit when maxFeePerWithdraw = 0", async function () {
-			const { botSigner, operator, user, receiver, expressProvider, symmio, affiliate, collateral, sponsor } = await deployFixture()
+			const { botSigner, operator, user, receiver, expressProvider, context, affiliate, collateral, sponsor } = await deployFixture()
 
-			const fee = 20n * 10n ** 6n
-			const sponsorAmount = 100n * 10n ** 6n
+			const fee = 20n * 10n ** 18n
+			const sponsorAmount = 100n * 10n ** 18n
 
 			// feeRate = 20 * 10000 / 500 = 400 (4%)
 			await expressProvider.setAffiliateConfig(affiliate, 400, 0)
@@ -1761,26 +1770,26 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				operator,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
-				withdrawAmount: 500n * 10n ** 6n,
+				withdrawAmount: 500n * 10n ** 18n,
 				fee,
 				operatorFee: 0n,
 				maxUserFee: 0n, // sponsor covers all
 			})
 
 			// User gets full amount
-			expect(await collateral.balanceOf(receiver.address)).to.equal(500n * 10n ** 6n)
+			expect(await collateral.balanceOf(receiver.address)).to.equal(500n * 10n ** 18n)
 			expect(await expressProvider.sponsorBalances(affiliate)).to.equal(sponsorAmount - fee)
 		})
 
 		it("should not limit when maxFeePerWithdraw > totalFee", async function () {
-			const { botSigner, operator, user, receiver, expressProvider, symmio, affiliate, collateral, sponsor } = await deployFixture()
+			const { botSigner, operator, user, receiver, expressProvider, context, affiliate, collateral, sponsor } = await deployFixture()
 
-			const fee = 10n * 10n ** 6n
-			const sponsorAmount = 100n * 10n ** 6n
-			const maxFeePerWithdraw = 50n * 10n ** 6n // much larger than fee
+			const fee = 10n * 10n ** 18n
+			const sponsorAmount = 100n * 10n ** 18n
+			const maxFeePerWithdraw = 50n * 10n ** 18n // much larger than fee
 
 			// feeRate = 10 * 10000 / 500 = 200 (2%)
 			await expressProvider.setAffiliateConfig(affiliate, 200, 0)
@@ -1796,10 +1805,10 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				operator,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
-				withdrawAmount: 500n * 10n ** 6n,
+				withdrawAmount: 500n * 10n ** 18n,
 				fee,
 				operatorFee: 0n,
 				maxUserFee: 0n,
@@ -1807,14 +1816,14 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 
 			// Sponsor only charged actual fee, not maxFeePerWithdraw
 			expect(await expressProvider.sponsorBalances(affiliate)).to.equal(sponsorAmount - fee)
-			expect(await collateral.balanceOf(receiver.address)).to.equal(500n * 10n ** 6n)
+			expect(await collateral.balanceOf(receiver.address)).to.equal(500n * 10n ** 18n)
 		})
 
 		it("should handle maxFeePerWithdraw == totalFee (exact boundary)", async function () {
-			const { botSigner, operator, user, receiver, expressProvider, symmio, affiliate, collateral, sponsor } = await deployFixture()
+			const { botSigner, operator, user, receiver, expressProvider, context, affiliate, collateral, sponsor } = await deployFixture()
 
-			const fee = 10n * 10n ** 6n
-			const sponsorAmount = 100n * 10n ** 6n
+			const fee = 10n * 10n ** 18n
+			const sponsorAmount = 100n * 10n ** 18n
 
 			// feeRate = 10 * 10000 / 500 = 200 (2%)
 			await expressProvider.setAffiliateConfig(affiliate, 200, 0)
@@ -1830,25 +1839,25 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				operator,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
-				withdrawAmount: 500n * 10n ** 6n,
+				withdrawAmount: 500n * 10n ** 18n,
 				fee,
 				operatorFee: 0n,
 				maxUserFee: 0n,
 			})
 
-			expect(await collateral.balanceOf(receiver.address)).to.equal(500n * 10n ** 6n)
+			expect(await collateral.balanceOf(receiver.address)).to.equal(500n * 10n ** 18n)
 			expect(await expressProvider.sponsorBalances(affiliate)).to.equal(sponsorAmount - fee)
 		})
 
 		it("should skip sponsor for large withdrawals (maxWithdrawAmount)", async function () {
-			const { botSigner, operator, user, receiver, expressProvider, symmio, affiliate, collateral, sponsor } = await deployFixture()
+			const { botSigner, operator, user, receiver, expressProvider, context, affiliate, collateral, sponsor } = await deployFixture()
 
-			const fee = 10n * 10n ** 6n
-			const sponsorAmount = 100n * 10n ** 6n
-			const maxWithdrawAmount = 200n * 10n ** 6n
+			const fee = 10n * 10n ** 18n
+			const sponsorAmount = 100n * 10n ** 18n
+			const maxWithdrawAmount = 200n * 10n ** 18n
 
 			// feeRate = 10 * 10000 / 500 = 200 (2%)
 			await expressProvider.setAffiliateConfig(affiliate, 200, 0)
@@ -1865,28 +1874,28 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				operator,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
-				withdrawAmount: 500n * 10n ** 6n,
+				withdrawAmount: 500n * 10n ** 18n,
 				fee,
 				operatorFee: 0n,
 				// maxUserFee defaults to fee (user pays full)
 			})
 
 			// User pays the full fee
-			expect(await collateral.balanceOf(receiver.address)).to.equal(500n * 10n ** 6n - fee)
+			expect(await collateral.balanceOf(receiver.address)).to.equal(500n * 10n ** 18n - fee)
 			// Sponsor balance unchanged
 			expect(await expressProvider.sponsorBalances(affiliate)).to.equal(sponsorAmount)
 		})
 
 		it("should skip sponsor for large express withdrawals (maxWithdrawAmount)", async function () {
-			const { botSigner, operator, user, receiver, expressProvider, symmio, affiliate, collateral, sponsor } = await deployFixture()
+			const { botSigner, operator, user, receiver, expressProvider, context, affiliate, collateral, sponsor } = await deployFixture()
 
-			const fee = 10n * 10n ** 6n
-			const sponsorAmount = 100n * 10n ** 6n
-			const maxWithdrawAmount = 200n * 10n ** 6n
-			const withdrawAmount = 500n * 10n ** 6n
+			const fee = 10n * 10n ** 18n
+			const sponsorAmount = 100n * 10n ** 18n
+			const maxWithdrawAmount = 200n * 10n ** 18n
+			const withdrawAmount = 500n * 10n ** 18n
 
 			// feeRate = 10 * 10000 / 500 = 200 (2%)
 			await expressProvider.setAffiliateConfig(affiliate, 200, 0)
@@ -1902,7 +1911,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				operator,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
 				withdrawAmount,
@@ -1916,10 +1925,10 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		})
 
 		it("should apply no limit when maxWithdrawAmount = 0", async function () {
-			const { botSigner, operator, user, receiver, expressProvider, symmio, affiliate, collateral, sponsor } = await deployFixture()
+			const { botSigner, operator, user, receiver, expressProvider, context, affiliate, collateral, sponsor } = await deployFixture()
 
-			const fee = 10n * 10n ** 6n
-			const sponsorAmount = 100n * 10n ** 6n
+			const fee = 10n * 10n ** 18n
+			const sponsorAmount = 100n * 10n ** 18n
 
 			// feeRate = 10 * 10000 / 5000 = 20 (0.2%)
 			await expressProvider.setAffiliateConfig(affiliate, 20, 0)
@@ -1936,25 +1945,25 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				operator,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
-				withdrawAmount: 5000n * 10n ** 6n,
+				withdrawAmount: 5000n * 10n ** 18n,
 				fee,
 				operatorFee: 0n,
 				maxUserFee: 0n,
 			})
 
-			expect(await collateral.balanceOf(receiver.address)).to.equal(5000n * 10n ** 6n)
+			expect(await collateral.balanceOf(receiver.address)).to.equal(5000n * 10n ** 18n)
 			expect(await expressProvider.sponsorBalances(affiliate)).to.equal(sponsorAmount - fee)
 		})
 
 		it("should sponsor when maxWithdrawAmount == expressAmount (exact boundary)", async function () {
-			const { botSigner, operator, user, receiver, expressProvider, symmio, affiliate, collateral, sponsor } = await deployFixture()
+			const { botSigner, operator, user, receiver, expressProvider, context, affiliate, collateral, sponsor } = await deployFixture()
 
-			const fee = 10n * 10n ** 6n
-			const sponsorAmount = 100n * 10n ** 6n
-			const withdrawAmount = 200n * 10n ** 6n
+			const fee = 10n * 10n ** 18n
+			const sponsorAmount = 100n * 10n ** 18n
+			const withdrawAmount = 200n * 10n ** 18n
 
 			// feeRate = 10 * 10000 / 200 = 500 (5%)
 			await expressProvider.setAffiliateConfig(affiliate, 500, 0)
@@ -1970,7 +1979,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				operator,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
 				withdrawAmount,
@@ -1985,12 +1994,12 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		})
 
 		it("should handle both caps set simultaneously", async function () {
-			const { botSigner, operator, user, receiver, expressProvider, symmio, affiliate, collateral, sponsor } = await deployFixture()
+			const { botSigner, operator, user, receiver, expressProvider, context, affiliate, collateral, sponsor } = await deployFixture()
 
-			const fee = 20n * 10n ** 6n
-			const sponsorAmount = 100n * 10n ** 6n
-			const maxFeePerWithdraw = 8n * 10n ** 6n
-			const maxWithdrawAmount = 600n * 10n ** 6n
+			const fee = 20n * 10n ** 18n
+			const sponsorAmount = 100n * 10n ** 18n
+			const maxFeePerWithdraw = 8n * 10n ** 18n
+			const maxWithdrawAmount = 600n * 10n ** 18n
 
 			// feeRate = 20 * 10000 / 500 = 400 (4%)
 			await expressProvider.setAffiliateConfig(affiliate, 400, 0)
@@ -2008,16 +2017,16 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				operator,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
-				withdrawAmount: 500n * 10n ** 6n,
+				withdrawAmount: 500n * 10n ** 18n,
 				fee,
 				operatorFee: 0n,
 				maxUserFee: fee - maxFeePerWithdraw, // user pays 12
 			})
 
-			expect(await collateral.balanceOf(receiver.address)).to.equal(500n * 10n ** 6n - (fee - maxFeePerWithdraw))
+			expect(await collateral.balanceOf(receiver.address)).to.equal(500n * 10n ** 18n - (fee - maxFeePerWithdraw))
 			expect(await expressProvider.sponsorBalances(affiliate)).to.equal(sponsorAmount - maxFeePerWithdraw)
 		})
 
@@ -2025,25 +2034,25 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 			const { deployer, expressProvider, affiliate, sponsor, collateral } = await deployFixture()
 
 			// Register a sponsor first
-			await collateral.mint(sponsor.address, 10n * 10n ** 6n)
-			await collateral.connect(sponsor).approve(await expressProvider.getAddress(), 10n * 10n ** 6n)
-			await expressProvider.connect(sponsor).depositSponsorBalance(affiliate, 10n * 10n ** 6n)
+			await collateral.mint(sponsor.address, 10n * 10n ** 18n)
+			await collateral.connect(sponsor).approve(await expressProvider.getAddress(), 10n * 10n ** 18n)
+			await expressProvider.connect(sponsor).depositSponsorBalance(affiliate, 10n * 10n ** 18n)
 
 			// Deployer has SETTER_ROLE
-			await expressProvider.setSponsorConfig(affiliate, 3n * 10n ** 6n, 500n * 10n ** 6n)
+			await expressProvider.setSponsorConfig(affiliate, 3n * 10n ** 18n, 500n * 10n ** 18n)
 
 			const config = await expressProvider.sponsorConfigs(affiliate)
-			expect(config.maxFeePerWithdraw).to.equal(3n * 10n ** 6n)
-			expect(config.maxWithdrawAmount).to.equal(500n * 10n ** 6n)
+			expect(config.maxFeePerWithdraw).to.equal(3n * 10n ** 18n)
+			expect(config.maxWithdrawAmount).to.equal(500n * 10n ** 18n)
 		})
 
 		it("should reject setSponsorConfig by non-setter", async function () {
 			const { expressProvider, affiliate, sponsor, collateral, user } = await deployFixture()
 
 			// Register sponsor
-			await collateral.mint(sponsor.address, 10n * 10n ** 6n)
-			await collateral.connect(sponsor).approve(await expressProvider.getAddress(), 10n * 10n ** 6n)
-			await expressProvider.connect(sponsor).depositSponsorBalance(affiliate, 10n * 10n ** 6n)
+			await collateral.mint(sponsor.address, 10n * 10n ** 18n)
+			await collateral.connect(sponsor).approve(await expressProvider.getAddress(), 10n * 10n ** 18n)
+			await expressProvider.connect(sponsor).depositSponsorBalance(affiliate, 10n * 10n ** 18n)
 
 			await expect(expressProvider.connect(user).setSponsorConfig(affiliate, 1n, 1n)).to.be.revert(ethers)
 		})
@@ -2055,10 +2064,10 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 
 	describe("maxUserFee", function () {
 		it("should pass when maxUserFee = fee + operatorFee, no sponsor (user pays full)", async function () {
-			const { botSigner, operator, user, receiver, expressProvider, symmio, affiliate, collateral } = await deployFixture()
+			const { botSigner, operator, user, receiver, expressProvider, context, affiliate, collateral } = await deployFixture()
 
-			const fee = 10n * 10n ** 6n
-			const opFee = 2n * 10n ** 6n
+			const fee = 10n * 10n ** 18n
+			const opFee = 2n * 10n ** 18n
 			// feeRate = 10 * 10000 / 500 = 200 (2%)
 			await expressProvider.setAffiliateConfig(affiliate, 200, opFee)
 
@@ -2069,23 +2078,23 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				operator,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
-				withdrawAmount: 500n * 10n ** 6n,
+				withdrawAmount: 500n * 10n ** 18n,
 				fee,
 				operatorFee: opFee,
 				maxUserFee: fee + opFee,
 			})
 
-			expect(await collateral.balanceOf(receiver.address)).to.equal(500n * 10n ** 6n - fee - opFee)
+			expect(await collateral.balanceOf(receiver.address)).to.equal(500n * 10n ** 18n - fee - opFee)
 		})
 
 		it("should pass when maxUserFee = 0 with full sponsor coverage", async function () {
-			const { botSigner, operator, user, receiver, expressProvider, symmio, affiliate, collateral, sponsor } = await deployFixture()
+			const { botSigner, operator, user, receiver, expressProvider, context, affiliate, collateral, sponsor } = await deployFixture()
 
-			const fee = 10n * 10n ** 6n
-			const sponsorAmount = 100n * 10n ** 6n
+			const fee = 10n * 10n ** 18n
+			const sponsorAmount = 100n * 10n ** 18n
 
 			// feeRate = 10 * 10000 / 500 = 200 (2%)
 			await expressProvider.setAffiliateConfig(affiliate, 200, 0)
@@ -2100,22 +2109,22 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				operator,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
-				withdrawAmount: 500n * 10n ** 6n,
+				withdrawAmount: 500n * 10n ** 18n,
 				fee,
 				operatorFee: 0n,
 				maxUserFee: 0n,
 			})
 
-			expect(await collateral.balanceOf(receiver.address)).to.equal(500n * 10n ** 6n)
+			expect(await collateral.balanceOf(receiver.address)).to.equal(500n * 10n ** 18n)
 		})
 
 		it("should revert when maxUserFee < totalFee and insufficient sponsor (UserFeeExceedsMaximum)", async function () {
-			const { botSigner, user, receiver, expressProvider, symmio, affiliate } = await deployFixture()
+			const { botSigner, user, receiver, expressProvider, context, affiliate } = await deployFixture()
 
-			const fee = 10n * 10n ** 6n
+			const fee = 10n * 10n ** 18n
 
 			// feeRate = 10 * 10000 / 500 = 200 (2%)
 			await expressProvider.setAffiliateConfig(affiliate, 200, 0)
@@ -2125,7 +2134,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 			const parts = [
 				{
 					id: 0n,
-					amount: 500n * 10n ** 6n,
+					amount: 500n * 10n ** 18n,
 					chainId: 31337n,
 					receiver: receiver.address,
 					virtualProvider: ethers.ZeroAddress,
@@ -2147,27 +2156,24 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				creditAmount: 0n,
 				fee,
 				operatorFee: 0n,
-				maxUserFee: 5n * 10n ** 6n,
+				maxUserFee: 5n * 10n ** 18n,
 				partsHash,
 				deadline,
 			})
 
-			const providerData = encodeProviderData(0n, 1, 0, affiliate, 0n, 0n, fee, 0n, deadline, signature, 5n * 10n ** 6n)
+			const providerData = encodeProviderData(0n, 1, 0, affiliate, 0n, 0n, fee, 0n, deadline, signature, 5n * 10n ** 18n)
 
-			const now = (await ethers.provider.getBlock("latest"))!.timestamp
-			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-
-			await expect(symmio.mockInitiateWithdraw(user.address, parts, providerData)).to.be.revertedWithCustomError(
+			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)).to.be.revertedWithCustomError(
 				expressProvider,
 				"UserFeeExceedsMaximum",
 			)
 		})
 
 		it("should pass when actualUserFee == maxUserFee (exact boundary)", async function () {
-			const { botSigner, operator, user, receiver, expressProvider, symmio, affiliate, collateral, sponsor } = await deployFixture()
+			const { botSigner, operator, user, receiver, expressProvider, context, affiliate, collateral, sponsor } = await deployFixture()
 
-			const fee = 10n * 10n ** 6n
-			const sponsorAmount = 6n * 10n ** 6n
+			const fee = 10n * 10n ** 18n
+			const sponsorAmount = 6n * 10n ** 18n
 
 			// feeRate = 10 * 10000 / 500 = 200 (2%)
 			await expressProvider.setAffiliateConfig(affiliate, 200, 0)
@@ -2183,23 +2189,23 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				operator,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
-				withdrawAmount: 500n * 10n ** 6n,
+				withdrawAmount: 500n * 10n ** 18n,
 				fee,
 				operatorFee: 0n,
-				maxUserFee: 4n * 10n ** 6n,
+				maxUserFee: 4n * 10n ** 18n,
 			})
 
-			expect(await collateral.balanceOf(receiver.address)).to.equal(500n * 10n ** 6n - 4n * 10n ** 6n)
+			expect(await collateral.balanceOf(receiver.address)).to.equal(500n * 10n ** 18n - 4n * 10n ** 18n)
 		})
 
 		it("should revert when sponsor is drained between sign and tx (second user's withdrawal fails)", async function () {
-			const { botSigner, user, user2, receiver, receiver2, expressProvider, symmio, affiliate, collateral, sponsor } = await deployFixture()
+			const { botSigner, user, user2, receiver, receiver2, expressProvider, context, affiliate, collateral, sponsor } = await deployFixture()
 
-			const fee = 10n * 10n ** 6n
-			const sponsorAmount = 10n * 10n ** 6n // exactly enough for one withdrawal
+			const fee = 10n * 10n ** 18n
+			const sponsorAmount = 10n * 10n ** 18n // exactly enough for one withdrawal
 
 			// feeRate = 10 * 10000 / 200 = 500 (5%)
 			await expressProvider.setAffiliateConfig(affiliate, 500, 0)
@@ -2214,10 +2220,10 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				botSigner,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
-				withdrawAmount: 200n * 10n ** 6n,
+				withdrawAmount: 200n * 10n ** 18n,
 				fee,
 				operatorFee: 0n,
 				nonce: 0n,
@@ -2232,7 +2238,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 			const parts2 = [
 				{
 					id: 0n,
-					amount: 200n * 10n ** 6n,
+					amount: 200n * 10n ** 18n,
 					chainId: 31337n,
 					receiver: receiver2.address,
 					virtualProvider: ethers.ZeroAddress,
@@ -2260,11 +2266,8 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 
 			const providerData2 = encodeProviderData(0n, 1, 0, affiliate, 0n, 0n, fee, 0n, deadline2, signature2, 0n)
 
-			const now2 = (await ethers.provider.getBlock("latest"))!.timestamp
-			await symmio.setDeallocateTimestamp(user2.address, now2 - 13 * 3600)
-
 			// This should revert because sponsor is drained and maxUserFee=0
-			await expect(symmio.mockInitiateWithdraw(user2.address, parts2, providerData2)).to.be.revertedWithCustomError(
+			await expect(context.withdrawFacet.connect(user2).initiateWithdraw(parts2, false, providerData2)).to.be.revertedWithCustomError(
 				expressProvider,
 				"UserFeeExceedsMaximum",
 			)
@@ -2277,12 +2280,12 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 
 	describe("Sponsor Coverage Priority", function () {
 		it("should cover operator fee first, then affiliate fee from sponsor", async function () {
-			const { botSigner, operator, user, receiver, expressProvider, symmio, affiliate, collateral, sponsor } = await deployFixture()
+			const { botSigner, operator, user, receiver, expressProvider, context, affiliate, collateral, sponsor } = await deployFixture()
 
-			const fee = 10n * 10n ** 6n
-			const opFee = 5n * 10n ** 6n
+			const fee = 10n * 10n ** 18n
+			const opFee = 5n * 10n ** 18n
 			const totalFee = fee + opFee
-			const sponsorAmount = 100n * 10n ** 6n
+			const sponsorAmount = 100n * 10n ** 18n
 
 			// feeRate = 10 * 10000 / 500 = 200 (2%)
 			await expressProvider.setAffiliateConfig(affiliate, 200, opFee)
@@ -2298,17 +2301,17 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				operator,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
-				withdrawAmount: 500n * 10n ** 6n,
+				withdrawAmount: 500n * 10n ** 18n,
 				fee,
 				operatorFee: opFee,
 				maxUserFee: 0n,
 			})
 
 			// User gets full amount
-			expect(await collateral.balanceOf(receiver.address)).to.equal(500n * 10n ** 6n)
+			expect(await collateral.balanceOf(receiver.address)).to.equal(500n * 10n ** 18n)
 
 			// Both fees collected
 			expect(await expressProvider.collectedFees(affiliate)).to.equal(fee)
@@ -2319,10 +2322,11 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		})
 
 		it("should lock sponsor deterministically at acceptance (multiple concurrent withdrawals)", async function () {
-			const { botSigner, operator, user, user2, receiver, receiver2, expressProvider, symmio, affiliate, collateral, sponsor } = await deployFixture()
+			const { botSigner, operator, user, user2, receiver, receiver2, expressProvider, context, affiliate, collateral, sponsor } =
+				await deployFixture()
 
-			const fee = 10n * 10n ** 6n
-			const sponsorAmount = 15n * 10n ** 6n // not enough for two full fees
+			const fee = 10n * 10n ** 18n
+			const sponsorAmount = 15n * 10n ** 18n // not enough for two full fees
 
 			// feeRate = 10 * 10000 / 200 = 500 (5%)
 			await expressProvider.setAffiliateConfig(affiliate, 500, 0)
@@ -2337,10 +2341,10 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				botSigner,
 				user,
 				receiver,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
-				withdrawAmount: 200n * 10n ** 6n,
+				withdrawAmount: 200n * 10n ** 18n,
 				fee,
 				operatorFee: 0n,
 				nonce: 0n,
@@ -2348,7 +2352,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 			})
 
 			// After first acceptance, sponsor has 15 - 10 = 5 left
-			expect(await expressProvider.sponsorBalances(affiliate)).to.equal(5n * 10n ** 6n)
+			expect(await expressProvider.sponsorBalances(affiliate)).to.equal(5n * 10n ** 18n)
 
 			// Second withdrawal: user2 -- sponsor covers only 5 of 10, user pays 5
 			await initiateWithdraw({
@@ -2356,14 +2360,14 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				botSigner,
 				user: user2,
 				receiver: receiver2,
-				symmio,
+				context,
 				affiliate,
 				affiliateAmount: 0n,
-				withdrawAmount: 200n * 10n ** 6n,
+				withdrawAmount: 200n * 10n ** 18n,
 				fee,
 				operatorFee: 0n,
 				nonce: 0n,
-				maxUserFee: 5n * 10n ** 6n, // user2 pays 5
+				maxUserFee: 5n * 10n ** 18n, // user2 pays 5
 			})
 
 			// Sponsor fully drained
@@ -2379,7 +2383,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 			const parts1 = [
 				{
 					id: 0n,
-					amount: 200n * 10n ** 6n,
+					amount: 200n * 10n ** 18n,
 					chainId: 31337n,
 					receiver: receiver.address,
 					virtualProvider: ethers.ZeroAddress,
@@ -2392,7 +2396,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 			const parts2 = [
 				{
 					id: 0n,
-					amount: 200n * 10n ** 6n,
+					amount: 200n * 10n ** 18n,
 					chainId: 31337n,
 					receiver: receiver2.address,
 					virtualProvider: ethers.ZeroAddress,
@@ -2402,9 +2406,9 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 			await expressProvider.connect(operator).processWithdraw(user2.address, 1, parts2)
 
 			// User1 gets full amount (sponsor covered 10)
-			expect(await collateral.balanceOf(receiver.address)).to.equal(200n * 10n ** 6n)
+			expect(await collateral.balanceOf(receiver.address)).to.equal(200n * 10n ** 18n)
 			// User2 pays 5 (sponsor only covered 5 of 10)
-			expect(await collateral.balanceOf(receiver2.address)).to.equal(200n * 10n ** 6n - 5n * 10n ** 6n)
+			expect(await collateral.balanceOf(receiver2.address)).to.equal(200n * 10n ** 18n - 5n * 10n ** 18n)
 		})
 	})
 }

@@ -472,7 +472,7 @@ Uses the same EIP-712 domain as the bot option (same contract, chain).
 
 **On-chain validation (in `onWithdrawRequest`):**
 1. Check `signatures.length >= minValidatorSignatures(affiliate)` (falls back to `minValidatorSignatures(address(0))` if affiliate-specific not set)
-2. Verify `symmioNonce == ISymmio(symmio).getUserNonce(user)` -- if the user acted on SYMMIO since validators signed, the nonce won't match and the withdrawal is rejected
+2. Verify `symmioNonce == ISymmio(symmio).nonceOfPartyA(user)` -- if the user acted on SYMMIO since validators signed, the nonce won't match and the withdrawal is rejected
 3. For each signature:
    - Reject future timestamps (`timestamp > block.timestamp`)
    - Verify `block.timestamp - timestamp <= validatorApprovalTimeout(affiliate)` (falls back to `validatorApprovalTimeout(address(0))` if affiliate-specific not set, default 30s)
@@ -507,7 +507,7 @@ optionData = abi.encode(
 validatorData = abi.encode(
     bytes[]   signatures,   // validator EIP-712 signatures (ordered by ascending signer address)
     uint256[] timestamps,   // corresponding signing timestamps
-    uint256   symmioNonce   // user's SYMMIO nonce at validation time (read via getUserNonce)
+    uint256   symmioNonce   // user's SYMMIO nonce at validation time (read via nonceOfPartyA)
 )
 
 creditDataRaw = abi.encode(CreditData) // empty bytes if creditAmount == 0

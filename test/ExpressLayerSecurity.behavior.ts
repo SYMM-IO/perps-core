@@ -1,10 +1,9 @@
 import { expect } from "chai"
-import hre, { network } from "hardhat"
 
 import { deployExpressProvider } from "../tasks/deploy/expressWithdrawLayerDiamond.js"
-
-const connection = await network.connect()
-const { ethers } = connection
+import { initializeFixture } from "./Initialize.fixture.js"
+import connection, { ethers, hre } from "./helpers/hardhat-connection.js"
+import { time } from "./helpers/network-helpers.js"
 
 const OPERATOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("OPERATOR_ROLE"))
 const SIGNER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("SIGNER_ROLE"))
@@ -14,20 +13,35 @@ const UNLOCK_ROLE = ethers.keccak256(ethers.toUtf8Bytes("UNLOCK_ROLE"))
 
 export function shouldBehaveLikeExpressLayerSecurity(): void {
 	async function deployFixture() {
-		const [deployer, botSigner, operator, user, receiver, affiliateOwner, locker, unlocker] = await ethers.getSigners()
+		const context = await initializeFixture()
 
-		const collateral = await ethers.deployContract("MockERC20", ["USDC", "USDC", 6])
-		const symmio = await ethers.deployContract("ExpressLayerMockSymmio", [await collateral.getAddress()])
+		const allSigners = await ethers.getSigners()
+		const deployer = context.signers.admin
+		const botSigner = allSigners[13]
+		const operator = allSigners[14]
+		const user = context.signers.user
+		const receiver = allSigners[15]
+		const affiliateOwner = allSigners[16]
+		const locker = allSigners[17]
+		const unlocker = allSigners[18]
 
-		// Deploy via shared deployment helpers
+		// Deploy ExpressProvider on top of the real Symmio diamond
 		const expressProvider = await deployExpressProvider(hre, connection, {
 			admin: deployer.address,
-			symmio: await symmio.getAddress(),
-			collateral: await collateral.getAddress(),
+			symmio: context.diamond,
+			collateral: await context.collateral.getAddress(),
 		})
 
-		// Register providers on mock SYMMIO
-		await symmio.registerExpressProvider(await expressProvider.getAddress())
+		// Register ExpressProvider on real Symmio
+		await context.controlFacet.connect(deployer).registerExpressProvider(await expressProvider.getAddress())
+
+		// Configure real Symmio withdraw settings
+		await context.controlFacet.connect(deployer).setMaxWithdrawParts(50)
+		await context.controlFacet.connect(deployer).setWithdrawCooldownPeriod(43200)
+
+		// Grant force cancel and suspender roles on real Symmio
+		await context.controlFacet.connect(deployer).grantRole(deployer.address, ethers.keccak256(ethers.toUtf8Bytes("WITHDRAW_FORCE_CANCEL_ROLE")))
+		await context.controlFacet.connect(deployer).grantRole(deployer.address, ethers.keccak256(ethers.toUtf8Bytes("SUSPENDER_ROLE")))
 
 		// Configure ExpressProvider via roles
 		await expressProvider.grantRole(SIGNER_ROLE, botSigner.address)
@@ -42,19 +56,26 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 		// Configure credit line on diamond
 		await expressProvider.setCreditLineMuonConfig(await muonVerifier.getAddress(), 1n, 60n)
 
-		// Fund general pool with 10,000 USDC
-		const generalFunding = 10_000n * 10n ** 6n
-		await collateral.mint(deployer.address, generalFunding)
-		await collateral.approve(await expressProvider.getAddress(), generalFunding)
+		// Deposit user balance into real Symmio
+		const userBalance = 100_000n * 10n ** 18n
+		await context.collateral.mint(user.address, userBalance)
+		await context.collateral.connect(user).approve(context.diamond, ethers.MaxUint256)
+		await context.accountFacet.connect(user).deposit(userBalance)
+
+		// Fund general pool with 10,000 tokens (18 decimals)
+		const generalFunding = 10_000n * 10n ** 18n
+		await context.collateral.mint(deployer.address, generalFunding)
+		await context.collateral.connect(deployer).approve(await expressProvider.getAddress(), generalFunding)
 		await expressProvider.depositToGeneral(generalFunding)
 
-		// Fund affiliate pool with 5,000 USDC
-		const affiliateFunding = 5_000n * 10n ** 6n
-		await collateral.mint(deployer.address, affiliateFunding)
-		await collateral.approve(await expressProvider.getAddress(), affiliateFunding)
+		// Fund affiliate pool with 5,000 tokens (18 decimals)
+		const affiliateFunding = 5_000n * 10n ** 18n
+		await context.collateral.mint(deployer.address, affiliateFunding)
+		await context.collateral.connect(deployer).approve(await expressProvider.getAddress(), affiliateFunding)
 		await expressProvider.depositToAffiliate(affiliate, affiliateFunding)
 
 		return {
+			context,
 			deployer,
 			botSigner,
 			operator,
@@ -64,8 +85,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			locker,
 			unlocker,
 			affiliate,
-			collateral,
-			symmio,
+			collateral: context.collateral,
 			expressProvider,
 			muonVerifier,
 			generalFunding,
@@ -215,7 +235,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 		return validator.signTypedData(domain, types, params)
 	}
 
-	// Helper: create a standard instant withdrawal via mock SYMMIO
+	// Helper: create a standard instant withdrawal via real Symmio
 	async function initiateInstantWithdraw(
 		fixture: any,
 		opts?: {
@@ -229,8 +249,8 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			symmioNonce?: bigint
 		},
 	) {
-		const { botSigner, user, receiver, expressProvider, symmio, affiliate } = fixture
-		const withdrawAmount = opts?.withdrawAmount ?? 500n * 10n ** 6n
+		const { botSigner, user, receiver, expressProvider, context, affiliate } = fixture
+		const withdrawAmount = opts?.withdrawAmount ?? 500n * 10n ** 18n
 		const affiliateAmount = opts?.affiliateAmount ?? 0n
 		const creditAmount = opts?.creditAmount ?? 0n
 		const fee = opts?.fee ?? 0n
@@ -282,9 +302,6 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			opts?.symmioNonce,
 		)
 
-		const now = (await ethers.provider.getBlock("latest"))!.timestamp
-		await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-
 		return { parts, providerData, withdrawAmount, partsHash, deadline }
 	}
 
@@ -295,7 +312,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 	describe("Validator Signatures", function () {
 		it("should accept with enough validator signatures (minValidatorSignatures = 2, provide 2)", async function () {
 			const fixture = await deployFixture()
-			const { expressProvider, symmio, user } = fixture
+			const { expressProvider, context, user } = fixture
 
 			const signers = await ethers.getSigners()
 			const validator1 = signers[6]
@@ -305,7 +322,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			await expressProvider.setValidator(fixture.affiliate, validator2.address, true)
 			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 2)
 
-			const withdrawAmount = 500n * 10n ** 6n
+			const withdrawAmount = 500n * 10n ** 18n
 			const expressAddr = await expressProvider.getAddress()
 
 			const parts = [
@@ -374,15 +391,15 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				[validatorTimestamp, validatorTimestamp],
 			)
 
-			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-			await symmio.mockInitiateWithdraw(user.address, parts, providerData)
+			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
 
-			expect(await symmio.acceptedRequests(user.address, 1)).to.be.true
+			const info = await expressProvider.getWithdrawInfo(user.address, 1)
+			expect(info.status).to.equal(1n) // ACCEPTED
 		})
 
 		it("should reject with insufficient validator signatures", async function () {
 			const fixture = await deployFixture()
-			const { expressProvider, symmio, user } = fixture
+			const { expressProvider, context, user } = fixture
 
 			const signers = await ethers.getSigners()
 			const validator1 = signers[6]
@@ -390,7 +407,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			await expressProvider.setValidator(fixture.affiliate, validator1.address, true)
 			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 2)
 
-			const withdrawAmount = 500n * 10n ** 6n
+			const withdrawAmount = 500n * 10n ** 18n
 			const expressAddr = await expressProvider.getAddress()
 
 			const parts = [
@@ -434,9 +451,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			// Only 1 signature but need 2
 			const providerData = encodeProviderData(nonce, 1, 0, fixture.affiliate, 0n, 0n, 0n, 0n, deadline, signature, undefined, [valSig1], [now])
 
-			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-
-			await expect(symmio.mockInitiateWithdraw(user.address, parts, providerData)).to.be.revertedWithCustomError(
+			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)).to.be.revertedWithCustomError(
 				expressProvider,
 				"InsufficientValidatorSignatures",
 			)
@@ -444,7 +459,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 
 		it("should reject expired validator signatures (timestamp + timeout < block.timestamp)", async function () {
 			const fixture = await deployFixture()
-			const { expressProvider, symmio, user } = fixture
+			const { expressProvider, context, user } = fixture
 
 			const signers = await ethers.getSigners()
 			const validator1 = signers[6]
@@ -452,7 +467,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			await expressProvider.setValidator(fixture.affiliate, validator1.address, true)
 			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 1)
 
-			const withdrawAmount = 500n * 10n ** 6n
+			const withdrawAmount = 500n * 10n ** 18n
 			const expressAddr = await expressProvider.getAddress()
 
 			const parts = [
@@ -513,9 +528,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				[expiredTimestamp],
 			)
 
-			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-
-			await expect(symmio.mockInitiateWithdraw(user.address, parts, providerData)).to.be.revertedWithCustomError(
+			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)).to.be.revertedWithCustomError(
 				expressProvider,
 				"ValidatorApprovalExpired",
 			)
@@ -523,7 +536,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 
 		it("should reject future-dated timestamps (timestamp > block.timestamp)", async function () {
 			const fixture = await deployFixture()
-			const { expressProvider, symmio, user } = fixture
+			const { expressProvider, context, user } = fixture
 
 			const signers = await ethers.getSigners()
 			const validator1 = signers[6]
@@ -531,7 +544,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			await expressProvider.setValidator(fixture.affiliate, validator1.address, true)
 			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 1)
 
-			const withdrawAmount = 500n * 10n ** 6n
+			const withdrawAmount = 500n * 10n ** 18n
 			const expressAddr = await expressProvider.getAddress()
 
 			const parts = [
@@ -591,9 +604,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				[futureTimestamp],
 			)
 
-			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-
-			await expect(symmio.mockInitiateWithdraw(user.address, parts, providerData)).to.be.revertedWithCustomError(
+			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)).to.be.revertedWithCustomError(
 				expressProvider,
 				"ValidatorApprovalExpired",
 			)
@@ -601,14 +612,14 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 
 		it("should reject validator signature from non-validator (InvalidValidator)", async function () {
 			const fixture = await deployFixture()
-			const { expressProvider, symmio, user } = fixture
+			const { expressProvider, context, user } = fixture
 
 			const signers = await ethers.getSigners()
 			const nonValidator = signers[6] // Not registered as validator
 
 			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 1)
 
-			const withdrawAmount = 500n * 10n ** 6n
+			const withdrawAmount = 500n * 10n ** 18n
 			const expressAddr = await expressProvider.getAddress()
 
 			const parts = [
@@ -651,14 +662,15 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 
 			const providerData = encodeProviderData(nonce, 1, 0, fixture.affiliate, 0n, 0n, 0n, 0n, deadline, signature, undefined, [valSig], [now])
 
-			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-
-			await expect(symmio.mockInitiateWithdraw(user.address, parts, providerData)).to.be.revertedWithCustomError(expressProvider, "InvalidValidator")
+			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)).to.be.revertedWithCustomError(
+				expressProvider,
+				"InvalidValidator",
+			)
 		})
 
 		it("should reject duplicate validator signatures (DuplicateValidator)", async function () {
 			const fixture = await deployFixture()
-			const { expressProvider, symmio, user } = fixture
+			const { expressProvider, context, user } = fixture
 
 			const signers = await ethers.getSigners()
 			const validator1 = signers[6]
@@ -666,7 +678,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			await expressProvider.setValidator(fixture.affiliate, validator1.address, true)
 			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 2)
 
-			const withdrawAmount = 500n * 10n ** 6n
+			const withdrawAmount = 500n * 10n ** 18n
 			const expressAddr = await expressProvider.getAddress()
 
 			const parts = [
@@ -731,9 +743,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				[now, now],
 			)
 
-			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-
-			await expect(symmio.mockInitiateWithdraw(user.address, parts, providerData)).to.be.revertedWithCustomError(
+			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)).to.be.revertedWithCustomError(
 				expressProvider,
 				"DuplicateValidator",
 			)
@@ -741,7 +751,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 
 		it("should reject wrong amount in validator signature", async function () {
 			const fixture = await deployFixture()
-			const { expressProvider, symmio, user } = fixture
+			const { expressProvider, context, user } = fixture
 
 			const signers = await ethers.getSigners()
 			const validator1 = signers[6]
@@ -749,7 +759,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			await expressProvider.setValidator(fixture.affiliate, validator1.address, true)
 			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 1)
 
-			const withdrawAmount = 500n * 10n ** 6n
+			const withdrawAmount = 500n * 10n ** 18n
 			const expressAddr = await expressProvider.getAddress()
 
 			const parts = [
@@ -783,7 +793,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			})
 
 			// Validator signs with WRONG amount (different from actual withdrawal amount)
-			const wrongAmount = 999n * 10n ** 6n
+			const wrongAmount = 999n * 10n ** 18n
 			const valSig = await signValidatorApproval(expressProvider, validator1, {
 				user: user.address,
 				nonce,
@@ -794,15 +804,16 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 
 			const providerData = encodeProviderData(nonce, 1, 0, fixture.affiliate, 0n, 0n, 0n, 0n, deadline, signature, undefined, [valSig], [now])
 
-			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-
 			// Wrong amount causes signature recovery to yield a different address, which is not a validator
-			await expect(symmio.mockInitiateWithdraw(user.address, parts, providerData)).to.be.revertedWithCustomError(expressProvider, "InvalidValidator")
+			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)).to.be.revertedWithCustomError(
+				expressProvider,
+				"InvalidValidator",
+			)
 		})
 
 		it("should reject wrong nonce in validator signature", async function () {
 			const fixture = await deployFixture()
-			const { expressProvider, symmio, user } = fixture
+			const { expressProvider, context, user } = fixture
 
 			const signers = await ethers.getSigners()
 			const validator1 = signers[6]
@@ -810,7 +821,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			await expressProvider.setValidator(fixture.affiliate, validator1.address, true)
 			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 1)
 
-			const withdrawAmount = 500n * 10n ** 6n
+			const withdrawAmount = 500n * 10n ** 18n
 			const expressAddr = await expressProvider.getAddress()
 
 			const parts = [
@@ -855,20 +866,21 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 
 			const providerData = encodeProviderData(nonce, 1, 0, fixture.affiliate, 0n, 0n, 0n, 0n, deadline, signature, undefined, [valSig], [now])
 
-			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-
 			// Wrong nonce causes signature recovery to yield a different address
-			await expect(symmio.mockInitiateWithdraw(user.address, parts, providerData)).to.be.revertedWithCustomError(expressProvider, "InvalidValidator")
+			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)).to.be.revertedWithCustomError(
+				expressProvider,
+				"InvalidValidator",
+			)
 		})
 
 		it("should skip validator check when minValidatorSignatures = 0", async function () {
 			const fixture = await deployFixture()
-			const { expressProvider, symmio, user } = fixture
+			const { expressProvider, context, user } = fixture
 
 			// Default is 0 -- no validator signatures needed
 			expect(await expressProvider.minValidatorSignatures(fixture.affiliate)).to.equal(0n)
 
-			const withdrawAmount = 500n * 10n ** 6n
+			const withdrawAmount = 500n * 10n ** 18n
 			const expressAddr = await expressProvider.getAddress()
 
 			const parts = [
@@ -904,15 +916,15 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			// No validator signatures provided, and that's fine
 			const providerData = encodeProviderData(nonce, 1, 0, fixture.affiliate, 0n, 0n, 0n, 0n, deadline, signature)
 
-			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-			await symmio.mockInitiateWithdraw(user.address, parts, providerData)
+			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
 
-			expect(await symmio.acceptedRequests(user.address, 1)).to.be.true
+			const info = await expressProvider.getWithdrawInfo(user.address, 1)
+			expect(info.status).to.equal(1n) // ACCEPTED
 		})
 
 		it("should reject when validator role is revoked between signing and submission", async function () {
 			const fixture = await deployFixture()
-			const { expressProvider, symmio, user } = fixture
+			const { expressProvider, context, user } = fixture
 
 			const signers = await ethers.getSigners()
 			const validator1 = signers[6]
@@ -920,7 +932,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			await expressProvider.setValidator(fixture.affiliate, validator1.address, true)
 			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 1)
 
-			const withdrawAmount = 500n * 10n ** 6n
+			const withdrawAmount = 500n * 10n ** 18n
 			const expressAddr = await expressProvider.getAddress()
 
 			const parts = [
@@ -967,15 +979,16 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 
 			const providerData = encodeProviderData(nonce, 1, 0, fixture.affiliate, 0n, 0n, 0n, 0n, deadline, signature, undefined, [valSig], [now])
 
-			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-
 			// Signature recovery yields the correct address, but that address is no longer a registered validator
-			await expect(symmio.mockInitiateWithdraw(user.address, parts, providerData)).to.be.revertedWithCustomError(expressProvider, "InvalidValidator")
+			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)).to.be.revertedWithCustomError(
+				expressProvider,
+				"InvalidValidator",
+			)
 		})
 
 		it("should accept when more than minValidatorSignatures are provided (extra are still validated)", async function () {
 			const fixture = await deployFixture()
-			const { expressProvider, symmio, user } = fixture
+			const { expressProvider, context, user } = fixture
 
 			const signers = await ethers.getSigners()
 			const validator1 = signers[6]
@@ -987,7 +1000,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			await expressProvider.setValidator(fixture.affiliate, validator3.address, true)
 			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 2) // Only require 2, but provide 3
 
-			const withdrawAmount = 500n * 10n ** 6n
+			const withdrawAmount = 500n * 10n ** 18n
 			const expressAddr = await expressProvider.getAddress()
 
 			const parts = [
@@ -1039,15 +1052,15 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 
 			const providerData = encodeProviderData(nonce, 1, 0, fixture.affiliate, 0n, 0n, 0n, 0n, deadline, signature, undefined, valSigs, valTimestamps)
 
-			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-			await symmio.mockInitiateWithdraw(user.address, parts, providerData)
+			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
 
-			expect(await symmio.acceptedRequests(user.address, 1)).to.be.true
+			const info = await expressProvider.getWithdrawInfo(user.address, 1)
+			expect(info.status).to.equal(1n) // ACCEPTED
 		})
 
 		it("should fail when admin changes minValidatorSignatures and pending sigs become insufficient", async function () {
 			const fixture = await deployFixture()
-			const { expressProvider, symmio, user } = fixture
+			const { expressProvider, context, user } = fixture
 
 			const signers = await ethers.getSigners()
 			const validator1 = signers[6]
@@ -1056,7 +1069,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			// Start with 1 validator required
 			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 1)
 
-			const withdrawAmount = 500n * 10n ** 6n
+			const withdrawAmount = 500n * 10n ** 18n
 			const expressAddr = await expressProvider.getAddress()
 
 			const parts = [
@@ -1103,10 +1116,8 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 
 			const providerData = encodeProviderData(nonce, 1, 0, fixture.affiliate, 0n, 0n, 0n, 0n, deadline, signature, undefined, [valSig], [now])
 
-			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-
 			// Now 1 signature is not enough
-			await expect(symmio.mockInitiateWithdraw(user.address, parts, providerData)).to.be.revertedWithCustomError(
+			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)).to.be.revertedWithCustomError(
 				expressProvider,
 				"InsufficientValidatorSignatures",
 			)
@@ -1114,7 +1125,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 
 		it("should fail when admin changes validatorApprovalTimeout and pending sigs expire", async function () {
 			const fixture = await deployFixture()
-			const { expressProvider, symmio, user } = fixture
+			const { expressProvider, context, user } = fixture
 
 			const signers = await ethers.getSigners()
 			const validator1 = signers[6]
@@ -1124,7 +1135,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			// Start with a generous timeout
 			await expressProvider.setValidatorApprovalTimeout(fixture.affiliate, 120)
 
-			const withdrawAmount = 500n * 10n ** 6n
+			const withdrawAmount = 500n * 10n ** 18n
 			const expressAddr = await expressProvider.getAddress()
 
 			const parts = [
@@ -1170,14 +1181,11 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			await expressProvider.setValidatorApprovalTimeout(fixture.affiliate, 5)
 
 			// Advance time 10 seconds so the signature is expired under the new 5s timeout
-			await ethers.provider.send("evm_increaseTime", [10])
-			await ethers.provider.send("evm_mine", [])
+			await time.increase(10)
 
 			const providerData = encodeProviderData(nonce, 1, 0, fixture.affiliate, 0n, 0n, 0n, 0n, deadline, signature, undefined, [valSig], [now])
 
-			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-
-			await expect(symmio.mockInitiateWithdraw(user.address, parts, providerData)).to.be.revertedWithCustomError(
+			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)).to.be.revertedWithCustomError(
 				expressProvider,
 				"ValidatorApprovalExpired",
 			)
@@ -1185,7 +1193,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 
 		it("should revert on mismatched array lengths (signatures vs timestamps)", async function () {
 			const fixture = await deployFixture()
-			const { expressProvider, symmio, user } = fixture
+			const { expressProvider, context, user } = fixture
 
 			const signers = await ethers.getSigners()
 			const validator1 = signers[6]
@@ -1195,7 +1203,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			await expressProvider.setValidator(fixture.affiliate, validator2.address, true)
 			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 2)
 
-			const withdrawAmount = 500n * 10n ** 6n
+			const withdrawAmount = 500n * 10n ** 18n
 			const expressAddr = await expressProvider.getAddress()
 
 			const parts = [
@@ -1262,9 +1270,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				[now],
 			)
 
-			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-
-			await expect(symmio.mockInitiateWithdraw(user.address, parts, providerData)).to.be.revertedWithCustomError(
+			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)).to.be.revertedWithCustomError(
 				expressProvider,
 				"ArrayLengthMismatch",
 			)
@@ -1272,7 +1278,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 
 		it("should accept validator timestamp at exact expiry boundary (timestamp + timeout == block.timestamp)", async function () {
 			const fixture = await deployFixture()
-			const { expressProvider, symmio, user } = fixture
+			const { expressProvider, context, user } = fixture
 
 			const signers = await ethers.getSigners()
 			const validator1 = signers[6]
@@ -1283,7 +1289,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			// Default timeout = 30s
 			const timeout = 30
 
-			const withdrawAmount = 500n * 10n ** 6n
+			const withdrawAmount = 500n * 10n ** 18n
 			const expressAddr = await expressProvider.getAddress()
 
 			const parts = [
@@ -1318,16 +1324,9 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 
 			// The check is: block.timestamp > timestamps[i] + validatorApprovalTimeout
 			// At exact boundary (==), > is false, so it should pass.
-			// The tricky part is accounting for block timestamp advancement between calls.
-			// We use setDeallocateTimestamp first, then the mockInitiateWithdraw tx mines at now+2.
-			// So we need: validatorTimestamp + timeout >= now + 2
-			// For exact boundary: validatorTimestamp = now + 2 - timeout = now - 28
-			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-			// After setDeallocateTimestamp, block.timestamp is now+1.
-			// mockInitiateWithdraw will mine at now+2.
-			// Check at tx time: (now+2) > validatorTimestamp + 30
-			// We want: (now+2) == validatorTimestamp + 30 => validatorTimestamp = now - 28
-			const validatorTimestamp = now - 28
+			// The initiateWithdraw tx will mine at now+1 (next block).
+			// We want: (now+1) == validatorTimestamp + 30 => validatorTimestamp = now - 29
+			const validatorTimestamp = now - 29
 
 			const valSig = await signValidatorApproval(expressProvider, validator1, {
 				user: user.address,
@@ -1354,21 +1353,22 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			)
 
 			// At exact boundary, block.timestamp == timestamp + timeout, so > check is false => should pass
-			await symmio.mockInitiateWithdraw(user.address, parts, providerData)
+			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
 
-			expect(await symmio.acceptedRequests(user.address, 1)).to.be.true
+			const info = await expressProvider.getWithdrawInfo(user.address, 1)
+			expect(info.status).to.equal(1n) // ACCEPTED
 		})
 
 		it("should reject when symmioNonce changed (user acted on SYMMIO after validator signed)", async function () {
 			const fixture = await deployFixture()
-			const { expressProvider, symmio, user } = fixture
+			const { expressProvider, context, user } = fixture
 
 			const signers = await ethers.getSigners()
 			const validator1 = signers[6]
 			await expressProvider.setValidator(fixture.affiliate, validator1.address, true)
 			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 1)
 
-			const withdrawAmount = 500n * 10n ** 6n
+			const withdrawAmount = 500n * 10n ** 18n
 			const expressAddr = await expressProvider.getAddress()
 
 			const parts = [
@@ -1410,9 +1410,9 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				symmioNonce: 0n,
 			})
 
-			// User acts on SYMMIO -- nonce changes to 1
-			await symmio.setUserNonce(user.address, 1)
-
+			// The validator signed with symmioNonce=0 which matches the user's actual nonce.
+			// To trigger a mismatch, encode providerData with a WRONG symmioNonce (999).
+			// The real Symmio nonce (partyANonces) starts at 0 and only increments on settlement/liquidation.
 			const providerData = encodeProviderData(
 				nonce,
 				1,
@@ -1427,27 +1427,32 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				undefined,
 				[valSig],
 				[now],
-				0n, // validator signed symmioNonce=0 but current is 1
+				999n, // providerData claims symmioNonce=999 but actual nonce is 0 → mismatch
 			)
 
-			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-
-			await expect(symmio.mockInitiateWithdraw(user.address, parts, providerData)).to.be.revertedWithCustomError(expressProvider, "InvalidNonce")
+			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)).to.be.revertedWithCustomError(
+				expressProvider,
+				"InvalidNonce",
+			)
 		})
 
 		it("should accept when symmioNonce matches current SYMMIO state", async function () {
 			const fixture = await deployFixture()
-			const { expressProvider, symmio, user } = fixture
+			const { expressProvider, context, user } = fixture
 
 			const signers = await ethers.getSigners()
 			const validator1 = signers[6]
 			await expressProvider.setValidator(fixture.affiliate, validator1.address, true)
 			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 1)
 
-			// Set SYMMIO nonce to 42
-			await symmio.setUserNonce(user.address, 42)
+			// Trigger nonce changes on real Symmio via allocate+deallocate
+			await context.controlFacet.connect(context.signers.admin).grantRole(user.address, ethers.keccak256(ethers.toUtf8Bytes("BALANCE_SETTLER_ROLE")))
+			await context.accountFacet.connect(user).allocate(1n)
+			await context.accountFacet.connect(user).zeroUpnlDeallocate(1n)
+			// Read the current nonce
+			const currentNonce = await context.viewFacet.nonceOfPartyA(user.address)
 
-			const withdrawAmount = 500n * 10n ** 6n
+			const withdrawAmount = 500n * 10n ** 18n
 			const expressAddr = await expressProvider.getAddress()
 
 			const parts = [
@@ -1480,21 +1485,36 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				deadline,
 			})
 
-			// Validator signs with matching symmioNonce = 42
+			// Validator signs with matching symmioNonce
 			const valSig = await signValidatorApproval(expressProvider, validator1, {
 				user: user.address,
 				nonce,
 				amount: withdrawAmount,
 				timestamp: now,
-				symmioNonce: 42n,
+				symmioNonce: currentNonce,
 			})
 
-			const providerData = encodeProviderData(nonce, 1, 0, fixture.affiliate, 0n, 0n, 0n, 0n, deadline, signature, undefined, [valSig], [now], 42n)
+			const providerData = encodeProviderData(
+				nonce,
+				1,
+				0,
+				fixture.affiliate,
+				0n,
+				0n,
+				0n,
+				0n,
+				deadline,
+				signature,
+				undefined,
+				[valSig],
+				[now],
+				currentNonce,
+			)
 
-			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-			await symmio.mockInitiateWithdraw(user.address, parts, providerData)
+			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
 
-			expect(await symmio.acceptedRequests(user.address, 1)).to.be.true
+			const info = await expressProvider.getWithdrawInfo(user.address, 1)
+			expect(info.status).to.equal(1n) // ACCEPTED
 		})
 	})
 
@@ -1661,11 +1681,11 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 
 		it("should allow locker to call lockWithdraw", async function () {
 			const fixture = await deployFixture()
-			const { locker, user, expressProvider, symmio } = fixture
+			const { locker, user, expressProvider, context } = fixture
 
 			// Create an accepted withdrawal first
 			const { parts, providerData } = await initiateInstantWithdraw(fixture)
-			await symmio.mockInitiateWithdraw(user.address, parts, providerData)
+			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
 
 			// Verify the withdrawal is in ACCEPTED status
 			const info = await expressProvider.getWithdrawInfo(user.address, 1)
@@ -1680,11 +1700,11 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 
 		it("should allow unlocker to call unlockAndProcess", async function () {
 			const fixture = await deployFixture()
-			const { locker, unlocker, user, receiver, expressProvider, symmio, collateral } = fixture
+			const { locker, unlocker, user, receiver, expressProvider, context, collateral } = fixture
 
 			// Create an accepted withdrawal first
 			const { parts, providerData, withdrawAmount } = await initiateInstantWithdraw(fixture)
-			await symmio.mockInitiateWithdraw(user.address, parts, providerData)
+			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
 
 			// Lock with the locker
 			await expressProvider.connect(locker).lockWithdraw(user.address, 1)
@@ -1744,13 +1764,13 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			await expressProvider.grantRole(WITHDRAWER_ROLE, user.address)
 
 			// Now user can withdraw from general
-			const generalAmt = 1_000n * 10n ** 6n
+			const generalAmt = 1_000n * 10n ** 18n
 			await expressProvider.connect(user).withdrawFromGeneral(generalAmt)
 			expect(await expressProvider.generalBalance()).to.equal(generalFunding - generalAmt)
 			expect(await collateral.balanceOf(user.address)).to.equal(generalAmt)
 
 			// And from affiliate
-			const frontendAmt = 500n * 10n ** 6n
+			const frontendAmt = 500n * 10n ** 18n
 			await expressProvider.connect(user).withdrawFromAffiliate(affiliate, frontendAmt)
 			expect(await expressProvider.affiliateBalances(affiliate)).to.equal(affiliateFunding - frontendAmt)
 
@@ -1815,7 +1835,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			expect(await expressProvider.generalBalance()).to.equal(generalFunding)
 
 			// Withdraw some
-			const withdrawAmt = 2_000n * 10n ** 6n
+			const withdrawAmt = 2_000n * 10n ** 18n
 			await expressProvider.withdrawFromGeneral(withdrawAmt)
 			expect(await expressProvider.generalBalance()).to.equal(generalFunding - withdrawAmt)
 			expect(await collateral.balanceOf(deployer.address)).to.equal(withdrawAmt)
@@ -1828,7 +1848,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			expect(await expressProvider.affiliateBalances(affiliate)).to.equal(affiliateFunding)
 
 			// Withdraw some
-			const withdrawAmt = 1_000n * 10n ** 6n
+			const withdrawAmt = 1_000n * 10n ** 18n
 			await expressProvider.withdrawFromAffiliate(affiliate, withdrawAmt)
 			expect(await expressProvider.affiliateBalances(affiliate)).to.equal(affiliateFunding - withdrawAmt)
 			expect(await collateral.balanceOf(deployer.address)).to.equal(withdrawAmt)
@@ -1858,7 +1878,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			const { deployer, expressProvider, collateral, generalFunding } = await deployFixture()
 
 			// Deposit zero to general
-			await collateral.approve(await expressProvider.getAddress(), 0n)
+			await collateral.connect(deployer).approve(await expressProvider.getAddress(), 0n)
 			await expressProvider.depositToGeneral(0n)
 			expect(await expressProvider.generalBalance()).to.equal(generalFunding)
 
@@ -1874,26 +1894,26 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			const otherAffiliate = signers[8].address
 
 			// Fund a second affiliate pool
-			const otherAmount = 3_000n * 10n ** 6n
+			const otherAmount = 3_000n * 10n ** 18n
 			await collateral.mint(deployer.address, otherAmount)
-			await collateral.approve(await expressProvider.getAddress(), otherAmount)
+			await collateral.connect(deployer).approve(await expressProvider.getAddress(), otherAmount)
 			await expressProvider.depositToAffiliate(otherAffiliate, otherAmount)
 
 			// Verify pools are independent
 			const frontendBal = await expressProvider.affiliateBalances(affiliate)
 			const otherBal = await expressProvider.affiliateBalances(otherAffiliate)
-			expect(frontendBal).to.equal(5_000n * 10n ** 6n) // from fixture
+			expect(frontendBal).to.equal(5_000n * 10n ** 18n) // from fixture
 			expect(otherBal).to.equal(otherAmount)
 
 			// Withdraw from one doesn't affect other
-			await expressProvider.withdrawFromAffiliate(otherAffiliate, 1_000n * 10n ** 6n)
-			expect(await expressProvider.affiliateBalances(affiliate)).to.equal(5_000n * 10n ** 6n)
-			expect(await expressProvider.affiliateBalances(otherAffiliate)).to.equal(2_000n * 10n ** 6n)
+			await expressProvider.withdrawFromAffiliate(otherAffiliate, 1_000n * 10n ** 18n)
+			expect(await expressProvider.affiliateBalances(affiliate)).to.equal(5_000n * 10n ** 18n)
+			expect(await expressProvider.affiliateBalances(otherAffiliate)).to.equal(2_000n * 10n ** 18n)
 		})
 
 		it("should handle withdrawFromGeneral safely when all balance is locked", async function () {
-			const { deployer, operator, user, receiver, expressProvider, collateral, symmio, affiliate, botSigner } = await deployFixture()
-			const withdrawAmount = 10_000n * 10n ** 6n
+			const { deployer, operator, user, receiver, expressProvider, collateral, context, affiliate, botSigner } = await deployFixture()
+			const withdrawAmount = 10_000n * 10n ** 18n
 
 			// Accept an INSTANT that locks the entire general balance
 			const expressAddr = await expressProvider.getAddress()
@@ -1926,9 +1946,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			})
 
 			const providerData = encodeProviderData(nonce, 1, 0, affiliate, 0n, 0n, 0n, 0n, deadline, signature)
-			const now = (await ethers.provider.getBlock("latest"))!.timestamp
-			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-			await symmio.mockInitiateWithdraw(user.address, parts, providerData)
+			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
 
 			// All general balance is locked
 			expect(await expressProvider.lockedGeneralBalance()).to.equal(withdrawAmount)
@@ -1973,16 +1991,12 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 
 		it("should prevent re-initialization via diamondCut", async function () {
 			const fixture = await deployFixture()
-			const { deployer, expressProvider, symmio, collateral } = fixture
+			const { deployer, expressProvider, context, collateral } = fixture
 			const expressAddr = await expressProvider.getAddress()
 
 			const diamondCut = await ethers.getContractAt("DiamondCutFacet", expressAddr)
 			const initContract = await (await ethers.getContractFactory("contracts/expressWithdrawLayer/Init.sol:Init")).deploy()
-			const initCalldata = initContract.interface.encodeFunctionData("init", [
-				deployer.address,
-				await symmio.getAddress(),
-				await collateral.getAddress(),
-			])
+			const initCalldata = initContract.interface.encodeFunctionData("init", [deployer.address, context.diamond, await collateral.getAddress()])
 
 			try {
 				await diamondCut.diamondCut([], await initContract.getAddress(), initCalldata)
@@ -2050,25 +2064,25 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 		it("should set protocol config", async function () {
 			const fixture = await deployFixture()
 			const { expressProvider, affiliate } = fixture
-			await expressProvider.setCreditLineProtocolConfig(affiliate, 1000n * 10n ** 6n, 5000n)
-			expect(await expressProvider.creditLineProtocolMaxDebt(affiliate)).to.equal(1000n * 10n ** 6n)
+			await expressProvider.setCreditLineProtocolConfig(affiliate, 1000n * 10n ** 18n, 5000n)
+			expect(await expressProvider.creditLineProtocolMaxDebt(affiliate)).to.equal(1000n * 10n ** 18n)
 			expect(await expressProvider.creditLineProtocolMaxDebtBps(affiliate)).to.equal(5000n)
 		})
 
 		it("should set affiliate config stricter than protocol", async function () {
 			const fixture = await deployFixture()
 			const { expressProvider, affiliate } = fixture
-			await expressProvider.setCreditLineProtocolConfig(affiliate, 1000n * 10n ** 6n, 5000n)
-			await expressProvider.setCreditLineAffiliateConfig(affiliate, 500n * 10n ** 6n, 3000n)
-			expect(await expressProvider.creditLineAffiliateMaxDebt(affiliate)).to.equal(500n * 10n ** 6n)
+			await expressProvider.setCreditLineProtocolConfig(affiliate, 1000n * 10n ** 18n, 5000n)
+			await expressProvider.setCreditLineAffiliateConfig(affiliate, 500n * 10n ** 18n, 3000n)
+			expect(await expressProvider.creditLineAffiliateMaxDebt(affiliate)).to.equal(500n * 10n ** 18n)
 			expect(await expressProvider.creditLineAffiliateMaxDebtBps(affiliate)).to.equal(3000n)
 		})
 
 		it("should reject affiliate config looser than protocol", async function () {
 			const fixture = await deployFixture()
 			const { expressProvider, affiliate } = fixture
-			await expressProvider.setCreditLineProtocolConfig(affiliate, 1000n * 10n ** 6n, 5000n)
-			await expect(expressProvider.setCreditLineAffiliateConfig(affiliate, 2000n * 10n ** 6n, 3000n)).to.be.revert(ethers) // AffiliateLimitExceedsProtocol
+			await expressProvider.setCreditLineProtocolConfig(affiliate, 1000n * 10n ** 18n, 5000n)
+			await expect(expressProvider.setCreditLineAffiliateConfig(affiliate, 2000n * 10n ** 18n, 3000n)).to.be.revert(ethers) // AffiliateLimitExceedsProtocol
 		})
 
 		it("should pause and unpause credit line", async function () {
@@ -2091,10 +2105,10 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 
 		it("should reject reserve when paused", async function () {
 			const fixture = await deployFixture()
-			const { expressProvider, botSigner, user, receiver, symmio, affiliate, collateral } = fixture
+			const { expressProvider, botSigner, user, receiver, context, affiliate, collateral } = fixture
 			const expressAddr = await expressProvider.getAddress()
-			const withdrawAmount = 500n * 10n ** 6n
-			const creditAmount = 200n * 10n ** 6n
+			const withdrawAmount = 500n * 10n ** 18n
+			const creditAmount = 200n * 10n ** 18n
 
 			await expressProvider.setCreditLinePaused(affiliate, true)
 
@@ -2126,7 +2140,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				deadline,
 			})
 
-			const creditDataRaw = buildCreditData(10_000n * 10n ** 6n, now)
+			const creditDataRaw = buildCreditData(10_000n * 10n ** 18n, now)
 			const providerData = encodeProviderData(
 				0n,
 				1,
@@ -2145,17 +2159,15 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				creditDataRaw,
 			)
 
-			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-			await collateral.mint(await symmio.getAddress(), creditAmount)
-			await expect(symmio.mockInitiateWithdraw(user.address, parts, providerData)).to.be.revert(ethers) // CreditLinePaused
+			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)).to.be.revert(ethers) // CreditLinePaused
 		})
 
 		it("should reject reserve for blacklisted user", async function () {
 			const fixture = await deployFixture()
-			const { expressProvider, botSigner, user, receiver, symmio, affiliate, collateral } = fixture
+			const { expressProvider, botSigner, user, receiver, context, affiliate, collateral } = fixture
 			const expressAddr = await expressProvider.getAddress()
-			const withdrawAmount = 500n * 10n ** 6n
-			const creditAmount = 200n * 10n ** 6n
+			const withdrawAmount = 500n * 10n ** 18n
+			const creditAmount = 200n * 10n ** 18n
 
 			await expressProvider.setCreditLineBlacklisted(affiliate, user.address, true)
 
@@ -2187,7 +2199,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				deadline,
 			})
 
-			const creditDataRaw = buildCreditData(10_000n * 10n ** 6n, now)
+			const creditDataRaw = buildCreditData(10_000n * 10n ** 18n, now)
 			const providerData = encodeProviderData(
 				0n,
 				1,
@@ -2206,9 +2218,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				creditDataRaw,
 			)
 
-			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-			await collateral.mint(await symmio.getAddress(), creditAmount)
-			await expect(symmio.mockInitiateWithdraw(user.address, parts, providerData)).to.be.revert(ethers) // UserBlacklisted
+			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)).to.be.revert(ethers) // UserBlacklisted
 		})
 
 		it("should reject non-setter calling credit line admin functions", async function () {

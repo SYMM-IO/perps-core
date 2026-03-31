@@ -316,7 +316,7 @@ library SymmioHookFacetImpl {
 
 		uint256 minSigs = _getMinValidatorSignatures(s, affiliate);
 		if (signatures.length < minSigs) revert LibErrors.InsufficientValidatorSignatures();
-		if (ISymmio(s.symmio).getUserNonce(user) != symmioNonce) revert LibErrors.InvalidNonce();
+		if (ISymmio(s.symmio).nonceOfPartyA(user) != symmioNonce) revert LibErrors.InvalidNonce();
 
 		uint256 timeout = _getValidatorApprovalTimeout(s, affiliate);
 		address lastSigner = address(0);

@@ -13,5 +13,5 @@ interface ISymmio {
 	function finalizeWithdrawRequest(address user, uint256 requestId) external;
 	function advanceWithdraw(address user, uint256 requestId, uint256 amount) external;
 	function getCollateral() external view returns (address);
-	function getUserNonce(address user) external view returns (uint256);
+	function nonceOfPartyA(address user) external view returns (uint256);
 }
