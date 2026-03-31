@@ -12,7 +12,6 @@ import { DecodedOption, ComputedAmounts } from "../../types/OptionTypes.sol";
 import { WithdrawReceiverPart, WithdrawRequest } from "../../../core/storages/WithdrawStorage.sol";
 import { WithdrawInfo, Status, OptionType } from "../../types/WithdrawTypes.sol";
 
-import { ICreditLineManager } from "../../interfaces/ICreditLineManager.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
 
 import { LibAccessControl } from "../../libraries/LibAccessControl.sol";
@@ -61,11 +60,9 @@ library SymmioHookFacetImpl {
 			_lockFunds(opt, amounts);
 		}
 
-		address manager = address(0);
 		if (opt.creditAmount > 0) {
-			manager = s.creditLineManagers[opt.affiliate];
-			if (manager == address(0)) revert LibErrors.CreditLineManagerNotSet();
-			ICreditLineManager(manager).reserveDebt(
+			LibCreditLine.reserveDebt(
+				opt.affiliate,
 				withdrawRequest.user,
 				withdrawRequest.id,
 				opt.creditAmount,
@@ -81,7 +78,6 @@ library SymmioHookFacetImpl {
 		info.affiliateAmount = opt.affiliateAmount;
 		info.creditAmount = opt.creditAmount;
 		info.affiliate = opt.affiliate;
-		info.creditLineManager = manager;
 		info.acceptedAt = block.timestamp;
 		info.cooldownEndTime = withdrawRequest.cooldownEndTime;
 		info.partsHash = keccak256(abi.encode(withdrawRequest.parts));

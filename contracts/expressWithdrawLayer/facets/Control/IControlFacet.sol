@@ -9,8 +9,6 @@ import { IControlEvents } from "./IControlEvents.sol";
 interface IControlFacet is IControlEvents {
 	// ── Config setters ──
 
-	function setCreditLineManager(address affiliate, address manager) external;
-
 	function setSecurityWindow(uint256 _securityWindow) external;
 
 	function setTolerancePeriod(uint256 _tolerancePeriod) external;

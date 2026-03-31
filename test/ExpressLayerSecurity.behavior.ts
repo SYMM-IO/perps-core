@@ -1,7 +1,7 @@
 import { expect } from "chai"
 import hre, { network } from "hardhat"
 
-import { deployExpressProvider, deployCreditLineManager } from "../tasks/deploy/expressWithdrawLayerDiamond.js"
+import { deployExpressProvider } from "../tasks/deploy/expressWithdrawLayerDiamond.js"
 
 const connection = await network.connect()
 const { ethers } = connection
@@ -36,20 +36,11 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 		await expressProvider.grantRole(UNLOCK_ROLE, unlocker.address)
 		const affiliate = affiliateOwner.address
 
-		// Deploy MockMuonSignatureVerifier for CreditLineManager
+		// Deploy MockMuonSignatureVerifier for credit line
 		const muonVerifier = await ethers.deployContract("MockMuonSignatureVerifier")
 
-		// Deploy CreditLineManager (UUPS proxy)
-		const creditLineManager = await deployCreditLineManager(hre, connection, {
-			admin: deployer.address,
-			symmio: await symmio.getAddress(),
-			expressProvider: await expressProvider.getAddress(),
-			signatureVerifier: await muonVerifier.getAddress(),
-			muonAppId: 1n,
-		})
-
-		// Register on express provider
-		await expressProvider.setCreditLineManager(affiliate, await creditLineManager.getAddress())
+		// Configure credit line on diamond
+		await expressProvider.setCreditLineMuonConfig(await muonVerifier.getAddress(), 1n, 60n)
 
 		// Fund general pool with 10,000 USDC
 		const generalFunding = 10_000n * 10n ** 6n
@@ -76,7 +67,6 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			collateral,
 			symmio,
 			expressProvider,
-			creditLineManager,
 			muonVerifier,
 			generalFunding,
 			affiliateFunding,
@@ -182,7 +172,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 		return ethers.AbiCoder.defaultAbiCoder().encode(["bytes", "bytes", "bytes"], [optionData, validatorData, creditDataRaw ?? "0x"])
 	}
 
-	// Helper: build credit data for CreditLineManager
+	// Helper: build credit data for credit line
 	function buildCreditData(eligibleBase: bigint, timestamp: number): string {
 		// Must encode as a single tuple to match abi.decode(data, (CreditData))
 		return ethers.AbiCoder.defaultAbiCoder().encode(
@@ -1967,16 +1957,18 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			await expect(diamondCut.connect(user).diamondCut([], ethers.ZeroAddress, "0x")).to.be.revert(ethers)
 		})
 
-		it("should set credit line manager for affiliate", async function () {
+		it("should configure credit line muon config", async function () {
 			const fixture = await deployFixture()
-			const { expressProvider, affiliate, creditLineManager } = fixture
-			expect(await expressProvider.creditLineManagers(affiliate)).to.equal(await creditLineManager.getAddress())
+			const { expressProvider, muonVerifier } = fixture
+			expect(await expressProvider.creditLineSignatureVerifier()).to.equal(await muonVerifier.getAddress())
+			expect(await expressProvider.creditLineMuonAppId()).to.equal(1n)
+			expect(await expressProvider.creditLineMuonFreshnessWindow()).to.equal(60n)
 		})
 
-		it("should reject setting credit line manager by non-setter", async function () {
+		it("should reject setting credit line config by non-setter", async function () {
 			const fixture = await deployFixture()
-			const { expressProvider, user, affiliate } = fixture
-			await expect(expressProvider.connect(user).setCreditLineManager(affiliate, ethers.ZeroAddress)).to.be.revert(ethers)
+			const { expressProvider, user } = fixture
+			await expect(expressProvider.connect(user).setCreditLineMuonConfig(ethers.ZeroAddress, 0n, 0n)).to.be.revert(ethers)
 		})
 
 		it("should prevent re-initialization via diamondCut", async function () {
@@ -2051,73 +2043,60 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 	})
 
 	// ═══════════════════════════════════════════════════════════════════════
-	//                        CREDIT LINE MANAGER
+	//                            CREDIT LINE
 	// ═══════════════════════════════════════════════════════════════════════
 
-	describe("CreditLineManager", function () {
-		it("should initialize with correct roles", async function () {
-			const fixture = await deployFixture()
-			const { creditLineManager, deployer, expressProvider } = fixture
-			const EXPRESS_PROVIDER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("EXPRESS_PROVIDER_ROLE"))
-			const PROTOCOL_ADMIN_ROLE = ethers.keccak256(ethers.toUtf8Bytes("PROTOCOL_ADMIN_ROLE"))
-			const AFFILIATE_ADMIN_ROLE = ethers.keccak256(ethers.toUtf8Bytes("AFFILIATE_ADMIN_ROLE"))
-
-			expect(await creditLineManager.hasRole(EXPRESS_PROVIDER_ROLE, await expressProvider.getAddress())).to.be.true
-			expect(await creditLineManager.hasRole(PROTOCOL_ADMIN_ROLE, deployer.address)).to.be.true
-			expect(await creditLineManager.hasRole(AFFILIATE_ADMIN_ROLE, deployer.address)).to.be.true
-		})
-
+	describe("CreditLine", function () {
 		it("should set protocol config", async function () {
 			const fixture = await deployFixture()
-			const { creditLineManager } = fixture
-			await creditLineManager.setProtocolConfig(1000n * 10n ** 6n, 5000n, 120n)
-			expect(await creditLineManager.protocolMaxDebt()).to.equal(1000n * 10n ** 6n)
-			expect(await creditLineManager.protocolMaxDebtBps()).to.equal(5000n)
-			expect(await creditLineManager.muonFreshnessWindow()).to.equal(120n)
+			const { expressProvider, affiliate } = fixture
+			await expressProvider.setCreditLineProtocolConfig(affiliate, 1000n * 10n ** 6n, 5000n)
+			expect(await expressProvider.creditLineProtocolMaxDebt(affiliate)).to.equal(1000n * 10n ** 6n)
+			expect(await expressProvider.creditLineProtocolMaxDebtBps(affiliate)).to.equal(5000n)
 		})
 
 		it("should set affiliate config stricter than protocol", async function () {
 			const fixture = await deployFixture()
-			const { creditLineManager } = fixture
-			await creditLineManager.setProtocolConfig(1000n * 10n ** 6n, 5000n, 60n)
-			await creditLineManager.setAffiliateConfig(500n * 10n ** 6n, 3000n)
-			expect(await creditLineManager.affiliateMaxDebt()).to.equal(500n * 10n ** 6n)
-			expect(await creditLineManager.affiliateMaxDebtBps()).to.equal(3000n)
+			const { expressProvider, affiliate } = fixture
+			await expressProvider.setCreditLineProtocolConfig(affiliate, 1000n * 10n ** 6n, 5000n)
+			await expressProvider.setCreditLineAffiliateConfig(affiliate, 500n * 10n ** 6n, 3000n)
+			expect(await expressProvider.creditLineAffiliateMaxDebt(affiliate)).to.equal(500n * 10n ** 6n)
+			expect(await expressProvider.creditLineAffiliateMaxDebtBps(affiliate)).to.equal(3000n)
 		})
 
 		it("should reject affiliate config looser than protocol", async function () {
 			const fixture = await deployFixture()
-			const { creditLineManager } = fixture
-			await creditLineManager.setProtocolConfig(1000n * 10n ** 6n, 5000n, 60n)
-			await expect(creditLineManager.setAffiliateConfig(2000n * 10n ** 6n, 3000n)).to.be.revert(ethers) // AffiliateLimitExceedsProtocol
+			const { expressProvider, affiliate } = fixture
+			await expressProvider.setCreditLineProtocolConfig(affiliate, 1000n * 10n ** 6n, 5000n)
+			await expect(expressProvider.setCreditLineAffiliateConfig(affiliate, 2000n * 10n ** 6n, 3000n)).to.be.revert(ethers) // AffiliateLimitExceedsProtocol
 		})
 
 		it("should pause and unpause credit line", async function () {
 			const fixture = await deployFixture()
-			const { creditLineManager } = fixture
-			await creditLineManager.setPaused(true)
-			expect(await creditLineManager.paused()).to.be.true
-			await creditLineManager.setPaused(false)
-			expect(await creditLineManager.paused()).to.be.false
+			const { expressProvider, affiliate } = fixture
+			await expressProvider.setCreditLinePaused(affiliate, true)
+			expect(await expressProvider.creditLinePaused(affiliate)).to.be.true
+			await expressProvider.setCreditLinePaused(affiliate, false)
+			expect(await expressProvider.creditLinePaused(affiliate)).to.be.false
 		})
 
 		it("should blacklist and unblacklist user", async function () {
 			const fixture = await deployFixture()
-			const { creditLineManager, user } = fixture
-			await creditLineManager.setBlacklisted(user.address, true)
-			expect(await creditLineManager.blacklisted(user.address)).to.be.true
-			await creditLineManager.setBlacklisted(user.address, false)
-			expect(await creditLineManager.blacklisted(user.address)).to.be.false
+			const { expressProvider, affiliate, user } = fixture
+			await expressProvider.setCreditLineBlacklisted(affiliate, user.address, true)
+			expect(await expressProvider.creditLineBlacklisted(affiliate, user.address)).to.be.true
+			await expressProvider.setCreditLineBlacklisted(affiliate, user.address, false)
+			expect(await expressProvider.creditLineBlacklisted(affiliate, user.address)).to.be.false
 		})
 
 		it("should reject reserve when paused", async function () {
 			const fixture = await deployFixture()
-			const { expressProvider, botSigner, user, receiver, symmio, affiliate, creditLineManager, collateral } = fixture
+			const { expressProvider, botSigner, user, receiver, symmio, affiliate, collateral } = fixture
 			const expressAddr = await expressProvider.getAddress()
 			const withdrawAmount = 500n * 10n ** 6n
 			const creditAmount = 200n * 10n ** 6n
 
-			await creditLineManager.setPaused(true)
+			await expressProvider.setCreditLinePaused(affiliate, true)
 
 			const parts = [
 				{
@@ -2173,12 +2152,12 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 
 		it("should reject reserve for blacklisted user", async function () {
 			const fixture = await deployFixture()
-			const { expressProvider, botSigner, user, receiver, symmio, affiliate, creditLineManager, collateral } = fixture
+			const { expressProvider, botSigner, user, receiver, symmio, affiliate, collateral } = fixture
 			const expressAddr = await expressProvider.getAddress()
 			const withdrawAmount = 500n * 10n ** 6n
 			const creditAmount = 200n * 10n ** 6n
 
-			await creditLineManager.setBlacklisted(user.address, true)
+			await expressProvider.setCreditLineBlacklisted(affiliate, user.address, true)
 
 			const parts = [
 				{
@@ -2232,12 +2211,12 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			await expect(symmio.mockInitiateWithdraw(user.address, parts, providerData)).to.be.revert(ethers) // UserBlacklisted
 		})
 
-		it("should reject non-admin calling CreditLineManager admin functions", async function () {
+		it("should reject non-setter calling credit line admin functions", async function () {
 			const fixture = await deployFixture()
-			const { creditLineManager, user } = fixture
-			await expect(creditLineManager.connect(user).setProtocolConfig(100n, 100n, 60n)).to.be.revert(ethers)
-			await expect(creditLineManager.connect(user).setPaused(true)).to.be.revert(ethers)
-			await expect(creditLineManager.connect(user).setBlacklisted(user.address, true)).to.be.revert(ethers)
+			const { expressProvider, affiliate, user } = fixture
+			await expect(expressProvider.connect(user).setCreditLineProtocolConfig(affiliate, 100n, 100n)).to.be.revert(ethers)
+			await expect(expressProvider.connect(user).setCreditLinePaused(affiliate, true)).to.be.revert(ethers)
+			await expect(expressProvider.connect(user).setCreditLineBlacklisted(affiliate, user.address, true)).to.be.revert(ethers)
 		})
 	})
 }

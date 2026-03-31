@@ -9,14 +9,6 @@ export interface DeployExpressOptions {
 	collateral: string
 }
 
-export interface DeployCreditLineOptions {
-	admin: string
-	symmio: string
-	expressProvider: string
-	signatureVerifier: string
-	muonAppId: bigint
-}
-
 /**
  * Deploy the ExpressProvider diamond with all facets.
  */
@@ -37,6 +29,7 @@ export async function deployExpressProvider(hre: HardhatRuntimeEnvironment, conn
 		"contracts/expressWithdrawLayer/facets/SymmioHook/SymmioHookFacet.sol:SymmioHookFacet",
 		"contracts/expressWithdrawLayer/facets/Operator/OperatorFacet.sol:OperatorFacet",
 		"contracts/expressWithdrawLayer/facets/View/ViewFacet.sol:ViewFacet",
+		"contracts/expressWithdrawLayer/facets/CreditLine/CreditLineFacet.sol:CreditLineFacet",
 	]
 	const cuts = []
 	const factories = []
@@ -63,60 +56,4 @@ export async function deployExpressProvider(hre: HardhatRuntimeEnvironment, conn
 	// Return a contract instance with all facet ABIs combined
 	const allAbis = [...factories.flatMap(f => f.interface.fragments), ...(await ethers.getContractFactory("DiamondCutFacet")).interface.fragments]
 	return ethers.getContractAt(allAbis, diamondAddress)
-}
-
-/**
- * Deploy CreditLineManager behind an ERC1967 proxy (UUPS pattern).
- */
-export async function deployCreditLineManager(hre: HardhatRuntimeEnvironment, connection: NetworkConnection, opts: DeployCreditLineOptions) {
-	const { ethers } = connection
-
-	// Deploy implementation
-	const impl = await (await ethers.getContractFactory("CreditLineManager")).deploy()
-	const implAddress = await impl.getAddress()
-
-	// Encode initializer calldata
-	const initData = impl.interface.encodeFunctionData("initialize", [
-		opts.admin,
-		opts.symmio,
-		opts.expressProvider,
-		opts.signatureVerifier,
-		opts.muonAppId,
-	])
-
-	// Deploy proxy pointing to implementation
-	const proxy = await (await ethers.getContractFactory("LocalERC1967Proxy")).deploy(implAddress, initData)
-	const proxyAddress = await proxy.getAddress()
-
-	// Return proxy with CreditLineManager ABI
-	return ethers.getContractAt("CreditLineManager", proxyAddress)
-}
-
-/**
- * Deploy the full system: ExpressProvider (Diamond) + CreditLineManager (UUPS proxy).
- */
-export async function deployAll(
-	hre: HardhatRuntimeEnvironment,
-	connection: NetworkConnection,
-	opts: {
-		admin: string
-		symmio: string
-		collateral: string
-		signatureVerifier: string
-		muonAppId: bigint
-	},
-) {
-	const diamond = await deployExpressProvider(hre, connection, opts)
-	const diamondAddress = await diamond.getAddress()
-
-	const creditLineManager = await deployCreditLineManager(hre, connection, {
-		admin: opts.admin,
-		symmio: opts.symmio,
-		expressProvider: diamondAddress,
-		signatureVerifier: opts.signatureVerifier,
-		muonAppId: opts.muonAppId,
-	})
-	const creditLineAddress = await creditLineManager.getAddress()
-
-	return { diamond, creditLineManager, diamondAddress, creditLineAddress }
 }

@@ -32,7 +32,7 @@ struct WithdrawInfo {
 	uint256 affiliateAmount;
 	uint256 creditAmount;
 	address affiliate;
-	address creditLineManager;
+	address __deprecated_creditLineManager;
 	uint256 acceptedAt;
 	uint256 finalizedAt;
 	uint256 cooldownEndTime;

@@ -1,7 +1,7 @@
 import { expect } from "chai"
 import hre, { network } from "hardhat"
 
-import { deployExpressProvider, deployCreditLineManager } from "../tasks/deploy/expressWithdrawLayerDiamond.js"
+import { deployExpressProvider } from "../tasks/deploy/expressWithdrawLayerDiamond.js"
 
 const connection = await network.connect()
 const { ethers } = connection
@@ -25,17 +25,8 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			collateral: await collateral.getAddress(),
 		})
 
-		// Deploy MockMuonSignatureVerifier for CreditLineManager
+		// Deploy MockMuonSignatureVerifier for credit line
 		const muonVerifier = await ethers.deployContract("MockMuonSignatureVerifier")
-
-		// Deploy CreditLineManager (UUPS proxy) for the affiliate
-		const creditLineManager = await deployCreditLineManager(hre, connection, {
-			admin: deployer.address,
-			symmio: await symmio.getAddress(),
-			expressProvider: await expressProvider.getAddress(),
-			signatureVerifier: await muonVerifier.getAddress(),
-			muonAppId: 1n,
-		})
 
 		// Register providers on mock SYMMIO
 		await symmio.registerExpressProvider(await expressProvider.getAddress())
@@ -47,8 +38,8 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		await expressProvider.grantRole(UNLOCK_ROLE, unlocker.address)
 		const affiliate = affiliateOwner.address
 
-		// Register credit line manager on express provider
-		await expressProvider.setCreditLineManager(affiliate, await creditLineManager.getAddress())
+		// Configure credit line on diamond
+		await expressProvider.setCreditLineMuonConfig(await muonVerifier.getAddress(), 1n, 60n)
 
 		// Fund general pool with 10,000 USDC
 		const generalFunding = 10_000n * 10n ** 6n
@@ -75,7 +66,6 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			collateral,
 			symmio,
 			expressProvider,
-			creditLineManager,
 			muonVerifier,
 			generalFunding,
 			affiliateFunding,
@@ -180,7 +170,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		return ethers.AbiCoder.defaultAbiCoder().encode(["bytes", "bytes", "bytes"], [optionData, validatorData, creditDataRaw ?? "0x"])
 	}
 
-	// Helper: build credit data for CreditLineManager Muon signature verification
+	// Helper: build credit data for Muon signature verification
 	function buildCreditData(eligibleBase: bigint, timestamp: number): string {
 		// Must encode as a single tuple to match abi.decode(data, (CreditData))
 		return ethers.AbiCoder.defaultAbiCoder().encode(
@@ -1545,7 +1535,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 	describe("Credit Line Integration", function () {
 		it("should reserve credit on INSTANT acceptance", async function () {
 			const fixture = await deployFixture()
-			const { expressProvider, botSigner, user, receiver, symmio, affiliate, creditLineManager, collateral } = fixture
+			const { expressProvider, botSigner, user, receiver, symmio, affiliate, collateral } = fixture
 			const expressAddr = await expressProvider.getAddress()
 			const withdrawAmount = 500n * 10n ** 6n
 			const creditAmount = 200n * 10n ** 6n
@@ -1603,13 +1593,13 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			await symmio.mockInitiateWithdraw(user.address, parts, providerData)
 
 			// Credit should be reserved
-			expect(await creditLineManager.reservedDebt()).to.equal(creditAmount)
-			expect(await creditLineManager.activeDebt()).to.equal(0n)
+			expect(await expressProvider.creditLineReservedDebt(affiliate)).to.equal(creditAmount)
+			expect(await expressProvider.creditLineActiveDebt(affiliate)).to.equal(0n)
 		})
 
 		it("should activate credit and advance collateral on processing", async function () {
 			const fixture = await deployFixture()
-			const { expressProvider, botSigner, operator, user, receiver, symmio, affiliate, creditLineManager, collateral } = fixture
+			const { expressProvider, botSigner, operator, user, receiver, symmio, affiliate, collateral } = fixture
 			const expressAddr = await expressProvider.getAddress()
 			const withdrawAmount = 500n * 10n ** 6n
 			const creditAmount = 200n * 10n ** 6n
@@ -1671,13 +1661,13 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			await expressProvider.connect(operator).processWithdraw(user.address, 1n, parts)
 
 			// Credit should now be active (moved from reserved to active)
-			expect(await creditLineManager.reservedDebt()).to.equal(0n)
-			expect(await creditLineManager.activeDebt()).to.equal(creditAmount)
+			expect(await expressProvider.creditLineReservedDebt(affiliate)).to.equal(0n)
+			expect(await expressProvider.creditLineActiveDebt(affiliate)).to.equal(creditAmount)
 		})
 
 		it("should settle credit on finalization", async function () {
 			const fixture = await deployFixture()
-			const { expressProvider, botSigner, operator, user, receiver, symmio, affiliate, creditLineManager, collateral } = fixture
+			const { expressProvider, botSigner, operator, user, receiver, symmio, affiliate, collateral } = fixture
 			const expressAddr = await expressProvider.getAddress()
 			const withdrawAmount = 500n * 10n ** 6n
 			const creditAmount = 200n * 10n ** 6n
@@ -1746,14 +1736,14 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			await symmio.finalizeWithdrawRequest(user.address, 1n)
 
 			// Credit should be fully settled
-			expect(await creditLineManager.reservedDebt()).to.equal(0n)
-			expect(await creditLineManager.activeDebt()).to.equal(0n)
-			expect(await creditLineManager.totalDebt()).to.equal(0n)
+			expect(await expressProvider.creditLineReservedDebt(affiliate)).to.equal(0n)
+			expect(await expressProvider.creditLineActiveDebt(affiliate)).to.equal(0n)
+			expect(await expressProvider.creditLineTotalDebt(affiliate)).to.equal(0n)
 		})
 
 		it("should cancel credit reservation on cancel before processing", async function () {
 			const fixture = await deployFixture()
-			const { expressProvider, botSigner, user, receiver, symmio, affiliate, creditLineManager, collateral } = fixture
+			const { expressProvider, botSigner, user, receiver, symmio, affiliate, collateral } = fixture
 			const expressAddr = await expressProvider.getAddress()
 			const withdrawAmount = 500n * 10n ** 6n
 			const creditAmount = 200n * 10n ** 6n
@@ -1809,19 +1799,19 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			await collateral.mint(await symmio.getAddress(), creditAmount)
 			await symmio.mockInitiateWithdraw(user.address, parts, providerData)
 
-			expect(await creditLineManager.reservedDebt()).to.equal(creditAmount)
+			expect(await expressProvider.creditLineReservedDebt(affiliate)).to.equal(creditAmount)
 
 			// Cancel
 			await symmio.mockCancelWithdraw(user.address, 1n)
 
 			// Credit reservation should be released
-			expect(await creditLineManager.reservedDebt()).to.equal(0n)
-			expect(await creditLineManager.totalDebt()).to.equal(0n)
+			expect(await expressProvider.creditLineReservedDebt(affiliate)).to.equal(0n)
+			expect(await expressProvider.creditLineTotalDebt(affiliate)).to.equal(0n)
 		})
 
 		it("should cover loss from affiliate pool on post-payout force cancel", async function () {
 			const fixture = await deployFixture()
-			const { expressProvider, botSigner, operator, user, receiver, symmio, affiliate, creditLineManager, collateral, affiliateFunding } = fixture
+			const { expressProvider, botSigner, operator, user, receiver, symmio, affiliate, collateral, affiliateFunding } = fixture
 			const expressAddr = await expressProvider.getAddress()
 			const withdrawAmount = 500n * 10n ** 6n
 			const creditAmount = 200n * 10n ** 6n
@@ -1892,7 +1882,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			expect(affiliateBefore - affiliateAfter).to.equal(creditAmount)
 
 			// Credit should be settled
-			expect(await creditLineManager.totalDebt()).to.equal(0n)
+			expect(await expressProvider.creditLineTotalDebt(affiliate)).to.equal(0n)
 		})
 
 		it("should reject credit for STANDARD withdrawals", async function () {

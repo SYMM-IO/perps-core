@@ -22,11 +22,6 @@ contract ControlFacet is IControlFacet {
 
 	// ── Config setters ──
 
-	function setCreditLineManager(address affiliate, address manager) external {
-		LibAccessControl.enforceRole(LibAccessControl.SETTER_ROLE);
-		ExpressProviderStorage.layout().creditLineManagers[affiliate] = manager;
-	}
-
 	function setSecurityWindow(uint256 _securityWindow) external {
 		LibAccessControl.enforceRole(LibAccessControl.SETTER_ROLE);
 		if (_securityWindow < 10) revert LibErrors.SecurityWindowTooLow();

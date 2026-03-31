@@ -43,10 +43,6 @@ contract ViewFacet is IViewFacet {
 		return ExpressProviderStorage.layout().lockedAffiliateBalances[affiliate];
 	}
 
-	function creditLineManagers(address affiliate) external view returns (address) {
-		return ExpressProviderStorage.layout().creditLineManagers[affiliate];
-	}
-
 	// ── Per-user state ──
 
 	function nonces(address user) external view returns (uint256) {

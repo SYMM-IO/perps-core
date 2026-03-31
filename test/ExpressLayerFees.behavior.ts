@@ -1,7 +1,7 @@
 import { expect } from "chai"
 import hre, { network } from "hardhat"
 
-import { deployExpressProvider, deployCreditLineManager } from "../tasks/deploy/expressWithdrawLayerDiamond.js"
+import { deployExpressProvider } from "../tasks/deploy/expressWithdrawLayerDiamond.js"
 
 const connection = await network.connect()
 const { ethers } = connection
@@ -35,20 +35,11 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		await expressProvider.grantRole(UNLOCK_ROLE, unlocker.address)
 		const affiliate = affiliateOwner.address
 
-		// Deploy MockMuonSignatureVerifier for CreditLineManager
+		// Deploy MockMuonSignatureVerifier for credit line
 		const muonVerifier = await ethers.deployContract("MockMuonSignatureVerifier")
 
-		// Deploy CreditLineManager (UUPS proxy)
-		const creditLineManager = await deployCreditLineManager(hre, connection, {
-			admin: deployer.address,
-			symmio: await symmio.getAddress(),
-			expressProvider: await expressProvider.getAddress(),
-			signatureVerifier: await muonVerifier.getAddress(),
-			muonAppId: 1n,
-		})
-
-		// Register on express provider
-		await expressProvider.setCreditLineManager(affiliate, await creditLineManager.getAddress())
+		// Configure credit line on diamond
+		await expressProvider.setCreditLineMuonConfig(await muonVerifier.getAddress(), 1n, 60n)
 
 		// Fund general pool with 10,000 USDC
 		const generalFunding = 10_000n * 10n ** 6n
@@ -78,7 +69,6 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 			collateral,
 			symmio,
 			expressProvider,
-			creditLineManager,
 			muonVerifier,
 			generalFunding,
 			affiliateFunding,

@@ -43,7 +43,6 @@ library LibErrors {
 	error AlreadyInitialized();
 	error SecurityWindowTooLow();
 	error TolerancePeriodTooLow();
-	error CreditLineManagerNotSet();
 	error CreditNotSupportedForStandard();
 	error InvalidPostPayoutRollback();
 	error VirtualProviderDeprecated();

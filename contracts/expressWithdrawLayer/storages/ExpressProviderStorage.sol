@@ -23,7 +23,7 @@ library ExpressProviderStorage {
 		uint256 lockedGeneralBalance;
 		mapping(address => uint256) affiliateBalances;
 		mapping(address => uint256) lockedAffiliateBalances;
-		mapping(address => address) creditLineManagers;
+		mapping(address => address) __deprecated_creditLineManagers;
 		// ── Per-user state ──
 		mapping(address => uint256) nonces;
 		mapping(address => mapping(uint256 => WithdrawInfo)) withdrawInfos;
