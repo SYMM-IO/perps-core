@@ -1,7 +1,7 @@
 import { expect } from "chai"
 import hre, { network } from "hardhat"
 
-import { deployExpressProvider, deployCreditLineManager } from "../tasks/deploy/expressLayerDiamond.js"
+import { deployExpressProvider, deployCreditLineManager } from "../tasks/deploy/expressWithdrawLayerDiamond.js"
 
 const connection = await network.connect()
 const { ethers } = connection
@@ -1985,7 +1985,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			const expressAddr = await expressProvider.getAddress()
 
 			const diamondCut = await ethers.getContractAt("DiamondCutFacet", expressAddr)
-			const initContract = await (await ethers.getContractFactory("contracts/expressLayer/Init.sol:Init")).deploy()
+			const initContract = await (await ethers.getContractFactory("contracts/expressWithdrawLayer/Init.sol:Init")).deploy()
 			const initCalldata = initContract.interface.encodeFunctionData("init", [
 				deployer.address,
 				await symmio.getAddress(),

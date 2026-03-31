@@ -33,10 +33,10 @@ export async function deployExpressProvider(hre: HardhatRuntimeEnvironment, conn
 	// 3. Deploy all facets (use fully qualified names for ambiguous contracts)
 	const facetNames = [
 		"DiamondLoupeFacet",
-		"contracts/expressLayer/facets/Control/ControlFacet.sol:ControlFacet",
-		"contracts/expressLayer/facets/SymmioHook/SymmioHookFacet.sol:SymmioHookFacet",
-		"contracts/expressLayer/facets/Operator/OperatorFacet.sol:OperatorFacet",
-		"contracts/expressLayer/facets/View/ViewFacet.sol:ViewFacet",
+		"contracts/expressWithdrawLayer/facets/Control/ControlFacet.sol:ControlFacet",
+		"contracts/expressWithdrawLayer/facets/SymmioHook/SymmioHookFacet.sol:SymmioHookFacet",
+		"contracts/expressWithdrawLayer/facets/Operator/OperatorFacet.sol:OperatorFacet",
+		"contracts/expressWithdrawLayer/facets/View/ViewFacet.sol:ViewFacet",
 	]
 	const cuts = []
 	const factories = []
@@ -53,7 +53,7 @@ export async function deployExpressProvider(hre: HardhatRuntimeEnvironment, conn
 	}
 
 	// 4. Deploy Init contract
-	const initContract = await (await ethers.getContractFactory("contracts/expressLayer/Init.sol:Init")).deploy()
+	const initContract = await (await ethers.getContractFactory("contracts/expressWithdrawLayer/Init.sol:Init")).deploy()
 	const initCalldata = initContract.interface.encodeFunctionData("init", [opts.admin, opts.symmio, opts.collateral])
 
 	// 5. Execute diamond cut with all facets + init
