@@ -6,6 +6,10 @@ The production upgrade flow depends on whether the diamond is owned by an EOA or
 
 ## Safe Path (Production)
 
+There are two variants depending on whether the diamond is owned directly by the Safe or by a TimeLock contract (which is itself owned by the Safe). The timelock variant schedules the diamondCut **before** pausing, so the timelock delay passes while the system is still live -- minimizing downtime.
+
+### Safe Path: Direct (Safe owns diamond)
+
 ```
 DEPLOY SIGNATURE VERIFIER (one-time, if upgrading from v0.8.4)
 ══════════════════════════════════════════════════════════════
@@ -37,8 +41,8 @@ BEFORE PAUSE (no downtime)
   safe-batch.json    diamondcut-calldata.json
 
 
-PAUSE STARTS (execute via Safe UI)
-══════════════════════════════════
+PAUSE + UPGRADE (execute via Safe UI)
+═════════════════════════════════════
   safe-batch.json contains:
     1. grantRole(PAUSER_ROLE)
     2. grantRole(UNPAUSER_ROLE)
@@ -54,7 +58,7 @@ PAUSE STARTS (execute via Safe UI)
       before executing. Grant via current PartyB admin.
 
   diamondcut-calldata.json:
-    diamondCut (chunked, executed separately)
+    diamondCut (executed as separate Safe tx)
 
 
 MIGRATION (system still paused)
@@ -82,6 +86,125 @@ UNPAUSE
     1. unpauseGlobal()            <-- UNPAUSE
     2. setCrossPartyBModeActivated(true)
     3. setCrossPartyB(partyB, true) x N
+```
+
+### Safe Path: TimeLock (TimeLock owns diamond, Safe owns TimeLock)
+
+When the diamond is behind a timelock, the diamondCut must be scheduled first and
+executed after the delay. The key optimization: schedule the diamondCut **while the
+system is still live**, wait for the delay to pass (no downtime), then pause + execute
+the cut + migrate + unpause in a single maintenance window.
+
+```
+BEFORE PAUSE (no downtime)
+══════════════════════════
+
+ deployFacets.ts                deployPeripherals.ts
+ (deploy libs + facets)         (deploy AL + IL + PartyB impl)
+        │                              │
+        ▼                              ▼
+ deployed-facets.json          deployed-peripherals.json
+        │                              │
+        └──────────┬───────────────────┘
+                   ▼
+         generateSafeBatch.ts
+         (reads both, no on-chain actions)
+                   │
+         ┌─────────┴──────────┐
+         ▼                    ▼
+  safe-batch.json    diamondcut-calldata.json
+                              │
+                              ▼
+                    generateTimelockBatch.ts
+                    (wraps diamondCut for timelock)
+                              │
+                    ┌─────────┴──────────────┐
+                    ▼                        ▼
+  timelock-schedule-safe-batch.json   timelock-execute-safe-batch.json
+
+
+SCHEDULE DIAMONDCUT (T=0, system still live)
+════════════════════════════════════════════
+  Import timelock-schedule-safe-batch.json into Safe TX Builder
+  Execute from Safe → calls timelock.schedule()
+  Timer starts (e.g. 12 hours)
+
+
+  ... timelock delay passes, system is still running normally ...
+
+
+PAUSE + PARAMS + WIRING (T=delay, downtime starts)
+═══════════════════════════════════════════════════
+  Import safe-batch.json into Safe TX Builder
+  Execute from Safe:
+    1. grantRole(PAUSER_ROLE)
+    2. grantRole(UNPAUSER_ROLE)
+    3. pauseGlobal()              <-- PAUSE
+    4. grantRole(PROTOCOL_CONFIG / COOLDOWN_ADMIN / FEE_ADMIN)
+    5. set v0.8.5 parameters
+    6. grantRole(MIGRATION_ROLE)
+    7. [wiring] AL/IL roles + hooks + whitelist
+    8. [wiring] upgradeTo(PartyB impl)  <-- UUPS (*)
+    9. [wiring] registerPartyBs on IL
+
+  (*) Safe must have DEFAULT_ADMIN_ROLE on SymmioPartyB
+      before executing. Grant via current PartyB admin.
+
+
+EXECUTE DIAMONDCUT (T=delay, after safe-batch)
+══════════════════════════════════════════════
+  Import timelock-execute-safe-batch.json into Safe TX Builder
+  Execute from Safe → calls timelock.execute()
+  Diamond is now upgraded to v0.8.5
+
+
+VERIFY
+══════
+  verifyDiamond.ts
+  verifyPeripherals.ts
+
+
+MIGRATION (system still paused)
+═══════════════════════════════
+
+ prepareMigrationInput.ts       (read-only: subgraph + on-chain)
+        │
+        ▼
+ migration-input.json
+        │
+        ▼
+ runMigration.ts                (migrateQuotes + migrateCrossLocked + verify)
+        │
+        ▼
+ migration-report.json
+
+
+UNPAUSE
+═══════
+
+ generatePostMigrationBatch.ts  (generates calldata, no on-chain)
+        │
+        ▼
+  Execute via Safe UI:
+    1. unpauseGlobal()            <-- UNPAUSE
+    2. setCrossPartyBModeActivated(true)
+    3. setCrossPartyB(partyB, true) x N
+
+
+TIMELINE
+════════
+
+  T=0          Schedule diamondCut on timelock
+               (system still running normally)
+
+  T=delay      Execute safe-batch.json (pause + params + wiring)
+               Execute timelock diamondCut
+               Verify upgrade
+               Run migration
+               Execute post-migration batch (unpause)
+
+  Minimum downtime = time between pause and unpause.
+  The timelock delay passes with zero downtime.
 ```
 
 ## EOA Path
@@ -131,7 +254,7 @@ Every Symmio deployment has a standard set of contracts and roles. The table bel
 | **Fees MultiSig** (receives protocol fees) | `0x273a...3f12` | `symmioFeeReceiver` | `upgrade.json` (other scripts fall back to this) |
 | **SignatureVerifier** (Muon signature verification contract) | `0x94eE...FC2` | `newV085Parameters.signatureVerifierAddress` | `upgrade.json` |
 | **SymmioPartyB** (existing PartyB proxy, if deployed) | `0xd600...B574` | `symmioPartyBAddress` | `upgrade.json` (other scripts fall back to this) |
-| **TimeLock** (12H or 3D, if diamond owner is a timelock) | `0xA75F...c63` | -- | Not in config; execute diamondCut via timelock manually |
+| **TimeLock** (12H or 3D, if diamond owner is a timelock) | `0xA75F...c63` | `timelockAddress` | `upgrade.json` (used by `generateTimelockBatch.ts` to wrap diamondCut) |
 | **Migration runner** (address that will call migration functions) | any EOA or multisig | `migrationRunner` | `upgrade.json` (defaults to `adminAddress`) |
 | **PartyB addresses** (all active PartyBs to enable cross mode) | `[0x...]` | `partyBs` | `postMigration.json` |
 | **Subgraph endpoint** (Goldsky/TheGraph for this chain) | `https://api.goldsky.com/...` | `subgraphEndpoint` | `upgrade.json` (other scripts fall back to this) |
@@ -288,10 +411,32 @@ Output:
 - `scripts/upgrade/output/diamondcut-calldata.json` -- raw diamondCut calldata chunks
 - `scripts/upgrade/output/upgrade-details.json` -- selector changes + breakdown
 
-Execute in Safe UI:
+**Direct (Safe owns diamond):**
 1. Import `safe-batch.json` into the Safe Transaction Builder (includes pause, role grants, params, wiring)
-2. Execute the diamondCut calldata from `diamondcut-calldata.json` (via timelock or direct)
-3. The batch pauses the system first, then applies params and wiring after diamondCut
+2. Execute the diamondCut calldata from `diamondcut-calldata.json` as a separate Safe tx
+
+**TimeLock (TimeLock owns diamond):**
+1. Run `generateTimelockBatch.ts` first (see [Step 2b](#step-2b-wrap-diamondcut-for-timelock))
+2. Import `timelock-schedule-safe-batch.json` → execute (schedules diamondCut, timer starts)
+3. Wait for timelock delay (system still live)
+4. Import `safe-batch.json` → execute (pause + params + wiring)
+5. Import `timelock-execute-safe-batch.json` → execute (applies diamondCut)
+
+## Step 2b: Wrap DiamondCut for TimeLock
+
+**Only needed when the diamond is owned by a TimeLock contract.** Reads `diamondcut-calldata.json` (output of `generateSafeBatch.ts`), fetches `minDelay` from the timelock, and wraps the diamondCut as timelock `schedule()` + `execute()` calls.
+
+Requires `timelockAddress` in `upgrade.json` (or `TIMELOCK_ADDRESS` env var).
+
+```bash
+npx hardhat run scripts/upgrade/generateTimelockBatch.ts --network arbitrum
+```
+
+Output:
+- `scripts/upgrade/output/timelock-schedule-safe-batch.json` -- Safe batch to schedule the diamondCut (execute immediately at T=0)
+- `scripts/upgrade/output/timelock-execute-safe-batch.json` -- Safe batch to execute after timelock delay
+
+Uses a deterministic salt derived from chain ID + diamond address + version string.
 
 ## Step 3: Prepare Migration Input
 
@@ -398,6 +543,7 @@ The migration report includes:
 | `adminAddress` | string | `""` | **Main MultiSig** (or TimeLock) -- the address that owns the diamond and will receive role grants |
 | `safeAddress` | string | `""` | **Main MultiSig** -- the Gnosis Safe used in Safe Transaction Builder (Safe path only) |
 | `migrationRunner` | string | `""` | Address that will run `migrateQuotes` / `migrateCrossLockedValues` (defaults to `adminAddress` if empty) |
+| `timelockAddress` | string | `""` | **TimeLock** contract address -- set if diamond is owned by a timelock (used by `generateTimelockBatch.ts`) |
 | `diamondCutChunkSize` | number | `1000` | Max facet selector changes per `diamondCut` transaction (increase only if hitting gas limits) |
 | `subgraphEndpoint` | string | `""` | Goldsky / TheGraph subgraph URL for this chain (used by `prepareMigrationInput.ts`) |
 | `spotCheckCount` | number | `20` | Number of random quotes/balances to verify against on-chain state during migration prep |
@@ -458,7 +604,7 @@ All scripts fall back to `upgrade.json` for `diamondAddress` and other shared fi
 
 | Config file | Script | Script-specific fields | Shared fields (from `upgrade.json`) |
 |-------------|--------|----------------------|-------------------------------------|
-| `upgrade.json` | `eoaUpgrade.ts`, `applyUpgrade.ts`, `generateSafeBatch.ts` | `adminAddress`, `newV085Parameters`, `diamondCutChunkSize`, `migrationRunner` | -- (source of truth) |
+| `upgrade.json` | `eoaUpgrade.ts`, `applyUpgrade.ts`, `generateSafeBatch.ts`, `generateTimelockBatch.ts` | `adminAddress`, `timelockAddress`, `newV085Parameters`, `diamondCutChunkSize`, `migrationRunner` | -- (source of truth) |
 | `deployPeripherals.json` | `deployPeripherals.ts` | `adminAddress` | `diamondAddress`, `symmioFeeReceiver`, `symmioPartyBAddress` |
 | `prepareMigration.json` | `prepareMigrationInput.ts` | `outputDir`, `outputFile` | `diamondAddress`, `subgraphEndpoint`, `spotCheckCount` |
 | `migrate.json` | `runMigration.ts` | `migrationInputFile`, `chunkSize`, `dryRun`, `fork` | `diamondAddress` |
