@@ -90,13 +90,13 @@ When the ExpressProvider fronts an IMMEDIATE or INSTANT withdrawal, it deducts f
 
 ### 4.2 Credit Line
 
-Pools have a hard limit: the operator must have pre-deposited enough tokens. The **credit line** removes this constraint by letting the ExpressProvider borrow against collateral that's already locked inside SYMMIO — specifically, the affiliate's *eligible balance* as attested by the Muon oracle.
+Pools have a hard limit: the operator must have pre-deposited enough tokens. The **credit line** removes this constraint by letting the affiliate withdraw more than what's in the pools, backed by the affiliate's *eligible balance* as attested by the Muon oracle.
 
 **How it works:**
 
-Each affiliate on SYMMIO has capital committed by its users (allocated balances, open positions, etc.). A portion of that capital is "eligible" — it's locked in SYMMIO and will eventually be claimable. The Muon oracle computes this off-chain and signs an attestation: "Affiliate X has Y eligible base." The ExpressProvider trusts this attestation to extend credit up to configured caps.
+The Muon oracle computes an aggregate "eligible base" for each affiliate off-chain — roughly, how much value the affiliate's users have that is eligible for withdrawal from SYMMIO. The oracle signs an attestation: "Affiliate X has Y eligible base." The ExpressProvider uses this attestation to determine how much credit the affiliate can take on.
 
-When a withdrawal uses credit, the ExpressProvider doesn't front its own tokens for the credit portion. Instead, it calls `advanceWithdraw` on SYMMIO, which releases the credit amount directly from SYMMIO's locked collateral to the provider. This is effectively a loan against the affiliate's locked capital — the provider takes on debt, and the debt is settled when the withdrawal finalizes.
+When a withdrawal uses credit, the ExpressProvider doesn't front its own tokens for the credit portion. Instead, it calls `advanceWithdraw` on SYMMIO, which releases the credit amount directly from SYMMIO's collateral to the provider. The provider records this as **affiliate debt** — the affiliate now owes that amount back. When the withdrawal finalizes and SYMMIO releases the full withdrawal amount to the provider, the debt is settled.
 
 **The debt lifecycle:**
 
@@ -106,9 +106,9 @@ RESERVE ──→ ACTIVATE ──→ SETTLE
    └── CANCEL (if withdrawal cancelled before processing)
 ```
 
-1. **Reserve** (on acceptance): Validates the Muon attestation, checks debt caps, records the debt as "reserved"
+1. **Reserve** (on acceptance): Validates the Muon attestation, checks debt caps, records the affiliate's debt as "reserved"
 2. **Activate** (on processing): Moves debt from "reserved" to "active", calls `advanceWithdraw` to pull tokens from SYMMIO
-3. **Settle** (on finalization): Clears the debt — SYMMIO has released the tokens, the loan is repaid
+3. **Settle** (on finalization): Clears the debt — SYMMIO finalized the withdrawal, the affiliate's debt is repaid
 4. **Cancel** (if withdrawal is cancelled pre-processing): Releases the reservation, no tokens were moved
 
 **Caps and controls:**
