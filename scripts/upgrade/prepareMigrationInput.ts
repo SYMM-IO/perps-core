@@ -8,13 +8,16 @@ import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 import { fetchOpenQuotes, fetchPartyBBalances } from "./utils/subgraphHelpers.js"
 
 /**
- * Prepare and validate migration input from subgraph data.
+ * Prepare migration input from subgraph data.
  *
- * Fetches open quotes and partyB balances from the subgraph, validates
- * against on-chain state, and writes a validated JSON file for runMigration.ts.
+ * Fetches open quotes and partyB balances from the subgraph, validates the
+ * boundary against on-chain getNextQuoteId(), and writes a JSON file for
+ * runMigration.ts. Can run before or after the diamondCut.
+ *
+ * For on-chain spot-check validation, run validateMigrationInput.ts separately.
  *
  * Usage:
- *   DIAMOND_ADDRESS=0x... SUBGRAPH_ENDPOINT=https://... npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network localhost
+ *   npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network mantle
  *
  * Config:
  *   cp scripts/upgrade/config/samples/prepareMigration.sample.json scripts/upgrade/config/prepareMigration.json
@@ -103,7 +106,6 @@ async function main() {
 	const shared = loadUpgradeConfigShared()
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress ?? shared.diamondAddress
 	const SUBGRAPH_ENDPOINT = process.env.SUBGRAPH_ENDPOINT || config.subgraphEndpoint || shared.subgraphEndpoint || DEFAULT_SUBGRAPH_ENDPOINT
-	const SPOT_CHECK_COUNT = Number(process.env.SPOT_CHECK_COUNT ?? config.spotCheckCount ?? shared.spotCheckCount ?? 20)
 	const outputDir = process.env.PREPARE_OUTPUT_DIR ?? config.outputDir ?? "./scripts/upgrade/output"
 	const outputFile = process.env.PREPARE_OUTPUT_FILE ?? config.outputFile ?? `${outputDir}/migration-input.json`
 	const reportFile = `${outputDir}/prepareMigrationInput-report.json`
@@ -134,9 +136,8 @@ async function main() {
 		log.header("Prepare Migration Input")
 		log.kv("Diamond", log.addr(DIAMOND_ADDRESS))
 		log.kv("Subgraph", SUBGRAPH_ENDPOINT)
-		log.kv("Spot-check count", String(SPOT_CHECK_COUNT))
 
-		log.setSteps(6)
+		log.setSteps(4)
 
 		// Step 1: Fetch open quotes from subgraph
 		let t = log.step("Fetch open quotes from subgraph")
@@ -210,88 +211,7 @@ async function main() {
 		tryWriteReport(reportFile, report)
 		log.stepDone(t)
 
-		// Step 4: Validate against on-chain -- spot-check quotes
-		t = log.step("Spot-check quotes against on-chain")
-		currentStep = "validate_spot_check"
-		const sampleSize = Math.min(SPOT_CHECK_COUNT, quotesResult.quotes.length)
-		const sampleIndices = new Set<number>()
-		while (sampleIndices.size < sampleSize) {
-			sampleIndices.add(Math.floor(Math.random() * quotesResult.quotes.length))
-		}
-		log.info(`Checking ${sampleSize} random quotes...`)
-		let spotCheckPassed = 0
-		for (const idx of sampleIndices) {
-			const subgraphQuote = quotesResult.quotes[idx]
-			const quoteId = BigInt(subgraphQuote.quoteId)
-			const onChainQuote = await viewFacetQuote.getQuote(quoteId)
-
-			const onChainStatus = Number(onChainQuote.quoteStatus)
-			const onChainPartyA = onChainQuote.partyA.toLowerCase()
-			const onChainPartyB = onChainQuote.partyB.toLowerCase()
-			const onChainSymbolId = toBigInt(onChainQuote.symbolId).toString()
-
-			if (onChainStatus !== subgraphQuote.quoteStatus) {
-				throw new Error(
-					`Quote ${quoteId}: quoteStatus mismatch. On-chain=${onChainStatus}, subgraph=${subgraphQuote.quoteStatus}. Subgraph may not be synced.`,
-				)
-			}
-			if (onChainPartyA !== subgraphQuote.partyA.toLowerCase()) {
-				throw new Error(`Quote ${quoteId}: partyA mismatch. On-chain=${onChainPartyA}, subgraph=${subgraphQuote.partyA}`)
-			}
-			if (subgraphQuote.partyB && onChainPartyB !== subgraphQuote.partyB.toLowerCase()) {
-				throw new Error(`Quote ${quoteId}: partyB mismatch. On-chain=${onChainPartyB}, subgraph=${subgraphQuote.partyB}`)
-			}
-			if (onChainSymbolId !== subgraphQuote.symbolId) {
-				throw new Error(`Quote ${quoteId}: symbolId mismatch. On-chain=${onChainSymbolId}, subgraph=${subgraphQuote.symbolId}`)
-			}
-			spotCheckPassed++
-		}
-		log.ok(`${spotCheckPassed}/${sampleSize} quotes verified`)
-		report.steps.push({
-			name: "validate_spot_check",
-			status: "ok",
-			details: { checked: spotCheckPassed, total: sampleSize },
-		})
-		currentStep = null
-		tryWriteReport(reportFile, report)
-		log.stepDone(t)
-
-		// Step 5: Validate partyB allocated balances against on-chain
-		t = log.step("Spot-check partyB balances against on-chain")
-		currentStep = "validate_partyb_balances"
-		const viewFacet = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", DIAMOND_ADDRESS)
-		const balanceSampleSize = Math.min(SPOT_CHECK_COUNT, balancesResult.entries.length)
-		const balanceSampleIndices = new Set<number>()
-		while (balanceSampleIndices.size < balanceSampleSize) {
-			balanceSampleIndices.add(Math.floor(Math.random() * balancesResult.entries.length))
-		}
-		log.info(`Checking ${balanceSampleSize} random balance entries...`)
-		let balanceCheckPassed = 0
-		let balanceCheckWarnings = 0
-		for (const idx of balanceSampleIndices) {
-			const entry = balancesResult.entries[idx]
-			const onChainBalance = toBigInt(await viewFacet.allocatedBalanceOfPartyB(entry.account, entry.counterParty))
-			const subgraphBalance = BigInt(entry.allocatedBalance)
-			if (onChainBalance !== subgraphBalance) {
-				log.detail(
-					`Drift: PartyB ${log.truncAddr(entry.account)} / PartyA ${log.truncAddr(entry.counterParty)}: on-chain=${onChainBalance}, subgraph=${subgraphBalance}`,
-				)
-				balanceCheckWarnings++
-			} else {
-				balanceCheckPassed++
-			}
-		}
-		log.ok(`${balanceCheckPassed}/${balanceSampleSize} exact match, ${balanceCheckWarnings} drifted (expected on fork)`)
-		report.steps.push({
-			name: "validate_partyb_balances",
-			status: "ok",
-			details: { checked: balanceCheckPassed, total: balanceSampleSize },
-		})
-		currentStep = null
-		tryWriteReport(reportFile, report)
-		log.stepDone(t)
-
-		// Step 6: Build migration input
+		// Step 4: Build migration input
 		t = log.step("Build migration input")
 		currentStep = "build_input"
 
@@ -339,8 +259,6 @@ async function main() {
 			validation: {
 				onChainNextQuoteId: onChainNextQuoteId.toString(),
 				maxSubgraphQuoteId: maxSubgraphQuoteId.toString(),
-				quoteSpotChecks: spotCheckPassed,
-				balanceSpotChecks: balanceCheckPassed,
 			},
 			quoteIds,
 			partyBTasks,
@@ -373,7 +291,10 @@ async function main() {
 			["Output", outputFile],
 			["Duration", scriptTimer.fmt()],
 		])
-		log.nextSteps(["Review the generated migration-input.json", "Run runMigration.ts with the validated input file"])
+		log.nextSteps([
+			"Run validateMigrationInput.ts to spot-check against on-chain (works on v0.8.4 and v0.8.5)",
+			"Run runMigration.ts after the diamondCut is applied",
+		])
 	} catch (error) {
 		if (currentStep) {
 			report.steps.push({

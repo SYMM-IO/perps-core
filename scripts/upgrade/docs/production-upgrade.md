@@ -61,15 +61,15 @@ PAUSE + UPGRADE (execute via Safe UI)
     diamondCut (executed as separate Safe tx)
 
 
-MIGRATION (system still paused)
-═══════════════════════════════
+PREPARE MIGRATION INPUT (right after pause, before diamondCut)
+══════════════════════════════════════════════════════════════
+  prepareMigrationInput.ts       (subgraph + boundary check — version-agnostic)
+  validateMigrationInput.ts      (optional spot-check — also version-agnostic)
 
- prepareMigrationInput.ts       (read-only: subgraph + on-chain)
-        │
-        ▼
- migration-input.json
-        │
-        ▼
+
+RUN MIGRATION (after diamondCut — requires v0.8.5)
+═══════════════════════════════════════════════════
+
  runMigration.ts                (migrateQuotes + migrateCrossLocked + verify)
         │
         ▼
@@ -164,15 +164,19 @@ VERIFY
   verifyPeripherals.ts
 
 
-MIGRATION (system still paused)
-═══════════════════════════════
+PREPARE MIGRATION INPUT (right after pause, before diamondCut)
+══════════════════════════════════════════════════════════════
+  prepareMigrationInput.ts       (subgraph + boundary check — version-agnostic)
+        │
+        ▼
+  migration-input.json
 
- prepareMigrationInput.ts       (read-only: subgraph + on-chain)
-        │
-        ▼
- migration-input.json
-        │
-        ▼
+  validateMigrationInput.ts      (optional spot-check — also version-agnostic)
+
+
+RUN MIGRATION (after diamondCut — requires v0.8.5)
+═══════════════════════════════════════════════════
+
  runMigration.ts                (migrateQuotes + migrateCrossLocked + verify)
         │
         ▼
@@ -198,6 +202,7 @@ TIMELINE
                (system still running normally)
 
   T=delay      Execute safe-batch.json (pause + params + wiring)
+               Prepare migration input (while waiting for diamondCut)
                Execute timelock diamondCut
                Verify upgrade
                Run migration
@@ -205,6 +210,7 @@ TIMELINE
 
   Minimum downtime = time between pause and unpause.
   The timelock delay passes with zero downtime.
+  Migration input is prepared before the diamondCut to save time.
 ```
 
 ## EOA Path
@@ -440,21 +446,30 @@ Uses a deterministic salt derived from chain ID + diamond address + version stri
 
 ## Step 3: Prepare Migration Input
 
-Wait for the subgraph to sync past the upgrade block, then fetch and validate migration data.
+Fetches subgraph data and builds the migration input file. **Can run before or after the diamondCut** — uses only version-agnostic on-chain calls (`getNextQuoteId`). Run it early (e.g. right after pausing) to minimize downtime.
 
 ```bash
-DIAMOND_ADDRESS=0x... \
-  npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network arbitrum
+npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network arbitrum
 ```
 
 What it does:
 - Fetches all open quotes from the subgraph
 - Fetches all PartyB-per-PartyA balance entries from the subgraph
-- Validates a random sample against on-chain state (boundary check + spot-checks)
+- Validates boundary against on-chain `getNextQuoteId()`
 - Computes expected aggregated positions for post-migration verification
-- Writes validated JSON input file
+- Writes JSON input file
 
 Output: `scripts/upgrade/output/migration-input.json`
+
+## Step 3b: Validate Migration Input (optional)
+
+Spot-checks the migration input against on-chain state. Uses raw `eth_call` for `getQuote()` with manual ABI decoding, so it works on both v0.8.4 and v0.8.5 diamonds.
+
+```bash
+npx hardhat run scripts/upgrade/validateMigrationInput.ts --network arbitrum
+```
+
+Output: console report (quote existence checks + balance spot-checks)
 
 ## Step 4: Run Migration
 

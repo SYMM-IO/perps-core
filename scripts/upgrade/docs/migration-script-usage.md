@@ -4,10 +4,11 @@ This document explains how to use the migration scripts for upgrading SYMMIO fro
 
 ## Overview
 
-Migration is a two-step process:
+Migration is a three-step process:
 
-1. **Prepare input** (`prepareMigrationInput.ts`) -- fetches open quotes and partyB balances from the subgraph, validates against on-chain state, writes a validated JSON file
-2. **Run migration** (`runMigration.ts`) -- executes migration using the validated input, then verifies results on-chain
+1. **Prepare input** (`prepareMigrationInput.ts`) -- fetches open quotes and partyB balances from the subgraph, validates boundary against on-chain, writes a JSON file. **Can run before or after the diamondCut.**
+2. **Validate input** (`validateMigrationInput.ts`) -- spot-checks migration input against on-chain state. Uses raw `eth_call` for `getQuote()` so it works on both v0.8.4 and v0.8.5 diamonds. **Optional but recommended.**
+3. **Run migration** (`runMigration.ts`) -- executes migration using the validated input, then verifies results on-chain. **Requires v0.8.5 (after diamondCut).**
 
 The low-level migration logic lives in `scripts/upgrade/migrate.ts`, which handles:
 - Migrating quotes to populate aggregated positions
@@ -23,38 +24,54 @@ Key features:
 
 ## Prerequisites
 
-1. The system must be globally paused (by multisig or fork upgrade script)
-2. The upgrade (diamondCut) must already be applied
-3. The executor address must have `MIGRATION_ROLE` granted
-4. `maxPartyAConnectionLimit` must be set (defaults to 0 after upgrade, which blocks `addConnection()`)
+**For `prepareMigrationInput.ts` and `validateMigrationInput.ts`:**
+1. The system should be globally paused (to prevent state drift between subgraph and migration)
+2. Diamond can be v0.8.4 or v0.8.5 — both scripts are version-agnostic
+
+**For `runMigration.ts`:**
+1. The upgrade (diamondCut) must already be applied (v0.8.5)
+2. The executor address must have `MIGRATION_ROLE` granted
+3. `maxPartyAConnectionLimit` must be set (defaults to 0 after upgrade, which blocks `addConnection()`)
 
 ## Step 1: Prepare Migration Input
 
-Fetches data from the subgraph, validates it against on-chain state, and writes a JSON file.
+Fetches data from the subgraph, validates the boundary against on-chain `getNextQuoteId()`, and writes a JSON file. **Can run before or after the diamondCut** — no v0.8.5-specific ABIs are used.
 
 ```bash
-DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network localhost
-
-# With custom subgraph endpoint
-DIAMOND_ADDRESS=0x... SUBGRAPH_ENDPOINT=https://... npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network localhost
+npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network mantle
 ```
 
 Output: `scripts/upgrade/output/migration-input.json`
-
-### How validation works
-
-- **Boundary check**: on-chain `getNextQuoteId()` must exceed the max subgraph quoteId
-- **Quote spot-check**: random sample of quotes verified against `getQuote()` on-chain (status, partyA, partyB, symbolId)
-- **Balance spot-check**: random sample of partyB allocated balances verified against `allocatedBalanceOfPartyB()` on-chain
 
 ### Env vars
 
 | Env var | Default | Description |
 |---------|---------|-------------|
-| `DIAMOND_ADDRESS` | -- | Diamond proxy address (required) |
-| `SUBGRAPH_ENDPOINT` | Goldsky stage | Subgraph GraphQL endpoint |
-| `SPOT_CHECK_COUNT` | `20` | Number of quotes/balances to spot-check |
+| `DIAMOND_ADDRESS` | from `upgrade.json` | Diamond proxy address |
+| `SUBGRAPH_ENDPOINT` | from `upgrade.json` | Subgraph GraphQL endpoint |
 | `PREPARE_OUTPUT_FILE` | `scripts/upgrade/output/migration-input.json` | Output file path |
+
+## Step 1b: Validate Migration Input (optional)
+
+Spot-checks the migration input against on-chain state. Uses raw `eth_call` for `getQuote()` to decode only the fields that exist in both v0.8.4 and v0.8.5 (`quoteStatus`, `partyA`, `partyB`, `symbolId`). **Can run before or after the diamondCut.**
+
+```bash
+npx hardhat run scripts/upgrade/validateMigrationInput.ts --network mantle
+```
+
+### What it checks
+
+- **Boundary**: on-chain `getNextQuoteId()` must exceed the max input quoteId
+- **Quote spot-check**: random sample of quotes verified via raw `eth_call` + manual ABI decoding (version-agnostic)
+- **Balance spot-check**: random sample of partyB allocated balances verified via `allocatedBalanceOfPartyB()`
+
+### Env vars
+
+| Env var | Default | Description |
+|---------|---------|-------------|
+| `DIAMOND_ADDRESS` | from `upgrade.json` | Diamond proxy address |
+| `MIGRATION_INPUT_FILE` | `scripts/upgrade/output/migration-input.json` | Input file to validate |
+| `SPOT_CHECK_COUNT` | `20` | Number of quotes/balances to spot-check |
 
 ## Step 2: Run Migration
 
