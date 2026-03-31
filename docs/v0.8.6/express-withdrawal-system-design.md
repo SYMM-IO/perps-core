@@ -69,28 +69,61 @@ sequenceDiagram
 
 ### 4.1 Balance Pools
 
-The ExpressProvider maintains two types of pools, plus an optional credit line per affiliate:
+The ExpressProvider maintains two types of liquidity pools:
 
 ```mermaid
 flowchart TD
     subgraph ExpressProvider
         GP[General Pool<br/>generalBalance / lockedGeneralBalance]
         FP[Affiliate Pool per affiliate<br/>affiliateBalances / lockedAffiliateBalances]
-        CL[Credit Line per affiliate<br/>CreditLineFacet + LibCreditLine<br/>reservedDebt / activeDebt]
     end
 
     Admin -->|depositToGeneral| GP
     AffiliateOp -->|depositToAffiliate| FP
-    MuonOracle -->|eligibleBase attestation| CL
 ```
 
 **General Pool**: System-wide, available to all users. Funded by operators via `depositToGeneral()`.
 
 **Affiliate Pool**: Per-affiliate, available only to that affiliate's users. Funded by affiliate operators via `depositToAffiliate(affiliate, amount)`.
 
-**Credit Line** (via CreditLineFacet): Per-affiliate, allows withdrawals backed by Muon-attested eligible balances. The credit line logic (in `CreditLineFacet` and `LibCreditLine`) tracks reserved and active debt per affiliate, enforces protocol and affiliate caps, and verifies Muon oracle signatures. All credit line state is stored in `CreditLineStorage` (diamond storage, keyed by affiliate address). Credit is not supported for STANDARD withdrawals.
+When the ExpressProvider fronts an IMMEDIATE or INSTANT withdrawal, it deducts from these pools. Pools are replenished when SYMMIO releases the actual tokens after cooldown.
 
-### 4.2 Liquidity Priority (for Express-Fronted Source Selection)
+### 4.2 Credit Line
+
+Pools have a hard limit: the operator must have pre-deposited enough tokens. The **credit line** removes this constraint by letting the ExpressProvider borrow against collateral that's already locked inside SYMMIO — specifically, the affiliate's *eligible balance* as attested by the Muon oracle.
+
+**How it works:**
+
+Each affiliate on SYMMIO has capital committed by its users (allocated balances, open positions, etc.). A portion of that capital is "eligible" — it's locked in SYMMIO and will eventually be claimable. The Muon oracle computes this off-chain and signs an attestation: "Affiliate X has Y eligible base." The ExpressProvider trusts this attestation to extend credit up to configured caps.
+
+When a withdrawal uses credit, the ExpressProvider doesn't front its own tokens for the credit portion. Instead, it calls `advanceWithdraw` on SYMMIO, which releases the credit amount directly from SYMMIO's locked collateral to the provider. This is effectively a loan against the affiliate's locked capital — the provider takes on debt, and the debt is settled when the withdrawal finalizes.
+
+**The debt lifecycle:**
+
+```
+RESERVE ──→ ACTIVATE ──→ SETTLE
+   │                        ↑
+   └── CANCEL (if withdrawal cancelled before processing)
+```
+
+1. **Reserve** (on acceptance): Validates the Muon attestation, checks debt caps, records the debt as "reserved"
+2. **Activate** (on processing): Moves debt from "reserved" to "active", calls `advanceWithdraw` to pull tokens from SYMMIO
+3. **Settle** (on finalization): Clears the debt — SYMMIO has released the tokens, the loan is repaid
+4. **Cancel** (if withdrawal is cancelled pre-processing): Releases the reservation, no tokens were moved
+
+**Caps and controls:**
+
+- **Protocol caps**: `protocolMaxDebt` (absolute cap) and `protocolMaxDebtBps` (percentage of eligible base). Set by admin. Cannot be loosened by affiliates.
+- **Affiliate caps**: `affiliateMaxDebt` and `affiliateMaxDebtBps`. Must be stricter than or equal to protocol caps.
+- **Effective cap** = min(protocol cap, affiliate cap). Both absolute and BPS caps must pass.
+- **Pause**: `setCreditLinePaused(affiliate, true)` disables all credit for an affiliate.
+- **Blacklist**: `setCreditLineBlacklisted(affiliate, user, true)` blocks a specific user from using credit.
+
+Credit is **not supported for STANDARD withdrawals** — only IMMEDIATE and INSTANT, because STANDARD doesn't front capital.
+
+All credit line logic lives inside the ExpressProvider diamond (`CreditLineFacet` for admin/views, `LibCreditLine` for debt operations). State is stored in `CreditLineStorage` (diamond storage, keyed by affiliate). See Section 9 for technical details.
+
+### 4.3 Liquidity Priority
 
 When constructing an IMMEDIATE or INSTANT option, the bot chooses funding sources in this order:
 
@@ -100,7 +133,7 @@ When constructing an IMMEDIATE or INSTANT option, the bot chooses funding source
 
 The bot encodes its decision into the signed option as `affiliateAmount` (how much from the affiliate pool) and `creditAmount` (how much from the credit line). The remainder comes from the general pool: `generalAmount = expressAmount - affiliateAmount - creditAmount`.
 
-### 4.3 Funding Cycle
+### 4.4 Funding Cycle
 
 When the ExpressProvider fronts funds for IMMEDIATE or INSTANT withdrawals, it temporarily depletes its pools. Those pools are replenished when SYMMIO releases the actual tokens after the 12-hour cooldown:
 
@@ -684,66 +717,34 @@ When `processWithdraw`, `unlockAndProcess`, or the inline IMMEDIATE path process
 - **Graceful degradation**: When the sponsor balance runs out, the system falls back to deducting fees from the user's withdrawal. There is no hard dependency on sponsorship being funded.
 - **Full fee accounting**: `collectedFees` always reflects the total fee charged, regardless of who paid. This keeps fee accounting clean for the admin.
 
-## 9. Credit Line System
+## 9. Credit Line — Technical Reference
 
-The credit line system allows users to withdraw against the affiliate's aggregate eligible balance (as attested by the Muon oracle) without requiring the full amount to be available in express pools. Credit is only supported for IMMEDIATE and INSTANT withdrawals -- not STANDARD.
+See Section 4.2 for the conceptual overview. This section covers implementation details.
 
 ### 9.1 Architecture
 
-Credit line logic is integrated directly into the ExpressProvider diamond via `CreditLineFacet` and `LibCreditLine`. All credit line state is stored in `CreditLineStorage` (diamond storage pattern), with per-affiliate configuration and debt tracking using affiliate-keyed mappings. There is no separate contract deployment per affiliate.
+Credit line logic lives inside the ExpressProvider diamond:
+- **`CreditLineFacet`** — admin setters (Muon config, protocol/affiliate caps, pause, blacklist) and view functions
+- **`LibCreditLine`** — debt operations (`reserveDebt`, `activateDebt`, `settleDebt`, `cancelReservation`) called internally by `SymmioHookFacetImpl` and `OperatorFacetImpl`
+- **`CreditLineStorage`** — diamond storage with per-affiliate mappings (`AffiliateCredit` struct)
 
-```mermaid
-sequenceDiagram
-    participant Bot
-    participant Express as ExpressProvider
-    participant Muon as Muon Oracle
-    participant SYMMIO
+### 9.2 Muon Verification
 
-    Bot->>Muon: Request eligible balance attestation for affiliate
-    Muon->>Bot: Return CreditData (eligibleBase, signatures)
-    Bot->>Bot: Sign EIP-712 option with creditAmount
+When `reserveDebt` is called, `LibCreditLine` validates the Muon oracle attestation:
 
-    Note over Express: On acceptance (onWithdrawRequest)
-    Express->>Express: LibCreditLine.reserveDebt(affiliate, user, reqId, creditAmount, creditData)
-    Note over Express: Verify Muon sigs, enforce caps, reserve debt
+1. **Freshness**: `block.timestamp <= data.timestamp + muonFreshnessWindow` (default 60s)
+2. **Signature**: The hash `keccak256(muonAppId, reqId, affiliate, eligibleBase, timestamp, chainId)` is verified via `IMuonSignatureVerifier`. The hash uses the **affiliate address** (not the diamond address) to scope attestations per affiliate.
+3. **Caps**: New total debt (`reservedDebt + activeDebt + creditAmount`) must not exceed `effectiveMaxDebt` (absolute) or `effectiveMaxBps` (BPS of `eligibleBase`)
 
-    Note over Express: On processing (processWithdraw)
-    Express->>Express: LibCreditLine.activateDebt(affiliate, user, reqId)
-    Express->>SYMMIO: advanceWithdraw(user, reqId, creditAmount)
-
-    Note over Express: On finalization (onWithdrawComplete)
-    Express->>Express: LibCreditLine.settleDebt(affiliate, user, reqId)
-```
-
-### 9.2 Credit Line Logic (CreditLineFacet + LibCreditLine)
-
-The credit line system tracks two types of debt per affiliate:
-- **Reserved debt**: Debt that has been committed but the withdrawal hasn't been processed yet
-- **Active debt**: Debt where the withdrawal has been processed (funds advanced from SYMMIO)
-
-**Debt caps** are enforced at two levels:
-- **Protocol level**: `protocolMaxDebt` (absolute) and `protocolMaxDebtBps` (percentage of eligible base)
-- **Affiliate level**: `affiliateMaxDebt` and `affiliateMaxDebtBps` (must be <= protocol limits)
-
-The effective cap is the stricter of the two levels.
-
-**Muon verification**: `reserveDebt` validates the Muon oracle attestation (signature, freshness within `muonFreshnessWindow`), ensuring the affiliate's `eligibleBase` is current and authentic. The Muon signature hash uses the affiliate address (not the diamond's address) to scope attestations per affiliate.
-
-### 9.3 Credit Lifecycle
+### 9.3 Debt Lifecycle (detailed)
 
 | Phase | Trigger | LibCreditLine Action |
 |-------|---------|----------------------|
-| Reserve | `onWithdrawRequest` | `reserveDebt` -- validates Muon data, checks caps, adds to `reservedDebt` |
-| Activate | `processWithdraw` / `unlockAndProcess` / IMMEDIATE inline | `activateDebt` -- moves from `reservedDebt` to `activeDebt` |
-| Settle | `onWithdrawComplete` | `settleDebt` -- removes from `activeDebt`, deletes request state |
-| Cancel | `onWithdrawCancelRequest` / `onForceWithdrawCancel` (pre-payout) | `cancelReservation` -- removes from `reservedDebt` |
-| Cover Loss | `onForceWithdrawCancel` / `onWithdrawSuspend` (post-payout) | `settleDebt` -- deducts `creditAmount` from affiliate pool to cover the loss |
-
-### 9.4 User Blacklisting and Pause
-
-The credit line facet supports:
-- **User blacklisting**: `setCreditLineBlacklisted(affiliate, user, true)` prevents a user from using credit for that affiliate (SETTER_ROLE)
-- **Pause**: `setCreditLinePaused(affiliate, true)` disables all credit reservations for that affiliate (SETTER_ROLE)
+| Reserve | `onWithdrawRequest` | `reserveDebt` — validates Muon data, checks caps, adds to `reservedDebt` |
+| Activate | `processWithdraw` / `unlockAndProcess` / IMMEDIATE inline | `activateDebt` — moves from `reservedDebt` to `activeDebt`, calls `advanceWithdraw` on SYMMIO |
+| Settle | `onWithdrawComplete` | `settleDebt` — removes from `activeDebt`, deletes request state |
+| Cancel | `onWithdrawCancelRequest` / `onForceWithdrawCancel` (pre-payout) | `cancelReservation` — removes from `reservedDebt` |
+| Cover Loss | `onForceWithdrawCancel` / `onWithdrawSuspend` (post-payout) | `settleDebt` — deducts `creditAmount` from affiliate pool to cover the loss |
 
 ## 10. Access Control & Roles
 
