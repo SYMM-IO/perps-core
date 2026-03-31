@@ -27,7 +27,6 @@ sequenceDiagram
     participant Validators
     participant SYMMIO
     participant Express as ExpressProvider
-    participant CLM as CreditLineManager
 
     User->>Bot: 1. Request withdrawal options (amount, receiver)
     Bot->>Bot: Check liquidity, risk, sign EIP-712 option
@@ -38,7 +37,7 @@ sequenceDiagram
     User->>SYMMIO: 3. initiateWithdraw(parts, providerData)
     SYMMIO->>Express: 4. onWithdrawRequest(request, collateral)
     Express->>Express: Verify signatures, validate validators, enforce fees
-    Express->>CLM: Reserve credit debt (if creditAmount > 0)
+    Express->>Express: Reserve credit debt via CreditLineFacet (if creditAmount > 0)
     Express->>SYMMIO: 5. acceptWithdrawRequest(user, reqId)
 
     alt IMMEDIATE (same-tx transfer, validators required)
@@ -77,9 +76,7 @@ flowchart TD
     subgraph ExpressProvider
         GP[General Pool<br/>generalBalance / lockedGeneralBalance]
         FP[Affiliate Pool per affiliate<br/>affiliateBalances / lockedAffiliateBalances]
-    end
-    subgraph "CreditLineManager (per affiliate)"
-        CL[Credit Line<br/>reservedDebt / activeDebt]
+        CL[Credit Line per affiliate<br/>CreditLineFacet + LibCreditLine<br/>reservedDebt / activeDebt]
     end
 
     Admin -->|depositToGeneral| GP
@@ -91,7 +88,7 @@ flowchart TD
 
 **Affiliate Pool**: Per-affiliate, available only to that affiliate's users. Funded by affiliate operators via `depositToAffiliate(affiliate, amount)`.
 
-**Credit Line** (in CreditLineManager): Per-affiliate, allows withdrawals backed by Muon-attested eligible balances. The CreditLineManager tracks reserved and active debt, enforces protocol and affiliate caps, and verifies Muon oracle signatures. Credit is not supported for STANDARD withdrawals.
+**Credit Line** (via CreditLineFacet): Per-affiliate, allows withdrawals backed by Muon-attested eligible balances. The credit line logic (in `CreditLineFacet` and `LibCreditLine`) tracks reserved and active debt per affiliate, enforces protocol and affiliate caps, and verifies Muon oracle signatures. All credit line state is stored in `CreditLineStorage` (diamond storage, keyed by affiliate address). Credit is not supported for STANDARD withdrawals.
 
 ### 4.2 Liquidity Priority (for Express-Fronted Source Selection)
 
@@ -112,20 +109,19 @@ sequenceDiagram
     participant User
     participant SYMMIO
     participant Express as ExpressProvider
-    participant CLM as CreditLineManager
 
-    Note over User,CLM: === WITHDRAWAL (drains then replenishes) ===
+    Note over User,Express: === WITHDRAWAL (drains then replenishes) ===
     User->>Express: (via SYMMIO callback) withdraw 500 USDC
     Note over Express: 300 from general, 100 from affiliate, 100 from credit line
-    Express->>CLM: reserveDebt(user, reqId, 100, creditData)
+    Express->>Express: LibCreditLine.reserveDebt(affiliate, user, reqId, 100, creditData)
     Note over Express: Pools locked
-    Express->>CLM: activateDebt(user, reqId)
+    Express->>Express: LibCreditLine.activateDebt(affiliate, user, reqId)
     Express->>SYMMIO: advanceWithdraw(user, reqId, 100)
     Express->>User: transfer 500 USDC from pools + credit (T+20s)
     Note over Express: Pools reduced by 400, credit active for 100
     SYMMIO->>Express: finalizeWithdrawRequest (T+12h) sends 400 USDC back
     Note over Express: Pools replenished by 400
-    Express->>CLM: settleDebt(user, reqId)
+    Express->>Express: LibCreditLine.settleDebt(affiliate, user, reqId)
 ```
 
 ## 5. The Withdrawal Flows
@@ -694,13 +690,12 @@ The credit line system allows users to withdraw against the affiliate's aggregat
 
 ### 9.1 Architecture
 
-Each affiliate can have a dedicated `CreditLineManager` contract (UUPS proxy), linked via `setCreditLineManager(affiliate, manager)`.
+Credit line logic is integrated directly into the ExpressProvider diamond via `CreditLineFacet` and `LibCreditLine`. All credit line state is stored in `CreditLineStorage` (diamond storage pattern), with per-affiliate configuration and debt tracking using affiliate-keyed mappings. There is no separate contract deployment per affiliate.
 
 ```mermaid
 sequenceDiagram
     participant Bot
     participant Express as ExpressProvider
-    participant CLM as CreditLineManager
     participant Muon as Muon Oracle
     participant SYMMIO
 
@@ -709,20 +704,20 @@ sequenceDiagram
     Bot->>Bot: Sign EIP-712 option with creditAmount
 
     Note over Express: On acceptance (onWithdrawRequest)
-    Express->>CLM: reserveDebt(user, reqId, creditAmount, creditData)
-    Note over CLM: Verify Muon sigs, enforce caps, reserve debt
+    Express->>Express: LibCreditLine.reserveDebt(affiliate, user, reqId, creditAmount, creditData)
+    Note over Express: Verify Muon sigs, enforce caps, reserve debt
 
     Note over Express: On processing (processWithdraw)
-    Express->>CLM: activateDebt(user, reqId)
+    Express->>Express: LibCreditLine.activateDebt(affiliate, user, reqId)
     Express->>SYMMIO: advanceWithdraw(user, reqId, creditAmount)
 
     Note over Express: On finalization (onWithdrawComplete)
-    Express->>CLM: settleDebt(user, reqId)
+    Express->>Express: LibCreditLine.settleDebt(affiliate, user, reqId)
 ```
 
-### 9.2 CreditLineManager
+### 9.2 Credit Line Logic (CreditLineFacet + LibCreditLine)
 
-The CreditLineManager tracks two types of debt:
+The credit line system tracks two types of debt per affiliate:
 - **Reserved debt**: Debt that has been committed but the withdrawal hasn't been processed yet
 - **Active debt**: Debt where the withdrawal has been processed (funds advanced from SYMMIO)
 
@@ -732,12 +727,12 @@ The CreditLineManager tracks two types of debt:
 
 The effective cap is the stricter of the two levels.
 
-**Muon verification**: `reserveDebt` validates the Muon oracle attestation (signature, freshness within `muonFreshnessWindow`), ensuring the affiliate's `eligibleBase` is current and authentic.
+**Muon verification**: `reserveDebt` validates the Muon oracle attestation (signature, freshness within `muonFreshnessWindow`), ensuring the affiliate's `eligibleBase` is current and authentic. The Muon signature hash uses the affiliate address (not the diamond's address) to scope attestations per affiliate.
 
 ### 9.3 Credit Lifecycle
 
-| Phase | Trigger | CreditLineManager Action |
-|-------|---------|--------------------------|
+| Phase | Trigger | LibCreditLine Action |
+|-------|---------|----------------------|
 | Reserve | `onWithdrawRequest` | `reserveDebt` -- validates Muon data, checks caps, adds to `reservedDebt` |
 | Activate | `processWithdraw` / `unlockAndProcess` / IMMEDIATE inline | `activateDebt` -- moves from `reservedDebt` to `activeDebt` |
 | Settle | `onWithdrawComplete` | `settleDebt` -- removes from `activeDebt`, deletes request state |
@@ -746,9 +741,9 @@ The effective cap is the stricter of the two levels.
 
 ### 9.4 User Blacklisting and Pause
 
-The CreditLineManager supports:
-- **User blacklisting**: `setBlacklisted(user, true)` prevents a user from using credit
-- **Pause**: `setPaused(true)` disables all credit reservations system-wide
+The credit line facet supports:
+- **User blacklisting**: `setCreditLineBlacklisted(affiliate, user, true)` prevents a user from using credit for that affiliate (SETTER_ROLE)
+- **Pause**: `setCreditLinePaused(affiliate, true)` disables all credit reservations for that affiliate (SETTER_ROLE)
 
 ## 10. Access Control & Roles
 
@@ -758,7 +753,7 @@ The CreditLineManager supports:
 |------|-----|--------|
 | Diamond Owner | Deployer/multisig | Diamond cut (add/replace/remove facets), grant/revoke roles |
 | `WITHDRAWER_ROLE` | Deployer/multisig | Withdraw liquidity from general and affiliate pools (`withdrawFromGeneral`, `withdrawFromAffiliate`) |
-| `SETTER_ROLE` | Deployer/multisig | Set all contract parameters: affiliate configs, security window, tolerance period, validators |
+| `SETTER_ROLE` | Deployer/multisig | Set all contract parameters: affiliate configs, security window, tolerance period, validators, credit line configs (protocol, affiliate, Muon, pause, blacklist) |
 | `SPONSOR_MANAGER_ROLE` | Deployer/multisig | Withdraw sponsor balances (`withdrawSponsorBalance`) |
 | `FEE_CLAIMER_ROLE` | Deployer/multisig | Claim accumulated fees (`claimFees`, `claimOperatorFees`) |
 | `OPERATOR_ROLE` | Bot service | `processWithdraw` |
@@ -768,14 +763,13 @@ The CreditLineManager supports:
 
 Roles are stored in diamond storage and managed via `grantRole`/`revokeRole` on AdminFacet (owner-only).
 
-### 10.2 CreditLineManager Roles
+### 10.2 Credit Line Access Control
 
-| Role | Who | Can do |
-|------|-----|--------|
-| `DEFAULT_ADMIN_ROLE` | Deployer/multisig | Upgrade contract, grant/revoke roles |
-| `EXPRESS_PROVIDER_ROLE` | ExpressProvider | `reserveDebt`, `activateDebt`, `settleDebt`, `cancelReservation` |
-| `PROTOCOL_ADMIN_ROLE` | Deployer/multisig | Set protocol-level debt caps and Muon config |
-| `AFFILIATE_ADMIN_ROLE` | Affiliate operator | Set affiliate-level debt caps, blacklist users, pause |
+Credit line operations no longer use separate OZ AccessControl roles. Since the credit line logic is integrated into the ExpressProvider diamond:
+
+- **Configuration** (Muon config, protocol caps, affiliate caps, pause, blacklist): Controlled by `SETTER_ROLE` on the diamond
+- **Debt lifecycle** (`reserveDebt`, `activateDebt`, `settleDebt`, `cancelReservation`): Called internally by `LibCreditLine` from within the diamond's facets -- no external role needed
+- The old `EXPRESS_PROVIDER_ROLE`, `PROTOCOL_ADMIN_ROLE`, and `AFFILIATE_ADMIN_ROLE` on the standalone CreditLineManager no longer exist
 
 ### 10.3 Validator Registration
 
@@ -784,8 +778,8 @@ Validators are not a role -- they are registered per-affiliate via `setValidator
 ### 10.4 Trust Relationships
 
 - ExpressProvider is registered as an **Express Provider** on SYMMIO
-- ExpressProvider holds `EXPRESS_PROVIDER_ROLE` on each CreditLineManager for `reserveDebt` / `activateDebt` / `settleDebt` / `cancelReservation`
-- CreditLineManager verifies Muon oracle attestations to validate credit eligibility
+- Credit line logic runs inside the ExpressProvider diamond (via `CreditLineFacet` / `LibCreditLine`) -- no cross-contract trust needed for debt operations
+- `LibCreditLine` verifies Muon oracle attestations to validate credit eligibility
 - Bot holds `OPERATOR_ROLE` and `SIGNER_ROLE` on ExpressProvider
 - Validators are registered per-affiliate on ExpressProvider via `setValidator(affiliate, validator, enabled)` -- their EIP-712 signatures are verified during onWithdrawRequest. Validators registered for `address(0)` serve as defaults for all affiliates
 
@@ -883,11 +877,7 @@ When a user calls `processWithdraw` permissionlessly (after the tolerance period
 flowchart LR
     subgraph "Per Chain"
         SYMMIO[SYMMIO Core Diamond]
-        EC[ExpressProvider<br/>EIP-2535 Diamond<br/>1 per chain]
-    end
-    subgraph "Per Chain Per Affiliate"
-        CLM1[CreditLineManager<br/>UUPS Proxy<br/>Affiliate A]
-        CLM2[CreditLineManager<br/>UUPS Proxy<br/>Affiliate B]
+        EC[ExpressProvider<br/>EIP-2535 Diamond<br/>1 per chain<br/>includes CreditLineFacet]
     end
     subgraph "Global"
         Bot[Bot Service]
@@ -895,20 +885,14 @@ flowchart LR
     end
 
     EC --> SYMMIO
-    CLM1 --> SYMMIO
-    CLM2 --> SYMMIO
-    EC --> CLM1
-    EC --> CLM2
     Bot --> EC
     Bot --> SYMMIO
-    Muon --> CLM1
-    Muon --> CLM2
+    Muon --> EC
 ```
 
 | Component | Count | Upgradeable | Description |
 |-----------|-------|-------------|-------------|
-| **ExpressProvider** | 1 per chain | Yes (EIP-2535 Diamond) | Main coordinator. Manages liquidity pools, validates bot signatures, locks/transfers funds. Split into AdminFacet, SymmioHookFacet, OperatorFacet, ViewFacet. |
-| **CreditLineManager** | 1 per chain per affiliate | Yes (UUPS proxy) | Manages per-affiliate credit lines backed by Muon oracle attestations. Tracks reserved/active debt and enforces protocol/affiliate caps. |
+| **ExpressProvider** | 1 per chain | Yes (EIP-2535 Diamond) | Main coordinator. Manages liquidity pools, validates bot signatures, locks/transfers funds, and handles credit lines. Split into AdminFacet, SymmioHookFacet, OperatorFacet, ViewFacet, CreditLineFacet. Credit line state is stored in `CreditLineStorage` (diamond storage) with per-affiliate mappings. |
 | **Bot Service** | 1 global | N/A | Off-chain. Provides options API, signs options, monitors events, calls `processWithdraw` and `finalizeWithdrawRequest`. |
 
 #### SYMMIO Callbacks (called by SYMMIO, not by bot)
@@ -954,7 +938,6 @@ function claimFees(address affiliate, address to) external;                 // F
 function claimOperatorFees(address affiliate, address to) external;        // FEE_CLAIMER_ROLE
 
 // Setter functions (SETTER_ROLE)
-function setCreditLineManager(address affiliate, address manager) external; // Setter only
 function setSecurityWindow(uint256 seconds) external;                      // Setter only
 function setTolerancePeriod(uint256 seconds) external;                     // Setter only
 function setAffiliateConfig(
@@ -965,6 +948,26 @@ function setAffiliateConfig(
 function setValidator(address affiliate, address validator, bool enabled) external; // Setter only
 function setMinValidatorSignatures(address affiliate, uint256 count) external;     // Setter only
 function setValidatorApprovalTimeout(address affiliate, uint256 seconds) external; // Setter only
+
+// Credit line setter functions (SETTER_ROLE, on CreditLineFacet)
+function setCreditLineMuonConfig(
+    address signatureVerifier,
+    uint256 muonAppId,
+    PublicKey memory muonPublicKey
+) external;                                                                // Setter only
+function setCreditLineProtocolConfig(
+    address affiliate,
+    uint256 maxDebt,
+    uint256 maxDebtBps,
+    uint256 muonFreshnessWindow
+) external;                                                                // Setter only
+function setCreditLineAffiliateConfig(
+    address affiliate,
+    uint256 maxDebt,
+    uint256 maxDebtBps
+) external;                                                                // Setter only
+function setCreditLinePaused(address affiliate, bool paused) external;     // Setter only
+function setCreditLineBlacklisted(address affiliate, address user, bool blacklisted) external; // Setter only
 
 // Fee sponsorship
 function depositSponsorBalance(address affiliate, uint256 amount) external; // Anyone
@@ -985,7 +988,10 @@ function generalBalance() external view returns (uint256);
 function lockedGeneralBalance() external view returns (uint256);
 function affiliateBalances(address affiliate) external view returns (uint256);
 function lockedAffiliateBalances(address affiliate) external view returns (uint256);
-function creditLineManagers(address affiliate) external view returns (address);
+// Credit line queries (on CreditLineFacet)
+function creditLineTotalDebt(address affiliate) external view returns (uint256);
+function creditLineReservedDebt(address affiliate) external view returns (uint256);
+function creditLineActiveDebt(address affiliate) external view returns (uint256);
 
 // Fee queries
 function affiliateConfigs(address affiliate) external view returns (uint256 feeRate, uint256 operatorFee);
@@ -1009,45 +1015,35 @@ function hasRole(bytes32 role, address account) external view returns (bool);
 
 ```
 
-### 12.2 CreditLineManager (UUPS Proxy)
+### 12.2 CreditLineFacet (Diamond Facet)
+
+All credit line functions are accessed on the ExpressProvider diamond address. Configuration requires `SETTER_ROLE`. Debt lifecycle functions (`reserveDebt`, `activateDebt`, `settleDebt`, `cancelReservation`) are internal to `LibCreditLine` and called by other facets within the diamond -- they are not externally callable.
 
 ```solidity
-// Initializer (called once on proxy deployment)
-function initialize(
-    address admin,
-    address _symmio,
-    address _expressProvider,
-    address _signatureVerifier,
-    uint256 _muonAppId
+// Configuration (SETTER_ROLE)
+function setCreditLineMuonConfig(
+    address signatureVerifier,
+    uint256 muonAppId,
+    PublicKey memory muonPublicKey
 ) external;
-
-// Called only by EXPRESS_PROVIDER_ROLE holders (ExpressProvider)
-function reserveDebt(address user, uint256 requestId, uint256 creditAmount, CreditData calldata data) external;
-function activateDebt(address user, uint256 requestId) external;
-function settleDebt(address user, uint256 requestId) external;
-function cancelReservation(address user, uint256 requestId) external;
+function setCreditLineProtocolConfig(
+    address affiliate,
+    uint256 maxDebt,
+    uint256 maxDebtBps,
+    uint256 muonFreshnessWindow
+) external;
+function setCreditLineAffiliateConfig(
+    address affiliate,
+    uint256 maxDebt,
+    uint256 maxDebtBps
+) external;
+function setCreditLinePaused(address affiliate, bool paused) external;
+function setCreditLineBlacklisted(address affiliate, address user, bool blacklisted) external;
 
 // View
-function totalDebt() external view returns (uint256);    // reservedDebt + activeDebt
-function reservedDebt() external view returns (uint256);
-function activeDebt() external view returns (uint256);
-
-// Protocol admin (PROTOCOL_ADMIN_ROLE)
-function setProtocolConfig(uint256 _maxDebt, uint256 _maxDebtBps, uint256 _muonFreshnessWindow) external;
-function setSignatureVerifier(address _signatureVerifier) external;
-function setMuonAppId(uint256 _muonAppId) external;
-
-// Affiliate admin (AFFILIATE_ADMIN_ROLE)
-function setAffiliateConfig(uint256 _maxDebt, uint256 _maxDebtBps) external;
-function setBlacklisted(address user, bool _blacklisted) external;
-function setPaused(bool _paused) external;
-
-// Role management (inherited from AccessControl)
-function grantRole(bytes32 role, address account) external;   // Admin only
-function revokeRole(bytes32 role, address account) external;  // Admin only
-
-// Upgrade (UUPS)
-function upgradeToAndCall(address newImplementation, bytes calldata data) external; // Admin only
+function creditLineTotalDebt(address affiliate) external view returns (uint256);    // reservedDebt + activeDebt
+function creditLineReservedDebt(address affiliate) external view returns (uint256);
+function creditLineActiveDebt(address affiliate) external view returns (uint256);
 ```
 
 ## 13. Data Types Reference
@@ -1072,7 +1068,6 @@ struct WithdrawInfo {
     uint256 affiliateAmount;      // how much of expressAmount from affiliate pool
     uint256 creditAmount;         // how much of expressAmount from credit line (0 for STANDARD)
     address affiliate;            // which affiliate pool was used
-    address creditLineManager;    // CreditLineManager address (address(0) if no credit used)
     uint256 acceptedAt;           // block.timestamp when accepted
     uint256 finalizedAt;          // block.timestamp when onWithdrawComplete called (STANDARD only)
     uint256 cooldownEndTime;      // when SYMMIO's 12h cooldown expires
@@ -1173,27 +1168,21 @@ struct WithdrawRequest {
 - SYMMIO core deployed with withdraw system enabled
 - Collateral token (e.g. USDC) address known
 - ExpressProvider registered as Express Provider on SYMMIO
-- Muon oracle and signature verifier deployed (if using credit lines)
+- Muon signature verifier address and app ID known (if using credit lines)
 
 ### Deploy via Hardhat task
 
 ```bash
-# Deploy ExpressProvider (diamond) and CreditLineManager(s)
+# Deploy ExpressProvider (diamond, includes CreditLineFacet)
 npx hardhat deploy \
   --symmio 0x<SYMMIO_ADDRESS> \
   --collateral 0x<USDC_ADDRESS> \
   --admin 0x<ADMIN_ADDRESS> \
   --network sepolia
 
-# Upgrade ExpressProvider
+# Upgrade ExpressProvider (diamond cut to add/replace facets)
 npx hardhat upgrade \
   --proxy 0x<EXPRESS_PROXY_ADDRESS> \
-  --network sepolia
-
-# Upgrade CreditLineManager
-npx hardhat upgrade \
-  --proxy 0x<CLM_PROXY_ADDRESS> \
-  --contract CreditLineManager \
   --network sepolia
 ```
 
@@ -1207,8 +1196,10 @@ symmio.registerExpressProvider(expressProviderProxy)
 expressProvider.grantRole(OPERATOR_ROLE, botAddress)
 expressProvider.grantRole(SIGNER_ROLE, botSignerAddress)
 
-# On ExpressProvider: link credit line manager to affiliate
-expressProvider.setCreditLineManager(affiliateAddress, creditLineManagerAddress)
+# On ExpressProvider: configure credit line (if using credit lines)
+expressProvider.setCreditLineMuonConfig(signatureVerifierAddress, muonAppId, muonPublicKey)
+expressProvider.setCreditLineProtocolConfig(affiliateAddress, maxDebt, maxDebtBps, muonFreshnessWindow)
+expressProvider.setCreditLineAffiliateConfig(affiliateAddress, maxDebt, maxDebtBps)
 
 # On ExpressProvider: configure validators (per-affiliate, or address(0) for default)
 expressProvider.setValidator(address(0), validator1Address, true)   # default validator for all affiliates

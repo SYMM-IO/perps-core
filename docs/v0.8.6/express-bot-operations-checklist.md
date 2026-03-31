@@ -519,7 +519,7 @@ flowchart TD
     B --> B3["sponsorBalances(affiliate)"]
     B --> B4["generalBalance, lockedGeneralBalance"]
     B --> B5["affiliateBalances, lockedAffiliateBalances"]
-    B --> B6["CLM.totalDebt()"]
+    B --> B6["expressProvider.creditLineTotalDebt(affiliate)"]
 
     B1 & B2 & B3 & B4 & B5 & B6 --> C{Compute available liquidity}
 
@@ -556,7 +556,7 @@ flowchart LR
 - [ ] Check `fee + operatorFee <= expressAmount` (else reverts `FeesExceedExpressAmount`)
 - [ ] Check available general pool: `generalBalance - lockedGeneralBalance >= generalAmount`
 - [ ] Check available affiliate pool: `affiliateBalances[affiliate] - lockedAffiliateBalances[affiliate] >= affiliateAmount`
-- [ ] Check credit line capacity: `creditLineManagers(affiliate) != address(0)` if using credit
+- [ ] Check credit line capacity: `expressProvider.creditLineTotalDebt(affiliate)` if using credit
 - [ ] For IMMEDIATE: verify `minValidatorSignatures(affiliate) > 0` (falls back to `address(0)` default)
 - [ ] If validators required: gather >= `minValidatorSignatures(affiliate)` attestations from validators registered for this affiliate (or `address(0)` default)
 - [ ] Construct `WithdrawReceiverPart[]` array
@@ -643,9 +643,8 @@ Setup:
   lockedGeneralBalance     = 4,600e6 USDC   (heavy utilization)
   affiliateBalances[0xAff] = 1,000e6 USDC
   lockedAffiliateBalances  =     0e6 USDC
-  creditLineManagers[0xAff]= 0xCLM           (affiliate's credit line manager)
-  CLM.totalDebt()          = 200e6 USDC      (existing debt)
-  CLM.protocolMaxDebt      = 5,000e6         (plenty of headroom)
+  expressProvider.creditLineTotalDebt(0xAff) = 200e6 USDC (existing debt)
+  credit line protocolMaxDebt                = 5,000e6   (plenty of headroom)
   affiliateConfigs(0xAff)  = { feeRate: 100 bps, operatorFee: 2e6 }
   sponsorBalances(0xAff)   = 10e6 USDC
   sponsorConfigs(0xAff)    = { maxFeePerWithdraw: 0, maxWithdrawAmount: 0 } (no caps)
@@ -665,7 +664,7 @@ Step 1 -- Bot sees: User requests options for 1,500 USDC withdrawal
 
   Bot checks: "Can I cover the gap using the credit line?"
     Shortfall = 1,500 - 1,400 = 100e6 minimum from credit
-    CLM headroom = protocolMaxDebt - totalDebt = 5,000 - 200 = 4,800e6
+    Credit line headroom = protocolMaxDebt - totalDebt = 5,000 - 200 = 4,800e6
     100 <= 4,800 -- YES, credit line has headroom.
     Bot also obtains Muon attestation for the affiliate's aggregate eligibleBase.
 
@@ -731,14 +730,14 @@ Step 4 -- What happens on-chain at acceptance (for reference)
     4. Verify operatorFee = 2e6  (matches on-chain config)
     5. Lock general pool: lockedGeneralBalance += 400e6  (now 5,000e6)
     6. Lock affiliate pool: lockedAffiliateBalances[0xAff] += 1,000e6
-    7. Reserve credit: CLM.reserveDebt(user, reqId, 100e6, creditData)
-       CLM.reservedDebt += 100e6
+    7. Reserve credit: CreditLineFacet.reserveDebt(user, reqId, 100e6, creditData)
+       creditLineReservedDebt(affiliate) += 100e6
     8. Lock sponsor coverage: sponsorBalances[0xAff] -= 10e6 (now 0)
-    9. Store WithdrawInfo with partsHash, creditAmount=100, creditLineManager=0xCLM
+    9. Store WithdrawInfo with partsHash, creditAmount=100
    10. Status = ACCEPTED
 
   At processWithdraw:
-    1. Activate credit: CLM.activateDebt -> reservedDebt -= 100, activeDebt += 100
+    1. Activate credit: CreditLineFacet.activateDebt -> reservedDebt -= 100, activeDebt += 100
     2. Advance from core: SYMMIO.advanceWithdraw(user, reqId, 100e6)
     3. Fee deduction cascades across parts in order:
        userFee = 17 - 10 (sponsor) = 7e6 remaining
@@ -931,8 +930,7 @@ Step 4 -- Bot sees: cooldownEndTime reached
 sequenceDiagram
     participant U as User
     participant S as SYMMIO
-    participant EP as ExpressProvider
-    participant CLM as CreditLineManager
+    participant EP as ExpressProvider (Diamond)
 
     U->>S: initiateWithdraw(parts, providerData)
     S->>EP: onWithdrawRequest(req, collateral)
@@ -941,8 +939,8 @@ sequenceDiagram
     Note over EP: Validate validator signatures
     Note over EP: Verify fee matches on-chain config
     Note over EP: Lock general + affiliate pools
-    EP->>CLM: reserveDebt(reqId, creditAmount)
-    EP->>CLM: activateDebt(reqId, creditAmount)
+    Note over EP: CreditLineFacet.reserveDebt(affiliate, reqId, creditAmount)
+    Note over EP: CreditLineFacet.activateDebt(affiliate, reqId, creditAmount)
     EP->>S: advanceWithdraw(user, reqId, creditAmount)
     EP->>S: acceptWithdrawRequest(user, reqId)
 
@@ -954,7 +952,7 @@ sequenceDiagram
     Note over EP,S: ═══ 12 HOURS LATER ═══
     S->>EP: onWithdrawComplete(req)
     Note over EP: Replenish pools
-    EP->>CLM: settleDebt(reqId)
+    Note over EP: CreditLineFacet.settleDebt(affiliate, reqId)
     Note over EP: Status = FINALIZED
 ```
 
@@ -985,7 +983,7 @@ Setup:
   affiliateBalances[aff]  =  5,000 USDC   lockedAffiliateBalances[aff]  = 0
   affiliateConfigs[aff]   = { feeRate: 100 (1%), operatorFee: 2e6 (2 USDC) }
   minValidatorSignatures(aff)  = 2        validatorApprovalTimeout(aff)      = 30s
-  CLM.availableCredit     =  3,000 USDC   CLM.outstandingDebt           = 0
+  creditLine availableCredit  =  3,000 USDC   creditLine outstandingDebt   = 0
   nonces[user]            = 3
   sponsorBalances[aff]    = 0 USDC (no sponsor)
 
@@ -995,7 +993,7 @@ Step 1 — Bot sees: user requests an express withdrawal for 1,000 USDC
       ValidatorsRequiredForImmediate otherwise)
     - generalBalance - lockedGeneralBalance                 = 10,000 - 0 = 10,000 USDC available
     - affiliateBalances[aff] - lockedAffiliateBalances[aff] = 5,000 - 0  = 5,000 USDC available
-    - CLM.availableCredit                                   = 3,000 USDC available
+    - creditLine availableCredit                              = 3,000 USDC available
     - nonces[user]                                          = 3
     - affiliateConfigs[aff].feeRate                         = 100 bps (1%)
     - affiliateConfigs[aff].operatorFee                     = 2e6 (2 USDC)
@@ -1017,12 +1015,12 @@ Step 1 — Bot sees: user requests an express withdrawal for 1,000 USDC
   Bot checks before signing:
     - generalBalance - lockedGeneralBalance >= generalAmount?   10,000 >= 500?   YES
     - affiliateBalances[aff] - lockedAffiliateBalances[aff] >= affiliateAmount?   5,000 >= 300?   YES
-    - CLM.availableCredit >= creditAmount?   3,000 >= 200?   YES
+    - creditLine availableCredit >= creditAmount?   3,000 >= 200?   YES
     - fee + operatorFee <= feeBasis?   12e6 <= 1,000e6?   YES
   Decision: Offer IMMEDIATE (optionType=0). Proceed to gather validator attestations.
 
-    What if CLM.availableCredit were only 150 USDC?
-      200 > 150 — CreditLineManager would revert InsufficientCredit during reserveDebt.
+    What if creditLine availableCredit were only 150 USDC?
+      200 > 150 — CreditLineFacet would revert InsufficientCredit during reserveDebt.
       Bot must reduce creditAmount to 150 (and increase generalAmount to 550),
       or fall back to INSTANT without credit.
 
@@ -1070,10 +1068,10 @@ Step 3 — Bot sees: user submits withdrawal (SYMMIO calls onWithdrawRequest —
      - lockedGeneralBalance:          0 + 500 = 500
      - lockedAffiliateBalances[aff]:  0 + 300 = 300
   e. Reserve and activate credit line debt:
-     - CLM.reserveDebt(reqId, 200e6)
-     - CLM.activateDebt(reqId, 200e6)
-     - CLM.availableCredit:  3,000 - 200 = 2,800
-     - CLM.outstandingDebt:  0 + 200     = 200
+     - CreditLineFacet.reserveDebt(affiliate, reqId, 200e6)
+     - CreditLineFacet.activateDebt(affiliate, reqId, 200e6)
+     - creditLine availableCredit:  3,000 - 200 = 2,800
+     - creditLine outstandingDebt:  0 + 200     = 200
   f. Advance credit-backed funds from SYMMIO:
      - SYMMIO.advanceWithdraw(user, reqId, 200e6)
   g. Lock fee (sponsor coverage = 0, so userFee = totalFee = 12 USDC)
@@ -1118,14 +1116,14 @@ Step 4 — Bot sees: cooldownEndTime reached (T0 + 12h)
   Contract replenishes pools and settles credit debt:
     - generalBalance:          9,500 + 500 = 10,000 (restored by generalAmount)
     - affiliateBalances[aff]:  4,700 + 300 = 5,000 (restored by affiliateAmount)
-    - CLM.settleDebt(reqId)
-    - CLM.outstandingDebt:     200 - 200   = 0 (debt fully settled)
-    - CLM.availableCredit:     2,800 + 200 = 3,000 (credit capacity restored)
+    - CreditLineFacet.settleDebt(affiliate, reqId)
+    - creditLine outstandingDebt:     200 - 200   = 0 (debt fully settled)
+    - creditLine availableCredit:     2,800 + 200 = 3,000 (credit capacity restored)
     - status = FINALIZED
 
     What if the bot forgot to call finalizeWithdrawRequest?
       Pools remain depleted (generalBalance = 9,500, affiliateBalances = 4,700).
-      Credit debt remains outstanding (CLM.outstandingDebt = 200).
+      Credit debt remains outstanding (creditLine outstandingDebt = 200).
       The 1000 USDC stays locked in SYMMIO. No one else can trigger
       finalization for this request. Bot should schedule this call reliably.
 
@@ -1470,7 +1468,7 @@ Final accounting:
 
 ### 5.4 Credit-Backed Withdrawal
 
-For IMMEDIATE and INSTANT options, the bot can include a `creditAmount` in the signed option to draw from the affiliate's credit line (CreditLineManager). This supplements pool liquidity:
+For IMMEDIATE and INSTANT options, the bot can include a `creditAmount` in the signed option to draw from the affiliate's credit line (managed by `CreditLineFacet` within the ExpressProvider diamond). This supplements pool liquidity:
 
 - `generalAmount = expressAmount - affiliateAmount - creditAmount`
 - Credit requires a valid Muon oracle attestation (`CreditData`)
@@ -1488,9 +1486,9 @@ Example: 500 USDC withdrawal
 ```
 
 The bot MUST verify:
-- [ ] `creditLineManagers(affiliate) != address(0)` — credit line is configured
-- [ ] CreditLineManager is not paused
-- [ ] User is not blacklisted on the CreditLineManager
+- [ ] Credit line is configured for this affiliate (check via `expressProvider.creditLinePaused(affiliate)` not reverting)
+- [ ] Credit line is not paused: `expressProvider.creditLinePaused(affiliate) == false`
+- [ ] User is not blacklisted: `expressProvider.creditLineBlacklisted(affiliate, user) == false`
 - [ ] `affiliateAmount + creditAmount <= expressAmount` (else reverts `FundingSplitExceedsExpress`)
 
 ---
@@ -2314,31 +2312,30 @@ cancelReservation:   reservedDebt -= amount, delete requestDebt[key]  (cancel/su
 | `settleDebt` | `onWithdrawComplete` (finalization) | ExpressProvider via LibCreditLine.settle |
 | `cancelReservation` | `onWithdrawCancelRequest` / `onForceWithdrawCancel` / `onSuspendWithdraw` | ExpressProvider via LibCreditLine.releaseReservation |
 
-**Key invariant:** `CreditLineManager.totalDebt() == reservedDebt + activeDebt`
+**Key invariant:** `expressProvider.creditLineTotalDebt(affiliate) == creditLineReservedDebt(affiliate) + creditLineActiveDebt(affiliate)`
 
 **Credit is NOT supported for STANDARD withdrawals.** The contract reverts `CreditNotSupportedForStandard` if `opt.creditAmount > 0` and `opt.optionType == STANDARD`.
 
 ### 10.3 Bot Monitoring for Credit Lines
 
-Each affiliate has its own `CreditLineManager` (a UUPS proxy). The bot must track one CLM per active affiliate.
+All credit line logic lives inside the ExpressProvider diamond via `CreditLineFacet` and `LibCreditLine`. Credit line state is stored in `CreditLineStorage` (diamond storage, per-affiliate via mappings). There is no separate deployment per affiliate -- all config is done on the diamond with affiliate-keyed functions.
 
-- [ ] **Check `totalDebt()`** -- total outstanding credit exposure (reserved + active). Compare against caps to estimate remaining capacity.
-- [ ] **Check `paused`** -- if `true`, all `reserveDebt` calls revert `CreditLinePaused`. The bot must not sign options with `creditAmount > 0` for this affiliate.
-- [ ] **Check `blacklisted[user]`** -- if `true` for the requesting user, `reserveDebt` reverts `UserBlacklisted`. The bot must reject credit for blacklisted users.
+- [ ] **Check `creditLineTotalDebt(affiliate)`** -- total outstanding credit exposure (reserved + active). Compare against caps to estimate remaining capacity.
+- [ ] **Check `creditLinePaused(affiliate)`** -- if `true`, all `reserveDebt` calls revert `CreditLinePaused`. The bot must not sign options with `creditAmount > 0` for this affiliate.
+- [ ] **Check `creditLineBlacklisted(affiliate, user)`** -- if `true` for the requesting user, `reserveDebt` reverts `UserBlacklisted`. The bot must reject credit for blacklisted users.
 - [ ] **Monitor debt cap headroom:**
   - `protocolMaxDebt` and `affiliateMaxDebt` -- absolute caps (0 = no limit). The effective cap is the tighter (non-zero minimum) of the two.
   - `protocolMaxDebtBps` and `affiliateMaxDebtBps` -- percentage caps as basis points of Muon `eligibleBase` (0 = no limit). Same tighter-of-two logic.
-  - New debt is allowed only if `totalDebt() + creditAmount <= effectiveMaxDebt` AND `totalDebt() + creditAmount <= eligibleBase * effectiveMaxBps / 10000`.
-- [ ] **Monitor `reservedDebt` vs `activeDebt` ratio** -- high `reservedDebt` means many accepted-but-not-yet-processed credit withdrawals. This is normal during the security window but may indicate processing delays if it persists.
-- [ ] **Listen for CLM events** to maintain an accurate local state:
-  - `DebtReserved(user, requestId, amount)` -- new credit accepted
-  - `DebtActivated(user, requestId, amount)` -- credit advanced to user
-  - `DebtSettled(user, requestId, amount)` -- credit repaid on finalization
-  - `DebtCancelled(user, requestId, amount)` -- credit released on cancel
-  - `PausedUpdated(bool)` -- credit line paused/unpaused
-  - `UserBlacklistUpdated(user, bool)` -- user blacklist change
-- [ ] **Alert on approaching caps** -- when `totalDebt()` exceeds 80% of `effectiveMaxDebt`, alert the affiliate operator
-- [ ] **Verify CLM is set** -- `s.creditLineManagers[affiliate]` must not be `address(0)`. If unset, the contract reverts `CreditLineManagerNotSet` and credit cannot be used for that affiliate.
+  - New debt is allowed only if `creditLineTotalDebt(affiliate) + creditAmount <= effectiveMaxDebt` AND `creditLineTotalDebt(affiliate) + creditAmount <= eligibleBase * effectiveMaxBps / 10000`.
+- [ ] **Monitor `creditLineReservedDebt(affiliate)` vs `creditLineActiveDebt(affiliate)` ratio** -- high reserved debt means many accepted-but-not-yet-processed credit withdrawals. This is normal during the security window but may indicate processing delays if it persists.
+- [ ] **Listen for credit line events** on the ExpressProvider diamond to maintain an accurate local state:
+  - `DebtReserved(affiliate, user, requestId, amount)` -- new credit accepted
+  - `DebtActivated(affiliate, user, requestId, amount)` -- credit advanced to user
+  - `DebtSettled(affiliate, user, requestId, amount)` -- credit repaid on finalization
+  - `DebtCancelled(affiliate, user, requestId, amount)` -- credit released on cancel
+  - `CreditLinePausedUpdated(affiliate, bool)` -- credit line paused/unpaused
+  - `CreditLineBlacklistUpdated(affiliate, user, bool)` -- user blacklist change
+- [ ] **Alert on approaching caps** -- when `creditLineTotalDebt(affiliate)` exceeds 80% of `effectiveMaxDebt`, alert the affiliate operator
 
 ### 10.4 How Credit Lines Work
 
@@ -2358,25 +2355,24 @@ struct CreditData {
 
 The Muon oracle computes `eligibleBase` off-chain as `freeEligible + haircutted(allocatedEligible) - excludedEligible`. The on-chain contract verifies:
 1. **Freshness:** `block.timestamp <= data.timestamp + muonFreshnessWindow` (default 60s). Stale signatures revert `MuonSignatureExpired`.
-2. **Schnorr signature:** The hash covers `(muonAppId, reqId, CLM address, eligibleBase, timestamp, chainId)`. Invalid signatures revert in the MuonSignatureVerifier.
+2. **Schnorr signature:** The hash covers `(muonAppId, reqId, affiliate address, eligibleBase, timestamp, chainId)`. Invalid signatures revert in the MuonSignatureVerifier.
 3. **Debt caps:** Both absolute and percentage caps are checked against `totalDebt + creditAmount`.
 
 **Flow during acceptance (`onWithdrawRequest`):**
 1. Bot signs option with `creditAmount > 0` and provides encoded `CreditData` as `creditDataRaw`.
-2. Contract looks up `s.creditLineManagers[affiliate]`; reverts if `address(0)`.
-3. Contract calls `CLM.reserveDebt(user, requestId, creditAmount, creditData)`.
-4. CLM verifies pause/blacklist, Muon signature, and caps. Records `requestDebt[key] = creditAmount`, increments `reservedDebt`.
+2. Contract calls `LibCreditLine.reserve`, which delegates to `CreditLineFacet` within the diamond.
+3. `CreditLineFacet` verifies pause/blacklist, Muon signature, and caps. Records `requestDebt[key] = creditAmount`, increments `reservedDebt` in `CreditLineStorage`.
 
 **Flow during processing (`processWithdraw` or IMMEDIATE):**
-1. `LibCreditLine.activate` calls `CLM.activateDebt(user, requestId)` -- moves debt from reserved to active.
+1. `LibCreditLine.activate` moves debt from reserved to active within `CreditLineStorage`.
 2. `LibCreditLine.activate` calls `SYMMIO.advanceWithdraw(user, requestId, creditAmount)` -- SYMMIO transfers `creditAmount` of collateral to the ExpressProvider, which can then pay the user.
 
 **Flow during finalization (`onWithdrawComplete`):**
 1. SYMMIO sends back the non-credit portion of the withdrawal.
-2. `LibCreditLine.settle` calls `CLM.settleDebt(user, requestId)` -- clears active debt and deletes the record.
+2. `LibCreditLine.settle` clears active debt and deletes the record in `CreditLineStorage`.
 
 **Flow on cancellation (before payout):**
-1. `LibCreditLine.releaseReservation` calls `CLM.cancelReservation(user, requestId)` -- decrements `reservedDebt`, deletes the record.
+1. `LibCreditLine.releaseReservation` decrements `reservedDebt` and deletes the record in `CreditLineStorage`.
 
 **Credit loss on post-payout rollback:** If a withdrawal is force-cancelled or suspended after processing (Status = PROCESSED), the credit amount has already been advanced and paid to the user. `LibCreditLine.coverLoss` deducts `creditAmount` from `s.affiliateBalances[affiliate]` (the affiliate pool absorbs the loss) and calls `settleDebt` to clear the record.
 
@@ -2385,12 +2381,11 @@ The Muon oracle computes `eligibleBase` off-chain as `freeEligible + haircutted(
 ```
 On withdrawal request with creditAmount > 0:
   1. Verify: optionType != STANDARD (credit not supported)
-  2. Verify: s.creditLineManagers[affiliate] != address(0)
-  3. Read CLM state:
-     - clm.paused() == false
-     - clm.blacklisted(user) == false
-     - currentDebt = clm.totalDebt()
-  4. Estimate cap headroom (requires knowing eligibleBase from Muon):
+  2. Read credit line state on the diamond:
+     - expressProvider.creditLinePaused(affiliate) == false
+     - expressProvider.creditLineBlacklisted(affiliate, user) == false
+     - currentDebt = expressProvider.creditLineTotalDebt(affiliate)
+  3. Estimate cap headroom (requires knowing eligibleBase from Muon):
      - effectiveMaxDebt = tighter_of(protocolMaxDebt, affiliateMaxDebt)
      - effectiveMaxBps  = tighter_of(protocolMaxDebtBps, affiliateMaxDebtBps)
      - absoluteOk = effectiveMaxDebt == 0 || currentDebt + creditAmount <= effectiveMaxDebt
@@ -2406,15 +2401,14 @@ Scenario: 500 USDC INSTANT withdrawal, 200 USDC backed by credit line
 
 Setup:
   Affiliate: 0xAffiliate
-  CreditLineManager: CLM (deployed as UUPS proxy for 0xAffiliate)
   affiliateConfigs[0xAffiliate] = { feeRate: 100 (1%), operatorFee: 0 }
   ExpressProvider pools:
     generalBalance = 2,000 USDC
     affiliateBalances[0xAffiliate] = 500 USDC
-  CLM state:
-    reservedDebt = 0, activeDebt = 0
+  Credit line state (CreditLineFacet on the diamond, keyed by 0xAffiliate):
+    creditLineReservedDebt(0xAffiliate) = 0, creditLineActiveDebt(0xAffiliate) = 0
     protocolMaxDebt = 10,000 USDC, affiliateMaxDebt = 5,000 USDC
-    paused = false, blacklisted[0xAlice] = false
+    creditLinePaused(0xAffiliate) = false, creditLineBlacklisted(0xAffiliate, 0xAlice) = false
 
 Step 1 -- Bot sees: withdrawal request for 500 USDC from 0xAlice
   Part 0: { amount: 500e6, expressProvider: EP, virtualProvider: address(0), receiver: 0xAlice }
@@ -2429,10 +2423,10 @@ Step 1 -- Bot sees: withdrawal request for 500 USDC from 0xAlice
     operatorFee = 0
     userFee = 5 USDC (no sponsor)
 
-  Bot reads CLM state:
-    clm.paused() = false -> OK
-    clm.blacklisted(0xAlice) = false -> OK
-    clm.totalDebt() = 0 -> headroom = 5,000 (affiliateMaxDebt)
+  Bot reads credit line state on the diamond:
+    expressProvider.creditLinePaused(0xAffiliate) = false -> OK
+    expressProvider.creditLineBlacklisted(0xAffiliate, 0xAlice) = false -> OK
+    expressProvider.creditLineTotalDebt(0xAffiliate) = 0 -> headroom = 5,000 (affiliateMaxDebt)
     0 + 200 = 200 <= 5,000 -> within absolute cap -> OK
   Bot obtains fresh CreditData from Muon oracle:
     eligibleBase = 50,000 USDC, timestamp = now - 10s
@@ -2444,16 +2438,16 @@ Step 1 -- Bot sees: withdrawal request for 500 USDC from 0xAlice
 Step 2 -- On-chain acceptance (SymmioHookFacet.onWithdrawRequest):
   Contract validates parts: virtualProvider == address(0) -> OK
   Contract checks: optionType == INSTANT, creditAmount > 0 -> not STANDARD -> OK
-  Contract calls CLM.reserveDebt(0xAlice, reqId=7, 200e6, creditData):
-    CLM verifies: not paused, not blacklisted -> OK
-    CLM verifies: timestamp + 60 >= block.timestamp -> fresh -> OK
-    CLM verifies: Muon Schnorr signature -> valid -> OK
-    CLM verifies: 0 + 200e6 <= 5,000e6 (effective absolute cap) -> OK
-    CLM verifies: 0 + 200e6 <= 50,000e6 * 1000 / 10,000 = 5,000e6 -> OK
-    CLM state after:
+  CreditLineFacet.reserveDebt(0xAffiliate, 0xAlice, reqId=7, 200e6, creditData):
+    Verifies: not paused, not blacklisted -> OK
+    Verifies: timestamp + 60 >= block.timestamp -> fresh -> OK
+    Verifies: Muon Schnorr signature (using affiliate address in hash) -> valid -> OK
+    Verifies: 0 + 200e6 <= 5,000e6 (effective absolute cap) -> OK
+    Verifies: 0 + 200e6 <= 50,000e6 * 1000 / 10,000 = 5,000e6 -> OK
+    CreditLineStorage state after:
       requestDebt[key] = 200e6
-      reservedDebt = 200e6
-      activeDebt = 0
+      reservedDebt(0xAffiliate) = 200e6
+      activeDebt(0xAffiliate) = 0
   Contract locks pools:
     generalBalance: 2,000 -> 1,800 (locked 200)
     affiliateBalances[0xAffiliate]: 500 -> 400 (locked 100)
@@ -2466,10 +2460,10 @@ Step 3 -- Bot processes after security window (20s):
 
   Contract executes:
     a) LibCreditLine.activate(symmio, 0xAlice, 7, info):
-       CLM.activateDebt(0xAlice, 7):
+       CreditLineFacet.activateDebt(0xAffiliate, 0xAlice, 7):
          requestActivated[key] = true
-         reservedDebt: 200e6 -> 0
-         activeDebt: 0 -> 200e6
+         reservedDebt(0xAffiliate): 200e6 -> 0
+         activeDebt(0xAffiliate): 0 -> 200e6
        SYMMIO.advanceWithdraw(0xAlice, 7, 200e6):
          SYMMIO transfers 200 USDC to ExpressProvider
          (these are locked funds released early from SYMMIO's withdrawal escrow)
@@ -2485,7 +2479,7 @@ Step 3 -- Bot processes after security window (20s):
       generalBalance = 1,800 (locked portion was spent, replenished by advance)
       affiliateBalances[0xAffiliate] = 400
       collectedFees[0xAffiliate] += 5e6
-      CLM: reservedDebt = 0, activeDebt = 200e6
+      Credit line: reservedDebt(0xAffiliate) = 0, activeDebt(0xAffiliate) = 200e6
     Status -> PROCESSED
 
   Where did the 500 USDC come from?
@@ -2501,23 +2495,23 @@ Step 4a -- Finalization (happy path, ~12 hours later):
     generalBalance: 1,800 + 200 = 2,000 (restored)
     affiliateBalances[0xAffiliate]: 400 + 100 = 500 (restored)
   LibCreditLine.settle(0xAlice, 7, info):
-    CLM.settleDebt(0xAlice, 7):
-      activeDebt: 200e6 -> 0
+    CreditLineFacet.settleDebt(0xAffiliate, 0xAlice, 7):
+      activeDebt(0xAffiliate): 200e6 -> 0
       delete requestDebt[key]
       delete requestActivated[key]
-  Final CLM state: reservedDebt = 0, activeDebt = 0 -- fully cleared.
+  Final credit line state: reservedDebt(0xAffiliate) = 0, activeDebt(0xAffiliate) = 0 -- fully cleared.
   Status -> FINALIZED
 
 Step 4b -- Cancellation before processing (alternative to step 3):
   Bot sees: onWithdrawCancelRequest or onForceWithdrawCancel for 0xAlice, request 7
   Contract calls LibCreditLine.releaseReservation(0xAlice, 7, info):
-    CLM.cancelReservation(0xAlice, 7):
-      reservedDebt: 200e6 -> 0
+    CreditLineFacet.cancelReservation(0xAffiliate, 0xAlice, 7):
+      reservedDebt(0xAffiliate): 200e6 -> 0
       delete requestDebt[key]
   Contract unlocks pools:
     generalBalance: 1,800 + 200 = 2,000 (restored)
     affiliateBalances[0xAffiliate]: 400 + 100 = 500 (restored)
-  CLM state: reservedDebt = 0, activeDebt = 0 -- fully cleared, no loss.
+  Credit line state: reservedDebt(0xAffiliate) = 0, activeDebt(0xAffiliate) = 0 -- fully cleared, no loss.
   Status -> CANCELLED
 
 Step 4c -- Post-payout rollback (force-cancel after PROCESSED, rare):
@@ -2526,8 +2520,8 @@ Step 4c -- Post-payout rollback (force-cancel after PROCESSED, rare):
     SYMMIO will not send those funds on finalization (they were already advanced).
     LibCreditLine.coverLoss(collateral, symmio, 0xAlice, 7, info):
       affiliateBalances[0xAffiliate] -= 200e6  (affiliate pool absorbs the loss)
-      CLM.settleDebt(0xAlice, 7):
-        activeDebt: 200e6 -> 0
+      CreditLineFacet.settleDebt(0xAffiliate, 0xAlice, 7):
+        activeDebt(0xAffiliate): 200e6 -> 0
         delete requestDebt[key]
     The 200 USDC loss comes from the affiliate pool.
     Note: In practice, forceCancelWithdraw requires block.timestamp < cooldownEndTime,
@@ -2588,7 +2582,7 @@ Scenario: Bot handles a multi-part INSTANT withdrawal with credit line
 Setup:
   generalBalance = 5,000 USDC,   lockedGeneralBalance = 4,500 USDC (500 unlocked)
   affiliateBalances[0xAffiliate] = 200 USDC, lockedAffiliateBalances[0xAffiliate] = 0
-  creditLine.available() = 1,000 USDC
+  creditLine available capacity = 1,000 USDC
   affiliateConfigs[0xAffiliate] = { feeRate: 100 (1%), operatorFee: 2e6 }
   sponsorBalances[0xAffiliate] = 0 (no sponsor)
 
@@ -2609,7 +2603,7 @@ Step 3 -- Bot decides the affiliate/general/credit split:
   Bot checks: affiliateBalances[0xAffiliate] - lockedAffiliateBalances[0xAffiliate]
               = 200 - 0 = 200 unlocked affiliate USDC
   Bot checks: generalBalance - lockedGeneralBalance = 500 unlocked general USDC
-  Bot checks: creditLine.available() = 1,000 USDC
+  Bot checks: creditLine available capacity = 1,000 USDC
   Bot decides: allocate affiliateAmount = 200, generalAmount = 500, creditAmount = 600
     -> expressAmount = affiliateAmount + generalAmount + creditAmount = 200 + 500 + 600 = 1,300
   Bot checks: 500 <= 500 (unlocked general) -> OK
@@ -2631,7 +2625,7 @@ Step 4 -- Bot computes fees:
 
 Step 5 -- Bot checks credit line capacity before signing:
   Bot reads on-chain:
-    creditLine.available() = 1,000 >= 600 (creditAmount) -> OK
+    creditLine available capacity = 1,000 >= 600 (creditAmount) -> OK
   Decision: Credit line has sufficient capacity. Sign and offer.
   At acceptance: reserveDebt(600) reserves 600 USDC on the credit line.
     Decision: Reject the request or offer a smaller amount.
@@ -2640,7 +2634,7 @@ Step 6 -- Bot observes: WithdrawAccepted(0xAlice, 99, INSTANT) event
   Bot reads on-chain (what the contract did during acceptance):
     lockedGeneralBalance: 4,500 -> 5,000 (+500 generalAmount)
     lockedAffiliateBalances[0xAffiliate]: 0 -> 200 (+200 affiliateAmount)
-    CLM.reserveDebt(0xAlice, 99, 600, creditData): reservedDebt += 600
+    CreditLineFacet.reserveDebt(0xAffiliate, 0xAlice, 99, 600, creditData): reservedDebt += 600
     partsHash stored for integrity check
   Bot checks: withdrawInfos[0xAlice][99].status == ACCEPTED
   Bot stores: the exact parts array (needed for processWithdraw)
@@ -2659,32 +2653,30 @@ Step 7 -- Bot processes after security window:
       feeRemaining = 15 - 15 = 0
       EP transfers 300 - 15 = 285 USDC to 0xA
 
-    Part 1 (600, VP1, receiver 0xA):
+    Part 1 (600, express-only, receiver 0xA):
       deduction = min(0, 600) = 0 (fee already exhausted)
-      VP1.releaseToUser(0xAlice, 99, 0xA, 600)
-      -> VP1._lockedBalance: 600 -> 0, 600 USDC transferred to 0xA
+      EP transfers 600 USDC to 0xA
 
-    Part 2 (400, VP2, receiver 0xB):
+    Part 2 (400, express-only, receiver 0xB):
       deduction = 0
-      VP2.releaseToUser(0xAlice, 99, 0xB, 400)
-      -> VP2._lockedBalance: 400 -> 0, 400 USDC transferred to 0xB
+      EP transfers 400 USDC to 0xB
 
   Pool balance updates:
-    lockedGeneralBalance -= 200, lockedAffiliateBalances[0xAffiliate] -= 100
-    generalBalance -= 200, affiliateBalances[0xAffiliate] -= 100
+    lockedGeneralBalance -= 500, lockedAffiliateBalances[0xAffiliate] -= 200
+    generalBalance -= 500, affiliateBalances[0xAffiliate] -= 200
+    Credit line: activateDebt(600) -> advanceWithdraw(600) from SYMMIO
     collectedFees[0xAffiliate] += 13, collectedOperatorFees[0xAffiliate] += 2
 
   Results:
-    0xA receives: 285 (from EP) + 600 (from VP1) = 885 USDC
-    0xB receives: 400 USDC (from VP2)
+    0xA receives: 285 + 600 = 885 USDC
+    0xB receives: 400 USDC
     Total disbursed: 1,285 out of 1,300 (15 USDC fee retained)
     Status -> PROCESSED
 
   What if the user had cancelled before processWithdraw?
     Contract calls _releaseWithdraw:
-      lockedGeneralBalance -= 200, lockedAffiliateBalances -= 100
-      VP1.unlock(0xAlice, 99): VP1._balance restored 200 -> 800
-      VP2.unlock(0xAlice, 99): VP2._balance restored 200 -> 600
+      lockedGeneralBalance -= 500, lockedAffiliateBalances -= 200
+      Credit line reservation released via cancelReservation(600)
       All locks released, no funds transferred, Status -> CANCELLED
 ```
 
@@ -2767,7 +2759,7 @@ Setup:
   acceptedAt = T=0, cooldownEndTime = T+43200 (T+12h)
   securityWindow = 20s, tolerancePeriod = 60s
   sponsorCoverage locked = 5 USDC, fee = 2.5 USDC, operatorFee = 0.5 USDC
-  creditAmount = 100 (credit line reservation active on CLM)
+  creditAmount = 100 (credit line reservation active on CreditLineFacet)
   lockedGeneralBalance includes 350, lockedAffiliateBalances[aff] includes 150
 
 Step 1 — Bot sees: WithdrawLocked(user, reqId) event at T=5s
@@ -3459,53 +3451,51 @@ Correct strategy — re-read securityWindow before EVERY processWithdraw call:
     No TooEarly revert possible
 ```
 
-#### Scenario 3: Credit Line Manager Change
+#### Scenario 3: Credit Line Config Change
 
 ```
-Scenario: Admin changes CreditLineManager mapping while bot has signed options using credit
+Scenario: Admin changes credit line config on the diamond while bot has signed options using credit
 
 Setup:
-  creditLineManagers[0xAffiliate] = CLM1 (at address 0xCLM1)
-  CLM1.totalDebt() = 500 USDC, protocolMaxDebt = 10,000 USDC
+  Credit line state for 0xAffiliate (on the ExpressProvider diamond via CreditLineFacet):
+    creditLineTotalDebt(0xAffiliate) = 500 USDC
+    protocolMaxDebt = 10,000 USDC, affiliateMaxDebt = 5,000 USDC
   Bot has signed 2 pending options for affiliate 0xAffiliate using credit:
-    Option A: Alice, 2,000 USDC (creditAmount=500 from CLM1)
-    Option B: Bob,   3,000 USDC (creditAmount=1,000 from CLM1)
+    Option A: Alice, 2,000 USDC (creditAmount=500)
+    Option B: Bob,   3,000 USDC (creditAmount=1,000)
 
-Step 1 — Admin calls: setCreditLineManager(0xAffiliate, 0xCLM2)
+Step 1 — Admin calls: setCreditLinePaused(0xAffiliate, true) or
+         setCreditLineAffiliateConfig(0xAffiliate, ...) with reduced caps
   On-chain state changes:
-    creditLineManagers[0xAffiliate] = 0xCLM2 (was 0xCLM1)
-  NOTE: No event is emitted for setCreditLineManager
-  Bot has NO immediate notification of this change
+    Credit line for 0xAffiliate is now paused or has lower caps
+  Bot detects: CreditLinePausedUpdated or config change event on the diamond
 
 Step 2 — Alice submits her withdrawal tx (Option A, signed with creditAmount=500)
   On-chain:
-    Contract reads creditLineManagers[0xAffiliate] = 0xCLM2
-    reserveDebt called on CLM2, NOT CLM1
-    CLM2 may have different debt caps, different state
-  Outcome depends on CLM2's configuration:
-    - If CLM2 has sufficient capacity: tx succeeds, debt reserved on CLM2
-    - If CLM2 is paused or at capacity: REVERT from reserveDebt
+    CreditLineFacet.reserveDebt checks pause/caps for 0xAffiliate
+  Outcome depends on new config:
+    - If paused: REVERT CreditLinePaused
+    - If caps reduced below current debt + 500: REVERT (cap exceeded)
+    - If still within caps and not paused: tx succeeds
 
-Step 3 — Bot sees: Option A reverted or succeeded against different CLM
+Step 3 — Bot sees: Option A reverted or config change event
   Bot reads on-chain:
-    creditLineManagers[0xAffiliate] = 0xCLM2
+    expressProvider.creditLinePaused(0xAffiliate) or updated caps
   Bot checks:
-    Cached CLM for 0xAffiliate was 0xCLM1, now 0xCLM2
-    Option B was signed based on CLM1's capacity
-    CLM2 may have different caps — this option may fail
+    Option B was signed based on old capacity/config
+    New config may reject Option B
   Decision:
     1. Invalidate pending option B
-    2. Read CLM2 state: totalDebt(), protocolMaxDebt, paused, etc.
-    3. Re-sign options with creditAmounts that respect CLM2's capacity
-    4. Update cached CLM mapping: 0xAffiliate -> 0xCLM2
+    2. Read updated credit line state: creditLineTotalDebt(0xAffiliate), caps, paused
+    3. Re-sign options with creditAmounts that respect updated config
+    4. Update cached credit line state for 0xAffiliate
 
-Correct strategy — poll creditLineManagers periodically:
-  Since setCreditLineManager emits NO event, the bot CANNOT rely on event-driven detection.
-  Bot must:
-    - Poll creditLineManagers[affiliate] on a regular interval (e.g., every 30s or every block)
-    - Before signing any option with creditAmount > 0, read creditLineManagers[affiliate] fresh
-    - Compare against cached value; if changed, invalidate all pending credit-referencing options
-    - Read new CLM's state to update capacity estimates
+Correct strategy — monitor credit line events and poll state:
+  Bot should:
+    - Listen for CreditLinePausedUpdated, config change events on the diamond
+    - Before signing any option with creditAmount > 0, read credit line state fresh
+    - If config changed, invalidate all pending credit-referencing options
+    - Read updated state to adjust capacity estimates
 ```
 
 #### Scenario 4: Role Grant / Revoke
@@ -3743,7 +3733,7 @@ flowchart TD
 |------|-----------|----------|---------------|
 | General (`generalBalance`) | `depositToGeneral` | INSTANT/IMMEDIATE general portion | `lockedGeneralBalance` |
 | Affiliate (`affiliateBalances[affiliate]`) | `depositToAffiliate` | Express affiliate portion | `lockedAffiliateBalances[affiliate]` |
-| Credit Line (`CreditLineManager`) | Muon-attested eligible balances | Credit-backed portions (non-STANDARD) | `reservedDebt` / `activeDebt` |
+| Credit Line (`CreditLineFacet`) | Muon-attested eligible balances | Credit-backed portions (non-STANDARD) | `creditLineReservedDebt` / `creditLineActiveDebt` |
 | Sponsor (`sponsorBalances[affiliate]`) | `depositSponsorBalance` | Fee coverage | `info.sponsorCoverage` (stored on WithdrawInfo) |
 
 ### 16.3 Available Liquidity Formulas
@@ -3751,7 +3741,7 @@ flowchart TD
 ```
 availableGeneral = generalBalance - lockedGeneralBalance
 availableAffiliate = affiliateBalances[affiliate] - lockedAffiliateBalances[affiliate]
-availableCredit = creditLineManager.protocolMaxDebt - creditLineManager.totalDebt() (if configured)
+availableCredit = protocolMaxDebt - expressProvider.creditLineTotalDebt(affiliate) (if credit configured)
 totalAvailable = availableGeneral + availableAffiliate + availableCredit
 ```
 
@@ -3762,7 +3752,7 @@ totalAvailable = availableGeneral + availableAffiliate + availableCredit
 - [ ] Do not offer INSTANT/IMMEDIATE if insufficient liquidity
 - [ ] Monitor `GeneralDeposit`/`GeneralWithdraw` and `AffiliateDeposit`/`AffiliateWithdraw` events
 - [ ] Verify `withdrawFromGeneral` / `withdrawFromAffiliate` cannot touch locked funds (enforced on-chain)
-- [ ] Monitor CreditLineManager `totalDebt()`, `paused`, and debt cap headroom
+- [ ] Monitor `creditLineTotalDebt(affiliate)`, `creditLinePaused(affiliate)`, and debt cap headroom via the diamond
 
 #### Numeric Example: Pool Utilization Tracking
 
@@ -3875,14 +3865,24 @@ flowchart TD
 | `SPONSOR_MANAGER_ROLE` | `keccak256("SPONSOR_MANAGER_ROLE")` | Admin | `withdrawSponsorBalance` |
 | `FEE_CLAIMER_ROLE` | `keccak256("FEE_CLAIMER_ROLE")` | Admin | `claimFees`, `claimOperatorFees` |
 
-### 17.3 CreditLineManager Roles
+### 17.3 Credit Line Functions (CreditLineFacet on the Diamond)
 
-| Role | Holder | Functions |
-|------|--------|-----------|
-| `DEFAULT_ADMIN_ROLE` | Admin | Upgrade contract, manage roles |
-| `EXPRESS_PROVIDER_ROLE` | ExpressProvider contract | `reserveDebt`, `activateDebt`, `settleDebt`, `cancelReservation` |
-| `PROTOCOL_ADMIN_ROLE` | Admin | `setProtocolConfig`, `setSignatureVerifier`, `setMuonAppId` |
-| `AFFILIATE_ADMIN_ROLE` | Affiliate operator | `setAffiliateConfig`, `setBlacklisted`, `setPaused` |
+Credit line logic is integrated into the ExpressProvider diamond via `CreditLineFacet`. There are no separate roles -- all credit line admin functions use the diamond's `SETTER_ROLE`.
+
+| Function | Caller | Description |
+|----------|--------|-------------|
+| `setCreditLineMuonConfig(...)` | `SETTER_ROLE` | Set Muon app ID, signature verifier, freshness window |
+| `setCreditLineProtocolConfig(affiliate, ...)` | `SETTER_ROLE` | Set protocol-level debt caps for an affiliate |
+| `setCreditLineAffiliateConfig(affiliate, ...)` | `SETTER_ROLE` | Set affiliate-level debt caps for an affiliate |
+| `setCreditLinePaused(affiliate, paused)` | `SETTER_ROLE` | Pause/unpause credit line for an affiliate |
+| `setCreditLineBlacklisted(affiliate, user, status)` | `SETTER_ROLE` | Blacklist/unblacklist a user for an affiliate |
+| `creditLineTotalDebt(affiliate)` | View | Total outstanding credit (reserved + active) |
+| `creditLineReservedDebt(affiliate)` | View | Reserved but not yet activated debt |
+| `creditLineActiveDebt(affiliate)` | View | Activated (advanced) debt |
+| `creditLinePaused(affiliate)` | View | Whether credit line is paused for this affiliate |
+| `creditLineBlacklisted(affiliate, user)` | View | Whether user is blacklisted for this affiliate |
+
+Internal credit line operations (`reserveDebt`, `activateDebt`, `settleDebt`, `cancelReservation`) are called internally by the diamond's facets (e.g., `SymmioHookFacet`, `ProcessFacet`) via `LibCreditLine` -- they are not externally callable.
 
 ### 17.4 SYMMIO-Gated Functions (no role, `msg.sender == symmio`)
 
@@ -3898,7 +3898,7 @@ flowchart TD
 flowchart TD
     A["Token balance check"] --> B["collateral.balanceOf(EP) >= \ngeneralBalance + Σ(affiliateBalances)\n+ Σ(collectedFees) + Σ(collectedOperatorFees)\n+ Σ(sponsorBalances)\n+ finalized STANDARD tokens"]
 
-    C["Credit line invariant"] --> D["CLM.totalDebt() ==\nCLM.reservedDebt + CLM.activeDebt"]
+    C["Credit line invariant"] --> D["creditLineTotalDebt(aff) ==\ncreditLineReservedDebt(aff) +\ncreditLineActiveDebt(aff)"]
 
     E["Lock invariants"] --> F["lockedGeneralBalance <= generalBalance"]
     E --> G["lockedAffiliateBalances[a] <= affiliateBalances[a]"]
@@ -3909,7 +3909,7 @@ flowchart TD
 ### 18.2 Accounting Invariants
 
 - [ ] `collateral.balanceOf(expressProvider) >= generalBalance + sum(affiliateBalances) + sum(collectedFees) + sum(collectedOperatorFees) + sum(sponsorBalances) + (tokens from finalized STANDARD awaiting processing)`
-- [ ] `CreditLineManager.totalDebt() == reservedDebt + activeDebt` (credit line accounting)
+- [ ] `creditLineTotalDebt(affiliate) == creditLineReservedDebt(affiliate) + creditLineActiveDebt(affiliate)` (credit line accounting, per-affiliate)
 - [ ] `lockedGeneralBalance <= generalBalance`
 - [ ] `lockedAffiliateBalances[a] <= affiliateBalances[a]` for all affiliates
 - [ ] Each `(user, requestId)` pair has exactly one status and follows valid transitions
@@ -3972,9 +3972,9 @@ Step 1 — Bot runs: scheduled invariant check (all passing)
     lockedAffiliateBalances[B] = 0      <= affiliateBalances[B] (1_000)  --> PASS
 
   Bot checks: Credit line invariant
-    CLM(FrontendA).totalDebt()    = 500
-    CLM(FrontendA).reservedDebt() = 200
-    CLM(FrontendA).activeDebt()   = 300
+    expressProvider.creditLineTotalDebt(FrontendA)    = 500
+    expressProvider.creditLineReservedDebt(FrontendA) = 200
+    expressProvider.creditLineActiveDebt(FrontendA)   = 300
     200 + 300 = 500 = totalDebt --> PASS
   Decision: all invariants hold; continue normal operations
 
@@ -4000,7 +4000,7 @@ What-if: lock invariant fails instead (lockedGeneralBalance > generalBalance)?
 What-if: credit line invariant fails (totalDebt != reservedDebt + activeDebt)?
   Bot stops offering credit-backed withdrawals for that affiliate.
   Pool-only withdrawals from the general and affiliate pools can continue.
-  Bot alerts ops to investigate the CreditLineManager state.
+  Bot alerts ops to investigate the credit line state on the diamond.
 ```
 
 ---
