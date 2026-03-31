@@ -1,5 +1,4 @@
 {
-	"diamondAddress": "0x...",
 	"migrationInputFile": "./scripts/upgrade/output/migration-input.json",
 	"chunkSize": 50,
 	"dryRun": false,

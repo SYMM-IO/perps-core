@@ -77,7 +77,6 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `diamondAddress` | -- | Diamond proxy address |
 | `migrationInputFile` | -- | Path to validated input JSON (required) |
 | `chunkSize` | `50` | Items per migration transaction (quotes and partyAs) |
 | `dryRun` | `false` | Log operations without executing |

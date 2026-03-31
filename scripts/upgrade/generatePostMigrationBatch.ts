@@ -2,6 +2,7 @@ import fs from "fs"
 
 import { ethers } from "../../test/helpers/hardhat-connection.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
+import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 
 /**
  * Generate post-migration transactions for the v0.8.5 upgrade.
@@ -58,8 +59,9 @@ const diamondIface = new ethers.Interface(DIAMOND_ABI)
 async function main() {
 	await verifyRpc()
 	const config = loadConfig()
-	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress
-	const SAFE_ADDRESS = process.env.SAFE_ADDRESS ?? config.safeAddress
+	const shared = loadUpgradeConfigShared()
+	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress ?? shared.diamondAddress
+	const SAFE_ADDRESS = process.env.SAFE_ADDRESS ?? config.safeAddress ?? shared.safeAddress
 	const partyBs = config.partyBs ?? []
 
 	if (!DIAMOND_ADDRESS || !ethers.isAddress(DIAMOND_ADDRESS)) {

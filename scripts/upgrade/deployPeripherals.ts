@@ -14,11 +14,12 @@
  *
  * Config: scripts/upgrade/config/deployPeripherals.json
  *   {
- *     "diamondAddress": "0x...",       // Core Symmio diamond (InstantLayer constructor arg)
  *     "adminAddress": "0x...",         // Admin/owner for contracts
- *     "symmioFeeReceiver": "0x...",    // Fee receiver for AccountLayer init
- *     "symmioPartyBAddress": "0x..."   // Existing SymmioPartyB proxy (for InstantLayer registration)
+ *     "symmioFeeReceiver": "0x...",    // Fee receiver for AccountLayer init (falls back to upgrade.json)
+ *     "symmioPartyBAddress": "0x..."   // Existing SymmioPartyB proxy (falls back to upgrade.json)
  *   }
+ *
+ * Falls back to upgrade.json for: diamondAddress, symmioFeeReceiver, symmioPartyBAddress
  *
  * Output: scripts/upgrade/output/deployed-peripherals.json
  */
@@ -28,9 +29,10 @@ import path from "path"
 import { ethers } from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
 import { deployAccountLayerDiamond, deployInstantLayer } from "./utils/peripheralHelpers.js"
+import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 
 type Config = {
-	diamondAddress: string
+	diamondAddress?: string
 	adminAddress: string
 	symmioFeeReceiver: string
 	symmioPartyBAddress?: string
@@ -50,7 +52,14 @@ function loadConfig(): Config {
 	if (!fs.existsSync(CONFIG_FILE)) {
 		throw new Error(`Config file not found: ${CONFIG_FILE}\nCopy config/samples/deployPeripherals.sample.json and fill in the values.`)
 	}
-	return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8")) as Config
+	const raw = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8")) as Config
+	const shared = loadUpgradeConfigShared()
+	return {
+		...raw,
+		diamondAddress: raw.diamondAddress ?? shared.diamondAddress,
+		symmioFeeReceiver: raw.symmioFeeReceiver ?? shared.symmioFeeReceiver ?? "",
+		symmioPartyBAddress: raw.symmioPartyBAddress ?? shared.symmioPartyBAddress,
+	}
 }
 
 function loadState(): DeployedState {

@@ -4,6 +4,7 @@ import path from "path"
 import { ethers } from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
+import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 import { fetchOpenQuotes, fetchPartyBBalances } from "./utils/subgraphHelpers.js"
 
 /**
@@ -99,9 +100,10 @@ async function main() {
 	const startedAtMs = Date.now()
 	const config = loadConfig()
 
-	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress
-	const SUBGRAPH_ENDPOINT = process.env.SUBGRAPH_ENDPOINT || config.subgraphEndpoint || DEFAULT_SUBGRAPH_ENDPOINT
-	const SPOT_CHECK_COUNT = Number(process.env.SPOT_CHECK_COUNT ?? config.spotCheckCount ?? 20)
+	const shared = loadUpgradeConfigShared()
+	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress ?? shared.diamondAddress
+	const SUBGRAPH_ENDPOINT = process.env.SUBGRAPH_ENDPOINT || config.subgraphEndpoint || shared.subgraphEndpoint || DEFAULT_SUBGRAPH_ENDPOINT
+	const SPOT_CHECK_COUNT = Number(process.env.SPOT_CHECK_COUNT ?? config.spotCheckCount ?? shared.spotCheckCount ?? 20)
 	const outputDir = process.env.PREPARE_OUTPUT_DIR ?? config.outputDir ?? "./scripts/upgrade/output"
 	const outputFile = process.env.PREPARE_OUTPUT_FILE ?? config.outputFile ?? `${outputDir}/migration-input.json`
 	const reportFile = `${outputDir}/prepareMigrationInput-report.json`

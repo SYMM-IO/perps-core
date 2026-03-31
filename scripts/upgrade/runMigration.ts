@@ -6,6 +6,7 @@ import { migrate, MigrationConfig, MigrationInput, MigrationReport } from "./mig
 import { getImpersonatedAdmin } from "./utils/forkHelpers.js"
 import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
+import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 
 export type PartyBTask = { partyB: string; partyAs: string[] }
 
@@ -320,7 +321,8 @@ if (configFile.outputDir && typeof configFile.outputDir !== "string") {
 	throw new Error("outputDir must be a string path.")
 }
 
-const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? configFile.diamondAddress
+const upgradeShared = loadUpgradeConfigShared()
+const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? configFile.diamondAddress ?? upgradeShared.diamondAddress
 const MIGRATION_INPUT_FILE = process.env.MIGRATION_INPUT_FILE ?? configFile.migrationInputFile
 
 const DEFAULT_OUTPUT_DIR = "./scripts/upgrade/output"

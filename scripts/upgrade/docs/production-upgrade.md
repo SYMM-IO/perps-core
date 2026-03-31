@@ -115,7 +115,8 @@ UNPAUSE
   cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/migrate.json
   cp scripts/upgrade/config/samples/postMigration.sample.json scripts/upgrade/config/postMigration.json
   cp scripts/upgrade/config/samples/deployPeripherals.sample.json scripts/upgrade/config/deployPeripherals.json
-  # edit each file -- see Configuration section below
+  # edit upgrade.json with all shared fields (diamondAddress, subgraphEndpoint, safeAddress, etc.)
+  # other config files only need script-specific fields -- they fall back to upgrade.json for shared values
   ```
 
 ## Address Mapping
@@ -124,16 +125,16 @@ Every Symmio deployment has a standard set of contracts and roles. The table bel
 
 | Deployment name | Example | Config field | Where it goes |
 |----------------|---------|-------------|---------------|
-| **Symmio** (diamond proxy) | `0x2Ecc...38B5` | `diamondAddress` | `upgrade.json`, `prepareMigration.json`, `migrate.json`, `postMigration.json` |
-| **Main MultiSig** (Gnosis Safe that owns the diamond) | `0x0C83...AFC4` | `safeAddress` | `upgrade.json`, `postMigration.json` |
+| **Symmio** (diamond proxy) | `0x2Ecc...38B5` | `diamondAddress` | `upgrade.json` (other scripts fall back to this) |
+| **Main MultiSig** (Gnosis Safe that owns the diamond) | `0x0C83...AFC4` | `safeAddress` | `upgrade.json` (other scripts fall back to this) |
 | **Main MultiSig** (also receives role grants) | `0x0C83...AFC4` | `adminAddress` | `upgrade.json`, `deployPeripherals.json` |
-| **Fees MultiSig** (receives protocol fees) | `0x273a...3f12` | `symmioFeeReceiver` | `upgrade.json`, `deployPeripherals.json` |
+| **Fees MultiSig** (receives protocol fees) | `0x273a...3f12` | `symmioFeeReceiver` | `upgrade.json` (other scripts fall back to this) |
 | **SignatureVerifier** (Muon signature verification contract) | `0x94eE...FC2` | `newV085Parameters.signatureVerifierAddress` | `upgrade.json` |
-| **SymmioPartyB** (existing PartyB proxy, if deployed) | `0xd600...B574` | `symmioPartyBAddress` | `upgrade.json`, `deployPeripherals.json` |
+| **SymmioPartyB** (existing PartyB proxy, if deployed) | `0xd600...B574` | `symmioPartyBAddress` | `upgrade.json` (other scripts fall back to this) |
 | **TimeLock** (12H or 3D, if diamond owner is a timelock) | `0xA75F...c63` | -- | Not in config; execute diamondCut via timelock manually |
 | **Migration runner** (address that will call migration functions) | any EOA or multisig | `migrationRunner` | `upgrade.json` (defaults to `adminAddress`) |
 | **PartyB addresses** (all active PartyBs to enable cross mode) | `[0x...]` | `partyBs` | `postMigration.json` |
-| **Subgraph endpoint** (Goldsky/TheGraph for this chain) | `https://api.goldsky.com/...` | `subgraphEndpoint` | `upgrade.json`, `prepareMigration.json` |
+| **Subgraph endpoint** (Goldsky/TheGraph for this chain) | `https://api.goldsky.com/...` | `subgraphEndpoint` | `upgrade.json` (other scripts fall back to this) |
 
 **Notes:**
 - `adminAddress` and `safeAddress` are often the same address (the Main MultiSig). Use `adminAddress` for the address that should receive role grants; use `safeAddress` for the Safe Transaction Builder target.
@@ -407,30 +408,30 @@ The migration report includes:
 
 `accountLayerDiamondAddress`, `instantLayerAddress`, and `symmioPartyBImplementation` are auto-loaded from `deployed-peripherals.json`. They can still be set in config or env vars as overrides.
 
+**Shared field fallback:** All per-script config files fall back to `upgrade.json` for shared fields (`diamondAddress`, `subgraphEndpoint`, `safeAddress`, `symmioFeeReceiver`, `symmioPartyBAddress`, `spotCheckCount`). You only need to set these once in `upgrade.json` -- the other config files only need their script-specific fields. Per-script config values and env vars take precedence over `upgrade.json` when set.
+
 ### Deploy peripherals config (`deployPeripherals.json`)
 
 Note: `adminAddress` here is **different** from `upgrade.json`. In `upgrade.json` it's the diamond owner (e.g. TimeLock). Here it's the admin for the **newly deployed** AccountLayer + InstantLayer contracts -- typically the **Main MultiSig** directly.
 
 | Field | Type | What to put here |
 |-------|------|-----------------|
-| `diamondAddress` | string | **Symmio** diamond proxy address |
 | `adminAddress` | string | **Main MultiSig** -- will be set as owner/admin for the new AccountLayer + InstantLayer contracts |
-| `symmioFeeReceiver` | string | **Fees MultiSig** -- fee receiver for AccountLayer initialization |
-| `symmioPartyBAddress` | string | Existing **SymmioPartyB** proxy address (for UUPS upgrade to new implementation). Leave empty if no PartyB proxy exists. |
+| `symmioFeeReceiver` | string | **Fees MultiSig** -- fee receiver for AccountLayer initialization. Falls back to `upgrade.json`. |
+| `symmioPartyBAddress` | string | Existing **SymmioPartyB** proxy address. Falls back to `upgrade.json`. |
 
 ### Prepare migration config (`prepareMigration.json`)
 
 | Field | Type | What to put here |
 |-------|------|-----------------|
-| `diamondAddress` | string | **Symmio** diamond proxy address |
-| `subgraphEndpoint` | string | Goldsky / TheGraph subgraph URL for this chain |
-| `spotCheckCount` | number | Number of random entries to verify against on-chain (default 20) |
+| `spotCheckCount` | number | Number of random entries to verify against on-chain (default 20). Falls back to `upgrade.json`. |
+| `outputDir` | string | Output directory (default `./scripts/upgrade/output`) |
+| `outputFile` | string | Output file path (default `./scripts/upgrade/output/migration-input.json`) |
 
 ### Migration config (`migrate.json`)
 
 | Field | Type | What to put here |
 |-------|------|-----------------|
-| `diamondAddress` | string | **Symmio** diamond proxy address |
 | `migrationInputFile` | string | Path to `migration-input.json` (output of previous step) |
 | `chunkSize` | number | Quotes per `migrateQuotes` transaction (default 50) |
 | `dryRun` | boolean | `true` to simulate without sending transactions |
@@ -440,8 +441,6 @@ Note: `adminAddress` here is **different** from `upgrade.json`. In `upgrade.json
 
 | Field | Type | What to put here |
 |-------|------|-----------------|
-| `diamondAddress` | string | **Symmio** diamond proxy address |
-| `safeAddress` | string | **Main MultiSig** -- for Safe batch output (leave empty for EOA path) |
 | `partyBs` | string[] | List of all active **PartyB** addresses to enable cross mode for |
 
 ### Env var overrides
@@ -455,12 +454,15 @@ Note: `adminAddress` here is **different** from `upgrade.json`. In `upgrade.json
 
 ### Config files by script
 
-| Config file | Script | Key fields |
-|-------------|--------|------------|
-| `upgrade.json` | `eoaUpgrade.ts`, `applyUpgrade.ts`, `generateSafeBatch.ts` | `diamondAddress`, `adminAddress`, `newV085Parameters` |
-| `prepareMigration.json` | `prepareMigrationInput.ts` | `diamondAddress`, `subgraphEndpoint` |
-| `migrate.json` | `runMigration.ts` | `diamondAddress`, `migrationInputFile`, `chunkSize` |
-| `postMigration.json` | `generatePostMigrationBatch.ts` | `diamondAddress`, `partyBs` |
+All scripts fall back to `upgrade.json` for `diamondAddress` and other shared fields. Per-script configs only need script-specific fields.
+
+| Config file | Script | Script-specific fields | Shared fields (from `upgrade.json`) |
+|-------------|--------|----------------------|-------------------------------------|
+| `upgrade.json` | `eoaUpgrade.ts`, `applyUpgrade.ts`, `generateSafeBatch.ts` | `adminAddress`, `newV085Parameters`, `diamondCutChunkSize`, `migrationRunner` | -- (source of truth) |
+| `deployPeripherals.json` | `deployPeripherals.ts` | `adminAddress` | `diamondAddress`, `symmioFeeReceiver`, `symmioPartyBAddress` |
+| `prepareMigration.json` | `prepareMigrationInput.ts` | `outputDir`, `outputFile` | `diamondAddress`, `subgraphEndpoint`, `spotCheckCount` |
+| `migrate.json` | `runMigration.ts` | `migrationInputFile`, `chunkSize`, `dryRun`, `fork` | `diamondAddress` |
+| `postMigration.json` | `generatePostMigrationBatch.ts` | `partyBs` | `diamondAddress`, `safeAddress` |
 
 ## newV085Parameters
 
