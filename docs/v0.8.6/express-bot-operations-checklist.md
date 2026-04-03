@@ -358,8 +358,8 @@ gantt
 |-----------|---------|--------|-------------|
 | `securityWindow` | 20s | SETTER_ROLE | Min delay before operator `processWithdraw` for INSTANT |
 | `tolerancePeriod` | 60s | SETTER_ROLE | Extra delay for permissionless processing |
-| `validatorApprovalTimeout(affiliate)` | 30s | SETTER_ROLE | Max age of validator signatures (per-affiliate, `address(0)` = default) |
-| `minValidatorSignatures(affiliate)` | 0 | SETTER_ROLE | Required validator attestation count (per-affiliate, `address(0)` = default) |
+| `validatorApprovalTimeout(affiliate)` | 30s | SETTER_ROLE | Max age of validator signatures. Effective getter falls back to `address(0)` when the affiliate-specific value is zero |
+| `minValidatorSignatures(affiliate)` | 0 | SETTER_ROLE | Required validator attestation count. Effective getter falls back to `address(0)` when the affiliate-specific value is zero |
 
 ### 3.5 Fixed Timing
 
@@ -372,8 +372,8 @@ gantt
 
 | Case | Behavior |
 |------|----------|
-| `securityWindow = 0` | Operator can process INSTANT immediately (same block) |
-| `tolerancePeriod = 0` | Anyone can process as soon as operator window opens |
+| `securityWindow < 10` | Setter reverts `SecurityWindowTooLow` |
+| `tolerancePeriod < 10` | Setter reverts `TolerancePeriodTooLow` |
 | Cooldown already elapsed (`deallocateTimestamp + 12h < now`) | `cooldownEndTime = block.timestamp`, finalization possible immediately |
 | LOCKED after cooldown | processableAt = cooldownEndTime (lock becomes ineffective) |
 
@@ -2374,7 +2374,7 @@ The Muon oracle computes `eligibleBase` off-chain as `freeEligible + haircutted(
 **Flow on cancellation (before payout):**
 1. `LibCreditLine.releaseReservation` decrements `reservedDebt` and deletes the record in `CreditLineStorage`.
 
-**Credit loss on post-payout rollback:** If a withdrawal is force-cancelled or suspended after processing (Status = PROCESSED), the credit amount has already been advanced and paid to the user. `LibCreditLine.coverLoss` deducts `creditAmount` from `s.affiliateBalances[affiliate]` (the affiliate pool absorbs the loss) and calls `settleDebt` to clear the record.
+**Post-payout rollback:** Not supported. Once Express pays the user for an IMMEDIATE or INSTANT withdrawal, SYMMIO core marks the request as `PROVIDER_PROCESSED`. From that point, `forceCancelWithdraw` and `suspendWithdrawRequest` revert, and the request must continue to normal cooldown finalization.
 
 ### 10.5 Bot Decision Logic for Credit
 
@@ -2514,18 +2514,12 @@ Step 4b -- Cancellation before processing (alternative to step 3):
   Credit line state: reservedDebt(0xAffiliate) = 0, activeDebt(0xAffiliate) = 0 -- fully cleared, no loss.
   Status -> CANCELLED
 
-Step 4c -- Post-payout rollback (force-cancel after PROCESSED, rare):
-  If SYMMIO force-cancels AFTER processing (status was PROCESSED):
-    The 200 USDC credit advance was already paid to 0xAlice.
-    SYMMIO will not send those funds on finalization (they were already advanced).
-    LibCreditLine.coverLoss(collateral, symmio, 0xAlice, 7, info):
-      affiliateBalances[0xAffiliate] -= 200e6  (affiliate pool absorbs the loss)
-      CreditLineFacet.settleDebt(0xAffiliate, 0xAlice, 7):
-        activeDebt(0xAffiliate): 200e6 -> 0
-        delete requestDebt[key]
-    The 200 USDC loss comes from the affiliate pool.
-    Note: In practice, forceCancelWithdraw requires block.timestamp < cooldownEndTime,
-    so this path is extremely unlikely for PROCESSED express withdrawals.
+Step 4c -- Attempted post-payout rollback:
+  After processing, SYMMIO core marks the request as PROVIDER_PROCESSED.
+  Any later call to forceCancelWithdraw or suspendWithdrawRequest reverts with:
+    "WithdrawFacet : Invalid withdraw request status"
+  Bot implication:
+    once payout happens, the only remaining lifecycle action is finalization.
 ```
 
 ---
@@ -3303,8 +3297,8 @@ Correct strategy:
 | Finalization at exact `cooldownEndTime` | Succeeds |
 | LOCKED after cooldown + tolerancePeriod | Anyone can process |
 | cooldownEndTime in the past (user deallocated long ago) | Cooldown already expired, finalization possible immediately |
-| `securityWindow = 0` | Operator can process same block as acceptance |
-| `tolerancePeriod = 0` | Anyone can process as soon as operator can |
+| `securityWindow < 10` | Setter reverts `SecurityWindowTooLow` |
+| `tolerancePeriod < 10` | Setter reverts `TolerancePeriodTooLow` |
 
 ### 15.5 Credit Line Edge Cases
 
@@ -3316,7 +3310,7 @@ Correct strategy:
 | Credit amount exceeds debt cap | `reserveDebt` reverts (cap exceeded) |
 | Muon attestation expired | `reserveDebt` reverts (freshness check fails) |
 | Credit used with STANDARD | Reverts `CreditNotSupportedForStandard` |
-| Post-payout rollback with credit | Affiliate pool absorbs credit loss via `coverLoss` |
+| Post-payout rollback with credit | Not supported; processed express withdrawals cannot be force-cancelled or suspended |
 
 ### 15.6 STANDARD-Specific Edge Cases
 
@@ -3882,7 +3876,7 @@ Credit line logic is integrated into the ExpressProvider diamond via `CreditLine
 | `creditLinePaused(affiliate)` | View | Whether credit line is paused for this affiliate |
 | `creditLineBlacklisted(affiliate, user)` | View | Whether user is blacklisted for this affiliate |
 
-Internal credit line operations (`reserveDebt`, `activateDebt`, `settleDebt`, `cancelReservation`) are called internally by the diamond's facets (e.g., `SymmioHookFacet`, `ProcessFacet`) via `LibCreditLine` -- they are not externally callable.
+Internal credit line operations (`reserveDebt`, `activateDebt`, `settleDebt`, `cancelReservation`) are called internally by the diamond's facets (e.g., `SymmioHookFacet`, `OperatorFacet`) via `LibCreditLine` -- they are not externally callable.
 
 ### 17.4 SYMMIO-Gated Functions (no role, `msg.sender == symmio`)
 
@@ -3931,7 +3925,7 @@ flowchart TD
 |--------------|-----------------|
 | Bot offline | Users can `processWithdraw` permissionlessly after `tolerancePeriod`. STANDARD always works without bot |
 | Bot fails to finalize | Anyone can call `finalizeWithdrawRequest` on SYMMIO after cooldown |
-| Validator service offline | IMMEDIATE unavailable; other types still work if `minValidatorSignatures(affiliate) == 0` |
+| Validator service offline | IMMEDIATE unavailable unless the effective validator requirement is 0 after `address(0)` fallback; other types still work |
 | Insufficient pool liquidity | Only STANDARD available (no capital fronting) |
 | Sponsor drained | Users pay full fees; system still functional |
 | Config change invalidates pending sigs | Re-sign options with updated config |

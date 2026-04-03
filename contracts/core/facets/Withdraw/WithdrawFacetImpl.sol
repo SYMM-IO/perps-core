@@ -176,7 +176,9 @@ library WithdrawFacetImpl {
 			require(withdrawRequest.status == WithdrawStatus.PENDING, "WithdrawFacet : Invalid withdraw request status");
 		} else {
 			require(
-				withdrawRequest.status == WithdrawStatus.PROVIDER_ACCEPTED || withdrawRequest.status == WithdrawStatus.CANCEL_REQUESTED,
+				withdrawRequest.status == WithdrawStatus.PROVIDER_ACCEPTED ||
+					withdrawRequest.status == WithdrawStatus.PROVIDER_PROCESSED ||
+					withdrawRequest.status == WithdrawStatus.CANCEL_REQUESTED,
 				"WithdrawFacet : Invalid withdraw request status"
 			);
 		}
@@ -235,6 +237,20 @@ library WithdrawFacetImpl {
 		require(msg.sender == withdrawRequest.provider, "WithdrawFacet : Not allowed to accept withdrawal");
 
 		withdrawRequest.status = WithdrawStatus.PROVIDER_ACCEPTED;
+	}
+
+	/// @notice Express provider marks a request as already paid out before cooldown finalization.
+	function markWithdrawProcessed(address user, uint256 requestId) internal {
+		WithdrawRequest storage withdrawRequest = _getWithdrawRequest(user, requestId);
+
+		require(withdrawRequest.status == WithdrawStatus.PROVIDER_ACCEPTED, "WithdrawFacet : Invalid withdraw request status");
+		require(
+			withdrawRequest.provider != address(0) && !withdrawRequest.isPureVirtual,
+			"WithdrawFacet : Only express withdraw can be marked processed"
+		);
+		require(msg.sender == withdrawRequest.provider, "WithdrawFacet : Not allowed to mark processed");
+
+		withdrawRequest.status = WithdrawStatus.PROVIDER_PROCESSED;
 	}
 
 	/// @notice Provider advances locked collateral early, before cooldown expires.

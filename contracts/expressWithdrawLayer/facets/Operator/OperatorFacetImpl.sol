@@ -57,6 +57,7 @@ library OperatorFacetImpl {
 		_collectAndTransfer(user, requestId, parts, info);
 		if (info.optionType != OptionType.STANDARD) {
 			_unlockAndDeductPools(info);
+			ISymmio(s.symmio).markWithdrawProcessed(user, requestId);
 		}
 
 		info.status = Status.PROCESSED;
@@ -85,6 +86,7 @@ library OperatorFacetImpl {
 		_collectAndTransfer(user, requestId, parts, info);
 		if (info.optionType != OptionType.STANDARD) {
 			_unlockAndDeductPools(info);
+			ISymmio(s.symmio).markWithdrawProcessed(user, requestId);
 		}
 
 		info.status = Status.PROCESSED;

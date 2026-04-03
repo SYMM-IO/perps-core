@@ -54,6 +54,12 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 		emit WithdrawAccepted(requestId, user);
 	}
 
+	/// @notice Express provider marks a withdrawal as already paid out to the user.
+	/// @dev Prevents post-payout cancel/suspend flows while still allowing cooldown finalization.
+	function markWithdrawProcessed(address user, uint256 requestId) external notSuspended(user) {
+		WithdrawFacetImpl.markWithdrawProcessed(user, requestId);
+	}
+
 	/// @notice Provider rejects a withdrawal request.
 	/// @dev
 	/// - Must be called only by the provider contract (express or virtual).
@@ -79,11 +85,11 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	/// @dev
 	/// - Classic withdrawal parts transfer directly to receivers.
 	/// - Provider-managed parts:
-	///      - Express provider receives total express amount.
+	///      - Express provider receives only the non-advanced express remainder.
 	///      - Virtual provider executes release logic internally.
 	/// - Request must be in:
 	///      - `PENDING` (classic-only) OR
-	///      - `PROVIDER_ACCEPTED` or `CANCEL_REQUESTED` (provider flow)
+	///      - `PROVIDER_ACCEPTED`, `PROVIDER_PROCESSED`, or `CANCEL_REQUESTED` (provider flow)
 	/// @param requestId ID of the withdrawal request.
 	function finalizeWithdrawRequest(address user, uint256 requestId) external notSuspended(user) nonReentrant {
 		WithdrawFacetImpl.finalizeWithdrawRequest(user, requestId);
@@ -105,6 +111,7 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	/// @dev
 	/// - Only callable by an account with the force-cancel role.
 	/// - Request must be in `PENDING`, `PROVIDER_ACCEPTED`, or `CANCEL_REQUESTED`.
+	/// - Already-paid express requests are marked `PROVIDER_PROCESSED` and are not force-cancellable.
 	/// - Cancels and refunds immediately, with provider callbacks as needed.
 	///
 	/// Emits:
@@ -135,6 +142,7 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	/// @notice Operator suspends a problematic withdrawal request.
 	/// @dev
 	/// - Suspended requests cannot progress until manually resolved.
+	/// - Already-paid express requests are marked `PROVIDER_PROCESSED` and are not suspendable.
 	/// @param user The user who initiated the withdrawal.
 	/// @param requestId ID of the withdrawal request.
 	function suspendWithdrawRequest(address user, uint256 requestId) external nonReentrant onlyRole(LibAccessibility.SUSPENDER_ROLE) {

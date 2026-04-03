@@ -96,7 +96,7 @@ Pools have a hard limit: the operator must have pre-deposited enough tokens. The
 
 The Muon oracle computes an aggregate "eligible base" for each affiliate off-chain — roughly, how much value the affiliate's users have that is eligible for withdrawal from SYMMIO. The oracle signs an attestation: "Affiliate X has Y eligible base." The ExpressProvider uses this attestation to determine how much credit the affiliate can take on.
 
-When a withdrawal uses credit, the ExpressProvider doesn't front its own tokens for the credit portion. Instead, it calls `advanceWithdraw` on SYMMIO, which releases the credit amount directly from SYMMIO's collateral to the provider. The provider records this as **affiliate debt** — the affiliate now owes that amount back. When the withdrawal finalizes and SYMMIO releases the full withdrawal amount to the provider, the debt is settled.
+When a withdrawal uses credit, the ExpressProvider doesn't front its own tokens for the credit portion. Instead, it calls `advanceWithdraw` on SYMMIO, which releases the credit amount directly from SYMMIO's collateral to the provider. The provider records this as **affiliate debt** — the affiliate now owes that amount back. When the withdrawal finalizes, SYMMIO releases only the non-advanced remainder (`totalExpressAmount - advancedAmount`) to the provider, and the debt is settled.
 
 **The debt lifecycle:**
 
@@ -357,7 +357,7 @@ An operator with `SUSPENDER_ROLE` on SYMMIO can suspend a user's withdrawal (e.g
 3. Refunds sponsor coverage to sponsor balance
 4. Sets status to `SUSPENDED`
 
-If the withdrawal was already PROCESSED, `_handleProcessedRollback` is called instead, which covers credit loss from the affiliate pool and removes expected inflows.
+Once Express has already paid the user, SYMMIO core marks the request as provider-processed. From that point, `forceCancelWithdraw` and `suspendWithdrawRequest` are no longer valid; the withdrawal must continue to normal cooldown finalization.
 
 Note: IMMEDIATE withdrawals cannot be suspended after acceptance because the funds are already transferred in the same transaction. The suspension would need to happen before the user's `initiateWithdraw` tx is mined. STANDARD withdrawals can only be suspended before finalization; once `onWithdrawComplete` has delivered the tokens, suspension is invalid.
 
@@ -605,9 +605,10 @@ This ensures the bot cannot overcharge or undercharge -- the contract is the sou
 
 ### 8.4 Fee Deduction
 
-Fees are deducted during `processWithdraw`, `unlockAndProcess`, or inline within `onWithdrawRequest` for IMMEDIATE:
+Fees are deducted during payout, but sponsor coverage is locked earlier during `onWithdrawRequest`:
 
-- The contract first attempts to pay the fee from the affiliate's `sponsorBalances`. Whatever the sponsor balance cannot cover is deducted from the user's withdrawal amount.
+- On acceptance, the contract locks `sponsorCoverage` by deducting up to `totalFee` from `sponsorBalances[affiliate]`.
+- During payout, only the remaining `userFee = totalFee - sponsorCoverage` is deducted from the user's withdrawal amount.
 - Fees are deducted from the collateral transfers by cascading across parts: the `userFee` is subtracted from the first part(s) until exhausted. The user receives `partAmount - deduction` for affected parts.
 - Parts where `expressProvider != address(this)` are skipped (not subject to fees from this provider).
 - For **STANDARD**: the fee is deducted from the forwarded tokens during `processWithdraw`, same as for INSTANT.
@@ -655,9 +656,9 @@ sequenceDiagram
 
     User->>Express: (via SYMMIO) onWithdrawRequest
     Express->>Express: Verify fee matches on-chain feeRate & operatorFee
+    Express->>Express: Lock sponsorCoverage = 5 at acceptance
 
     Bot->>Express: processWithdraw
-    Express->>Express: sponsorBalances[affiliate] -= 5 (sponsor covers fee)
     Express->>User: Transfer 1000 USDC (full amount, fee sponsored)
     Express->>Express: collectedFees[affiliate] += 5
 
@@ -674,9 +675,9 @@ sequenceDiagram
     participant User
 
     Note over Express: sponsorBalances[affiliate] = 2 USDC, fee = 5 USDC
+    Note over Express: onWithdrawRequest locks sponsorCoverage = 2
 
     Bot->>Express: processWithdraw
-    Express->>Express: sponsorBalances[affiliate] -= 2 (partial sponsor)
     Express->>Express: Remaining 3 USDC deducted from user's withdrawal
     Express->>User: Transfer 997 USDC (1000 - 3 user portion)
     Express->>Express: collectedFees[affiliate] += 5 (full fee)
@@ -694,19 +695,19 @@ Each affiliate has a `sponsorBalances` mapping that holds collateral deposited b
 mapping(address => uint256) public sponsorBalances;  // affiliate => sponsor balance
 ```
 
-- **`depositSponsorBalance(address affiliate, uint256 amount)`** -- Anyone can deposit collateral to fund fee sponsorship for an affiliate. The caller must have approved the collateral token for the ExpressProvider. The `sponsors[affiliate]` mapping tracks the last depositor.
+- **`depositSponsorBalance(address affiliate, uint256 amount)`** -- Anyone can deposit collateral to fund fee sponsorship for an affiliate. The caller must have approved the collateral token for the ExpressProvider. The `sponsors[affiliate]` mapping records the first depositor and is not overwritten by later deposits.
 - **`withdrawSponsorBalance(address affiliate, uint256 amount, address to)`** -- `SPONSOR_MANAGER_ROLE` only. Withdraws unused sponsor funds to the specified `to` address.
 - **`setSponsorConfig(address affiliate, uint256 maxFeePerWithdraw, uint256 maxWithdrawAmount)`** -- `SETTER_ROLE` only. Configures caps on sponsorship: `maxFeePerWithdraw` limits how much the sponsor covers per withdrawal (0 = no limit), and `maxWithdrawAmount` restricts sponsorship to withdrawals whose total fee-bearing amount (`expressAmount`) is at or below this size (0 = no limit).
 
-#### Sponsorship Logic During Withdrawal Processing
+#### Sponsorship Locking and Payout
 
-When `processWithdraw`, `unlockAndProcess`, or the inline IMMEDIATE path processes a withdrawal with a fee:
+When `onWithdrawRequest` accepts a withdrawal with a fee:
 
-1. The contract checks `sponsorBalances[affiliate]`.
-2. If the sponsor balance can cover the full fee: the entire fee is deducted from `sponsorBalances[affiliate]`, and the user receives the full withdrawal amount with no fee deduction.
-3. If the sponsor balance can partially cover the fee: the available sponsor balance is consumed entirely, and the remainder is deducted from the user's withdrawal amount.
-4. If the sponsor balance is zero: the full fee is deducted from the user's withdrawal amount (same as the legacy behavior).
-5. In all cases, the full fee amount is added to `collectedFees[affiliate]`.
+1. The contract checks `sponsorBalances[affiliate]` and `sponsorConfigs[affiliate]`.
+2. It locks up to `totalFee` as `sponsorCoverage` immediately, deducting that amount from `sponsorBalances[affiliate]`.
+3. The locked coverage is stored on `WithdrawInfo`, making the later payout deterministic.
+4. During `processWithdraw`, `unlockAndProcess`, or the inline IMMEDIATE path, the user only pays `totalFee - sponsorCoverage`.
+5. If the withdrawal is cancelled or suspended before payout, the locked sponsor coverage is refunded.
 
 #### Key Properties
 
@@ -744,7 +745,7 @@ When `reserveDebt` is called, `LibCreditLine` validates the Muon oracle attestat
 | Activate | `processWithdraw` / `unlockAndProcess` / IMMEDIATE inline | `activateDebt` — moves from `reservedDebt` to `activeDebt`, calls `advanceWithdraw` on SYMMIO |
 | Settle | `onWithdrawComplete` | `settleDebt` — removes from `activeDebt`, deletes request state |
 | Cancel | `onWithdrawCancelRequest` / `onForceWithdrawCancel` (pre-payout) | `cancelReservation` — removes from `reservedDebt` |
-| Cover Loss | `onForceWithdrawCancel` / `onWithdrawSuspend` (post-payout) | `settleDebt` — deducts `creditAmount` from affiliate pool to cover the loss |
+| Post-payout rollback | Not supported | Once Express pays the user, SYMMIO core marks the request as provider-processed and rejects force-cancel / suspend |
 
 ## 10. Access Control & Roles
 
@@ -762,7 +763,7 @@ When `reserveDebt` is called, `LibCreditLine` validates the Muon oracle attestat
 | `UNLOCK_ROLE` | Deployer/multisig | `unlockAndProcess` (separated from bot to prevent lock-unlock hostage attacks) |
 | `SIGNER_ROLE` | Bot signer key | Signs withdrawal options (verified on-chain via EIP-712) |
 
-Roles are stored in diamond storage and managed via `grantRole`/`revokeRole` on AdminFacet (owner-only).
+Roles are stored in diamond storage and managed via `grantRole`/`revokeRole` on `ControlFacet` (owner-only).
 
 ### 10.2 Credit Line Access Control
 
@@ -819,6 +820,7 @@ The bot must monitor these events on the ExpressProvider:
 |-------|--------|
 | `WithdrawAccepted(user, requestId, optionType)` | For IMMEDIATE: no action needed (already processed). Otherwise, schedule `processWithdraw` at the right time |
 | `WithdrawProcessed(user, requestId)` | Schedule `finalizeWithdrawRequest` on SYMMIO at cooldownEndTime |
+| `WithdrawUnlockedAndProcessed(user, requestId)` | Schedule `finalizeWithdrawRequest` on SYMMIO at cooldownEndTime and clear the lock alert |
 | `WithdrawLocked(user, requestId)` | Cancel scheduled processing, notify admin |
 | `WithdrawCancelled(user, requestId)` | Cancel all scheduled actions for this withdrawal |
 | `WithdrawSuspended(user, requestId)` | Cancel all scheduled actions for this withdrawal |
@@ -893,7 +895,7 @@ flowchart LR
 
 | Component | Count | Upgradeable | Description |
 |-----------|-------|-------------|-------------|
-| **ExpressProvider** | 1 per chain | Yes (EIP-2535 Diamond) | Main coordinator. Manages liquidity pools, validates bot signatures, locks/transfers funds, and handles credit lines. Split into AdminFacet, SymmioHookFacet, OperatorFacet, ViewFacet, CreditLineFacet. Credit line state is stored in `CreditLineStorage` (diamond storage) with per-affiliate mappings. |
+| **ExpressProvider** | 1 per chain | Yes (EIP-2535 Diamond) | Main coordinator. Manages liquidity pools, validates bot signatures, locks/transfers funds, and handles credit lines. Split into ControlFacet, SymmioHookFacet, OperatorFacet, ViewFacet, CreditLineFacet. Credit line state is stored in `CreditLineStorage` (diamond storage) with per-affiliate mappings. |
 | **Bot Service** | 1 global | N/A | Off-chain. Provides options API, signs options, monitors events, calls `processWithdraw` and `finalizeWithdrawRequest`. |
 
 #### SYMMIO Callbacks (called by SYMMIO, not by bot)
@@ -954,13 +956,12 @@ function setValidatorApprovalTimeout(address affiliate, uint256 seconds) externa
 function setCreditLineMuonConfig(
     address signatureVerifier,
     uint256 muonAppId,
-    PublicKey memory muonPublicKey
+    uint256 muonFreshnessWindow
 ) external;                                                                // Setter only
 function setCreditLineProtocolConfig(
     address affiliate,
     uint256 maxDebt,
-    uint256 maxDebtBps,
-    uint256 muonFreshnessWindow
+    uint256 maxDebtBps
 ) external;                                                                // Setter only
 function setCreditLineAffiliateConfig(
     address affiliate,
@@ -975,7 +976,7 @@ function depositSponsorBalance(address affiliate, uint256 amount) external; // A
 function withdrawSponsorBalance(address affiliate, uint256 amount, address to) external; // SPONSOR_MANAGER_ROLE
 function setSponsorConfig(address affiliate, uint256 maxFeePerWithdraw, uint256 maxWithdrawAmount) external; // Setter only
 
-// Role management (owner-only, via AdminFacet)
+// Role management (owner-only, via ControlFacet)
 function grantRole(bytes32 role, address account) external;   // Diamond owner only
 function revokeRole(bytes32 role, address account) external;  // Diamond owner only
 ```
@@ -1025,13 +1026,12 @@ All credit line functions are accessed on the ExpressProvider diamond address. C
 function setCreditLineMuonConfig(
     address signatureVerifier,
     uint256 muonAppId,
-    PublicKey memory muonPublicKey
+    uint256 muonFreshnessWindow
 ) external;
 function setCreditLineProtocolConfig(
     address affiliate,
     uint256 maxDebt,
-    uint256 maxDebtBps,
-    uint256 muonFreshnessWindow
+    uint256 maxDebtBps
 ) external;
 function setCreditLineAffiliateConfig(
     address affiliate,
@@ -1121,8 +1121,8 @@ WITHDRAWER_ROLE      = keccak256("WITHDRAWER_ROLE")
 securityWindow    = 20 seconds   // delay before operator can process INSTANT
 tolerancePeriod   = 60 seconds   // extra delay for permissionless processing
 operatorFee           = per-affiliate // fixed fee per withdrawal (collateral decimals), covers bot gas; set via setAffiliateConfig
-minValidatorSignatures = mapping(address => uint256) // per-affiliate, number of validator attestations required (0 = disabled), address(0) = default
-validatorApprovalTimeout = mapping(address => uint256) // per-affiliate, max age of validator signatures, address(0) = default (30 seconds)
+minValidatorSignatures = mapping(address => uint256) // stored per-affiliate; runtime falls back to address(0) default when affiliate value is 0
+validatorApprovalTimeout = mapping(address => uint256) // stored per-affiliate; runtime falls back to address(0) default when affiliate value is 0
 ```
 
 ```solidity
@@ -1159,6 +1159,7 @@ struct WithdrawRequest {
     bytes providerData;
     uint256 totalAmount;
     uint256 totalVirtualAmount;
+    uint256 advancedAmount;     // amount already released early from SYMMIO via advanceWithdraw
 }
 ```
 
@@ -1171,21 +1172,9 @@ struct WithdrawRequest {
 - ExpressProvider registered as Express Provider on SYMMIO
 - Muon signature verifier address and app ID known (if using credit lines)
 
-### Deploy via Hardhat task
+### Deploy via Repo Helper
 
-```bash
-# Deploy ExpressProvider (diamond, includes CreditLineFacet)
-npx hardhat deploy \
-  --symmio 0x<SYMMIO_ADDRESS> \
-  --collateral 0x<USDC_ADDRESS> \
-  --admin 0x<ADMIN_ADDRESS> \
-  --network sepolia
-
-# Upgrade ExpressProvider (diamond cut to add/replace facets)
-npx hardhat upgrade \
-  --proxy 0x<EXPRESS_PROXY_ADDRESS> \
-  --network sepolia
-```
+This repo currently deploys the ExpressProvider programmatically via the helper in `tasks/deploy/expressWithdrawLayerDiamond.ts` (`deployExpressProvider(...)`). It does not expose dedicated `npx hardhat deploy` / `npx hardhat upgrade` commands for the express layer.
 
 ### Post-deployment setup
 
@@ -1198,8 +1187,8 @@ expressProvider.grantRole(OPERATOR_ROLE, botAddress)
 expressProvider.grantRole(SIGNER_ROLE, botSignerAddress)
 
 # On ExpressProvider: configure credit line (if using credit lines)
-expressProvider.setCreditLineMuonConfig(signatureVerifierAddress, muonAppId, muonPublicKey)
-expressProvider.setCreditLineProtocolConfig(affiliateAddress, maxDebt, maxDebtBps, muonFreshnessWindow)
+expressProvider.setCreditLineMuonConfig(signatureVerifierAddress, muonAppId, muonFreshnessWindow)
+expressProvider.setCreditLineProtocolConfig(affiliateAddress, maxDebt, maxDebtBps)
 expressProvider.setCreditLineAffiliateConfig(affiliateAddress, maxDebt, maxDebtBps)
 
 # On ExpressProvider: configure validators (per-affiliate, or address(0) for default)
@@ -1226,11 +1215,11 @@ expressProvider.depositToAffiliate(affiliateAddress, amount)
 | INSTANT | Yes | If status is ACCEPTED (not yet processed) | Funds locked but not transferred; unlocking is safe |
 | STANDARD | Yes | If status is ACCEPTED (before SYMMIO finalization) | No capital fronted; Express just releases acceptance |
 
-### 15.2 Credit Line Loss on Post-Payout Rollback
+### 15.2 No Post-Payout Cancel / Suspend
 
-If a withdrawal with credit is force-cancelled or suspended after being PROCESSED (funds already sent to user), the credit amount cannot be recovered from the user. The contract covers this loss by deducting `creditAmount` from the affiliate's pool balance (`affiliateBalances[affiliate] -= creditAmount`). This is a design trade-off: the affiliate pool absorbs credit losses from post-payout rollbacks.
+Once Express has paid the user for an IMMEDIATE or INSTANT withdrawal, SYMMIO core marks the request as `PROVIDER_PROCESSED`. From that point, `forceCancelWithdraw` and `suspendWithdrawRequest` revert because the request is no longer in a cancellable provider status.
 
-**Note:** In practice, SYMMIO's `forceCancelWithdraw` requires `block.timestamp < cooldownEndTime`, so this path cannot be triggered for PROCESSED express withdrawals (which are processed well before cooldown ends). This is a safety net for edge cases.
+For credit-backed withdrawals, this avoids trying to unwind a payout after `advanceWithdraw` has already released the credit portion from SYMMIO escrow. The remaining lifecycle is normal cooldown finalization only.
 
 ### 15.3 Liquidity Fragmentation
 

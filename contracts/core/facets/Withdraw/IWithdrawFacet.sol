@@ -14,6 +14,7 @@ interface IWithdrawFacet is IWithdrawEvents {
 		bytes memory data
 	) external returns (uint256 requestId, uint256 cooldownEndTime);
 	function acceptWithdrawRequest(address user, uint256 requestId) external;
+	function markWithdrawProcessed(address user, uint256 requestId) external;
 	function advanceWithdraw(address user, uint256 requestId, uint256 amount) external;
 	function finalizeWithdrawRequest(address user, uint256 requestId) external;
 	function requestCancelWithdraw(uint256 requestId) external;

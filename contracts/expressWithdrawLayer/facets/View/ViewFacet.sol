@@ -99,15 +99,22 @@ contract ViewFacet is IViewFacet {
 	// ── Validators ──
 
 	function minValidatorSignatures(address affiliate) external view returns (uint256) {
-		return ValidatorStorage.layout().minValidatorSignatures[affiliate];
+		ValidatorStorage.Layout storage v = ValidatorStorage.layout();
+		uint256 val = v.minValidatorSignatures[affiliate];
+		if (val > 0) return val;
+		return v.minValidatorSignatures[address(0)];
 	}
 
 	function validatorApprovalTimeout(address affiliate) external view returns (uint256) {
-		return ValidatorStorage.layout().validatorApprovalTimeout[affiliate];
+		ValidatorStorage.Layout storage v = ValidatorStorage.layout();
+		uint256 val = v.validatorApprovalTimeout[affiliate];
+		if (val > 0) return val;
+		return v.validatorApprovalTimeout[address(0)];
 	}
 
 	function isValidator(address affiliate, address validator) external view returns (bool) {
-		return ValidatorStorage.layout().validators[affiliate][validator];
+		ValidatorStorage.Layout storage v = ValidatorStorage.layout();
+		return v.validators[affiliate][validator] || v.validators[address(0)][validator];
 	}
 
 	// ── Access control ──

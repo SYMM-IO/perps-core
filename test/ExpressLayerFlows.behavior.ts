@@ -3,6 +3,7 @@ import { expect } from "chai"
 import { deployExpressProvider } from "../tasks/deploy/expressWithdrawLayerDiamond.js"
 import { initializeFixture } from "./Initialize.fixture.js"
 import connection, { ethers, hre } from "./helpers/hardhat-connection.js"
+import { WithdrawStatus } from "./models/Enums.js"
 import { RunContext } from "./models/RunContext.js"
 
 const OPERATOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("OPERATOR_ROLE"))
@@ -1115,7 +1116,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			expect(await expressProvider.generalBalance()).to.equal(generalFunding)
 		})
 
-		it("should force cancel INSTANT after processing (rollback)", async function () {
+		it("should reject force cancel INSTANT after processing", async function () {
 			const fixture = await deployFixture()
 			const { operator, user, expressProvider, context } = fixture
 
@@ -1128,10 +1129,9 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			await ethers.provider.send("evm_mine", [])
 			await expressProvider.connect(operator).processWithdraw(user.address, requestId, parts)
 
-			// In credit line model, force cancel after processing does rollback (not revert)
-			await context.withdrawFacet.connect(context.signers.admin).forceCancelWithdraw(user.address, requestId)
-			const info = await expressProvider.getWithdrawInfo(user.address, requestId)
-			expect(info.status).to.equal(5n) // CANCELLED
+			await expect(context.withdrawFacet.connect(context.signers.admin).forceCancelWithdraw(user.address, requestId)).to.be.revertedWith(
+				"WithdrawFacet : Invalid withdraw request status",
+			)
 		})
 
 		it("should reject force cancel on LOCKED STANDARD after finalization", async function () {
@@ -1196,7 +1196,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			expect(info.status).to.equal(6n) // SUSPENDED
 		})
 
-		it("should suspend PROCESSED INSTANT (rollback)", async function () {
+		it("should reject suspend PROCESSED INSTANT", async function () {
 			const fixture = await deployFixture()
 			const { operator, user, expressProvider, context } = fixture
 			const { parts, requestId } = await acceptInstant(fixture)
@@ -1206,11 +1206,10 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			await ethers.provider.send("evm_mine", [])
 			await expressProvider.connect(operator).processWithdraw(user.address, requestId, parts)
 
-			// In credit line model, suspend on PROCESSED does rollback (not revert)
 			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(user.address)
-			await context.withdrawFacet.connect(context.signers.admin).suspendWithdrawRequest(user.address, requestId)
-			const info = await expressProvider.getWithdrawInfo(user.address, requestId)
-			expect(info.status).to.equal(6n) // SUSPENDED
+			await expect(context.withdrawFacet.connect(context.signers.admin).suspendWithdrawRequest(user.address, requestId)).to.be.revertedWith(
+				"WithdrawFacet : Invalid withdraw request status",
+			)
 		})
 
 		it("should revert suspend on FINALIZED", async function () {
@@ -1837,9 +1836,9 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			expect(await expressProvider.creditLineTotalDebt(affiliate)).to.equal(0n)
 		})
 
-		it.skip("should cover loss from affiliate pool on post-payout force cancel (impossible with real Symmio — force cancel requires cooldown not expired, but advance already unlocked balance)", async function () {
+		it("should reject force cancel on processed credit-backed withdrawal", async function () {
 			const fixture = await deployFixture()
-			const { expressProvider, botSigner, operator, user, receiver, context, affiliate, affiliateFunding } = fixture
+			const { expressProvider, botSigner, operator, user, receiver, context, affiliate } = fixture
 			const expressAddr = await expressProvider.getAddress()
 			const withdrawAmount = 500n * 10n ** 18n
 			const creditAmount = 200n * 10n ** 18n
@@ -1900,17 +1899,12 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			await ethers.provider.send("evm_mine", [])
 			await expressProvider.connect(operator).processWithdraw(user.address, 1n, parts)
 
-			const affiliateBefore = await expressProvider.affiliateBalances(affiliate)
+			const coreRequest = await context.viewFacet.getWithdrawRequests(user.address, 1n)
+			expect(coreRequest.status).to.equal(WithdrawStatus.PROVIDER_PROCESSED)
 
-			// Force cancel after processing - should cover loss from affiliate pool
-			await context.withdrawFacet.connect(context.signers.admin).forceCancelWithdraw(user.address, 1n)
-
-			// Affiliate pool should be reduced by creditAmount
-			const affiliateAfter = await expressProvider.affiliateBalances(affiliate)
-			expect(affiliateBefore - affiliateAfter).to.equal(creditAmount)
-
-			// Credit should be settled
-			expect(await expressProvider.creditLineTotalDebt(affiliate)).to.equal(0n)
+			await expect(context.withdrawFacet.connect(context.signers.admin).forceCancelWithdraw(user.address, 1n)).to.be.revertedWith(
+				"WithdrawFacet : Invalid withdraw request status",
+			)
 		})
 
 		it("should reject credit for STANDARD withdrawals", async function () {
@@ -2260,7 +2254,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 	describe("State Machine Invariants", function () {
 		it("after processWithdraw, status is PROCESSED", async function () {
 			const fixture = await deployFixture()
-			const { operator, user, expressProvider } = fixture
+			const { operator, user, expressProvider, context } = fixture
 			const { parts, requestId } = await acceptInstant(fixture)
 
 			await ethers.provider.send("evm_increaseTime", [21])
@@ -2269,6 +2263,9 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 
 			const info = await expressProvider.getWithdrawInfo(user.address, requestId)
 			expect(info.status).to.equal(3n) // PROCESSED
+
+			const coreRequest = await context.viewFacet.getWithdrawRequests(user.address, requestId)
+			expect(coreRequest.status).to.equal(WithdrawStatus.PROVIDER_PROCESSED)
 		})
 
 		it("after finalization, status is FINALIZED", async function () {
@@ -2412,6 +2409,9 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			// Status is PROCESSED (skipped ACCEPTED)
 			const info = await expressProvider.getWithdrawInfo(user.address, 1)
 			expect(info.status).to.equal(3n) // PROCESSED
+
+			const coreRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
+			expect(coreRequest.status).to.equal(WithdrawStatus.PROVIDER_PROCESSED)
 		})
 
 		it("should reject IMMEDIATE without validators enabled", async function () {
@@ -2649,7 +2649,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			)
 		})
 
-		it("should force cancel IMMEDIATE after payment (rollback)", async function () {
+		it("should reject force cancel IMMEDIATE after payment", async function () {
 			const fixture = await deployFixture()
 			const { botSigner, user, receiver, expressProvider, context, affiliate } = fixture
 
@@ -2705,10 +2705,9 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
 
 			expect(await fixture.collateral.balanceOf(receiver.address)).to.equal(withdrawAmount)
-			// In credit line model, force cancel after PROCESSED does rollback
-			await context.withdrawFacet.connect(context.signers.admin).forceCancelWithdraw(user.address, 1n)
-			const info = await expressProvider.getWithdrawInfo(user.address, 1)
-			expect(info.status).to.equal(5n) // CANCELLED
+			await expect(context.withdrawFacet.connect(context.signers.admin).forceCancelWithdraw(user.address, 1n)).to.be.revertedWith(
+				"WithdrawFacet : Invalid withdraw request status",
+			)
 		})
 	})
 }

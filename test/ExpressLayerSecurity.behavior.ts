@@ -922,6 +922,21 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			expect(info.status).to.equal(1n) // ACCEPTED
 		})
 
+		it("should expose default validator config through view getters", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, affiliate } = fixture
+			const signers = await ethers.getSigners()
+			const validator = signers[6]
+
+			await expressProvider.setValidator(ethers.ZeroAddress, validator.address, true)
+			await expressProvider.setMinValidatorSignatures(ethers.ZeroAddress, 2)
+			await expressProvider.setValidatorApprovalTimeout(ethers.ZeroAddress, 45)
+
+			expect(await expressProvider.minValidatorSignatures(affiliate)).to.equal(2n)
+			expect(await expressProvider.validatorApprovalTimeout(affiliate)).to.equal(45n)
+			expect(await expressProvider.isValidator(affiliate, validator.address)).to.be.true
+		})
+
 		it("should reject when validator role is revoked between signing and submission", async function () {
 			const fixture = await deployFixture()
 			const { expressProvider, context, user } = fixture

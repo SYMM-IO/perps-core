@@ -105,6 +105,7 @@ library SymmioHookFacetImpl {
 			LibCreditLine.activate(g.symmio, withdrawRequest.user, withdrawRequest.id, info);
 			_collectAndTransfer(withdrawRequest.user, withdrawRequest.id, withdrawRequest.parts, info);
 			_unlockAndDeductPools(info);
+			ISymmio(g.symmio).markWithdrawProcessed(withdrawRequest.user, withdrawRequest.id);
 			info.status = Status.PROCESSED;
 			processed = true;
 		} else {
