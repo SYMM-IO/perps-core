@@ -409,6 +409,9 @@ export type WiringTransaction = {
 	value: string
 	calldata: string
 	description: string
+	iface: ethers.Interface
+	methodName: string
+	args: any[]
 }
 
 export function buildWiringTransactions(
@@ -441,86 +444,39 @@ export function buildWiringTransactions(
 
 	const proxyAdminIface = new ethers.Interface(["function upgrade(address proxy, address implementation)"])
 
+	// Helper to reduce repetition
+	const push = (to: string, iface: ethers.Interface, methodName: string, args: any[], description: string) => {
+		txs.push({
+			to,
+			value: "0",
+			calldata: iface.encodeFunctionData(methodName, args),
+			description,
+			iface,
+			methodName,
+			args,
+		})
+	}
+
 	// On core Diamond
-	txs.push({
-		to: diamondAddress,
-		value: "0",
-		calldata: controlFacetIface.encodeFunctionData("grantRole", [protocolAdmin, roleHash("INTEGRATION_ADMIN_ROLE")]),
-		description: `grantRole(protocolAdmin, INTEGRATION_ADMIN_ROLE)`,
-	})
-	txs.push({
-		to: diamondAddress,
-		value: "0",
-		calldata: controlFacetIface.encodeFunctionData("grantRole", [accountLayerDiamondAddress, roleHash("SIGNER_ADMIN_ROLE")]),
-		description: `grantRole(AccountLayer, SIGNER_ADMIN_ROLE)`,
-	})
-	txs.push({
-		to: diamondAddress,
-		value: "0",
-		calldata: controlFacetIface.encodeFunctionData("grantRole", [accountLayerDiamondAddress, roleHash("AFFILIATE_MANAGER_ROLE")]),
-		description: `grantRole(AccountLayer, AFFILIATE_MANAGER_ROLE)`,
-	})
-	txs.push({
-		to: diamondAddress,
-		value: "0",
-		calldata: controlFacetIface.encodeFunctionData("grantRole", [accountLayerDiamondAddress, roleHash("BALANCE_SETTLER_ROLE")]),
-		description: `grantRole(AccountLayer, BALANCE_SETTLER_ROLE)`,
-	})
-	txs.push({
-		to: diamondAddress,
-		value: "0",
-		calldata: controlFacetIface.encodeFunctionData("grantRole", [instantLayerAddress, roleHash("INSTANT_LAYER_ROLE")]),
-		description: `grantRole(InstantLayer, INSTANT_LAYER_ROLE)`,
-	})
-	txs.push({
-		to: diamondAddress,
-		value: "0",
-		calldata: controlFacetIface.encodeFunctionData("registerHook", [ethers.ZeroAddress, accountLayerDiamondAddress]),
-		description: `registerHook(address(0), AccountLayer)`,
-	})
+	push(diamondAddress, controlFacetIface, "grantRole", [protocolAdmin, roleHash("INTEGRATION_ADMIN_ROLE")], `grantRole(protocolAdmin, INTEGRATION_ADMIN_ROLE)`)
+	push(diamondAddress, controlFacetIface, "grantRole", [accountLayerDiamondAddress, roleHash("SIGNER_ADMIN_ROLE")], `grantRole(AccountLayer, SIGNER_ADMIN_ROLE)`)
+	push(diamondAddress, controlFacetIface, "grantRole", [accountLayerDiamondAddress, roleHash("AFFILIATE_MANAGER_ROLE")], `grantRole(AccountLayer, AFFILIATE_MANAGER_ROLE)`)
+	push(diamondAddress, controlFacetIface, "grantRole", [accountLayerDiamondAddress, roleHash("BALANCE_SETTLER_ROLE")], `grantRole(AccountLayer, BALANCE_SETTLER_ROLE)`)
+	push(diamondAddress, controlFacetIface, "grantRole", [instantLayerAddress, roleHash("INSTANT_LAYER_ROLE")], `grantRole(InstantLayer, INSTANT_LAYER_ROLE)`)
+	push(diamondAddress, controlFacetIface, "registerHook", [ethers.ZeroAddress, accountLayerDiamondAddress], `registerHook(address(0), AccountLayer)`)
 
 	// On AccountLayer Diamond
-	txs.push({
-		to: accountLayerDiamondAddress,
-		value: "0",
-		calldata: alControlFacetIface.encodeFunctionData("grantRole", [instantLayerAddress, roleHash("SIGNER_SETTER_ROLE")]),
-		description: `grantRole(InstantLayer, SIGNER_SETTER_ROLE) on AccountLayer`,
-	})
-	txs.push({
-		to: accountLayerDiamondAddress,
-		value: "0",
-		calldata: alControlFacetIface.encodeFunctionData("setWhitelistedSymmioCore", [diamondAddress, true]),
-		description: `setWhitelistedSymmioCore(Diamond, true) on AccountLayer`,
-	})
+	push(accountLayerDiamondAddress, alControlFacetIface, "grantRole", [instantLayerAddress, roleHash("SIGNER_SETTER_ROLE")], `grantRole(InstantLayer, SIGNER_SETTER_ROLE) on AccountLayer`)
+	push(accountLayerDiamondAddress, alControlFacetIface, "setWhitelistedSymmioCore", [diamondAddress, true], `setWhitelistedSymmioCore(Diamond, true) on AccountLayer`)
 
 	// On InstantLayer
-	txs.push({
-		to: instantLayerAddress,
-		value: "0",
-		calldata: instantLayerIface.encodeFunctionData("setAccountLayer", [accountLayerDiamondAddress]),
-		description: `setAccountLayer(AccountLayer) on InstantLayer`,
-	})
-	txs.push({
-		to: instantLayerAddress,
-		value: "0",
-		calldata: instantLayerIface.encodeFunctionData("setTargetWhitelist", [diamondAddress, true]),
-		description: `setTargetWhitelist(Diamond, true) on InstantLayer`,
-	})
-	txs.push({
-		to: instantLayerAddress,
-		value: "0",
-		calldata: instantLayerIface.encodeFunctionData("setTargetWhitelist", [accountLayerDiamondAddress, true]),
-		description: `setTargetWhitelist(AccountLayer, true) on InstantLayer`,
-	})
+	push(instantLayerAddress, instantLayerIface, "setAccountLayer", [accountLayerDiamondAddress], `setAccountLayer(AccountLayer) on InstantLayer`)
+	push(instantLayerAddress, instantLayerIface, "setTargetWhitelist", [diamondAddress, true], `setTargetWhitelist(Diamond, true) on InstantLayer`)
+	push(instantLayerAddress, instantLayerIface, "setTargetWhitelist", [accountLayerDiamondAddress, true], `setTargetWhitelist(AccountLayer, true) on InstantLayer`)
 
 	// SymmioPartyB: register on InstantLayer
 	if (symmioPartyBAddress) {
-		txs.push({
-			to: instantLayerAddress,
-			value: "0",
-			calldata: instantLayerIface.encodeFunctionData("registerPartyBs", [[symmioPartyBAddress]]),
-			description: `registerPartyBs([SymmioPartyB]) on InstantLayer`,
-		})
+		push(instantLayerAddress, instantLayerIface, "registerPartyBs", [[symmioPartyBAddress]], `registerPartyBs([SymmioPartyB]) on InstantLayer`)
 	}
 
 	return txs

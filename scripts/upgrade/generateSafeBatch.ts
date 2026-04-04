@@ -21,7 +21,7 @@ import path from "path"
 
 import { ethers } from "../../test/helpers/hardhat-connection.js"
 import { buildWiringTransactions } from "./utils/peripheralHelpers.js"
-import { buildDiamondCut, buildUpgradeTransactions, loadDeployedFacets, type NewV085Parameters, type SafeBatch } from "./utils/upgradeHelpers.js"
+import { buildDiamondCut, buildUpgradeTransactions, loadDeployedFacets, toHumanReadableSafeTxFromIface, type NewV085Parameters, type SafeBatch } from "./utils/upgradeHelpers.js"
 
 type Config = {
 	diamondAddress?: string
@@ -141,12 +141,15 @@ async function main() {
 				value: "0",
 				calldata: uupsIface.encodeFunctionData("upgradeTo", [PARTYB_IMPL]),
 				description: `upgradeTo(new SymmioPartyB implementation)`,
+				iface: uupsIface,
+				methodName: "upgradeTo",
+				args: [PARTYB_IMPL],
 			})
 			console.log(`  NOTE: The Safe (${SAFE_ADDRESS}) must have DEFAULT_ADMIN_ROLE on SymmioPartyB (${PARTYB_ADDRESS}) before executing this batch.`)
 		}
 
 		for (const tx of wiringTxs) {
-			result.safeTxs.push({ to: tx.to, value: tx.value, data: tx.calldata })
+			result.safeTxs.push(toHumanReadableSafeTxFromIface(tx.iface, tx.to, tx.methodName, tx.args))
 			result.breakdown.push(`${result.breakdown.length + 1}. [wiring] ${tx.description}`)
 		}
 		console.log(`  Added ${wiringTxs.length} wiring transactions`)

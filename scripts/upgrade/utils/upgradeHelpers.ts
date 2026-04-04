@@ -473,11 +473,18 @@ function paramTypeToAbiInput(param: any): AbiInput {
 function argToString(value: any): string {
 	if (typeof value === "bigint") return value.toString()
 	if (typeof value === "number") return value.toString()
+	if (Array.isArray(value)) return JSON.stringify(value)
+	if (typeof value === "boolean") return value.toString()
 	return String(value)
 }
 
-export function toHumanReadableSafeTx(to: string, methodName: string, args: any[]): SafeTransaction {
-	const fragment = diamondIface.getFunction(methodName)
+export function toHumanReadableSafeTxFromIface(
+	iface: ethers.Interface,
+	to: string,
+	methodName: string,
+	args: any[],
+): SafeTransaction {
+	const fragment = iface.getFunction(methodName)
 	if (!fragment) throw new Error(`Unknown method: ${methodName}`)
 
 	const inputs = fragment.inputs.map(paramTypeToAbiInput)
@@ -497,6 +504,10 @@ export function toHumanReadableSafeTx(to: string, methodName: string, args: any[
 		},
 		contractInputsValues,
 	}
+}
+
+export function toHumanReadableSafeTx(to: string, methodName: string, args: any[]): SafeTransaction {
+	return toHumanReadableSafeTxFromIface(diamondIface, to, methodName, args)
 }
 
 function addTx(
