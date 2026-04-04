@@ -91,7 +91,7 @@ function saveState(filePath: string, state: DeployedState): void {
 // ============================================================================
 
 export async function deployAccountLayerDiamond(
-	adminAddress: string,
+	protocolAdmin: string,
 	symmioFeeReceiver: string,
 	stateFile?: string,
 	adminSigner?: any,
@@ -119,7 +119,7 @@ export async function deployAccountLayerDiamond(
 
 	// 2. Diamond proxy — deployed with deployer as owner so this script can
 	//    call diamondCut directly. The Init grants DEFAULT_ADMIN_ROLE to
-	//    adminAddress for role-based governance.
+	//    protocolAdmin for role-based governance.
 	const [deployer] = await ethers.getSigners()
 
 	let diamondAddress: string
@@ -128,7 +128,7 @@ export async function deployAccountLayerDiamond(
 		log.deployed("Diamond", diamondAddress, true)
 	} else {
 		const factory = await ethers.getContractFactory("Diamond")
-		const deployOwner = adminSigner ? adminAddress : await deployer.getAddress()
+		const deployOwner = adminSigner ? protocolAdmin : await deployer.getAddress()
 		const contract = await factory.deploy(deployOwner, diamondCutFacetAddress)
 		diamondAddress = await contract.getAddress()
 		al.diamond = diamondAddress
@@ -238,7 +238,7 @@ export async function deployAccountLayerDiamond(
 			const accountManagerFactory = await ethers.getContractFactory("contracts/accountLayer/AccountManager.sol:AccountManager")
 			const accountManagerBytecode = accountManagerFactory.bytecode
 
-			const initCalldata = init.interface.encodeFunctionData("init", [adminAddress, symmioFeeReceiver, accountManagerBytecode])
+			const initCalldata = init.interface.encodeFunctionData("init", [protocolAdmin, symmioFeeReceiver, accountManagerBytecode])
 
 			const chunkSize = 3
 			const totalChunks = Math.ceil(cut.length / chunkSize)
@@ -276,7 +276,7 @@ export async function deployAccountLayerDiamond(
 // Deploy InstantLayer
 // ============================================================================
 
-export async function deployInstantLayer(symmioAddress: string, adminAddress: string, stateFile?: string): Promise<InstantLayerDeployResult> {
+export async function deployInstantLayer(symmioAddress: string, protocolAdmin: string, stateFile?: string): Promise<InstantLayerDeployResult> {
 	const state = loadState(stateFile ?? "")
 
 	if (state.instantLayer?.address) {
@@ -285,7 +285,7 @@ export async function deployInstantLayer(symmioAddress: string, adminAddress: st
 	}
 
 	const factory = await ethers.getContractFactory("InstantLayer")
-	const contract = await factory.deploy(symmioAddress, adminAddress)
+	const contract = await factory.deploy(symmioAddress, protocolAdmin)
 	const address = await contract.getAddress()
 
 	if (!state.instantLayer) state.instantLayer = {}
@@ -415,7 +415,7 @@ export function buildWiringTransactions(
 	diamondAddress: string,
 	accountLayerDiamondAddress: string,
 	instantLayerAddress: string,
-	adminAddress: string,
+	protocolAdmin: string,
 	symmioPartyBAddress?: string,
 	symmioPartyBImplementation?: string,
 ): WiringTransaction[] {
@@ -445,8 +445,8 @@ export function buildWiringTransactions(
 	txs.push({
 		to: diamondAddress,
 		value: "0",
-		calldata: controlFacetIface.encodeFunctionData("grantRole", [adminAddress, roleHash("INTEGRATION_ADMIN_ROLE")]),
-		description: `grantRole(admin, INTEGRATION_ADMIN_ROLE)`,
+		calldata: controlFacetIface.encodeFunctionData("grantRole", [protocolAdmin, roleHash("INTEGRATION_ADMIN_ROLE")]),
+		description: `grantRole(protocolAdmin, INTEGRATION_ADMIN_ROLE)`,
 	})
 	txs.push({
 		to: diamondAddress,

@@ -521,7 +521,7 @@ function addTx(
 
 export function buildUpgradeTransactions(
 	diamondAddress: string,
-	adminAddress: string,
+	protocolAdmin: string,
 	migrationRunner: string,
 	diamondCut: any[],
 	selectorChanges: SelectorChange[],
@@ -541,8 +541,8 @@ export function buildUpgradeTransactions(
 		txIdx,
 		diamondAddress,
 		"grantRole",
-		[adminAddress, ethers.id("PAUSER_ROLE")],
-		`grantRole(PAUSER_ROLE) -> ${adminAddress}`,
+		[protocolAdmin, ethers.id("PAUSER_ROLE")],
+		`grantRole(PAUSER_ROLE) -> ${protocolAdmin}`,
 	)
 
 	addTx(
@@ -552,8 +552,8 @@ export function buildUpgradeTransactions(
 		txIdx,
 		diamondAddress,
 		"grantRole",
-		[adminAddress, ethers.id("UNPAUSER_ROLE")],
-		`grantRole(UNPAUSER_ROLE) -> ${adminAddress}`,
+		[protocolAdmin, ethers.id("UNPAUSER_ROLE")],
+		`grantRole(UNPAUSER_ROLE) -> ${protocolAdmin}`,
 	)
 
 	addTx(safeTxs, calldataTxs, breakdown, txIdx, diamondAddress, "pauseGlobal", [], "pauseGlobal()")
@@ -589,8 +589,8 @@ export function buildUpgradeTransactions(
 		txIdx,
 		diamondAddress,
 		"grantRole",
-		[adminAddress, ethers.id("PROTOCOL_CONFIG_ROLE")],
-		`grantRole(PROTOCOL_CONFIG_ROLE) -> ${adminAddress}`,
+		[protocolAdmin, ethers.id("PROTOCOL_CONFIG_ROLE")],
+		`grantRole(PROTOCOL_CONFIG_ROLE) -> ${protocolAdmin}`,
 	)
 
 	addTx(
@@ -600,8 +600,8 @@ export function buildUpgradeTransactions(
 		txIdx,
 		diamondAddress,
 		"grantRole",
-		[adminAddress, ethers.id("COOLDOWN_ADMIN_ROLE")],
-		`grantRole(COOLDOWN_ADMIN_ROLE) -> ${adminAddress}`,
+		[protocolAdmin, ethers.id("COOLDOWN_ADMIN_ROLE")],
+		`grantRole(COOLDOWN_ADMIN_ROLE) -> ${protocolAdmin}`,
 	)
 
 	const needsFeeAdminRole =
@@ -617,8 +617,8 @@ export function buildUpgradeTransactions(
 			txIdx,
 			diamondAddress,
 			"grantRole",
-			[adminAddress, ethers.id("FEE_ADMIN_ROLE")],
-			`grantRole(FEE_ADMIN_ROLE) -> ${adminAddress}`,
+			[protocolAdmin, ethers.id("FEE_ADMIN_ROLE")],
+			`grantRole(FEE_ADMIN_ROLE) -> ${protocolAdmin}`,
 		)
 	}
 

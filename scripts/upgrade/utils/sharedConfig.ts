@@ -6,7 +6,7 @@ import fs from "fs"
  */
 export type UpgradeConfigShared = {
 	diamondAddress?: string
-	adminAddress?: string
+	protocolAdmin?: string
 	safeAddress?: string
 	subgraphEndpoint?: string
 	spotCheckCount?: number

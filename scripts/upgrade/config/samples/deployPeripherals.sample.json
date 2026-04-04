@@ -1,4 +1,4 @@
 {
-	"adminAddress": "0x...",
+	"protocolAdmin": "0x...",
 	"symmioFeeReceiver": "0x..."
 }

@@ -31,7 +31,7 @@ import { deployFacets, buildDiamondCut, applyDiamondCut, setV085Parameters, type
 
 type Config = {
 	diamondAddress?: string
-	adminAddress?: string
+	protocolAdmin?: string
 	migrationRunner?: string
 	symmioFeeReceiver?: string
 	setupInstantLayerTemplates?: boolean
@@ -53,7 +53,7 @@ async function main() {
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress
 	if (!DIAMOND_ADDRESS) throw new Error("DIAMOND_ADDRESS required (env or config)")
 
-	const MIGRATION_RUNNER = config.migrationRunner ?? config.adminAddress
+	const MIGRATION_RUNNER = config.migrationRunner ?? config.protocolAdmin
 	const newParams = config.newV085Parameters ?? {}
 
 	log.header("Symmio v0.8.5 EOA Upgrade")

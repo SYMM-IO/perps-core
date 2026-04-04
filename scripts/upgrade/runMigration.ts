@@ -22,7 +22,7 @@ type MigrationOnDemandReport = {
 	finishedAt?: string
 	durationMs?: number
 	diamondAddress?: string
-	adminAddress?: string
+	protocolAdmin?: string
 	migrationInputFile?: string
 	outputDir?: string
 	progressFile?: string
@@ -416,7 +416,7 @@ async function main() {
 			admin = signers[0]
 		}
 		const adminAddress = await admin.getAddress()
-		report.adminAddress = adminAddress
+		report.protocolAdmin = adminAddress
 		report.steps.push({
 			name: "resolve_signer",
 			status: "ok",

@@ -14,7 +14,7 @@
  *
  * Config: scripts/upgrade/config/deployPeripherals.json
  *   {
- *     "adminAddress": "0x...",         // Admin/owner for contracts
+ *     "protocolAdmin": "0x...",        // Address that owns peripherals and receives operational roles
  *     "symmioFeeReceiver": "0x...",    // Fee receiver for AccountLayer init (falls back to upgrade.json)
  *     "symmioPartyBAddress": "0x..."   // Existing SymmioPartyB proxy (falls back to upgrade.json)
  *   }
@@ -33,7 +33,7 @@ import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 
 type Config = {
 	diamondAddress?: string
-	adminAddress: string
+	protocolAdmin: string
 	symmioFeeReceiver: string
 	symmioPartyBAddress?: string
 }
@@ -75,13 +75,13 @@ function saveState(state: DeployedState): void {
 async function main() {
 	const config = loadConfig()
 
-	const { diamondAddress, adminAddress, symmioFeeReceiver, symmioPartyBAddress } = config
+	const { diamondAddress, protocolAdmin, symmioFeeReceiver, symmioPartyBAddress } = config
 
 	if (!diamondAddress || !ethers.isAddress(diamondAddress)) {
 		throw new Error("diamondAddress is required and must be a valid address")
 	}
-	if (!adminAddress || !ethers.isAddress(adminAddress)) {
-		throw new Error("adminAddress is required and must be a valid address")
+	if (!protocolAdmin || !ethers.isAddress(protocolAdmin)) {
+		throw new Error("protocolAdmin is required and must be a valid address")
 	}
 	if (!symmioFeeReceiver || !ethers.isAddress(symmioFeeReceiver)) {
 		throw new Error("symmioFeeReceiver is required and must be a valid address")
@@ -92,7 +92,7 @@ async function main() {
 
 	log.header("Deploy v0.8.5 Peripherals")
 	log.kv("Diamond (core)", log.addr(diamondAddress))
-	log.kv("Admin", log.addr(adminAddress))
+	log.kv("Protocol admin", log.addr(protocolAdmin))
 	log.kv("Fee receiver", log.addr(symmioFeeReceiver))
 	log.kv("SymmioPartyB proxy", symmioPartyBAddress ? log.addr(symmioPartyBAddress) : "(not set)")
 
@@ -102,12 +102,12 @@ async function main() {
 
 	// Deploy AccountLayer Diamond
 	let t = log.step("AccountLayer Diamond")
-	const alResult = await deployAccountLayerDiamond(adminAddress, symmioFeeReceiver, STATE_FILE)
+	const alResult = await deployAccountLayerDiamond(protocolAdmin, symmioFeeReceiver, STATE_FILE)
 	log.stepDone(t)
 
 	// Deploy InstantLayer
 	t = log.step("InstantLayer")
-	const ilResult = await deployInstantLayer(diamondAddress, adminAddress, STATE_FILE)
+	const ilResult = await deployInstantLayer(diamondAddress, protocolAdmin, STATE_FILE)
 	log.stepDone(t)
 
 	// Deploy SymmioPartyB implementation

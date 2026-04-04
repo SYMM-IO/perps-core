@@ -25,7 +25,7 @@ import { buildDiamondCut, buildUpgradeTransactions, loadDeployedFacets, type New
 
 type Config = {
 	diamondAddress?: string
-	adminAddress?: string
+	protocolAdmin?: string
 	safeAddress?: string
 	migrationRunner?: string
 	diamondCutChunkSize?: number
@@ -56,8 +56,8 @@ async function main() {
 
 	const CHAIN_ID = process.env.CHAIN_ID ?? String(Number((await ethers.provider.getNetwork()).chainId))
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress
-	const ADMIN_ADDRESS = process.env.ADMIN_ADDRESS ?? config.adminAddress
-	const MIGRATION_RUNNER = process.env.MIGRATION_RUNNER ?? config.migrationRunner ?? ADMIN_ADDRESS
+	const PROTOCOL_ADMIN = process.env.PROTOCOL_ADMIN ?? process.env.ADMIN_ADDRESS ?? config.protocolAdmin
+	const MIGRATION_RUNNER = process.env.MIGRATION_RUNNER ?? config.migrationRunner ?? PROTOCOL_ADMIN
 	const safeRaw = process.env.SAFE_ADDRESS ?? config.safeAddress
 	const SAFE_ADDRESS = safeRaw ? ethers.getAddress(safeRaw) : undefined
 	const DIAMOND_CUT_CHUNK_SIZE = Number(process.env.DIAMOND_CUT_CHUNK_SIZE ?? config.diamondCutChunkSize ?? 6)
@@ -66,8 +66,8 @@ async function main() {
 	if (!DIAMOND_ADDRESS || !ethers.isAddress(DIAMOND_ADDRESS)) {
 		throw new Error("DIAMOND_ADDRESS is required (env var or config file)")
 	}
-	if (!ADMIN_ADDRESS || !ethers.isAddress(ADMIN_ADDRESS)) {
-		throw new Error("ADMIN_ADDRESS is required -- the address that will execute upgrade transactions")
+	if (!PROTOCOL_ADMIN || !ethers.isAddress(PROTOCOL_ADMIN)) {
+		throw new Error("PROTOCOL_ADMIN is required -- the address that receives operational roles (PAUSER, UNPAUSER, etc.) and owns peripherals")
 	}
 	if (!SAFE_ADDRESS) {
 		throw new Error("SAFE_ADDRESS is required for Safe batch generation (env var or config file)")
@@ -77,7 +77,7 @@ async function main() {
 	}
 
 	console.log(`Diamond:          ${DIAMOND_ADDRESS}`)
-	console.log(`Admin:            ${ADMIN_ADDRESS}`)
+	console.log(`Protocol admin:   ${PROTOCOL_ADMIN}`)
 	console.log(`Safe:             ${SAFE_ADDRESS}`)
 	console.log(`Migration runner: ${MIGRATION_RUNNER}`)
 	console.log(`Chain ID:         ${CHAIN_ID}`)
@@ -101,7 +101,7 @@ async function main() {
 	console.log("Building upgrade transactions...")
 	const result = buildUpgradeTransactions(
 		DIAMOND_ADDRESS,
-		ADMIN_ADDRESS,
+		PROTOCOL_ADMIN,
 		MIGRATION_RUNNER,
 		diamondCut,
 		selectorChanges,
@@ -129,7 +129,7 @@ async function main() {
 		console.log(`  AccountLayerDiamond: ${AL_ADDRESS}`)
 		console.log(`  InstantLayer:        ${IL_ADDRESS}`)
 		if (PARTYB_ADDRESS) console.log(`  SymmioPartyB:        ${PARTYB_ADDRESS}`)
-		const wiringTxs = buildWiringTransactions(DIAMOND_ADDRESS, AL_ADDRESS, IL_ADDRESS, ADMIN_ADDRESS, PARTYB_ADDRESS, PARTYB_IMPL)
+		const wiringTxs = buildWiringTransactions(DIAMOND_ADDRESS, AL_ADDRESS, IL_ADDRESS, PROTOCOL_ADMIN, PARTYB_ADDRESS, PARTYB_IMPL)
 
 		// SymmioPartyB UUPS proxy upgrade (if address and new implementation provided)
 		// The Safe must have DEFAULT_ADMIN_ROLE on the PartyB proxy to call upgradeTo.
@@ -201,7 +201,7 @@ async function main() {
 		JSON.stringify(
 			{
 				diamondAddress: DIAMOND_ADDRESS,
-				adminAddress: ADMIN_ADDRESS,
+				protocolAdmin: PROTOCOL_ADMIN,
 				safeAddress: SAFE_ADDRESS,
 				migrationRunner: MIGRATION_RUNNER,
 				chainId: CHAIN_ID,

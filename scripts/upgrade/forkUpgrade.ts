@@ -28,7 +28,7 @@ const DEFAULT_SUBGRAPH_ENDPOINT = "https://api.goldsky.com/api/public/project_cm
 
 type ForkUpgradeConfig = {
 	diamondAddress?: string
-	adminAddress?: string
+	protocolAdmin?: string
 	diamondCutChunkSize?: number
 	subgraphEndpoint?: string
 	spotCheckCount?: number
@@ -50,7 +50,7 @@ type ForkUpgradeReport = {
 	finishedAt?: string
 	durationMs?: number
 	diamondAddress?: string
-	adminAddress?: string
+	protocolAdmin?: string
 	steps: StepResult[]
 	error?: string
 }
@@ -108,7 +108,7 @@ async function main() {
 	const config = loadConfig()
 
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress
-	const ADMIN_ADDRESS = process.env.ADMIN_ADDRESS ?? (config.adminAddress || undefined)
+	const ADMIN_ADDRESS = process.env.PROTOCOL_ADMIN ?? process.env.ADMIN_ADDRESS ?? (config.protocolAdmin || undefined)
 	const DIAMOND_CUT_CHUNK_SIZE = Number(process.env.DIAMOND_CUT_CHUNK_SIZE ?? config.diamondCutChunkSize ?? 6)
 	const SUBGRAPH_ENDPOINT = process.env.SUBGRAPH_ENDPOINT || config.subgraphEndpoint || DEFAULT_SUBGRAPH_ENDPOINT
 	const newParams = config.newV085Parameters ?? {}
@@ -153,7 +153,7 @@ async function main() {
 		currentStep = "impersonate_admin"
 		const admin = await getImpersonatedAdmin(DIAMOND_ADDRESS, ADMIN_ADDRESS)
 		const adminAddress = await admin.getAddress()
-		report.adminAddress = adminAddress
+		report.protocolAdmin = adminAddress
 		report.steps.push({ name: "impersonate_admin", status: "ok", details: { adminAddress } })
 		currentStep = null
 		tryWriteReport(reportFile, report)

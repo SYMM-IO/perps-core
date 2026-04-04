@@ -26,7 +26,7 @@ type Config = {
 	diamondAddress: string
 	accountLayerDiamondAddress: string
 	instantLayerAddress: string
-	adminAddress?: string
+	protocolAdmin?: string
 }
 
 const CONFIG_FILE = process.env.VERIFY_PERIPHERALS_CONFIG ?? "./scripts/upgrade/config/verifyPeripherals.json"
@@ -90,7 +90,7 @@ async function main() {
 
 	// Resolve admin from diamond owner
 	const { resolveOwner } = await import("./utils/forkHelpers.js")
-	const adminAddress = config.adminAddress || (await resolveOwner(diamondAddress))
+	const adminAddress = config.protocolAdmin || (await resolveOwner(diamondAddress))
 
 	console.log(`Core Diamond:        ${diamondAddress}`)
 	console.log(`AccountLayer:        ${accountLayerDiamondAddress}`)
