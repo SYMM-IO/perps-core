@@ -9,21 +9,11 @@ import { WithdrawReceiverPart } from "../../../core/storages/WithdrawStorage.sol
 import { IOperatorFacet } from "./IOperatorFacet.sol";
 import { OperatorFacetImpl } from "./OperatorFacetImpl.sol";
 
-import { LibErrors } from "../../libraries/LibErrors.sol";
-
-import { GlobalStorage } from "../../storages/GlobalStorage.sol";
+import { ReentrancyGuard } from "../../utils/ReentrancyGuard.sol";
 
 /// @title OperatorFacet
 /// @notice Bot/operator functions for processing, locking, and unlocking withdrawals.
-contract OperatorFacet is IOperatorFacet {
-	modifier nonReentrant() {
-		GlobalStorage.Layout storage s = GlobalStorage.layout();
-		if (s.reentrancyStatus == 1) revert LibErrors.Reentrancy();
-		s.reentrancyStatus = 1;
-		_;
-		s.reentrancyStatus = 0;
-	}
-
+contract OperatorFacet is IOperatorFacet, ReentrancyGuard {
 	function processWithdraw(address user, uint256 requestId, WithdrawReceiverPart[] calldata parts) external nonReentrant {
 		OperatorFacetImpl.processWithdraw(user, requestId, parts);
 		emit WithdrawProcessed(user, requestId);
