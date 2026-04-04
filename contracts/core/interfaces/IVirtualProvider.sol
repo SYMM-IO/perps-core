@@ -21,10 +21,6 @@ interface IVirtualProvider {
 	/// @param withdrawRequest The withdrawal request being cancelled
 	function onWithdrawCancelRequest(WithdrawRequest memory withdrawRequest) external;
 
-	/// @notice Called when the protocol force-cancels a withdrawal handled by this provider
-	/// @param withdrawRequest The force-cancelled withdrawal request
-	function onForceWithdrawCancel(WithdrawRequest memory withdrawRequest) external;
-
 	/// @notice Called when a withdrawal request's cooldown is reduced via speed-up
 	/// @param withdrawRequest The withdrawal request being sped up
 	/// @param newCooldown The new reduced cooldown duration

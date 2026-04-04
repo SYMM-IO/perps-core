@@ -101,25 +101,6 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 		emit WithdrawCancelRequested(requestId, LibSigner.getSigner());
 	}
 
-	/// @notice Force-cancels a withdrawal before cooldown expiry.
-	/// @dev
-	/// - Only callable by an account with the force-cancel role.
-	/// - Request must be in `PENDING`, `PROVIDER_ACCEPTED`, or `CANCEL_REQUESTED`.
-	/// - Cancels and refunds immediately, with provider callbacks as needed.
-	///
-	/// Emits:
-	/// - `WithdrawCancelled`
-	///
-	/// @param user The owner of the withdrawal request.
-	/// @param requestId ID of the withdrawal request.
-	function forceCancelWithdraw(
-		address user,
-		uint256 requestId
-	) external onlyRole(LibAccessibility.WITHDRAW_FORCE_CANCEL_ROLE) notSuspended(user) nonReentrant {
-		WithdrawFacetImpl.forceCancelWithdraw(user, requestId);
-		emit WithdrawCancelled(requestId, user);
-	}
-
 	/// @notice Provider accepts a cancellation request.
 	/// @dev
 	/// - Must be called only by the provider contract (express or virtual).

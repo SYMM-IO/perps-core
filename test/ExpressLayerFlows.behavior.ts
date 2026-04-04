@@ -44,8 +44,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		await context.controlFacet.connect(deployer).setMaxWithdrawParts(50)
 		await context.controlFacet.connect(deployer).setWithdrawCooldownPeriod(43200)
 
-		// Grant WITHDRAW_FORCE_CANCEL_ROLE and SUSPENDER_ROLE to admin on real Symmio
-		await context.controlFacet.connect(deployer).grantRole(deployer.address, ethers.keccak256(ethers.toUtf8Bytes("WITHDRAW_FORCE_CANCEL_ROLE")))
+		// Grant SUSPENDER_ROLE to admin on real Symmio
 		await context.controlFacet.connect(deployer).grantRole(deployer.address, ethers.keccak256(ethers.toUtf8Bytes("SUSPENDER_ROLE")))
 
 		// Configure ExpressProvider via roles
@@ -1079,66 +1078,6 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 
 			// Cancel after finalization+processing should fail
 			await expect(context.withdrawFacet.connect(user).requestCancelWithdraw(requestId)).to.be.revert(ethers)
-		})
-
-		it("should reject force cancel for express withdrawals (ACCEPTED instant)", async function () {
-			const fixture = await deployFixture()
-			const { user, context } = fixture
-
-			await triggerRecentDeallocate(fixture)
-
-			const { requestId } = await acceptInstant(fixture)
-
-			await expect(context.withdrawFacet.connect(context.signers.admin).forceCancelWithdraw(user.address, requestId)).to.be.revertedWith(
-				"WithdrawFacet : Use suspend for express withdrawals",
-			)
-		})
-
-		it("should reject force cancel for express withdrawals (LOCKED instant)", async function () {
-			const fixture = await deployFixture()
-			const { user, context, locker, expressProvider } = fixture
-
-			await triggerRecentDeallocate(fixture)
-
-			const { requestId } = await acceptInstant(fixture)
-
-			await expressProvider.connect(locker).lockWithdraw(user.address, requestId)
-			await expect(context.withdrawFacet.connect(context.signers.admin).forceCancelWithdraw(user.address, requestId)).to.be.revertedWith(
-				"WithdrawFacet : Use suspend for express withdrawals",
-			)
-		})
-
-		it("should reject force cancel for express withdrawals (PROCESSED instant)", async function () {
-			const fixture = await deployFixture()
-			const { operator, user, expressProvider, context } = fixture
-
-			await triggerRecentDeallocate(fixture)
-
-			const { parts, requestId } = await acceptInstant(fixture)
-
-			await ethers.provider.send("evm_increaseTime", [21])
-			await ethers.provider.send("evm_mine", [])
-			await expressProvider.connect(operator).processWithdraw(user.address, requestId, parts)
-
-			await expect(context.withdrawFacet.connect(context.signers.admin).forceCancelWithdraw(user.address, requestId)).to.be.revertedWith(
-				"WithdrawFacet : Use suspend for express withdrawals",
-			)
-		})
-
-		it("should reject force cancel for express withdrawals (LOCKED STANDARD after finalization)", async function () {
-			const fixture = await deployFixture()
-			const { user, expressProvider, context, locker } = fixture
-
-			await triggerRecentDeallocate(fixture)
-
-			const { requestId, withdrawAmount } = await acceptStandard(fixture)
-
-			await expressProvider.connect(locker).lockWithdraw(user.address, requestId)
-			await finalizeStandard(fixture, requestId, withdrawAmount)
-
-			await expect(context.withdrawFacet.connect(context.signers.admin).forceCancelWithdraw(user.address, requestId)).to.be.revertedWith(
-				"WithdrawFacet : Use suspend for express withdrawals",
-			)
 		})
 	})
 
@@ -2567,67 +2506,6 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			await expect(expressProvider.connect(operator).processWithdraw(user.address, 1, parts)).to.be.revertedWithCustomError(
 				expressProvider,
 				"NotAccepted",
-			)
-		})
-
-		it("should reject force cancel IMMEDIATE after payment", async function () {
-			const fixture = await deployFixture()
-			const { botSigner, user, receiver, expressProvider, context, affiliate } = fixture
-
-			const allSigners = await ethers.getSigners()
-			const validator1 = allSigners[19]
-			await expressProvider.setValidator(affiliate, validator1.address, true)
-			await expressProvider.setMinValidatorSignatures(affiliate, 1)
-
-			const withdrawAmount = 500n * 10n ** 18n
-			const expressAddr = await expressProvider.getAddress()
-
-			const parts = [
-				{
-					id: 0n,
-					amount: withdrawAmount,
-					chainId: 31337n,
-					receiver: receiver.address,
-					virtualProvider: ethers.ZeroAddress,
-					expressProvider: expressAddr,
-				},
-			]
-
-			const partsHash = computePartsHash(parts)
-			const now = (await ethers.provider.getBlock("latest"))!.timestamp
-			const deadline = now + 3600
-
-			const signature = await signWithdrawOption(expressProvider, botSigner, {
-				user: user.address,
-				nonce: 0n,
-				optionType: 0,
-				availableAt: 0,
-				affiliate,
-				affiliateAmount: 0n,
-				creditAmount: 0n,
-				fee: 0n,
-				operatorFee: 0n,
-				partsHash,
-				deadline,
-			})
-
-			const valSig = await signValidatorApproval(expressProvider, validator1, {
-				user: user.address,
-				nonce: 0n,
-				amount: withdrawAmount,
-				timestamp: now,
-				symmioNonce: 0n,
-			})
-
-			const providerData = encodeProviderData(0n, 0, 0, affiliate, 0n, 0n, 0n, 0n, deadline, signature, undefined, [valSig], [now])
-
-			// Trigger recent deallocate so cooldown is in the future (required for forceCancelWithdraw)
-			await triggerRecentDeallocate(fixture)
-			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
-
-			expect(await fixture.collateral.balanceOf(receiver.address)).to.equal(withdrawAmount)
-			await expect(context.withdrawFacet.connect(context.signers.admin).forceCancelWithdraw(user.address, 1n)).to.be.revertedWith(
-				"WithdrawFacet : Use suspend for express withdrawals",
 			)
 		})
 	})

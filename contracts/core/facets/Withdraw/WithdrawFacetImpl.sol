@@ -302,28 +302,6 @@ library WithdrawFacetImpl {
 		}
 	}
 
-	/// @notice Force-cancels a withdrawal before cooldown expiry, refunding and notifying providers
-	function forceCancelWithdraw(address user, uint256 requestId) internal {
-		WithdrawRequest storage withdrawRequest = _getWithdrawRequest(user, requestId);
-
-		require(
-			withdrawRequest.status == WithdrawStatus.PENDING ||
-				withdrawRequest.status == WithdrawStatus.PROVIDER_ACCEPTED ||
-				withdrawRequest.status == WithdrawStatus.CANCEL_REQUESTED,
-			"WithdrawFacet : Invalid withdraw request status"
-		);
-		require(block.timestamp < withdrawRequest.cooldownEndTime, "WithdrawFacet : Withdraw cooldown already over");
-
-		require(withdrawRequest.isPureVirtual || withdrawRequest.provider == address(0), "WithdrawFacet : Use suspend for express withdrawals");
-
-		_unlockAndRefund(withdrawRequest);
-		withdrawRequest.status = WithdrawStatus.CANCELLED;
-
-		if (withdrawRequest.provider != address(0)) {
-			LibSafeCall.safeExternalCall(withdrawRequest.provider, abi.encodeCall(IVirtualProvider.onForceWithdrawCancel, (withdrawRequest)));
-		}
-	}
-
 	/// @notice Provider accepts a cancellation request, refunding the user and marking as CANCELLED
 	function acceptWithdrawCancelRequest(address user, uint256 requestId) internal {
 		WithdrawRequest storage withdrawRequest = _getWithdrawRequest(user, requestId);

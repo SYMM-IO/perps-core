@@ -39,8 +39,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 		await context.controlFacet.connect(deployer).setMaxWithdrawParts(50)
 		await context.controlFacet.connect(deployer).setWithdrawCooldownPeriod(43200)
 
-		// Grant force cancel and suspender roles on real Symmio
-		await context.controlFacet.connect(deployer).grantRole(deployer.address, ethers.keccak256(ethers.toUtf8Bytes("WITHDRAW_FORCE_CANCEL_ROLE")))
+		// Grant suspender role on real Symmio
 		await context.controlFacet.connect(deployer).grantRole(deployer.address, ethers.keccak256(ethers.toUtf8Bytes("SUSPENDER_ROLE")))
 
 		// Configure ExpressProvider via roles
@@ -1609,29 +1608,6 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			}
 
 			await expect(expressProvider.connect(user).onWithdrawCancelRequest(fakeRequest)).to.be.revertedWithCustomError(expressProvider, "OnlySymmio")
-		})
-
-		it("should reject non-SYMMIO calling onForceWithdrawCancel", async function () {
-			const { expressProvider, user } = await deployFixture()
-
-			const fakeRequest = {
-				id: 1n,
-				user: user.address,
-				parts: [],
-				timestamp: 0n,
-				cooldownEndTime: 0n,
-				status: 0,
-				speedUp: false,
-				isCooldownModified: false,
-				provider: await expressProvider.getAddress(),
-				isPureVirtual: false,
-				providerData: "0x",
-				totalAmount: 0n,
-				totalVirtualAmount: 0n,
-				advancedAmount: 0n,
-			}
-
-			await expect(expressProvider.connect(user).onForceWithdrawCancel(fakeRequest)).to.be.revertedWithCustomError(expressProvider, "OnlySymmio")
 		})
 
 		it("should reject non-SYMMIO calling onWithdrawSuspend", async function () {

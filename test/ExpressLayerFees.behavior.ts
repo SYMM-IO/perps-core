@@ -43,9 +43,6 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		await context.controlFacet.connect(deployer).setMaxWithdrawParts(50)
 		await context.controlFacet.connect(deployer).setWithdrawCooldownPeriod(43200)
 
-		// Grant additional roles on real Symmio
-		await context.controlFacet.connect(deployer).grantRole(deployer.address, ethers.keccak256(ethers.toUtf8Bytes("WITHDRAW_FORCE_CANCEL_ROLE")))
-
 		// Configure ExpressProvider via roles
 		await expressProvider.grantRole(SIGNER_ROLE, botSigner.address)
 		await expressProvider.grantRole(OPERATOR_ROLE, operator.address)

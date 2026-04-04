@@ -16516,24 +16516,6 @@
     {
         "inputs": [
             {
-                "internalType": "address",
-                "name": "user",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "requestId",
-                "type": "uint256"
-            }
-        ],
-        "name": "forceCancelWithdraw",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
                 "components": [
                     {
                         "internalType": "uint256",
@@ -18375,19 +18357,6 @@
     {
         "inputs": [],
         "name": "VIRTUAL_DEPOSITOR_ROLE",
-        "outputs": [
-            {
-                "internalType": "bytes32",
-                "name": "",
-                "type": "bytes32"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "WITHDRAW_FORCE_CANCEL_ROLE",
         "outputs": [
             {
                 "internalType": "bytes32",

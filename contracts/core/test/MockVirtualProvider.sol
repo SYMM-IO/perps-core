@@ -77,11 +77,6 @@ contract VirtualProvider is IVirtualProvider {
 		withdrawRequest; // silence unused warning
 	}
 
-	function onForceWithdrawCancel(WithdrawRequest memory withdrawRequest) external pure override {
-		require(true, "");
-		withdrawRequest;
-	}
-
 	function onSpeedUpWithdrawRequest(WithdrawRequest memory withdrawRequest, uint256 _newCooldown) external pure override {
 		require(true, "");
 		withdrawRequest;
@@ -165,7 +160,6 @@ contract ConfigurableMockVirtualProvider is IVirtualProvider {
 	function onWithdrawRequest(WithdrawRequest memory) external pure override {}
 	function onWithdrawComplete(WithdrawRequest memory) external pure override {}
 	function onWithdrawCancelRequest(WithdrawRequest memory) external pure override {}
-	function onForceWithdrawCancel(WithdrawRequest memory) external pure override {}
 	function onSpeedUpWithdrawRequest(WithdrawRequest memory, uint256) external pure override {}
 	function onWithdrawSuspend(WithdrawRequest memory) external pure override {}
 	function onExternalTransfer(VirtualExternalTransferRequest memory) external pure override {}
@@ -218,7 +212,6 @@ contract MaliciousMockVirtualProvider is IVirtualProvider {
 	function onWithdrawRequest(WithdrawRequest memory) external pure override {}
 	function onWithdrawComplete(WithdrawRequest memory) external pure override {}
 	function onWithdrawCancelRequest(WithdrawRequest memory) external pure override {}
-	function onForceWithdrawCancel(WithdrawRequest memory) external pure override {}
 	function onSpeedUpWithdrawRequest(WithdrawRequest memory, uint256) external pure override {}
 	function onWithdrawSuspend(WithdrawRequest memory) external pure override {}
 	function onExternalTransfer(VirtualExternalTransferRequest memory) external pure override {}
