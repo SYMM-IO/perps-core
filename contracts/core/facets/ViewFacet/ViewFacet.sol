@@ -225,6 +225,13 @@ contract ViewFacet is IViewFacet {
 		return allocatedBalances;
 	}
 
+	/// @notice Returns the balance of Party B emergency reserve vault.
+	/// @param partyB The address of Party B.
+	/// @return The balance of Party B vault.
+	function balanceOfReserveVault(address partyB) external view returns (uint256) {
+		return AccountStorage.layout().reserveVault[partyB];
+	}
+
 	/// @notice Returns the deallocation timestamp of a user (indicating the most recent time the user executed a deallocation).
 	/// @param user The address of the user.
 	/// @return The deallocation timestamp of the user.

@@ -46,6 +46,8 @@ interface IViewFacet {
 
 	function allocatedBalanceOfPartyBs(address partyA, address[] memory partyBs) external view returns (uint256[] memory);
 
+	function balanceOfReserveVault(address partyB) external view returns (uint256);
+
 	function withdrawCooldownOf(address user) external view returns (uint256);
 
 	function getWithdrawableTime(address user) external view returns (uint256);
