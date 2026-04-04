@@ -41,6 +41,14 @@ BEFORE PAUSE (no downtime)
   safe-batch.json    diamondcut-calldata.json
 
 
+VERIFY DEPLOYED CONTRACTS (block explorer)
+═══════════════════════════════════════════
+  NETWORK=<network> bash scripts/upgrade/verify-all.sh
+
+  Verifies all libraries, facets, and peripherals (AL, IL, PartyB impl)
+  on the block explorer. Run after deployFacets + deployPeripherals.
+
+
 PAUSE + UPGRADE (execute via Safe UI)
 ═════════════════════════════════════
   safe-batch.json contains:
@@ -121,6 +129,11 @@ BEFORE PAUSE (no downtime)
                     ┌─────────┴──────────────┐
                     ▼                        ▼
   timelock-schedule-safe-batch.json   timelock-execute-safe-batch.json
+
+
+VERIFY DEPLOYED CONTRACTS (block explorer)
+═══════════════════════════════════════════
+  NETWORK=<network> bash scripts/upgrade/verify-all.sh
 
 
 SCHEDULE DIAMONDCUT (T=0, system still live)
@@ -308,6 +321,7 @@ npx hardhat run scripts/upgrade/runMigration.ts --network fork-arbitrum
 
 | Script | What it checks |
 |--------|---------------|
+| `verify-all.sh` | Block explorer verification of all deployed contracts (libraries, facets, peripherals) |
 | `verifyDiamond.ts` | All v0.8.5 facet selectors registered on diamond |
 | `verifyPeripherals.ts` | AccountLayer + InstantLayer roles, hooks, whitelist, templates |
 | `testTemplateExecution.ts` | Full end-to-end: affiliate registration, sub-account, PartyB UUPS upgrade, EIP-712 delegation, sendQuote -> lockQuote -> openPosition via InstantLayer template |
@@ -524,6 +538,20 @@ Output:
 - `scripts/upgrade/output/post-migration-safe-batch.json` -- Safe batch (if SAFE_ADDRESS set)
 
 ## Production Verification
+
+### Block explorer verification
+
+After deploying facets and peripherals (before or after the diamondCut):
+
+```bash
+NETWORK=<network> bash scripts/upgrade/verify-all.sh
+```
+
+Verifies all libraries (4), core facets (28), AccountLayer contracts (DiamondCutFacet, Diamond, Init, LibQuoteParams, 7 facets), InstantLayer, and SymmioPartyB implementation. Contracts with library dependencies are verified with the correct `--libraries` flags. Each verification is `|| true` so the script continues past already-verified or failing contracts.
+
+Addresses are read from `scripts/upgrade/output/deployed-facets.json` and `deployed-peripherals.json`. If addresses change, update `verify-all.sh` accordingly.
+
+### On-chain verification
 
 After the diamondCut + wiring batch:
 
