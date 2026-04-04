@@ -40,8 +40,7 @@ enum WithdrawStatus {
 	COMPLETED,
 	CANCEL_REQUESTED,
 	CANCELLED,
-	SUSPENDED,
-	PROVIDER_PROCESSED
+	SUSPENDED
 }
 
 /// @title WithdrawStorage

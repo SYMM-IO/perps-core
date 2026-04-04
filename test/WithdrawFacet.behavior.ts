@@ -1302,7 +1302,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			expect(finalRequest.status).to.equal(WithdrawStatus.COMPLETED)
 		})
 
-		it("Should finalize provider-processed withdraw with only the non-advanced remainder", async function () {
+		it("Should finalize provider-accepted withdraw with only the non-advanced remainder", async function () {
 			await userDeposit("100")
 			const epAddress = await expressProvider.getAddress()
 			const advancedAmount = ethers.parseUnits("30", 18)
@@ -1314,15 +1314,14 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")
 			await expressProvider.acceptWithdrawRequest(user.address, 1)
 			await expressProvider.advanceWithdraw(user.address, 1, advancedAmount)
-			await expressProvider.markWithdrawProcessed(user.address, 1)
 
-			const processedRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
-			expect(processedRequest.status).to.equal(WithdrawStatus.PROVIDER_PROCESSED)
-			expect(processedRequest.advancedAmount).to.equal(advancedAmount)
+			const acceptedRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
+			expect(acceptedRequest.status).to.equal(WithdrawStatus.PROVIDER_ACCEPTED)
+			expect(acceptedRequest.advancedAmount).to.equal(advancedAmount)
 
 			const pending = await context.viewFacet.getPendingWithdrawRequests(user.address, 1, 10)
 			expect(pending.length).to.equal(1)
-			expect(pending[0].status).to.equal(WithdrawStatus.PROVIDER_PROCESSED)
+			expect(pending[0].status).to.equal(WithdrawStatus.PROVIDER_ACCEPTED)
 
 			await time.increase(1000)
 			const expressBalanceBefore = await context.collateral.balanceOf(epAddress)

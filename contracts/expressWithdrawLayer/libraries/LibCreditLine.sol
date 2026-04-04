@@ -103,8 +103,8 @@ library LibCreditLine {
 		_cancelReservation(info.affiliate, user, requestId);
 	}
 
-	/// @dev Defensive fallback if an already-paid withdrawal ever receives a rollback callback.
-	///      Normal flow blocks this by marking the core request PROVIDER_PROCESSED before payout.
+	/// @dev Covers credit loss on post-payout rollback (suspend/force-cancel after PROCESSED).
+	///      Deducts from affiliate pool and settles credit debt.
 	function coverLoss(IERC20, address, address user, uint256 requestId, WithdrawInfo storage info) internal {
 		if (info.creditAmount == 0) return;
 

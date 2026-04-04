@@ -77,7 +77,6 @@ export enum WithdrawStatus {
 	CANCEL_REQUESTED,
 	CANCELLED,
 	SUSPENDED,
-	PROVIDER_PROCESSED,
 }
 
 export enum ExternalTransferStatus {

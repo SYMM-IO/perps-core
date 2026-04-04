@@ -733,7 +733,7 @@ contract ViewFacet is IViewFacet {
 	}
 
 	/// @notice Retrieves unfinished withdraw requests for a user within a paginated range.
-	/// @dev Returns requests with status PENDING, PROVIDER_ACCEPTED, PROVIDER_PROCESSED, CANCEL_REQUESTED, or SUSPENDED.
+	/// @dev Returns requests with status PENDING, PROVIDER_ACCEPTED, CANCEL_REQUESTED, or SUSPENDED.
 	///      Skips requests that are COMPLETED, CANCELLED, or PROVIDER_REJECTED.
 	/// @param user The address of the user.
 	/// @param start The starting request ID (inclusive).

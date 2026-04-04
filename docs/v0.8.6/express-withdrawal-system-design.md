@@ -357,7 +357,7 @@ An operator with `SUSPENDER_ROLE` on SYMMIO can suspend a user's withdrawal (e.g
 3. Refunds sponsor coverage to sponsor balance
 4. Sets status to `SUSPENDED`
 
-Once Express has already paid the user, SYMMIO core marks the request as provider-processed. From that point, `forceCancelWithdraw` and `suspendWithdrawRequest` are no longer valid; the withdrawal must continue to normal cooldown finalization.
+If the withdrawal was already PROCESSED, `_handleProcessedRollback` is called instead, which covers credit loss from the affiliate pool and removes expected inflows.
 
 Note: IMMEDIATE withdrawals cannot be suspended after acceptance because the funds are already transferred in the same transaction. The suspension would need to happen before the user's `initiateWithdraw` tx is mined. STANDARD withdrawals can only be suspended before finalization; once `onWithdrawComplete` has delivered the tokens, suspension is invalid.
 
@@ -745,7 +745,7 @@ When `reserveDebt` is called, `LibCreditLine` validates the Muon oracle attestat
 | Activate | `processWithdraw` / `unlockAndProcess` / IMMEDIATE inline | `activateDebt` — moves from `reservedDebt` to `activeDebt`, calls `advanceWithdraw` on SYMMIO |
 | Settle | `onWithdrawComplete` | `settleDebt` — removes from `activeDebt`, deletes request state |
 | Cancel | `onWithdrawCancelRequest` / `onForceWithdrawCancel` (pre-payout) | `cancelReservation` — removes from `reservedDebt` |
-| Post-payout rollback | Not supported | Once Express pays the user, SYMMIO core marks the request as provider-processed and rejects force-cancel / suspend |
+| Cover Loss | `onForceWithdrawCancel` / `onWithdrawSuspend` (post-payout) | `settleDebt` — deducts `creditAmount` from affiliate pool to cover the loss |
 
 ## 10. Access Control & Roles
 
@@ -1215,11 +1215,9 @@ expressProvider.depositToAffiliate(affiliateAddress, amount)
 | INSTANT | Yes | If status is ACCEPTED (not yet processed) | Funds locked but not transferred; unlocking is safe |
 | STANDARD | Yes | If status is ACCEPTED (before SYMMIO finalization) | No capital fronted; Express just releases acceptance |
 
-### 15.2 No Post-Payout Cancel / Suspend
+### 15.2 Post-Payout Rollback
 
-Once Express has paid the user for an IMMEDIATE or INSTANT withdrawal, SYMMIO core marks the request as `PROVIDER_PROCESSED`. From that point, `forceCancelWithdraw` and `suspendWithdrawRequest` revert because the request is no longer in a cancellable provider status.
-
-For credit-backed withdrawals, this avoids trying to unwind a payout after `advanceWithdraw` has already released the credit portion from SYMMIO escrow. The remaining lifecycle is normal cooldown finalization only.
+If a force-cancel or suspend occurs after Express has already paid the user, the credit portion (if any) has already been advanced via `advanceWithdraw`. `LibCreditLine.coverLoss` deducts the credit amount from the affiliate pool to absorb the loss. In practice this path is extremely unlikely because `forceCancelWithdraw` requires `block.timestamp < cooldownEndTime`, and express processing typically happens well before cooldown expiry.
 
 ### 15.3 Liquidity Fragmentation
 

@@ -1836,77 +1836,6 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			expect(await expressProvider.creditLineTotalDebt(affiliate)).to.equal(0n)
 		})
 
-		it("should reject force cancel on processed credit-backed withdrawal", async function () {
-			const fixture = await deployFixture()
-			const { expressProvider, botSigner, operator, user, receiver, context, affiliate } = fixture
-			const expressAddr = await expressProvider.getAddress()
-			const withdrawAmount = 500n * 10n ** 18n
-			const creditAmount = 200n * 10n ** 18n
-
-			const parts = [
-				{
-					id: 0n,
-					amount: withdrawAmount,
-					chainId: 31337n,
-					receiver: receiver.address,
-					virtualProvider: ethers.ZeroAddress,
-					expressProvider: expressAddr,
-				},
-			]
-
-			const partsHash = computePartsHash(parts)
-			const deadline = (await ethers.provider.getBlock("latest"))!.timestamp + 3600
-			const now = (await ethers.provider.getBlock("latest"))!.timestamp
-
-			const signature = await signWithdrawOption(expressProvider, botSigner, {
-				user: user.address,
-				nonce: 0n,
-				optionType: 1,
-				availableAt: 0,
-				affiliate,
-				affiliateAmount: 0n,
-				creditAmount,
-				fee: 0n,
-				operatorFee: 0n,
-				partsHash,
-				deadline,
-			})
-
-			const creditDataRaw = buildCreditData(10_000n * 10n ** 18n, now)
-			const providerData = encodeProviderData(
-				0n,
-				1,
-				0,
-				affiliate,
-				0n,
-				creditAmount,
-				0n,
-				0n,
-				deadline,
-				signature,
-				undefined,
-				undefined,
-				undefined,
-				creditDataRaw,
-			)
-
-			// Trigger recent deallocate so cooldown is in the future (required for forceCancelWithdraw)
-			await triggerRecentDeallocate(fixture)
-			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
-
-			// Process
-			await ethers.provider.send("evm_increaseTime", [21])
-			await ethers.provider.send("evm_mine", [])
-			await expressProvider.connect(operator).processWithdraw(user.address, 1n, parts)
-
-			const coreRequest = await context.viewFacet.getWithdrawRequests(user.address, 1n)
-			expect(coreRequest.status).to.equal(WithdrawStatus.PROVIDER_PROCESSED)
-
-			await expect(context.withdrawFacet.connect(context.signers.admin).forceCancelWithdraw(user.address, 1n)).to.be.revertedWith(
-				"WithdrawFacet : Invalid withdraw request status",
-			)
-		})
-
 		it("should reject credit for STANDARD withdrawals", async function () {
 			const fixture = await deployFixture()
 			const { expressProvider, botSigner, user, receiver, context, affiliate } = fixture
@@ -2265,7 +2194,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			expect(info.status).to.equal(3n) // PROCESSED
 
 			const coreRequest = await context.viewFacet.getWithdrawRequests(user.address, requestId)
-			expect(coreRequest.status).to.equal(WithdrawStatus.PROVIDER_PROCESSED)
+			expect(coreRequest.status).to.equal(WithdrawStatus.PROVIDER_ACCEPTED)
 		})
 
 		it("after finalization, status is FINALIZED", async function () {
@@ -2411,7 +2340,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			expect(info.status).to.equal(3n) // PROCESSED
 
 			const coreRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
-			expect(coreRequest.status).to.equal(WithdrawStatus.PROVIDER_PROCESSED)
+			expect(coreRequest.status).to.equal(WithdrawStatus.PROVIDER_ACCEPTED)
 		})
 
 		it("should reject IMMEDIATE without validators enabled", async function () {

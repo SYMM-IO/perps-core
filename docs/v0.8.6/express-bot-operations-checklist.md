@@ -2374,7 +2374,7 @@ The Muon oracle computes `eligibleBase` off-chain as `freeEligible + haircutted(
 **Flow on cancellation (before payout):**
 1. `LibCreditLine.releaseReservation` decrements `reservedDebt` and deletes the record in `CreditLineStorage`.
 
-**Post-payout rollback:** Not supported. Once Express pays the user for an IMMEDIATE or INSTANT withdrawal, SYMMIO core marks the request as `PROVIDER_PROCESSED`. From that point, `forceCancelWithdraw` and `suspendWithdrawRequest` revert, and the request must continue to normal cooldown finalization.
+**Credit loss on post-payout rollback:** If a withdrawal is force-cancelled or suspended after processing (Status = PROCESSED), the credit amount has already been advanced and paid to the user. `LibCreditLine.coverLoss` deducts `creditAmount` from `s.affiliateBalances[affiliate]` (the affiliate pool absorbs the loss) and calls `settleDebt` to clear the record.
 
 ### 10.5 Bot Decision Logic for Credit
 
@@ -2514,12 +2514,18 @@ Step 4b -- Cancellation before processing (alternative to step 3):
   Credit line state: reservedDebt(0xAffiliate) = 0, activeDebt(0xAffiliate) = 0 -- fully cleared, no loss.
   Status -> CANCELLED
 
-Step 4c -- Attempted post-payout rollback:
-  After processing, SYMMIO core marks the request as PROVIDER_PROCESSED.
-  Any later call to forceCancelWithdraw or suspendWithdrawRequest reverts with:
-    "WithdrawFacet : Invalid withdraw request status"
-  Bot implication:
-    once payout happens, the only remaining lifecycle action is finalization.
+Step 4c -- Post-payout rollback (force-cancel after PROCESSED, rare):
+  If SYMMIO force-cancels AFTER processing (status was PROCESSED):
+    The 200 USDC credit advance was already paid to 0xAlice.
+    SYMMIO will not send those funds on finalization (they were already advanced).
+    LibCreditLine.coverLoss(collateral, symmio, 0xAlice, 7, info):
+      affiliateBalances[0xAffiliate] -= 200e6  (affiliate pool absorbs the loss)
+      CreditLineFacet.settleDebt(0xAffiliate, 0xAlice, 7):
+        activeDebt(0xAffiliate): 200e6 -> 0
+        delete requestDebt[key]
+    The 200 USDC loss comes from the affiliate pool.
+    Note: In practice, forceCancelWithdraw requires block.timestamp < cooldownEndTime,
+    so this path is extremely unlikely for PROCESSED express withdrawals.
 ```
 
 ---
@@ -3310,7 +3316,7 @@ Correct strategy:
 | Credit amount exceeds debt cap | `reserveDebt` reverts (cap exceeded) |
 | Muon attestation expired | `reserveDebt` reverts (freshness check fails) |
 | Credit used with STANDARD | Reverts `CreditNotSupportedForStandard` |
-| Post-payout rollback with credit | Not supported; processed express withdrawals cannot be force-cancelled or suspended |
+| Post-payout rollback with credit | Affiliate pool absorbs credit loss via `coverLoss` |
 
 ### 15.6 STANDARD-Specific Edge Cases
 

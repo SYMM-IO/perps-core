@@ -8,7 +8,6 @@ pragma solidity >=0.8.18;
 /// @notice Minimal interface for ExpressProvider interactions with SYMMIO core.
 interface ISymmio {
 	function acceptWithdrawRequest(address user, uint256 requestId) external;
-	function markWithdrawProcessed(address user, uint256 requestId) external;
 	function rejectWithdrawRequest(address user, uint256 requestId) external;
 	function acceptWithdrawCancelRequest(address user, uint256 requestId) external;
 	function finalizeWithdrawRequest(address user, uint256 requestId) external;
