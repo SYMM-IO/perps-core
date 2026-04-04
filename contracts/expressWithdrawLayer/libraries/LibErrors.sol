@@ -44,6 +44,6 @@ library LibErrors {
 	error TolerancePeriodTooLow();
 	error CreditNotSupportedForStandard();
 	error InvalidPostPayoutRollback();
-	error VirtualProviderDeprecated();
+	error VirtualProviderMustBeZero();
 	error Reentrancy();
 }

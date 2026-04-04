@@ -1033,7 +1033,7 @@ Step 2 — Bot sees: validator attestations gathered
     - ISymmio(symmio).nonceOfPartyA(user)                    = 42 (SYMMIO-side nonce)
     - block.timestamp                                       = T_now
   Bot requests ValidatorApproval signatures from 2 independent validators registered for aff (or address(0) default):
-    Each validator signs: ValidatorApproval(user, nonce=3, amount=1000e6, timestamp=T_now, symmioNonce=42)
+    Each validator signs: ValidatorApproval(user, nonce=3, amount=totalAmount, timestamp=T_now, symmioNonce=42)
   Bot checks:
     - Received 2 signatures?                                                       YES
     - Each signature timestamp within validatorApprovalTimeout(aff) (30s) of current time? YES
@@ -2147,7 +2147,7 @@ ValidatorApproval(address user, uint256 nonce, uint256 amount, uint256 timestamp
 
 - `user` -- withdrawing user
 - `nonce` -- same nonce as the WithdrawOption (the user's current nonce on ExpressProvider)
-- `amount` -- `expressAmount` (total fee-bearing amount)
+- `amount` -- `totalAmount` (the full withdrawal amount, since a suspend rolls back the entire request)
 - `timestamp` -- when the validator signed (must be <= `block.timestamp`)
 - `symmioNonce` -- user's current nonce on SYMMIO (`nonceOfPartyA(user)`)
 

@@ -58,7 +58,7 @@ library SymmioHookFacetImpl {
 		if (opt.fee + opt.operatorFee > feeBasis) revert LibErrors.FeesExceedExpressAmount();
 
 		if (minSigs > 0) {
-			_validateValidators(opt.affiliate, withdrawRequest.user, opt.nonce, amounts.expressAmount, validatorData);
+			_validateValidators(opt.affiliate, withdrawRequest.user, opt.nonce, withdrawRequest.totalAmount, validatorData);
 		}
 
 		if (optType != OptionType.STANDARD) {

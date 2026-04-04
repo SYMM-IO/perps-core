@@ -804,7 +804,7 @@ When a user requests withdrawal options:
 
 All three options use the same EIP-712 signature and go through ExpressProvider.
 
-5. Collect validator attestations: query N validator services registered for this affiliate (or the `address(0)` default) with `(user, nonce, amount)`. Each validator signs `ValidatorApproval` with current timestamp.
+5. Collect validator attestations: query N validator services registered for this affiliate (or the `address(0)` default) with `(user, nonce, totalAmount)`. Each validator signs `ValidatorApproval` using the full withdrawal `totalAmount` (not just the express portion) with current timestamp.
 6. Read `affiliateConfigs(affiliate)` to get `feeRate` and `operatorFee`
 7. Compute `fee = expressAmount * feeRate / 10000`
 8. If using credit line: obtain Muon attestation (`CreditData`) for the affiliate's aggregate eligible balance. Credit is not supported for STANDARD.

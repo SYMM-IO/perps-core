@@ -30,7 +30,7 @@ library LibParts {
 	) internal view returns (ComputedAmounts memory amounts) {
 		for (uint256 i = 0; i < parts.length; i++) {
 			if (parts[i].expressProvider == address(this)) {
-				if (parts[i].virtualProvider != address(0)) revert LibErrors.VirtualProviderDeprecated();
+				if (parts[i].virtualProvider != address(0)) revert LibErrors.VirtualProviderMustBeZero();
 				amounts.expressAmount += parts[i].amount;
 			}
 		}
@@ -45,7 +45,7 @@ library LibParts {
 
 		for (uint256 i = 0; i < parts.length; i++) {
 			if (parts[i].expressProvider != address(this)) continue;
-			if (parts[i].virtualProvider != address(0)) revert LibErrors.VirtualProviderDeprecated();
+			if (parts[i].virtualProvider != address(0)) revert LibErrors.VirtualProviderMustBeZero();
 
 			address receiver = bytesToAddress(parts[i].receiver);
 
