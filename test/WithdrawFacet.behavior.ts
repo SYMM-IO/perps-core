@@ -1428,7 +1428,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			)
 		})
 
-		it("Should force cancel withdraw with express provider", async function () {
+		it("Should reject force cancel for express provider withdrawals", async function () {
 			await userDeposit("100")
 			await triggerCooldown()
 			const epAddress = await expressProvider.getAddress()
@@ -1440,22 +1440,16 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				await buildPart("20"),
 			]
 
-			const balanceBefore = await context.viewFacet.balanceOf(user.address)
 			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")
 
 			await expressProvider.acceptWithdrawRequest(user.address, 1)
 
-			await expect(context.withdrawFacet.connect(context.signers.admin).forceCancelWithdraw(user.address, 1)).not.reverted
-
-			const updatedWithdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
-			expect(updatedWithdrawRequest.status).to.equal(WithdrawStatus.CANCELLED)
-
-			// Balance should be fully restored
-			const balanceAfter = await context.viewFacet.balanceOf(user.address)
-			expect(balanceAfter).to.equal(balanceBefore)
+			await expect(context.withdrawFacet.connect(context.signers.admin).forceCancelWithdraw(user.address, 1)).to.revertedWith(
+				"WithdrawFacet : Use suspend for express withdrawals",
+			)
 		})
 
-		it("Should force cancel express withdraw on CANCEL_REQUESTED status", async function () {
+		it("Should reject force cancel for express provider withdrawals in CANCEL_REQUESTED status", async function () {
 			await userDeposit("100")
 			await triggerCooldown()
 			const epAddress = await expressProvider.getAddress()
@@ -1467,26 +1461,18 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				await buildPart("20"),
 			]
 
-			const balanceBefore = await context.viewFacet.balanceOf(user.address)
 			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")
 
 			await expressProvider.acceptWithdrawRequest(user.address, 1)
 
-			// User requests cancel - status becomes CANCEL_REQUESTED for express
 			await context.withdrawFacet.connect(context.signers.user).requestCancelWithdraw(1)
 
 			const withdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
 			expect(withdrawRequest.status).to.equal(WithdrawStatus.CANCEL_REQUESTED)
 
-			// Admin can force cancel even in CANCEL_REQUESTED status
-			await expect(context.withdrawFacet.connect(context.signers.admin).forceCancelWithdraw(user.address, 1)).not.reverted
-
-			const updatedWithdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
-			expect(updatedWithdrawRequest.status).to.equal(WithdrawStatus.CANCELLED)
-
-			// Balance should be fully restored
-			const balanceAfter = await context.viewFacet.balanceOf(user.address)
-			expect(balanceAfter).to.equal(balanceBefore)
+			await expect(context.withdrawFacet.connect(context.signers.admin).forceCancelWithdraw(user.address, 1)).to.revertedWith(
+				"WithdrawFacet : Use suspend for express withdrawals",
+			)
 		})
 	})
 

@@ -314,15 +314,13 @@ library WithdrawFacetImpl {
 		);
 		require(block.timestamp < withdrawRequest.cooldownEndTime, "WithdrawFacet : Withdraw cooldown already over");
 
+		require(withdrawRequest.isPureVirtual || withdrawRequest.provider == address(0), "WithdrawFacet : Use suspend for express withdrawals");
+
 		_unlockAndRefund(withdrawRequest);
 		withdrawRequest.status = WithdrawStatus.CANCELLED;
 
 		if (withdrawRequest.provider != address(0)) {
-			if (withdrawRequest.isPureVirtual) {
-				LibSafeCall.safeExternalCall(withdrawRequest.provider, abi.encodeCall(IVirtualProvider.onForceWithdrawCancel, (withdrawRequest)));
-			} else {
-				LibSafeCall.safeExternalCall(withdrawRequest.provider, abi.encodeCall(IExpressProvider.onForceWithdrawCancel, (withdrawRequest)));
-			}
+			LibSafeCall.safeExternalCall(withdrawRequest.provider, abi.encodeCall(IVirtualProvider.onForceWithdrawCancel, (withdrawRequest)));
 		}
 	}
 

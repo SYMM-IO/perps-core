@@ -25,7 +25,6 @@ library LibErrors {
 	error NotProcessed();
 	error NotAccepted();
 	error NotFinalized();
-	error InvalidStatusForForceCancel();
 	error PartsMismatch();
 	error TooEarly();
 	error NotLocked();

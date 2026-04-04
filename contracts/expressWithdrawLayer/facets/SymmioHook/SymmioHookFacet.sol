@@ -39,13 +39,6 @@ contract SymmioHookFacet is ISymmioHookFacet {
 		emit WithdrawCancelled(withdrawRequest.user, withdrawRequest.id);
 	}
 
-	function onForceWithdrawCancel(WithdrawRequest memory withdrawRequest) external nonReentrant {
-		(bool cancelled, ) = SymmioHookFacetImpl.onForceWithdrawCancel(withdrawRequest);
-		if (cancelled) {
-			emit WithdrawCancelled(withdrawRequest.user, withdrawRequest.id);
-		}
-	}
-
 	function onWithdrawSuspend(WithdrawRequest memory withdrawRequest) external nonReentrant {
 		SymmioHookFacetImpl.onWithdrawSuspend(withdrawRequest);
 		emit WithdrawSuspended(withdrawRequest.user, withdrawRequest.id);

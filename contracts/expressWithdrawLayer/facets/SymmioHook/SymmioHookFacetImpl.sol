@@ -158,37 +158,6 @@ library SymmioHookFacetImpl {
 		ISymmio(g.symmio).acceptWithdrawCancelRequest(withdrawRequest.user, withdrawRequest.id);
 	}
 
-	/// @notice Handles force withdraw cancel callback from Symmio.
-	/// @return cancelled Whether the status ended as CANCELLED (true) vs other terminal states.
-	/// @return wasProcessed Whether the withdraw had been in PROCESSED status (rollback path).
-	function onForceWithdrawCancel(WithdrawRequest memory withdrawRequest) internal returns (bool cancelled, bool wasProcessed) {
-		GlobalStorage.Layout storage g = GlobalStorage.layout();
-		if (msg.sender != g.symmio) revert LibErrors.OnlySymmio();
-
-		WithdrawInfo storage info = g.withdrawInfos[withdrawRequest.user][withdrawRequest.id];
-		if (keccak256(abi.encode(withdrawRequest.parts)) != info.partsHash) revert LibErrors.PartsMismatch();
-
-		if (info.status == Status.PROCESSED) {
-			_handleProcessedRollback(withdrawRequest.user, withdrawRequest.id, info);
-			info.status = Status.CANCELLED;
-			cancelled = true;
-			wasProcessed = true;
-			return (cancelled, wasProcessed);
-		}
-
-		if (info.status != Status.ACCEPTED && info.status != Status.LOCKED) {
-			revert LibErrors.InvalidStatusForForceCancel();
-		}
-		if (info.optionType == OptionType.STANDARD && info.finalizedAt != 0) {
-			revert LibErrors.InvalidStatusForForceCancel();
-		}
-
-		_releaseWithdraw(withdrawRequest.user, withdrawRequest.id, info);
-		info.status = Status.CANCELLED;
-		cancelled = true;
-		wasProcessed = false;
-	}
-
 	/// @notice Handles withdraw suspend callback from Symmio.
 	/// @return wasProcessed Whether the withdraw had been in PROCESSED status (rollback path).
 	function onWithdrawSuspend(WithdrawRequest memory withdrawRequest) internal returns (bool wasProcessed) {

@@ -14,7 +14,5 @@ interface ISymmioHookFacet is ISymmioHookEvents {
 
 	function onWithdrawCancelRequest(WithdrawRequest memory withdrawRequest) external;
 
-	function onForceWithdrawCancel(WithdrawRequest memory withdrawRequest) external;
-
 	function onWithdrawSuspend(WithdrawRequest memory withdrawRequest) external;
 }

@@ -153,6 +153,17 @@ async function setHyperEVMBigBlocks(hre: any, enable: boolean): Promise<void> {
 		body: JSON.stringify(payload),
 	})
 
+	const contentType = response.headers.get("content-type") || ""
+	if (!contentType.includes("application/json")) {
+		const text = await response.text()
+		throw new Error(
+			`API returned non-JSON response (status ${response.status}, content-type: ${contentType}).\n` +
+				`This usually means the Hyperliquid API endpoint is temporarily down or unreachable.\n` +
+				`URL: ${apiUrl}\n` +
+				`Response body (first 500 chars): ${text.slice(0, 500)}`,
+		)
+	}
+
 	const result = await response.json()
 
 	if (response.ok && result.status === "ok") {
