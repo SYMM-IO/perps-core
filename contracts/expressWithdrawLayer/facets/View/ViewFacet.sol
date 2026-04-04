@@ -10,10 +10,12 @@ import { WithdrawInfo } from "../../types/WithdrawTypes.sol";
 
 import { LibAccessControl } from "../../libraries/LibAccessControl.sol";
 
+import { AffiliateCredit } from "../../types/CreditTypes.sol";
 import { GlobalStorage } from "../../storages/GlobalStorage.sol";
 import { PoolStorage } from "../../storages/PoolStorage.sol";
 import { FeeStorage } from "../../storages/FeeStorage.sol";
 import { ValidatorStorage } from "../../storages/ValidatorStorage.sol";
+import { CreditLineStorage } from "../../storages/CreditLineStorage.sol";
 
 /// @title ViewFacet
 /// @notice Read-only facet exposing all state getters for the ExpressProvider diamond.
@@ -121,5 +123,66 @@ contract ViewFacet is IViewFacet {
 
 	function hasRole(bytes32 role, address account) external view returns (bool) {
 		return LibAccessControl.hasRole(role, account);
+	}
+
+	// ── Credit line ──
+
+	function creditLineSignatureVerifier() external view returns (address) {
+		return CreditLineStorage.layout().signatureVerifier;
+	}
+
+	function creditLineMuonAppId() external view returns (uint256) {
+		return CreditLineStorage.layout().muonAppId;
+	}
+
+	function creditLineMuonFreshnessWindow() external view returns (uint256) {
+		return CreditLineStorage.layout().muonFreshnessWindow;
+	}
+
+	function creditLineProtocolMaxDebt(address affiliate) external view returns (uint256) {
+		return CreditLineStorage.layout().affiliates[affiliate].protocolMaxDebt;
+	}
+
+	function creditLineProtocolMaxDebtBps(address affiliate) external view returns (uint256) {
+		return CreditLineStorage.layout().affiliates[affiliate].protocolMaxDebtBps;
+	}
+
+	function creditLineAffiliateMaxDebt(address affiliate) external view returns (uint256) {
+		return CreditLineStorage.layout().affiliates[affiliate].affiliateMaxDebt;
+	}
+
+	function creditLineAffiliateMaxDebtBps(address affiliate) external view returns (uint256) {
+		return CreditLineStorage.layout().affiliates[affiliate].affiliateMaxDebtBps;
+	}
+
+	function creditLineReservedDebt(address affiliate) external view returns (uint256) {
+		return CreditLineStorage.layout().affiliates[affiliate].reservedDebt;
+	}
+
+	function creditLineActiveDebt(address affiliate) external view returns (uint256) {
+		return CreditLineStorage.layout().affiliates[affiliate].activeDebt;
+	}
+
+	function creditLineTotalDebt(address affiliate) external view returns (uint256) {
+		AffiliateCredit storage ac = CreditLineStorage.layout().affiliates[affiliate];
+		return ac.reservedDebt + ac.activeDebt;
+	}
+
+	function creditLineRequestDebt(address affiliate, address user, uint256 requestId) external view returns (uint256) {
+		bytes32 key = keccak256(abi.encodePacked(user, requestId));
+		return CreditLineStorage.layout().affiliates[affiliate].requestDebt[key];
+	}
+
+	function creditLineRequestActivated(address affiliate, address user, uint256 requestId) external view returns (bool) {
+		bytes32 key = keccak256(abi.encodePacked(user, requestId));
+		return CreditLineStorage.layout().affiliates[affiliate].requestActivated[key];
+	}
+
+	function creditLinePaused(address affiliate) external view returns (bool) {
+		return CreditLineStorage.layout().affiliates[affiliate].paused;
+	}
+
+	function creditLineBlacklisted(address affiliate, address user) external view returns (bool) {
+		return CreditLineStorage.layout().affiliates[affiliate].blacklisted[user];
 	}
 }

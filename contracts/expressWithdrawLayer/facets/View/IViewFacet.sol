@@ -63,4 +63,34 @@ interface IViewFacet {
 	// ── Access control ──
 
 	function hasRole(bytes32 role, address account) external view returns (bool);
+
+	// ── Credit line ──
+
+	function creditLineSignatureVerifier() external view returns (address);
+
+	function creditLineMuonAppId() external view returns (uint256);
+
+	function creditLineMuonFreshnessWindow() external view returns (uint256);
+
+	function creditLineProtocolMaxDebt(address affiliate) external view returns (uint256);
+
+	function creditLineProtocolMaxDebtBps(address affiliate) external view returns (uint256);
+
+	function creditLineAffiliateMaxDebt(address affiliate) external view returns (uint256);
+
+	function creditLineAffiliateMaxDebtBps(address affiliate) external view returns (uint256);
+
+	function creditLineReservedDebt(address affiliate) external view returns (uint256);
+
+	function creditLineActiveDebt(address affiliate) external view returns (uint256);
+
+	function creditLineTotalDebt(address affiliate) external view returns (uint256);
+
+	function creditLineRequestDebt(address affiliate, address user, uint256 requestId) external view returns (uint256);
+
+	function creditLineRequestActivated(address affiliate, address user, uint256 requestId) external view returns (bool);
+
+	function creditLinePaused(address affiliate) external view returns (bool);
+
+	function creditLineBlacklisted(address affiliate, address user) external view returns (bool);
 }
