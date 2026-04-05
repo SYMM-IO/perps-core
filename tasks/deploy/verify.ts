@@ -469,6 +469,9 @@ async function verifyCoreSystemParameters(ethers: any, diamondAddress: string, r
 	await checkValue(results, cat, "Settlement cooldown", () => view.settlementCooldown(), {
 		hint: "Call ControlFacet.setSettlementCooldown(seconds) on Diamond",
 	})
+	await checkValue(results, cat, "Max withdraw parts", () => view.getMaxWithdrawParts(), {
+		hint: "Call ControlFacet.setMaxWithdrawParts(n) on Diamond (e.g. 10)",
+	})
 
 	// Force close cooldowns (returns tuple)
 	try {

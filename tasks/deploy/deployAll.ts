@@ -901,7 +901,7 @@ async function setupSystem(
 		{
 			key: "setup.setMaxWithdrawParts",
 			name: "setMaxWithdrawParts",
-			action: () => controlFacet.connect(deployer).setMaxWithdrawParts(30),
+			action: () => controlFacet.connect(deployer).setMaxWithdrawParts(10),
 		},
 		{ key: "setup.setDeallocateCooldown", name: "setDeallocateCooldown", action: () => controlFacet.connect(deployer).setDeallocateCooldown(120) },
 		{ key: "setup.setSettlementCooldown", name: "setSettlementCooldown", action: () => controlFacet.connect(deployer).setSettlementCooldown(300) },
