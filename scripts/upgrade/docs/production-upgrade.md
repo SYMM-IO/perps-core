@@ -48,6 +48,15 @@ VERIFY DEPLOYED CONTRACTS (block explorer)
   Verifies all libraries, facets, and peripherals (AL, IL, PartyB impl)
   on the block explorer. Run after deployFacets + deployPeripherals.
 
+VERIFY DEPLOYED BYTECODE (local vs on-chain)
+═════════════════════════════════════════════
+  RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyDeploy.ts
+  RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
+
+  Compares on-chain bytecode against locally compiled artifacts.
+  Handles library linking (core facets) and immutable variables (peripherals).
+  Reads addresses from output/deployed-facets.json and deployed-peripherals.json.
+
 
 PAUSE (execute via Safe UI)
 ══════════════════════════
@@ -140,6 +149,11 @@ BEFORE PAUSE (no downtime)
 VERIFY DEPLOYED CONTRACTS (block explorer)
 ═══════════════════════════════════════════
   NETWORK=<network> bash scripts/upgrade/verify-all.sh
+
+VERIFY DEPLOYED BYTECODE (local vs on-chain)
+═════════════════════════════════════════════
+  node scripts/upgrade/verifyDeploy.mjs [RPC_URL] [FACETS_FILE]
+  node scripts/upgrade/verifyPeripheralsDeploy.mjs [RPC_URL] [PERIPHERALS_FILE]
 
 
 SCHEDULE DIAMONDCUT (T=0, system still live)
@@ -335,6 +349,8 @@ npx hardhat run scripts/upgrade/runMigration.ts --network fork-arbitrum
 | Script | What it checks |
 |--------|---------------|
 | `verify-all.sh` | Block explorer verification of all deployed contracts (libraries, facets, peripherals) |
+| `verifyDeploy.ts` | Bytecode verification of deployed core facets against local compiled artifacts (library linking aware) |
+| `verifyPeripheralsDeploy.ts` | Bytecode verification of deployed peripherals against local compiled artifacts (library linking + immutable aware) |
 | `verifyDiamond.ts` | All v0.8.5 facet selectors registered on diamond |
 | `verifyPeripherals.ts` | AccountLayer + InstantLayer roles, hooks, whitelist, templates |
 | `testTemplateExecution.ts` | Full end-to-end: affiliate registration, sub-account, PartyB UUPS upgrade, EIP-712 delegation, sendQuote -> lockQuote -> openPosition via InstantLayer template |
@@ -566,6 +582,32 @@ NETWORK=<network> bash scripts/upgrade/verify-all.sh
 Verifies all libraries (4), core facets (28), AccountLayer contracts (DiamondCutFacet, Diamond, Init, LibQuoteParams, 7 facets), InstantLayer, and SymmioPartyB implementation. Contracts with library dependencies are verified with the correct `--libraries` flags. Each verification is `|| true` so the script continues past already-verified or failing contracts.
 
 Addresses are read from `scripts/upgrade/output/deployed-facets.json` and `deployed-peripherals.json`. If addresses change, update `verify-all.sh` accordingly.
+
+### Bytecode verification (local vs on-chain)
+
+Compares the on-chain deployed bytecode against locally compiled Hardhat artifacts. This is independent of block explorer verification and works for any RPC-accessible network.
+
+```bash
+# Core facets (reads deployed-facets.json)
+RPC_URL=https://rpc.mantle.xyz npx ts-node scripts/upgrade/verifyDeploy.ts
+
+# Peripherals (reads deployed-peripherals.json)
+RPC_URL=https://rpc.mantle.xyz npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
+```
+
+Addresses are read from `scripts/upgrade/output/deployed-facets.json` and `deployed-peripherals.json`. Override with env vars:
+
+```bash
+# Custom paths / different network
+RPC_URL=https://arb1.arbitrum.io/rpc FACETS_FILE=./output/deployed-facets-arb.json npx ts-node scripts/upgrade/verifyDeploy.ts
+RPC_URL=https://arb1.arbitrum.io/rpc PERIPHERALS_FILE=./output/deployed-peripherals-arb.json npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
+```
+
+**What they handle:**
+- **Library linking** -- facets that use external libraries (e.g. `LibQuoteFunding`, `LibSettlement`) have placeholder slots in compiled bytecode. The scripts extract actual library addresses from on-chain bytecode and substitute them before comparing.
+- **Immutable variables** -- contracts like `InstantLayer` and `SymmioPartyB` embed constructor-set values (EIP-712 domain, symmio address, etc.) in deployed bytecode. The scripts mask these regions using `immutableReferences` from the artifact before comparing, and report the on-chain values.
+
+**Prerequisites:** Run `npx hardhat compile` first. Artifacts must be present in `artifacts/contracts/`.
 
 ### On-chain verification
 
