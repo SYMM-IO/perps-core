@@ -28,9 +28,16 @@ WORKDIR /app
 COPY package.json ./
 RUN npm install --ignore-scripts
 
-# Copy source and compile
+# Pre-download solc compiler (cached unless hardhat config or tasks change)
 WORKDIR /app/symmio
-COPY . .
+COPY hardhat.config.ts ./
+# tasks/ is required because hardhat.config.ts imports from it;
+# without it, the config fails to load and solc won't be downloaded.
+COPY tasks/ tasks/
 RUN ln -s /app/node_modules . \
-    && cp .env.example .env \
-    && ./docker/compile.sh
+    && npx hardhat compile 2>/dev/null ; true
+
+# Copy source and compile
+COPY .env.example .env
+COPY . .
+RUN ./docker/compile.sh
