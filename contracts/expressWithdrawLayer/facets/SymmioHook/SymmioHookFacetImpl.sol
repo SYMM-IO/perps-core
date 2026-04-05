@@ -130,7 +130,9 @@ library SymmioHookFacetImpl {
 			}
 		} else {
 			PoolStorage.Layout storage p = PoolStorage.layout();
-			p.generalBalance += info.generalAmount;
+			if (info.generalAmount > 0) {
+				p.generalBalance += info.generalAmount;
+			}
 			if (info.affiliateAmount > 0) {
 				p.affiliateBalances[info.affiliate] += info.affiliateAmount;
 			}
