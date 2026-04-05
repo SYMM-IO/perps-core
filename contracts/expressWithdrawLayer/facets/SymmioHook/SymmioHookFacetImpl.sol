@@ -109,7 +109,6 @@ library SymmioHookFacetImpl {
 			processed = true;
 		} else {
 			info.status = Status.ACCEPTED;
-			processed = false;
 		}
 	}
 
