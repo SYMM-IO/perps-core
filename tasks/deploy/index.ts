@@ -1,4 +1,5 @@
 import { accountLayerDiamondTask } from "./accountLayerDiamond.js"
+import { create2FactoryTask } from "./create2Factory.js"
 import { deployAllTask } from "./deployAll.js"
 import { diamondTask } from "./diamond.js"
 import { feeDistributorTask } from "./feeDistributor.js"
@@ -23,6 +24,7 @@ import {
 export const deployTasks = [
 	accountLayerDiamondTask,
 	checkDeploymentTask,
+	create2FactoryTask,
 	deployAllTask,
 	diamondTask,
 	disableBigBlocksTask,

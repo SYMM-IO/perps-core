@@ -13,6 +13,7 @@ export interface DeployedContract {
 }
 
 export interface DiamondCheckpoint {
+	create2Factory?: DeployedContract
 	diamondCutFacet?: DeployedContract
 	diamond?: DeployedContract
 	init?: DeployedContract
