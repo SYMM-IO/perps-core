@@ -22,7 +22,6 @@ library LibErrors {
 	error InsufficientGeneralBalance();
 	error InsufficientAffiliateBalance();
 	error InvalidStatusForStandard();
-	error NotProcessed();
 	error NotAccepted();
 	error NotFinalized();
 	error PartsMismatch();

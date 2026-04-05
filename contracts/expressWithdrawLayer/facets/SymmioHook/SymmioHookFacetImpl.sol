@@ -129,8 +129,6 @@ library SymmioHookFacetImpl {
 				info.status = Status.FINALIZED;
 			}
 		} else {
-			if (info.status != Status.PROCESSED) revert LibErrors.NotProcessed();
-
 			PoolStorage.Layout storage p = PoolStorage.layout();
 			p.generalBalance += info.generalAmount;
 			if (info.affiliateAmount > 0) {
