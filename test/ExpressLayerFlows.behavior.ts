@@ -2030,9 +2030,10 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 						{ name: "amount", type: "uint256" },
 						{ name: "timestamp", type: "uint256" },
 						{ name: "symmioNonce", type: "uint256" },
+						{ name: "symmio", type: "address" },
 					],
 				}
-				return validator1.signTypedData(domain, types, { user: u, nonce, amount, timestamp: ts, symmioNonce: 0n })
+				return validator1.signTypedData(domain, types, { user: u, nonce, amount, timestamp: ts, symmioNonce: 0n, symmio: context.diamond })
 			}
 
 			// User 1: IMMEDIATE (8,000 tokens)
@@ -2191,7 +2192,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		async function signValidatorApproval(
 			expressProvider: any,
 			validator: any,
-			params: { user: string; nonce: bigint; amount: bigint; timestamp: number; symmioNonce: bigint },
+			params: { user: string; nonce: bigint; amount: bigint; timestamp: number; symmioNonce: bigint; symmio: string },
 		) {
 			const domain = { name: "ExpressProvider", version: "1", chainId: 31337, verifyingContract: await expressProvider.getAddress() }
 			const types = {
@@ -2201,6 +2202,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 					{ name: "amount", type: "uint256" },
 					{ name: "timestamp", type: "uint256" },
 					{ name: "symmioNonce", type: "uint256" },
+					{ name: "symmio", type: "address" },
 				],
 			}
 			return validator.signTypedData(domain, types, params)
@@ -2253,6 +2255,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 				amount: withdrawAmount,
 				timestamp: now,
 				symmioNonce: 0n,
+				symmio: context.diamond,
 			})
 
 			const providerData = encodeProviderData(0n, 0, 0, affiliate, 0n, 0n, 0n, 0n, deadline, signature, undefined, [valSig], [now])
@@ -2369,6 +2372,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 				amount: withdrawAmount,
 				timestamp: now,
 				symmioNonce: 0n,
+				symmio: context.diamond,
 			})
 
 			const providerData = encodeProviderData(0n, 0, 0, affiliate, 0n, 0n, fee, opFee, deadline, signature, undefined, [valSig], [now])
@@ -2428,6 +2432,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 				amount: withdrawAmount,
 				timestamp: now,
 				symmioNonce: 0n,
+				symmio: context.diamond,
 			})
 
 			const providerData = encodeProviderData(0n, 0, 0, affiliate, 0n, 0n, 0n, 0n, deadline, signature, undefined, [valSig], [now])
@@ -2496,6 +2501,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 				amount: withdrawAmount,
 				timestamp: now,
 				symmioNonce: 0n,
+				symmio: context.diamond,
 			})
 
 			const providerData = encodeProviderData(0n, 0, 0, affiliate, 0n, 0n, 0n, 0n, deadline, signature, undefined, [valSig], [now])

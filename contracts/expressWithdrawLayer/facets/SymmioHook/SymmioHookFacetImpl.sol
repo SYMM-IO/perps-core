@@ -301,7 +301,9 @@ library SymmioHookFacetImpl {
 				revert LibErrors.ValidatorApprovalExpired();
 			}
 
-			bytes32 structHash = keccak256(abi.encode(LibAccessControl.VALIDATOR_APPROVAL_TYPEHASH, user, nonce, amount, timestamps[i], symmioNonce));
+			bytes32 structHash = keccak256(
+				abi.encode(LibAccessControl.VALIDATOR_APPROVAL_TYPEHASH, user, nonce, amount, timestamps[i], symmioNonce, g.symmio)
+			);
 			address signer = ECDSA.recover(LibAccessControl.hashTypedDataV4(structHash), signatures[i]);
 
 			if (!_isValidator(v, affiliate, signer)) revert LibErrors.InvalidValidator();

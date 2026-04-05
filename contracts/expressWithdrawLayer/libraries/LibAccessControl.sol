@@ -23,7 +23,7 @@ library LibAccessControl {
 	);
 
 	bytes32 public constant VALIDATOR_APPROVAL_TYPEHASH = keccak256(
-		"ValidatorApproval(address user,uint256 nonce,uint256 amount,uint256 timestamp,uint256 symmioNonce)"
+		"ValidatorApproval(address user,uint256 nonce,uint256 amount,uint256 timestamp,uint256 symmioNonce,address symmio)"
 	);
 
 	bytes32 private constant TYPE_HASH = keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");

@@ -214,7 +214,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 	async function signValidatorApproval(
 		expressProvider: any,
 		validator: any,
-		params: { user: string; nonce: bigint; amount: bigint; timestamp: number; symmioNonce: bigint },
+		params: { user: string; nonce: bigint; amount: bigint; timestamp: number; symmioNonce: bigint; symmio: string },
 	) {
 		const domain = {
 			name: "ExpressProvider",
@@ -229,6 +229,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				{ name: "amount", type: "uint256" },
 				{ name: "timestamp", type: "uint256" },
 				{ name: "symmioNonce", type: "uint256" },
+				{ name: "symmio", type: "address" },
 			],
 		}
 		return validator.signTypedData(domain, types, params)
@@ -365,6 +366,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				amount: withdrawAmount,
 				timestamp: validatorTimestamp,
 				symmioNonce: 0n,
+				symmio: context.diamond,
 			})
 			const valSig2 = await signValidatorApproval(expressProvider, v2, {
 				user: user.address,
@@ -372,6 +374,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				amount: withdrawAmount,
 				timestamp: validatorTimestamp,
 				symmioNonce: 0n,
+				symmio: context.diamond,
 			})
 
 			const providerData = encodeProviderData(
@@ -445,6 +448,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				amount: withdrawAmount,
 				timestamp: now,
 				symmioNonce: 0n,
+				symmio: context.diamond,
 			})
 
 			// Only 1 signature but need 2
@@ -509,6 +513,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				amount: withdrawAmount,
 				timestamp: expiredTimestamp,
 				symmioNonce: 0n,
+				symmio: context.diamond,
 			})
 
 			const providerData = encodeProviderData(
@@ -585,6 +590,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				amount: withdrawAmount,
 				timestamp: futureTimestamp,
 				symmioNonce: 0n,
+				symmio: context.diamond,
 			})
 
 			const providerData = encodeProviderData(
@@ -657,6 +663,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				amount: withdrawAmount,
 				timestamp: now,
 				symmioNonce: 0n,
+				symmio: context.diamond,
 			})
 
 			const providerData = encodeProviderData(nonce, 1, 0, fixture.affiliate, 0n, 0n, 0n, 0n, deadline, signature, undefined, [valSig], [now])
@@ -717,6 +724,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				amount: withdrawAmount,
 				timestamp: now,
 				symmioNonce: 0n,
+				symmio: context.diamond,
 			})
 			const valSig2 = await signValidatorApproval(expressProvider, validator1, {
 				user: user.address,
@@ -724,6 +732,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				amount: withdrawAmount,
 				timestamp: now,
 				symmioNonce: 0n,
+				symmio: context.diamond,
 			})
 
 			const providerData = encodeProviderData(
@@ -799,6 +808,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				amount: wrongAmount,
 				timestamp: now,
 				symmioNonce: 0n,
+				symmio: context.diamond,
 			})
 
 			const providerData = encodeProviderData(nonce, 1, 0, fixture.affiliate, 0n, 0n, 0n, 0n, deadline, signature, undefined, [valSig], [now])
@@ -861,6 +871,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				amount: withdrawAmount,
 				timestamp: now,
 				symmioNonce: 0n,
+				symmio: context.diamond,
 			})
 
 			const providerData = encodeProviderData(nonce, 1, 0, fixture.affiliate, 0n, 0n, 0n, 0n, deadline, signature, undefined, [valSig], [now])
@@ -986,6 +997,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				amount: withdrawAmount,
 				timestamp: now,
 				symmioNonce: 0n,
+				symmio: context.diamond,
 			})
 
 			// Revoke the validator role BEFORE the on-chain submission
@@ -1059,6 +1071,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 					amount: withdrawAmount,
 					timestamp: now,
 					symmioNonce: 0n,
+					symmio: context.diamond,
 				})
 				valSigs.push(sig)
 				valTimestamps.push(now)
@@ -1123,6 +1136,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				amount: withdrawAmount,
 				timestamp: now,
 				symmioNonce: 0n,
+				symmio: context.diamond,
 			})
 
 			// Admin raises the requirement to 2
@@ -1189,6 +1203,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				amount: withdrawAmount,
 				timestamp: now,
 				symmioNonce: 0n,
+				symmio: context.diamond,
 			})
 
 			// Admin reduces timeout to 5 seconds
@@ -1258,6 +1273,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				amount: withdrawAmount,
 				timestamp: now,
 				symmioNonce: 0n,
+				symmio: context.diamond,
 			})
 			const valSig2 = await signValidatorApproval(expressProvider, v2, {
 				user: user.address,
@@ -1265,6 +1281,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				amount: withdrawAmount,
 				timestamp: now,
 				symmioNonce: 0n,
+				symmio: context.diamond,
 			})
 
 			// 2 signatures but only 1 timestamp -- mismatch
@@ -1348,6 +1365,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				amount: withdrawAmount,
 				timestamp: validatorTimestamp,
 				symmioNonce: 0n,
+				symmio: context.diamond,
 			})
 
 			const providerData = encodeProviderData(
@@ -1422,6 +1440,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				amount: withdrawAmount,
 				timestamp: now,
 				symmioNonce: 0n,
+				symmio: context.diamond,
 			})
 
 			// The validator signed with symmioNonce=0 which matches the user's actual nonce.
@@ -1506,6 +1525,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				amount: withdrawAmount,
 				timestamp: now,
 				symmioNonce: currentNonce,
+				symmio: context.diamond,
 			})
 
 			const providerData = encodeProviderData(

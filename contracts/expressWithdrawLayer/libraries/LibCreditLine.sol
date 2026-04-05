@@ -14,6 +14,7 @@ import { WithdrawInfo } from "../types/WithdrawTypes.sol";
 import { ISymmio } from "../interfaces/ISymmio.sol";
 
 import { CreditLineStorage } from "../storages/CreditLineStorage.sol";
+import { GlobalStorage } from "../storages/GlobalStorage.sol";
 import { PoolStorage } from "../storages/PoolStorage.sol";
 
 /// @title LibCreditLine
@@ -61,9 +62,12 @@ library LibCreditLine {
 		if (block.timestamp > data.timestamp + cl.muonFreshnessWindow) revert MuonSignatureExpired();
 
 		// Verify Muon signature via the shared verifier.
-		// NOTE: Uses affiliate address as identifier (changed from address(this) in the old per-affiliate CLM).
-		//       The Muon oracle app must be updated to sign over the affiliate address.
-		bytes32 hash = keccak256(abi.encodePacked(cl.muonAppId, data.reqId, affiliate, data.eligibleBase, data.timestamp, block.chainid));
+		// NOTE: Includes express provider (address(this)) and symmio addresses to prevent cross-deployment replay.
+		//       The Muon oracle app must sign over both contract addresses.
+		address symmio = GlobalStorage.layout().symmio;
+		bytes32 hash = keccak256(
+			abi.encodePacked(cl.muonAppId, data.reqId, affiliate, data.eligibleBase, data.timestamp, block.chainid, address(this), symmio)
+		);
 		IMuonSignatureVerifier(cl.signatureVerifier).verify(hash, data.sigs, data.gatewaySignature);
 
 		// Check caps
