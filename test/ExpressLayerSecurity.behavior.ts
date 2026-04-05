@@ -161,7 +161,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 		return ethers.keccak256(encoded)
 	}
 
-	// Helper: encode provider data for initiateWithdraw (nested: optionData + validatorData + creditData)
+	// Helper: encode provider data for initiateWithdraw (nested: offerData + validatorData + creditData)
 	function encodeProviderData(
 		nonce: bigint,
 		optionType: number,
@@ -180,7 +180,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 		creditDataRaw?: string,
 	): string {
 		const muf = maxUserFee ?? fee + operatorFee
-		const optionData = ethers.AbiCoder.defaultAbiCoder().encode(
+		const offerData = ethers.AbiCoder.defaultAbiCoder().encode(
 			["uint256", "uint8", "uint256", "address", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "bytes"],
 			[nonce, optionType, availableAt, affiliate, affiliateAmount, creditAmount, fee, operatorFee, muf, deadline, signature],
 		)
@@ -188,7 +188,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			["bytes[]", "uint256[]", "uint256"],
 			[validatorSignatures ?? [], validatorTimestamps ?? [], symmioNonce ?? 0n],
 		)
-		return ethers.AbiCoder.defaultAbiCoder().encode(["bytes", "bytes", "bytes"], [optionData, validatorData, creditDataRaw ?? "0x"])
+		return ethers.AbiCoder.defaultAbiCoder().encode(["bytes", "bytes", "bytes"], [offerData, validatorData, creditDataRaw ?? "0x"])
 	}
 
 	// Helper: build credit data for credit line

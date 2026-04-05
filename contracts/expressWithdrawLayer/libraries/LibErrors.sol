@@ -16,7 +16,7 @@ library LibErrors {
 	error InsufficientUnlockedAffiliateBalance();
 	error FeesExceedExpressAmount();
 	error UserFeeExceedsMaximum();
-	error OptionExpired();
+	error OfferExpired();
 	error InvalidNonce();
 	error InvalidSigner();
 	error InsufficientGeneralBalance();

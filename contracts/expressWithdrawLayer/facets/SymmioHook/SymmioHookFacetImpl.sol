@@ -8,7 +8,7 @@ import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 import { SponsorConfig } from "../../types/ConfigTypes.sol";
 import { CreditData } from "../../types/CreditTypes.sol";
-import { DecodedOption, ComputedAmounts } from "../../types/OptionTypes.sol";
+import { WithdrawOffer, ComputedAmounts } from "../../types/OptionTypes.sol";
 import { WithdrawReceiverPart, WithdrawRequest } from "../../../core/storages/WithdrawStorage.sol";
 import { WithdrawInfo, Status, OptionType } from "../../types/WithdrawTypes.sol";
 
@@ -25,7 +25,7 @@ import { FeeStorage } from "../../storages/FeeStorage.sol";
 import { ValidatorStorage } from "../../storages/ValidatorStorage.sol";
 
 library SymmioHookFacetImpl {
-	/// @notice Processes a new withdraw request: decodes/verifies the option, locks funds, accepts the request.
+	/// @notice Processes a new withdraw request: decodes/verifies the offer, locks funds, accepts the request.
 	/// @return optionType The option type for event emission.
 	/// @return processed Whether the withdraw was immediately processed (IMMEDIATE mode).
 	function onWithdrawRequest(WithdrawRequest memory withdrawRequest) internal returns (uint8 optionType, bool processed) {
@@ -34,72 +34,72 @@ library SymmioHookFacetImpl {
 		ValidatorStorage.Layout storage v = ValidatorStorage.layout();
 		if (msg.sender != g.symmio) revert LibErrors.OnlySymmio();
 
-		(bytes memory optionData, bytes memory validatorData, bytes memory creditDataRaw) = abi.decode(
+		(bytes memory offerData, bytes memory validatorData, bytes memory creditDataRaw) = abi.decode(
 			withdrawRequest.providerData,
 			(bytes, bytes, bytes)
 		);
 
-		DecodedOption memory opt = _decodeAndVerifyOption(withdrawRequest, optionData);
-		if (opt.optionType > uint8(OptionType.STANDARD)) revert LibErrors.InvalidOptionType();
+		WithdrawOffer memory offer = _decodeAndVerifyOffer(withdrawRequest, offerData);
+		if (offer.optionType > uint8(OptionType.STANDARD)) revert LibErrors.InvalidOptionType();
 
-		OptionType optType = OptionType(opt.optionType);
-		if (optType == OptionType.STANDARD && opt.creditAmount > 0) revert LibErrors.CreditNotSupportedForStandard();
+		OptionType optType = OptionType(offer.optionType);
+		if (optType == OptionType.STANDARD && offer.creditAmount > 0) revert LibErrors.CreditNotSupportedForStandard();
 
-		ComputedAmounts memory amounts = LibParts.computeAmounts(withdrawRequest.parts, opt.affiliateAmount, opt.creditAmount);
+		ComputedAmounts memory amounts = LibParts.computeAmounts(withdrawRequest.parts, offer.affiliateAmount, offer.creditAmount);
 
-		uint256 minSigs = _getMinValidatorSignatures(v, opt.affiliate);
+		uint256 minSigs = _getMinValidatorSignatures(v, offer.affiliate);
 		if (optType == OptionType.IMMEDIATE && minSigs == 0) {
 			revert LibErrors.ValidatorsRequiredForImmediate();
 		}
 
 		uint256 feeBasis = amounts.expressAmount;
-		if (opt.fee != (feeBasis * f.affiliateConfigs[opt.affiliate].feeRate) / 10000) revert LibErrors.FeeMismatch();
-		if (opt.operatorFee != f.affiliateConfigs[opt.affiliate].operatorFee) revert LibErrors.OperatorFeeMismatch();
-		if (opt.fee + opt.operatorFee > feeBasis) revert LibErrors.FeesExceedExpressAmount();
+		if (offer.fee != (feeBasis * f.affiliateConfigs[offer.affiliate].feeRate) / 10000) revert LibErrors.FeeMismatch();
+		if (offer.operatorFee != f.affiliateConfigs[offer.affiliate].operatorFee) revert LibErrors.OperatorFeeMismatch();
+		if (offer.fee + offer.operatorFee > feeBasis) revert LibErrors.FeesExceedExpressAmount();
 
 		if (minSigs > 0) {
-			_validateValidators(opt.affiliate, withdrawRequest.user, opt.nonce, withdrawRequest.totalAmount, validatorData);
+			_validateValidators(offer.affiliate, withdrawRequest.user, offer.nonce, withdrawRequest.totalAmount, validatorData);
 		}
 
 		if (optType != OptionType.STANDARD) {
-			_lockFunds(opt, amounts);
+			_lockFunds(offer, amounts);
 		}
 
-		if (opt.creditAmount > 0) {
+		if (offer.creditAmount > 0) {
 			LibCreditLine.reserveDebt(
-				opt.affiliate,
+				offer.affiliate,
 				withdrawRequest.user,
 				withdrawRequest.id,
-				opt.creditAmount,
+				offer.creditAmount,
 				abi.decode(creditDataRaw, (CreditData))
 			);
 		}
 
 		WithdrawInfo storage info = g.withdrawInfos[withdrawRequest.user][withdrawRequest.id];
 		info.optionType = optType;
-		info.availableAt = opt.availableAt;
+		info.availableAt = offer.availableAt;
 		info.expressAmount = amounts.expressAmount;
 		info.generalAmount = amounts.generalAmount;
-		info.affiliateAmount = opt.affiliateAmount;
-		info.creditAmount = opt.creditAmount;
-		info.affiliate = opt.affiliate;
+		info.affiliateAmount = offer.affiliateAmount;
+		info.creditAmount = offer.creditAmount;
+		info.affiliate = offer.affiliate;
 		info.acceptedAt = block.timestamp;
 		info.cooldownEndTime = withdrawRequest.cooldownEndTime;
 		info.partsHash = keccak256(abi.encode(withdrawRequest.parts));
-		info.fee = opt.fee;
+		info.fee = offer.fee;
 
-		if (opt.operatorFee > 0) {
-			f.operatorFees[withdrawRequest.user][withdrawRequest.id] = opt.operatorFee;
+		if (offer.operatorFee > 0) {
+			f.operatorFees[withdrawRequest.user][withdrawRequest.id] = offer.operatorFee;
 		}
 
 		_lockFee(withdrawRequest.user, withdrawRequest.id, info);
 
-		uint256 totalFee = opt.fee + opt.operatorFee;
+		uint256 totalFee = offer.fee + offer.operatorFee;
 		uint256 actualUserFee = totalFee - info.sponsorCoverage;
-		if (actualUserFee > opt.maxUserFee) revert LibErrors.UserFeeExceedsMaximum();
+		if (actualUserFee > offer.maxUserFee) revert LibErrors.UserFeeExceedsMaximum();
 
 		ISymmio(g.symmio).acceptWithdrawRequest(withdrawRequest.user, withdrawRequest.id);
-		optionType = opt.optionType;
+		optionType = offer.optionType;
 
 		if (optType == OptionType.IMMEDIATE) {
 			LibCreditLine.activate(g.symmio, withdrawRequest.user, withdrawRequest.id, info);
@@ -187,54 +187,54 @@ library SymmioHookFacetImpl {
 	}
 
 	// ═══════════════════════════════════════════════════════════════════
-	//                     INTERNAL: OPTION VERIFICATION
+	//                     INTERNAL: OFFER VERIFICATION
 	// ═══════════════════════════════════════════════════════════════════
 
-	function _decodeAndVerifyOption(WithdrawRequest memory withdrawRequest, bytes memory optionData) internal returns (DecodedOption memory opt) {
+	function _decodeAndVerifyOffer(WithdrawRequest memory withdrawRequest, bytes memory offerData) internal returns (WithdrawOffer memory offer) {
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
 
 		(
-			opt.nonce,
-			opt.optionType,
-			opt.availableAt,
-			opt.affiliate,
-			opt.affiliateAmount,
-			opt.creditAmount,
-			opt.fee,
-			opt.operatorFee,
-			opt.maxUserFee,
-			opt.deadline,
-			opt.signature
-		) = abi.decode(optionData, (uint256, uint8, uint256, address, uint256, uint256, uint256, uint256, uint256, uint256, bytes));
+			offer.nonce,
+			offer.optionType,
+			offer.availableAt,
+			offer.affiliate,
+			offer.affiliateAmount,
+			offer.creditAmount,
+			offer.fee,
+			offer.operatorFee,
+			offer.maxUserFee,
+			offer.deadline,
+			offer.signature
+		) = abi.decode(offerData, (uint256, uint8, uint256, address, uint256, uint256, uint256, uint256, uint256, uint256, bytes));
 
-		if (block.timestamp > opt.deadline) revert LibErrors.OptionExpired();
-		if (g.nonces[withdrawRequest.user] != opt.nonce) revert LibErrors.InvalidNonce();
+		if (block.timestamp > offer.deadline) revert LibErrors.OfferExpired();
+		if (g.nonces[withdrawRequest.user] != offer.nonce) revert LibErrors.InvalidNonce();
 
-		_verifyOptionSignature(withdrawRequest, opt);
+		_verifyOfferSignature(withdrawRequest, offer);
 		g.nonces[withdrawRequest.user]++;
 	}
 
-	function _verifyOptionSignature(WithdrawRequest memory withdrawRequest, DecodedOption memory opt) internal view {
+	function _verifyOfferSignature(WithdrawRequest memory withdrawRequest, WithdrawOffer memory offer) internal view {
 		bytes32 partsHash = keccak256(abi.encode(withdrawRequest.parts));
 		bytes32 structHash = keccak256(
 			abi.encode(
 				LibAccessControl.WITHDRAW_OPTION_TYPEHASH,
 				withdrawRequest.user,
-				opt.nonce,
-				opt.optionType,
-				opt.availableAt,
-				opt.affiliate,
-				opt.affiliateAmount,
-				opt.creditAmount,
-				opt.fee,
-				opt.operatorFee,
-				opt.maxUserFee,
+				offer.nonce,
+				offer.optionType,
+				offer.availableAt,
+				offer.affiliate,
+				offer.affiliateAmount,
+				offer.creditAmount,
+				offer.fee,
+				offer.operatorFee,
+				offer.maxUserFee,
 				partsHash,
-				opt.deadline
+				offer.deadline
 			)
 		);
 
-		address signer = ECDSA.recover(LibAccessControl.hashTypedDataV4(structHash), opt.signature);
+		address signer = ECDSA.recover(LibAccessControl.hashTypedDataV4(structHash), offer.signature);
 		if (!LibAccessControl.hasRole(LibAccessControl.SIGNER_ROLE, signer)) revert LibErrors.InvalidSigner();
 	}
 
@@ -242,16 +242,16 @@ library SymmioHookFacetImpl {
 	//                     INTERNAL: FUND LOCKING
 	// ═══════════════════════════════════════════════════════════════════
 
-	function _lockFunds(DecodedOption memory opt, ComputedAmounts memory amounts) internal {
+	function _lockFunds(WithdrawOffer memory offer, ComputedAmounts memory amounts) internal {
 		PoolStorage.Layout storage p = PoolStorage.layout();
 
 		if (p.generalBalance - p.lockedGeneralBalance < amounts.generalAmount) revert LibErrors.InsufficientGeneralBalance();
-		if (p.affiliateBalances[opt.affiliate] - p.lockedAffiliateBalances[opt.affiliate] < opt.affiliateAmount) {
+		if (p.affiliateBalances[offer.affiliate] - p.lockedAffiliateBalances[offer.affiliate] < offer.affiliateAmount) {
 			revert LibErrors.InsufficientAffiliateBalance();
 		}
 
 		p.lockedGeneralBalance += amounts.generalAmount;
-		p.lockedAffiliateBalances[opt.affiliate] += opt.affiliateAmount;
+		p.lockedAffiliateBalances[offer.affiliate] += offer.affiliateAmount;
 	}
 
 	function _lockFee(address user, uint256 requestId, WithdrawInfo storage info) internal {

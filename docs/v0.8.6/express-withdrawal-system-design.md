@@ -518,12 +518,12 @@ When `minValidatorSignatures(affiliate) == 0` (and no default set), the validato
 
 ### 7.6 Provider Data Encoding
 
-The signed option, validator attestations, and credit data are packed into `providerData` which the user passes to `SYMMIO.initiateWithdraw(parts, speedUp, providerData)`. The encoding is nested:
+The signed offer, validator attestations, and credit data are packed into `providerData` which the user passes to `SYMMIO.initiateWithdraw(parts, speedUp, providerData)`. The encoding is nested:
 
 ```
-providerData = abi.encode(optionData, validatorData, creditDataRaw)
+providerData = abi.encode(offerData, validatorData, creditDataRaw)
 
-optionData = abi.encode(
+offerData = abi.encode(
     uint256 nonce,
     uint8   optionType,
     uint256 availableAt,
@@ -596,9 +596,9 @@ When `onWithdrawRequest` decodes and validates the signed option, the contract i
 
 ```solidity
 uint256 feeBasis = amounts.expressAmount;
-if (opt.fee != feeBasis * affiliateConfigs[opt.affiliate].feeRate / 10000) revert FeeMismatch();
-if (opt.operatorFee != affiliateConfigs[opt.affiliate].operatorFee) revert OperatorFeeMismatch();
-if (opt.fee + opt.operatorFee > feeBasis) revert FeesExceedExpressAmount();
+if (offer.fee != feeBasis * affiliateConfigs[offer.affiliate].feeRate / 10000) revert FeeMismatch();
+if (offer.operatorFee != affiliateConfigs[offer.affiliate].operatorFee) revert OperatorFeeMismatch();
+if (offer.fee + offer.operatorFee > feeBasis) revert FeesExceedExpressAmount();
 ```
 
 This ensures the bot cannot overcharge or undercharge -- the contract is the source of truth for fee calculation. A malicious or buggy bot signing incorrect fees will have its transaction reverted. The bot must use the exact `feeRate` and `operatorFee` from the affiliate's on-chain config.
@@ -1077,7 +1077,7 @@ struct WithdrawInfo {
     uint256 sponsorCoverage;      // how much of the fee the sponsor covers (locked at acceptance)
 }
 
-struct DecodedOption {
+struct WithdrawOffer {
     uint256 nonce;
     uint8   optionType;           // 0=IMMEDIATE, 1=INSTANT, 2=STANDARD
     uint256 availableAt;          // Reserved field, not currently used. Always 0.

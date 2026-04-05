@@ -171,7 +171,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		return ethers.keccak256(encoded)
 	}
 
-	// Helper: encode provider data for initiateWithdraw (nested: optionData + validatorData + creditData)
+	// Helper: encode provider data for initiateWithdraw (nested: offerData + validatorData + creditData)
 	function encodeProviderData(
 		nonce: bigint,
 		optionType: number,
@@ -189,7 +189,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		creditDataRaw?: string,
 	): string {
 		const muf = maxUserFee ?? fee + operatorFee
-		const optionData = ethers.AbiCoder.defaultAbiCoder().encode(
+		const offerData = ethers.AbiCoder.defaultAbiCoder().encode(
 			["uint256", "uint8", "uint256", "address", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "bytes"],
 			[nonce, optionType, availableAt, affiliate, affiliateAmount, creditAmount, fee, operatorFee, muf, deadline, signature],
 		)
@@ -197,7 +197,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			["bytes[]", "uint256[]", "uint256"],
 			[validatorSignatures ?? [], validatorTimestamps ?? [], 0],
 		)
-		return ethers.AbiCoder.defaultAbiCoder().encode(["bytes", "bytes", "bytes"], [optionData, validatorData, creditDataRaw ?? "0x"])
+		return ethers.AbiCoder.defaultAbiCoder().encode(["bytes", "bytes", "bytes"], [offerData, validatorData, creditDataRaw ?? "0x"])
 	}
 
 	// Helper: build credit data for Muon signature verification
@@ -479,7 +479,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 
 			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)).to.be.revertedWithCustomError(
 				expressProvider,
-				"OptionExpired",
+				"OfferExpired",
 			)
 		})
 

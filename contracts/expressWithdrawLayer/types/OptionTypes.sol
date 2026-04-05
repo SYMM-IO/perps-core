@@ -4,8 +4,8 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-/// @notice Decoded fields from the bot's EIP-712 signed option payload.
-struct DecodedOption {
+/// @notice Decoded fields from the bot's EIP-712 signed withdraw offer payload.
+struct WithdrawOffer {
 	uint256 nonce;
 	uint8 optionType;
 	uint256 availableAt;

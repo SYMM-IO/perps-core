@@ -202,10 +202,10 @@ Step 2 — Bot sees: SYMMIO calls onWithdrawRequest (acceptance tx)
   User submits the signed option to SYMMIO. SYMMIO calls onWithdrawRequest on ExpressProvider.
   Bot reads (contract verifies automatically):
     - EIP-712 signer has SIGNER_ROLE?                                              YES
-    - nonces[user] == opt.nonce?   7 == 7?                                         YES (nonce increments to 8)
-    - block.timestamp <= opt.deadline?                                             YES
-    - opt.fee == feeBasis * feeRate / 10000?   2.5e6 == 2.5e6?                     YES (reverts FeeMismatch otherwise)
-    - opt.operatorFee == affiliateConfigs[aff].operatorFee?   1e6 == 1e6?           YES (reverts OperatorFeeMismatch otherwise)
+    - nonces[user] == offer.nonce?   7 == 7?                                         YES (nonce increments to 8)
+    - block.timestamp <= offer.deadline?                                             YES
+    - offer.fee == feeBasis * feeRate / 10000?   2.5e6 == 2.5e6?                     YES (reverts FeeMismatch otherwise)
+    - offer.operatorFee == affiliateConfigs[aff].operatorFee?   1e6 == 1e6?           YES (reverts OperatorFeeMismatch otherwise)
     - generalBalance - lockedGeneralBalance >= generalAmount?   10,000 >= 300?      YES (reverts InsufficientGeneralBalance otherwise)
     - affiliateBalances[aff] - lockedAffiliateBalances[aff] >= affiliateAmount?
       5,000 >= 200?                                                                YES (reverts InsufficientAffiliateBalance otherwise)
@@ -595,9 +595,9 @@ flowchart TD
 ### 4.4 providerData Encoding
 
 ```
-providerData = abi.encode(optionData, validatorData, creditDataRaw)
+providerData = abi.encode(offerData, validatorData, creditDataRaw)
   where:
-    optionData = abi.encode(DecodedOption struct — includes creditAmount field)
+    offerData = abi.encode(WithdrawOffer struct — includes creditAmount field)
     validatorData = abi.encode(bytes[] signatures, uint256[] timestamps, uint256 symmioNonce)
     creditDataRaw = abi.encode(CreditData) if creditAmount > 0, else empty bytes
 ```
@@ -1053,11 +1053,11 @@ Step 3 — Bot sees: user submits withdrawal (SYMMIO calls onWithdrawRequest —
   Contract executes all of the following atomically:
   a. Decode + verify EIP-712 option signature:
      - Recovered signer has SIGNER_ROLE?                                           YES
-     - nonces[user] == opt.nonce?   3 == 3?                                        YES (increments to 4)
-     - block.timestamp <= opt.deadline?                                            YES
+     - nonces[user] == offer.nonce?   3 == 3?                                        YES (increments to 4)
+     - block.timestamp <= offer.deadline?                                            YES
   b. Verify fees match on-chain config:
-     - opt.fee == feeBasis * feeRate / 10000?   10e6 == 10e6?                       YES (reverts FeeMismatch otherwise)
-     - opt.operatorFee == affiliateConfigs[aff].operatorFee?   2e6 == 2e6?          YES (reverts OperatorFeeMismatch otherwise)
+     - offer.fee == feeBasis * feeRate / 10000?   10e6 == 10e6?                       YES (reverts FeeMismatch otherwise)
+     - offer.operatorFee == affiliateConfigs[aff].operatorFee?   2e6 == 2e6?          YES (reverts OperatorFeeMismatch otherwise)
      - fee + operatorFee <= feeBasis?   12e6 <= 1,000e6?                           YES (reverts FeesExceedExpressAmount otherwise)
   c. Validate 2 validator signatures:
      - Each signer is a registered validator (isValidator(aff, signer))?   YES
@@ -2314,7 +2314,7 @@ cancelReservation:   reservedDebt -= amount, delete requestDebt[key]  (cancel/su
 
 **Key invariant:** `expressProvider.creditLineTotalDebt(affiliate) == creditLineReservedDebt(affiliate) + creditLineActiveDebt(affiliate)`
 
-**Credit is NOT supported for STANDARD withdrawals.** The contract reverts `CreditNotSupportedForStandard` if `opt.creditAmount > 0` and `opt.optionType == STANDARD`.
+**Credit is NOT supported for STANDARD withdrawals.** The contract reverts `CreditNotSupportedForStandard` if `offer.creditAmount > 0` and `offer.optionType == STANDARD`.
 
 ### 10.3 Bot Monitoring for Credit Lines
 
@@ -2902,7 +2902,7 @@ flowchart TD
 
     A -->|Signature| S{Which?}
     S --> S1["InvalidSigner → Check SIGNER_ROLE"]
-    S --> S2["OptionExpired → Re-sign with later deadline"]
+    S --> S2["OfferExpired → Re-sign with later deadline"]
     S --> S3["InvalidNonce → Re-read nonces(user)"]
     S --> S4["InvalidValidator → Re-gather from registered validators"]
     S --> S5["DuplicateValidator → Sort & deduplicate"]
@@ -2938,7 +2938,7 @@ flowchart TD
 | Error | Cause | Bot Action |
 |-------|-------|------------|
 | `InvalidSigner` | Recovered signer lacks SIGNER_ROLE | Check signing key has SIGNER_ROLE |
-| `OptionExpired` | `block.timestamp > opt.deadline` | Extend deadline or re-sign |
+| `OfferExpired` | `block.timestamp > offer.deadline` | Extend deadline or re-sign |
 | `InvalidNonce` | Option nonce != `nonces[user]` | Re-read nonce, re-sign |
 | `OnlySymmio` | Non-SYMMIO calling callback | N/A (contract architecture issue) |
 | `InvalidValidator` | Recovered validator not registered for this affiliate (or `address(0)` default) | Re-gather from registered validators |
@@ -2987,7 +2987,7 @@ flowchart TD
 
 | Error | Cause | Bot Action |
 |-------|-------|------------|
-| `InvalidOptionType` | `opt.optionType > 2` in `onWithdrawRequest` | Use only 0 (IMMEDIATE), 1 (INSTANT), or 2 (STANDARD) |
+| `InvalidOptionType` | `offer.optionType > 2` in `onWithdrawRequest` | Use only 0 (IMMEDIATE), 1 (INSTANT), or 2 (STANDARD) |
 | `ValidatorsRequiredForImmediate` | IMMEDIATE option when `minValidatorSignatures(affiliate) == 0` | Do not offer IMMEDIATE unless validators are configured for this affiliate (or `address(0)` default); fall back to INSTANT |
 | `InvalidAddressBytesLength` | `parts[i].receiver` is not exactly 20 bytes | Ensure all receiver fields are valid 20-byte Ethereum addresses |
 
