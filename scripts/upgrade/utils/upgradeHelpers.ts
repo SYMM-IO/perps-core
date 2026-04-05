@@ -426,6 +426,8 @@ export type DeployedFacets = {
 }
 
 export type UpgradeTransactionResult = {
+	pauseSafeTxs: SafeTransaction[]
+	pauseBreakdown: string[]
 	safeTxs: SafeTransaction[]
 	calldataTxs: CalldataTransaction[]
 	diamondCutCalldataChunks: DiamondCutCalldata[]
@@ -539,38 +541,28 @@ export function buildUpgradeTransactions(
 	chunkSize: number,
 	newParams: NewV085Parameters,
 ): UpgradeTransactionResult {
+	const pauseSafeTxs: SafeTransaction[] = []
+	const pauseBreakdown: string[] = []
+	const pauseTxIdx = { value: 1 }
+
+	// Phase 0: Pause (separate batch — executed as standalone Safe tx before diamondCut)
+	pauseSafeTxs.push(toHumanReadableSafeTx(diamondAddress, "grantRole", [protocolAdmin, ethers.id("PAUSER_ROLE")]))
+	pauseBreakdown.push(`${pauseTxIdx.value++}. grantRole(PAUSER_ROLE) -> ${protocolAdmin}`)
+
+	pauseSafeTxs.push(toHumanReadableSafeTx(diamondAddress, "grantRole", [protocolAdmin, ethers.id("UNPAUSER_ROLE")]))
+	pauseBreakdown.push(`${pauseTxIdx.value++}. grantRole(UNPAUSER_ROLE) -> ${protocolAdmin}`)
+
+	pauseSafeTxs.push(toHumanReadableSafeTx(diamondAddress, "pauseGlobal", []))
+	pauseBreakdown.push(`${pauseTxIdx.value++}. pauseGlobal()`)
+
+	// Phase 1: Post-diamondCut transactions
 	const safeTxs: SafeTransaction[] = []
 	const calldataTxs: CalldataTransaction[] = []
 	const breakdown: string[] = []
 	const txIdx = { value: 1 }
 
-	// Phase 1: Pre-upgrade pause
-	addTx(
-		safeTxs,
-		calldataTxs,
-		breakdown,
-		txIdx,
-		diamondAddress,
-		"grantRole",
-		[protocolAdmin, ethers.id("PAUSER_ROLE")],
-		`grantRole(PAUSER_ROLE) -> ${protocolAdmin}`,
-	)
-
-	addTx(
-		safeTxs,
-		calldataTxs,
-		breakdown,
-		txIdx,
-		diamondAddress,
-		"grantRole",
-		[protocolAdmin, ethers.id("UNPAUSER_ROLE")],
-		`grantRole(UNPAUSER_ROLE) -> ${protocolAdmin}`,
-	)
-
-	addTx(safeTxs, calldataTxs, breakdown, txIdx, diamondAddress, "pauseGlobal", [], "pauseGlobal()")
-
 	// Record insertion index — diamondCut goes here during execution
-	const diamondCutInsertionIndex = calldataTxs.length
+	const diamondCutInsertionIndex = 0
 
 	// Build diamond cut chunks
 	const chunks: any[][] = []
@@ -754,7 +746,7 @@ export function buildUpgradeTransactions(
 		`grantRole(MIGRATION_ROLE) -> ${migrationRunner}`,
 	)
 
-	return { safeTxs, calldataTxs, diamondCutCalldataChunks, diamondCutInsertionIndex, breakdown, selectorChanges }
+	return { pauseSafeTxs, pauseBreakdown, safeTxs, calldataTxs, diamondCutCalldataChunks, diamondCutInsertionIndex, breakdown, selectorChanges }
 }
 
 // =============================================================================

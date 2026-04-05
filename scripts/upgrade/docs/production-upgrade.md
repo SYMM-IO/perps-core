@@ -49,24 +49,30 @@ VERIFY DEPLOYED CONTRACTS (block explorer)
   on the block explorer. Run after deployFacets + deployPeripherals.
 
 
-PAUSE + UPGRADE (execute via Safe UI)
-═════════════════════════════════════
-  safe-batch.json contains:
+PAUSE (execute via Safe UI)
+══════════════════════════
+  pause-safe-batch.json:
     1. grantRole(PAUSER_ROLE)
     2. grantRole(UNPAUSER_ROLE)
     3. pauseGlobal()              <-- PAUSE
-    4. grantRole(PROTOCOL_CONFIG / COOLDOWN_ADMIN / FEE_ADMIN)
-    5. set v0.8.5 parameters
-    6. grantRole(MIGRATION_ROLE)
-    7. [wiring] AL/IL roles + hooks + whitelist
-    8. [wiring] upgradeTo(PartyB impl)  <-- UUPS (*)
-    9. [wiring] registerPartyBs on IL
+
+DIAMONDCUT (execute via Safe UI)
+════════════════════════════════
+  diamondcut-calldata.json:
+    diamondCut (executed as separate Safe tx)
+
+POST-DIAMONDCUT (execute via Safe UI)
+═════════════════════════════════════
+  safe-batch.json contains:
+    1. grantRole(PROTOCOL_CONFIG / COOLDOWN_ADMIN / FEE_ADMIN)
+    2. set v0.8.5 parameters
+    3. grantRole(MIGRATION_ROLE)
+    4. [wiring] AL/IL roles + hooks + whitelist
+    5. [wiring] upgradeTo(PartyB impl)  <-- UUPS (*)
+    6. [wiring] registerPartyBs on IL
 
   (*) Safe must have DEFAULT_ADMIN_ROLE on SymmioPartyB
       before executing. Grant via current PartyB admin.
-
-  diamondcut-calldata.json:
-    diamondCut (executed as separate Safe tx)
 
 
 PREPARE MIGRATION INPUT (right after pause, before diamondCut)
@@ -146,29 +152,35 @@ SCHEDULE DIAMONDCUT (T=0, system still live)
   ... timelock delay passes, system is still running normally ...
 
 
-PAUSE + PARAMS + WIRING (T=delay, downtime starts)
-═══════════════════════════════════════════════════
-  Import safe-batch.json into Safe TX Builder
+PAUSE (T=delay, downtime starts)
+════════════════════════════════
+  Import pause-safe-batch.json into Safe TX Builder
   Execute from Safe:
     1. grantRole(PAUSER_ROLE)
     2. grantRole(UNPAUSER_ROLE)
     3. pauseGlobal()              <-- PAUSE
-    4. grantRole(PROTOCOL_CONFIG / COOLDOWN_ADMIN / FEE_ADMIN)
-    5. set v0.8.5 parameters
-    6. grantRole(MIGRATION_ROLE)
-    7. [wiring] AL/IL roles + hooks + whitelist
-    8. [wiring] upgradeTo(PartyB impl)  <-- UUPS (*)
-    9. [wiring] registerPartyBs on IL
-
-  (*) Safe must have DEFAULT_ADMIN_ROLE on SymmioPartyB
-      before executing. Grant via current PartyB admin.
 
 
-EXECUTE DIAMONDCUT (T=delay, after safe-batch)
-══════════════════════════════════════════════
+EXECUTE DIAMONDCUT (T=delay, after pause)
+═════════════════════════════════════════
   Import timelock-execute-safe-batch.json into Safe TX Builder
   Execute from Safe → calls timelock.execute()
   Diamond is now upgraded to v0.8.5
+
+
+POST-DIAMONDCUT (T=delay, after diamondCut)
+═══════════════════════════════════════════
+  Import safe-batch.json into Safe TX Builder
+  Execute from Safe:
+    1. grantRole(PROTOCOL_CONFIG / COOLDOWN_ADMIN / FEE_ADMIN)
+    2. set v0.8.5 parameters
+    3. grantRole(MIGRATION_ROLE)
+    4. [wiring] AL/IL roles + hooks + whitelist
+    5. [wiring] upgradeTo(PartyB impl)  <-- UUPS (*)
+    6. [wiring] registerPartyBs on IL
+
+  (*) Safe must have DEFAULT_ADMIN_ROLE on SymmioPartyB
+      before executing. Grant via current PartyB admin.
 
 
 VERIFY
@@ -214,10 +226,11 @@ TIMELINE
   T=0          Schedule diamondCut on timelock
                (system still running normally)
 
-  T=delay      Execute safe-batch.json (pause + params + wiring)
-               Prepare migration input (while waiting for diamondCut)
+  T=delay      Execute pause-safe-batch.json (pause)
                Execute timelock diamondCut
+               Execute safe-batch.json (roles + params + wiring)
                Verify upgrade
+               Prepare migration input
                Run migration
                Execute post-migration batch (unpause)
 
@@ -427,20 +440,23 @@ npx hardhat run scripts/upgrade/generateSafeBatch.ts --network arbitrum
 ```
 
 Output:
-- `scripts/upgrade/output/safe-batch.json` -- Safe Transaction Builder JSON (non-diamondCut txs, includes AL/IL wiring if addresses set)
+- `scripts/upgrade/output/pause-safe-batch.json` -- Safe batch for pause (grantRole PAUSER/UNPAUSER + pauseGlobal)
+- `scripts/upgrade/output/safe-batch.json` -- Safe batch for post-diamondCut (roles, params, wiring)
 - `scripts/upgrade/output/diamondcut-calldata.json` -- raw diamondCut calldata chunks
 - `scripts/upgrade/output/upgrade-details.json` -- selector changes + breakdown
 
 **Direct (Safe owns diamond):**
-1. Import `safe-batch.json` into the Safe Transaction Builder (includes pause, role grants, params, wiring)
+1. Import `pause-safe-batch.json` → execute (pause system)
 2. Execute the diamondCut calldata from `diamondcut-calldata.json` as a separate Safe tx
+3. Import `safe-batch.json` → execute (roles + params + wiring)
 
 **TimeLock (TimeLock owns diamond):**
 1. Run `generateTimelockBatch.ts` first (see [Step 2b](#step-2b-wrap-diamondcut-for-timelock))
 2. Import `timelock-schedule-safe-batch.json` → execute (schedules diamondCut, timer starts)
 3. Wait for timelock delay (system still live)
-4. Import `safe-batch.json` → execute (pause + params + wiring)
+4. Import `pause-safe-batch.json` → execute (pause)
 5. Import `timelock-execute-safe-batch.json` → execute (applies diamondCut)
+6. Import `safe-batch.json` → execute (roles + params + wiring)
 
 ## Step 2b: Wrap DiamondCut for TimeLock
 
