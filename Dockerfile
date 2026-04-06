@@ -35,7 +35,7 @@ COPY hardhat.config.ts ./
 # without it, the config fails to load and solc won't be downloaded.
 COPY tasks/ tasks/
 RUN ln -s /app/node_modules . \
-    && npx hardhat compile 2>/dev/null ; true
+    && npx hardhat compile
 
 # Copy source and compile
 COPY .env.example .env
