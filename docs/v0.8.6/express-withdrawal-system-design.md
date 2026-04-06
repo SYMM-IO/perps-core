@@ -148,13 +148,13 @@ sequenceDiagram
     Note over Express: 300 from general, 100 from affiliate, 100 from credit line
     Express->>Express: LibCreditLine.reserveDebt(affiliate, user, reqId, 100, creditData)
     Note over Express: Pools locked
-    Express->>Express: LibCreditLine.activateDebt(affiliate, user, reqId)
+    Express->>Express: LibCreditLine.activate(affiliate, user, reqId)
     Express->>SYMMIO: advanceWithdraw(user, reqId, 100)
     Express->>User: transfer 500 USDC from pools + credit (T+20s)
     Note over Express: Pools reduced by 400, credit active for 100
     SYMMIO->>Express: finalizeWithdrawRequest (T+12h) sends 400 USDC back
     Note over Express: Pools replenished by 400
-    Express->>Express: LibCreditLine.settleDebt(affiliate, user, reqId)
+    Express->>Express: LibCreditLine.settle(affiliate, user, reqId)
 ```
 
 ## 5. The Withdrawal Flows
@@ -199,7 +199,7 @@ sequenceDiagram
 - `processWithdraw` requires FINALIZED status (not ACCEPTED)
 - `processWithdraw` forwards express tokens to the user
 - Cancellable before finalization
-- Once finalized, `forceCancel` and `suspend` are no longer valid; a LOCKED STANDARD can be resolved via `unlockAndProcess` or via `processWithdraw` after cooldown expiry (which also triggers finalization from SYMMIO if needed)
+- Once finalized, `suspend` is no longer valid; a LOCKED STANDARD can be resolved via `unlockAndProcess` or via `processWithdraw` after cooldown expiry (which also triggers finalization from SYMMIO if needed)
 
 ### 5.2 INSTANT -- Instant Withdrawal (~20 seconds)
 
@@ -346,8 +346,6 @@ flowchart TD
 
 **IMMEDIATE is non-cancellable** because funds are already transferred to the user in the same transaction.
 
-`forceCancel` is separate from user cancellation: SYMMIO can still force-cancel ACCEPTED or LOCKED withdrawals before payout. Once a withdrawal is already PROCESSED, or a STANDARD withdrawal has already finalized, `forceCancel` is invalid.
-
 ### 6.4 Suspension
 
 An operator with `SUSPENDER_ROLE` on SYMMIO can suspend a user's withdrawal (e.g., for compliance). SYMMIO calls `onWithdrawSuspend` on the ExpressProvider, which:
@@ -373,12 +371,10 @@ stateDiagram-v2
     ACCEPTED --> PROCESSED: processWithdraw (front from pools)
     ACCEPTED --> LOCKED: lockWithdraw (risk detected)
     ACCEPTED --> CANCELLED: onWithdrawCancelRequest
-    ACCEPTED --> CANCELLED: onForceWithdrawCancel (pre-payout)
     ACCEPTED --> SUSPENDED: onWithdrawSuspend
 
     LOCKED --> PROCESSED: unlockAndProcess [UNLOCK_ROLE] (false alarm)
     LOCKED --> PROCESSED: processWithdraw (after cooldown, permissionless)
-    LOCKED --> CANCELLED: onForceWithdrawCancel (pre-payout)
     LOCKED --> SUSPENDED: onWithdrawSuspend
 
     PROCESSED --> FINALIZED: onWithdrawComplete (pools replenished)
@@ -401,19 +397,17 @@ stateDiagram-v2
     ACCEPTED --> LOCKED: lockWithdraw [LOCKER_ROLE] (risk flagged during 12h cooldown)
     ACCEPTED --> FINALIZED: onWithdrawComplete (tokens arrive)
     ACCEPTED --> CANCELLED: onWithdrawCancelRequest
-    ACCEPTED --> CANCELLED: onForceWithdrawCancel (pre-finalization)
     ACCEPTED --> SUSPENDED: onWithdrawSuspend
 
     LOCKED --> LOCKED: onWithdrawComplete (tokens arrive, lock preserved)
     LOCKED --> PROCESSED: unlockAndProcess [UNLOCK_ROLE] (false alarm)
     LOCKED --> PROCESSED: processWithdraw (after cooldown, finalizes from SYMMIO + processes)
-    LOCKED --> CANCELLED: onForceWithdrawCancel (pre-finalization)
     LOCKED --> SUSPENDED: onWithdrawSuspend
 
     FINALIZED --> PROCESSED: processWithdraw (forward to user, no risk check needed)
 ```
 
-Note: For STANDARD, risk locking happens **during** the 12-hour cooldown (before SYMMIO finalizes), not after. Once SYMMIO has finalized and sent the tokens, the cooldown period itself served as the security window -- no additional risk check is needed. If a withdrawal is LOCKED when `onWithdrawComplete` fires, the status stays LOCKED (tokens arrive but can't be forwarded until `unlockAndProcess`), and `forceCancel` / `suspend` are no longer valid after finalization. However, once the cooldown expires, `processWithdraw` accepts LOCKED withdrawals (for STANDARD, it calls `finalizeWithdrawRequest` on SYMMIO first to retrieve tokens), ensuring users are never indefinitely blocked.
+Note: For STANDARD, risk locking happens **during** the 12-hour cooldown (before SYMMIO finalizes), not after. Once SYMMIO has finalized and sent the tokens, the cooldown period itself served as the security window -- no additional risk check is needed. If a withdrawal is LOCKED when `onWithdrawComplete` fires, the status stays LOCKED (tokens arrive but can't be forwarded until `unlockAndProcess`), and `suspend` is no longer valid after finalization. However, once the cooldown expires, `processWithdraw` accepts LOCKED withdrawals (for STANDARD, it calls `finalizeWithdrawRequest` on SYMMIO first to retrieve tokens), ensuring users are never indefinitely blocked.
 
 **SYMMIO Withdrawal Status (for reference):**
 
@@ -481,7 +475,7 @@ struct WithdrawReceiverPart {
     uint256 amount;          // collateral decimals (e.g. 6 for USDC)
     int256  chainId;
     bytes   receiver;        // 20 bytes, the receiver address
-    address virtualProvider; // DEPRECATED: must be address(0), reverts VirtualProviderDeprecated otherwise
+    address virtualProvider; // DEPRECATED: must be address(0), reverts VirtualProviderMustBeZero otherwise
     address expressProvider; // ExpressProvider address
 }
 ```
@@ -493,15 +487,16 @@ Validators sign a separate EIP-712 message attesting to user legitimacy:
 **Type:**
 ```
 ValidatorApproval(
-    address user,       // the withdrawing user
-    uint256 nonce,      // must match the bot option nonce (ties to specific withdrawal)
-    uint256 amount,     // total withdrawal amount (expressAmount)
-    uint256 timestamp,  // when the validator signed (freshness check)
-    uint256 symmioNonce // user's current nonce on SYMMIO (invalidates if user acts on SYMMIO)
+    address user,        // the withdrawing user
+    uint256 nonce,       // must match the bot option nonce (ties to specific withdrawal)
+    uint256 amount,      // SYMMIO request totalAmount (full request, not the express portion)
+    uint256 timestamp,   // when the validator signed (freshness check)
+    uint256 symmioNonce, // user's current nonce on SYMMIO (invalidates if user acts on SYMMIO)
+    address symmio       // SYMMIO core address (cross-deployment replay protection)
 )
 ```
 
-Uses the same EIP-712 domain as the bot option (same contract, chain).
+Uses the same EIP-712 domain as the bot option (same contract, chain). The signature is additionally bound to the SYMMIO core address so a validator approval signed for one deployment cannot be replayed against an Express Provider that integrates with a different SYMMIO core.
 
 **On-chain validation (in `onWithdrawRequest`):**
 1. Check `signatures.length >= minValidatorSignatures(affiliate)` (falls back to `minValidatorSignatures(address(0))` if affiliate-specific not set)
@@ -725,16 +720,17 @@ See Section 4.2 for the conceptual overview. This section covers implementation 
 ### 9.1 Architecture
 
 Credit line logic lives inside the ExpressProvider diamond:
-- **`CreditLineFacet`** — admin setters (Muon config, protocol/affiliate caps, pause, blacklist) and view functions
-- **`LibCreditLine`** — debt operations (`reserveDebt`, `activateDebt`, `settleDebt`, `cancelReservation`) called internally by `SymmioHookFacetImpl` and `OperatorFacetImpl`
-- **`CreditLineStorage`** — diamond storage with per-affiliate mappings (`AffiliateCredit` struct)
+- **`CreditLineFacet`** — admin setters only (Muon config, protocol/affiliate caps, pause, blacklist)
+- **`ViewFacet`** — credit line **read** functions (debt totals, per-request debt, configuration getters) live here, alongside the other read-only views
+- **`LibCreditLine`** — debt operations (`reserveDebt`, `activate`, `settle`, `releaseReservation`, `coverLoss`) called internally by `SymmioHookFacetImpl` and `OperatorFacetImpl`
+- **`CreditLineStorage`** — diamond storage with per-affiliate mappings (`AffiliateCredit` struct). The `AffiliateCredit` struct is defined in `types/CreditTypes.sol` and held in `CreditLineStorage`.
 
 ### 9.2 Muon Verification
 
 When `reserveDebt` is called, `LibCreditLine` validates the Muon oracle attestation:
 
 1. **Freshness**: `block.timestamp <= data.timestamp + muonFreshnessWindow` (default 60s)
-2. **Signature**: The hash `keccak256(muonAppId, reqId, affiliate, eligibleBase, timestamp, chainId)` is verified via `IMuonSignatureVerifier`. The hash uses the **affiliate address** (not the diamond address) to scope attestations per affiliate.
+2. **Signature**: The hash `keccak256(abi.encodePacked(muonAppId, reqId, affiliate, eligibleBase, timestamp, chainId, address(this), symmio))` is verified via `IMuonSignatureVerifier`. The hash uses the **affiliate address** to scope attestations per affiliate, and is additionally bound to both `address(this)` (the express provider diamond) and `symmio` (the SYMMIO core address) so an attestation signed for one deployment cannot be replayed against another.
 3. **Caps**: New total debt (`reservedDebt + activeDebt + creditAmount`) must not exceed `effectiveMaxDebt` (absolute) or `effectiveMaxBps` (BPS of `eligibleBase`)
 
 ### 9.3 Debt Lifecycle (detailed)
@@ -742,10 +738,10 @@ When `reserveDebt` is called, `LibCreditLine` validates the Muon oracle attestat
 | Phase | Trigger | LibCreditLine Action |
 |-------|---------|----------------------|
 | Reserve | `onWithdrawRequest` | `reserveDebt` — validates Muon data, checks caps, adds to `reservedDebt` |
-| Activate | `processWithdraw` / `unlockAndProcess` / IMMEDIATE inline | `activateDebt` — moves from `reservedDebt` to `activeDebt`, calls `advanceWithdraw` on SYMMIO |
-| Settle | `onWithdrawComplete` | `settleDebt` — removes from `activeDebt`, deletes request state |
-| Cancel | `onWithdrawCancelRequest` / `onForceWithdrawCancel` (pre-payout) | `cancelReservation` — removes from `reservedDebt` |
-| Cover Loss | `onForceWithdrawCancel` / `onWithdrawSuspend` (post-payout) | `settleDebt` — deducts `creditAmount` from affiliate pool to cover the loss |
+| Activate | `processWithdraw` / `unlockAndProcess` / IMMEDIATE inline | `activate` — moves from `reservedDebt` to `activeDebt`, calls `advanceWithdraw` on SYMMIO |
+| Settle | `onWithdrawComplete` | `settle` — removes from `activeDebt`, deletes request state |
+| Cancel | `onWithdrawCancelRequest` (pre-payout) | `releaseReservation` — removes from `reservedDebt` |
+| Cover Loss | `onWithdrawSuspend` (post-payout) | `coverLoss` — deducts `creditAmount` from affiliate pool to cover the loss |
 
 ## 10. Access Control & Roles
 
@@ -770,7 +766,7 @@ Roles are stored in diamond storage and managed via `grantRole`/`revokeRole` on 
 Credit line operations no longer use separate OZ AccessControl roles. Since the credit line logic is integrated into the ExpressProvider diamond:
 
 - **Configuration** (Muon config, protocol caps, affiliate caps, pause, blacklist): Controlled by `SETTER_ROLE` on the diamond
-- **Debt lifecycle** (`reserveDebt`, `activateDebt`, `settleDebt`, `cancelReservation`): Called internally by `LibCreditLine` from within the diamond's facets -- no external role needed
+- **Debt lifecycle** (`reserveDebt`, `activate`, `settle`, `releaseReservation`, `coverLoss`): Called internally by `LibCreditLine` from within the diamond's facets -- no external role needed
 - The old `EXPRESS_PROVIDER_ROLE`, `PROTOCOL_ADMIN_ROLE`, and `AFFILIATE_ADMIN_ROLE` on the standalone CreditLineManager no longer exist
 
 ### 10.3 Validator Registration
@@ -910,10 +906,8 @@ function onWithdrawComplete(WithdrawRequest memory request) external;
 // Called when user requests cancellation
 function onWithdrawCancelRequest(WithdrawRequest memory request) external;
 
-// Called on force cancel by admin
-function onForceWithdrawCancel(WithdrawRequest memory request) external;
-
-// Called when operator suspends the withdrawal
+// Called when operator suspends the withdrawal (also handles all force-cancellation paths,
+// with rollback if the withdrawal had already been processed)
 function onWithdrawSuspend(WithdrawRequest memory request) external;
 ```
 
@@ -990,10 +984,21 @@ function generalBalance() external view returns (uint256);
 function lockedGeneralBalance() external view returns (uint256);
 function affiliateBalances(address affiliate) external view returns (uint256);
 function lockedAffiliateBalances(address affiliate) external view returns (uint256);
-// Credit line queries (on CreditLineFacet)
+// Credit line queries (on ViewFacet)
+function creditLineSignatureVerifier() external view returns (address);
+function creditLineMuonAppId() external view returns (uint256);
+function creditLineMuonFreshnessWindow() external view returns (uint256);
+function creditLineProtocolMaxDebt(address affiliate) external view returns (uint256);
+function creditLineProtocolMaxDebtBps(address affiliate) external view returns (uint256);
+function creditLineAffiliateMaxDebt(address affiliate) external view returns (uint256);
+function creditLineAffiliateMaxDebtBps(address affiliate) external view returns (uint256);
 function creditLineTotalDebt(address affiliate) external view returns (uint256);
 function creditLineReservedDebt(address affiliate) external view returns (uint256);
 function creditLineActiveDebt(address affiliate) external view returns (uint256);
+function creditLineRequestDebt(address affiliate, address user, uint256 requestId) external view returns (uint256);
+function creditLineRequestActivated(address affiliate, address user, uint256 requestId) external view returns (bool);
+function creditLinePaused(address affiliate) external view returns (bool);
+function creditLineBlacklisted(address affiliate, address user) external view returns (bool);
 
 // Fee queries
 function affiliateConfigs(address affiliate) external view returns (uint256 feeRate, uint256 operatorFee);
@@ -1019,7 +1024,7 @@ function hasRole(bytes32 role, address account) external view returns (bool);
 
 ### 12.2 CreditLineFacet (Diamond Facet)
 
-All credit line functions are accessed on the ExpressProvider diamond address. Configuration requires `SETTER_ROLE`. Debt lifecycle functions (`reserveDebt`, `activateDebt`, `settleDebt`, `cancelReservation`) are internal to `LibCreditLine` and called by other facets within the diamond -- they are not externally callable.
+All credit line functions are accessed on the ExpressProvider diamond address. Configuration requires `SETTER_ROLE`. Debt lifecycle functions (`reserveDebt`, `activate`, `settle`, `releaseReservation`, `coverLoss`) are internal to `LibCreditLine` and called by other facets within the diamond -- they are not externally callable. Credit line **read** functions live on `ViewFacet` (see Section 12.1 view functions).
 
 ```solidity
 // Configuration (SETTER_ROLE)
@@ -1040,11 +1045,6 @@ function setCreditLineAffiliateConfig(
 ) external;
 function setCreditLinePaused(address affiliate, bool paused) external;
 function setCreditLineBlacklisted(address affiliate, address user, bool blacklisted) external;
-
-// View
-function creditLineTotalDebt(address affiliate) external view returns (uint256);    // reservedDebt + activeDebt
-function creditLineReservedDebt(address affiliate) external view returns (uint256);
-function creditLineActiveDebt(address affiliate) external view returns (uint256);
 ```
 
 ## 13. Data Types Reference
@@ -1217,7 +1217,7 @@ expressProvider.depositToAffiliate(affiliateAddress, amount)
 
 ### 15.2 Post-Payout Rollback
 
-If a force-cancel or suspend occurs after Express has already paid the user, the credit portion (if any) has already been advanced via `advanceWithdraw`. `LibCreditLine.coverLoss` deducts the credit amount from the affiliate pool to absorb the loss. In practice this path is extremely unlikely because `forceCancelWithdraw` requires `block.timestamp < cooldownEndTime`, and express processing typically happens well before cooldown expiry.
+If `onWithdrawSuspend` fires after Express has already paid the user (status was `PROCESSED`), the credit portion (if any) has already been advanced via `advanceWithdraw`. `LibCreditLine.coverLoss` is invoked only on this post-payout path: it deducts the credit amount from the affiliate pool to absorb the loss and settles the active debt. Suspension after `block.timestamp >= cooldownEndTime` is unusual but possible if SYMMIO operators delay finalization, so the rollback path must remain available.
 
 ### 15.3 Liquidity Fragmentation
 
