@@ -349,8 +349,8 @@ npx hardhat run scripts/upgrade/runMigration.ts --network fork-arbitrum
 | Script | What it checks |
 |--------|---------------|
 | `verify-all.sh` | Block explorer verification of all deployed contracts (libraries, facets, peripherals) |
-| `verifyDeploy.ts` | Bytecode verification of deployed core facets against local compiled artifacts (library linking aware) |
-| `verifyPeripheralsDeploy.ts` | Bytecode verification of deployed peripherals against local compiled artifacts (library linking + immutable aware) |
+| `verifyDeploy.ts` | Bytecode verification of deployed core facets (reads addresses from `output/deployed-facets.json`) against local compiled artifacts (library linking aware) |
+| `verifyPeripheralsDeploy.ts` | Bytecode verification of deployed peripherals (AccountLayer, InstantLayer, SymmioPartyB impl, MuonSignatureVerifier) against local compiled artifacts. Handles library linking and immutable variable masking. |
 | `verifyDiamond.ts` | All v0.8.5 facet selectors registered on diamond |
 | `verifyPeripherals.ts` | AccountLayer + InstantLayer roles, hooks, whitelist, templates |
 | `testTemplateExecution.ts` | Full end-to-end: affiliate registration, sub-account, PartyB UUPS upgrade, EIP-712 delegation, sendQuote -> lockQuote -> openPosition via InstantLayer template |
@@ -588,20 +588,23 @@ Addresses are read from `scripts/upgrade/output/deployed-facets.json` and `deplo
 Compares the on-chain deployed bytecode against locally compiled Hardhat artifacts. This is independent of block explorer verification and works for any RPC-accessible network.
 
 ```bash
-# Core facets (reads deployed-facets.json)
+# Core facets: reads deployed-facets.json
 RPC_URL=https://rpc.mantle.xyz npx ts-node scripts/upgrade/verifyDeploy.ts
 
-# Peripherals (reads deployed-peripherals.json)
+# Peripherals: reads deployed-peripherals.json
 RPC_URL=https://rpc.mantle.xyz npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
 ```
 
-Addresses are read from `scripts/upgrade/output/deployed-facets.json` and `deployed-peripherals.json`. Override with env vars:
+Both read addresses from `scripts/upgrade/output/` files (`deployed-facets.json` and `deployed-peripherals.json` respectively). `verifyPeripheralsDeploy.ts` also picks up the `MuonSignatureVerifier` address from `upgrade.json` (`newV085Parameters.signatureVerifierAddress`).
+
+Override env vars:
 
 ```bash
-# Custom paths / different network
-RPC_URL=https://arb1.arbitrum.io/rpc FACETS_FILE=./output/deployed-facets-arb.json npx ts-node scripts/upgrade/verifyDeploy.ts
-RPC_URL=https://arb1.arbitrum.io/rpc PERIPHERALS_FILE=./output/deployed-peripherals-arb.json npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
+FACETS_FILE=./output/deployed-facets-arb.json RPC_URL=https://arb1.arbitrum.io/rpc npx ts-node scripts/upgrade/verifyDeploy.ts
+PERIPHERALS_FILE=./output/deployed-peripherals-arb.json RPC_URL=https://arb1.arbitrum.io/rpc npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
 ```
+
+**When to run:** after `deployFacets.ts` / `deployPeripherals.ts` and before applying the diamondCut, to confirm the standalone pre-deployed bytecodes match the local compiled source.
 
 **What they handle:**
 - **Library linking** -- facets that use external libraries (e.g. `LibQuoteFunding`, `LibSettlement`) have placeholder slots in compiled bytecode. The scripts extract actual library addresses from on-chain bytecode and substitute them before comparing.

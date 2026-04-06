@@ -27,6 +27,7 @@ if (!rpcUrl) {
 }
 
 const peripheralsFile = process.env.PERIPHERALS_FILE ?? path.join(OUTPUT_DIR, "deployed-peripherals.json")
+const upgradeConfigFile = process.env.UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/upgrade.json"
 
 if (!fs.existsSync(peripheralsFile)) {
 	console.error(`Missing deployed-peripherals.json at ${peripheralsFile}`)
@@ -110,6 +111,18 @@ CONTRACTS[deployed.accountLayer.init] = {
 CONTRACTS[deployed.instantLayer.address] = {
 	name: "InstantLayer",
 	path: "instantLayer/InstantLayer.sol/InstantLayer.json",
+}
+
+// MuonSignatureVerifier (address from upgrade.json)
+if (fs.existsSync(upgradeConfigFile)) {
+	const upgradeConfig = JSON.parse(fs.readFileSync(upgradeConfigFile, "utf8"))
+	const sigVerifierAddr = upgradeConfig?.newV085Parameters?.signatureVerifierAddress
+	if (sigVerifierAddr) {
+		CONTRACTS[sigVerifierAddr] = {
+			name: "MuonSignatureVerifier",
+			path: "helpers/verification/SymmioSignatureVerifier.sol/MuonSignatureVerifier.json",
+		}
+	}
 }
 
 // SymmioPartyB implementation

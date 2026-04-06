@@ -85,60 +85,108 @@ async function main() {
 	const calldataJson = JSON.parse(fs.readFileSync(calldataFile, "utf-8"))
 	const chunks: { calldata: string; description: string }[] = calldataJson.chunks
 	if (!chunks || chunks.length === 0) throw new Error("No diamondCut calldata chunks found")
-	if (chunks.length > 1) console.warn(`WARN: ${chunks.length} chunks found — wrapping all, but expected 1`)
-
-	const diamondCutCalldata = chunks[0].calldata
 
 	console.log(`Diamond:    ${DIAMOND_ADDRESS}`)
 	console.log(`Timelock:   ${TIMELOCK_ADDRESS}`)
 	console.log(`Safe:       ${SAFE_ADDRESS}`)
 	console.log(`Chain ID:   ${CHAIN_ID}`)
+	console.log(`Chunks:     ${chunks.length}`)
 	console.log()
 
 	// Fetch minDelay from timelock
 	const timelock = new ethers.Contract(TIMELOCK_ADDRESS, TIMELOCK_ABI, ethers.provider)
 	const minDelay = await timelock.getMinDelay()
 	console.log(`Min delay:  ${minDelay} (${formatDuration(Number(minDelay))})`)
-
-	// Deterministic salt
-	const salt = ethers.keccak256(
-		ethers.AbiCoder.defaultAbiCoder().encode(["uint256", "address", "string"], [BigInt(CHAIN_ID), DIAMOND_ADDRESS, "diamondCut-v0.8.5"]),
-	)
-	console.log(`Salt:       ${salt}`)
-
-	// Compute operation ID
-	const operationId = await timelock.hashOperation(DIAMOND_ADDRESS, 0, diamondCutCalldata, ZERO_BYTES32, salt)
-	console.log(`Operation:  ${operationId}`)
 	console.log()
 
-	// Encode schedule and execute
 	const timelockIface = new ethers.Interface(TIMELOCK_ABI)
-
-	const scheduleCalldata = timelockIface.encodeFunctionData("schedule", [DIAMOND_ADDRESS, 0, diamondCutCalldata, ZERO_BYTES32, salt, minDelay])
-
-	const executeCalldata = timelockIface.encodeFunctionData("execute", [DIAMOND_ADDRESS, 0, diamondCutCalldata, ZERO_BYTES32, salt])
 
 	// Write output
 	if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
 
-	const scheduleBatch = makeSafeBatch(CHAIN_ID, SAFE_ADDRESS, "Symmio v0.8.5 — Timelock Schedule DiamondCut", [
-		{ to: TIMELOCK_ADDRESS, value: "0", data: scheduleCalldata },
-	])
-	const scheduleFile = path.join(OUTPUT_DIR, "timelock-schedule-safe-batch.json")
-	fs.writeFileSync(scheduleFile, JSON.stringify(scheduleBatch, null, 2))
-	console.log(`Schedule batch: ${scheduleFile}`)
+	// Remove any previously generated per-chunk files so old chunks don't leak in
+	// (safe because we rewrite them all below)
+	for (const f of fs.readdirSync(OUTPUT_DIR)) {
+		if (/^timelock-(schedule|execute)-safe-batch(-\d+)?\.json$/.test(f)) {
+			fs.unlinkSync(path.join(OUTPUT_DIR, f))
+		}
+	}
 
-	const executeBatch = makeSafeBatch(CHAIN_ID, SAFE_ADDRESS, "Symmio v0.8.5 — Timelock Execute DiamondCut", [
-		{ to: TIMELOCK_ADDRESS, value: "0", data: executeCalldata },
-	])
-	const executeFile = path.join(OUTPUT_DIR, "timelock-execute-safe-batch.json")
-	fs.writeFileSync(executeFile, JSON.stringify(executeBatch, null, 2))
-	console.log(`Execute batch:  ${executeFile}`)
+	const scheduleFiles: string[] = []
+	const executeFiles: string[] = []
+	const pad = String(chunks.length).length
+
+	// For each chunk: unique salt, chained predecessor (chunk N depends on chunk N-1),
+	// so the timelock enforces strict in-order execution.
+	// One Safe batch file per chunk so each Ledger signing prompt only sees one
+	// schedule()/execute() call (multicall aggregation of N txs would blow the Ledger
+	// calldata limit).
+	let predecessor: string = ZERO_BYTES32
+	for (let i = 0; i < chunks.length; i++) {
+		const chunkCalldata = chunks[i].calldata
+		const salt = ethers.keccak256(
+			ethers.AbiCoder.defaultAbiCoder().encode(
+				["uint256", "address", "string", "uint256"],
+				[BigInt(CHAIN_ID), DIAMOND_ADDRESS, "diamondCut-v0.8.5", BigInt(i)],
+			),
+		)
+		const operationId = await timelock.hashOperation(DIAMOND_ADDRESS, 0, chunkCalldata, predecessor, salt)
+
+		const bytes = (chunkCalldata.length - 2) / 2
+		console.log(`Chunk ${i + 1}/${chunks.length}:`)
+		console.log(`  size:        ${bytes} bytes (${(bytes / 1024).toFixed(2)} KB)`)
+		console.log(`  salt:        ${salt}`)
+		console.log(`  predecessor: ${predecessor}`)
+		console.log(`  operation:   ${operationId}`)
+
+		const scheduleTx = {
+			to: TIMELOCK_ADDRESS,
+			value: "0",
+			data: timelockIface.encodeFunctionData("schedule", [DIAMOND_ADDRESS, 0, chunkCalldata, predecessor, salt, minDelay]),
+		}
+		const executeTx = {
+			to: TIMELOCK_ADDRESS,
+			value: "0",
+			data: timelockIface.encodeFunctionData("execute", [DIAMOND_ADDRESS, 0, chunkCalldata, predecessor, salt]),
+		}
+
+		const idx = String(i + 1).padStart(pad, "0")
+		const scheduleFile = path.join(OUTPUT_DIR, `timelock-schedule-safe-batch-${idx}.json`)
+		const executeFile = path.join(OUTPUT_DIR, `timelock-execute-safe-batch-${idx}.json`)
+
+		const scheduleBatch = makeSafeBatch(
+			CHAIN_ID,
+			SAFE_ADDRESS,
+			`Symmio v0.8.5 — Timelock Schedule DiamondCut chunk ${i + 1}/${chunks.length}`,
+			[scheduleTx],
+		)
+		fs.writeFileSync(scheduleFile, JSON.stringify(scheduleBatch, null, 2))
+		scheduleFiles.push(scheduleFile)
+
+		const executeBatch = makeSafeBatch(
+			CHAIN_ID,
+			SAFE_ADDRESS,
+			`Symmio v0.8.5 — Timelock Execute DiamondCut chunk ${i + 1}/${chunks.length}`,
+			[executeTx],
+		)
+		fs.writeFileSync(executeFile, JSON.stringify(executeBatch, null, 2))
+		executeFiles.push(executeFile)
+
+		predecessor = operationId
+	}
+	console.log()
+
+	console.log(`Schedule files (${scheduleFiles.length}):`)
+	for (const f of scheduleFiles) console.log(`  ${f}`)
+	console.log(`Execute files  (${executeFiles.length}):`)
+	for (const f of executeFiles) console.log(`  ${f}`)
 
 	console.log(`\nWorkflow:`)
-	console.log(`  1. Import ${path.basename(scheduleFile)} into Safe TX Builder → execute now`)
+	console.log(`  1. Import each timelock-schedule-safe-batch-N.json into Safe TX Builder in order`)
+	console.log(`     (chunks share a predecessor chain — must be scheduled in order 1..${chunks.length})`)
 	console.log(`  2. Wait ${formatDuration(Number(minDelay))}`)
-	console.log(`  3. Import ${path.basename(executeFile)} into Safe TX Builder → execute after delay`)
+	console.log(`  3. Import each timelock-execute-safe-batch-N.json into Safe TX Builder in order`)
+	console.log(`     (strict ordering enforced on-chain by the predecessor chain)`)
 }
 
 main().catch(error => {
