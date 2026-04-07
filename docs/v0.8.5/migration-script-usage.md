@@ -87,7 +87,26 @@ Deploys AccountLayer Diamond, InstantLayer, and SymmioPartyB implementation. Res
 
 Output: `output/deployed-peripherals.json`
 
-### 3. Generate Safe batch
+### 3. Verify deployments
+
+Run immediately after steps 1 and 2, before signing anything on-chain.
+
+**Block explorer verification** -- verifies source for all libraries, facets, and peripherals (AccountLayer, InstantLayer, SymmioPartyB impl). Reads addresses from `output/deployed-facets.json` and `output/deployed-peripherals.json`:
+
+```bash
+NETWORK=<network> bash scripts/upgrade/verify-all.sh
+```
+
+**Local-vs-on-chain bytecode verification** -- compares deployed bytecode against locally compiled artifacts. `verifyDeploy.ts` is library-linking aware for core facets; `verifyPeripheralsDeploy.ts` also masks immutable variables for the peripherals:
+
+```bash
+RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyDeploy.ts
+RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
+```
+
+`verifyPeripheralsDeploy.ts` also picks up the `MuonSignatureVerifier` address from `upgrade.json` (`newV085Parameters.signatureVerifierAddress`).
+
+### 4. Generate Safe batch
 
 ```bash
 npx hardhat run scripts/upgrade/generateSafeBatch.ts --network <network>
@@ -110,13 +129,13 @@ The Safe batch includes:
 
 The diamondCut is **not** in the Safe batch -- it's separate so it can be routed through the timelock.
 
-### 4. Generate timelock batches (Path A only)
+### 5. Generate timelock batches (Path A only)
 
 ```bash
 npx hardhat run scripts/upgrade/generateTimelockBatch.ts --network <network>
 ```
 
-Wraps the diamondCut calldata from step 3 into two Safe batches:
+Wraps the diamondCut calldata from step 4 into two Safe batches:
 
 Output:
 - `output/timelock-schedule-safe-batch.json` -- Calls `TimelockController.schedule()` on the timelock
@@ -124,27 +143,43 @@ Output:
 
 Both target the **timelock contract**, not the diamond directly. The Safe signs these transactions as the timelock proposer/executor.
 
-### 5. Prepare migration input
+### 6. Prepare migration input
 
 ```bash
 npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network <network>
 ```
 
-Fetches open quotes and PartyB balances from the subgraph, builds the migration payload, and takes an on-chain balance snapshot.
+Critical-path script: kept short and reliable so it can run during the pause window. Four steps:
+1. Fetch open quotes from subgraph
+2. Fetch PartyB balances from subgraph
+3. Validate boundary against on-chain `getNextQuoteId()`
+4. Build the migration input file
 
 Output:
 - `output/migration-input.json` -- Quote IDs, PartyB tasks, expected aggregates
-- `output/prepareMigrationInput-report.json` -- Step-by-step report with balance snapshot
+- `output/prepareMigrationInput-report.json` -- Step-by-step report
 
-### 6. Validate migration input
+### 7. Validate migration input (optional)
 
 ```bash
 npx hardhat run scripts/upgrade/validateMigrationInput.ts --network <network>
 ```
 
-Spot-checks the migration input against on-chain state. Can be run before or after the upgrade is applied.
+Spot-checks the migration input against on-chain state. Version-agnostic — can be run before or after the upgrade is applied.
 
-### 7. Run migration (after upgrade is live)
+### 7b. Snapshot on-chain balances (optional, off the critical path)
+
+```bash
+npx hardhat run scripts/upgrade/snapshotBalances.ts --network <network>
+```
+
+Captures total deposits + allocated balances per PartyA / PartyB for sanity-checking the protocol's total funds before vs after the upgrade. Reads `migration-input.json`, re-fetches PartyB balance entries from the subgraph, and queries the diamond with bounded concurrency and per-call retry/backoff (configurable via `SNAPSHOT_CONCURRENCY` and `SNAPSHOT_MAX_RETRIES`).
+
+**Run this OUTSIDE the pause window** -- it does ~2 RPC calls per PartyA and is the first thing to suffer when an RPC endpoint is flaky. It is not on the migration critical path; `runMigration.ts` does not consume its output.
+
+Output: `output/balance-snapshot.json`
+
+### 8. Run migration (after upgrade is live)
 
 ```bash
 npx hardhat run scripts/upgrade/runMigration.ts --network <network>
@@ -154,7 +189,7 @@ Executes `migrateQuotes()` and `migrateCrossLockedValues()` on the paused diamon
 
 Output: `output/migration-report.json`
 
-### 8. Generate post-migration batch
+### 9. Generate post-migration batch
 
 ```bash
 npx hardhat run scripts/upgrade/generatePostMigrationBatch.ts --network <network>
@@ -168,28 +203,36 @@ Output:
 - `output/post-migration-transactions.json` -- Raw calldata
 - `output/post-migration-safe-batch.json` -- Safe Transaction Builder JSON
 
-### 9. Verify
+### 10. Verify upgrade & wiring
+
+Run **after** the wiring batch (`safe-batch.json`) has been executed by the multisig, before unpausing.
 
 ```bash
 npx hardhat run scripts/upgrade/verifyDiamond.ts --network <network>
 npx hardhat run scripts/upgrade/verifyPeripherals.ts --network <network>
 ```
 
-Checks on-chain state: facet registrations, role assignments, wiring between Diamond/AccountLayer/InstantLayer.
+- `verifyDiamond.ts` -- confirms all v0.8.5 facet selectors are registered on the diamond.
+- `verifyPeripherals.ts` -- confirms AccountLayer + InstantLayer roles, hooks, whitelist, and templates are wired correctly.
+
+This is distinct from step 3 (deployment verification): step 3 checks the bytecode of the new contracts, this step checks that the upgrade transactions were applied correctly on-chain.
 
 ---
 
 ## Execution Flow: Timelock Path
 
 ```
-Phase 1: Prepare (can be done in advance)
+Phase 1: Prepare (can be done in advance, no downtime)
   deployFacets.ts
   deployPeripherals.ts
+  -> Verify deployments:
+       verify-all.sh                  (block explorer source verification)
+       verifyDeploy.ts                (core facets bytecode + library linking)
+       verifyPeripheralsDeploy.ts     (peripherals bytecode + immutables)
   generateSafeBatch.ts
   generateTimelockBatch.ts
-  prepareMigrationInput.ts
-  validateMigrationInput.ts
   generatePostMigrationBatch.ts
+  snapshotBalances.ts                 (optional pre-pause snapshot, off critical path)
 
 Phase 2: Schedule (multisig signs)
   Import timelock-schedule-safe-batch.json into Safe TX Builder
@@ -198,13 +241,20 @@ Phase 2: Schedule (multisig signs)
 Phase 3: Wait
   Timelock delay elapses (e.g. 3 days)
 
-Phase 4: Execute upgrade (multisig signs both)
+Phase 4: Execute upgrade (multisig signs, downtime starts)
+  Import pause-safe-batch.json into Safe TX Builder
+  -> Grants PAUSER/UNPAUSER, calls pauseGlobal()  <-- DOWNTIME STARTS
+  prepareMigrationInput.ts           (after pause, before diamondCut — subgraph + boundary check)
+  validateMigrationInput.ts          (optional on-chain spot-check)
   Import timelock-execute-safe-batch.json into Safe TX Builder
   -> Applies the diamondCut through the timelock
   Import safe-batch.json into Safe TX Builder
-  -> Pauses system, grants roles, sets parameters, wires peripherals
+  -> Grants roles, sets parameters, wires peripherals
+  -> Verify upgrade & wiring:
+       verifyDiamond.ts               (all v0.8.5 selectors registered)
+       verifyPeripherals.ts           (AL/IL roles, hooks, whitelist, templates)
 
-Phase 5: Migrate (EOA)
+Phase 5: Migrate (EOA with MIGRATION_ROLE)
   runMigration.ts
   -> Migrates quotes and PartyB locked values on the paused system
 
@@ -215,7 +265,17 @@ Phase 6: Unpause (multisig signs)
 
 ## Execution Flow: Direct Safe Path
 
-Same as above but skip `generateTimelockBatch.ts` and include the diamondCut directly in the Safe batch (the script handles this automatically when no timelock is configured).
+Same as above but skip `generateTimelockBatch.ts` and include the diamondCut directly in the Safe batch (the script handles this automatically when no timelock is configured). The verification points are unchanged: verify deployments after `deployFacets.ts` + `deployPeripherals.ts`, and verify upgrade & wiring after the Safe batch is executed.
+
+## Verification Cheat Sheet
+
+| Script | When | Purpose |
+|--------|------|---------|
+| `verify-all.sh` | After deploy facets + peripherals | Block-explorer source verification of libraries, facets, and peripherals |
+| `verifyDeploy.ts` | After deploy facets | Compare local-compiled bytecode vs deployed core facets (library-link aware) |
+| `verifyPeripheralsDeploy.ts` | After deploy peripherals | Same, for AccountLayer / InstantLayer / SymmioPartyB impl / MuonSignatureVerifier (handles immutables) |
+| `verifyDiamond.ts` | After `safe-batch.json` is executed | All v0.8.5 facet selectors registered on the diamond |
+| `verifyPeripherals.ts` | After `safe-batch.json` is executed | AccountLayer + InstantLayer roles, hooks, whitelist, templates wired correctly |
 
 ## Output Files Reference
 
@@ -230,6 +290,7 @@ Same as above but skip `generateTimelockBatch.ts` and include the diamondCut dir
 | `timelock-execute-safe-batch.json` | generateTimelockBatch.ts | Safe TX Builder |
 | `migration-input.json` | prepareMigrationInput.ts | runMigration.ts |
 | `prepareMigrationInput-report.json` | prepareMigrationInput.ts | Human review |
+| `balance-snapshot.json` | snapshotBalances.ts | Human review (sanity-check totals) |
 | `migration-report.json` | runMigration.ts | Human review |
 | `post-migration-transactions.json` | generatePostMigrationBatch.ts | EOA execution |
 | `post-migration-safe-batch.json` | generatePostMigrationBatch.ts | Safe TX Builder |

@@ -14,7 +14,11 @@ import { fetchOpenQuotes, fetchPartyBBalances } from "./utils/subgraphHelpers.js
  * boundary against on-chain getNextQuoteId(), and writes a JSON file for
  * runMigration.ts. Can run before or after the diamondCut.
  *
- * For on-chain spot-check validation, run validateMigrationInput.ts separately.
+ * Critical-path script: kept short and reliable so it can run during the
+ * pause window. Optional checks (on-chain balance snapshot, on-chain spot
+ * checks) live in separate scripts:
+ *   - snapshotBalances.ts          on-chain balance snapshot for sanity-checking totals
+ *   - validateMigrationInput.ts    on-chain spot-check of quotes/balances
  *
  * Usage:
  *   npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network mantle
@@ -50,28 +54,6 @@ type PrepareReport = {
 	diamondAddress?: string
 	subgraphEndpoint?: string
 	steps: StepResult[]
-	balanceSnapshot?: {
-		partyA: Record<string, { deposit: string; allocated: string }>
-		partyB: Record<string, { deposit: string; allocatedTotal: string }>
-		summary: {
-			partyA: {
-				count: number
-				totalDeposit: string
-				totalAllocated: string
-				totalFunds: string
-				topDeposit: { address: string; amount: string }
-				topAllocated: { address: string; amount: string }
-			}
-			partyB: {
-				count: number
-				totalDeposit: string
-				totalAllocated: string
-				totalFunds: string
-				topDeposit: { address: string; amount: string }
-				topAllocated: { address: string; amount: string }
-			}
-		}
-	}
 	error?: string
 }
 
@@ -159,7 +141,7 @@ async function main() {
 		log.kv("Diamond", log.addr(DIAMOND_ADDRESS))
 		log.kv("Subgraph", SUBGRAPH_ENDPOINT)
 
-		log.setSteps(5)
+		log.setSteps(4)
 
 		// Step 1: Fetch open quotes from subgraph
 		let t = log.step("Fetch open quotes from subgraph")
@@ -305,110 +287,6 @@ async function main() {
 			},
 		})
 		currentStep = null
-		log.stepDone(t)
-
-		// Step 5: Snapshot on-chain balances (report-only)
-		t = log.step("Snapshot on-chain balances")
-		currentStep = "snapshot_balances"
-
-		const viewFacet = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", DIAMOND_ADDRESS)
-
-		// Collect unique partyAs from quotes + balance entries
-		const allPartyAs = new Set<string>()
-		for (const q of quotesResult.quotes) allPartyAs.add(q.partyA)
-		for (const e of balancesResult.entries) allPartyAs.add(e.counterParty)
-		const partyAList = [...allPartyAs].sort()
-
-		// PartyA balances: deposit + allocated
-		const partyABalances: Record<string, { deposit: string; allocated: string }> = {}
-		log.info(`Fetching balances for ${partyAList.length} partyAs...`)
-		for (const partyA of partyAList) {
-			const [deposit, allocated] = await Promise.all([
-				viewFacet.balanceOf(partyA).then(toBigInt),
-				viewFacet.allocatedBalanceOfPartyA(partyA).then(toBigInt),
-			])
-			partyABalances[partyA] = { deposit: deposit.toString(), allocated: allocated.toString() }
-		}
-
-		// PartyB balances: deposit + total allocated (sum from subgraph entries)
-		const partyBList = [...new Set(balancesResult.entries.map(e => e.account))].sort()
-		const partyBAllocatedSums = new Map<string, bigint>()
-		for (const e of balancesResult.entries) {
-			partyBAllocatedSums.set(e.account, (partyBAllocatedSums.get(e.account) ?? 0n) + BigInt(e.allocatedBalance))
-		}
-
-		const partyBBalances: Record<string, { deposit: string; allocatedTotal: string }> = {}
-		log.info(`Fetching balances for ${partyBList.length} partyBs...`)
-		for (const partyB of partyBList) {
-			const deposit = toBigInt(await viewFacet.balanceOf(partyB))
-			partyBBalances[partyB] = {
-				deposit: deposit.toString(),
-				allocatedTotal: (partyBAllocatedSums.get(partyB) ?? 0n).toString(),
-			}
-		}
-
-		// Compute summaries
-		let partyATotalDeposit = 0n
-		let partyATotalAllocated = 0n
-		let partyATopDeposit = { address: "", amount: 0n }
-		let partyATopAllocated = { address: "", amount: 0n }
-		for (const [addr, bal] of Object.entries(partyABalances)) {
-			const dep = BigInt(bal.deposit)
-			const alloc = BigInt(bal.allocated)
-			partyATotalDeposit += dep
-			partyATotalAllocated += alloc
-			if (dep > partyATopDeposit.amount) partyATopDeposit = { address: addr, amount: dep }
-			if (alloc > partyATopAllocated.amount) partyATopAllocated = { address: addr, amount: alloc }
-		}
-
-		let partyBTotalDeposit = 0n
-		let partyBTotalAllocated = 0n
-		let partyBTopDeposit = { address: "", amount: 0n }
-		let partyBTopAllocated = { address: "", amount: 0n }
-		for (const [addr, bal] of Object.entries(partyBBalances)) {
-			const dep = BigInt(bal.deposit)
-			const alloc = BigInt(bal.allocatedTotal)
-			partyBTotalDeposit += dep
-			partyBTotalAllocated += alloc
-			if (dep > partyBTopDeposit.amount) partyBTopDeposit = { address: addr, amount: dep }
-			if (alloc > partyBTopAllocated.amount) partyBTopAllocated = { address: addr, amount: alloc }
-		}
-
-		const balanceSummary = {
-			partyA: {
-				count: partyAList.length,
-				totalDeposit: partyATotalDeposit.toString(),
-				totalAllocated: partyATotalAllocated.toString(),
-				totalFunds: (partyATotalDeposit + partyATotalAllocated).toString(),
-				topDeposit: { address: partyATopDeposit.address, amount: partyATopDeposit.amount.toString() },
-				topAllocated: { address: partyATopAllocated.address, amount: partyATopAllocated.amount.toString() },
-			},
-			partyB: {
-				count: partyBList.length,
-				totalDeposit: partyBTotalDeposit.toString(),
-				totalAllocated: partyBTotalAllocated.toString(),
-				totalFunds: (partyBTotalDeposit + partyBTotalAllocated).toString(),
-				topDeposit: { address: partyBTopDeposit.address, amount: partyBTopDeposit.amount.toString() },
-				topAllocated: { address: partyBTopAllocated.address, amount: partyBTopAllocated.amount.toString() },
-			},
-		}
-
-		log.ok(`${partyAList.length} partyAs, ${partyBList.length} partyBs snapshotted`)
-		log.stats([
-			["PartyA total funds", `deposit=${partyATotalDeposit} + allocated=${partyATotalAllocated}`],
-			["PartyA top deposit", `${log.truncAddr(partyATopDeposit.address)} = ${partyATopDeposit.amount}`],
-			["PartyA top allocated", `${log.truncAddr(partyATopAllocated.address)} = ${partyATopAllocated.amount}`],
-			["PartyB total funds", `deposit=${partyBTotalDeposit} + allocated=${partyBTotalAllocated}`],
-			["PartyB top deposit", `${log.truncAddr(partyBTopDeposit.address)} = ${partyBTopDeposit.amount}`],
-			["PartyB top allocated", `${log.truncAddr(partyBTopAllocated.address)} = ${partyBTopAllocated.amount}`],
-		])
-		report.steps.push({
-			name: "snapshot_balances",
-			status: "ok",
-			details: { partyACount: partyAList.length, partyBCount: partyBList.length },
-		})
-		report.balanceSnapshot = { partyA: partyABalances, partyB: partyBBalances, summary: balanceSummary }
-		currentStep = null
 		tryWriteReport(reportFile, report)
 		log.stepDone(t)
 
@@ -420,6 +298,7 @@ async function main() {
 		])
 		log.nextSteps([
 			"Run validateMigrationInput.ts to spot-check against on-chain (works on v0.8.4 and v0.8.5)",
+			"Run snapshotBalances.ts (optional) to capture an on-chain balance snapshot for sanity-checking totals",
 			"Run runMigration.ts after the diamondCut is applied",
 		])
 	} catch (error) {
