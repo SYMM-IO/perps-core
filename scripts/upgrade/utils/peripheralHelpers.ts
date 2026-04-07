@@ -458,21 +458,69 @@ export function buildWiringTransactions(
 	}
 
 	// On core Diamond
-	push(diamondAddress, controlFacetIface, "grantRole", [protocolAdmin, roleHash("INTEGRATION_ADMIN_ROLE")], `grantRole(protocolAdmin, INTEGRATION_ADMIN_ROLE)`)
-	push(diamondAddress, controlFacetIface, "grantRole", [accountLayerDiamondAddress, roleHash("SIGNER_ADMIN_ROLE")], `grantRole(AccountLayer, SIGNER_ADMIN_ROLE)`)
-	push(diamondAddress, controlFacetIface, "grantRole", [accountLayerDiamondAddress, roleHash("AFFILIATE_MANAGER_ROLE")], `grantRole(AccountLayer, AFFILIATE_MANAGER_ROLE)`)
-	push(diamondAddress, controlFacetIface, "grantRole", [accountLayerDiamondAddress, roleHash("BALANCE_SETTLER_ROLE")], `grantRole(AccountLayer, BALANCE_SETTLER_ROLE)`)
-	push(diamondAddress, controlFacetIface, "grantRole", [instantLayerAddress, roleHash("INSTANT_LAYER_ROLE")], `grantRole(InstantLayer, INSTANT_LAYER_ROLE)`)
+	push(
+		diamondAddress,
+		controlFacetIface,
+		"grantRole",
+		[protocolAdmin, roleHash("INTEGRATION_ADMIN_ROLE")],
+		`grantRole(protocolAdmin, INTEGRATION_ADMIN_ROLE)`,
+	)
+	push(
+		diamondAddress,
+		controlFacetIface,
+		"grantRole",
+		[accountLayerDiamondAddress, roleHash("SIGNER_ADMIN_ROLE")],
+		`grantRole(AccountLayer, SIGNER_ADMIN_ROLE)`,
+	)
+	push(
+		diamondAddress,
+		controlFacetIface,
+		"grantRole",
+		[accountLayerDiamondAddress, roleHash("AFFILIATE_MANAGER_ROLE")],
+		`grantRole(AccountLayer, AFFILIATE_MANAGER_ROLE)`,
+	)
+	push(
+		diamondAddress,
+		controlFacetIface,
+		"grantRole",
+		[accountLayerDiamondAddress, roleHash("BALANCE_SETTLER_ROLE")],
+		`grantRole(AccountLayer, BALANCE_SETTLER_ROLE)`,
+	)
+	push(
+		diamondAddress,
+		controlFacetIface,
+		"grantRole",
+		[instantLayerAddress, roleHash("INSTANT_LAYER_ROLE")],
+		`grantRole(InstantLayer, INSTANT_LAYER_ROLE)`,
+	)
 	push(diamondAddress, controlFacetIface, "registerHook", [ethers.ZeroAddress, accountLayerDiamondAddress], `registerHook(address(0), AccountLayer)`)
 
 	// On AccountLayer Diamond
-	push(accountLayerDiamondAddress, alControlFacetIface, "grantRole", [instantLayerAddress, roleHash("SIGNER_SETTER_ROLE")], `grantRole(InstantLayer, SIGNER_SETTER_ROLE) on AccountLayer`)
-	push(accountLayerDiamondAddress, alControlFacetIface, "setWhitelistedSymmioCore", [diamondAddress, true], `setWhitelistedSymmioCore(Diamond, true) on AccountLayer`)
+	push(
+		accountLayerDiamondAddress,
+		alControlFacetIface,
+		"grantRole",
+		[instantLayerAddress, roleHash("SIGNER_SETTER_ROLE")],
+		`grantRole(InstantLayer, SIGNER_SETTER_ROLE) on AccountLayer`,
+	)
+	push(
+		accountLayerDiamondAddress,
+		alControlFacetIface,
+		"setWhitelistedSymmioCore",
+		[diamondAddress, true],
+		`setWhitelistedSymmioCore(Diamond, true) on AccountLayer`,
+	)
 
 	// On InstantLayer
 	push(instantLayerAddress, instantLayerIface, "setAccountLayer", [accountLayerDiamondAddress], `setAccountLayer(AccountLayer) on InstantLayer`)
 	push(instantLayerAddress, instantLayerIface, "setTargetWhitelist", [diamondAddress, true], `setTargetWhitelist(Diamond, true) on InstantLayer`)
-	push(instantLayerAddress, instantLayerIface, "setTargetWhitelist", [accountLayerDiamondAddress, true], `setTargetWhitelist(AccountLayer, true) on InstantLayer`)
+	push(
+		instantLayerAddress,
+		instantLayerIface,
+		"setTargetWhitelist",
+		[accountLayerDiamondAddress, true],
+		`setTargetWhitelist(AccountLayer, true) on InstantLayer`,
+	)
 
 	// SymmioPartyB: register on InstantLayer
 	if (symmioPartyBAddress) {

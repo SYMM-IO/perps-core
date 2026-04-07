@@ -154,21 +154,15 @@ async function main() {
 		const scheduleFile = path.join(OUTPUT_DIR, `timelock-schedule-safe-batch-${idx}.json`)
 		const executeFile = path.join(OUTPUT_DIR, `timelock-execute-safe-batch-${idx}.json`)
 
-		const scheduleBatch = makeSafeBatch(
-			CHAIN_ID,
-			SAFE_ADDRESS,
-			`Symmio v0.8.5 — Timelock Schedule DiamondCut chunk ${i + 1}/${chunks.length}`,
-			[scheduleTx],
-		)
+		const scheduleBatch = makeSafeBatch(CHAIN_ID, SAFE_ADDRESS, `Symmio v0.8.5 — Timelock Schedule DiamondCut chunk ${i + 1}/${chunks.length}`, [
+			scheduleTx,
+		])
 		fs.writeFileSync(scheduleFile, JSON.stringify(scheduleBatch, null, 2))
 		scheduleFiles.push(scheduleFile)
 
-		const executeBatch = makeSafeBatch(
-			CHAIN_ID,
-			SAFE_ADDRESS,
-			`Symmio v0.8.5 — Timelock Execute DiamondCut chunk ${i + 1}/${chunks.length}`,
-			[executeTx],
-		)
+		const executeBatch = makeSafeBatch(CHAIN_ID, SAFE_ADDRESS, `Symmio v0.8.5 — Timelock Execute DiamondCut chunk ${i + 1}/${chunks.length}`, [
+			executeTx,
+		])
 		fs.writeFileSync(executeFile, JSON.stringify(executeBatch, null, 2))
 		executeFiles.push(executeFile)
 

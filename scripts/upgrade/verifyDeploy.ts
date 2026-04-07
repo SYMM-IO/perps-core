@@ -117,12 +117,7 @@ function extractLibraryPlaceholders(artifact: any): { placeholders: Placeholder[
 	return { placeholders, hashToLib }
 }
 
-function linkAndCompare(
-	compiledHex: string,
-	deployedHex: string,
-	placeholders: Placeholder[],
-	hashToLib: Record<string, LibInfo>,
-): LinkResult {
+function linkAndCompare(compiledHex: string, deployedHex: string, placeholders: Placeholder[], hashToLib: Record<string, LibInfo>): LinkResult {
 	if (compiledHex.length !== deployedHex.length) {
 		return { match: false, reason: `Size mismatch: compiled=${compiledHex.length / 2} deployed=${deployedHex.length / 2}` }
 	}
@@ -187,7 +182,7 @@ async function main() {
 	const batchSize = 5
 	for (let i = 0; i < addresses.length; i += batchSize) {
 		const batch = addresses.slice(i, i + batchSize)
-		const results = await Promise.all(batch.map(async (addr) => ({ addr, code: await provider.getCode(addr) })))
+		const results = await Promise.all(batch.map(async addr => ({ addr, code: await provider.getCode(addr) })))
 		for (const r of results) deployedCodes[r.addr] = r.code
 		process.stdout.write(`  Fetched ${Math.min(i + batchSize, addresses.length)}/${addresses.length}\r`)
 	}
@@ -254,7 +249,7 @@ async function main() {
 
 		if (result.match) {
 			const libNames = Object.values(result.libs!)
-				.map((l) => `${l.name.split(":").pop()} @ ${l.address}`)
+				.map(l => `${l.name.split(":").pop()} @ ${l.address}`)
 				.join(", ")
 			console.log(`✅ ${info.name.padEnd(30)} | MATCH after linking ${placeholders.length} library refs (${deployedHex.length / 2} bytes)`)
 			console.log(`   Libraries: ${libNames}`)

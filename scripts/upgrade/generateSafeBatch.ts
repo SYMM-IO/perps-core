@@ -21,7 +21,14 @@ import path from "path"
 
 import { ethers } from "../../test/helpers/hardhat-connection.js"
 import { buildWiringTransactions } from "./utils/peripheralHelpers.js"
-import { buildDiamondCut, buildUpgradeTransactions, loadDeployedFacets, toHumanReadableSafeTxFromIface, type NewV085Parameters, type SafeBatch } from "./utils/upgradeHelpers.js"
+import {
+	buildDiamondCut,
+	buildUpgradeTransactions,
+	loadDeployedFacets,
+	toHumanReadableSafeTxFromIface,
+	type NewV085Parameters,
+	type SafeBatch,
+} from "./utils/upgradeHelpers.js"
 
 type Config = {
 	diamondAddress?: string

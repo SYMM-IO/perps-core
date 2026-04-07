@@ -480,12 +480,7 @@ function argToString(value: any): string {
 	return String(value)
 }
 
-export function toHumanReadableSafeTxFromIface(
-	iface: ethers.Interface,
-	to: string,
-	methodName: string,
-	args: any[],
-): SafeTransaction {
+export function toHumanReadableSafeTxFromIface(iface: ethers.Interface, to: string, methodName: string, args: any[]): SafeTransaction {
 	const fragment = iface.getFunction(methodName)
 	if (!fragment) throw new Error(`Unknown method: ${methodName}`)
 
