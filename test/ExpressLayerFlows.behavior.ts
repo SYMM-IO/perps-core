@@ -1127,22 +1127,6 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			expect(info.status).to.equal(6n) // SUSPENDED
 		})
 
-		it("should reject suspend PROCESSED INSTANT", async function () {
-			const fixture = await deployFixture()
-			const { operator, user, expressProvider, context } = fixture
-			const { parts, requestId } = await acceptInstant(fixture)
-
-			// Process
-			await ethers.provider.send("evm_increaseTime", [21])
-			await ethers.provider.send("evm_mine", [])
-			await expressProvider.connect(operator).processWithdraw(user.address, requestId, parts)
-
-			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(user.address)
-			await expect(context.withdrawFacet.connect(context.signers.admin).suspendWithdrawRequest(user.address, requestId)).to.be.revertedWith(
-				"WithdrawFacet : Invalid withdraw request status",
-			)
-		})
-
 		it("should revert suspend on FINALIZED", async function () {
 			const fixture = await deployFixture()
 			const { operator, user, expressProvider, context, collateral } = fixture

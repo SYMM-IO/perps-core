@@ -4,12 +4,13 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
+import { AffiliateCredit } from "../../types/CreditTypes.sol";
+
 import { ICreditLineFacet } from "./ICreditLineFacet.sol";
 
 import { LibAccessControl } from "../../libraries/LibAccessControl.sol";
 import { LibCreditLine } from "../../libraries/LibCreditLine.sol";
 
-import { AffiliateCredit } from "../../types/CreditTypes.sol";
 import { CreditLineStorage } from "../../storages/CreditLineStorage.sol";
 
 /// @title CreditLineFacet

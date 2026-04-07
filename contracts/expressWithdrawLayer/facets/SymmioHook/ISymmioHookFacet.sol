@@ -4,8 +4,15 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { ISymmioHookEvents } from "./ISymmioHookEvents.sol";
 import { WithdrawRequest } from "../../../core/storages/WithdrawStorage.sol";
+
+interface ISymmioHookEvents {
+	event WithdrawAccepted(address indexed user, uint256 indexed requestId, uint8 optionType);
+	event WithdrawProcessed(address indexed user, uint256 indexed requestId);
+	event WithdrawFinalized(address indexed user, uint256 indexed requestId);
+	event WithdrawCancelled(address indexed user, uint256 indexed requestId);
+	event WithdrawSuspended(address indexed user, uint256 indexed requestId);
+}
 
 interface ISymmioHookFacet is ISymmioHookEvents {
 	function onWithdrawRequest(WithdrawRequest memory withdrawRequest, address) external;

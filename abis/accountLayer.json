@@ -288,36 +288,35 @@
             {
                 "indexed": true,
                 "internalType": "address",
-                "name": "affiliate",
+                "name": "sender",
                 "type": "address"
             },
             {
                 "indexed": true,
                 "internalType": "address",
-                "name": "accountManager",
+                "name": "account",
                 "type": "address"
-            }
-        ],
-        "name": "AccountManagerDeployed",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": false,
-                "internalType": "bytes",
-                "name": "oldImplementation",
-                "type": "bytes"
             },
             {
                 "indexed": false,
                 "internalType": "bytes",
-                "name": "newImplementation",
+                "name": "callData",
+                "type": "bytes"
+            },
+            {
+                "indexed": false,
+                "internalType": "bool",
+                "name": "success",
+                "type": "bool"
+            },
+            {
+                "indexed": false,
+                "internalType": "bytes",
+                "name": "resultData",
                 "type": "bytes"
             }
         ],
-        "name": "AccountManagerImplementationUpdated",
+        "name": "Call",
         "type": "event"
     },
     {
@@ -326,23 +325,17 @@
             {
                 "indexed": true,
                 "internalType": "address",
-                "name": "affiliate",
+                "name": "account",
                 "type": "address"
             },
             {
                 "indexed": false,
-                "internalType": "bytes4[]",
-                "name": "selectors",
-                "type": "bytes4[]"
-            },
-            {
-                "indexed": false,
-                "internalType": "bool",
-                "name": "allowed",
-                "type": "bool"
+                "internalType": "string",
+                "name": "name",
+                "type": "string"
             }
         ],
-        "name": "CallAllowedSelectorsSet",
+        "name": "EditAccountName",
         "type": "event"
     },
     {
@@ -351,23 +344,54 @@
             {
                 "indexed": true,
                 "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
                 "name": "affiliate",
                 "type": "address"
             },
             {
                 "indexed": false,
-                "internalType": "bytes4[]",
-                "name": "selectors",
-                "type": "bytes4[]"
+                "internalType": "bytes4",
+                "name": "selector",
+                "type": "bytes4"
+            }
+        ],
+        "name": "HookActionExecuted",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "owner",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "legacyContract",
+                "type": "address"
             },
             {
                 "indexed": false,
-                "internalType": "bool",
-                "name": "allowed",
-                "type": "bool"
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
             }
         ],
-        "name": "HookAllowedSelectorsSet",
+        "name": "LegacyAccountImported",
         "type": "event"
     },
     {
@@ -388,41 +412,23 @@
         "inputs": [
             {
                 "indexed": true,
-                "internalType": "bytes32",
-                "name": "role",
-                "type": "bytes32"
-            },
-            {
-                "indexed": true,
                 "internalType": "address",
-                "name": "account",
+                "name": "subAccount",
                 "type": "address"
             },
             {
                 "indexed": false,
                 "internalType": "bool",
-                "name": "status",
+                "name": "enabled",
                 "type": "bool"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "sender",
-                "type": "address"
             }
         ],
-        "name": "RoleAdminSet",
+        "name": "SingleVAModeChanged",
         "type": "event"
     },
     {
         "anonymous": false,
         "inputs": [
-            {
-                "indexed": true,
-                "internalType": "bytes32",
-                "name": "role",
-                "type": "bytes32"
-            },
             {
                 "indexed": true,
                 "internalType": "address",
@@ -432,60 +438,9 @@
             {
                 "indexed": true,
                 "internalType": "address",
-                "name": "sender",
-                "type": "address"
-            }
-        ],
-        "name": "RoleGranted",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "bytes32",
-                "name": "role",
-                "type": "bytes32"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "account",
+                "name": "owner",
                 "type": "address"
             },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "sender",
-                "type": "address"
-            }
-        ],
-        "name": "RoleRevoked",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "oldSigner",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "newSigner",
-                "type": "address"
-            }
-        ],
-        "name": "SignerUpdated",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
             {
                 "indexed": true,
                 "internalType": "address",
@@ -493,13 +448,13 @@
                 "type": "address"
             },
             {
-                "indexed": true,
-                "internalType": "address",
-                "name": "core",
-                "type": "address"
+                "indexed": false,
+                "internalType": "string",
+                "name": "name",
+                "type": "string"
             }
         ],
-        "name": "SymmioCoreAddedToAffiliate",
+        "name": "SubAccountCreated",
         "type": "event"
     },
     {
@@ -508,17 +463,23 @@
             {
                 "indexed": true,
                 "internalType": "address",
-                "name": "oldReceiver",
+                "name": "account",
                 "type": "address"
             },
             {
                 "indexed": true,
                 "internalType": "address",
-                "name": "newReceiver",
+                "name": "owner",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
                 "type": "address"
             }
         ],
-        "name": "SymmioFeeReceiverUpdated",
+        "name": "SubAccountDeleted",
         "type": "event"
     },
     {
@@ -540,18 +501,114 @@
             {
                 "indexed": true,
                 "internalType": "address",
-                "name": "core",
+                "name": "account",
                 "type": "address"
             },
             {
-                "indexed": false,
-                "internalType": "bool",
-                "name": "status",
-                "type": "bool"
+                "indexed": true,
+                "internalType": "address",
+                "name": "parent",
+                "type": "address"
             }
         ],
-        "name": "WhitelistedSymmioCoreSet",
+        "name": "VirtualAccountCreated",
         "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "parent",
+                "type": "address"
+            }
+        ],
+        "name": "VirtualAccountDeleted",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "parent",
+                "type": "address"
+            }
+        ],
+        "name": "VirtualAccountReused",
+        "type": "event"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes[]",
+                "name": "callDatas",
+                "type": "bytes[]"
+            }
+        ],
+        "name": "_call",
+        "outputs": [
+            {
+                "internalType": "bytes[]",
+                "name": "",
+                "type": "bytes[]"
+            }
+        ],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "parentAccount",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes",
+                "name": "metadata",
+                "type": "bytes"
+            },
+            {
+                "internalType": "enum VirtualAccountIsolationType",
+                "name": "isolationType",
+                "type": "uint8"
+            },
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            }
+        ],
+        "name": "createCustomVirtualAccount",
+        "outputs": [
+            {
+                "internalType": "address",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "nonpayable",
+        "type": "function"
     },
     {
         "inputs": [
@@ -561,12 +618,58 @@
                 "type": "address"
             },
             {
+                "components": [
+                    {
+                        "internalType": "string",
+                        "name": "name",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "metadata",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "symmioCore",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "enum SubAccountIsolationType",
+                        "name": "isolationType",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "singleVAMode",
+                        "type": "bool"
+                    }
+                ],
+                "internalType": "struct SubAccountCreationData[]",
+                "name": "accountsData",
+                "type": "tuple[]"
+            }
+        ],
+        "name": "createSubAccounts",
+        "outputs": [
+            {
+                "internalType": "address[]",
+                "name": "",
+                "type": "address[]"
+            }
+        ],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
                 "internalType": "address",
-                "name": "core",
+                "name": "subAccount",
                 "type": "address"
             }
         ],
-        "name": "addSymmioCoreToAffiliate",
+        "name": "deleteSubAccount",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -575,23 +678,16 @@
         "inputs": [
             {
                 "internalType": "address",
-                "name": "user",
+                "name": "account",
                 "type": "address"
             },
             {
-                "internalType": "bytes32",
-                "name": "role",
-                "type": "bytes32"
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
             }
         ],
-        "name": "grantRole",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "pause",
+        "name": "depositAndAllocateForAccount",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -600,16 +696,70 @@
         "inputs": [
             {
                 "internalType": "address",
-                "name": "user",
+                "name": "account",
                 "type": "address"
             },
             {
-                "internalType": "bytes32",
-                "name": "role",
-                "type": "bytes32"
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
             }
         ],
-        "name": "revokeRole",
+        "name": "depositAndAllocateForAccountWithExpressRate",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "depositForAccount",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "depositForAccountWithExpressRate",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "internalType": "string",
+                "name": "name",
+                "type": "string"
+            }
+        ],
+        "name": "editAccountName",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -618,57 +768,202 @@
         "inputs": [
             {
                 "internalType": "bytes",
-                "name": "implementation",
+                "name": "callData",
                 "type": "bytes"
             }
         ],
-        "name": "setAccountManagerImplementation",
+        "name": "executeForAccount",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
     },
     {
         "inputs": [
+            {
+                "internalType": "address",
+                "name": "legacyContract",
+                "type": "address"
+            },
             {
                 "internalType": "address",
                 "name": "affiliate",
                 "type": "address"
             },
             {
-                "internalType": "bytes4[]",
-                "name": "selectors",
-                "type": "bytes4[]"
+                "internalType": "address[]",
+                "name": "symmioCores",
+                "type": "address[]"
+            },
+            {
+                "components": [
+                    {
+                        "internalType": "address",
+                        "name": "account",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "name",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "coreIndex",
+                        "type": "uint256"
+                    }
+                ],
+                "internalType": "struct LegacyAccountImportData[]",
+                "name": "accountsData",
+                "type": "tuple[]"
+            }
+        ],
+        "name": "importLegacyAccounts",
+        "outputs": [
+            {
+                "internalType": "address[]",
+                "name": "importedAccounts",
+                "type": "address[]"
+            }
+        ],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
             },
             {
                 "internalType": "bool",
-                "name": "allowed",
+                "name": "enabled",
                 "type": "bool"
             }
         ],
-        "name": "setCallAllowedSelectors",
+        "name": "setSingleVAMode",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
     },
     {
         "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            }
+        ],
+        "name": "onCancelQuote",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            }
+        ],
+        "name": "onCloseExpired",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "filledAmount",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "closedPrice",
+                "type": "uint256"
+            },
+            {
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            }
+        ],
+        "name": "onClosePosition",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            },
+            {
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
             {
                 "internalType": "address",
                 "name": "affiliate",
                 "type": "address"
             },
             {
-                "internalType": "bytes4[]",
-                "name": "selectors",
-                "type": "bytes4[]"
-            },
-            {
-                "internalType": "bool",
-                "name": "allowed",
-                "type": "bool"
+                "internalType": "uint8",
+                "name": "feeType",
+                "type": "uint8"
             }
         ],
-        "name": "setHookAllowedSelectors",
+        "name": "onFeeCharged",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -677,21 +972,11 @@
         "inputs": [
             {
                 "internalType": "address",
-                "name": "user",
+                "name": "partyA",
                 "type": "address"
-            },
-            {
-                "internalType": "bytes32",
-                "name": "role",
-                "type": "bytes32"
-            },
-            {
-                "internalType": "bool",
-                "name": "status",
-                "type": "bool"
             }
         ],
-        "name": "setRoleAdmin",
+        "name": "onLiquidationSettled",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -699,145 +984,113 @@
     {
         "inputs": [
             {
-                "internalType": "address",
-                "name": "_signer",
-                "type": "address"
-            }
-        ],
-        "name": "setSigner",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "filledAmount",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "openedPrice",
+                "type": "uint256"
+            },
             {
                 "internalType": "address",
-                "name": "receiver",
-                "type": "address"
-            }
-        ],
-        "name": "setSymmioFeeReceiver",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "core",
+                "name": "partyA",
                 "type": "address"
             },
             {
-                "internalType": "bool",
-                "name": "status",
-                "type": "bool"
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
             }
         ],
-        "name": "setWhitelistedSymmioCore",
+        "name": "onOpenPosition",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
     },
     {
         "inputs": [],
-        "name": "unpause",
-        "outputs": [],
-        "stateMutability": "nonpayable",
+        "name": "MAX_NAME_LENGTH",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
         "type": "function"
     },
     {
-        "anonymous": false,
-        "inputs": [
+        "inputs": [],
+        "name": "accountManagerImplementation",
+        "outputs": [
             {
-                "indexed": true,
-                "internalType": "address",
-                "name": "virtualAccount",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "subAccount",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
+                "internalType": "bytes",
+                "name": "",
+                "type": "bytes"
             }
         ],
-        "name": "AddMargin",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "virtualAccount",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "subAccount",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            }
-        ],
-        "name": "EmergencyMarginRecovered",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "virtualAccount",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "subAccount",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            }
-        ],
-        "name": "RemoveMargin",
-        "type": "event"
+        "stateMutability": "view",
+        "type": "function"
     },
     {
         "inputs": [
             {
                 "internalType": "address",
-                "name": "virtualAccount",
+                "name": "affiliate",
                 "type": "address"
             },
             {
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
+                "internalType": "address",
+                "name": "symmio",
+                "type": "address"
             }
         ],
-        "name": "addMargin",
-        "outputs": [],
-        "stateMutability": "nonpayable",
+        "name": "dryClaimAllFees",
+        "outputs": [
+            {
+                "internalType": "address[]",
+                "name": "holders",
+                "type": "address[]"
+            },
+            {
+                "internalType": "uint256[]",
+                "name": "shares",
+                "type": "uint256[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "registrant",
+                "type": "address"
+            },
+            {
+                "internalType": "string",
+                "name": "name",
+                "type": "string"
+            }
+        ],
+        "name": "generateAccountManagerAddress",
+        "outputs": [
+            {
+                "internalType": "address",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
         "type": "function"
     },
     {
@@ -856,16 +1109,571 @@
                 "internalType": "uint256",
                 "name": "symbolId",
                 "type": "uint256"
-            },
+            }
+        ],
+        "name": "getActiveVAByKey",
+        "outputs": [
+            {
+                "internalType": "address",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            }
+        ],
+        "name": "getAffiliateAdmin",
+        "outputs": [
+            {
+                "internalType": "address",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            }
+        ],
+        "name": "getAffiliateExpressRate",
+        "outputs": [
             {
                 "internalType": "uint256",
-                "name": "amount",
+                "name": "",
                 "type": "uint256"
             }
         ],
-        "name": "addMarginToNextVA",
-        "outputs": [],
-        "stateMutability": "nonpayable",
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            }
+        ],
+        "name": "getAffiliateFeeDistributor",
+        "outputs": [
+            {
+                "internalType": "address",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            }
+        ],
+        "name": "getAffiliateStakeholders",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "address",
+                        "name": "receiver",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "share",
+                        "type": "uint256"
+                    }
+                ],
+                "internalType": "struct Stakeholder[]",
+                "name": "",
+                "type": "tuple[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            }
+        ],
+        "name": "getAffiliateState",
+        "outputs": [
+            {
+                "internalType": "enum AffiliateState",
+                "name": "",
+                "type": "uint8"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            }
+        ],
+        "name": "getAffiliateSymmioCores",
+        "outputs": [
+            {
+                "internalType": "address[]",
+                "name": "",
+                "type": "address[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            }
+        ],
+        "name": "getAffiliateSymmioShare",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes4",
+                "name": "selector",
+                "type": "bytes4"
+            }
+        ],
+        "name": "getHook",
+        "outputs": [
+            {
+                "internalType": "address",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "owner",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "maxResults",
+                "type": "uint256"
+            }
+        ],
+        "name": "getLegacyAccountsOfUser",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "address",
+                        "name": "accountAddress",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "name",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "legacyContract",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "alreadyImported",
+                        "type": "bool"
+                    }
+                ],
+                "internalType": "struct LegacyAccountInfo[]",
+                "name": "accounts",
+                "type": "tuple[]"
+            },
+            {
+                "internalType": "bool",
+                "name": "hasMore",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "getLegacyMultiAccounts",
+        "outputs": [
+            {
+                "internalType": "address[]",
+                "name": "",
+                "type": "address[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            }
+        ],
+        "name": "getRelatedCore",
+        "outputs": [
+            {
+                "internalType": "address",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "getSigner",
+        "outputs": [
+            {
+                "internalType": "address",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            }
+        ],
+        "name": "getSubAccount",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "address",
+                        "name": "accountAddress",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "owner",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "name",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "isExists",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "singleVAMode",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "affiliate",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "symmioCore",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "metadata",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "enum SubAccountIsolationType",
+                        "name": "isolationType",
+                        "type": "uint8"
+                    }
+                ],
+                "internalType": "struct SubAccountDetail",
+                "name": "",
+                "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            }
+        ],
+        "name": "getSubAccountVirtualNonce",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "owner",
+                "type": "address"
+            }
+        ],
+        "name": "getSubAccountsCountOfUser",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "owner",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "offset",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "limit",
+                "type": "uint256"
+            }
+        ],
+        "name": "getUserSubAccounts",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "address",
+                        "name": "accountAddress",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "owner",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "name",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "isExists",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "singleVAMode",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "affiliate",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "symmioCore",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "metadata",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "enum SubAccountIsolationType",
+                        "name": "isolationType",
+                        "type": "uint8"
+                    }
+                ],
+                "internalType": "struct SubAccountDetail[]",
+                "name": "",
+                "type": "tuple[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "owner",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "offset",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "limit",
+                "type": "uint256"
+            }
+        ],
+        "name": "getUserSubAccountsAddresses",
+        "outputs": [
+            {
+                "internalType": "address[]",
+                "name": "",
+                "type": "address[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            }
+        ],
+        "name": "getVirtualAccount",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "address",
+                        "name": "accountAddress",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "parentAccount",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "symbolId",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "isExists",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "metadata",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "enum VirtualAccountIsolationType",
+                        "name": "isolationType",
+                        "type": "uint8"
+                    }
+                ],
+                "internalType": "struct VirtualAccountDetail",
+                "name": "",
+                "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "offset",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "limit",
+                "type": "uint256"
+            }
+        ],
+        "name": "getVirtualAccountQuoteIds",
+        "outputs": [
+            {
+                "internalType": "uint256[]",
+                "name": "",
+                "type": "uint256[]"
+            }
+        ],
+        "stateMutability": "view",
         "type": "function"
     },
     {
@@ -877,80 +1685,306 @@
             },
             {
                 "internalType": "uint256",
-                "name": "nonce",
+                "name": "offset",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "limit",
                 "type": "uint256"
             }
         ],
-        "name": "emergencyRecoverMargin",
-        "outputs": [],
-        "stateMutability": "nonpayable",
+        "name": "getVirtualAccountsAddressesOfSubAccount",
+        "outputs": [
+            {
+                "internalType": "address[]",
+                "name": "",
+                "type": "address[]"
+            }
+        ],
+        "stateMutability": "view",
         "type": "function"
     },
     {
         "inputs": [
             {
                 "internalType": "address",
-                "name": "virtualAccount",
+                "name": "subAccount",
+                "type": "address"
+            }
+        ],
+        "name": "getVirtualAccountsCountOfSubAccount",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "subAccount",
                 "type": "address"
             },
             {
                 "internalType": "uint256",
-                "name": "amount",
+                "name": "offset",
                 "type": "uint256"
             },
             {
+                "internalType": "uint256",
+                "name": "limit",
+                "type": "uint256"
+            }
+        ],
+        "name": "getVirtualAccountsOfSubAccount",
+        "outputs": [
+            {
                 "components": [
                     {
-                        "internalType": "bytes",
-                        "name": "reqId",
-                        "type": "bytes"
+                        "internalType": "address",
+                        "name": "accountAddress",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "parentAccount",
+                        "type": "address"
                     },
                     {
                         "internalType": "uint256",
-                        "name": "timestamp",
+                        "name": "symbolId",
                         "type": "uint256"
                     },
                     {
-                        "internalType": "int256",
-                        "name": "upnl",
-                        "type": "int256"
+                        "internalType": "bool",
+                        "name": "isExists",
+                        "type": "bool"
                     },
                     {
                         "internalType": "bytes",
-                        "name": "gatewaySignature",
+                        "name": "metadata",
                         "type": "bytes"
                     },
                     {
-                        "components": [
-                            {
-                                "internalType": "uint256",
-                                "name": "signature",
-                                "type": "uint256"
-                            },
-                            {
-                                "internalType": "address",
-                                "name": "owner",
-                                "type": "address"
-                            },
-                            {
-                                "internalType": "address",
-                                "name": "nonce",
-                                "type": "address"
-                            }
-                        ],
-                        "internalType": "struct ISymmio.SchnorrSign",
-                        "name": "sigs",
-                        "type": "tuple"
+                        "internalType": "enum VirtualAccountIsolationType",
+                        "name": "isolationType",
+                        "type": "uint8"
                     }
                 ],
-                "internalType": "struct ISymmio.SingleUpnlSig",
-                "name": "upnlSig",
-                "type": "tuple"
+                "internalType": "struct VirtualAccountDetail[]",
+                "name": "",
+                "type": "tuple[]"
             }
         ],
-        "name": "removeMargin",
-        "outputs": [],
-        "stateMutability": "nonpayable",
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "globalNonce",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes32",
+                "name": "role",
+                "type": "bytes32"
+            }
+        ],
+        "name": "hasRole",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            }
+        ],
+        "name": "isLegacyMultiAccount",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes4",
+                "name": "selector",
+                "type": "bytes4"
+            },
+            {
+                "internalType": "address",
+                "name": "operator",
+                "type": "address"
+            }
+        ],
+        "name": "isOperator",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes32",
+                "name": "role",
+                "type": "bytes32"
+            }
+        ],
+        "name": "isRoleAdmin",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "core",
+                "type": "address"
+            }
+        ],
+        "name": "isWhitelistedSymmioCore",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            }
+        ],
+        "name": "ownerOf",
+        "outputs": [
+            {
+                "internalType": "address",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "paused",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "internalType": "enum VirtualAccountIsolationType",
+                "name": "isolationType",
+                "type": "uint8"
+            },
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            }
+        ],
+        "name": "predictNextVirtualAccountAddress",
+        "outputs": [
+            {
+                "internalType": "address",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "symmioFeeReceiver",
+        "outputs": [
+            {
+                "internalType": "address",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
         "type": "function"
     },
     {
@@ -1774,38 +2808,89 @@
             {
                 "indexed": true,
                 "internalType": "address",
-                "name": "account",
+                "name": "virtualAccount",
                 "type": "address"
             },
             {
                 "indexed": true,
                 "internalType": "address",
-                "name": "parent",
+                "name": "subAccount",
                 "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
             }
         ],
-        "name": "VirtualAccountDeleted",
+        "name": "AddMargin",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "virtualAccount",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "EmergencyMarginRecovered",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "virtualAccount",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "RemoveMargin",
         "type": "event"
     },
     {
         "inputs": [
             {
+                "internalType": "address",
+                "name": "virtualAccount",
+                "type": "address"
+            },
+            {
                 "internalType": "uint256",
-                "name": "quoteId",
+                "name": "amount",
                 "type": "uint256"
-            },
-            {
-                "internalType": "address",
-                "name": "partyA",
-                "type": "address"
-            },
-            {
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
             }
         ],
-        "name": "onCancelQuote",
+        "name": "addMargin",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -1813,98 +2898,27 @@
     {
         "inputs": [
             {
-                "internalType": "uint256",
-                "name": "",
-                "type": "uint256"
-            },
-            {
                 "internalType": "address",
-                "name": "",
+                "name": "subAccount",
                 "type": "address"
             },
             {
-                "internalType": "address",
-                "name": "",
-                "type": "address"
-            }
-        ],
-        "name": "onCloseExpired",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "uint256",
-                "name": "quoteId",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "",
-                "type": "uint256"
-            },
-            {
-                "internalType": "address",
-                "name": "partyA",
-                "type": "address"
-            },
-            {
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            }
-        ],
-        "name": "onClosePosition",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "uint256",
-                "name": "",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "",
-                "type": "uint256"
-            },
-            {
-                "internalType": "address",
-                "name": "",
-                "type": "address"
-            },
-            {
-                "internalType": "address",
-                "name": "",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "",
-                "type": "uint256"
-            },
-            {
-                "internalType": "address",
-                "name": "",
-                "type": "address"
-            },
-            {
-                "internalType": "uint8",
-                "name": "",
+                "internalType": "enum VirtualAccountIsolationType",
+                "name": "isolationType",
                 "type": "uint8"
+            },
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
             }
         ],
-        "name": "onFeeCharged",
+        "name": "addMarginToNextVA",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -1913,11 +2927,16 @@
         "inputs": [
             {
                 "internalType": "address",
-                "name": "partyA",
+                "name": "subAccount",
                 "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "nonce",
+                "type": "uint256"
             }
         ],
-        "name": "onLiquidationSettled",
+        "name": "emergencyRecoverMargin",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -1925,32 +2944,66 @@
     {
         "inputs": [
             {
-                "internalType": "uint256",
-                "name": "",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "",
-                "type": "uint256"
-            },
-            {
                 "internalType": "address",
-                "name": "",
+                "name": "virtualAccount",
                 "type": "address"
             },
             {
-                "internalType": "address",
-                "name": "",
-                "type": "address"
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            },
+            {
+                "components": [
+                    {
+                        "internalType": "bytes",
+                        "name": "reqId",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "timestamp",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "upnl",
+                        "type": "int256"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "gatewaySignature",
+                        "type": "bytes"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "signature",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "owner",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "nonce",
+                                "type": "address"
+                            }
+                        ],
+                        "internalType": "struct ISymmio.SchnorrSign",
+                        "name": "sigs",
+                        "type": "tuple"
+                    }
+                ],
+                "internalType": "struct ISymmio.SingleUpnlSig",
+                "name": "upnlSig",
+                "type": "tuple"
             }
         ],
-        "name": "onOpenPosition",
+        "name": "removeMargin",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -1958,11 +3011,130 @@
     {
         "anonymous": false,
         "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "accountManager",
+                "type": "address"
+            }
+        ],
+        "name": "AccountManagerDeployed",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
+                "internalType": "bytes",
+                "name": "oldImplementation",
+                "type": "bytes"
+            },
+            {
+                "indexed": false,
+                "internalType": "bytes",
+                "name": "newImplementation",
+                "type": "bytes"
+            }
+        ],
+        "name": "AccountManagerImplementationUpdated",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "bytes4[]",
+                "name": "selectors",
+                "type": "bytes4[]"
+            },
+            {
+                "indexed": false,
+                "internalType": "bool",
+                "name": "allowed",
+                "type": "bool"
+            }
+        ],
+        "name": "CallAllowedSelectorsSet",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "bytes4[]",
+                "name": "selectors",
+                "type": "bytes4[]"
+            },
+            {
+                "indexed": false,
+                "internalType": "bool",
+                "name": "allowed",
+                "type": "bool"
+            }
+        ],
+        "name": "HookAllowedSelectorsSet",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "bytes32",
+                "name": "role",
+                "type": "bytes32"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "bool",
+                "name": "status",
+                "type": "bool"
+            },
             {
                 "indexed": true,
                 "internalType": "address",
                 "name": "sender",
                 "type": "address"
+            }
+        ],
+        "name": "RoleAdminSet",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "bytes32",
+                "name": "role",
+                "type": "bytes32"
             },
             {
                 "indexed": true,
@@ -1971,1291 +3143,132 @@
                 "type": "address"
             },
             {
+                "indexed": true,
+                "internalType": "address",
+                "name": "sender",
+                "type": "address"
+            }
+        ],
+        "name": "RoleGranted",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "bytes32",
+                "name": "role",
+                "type": "bytes32"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "sender",
+                "type": "address"
+            }
+        ],
+        "name": "RoleRevoked",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
                 "indexed": false,
-                "internalType": "bytes",
-                "name": "callData",
-                "type": "bytes"
+                "internalType": "address",
+                "name": "oldSigner",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "newSigner",
+                "type": "address"
+            }
+        ],
+        "name": "SignerUpdated",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "core",
+                "type": "address"
+            }
+        ],
+        "name": "SymmioCoreAddedToAffiliate",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "oldReceiver",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "newReceiver",
+                "type": "address"
+            }
+        ],
+        "name": "SymmioFeeReceiverUpdated",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "core",
+                "type": "address"
             },
             {
                 "indexed": false,
                 "internalType": "bool",
-                "name": "success",
-                "type": "bool"
-            },
-            {
-                "indexed": false,
-                "internalType": "bytes",
-                "name": "resultData",
-                "type": "bytes"
-            }
-        ],
-        "name": "Call",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "account",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "string",
-                "name": "name",
-                "type": "string"
-            }
-        ],
-        "name": "EditAccountName",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "account",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "bytes4",
-                "name": "selector",
-                "type": "bytes4"
-            }
-        ],
-        "name": "HookActionExecuted",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "account",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "owner",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "legacyContract",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            }
-        ],
-        "name": "LegacyAccountImported",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "subAccount",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "bool",
-                "name": "enabled",
+                "name": "status",
                 "type": "bool"
             }
         ],
-        "name": "SingleVAModeChanged",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "account",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "owner",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "string",
-                "name": "name",
-                "type": "string"
-            }
-        ],
-        "name": "SubAccountCreated",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "account",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "owner",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            }
-        ],
-        "name": "SubAccountDeleted",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "account",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "parent",
-                "type": "address"
-            }
-        ],
-        "name": "VirtualAccountCreated",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "account",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "parent",
-                "type": "address"
-            }
-        ],
-        "name": "VirtualAccountReused",
+        "name": "WhitelistedSymmioCoreSet",
         "type": "event"
     },
     {
         "inputs": [
             {
                 "internalType": "address",
-                "name": "account",
-                "type": "address"
-            },
-            {
-                "internalType": "bytes[]",
-                "name": "callDatas",
-                "type": "bytes[]"
-            }
-        ],
-        "name": "_call",
-        "outputs": [
-            {
-                "internalType": "bytes[]",
-                "name": "",
-                "type": "bytes[]"
-            }
-        ],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "parentAccount",
-                "type": "address"
-            },
-            {
-                "internalType": "bytes",
-                "name": "metadata",
-                "type": "bytes"
-            },
-            {
-                "internalType": "enum VirtualAccountIsolationType",
-                "name": "isolationType",
-                "type": "uint8"
-            },
-            {
-                "internalType": "uint256",
-                "name": "symbolId",
-                "type": "uint256"
-            }
-        ],
-        "name": "createCustomVirtualAccount",
-        "outputs": [
-            {
-                "internalType": "address",
-                "name": "",
-                "type": "address"
-            }
-        ],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
                 "name": "affiliate",
                 "type": "address"
             },
             {
-                "components": [
-                    {
-                        "internalType": "string",
-                        "name": "name",
-                        "type": "string"
-                    },
-                    {
-                        "internalType": "bytes",
-                        "name": "metadata",
-                        "type": "bytes"
-                    },
-                    {
-                        "internalType": "address",
-                        "name": "symmioCore",
-                        "type": "address"
-                    },
-                    {
-                        "internalType": "enum SubAccountIsolationType",
-                        "name": "isolationType",
-                        "type": "uint8"
-                    },
-                    {
-                        "internalType": "bool",
-                        "name": "singleVAMode",
-                        "type": "bool"
-                    }
-                ],
-                "internalType": "struct SubAccountCreationData[]",
-                "name": "accountsData",
-                "type": "tuple[]"
-            }
-        ],
-        "name": "createSubAccounts",
-        "outputs": [
-            {
-                "internalType": "address[]",
-                "name": "",
-                "type": "address[]"
-            }
-        ],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
                 "internalType": "address",
-                "name": "subAccount",
+                "name": "core",
                 "type": "address"
             }
         ],
-        "name": "deleteSubAccount",
+        "name": "addSymmioCoreToAffiliate",
         "outputs": [],
         "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "account",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            }
-        ],
-        "name": "depositAndAllocateForAccount",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "account",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            }
-        ],
-        "name": "depositAndAllocateForAccountWithExpressRate",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "account",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            }
-        ],
-        "name": "depositForAccount",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "account",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            }
-        ],
-        "name": "depositForAccountWithExpressRate",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "account",
-                "type": "address"
-            },
-            {
-                "internalType": "string",
-                "name": "name",
-                "type": "string"
-            }
-        ],
-        "name": "editAccountName",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "bytes",
-                "name": "callData",
-                "type": "bytes"
-            }
-        ],
-        "name": "executeForAccount",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "legacyContract",
-                "type": "address"
-            },
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "internalType": "address[]",
-                "name": "symmioCores",
-                "type": "address[]"
-            },
-            {
-                "components": [
-                    {
-                        "internalType": "address",
-                        "name": "account",
-                        "type": "address"
-                    },
-                    {
-                        "internalType": "string",
-                        "name": "name",
-                        "type": "string"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "coreIndex",
-                        "type": "uint256"
-                    }
-                ],
-                "internalType": "struct LegacyAccountImportData[]",
-                "name": "accountsData",
-                "type": "tuple[]"
-            }
-        ],
-        "name": "importLegacyAccounts",
-        "outputs": [
-            {
-                "internalType": "address[]",
-                "name": "importedAccounts",
-                "type": "address[]"
-            }
-        ],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "subAccount",
-                "type": "address"
-            },
-            {
-                "internalType": "bool",
-                "name": "enabled",
-                "type": "bool"
-            }
-        ],
-        "name": "setSingleVAMode",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "MAX_NAME_LENGTH",
-        "outputs": [
-            {
-                "internalType": "uint256",
-                "name": "",
-                "type": "uint256"
-            }
-        ],
-        "stateMutability": "pure",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "accountManagerImplementation",
-        "outputs": [
-            {
-                "internalType": "bytes",
-                "name": "",
-                "type": "bytes"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "internalType": "address",
-                "name": "symmio",
-                "type": "address"
-            }
-        ],
-        "name": "dryClaimAllFees",
-        "outputs": [
-            {
-                "internalType": "address[]",
-                "name": "holders",
-                "type": "address[]"
-            },
-            {
-                "internalType": "uint256[]",
-                "name": "shares",
-                "type": "uint256[]"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "registrant",
-                "type": "address"
-            },
-            {
-                "internalType": "string",
-                "name": "name",
-                "type": "string"
-            }
-        ],
-        "name": "generateAccountManagerAddress",
-        "outputs": [
-            {
-                "internalType": "address",
-                "name": "",
-                "type": "address"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "subAccount",
-                "type": "address"
-            },
-            {
-                "internalType": "enum VirtualAccountIsolationType",
-                "name": "isolationType",
-                "type": "uint8"
-            },
-            {
-                "internalType": "uint256",
-                "name": "symbolId",
-                "type": "uint256"
-            }
-        ],
-        "name": "getActiveVAByKey",
-        "outputs": [
-            {
-                "internalType": "address",
-                "name": "",
-                "type": "address"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            }
-        ],
-        "name": "getAffiliateAdmin",
-        "outputs": [
-            {
-                "internalType": "address",
-                "name": "",
-                "type": "address"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            }
-        ],
-        "name": "getAffiliateExpressRate",
-        "outputs": [
-            {
-                "internalType": "uint256",
-                "name": "",
-                "type": "uint256"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            }
-        ],
-        "name": "getAffiliateFeeDistributor",
-        "outputs": [
-            {
-                "internalType": "address",
-                "name": "",
-                "type": "address"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            }
-        ],
-        "name": "getAffiliateStakeholders",
-        "outputs": [
-            {
-                "components": [
-                    {
-                        "internalType": "address",
-                        "name": "receiver",
-                        "type": "address"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "share",
-                        "type": "uint256"
-                    }
-                ],
-                "internalType": "struct Stakeholder[]",
-                "name": "",
-                "type": "tuple[]"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            }
-        ],
-        "name": "getAffiliateState",
-        "outputs": [
-            {
-                "internalType": "enum AffiliateState",
-                "name": "",
-                "type": "uint8"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            }
-        ],
-        "name": "getAffiliateSymmioCores",
-        "outputs": [
-            {
-                "internalType": "address[]",
-                "name": "",
-                "type": "address[]"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            }
-        ],
-        "name": "getAffiliateSymmioShare",
-        "outputs": [
-            {
-                "internalType": "uint256",
-                "name": "",
-                "type": "uint256"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "internalType": "bytes4",
-                "name": "selector",
-                "type": "bytes4"
-            }
-        ],
-        "name": "getHook",
-        "outputs": [
-            {
-                "internalType": "address",
-                "name": "",
-                "type": "address"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "owner",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "maxResults",
-                "type": "uint256"
-            }
-        ],
-        "name": "getLegacyAccountsOfUser",
-        "outputs": [
-            {
-                "components": [
-                    {
-                        "internalType": "address",
-                        "name": "accountAddress",
-                        "type": "address"
-                    },
-                    {
-                        "internalType": "string",
-                        "name": "name",
-                        "type": "string"
-                    },
-                    {
-                        "internalType": "address",
-                        "name": "legacyContract",
-                        "type": "address"
-                    },
-                    {
-                        "internalType": "bool",
-                        "name": "alreadyImported",
-                        "type": "bool"
-                    }
-                ],
-                "internalType": "struct LegacyAccountInfo[]",
-                "name": "accounts",
-                "type": "tuple[]"
-            },
-            {
-                "internalType": "bool",
-                "name": "hasMore",
-                "type": "bool"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "getLegacyMultiAccounts",
-        "outputs": [
-            {
-                "internalType": "address[]",
-                "name": "",
-                "type": "address[]"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "account",
-                "type": "address"
-            }
-        ],
-        "name": "getRelatedCore",
-        "outputs": [
-            {
-                "internalType": "address",
-                "name": "",
-                "type": "address"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "getSigner",
-        "outputs": [
-            {
-                "internalType": "address",
-                "name": "",
-                "type": "address"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "account",
-                "type": "address"
-            }
-        ],
-        "name": "getSubAccount",
-        "outputs": [
-            {
-                "components": [
-                    {
-                        "internalType": "address",
-                        "name": "accountAddress",
-                        "type": "address"
-                    },
-                    {
-                        "internalType": "address",
-                        "name": "owner",
-                        "type": "address"
-                    },
-                    {
-                        "internalType": "string",
-                        "name": "name",
-                        "type": "string"
-                    },
-                    {
-                        "internalType": "bool",
-                        "name": "isExists",
-                        "type": "bool"
-                    },
-                    {
-                        "internalType": "bool",
-                        "name": "singleVAMode",
-                        "type": "bool"
-                    },
-                    {
-                        "internalType": "address",
-                        "name": "affiliate",
-                        "type": "address"
-                    },
-                    {
-                        "internalType": "address",
-                        "name": "symmioCore",
-                        "type": "address"
-                    },
-                    {
-                        "internalType": "bytes",
-                        "name": "metadata",
-                        "type": "bytes"
-                    },
-                    {
-                        "internalType": "enum SubAccountIsolationType",
-                        "name": "isolationType",
-                        "type": "uint8"
-                    }
-                ],
-                "internalType": "struct SubAccountDetail",
-                "name": "",
-                "type": "tuple"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "subAccount",
-                "type": "address"
-            }
-        ],
-        "name": "getSubAccountVirtualNonce",
-        "outputs": [
-            {
-                "internalType": "uint256",
-                "name": "",
-                "type": "uint256"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "owner",
-                "type": "address"
-            }
-        ],
-        "name": "getSubAccountsCountOfUser",
-        "outputs": [
-            {
-                "internalType": "uint256",
-                "name": "",
-                "type": "uint256"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "owner",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "offset",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "limit",
-                "type": "uint256"
-            }
-        ],
-        "name": "getUserSubAccounts",
-        "outputs": [
-            {
-                "components": [
-                    {
-                        "internalType": "address",
-                        "name": "accountAddress",
-                        "type": "address"
-                    },
-                    {
-                        "internalType": "address",
-                        "name": "owner",
-                        "type": "address"
-                    },
-                    {
-                        "internalType": "string",
-                        "name": "name",
-                        "type": "string"
-                    },
-                    {
-                        "internalType": "bool",
-                        "name": "isExists",
-                        "type": "bool"
-                    },
-                    {
-                        "internalType": "bool",
-                        "name": "singleVAMode",
-                        "type": "bool"
-                    },
-                    {
-                        "internalType": "address",
-                        "name": "affiliate",
-                        "type": "address"
-                    },
-                    {
-                        "internalType": "address",
-                        "name": "symmioCore",
-                        "type": "address"
-                    },
-                    {
-                        "internalType": "bytes",
-                        "name": "metadata",
-                        "type": "bytes"
-                    },
-                    {
-                        "internalType": "enum SubAccountIsolationType",
-                        "name": "isolationType",
-                        "type": "uint8"
-                    }
-                ],
-                "internalType": "struct SubAccountDetail[]",
-                "name": "details",
-                "type": "tuple[]"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "owner",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "offset",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "limit",
-                "type": "uint256"
-            }
-        ],
-        "name": "getUserSubAccountsAddresses",
-        "outputs": [
-            {
-                "internalType": "address[]",
-                "name": "",
-                "type": "address[]"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "account",
-                "type": "address"
-            }
-        ],
-        "name": "getVirtualAccount",
-        "outputs": [
-            {
-                "components": [
-                    {
-                        "internalType": "address",
-                        "name": "accountAddress",
-                        "type": "address"
-                    },
-                    {
-                        "internalType": "address",
-                        "name": "parentAccount",
-                        "type": "address"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "symbolId",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "bool",
-                        "name": "isExists",
-                        "type": "bool"
-                    },
-                    {
-                        "internalType": "bytes",
-                        "name": "metadata",
-                        "type": "bytes"
-                    },
-                    {
-                        "internalType": "enum VirtualAccountIsolationType",
-                        "name": "isolationType",
-                        "type": "uint8"
-                    }
-                ],
-                "internalType": "struct VirtualAccountDetail",
-                "name": "",
-                "type": "tuple"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "account",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "offset",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "limit",
-                "type": "uint256"
-            }
-        ],
-        "name": "getVirtualAccountQuoteIds",
-        "outputs": [
-            {
-                "internalType": "uint256[]",
-                "name": "",
-                "type": "uint256[]"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "subAccount",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "offset",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "limit",
-                "type": "uint256"
-            }
-        ],
-        "name": "getVirtualAccountsAddressesOfSubAccount",
-        "outputs": [
-            {
-                "internalType": "address[]",
-                "name": "",
-                "type": "address[]"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "subAccount",
-                "type": "address"
-            }
-        ],
-        "name": "getVirtualAccountsCountOfSubAccount",
-        "outputs": [
-            {
-                "internalType": "uint256",
-                "name": "",
-                "type": "uint256"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "subAccount",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "offset",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "limit",
-                "type": "uint256"
-            }
-        ],
-        "name": "getVirtualAccountsOfSubAccount",
-        "outputs": [
-            {
-                "components": [
-                    {
-                        "internalType": "address",
-                        "name": "accountAddress",
-                        "type": "address"
-                    },
-                    {
-                        "internalType": "address",
-                        "name": "parentAccount",
-                        "type": "address"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "symbolId",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "bool",
-                        "name": "isExists",
-                        "type": "bool"
-                    },
-                    {
-                        "internalType": "bytes",
-                        "name": "metadata",
-                        "type": "bytes"
-                    },
-                    {
-                        "internalType": "enum VirtualAccountIsolationType",
-                        "name": "isolationType",
-                        "type": "uint8"
-                    }
-                ],
-                "internalType": "struct VirtualAccountDetail[]",
-                "name": "details",
-                "type": "tuple[]"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "globalNonce",
-        "outputs": [
-            {
-                "internalType": "uint256",
-                "name": "",
-                "type": "uint256"
-            }
-        ],
-        "stateMutability": "view",
         "type": "function"
     },
     {
@@ -3271,63 +3284,16 @@
                 "type": "bytes32"
             }
         ],
-        "name": "hasRole",
-        "outputs": [
-            {
-                "internalType": "bool",
-                "name": "",
-                "type": "bool"
-            }
-        ],
-        "stateMutability": "view",
+        "name": "grantRole",
+        "outputs": [],
+        "stateMutability": "nonpayable",
         "type": "function"
     },
     {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "account",
-                "type": "address"
-            }
-        ],
-        "name": "isLegacyMultiAccount",
-        "outputs": [
-            {
-                "internalType": "bool",
-                "name": "",
-                "type": "bool"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "internalType": "bytes4",
-                "name": "selector",
-                "type": "bytes4"
-            },
-            {
-                "internalType": "address",
-                "name": "operator",
-                "type": "address"
-            }
-        ],
-        "name": "isOperator",
-        "outputs": [
-            {
-                "internalType": "bool",
-                "name": "",
-                "type": "bool"
-            }
-        ],
-        "stateMutability": "view",
+        "inputs": [],
+        "name": "pause",
+        "outputs": [],
+        "stateMutability": "nonpayable",
         "type": "function"
     },
     {
@@ -3343,15 +3309,117 @@
                 "type": "bytes32"
             }
         ],
-        "name": "isRoleAdmin",
-        "outputs": [
+        "name": "revokeRole",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "bytes",
+                "name": "implementation",
+                "type": "bytes"
+            }
+        ],
+        "name": "setAccountManagerImplementation",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes4[]",
+                "name": "selectors",
+                "type": "bytes4[]"
+            },
             {
                 "internalType": "bool",
-                "name": "",
+                "name": "allowed",
                 "type": "bool"
             }
         ],
-        "stateMutability": "view",
+        "name": "setCallAllowedSelectors",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes4[]",
+                "name": "selectors",
+                "type": "bytes4[]"
+            },
+            {
+                "internalType": "bool",
+                "name": "allowed",
+                "type": "bool"
+            }
+        ],
+        "name": "setHookAllowedSelectors",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes32",
+                "name": "role",
+                "type": "bytes32"
+            },
+            {
+                "internalType": "bool",
+                "name": "status",
+                "type": "bool"
+            }
+        ],
+        "name": "setRoleAdmin",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "_signer",
+                "type": "address"
+            }
+        ],
+        "name": "setSigner",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "receiver",
+                "type": "address"
+            }
+        ],
+        "name": "setSymmioFeeReceiver",
+        "outputs": [],
+        "stateMutability": "nonpayable",
         "type": "function"
     },
     {
@@ -3360,91 +3428,23 @@
                 "internalType": "address",
                 "name": "core",
                 "type": "address"
-            }
-        ],
-        "name": "isWhitelistedSymmioCore",
-        "outputs": [
+            },
             {
                 "internalType": "bool",
-                "name": "",
+                "name": "status",
                 "type": "bool"
             }
         ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "account",
-                "type": "address"
-            }
-        ],
-        "name": "ownerOf",
-        "outputs": [
-            {
-                "internalType": "address",
-                "name": "",
-                "type": "address"
-            }
-        ],
-        "stateMutability": "view",
+        "name": "setWhitelistedSymmioCore",
+        "outputs": [],
+        "stateMutability": "nonpayable",
         "type": "function"
     },
     {
         "inputs": [],
-        "name": "paused",
-        "outputs": [
-            {
-                "internalType": "bool",
-                "name": "",
-                "type": "bool"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "subAccount",
-                "type": "address"
-            },
-            {
-                "internalType": "enum VirtualAccountIsolationType",
-                "name": "isolationType",
-                "type": "uint8"
-            },
-            {
-                "internalType": "uint256",
-                "name": "symbolId",
-                "type": "uint256"
-            }
-        ],
-        "name": "predictNextVirtualAccountAddress",
-        "outputs": [
-            {
-                "internalType": "address",
-                "name": "",
-                "type": "address"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "symmioFeeReceiver",
-        "outputs": [
-            {
-                "internalType": "address",
-                "name": "",
-                "type": "address"
-            }
-        ],
-        "stateMutability": "view",
+        "name": "unpause",
+        "outputs": [],
+        "stateMutability": "nonpayable",
         "type": "function"
     },
     {

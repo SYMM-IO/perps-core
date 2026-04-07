@@ -4,13 +4,14 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { IViewFacet } from "./IViewFacet.sol";
 import { AffiliateConfig, SponsorConfig } from "../../types/ConfigTypes.sol";
+import { AffiliateCredit } from "../../types/CreditTypes.sol";
 import { WithdrawInfo } from "../../types/WithdrawTypes.sol";
+
+import { IViewFacet } from "./IViewFacet.sol";
 
 import { LibAccessControl } from "../../libraries/LibAccessControl.sol";
 
-import { AffiliateCredit } from "../../types/CreditTypes.sol";
 import { GlobalStorage } from "../../storages/GlobalStorage.sol";
 import { PoolStorage } from "../../storages/PoolStorage.sol";
 import { FeeStorage } from "../../storages/FeeStorage.sol";
