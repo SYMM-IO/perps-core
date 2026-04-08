@@ -95,6 +95,16 @@ const customChains = [
 export default defineConfig({
 	plugins: [hardhatToolboxMochaEthers, hardhatEthersPlugin, hardhatVerify],
 	tasks: deployTasks,
+	chainDescriptors: {
+		42161: {
+			name: "Arbitrum One",
+			hardforkHistory: {
+				merge: { blockNumber: 0 },
+				shanghai: { blockNumber: 0 },
+				cancun: { blockNumber: 0 },
+			},
+		},
+	},
 	solidity: {
 		profiles: {
 			default: {
@@ -144,8 +154,30 @@ export default defineConfig({
 		mode: createNetworkConfig("mode", "https://mainnet.mode.network"),
 		mantle: createNetworkConfig("mantle", "https://mantle.drpc.org"),
 		mantle2: createNetworkConfig("mantle2", "https://mantle.drpc.org"),
+		hyperevm: createNetworkConfig("hyp/erevm", "https://rpc.hyperliquid.xyz/evm"),
 		arbitrum: createNetworkConfig("arbitrum", "https://arbitrum.llamarpc.com"),
-		hyperevm: createNetworkConfig("hyperevm", "https://rpc.hyperliquid.xyz/evm"),
+		"fork-arbitrum": {
+			type: "edr-simulated",
+			chainId: 42161,
+			blockGasLimit: 30_000_000,
+			allowUnlimitedContractSize: true,
+			hardfork: "cancun",
+			forking: {
+				url: (configVariable("RPC_ARBITRUM") as any) || "https://arbitrum.drpc.org",
+				blockNumber: Number(process.env.FORK_BLOCK_NUMBER || 0) || undefined,
+			},
+		},
+		"fork-base": {
+			type: "edr-simulated",
+			chainId: 8453,
+			blockGasLimit: 30_000_000,
+			allowUnlimitedContractSize: true,
+			hardfork: "cancun",
+			forking: {
+				url: (configVariable("RPC_BASE") as any) || "https://base.drpc.org",
+				blockNumber: Number(process.env.FORK_BLOCK_NUMBER || 0) || undefined,
+			},
+		},
 	},
 	verify: {
 		etherscan: {
