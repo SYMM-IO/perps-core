@@ -8,11 +8,14 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import { AffiliateConfig, SponsorConfig } from "../../types/ConfigTypes.sol";
+import { AffiliateCredit } from "../../types/CreditTypes.sol";
 
 import { LibAccessControl } from "../../libraries/LibAccessControl.sol";
+import { LibCreditLine } from "../../libraries/LibCreditLine.sol";
 import { LibDiamond } from "../../../diamond/libraries/LibDiamond.sol";
 import { LibErrors } from "../../libraries/LibErrors.sol";
 
+import { CreditLineStorage } from "../../storages/CreditLineStorage.sol";
 import { GlobalStorage } from "../../storages/GlobalStorage.sol";
 import { PoolStorage } from "../../storages/PoolStorage.sol";
 import { FeeStorage } from "../../storages/FeeStorage.sol";
@@ -63,6 +66,50 @@ contract ControlFacet is IControlFacet {
 		if (feeRate > 10000) revert LibErrors.FeeRateExceeds100Percent();
 		FeeStorage.layout().affiliateConfigs[affiliate] = AffiliateConfig(feeRate, _operatorFee);
 		emit AffiliateConfigUpdated(affiliate, feeRate, _operatorFee);
+	}
+
+	// ── Credit line setters ──
+
+	function setCreditLineMuonConfig(address signatureVerifier, uint256 muonAppId, uint256 muonFreshnessWindow) external {
+		LibAccessControl.enforceRole(LibAccessControl.SETTER_ROLE);
+		CreditLineStorage.Layout storage cl = CreditLineStorage.layout();
+		cl.signatureVerifier = signatureVerifier;
+		cl.muonAppId = muonAppId;
+		cl.muonFreshnessWindow = muonFreshnessWindow;
+		emit CreditLineMuonConfigUpdated(signatureVerifier, muonAppId, muonFreshnessWindow);
+	}
+
+	function setCreditLineProtocolConfig(address affiliate, uint256 maxDebt, uint256 maxDebtBps) external {
+		LibAccessControl.enforceRole(LibAccessControl.SETTER_ROLE);
+		AffiliateCredit storage ac = CreditLineStorage.layout().affiliates[affiliate];
+		ac.protocolMaxDebt = maxDebt;
+		ac.protocolMaxDebtBps = maxDebtBps;
+		emit CreditLineProtocolConfigUpdated(affiliate, maxDebt, maxDebtBps);
+	}
+
+	function setCreditLineAffiliateConfig(address affiliate, uint256 maxDebt, uint256 maxDebtBps) external {
+		LibAccessControl.enforceRole(LibAccessControl.SETTER_ROLE);
+		AffiliateCredit storage ac = CreditLineStorage.layout().affiliates[affiliate];
+
+		// Affiliate limits must be stricter (or equal) to protocol limits
+		if (ac.protocolMaxDebt > 0 && maxDebt > ac.protocolMaxDebt) revert LibCreditLine.AffiliateLimitExceedsProtocol();
+		if (ac.protocolMaxDebtBps > 0 && maxDebtBps > ac.protocolMaxDebtBps) revert LibCreditLine.AffiliateLimitExceedsProtocol();
+
+		ac.affiliateMaxDebt = maxDebt;
+		ac.affiliateMaxDebtBps = maxDebtBps;
+		emit CreditLineAffiliateConfigUpdated(affiliate, maxDebt, maxDebtBps);
+	}
+
+	function setCreditLinePaused(address affiliate, bool paused) external {
+		LibAccessControl.enforceRole(LibAccessControl.SETTER_ROLE);
+		CreditLineStorage.layout().affiliates[affiliate].paused = paused;
+		emit CreditLinePausedUpdated(affiliate, paused);
+	}
+
+	function setCreditLineBlacklisted(address affiliate, address user, bool blacklisted) external {
+		LibAccessControl.enforceRole(LibAccessControl.SETTER_ROLE);
+		CreditLineStorage.layout().affiliates[affiliate].blacklisted[user] = blacklisted;
+		emit CreditLineUserBlacklistUpdated(affiliate, user, blacklisted);
 	}
 
 	// ── Fee claims ──

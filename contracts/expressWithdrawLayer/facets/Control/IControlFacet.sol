@@ -18,6 +18,11 @@ interface IControlEvents {
 	event MinValidatorSignaturesUpdated(address indexed affiliate, uint256 minValidatorSignatures);
 	event ValidatorApprovalTimeoutUpdated(address indexed affiliate, uint256 timeout);
 	event ValidatorUpdated(address indexed affiliate, address indexed validator, bool enabled);
+	event CreditLineProtocolConfigUpdated(address indexed affiliate, uint256 maxDebt, uint256 maxDebtBps);
+	event CreditLineMuonConfigUpdated(address signatureVerifier, uint256 muonAppId, uint256 muonFreshnessWindow);
+	event CreditLineAffiliateConfigUpdated(address indexed affiliate, uint256 maxDebt, uint256 maxDebtBps);
+	event CreditLineUserBlacklistUpdated(address indexed affiliate, address indexed user, bool blacklisted);
+	event CreditLinePausedUpdated(address indexed affiliate, bool paused);
 }
 
 interface IControlFacet is IControlEvents {
@@ -34,6 +39,18 @@ interface IControlFacet is IControlEvents {
 	function setValidator(address affiliate, address validator, bool enabled) external;
 
 	function setAffiliateConfig(address affiliate, uint256 feeRate, uint256 _operatorFee) external;
+
+	// ── Credit line setters ──
+
+	function setCreditLineMuonConfig(address signatureVerifier, uint256 muonAppId, uint256 muonFreshnessWindow) external;
+
+	function setCreditLineProtocolConfig(address affiliate, uint256 maxDebt, uint256 maxDebtBps) external;
+
+	function setCreditLineAffiliateConfig(address affiliate, uint256 maxDebt, uint256 maxDebtBps) external;
+
+	function setCreditLinePaused(address affiliate, bool paused) external;
+
+	function setCreditLineBlacklisted(address affiliate, address user, bool blacklisted) external;
 
 	// ── Fee claims ──
 

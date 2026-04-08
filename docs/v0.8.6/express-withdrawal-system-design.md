@@ -37,7 +37,7 @@ sequenceDiagram
     User->>SYMMIO: 3. initiateWithdraw(parts, providerData)
     SYMMIO->>Express: 4. onWithdrawRequest(request, collateral)
     Express->>Express: Verify signatures, validate validators, enforce fees
-    Express->>Express: Reserve credit debt via CreditLineFacet (if creditAmount > 0)
+    Express->>Express: Reserve credit debt via LibCreditLine (if creditAmount > 0)
     Express->>SYMMIO: 5. acceptWithdrawRequest(user, reqId)
 
     alt IMMEDIATE (same-tx transfer, validators required)
@@ -121,7 +121,7 @@ RESERVE ──→ ACTIVATE ──→ SETTLE
 
 Credit is **not supported for STANDARD withdrawals** — only IMMEDIATE and INSTANT, because STANDARD doesn't front capital.
 
-All credit line logic lives inside the ExpressProvider diamond (`CreditLineFacet` for admin/views, `LibCreditLine` for debt operations). State is stored in `CreditLineStorage` (diamond storage, keyed by affiliate). See Section 9 for technical details.
+All credit line logic lives inside the ExpressProvider diamond (`ControlFacet` for admin setters, `ViewFacet` for reads, `LibCreditLine` for debt operations). State is stored in `CreditLineStorage` (diamond storage, keyed by affiliate). See Section 9 for technical details.
 
 ### 4.3 Liquidity Priority
 
@@ -720,7 +720,7 @@ See Section 4.2 for the conceptual overview. This section covers implementation 
 ### 9.1 Architecture
 
 Credit line logic lives inside the ExpressProvider diamond:
-- **`CreditLineFacet`** — admin setters only (Muon config, protocol/affiliate caps, pause, blacklist)
+- **`ControlFacet`** — credit line admin setters (Muon config, protocol/affiliate caps, pause, blacklist) live here alongside the other admin setters
 - **`ViewFacet`** — credit line **read** functions (debt totals, per-request debt, configuration getters) live here, alongside the other read-only views
 - **`LibCreditLine`** — debt operations (`reserveDebt`, `activate`, `settle`, `releaseReservation`, `coverLoss`) called internally by `SymmioHookFacetImpl` and `OperatorFacetImpl`
 - **`CreditLineStorage`** — diamond storage with per-affiliate mappings (`AffiliateCredit` struct). The `AffiliateCredit` struct is defined in `types/CreditTypes.sol` and held in `CreditLineStorage`.
@@ -776,7 +776,7 @@ Validators are not a role -- they are registered per-affiliate via `setValidator
 ### 10.4 Trust Relationships
 
 - ExpressProvider is registered as an **Express Provider** on SYMMIO
-- Credit line logic runs inside the ExpressProvider diamond (via `CreditLineFacet` / `LibCreditLine`) -- no cross-contract trust needed for debt operations
+- Credit line logic runs inside the ExpressProvider diamond (via `ControlFacet` setters / `LibCreditLine`) -- no cross-contract trust needed for debt operations
 - `LibCreditLine` verifies Muon oracle attestations to validate credit eligibility
 - Bot holds `OPERATOR_ROLE` and `SIGNER_ROLE` on ExpressProvider
 - Validators are registered per-affiliate on ExpressProvider via `setValidator(affiliate, validator, enabled)` -- their EIP-712 signatures are verified during onWithdrawRequest. Validators registered for `address(0)` serve as defaults for all affiliates
@@ -876,7 +876,7 @@ When a user calls `processWithdraw` permissionlessly (after the tolerance period
 flowchart LR
     subgraph "Per Chain"
         SYMMIO[SYMMIO Core Diamond]
-        EC[ExpressProvider<br/>EIP-2535 Diamond<br/>1 per chain<br/>includes CreditLineFacet]
+        EC[ExpressProvider<br/>EIP-2535 Diamond<br/>1 per chain]
     end
     subgraph "Global"
         Bot[Bot Service]
@@ -891,7 +891,7 @@ flowchart LR
 
 | Component | Count | Upgradeable | Description |
 |-----------|-------|-------------|-------------|
-| **ExpressProvider** | 1 per chain | Yes (EIP-2535 Diamond) | Main coordinator. Manages liquidity pools, validates bot signatures, locks/transfers funds, and handles credit lines. Split into ControlFacet, SymmioHookFacet, OperatorFacet, ViewFacet, CreditLineFacet. Credit line state is stored in `CreditLineStorage` (diamond storage) with per-affiliate mappings. |
+| **ExpressProvider** | 1 per chain | Yes (EIP-2535 Diamond) | Main coordinator. Manages liquidity pools, validates bot signatures, locks/transfers funds, and handles credit lines. Split into ControlFacet, SymmioHookFacet, OperatorFacet, ViewFacet. Credit line state is stored in `CreditLineStorage` (diamond storage) with per-affiliate mappings. |
 | **Bot Service** | 1 global | N/A | Off-chain. Provides options API, signs options, monitors events, calls `processWithdraw` and `finalizeWithdrawRequest`. |
 
 #### SYMMIO Callbacks (called by SYMMIO, not by bot)
@@ -946,7 +946,7 @@ function setValidator(address affiliate, address validator, bool enabled) extern
 function setMinValidatorSignatures(address affiliate, uint256 count) external;     // Setter only
 function setValidatorApprovalTimeout(address affiliate, uint256 seconds) external; // Setter only
 
-// Credit line setter functions (SETTER_ROLE, on CreditLineFacet)
+// Credit line setter functions (SETTER_ROLE, on ControlFacet)
 function setCreditLineMuonConfig(
     address signatureVerifier,
     uint256 muonAppId,
@@ -1022,30 +1022,7 @@ function hasRole(bytes32 role, address account) external view returns (bool);
 
 ```
 
-### 12.2 CreditLineFacet (Diamond Facet)
-
-All credit line functions are accessed on the ExpressProvider diamond address. Configuration requires `SETTER_ROLE`. Debt lifecycle functions (`reserveDebt`, `activate`, `settle`, `releaseReservation`, `coverLoss`) are internal to `LibCreditLine` and called by other facets within the diamond -- they are not externally callable. Credit line **read** functions live on `ViewFacet` (see Section 12.1 view functions).
-
-```solidity
-// Configuration (SETTER_ROLE)
-function setCreditLineMuonConfig(
-    address signatureVerifier,
-    uint256 muonAppId,
-    uint256 muonFreshnessWindow
-) external;
-function setCreditLineProtocolConfig(
-    address affiliate,
-    uint256 maxDebt,
-    uint256 maxDebtBps
-) external;
-function setCreditLineAffiliateConfig(
-    address affiliate,
-    uint256 maxDebt,
-    uint256 maxDebtBps
-) external;
-function setCreditLinePaused(address affiliate, bool paused) external;
-function setCreditLineBlacklisted(address affiliate, address user, bool blacklisted) external;
-```
+Credit line configuration setters live on `ControlFacet` (shown in section 12.1 admin functions). Debt lifecycle functions (`reserveDebt`, `activate`, `settle`, `releaseReservation`, `coverLoss`) are internal to `LibCreditLine` and called by other facets within the diamond -- they are not externally callable. Credit line **read** functions live on `ViewFacet` (see Section 12.1 view functions).
 
 ## 13. Data Types Reference
 

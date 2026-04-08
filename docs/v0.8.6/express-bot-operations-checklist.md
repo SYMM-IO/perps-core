@@ -1020,7 +1020,7 @@ Step 1 — Bot sees: user requests an express withdrawal for 1,000 USDC
   Decision: Offer IMMEDIATE (optionType=0). Proceed to gather validator attestations.
 
     What if creditLine availableCredit were only 150 USDC?
-      200 > 150 — CreditLineFacet would revert InsufficientCredit during reserveDebt.
+      200 > 150 — LibCreditLine would revert InsufficientCredit during reserveDebt.
       Bot must reduce creditAmount to 150 (and increase generalAmount to 550),
       or fall back to INSTANT without credit.
 
@@ -1469,7 +1469,7 @@ Final accounting:
 
 ### 5.4 Credit-Backed Withdrawal
 
-For IMMEDIATE and INSTANT options, the bot can include a `creditAmount` in the signed option to draw from the affiliate's credit line (managed by `CreditLineFacet` within the ExpressProvider diamond). This supplements pool liquidity:
+For IMMEDIATE and INSTANT options, the bot can include a `creditAmount` in the signed option to draw from the affiliate's credit line (configured on `ControlFacet` and processed by `LibCreditLine` within the ExpressProvider diamond). This supplements pool liquidity:
 
 - `generalAmount = expressAmount - affiliateAmount - creditAmount`
 - Credit requires a valid Muon oracle attestation (`CreditData`)
@@ -2336,7 +2336,7 @@ coverLoss:           affiliateBalances[affiliate] -= creditAmount, then internal
 
 All credit line logic lives inside the ExpressProvider diamond via `LibCreditLine` and is invoked from `SymmioHookFacetImpl` / `OperatorFacetImpl`. Credit line state is stored in `CreditLineStorage` (diamond storage, per-affiliate via mappings). There is no separate deployment per affiliate -- all config is done on the diamond with affiliate-keyed functions.
 
-`CreditLineFacet` now exposes only **5 setters** (`setCreditLineMuonConfig`, `setCreditLineProtocolConfig`, `setCreditLineAffiliateConfig`, `setCreditLinePaused`, `setCreditLineBlacklisted`). All credit line **read** functions (`creditLineTotalDebt`, `creditLineReservedDebt`, `creditLineActiveDebt`, `creditLineSignatureVerifier`, `creditLineMuonAppId`, `creditLineMuonFreshnessWindow`, `creditLineProtocolMaxDebt`, `creditLineProtocolMaxDebtBps`, `creditLineAffiliateMaxDebt`, `creditLineAffiliateMaxDebtBps`, `creditLineRequestDebt`, `creditLineRequestActivated`, `creditLinePaused`, `creditLineBlacklisted`) live on **`ViewFacet`** (commit a8902f45) but are still called on the diamond address.
+`ControlFacet` exposes the **5 credit line setters** (`setCreditLineMuonConfig`, `setCreditLineProtocolConfig`, `setCreditLineAffiliateConfig`, `setCreditLinePaused`, `setCreditLineBlacklisted`) alongside the other admin setters. All credit line **read** functions (`creditLineTotalDebt`, `creditLineReservedDebt`, `creditLineActiveDebt`, `creditLineSignatureVerifier`, `creditLineMuonAppId`, `creditLineMuonFreshnessWindow`, `creditLineProtocolMaxDebt`, `creditLineProtocolMaxDebtBps`, `creditLineAffiliateMaxDebt`, `creditLineAffiliateMaxDebtBps`, `creditLineRequestDebt`, `creditLineRequestActivated`, `creditLinePaused`, `creditLineBlacklisted`) live on **`ViewFacet`**. All are called on the diamond address.
 
 - [ ] **Check `creditLineTotalDebt(affiliate)`** -- total outstanding credit exposure (reserved + active). Compare against caps to estimate remaining capacity.
 - [ ] **Check `creditLinePaused(affiliate)`** -- if `true`, all `reserveDebt` calls revert `CreditLinePaused`. The bot must not sign options with `creditAmount > 0` for this affiliate.
@@ -3518,7 +3518,7 @@ Correct strategy — re-read securityWindow before EVERY processWithdraw call:
 Scenario: Admin changes credit line config on the diamond while bot has signed options using credit
 
 Setup:
-  Credit line state for 0xAffiliate (on the ExpressProvider diamond via CreditLineFacet):
+  Credit line state for 0xAffiliate (on the ExpressProvider diamond via ControlFacet setters / ViewFacet reads):
     creditLineTotalDebt(0xAffiliate) = 500 USDC
     protocolMaxDebt = 10,000 USDC, affiliateMaxDebt = 5,000 USDC
   Bot has signed 2 pending options for affiliate 0xAffiliate using credit:
@@ -3827,7 +3827,7 @@ flowchart TD
 |------|-----------|----------|---------------|
 | General (`generalBalance`) | `depositToGeneral` | INSTANT/IMMEDIATE general portion | `lockedGeneralBalance` |
 | Affiliate (`affiliateBalances[affiliate]`) | `depositToAffiliate` | Express affiliate portion | `lockedAffiliateBalances[affiliate]` |
-| Credit Line (`CreditLineFacet`) | Muon-attested eligible balances | Credit-backed portions (non-STANDARD) | `creditLineReservedDebt` / `creditLineActiveDebt` |
+| Credit Line (`CreditLineStorage`) | Muon-attested eligible balances | Credit-backed portions (non-STANDARD) | `creditLineReservedDebt` / `creditLineActiveDebt` |
 | Sponsor (`sponsorBalances[affiliate]`) | `depositSponsorBalance` | Fee coverage | `info.sponsorCoverage` (stored on WithdrawInfo) |
 
 ### 16.3 Available Liquidity Formulas
@@ -3959,11 +3959,11 @@ flowchart TD
 | `SPONSOR_MANAGER_ROLE` | `keccak256("SPONSOR_MANAGER_ROLE")` | Admin | `withdrawSponsorBalance` |
 | `FEE_CLAIMER_ROLE` | `keccak256("FEE_CLAIMER_ROLE")` | Admin | `claimFees`, `claimOperatorFees` |
 
-### 17.3 Credit Line Functions (CreditLineFacet on the Diamond)
+### 17.3 Credit Line Functions (on the Diamond)
 
-Credit line admin lives on `CreditLineFacet`; all credit line **view** functions are on `ViewFacet` (commit a8902f45). There are no separate roles -- all credit line admin functions use the diamond's `SETTER_ROLE`.
+Credit line admin setters live on `ControlFacet`; all credit line **view** functions are on `ViewFacet`. There are no separate roles -- all credit line admin functions use the diamond's `SETTER_ROLE`.
 
-**Admin functions (CreditLineFacet, 5 setters):**
+**Admin functions (ControlFacet, 5 setters):**
 
 | Function | Caller | Description |
 |----------|--------|-------------|
