@@ -8,6 +8,7 @@ export type UpgradeConfigShared = {
 	diamondAddress?: string
 	protocolAdmin?: string
 	safeAddress?: string
+	migrationRunner?: string
 	subgraphEndpoint?: string
 	spotCheckCount?: number
 	symmioFeeReceiver?: string

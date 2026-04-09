@@ -36,6 +36,7 @@ type CalldataTransaction = {
 type Config = {
 	diamondAddress?: string
 	safeAddress?: string
+	migrationRunner?: string
 	partyBs?: string[]
 }
 
@@ -52,6 +53,7 @@ function ensureDir(dir: string): void {
 }
 
 const DIAMOND_ABI = [
+	"function revokeRole(address user, bytes32 role)",
 	"function unpauseGlobal()",
 	"function setCrossPartyBModeActivated(bool activated)",
 	"function setCrossPartyB(address partyB, bool enabled)",
@@ -65,14 +67,19 @@ async function main() {
 	const shared = loadUpgradeConfigShared()
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress ?? shared.diamondAddress
 	const SAFE_ADDRESS = process.env.SAFE_ADDRESS ?? config.safeAddress ?? shared.safeAddress
+	const MIGRATION_RUNNER = process.env.MIGRATION_RUNNER ?? config.migrationRunner ?? shared.migrationRunner
 	const partyBs = config.partyBs ?? []
 
 	if (!DIAMOND_ADDRESS || !ethers.isAddress(DIAMOND_ADDRESS)) {
 		throw new Error("DIAMOND_ADDRESS is required")
 	}
+	if (!MIGRATION_RUNNER || !ethers.isAddress(MIGRATION_RUNNER)) {
+		throw new Error("MIGRATION_RUNNER is required for role revocation (env var, postMigration.json, or upgrade.json)")
+	}
 
-	console.log(`Diamond: ${DIAMOND_ADDRESS}`)
-	console.log(`PartyBs: ${partyBs.length}`)
+	console.log(`Diamond:          ${DIAMOND_ADDRESS}`)
+	console.log(`Migration runner: ${MIGRATION_RUNNER}`)
+	console.log(`PartyBs:          ${partyBs.length}`)
 
 	for (const addr of partyBs) {
 		if (!ethers.isAddress(addr) || addr === ethers.ZeroAddress) {
@@ -93,14 +100,18 @@ async function main() {
 		})
 	}
 
-	// 1. Unpause
+	// 1. Revoke migration roles before unpause
+	addTx("revokeRole", [MIGRATION_RUNNER, ethers.id("MIGRATION_ROLE")], `revokeRole(MIGRATION_ROLE) <- ${MIGRATION_RUNNER}`)
+	addTx("revokeRole", [MIGRATION_RUNNER, ethers.id("SYMBOL_MANAGER_ROLE")], `revokeRole(SYMBOL_MANAGER_ROLE) <- ${MIGRATION_RUNNER}`)
+
+	// 2. Unpause
 	addTx("unpauseGlobal", [], "unpauseGlobal()")
 
-	// 2. Enable cross-PartyB mode (global feature flag)
+	// 3. Enable cross-PartyB mode (global feature flag)
 	if (partyBs.length > 0) {
 		addTx("setCrossPartyBModeActivated", [true], "setCrossPartyBModeActivated(true)")
 
-		// 3. Enable cross mode per PartyB
+		// 4. Enable cross mode per PartyB
 		for (const partyB of partyBs) {
 			addTx("setCrossPartyB", [partyB, true], `setCrossPartyB(${partyB}, true)`)
 		}
