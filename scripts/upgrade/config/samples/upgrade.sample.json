@@ -24,6 +24,7 @@
 
 		"unbindCooldown": 86400,
 		"maxWithdrawParts": 5,
-		"minWithdrawCooldown": 43200
+		"minWithdrawCooldown": 43200,
+		"symbolType": 1
 	}
 }

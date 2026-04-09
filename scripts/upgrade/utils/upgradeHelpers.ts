@@ -729,7 +729,7 @@ export function buildUpgradeTransactions(
 		)
 	}
 
-	// Phase 3: Migration role
+	// Phase 3: Migration + symbol management roles
 	addTx(
 		safeTxs,
 		calldataTxs,
@@ -739,6 +739,17 @@ export function buildUpgradeTransactions(
 		"grantRole",
 		[migrationRunner, ethers.id("MIGRATION_ROLE")],
 		`grantRole(MIGRATION_ROLE) -> ${migrationRunner}`,
+	)
+
+	addTx(
+		safeTxs,
+		calldataTxs,
+		breakdown,
+		txIdx,
+		diamondAddress,
+		"grantRole",
+		[migrationRunner, ethers.id("SYMBOL_MANAGER_ROLE")],
+		`grantRole(SYMBOL_MANAGER_ROLE) -> ${migrationRunner}`,
 	)
 
 	return { pauseSafeTxs, pauseBreakdown, safeTxs, calldataTxs, diamondCutCalldataChunks, diamondCutInsertionIndex, breakdown, selectorChanges }

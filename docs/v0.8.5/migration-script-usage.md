@@ -124,7 +124,7 @@ The Safe batch includes:
 2. `pauseGlobal()`
 3. Grant PROTOCOL_CONFIG_ROLE, COOLDOWN_ADMIN_ROLE, FEE_ADMIN_ROLE to `protocolAdmin`
 4. Set v0.8.5 parameters
-5. Grant MIGRATION_ROLE to `migrationRunner`
+5. Grant MIGRATION_ROLE and SYMBOL_MANAGER_ROLE to `migrationRunner`
 6. Peripheral wiring (roles + hooks between Diamond, AccountLayer, InstantLayer)
 
 The diamondCut is **not** in the Safe batch -- it's separate so it can be routed through the timelock.
@@ -167,7 +167,19 @@ npx hardhat run scripts/upgrade/validateMigrationInput.ts --network <network>
 
 Spot-checks the migration input against on-chain state. Version-agnostic — can be run before or after the upgrade is applied.
 
-### 7b. Snapshot on-chain balances (optional, off the critical path)
+### 7b. Prepare symbol types input (off the critical path)
+
+```bash
+npx hardhat run scripts/upgrade/prepareSymbolTypes.ts --network <network>
+```
+
+Fetches all symbol IDs and names from the subgraph and writes the input file for `setSymbolTypes.ts`. The `symbolType` value (applied to all symbols) is read from `newV085Parameters.symbolType` in `upgrade.json`.
+
+**Run this OUTSIDE the pause window** -- it only hits the subgraph and writes a local file. `setSymbolTypes.ts` consumes its output and does not re-fetch.
+
+Output: `output/symbol-types-input.json`
+
+### 7c. Snapshot on-chain balances (optional, off the critical path)
 
 ```bash
 npx hardhat run scripts/upgrade/snapshotBalances.ts --network <network>
@@ -188,6 +200,18 @@ npx hardhat run scripts/upgrade/runMigration.ts --network <network>
 Executes `migrateQuotes()` and `migrateCrossLockedValues()` on the paused diamond. Requires `MIGRATION_ROLE`. Resume-safe via progress file.
 
 Output: `output/migration-report.json`
+
+### 8b. Set symbol types
+
+```bash
+npx hardhat run scripts/upgrade/setSymbolTypes.ts --network <network>
+```
+
+Reads `output/symbol-types-input.json` (produced by `prepareSymbolTypes.ts`) and calls `setSymbolTypes()` on the diamond to backfill the `symbolType` for all symbols. Requires `SYMBOL_MANAGER_ROLE` (granted to `migrationRunner` in the Safe batch).
+
+Can run in parallel with or immediately after `runMigration.ts` -- both require only their respective roles and are independent of each other.
+
+Output: `output/set-symbol-types-report.json`
 
 ### 9. Generate post-migration batch
 
@@ -232,7 +256,8 @@ Phase 1: Prepare (can be done in advance, no downtime)
   generateSafeBatch.ts
   generateTimelockBatch.ts
   generatePostMigrationBatch.ts
-  snapshotBalances.ts                 (optional pre-pause snapshot, off critical path)
+  prepareSymbolTypes.ts              (off critical path — fetch symbols from subgraph)
+  snapshotBalances.ts                (optional pre-pause snapshot, off critical path)
 
 Phase 2: Schedule (multisig signs)
   Import timelock-schedule-safe-batch.json into Safe TX Builder
@@ -254,9 +279,11 @@ Phase 4: Execute upgrade (multisig signs, downtime starts)
        verifyDiamond.ts               (all v0.8.5 selectors registered)
        verifyPeripherals.ts           (AL/IL roles, hooks, whitelist, templates)
 
-Phase 5: Migrate (EOA with MIGRATION_ROLE)
+Phase 5: Migrate (EOA with MIGRATION_ROLE / SYMBOL_MANAGER_ROLE)
   runMigration.ts
   -> Migrates quotes and PartyB locked values on the paused system
+  setSymbolTypes.ts
+  -> Backfills symbolType for all symbols (reads symbol-types-input.json)
 
 Phase 6: Unpause (multisig signs)
   Import post-migration-safe-batch.json into Safe TX Builder
@@ -290,7 +317,9 @@ Same as above but skip `generateTimelockBatch.ts` and include the diamondCut dir
 | `timelock-execute-safe-batch.json` | generateTimelockBatch.ts | Safe TX Builder |
 | `migration-input.json` | prepareMigrationInput.ts | runMigration.ts |
 | `prepareMigrationInput-report.json` | prepareMigrationInput.ts | Human review |
+| `symbol-types-input.json` | prepareSymbolTypes.ts | setSymbolTypes.ts |
 | `balance-snapshot.json` | snapshotBalances.ts | Human review (sanity-check totals) |
 | `migration-report.json` | runMigration.ts | Human review |
+| `set-symbol-types-report.json` | setSymbolTypes.ts | Human review |
 | `post-migration-transactions.json` | generatePostMigrationBatch.ts | EOA execution |
 | `post-migration-safe-batch.json` | generatePostMigrationBatch.ts | Safe TX Builder |

@@ -104,6 +104,14 @@ export default defineConfig({
 				cancun: { blockNumber: 0 },
 			},
 		},
+		5000: {
+			name: "Mantle",
+			hardforkHistory: {
+				merge: { blockNumber: 0 },
+				shanghai: { blockNumber: 0 },
+				cancun: { blockNumber: 0 },
+			},
+		},
 	},
 	solidity: {
 		profiles: {
@@ -175,6 +183,17 @@ export default defineConfig({
 			hardfork: "cancun",
 			forking: {
 				url: (configVariable("RPC_BASE") as any) || "https://base.drpc.org",
+				blockNumber: Number(process.env.FORK_BLOCK_NUMBER || 0) || undefined,
+			},
+		},
+		"fork-mantle": {
+			type: "edr-simulated",
+			chainId: 5000,
+			blockGasLimit: 30_000_000,
+			allowUnlimitedContractSize: true,
+			hardfork: "cancun",
+			forking: {
+				url: (configVariable("RPC_MANTLE") as any) || "https://mantle.drpc.org",
 				blockNumber: Number(process.env.FORK_BLOCK_NUMBER || 0) || undefined,
 			},
 		},

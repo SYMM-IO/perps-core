@@ -12,6 +12,7 @@ export type UpgradeConfigShared = {
 	spotCheckCount?: number
 	symmioFeeReceiver?: string
 	symmioPartyBAddress?: string
+	newV085Parameters?: { symbolType?: number }
 }
 
 const DEFAULT_UPGRADE_CONFIG_FILE = "./scripts/upgrade/config/upgrade.json"
