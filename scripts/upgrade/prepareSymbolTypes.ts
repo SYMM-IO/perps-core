@@ -25,7 +25,7 @@ export type SymbolTypesInput = {
 	generatedAt: string
 	subgraphEndpoint: string
 	symbolType: number
-	symbols: { id: string; name: string }[]
+	symbols: { symbolId: string; name: string }[]
 }
 
 async function main() {
@@ -51,13 +51,13 @@ async function main() {
 	}
 
 	log.ok(`Fetched ${symbols.length} symbols`)
-	for (const s of symbols) log.info(`  [${s.id}] ${s.name}`)
+	for (const s of symbols) log.info(`  [${s.symbolId}] ${s.name}`)
 
 	const input: SymbolTypesInput = {
 		generatedAt: new Date().toISOString(),
 		subgraphEndpoint: SUBGRAPH_ENDPOINT,
 		symbolType: SYMBOL_TYPE,
-		symbols,
+		symbols: symbols.map(s => ({ symbolId: s.symbolId, name: s.name })),
 	}
 
 	if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })

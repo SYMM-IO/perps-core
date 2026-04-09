@@ -52,7 +52,7 @@ async function main() {
 	log.info(`Input:       ${inputFile}`)
 	log.info("")
 
-	for (const s of symbols) log.info(`  [${s.id}] ${s.name}`)
+	for (const s of symbols) log.info(`  [${s.symbolId}] ${s.name}`)
 	log.info("")
 
 	if (DRY_RUN) {
@@ -75,7 +75,7 @@ async function main() {
 	let totalSet = 0
 	for (let i = 0; i < symbols.length; i += CHUNK_SIZE) {
 		const chunk = symbols.slice(i, i + CHUNK_SIZE)
-		const symbolIds = chunk.map(s => BigInt(s.id))
+		const symbolIds = chunk.map(s => BigInt(s.symbolId))
 		const symbolTypes = chunk.map(() => BigInt(symbolType))
 		log.info(`Submitting chunk ${Math.floor(i / CHUNK_SIZE) + 1} (${chunk.length} symbols)...`)
 		const tx = await diamond.setSymbolTypes(symbolIds, symbolTypes)
@@ -100,7 +100,7 @@ function writeReport(diamondAddress: string, input: SymbolTypesInput, totalSet: 
 				symbolType: input.symbolType,
 				dryRun,
 				totalSet,
-				symbols: input.symbols.map(s => s.name),
+				symbols: input.symbols.map(s => ({ symbolId: s.symbolId, name: s.name })),
 			},
 			null,
 			2,

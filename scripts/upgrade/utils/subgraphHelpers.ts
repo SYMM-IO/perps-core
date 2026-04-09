@@ -37,6 +37,7 @@ export type SubgraphPartyBBalancesResult = {
 
 export type SubgraphSymbol = {
 	id: string
+	symbolId: string
 	name: string
 }
 
@@ -155,17 +156,19 @@ export async function fetchPartyBBalances(endpoint: string, pageSize: number = D
  */
 export async function fetchSymbols(endpoint: string, pageSize: number = DEFAULT_PAGE_SIZE): Promise<SubgraphSymbol[]> {
 	const allSymbols: SubgraphSymbol[] = []
-	let lastId = "0"
+	let lastId = ""
 
 	while (true) {
+		const whereClause = lastId ? `{ id_gt: "${lastId}" }` : `{}`
 		const query = `{
 			symbols(
 				first: ${pageSize}
-				where: { symbolId_gt: "${lastId}" }
-				orderBy: symbolId
+				where: ${whereClause}
+				orderBy: id
 				orderDirection: asc
 			) {
 				id
+				symbolId
 				name
 			}
 		}`
