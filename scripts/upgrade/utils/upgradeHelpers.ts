@@ -392,7 +392,7 @@ export type CalldataTransaction = {
 export type SafeTransaction = {
 	to: string
 	value: string
-	data: string | null
+	data: string
 	contractMethod?: {
 		inputs: AbiInput[]
 		name: string
@@ -490,10 +490,14 @@ export function toHumanReadableSafeTxFromIface(iface: ethers.Interface, to: stri
 		contractInputsValues[fragment.inputs[i].name] = argToString(args[i])
 	}
 
+	// Include encoded calldata alongside contractMethod so Safe TX Builder can both
+	// display the decoded view and fall back to raw calldata if needed.
+	const data = iface.encodeFunctionData(methodName, args)
+
 	return {
 		to,
 		value: "0",
-		data: null,
+		data,
 		contractMethod: {
 			inputs,
 			name: methodName,

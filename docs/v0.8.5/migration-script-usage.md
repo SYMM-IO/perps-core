@@ -332,3 +332,40 @@ Same as above but skip `generateTimelockBatch.ts` and include the diamondCut dir
 | `set-symbol-types-report.json` | setSymbolTypes.ts | Human review |
 | `post-migration-transactions.json` | generatePostMigrationBatch.ts | EOA execution |
 | `post-migration-safe-batch.json` | generatePostMigrationBatch.ts | Safe TX Builder |
+
+---
+
+## Local E2E Test
+
+```bash
+npx hardhat run scripts/upgrade/localE2ETest.ts
+```
+
+Runs the full upgrade and migration pipeline against the in-process Hardhat network -- no RPC, no subgraph, no config files required. Completes in ~6 seconds.
+
+**What it exercises:**
+
+| Step | Helper function |
+|------|----------------|
+| Deploy 28 core facets + libraries | `deployFacets()` |
+| Diff live diamond vs new facets | `buildDiamondCut()` |
+| Apply diamond cut (381 Replace actions, 5 chunks) | `applyDiamondCut()` |
+| Deploy fresh AccountLayer Diamond | `deployAccountLayerDiamond()` |
+| Deploy fresh InstantLayer | `deployInstantLayer()` |
+| Wire peripherals to diamond | `wireAccountLayerInstantLayer()` |
+| Register InstantOpen / InstantClose / InstantCloseWithAllocation templates | `setupInstantLayerTemplates()` |
+| Build migration input from on-chain state (no subgraph) | inline loop over `getNextQuoteId()` |
+| Migrate quotes + PartyB balances | `migrate()` |
+| Verify selectors, system hook, AL roles, IL templates | inline checks |
+| Revoke roles, unpause, post-upgrade smoke test | inline |
+
+**What it does NOT cover:**
+
+- `prepareMigrationInput.ts` (subgraph path) -- tested manually against a live network
+- `generateSafeBatch.ts` / `generateTimelockBatch.ts` -- require a live RPC to diff the diamond
+- Block-explorer source verification (`verify-all.sh`, `verifyDeploy.ts`, `verifyPeripheralsDeploy.ts`)
+- Timelock schedule/execute flow
+
+**Self-upgrade note:** Because Hardhat's `deployDiamond` already deploys a full v0.8.5 system, the diamond cut produces all-Replace actions (same selectors, fresh contract addresses). This still exercises the full cut mechanism and all migration logic.
+
+**Known quirk:** `ViewFacetQuote.getNextQuoteId()` returns the **last assigned** quote ID, not the next available one. The test builds migration input with `for id = 1 to lastId` (inclusive) to avoid missing the highest ID.
