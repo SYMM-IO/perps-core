@@ -69,6 +69,35 @@ For local development or fork testing.
 
 ## Scripts (in execution order)
 
+### 0. Read Muon config from v0.8.4 diamond
+
+```bash
+DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/readMuonConfig.ts --network <network>
+```
+
+Reads the Muon TSS public key and gateway signer from the v0.8.4 diamond's `MuonStorage` and outputs them in a format ready to paste into `upgrade.json`. In v0.8.4, these were stored inline in the diamond; in v0.8.5, they must be seeded onto the external `MuonSignatureVerifier` contract.
+
+The script reads `getMuonIds()` (public key + gateway + appId) and `getMuonConfig()` (validity times) from the live diamond. The `muonAppId`, `upnlValidTime`, and `priceValidTime` persist in diamond storage across the upgrade and do not need re-setting -- they are output for reference only.
+
+Output:
+- Console: config snippet to add to `upgrade.json` -> `newV085Parameters`
+- `output/muon-config.json` -- full Muon config with all values
+
+Add the output to `upgrade.json`:
+
+```json
+{
+  "newV085Parameters": {
+    "signatureVerifierAddress": "0x...",
+    "muonPublicKeys": [{ "x": "123...", "parity": 1 }],
+    "muonGatewaySigners": ["0x..."],
+    ...
+  }
+}
+```
+
+When `signatureVerifierAddress`, `muonPublicKeys`, and `muonGatewaySigners` are all set, the upgrade scripts automatically include `addPublicKey()` and `addGatewaySigner()` calls on the `MuonSignatureVerifier` in the Safe batch (or execute them directly in the EOA path). The Safe must have `SETTER_ROLE` on the verifier contract.
+
 ### 1. Deploy facets
 
 ```bash
@@ -123,9 +152,10 @@ The Safe batch includes:
 1. Grant PAUSER_ROLE and UNPAUSER_ROLE to `protocolAdmin`
 2. `pauseGlobal()`
 3. Grant PROTOCOL_CONFIG_ROLE, COOLDOWN_ADMIN_ROLE, FEE_ADMIN_ROLE to `protocolAdmin`
-4. Set v0.8.5 parameters
-5. Grant MIGRATION_ROLE and SYMBOL_MANAGER_ROLE to `migrationRunner`
-6. Peripheral wiring (roles + hooks between Diamond, AccountLayer, InstantLayer)
+4. Set v0.8.5 parameters (including `setSignatureVerifierAddress`)
+5. Seed MuonSignatureVerifier with TSS public keys and gateway signers (if configured in `newV085Parameters`)
+6. Grant MIGRATION_ROLE and SYMBOL_MANAGER_ROLE to `migrationRunner`
+7. Peripheral wiring (roles + hooks between Diamond, AccountLayer, InstantLayer)
 
 The diamondCut is **not** in the Safe batch -- it's separate so it can be routed through the timelock.
 
@@ -255,6 +285,7 @@ This is distinct from step 3 (deployment verification): step 3 checks the byteco
 
 ```
 Phase 1: Prepare (can be done in advance, no downtime)
+  readMuonConfig.ts              (read TSS key + gateway from v0.8.4 diamond -> upgrade.json)
   deployFacets.ts
   deployPeripherals.ts
   -> Verify deployments:
@@ -317,6 +348,7 @@ Same as above but skip `generateTimelockBatch.ts` and include the diamondCut dir
 
 | File | Producer | Consumer |
 |------|----------|----------|
+| `muon-config.json` | readMuonConfig.ts | Human review (paste into upgrade.json) |
 | `deployed-facets.json` | deployFacets.ts | generateSafeBatch.ts |
 | `deployed-peripherals.json` | deployPeripherals.ts | generateSafeBatch.ts |
 | `safe-batch.json` | generateSafeBatch.ts | Safe TX Builder |

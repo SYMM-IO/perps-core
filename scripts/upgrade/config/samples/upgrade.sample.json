@@ -14,6 +14,8 @@
 		"maxPartyAConnectionLimit": 5,
 
 		"signatureVerifierAddress": "0x...",
+		"muonPublicKeys": [{ "x": "0x...", "parity": 1 }],
+		"muonGatewaySigners": ["0x..."],
 
 		"liquidationInsuranceVault": "0x...",
 		"maxLiquidationProfitPerPosition": "1000000000000000000",

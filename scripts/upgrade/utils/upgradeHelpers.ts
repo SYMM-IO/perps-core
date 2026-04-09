@@ -303,6 +303,11 @@ export async function applyDiamondCut(diamondAddress: string, diamondCut: any[],
 // EOA parameter setter
 // =============================================================================
 
+export type MuonPublicKey = {
+	x: string
+	parity: number
+}
+
 export type NewV085Parameters = {
 	maxPartyAConnectionLimit?: number
 	signatureVerifierAddress?: string
@@ -313,6 +318,8 @@ export type NewV085Parameters = {
 	unbindCooldown?: number
 	maxWithdrawParts?: number
 	minWithdrawCooldown?: number
+	muonPublicKeys?: MuonPublicKey[]
+	muonGatewaySigners?: string[]
 }
 
 export async function setV085Parameters(diamondAddress: string, params: NewV085Parameters, signerOverride?: any): Promise<void> {
@@ -337,6 +344,34 @@ export async function setV085Parameters(diamondAddress: string, params: NewV085P
 	if (params.signatureVerifierAddress && ethers.isAddress(params.signatureVerifierAddress)) {
 		await (await controlFacet.setSignatureVerifierAddress(params.signatureVerifierAddress)).wait()
 		log.ok(`signatureVerifierAddress = ${log.addr(params.signatureVerifierAddress)}`)
+
+		// Seed MuonSignatureVerifier with public keys and gateway signers
+		const verifier = await ethers.getContractAt("MuonSignatureVerifier", params.signatureVerifierAddress, signer)
+
+		if (params.muonPublicKeys && params.muonPublicKeys.length > 0) {
+			const existingKeys = await verifier.getAllPublicKeys()
+			for (const key of params.muonPublicKeys) {
+				const alreadyPresent = existingKeys.some((k: any) => k.x.toString() === key.x && Number(k.parity) === key.parity)
+				if (alreadyPresent) {
+					log.ok(`Public key (x=${key.x.slice(0, 10)}..., parity=${key.parity}) already present`)
+					continue
+				}
+				await (await verifier.addPublicKey({ x: key.x, parity: key.parity })).wait()
+				log.ok(`addPublicKey(x=${key.x.slice(0, 10)}..., parity=${key.parity})`)
+			}
+		}
+
+		if (params.muonGatewaySigners && params.muonGatewaySigners.length > 0) {
+			const existingSigners = (await verifier.getAllGatewaySigners()).map((s: string) => s.toLowerCase())
+			for (const gw of params.muonGatewaySigners) {
+				if (existingSigners.includes(gw.toLowerCase())) {
+					log.ok(`Gateway signer ${log.addr(gw)} already present`)
+					continue
+				}
+				await (await verifier.addGatewaySigner(gw)).wait()
+				log.ok(`addGatewaySigner(${log.addr(gw)})`)
+			}
+		}
 	}
 
 	if (params.liquidationInsuranceVault && params.maxLiquidationProfitPerPosition) {
@@ -649,6 +684,39 @@ export function buildUpgradeTransactions(
 			[newParams.signatureVerifierAddress],
 			`setSignatureVerifierAddress(${newParams.signatureVerifierAddress})`,
 		)
+
+		// Seed MuonSignatureVerifier with public keys and gateway signers
+		const verifierIface = new ethers.Interface([
+			"function addPublicKey(tuple(uint256 x, uint8 parity) pubKey)",
+			"function addGatewaySigner(address signer)",
+		])
+
+		if (newParams.muonPublicKeys && newParams.muonPublicKeys.length > 0) {
+			for (const key of newParams.muonPublicKeys) {
+				const pubKeyTuple = { x: key.x, parity: key.parity }
+				safeTxs.push(toHumanReadableSafeTxFromIface(verifierIface, newParams.signatureVerifierAddress, "addPublicKey", [pubKeyTuple]))
+				calldataTxs.push({
+					to: newParams.signatureVerifierAddress,
+					value: "0",
+					calldata: verifierIface.encodeFunctionData("addPublicKey", [pubKeyTuple]),
+					description: `addPublicKey(x=${key.x.slice(0, 10)}..., parity=${key.parity}) on MuonSignatureVerifier`,
+				})
+				breakdown.push(`${txIdx.value++}. [verifier] addPublicKey(x=${key.x.slice(0, 10)}..., parity=${key.parity})`)
+			}
+		}
+
+		if (newParams.muonGatewaySigners && newParams.muonGatewaySigners.length > 0) {
+			for (const gw of newParams.muonGatewaySigners) {
+				safeTxs.push(toHumanReadableSafeTxFromIface(verifierIface, newParams.signatureVerifierAddress, "addGatewaySigner", [gw]))
+				calldataTxs.push({
+					to: newParams.signatureVerifierAddress,
+					value: "0",
+					calldata: verifierIface.encodeFunctionData("addGatewaySigner", [gw]),
+					description: `addGatewaySigner(${gw}) on MuonSignatureVerifier`,
+				})
+				breakdown.push(`${txIdx.value++}. [verifier] addGatewaySigner(${gw})`)
+			}
+		}
 	}
 
 	if (newParams.liquidationInsuranceVault && newParams.maxLiquidationProfitPerPosition) {

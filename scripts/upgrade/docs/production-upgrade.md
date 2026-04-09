@@ -11,6 +11,13 @@ There are two variants depending on whether the diamond is owned directly by the
 ### Safe Path: Direct (Safe owns diamond)
 
 ```
+READ MUON CONFIG (one-time, if upgrading from v0.8.4)
+═════════════════════════════════════════════════════
+  Reads TSS public key + gateway signer from the v0.8.4 diamond.
+  Paste output into upgrade.json → newV085Parameters.
+
+  readMuonConfig.ts → muon-config.json + console snippet
+
 DEPLOY SIGNATURE VERIFIER (one-time, if upgrading from v0.8.4)
 ══════════════════════════════════════════════════════════════
   v0.8.4 had signature verification inline in the diamond.
@@ -18,8 +25,8 @@ DEPLOY SIGNATURE VERIFIER (one-time, if upgrading from v0.8.4)
 
   npx hardhat deploy:signatureVerifier --admin <admin> --network <network>
 
-  Then configure Muon TSS keys + gateway signers on the new contract.
   Put the deployed address in upgrade.json → newV085Parameters.signatureVerifierAddress
+  TSS keys + gateway signers are seeded automatically from muonPublicKeys/muonGatewaySigners in config.
 
 
 BEFORE PAUSE (no downtime)
@@ -255,7 +262,7 @@ TIMELINE
 
 ## EOA Path
 
-**Pre-requisite (if upgrading from v0.8.4):** Deploy `MuonSignatureVerifier` first (see [Deploy SignatureVerifier](#deploy-signatureverifier)).
+**Pre-requisites (if upgrading from v0.8.4):** Run `readMuonConfig.ts` to capture TSS key + gateway, then deploy `MuonSignatureVerifier` (see [Read Muon Config](#read-muon-config-from-v084-diamond) and [Deploy SignatureVerifier](#deploy-signatureverifier)). The EOA path seeds the verifier automatically from `muonPublicKeys`/`muonGatewaySigners` in config.
 
 **Single script:**
 
@@ -397,6 +404,25 @@ Output:
 
 The steps below can be used individually (e.g. for Safe path, or if you need more control over the EOA upgrade process).
 
+## Read Muon Config from v0.8.4 Diamond
+
+**Run before anything else** to capture the TSS public key and gateway signer from the live v0.8.4 diamond:
+
+```bash
+DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/readMuonConfig.ts --network <network>
+```
+
+Reads `getMuonIds()` (public key, gateway, appId) and `getMuonConfig()` (validity times). The `muonAppId`, `upnlValidTime`, and `priceValidTime` persist in diamond storage across the upgrade -- they are output for reference only. The public key and gateway are what must be seeded onto the new external verifier.
+
+Add the output to `upgrade.json` -> `newV085Parameters`:
+
+```json
+"muonPublicKeys": [{ "x": "123...", "parity": 1 }],
+"muonGatewaySigners": ["0x..."]
+```
+
+Output: `scripts/upgrade/output/muon-config.json`
+
 ## Deploy SignatureVerifier
 
 **Required when upgrading from v0.8.4.** In v0.8.4, Muon signature verification was inline in the diamond via `LibMuon`. In v0.8.5, it is refactored into an external `MuonSignatureVerifier` contract (`contracts/helpers/verification/SymmioSignatureVerifier.sol`) that must be deployed separately.
@@ -409,8 +435,8 @@ npx hardhat deploy:signatureVerifier --admin <admin-address> --network <network>
 
 After deployment:
 1. Note the deployed address
-2. Configure Muon TSS public keys and gateway signers on the new contract (via the admin)
-3. Set the address in `upgrade.json` -> `newV085Parameters.signatureVerifierAddress`
+2. Set the address in `upgrade.json` -> `newV085Parameters.signatureVerifierAddress`
+3. TSS public keys and gateway signers are seeded automatically by the upgrade scripts (from `muonPublicKeys` and `muonGatewaySigners` in config). The Safe must have `SETTER_ROLE` on the verifier.
 
 If upgrading a chain that already runs v0.8.5 (or where the verifier was deployed previously), skip this step and use the existing verifier address.
 
@@ -722,6 +748,8 @@ These parameters **only exist in v0.8.5** (not in v0.8.4 storage). After `diamon
 |-----------|------|-----------------|
 | `maxPartyAConnectionLimit` | number | **REQUIRED** -- max PartyBs a PartyA can connect to. Migration fails if 0. Typical value: `5` |
 | `signatureVerifierAddress` | address | **SignatureVerifier** contract address -- the Muon oracle signature verification contract from your deployment |
+| `muonPublicKeys` | array | TSS public keys to seed on the verifier. Each entry: `{ "x": "uint256", "parity": 0|1 }`. Read from the v0.8.4 diamond via `readMuonConfig.ts` |
+| `muonGatewaySigners` | string[] | Gateway signer addresses to seed on the verifier. Read from the v0.8.4 diamond via `readMuonConfig.ts` |
 | `liquidationInsuranceVault` | address | Address that receives liquidation insurance -- typically the **Fees MultiSig** |
 | `maxLiquidationProfitPerPosition` | string (wei) | Max profit kept from liquidation per position. Example: `"1000000000000000000"` = 1 token |
 | `softLiquidationPenaltyCollector` | address | Address that receives soft liquidation penalties -- typically the **Fees MultiSig** |
