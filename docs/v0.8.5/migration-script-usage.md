@@ -221,6 +221,14 @@ npx hardhat run scripts/upgrade/generatePostMigrationBatch.ts --network <network
 
 Generates the final transaction set to unpause the system and optionally enable cross-PartyB mode. No on-chain dependency -- can be generated at any time.
 
+The batch always begins with role revocation before unpausing:
+1. `revokeRole(MIGRATION_ROLE, migrationRunner)`
+2. `revokeRole(SYMBOL_MANAGER_ROLE, migrationRunner)`
+3. `unpauseGlobal()`
+4. `setCrossPartyBModeActivated(true)` + per-PartyB `setCrossPartyB()` (if `partyBs` list is configured)
+
+`migrationRunner` is resolved from env `MIGRATION_RUNNER` → `postMigration.json` → `upgrade.json`.
+
 Config: `scripts/upgrade/config/postMigration.json` (optional, for PartyB list)
 
 Output:
@@ -287,6 +295,7 @@ Phase 5: Migrate (EOA with MIGRATION_ROLE / SYMBOL_MANAGER_ROLE)
 
 Phase 6: Unpause (multisig signs)
   Import post-migration-safe-batch.json into Safe TX Builder
+  -> Revoke MIGRATION_ROLE + SYMBOL_MANAGER_ROLE from migrationRunner
   -> Unpause + optional cross-PartyB activation
 ```
 
