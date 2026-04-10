@@ -123,10 +123,16 @@ Migration input is fetched from the Goldsky stage subgraph, not scanned on-chain
 - `quotes(where: { quoteStatus_in: [0, 1, 2, 4, 5, 6] })` -- quotes needing migration (PENDING, LOCKED, CANCEL_PENDING, OPENED, CLOSE_PENDING, CANCEL_CLOSE_PENDING)
 - `latestAccountBalances(where: { accountType: "PARTY_B", counterParty_not: null })` -- partyB-per-partyA balance entries
 
-**Validation against on-chain:**
+**Validation against on-chain (`validateMigrationInput.ts`):**
 - Boundary check: max subgraph quoteId must not exceed on-chain `getNextQuoteId()` (which returns the last assigned ID)
 - Quote spot-check: random sample of quotes verified against `getQuote()` on-chain (status, partyA, partyB, symbolId)
 - Balance spot-check: random sample of partyB allocated balances verified against `allocatedBalanceOfPartyB()` on-chain
+
+**Edge case validation (`validateMigrationEdgeCases.ts`):** Particularly important on forks where the subgraph indexes the live chain beyond the fork block:
+- Boundary quote: verifies the quote at `lastId` is included if it has a migratable status
+- Fork drift: ensures no quoteIds exceed on-chain `lastId` (the subgraph may have quotes created after the fork block)
+- Gap scan: scans first and last N quotes on-chain, flags active quotes missing from input
+- PartyB completeness: checks for empty `partyAs` arrays and duplicate entries
 
 Default subgraph endpoint: `https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/arbitrum_analytics/stage/gn`
 

@@ -191,11 +191,27 @@ Output:
 
 ### 7. Validate migration input (optional)
 
+Two complementary validation scripts check the migration input against on-chain state. Both are version-agnostic and can run before or after the diamondCut.
+
+**`validateMigrationInput.ts`** -- random spot-checks for broad coverage. Samples N random quotes and partyB balances to verify they exist on-chain with valid data. Good for catching systemic issues (e.g. wrong subgraph endpoint, stale data).
+
 ```bash
 npx hardhat run scripts/upgrade/validateMigrationInput.ts --network <network>
 ```
 
-Spot-checks the migration input against on-chain state. Version-agnostic — can be run before or after the upgrade is applied.
+**`validateMigrationEdgeCases.ts`** -- deterministic checks targeting corner cases that random sampling is unlikely to hit:
+
+- Boundary quote: verifies the quote at `lastId` is included in the input if it has a migratable status
+- Fork drift: ensures no quoteIds in the input exceed on-chain `lastId` (catches stale subgraph data on forks)
+- Gap scan: scans the first and last N quotes on-chain and flags any active quotes missing from the input
+- PartyB completeness: checks for empty `partyAs` arrays and duplicate partyB entries
+- PENDING quotes: samples PENDING quotes to verify they have zero-address partyB as expected
+
+```bash
+npx hardhat run scripts/upgrade/validateMigrationEdgeCases.ts --network <network>
+# Increase gap scan range (default 50 from each end):
+GAP_SCAN_RANGE=200 npx hardhat run scripts/upgrade/validateMigrationEdgeCases.ts --network <network>
+```
 
 ### 7b. Prepare symbol types input (off the critical path)
 
@@ -311,7 +327,8 @@ Phase 4: Execute upgrade (multisig signs, downtime starts)
   Import timelock-execute-safe-batch.json into Safe TX Builder
   -> Applies the diamondCut through the timelock
   prepareMigrationInput.ts           (after pause — subgraph + boundary check, version-agnostic)
-  validateMigrationInput.ts          (optional on-chain spot-check)
+  validateMigrationInput.ts          (optional — random spot-check)
+  validateMigrationEdgeCases.ts      (optional — boundary, fork drift, gap scan)
   Import safe-batch.json into Safe TX Builder
   -> Grants roles, sets parameters, wires peripherals
   -> Verify upgrade & wiring:
@@ -341,6 +358,8 @@ Same as above but skip `generateTimelockBatch.ts` and include the diamondCut dir
 | `verify-all.sh` | After deploy facets + peripherals | Block-explorer source verification of libraries, facets, and peripherals |
 | `verifyDeploy.ts` | After deploy facets | Compare local-compiled bytecode vs deployed core facets (library-link aware) |
 | `verifyPeripheralsDeploy.ts` | After deploy peripherals | Same, for AccountLayer / InstantLayer / SymmioPartyB impl / MuonSignatureVerifier (handles immutables) |
+| `validateMigrationInput.ts` | After `prepareMigrationInput.ts` | Random spot-check of quotes and partyB balances against on-chain |
+| `validateMigrationEdgeCases.ts` | After `prepareMigrationInput.ts` | Deterministic boundary, fork drift, gap scan, and partyB completeness checks |
 | `verifyDiamond.ts` | After `safe-batch.json` is executed | All v0.8.5 facet selectors registered on the diamond |
 | `verifyPeripherals.ts` | After `safe-batch.json` is executed | AccountLayer + InstantLayer roles, hooks, whitelist, templates wired correctly |
 

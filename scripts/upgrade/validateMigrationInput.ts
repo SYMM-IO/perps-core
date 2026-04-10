@@ -116,7 +116,7 @@ async function main() {
 	log.setSteps(3)
 
 	// Step 1: Boundary check
-	let t = log.step("Boundary check (getNextQuoteId)")
+	let t = log.step("Boundary check (lastQuoteId)")
 	const viewFacetQuote = await ethers.getContractAt("contracts/core/facets/ViewFacetQuote/ViewFacetQuote.sol:ViewFacetQuote", DIAMOND_ADDRESS)
 	// getNextQuoteId() returns the LAST assigned quote ID (not next available) — see QuoteStorage.lastId
 	const onChainLastQuoteId = toBigInt(await viewFacetQuote.getNextQuoteId())

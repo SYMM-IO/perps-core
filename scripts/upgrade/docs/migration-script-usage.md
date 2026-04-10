@@ -53,25 +53,47 @@ Output: `scripts/upgrade/output/migration-input.json`
 
 ## Step 1b: Validate Migration Input (optional)
 
-Spot-checks the migration input against on-chain state. Uses raw `eth_call` for `getQuote()` to decode only the fields that exist in both v0.8.4 and v0.8.5 (`quoteStatus`, `partyA`, `partyB`, `symbolId`). **Can run before or after the diamondCut.**
+Two complementary scripts validate the migration input against on-chain state. Both use raw `eth_call` for `getQuote()` to work with v0.8.4 and v0.8.5. **Can run before or after the diamondCut.**
+
+### `validateMigrationInput.ts` -- random spot-checks
+
+Samples N random quotes and partyB balances to verify they exist on-chain. Good for catching systemic issues (wrong subgraph, stale data).
 
 ```bash
 npx hardhat run scripts/upgrade/validateMigrationInput.ts --network mantle
 ```
 
-### What it checks
-
+What it checks:
 - **Boundary**: max input quoteId must not exceed on-chain `getNextQuoteId()` (last assigned ID)
-- **Quote spot-check**: random sample of quotes verified via raw `eth_call` + manual ABI decoding (version-agnostic)
+- **Quote spot-check**: random sample of quotes verified via raw `eth_call` + manual ABI decoding
 - **Balance spot-check**: random sample of partyB allocated balances verified via `allocatedBalanceOfPartyB()`
-
-### Env vars
 
 | Env var | Default | Description |
 |---------|---------|-------------|
 | `DIAMOND_ADDRESS` | from `upgrade.json` | Diamond proxy address |
 | `MIGRATION_INPUT_FILE` | `scripts/upgrade/output/migration-input.json` | Input file to validate |
 | `SPOT_CHECK_COUNT` | `20` | Number of quotes/balances to spot-check |
+
+### `validateMigrationEdgeCases.ts` -- deterministic corner cases
+
+Targets edge cases that random sampling is unlikely to hit. Especially important on fork tests where the subgraph indexes the live chain beyond the fork block.
+
+```bash
+npx hardhat run scripts/upgrade/validateMigrationEdgeCases.ts --network mantle
+```
+
+What it checks:
+- **Boundary quote**: verifies the quote at `lastId` is included if it has a migratable status
+- **Fork drift**: ensures no quoteIds exceed on-chain `lastId`
+- **Gap scan**: scans first and last N quotes on-chain, flags active quotes missing from input
+- **PartyB completeness**: checks for empty `partyAs` arrays and duplicate partyB entries
+- **PENDING quotes**: samples PENDING quotes to verify zero-address partyB
+
+| Env var | Default | Description |
+|---------|---------|-------------|
+| `DIAMOND_ADDRESS` | from `upgrade.json` | Diamond proxy address |
+| `MIGRATION_INPUT_FILE` | `scripts/upgrade/output/migration-input.json` | Input file to validate |
+| `GAP_SCAN_RANGE` | `50` | Number of quotes to scan from each end (head + tail) |
 
 ## Step 2: Run Migration
 

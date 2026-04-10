@@ -94,7 +94,8 @@ POST-DIAMONDCUT (execute via Safe UI)
 PREPARE MIGRATION INPUT (after pause — version-agnostic, can run before or after diamondCut)
 ════════════════════════════════════════════════════════════════════════════════════════════
   prepareMigrationInput.ts       (subgraph + boundary check — version-agnostic)
-  validateMigrationInput.ts      (optional spot-check — also version-agnostic)
+  validateMigrationInput.ts      (optional — random spot-check)
+  validateMigrationEdgeCases.ts  (optional — boundary, fork drift, gap scan)
 
 
 RUN MIGRATION (after diamondCut — requires v0.8.5)
@@ -217,7 +218,8 @@ PREPARE MIGRATION INPUT (after pause — version-agnostic, can run before or aft
         ▼
   migration-input.json
 
-  validateMigrationInput.ts      (optional spot-check — also version-agnostic)
+  validateMigrationInput.ts      (optional — random spot-check)
+  validateMigrationEdgeCases.ts  (optional — boundary, fork drift, gap scan)
 
 
 RUN MIGRATION (after diamondCut — requires v0.8.5)
@@ -535,13 +537,19 @@ Output: `scripts/upgrade/output/migration-input.json`
 
 ## Step 3b: Validate Migration Input (optional)
 
-Spot-checks the migration input against on-chain state. Uses raw `eth_call` for `getQuote()` with manual ABI decoding, so it works on both v0.8.4 and v0.8.5 diamonds.
+Two complementary scripts validate the input. Both use raw `eth_call` and work on v0.8.4 and v0.8.5.
+
+**`validateMigrationInput.ts`** -- random spot-checks quotes and balances for broad coverage:
 
 ```bash
 npx hardhat run scripts/upgrade/validateMigrationInput.ts --network arbitrum
 ```
 
-Output: console report (quote existence checks + balance spot-checks)
+**`validateMigrationEdgeCases.ts`** -- deterministic checks for corner cases (boundary quote at `lastId`, fork drift, gap scan, partyB completeness). Especially important on fork tests:
+
+```bash
+npx hardhat run scripts/upgrade/validateMigrationEdgeCases.ts --network arbitrum
+```
 
 ## Step 4: Run Migration
 

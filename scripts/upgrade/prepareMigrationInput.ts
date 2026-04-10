@@ -300,8 +300,9 @@ async function main() {
 			["Duration", scriptTimer.fmt()],
 		])
 		log.nextSteps([
-			"Run validateMigrationInput.ts to spot-check against on-chain (works on v0.8.4 and v0.8.5)",
-			"Run snapshotBalances.ts (optional) to capture an on-chain balance snapshot for sanity-checking totals",
+			"Run validateMigrationInput.ts to spot-check quotes and balances against on-chain",
+			"Run validateMigrationEdgeCases.ts to verify boundary quote, fork drift, and gaps",
+			"Run snapshotBalances.ts (optional) to capture on-chain balance snapshot",
 			"Run runMigration.ts after the diamondCut is applied",
 		])
 	} catch (error) {
