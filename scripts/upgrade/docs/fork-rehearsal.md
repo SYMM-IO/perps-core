@@ -201,7 +201,6 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 | `chunkSize` | number | `50` | Items per migration transaction (quotes and partyAs) |
 | `dryRun` | boolean | `false` | Log operations without executing |
 | `fork` | boolean | `false` | Impersonate diamond owner instead of using deployer signer |
-| `strict` | boolean | `false` | Stop on any failure |
 | `progressFile` | string | `scripts/upgrade/output/migration-progress.json` | Resume file path |
 | `reportFile` | string | `scripts/upgrade/output/migration-report.json` | Report file path |
 
@@ -214,7 +213,6 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 | `MIGRATE_CHUNK_SIZE` | `chunkSize` |
 | `DRY_RUN` | `dryRun` |
 | `FORK` | `fork` |
-| `MIGRATE_STRICT` | `strict` |
 | `MIGRATION_CONFIG_FILE` | Config file path (default: `scripts/upgrade/config/migrate.json`) |
 
 ## newV085Parameters

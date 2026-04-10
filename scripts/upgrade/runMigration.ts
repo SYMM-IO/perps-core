@@ -72,7 +72,6 @@ type MigrationConfigFile = {
 	progressFile?: string
 	reportFile?: string
 	outputDir?: string
-	strict?: boolean
 }
 
 const MIGRATION_CONFIG_FILE = process.env.MIGRATION_CONFIG_FILE ?? "./scripts/upgrade/config/migrate.json"
@@ -349,7 +348,6 @@ const MIGRATION_CONFIG: MigrationConfig = {
 	chunkSize: Number(process.env.MIGRATE_CHUNK_SIZE ?? configFile.chunkSize ?? "50"),
 	dryRun: parseBool(process.env.DRY_RUN, configFile.dryRun ?? false),
 	progressFile: migrateProgressFile,
-	strict: parseBool(process.env.MIGRATE_STRICT, configFile.strict ?? false),
 }
 
 async function main() {
@@ -366,7 +364,6 @@ async function main() {
 		config: {
 			chunkSize: MIGRATION_CONFIG.chunkSize,
 			dryRun: MIGRATION_CONFIG.dryRun,
-			strict: MIGRATION_CONFIG.strict,
 		},
 		steps: [],
 	}

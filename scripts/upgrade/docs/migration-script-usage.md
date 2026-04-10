@@ -123,7 +123,6 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 | `progressFile` | `scripts/upgrade/output/migration-progress.json` | Resume file path |
 | `reportFile` | `scripts/upgrade/output/migration-report.json` | Report file path |
 | `outputDir` | `scripts/upgrade/output` | Output directory |
-| `strict` | `false` | Stop immediately on any failure |
 
 ### Env var overrides
 
@@ -137,7 +136,6 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 | `MIGRATE_PROGRESS_FILE` | `progressFile` |
 | `MIGRATE_REPORT_FILE` | `reportFile` |
 | `MIGRATION_OUTPUT_DIR` | `outputDir` |
-| `MIGRATE_STRICT` | `strict` |
 
 ## Low-Level API (`scripts/upgrade/migrate.ts`)
 
@@ -171,7 +169,6 @@ const report = await migrate(migrationFacet, input, {
 | `retryBackoffMultiplier` | 2 | Exponential backoff multiplier |
 | `confirmations` | 1 | Block confirmations to wait |
 | `progressFile` | `./migration-progress.json` | Progress file path (null to disable) |
-| `strict` | false | Throw error on any failure |
 | `dryRun` | false | Log without executing transactions |
 
 ## Resume After Failure
@@ -251,9 +248,6 @@ Quote migration calls `addConnection()` which checks `maxPartyAConnectionLimit`.
 
 ### Stuck migration
 Delete the progress file (`scripts/upgrade/output/migration-progress.json`) to start fresh. Already-migrated items will be skipped via on-chain checks.
-
-### Strict mode
-Use `strict: true` in config (or `MIGRATE_STRICT=true` env var) to stop immediately on any failure instead of continuing.
 
 ### Subgraph validation fails
 The subgraph may not be synced to the current block. Check the spot-check error message -- it tells you which field mismatched and whether the subgraph is stale.

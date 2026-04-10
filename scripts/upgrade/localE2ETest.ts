@@ -287,7 +287,6 @@ async function main() {
 		const report = await migrate(migrationFacet as any, migrationInput, {
 			chunkSize: 50,
 			progressFile: null, // no file I/O
-			strict: true,
 		})
 		if (report.status !== "success") throw new Error(`Migration status: ${report.status}`)
 		console.log(`    quotes migrated: ${report.quotesMigrated}/${report.quotesTotal}`)
