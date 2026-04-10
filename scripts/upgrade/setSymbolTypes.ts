@@ -63,7 +63,20 @@ async function main() {
 
 	await verifyRpc()
 
-	const signer = await ethers.provider.getSigner()
+	const migratorAddress = shared.migrationRunner
+	let signer
+	if (migratorAddress) {
+		const signers = await ethers.getSigners()
+		for (const s of signers) {
+			if ((await s.getAddress()).toLowerCase() === migratorAddress.toLowerCase()) {
+				signer = s
+				break
+			}
+		}
+		if (!signer) throw new Error(`No signer found for migrationRunner ${migratorAddress}. Add TEAM_MIGRATOR to the Hardhat keystore.`)
+	} else {
+		signer = await ethers.provider.getSigner()
+	}
 	log.info(`Signer: ${await signer.getAddress()}`)
 
 	const diamond = await ethers.getContractAt(

@@ -285,7 +285,12 @@ TIMELINE
 
 - Deployment info for the target network (see [Address Mapping](#address-mapping) below)
 - Subgraph endpoint synced to current chain state (for migration)
-- `.env` with deployer private key (`TEAM_DEPLOYER`) and optional RPC override (`RPC_<NETWORK>`)
+- Hardhat keystore with two private keys and optional RPC override (`RPC_<NETWORK>`):
+  ```bash
+  npx hardhat keystore set TEAM_DEPLOYER          # protocolAdmin / diamond owner key
+  npx hardhat keystore set TEAM_MIGRATOR            # migrationRunner key (MIGRATION_ROLE)
+  ```
+  Scripts auto-select the correct signer by matching the address from `upgrade.json` (`protocolAdmin` / `migrationRunner`) against available signers. No env var switching needed.
 - Config files:
   ```bash
   cp scripts/upgrade/config/samples/upgrade.sample.json scripts/upgrade/config/upgrade.json

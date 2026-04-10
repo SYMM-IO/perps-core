@@ -414,7 +414,7 @@ async function main() {
 
 		log.header("Symmio v0.8.5 Migration")
 
-		// Resolve signer — fork: impersonate diamond owner, production: use deployer (must have MIGRATION_ROLE)
+		// Resolve signer — fork: impersonate diamond owner, production: find migrator signer (must have MIGRATION_ROLE)
 		currentStep = "resolve_signer"
 		const isFork = parseBool(process.env.FORK, configFile.fork ?? false)
 		let admin
@@ -422,7 +422,18 @@ async function main() {
 			admin = await getImpersonatedAdmin(DIAMOND_ADDRESS)
 		} else {
 			const signers = await ethers.getSigners()
-			admin = signers[0]
+			const migratorAddress = upgradeShared.migrationRunner
+			if (migratorAddress) {
+				for (const s of signers) {
+					if ((await s.getAddress()).toLowerCase() === migratorAddress.toLowerCase()) {
+						admin = s
+						break
+					}
+				}
+				if (!admin) throw new Error(`No signer found for migrationRunner ${migratorAddress}. Add TEAM_MIGRATOR to the Hardhat keystore.`)
+			} else {
+				admin = signers[0]
+			}
 		}
 		const adminAddress = await admin.getAddress()
 		report.protocolAdmin = adminAddress

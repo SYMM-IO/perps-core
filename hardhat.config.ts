@@ -11,14 +11,15 @@ const dotenvConfigPath = process.env.DOTENV_CONFIG_PATH || "./.env"
 dotenvConfig({ path: resolve(process.cwd(), dotenvConfigPath) })
 
 const DUMMY_PRIVATE_KEY = "0xec81e00837948239d5927bcb2b785675552bc92f1d2607ee91c540ddb56d6796"
-const privateKey = (configVariable("TEAM_DEPLOYER") as any) || DUMMY_PRIVATE_KEY
+const protocolAdminKey = (configVariable("TEAM_DEPLOYER") as any) || DUMMY_PRIVATE_KEY
+const migratorKey = configVariable("TEAM_MIGRATOR") as any
 const etherscanApiKey = (configVariable("ETHERSCAN_APIKEY") as any) || ""
 
 const createNetworkConfig = (network: string, defaultUrl: string) =>
 	({
 		type: "http",
 		url: (configVariable(`RPC_${network.toUpperCase()}`) as any) || defaultUrl,
-		accounts: [privateKey],
+		accounts: [protocolAdminKey, migratorKey].filter(Boolean),
 	}) as {
 		type: "http"
 		url: string

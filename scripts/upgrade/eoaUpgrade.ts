@@ -91,7 +91,20 @@ async function main() {
 	// Step 3: Pause system
 	t = log.step("Pause system")
 	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", DIAMOND_ADDRESS)
-	const signer = await ethers.provider.getSigner()
+	let signer
+	const protocolAdminAddress = config.protocolAdmin
+	if (protocolAdminAddress) {
+		const signers = await ethers.getSigners()
+		for (const s of signers) {
+			if ((await s.getAddress()).toLowerCase() === protocolAdminAddress.toLowerCase()) {
+				signer = s
+				break
+			}
+		}
+		if (!signer) throw new Error(`No signer found for protocolAdmin ${protocolAdminAddress}. Add TEAM_DEPLOYER to the Hardhat keystore.`)
+	} else {
+		signer = await ethers.provider.getSigner()
+	}
 	const signerAddress = await signer.getAddress()
 	await (await controlFacet.setAdmin(signerAddress)).wait()
 	log.ok("Admin set")
