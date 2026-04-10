@@ -91,8 +91,8 @@ POST-DIAMONDCUT (execute via Safe UI)
       before executing. Grant via current PartyB admin.
 
 
-PREPARE MIGRATION INPUT (right after pause, before diamondCut)
-══════════════════════════════════════════════════════════════
+PREPARE MIGRATION INPUT (after pause — version-agnostic, can run before or after diamondCut)
+════════════════════════════════════════════════════════════════════════════════════════════
   prepareMigrationInput.ts       (subgraph + boundary check — version-agnostic)
   validateMigrationInput.ts      (optional spot-check — also version-agnostic)
 
@@ -210,8 +210,8 @@ VERIFY
   verifyPeripherals.ts
 
 
-PREPARE MIGRATION INPUT (right after pause, before diamondCut)
-══════════════════════════════════════════════════════════════
+PREPARE MIGRATION INPUT (after pause — version-agnostic, can run before or after diamondCut)
+════════════════════════════════════════════════════════════════════════════════════════════
   prepareMigrationInput.ts       (subgraph + boundary check — version-agnostic)
         │
         ▼
@@ -518,7 +518,7 @@ Uses a deterministic salt derived from chain ID + diamond address + version stri
 
 ## Step 3: Prepare Migration Input
 
-Fetches subgraph data and builds the migration input file. **Can run before or after the diamondCut** — uses only version-agnostic on-chain calls (`getNextQuoteId`). Run it early (e.g. right after pausing) to minimize downtime.
+Fetches subgraph data and builds the migration input file. **Can run before or after the diamondCut** — uses only version-agnostic on-chain calls (`getNextQuoteId`, which returns the last assigned ID). Run it early (e.g. right after pausing) to minimize downtime.
 
 ```bash
 npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network arbitrum
@@ -527,7 +527,7 @@ npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network arbitrum
 What it does:
 - Fetches all open quotes from the subgraph
 - Fetches all PartyB-per-PartyA balance entries from the subgraph
-- Validates boundary against on-chain `getNextQuoteId()`
+- Validates boundary against on-chain `getNextQuoteId()` (returns last assigned ID, not next available)
 - Computes expected aggregated positions for post-migration verification
 - Writes JSON input file
 

@@ -182,7 +182,7 @@ npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network <network>
 Critical-path script: kept short and reliable so it can run during the pause window. Four steps:
 1. Fetch open quotes from subgraph
 2. Fetch PartyB balances from subgraph
-3. Validate boundary against on-chain `getNextQuoteId()`
+3. Validate boundary against on-chain `getNextQuoteId()` (returns last assigned ID, not next available)
 4. Build the migration input file
 
 Output:
@@ -308,10 +308,10 @@ Phase 3: Wait
 Phase 4: Execute upgrade (multisig signs, downtime starts)
   Import pause-safe-batch.json into Safe TX Builder
   -> Grants PAUSER/UNPAUSER, calls pauseGlobal()  <-- DOWNTIME STARTS
-  prepareMigrationInput.ts           (after pause, before diamondCut — subgraph + boundary check)
-  validateMigrationInput.ts          (optional on-chain spot-check)
   Import timelock-execute-safe-batch.json into Safe TX Builder
   -> Applies the diamondCut through the timelock
+  prepareMigrationInput.ts           (after pause — subgraph + boundary check, version-agnostic)
+  validateMigrationInput.ts          (optional on-chain spot-check)
   Import safe-batch.json into Safe TX Builder
   -> Grants roles, sets parameters, wires peripherals
   -> Verify upgrade & wiring:
@@ -400,4 +400,4 @@ Runs the full upgrade and migration pipeline against the in-process Hardhat netw
 
 **Self-upgrade note:** Because Hardhat's `deployDiamond` already deploys a full v0.8.5 system, the diamond cut produces all-Replace actions (same selectors, fresh contract addresses). This still exercises the full cut mechanism and all migration logic.
 
-**Known quirk:** `ViewFacetQuote.getNextQuoteId()` returns the **last assigned** quote ID, not the next available one. The test builds migration input with `for id = 1 to lastId` (inclusive) to avoid missing the highest ID.
+**Note:** `ViewFacetQuote.getNextQuoteId()` returns the **last assigned** quote ID, not the next available one. Both the test and `prepareMigrationInput.ts` use inclusive bounds (`<= lastId`) to avoid missing the highest ID.

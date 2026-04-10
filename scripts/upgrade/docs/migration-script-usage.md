@@ -35,7 +35,7 @@ Key features:
 
 ## Step 1: Prepare Migration Input
 
-Fetches data from the subgraph, validates the boundary against on-chain `getNextQuoteId()`, and writes a JSON file. **Can run before or after the diamondCut** — no v0.8.5-specific ABIs are used.
+Fetches data from the subgraph, validates the boundary against on-chain `getNextQuoteId()` (which returns the last assigned ID, not next available), and writes a JSON file. **Can run before or after the diamondCut** — no v0.8.5-specific ABIs are used.
 
 ```bash
 npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network mantle
@@ -61,7 +61,7 @@ npx hardhat run scripts/upgrade/validateMigrationInput.ts --network mantle
 
 ### What it checks
 
-- **Boundary**: on-chain `getNextQuoteId()` must exceed the max input quoteId
+- **Boundary**: max input quoteId must not exceed on-chain `getNextQuoteId()` (last assigned ID)
 - **Quote spot-check**: random sample of quotes verified via raw `eth_call` + manual ABI decoding (version-agnostic)
 - **Balance spot-check**: random sample of partyB allocated balances verified via `allocatedBalanceOfPartyB()`
 

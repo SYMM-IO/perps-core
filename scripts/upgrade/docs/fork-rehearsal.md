@@ -124,7 +124,7 @@ Migration input is fetched from the Goldsky stage subgraph, not scanned on-chain
 - `latestAccountBalances(where: { accountType: "PARTY_B", counterParty_not: null })` -- partyB-per-partyA balance entries
 
 **Validation against on-chain:**
-- Boundary check: on-chain `getNextQuoteId()` must exceed the max subgraph quoteId
+- Boundary check: max subgraph quoteId must not exceed on-chain `getNextQuoteId()` (which returns the last assigned ID)
 - Quote spot-check: random sample of quotes verified against `getQuote()` on-chain (status, partyA, partyB, symbolId)
 - Balance spot-check: random sample of partyB allocated balances verified against `allocatedBalanceOfPartyB()` on-chain
 

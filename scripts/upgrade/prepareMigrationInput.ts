@@ -189,25 +189,28 @@ async function main() {
 		t = log.step("Validate boundary against on-chain")
 		currentStep = "validate_boundary"
 		const viewFacetQuote = await ethers.getContractAt("contracts/core/facets/ViewFacetQuote/ViewFacetQuote.sol:ViewFacetQuote", DIAMOND_ADDRESS)
-		const onChainNextQuoteId = toBigInt(await viewFacetQuote.getNextQuoteId())
+		// getNextQuoteId() returns the LAST assigned quote ID (not next available) — see QuoteStorage.lastId
+		const onChainLastQuoteId = toBigInt(await viewFacetQuote.getNextQuoteId())
 		const maxSubgraphQuoteId = quotesResult.quotes.reduce((max, q) => {
 			const id = BigInt(q.quoteId)
 			return id > max ? id : max
 		}, 0n)
 
-		if (maxSubgraphQuoteId >= onChainNextQuoteId) {
+		if (maxSubgraphQuoteId > onChainLastQuoteId) {
 			const before = quotesResult.quotes.length
-			quotesResult.quotes = quotesResult.quotes.filter(q => BigInt(q.quoteId) < onChainNextQuoteId)
+			quotesResult.quotes = quotesResult.quotes.filter(q => BigInt(q.quoteId) <= onChainLastQuoteId)
 			const dropped = before - quotesResult.quotes.length
-			log.warn(`Subgraph ahead of on-chain (max=${maxSubgraphQuoteId}, nextQuoteId=${onChainNextQuoteId}). Filtered ${dropped} quotes.`)
+			log.warn(
+				`Subgraph has quotes beyond on-chain lastId (max=${maxSubgraphQuoteId}, lastId=${onChainLastQuoteId}). Likely a fork — filtered ${dropped} quotes.`,
+			)
 		} else {
-			log.ok(`Boundary check passed — on-chain nextQuoteId=${onChainNextQuoteId}, subgraph max=${maxSubgraphQuoteId}`)
+			log.ok(`Boundary check passed — on-chain lastQuoteId=${onChainLastQuoteId}, subgraph max=${maxSubgraphQuoteId}`)
 		}
 		report.steps.push({
 			name: "validate_boundary",
 			status: "ok",
 			details: {
-				onChainNextQuoteId: onChainNextQuoteId.toString(),
+				onChainLastQuoteId: onChainLastQuoteId.toString(),
 				maxSubgraphQuoteId: maxSubgraphQuoteId.toString(),
 			},
 		})
@@ -261,7 +264,7 @@ async function main() {
 			diamondAddress: DIAMOND_ADDRESS,
 			subgraphEndpoint: SUBGRAPH_ENDPOINT,
 			validation: {
-				onChainNextQuoteId: onChainNextQuoteId.toString(),
+				onChainLastQuoteId: onChainLastQuoteId.toString(),
 				maxSubgraphQuoteId: maxSubgraphQuoteId.toString(),
 			},
 			quoteIds,
