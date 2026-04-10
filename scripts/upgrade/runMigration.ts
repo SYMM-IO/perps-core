@@ -69,6 +69,7 @@ type MigrationConfigFile = {
 	chunkSize?: number
 	dryRun?: boolean
 	fork?: boolean
+	skipPreCheck?: boolean
 	progressFile?: string
 	reportFile?: string
 	outputDir?: string
@@ -218,10 +219,14 @@ function loadMigrationInput(filePath: string): {
 	}
 }
 
+// Statuses that migrateQuotes processes and marks as migrated
+const MIGRATABLE_STATUSES = new Set([0, 1, 2, 4, 5, 6])
+
 export async function verifyMigration(
 	migrationFacet: any,
 	viewFacet: any,
 	viewFacetAggregate: any,
+	viewFacetQuote: any,
 	openQuoteIds: bigint[],
 	partyBTasks: PartyBTask[],
 	expectedAggregates: Map<string, { long: bigint; short: bigint }> | null,
@@ -229,7 +234,13 @@ export async function verifyMigration(
 	for (const quoteId of openQuoteIds) {
 		const migrated = await migrationFacet.isQuoteMigrated(quoteId)
 		if (!migrated) {
-			throw new Error(`Quote ${quoteId.toString()} not migrated`)
+			// Check on-chain status — the contract skips non-migratable statuses (CANCELED, CLOSED, etc.)
+			const quote = await viewFacetQuote.getQuote(quoteId)
+			const status = Number(quote.quoteStatus)
+			if (!MIGRATABLE_STATUSES.has(status)) {
+				continue // correctly skipped by contract
+			}
+			throw new Error(`Quote ${quoteId.toString()} not migrated (status=${status})`)
 		}
 	}
 
@@ -347,6 +358,7 @@ if (path.resolve(migrateReportFile) === path.resolve(migrateProgressFile)) {
 const MIGRATION_CONFIG: MigrationConfig = {
 	chunkSize: Number(process.env.MIGRATE_CHUNK_SIZE ?? configFile.chunkSize ?? "50"),
 	dryRun: parseBool(process.env.DRY_RUN, configFile.dryRun ?? false),
+	skipPreCheck: parseBool(process.env.SKIP_PRE_CHECK, configFile.skipPreCheck ?? false),
 	progressFile: migrateProgressFile,
 }
 
@@ -436,12 +448,17 @@ async function main() {
 		currentStep = "connect_facets"
 		const migrationFacet = await ethers.getContractAt("contracts/core/facets/Migration/MigrationFacet.sol:MigrationFacet", DIAMOND_ADDRESS, admin)
 		const viewFacet = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", DIAMOND_ADDRESS, admin)
+		const viewFacetQuote = await ethers.getContractAt(
+			"contracts/core/facets/ViewFacetQuote/ViewFacetQuote.sol:ViewFacetQuote",
+			DIAMOND_ADDRESS,
+			admin,
+		)
 		const viewFacetAggregate = await ethers.getContractAt(
 			"contracts/core/facets/ViewFacetAggregate/ViewFacetAggregate.sol:ViewFacetAggregate",
 			DIAMOND_ADDRESS,
 			admin,
 		)
-		log.ok("MigrationFacet, ViewFacet, ViewFacetAggregate connected")
+		log.ok("MigrationFacet, ViewFacet, ViewFacetQuote, ViewFacetAggregate connected")
 		report.steps.push({ name: "connect_facets", status: "ok" })
 		currentStep = null
 		tryWriteReport(migrateReportFile, report)
@@ -483,7 +500,7 @@ async function main() {
 		} else {
 			currentStep = "migrate"
 			log.info(`Migrating ${log.commaNumber(input.quoteIds.length)} quotes across ${input.partyBTasks.length} partyBs...`)
-			const migrationReport = await migrate(migrationFacet, input, MIGRATION_CONFIG)
+			const migrationReport = await migrate(migrationFacet, viewFacetQuote, input, MIGRATION_CONFIG)
 			report.migrationReport = migrationReport
 			report.steps.push({
 				name: "migrate",
@@ -507,7 +524,7 @@ async function main() {
 			log.info(
 				`Verifying ${log.commaNumber(input.quoteIds.length)} quotes, ${input.partyBTasks.length} partyBs, ${log.commaNumber(expectedAggregates?.size ?? 0)} aggregates...`,
 			)
-			await verifyMigration(migrationFacet, viewFacet, viewFacetAggregate, input.quoteIds, input.partyBTasks, expectedAggregates)
+			await verifyMigration(migrationFacet, viewFacet, viewFacetAggregate, viewFacetQuote, input.quoteIds, input.partyBTasks, expectedAggregates)
 			log.ok("All migration checks passed")
 			report.verification = {
 				performed: true,

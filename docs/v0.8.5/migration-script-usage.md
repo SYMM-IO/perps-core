@@ -243,7 +243,13 @@ Output: `output/balance-snapshot.json`
 npx hardhat run scripts/upgrade/runMigration.ts --network <network>
 ```
 
-Executes `migrateQuotes()` and `migrateCrossLockedValues()` on the paused diamond. Requires `MIGRATION_ROLE`. Resume-safe via progress file.
+Executes `migrateQuotes()` and `migrateCrossLockedValues()` on the paused diamond. Requires `MIGRATION_ROLE`. Resume-safe via progress file. Any failure halts execution immediately -- no silent skipping.
+
+After migration, the script runs built-in verification:
+- Checks `isQuoteMigrated()` for every quoteId. Quotes with non-migratable on-chain status (CANCELED, CLOSED, LIQUIDATED, EXPIRED) are skipped -- the contract correctly ignores them and the verifier matches this behavior.
+- Checks `isCrossLockedValuesMigrated()` for every partyB-partyA pair
+- Verifies cross locked values sum matches per-partyA values
+- Verifies aggregated positions match expected amounts from the input
 
 Output: `output/migration-report.json`
 

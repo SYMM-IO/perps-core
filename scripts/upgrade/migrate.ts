@@ -14,6 +14,7 @@ const DEFAULT_CONFIG: Required<MigrationConfig> = {
 	retryBackoffMultiplier: 2,
 	confirmations: 1,
 	progressFile: "./migration-progress.json",
+	skipPreCheck: false,
 	dryRun: false,
 }
 
@@ -34,6 +35,8 @@ export interface MigrationConfig {
 	confirmations?: number
 	/** File path for saving progress (enables resume) */
 	progressFile?: string | null
+	/** Skip pre-flight on-chain checks for already-migrated items (faster, may send no-op transactions) */
+	skipPreCheck?: boolean
 	/** Dry run mode - log operations without executing */
 	dryRun?: boolean
 }
@@ -87,7 +90,12 @@ export interface MigrationReport {
 // Main Migration Function
 // =============================================================================
 
-export async function migrate(migrationFacet: MigrationFacet, input: MigrationInput, config: MigrationConfig = {}): Promise<MigrationReport> {
+export async function migrate(
+	migrationFacet: MigrationFacet,
+	viewFacetQuote: { getQuote(quoteId: bigint): Promise<{ quoteStatus: bigint; partyA: string }> },
+	input: MigrationInput,
+	config: MigrationConfig = {},
+): Promise<MigrationReport> {
 	const cfg = { ...DEFAULT_CONFIG, ...config }
 	const startTime = Date.now()
 	const startedAt = new Date().toISOString()
@@ -144,7 +152,33 @@ export async function migrate(migrationFacet: MigrationFacet, input: MigrationIn
 			if (progress.phase === "quotes") {
 				logHeader("Phase 1: Migrating Quotes")
 
-				const quoteChunks = chunkArray(input.quoteIds, cfg.chunkSize)
+				let quotesToMigrate = input.quoteIds
+				if (!cfg.skipPreCheck) {
+					// Filter out already-migrated and non-migratable quotes to avoid no-op transactions.
+					// Non-migratable statuses (CANCELED=3, CLOSED=7, LIQUIDATED=8, EXPIRED=9, LIQUIDATED_PENDING=10)
+					// are correctly skipped by the contract — no need to send them.
+					const MIGRATABLE = new Set([0, 1, 2, 4, 5, 6])
+					const pending: bigint[] = []
+					let alreadyMigrated = 0
+					let nonMigratable = 0
+					for (const quoteId of input.quoteIds) {
+						const migrated: boolean = await migrationFacet.isQuoteMigrated(quoteId)
+						if (migrated) {
+							alreadyMigrated++
+						} else {
+							const quote = await viewFacetQuote.getQuote(quoteId)
+							if (MIGRATABLE.has(Number(quote.quoteStatus))) {
+								pending.push(quoteId)
+							} else {
+								nonMigratable++
+							}
+						}
+					}
+					log("info", `  ${alreadyMigrated} already migrated, ${nonMigratable} non-migratable, ${pending.length} remaining`)
+					quotesToMigrate = pending
+				}
+
+				const quoteChunks = chunkArray(quotesToMigrate, cfg.chunkSize)
 				const startChunk = progress.lastProcessedQuoteChunk + 1
 
 				for (let i = startChunk; i < quoteChunks.length; i++) {
@@ -193,15 +227,33 @@ export async function migrate(migrationFacet: MigrationFacet, input: MigrationIn
 				const partyAs = deduplicateAddresses(task.partyAs)
 
 				log("info", `\nProcessing PartyB ${i + 1}/${input.partyBTasks.length}: ${formatAddress(partyB)}`)
-				log("info", `  PartyAs to process: ${partyAs.length}`)
 				partyAsTotal += partyAs.length
 
-				// No pre-check skip — the contract is idempotent (skips already-migrated pairs internally).
-				// A first-partyA-only check is unsafe: if the first partyA was migrated but others weren't,
-				// the whole partyB would be incorrectly skipped.
+				let partyAsToMigrate = partyAs
+				if (!cfg.skipPreCheck) {
+					// Filter out already-migrated partyAs to avoid no-op transactions
+					const pending: string[] = []
+					for (const partyA of partyAs) {
+						const migrated: boolean = await migrationFacet.isCrossLockedValuesMigrated(partyB, partyA)
+						if (!migrated) pending.push(partyA)
+					}
+					log("info", `  PartyAs: ${partyAs.length - pending.length} already migrated, ${pending.length} remaining`)
+
+					if (pending.length === 0) {
+						partyBsMigrated++
+						progress.partyBsProcessed = partyBsMigrated
+						progress.lastProcessedPartyB = i
+						progress.lastProcessedPartyAChunk = -1
+						saveProgress(cfg.progressFile, progress)
+						continue
+					}
+					partyAsToMigrate = pending
+				} else {
+					log("info", `  PartyAs to process: ${partyAs.length}`)
+				}
 
 				// Chunk partyAs to avoid gas/compute limits
-				const partyAChunks = chunkArray(partyAs, cfg.chunkSize)
+				const partyAChunks = chunkArray(partyAsToMigrate, cfg.chunkSize)
 
 				// Resume from last successful partyA chunk if resuming the same partyB
 				const startPartyAChunk = i === startPartyB ? progress.lastProcessedPartyAChunk + 1 : 0

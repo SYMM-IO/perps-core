@@ -97,7 +97,13 @@ What it checks:
 
 ## Step 2: Run Migration
 
-Takes the validated input file and runs migration + verification.
+Takes the validated input file and runs migration + verification. Any failure halts immediately. The migration report is always printed before exiting, even on failure.
+
+Built-in verification (step 4/4) checks:
+- `isQuoteMigrated()` for every quoteId — quotes with non-migratable on-chain status (CANCELED, CLOSED, etc.) are skipped, matching the contract's behavior
+- `isCrossLockedValuesMigrated()` for every partyB-partyA pair
+- Cross locked values sum matches per-partyA values
+- Aggregated positions match expected amounts from the input
 
 ```bash
 DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
@@ -120,6 +126,7 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 | `chunkSize` | `50` | Items per migration transaction (quotes and partyAs) |
 | `dryRun` | `false` | Log operations without executing |
 | `fork` | `false` | Impersonate diamond owner instead of using deployer signer |
+| `skipPreCheck` | `false` | Skip on-chain pre-flight checks for already-migrated items (faster, may send no-op transactions) |
 | `progressFile` | `scripts/upgrade/output/migration-progress.json` | Resume file path |
 | `reportFile` | `scripts/upgrade/output/migration-report.json` | Report file path |
 | `outputDir` | `scripts/upgrade/output` | Output directory |
@@ -133,6 +140,7 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 | `MIGRATE_CHUNK_SIZE` | `chunkSize` |
 | `DRY_RUN` | `dryRun` |
 | `FORK` | `fork` |
+| `SKIP_PRE_CHECK` | `skipPreCheck` |
 | `MIGRATE_PROGRESS_FILE` | `progressFile` |
 | `MIGRATE_REPORT_FILE` | `reportFile` |
 | `MIGRATION_OUTPUT_DIR` | `outputDir` |
@@ -152,7 +160,7 @@ const input: MigrationInput = {
     ]
 }
 
-const report = await migrate(migrationFacet, input, {
+const report = await migrate(migrationFacet, viewFacetQuote, input, {
     chunkSize: 50,
     maxRetries: 3,
     confirmations: 1,
@@ -169,6 +177,7 @@ const report = await migrate(migrationFacet, input, {
 | `retryBackoffMultiplier` | 2 | Exponential backoff multiplier |
 | `confirmations` | 1 | Block confirmations to wait |
 | `progressFile` | `./migration-progress.json` | Progress file path (null to disable) |
+| `skipPreCheck` | false | Skip on-chain pre-flight checks (faster, contract handles idempotency) |
 | `dryRun` | false | Log without executing transactions |
 
 ## Resume After Failure

@@ -1,16 +1,33 @@
 import { ethers } from "../../test/helpers/hardhat-connection.js"
 
+const STATUS_NAMES: Record<number, string> = {
+	0: "PENDING",
+	1: "LOCKED",
+	2: "CANCEL_PENDING",
+	3: "CANCELED",
+	4: "OPENED",
+	5: "CLOSE_PENDING",
+	6: "CANCEL_CLOSE_PENDING",
+	7: "CLOSED",
+	8: "LIQUIDATED",
+	9: "EXPIRED",
+	10: "LIQUIDATED_PENDING",
+}
+
 const diamond = "0x2Ecc7da3Cc98d341F987C85c3D9FC198570838B5"
-const migrationRunner = "0x3d3829fC319B918ed0A26D7e2f59E7E629eE8F3A"
-const MIGRATION_ROLE = ethers.id("MIGRATION_ROLE")
 
 async function main() {
-	const viewFacet = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", diamond)
-	const hasRole = await viewFacet.hasRole(migrationRunner, MIGRATION_ROLE)
-	console.log(`MIGRATION_ROLE for ${migrationRunner}: ${hasRole}`)
+	const viewFacetQuote = await ethers.getContractAt("contracts/core/facets/ViewFacetQuote/ViewFacetQuote.sol:ViewFacetQuote", diamond)
+	const quote = await viewFacetQuote.getQuote(6438)
+	console.log(`Quote 6438:`)
+	console.log(`  status: ${quote.quoteStatus} (${STATUS_NAMES[Number(quote.quoteStatus)] ?? "UNKNOWN"})`)
+	console.log(`  partyA: ${quote.partyA}`)
+	console.log(`  partyB: ${quote.partyB}`)
+	console.log(`  symbolId: ${quote.symbolId}`)
 
-	const [globalPaused] = await (viewFacet as any).pauseState()
-	console.log(`Global paused: ${globalPaused}`)
+	const migrationFacet = await ethers.getContractAt("contracts/core/facets/Migration/MigrationFacet.sol:MigrationFacet", diamond)
+	const isMigrated = await migrationFacet.isQuoteMigrated(6438)
+	console.log(`  migrated: ${isMigrated}`)
 }
 
 main().catch(console.error)

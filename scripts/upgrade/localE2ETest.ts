@@ -284,7 +284,8 @@ async function main() {
 
 	await check("migrate() completes with status=success", async () => {
 		const migrationFacet = await ethers.getContractAt("MigrationFacet", diamondAddress, admin)
-		const report = await migrate(migrationFacet as any, migrationInput, {
+		const viewFacetQuoteLocal = await ethers.getContractAt("ViewFacetQuote", diamondAddress)
+		const report = await migrate(migrationFacet as any, viewFacetQuoteLocal as any, migrationInput, {
 			chunkSize: 50,
 			progressFile: null, // no file I/O
 		})

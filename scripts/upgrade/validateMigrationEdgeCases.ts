@@ -126,7 +126,7 @@ async function main() {
 
 	let failures = 0
 
-	log.setSteps(5)
+	log.setSteps(6)
 
 	// ── Check 1: Boundary quote ─────────────────────────────────────
 	let t = log.step("Boundary quote (lastId)")
@@ -263,6 +263,42 @@ async function main() {
 		log.warn(`${pendingWithPartyB} PENDING quotes have non-zero partyB (unexpected)`)
 	} else {
 		log.ok(`${pendingCount} PENDING quotes checked — all have zero-address partyB as expected`)
+	}
+	log.stepDone(t)
+
+	// ── Check 6: Quote-to-partyBTask consistency ───────────────────
+	t = log.step("Quote-to-partyBTask consistency")
+	// Every quote with a non-zero partyB must have its partyB-partyA pair in partyBTasks.
+	// Otherwise migrateCrossLockedValues would miss that pair.
+	const partyBTaskIndex = new Map<string, Set<string>>()
+	for (const task of partyBTasks) {
+		const pbKey = task.partyB.toLowerCase()
+		if (!partyBTaskIndex.has(pbKey)) {
+			partyBTaskIndex.set(pbKey, new Set())
+		}
+		for (const pa of task.partyAs) {
+			partyBTaskIndex.get(pbKey)!.add(pa.toLowerCase())
+		}
+	}
+
+	let missingPairs = 0
+	for (const idx of indicesToCheck) {
+		const quoteId = BigInt(quoteIds[idx])
+		const quote = await rawGetQuote(DIAMOND_ADDRESS, quoteId)
+		if (quote.partyB === ethers.ZeroAddress) continue
+		const pbKey = quote.partyB.toLowerCase()
+		const paKey = quote.partyA.toLowerCase()
+		const partyASet = partyBTaskIndex.get(pbKey)
+		if (!partyASet || !partyASet.has(paKey)) {
+			log.error(`Quote ${quoteId}: partyB=${log.truncAddr(quote.partyB)} + partyA=${log.truncAddr(quote.partyA)} missing from partyBTasks`)
+			missingPairs++
+		}
+	}
+	if (missingPairs > 0) {
+		log.error(`${missingPairs} quote partyB-partyA pairs missing from partyBTasks`)
+		failures++
+	} else {
+		log.ok(`All sampled quotes have their partyB-partyA pair in partyBTasks`)
 	}
 	log.stepDone(t)
 
