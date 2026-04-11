@@ -45,6 +45,7 @@ export interface DeploymentCheckpoint {
 		instantLayer?: DeployedContract
 		symmioPartyB?: DeployedContract & { implementation?: string; admin?: string }
 		accountManager?: DeployedContract
+		symbolManager?: DeployedContract
 	}
 	setupComplete?: {
 		systemRoles?: boolean
@@ -313,6 +314,9 @@ export function displayCheckpointStatus(checkpoint: DeploymentCheckpoint): void 
 	}
 	if (checkpoint.contracts.symmioPartyB) {
 		console.log(`  - SymmioPartyB: ${checkpoint.contracts.symmioPartyB.address}`)
+	}
+	if (checkpoint.contracts.symbolManager) {
+		console.log(`  - SymmioSymbolManager: ${checkpoint.contracts.symbolManager.address}`)
 	}
 
 	// Show setup progress (generic progress tracking)

@@ -13,6 +13,7 @@ import {
 	INSTANTLAYER_DEPLOYMENT_FILE,
 	PARTYB_DEPLOYMENT_FILE,
 	STABLECOIN_DEPLOYMENT_FILE,
+	SYMBOLMANAGER_DEPLOYMENT_FILE,
 	VERIFY_FAILED_FILE,
 } from "./constants.js"
 import { getConnection } from "./helpers.js"
@@ -184,6 +185,7 @@ export const verifyAllTask = task("verify:all", "Verifies all deployed contracts
 					{ file: ACCOUNTLAYER_DEPLOYMENT_FILE, name: "AccountLayer (accountlayer.json)" },
 					{ file: INSTANTLAYER_DEPLOYMENT_FILE, name: "InstantLayer (instantlayer.json)" },
 					{ file: PARTYB_DEPLOYMENT_FILE, name: "PartyB (partyb.json)" },
+					{ file: SYMBOLMANAGER_DEPLOYMENT_FILE, name: "SymbolManager (symbolmanager.json)" },
 				]
 
 				for (const { file, name } of logFiles) {
