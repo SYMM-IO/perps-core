@@ -31,6 +31,7 @@ import { shouldBehaveLikeSettlement } from "../Settlement.behavior.js"
 import { shouldBehaveLikeSettlementUnified } from "../SettlementUnified.behavior.js"
 import { shouldBehaveLikeSpecificScenario } from "../SpecificScenario.behavior.js"
 import { shouldBehaveLikeSymmioPartyB } from "../SymmioPartyB.behavior.js"
+import { shouldBehaveLikeSymmioSymbolManager } from "../SymmioSymbolManager.behavior.js"
 import { shouldBehaveLikeWithdrawFacet } from "../WithdrawFacet.behavior.js"
 
 describe("UnitTests", function () {
@@ -145,6 +146,10 @@ describe("UnitTests", function () {
 
 		describe("SymmioPartyB", async function () {
 			shouldBehaveLikeSymmioPartyB()
+		})
+
+		describe("SymmioSymbolManager", async function () {
+			shouldBehaveLikeSymmioSymbolManager()
 		})
 
 		describe("WithdrawFacet", async function () {

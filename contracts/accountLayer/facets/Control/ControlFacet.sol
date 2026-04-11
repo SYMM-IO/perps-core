@@ -11,6 +11,7 @@ import { AccountLayerPausable } from "../../utils/AccountLayerPausable.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { AffiliateStorage, AffiliateState } from "../../storages/AffiliateStorage.sol";
 import { LibAccountLayerAccessibility } from "../../libraries/LibAccountLayerAccessibility.sol";
+import { LibDiamond } from "../../../diamond/libraries/LibDiamond.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
 
 /// @notice Administrative facet for role management, pause control, and system configuration
@@ -18,6 +19,26 @@ contract ControlFacet is IControlFacet, AccountLayerAccessibility, AccountLayerP
 	using EnumerableSet for EnumerableSet.AddressSet;
 
 	bytes32 private constant ACCOUNT_MANAGER_CODE_HASH = keccak256("ACM_V1");
+
+	// ==================== Ownership ====================
+
+	/// @notice Initiates a two-step ownership transfer to a new address. The new owner must call acceptOwnership() to complete the transfer.
+	/// @param owner The address of the pending new owner.
+	function transferOwnership(address owner) external {
+		LibDiamond.enforceIsContractOwner();
+		LibDiamond.transferOwnership(owner);
+	}
+
+	/// @notice Cancels the pending ownership transfer.
+	function cancelOwnershipTransfer() external {
+		LibDiamond.enforceIsContractOwner();
+		LibDiamond.cancelOwnershipTransfer();
+	}
+
+	/// @notice Completes the two-step ownership transfer. Must be called by the pending owner set via transferOwnership().
+	function acceptOwnership() external {
+		LibDiamond.acceptOwnership();
+	}
 
 	// ==================== Role Management ====================
 

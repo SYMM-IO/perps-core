@@ -3,6 +3,7 @@ import { ContractTransactionReceipt } from "ethers"
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
+import { mineCreate2Salt } from "../utils/create2Mining.js"
 import { FacetCutAction, getSelectors } from "../utils/diamondCut.js"
 import { writeData } from "../utils/fs.js"
 import { DeploymentCheckpoint, DiamondCheckpoint, createDeployedContract, saveCheckpoint } from "./checkpoint.js"
@@ -76,13 +77,51 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 		}
 	}
 
-	// Deploy Diamond
+	// Deploy Diamond (via CREATE2 if factory address is provided, otherwise standard CREATE)
+	const create2FactoryAddress = process.env.CREATE2_FACTORY_ADDRESS || ""
+	const vanityPrefix = process.env.DIAMOND_VANITY_PREFIX || "573310"
 	let diamondAddress: string
 	let diamond: any
 	if (diamondCheckpoint.diamond) {
 		diamondAddress = diamondCheckpoint.diamond.address
 		diamond = await ethers.getContractAt("Diamond", diamondAddress)
 		logger.info(`  ⏭ Diamond already deployed at ${diamondAddress}`)
+	} else if (create2FactoryAddress) {
+		const DiamondFactory = await ethers.getContractFactory("Diamond")
+		const constructorArgs = [owner.address, diamondCutFacetAddress]
+		const initCode = ethers.concat([DiamondFactory.bytecode, DiamondFactory.interface.encodeDeploy(constructorArgs)])
+
+		const create2Factory = await ethers.getContractAt("Create2Factory", create2FactoryAddress)
+		const initCodeHex = ethers.hexlify(initCode)
+		let startNonce = 0n
+
+		while (true) {
+			logger.info(`  Mining CREATE2 salt for 0x${vanityPrefix} prefix...`)
+			const { salt, address: predictedAddress, attempts, elapsedMs } = mineCreate2Salt(create2FactoryAddress, initCodeHex, vanityPrefix, startNonce)
+			logger.info(`  Found salt after ${attempts.toLocaleString()} attempts (${(elapsedMs / 1000).toFixed(1)}s)`)
+			logger.info(`  Predicted address: ${predictedAddress}`)
+
+			try {
+				const tx = await create2Factory.deploy(salt, initCode)
+				receipt = (await tx.wait())!
+				totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
+
+				diamondAddress = predictedAddress
+				diamond = await ethers.getContractAt("Diamond", diamondAddress)
+				logger.deployed("Diamond (CREATE2)", diamondAddress)
+				break
+			} catch (err: any) {
+				logger.info(`  Salt already used, trying next match...`)
+				startNonce = BigInt(salt) + 1n
+			}
+		}
+
+		// Save checkpoint
+		if (checkpoint) {
+			diamondCheckpoint.diamond = createDeployedContract(diamondAddress, constructorArgs)
+			checkpoint.contracts.diamond = diamondCheckpoint
+			saveCheckpoint(checkpoint)
+		}
 	} else {
 		const DiamondFactory = await ethers.getContractFactory("Diamond")
 		diamond = await DiamondFactory.deploy(owner.address, diamondCutFacetAddress)

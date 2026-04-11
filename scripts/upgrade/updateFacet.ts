@@ -1,11 +1,12 @@
-import { FacetCutAction, getSelectors } from "../tasks/utils/diamondCut.js"
-import { ethers } from "../test/helpers/hardhat-connection.js"
+import { FacetCutAction, getSelectors } from "../../tasks/utils/diamondCut.js"
+import { ethers } from "../../test/helpers/hardhat-connection.js"
+import { verifyRpc } from "./utils/rpcCheck.js"
 
 /**
  * Replace a facet on the diamond.
  *
  * Run:
- *   DIAMOND_ADDRESS=0x... FACET_NAME=PartyAFacet npx hardhat run ./scripts/updateFacet.ts --network localhost
+ *   DIAMOND_ADDRESS=0x... FACET_NAME=PartyAFacet npx hardhat run ./scripts/upgrade/updateFacet.ts --network localhost
  *
  * Optional:
  *   FACET_ADDRESS=0x...   # if you already deployed the facet
@@ -21,11 +22,12 @@ const FacetLibraryDependencies: Record<string, string[]> = {
 	PartyBBatchActionsFacet: ["LibQuoteClose", "LibQuoteFunding"],
 	PartyBEmergencyActionsFacet: ["LibQuoteClose"],
 	PartyBQuoteActionsFacet: ["LibQuoteClose"],
-	ForceActionsFacet: ["LibQuoteClose", "LibSettlement"],
-	ForceCloseStepsFacet: ["LibQuoteClose", "LibSettlement"],
+	ForceActionsFacet: ["LibForceActions", "LibSettlement"],
+	ForceCloseStepsFacet: ["LibForceActions", "LibSettlement"],
 	ViewFacetQuote: ["LibQuoteFunding"],
 	FundingRateFacet: ["LibQuoteFunding"],
 	PartyALiquidationFacet: ["LibQuoteFunding"],
+	ClearingHouseFacet: ["LibQuoteFunding"],
 	SettlementFacet: ["LibSettlement"],
 }
 
@@ -54,6 +56,15 @@ async function deployLibraries(): Promise<Record<string, string>> {
 	await libQuoteClose.waitForDeployment()
 	libraries.LibQuoteClose = await libQuoteClose.getAddress()
 
+	const LibForceActionsFactory = await ethers.getContractFactory("LibForceActions", {
+		libraries: {
+			"project/contracts/core/libraries/LibQuoteClose.sol:LibQuoteClose": libraries.LibQuoteClose,
+		},
+	})
+	const libForceActions = await LibForceActionsFactory.deploy()
+	await libForceActions.waitForDeployment()
+	libraries.LibForceActions = await libForceActions.getAddress()
+
 	const LibSettlementFactory = await ethers.getContractFactory("LibSettlement")
 	const libSettlement = await LibSettlementFactory.deploy()
 	await libSettlement.waitForDeployment()
@@ -77,6 +88,7 @@ async function getFacetFactory(name: string): Promise<any> {
 }
 
 async function main() {
+	await verifyRpc()
 	const diamondAddress = validateAddress("DIAMOND_ADDRESS", DIAMOND_ADDRESS)
 	if (FACET_ADDRESS && (!ethers.isAddress(FACET_ADDRESS) || FACET_ADDRESS === ethers.ZeroAddress)) {
 		throw new Error(`FACET_ADDRESS is invalid: ${FACET_ADDRESS}`)

@@ -11,7 +11,7 @@ const dotenvConfigPath = process.env.DOTENV_CONFIG_PATH || "./.env"
 dotenvConfig({ path: resolve(process.cwd(), dotenvConfigPath) })
 
 const DUMMY_PRIVATE_KEY = "0xec81e00837948239d5927bcb2b785675552bc92f1d2607ee91c540ddb56d6796"
-const privateKey = (configVariable("TEAM_DEPLOYER") as any) || DUMMY_PRIVATE_KEY
+const privateKey = (configVariable("NEW_DEPLOYER") as any) || DUMMY_PRIVATE_KEY
 const etherscanApiKey = (configVariable("ETHERSCAN_APIKEY") as any) || ""
 
 const createNetworkConfig = (network: string, defaultUrl: string) =>
@@ -95,6 +95,16 @@ const customChains = [
 export default defineConfig({
 	plugins: [hardhatToolboxMochaEthers, hardhatEthersPlugin, hardhatVerify],
 	tasks: deployTasks,
+	chainDescriptors: {
+		42161: {
+			name: "Arbitrum One",
+			hardforkHistory: {
+				merge: { blockNumber: 0 },
+				shanghai: { blockNumber: 0 },
+				cancun: { blockNumber: 0 },
+			},
+		},
+	},
 	solidity: {
 		profiles: {
 			default: {
@@ -144,8 +154,30 @@ export default defineConfig({
 		mode: createNetworkConfig("mode", "https://mainnet.mode.network"),
 		mantle: createNetworkConfig("mantle", "https://mantle.drpc.org"),
 		mantle2: createNetworkConfig("mantle2", "https://mantle.drpc.org"),
-		arbitrum: createNetworkConfig("arbitrum", "https://arbitrum.llamarpc.com"),
 		hyperevm: createNetworkConfig("hyperevm", "https://rpc.hyperliquid.xyz/evm"),
+		arbitrum: createNetworkConfig("arbitrum", "https://arbitrum.llamarpc.com"),
+		"fork-arbitrum": {
+			type: "edr-simulated",
+			chainId: 42161,
+			blockGasLimit: 30_000_000,
+			allowUnlimitedContractSize: true,
+			hardfork: "cancun",
+			forking: {
+				url: (configVariable("RPC_ARBITRUM") as any) || "https://arbitrum.drpc.org",
+				blockNumber: Number(process.env.FORK_BLOCK_NUMBER || 0) || undefined,
+			},
+		},
+		"fork-base": {
+			type: "edr-simulated",
+			chainId: 8453,
+			blockGasLimit: 30_000_000,
+			allowUnlimitedContractSize: true,
+			hardfork: "cancun",
+			forking: {
+				url: (configVariable("RPC_BASE") as any) || "https://base.drpc.org",
+				blockNumber: Number(process.env.FORK_BLOCK_NUMBER || 0) || undefined,
+			},
+		},
 	},
 	verify: {
 		etherscan: {

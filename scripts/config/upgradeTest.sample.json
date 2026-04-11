@@ -1,9 +1,0 @@
-{
-  "diamondAddress": "0xCD8a1C3ba11CF5ECfa6267617243239504a98d90",
-  "diamondCutChunkSize": 6,
-  "progressFile": "./scripts/config/upgradeTest-progress.json",
-  "reportFile": "./scripts/config/upgradeTest-report.json",
-  "quoteScanLimit": 500,
-  "keepProgress": false,
-  "verbose": false
-}

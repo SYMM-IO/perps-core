@@ -19,10 +19,12 @@ import {
 } from "./checkpoint.js"
 import { deployDiamond } from "./diamond.js"
 import { getConnection } from "./helpers.js"
+import { setHyperEVMBigBlocks } from "./hyperevm.js"
 import { deployInstantLayer } from "./instantLayer.js"
 import { deploySymmioPartyB } from "./partyB.js"
 import { deploySignatureVerifier } from "./signatureVerifier.js"
 import { deployStablecoin } from "./stablecoin.js"
+import { deploySymbolManager, grantSymbolManagerDiamondRoles, grantSymbolManagerOperatorRoles } from "./symbolManager.js"
 
 interface DeploymentResult {
 	contract: string
@@ -39,6 +41,8 @@ interface SystemDeploymentReport {
 		symmioFeeReceiver: string
 		collateralAddress: string
 		deployPartyB: boolean
+		deploySymbolManager: boolean
+		symbolManagerOperator: string
 		registerDummyAffiliate: boolean
 		setupInstantLayerTemplates: boolean
 		signatureVerifierAddress: string
@@ -66,6 +70,7 @@ interface DeployedContracts {
 	instantLayer?: string
 	symmioPartyB?: string
 	accountManager?: string
+	symbolManager?: string
 }
 
 async function getEnvConfig(hre: any) {
@@ -78,9 +83,12 @@ async function getEnvConfig(hre: any) {
 	const collateralAddress = process.env.COLLATERAL_ADDRESS || ""
 	// Default to true unless explicitly set to "false"
 	const deployPartyB = process.env.DEPLOY_PARTYB !== "false"
+	const deploySymbolManagerFlag = process.env.DEPLOY_SYMBOL_MANAGER !== "false"
 	const registerDummyAffiliate = process.env.REGISTER_DUMMY_AFFILIATE !== "false"
 	// Optional signer address for SymmioPartyB (ERC-1271 signature verification)
 	const partyBSigner = process.env.PARTYB_SIGNER || ""
+	// Optional operator address that will receive SYMBOL_ADDER_ROLE + SYMBOL_REMOVER_ROLE on the SymbolManager
+	const symbolManagerOperator = process.env.SYMBOL_MANAGER_OPERATOR || ""
 	// Setup InstantLayer templates (default: true, set to "false" to skip)
 	const setupInstantLayerTemplates = process.env.SETUP_INSTANT_LAYER_TEMPLATES !== "false"
 	// Optional: use existing MuonSignatureVerifier address instead of deploying
@@ -92,7 +100,7 @@ async function getEnvConfig(hre: any) {
 	const muonUpnlValidTime = process.env.MUON_UPNL_VALID_TIME || "300"
 	const muonPriceValidTime = process.env.MUON_PRICE_VALID_TIME || "300"
 	const muonPublicKeyX = process.env.MUON_PUBLIC_KEY_X || ""
-	const muonPublicKeyParity = process.env.MUON_PUBLIC_KEY_PARITY || ""
+	const muonPublicKeyParity = process.env.MUON_PUBLIC_KEY_PARITY ?? ""
 	const muonGatewaySigners = (process.env.MUON_GATEWAY_SIGNERS || "")
 		.split(",")
 		.map(s => s.trim())
@@ -103,6 +111,8 @@ async function getEnvConfig(hre: any) {
 		symmioFeeReceiver,
 		collateralAddress,
 		deployPartyB,
+		deploySymbolManager: deploySymbolManagerFlag,
+		symbolManagerOperator,
 		registerDummyAffiliate,
 		partyBSigner,
 		setupInstantLayerTemplates,
@@ -148,6 +158,18 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 		defaultValue: undefined,
 	})
 	.addOption({
+		name: "deploySymbolManager",
+		description: "Deploy SymmioSymbolManager (overrides DEPLOY_SYMBOL_MANAGER env)",
+		type: ArgumentType.STRING_WITHOUT_DEFAULT,
+		defaultValue: undefined,
+	})
+	.addOption({
+		name: "symbolManagerOperator",
+		description: "Address to grant SYMBOL_ADDER_ROLE + SYMBOL_REMOVER_ROLE on SymbolManager (overrides SYMBOL_MANAGER_OPERATOR env)",
+		type: ArgumentType.STRING_WITHOUT_DEFAULT,
+		defaultValue: undefined,
+	})
+	.addOption({
 		name: "deployMockVerifier",
 		description: "Deploy MockMuonSignatureVerifier instead of real verifier (overrides DEPLOY_MOCK_VERIFIER env)",
 		type: ArgumentType.STRING_WITHOUT_DEFAULT,
@@ -173,6 +195,8 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 				fresh,
 				deployFakeStablecoin,
 				deployPartyb,
+				deploySymbolManager: deploySymbolManagerFlag,
+				symbolManagerOperator: symbolManagerOperatorFlag,
 				deployMockVerifier,
 				registerDummyAffiliate: registerDummyAffiliateFlag,
 				setupInstantLayerTemplates: setupIlTemplatesFlag,
@@ -188,6 +212,8 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			// CLI flags override env vars when explicitly provided
 			if (deployFakeStablecoin !== undefined && deployFakeStablecoin === "true") config.collateralAddress = ""
 			if (deployPartyb !== undefined) config.deployPartyB = deployPartyb === "true"
+			if (deploySymbolManagerFlag !== undefined) config.deploySymbolManager = deploySymbolManagerFlag === "true"
+			if (symbolManagerOperatorFlag !== undefined) config.symbolManagerOperator = symbolManagerOperatorFlag
 			if (deployMockVerifier !== undefined) config.deployMockVerifier = deployMockVerifier === "true"
 			if (registerDummyAffiliateFlag !== undefined) config.registerDummyAffiliate = registerDummyAffiliateFlag === "true"
 			if (setupIlTemplatesFlag !== undefined) config.setupInstantLayerTemplates = setupIlTemplatesFlag === "true"
@@ -221,6 +247,8 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			console.log(`Collateral Address: ${config.collateralAddress || "(will deploy FakeStablecoin)"}`)
 			console.log(`Deploy PartyB: ${config.deployPartyB}`)
 			console.log(`PartyB Signer: ${config.partyBSigner || "(not set)"}`)
+			console.log(`Deploy SymbolManager: ${config.deploySymbolManager}`)
+			console.log(`SymbolManager Operator: ${config.symbolManagerOperator || "(not set)"}`)
 			console.log(`Register Dummy Affiliate: ${config.registerDummyAffiliate}`)
 			console.log(`Setup InstantLayer Templates: ${config.setupInstantLayerTemplates}`)
 			console.log(
@@ -237,6 +265,14 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 
 			const deploymentResults: DeploymentResult[] = []
 			const deployedContracts: DeployedContracts = {}
+
+			// HyperEVM (chainId 999 mainnet, 998 testnet) requires big blocks for facet deployment
+			const isHyperEVM = Number(chainId) === 999 || Number(chainId) === 998
+			if (isHyperEVM) {
+				console.log("HyperEVM detected — enabling big blocks for contract deployment...")
+				await setHyperEVMBigBlocks(hre, true)
+				console.log()
+			}
 
 			await runDeploymentStep(checkpoint, {
 				id: "collateral",
@@ -511,6 +547,56 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 						console.log()
 					},
 				})
+			}
+
+			if (config.deploySymbolManager) {
+				await runDeploymentStep(checkpoint, {
+					id: "symbolManager",
+					title: "Deploying SymmioSymbolManager",
+					order: 7,
+					run: async () => {
+						try {
+							const wasAlreadyDeployed = !!checkpoint.contracts.symbolManager
+							const symbolManager = await deploySymbolManager(hre, {
+								symmioAddress: deployedContracts.diamond!,
+								admin: config.admin,
+								logData,
+								checkpoint,
+							})
+							deployedContracts.symbolManager = await symbolManager.getAddress()
+							console.log(`SymmioSymbolManager deployed at: ${deployedContracts.symbolManager}`)
+							deploymentResults.push({
+								contract: "SymmioSymbolManager",
+								address: deployedContracts.symbolManager,
+								status: wasAlreadyDeployed ? "skipped" : "success",
+								timestamp: new Date().toISOString(),
+							})
+						} catch (err: any) {
+							console.error(`Failed to deploy SymmioSymbolManager: ${err.message}`)
+							deploymentResults.push({
+								contract: "SymmioSymbolManager",
+								address: "N/A",
+								status: "failed",
+								error: err.message,
+								timestamp: new Date().toISOString(),
+							})
+							throw err
+						}
+						console.log()
+					},
+				})
+			}
+
+			// All contracts are deployed — switch back to fast blocks for setup/config calls
+			if (isHyperEVM) {
+				console.log("Contract deployment complete — disabling big blocks for setup phase...")
+				try {
+					await setHyperEVMBigBlocks(hre, false)
+				} catch (err: any) {
+					console.warn(`  ⚠ Failed to disable big blocks: ${err.message}`)
+					console.warn("  ⚠ Run 'npx hardhat hyperevm:disable-big-blocks --network hyperevm' manually after deployment.")
+				}
+				console.log()
 			}
 
 			await runDeploymentStep(checkpoint, {
@@ -789,7 +875,7 @@ async function setupSystem(
 					await checkpointedStep(checkpoint, "setup.msvPublicKey", "Adding Muon public key on MuonSignatureVerifier", async () => {
 						const existingKeys = await signatureVerifier.getAllPublicKeys()
 						const exists = existingKeys.some(
-							(key: { x: bigint; parity: number }) => key.x.toString() === config.muonPublicKeyX && key.parity === parity,
+							(key: { x: bigint; parity: bigint | number }) => key.x.toString() === config.muonPublicKeyX && Number(key.parity) === parity,
 						)
 						if (exists) {
 							console.log("  ⏭ Muon public key already present on MuonSignatureVerifier")
@@ -872,7 +958,9 @@ async function setupSystem(
 			if (config.muonPublicKeyX && config.muonPublicKeyParity) {
 				const parity = Number(config.muonPublicKeyParity)
 				const keys = await signatureVerifier.getAllPublicKeys()
-				const found = keys.some((key: { x: bigint; parity: number }) => key.x.toString() === config.muonPublicKeyX && key.parity === parity)
+				const found = keys.some(
+					(key: { x: bigint; parity: bigint | number }) => key.x.toString() === config.muonPublicKeyX && Number(key.parity) === parity,
+				)
 				if (!found) {
 					throw new Error("Expected Muon public key is not present on MuonSignatureVerifier")
 				}
@@ -897,6 +985,11 @@ async function setupSystem(
 			key: "setup.setBalanceLimitPerUser",
 			name: "setBalanceLimitPerUser",
 			action: () => controlFacet.connect(deployer).setBalanceLimitPerUser(ethers.parseEther("10000")),
+		},
+		{
+			key: "setup.setMaxWithdrawParts",
+			name: "setMaxWithdrawParts",
+			action: () => controlFacet.connect(deployer).setMaxWithdrawParts(10),
 		},
 		{ key: "setup.setDeallocateCooldown", name: "setDeallocateCooldown", action: () => controlFacet.connect(deployer).setDeallocateCooldown(120) },
 		{ key: "setup.setSettlementCooldown", name: "setSettlementCooldown", action: () => controlFacet.connect(deployer).setSettlementCooldown(300) },
@@ -1003,6 +1096,35 @@ async function setupSystem(
 		await checkpointedStep(checkpoint, "setup.ilRegisterPartyB", "Registering SymmioPartyB on InstantLayer (also grants OPERATOR_ROLE)", async () => {
 			await instantLayer.connect(deployer).registerPartyBs([deployedContracts.symmioPartyB!])
 		})
+	}
+
+	// SymbolManager setup (if deployed)
+	if (deployedContracts.symbolManager) {
+		await checkpointedStep(checkpoint, "setup.smGrantSymbolManagerRole", "Granting SYMBOL_MANAGER_ROLE to SymbolManager on Diamond", async () => {
+			await controlFacet.connect(deployer).grantRole(deployedContracts.symbolManager!, roleHash("SYMBOL_MANAGER_ROLE"))
+		})
+
+		await checkpointedStep(
+			checkpoint,
+			"setup.smGrantForceCloseGapRatioRole",
+			"Granting FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE to SymbolManager on Diamond",
+			async () => {
+				await controlFacet.connect(deployer).grantRole(deployedContracts.symbolManager!, roleHash("FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE"))
+			},
+		)
+
+		if (config.symbolManagerOperator) {
+			const operatorAddress = ethers.getAddress(config.symbolManagerOperator.toLowerCase())
+			const symbolManager = await ethers.getContractAt("SymmioSymbolManager", deployedContracts.symbolManager!)
+
+			await checkpointedStep(checkpoint, "setup.smGrantAdderRole", "Granting SYMBOL_ADDER_ROLE on SymbolManager to operator", async () => {
+				await symbolManager.connect(deployer).grantRole(roleHash("SYMBOL_ADDER_ROLE"), operatorAddress)
+			})
+
+			await checkpointedStep(checkpoint, "setup.smGrantRemoverRole", "Granting SYMBOL_REMOVER_ROLE on SymbolManager to operator", async () => {
+				await symbolManager.connect(deployer).grantRole(roleHash("SYMBOL_REMOVER_ROLE"), operatorAddress)
+			})
+		}
 	}
 
 	console.log("  System setup complete!")
@@ -1128,6 +1250,8 @@ function generateReport(deployments: DeploymentResult[], config: ReturnType<type
 			symmioFeeReceiver: config.symmioFeeReceiver,
 			collateralAddress: config.collateralAddress,
 			deployPartyB: config.deployPartyB,
+			deploySymbolManager: config.deploySymbolManager,
+			symbolManagerOperator: config.symbolManagerOperator,
 			registerDummyAffiliate: config.registerDummyAffiliate,
 			setupInstantLayerTemplates: config.setupInstantLayerTemplates,
 			signatureVerifierAddress: config.signatureVerifierAddress,
@@ -1166,6 +1290,7 @@ function displayReport(report: SystemDeploymentReport, deployedContracts: Deploy
 	if (deployedContracts.accountLayerDiamond) console.log(`AccountLayerDiamond:  ${deployedContracts.accountLayerDiamond}`)
 	if (deployedContracts.instantLayer) console.log(`InstantLayer:         ${deployedContracts.instantLayer}`)
 	if (deployedContracts.symmioPartyB) console.log(`SymmioPartyB:         ${deployedContracts.symmioPartyB}`)
+	if (deployedContracts.symbolManager) console.log(`SymbolManager:        ${deployedContracts.symbolManager}`)
 	if (deployedContracts.accountManager) console.log(`AccountManager:       ${deployedContracts.accountManager}`)
 	console.log()
 
@@ -1174,6 +1299,8 @@ function displayReport(report: SystemDeploymentReport, deployedContracts: Deploy
 	console.log(`Admin:                       ${report.config.admin}`)
 	console.log(`Symmio Fee Receiver:         ${report.config.symmioFeeReceiver}`)
 	console.log(`Deploy PartyB:               ${report.config.deployPartyB}`)
+	console.log(`Deploy SymbolManager:        ${report.config.deploySymbolManager}`)
+	console.log(`SymbolManager Operator:      ${report.config.symbolManagerOperator || "(not set)"}`)
 	console.log(`Register Dummy Affiliate:    ${report.config.registerDummyAffiliate}`)
 	console.log(`Setup InstantLayer Templates: ${report.config.setupInstantLayerTemplates}`)
 	console.log(`Muon App ID:                 ${report.config.muonAppId || "(not set)"}`)
