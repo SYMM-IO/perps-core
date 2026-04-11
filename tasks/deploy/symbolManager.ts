@@ -5,6 +5,7 @@ import { readData, writeData } from "../utils/fs.js"
 import { DeploymentCheckpoint, createDeployedContract, saveCheckpoint } from "./checkpoint.js"
 import { SYMBOLMANAGER_DEPLOYMENT_FILE } from "./constants.js"
 import { checksumAddress, getConnection } from "./helpers.js"
+import { setHyperEVMBigBlocks } from "./hyperevm.js"
 import { logger } from "./logger.js"
 
 // Role hashes for the Symmio core Diamond that the SymbolManager needs in order
@@ -94,7 +95,31 @@ export const symbolManagerTask = task("deploy:symbolManager", "Deploys the Symmi
 	})
 	.addOption({ name: "logData", description: "Write the deployed address to a data file", type: ArgumentType.BOOLEAN, defaultValue: true })
 	.setAction(async () => ({
-		default: async ({ symmioAddress, admin, logData }, hre) => deploySymbolManager(hre, { symmioAddress, admin, logData }),
+		default: async ({ symmioAddress, admin, logData }, hre) => {
+			const { ethers } = await getConnection(hre)
+			const chainId = Number((await ethers.provider.getNetwork()).chainId)
+			// HyperEVM mainnet=999, testnet=998 — deploys need big blocks to land reliably
+			const isHyperEVM = chainId === 999 || chainId === 998
+
+			if (isHyperEVM) {
+				logger.info("HyperEVM detected — enabling big blocks for contract deployment...")
+				await setHyperEVMBigBlocks(hre, true)
+			}
+
+			try {
+				return await deploySymbolManager(hre, { symmioAddress, admin, logData })
+			} finally {
+				if (isHyperEVM) {
+					try {
+						logger.info("Deployment complete — disabling big blocks...")
+						await setHyperEVMBigBlocks(hre, false)
+					} catch (err: any) {
+						logger.error(`Failed to disable big blocks: ${err.message}`)
+						logger.error("Run 'npx hardhat hyperevm:disable-big-blocks --network hyperevm' manually.")
+					}
+				}
+			}
+		},
 	}))
 	.build()
 
