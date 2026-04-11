@@ -96,7 +96,7 @@ function constructConnectionId(action: Record<string, string | boolean>, nonce: 
  * Prerequisites:
  * - The signer address must exist on HyperCore L1 (must have deposited USDC via Hyperliquid bridge)
  */
-async function setHyperEVMBigBlocks(hre: any, enable: boolean): Promise<void> {
+export async function setHyperEVMBigBlocks(hre: any, enable: boolean): Promise<void> {
 	const { ethers } = await getConnection(hre)
 	const [signer] = await ethers.getSigners()
 	const chainId = Number((await ethers.provider.getNetwork()).chainId)

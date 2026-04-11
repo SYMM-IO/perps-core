@@ -13,6 +13,7 @@ import {
 	INSTANTLAYER_DEPLOYMENT_FILE,
 	PARTYB_DEPLOYMENT_FILE,
 	STABLECOIN_DEPLOYMENT_FILE,
+	VERIFY_FAILED_FILE,
 } from "./constants.js"
 import { getConnection } from "./helpers.js"
 
@@ -132,8 +133,12 @@ export const verifyAllTask = task("verify:all", "Verifies all deployed contracts
 		type: ArgumentType.INT,
 		defaultValue: 0,
 	})
+	.addFlag({
+		name: "retryFailed",
+		description: `Only retry contracts that failed in a previous run (loaded from tasks/data/${VERIFY_FAILED_FILE})`,
+	})
 	.setAction(async () => ({
-		default: async (args: { skip: number }, hre: any) => {
+		default: async (args: { skip: number; retryFailed: boolean }, hre: any) => {
 			const connection = await getConnection(hre)
 			const { ethers } = connection
 			const chainId = Number((await ethers.provider.getNetwork()).chainId)
@@ -148,37 +153,72 @@ export const verifyAllTask = task("verify:all", "Verifies all deployed contracts
 			console.log("")
 
 			let contracts: ContractToVerify[] = []
+			const failedFilePath = `./tasks/data/${VERIFY_FAILED_FILE}`
 
-			// Read from deployment log files
-			const logFiles = [
-				{ file: STABLECOIN_DEPLOYMENT_FILE, name: "Stablecoin (stablecoin.json)" },
-				{ file: DEPLOYMENT_LOG_FILE, name: "Core Diamond (deployed.json)" },
-				{ file: ACCOUNTLAYER_DEPLOYMENT_FILE, name: "AccountLayer (accountlayer.json)" },
-				{ file: INSTANTLAYER_DEPLOYMENT_FILE, name: "InstantLayer (instantlayer.json)" },
-				{ file: PARTYB_DEPLOYMENT_FILE, name: "PartyB (partyb.json)" },
-			]
-
-			for (const { file, name } of logFiles) {
-				const filePath = `./tasks/data/${file}`
-				if (fs.existsSync(filePath)) {
-					try {
-						const data = JSON.parse(fs.readFileSync(filePath, "utf8"))
-						if (Array.isArray(data)) {
-							contracts.push(
-								...data.map((c: any) => ({
-									name: c.name,
-									address: c.address,
-									constructorArguments: c.constructorArguments || [],
-								})),
-							)
-							console.log(`Loaded ${data.length} contracts from ${name}`)
-						}
-					} catch (e) {
-						console.log(`Could not read ${name}: ${e}`)
-					}
-				} else {
-					console.log(`${name} not found, skipping`)
+			if (args.retryFailed) {
+				if (!fs.existsSync(failedFilePath)) {
+					console.log(`No previous failures found at ${failedFilePath}. Nothing to retry.`)
+					return
 				}
+				try {
+					const data = JSON.parse(fs.readFileSync(failedFilePath, "utf8"))
+					if (Array.isArray(data)) {
+						contracts.push(
+							...data.map((c: any) => ({
+								name: c.name,
+								address: c.address,
+								constructorArguments: c.constructorArguments || [],
+							})),
+						)
+						console.log(`Loaded ${data.length} previously-failed contracts from ${VERIFY_FAILED_FILE}`)
+					}
+				} catch (e) {
+					console.log(`Could not read ${failedFilePath}: ${e}`)
+					return
+				}
+			} else {
+				// Read from deployment log files
+				const logFiles = [
+					{ file: STABLECOIN_DEPLOYMENT_FILE, name: "Stablecoin (stablecoin.json)" },
+					{ file: DEPLOYMENT_LOG_FILE, name: "Core Diamond (deployed.json)" },
+					{ file: ACCOUNTLAYER_DEPLOYMENT_FILE, name: "AccountLayer (accountlayer.json)" },
+					{ file: INSTANTLAYER_DEPLOYMENT_FILE, name: "InstantLayer (instantlayer.json)" },
+					{ file: PARTYB_DEPLOYMENT_FILE, name: "PartyB (partyb.json)" },
+				]
+
+				for (const { file, name } of logFiles) {
+					const filePath = `./tasks/data/${file}`
+					if (fs.existsSync(filePath)) {
+						try {
+							const data = JSON.parse(fs.readFileSync(filePath, "utf8"))
+							if (Array.isArray(data)) {
+								contracts.push(
+									...data.map((c: any) => ({
+										name: c.name,
+										address: c.address,
+										constructorArguments: c.constructorArguments || [],
+									})),
+								)
+								console.log(`Loaded ${data.length} contracts from ${name}`)
+							}
+						} catch (e) {
+							console.log(`Could not read ${name}: ${e}`)
+						}
+					} else {
+						console.log(`${name} not found, skipping`)
+					}
+				}
+			}
+
+			// Filter out entries with missing/invalid addresses so they don't blow
+			// up later as "undefined is not a valid address". These usually indicate
+			// a deployment-script bug (e.g. proxy admin/impl not captured) — surface
+			// it loudly here rather than mid-loop.
+			const skipped = contracts.filter(c => !c.address || !/^0x[0-9a-fA-F]{40}$/.test(c.address))
+			if (skipped.length > 0) {
+				console.log(`Skipping ${skipped.length} contracts with missing/invalid addresses:`)
+				for (const s of skipped) console.log(`  - ${s.name}: ${s.address ?? "(undefined)"}`)
+				contracts = contracts.filter(c => c.address && /^0x[0-9a-fA-F]{40}$/.test(c.address))
 			}
 
 			console.log(`Found ${contracts.length} contracts to verify`)
@@ -191,31 +231,68 @@ export const verifyAllTask = task("verify:all", "Verifies all deployed contracts
 			let verified = 0
 			let failed = 0
 			let alreadyVerified = 0
+			const failedContracts: Array<ContractToVerify & { error: string }> = []
+
+			// Patterns that indicate a flaky Etherscan/network failure (worth retrying)
+			// rather than a real verification problem.
+			const isTransient = (msg: string) =>
+				msg.includes("HHE80024") ||
+				msg.includes("HHE80001") ||
+				msg.includes("other side closed") ||
+				msg.includes("Other Exception") ||
+				msg.includes("ETIMEDOUT") ||
+				msg.includes("ECONNRESET") ||
+				msg.includes("socket hang up")
+
+			const MAX_ATTEMPTS = 3
+			const RETRY_DELAY_MS = 8000
 
 			for (let i = 0; i < contracts.length; i++) {
 				const contract = contracts[i]
 				const idx = args.skip + i + 1
 				console.log(`[${idx}/${args.skip + contracts.length}] Verifying ${contract.name} at ${contract.address}...`)
 
-				try {
-					await verifyContract(
-						{
-							address: contract.address,
-							constructorArgs: contract.constructorArguments,
-							contract: contract.name.includes(":") ? contract.name : undefined,
-						},
-						hre,
-					)
+				let lastErr: any
+				let outcome: "ok" | "already" | "fail" = "fail"
+				for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+					try {
+						await verifyContract(
+							{
+								address: contract.address,
+								constructorArgs: contract.constructorArguments,
+								contract: contract.name.includes(":") ? contract.name : undefined,
+							},
+							hre,
+						)
+						outcome = "ok"
+						break
+					} catch (err: any) {
+						lastErr = err
+						const msg = err.message ?? String(err)
+						if (msg.includes("Already Verified") || msg.includes("already verified")) {
+							outcome = "already"
+							break
+						}
+						if (attempt < MAX_ATTEMPTS && isTransient(msg)) {
+							console.log(`   [retry ${attempt}/${MAX_ATTEMPTS - 1}] transient error, waiting ${RETRY_DELAY_MS / 1000}s...`)
+							await new Promise(r => setTimeout(r, RETRY_DELAY_MS))
+							continue
+						}
+						break
+					}
+				}
+
+				if (outcome === "ok") {
 					verified++
 					console.log(`   [OK] Verified`)
-				} catch (err: any) {
-					if (err.message?.includes("Already Verified") || err.message?.includes("already verified")) {
-						alreadyVerified++
-						console.log(`   [SKIP] Already verified`)
-					} else {
-						failed++
-						console.log(`   [FAIL] ${err.message?.slice(0, 100)}`)
-					}
+				} else if (outcome === "already") {
+					alreadyVerified++
+					console.log(`   [SKIP] Already verified`)
+				} else {
+					failed++
+					const errMsg = lastErr?.message?.slice(0, 200) || String(lastErr)
+					console.log(`   [FAIL] ${errMsg.slice(0, 100)}`)
+					failedContracts.push({ ...contract, error: errMsg })
 				}
 				console.log("")
 			}
@@ -230,7 +307,46 @@ export const verifyAllTask = task("verify:all", "Verifies all deployed contracts
 			console.log("=".repeat(80))
 
 			if (failed > 0) {
-				console.log(`\nTo resume from where it failed, use: --skip=${args.skip + verified + alreadyVerified}`)
+				console.log("")
+				console.log("FAILED CONTRACTS:")
+				console.log("-".repeat(80))
+				for (let i = 0; i < failedContracts.length; i++) {
+					const f = failedContracts[i]
+					console.log(`  ${i + 1}. ${f.name}`)
+					console.log(`     address: ${f.address}`)
+					console.log(`     error:   ${f.error.slice(0, 140)}`)
+				}
+				console.log("-".repeat(80))
+
+				// Persist failed list so user can retry just these
+				try {
+					const dataDir = path.dirname(failedFilePath)
+					if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true })
+					fs.writeFileSync(
+						failedFilePath,
+						JSON.stringify(
+							failedContracts.map(({ error, ...c }) => c),
+							null,
+							2,
+						),
+					)
+					console.log("")
+					console.log(`Wrote failed contracts to ${failedFilePath}`)
+					console.log(`To retry only failed contracts, run:`)
+					console.log(`  npx hardhat verify:all --retry-failed --network ${network}`)
+				} catch (e) {
+					console.log(`Could not write ${failedFilePath}: ${e}`)
+				}
+			} else if (args.retryFailed) {
+				// Successful retry — clean up the failed file
+				try {
+					if (fs.existsSync(failedFilePath)) {
+						fs.unlinkSync(failedFilePath)
+						console.log(`\nAll retries succeeded. Removed ${failedFilePath}.`)
+					}
+				} catch {
+					// non-fatal
+				}
 			}
 		},
 	}))
