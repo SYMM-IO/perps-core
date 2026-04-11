@@ -77,9 +77,18 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 		}
 	}
 
-	// Deploy Diamond (via CREATE2 if factory address is provided, otherwise standard CREATE)
-	const create2FactoryAddress = process.env.CREATE2_FACTORY_ADDRESS || ""
+	// Deploy Diamond (via CREATE2 if factory address is provided AND has code on this network, otherwise standard CREATE)
+	const envCreate2FactoryAddress = process.env.CREATE2_FACTORY_ADDRESS || ""
 	const vanityPrefix = process.env.DIAMOND_VANITY_PREFIX || "573310"
+	let create2FactoryAddress = ""
+	if (envCreate2FactoryAddress) {
+		const factoryCode = await ethers.provider.getCode(envCreate2FactoryAddress)
+		if (factoryCode && factoryCode !== "0x") {
+			create2FactoryAddress = envCreate2FactoryAddress
+		} else {
+			logger.info(`  ⚠ CREATE2_FACTORY_ADDRESS ${envCreate2FactoryAddress} has no code on this network — falling back to standard deploy`)
+		}
+	}
 	let diamondAddress: string
 	let diamond: any
 	if (diamondCheckpoint.diamond) {
