@@ -52,4 +52,7 @@ library LibErrors {
 	error InvalidAccelerateSigner();
 	error StandardAlreadyFinalized();
 	error AccelerateCooldownElapsed();
+	// ── Cap-change fee / throttle ──
+	error NoOpCapChange();
+	error CapChangeFeeNotConfigured();
 }

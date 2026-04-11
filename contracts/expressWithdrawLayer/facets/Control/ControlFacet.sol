@@ -100,6 +100,93 @@ contract ControlFacet is IControlFacet {
 		emit CreditLineAffiliateConfigUpdated(affiliate, maxDebt, maxDebtBps);
 	}
 
+	/// @notice Self-service cap adjustment for an affiliate. Decreases are always free;
+	///         increases count against the per-window free allowance and charge a fee once exhausted.
+	///         msg.sender is treated as the affiliate identity.
+	function setMyCreditLineConfig(uint256 maxDebt, uint256 maxDebtBps) external {
+		address affiliate = msg.sender;
+		CreditLineStorage.Layout storage cl = CreditLineStorage.layout();
+		AffiliateCredit storage ac = cl.affiliates[affiliate];
+
+		// Preserve protocol-cap invariant
+		if (ac.protocolMaxDebt > 0 && maxDebt > ac.protocolMaxDebt) revert LibCreditLine.AffiliateLimitExceedsProtocol();
+		if (ac.protocolMaxDebtBps > 0 && maxDebtBps > ac.protocolMaxDebtBps) revert LibCreditLine.AffiliateLimitExceedsProtocol();
+
+		uint256 oldMaxDebt = ac.affiliateMaxDebt;
+		uint256 oldMaxDebtBps = ac.affiliateMaxDebtBps;
+
+		if (oldMaxDebt == maxDebt && oldMaxDebtBps == maxDebtBps) revert LibErrors.NoOpCapChange();
+
+		bool isDecrease = _isDecreaseCapChange(oldMaxDebt, oldMaxDebtBps, maxDebt, maxDebtBps);
+		uint256 feePaid = 0;
+		if (!isDecrease) {
+			feePaid = _applyCapChangeThrottleAndFee(cl, ac, affiliate);
+		}
+
+		ac.affiliateMaxDebt = maxDebt;
+		ac.affiliateMaxDebtBps = maxDebtBps;
+
+		emit CreditLineAffiliateConfigSelfUpdated(affiliate, maxDebt, maxDebtBps, isDecrease, feePaid);
+		emit CreditLineAffiliateConfigUpdated(affiliate, maxDebt, maxDebtBps);
+	}
+
+	function setCapChangeFeeConfig(address feeToken, uint256 feeAmount, address feeReceiver) external {
+		LibAccessControl.enforceRole(LibAccessControl.SETTER_ROLE);
+		CreditLineStorage.Layout storage cl = CreditLineStorage.layout();
+		cl.capChangeFeeToken = feeToken;
+		cl.capChangeFeeAmount = feeAmount;
+		cl.capChangeFeeReceiver = feeReceiver;
+		emit CapChangeFeeConfigUpdated(feeToken, feeAmount, feeReceiver);
+	}
+
+	function setCapChangeQuotaConfig(uint256 maxFreePerWindow, uint256 windowDuration) external {
+		LibAccessControl.enforceRole(LibAccessControl.SETTER_ROLE);
+		CreditLineStorage.Layout storage cl = CreditLineStorage.layout();
+		cl.capChangeMaxFreePerWindow = maxFreePerWindow;
+		cl.capChangeWindowDuration = windowDuration;
+		emit CapChangeQuotaConfigUpdated(maxFreePerWindow, windowDuration);
+	}
+
+	/// @dev Treats 0 as "no cap" (effectively infinity) when comparing old vs new values.
+	///      Returns true iff neither dimension loosens.
+	function _isDecreaseCapChange(uint256 oldMax, uint256 oldBps, uint256 newMax, uint256 newBps) internal pure returns (bool) {
+		uint256 oldMaxCmp = oldMax == 0 ? type(uint256).max : oldMax;
+		uint256 newMaxCmp = newMax == 0 ? type(uint256).max : newMax;
+		uint256 oldBpsCmp = oldBps == 0 ? type(uint256).max : oldBps;
+		uint256 newBpsCmp = newBps == 0 ? type(uint256).max : newBps;
+		return newMaxCmp <= oldMaxCmp && newBpsCmp <= oldBpsCmp;
+	}
+
+	function _applyCapChangeThrottleAndFee(
+		CreditLineStorage.Layout storage cl,
+		AffiliateCredit storage ac,
+		address affiliate
+	) internal returns (uint256 feePaid) {
+		// If quota is unconfigured (windowDuration == 0), treat all increases as free — feature dormant.
+		if (cl.capChangeWindowDuration == 0) {
+			return 0;
+		}
+
+		// Epoch reset
+		if (block.timestamp >= ac.capChangeEpochStart + cl.capChangeWindowDuration) {
+			ac.capChangeCount = 0;
+			ac.capChangeEpochStart = block.timestamp;
+		}
+
+		ac.capChangeCount++;
+
+		if (ac.capChangeCount <= cl.capChangeMaxFreePerWindow) {
+			return 0;
+		}
+
+		if (cl.capChangeFeeToken == address(0) || cl.capChangeFeeAmount == 0 || cl.capChangeFeeReceiver == address(0)) {
+			revert LibErrors.CapChangeFeeNotConfigured();
+		}
+
+		IERC20(cl.capChangeFeeToken).safeTransferFrom(affiliate, cl.capChangeFeeReceiver, cl.capChangeFeeAmount);
+		return cl.capChangeFeeAmount;
+	}
+
 	function setCreditLinePaused(address affiliate, bool paused) external {
 		LibAccessControl.enforceRole(LibAccessControl.SETTER_ROLE);
 		CreditLineStorage.layout().affiliates[affiliate].paused = paused;

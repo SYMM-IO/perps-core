@@ -375,6 +375,93 @@ The `optionType` field on `WithdrawInfo` is mutated from STANDARD to INSTANT. Do
 - Successful acceleration: `WithdrawAccelerated(user, requestId, affiliate, affiliateAmount, creditAmount, generalAmount)` followed by `WithdrawProcessed(user, requestId)`
 - Terminal without acceleration: `WithdrawFinalized` / `WithdrawCancelled` / `WithdrawSuspended`
 
+### 5.5 Affiliate Cap Self-Service & Fee Model
+
+Caps are now an active operational lever -- raising them promotes deferred STANDARD withdrawals into INSTANT via the accelerate path. To prevent churn (a frontend ping-ponging the cap up and down all day), self-service cap adjustments go through a quota + fee throttle. The protocol admin still has a direct bypass via `setCreditLineAffiliateConfig` for emergency support.
+
+**Self-service entrypoint:**
+
+```solidity
+ControlFacet.setMyCreditLineConfig(uint256 maxDebt, uint256 maxDebtBps)
+```
+
+`msg.sender` is treated as the affiliate identity -- no parameter, no role check. Each affiliate self-manages their own slot; they cannot touch anyone else's.
+
+**Economics:**
+
+- **Decreases are always free.** The on-chain classifier treats a change as a decrease iff neither dimension loosens (using `0` as "uncapped = infinity" when comparing). Tightening risk is unconditional and instant.
+- **Increases use a per-window quota.** Each affiliate gets `maxFreePerWindow` free increases per `windowDuration`-second epoch. The epoch resets the first time a call lands after `block.timestamp >= epochStart + windowDuration`.
+- **Over-quota increases charge a fee.** The protocol admin configures a fee ERC20 token, fee amount, and fee receiver. Once the free allowance is exhausted in the current window, each further increase transfers `feeAmount` of the fee token from the affiliate to the configured receiver via `safeTransferFrom`.
+- **No-ops revert.** Calling with unchanged values reverts `NoOpCapChange` so there's no incentive to "refresh" state for any reason.
+
+**Decrease / increase classification table:**
+
+| Old (maxDebt, maxDebtBps) | New         | Classification                            | Counts? | Fee?                   |
+| ------------------------- | ----------- | ----------------------------------------- | ------- | ---------------------- |
+| (100, 1000)               | (50, 1000)  | Decrease                                  | No      | No                     |
+| (100, 1000)               | (100, 500)  | Decrease                                  | No      | No                     |
+| (100, 1000)               | (200, 1000) | Increase                                  | Yes     | If over quota          |
+| (100, 1000)               | (50, 2000)  | Increase (bps loosened)                   | Yes     | If over quota          |
+| (100, 1000)               | (0, 1000)   | Increase (self-cap removed, 0 = uncapped) | Yes     | If over quota          |
+| (0, 0)                    | (100, 1000) | Decrease (infinity -> 100/1000)           | No      | No                     |
+| (100, 1000)               | (100, 1000) | No-op                                     | --      | Revert `NoOpCapChange` |
+
+**Dormant-by-default.** New deployments start with `capChangeWindowDuration == 0`, which disables the throttle entirely (all increases are free). The feature activates only once the admin calls `setCapChangeQuotaConfig` and `setCapChangeFeeConfig`. Fee config must be set for any paid path to succeed -- otherwise the charge reverts `CapChangeFeeNotConfigured`.
+
+**Admin configuration (SETTER_ROLE):**
+
+```solidity
+setCapChangeFeeConfig(address feeToken, uint256 feeAmount, address feeReceiver)
+setCapChangeQuotaConfig(uint256 maxFreePerWindow, uint256 windowDuration)
+```
+
+All five parameters are individually mutable at any time. Mid-window changes take effect on the next `setMyCreditLineConfig` call. The fee token is an arbitrary ERC20 -- the protocol does not assume SYMM, USDC, or any particular token. The admin picks.
+
+**Emergency bypass:** the existing `setCreditLineAffiliateConfig(address affiliate, uint256 maxDebt, uint256 maxDebtBps)` remains gated by `SETTER_ROLE`. It bypasses the throttle and fee. Use for support cases (an affiliate is stuck over quota and needs a one-off adjustment).
+
+**Flow diagram:**
+
+```mermaid
+flowchart TD
+    A[Affiliate calls setMyCreditLineConfig] --> B{Protocol cap invariant ok?}
+    B -->|No| Z1[revert AffiliateLimitExceedsProtocol]
+    B -->|Yes| C{No-op?}
+    C -->|Yes| Z2[revert NoOpCapChange]
+    C -->|No| D{Decrease?<br/>neither dim loosened}
+    D -->|Yes| E[Apply change, no counter, no fee]
+    D -->|No| F{windowDuration == 0?}
+    F -->|Yes| E
+    F -->|No| G{Epoch expired?}
+    G -->|Yes| H[Reset counter to 0<br/>epochStart = now]
+    G -->|No| I[Keep counter]
+    H --> J[Counter += 1]
+    I --> J
+    J --> K{Counter <= maxFreePerWindow?}
+    K -->|Yes| E
+    K -->|No| L{Fee config complete?}
+    L -->|No| Z3[revert CapChangeFeeNotConfigured]
+    L -->|Yes| M[safeTransferFrom feeAmount<br/>to feeReceiver]
+    M --> E
+    E --> N[Emit CreditLineAffiliateConfigSelfUpdated<br/>and CreditLineAffiliateConfigUpdated]
+```
+
+**Events to monitor:**
+
+- `CreditLineAffiliateConfigSelfUpdated(affiliate, maxDebt, maxDebtBps, wasDecrease, feePaid)` -- emitted on every successful self-service call, with `feePaid == 0` for free changes
+- `CreditLineAffiliateConfigUpdated(affiliate, maxDebt, maxDebtBps)` -- re-emitted for indexer parity; also emitted by the admin bypass path, so indexers watching both get full coverage
+- `CapChangeFeeConfigUpdated(feeToken, feeAmount, feeReceiver)` -- when admin updates fee config
+- `CapChangeQuotaConfigUpdated(maxFreePerWindow, windowDuration)` -- when admin updates quota config
+
+**View getters (for frontend UX):**
+
+```solidity
+capChangeFeeConfig() returns (address feeToken, uint256 feeAmount, address feeReceiver)
+capChangeQuotaConfig() returns (uint256 maxFreePerWindow, uint256 windowDuration)
+capChangeAffiliateState(address affiliate) returns (uint256 count, uint256 epochStart, uint256 remainingFree, uint256 nextResetAt)
+```
+
+`remainingFree` automatically accounts for an elapsed window (returns the full `maxFreePerWindow` if the window has expired, since the next call will reset the counter). This lets a frontend preview the "next call will be free/paid" state without replaying the contract logic.
+
 ## 6. Safety Mechanisms
 
 ### 6.1 Security Window

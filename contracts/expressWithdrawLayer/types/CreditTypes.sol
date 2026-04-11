@@ -32,6 +32,11 @@ struct AffiliateCredit {
 	bool paused;
 	/// @dev Per-user exclusion list — blocked addresses cannot reserve credit with this affiliate.
 	mapping(address => bool) blacklisted;
+	// ── Cap-change throttle state ──
+	/// @dev Number of non-free cap changes performed within the current window.
+	uint256 capChangeCount;
+	/// @dev Timestamp when the current quota window started.
+	uint256 capChangeEpochStart;
 }
 
 /// @notice Muon-signed attestation of an affiliate's eligible balance base.

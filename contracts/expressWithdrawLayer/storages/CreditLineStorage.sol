@@ -19,6 +19,13 @@ library CreditLineStorage {
 		uint256 muonFreshnessWindow;
 		// ── Per-affiliate credit config and debt state ──
 		mapping(address => AffiliateCredit) affiliates;
+		// ── Cap-change fee config (protocol-wide) ──
+		address capChangeFeeToken;
+		uint256 capChangeFeeAmount;
+		address capChangeFeeReceiver;
+		// ── Cap-change quota config (protocol-wide) ──
+		uint256 capChangeMaxFreePerWindow;
+		uint256 capChangeWindowDuration;
 	}
 
 	function layout() internal pure returns (Layout storage l) {
