@@ -59,6 +59,10 @@ contract ViewFacet is IViewFacet {
 		return GlobalStorage.layout().withdrawInfos[user][requestId];
 	}
 
+	function accelerateNonce(address user, uint256 requestId) external view returns (uint256) {
+		return GlobalStorage.layout().accelerateNonces[user][requestId];
+	}
+
 	// ── Security ──
 
 	function securityWindow() external view returns (uint256) {

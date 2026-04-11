@@ -12,11 +12,11 @@ An ExpressProvider contract fronts funds from liquidity pools and credit lines s
 
 The system offers three withdrawal speeds, all routed through the same ExpressProvider contract:
 
-| Option | Name | When user gets funds | Capital source |
-|--------|------|---------------------|----------------|
-| IMMEDIATE | Immediate | Same transaction | Express pools front it, transferred in onWithdrawRequest |
-| INSTANT | Instant | ~20 seconds | Express pools front it (general + affiliate + credit line) |
-| STANDARD | Standard | 12 hours | SYMMIO sends to Express after cooldown, Express forwards to user (credit not supported) |
+| Option    | Name      | When user gets funds | Capital source                                                                          |
+| --------- | --------- | -------------------- | --------------------------------------------------------------------------------------- |
+| IMMEDIATE | Immediate | Same transaction     | Express pools front it, transferred in onWithdrawRequest                                |
+| INSTANT   | Instant   | ~20 seconds          | Express pools front it (general + affiliate + credit line)                              |
+| STANDARD  | Standard  | 12 hours             | SYMMIO sends to Express after cooldown, Express forwards to user (credit not supported) |
 
 All three options go through the ExpressProvider. This gives the bot full control over the withdrawal lifecycle for every option, including finalization after cooldown. The per-affiliate operator fee discourages dust withdrawals by making them uneconomical for griefers.
 
@@ -90,7 +90,7 @@ When the ExpressProvider fronts an IMMEDIATE or INSTANT withdrawal, it deducts f
 
 ### 4.2 Credit Line
 
-Pools have a hard limit: the operator must have pre-deposited enough tokens. The **credit line** removes this constraint by letting the affiliate withdraw more than what's in the pools, backed by the affiliate's *eligible balance* as attested by the Muon oracle.
+Pools have a hard limit: the operator must have pre-deposited enough tokens. The **credit line** removes this constraint by letting the affiliate withdraw more than what's in the pools, backed by the affiliate's _eligible balance_ as attested by the Muon oracle.
 
 **How it works:**
 
@@ -193,6 +193,7 @@ sequenceDiagram
 ```
 
 **Key properties:**
+
 - No express pool locking on accept (no capital fronted)
 - Credit lines are not supported (`creditAmount` must be 0)
 - `onWithdrawComplete` sets status to FINALIZED (tokens arrive from SYMMIO)
@@ -242,6 +243,7 @@ sequenceDiagram
 ```
 
 **Timing:**
+
 - `processWithdraw` by operator: allowed after `acceptedAt + securityWindow` (default 20s)
 - `processWithdraw` by anyone (permissionless fallback): allowed after `acceptedAt + securityWindow + tolerancePeriod` (default 80s)
 
@@ -280,6 +282,7 @@ sequenceDiagram
 ```
 
 **Key properties:**
+
 - Validators are mandatory -- `ValidatorsRequiredForImmediate` error if `minValidatorSignatures(affiliate) == 0`
 - Status goes directly NONE -> PROCESSED (skips ACCEPTED)
 - `processWithdraw` cannot be called (already PROCESSED)
@@ -287,6 +290,90 @@ sequenceDiagram
 - Finalization works identically to INSTANT (pools replenished at cooldown)
 - `nonReentrant` guard on `onWithdrawRequest` prevents reentrancy during transfers
 - User pays gas for the transfer (included in their `initiateWithdraw` tx)
+
+### 5.4 Accelerate -- Promote a pending STANDARD to INSTANT
+
+When an affiliate's credit cap is full, the bot signs STANDARD offers off-chain so the user tx always succeeds (the UI tells the user they may wait up to 12 hours). The user's request is ACCEPTED as STANDARD -- no pool lock, no credit. But the request isn't dead: if capacity frees up before the 12h cooldown expires, **any caller** can promote that STANDARD into INSTANT-style processing and pay the user immediately.
+
+The bot polls every 30 minutes; the frontend can also trigger a retry on demand (for example, right after raising `affiliateMaxDebt`). Both call the same permissionless `accelerateWithdraw` function with a fresh bot-signed `AccelerateOffer`.
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Bot
+    participant Caller as Caller<br/>(bot / frontend / user)
+    participant SYMMIO
+    participant Express as ExpressProvider
+
+    User->>Bot: Request withdrawal options
+    Bot->>Bot: Check cap -- cap is full
+    Bot->>Bot: Sign EIP-712 option (type=STANDARD, creditAmount=0)
+    Bot->>User: Return STANDARD + parts (UI: "may take up to 12h")
+
+    User->>SYMMIO: initiateWithdraw(parts, providerData)
+    SYMMIO->>Express: onWithdrawRequest
+    Express->>SYMMIO: acceptWithdrawRequest
+    Note over Express: Status = ACCEPTED (STANDARD)
+
+    loop Every ~30 minutes
+        Bot->>Express: creditLineTotalDebt(affiliate)
+        alt Cap now has room
+            Bot->>Bot: Sign AccelerateOffer (affiliateAmount, creditAmount)
+            Caller->>Express: accelerateWithdraw(user, reqId, parts, offer, creditData)
+            Express->>Express: Verify SIGNER_ROLE signature
+            Express->>Express: reserveDebt (cap check -- atomic revert if still full)
+            Express->>Express: Lock pool funds, optionType -> INSTANT
+            Express->>SYMMIO: advanceWithdraw (pull collateral early)
+            Express->>User: Transfer tokens
+            Note over Express: Status = PROCESSED
+        else Still full
+            Note over Bot: No-op -- keep polling
+        end
+    end
+
+    Note over SYMMIO: 12 hours later (if not accelerated)
+    Bot->>SYMMIO: finalizeWithdrawRequest (normal STANDARD path)
+    SYMMIO->>Express: onWithdrawComplete
+```
+
+**State transition on successful acceleration:**
+
+```
+ACCEPTED (STANDARD) ──accelerateWithdraw──► PROCESSED (INSTANT)
+```
+
+The `optionType` field on `WithdrawInfo` is mutated from STANDARD to INSTANT. Downstream lifecycle hooks (`onWithdrawComplete`, `onWithdrawSuspend`) then route through the existing INSTANT branches unchanged -- pools get replenished at core finalization, credit debt is settled, and suspend-after-processed rollback works via `_handleProcessedRollback`.
+
+**Preconditions (enforced in order):**
+
+1. `info.status == ACCEPTED`
+2. `info.optionType == STANDARD`
+3. `info.finalizedAt == 0` (core hasn't finalized yet)
+4. `block.timestamp < info.cooldownEndTime` (otherwise the normal STANDARD finalization path takes over -- avoids racing core)
+5. `block.timestamp <= offer.deadline`
+6. `accelerateNonces[user][requestId] == offer.nonce`
+7. `keccak256(abi.encode(parts)) == info.partsHash`
+8. Offer signature recovers to a `SIGNER_ROLE` holder
+9. `offer.affiliateAmount + offer.creditAmount <= info.expressAmount`
+10. Pool balances cover the requested split
+11. Credit cap accommodates `offer.creditAmount` (handled by `LibCreditLine.reserveDebt`)
+
+**Failure semantics:**
+
+- Any failure (cap full, pool short, bad signature, etc.) reverts the **entire transaction** atomically. The STANDARD request is left untouched, the nonce is not consumed, and the same signature can be retried later.
+- The `accelerateNonces` counter is incremented **only on successful acceleration**. A bot can invalidate a previously-signed offer by waiting for a success and signing a new nonce, but during retry loops the same signature keeps working.
+
+**Preserved fields:** `expressAmount`, `fee`, `operatorFee`, `sponsorCoverage`, `cooldownEndTime`, `acceptedAt`, `partsHash`. Acceleration is strictly a re-routing of the funding split -- user receives exactly the same net amount they would have on the STANDARD path, just instantly.
+
+**Permissioning:** `accelerateWithdraw` is permissionless. The caller is not verified. All trust comes from the SIGNER_ROLE signature embedded in the offer. This lets frontends, keepers, or even the user themselves submit the transaction without coordinating with the bot on who sends the tx.
+
+**What counts as "frontend raising the cap":** calling `ControlFacet.setCreditLineAffiliateConfig(affiliate, newMaxDebt, newMaxDebtBps)` with looser values (still bounded by protocol caps). After this call, the frontend's backend can either notify the bot (which picks it up on the next 30-minute poll) or immediately request a fresh `AccelerateOffer` from the bot's API and submit `accelerateWithdraw` itself.
+
+**Event model** (indexers should subscribe to the terminal events to track lifecycle):
+
+- Initial accept: `WithdrawAccepted(user, requestId, optionType=2)` -- STANDARD
+- Successful acceleration: `WithdrawAccelerated(user, requestId, affiliate, affiliateAmount, creditAmount, generalAmount)` followed by `WithdrawProcessed(user, requestId)`
+- Terminal without acceleration: `WithdrawFinalized` / `WithdrawCancelled` / `WithdrawSuspended`
 
 ## 6. Safety Mechanisms
 
@@ -318,8 +405,8 @@ Funds are transferred in the same transaction as acceptance. The only risk gatin
 2. If **LOW RISK**: call `processWithdraw`
 3. If **HIGH RISK**: `LOCKER_ROLE` holder calls `lockWithdraw` to prevent permissionless processing, then notifies admin
 4. Admin (holding `UNLOCK_ROLE`) reviews and either:
-   - Calls `unlockAndProcess` (false alarm)
-   - Calls SYMMIO's `suspendWithdrawRequest` (confirmed bad actor)
+    - Calls `unlockAndProcess` (false alarm)
+    - Calls SYMMIO's `suspendWithdrawRequest` (confirmed bad actor)
 
 **STANDARD -- risk check during the 12-hour cooldown:**
 
@@ -411,15 +498,15 @@ Note: For STANDARD, risk locking happens **during** the 12-hour cooldown (before
 
 **SYMMIO Withdrawal Status (for reference):**
 
-| Status | Description |
-|--------|-------------|
-| `PENDING` | Created by initiateWithdraw. Awaiting provider. |
-| `PROVIDER_ACCEPTED` | Provider accepted. Awaiting cooldown/processing. |
-| `PROVIDER_REJECTED` | Provider rejected. Funds refunded. |
-| `CANCEL_REQUESTED` | User requested cancellation. Awaiting provider response. |
-| `CANCELLED` | Cancelled. Funds refunded to user. |
-| `SUSPENDED` | Operator suspended. Funds refunded to user. |
-| `COMPLETED` | Finalized. Tokens transferred. |
+| Status              | Description                                              |
+| ------------------- | -------------------------------------------------------- |
+| `PENDING`           | Created by initiateWithdraw. Awaiting provider.          |
+| `PROVIDER_ACCEPTED` | Provider accepted. Awaiting cooldown/processing.         |
+| `PROVIDER_REJECTED` | Provider rejected. Funds refunded.                       |
+| `CANCEL_REQUESTED`  | User requested cancellation. Awaiting provider response. |
+| `CANCELLED`         | Cancelled. Funds refunded to user.                       |
+| `SUSPENDED`         | Operator suspended. Funds refunded to user.              |
+| `COMPLETED`         | Finalized. Tokens transferred.                           |
 
 ## 7. The Signature Scheme (EIP-712)
 
@@ -471,20 +558,45 @@ Where `parts` is an array of `WithdrawReceiverPart`:
 
 ```solidity
 struct WithdrawReceiverPart {
-    uint256 id;
-    uint256 amount;          // collateral decimals (e.g. 6 for USDC)
-    int256  chainId;
-    bytes   receiver;        // 20 bytes, the receiver address
-    address virtualProvider; // DEPRECATED: must be address(0), reverts VirtualProviderMustBeZero otherwise
-    address expressProvider; // ExpressProvider address
+	uint256 id;
+	uint256 amount; // collateral decimals (e.g. 6 for USDC)
+	int256 chainId;
+	bytes receiver; // 20 bytes, the receiver address
+	address virtualProvider; // DEPRECATED: must be address(0), reverts VirtualProviderMustBeZero otherwise
+	address expressProvider; // ExpressProvider address
 }
 ```
 
-### 7.5 Validator Approval Signature
+### 7.5 Accelerate Offer Type
+
+When the bot wants to promote an already-ACCEPTED STANDARD request into INSTANT-style processing (see §5.4), it signs a separate typed struct:
+
+```
+AccelerateOffer(
+    address user,
+    uint256 requestId,
+    uint256 nonce,           // per-(user, requestId) counter, read via ViewFacet.accelerateNonce
+    uint256 affiliateAmount, // how much from affiliate pool
+    uint256 creditAmount,    // how much from credit line
+    bytes32 partsHash,       // must equal info.partsHash (binds to the exact accepted request)
+    uint256 deadline         // signature expiry timestamp
+)
+```
+
+**Notes:**
+
+- Uses the same EIP-712 domain as `WithdrawOption`.
+- `partsHash` is bound into the struct so an acceleration signature for `(userA, requestId=1)` cannot be replayed against any other request.
+- The per-`(user, requestId)` nonce is isolated from the main `g.nonces[user]` counter -- acceleration attempts do not affect the main nonce.
+- The nonce is incremented **only on successful acceleration**. A stale-but-still-valid signature keeps working across retries as long as caps or pool balances make it succeed.
+- `fee`, `operatorFee`, `sponsorCoverage`, `expressAmount`, and `cooldownEndTime` are NOT in the accelerate offer -- they are pinned from the original STANDARD accept and reused unchanged.
+
+### 7.6 Validator Approval Signature
 
 Validators sign a separate EIP-712 message attesting to user legitimacy:
 
 **Type:**
+
 ```
 ValidatorApproval(
     address user,        // the withdrawing user
@@ -499,19 +611,20 @@ ValidatorApproval(
 Uses the same EIP-712 domain as the bot option (same contract, chain). The signature is additionally bound to the SYMMIO core address so a validator approval signed for one deployment cannot be replayed against an Express Provider that integrates with a different SYMMIO core.
 
 **On-chain validation (in `onWithdrawRequest`):**
+
 1. Check `signatures.length >= minValidatorSignatures(affiliate)` (falls back to `minValidatorSignatures(address(0))` if affiliate-specific not set)
 2. Verify `symmioNonce == ISymmio(symmio).nonceOfPartyA(user)` -- if the user acted on SYMMIO since validators signed, the nonce won't match and the withdrawal is rejected
 3. For each signature:
-   - Reject future timestamps (`timestamp > block.timestamp`)
-   - Verify `block.timestamp - timestamp <= validatorApprovalTimeout(affiliate)` (falls back to `validatorApprovalTimeout(address(0))` if affiliate-specific not set, default 30s)
-   - Recover signer from EIP-712 digest (includes `symmioNonce`)
-   - Verify signer is a valid validator for the affiliate via `isValidator(affiliate, signer)` -- checks affiliate-specific registration first, then falls back to `address(0)` default
-   - Verify signer address is strictly greater than the previous (ascending order = no duplicates)
+    - Reject future timestamps (`timestamp > block.timestamp`)
+    - Verify `block.timestamp - timestamp <= validatorApprovalTimeout(affiliate)` (falls back to `validatorApprovalTimeout(address(0))` if affiliate-specific not set, default 30s)
+    - Recover signer from EIP-712 digest (includes `symmioNonce`)
+    - Verify signer is a valid validator for the affiliate via `isValidator(affiliate, signer)` -- checks affiliate-specific registration first, then falls back to `address(0)` default
+    - Verify signer address is strictly greater than the previous (ascending order = no duplicates)
 4. If any check fails -> revert (withdrawal auto-rejected)
 
 When `minValidatorSignatures(affiliate) == 0` (and no default set), the validator check is skipped entirely.
 
-### 7.6 Provider Data Encoding
+### 7.7 Provider Data Encoding
 
 The signed offer, validator attestations, and credit data are packed into `providerData` which the user passes to `SYMMIO.initiateWithdraw(parts, speedUp, providerData)`. The encoding is nested:
 
@@ -557,19 +670,15 @@ Each affiliate (frontend) has an `AffiliateConfig`:
 
 ```solidity
 struct AffiliateConfig {
-    uint256 feeRate;              // fee in basis points (1 bp = 0.01%, max 10000)
-    uint256 operatorFee;          // fixed operator fee in collateral decimals (covers bot gas)
+	uint256 feeRate; // fee in basis points (1 bp = 0.01%, max 10000)
+	uint256 operatorFee; // fixed operator fee in collateral decimals (covers bot gas)
 }
 ```
 
 The admin sets this via:
 
 ```solidity
-function setAffiliateConfig(
-    address affiliate,
-    uint256 feeRate,
-    uint256 operatorFee
-) external onlyRole(SETTER_ROLE);
+function setAffiliateConfig(address affiliate, uint256 feeRate, uint256 operatorFee) external onlyRole(SETTER_ROLE);
 ```
 
 - `feeRate` is in basis points (e.g., 50 = 0.50%).
@@ -720,6 +829,7 @@ See Section 4.2 for the conceptual overview. This section covers implementation 
 ### 9.1 Architecture
 
 Credit line logic lives inside the ExpressProvider diamond:
+
 - **`ControlFacet`** — credit line admin setters (Muon config, protocol/affiliate caps, pause, blacklist) live here alongside the other admin setters
 - **`ViewFacet`** — credit line **read** functions (debt totals, per-request debt, configuration getters) live here, alongside the other read-only views
 - **`LibCreditLine`** — debt operations (`reserveDebt`, `activate`, `settle`, `releaseReservation`, `coverLoss`) called internally by `SymmioHookFacetImpl` and `OperatorFacetImpl`
@@ -735,29 +845,29 @@ When `reserveDebt` is called, `LibCreditLine` validates the Muon oracle attestat
 
 ### 9.3 Debt Lifecycle (detailed)
 
-| Phase | Trigger | LibCreditLine Action |
-|-------|---------|----------------------|
-| Reserve | `onWithdrawRequest` | `reserveDebt` — validates Muon data, checks caps, adds to `reservedDebt` |
-| Activate | `processWithdraw` / `unlockAndProcess` / IMMEDIATE inline | `activate` — moves from `reservedDebt` to `activeDebt`, calls `advanceWithdraw` on SYMMIO |
-| Settle | `onWithdrawComplete` | `settle` — removes from `activeDebt`, deletes request state |
-| Cancel | `onWithdrawCancelRequest` (pre-payout) | `releaseReservation` — removes from `reservedDebt` |
-| Cover Loss | `onWithdrawSuspend` (post-payout) | `coverLoss` — deducts `creditAmount` from affiliate pool to cover the loss |
+| Phase      | Trigger                                                   | LibCreditLine Action                                                                      |
+| ---------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Reserve    | `onWithdrawRequest`                                       | `reserveDebt` — validates Muon data, checks caps, adds to `reservedDebt`                  |
+| Activate   | `processWithdraw` / `unlockAndProcess` / IMMEDIATE inline | `activate` — moves from `reservedDebt` to `activeDebt`, calls `advanceWithdraw` on SYMMIO |
+| Settle     | `onWithdrawComplete`                                      | `settle` — removes from `activeDebt`, deletes request state                               |
+| Cancel     | `onWithdrawCancelRequest` (pre-payout)                    | `releaseReservation` — removes from `reservedDebt`                                        |
+| Cover Loss | `onWithdrawSuspend` (post-payout)                         | `coverLoss` — deducts `creditAmount` from affiliate pool to cover the loss                |
 
 ## 10. Access Control & Roles
 
 ### 10.1 ExpressProvider Roles
 
-| Role | Who | Can do |
-|------|-----|--------|
-| Diamond Owner | Deployer/multisig | Diamond cut (add/replace/remove facets), grant/revoke roles |
-| `WITHDRAWER_ROLE` | Deployer/multisig | Withdraw liquidity from general and affiliate pools (`withdrawFromGeneral`, `withdrawFromAffiliate`) |
-| `SETTER_ROLE` | Deployer/multisig | Set all contract parameters: affiliate configs, security window, tolerance period, validators, credit line configs (protocol, affiliate, Muon, pause, blacklist) |
-| `SPONSOR_MANAGER_ROLE` | Deployer/multisig | Withdraw sponsor balances (`withdrawSponsorBalance`) |
-| `FEE_CLAIMER_ROLE` | Deployer/multisig | Claim accumulated fees (`claimFees`, `claimOperatorFees`) |
-| `OPERATOR_ROLE` | Bot service | `processWithdraw` |
-| `LOCKER_ROLE` | Risk detection service | `lockWithdraw` (separated from operator so the processing key cannot freeze funds) |
-| `UNLOCK_ROLE` | Deployer/multisig | `unlockAndProcess` (separated from bot to prevent lock-unlock hostage attacks) |
-| `SIGNER_ROLE` | Bot signer key | Signs withdrawal options (verified on-chain via EIP-712) |
+| Role                   | Who                    | Can do                                                                                                                                                           |
+| ---------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Diamond Owner          | Deployer/multisig      | Diamond cut (add/replace/remove facets), grant/revoke roles                                                                                                      |
+| `WITHDRAWER_ROLE`      | Deployer/multisig      | Withdraw liquidity from general and affiliate pools (`withdrawFromGeneral`, `withdrawFromAffiliate`)                                                             |
+| `SETTER_ROLE`          | Deployer/multisig      | Set all contract parameters: affiliate configs, security window, tolerance period, validators, credit line configs (protocol, affiliate, Muon, pause, blacklist) |
+| `SPONSOR_MANAGER_ROLE` | Deployer/multisig      | Withdraw sponsor balances (`withdrawSponsorBalance`)                                                                                                             |
+| `FEE_CLAIMER_ROLE`     | Deployer/multisig      | Claim accumulated fees (`claimFees`, `claimOperatorFees`)                                                                                                        |
+| `OPERATOR_ROLE`        | Bot service            | `processWithdraw`                                                                                                                                                |
+| `LOCKER_ROLE`          | Risk detection service | `lockWithdraw` (separated from operator so the processing key cannot freeze funds)                                                                               |
+| `UNLOCK_ROLE`          | Deployer/multisig      | `unlockAndProcess` (separated from bot to prevent lock-unlock hostage attacks)                                                                                   |
+| `SIGNER_ROLE`          | Bot signer key         | Signs withdrawal options (verified on-chain via EIP-712)                                                                                                         |
 
 Roles are stored in diamond storage and managed via `grantRole`/`revokeRole` on `ControlFacet` (owner-only).
 
@@ -792,11 +902,11 @@ When a user requests withdrawal options:
 3. Calculate available liquidity across pools
 4. Generate up to 3 options:
 
-| Check | Option Generated |
-|-------|-----------------|
+| Check                                                           | Option Generated             |
+| --------------------------------------------------------------- | ---------------------------- |
 | Sufficient instant liquidity + validators enabled for affiliate | **IMMEDIATE** (optionType=0) |
-| Sufficient instant liquidity + low risk | **INSTANT** (optionType=1) |
-| Always | **STANDARD** (optionType=2) |
+| Sufficient instant liquidity + low risk                         | **INSTANT** (optionType=1)   |
+| Always                                                          | **STANDARD** (optionType=2)  |
 
 All three options use the same EIP-712 signature and go through ExpressProvider.
 
@@ -812,15 +922,16 @@ All three options use the same EIP-712 signature and go through ExpressProvider.
 
 The bot must monitor these events on the ExpressProvider:
 
-| Event | Action |
-|-------|--------|
-| `WithdrawAccepted(user, requestId, optionType)` | For IMMEDIATE: no action needed (already processed). Otherwise, schedule `processWithdraw` at the right time |
-| `WithdrawProcessed(user, requestId)` | Schedule `finalizeWithdrawRequest` on SYMMIO at cooldownEndTime |
-| `WithdrawUnlockedAndProcessed(user, requestId)` | Schedule `finalizeWithdrawRequest` on SYMMIO at cooldownEndTime and clear the lock alert |
-| `WithdrawLocked(user, requestId)` | Cancel scheduled processing, notify admin |
-| `WithdrawCancelled(user, requestId)` | Cancel all scheduled actions for this withdrawal |
-| `WithdrawSuspended(user, requestId)` | Cancel all scheduled actions for this withdrawal |
-| `WithdrawFinalized(user, requestId)` | Confirm cycle complete, update internal state |
+| Event                                                                                           | Action                                                                                                                                                                                       |
+| ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WithdrawAccepted(user, requestId, optionType)`                                                 | For IMMEDIATE: no action needed (already processed). For STANDARD signed due to cap-full: enqueue for accelerate polling (see §11.8). Otherwise schedule `processWithdraw` at the right time |
+| `WithdrawProcessed(user, requestId)`                                                            | Schedule `finalizeWithdrawRequest` on SYMMIO at cooldownEndTime                                                                                                                              |
+| `WithdrawUnlockedAndProcessed(user, requestId)`                                                 | Schedule `finalizeWithdrawRequest` on SYMMIO at cooldownEndTime and clear the lock alert                                                                                                     |
+| `WithdrawAccelerated(user, requestId, affiliate, affiliateAmount, creditAmount, generalAmount)` | Remove from accelerate retry queue. A `WithdrawProcessed` follows in the same tx -- treat identically to native INSTANT processing                                                           |
+| `WithdrawLocked(user, requestId)`                                                               | Cancel scheduled processing, notify admin                                                                                                                                                    |
+| `WithdrawCancelled(user, requestId)`                                                            | Cancel all scheduled actions for this withdrawal (including accelerate retries)                                                                                                              |
+| `WithdrawSuspended(user, requestId)`                                                            | Cancel all scheduled actions for this withdrawal (including accelerate retries)                                                                                                              |
+| `WithdrawFinalized(user, requestId)`                                                            | Confirm cycle complete, update internal state                                                                                                                                                |
 
 ### 11.3 Scheduled Actions
 
@@ -839,11 +950,11 @@ gantt
     User can process permissionlessly :crit, 80, 85
 ```
 
-| Option | finalizeWithdrawRequest | processWithdraw |
-|--------|------------------------|-----------------|
-| IMMEDIATE | cooldownEndTime (~12h) | N/A (transferred in onWithdrawRequest) |
-| INSTANT | `cooldownEndTime` (~12h) | `acceptedAt + securityWindow` (20s) |
-| STANDARD | `cooldownEndTime` (~12h) | Operator: immediately after finalization. Anyone: after `tolerancePeriod`. |
+| Option    | finalizeWithdrawRequest  | processWithdraw                                                            |
+| --------- | ------------------------ | -------------------------------------------------------------------------- |
+| IMMEDIATE | cooldownEndTime (~12h)   | N/A (transferred in onWithdrawRequest)                                     |
+| INSTANT   | `cooldownEndTime` (~12h) | `acceptedAt + securityWindow` (20s)                                        |
+| STANDARD  | `cooldownEndTime` (~12h) | Operator: immediately after finalization. Anyone: after `tolerancePeriod`. |
 
 ### 11.4 Permissionless Fallback
 
@@ -855,16 +966,55 @@ The bot MUST handle duplicate or replayed event IDs idempotently. If the bot pro
 
 ### 11.6 Performance Targets
 
-| Metric | Target |
-|--------|--------|
+| Metric                                  | Target                                                 |
+| --------------------------------------- | ------------------------------------------------------ |
 | Immediate withdrawal end-to-end latency | Same transaction as `initiateWithdraw` (user pays gas) |
-| Instant withdrawal end-to-end latency | < 30 seconds (20s security window + processing) |
-| Options API response time | < 2 seconds |
-| Finalization scheduling accuracy | Within 1 block of `cooldownEndTime` |
+| Instant withdrawal end-to-end latency   | < 30 seconds (20s security window + processing)        |
+| Options API response time               | < 2 seconds                                            |
+| Finalization scheduling accuracy        | Within 1 block of `cooldownEndTime`                    |
 
 ### 11.7 State Synchronization
 
 When a user calls `processWithdraw` permissionlessly (after the tolerance period), the bot must detect the resulting `WithdrawProcessed` event and cancel its own scheduled processing for that withdrawal. Failure to do so results in a reverted transaction (harmless but wasteful).
+
+### 11.8 Cap-Aware Accelerate Polling
+
+When the bot decides to sign a STANDARD offer **because the affiliate credit cap is currently full** (rather than because the user explicitly asked for STANDARD), it should flag the request internally as "would have been INSTANT" and enter it into an accelerate retry queue. Every ~30 minutes the bot re-evaluates these queued requests and promotes any that now fit under the cap.
+
+**Decision logic for signing offers:**
+
+```
+if user requested STANDARD:
+    sign STANDARD option (creditAmount = 0)
+else if reservedDebt + activeDebt + desiredCreditAmount > effectiveMaxDebt:
+    sign STANDARD option (creditAmount = 0) + mark "accelerate candidate"
+else:
+    sign INSTANT option with the desired creditAmount
+```
+
+Where `effectiveMaxDebt = min(protocolMaxDebt, affiliateMaxDebt)` (0 means uncapped on that side). The bps cap must also be checked against Muon's latest `eligibleBase` attestation.
+
+**Retry loop (every 30 minutes):**
+
+For each accelerate candidate in the queue, check:
+
+1. `getWithdrawInfo(user, requestId).status == ACCEPTED` and `optionType == STANDARD` -- else drop from queue (terminal state).
+2. `block.timestamp < cooldownEndTime - safetyMargin` (e.g., 10 minutes) -- else drop from queue and let core finalize normally.
+3. `creditLineTotalDebt(affiliate) + desiredCreditAmount <= effectiveMaxDebt` -- if still full, leave in queue.
+4. If capacity exists, sign a fresh `AccelerateOffer` with the current `accelerateNonce(user, requestId)`, request a current Muon `eligibleBase` attestation, and submit `accelerateWithdraw`.
+
+**Frontend manual trigger:** When an affiliate raises `affiliateMaxDebt` via `ControlFacet.setCreditLineAffiliateConfig`, the frontend can either:
+
+- **(a)** Notify the bot via an internal webhook and wait for the next 30-minute poll to pick it up, or
+- **(b)** Fetch a fresh `AccelerateOffer` from the bot's API for a specific request and submit `accelerateWithdraw` directly from the frontend's backend. This is identical to the bot path -- the signature is bot-issued, only the on-chain submitter differs.
+
+**Nonce management:** The per-request `accelerateNonce` is the only nonce the bot must manage for acceleration. Read it with `ViewFacet.accelerateNonce(user, requestId)`. On `InvalidAccelerateNonce` revert, re-fetch from chain and re-sign.
+
+**Stop conditions for retry loop:**
+
+- `WithdrawAccelerated` / `WithdrawProcessed` emitted (success).
+- `WithdrawFinalized` / `WithdrawCancelled` / `WithdrawSuspended` emitted (terminal without acceleration).
+- `block.timestamp >= cooldownEndTime - safetyMargin` (too late; on-chain accelerate would revert with `AccelerateCooldownElapsed`).
 
 ## 12. Contract Interfaces
 
@@ -889,10 +1039,10 @@ flowchart LR
     Muon --> EC
 ```
 
-| Component | Count | Upgradeable | Description |
-|-----------|-------|-------------|-------------|
+| Component           | Count       | Upgradeable            | Description                                                                                                                                                                                                                                                                                 |
+| ------------------- | ----------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **ExpressProvider** | 1 per chain | Yes (EIP-2535 Diamond) | Main coordinator. Manages liquidity pools, validates bot signatures, locks/transfers funds, and handles credit lines. Split into ControlFacet, SymmioHookFacet, OperatorFacet, ViewFacet. Credit line state is stored in `CreditLineStorage` (diamond storage) with per-affiliate mappings. |
-| **Bot Service** | 1 global | N/A | Off-chain. Provides options API, signs options, monitors events, calls `processWithdraw` and `finalizeWithdrawRequest`. |
+| **Bot Service**     | 1 global    | N/A                    | Off-chain. Provides options API, signs options, monitors events, calls `processWithdraw` and `finalizeWithdrawRequest`.                                                                                                                                                                     |
 
 #### SYMMIO Callbacks (called by SYMMIO, not by bot)
 
@@ -1019,7 +1169,6 @@ function isValidator(address affiliate, address validator) external view returns
 
 // Access control
 function hasRole(bytes32 role, address account) external view returns (bool);
-
 ```
 
 Credit line configuration setters live on `ControlFacet` (shown in section 12.1 admin functions). Debt lifecycle functions (`reserveDebt`, `activate`, `settle`, `releaseReservation`, `coverLoss`) are internal to `LibCreditLine` and called by other facets within the diamond -- they are not externally callable. Credit line **read** functions live on `ViewFacet` (see Section 12.1 view functions).
@@ -1105,38 +1254,38 @@ validatorApprovalTimeout = mapping(address => uint256) // stored per-affiliate; 
 ```solidity
 // SYMMIO types (must match perps-core ABI)
 struct WithdrawReceiverPart {
-    uint256 id;
-    uint256 amount;          // collateral decimals
-    int256  chainId;
-    bytes   receiver;        // 20 bytes
-    address virtualProvider; // DEPRECATED: must be address(0)
-    address expressProvider;
+	uint256 id;
+	uint256 amount; // collateral decimals
+	int256 chainId;
+	bytes receiver; // 20 bytes
+	address virtualProvider; // DEPRECATED: must be address(0)
+	address expressProvider;
 }
 
 // Credit line types
 struct CreditData {
-    bytes   reqId;             // Muon request ID
-    uint256 eligibleBase;      // Muon-verified affiliate-level eligible balance
-    uint256 timestamp;         // Muon signature timestamp
-    bytes   gatewaySignature;  // Gateway signature from Muon
-    SchnorrSign sigs;          // Schnorr signatures
+	bytes reqId; // Muon request ID
+	uint256 eligibleBase; // Muon-verified affiliate-level eligible balance
+	uint256 timestamp; // Muon signature timestamp
+	bytes gatewaySignature; // Gateway signature from Muon
+	SchnorrSign sigs; // Schnorr signatures
 }
 
 struct WithdrawRequest {
-    uint256 id;
-    address user;
-    WithdrawReceiverPart[] parts;
-    uint256 timestamp;
-    uint256 cooldownEndTime;
-    WithdrawStatus status;
-    bool speedUp;
-    bool isCooldownModified;
-    address provider;
-    bool isPureVirtual;
-    bytes providerData;
-    uint256 totalAmount;
-    uint256 totalVirtualAmount;
-    uint256 advancedAmount;     // amount already released early from SYMMIO via advanceWithdraw
+	uint256 id;
+	address user;
+	WithdrawReceiverPart[] parts;
+	uint256 timestamp;
+	uint256 cooldownEndTime;
+	WithdrawStatus status;
+	bool speedUp;
+	bool isCooldownModified;
+	address provider;
+	bool isPureVirtual;
+	bytes providerData;
+	uint256 totalAmount;
+	uint256 totalVirtualAmount;
+	uint256 advancedAmount; // amount already released early from SYMMIO via advanceWithdraw
 }
 ```
 
@@ -1186,11 +1335,11 @@ expressProvider.depositToAffiliate(affiliateAddress, amount)
 
 ### 15.1 Cancellation Rules
 
-| Option | Cancellable | Condition | Rationale |
-|--------|-------------|-----------|-----------|
-| IMMEDIATE | No | Never | Funds already transferred in same tx |
-| INSTANT | Yes | If status is ACCEPTED (not yet processed) | Funds locked but not transferred; unlocking is safe |
-| STANDARD | Yes | If status is ACCEPTED (before SYMMIO finalization) | No capital fronted; Express just releases acceptance |
+| Option    | Cancellable | Condition                                          | Rationale                                            |
+| --------- | ----------- | -------------------------------------------------- | ---------------------------------------------------- |
+| IMMEDIATE | No          | Never                                              | Funds already transferred in same tx                 |
+| INSTANT   | Yes         | If status is ACCEPTED (not yet processed)          | Funds locked but not transferred; unlocking is safe  |
+| STANDARD  | Yes         | If status is ACCEPTED (before SYMMIO finalization) | No capital fronted; Express just releases acceptance |
 
 ### 15.2 Post-Payout Rollback
 

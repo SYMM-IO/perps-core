@@ -7,35 +7,20 @@ Complete reference of every flow, state, edge case, and scenario the operator bo
 ## Table of Contents
 
 **Part I: Understanding the System**
+
 1. [Overview](#1-overview)
 2. [State Machine](#2-state-machine)
 3. [Timing](#3-timing)
 
-**Part II: Core Bot Flows**
-4. [Options API](#4-options-api)
-5. [Withdrawal Flows](#5-withdrawal-flows)
-6. [Processing & Finalization](#6-processing--finalization)
-7. [Event Monitoring](#7-event-monitoring)
+**Part II: Core Bot Flows** 4. [Options API](#4-options-api) 5. [Withdrawal Flows](#5-withdrawal-flows) 6. [Processing & Finalization](#6-processing--finalization) 7. [Event Monitoring](#7-event-monitoring)
 
-**Part III: Supporting Systems**
-8. [Fee System](#8-fee-system)
-9. [Validator System](#9-validator-system)
-10. [Credit Line System](#10-credit-line-system)
-11. [Multi-Part Withdrawals](#11-multi-part-withdrawals)
+**Part III: Supporting Systems** 8. [Fee System](#8-fee-system) 9. [Validator System](#9-validator-system) 10. [Credit Line System](#10-credit-line-system) 11. [Multi-Part Withdrawals](#11-multi-part-withdrawals)
 
-**Part IV: Safety & Risk**
-12. [Risk Lock / Unlock](#12-risk-lock--unlock)
-13. [Cancellation & Suspension](#13-cancellation--suspension)
-14. [Error Catalog](#14-error-catalog)
-15. [Edge Cases & Race Conditions](#15-edge-cases--race-conditions)
+**Part IV: Safety & Risk** 12. [Risk Lock / Unlock](#12-risk-lock--unlock) 13. [Cancellation & Suspension](#13-cancellation--suspension) 14. [Error Catalog](#14-error-catalog) 15. [Edge Cases & Race Conditions](#15-edge-cases--race-conditions)
 
-**Part V: Operations**
-16. [Pool Management](#16-pool-management)
-17. [Access Control](#17-access-control)
-18. [Operational Invariants](#18-operational-invariants)
+**Part V: Operations** 16. [Pool Management](#16-pool-management) 17. [Access Control](#17-access-control) 18. [Operational Invariants](#18-operational-invariants)
 
-**Part VI: Reference**
-19. [Complete State x Option Type Decision Matrix](#19-complete-state-x-option-type-decision-matrix)
+**Part VI: Reference** 19. [Complete State x Option Type Decision Matrix](#19-complete-state-x-option-type-decision-matrix)
 
 ---
 
@@ -45,11 +30,11 @@ The Express Provider bot operates as the automated backend for the ExpressProvid
 
 ### Option Types
 
-| Option Type | Value | User Experience | Capital Fronted? | processWithdraw Needed? |
-|-------------|-------|-----------------|------------------|-------------------------|
-| IMMEDIATE | 0 | Same-transaction transfer. Fastest possible. | Yes (same-tx) | No |
-| INSTANT | 1 | ~20 seconds. Capital fronted from pools. | Yes (pools locked) | Yes |
-| STANDARD | 2 | ~12 hours. No capital fronting. ExpressProvider acts as intermediary. | No | Yes (after finalization) |
+| Option Type | Value | User Experience                                                       | Capital Fronted?   | processWithdraw Needed?  |
+| ----------- | ----- | --------------------------------------------------------------------- | ------------------ | ------------------------ |
+| IMMEDIATE   | 0     | Same-transaction transfer. Fastest possible.                          | Yes (same-tx)      | No                       |
+| INSTANT     | 1     | ~20 seconds. Capital fronted from pools.                              | Yes (pools locked) | Yes                      |
+| STANDARD    | 2     | ~12 hours. No capital fronting. ExpressProvider acts as intermediary. | No                 | Yes (after finalization) |
 
 ---
 
@@ -57,15 +42,15 @@ The Express Provider bot operates as the automated backend for the ExpressProvid
 
 ### ExpressProvider Internal Status
 
-| Status | Value | Meaning |
-|--------|-------|---------|
-| `NONE` | 0 | No withdrawal exists for this (user, requestId) |
-| `ACCEPTED` | 1 | Withdrawal accepted, funds locked (INSTANT/IMMEDIATE). Awaiting processing |
-| `LOCKED` | 2 | Risk-flagged by LOCKER_ROLE. Processing blocked until resolved |
-| `PROCESSED` | 3 | Funds transferred to user. Awaiting SYMMIO finalization to replenish pools |
-| `FINALIZED` | 4 | Terminal. Pools replenished (INSTANT/IMMEDIATE) or tokens arrived (STANDARD) |
-| `CANCELLED` | 5 | Terminal. All locks released, sponsor refunded |
-| `SUSPENDED` | 6 | Terminal. All locks released, sponsor refunded |
+| Status      | Value | Meaning                                                                      |
+| ----------- | ----- | ---------------------------------------------------------------------------- |
+| `NONE`      | 0     | No withdrawal exists for this (user, requestId)                              |
+| `ACCEPTED`  | 1     | Withdrawal accepted, funds locked (INSTANT/IMMEDIATE). Awaiting processing   |
+| `LOCKED`    | 2     | Risk-flagged by LOCKER_ROLE. Processing blocked until resolved               |
+| `PROCESSED` | 3     | Funds transferred to user. Awaiting SYMMIO finalization to replenish pools   |
+| `FINALIZED` | 4     | Terminal. Pools replenished (INSTANT/IMMEDIATE) or tokens arrived (STANDARD) |
+| `CANCELLED` | 5     | Terminal. All locks released, sponsor refunded                               |
+| `SUSPENDED` | 6     | Terminal. All locks released, sponsor refunded                               |
 
 ### State Transition Diagrams
 
@@ -134,21 +119,21 @@ stateDiagram-v2
 
 ### Transition Triggers
 
-| From | To | Trigger | Who |
-|------|----|---------|-----|
-| NONE | ACCEPTED | `onWithdrawRequest` (INSTANT/STANDARD) | SYMMIO callback |
-| NONE | PROCESSED | `onWithdrawRequest` (IMMEDIATE, same-tx transfer) | SYMMIO callback |
-| ACCEPTED | PROCESSED | `processWithdraw` | OPERATOR_ROLE (or anyone after tolerancePeriod) |
-| ACCEPTED | LOCKED | `lockWithdraw` | LOCKER_ROLE |
-| ACCEPTED | CANCELLED | `onWithdrawCancelRequest` | SYMMIO callback |
-| ACCEPTED | SUSPENDED | `onWithdrawSuspend` | SYMMIO callback |
-| LOCKED | PROCESSED | `unlockAndProcess` | UNLOCK_ROLE |
-| LOCKED | PROCESSED | `processWithdraw` (after cooldownEndTime) | OPERATOR_ROLE (or anyone) |
-| LOCKED | SUSPENDED | `onWithdrawSuspend` (STANDARD only if `finalizedAt == 0`) | SYMMIO callback |
-| LOCKED | LOCKED (finalizedAt set) | `onWithdrawComplete` (STANDARD only) | SYMMIO callback |
-| PROCESSED | SUSPENDED | `onWithdrawSuspend` (post-payout rollback: covers credit loss, returns funds to pools) | SYMMIO callback |
-| PROCESSED | FINALIZED | `onWithdrawComplete` | SYMMIO callback |
-| ACCEPTED | FINALIZED | `onWithdrawComplete` (STANDARD only) | SYMMIO callback |
+| From      | To                       | Trigger                                                                                | Who                                             |
+| --------- | ------------------------ | -------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| NONE      | ACCEPTED                 | `onWithdrawRequest` (INSTANT/STANDARD)                                                 | SYMMIO callback                                 |
+| NONE      | PROCESSED                | `onWithdrawRequest` (IMMEDIATE, same-tx transfer)                                      | SYMMIO callback                                 |
+| ACCEPTED  | PROCESSED                | `processWithdraw`                                                                      | OPERATOR_ROLE (or anyone after tolerancePeriod) |
+| ACCEPTED  | LOCKED                   | `lockWithdraw`                                                                         | LOCKER_ROLE                                     |
+| ACCEPTED  | CANCELLED                | `onWithdrawCancelRequest`                                                              | SYMMIO callback                                 |
+| ACCEPTED  | SUSPENDED                | `onWithdrawSuspend`                                                                    | SYMMIO callback                                 |
+| LOCKED    | PROCESSED                | `unlockAndProcess`                                                                     | UNLOCK_ROLE                                     |
+| LOCKED    | PROCESSED                | `processWithdraw` (after cooldownEndTime)                                              | OPERATOR_ROLE (or anyone)                       |
+| LOCKED    | SUSPENDED                | `onWithdrawSuspend` (STANDARD only if `finalizedAt == 0`)                              | SYMMIO callback                                 |
+| LOCKED    | LOCKED (finalizedAt set) | `onWithdrawComplete` (STANDARD only)                                                   | SYMMIO callback                                 |
+| PROCESSED | SUSPENDED                | `onWithdrawSuspend` (post-payout rollback: covers credit loss, returns funds to pools) | SYMMIO callback                                 |
+| PROCESSED | FINALIZED                | `onWithdrawComplete`                                                                   | SYMMIO callback                                 |
+| ACCEPTED  | FINALIZED                | `onWithdrawComplete` (STANDARD only)                                                   | SYMMIO callback                                 |
 
 Note: `onWithdrawSuspend` handles all cancellation paths from non-terminal states. Suspend can happen at any point (`ACCEPTED`, `LOCKED`, or `PROCESSED`) and triggers a rollback (covering credit loss, returning funds to pools) when called from `PROCESSED`. The contract callback list is exactly: `onWithdrawRequest`, `onWithdrawComplete`, `onWithdrawCancelRequest`, `onWithdrawSuspend`.
 
@@ -289,15 +274,16 @@ Result:
 The `processableAt` timestamp determines when `processWithdraw` can be called. It varies
 by option type, status, and caller role. This table is the definitive reference.
 
-| Option Type | Status | processableAt (OPERATOR_ROLE) | processableAt (Anyone) |
-|-------------|--------|-------------------------------|------------------------|
-| INSTANT | ACCEPTED | `acceptedAt + securityWindow` | `acceptedAt + securityWindow + tolerancePeriod` |
-| INSTANT | LOCKED | `cooldownEndTime` (only if `block.timestamp >= cooldownEndTime`) | `cooldownEndTime + tolerancePeriod` |
-| STANDARD | FINALIZED | `finalizedAt` | `finalizedAt + tolerancePeriod` |
-| STANDARD | LOCKED | `cooldownEndTime` (only if `block.timestamp >= cooldownEndTime`) | `cooldownEndTime + tolerancePeriod` |
-| IMMEDIATE | N/A | N/A (processed atomically inside `onWithdrawRequest`) | N/A |
+| Option Type | Status    | processableAt (OPERATOR_ROLE)                                    | processableAt (Anyone)                          |
+| ----------- | --------- | ---------------------------------------------------------------- | ----------------------------------------------- |
+| INSTANT     | ACCEPTED  | `acceptedAt + securityWindow`                                    | `acceptedAt + securityWindow + tolerancePeriod` |
+| INSTANT     | LOCKED    | `cooldownEndTime` (only if `block.timestamp >= cooldownEndTime`) | `cooldownEndTime + tolerancePeriod`             |
+| STANDARD    | FINALIZED | `finalizedAt`                                                    | `finalizedAt + tolerancePeriod`                 |
+| STANDARD    | LOCKED    | `cooldownEndTime` (only if `block.timestamp >= cooldownEndTime`) | `cooldownEndTime + tolerancePeriod`             |
+| IMMEDIATE   | N/A       | N/A (processed atomically inside `onWithdrawRequest`)            | N/A                                             |
 
 Notes:
+
 - For LOCKED withdrawals, `processWithdraw` only becomes callable once `block.timestamp >= cooldownEndTime`.
   At that point the risk window is over and the lock becomes ineffective.
 - For LOCKED STANDARD withdrawals with `finalizedAt == 0`, `processWithdraw` calls
@@ -353,28 +339,28 @@ gantt
 
 ### 3.4 Configurable Parameters
 
-| Parameter | Default | Setter | Description |
-|-----------|---------|--------|-------------|
-| `securityWindow` | 20s | SETTER_ROLE | Min delay before operator `processWithdraw` for INSTANT |
-| `tolerancePeriod` | 60s | SETTER_ROLE | Extra delay for permissionless processing |
-| `validatorApprovalTimeout(affiliate)` | 30s | SETTER_ROLE | Max age of validator signatures. Effective getter falls back to `address(0)` when the affiliate-specific value is zero |
-| `minValidatorSignatures(affiliate)` | 0 | SETTER_ROLE | Required validator attestation count. Effective getter falls back to `address(0)` when the affiliate-specific value is zero |
+| Parameter                             | Default | Setter      | Description                                                                                                                 |
+| ------------------------------------- | ------- | ----------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `securityWindow`                      | 20s     | SETTER_ROLE | Min delay before operator `processWithdraw` for INSTANT                                                                     |
+| `tolerancePeriod`                     | 60s     | SETTER_ROLE | Extra delay for permissionless processing                                                                                   |
+| `validatorApprovalTimeout(affiliate)` | 30s     | SETTER_ROLE | Max age of validator signatures. Effective getter falls back to `address(0)` when the affiliate-specific value is zero      |
+| `minValidatorSignatures(affiliate)`   | 0       | SETTER_ROLE | Required validator attestation count. Effective getter falls back to `address(0)` when the affiliate-specific value is zero |
 
 ### 3.5 Fixed Timing
 
-| Timing | Value | Source |
-|--------|-------|--------|
-| SYMMIO withdrawal cooldown | 12 hours | SYMMIO core |
-| `cooldownEndTime` | `max(deallocateTimestamp + 12h, block.timestamp)` | Computed from SYMMIO |
+| Timing                     | Value                                             | Source               |
+| -------------------------- | ------------------------------------------------- | -------------------- |
+| SYMMIO withdrawal cooldown | 12 hours                                          | SYMMIO core          |
+| `cooldownEndTime`          | `max(deallocateTimestamp + 12h, block.timestamp)` | Computed from SYMMIO |
 
 ### 3.6 Special Timing Cases
 
-| Case | Behavior |
-|------|----------|
-| `securityWindow < 10` | Setter reverts `SecurityWindowTooLow` |
-| `tolerancePeriod < 10` | Setter reverts `TolerancePeriodTooLow` |
+| Case                                                         | Behavior                                                               |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------- |
+| `securityWindow < 10`                                        | Setter reverts `SecurityWindowTooLow`                                  |
+| `tolerancePeriod < 10`                                       | Setter reverts `TolerancePeriodTooLow`                                 |
 | Cooldown already elapsed (`deallocateTimestamp + 12h < now`) | `cooldownEndTime = block.timestamp`, finalization possible immediately |
-| LOCKED after cooldown | processableAt = cooldownEndTime (lock becomes ineffective) |
+| LOCKED after cooldown                                        | processableAt = cooldownEndTime (lock becomes ineffective)             |
 
 #### Numeric Scenarios: Bot Computes processableAt
 
@@ -567,14 +553,15 @@ flowchart LR
 
 Each `WithdrawReceiverPart`:
 
-| Field | Express part | Non-express |
-|-------|-------------|-------------|
-| `expressProvider` | ExpressProvider address | `address(0)` |
-| `virtualProvider` | `address(0)` (DEPRECATED, must be zero) | varies |
-| `amount` | collateral decimals | collateral decimals |
-| `receiver` | user's receiver address | user's receiver address |
+| Field             | Express part                            | Non-express             |
+| ----------------- | --------------------------------------- | ----------------------- |
+| `expressProvider` | ExpressProvider address                 | `address(0)`            |
+| `virtualProvider` | `address(0)` (DEPRECATED, must be zero) | varies                  |
+| `amount`          | collateral decimals                     | collateral decimals     |
+| `receiver`        | user's receiver address                 | user's receiver address |
 
 **Amount classification:**
+
 - `expressAmount` = sum of parts where `expressProvider == address(this)`
 - `generalAmount = expressAmount - affiliateAmount - creditAmount`
 - `feeBasis = expressAmount`
@@ -615,6 +602,7 @@ If no credit used, `creditDataRaw` is empty bytes (`""`).
 ### 4.6 Signing Requirements
 
 **WithdrawOption EIP-712 fields (all must be exact):**
+
 - [ ] `user` -- the withdrawing user address
 - [ ] `nonce` -- must match `nonces[user]` at execution time
 - [ ] `optionType` -- 0-2
@@ -957,6 +945,7 @@ sequenceDiagram
 ```
 
 **Prerequisites:**
+
 - [ ] `minValidatorSignatures(affiliate) > 0` (REQUIRED, reverts `ValidatorsRequiredForImmediate` otherwise; falls back to `minValidatorSignatures(address(0))` default)
 - [ ] Sufficient general pool liquidity
 - [ ] Sufficient affiliate pool liquidity (if affiliateAmount > 0)
@@ -964,6 +953,7 @@ sequenceDiagram
 - [ ] Valid validator attestations gathered from validators registered for this affiliate (or `address(0)` default)
 
 **Bot checklist:**
+
 - [ ] Gather >= `minValidatorSignatures(affiliate)` validator sigs before offering IMMEDIATE (from validators registered for this affiliate or `address(0)` default)
 - [ ] Validator sigs must be address-sorted ascending (dedup check)
 - [ ] Each validator timestamp must be within `validatorApprovalTimeout(affiliate)` of current time
@@ -1174,6 +1164,7 @@ sequenceDiagram
 ```
 
 **Bot checklist:**
+
 - [ ] Wait at least `securityWindow` after `acceptedAt` before calling `processWithdraw`
 - [ ] Perform risk check during security window
 - [ ] If risky: call `lockWithdraw` (LOCKER_ROLE), do NOT call `processWithdraw`
@@ -1317,6 +1308,7 @@ Step 5 — Bot sees: block.timestamp >= cooldownEndTime (~T0 + 12h).
 ---
 
 ### 5.3 STANDARD (optionType = 2)
+
 **User experience:** ~12 hours. No capital fronting. ExpressProvider acts as intermediary.
 
 ```mermaid
@@ -1349,6 +1341,7 @@ sequenceDiagram
 ```
 
 **Bot checklist:**
+
 - [ ] Do NOT call `processWithdraw` before finalization (reverts `NotFinalized`)
 - [ ] Operator can process immediately after finalization
 - [ ] Anyone can process after finalization + `tolerancePeriod`
@@ -1487,6 +1480,7 @@ Example: 500 USDC withdrawal
 ```
 
 The bot MUST verify:
+
 - [ ] Credit line is configured for this affiliate (check via `expressProvider.creditLinePaused(affiliate)` not reverting)
 - [ ] Credit line is not paused: `expressProvider.creditLinePaused(affiliate) == false`
 - [ ] User is not blacklisted: `expressProvider.creditLineBlacklisted(affiliate, user) == false`
@@ -1498,22 +1492,22 @@ The bot MUST verify:
 
 ### 6.1 After Acceptance
 
-| Option | Schedule processWithdraw at | Schedule finalizeWithdrawRequest at |
-|--------|----------------------------|-------------------------------------|
-| IMMEDIATE | N/A (already processed) | `cooldownEndTime` |
-| INSTANT | `acceptedAt + securityWindow` | `cooldownEndTime` |
-| STANDARD | After `onWithdrawComplete` | `cooldownEndTime` |
+| Option    | Schedule processWithdraw at   | Schedule finalizeWithdrawRequest at |
+| --------- | ----------------------------- | ----------------------------------- |
+| IMMEDIATE | N/A (already processed)       | `cooldownEndTime`                   |
+| INSTANT   | `acceptedAt + securityWindow` | `cooldownEndTime`                   |
+| STANDARD  | After `onWithdrawComplete`    | `cooldownEndTime`                   |
 
 ### 6.2 Processing (`processWithdraw`)
 
 - [ ] Verify status is correct for the option type:
-  - INSTANT: must be ACCEPTED (or LOCKED after cooldown)
-  - STANDARD: must be FINALIZED (or LOCKED after cooldown)
+    - INSTANT: must be ACCEPTED (or LOCKED after cooldown)
+    - STANDARD: must be FINALIZED (or LOCKED after cooldown)
 - [ ] Provide exact `parts` array (verified against stored `partsHash`)
 - [ ] Check timing:
-  - INSTANT: `block.timestamp >= acceptedAt + securityWindow`
-  - STANDARD: `block.timestamp >= finalizedAt` (operator) or `+ tolerancePeriod` (anyone)
-  - LOCKED after cooldown: `block.timestamp >= cooldownEndTime`
+    - INSTANT: `block.timestamp >= acceptedAt + securityWindow`
+    - STANDARD: `block.timestamp >= finalizedAt` (operator) or `+ tolerancePeriod` (anyone)
+    - LOCKED after cooldown: `block.timestamp >= cooldownEndTime`
 - [ ] For LOCKED STANDARD without finalization: `processWithdraw` calls `finalizeWithdrawRequest` on SYMMIO first
 - [ ] After successful processing: schedule `finalizeWithdrawRequest` at `cooldownEndTime`
 
@@ -1547,11 +1541,11 @@ gantt
 
 #### When Anyone Can Process
 
-| Option | Operator processableAt | Anyone processableAt |
-|--------|----------------------|---------------------|
-| INSTANT | `acceptedAt + securityWindow` | `acceptedAt + securityWindow + tolerancePeriod` |
-| STANDARD | `finalizedAt` | `finalizedAt + tolerancePeriod` |
-| LOCKED (after cooldown) | `cooldownEndTime` | `cooldownEndTime + tolerancePeriod` |
+| Option                  | Operator processableAt        | Anyone processableAt                            |
+| ----------------------- | ----------------------------- | ----------------------------------------------- |
+| INSTANT                 | `acceptedAt + securityWindow` | `acceptedAt + securityWindow + tolerancePeriod` |
+| STANDARD                | `finalizedAt`                 | `finalizedAt + tolerancePeriod`                 |
+| LOCKED (after cooldown) | `cooldownEndTime`             | `cooldownEndTime + tolerancePeriod`             |
 
 #### Bot Must Handle
 
@@ -1661,26 +1655,26 @@ flowchart TD
 
 ### 7.2 Events to Monitor
 
-| Event | Source | Bot Action |
-|-------|--------|------------|
-| `WithdrawAccepted(user, requestId, optionType)` | ExpressProvider | Schedule `processWithdraw` at appropriate time (skip for IMMEDIATE) |
-| `WithdrawProcessed(user, requestId)` | ExpressProvider | Schedule `finalizeWithdrawRequest` on SYMMIO at `cooldownEndTime`. Cancel any pending `processWithdraw` schedule |
-| `WithdrawLocked(user, requestId)` | ExpressProvider | Cancel scheduled `processWithdraw`. Alert admin. Monitor for resolution |
-| `WithdrawUnlockedAndProcessed(user, requestId)` | ExpressProvider | Schedule `finalizeWithdrawRequest`. Clear lock alert |
-| `WithdrawFinalized(user, requestId)` | ExpressProvider | Cycle complete. Update internal tracking. For STANDARD: trigger `processWithdraw` |
-| `WithdrawCancelled(user, requestId)` | ExpressProvider | Cancel all scheduled actions for this withdrawal |
-| `WithdrawSuspended(user, requestId)` | ExpressProvider | Cancel all scheduled actions for this withdrawal |
-| `AffiliateConfigUpdated(affiliate, feeRate, operatorFee)` | ExpressProvider | Update cached fee config. Re-sign any pending options |
-| `SponsorConfigUpdated(affiliate, ...)` | ExpressProvider | Update cached sponsor config |
-| `MinValidatorSignaturesUpdated(affiliate, min)` | ExpressProvider | Update validator gathering logic for this affiliate. If raised, pending ops may be invalidated |
-| `ValidatorApprovalTimeoutUpdated(affiliate, timeout)` | ExpressProvider | Update timestamp freshness check for this affiliate. Pending sigs may expire |
-| `ValidatorUpdated(affiliate, validator, enabled)` | ExpressProvider | Update tracked validators for this affiliate. If disabled, pending sigs from that validator become invalid |
-| `GeneralDeposit(amount)` | ExpressProvider | Update available liquidity tracking |
-| `GeneralWithdraw(amount)` | ExpressProvider | Update available liquidity tracking |
-| `AffiliateDeposit(affiliate, amount)` | ExpressProvider | Update per-affiliate liquidity tracking |
-| `AffiliateWithdraw(affiliate, amount)` | ExpressProvider | Update per-affiliate liquidity tracking |
-| `SponsorDeposit(affiliate, amount)` | ExpressProvider | Update sponsor balance tracking |
-| `SponsorWithdraw(affiliate, amount)` | ExpressProvider | Update sponsor balance tracking |
+| Event                                                     | Source          | Bot Action                                                                                                       |
+| --------------------------------------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `WithdrawAccepted(user, requestId, optionType)`           | ExpressProvider | Schedule `processWithdraw` at appropriate time (skip for IMMEDIATE)                                              |
+| `WithdrawProcessed(user, requestId)`                      | ExpressProvider | Schedule `finalizeWithdrawRequest` on SYMMIO at `cooldownEndTime`. Cancel any pending `processWithdraw` schedule |
+| `WithdrawLocked(user, requestId)`                         | ExpressProvider | Cancel scheduled `processWithdraw`. Alert admin. Monitor for resolution                                          |
+| `WithdrawUnlockedAndProcessed(user, requestId)`           | ExpressProvider | Schedule `finalizeWithdrawRequest`. Clear lock alert                                                             |
+| `WithdrawFinalized(user, requestId)`                      | ExpressProvider | Cycle complete. Update internal tracking. For STANDARD: trigger `processWithdraw`                                |
+| `WithdrawCancelled(user, requestId)`                      | ExpressProvider | Cancel all scheduled actions for this withdrawal                                                                 |
+| `WithdrawSuspended(user, requestId)`                      | ExpressProvider | Cancel all scheduled actions for this withdrawal                                                                 |
+| `AffiliateConfigUpdated(affiliate, feeRate, operatorFee)` | ExpressProvider | Update cached fee config. Re-sign any pending options                                                            |
+| `SponsorConfigUpdated(affiliate, ...)`                    | ExpressProvider | Update cached sponsor config                                                                                     |
+| `MinValidatorSignaturesUpdated(affiliate, min)`           | ExpressProvider | Update validator gathering logic for this affiliate. If raised, pending ops may be invalidated                   |
+| `ValidatorApprovalTimeoutUpdated(affiliate, timeout)`     | ExpressProvider | Update timestamp freshness check for this affiliate. Pending sigs may expire                                     |
+| `ValidatorUpdated(affiliate, validator, enabled)`         | ExpressProvider | Update tracked validators for this affiliate. If disabled, pending sigs from that validator become invalid       |
+| `GeneralDeposit(amount)`                                  | ExpressProvider | Update available liquidity tracking                                                                              |
+| `GeneralWithdraw(amount)`                                 | ExpressProvider | Update available liquidity tracking                                                                              |
+| `AffiliateDeposit(affiliate, amount)`                     | ExpressProvider | Update per-affiliate liquidity tracking                                                                          |
+| `AffiliateWithdraw(affiliate, amount)`                    | ExpressProvider | Update per-affiliate liquidity tracking                                                                          |
+| `SponsorDeposit(affiliate, amount)`                       | ExpressProvider | Update sponsor balance tracking                                                                                  |
+| `SponsorWithdraw(affiliate, amount)`                      | ExpressProvider | Update sponsor balance tracking                                                                                  |
 
 ### 7.3 Idempotency Requirements
 
@@ -1892,18 +1886,18 @@ flowchart TD
 
 ### 8.5 Sponsor Scenarios
 
-| Scenario | Bot Must Handle |
-|----------|----------------|
-| Full sponsor coverage | `maxUserFee = 0`, user pays nothing |
-| Partial sponsor coverage | `maxUserFee = totalFee - min(sponsorBalance, maxCoverage)` |
-| No sponsor | `maxUserFee = totalFee` |
+| Scenario                            | Bot Must Handle                                                 |
+| ----------------------------------- | --------------------------------------------------------------- |
+| Full sponsor coverage               | `maxUserFee = 0`, user pays nothing                             |
+| Partial sponsor coverage            | `maxUserFee = totalFee - min(sponsorBalance, maxCoverage)`      |
+| No sponsor                          | `maxUserFee = totalFee`                                         |
 | Sponsor drained between sign and tx | Reverts `UserFeeExceedsMaximum` if `maxUserFee` was set too low |
-| Sponsor balance changes mid-flight | Coverage locked at acceptance time, not processing time |
-| Cancel/suspend refunds sponsor | `sponsorBalances[affiliate] += info.sponsorCoverage` |
-| maxWithdrawAmount gate | Large withdrawals skip sponsorship entirely |
-| maxFeePerWithdraw cap | Sponsor covers at most this much per withdrawal |
-| Both caps active | Both checked independently |
-| Zero caps | 0 means "no limit" for both settings |
+| Sponsor balance changes mid-flight  | Coverage locked at acceptance time, not processing time         |
+| Cancel/suspend refunds sponsor      | `sponsorBalances[affiliate] += info.sponsorCoverage`            |
+| maxWithdrawAmount gate              | Large withdrawals skip sponsorship entirely                     |
+| maxFeePerWithdraw cap               | Sponsor covers at most this much per withdrawal                 |
+| Both caps active                    | Both checked independently                                      |
+| Zero caps                           | 0 means "no limit" for both settings                            |
 
 ### 8.6 Bot Checklist for Sponsors
 
@@ -2134,11 +2128,11 @@ sequenceDiagram
 
 ### 9.2 When Validators Are Required
 
-| Condition | Validators Checked? |
-|-----------|-------------------|
-| `minValidatorSignatures(affiliate) > 0` | Yes, for ALL option types |
-| `minValidatorSignatures(affiliate) == 0` | No |
-| IMMEDIATE option type | ALWAYS required (reverts `ValidatorsRequiredForImmediate` if disabled) |
+| Condition                                | Validators Checked?                                                    |
+| ---------------------------------------- | ---------------------------------------------------------------------- |
+| `minValidatorSignatures(affiliate) > 0`  | Yes, for ALL option types                                              |
+| `minValidatorSignatures(affiliate) == 0` | No                                                                     |
+| IMMEDIATE option type                    | ALWAYS required (reverts `ValidatorsRequiredForImmediate` if disabled) |
 
 ### 9.3 ValidatorApproval EIP-712 Structure
 
@@ -2161,11 +2155,11 @@ ValidatorApproval(address user,uint256 nonce,uint256 amount,uint256 timestamp,ui
 - [ ] `signatures.length >= minValidatorSignatures(affiliate)` (else `InsufficientValidatorSignatures`; falls back to `minValidatorSignatures(address(0))` default)
 - [ ] `symmioNonce == ISymmio(symmio).nonceOfPartyA(user)` (else `InvalidNonce`)
 - [ ] For each signature:
-  - [ ] `timestamps[i] <= block.timestamp` (no future-dating, else `ValidatorApprovalExpired`)
-  - [ ] `block.timestamp - timestamps[i] <= validatorApprovalTimeout(affiliate)` (not stale, else `ValidatorApprovalExpired`; falls back to `validatorApprovalTimeout(address(0))` default)
-  - [ ] Recovered signer passes `isValidator(affiliate, signer)` — checks affiliate-specific registration first, then `address(0)` default (else `InvalidValidator`)
-  - [ ] Signers are sorted ascending by address (else `DuplicateValidator`)
-  - [ ] No duplicate signers
+    - [ ] `timestamps[i] <= block.timestamp` (no future-dating, else `ValidatorApprovalExpired`)
+    - [ ] `block.timestamp - timestamps[i] <= validatorApprovalTimeout(affiliate)` (not stale, else `ValidatorApprovalExpired`; falls back to `validatorApprovalTimeout(address(0))` default)
+    - [ ] Recovered signer passes `isValidator(affiliate, signer)` — checks affiliate-specific registration first, then `address(0)` default (else `InvalidValidator`)
+    - [ ] Signers are sorted ascending by address (else `DuplicateValidator`)
+    - [ ] No duplicate signers
 
 ### 9.5 Bot Checklist for Validators
 
@@ -2180,18 +2174,18 @@ ValidatorApproval(address user,uint256 nonce,uint256 amount,uint256 timestamp,ui
 
 ### 9.6 Edge Cases
 
-| Edge Case | Result |
-|-----------|--------|
-| Exact expiry boundary (`timestamp + timeout == block.timestamp`) | VALID (strict `>` check) |
-| Future-dated timestamp | REJECTED (`ValidatorApprovalExpired`) |
-| Same validator signs twice | REJECTED (`DuplicateValidator`) |
-| Wrong amount in validator sig | REJECTED (`InvalidValidator` -- recovered address not a registered validator) |
-| Wrong nonce in validator sig | REJECTED (`InvalidValidator` -- recovered address not a registered validator) |
-| Validator disabled after signing | REJECTED at submission time |
-| More sigs than minimum | All validated, extras must also be valid |
-| symmioNonce changed after signing | REJECTED (`InvalidNonce`) |
-| Affiliate has no per-affiliate validator config | Falls back to `address(0)` defaults for `minValidatorSignatures`, `validatorApprovalTimeout`, and `isValidator` |
-| Wrong `symmio` address in signed payload | REJECTED (`InvalidValidator` -- recovered address mismatches due to typehash binding) |
+| Edge Case                                                        | Result                                                                                                          |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Exact expiry boundary (`timestamp + timeout == block.timestamp`) | VALID (strict `>` check)                                                                                        |
+| Future-dated timestamp                                           | REJECTED (`ValidatorApprovalExpired`)                                                                           |
+| Same validator signs twice                                       | REJECTED (`DuplicateValidator`)                                                                                 |
+| Wrong amount in validator sig                                    | REJECTED (`InvalidValidator` -- recovered address not a registered validator)                                   |
+| Wrong nonce in validator sig                                     | REJECTED (`InvalidValidator` -- recovered address not a registered validator)                                   |
+| Validator disabled after signing                                 | REJECTED at submission time                                                                                     |
+| More sigs than minimum                                           | All validated, extras must also be valid                                                                        |
+| symmioNonce changed after signing                                | REJECTED (`InvalidNonce`)                                                                                       |
+| Affiliate has no per-affiliate validator config                  | Falls back to `address(0)` defaults for `minValidatorSignatures`, `validatorApprovalTimeout`, and `isValidator` |
+| Wrong `symmio` address in signed payload                         | REJECTED (`InvalidValidator` -- recovered address mismatches due to typehash binding)                           |
 
 **Per-affiliate config note:** `setValidator`, `setMinValidatorSignatures`, and `setValidatorApprovalTimeout` are all per-affiliate (commit 11891d89). The bot must read each value via the affiliate-keyed getter; if the affiliate has not been customized, the contract automatically falls back to the `address(0)` defaults set by the protocol. The same fallback applies to `isValidator(affiliate, signer)`.
 
@@ -2318,13 +2312,13 @@ coverLoss:           affiliateBalances[affiliate] -= creditAmount, then internal
 
 **Who calls what:**
 
-| Lifecycle event | Trigger | Called by |
-|-----------------|---------|-----------|
-| `reserveDebt` | `onWithdrawRequest` (acceptance) -- validates Muon, checks caps, increments reservedDebt | SymmioHookFacetImpl via LibCreditLine.reserveDebt |
-| `activate` | `processWithdraw` / `unlockAndProcess` / inline IMMEDIATE in `onWithdrawRequest` -- moves reserved -> active and calls `ISymmio.advanceWithdraw` | OperatorFacetImpl / SymmioHookFacetImpl via LibCreditLine.activate |
-| `settle` | `onWithdrawComplete` (finalization) -- removes from active and clears request state | SymmioHookFacetImpl via LibCreditLine.settle |
-| `releaseReservation` | `onWithdrawCancelRequest` (pre-payout, ACCEPTED only) -- removes from reservedDebt | SymmioHookFacetImpl via LibCreditLine.releaseReservation |
-| `coverLoss` | `onWithdrawSuspend` when status was PROCESSED (post-payout rollback) -- deducts from affiliate pool to absorb the loss and then settles | SymmioHookFacetImpl via LibCreditLine.coverLoss |
+| Lifecycle event      | Trigger                                                                                                                                          | Called by                                                          |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| `reserveDebt`        | `onWithdrawRequest` (acceptance) -- validates Muon, checks caps, increments reservedDebt                                                         | SymmioHookFacetImpl via LibCreditLine.reserveDebt                  |
+| `activate`           | `processWithdraw` / `unlockAndProcess` / inline IMMEDIATE in `onWithdrawRequest` -- moves reserved -> active and calls `ISymmio.advanceWithdraw` | OperatorFacetImpl / SymmioHookFacetImpl via LibCreditLine.activate |
+| `settle`             | `onWithdrawComplete` (finalization) -- removes from active and clears request state                                                              | SymmioHookFacetImpl via LibCreditLine.settle                       |
+| `releaseReservation` | `onWithdrawCancelRequest` (pre-payout, ACCEPTED only) -- removes from reservedDebt                                                               | SymmioHookFacetImpl via LibCreditLine.releaseReservation           |
+| `coverLoss`          | `onWithdrawSuspend` when status was PROCESSED (post-payout rollback) -- deducts from affiliate pool to absorb the loss and then settles          | SymmioHookFacetImpl via LibCreditLine.coverLoss                    |
 
 **Note:** `onForceWithdrawCancel` has been removed entirely (commit 40d5fd99). Only `onWithdrawSuspend` triggers `coverLoss` now; the `forceCancelWithdraw` path no longer exists.
 
@@ -2342,17 +2336,17 @@ All credit line logic lives inside the ExpressProvider diamond via `LibCreditLin
 - [ ] **Check `creditLinePaused(affiliate)`** -- if `true`, all `reserveDebt` calls revert `CreditLinePaused`. The bot must not sign options with `creditAmount > 0` for this affiliate.
 - [ ] **Check `creditLineBlacklisted(affiliate, user)`** -- if `true` for the requesting user, `reserveDebt` reverts `UserBlacklisted`. The bot must reject credit for blacklisted users.
 - [ ] **Monitor debt cap headroom:**
-  - `protocolMaxDebt` and `affiliateMaxDebt` -- absolute caps (0 = no limit). The effective cap is the tighter (non-zero minimum) of the two.
-  - `protocolMaxDebtBps` and `affiliateMaxDebtBps` -- percentage caps as basis points of Muon `eligibleBase` (0 = no limit). Same tighter-of-two logic.
-  - New debt is allowed only if `creditLineTotalDebt(affiliate) + creditAmount <= effectiveMaxDebt` AND `creditLineTotalDebt(affiliate) + creditAmount <= eligibleBase * effectiveMaxBps / 10000`.
+    - `protocolMaxDebt` and `affiliateMaxDebt` -- absolute caps (0 = no limit). The effective cap is the tighter (non-zero minimum) of the two.
+    - `protocolMaxDebtBps` and `affiliateMaxDebtBps` -- percentage caps as basis points of Muon `eligibleBase` (0 = no limit). Same tighter-of-two logic.
+    - New debt is allowed only if `creditLineTotalDebt(affiliate) + creditAmount <= effectiveMaxDebt` AND `creditLineTotalDebt(affiliate) + creditAmount <= eligibleBase * effectiveMaxBps / 10000`.
 - [ ] **Monitor `creditLineReservedDebt(affiliate)` vs `creditLineActiveDebt(affiliate)` ratio** -- high reserved debt means many accepted-but-not-yet-processed credit withdrawals. This is normal during the security window but may indicate processing delays if it persists.
 - [ ] **Listen for credit line events** on the ExpressProvider diamond to maintain an accurate local state:
-  - `DebtReserved(affiliate, user, requestId, amount)` -- new credit accepted
-  - `DebtActivated(affiliate, user, requestId, amount)` -- credit advanced to user
-  - `DebtSettled(affiliate, user, requestId, amount)` -- credit repaid on finalization
-  - `DebtCancelled(affiliate, user, requestId, amount)` -- credit released on cancel
-  - `CreditLinePausedUpdated(affiliate, bool)` -- credit line paused/unpaused
-  - `CreditLineBlacklistUpdated(affiliate, user, bool)` -- user blacklist change
+    - `DebtReserved(affiliate, user, requestId, amount)` -- new credit accepted
+    - `DebtActivated(affiliate, user, requestId, amount)` -- credit advanced to user
+    - `DebtSettled(affiliate, user, requestId, amount)` -- credit repaid on finalization
+    - `DebtCancelled(affiliate, user, requestId, amount)` -- credit released on cancel
+    - `CreditLinePausedUpdated(affiliate, bool)` -- credit line paused/unpaused
+    - `CreditLineBlacklistUpdated(affiliate, user, bool)` -- user blacklist change
 - [ ] **Alert on approaching caps** -- when `creditLineTotalDebt(affiliate)` exceeds 80% of `effectiveMaxDebt`, alert the affiliate operator
 
 ### 10.4 How Credit Lines Work
@@ -2363,15 +2357,16 @@ Credit lines let the ExpressProvider front more capital than it holds in its gen
 
 ```solidity
 struct CreditData {
-    bytes   reqId;             // Muon request identifier
-    uint256 eligibleBase;      // Muon-computed aggregate eligible balance for the affiliate
-    uint256 timestamp;         // when the Muon oracle produced this attestation
-    bytes   gatewaySignature;  // Muon gateway signature
-    IMuonSignatureVerifier.SchnorrSign sigs;  // Schnorr signature for verification
+	bytes reqId; // Muon request identifier
+	uint256 eligibleBase; // Muon-computed aggregate eligible balance for the affiliate
+	uint256 timestamp; // when the Muon oracle produced this attestation
+	bytes gatewaySignature; // Muon gateway signature
+	IMuonSignatureVerifier.SchnorrSign sigs; // Schnorr signature for verification
 }
 ```
 
 The Muon oracle computes `eligibleBase` off-chain as `freeEligible + haircutted(allocatedEligible) - excludedEligible`. The on-chain contract verifies:
+
 1. **Freshness:** `block.timestamp <= data.timestamp + muonFreshnessWindow` (default 60s). Stale signatures revert `MuonSignatureExpired`.
 2. **Schnorr signature:** The hash bound for verification is:
    `keccak256(abi.encodePacked(muonAppId, reqId, affiliate, eligibleBase, timestamp, chainId, address(this), symmio))`
@@ -2381,19 +2376,23 @@ The Muon oracle computes `eligibleBase` off-chain as `freeEligible + haircutted(
 **Note:** `AffiliateCredit` (the per-affiliate credit struct) is now defined in `types/CreditTypes.sol` (commit 61ec950e), but it is still stored within `CreditLineStorage.affiliates[affiliate]`.
 
 **Flow during acceptance (`onWithdrawRequest`):**
+
 1. Bot signs option with `creditAmount > 0` and provides encoded `CreditData` as `creditDataRaw`.
 2. `SymmioHookFacetImpl` calls `LibCreditLine.reserveDebt`.
 3. `reserveDebt` verifies pause/blacklist, Muon signature, and caps. Records `requestDebt[key] = creditAmount`, increments `reservedDebt` in `CreditLineStorage`.
 
 **Flow during processing (`processWithdraw`, `unlockAndProcess`, or IMMEDIATE inline):**
+
 1. `LibCreditLine.activate` moves debt from reserved to active within `CreditLineStorage`.
 2. `LibCreditLine.activate` calls `SYMMIO.advanceWithdraw(user, requestId, creditAmount)` -- SYMMIO transfers `creditAmount` of collateral to the ExpressProvider, which can then pay the user.
 
 **Flow during finalization (`onWithdrawComplete`):**
+
 1. SYMMIO sends back the non-credit portion of the withdrawal.
 2. `LibCreditLine.settle` clears active debt and deletes the record in `CreditLineStorage`.
 
 **Flow on cancellation (before payout, ACCEPTED only):**
+
 1. `LibCreditLine.releaseReservation` decrements `reservedDebt` and deletes the record in `CreditLineStorage`.
 
 **Credit loss on post-payout rollback:** If a withdrawal is suspended after processing (Status = PROCESSED), the credit amount has already been advanced and paid to the user. `LibCreditLine.coverLoss` deducts `creditAmount` from `s.affiliateBalances[affiliate]` (the affiliate pool absorbs the loss) and then internally settles the debt to clear the record. Only `onWithdrawSuspend` reaches this path -- `forceCancelWithdraw` / `onForceWithdrawCancel` no longer exist (commit 40d5fd99).
@@ -2552,6 +2551,71 @@ Step 4c -- Post-payout rollback (suspend after PROCESSED, rare):
 
 ---
 
+### 10.6 Cap-Aware Accelerate Polling (STANDARD → INSTANT)
+
+When the credit cap is full at options-API time, the bot signs a STANDARD offer so the user's `initiateWithdraw` always succeeds (the UI tells them they may have to wait up to 12 hours). But the request is kept alive for promotion: every ~30 minutes the bot re-checks cap headroom and, if possible, submits `accelerateWithdraw` with a fresh bot signature to pay the user immediately.
+
+See `expressWithdrawLayer/facets/Accelerate/AccelerateFacet.sol` and design doc §5.4 for the on-chain contract.
+
+**Bot responsibilities:**
+
+1. **Decision at sign time.** If the user would have qualified for INSTANT but the cap is full, sign STANDARD and mark the request as an accelerate candidate in the bot's state store.
+
+    ```
+    if user-requested-speed == STANDARD:
+        sign STANDARD (normal path)
+    elif reservedDebt + activeDebt + desiredCreditAmount > effectiveMaxDebt
+         or similar bps-cap check fails:
+        sign STANDARD (creditAmount = 0)
+        enqueue(user, requestId) for accelerate retry
+    else:
+        sign INSTANT (normal path)
+    ```
+
+2. **Retry loop (every ~30 minutes).** For each enqueued `(user, requestId)`:
+    - Read `ViewFacet.getWithdrawInfo(user, requestId)`. If `status != ACCEPTED` or `optionType != STANDARD`, remove from queue (terminal state).
+    - Check `block.timestamp < info.cooldownEndTime - safetyMargin` (e.g., 10 minutes). Otherwise remove from queue and let STANDARD finalize normally.
+    - Compute current headroom via `ViewFacet.creditLineReservedDebt(affiliate) + creditLineActiveDebt(affiliate)` vs. `creditLineProtocolMaxDebt` / `creditLineAffiliateMaxDebt` / bps equivalents. If still insufficient, leave in queue.
+    - Obtain a fresh Muon `eligibleBase` attestation.
+    - Read `ViewFacet.accelerateNonce(user, requestId)`.
+    - Sign a new `AccelerateOffer` (see design doc §7.5) with the current nonce.
+    - Submit `accelerateWithdraw(user, requestId, parts, offerData, creditDataRaw)` from the bot account (or the affiliate's relay).
+
+3. **Frontend manual trigger.** When an affiliate raises `affiliateMaxDebt` by calling `ControlFacet.setCreditLineAffiliateConfig(affiliate, maxDebt, maxDebtBps)`, the frontend can either:
+    - Send a webhook to the bot to trigger an immediate re-check instead of waiting for the next 30-minute tick, **or**
+    - Fetch a fresh `AccelerateOffer` from the bot's API and have its own backend submit `accelerateWithdraw`. The contract is permissionless; the bot signature alone is sufficient.
+
+4. **Stop conditions.** Remove from the retry queue on any of:
+    - `WithdrawAccelerated(user, requestId, ...)` emitted
+    - `WithdrawFinalized` / `WithdrawCancelled` / `WithdrawSuspended` emitted
+    - `block.timestamp >= info.cooldownEndTime - safetyMargin`
+
+5. **Nonce handling.** `accelerateNonces[user][requestId]` is incremented **only on successful acceleration**. A stale offer (old nonce after a successful prior acceleration) reverts with `InvalidAccelerateNonce`; re-fetch and re-sign. Failed retries (cap still full, pool short) do NOT consume the nonce, so the same signature keeps working across retries.
+
+6. **Idempotency.** The retry loop must be safe to run concurrently across multiple bot workers. Use a per-request lock (database-level or in-memory) keyed by `(user, requestId)` before signing and submitting, and treat `InvalidAccelerateNonce` / `AccelerateOnlyFromStandardAccepted` as benign (another worker beat us to it).
+
+**Failure modes (none require manual intervention):**
+
+| Revert reason                                                 | What happened                                                   | Bot action                                                     |
+| ------------------------------------------------------------- | --------------------------------------------------------------- | -------------------------------------------------------------- |
+| `AccelerateOnlyFromStandardAccepted`                          | Request already accelerated, cancelled, suspended, or finalized | Remove from queue                                              |
+| `StandardAlreadyFinalized`                                    | Core finalized the STANDARD path first                          | Remove from queue                                              |
+| `AccelerateCooldownElapsed`                                   | Safety margin expired; too late to race core                    | Remove from queue                                              |
+| `AccelerateOfferExpired`                                      | Offer deadline passed                                           | Re-sign with a longer deadline                                 |
+| `DebtExceedsAbsoluteCap` / `DebtExceedsPercentCap`            | Cap still full                                                  | Keep in queue, retry next cycle                                |
+| `InsufficientGeneralBalance` / `InsufficientAffiliateBalance` | Pools drained                                                   | Either re-sign with a smaller pool split (more credit) or wait |
+| `InvalidAccelerateNonce`                                      | Stale nonce                                                     | Re-read `accelerateNonce` and re-sign                          |
+
+**Observability:** emit metrics for:
+
+- Queue size and per-request age
+- Retry attempt count per request
+- Success rate (accelerations / accelerate candidates signed)
+- Time-from-accept-to-acceleration distribution
+- Requests that timed out without acceleration (hit cooldown safety margin)
+
+---
+
 ## 11. Multi-Part Withdrawals
 
 ### 11.1 Part Classification
@@ -2563,10 +2627,10 @@ flowchart TD
     B -->|Yes| D["Express\nAdds to expressAmount\nFunds from EP pools"]
 ```
 
-| Part Type | Condition | Contributes to |
-|-----------|-----------|---------------|
-| Express | `expressProvider == this` (virtualProvider must be `address(0)`) | `expressAmount` |
-| Non-express | `expressProvider != this` | Skipped entirely |
+| Part Type   | Condition                                                        | Contributes to   |
+| ----------- | ---------------------------------------------------------------- | ---------------- |
+| Express     | `expressProvider == this` (virtualProvider must be `address(0)`) | `expressAmount`  |
+| Non-express | `expressProvider != this`                                        | Skipped entirely |
 
 ### 11.2 Multi-Part Fee Cascading
 
@@ -2584,6 +2648,7 @@ flowchart LR
 ### 11.3 Credit Line in Multi-Part Withdrawals
 
 When a withdrawal uses credit (creditAmount > 0), the credit line applies to the total withdrawal, not per-part:
+
 - At acceptance: `LibCreditLine.reserveDebt(creditAmount)` reserves the total credit across all parts
 - At processing: `LibCreditLine.activate(creditAmount)` moves debt reserved -> active and calls `ISymmio.advanceWithdraw`
 - At finalization: `LibCreditLine.settle(creditAmount)` settles when SYMMIO reimburses
@@ -2755,11 +2820,11 @@ flowchart LR
     style UL fill:#9f9
 ```
 
-| Role | Can Lock? | Can Unlock? | Can Process? |
-|------|-----------|-------------|-------------|
-| OPERATOR_ROLE | NO | NO | YES |
-| LOCKER_ROLE | YES | NO | NO |
-| UNLOCK_ROLE | NO | YES | NO (only via unlockAndProcess) |
+| Role          | Can Lock? | Can Unlock? | Can Process?                   |
+| ------------- | --------- | ----------- | ------------------------------ |
+| OPERATOR_ROLE | NO        | NO          | YES                            |
+| LOCKER_ROLE   | YES       | NO          | NO                             |
+| UNLOCK_ROLE   | NO        | YES         | NO (only via unlockAndProcess) |
 
 **Why:** Prevents the bot from unilaterally freezing and releasing funds. A higher-level authority (UNLOCK_ROLE) must approve unlocks.
 
@@ -2881,23 +2946,25 @@ Note: `forceCancelWithdraw` and `onForceWithdrawCancel` were removed (commits 40
 
 ### 13.2 Cancellation Matrix
 
-| Status | `onWithdrawCancelRequest` | `onWithdrawSuspend` | Outcome |
-|--------|---------------------------|---------------------|---------|
-| NONE | revert | revert | No withdrawal exists |
-| ACCEPTED | CANCELLED | SUSPENDED | Releases pool locks, credit reservation, refunds sponsor coverage |
-| LOCKED | revert (`NotAccepted`) | SUSPENDED | Suspend releases pool locks, credit reservation, refunds sponsor coverage |
-| PROCESSED | revert (`NotAccepted`) | SUSPENDED | Suspend triggers post-payout rollback: `coverLoss` deducts `creditAmount` from affiliate pool (pools were already deducted at processing) |
-| FINALIZED | revert | revert (STANDARD: `InvalidStatusForSuspend`) | Terminal |
-| CANCELLED | revert | revert | Terminal |
-| SUSPENDED | revert | revert | Terminal |
+| Status    | `onWithdrawCancelRequest` | `onWithdrawSuspend`                          | Outcome                                                                                                                                   |
+| --------- | ------------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| NONE      | revert                    | revert                                       | No withdrawal exists                                                                                                                      |
+| ACCEPTED  | CANCELLED                 | SUSPENDED                                    | Releases pool locks, credit reservation, refunds sponsor coverage                                                                         |
+| LOCKED    | revert (`NotAccepted`)    | SUSPENDED                                    | Suspend releases pool locks, credit reservation, refunds sponsor coverage                                                                 |
+| PROCESSED | revert (`NotAccepted`)    | SUSPENDED                                    | Suspend triggers post-payout rollback: `coverLoss` deducts `creditAmount` from affiliate pool (pools were already deducted at processing) |
+| FINALIZED | revert                    | revert (STANDARD: `InvalidStatusForSuspend`) | Terminal                                                                                                                                  |
+| CANCELLED | revert                    | revert                                       | Terminal                                                                                                                                  |
+| SUSPENDED | revert                    | revert                                       | Terminal                                                                                                                                  |
 
 Notes:
+
 - IMMEDIATE transitions directly from NONE to PROCESSED in `onWithdrawRequest`, so it can never be cancelled (status is never ACCEPTED). It CAN be suspended (PROCESSED is a valid suspend state) and triggers the post-payout rollback.
 - STANDARD at FINALIZED cannot be suspended (raises `InvalidStatusForSuspend`).
 
 ### 13.3 What Gets Released on Cancel/Suspend
 
 **On user cancel from ACCEPTED (`onWithdrawCancelRequest`):**
+
 - [ ] `lockedGeneralBalance -= generalAmount` (INSTANT/IMMEDIATE only)
 - [ ] `lockedAffiliateBalances[affiliate] -= affiliateAmount` (INSTANT/IMMEDIATE only)
 - [ ] `generalBalance` and `affiliateBalances` values unchanged (locks are released, not balances)
@@ -2906,10 +2973,12 @@ Notes:
 - [ ] Status set to CANCELLED
 
 **On suspend from ACCEPTED or LOCKED (`onWithdrawSuspend`):**
+
 - [ ] Same release flow as user cancel (pool locks, credit reservation, sponsor coverage)
 - [ ] Status set to SUSPENDED
 
 **On suspend from PROCESSED (post-payout rollback path):**
+
 - [ ] `affiliateBalances[affiliate] -= creditAmount` via `LibCreditLine.coverLoss` (affiliate pool absorbs credit loss)
 - [ ] Pools were already deducted at processing time -- nothing to unlock
 - [ ] Sponsor coverage was already consumed by fees -- not refunded
@@ -2976,83 +3045,83 @@ flowchart TD
 
 ### 14.2 Signature & Auth Errors
 
-| Error | Cause | Bot Action |
-|-------|-------|------------|
-| `InvalidSigner` | Recovered signer lacks SIGNER_ROLE | Check signing key has SIGNER_ROLE |
-| `OfferExpired` | `block.timestamp > offer.deadline` | Extend deadline or re-sign |
-| `InvalidNonce` | Option nonce != `nonces[user]` | Re-read nonce, re-sign |
-| `OnlySymmio` | Non-SYMMIO calling callback | N/A (contract architecture issue) |
-| `InvalidValidator` | Recovered validator not registered for this affiliate (or `address(0)` default) | Re-gather from registered validators |
-| `DuplicateValidator` | Same validator signed twice | Sort and deduplicate |
-| `InsufficientValidatorSignatures` | Fewer sigs than `minValidatorSignatures(affiliate)` | Gather more |
-| `ValidatorApprovalExpired` | Timestamp too old or future-dated | Re-gather with fresh timestamps |
-| `ArrayLengthMismatch` | signatures.length != timestamps.length | Fix encoding |
+| Error                             | Cause                                                                           | Bot Action                           |
+| --------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------ |
+| `InvalidSigner`                   | Recovered signer lacks SIGNER_ROLE                                              | Check signing key has SIGNER_ROLE    |
+| `OfferExpired`                    | `block.timestamp > offer.deadline`                                              | Extend deadline or re-sign           |
+| `InvalidNonce`                    | Option nonce != `nonces[user]`                                                  | Re-read nonce, re-sign               |
+| `OnlySymmio`                      | Non-SYMMIO calling callback                                                     | N/A (contract architecture issue)    |
+| `InvalidValidator`                | Recovered validator not registered for this affiliate (or `address(0)` default) | Re-gather from registered validators |
+| `DuplicateValidator`              | Same validator signed twice                                                     | Sort and deduplicate                 |
+| `InsufficientValidatorSignatures` | Fewer sigs than `minValidatorSignatures(affiliate)`                             | Gather more                          |
+| `ValidatorApprovalExpired`        | Timestamp too old or future-dated                                               | Re-gather with fresh timestamps      |
+| `ArrayLengthMismatch`             | signatures.length != timestamps.length                                          | Fix encoding                         |
 
 ### 14.3 Liquidity Errors
 
-| Error | Cause | Bot Action |
-|-------|-------|------------|
-| `InsufficientGeneralBalance` | INSTANT/IMMEDIATE generalAmount > available | Reduce amount or wait for pool refill |
-| `InsufficientAffiliateBalance` | affiliateAmount > available affiliate balance | Reduce affiliateAmount |
-| `InsufficientUnlockedGeneralBalance` | Withdraw attempt touches locked funds | Wait for withdrawals to complete |
-| `InsufficientUnlockedAffiliateBalance` | Same for affiliate pool | Wait for withdrawals to complete |
+| Error                                  | Cause                                         | Bot Action                            |
+| -------------------------------------- | --------------------------------------------- | ------------------------------------- |
+| `InsufficientGeneralBalance`           | INSTANT/IMMEDIATE generalAmount > available   | Reduce amount or wait for pool refill |
+| `InsufficientAffiliateBalance`         | affiliateAmount > available affiliate balance | Reduce affiliateAmount                |
+| `InsufficientUnlockedGeneralBalance`   | Withdraw attempt touches locked funds         | Wait for withdrawals to complete      |
+| `InsufficientUnlockedAffiliateBalance` | Same for affiliate pool                       | Wait for withdrawals to complete      |
 
 ### 14.4 Fee Errors
 
-| Error | Cause | Bot Action |
-|-------|-------|------------|
-| `FeeMismatch` | Signed fee != on-chain computed fee | Re-read `feeRate`, recompute |
-| `OperatorFeeMismatch` | Signed operatorFee != on-chain config | Re-read `operatorFee` |
-| `FeesExceedExpressAmount` | `fee + operatorFee > feeBasis` | Reduce fees or increase amount |
-| `UserFeeExceedsMaximum` | User fee after sponsor > maxUserFee | Increase maxUserFee or ensure sponsor coverage |
-| `FeeRateExceeds100Percent` | feeRate > 10000 on config | Admin error |
-| `NoFeesToClaim` | `collectedFees == 0` | No action needed |
-| `NoOperatorFeesToClaim` | `collectedOperatorFees == 0` | No action needed |
-| `InsufficientSponsorBalance` | Withdraw exceeds sponsor balance | Reduce amount |
+| Error                        | Cause                                 | Bot Action                                     |
+| ---------------------------- | ------------------------------------- | ---------------------------------------------- |
+| `FeeMismatch`                | Signed fee != on-chain computed fee   | Re-read `feeRate`, recompute                   |
+| `OperatorFeeMismatch`        | Signed operatorFee != on-chain config | Re-read `operatorFee`                          |
+| `FeesExceedExpressAmount`    | `fee + operatorFee > feeBasis`        | Reduce fees or increase amount                 |
+| `UserFeeExceedsMaximum`      | User fee after sponsor > maxUserFee   | Increase maxUserFee or ensure sponsor coverage |
+| `FeeRateExceeds100Percent`   | feeRate > 10000 on config             | Admin error                                    |
+| `NoFeesToClaim`              | `collectedFees == 0`                  | No action needed                               |
+| `NoOperatorFeesToClaim`      | `collectedOperatorFees == 0`          | No action needed                               |
+| `InsufficientSponsorBalance` | Withdraw exceeds sponsor balance      | Reduce amount                                  |
 
 ### 14.5 State Errors
 
-| Error | Cause | Bot Action |
-|-------|-------|------------|
-| `NotAccepted` | `processWithdraw`, `lockWithdraw`, or `onWithdrawCancelRequest` on non-ACCEPTED status | Check status first; only ACCEPTED is accepted |
-| `NotFinalized` | `processWithdraw` / `unlockAndProcess` on STANDARD before SYMMIO `onWithdrawComplete` set `finalizedAt` | Wait for `onWithdrawComplete` |
-| `NotLocked` | `unlockAndProcess` on non-LOCKED status | Check status first |
-| `InvalidStatusForStandard` | `onWithdrawComplete` on STANDARD when status is not ACCEPTED or LOCKED | Check status -- may already be CANCELLED or SUSPENDED |
-| `TooEarly` | Processing before allowed time | Wait for correct timestamp (see processableAt lookup table) |
-| `PartsMismatch` | Parts array doesn't match stored hash | Use exact same parts |
-| `InvalidStatusForSuspend` | `onWithdrawSuspend` on STANDARD that is already FINALIZED, or on terminal CANCELLED/SUSPENDED | Cannot suspend at this stage |
-| `InvalidPostPayoutRollback` | Rollback path in `onWithdrawSuspend` (from PROCESSED) cannot complete properly | Investigate; affiliate pool may have insufficient credit balance |
+| Error                       | Cause                                                                                                   | Bot Action                                                       |
+| --------------------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `NotAccepted`               | `processWithdraw`, `lockWithdraw`, or `onWithdrawCancelRequest` on non-ACCEPTED status                  | Check status first; only ACCEPTED is accepted                    |
+| `NotFinalized`              | `processWithdraw` / `unlockAndProcess` on STANDARD before SYMMIO `onWithdrawComplete` set `finalizedAt` | Wait for `onWithdrawComplete`                                    |
+| `NotLocked`                 | `unlockAndProcess` on non-LOCKED status                                                                 | Check status first                                               |
+| `InvalidStatusForStandard`  | `onWithdrawComplete` on STANDARD when status is not ACCEPTED or LOCKED                                  | Check status -- may already be CANCELLED or SUSPENDED            |
+| `TooEarly`                  | Processing before allowed time                                                                          | Wait for correct timestamp (see processableAt lookup table)      |
+| `PartsMismatch`             | Parts array doesn't match stored hash                                                                   | Use exact same parts                                             |
+| `InvalidStatusForSuspend`   | `onWithdrawSuspend` on STANDARD that is already FINALIZED, or on terminal CANCELLED/SUSPENDED           | Cannot suspend at this stage                                     |
+| `InvalidPostPayoutRollback` | Rollback path in `onWithdrawSuspend` (from PROCESSED) cannot complete properly                          | Investigate; affiliate pool may have insufficient credit balance |
 
 ### 14.6 Validation Errors
 
-| Error | Cause | Bot Action |
-|-------|-------|------------|
-| `InvalidOptionType` | `offer.optionType > 2` in `onWithdrawRequest` | Use only 0 (IMMEDIATE), 1 (INSTANT), or 2 (STANDARD) |
+| Error                            | Cause                                                          | Bot Action                                                                                                                 |
+| -------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `InvalidOptionType`              | `offer.optionType > 2` in `onWithdrawRequest`                  | Use only 0 (IMMEDIATE), 1 (INSTANT), or 2 (STANDARD)                                                                       |
 | `ValidatorsRequiredForImmediate` | IMMEDIATE option when `minValidatorSignatures(affiliate) == 0` | Do not offer IMMEDIATE unless validators are configured for this affiliate (or `address(0)` default); fall back to INSTANT |
-| `InvalidAddressBytesLength` | `parts[i].receiver` is not exactly 20 bytes | Ensure all receiver fields are valid 20-byte Ethereum addresses |
-| `CreditNotSupportedForStandard` | STANDARD option signed with `creditAmount > 0` | Always set `creditAmount = 0` for STANDARD options |
-| `VirtualProviderMustBeZero` | Any `parts[i].virtualProvider != address(0)` | Always set `virtualProvider` to `address(0)` (deprecated field) |
-| `FundingSplitExceedsExpress` | `affiliateAmount + creditAmount > expressAmount` | Ensure the funding split sums to at most `expressAmount` |
+| `InvalidAddressBytesLength`      | `parts[i].receiver` is not exactly 20 bytes                    | Ensure all receiver fields are valid 20-byte Ethereum addresses                                                            |
+| `CreditNotSupportedForStandard`  | STANDARD option signed with `creditAmount > 0`                 | Always set `creditAmount = 0` for STANDARD options                                                                         |
+| `VirtualProviderMustBeZero`      | Any `parts[i].virtualProvider != address(0)`                   | Always set `virtualProvider` to `address(0)` (deprecated field)                                                            |
+| `FundingSplitExceedsExpress`     | `affiliateAmount + creditAmount > expressAmount`               | Ensure the funding split sums to at most `expressAmount`                                                                   |
 
 #### Credit Line Errors (LibCreditLine)
 
-| Error | Cause | Bot Action |
-|-------|-------|------------|
-| `CreditLinePaused` | `setCreditLinePaused(affiliate, true)` was called | Wait for unpause or omit credit |
-| `UserBlacklisted` | User on the affiliate's per-user blacklist | Do not offer credit-backed withdrawals to that user |
-| `MuonSignatureExpired` | Muon attestation older than `muonFreshnessWindow` | Re-fetch a fresh Muon attestation |
-| `DebtExceedsAbsoluteCap` | `reservedDebt + activeDebt + creditAmount > effectiveMaxDebt` | Reduce `creditAmount` or wait for debt to settle |
-| `DebtExceedsPercentCap` | Sum exceeds `(eligibleBase * effectiveMaxBps / 10000)` | Reduce `creditAmount` |
-| `NoDebtForRequest` | Activate/settle for a request with no reserved debt | Check the bot's per-request debt tracking |
-| `DebtAlreadyActivated` | Activate called twice for the same request | Activation is idempotent within a request lifecycle |
-| `DebtNotActivated` | Settle called before activate on a paid-out path | Investigate; should never happen on the bot path |
-| `AffiliateLimitExceedsProtocol` | Setter tried to set affiliate cap above protocol cap | Admin error |
-| `CreditLineNotConfigured` | Muon `signatureVerifier` unset | Admin must call `setCreditLineMuonConfig` first |
+| Error                           | Cause                                                         | Bot Action                                          |
+| ------------------------------- | ------------------------------------------------------------- | --------------------------------------------------- |
+| `CreditLinePaused`              | `setCreditLinePaused(affiliate, true)` was called             | Wait for unpause or omit credit                     |
+| `UserBlacklisted`               | User on the affiliate's per-user blacklist                    | Do not offer credit-backed withdrawals to that user |
+| `MuonSignatureExpired`          | Muon attestation older than `muonFreshnessWindow`             | Re-fetch a fresh Muon attestation                   |
+| `DebtExceedsAbsoluteCap`        | `reservedDebt + activeDebt + creditAmount > effectiveMaxDebt` | Reduce `creditAmount` or wait for debt to settle    |
+| `DebtExceedsPercentCap`         | Sum exceeds `(eligibleBase * effectiveMaxBps / 10000)`        | Reduce `creditAmount`                               |
+| `NoDebtForRequest`              | Activate/settle for a request with no reserved debt           | Check the bot's per-request debt tracking           |
+| `DebtAlreadyActivated`          | Activate called twice for the same request                    | Activation is idempotent within a request lifecycle |
+| `DebtNotActivated`              | Settle called before activate on a paid-out path              | Investigate; should never happen on the bot path    |
+| `AffiliateLimitExceedsProtocol` | Setter tried to set affiliate cap above protocol cap          | Admin error                                         |
+| `CreditLineNotConfigured`       | Muon `signatureVerifier` unset                                | Admin must call `setCreditLineMuonConfig` first     |
 
 #### Access Control Error (LibAccessControl)
 
-| Error | Cause | Bot Action |
-|-------|-------|------------|
+| Error                        | Cause                                           | Bot Action                                         |
+| ---------------------------- | ----------------------------------------------- | -------------------------------------------------- |
 | `AccessDenied(bytes32 role)` | Caller lacks the required role for the function | Check role membership via `hasRole(role, account)` |
 
 ### 14.7 Bot Scenarios for Key Errors
@@ -3209,12 +3278,12 @@ sequenceDiagram
     EP-->>U2: ACCEPTED
 ```
 
-| Scenario | Behavior |
-|----------|----------|
-| Two INSTANT withdrawals for more than half the pool | Second reverts `InsufficientGeneralBalance` |
-| First withdrawal cancelled, second retried | Succeeds (pool freed) |
-| Two IMMEDIATE withdrawals racing | Second reverts (funds transferred atomically in first's tx) |
-| Sponsor balance drained between sign and execution | Reverts `UserFeeExceedsMaximum` if maxUserFee too low |
+| Scenario                                            | Behavior                                                    |
+| --------------------------------------------------- | ----------------------------------------------------------- |
+| Two INSTANT withdrawals for more than half the pool | Second reverts `InsufficientGeneralBalance`                 |
+| First withdrawal cancelled, second retried          | Succeeds (pool freed)                                       |
+| Two IMMEDIATE withdrawals racing                    | Second reverts (funds transferred atomically in first's tx) |
+| Sponsor balance drained between sign and execution  | Reverts `UserFeeExceedsMaximum` if maxUserFee too low       |
 
 ### 15.2 Config Changes Mid-Flight
 
@@ -3236,25 +3305,25 @@ sequenceDiagram
     EP-->>User: REVERT: FeeMismatch
 ```
 
-| Config Change | Impact on In-Flight Withdrawals |
-|---------------|---------------------------------|
-| `feeRate` changed | Options signed with old rate will revert `FeeMismatch` |
-| `operatorFee` changed | Options signed with old value will revert `OperatorFeeMismatch` |
-| `minValidatorSignatures(affiliate)` raised | Pending options with insufficient sigs for this affiliate will revert |
-| `validatorApprovalTimeout(affiliate)` reduced | Previously valid sigs for this affiliate may expire |
-| `securityWindow` changed | Affects timing for unprocessed INSTANT withdrawals |
-| `tolerancePeriod` changed | Affects permissionless processing window |
-| SIGNER_ROLE revoked | All options signed by that key become invalid |
-| Validator disabled (via `setValidator`) | Pending validator sigs from that key become invalid |
+| Config Change                                 | Impact on In-Flight Withdrawals                                       |
+| --------------------------------------------- | --------------------------------------------------------------------- |
+| `feeRate` changed                             | Options signed with old rate will revert `FeeMismatch`                |
+| `operatorFee` changed                         | Options signed with old value will revert `OperatorFeeMismatch`       |
+| `minValidatorSignatures(affiliate)` raised    | Pending options with insufficient sigs for this affiliate will revert |
+| `validatorApprovalTimeout(affiliate)` reduced | Previously valid sigs for this affiliate may expire                   |
+| `securityWindow` changed                      | Affects timing for unprocessed INSTANT withdrawals                    |
+| `tolerancePeriod` changed                     | Affects permissionless processing window                              |
+| SIGNER_ROLE revoked                           | All options signed by that key become invalid                         |
+| Validator disabled (via `setValidator`)       | Pending validator sigs from that key become invalid                   |
 
 ### 15.3 Nonce Edge Cases
 
-| Scenario | Behavior |
-|----------|----------|
-| Nonce replay (same nonce used twice) | Reverts `InvalidNonce` |
-| Nonce skip (nonce 0, then nonce 2) | Reverts `InvalidNonce` |
+| Scenario                                                    | Behavior                                      |
+| ----------------------------------------------------------- | --------------------------------------------- |
+| Nonce replay (same nonce used twice)                        | Reverts `InvalidNonce`                        |
+| Nonce skip (nonce 0, then nonce 2)                          | Reverts `InvalidNonce`                        |
 | Nonce read at sign time, but another withdrawal consumed it | Reverts `InvalidNonce` -- re-read and re-sign |
-| Concurrent options for same user | Only one can succeed (nonce is sequential) |
+| Concurrent options for same user                            | Only one can succeed (nonce is sequential)    |
 
 #### Numeric Example: Nonce Race Condition
 
@@ -3359,38 +3428,38 @@ Correct strategy:
 
 ### 15.4 Timing Edge Cases
 
-| Scenario | Behavior |
-|----------|----------|
-| `processWithdraw` at exact securityWindow boundary | Succeeds (uses `>=` check) |
-| Finalization at exact `cooldownEndTime` | Succeeds |
-| LOCKED after cooldown + tolerancePeriod | Anyone can process |
+| Scenario                                                | Behavior                                                    |
+| ------------------------------------------------------- | ----------------------------------------------------------- |
+| `processWithdraw` at exact securityWindow boundary      | Succeeds (uses `>=` check)                                  |
+| Finalization at exact `cooldownEndTime`                 | Succeeds                                                    |
+| LOCKED after cooldown + tolerancePeriod                 | Anyone can process                                          |
 | cooldownEndTime in the past (user deallocated long ago) | Cooldown already expired, finalization possible immediately |
-| `securityWindow < 10` | Setter reverts `SecurityWindowTooLow` |
-| `tolerancePeriod < 10` | Setter reverts `TolerancePeriodTooLow` |
+| `securityWindow < 10`                                   | Setter reverts `SecurityWindowTooLow`                       |
+| `tolerancePeriod < 10`                                  | Setter reverts `TolerancePeriodTooLow`                      |
 
 ### 15.5 Credit Line Edge Cases
 
-| Scenario | Behavior |
-|----------|----------|
-| Cancel with active credit reservation | `LibCreditLine.releaseReservation` releases reserved debt |
-| Credit line paused between signing and acceptance | `reserveDebt` reverts (paused) |
-| User blacklisted between signing and acceptance | `reserveDebt` reverts (blacklisted) |
-| Credit amount exceeds debt cap | `reserveDebt` reverts (cap exceeded) |
-| Muon attestation expired | `reserveDebt` reverts (freshness check fails) |
-| Credit used with STANDARD | Reverts `CreditNotSupportedForStandard` |
-| Post-payout rollback with credit | Affiliate pool absorbs credit loss via `coverLoss` |
+| Scenario                                          | Behavior                                                  |
+| ------------------------------------------------- | --------------------------------------------------------- |
+| Cancel with active credit reservation             | `LibCreditLine.releaseReservation` releases reserved debt |
+| Credit line paused between signing and acceptance | `reserveDebt` reverts (paused)                            |
+| User blacklisted between signing and acceptance   | `reserveDebt` reverts (blacklisted)                       |
+| Credit amount exceeds debt cap                    | `reserveDebt` reverts (cap exceeded)                      |
+| Muon attestation expired                          | `reserveDebt` reverts (freshness check fails)             |
+| Credit used with STANDARD                         | Reverts `CreditNotSupportedForStandard`                   |
+| Post-payout rollback with credit                  | Affiliate pool absorbs credit loss via `coverLoss`        |
 
 ### 15.6 STANDARD-Specific Edge Cases
 
-| Scenario | Behavior |
-|----------|----------|
-| Process before finalization | Reverts `NotFinalized` |
-| LOCKED then finalized | Status stays LOCKED, `finalizedAt` set |
-| LOCKED + finalized then suspend | Allowed: status is still LOCKED, so `onWithdrawSuspend` transitions to SUSPENDED. Only STANDARD at FINALIZED status reverts `InvalidStatusForSuspend` |
-| LOCKED + finalized: resolution | Only `unlockAndProcess` (UNLOCK_ROLE) |
-| LOCKED + NOT finalized + cooldown expired | `processWithdraw` calls `finalizeWithdrawRequest` on SYMMIO first, then processes |
-| `affiliateAmount + creditAmount > expressAmount` | Reverts `FundingSplitExceedsExpress`. Bot must ensure the sum never exceeds expressAmount |
-| Credit with STANDARD | Reverts `CreditNotSupportedForStandard`. Bot must set creditAmount = 0 for STANDARD |
+| Scenario                                         | Behavior                                                                                                                                              |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Process before finalization                      | Reverts `NotFinalized`                                                                                                                                |
+| LOCKED then finalized                            | Status stays LOCKED, `finalizedAt` set                                                                                                                |
+| LOCKED + finalized then suspend                  | Allowed: status is still LOCKED, so `onWithdrawSuspend` transitions to SUSPENDED. Only STANDARD at FINALIZED status reverts `InvalidStatusForSuspend` |
+| LOCKED + finalized: resolution                   | Only `unlockAndProcess` (UNLOCK_ROLE)                                                                                                                 |
+| LOCKED + NOT finalized + cooldown expired        | `processWithdraw` calls `finalizeWithdrawRequest` on SYMMIO first, then processes                                                                     |
+| `affiliateAmount + creditAmount > expressAmount` | Reverts `FundingSplitExceedsExpress`. Bot must ensure the sum never exceeds expressAmount                                                             |
+| Credit with STANDARD                             | Reverts `CreditNotSupportedForStandard`. Bot must set creditAmount = 0 for STANDARD                                                                   |
 
 ### 15.7 Admin / Configuration Change Scenarios
 
@@ -3823,12 +3892,12 @@ flowchart TD
 
 ### 16.2 Pool Types
 
-| Pool | Funded By | Used For | Locked During |
-|------|-----------|----------|---------------|
-| General (`generalBalance`) | `depositToGeneral` | INSTANT/IMMEDIATE general portion | `lockedGeneralBalance` |
-| Affiliate (`affiliateBalances[affiliate]`) | `depositToAffiliate` | Express affiliate portion | `lockedAffiliateBalances[affiliate]` |
-| Credit Line (`CreditLineStorage`) | Muon-attested eligible balances | Credit-backed portions (non-STANDARD) | `creditLineReservedDebt` / `creditLineActiveDebt` |
-| Sponsor (`sponsorBalances[affiliate]`) | `depositSponsorBalance` | Fee coverage | `info.sponsorCoverage` (stored on WithdrawInfo) |
+| Pool                                       | Funded By                       | Used For                              | Locked During                                     |
+| ------------------------------------------ | ------------------------------- | ------------------------------------- | ------------------------------------------------- |
+| General (`generalBalance`)                 | `depositToGeneral`              | INSTANT/IMMEDIATE general portion     | `lockedGeneralBalance`                            |
+| Affiliate (`affiliateBalances[affiliate]`) | `depositToAffiliate`            | Express affiliate portion             | `lockedAffiliateBalances[affiliate]`              |
+| Credit Line (`CreditLineStorage`)          | Muon-attested eligible balances | Credit-backed portions (non-STANDARD) | `creditLineReservedDebt` / `creditLineActiveDebt` |
+| Sponsor (`sponsorBalances[affiliate]`)     | `depositSponsorBalance`         | Fee coverage                          | `info.sponsorCoverage` (stored on WithdrawInfo)   |
 
 ### 16.3 Available Liquidity Formulas
 
@@ -3946,18 +4015,18 @@ flowchart TD
 
 ### 17.2 ExpressProvider Roles
 
-| Role | Constant | Holder | Functions |
-|------|----------|--------|-----------|
-| Diamond Owner | N/A | Admin/multisig | `diamondCut` (add/replace/remove facets), `grantRole`/`revokeRole` |
-| `SETTER_ROLE` | `keccak256("SETTER_ROLE")` | Admin | All `set*` config functions |
-| `OPERATOR_ROLE` | `keccak256("OPERATOR_ROLE")` | Bot service | `processWithdraw` (preferred caller) |
-| `LOCKER_ROLE` | `keccak256("LOCKER_ROLE")` | Risk service | `lockWithdraw` |
-| `UNLOCK_ROLE` | `keccak256("UNLOCK_ROLE")` | Security team | `unlockAndProcess` |
-| `SIGNER_ROLE` | `keccak256("SIGNER_ROLE")` | Bot signing key | EIP-712 option signatures (verified on-chain) |
+| Role                       | Constant                                                                    | Holder              | Functions                                                                                 |
+| -------------------------- | --------------------------------------------------------------------------- | ------------------- | ----------------------------------------------------------------------------------------- |
+| Diamond Owner              | N/A                                                                         | Admin/multisig      | `diamondCut` (add/replace/remove facets), `grantRole`/`revokeRole`                        |
+| `SETTER_ROLE`              | `keccak256("SETTER_ROLE")`                                                  | Admin               | All `set*` config functions                                                               |
+| `OPERATOR_ROLE`            | `keccak256("OPERATOR_ROLE")`                                                | Bot service         | `processWithdraw` (preferred caller)                                                      |
+| `LOCKER_ROLE`              | `keccak256("LOCKER_ROLE")`                                                  | Risk service        | `lockWithdraw`                                                                            |
+| `UNLOCK_ROLE`              | `keccak256("UNLOCK_ROLE")`                                                  | Security team       | `unlockAndProcess`                                                                        |
+| `SIGNER_ROLE`              | `keccak256("SIGNER_ROLE")`                                                  | Bot signing key     | EIP-712 option signatures (verified on-chain)                                             |
 | Validators (per-affiliate) | N/A (not a role, tracked in `mapping(address => mapping(address => bool))`) | Monitoring services | EIP-712 validator attestations. Managed via `setValidator(affiliate, validator, enabled)` |
-| `WITHDRAWER_ROLE` | `keccak256("WITHDRAWER_ROLE")` | Admin | `withdrawFromGeneral`, `withdrawFromAffiliate` |
-| `SPONSOR_MANAGER_ROLE` | `keccak256("SPONSOR_MANAGER_ROLE")` | Admin | `withdrawSponsorBalance` |
-| `FEE_CLAIMER_ROLE` | `keccak256("FEE_CLAIMER_ROLE")` | Admin | `claimFees`, `claimOperatorFees` |
+| `WITHDRAWER_ROLE`          | `keccak256("WITHDRAWER_ROLE")`                                              | Admin               | `withdrawFromGeneral`, `withdrawFromAffiliate`                                            |
+| `SPONSOR_MANAGER_ROLE`     | `keccak256("SPONSOR_MANAGER_ROLE")`                                         | Admin               | `withdrawSponsorBalance`                                                                  |
+| `FEE_CLAIMER_ROLE`         | `keccak256("FEE_CLAIMER_ROLE")`                                             | Admin               | `claimFees`, `claimOperatorFees`                                                          |
 
 ### 17.3 Credit Line Functions (on the Diamond)
 
@@ -3965,32 +4034,32 @@ Credit line admin setters live on `ControlFacet`; all credit line **view** funct
 
 **Admin functions (ControlFacet, 5 setters):**
 
-| Function | Caller | Description |
-|----------|--------|-------------|
-| `setCreditLineMuonConfig(...)` | `SETTER_ROLE` | Set Muon app ID, signature verifier, freshness window |
-| `setCreditLineProtocolConfig(affiliate, ...)` | `SETTER_ROLE` | Set protocol-level debt caps for an affiliate |
-| `setCreditLineAffiliateConfig(affiliate, ...)` | `SETTER_ROLE` | Set affiliate-level debt caps for an affiliate |
-| `setCreditLinePaused(affiliate, paused)` | `SETTER_ROLE` | Pause/unpause credit line for an affiliate |
-| `setCreditLineBlacklisted(affiliate, user, status)` | `SETTER_ROLE` | Blacklist/unblacklist a user for an affiliate |
+| Function                                            | Caller        | Description                                           |
+| --------------------------------------------------- | ------------- | ----------------------------------------------------- |
+| `setCreditLineMuonConfig(...)`                      | `SETTER_ROLE` | Set Muon app ID, signature verifier, freshness window |
+| `setCreditLineProtocolConfig(affiliate, ...)`       | `SETTER_ROLE` | Set protocol-level debt caps for an affiliate         |
+| `setCreditLineAffiliateConfig(affiliate, ...)`      | `SETTER_ROLE` | Set affiliate-level debt caps for an affiliate        |
+| `setCreditLinePaused(affiliate, paused)`            | `SETTER_ROLE` | Pause/unpause credit line for an affiliate            |
+| `setCreditLineBlacklisted(affiliate, user, status)` | `SETTER_ROLE` | Blacklist/unblacklist a user for an affiliate         |
 
 **View functions (ViewFacet):**
 
-| Function | Description |
-|----------|-------------|
-| `creditLineSignatureVerifier()` | Muon signature verifier address |
-| `creditLineMuonAppId()` | Muon app ID |
-| `creditLineMuonFreshnessWindow()` | Max age of Muon signatures |
-| `creditLineProtocolMaxDebt(affiliate)` | Protocol-level absolute debt cap |
-| `creditLineProtocolMaxDebtBps(affiliate)` | Protocol-level percentage cap (bps of eligibleBase) |
-| `creditLineAffiliateMaxDebt(affiliate)` | Affiliate-chosen absolute cap |
-| `creditLineAffiliateMaxDebtBps(affiliate)` | Affiliate-chosen percentage cap (bps) |
-| `creditLineReservedDebt(affiliate)` | Reserved but not yet activated debt |
-| `creditLineActiveDebt(affiliate)` | Activated (advanced) debt |
-| `creditLineTotalDebt(affiliate)` | Total outstanding credit (reserved + active) |
-| `creditLineRequestDebt(affiliate, user, requestId)` | Per-request debt amount |
-| `creditLineRequestActivated(affiliate, user, requestId)` | Whether per-request debt has been activated |
-| `creditLinePaused(affiliate)` | Whether credit line is paused for this affiliate |
-| `creditLineBlacklisted(affiliate, user)` | Whether user is blacklisted for this affiliate |
+| Function                                                 | Description                                         |
+| -------------------------------------------------------- | --------------------------------------------------- |
+| `creditLineSignatureVerifier()`                          | Muon signature verifier address                     |
+| `creditLineMuonAppId()`                                  | Muon app ID                                         |
+| `creditLineMuonFreshnessWindow()`                        | Max age of Muon signatures                          |
+| `creditLineProtocolMaxDebt(affiliate)`                   | Protocol-level absolute debt cap                    |
+| `creditLineProtocolMaxDebtBps(affiliate)`                | Protocol-level percentage cap (bps of eligibleBase) |
+| `creditLineAffiliateMaxDebt(affiliate)`                  | Affiliate-chosen absolute cap                       |
+| `creditLineAffiliateMaxDebtBps(affiliate)`               | Affiliate-chosen percentage cap (bps)               |
+| `creditLineReservedDebt(affiliate)`                      | Reserved but not yet activated debt                 |
+| `creditLineActiveDebt(affiliate)`                        | Activated (advanced) debt                           |
+| `creditLineTotalDebt(affiliate)`                         | Total outstanding credit (reserved + active)        |
+| `creditLineRequestDebt(affiliate, user, requestId)`      | Per-request debt amount                             |
+| `creditLineRequestActivated(affiliate, user, requestId)` | Whether per-request debt has been activated         |
+| `creditLinePaused(affiliate)`                            | Whether credit line is paused for this affiliate    |
+| `creditLineBlacklisted(affiliate, user)`                 | Whether user is blacklisted for this affiliate      |
 
 Internal credit line operations (`reserveDebt`, `activate`, `settle`, `releaseReservation`, `coverLoss`) are called internally by the diamond's facets (e.g., `SymmioHookFacet`, `OperatorFacet`) via `LibCreditLine` -- they are not externally callable.
 
@@ -4039,14 +4108,14 @@ flowchart TD
 
 ### 18.4 Graceful Degradation
 
-| Failure Mode | System Behavior |
-|--------------|-----------------|
-| Bot offline | Users can `processWithdraw` permissionlessly after `tolerancePeriod`. STANDARD always works without bot |
-| Bot fails to finalize | Anyone can call `finalizeWithdrawRequest` on SYMMIO after cooldown |
-| Validator service offline | IMMEDIATE unavailable unless the effective validator requirement is 0 after `address(0)` fallback; other types still work |
-| Insufficient pool liquidity | Only STANDARD available (no capital fronting) |
-| Sponsor drained | Users pay full fees; system still functional |
-| Config change invalidates pending sigs | Re-sign options with updated config |
+| Failure Mode                           | System Behavior                                                                                                           |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Bot offline                            | Users can `processWithdraw` permissionlessly after `tolerancePeriod`. STANDARD always works without bot                   |
+| Bot fails to finalize                  | Anyone can call `finalizeWithdrawRequest` on SYMMIO after cooldown                                                        |
+| Validator service offline              | IMMEDIATE unavailable unless the effective validator requirement is 0 after `address(0)` fallback; other types still work |
+| Insufficient pool liquidity            | Only STANDARD available (no capital fronting)                                                                             |
+| Sponsor drained                        | Users pay full fees; system still functional                                                                              |
+| Config change invalidates pending sigs | Re-sign options with updated config                                                                                       |
 
 #### Numeric Example: Invariant Verification After Multiple Operations
 
@@ -4171,6 +4240,7 @@ This section provides a definitive lookup table for every combination of **Expre
 Each cell tells the bot exactly what to do, what to watch for, what actions are available (and to whom), what will revert, and what timers should be running. Impossible combinations -- those that can never occur due to the state machine design -- are marked as such with an explanation.
 
 **Default contract parameters used in numeric scenarios:**
+
 - `securityWindow = 20s`
 - `tolerancePeriod = 60s`
 - `validatorApprovalTimeout(affiliate) = 30s`
@@ -4182,6 +4252,7 @@ Each cell tells the bot exactly what to do, what to watch for, what actions are 
 **Bot situation:** No withdrawal exists yet for this (user, requestId). The bot may be about to sign an IMMEDIATE option.
 
 **Bot should:**
+
 1. Pre-sign the EIP-712 WithdrawOption with `optionType = 0 (IMMEDIATE)`
 2. Ensure `minValidatorSignatures(affiliate) > 0` (contract reverts otherwise: `ValidatorsRequiredForImmediate`)
 3. Gather validator signatures (each from a registered validator for this affiliate or `address(0)` default, within `validatorApprovalTimeout(affiliate)`)
@@ -4189,10 +4260,12 @@ Each cell tells the bot exactly what to do, what to watch for, what actions are 
 5. Verify credit line capacity (if creditAmount > 0)
 
 **Available actions:**
+
 - User: calls `initiateWithdraw` on SYMMIO, which triggers `onWithdrawRequest` on ExpressProvider
 - No bot action needed after signing -- IMMEDIATE processes entirely within `onWithdrawRequest`
 
 **Will revert:**
+
 - `processWithdraw`: status is `NONE`, reverts with `NotAccepted` (INSTANT path) or `NotFinalized` (STANDARD path)
 - `lockWithdraw`: reverts with `NotAccepted`
 - `unlockAndProcess`: reverts with `NotLocked`
@@ -4218,25 +4291,30 @@ Each cell tells the bot exactly what to do, what to watch for, what actions are 
 **Bot situation:** IMMEDIATE withdrawal completed in one transaction. Funds already transferred to the user. Awaiting SYMMIO's 12-hour finalization to replenish pools. SYMMIO may also suspend the withdrawal during the cooldown, in which case the contract takes the post-payout rollback path (covers credit loss, deducts `creditAmount` from the affiliate pool).
 
 **Bot should:**
+
 1. Timer set: call `finalizeWithdrawRequest(user, reqId)` on SYMMIO at `cooldownEndTime`
 2. Monitor for: `WithdrawFinalized` event (from `onWithdrawComplete`) **and** `WithdrawSuspended` event (from `onWithdrawSuspend` rollback path)
 3. No further user-facing action needed -- the user already has their funds
 
 **Available actions:**
+
 - OPERATOR_ROLE: call `finalizeWithdrawRequest` on SYMMIO (at `cooldownEndTime`)
 - SYMMIO (callback): `onWithdrawComplete` transitions to FINALIZED and replenishes pools
 - SYMMIO (callback): `onWithdrawSuspend` triggers `_handleProcessedRollback` -- deducts `creditAmount` from affiliate pool, settles credit, status -> SUSPENDED
 
 **Will revert:**
+
 - `processWithdraw`: `NotAccepted` (status is PROCESSED, not ACCEPTED)
 - `lockWithdraw`: `NotAccepted`
 - `onWithdrawCancelRequest`: `NotAccepted` (cancel callback only works from ACCEPTED)
 - `onWithdrawComplete` before SYMMIO cooldown: SYMMIO-side revert (not an ExpressProvider check)
 
 **Timers:**
+
 - Finalization timer: `cooldownEndTime` (typically `acceptedAt + 12 hours`)
 
 **Numeric scenario:**
+
 ```
 acceptedAt = 1700000000, cooldownEndTime = 1700043200
 Bot reads: status = PROCESSED, block.timestamp = 1700040000
@@ -4255,12 +4333,14 @@ Result: status -> FINALIZED, generalBalance += generalAmount, affiliateBalances[
 **Bot situation:** Terminal state. SYMMIO has finalized and pools are replenished. No further action needed.
 
 **Bot should:**
+
 1. Archive this withdrawal in the database
 2. Remove all timers for this (user, requestId)
 
 **Available actions:** None. All state-changing functions will revert.
 
 **Will revert:**
+
 - `processWithdraw`: `NotAccepted`
 - `lockWithdraw`: `NotAccepted`
 - `onWithdrawComplete`: status is FINALIZED, no longer in a callable state (the unreachable NotProcessed check was removed in commit 1ae4b688; SYMMIO will not call the callback again on a finalized record)
@@ -4290,6 +4370,7 @@ Result: status -> FINALIZED, generalBalance += generalAmount, affiliateBalances[
 **Bot situation:** No withdrawal exists yet. The bot may be about to sign an INSTANT option.
 
 **Bot should:**
+
 1. Check that `generalBalance - lockedGeneralBalance >= generalAmount` (else `InsufficientGeneralBalance`)
 2. Check that `affiliateBalances[aff] - lockedAffiliateBalances[aff] >= affiliateAmount` (else `InsufficientAffiliateBalance`)
 3. Check credit line capacity (if creditAmount > 0)
@@ -4297,9 +4378,11 @@ Result: status -> FINALIZED, generalBalance += generalAmount, affiliateBalances[
 5. Optionally gather validator signatures (if `minValidatorSignatures(affiliate) > 0`)
 
 **Available actions:**
+
 - User: calls `initiateWithdraw` on SYMMIO
 
 **Will revert:**
+
 - All ExpressProvider functions targeting this (user, requestId): no info exists yet
 
 **Timers:** None yet.
@@ -4311,11 +4394,13 @@ Result: status -> FINALIZED, generalBalance += generalAmount, affiliateBalances[
 **Bot situation:** INSTANT withdrawal accepted, funds locked in pools. Waiting for securityWindow before processing.
 
 **Bot should:**
+
 1. Risk check is running
 2. Timer set: `processWithdraw` at `acceptedAt + securityWindow`
 3. Monitoring for: `WithdrawLocked`, `WithdrawCancelled`, `WithdrawSuspended`
 
 **Available actions:**
+
 - OPERATOR_ROLE: `processWithdraw(user, reqId, parts)` after `acceptedAt + securityWindow`
 - LOCKER_ROLE: `lockWithdraw(user, reqId)` anytime while ACCEPTED
 - Anyone: `processWithdraw(user, reqId, parts)` after `acceptedAt + securityWindow + tolerancePeriod`
@@ -4323,6 +4408,7 @@ Result: status -> FINALIZED, generalBalance += generalAmount, affiliateBalances[
 - SYMMIO (callback): `onWithdrawSuspend` transitions to SUSPENDED
 
 **Will revert:**
+
 - `processWithdraw` before `acceptedAt + securityWindow`: `TooEarly`
 - `processWithdraw` by non-operator before `acceptedAt + securityWindow + tolerancePeriod`: `TooEarly`
 - `lockWithdraw` if status already changed: `NotAccepted`
@@ -4330,6 +4416,7 @@ Result: status -> FINALIZED, generalBalance += generalAmount, affiliateBalances[
 - `onWithdrawComplete`: `NotProcessed` (not yet processed)
 
 **Numeric scenario:**
+
 ```
 acceptedAt = 1700000000, securityWindow = 20s, tolerancePeriod = 60s
 Bot reads: status = ACCEPTED, block.timestamp = 1700000015
@@ -4356,6 +4443,7 @@ Anyone can call processWithdraw(user, reqId, parts)
 **Bot situation:** INSTANT withdrawal was risk-flagged by the LOCKER_ROLE. Funds remain locked in pools. Processing is blocked.
 
 **Bot should:**
+
 1. Investigate the risk flag
 2. If false alarm: request UNLOCK_ROLE holder to call `unlockAndProcess`
 3. If confirmed threat: request SYMMIO operator to suspend via `onWithdrawSuspend`
@@ -4363,18 +4451,21 @@ Anyone can call processWithdraw(user, reqId, parts)
 5. Fallback: if investigation takes too long and cooldownEndTime passes, OPERATOR_ROLE or anyone can call `processWithdraw` (the `isLockedAfterCooldown` path)
 
 **Available actions:**
+
 - UNLOCK_ROLE: `unlockAndProcess(user, reqId, parts)` (immediate, no time gate)
 - OPERATOR_ROLE: `processWithdraw(user, reqId, parts)` after `cooldownEndTime` (locked-after-cooldown path)
 - Anyone: `processWithdraw(user, reqId, parts)` after `cooldownEndTime + tolerancePeriod`
 - SYMMIO (callback): `onWithdrawSuspend` transitions to SUSPENDED (releases pool locks and credit reservation)
 
 **Will revert:**
+
 - `processWithdraw` before `cooldownEndTime`: `NotAccepted` (status is LOCKED, `isLockedAfterCooldown` is false)
 - `lockWithdraw`: `NotAccepted` (already LOCKED)
 - `onWithdrawCancelRequest`: `NotAccepted` (cancel callback only works from ACCEPTED)
 - `onWithdrawComplete`: `NotProcessed`
 
 **Numeric scenario:**
+
 ```
 acceptedAt = 1700000000, cooldownEndTime = 1700043200
 Bot reads: status = LOCKED, block.timestamp = 1700000100
@@ -4399,23 +4490,28 @@ processableAt = 1700043200 + 60 = 1700043260
 **Bot situation:** Funds have been transferred to the user. Awaiting SYMMIO finalization to replenish pools. SYMMIO may also suspend the withdrawal during the cooldown, in which case the contract takes the post-payout rollback path (covers credit loss, deducts `creditAmount` from the affiliate pool).
 
 **Bot should:**
+
 1. Timer set: call `finalizeWithdrawRequest(user, reqId)` on SYMMIO at `cooldownEndTime`
 2. Monitor for: `WithdrawFinalized` event **and** `WithdrawSuspended` event (rollback path)
 
 **Available actions:**
+
 - OPERATOR_ROLE: call `finalizeWithdrawRequest` on SYMMIO at `cooldownEndTime`
 - SYMMIO (callback): `onWithdrawComplete` replenishes pools and transitions to FINALIZED
 - SYMMIO (callback): `onWithdrawSuspend` triggers `_handleProcessedRollback` -- deducts `creditAmount` from affiliate pool, settles credit, status -> SUSPENDED
 
 **Will revert:**
+
 - `processWithdraw`: `NotAccepted`
 - `lockWithdraw`: `NotAccepted`
 - `onWithdrawCancelRequest`: `NotAccepted` (cancel callback only works from ACCEPTED)
 
 **Timers:**
+
 - Finalization timer: `cooldownEndTime`
 
 **Numeric scenario:**
+
 ```
 acceptedAt = 1700000000, cooldownEndTime = 1700043200
 Bot reads: status = PROCESSED, block.timestamp = 1700042000
@@ -4436,6 +4532,7 @@ Result: status -> FINALIZED
 **Bot situation:** Terminal state. SYMMIO finalized, pools replenished. No further action.
 
 **Bot should:**
+
 1. Archive this withdrawal
 2. Remove all timers
 
@@ -4452,6 +4549,7 @@ Result: status -> FINALIZED
 **Bot situation:** Terminal state. The withdrawal was cancelled by the user via `onWithdrawCancelRequest` (only reachable from ACCEPTED). All pool locks released, credit reservation released, sponsor coverage refunded. (`onForceWithdrawCancel` was removed in commit eabd1f3f.)
 
 **Bot should:**
+
 1. Archive this withdrawal
 2. Remove all timers
 3. Note: pool balances have been restored -- no reimbursement needed
@@ -4467,10 +4565,12 @@ Result: status -> FINALIZED
 ### INSTANT x SUSPENDED
 
 **Bot situation:** Terminal state. A SYMMIO operator suspended this withdrawal via `onWithdrawSuspend`. Reachable from ACCEPTED, LOCKED, or PROCESSED:
+
 - From ACCEPTED/LOCKED: pool locks released, credit reservation released, sponsor coverage refunded.
 - From PROCESSED (post-payout): `_handleProcessedRollback` deducts `creditAmount` from the affiliate pool to absorb the credit loss and settles the debt.
 
 **Bot should:**
+
 1. Archive this withdrawal
 2. Remove all timers
 3. Log the suspension for compliance review
@@ -4488,14 +4588,17 @@ Result: status -> FINALIZED
 **Bot situation:** No withdrawal exists yet. The bot may be about to sign a STANDARD option. STANDARD means no capital fronting -- Express acts as an intermediary and forwards tokens after SYMMIO's 12-hour cooldown.
 
 **Bot should:**
+
 1. No pool liquidity check needed (no capital is fronted)
 2. Sign the EIP-712 WithdrawOption with `optionType = 2 (STANDARD)`, `availableAt = 0`
 3. Optionally gather validator signatures (if `minValidatorSignatures(affiliate) > 0`)
 
 **Available actions:**
+
 - User: calls `initiateWithdraw` on SYMMIO
 
 **Will revert:**
+
 - All ExpressProvider functions targeting this (user, requestId): no info exists yet
 
 **Timers:** None yet.
@@ -4507,25 +4610,30 @@ Result: status -> FINALIZED
 **Bot situation:** STANDARD withdrawal accepted. No pools locked, no capital fronted. Waiting for SYMMIO's 12-hour cooldown to complete, at which point `onWithdrawComplete` will deliver the tokens and transition to FINALIZED.
 
 **Bot should:**
+
 1. Timer set: call `finalizeWithdrawRequest(user, reqId)` on SYMMIO at `cooldownEndTime`
 2. Risk check is running (LOCKER_ROLE can lock during the 12h window)
 3. Monitoring for: `WithdrawLocked`, `WithdrawCancelled`, `WithdrawSuspended`, `WithdrawFinalized`
 
 **Available actions:**
+
 - LOCKER_ROLE: `lockWithdraw(user, reqId)` anytime while ACCEPTED
 - SYMMIO (callback): `onWithdrawComplete` transitions to FINALIZED (tokens arrive)
 - SYMMIO (callback): `onWithdrawCancelRequest` transitions to CANCELLED
 - SYMMIO (callback): `onWithdrawSuspend` transitions to SUSPENDED
 
 **Will revert:**
+
 - `processWithdraw`: `NotFinalized` (status is ACCEPTED, not FINALIZED, and not locked-after-cooldown)
 - `unlockAndProcess`: `NotLocked`
 - `onWithdrawComplete` before SYMMIO cooldown: SYMMIO-side revert
 
 **Timers:**
+
 - Finalization timer: `cooldownEndTime`
 
 **Numeric scenario:**
+
 ```
 acceptedAt = 1700000000, cooldownEndTime = 1700043200
 Bot reads: status = ACCEPTED, block.timestamp = 1700020000
@@ -4552,6 +4660,7 @@ Bot immediately calls: processWithdraw(user, reqId, parts)
 **Bot situation:** STANDARD withdrawal was risk-flagged during the 12-hour cooldown. When `onWithdrawComplete` is called by SYMMIO, the contract preserves the LOCKED status (does NOT transition to FINALIZED), but sets `finalizedAt` so that tokens are known to have arrived.
 
 **Bot should:**
+
 1. Investigate the risk flag
 2. If false alarm AND `finalizedAt != 0` (tokens arrived): request UNLOCK_ROLE holder to call `unlockAndProcess`
 3. If false alarm AND `finalizedAt == 0` (tokens not yet arrived): wait for `onWithdrawComplete` first, then `unlockAndProcess`
@@ -4559,15 +4668,17 @@ Bot immediately calls: processWithdraw(user, reqId, parts)
 5. Fallback: after `cooldownEndTime`, OPERATOR_ROLE can call `processWithdraw` which will auto-finalize from SYMMIO if needed
 
 **Available actions:**
+
 - UNLOCK_ROLE: `unlockAndProcess(user, reqId, parts)` (requires `finalizedAt != 0`, else `NotFinalized`)
 - OPERATOR_ROLE: `processWithdraw(user, reqId, parts)` after `cooldownEndTime`
-  - If `finalizedAt == 0`: auto-calls `SYMMIO.finalizeWithdrawRequest` first (the `isLockedAfterCooldown` path)
-  - Then processes normally
+    - If `finalizedAt == 0`: auto-calls `SYMMIO.finalizeWithdrawRequest` first (the `isLockedAfterCooldown` path)
+    - Then processes normally
 - Anyone: `processWithdraw(user, reqId, parts)` after `cooldownEndTime + tolerancePeriod`
 - SYMMIO (callback): `onWithdrawComplete` sets `finalizedAt` but keeps LOCKED
 - SYMMIO (callback): `onWithdrawSuspend` transitions to SUSPENDED (only if `finalizedAt == 0`)
 
 **Will revert:**
+
 - `lockWithdraw`: `NotAccepted` (already LOCKED)
 - `onWithdrawCancelRequest`: `NotAccepted` (cancel callback only works from ACCEPTED)
 - `unlockAndProcess` when `finalizedAt == 0`: `NotFinalized`
@@ -4575,6 +4686,7 @@ Bot immediately calls: processWithdraw(user, reqId, parts)
 - `processWithdraw` before `cooldownEndTime` (while locked): `NotFinalized` and `isLockedAfterCooldown` is false
 
 **Numeric scenario:**
+
 ```
 acceptedAt = 1700000000, cooldownEndTime = 1700043200
 
@@ -4610,6 +4722,7 @@ Scenario B -- locked-after-cooldown path:
 Note: Unlike INSTANT/IMMEDIATE where PROCESSED -> FINALIZED, for STANDARD the flow is ACCEPTED -> FINALIZED -> PROCESSED (or LOCKED -> PROCESSED via unlockAndProcess/locked-after-cooldown). The `onWithdrawComplete` callback that would transition PROCESSED -> FINALIZED does not apply here because STANDARD's `onWithdrawComplete` requires `status == ACCEPTED || status == LOCKED`.
 
 **Bot should:**
+
 1. Archive this withdrawal
 2. Remove all timers
 3. No pool replenishment step -- STANDARD never fronted capital from pools
@@ -4617,6 +4730,7 @@ Note: Unlike INSTANT/IMMEDIATE where PROCESSED -> FINALIZED, for STANDARD the fl
 **Available actions:** None meaningful. The withdrawal lifecycle is complete.
 
 **Will revert:**
+
 - `processWithdraw`: `NotFinalized` (status is PROCESSED, not FINALIZED)
 - `lockWithdraw`: `NotAccepted`
 - `onWithdrawComplete`: `InvalidStatusForStandard` (expects ACCEPTED or LOCKED)
@@ -4632,15 +4746,18 @@ Note: Unlike INSTANT/IMMEDIATE where PROCESSED -> FINALIZED, for STANDARD the fl
 **Bot situation:** SYMMIO has sent the tokens to ExpressProvider via `onWithdrawComplete`. The contract holds the tokens and is ready for the bot to forward them to the user via `processWithdraw`.
 
 **Bot should:**
+
 1. Immediately call `processWithdraw(user, reqId, parts)` to forward tokens to receivers
 2. For STANDARD, `processableAt = finalizedAt` (operator) or `finalizedAt + tolerancePeriod` (anyone)
 3. Since finalization just happened, the operator can typically process in the same block or next block
 
 **Available actions:**
+
 - OPERATOR_ROLE: `processWithdraw(user, reqId, parts)` immediately (processableAt = finalizedAt, which is now)
 - Anyone: `processWithdraw(user, reqId, parts)` after `finalizedAt + tolerancePeriod`
 
 **Will revert:**
+
 - `processWithdraw` by non-operator before `finalizedAt + tolerancePeriod`: `TooEarly`
 - `lockWithdraw`: `NotAccepted`
 - `unlockAndProcess`: `NotLocked`
@@ -4649,6 +4766,7 @@ Note: Unlike INSTANT/IMMEDIATE where PROCESSED -> FINALIZED, for STANDARD the fl
 - `onWithdrawSuspend`: `InvalidStatusForSuspend` (STANDARD at FINALIZED cannot be suspended)
 
 **Numeric scenario:**
+
 ```
 acceptedAt = 1700000000, cooldownEndTime = 1700043200
 At T=1700043200:
@@ -4675,6 +4793,7 @@ Non-operator at T=1700043250:
 **Bot situation:** Terminal state. Withdrawal was cancelled by the user via `onWithdrawCancelRequest` (only reachable from ACCEPTED). Since STANDARD does not front capital, there are no pool locks to release. Credit reservation is released, sponsor coverage is refunded. (`onForceWithdrawCancel` was removed in commit eabd1f3f.)
 
 **Bot should:**
+
 1. Archive this withdrawal
 2. Remove all timers
 
@@ -4691,6 +4810,7 @@ Non-operator at T=1700043250:
 **Bot situation:** Terminal state. SYMMIO operator suspended the withdrawal. Since STANDARD does not front capital, there are no pool locks to release. Credit reservation is released, sponsor coverage is refunded.
 
 **Bot should:**
+
 1. Archive this withdrawal
 2. Remove all timers
 3. Log for compliance review
@@ -4707,27 +4827,27 @@ Non-operator at T=1700043250:
 
 The table below provides a quick-reference view. "I" = Impossible combination. Terminal states (FINALIZED, CANCELLED, SUSPENDED) are marked with their nature.
 
-| Status \ OptionType | IMMEDIATE | INSTANT | STANDARD |
-|---|---|---|---|
-| **NONE** | Sign option, gather validators (per-affiliate) | Sign option, check pool liquidity | Sign option, no liquidity needed |
-| **ACCEPTED** | **I** -- skips to PROCESSED | Wait securityWindow, then processWithdraw | Wait for onWithdrawComplete (12h) |
-| **LOCKED** | **I** -- never ACCEPTED | Await UNLOCK_ROLE or cooldown expiry | Await UNLOCK_ROLE or cooldown expiry + finalize |
-| **PROCESSED** | Await finalization (12h); suspend possible (rollback) | Await finalization (12h); suspend possible (rollback) | Terminal (no pool replenishment) |
-| **FINALIZED** | Terminal (pools replenished) | Terminal (pools replenished) | Forward tokens via processWithdraw |
-| **CANCELLED** | **I** -- never ACCEPTED | Terminal (locks released, from ACCEPTED only) | Terminal (cancel from ACCEPTED only) |
-| **SUSPENDED** | Terminal -- only via PROCESSED rollback path | Terminal (from ACCEPTED/LOCKED: locks released; from PROCESSED: rollback) | Terminal (from ACCEPTED/LOCKED with `finalizedAt == 0`) |
+| Status \ OptionType | IMMEDIATE                                             | INSTANT                                                                   | STANDARD                                                |
+| ------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------- |
+| **NONE**            | Sign option, gather validators (per-affiliate)        | Sign option, check pool liquidity                                         | Sign option, no liquidity needed                        |
+| **ACCEPTED**        | **I** -- skips to PROCESSED                           | Wait securityWindow, then processWithdraw                                 | Wait for onWithdrawComplete (12h)                       |
+| **LOCKED**          | **I** -- never ACCEPTED                               | Await UNLOCK_ROLE or cooldown expiry                                      | Await UNLOCK_ROLE or cooldown expiry + finalize         |
+| **PROCESSED**       | Await finalization (12h); suspend possible (rollback) | Await finalization (12h); suspend possible (rollback)                     | Terminal (no pool replenishment)                        |
+| **FINALIZED**       | Terminal (pools replenished)                          | Terminal (pools replenished)                                              | Forward tokens via processWithdraw                      |
+| **CANCELLED**       | **I** -- never ACCEPTED                               | Terminal (locks released, from ACCEPTED only)                             | Terminal (cancel from ACCEPTED only)                    |
+| **SUSPENDED**       | Terminal -- only via PROCESSED rollback path          | Terminal (from ACCEPTED/LOCKED: locks released; from PROCESSED: rollback) | Terminal (from ACCEPTED/LOCKED with `finalizedAt == 0`) |
 
 ### Key Differences by Option Type
 
-| Aspect | IMMEDIATE | INSTANT | STANDARD |
-|---|---|---|---|
-| **Capital fronted?** | Yes (same-tx) | Yes (pools locked) | No |
-| **Validators required?** | Always | Only if `minValidatorSignatures(affiliate) > 0` | Only if `minValidatorSignatures(affiliate) > 0` |
-| **processWithdraw needed?** | No | Yes | Yes (after finalization) |
-| **processableAt (operator)** | N/A | `acceptedAt + securityWindow` | `finalizedAt` |
-| **processableAt (anyone)** | N/A | `acceptedAt + securityWindow + tolerancePeriod` | `finalizedAt + tolerancePeriod` |
-| **User-cancellable?** | No (already processed) | Yes (while ACCEPTED) | Yes (while ACCEPTED) |
-| **Force-cancellable?** | N/A -- `onForceWithdrawCancel` removed (commit eabd1f3f); use suspend | N/A -- `onForceWithdrawCancel` removed; use suspend | N/A -- `onForceWithdrawCancel` removed; use suspend |
-| **Suspendable?** | Yes -- only from PROCESSED (post-payout rollback path) | Yes (ACCEPTED, LOCKED, or PROCESSED -- PROCESSED triggers rollback) | Yes (ACCEPTED or LOCKED, if `finalizedAt == 0`) |
-| **Pool replenishment** | `onWithdrawComplete` | `onWithdrawComplete` | N/A (no pool capital used) |
-| **Lifecycle order** | NONE->PROCESSED->FINALIZED | NONE->ACCEPTED->PROCESSED->FINALIZED | NONE->ACCEPTED->FINALIZED->PROCESSED |
+| Aspect                       | IMMEDIATE                                                             | INSTANT                                                             | STANDARD                                            |
+| ---------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------- | --------------------------------------------------- |
+| **Capital fronted?**         | Yes (same-tx)                                                         | Yes (pools locked)                                                  | No                                                  |
+| **Validators required?**     | Always                                                                | Only if `minValidatorSignatures(affiliate) > 0`                     | Only if `minValidatorSignatures(affiliate) > 0`     |
+| **processWithdraw needed?**  | No                                                                    | Yes                                                                 | Yes (after finalization)                            |
+| **processableAt (operator)** | N/A                                                                   | `acceptedAt + securityWindow`                                       | `finalizedAt`                                       |
+| **processableAt (anyone)**   | N/A                                                                   | `acceptedAt + securityWindow + tolerancePeriod`                     | `finalizedAt + tolerancePeriod`                     |
+| **User-cancellable?**        | No (already processed)                                                | Yes (while ACCEPTED)                                                | Yes (while ACCEPTED)                                |
+| **Force-cancellable?**       | N/A -- `onForceWithdrawCancel` removed (commit eabd1f3f); use suspend | N/A -- `onForceWithdrawCancel` removed; use suspend                 | N/A -- `onForceWithdrawCancel` removed; use suspend |
+| **Suspendable?**             | Yes -- only from PROCESSED (post-payout rollback path)                | Yes (ACCEPTED, LOCKED, or PROCESSED -- PROCESSED triggers rollback) | Yes (ACCEPTED or LOCKED, if `finalizedAt == 0`)     |
+| **Pool replenishment**       | `onWithdrawComplete`                                                  | `onWithdrawComplete`                                                | N/A (no pool capital used)                          |
+| **Lifecycle order**          | NONE->PROCESSED->FINALIZED                                            | NONE->ACCEPTED->PROCESSED->FINALIZED                                | NONE->ACCEPTED->FINALIZED->PROCESSED                |

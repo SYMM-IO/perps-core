@@ -28,6 +28,7 @@ export async function deployExpressProvider(hre: HardhatRuntimeEnvironment, conn
 		"contracts/expressWithdrawLayer/facets/Control/ControlFacet.sol:ControlFacet",
 		"contracts/expressWithdrawLayer/facets/SymmioHook/SymmioHookFacet.sol:SymmioHookFacet",
 		"contracts/expressWithdrawLayer/facets/Operator/OperatorFacet.sol:OperatorFacet",
+		"contracts/expressWithdrawLayer/facets/Accelerate/AccelerateFacet.sol:AccelerateFacet",
 		"contracts/expressWithdrawLayer/facets/View/ViewFacet.sol:ViewFacet",
 	]
 	const cuts = []
