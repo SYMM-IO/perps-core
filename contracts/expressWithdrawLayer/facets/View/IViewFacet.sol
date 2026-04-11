@@ -95,4 +95,14 @@ interface IViewFacet {
 	function creditLinePaused(address affiliate) external view returns (bool);
 
 	function creditLineBlacklisted(address affiliate, address user) external view returns (bool);
+
+	// ── Cap-change fee / throttle ──
+
+	function capChangeFeeConfig() external view returns (address feeToken, uint256 feeAmount, address feeReceiver);
+
+	function capChangeQuotaConfig() external view returns (uint256 maxFreePerWindow, uint256 windowDuration);
+
+	function capChangeAffiliateState(
+		address affiliate
+	) external view returns (uint256 count, uint256 epochStart, uint256 remainingFree, uint256 nextResetAt);
 }

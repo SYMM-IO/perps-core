@@ -190,4 +190,36 @@ contract ViewFacet is IViewFacet {
 	function creditLineBlacklisted(address affiliate, address user) external view returns (bool) {
 		return CreditLineStorage.layout().affiliates[affiliate].blacklisted[user];
 	}
+
+	// ── Cap-change fee / throttle ──
+
+	function capChangeFeeConfig() external view returns (address feeToken, uint256 feeAmount, address feeReceiver) {
+		CreditLineStorage.Layout storage cl = CreditLineStorage.layout();
+		return (cl.capChangeFeeToken, cl.capChangeFeeAmount, cl.capChangeFeeReceiver);
+	}
+
+	function capChangeQuotaConfig() external view returns (uint256 maxFreePerWindow, uint256 windowDuration) {
+		CreditLineStorage.Layout storage cl = CreditLineStorage.layout();
+		return (cl.capChangeMaxFreePerWindow, cl.capChangeWindowDuration);
+	}
+
+	function capChangeAffiliateState(
+		address affiliate
+	) external view returns (uint256 count, uint256 epochStart, uint256 remainingFree, uint256 nextResetAt) {
+		CreditLineStorage.Layout storage cl = CreditLineStorage.layout();
+		AffiliateCredit storage ac = cl.affiliates[affiliate];
+		count = ac.capChangeCount;
+		epochStart = ac.capChangeEpochStart;
+		uint256 windowDuration = cl.capChangeWindowDuration;
+		uint256 maxFree = cl.capChangeMaxFreePerWindow;
+		// If the window has elapsed, the next call resets the counter — so logically there is a full quota available.
+		bool epochElapsed = windowDuration == 0 || block.timestamp >= epochStart + windowDuration;
+		if (epochElapsed) {
+			remainingFree = maxFree;
+			nextResetAt = windowDuration == 0 ? 0 : block.timestamp + windowDuration;
+		} else {
+			remainingFree = maxFree > count ? maxFree - count : 0;
+			nextResetAt = epochStart + windowDuration;
+		}
+	}
 }

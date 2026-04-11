@@ -2616,6 +2616,45 @@ See `expressWithdrawLayer/facets/Accelerate/AccelerateFacet.sol` and design doc 
 
 ---
 
+### 10.7 Affiliate Cap Self-Service & Fee
+
+Affiliates can now adjust their own credit line cap without an admin call. See design doc §5.5 for the full model. Operational notes:
+
+**Decreases are always free.** When a frontend needs to tighten risk (e.g., an anomaly spike, a pool running low, a governance decision), it should call `setMyCreditLineConfig` with lower values immediately. The on-chain classifier treats "neither dimension loosened" as a decrease -- no fee, no counter bump, no delay. Tightening is the protocol's preferred risk response.
+
+**Increases are throttled and can cost fees.** Each affiliate gets `maxFreePerWindow` free increases per `windowDuration`. Once the quota is exhausted in the current window, the next increase pulls `feeAmount` of the protocol-configured fee token from the affiliate's wallet.
+
+**Before submitting a cap change, a frontend should:**
+
+1. Read `capChangeQuotaConfig()` → `(maxFreePerWindow, windowDuration)`.
+2. Read `capChangeAffiliateState(affiliate)` → `(count, epochStart, remainingFree, nextResetAt)`.
+3. If `remainingFree > 0`, the call is free.
+4. If `remainingFree == 0`, read `capChangeFeeConfig()` → `(feeToken, feeAmount, feeReceiver)` and show the user the fee they'll pay. Confirm, then approve `feeToken` for the diamond and submit `setMyCreditLineConfig`.
+5. Classifier sanity: if the user is tightening caps, the call is always free regardless of `remainingFree`. No fee is pulled even if the quota is exhausted.
+
+**Admin changes bypass throttle.** A protocol admin with `SETTER_ROLE` can still call `setCreditLineAffiliateConfig(affiliate, ...)` for emergencies. Indexers monitoring cap state should subscribe to **both**:
+
+- `CreditLineAffiliateConfigSelfUpdated(affiliate, maxDebt, maxDebtBps, wasDecrease, feePaid)` -- affiliate self-service calls
+- `CreditLineAffiliateConfigUpdated(affiliate, maxDebt, maxDebtBps)` -- emitted by both paths
+
+The second event is a superset; the first carries the extra classification and fee-paid context. For pure cap tracking, the second is sufficient.
+
+**Failure modes:**
+
+| Revert reason                                           | Meaning                              | Frontend action                                                                    |
+| ------------------------------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------- |
+| `NoOpCapChange`                                         | Values unchanged                     | Don't submit a no-op                                                               |
+| `AffiliateLimitExceedsProtocol`                         | Requested cap above protocol ceiling | Show user the protocol ceiling and let them pick a smaller value                   |
+| `CapChangeFeeNotConfigured`                             | Admin set quota but not fee config   | Wait for admin to finish configuration; show "cap changes temporarily unavailable" |
+| `ERC20InsufficientAllowance` / generic SafeERC20 revert | Fee token not approved for diamond   | Prompt user to approve the fee token, then retry                                   |
+| `ERC20InsufficientBalance`                              | Affiliate wallet is out of fee token | Surface balance requirement to user                                                |
+
+**Fee configuration is protocol-wide and mutable.** The admin can change the fee token address, amount, and receiver at any time. Frontends should read config fresh before each submission rather than caching values.
+
+**Recommended UX copy for the fee path:** "You've used your N free cap changes this window. This change will cost `{feeAmount} {feeTokenSymbol}`. Window resets at `{nextResetAt}`. Need to _tighten_ your cap instead? That's always free."
+
+---
+
 ## 11. Multi-Part Withdrawals
 
 ### 11.1 Part Classification

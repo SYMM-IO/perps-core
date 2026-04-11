@@ -23,6 +23,9 @@ interface IControlEvents {
 	event CreditLineAffiliateConfigUpdated(address indexed affiliate, uint256 maxDebt, uint256 maxDebtBps);
 	event CreditLineUserBlacklistUpdated(address indexed affiliate, address indexed user, bool blacklisted);
 	event CreditLinePausedUpdated(address indexed affiliate, bool paused);
+	event CapChangeFeeConfigUpdated(address feeToken, uint256 feeAmount, address feeReceiver);
+	event CapChangeQuotaConfigUpdated(uint256 maxFreePerWindow, uint256 windowDuration);
+	event CreditLineAffiliateConfigSelfUpdated(address indexed affiliate, uint256 maxDebt, uint256 maxDebtBps, bool wasDecrease, uint256 feePaid);
 }
 
 interface IControlFacet is IControlEvents {
@@ -47,6 +50,12 @@ interface IControlFacet is IControlEvents {
 	function setCreditLineProtocolConfig(address affiliate, uint256 maxDebt, uint256 maxDebtBps) external;
 
 	function setCreditLineAffiliateConfig(address affiliate, uint256 maxDebt, uint256 maxDebtBps) external;
+
+	function setMyCreditLineConfig(uint256 maxDebt, uint256 maxDebtBps) external;
+
+	function setCapChangeFeeConfig(address feeToken, uint256 feeAmount, address feeReceiver) external;
+
+	function setCapChangeQuotaConfig(uint256 maxFreePerWindow, uint256 windowDuration) external;
 
 	function setCreditLinePaused(address affiliate, bool paused) external;
 
