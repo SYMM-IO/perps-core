@@ -63,23 +63,28 @@ export async function deploySymmioPartyB(
 
 	// Write deployment data to JSON file
 	if (logData) {
-		writeData(PARTYB_DEPLOYMENT_FILE, [
+		const entries: Array<{ name: string; address: string; constructorArguments: any[] }> = [
 			{
 				name: "SymmioPartyBProxy",
 				address: await symmioPartyB.getAddress(),
 				constructorArguments: [admin, symmioAddress],
 			},
-			{
-				name: "SymmioPartyBAdmin",
-				address: addresses.admin,
-				constructorArguments: [],
-			},
-			{
+		]
+		if (addresses.implementation) {
+			entries.push({
 				name: "SymmioPartyBImplementation",
 				address: addresses.implementation,
 				constructorArguments: [],
-			},
-		])
+			})
+		}
+		if (addresses.admin) {
+			entries.push({
+				name: "SymmioPartyBAdmin",
+				address: addresses.admin,
+				constructorArguments: [],
+			})
+		}
+		writeData(PARTYB_DEPLOYMENT_FILE, entries)
 	}
 
 	return symmioPartyB

@@ -1,7 +1,7 @@
 import { ethers as eth } from "ethers"
 import * as fs from "fs"
 
-import { MigrationFacet } from "../src/types/index.js"
+import { MigrationFacet } from "../../src/types/index.js"
 
 // =============================================================================
 // Configuration
@@ -58,8 +58,10 @@ export interface MigrationProgress {
 	phase: "quotes" | "balances" | "complete"
 	quotesProcessed: number
 	partyBsProcessed: number
+	partyAsProcessed: number
 	lastProcessedQuoteChunk: number
 	lastProcessedPartyB: number
+	lastProcessedPartyAChunk: number
 }
 
 export interface OperationResult {
@@ -78,6 +80,8 @@ export interface MigrationReport {
 	quotesMigrated: number
 	partyBsTotal: number
 	partyBsMigrated: number
+	partyAsTotal: number
+	partyAsMigrated: number
 	operations: OperationResult[]
 	status: "success" | "partial_failure" | "failed"
 }
@@ -92,37 +96,45 @@ export async function migrate(migrationFacet: MigrationFacet, input: MigrationIn
 	const startedAt = new Date().toISOString()
 
 	const operations: OperationResult[] = []
-	let quotesMigrated = 0
-	let partyBsMigrated = 0
+	let partyAsTotal = 0
 
 	// Load progress if resuming
 	let progress = loadProgress(cfg.progressFile)
-	if (progress) {
-		log("info", `Resuming migration from ${progress.phase} phase`)
-		log("info", `  Quotes processed: ${progress.quotesProcessed}`)
-		log("info", `  PartyBs processed: ${progress.partyBsProcessed}`)
-	} else {
+	let quotesMigrated = progress?.quotesProcessed ?? 0
+	let partyBsMigrated = progress?.partyBsProcessed ?? 0
+	let partyAsMigrated = progress?.partyAsProcessed ?? 0
+
+	const isResuming = !!progress
+	if (!progress) {
 		progress = {
 			startedAt,
 			phase: "quotes",
 			quotesProcessed: 0,
 			partyBsProcessed: 0,
+			partyAsProcessed: 0,
 			lastProcessedQuoteChunk: -1,
 			lastProcessedPartyB: -1,
+			lastProcessedPartyAChunk: -1,
 		}
 	}
 
+	const totalPartyAs = input.partyBTasks.reduce((sum, t) => sum + t.partyAs.length, 0)
+	const totalQuoteChunks = Math.ceil(input.quoteIds.length / cfg.chunkSize)
+
 	logHeader("SYMMIO V0.8.5 Migration")
 	log("info", `Started at: ${startedAt}`)
+	if (isResuming) log("info", `Resuming from: ${progress.phase} phase`)
+	log("info", ``)
 	log("info", `Configuration:`)
 	log("info", `  Chunk size: ${cfg.chunkSize}`)
 	log("info", `  Max retries: ${cfg.maxRetries}`)
 	log("info", `  Confirmations: ${cfg.confirmations}`)
 	log("info", `  Dry run: ${cfg.dryRun ?? false}`)
 	log("info", ``)
-	log("info", `Input:`)
-	log("info", `  Quotes to migrate: ${input.quoteIds.length}`)
-	log("info", `  PartyBs to migrate: ${input.partyBTasks.length}`)
+	log("info", `Progress:`)
+	log("info", `  Quotes:   ${quotesMigrated}/${input.quoteIds.length} (${progress.lastProcessedQuoteChunk + 1}/${totalQuoteChunks} chunks)`)
+	log("info", `  PartyBs:  ${partyBsMigrated}/${input.partyBTasks.length}`)
+	log("info", `  PartyAs:  ${partyAsMigrated}/${totalPartyAs}`)
 
 	// =========================================================================
 	// Phase 1: Migrate Quotes (Aggregated Positions)
@@ -182,44 +194,58 @@ export async function migrate(migrationFacet: MigrationFacet, input: MigrationIn
 
 			log("info", `\nProcessing PartyB ${i + 1}/${input.partyBTasks.length}: ${formatAddress(partyB)}`)
 			log("info", `  PartyAs to process: ${partyAs.length}`)
+			partyAsTotal += partyAs.length
 
-			// Check if already migrated
-			if (!cfg.dryRun) {
-				const alreadyMigrated = await migrationFacet.isPartyBLockedValuesMigrated(partyB)
-				if (alreadyMigrated) {
-					log("warn", `  Already migrated, skipping`)
-					partyBsMigrated++
-					progress.partyBsProcessed++
-					progress.lastProcessedPartyB = i
+			// No pre-check skip — the contract is idempotent (skips already-migrated pairs internally).
+			// A first-partyA-only check is unsafe: if the first partyA was migrated but others weren't,
+			// the whole partyB would be incorrectly skipped.
+
+			// Chunk partyAs to avoid gas/compute limits
+			const partyAChunks = chunkArray(partyAs, cfg.chunkSize)
+			let allChunksOk = true
+
+			// Resume from last successful partyA chunk if resuming the same partyB
+			const startPartyAChunk = i === startPartyB ? progress.lastProcessedPartyAChunk + 1 : 0
+
+			for (let j = startPartyAChunk; j < partyAChunks.length; j++) {
+				const partyAChunk = partyAChunks[j]
+				const chunkLabel = partyAChunks.length > 1 ? ` (chunk ${j + 1}/${partyAChunks.length})` : ""
+				const operation = `Migrate balances for ${formatAddress(partyB)}${chunkLabel}`
+
+				const result = await executeOperation(
+					operation,
+					async () => {
+						if (cfg.dryRun) {
+							log("info", `  [DRY RUN] Would migrate ${partyAChunk.length} partyA balances`)
+							return null
+						}
+						return migrationFacet.migrateCrossLockedValues(partyB, partyAChunk)
+					},
+					cfg,
+				)
+
+				operations.push(result)
+
+				if (result.success) {
+					partyAsMigrated += partyAChunk.length
+					progress.partyAsProcessed = partyAsMigrated
+					progress.lastProcessedPartyAChunk = j
 					saveProgress(cfg.progressFile, progress)
-					continue
+				} else {
+					allChunksOk = false
+					if (cfg.strict) {
+						throw new Error(`Migration failed at ${operation}: ${result.error}`)
+					}
 				}
 			}
 
-			const operation = `Migrate balances for ${formatAddress(partyB)}`
-
-			const result = await executeOperation(
-				operation,
-				async () => {
-					if (cfg.dryRun) {
-						log("info", `  [DRY RUN] Would migrate ${partyAs.length} partyA balances`)
-						return null
-					}
-					return migrationFacet.migrateCrossLockedValues(partyB, partyAs)
-				},
-				cfg,
-			)
-
-			operations.push(result)
-
-			if (result.success) {
+			if (allChunksOk) {
 				partyBsMigrated++
-				progress.partyBsProcessed++
-				progress.lastProcessedPartyB = i
-				saveProgress(cfg.progressFile, progress)
-			} else if (cfg.strict) {
-				throw new Error(`Migration failed at ${operation}: ${result.error}`)
+				progress.partyBsProcessed = partyBsMigrated
 			}
+			progress.lastProcessedPartyB = i
+			progress.lastProcessedPartyAChunk = -1
+			saveProgress(cfg.progressFile, progress)
 		}
 
 		progress.phase = "complete"
@@ -253,6 +279,8 @@ export async function migrate(migrationFacet: MigrationFacet, input: MigrationIn
 		quotesMigrated,
 		partyBsTotal: input.partyBTasks.length,
 		partyBsMigrated,
+		partyAsTotal,
+		partyAsMigrated,
 		operations,
 		status,
 	}
@@ -492,6 +520,10 @@ Quotes:
 PartyBs:
   Total:    ${report.partyBsTotal}
   Migrated: ${report.partyBsMigrated}
+
+PartyAs:
+  Total:    ${report.partyAsTotal}
+  Migrated: ${report.partyAsMigrated}
 
 Operations:
   Total:    ${report.operations.length}

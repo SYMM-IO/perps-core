@@ -19,6 +19,7 @@ import { AccountLayerStorage } from "../../storages/AccountLayerStorage.sol";
 import { AffiliateStorage, AffiliateState, Stakeholder } from "../../storages/AffiliateStorage.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
 import { LibAccountLayerAccessibility } from "../../libraries/LibAccountLayerAccessibility.sol";
+import { LibDiamond } from "../../../diamond/libraries/LibDiamond.sol";
 import { IMultiAccount } from "../../interfaces/IMultiAccount.sol";
 
 /// @notice Read-only facet providing view functions for accounts, affiliates, roles, and system state
@@ -510,6 +511,18 @@ contract ViewFacet is IViewFacet {
 	/// @return Whether the user is a role admin
 	function isRoleAdmin(address user, bytes32 role) external view returns (bool) {
 		return LibAccountLayerAccessibility.isRoleAdmin(user, role);
+	}
+
+	// ==================== Ownership ====================
+
+	/// @notice Returns the current diamond owner address
+	function owner() external view returns (address) {
+		return LibDiamond.contractOwner();
+	}
+
+	/// @notice Returns the pending owner address (for two-step ownership transfer)
+	function pendingOwner() external view returns (address) {
+		return LibDiamond.diamondStorage().pendingOwner;
 	}
 
 	// ==================== Pause Control ====================

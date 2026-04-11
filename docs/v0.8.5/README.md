@@ -146,9 +146,17 @@ Complete changelog of every event change from v0.8.4 to v0.8.5 — removed backw
 
 Backfills the new aggregated position structures and cross bucket locked values from existing v0.8.4 data. Run during a global pause after the diamond cut -- migrates quote-level data into symbol-level aggregates and sums per-PartyA locked/pending locked balances into the cross bucket. Allocated balances are not aggregated -- solvers fund the cross bucket independently after enabling cross mode.
 
-### [Migration Script Usage](scripts/migration-script-usage.md)
+### [Migration Script Usage](migration-script-usage.md)
 
-Practical guide for running the migration scripts against a live deployment.
+Step-by-step guide for running the v0.8.5 upgrade and migration scripts -- covers config fields, execution order, timelock vs direct Safe flows, and all output files.
+
+### [Production Upgrade](../../scripts/upgrade/docs/production-upgrade.md)
+
+Step-by-step production upgrade flow: deploy facets, generate upgrade calldata, execute, prepare migration input, run migration, unpause.
+
+### [Fork Rehearsal](../../scripts/upgrade/docs/fork-rehearsal.md)
+
+Fork-based upgrade and migration rehearsal workflow. Three-step pipeline (upgrade -> prepare migration input -> migrate) tested against real mainnet state via Hardhat fork.
 
 ### [Setup Task](setup-task.md)
 

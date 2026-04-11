@@ -277,6 +277,85 @@ export function shouldBehaveLikeAccountLayer(): void {
 			})
 		})
 
+		describe("Ownership", async () => {
+			describe("transferOwnership", () => {
+				it("Should initiate ownership transfer successfully", async function () {
+					await expect(context.alControlFacet.connect(context.signers.admin).transferOwnership(context.signers.user.address)).to.not.be.reverted
+					expect(await context.alViewFacet.pendingOwner()).to.equal(context.signers.user.address)
+				})
+
+				it("Should revert when caller is not current owner", async function () {
+					await expect(context.alControlFacet.connect(context.signers.user).transferOwnership(context.signers.user2.address)).to.be.revertedWith(
+						"LibDiamond: Must be contract owner",
+					)
+				})
+			})
+
+			describe("cancelOwnershipTransfer", () => {
+				it("Should allow owner to cancel the pending transfer", async function () {
+					await context.alControlFacet.connect(context.signers.admin).transferOwnership(context.signers.user.address)
+					expect(await context.alViewFacet.pendingOwner()).to.equal(context.signers.user.address)
+					await expect(context.alControlFacet.connect(context.signers.admin).cancelOwnershipTransfer()).to.not.be.reverted
+					expect(await context.alViewFacet.pendingOwner()).to.equal(ZeroAddress)
+				})
+
+				it("Should revert when there is no pending owner", async function () {
+					await expect(context.alControlFacet.connect(context.signers.admin).cancelOwnershipTransfer()).to.be.revertedWith(
+						"LibDiamond: Pending owner is zero",
+					)
+				})
+
+				it("Should revert when caller is not current owner", async function () {
+					await context.alControlFacet.connect(context.signers.admin).transferOwnership(context.signers.user.address)
+					await expect(context.alControlFacet.connect(context.signers.user).cancelOwnershipTransfer()).to.be.revertedWith(
+						"LibDiamond: Must be contract owner",
+					)
+				})
+			})
+
+			describe("acceptOwnership", () => {
+				it("Should allow pending owner to accept ownership", async function () {
+					await context.alControlFacet.connect(context.signers.admin).transferOwnership(context.signers.user.address)
+					await expect(context.alControlFacet.connect(context.signers.user).acceptOwnership()).to.not.be.reverted
+					expect(await context.alViewFacet.owner()).to.equal(context.signers.user.address)
+					expect(await context.alViewFacet.pendingOwner()).to.equal(ZeroAddress)
+				})
+
+				it("Should revert when no pending owner is set", async function () {
+					await expect(context.alControlFacet.connect(context.signers.user).acceptOwnership()).to.be.revertedWith(
+						"LibDiamond: Sender should be the pendingOwner",
+					)
+				})
+
+				it("Should revert when caller is not the pending owner", async function () {
+					await context.alControlFacet.connect(context.signers.admin).transferOwnership(context.signers.user.address)
+					await expect(context.alControlFacet.connect(context.signers.admin).acceptOwnership()).to.be.revertedWith(
+						"LibDiamond: Sender should be the pendingOwner",
+					)
+				})
+
+				it("Should not allow previous pending owner to accept after cancel", async function () {
+					await context.alControlFacet.connect(context.signers.admin).transferOwnership(context.signers.user.address)
+					await context.alControlFacet.connect(context.signers.admin).cancelOwnershipTransfer()
+					await expect(context.alControlFacet.connect(context.signers.user).acceptOwnership()).to.be.revertedWith(
+						"LibDiamond: Sender should be the pendingOwner",
+					)
+				})
+
+				it("Should update contract owner after acceptance", async function () {
+					await context.alControlFacet.connect(context.signers.admin).transferOwnership(context.signers.user.address)
+					await context.alControlFacet.connect(context.signers.user).acceptOwnership()
+					// Old owner can no longer transfer
+					await expect(context.alControlFacet.connect(context.signers.admin).transferOwnership(context.signers.user2.address)).to.be.revertedWith(
+						"LibDiamond: Must be contract owner",
+					)
+					// New owner can transfer
+					await expect(context.alControlFacet.connect(context.signers.user).transferOwnership(context.signers.user2.address)).to.not.be.reverted
+					expect(await context.alViewFacet.pendingOwner()).to.equal(context.signers.user2.address)
+				})
+			})
+		})
+
 		describe("createSubAccounts", async () => {
 			const buildExampleSubAccountData = (): SubAccountCreationDataStruct[] => [createSubAccountData("EXAMPLE_NAME", 0, "EXAMPLE")]
 
