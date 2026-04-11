@@ -19,6 +19,7 @@ import {
 } from "./checkpoint.js"
 import { deployDiamond } from "./diamond.js"
 import { getConnection } from "./helpers.js"
+import { setHyperEVMBigBlocks } from "./hyperevm.js"
 import { deployInstantLayer } from "./instantLayer.js"
 import { deploySymmioPartyB } from "./partyB.js"
 import { deploySignatureVerifier } from "./signatureVerifier.js"
@@ -92,7 +93,7 @@ async function getEnvConfig(hre: any) {
 	const muonUpnlValidTime = process.env.MUON_UPNL_VALID_TIME || "300"
 	const muonPriceValidTime = process.env.MUON_PRICE_VALID_TIME || "300"
 	const muonPublicKeyX = process.env.MUON_PUBLIC_KEY_X || ""
-	const muonPublicKeyParity = process.env.MUON_PUBLIC_KEY_PARITY || ""
+	const muonPublicKeyParity = process.env.MUON_PUBLIC_KEY_PARITY ?? ""
 	const muonGatewaySigners = (process.env.MUON_GATEWAY_SIGNERS || "")
 		.split(",")
 		.map(s => s.trim())
@@ -237,6 +238,14 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 
 			const deploymentResults: DeploymentResult[] = []
 			const deployedContracts: DeployedContracts = {}
+
+			// HyperEVM (chainId 999 mainnet, 998 testnet) requires big blocks for facet deployment
+			const isHyperEVM = Number(chainId) === 999 || Number(chainId) === 998
+			if (isHyperEVM) {
+				console.log("HyperEVM detected — enabling big blocks for contract deployment...")
+				await setHyperEVMBigBlocks(hre, true)
+				console.log()
+			}
 
 			await runDeploymentStep(checkpoint, {
 				id: "collateral",
@@ -511,6 +520,18 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 						console.log()
 					},
 				})
+			}
+
+			// All contracts are deployed — switch back to fast blocks for setup/config calls
+			if (isHyperEVM) {
+				console.log("Contract deployment complete — disabling big blocks for setup phase...")
+				try {
+					await setHyperEVMBigBlocks(hre, false)
+				} catch (err: any) {
+					console.warn(`  ⚠ Failed to disable big blocks: ${err.message}`)
+					console.warn("  ⚠ Run 'npx hardhat hyperevm:disable-big-blocks --network hyperevm' manually after deployment.")
+				}
+				console.log()
 			}
 
 			await runDeploymentStep(checkpoint, {
@@ -789,7 +810,7 @@ async function setupSystem(
 					await checkpointedStep(checkpoint, "setup.msvPublicKey", "Adding Muon public key on MuonSignatureVerifier", async () => {
 						const existingKeys = await signatureVerifier.getAllPublicKeys()
 						const exists = existingKeys.some(
-							(key: { x: bigint; parity: number }) => key.x.toString() === config.muonPublicKeyX && key.parity === parity,
+							(key: { x: bigint; parity: bigint | number }) => key.x.toString() === config.muonPublicKeyX && Number(key.parity) === parity,
 						)
 						if (exists) {
 							console.log("  ⏭ Muon public key already present on MuonSignatureVerifier")
@@ -872,7 +893,9 @@ async function setupSystem(
 			if (config.muonPublicKeyX && config.muonPublicKeyParity) {
 				const parity = Number(config.muonPublicKeyParity)
 				const keys = await signatureVerifier.getAllPublicKeys()
-				const found = keys.some((key: { x: bigint; parity: number }) => key.x.toString() === config.muonPublicKeyX && key.parity === parity)
+				const found = keys.some(
+					(key: { x: bigint; parity: bigint | number }) => key.x.toString() === config.muonPublicKeyX && Number(key.parity) === parity,
+				)
 				if (!found) {
 					throw new Error("Expected Muon public key is not present on MuonSignatureVerifier")
 				}
