@@ -10,6 +10,7 @@ import { multicallTask } from "./multicall.js"
 import { partyBTask } from "./partyB.js"
 import { signatureVerifierTask } from "./signatureVerifier.js"
 import { stablecoinTask } from "./stablecoin.js"
+import { grantSymbolManagerDiamondRolesTask, grantSymbolManagerOperatorRolesTask, symbolManagerTask } from "./symbolManager.js"
 import { upgradeProxyTask } from "./upgrade.js"
 import {
 	checkDeploymentTask,
@@ -36,6 +37,9 @@ export const deployTasks = [
 	partyBTask,
 	signatureVerifierTask,
 	stablecoinTask,
+	symbolManagerTask,
+	grantSymbolManagerDiamondRolesTask,
+	grantSymbolManagerOperatorRolesTask,
 	upgradeProxyTask,
 	verifyAllTask,
 	verifyDeploymentTask,
