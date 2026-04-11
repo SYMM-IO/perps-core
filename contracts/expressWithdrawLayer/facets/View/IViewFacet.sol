@@ -30,6 +30,8 @@ interface IViewFacet {
 
 	function getWithdrawInfo(address user, uint256 requestId) external view returns (WithdrawInfo memory);
 
+	function accelerateNonce(address user, uint256 requestId) external view returns (uint256);
+
 	// ── Security ──
 
 	function securityWindow() external view returns (uint256);

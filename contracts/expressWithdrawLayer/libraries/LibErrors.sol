@@ -45,4 +45,11 @@ library LibErrors {
 	error InvalidPostPayoutRollback();
 	error VirtualProviderMustBeZero();
 	error Reentrancy();
+	// ── Accelerate flow ──
+	error AccelerateOnlyFromStandardAccepted();
+	error AccelerateOfferExpired();
+	error InvalidAccelerateNonce();
+	error InvalidAccelerateSigner();
+	error StandardAlreadyFinalized();
+	error AccelerateCooldownElapsed();
 }
