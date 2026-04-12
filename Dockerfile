@@ -1,5 +1,4 @@
 # Project: symmio
-# Description: -
 
 FROM node:lts
 
@@ -12,29 +11,33 @@ ARG COMMIT_AUTHOR
 ARG BUILD_APPLICATION
 ARG BUILD_DATE
 
-LABEL org.vcs.CommitId=${COMMIT_ID}
-LABEL org.vcs.CommitTimestamp=${COMMIT_TIMESTAMP}
-LABEL org.vcs.CommitAuthor=${COMMIT_AUTHOR}
-LABEL org.build.Application=${BUILD_APPLICATION}
-LABEL org.build.Date=${BUILD_DATE}
+LABEL org.vcs.CommitId=${COMMIT_ID} \
+      org.vcs.CommitTimestamp=${COMMIT_TIMESTAMP} \
+      org.vcs.CommitAuthor=${COMMIT_AUTHOR} \
+      org.build.Application=${BUILD_APPLICATION} \
+      org.build.Date=${BUILD_DATE}
 
 ######################################################################
-# BUILD STAGE
+# BUILD
 ######################################################################
-RUN npm config set fetch-retries 10
-RUN npm config set fetch-retry-mintimeout 20000
-RUN npm install -g npm
-RUN mkdir /app
+RUN npm config set fetch-retries 10 \
+    && npm config set fetch-retry-mintimeout 20000
 
-COPY package.json /app/
+# Install dependencies first (cached unless package.json changes)
 WORKDIR /app
-
+COPY package.json ./
 RUN npm install --ignore-scripts
 
-RUN mkdir -p /app/symmio
-
-COPY . /app/symmio
+# Pre-download solc compiler (cached unless hardhat config or tasks change)
 WORKDIR /app/symmio
-RUN cp .env.example .env
-RUN ln -s /app/node_modules .
+COPY hardhat.config.ts ./
+# tasks/ is required because hardhat.config.ts imports from it;
+# without it, the config fails to load and solc won't be downloaded.
+COPY tasks/ tasks/
+RUN ln -s /app/node_modules . \
+    && npx hardhat compile
+
+# Copy source and compile
+COPY .env.example .env
+COPY . .
 RUN ./docker/compile.sh
