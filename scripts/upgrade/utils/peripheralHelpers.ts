@@ -529,3 +529,57 @@ export function buildWiringTransactions(
 
 	return txs
 }
+
+// ============================================================================
+// Build InstantLayer template transactions for Safe path
+// ============================================================================
+
+export function buildTemplateTransactions(instantLayerAddress: string): WiringTransaction[] {
+	const txs: WiringTransaction[] = []
+
+	const iface = new ethers.Interface([
+		"function addTemplate(string name, tuple(uint256[] insertionPoints, uint256[] sourceIndices, uint256[] sourceOffsets)[] operations)",
+	])
+
+	const push = (methodName: string, args: any[], description: string) => {
+		txs.push({
+			to: instantLayerAddress,
+			value: "0",
+			calldata: iface.encodeFunctionData(methodName, args),
+			description,
+			iface,
+			methodName,
+			args,
+		})
+	}
+
+	// InstantOpen Template (4 operations)
+	const instantOpenOps = [
+		{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] }, // op 0: addMarginToNextVA
+		{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] }, // op 1: sendQuote
+		{ insertionPoints: [0], sourceIndices: [1], sourceOffsets: [0] }, // op 2: lockQuote - quoteId from op 1
+		{ insertionPoints: [0], sourceIndices: [1], sourceOffsets: [0] }, // op 3: openPosition - quoteId from op 1
+	]
+	push("addTemplate", ["InstantOpen", instantOpenOps], `addTemplate("InstantOpen", 4 ops) on InstantLayer`)
+
+	// InstantClose Template (2 operations)
+	const instantCloseOps = [
+		{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] }, // op 0: requestToClosePosition
+		{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] }, // op 1: fillCloseRequest
+	]
+	push("addTemplate", ["InstantClose", instantCloseOps], `addTemplate("InstantClose", 2 ops) on InstantLayer`)
+
+	// InstantCloseWithAllocation Template (3 operations)
+	const instantCloseWithAllocationOps = [
+		{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] }, // op 0
+		{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] }, // op 1
+		{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] }, // op 2
+	]
+	push(
+		"addTemplate",
+		["InstantCloseWithAllocation", instantCloseWithAllocationOps],
+		`addTemplate("InstantCloseWithAllocation", 3 ops) on InstantLayer`,
+	)
+
+	return txs
+}
