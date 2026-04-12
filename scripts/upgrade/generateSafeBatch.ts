@@ -20,7 +20,7 @@ import fs from "fs"
 import path from "path"
 
 import { ethers } from "../../test/helpers/hardhat-connection.js"
-import { buildWiringTransactions } from "./utils/peripheralHelpers.js"
+import { buildTemplateTransactions, buildWiringTransactions } from "./utils/peripheralHelpers.js"
 import {
 	buildDiamondCut,
 	buildUpgradeTransactions,
@@ -40,6 +40,7 @@ type Config = {
 	instantLayerAddress?: string
 	symmioPartyBAddress?: string
 	symmioPartyBImplementation?: string
+	setupInstantLayerTemplates?: boolean
 	newV085Parameters?: NewV085Parameters
 }
 
@@ -160,6 +161,16 @@ async function main() {
 			result.breakdown.push(`${result.breakdown.length + 1}. [wiring] ${tx.description}`)
 		}
 		console.log(`  Added ${wiringTxs.length} wiring transactions`)
+
+		// InstantLayer templates
+		if (config.setupInstantLayerTemplates !== false) {
+			const templateTxs = buildTemplateTransactions(IL_ADDRESS)
+			for (const tx of templateTxs) {
+				result.safeTxs.push(toHumanReadableSafeTxFromIface(tx.iface, tx.to, tx.methodName, tx.args))
+				result.breakdown.push(`${result.breakdown.length + 1}. [template] ${tx.description}`)
+			}
+			console.log(`  Added ${templateTxs.length} template transactions`)
+		}
 	} else if (AL_ADDRESS || IL_ADDRESS) {
 		console.log("\nWARN: Both accountLayerDiamondAddress and instantLayerAddress must be set for wiring. Skipping.")
 	} else {
