@@ -50,7 +50,7 @@ BEFORE PAUSE (no downtime)
 
 VERIFY DEPLOYED CONTRACTS (block explorer)
 ═══════════════════════════════════════════
-  NETWORK=<network> bash scripts/upgrade/verify-all.sh
+  npx hardhat run scripts/upgrade/verifyContracts.ts --network <network>
 
   Verifies all libraries, facets, and peripherals (AL, IL, PartyB impl)
   on the block explorer. Run after deployFacets + deployPeripherals.
@@ -156,7 +156,7 @@ BEFORE PAUSE (no downtime)
 
 VERIFY DEPLOYED CONTRACTS (block explorer)
 ═══════════════════════════════════════════
-  NETWORK=<network> bash scripts/upgrade/verify-all.sh
+  npx hardhat run scripts/upgrade/verifyContracts.ts --network <network>
 
 VERIFY DEPLOYED BYTECODE (local vs on-chain)
 ═════════════════════════════════════════════
@@ -362,7 +362,7 @@ npx hardhat run scripts/upgrade/runMigration.ts --network fork-arbitrum
 
 | Script | What it checks |
 |--------|---------------|
-| `verify-all.sh` | Block explorer verification of all deployed contracts (libraries, facets, peripherals) |
+| `verifyContracts.ts` | Block explorer verification of all deployed contracts (libraries, facets, peripherals). Reads from deploy output files and handles library linking automatically. |
 | `verifyDeploy.ts` | Bytecode verification of deployed core facets (reads addresses from `output/deployed-facets.json`) against local compiled artifacts (library linking aware) |
 | `verifyPeripheralsDeploy.ts` | Bytecode verification of deployed peripherals (AccountLayer, InstantLayer, SymmioPartyB impl, MuonSignatureVerifier) against local compiled artifacts. Handles library linking and immutable variable masking. |
 | `verifyDiamond.ts` | All v0.8.5 facet selectors registered on diamond |
@@ -615,12 +615,10 @@ Output:
 After deploying facets and peripherals (before or after the diamondCut):
 
 ```bash
-NETWORK=<network> bash scripts/upgrade/verify-all.sh
+npx hardhat run scripts/upgrade/verifyContracts.ts --network <network>
 ```
 
-Verifies all libraries (4), core facets (28), AccountLayer contracts (DiamondCutFacet, Diamond, Init, LibQuoteParams, 7 facets), InstantLayer, and SymmioPartyB implementation. Contracts with library dependencies are verified with the correct `--libraries` flags. Each verification is `|| true` so the script continues past already-verified or failing contracts.
-
-Addresses are read from `scripts/upgrade/output/deployed-facets.json` and `deployed-peripherals.json`. If addresses change, update `verify-all.sh` accordingly.
+Verifies all libraries, core facets, AccountLayer contracts (DiamondCutFacet, Diamond, Init, libraries, facets), InstantLayer, and SymmioPartyB implementation. Library dependencies and contract path disambiguation are handled automatically. Addresses are read dynamically from `scripts/upgrade/output/deployed-facets.json` and `deployed-peripherals.json`, constructor args from `config/upgrade.json`. Resume with `SKIP=N` if a contract fails.
 
 ### Bytecode verification (local vs on-chain)
 

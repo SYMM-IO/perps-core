@@ -120,10 +120,12 @@ Output: `output/deployed-peripherals.json`
 
 Run immediately after steps 1 and 2, before signing anything on-chain.
 
-**Block explorer verification** -- verifies source for all libraries, facets, and peripherals (AccountLayer, InstantLayer, SymmioPartyB impl). Reads addresses from `output/deployed-facets.json` and `output/deployed-peripherals.json`:
+**Block explorer verification** -- verifies source for all libraries, facets, peripherals (AccountLayer, InstantLayer, SymmioPartyB impl), and MuonSignatureVerifier. Reads addresses from `output/deployed-facets.json`, `output/deployed-peripherals.json`, and `config/upgrade.json`. Auto-detects library addresses from on-chain bytecode when not in the deploy output. Resume with `SKIP=N` if a contract fails:
 
 ```bash
-NETWORK=<network> bash scripts/upgrade/verify-all.sh
+npx hardhat run scripts/upgrade/verifyContracts.ts --network <network>
+# Resume from contract 10:
+SKIP=10 npx hardhat run scripts/upgrade/verifyContracts.ts --network <network>
 ```
 
 **Local-vs-on-chain bytecode verification** -- compares deployed bytecode against locally compiled artifacts. `verifyDeploy.ts` is library-linking aware for core facets; `verifyPeripheralsDeploy.ts` also masks immutable variables for the peripherals:
@@ -311,7 +313,7 @@ Phase 1: Prepare (can be done in advance, no downtime)
   deployFacets.ts
   deployPeripherals.ts
   -> Verify deployments:
-       verify-all.sh                  (block explorer source verification)
+       verifyContracts.ts             (block explorer source verification)
        verifyDeploy.ts                (core facets bytecode + library linking)
        verifyPeripheralsDeploy.ts     (peripherals bytecode + immutables)
   generateSafeBatch.ts
@@ -361,7 +363,7 @@ Same as above but skip `generateTimelockBatch.ts` and include the diamondCut dir
 
 | Script | When | Purpose |
 |--------|------|---------|
-| `verify-all.sh` | After deploy facets + peripherals | Block-explorer source verification of libraries, facets, and peripherals |
+| `verifyContracts.ts` | After deploy facets + peripherals | Block-explorer source verification of libraries, facets, and peripherals |
 | `verifyDeploy.ts` | After deploy facets | Compare local-compiled bytecode vs deployed core facets (library-link aware) |
 | `verifyPeripheralsDeploy.ts` | After deploy peripherals | Same, for AccountLayer / InstantLayer / SymmioPartyB impl / MuonSignatureVerifier (handles immutables) |
 | `validateMigrationInput.ts` | After `prepareMigrationInput.ts` | Random spot-check of quotes and partyB balances against on-chain |
@@ -420,7 +422,7 @@ Runs the full upgrade and migration pipeline against the in-process Hardhat netw
 
 - `prepareMigrationInput.ts` (subgraph path) -- tested manually against a live network
 - `generateSafeBatch.ts` / `generateTimelockBatch.ts` -- require a live RPC to diff the diamond
-- Block-explorer source verification (`verify-all.sh`, `verifyDeploy.ts`, `verifyPeripheralsDeploy.ts`)
+- Block-explorer source verification (`verifyContracts.ts`, `verifyDeploy.ts`, `verifyPeripheralsDeploy.ts`)
 - Timelock schedule/execute flow
 
 **Self-upgrade note:** Because Hardhat's `deployDiamond` already deploys a full v0.8.5 system, the diamond cut produces all-Replace actions (same selectors, fresh contract addresses). This still exercises the full cut mechanism and all migration logic.
