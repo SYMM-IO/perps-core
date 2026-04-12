@@ -1,4 +1,5 @@
 import { accountLayerDiamondTask } from "./accountLayerDiamond.js"
+import { create2FactoryTask } from "./create2Factory.js"
 import { deployAllTask } from "./deployAll.js"
 import { diamondTask } from "./diamond.js"
 import { feeDistributorTask } from "./feeDistributor.js"
@@ -9,6 +10,7 @@ import { multicallTask } from "./multicall.js"
 import { partyBTask } from "./partyB.js"
 import { signatureVerifierTask } from "./signatureVerifier.js"
 import { stablecoinTask } from "./stablecoin.js"
+import { grantSymbolManagerDiamondRolesTask, grantSymbolManagerOperatorRolesTask, symbolManagerTask } from "./symbolManager.js"
 import { upgradeProxyTask } from "./upgrade.js"
 import {
 	checkDeploymentTask,
@@ -23,6 +25,7 @@ import {
 export const deployTasks = [
 	accountLayerDiamondTask,
 	checkDeploymentTask,
+	create2FactoryTask,
 	deployAllTask,
 	diamondTask,
 	disableBigBlocksTask,
@@ -34,6 +37,9 @@ export const deployTasks = [
 	partyBTask,
 	signatureVerifierTask,
 	stablecoinTask,
+	symbolManagerTask,
+	grantSymbolManagerDiamondRolesTask,
+	grantSymbolManagerOperatorRolesTask,
 	upgradeProxyTask,
 	verifyAllTask,
 	verifyDeploymentTask,

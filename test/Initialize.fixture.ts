@@ -18,7 +18,9 @@ export async function initializeFixture(): Promise<RunContext> {
 		reportGas: true,
 	})
 
-	const admin = process.env.ADMIN_PUBLIC_KEY || (await (await ethers.getSigners())[0].getAddress())
+	// Tests must always use a local signer as admin — env ADMIN_PUBLIC_KEY would grant roles
+	// to an address the test runtime can't sign for, breaking the fixture setup.
+	const admin = await (await ethers.getSigners())[0].getAddress()
 
 	const symmioPartyB = await deploySymmioPartyB(hre, {
 		symmioAddress: await diamond.getAddress(),

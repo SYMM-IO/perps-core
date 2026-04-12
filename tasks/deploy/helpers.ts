@@ -70,13 +70,35 @@ export async function deployProxyWithFallback(
 	return factory.attach(await proxy.getAddress())
 }
 
+// ERC1967 storage slots (EIP-1967)
+const ERC1967_IMPLEMENTATION_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc"
+const ERC1967_ADMIN_SLOT = "0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103"
+
 export async function getUpgradeAddresses(upgrades: any, contract: any): Promise<{ admin?: string; implementation?: string }> {
-	if (!upgrades?.erc1967) {
-		return {}
+	const proxyAddress = await contract.getAddress()
+
+	if (upgrades?.erc1967) {
+		return {
+			admin: await upgrades.erc1967.getAdminAddress(proxyAddress),
+			implementation: await upgrades.erc1967.getImplementationAddress(proxyAddress),
+		}
+	}
+
+	// Fallback: read ERC1967 storage slots directly. Used when hardhat-upgrades
+	// is unavailable and deployProxyWithFallback used LocalERC1967Proxy (a plain
+	// ERC1967Proxy with no separate admin contract — admin slot will be zero).
+	const provider = contract.runner?.provider ?? contract.provider
+	if (!provider) return {}
+
+	const readSlot = async (slot: string): Promise<string | undefined> => {
+		const raw = await provider.getStorage(proxyAddress, slot)
+		const addr = "0x" + raw.slice(-40)
+		if (addr === "0x" + "0".repeat(40)) return undefined
+		return ethersLib.getAddress(addr)
 	}
 
 	return {
-		admin: await upgrades.erc1967.getAdminAddress(await contract.getAddress()),
-		implementation: await upgrades.erc1967.getImplementationAddress(await contract.getAddress()),
+		implementation: await readSlot(ERC1967_IMPLEMENTATION_SLOT),
+		admin: await readSlot(ERC1967_ADMIN_SLOT),
 	}
 }
