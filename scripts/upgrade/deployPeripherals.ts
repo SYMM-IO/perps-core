@@ -1,6 +1,6 @@
 /**
- * Deploy v0.8.5 peripheral contracts: AccountLayer Diamond, InstantLayer,
- * and SymmioPartyB implementation.
+ * Deploy v0.8.5 peripheral contracts: MuonSignatureVerifier, AccountLayer Diamond,
+ * InstantLayer, and SymmioPartyB implementation.
  *
  * These contracts are independent of the core diamond and can be deployed
  * before the upgrade. Resume-safe via state file.
@@ -32,12 +32,14 @@ type Config = {
 }
 
 type DeployedState = {
+	signatureVerifier?: string
 	accountLayer?: any
 	instantLayer?: any
 	symmioPartyBImplementation?: string
 }
 
 const CONFIG_FILE = process.env.DEPLOY_PERIPHERALS_CONFIG ?? "./scripts/upgrade/config/deployPeripherals.json"
+const UPGRADE_CONFIG_FILE = process.env.UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/upgrade.json"
 const OUTPUT_DIR = "./scripts/upgrade/output"
 const STATE_FILE = path.join(OUTPUT_DIR, "deployed-peripherals.json")
 
@@ -84,10 +86,38 @@ async function main() {
 
 	if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
 
-	log.setSteps(3)
+	log.setSteps(4)
+
+	// Deploy MuonSignatureVerifier
+	let t = log.step("MuonSignatureVerifier")
+	const state0 = loadState()
+	let signatureVerifierAddr: string
+
+	if (state0.signatureVerifier) {
+		signatureVerifierAddr = state0.signatureVerifier
+		log.deployed("MuonSignatureVerifier", signatureVerifierAddr, true)
+	} else {
+		const factory = await ethers.getContractFactory("MuonSignatureVerifier")
+		const contract = await factory.deploy(protocolAdmin)
+		signatureVerifierAddr = await contract.getAddress()
+		state0.signatureVerifier = signatureVerifierAddr
+		saveState(state0)
+		await contract.waitForDeployment()
+		log.deployed("MuonSignatureVerifier", signatureVerifierAddr)
+	}
+
+	// Write address back to upgrade.json
+	if (fs.existsSync(UPGRADE_CONFIG_FILE)) {
+		const upgradeConfig = JSON.parse(fs.readFileSync(UPGRADE_CONFIG_FILE, "utf-8"))
+		if (!upgradeConfig.newV085Parameters) upgradeConfig.newV085Parameters = {}
+		upgradeConfig.newV085Parameters.signatureVerifierAddress = signatureVerifierAddr
+		fs.writeFileSync(UPGRADE_CONFIG_FILE, JSON.stringify(upgradeConfig, null, "\t") + "\n")
+		log.kv("Written signatureVerifierAddress to", UPGRADE_CONFIG_FILE)
+	}
+	log.stepDone(t)
 
 	// Deploy AccountLayer Diamond
-	let t = log.step("AccountLayer Diamond")
+	t = log.step("AccountLayer Diamond")
 	const alResult = await deployAccountLayerDiamond(protocolAdmin, symmioFeeReceiver, STATE_FILE)
 	log.stepDone(t)
 
@@ -117,6 +147,7 @@ async function main() {
 
 	// Summary
 	log.success("Peripheral deployment complete", [
+		["MuonSignatureVerifier", signatureVerifierAddr],
 		["AccountLayer Diamond", alResult.diamondAddress],
 		["InstantLayer", ilResult.address],
 		["SymmioPartyB impl", symmioPartyBImpl],

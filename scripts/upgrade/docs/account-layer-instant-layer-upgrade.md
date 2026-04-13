@@ -185,7 +185,7 @@ The full fork rehearsal flow is now:
 
 The v0.8.5 SymmioPartyB adds ERC-1271 (`isValidSignature`) support required by InstantLayer. The storage layout is compatible with v0.8.4 for in-place proxy upgrades.
 
-- `deployPeripherals.ts` deploys the new SymmioPartyB implementation (not the proxy)
+- `deployPeripherals.ts` deploys MuonSignatureVerifier, AccountLayer, InstantLayer, and the new SymmioPartyB implementation (not the proxy)
 - `generateSafeBatch.ts` generates InstantLayer PartyB registration transactions from `config/partyBList.json` (when `registerOnInstantLayer` is true)
 - `testTemplateExecution.ts` verifies the full flow end-to-end (deploy PartyB, register, fund, execute InstantOpen template)
 
