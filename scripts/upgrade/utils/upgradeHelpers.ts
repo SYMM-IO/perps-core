@@ -303,6 +303,8 @@ export async function applyDiamondCut(diamondAddress: string, diamondCut: any[],
 // EOA parameter setter
 // =============================================================================
 
+export const MUON_FUNCTION_NAMES = ["Trading", "AccountManagement", "Settlement", "ForceClose", "Funding", "LiquidationPartyA", "LiquidationPartyB"]
+
 export type MuonPublicKey = {
 	x: string
 	parity: number
@@ -320,6 +322,7 @@ export type NewV085Parameters = {
 	minWithdrawCooldown?: number
 	muonPublicKeys?: MuonPublicKey[]
 	muonGatewaySigners?: string[]
+	muonFunctionPermissions?: string[]
 }
 
 export async function setV085Parameters(diamondAddress: string, params: NewV085Parameters, signerOverride?: any): Promise<void> {
@@ -370,6 +373,28 @@ export async function setV085Parameters(diamondAddress: string, params: NewV085P
 				}
 				await (await verifier.addGatewaySigner(gw)).wait()
 				log.ok(`addGatewaySigner(${log.addr(gw)})`)
+			}
+		}
+
+		if (params.muonFunctionPermissions && params.muonFunctionPermissions.length > 0) {
+			const functionIndices = params.muonFunctionPermissions.map(name => {
+				const idx = MUON_FUNCTION_NAMES.indexOf(name)
+				if (idx === -1) throw new Error(`Unknown MuonFunction: ${name}. Valid values: ${MUON_FUNCTION_NAMES.join(", ")}`)
+				return idx
+			})
+
+			if (params.muonPublicKeys && params.muonPublicKeys.length > 0) {
+				for (const key of params.muonPublicKeys) {
+					await (await verifier.setPublicKeyPermissions({ x: key.x, parity: key.parity }, functionIndices, true)).wait()
+					log.ok(`setPublicKeyPermissions(x=${key.x.slice(0, 10)}..., parity=${key.parity}, [${params.muonFunctionPermissions.join(", ")}], true)`)
+				}
+			}
+
+			if (params.muonGatewaySigners && params.muonGatewaySigners.length > 0) {
+				for (const gw of params.muonGatewaySigners) {
+					await (await verifier.setGatewaySignerPermissions(gw, functionIndices, true)).wait()
+					log.ok(`setGatewaySignerPermissions(${log.addr(gw)}, [${params.muonFunctionPermissions.join(", ")}], true)`)
+				}
 			}
 		}
 	}
@@ -689,6 +714,8 @@ export function buildUpgradeTransactions(
 		const verifierIface = new ethers.Interface([
 			"function addPublicKey(tuple(uint256 x, uint8 parity) pubKey)",
 			"function addGatewaySigner(address signer)",
+			"function setPublicKeyPermissions(tuple(uint256 x, uint8 parity) pubKey, uint8[] functions, bool allowed)",
+			"function setGatewaySignerPermissions(address signer, uint8[] functions, bool allowed)",
 		])
 
 		if (newParams.muonPublicKeys && newParams.muonPublicKeys.length > 0) {
@@ -715,6 +742,56 @@ export function buildUpgradeTransactions(
 					description: `addGatewaySigner(${gw}) on MuonSignatureVerifier`,
 				})
 				breakdown.push(`${txIdx.value++}. [verifier] addGatewaySigner(${gw})`)
+			}
+		}
+
+		if (newParams.muonFunctionPermissions && newParams.muonFunctionPermissions.length > 0) {
+			const functionIndices = newParams.muonFunctionPermissions.map(name => {
+				const idx = MUON_FUNCTION_NAMES.indexOf(name)
+				if (idx === -1) throw new Error(`Unknown MuonFunction: ${name}. Valid values: ${MUON_FUNCTION_NAMES.join(", ")}`)
+				return idx
+			})
+			const permissionNames = newParams.muonFunctionPermissions.join(", ")
+
+			if (newParams.muonPublicKeys && newParams.muonPublicKeys.length > 0) {
+				for (const key of newParams.muonPublicKeys) {
+					const pubKeyTuple = { x: key.x, parity: key.parity }
+					safeTxs.push(
+						toHumanReadableSafeTxFromIface(verifierIface, newParams.signatureVerifierAddress, "setPublicKeyPermissions", [
+							pubKeyTuple,
+							functionIndices,
+							true,
+						]),
+					)
+					calldataTxs.push({
+						to: newParams.signatureVerifierAddress,
+						value: "0",
+						calldata: verifierIface.encodeFunctionData("setPublicKeyPermissions", [pubKeyTuple, functionIndices, true]),
+						description: `setPublicKeyPermissions(x=${key.x.slice(0, 10)}..., parity=${key.parity}, [${permissionNames}], true) on MuonSignatureVerifier`,
+					})
+					breakdown.push(
+						`${txIdx.value++}. [verifier] setPublicKeyPermissions(x=${key.x.slice(0, 10)}..., parity=${key.parity}, [${permissionNames}], true)`,
+					)
+				}
+			}
+
+			if (newParams.muonGatewaySigners && newParams.muonGatewaySigners.length > 0) {
+				for (const gw of newParams.muonGatewaySigners) {
+					safeTxs.push(
+						toHumanReadableSafeTxFromIface(verifierIface, newParams.signatureVerifierAddress, "setGatewaySignerPermissions", [
+							gw,
+							functionIndices,
+							true,
+						]),
+					)
+					calldataTxs.push({
+						to: newParams.signatureVerifierAddress,
+						value: "0",
+						calldata: verifierIface.encodeFunctionData("setGatewaySignerPermissions", [gw, functionIndices, true]),
+						description: `setGatewaySignerPermissions(${gw}, [${permissionNames}], true) on MuonSignatureVerifier`,
+					})
+					breakdown.push(`${txIdx.value++}. [verifier] setGatewaySignerPermissions(${gw}, [${permissionNames}], true)`)
+				}
 			}
 		}
 	}

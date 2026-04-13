@@ -68,6 +68,15 @@ For local development or fork testing.
 
 ## Scripts (in execution order)
 
+### Prerequisites: clean build
+
+Always start with a clean compilation to avoid stale artifact issues:
+
+```bash
+npx hardhat clean
+npx hardhat compile
+```
+
 ### 0. Read Muon config from v0.8.4 diamond
 
 ```bash
@@ -326,6 +335,7 @@ This is distinct from step 3 (deployment verification): step 3 checks the byteco
 
 ```
 Phase 1: Prepare (can be done in advance, no downtime)
+  npx hardhat clean && npx hardhat compile
   readMuonConfig.ts              (read TSS key + gateway from v0.8.4 diamond -> upgrade.json)
   deployFacets.ts
   deployPeripherals.ts
