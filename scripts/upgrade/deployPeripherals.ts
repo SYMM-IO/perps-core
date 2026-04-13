@@ -12,13 +12,8 @@
  *   DEPLOY_PERIPHERALS_CONFIG=./path/to/config.json \
  *     npx hardhat run scripts/upgrade/deployPeripherals.ts --network arbitrum
  *
- * Config: scripts/upgrade/config/deployPeripherals.json
- *   {
- *     "protocolAdmin": "0x...",        // Address that owns peripherals and receives operational roles
- *     "symmioFeeReceiver": "0x..."     // Fee receiver for AccountLayer init (falls back to upgrade.json)
- *   }
- *
- * Falls back to upgrade.json for: diamondAddress, symmioFeeReceiver
+ * Config: Reads from upgrade.json by default. Optional deployPeripherals.json overrides any field.
+ *   Required fields (from either source): diamondAddress, protocolAdmin, symmioFeeReceiver
  *
  * Output: scripts/upgrade/output/deployed-peripherals.json
  */
@@ -47,14 +42,13 @@ const OUTPUT_DIR = "./scripts/upgrade/output"
 const STATE_FILE = path.join(OUTPUT_DIR, "deployed-peripherals.json")
 
 function loadConfig(): Config {
-	if (!fs.existsSync(CONFIG_FILE)) {
-		throw new Error(`Config file not found: ${CONFIG_FILE}\nCopy config/samples/deployPeripherals.sample.json and fill in the values.`)
-	}
-	const raw = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8")) as Config
 	const shared = loadUpgradeConfigShared()
+	const raw: Partial<Config> = fs.existsSync(CONFIG_FILE)
+		? JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8"))
+		: {}
 	return {
-		...raw,
 		diamondAddress: raw.diamondAddress ?? shared.diamondAddress,
+		protocolAdmin: raw.protocolAdmin ?? shared.protocolAdmin ?? "",
 		symmioFeeReceiver: raw.symmioFeeReceiver ?? shared.symmioFeeReceiver ?? "",
 	}
 }
