@@ -15,6 +15,7 @@
 		"signatureVerifierAddress": "0x...",
 		"muonPublicKeys": [{ "x": "0x...", "parity": 1 }],
 		"muonGatewaySigners": ["0x..."],
+		"muonFunctionPermissions": ["Trading", "AccountManagement", "Settlement", "ForceClose", "Funding", "LiquidationPartyA", "LiquidationPartyB"],
 
 		"liquidationInsuranceVault": "0x...",
 		"maxLiquidationProfitPerPosition": "1000000000000000000",
