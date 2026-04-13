@@ -12,7 +12,7 @@
  *
  * Config:
  *   scripts/upgrade/config/upgrade.json                    -- diamondAddress, symbolType
- *   scripts/upgrade/config/partyBListForWhitelistSymbolType.json  -- partyBs list
+ *   scripts/upgrade/config/partyBList.json  -- partyBs list
  */
 import fs from "fs"
 import path from "path"
@@ -23,10 +23,10 @@ import { verifyRpc } from "./utils/rpcCheck.js"
 import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 
 type WhitelistConfig = {
-	partyBs: string[]
+	partyBs: Record<string, string[]>
 }
 
-const CONFIG_FILE = process.env.WHITELIST_CONFIG_FILE ?? "./scripts/upgrade/config/partyBListForWhitelistSymbolType.json"
+const CONFIG_FILE = process.env.WHITELIST_CONFIG_FILE ?? "./scripts/upgrade/config/partyBList.json"
 const OUTPUT_DIR = "./scripts/upgrade/output"
 
 async function main() {
@@ -44,7 +44,7 @@ async function main() {
 	}
 
 	const config: WhitelistConfig = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8"))
-	const { partyBs } = config
+	const partyBs = Object.values(config.partyBs ?? {}).flat()
 
 	if (!partyBs || partyBs.length === 0) {
 		throw new Error("No partyBs defined in config file")

@@ -381,13 +381,18 @@ async function main() {
 		// ── Step 10: Register PartyBs on InstantLayer ───────────────────
 		t = log.step("Register PartyBs on InstantLayer")
 		currentStep = "register_partybs"
-		const PARTYB_LIST_FILE = process.env.PARTYB_LIST_FILE ?? "./scripts/upgrade/config/partyBListForWhitelistSymbolType.json"
+		const PARTYB_LIST_FILE = process.env.PARTYB_LIST_FILE ?? "./scripts/upgrade/config/partyBList.json"
 		const registeredPartyBs: string[] = []
 
 		if (fs.existsSync(PARTYB_LIST_FILE)) {
-			const listConfig = JSON.parse(fs.readFileSync(PARTYB_LIST_FILE, "utf-8")) as { partyBs?: string[]; registerOnInstantLayer?: boolean }
+			const listConfig = JSON.parse(fs.readFileSync(PARTYB_LIST_FILE, "utf-8")) as {
+				partyBs?: Record<string, string[]>
+				registerOnInstantLayer?: boolean
+			}
 			if (listConfig.registerOnInstantLayer) {
-				const partyBsToRegister = (listConfig.partyBs ?? []).filter((a: string) => ethers.isAddress(a))
+				const partyBsToRegister = Object.values(listConfig.partyBs ?? {})
+					.flat()
+					.filter((a: string) => ethers.isAddress(a))
 				const il = await ethers.getContractAt("InstantLayer", ilResult.address, admin)
 				for (const partyB of partyBsToRegister) {
 					const isRegistered = await il.registeredPartyBs(partyB)

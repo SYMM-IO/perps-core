@@ -165,12 +165,17 @@ async function main() {
 	await symmioPartyBImpl.waitForDeployment()
 	log.deployed("Implementation", await symmioPartyBImpl.getAddress())
 
-	// Register PartyBs on InstantLayer (from partyBListForWhitelistSymbolType.json)
-	const PARTYB_LIST_FILE = process.env.PARTYB_LIST_FILE ?? "./scripts/upgrade/config/partyBListForWhitelistSymbolType.json"
+	// Register PartyBs on InstantLayer (from partyBList.json)
+	const PARTYB_LIST_FILE = process.env.PARTYB_LIST_FILE ?? "./scripts/upgrade/config/partyBList.json"
 	if (fs.existsSync(PARTYB_LIST_FILE)) {
-		const listConfig = JSON.parse(fs.readFileSync(PARTYB_LIST_FILE, "utf-8")) as { partyBs?: string[]; registerOnInstantLayer?: boolean }
+		const listConfig = JSON.parse(fs.readFileSync(PARTYB_LIST_FILE, "utf-8")) as {
+			partyBs?: Record<string, string[]>
+			registerOnInstantLayer?: boolean
+		}
 		if (listConfig.registerOnInstantLayer) {
-			const partyBsToRegister = (listConfig.partyBs ?? []).filter(a => ethers.isAddress(a))
+			const partyBsToRegister = Object.values(listConfig.partyBs ?? {})
+				.flat()
+				.filter(a => ethers.isAddress(a))
 			const il = await ethers.getContractAt("InstantLayer", ilResult.address, signer)
 			for (const partyB of partyBsToRegister) {
 				const isRegistered = await il.registeredPartyBs(partyB)
