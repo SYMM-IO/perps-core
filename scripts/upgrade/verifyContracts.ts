@@ -22,7 +22,7 @@ import fs from "fs"
 import path from "path"
 
 // Import to initialize the hardhat connection (needed for auto-detect)
-import { ethers, network } from "../../test/helpers/hardhat-connection.js"
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
 import { FacetLibraryDependencies } from "./utils/upgradeHelpers.js"
 
@@ -62,16 +62,16 @@ const AccountLayerFacetLibraryDependencies: Record<string, string[]> = {
 	CoreFacet: ["LibQuoteParams"],
 }
 
-// Library source paths for --libraries flag (CLI format: path:name:address)
+// Library source FQNs for --libraries-path (Hardhat 3 format: "source:name" → address)
 const CoreLibrarySourcePaths: Record<string, string> = {
-	LibQuoteFunding: "project/contracts/core/libraries/LibQuoteFunding.sol:LibQuoteFunding",
-	LibQuoteClose: "project/contracts/core/libraries/LibQuoteClose.sol:LibQuoteClose",
-	LibForceActions: "project/contracts/core/libraries/LibForceActions.sol:LibForceActions",
-	LibSettlement: "project/contracts/core/libraries/LibSettlement.sol:LibSettlement",
+	LibQuoteFunding: "contracts/core/libraries/LibQuoteFunding.sol:LibQuoteFunding",
+	LibQuoteClose: "contracts/core/libraries/LibQuoteClose.sol:LibQuoteClose",
+	LibForceActions: "contracts/core/libraries/LibForceActions.sol:LibForceActions",
+	LibSettlement: "contracts/core/libraries/LibSettlement.sol:LibSettlement",
 }
 
 const AccountLayerLibrarySourcePaths: Record<string, string> = {
-	LibQuoteParams: "project/contracts/accountLayer/libraries/LibQuoteParams.sol:LibQuoteParams",
+	LibQuoteParams: "contracts/accountLayer/libraries/LibQuoteParams.sol:LibQuoteParams",
 }
 
 // ============================================================================
@@ -107,7 +107,7 @@ type ContractToVerify = {
 	name: string
 	address: string
 	constructorArgs: string[]
-	libraryFlags: string[] // --libraries flags for CLI
+	libraries: Record<string, string> // FQN → address for --libraries-path
 	contract?: string // --contract flag for CLI
 }
 
@@ -120,16 +120,16 @@ function loadJSON<T>(filePath: string): T {
 	return JSON.parse(fs.readFileSync(filePath, "utf-8")) as T
 }
 
-function buildLibraryFlags(deps: string[], addresses: Record<string, string>, sourcePaths: Record<string, string>): string[] {
-	const flags: string[] = []
+function buildLibraryMap(deps: string[], addresses: Record<string, string>, sourcePaths: Record<string, string>): Record<string, string> {
+	const map: Record<string, string> = {}
 	for (const dep of deps) {
 		const addr = addresses[dep]
-		const srcPath = sourcePaths[dep]
-		if (addr && srcPath) {
-			flags.push(`${srcPath}:${addr}`)
+		const fqn = sourcePaths[dep]
+		if (addr && fqn) {
+			map[fqn] = addr
 		}
 	}
-	return flags
+	return map
 }
 
 // ============================================================================
@@ -243,7 +243,7 @@ function buildContractList(
 			name,
 			address,
 			constructorArgs: [],
-			libraryFlags: buildLibraryFlags(deps, libraries, CoreLibrarySourcePaths),
+			libraries: buildLibraryMap(deps, libraries, CoreLibrarySourcePaths),
 		})
 	}
 
@@ -254,7 +254,7 @@ function buildContractList(
 			name,
 			address: info.address,
 			constructorArgs: [],
-			libraryFlags: buildLibraryFlags(deps, libraries, CoreLibrarySourcePaths),
+			libraries: buildLibraryMap(deps, libraries, CoreLibrarySourcePaths),
 			contract: CoreFacetContractPaths[name],
 		})
 	}
@@ -266,7 +266,7 @@ function buildContractList(
 			name: "MuonSignatureVerifier",
 			address: verifierAddress,
 			constructorArgs: [config.protocolAdmin!],
-			libraryFlags: [],
+			libraries: {},
 			contract: "contracts/helpers/verification/SymmioSignatureVerifier.sol:MuonSignatureVerifier",
 		})
 	}
@@ -278,7 +278,7 @@ function buildContractList(
 		name: "AL DiamondCutFacet",
 		address: peripheralsData.accountLayer.diamondCutFacet,
 		constructorArgs: [],
-		libraryFlags: [],
+		libraries: {},
 	})
 
 	// ── AccountLayer Diamond (constructor: owner, diamondCutFacet) ──────
@@ -288,7 +288,7 @@ function buildContractList(
 		name: "AL Diamond",
 		address: peripheralsData.accountLayer.diamond,
 		constructorArgs: [owner, peripheralsData.accountLayer.diamondCutFacet],
-		libraryFlags: [],
+		libraries: {},
 	})
 
 	// ── AccountLayer Init ──────────────────────────────────────────────
@@ -296,7 +296,7 @@ function buildContractList(
 		name: "AL Init",
 		address: peripheralsData.accountLayer.init,
 		constructorArgs: [],
-		libraryFlags: [],
+		libraries: {},
 		contract: "contracts/accountLayer/Init.sol:Init",
 	})
 
@@ -306,7 +306,7 @@ function buildContractList(
 			name: `AL ${name}`,
 			address,
 			constructorArgs: [],
-			libraryFlags: [],
+			libraries: {},
 			contract: `contracts/accountLayer/libraries/${name}.sol:${name}`,
 		})
 	}
@@ -318,7 +318,7 @@ function buildContractList(
 			name: `AL ${name}`,
 			address,
 			constructorArgs: [],
-			libraryFlags: buildLibraryFlags(deps, peripheralsData.accountLayer.libraries, AccountLayerLibrarySourcePaths),
+			libraries: buildLibraryMap(deps, peripheralsData.accountLayer.libraries, AccountLayerLibrarySourcePaths),
 			contract: AccountLayerFacetContractPaths[name],
 		})
 	}
@@ -330,7 +330,7 @@ function buildContractList(
 		name: "InstantLayer",
 		address: peripheralsData.instantLayer.address,
 		constructorArgs: [diamond, owner],
-		libraryFlags: [],
+		libraries: {},
 	})
 
 	// ── SymmioPartyB implementation (no constructor args) ──────────────
@@ -339,7 +339,7 @@ function buildContractList(
 			name: "SymmioPartyB",
 			address: peripheralsData.symmioPartyBImplementation,
 			constructorArgs: [],
-			libraryFlags: [],
+			libraries: {},
 		})
 	}
 
@@ -350,6 +350,8 @@ function buildContractList(
 // CLI verify runner
 // ============================================================================
 
+const LIBRARIES_TMP_FILE = path.join(OUTPUT_DIR, ".tmp-libraries.json")
+
 function buildVerifyCommand(networkName: string, c: ContractToVerify): string {
 	const parts = ["npx hardhat verify", `--network ${networkName}`]
 
@@ -357,8 +359,9 @@ function buildVerifyCommand(networkName: string, c: ContractToVerify): string {
 		parts.push(`--contract ${c.contract}`)
 	}
 
-	for (const lib of c.libraryFlags) {
-		parts.push(`--libraries ${lib}`)
+	if (Object.keys(c.libraries).length > 0) {
+		fs.writeFileSync(LIBRARIES_TMP_FILE, JSON.stringify(c.libraries, null, 2))
+		parts.push(`--libraries-path ${LIBRARIES_TMP_FILE}`)
 	}
 
 	parts.push(c.address)
@@ -407,7 +410,8 @@ async function main() {
 	const t = log.timer()
 	log.header("Verify Deployed Contracts on Block Explorer")
 
-	const networkName = network.networkName
+	const networkName = connection.networkName
+	if (!networkName) throw new Error("Could not determine network name. Make sure to pass --network <name>.")
 
 	// Load deployed data
 	const facetsData = loadJSON<DeployedFacets>(FACETS_FILE)
@@ -474,7 +478,8 @@ async function main() {
 	for (let i = 0; i < contracts.length; i++) {
 		const c = contracts[i]
 		const idx = skip + i + 1
-		const libInfo = c.libraryFlags.length > 0 ? ` (${c.libraryFlags.length} libs)` : ""
+		const libCount = Object.keys(c.libraries).length
+		const libInfo = libCount > 0 ? ` (${libCount} libs)` : ""
 		log.info(`[${idx}/${skip + contracts.length}] ${c.name} at ${c.address}${libInfo}`)
 
 		const result = runVerify(networkName, c)
@@ -492,6 +497,9 @@ async function main() {
 				break
 		}
 	}
+
+	// Cleanup temp file
+	if (fs.existsSync(LIBRARIES_TMP_FILE)) fs.unlinkSync(LIBRARIES_TMP_FILE)
 
 	// Summary
 	const entries: Array<[string, string]> = [
