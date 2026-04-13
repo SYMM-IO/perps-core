@@ -367,37 +367,35 @@ export async function wireAccountLayerInstantLayer(
 // Setup InstantLayer Templates
 // ============================================================================
 
-export async function setupInstantLayerTemplates(instantLayerAddress: string, adminSigner: any): Promise<void> {
+const DEFAULT_TEMPLATES_FILE = "./scripts/upgrade/config/instantLayerTemplates.json"
+
+type TemplateConfig = {
+	name: string
+	operations: { insertionPoints: number[]; sourceIndices: number[]; sourceOffsets: number[] }[]
+}
+
+function loadTemplates(configFile?: string): TemplateConfig[] {
+	const file = configFile ?? process.env.TEMPLATES_CONFIG_FILE ?? DEFAULT_TEMPLATES_FILE
+	if (!fs.existsSync(file)) {
+		throw new Error(`InstantLayer templates config not found: ${file}`)
+	}
+	const config = JSON.parse(fs.readFileSync(file, "utf-8")) as { templates: TemplateConfig[] }
+	if (!config.templates || config.templates.length === 0) {
+		throw new Error(`No templates defined in ${file}`)
+	}
+	return config.templates
+}
+
+export async function setupInstantLayerTemplates(instantLayerAddress: string, adminSigner: any, configFile?: string): Promise<void> {
 	log.info("Templates:")
 
+	const templates = loadTemplates(configFile)
 	const instantLayer = await ethers.getContractAt("InstantLayer", instantLayerAddress, adminSigner)
 
-	// InstantOpen Template (4 operations)
-	const instantOpenOps = [
-		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 0: addMarginToNextVA
-		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 1: sendQuote
-		{ sourceIndices: [1], insertionPoints: [0], sourceOffsets: [0] }, // op 2: lockQuote - quoteId from op 1
-		{ sourceIndices: [1], insertionPoints: [0], sourceOffsets: [0] }, // op 3: openPosition - quoteId from op 1
-	]
-	await (await instantLayer.addTemplate("InstantOpen", instantOpenOps)).wait()
-	log.ok("InstantOpen (4 ops)")
-
-	// InstantClose Template (2 operations)
-	const instantCloseOps = [
-		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 0: requestToClosePosition
-		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 1: fillCloseRequest
-	]
-	await (await instantLayer.addTemplate("InstantClose", instantCloseOps)).wait()
-	log.ok("InstantClose (2 ops)")
-
-	// InstantCloseWithAllocation Template (3 operations)
-	const instantCloseWithAllocationOps = [
-		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 0
-		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 1
-		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 2
-	]
-	await (await instantLayer.addTemplate("InstantCloseWithAllocation", instantCloseWithAllocationOps)).wait()
-	log.ok("InstantCloseWithAllocation (3 ops)")
+	for (const template of templates) {
+		await (await instantLayer.addTemplate(template.name, template.operations)).wait()
+		log.ok(`${template.name} (${template.operations.length} ops)`)
+	}
 }
 
 // ============================================================================
@@ -539,52 +537,25 @@ export function buildWiringTransactions(
 // Build InstantLayer template transactions for Safe path
 // ============================================================================
 
-export function buildTemplateTransactions(instantLayerAddress: string): WiringTransaction[] {
+export function buildTemplateTransactions(instantLayerAddress: string, configFile?: string): WiringTransaction[] {
+	const templates = loadTemplates(configFile)
 	const txs: WiringTransaction[] = []
 
 	const iface = new ethers.Interface([
 		"function addTemplate(string name, tuple(uint256[] insertionPoints, uint256[] sourceIndices, uint256[] sourceOffsets)[] operations)",
 	])
 
-	const push = (methodName: string, args: any[], description: string) => {
+	for (const template of templates) {
 		txs.push({
 			to: instantLayerAddress,
 			value: "0",
-			calldata: iface.encodeFunctionData(methodName, args),
-			description,
+			calldata: iface.encodeFunctionData("addTemplate", [template.name, template.operations]),
+			description: `addTemplate("${template.name}", ${template.operations.length} ops) on InstantLayer`,
 			iface,
-			methodName,
-			args,
+			methodName: "addTemplate",
+			args: [template.name, template.operations],
 		})
 	}
-
-	// InstantOpen Template (4 operations)
-	const instantOpenOps = [
-		{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] }, // op 0: addMarginToNextVA
-		{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] }, // op 1: sendQuote
-		{ insertionPoints: [0], sourceIndices: [1], sourceOffsets: [0] }, // op 2: lockQuote - quoteId from op 1
-		{ insertionPoints: [0], sourceIndices: [1], sourceOffsets: [0] }, // op 3: openPosition - quoteId from op 1
-	]
-	push("addTemplate", ["InstantOpen", instantOpenOps], `addTemplate("InstantOpen", 4 ops) on InstantLayer`)
-
-	// InstantClose Template (2 operations)
-	const instantCloseOps = [
-		{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] }, // op 0: requestToClosePosition
-		{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] }, // op 1: fillCloseRequest
-	]
-	push("addTemplate", ["InstantClose", instantCloseOps], `addTemplate("InstantClose", 2 ops) on InstantLayer`)
-
-	// InstantCloseWithAllocation Template (3 operations)
-	const instantCloseWithAllocationOps = [
-		{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] }, // op 0
-		{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] }, // op 1
-		{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] }, // op 2
-	]
-	push(
-		"addTemplate",
-		["InstantCloseWithAllocation", instantCloseWithAllocationOps],
-		`addTemplate("InstantCloseWithAllocation", 3 ops) on InstantLayer`,
-	)
 
 	return txs
 }
