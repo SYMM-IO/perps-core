@@ -15,11 +15,10 @@
  * Config: scripts/upgrade/config/deployPeripherals.json
  *   {
  *     "protocolAdmin": "0x...",        // Address that owns peripherals and receives operational roles
- *     "symmioFeeReceiver": "0x...",    // Fee receiver for AccountLayer init (falls back to upgrade.json)
- *     "symmioPartyBAddress": "0x..."   // Existing SymmioPartyB proxy (falls back to upgrade.json)
+ *     "symmioFeeReceiver": "0x..."     // Fee receiver for AccountLayer init (falls back to upgrade.json)
  *   }
  *
- * Falls back to upgrade.json for: diamondAddress, symmioFeeReceiver, symmioPartyBAddress
+ * Falls back to upgrade.json for: diamondAddress, symmioFeeReceiver
  *
  * Output: scripts/upgrade/output/deployed-peripherals.json
  */
@@ -35,7 +34,6 @@ type Config = {
 	diamondAddress?: string
 	protocolAdmin: string
 	symmioFeeReceiver: string
-	symmioPartyBAddress?: string
 }
 
 type DeployedState = {
@@ -58,7 +56,6 @@ function loadConfig(): Config {
 		...raw,
 		diamondAddress: raw.diamondAddress ?? shared.diamondAddress,
 		symmioFeeReceiver: raw.symmioFeeReceiver ?? shared.symmioFeeReceiver ?? "",
-		symmioPartyBAddress: raw.symmioPartyBAddress ?? shared.symmioPartyBAddress,
 	}
 }
 
@@ -75,7 +72,7 @@ function saveState(state: DeployedState): void {
 async function main() {
 	const config = loadConfig()
 
-	const { diamondAddress, protocolAdmin, symmioFeeReceiver, symmioPartyBAddress } = config
+	const { diamondAddress, protocolAdmin, symmioFeeReceiver } = config
 
 	if (!diamondAddress || !ethers.isAddress(diamondAddress)) {
 		throw new Error("diamondAddress is required and must be a valid address")
@@ -86,15 +83,10 @@ async function main() {
 	if (!symmioFeeReceiver || !ethers.isAddress(symmioFeeReceiver)) {
 		throw new Error("symmioFeeReceiver is required and must be a valid address")
 	}
-	if (symmioPartyBAddress && !ethers.isAddress(symmioPartyBAddress)) {
-		throw new Error("symmioPartyBAddress must be a valid address")
-	}
-
 	log.header("Deploy v0.8.5 Peripherals")
 	log.kv("Diamond (core)", log.addr(diamondAddress))
 	log.kv("Protocol admin", log.addr(protocolAdmin))
 	log.kv("Fee receiver", log.addr(symmioFeeReceiver))
-	log.kv("SymmioPartyB proxy", symmioPartyBAddress ? log.addr(symmioPartyBAddress) : "(not set)")
 
 	if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
 
@@ -137,10 +129,7 @@ async function main() {
 		["State file", STATE_FILE],
 	])
 
-	log.nextSteps([
-		"Run generateSafeBatch.ts (peripheral addresses are auto-loaded from deployed-peripherals.json)",
-		`Grant DEFAULT_ADMIN_ROLE on SymmioPartyB (${symmioPartyBAddress ?? "N/A"}) to the Safe before executing the upgrade batch`,
-	])
+	log.nextSteps(["Run generateSafeBatch.ts (peripheral addresses are auto-loaded from deployed-peripherals.json)"])
 }
 
 main().catch(error => {

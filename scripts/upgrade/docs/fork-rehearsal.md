@@ -159,7 +159,6 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 | `diamondCutChunkSize` | number | `1000` | Max facet cuts per transaction |
 | `symmioFeeReceiver` | string | `""` | Fee receiver for AccountLayer Init (defaults to admin) |
 | `setupInstantLayerTemplates` | boolean | `true` | Setup OpenPosition/ClosePosition templates on InstantLayer |
-| `symmioPartyBAddress` | string | `""` | Existing SymmioPartyB proxy address (for UUPS upgrade + InstantLayer registration) |
 | `newV085Parameters` | object | -- | New v0.8.5 parameters to initialize (see below) |
 
 ### Upgrade env var overrides

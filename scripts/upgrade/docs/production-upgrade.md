@@ -84,11 +84,7 @@ POST-DIAMONDCUT (execute via Safe UI)
     2. set v0.8.5 parameters
     3. grantRole(MIGRATION_ROLE)
     4. [wiring] AL/IL roles + hooks + whitelist
-    5. [wiring] upgradeTo(PartyB impl)  <-- UUPS (*)
-    6. [wiring] registerPartyBs on IL
-
-  (*) Safe must have DEFAULT_ADMIN_ROLE on SymmioPartyB
-      before executing. Grant via current PartyB admin.
+    5. [wiring] registerPartyBs on IL (from config/partyBListForWhitelistSymbolType.json)
 
 
 PREPARE MIGRATION INPUT (after pause — version-agnostic, can run before or after diamondCut)
@@ -208,11 +204,7 @@ POST-DIAMONDCUT (T=delay, after diamondCut)
     2. set v0.8.5 parameters
     3. grantRole(MIGRATION_ROLE)
     4. [wiring] AL/IL roles + hooks + whitelist
-    5. [wiring] upgradeTo(PartyB impl)  <-- UUPS (*)
-    6. [wiring] registerPartyBs on IL
-
-  (*) Safe must have DEFAULT_ADMIN_ROLE on SymmioPartyB
-      before executing. Grant via current PartyB admin.
+    5. [wiring] registerPartyBs on IL (from config/partyBListForWhitelistSymbolType.json)
 
 
 VERIFY
@@ -335,7 +327,7 @@ Every Symmio deployment has a standard set of contracts and roles. The table bel
 | **Main MultiSig** (also receives role grants) | `0x0C83...AFC4` | `adminAddress` | `upgrade.json`, `deployPeripherals.json` |
 | **Fees MultiSig** (receives protocol fees) | `0x273a...3f12` | `symmioFeeReceiver` | `upgrade.json` (other scripts fall back to this) |
 | **SignatureVerifier** (Muon signature verification contract) | `0x94eE...FC2` | `newV085Parameters.signatureVerifierAddress` | `upgrade.json` |
-| **SymmioPartyB** (existing PartyB proxy, if deployed) | `0xd600...B574` | `symmioPartyBAddress` | `upgrade.json` (other scripts fall back to this) |
+| **PartyB list** (for IL registration + symbol whitelisting) | -- | `partyBs` + `registerOnInstantLayer` | `config/partyBListForWhitelistSymbolType.json` |
 | **TimeLock** (12H or 3D, if diamond owner is a timelock) | `0xA75F...c63` | `timelockAddress` | `upgrade.json` (used by `generateTimelockBatch.ts` to wrap diamondCut) |
 | **Migration runner** (address that will call migration functions) | any EOA or multisig | `migrationRunner` | `upgrade.json` (defaults to `adminAddress`) |
 | **PartyB addresses** (all active PartyBs to enable cross mode) | `[0x...]` | `partyBs` | `postMigration.json` |
@@ -391,7 +383,7 @@ npx hardhat run scripts/upgrade/runMigration.ts --network fork-arbitrum
 | `verifyPeripherals.ts` | AccountLayer + InstantLayer roles, hooks, whitelist, templates |
 | `testTemplateExecution.ts` | Full end-to-end: affiliate registration, sub-account, PartyB UUPS upgrade, EIP-712 delegation, sendQuote -> lockQuote -> openPosition via InstantLayer template |
 
-`testTemplateExecution.ts` auto-loads `diamondAddress` and `symmioPartyBAddress` from `upgrade.json`, and `accountLayerDiamondAddress` + `instantLayerAddress` from the output files. No manual config needed.
+`testTemplateExecution.ts` auto-loads `diamondAddress` from `upgrade.json`, and `accountLayerDiamondAddress` + `instantLayerAddress` from the output files. No manual config needed.
 
 **What is NOT covered by these scripts** (verified elsewhere):
 - Migration correctness -- `forkUpgrade.ts` step 11 verifies pre/post upgrade snapshots; `runMigration.ts` verifies all migrated data
@@ -504,7 +496,7 @@ The script applies all facet cuts in a **single transaction** (no chunking neede
 
 Generates Safe Transaction Builder JSON for the full upgrade (roles, pause, params, migration role, AccountLayer/InstantLayer wiring) plus separate diamondCut calldata.
 
-**Prerequisites:** Run `deployFacets.ts` and `deployPeripherals.ts` first. The script auto-loads `deployed-facets.json` and `deployed-peripherals.json` from the output directory -- no manual address copy needed. Set `symmioPartyBAddress` in `upgrade.json` to include PartyB UUPS upgrade + InstantLayer registration in the Safe batch. Config and env vars override auto-loaded values if set.
+**Prerequisites:** Run `deployFacets.ts` and `deployPeripherals.ts` first. The script auto-loads `deployed-facets.json` and `deployed-peripherals.json` from the output directory -- no manual address copy needed. InstantLayer PartyB registration reads from `config/partyBListForWhitelistSymbolType.json` (when `registerOnInstantLayer` is true). Config and env vars override auto-loaded values if set.
 
 ```bash
 npx hardhat run scripts/upgrade/generateSafeBatch.ts --network arbitrum
@@ -712,12 +704,11 @@ The migration report includes:
 | `spotCheckCount` | number | `20` | Number of random quotes/balances to verify against on-chain state during migration prep |
 | `symmioFeeReceiver` | string | `""` | **Fees MultiSig** -- receives protocol fees in AccountLayer (defaults to `adminAddress` if empty) |
 | `setupInstantLayerTemplates` | boolean | `true` | Whether to register OpenPosition + ClosePosition templates on InstantLayer |
-| `symmioPartyBAddress` | string | `""` | Existing **SymmioPartyB** proxy address -- needed for UUPS upgrade + InstantLayer PartyB registration |
 | `newV085Parameters` | object | -- | New v0.8.5 parameters (see [newV085Parameters](#newv085parameters) below) |
 
 `accountLayerDiamondAddress`, `instantLayerAddress`, and `symmioPartyBImplementation` are auto-loaded from `deployed-peripherals.json`. They can still be set in config or env vars as overrides.
 
-**Shared field fallback:** All per-script config files fall back to `upgrade.json` for shared fields (`diamondAddress`, `subgraphEndpoint`, `safeAddress`, `symmioFeeReceiver`, `symmioPartyBAddress`, `spotCheckCount`). You only need to set these once in `upgrade.json` -- the other config files only need their script-specific fields. Per-script config values and env vars take precedence over `upgrade.json` when set.
+**Shared field fallback:** All per-script config files fall back to `upgrade.json` for shared fields (`diamondAddress`, `subgraphEndpoint`, `safeAddress`, `symmioFeeReceiver`, `spotCheckCount`). You only need to set these once in `upgrade.json` -- the other config files only need their script-specific fields. Per-script config values and env vars take precedence over `upgrade.json` when set.
 
 ### Deploy peripherals config (`deployPeripherals.json`)
 
@@ -727,7 +718,6 @@ Note: `adminAddress` here is **different** from `upgrade.json`. In `upgrade.json
 |-------|------|-----------------|
 | `adminAddress` | string | **Main MultiSig** -- will be set as owner/admin for the new AccountLayer + InstantLayer contracts |
 | `symmioFeeReceiver` | string | **Fees MultiSig** -- fee receiver for AccountLayer initialization. Falls back to `upgrade.json`. |
-| `symmioPartyBAddress` | string | Existing **SymmioPartyB** proxy address. Falls back to `upgrade.json`. |
 
 ### Prepare migration config (`prepareMigration.json`)
 
@@ -768,7 +758,7 @@ All scripts fall back to `upgrade.json` for `diamondAddress` and other shared fi
 | Config file | Script | Script-specific fields | Shared fields (from `upgrade.json`) |
 |-------------|--------|----------------------|-------------------------------------|
 | `upgrade.json` | `eoaUpgrade.ts`, `applyUpgrade.ts`, `generateSafeBatch.ts`, `generateTimelockBatch.ts` | `adminAddress`, `timelockAddress`, `newV085Parameters`, `diamondCutChunkSize`, `migrationRunner` | -- (source of truth) |
-| `deployPeripherals.json` | `deployPeripherals.ts` | `adminAddress` | `diamondAddress`, `symmioFeeReceiver`, `symmioPartyBAddress` |
+| `deployPeripherals.json` | `deployPeripherals.ts` | `adminAddress` | `diamondAddress`, `symmioFeeReceiver` |
 | `prepareMigration.json` | `prepareMigrationInput.ts` | `outputDir`, `outputFile` | `diamondAddress`, `subgraphEndpoint`, `spotCheckCount` |
 | `migrate.json` | `runMigration.ts` | `migrationInputFile`, `chunkSize`, `dryRun`, `fork` | `diamondAddress` |
 | `postMigration.json` | `generatePostMigrationBatch.ts` | `partyBs` | `diamondAddress`, `safeAddress` |

@@ -12,7 +12,6 @@ export type UpgradeConfigShared = {
 	subgraphEndpoint?: string
 	spotCheckCount?: number
 	symmioFeeReceiver?: string
-	symmioPartyBAddress?: string
 	instantLayerAddress?: string
 	accountLayerDiamondAddress?: string
 	newV085Parameters?: { symbolType?: number }

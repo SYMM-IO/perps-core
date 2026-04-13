@@ -23,7 +23,6 @@ cp scripts/upgrade/config/samples/upgrade.sample.json scripts/upgrade/config/upg
 | `subgraphEndpoint` | No | Goldsky/TheGraph endpoint for fetching open quotes and PartyB balances |
 | `spotCheckCount` | No | Number of random on-chain spot-checks during migration input validation |
 | `symmioFeeReceiver` | No | Fee receiver address for AccountLayer init |
-| `symmioPartyBAddress` | No | Existing SymmioPartyB proxy address (for UUPS upgrade + InstantLayer registration) |
 | `newV085Parameters` | No | New parameter values to set during upgrade (see sample) |
 
 ### Key distinction: `protocolAdmin` vs `safeAddress` vs `timelockAddress`
@@ -158,6 +157,7 @@ The Safe batch includes:
 5. Seed MuonSignatureVerifier with TSS public keys and gateway signers (if configured in `newV085Parameters`)
 6. Grant MIGRATION_ROLE and SYMBOL_MANAGER_ROLE to `migrationRunner`
 7. Peripheral wiring (roles + hooks between Diamond, AccountLayer, InstantLayer)
+8. `registerPartyBs()` on InstantLayer (reads PartyB list from `config/partyBListForWhitelistSymbolType.json`)
 
 The diamondCut is **not** in the Safe batch -- it's separate so it can be routed through the timelock.
 

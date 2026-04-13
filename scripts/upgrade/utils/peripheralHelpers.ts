@@ -419,8 +419,7 @@ export function buildWiringTransactions(
 	accountLayerDiamondAddress: string,
 	instantLayerAddress: string,
 	protocolAdmin: string,
-	symmioPartyBAddress?: string,
-	symmioPartyBImplementation?: string,
+	partyBsToRegister?: string[],
 ): WiringTransaction[] {
 	const roleHash = (name: string) => ethers.id(name)
 	const txs: WiringTransaction[] = []
@@ -522,9 +521,15 @@ export function buildWiringTransactions(
 		`setTargetWhitelist(AccountLayer, true) on InstantLayer`,
 	)
 
-	// SymmioPartyB: register on InstantLayer
-	if (symmioPartyBAddress) {
-		push(instantLayerAddress, instantLayerIface, "registerPartyBs", [[symmioPartyBAddress]], `registerPartyBs([SymmioPartyB]) on InstantLayer`)
+	// Register PartyBs on InstantLayer
+	if (partyBsToRegister && partyBsToRegister.length > 0) {
+		push(
+			instantLayerAddress,
+			instantLayerIface,
+			"registerPartyBs",
+			[partyBsToRegister],
+			`registerPartyBs([${partyBsToRegister.length} partyBs]) on InstantLayer`,
+		)
 	}
 
 	return txs
