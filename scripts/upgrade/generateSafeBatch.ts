@@ -38,8 +38,6 @@ type Config = {
 	diamondCutChunkSize?: number
 	accountLayerDiamondAddress?: string
 	instantLayerAddress?: string
-	symmioPartyBAddress?: string
-	symmioPartyBImplementation?: string
 	setupInstantLayerTemplates?: boolean
 	newV085Parameters?: NewV085Parameters
 }
@@ -48,7 +46,6 @@ type Config = {
 type DeployedPeripherals = {
 	accountLayer?: { diamond?: string }
 	instantLayer?: { address?: string }
-	symmioPartyBImplementation?: string
 }
 
 const CONFIG_FILE = process.env.UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/upgrade.json"
@@ -129,32 +126,22 @@ async function main() {
 	const AL_ADDRESS = process.env.ACCOUNT_LAYER_ADDRESS ?? (config.accountLayerDiamondAddress || peripherals.accountLayer?.diamond)
 	const IL_ADDRESS = process.env.INSTANT_LAYER_ADDRESS ?? (config.instantLayerAddress || peripherals.instantLayer?.address)
 
-	const PARTYB_ADDRESS = process.env.SYMMIO_PARTYB_ADDRESS ?? config.symmioPartyBAddress
-	const PARTYB_IMPL = process.env.SYMMIO_PARTYB_IMPLEMENTATION ?? (config.symmioPartyBImplementation || peripherals.symmioPartyBImplementation)
+	// Load PartyB list for InstantLayer registration from partyBListForWhitelistSymbolType.json
+	const PARTYB_LIST_FILE = process.env.PARTYB_LIST_FILE ?? "./scripts/upgrade/config/partyBListForWhitelistSymbolType.json"
+	let partyBsToRegister: string[] = []
+	if (fs.existsSync(PARTYB_LIST_FILE)) {
+		const listConfig = JSON.parse(fs.readFileSync(PARTYB_LIST_FILE, "utf-8")) as { partyBs?: string[]; registerOnInstantLayer?: boolean }
+		if (listConfig.registerOnInstantLayer) {
+			partyBsToRegister = (listConfig.partyBs ?? []).filter(a => ethers.isAddress(a))
+		}
+	}
 
 	if (AL_ADDRESS && IL_ADDRESS && ethers.isAddress(AL_ADDRESS) && ethers.isAddress(IL_ADDRESS)) {
 		console.log("\nBuilding peripheral wiring transactions...")
 		console.log(`  AccountLayerDiamond: ${AL_ADDRESS}`)
 		console.log(`  InstantLayer:        ${IL_ADDRESS}`)
-		if (PARTYB_ADDRESS) console.log(`  SymmioPartyB:        ${PARTYB_ADDRESS}`)
-		const wiringTxs = buildWiringTransactions(DIAMOND_ADDRESS, AL_ADDRESS, IL_ADDRESS, PROTOCOL_ADMIN, PARTYB_ADDRESS, PARTYB_IMPL)
-
-		// SymmioPartyB UUPS proxy upgrade (if address and new implementation provided)
-		// The Safe must have DEFAULT_ADMIN_ROLE on the PartyB proxy to call upgradeTo.
-		// The current PartyB admin must grant this role to the Safe before executing the batch.
-		if (PARTYB_ADDRESS && PARTYB_IMPL) {
-			const uupsIface = new ethers.Interface(["function upgradeTo(address newImplementation)"])
-			wiringTxs.unshift({
-				to: PARTYB_ADDRESS,
-				value: "0",
-				calldata: uupsIface.encodeFunctionData("upgradeTo", [PARTYB_IMPL]),
-				description: `upgradeTo(new SymmioPartyB implementation)`,
-				iface: uupsIface,
-				methodName: "upgradeTo",
-				args: [PARTYB_IMPL],
-			})
-			console.log(`  NOTE: The Safe (${SAFE_ADDRESS}) must have DEFAULT_ADMIN_ROLE on SymmioPartyB (${PARTYB_ADDRESS}) before executing this batch.`)
-		}
+		if (partyBsToRegister.length > 0) console.log(`  PartyBs to register: ${partyBsToRegister.length} (from ${PARTYB_LIST_FILE})`)
+		const wiringTxs = buildWiringTransactions(DIAMOND_ADDRESS, AL_ADDRESS, IL_ADDRESS, PROTOCOL_ADMIN, partyBsToRegister)
 
 		for (const tx of wiringTxs) {
 			result.safeTxs.push(toHumanReadableSafeTxFromIface(tx.iface, tx.to, tx.methodName, tx.args))

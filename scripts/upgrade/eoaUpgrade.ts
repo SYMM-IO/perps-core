@@ -35,7 +35,6 @@ type Config = {
 	migrationRunner?: string
 	symmioFeeReceiver?: string
 	setupInstantLayerTemplates?: boolean
-	symmioPartyBAddress?: string
 	newV085Parameters?: NewV085Parameters
 }
 
@@ -159,25 +158,34 @@ async function main() {
 	}
 	log.stepDone(t)
 
-	// Step 7: Deploy SymmioPartyB implementation + register on InstantLayer
-	t = log.step("Deploy SymmioPartyB")
-	const PARTYB_ADDRESS = process.env.SYMMIO_PARTYB_ADDRESS ?? config.symmioPartyBAddress
+	// Step 7: Deploy SymmioPartyB implementation + register PartyBs on InstantLayer
+	t = log.step("Deploy SymmioPartyB + register PartyBs")
 	const SymmioPartyBFactory = await ethers.getContractFactory("SymmioPartyB")
 	const symmioPartyBImpl = await SymmioPartyBFactory.deploy()
 	await symmioPartyBImpl.waitForDeployment()
 	log.deployed("Implementation", await symmioPartyBImpl.getAddress())
 
-	if (PARTYB_ADDRESS) {
-		const il = await ethers.getContractAt("InstantLayer", ilResult.address, signer)
-		const isRegistered = await il.registeredPartyBs(PARTYB_ADDRESS)
-		if (!isRegistered) {
-			await (await il.registerPartyBs([PARTYB_ADDRESS])).wait()
-			log.ok(`Registered ${log.addr(PARTYB_ADDRESS)} on InstantLayer`)
+	// Register PartyBs on InstantLayer (from partyBListForWhitelistSymbolType.json)
+	const PARTYB_LIST_FILE = process.env.PARTYB_LIST_FILE ?? "./scripts/upgrade/config/partyBListForWhitelistSymbolType.json"
+	if (fs.existsSync(PARTYB_LIST_FILE)) {
+		const listConfig = JSON.parse(fs.readFileSync(PARTYB_LIST_FILE, "utf-8")) as { partyBs?: string[]; registerOnInstantLayer?: boolean }
+		if (listConfig.registerOnInstantLayer) {
+			const partyBsToRegister = (listConfig.partyBs ?? []).filter(a => ethers.isAddress(a))
+			const il = await ethers.getContractAt("InstantLayer", ilResult.address, signer)
+			for (const partyB of partyBsToRegister) {
+				const isRegistered = await il.registeredPartyBs(partyB)
+				if (!isRegistered) {
+					await (await il.registerPartyBs([partyB])).wait()
+					log.ok(`Registered ${log.addr(partyB)} on InstantLayer`)
+				} else {
+					log.ok(`${log.addr(partyB)} already registered on InstantLayer`)
+				}
+			}
 		} else {
-			log.ok(`${log.addr(PARTYB_ADDRESS)} already registered on InstantLayer`)
+			log.ok("registerOnInstantLayer is false — skipping IL registration")
 		}
 	} else {
-		log.warn("No symmioPartyBAddress configured — proxy upgrade + registration must be done separately")
+		log.warn(`${PARTYB_LIST_FILE} not found — skipping IL registration`)
 	}
 	log.stepDone(t)
 

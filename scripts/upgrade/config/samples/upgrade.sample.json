@@ -9,7 +9,6 @@
 	"spotCheckCount": 20,
 	"symmioFeeReceiver": "0x...",
 	"setupInstantLayerTemplates": true,
-	"symmioPartyBAddress": "",
 	"newV085Parameters": {
 		"maxPartyAConnectionLimit": 5,
 
