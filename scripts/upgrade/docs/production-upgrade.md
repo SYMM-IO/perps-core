@@ -18,22 +18,11 @@ READ MUON CONFIG (one-time, if upgrading from v0.8.4)
 
   readMuonConfig.ts → muon-config.json + console snippet
 
-DEPLOY SIGNATURE VERIFIER (one-time, if upgrading from v0.8.4)
-══════════════════════════════════════════════════════════════
-  v0.8.4 had signature verification inline in the diamond.
-  v0.8.5 uses an external MuonSignatureVerifier contract.
-
-  npx hardhat deploy:signatureVerifier --admin <admin> --network <network>
-
-  Put the deployed address in upgrade.json → newV085Parameters.signatureVerifierAddress
-  TSS keys + gateway signers are seeded automatically from muonPublicKeys/muonGatewaySigners in config.
-
-
 BEFORE PAUSE (no downtime)
 ══════════════════════════
 
  deployFacets.ts                deployPeripherals.ts
- (deploy libs + facets)         (deploy AL + IL + PartyB impl)
+ (deploy libs + facets)         (deploy SigVerifier + AL + IL + PartyB impl)
         │                              │
         ▼                              ▼
  deployed-facets.json          deployed-peripherals.json
@@ -276,7 +265,7 @@ TIMELINE
 
 ## EOA Path
 
-**Pre-requisites (if upgrading from v0.8.4):** Run `readMuonConfig.ts` to capture TSS key + gateway, then deploy `MuonSignatureVerifier` (see [Read Muon Config](#read-muon-config-from-v084-diamond) and [Deploy SignatureVerifier](#deploy-signatureverifier)). The EOA path seeds the verifier automatically from `muonPublicKeys`/`muonGatewaySigners` in config.
+**Pre-requisites (if upgrading from v0.8.4):** Run `readMuonConfig.ts` to capture TSS key + gateway (see [Read Muon Config](#read-muon-config-from-v084-diamond)). The `MuonSignatureVerifier` is deployed automatically by `deployPeripherals.ts` and the EOA path seeds it from `muonPublicKeys`/`muonGatewaySigners` in config.
 
 **Single script:**
 
@@ -448,16 +437,9 @@ Output: `scripts/upgrade/output/muon-config.json`
 
 **Required when upgrading from v0.8.4.** In v0.8.4, Muon signature verification was inline in the diamond via `LibMuon`. In v0.8.5, it is refactored into an external `MuonSignatureVerifier` contract (`contracts/helpers/verification/SymmioSignatureVerifier.sol`) that must be deployed separately.
 
-```bash
-# --admin: address that can manage TSS keys and gateway signers on the verifier
-# Typically the diamond owner (TimeLock or MultiSig)
-npx hardhat deploy:signatureVerifier --admin <admin-address> --network <network>
-```
+`deployPeripherals.ts` handles this automatically — it deploys `MuonSignatureVerifier(protocolAdmin)` and writes the address back to `upgrade.json` → `newV085Parameters.signatureVerifierAddress`. No separate step is needed.
 
-After deployment:
-1. Note the deployed address
-2. Set the address in `upgrade.json` -> `newV085Parameters.signatureVerifierAddress`
-3. TSS public keys and gateway signers are seeded automatically by the upgrade scripts (from `muonPublicKeys` and `muonGatewaySigners` in config). The Safe must have `SETTER_ROLE` on the verifier.
+TSS public keys and gateway signers are seeded automatically by the upgrade scripts (from `muonPublicKeys` and `muonGatewaySigners` in config). The Safe must have `SETTER_ROLE` on the verifier.
 
 If upgrading a chain that already runs v0.8.5 (or where the verifier was deployed previously), skip this step and use the existing verifier address.
 
