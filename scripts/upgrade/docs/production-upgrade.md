@@ -106,6 +106,9 @@ RUN MIGRATION (after diamondCut — requires v0.8.5)
         ▼
  migration-report.json
 
+ setSymbolTypes.ts              (backfill symbolType for all symbols)
+ whitelistSymbolTypes.ts        (whitelist symbol type per PartyB)
+
 
 UNPAUSE
 ═══════
@@ -117,6 +120,13 @@ UNPAUSE
     1. unpauseGlobal()            <-- UNPAUSE
     2. setCrossPartyBModeActivated(true)
     3. setCrossPartyB(partyB, true) x N
+
+
+POST-UPGRADE PATCHES (if needed after unpause)
+═══════════════════════════════════════════════
+  generateSymbolTypeRoleBatch.ts   (grant/revoke SYMBOL_MANAGER_ROLE via Safe)
+  generateTemplateBatch.ts         (add InstantLayer templates via Safe)
+  whitelistSymbolTypes.ts          (whitelist symbol type per PartyB)
 ```
 
 ### Safe Path: TimeLock (TimeLock owns diamond, Safe owns TimeLock)
@@ -230,6 +240,9 @@ RUN MIGRATION (after diamondCut — requires v0.8.5)
         ▼
  migration-report.json
 
+ setSymbolTypes.ts              (backfill symbolType for all symbols)
+ whitelistSymbolTypes.ts        (whitelist symbol type per PartyB)
+
 
 UNPAUSE
 ═══════
@@ -241,6 +254,13 @@ UNPAUSE
     1. unpauseGlobal()            <-- UNPAUSE
     2. setCrossPartyBModeActivated(true)
     3. setCrossPartyB(partyB, true) x N
+
+
+POST-UPGRADE PATCHES (if needed after unpause)
+═══════════════════════════════════════════════
+  generateSymbolTypeRoleBatch.ts   (grant/revoke SYMBOL_MANAGER_ROLE via Safe)
+  generateTemplateBatch.ts         (add InstantLayer templates via Safe)
+  whitelistSymbolTypes.ts          (whitelist symbol type per PartyB)
 
 
 TIMELINE
@@ -297,6 +317,8 @@ TIMELINE
   cp scripts/upgrade/config/samples/prepareMigration.sample.json scripts/upgrade/config/prepareMigration.json
   cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/migrate.json
   cp scripts/upgrade/config/samples/postMigration.sample.json scripts/upgrade/config/postMigration.json
+  cp scripts/upgrade/config/samples/partyBListForWhitelistSymbolType.sample.json scripts/upgrade/config/partyBListForWhitelistSymbolType.json
+  cp scripts/upgrade/config/samples/instantLayerTemplates.sample.json scripts/upgrade/config/instantLayerTemplates.json
   cp scripts/upgrade/config/samples/deployPeripherals.sample.json scripts/upgrade/config/deployPeripherals.json
   # edit upgrade.json with all shared fields (diamondAddress, subgraphEndpoint, safeAddress, etc.)
   # other config files only need script-specific fields -- they fall back to upgrade.json for shared values
@@ -750,6 +772,8 @@ All scripts fall back to `upgrade.json` for `diamondAddress` and other shared fi
 | `prepareMigration.json` | `prepareMigrationInput.ts` | `outputDir`, `outputFile` | `diamondAddress`, `subgraphEndpoint`, `spotCheckCount` |
 | `migrate.json` | `runMigration.ts` | `migrationInputFile`, `chunkSize`, `dryRun`, `fork` | `diamondAddress` |
 | `postMigration.json` | `generatePostMigrationBatch.ts` | `partyBs` | `diamondAddress`, `safeAddress` |
+| `partyBListForWhitelistSymbolType.json` | `whitelistSymbolTypes.ts` | `partyBs` | `diamondAddress`, `newV085Parameters.symbolType` |
+| `instantLayerTemplates.json` | `generateTemplateBatch.ts` | `templates` | `safeAddress`, `instantLayerAddress` |
 
 ## newV085Parameters
 
