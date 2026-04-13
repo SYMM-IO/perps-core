@@ -13,6 +13,8 @@ export type UpgradeConfigShared = {
 	spotCheckCount?: number
 	symmioFeeReceiver?: string
 	symmioPartyBAddress?: string
+	instantLayerAddress?: string
+	accountLayerDiamondAddress?: string
 	newV085Parameters?: { symbolType?: number }
 }
 

@@ -267,6 +267,23 @@ Can run in parallel with or immediately after `runMigration.ts` -- both require 
 
 Output: `output/set-symbol-types-report.json`
 
+### 8c. Whitelist symbol type for PartyBs
+
+```bash
+npx hardhat run scripts/upgrade/whitelistSymbolTypes.ts --network <network>
+
+# Dry run (log without submitting)
+DRY_RUN=true npx hardhat run scripts/upgrade/whitelistSymbolTypes.ts --network <network>
+```
+
+Calls `whitelistSymbolType(partyB, symbolType)` for each PartyB in the config, allowing them to accept quotes for all symbols of that type. Requires `PARTY_B_MANAGER_ROLE`.
+
+The `symbolType` value is read from `newV085Parameters.symbolType` in `upgrade.json`. PartyB addresses are read from `scripts/upgrade/config/partyBListForWhitelistSymbolType.json`.
+
+Can run after `setSymbolTypes.ts` has assigned types to all symbols.
+
+Output: `output/whitelist-symbol-types-report.json`
+
 ### 9. Generate post-migration batch
 
 ```bash
@@ -343,11 +360,13 @@ Phase 4: Execute upgrade (multisig signs, downtime starts)
        verifyDiamond.ts               (all v0.8.5 selectors registered)
        verifyPeripherals.ts           (AL/IL roles, hooks, whitelist, templates)
 
-Phase 5: Migrate (EOA with MIGRATION_ROLE / SYMBOL_MANAGER_ROLE)
+Phase 5: Migrate (EOA with MIGRATION_ROLE / SYMBOL_MANAGER_ROLE / PARTY_B_MANAGER_ROLE)
   runMigration.ts
   -> Migrates quotes and PartyB locked values on the paused system
   setSymbolTypes.ts
   -> Backfills symbolType for all symbols (reads symbol-types-input.json)
+  whitelistSymbolTypes.ts
+  -> Whitelists symbol type per PartyB (reads partyBListForWhitelistSymbolType.json)
 
 Phase 6: Unpause (multisig signs)
   Import post-migration-safe-batch.json into Safe TX Builder
@@ -391,6 +410,45 @@ Same as above but skip `generateTimelockBatch.ts` and include the diamondCut dir
 | `set-symbol-types-report.json` | setSymbolTypes.ts | Human review |
 | `post-migration-transactions.json` | generatePostMigrationBatch.ts | EOA execution |
 | `post-migration-safe-batch.json` | generatePostMigrationBatch.ts | Safe TX Builder |
+| `whitelist-symbol-types-report.json` | whitelistSymbolTypes.ts | Human review |
+| `grant-symbol-role-safe-batch.json` | generateSymbolTypeRoleBatch.ts | Safe TX Builder |
+| `revoke-symbol-role-safe-batch.json` | generateSymbolTypeRoleBatch.ts | Safe TX Builder |
+| `add-templates-safe-batch.json` | generateTemplateBatch.ts | Safe TX Builder |
+
+---
+
+## Post-Upgrade Patch Scripts
+
+Standalone scripts for tasks that were missed during the initial upgrade window or need to be run after unpausing.
+
+### Generate symbol type role batch
+
+```bash
+npx hardhat run scripts/upgrade/generateSymbolTypeRoleBatch.ts --network <network>
+```
+
+Generates two Safe batches to grant and revoke `SYMBOL_MANAGER_ROLE` for the migration runner, for use when `setSymbolTypes.ts` needs to run after the system is unpaused.
+
+Output:
+- `output/grant-symbol-role-safe-batch.json` -- Grant `SYMBOL_MANAGER_ROLE` to `migrationRunner`
+- `output/revoke-symbol-role-safe-batch.json` -- Revoke `SYMBOL_MANAGER_ROLE` from `migrationRunner`
+
+Flow:
+1. Execute grant batch via Safe
+2. Run `setSymbolTypes.ts`
+3. Execute revoke batch via Safe
+
+### Generate template batch
+
+```bash
+npx hardhat run scripts/upgrade/generateTemplateBatch.ts --network <network>
+```
+
+Generates a Safe batch to call `addTemplate()` on the InstantLayer contract. Reads template definitions from `scripts/upgrade/config/instantLayerTemplates.json`. The Safe (protocolAdmin) must have `SETTER_ROLE` on InstantLayer.
+
+Config: `scripts/upgrade/config/instantLayerTemplates.json` (copy from `samples/instantLayerTemplates.sample.json`)
+
+Output: `output/add-templates-safe-batch.json`
 
 ---
 
