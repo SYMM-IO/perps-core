@@ -157,7 +157,7 @@ The Safe batch includes:
 5. Seed MuonSignatureVerifier with TSS public keys and gateway signers (if configured in `newV085Parameters`)
 6. Grant MIGRATION_ROLE and SYMBOL_MANAGER_ROLE to `migrationRunner`
 7. Peripheral wiring (roles + hooks between Diamond, AccountLayer, InstantLayer)
-8. `registerPartyBs()` on InstantLayer (reads PartyB list from `config/partyBListForWhitelistSymbolType.json`)
+8. `registerPartyBs()` on InstantLayer (reads PartyB list from `config/partyBList.json`)
 
 The diamondCut is **not** in the Safe batch -- it's separate so it can be routed through the timelock.
 
@@ -278,7 +278,7 @@ DRY_RUN=true npx hardhat run scripts/upgrade/whitelistSymbolTypes.ts --network <
 
 Calls `whitelistSymbolType(partyB, symbolType)` for each PartyB in the config, allowing them to accept quotes for all symbols of that type. Requires `PARTY_B_MANAGER_ROLE`.
 
-The `symbolType` value is read from `newV085Parameters.symbolType` in `upgrade.json`. PartyB addresses are read from `scripts/upgrade/config/partyBListForWhitelistSymbolType.json`.
+The `symbolType` value is read from `newV085Parameters.symbolType` in `upgrade.json`. PartyB addresses are read from `scripts/upgrade/config/partyBList.json`.
 
 Can run after `setSymbolTypes.ts` has assigned types to all symbols.
 
@@ -366,7 +366,7 @@ Phase 5: Migrate (EOA with MIGRATION_ROLE / SYMBOL_MANAGER_ROLE / PARTY_B_MANAGE
   setSymbolTypes.ts
   -> Backfills symbolType for all symbols (reads symbol-types-input.json)
   whitelistSymbolTypes.ts
-  -> Whitelists symbol type per PartyB (reads partyBListForWhitelistSymbolType.json)
+  -> Whitelists symbol type per PartyB (reads partyBList.json)
 
 Phase 6: Unpause (multisig signs)
   Import post-migration-safe-batch.json into Safe TX Builder

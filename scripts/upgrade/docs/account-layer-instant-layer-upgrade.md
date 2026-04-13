@@ -90,7 +90,7 @@ The piping is defined by `sourceIndices`, `insertionPoints`, and `sourceOffsets`
 
 For the Safe path. Returns an array of `{ to, value, calldata, description }` objects -- the same wiring as `wireAccountLayerInstantLayer` but as raw calldata instead of executed transactions. These get appended to the Safe batch JSON.
 
-If `partyBsToRegister` is provided, also generates `registerPartyBs(partyBs)` on InstantLayer. The list is read from `config/partyBListForWhitelistSymbolType.json` when `registerOnInstantLayer` is true.
+If `partyBsToRegister` is provided, also generates `registerPartyBs(partyBs)` on InstantLayer. The list is read from `config/partyBList.json` when `registerOnInstantLayer` is true.
 
 Note: each transaction targets a different contract (`to` varies between diamond, AL, IL, and PartyB proxy admin), which the Safe Transaction Builder handles fine.
 
@@ -186,7 +186,7 @@ The full fork rehearsal flow is now:
 The v0.8.5 SymmioPartyB adds ERC-1271 (`isValidSignature`) support required by InstantLayer. The storage layout is compatible with v0.8.4 for in-place proxy upgrades.
 
 - `deployPeripherals.ts` deploys the new SymmioPartyB implementation (not the proxy)
-- `generateSafeBatch.ts` generates InstantLayer PartyB registration transactions from `config/partyBListForWhitelistSymbolType.json` (when `registerOnInstantLayer` is true)
+- `generateSafeBatch.ts` generates InstantLayer PartyB registration transactions from `config/partyBList.json` (when `registerOnInstantLayer` is true)
 - `testTemplateExecution.ts` verifies the full flow end-to-end (deploy PartyB, register, fund, execute InstantOpen template)
 
 ## Things NOT Handled

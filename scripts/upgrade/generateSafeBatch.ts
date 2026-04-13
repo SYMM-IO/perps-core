@@ -126,13 +126,18 @@ async function main() {
 	const AL_ADDRESS = process.env.ACCOUNT_LAYER_ADDRESS ?? (config.accountLayerDiamondAddress || peripherals.accountLayer?.diamond)
 	const IL_ADDRESS = process.env.INSTANT_LAYER_ADDRESS ?? (config.instantLayerAddress || peripherals.instantLayer?.address)
 
-	// Load PartyB list for InstantLayer registration from partyBListForWhitelistSymbolType.json
-	const PARTYB_LIST_FILE = process.env.PARTYB_LIST_FILE ?? "./scripts/upgrade/config/partyBListForWhitelistSymbolType.json"
+	// Load PartyB list for InstantLayer registration from partyBList.json
+	const PARTYB_LIST_FILE = process.env.PARTYB_LIST_FILE ?? "./scripts/upgrade/config/partyBList.json"
 	let partyBsToRegister: string[] = []
 	if (fs.existsSync(PARTYB_LIST_FILE)) {
-		const listConfig = JSON.parse(fs.readFileSync(PARTYB_LIST_FILE, "utf-8")) as { partyBs?: string[]; registerOnInstantLayer?: boolean }
+		const listConfig = JSON.parse(fs.readFileSync(PARTYB_LIST_FILE, "utf-8")) as {
+			partyBs?: Record<string, string[]>
+			registerOnInstantLayer?: boolean
+		}
 		if (listConfig.registerOnInstantLayer) {
-			partyBsToRegister = (listConfig.partyBs ?? []).filter(a => ethers.isAddress(a))
+			partyBsToRegister = Object.values(listConfig.partyBs ?? {})
+				.flat()
+				.filter(a => ethers.isAddress(a))
 		}
 	}
 

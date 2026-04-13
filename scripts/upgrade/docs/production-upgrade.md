@@ -84,7 +84,7 @@ POST-DIAMONDCUT (execute via Safe UI)
     2. set v0.8.5 parameters
     3. grantRole(MIGRATION_ROLE)
     4. [wiring] AL/IL roles + hooks + whitelist
-    5. [wiring] registerPartyBs on IL (from config/partyBListForWhitelistSymbolType.json)
+    5. [wiring] registerPartyBs on IL (from config/partyBList.json)
 
 
 PREPARE MIGRATION INPUT (after pause — version-agnostic, can run before or after diamondCut)
@@ -204,7 +204,7 @@ POST-DIAMONDCUT (T=delay, after diamondCut)
     2. set v0.8.5 parameters
     3. grantRole(MIGRATION_ROLE)
     4. [wiring] AL/IL roles + hooks + whitelist
-    5. [wiring] registerPartyBs on IL (from config/partyBListForWhitelistSymbolType.json)
+    5. [wiring] registerPartyBs on IL (from config/partyBList.json)
 
 
 VERIFY
@@ -309,7 +309,7 @@ TIMELINE
   cp scripts/upgrade/config/samples/prepareMigration.sample.json scripts/upgrade/config/prepareMigration.json
   cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/migrate.json
   cp scripts/upgrade/config/samples/postMigration.sample.json scripts/upgrade/config/postMigration.json
-  cp scripts/upgrade/config/samples/partyBListForWhitelistSymbolType.sample.json scripts/upgrade/config/partyBListForWhitelistSymbolType.json
+  cp scripts/upgrade/config/samples/partyBList.sample.json scripts/upgrade/config/partyBList.json
   cp scripts/upgrade/config/samples/instantLayerTemplates.sample.json scripts/upgrade/config/instantLayerTemplates.json
   cp scripts/upgrade/config/samples/deployPeripherals.sample.json scripts/upgrade/config/deployPeripherals.json
   # edit upgrade.json with all shared fields (diamondAddress, subgraphEndpoint, safeAddress, etc.)
@@ -327,7 +327,7 @@ Every Symmio deployment has a standard set of contracts and roles. The table bel
 | **Main MultiSig** (also receives role grants) | `0x0C83...AFC4` | `adminAddress` | `upgrade.json`, `deployPeripherals.json` |
 | **Fees MultiSig** (receives protocol fees) | `0x273a...3f12` | `symmioFeeReceiver` | `upgrade.json` (other scripts fall back to this) |
 | **SignatureVerifier** (Muon signature verification contract) | `0x94eE...FC2` | `newV085Parameters.signatureVerifierAddress` | `upgrade.json` |
-| **PartyB list** (for IL registration + symbol whitelisting) | -- | `partyBs` + `registerOnInstantLayer` | `config/partyBListForWhitelistSymbolType.json` |
+| **PartyB list** (for IL registration + symbol whitelisting) | -- | `partyBs` + `registerOnInstantLayer` | `config/partyBList.json` |
 | **TimeLock** (12H or 3D, if diamond owner is a timelock) | `0xA75F...c63` | `timelockAddress` | `upgrade.json` (used by `generateTimelockBatch.ts` to wrap diamondCut) |
 | **Migration runner** (address that will call migration functions) | any EOA or multisig | `migrationRunner` | `upgrade.json` (defaults to `adminAddress`) |
 | **PartyB addresses** (all active PartyBs to enable cross mode) | `[0x...]` | `partyBs` | `postMigration.json` |
@@ -496,7 +496,7 @@ The script applies all facet cuts in a **single transaction** (no chunking neede
 
 Generates Safe Transaction Builder JSON for the full upgrade (roles, pause, params, migration role, AccountLayer/InstantLayer wiring) plus separate diamondCut calldata.
 
-**Prerequisites:** Run `deployFacets.ts` and `deployPeripherals.ts` first. The script auto-loads `deployed-facets.json` and `deployed-peripherals.json` from the output directory -- no manual address copy needed. InstantLayer PartyB registration reads from `config/partyBListForWhitelistSymbolType.json` (when `registerOnInstantLayer` is true). Config and env vars override auto-loaded values if set.
+**Prerequisites:** Run `deployFacets.ts` and `deployPeripherals.ts` first. The script auto-loads `deployed-facets.json` and `deployed-peripherals.json` from the output directory -- no manual address copy needed. InstantLayer PartyB registration reads from `config/partyBList.json` (when `registerOnInstantLayer` is true). Config and env vars override auto-loaded values if set.
 
 ```bash
 npx hardhat run scripts/upgrade/generateSafeBatch.ts --network arbitrum
@@ -762,7 +762,7 @@ All scripts fall back to `upgrade.json` for `diamondAddress` and other shared fi
 | `prepareMigration.json` | `prepareMigrationInput.ts` | `outputDir`, `outputFile` | `diamondAddress`, `subgraphEndpoint`, `spotCheckCount` |
 | `migrate.json` | `runMigration.ts` | `migrationInputFile`, `chunkSize`, `dryRun`, `fork` | `diamondAddress` |
 | `postMigration.json` | `generatePostMigrationBatch.ts` | `partyBs` | `diamondAddress`, `safeAddress` |
-| `partyBListForWhitelistSymbolType.json` | `whitelistSymbolTypes.ts` | `partyBs` | `diamondAddress`, `newV085Parameters.symbolType` |
+| `partyBList.json` | `whitelistSymbolTypes.ts` | `partyBs` | `diamondAddress`, `newV085Parameters.symbolType` |
 | `instantLayerTemplates.json` | `generateTemplateBatch.ts` | `templates` | `safeAddress`, `instantLayerAddress` |
 
 ## newV085Parameters
