@@ -89,6 +89,8 @@ library WithdrawStorage {
 		/// @dev The old withdrawal system is being phased out in favor of the new multi-part
 		///      withdrawal system. Set this true once all users have migrated.
 		bool legacyWithdrawalDeprecated;
+		/// @notice True while a finalize callback is executing; blocks re-entrant advanceWithdraw.
+		bool finalizingInProgress;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

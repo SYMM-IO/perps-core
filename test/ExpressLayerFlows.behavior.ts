@@ -1015,6 +1015,359 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		})
 	})
 
+	describe("C-4 regression — onWithdrawComplete status guard", function () {
+		it("INSTANT ACCEPTED + premature SYMMIO finalize reverts (no pool corruption, user recoverable)", async function () {
+			const fixture = await deployFixture()
+			const { user, operator, expressProvider, context, generalFunding, affiliateFunding, affiliate } = fixture
+
+			const affiliateAmount = 200n * 10n ** 18n
+			const { parts, requestId, withdrawAmount } = await acceptInstant(fixture, { affiliateAmount })
+
+			const generalAfterAccept = await expressProvider.generalBalance()
+			const affiliateAfterAccept = await expressProvider.affiliateBalances(affiliate)
+			const lockedGeneralAfterAccept = await expressProvider.lockedGeneralBalance()
+			const lockedAffiliateAfterAccept = await expressProvider.lockedAffiliateBalances(affiliate)
+			expect(generalAfterAccept).to.equal(generalFunding)
+			expect(affiliateAfterAccept).to.equal(affiliateFunding)
+			expect(lockedGeneralAfterAccept).to.equal(withdrawAmount - affiliateAmount)
+			expect(lockedAffiliateAfterAccept).to.equal(affiliateAmount)
+
+			await ethers.provider.send("evm_increaseTime", [12 * 3600 + 1])
+			await ethers.provider.send("evm_mine", [])
+
+			await expect(context.withdrawFacet.finalizeWithdrawRequest(user.address, requestId)).to.be.revertedWithCustomError(
+				expressProvider,
+				"InvalidStatusForComplete",
+			)
+
+			expect(await expressProvider.generalBalance()).to.equal(generalAfterAccept)
+			expect(await expressProvider.affiliateBalances(affiliate)).to.equal(affiliateAfterAccept)
+			expect(await expressProvider.lockedGeneralBalance()).to.equal(lockedGeneralAfterAccept)
+			expect(await expressProvider.lockedAffiliateBalances(affiliate)).to.equal(lockedAffiliateAfterAccept)
+
+			const info = await expressProvider.getWithdrawInfo(user.address, requestId)
+			expect(info.status).to.equal(1n)
+
+			await expressProvider.connect(operator).processWithdraw(user.address, requestId, parts)
+			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).status).to.equal(3n)
+
+			await context.withdrawFacet.finalizeWithdrawRequest(user.address, requestId)
+			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).status).to.equal(4n)
+
+			expect(await expressProvider.generalBalance()).to.equal(generalFunding)
+			expect(await expressProvider.affiliateBalances(affiliate)).to.equal(affiliateFunding)
+			expect(await expressProvider.lockedGeneralBalance()).to.equal(0n)
+			expect(await expressProvider.lockedAffiliateBalances(affiliate)).to.equal(0n)
+		})
+
+		it("INSTANT LOCKED + premature SYMMIO finalize reverts (LOCKED path cannot be bypassed)", async function () {
+			const fixture = await deployFixture()
+			const { user, locker, unlocker, expressProvider, context } = fixture
+
+			const affiliateAmount = 200n * 10n ** 18n
+			const { parts, requestId } = await acceptInstant(fixture, { affiliateAmount })
+
+			await expressProvider.connect(locker).lockWithdraw(user.address, requestId)
+			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).status).to.equal(2n)
+
+			await ethers.provider.send("evm_increaseTime", [12 * 3600 + 1])
+			await ethers.provider.send("evm_mine", [])
+
+			await expect(context.withdrawFacet.finalizeWithdrawRequest(user.address, requestId)).to.be.revertedWithCustomError(
+				expressProvider,
+				"InvalidStatusForComplete",
+			)
+
+			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).status).to.equal(2n)
+
+			await expressProvider.connect(unlocker).unlockAndProcess(user.address, requestId, parts)
+			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).status).to.equal(3n)
+
+			await context.withdrawFacet.finalizeWithdrawRequest(user.address, requestId)
+			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).status).to.equal(4n)
+		})
+
+		it("INSTANT happy path: PROCESSED → finalize still works", async function () {
+			const fixture = await deployFixture()
+			const { user, expressProvider, context, generalFunding, affiliateFunding, affiliate } = fixture
+
+			const affiliateAmount = 200n * 10n ** 18n
+			const { parts, requestId } = await acceptInstant(fixture, { affiliateAmount })
+
+			await ethers.provider.send("evm_increaseTime", [21])
+			await ethers.provider.send("evm_mine", [])
+			await expressProvider.connect(fixture.operator).processWithdraw(user.address, requestId, parts)
+
+			await ethers.provider.send("evm_increaseTime", [12 * 3600])
+			await ethers.provider.send("evm_mine", [])
+			await context.withdrawFacet.finalizeWithdrawRequest(user.address, requestId)
+
+			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).status).to.equal(4n)
+			expect(await expressProvider.generalBalance()).to.equal(generalFunding)
+			expect(await expressProvider.affiliateBalances(affiliate)).to.equal(affiliateFunding)
+		})
+
+		it("C-1 regression: suspend after advance does not underflow, user refund matches non-advanced portion", async function () {
+			const fixture = await deployFixture()
+			const { user, expressProvider, context, affiliate } = fixture
+
+			const affiliateAmount = 200n * 10n ** 18n
+			const creditAmount = 100n * 10n ** 18n
+			const withdrawAmount = 500n * 10n ** 18n
+			const expressAddr = await expressProvider.getAddress()
+			const now = (await ethers.provider.getBlock("latest"))!.timestamp
+			const deadline = now + 3600
+
+			const parts = [
+				{
+					id: 0n,
+					amount: withdrawAmount,
+					chainId: 31337n,
+					receiver: fixture.receiver.address,
+					virtualProvider: ethers.ZeroAddress,
+					expressProvider: expressAddr,
+				},
+			]
+			const partsHash = computePartsHash(parts)
+
+			const signature = await signWithdrawOption(expressProvider, fixture.botSigner, {
+				user: user.address,
+				nonce: 0n,
+				optionType: 1,
+				availableAt: 0,
+				affiliate,
+				affiliateAmount,
+				creditAmount,
+				fee: 0n,
+				operatorFee: 0n,
+				partsHash,
+				deadline,
+			})
+			const creditDataRaw = buildCreditData(10_000n * 10n ** 18n, now)
+			const providerData = encodeProviderData(
+				0n,
+				1,
+				0,
+				affiliate,
+				affiliateAmount,
+				creditAmount,
+				0n,
+				0n,
+				deadline,
+				signature,
+				undefined,
+				undefined,
+				undefined,
+				creditDataRaw,
+			)
+
+			const userBalanceBefore = await context.viewFacet.balanceOf(user.address)
+			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
+			const requestId = await context.viewFacet.getLastWithdrawRequestId(user.address)
+
+			await ethers.provider.send("evm_increaseTime", [21])
+			await ethers.provider.send("evm_mine", [])
+			await expressProvider.connect(fixture.operator).processWithdraw(user.address, requestId, parts)
+
+			const req = await context.viewFacet.getWithdrawRequests(user.address, requestId)
+			expect(req.advancedAmount).to.equal(creditAmount)
+
+			const lockedBefore = await context.viewFacet.getWithdrawLockedBalance()
+			const balanceBeforeSuspend = await context.viewFacet.balanceOf(user.address)
+
+			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(user.address)
+			await context.withdrawFacet.connect(context.signers.admin).suspendWithdrawRequest(user.address, requestId)
+
+			const lockedAfter = await context.viewFacet.getWithdrawLockedBalance()
+			const balanceAfter = await context.viewFacet.balanceOf(user.address)
+
+			expect(lockedBefore - lockedAfter).to.equal(withdrawAmount - creditAmount)
+			expect(balanceAfter - balanceBeforeSuspend).to.equal(withdrawAmount - creditAmount)
+			expect(userBalanceBefore - balanceAfter).to.equal(creditAmount)
+		})
+
+		it("IMMEDIATE + credit: nested advance during initiateWithdraw callback succeeds", async function () {
+			const fixture = await deployFixture()
+			const { user, receiver, botSigner, expressProvider, context, affiliate, collateral } = fixture
+
+			const allSigners = await ethers.getSigners()
+			const validator1 = allSigners[19]
+			await expressProvider.setValidator(affiliate, validator1.address, true)
+			await expressProvider.setMinValidatorSignatures(affiliate, 1)
+
+			const withdrawAmount = 500n * 10n ** 18n
+			const creditAmount = 100n * 10n ** 18n
+			const affiliateAmount = 200n * 10n ** 18n
+			const expressAddr = await expressProvider.getAddress()
+
+			const parts = [
+				{
+					id: 0n,
+					amount: withdrawAmount,
+					chainId: 31337n,
+					receiver: receiver.address,
+					virtualProvider: ethers.ZeroAddress,
+					expressProvider: expressAddr,
+				},
+			]
+			const partsHash = computePartsHash(parts)
+			const now = (await ethers.provider.getBlock("latest"))!.timestamp
+			const deadline = now + 3600
+
+			const signature = await signWithdrawOption(expressProvider, botSigner, {
+				user: user.address,
+				nonce: 0n,
+				optionType: 0,
+				availableAt: 0,
+				affiliate,
+				affiliateAmount,
+				creditAmount,
+				fee: 0n,
+				operatorFee: 0n,
+				partsHash,
+				deadline,
+			})
+
+			const domain = { name: "ExpressProvider", version: "1", chainId: 31337, verifyingContract: expressAddr }
+			const valTypes = {
+				ValidatorApproval: [
+					{ name: "user", type: "address" },
+					{ name: "nonce", type: "uint256" },
+					{ name: "amount", type: "uint256" },
+					{ name: "timestamp", type: "uint256" },
+					{ name: "symmioNonce", type: "uint256" },
+					{ name: "symmio", type: "address" },
+				],
+			}
+			const valSig = await validator1.signTypedData(domain, valTypes, {
+				user: user.address,
+				nonce: 0n,
+				amount: withdrawAmount,
+				timestamp: now,
+				symmioNonce: 0n,
+				symmio: context.diamond,
+			})
+
+			const creditDataRaw = buildCreditData(10_000n * 10n ** 18n, now)
+			const providerData = encodeProviderData(
+				0n,
+				0,
+				0,
+				affiliate,
+				affiliateAmount,
+				creditAmount,
+				0n,
+				0n,
+				deadline,
+				signature,
+				undefined,
+				[valSig],
+				[now],
+				creditDataRaw,
+			)
+
+			const receiverBalBefore = await collateral.balanceOf(receiver.address)
+			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
+			const requestId = await context.viewFacet.getLastWithdrawRequestId(user.address)
+
+			const info = await expressProvider.getWithdrawInfo(user.address, requestId)
+			expect(info.status).to.equal(3n)
+			expect(info.creditAmount).to.equal(creditAmount)
+
+			const req = await context.viewFacet.getWithdrawRequests(user.address, requestId)
+			expect(req.advancedAmount).to.equal(creditAmount)
+
+			expect(await collateral.balanceOf(receiver.address)).to.equal(receiverBalBefore + withdrawAmount)
+		})
+
+		it("C-3 regression: malicious provider cannot re-enter advanceWithdraw during onWithdrawComplete", async function () {
+			const fixture = await deployFixture()
+			const { context, collateral, deployer } = fixture
+
+			const allSigners = await ethers.getSigners()
+			const userA = allSigners[10]
+			const userB = allSigners[11]
+			const userBalance = 100_000n * 10n ** 18n
+			for (const u of [userA, userB]) {
+				await collateral.mint(u.address, userBalance)
+				await collateral.connect(u).approve(context.diamond, ethers.MaxUint256)
+				await context.accountFacet.connect(u).deposit(userBalance)
+			}
+
+			const Mal = await ethers.getContractFactory("contracts/core/test/MaliciousAdvanceProvider.sol:MaliciousAdvanceProvider")
+			const mal = await Mal.deploy(context.diamond)
+			await mal.waitForDeployment()
+			const malAddr = await mal.getAddress()
+			await context.controlFacet.connect(deployer).registerExpressProvider(malAddr)
+
+			// User B initiates a benign withdrawal so the global withdrawLockedBalance has slack
+			// (otherwise the malicious advance would underflow on the per-request math alone).
+			const benignAmount = 1000n * 10n ** 18n
+			const benignParts = [
+				{
+					id: 0n,
+					amount: benignAmount,
+					chainId: 31337n,
+					receiver: ethers.solidityPacked(["address"], [userB.address]),
+					virtualProvider: ethers.ZeroAddress,
+					expressProvider: malAddr,
+				},
+			]
+			await context.withdrawFacet.connect(userB).initiateWithdraw(benignParts, false, "0x")
+
+			// User A initiates a withdrawal also via the malicious provider
+			const aAmount = 500n * 10n ** 18n
+			const aParts = [
+				{
+					id: 0n,
+					amount: aAmount,
+					chainId: 31337n,
+					receiver: ethers.solidityPacked(["address"], [userA.address]),
+					virtualProvider: ethers.ZeroAddress,
+					expressProvider: malAddr,
+				},
+			]
+			await context.withdrawFacet.connect(userA).initiateWithdraw(aParts, false, "0x")
+			const aReqId = await context.viewFacet.getLastWithdrawRequestId(userA.address)
+
+			// Arm the malicious provider to call advanceWithdraw(aAmount) inside its onWithdrawComplete
+			await mal.setAttack(true, aAmount)
+
+			await ethers.provider.send("evm_increaseTime", [12 * 3600 + 1])
+			await ethers.provider.send("evm_mine", [])
+
+			const malBalanceBefore = await collateral.balanceOf(malAddr)
+
+			// Without the C-3 fix, the malicious finalize would succeed and the provider would
+			// pocket an extra `aAmount` of tokens. With the fix, advanceWithdraw inside the
+			// callback must revert, taking the whole finalize tx with it.
+			await expect(context.withdrawFacet.finalizeWithdrawRequest(userA.address, aReqId)).to.be.reverted
+
+			expect(await collateral.balanceOf(malAddr)).to.equal(malBalanceBefore)
+			expect(await mal.extraExtracted()).to.equal(0n)
+
+			// Disarm; legitimate finalize must succeed (no double-extraction)
+			await mal.setAttack(false, 0n)
+			await context.withdrawFacet.finalizeWithdrawRequest(userA.address, aReqId)
+			expect(await collateral.balanceOf(malAddr)).to.equal(malBalanceBefore + aAmount)
+		})
+
+		it("M-1 regression: STANDARD LOCKED double finalize reverts", async function () {
+			const fixture = await deployFixture()
+			const { user, locker, expressProvider, context } = fixture
+			const { requestId, withdrawAmount } = await acceptStandard(fixture)
+
+			await expressProvider.connect(locker).lockWithdraw(user.address, requestId)
+
+			await finalizeStandard(fixture, requestId, withdrawAmount)
+			const info1 = await expressProvider.getWithdrawInfo(user.address, requestId)
+			expect(info1.status).to.equal(2n)
+			expect(info1.finalizedAt).to.be.greaterThan(0n)
+
+			await expect(context.withdrawFacet.finalizeWithdrawRequest(user.address, requestId)).to.be.reverted
+		})
+	})
+
 	// ═══════════════════════════════════════════════════════════════════
 	//                          CANCELLATION
 	// ═══════════════════════════════════════════════════════════════════

@@ -213,11 +213,15 @@ library WithdrawFacetImpl {
 				LibSafeERC20.safeTransfer(collateral, withdrawRequest.provider, remainingExpress);
 				withdrawLayout.withdrawLockedBalance -= remainingExpress;
 			}
+			withdrawLayout.finalizingInProgress = true;
 			LibSafeCall.safeExternalCall(withdrawRequest.provider, abi.encodeCall(IExpressProvider.onWithdrawComplete, (withdrawRequest)));
+			withdrawLayout.finalizingInProgress = false;
 		}
 
 		if (withdrawRequest.isPureVirtual) {
+			withdrawLayout.finalizingInProgress = true;
 			LibSafeCall.safeExternalCall(withdrawRequest.provider, abi.encodeCall(IVirtualProvider.onWithdrawComplete, (withdrawRequest)));
+			withdrawLayout.finalizingInProgress = false;
 		}
 
 		withdrawRequest.status = WithdrawStatus.COMPLETED;
@@ -242,6 +246,8 @@ library WithdrawFacetImpl {
 	function advanceWithdraw(address user, uint256 requestId, uint256 amount) internal {
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+
+		require(!withdrawLayout.finalizingInProgress, "WithdrawFacet : Cannot advance during finalize callback");
 
 		WithdrawRequest storage withdrawRequest = _getWithdrawRequest(user, requestId);
 
@@ -379,7 +385,10 @@ library WithdrawFacetImpl {
 		return withdrawLayout.withdrawRequests[user][requestId];
 	}
 
-	/// @notice Unlocks the withdrawal locked balance and refunds the user's internal balance
+	/// @notice Unlocks the withdrawal locked balance and refunds the user's internal balance.
+	/// @dev Accounts for `advancedAmount` already released to an express provider via `advanceWithdraw`:
+	///      the locked balance was pre-decremented by that amount and the user's internal balance
+	///      must not be refunded for tokens already paid out through the provider.
 	function _unlockAndRefund(WithdrawRequest storage withdrawRequest) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
@@ -387,9 +396,11 @@ library WithdrawFacetImpl {
 
 		uint256 collateralDecimals = IERC20Metadata(appLayout.collateral).decimals();
 
-		withdrawLayout.withdrawLockedBalance -= (withdrawRequest.totalAmount - withdrawRequest.totalVirtualAmount);
+		uint256 unlockAmount = withdrawRequest.totalAmount - withdrawRequest.totalVirtualAmount - withdrawRequest.advancedAmount;
+		withdrawLayout.withdrawLockedBalance -= unlockAmount;
 
-		uint256 amountWith18 = _to18Decimals(withdrawRequest.totalAmount, collateralDecimals);
+		uint256 refundAmount = withdrawRequest.totalAmount - withdrawRequest.advancedAmount;
+		uint256 amountWith18 = _to18Decimals(refundAmount, collateralDecimals);
 		accountLayout.balances[withdrawRequest.user] += amountWith18;
 	}
 
