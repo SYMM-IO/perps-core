@@ -175,7 +175,7 @@ async function main() {
 	if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
 
 	// 1. Pause batch (standalone — execute before diamondCut)
-	const pauseFile = path.join(OUTPUT_DIR, "pause-safe-batch.json")
+	const pauseFile = path.join(OUTPUT_DIR, `pause-safe-batch-${networkName}.json`)
 	const pauseBatch: SafeBatch = {
 		version: "1.0",
 		chainId: CHAIN_ID,
@@ -193,7 +193,7 @@ async function main() {
 	console.log(`\nPause batch:              ${pauseFile}`)
 
 	// 2. Safe batch JSON (post-diamondCut: roles, params, wiring)
-	const batchFile = path.join(OUTPUT_DIR, "safe-batch.json")
+	const batchFile = path.join(OUTPUT_DIR, `safe-batch-${networkName}.json`)
 	const batch: SafeBatch = {
 		version: "1.0",
 		chainId: CHAIN_ID,
@@ -211,7 +211,7 @@ async function main() {
 	console.log(`Safe batch:               ${batchFile}`)
 
 	// 2. Diamond cut calldata (separate)
-	const diamondCutFile = path.join(OUTPUT_DIR, "diamondcut-calldata.json")
+	const diamondCutFile = path.join(OUTPUT_DIR, `diamondcut-calldata-${networkName}.json`)
 	fs.writeFileSync(
 		diamondCutFile,
 		JSON.stringify(
@@ -227,7 +227,7 @@ async function main() {
 	console.log(`DiamondCut calldata:      ${diamondCutFile}`)
 
 	// 3. Details file
-	const detailsFile = path.join(OUTPUT_DIR, "upgrade-details.json")
+	const detailsFile = path.join(OUTPUT_DIR, `upgrade-details-${networkName}.json`)
 	fs.writeFileSync(
 		detailsFile,
 		JSON.stringify(
@@ -260,9 +260,9 @@ async function main() {
 	}
 
 	console.log("\nExecution order:")
-	console.log("  1. Import pause-safe-batch.json → execute (pause system)")
-	console.log("  2. Execute diamondCut from diamondcut-calldata.json (via timelock or direct)")
-	console.log("  3. Import safe-batch.json → execute (roles + params + wiring)")
+	console.log(`  1. Import pause-safe-batch-${networkName}.json → execute (pause system)`)
+	console.log(`  2. Execute diamondCut from diamondcut-calldata-${networkName}.json (via timelock or direct)`)
+	console.log(`  3. Import safe-batch-${networkName}.json → execute (roles + params + wiring)`)
 }
 
 main().catch(error => {

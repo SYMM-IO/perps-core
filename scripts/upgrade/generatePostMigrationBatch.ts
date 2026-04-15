@@ -1,6 +1,6 @@
 import fs from "fs"
 
-import { ethers } from "../../test/helpers/hardhat-connection.js"
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
 import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 import { toHumanReadableSafeTxFromIface, type SafeBatch, type SafeTransaction } from "./utils/upgradeHelpers.js"
@@ -119,8 +119,9 @@ async function main() {
 
 	// Write output
 	ensureDir(OUTPUT_DIR)
+	const networkName = connection.networkName
 
-	const txsFile = `${OUTPUT_DIR}/post-migration-transactions.json`
+	const txsFile = `${OUTPUT_DIR}/post-migration-transactions-${networkName}.json`
 	const rawTxs = transactions.map(({ to, value, calldata, description }) => ({ to, value, calldata, description }))
 	fs.writeFileSync(txsFile, JSON.stringify(rawTxs, null, 2))
 	console.log(`\nWrote ${transactions.length} transactions to ${txsFile}`)
@@ -142,7 +143,7 @@ async function main() {
 			},
 			transactions: safeTxs,
 		}
-		const safeFile = `${OUTPUT_DIR}/post-migration-safe-batch.json`
+		const safeFile = `${OUTPUT_DIR}/post-migration-safe-batch-${networkName}.json`
 		fs.writeFileSync(safeFile, JSON.stringify(safeBatch, null, 2))
 		console.log(`Wrote Safe batch to ${safeFile}`)
 	}

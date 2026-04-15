@@ -18,7 +18,7 @@
  */
 import fs from "fs"
 
-import { ethers } from "../../test/helpers/hardhat-connection.js"
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 import { toHumanReadableSafeTxFromIface, type SafeBatch } from "./utils/upgradeHelpers.js"
 
@@ -56,6 +56,7 @@ async function main() {
 	console.log()
 
 	if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
+	const networkName = connection.networkName
 
 	// 1. Grant batch
 	const grantTx = toHumanReadableSafeTxFromIface(diamondIface, DIAMOND_ADDRESS, "grantRole", [MIGRATION_RUNNER, SYMBOL_MANAGER_ROLE])
@@ -72,7 +73,7 @@ async function main() {
 		},
 		transactions: [grantTx],
 	}
-	const grantFile = `${OUTPUT_DIR}/grant-symbol-role-safe-batch.json`
+	const grantFile = `${OUTPUT_DIR}/grant-symbol-role-safe-batch-${networkName}.json`
 	fs.writeFileSync(grantFile, JSON.stringify(grantBatch, null, 2))
 	console.log(`Grant batch:  ${grantFile}`)
 
@@ -91,14 +92,14 @@ async function main() {
 		},
 		transactions: [revokeTx],
 	}
-	const revokeFile = `${OUTPUT_DIR}/revoke-symbol-role-safe-batch.json`
+	const revokeFile = `${OUTPUT_DIR}/revoke-symbol-role-safe-batch-${networkName}.json`
 	fs.writeFileSync(revokeFile, JSON.stringify(revokeBatch, null, 2))
 	console.log(`Revoke batch: ${revokeFile}`)
 
 	console.log("\nExecution order:")
-	console.log("  1. Import grant-symbol-role-safe-batch.json into Safe → execute")
+	console.log(`  1. Import grant-symbol-role-safe-batch-${networkName}.json into Safe → execute`)
 	console.log("  2. Run: npx hardhat run scripts/upgrade/setSymbolTypes.ts --network <network>")
-	console.log("  3. Import revoke-symbol-role-safe-batch.json into Safe → execute")
+	console.log(`  3. Import revoke-symbol-role-safe-batch-${networkName}.json into Safe → execute`)
 }
 
 main().catch(error => {

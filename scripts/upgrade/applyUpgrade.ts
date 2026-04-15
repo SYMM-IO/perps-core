@@ -55,7 +55,7 @@ async function main() {
 
 	// Write details
 	if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
-	const detailsFile = `${OUTPUT_DIR}/upgrade-details.json`
+	const detailsFile = `${OUTPUT_DIR}/upgrade-details-${networkName}.json`
 	fs.writeFileSync(detailsFile, JSON.stringify({ diamondAddress: DIAMOND_ADDRESS, selectorChanges }, null, 2))
 	log.ok(`Details written to ${detailsFile}`)
 	log.stepDone(t)
