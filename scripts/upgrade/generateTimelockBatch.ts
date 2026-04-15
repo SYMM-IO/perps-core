@@ -15,7 +15,7 @@
 import fs from "fs"
 import path from "path"
 
-import { ethers } from "../../test/helpers/hardhat-connection.js"
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
 import type { SafeBatch } from "./utils/upgradeHelpers.js"
 
@@ -79,8 +79,10 @@ async function main() {
 	if (!TIMELOCK_ADDRESS || !ethers.isAddress(TIMELOCK_ADDRESS))
 		throw new Error("TIMELOCK_ADDRESS required (config timelockAddress or env TIMELOCK_ADDRESS)")
 
+	const networkName = connection.networkName
+
 	// Load diamondcut calldata
-	const calldataFile = path.join(OUTPUT_DIR, "diamondcut-calldata.json")
+	const calldataFile = path.join(OUTPUT_DIR, `diamondcut-calldata-${networkName}.json`)
 	if (!fs.existsSync(calldataFile)) throw new Error(`${calldataFile} not found — run generateSafeBatch.ts first`)
 	const calldataJson = JSON.parse(fs.readFileSync(calldataFile, "utf-8"))
 	const chunks: { calldata: string; description: string }[] = calldataJson.chunks
@@ -107,7 +109,7 @@ async function main() {
 	// Remove any previously generated per-chunk files so old chunks don't leak in
 	// (safe because we rewrite them all below)
 	for (const f of fs.readdirSync(OUTPUT_DIR)) {
-		if (/^timelock-(schedule|execute)-safe-batch(-\d+)?\.json$/.test(f)) {
+		if (new RegExp(`^timelock-(schedule|execute)-safe-batch-${networkName}(-\\d+)?\\.json$`).test(f)) {
 			fs.unlinkSync(path.join(OUTPUT_DIR, f))
 		}
 	}
@@ -151,8 +153,8 @@ async function main() {
 		}
 
 		const idx = String(i + 1).padStart(pad, "0")
-		const scheduleFile = path.join(OUTPUT_DIR, `timelock-schedule-safe-batch-${idx}.json`)
-		const executeFile = path.join(OUTPUT_DIR, `timelock-execute-safe-batch-${idx}.json`)
+		const scheduleFile = path.join(OUTPUT_DIR, `timelock-schedule-safe-batch-${networkName}-${idx}.json`)
+		const executeFile = path.join(OUTPUT_DIR, `timelock-execute-safe-batch-${networkName}-${idx}.json`)
 
 		const scheduleBatch = makeSafeBatch(CHAIN_ID, SAFE_ADDRESS, `Symmio v0.8.5 — Timelock Schedule DiamondCut chunk ${i + 1}/${chunks.length}`, [
 			scheduleTx,
@@ -176,10 +178,10 @@ async function main() {
 	for (const f of executeFiles) console.log(`  ${f}`)
 
 	console.log(`\nWorkflow:`)
-	console.log(`  1. Import each timelock-schedule-safe-batch-N.json into Safe TX Builder in order`)
+	console.log(`  1. Import each timelock-schedule-safe-batch-${networkName}-N.json into Safe TX Builder in order`)
 	console.log(`     (chunks share a predecessor chain — must be scheduled in order 1..${chunks.length})`)
 	console.log(`  2. Wait ${formatDuration(Number(minDelay))}`)
-	console.log(`  3. Import each timelock-execute-safe-batch-N.json into Safe TX Builder in order`)
+	console.log(`  3. Import each timelock-execute-safe-batch-${networkName}-N.json into Safe TX Builder in order`)
 	console.log(`     (strict ordering enforced on-chain by the predecessor chain)`)
 }
 

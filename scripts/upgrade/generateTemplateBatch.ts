@@ -129,12 +129,12 @@ async function main() {
 		transactions: safeTxs,
 	}
 
-	const outFile = path.join(OUTPUT_DIR, "add-templates-safe-batch.json")
+	const outFile = path.join(OUTPUT_DIR, `add-templates-safe-batch-${connection.networkName}.json`)
 	fs.writeFileSync(outFile, JSON.stringify(batch, null, 2))
 	console.log(`\nSafe batch: ${outFile}`)
 
 	console.log("\nExecution:")
-	console.log("  1. Import add-templates-safe-batch.json into Safe → sign & execute")
+	console.log(`  1. Import add-templates-safe-batch-${connection.networkName}.json into Safe → sign & execute`)
 	console.log(`  NOTE: The Safe (${SAFE_ADDRESS}) must have SETTER_ROLE on InstantLayer (${IL_ADDRESS})`)
 }
 
