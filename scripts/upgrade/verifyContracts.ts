@@ -31,8 +31,7 @@ import { FacetLibraryDependencies } from "./utils/upgradeHelpers.js"
 // ============================================================================
 
 const OUTPUT_DIR = "./scripts/upgrade/output"
-const FACETS_FILE = path.join(OUTPUT_DIR, "deployed-facets.json")
-const PERIPHERALS_FILE = path.join(OUTPUT_DIR, "deployed-peripherals.json")
+// Resolved with network name at runtime (see main())
 const CONFIG_FILE = process.env.UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/upgrade.json"
 
 // ============================================================================
@@ -387,7 +386,11 @@ function runVerify(networkName: string, c: ContractToVerify): "verified" | "alre
 			return "already"
 		}
 		// Print explorer URL or success message from hardhat verify output
-		const useful = output.split("\n").filter((l: string) => l.trim() && !l.includes("WARNING")).join("\n").trim()
+		const useful = output
+			.split("\n")
+			.filter((l: string) => l.trim() && !l.includes("WARNING"))
+			.join("\n")
+			.trim()
 		if (useful) log.detail(useful)
 		return "verified"
 	} catch (err: any) {
@@ -416,6 +419,9 @@ async function main() {
 
 	const networkName = connection.networkName
 	if (!networkName) throw new Error("Could not determine network name. Make sure to pass --network <name>.")
+
+	const FACETS_FILE = path.join(OUTPUT_DIR, `deployed-facets-${networkName}.json`)
+	const PERIPHERALS_FILE = path.join(OUTPUT_DIR, `deployed-peripherals-${networkName}.json`)
 
 	// Load deployed data
 	const facetsData = loadJSON<DeployedFacets>(FACETS_FILE)
@@ -449,9 +455,9 @@ async function main() {
 	let peripheralsData: DeployedPeripherals | null = null
 	if (fs.existsSync(PERIPHERALS_FILE)) {
 		peripheralsData = loadJSON<DeployedPeripherals>(PERIPHERALS_FILE)
-		log.ok(`Loaded peripherals from deployed-peripherals.json`)
+		log.ok(`Loaded peripherals from ${PERIPHERALS_FILE}`)
 	} else {
-		log.warn("deployed-peripherals.json not found — skipping peripheral verification")
+		log.warn(`${PERIPHERALS_FILE} not found — skipping peripheral verification`)
 	}
 
 	// Load config

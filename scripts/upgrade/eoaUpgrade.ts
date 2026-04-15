@@ -24,7 +24,7 @@
 import fs from "fs"
 import path from "path"
 
-import { ethers } from "../../test/helpers/hardhat-connection.js"
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
 import { deployAccountLayerDiamond, deployInstantLayer, wireAccountLayerInstantLayer, setupInstantLayerTemplates } from "./utils/peripheralHelpers.js"
 import { deployFacets, buildDiamondCut, applyDiamondCut, setV085Parameters, type NewV085Parameters } from "./utils/upgradeHelpers.js"
@@ -63,7 +63,7 @@ async function main() {
 	// Step 1: Deploy facets
 	let t = log.step("Deploy v0.8.5 facets")
 	if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
-	const facetsOutFile = path.join(OUTPUT_DIR, "deployed-facets.json")
+	const facetsOutFile = path.join(OUTPUT_DIR, `deployed-facets-${connection.networkName}.json`)
 	const { facets: newFacets, selectorSignatures } = await deployFacets(facetsOutFile)
 	log.ok(`${Object.keys(newFacets).length} facets ready`)
 	log.stepDone(t)

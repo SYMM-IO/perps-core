@@ -80,7 +80,7 @@ npx hardhat compile
 ### 0. Read Muon config from v0.8.4 diamond
 
 ```bash
-DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/readMuonConfig.ts --network <network>
+USE_KEYSTORE=true DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/readMuonConfig.ts --network <network>
 ```
 
 Reads the Muon TSS public key and gateway signer from the v0.8.4 diamond's `MuonStorage` and outputs them in a format ready to paste into `upgrade.json`. In v0.8.4, these were stored inline in the diamond; in v0.8.5, they must be seeded onto the external `MuonSignatureVerifier` contract.
@@ -109,38 +109,38 @@ When `signatureVerifierAddress`, `muonPublicKeys`, and `muonGatewaySigners` are 
 ### 1. Deploy facets
 
 ```bash
-npx hardhat run scripts/upgrade/deployFacets.ts --network <network>
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/deployFacets.ts --network <network>
 ```
 
-Deploys all v0.8.5 facet contracts and libraries. Resume-safe via state file (`output/deployed-facets.json`).
+Deploys all v0.8.5 facet contracts and libraries. Resume-safe via state file (`output/deployed-facets-{network}.json`). Logs RPC connection info (chain ID, block) before starting.
 
 ### 2. Deploy peripherals
 
 ```bash
-npx hardhat run scripts/upgrade/deployPeripherals.ts --network <network>
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/deployPeripherals.ts --network <network>
 ```
 
-Deploys AccountLayer Diamond, InstantLayer, and SymmioPartyB implementation. Resume-safe. Requires `protocolAdmin` and `symmioFeeReceiver`.
+Deploys AccountLayer Diamond, InstantLayer, and SymmioPartyB implementation. Resume-safe. Requires `protocolAdmin` and `symmioFeeReceiver`. Logs RPC connection info before starting.
 
-Output: `output/deployed-peripherals.json`
+Output: `output/deployed-peripherals-{network}.json`
 
 ### 3. Verify deployments
 
 Run immediately after steps 1 and 2, before signing anything on-chain.
 
-**Block explorer verification** -- verifies source for all libraries, facets, peripherals (AccountLayer, InstantLayer, SymmioPartyB impl), and MuonSignatureVerifier. Reads addresses from `output/deployed-facets.json`, `output/deployed-peripherals.json`, and `config/upgrade.json`. Auto-detects library addresses from on-chain bytecode when not in the deploy output. Resume with `SKIP=N` if a contract fails:
+**Block explorer verification** -- verifies source for all libraries, facets, peripherals (AccountLayer, InstantLayer, SymmioPartyB impl), and MuonSignatureVerifier. Reads addresses from `output/deployed-facets-{network}.json`, `output/deployed-peripherals-{network}.json` (resolved from `--network`), and `config/upgrade.json`. Auto-detects library addresses from on-chain bytecode when not in the deploy output. Resume with `SKIP=N` if a contract fails:
 
 ```bash
-npx hardhat run scripts/upgrade/verifyContracts.ts --network <network>
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyContracts.ts --network <network>
 # Resume from contract 10:
-SKIP=10 npx hardhat run scripts/upgrade/verifyContracts.ts --network <network>
+SKIP=10 USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyContracts.ts --network <network>
 ```
 
-**Local-vs-on-chain bytecode verification** -- compares deployed bytecode against locally compiled artifacts. `verifyDeploy.ts` is library-linking aware for core facets; `verifyPeripheralsDeploy.ts` also masks immutable variables for the peripherals:
+**Local-vs-on-chain bytecode verification** -- compares deployed bytecode against locally compiled artifacts. `verifyDeploy.ts` is library-linking aware for core facets; `verifyPeripheralsDeploy.ts` also masks immutable variables for the peripherals. These run standalone via `ts-node` (not `npx hardhat run`), so pass `NETWORK` to resolve the correct output file:
 
 ```bash
-RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyDeploy.ts
-RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
+NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyDeploy.ts
+NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
 ```
 
 `verifyPeripheralsDeploy.ts` also picks up the `MuonSignatureVerifier` address from `upgrade.json` (`newV085Parameters.signatureVerifierAddress`).
@@ -148,7 +148,7 @@ RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
 ### 4. Generate Safe batch
 
 ```bash
-npx hardhat run scripts/upgrade/generateSafeBatch.ts --network <network>
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/generateSafeBatch.ts --network <network>
 ```
 
 Builds the upgrade transaction set by diffing the live diamond against deployed facets. Automatically loads peripheral addresses from step 2 output.
@@ -173,7 +173,7 @@ The diamondCut is **not** in the Safe batch -- it's separate so it can be routed
 ### 5. Generate timelock batches (Path A only)
 
 ```bash
-npx hardhat run scripts/upgrade/generateTimelockBatch.ts --network <network>
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/generateTimelockBatch.ts --network <network>
 ```
 
 Wraps the diamondCut calldata from step 4 into two Safe batches:
@@ -187,7 +187,7 @@ Both target the **timelock contract**, not the diamond directly. The Safe signs 
 ### 6. Prepare migration input
 
 ```bash
-npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network <network>
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network <network>
 ```
 
 Critical-path script: kept short and reliable so it can run during the pause window. Four steps:
@@ -207,7 +207,7 @@ Two complementary validation scripts check the migration input against on-chain 
 **`validateMigrationInput.ts`** -- random spot-checks for broad coverage. Samples N random quotes and partyB balances to verify they exist on-chain with valid data. Good for catching systemic issues (e.g. wrong subgraph endpoint, stale data).
 
 ```bash
-npx hardhat run scripts/upgrade/validateMigrationInput.ts --network <network>
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/validateMigrationInput.ts --network <network>
 ```
 
 **`validateMigrationEdgeCases.ts`** -- deterministic checks targeting corner cases that random sampling is unlikely to hit:
@@ -219,15 +219,15 @@ npx hardhat run scripts/upgrade/validateMigrationInput.ts --network <network>
 - PENDING quotes: samples PENDING quotes to verify they have zero-address partyB as expected
 
 ```bash
-npx hardhat run scripts/upgrade/validateMigrationEdgeCases.ts --network <network>
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/validateMigrationEdgeCases.ts --network <network>
 # Increase gap scan range (default 50 from each end):
-GAP_SCAN_RANGE=200 npx hardhat run scripts/upgrade/validateMigrationEdgeCases.ts --network <network>
+GAP_SCAN_RANGE=200 USE_KEYSTORE=true npx hardhat run scripts/upgrade/validateMigrationEdgeCases.ts --network <network>
 ```
 
 ### 7b. Prepare symbol types input (off the critical path)
 
 ```bash
-npx hardhat run scripts/upgrade/prepareSymbolTypes.ts --network <network>
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/prepareSymbolTypes.ts --network <network>
 ```
 
 Fetches all symbol IDs and names from the subgraph and writes the input file for `setSymbolTypes.ts`. The `symbolType` value (applied to all symbols) is read from `newV085Parameters.symbolType` in `upgrade.json`.
@@ -239,7 +239,7 @@ Output: `output/symbol-types-input.json`
 ### 7c. Snapshot on-chain balances (optional, off the critical path)
 
 ```bash
-npx hardhat run scripts/upgrade/snapshotBalances.ts --network <network>
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/snapshotBalances.ts --network <network>
 ```
 
 Captures total deposits + allocated balances per PartyA / PartyB for sanity-checking the protocol's total funds before vs after the upgrade. Reads `migration-input.json`, re-fetches PartyB balance entries from the subgraph, and queries the diamond with bounded concurrency and per-call retry/backoff (configurable via `SNAPSHOT_CONCURRENCY` and `SNAPSHOT_MAX_RETRIES`).
@@ -251,7 +251,7 @@ Output: `output/balance-snapshot.json`
 ### 8. Run migration (after upgrade is live)
 
 ```bash
-npx hardhat run scripts/upgrade/runMigration.ts --network <network>
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/runMigration.ts --network <network>
 ```
 
 Executes `migrateQuotes()` and `migrateCrossLockedValues()` on the paused diamond. Requires `MIGRATION_ROLE`. Resume-safe via progress file. Any failure halts execution immediately -- no silent skipping.
@@ -267,7 +267,7 @@ Output: `output/migration-report.json`
 ### 8b. Set symbol types
 
 ```bash
-npx hardhat run scripts/upgrade/setSymbolTypes.ts --network <network>
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/setSymbolTypes.ts --network <network>
 ```
 
 Reads `output/symbol-types-input.json` (produced by `prepareSymbolTypes.ts`) and calls `setSymbolTypes()` on the diamond to backfill the `symbolType` for all symbols. Requires `SYMBOL_MANAGER_ROLE` (granted to `migrationRunner` in the Safe batch).
@@ -279,10 +279,10 @@ Output: `output/set-symbol-types-report.json`
 ### 8c. Whitelist symbol type for PartyBs
 
 ```bash
-npx hardhat run scripts/upgrade/whitelistSymbolTypes.ts --network <network>
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/whitelistSymbolTypes.ts --network <network>
 
 # Dry run (log without submitting)
-DRY_RUN=true npx hardhat run scripts/upgrade/whitelistSymbolTypes.ts --network <network>
+DRY_RUN=true USE_KEYSTORE=true npx hardhat run scripts/upgrade/whitelistSymbolTypes.ts --network <network>
 ```
 
 Calls `whitelistSymbolType(partyB, symbolType)` for each PartyB in the config, allowing them to accept quotes for all symbols of that type. Requires `PARTY_B_MANAGER_ROLE`.
@@ -296,7 +296,7 @@ Output: `output/whitelist-symbol-types-report.json`
 ### 9. Generate post-migration batch
 
 ```bash
-npx hardhat run scripts/upgrade/generatePostMigrationBatch.ts --network <network>
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/generatePostMigrationBatch.ts --network <network>
 ```
 
 Generates the final transaction set to unpause the system and optionally enable cross-PartyB mode. No on-chain dependency -- can be generated at any time.
@@ -320,8 +320,8 @@ Output:
 Run **after** the wiring batch (`safe-batch.json`) has been executed by the multisig, before unpausing.
 
 ```bash
-npx hardhat run scripts/upgrade/verifyDiamond.ts --network <network>
-npx hardhat run scripts/upgrade/verifyPeripherals.ts --network <network>
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyDiamond.ts --network <network>
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyPeripherals.ts --network <network>
 ```
 
 - `verifyDiamond.ts` -- confirms all v0.8.5 facet selectors are registered on the diamond.
@@ -405,8 +405,8 @@ Same as above but skip `generateTimelockBatch.ts` and include the diamondCut dir
 | File | Producer | Consumer |
 |------|----------|----------|
 | `muon-config.json` | readMuonConfig.ts | Human review (paste into upgrade.json) |
-| `deployed-facets.json` | deployFacets.ts | generateSafeBatch.ts |
-| `deployed-peripherals.json` | deployPeripherals.ts | generateSafeBatch.ts |
+| `deployed-facets-{network}.json` | deployFacets.ts | generateSafeBatch.ts |
+| `deployed-peripherals-{network}.json` | deployPeripherals.ts | generateSafeBatch.ts |
 | `safe-batch.json` | generateSafeBatch.ts | Safe TX Builder |
 | `diamondcut-calldata.json` | generateSafeBatch.ts | generateTimelockBatch.ts |
 | `upgrade-details.json` | generateSafeBatch.ts | Human review |
@@ -434,7 +434,7 @@ Standalone scripts for tasks that were missed during the initial upgrade window 
 ### Generate symbol type role batch
 
 ```bash
-npx hardhat run scripts/upgrade/generateSymbolTypeRoleBatch.ts --network <network>
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/generateSymbolTypeRoleBatch.ts --network <network>
 ```
 
 Generates two Safe batches to grant and revoke `SYMBOL_MANAGER_ROLE` for the migration runner, for use when `setSymbolTypes.ts` needs to run after the system is unpaused.
@@ -451,7 +451,7 @@ Flow:
 ### Generate template batch
 
 ```bash
-npx hardhat run scripts/upgrade/generateTemplateBatch.ts --network <network>
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/generateTemplateBatch.ts --network <network>
 ```
 
 Generates a Safe batch to call `addTemplate()` on the InstantLayer contract. Reads template definitions from `scripts/upgrade/config/instantLayerTemplates.json`. The Safe (protocolAdmin) must have `SETTER_ROLE` on InstantLayer.

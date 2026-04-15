@@ -38,7 +38,7 @@ Key features:
 Fetches data from the subgraph, validates the boundary against on-chain `getNextQuoteId()` (which returns the last assigned ID, not next available), and writes a JSON file. **Can run before or after the diamondCut** — no v0.8.5-specific ABIs are used.
 
 ```bash
-npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network mantle
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network mantle
 ```
 
 Output: `scripts/upgrade/output/migration-input.json`
@@ -60,7 +60,7 @@ Two complementary scripts validate the migration input against on-chain state. B
 Samples N random quotes and partyB balances to verify they exist on-chain. Good for catching systemic issues (wrong subgraph, stale data).
 
 ```bash
-npx hardhat run scripts/upgrade/validateMigrationInput.ts --network mantle
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/validateMigrationInput.ts --network mantle
 ```
 
 What it checks:
@@ -79,7 +79,7 @@ What it checks:
 Targets edge cases that random sampling is unlikely to hit. Especially important on fork tests where the subgraph indexes the live chain beyond the fork block.
 
 ```bash
-npx hardhat run scripts/upgrade/validateMigrationEdgeCases.ts --network mantle
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/validateMigrationEdgeCases.ts --network mantle
 ```
 
 What it checks:
@@ -106,7 +106,7 @@ Built-in verification (step 4/4) checks:
 - Aggregated positions match expected amounts from the input
 
 ```bash
-DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
+USE_KEYSTORE=true DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
   npx hardhat run scripts/upgrade/runMigration.ts --network localhost
 ```
 
@@ -186,12 +186,12 @@ The script automatically saves progress after each successful operation. If it f
 
 ```bash
 # First run - fails at chunk 5
-DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
+USE_KEYSTORE=true DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
   npx hardhat run scripts/upgrade/runMigration.ts --network localhost
 # Output: error at chunk 5
 
 # Second run - automatically resumes from chunk 5
-DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
+USE_KEYSTORE=true DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
   npx hardhat run scripts/upgrade/runMigration.ts --network localhost
 # Output: Resuming migration from quotes phase
 ```
@@ -203,7 +203,7 @@ The progress file is automatically deleted when migration completes successfully
 Test the migration without executing transactions:
 
 ```bash
-DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
+USE_KEYSTORE=true DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
   DRY_RUN=true npx hardhat run scripts/upgrade/runMigration.ts --network localhost
 ```
 

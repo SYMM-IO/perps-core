@@ -25,7 +25,7 @@
  */
 import fs from "fs"
 
-import { ethers, networkHelpers } from "../../test/helpers/hardhat-connection.js"
+import connection, { ethers, networkHelpers } from "../../test/helpers/hardhat-connection.js"
 import { resolveOwner, impersonateAndFund } from "./utils/forkHelpers.js"
 
 // ============================================================================
@@ -61,7 +61,7 @@ function loadConfig(): Config {
 
 	// Read AL + IL from deployed output (forkUpgrade or deployPeripherals)
 	const alilFile = `${OUTPUT_DIR}/deployed-accountlayer-instantlayer.json`
-	const peripheralsFile = `${OUTPUT_DIR}/deployed-peripherals.json`
+	const peripheralsFile = `${OUTPUT_DIR}/deployed-peripherals-${connection.networkName}.json`
 
 	if (fs.existsSync(alilFile)) {
 		const alil = JSON.parse(fs.readFileSync(alilFile, "utf-8"))

@@ -13,7 +13,7 @@
  */
 import fs from "fs"
 
-import { ethers } from "../../test/helpers/hardhat-connection.js"
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
 import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 import { buildDiamondCut, applyDiamondCut, loadDeployedFacets } from "./utils/upgradeHelpers.js"
@@ -25,7 +25,8 @@ async function main() {
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? shared.diamondAddress
 	if (!DIAMOND_ADDRESS) throw new Error("DIAMOND_ADDRESS required (env or config)")
 
-	const FACETS_FILE = process.env.FACETS_FILE ?? `${OUTPUT_DIR}/deployed-facets.json`
+	const networkName = connection.networkName
+	const FACETS_FILE = process.env.FACETS_FILE ?? `${OUTPUT_DIR}/deployed-facets-${networkName}.json`
 	const facetData = loadDeployedFacets(FACETS_FILE)
 
 	log.header("Apply Diamond Cut")

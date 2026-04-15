@@ -18,7 +18,7 @@
 import fs from "fs"
 import path from "path"
 
-import { ethers } from "../../test/helpers/hardhat-connection.js"
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 import { toHumanReadableSafeTxFromIface, type SafeBatch } from "./utils/upgradeHelpers.js"
 
@@ -43,7 +43,7 @@ type DeployedPeripherals = {
 
 const TEMPLATES_CONFIG_FILE = process.env.TEMPLATES_CONFIG_FILE ?? "./scripts/upgrade/config/instantLayerTemplates.json"
 const OUTPUT_DIR = "./scripts/upgrade/output"
-const PERIPHERALS_FILE = process.env.PERIPHERALS_FILE ?? path.join(OUTPUT_DIR, "deployed-peripherals.json")
+const PERIPHERALS_FILE = process.env.PERIPHERALS_FILE ?? path.join(OUTPUT_DIR, `deployed-peripherals-${connection.networkName}.json`)
 
 const INSTANT_LAYER_ABI = [
 	"function addTemplate(string name, tuple(uint256[] insertionPoints, uint256[] sourceIndices, uint256[] sourceOffsets)[] operations)",
