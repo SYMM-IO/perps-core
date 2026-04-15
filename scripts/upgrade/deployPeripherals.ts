@@ -15,14 +15,15 @@
  * Config: Reads from upgrade.json by default. Optional deployPeripherals.json overrides any field.
  *   Required fields (from either source): diamondAddress, protocolAdmin, symmioFeeReceiver
  *
- * Output: scripts/upgrade/output/deployed-peripherals.json
+ * Output: scripts/upgrade/output/deployed-peripherals-{network}.json
  */
 import fs from "fs"
 import path from "path"
 
-import { ethers } from "../../test/helpers/hardhat-connection.js"
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
 import { deployAccountLayerDiamond, deployInstantLayer } from "./utils/peripheralHelpers.js"
+import { verifyRpc } from "./utils/rpcCheck.js"
 import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 
 type Config = {
@@ -41,13 +42,11 @@ type DeployedState = {
 const CONFIG_FILE = process.env.DEPLOY_PERIPHERALS_CONFIG ?? "./scripts/upgrade/config/deployPeripherals.json"
 const UPGRADE_CONFIG_FILE = process.env.UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/upgrade.json"
 const OUTPUT_DIR = "./scripts/upgrade/output"
-const STATE_FILE = path.join(OUTPUT_DIR, "deployed-peripherals.json")
+let STATE_FILE = path.join(OUTPUT_DIR, "deployed-peripherals.json") // updated with network name in main()
 
 function loadConfig(): Config {
 	const shared = loadUpgradeConfigShared()
-	const raw: Partial<Config> = fs.existsSync(CONFIG_FILE)
-		? JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8"))
-		: {}
+	const raw: Partial<Config> = fs.existsSync(CONFIG_FILE) ? JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8")) : {}
 	return {
 		diamondAddress: raw.diamondAddress ?? shared.diamondAddress,
 		protocolAdmin: raw.protocolAdmin ?? shared.protocolAdmin ?? "",
@@ -66,6 +65,9 @@ function saveState(state: DeployedState): void {
 }
 
 async function main() {
+	const networkName = connection.networkName
+	STATE_FILE = path.join(OUTPUT_DIR, `deployed-peripherals-${networkName}.json`)
+
 	const config = loadConfig()
 
 	const { diamondAddress, protocolAdmin, symmioFeeReceiver } = config
@@ -79,6 +81,7 @@ async function main() {
 	if (!symmioFeeReceiver || !ethers.isAddress(symmioFeeReceiver)) {
 		throw new Error("symmioFeeReceiver is required and must be a valid address")
 	}
+	await verifyRpc()
 	log.header("Deploy v0.8.5 Peripherals")
 	log.kv("Diamond (core)", log.addr(diamondAddress))
 	log.kv("Protocol admin", log.addr(protocolAdmin))
@@ -154,7 +157,7 @@ async function main() {
 		["State file", STATE_FILE],
 	])
 
-	log.nextSteps(["Run generateSafeBatch.ts (peripheral addresses are auto-loaded from deployed-peripherals.json)"])
+	log.nextSteps([`Run generateSafeBatch.ts (peripheral addresses are auto-loaded from ${path.basename(STATE_FILE)})`])
 }
 
 main().catch(error => {

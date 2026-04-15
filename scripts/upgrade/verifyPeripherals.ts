@@ -20,7 +20,7 @@
  */
 import fs from "fs"
 
-import { ethers } from "../../test/helpers/hardhat-connection.js"
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 
 type Config = {
 	diamondAddress: string
@@ -58,8 +58,9 @@ function loadConfig(): Config {
 		console.log(`Loaded diamond from ${UPGRADE_CONFIG_FILE}`)
 	}
 
+	const networkName = connection.networkName
 	const alilFile = `${OUTPUT_DIR}/deployed-accountlayer-instantlayer.json`
-	const peripheralsFile = `${OUTPUT_DIR}/deployed-peripherals.json`
+	const peripheralsFile = `${OUTPUT_DIR}/deployed-peripherals-${networkName}.json`
 	if (fs.existsSync(alilFile)) {
 		const alil = JSON.parse(fs.readFileSync(alilFile, "utf-8"))
 		config.accountLayerDiamondAddress = alil.accountLayer?.diamond

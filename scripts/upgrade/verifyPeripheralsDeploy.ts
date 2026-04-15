@@ -10,7 +10,8 @@
  *
  * Env overrides:
  *   RPC_URL          -- RPC endpoint (required)
- *   PERIPHERALS_FILE -- path to deployed-peripherals.json (default: output/deployed-peripherals.json)
+ *   NETWORK          -- network name for file resolution (e.g. "arbitrum" -> deployed-peripherals-arbitrum.json)
+ *   PERIPHERALS_FILE -- path to deployed-peripherals.json (overrides NETWORK-based resolution)
  */
 import { ethers } from "ethers"
 import fs from "fs"
@@ -26,7 +27,8 @@ if (!rpcUrl) {
 	process.exit(1)
 }
 
-const peripheralsFile = process.env.PERIPHERALS_FILE ?? path.join(OUTPUT_DIR, "deployed-peripherals.json")
+const networkSuffix = process.env.NETWORK ? `-${process.env.NETWORK}` : ""
+const peripheralsFile = process.env.PERIPHERALS_FILE ?? path.join(OUTPUT_DIR, `deployed-peripherals${networkSuffix}.json`)
 const upgradeConfigFile = process.env.UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/upgrade.json"
 
 if (!fs.existsSync(peripheralsFile)) {

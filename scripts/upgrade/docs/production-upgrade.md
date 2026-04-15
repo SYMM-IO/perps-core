@@ -25,7 +25,7 @@ BEFORE PAUSE (no downtime)
  (deploy libs + facets)         (deploy SigVerifier + AL + IL + PartyB impl)
         │                              │
         ▼                              ▼
- deployed-facets.json          deployed-peripherals.json
+ deployed-facets-{network}.json          deployed-peripherals-{network}.json
         │                              │
         └──────────┬───────────────────┘
                    ▼
@@ -39,19 +39,19 @@ BEFORE PAUSE (no downtime)
 
 VERIFY DEPLOYED CONTRACTS (block explorer)
 ═══════════════════════════════════════════
-  npx hardhat run scripts/upgrade/verifyContracts.ts --network <network>
+  USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyContracts.ts --network <network>
 
   Verifies all libraries, facets, and peripherals (AL, IL, PartyB impl)
   on the block explorer. Run after deployFacets + deployPeripherals.
 
 VERIFY DEPLOYED BYTECODE (local vs on-chain)
 ═════════════════════════════════════════════
-  RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyDeploy.ts
-  RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
+  NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyDeploy.ts
+  NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
 
   Compares on-chain bytecode against locally compiled artifacts.
   Handles library linking (core facets) and immutable variables (peripherals).
-  Reads addresses from output/deployed-facets.json and deployed-peripherals.json.
+  NETWORK resolves the correct file (e.g. deployed-facets-arbitrum.json).
 
 
 PAUSE (execute via Safe UI)
@@ -129,7 +129,7 @@ BEFORE PAUSE (no downtime)
  (deploy libs + facets)         (deploy AL + IL + PartyB impl)
         │                              │
         ▼                              ▼
- deployed-facets.json          deployed-peripherals.json
+ deployed-facets-{network}.json          deployed-peripherals-{network}.json
         │                              │
         └──────────┬───────────────────┘
                    ▼
@@ -151,12 +151,12 @@ BEFORE PAUSE (no downtime)
 
 VERIFY DEPLOYED CONTRACTS (block explorer)
 ═══════════════════════════════════════════
-  npx hardhat run scripts/upgrade/verifyContracts.ts --network <network>
+  USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyContracts.ts --network <network>
 
 VERIFY DEPLOYED BYTECODE (local vs on-chain)
 ═════════════════════════════════════════════
-  node scripts/upgrade/verifyDeploy.mjs [RPC_URL] [FACETS_FILE]
-  node scripts/upgrade/verifyPeripheralsDeploy.mjs [RPC_URL] [PERIPHERALS_FILE]
+  NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyDeploy.ts
+  NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
 
 
 SCHEDULE DIAMONDCUT (T=0, system still live)
@@ -373,7 +373,7 @@ npx hardhat run scripts/upgrade/runMigration.ts --network fork-arbitrum
 | Script | What it checks |
 |--------|---------------|
 | `verifyContracts.ts` | Block explorer verification of all deployed contracts (libraries, facets, peripherals). Reads from deploy output files and handles library linking automatically. |
-| `verifyDeploy.ts` | Bytecode verification of deployed core facets (reads addresses from `output/deployed-facets.json`) against local compiled artifacts (library linking aware) |
+| `verifyDeploy.ts` | Bytecode verification of deployed core facets against local compiled artifacts (library linking aware). Uses `NETWORK` env var to resolve `output/deployed-facets-{network}.json` |
 | `verifyPeripheralsDeploy.ts` | Bytecode verification of deployed peripherals (AccountLayer, InstantLayer, SymmioPartyB impl, MuonSignatureVerifier) against local compiled artifacts. Handles library linking and immutable variable masking. |
 | `verifyDiamond.ts` | All v0.8.5 facet selectors registered on diamond |
 | `verifyPeripherals.ts` | AccountLayer + InstantLayer roles, hooks, whitelist, templates |
@@ -391,17 +391,17 @@ npx hardhat run scripts/upgrade/runMigration.ts --network fork-arbitrum
 For EOA-owned diamonds, `eoaUpgrade.ts` runs the full upgrade in one command: deploys facets, pauses the system, applies the diamond cut, sets v0.8.5 parameters, deploys AccountLayer + InstantLayer, wires integrations, and grants the migration role.
 
 ```bash
-npx hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
 
 # Override diamond address
-DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
+DIAMOND_ADDRESS=0x... USE_KEYSTORE=true npx hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
 ```
 
 What it does (in order):
 
 | Step | Action |
 |------|--------|
-| 1 | Deploy v0.8.5 libraries + facets (resume-safe via `deployed-facets.json`) |
+| 1 | Deploy v0.8.5 libraries + facets (resume-safe via `deployed-facets-{network}.json`) |
 | 2 | Build diamond cut (diff current vs new selectors) |
 | 3 | `setAdmin` + grant `PAUSER_ROLE`/`UNPAUSER_ROLE` + `pauseGlobal()` |
 | 4 | Apply diamond cut (single transaction) |
@@ -412,7 +412,7 @@ What it does (in order):
 After completion, the system is paused and ready for migration. Continue with [Step 3: Prepare Migration Input](#step-3-prepare-migration-input).
 
 Output:
-- `scripts/upgrade/output/deployed-facets.json` -- deployed facet addresses
+- `scripts/upgrade/output/deployed-facets-{network}.json` -- deployed facet addresses
 - `scripts/upgrade/output/deployed-accountlayer-instantlayer.json` -- AccountLayer + InstantLayer addresses
 
 ---
@@ -426,7 +426,7 @@ The steps below can be used individually (e.g. for Safe path, or if you need mor
 **Run before anything else** to capture the TSS public key and gateway signer from the live v0.8.4 diamond:
 
 ```bash
-DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/readMuonConfig.ts --network <network>
+USE_KEYSTORE=true DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/readMuonConfig.ts --network <network>
 ```
 
 Reads `getMuonIds()` (public key, gateway, appId) and `getMuonConfig()` (validity times). The `muonAppId`, `upnlValidTime`, and `priceValidTime` persist in diamond storage across the upgrade -- they are output for reference only. The public key and gateway are what must be seeded onto the new external verifier.
@@ -452,28 +452,28 @@ If upgrading a chain that already runs v0.8.5 (or where the verifier was deploye
 
 ## Step 1: Deploy Facets
 
-Deploys all v0.8.5 libraries and facets. Supports resume -- if `deployed-facets.json` already exists, previously deployed contracts are skipped.
+Deploys all v0.8.5 libraries and facets. Supports resume -- if `deployed-facets-{network}.json` already exists, previously deployed contracts are skipped. Logs RPC connection info (chain ID, block number) before starting.
 
 ```bash
-npx hardhat run scripts/upgrade/deployFacets.ts --network arbitrum
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/deployFacets.ts --network arbitrum
 ```
 
-Output: `scripts/upgrade/output/deployed-facets.json`
+Output: `scripts/upgrade/output/deployed-facets-arbitrum.json` (network name is appended automatically)
 
 ## Step 2: Apply Upgrade
 
 ### EOA path
 
-Reads `deployed-facets.json`, diffs selectors against the live diamond, and executes a single `diamondCut` transaction from the connected signer (via Hardhat keystore).
+Reads `deployed-facets-{network}.json`, diffs selectors against the live diamond, and executes a single `diamondCut` transaction from the connected signer (via Hardhat keystore).
 
 ```bash
-npx hardhat run scripts/upgrade/applyUpgrade.ts --network arbitrum
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/applyUpgrade.ts --network arbitrum
 
 # Override diamond address
-DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/applyUpgrade.ts --network arbitrum
+DIAMOND_ADDRESS=0x... USE_KEYSTORE=true npx hardhat run scripts/upgrade/applyUpgrade.ts --network arbitrum
 
-# Custom facets file
-FACETS_FILE=./path/to/deployed-facets.json npx hardhat run scripts/upgrade/applyUpgrade.ts --network arbitrum
+# Custom facets file (overrides network-based resolution)
+FACETS_FILE=./path/to/deployed-facets-arbitrum.json USE_KEYSTORE=true npx hardhat run scripts/upgrade/applyUpgrade.ts --network arbitrum
 ```
 
 Output:
@@ -485,10 +485,10 @@ The script applies all facet cuts in a **single transaction** (no chunking neede
 
 Generates Safe Transaction Builder JSON for the full upgrade (roles, pause, params, migration role, AccountLayer/InstantLayer wiring) plus separate diamondCut calldata.
 
-**Prerequisites:** Run `deployFacets.ts` and `deployPeripherals.ts` first. The script auto-loads `deployed-facets.json` and `deployed-peripherals.json` from the output directory -- no manual address copy needed. InstantLayer PartyB registration reads from `config/partyBList.json` (when `registerOnInstantLayer` is true). Config and env vars override auto-loaded values if set.
+**Prerequisites:** Run `deployFacets.ts` and `deployPeripherals.ts` first. The script auto-loads `deployed-facets-{network}.json` and `deployed-peripherals-{network}.json` from the output directory -- no manual address copy needed. InstantLayer PartyB registration reads from `config/partyBList.json` (when `registerOnInstantLayer` is true). Config and env vars override auto-loaded values if set.
 
 ```bash
-npx hardhat run scripts/upgrade/generateSafeBatch.ts --network arbitrum
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/generateSafeBatch.ts --network arbitrum
 ```
 
 Output:
@@ -517,7 +517,7 @@ Output:
 Requires `timelockAddress` in `upgrade.json` (or `TIMELOCK_ADDRESS` env var).
 
 ```bash
-npx hardhat run scripts/upgrade/generateTimelockBatch.ts --network arbitrum
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/generateTimelockBatch.ts --network arbitrum
 ```
 
 Output:
@@ -531,7 +531,7 @@ Uses a deterministic salt derived from chain ID + diamond address + version stri
 Fetches subgraph data and builds the migration input file. **Can run before or after the diamondCut** — uses only version-agnostic on-chain calls (`getNextQuoteId`, which returns the last assigned ID). Run it early (e.g. right after pausing) to minimize downtime.
 
 ```bash
-npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network arbitrum
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network arbitrum
 ```
 
 What it does:
@@ -550,13 +550,13 @@ Two complementary scripts validate the input. Both use raw `eth_call` and work o
 **`validateMigrationInput.ts`** -- random spot-checks quotes and balances for broad coverage:
 
 ```bash
-npx hardhat run scripts/upgrade/validateMigrationInput.ts --network arbitrum
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/validateMigrationInput.ts --network arbitrum
 ```
 
 **`validateMigrationEdgeCases.ts`** -- deterministic checks for corner cases (boundary quote at `lastId`, fork drift, gap scan, partyB completeness). Especially important on fork tests:
 
 ```bash
-npx hardhat run scripts/upgrade/validateMigrationEdgeCases.ts --network arbitrum
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/validateMigrationEdgeCases.ts --network arbitrum
 ```
 
 ## Step 4: Run Migration
@@ -564,7 +564,7 @@ npx hardhat run scripts/upgrade/validateMigrationEdgeCases.ts --network arbitrum
 Execute migration using the validated input file. The executor must have `MIGRATION_ROLE`.
 
 ```bash
-DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
+USE_KEYSTORE=true DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
   npx hardhat run scripts/upgrade/runMigration.ts --network arbitrum
 ```
 
@@ -582,7 +582,7 @@ If the script fails (RPC error, gas issue), re-run the same command. It reads `m
 ### Dry run
 
 ```bash
-DRY_RUN=true DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
+USE_KEYSTORE=true DRY_RUN=true DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
   npx hardhat run scripts/upgrade/runMigration.ts --network arbitrum
 ```
 
@@ -591,10 +591,10 @@ DRY_RUN=true DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output
 After `migration-report.json` shows `"status": "success"`, generate and execute post-migration transactions.
 
 ```bash
-DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/generatePostMigrationBatch.ts --network arbitrum
+USE_KEYSTORE=true DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/generatePostMigrationBatch.ts --network arbitrum
 
 # With Safe batch output
-DIAMOND_ADDRESS=0x... SAFE_ADDRESS=0x... npx hardhat run scripts/upgrade/generatePostMigrationBatch.ts --network arbitrum
+USE_KEYSTORE=true DIAMOND_ADDRESS=0x... SAFE_ADDRESS=0x... npx hardhat run scripts/upgrade/generatePostMigrationBatch.ts --network arbitrum
 ```
 
 PartyB addresses are read from `postMigration.json` config (`partyBs` array).
@@ -618,30 +618,30 @@ Output:
 After deploying facets and peripherals (before or after the diamondCut):
 
 ```bash
-npx hardhat run scripts/upgrade/verifyContracts.ts --network <network>
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyContracts.ts --network <network>
 ```
 
-Verifies all libraries, core facets, AccountLayer contracts (DiamondCutFacet, Diamond, Init, libraries, facets), InstantLayer, and SymmioPartyB implementation. Library dependencies and contract path disambiguation are handled automatically. Addresses are read dynamically from `scripts/upgrade/output/deployed-facets.json` and `deployed-peripherals.json`, constructor args from `config/upgrade.json`. Resume with `SKIP=N` if a contract fails.
+Verifies all libraries, core facets, AccountLayer contracts (DiamondCutFacet, Diamond, Init, libraries, facets), InstantLayer, and SymmioPartyB implementation. Library dependencies and contract path disambiguation are handled automatically. Addresses are read dynamically from `scripts/upgrade/output/deployed-facets-{network}.json` and `deployed-peripherals-{network}.json` (resolved from `--network`), constructor args from `config/upgrade.json`. Resume with `SKIP=N` if a contract fails.
 
 ### Bytecode verification (local vs on-chain)
 
 Compares the on-chain deployed bytecode against locally compiled Hardhat artifacts. This is independent of block explorer verification and works for any RPC-accessible network.
 
 ```bash
-# Core facets: reads deployed-facets.json
-RPC_URL=https://rpc.mantle.xyz npx ts-node scripts/upgrade/verifyDeploy.ts
+# Core facets: reads deployed-facets-{network}.json
+NETWORK=mantle RPC_URL=https://rpc.mantle.xyz npx ts-node scripts/upgrade/verifyDeploy.ts
 
-# Peripherals: reads deployed-peripherals.json
-RPC_URL=https://rpc.mantle.xyz npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
+# Peripherals: reads deployed-peripherals-{network}.json
+NETWORK=mantle RPC_URL=https://rpc.mantle.xyz npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
 ```
 
-Both read addresses from `scripts/upgrade/output/` files (`deployed-facets.json` and `deployed-peripherals.json` respectively). `verifyPeripheralsDeploy.ts` also picks up the `MuonSignatureVerifier` address from `upgrade.json` (`newV085Parameters.signatureVerifierAddress`).
+These scripts run standalone via `ts-node` (not `npx hardhat run`), so they use the `NETWORK` env var to resolve the correct output file (e.g. `NETWORK=arbitrum` -> `deployed-facets-arbitrum.json`). Both also read from `scripts/upgrade/output/`. `verifyPeripheralsDeploy.ts` also picks up the `MuonSignatureVerifier` address from `upgrade.json` (`newV085Parameters.signatureVerifierAddress`).
 
-Override env vars:
+Override env vars (takes precedence over `NETWORK`-based resolution):
 
 ```bash
-FACETS_FILE=./output/deployed-facets-arb.json RPC_URL=https://arb1.arbitrum.io/rpc npx ts-node scripts/upgrade/verifyDeploy.ts
-PERIPHERALS_FILE=./output/deployed-peripherals-arb.json RPC_URL=https://arb1.arbitrum.io/rpc npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
+FACETS_FILE=./output/deployed-facets-arbitrum.json RPC_URL=https://arb1.arbitrum.io/rpc npx ts-node scripts/upgrade/verifyDeploy.ts
+PERIPHERALS_FILE=./output/deployed-peripherals-arbitrum.json RPC_URL=https://arb1.arbitrum.io/rpc npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
 ```
 
 **When to run:** after `deployFacets.ts` / `deployPeripherals.ts` and before applying the diamondCut, to confirm the standalone pre-deployed bytecodes match the local compiled source.
@@ -658,10 +658,10 @@ After the diamondCut + wiring batch:
 
 ```bash
 # Verify all v0.8.5 facet selectors are registered
-npx hardhat run scripts/upgrade/verifyDiamond.ts --network arbitrum
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyDiamond.ts --network arbitrum
 
 # Verify AccountLayer + InstantLayer wiring (roles, hooks, templates)
-npx hardhat run scripts/upgrade/verifyPeripherals.ts --network arbitrum
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyPeripherals.ts --network arbitrum
 ```
 
 Also review `upgrade-details.json` for the full selector diff (added, replaced, removed).
@@ -695,7 +695,7 @@ The migration report includes:
 | `setupInstantLayerTemplates` | boolean | `true` | Whether to register OpenPosition + ClosePosition templates on InstantLayer |
 | `newV085Parameters` | object | -- | New v0.8.5 parameters (see [newV085Parameters](#newv085parameters) below) |
 
-`accountLayerDiamondAddress`, `instantLayerAddress`, and `symmioPartyBImplementation` are auto-loaded from `deployed-peripherals.json`. They can still be set in config or env vars as overrides.
+`accountLayerDiamondAddress`, `instantLayerAddress`, and `symmioPartyBImplementation` are auto-loaded from `deployed-peripherals-{network}.json` (resolved from the `--network` flag). They can still be set in config or env vars as overrides.
 
 **Shared field fallback:** All per-script config files fall back to `upgrade.json` for shared fields (`diamondAddress`, `subgraphEndpoint`, `safeAddress`, `symmioFeeReceiver`, `spotCheckCount`). You only need to set these once in `upgrade.json` -- the other config files only need their script-specific fields. Per-script config values and env vars take precedence over `upgrade.json` when set.
 
@@ -735,9 +735,11 @@ Note: `adminAddress` here is **different** from `upgrade.json`. In `upgrade.json
 
 | Env var | Overrides |
 |---------|-----------|
+| `USE_KEYSTORE` | Set to `true` to use Hardhat keystore keys and RPC overrides (required for all `npx hardhat run` commands on live networks) |
 | `DIAMOND_ADDRESS` | `diamondAddress` |
-| `FACETS_FILE` | Path to `deployed-facets.json` |
-| `PERIPHERALS_FILE` | Path to `deployed-peripherals.json` |
+| `FACETS_FILE` | Path to `deployed-facets-{network}.json` (overrides network-based resolution) |
+| `PERIPHERALS_FILE` | Path to `deployed-peripherals-{network}.json` (overrides network-based resolution) |
+| `NETWORK` | Network name for `ts-node` scripts (e.g. `arbitrum`) -- resolves output file names. Not needed for `npx hardhat run` scripts (uses `--network` flag automatically) |
 | `UPGRADE_CONFIG_FILE` | Config file path (default: `scripts/upgrade/config/upgrade.json`) |
 
 ### Config files by script
