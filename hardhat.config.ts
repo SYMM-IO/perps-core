@@ -11,14 +11,18 @@ const dotenvConfigPath = process.env.DOTENV_CONFIG_PATH || "./.env"
 dotenvConfig({ path: resolve(process.cwd(), dotenvConfigPath) })
 
 const DUMMY_PRIVATE_KEY = "0xec81e00837948239d5927bcb2b785675552bc92f1d2607ee91c540ddb56d6796"
-const protocolAdminKey = (configVariable("TEAM_DEPLOYER") as any) || DUMMY_PRIVATE_KEY
-const migratorKey = configVariable("TEAM_MIGRATOR") as any
-const etherscanApiKey = (configVariable("ETHERSCAN_APIKEY") as any) || ""
+
+// Use process.env directly to avoid hardhat-keystore password prompts.
+// Fall back to configVariable() only when USE_KEYSTORE=true is explicitly set.
+const useKeystore = process.env.USE_KEYSTORE === "true"
+const protocolAdminKey = process.env.TEAM_DEPLOYER || (useKeystore ? configVariable("TEAM_DEPLOYER") : DUMMY_PRIVATE_KEY)
+const migratorKey = process.env.TEAM_MIGRATOR || (useKeystore ? configVariable("TEAM_MIGRATOR") : undefined)
+const etherscanApiKey = process.env.ETHERSCAN_APIKEY || (useKeystore ? configVariable("ETHERSCAN_APIKEY") : "")
 
 const createNetworkConfig = (network: string, defaultUrl: string) =>
 	({
 		type: "http",
-		url: (configVariable(`RPC_${network.toUpperCase()}`) as any) || defaultUrl,
+		url: process.env[`RPC_${network.toUpperCase()}`] || (useKeystore ? configVariable(`RPC_${network.toUpperCase()}`) : defaultUrl) || defaultUrl,
 		accounts: [protocolAdminKey, migratorKey].filter(Boolean),
 	}) as {
 		type: "http"
@@ -172,7 +176,7 @@ export default defineConfig({
 			allowUnlimitedContractSize: true,
 			hardfork: "cancun",
 			forking: {
-				url: (configVariable("RPC_ARBITRUM") as any) || "https://arbitrum.drpc.org",
+				url: process.env.RPC_ARBITRUM || (useKeystore ? configVariable("RPC_ARBITRUM") : "https://arbitrum.drpc.org") || "https://arbitrum.drpc.org",
 				blockNumber: Number(process.env.FORK_BLOCK_NUMBER || 0) || undefined,
 			},
 		},
@@ -183,7 +187,7 @@ export default defineConfig({
 			allowUnlimitedContractSize: true,
 			hardfork: "cancun",
 			forking: {
-				url: (configVariable("RPC_BASE") as any) || "https://base.drpc.org",
+				url: process.env.RPC_BASE || (useKeystore ? configVariable("RPC_BASE") : "https://base.drpc.org") || "https://base.drpc.org",
 				blockNumber: Number(process.env.FORK_BLOCK_NUMBER || 0) || undefined,
 			},
 		},
@@ -194,7 +198,7 @@ export default defineConfig({
 			allowUnlimitedContractSize: true,
 			hardfork: "cancun",
 			forking: {
-				url: (configVariable("RPC_MANTLE") as any) || "https://mantle.drpc.org",
+				url: process.env.RPC_MANTLE || (useKeystore ? configVariable("RPC_MANTLE") : "https://mantle.drpc.org") || "https://mantle.drpc.org",
 				blockNumber: Number(process.env.FORK_BLOCK_NUMBER || 0) || undefined,
 			},
 		},

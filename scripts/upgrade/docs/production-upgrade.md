@@ -290,8 +290,15 @@ TIMELINE
   ```bash
   npx hardhat keystore set TEAM_DEPLOYER          # protocolAdmin / diamond owner key
   npx hardhat keystore set TEAM_MIGRATOR            # migrationRunner key (MIGRATION_ROLE)
+  npx hardhat keystore set RPC_ARBITRUM           # optional RPC override (per network)
   ```
   Scripts auto-select the correct signer by matching the address from `upgrade.json` (`protocolAdmin` / `migrationRunner`) against available signers. No env var switching needed.
+
+  **Important:** keystore values are only read when `USE_KEYSTORE=true` is set. Without it, `hardhat.config.ts` falls back to public RPCs (e.g. `arbitrum.llamarpc.com`) and the `DUMMY_PRIVATE_KEY`. Prefix every hardhat command that needs the real keys / RPCs:
+  ```bash
+  USE_KEYSTORE=true npx hardhat run scripts/upgrade/<script>.ts --network <network>
+  ```
+  Or export it once per shell: `export USE_KEYSTORE=true`. Alternatively, pass the RPC inline for one-offs: `RPC_ARBITRUM=https://... npx hardhat run ...`.
 - Config files:
   ```bash
   cp scripts/upgrade/config/samples/upgrade.sample.json scripts/upgrade/config/upgrade.json

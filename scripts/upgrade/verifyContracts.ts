@@ -35,45 +35,6 @@ const FACETS_FILE = path.join(OUTPUT_DIR, "deployed-facets.json")
 const PERIPHERALS_FILE = path.join(OUTPUT_DIR, "deployed-peripherals.json")
 const CONFIG_FILE = process.env.UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/upgrade.json"
 
-// Inter-library dependencies (mirrors deployLibraries() in upgradeHelpers.ts)
-const CoreLibraryDependencies: Record<string, string[]> = {
-	LibQuoteClose: ["LibQuoteFunding"],
-	LibForceActions: ["LibQuoteClose"],
-}
-
-// Core facets needing --contract for CLI disambiguation
-const CoreFacetContractPaths: Record<string, string> = {
-	ControlFacet: "contracts/core/facets/Control/ControlFacet.sol:ControlFacet",
-	ViewFacet: "contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet",
-}
-
-// AccountLayer facets needing --contract for CLI disambiguation
-const AccountLayerFacetContractPaths: Record<string, string> = {
-	CoreFacet: "contracts/accountLayer/facets/Core/CoreFacet.sol:CoreFacet",
-	MarginFacet: "contracts/accountLayer/facets/Margin/MarginFacet.sol:MarginFacet",
-	SymmioHookFacet: "contracts/accountLayer/facets/SymmioHook/SymmioHookFacet.sol:SymmioHookFacet",
-	ControlFacet: "contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet",
-	ViewFacet: "contracts/accountLayer/facets/View/ViewFacet.sol:ViewFacet",
-	AffiliateFacet: "contracts/accountLayer/facets/Affiliate/AffiliateFacet.sol:AffiliateFacet",
-}
-
-// AccountLayer facets that need library linking
-const AccountLayerFacetLibraryDependencies: Record<string, string[]> = {
-	CoreFacet: ["LibQuoteParams"],
-}
-
-// Library source FQNs for --libraries-path (Hardhat 3 format: "source:name" → address)
-const CoreLibrarySourcePaths: Record<string, string> = {
-	LibQuoteFunding: "contracts/core/libraries/LibQuoteFunding.sol:LibQuoteFunding",
-	LibQuoteClose: "contracts/core/libraries/LibQuoteClose.sol:LibQuoteClose",
-	LibForceActions: "contracts/core/libraries/LibForceActions.sol:LibForceActions",
-	LibSettlement: "contracts/core/libraries/LibSettlement.sol:LibSettlement",
-}
-
-const AccountLayerLibrarySourcePaths: Record<string, string> = {
-	LibQuoteParams: "contracts/accountLayer/libraries/LibQuoteParams.sol:LibQuoteParams",
-}
-
 // ============================================================================
 // Types
 // ============================================================================
@@ -92,6 +53,7 @@ type DeployedPeripherals = {
 		facets: Record<string, string>
 	}
 	instantLayer: { address: string }
+	signatureVerifier?: string
 	symmioPartyBImplementation: string
 }
 
@@ -120,16 +82,56 @@ function loadJSON<T>(filePath: string): T {
 	return JSON.parse(fs.readFileSync(filePath, "utf-8")) as T
 }
 
-function buildLibraryMap(deps: string[], addresses: Record<string, string>, sourcePaths: Record<string, string>): Record<string, string> {
-	const map: Record<string, string> = {}
-	for (const dep of deps) {
-		const addr = addresses[dep]
-		const fqn = sourcePaths[dep]
-		if (addr && fqn) {
-			map[fqn] = addr
+function artifactPathFromFqn(fqn: string): string {
+	const [src, name] = fqn.split(":")
+	return path.join("artifacts", src, `${name}.json`)
+}
+
+// Derive the exact libraries needed to verify a contract by reading its artifact's
+// linkReferences. This is more reliable than pre-declared dependency lists, which
+// often include transitive or pre-inline deps that verify rejects as "not used".
+function librariesFromArtifact(fqn: string, allAddresses: Record<string, string>): Record<string, string> {
+	const artifactPath = artifactPathFromFqn(fqn)
+	if (!fs.existsSync(artifactPath)) return {}
+	const artifact = JSON.parse(fs.readFileSync(artifactPath, "utf-8"))
+	const linkRefs: Record<string, Record<string, unknown>> = artifact.linkReferences || {}
+	const out: Record<string, string> = {}
+	for (const [source, libs] of Object.entries(linkRefs)) {
+		for (const libName of Object.keys(libs)) {
+			const addr = allAddresses[libName]
+			if (!addr) {
+				log.warn(`No address for linked library ${libName} (referenced by ${fqn})`)
+				continue
+			}
+			out[`${source}:${libName}`] = addr
 		}
 	}
-	return map
+	return out
+}
+
+function coreLibFqn(name: string): string {
+	return `contracts/core/libraries/${name}.sol:${name}`
+}
+
+function coreFacetFqn(facetName: string): string {
+	if (FACET_DIR_MAP[facetName]) {
+		return `contracts/${FACET_DIR_MAP[facetName]}/${facetName}.sol:${facetName}`
+	}
+	const dirName = facetName.replace(/Facet$/, "")
+	const primaryArtifact = path.join("artifacts", "contracts", "core", "facets", dirName, `${facetName}.sol`, `${facetName}.json`)
+	if (fs.existsSync(primaryArtifact)) {
+		return `contracts/core/facets/${dirName}/${facetName}.sol:${facetName}`
+	}
+	return `contracts/core/facets/${facetName}/${facetName}.sol:${facetName}`
+}
+
+function accountLayerFacetFqn(facetName: string): string {
+	const dirName = facetName.replace(/Facet$/, "")
+	return `contracts/accountLayer/facets/${dirName}/${facetName}.sol:${facetName}`
+}
+
+function accountLayerLibFqn(name: string): string {
+	return `contracts/accountLayer/libraries/${name}.sol:${name}`
 }
 
 // ============================================================================
@@ -141,14 +143,7 @@ const FACET_DIR_MAP: Record<string, string> = {
 }
 
 function facetArtifactPath(facetName: string): string {
-	if (FACET_DIR_MAP[facetName]) {
-		return path.join("artifacts", "contracts", `${FACET_DIR_MAP[facetName]}/${facetName}.sol/${facetName}.json`)
-	}
-	const artifactsDir = path.join("artifacts", "contracts")
-	const dirName = facetName.replace(/Facet$/, "")
-	const primary = path.join(artifactsDir, `core/facets/${dirName}/${facetName}.sol/${facetName}.json`)
-	if (fs.existsSync(primary)) return primary
-	return path.join(artifactsDir, `core/facets/${facetName}/${facetName}.sol/${facetName}.json`)
+	return artifactPathFromFqn(coreFacetFqn(facetName))
 }
 
 async function detectLibraryAddresses(facetsData: DeployedFacets): Promise<Record<string, string>> {
@@ -232,35 +227,40 @@ function buildContractList(
 	config: UpgradeConfig,
 ): ContractToVerify[] {
 	const contracts: ContractToVerify[] = []
+	const allLibAddresses: Record<string, string> = {
+		...libraries,
+		...(peripheralsData?.accountLayer.libraries ?? {}),
+	}
 
 	// ── Core Libraries (ordered: deps first) ────────────────────────────
 	const libOrder = ["LibQuoteFunding", "LibSettlement", "LibQuoteClose", "LibForceActions"]
 	for (const name of libOrder) {
 		const address = libraries[name]
 		if (!address) continue
-		const deps = CoreLibraryDependencies[name] ?? []
+		const fqn = coreLibFqn(name)
 		contracts.push({
 			name,
 			address,
 			constructorArgs: [],
-			libraries: buildLibraryMap(deps, libraries, CoreLibrarySourcePaths),
+			libraries: librariesFromArtifact(fqn, allLibAddresses),
+			contract: fqn,
 		})
 	}
 
 	// ── Core Facets ─────────────────────────────────────────────────────
 	for (const [name, info] of Object.entries(facetsData.facets)) {
-		const deps = FacetLibraryDependencies[name] ?? []
+		const fqn = coreFacetFqn(name)
 		contracts.push({
 			name,
 			address: info.address,
 			constructorArgs: [],
-			libraries: buildLibraryMap(deps, libraries, CoreLibrarySourcePaths),
-			contract: CoreFacetContractPaths[name],
+			libraries: librariesFromArtifact(fqn, allLibAddresses),
+			contract: fqn,
 		})
 	}
 
 	// ── MuonSignatureVerifier (constructor: admin) ─────────────────────
-	const verifierAddress = config.newV085Parameters?.signatureVerifierAddress
+	const verifierAddress = peripheralsData?.signatureVerifier ?? config.newV085Parameters?.signatureVerifierAddress
 	if (verifierAddress) {
 		contracts.push({
 			name: "MuonSignatureVerifier",
@@ -302,24 +302,25 @@ function buildContractList(
 
 	// ── AccountLayer Libraries ─────────────────────────────────────────
 	for (const [name, address] of Object.entries(peripheralsData.accountLayer.libraries)) {
+		const fqn = accountLayerLibFqn(name)
 		contracts.push({
 			name: `AL ${name}`,
 			address,
 			constructorArgs: [],
-			libraries: {},
-			contract: `contracts/accountLayer/libraries/${name}.sol:${name}`,
+			libraries: librariesFromArtifact(fqn, allLibAddresses),
+			contract: fqn,
 		})
 	}
 
 	// ── AccountLayer Facets ────────────────────────────────────────────
 	for (const [name, address] of Object.entries(peripheralsData.accountLayer.facets)) {
-		const deps = AccountLayerFacetLibraryDependencies[name] ?? []
+		const fqn = accountLayerFacetFqn(name)
 		contracts.push({
 			name: `AL ${name}`,
 			address,
 			constructorArgs: [],
-			libraries: buildLibraryMap(deps, peripheralsData.accountLayer.libraries, AccountLayerLibrarySourcePaths),
-			contract: AccountLayerFacetContractPaths[name],
+			libraries: librariesFromArtifact(fqn, allLibAddresses),
+			contract: fqn,
 		})
 	}
 
@@ -385,6 +386,9 @@ function runVerify(networkName: string, c: ContractToVerify): "verified" | "alre
 		if (output.includes("already been verified")) {
 			return "already"
 		}
+		// Print explorer URL or success message from hardhat verify output
+		const useful = output.split("\n").filter((l: string) => l.trim() && !l.includes("WARNING")).join("\n").trim()
+		if (useful) log.detail(useful)
 		return "verified"
 	} catch (err: any) {
 		const output = (err.stdout ?? "") + (err.stderr ?? "")
