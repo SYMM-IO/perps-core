@@ -90,10 +90,11 @@ contract SymmioHookFacet is ISymmioHookFacet, ReentrancyGuard {
 		info.cooldownEndTime = withdrawRequest.cooldownEndTime;
 		info.partsHash = keccak256(abi.encode(withdrawRequest.parts));
 		info.fee = offer.fee;
-
-		if (offer.operatorFee > 0) {
-			f.operatorFees[withdrawRequest.user][withdrawRequest.id] = offer.operatorFee;
-		}
+		// Reset per-request fields that subsequent writes are conditional on; protects
+		// against stale leftovers if a (user, requestId) slot is ever reused.
+		info.finalizedAt = 0;
+		info.sponsorCoverage = 0;
+		f.operatorFees[withdrawRequest.user][withdrawRequest.id] = offer.operatorFee;
 
 		_lockFee(withdrawRequest.user, withdrawRequest.id, info);
 
@@ -127,12 +128,15 @@ contract SymmioHookFacet is ISymmioHookFacet, ReentrancyGuard {
 			if (info.status != Status.ACCEPTED && info.status != Status.LOCKED) {
 				revert LibErrors.InvalidStatusForStandard();
 			}
+			if (info.finalizedAt != 0) revert LibErrors.InvalidStatusForComplete();
 
 			info.finalizedAt = block.timestamp;
 			if (info.status == Status.ACCEPTED) {
 				info.status = Status.FINALIZED;
 			}
 		} else {
+			if (info.status != Status.PROCESSED) revert LibErrors.InvalidStatusForComplete();
+
 			PoolStorage.Layout storage p = PoolStorage.layout();
 			if (info.generalAmount > 0) {
 				p.generalBalance += info.generalAmount;
