@@ -5,6 +5,7 @@ import { diamondTask } from "./diamond.js"
 import { feeDistributorTask } from "./feeDistributor.js"
 import { enableBigBlocksTask, disableBigBlocksTask } from "./hyperevm.js"
 import { instantLayerTask } from "./instantLayer.js"
+import { liquidatorTask } from "./liquidator.js"
 import { multiaccountTask } from "./multiaccount.js"
 import { multicallTask } from "./multicall.js"
 import { partyBTask } from "./partyB.js"
@@ -32,6 +33,7 @@ export const deployTasks = [
 	enableBigBlocksTask,
 	feeDistributorTask,
 	instantLayerTask,
+	liquidatorTask,
 	multiaccountTask,
 	multicallTask,
 	partyBTask,
