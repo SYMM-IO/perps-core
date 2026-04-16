@@ -96,6 +96,8 @@ interface IViewFacet {
 
 	function creditLineBlacklisted(address affiliate, address user) external view returns (bool);
 
+	function creditLineBadDebt(address affiliate) external view returns (uint256);
+
 	// ── Cap-change fee / throttle ──
 
 	function capChangeFeeConfig() external view returns (address feeToken, uint256 feeAmount, address feeReceiver);

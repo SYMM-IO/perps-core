@@ -45,6 +45,7 @@ library LibCreditLine {
 	event DebtActivated(address indexed affiliate, address indexed user, uint256 indexed requestId, uint256 amount);
 	event DebtSettled(address indexed affiliate, address indexed user, uint256 indexed requestId, uint256 amount);
 	event DebtCancelled(address indexed affiliate, address indexed user, uint256 indexed requestId, uint256 amount);
+	event BadDebtAccrued(address indexed affiliate, address indexed user, uint256 indexed requestId, uint256 amount);
 
 	// ═══════════════════════════════════════════════════════════════════
 	//                         DEBT OPERATIONS
@@ -110,11 +111,22 @@ library LibCreditLine {
 	}
 
 	/// @dev Covers credit loss on post-payout rollback (suspend/force-cancel after PROCESSED).
-	///      Deducts from affiliate pool and settles credit debt.
+	///      Deducts from the affiliate pool up to available balance; any shortfall is accrued as bad debt.
 	function coverLoss(IERC20, address, address user, uint256 requestId, WithdrawInfo storage info) internal {
 		if (info.creditAmount == 0) return;
 
-		PoolStorage.layout().affiliateBalances[info.affiliate] -= info.creditAmount;
+		PoolStorage.Layout storage p = PoolStorage.layout();
+		uint256 available = p.affiliateBalances[info.affiliate];
+		uint256 coverable = available < info.creditAmount ? available : info.creditAmount;
+		uint256 deficit = info.creditAmount - coverable;
+
+		if (coverable > 0) {
+			p.affiliateBalances[info.affiliate] -= coverable;
+		}
+		if (deficit > 0) {
+			CreditLineStorage.layout().affiliates[info.affiliate].badDebt += deficit;
+			emit BadDebtAccrued(info.affiliate, user, requestId, deficit);
+		}
 
 		_settleDebt(info.affiliate, user, requestId);
 	}

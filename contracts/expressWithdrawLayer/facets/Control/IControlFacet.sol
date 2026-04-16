@@ -26,6 +26,7 @@ interface IControlEvents {
 	event CapChangeFeeConfigUpdated(address feeToken, uint256 feeAmount, address feeReceiver);
 	event CapChangeQuotaConfigUpdated(uint256 maxFreePerWindow, uint256 windowDuration);
 	event CreditLineAffiliateConfigSelfUpdated(address indexed affiliate, uint256 maxDebt, uint256 maxDebtBps, bool wasDecrease, uint256 feePaid);
+	event TokensRescued(address indexed token, address indexed to, uint256 amount);
 }
 
 interface IControlFacet is IControlEvents {
@@ -104,4 +105,8 @@ interface IControlFacet is IControlEvents {
 	function acceptOwnership() external;
 
 	function cancelOwnershipTransfer() external;
+
+	// ── Emergency recovery ──
+
+	function rescueTokens(address token, address to, uint256 amount) external;
 }

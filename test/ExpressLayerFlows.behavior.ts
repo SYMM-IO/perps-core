@@ -2956,4 +2956,164 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			)
 		})
 	})
+
+	describe("Credit loss coverage", function () {
+		async function setupProcessedWithCredit(fixture: any, affiliateAmount: bigint, creditAmount: bigint, withdrawAmount: bigint) {
+			const { user, botSigner, receiver, expressProvider, context, affiliate } = fixture
+			const expressAddr = await expressProvider.getAddress()
+			const now = (await ethers.provider.getBlock("latest"))!.timestamp
+			const deadline = now + 3600
+
+			const parts = [
+				{
+					id: 0n,
+					amount: withdrawAmount,
+					chainId: 31337n,
+					receiver: receiver.address,
+					virtualProvider: ethers.ZeroAddress,
+					expressProvider: expressAddr,
+				},
+			]
+			const signature = await signWithdrawOption(expressProvider, botSigner, {
+				user: user.address,
+				nonce: 0n,
+				optionType: 1,
+				availableAt: 0,
+				affiliate,
+				affiliateAmount,
+				creditAmount,
+				fee: 0n,
+				operatorFee: 0n,
+				partsHash: computePartsHash(parts),
+				deadline,
+			})
+			const creditDataRaw = buildCreditData(100_000n * 10n ** 18n, now)
+			const providerData = encodeProviderData(
+				0n,
+				1,
+				0,
+				affiliate,
+				affiliateAmount,
+				creditAmount,
+				0n,
+				0n,
+				deadline,
+				signature,
+				undefined,
+				undefined,
+				undefined,
+				creditDataRaw,
+			)
+
+			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
+			const requestId = await context.viewFacet.getLastWithdrawRequestId(user.address)
+
+			await ethers.provider.send("evm_increaseTime", [21])
+			await ethers.provider.send("evm_mine", [])
+			await expressProvider.connect(fixture.operator).processWithdraw(user.address, requestId, parts)
+
+			return { parts, requestId }
+		}
+
+		it("post-processed suspend accrues bad debt when affiliate pool cannot fully cover credit", async function () {
+			const fixture = await deployFixture()
+			const { user, expressProvider, context, affiliate, affiliateFunding } = fixture
+
+			const affiliateAmount = 3000n * 10n ** 18n
+			const creditAmount = 3000n * 10n ** 18n
+			const withdrawAmount = 7000n * 10n ** 18n
+			const { requestId } = await setupProcessedWithCredit(fixture, affiliateAmount, creditAmount, withdrawAmount)
+
+			expect(await expressProvider.affiliateBalances(affiliate)).to.equal(affiliateFunding - affiliateAmount)
+			expect(await expressProvider.creditLineBadDebt(affiliate)).to.equal(0n)
+
+			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(user.address)
+			await context.withdrawFacet.connect(context.signers.admin).suspendWithdrawRequest(user.address, requestId)
+
+			expect(await expressProvider.affiliateBalances(affiliate)).to.equal(0n)
+			const expectedBadDebt = creditAmount - (affiliateFunding - affiliateAmount)
+			expect(await expressProvider.creditLineBadDebt(affiliate)).to.equal(expectedBadDebt)
+
+			const info = await expressProvider.getWithdrawInfo(user.address, requestId)
+			expect(info.status).to.equal(6n)
+
+			expect(await expressProvider.creditLineRequestDebt(affiliate, user.address, requestId)).to.equal(0n)
+			expect(await expressProvider.creditLineActiveDebt(affiliate)).to.equal(0n)
+		})
+
+		it("post-processed suspend deducts in full and leaves no bad debt when pool covers", async function () {
+			const fixture = await deployFixture()
+			const { user, expressProvider, context, affiliate, affiliateFunding } = fixture
+
+			const affiliateAmount = 1000n * 10n ** 18n
+			const creditAmount = 1000n * 10n ** 18n
+			const withdrawAmount = 5000n * 10n ** 18n
+			const { requestId } = await setupProcessedWithCredit(fixture, affiliateAmount, creditAmount, withdrawAmount)
+
+			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(user.address)
+			await context.withdrawFacet.connect(context.signers.admin).suspendWithdrawRequest(user.address, requestId)
+
+			expect(await expressProvider.affiliateBalances(affiliate)).to.equal(affiliateFunding - affiliateAmount - creditAmount)
+			expect(await expressProvider.creditLineBadDebt(affiliate)).to.equal(0n)
+		})
+
+		it("complete after post-processed suspend reverts and leaves pools and debt untouched", async function () {
+			const fixture = await deployFixture()
+			const { user, expressProvider, context, affiliate } = fixture
+
+			const affiliateAmount = 500n * 10n ** 18n
+			const creditAmount = 500n * 10n ** 18n
+			const withdrawAmount = 3000n * 10n ** 18n
+			const { requestId } = await setupProcessedWithCredit(fixture, affiliateAmount, creditAmount, withdrawAmount)
+
+			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(user.address)
+			await context.withdrawFacet.connect(context.signers.admin).suspendWithdrawRequest(user.address, requestId)
+
+			const generalBefore = await expressProvider.generalBalance()
+			const affiliateBefore = await expressProvider.affiliateBalances(affiliate)
+			const activeDebtBefore = await expressProvider.creditLineActiveDebt(affiliate)
+
+			await expect(context.withdrawFacet.finalizeWithdrawRequest(user.address, requestId)).to.be.reverted
+
+			expect(await expressProvider.generalBalance()).to.equal(generalBefore)
+			expect(await expressProvider.affiliateBalances(affiliate)).to.equal(affiliateBefore)
+			expect(await expressProvider.creditLineActiveDebt(affiliate)).to.equal(activeDebtBefore)
+			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).status).to.equal(6n)
+		})
+	})
+
+	describe("Emergency rescue", function () {
+		it("rescues arbitrary ERC20 tokens held by the diamond", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, collateral, deployer, receiver } = fixture
+
+			const stuck = 1_234n * 10n ** 18n
+			await collateral.mint(deployer.address, stuck)
+			await collateral.connect(deployer).transfer(await expressProvider.getAddress(), stuck)
+
+			const before = await collateral.balanceOf(receiver.address)
+			await expressProvider.connect(deployer).rescueTokens(await collateral.getAddress(), receiver.address, stuck)
+			expect(await collateral.balanceOf(receiver.address)).to.equal(before + stuck)
+		})
+
+		it("rejects rescueTokens from a non-owner caller", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, collateral, user, receiver } = fixture
+			await expect(expressProvider.connect(user).rescueTokens(await collateral.getAddress(), receiver.address, 1n)).to.be.reverted
+		})
+
+		it("recovers tokens stranded after STANDARD finalize when the configured receiver is unusable", async function () {
+			const fixture = await deployFixture()
+			const { user, expressProvider, collateral, deployer, locker } = fixture
+
+			const { requestId, withdrawAmount } = await acceptStandard(fixture)
+			await expressProvider.connect(locker).lockWithdraw(user.address, requestId)
+			await finalizeStandard(fixture, requestId, withdrawAmount)
+
+			const rescueRecipient = fixture.affiliateOwner
+			const before = await collateral.balanceOf(rescueRecipient.address)
+			await expressProvider.connect(deployer).rescueTokens(await collateral.getAddress(), rescueRecipient.address, withdrawAmount)
+			expect(await collateral.balanceOf(rescueRecipient.address)).to.equal(before + withdrawAmount)
+		})
+	})
 }
