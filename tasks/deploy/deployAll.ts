@@ -41,6 +41,7 @@ interface SystemDeploymentReport {
 		symmioFeeReceiver: string
 		collateralAddress: string
 		deployPartyB: boolean
+		setAdlEnabled: boolean
 		deploySymbolManager: boolean
 		symbolManagerOperator: string
 		registerDummyAffiliate: boolean
@@ -83,6 +84,8 @@ async function getEnvConfig(hre: any) {
 	const collateralAddress = process.env.COLLATERAL_ADDRESS || ""
 	// Default to true unless explicitly set to "false"
 	const deployPartyB = process.env.DEPLOY_PARTYB !== "false"
+	// Enable ADL for the deployed SymmioPartyB (only applied when DEPLOY_PARTYB is true). Default: false.
+	const setAdlEnabled = process.env.SET_ADL_ENABLED === "true"
 	const deploySymbolManagerFlag = process.env.DEPLOY_SYMBOL_MANAGER !== "false"
 	const registerDummyAffiliate = process.env.REGISTER_DUMMY_AFFILIATE !== "false"
 	// Optional signer address for SymmioPartyB (ERC-1271 signature verification)
@@ -111,6 +114,7 @@ async function getEnvConfig(hre: any) {
 		symmioFeeReceiver,
 		collateralAddress,
 		deployPartyB,
+		setAdlEnabled,
 		deploySymbolManager: deploySymbolManagerFlag,
 		symbolManagerOperator,
 		registerDummyAffiliate,
@@ -158,6 +162,12 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 		defaultValue: undefined,
 	})
 	.addOption({
+		name: "setAdlEnabled",
+		description: "Enable ADL for the deployed SymmioPartyB (overrides SET_ADL_ENABLED env)",
+		type: ArgumentType.STRING_WITHOUT_DEFAULT,
+		defaultValue: undefined,
+	})
+	.addOption({
 		name: "deploySymbolManager",
 		description: "Deploy SymmioSymbolManager (overrides DEPLOY_SYMBOL_MANAGER env)",
 		type: ArgumentType.STRING_WITHOUT_DEFAULT,
@@ -195,6 +205,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 				fresh,
 				deployFakeStablecoin,
 				deployPartyb,
+				setAdlEnabled: setAdlEnabledFlag,
 				deploySymbolManager: deploySymbolManagerFlag,
 				symbolManagerOperator: symbolManagerOperatorFlag,
 				deployMockVerifier,
@@ -212,6 +223,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			// CLI flags override env vars when explicitly provided
 			if (deployFakeStablecoin !== undefined && deployFakeStablecoin === "true") config.collateralAddress = ""
 			if (deployPartyb !== undefined) config.deployPartyB = deployPartyb === "true"
+			if (setAdlEnabledFlag !== undefined) config.setAdlEnabled = setAdlEnabledFlag === "true"
 			if (deploySymbolManagerFlag !== undefined) config.deploySymbolManager = deploySymbolManagerFlag === "true"
 			if (symbolManagerOperatorFlag !== undefined) config.symbolManagerOperator = symbolManagerOperatorFlag
 			if (deployMockVerifier !== undefined) config.deployMockVerifier = deployMockVerifier === "true"
@@ -246,6 +258,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			console.log(`Symmio Fee Receiver: ${config.symmioFeeReceiver}`)
 			console.log(`Collateral Address: ${config.collateralAddress || "(will deploy FakeStablecoin)"}`)
 			console.log(`Deploy PartyB: ${config.deployPartyB}`)
+			console.log(`Set ADL Enabled: ${config.setAdlEnabled}`)
 			console.log(`PartyB Signer: ${config.partyBSigner || "(not set)"}`)
 			console.log(`Deploy SymbolManager: ${config.deploySymbolManager}`)
 			console.log(`SymbolManager Operator: ${config.symbolManagerOperator || "(not set)"}`)
@@ -1064,6 +1077,12 @@ async function setupSystem(
 			await controlFacet.connect(deployer).registerPartyB(deployedContracts.symmioPartyB!)
 		})
 
+		if (config.setAdlEnabled) {
+			await checkpointedStep(checkpoint, "setup.setAdlEnabled", "Enabling ADL for SymmioPartyB on Diamond", async () => {
+				await controlFacet.connect(deployer).setADLEnabled(deployedContracts.symmioPartyB!, true)
+			})
+		}
+
 		const symmioPartyB = await ethers.getContractAt("SymmioPartyB", deployedContracts.symmioPartyB)
 		const partyBDefaultAdminRole = await symmioPartyB.DEFAULT_ADMIN_ROLE()
 
@@ -1250,6 +1269,7 @@ function generateReport(deployments: DeploymentResult[], config: ReturnType<type
 			symmioFeeReceiver: config.symmioFeeReceiver,
 			collateralAddress: config.collateralAddress,
 			deployPartyB: config.deployPartyB,
+			setAdlEnabled: config.setAdlEnabled,
 			deploySymbolManager: config.deploySymbolManager,
 			symbolManagerOperator: config.symbolManagerOperator,
 			registerDummyAffiliate: config.registerDummyAffiliate,
@@ -1299,6 +1319,7 @@ function displayReport(report: SystemDeploymentReport, deployedContracts: Deploy
 	console.log(`Admin:                       ${report.config.admin}`)
 	console.log(`Symmio Fee Receiver:         ${report.config.symmioFeeReceiver}`)
 	console.log(`Deploy PartyB:               ${report.config.deployPartyB}`)
+	console.log(`Set ADL Enabled:             ${report.config.setAdlEnabled}`)
 	console.log(`Deploy SymbolManager:        ${report.config.deploySymbolManager}`)
 	console.log(`SymbolManager Operator:      ${report.config.symbolManagerOperator || "(not set)"}`)
 	console.log(`Register Dummy Affiliate:    ${report.config.registerDummyAffiliate}`)
