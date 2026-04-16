@@ -4,11 +4,8 @@ import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 import path from "path"
 
-import { readData } from "../utils/fs.js"
 import {
-	ACCOUNTLAYER_ACCOUNT_DEPLOYMENT_LOG_FILE,
 	ACCOUNTLAYER_DEPLOYMENT_FILE,
-	ACCOUNTLAYER_AFFILIATE_DEPLOYMENT_FILE,
 	DEPLOYMENT_LOG_FILE,
 	INSTANTLAYER_DEPLOYMENT_FILE,
 	PARTYB_DEPLOYMENT_FILE,
@@ -17,105 +14,6 @@ import {
 	VERIFY_FAILED_FILE,
 } from "./constants.js"
 import { getConnection } from "./helpers.js"
-
-const verifyDeploymentAction = async (_: unknown, hre: any) => {
-	const deployedAddresses = readData(DEPLOYMENT_LOG_FILE)
-
-	for (const address of deployedAddresses) {
-		try {
-			console.log(`Verifying ${address.address}`)
-			await verifyContract(
-				{
-					address: address.address,
-					constructorArgs: address.constructorArguments,
-				},
-				hre,
-			)
-		} catch (err) {
-			console.error(err)
-		}
-	}
-}
-
-const verifyAffiliateAction = async (_: unknown, hre: any) => {
-	const deployedAddresses = readData(ACCOUNTLAYER_AFFILIATE_DEPLOYMENT_FILE)
-
-	for (const address of deployedAddresses) {
-		try {
-			console.log(`Verifying ${address.address}`)
-			await verifyContract(
-				{
-					address: address.address,
-					constructorArgs: address.constructorArguments,
-				},
-				hre,
-			)
-		} catch (err) {
-			console.error(err)
-		}
-	}
-}
-
-const verifyAccountAction = async (_: unknown, hre: any) => {
-	const deployedAddresses = readData(ACCOUNTLAYER_ACCOUNT_DEPLOYMENT_LOG_FILE)
-
-	for (const address of deployedAddresses) {
-		try {
-			console.log(`Verifying ${address.address}`)
-			await verifyContract(
-				{
-					address: address.address,
-					constructorArgs: address.constructorArguments,
-				},
-				hre,
-			)
-		} catch (err) {
-			console.error(err)
-		}
-	}
-}
-
-const verifyInstantLayerAction = async (_: unknown, hre: any) => {
-	const deployedAddresses = readData(INSTANTLAYER_DEPLOYMENT_FILE)
-
-	for (const address of deployedAddresses) {
-		try {
-			console.log(`Verifying ${address.address}`)
-			await verifyContract(
-				{
-					address: address.address,
-					constructorArgs: address.constructorArguments,
-				},
-				hre,
-			)
-		} catch (err) {
-			console.error(err)
-		}
-	}
-}
-
-const verifyAccountLayerAction = async (_: unknown, hre: any) => {
-	const deployedAddresses = readData(ACCOUNTLAYER_DEPLOYMENT_FILE)
-
-	for (const address of deployedAddresses) {
-		try {
-			console.log(`Verifying ${address.address}`)
-			await verifyContract(
-				{
-					address: address.address,
-					constructorArgs: address.constructorArguments,
-				},
-				hre,
-			)
-		} catch (err) {
-			console.error(err)
-		}
-	}
-}
-
-export const verifyDeploymentTask = task("verify:deployment", "Verifies the deployed contracts")
-	.setAction(async () => ({ default: verifyDeploymentAction }))
-	.build()
 
 // ============================================================================
 // Verify All Contracts from Deployment Logs
@@ -352,22 +250,6 @@ export const verifyAllTask = task("verify:all", "Verifies all deployed contracts
 			}
 		},
 	}))
-	.build()
-
-export const verifyAffiliateTask = task("verify:affiliate", "Verifies the deployed contracts")
-	.setAction(async () => ({ default: verifyAffiliateAction }))
-	.build()
-
-export const verifyAccountTask = task("verify:account", "Verifies the deployed contracts")
-	.setAction(async () => ({ default: verifyAccountAction }))
-	.build()
-
-export const verifyInstantLayerTask = task("verify:instantLayer", "Verifies the deployed contracts")
-	.setAction(async () => ({ default: verifyInstantLayerAction }))
-	.build()
-
-export const verifyAccountLayerTask = task("verify:accountLayer", "Verifies the AccountLayer diamond contracts")
-	.setAction(async () => ({ default: verifyAccountLayerAction }))
 	.build()
 
 // ============================================================================
