@@ -287,7 +287,10 @@ contract ControlFacet is IControlFacet {
 		LibAccessControl.enforceRole(LibAccessControl.WITHDRAWER_ROLE);
 		PoolStorage.Layout storage p = PoolStorage.layout();
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
-		if (p.affiliateBalances[affiliate] - p.lockedAffiliateBalances[affiliate] < amount) revert LibErrors.InsufficientUnlockedAffiliateBalance();
+		uint256 bal = p.affiliateBalances[affiliate];
+		uint256 locked = p.lockedAffiliateBalances[affiliate];
+		uint256 available = bal > locked ? bal - locked : 0;
+		if (available < amount) revert LibErrors.InsufficientUnlockedAffiliateBalance();
 		p.affiliateBalances[affiliate] -= amount;
 		g.collateral.safeTransfer(msg.sender, amount);
 		emit AffiliateWithdraw(affiliate, amount);

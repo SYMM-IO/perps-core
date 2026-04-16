@@ -32,6 +32,7 @@ library LibCreditLine {
 	error DebtExceedsPercentCap();
 	error NoDebtForRequest();
 	error DebtAlreadyActivated();
+	error DebtAlreadyReserved();
 	error DebtNotActivated();
 	error AffiliateLimitExceedsProtocol();
 	error CreditLineNotConfigured();
@@ -81,6 +82,7 @@ library LibCreditLine {
 
 		// Record debt
 		bytes32 key = _key(user, requestId);
+		if (ac.requestDebt[key] != 0) revert DebtAlreadyReserved();
 		ac.requestDebt[key] = creditAmount;
 		ac.reservedDebt += creditAmount;
 
@@ -158,6 +160,7 @@ library LibCreditLine {
 		bytes32 key = _key(user, requestId);
 		uint256 amount = ac.requestDebt[key];
 		if (amount == 0) revert NoDebtForRequest();
+		if (ac.requestActivated[key]) revert DebtAlreadyActivated();
 
 		ac.reservedDebt -= amount;
 		delete ac.requestDebt[key];

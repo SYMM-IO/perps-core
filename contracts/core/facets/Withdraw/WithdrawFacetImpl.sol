@@ -385,10 +385,7 @@ library WithdrawFacetImpl {
 		return withdrawLayout.withdrawRequests[user][requestId];
 	}
 
-	/// @notice Unlocks the withdrawal locked balance and refunds the user's internal balance.
-	/// @dev Accounts for `advancedAmount` already released to an express provider via `advanceWithdraw`:
-	///      the locked balance was pre-decremented by that amount and the user's internal balance
-	///      must not be refunded for tokens already paid out through the provider.
+	/// @notice Unlocks and refunds the non-advanced portion of a withdrawal.
 	function _unlockAndRefund(WithdrawRequest storage withdrawRequest) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
