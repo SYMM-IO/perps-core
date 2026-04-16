@@ -37,9 +37,5 @@ export const PARTYB_DEPLOYMENT_FILE = "partyb.json"
 export const STABLECOIN_DEPLOYMENT_FILE = "stablecoin.json"
 export const SYMBOLMANAGER_DEPLOYMENT_FILE = "symbolmanager.json"
 
-// Legacy files (kept for backwards compatibility)
-export const ACCOUNTLAYER_ACCOUNT_DEPLOYMENT_LOG_FILE = "accounthub.json"
-export const ACCOUNTLAYER_AFFILIATE_DEPLOYMENT_FILE = "affiliatehub.json"
-
 // Failed verifications — written by verify:all, consumed by verify:all --retry-failed
 export const VERIFY_FAILED_FILE = "verify-failed.json"
