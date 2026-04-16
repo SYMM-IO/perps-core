@@ -191,6 +191,10 @@ contract ViewFacet is IViewFacet {
 		return CreditLineStorage.layout().affiliates[affiliate].blacklisted[user];
 	}
 
+	function creditLineBadDebt(address affiliate) external view returns (uint256) {
+		return CreditLineStorage.layout().affiliates[affiliate].badDebt;
+	}
+
 	// ── Cap-change fee / throttle ──
 
 	function capChangeFeeConfig() external view returns (address feeToken, uint256 feeAmount, address feeReceiver) {

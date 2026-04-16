@@ -331,4 +331,12 @@ contract ControlFacet is IControlFacet {
 		LibDiamond.enforceIsContractOwner();
 		LibDiamond.cancelOwnershipTransfer();
 	}
+
+	// ── Emergency recovery ──
+
+	function rescueTokens(address token, address to, uint256 amount) external {
+		LibDiamond.enforceIsContractOwner();
+		IERC20(token).safeTransfer(to, amount);
+		emit TokensRescued(token, to, amount);
+	}
 }
