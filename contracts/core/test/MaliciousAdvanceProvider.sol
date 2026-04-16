@@ -9,7 +9,7 @@ interface ISymmioCore {
 	function advanceWithdraw(address user, uint256 requestId, uint256 amount) external;
 }
 
-/// @notice Test-only provider that re-enters advanceWithdraw inside onWithdrawComplete to simulate C-3.
+/// @notice Test-only provider that re-enters advanceWithdraw from inside onWithdrawComplete.
 contract MaliciousAdvanceProvider is IExpressProvider {
 	address public symmio;
 	uint256 public extraExtracted;

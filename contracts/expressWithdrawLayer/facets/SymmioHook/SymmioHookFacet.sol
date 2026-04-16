@@ -79,6 +79,7 @@ contract SymmioHookFacet is ISymmioHookFacet, ReentrancyGuard {
 		}
 
 		WithdrawInfo storage info = g.withdrawInfos[withdrawRequest.user][withdrawRequest.id];
+		if (info.status != Status.NONE) revert LibErrors.StaleWithdrawSlot();
 		info.optionType = optType;
 		info.availableAt = offer.availableAt;
 		info.expressAmount = amounts.expressAmount;
@@ -90,8 +91,6 @@ contract SymmioHookFacet is ISymmioHookFacet, ReentrancyGuard {
 		info.cooldownEndTime = withdrawRequest.cooldownEndTime;
 		info.partsHash = keccak256(abi.encode(withdrawRequest.parts));
 		info.fee = offer.fee;
-		// Reset per-request fields that subsequent writes are conditional on; protects
-		// against stale leftovers if a (user, requestId) slot is ever reused.
 		info.finalizedAt = 0;
 		info.sponsorCoverage = 0;
 		f.operatorFees[withdrawRequest.user][withdrawRequest.id] = offer.operatorFee;

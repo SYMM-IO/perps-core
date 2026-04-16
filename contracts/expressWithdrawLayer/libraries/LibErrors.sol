@@ -23,6 +23,7 @@ library LibErrors {
 	error InsufficientAffiliateBalance();
 	error InvalidStatusForStandard();
 	error InvalidStatusForComplete();
+	error StaleWithdrawSlot();
 	error NotAccepted();
 	error NotFinalized();
 	error PartsMismatch();
