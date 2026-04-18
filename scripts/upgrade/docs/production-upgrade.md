@@ -22,9 +22,9 @@ BEFORE PAUSE (no downtime)
 ══════════════════════════
 
  deployFacets.ts                deployPeripherals.ts
- (deploy libs + facets)         (deploy SigVerifier + AL + IL + PartyB impl)
-        │                              │
-        ▼                              ▼
+ (deploy libs + facets)         (deploy SigVerifier + AL + IL + PartyB impl
+        │                        + transferOwnership(Safe) on AccountLayer)
+        ▼                              │
  deployed-facets-{network}.json          deployed-peripherals-{network}.json
         │                              │
         └──────────┬───────────────────┘
@@ -53,6 +53,15 @@ VERIFY DEPLOYED BYTECODE (local vs on-chain)
   Handles library linking (core facets) and immutable variables (peripherals).
   NETWORK resolves the correct file (e.g. deployed-facets-arbitrum.json).
 
+VERIFY GENERATED CALLDATA (local repo vs on-disk JSON)
+═══════════════════════════════════════════════════════
+  npx hardhat run scripts/upgrade/verifyBatchCalldata.ts --network <network>
+
+  Reconstructs each batch from current upgrade.json + deployed-*.json and
+  byte-compares against pause-safe-batch / safe-batch / diamondcut-calldata
+  / timelock-{schedule,execute} / post-migration / symbol-role / add-templates
+  JSON files. Run before signing anything in the Safe UI.
+
 
 PAUSE (execute via Safe UI)
 ══════════════════════════
@@ -74,6 +83,8 @@ POST-DIAMONDCUT (execute via Safe UI)
     3. grantRole(MIGRATION_ROLE)
     4. [wiring] AL/IL roles + hooks + whitelist
     5. [wiring] registerPartyBs on IL (from config/partyBList.json)
+    6. [ownership] acceptOwnership() on AccountLayer diamond
+       (transferOwnership was already called by deployer during deployPeripherals)
 
 
 PREPARE MIGRATION INPUT (after pause — version-agnostic, can run before or after diamondCut)
@@ -126,9 +137,9 @@ BEFORE PAUSE (no downtime)
 ══════════════════════════
 
  deployFacets.ts                deployPeripherals.ts
- (deploy libs + facets)         (deploy AL + IL + PartyB impl)
-        │                              │
-        ▼                              ▼
+ (deploy libs + facets)         (deploy SigVerifier + AL + IL + PartyB impl
+        │                        + transferOwnership(Safe) on AccountLayer)
+        ▼                              │
  deployed-facets-{network}.json          deployed-peripherals-{network}.json
         │                              │
         └──────────┬───────────────────┘
@@ -157,6 +168,14 @@ VERIFY DEPLOYED BYTECODE (local vs on-chain)
 ═════════════════════════════════════════════
   NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyDeploy.ts
   NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
+
+VERIFY GENERATED CALLDATA (local repo vs on-disk JSON)
+═══════════════════════════════════════════════════════
+  npx hardhat run scripts/upgrade/verifyBatchCalldata.ts --network <network>
+
+  Also checks timelock-{schedule,execute}-safe-batch-*.json: inner calldata
+  matches diamondcut-calldata chunks, predecessor chain and salt derivation
+  are correct.
 
 
 SCHEDULE DIAMONDCUT (T=0, system still live)
@@ -194,6 +213,8 @@ POST-DIAMONDCUT (T=delay, after diamondCut)
     3. grantRole(MIGRATION_ROLE)
     4. [wiring] AL/IL roles + hooks + whitelist
     5. [wiring] registerPartyBs on IL (from config/partyBList.json)
+    6. [ownership] acceptOwnership() on AccountLayer diamond
+       (transferOwnership was already called by deployer during deployPeripherals)
 
 
 VERIFY
@@ -252,7 +273,7 @@ TIMELINE
 
   T=delay      Execute pause-safe-batch.json (pause)
                Execute timelock diamondCut
-               Execute safe-batch.json (roles + params + wiring)
+               Execute safe-batch.json (roles + params + wiring + accept AL ownership)
                Verify upgrade
                Prepare migration input
                Run migration
@@ -377,6 +398,7 @@ npx hardhat run scripts/upgrade/runMigration.ts --network fork-arbitrum
 | `verifyPeripheralsDeploy.ts` | Bytecode verification of deployed peripherals (AccountLayer, InstantLayer, SymmioPartyB impl, MuonSignatureVerifier) against local compiled artifacts. Handles library linking and immutable variable masking. |
 | `verifyDiamond.ts` | All v0.8.5 facet selectors registered on diamond |
 | `verifyPeripherals.ts` | AccountLayer + InstantLayer roles, hooks, whitelist, templates |
+| `verifyBatchCalldata.ts` | All generated Safe batches + `diamondcut-calldata-{network}.json` byte-match what the current repo + config would produce. Run **before signing** in the Safe UI. See [Step 2c](#step-2c-verify-generated-calldata-recommended) |
 | `testTemplateExecution.ts` | Full end-to-end: affiliate registration, sub-account, PartyB UUPS upgrade, EIP-712 delegation, sendQuote -> lockQuote -> openPosition via InstantLayer template |
 
 `testTemplateExecution.ts` auto-loads `diamondAddress` from `upgrade.json`, and `accountLayerDiamondAddress` + `instantLayerAddress` from the output files. No manual config needed.
@@ -493,14 +515,14 @@ USE_KEYSTORE=true npx hardhat run scripts/upgrade/generateSafeBatch.ts --network
 
 Output:
 - `scripts/upgrade/output/pause-safe-batch.json` -- Safe batch for pause (grantRole PAUSER/UNPAUSER + pauseGlobal)
-- `scripts/upgrade/output/safe-batch.json` -- Safe batch for post-diamondCut (roles, params, wiring)
+- `scripts/upgrade/output/safe-batch.json` -- Safe batch for post-diamondCut (roles, params, wiring, accept AL ownership)
 - `scripts/upgrade/output/diamondcut-calldata.json` -- raw diamondCut calldata chunks
 - `scripts/upgrade/output/upgrade-details.json` -- selector changes + breakdown
 
 **Direct (Safe owns diamond):**
 1. Import `pause-safe-batch.json` → execute (pause system)
 2. Execute the diamondCut calldata from `diamondcut-calldata.json` as a separate Safe tx
-3. Import `safe-batch.json` → execute (roles + params + wiring)
+3. Import `safe-batch.json` → execute (roles + params + wiring + accept AL ownership)
 
 **TimeLock (TimeLock owns diamond):**
 1. Run `generateTimelockBatch.ts` first (see [Step 2b](#step-2b-wrap-diamondcut-for-timelock))
@@ -508,7 +530,7 @@ Output:
 3. Wait for timelock delay (system still live)
 4. Import `pause-safe-batch.json` → execute (pause)
 5. Import `timelock-execute-safe-batch.json` → execute (applies diamondCut)
-6. Import `safe-batch.json` → execute (roles + params + wiring)
+6. Import `safe-batch.json` → execute (roles + params + wiring + accept AL ownership)
 
 ## Step 2b: Wrap DiamondCut for TimeLock
 
@@ -525,6 +547,52 @@ Output:
 - `scripts/upgrade/output/timelock-execute-safe-batch.json` -- Safe batch to execute after timelock delay
 
 Uses a deterministic salt derived from chain ID + diamond address + version string.
+
+## Step 2c: Verify Generated Calldata (recommended)
+
+Before signing any batch in the Safe UI, confirm every generated JSON matches what the current repo + config would produce. The verifier decodes each transaction and byte-compares against the expected calldata reconstructed from `upgrade.json`, `partyBList.json`, `instantLayerTemplates.json`, `deployed-facets-{network}.json`, and `deployed-peripherals-{network}.json`.
+
+```bash
+npx hardhat run scripts/upgrade/verifyBatchCalldata.ts --network arbitrum
+```
+
+What it checks, per file:
+
+| File | Checks |
+|------|--------|
+| `pause-safe-batch-{network}.json` | Exactly the 3 expected txs (grant PAUSER, grant UNPAUSER, pauseGlobal) on the diamond |
+| `safe-batch-{network}.json` | Every non-diamondCut tx byte-matches the current generator output (roles, v0.8.5 params, Muon verifier seeding, AL/IL wiring, PartyB registration, templates) |
+| `diamondcut-calldata-{network}.json` | Decodes each chunk; asserts facetAddress ∈ deployed-facets, selectors belong to their facet, `_init == 0x0`, `_calldata == 0x`, no duplicate selectors across chunks. Optionally cross-checks `deployed-facets.json` selectors against the compiled ABI |
+| `timelock-{schedule,execute}-safe-batch-{network}-N.json` | Each file targets `timelockAddress`; inner calldata equals `diamondcut-calldata.chunks[N]`; predecessor chain is consistent and starts at `0x0`; salts match `keccak256(abi.encode(chainId, diamond, "diamondCut-v0.8.5", N))` |
+| `post-migration-{safe-batch,transactions}-{network}.json` | `revokeRole` × 2, `unpauseGlobal`, `setCrossPartyBModeActivated(true)`, `setCrossPartyB(partyB, true)` × N (reading PartyBs from `postMigration.json`) |
+| `grant-symbol-role-safe-batch-{network}.json` / `revoke-symbol-role-safe-batch-{network}.json` | Single `grantRole` / `revokeRole` for `SYMBOL_MANAGER_ROLE` targeting `migrationRunner` |
+| `add-templates-safe-batch-{network}.json` | One `addTemplate` tx per entry in `config/instantLayerTemplates.json`, targeting `instantLayerAddress` |
+
+Every Safe batch also asserts `meta.createdFromSafeAddress == upgrade.json.safeAddress`.
+
+**Configuration** (`config/verifyBatch.json`, optional — see `config/samples/verifyBatch.sample.json`):
+
+| Field | Description |
+|-------|-------------|
+| `networkName` | Override the network suffix used to resolve files (default: from `--network`) |
+| `outputDir` | Directory containing the generated JSON files (default: `./scripts/upgrade/output`) |
+| `configDir` | Directory containing `upgrade.json` / `partyBList.json` / `instantLayerTemplates.json` |
+| `only` | Array of labels to verify; omit to verify all. Env `ONLY=a,b,c` overrides |
+| `skip` | Array of labels to skip (applied after `only`). Env `SKIP=a,b` overrides |
+| `verifyFacetSelectorsAgainstArtifacts` | When true (default), the selectors recorded in `deployed-facets-{network}.json` are cross-checked against the locally compiled facet ABIs — catches a tampered deployed-facets file. Env `VERIFY_ARTIFACTS=false` disables |
+| `paths` | Per-file overrides for every input the verifier reads (batch files, deploy outputs, configs). Useful for verifying artifacts from another branch or a different output directory |
+
+Available labels (for `only` / `skip` / env `ONLY` / `SKIP`):
+
+```
+pause-safe-batch, safe-batch, diamondcut-calldata,
+timelock-schedule-safe-batch, timelock-execute-safe-batch,
+post-migration-safe-batch, post-migration-transactions,
+grant-symbol-role-safe-batch, revoke-symbol-role-safe-batch,
+add-templates-safe-batch
+```
+
+The script exits non-zero if any check fails and prints per-file issue lists (expected vs actual selector, `to`, or calldata) to make diagnosis straightforward.
 
 ## Step 3: Prepare Migration Input
 

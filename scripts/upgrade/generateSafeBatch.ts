@@ -164,6 +164,13 @@ async function main() {
 			}
 			console.log(`  Added ${templateTxs.length} template transactions`)
 		}
+		// Accept AccountLayer ownership (two-step: deployPeripherals called transferOwnership, Safe must acceptOwnership)
+		if (SAFE_ADDRESS) {
+			const acceptOwnershipIface = new ethers.Interface(["function acceptOwnership()"])
+			result.safeTxs.push(toHumanReadableSafeTxFromIface(acceptOwnershipIface, AL_ADDRESS, "acceptOwnership", []))
+			result.breakdown.push(`${result.breakdown.length + 1}. [ownership] acceptOwnership() on AccountLayer`)
+			console.log(`  Added acceptOwnership transaction`)
+		}
 	} else if (AL_ADDRESS || IL_ADDRESS) {
 		console.log("\nWARN: Both accountLayerDiamondAddress and instantLayerAddress must be set for wiring. Skipping.")
 	} else {
@@ -260,9 +267,9 @@ async function main() {
 	}
 
 	console.log("\nExecution order:")
-	console.log(`  1. Import pause-safe-batch-${networkName}.json → execute (pause system)`)
+	console.log(`  1. Import pause-safe-batch-${networkName}.json → execute from Safe (pause system)`)
 	console.log(`  2. Execute diamondCut from diamondcut-calldata-${networkName}.json (via timelock or direct)`)
-	console.log(`  3. Import safe-batch-${networkName}.json → execute (roles + params + wiring)`)
+	console.log(`  3. Import safe-batch-${networkName}.json → execute from Safe (roles + params + wiring + accept AL ownership)`)
 }
 
 main().catch(error => {
