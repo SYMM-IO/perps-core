@@ -30,6 +30,7 @@ type Config = {
 	diamondAddress?: string
 	protocolAdmin: string
 	symmioFeeReceiver: string
+	safeAddress?: string
 }
 
 type DeployedState = {
@@ -51,6 +52,7 @@ function loadConfig(): Config {
 		diamondAddress: raw.diamondAddress ?? shared.diamondAddress,
 		protocolAdmin: raw.protocolAdmin ?? shared.protocolAdmin ?? "",
 		symmioFeeReceiver: raw.symmioFeeReceiver ?? shared.symmioFeeReceiver ?? "",
+		safeAddress: raw.safeAddress ?? shared.safeAddress,
 	}
 }
 
@@ -122,6 +124,19 @@ async function main() {
 	// Deploy AccountLayer Diamond
 	t = log.step("AccountLayer Diamond")
 	const alResult = await deployAccountLayerDiamond(protocolAdmin, symmioFeeReceiver, STATE_FILE)
+
+	// Transfer AccountLayer ownership to Safe (two-step: Safe must call acceptOwnership)
+	const AL_NEW_OWNER = process.env.SAFE_ADDRESS ?? config.safeAddress
+	if (AL_NEW_OWNER && ethers.isAddress(AL_NEW_OWNER)) {
+		const alControlFacet = await ethers.getContractAt("contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet", alResult.diamondAddress)
+		try {
+			await (await alControlFacet.transferOwnership(AL_NEW_OWNER)).wait()
+			log.ok(`transferOwnership(${AL_NEW_OWNER}) on AccountLayer — new owner must call acceptOwnership()`)
+		} catch (e: any) {
+			// May fail if already transferred or caller is not the owner (e.g. re-run after ownership was already transferred)
+			log.ok(`transferOwnership skipped (already transferred or caller is not owner)`)
+		}
+	}
 	log.stepDone(t)
 
 	// Deploy InstantLayer

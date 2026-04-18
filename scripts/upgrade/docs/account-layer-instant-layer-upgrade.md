@@ -195,4 +195,4 @@ These are intentionally left out of the upgrade scripts:
 
 - **Dummy affiliate registration** -- only needed for testing, not production upgrades.
 - **AccountManager deployment** -- happens automatically via CREATE2 when an affiliate registers through AccountLayer. The bytecode is stored during Init.
-- **Diamond ownership transfer** -- the upgrade doesn't change ownership.
+- **Core diamond ownership transfer** -- the upgrade doesn't change core diamond ownership. AccountLayer ownership is transferred to the Safe via two-step: `deployPeripherals.ts` calls `transferOwnership(safe)`, then the Safe executes `acceptOwnership()` as part of the `safe-batch.json` wiring transactions.
