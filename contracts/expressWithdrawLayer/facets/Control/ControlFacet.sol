@@ -22,9 +22,10 @@ import { FeeStorage } from "../../storages/FeeStorage.sol";
 import { ValidatorStorage } from "../../storages/ValidatorStorage.sol";
 
 import { IControlFacet } from "./IControlFacet.sol";
+import { Pausable } from "../../utils/Pausable.sol";
 import { ReentrancyGuard } from "../../utils/ReentrancyGuard.sol";
 
-contract ControlFacet is IControlFacet, ReentrancyGuard {
+contract ControlFacet is IControlFacet, Pausable, ReentrancyGuard {
 	using SafeERC20 for IERC20;
 
 	// ── Config setters ──
@@ -104,7 +105,7 @@ contract ControlFacet is IControlFacet, ReentrancyGuard {
 	/// @notice Self-service cap adjustment for an affiliate. Decreases are always free;
 	///         increases count against the per-window free allowance and charge a fee once exhausted.
 	///         msg.sender is treated as the affiliate identity.
-	function setMyCreditLineConfig(uint256 maxDebt, uint256 maxDebtBps) external {
+	function setMyCreditLineConfig(uint256 maxDebt, uint256 maxDebtBps) external whenNotPaused {
 		address affiliate = msg.sender;
 		CreditLineStorage.Layout storage cl = CreditLineStorage.layout();
 		AffiliateCredit storage ac = cl.affiliates[affiliate];
@@ -202,7 +203,7 @@ contract ControlFacet is IControlFacet, ReentrancyGuard {
 
 	// ── Fee claims ──
 
-	function claimFees(address affiliate, address to) external nonReentrant {
+	function claimFees(address affiliate, address to) external nonReentrant whenNotPaused {
 		LibAccessControl.enforceRole(LibAccessControl.FEE_CLAIMER_ROLE);
 		FeeStorage.Layout storage f = FeeStorage.layout();
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
@@ -213,7 +214,7 @@ contract ControlFacet is IControlFacet, ReentrancyGuard {
 		emit FeesClaimed(affiliate, amount);
 	}
 
-	function claimOperatorFees(address affiliate, address to) external nonReentrant {
+	function claimOperatorFees(address affiliate, address to) external nonReentrant whenNotPaused {
 		LibAccessControl.enforceRole(LibAccessControl.FEE_CLAIMER_ROLE);
 		FeeStorage.Layout storage f = FeeStorage.layout();
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
@@ -226,7 +227,7 @@ contract ControlFacet is IControlFacet, ReentrancyGuard {
 
 	// ── Sponsor management ──
 
-	function depositSponsorBalance(address affiliate, uint256 amount) external {
+	function depositSponsorBalance(address affiliate, uint256 amount) external whenNotPaused {
 		FeeStorage.Layout storage f = FeeStorage.layout();
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
 		g.collateral.safeTransferFrom(msg.sender, address(this), amount);
@@ -237,7 +238,7 @@ contract ControlFacet is IControlFacet, ReentrancyGuard {
 		emit SponsorDeposit(affiliate, amount);
 	}
 
-	function withdrawSponsorBalance(address affiliate, uint256 amount, address to) external nonReentrant {
+	function withdrawSponsorBalance(address affiliate, uint256 amount, address to) external nonReentrant whenNotPaused {
 		LibAccessControl.enforceRole(LibAccessControl.SPONSOR_MANAGER_ROLE);
 		FeeStorage.Layout storage f = FeeStorage.layout();
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
@@ -255,7 +256,7 @@ contract ControlFacet is IControlFacet, ReentrancyGuard {
 
 	// ── General pool ──
 
-	function depositToGeneral(uint256 amount) external {
+	function depositToGeneral(uint256 amount) external whenNotPaused {
 		PoolStorage.Layout storage p = PoolStorage.layout();
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
 		g.collateral.safeTransferFrom(msg.sender, address(this), amount);
@@ -263,7 +264,7 @@ contract ControlFacet is IControlFacet, ReentrancyGuard {
 		emit GeneralDeposit(amount);
 	}
 
-	function withdrawFromGeneral(uint256 amount) external nonReentrant {
+	function withdrawFromGeneral(uint256 amount) external nonReentrant whenNotPaused {
 		LibAccessControl.enforceRole(LibAccessControl.WITHDRAWER_ROLE);
 		PoolStorage.Layout storage p = PoolStorage.layout();
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
@@ -276,7 +277,7 @@ contract ControlFacet is IControlFacet, ReentrancyGuard {
 
 	// ── Affiliate pool ──
 
-	function depositToAffiliate(address affiliate, uint256 amount) external {
+	function depositToAffiliate(address affiliate, uint256 amount) external whenNotPaused {
 		PoolStorage.Layout storage p = PoolStorage.layout();
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
 		g.collateral.safeTransferFrom(msg.sender, address(this), amount);
@@ -284,7 +285,7 @@ contract ControlFacet is IControlFacet, ReentrancyGuard {
 		emit AffiliateDeposit(affiliate, amount);
 	}
 
-	function withdrawFromAffiliate(address affiliate, uint256 amount) external nonReentrant {
+	function withdrawFromAffiliate(address affiliate, uint256 amount) external nonReentrant whenNotPaused {
 		LibAccessControl.enforceRole(LibAccessControl.WITHDRAWER_ROLE);
 		PoolStorage.Layout storage p = PoolStorage.layout();
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
@@ -339,6 +340,13 @@ contract ControlFacet is IControlFacet, ReentrancyGuard {
 		LibDiamond.enforceIsContractOwner();
 		IERC20(token).safeTransfer(to, amount);
 		emit TokensRescued(token, to, amount);
+	}
+
+	/// @notice PAUSER_ROLE kill switch
+	function setPaused(bool value) external {
+		LibAccessControl.enforceRole(LibAccessControl.PAUSER_ROLE);
+		GlobalStorage.layout().paused = value;
+		emit PausedUpdated(value);
 	}
 
 	/// @notice Owner-only. Zeros a stuck per-request credit debt entry and decrements

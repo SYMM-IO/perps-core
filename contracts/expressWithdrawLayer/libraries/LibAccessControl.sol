@@ -17,6 +17,7 @@ library LibAccessControl {
 	bytes32 public constant FEE_CLAIMER_ROLE = keccak256("FEE_CLAIMER_ROLE");
 	bytes32 public constant UNLOCK_ROLE = keccak256("UNLOCK_ROLE");
 	bytes32 public constant WITHDRAWER_ROLE = keccak256("WITHDRAWER_ROLE");
+	bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
 	bytes32 public constant WITHDRAW_OPTION_TYPEHASH = keccak256(
 		"WithdrawOption(address user,uint256 nonce,uint8 optionType,uint256 availableAt,address affiliate,uint256 affiliateAmount,uint256 creditAmount,uint256 fee,uint256 operatorFee,uint256 maxUserFee,bytes32 partsHash,uint256 deadline)"
