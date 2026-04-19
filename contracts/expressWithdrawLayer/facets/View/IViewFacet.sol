@@ -24,6 +24,8 @@ interface IViewFacet {
 
 	function lockedAffiliateBalances(address affiliate) external view returns (uint256);
 
+	function generalBadDebt() external view returns (uint256);
+
 	// ── Per-user state ──
 
 	function nonces(address user) external view returns (uint256);

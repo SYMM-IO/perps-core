@@ -85,14 +85,12 @@ contract AccelerateFacet is IAccelerateFacet, IOperatorEvents, ReentrancyGuard {
 		info.affiliateAmount = offer.affiliateAmount;
 		info.creditAmount = offer.creditAmount;
 
-		// Activate the debt and pull collateral from core via advanceWithdraw.
-		LibCreditLine.activate(g.symmio, user, requestId, info);
+		_unlockAndDeductPools(info);
+		info.status = Status.PROCESSED;
 
 		// ── Interactions ──
+		LibCreditLine.activate(g.symmio, user, requestId, info);
 		_collectAndTransfer(user, requestId, parts, info);
-		_unlockAndDeductPools(info);
-
-		info.status = Status.PROCESSED;
 
 		emit WithdrawAccelerated(user, requestId, affiliate, offer.affiliateAmount, offer.creditAmount, newGeneralAmount);
 		emit WithdrawProcessed(user, requestId);

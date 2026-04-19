@@ -56,15 +56,15 @@ contract OperatorFacet is IOperatorFacet, ReentrancyGuard {
 		if (block.timestamp < processableAt) revert LibErrors.TooEarly();
 
 		if (info.optionType != OptionType.STANDARD) {
-			LibCreditLine.activate(s.symmio, user, requestId, info);
-		}
-
-		_collectAndTransfer(user, requestId, parts, info);
-		if (info.optionType != OptionType.STANDARD) {
 			_unlockAndDeductPools(info);
 		}
-
 		info.status = Status.PROCESSED;
+
+		if (info.optionType != OptionType.STANDARD) {
+			LibCreditLine.activate(s.symmio, user, requestId, info);
+		}
+		_collectAndTransfer(user, requestId, parts, info);
+
 		emit WithdrawProcessed(user, requestId);
 	}
 
@@ -86,15 +86,15 @@ contract OperatorFacet is IOperatorFacet, ReentrancyGuard {
 		if (keccak256(abi.encode(parts)) != info.partsHash) revert LibErrors.PartsMismatch();
 
 		if (info.optionType != OptionType.STANDARD) {
-			LibCreditLine.activate(s.symmio, user, requestId, info);
-		}
-
-		_collectAndTransfer(user, requestId, parts, info);
-		if (info.optionType != OptionType.STANDARD) {
 			_unlockAndDeductPools(info);
 		}
-
 		info.status = Status.PROCESSED;
+
+		if (info.optionType != OptionType.STANDARD) {
+			LibCreditLine.activate(s.symmio, user, requestId, info);
+		}
+		_collectAndTransfer(user, requestId, parts, info);
+
 		emit WithdrawUnlockedAndProcessed(user, requestId);
 	}
 
