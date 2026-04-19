@@ -14,6 +14,8 @@ library PoolStorage {
 		uint256 lockedGeneralBalance;
 		mapping(address => uint256) affiliateBalances;
 		mapping(address => uint256) lockedAffiliateBalances;
+		/// @dev Cumulative generalAmount lost to post-payout rollbacks
+		uint256 generalBadDebt;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

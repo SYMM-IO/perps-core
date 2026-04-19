@@ -49,6 +49,10 @@ contract ViewFacet is IViewFacet {
 		return PoolStorage.layout().lockedAffiliateBalances[affiliate];
 	}
 
+	function generalBadDebt() external view returns (uint256) {
+		return PoolStorage.layout().generalBadDebt;
+	}
+
 	// ── Per-user state ──
 
 	function nonces(address user) external view returns (uint256) {

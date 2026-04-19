@@ -106,10 +106,10 @@ contract SymmioHookFacet is ISymmioHookFacet, ReentrancyGuard {
 		emit WithdrawAccepted(withdrawRequest.user, withdrawRequest.id, offer.optionType);
 
 		if (optType == OptionType.IMMEDIATE) {
-			LibCreditLine.activate(g.symmio, withdrawRequest.user, withdrawRequest.id, info);
-			_collectAndTransfer(withdrawRequest.user, withdrawRequest.id, withdrawRequest.parts, info);
 			_unlockAndDeductPools(info);
 			info.status = Status.PROCESSED;
+			LibCreditLine.activate(g.symmio, withdrawRequest.user, withdrawRequest.id, info);
+			_collectAndTransfer(withdrawRequest.user, withdrawRequest.id, withdrawRequest.parts, info);
 			emit WithdrawProcessed(withdrawRequest.user, withdrawRequest.id);
 		} else {
 			info.status = Status.ACCEPTED;
@@ -398,6 +398,46 @@ contract SymmioHookFacet is ISymmioHookFacet, ReentrancyGuard {
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
 		if (info.optionType == OptionType.STANDARD) revert LibErrors.InvalidPostPayoutRollback();
 
+		_restoreSponsor(user, requestId, info);
+		_recordGeneralLoss(user, requestId, info);
 		LibCreditLine.coverLoss(g.collateral, g.symmio, user, requestId, info);
+	}
+
+	function _restoreSponsor(address user, uint256 requestId, WithdrawInfo storage info) internal {
+		uint256 coverage = info.sponsorCoverage;
+		if (coverage == 0) return;
+
+		FeeStorage.Layout storage f = FeeStorage.layout();
+		address affiliate = info.affiliate;
+		uint256 remaining = coverage;
+
+		uint256 availAff = f.collectedFees[affiliate];
+		uint256 takeAff = remaining < availAff ? remaining : availAff;
+		if (takeAff > 0) {
+			f.collectedFees[affiliate] = availAff - takeAff;
+			remaining -= takeAff;
+		}
+
+		if (remaining > 0) {
+			uint256 availOp = f.collectedOperatorFees[affiliate];
+			uint256 takeOp = remaining < availOp ? remaining : availOp;
+			if (takeOp > 0) {
+				f.collectedOperatorFees[affiliate] = availOp - takeOp;
+				remaining -= takeOp;
+			}
+		}
+
+		uint256 restored = coverage - remaining;
+		if (restored > 0) {
+			f.sponsorBalances[affiliate] += restored;
+		}
+		info.sponsorCoverage = 0;
+		emit SponsorCoverageRestored(user, requestId, affiliate, restored, remaining);
+	}
+
+	function _recordGeneralLoss(address user, uint256 requestId, WithdrawInfo storage info) internal {
+		if (info.generalAmount == 0) return;
+		PoolStorage.layout().generalBadDebt += info.generalAmount;
+		emit GeneralBadDebtAccrued(user, requestId, info.generalAmount);
 	}
 }

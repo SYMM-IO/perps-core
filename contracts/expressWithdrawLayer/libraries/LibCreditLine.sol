@@ -111,17 +111,21 @@ library LibCreditLine {
 	}
 
 	/// @dev Covers credit loss on post-payout rollback (suspend/force-cancel after PROCESSED).
-	///      Deducts from the affiliate pool up to available balance; any shortfall is accrued as bad debt.
+	///      Caps the deduction at the affiliate's unlocked balance so other pending requests
+	///      of the same affiliate keep their `locked <= balance` invariant. Any shortfall
+	///      is accrued as bad debt.
 	function coverLoss(IERC20, address, address user, uint256 requestId, WithdrawInfo storage info) internal {
 		if (info.creditAmount == 0) return;
 
 		PoolStorage.Layout storage p = PoolStorage.layout();
-		uint256 available = p.affiliateBalances[info.affiliate];
-		uint256 coverable = available < info.creditAmount ? available : info.creditAmount;
+		uint256 balance = p.affiliateBalances[info.affiliate];
+		uint256 locked = p.lockedAffiliateBalances[info.affiliate];
+		uint256 unlocked = balance > locked ? balance - locked : 0;
+		uint256 coverable = unlocked < info.creditAmount ? unlocked : info.creditAmount;
 		uint256 deficit = info.creditAmount - coverable;
 
 		if (coverable > 0) {
-			p.affiliateBalances[info.affiliate] -= coverable;
+			p.affiliateBalances[info.affiliate] = balance - coverable;
 		}
 		if (deficit > 0) {
 			CreditLineStorage.layout().affiliates[info.affiliate].badDebt += deficit;
