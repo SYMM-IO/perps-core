@@ -53,6 +53,10 @@ contract ViewFacet is IViewFacet {
 		return PoolStorage.layout().generalBadDebt;
 	}
 
+	function paused() external view returns (bool) {
+		return GlobalStorage.layout().paused;
+	}
+
 	// ── Per-user state ──
 
 	function nonces(address user) external view returns (uint256) {

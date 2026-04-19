@@ -3438,6 +3438,373 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		})
 	})
 
+	describe("Global pause kill switch", function () {
+		const PAUSER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("PAUSER_ROLE"))
+
+		it("setPaused flips the flag and emits PausedUpdated", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, deployer } = fixture
+			expect(await expressProvider.paused()).to.equal(false)
+
+			await expect(expressProvider.connect(deployer).setPaused(true)).to.emit(expressProvider, "PausedUpdated").withArgs(true)
+			expect(await expressProvider.paused()).to.equal(true)
+
+			await expect(expressProvider.connect(deployer).setPaused(false)).to.emit(expressProvider, "PausedUpdated").withArgs(false)
+			expect(await expressProvider.paused()).to.equal(false)
+		})
+
+		it("setPaused rejects callers without PAUSER_ROLE", async function () {
+			const fixture = await deployFixture()
+			const { user, expressProvider } = fixture
+			await expect(expressProvider.connect(user).setPaused(true)).to.be.revertedWithCustomError(expressProvider, "AccessDenied")
+			expect(await expressProvider.paused()).to.equal(false)
+		})
+
+		it("PAUSER_ROLE can be granted to and revoked from non-admin accounts", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, deployer, affiliateOwner } = fixture
+
+			await expect(expressProvider.connect(affiliateOwner).setPaused(true)).to.be.revertedWithCustomError(expressProvider, "AccessDenied")
+
+			await expressProvider.connect(deployer).grantRole(PAUSER_ROLE, affiliateOwner.address)
+			await expressProvider.connect(affiliateOwner).setPaused(true)
+			expect(await expressProvider.paused()).to.equal(true)
+
+			await expressProvider.connect(deployer).revokeRole(PAUSER_ROLE, affiliateOwner.address)
+			await expect(expressProvider.connect(affiliateOwner).setPaused(false)).to.be.revertedWithCustomError(expressProvider, "AccessDenied")
+			expect(await expressProvider.paused()).to.equal(true)
+		})
+
+		it("pause blocks onWithdrawRequest; user's core balance is fully restored by the revert", async function () {
+			const fixture = await deployFixture()
+			const { user, expressProvider, context, deployer, botSigner, receiver, affiliate } = fixture
+
+			const userBalBefore = await context.viewFacet.balanceOf(user.address)
+			const lockedBefore = await context.viewFacet.getWithdrawLockedBalance()
+
+			await expressProvider.connect(deployer).setPaused(true)
+
+			const withdrawAmount = 500n * 10n ** 18n
+			const expressAddr = await expressProvider.getAddress()
+			const now = (await ethers.provider.getBlock("latest"))!.timestamp
+			const deadline = now + 3600
+			const parts = [
+				{
+					id: 0n,
+					amount: withdrawAmount,
+					chainId: 31337n,
+					receiver: receiver.address,
+					virtualProvider: ethers.ZeroAddress,
+					expressProvider: expressAddr,
+				},
+			]
+			const sig = await signWithdrawOption(expressProvider, botSigner, {
+				user: user.address,
+				nonce: 0n,
+				optionType: 1,
+				availableAt: 0,
+				affiliate,
+				affiliateAmount: 0n,
+				creditAmount: 0n,
+				fee: 0n,
+				operatorFee: 0n,
+				partsHash: computePartsHash(parts),
+				deadline,
+			})
+			const pd = encodeProviderData(0n, 1, 0, affiliate, 0n, 0n, 0n, 0n, deadline, sig)
+
+			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, pd)).to.be.reverted
+
+			expect(await context.viewFacet.balanceOf(user.address)).to.equal(userBalBefore)
+			expect(await context.viewFacet.getWithdrawLockedBalance()).to.equal(lockedBefore)
+			expect(await expressProvider.nonces(user.address)).to.equal(0n)
+		})
+
+		it("pause blocks processWithdraw, lockWithdraw, and unlockAndProcess", async function () {
+			const fixture = await deployFixture()
+			const { user, expressProvider, deployer, locker, unlocker, operator } = fixture
+
+			const { parts: parts1, requestId: id1 } = await acceptInstant(fixture)
+			const { parts: parts2, requestId: id2 } = await acceptInstant(fixture)
+			await expressProvider.connect(locker).lockWithdraw(user.address, id2)
+
+			await expressProvider.connect(deployer).setPaused(true)
+
+			await expect(expressProvider.connect(operator).processWithdraw(user.address, id1, parts1)).to.be.revertedWithCustomError(
+				expressProvider,
+				"Paused",
+			)
+			await expect(expressProvider.connect(locker).lockWithdraw(user.address, id1)).to.be.revertedWithCustomError(expressProvider, "Paused")
+			await expect(expressProvider.connect(unlocker).unlockAndProcess(user.address, id2, parts2)).to.be.revertedWithCustomError(
+				expressProvider,
+				"Paused",
+			)
+
+			expect((await expressProvider.getWithdrawInfo(user.address, id1)).status).to.equal(1n)
+			expect((await expressProvider.getWithdrawInfo(user.address, id2)).status).to.equal(2n)
+		})
+
+		it("pause blocks accelerateWithdraw", async function () {
+			const fixture = await deployFixture()
+			const { user, expressProvider, deployer } = fixture
+			const { parts, requestId } = await acceptStandard(fixture)
+
+			await expressProvider.connect(deployer).setPaused(true)
+
+			await expect(expressProvider.connect(user).accelerateWithdraw(user.address, requestId, parts, "0x", "0x")).to.be.revertedWithCustomError(
+				expressProvider,
+				"Paused",
+			)
+		})
+
+		it("pause blocks all ControlFacet pool and fee mutations", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, deployer, collateral, affiliate, receiver } = fixture
+
+			await collateral.mint(deployer.address, 100n * 10n ** 18n)
+			await collateral.connect(deployer).approve(await expressProvider.getAddress(), 100n * 10n ** 18n)
+
+			await expressProvider.connect(deployer).setPaused(true)
+
+			await expect(expressProvider.connect(deployer).depositToGeneral(1n)).to.be.revertedWithCustomError(expressProvider, "Paused")
+			await expect(expressProvider.connect(deployer).depositToAffiliate(affiliate, 1n)).to.be.revertedWithCustomError(expressProvider, "Paused")
+			await expect(expressProvider.connect(deployer).withdrawFromGeneral(1n)).to.be.revertedWithCustomError(expressProvider, "Paused")
+			await expect(expressProvider.connect(deployer).withdrawFromAffiliate(affiliate, 1n)).to.be.revertedWithCustomError(expressProvider, "Paused")
+			await expect(expressProvider.connect(deployer).depositSponsorBalance(affiliate, 1n)).to.be.revertedWithCustomError(expressProvider, "Paused")
+			await expect(expressProvider.connect(deployer).withdrawSponsorBalance(affiliate, 1n, receiver.address)).to.be.revertedWithCustomError(
+				expressProvider,
+				"Paused",
+			)
+			await expect(expressProvider.connect(deployer).claimFees(affiliate, receiver.address)).to.be.revertedWithCustomError(expressProvider, "Paused")
+			await expect(expressProvider.connect(deployer).claimOperatorFees(affiliate, receiver.address)).to.be.revertedWithCustomError(
+				expressProvider,
+				"Paused",
+			)
+		})
+
+		it("pause blocks self-service setMyCreditLineConfig", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, deployer, affiliateOwner } = fixture
+
+			await expressProvider.connect(deployer).setCreditLineProtocolConfig(affiliateOwner.address, 1000n * 10n ** 18n, 0)
+			await expressProvider.connect(deployer).setPaused(true)
+
+			await expect(expressProvider.connect(affiliateOwner).setMyCreditLineConfig(500n * 10n ** 18n, 0)).to.be.revertedWithCustomError(
+				expressProvider,
+				"Paused",
+			)
+		})
+
+		it("pause allows onWithdrawCancelRequest — in-flight INSTANT can still cancel via core", async function () {
+			const fixture = await deployFixture()
+			const { user, expressProvider, context, deployer, generalFunding, affiliateFunding, affiliate } = fixture
+
+			const affiliateAmount = 200n * 10n ** 18n
+			const { requestId } = await acceptInstant(fixture, { affiliateAmount })
+
+			await expressProvider.connect(deployer).setPaused(true)
+
+			await context.withdrawFacet.connect(user).requestCancelWithdraw(requestId)
+
+			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).status).to.equal(5n)
+			expect(await expressProvider.generalBalance()).to.equal(generalFunding)
+			expect(await expressProvider.lockedGeneralBalance()).to.equal(0n)
+			expect(await expressProvider.affiliateBalances(affiliate)).to.equal(affiliateFunding)
+			expect(await expressProvider.lockedAffiliateBalances(affiliate)).to.equal(0n)
+		})
+
+		it("pause allows onWithdrawSuspend — PROCESSED INSTANT can still suspend with coverLoss", async function () {
+			const fixture = await deployFixture()
+			const { user, expressProvider, context, deployer, affiliate, affiliateFunding } = fixture
+
+			const affiliateAmount = 200n * 10n ** 18n
+			const creditAmount = 100n * 10n ** 18n
+			const withdrawAmount = 1000n * 10n ** 18n
+			const expressAddr = await expressProvider.getAddress()
+			const now = (await ethers.provider.getBlock("latest"))!.timestamp
+			const deadline = now + 3600
+			const parts = [
+				{
+					id: 0n,
+					amount: withdrawAmount,
+					chainId: 31337n,
+					receiver: fixture.receiver.address,
+					virtualProvider: ethers.ZeroAddress,
+					expressProvider: expressAddr,
+				},
+			]
+			const sig = await signWithdrawOption(expressProvider, fixture.botSigner, {
+				user: user.address,
+				nonce: 0n,
+				optionType: 1,
+				availableAt: 0,
+				affiliate,
+				affiliateAmount,
+				creditAmount,
+				fee: 0n,
+				operatorFee: 0n,
+				partsHash: computePartsHash(parts),
+				deadline,
+			})
+			const creditDataRaw = buildCreditData(100_000n * 10n ** 18n, now)
+			const pd = encodeProviderData(
+				0n,
+				1,
+				0,
+				affiliate,
+				affiliateAmount,
+				creditAmount,
+				0n,
+				0n,
+				deadline,
+				sig,
+				undefined,
+				undefined,
+				undefined,
+				creditDataRaw,
+			)
+			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, pd)
+			const requestId = await context.viewFacet.getLastWithdrawRequestId(user.address)
+			await ethers.provider.send("evm_increaseTime", [21])
+			await ethers.provider.send("evm_mine", [])
+			await expressProvider.connect(fixture.operator).processWithdraw(user.address, requestId, parts)
+
+			await expressProvider.connect(deployer).setPaused(true)
+
+			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(user.address)
+			await context.withdrawFacet.connect(context.signers.admin).suspendWithdrawRequest(user.address, requestId)
+
+			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).status).to.equal(6n)
+			expect(await expressProvider.affiliateBalances(affiliate)).to.equal(affiliateFunding - affiliateAmount - creditAmount)
+			expect(await expressProvider.creditLineActiveDebt(affiliate)).to.equal(0n)
+			expect(await expressProvider.generalBadDebt()).to.equal(withdrawAmount - affiliateAmount - creditAmount)
+		})
+
+		it("pause allows onWithdrawComplete — STANDARD can still finalize from core", async function () {
+			const fixture = await deployFixture()
+			const { user, expressProvider, context, deployer } = fixture
+
+			const { requestId } = await acceptStandard(fixture)
+			await ethers.provider.send("evm_increaseTime", [12 * 3600])
+			await ethers.provider.send("evm_mine", [])
+
+			await expressProvider.connect(deployer).setPaused(true)
+
+			await context.withdrawFacet.finalizeWithdrawRequest(user.address, requestId)
+			const info = await expressProvider.getWithdrawInfo(user.address, requestId)
+			expect(info.status).to.equal(4n)
+			expect(info.finalizedAt).to.be.greaterThan(0n)
+		})
+
+		it("pause allows onWithdrawComplete for PROCESSED INSTANT — pools replenished and debt settled", async function () {
+			const fixture = await deployFixture()
+			const { user, expressProvider, context, deployer, operator, affiliate, generalFunding, affiliateFunding } = fixture
+
+			const affiliateAmount = 200n * 10n ** 18n
+			const { parts, requestId } = await acceptInstant(fixture, { affiliateAmount })
+
+			await ethers.provider.send("evm_increaseTime", [21])
+			await ethers.provider.send("evm_mine", [])
+			await expressProvider.connect(operator).processWithdraw(user.address, requestId, parts)
+
+			await expressProvider.connect(deployer).setPaused(true)
+
+			await ethers.provider.send("evm_increaseTime", [12 * 3600])
+			await ethers.provider.send("evm_mine", [])
+			await context.withdrawFacet.finalizeWithdrawRequest(user.address, requestId)
+
+			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).status).to.equal(4n)
+			expect(await expressProvider.generalBalance()).to.equal(generalFunding)
+			expect(await expressProvider.affiliateBalances(affiliate)).to.equal(affiliateFunding)
+		})
+
+		it("unpausing resumes normal operations end-to-end", async function () {
+			const fixture = await deployFixture()
+			const { user, expressProvider, context, deployer, operator, receiver, collateral } = fixture
+
+			const { parts, requestId, withdrawAmount } = await acceptInstant(fixture)
+			const receiverBefore = await collateral.balanceOf(receiver.address)
+
+			await expressProvider.connect(deployer).setPaused(true)
+			await ethers.provider.send("evm_increaseTime", [21])
+			await ethers.provider.send("evm_mine", [])
+			await expect(expressProvider.connect(operator).processWithdraw(user.address, requestId, parts)).to.be.revertedWithCustomError(
+				expressProvider,
+				"Paused",
+			)
+
+			await expressProvider.connect(deployer).setPaused(false)
+			expect(await expressProvider.paused()).to.equal(false)
+
+			await expressProvider.connect(operator).processWithdraw(user.address, requestId, parts)
+			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).status).to.equal(3n)
+			expect(await collateral.balanceOf(receiver.address)).to.equal(receiverBefore + withdrawAmount)
+		})
+
+		it("owner recovery tools (rescueTokens, clearRequestDebt) remain available under pause", async function () {
+			const fixture = await deployFixture()
+			const { user, expressProvider, context, deployer, collateral, affiliate, botSigner, receiver } = fixture
+
+			const creditAmount = 400n * 10n ** 18n
+			const withdrawAmount = 1500n * 10n ** 18n
+			const expressAddr = await expressProvider.getAddress()
+			const now = (await ethers.provider.getBlock("latest"))!.timestamp
+			const deadline = now + 3600
+			const parts = [
+				{
+					id: 0n,
+					amount: withdrawAmount,
+					chainId: 31337n,
+					receiver: receiver.address,
+					virtualProvider: ethers.ZeroAddress,
+					expressProvider: expressAddr,
+				},
+			]
+			const sig = await signWithdrawOption(expressProvider, botSigner, {
+				user: user.address,
+				nonce: 0n,
+				optionType: 1,
+				availableAt: 0,
+				affiliate,
+				affiliateAmount: 0n,
+				creditAmount,
+				fee: 0n,
+				operatorFee: 0n,
+				partsHash: computePartsHash(parts),
+				deadline,
+			})
+			const creditDataRaw = buildCreditData(100_000n * 10n ** 18n, now)
+			const pd = encodeProviderData(0n, 1, 0, affiliate, 0n, creditAmount, 0n, 0n, deadline, sig, undefined, undefined, undefined, creditDataRaw)
+			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, pd)
+			const requestId = await context.viewFacet.getLastWithdrawRequestId(user.address)
+
+			await expressProvider.connect(deployer).setPaused(true)
+
+			const stuck = 555n * 10n ** 18n
+			await collateral.mint(deployer.address, stuck)
+			await collateral.connect(deployer).transfer(expressAddr, stuck)
+			const rescueBalBefore = await collateral.balanceOf(receiver.address)
+			await expressProvider.connect(deployer).rescueTokens(await collateral.getAddress(), receiver.address, stuck)
+			expect(await collateral.balanceOf(receiver.address)).to.equal(rescueBalBefore + stuck)
+
+			expect(await expressProvider.creditLineReservedDebt(affiliate)).to.equal(creditAmount)
+			await expressProvider.connect(deployer).clearRequestDebt(affiliate, user.address, requestId)
+			expect(await expressProvider.creditLineReservedDebt(affiliate)).to.equal(0n)
+		})
+
+		it("pause does not affect view functions", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, deployer, affiliate } = fixture
+
+			await expressProvider.connect(deployer).setPaused(true)
+
+			expect(await expressProvider.generalBalance()).to.be.a("bigint")
+			expect(await expressProvider.lockedGeneralBalance()).to.be.a("bigint")
+			expect(await expressProvider.affiliateBalances(affiliate)).to.be.a("bigint")
+			expect(await expressProvider.paused()).to.equal(true)
+		})
+	})
+
 	describe("Owner clearRequestDebt", function () {
 		it("clears reserved debt and decrements reservedDebt aggregate", async function () {
 			const fixture = await deployFixture()

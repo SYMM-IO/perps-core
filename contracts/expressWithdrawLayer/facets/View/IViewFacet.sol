@@ -26,6 +26,8 @@ interface IViewFacet {
 
 	function generalBadDebt() external view returns (uint256);
 
+	function paused() external view returns (bool);
+
 	// ── Per-user state ──
 
 	function nonces(address user) external view returns (uint256);

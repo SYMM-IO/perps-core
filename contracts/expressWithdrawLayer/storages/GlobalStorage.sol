@@ -33,6 +33,10 @@ library GlobalStorage {
 		uint256 reentrancyStatus;
 		// ── Accelerate (promote STANDARD → INSTANT) per-request nonce ──
 		mapping(address => mapping(uint256 => uint256)) accelerateNonces;
+		// ── Global kill switch ──
+		/// @dev When true, all user-facing mutations revert. Core callbacks that must succeed
+		///      (`onWithdrawComplete`, `onWithdrawSuspend`, `onWithdrawCancelRequest`) remain open.
+		bool paused;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

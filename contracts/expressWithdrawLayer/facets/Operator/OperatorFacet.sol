@@ -19,12 +19,13 @@ import { GlobalStorage } from "../../storages/GlobalStorage.sol";
 import { PoolStorage } from "../../storages/PoolStorage.sol";
 import { FeeStorage } from "../../storages/FeeStorage.sol";
 
+import { Pausable } from "../../utils/Pausable.sol";
 import { ReentrancyGuard } from "../../utils/ReentrancyGuard.sol";
 
 /// @title OperatorFacet
 /// @notice Bot/operator functions for processing, locking, and unlocking withdrawals.
-contract OperatorFacet is IOperatorFacet, ReentrancyGuard {
-	function processWithdraw(address user, uint256 requestId, WithdrawReceiverPart[] calldata parts) external nonReentrant {
+contract OperatorFacet is IOperatorFacet, Pausable, ReentrancyGuard {
+	function processWithdraw(address user, uint256 requestId, WithdrawReceiverPart[] calldata parts) external nonReentrant whenNotPaused {
 		GlobalStorage.Layout storage s = GlobalStorage.layout();
 		WithdrawInfo storage info = s.withdrawInfos[user][requestId];
 
@@ -68,7 +69,7 @@ contract OperatorFacet is IOperatorFacet, ReentrancyGuard {
 		emit WithdrawProcessed(user, requestId);
 	}
 
-	function lockWithdraw(address user, uint256 requestId) external nonReentrant {
+	function lockWithdraw(address user, uint256 requestId) external nonReentrant whenNotPaused {
 		LibAccessControl.enforceRole(LibAccessControl.LOCKER_ROLE);
 		WithdrawInfo storage info = GlobalStorage.layout().withdrawInfos[user][requestId];
 		if (info.status != Status.ACCEPTED) revert LibErrors.NotAccepted();
@@ -76,7 +77,7 @@ contract OperatorFacet is IOperatorFacet, ReentrancyGuard {
 		emit WithdrawLocked(user, requestId);
 	}
 
-	function unlockAndProcess(address user, uint256 requestId, WithdrawReceiverPart[] calldata parts) external nonReentrant {
+	function unlockAndProcess(address user, uint256 requestId, WithdrawReceiverPart[] calldata parts) external nonReentrant whenNotPaused {
 		LibAccessControl.enforceRole(LibAccessControl.UNLOCK_ROLE);
 		GlobalStorage.Layout storage s = GlobalStorage.layout();
 		WithdrawInfo storage info = s.withdrawInfos[user][requestId];

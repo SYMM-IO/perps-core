@@ -23,6 +23,7 @@ import { GlobalStorage } from "../../storages/GlobalStorage.sol";
 import { PoolStorage } from "../../storages/PoolStorage.sol";
 import { FeeStorage } from "../../storages/FeeStorage.sol";
 
+import { Pausable } from "../../utils/Pausable.sol";
 import { ReentrancyGuard } from "../../utils/ReentrancyGuard.sol";
 
 /// @title AccelerateFacet
@@ -33,14 +34,14 @@ import { ReentrancyGuard } from "../../utils/ReentrancyGuard.sol";
 ///         collateral from core), pool funds are locked and deducted, and the user is
 ///         paid immediately. On cap breach: the whole tx reverts atomically, preserving
 ///         the STANDARD request so the same signature can be retried later.
-contract AccelerateFacet is IAccelerateFacet, IOperatorEvents, ReentrancyGuard {
+contract AccelerateFacet is IAccelerateFacet, IOperatorEvents, Pausable, ReentrancyGuard {
 	function accelerateWithdraw(
 		address user,
 		uint256 requestId,
 		WithdrawReceiverPart[] calldata parts,
 		bytes calldata accelerateOfferData,
 		bytes calldata creditDataRaw
-	) external nonReentrant {
+	) external nonReentrant whenNotPaused {
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
 		WithdrawInfo storage info = g.withdrawInfos[user][requestId];
 

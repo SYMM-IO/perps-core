@@ -25,13 +25,14 @@ import { PoolStorage } from "../../storages/PoolStorage.sol";
 import { FeeStorage } from "../../storages/FeeStorage.sol";
 import { ValidatorStorage } from "../../storages/ValidatorStorage.sol";
 
+import { Pausable } from "../../utils/Pausable.sol";
 import { ReentrancyGuard } from "../../utils/ReentrancyGuard.sol";
 
 /// @title SymmioHookFacet
 /// @notice Handles SYMMIO callbacks for the ExpressProvider diamond.
-contract SymmioHookFacet is ISymmioHookFacet, ReentrancyGuard {
+contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 	/// @notice Processes a new withdraw request: decodes/verifies the offer, locks funds, accepts the request.
-	function onWithdrawRequest(WithdrawRequest memory withdrawRequest, address) external nonReentrant {
+	function onWithdrawRequest(WithdrawRequest memory withdrawRequest, address) external nonReentrant whenNotPaused {
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
 		FeeStorage.Layout storage f = FeeStorage.layout();
 		ValidatorStorage.Layout storage v = ValidatorStorage.layout();

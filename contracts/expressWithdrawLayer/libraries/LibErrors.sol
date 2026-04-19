@@ -47,6 +47,7 @@ library LibErrors {
 	error InvalidPostPayoutRollback();
 	error VirtualProviderMustBeZero();
 	error Reentrancy();
+	error Paused();
 	// ── Accelerate flow ──
 	error AccelerateOnlyFromStandardAccepted();
 	error AccelerateOfferExpired();
