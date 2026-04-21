@@ -21,7 +21,7 @@ import { buildDiamondCut, applyDiamondCut, loadDeployedFacets } from "./utils/up
 const OUTPUT_DIR = "./scripts/upgrade/output"
 
 async function main() {
-	const shared = loadUpgradeConfigShared()
+	const shared = loadUpgradeConfigShared(connection.networkName)
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? shared.diamondAddress
 	if (!DIAMOND_ADDRESS) throw new Error("DIAMOND_ADDRESS required (env or config)")
 

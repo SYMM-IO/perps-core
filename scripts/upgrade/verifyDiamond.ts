@@ -19,13 +19,13 @@
  */
 import fs from "fs"
 
+import { resolveConfigFile } from "./utils/sharedConfig.js"
 import { verifyAgainstArtifacts } from "./utils/verifyUpgrade.js"
 
-const CONFIG_FILE = process.env.UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/upgrade.json"
-
 function loadConfig(): { diamondAddress?: string } {
-	if (!fs.existsSync(CONFIG_FILE)) return {}
-	return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8"))
+	const configFile = resolveConfigFile("upgrade", undefined, process.env.UPGRADE_CONFIG_FILE)
+	if (!fs.existsSync(configFile)) return {}
+	return JSON.parse(fs.readFileSync(configFile, "utf-8"))
 }
 
 async function main() {

@@ -6,7 +6,7 @@ Rehearse the full v0.8.4 -> v0.8.5 upgrade + migration on a fork of a live netwo
 
 The fork rehearsal mirrors the production flow with three separate steps:
 
-1. **Upgrade** (`forkUpgrade.ts`) -- impersonate admin, pause, deploy facets, diamondCut, set params, deploy AccountLayer + InstantLayer, wire integrations
+1. **Upgrade** (`forkUpgrade.ts`) -- impersonate admin, pause, deploy facets, diamondCut, set params, deploy AccountLayer + InstantLayer + SymmioSymbolManager, wire integrations
 2. **Prepare migration input** (`prepareMigrationInput.ts`) -- fetch from subgraph, validate against on-chain
 3. **Migrate** (`runMigration.ts`) -- run migration + verify using the validated input
 
@@ -51,14 +51,14 @@ FORK_BLOCK_NUMBER=250000000 npx hardhat node --network fork-arbitrum
 
 ### Step 1: Upgrade
 
-Deploys v0.8.5 facets, applies diamondCut, sets parameters, deploys AccountLayer Diamond + InstantLayer, and wires all integrations on the fork (impersonates diamond owner).
+Deploys v0.8.5 facets, applies diamondCut, sets parameters, deploys AccountLayer Diamond + InstantLayer + SymmioSymbolManager, and wires all integrations on the fork (impersonates diamond owner).
 
 ```bash
 # Terminal 2
 npx hardhat run scripts/upgrade/forkUpgrade.ts --network localhost
 ```
 
-Output: `scripts/upgrade/output/forkUpgrade-report.json`, `deployed-facets.json`, `deployed-accountlayer-instantlayer.json`
+Output: `scripts/upgrade/output/forkUpgrade-report.json`, `deployed-facets.json`, `deployed-accountlayer-instantlayer.json`, `deployed-symbolmanager.json`
 
 ### Step 1.5: Verify upgrade
 
@@ -143,10 +143,12 @@ Override with `SUBGRAPH_ENDPOINT` env var.
 Copy and edit the sample configs:
 
 ```bash
-cp scripts/upgrade/config/samples/upgrade.sample.json scripts/upgrade/config/upgrade.json
-cp scripts/upgrade/config/samples/prepareMigration.sample.json scripts/upgrade/config/prepareMigration.json
-cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/migrate.json
+cp scripts/upgrade/config/samples/upgrade.sample.json scripts/upgrade/config/upgrade-<network>.json
+cp scripts/upgrade/config/samples/prepareMigration.sample.json scripts/upgrade/config/prepareMigration-<network>.json
+cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/migrate-<network>.json
 ```
+
+Config files support network-postfixed names (e.g. `upgrade-arbitrum.json`). Scripts try `{name}-{network}.json` first, fall back to `{name}.json`.
 
 ### Upgrade config (`upgrade.json`)
 
@@ -169,7 +171,7 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 | `ADMIN_ADDRESS` | `adminAddress` |
 | `DIAMOND_CUT_CHUNK_SIZE` | `diamondCutChunkSize` |
 | `SUBGRAPH_ENDPOINT` | `subgraphEndpoint` |
-| `UPGRADE_CONFIG_FILE` | Config file path (default: `scripts/upgrade/config/upgrade.json`) |
+| `UPGRADE_CONFIG_FILE` | Config file path (default: `scripts/upgrade/config/upgrade-{network}.json`, falls back to `upgrade.json`) |
 
 ### Prepare migration config (`prepareMigration.json`)
 
@@ -189,7 +191,7 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 | `SUBGRAPH_ENDPOINT` | `subgraphEndpoint` |
 | `SPOT_CHECK_COUNT` | `spotCheckCount` |
 | `PREPARE_OUTPUT_FILE` | `outputFile` |
-| `PREPARE_MIGRATION_CONFIG_FILE` | Config file path (default: `scripts/upgrade/config/prepareMigration.json`) |
+| `PREPARE_MIGRATION_CONFIG_FILE` | Config file path (default: `scripts/upgrade/config/prepareMigration-{network}.json`, falls back to `prepareMigration.json`) |
 
 ### Migration config (`migrate.json`)
 
@@ -214,7 +216,7 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 | `DRY_RUN` | `dryRun` |
 | `FORK` | `fork` |
 | `SKIP_PRE_CHECK` | `skipPreCheck` |
-| `MIGRATION_CONFIG_FILE` | Config file path (default: `scripts/upgrade/config/migrate.json`) |
+| `MIGRATION_CONFIG_FILE` | Config file path (default: `scripts/upgrade/config/migrate-{network}.json`, falls back to `migrate.json`) |
 
 ## newV085Parameters
 

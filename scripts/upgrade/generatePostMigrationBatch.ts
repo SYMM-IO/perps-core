@@ -2,7 +2,7 @@ import fs from "fs"
 
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
-import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
+import { loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig.js"
 import { toHumanReadableSafeTxFromIface, type SafeBatch, type SafeTransaction } from "./utils/upgradeHelpers.js"
 
 /**
@@ -40,12 +40,12 @@ type Config = {
 	partyBs?: string[]
 }
 
-const CONFIG_FILE = process.env.POST_MIGRATION_CONFIG_FILE ?? "./scripts/upgrade/config/postMigration.json"
 const OUTPUT_DIR = "./scripts/upgrade/output"
 
-function loadConfig(): Config {
-	if (!fs.existsSync(CONFIG_FILE)) return {}
-	return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8")) as Config
+function loadConfig(networkName: string): Config {
+	const configFile = resolveConfigFile("postMigration", networkName, process.env.POST_MIGRATION_CONFIG_FILE)
+	if (!fs.existsSync(configFile)) return {}
+	return JSON.parse(fs.readFileSync(configFile, "utf-8")) as Config
 }
 
 function ensureDir(dir: string): void {
@@ -63,8 +63,9 @@ const diamondIface = new ethers.Interface(DIAMOND_ABI)
 
 async function main() {
 	await verifyRpc()
-	const config = loadConfig()
-	const shared = loadUpgradeConfigShared()
+	const networkName = connection.networkName
+	const config = loadConfig(networkName)
+	const shared = loadUpgradeConfigShared(networkName)
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress ?? shared.diamondAddress
 	const SAFE_ADDRESS = process.env.SAFE_ADDRESS ?? config.safeAddress ?? shared.safeAddress
 	const MIGRATION_RUNNER = process.env.MIGRATION_RUNNER ?? config.migrationRunner ?? shared.migrationRunner
@@ -119,7 +120,6 @@ async function main() {
 
 	// Write output
 	ensureDir(OUTPUT_DIR)
-	const networkName = connection.networkName
 
 	const txsFile = `${OUTPUT_DIR}/post-migration-transactions-${networkName}.json`
 	const rawTxs = transactions.map(({ to, value, calldata, description }) => ({ to, value, calldata, description }))

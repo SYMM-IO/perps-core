@@ -29,7 +29,7 @@ const DIAMOND_ABI = ["function grantRole(address user, bytes32 role)", "function
 const diamondIface = new ethers.Interface(DIAMOND_ABI)
 
 async function main() {
-	const shared = loadUpgradeConfigShared()
+	const shared = loadUpgradeConfigShared(connection.networkName)
 
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? shared.diamondAddress
 	const SAFE_ADDRESS = process.env.SAFE_ADDRESS ?? shared.safeAddress

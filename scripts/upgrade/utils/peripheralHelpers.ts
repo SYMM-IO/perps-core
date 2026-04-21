@@ -63,6 +63,9 @@ type DeployedState = {
 	instantLayer?: {
 		address?: string
 	}
+	symbolManager?: {
+		address?: string
+	}
 }
 
 // ============================================================================
@@ -529,6 +532,89 @@ export function buildWiringTransactions(
 			`registerPartyBs([${partyBsToRegister.length} partyBs]) on InstantLayer`,
 		)
 	}
+
+	return txs
+}
+
+// ============================================================================
+// Deploy SymmioSymbolManager
+// ============================================================================
+
+export type SymbolManagerDeployResult = {
+	address: string
+}
+
+export async function deploySymbolManager(diamondAddress: string, protocolAdmin: string, stateFile?: string): Promise<SymbolManagerDeployResult> {
+	const state = loadState(stateFile ?? "")
+
+	if (state.symbolManager?.address) {
+		log.deployed("SymmioSymbolManager", state.symbolManager.address, true)
+		return { address: state.symbolManager.address }
+	}
+
+	const factory = await ethers.getContractFactory("SymmioSymbolManager")
+	const contract = await factory.deploy(diamondAddress, protocolAdmin)
+	const address = await contract.getAddress()
+
+	if (!state.symbolManager) state.symbolManager = {}
+	state.symbolManager.address = address
+	if (stateFile) saveState(stateFile, state)
+
+	await contract.waitForDeployment()
+	log.deployed("SymmioSymbolManager", address)
+	return { address }
+}
+
+// ============================================================================
+// Wire SymmioSymbolManager to Diamond (EOA path)
+// ============================================================================
+
+export async function wireSymbolManager(diamondAddress: string, symbolManagerAddress: string, adminSigner: any): Promise<void> {
+	const roleHash = (name: string) => ethers.id(name)
+	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", diamondAddress, adminSigner)
+
+	await (await controlFacet.grantRole(symbolManagerAddress, roleHash("SYMBOL_MANAGER_ROLE"))).wait()
+	log.ok("grantRole(SymbolManager, SYMBOL_MANAGER_ROLE)")
+	await (await controlFacet.grantRole(symbolManagerAddress, roleHash("FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE"))).wait()
+	log.ok("grantRole(SymbolManager, FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE)")
+}
+
+// ============================================================================
+// Build SymmioSymbolManager wiring transactions for Safe path
+// ============================================================================
+
+export function buildSymbolManagerWiringTransactions(diamondAddress: string, symbolManagerAddress: string): WiringTransaction[] {
+	const roleHash = (name: string) => ethers.id(name)
+	const txs: WiringTransaction[] = []
+
+	const controlFacetIface = new ethers.Interface(["function grantRole(address account, bytes32 role)"])
+
+	const push = (to: string, iface: ethers.Interface, methodName: string, args: any[], description: string) => {
+		txs.push({
+			to,
+			value: "0",
+			calldata: iface.encodeFunctionData(methodName, args),
+			description,
+			iface,
+			methodName,
+			args,
+		})
+	}
+
+	push(
+		diamondAddress,
+		controlFacetIface,
+		"grantRole",
+		[symbolManagerAddress, roleHash("SYMBOL_MANAGER_ROLE")],
+		`grantRole(SymbolManager, SYMBOL_MANAGER_ROLE)`,
+	)
+	push(
+		diamondAddress,
+		controlFacetIface,
+		"grantRole",
+		[symbolManagerAddress, roleHash("FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE")],
+		`grantRole(SymbolManager, FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE)`,
+	)
 
 	return txs
 }

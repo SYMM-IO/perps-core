@@ -13,7 +13,8 @@
  *   5. Set new v0.8.5 parameters
  *   6. Deploy AccountLayer + InstantLayer and wire them
  *   7. Deploy SymmioPartyB implementation + register
- *   8. Grant migration role
+ *   8. Deploy SymmioSymbolManager and wire it
+ *   9. Grant migration role
  *
  * Usage:
  *   npx hardhat run scripts/upgrade/eoaUpgrade.ts --network localhost
@@ -26,7 +27,15 @@ import path from "path"
 
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
-import { deployAccountLayerDiamond, deployInstantLayer, wireAccountLayerInstantLayer, setupInstantLayerTemplates } from "./utils/peripheralHelpers.js"
+import {
+	deployAccountLayerDiamond,
+	deployInstantLayer,
+	deploySymbolManager,
+	wireAccountLayerInstantLayer,
+	wireSymbolManager,
+	setupInstantLayerTemplates,
+} from "./utils/peripheralHelpers.js"
+import { resolveConfigFile } from "./utils/sharedConfig.js"
 import { deployFacets, buildDiamondCut, applyDiamondCut, setV085Parameters, type NewV085Parameters } from "./utils/upgradeHelpers.js"
 
 type Config = {
@@ -38,10 +47,10 @@ type Config = {
 	newV085Parameters?: NewV085Parameters
 }
 
-const CONFIG_FILE = process.env.UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/upgrade.json"
 const OUTPUT_DIR = "./scripts/upgrade/output"
 
 function loadConfig(): Config {
+	const CONFIG_FILE = resolveConfigFile("upgrade", connection.networkName, process.env.UPGRADE_CONFIG_FILE)
 	if (!fs.existsSync(CONFIG_FILE)) return {}
 	return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8")) as Config
 }
@@ -58,7 +67,7 @@ async function main() {
 	log.header("Symmio v0.8.5 EOA Upgrade")
 	log.kv("Diamond", log.addr(DIAMOND_ADDRESS))
 
-	log.setSteps(8)
+	log.setSteps(9)
 
 	// Step 1: Deploy facets
 	let t = log.step("Deploy v0.8.5 facets")
@@ -166,7 +175,7 @@ async function main() {
 	log.deployed("Implementation", await symmioPartyBImpl.getAddress())
 
 	// Register PartyBs on InstantLayer (from partyBList.json)
-	const PARTYB_LIST_FILE = process.env.PARTYB_LIST_FILE ?? "./scripts/upgrade/config/partyBList.json"
+	const PARTYB_LIST_FILE = resolveConfigFile("partyBList", connection.networkName, process.env.PARTYB_LIST_FILE)
 	if (fs.existsSync(PARTYB_LIST_FILE)) {
 		const listConfig = JSON.parse(fs.readFileSync(PARTYB_LIST_FILE, "utf-8")) as {
 			partyBs?: Record<string, string[]>
@@ -194,7 +203,14 @@ async function main() {
 	}
 	log.stepDone(t)
 
-	// Step 8: Grant migration role
+	// Step 8: Deploy SymmioSymbolManager and wire it
+	t = log.step("Deploy SymmioSymbolManager")
+	const smStateFile = path.join(OUTPUT_DIR, "deployed-symbolmanager.json")
+	const smResult = await deploySymbolManager(DIAMOND_ADDRESS, signerAddress, smStateFile)
+	await wireSymbolManager(DIAMOND_ADDRESS, smResult.address, signer)
+	log.stepDone(t)
+
+	// Step 9: Grant migration role
 	t = log.step("Grant migration role")
 	if (MIGRATION_RUNNER) {
 		await (await controlFacet.grantRole(MIGRATION_RUNNER, ethers.id("MIGRATION_ROLE"))).wait()
@@ -209,6 +225,7 @@ async function main() {
 		["Diamond", DIAMOND_ADDRESS],
 		["AccountLayer", alResult.diamondAddress],
 		["InstantLayer", ilResult.address],
+		["SymbolManager", smResult.address],
 		["Duration", scriptTimer.fmt()],
 	])
 	log.nextSteps([

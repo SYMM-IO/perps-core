@@ -4,7 +4,7 @@ import path from "path"
 import { ethers } from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
-import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
+import { loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig.js"
 import { fetchOpenQuotes } from "./utils/subgraphHelpers.js"
 
 /**
@@ -57,7 +57,7 @@ type PrepareReport = {
 	error?: string
 }
 
-const CONFIG_FILE = process.env.PREPARE_MIGRATION_CONFIG_FILE ?? "./scripts/upgrade/config/prepareMigration.json"
+const CONFIG_FILE = resolveConfigFile("prepareMigration", undefined, process.env.PREPARE_MIGRATION_CONFIG_FILE)
 
 function loadConfig(): PrepareConfig {
 	if (!fs.existsSync(CONFIG_FILE)) return {}

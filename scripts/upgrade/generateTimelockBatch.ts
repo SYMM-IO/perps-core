@@ -17,6 +17,7 @@ import path from "path"
 
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
+import { resolveConfigFile } from "./utils/sharedConfig.js"
 import type { SafeBatch } from "./utils/upgradeHelpers.js"
 
 type Config = {
@@ -32,13 +33,13 @@ const TIMELOCK_ABI = [
 	"function hashOperation(address target, uint256 value, bytes data, bytes32 predecessor, bytes32 salt) pure returns (bytes32)",
 ]
 
-const CONFIG_FILE = process.env.UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/upgrade.json"
 const OUTPUT_DIR = "./scripts/upgrade/output"
 const ZERO_BYTES32 = ethers.ZeroHash
 
-function loadConfig(): Config {
-	if (!fs.existsSync(CONFIG_FILE)) return {}
-	return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8")) as Config
+function loadConfig(networkName: string): Config {
+	const configFile = resolveConfigFile("upgrade", networkName, process.env.UPGRADE_CONFIG_FILE)
+	if (!fs.existsSync(configFile)) return {}
+	return JSON.parse(fs.readFileSync(configFile, "utf-8")) as Config
 }
 
 function formatDuration(seconds: number): string {
@@ -67,7 +68,7 @@ function makeSafeBatch(chainId: string, safeAddress: string, name: string, txs: 
 
 async function main() {
 	await verifyRpc()
-	const config = loadConfig()
+	const config = loadConfig(connection.networkName)
 
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress
 	const SAFE_ADDRESS = process.env.SAFE_ADDRESS ?? config.safeAddress
