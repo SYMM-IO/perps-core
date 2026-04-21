@@ -10,7 +10,7 @@ AccountLayer and InstantLayer are **entirely new in v0.8.5** -- they don't exist
 
 ### New file: `scripts/upgrade/utils/peripheralHelpers.ts`
 
-Contains 5 exported functions:
+Contains 8 exported functions:
 
 #### `deployAccountLayerDiamond(adminAddress, symmioFeeReceiver, stateFile?)`
 
@@ -90,9 +90,23 @@ The piping is defined by `sourceIndices`, `insertionPoints`, and `sourceOffsets`
 
 For the Safe path. Returns an array of `{ to, value, calldata, description }` objects -- the same wiring as `wireAccountLayerInstantLayer` but as raw calldata instead of executed transactions. These get appended to the Safe batch JSON.
 
-If `partyBsToRegister` is provided, also generates `registerPartyBs(partyBs)` on InstantLayer. The list is read from `config/partyBList.json` when `registerOnInstantLayer` is true.
+If `partyBsToRegister` is provided, also generates `registerPartyBs(partyBs)` on InstantLayer. The list is read from `config/partyBList-{network}.json` (or `partyBList.json`) when `registerOnInstantLayer` is true.
 
 Note: each transaction targets a different contract (`to` varies between diamond, AL, IL, and PartyB proxy admin), which the Safe Transaction Builder handles fine.
+
+#### `deploySymbolManager(diamondAddress, protocolAdmin, stateFile?)`
+
+Deploys a single `SymmioSymbolManager` contract. Constructor args: `(diamondAddress, protocolAdmin)`. The constructor grants admin `DEFAULT_ADMIN_ROLE` and sets daily operation limits (25 per operation type). Resume-safe via `stateFile`.
+
+#### `wireSymbolManager(diamondAddress, symbolManagerAddress, adminSigner)`
+
+Grants two roles on the core Diamond to the SymbolManager (EOA path):
+- `grantRole(symbolManager, SYMBOL_MANAGER_ROLE)` -- allows symbol CRUD (addSymbols, setSymbolValidationState, setSymbolTradingFee, etc.)
+- `grantRole(symbolManager, FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE)` -- allows setForceCloseGapRatio
+
+#### `buildSymbolManagerWiringTransactions(diamondAddress, symbolManagerAddress)`
+
+For the Safe path. Returns an array of `WiringTransaction` objects -- the same two role grants as `wireSymbolManager` but as raw calldata. These get appended to the Safe batch JSON independently of the AL/IL wiring.
 
 ## How It Integrates Into Each Script
 
@@ -111,7 +125,7 @@ The impersonated admin is used for wiring because only the diamond owner can cal
 
 ### `eoaUpgrade.ts` (EOA production)
 
-New step 6 (migration role grant moved to step 7):
+New step 6 for AL + IL (migration role grant moved to step 9). New step 8 deploys SymmioSymbolManager and wires it (grants SYMBOL_MANAGER_ROLE + FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE on core Diamond).
 
 Same as fork but uses the connected EOA signer for both deployment and wiring.
 
@@ -127,6 +141,8 @@ For Safe, the contracts must be deployed separately first (Safe can't deploy con
 ```
 
 If both are set, `buildWiringTransactions()` generates calldata and appends it to `safe-batch.json`. If not set, the script warns and skips.
+
+SymbolManager wiring is independent -- if `symbolManagerAddress` is resolved (from env, config, or `deployed-peripherals-{network}.json`), `buildSymbolManagerWiringTransactions()` appends the 2 role-grant transactions regardless of whether AL/IL are set.
 
 ## Other Changes
 
@@ -146,7 +162,7 @@ This also fixed the **parameter gap** -- `forkUpgrade.ts` previously had an inli
 
 ### Config additions
 
-New fields in `upgrade.json`:
+New fields in `upgrade-{network}.json`:
 
 | Field | Used by | Purpose |
 |-------|---------|---------|
@@ -173,8 +189,10 @@ The full fork rehearsal flow is now:
 11. Deploy InstantLayer                               <-- NEW
 12. Wire AL + IL to core Diamond                      <-- NEW
 13. Setup InstantLayer templates                      <-- NEW
-14. Verify upgrade integrity (pre vs post snapshot)
-15. Grant MIGRATION_ROLE
+14. Deploy SymmioSymbolManager                         <-- NEW
+15. Wire SymbolManager to core Diamond                 <-- NEW
+16. Verify upgrade integrity (pre vs post snapshot)
+17. Grant MIGRATION_ROLE
 --- then separately ---
 16. prepareMigrationInput.ts
 17. runMigration.ts
@@ -185,8 +203,8 @@ The full fork rehearsal flow is now:
 
 The v0.8.5 SymmioPartyB adds ERC-1271 (`isValidSignature`) support required by InstantLayer. The storage layout is compatible with v0.8.4 for in-place proxy upgrades.
 
-- `deployPeripherals.ts` deploys MuonSignatureVerifier, AccountLayer, InstantLayer, and the new SymmioPartyB implementation (not the proxy)
-- `generateSafeBatch.ts` generates InstantLayer PartyB registration transactions from `config/partyBList.json` (when `registerOnInstantLayer` is true)
+- `deployPeripherals.ts` deploys MuonSignatureVerifier, AccountLayer, InstantLayer, SymmioSymbolManager, and the new SymmioPartyB implementation (not the proxy)
+- `generateSafeBatch.ts` generates InstantLayer PartyB registration transactions from `config/partyBList-{network}.json` (when `registerOnInstantLayer` is true)
 - `testTemplateExecution.ts` verifies the full flow end-to-end (deploy PartyB, register, fund, execute InstantOpen template)
 
 ## Things NOT Handled

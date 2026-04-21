@@ -20,13 +20,13 @@ import path from "path"
 import { ethers } from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
-import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
+import { loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig.js"
 
 type WhitelistConfig = {
 	partyBs: Record<string, string[]>
 }
 
-const CONFIG_FILE = process.env.WHITELIST_CONFIG_FILE ?? "./scripts/upgrade/config/partyBList.json"
+const CONFIG_FILE = resolveConfigFile("partyBList", undefined, process.env.WHITELIST_CONFIG_FILE)
 const OUTPUT_DIR = "./scripts/upgrade/output"
 
 async function main() {

@@ -19,7 +19,7 @@ import fs from "fs"
 import path from "path"
 
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
-import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
+import { loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig.js"
 import { toHumanReadableSafeTxFromIface, type SafeBatch } from "./utils/upgradeHelpers.js"
 
 type OperationConfig = {
@@ -52,7 +52,7 @@ const INSTANT_LAYER_ABI = [
 const instantLayerIface = new ethers.Interface(INSTANT_LAYER_ABI)
 
 async function main() {
-	const shared = loadUpgradeConfigShared()
+	const shared = loadUpgradeConfigShared(connection.networkName)
 
 	let peripherals: DeployedPeripherals = {}
 	if (fs.existsSync(PERIPHERALS_FILE)) {

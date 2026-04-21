@@ -22,9 +22,9 @@ import path from "path"
 
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
-import { deployAccountLayerDiamond, deployInstantLayer } from "./utils/peripheralHelpers.js"
+import { deployAccountLayerDiamond, deployInstantLayer, deploySymbolManager } from "./utils/peripheralHelpers.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
-import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
+import { loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig.js"
 
 type Config = {
 	diamondAddress?: string
@@ -40,14 +40,13 @@ type DeployedState = {
 	symmioPartyBImplementation?: string
 }
 
-const CONFIG_FILE = process.env.DEPLOY_PERIPHERALS_CONFIG ?? "./scripts/upgrade/config/deployPeripherals.json"
-const UPGRADE_CONFIG_FILE = process.env.UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/upgrade.json"
 const OUTPUT_DIR = "./scripts/upgrade/output"
 let STATE_FILE = path.join(OUTPUT_DIR, "deployed-peripherals.json") // updated with network name in main()
 
-function loadConfig(): Config {
-	const shared = loadUpgradeConfigShared()
-	const raw: Partial<Config> = fs.existsSync(CONFIG_FILE) ? JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8")) : {}
+function loadConfig(networkName: string): Config {
+	const shared = loadUpgradeConfigShared(networkName)
+	const configFile = resolveConfigFile("deployPeripherals", networkName, process.env.DEPLOY_PERIPHERALS_CONFIG)
+	const raw: Partial<Config> = fs.existsSync(configFile) ? JSON.parse(fs.readFileSync(configFile, "utf-8")) : {}
 	return {
 		diamondAddress: raw.diamondAddress ?? shared.diamondAddress,
 		protocolAdmin: raw.protocolAdmin ?? shared.protocolAdmin ?? "",
@@ -70,7 +69,7 @@ async function main() {
 	const networkName = connection.networkName
 	STATE_FILE = path.join(OUTPUT_DIR, `deployed-peripherals-${networkName}.json`)
 
-	const config = loadConfig()
+	const config = loadConfig(networkName)
 
 	const { diamondAddress, protocolAdmin, symmioFeeReceiver } = config
 
@@ -91,7 +90,7 @@ async function main() {
 
 	if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
 
-	log.setSteps(4)
+	log.setSteps(5)
 
 	// Deploy MuonSignatureVerifier
 	let t = log.step("MuonSignatureVerifier")
@@ -111,13 +110,14 @@ async function main() {
 		log.deployed("MuonSignatureVerifier", signatureVerifierAddr)
 	}
 
-	// Write address back to upgrade.json
-	if (fs.existsSync(UPGRADE_CONFIG_FILE)) {
-		const upgradeConfig = JSON.parse(fs.readFileSync(UPGRADE_CONFIG_FILE, "utf-8"))
+	// Write address back to upgrade config
+	const upgradeConfigPath = resolveConfigFile("upgrade", networkName, process.env.UPGRADE_CONFIG_FILE)
+	if (fs.existsSync(upgradeConfigPath)) {
+		const upgradeConfig = JSON.parse(fs.readFileSync(upgradeConfigPath, "utf-8"))
 		if (!upgradeConfig.newV085Parameters) upgradeConfig.newV085Parameters = {}
 		upgradeConfig.newV085Parameters.signatureVerifierAddress = signatureVerifierAddr
-		fs.writeFileSync(UPGRADE_CONFIG_FILE, JSON.stringify(upgradeConfig, null, "\t") + "\n")
-		log.kv("Written signatureVerifierAddress to", UPGRADE_CONFIG_FILE)
+		fs.writeFileSync(upgradeConfigPath, JSON.stringify(upgradeConfig, null, "\t") + "\n")
+		log.kv("Written signatureVerifierAddress to", upgradeConfigPath)
 	}
 	log.stepDone(t)
 
@@ -163,12 +163,18 @@ async function main() {
 	}
 	log.stepDone(t)
 
+	// Deploy SymmioSymbolManager
+	t = log.step("SymmioSymbolManager")
+	const smResult = await deploySymbolManager(diamondAddress, protocolAdmin, STATE_FILE)
+	log.stepDone(t)
+
 	// Summary
 	log.success("Peripheral deployment complete", [
 		["MuonSignatureVerifier", signatureVerifierAddr],
 		["AccountLayer Diamond", alResult.diamondAddress],
 		["InstantLayer", ilResult.address],
 		["SymmioPartyB impl", symmioPartyBImpl],
+		["SymmioSymbolManager", smResult.address],
 		["State file", STATE_FILE],
 	])
 

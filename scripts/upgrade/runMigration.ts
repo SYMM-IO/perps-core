@@ -6,7 +6,7 @@ import { migrate, MigrationConfig, MigrationInput, MigrationReport } from "./mig
 import { getImpersonatedAdmin } from "./utils/forkHelpers.js"
 import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
-import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
+import { loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig.js"
 
 export type PartyBTask = { partyB: string; partyAs: string[] }
 
@@ -75,7 +75,7 @@ type MigrationConfigFile = {
 	outputDir?: string
 }
 
-const MIGRATION_CONFIG_FILE = process.env.MIGRATION_CONFIG_FILE ?? "./scripts/upgrade/config/migrate.json"
+const MIGRATION_CONFIG_FILE = resolveConfigFile("migrate", undefined, process.env.MIGRATION_CONFIG_FILE)
 
 function loadMigrationConfigFile(): MigrationConfigFile {
 	const configPath = MIGRATION_CONFIG_FILE

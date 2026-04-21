@@ -13,6 +13,8 @@
  *   deployInstantLayer()             deploy fresh InstantLayer
  *   wireAccountLayerInstantLayer()   wire the new peripherals
  *   setupInstantLayerTemplates()     register templates
+ *   deploySymbolManager()            deploy fresh SymmioSymbolManager
+ *   wireSymbolManager()              grant SYMBOL_MANAGER_ROLE + FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE
  *   migrate()                        migrateQuotes + migrateCrossLockedValues
  *   post-upgrade verification        selectors, hook, roles, quote states
  *
@@ -29,7 +31,14 @@ import { limitOpenRequestBuilder } from "../../test/models/requestModels/OpenReq
 import { limitQuoteRequestBuilder } from "../../test/models/requestModels/QuoteRequest.js"
 import { decimal } from "../../test/utils/Common.js"
 import { migrate, type MigrationInput, type PartyBMigrationTask } from "./migrate.js"
-import { deployAccountLayerDiamond, deployInstantLayer, wireAccountLayerInstantLayer, setupInstantLayerTemplates } from "./utils/peripheralHelpers.js"
+import {
+	deployAccountLayerDiamond,
+	deployInstantLayer,
+	deploySymbolManager,
+	wireAccountLayerInstantLayer,
+	wireSymbolManager,
+	setupInstantLayerTemplates,
+} from "./utils/peripheralHelpers.js"
 import { applyDiamondCut, buildDiamondCut, deployFacets, type FacetInfo } from "./utils/upgradeHelpers.js"
 
 // =============================================================================
@@ -205,6 +214,7 @@ async function main() {
 
 	let newAlAddress = ""
 	let newIlAddress = ""
+	let newSmAddress = ""
 
 	await check("deployAccountLayerDiamond", async () => {
 		const result = await deployAccountLayerDiamond(adminAddress, feeReceiverAddress)
@@ -228,6 +238,18 @@ async function main() {
 	await check("setupInstantLayerTemplates", async () => {
 		await setupInstantLayerTemplates(newIlAddress, admin)
 		console.log("    templates registered")
+	})
+
+	await check("deploySymbolManager", async () => {
+		const result = await deploySymbolManager(diamondAddress, adminAddress)
+		newSmAddress = result.address
+		console.log(`    SymbolManager: ${newSmAddress}`)
+		if (!ethers.isAddress(newSmAddress)) throw new Error("Invalid SymbolManager address")
+	})
+
+	await check("wireSymbolManager", async () => {
+		await wireSymbolManager(diamondAddress, newSmAddress, admin)
+		console.log("    wired successfully")
 	})
 
 	// =========================================================================
@@ -369,6 +391,20 @@ async function main() {
 		const nextId: bigint = await (il as any).nextTemplateId()
 		if (nextId < 3n) throw new Error(`Expected at least 3 templates, got nextTemplateId=${nextId}`)
 		console.log(`    nextTemplateId = ${nextId} (${nextId} templates added)`)
+	})
+
+	await check("SymbolManager has SYMBOL_MANAGER_ROLE on Diamond", async () => {
+		const viewFacet = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", diamondAddress)
+		const hasRole: boolean = await (viewFacet as any).hasRole(newSmAddress, ethers.id("SYMBOL_MANAGER_ROLE"))
+		if (!hasRole) throw new Error("SymbolManager missing SYMBOL_MANAGER_ROLE")
+		console.log("    SYMBOL_MANAGER_ROLE ✓")
+	})
+
+	await check("SymbolManager has FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE on Diamond", async () => {
+		const viewFacet = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", diamondAddress)
+		const hasRole: boolean = await (viewFacet as any).hasRole(newSmAddress, ethers.id("FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE"))
+		if (!hasRole) throw new Error("SymbolManager missing FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE")
+		console.log("    FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE ✓")
 	})
 
 	await check("Diamond is still paused", async () => {

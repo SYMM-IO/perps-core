@@ -3,7 +3,7 @@
  *
  * Reads contract addresses dynamically from:
  *   - output/deployed-facets.json      (libraries + core facets)
- *   - output/deployed-peripherals.json (AccountLayer + InstantLayer + SymmioPartyB)
+ *   - output/deployed-peripherals.json (AccountLayer + InstantLayer + SymmioPartyB + SymmioSymbolManager)
  *   - config/upgrade.json              (diamondAddress, protocolAdmin, signatureVerifierAddress)
  *
  * If deployed-facets.json has no library addresses, the script auto-detects them
@@ -24,6 +24,7 @@ import path from "path"
 // Import to initialize the hardhat connection (needed for auto-detect)
 import connection, { ethers, hre } from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
+import { resolveConfigFile } from "./utils/sharedConfig.js"
 import { FacetLibraryDependencies } from "./utils/upgradeHelpers.js"
 
 // ============================================================================
@@ -32,7 +33,8 @@ import { FacetLibraryDependencies } from "./utils/upgradeHelpers.js"
 
 const OUTPUT_DIR = "./scripts/upgrade/output"
 // Resolved with network name at runtime (see main())
-const CONFIG_FILE = process.env.UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/upgrade.json"
+// Resolved with network name at runtime (see main())
+let CONFIG_FILE = ""
 
 // ============================================================================
 // Types
@@ -54,6 +56,7 @@ type DeployedPeripherals = {
 	instantLayer: { address: string }
 	signatureVerifier?: string
 	symmioPartyBImplementation: string
+	symbolManager?: { address: string }
 }
 
 type UpgradeConfig = {
@@ -343,6 +346,17 @@ function buildContractList(
 		})
 	}
 
+	// ── SymmioSymbolManager (constructor: symmioAddress, admin) ─────────
+	if (peripheralsData.symbolManager?.address) {
+		contracts.push({
+			name: "SymmioSymbolManager",
+			address: peripheralsData.symbolManager.address,
+			constructorArgs: [diamond, owner],
+			libraries: {},
+			contract: "contracts/helpers/symbolManager/SymmioSymbolManager.sol:SymmioSymbolManager",
+		})
+	}
+
 	return contracts
 }
 
@@ -407,6 +421,7 @@ async function main() {
 
 	const networkName = connection.networkName
 	if (!networkName) throw new Error("Could not determine network name. Make sure to pass --network <name>.")
+	CONFIG_FILE = resolveConfigFile("upgrade", networkName, process.env.UPGRADE_CONFIG_FILE)
 
 	const FACETS_FILE = path.join(OUTPUT_DIR, `deployed-facets-${networkName}.json`)
 	const PERIPHERALS_FILE = path.join(OUTPUT_DIR, `deployed-peripherals-${networkName}.json`)

@@ -6,6 +6,7 @@ import { getImpersonatedAdmin } from "./utils/forkHelpers.js"
 import { log } from "./utils/log.js"
 import { deployAccountLayerDiamond, deployInstantLayer, wireAccountLayerInstantLayer, setupInstantLayerTemplates } from "./utils/peripheralHelpers.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
+import { resolveConfigFile } from "./utils/sharedConfig.js"
 import { fetchOpenQuotes, fetchPartyBBalances } from "./utils/subgraphHelpers.js"
 import { deployFacets, buildDiamondCut, applyDiamondCut, setV085Parameters, type NewV085Parameters } from "./utils/upgradeHelpers.js"
 
@@ -54,9 +55,8 @@ type ForkUpgradeReport = {
 	error?: string
 }
 
-const CONFIG_FILE = process.env.UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/upgrade.json"
-
 function loadConfig(): ForkUpgradeConfig {
+	const CONFIG_FILE = resolveConfigFile("upgrade", undefined, process.env.UPGRADE_CONFIG_FILE)
 	if (!fs.existsSync(CONFIG_FILE)) return {}
 	const raw = fs.readFileSync(CONFIG_FILE, "utf-8")
 	const data = JSON.parse(raw)
@@ -381,7 +381,7 @@ async function main() {
 		// ── Step 10: Register PartyBs on InstantLayer ───────────────────
 		t = log.step("Register PartyBs on InstantLayer")
 		currentStep = "register_partybs"
-		const PARTYB_LIST_FILE = process.env.PARTYB_LIST_FILE ?? "./scripts/upgrade/config/partyBList.json"
+		const PARTYB_LIST_FILE = resolveConfigFile("partyBList", undefined, process.env.PARTYB_LIST_FILE)
 		const registeredPartyBs: string[] = []
 
 		if (fs.existsSync(PARTYB_LIST_FILE)) {

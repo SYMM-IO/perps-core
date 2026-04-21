@@ -20,7 +20,8 @@ import fs from "fs"
 import path from "path"
 
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
-import { buildTemplateTransactions, buildWiringTransactions } from "./utils/peripheralHelpers.js"
+import { buildTemplateTransactions, buildSymbolManagerWiringTransactions, buildWiringTransactions } from "./utils/peripheralHelpers.js"
+import { resolveConfigFile } from "./utils/sharedConfig.js"
 import {
 	buildDiamondCut,
 	buildUpgradeTransactions,
@@ -38,6 +39,7 @@ type Config = {
 	diamondCutChunkSize?: number
 	accountLayerDiamondAddress?: string
 	instantLayerAddress?: string
+	symbolManagerAddress?: string
 	setupInstantLayerTemplates?: boolean
 	newV085Parameters?: NewV085Parameters
 }
@@ -46,18 +48,20 @@ type Config = {
 type DeployedPeripherals = {
 	accountLayer?: { diamond?: string }
 	instantLayer?: { address?: string }
+	symbolManager?: { address?: string }
 }
 
-const CONFIG_FILE = process.env.UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/upgrade.json"
 const OUTPUT_DIR = "./scripts/upgrade/output"
 
-function loadConfig(): Config {
-	if (!fs.existsSync(CONFIG_FILE)) return {}
-	return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8")) as Config
+function loadConfig(networkName: string): Config {
+	const configFile = resolveConfigFile("upgrade", networkName, process.env.UPGRADE_CONFIG_FILE)
+	if (!fs.existsSync(configFile)) return {}
+	return JSON.parse(fs.readFileSync(configFile, "utf-8")) as Config
 }
 
 async function main() {
-	const config = loadConfig()
+	const networkName = connection.networkName
+	const config = loadConfig(networkName)
 
 	const CHAIN_ID = process.env.CHAIN_ID ?? String(Number((await ethers.provider.getNetwork()).chainId))
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress
@@ -89,7 +93,6 @@ async function main() {
 	console.log()
 
 	// Load deployed facets
-	const networkName = connection.networkName
 	const FACETS_FILE = process.env.FACETS_FILE ?? path.join(OUTPUT_DIR, `deployed-facets-${networkName}.json`)
 	const facetData = loadDeployedFacets(FACETS_FILE)
 	console.log()
@@ -126,9 +129,10 @@ async function main() {
 	// Resolve addresses: env > config > deployed-peripherals.json
 	const AL_ADDRESS = process.env.ACCOUNT_LAYER_ADDRESS ?? (config.accountLayerDiamondAddress || peripherals.accountLayer?.diamond)
 	const IL_ADDRESS = process.env.INSTANT_LAYER_ADDRESS ?? (config.instantLayerAddress || peripherals.instantLayer?.address)
+	const SM_ADDRESS = process.env.SYMBOL_MANAGER_ADDRESS ?? (config.symbolManagerAddress || peripherals.symbolManager?.address)
 
 	// Load PartyB list for InstantLayer registration from partyBList.json
-	const PARTYB_LIST_FILE = process.env.PARTYB_LIST_FILE ?? "./scripts/upgrade/config/partyBList.json"
+	const PARTYB_LIST_FILE = resolveConfigFile("partyBList", networkName, process.env.PARTYB_LIST_FILE)
 	let partyBsToRegister: string[] = []
 	if (fs.existsSync(PARTYB_LIST_FILE)) {
 		const listConfig = JSON.parse(fs.readFileSync(PARTYB_LIST_FILE, "utf-8")) as {
@@ -176,6 +180,20 @@ async function main() {
 	} else {
 		console.log("\nNo AccountLayer/InstantLayer addresses provided. Wiring transactions will not be generated.")
 		console.log("  Set accountLayerDiamondAddress and instantLayerAddress in config after deploying them.")
+	}
+
+	// SymbolManager wiring (independent of AccountLayer/InstantLayer)
+	if (SM_ADDRESS && ethers.isAddress(SM_ADDRESS)) {
+		console.log("\nBuilding SymbolManager wiring transactions...")
+		console.log(`  SymmioSymbolManager: ${SM_ADDRESS}`)
+		const smWiringTxs = buildSymbolManagerWiringTransactions(DIAMOND_ADDRESS, SM_ADDRESS)
+		for (const tx of smWiringTxs) {
+			result.safeTxs.push(toHumanReadableSafeTxFromIface(tx.iface, tx.to, tx.methodName, tx.args))
+			result.breakdown.push(`${result.breakdown.length + 1}. [wiring] ${tx.description}`)
+		}
+		console.log(`  Added ${smWiringTxs.length} SymbolManager wiring transactions`)
+	} else if (SM_ADDRESS) {
+		console.log("\nWARN: symbolManagerAddress is not a valid address. Skipping SymbolManager wiring.")
 	}
 
 	// Write output files
