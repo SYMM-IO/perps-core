@@ -37,13 +37,6 @@ BEFORE PAUSE (no downtime)
   safe-batch.json    diamondcut-calldata.json
 
 
-VERIFY DEPLOYED CONTRACTS (block explorer)
-═══════════════════════════════════════════
-  USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyContracts.ts --network <network>
-
-  Verifies all libraries, facets, and peripherals (AL, IL, PartyB impl)
-  on the block explorer. Run after deployFacets + deployPeripherals.
-
 VERIFY DEPLOYED BYTECODE (local vs on-chain)
 ═════════════════════════════════════════════
   NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyDeploy.ts
@@ -61,6 +54,13 @@ VERIFY GENERATED CALLDATA (local repo vs on-disk JSON)
   byte-compares against pause-safe-batch / safe-batch / diamondcut-calldata
   / timelock-{schedule,execute} / post-migration / symbol-role / add-templates
   JSON files. Run before signing anything in the Safe UI.
+
+VERIFY DEPLOYED CONTRACTS (block explorer)
+═══════════════════════════════════════════
+  USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyContracts.ts --network <network>
+
+  Verifies all libraries, facets, and peripherals (AL, IL, PartyB impl)
+  on the block explorer. Run after correctness verifications.
 
 
 PAUSE (execute via Safe UI)
@@ -160,10 +160,6 @@ BEFORE PAUSE (no downtime)
   timelock-schedule-safe-batch.json   timelock-execute-safe-batch.json
 
 
-VERIFY DEPLOYED CONTRACTS (block explorer)
-═══════════════════════════════════════════
-  USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyContracts.ts --network <network>
-
 VERIFY DEPLOYED BYTECODE (local vs on-chain)
 ═════════════════════════════════════════════
   NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyDeploy.ts
@@ -176,6 +172,10 @@ VERIFY GENERATED CALLDATA (local repo vs on-disk JSON)
   Also checks timelock-{schedule,execute}-safe-batch-*.json: inner calldata
   matches diamondcut-calldata chunks, predecessor chain and salt derivation
   are correct.
+
+VERIFY DEPLOYED CONTRACTS (block explorer)
+═══════════════════════════════════════════
+  USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyContracts.ts --network <network>
 
 
 SCHEDULE DIAMONDCUT (T=0, system still live)
@@ -393,12 +393,12 @@ npx hardhat run scripts/upgrade/runMigration.ts --network fork-arbitrum
 
 | Script | What it checks |
 |--------|---------------|
-| `verifyContracts.ts` | Block explorer verification of all deployed contracts (libraries, facets, peripherals). Reads from deploy output files and handles library linking automatically. |
 | `verifyDeploy.ts` | Bytecode verification of deployed core facets against local compiled artifacts (library linking aware). Uses `NETWORK` env var to resolve `output/deployed-facets-{network}.json` |
 | `verifyPeripheralsDeploy.ts` | Bytecode verification of deployed peripherals (AccountLayer, InstantLayer, SymmioPartyB impl, MuonSignatureVerifier) against local compiled artifacts. Handles library linking and immutable variable masking. |
+| `verifyBatchCalldata.ts` | All generated Safe batches + `diamondcut-calldata-{network}.json` byte-match what the current repo + config would produce. Run **before signing** in the Safe UI. See [Step 2c](#step-2c-verify-generated-calldata-recommended) |
+| `verifyContracts.ts` | Block explorer verification of all deployed contracts (libraries, facets, peripherals). Reads from deploy output files and handles library linking automatically. Run **after** correctness verifications. |
 | `verifyDiamond.ts` | All v0.8.5 facet selectors registered on diamond |
 | `verifyPeripherals.ts` | AccountLayer + InstantLayer roles, hooks, whitelist, templates |
-| `verifyBatchCalldata.ts` | All generated Safe batches + `diamondcut-calldata-{network}.json` byte-match what the current repo + config would produce. Run **before signing** in the Safe UI. See [Step 2c](#step-2c-verify-generated-calldata-recommended) |
 | `testTemplateExecution.ts` | Full end-to-end: affiliate registration, sub-account, PartyB UUPS upgrade, EIP-712 delegation, sendQuote -> lockQuote -> openPosition via InstantLayer template |
 
 `testTemplateExecution.ts` auto-loads `diamondAddress` from `upgrade.json`, and `accountLayerDiamondAddress` + `instantLayerAddress` from the output files. No manual config needed.
@@ -681,16 +681,6 @@ Output:
 
 ## Production Verification
 
-### Block explorer verification
-
-After deploying facets and peripherals (before or after the diamondCut):
-
-```bash
-USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyContracts.ts --network <network>
-```
-
-Verifies all libraries, core facets, AccountLayer contracts (DiamondCutFacet, Diamond, Init, libraries, facets), InstantLayer, and SymmioPartyB implementation. Library dependencies and contract path disambiguation are handled automatically. Addresses are read dynamically from `scripts/upgrade/output/deployed-facets-{network}.json` and `deployed-peripherals-{network}.json` (resolved from `--network`), constructor args from `config/upgrade.json`. Resume with `SKIP=N` if a contract fails.
-
 ### Bytecode verification (local vs on-chain)
 
 Compares the on-chain deployed bytecode against locally compiled Hardhat artifacts. This is independent of block explorer verification and works for any RPC-accessible network.
@@ -719,6 +709,16 @@ PERIPHERALS_FILE=./output/deployed-peripherals-arbitrum.json RPC_URL=https://arb
 - **Immutable variables** -- contracts like `InstantLayer` and `SymmioPartyB` embed constructor-set values (EIP-712 domain, symmio address, etc.) in deployed bytecode. The scripts mask these regions using `immutableReferences` from the artifact before comparing, and report the on-chain values.
 
 **Prerequisites:** Run `npx hardhat compile` first. Artifacts must be present in `artifacts/contracts/`.
+
+### Block explorer verification
+
+After correctness verifications (bytecode + calldata), verify on the block explorer:
+
+```bash
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyContracts.ts --network <network>
+```
+
+Verifies all libraries, core facets, AccountLayer contracts (DiamondCutFacet, Diamond, Init, libraries, facets), InstantLayer, and SymmioPartyB implementation. Library dependencies and contract path disambiguation are handled automatically. Addresses are read dynamically from `scripts/upgrade/output/deployed-facets-{network}.json` and `deployed-peripherals-{network}.json` (resolved from `--network`), constructor args from `config/upgrade.json`. Resume with `SKIP=N` if a contract fails.
 
 ### On-chain verification
 
