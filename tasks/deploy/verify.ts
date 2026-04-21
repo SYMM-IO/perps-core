@@ -4,11 +4,8 @@ import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 import path from "path"
 
-import { readData } from "../utils/fs.js"
 import {
-	ACCOUNTLAYER_ACCOUNT_DEPLOYMENT_LOG_FILE,
 	ACCOUNTLAYER_DEPLOYMENT_FILE,
-	ACCOUNTLAYER_AFFILIATE_DEPLOYMENT_FILE,
 	DEPLOYMENT_LOG_FILE,
 	INSTANTLAYER_DEPLOYMENT_FILE,
 	PARTYB_DEPLOYMENT_FILE,
@@ -17,105 +14,6 @@ import {
 	VERIFY_FAILED_FILE,
 } from "./constants.js"
 import { getConnection } from "./helpers.js"
-
-const verifyDeploymentAction = async (_: unknown, hre: any) => {
-	const deployedAddresses = readData(DEPLOYMENT_LOG_FILE)
-
-	for (const address of deployedAddresses) {
-		try {
-			console.log(`Verifying ${address.address}`)
-			await verifyContract(
-				{
-					address: address.address,
-					constructorArgs: address.constructorArguments,
-				},
-				hre,
-			)
-		} catch (err) {
-			console.error(err)
-		}
-	}
-}
-
-const verifyAffiliateAction = async (_: unknown, hre: any) => {
-	const deployedAddresses = readData(ACCOUNTLAYER_AFFILIATE_DEPLOYMENT_FILE)
-
-	for (const address of deployedAddresses) {
-		try {
-			console.log(`Verifying ${address.address}`)
-			await verifyContract(
-				{
-					address: address.address,
-					constructorArgs: address.constructorArguments,
-				},
-				hre,
-			)
-		} catch (err) {
-			console.error(err)
-		}
-	}
-}
-
-const verifyAccountAction = async (_: unknown, hre: any) => {
-	const deployedAddresses = readData(ACCOUNTLAYER_ACCOUNT_DEPLOYMENT_LOG_FILE)
-
-	for (const address of deployedAddresses) {
-		try {
-			console.log(`Verifying ${address.address}`)
-			await verifyContract(
-				{
-					address: address.address,
-					constructorArgs: address.constructorArguments,
-				},
-				hre,
-			)
-		} catch (err) {
-			console.error(err)
-		}
-	}
-}
-
-const verifyInstantLayerAction = async (_: unknown, hre: any) => {
-	const deployedAddresses = readData(INSTANTLAYER_DEPLOYMENT_FILE)
-
-	for (const address of deployedAddresses) {
-		try {
-			console.log(`Verifying ${address.address}`)
-			await verifyContract(
-				{
-					address: address.address,
-					constructorArgs: address.constructorArguments,
-				},
-				hre,
-			)
-		} catch (err) {
-			console.error(err)
-		}
-	}
-}
-
-const verifyAccountLayerAction = async (_: unknown, hre: any) => {
-	const deployedAddresses = readData(ACCOUNTLAYER_DEPLOYMENT_FILE)
-
-	for (const address of deployedAddresses) {
-		try {
-			console.log(`Verifying ${address.address}`)
-			await verifyContract(
-				{
-					address: address.address,
-					constructorArgs: address.constructorArguments,
-				},
-				hre,
-			)
-		} catch (err) {
-			console.error(err)
-		}
-	}
-}
-
-export const verifyDeploymentTask = task("verify:deployment", "Verifies the deployed contracts")
-	.setAction(async () => ({ default: verifyDeploymentAction }))
-	.build()
 
 // ============================================================================
 // Verify All Contracts from Deployment Logs
@@ -354,22 +252,6 @@ export const verifyAllTask = task("verify:all", "Verifies all deployed contracts
 	}))
 	.build()
 
-export const verifyAffiliateTask = task("verify:affiliate", "Verifies the deployed contracts")
-	.setAction(async () => ({ default: verifyAffiliateAction }))
-	.build()
-
-export const verifyAccountTask = task("verify:account", "Verifies the deployed contracts")
-	.setAction(async () => ({ default: verifyAccountAction }))
-	.build()
-
-export const verifyInstantLayerTask = task("verify:instantLayer", "Verifies the deployed contracts")
-	.setAction(async () => ({ default: verifyInstantLayerAction }))
-	.build()
-
-export const verifyAccountLayerTask = task("verify:accountLayer", "Verifies the AccountLayer diamond contracts")
-	.setAction(async () => ({ default: verifyAccountLayerAction }))
-	.build()
-
 // ============================================================================
 // Deployment Health Check Task
 // ============================================================================
@@ -548,6 +430,66 @@ async function checkOzDefaultAdminRole(
 		}
 	} catch (e: any) {
 		pushAndLog(results, { category, check: "DEFAULT_ADMIN_ROLE check", status: "fail", message: e.message?.slice(0, 120) })
+	}
+}
+
+async function checkDiamondOwner(
+	ethers: any,
+	diamondAddress: string,
+	viewFacetContractName: string,
+	category: string,
+	adminAddress: string | undefined,
+	results: VerificationResult[],
+) {
+	const transferHint = "Call Diamond.transferOwnership(newOwner), then newOwner calls Diamond.acceptOwnership()"
+	let view: any
+	try {
+		view = await ethers.getContractAt(viewFacetContractName, diamondAddress)
+		const owner = await view.owner()
+
+		if (adminAddress) {
+			if (owner.toLowerCase() === adminAddress.toLowerCase()) {
+				pushAndLog(results, { category, check: "Owner", status: "pass", actual: owner })
+			} else {
+				pushAndLog(results, {
+					category,
+					check: "Owner",
+					status: "fail",
+					expected: adminAddress,
+					actual: owner,
+					hint: transferHint,
+				})
+			}
+		} else if (owner === ethers.ZeroAddress) {
+			pushAndLog(results, {
+				category,
+				check: "Owner",
+				status: "fail",
+				message: "Not set (zero address)",
+				hint: transferHint,
+			})
+		} else {
+			pushAndLog(results, { category, check: "Owner", status: "pass", actual: owner })
+		}
+	} catch (e: any) {
+		pushAndLog(results, { category, check: "Owner", status: "fail", message: e.message?.slice(0, 120) })
+		return
+	}
+
+	try {
+		const pending = await view.pendingOwner()
+		if (pending && pending !== ethers.ZeroAddress) {
+			pushAndLog(results, {
+				category,
+				check: "Pending owner",
+				status: "warn",
+				actual: pending,
+				message: "Ownership transfer in progress",
+				hint: "Pending owner must call Diamond.acceptOwnership() to finalize transfer",
+			})
+		}
+	} catch {
+		// pendingOwner is optional; skip if not exposed
 	}
 }
 
@@ -877,6 +819,9 @@ async function verifyAccountLayerFull(
 	}
 
 	const alView = await ethers.getContractAt("contracts/accountLayer/facets/View/ViewFacet.sol:ViewFacet", accountLayerAddress)
+
+	// Owner (and pending owner if transfer in progress)
+	await checkDiamondOwner(ethers, accountLayerAddress, "contracts/accountLayer/facets/View/ViewFacet.sol:ViewFacet", cat, addresses.admin, results)
 
 	// Roles (Symmio-style: hasRole(address, bytes32))
 	console.log("")
@@ -1433,40 +1378,15 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 					pushAndLog(results, { category: "Core Diamond", check: "Facet count", status: "fail", message: e.message?.slice(0, 120) })
 				}
 
-				// Check owner
-				try {
-					const view = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", addresses.diamond)
-					const owner = await view.owner()
-
-					if (addresses.admin) {
-						if (owner.toLowerCase() === addresses.admin.toLowerCase()) {
-							pushAndLog(results, { category: "Core Diamond", check: "Owner", status: "pass", actual: owner })
-						} else {
-							pushAndLog(results, {
-								category: "Core Diamond",
-								check: "Owner",
-								status: "fail",
-								expected: addresses.admin,
-								actual: owner,
-								hint: "Call Diamond.transferOwnership(newOwner), then newOwner calls Diamond.acceptOwnership()",
-							})
-						}
-					} else {
-						if (owner === ethers.ZeroAddress) {
-							pushAndLog(results, {
-								category: "Core Diamond",
-								check: "Owner",
-								status: "fail",
-								message: "Not set (zero address)",
-								hint: "Call Diamond.transferOwnership(newOwner), then newOwner calls Diamond.acceptOwnership()",
-							})
-						} else {
-							pushAndLog(results, { category: "Core Diamond", check: "Owner", status: "pass", actual: owner })
-						}
-					}
-				} catch (e: any) {
-					pushAndLog(results, { category: "Core Diamond", check: "Owner", status: "fail", message: e.message?.slice(0, 120) })
-				}
+				// Check owner (and pending owner if transfer in progress)
+				await checkDiamondOwner(
+					ethers,
+					addresses.diamond,
+					"contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet",
+					"Core Diamond",
+					addresses.admin,
+					results,
+				)
 
 				// Check collateral
 				await checkAddress(
