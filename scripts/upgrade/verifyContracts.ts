@@ -9,20 +9,20 @@
  * If deployed-facets.json has no library addresses, the script auto-detects them
  * from on-chain bytecode (same technique as verifyDeploy.ts).
  *
- * Uses `npx hardhat verify` CLI under the hood — the programmatic verifyContract()
- * API has a source-name resolution bug in Hardhat 3 that causes HHE100 for all
- * new verifications.
+ * Uses the programmatic verifyContract() API from @nomicfoundation/hardhat-verify.
+ * Requires the postinstall patch (scripts/patch-hardhat-verify.js) to fix the
+ * HHE100 Map key lookup bug in Hardhat 3's getCompilerInput().
  *
  * Usage:
  *   npx hardhat run scripts/upgrade/verifyContracts.ts --network <network>
  *   SKIP=5 npx hardhat run scripts/upgrade/verifyContracts.ts --network <network>
  */
-import { execSync } from "child_process"
+import { verifyContract } from "@nomicfoundation/hardhat-verify/verify"
 import fs from "fs"
 import path from "path"
 
 // Import to initialize the hardhat connection (needed for auto-detect)
-import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
+import connection, { ethers, hre } from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
 import { FacetLibraryDependencies } from "./utils/upgradeHelpers.js"
 
@@ -347,66 +347,54 @@ function buildContractList(
 }
 
 // ============================================================================
-// CLI verify runner
+// Programmatic verify runner
 // ============================================================================
 
-const LIBRARIES_TMP_FILE = path.join(OUTPUT_DIR, ".tmp-libraries.json")
+// Patterns that indicate a transient failure (worth retrying)
+const isTransient = (msg: string) =>
+	msg.includes("HHE80024") ||
+	msg.includes("HHE80001") ||
+	msg.includes("other side closed") ||
+	msg.includes("Other Exception") ||
+	msg.includes("ETIMEDOUT") ||
+	msg.includes("ECONNRESET") ||
+	msg.includes("socket hang up")
 
-function buildVerifyCommand(networkName: string, c: ContractToVerify): string {
-	const parts = ["npx hardhat verify", `--network ${networkName}`]
+const MAX_ATTEMPTS = 3
+const RETRY_DELAY_MS = 8000
 
-	if (c.contract) {
-		parts.push(`--contract ${c.contract}`)
-	}
-
-	if (Object.keys(c.libraries).length > 0) {
-		fs.writeFileSync(LIBRARIES_TMP_FILE, JSON.stringify(c.libraries, null, 2))
-		parts.push(`--libraries-path ${LIBRARIES_TMP_FILE}`)
-	}
-
-	parts.push(c.address)
-
-	for (const arg of c.constructorArgs) {
-		parts.push(`"${arg}"`)
-	}
-
-	return parts.join(" ")
-}
-
-function runVerify(networkName: string, c: ContractToVerify): "verified" | "already" | "failed" {
-	const cmd = buildVerifyCommand(networkName, c)
-	try {
-		const output = execSync(cmd, {
-			encoding: "utf-8",
-			timeout: 120_000,
-			env: { ...process.env, FORCE_COLOR: "0" },
-			stdio: ["pipe", "pipe", "pipe"],
-		})
-		if (output.includes("already been verified")) {
-			return "already"
+async function runVerify(c: ContractToVerify): Promise<"verified" | "already" | "failed"> {
+	let lastErr: any
+	for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+		try {
+			await verifyContract(
+				{
+					address: c.address,
+					constructorArgs: c.constructorArgs,
+					libraries: c.libraries,
+					contract: c.contract,
+				},
+				hre as any,
+				() => {}, // suppress internal console.log
+			)
+			return "verified"
+		} catch (err: any) {
+			lastErr = err
+			const msg = err.message ?? String(err)
+			if (msg.includes("Already Verified") || msg.includes("already verified") || msg.includes("already been verified")) {
+				return "already"
+			}
+			if (attempt < MAX_ATTEMPTS && isTransient(msg)) {
+				log.detail(`Transient error, retrying (${attempt}/${MAX_ATTEMPTS - 1})...`)
+				await new Promise(r => setTimeout(r, RETRY_DELAY_MS))
+				continue
+			}
+			log.error(msg.slice(0, 200))
+			return "failed"
 		}
-		// Print explorer URL or success message from hardhat verify output
-		const useful = output
-			.split("\n")
-			.filter((l: string) => l.trim() && !l.includes("WARNING"))
-			.join("\n")
-			.trim()
-		if (useful) log.detail(useful)
-		return "verified"
-	} catch (err: any) {
-		const output = (err.stdout ?? "") + (err.stderr ?? "")
-		if (output.includes("already been verified") || output.includes("Already Verified")) {
-			return "already"
-		}
-		log.error(
-			output
-				.split("\n")
-				.filter((l: string) => l.includes("HHE") || l.includes("Error"))
-				.slice(0, 2)
-				.join(" | ") || output.slice(0, 150),
-		)
-		return "failed"
 	}
+	log.error((lastErr?.message ?? String(lastErr)).slice(0, 200))
+	return "failed"
 }
 
 // ============================================================================
@@ -480,7 +468,7 @@ async function main() {
 	}
 	log.blank()
 
-	// Verify each contract via CLI
+	// Verify each contract via programmatic API
 	let verified = 0
 	let alreadyVerified = 0
 	let failed = 0
@@ -492,7 +480,7 @@ async function main() {
 		const libInfo = libCount > 0 ? ` (${libCount} libs)` : ""
 		log.info(`[${idx}/${skip + contracts.length}] ${c.name} at ${c.address}${libInfo}`)
 
-		const result = runVerify(networkName, c)
+		const result = await runVerify(c)
 		switch (result) {
 			case "verified":
 				verified++
@@ -507,9 +495,6 @@ async function main() {
 				break
 		}
 	}
-
-	// Cleanup temp file
-	if (fs.existsSync(LIBRARIES_TMP_FILE)) fs.unlinkSync(LIBRARIES_TMP_FILE)
 
 	// Summary
 	const entries: Array<[string, string]> = [
