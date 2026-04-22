@@ -11,6 +11,7 @@ import {
 	ACCOUNTLAYER_AFFILIATE_DEPLOYMENT_FILE,
 	DEPLOYMENT_LOG_FILE,
 	INSTANTLAYER_DEPLOYMENT_FILE,
+	LIQUIDATOR_DEPLOYMENT_FILE,
 	PARTYB_DEPLOYMENT_FILE,
 	STABLECOIN_DEPLOYMENT_FILE,
 	SYMBOLMANAGER_DEPLOYMENT_FILE,
@@ -185,6 +186,7 @@ export const verifyAllTask = task("verify:all", "Verifies all deployed contracts
 					{ file: ACCOUNTLAYER_DEPLOYMENT_FILE, name: "AccountLayer (accountlayer.json)" },
 					{ file: INSTANTLAYER_DEPLOYMENT_FILE, name: "InstantLayer (instantlayer.json)" },
 					{ file: PARTYB_DEPLOYMENT_FILE, name: "PartyB (partyb.json)" },
+					{ file: LIQUIDATOR_DEPLOYMENT_FILE, name: "SymmioLiquidator (liquidator.json)" },
 					{ file: SYMBOLMANAGER_DEPLOYMENT_FILE, name: "SymbolManager (symbolmanager.json)" },
 				]
 
@@ -1221,6 +1223,114 @@ async function verifyPartyBFull(
 	}
 }
 
+async function verifyLiquidatorFull(
+	ethers: any,
+	liquidatorAddress: string,
+	addresses: { diamond?: string; admin?: string; operators?: string[] },
+	results: VerificationResult[],
+) {
+	const cat = "Liquidator"
+	const liquidator = await ethers.getContractAt("SymmioLiquidator", liquidatorAddress)
+
+	// Symmio address
+	try {
+		const symmioAddr = await liquidator.symmioAddress()
+		if (addresses.diamond && symmioAddr.toLowerCase() !== addresses.diamond.toLowerCase()) {
+			pushAndLog(results, {
+				category: cat,
+				check: "Symmio address",
+				status: "fail",
+				expected: addresses.diamond,
+				actual: symmioAddr,
+				hint: `Call SymmioLiquidator.setSymmioAddress(${addresses.diamond})`,
+			})
+		} else if (symmioAddr === ethers.ZeroAddress) {
+			pushAndLog(results, {
+				category: cat,
+				check: "Symmio address",
+				status: "fail",
+				message: "Not set (zero address)",
+				hint: "Call SymmioLiquidator.setSymmioAddress(diamondAddress)",
+			})
+		} else {
+			pushAndLog(results, { category: cat, check: "Symmio address", status: "pass", actual: symmioAddr })
+		}
+	} catch (e: any) {
+		pushAndLog(results, { category: cat, check: "Symmio address", status: "fail", message: e.message?.slice(0, 120) })
+	}
+
+	// Pause state
+	try {
+		const paused = await liquidator.paused()
+		pushAndLog(results, { category: cat, check: "Paused", status: paused ? "warn" : "pass", actual: String(paused) })
+	} catch (e: any) {
+		pushAndLog(results, { category: cat, check: "Paused", status: "fail", message: e.message?.slice(0, 120) })
+	}
+
+	// Admin roles on SymmioLiquidator
+	console.log("")
+	console.log(`   ${c.dim}-- Roles on SymmioLiquidator --${c.reset}`)
+	if (addresses.admin) {
+		await checkOzDefaultAdminRole(results, cat, liquidator, addresses.admin, "fail", "SymmioLiquidator")
+		await checkRole(results, cat, liquidator, addresses.admin, "MANAGER_ROLE", ethers, { ozStyle: true, contractLabel: "SymmioLiquidator" })
+	} else {
+		pushAndLog(results, {
+			category: cat,
+			check: "Admin roles",
+			status: "warn",
+			message: "No admin address provided, skipping role checks",
+			hint: "Re-run with --admin <address> to verify role assignments",
+		})
+	}
+
+	if (addresses.operators && addresses.operators.length > 0) {
+		for (const op of addresses.operators) {
+			await checkRole(results, cat, liquidator, op, "OPERATOR_ROLE", ethers, { ozStyle: true, contractLabel: "SymmioLiquidator" })
+		}
+	}
+
+	// LIQUIDATOR_ROLE + PARTYB_LIQUIDATOR_ROLE on core
+	if (addresses.diamond) {
+		console.log("")
+		console.log(`   ${c.dim}-- Core roles granted to SymmioLiquidator --${c.reset}`)
+		try {
+			const view = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", addresses.diamond)
+			await checkRole(results, cat, view, liquidatorAddress, "LIQUIDATOR_ROLE", ethers, { contractLabel: "Diamond ControlFacet" })
+			await checkRole(results, cat, view, liquidatorAddress, "PARTYB_LIQUIDATOR_ROLE", ethers, { contractLabel: "Diamond ControlFacet" })
+		} catch (e: any) {
+			pushAndLog(results, { category: cat, check: "Core role check", status: "fail", message: e.message?.slice(0, 120) })
+		}
+	}
+
+	// Hardcoded liquidation selectors
+	console.log("")
+	console.log(`   ${c.dim}-- Allowed selectors --${c.reset}`)
+	const partyA = await ethers.getContractAt("IPartyALiquidationFacet", ethers.ZeroAddress)
+	const partyB = await ethers.getContractAt("IPartyBLiquidationFacet", ethers.ZeroAddress)
+	const expected: Array<[string, string]> = [
+		["liquidatePartyA", partyA.interface.getFunction("liquidatePartyA").selector],
+		["setSymbolsPrice", partyA.interface.getFunction("setSymbolsPrice").selector],
+		["deferredLiquidatePartyA", partyA.interface.getFunction("deferredLiquidatePartyA").selector],
+		["deferredSetSymbolsPrice", partyA.interface.getFunction("deferredSetSymbolsPrice").selector],
+		["liquidatePendingPositionsPartyA", partyA.interface.getFunction("liquidatePendingPositionsPartyA").selector],
+		["liquidatePositionsPartyA", partyA.interface.getFunction("liquidatePositionsPartyA").selector],
+		["settlePartyALiquidation", partyA.interface.getFunction("settlePartyALiquidation").selector],
+		["liquidatePartyB", partyB.interface.getFunction("liquidatePartyB").selector],
+		["liquidatePositionsPartyB", partyB.interface.getFunction("liquidatePositionsPartyB").selector],
+	]
+	for (const [name, selector] of expected) {
+		await checkBool(
+			results,
+			cat,
+			`${name} allowed`,
+			() => liquidator.allowedSelectors(selector),
+			true,
+			"fail",
+			`Call SymmioLiquidator.setAllowedSelector(${selector}, true)`,
+		)
+	}
+}
+
 // ============================================================================
 // Address loading helpers
 // ============================================================================
@@ -1231,6 +1341,7 @@ function loadAddressesFromCheckpoint(checkpoint: any, existing: any) {
 		accountLayer: existing.accountLayer || checkpoint.contracts?.accountLayerDiamond?.diamond?.address,
 		instantLayer: existing.instantLayer || checkpoint.contracts?.instantLayer?.address,
 		partyB: existing.partyB || checkpoint.contracts?.symmioPartyB?.address,
+		liquidator: existing.liquidator || checkpoint.contracts?.symmioLiquidator?.address,
 		collateral: existing.collateral || checkpoint.contracts?.collateral?.address,
 		admin: existing.admin,
 	}
@@ -1242,6 +1353,7 @@ function loadAddressesFromReport(report: any, existing: any) {
 		accountLayer: existing.accountLayer || report.addresses?.accountLayerDiamond,
 		instantLayer: existing.instantLayer || report.addresses?.instantLayer,
 		partyB: existing.partyB || report.addresses?.symmioPartyB,
+		liquidator: existing.liquidator || report.addresses?.symmioLiquidator,
 		collateral: existing.collateral || report.addresses?.collateral,
 		admin: existing.admin || report.config?.admin,
 	}
@@ -1277,6 +1389,18 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 		defaultValue: "",
 	})
 	.addOption({
+		name: "liquidator",
+		description: "SymmioLiquidator address (optional)",
+		type: ArgumentType.STRING,
+		defaultValue: "",
+	})
+	.addOption({
+		name: "operators",
+		description: "SymmioLiquidator operator addresses (comma-separated, optional)",
+		type: ArgumentType.STRING,
+		defaultValue: "",
+	})
+	.addOption({
 		name: "collateral",
 		description: "Collateral token address",
 		type: ArgumentType.STRING,
@@ -1308,14 +1432,29 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 			const network = connection.networkName || "unknown"
 
 			// Convert empty strings to undefined for cleaner handling
-			let addresses = {
+			let addresses: {
+				diamond?: string
+				accountLayer?: string
+				instantLayer?: string
+				partyB?: string
+				liquidator?: string
+				collateral?: string
+				admin?: string
+			} = {
 				diamond: args.diamond || undefined,
 				accountLayer: args.accountLayer || undefined,
 				instantLayer: args.instantLayer || undefined,
 				partyB: args.partyB || undefined,
+				liquidator: args.liquidator || undefined,
 				collateral: args.collateral || undefined,
 				admin: args.admin || undefined,
 			}
+			const operators: string[] = args.operators
+				? String(args.operators)
+						.split(",")
+						.map((a: string) => a.trim())
+						.filter(Boolean)
+				: []
 
 			// Load from deployment report if requested
 			if (args.fromReport) {
@@ -1380,6 +1519,12 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 				}
 			} else {
 				console.log(`${c.dim}  PartyB         (not set)${c.reset}`)
+			}
+			console.log(`${c.dim}  Liquidator     ${c.reset}${addresses.liquidator || `${c.dim}(not set)${c.reset}`}`)
+			if (operators.length > 0) {
+				for (let i = 0; i < operators.length; i++) {
+					console.log(`${c.dim}  Operator [${i}]   ${c.reset}${operators[i]}`)
+				}
 			}
 			console.log(`${c.dim}  Collateral     ${c.reset}${addresses.collateral || `${c.dim}(not set)${c.reset}`}`)
 			console.log(`${c.dim}  Admin          ${c.reset}${addresses.admin || `${c.dim}(not set)${c.reset}`}`)
@@ -1552,6 +1697,28 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 				} else {
 					pushAndLog(results, { category: `PartyB[${i}]`, check: "Contract exists", status: "pass" })
 					await verifyPartyBFull(ethers, pbAddr, addresses, results)
+				}
+				console.log("")
+			}
+
+			// ========================================
+			// 5. SymmioLiquidator Verification
+			// ========================================
+			if (addresses.liquidator) {
+				console.log(`${c.bold}SymmioLiquidator${c.reset}  ${c.dim}${addresses.liquidator}${c.reset}`)
+
+				const liqCode = await ethers.provider.getCode(addresses.liquidator)
+				if (liqCode === "0x") {
+					pushAndLog(results, {
+						category: "Liquidator",
+						check: "Contract exists",
+						status: "fail",
+						message: "No contract at address",
+						hint: "Verify the SymmioLiquidator address is correct, or run scripts/deployLiquidator.ts",
+					})
+				} else {
+					pushAndLog(results, { category: "Liquidator", check: "Contract exists", status: "pass" })
+					await verifyLiquidatorFull(ethers, addresses.liquidator, { ...addresses, operators }, results)
 				}
 				console.log("")
 			}
