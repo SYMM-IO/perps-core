@@ -502,6 +502,43 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			expect(await collateral.balanceOf(receiver.address)).to.equal(receiverBefore + withdrawAmount)
 		})
 
+		it("accelerates with affiliateAmount = 0 AND creditAmount = 0 (all general)", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, user, affiliate, randomCaller, receiver, collateral, generalFunding } = fixture
+
+			const withdrawAmount = 500n * 10n ** 18n
+			const { parts, requestId, partsHash } = await acceptStandard(fixture, { withdrawAmount })
+
+			const receiverBefore = await collateral.balanceOf(receiver.address)
+
+			const { offerData, creditDataRaw } = await buildAccelerateCall(fixture, {
+				user: user.address,
+				requestId,
+				parts,
+				nonce: 0n,
+				affiliateAmount: 0n,
+				creditAmount: 0n,
+				partsHash,
+			})
+
+			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw)
+
+			const info = await expressProvider.getWithdrawInfo(user.address, requestId)
+			expect(info.status).to.equal(STATUS_PROCESSED)
+			expect(info.optionType).to.equal(OPT_INSTANT)
+			expect(info.generalAmount).to.equal(withdrawAmount)
+			expect(info.affiliateAmount).to.equal(0n)
+			expect(info.creditAmount).to.equal(0n)
+
+			expect(await expressProvider.generalBalance()).to.equal(generalFunding - withdrawAmount)
+			expect(await expressProvider.lockedGeneralBalance()).to.equal(0n)
+			// Credit & affiliate pool untouched
+			expect(await expressProvider.creditLineActiveDebt(affiliate)).to.equal(0n)
+			expect(await expressProvider.creditLineReservedDebt(affiliate)).to.equal(0n)
+			// User paid
+			expect(await collateral.balanceOf(receiver.address)).to.equal(receiverBefore + withdrawAmount)
+		})
+
 		it("accelerate callable by user themselves (permissionless)", async function () {
 			const fixture = await deployFixture()
 			const { expressProvider, user, receiver, collateral } = fixture
@@ -681,6 +718,80 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			await expect(
 				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw),
 			).to.be.revertedWithCustomError(expressProvider, "AccelerateOfferExpired")
+		})
+
+		it("reverts AccelerateCooldownElapsed at the exact cooldownEndTime boundary (>= check)", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, user, randomCaller } = fixture
+
+			const { parts, requestId, partsHash } = await acceptStandard(fixture)
+			const info = await expressProvider.getWithdrawInfo(user.address, requestId)
+
+			const { offerData, creditDataRaw } = await buildAccelerateCall(fixture, {
+				user: user.address,
+				requestId,
+				parts,
+				nonce: 0n,
+				affiliateAmount: 0n,
+				creditAmount: 0n,
+				partsHash,
+				deadlineOffset: 13 * 3600,
+			})
+
+			await ethers.provider.send("evm_setNextBlockTimestamp", [Number(info.cooldownEndTime)])
+
+			await expect(
+				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw),
+			).to.be.revertedWithCustomError(expressProvider, "AccelerateCooldownElapsed")
+		})
+
+		it("succeeds at cooldownEndTime - 1 (just under the boundary)", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, user, randomCaller } = fixture
+
+			const { parts, requestId, partsHash } = await acceptStandard(fixture)
+			const info = await expressProvider.getWithdrawInfo(user.address, requestId)
+
+			const { offerData, creditDataRaw } = await buildAccelerateCall(fixture, {
+				user: user.address,
+				requestId,
+				parts,
+				nonce: 0n,
+				affiliateAmount: 0n,
+				creditAmount: 0n,
+				partsHash,
+				deadlineOffset: 13 * 3600,
+			})
+
+			await ethers.provider.send("evm_setNextBlockTimestamp", [Number(info.cooldownEndTime) - 1])
+			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw)
+
+			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).status).to.equal(STATUS_PROCESSED)
+		})
+
+		it("succeeds when offer.deadline == block.timestamp (strict > check)", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, botSigner, user, randomCaller } = fixture
+
+			const { parts, requestId, partsHash } = await acceptStandard(fixture)
+
+			const nextTs = (await ethers.provider.getBlock("latest"))!.timestamp + 30
+			const sig = await signAccelerateOffer(expressProvider, botSigner, {
+				user: user.address,
+				requestId,
+				nonce: 0n,
+				affiliateAmount: 0n,
+				creditAmount: 100n * 10n ** 18n,
+				partsHash,
+				deadline: nextTs,
+			})
+			const offerData = encodeAccelerateOfferData(0n, 0n, 100n * 10n ** 18n, nextTs, sig)
+			const creditDataRaw = buildCreditData(10_000n * 10n ** 18n, nextTs)
+
+			await ethers.provider.send("evm_setNextBlockTimestamp", [nextTs])
+			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw)
+
+			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).status).to.equal(STATUS_PROCESSED)
 		})
 
 		it("rejects after core finalization (status check fires first)", async function () {
@@ -872,6 +983,80 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			).to.be.revertedWithCustomError(expressProvider, "AccelerateOnlyFromStandardAccepted")
 		})
 
+		it("reverts AccelerateOnlyFromStandardAccepted when target is PROCESSED (post-acceleration replay)", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, user, randomCaller } = fixture
+
+			const { parts, requestId, partsHash } = await acceptStandard(fixture)
+
+			const first = await buildAccelerateCall(fixture, {
+				user: user.address,
+				requestId,
+				parts,
+				nonce: 0n,
+				affiliateAmount: 0n,
+				creditAmount: 100n * 10n ** 18n,
+				partsHash,
+			})
+			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, first.offerData, first.creditDataRaw)
+
+			const second = await buildAccelerateCall(fixture, {
+				user: user.address,
+				requestId,
+				parts,
+				nonce: 1n,
+				affiliateAmount: 0n,
+				creditAmount: 50n * 10n ** 18n,
+				partsHash,
+			})
+			await expect(
+				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, second.offerData, second.creditDataRaw),
+			).to.be.revertedWithCustomError(expressProvider, "AccelerateOnlyFromStandardAccepted")
+		})
+
+		it("reverts AccelerateOnlyFromStandardAccepted when target is CANCELLED", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, user, context, randomCaller } = fixture
+
+			const { parts, requestId, partsHash } = await acceptStandard(fixture)
+			await context.withdrawFacet.connect(user).requestCancelWithdraw(requestId)
+
+			const { offerData, creditDataRaw } = await buildAccelerateCall(fixture, {
+				user: user.address,
+				requestId,
+				parts,
+				nonce: 0n,
+				affiliateAmount: 0n,
+				creditAmount: 100n * 10n ** 18n,
+				partsHash,
+			})
+			await expect(
+				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw),
+			).to.be.revertedWithCustomError(expressProvider, "AccelerateOnlyFromStandardAccepted")
+		})
+
+		it("reverts AccelerateOnlyFromStandardAccepted when target is SUSPENDED", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, user, context, randomCaller } = fixture
+
+			const { parts, requestId, partsHash } = await acceptStandard(fixture)
+			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(user.address)
+			await context.withdrawFacet.connect(context.signers.admin).suspendWithdrawRequest(user.address, requestId)
+
+			const { offerData, creditDataRaw } = await buildAccelerateCall(fixture, {
+				user: user.address,
+				requestId,
+				parts,
+				nonce: 0n,
+				affiliateAmount: 0n,
+				creditAmount: 100n * 10n ** 18n,
+				partsHash,
+			})
+			await expect(
+				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw),
+			).to.be.revertedWithCustomError(expressProvider, "AccelerateOnlyFromStandardAccepted")
+		})
+
 		it("reverts FundingSplitExceedsExpress when affiliate + credit > expressAmount", async function () {
 			const fixture = await deployFixture()
 			const { expressProvider, user, randomCaller } = fixture
@@ -893,6 +1078,36 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw),
 			).to.be.revertedWithCustomError(expressProvider, "FundingSplitExceedsExpress")
 		})
+
+		it("succeeds when affiliateAmount + creditAmount == expressAmount (exact boundary)", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, user, randomCaller, affiliate } = fixture
+
+			const withdrawAmount = 500n * 10n ** 18n
+			const { parts, requestId, partsHash } = await acceptStandard(fixture, { withdrawAmount })
+
+			const affiliateAmount = 200n * 10n ** 18n
+			const creditAmount = withdrawAmount - affiliateAmount // exactly fills expressAmount
+
+			const { offerData, creditDataRaw } = await buildAccelerateCall(fixture, {
+				user: user.address,
+				requestId,
+				parts,
+				nonce: 0n,
+				affiliateAmount,
+				creditAmount,
+				partsHash,
+			})
+
+			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw)
+
+			const info = await expressProvider.getWithdrawInfo(user.address, requestId)
+			expect(info.status).to.equal(STATUS_PROCESSED)
+			expect(info.generalAmount).to.equal(0n)
+			expect(info.affiliateAmount).to.equal(affiliateAmount)
+			expect(info.creditAmount).to.equal(creditAmount)
+			expect(await expressProvider.creditLineActiveDebt(affiliate)).to.equal(creditAmount)
+		})
 	})
 
 	// ═══════════════════════════════════════════════════════════════════
@@ -900,6 +1115,37 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 	// ═══════════════════════════════════════════════════════════════════
 
 	describe("Pool Funding Guards", function () {
+		it("reverts InsufficientGeneralBalance when general pool lacks capacity", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, user, affiliate, randomCaller, deployer, generalFunding } = fixture
+
+			const WITHDRAWER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("WITHDRAWER_ROLE"))
+			await expressProvider.connect(deployer).grantRole(WITHDRAWER_ROLE, deployer.address)
+
+			const withdrawAmount = 500n * 10n ** 18n
+			const drain = generalFunding - (withdrawAmount - 1n)
+			await expressProvider.connect(deployer).withdrawFromGeneral(drain)
+
+			const { parts, requestId, partsHash } = await acceptStandard(fixture, { withdrawAmount })
+
+			const { offerData, creditDataRaw } = await buildAccelerateCall(fixture, {
+				user: user.address,
+				requestId,
+				parts,
+				nonce: 0n,
+				affiliateAmount: 0n,
+				creditAmount: 0n,
+				partsHash,
+			})
+
+			await expect(
+				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw),
+			).to.be.revertedWithCustomError(expressProvider, "InsufficientGeneralBalance")
+
+			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).status).to.equal(STATUS_ACCEPTED)
+			expect(await expressProvider.accelerateNonce(user.address, requestId)).to.equal(0n)
+		})
+
 		it("reverts InsufficientAffiliateBalance when affiliate pool is drained", async function () {
 			const fixture = await deployFixture()
 			const { expressProvider, user, affiliate, randomCaller, deployer } = fixture
