@@ -104,7 +104,7 @@ RUN MIGRATION (after diamondCut — requires v0.8.5)
         ▼
  migration-report.json
 
- setSymbolTypes.ts              (backfill symbolType for all symbols)
+ setSymbolType.ts               (backfill symbolType for all symbols)
  whitelistSymbolTypes.ts        (whitelist symbol type per PartyB)
 
 
@@ -246,7 +246,7 @@ RUN MIGRATION (after diamondCut — requires v0.8.5)
         ▼
  migration-report.json
 
- setSymbolTypes.ts              (backfill symbolType for all symbols)
+ setSymbolType.ts               (backfill symbolType for all symbols)
  whitelistSymbolTypes.ts        (whitelist symbol type per PartyB)
 
 
