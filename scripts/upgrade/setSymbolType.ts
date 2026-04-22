@@ -1,44 +1,65 @@
 /**
  * Set symbolType for all symbols on the Symmio diamond.
  *
- * Reads symbol IDs and type from the input file produced by prepareSymbolTypes.ts,
+ * Reads symbol IDs and type from the input file produced by fetchSymbolList.ts,
  * then calls setSymbolTypes() on the target diamond. Requires SYMBOL_MANAGER_ROLE
  * (granted to migrationRunner by the Safe batch).
  *
  * Run:
- *   npx hardhat run scripts/upgrade/setSymbolTypes.ts --network <network>
+ *   npx hardhat run scripts/upgrade/setSymbolType.ts --network <network>
  *
  *   # Dry run (log without submitting)
- *   DRY_RUN=true npx hardhat run scripts/upgrade/setSymbolTypes.ts --network <network>
+ *   DRY_RUN=true npx hardhat run scripts/upgrade/setSymbolType.ts --network <network>
  *
  * Config: scripts/upgrade/config/upgrade.json (diamondAddress)
- * Input:  scripts/upgrade/output/symbol-types-input.json (from prepareSymbolTypes.ts)
- * Output: scripts/upgrade/output/set-symbol-types-report.json
+ * Input:  scripts/upgrade/output/{count}-symbol-types-input-{network}.json (from fetchSymbolList.ts)
+ * Output: scripts/upgrade/output/set-symbol-types-report-{network}.json
  */
 import fs from "fs"
 import path from "path"
 
-import { ethers } from "../../test/helpers/hardhat-connection.js"
-import type { SymbolTypesInput } from "./prepareSymbolTypes.js"
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
+import type { SymbolTypesInput } from "./fetchSymbolList.js"
 import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
 import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 
 const OUTPUT_DIR = "./scripts/upgrade/output"
 
+function resolveSymbolTypesInputFile(networkName: string): string {
+	const suffix = `-symbol-types-input-${networkName}.json`
+	if (!fs.existsSync(OUTPUT_DIR)) {
+		throw new Error(`Output dir not found: ${OUTPUT_DIR}. Run fetchSymbolList.ts first.`)
+	}
+	const matches = fs
+		.readdirSync(OUTPUT_DIR)
+		.filter(f => f.endsWith(suffix) && /^\d+-symbol-types-input-/.test(f))
+		.map(f => ({ name: f, mtime: fs.statSync(path.join(OUTPUT_DIR, f)).mtimeMs }))
+		.sort((a, b) => b.mtime - a.mtime)
+	if (matches.length === 0) {
+		throw new Error(`No input file matching *${suffix} in ${OUTPUT_DIR}. Run fetchSymbolList.ts first.`)
+	}
+	if (matches.length > 1) {
+		log.warn(`Multiple input files for ${networkName} — picking newest: ${matches[0].name}`)
+		for (const m of matches.slice(1)) log.warn(`  skipped: ${m.name}`)
+	}
+	return path.join(OUTPUT_DIR, matches[0].name)
+}
+
 async function main() {
-	const shared = loadUpgradeConfigShared()
+	const networkName = connection.networkName
+	const shared = loadUpgradeConfigShared(networkName)
 
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? shared.diamondAddress
 	const CHUNK_SIZE = Number(process.env.CHUNK_SIZE ?? 100)
 	const DRY_RUN = process.env.DRY_RUN === "true"
-	const inputFile = process.env.SYMBOL_TYPES_INPUT_FILE ?? path.join(OUTPUT_DIR, "symbol-types-input.json")
+	const inputFile = process.env.SYMBOL_TYPES_INPUT_FILE ?? resolveSymbolTypesInputFile(networkName)
 
 	if (!DIAMOND_ADDRESS || !ethers.isAddress(DIAMOND_ADDRESS)) {
 		throw new Error("DIAMOND_ADDRESS is required (env var or upgrade.json)")
 	}
 	if (!fs.existsSync(inputFile)) {
-		throw new Error(`Input file not found: ${inputFile}\nRun prepareSymbolTypes.ts first.`)
+		throw new Error(`Input file not found: ${inputFile}\nRun fetchSymbolList.ts first.`)
 	}
 
 	const input: SymbolTypesInput = JSON.parse(fs.readFileSync(inputFile, "utf-8"))
@@ -57,7 +78,7 @@ async function main() {
 
 	if (DRY_RUN) {
 		log.warn("DRY RUN — no transactions submitted")
-		writeReport(DIAMOND_ADDRESS, input, 0, true)
+		writeReport(DIAMOND_ADDRESS, input, 0, true, networkName)
 		return
 	}
 
@@ -95,29 +116,22 @@ async function main() {
 		})
 	}
 
-	log.info(`Sending ${chunks.length} chunk transactions in parallel...`)
-	const baseNonce = await signer.getNonce()
-
-	const txPromises = chunks.map((chunk, i) => {
-		log.info(`Submitting chunk ${chunk.index} (${chunk.symbolIds.length} symbols, nonce ${baseNonce + i})...`)
-		return diamond.setSymbolTypes(chunk.symbolIds, chunk.symbolTypes, { nonce: baseNonce + i })
-	})
-	const txResponses = await Promise.all(txPromises)
-
-	log.info("Waiting for confirmations...")
-	const receipts = await Promise.all(txResponses.map(tx => tx.wait()))
-	for (let i = 0; i < receipts.length; i++) {
-		log.ok(`  chunk ${chunks[i].index}: tx ${receipts[i].hash} (gas: ${receipts[i].gasUsed})`)
+	log.info(`Sending ${chunks.length} chunk transactions sequentially...`)
+	for (const chunk of chunks) {
+		log.info(`Submitting chunk ${chunk.index} (${chunk.symbolIds.length} symbols)...`)
+		const tx = await diamond.setSymbolTypes(chunk.symbolIds, chunk.symbolTypes)
+		const receipt = await tx.wait()
+		log.ok(`  chunk ${chunk.index}: tx ${receipt.hash} (gas: ${receipt.gasUsed})`)
 	}
 	const totalSet = symbols.length
 
 	log.ok(`\nSet symbolType=${symbolType} for ${totalSet} symbols on ${DIAMOND_ADDRESS}`)
-	writeReport(DIAMOND_ADDRESS, input, totalSet, false)
+	writeReport(DIAMOND_ADDRESS, input, totalSet, false, networkName)
 }
 
-function writeReport(diamondAddress: string, input: SymbolTypesInput, totalSet: number, dryRun: boolean) {
+function writeReport(diamondAddress: string, input: SymbolTypesInput, totalSet: number, dryRun: boolean, networkName: string) {
 	if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
-	const reportFile = path.join(OUTPUT_DIR, "set-symbol-types-report.json")
+	const reportFile = path.join(OUTPUT_DIR, `set-symbol-types-report-${networkName}.json`)
 	fs.writeFileSync(
 		reportFile,
 		JSON.stringify(

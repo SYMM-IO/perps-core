@@ -228,12 +228,12 @@ GAP_SCAN_RANGE=200 USE_KEYSTORE=true npx hardhat run scripts/upgrade/validateMig
 ### 7b. Prepare symbol types input (off the critical path)
 
 ```bash
-USE_KEYSTORE=true npx hardhat run scripts/upgrade/prepareSymbolTypes.ts --network <network>
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/fetchSymbolList.ts --network <network>
 ```
 
-Fetches all symbol IDs and names from the subgraph and writes the input file for `setSymbolTypes.ts`. The `symbolType` value (applied to all symbols) is read from `newV085Parameters.symbolType` in `upgrade-{network}.json`.
+Fetches all symbol IDs and names from the subgraph and writes the input file for `setSymbolType.ts`. The `symbolType` value (applied to all symbols) is read from `newV085Parameters.symbolType` in `upgrade-{network}.json`.
 
-**Run this OUTSIDE the pause window** -- it only hits the subgraph and writes a local file. `setSymbolTypes.ts` consumes its output and does not re-fetch.
+**Run this OUTSIDE the pause window** -- it only hits the subgraph and writes a local file. `setSymbolType.ts` consumes its output and does not re-fetch.
 
 Output: `output/symbol-types-input.json`
 
@@ -268,10 +268,10 @@ Output: `output/migration-report.json`
 ### 8b. Set symbol types
 
 ```bash
-USE_KEYSTORE=true npx hardhat run scripts/upgrade/setSymbolTypes.ts --network <network>
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/setSymbolType.ts --network <network>
 ```
 
-Reads `output/symbol-types-input.json` (produced by `prepareSymbolTypes.ts`) and calls `setSymbolTypes()` on the diamond to backfill the `symbolType` for all symbols. Requires `SYMBOL_MANAGER_ROLE` (granted to `migrationRunner` in the Safe batch).
+Reads `output/symbol-types-input.json` (produced by `fetchSymbolList.ts`) and calls `setSymbolTypes()` on the diamond to backfill the `symbolType` for all symbols. Requires `SYMBOL_MANAGER_ROLE` (granted to `migrationRunner` in the Safe batch).
 
 Can run in parallel with or immediately after `runMigration.ts` -- both require only their respective roles and are independent of each other.
 
@@ -290,7 +290,7 @@ Calls `whitelistSymbolType(partyB, symbolType)` for each PartyB in the config, a
 
 The `symbolType` value is read from `newV085Parameters.symbolType` in `upgrade-{network}.json`. PartyB addresses are read from `scripts/upgrade/config/partyBList-{network}.json`.
 
-Can run after `setSymbolTypes.ts` has assigned types to all symbols.
+Can run after `setSymbolType.ts` has assigned types to all symbols.
 
 Output: `output/whitelist-symbol-types-report.json`
 
@@ -347,7 +347,7 @@ Phase 1: Prepare (can be done in advance, no downtime)
   generateSafeBatch.ts
   generateTimelockBatch.ts
   generatePostMigrationBatch.ts
-  prepareSymbolTypes.ts              (off critical path — fetch symbols from subgraph)
+  fetchSymbolList.ts              (off critical path — fetch symbols from subgraph)
   snapshotBalances.ts                (optional pre-pause snapshot, off critical path)
 
 Phase 2: Schedule (multisig signs)
@@ -374,7 +374,7 @@ Phase 4: Execute upgrade (multisig signs, downtime starts)
 Phase 5: Migrate (EOA with MIGRATION_ROLE / SYMBOL_MANAGER_ROLE / PARTY_B_MANAGER_ROLE)
   runMigration.ts
   -> Migrates quotes and PartyB locked values on the paused system
-  setSymbolTypes.ts
+  setSymbolType.ts
   -> Backfills symbolType for all symbols (reads symbol-types-input.json)
   whitelistSymbolTypes.ts
   -> Whitelists symbol type per PartyB (reads partyBList-{network}.json)
@@ -415,10 +415,10 @@ Same as above but skip `generateTimelockBatch.ts` and include the diamondCut dir
 | `timelock-execute-safe-batch.json` | generateTimelockBatch.ts | Safe TX Builder |
 | `migration-input.json` | prepareMigrationInput.ts | runMigration.ts |
 | `prepareMigrationInput-report.json` | prepareMigrationInput.ts | Human review |
-| `symbol-types-input.json` | prepareSymbolTypes.ts | setSymbolTypes.ts |
+| `symbol-types-input.json` | fetchSymbolList.ts | setSymbolType.ts |
 | `balance-snapshot.json` | snapshotBalances.ts | Human review (sanity-check totals) |
 | `migration-report.json` | runMigration.ts | Human review |
-| `set-symbol-types-report.json` | setSymbolTypes.ts | Human review |
+| `set-symbol-types-report.json` | setSymbolType.ts | Human review |
 | `post-migration-transactions.json` | generatePostMigrationBatch.ts | EOA execution |
 | `post-migration-safe-batch.json` | generatePostMigrationBatch.ts | Safe TX Builder |
 | `whitelist-symbol-types-report.json` | whitelistSymbolTypes.ts | Human review |
@@ -438,7 +438,7 @@ Standalone scripts for tasks that were missed during the initial upgrade window 
 USE_KEYSTORE=true npx hardhat run scripts/upgrade/generateSymbolTypeRoleBatch.ts --network <network>
 ```
 
-Generates two Safe batches to grant and revoke `SYMBOL_MANAGER_ROLE` for the migration runner, for use when `setSymbolTypes.ts` needs to run after the system is unpaused.
+Generates two Safe batches to grant and revoke `SYMBOL_MANAGER_ROLE` for the migration runner, for use when `setSymbolType.ts` needs to run after the system is unpaused.
 
 Output:
 - `output/grant-symbol-role-safe-batch.json` -- Grant `SYMBOL_MANAGER_ROLE` to `migrationRunner`
@@ -446,7 +446,7 @@ Output:
 
 Flow:
 1. Execute grant batch via Safe
-2. Run `setSymbolTypes.ts`
+2. Run `setSymbolType.ts`
 3. Execute revoke batch via Safe
 
 ### Generate template batch

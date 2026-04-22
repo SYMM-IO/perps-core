@@ -1,20 +1,21 @@
 /**
- * Fetch symbols from the subgraph and prepare the input file for setSymbolTypes.ts.
+ * Fetch symbols from the subgraph and write the input file for setSymbolType.ts.
  *
- * Run before setSymbolTypes.ts — run during the pause window to capture any
+ * Run before setSymbolType.ts — run during the pause window to capture any
  * symbols added during the timelock delay.
  *
  * Run:
- *   npx hardhat run scripts/upgrade/prepareSymbolTypes.ts --network <network>
+ *   npx hardhat run scripts/upgrade/fetchSymbolList.ts --network <network>
  *
  * Config: scripts/upgrade/config/upgrade.json
  *   subgraphEndpoint, newV085Parameters.symbolType
  *
- * Output: scripts/upgrade/output/symbol-types-input.json
+ * Output: scripts/upgrade/output/{count}-symbol-types-input-{network}.json
  */
 import fs from "fs"
 import path from "path"
 
+import connection from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
 import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 import { fetchSymbols } from "./utils/subgraphHelpers.js"
@@ -30,16 +31,17 @@ export type SymbolTypesInput = {
 }
 
 async function main() {
-	const shared = loadUpgradeConfigShared()
+	const networkName = connection.networkName
+	const shared = loadUpgradeConfigShared(networkName)
 
 	const SUBGRAPH_ENDPOINT = process.env.SUBGRAPH_ENDPOINT ?? shared.subgraphEndpoint ?? DEFAULT_SUBGRAPH_ENDPOINT
 	const SYMBOL_TYPE = process.env.SYMBOL_TYPE !== undefined ? Number(process.env.SYMBOL_TYPE) : shared.newV085Parameters?.symbolType
-	const outputFile = process.env.SYMBOL_TYPES_INPUT_FILE ?? path.join(OUTPUT_DIR, "symbol-types-input.json")
 
 	if (SYMBOL_TYPE === undefined) {
 		throw new Error("symbolType is required — set newV085Parameters.symbolType in upgrade.json or SYMBOL_TYPE env var")
 	}
 
+	log.info(`Network:     ${networkName}`)
 	log.info(`Subgraph:    ${SUBGRAPH_ENDPOINT}`)
 	log.info(`Symbol type: ${SYMBOL_TYPE}`)
 	log.info("")
@@ -60,6 +62,8 @@ async function main() {
 		symbolType: SYMBOL_TYPE,
 		symbols: symbols.map(s => ({ symbolId: s.symbolId, name: s.name })),
 	}
+
+	const outputFile = process.env.SYMBOL_TYPES_INPUT_FILE ?? path.join(OUTPUT_DIR, `${symbols.length}-symbol-types-input-${networkName}.json`)
 
 	if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
 	fs.writeFileSync(outputFile, JSON.stringify(input, null, 2))
