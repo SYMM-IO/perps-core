@@ -44,6 +44,7 @@ export interface DeploymentCheckpoint {
 		signatureVerifier?: DeployedContract
 		instantLayer?: DeployedContract
 		symmioPartyB?: DeployedContract & { implementation?: string; admin?: string }
+		symmioLiquidator?: DeployedContract & { implementation?: string; admin?: string }
 		accountManager?: DeployedContract
 		symbolManager?: DeployedContract
 	}

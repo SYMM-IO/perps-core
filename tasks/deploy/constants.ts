@@ -34,6 +34,7 @@ export const DEPLOYMENT_LOG_FILE = "deployed.json" // Core Diamond contracts
 export const ACCOUNTLAYER_DEPLOYMENT_FILE = "accountlayer.json"
 export const INSTANTLAYER_DEPLOYMENT_FILE = "instantlayer.json"
 export const PARTYB_DEPLOYMENT_FILE = "partyb.json"
+export const LIQUIDATOR_DEPLOYMENT_FILE = "liquidator.json"
 export const STABLECOIN_DEPLOYMENT_FILE = "stablecoin.json"
 export const SYMBOLMANAGER_DEPLOYMENT_FILE = "symbolmanager.json"
 
