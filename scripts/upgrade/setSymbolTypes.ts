@@ -85,17 +85,31 @@ async function main() {
 		signer,
 	)
 
-	let totalSet = 0
+	const chunks: { index: number; symbolIds: bigint[]; symbolTypes: bigint[] }[] = []
 	for (let i = 0; i < symbols.length; i += CHUNK_SIZE) {
 		const chunk = symbols.slice(i, i + CHUNK_SIZE)
-		const symbolIds = chunk.map(s => BigInt(s.symbolId))
-		const symbolTypes = chunk.map(() => BigInt(symbolType))
-		log.info(`Submitting chunk ${Math.floor(i / CHUNK_SIZE) + 1} (${chunk.length} symbols)...`)
-		const tx = await diamond.setSymbolTypes(symbolIds, symbolTypes)
-		const receipt = await tx.wait()
-		log.ok(`  tx: ${receipt.hash} (gas: ${receipt.gasUsed})`)
-		totalSet += chunk.length
+		chunks.push({
+			index: Math.floor(i / CHUNK_SIZE) + 1,
+			symbolIds: chunk.map(s => BigInt(s.symbolId)),
+			symbolTypes: chunk.map(() => BigInt(symbolType)),
+		})
 	}
+
+	log.info(`Sending ${chunks.length} chunk transactions in parallel...`)
+	const baseNonce = await signer.getNonce()
+
+	const txPromises = chunks.map((chunk, i) => {
+		log.info(`Submitting chunk ${chunk.index} (${chunk.symbolIds.length} symbols, nonce ${baseNonce + i})...`)
+		return diamond.setSymbolTypes(chunk.symbolIds, chunk.symbolTypes, { nonce: baseNonce + i })
+	})
+	const txResponses = await Promise.all(txPromises)
+
+	log.info("Waiting for confirmations...")
+	const receipts = await Promise.all(txResponses.map(tx => tx.wait()))
+	for (let i = 0; i < receipts.length; i++) {
+		log.ok(`  chunk ${chunks[i].index}: tx ${receipts[i].hash} (gas: ${receipts[i].gasUsed})`)
+	}
+	const totalSet = symbols.length
 
 	log.ok(`\nSet symbolType=${symbolType} for ${totalSet} symbols on ${DIAMOND_ADDRESS}`)
 	writeReport(DIAMOND_ADDRESS, input, totalSet, false)

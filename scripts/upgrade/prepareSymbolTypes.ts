@@ -1,7 +1,8 @@
 /**
  * Fetch symbols from the subgraph and prepare the input file for setSymbolTypes.ts.
  *
- * Run before setSymbolTypes.ts — can be done outside the pause window.
+ * Run before setSymbolTypes.ts — run during the pause window to capture any
+ * symbols added during the timelock delay.
  *
  * Run:
  *   npx hardhat run scripts/upgrade/prepareSymbolTypes.ts --network <network>
