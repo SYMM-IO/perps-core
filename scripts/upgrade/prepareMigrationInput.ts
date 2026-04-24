@@ -1,10 +1,11 @@
 import fs from "fs"
 import path from "path"
 
-import { ethers } from "../../test/helpers/hardhat-connection.js"
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
-import { loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig.js"
+import { baseNetworkName, loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig.js"
+import { createStepReporter } from "./utils/stepReporter.js"
 import { fetchOpenQuotes } from "./utils/subgraphHelpers.js"
 
 /**
@@ -43,6 +44,9 @@ type PrepareConfig = {
 type StepResult = {
 	name: string
 	status: "ok" | "error"
+	startedAt?: string
+	finishedAt?: string
+	durationMs?: number
 	details?: Record<string, unknown>
 }
 
@@ -57,9 +61,8 @@ type PrepareReport = {
 	error?: string
 }
 
-const CONFIG_FILE = resolveConfigFile("prepareMigration", undefined, process.env.PREPARE_MIGRATION_CONFIG_FILE)
-
-function loadConfig(): PrepareConfig {
+function loadConfig(networkName?: string): PrepareConfig {
+	const CONFIG_FILE = resolveConfigFile("prepareMigration", networkName, process.env.PREPARE_MIGRATION_CONFIG_FILE)
 	if (!fs.existsSync(CONFIG_FILE)) return {}
 	const raw = fs.readFileSync(CONFIG_FILE, "utf-8")
 	const data = JSON.parse(raw)
@@ -105,14 +108,17 @@ async function main() {
 	const scriptTimer = log.timer()
 	await verifyRpc()
 	const startedAtMs = Date.now()
-	const config = loadConfig()
+	// Base chain name (fork-base -> base) so artifacts don't collide across networks.
+	const networkSuffix = baseNetworkName(connection.networkName)
+	const withSuffix = (baseName: string): string => (networkSuffix ? `${baseName}-${networkSuffix}.json` : `${baseName}.json`)
 
-	const shared = loadUpgradeConfigShared()
+	const config = loadConfig(networkSuffix)
+	const shared = loadUpgradeConfigShared(networkSuffix)
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress ?? shared.diamondAddress
 	const SUBGRAPH_ENDPOINT = process.env.SUBGRAPH_ENDPOINT || config.subgraphEndpoint || shared.subgraphEndpoint || DEFAULT_SUBGRAPH_ENDPOINT
 	const outputDir = process.env.PREPARE_OUTPUT_DIR ?? config.outputDir ?? "./scripts/upgrade/output"
-	const outputFile = process.env.PREPARE_OUTPUT_FILE ?? config.outputFile ?? `${outputDir}/migration-input.json`
-	const reportFile = `${outputDir}/prepareMigrationInput-report.json`
+	const outputFile = process.env.PREPARE_OUTPUT_FILE ?? config.outputFile ?? `${outputDir}/${withSuffix("migration-input")}`
+	const reportFile = `${outputDir}/${withSuffix("prepareMigrationInput-report")}`
 
 	const report: PrepareReport = {
 		status: "running",
@@ -121,6 +127,8 @@ async function main() {
 	}
 	tryWriteReport(reportFile, report)
 	let currentStep: string | null = null
+
+	const { finish: finishStep } = createStepReporter(report.steps)
 
 	try {
 		// Validate inputs
@@ -163,7 +171,7 @@ async function main() {
 		})
 		currentStep = null
 		tryWriteReport(reportFile, report)
-		log.stepDone(t)
+		finishStep(t)
 
 		// Step 2: Validate against on-chain -- boundary check
 		t = log.step("Validate boundary against on-chain")
@@ -196,7 +204,7 @@ async function main() {
 		})
 		currentStep = null
 		tryWriteReport(reportFile, report)
-		log.stepDone(t)
+		finishStep(t)
 
 		// Step 3: Build migration input
 		t = log.step("Build migration input")
@@ -274,7 +282,7 @@ async function main() {
 		})
 		currentStep = null
 		tryWriteReport(reportFile, report)
-		log.stepDone(t)
+		finishStep(t)
 
 		report.status = "success"
 

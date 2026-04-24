@@ -17,20 +17,21 @@
 import fs from "fs"
 import path from "path"
 
-import { ethers } from "../../test/helpers/hardhat-connection.js"
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
-import { loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig.js"
+import { baseNetworkName, loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig.js"
 
 type WhitelistConfig = {
 	partyBs: Record<string, string[]>
 }
 
-const CONFIG_FILE = resolveConfigFile("partyBList", undefined, process.env.WHITELIST_CONFIG_FILE)
+const NETWORK_SUFFIX = baseNetworkName(connection.networkName)
+const CONFIG_FILE = resolveConfigFile("partyBList", NETWORK_SUFFIX, process.env.WHITELIST_CONFIG_FILE)
 const OUTPUT_DIR = "./scripts/upgrade/output"
 
 async function main() {
-	const shared = loadUpgradeConfigShared()
+	const shared = loadUpgradeConfigShared(NETWORK_SUFFIX)
 
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? shared.diamondAddress
 	const SYMBOL_TYPE = Number(process.env.SYMBOL_TYPE ?? shared.newV085Parameters?.symbolType ?? 1)
@@ -104,7 +105,7 @@ async function main() {
 
 	// Write report
 	if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
-	const reportFile = path.join(OUTPUT_DIR, "whitelist-symbol-types-report.json")
+	const reportFile = path.join(OUTPUT_DIR, NETWORK_SUFFIX ? `whitelist-symbol-types-report-${NETWORK_SUFFIX}.json` : "whitelist-symbol-types-report.json")
 	fs.writeFileSync(
 		reportFile,
 		JSON.stringify(
