@@ -1,12 +1,14 @@
 import fs from "fs"
 import path from "path"
 
-import { ethers } from "../../test/helpers/hardhat-connection.js"
-import { getImpersonatedAdmin } from "./utils/forkHelpers.js"
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
+import { getImpersonatedAdmin, impersonateAndFund } from "./utils/forkHelpers.js"
 import { log } from "./utils/log.js"
 import { deployAccountLayerDiamond, deployInstantLayer, wireAccountLayerInstantLayer, setupInstantLayerTemplates } from "./utils/peripheralHelpers.js"
+import { runPreflight } from "./utils/preflight.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
-import { resolveConfigFile } from "./utils/sharedConfig.js"
+import { baseNetworkName, resolveConfigFile } from "./utils/sharedConfig.js"
+import { createStepReporter } from "./utils/stepReporter.js"
 import { fetchOpenQuotes, fetchPartyBBalances } from "./utils/subgraphHelpers.js"
 import { deployFacets, buildDiamondCut, applyDiamondCut, setV085Parameters, type NewV085Parameters } from "./utils/upgradeHelpers.js"
 
@@ -41,6 +43,9 @@ type ForkUpgradeConfig = {
 type StepResult = {
 	name: string
 	status: "ok" | "error"
+	startedAt?: string
+	finishedAt?: string
+	durationMs?: number
 	details?: Record<string, unknown>
 }
 
@@ -55,8 +60,8 @@ type ForkUpgradeReport = {
 	error?: string
 }
 
-function loadConfig(): ForkUpgradeConfig {
-	const CONFIG_FILE = resolveConfigFile("upgrade", undefined, process.env.UPGRADE_CONFIG_FILE)
+function loadConfig(networkName?: string): ForkUpgradeConfig {
+	const CONFIG_FILE = resolveConfigFile("upgrade", baseNetworkName(networkName), process.env.UPGRADE_CONFIG_FILE)
 	if (!fs.existsSync(CONFIG_FILE)) return {}
 	const raw = fs.readFileSync(CONFIG_FILE, "utf-8")
 	const data = JSON.parse(raw)
@@ -100,11 +105,25 @@ function tryWriteReport(filePath: string, report: ForkUpgradeReport): void {
 	}
 }
 
+function printStepTimings(steps: StepResult[], totalMs: number): void {
+	const timed = steps.filter(s => typeof s.durationMs === "number")
+	if (timed.length === 0) return
+	console.log("")
+	console.log("  Step timings:")
+	const rows: Array<[string, string | number]> = timed.map(s => {
+		const label = `${s.name}${s.status === "error" ? " (error)" : ""}`
+		const pct = totalMs > 0 ? ((s.durationMs! / totalMs) * 100).toFixed(1) : "0.0"
+		return [label, `${log.formatMs(s.durationMs!)}  (${pct}%)`]
+	})
+	rows.push(["total", log.formatMs(totalMs)])
+	log.stats(rows)
+}
+
 async function main() {
 	const scriptTimer = log.timer()
 	await verifyRpc()
 	const startedAtMs = Date.now()
-	const config = loadConfig()
+	const config = loadConfig(connection.networkName)
 
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress
 	const ADMIN_ADDRESS = process.env.PROTOCOL_ADMIN ?? process.env.ADMIN_ADDRESS ?? (config.protocolAdmin || undefined)
@@ -113,7 +132,11 @@ async function main() {
 	const newParams = config.newV085Parameters ?? {}
 
 	const outputDir = "./scripts/upgrade/output"
-	const reportFile = `${outputDir}/forkUpgrade-report.json`
+	// Suffix output artifacts with the base chain name (e.g. fork-base -> base) so
+	// running this against different chains doesn't clobber or mix state files.
+	const networkSuffix = baseNetworkName(connection.networkName)
+	const withSuffix = (baseName: string, ext = "json"): string => networkSuffix ? `${baseName}-${networkSuffix}.${ext}` : `${baseName}.${ext}`
+	const reportFile = `${outputDir}/${withSuffix("forkUpgrade-report")}`
 
 	const report: ForkUpgradeReport = {
 		status: "running",
@@ -123,11 +146,31 @@ async function main() {
 	tryWriteReport(reportFile, report)
 	let currentStep: string | null = null
 
+	const { finish: finishStep } = createStepReporter(report.steps)
+
 	// Variables that need to survive across steps for the summary
 	let accountLayerAddress = ""
 	let instantLayerAddress = ""
 
 	try {
+		// ── Preflight ────────────────────────────────────────────────────
+		// Fail early with a clear message before any impersonation or on-chain
+		// side effects. See utils/preflight.ts for the checklist.
+		currentStep = "preflight"
+		await runPreflight(connection.networkName, {
+			diamondAddress: DIAMOND_ADDRESS,
+			signatureVerifierAddress: newParams.signatureVerifierAddress,
+			subgraphEndpoint: SUBGRAPH_ENDPOINT,
+			stateFiles: [
+				`${outputDir}/${withSuffix("deployed-facets")}`,
+				`${outputDir}/${withSuffix("deployed-peripherals")}`,
+				`${outputDir}/${withSuffix("deployed-accountlayer-instantlayer")}`,
+			],
+		})
+		report.steps.push({ name: "preflight", status: "ok" })
+		currentStep = null
+		tryWriteReport(reportFile, report)
+
 		// ── Validate inputs ──────────────────────────────────────────────
 		currentStep = "validate_inputs"
 		if (!DIAMOND_ADDRESS) {
@@ -156,7 +199,7 @@ async function main() {
 		report.steps.push({ name: "impersonate_admin", status: "ok", details: { adminAddress } })
 		currentStep = null
 		tryWriteReport(reportFile, report)
-		log.stepDone(t)
+		finishStep(t)
 
 		// ── Step 2: Connect facets ───────────────────────────────────────
 		t = log.step("Connect to existing facets")
@@ -172,7 +215,7 @@ async function main() {
 		report.steps.push({ name: "connect_facets", status: "ok" })
 		currentStep = null
 		tryWriteReport(reportFile, report)
-		log.stepDone(t)
+		finishStep(t)
 
 		// ── Step 3: Fetch subgraph data ──────────────────────────────────
 		t = log.step("Fetch subgraph data")
@@ -198,7 +241,7 @@ async function main() {
 		})
 		currentStep = null
 		tryWriteReport(reportFile, report)
-		log.stepDone(t)
+		finishStep(t)
 
 		// ── Step 4: Capture pre-upgrade snapshot ─────────────────────────
 		t = log.step("Capture pre-upgrade on-chain snapshot")
@@ -258,7 +301,7 @@ async function main() {
 		})
 		currentStep = null
 		tryWriteReport(reportFile, report)
-		log.stepDone(t)
+		finishStep(t)
 
 		// ── Step 5: Pause system ─────────────────────────────────────────
 		t = log.step("Pause system")
@@ -288,12 +331,12 @@ async function main() {
 		report.steps.push({ name: "pause_system", status: "ok", details: { pausedByScript } })
 		currentStep = null
 		tryWriteReport(reportFile, report)
-		log.stepDone(t)
+		finishStep(t)
 
 		// ── Step 6: Deploy v0.8.5 facets ─────────────────────────────────
 		t = log.step("Deploy v0.8.5 facets")
 		currentStep = "deploy_facets"
-		const facetsOutFile = `${outputDir}/deployed-facets.json`
+		const facetsOutFile = `${outputDir}/${withSuffix("deployed-facets")}`
 		const { facets: newFacets, selectorSignatures } = await deployFacets(facetsOutFile)
 		log.ok(`${Object.keys(newFacets).length} facets ready`)
 		report.steps.push({
@@ -303,7 +346,7 @@ async function main() {
 		})
 		currentStep = null
 		tryWriteReport(reportFile, report)
-		log.stepDone(t)
+		finishStep(t)
 
 		// ── Step 7: Build + apply diamond cut ────────────────────────────
 		t = log.step("Build and apply diamond cut")
@@ -320,6 +363,17 @@ async function main() {
 			["Remove", actionCounts.remove],
 			["Total", selectorChanges.length],
 		])
+		// Catches: operator ran forkUpgrade against an already-upgraded diamond (e.g.
+		// pointing at a chain that's already on v0.8.5). The diff shows zero changes,
+		// so the diamondCut would be a no-op — but downstream steps (role grants,
+		// peripheral deploys, parameter sets) would still fire. Abort early so the
+		// operator realizes they picked the wrong chain rather than re-paying those costs.
+		if (selectorChanges.length === 0) {
+			throw new Error(
+				`Diamond at ${DIAMOND_ADDRESS} already exposes every v0.8.5 selector — nothing to upgrade. ` +
+					`If you intended to rehearse migration only, skip forkUpgrade.ts and run the migration scripts directly.`,
+			)
+		}
 		report.steps.push({
 			name: "build_diamond_cut",
 			status: "ok",
@@ -334,12 +388,38 @@ async function main() {
 		report.steps.push({ name: "apply_diamond_cut", status: "ok" })
 		currentStep = null
 		tryWriteReport(reportFile, report)
-		log.stepDone(t)
+		finishStep(t)
 
 		// ── Step 8: Set new v0.8.5 parameters ───────────────────────────
 		t = log.step("Set v0.8.5 parameters")
 		currentStep = "set_v085_parameters"
 		await (await controlFacet.setAdmin(adminAddress)).wait()
+
+		// Fork-only: grant SETTER_ROLE on the existing MuonSignatureVerifier to our
+		// impersonated signer. On production the Safe already holds this role; on a fork
+		// the diamond owner (often a timelock) does not, so the seeding calls revert.
+		if (newParams.signatureVerifierAddress && ethers.isAddress(newParams.signatureVerifierAddress)) {
+			const verifierAccess = await ethers.getContractAt(
+				[
+					"function SETTER_ROLE() view returns (bytes32)",
+					"function DEFAULT_ADMIN_ROLE() view returns (bytes32)",
+					"function hasRole(bytes32,address) view returns (bool)",
+					"function getRoleMember(bytes32,uint256) view returns (address)",
+					"function grantRole(bytes32,address)",
+				],
+				newParams.signatureVerifierAddress,
+				admin,
+			)
+			const setterRole = await verifierAccess.SETTER_ROLE()
+			if (!(await verifierAccess.hasRole(setterRole, adminAddress))) {
+				const defaultAdminRole = await verifierAccess.DEFAULT_ADMIN_ROLE()
+				const verifierAdmin = await verifierAccess.getRoleMember(defaultAdminRole, 0)
+				const verifierAdminSigner = await impersonateAndFund(verifierAdmin)
+				await (await verifierAccess.connect(verifierAdminSigner).grantRole(setterRole, adminAddress)).wait()
+				log.ok(`Fork patch: SETTER_ROLE granted to ${log.addr(adminAddress)} on verifier (via ${log.addr(verifierAdmin)})`)
+			}
+		}
+
 		await setV085Parameters(DIAMOND_ADDRESS, newParams, admin)
 		if (Object.keys(newParams).length === 0) {
 			log.info("(no parameters configured)")
@@ -347,13 +427,13 @@ async function main() {
 		report.steps.push({ name: "set_v085_parameters", status: "ok", details: { ...newParams } })
 		currentStep = null
 		tryWriteReport(reportFile, report)
-		log.stepDone(t)
+		finishStep(t)
 
 		// ── Step 9: Deploy AccountLayer + InstantLayer ───────────────────
 		t = log.step("Deploy AccountLayer + InstantLayer")
 		currentStep = "deploy_account_instant_layer"
 		const symmioFeeReceiver = config.symmioFeeReceiver || adminAddress
-		const alilStateFile = `${outputDir}/deployed-accountlayer-instantlayer.json`
+		const alilStateFile = `${outputDir}/${withSuffix("deployed-accountlayer-instantlayer")}`
 
 		const alResult = await deployAccountLayerDiamond(adminAddress, symmioFeeReceiver, alilStateFile, admin)
 		const ilResult = await deployInstantLayer(DIAMOND_ADDRESS, adminAddress, alilStateFile)
@@ -376,12 +456,12 @@ async function main() {
 		})
 		currentStep = null
 		tryWriteReport(reportFile, report)
-		log.stepDone(t)
+		finishStep(t)
 
 		// ── Step 10: Register PartyBs on InstantLayer ───────────────────
 		t = log.step("Register PartyBs on InstantLayer")
 		currentStep = "register_partybs"
-		const PARTYB_LIST_FILE = resolveConfigFile("partyBList", undefined, process.env.PARTYB_LIST_FILE)
+		const PARTYB_LIST_FILE = resolveConfigFile("partyBList", baseNetworkName(connection.networkName), process.env.PARTYB_LIST_FILE)
 		const registeredPartyBs: string[] = []
 
 		if (fs.existsSync(PARTYB_LIST_FILE)) {
@@ -418,7 +498,7 @@ async function main() {
 		})
 		currentStep = null
 		tryWriteReport(reportFile, report)
-		log.stepDone(t)
+		finishStep(t)
 
 		// ── Step 11: Verify upgrade integrity ────────────────────────────
 		t = log.step("Verify upgrade integrity")
@@ -465,7 +545,7 @@ async function main() {
 		})
 		currentStep = null
 		tryWriteReport(reportFile, report)
-		log.stepDone(t)
+		finishStep(t)
 
 		// ── Grant migration role ─────────────────────────────────────────
 		currentStep = "grant_migration_role"
@@ -478,6 +558,7 @@ async function main() {
 		report.status = "success"
 
 		// ── Summary ──────────────────────────────────────────────────────
+		printStepTimings(report.steps, scriptTimer.ms())
 		log.success("Fork upgrade completed successfully", [
 			["Diamond", DIAMOND_ADDRESS],
 			["AccountLayer", accountLayerAddress],
@@ -500,6 +581,7 @@ async function main() {
 		report.status = "failed"
 		report.error = formatError(error)
 		tryWriteReport(reportFile, report)
+		printStepTimings(report.steps, scriptTimer.ms())
 		log.failure("Fork upgrade failed", `Step: ${currentStep ?? "unknown"}\n  ${formatError(error)}`)
 		throw error
 	} finally {

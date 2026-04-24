@@ -1,9 +1,9 @@
 import fs from "fs"
 
-import { ethers } from "../../test/helpers/hardhat-connection.js"
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
-import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
+import { baseNetworkName, loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 
 /**
  * Validate migration input edge cases against on-chain state.
@@ -28,28 +28,40 @@ import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 
 // ── Raw getQuote decoding (same as validateMigrationInput.ts) ───────
 //
-// Tuple field layout (head offsets, 0-indexed):
-//   0: id              2: symbolId        20: partyA
-//   21: partyB         22: quoteStatus
+// Tuple head offsets, 0-indexed. LockedValues inlines 4 words each:
+//   0: id                                 11-14: initialLockedValues (cva, lf, partyAmm, partyBmm)
+//   1: partyBsWhiteList (pointer)         15-18: lockedValues       (cva, lf, partyAmm, partyBmm)
+//   2: symbolId                           20: partyA
+//                                         21: partyB
+//                                         22: quoteStatus
 
 const GET_QUOTE_SELECTOR = ethers.id("getQuote(uint256)").slice(0, 10)
 
-function decodeQuoteFields(data: string): { symbolId: string; partyA: string; partyB: string; quoteStatus: number } {
+type DecodedQuote = {
+	symbolId: string
+	partyA: string
+	partyB: string
+	quoteStatus: number
+	initialLockedValues: { cva: bigint; lf: bigint; partyAmm: bigint; partyBmm: bigint }
+	lockedValues: { cva: bigint; lf: bigint; partyAmm: bigint; partyBmm: bigint }
+}
+
+function decodeQuoteFields(data: string): DecodedQuote {
 	const tupleStart = 66
 	const word = (index: number): string => data.slice(tupleStart + index * 64, tupleStart + (index + 1) * 64)
+	const wordBig = (index: number): bigint => BigInt("0x" + word(index))
 
 	return {
-		symbolId: BigInt("0x" + word(2)).toString(),
+		symbolId: wordBig(2).toString(),
+		initialLockedValues: { cva: wordBig(11), lf: wordBig(12), partyAmm: wordBig(13), partyBmm: wordBig(14) },
+		lockedValues: { cva: wordBig(15), lf: wordBig(16), partyAmm: wordBig(17), partyBmm: wordBig(18) },
 		partyA: ethers.getAddress("0x" + word(20).slice(24)),
 		partyB: ethers.getAddress("0x" + word(21).slice(24)),
-		quoteStatus: Number(BigInt("0x" + word(22))),
+		quoteStatus: Number(wordBig(22)),
 	}
 }
 
-async function rawGetQuote(
-	diamondAddress: string,
-	quoteId: bigint,
-): Promise<{ symbolId: string; partyA: string; partyB: string; quoteStatus: number }> {
+async function rawGetQuote(diamondAddress: string, quoteId: bigint): Promise<DecodedQuote> {
 	const calldata = GET_QUOTE_SELECTOR + ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [quoteId]).slice(2)
 	const result = await ethers.provider.call({ to: diamondAddress, data: calldata })
 	if (!result || result === "0x") throw new Error(`getQuote(${quoteId}) returned empty data`)
@@ -80,7 +92,10 @@ function statusName(status: number): string {
 
 // ── Config ──────────────────────────────────────────────────────────
 
-const DEFAULT_INPUT_FILE = "./scripts/upgrade/output/migration-input.json"
+const NETWORK_SUFFIX = baseNetworkName(connection.networkName)
+const DEFAULT_INPUT_FILE = NETWORK_SUFFIX
+	? `./scripts/upgrade/output/migration-input-${NETWORK_SUFFIX}.json`
+	: "./scripts/upgrade/output/migration-input.json"
 
 function toBigInt(value: unknown): bigint {
 	if (typeof value === "bigint") return value
@@ -95,7 +110,7 @@ async function main() {
 	const scriptTimer = log.timer()
 	await verifyRpc()
 
-	const shared = loadUpgradeConfigShared()
+	const shared = loadUpgradeConfigShared(NETWORK_SUFFIX)
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? shared.diamondAddress
 	const INPUT_FILE = process.env.MIGRATION_INPUT_FILE ?? DEFAULT_INPUT_FILE
 	// How many quotes to scan from each end (head and tail) for gap detection
@@ -126,7 +141,7 @@ async function main() {
 
 	let failures = 0
 
-	log.setSteps(6)
+	log.setSteps(9)
 
 	// ── Check 1: Boundary quote ─────────────────────────────────────
 	let t = log.step("Boundary quote (lastId)")
@@ -299,6 +314,91 @@ async function main() {
 		failures++
 	} else {
 		log.ok(`All sampled quotes have their partyB-partyA pair in partyBTasks`)
+	}
+	log.stepDone(t)
+
+	// ── Check 7: Duplicate quoteIds in input ────────────────────────
+	// Catches: prepareMigrationInput.ts merged overlapping subgraph pages without
+	// dedup, or the operator hand-edited the input file. Duplicate quoteIds would
+	// make migrateQuotes() revert on the second occurrence (already-migrated), but
+	// better to fail validation here than mid-migration.
+	t = log.step("No duplicate quoteIds in input")
+	const seen = new Set<string>()
+	const duplicates: string[] = []
+	for (const id of quoteIds) {
+		if (seen.has(id)) duplicates.push(id)
+		else seen.add(id)
+	}
+	if (duplicates.length > 0) {
+		log.error(`${duplicates.length} duplicate quoteId(s): ${duplicates.slice(0, 5).join(", ")}${duplicates.length > 5 ? "..." : ""}`)
+		failures++
+	} else {
+		log.ok(`No duplicates among ${quoteIds.length} quoteIds`)
+	}
+	log.stepDone(t)
+
+	// ── Check 8: Non-PENDING quotes have non-zero initialLockedValues ──
+	// Catches: corrupted/truncated on-chain state or quote in unexpected pseudo-status.
+	// A non-PENDING migratable quote (LOCKED, OPENED, etc.) must have initialLockedValues
+	// set — migrateQuotes() aggregates these into cross-locked buckets. Zero values mean
+	// either the quote predates the invariant or the storage slot was clobbered; either
+	// way migration would produce incorrect aggregates.
+	t = log.step("Non-PENDING quotes have non-zero initialLockedValues")
+	let zeroLockedCount = 0
+	for (const idx of indicesToCheck) {
+		const quoteId = BigInt(quoteIds[idx])
+		const quote = await rawGetQuote(DIAMOND_ADDRESS, quoteId)
+		if (quote.quoteStatus === 0) continue // PENDING: may legitimately have zeros pre-lock
+		if (!MIGRATABLE_STATUSES.has(quote.quoteStatus)) continue
+		const sum = quote.initialLockedValues.cva + quote.initialLockedValues.lf + quote.initialLockedValues.partyAmm + quote.initialLockedValues.partyBmm
+		if (sum === 0n) {
+			log.warn(`Quote ${quoteId} (${statusName(quote.quoteStatus)}): initialLockedValues are all zero`)
+			zeroLockedCount++
+		}
+	}
+	if (zeroLockedCount > 0) {
+		log.error(`${zeroLockedCount} non-PENDING sampled quotes have zero initialLockedValues`)
+		failures++
+	} else {
+		log.ok(`All non-PENDING sampled quotes have non-zero initialLockedValues`)
+	}
+	log.stepDone(t)
+
+	// ── Check 9: Subgraph is not significantly behind on-chain head ──
+	// Catches: subgraph reorg / indexing lag. If the subgraph is far behind the
+	// chain head, prepareMigrationInput.ts may have missed recent quotes. 50 blocks
+	// is our tolerance — tunable via SUBGRAPH_MAX_LAG_BLOCKS.
+	t = log.step("Subgraph indexing is not significantly behind chain head")
+	const subgraphEndpoint = shared.subgraphEndpoint
+	const maxLag = Number(process.env.SUBGRAPH_MAX_LAG_BLOCKS ?? 50)
+	if (!subgraphEndpoint) {
+		log.info("subgraphEndpoint not configured — skipping")
+	} else {
+		try {
+			const res = await fetch(subgraphEndpoint, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ query: "{ _meta { block { number } } }" }),
+				signal: AbortSignal.timeout(10_000),
+			})
+			const body = (await res.json()) as any
+			const indexedBlock = Number(body?.data?._meta?.block?.number ?? 0)
+			const headBlock = await ethers.provider.getBlockNumber()
+			const lag = headBlock - indexedBlock
+			log.info(`Subgraph indexed to ${indexedBlock}; chain head ${headBlock}; lag ${lag} blocks`)
+			if (indexedBlock === 0) {
+				log.error(`Subgraph _meta returned null / missing block number`)
+				failures++
+			} else if (lag > maxLag) {
+				log.error(`Subgraph is ${lag} blocks behind (> ${maxLag}). Wait for it to catch up before migrating.`)
+				failures++
+			} else {
+				log.ok(`Lag is within tolerance (${lag} <= ${maxLag})`)
+			}
+		} catch (err) {
+			log.error(`Subgraph lag check failed: ${(err as Error).message}`)
+			failures++
+		}
 	}
 	log.stepDone(t)
 

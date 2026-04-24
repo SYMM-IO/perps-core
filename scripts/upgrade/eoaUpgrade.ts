@@ -35,6 +35,7 @@ import {
 	wireSymbolManager,
 	setupInstantLayerTemplates,
 } from "./utils/peripheralHelpers.js"
+import { runPreflight } from "./utils/preflight.js"
 import { resolveConfigFile } from "./utils/sharedConfig.js"
 import { deployFacets, buildDiamondCut, applyDiamondCut, setV085Parameters, type NewV085Parameters } from "./utils/upgradeHelpers.js"
 
@@ -64,6 +65,17 @@ async function main() {
 	const MIGRATION_RUNNER = config.migrationRunner ?? config.protocolAdmin
 	const newParams = config.newV085Parameters ?? {}
 
+	// Preflight — fail early with a clear message before any on-chain side effects.
+	await runPreflight(connection.networkName, {
+		diamondAddress: DIAMOND_ADDRESS,
+		signatureVerifierAddress: newParams.signatureVerifierAddress,
+		stateFiles: [
+			path.join(OUTPUT_DIR, `deployed-facets-${connection.networkName}.json`),
+			path.join(OUTPUT_DIR, `deployed-peripherals-${connection.networkName}.json`),
+			path.join(OUTPUT_DIR, `deployed-accountlayer-instantlayer.json`),
+		],
+	})
+
 	log.header("Symmio v0.8.5 EOA Upgrade")
 	log.kv("Diamond", log.addr(DIAMOND_ADDRESS))
 
@@ -90,6 +102,10 @@ async function main() {
 		["Total", selectorChanges.length],
 	])
 
+	// Already-upgraded guard: zero selector changes means the diamond already exposes
+	// every v0.8.5 selector. Exit cleanly — this is an idempotent rerun, not an error.
+	// If the operator meant to target a different (still-v0.8.4) chain, the preflight
+	// chainId check earlier would have caught that.
 	if (diamondCut.length === 0) {
 		log.ok("Nothing to cut — diamond is already up to date")
 		return

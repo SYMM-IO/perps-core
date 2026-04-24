@@ -23,6 +23,17 @@ const CONFIG_DIR = "./scripts/upgrade/config"
 let cachedConfig: UpgradeConfigShared | null = null
 
 /**
+ * Strip a leading "fork-" prefix so fork networks resolve configs tagged with the base chain.
+ *
+ * Example: network "fork-base" resolves configs under "base" (upgrade-base.json, etc.).
+ * A plain chain name like "arbitrum" passes through unchanged.
+ */
+export function baseNetworkName(name?: string): string | undefined {
+	if (!name) return undefined
+	return name.startsWith("fork-") ? name.slice("fork-".length) : name
+}
+
+/**
  * Resolve a config file path with network-name fallback.
  *
  * Tries `config/{baseName}-{networkName}.json` first, falls back to

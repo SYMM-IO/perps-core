@@ -1,18 +1,27 @@
 import fs from "fs"
 import path from "path"
 
-import { ethers } from "../../test/helpers/hardhat-connection.js"
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { migrate, MigrationConfig, MigrationInput, MigrationReport } from "./migrate.js"
 import { getImpersonatedAdmin } from "./utils/forkHelpers.js"
 import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
-import { loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig.js"
+import { baseNetworkName, loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig.js"
+import { createStepReporter } from "./utils/stepReporter.js"
+
+// Base chain name (fork-base -> base) so progress/report/input files don't collide
+// when the same workspace is used for multiple chains.
+const NETWORK_SUFFIX = baseNetworkName(connection.networkName)
+const withSuffix = (baseName: string): string => (NETWORK_SUFFIX ? `${baseName}-${NETWORK_SUFFIX}.json` : `${baseName}.json`)
 
 export type PartyBTask = { partyB: string; partyAs: string[] }
 
 type ScriptStep = {
 	name: string
 	status: "ok" | "error"
+	startedAt?: string
+	finishedAt?: string
+	durationMs?: number
 	details?: Record<string, unknown>
 }
 
@@ -75,7 +84,7 @@ type MigrationConfigFile = {
 	outputDir?: string
 }
 
-const MIGRATION_CONFIG_FILE = resolveConfigFile("migrate", undefined, process.env.MIGRATION_CONFIG_FILE)
+const MIGRATION_CONFIG_FILE = resolveConfigFile("migrate", NETWORK_SUFFIX, process.env.MIGRATION_CONFIG_FILE)
 
 function loadMigrationConfigFile(): MigrationConfigFile {
 	const configPath = MIGRATION_CONFIG_FILE
@@ -245,10 +254,14 @@ export async function verifyMigration(
 	}
 
 	for (const task of partyBTasks) {
-		if (task.partyAs.length > 0) {
-			const migrated = await migrationFacet.isCrossLockedValuesMigrated(task.partyB, task.partyAs[0])
+		// Catches: partial migration where the first partyA succeeded but a later one
+		// failed silently. The original check tested only partyAs[0]; checking every
+		// (partyB, partyA) pair ensures migrateCrossLockedValues() wasn't resumed at a
+		// stale chunk boundary or skipped a pair due to an error the operator missed.
+		for (const partyA of task.partyAs) {
+			const migrated = await migrationFacet.isCrossLockedValuesMigrated(task.partyB, partyA)
 			if (!migrated) {
-				throw new Error(`PartyB ${task.partyB} not migrated`)
+				throw new Error(`PartyB ${task.partyB} + PartyA ${partyA} pair not migrated`)
 			}
 		}
 
@@ -331,15 +344,16 @@ if (configFile.outputDir && typeof configFile.outputDir !== "string") {
 	throw new Error("outputDir must be a string path.")
 }
 
-const upgradeShared = loadUpgradeConfigShared()
+const upgradeShared = loadUpgradeConfigShared(NETWORK_SUFFIX)
 const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? configFile.diamondAddress ?? upgradeShared.diamondAddress
-const MIGRATION_INPUT_FILE = process.env.MIGRATION_INPUT_FILE ?? configFile.migrationInputFile
-
+// Default to the network-suffixed migration-input file written by prepareMigrationInput.ts.
 const DEFAULT_OUTPUT_DIR = "./scripts/upgrade/output"
 const outputDir = process.env.MIGRATION_OUTPUT_DIR ?? configFile.outputDir ?? DEFAULT_OUTPUT_DIR
-const DEFAULT_PROGRESS_FILE = `${outputDir}/migration-progress.json`
+const MIGRATION_INPUT_FILE = process.env.MIGRATION_INPUT_FILE ?? configFile.migrationInputFile ?? `${outputDir}/${withSuffix("migration-input")}`
+
+const DEFAULT_PROGRESS_FILE = `${outputDir}/${withSuffix("migration-progress")}`
 let migrateProgressFile = process.env.MIGRATE_PROGRESS_FILE ?? configFile.progressFile ?? DEFAULT_PROGRESS_FILE
-const DEFAULT_REPORT_FILE = `${outputDir}/migration-report.json`
+const DEFAULT_REPORT_FILE = `${outputDir}/${withSuffix("migration-report")}`
 let migrateReportFile = process.env.MIGRATE_REPORT_FILE ?? configFile.reportFile ?? DEFAULT_REPORT_FILE
 
 if (path.resolve(migrateProgressFile) === path.resolve(MIGRATION_CONFIG_FILE)) {
@@ -381,6 +395,8 @@ async function main() {
 	}
 	tryWriteReport(migrateReportFile, report)
 	let currentStep: string | null = null
+
+	const { finish: finishStep } = createStepReporter(report.steps)
 
 	try {
 		// Validate inputs
@@ -473,7 +489,7 @@ async function main() {
 		report.steps.push({ name: "connect_facets", status: "ok" })
 		currentStep = null
 		tryWriteReport(migrateReportFile, report)
-		log.stepDone(t)
+		finishStep(t)
 
 		// Load validated input
 		t = log.step("Load migration input")
@@ -484,6 +500,35 @@ async function main() {
 			["PartyB tasks", input.partyBTasks.length],
 			["Aggregate keys", expectedAggregates?.size ?? 0],
 		])
+
+		// Catches: operator re-running runMigration.ts against a different input file
+		// than the prior (interrupted) run's progress reflects. The existing progress
+		// counts would resume mid-way through a different quoteIds list, silently
+		// skipping quotes. Detect this by comparing saved progress totals against the
+		// current input totals. A completed phase="complete" is explicitly surfaced too.
+		if (fs.existsSync(migrateProgressFile)) {
+			try {
+				const priorProgress = JSON.parse(fs.readFileSync(migrateProgressFile, "utf-8"))
+				if (priorProgress && typeof priorProgress === "object") {
+					if (priorProgress.phase === "complete") {
+						log.warn(
+							`Progress file at ${migrateProgressFile} marks migration as complete. Re-running will be a no-op unless you delete it.`,
+						)
+					}
+					const priorQuotes = Number(priorProgress.quotesProcessed ?? 0)
+					if (priorQuotes > input.quoteIds.length) {
+						throw new Error(
+							`Progress file reports ${priorQuotes} quotes processed but current input has only ${input.quoteIds.length}. ` +
+								`Either the input file changed or the progress file is stale. Delete ${migrateProgressFile} to restart.`,
+						)
+					}
+				}
+			} catch (error) {
+				// Re-throw our own validation error, swallow JSON parse errors (partial/corrupt file).
+				if (error instanceof Error && error.message.includes("Progress file reports")) throw error
+			}
+		}
+
 		report.input = {
 			quoteIdsTotal: input.quoteIds.length,
 			partyBTasksTotal: input.partyBTasks.length,
@@ -500,7 +545,7 @@ async function main() {
 		})
 		currentStep = null
 		tryWriteReport(migrateReportFile, report)
-		log.stepDone(t)
+		finishStep(t)
 
 		// Run migration
 		t = log.step("Execute migration")
@@ -526,7 +571,7 @@ async function main() {
 			currentStep = null
 			tryWriteReport(migrateReportFile, report)
 		}
-		log.stepDone(t)
+		finishStep(t)
 
 		// Verify migration
 		t = log.step("Verify migration")
@@ -559,7 +604,7 @@ async function main() {
 				aggregateChecks: 0,
 			}
 		}
-		log.stepDone(t)
+		finishStep(t)
 
 		report.status = "success"
 
