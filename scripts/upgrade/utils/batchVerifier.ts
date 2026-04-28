@@ -15,7 +15,7 @@ import path from "path"
 import { FacetNames } from "../../../tasks/deploy/constants.js"
 import { getSelectors } from "../../../tasks/utils/diamondCut.js"
 import { ethers } from "../../../test/helpers/hardhat-connection.js"
-import { buildTemplateTransactions, buildWiringTransactions } from "./peripheralHelpers.js"
+import { buildTemplateTransactions, buildWiringTransactions, filterUnregisteredPartyBs } from "./peripheralHelpers.js"
 import {
 	buildUpgradeTransactions,
 	FacetLibraryDependencies,
@@ -78,6 +78,10 @@ export type LoadedContext = {
 	setupInstantLayerTemplates: boolean
 	newParams: NewV085Parameters
 	partyBsToRegister: string[]
+	registerOnSymmioCore: boolean
+	registerOnInstantLayer: boolean
+	partyBsForDiamond: string[]
+	partyBsForInstantLayer: string[]
 	templates: unknown[]
 	// Deploy outputs
 	accountLayerAddress?: string
@@ -150,6 +154,7 @@ type UpgradeConfig = {
 
 type PartyBListConfig = {
 	partyBs?: Record<string, string[]>
+	registerOnSymmioCore?: boolean
 	registerOnInstantLayer?: boolean
 }
 
@@ -168,7 +173,7 @@ type DeployedFacets = {
 	selectorSignatures: Record<string, string>
 }
 
-export function loadVerifyContext(inputs: VerifyContextInputs): LoadedContext {
+export async function loadVerifyContext(inputs: VerifyContextInputs): Promise<LoadedContext> {
 	const { networkName, outputDir, configDir, paths = {} } = inputs
 
 	const upgradeFile = paths.upgradeConfig ?? path.join(configDir, "upgrade.json")
@@ -201,12 +206,31 @@ export function loadVerifyContext(inputs: VerifyContextInputs): LoadedContext {
 	const instantLayerAddress = upgradeConfig.instantLayerAddress ?? deployedPeripherals.instantLayer?.address
 	const signatureVerifierAddress = upgradeConfig.newV085Parameters?.signatureVerifierAddress ?? deployedPeripherals.signatureVerifier
 
-	const partyBsToRegister: string[] = partyBListConfig.registerOnInstantLayer
-		? Object.values(partyBListConfig.partyBs ?? {})
-				.flat()
-				.filter(a => ethers.isAddress(a))
-				.map(a => ethers.getAddress(a))
-		: []
+	// Load full partyB list; per-target gates (registerOnSymmioCore,
+	// registerOnInstantLayer) default to true when the list file exists.
+	const partyBsToRegister: string[] = Object.values(partyBListConfig.partyBs ?? {})
+		.flat()
+		.filter(a => ethers.isAddress(a))
+		.map(a => ethers.getAddress(a))
+	const registerOnSymmioCore: boolean = partyBListConfig.registerOnSymmioCore !== false
+	const registerOnInstantLayer: boolean = partyBListConfig.registerOnInstantLayer !== false
+
+	// Mirror the generator's pre-filter: compute which PartyBs actually need
+	// registration against current on-chain state. Verifier and generator must
+	// agree; if one filters and the other doesn't, byte-compare drifts.
+	let partyBsForDiamond: string[] = []
+	let partyBsForInstantLayer: string[] = []
+	if (partyBsToRegister.length > 0) {
+		const filtered = await filterUnregisteredPartyBs(
+			ethers.provider,
+			ethers.getAddress(diamondAddress),
+			instantLayerAddress && ethers.isAddress(instantLayerAddress) ? ethers.getAddress(instantLayerAddress) : undefined,
+			partyBsToRegister,
+			{ registerOnSymmioCore, registerOnInstantLayer },
+		)
+		partyBsForDiamond = filtered.partyBsForDiamond
+		partyBsForInstantLayer = filtered.partyBsForInstantLayer
+	}
 
 	// Resolve file paths (network-qualified defaults, override via paths)
 	const files = {
@@ -236,6 +260,10 @@ export function loadVerifyContext(inputs: VerifyContextInputs): LoadedContext {
 		setupInstantLayerTemplates: upgradeConfig.setupInstantLayerTemplates !== false,
 		newParams: upgradeConfig.newV085Parameters ?? {},
 		partyBsToRegister,
+		registerOnSymmioCore,
+		registerOnInstantLayer,
+		partyBsForDiamond,
+		partyBsForInstantLayer,
 		templates: templatesConfig.templates ?? [],
 		accountLayerAddress: accountLayerAddress && ethers.isAddress(accountLayerAddress) ? ethers.getAddress(accountLayerAddress) : undefined,
 		instantLayerAddress: instantLayerAddress && ethers.isAddress(instantLayerAddress) ? ethers.getAddress(instantLayerAddress) : undefined,
@@ -315,7 +343,8 @@ function buildExpectedSafeTxs(ctx: LoadedContext): { pauseSafeTxs: SafeTransacti
 			ctx.accountLayerAddress,
 			ctx.instantLayerAddress,
 			ctx.protocolAdmin,
-			ctx.partyBsToRegister,
+			ctx.partyBsForDiamond,
+			ctx.partyBsForInstantLayer,
 		)
 		for (const tx of wiring) {
 			safeTxs.push(toHumanReadableSafeTxFromIface(tx.iface, tx.to, tx.methodName, tx.args))

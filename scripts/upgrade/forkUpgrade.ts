@@ -458,43 +458,69 @@ async function main() {
 		tryWriteReport(reportFile, report)
 		finishStep(t)
 
-		// ── Step 10: Register PartyBs on InstantLayer ───────────────────
-		t = log.step("Register PartyBs on InstantLayer")
+		// ── Step 10: Register PartyBs on Diamond + InstantLayer ─────────
+		t = log.step("Register PartyBs on Diamond + InstantLayer")
 		currentStep = "register_partybs"
 		const PARTYB_LIST_FILE = resolveConfigFile("partyBList", baseNetworkName(connection.networkName), process.env.PARTYB_LIST_FILE)
-		const registeredPartyBs: string[] = []
+		const registeredOnDiamond: string[] = []
+		const registeredOnInstantLayer: string[] = []
 
 		if (fs.existsSync(PARTYB_LIST_FILE)) {
 			const listConfig = JSON.parse(fs.readFileSync(PARTYB_LIST_FILE, "utf-8")) as {
 				partyBs?: Record<string, string[]>
+				registerOnSymmioCore?: boolean
 				registerOnInstantLayer?: boolean
 			}
+			const partyBsToRegister = Object.values(listConfig.partyBs ?? {})
+				.flat()
+				.filter((a: string) => ethers.isAddress(a))
+			const registerOnSymmioCore = listConfig.registerOnSymmioCore !== false
+
+			if (partyBsToRegister.length > 0 && registerOnSymmioCore) {
+				// Diamond registration — needs PARTY_B_MANAGER_ROLE. Admin is DEFAULT_ADMIN
+				// so grant-to-self is safe and idempotent.
+				await (await controlFacet.grantRole(adminAddress, ethers.id("PARTY_B_MANAGER_ROLE"))).wait()
+				log.ok("PARTY_B_MANAGER_ROLE granted")
+				for (const partyB of partyBsToRegister) {
+					const isRegistered = await viewFacet.isPartyB(partyB)
+					if (!isRegistered) {
+						await (await controlFacet.registerPartyB(partyB)).wait()
+						log.ok(`Registered ${log.addr(partyB)} on Diamond`)
+						registeredOnDiamond.push(partyB)
+					} else {
+						log.ok(`${log.addr(partyB)} already registered on Diamond`)
+					}
+				}
+			} else if (!registerOnSymmioCore) {
+				log.ok("registerOnSymmioCore is false — skipping Diamond registration")
+			}
+
 			if (listConfig.registerOnInstantLayer) {
-				const partyBsToRegister = Object.values(listConfig.partyBs ?? {})
-					.flat()
-					.filter((a: string) => ethers.isAddress(a))
 				const il = await ethers.getContractAt("InstantLayer", ilResult.address, admin)
 				for (const partyB of partyBsToRegister) {
 					const isRegistered = await il.registeredPartyBs(partyB)
 					if (!isRegistered) {
 						await (await il.registerPartyBs([partyB])).wait()
 						log.ok(`Registered ${log.addr(partyB)} on InstantLayer`)
+						registeredOnInstantLayer.push(partyB)
 					} else {
 						log.ok(`${log.addr(partyB)} already registered on InstantLayer`)
 					}
-					registeredPartyBs.push(partyB)
 				}
 			} else {
-				log.ok("registerOnInstantLayer is false — skipping")
+				log.ok("registerOnInstantLayer is false — skipping IL registration")
 			}
 		} else {
-			log.warn(`${PARTYB_LIST_FILE} not found — skipping IL registration`)
+			log.warn(`${PARTYB_LIST_FILE} not found — skipping PartyB registration`)
 		}
 
 		report.steps.push({
 			name: "register_partybs",
 			status: "ok",
-			details: { registered: registeredPartyBs },
+			details: {
+				registeredOnDiamond,
+				registeredOnInstantLayer,
+			},
 		})
 		currentStep = null
 		tryWriteReport(reportFile, report)

@@ -4,5 +4,6 @@
       "0x..."
     ]
   },
+  "registerOnSymmioCore": true,
   "registerOnInstantLayer": false
 }

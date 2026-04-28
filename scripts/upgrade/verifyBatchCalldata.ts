@@ -130,7 +130,7 @@ async function main() {
 	// Map user-facing "paths" keys to the camelCased keys of LoadedContext.paths
 	const pathOverrides = cfg.paths ? Object.fromEntries(Object.entries(cfg.paths).map(([k, v]) => [k, path.resolve(v)])) : {}
 
-	const ctx = loadVerifyContext({
+	const ctx = await loadVerifyContext({
 		networkName,
 		outputDir,
 		configDir,

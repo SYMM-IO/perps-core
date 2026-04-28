@@ -86,11 +86,11 @@ Adds three templates:
 
 The piping is defined by `sourceIndices`, `insertionPoints`, and `sourceOffsets` arrays on each operation. These tell InstantLayer which return value from which previous operation to inject into which calldata offset.
 
-#### `buildWiringTransactions(diamondAddress, alDiamondAddress, ilAddress, adminAddress, partyBsToRegister?)`
+#### `buildWiringTransactions(diamondAddress, alDiamondAddress, ilAddress, adminAddress, partyBsForDiamond?, partyBsForInstantLayer?)`
 
 For the Safe path. Returns an array of `{ to, value, calldata, description }` objects -- the same wiring as `wireAccountLayerInstantLayer` but as raw calldata instead of executed transactions. These get appended to the Safe batch JSON.
 
-If `partyBsToRegister` is provided, also generates `registerPartyBs(partyBs)` on InstantLayer. The list is read from `config/partyBList-{network}.json` (or `partyBList.json`) when `registerOnInstantLayer` is true.
+Each PartyB list is **pre-filtered** by the caller via `filterUnregisteredPartyBs()` against current on-chain state, so the batch never contains registrations that would revert. If `partyBsForDiamond` is non-empty, emits `grantRole(protocolAdmin, PARTY_B_MANAGER_ROLE)` followed by one `registerPartyB(pb)` per address on the core Diamond. If `partyBsForInstantLayer` is non-empty, emits a single `registerPartyBs(array)` on InstantLayer. Both lists originate from `config/partyBList-{network}.json` and are independently gated by the `registerOnSymmioCore` / `registerOnInstantLayer` flags (both default to `true`).
 
 Note: each transaction targets a different contract (`to` varies between diamond, AL, IL, and PartyB proxy admin), which the Safe Transaction Builder handles fine.
 
@@ -204,7 +204,7 @@ The full fork rehearsal flow is now:
 The v0.8.5 SymmioPartyB adds ERC-1271 (`isValidSignature`) support required by InstantLayer. The storage layout is compatible with v0.8.4 for in-place proxy upgrades.
 
 - `deployPeripherals.ts` deploys MuonSignatureVerifier, AccountLayer, InstantLayer, SymmioSymbolManager, and the new SymmioPartyB implementation (not the proxy)
-- `generateSafeBatch.ts` generates InstantLayer PartyB registration transactions from `config/partyBList-{network}.json` (when `registerOnInstantLayer` is true)
+- `generateSafeBatch.ts` generates PartyB registration transactions from `config/partyBList-{network}.json`: `registerPartyB` on the core Diamond (gated by `registerOnSymmioCore`, default `true`) and `registerPartyBs` on InstantLayer (gated by `registerOnInstantLayer`, default `true`). Both lists are pre-filtered against live on-chain state so re-running the batch is safe.
 - `testTemplateExecution.ts` verifies the full flow end-to-end (deploy PartyB, register, fund, execute InstantOpen template)
 
 ## Things NOT Handled
