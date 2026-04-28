@@ -183,24 +183,51 @@ async function main() {
 	}
 	log.stepDone(t)
 
-	// Step 7: Deploy SymmioPartyB implementation + register PartyBs on InstantLayer
+	// Step 7: Deploy SymmioPartyB implementation + register PartyBs on Diamond + InstantLayer
 	t = log.step("Deploy SymmioPartyB + register PartyBs")
 	const SymmioPartyBFactory = await ethers.getContractFactory("SymmioPartyB")
 	const symmioPartyBImpl = await SymmioPartyBFactory.deploy()
 	await symmioPartyBImpl.waitForDeployment()
 	log.deployed("Implementation", await symmioPartyBImpl.getAddress())
 
-	// Register PartyBs on InstantLayer (from partyBList.json)
+	// Register PartyBs on Diamond + InstantLayer (from partyBList.json)
 	const PARTYB_LIST_FILE = resolveConfigFile("partyBList", connection.networkName, process.env.PARTYB_LIST_FILE)
 	if (fs.existsSync(PARTYB_LIST_FILE)) {
 		const listConfig = JSON.parse(fs.readFileSync(PARTYB_LIST_FILE, "utf-8")) as {
 			partyBs?: Record<string, string[]>
+			registerOnSymmioCore?: boolean
 			registerOnInstantLayer?: boolean
 		}
+		const partyBsToRegister = Object.values(listConfig.partyBs ?? {})
+			.flat()
+			.filter(a => ethers.isAddress(a))
+		const registerOnSymmioCore = listConfig.registerOnSymmioCore !== false
+
+		if (partyBsToRegister.length > 0 && registerOnSymmioCore) {
+			// Diamond registration — needs PARTY_B_MANAGER_ROLE. signer already holds
+			// DEFAULT_ADMIN (granted via setAdmin in step 3) so grant-to-self is safe.
+			await (await controlFacet.grantRole(signerAddress, ethers.id("PARTY_B_MANAGER_ROLE"))).wait()
+			log.ok("PARTY_B_MANAGER_ROLE granted")
+			const viewFacet = new ethers.Contract(DIAMOND_ADDRESS, ["function isPartyB(address user) view returns (bool)"], signer)
+			const controlFacetWithSigner = await ethers.getContractAt(
+				"contracts/core/facets/Control/ControlFacet.sol:ControlFacet",
+				DIAMOND_ADDRESS,
+				signer,
+			)
+			for (const partyB of partyBsToRegister) {
+				const isRegistered: boolean = await viewFacet.isPartyB(partyB)
+				if (!isRegistered) {
+					await (await controlFacetWithSigner.registerPartyB(partyB)).wait()
+					log.ok(`Registered ${log.addr(partyB)} on Diamond`)
+				} else {
+					log.ok(`${log.addr(partyB)} already registered on Diamond`)
+				}
+			}
+		} else if (!registerOnSymmioCore) {
+			log.ok("registerOnSymmioCore is false — skipping Diamond registration")
+		}
+
 		if (listConfig.registerOnInstantLayer) {
-			const partyBsToRegister = Object.values(listConfig.partyBs ?? {})
-				.flat()
-				.filter(a => ethers.isAddress(a))
 			const il = await ethers.getContractAt("InstantLayer", ilResult.address, signer)
 			for (const partyB of partyBsToRegister) {
 				const isRegistered = await il.registeredPartyBs(partyB)
@@ -215,7 +242,7 @@ async function main() {
 			log.ok("registerOnInstantLayer is false — skipping IL registration")
 		}
 	} else {
-		log.warn(`${PARTYB_LIST_FILE} not found — skipping IL registration`)
+		log.warn(`${PARTYB_LIST_FILE} not found — skipping PartyB registration`)
 	}
 	log.stepDone(t)
 

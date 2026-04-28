@@ -84,7 +84,7 @@ POST-DIAMONDCUT (execute via Safe UI)
     3. grantRole(MIGRATION_ROLE)
     4. [wiring] AL/IL roles + hooks + whitelist
     5. [wiring] SymbolManager roles (SYMBOL_MANAGER_ROLE + FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE)
-    6. [wiring] registerPartyBs on IL (from config/partyBList-{network}.json)
+    6. [wiring] registerPartyB on Diamond + registerPartyBs on IL (from config/partyBList-{network}.json; each target gated by registerOnSymmioCore / registerOnInstantLayer, pre-filtered vs on-chain state)
     7. [ownership] acceptOwnership() on AccountLayer diamond
        (transferOwnership was already called by deployer during deployPeripherals)
 
@@ -216,7 +216,7 @@ POST-DIAMONDCUT (T=delay, after diamondCut)
     3. grantRole(MIGRATION_ROLE)
     4. [wiring] AL/IL roles + hooks + whitelist
     5. [wiring] SymbolManager roles (SYMBOL_MANAGER_ROLE + FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE)
-    6. [wiring] registerPartyBs on IL (from config/partyBList-{network}.json)
+    6. [wiring] registerPartyB on Diamond + registerPartyBs on IL (from config/partyBList-{network}.json; each target gated by registerOnSymmioCore / registerOnInstantLayer, pre-filtered vs on-chain state)
     7. [ownership] acceptOwnership() on AccountLayer diamond
        (transferOwnership was already called by deployer during deployPeripherals)
 
@@ -349,7 +349,7 @@ Every Symmio deployment has a standard set of contracts and roles. The table bel
 | **Main MultiSig** (also receives role grants) | `0x0C83...AFC4` | `adminAddress` | `upgrade.json`, `deployPeripherals.json` |
 | **Fees MultiSig** (receives protocol fees) | `0x273a...3f12` | `symmioFeeReceiver` | `upgrade.json` (other scripts fall back to this) |
 | **SignatureVerifier** (Muon signature verification contract) | `0x94eE...FC2` | `newV085Parameters.signatureVerifierAddress` | `upgrade.json` |
-| **PartyB list** (for IL registration + symbol whitelisting) | -- | `partyBs` + `registerOnInstantLayer` | `config/partyBList-{network}.json` |
+| **PartyB list** (for Diamond + IL registration + symbol whitelisting) | -- | `partyBs` + `registerOnSymmioCore` + `registerOnInstantLayer` | `config/partyBList-{network}.json` |
 | **TimeLock** (12H or 3D, if diamond owner is a timelock) | `0xA75F...c63` | `timelockAddress` | `upgrade.json` (used by `generateTimelockBatch.ts` to wrap diamondCut) |
 | **Migration runner** (address that will call migration functions) | any EOA or multisig | `migrationRunner` | `upgrade.json` (defaults to `adminAddress`) |
 | **PartyB addresses** (all active PartyBs to enable cross mode) | `[0x...]` | `partyBs` | `postMigration.json` |
@@ -515,7 +515,7 @@ The script applies all facet cuts in a **single transaction** (no chunking neede
 
 Generates Safe Transaction Builder JSON for the full upgrade (roles, pause, params, migration role, AccountLayer/InstantLayer/SymbolManager wiring) plus separate diamondCut calldata.
 
-**Prerequisites:** Run `deployFacets.ts` and `deployPeripherals.ts` first. The script auto-loads `deployed-facets-{network}.json` and `deployed-peripherals-{network}.json` from the output directory -- no manual address copy needed. InstantLayer PartyB registration reads from `config/partyBList-{network}.json` (when `registerOnInstantLayer` is true). Config and env vars override auto-loaded values if set.
+**Prerequisites:** Run `deployFacets.ts` and `deployPeripherals.ts` first. The script auto-loads `deployed-facets-{network}.json` and `deployed-peripherals-{network}.json` from the output directory -- no manual address copy needed. PartyB registration reads from `config/partyBList-{network}.json`: entries are registered on core Diamond when `registerOnSymmioCore` is true (default) and on InstantLayer when `registerOnInstantLayer` is true (default). The generator pre-filters both lists against live on-chain state, so batches are safe to regenerate and re-run. Config and env vars override auto-loaded values if set.
 
 ```bash
 USE_KEYSTORE=true npx hardhat run scripts/upgrade/generateSafeBatch.ts --network arbitrum

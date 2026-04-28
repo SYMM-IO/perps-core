@@ -415,12 +415,56 @@ export type WiringTransaction = {
 	args: any[]
 }
 
+/**
+ * Filter a PartyB list against current on-chain registration state.
+ *
+ * Returns the subset that still needs to be registered on Diamond (via
+ * ViewFacet.isPartyB) and on InstantLayer (via registeredPartyBs). Also
+ * returns the per-address state for logging.
+ *
+ * InstantLayer's registerPartyBs reverts with EmptyArray() if called with an
+ * empty list, so callers should skip the IL tx if the filtered list is empty.
+ */
+export async function filterUnregisteredPartyBs(
+	provider: ethers.Provider,
+	diamondAddress: string,
+	instantLayerAddress: string | undefined,
+	partyBs: string[],
+	opts: { registerOnSymmioCore: boolean; registerOnInstantLayer: boolean },
+): Promise<{
+	partyBsForDiamond: string[]
+	partyBsForInstantLayer: string[]
+	states: { address: string; onDiamond: boolean | null; onInstantLayer: boolean | null }[]
+}> {
+	const viewFacetIface = new ethers.Interface(["function isPartyB(address user) view returns (bool)"])
+	const instantLayerIface = new ethers.Interface(["function registeredPartyBs(address) view returns (bool)"])
+
+	const diamond = opts.registerOnSymmioCore ? new ethers.Contract(diamondAddress, viewFacetIface, provider) : null
+	const il = opts.registerOnInstantLayer && instantLayerAddress ? new ethers.Contract(instantLayerAddress, instantLayerIface, provider) : null
+
+	const states: { address: string; onDiamond: boolean | null; onInstantLayer: boolean | null }[] = []
+	const partyBsForDiamond: string[] = []
+	const partyBsForInstantLayer: string[] = []
+
+	for (const raw of partyBs) {
+		const addr = ethers.getAddress(raw)
+		const onDiamond: boolean | null = diamond ? await diamond.isPartyB(addr) : null
+		const onInstantLayer: boolean | null = il ? await il.registeredPartyBs(addr) : null
+		states.push({ address: addr, onDiamond, onInstantLayer })
+		if (diamond && onDiamond === false) partyBsForDiamond.push(addr)
+		if (il && onInstantLayer === false) partyBsForInstantLayer.push(addr)
+	}
+
+	return { partyBsForDiamond, partyBsForInstantLayer, states }
+}
+
 export function buildWiringTransactions(
 	diamondAddress: string,
 	accountLayerDiamondAddress: string,
 	instantLayerAddress: string,
 	protocolAdmin: string,
-	partyBsToRegister?: string[],
+	partyBsForDiamond: string[] = [],
+	partyBsForInstantLayer: string[] = [],
 ): WiringTransaction[] {
 	const roleHash = (name: string) => ethers.id(name)
 	const txs: WiringTransaction[] = []
@@ -429,6 +473,7 @@ export function buildWiringTransactions(
 	const controlFacetIface = new ethers.Interface([
 		"function grantRole(address account, bytes32 role)",
 		"function registerHook(address affiliate, address hook)",
+		"function registerPartyB(address partyB)",
 	])
 
 	const alControlFacetIface = new ethers.Interface([
@@ -522,14 +567,34 @@ export function buildWiringTransactions(
 		`setTargetWhitelist(AccountLayer, true) on InstantLayer`,
 	)
 
-	// Register PartyBs on InstantLayer
-	if (partyBsToRegister && partyBsToRegister.length > 0) {
+	// Register PartyBs on Diamond — only those not already registered. The caller
+	// is expected to pre-filter via filterUnregisteredPartyBs so the batch doesn't
+	// revert on re-run (registerPartyB reverts if already registered).
+	if (partyBsForDiamond.length > 0) {
+		// Grant PARTY_B_MANAGER_ROLE to the Safe so it can call registerPartyB, then
+		// one call per PartyB (ControlFacet has no batch variant).
+		push(
+			diamondAddress,
+			controlFacetIface,
+			"grantRole",
+			[protocolAdmin, roleHash("PARTY_B_MANAGER_ROLE")],
+			`grantRole(protocolAdmin, PARTY_B_MANAGER_ROLE)`,
+		)
+		for (const partyB of partyBsForDiamond) {
+			push(diamondAddress, controlFacetIface, "registerPartyB", [partyB], `registerPartyB(${partyB}) on Diamond`)
+		}
+	}
+
+	// Register PartyBs on InstantLayer — single batched call. InstantLayer reverts
+	// with EmptyArray() on empty input and PartyBAlreadyRegistered on dupes, so this
+	// only fires when the filtered list is non-empty.
+	if (partyBsForInstantLayer.length > 0) {
 		push(
 			instantLayerAddress,
 			instantLayerIface,
 			"registerPartyBs",
-			[partyBsToRegister],
-			`registerPartyBs([${partyBsToRegister.length} partyBs]) on InstantLayer`,
+			[partyBsForInstantLayer],
+			`registerPartyBs([${partyBsForInstantLayer.length} partyBs]) on InstantLayer`,
 		)
 	}
 

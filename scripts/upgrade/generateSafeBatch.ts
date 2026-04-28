@@ -20,7 +20,12 @@ import fs from "fs"
 import path from "path"
 
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
-import { buildTemplateTransactions, buildSymbolManagerWiringTransactions, buildWiringTransactions } from "./utils/peripheralHelpers.js"
+import {
+	buildTemplateTransactions,
+	buildSymbolManagerWiringTransactions,
+	buildWiringTransactions,
+	filterUnregisteredPartyBs,
+} from "./utils/peripheralHelpers.js"
 import { resolveConfigFile } from "./utils/sharedConfig.js"
 import {
 	buildDiamondCut,
@@ -131,27 +136,66 @@ async function main() {
 	const IL_ADDRESS = process.env.INSTANT_LAYER_ADDRESS ?? (config.instantLayerAddress || peripherals.instantLayer?.address)
 	const SM_ADDRESS = process.env.SYMBOL_MANAGER_ADDRESS ?? (config.symbolManagerAddress || peripherals.symbolManager?.address)
 
-	// Load PartyB list for InstantLayer registration from partyBList.json
+	// Load PartyB list for Diamond + InstantLayer registration from partyBList.json.
+	// Each target has its own gate: registerOnSymmioCore, registerOnInstantLayer.
+	// Both default to true when the list file exists.
 	const PARTYB_LIST_FILE = resolveConfigFile("partyBList", networkName, process.env.PARTYB_LIST_FILE)
-	let partyBsToRegister: string[] = []
+	let partyBsFromConfig: string[] = []
+	let registerOnSymmioCore = true
+	let registerOnInstantLayer = true
 	if (fs.existsSync(PARTYB_LIST_FILE)) {
 		const listConfig = JSON.parse(fs.readFileSync(PARTYB_LIST_FILE, "utf-8")) as {
 			partyBs?: Record<string, string[]>
+			registerOnSymmioCore?: boolean
 			registerOnInstantLayer?: boolean
 		}
-		if (listConfig.registerOnInstantLayer) {
-			partyBsToRegister = Object.values(listConfig.partyBs ?? {})
-				.flat()
-				.filter(a => ethers.isAddress(a))
-		}
+		partyBsFromConfig = Object.values(listConfig.partyBs ?? {})
+			.flat()
+			.filter(a => ethers.isAddress(a))
+		registerOnSymmioCore = listConfig.registerOnSymmioCore !== false
+		registerOnInstantLayer = listConfig.registerOnInstantLayer !== false
 	}
 
 	if (AL_ADDRESS && IL_ADDRESS && ethers.isAddress(AL_ADDRESS) && ethers.isAddress(IL_ADDRESS)) {
 		console.log("\nBuilding peripheral wiring transactions...")
 		console.log(`  AccountLayerDiamond: ${AL_ADDRESS}`)
 		console.log(`  InstantLayer:        ${IL_ADDRESS}`)
-		if (partyBsToRegister.length > 0) console.log(`  PartyBs to register: ${partyBsToRegister.length} (from ${PARTYB_LIST_FILE})`)
-		const wiringTxs = buildWiringTransactions(DIAMOND_ADDRESS, AL_ADDRESS, IL_ADDRESS, PROTOCOL_ADMIN, partyBsToRegister)
+
+		// Pre-filter PartyBs against current on-chain state. Emitting a registration
+		// tx for an already-registered PartyB would revert the whole Safe batch on
+		// execution. Do this query before emitting the wiring txs so re-runs are safe.
+		let partyBsForDiamond: string[] = []
+		let partyBsForInstantLayer: string[] = []
+		if (partyBsFromConfig.length > 0) {
+			console.log(`  PartyBs in config:    ${partyBsFromConfig.length} (from ${PARTYB_LIST_FILE})`)
+			console.log(`  Register on Core:     ${registerOnSymmioCore}`)
+			console.log(`  Register on IL:       ${registerOnInstantLayer}`)
+			const filtered = await filterUnregisteredPartyBs(ethers.provider, DIAMOND_ADDRESS, IL_ADDRESS, partyBsFromConfig, {
+				registerOnSymmioCore,
+				registerOnInstantLayer,
+			})
+			partyBsForDiamond = filtered.partyBsForDiamond
+			partyBsForInstantLayer = filtered.partyBsForInstantLayer
+
+			if (registerOnSymmioCore) {
+				console.log("  Diamond registration state:")
+				for (const s of filtered.states) {
+					const mark = s.onDiamond === null ? "? skipped" : s.onDiamond ? "⏭ already registered" : "＋ will register"
+					console.log(`    ${mark.padEnd(22)} ${s.address}`)
+				}
+			}
+			if (registerOnInstantLayer) {
+				console.log("  InstantLayer registration state:")
+				for (const s of filtered.states) {
+					const mark = s.onInstantLayer === null ? "? skipped" : s.onInstantLayer ? "⏭ already registered" : "＋ will register"
+					console.log(`    ${mark.padEnd(22)} ${s.address}`)
+				}
+			}
+			if (registerOnSymmioCore) console.log(`  → registering on Diamond:      ${partyBsForDiamond.length}`)
+			if (registerOnInstantLayer) console.log(`  → registering on InstantLayer: ${partyBsForInstantLayer.length}`)
+		}
+
+		const wiringTxs = buildWiringTransactions(DIAMOND_ADDRESS, AL_ADDRESS, IL_ADDRESS, PROTOCOL_ADMIN, partyBsForDiamond, partyBsForInstantLayer)
 
 		for (const tx of wiringTxs) {
 			result.safeTxs.push(toHumanReadableSafeTxFromIface(tx.iface, tx.to, tx.methodName, tx.args))
