@@ -6,7 +6,7 @@ Rehearse the full v0.8.4 -> v0.8.5 upgrade + migration on a fork of a live netwo
 
 The fork rehearsal mirrors the production flow with three separate steps:
 
-1. **Upgrade** (`forkUpgrade.ts`) -- impersonate admin, pause, deploy facets, diamondCut, set params, deploy AccountLayer + InstantLayer, wire integrations
+1. **Upgrade** (`forkUpgrade.ts`) -- impersonate admin, pause, deploy facets, diamondCut, set params, deploy AccountLayer + InstantLayer + SymmioSymbolManager, wire integrations
 2. **Prepare migration input** (`prepareMigrationInput.ts`) -- fetch from subgraph, validate against on-chain
 3. **Migrate** (`runMigration.ts`) -- run migration + verify using the validated input
 
@@ -51,14 +51,14 @@ FORK_BLOCK_NUMBER=250000000 npx hardhat node --network fork-arbitrum
 
 ### Step 1: Upgrade
 
-Deploys v0.8.5 facets, applies diamondCut, sets parameters, deploys AccountLayer Diamond + InstantLayer, and wires all integrations on the fork (impersonates diamond owner).
+Deploys v0.8.5 facets, applies diamondCut, sets parameters, deploys AccountLayer Diamond + InstantLayer + SymmioSymbolManager, and wires all integrations on the fork (impersonates diamond owner).
 
 ```bash
 # Terminal 2
 npx hardhat run scripts/upgrade/forkUpgrade.ts --network localhost
 ```
 
-Output: `scripts/upgrade/output/forkUpgrade-report.json`, `deployed-facets.json`, `deployed-accountlayer-instantlayer.json`
+Output: `scripts/upgrade/output/forkUpgrade-report.json`, `deployed-facets.json`, `deployed-accountlayer-instantlayer.json`, `deployed-symbolmanager.json`
 
 ### Step 1.5: Verify upgrade
 
@@ -123,10 +123,16 @@ Migration input is fetched from the Goldsky stage subgraph, not scanned on-chain
 - `quotes(where: { quoteStatus_in: [0, 1, 2, 4, 5, 6] })` -- quotes needing migration (PENDING, LOCKED, CANCEL_PENDING, OPENED, CLOSE_PENDING, CANCEL_CLOSE_PENDING)
 - `latestAccountBalances(where: { accountType: "PARTY_B", counterParty_not: null })` -- partyB-per-partyA balance entries
 
-**Validation against on-chain:**
-- Boundary check: on-chain `getNextQuoteId()` must exceed the max subgraph quoteId
+**Validation against on-chain (`validateMigrationInput.ts`):**
+- Boundary check: max subgraph quoteId must not exceed on-chain `getNextQuoteId()` (which returns the last assigned ID)
 - Quote spot-check: random sample of quotes verified against `getQuote()` on-chain (status, partyA, partyB, symbolId)
 - Balance spot-check: random sample of partyB allocated balances verified against `allocatedBalanceOfPartyB()` on-chain
+
+**Edge case validation (`validateMigrationEdgeCases.ts`):** Particularly important on forks where the subgraph indexes the live chain beyond the fork block:
+- Boundary quote: verifies the quote at `lastId` is included if it has a migratable status
+- Fork drift: ensures no quoteIds exceed on-chain `lastId` (the subgraph may have quotes created after the fork block)
+- Gap scan: scans first and last N quotes on-chain, flags active quotes missing from input
+- PartyB completeness: checks for empty `partyAs` arrays and duplicate entries
 
 Default subgraph endpoint: `https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/arbitrum_analytics/stage/gn`
 
@@ -137,10 +143,12 @@ Override with `SUBGRAPH_ENDPOINT` env var.
 Copy and edit the sample configs:
 
 ```bash
-cp scripts/upgrade/config/samples/upgrade.sample.json scripts/upgrade/config/upgrade.json
-cp scripts/upgrade/config/samples/prepareMigration.sample.json scripts/upgrade/config/prepareMigration.json
-cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/migrate.json
+cp scripts/upgrade/config/samples/upgrade.sample.json scripts/upgrade/config/upgrade-<network>.json
+cp scripts/upgrade/config/samples/prepareMigration.sample.json scripts/upgrade/config/prepareMigration-<network>.json
+cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/migrate-<network>.json
 ```
+
+Config files support network-postfixed names (e.g. `upgrade-arbitrum.json`). Scripts try `{name}-{network}.json` first, fall back to `{name}.json`.
 
 ### Upgrade config (`upgrade.json`)
 
@@ -153,7 +161,6 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 | `diamondCutChunkSize` | number | `1000` | Max facet cuts per transaction |
 | `symmioFeeReceiver` | string | `""` | Fee receiver for AccountLayer Init (defaults to admin) |
 | `setupInstantLayerTemplates` | boolean | `true` | Setup OpenPosition/ClosePosition templates on InstantLayer |
-| `symmioPartyBAddress` | string | `""` | Existing SymmioPartyB proxy address (for UUPS upgrade + InstantLayer registration) |
 | `newV085Parameters` | object | -- | New v0.8.5 parameters to initialize (see below) |
 
 ### Upgrade env var overrides
@@ -164,7 +171,7 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 | `ADMIN_ADDRESS` | `adminAddress` |
 | `DIAMOND_CUT_CHUNK_SIZE` | `diamondCutChunkSize` |
 | `SUBGRAPH_ENDPOINT` | `subgraphEndpoint` |
-| `UPGRADE_CONFIG_FILE` | Config file path (default: `scripts/upgrade/config/upgrade.json`) |
+| `UPGRADE_CONFIG_FILE` | Config file path (default: `scripts/upgrade/config/upgrade-{network}.json`, falls back to `upgrade.json`) |
 
 ### Prepare migration config (`prepareMigration.json`)
 
@@ -184,7 +191,7 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 | `SUBGRAPH_ENDPOINT` | `subgraphEndpoint` |
 | `SPOT_CHECK_COUNT` | `spotCheckCount` |
 | `PREPARE_OUTPUT_FILE` | `outputFile` |
-| `PREPARE_MIGRATION_CONFIG_FILE` | Config file path (default: `scripts/upgrade/config/prepareMigration.json`) |
+| `PREPARE_MIGRATION_CONFIG_FILE` | Config file path (default: `scripts/upgrade/config/prepareMigration-{network}.json`, falls back to `prepareMigration.json`) |
 
 ### Migration config (`migrate.json`)
 
@@ -195,7 +202,7 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 | `chunkSize` | number | `50` | Items per migration transaction (quotes and partyAs) |
 | `dryRun` | boolean | `false` | Log operations without executing |
 | `fork` | boolean | `false` | Impersonate diamond owner instead of using deployer signer |
-| `strict` | boolean | `false` | Stop on any failure |
+| `skipPreCheck` | boolean | `false` | Skip on-chain pre-flight checks (faster, may send no-op transactions) |
 | `progressFile` | string | `scripts/upgrade/output/migration-progress.json` | Resume file path |
 | `reportFile` | string | `scripts/upgrade/output/migration-report.json` | Report file path |
 
@@ -208,8 +215,8 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 | `MIGRATE_CHUNK_SIZE` | `chunkSize` |
 | `DRY_RUN` | `dryRun` |
 | `FORK` | `fork` |
-| `MIGRATE_STRICT` | `strict` |
-| `MIGRATION_CONFIG_FILE` | Config file path (default: `scripts/upgrade/config/migrate.json`) |
+| `SKIP_PRE_CHECK` | `skipPreCheck` |
+| `MIGRATION_CONFIG_FILE` | Config file path (default: `scripts/upgrade/config/migrate-{network}.json`, falls back to `migrate.json`) |
 
 ## newV085Parameters
 

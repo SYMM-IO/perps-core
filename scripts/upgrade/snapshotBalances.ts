@@ -143,6 +143,7 @@ async function main() {
 
 	log.header("Snapshot On-Chain Balances")
 	log.kv("Diamond", log.addr(DIAMOND_ADDRESS))
+	log.kv("Subgraph", SUBGRAPH_ENDPOINT)
 	log.kv("Input", inputFile)
 	log.kv("Output", outputFile)
 	log.kv("Concurrency", String(concurrency))

@@ -4,8 +4,8 @@ import path from "path"
 import { ethers } from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
-import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
-import { fetchOpenQuotes, fetchPartyBBalances } from "./utils/subgraphHelpers.js"
+import { loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig.js"
+import { fetchOpenQuotes } from "./utils/subgraphHelpers.js"
 
 /**
  * Prepare migration input from subgraph data.
@@ -57,7 +57,7 @@ type PrepareReport = {
 	error?: string
 }
 
-const CONFIG_FILE = process.env.PREPARE_MIGRATION_CONFIG_FILE ?? "./scripts/upgrade/config/prepareMigration.json"
+const CONFIG_FILE = resolveConfigFile("prepareMigration", undefined, process.env.PREPARE_MIGRATION_CONFIG_FILE)
 
 function loadConfig(): PrepareConfig {
 	if (!fs.existsSync(CONFIG_FILE)) return {}
@@ -141,7 +141,7 @@ async function main() {
 		log.kv("Diamond", log.addr(DIAMOND_ADDRESS))
 		log.kv("Subgraph", SUBGRAPH_ENDPOINT)
 
-		log.setSteps(4)
+		log.setSteps(3)
 
 		// Step 1: Fetch open quotes from subgraph
 		let t = log.step("Fetch open quotes from subgraph")
@@ -165,49 +165,32 @@ async function main() {
 		tryWriteReport(reportFile, report)
 		log.stepDone(t)
 
-		// Step 2: Fetch partyB balances from subgraph
-		t = log.step("Fetch partyB balances from subgraph")
-		currentStep = "fetch_partyb_balances"
-		const balancesResult = await fetchPartyBBalances(SUBGRAPH_ENDPOINT)
-		log.stats([
-			["Balance entries", balancesResult.entries.length],
-			["Distinct partyBs", balancesResult.partyBs.length],
-		])
-		report.steps.push({
-			name: "fetch_partyb_balances",
-			status: "ok",
-			details: {
-				entriesCount: balancesResult.entries.length,
-				partyBsCount: balancesResult.partyBs.length,
-			},
-		})
-		currentStep = null
-		tryWriteReport(reportFile, report)
-		log.stepDone(t)
-
-		// Step 3: Validate against on-chain -- boundary check
+		// Step 2: Validate against on-chain -- boundary check
 		t = log.step("Validate boundary against on-chain")
 		currentStep = "validate_boundary"
 		const viewFacetQuote = await ethers.getContractAt("contracts/core/facets/ViewFacetQuote/ViewFacetQuote.sol:ViewFacetQuote", DIAMOND_ADDRESS)
-		const onChainNextQuoteId = toBigInt(await viewFacetQuote.getNextQuoteId())
+		// getNextQuoteId() returns the LAST assigned quote ID (not next available) — see QuoteStorage.lastId
+		const onChainLastQuoteId = toBigInt(await viewFacetQuote.getNextQuoteId())
 		const maxSubgraphQuoteId = quotesResult.quotes.reduce((max, q) => {
 			const id = BigInt(q.quoteId)
 			return id > max ? id : max
 		}, 0n)
 
-		if (maxSubgraphQuoteId >= onChainNextQuoteId) {
+		if (maxSubgraphQuoteId > onChainLastQuoteId) {
 			const before = quotesResult.quotes.length
-			quotesResult.quotes = quotesResult.quotes.filter(q => BigInt(q.quoteId) < onChainNextQuoteId)
+			quotesResult.quotes = quotesResult.quotes.filter(q => BigInt(q.quoteId) <= onChainLastQuoteId)
 			const dropped = before - quotesResult.quotes.length
-			log.warn(`Subgraph ahead of on-chain (max=${maxSubgraphQuoteId}, nextQuoteId=${onChainNextQuoteId}). Filtered ${dropped} quotes.`)
+			log.warn(
+				`Subgraph has quotes beyond on-chain lastId (max=${maxSubgraphQuoteId}, lastId=${onChainLastQuoteId}). Likely a fork — filtered ${dropped} quotes.`,
+			)
 		} else {
-			log.ok(`Boundary check passed — on-chain nextQuoteId=${onChainNextQuoteId}, subgraph max=${maxSubgraphQuoteId}`)
+			log.ok(`Boundary check passed — on-chain lastQuoteId=${onChainLastQuoteId}, subgraph max=${maxSubgraphQuoteId}`)
 		}
 		report.steps.push({
 			name: "validate_boundary",
 			status: "ok",
 			details: {
-				onChainNextQuoteId: onChainNextQuoteId.toString(),
+				onChainLastQuoteId: onChainLastQuoteId.toString(),
 				maxSubgraphQuoteId: maxSubgraphQuoteId.toString(),
 			},
 		})
@@ -215,20 +198,23 @@ async function main() {
 		tryWriteReport(reportFile, report)
 		log.stepDone(t)
 
-		// Step 4: Build migration input
+		// Step 3: Build migration input
 		t = log.step("Build migration input")
 		currentStep = "build_input"
 
 		// Quote IDs
 		const quoteIds = quotesResult.quotes.map(q => q.quoteId).sort((a, b) => Number(BigInt(a) - BigInt(b)))
 
-		// PartyB tasks from subgraph balances
+		// PartyB tasks derived from active quotes (not from all historical balance entries).
+		// Only partyB-partyA pairs with active quotes have non-zero locked values to migrate.
+		// PENDING quotes have partyB = address(0) and don't contribute to partyB locked values.
 		const partyBTaskMap = new Map<string, Set<string>>()
-		for (const entry of balancesResult.entries) {
-			if (!partyBTaskMap.has(entry.account)) {
-				partyBTaskMap.set(entry.account, new Set())
+		for (const q of quotesResult.quotes) {
+			if (!q.partyB || q.partyB === "0x0000000000000000000000000000000000000000") continue
+			if (!partyBTaskMap.has(q.partyB)) {
+				partyBTaskMap.set(q.partyB, new Set())
 			}
-			partyBTaskMap.get(entry.account)!.add(entry.counterParty)
+			partyBTaskMap.get(q.partyB)!.add(q.partyA)
 		}
 		const partyBTasks = [...partyBTaskMap.entries()]
 			.map(([partyB, partyAsSet]) => ({
@@ -261,7 +247,7 @@ async function main() {
 			diamondAddress: DIAMOND_ADDRESS,
 			subgraphEndpoint: SUBGRAPH_ENDPOINT,
 			validation: {
-				onChainNextQuoteId: onChainNextQuoteId.toString(),
+				onChainLastQuoteId: onChainLastQuoteId.toString(),
 				maxSubgraphQuoteId: maxSubgraphQuoteId.toString(),
 			},
 			quoteIds,
@@ -297,8 +283,9 @@ async function main() {
 			["Duration", scriptTimer.fmt()],
 		])
 		log.nextSteps([
-			"Run validateMigrationInput.ts to spot-check against on-chain (works on v0.8.4 and v0.8.5)",
-			"Run snapshotBalances.ts (optional) to capture an on-chain balance snapshot for sanity-checking totals",
+			"Run validateMigrationInput.ts to spot-check quotes and balances against on-chain",
+			"Run validateMigrationEdgeCases.ts to verify boundary quote, fork drift, and gaps",
+			"Run snapshotBalances.ts (optional) to capture on-chain balance snapshot",
 			"Run runMigration.ts after the diamondCut is applied",
 		])
 	} catch (error) {

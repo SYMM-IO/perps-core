@@ -13,23 +13,20 @@
  */
 import fs from "fs"
 
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
+import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 import { buildDiamondCut, applyDiamondCut, loadDeployedFacets } from "./utils/upgradeHelpers.js"
 
-const CONFIG_FILE = process.env.UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/upgrade.json"
 const OUTPUT_DIR = "./scripts/upgrade/output"
 
-function loadConfig(): { diamondAddress?: string } {
-	if (!fs.existsSync(CONFIG_FILE)) return {}
-	return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8"))
-}
-
 async function main() {
-	const config = loadConfig()
-	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress
+	const shared = loadUpgradeConfigShared(connection.networkName)
+	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? shared.diamondAddress
 	if (!DIAMOND_ADDRESS) throw new Error("DIAMOND_ADDRESS required (env or config)")
 
-	const FACETS_FILE = process.env.FACETS_FILE ?? `${OUTPUT_DIR}/deployed-facets.json`
+	const networkName = connection.networkName
+	const FACETS_FILE = process.env.FACETS_FILE ?? `${OUTPUT_DIR}/deployed-facets-${networkName}.json`
 	const facetData = loadDeployedFacets(FACETS_FILE)
 
 	log.header("Apply Diamond Cut")
@@ -58,15 +55,29 @@ async function main() {
 
 	// Write details
 	if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
-	const detailsFile = `${OUTPUT_DIR}/upgrade-details.json`
+	const detailsFile = `${OUTPUT_DIR}/upgrade-details-${networkName}.json`
 	fs.writeFileSync(detailsFile, JSON.stringify({ diamondAddress: DIAMOND_ADDRESS, selectorChanges }, null, 2))
 	log.ok(`Details written to ${detailsFile}`)
 	log.stepDone(t)
 
+	// Resolve protocolAdmin signer
+	let signer
+	const protocolAdminAddress = shared.protocolAdmin
+	if (protocolAdminAddress) {
+		const signers = await ethers.getSigners()
+		for (const s of signers) {
+			if ((await s.getAddress()).toLowerCase() === protocolAdminAddress.toLowerCase()) {
+				signer = s
+				break
+			}
+		}
+		if (!signer) throw new Error(`No signer found for protocolAdmin ${protocolAdminAddress}. Add TEAM_DEPLOYER to the Hardhat keystore.`)
+	}
+
 	// Apply in a single transaction
 	t = log.step("Apply diamond cut")
 	log.info(`${diamondCut.length} cuts in 1 transaction...`)
-	await applyDiamondCut(DIAMOND_ADDRESS, diamondCut, undefined, diamondCut.length)
+	await applyDiamondCut(DIAMOND_ADDRESS, diamondCut, signer, diamondCut.length)
 	log.ok("Diamond cut applied")
 	log.stepDone(t)
 }
