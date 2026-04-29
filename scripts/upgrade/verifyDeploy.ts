@@ -10,7 +10,8 @@
  *
  * Env overrides:
  *   RPC_URL      -- RPC endpoint (required)
- *   FACETS_FILE  -- path to deployed-facets.json (default: output/deployed-facets.json)
+ *   NETWORK      -- network name for file resolution (e.g. "arbitrum" -> deployed-facets-arbitrum.json)
+ *   FACETS_FILE  -- path to deployed-facets.json (overrides NETWORK-based resolution)
  */
 import { ethers } from "ethers"
 import fs from "fs"
@@ -26,7 +27,8 @@ if (!rpcUrl) {
 	process.exit(1)
 }
 
-const facetsFile = process.env.FACETS_FILE ?? path.join(OUTPUT_DIR, "deployed-facets.json")
+const networkSuffix = process.env.NETWORK ? `-${process.env.NETWORK}` : ""
+const facetsFile = process.env.FACETS_FILE ?? path.join(OUTPUT_DIR, `deployed-facets${networkSuffix}.json`)
 
 if (!fs.existsSync(facetsFile)) {
 	console.error(`Missing deployed-facets.json at ${facetsFile}`)

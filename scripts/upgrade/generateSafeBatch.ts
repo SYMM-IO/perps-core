@@ -19,8 +19,9 @@
 import fs from "fs"
 import path from "path"
 
-import { ethers } from "../../test/helpers/hardhat-connection.js"
-import { buildWiringTransactions } from "./utils/peripheralHelpers.js"
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
+import { buildTemplateTransactions, buildSymbolManagerWiringTransactions, buildWiringTransactions } from "./utils/peripheralHelpers.js"
+import { resolveConfigFile } from "./utils/sharedConfig.js"
 import {
 	buildDiamondCut,
 	buildUpgradeTransactions,
@@ -38,8 +39,8 @@ type Config = {
 	diamondCutChunkSize?: number
 	accountLayerDiamondAddress?: string
 	instantLayerAddress?: string
-	symmioPartyBAddress?: string
-	symmioPartyBImplementation?: string
+	symbolManagerAddress?: string
+	setupInstantLayerTemplates?: boolean
 	newV085Parameters?: NewV085Parameters
 }
 
@@ -47,19 +48,20 @@ type Config = {
 type DeployedPeripherals = {
 	accountLayer?: { diamond?: string }
 	instantLayer?: { address?: string }
-	symmioPartyBImplementation?: string
+	symbolManager?: { address?: string }
 }
 
-const CONFIG_FILE = process.env.UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/upgrade.json"
 const OUTPUT_DIR = "./scripts/upgrade/output"
 
-function loadConfig(): Config {
-	if (!fs.existsSync(CONFIG_FILE)) return {}
-	return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8")) as Config
+function loadConfig(networkName: string): Config {
+	const configFile = resolveConfigFile("upgrade", networkName, process.env.UPGRADE_CONFIG_FILE)
+	if (!fs.existsSync(configFile)) return {}
+	return JSON.parse(fs.readFileSync(configFile, "utf-8")) as Config
 }
 
 async function main() {
-	const config = loadConfig()
+	const networkName = connection.networkName
+	const config = loadConfig(networkName)
 
 	const CHAIN_ID = process.env.CHAIN_ID ?? String(Number((await ethers.provider.getNetwork()).chainId))
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress
@@ -91,7 +93,7 @@ async function main() {
 	console.log()
 
 	// Load deployed facets
-	const FACETS_FILE = process.env.FACETS_FILE ?? path.join(OUTPUT_DIR, "deployed-facets.json")
+	const FACETS_FILE = process.env.FACETS_FILE ?? path.join(OUTPUT_DIR, `deployed-facets-${networkName}.json`)
 	const facetData = loadDeployedFacets(FACETS_FILE)
 	console.log()
 
@@ -117,7 +119,7 @@ async function main() {
 	)
 
 	// Load deployed peripherals (written by deployPeripherals.ts)
-	const PERIPHERALS_FILE = process.env.PERIPHERALS_FILE ?? path.join(OUTPUT_DIR, "deployed-peripherals.json")
+	const PERIPHERALS_FILE = process.env.PERIPHERALS_FILE ?? path.join(OUTPUT_DIR, `deployed-peripherals-${networkName}.json`)
 	let peripherals: DeployedPeripherals = {}
 	if (fs.existsSync(PERIPHERALS_FILE)) {
 		peripherals = JSON.parse(fs.readFileSync(PERIPHERALS_FILE, "utf-8"))
@@ -127,39 +129,52 @@ async function main() {
 	// Resolve addresses: env > config > deployed-peripherals.json
 	const AL_ADDRESS = process.env.ACCOUNT_LAYER_ADDRESS ?? (config.accountLayerDiamondAddress || peripherals.accountLayer?.diamond)
 	const IL_ADDRESS = process.env.INSTANT_LAYER_ADDRESS ?? (config.instantLayerAddress || peripherals.instantLayer?.address)
+	const SM_ADDRESS = process.env.SYMBOL_MANAGER_ADDRESS ?? (config.symbolManagerAddress || peripherals.symbolManager?.address)
 
-	const PARTYB_ADDRESS = process.env.SYMMIO_PARTYB_ADDRESS ?? config.symmioPartyBAddress
-	const PARTYB_IMPL = process.env.SYMMIO_PARTYB_IMPLEMENTATION ?? (config.symmioPartyBImplementation || peripherals.symmioPartyBImplementation)
+	// Load PartyB list for InstantLayer registration from partyBList.json
+	const PARTYB_LIST_FILE = resolveConfigFile("partyBList", networkName, process.env.PARTYB_LIST_FILE)
+	let partyBsToRegister: string[] = []
+	if (fs.existsSync(PARTYB_LIST_FILE)) {
+		const listConfig = JSON.parse(fs.readFileSync(PARTYB_LIST_FILE, "utf-8")) as {
+			partyBs?: Record<string, string[]>
+			registerOnInstantLayer?: boolean
+		}
+		if (listConfig.registerOnInstantLayer) {
+			partyBsToRegister = Object.values(listConfig.partyBs ?? {})
+				.flat()
+				.filter(a => ethers.isAddress(a))
+		}
+	}
 
 	if (AL_ADDRESS && IL_ADDRESS && ethers.isAddress(AL_ADDRESS) && ethers.isAddress(IL_ADDRESS)) {
 		console.log("\nBuilding peripheral wiring transactions...")
 		console.log(`  AccountLayerDiamond: ${AL_ADDRESS}`)
 		console.log(`  InstantLayer:        ${IL_ADDRESS}`)
-		if (PARTYB_ADDRESS) console.log(`  SymmioPartyB:        ${PARTYB_ADDRESS}`)
-		const wiringTxs = buildWiringTransactions(DIAMOND_ADDRESS, AL_ADDRESS, IL_ADDRESS, PROTOCOL_ADMIN, PARTYB_ADDRESS, PARTYB_IMPL)
-
-		// SymmioPartyB UUPS proxy upgrade (if address and new implementation provided)
-		// The Safe must have DEFAULT_ADMIN_ROLE on the PartyB proxy to call upgradeTo.
-		// The current PartyB admin must grant this role to the Safe before executing the batch.
-		if (PARTYB_ADDRESS && PARTYB_IMPL) {
-			const uupsIface = new ethers.Interface(["function upgradeTo(address newImplementation)"])
-			wiringTxs.unshift({
-				to: PARTYB_ADDRESS,
-				value: "0",
-				calldata: uupsIface.encodeFunctionData("upgradeTo", [PARTYB_IMPL]),
-				description: `upgradeTo(new SymmioPartyB implementation)`,
-				iface: uupsIface,
-				methodName: "upgradeTo",
-				args: [PARTYB_IMPL],
-			})
-			console.log(`  NOTE: The Safe (${SAFE_ADDRESS}) must have DEFAULT_ADMIN_ROLE on SymmioPartyB (${PARTYB_ADDRESS}) before executing this batch.`)
-		}
+		if (partyBsToRegister.length > 0) console.log(`  PartyBs to register: ${partyBsToRegister.length} (from ${PARTYB_LIST_FILE})`)
+		const wiringTxs = buildWiringTransactions(DIAMOND_ADDRESS, AL_ADDRESS, IL_ADDRESS, PROTOCOL_ADMIN, partyBsToRegister)
 
 		for (const tx of wiringTxs) {
 			result.safeTxs.push(toHumanReadableSafeTxFromIface(tx.iface, tx.to, tx.methodName, tx.args))
 			result.breakdown.push(`${result.breakdown.length + 1}. [wiring] ${tx.description}`)
 		}
 		console.log(`  Added ${wiringTxs.length} wiring transactions`)
+
+		// InstantLayer templates
+		if (config.setupInstantLayerTemplates !== false) {
+			const templateTxs = buildTemplateTransactions(IL_ADDRESS)
+			for (const tx of templateTxs) {
+				result.safeTxs.push(toHumanReadableSafeTxFromIface(tx.iface, tx.to, tx.methodName, tx.args))
+				result.breakdown.push(`${result.breakdown.length + 1}. [template] ${tx.description}`)
+			}
+			console.log(`  Added ${templateTxs.length} template transactions`)
+		}
+		// Accept AccountLayer ownership (two-step: deployPeripherals called transferOwnership, Safe must acceptOwnership)
+		if (SAFE_ADDRESS) {
+			const acceptOwnershipIface = new ethers.Interface(["function acceptOwnership()"])
+			result.safeTxs.push(toHumanReadableSafeTxFromIface(acceptOwnershipIface, AL_ADDRESS, "acceptOwnership", []))
+			result.breakdown.push(`${result.breakdown.length + 1}. [ownership] acceptOwnership() on AccountLayer`)
+			console.log(`  Added acceptOwnership transaction`)
+		}
 	} else if (AL_ADDRESS || IL_ADDRESS) {
 		console.log("\nWARN: Both accountLayerDiamondAddress and instantLayerAddress must be set for wiring. Skipping.")
 	} else {
@@ -167,11 +182,25 @@ async function main() {
 		console.log("  Set accountLayerDiamondAddress and instantLayerAddress in config after deploying them.")
 	}
 
+	// SymbolManager wiring (independent of AccountLayer/InstantLayer)
+	if (SM_ADDRESS && ethers.isAddress(SM_ADDRESS)) {
+		console.log("\nBuilding SymbolManager wiring transactions...")
+		console.log(`  SymmioSymbolManager: ${SM_ADDRESS}`)
+		const smWiringTxs = buildSymbolManagerWiringTransactions(DIAMOND_ADDRESS, SM_ADDRESS)
+		for (const tx of smWiringTxs) {
+			result.safeTxs.push(toHumanReadableSafeTxFromIface(tx.iface, tx.to, tx.methodName, tx.args))
+			result.breakdown.push(`${result.breakdown.length + 1}. [wiring] ${tx.description}`)
+		}
+		console.log(`  Added ${smWiringTxs.length} SymbolManager wiring transactions`)
+	} else if (SM_ADDRESS) {
+		console.log("\nWARN: symbolManagerAddress is not a valid address. Skipping SymbolManager wiring.")
+	}
+
 	// Write output files
 	if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
 
 	// 1. Pause batch (standalone — execute before diamondCut)
-	const pauseFile = path.join(OUTPUT_DIR, "pause-safe-batch.json")
+	const pauseFile = path.join(OUTPUT_DIR, `pause-safe-batch-${networkName}.json`)
 	const pauseBatch: SafeBatch = {
 		version: "1.0",
 		chainId: CHAIN_ID,
@@ -189,7 +218,7 @@ async function main() {
 	console.log(`\nPause batch:              ${pauseFile}`)
 
 	// 2. Safe batch JSON (post-diamondCut: roles, params, wiring)
-	const batchFile = path.join(OUTPUT_DIR, "safe-batch.json")
+	const batchFile = path.join(OUTPUT_DIR, `safe-batch-${networkName}.json`)
 	const batch: SafeBatch = {
 		version: "1.0",
 		chainId: CHAIN_ID,
@@ -207,7 +236,7 @@ async function main() {
 	console.log(`Safe batch:               ${batchFile}`)
 
 	// 2. Diamond cut calldata (separate)
-	const diamondCutFile = path.join(OUTPUT_DIR, "diamondcut-calldata.json")
+	const diamondCutFile = path.join(OUTPUT_DIR, `diamondcut-calldata-${networkName}.json`)
 	fs.writeFileSync(
 		diamondCutFile,
 		JSON.stringify(
@@ -223,7 +252,7 @@ async function main() {
 	console.log(`DiamondCut calldata:      ${diamondCutFile}`)
 
 	// 3. Details file
-	const detailsFile = path.join(OUTPUT_DIR, "upgrade-details.json")
+	const detailsFile = path.join(OUTPUT_DIR, `upgrade-details-${networkName}.json`)
 	fs.writeFileSync(
 		detailsFile,
 		JSON.stringify(
@@ -256,9 +285,9 @@ async function main() {
 	}
 
 	console.log("\nExecution order:")
-	console.log("  1. Import pause-safe-batch.json → execute (pause system)")
-	console.log("  2. Execute diamondCut from diamondcut-calldata.json (via timelock or direct)")
-	console.log("  3. Import safe-batch.json → execute (roles + params + wiring)")
+	console.log(`  1. Import pause-safe-batch-${networkName}.json → execute from Safe (pause system)`)
+	console.log(`  2. Execute diamondCut from diamondcut-calldata-${networkName}.json (via timelock or direct)`)
+	console.log(`  3. Import safe-batch-${networkName}.json → execute from Safe (roles + params + wiring + accept AL ownership)`)
 }
 
 main().catch(error => {

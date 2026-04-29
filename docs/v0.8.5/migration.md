@@ -281,10 +281,18 @@ After migration, verify correctness:
 
 ### 1. Quote Migration Status
 
+**Note:** `isQuoteMigrated()` only returns true for quotes that were actually processed by `migrateQuotes()`. Quotes with non-migratable on-chain status (CANCELED, CLOSED, LIQUIDATED, EXPIRED) are correctly skipped by the contract and will return false -- this is expected. Always check the on-chain status before treating a false result as a failure.
+
 ```tsx
+const MIGRATABLE_STATUSES = new Set([0, 1, 2, 4, 5, 6]); // PENDING, LOCKED, CANCEL_PENDING, OPENED, CLOSE_PENDING, CANCEL_CLOSE_PENDING
+
 for (const quoteId of migratedQuoteIds) {
     const isMigrated = await migrationFacet.isQuoteMigrated(quoteId);
-    assert(isMigrated, `Quote ${quoteId} not migrated`);
+    if (!isMigrated) {
+        const quote = await viewFacetQuote.getQuote(quoteId);
+        if (!MIGRATABLE_STATUSES.has(Number(quote.quoteStatus))) continue; // correctly skipped
+        assert(false, `Quote ${quoteId} not migrated (status=${quote.quoteStatus})`);
+    }
 }
 ```
 

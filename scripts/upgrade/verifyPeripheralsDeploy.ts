@@ -10,7 +10,8 @@
  *
  * Env overrides:
  *   RPC_URL          -- RPC endpoint (required)
- *   PERIPHERALS_FILE -- path to deployed-peripherals.json (default: output/deployed-peripherals.json)
+ *   NETWORK          -- network name for file resolution (e.g. "arbitrum" -> deployed-peripherals-arbitrum.json)
+ *   PERIPHERALS_FILE -- path to deployed-peripherals.json (overrides NETWORK-based resolution)
  */
 import { ethers } from "ethers"
 import fs from "fs"
@@ -26,8 +27,15 @@ if (!rpcUrl) {
 	process.exit(1)
 }
 
-const peripheralsFile = process.env.PERIPHERALS_FILE ?? path.join(OUTPUT_DIR, "deployed-peripherals.json")
-const upgradeConfigFile = process.env.UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/upgrade.json"
+const networkSuffix = process.env.NETWORK ? `-${process.env.NETWORK}` : ""
+const peripheralsFile = process.env.PERIPHERALS_FILE ?? path.join(OUTPUT_DIR, `deployed-peripherals${networkSuffix}.json`)
+// Network-aware: tries upgrade-{NETWORK}.json, falls back to upgrade.json
+const networkSuffixConfig = process.env.NETWORK ? `-${process.env.NETWORK}` : ""
+const upgradeConfigFile =
+	process.env.UPGRADE_CONFIG_FILE ??
+	(fs.existsSync(`./scripts/upgrade/config/upgrade${networkSuffixConfig}.json`)
+		? `./scripts/upgrade/config/upgrade${networkSuffixConfig}.json`
+		: "./scripts/upgrade/config/upgrade.json")
 
 if (!fs.existsSync(peripheralsFile)) {
 	console.error(`Missing deployed-peripherals.json at ${peripheralsFile}`)
@@ -129,6 +137,15 @@ if (fs.existsSync(upgradeConfigFile)) {
 CONTRACTS[deployed.symmioPartyBImplementation] = {
 	name: "SymmioPartyB",
 	path: "helpers/accounts/SymmioPartyB.sol/SymmioPartyB.json",
+}
+
+// SymmioSymbolManager (address from deployed-peripherals.json)
+const smAddr = (deployed as any).symbolManager?.address
+if (smAddr) {
+	CONTRACTS[smAddr] = {
+		name: "SymmioSymbolManager",
+		path: "helpers/symbolManager/SymmioSymbolManager.sol/SymmioSymbolManager.json",
+	}
 }
 
 function extractLibraryPlaceholders(artifact: any): { placeholders: Placeholder[]; hashToLib: Record<string, LibInfo> } {

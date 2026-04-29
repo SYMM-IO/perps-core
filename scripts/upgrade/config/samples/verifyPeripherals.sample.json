@@ -2,5 +2,6 @@
 	"diamondAddress": "0x...",
 	"accountLayerDiamondAddress": "0x...",
 	"instantLayerAddress": "0x...",
+	"symbolManagerAddress": "0x...",
 	"protocolAdmin": "0x..."
 }

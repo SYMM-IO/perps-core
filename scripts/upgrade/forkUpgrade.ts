@@ -6,6 +6,7 @@ import { getImpersonatedAdmin } from "./utils/forkHelpers.js"
 import { log } from "./utils/log.js"
 import { deployAccountLayerDiamond, deployInstantLayer, wireAccountLayerInstantLayer, setupInstantLayerTemplates } from "./utils/peripheralHelpers.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
+import { resolveConfigFile } from "./utils/sharedConfig.js"
 import { fetchOpenQuotes, fetchPartyBBalances } from "./utils/subgraphHelpers.js"
 import { deployFacets, buildDiamondCut, applyDiamondCut, setV085Parameters, type NewV085Parameters } from "./utils/upgradeHelpers.js"
 
@@ -34,7 +35,6 @@ type ForkUpgradeConfig = {
 	spotCheckCount?: number
 	symmioFeeReceiver?: string
 	setupInstantLayerTemplates?: boolean
-	symmioPartyBAddress?: string
 	newV085Parameters?: NewV085Parameters
 }
 
@@ -55,9 +55,8 @@ type ForkUpgradeReport = {
 	error?: string
 }
 
-const CONFIG_FILE = process.env.UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/upgrade.json"
-
 function loadConfig(): ForkUpgradeConfig {
+	const CONFIG_FILE = resolveConfigFile("upgrade", undefined, process.env.UPGRADE_CONFIG_FILE)
 	if (!fs.existsSync(CONFIG_FILE)) return {}
 	const raw = fs.readFileSync(CONFIG_FILE, "utf-8")
 	const data = JSON.parse(raw)
@@ -379,79 +378,44 @@ async function main() {
 		tryWriteReport(reportFile, report)
 		log.stepDone(t)
 
-		// ── Step 10: SymmioPartyB upgrade ────────────────────────────────
-		t = log.step("Upgrade SymmioPartyB")
-		currentStep = "setup_symmio_partyb"
-		const PARTYB_ADDRESS = process.env.SYMMIO_PARTYB_ADDRESS ?? config.symmioPartyBAddress
+		// ── Step 10: Register PartyBs on InstantLayer ───────────────────
+		t = log.step("Register PartyBs on InstantLayer")
+		currentStep = "register_partybs"
+		const PARTYB_LIST_FILE = resolveConfigFile("partyBList", undefined, process.env.PARTYB_LIST_FILE)
+		const registeredPartyBs: string[] = []
 
-		if (PARTYB_ADDRESS) {
-			log.kv("Existing proxy", log.addr(PARTYB_ADDRESS))
-
-			// Deploy new implementation
-			const SymmioPartyBFactory = await ethers.getContractFactory("SymmioPartyB")
-			const newImpl = await SymmioPartyBFactory.deploy()
-			await newImpl.waitForDeployment()
-			const newImplAddress = await newImpl.getAddress()
-			log.deployed("New implementation", newImplAddress)
-
-			// UUPS proxy upgrade: grant DEFAULT_ADMIN_ROLE to diamond admin, then upgradeTo
-			const DEFAULT_ADMIN_ROLE = ethers.ZeroHash
-			const partyBContract = new ethers.Contract(
-				PARTYB_ADDRESS,
-				[
-					"function hasRole(bytes32 role, address account) view returns (bool)",
-					"function grantRole(bytes32 role, address account)",
-					"function upgradeTo(address newImplementation)",
-				],
-				admin,
-			)
-
-			const hasRole = await partyBContract.hasRole(DEFAULT_ADMIN_ROLE, adminAddress)
-			if (!hasRole) {
-				// Grant DEFAULT_ADMIN_ROLE to diamond admin via direct storage write (fork only).
-				// AccessControlUpgradeable stores _roles[role].members[addr] as a bool in a nested mapping.
-				// Slot = keccak256(addr . keccak256(role . _roles_base_slot))
-				// The base slot varies by OZ version / inheritance, so we try common values.
-				const candidateSlots = [151, 101, 201, 251]
-				let granted = false
-				for (const baseSlot of candidateSlots) {
-					const roleSlot = ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(["bytes32", "uint256"], [DEFAULT_ADMIN_ROLE, baseSlot]))
-					const memberSlot = ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(["address", "bytes32"], [adminAddress, roleSlot]))
-					await ethers.provider.send("hardhat_setStorageAt", [PARTYB_ADDRESS, memberSlot, ethers.zeroPadValue("0x01", 32)])
-					if (await partyBContract.hasRole(DEFAULT_ADMIN_ROLE, adminAddress)) {
-						granted = true
-						break
+		if (fs.existsSync(PARTYB_LIST_FILE)) {
+			const listConfig = JSON.parse(fs.readFileSync(PARTYB_LIST_FILE, "utf-8")) as {
+				partyBs?: Record<string, string[]>
+				registerOnInstantLayer?: boolean
+			}
+			if (listConfig.registerOnInstantLayer) {
+				const partyBsToRegister = Object.values(listConfig.partyBs ?? {})
+					.flat()
+					.filter((a: string) => ethers.isAddress(a))
+				const il = await ethers.getContractAt("InstantLayer", ilResult.address, admin)
+				for (const partyB of partyBsToRegister) {
+					const isRegistered = await il.registeredPartyBs(partyB)
+					if (!isRegistered) {
+						await (await il.registerPartyBs([partyB])).wait()
+						log.ok(`Registered ${log.addr(partyB)} on InstantLayer`)
+					} else {
+						log.ok(`${log.addr(partyB)} already registered on InstantLayer`)
 					}
+					registeredPartyBs.push(partyB)
 				}
-				if (!granted) {
-					throw new Error("Failed to grant DEFAULT_ADMIN_ROLE on SymmioPartyB via storage — unknown storage layout")
-				}
-				log.ok(`Granted DEFAULT_ADMIN_ROLE to diamond admin ${log.addr(adminAddress)} (via fork storage write)`)
-			}
-
-			await (await partyBContract.upgradeTo(newImplAddress)).wait()
-			log.ok("Proxy upgraded via upgradeTo (UUPS)")
-
-			// Register on InstantLayer
-			const il = await ethers.getContractAt("InstantLayer", ilResult.address, admin)
-			const isRegistered = await il.registeredPartyBs(PARTYB_ADDRESS)
-			if (!isRegistered) {
-				await (await il.registerPartyBs([PARTYB_ADDRESS])).wait()
-				log.ok("Registered on InstantLayer")
 			} else {
-				log.ok("Already registered on InstantLayer")
+				log.ok("registerOnInstantLayer is false — skipping")
 			}
-
-			report.steps.push({
-				name: "setup_symmio_partyb",
-				status: "ok",
-				details: { proxy: PARTYB_ADDRESS, implementation: newImplAddress },
-			})
 		} else {
-			log.warn("No symmioPartyBAddress configured — skipping PartyB upgrade")
-			log.detail("Set symmioPartyBAddress in config to include PartyB in the upgrade")
-			report.steps.push({ name: "setup_symmio_partyb", status: "ok", details: { skipped: true } })
+			log.warn(`${PARTYB_LIST_FILE} not found — skipping IL registration`)
 		}
+
+		report.steps.push({
+			name: "register_partybs",
+			status: "ok",
+			details: { registered: registeredPartyBs },
+		})
 		currentStep = null
 		tryWriteReport(reportFile, report)
 		log.stepDone(t)

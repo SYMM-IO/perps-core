@@ -63,6 +63,9 @@ type DeployedState = {
 	instantLayer?: {
 		address?: string
 	}
+	symbolManager?: {
+		address?: string
+	}
 }
 
 // ============================================================================
@@ -367,37 +370,35 @@ export async function wireAccountLayerInstantLayer(
 // Setup InstantLayer Templates
 // ============================================================================
 
-export async function setupInstantLayerTemplates(instantLayerAddress: string, adminSigner: any): Promise<void> {
+const DEFAULT_TEMPLATES_FILE = "./scripts/upgrade/config/instantLayerTemplates.json"
+
+type TemplateConfig = {
+	name: string
+	operations: { insertionPoints: number[]; sourceIndices: number[]; sourceOffsets: number[] }[]
+}
+
+function loadTemplates(configFile?: string): TemplateConfig[] {
+	const file = configFile ?? process.env.TEMPLATES_CONFIG_FILE ?? DEFAULT_TEMPLATES_FILE
+	if (!fs.existsSync(file)) {
+		throw new Error(`InstantLayer templates config not found: ${file}`)
+	}
+	const config = JSON.parse(fs.readFileSync(file, "utf-8")) as { templates: TemplateConfig[] }
+	if (!config.templates || config.templates.length === 0) {
+		throw new Error(`No templates defined in ${file}`)
+	}
+	return config.templates
+}
+
+export async function setupInstantLayerTemplates(instantLayerAddress: string, adminSigner: any, configFile?: string): Promise<void> {
 	log.info("Templates:")
 
+	const templates = loadTemplates(configFile)
 	const instantLayer = await ethers.getContractAt("InstantLayer", instantLayerAddress, adminSigner)
 
-	// InstantOpen Template (4 operations)
-	const instantOpenOps = [
-		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 0: addMarginToNextVA
-		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 1: sendQuote
-		{ sourceIndices: [1], insertionPoints: [0], sourceOffsets: [0] }, // op 2: lockQuote - quoteId from op 1
-		{ sourceIndices: [1], insertionPoints: [0], sourceOffsets: [0] }, // op 3: openPosition - quoteId from op 1
-	]
-	await (await instantLayer.addTemplate("InstantOpen", instantOpenOps)).wait()
-	log.ok("InstantOpen (4 ops)")
-
-	// InstantClose Template (2 operations)
-	const instantCloseOps = [
-		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 0: requestToClosePosition
-		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 1: fillCloseRequest
-	]
-	await (await instantLayer.addTemplate("InstantClose", instantCloseOps)).wait()
-	log.ok("InstantClose (2 ops)")
-
-	// InstantCloseWithAllocation Template (3 operations)
-	const instantCloseWithAllocationOps = [
-		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 0
-		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 1
-		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 2
-	]
-	await (await instantLayer.addTemplate("InstantCloseWithAllocation", instantCloseWithAllocationOps)).wait()
-	log.ok("InstantCloseWithAllocation (3 ops)")
+	for (const template of templates) {
+		await (await instantLayer.addTemplate(template.name, template.operations)).wait()
+		log.ok(`${template.name} (${template.operations.length} ops)`)
+	}
 }
 
 // ============================================================================
@@ -419,8 +420,7 @@ export function buildWiringTransactions(
 	accountLayerDiamondAddress: string,
 	instantLayerAddress: string,
 	protocolAdmin: string,
-	symmioPartyBAddress?: string,
-	symmioPartyBImplementation?: string,
+	partyBsToRegister?: string[],
 ): WiringTransaction[] {
 	const roleHash = (name: string) => ethers.id(name)
 	const txs: WiringTransaction[] = []
@@ -522,9 +522,125 @@ export function buildWiringTransactions(
 		`setTargetWhitelist(AccountLayer, true) on InstantLayer`,
 	)
 
-	// SymmioPartyB: register on InstantLayer
-	if (symmioPartyBAddress) {
-		push(instantLayerAddress, instantLayerIface, "registerPartyBs", [[symmioPartyBAddress]], `registerPartyBs([SymmioPartyB]) on InstantLayer`)
+	// Register PartyBs on InstantLayer
+	if (partyBsToRegister && partyBsToRegister.length > 0) {
+		push(
+			instantLayerAddress,
+			instantLayerIface,
+			"registerPartyBs",
+			[partyBsToRegister],
+			`registerPartyBs([${partyBsToRegister.length} partyBs]) on InstantLayer`,
+		)
+	}
+
+	return txs
+}
+
+// ============================================================================
+// Deploy SymmioSymbolManager
+// ============================================================================
+
+export type SymbolManagerDeployResult = {
+	address: string
+}
+
+export async function deploySymbolManager(diamondAddress: string, protocolAdmin: string, stateFile?: string): Promise<SymbolManagerDeployResult> {
+	const state = loadState(stateFile ?? "")
+
+	if (state.symbolManager?.address) {
+		log.deployed("SymmioSymbolManager", state.symbolManager.address, true)
+		return { address: state.symbolManager.address }
+	}
+
+	const factory = await ethers.getContractFactory("SymmioSymbolManager")
+	const contract = await factory.deploy(diamondAddress, protocolAdmin)
+	const address = await contract.getAddress()
+
+	if (!state.symbolManager) state.symbolManager = {}
+	state.symbolManager.address = address
+	if (stateFile) saveState(stateFile, state)
+
+	await contract.waitForDeployment()
+	log.deployed("SymmioSymbolManager", address)
+	return { address }
+}
+
+// ============================================================================
+// Wire SymmioSymbolManager to Diamond (EOA path)
+// ============================================================================
+
+export async function wireSymbolManager(diamondAddress: string, symbolManagerAddress: string, adminSigner: any): Promise<void> {
+	const roleHash = (name: string) => ethers.id(name)
+	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", diamondAddress, adminSigner)
+
+	await (await controlFacet.grantRole(symbolManagerAddress, roleHash("SYMBOL_MANAGER_ROLE"))).wait()
+	log.ok("grantRole(SymbolManager, SYMBOL_MANAGER_ROLE)")
+	await (await controlFacet.grantRole(symbolManagerAddress, roleHash("FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE"))).wait()
+	log.ok("grantRole(SymbolManager, FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE)")
+}
+
+// ============================================================================
+// Build SymmioSymbolManager wiring transactions for Safe path
+// ============================================================================
+
+export function buildSymbolManagerWiringTransactions(diamondAddress: string, symbolManagerAddress: string): WiringTransaction[] {
+	const roleHash = (name: string) => ethers.id(name)
+	const txs: WiringTransaction[] = []
+
+	const controlFacetIface = new ethers.Interface(["function grantRole(address account, bytes32 role)"])
+
+	const push = (to: string, iface: ethers.Interface, methodName: string, args: any[], description: string) => {
+		txs.push({
+			to,
+			value: "0",
+			calldata: iface.encodeFunctionData(methodName, args),
+			description,
+			iface,
+			methodName,
+			args,
+		})
+	}
+
+	push(
+		diamondAddress,
+		controlFacetIface,
+		"grantRole",
+		[symbolManagerAddress, roleHash("SYMBOL_MANAGER_ROLE")],
+		`grantRole(SymbolManager, SYMBOL_MANAGER_ROLE)`,
+	)
+	push(
+		diamondAddress,
+		controlFacetIface,
+		"grantRole",
+		[symbolManagerAddress, roleHash("FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE")],
+		`grantRole(SymbolManager, FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE)`,
+	)
+
+	return txs
+}
+
+// ============================================================================
+// Build InstantLayer template transactions for Safe path
+// ============================================================================
+
+export function buildTemplateTransactions(instantLayerAddress: string, configFile?: string): WiringTransaction[] {
+	const templates = loadTemplates(configFile)
+	const txs: WiringTransaction[] = []
+
+	const iface = new ethers.Interface([
+		"function addTemplate(string name, tuple(uint256[] insertionPoints, uint256[] sourceIndices, uint256[] sourceOffsets)[] operations)",
+	])
+
+	for (const template of templates) {
+		txs.push({
+			to: instantLayerAddress,
+			value: "0",
+			calldata: iface.encodeFunctionData("addTemplate", [template.name, template.operations]),
+			description: `addTemplate("${template.name}", ${template.operations.length} ops) on InstantLayer`,
+			iface,
+			methodName: "addTemplate",
+			args: [template.name, template.operations],
+		})
 	}
 
 	return txs

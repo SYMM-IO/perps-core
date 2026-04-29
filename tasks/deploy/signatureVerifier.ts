@@ -1,11 +1,15 @@
+import fs from "fs"
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
+import { loadUpgradeConfigShared } from "../../scripts/upgrade/utils/sharedConfig.js"
 import { readData, writeData } from "../utils/fs.js"
 import { DeploymentCheckpoint, createDeployedContract, saveCheckpoint } from "./checkpoint.js"
 import { DEPLOYMENT_LOG_FILE } from "./constants.js"
 import { getConnection } from "./helpers.js"
 import { logger } from "./logger.js"
+
+const DEFAULT_UPGRADE_CONFIG_FILE = "./scripts/upgrade/config/upgrade.json"
 
 type DeploySignatureVerifierArgs = {
 	admin?: string
@@ -18,7 +22,7 @@ export async function deploySignatureVerifier(hre: any, { admin, logData = true,
 	logger.section("MuonSignatureVerifier Deployment")
 
 	const [deployer] = await ethers.getSigners()
-	const resolvedAdmin = admin || deployer.address
+	const resolvedAdmin = admin || process.env.PROTOCOL_ADMIN || loadUpgradeConfigShared().protocolAdmin || deployer.address
 	logger.debug("Deploying MuonSignatureVerifier with account:", deployer.address)
 	logger.debug("SignatureVerifier admin:", resolvedAdmin)
 
@@ -41,6 +45,16 @@ export async function deploySignatureVerifier(hre: any, { admin, logData = true,
 	if (checkpoint) {
 		checkpoint.contracts.signatureVerifier = createDeployedContract(address, [resolvedAdmin])
 		saveCheckpoint(checkpoint)
+	}
+
+	// Write address back to upgrade.json -> newV085Parameters.signatureVerifierAddress
+	const configPath = process.env.UPGRADE_CONFIG_FILE ?? DEFAULT_UPGRADE_CONFIG_FILE
+	if (fs.existsSync(configPath)) {
+		const config = JSON.parse(fs.readFileSync(configPath, "utf-8"))
+		if (!config.newV085Parameters) config.newV085Parameters = {}
+		config.newV085Parameters.signatureVerifierAddress = address
+		fs.writeFileSync(configPath, JSON.stringify(config, null, "\t") + "\n")
+		logger.info(`  ✅ Written signatureVerifierAddress to ${configPath}`)
 	}
 
 	if (logData) {

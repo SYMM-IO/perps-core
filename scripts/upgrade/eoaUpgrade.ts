@@ -13,7 +13,8 @@
  *   5. Set new v0.8.5 parameters
  *   6. Deploy AccountLayer + InstantLayer and wire them
  *   7. Deploy SymmioPartyB implementation + register
- *   8. Grant migration role
+ *   8. Deploy SymmioSymbolManager and wire it
+ *   9. Grant migration role
  *
  * Usage:
  *   npx hardhat run scripts/upgrade/eoaUpgrade.ts --network localhost
@@ -24,9 +25,17 @@
 import fs from "fs"
 import path from "path"
 
-import { ethers } from "../../test/helpers/hardhat-connection.js"
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
-import { deployAccountLayerDiamond, deployInstantLayer, wireAccountLayerInstantLayer, setupInstantLayerTemplates } from "./utils/peripheralHelpers.js"
+import {
+	deployAccountLayerDiamond,
+	deployInstantLayer,
+	deploySymbolManager,
+	wireAccountLayerInstantLayer,
+	wireSymbolManager,
+	setupInstantLayerTemplates,
+} from "./utils/peripheralHelpers.js"
+import { resolveConfigFile } from "./utils/sharedConfig.js"
 import { deployFacets, buildDiamondCut, applyDiamondCut, setV085Parameters, type NewV085Parameters } from "./utils/upgradeHelpers.js"
 
 type Config = {
@@ -35,14 +44,13 @@ type Config = {
 	migrationRunner?: string
 	symmioFeeReceiver?: string
 	setupInstantLayerTemplates?: boolean
-	symmioPartyBAddress?: string
 	newV085Parameters?: NewV085Parameters
 }
 
-const CONFIG_FILE = process.env.UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/upgrade.json"
 const OUTPUT_DIR = "./scripts/upgrade/output"
 
 function loadConfig(): Config {
+	const CONFIG_FILE = resolveConfigFile("upgrade", connection.networkName, process.env.UPGRADE_CONFIG_FILE)
 	if (!fs.existsSync(CONFIG_FILE)) return {}
 	return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8")) as Config
 }
@@ -59,12 +67,12 @@ async function main() {
 	log.header("Symmio v0.8.5 EOA Upgrade")
 	log.kv("Diamond", log.addr(DIAMOND_ADDRESS))
 
-	log.setSteps(8)
+	log.setSteps(9)
 
 	// Step 1: Deploy facets
 	let t = log.step("Deploy v0.8.5 facets")
 	if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
-	const facetsOutFile = path.join(OUTPUT_DIR, "deployed-facets.json")
+	const facetsOutFile = path.join(OUTPUT_DIR, `deployed-facets-${connection.networkName}.json`)
 	const { facets: newFacets, selectorSignatures } = await deployFacets(facetsOutFile)
 	log.ok(`${Object.keys(newFacets).length} facets ready`)
 	log.stepDone(t)
@@ -91,7 +99,20 @@ async function main() {
 	// Step 3: Pause system
 	t = log.step("Pause system")
 	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", DIAMOND_ADDRESS)
-	const signer = await ethers.provider.getSigner()
+	let signer
+	const protocolAdminAddress = config.protocolAdmin
+	if (protocolAdminAddress) {
+		const signers = await ethers.getSigners()
+		for (const s of signers) {
+			if ((await s.getAddress()).toLowerCase() === protocolAdminAddress.toLowerCase()) {
+				signer = s
+				break
+			}
+		}
+		if (!signer) throw new Error(`No signer found for protocolAdmin ${protocolAdminAddress}. Add TEAM_DEPLOYER to the Hardhat keystore.`)
+	} else {
+		signer = await ethers.provider.getSigner()
+	}
 	const signerAddress = await signer.getAddress()
 	await (await controlFacet.setAdmin(signerAddress)).wait()
 	log.ok("Admin set")
@@ -146,29 +167,50 @@ async function main() {
 	}
 	log.stepDone(t)
 
-	// Step 7: Deploy SymmioPartyB implementation + register on InstantLayer
-	t = log.step("Deploy SymmioPartyB")
-	const PARTYB_ADDRESS = process.env.SYMMIO_PARTYB_ADDRESS ?? config.symmioPartyBAddress
+	// Step 7: Deploy SymmioPartyB implementation + register PartyBs on InstantLayer
+	t = log.step("Deploy SymmioPartyB + register PartyBs")
 	const SymmioPartyBFactory = await ethers.getContractFactory("SymmioPartyB")
 	const symmioPartyBImpl = await SymmioPartyBFactory.deploy()
 	await symmioPartyBImpl.waitForDeployment()
 	log.deployed("Implementation", await symmioPartyBImpl.getAddress())
 
-	if (PARTYB_ADDRESS) {
-		const il = await ethers.getContractAt("InstantLayer", ilResult.address, signer)
-		const isRegistered = await il.registeredPartyBs(PARTYB_ADDRESS)
-		if (!isRegistered) {
-			await (await il.registerPartyBs([PARTYB_ADDRESS])).wait()
-			log.ok(`Registered ${log.addr(PARTYB_ADDRESS)} on InstantLayer`)
+	// Register PartyBs on InstantLayer (from partyBList.json)
+	const PARTYB_LIST_FILE = resolveConfigFile("partyBList", connection.networkName, process.env.PARTYB_LIST_FILE)
+	if (fs.existsSync(PARTYB_LIST_FILE)) {
+		const listConfig = JSON.parse(fs.readFileSync(PARTYB_LIST_FILE, "utf-8")) as {
+			partyBs?: Record<string, string[]>
+			registerOnInstantLayer?: boolean
+		}
+		if (listConfig.registerOnInstantLayer) {
+			const partyBsToRegister = Object.values(listConfig.partyBs ?? {})
+				.flat()
+				.filter(a => ethers.isAddress(a))
+			const il = await ethers.getContractAt("InstantLayer", ilResult.address, signer)
+			for (const partyB of partyBsToRegister) {
+				const isRegistered = await il.registeredPartyBs(partyB)
+				if (!isRegistered) {
+					await (await il.registerPartyBs([partyB])).wait()
+					log.ok(`Registered ${log.addr(partyB)} on InstantLayer`)
+				} else {
+					log.ok(`${log.addr(partyB)} already registered on InstantLayer`)
+				}
+			}
 		} else {
-			log.ok(`${log.addr(PARTYB_ADDRESS)} already registered on InstantLayer`)
+			log.ok("registerOnInstantLayer is false — skipping IL registration")
 		}
 	} else {
-		log.warn("No symmioPartyBAddress configured — proxy upgrade + registration must be done separately")
+		log.warn(`${PARTYB_LIST_FILE} not found — skipping IL registration`)
 	}
 	log.stepDone(t)
 
-	// Step 8: Grant migration role
+	// Step 8: Deploy SymmioSymbolManager and wire it
+	t = log.step("Deploy SymmioSymbolManager")
+	const smStateFile = path.join(OUTPUT_DIR, "deployed-symbolmanager.json")
+	const smResult = await deploySymbolManager(DIAMOND_ADDRESS, signerAddress, smStateFile)
+	await wireSymbolManager(DIAMOND_ADDRESS, smResult.address, signer)
+	log.stepDone(t)
+
+	// Step 9: Grant migration role
 	t = log.step("Grant migration role")
 	if (MIGRATION_RUNNER) {
 		await (await controlFacet.grantRole(MIGRATION_RUNNER, ethers.id("MIGRATION_ROLE"))).wait()
@@ -183,6 +225,7 @@ async function main() {
 		["Diamond", DIAMOND_ADDRESS],
 		["AccountLayer", alResult.diamondAddress],
 		["InstantLayer", ilResult.address],
+		["SymbolManager", smResult.address],
 		["Duration", scriptTimer.fmt()],
 	])
 	log.nextSteps([

@@ -60,6 +60,7 @@
 		"access": "public"
 	},
 	"scripts": {
+		"postinstall": "node scripts/patch-hardhat-verify.js",
 		"prepare": "husky",
 		"clean": "shx rm -rf ./artifacts ./cache ./coverage ./src/types ./coverage.json && yarn typechain",
 		"compile": "hardhat compile",

@@ -1,7 +1,7 @@
 /**
- * Subgraph data fetching utilities for migration input preparation.
+ * Subgraph data fetching utilities for migration input preparation and symbol management.
  *
- * Fetches open quotes and partyB balance data from the Goldsky stage subgraph
+ * Fetches open quotes, partyB balance data, and symbols from the Goldsky stage subgraph
  * with pagination (max 1000 per request).
  */
 
@@ -33,6 +33,12 @@ export type SubgraphOpenQuotesResult = {
 export type SubgraphPartyBBalancesResult = {
 	entries: PartyBBalanceEntry[]
 	partyBs: string[]
+}
+
+export type SubgraphSymbol = {
+	id: string
+	symbolId: string
+	name: string
 }
 
 async function fetchGraphQL(endpoint: string, query: string): Promise<any> {
@@ -143,4 +149,37 @@ export async function fetchPartyBBalances(endpoint: string, pageSize: number = D
 		entries: allEntries,
 		partyBs: [...partyBSet].sort(),
 	}
+}
+
+/**
+ * Fetch all symbols from the subgraph with their types, paginated by id.
+ */
+export async function fetchSymbols(endpoint: string, pageSize: number = DEFAULT_PAGE_SIZE): Promise<SubgraphSymbol[]> {
+	const allSymbols: SubgraphSymbol[] = []
+	let lastId = ""
+
+	while (true) {
+		const whereClause = lastId ? `{ id_gt: "${lastId}" }` : `{}`
+		const query = `{
+			symbols(
+				first: ${pageSize}
+				where: ${whereClause}
+				orderBy: id
+				orderDirection: asc
+			) {
+				id
+				symbolId
+				name
+			}
+		}`
+
+		const data = await fetchGraphQL(endpoint, query)
+		const symbols: SubgraphSymbol[] = data.symbols
+
+		allSymbols.push(...symbols)
+		if (symbols.length < pageSize) break
+		lastId = symbols[symbols.length - 1].id
+	}
+
+	return allSymbols
 }
