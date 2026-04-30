@@ -24,6 +24,10 @@ interface IViewFacet {
 
 	function lockedAffiliateBalances(address affiliate) external view returns (uint256);
 
+	function generalBadDebt() external view returns (uint256);
+
+	function paused() external view returns (bool);
+
 	// ── Per-user state ──
 
 	function nonces(address user) external view returns (uint256);
@@ -95,6 +99,8 @@ interface IViewFacet {
 	function creditLinePaused(address affiliate) external view returns (bool);
 
 	function creditLineBlacklisted(address affiliate, address user) external view returns (bool);
+
+	function creditLineBadDebt(address affiliate) external view returns (uint256);
 
 	// ── Cap-change fee / throttle ──
 

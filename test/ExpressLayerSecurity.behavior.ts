@@ -674,6 +674,94 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			)
 		})
 
+		it("should reject validator signatures passed in descending order", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, context, user } = fixture
+
+			const signers = await ethers.getSigners()
+			let vA = signers[6]
+			let vB = signers[7]
+			if (vA.address.toLowerCase() < vB.address.toLowerCase()) {
+				const tmp = vA
+				vA = vB
+				vB = tmp
+			}
+
+			await expressProvider.setValidator(fixture.affiliate, vA.address, true)
+			await expressProvider.setValidator(fixture.affiliate, vB.address, true)
+			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 2)
+
+			const withdrawAmount = 500n * 10n ** 18n
+			const expressAddr = await expressProvider.getAddress()
+			const parts = [
+				{
+					id: 0n,
+					amount: withdrawAmount,
+					chainId: 31337n,
+					receiver: fixture.receiver.address,
+					virtualProvider: ethers.ZeroAddress,
+					expressProvider: expressAddr,
+				},
+			]
+
+			const partsHash = computePartsHash(parts)
+			const now = (await ethers.provider.getBlock("latest"))!.timestamp
+			const deadline = now + 3600
+			const nonce = await expressProvider.nonces(user.address)
+
+			const signature = await signWithdrawOption(expressProvider, fixture.botSigner, {
+				user: user.address,
+				nonce,
+				optionType: 1,
+				availableAt: 0,
+				affiliate: fixture.affiliate,
+				affiliateAmount: 0n,
+				creditAmount: 0n,
+				fee: 0n,
+				operatorFee: 0n,
+				partsHash,
+				deadline,
+			})
+
+			const sigA = await signValidatorApproval(expressProvider, vA, {
+				user: user.address,
+				nonce,
+				amount: withdrawAmount,
+				timestamp: now,
+				symmioNonce: 0n,
+				symmio: context.diamond,
+			})
+			const sigB = await signValidatorApproval(expressProvider, vB, {
+				user: user.address,
+				nonce,
+				amount: withdrawAmount,
+				timestamp: now,
+				symmioNonce: 0n,
+				symmio: context.diamond,
+			})
+
+			const providerData = encodeProviderData(
+				nonce,
+				1,
+				0,
+				fixture.affiliate,
+				0n,
+				0n,
+				0n,
+				0n,
+				deadline,
+				signature,
+				undefined,
+				[sigA, sigB],
+				[now, now],
+			)
+
+			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)).to.be.revertedWithCustomError(
+				expressProvider,
+				"DuplicateValidator",
+			)
+		})
+
 		it("should reject duplicate validator signatures (DuplicateValidator)", async function () {
 			const fixture = await deployFixture()
 			const { expressProvider, context, user } = fixture
@@ -1010,6 +1098,21 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				expressProvider,
 				"InvalidValidator",
 			)
+		})
+
+		it("should reject when bot's SIGNER_ROLE is revoked between signing and submission", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, context, user, botSigner } = fixture
+
+			const { parts, providerData } = await initiateInstantWithdraw(fixture)
+
+			await expressProvider.revokeRole(SIGNER_ROLE, botSigner.address)
+
+			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)).to.be.revertedWithCustomError(
+				expressProvider,
+				"InvalidSigner",
+			)
+			expect(await expressProvider.nonces(user.address)).to.equal(0n)
 		})
 
 		it("should accept when more than minValidatorSignatures are provided (extra are still validated)", async function () {
@@ -1896,6 +1999,26 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			// Deposit zero to affiliate
 			const { affiliate, affiliateFunding } = await deployFixture()
 			// Note: fresh fixture for isolation; let's check on the original fixture instead
+		})
+
+		it("should accept withdrawFromGeneral(0) as a no-op emitting GeneralWithdraw(0)", async function () {
+			const { expressProvider, generalFunding, collateral } = await deployFixture()
+			const expressAddr = await expressProvider.getAddress()
+			const held = await collateral.balanceOf(expressAddr)
+
+			await expect(expressProvider.withdrawFromGeneral(0n)).to.emit(expressProvider, "GeneralWithdraw").withArgs(0n)
+			expect(await expressProvider.generalBalance()).to.equal(generalFunding)
+			expect(await collateral.balanceOf(expressAddr)).to.equal(held)
+		})
+
+		it("should accept withdrawFromAffiliate(0) as a no-op emitting AffiliateWithdraw(0)", async function () {
+			const { expressProvider, affiliate, affiliateFunding, collateral } = await deployFixture()
+			const expressAddr = await expressProvider.getAddress()
+			const held = await collateral.balanceOf(expressAddr)
+
+			await expect(expressProvider.withdrawFromAffiliate(affiliate, 0n)).to.emit(expressProvider, "AffiliateWithdraw").withArgs(affiliate, 0n)
+			expect(await expressProvider.affiliateBalances(affiliate)).to.equal(affiliateFunding)
+			expect(await collateral.balanceOf(expressAddr)).to.equal(held)
 		})
 
 		it("should keep affiliate pools isolated from each other", async function () {

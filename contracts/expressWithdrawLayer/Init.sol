@@ -42,5 +42,6 @@ contract Init {
 		LibAccessControl.grantRole(admin, LibAccessControl.SPONSOR_MANAGER_ROLE);
 		LibAccessControl.grantRole(admin, LibAccessControl.FEE_CLAIMER_ROLE);
 		LibAccessControl.grantRole(admin, LibAccessControl.WITHDRAWER_ROLE);
+		LibAccessControl.grantRole(admin, LibAccessControl.PAUSER_ROLE);
 	}
 }

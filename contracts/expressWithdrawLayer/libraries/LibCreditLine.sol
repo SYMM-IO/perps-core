@@ -32,6 +32,7 @@ library LibCreditLine {
 	error DebtExceedsPercentCap();
 	error NoDebtForRequest();
 	error DebtAlreadyActivated();
+	error DebtAlreadyReserved();
 	error DebtNotActivated();
 	error AffiliateLimitExceedsProtocol();
 	error CreditLineNotConfigured();
@@ -44,6 +45,7 @@ library LibCreditLine {
 	event DebtActivated(address indexed affiliate, address indexed user, uint256 indexed requestId, uint256 amount);
 	event DebtSettled(address indexed affiliate, address indexed user, uint256 indexed requestId, uint256 amount);
 	event DebtCancelled(address indexed affiliate, address indexed user, uint256 indexed requestId, uint256 amount);
+	event BadDebtAccrued(address indexed affiliate, address indexed user, uint256 indexed requestId, uint256 amount);
 
 	// ═══════════════════════════════════════════════════════════════════
 	//                         DEBT OPERATIONS
@@ -81,6 +83,7 @@ library LibCreditLine {
 
 		// Record debt
 		bytes32 key = _key(user, requestId);
+		if (ac.requestDebt[key] != 0) revert DebtAlreadyReserved();
 		ac.requestDebt[key] = creditAmount;
 		ac.reservedDebt += creditAmount;
 
@@ -108,11 +111,26 @@ library LibCreditLine {
 	}
 
 	/// @dev Covers credit loss on post-payout rollback (suspend/force-cancel after PROCESSED).
-	///      Deducts from affiliate pool and settles credit debt.
+	///      Caps the deduction at the affiliate's unlocked balance so other pending requests
+	///      of the same affiliate keep their `locked <= balance` invariant. Any shortfall
+	///      is accrued as bad debt.
 	function coverLoss(IERC20, address, address user, uint256 requestId, WithdrawInfo storage info) internal {
 		if (info.creditAmount == 0) return;
 
-		PoolStorage.layout().affiliateBalances[info.affiliate] -= info.creditAmount;
+		PoolStorage.Layout storage p = PoolStorage.layout();
+		uint256 balance = p.affiliateBalances[info.affiliate];
+		uint256 locked = p.lockedAffiliateBalances[info.affiliate];
+		uint256 unlocked = balance > locked ? balance - locked : 0;
+		uint256 coverable = unlocked < info.creditAmount ? unlocked : info.creditAmount;
+		uint256 deficit = info.creditAmount - coverable;
+
+		if (coverable > 0) {
+			p.affiliateBalances[info.affiliate] = balance - coverable;
+		}
+		if (deficit > 0) {
+			CreditLineStorage.layout().affiliates[info.affiliate].badDebt += deficit;
+			emit BadDebtAccrued(info.affiliate, user, requestId, deficit);
+		}
 
 		_settleDebt(info.affiliate, user, requestId);
 	}
@@ -158,6 +176,7 @@ library LibCreditLine {
 		bytes32 key = _key(user, requestId);
 		uint256 amount = ac.requestDebt[key];
 		if (amount == 0) revert NoDebtForRequest();
+		if (ac.requestActivated[key]) revert DebtAlreadyActivated();
 
 		ac.reservedDebt -= amount;
 		delete ac.requestDebt[key];

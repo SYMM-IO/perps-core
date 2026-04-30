@@ -23,6 +23,7 @@ import { GlobalStorage } from "../../storages/GlobalStorage.sol";
 import { PoolStorage } from "../../storages/PoolStorage.sol";
 import { FeeStorage } from "../../storages/FeeStorage.sol";
 
+import { Pausable } from "../../utils/Pausable.sol";
 import { ReentrancyGuard } from "../../utils/ReentrancyGuard.sol";
 
 /// @title AccelerateFacet
@@ -33,14 +34,14 @@ import { ReentrancyGuard } from "../../utils/ReentrancyGuard.sol";
 ///         collateral from core), pool funds are locked and deducted, and the user is
 ///         paid immediately. On cap breach: the whole tx reverts atomically, preserving
 ///         the STANDARD request so the same signature can be retried later.
-contract AccelerateFacet is IAccelerateFacet, IOperatorEvents, ReentrancyGuard {
+contract AccelerateFacet is IAccelerateFacet, IOperatorEvents, Pausable, ReentrancyGuard {
 	function accelerateWithdraw(
 		address user,
 		uint256 requestId,
 		WithdrawReceiverPart[] calldata parts,
 		bytes calldata accelerateOfferData,
 		bytes calldata creditDataRaw
-	) external nonReentrant {
+	) external nonReentrant whenNotPaused {
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
 		WithdrawInfo storage info = g.withdrawInfos[user][requestId];
 
@@ -85,14 +86,12 @@ contract AccelerateFacet is IAccelerateFacet, IOperatorEvents, ReentrancyGuard {
 		info.affiliateAmount = offer.affiliateAmount;
 		info.creditAmount = offer.creditAmount;
 
-		// Activate the debt and pull collateral from core via advanceWithdraw.
-		LibCreditLine.activate(g.symmio, user, requestId, info);
+		_unlockAndDeductPools(info);
+		info.status = Status.PROCESSED;
 
 		// ── Interactions ──
+		LibCreditLine.activate(g.symmio, user, requestId, info);
 		_collectAndTransfer(user, requestId, parts, info);
-		_unlockAndDeductPools(info);
-
-		info.status = Status.PROCESSED;
 
 		emit WithdrawAccelerated(user, requestId, affiliate, offer.affiliateAmount, offer.creditAmount, newGeneralAmount);
 		emit WithdrawProcessed(user, requestId);
