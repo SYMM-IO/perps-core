@@ -58,4 +58,6 @@ library LibErrors {
 	// ── Cap-change fee / throttle ──
 	error NoOpCapChange();
 	error CapChangeFeeNotConfigured();
+	// ── Credit bad debt ──
+	error InvalidRepayAmount();
 }

@@ -4845,4 +4845,343 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			await expect(expressProvider.connect(user).clearRequestDebt(affiliate, user.address, 1n)).to.be.reverted
 		})
 	})
+
+	describe("Credit bad debt accounting", function () {
+		async function accrueBadDebt(fixture: any, opts: { affiliateAmount: bigint; creditAmount: bigint; withdrawAmount: bigint }): Promise<bigint> {
+			const { user, botSigner, receiver, expressProvider, context, affiliate } = fixture
+			const expressAddr = await expressProvider.getAddress()
+			const nonce = await expressProvider.nonces(user.address)
+			const now = (await ethers.provider.getBlock("latest"))!.timestamp
+			const deadline = now + 3600
+
+			const parts = [
+				{
+					id: 0n,
+					amount: opts.withdrawAmount,
+					chainId: 31337n,
+					receiver: receiver.address,
+					virtualProvider: ethers.ZeroAddress,
+					expressProvider: expressAddr,
+				},
+			]
+			const sig = await signWithdrawOption(expressProvider, botSigner, {
+				user: user.address,
+				nonce,
+				optionType: 1,
+				availableAt: 0,
+				affiliate,
+				affiliateAmount: opts.affiliateAmount,
+				creditAmount: opts.creditAmount,
+				fee: 0n,
+				operatorFee: 0n,
+				partsHash: computePartsHash(parts),
+				deadline,
+			})
+			const creditDataRaw = buildCreditData(100_000n * 10n ** 18n, now)
+			const pd = encodeProviderData(
+				nonce,
+				1,
+				0,
+				affiliate,
+				opts.affiliateAmount,
+				opts.creditAmount,
+				0n,
+				0n,
+				deadline,
+				sig,
+				undefined,
+				undefined,
+				undefined,
+				creditDataRaw,
+			)
+			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, pd)
+			const requestId = await context.viewFacet.getLastWithdrawRequestId(user.address)
+
+			await ethers.provider.send("evm_increaseTime", [21])
+			await ethers.provider.send("evm_mine", [])
+			await expressProvider.connect(fixture.operator).processWithdraw(user.address, requestId, parts)
+
+			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(user.address)
+			await context.withdrawFacet.connect(context.signers.admin).suspendWithdrawRequest(user.address, requestId)
+
+			await context.pauseControlFacet.connect(context.signers.admin).unsuspendedAddress(user.address)
+
+			return await expressProvider.creditLineBadDebt(affiliate)
+		}
+
+		// Build credit-backed INSTANT provider data without submitting it yet.
+		async function buildCreditWithdraw(fixture: any, opts: { creditAmount: bigint; withdrawAmount: bigint; nonceOverride?: bigint }) {
+			const { user, botSigner, receiver, expressProvider, affiliate } = fixture
+			const expressAddr = await expressProvider.getAddress()
+			const nonce = opts.nonceOverride ?? (await expressProvider.nonces(user.address))
+			const now = (await ethers.provider.getBlock("latest"))!.timestamp
+			const deadline = now + 3600
+
+			const parts = [
+				{
+					id: 0n,
+					amount: opts.withdrawAmount,
+					chainId: 31337n,
+					receiver: receiver.address,
+					virtualProvider: ethers.ZeroAddress,
+					expressProvider: expressAddr,
+				},
+			]
+			const sig = await signWithdrawOption(expressProvider, botSigner, {
+				user: user.address,
+				nonce,
+				optionType: 1,
+				availableAt: 0,
+				affiliate,
+				affiliateAmount: 0n,
+				creditAmount: opts.creditAmount,
+				fee: 0n,
+				operatorFee: 0n,
+				partsHash: computePartsHash(parts),
+				deadline,
+			})
+			const creditDataRaw = buildCreditData(100_000n * 10n ** 18n, now)
+			const pd = encodeProviderData(
+				nonce,
+				1,
+				0,
+				affiliate,
+				0n,
+				opts.creditAmount,
+				0n,
+				0n,
+				deadline,
+				sig,
+				undefined,
+				undefined,
+				undefined,
+				creditDataRaw,
+			)
+			return { parts, providerData: pd }
+		}
+
+		it("badDebt counts toward absolute cap; new reservation past cap - badDebt reverts", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, deployer, affiliate, user, context } = fixture
+
+			const cap = 1500n * 10n ** 18n
+			await expressProvider.connect(deployer).setCreditLineProtocolConfig(affiliate, cap, 0)
+
+			// affiliate pool = 5000 (from fixture). Drain so that an 800-credit suspend leaves a deficit.
+			// withdrawAmount = 7000 → expressAmount = 7000. affiliateAmount = 4500, creditAmount = 1500.
+			// On accept: pool locks 4500 → unlocked = 500. On process: pool decreases by 4500 → balance = 500.
+			// On post-payout suspend: coverLoss tries to cover 1500 from unlocked = 500. badDebt = 1000.
+			const badDebt = await accrueBadDebt(fixture, {
+				affiliateAmount: 4500n * 10n ** 18n,
+				creditAmount: cap, // exactly at cap; activeDebt = cap then suspends → badDebt accrues
+				withdrawAmount: 7000n * 10n ** 18n,
+			})
+			expect(badDebt).to.be.gt(0n)
+			expect(badDebt).to.be.lte(cap)
+
+			// remaining capacity is cap - badDebt; one wei over must revert
+			const remaining = cap - badDebt
+			const tooMuch = remaining + 1n
+			const overOffer = await buildCreditWithdraw(fixture, { creditAmount: tooMuch, withdrawAmount: 8000n * 10n ** 18n })
+			await expect(
+				context.withdrawFacet.connect(user).initiateWithdraw(overOffer.parts, false, overOffer.providerData),
+			).to.be.revertedWithCustomError(expressProvider, "DebtExceedsAbsoluteCap")
+
+			// At the boundary it must succeed (only matters if remaining > 0)
+			if (remaining > 0n) {
+				const exactOffer = await buildCreditWithdraw(fixture, { creditAmount: remaining, withdrawAmount: 8000n * 10n ** 18n })
+				await context.withdrawFacet.connect(user).initiateWithdraw(exactOffer.parts, false, exactOffer.providerData)
+				expect(await expressProvider.creditLineReservedDebt(affiliate)).to.equal(remaining)
+			}
+		})
+
+		it("badDebt counts toward bps cap as well", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, deployer, affiliate, user, context } = fixture
+
+			// Accrue badDebt first (still uncapped at this point)
+			const badDebt = await accrueBadDebt(fixture, {
+				affiliateAmount: 4500n * 10n ** 18n,
+				creditAmount: 1500n * 10n ** 18n,
+				withdrawAmount: 7000n * 10n ** 18n,
+			})
+			expect(badDebt).to.be.gt(0n)
+
+			const eligibleBase = 100_000n * 10n ** 18n
+			const bps = (badDebt * 10000n) / eligibleBase
+			expect(bps).to.be.gt(0n)
+			await expressProvider.connect(deployer).setCreditLineProtocolConfig(affiliate, 0, bps)
+
+			const overOffer = await buildCreditWithdraw(fixture, { creditAmount: 1n, withdrawAmount: 8000n * 10n ** 18n })
+			await expect(
+				context.withdrawFacet.connect(user).initiateWithdraw(overOffer.parts, false, overOffer.providerData),
+			).to.be.revertedWithCustomError(expressProvider, "DebtExceedsPercentCap")
+		})
+
+		it("repayCreditBadDebt restores capacity and credits the affiliate pool", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, deployer, affiliate, collateral, context, user } = fixture
+
+			const cap = 1500n * 10n ** 18n
+			await expressProvider.connect(deployer).setCreditLineProtocolConfig(affiliate, cap, 0)
+
+			const badDebt = await accrueBadDebt(fixture, {
+				affiliateAmount: 4500n * 10n ** 18n,
+				creditAmount: cap,
+				withdrawAmount: 7000n * 10n ** 18n,
+			})
+			expect(badDebt).to.be.gt(0n)
+
+			const expressAddr = await expressProvider.getAddress()
+			const poolBefore = await expressProvider.affiliateBalances(affiliate)
+			const diamondBalBefore = await collateral.balanceOf(expressAddr)
+
+			// Fund the deployer to act as the repayer
+			await collateral.mint(deployer.address, badDebt)
+			await collateral.connect(deployer).approve(expressAddr, badDebt)
+
+			await expect(expressProvider.connect(deployer).repayCreditBadDebt(affiliate, badDebt))
+				.to.emit(expressProvider, "CreditBadDebtRepaid")
+				.withArgs(affiliate, deployer.address, badDebt)
+
+			// Bad debt cleared; pool credited; tokens received
+			expect(await expressProvider.creditLineBadDebt(affiliate)).to.equal(0n)
+			expect(await expressProvider.affiliateBalances(affiliate)).to.equal(poolBefore + badDebt)
+			expect(await collateral.balanceOf(expressAddr)).to.equal(diamondBalBefore + badDebt)
+
+			// Capacity fully restored — a fresh reservation up to `cap` succeeds
+			const fullOffer = await buildCreditWithdraw(fixture, { creditAmount: cap, withdrawAmount: 8000n * 10n ** 18n })
+			await context.withdrawFacet.connect(user).initiateWithdraw(fullOffer.parts, false, fullOffer.providerData)
+			expect(await expressProvider.creditLineReservedDebt(affiliate)).to.equal(cap)
+		})
+
+		it("partial repayment restores partial capacity", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, deployer, affiliate, collateral, context, user } = fixture
+
+			const cap = 2000n * 10n ** 18n
+			await expressProvider.connect(deployer).setCreditLineProtocolConfig(affiliate, cap, 0)
+
+			const badDebt = await accrueBadDebt(fixture, {
+				affiliateAmount: 4500n * 10n ** 18n,
+				creditAmount: cap,
+				withdrawAmount: 7000n * 10n ** 18n,
+			})
+			expect(badDebt).to.be.gt(0n)
+
+			const half = badDebt / 2n
+			expect(half).to.be.gt(0n)
+
+			const expressAddr = await expressProvider.getAddress()
+			await collateral.mint(deployer.address, half)
+			await collateral.connect(deployer).approve(expressAddr, half)
+			await expressProvider.connect(deployer).repayCreditBadDebt(affiliate, half)
+
+			expect(await expressProvider.creditLineBadDebt(affiliate)).to.equal(badDebt - half)
+
+			// Available capacity = cap - remaining badDebt
+			const remaining = cap - (badDebt - half)
+			const exactOffer = await buildCreditWithdraw(fixture, { creditAmount: remaining, withdrawAmount: 8000n * 10n ** 18n })
+			await context.withdrawFacet.connect(user).initiateWithdraw(exactOffer.parts, false, exactOffer.providerData)
+			expect(await expressProvider.creditLineReservedDebt(affiliate)).to.equal(remaining)
+		})
+
+		it("cap check sums reservedDebt + badDebt + new reservation correctly", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, deployer, affiliate, context, user } = fixture
+
+			const cap = 2000n * 10n ** 18n
+			await expressProvider.connect(deployer).setCreditLineProtocolConfig(affiliate, cap, 0)
+
+			const badDebt = await accrueBadDebt(fixture, {
+				affiliateAmount: 4500n * 10n ** 18n,
+				creditAmount: cap,
+				withdrawAmount: 7000n * 10n ** 18n,
+			})
+			expect(badDebt).to.be.gt(0n)
+
+			// Reserve up to remaining capacity. withdrawAmount == creditAmount so generalAmount = 0
+			// and the general pool isn't locked by this fresh request.
+			const remaining = cap - badDebt
+			expect(remaining).to.be.gt(0n)
+			const fillOffer = await buildCreditWithdraw(fixture, { creditAmount: remaining, withdrawAmount: remaining })
+			await context.withdrawFacet.connect(user).initiateWithdraw(fillOffer.parts, false, fillOffer.providerData)
+			expect(await expressProvider.creditLineReservedDebt(affiliate)).to.equal(remaining)
+
+			// reservedDebt = remaining, badDebt = badDebt, cap full. A 1 wei credit reservation
+			// must revert because reserved + badDebt + 1 > cap.
+			const overOffer = await buildCreditWithdraw(fixture, { creditAmount: 1n, withdrawAmount: 1n })
+			await expect(
+				context.withdrawFacet.connect(user).initiateWithdraw(overOffer.parts, false, overOffer.providerData),
+			).to.be.revertedWithCustomError(expressProvider, "DebtExceedsAbsoluteCap")
+		})
+
+		it("repayCreditBadDebt rejects zero or > badDebt amounts", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, deployer, affiliate } = fixture
+
+			// With no badDebt yet, even repaying 1 wei must revert
+			await expect(expressProvider.connect(deployer).repayCreditBadDebt(affiliate, 0n)).to.be.revertedWithCustomError(
+				expressProvider,
+				"InvalidRepayAmount",
+			)
+			await expect(expressProvider.connect(deployer).repayCreditBadDebt(affiliate, 1n)).to.be.revertedWithCustomError(
+				expressProvider,
+				"InvalidRepayAmount",
+			)
+
+			const badDebt = await accrueBadDebt(fixture, {
+				affiliateAmount: 4500n * 10n ** 18n,
+				creditAmount: 1500n * 10n ** 18n,
+				withdrawAmount: 7000n * 10n ** 18n,
+			})
+
+			await expect(expressProvider.connect(deployer).repayCreditBadDebt(affiliate, 0n)).to.be.revertedWithCustomError(
+				expressProvider,
+				"InvalidRepayAmount",
+			)
+			await expect(expressProvider.connect(deployer).repayCreditBadDebt(affiliate, badDebt + 1n)).to.be.revertedWithCustomError(
+				expressProvider,
+				"InvalidRepayAmount",
+			)
+		})
+
+		it("repayCreditBadDebt is permissionless (any account can pay)", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, deployer, affiliate, collateral, user } = fixture
+
+			const badDebt = await accrueBadDebt(fixture, {
+				affiliateAmount: 4500n * 10n ** 18n,
+				creditAmount: 1500n * 10n ** 18n,
+				withdrawAmount: 7000n * 10n ** 18n,
+			})
+
+			const allSigners = await ethers.getSigners()
+			const stranger = allSigners[19]
+			expect(await expressProvider.hasRole(ethers.keccak256(ethers.toUtf8Bytes("WITHDRAWER_ROLE")), stranger.address)).to.equal(false)
+
+			await collateral.mint(stranger.address, badDebt)
+			await collateral.connect(stranger).approve(await expressProvider.getAddress(), badDebt)
+
+			await expect(expressProvider.connect(stranger).repayCreditBadDebt(affiliate, badDebt))
+				.to.emit(expressProvider, "CreditBadDebtRepaid")
+				.withArgs(affiliate, stranger.address, badDebt)
+			expect(await expressProvider.creditLineBadDebt(affiliate)).to.equal(0n)
+		})
+
+		it("repayCreditBadDebt is blocked while paused", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, deployer, affiliate } = fixture
+
+			await accrueBadDebt(fixture, {
+				affiliateAmount: 4500n * 10n ** 18n,
+				creditAmount: 1500n * 10n ** 18n,
+				withdrawAmount: 7000n * 10n ** 18n,
+			})
+
+			await expressProvider.connect(deployer).setPaused(true)
+
+			await expect(expressProvider.connect(deployer).repayCreditBadDebt(affiliate, 1n)).to.be.revertedWithCustomError(expressProvider, "Paused")
+		})
+	})
 }

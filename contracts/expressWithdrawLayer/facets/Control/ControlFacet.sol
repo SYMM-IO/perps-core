@@ -367,4 +367,16 @@ contract ControlFacet is IControlFacet, Pausable, ReentrancyGuard {
 		delete ac.requestActivated[key];
 		emit RequestDebtCleared(affiliate, user, requestId, amount, wasActivated);
 	}
+
+	/// @notice Repays accrued bad debt for an affiliate. Pulls `amount` collateral from the
+	///         caller, decrements `badDebt`, and credits the affiliate pool. Permissionless —
+	///         anyone willing to pay can restore the affiliate's credit capacity.
+	function repayCreditBadDebt(address affiliate, uint256 amount) external nonReentrant whenNotPaused {
+		AffiliateCredit storage ac = CreditLineStorage.layout().affiliates[affiliate];
+		if (amount == 0 || amount > ac.badDebt) revert LibErrors.InvalidRepayAmount();
+		ac.badDebt -= amount;
+		PoolStorage.layout().affiliateBalances[affiliate] += amount;
+		GlobalStorage.layout().collateral.safeTransferFrom(msg.sender, address(this), amount);
+		emit CreditBadDebtRepaid(affiliate, msg.sender, amount);
+	}
 }
