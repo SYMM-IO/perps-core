@@ -22,8 +22,10 @@ import { FeeStorage } from "../../storages/FeeStorage.sol";
 import { ValidatorStorage } from "../../storages/ValidatorStorage.sol";
 
 import { IControlFacet } from "./IControlFacet.sol";
+import { Pausable } from "../../utils/Pausable.sol";
+import { ReentrancyGuard } from "../../utils/ReentrancyGuard.sol";
 
-contract ControlFacet is IControlFacet {
+contract ControlFacet is IControlFacet, Pausable, ReentrancyGuard {
 	using SafeERC20 for IERC20;
 
 	// ── Config setters ──
@@ -103,7 +105,7 @@ contract ControlFacet is IControlFacet {
 	/// @notice Self-service cap adjustment for an affiliate. Decreases are always free;
 	///         increases count against the per-window free allowance and charge a fee once exhausted.
 	///         msg.sender is treated as the affiliate identity.
-	function setMyCreditLineConfig(uint256 maxDebt, uint256 maxDebtBps) external {
+	function setMyCreditLineConfig(uint256 maxDebt, uint256 maxDebtBps) external whenNotPaused {
 		address affiliate = msg.sender;
 		CreditLineStorage.Layout storage cl = CreditLineStorage.layout();
 		AffiliateCredit storage ac = cl.affiliates[affiliate];
@@ -201,7 +203,7 @@ contract ControlFacet is IControlFacet {
 
 	// ── Fee claims ──
 
-	function claimFees(address affiliate, address to) external {
+	function claimFees(address affiliate, address to) external nonReentrant whenNotPaused {
 		LibAccessControl.enforceRole(LibAccessControl.FEE_CLAIMER_ROLE);
 		FeeStorage.Layout storage f = FeeStorage.layout();
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
@@ -212,7 +214,7 @@ contract ControlFacet is IControlFacet {
 		emit FeesClaimed(affiliate, amount);
 	}
 
-	function claimOperatorFees(address affiliate, address to) external {
+	function claimOperatorFees(address affiliate, address to) external nonReentrant whenNotPaused {
 		LibAccessControl.enforceRole(LibAccessControl.FEE_CLAIMER_ROLE);
 		FeeStorage.Layout storage f = FeeStorage.layout();
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
@@ -225,7 +227,7 @@ contract ControlFacet is IControlFacet {
 
 	// ── Sponsor management ──
 
-	function depositSponsorBalance(address affiliate, uint256 amount) external {
+	function depositSponsorBalance(address affiliate, uint256 amount) external whenNotPaused {
 		FeeStorage.Layout storage f = FeeStorage.layout();
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
 		g.collateral.safeTransferFrom(msg.sender, address(this), amount);
@@ -236,7 +238,7 @@ contract ControlFacet is IControlFacet {
 		emit SponsorDeposit(affiliate, amount);
 	}
 
-	function withdrawSponsorBalance(address affiliate, uint256 amount, address to) external {
+	function withdrawSponsorBalance(address affiliate, uint256 amount, address to) external nonReentrant whenNotPaused {
 		LibAccessControl.enforceRole(LibAccessControl.SPONSOR_MANAGER_ROLE);
 		FeeStorage.Layout storage f = FeeStorage.layout();
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
@@ -254,7 +256,7 @@ contract ControlFacet is IControlFacet {
 
 	// ── General pool ──
 
-	function depositToGeneral(uint256 amount) external {
+	function depositToGeneral(uint256 amount) external whenNotPaused {
 		PoolStorage.Layout storage p = PoolStorage.layout();
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
 		g.collateral.safeTransferFrom(msg.sender, address(this), amount);
@@ -262,7 +264,7 @@ contract ControlFacet is IControlFacet {
 		emit GeneralDeposit(amount);
 	}
 
-	function withdrawFromGeneral(uint256 amount) external {
+	function withdrawFromGeneral(uint256 amount) external nonReentrant whenNotPaused {
 		LibAccessControl.enforceRole(LibAccessControl.WITHDRAWER_ROLE);
 		PoolStorage.Layout storage p = PoolStorage.layout();
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
@@ -275,7 +277,7 @@ contract ControlFacet is IControlFacet {
 
 	// ── Affiliate pool ──
 
-	function depositToAffiliate(address affiliate, uint256 amount) external {
+	function depositToAffiliate(address affiliate, uint256 amount) external whenNotPaused {
 		PoolStorage.Layout storage p = PoolStorage.layout();
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
 		g.collateral.safeTransferFrom(msg.sender, address(this), amount);
@@ -283,11 +285,14 @@ contract ControlFacet is IControlFacet {
 		emit AffiliateDeposit(affiliate, amount);
 	}
 
-	function withdrawFromAffiliate(address affiliate, uint256 amount) external {
+	function withdrawFromAffiliate(address affiliate, uint256 amount) external nonReentrant whenNotPaused {
 		LibAccessControl.enforceRole(LibAccessControl.WITHDRAWER_ROLE);
 		PoolStorage.Layout storage p = PoolStorage.layout();
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
-		if (p.affiliateBalances[affiliate] - p.lockedAffiliateBalances[affiliate] < amount) revert LibErrors.InsufficientUnlockedAffiliateBalance();
+		uint256 bal = p.affiliateBalances[affiliate];
+		uint256 locked = p.lockedAffiliateBalances[affiliate];
+		uint256 available = bal > locked ? bal - locked : 0;
+		if (available < amount) revert LibErrors.InsufficientUnlockedAffiliateBalance();
 		p.affiliateBalances[affiliate] -= amount;
 		g.collateral.safeTransfer(msg.sender, amount);
 		emit AffiliateWithdraw(affiliate, amount);
@@ -327,5 +332,39 @@ contract ControlFacet is IControlFacet {
 	function cancelOwnershipTransfer() external {
 		LibDiamond.enforceIsContractOwner();
 		LibDiamond.cancelOwnershipTransfer();
+	}
+
+	// ── Emergency recovery ──
+
+	function rescueTokens(address token, address to, uint256 amount) external nonReentrant {
+		LibDiamond.enforceIsContractOwner();
+		IERC20(token).safeTransfer(to, amount);
+		emit TokensRescued(token, to, amount);
+	}
+
+	/// @notice PAUSER_ROLE kill switch
+	function setPaused(bool value) external {
+		LibAccessControl.enforceRole(LibAccessControl.PAUSER_ROLE);
+		GlobalStorage.layout().paused = value;
+		emit PausedUpdated(value);
+	}
+
+	/// @notice Owner-only. Zeros a stuck per-request credit debt entry and decrements
+	///         `reservedDebt` or `activeDebt` by the exact amount, consistent with activation state.
+	function clearRequestDebt(address affiliate, address user, uint256 requestId) external {
+		LibDiamond.enforceIsContractOwner();
+		AffiliateCredit storage ac = CreditLineStorage.layout().affiliates[affiliate];
+		bytes32 key = keccak256(abi.encodePacked(user, requestId));
+		uint256 amount = ac.requestDebt[key];
+		if (amount == 0) return;
+		bool wasActivated = ac.requestActivated[key];
+		if (wasActivated) {
+			ac.activeDebt -= amount;
+		} else {
+			ac.reservedDebt -= amount;
+		}
+		delete ac.requestDebt[key];
+		delete ac.requestActivated[key];
+		emit RequestDebtCleared(affiliate, user, requestId, amount, wasActivated);
 	}
 }

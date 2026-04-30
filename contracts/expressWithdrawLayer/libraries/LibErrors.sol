@@ -22,6 +22,8 @@ library LibErrors {
 	error InsufficientGeneralBalance();
 	error InsufficientAffiliateBalance();
 	error InvalidStatusForStandard();
+	error InvalidStatusForComplete();
+	error StaleWithdrawSlot();
 	error NotAccepted();
 	error NotFinalized();
 	error PartsMismatch();
@@ -45,6 +47,7 @@ library LibErrors {
 	error InvalidPostPayoutRollback();
 	error VirtualProviderMustBeZero();
 	error Reentrancy();
+	error Paused();
 	// ── Accelerate flow ──
 	error AccelerateOnlyFromStandardAccepted();
 	error AccelerateOfferExpired();

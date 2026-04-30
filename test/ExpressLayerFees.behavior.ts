@@ -651,6 +651,32 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 			expect(await expressProvider.collectedFees(affiliate)).to.equal(0n)
 		})
 
+		it("should accept fee = 0 when feeRate > 0 but expressAmount rounds to zero", async function () {
+			const { botSigner, operator, user, receiver, expressProvider, context, affiliate, collateral } = await deployFixture()
+
+			// feeRate = 100 (1%). With expressAmount = 99 wei: 99 * 100 / 10000 = 0 (Solidity integer division)
+			await expressProvider.setAffiliateConfig(affiliate, 100, 0)
+
+			const withdrawAmount = 99n
+
+			await doWithdraw({
+				expressProvider,
+				botSigner,
+				operator,
+				user,
+				receiver,
+				context,
+				affiliate,
+				affiliateAmount: 0n,
+				withdrawAmount,
+				fee: 0n,
+				operatorFee: 0n,
+			})
+
+			expect(await collateral.balanceOf(receiver.address)).to.equal(withdrawAmount)
+			expect(await expressProvider.collectedFees(affiliate)).to.equal(0n)
+		})
+
 		it("should allow fee equals entire withdrawal amount (user gets zero)", async function () {
 			const { botSigner, operator, user, receiver, expressProvider, context, affiliate, collateral } = await deployFixture()
 

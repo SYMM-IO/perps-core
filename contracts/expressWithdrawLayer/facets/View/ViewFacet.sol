@@ -49,6 +49,14 @@ contract ViewFacet is IViewFacet {
 		return PoolStorage.layout().lockedAffiliateBalances[affiliate];
 	}
 
+	function generalBadDebt() external view returns (uint256) {
+		return PoolStorage.layout().generalBadDebt;
+	}
+
+	function paused() external view returns (bool) {
+		return GlobalStorage.layout().paused;
+	}
+
 	// ── Per-user state ──
 
 	function nonces(address user) external view returns (uint256) {
@@ -189,6 +197,10 @@ contract ViewFacet is IViewFacet {
 
 	function creditLineBlacklisted(address affiliate, address user) external view returns (bool) {
 		return CreditLineStorage.layout().affiliates[affiliate].blacklisted[user];
+	}
+
+	function creditLineBadDebt(address affiliate) external view returns (uint256) {
+		return CreditLineStorage.layout().affiliates[affiliate].badDebt;
 	}
 
 	// ── Cap-change fee / throttle ──

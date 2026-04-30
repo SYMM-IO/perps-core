@@ -36,9 +36,8 @@ library LibAggregateFunding {
 		int256 contribution = (int256(amount) * quote.accumulatedPaidFunding) / 1e18;
 
 		// Update per-partyB storage (required for accurate funding calculations with multiple hedgers)
-		aggregatedLayout
-			.partyAAggregatedFundingPerPartyB[quote.partyA][quote.partyB][quote.symbolId][quote.positionType]
-			.weightedPaidFunding += contribution;
+		aggregatedLayout.partyAAggregatedFundingPerPartyB[quote.partyA][quote.partyB][quote.symbolId][quote.positionType].weightedPaidFunding +=
+			contribution;
 	}
 
 	/// @notice Adds to partyB aggregate funding when a position is opened
@@ -54,9 +53,8 @@ library LibAggregateFunding {
 		aggregatedLayout.partyBAggregatedFunding[quote.partyB][quote.symbolId][quote.positionType].weightedPaidFunding += contribution;
 
 		// Update per-partyA funding
-		aggregatedLayout
-			.partyBAggregatedFundingPerPartyA[quote.partyB][quote.partyA][quote.symbolId][quote.positionType]
-			.weightedPaidFunding += contribution;
+		aggregatedLayout.partyBAggregatedFundingPerPartyA[quote.partyB][quote.partyA][quote.symbolId][quote.positionType].weightedPaidFunding +=
+			contribution;
 	}
 
 	/// @notice Adds to both parties' aggregate funding when a position is opened
@@ -79,9 +77,8 @@ library LibAggregateFunding {
 		int256 contribution = (int256(amount) * quote.accumulatedPaidFunding) / 1e18;
 
 		// Update per-partyB storage (required for accurate funding calculations with multiple hedgers)
-		aggregatedLayout
-			.partyAAggregatedFundingPerPartyB[quote.partyA][quote.partyB][quote.symbolId][quote.positionType]
-			.weightedPaidFunding -= contribution;
+		aggregatedLayout.partyAAggregatedFundingPerPartyB[quote.partyA][quote.partyB][quote.symbolId][quote.positionType].weightedPaidFunding -=
+			contribution;
 	}
 
 	/// @notice Subtracts from partyB aggregate funding when a position is closed
@@ -97,9 +94,8 @@ library LibAggregateFunding {
 		aggregatedLayout.partyBAggregatedFunding[quote.partyB][quote.symbolId][quote.positionType].weightedPaidFunding -= contribution;
 
 		// Update per-partyA funding
-		aggregatedLayout
-			.partyBAggregatedFundingPerPartyA[quote.partyB][quote.partyA][quote.symbolId][quote.positionType]
-			.weightedPaidFunding -= contribution;
+		aggregatedLayout.partyBAggregatedFundingPerPartyA[quote.partyB][quote.partyA][quote.symbolId][quote.positionType].weightedPaidFunding -=
+			contribution;
 	}
 
 	/// @notice Subtracts from both parties' aggregate funding when a position is closed
@@ -126,17 +122,15 @@ library LibAggregateFunding {
 		int256 delta = newContribution - oldContribution;
 
 		// Update partyA aggregate (per-partyB storage for accurate multi-hedger calculations)
-		aggregatedLayout
-			.partyAAggregatedFundingPerPartyB[quote.partyA][quote.partyB][quote.symbolId][quote.positionType]
-			.weightedPaidFunding += delta;
+		aggregatedLayout.partyAAggregatedFundingPerPartyB[quote.partyA][quote.partyB][quote.symbolId][quote.positionType].weightedPaidFunding +=
+			delta;
 
 		// Update global partyB funding (for cross partyB mode)
 		aggregatedLayout.partyBAggregatedFunding[quote.partyB][quote.symbolId][quote.positionType].weightedPaidFunding += delta;
 
 		// Update partyB aggregate per partyA
-		aggregatedLayout
-			.partyBAggregatedFundingPerPartyA[quote.partyB][quote.partyA][quote.symbolId][quote.positionType]
-			.weightedPaidFunding += delta;
+		aggregatedLayout.partyBAggregatedFundingPerPartyA[quote.partyB][quote.partyA][quote.symbolId][quote.positionType].weightedPaidFunding +=
+			delta;
 	}
 
 	/// @notice Calculates the aggregate funding debt for partyA for a specific symbol and position type

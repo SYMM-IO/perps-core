@@ -37,6 +37,9 @@ struct AffiliateCredit {
 	uint256 capChangeCount;
 	/// @dev Timestamp when the current quota window started.
 	uint256 capChangeEpochStart;
+	// ── Bad debt tracking ──
+	/// @dev Unrecovered credit loss accrued when coverLoss could not fully deduct from the affiliate pool.
+	uint256 badDebt;
 }
 
 /// @notice Muon-signed attestation of an affiliate's eligible balance base.

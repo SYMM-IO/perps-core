@@ -25,13 +25,14 @@ import { PoolStorage } from "../../storages/PoolStorage.sol";
 import { FeeStorage } from "../../storages/FeeStorage.sol";
 import { ValidatorStorage } from "../../storages/ValidatorStorage.sol";
 
+import { Pausable } from "../../utils/Pausable.sol";
 import { ReentrancyGuard } from "../../utils/ReentrancyGuard.sol";
 
 /// @title SymmioHookFacet
 /// @notice Handles SYMMIO callbacks for the ExpressProvider diamond.
-contract SymmioHookFacet is ISymmioHookFacet, ReentrancyGuard {
+contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 	/// @notice Processes a new withdraw request: decodes/verifies the offer, locks funds, accepts the request.
-	function onWithdrawRequest(WithdrawRequest memory withdrawRequest, address) external nonReentrant {
+	function onWithdrawRequest(WithdrawRequest memory withdrawRequest, address) external nonReentrant whenNotPaused {
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
 		FeeStorage.Layout storage f = FeeStorage.layout();
 		ValidatorStorage.Layout storage v = ValidatorStorage.layout();
@@ -79,6 +80,7 @@ contract SymmioHookFacet is ISymmioHookFacet, ReentrancyGuard {
 		}
 
 		WithdrawInfo storage info = g.withdrawInfos[withdrawRequest.user][withdrawRequest.id];
+		if (info.status != Status.NONE) revert LibErrors.StaleWithdrawSlot();
 		info.optionType = optType;
 		info.availableAt = offer.availableAt;
 		info.expressAmount = amounts.expressAmount;
@@ -90,10 +92,9 @@ contract SymmioHookFacet is ISymmioHookFacet, ReentrancyGuard {
 		info.cooldownEndTime = withdrawRequest.cooldownEndTime;
 		info.partsHash = keccak256(abi.encode(withdrawRequest.parts));
 		info.fee = offer.fee;
-
-		if (offer.operatorFee > 0) {
-			f.operatorFees[withdrawRequest.user][withdrawRequest.id] = offer.operatorFee;
-		}
+		info.finalizedAt = 0;
+		info.sponsorCoverage = 0;
+		f.operatorFees[withdrawRequest.user][withdrawRequest.id] = offer.operatorFee;
 
 		_lockFee(withdrawRequest.user, withdrawRequest.id, info);
 
@@ -106,10 +107,10 @@ contract SymmioHookFacet is ISymmioHookFacet, ReentrancyGuard {
 		emit WithdrawAccepted(withdrawRequest.user, withdrawRequest.id, offer.optionType);
 
 		if (optType == OptionType.IMMEDIATE) {
-			LibCreditLine.activate(g.symmio, withdrawRequest.user, withdrawRequest.id, info);
-			_collectAndTransfer(withdrawRequest.user, withdrawRequest.id, withdrawRequest.parts, info);
 			_unlockAndDeductPools(info);
 			info.status = Status.PROCESSED;
+			LibCreditLine.activate(g.symmio, withdrawRequest.user, withdrawRequest.id, info);
+			_collectAndTransfer(withdrawRequest.user, withdrawRequest.id, withdrawRequest.parts, info);
 			emit WithdrawProcessed(withdrawRequest.user, withdrawRequest.id);
 		} else {
 			info.status = Status.ACCEPTED;
@@ -127,12 +128,15 @@ contract SymmioHookFacet is ISymmioHookFacet, ReentrancyGuard {
 			if (info.status != Status.ACCEPTED && info.status != Status.LOCKED) {
 				revert LibErrors.InvalidStatusForStandard();
 			}
+			if (info.finalizedAt != 0) revert LibErrors.InvalidStatusForComplete();
 
 			info.finalizedAt = block.timestamp;
 			if (info.status == Status.ACCEPTED) {
 				info.status = Status.FINALIZED;
 			}
 		} else {
+			if (info.status != Status.PROCESSED) revert LibErrors.InvalidStatusForComplete();
+
 			PoolStorage.Layout storage p = PoolStorage.layout();
 			if (info.generalAmount > 0) {
 				p.generalBalance += info.generalAmount;
@@ -395,6 +399,46 @@ contract SymmioHookFacet is ISymmioHookFacet, ReentrancyGuard {
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
 		if (info.optionType == OptionType.STANDARD) revert LibErrors.InvalidPostPayoutRollback();
 
+		_restoreSponsor(user, requestId, info);
+		_recordGeneralLoss(user, requestId, info);
 		LibCreditLine.coverLoss(g.collateral, g.symmio, user, requestId, info);
+	}
+
+	function _restoreSponsor(address user, uint256 requestId, WithdrawInfo storage info) internal {
+		uint256 coverage = info.sponsorCoverage;
+		if (coverage == 0) return;
+
+		FeeStorage.Layout storage f = FeeStorage.layout();
+		address affiliate = info.affiliate;
+		uint256 remaining = coverage;
+
+		uint256 availAff = f.collectedFees[affiliate];
+		uint256 takeAff = remaining < availAff ? remaining : availAff;
+		if (takeAff > 0) {
+			f.collectedFees[affiliate] = availAff - takeAff;
+			remaining -= takeAff;
+		}
+
+		if (remaining > 0) {
+			uint256 availOp = f.collectedOperatorFees[affiliate];
+			uint256 takeOp = remaining < availOp ? remaining : availOp;
+			if (takeOp > 0) {
+				f.collectedOperatorFees[affiliate] = availOp - takeOp;
+				remaining -= takeOp;
+			}
+		}
+
+		uint256 restored = coverage - remaining;
+		if (restored > 0) {
+			f.sponsorBalances[affiliate] += restored;
+		}
+		info.sponsorCoverage = 0;
+		emit SponsorCoverageRestored(user, requestId, affiliate, restored, remaining);
+	}
+
+	function _recordGeneralLoss(address user, uint256 requestId, WithdrawInfo storage info) internal {
+		if (info.generalAmount == 0) return;
+		PoolStorage.layout().generalBadDebt += info.generalAmount;
+		emit GeneralBadDebtAccrued(user, requestId, info.generalAmount);
 	}
 }
