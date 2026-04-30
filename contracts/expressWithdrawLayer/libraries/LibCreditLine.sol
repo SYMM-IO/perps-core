@@ -73,7 +73,7 @@ library LibCreditLine {
 		IMuonSignatureVerifier(cl.signatureVerifier).verify(hash, data.sigs, data.gatewaySignature);
 
 		// Check caps
-		uint256 newTotalDebt = ac.reservedDebt + ac.activeDebt + creditAmount;
+		uint256 newTotalDebt = ac.reservedDebt + ac.activeDebt + ac.badDebt + creditAmount;
 
 		uint256 effectiveMaxDebt = _effectiveMax(ac.protocolMaxDebt, ac.affiliateMaxDebt);
 		if (effectiveMaxDebt > 0 && newTotalDebt > effectiveMaxDebt) revert DebtExceedsAbsoluteCap();

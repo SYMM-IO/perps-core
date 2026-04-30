@@ -29,6 +29,7 @@ interface IControlEvents {
 	event TokensRescued(address indexed token, address indexed to, uint256 amount);
 	event RequestDebtCleared(address indexed affiliate, address indexed user, uint256 indexed requestId, uint256 amount, bool wasActivated);
 	event PausedUpdated(bool paused);
+	event CreditBadDebtRepaid(address indexed affiliate, address indexed payer, uint256 amount);
 }
 
 interface IControlFacet is IControlEvents {
@@ -115,4 +116,6 @@ interface IControlFacet is IControlEvents {
 	function clearRequestDebt(address affiliate, address user, uint256 requestId) external;
 
 	function setPaused(bool value) external;
+
+	function repayCreditBadDebt(address affiliate, uint256 amount) external;
 }
