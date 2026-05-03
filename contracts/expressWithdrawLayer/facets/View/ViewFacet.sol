@@ -96,6 +96,14 @@ contract ViewFacet is IViewFacet {
 		return FeeStorage.layout().collectedOperatorFees[affiliate];
 	}
 
+	function pendingFees(address user, uint256 requestId) external view returns (uint256) {
+		return FeeStorage.layout().pendingFees[user][requestId];
+	}
+
+	function pendingOperatorFees(address user, uint256 requestId) external view returns (uint256) {
+		return FeeStorage.layout().pendingOperatorFees[user][requestId];
+	}
+
 	// ── Sponsorship ──
 
 	function sponsorBalances(address affiliate) external view returns (uint256) {

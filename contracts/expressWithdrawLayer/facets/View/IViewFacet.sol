@@ -50,6 +50,10 @@ interface IViewFacet {
 
 	function collectedOperatorFees(address affiliate) external view returns (uint256);
 
+	function pendingFees(address user, uint256 requestId) external view returns (uint256);
+
+	function pendingOperatorFees(address user, uint256 requestId) external view returns (uint256);
+
 	// ── Sponsorship ──
 
 	function sponsorBalances(address affiliate) external view returns (uint256);

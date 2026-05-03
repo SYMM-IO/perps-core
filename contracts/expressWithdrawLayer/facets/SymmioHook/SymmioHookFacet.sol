@@ -145,6 +145,18 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 				p.affiliateBalances[info.affiliate] += info.affiliateAmount;
 			}
 
+			FeeStorage.Layout storage f = FeeStorage.layout();
+			uint256 pf = f.pendingFees[withdrawRequest.user][withdrawRequest.id];
+			uint256 pof = f.pendingOperatorFees[withdrawRequest.user][withdrawRequest.id];
+			if (pf > 0) {
+				f.collectedFees[info.affiliate] += pf;
+				delete f.pendingFees[withdrawRequest.user][withdrawRequest.id];
+			}
+			if (pof > 0) {
+				f.collectedOperatorFees[info.affiliate] += pof;
+				delete f.pendingOperatorFees[withdrawRequest.user][withdrawRequest.id];
+			}
+
 			LibCreditLine.settle(withdrawRequest.user, withdrawRequest.id, info);
 			info.status = Status.FINALIZED;
 		}
@@ -353,11 +365,15 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 		uint256 totalFee = info.fee + operatorFee;
 		uint256 userFee = totalFee - info.sponsorCoverage;
 
-		if (info.fee > 0) {
-			f.collectedFees[info.affiliate] += info.fee;
-		}
-		if (operatorFee > 0) {
-			f.collectedOperatorFees[info.affiliate] += operatorFee;
+		// STANDARD's onWithdrawComplete fires before processing, so fees go straight to
+		// claimable. Non-STANDARD sits in PROCESSED until finalize and is post-payout rollback
+		// eligible, so fees stay in per-request escrow.
+		if (info.optionType == OptionType.STANDARD) {
+			if (info.fee > 0) f.collectedFees[info.affiliate] += info.fee;
+			if (operatorFee > 0) f.collectedOperatorFees[info.affiliate] += operatorFee;
+		} else {
+			if (info.fee > 0) f.pendingFees[user][requestId] = info.fee;
+			if (operatorFee > 0) f.pendingOperatorFees[user][requestId] = operatorFee;
 		}
 
 		LibParts.transferToReceivers(parts, userFee);
@@ -404,35 +420,34 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 		LibCreditLine.coverLoss(g.collateral, g.symmio, user, requestId, info);
 	}
 
+	/// @dev Drains pending fees up to sponsorCoverage back to the sponsor, then promotes the
+	///      leftover (user-paid portion) to the affiliate's claimable buckets.
 	function _restoreSponsor(address user, uint256 requestId, WithdrawInfo storage info) internal {
-		uint256 coverage = info.sponsorCoverage;
-		if (coverage == 0) return;
-
 		FeeStorage.Layout storage f = FeeStorage.layout();
 		address affiliate = info.affiliate;
+		uint256 coverage = info.sponsorCoverage;
+		info.sponsorCoverage = 0;
+
+		uint256 pf = f.pendingFees[user][requestId];
+		uint256 pof = f.pendingOperatorFees[user][requestId];
+
 		uint256 remaining = coverage;
+		uint256 takeAff = remaining < pf ? remaining : pf;
+		pf -= takeAff;
+		remaining -= takeAff;
 
-		uint256 availAff = f.collectedFees[affiliate];
-		uint256 takeAff = remaining < availAff ? remaining : availAff;
-		if (takeAff > 0) {
-			f.collectedFees[affiliate] = availAff - takeAff;
-			remaining -= takeAff;
-		}
+		uint256 takeOp = remaining < pof ? remaining : pof;
+		pof -= takeOp;
+		remaining -= takeOp;
 
-		if (remaining > 0) {
-			uint256 availOp = f.collectedOperatorFees[affiliate];
-			uint256 takeOp = remaining < availOp ? remaining : availOp;
-			if (takeOp > 0) {
-				f.collectedOperatorFees[affiliate] = availOp - takeOp;
-				remaining -= takeOp;
-			}
-		}
+		if (pf > 0) f.collectedFees[affiliate] += pf;
+		if (pof > 0) f.collectedOperatorFees[affiliate] += pof;
+		delete f.pendingFees[user][requestId];
+		delete f.pendingOperatorFees[user][requestId];
 
 		uint256 restored = coverage - remaining;
-		if (restored > 0) {
-			f.sponsorBalances[affiliate] += restored;
-		}
-		info.sponsorCoverage = 0;
+		if (restored > 0) f.sponsorBalances[affiliate] += restored;
+
 		emit SponsorCoverageRestored(user, requestId, affiliate, restored, remaining);
 	}
 
