@@ -289,6 +289,10 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 
 			// Process withdrawal as operator
 			await expressProvider.connect(operator).processWithdraw(user.address, nonce + 1n, parts)
+
+			await ethers.provider.send("evm_increaseTime", [12 * 3600])
+			await ethers.provider.send("evm_mine", [])
+			await context.withdrawFacet.finalizeWithdrawRequest(user.address, nonce + 1n)
 		}
 
 		return { parts, partsHash, deadline, signature, providerData, requestId: nonce + 1n }
@@ -782,7 +786,10 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 			// Unlock and process
 			await expressProvider.connect(unlocker).unlockAndProcess(user.address, requestId, parts)
 
-			// Fee deducted
+			await ethers.provider.send("evm_increaseTime", [12 * 3600])
+			await ethers.provider.send("evm_mine", [])
+			await context.withdrawFacet.finalizeWithdrawRequest(user.address, requestId)
+
 			expect(await collateral.balanceOf(receiver.address)).to.equal(withdrawAmount - fee)
 			expect(await expressProvider.collectedFees(affiliate)).to.equal(fee)
 		})
@@ -849,7 +856,10 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 			await ethers.provider.send("evm_mine", [])
 			await expressProvider.connect(operator).processWithdraw(user.address, 1, parts)
 
-			// Receiver gets total - fee (fee taken from first part only since 50 < 300)
+			await ethers.provider.send("evm_increaseTime", [12 * 3600])
+			await ethers.provider.send("evm_mine", [])
+			await context.withdrawFacet.finalizeWithdrawRequest(user.address, 1)
+
 			expect(await collateral.balanceOf(receiver.address)).to.equal(amount1 + amount2 - fee)
 			expect(await expressProvider.collectedFees(affiliate)).to.equal(fee)
 		})
@@ -1085,9 +1095,11 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 
 			await expressProvider.connect(operator).processWithdraw(user.address, 1, parts)
 
-			// Receiver gets withdrawAmount - fee
+			await ethers.provider.send("evm_increaseTime", [12 * 3600])
+			await ethers.provider.send("evm_mine", [])
+			await context.withdrawFacet.finalizeWithdrawRequest(user.address, 1)
+
 			expect(await collateral.balanceOf(receiver.address)).to.equal(withdrawAmount - fee)
-			// Fee is tracked in collectedFees
 			expect(await expressProvider.collectedFees(affiliate)).to.equal(fee)
 		})
 	})

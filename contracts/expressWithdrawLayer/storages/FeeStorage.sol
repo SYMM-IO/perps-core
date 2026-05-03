@@ -21,6 +21,9 @@ library FeeStorage {
 		mapping(address => uint256) sponsorBalances;
 		mapping(address => address) sponsors;
 		mapping(address => SponsorConfig) sponsorConfigs;
+		// Per-request fee escrow held until finalize promotes them or post-payout suspend claws back.
+		mapping(address => mapping(uint256 => uint256)) pendingFees;
+		mapping(address => mapping(uint256 => uint256)) pendingOperatorFees;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

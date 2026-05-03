@@ -140,11 +140,12 @@ contract AccelerateFacet is IAccelerateFacet, IOperatorEvents, Pausable, Reentra
 		uint256 totalFee = info.fee + operatorFee;
 		uint256 userFee = totalFee - info.sponsorCoverage;
 
-		if (info.fee > 0) {
-			f.collectedFees[info.affiliate] += info.fee;
-		}
-		if (operatorFee > 0) {
-			f.collectedOperatorFees[info.affiliate] += operatorFee;
+		if (info.optionType == OptionType.STANDARD) {
+			if (info.fee > 0) f.collectedFees[info.affiliate] += info.fee;
+			if (operatorFee > 0) f.collectedOperatorFees[info.affiliate] += operatorFee;
+		} else {
+			if (info.fee > 0) f.pendingFees[user][requestId] = info.fee;
+			if (operatorFee > 0) f.pendingOperatorFees[user][requestId] = operatorFee;
 		}
 
 		LibParts.transferToReceivers(parts, userFee);
