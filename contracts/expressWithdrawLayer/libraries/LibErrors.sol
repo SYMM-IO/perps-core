@@ -8,6 +8,8 @@ pragma solidity >=0.8.18;
 /// @notice Shared custom errors used across ExpressProvider facets.
 library LibErrors {
 	error OnlySymmio();
+	error InvalidProvider();
+	error InvalidCollateral();
 	error FeeRateExceeds100Percent();
 	error NoFeesToClaim();
 	error NoOperatorFeesToClaim();

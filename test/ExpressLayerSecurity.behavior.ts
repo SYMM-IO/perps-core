@@ -2,7 +2,7 @@ import { expect } from "chai"
 
 import { deployExpressProvider } from "../tasks/deploy/expressWithdrawLayerDiamond.js"
 import { initializeFixture } from "./Initialize.fixture.js"
-import connection, { ethers, hre } from "./helpers/hardhat-connection.js"
+import connection, { ethers, hre, networkHelpers } from "./helpers/hardhat-connection.js"
 import { time } from "./helpers/network-helpers.js"
 
 const OPERATOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("OPERATOR_ROLE"))
@@ -1687,6 +1687,73 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			)
 		})
 
+		it("should reject onWithdrawRequest when withdrawRequest.provider is not this diamond", async function () {
+			const { expressProvider, user, context, collateral } = await deployFixture()
+
+			const symmio = context.diamond
+			await networkHelpers.impersonateAccount(symmio)
+			await networkHelpers.setBalance(symmio, 10n ** 18n)
+			const symmioSigner = await ethers.getSigner(symmio)
+
+			const stranger = (await ethers.getSigners())[8]
+			const wrongProviderRequest = {
+				id: 1n,
+				user: user.address,
+				parts: [],
+				timestamp: 0n,
+				cooldownEndTime: 0n,
+				status: 0,
+				speedUp: false,
+				isCooldownModified: false,
+				provider: stranger.address,
+				isPureVirtual: false,
+				providerData: "0x",
+				totalAmount: 0n,
+				totalVirtualAmount: 0n,
+				advancedAmount: 0n,
+			}
+
+			await expect(
+				expressProvider.connect(symmioSigner).onWithdrawRequest(wrongProviderRequest, await collateral.getAddress()),
+			).to.be.revertedWithCustomError(expressProvider, "InvalidProvider")
+
+			await networkHelpers.stopImpersonatingAccount(symmio)
+		})
+
+		it("should reject onWithdrawRequest when callback collateral does not match the diamond's collateral", async function () {
+			const { expressProvider, user, context } = await deployFixture()
+
+			const symmio = context.diamond
+			await networkHelpers.impersonateAccount(symmio)
+			await networkHelpers.setBalance(symmio, 10n ** 18n)
+			const symmioSigner = await ethers.getSigner(symmio)
+
+			const correctRequest = {
+				id: 1n,
+				user: user.address,
+				parts: [],
+				timestamp: 0n,
+				cooldownEndTime: 0n,
+				status: 0,
+				speedUp: false,
+				isCooldownModified: false,
+				provider: await expressProvider.getAddress(),
+				isPureVirtual: false,
+				providerData: "0x",
+				totalAmount: 0n,
+				totalVirtualAmount: 0n,
+				advancedAmount: 0n,
+			}
+
+			const wrongCollateral = "0x000000000000000000000000000000000000c0c0"
+			await expect(expressProvider.connect(symmioSigner).onWithdrawRequest(correctRequest, wrongCollateral)).to.be.revertedWithCustomError(
+				expressProvider,
+				"InvalidCollateral",
+			)
+
+			await networkHelpers.stopImpersonatingAccount(symmio)
+		})
+
 		it("should reject non-SYMMIO calling onWithdrawComplete", async function () {
 			const { expressProvider, user } = await deployFixture()
 
@@ -2100,6 +2167,21 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 
 			// Verify diamond is functional after deployment
 			expect(await expressProvider.generalBalance()).to.be.a("bigint")
+		})
+
+		it("Init.init reverts InvalidCollateral when _collateral does not match SYMMIO's getCollateral()", async function () {
+			const { context, deployer } = await deployFixture()
+
+			const wrongCollateral = await ethers.deployContract("MockToken", ["Wrong", "WRONG"])
+			await wrongCollateral.waitForDeployment()
+
+			const init = await ethers.deployContract("contracts/expressWithdrawLayer/Init.sol:Init")
+			await init.waitForDeployment()
+
+			await expect(init.init(deployer.address, context.diamond, await wrongCollateral.getAddress())).to.be.revertedWithCustomError(
+				init,
+				"InvalidCollateral",
+			)
 		})
 
 		it("should reject non-owner diamond cut", async function () {

@@ -32,11 +32,13 @@ import { ReentrancyGuard } from "../../utils/ReentrancyGuard.sol";
 /// @notice Handles SYMMIO callbacks for the ExpressProvider diamond.
 contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 	/// @notice Processes a new withdraw request: decodes/verifies the offer, locks funds, accepts the request.
-	function onWithdrawRequest(WithdrawRequest memory withdrawRequest, address) external nonReentrant whenNotPaused {
+	function onWithdrawRequest(WithdrawRequest memory withdrawRequest, address callbackCollateral) external nonReentrant whenNotPaused {
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
 		FeeStorage.Layout storage f = FeeStorage.layout();
 		ValidatorStorage.Layout storage v = ValidatorStorage.layout();
 		if (msg.sender != g.symmio) revert LibErrors.OnlySymmio();
+		if (withdrawRequest.provider != address(this)) revert LibErrors.InvalidProvider();
+		if (callbackCollateral != address(g.collateral)) revert LibErrors.InvalidCollateral();
 
 		(bytes memory offerData, bytes memory validatorData, bytes memory creditDataRaw) = abi.decode(
 			withdrawRequest.providerData,
