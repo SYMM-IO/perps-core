@@ -13,6 +13,8 @@ import { LibErrors } from "./libraries/LibErrors.sol";
 import { IDiamondLoupe } from "../diamond/facets/DiamondLoup/IDiamondLoupe.sol";
 import { IERC165 } from "../diamond/interfaces/IERC165.sol";
 
+import { ISymmio } from "./interfaces/ISymmio.sol";
+
 import { GlobalStorage } from "./storages/GlobalStorage.sol";
 import { ValidatorStorage } from "./storages/ValidatorStorage.sol";
 
@@ -29,6 +31,7 @@ contract Init {
 		ds.supportedInterfaces[type(IERC165).interfaceId] = true;
 		ds.supportedInterfaces[type(IDiamondLoupe).interfaceId] = true;
 
+		if (ISymmio(_symmio).getCollateral() != _collateral) revert LibErrors.InvalidCollateral();
 		s.symmio = _symmio;
 		s.collateral = IERC20(_collateral);
 		s.securityWindow = 20;

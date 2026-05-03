@@ -2708,6 +2708,69 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			expect(await expressProvider.creditLineReservedDebt(affiliate)).to.equal(0n)
 		})
 
+		it("should revert MuonSignatureExpired when data.timestamp is in the future", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, botSigner, user, receiver, context, affiliate } = fixture
+			const expressAddr = await expressProvider.getAddress()
+
+			const now = (await ethers.provider.getBlock("latest"))!.timestamp
+			const futureTs = now + 60
+
+			const withdrawAmount = 300n * 10n ** 18n
+			const creditAmount = 100n * 10n ** 18n
+
+			const parts = [
+				{
+					id: 0n,
+					amount: withdrawAmount,
+					chainId: 31337n,
+					receiver: receiver.address,
+					virtualProvider: ethers.ZeroAddress,
+					expressProvider: expressAddr,
+				},
+			]
+			const partsHash = computePartsHash(parts)
+			const deadline = now + 3600
+
+			const signature = await signWithdrawOption(expressProvider, botSigner, {
+				user: user.address,
+				nonce: 0n,
+				optionType: 1,
+				availableAt: 0,
+				affiliate,
+				affiliateAmount: 0n,
+				creditAmount,
+				fee: 0n,
+				operatorFee: 0n,
+				partsHash,
+				deadline,
+			})
+			const creditDataRaw = buildCreditData(100_000n * 10n ** 18n, futureTs)
+			const providerData = encodeProviderData(
+				0n,
+				1,
+				0,
+				affiliate,
+				0n,
+				creditAmount,
+				0n,
+				0n,
+				deadline,
+				signature,
+				undefined,
+				undefined,
+				undefined,
+				creditDataRaw,
+			)
+
+			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)).to.be.revertedWithCustomError(
+				expressProvider,
+				"MuonSignatureExpired",
+			)
+			expect(await expressProvider.nonces(user.address)).to.equal(0n)
+			expect(await expressProvider.creditLineReservedDebt(affiliate)).to.equal(0n)
+		})
+
 		it("should succeed at the exact absolute cap boundary (newTotalDebt == effectiveMaxDebt)", async function () {
 			const fixture = await deployFixture()
 			const { expressProvider, botSigner, user, receiver, context, affiliate, deployer } = fixture

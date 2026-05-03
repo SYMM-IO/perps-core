@@ -105,7 +105,7 @@ contract ControlFacet is IControlFacet, Pausable, ReentrancyGuard {
 	/// @notice Self-service cap adjustment for an affiliate. Decreases are always free;
 	///         increases count against the per-window free allowance and charge a fee once exhausted.
 	///         msg.sender is treated as the affiliate identity.
-	function setMyCreditLineConfig(uint256 maxDebt, uint256 maxDebtBps) external whenNotPaused {
+	function setMyCreditLineConfig(uint256 maxDebt, uint256 maxDebtBps) external nonReentrant whenNotPaused {
 		address affiliate = msg.sender;
 		CreditLineStorage.Layout storage cl = CreditLineStorage.layout();
 		AffiliateCredit storage ac = cl.affiliates[affiliate];
@@ -227,7 +227,7 @@ contract ControlFacet is IControlFacet, Pausable, ReentrancyGuard {
 
 	// ── Sponsor management ──
 
-	function depositSponsorBalance(address affiliate, uint256 amount) external whenNotPaused {
+	function depositSponsorBalance(address affiliate, uint256 amount) external nonReentrant whenNotPaused {
 		FeeStorage.Layout storage f = FeeStorage.layout();
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
 		g.collateral.safeTransferFrom(msg.sender, address(this), amount);
@@ -256,7 +256,7 @@ contract ControlFacet is IControlFacet, Pausable, ReentrancyGuard {
 
 	// ── General pool ──
 
-	function depositToGeneral(uint256 amount) external whenNotPaused {
+	function depositToGeneral(uint256 amount) external nonReentrant whenNotPaused {
 		PoolStorage.Layout storage p = PoolStorage.layout();
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
 		g.collateral.safeTransferFrom(msg.sender, address(this), amount);
@@ -277,7 +277,7 @@ contract ControlFacet is IControlFacet, Pausable, ReentrancyGuard {
 
 	// ── Affiliate pool ──
 
-	function depositToAffiliate(address affiliate, uint256 amount) external whenNotPaused {
+	function depositToAffiliate(address affiliate, uint256 amount) external nonReentrant whenNotPaused {
 		PoolStorage.Layout storage p = PoolStorage.layout();
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
 		g.collateral.safeTransferFrom(msg.sender, address(this), amount);

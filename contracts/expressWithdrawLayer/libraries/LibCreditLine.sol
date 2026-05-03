@@ -61,6 +61,7 @@ library LibCreditLine {
 		if (ac.blacklisted[user]) revert UserBlacklisted();
 
 		// Verify Muon signature freshness
+		if (data.timestamp > block.timestamp) revert MuonSignatureExpired();
 		if (block.timestamp > data.timestamp + cl.muonFreshnessWindow) revert MuonSignatureExpired();
 
 		// Verify Muon signature via the shared verifier.
