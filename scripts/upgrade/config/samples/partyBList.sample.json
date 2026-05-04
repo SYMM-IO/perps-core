@@ -1,9 +1,17 @@
 {
-  "partyBs": {
-    "SolverName": [
-      "0x..."
-    ]
-  },
-  "registerOnSymmioCore": true,
-  "registerOnInstantLayer": false
+	"partyBs": {
+		"SolverA": [
+			"0x1111111111111111111111111111111111111111",
+			"0x2222222222222222222222222222222222222222"
+		],
+		"SolverB": [
+			"0x3333333333333333333333333333333333333333"
+		],
+		"SolverC": [
+			"0x4444444444444444444444444444444444444444",
+			"0x5555555555555555555555555555555555555555"
+		]
+	},
+	"registerOnSymmioCore": true,
+	"registerOnInstantLayer": true
 }

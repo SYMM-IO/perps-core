@@ -95,6 +95,14 @@ const customChains = [
 			browserURL: "https://hyperevmscan.io",
 		},
 	},
+	{
+		network: "bsc",
+		chainId: 56,
+		urls: {
+			apiURL: "https://api.bscscan.com/api",
+			browserURL: "https://bscscan.com",
+		},
+	},
 ]
 
 export default defineConfig({
@@ -111,6 +119,27 @@ export default defineConfig({
 		},
 		5000: {
 			name: "Mantle",
+			hardforkHistory: {
+				merge: { blockNumber: 0 },
+				shanghai: { blockNumber: 0 },
+				cancun: { blockNumber: 0 },
+			},
+		},
+		8453: {
+			name: "Base",
+			// Override default chainType (op) to generic. Hardhat 3's config validator
+			// only accepts L1 hardfork names in hardforkHistory; the runtime then needs
+			// the chainType to match. For our upgrade scripts (view calls + diamondCut)
+			// L1 EVM semantics are sufficient.
+			chainType: "generic",
+			hardforkHistory: {
+				merge: { blockNumber: 0 },
+				shanghai: { blockNumber: 0 },
+				cancun: { blockNumber: 0 },
+			},
+		},
+		56: {
+			name: "BNB Smart Chain",
 			hardforkHistory: {
 				merge: { blockNumber: 0 },
 				shanghai: { blockNumber: 0 },
@@ -159,7 +188,7 @@ export default defineConfig({
 			type: "http",
 			url: process.env.HARDHAT_DOCKER_URL || "http://localhost:8545",
 		},
-		bsc: createNetworkConfig("bsc", "https://binance.llamarpc.com"),
+		bsc: createNetworkConfig("bsc", "https://bsc-rpc.publicnode.com"),
 		base: createNetworkConfig("base", "https://mainnet.base.org"),
 		polygon: createNetworkConfig("polygon", "https://polygon-rpc.com"),
 		iota: createNetworkConfig("iota", "https://json-rpc.evm.iotaledger.net"),
