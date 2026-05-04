@@ -7,13 +7,16 @@ import { MigrationFacet } from "../../src/types/index.js"
 // Configuration
 // =============================================================================
 
+// Library-level defaults. `progressFile` is intentionally null so callers must
+// supply a network-scoped path (e.g. scripts/upgrade/output/migration-progress-base.json).
+// runMigration.ts already does this; importers using migrate() directly should follow suit.
 const DEFAULT_CONFIG: Required<MigrationConfig> = {
 	chunkSize: 50,
 	maxRetries: 3,
 	retryDelayMs: 2000,
 	retryBackoffMultiplier: 2,
 	confirmations: 1,
-	progressFile: "./migration-progress.json",
+	progressFile: null,
 	skipPreCheck: false,
 	dryRun: false,
 }

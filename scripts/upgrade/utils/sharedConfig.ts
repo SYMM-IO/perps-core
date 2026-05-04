@@ -23,12 +23,18 @@ const CONFIG_DIR = "./scripts/upgrade/config"
 let cachedConfig: UpgradeConfigShared | null = null
 
 /**
- * Strip a leading "fork-" prefix so fork networks resolve configs tagged with the base chain.
+ * Map the hardhat network name to the suffix used for network-postfixed config
+ * files (upgrade-<suffix>.json, partyBList-<suffix>.json, etc.).
  *
- * Example: network "fork-base" resolves configs under "base" (upgrade-base.json, etc.).
- * A plain chain name like "arbitrum" passes through unchanged.
+ * Resolution order:
+ *   1. NETWORK_ALIAS env var, if set — use this when running against a forked
+ *      node via a generic network name (e.g. --network docker pointing at a
+ *      Base fork node, set NETWORK_ALIAS=base).
+ *   2. Strip a leading "fork-" prefix (so "fork-base" → "base").
+ *   3. Otherwise return the network name unchanged.
  */
 export function baseNetworkName(name?: string): string | undefined {
+	if (process.env.NETWORK_ALIAS) return process.env.NETWORK_ALIAS
 	if (!name) return undefined
 	return name.startsWith("fork-") ? name.slice("fork-".length) : name
 }

@@ -28,7 +28,8 @@ import { fetchOpenQuotes } from "./utils/subgraphHelpers.js"
  *   cp scripts/upgrade/config/samples/prepareMigration.sample.json scripts/upgrade/config/prepareMigration.json
  *
  * Output:
- *   scripts/upgrade/output/migration-input.json
+ *   scripts/upgrade/output/migration-input-{network}.json
+ *   (network suffix derived from --network flag, with "fork-" stripped; or NETWORK_ALIAS env var)
  */
 
 const DEFAULT_SUBGRAPH_ENDPOINT = "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/arbitrum_analytics/stage/gn"

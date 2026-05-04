@@ -63,8 +63,11 @@ type MigrationOnDemandReport = {
  * - Caller has MIGRATION_ROLE granted
  *
  * Run:
- *   DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
- *     npx hardhat run ./scripts/upgrade/runMigration.ts --network localhost
+ *   DIAMOND_ADDRESS=0x... npx hardhat run ./scripts/upgrade/runMigration.ts --network <network>
+ *
+ * Defaults to scripts/upgrade/output/migration-input-{network}.json (network suffix
+ * derived from --network with "fork-" stripped, or from NETWORK_ALIAS env var).
+ * Override with MIGRATION_INPUT_FILE=... if needed.
  *
  * Config:
  *   cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/migrate.json

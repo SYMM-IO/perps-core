@@ -1,5 +1,3 @@
 {
-	"spotCheckCount": 20,
-	"outputDir": "./scripts/upgrade/output",
-	"outputFile": "./scripts/upgrade/output/migration-input.json"
+	"spotCheckCount": 20
 }
