@@ -198,10 +198,9 @@ library LibPartyBPositionsActions {
 		quote.quoteStatus = QuoteStatus.OPENED;
 		LibQuote.addToOpenPositions(quoteId);
 
-		uint256 openFee =
-			quote.orderType == OrderType.LIMIT
-				? (filledAmount * quote.requestedOpenPrice * quote.tradingFee) / 1e36
-				: (filledAmount * quote.marketPrice * quote.tradingFee) / 1e36;
+		uint256 openFee = quote.orderType == OrderType.LIMIT
+			? (filledAmount * quote.requestedOpenPrice * quote.tradingFee) / 1e36
+			: (filledAmount * quote.marketPrice * quote.tradingFee) / 1e36;
 		if (!_instantOpenMode) {
 			LibAccount.realizeOpenTradingFee(quote.partyA, quoteFeeBeforeOpen - remainingQuoteFee);
 		}
