@@ -247,6 +247,30 @@ await instantLayer.executeBatch(
 );
 ```
 
+### Funding Updates With Engine Nonce
+
+Funding-rate updates are the only PartyB calls that must include the solver engine nonce. For these calls, do not encode Symmio core `setFundingFee(...)` directly.
+
+Encode `setFundingFee` from the `SymmioPartyB` ABI instead. It has the same funding parameters plus `fundingNonce` as the last argument:
+
+```typescript
+const partyBInterface = new ethers.Interface([
+  "function setFundingFee(uint256[] symbolIds,int256[] longFees,int256[] shortFees,int256[] marketPrices,uint256 fundingNonce)"
+]);
+
+const fundingCallData = partyBInterface.encodeFunctionData("setFundingFee", [
+  symbolIds,
+  longFees,
+  shortFees,
+  marketPrices,
+  fundingNonce
+]);
+```
+
+Use `fundingCallData` as the PartyB operation calldata, the same place you would put `lockQuote` or `openPosition` calldata. The nonce is not a new top-level field and should not be placed in `replayAttackHeader.nonce`. `SymmioPartyB._call` checks `fundingNonce`; if it is newer than the last accepted funding nonce, it forwards the funding update to Symmio. If it is stale or equal, it skips the funding update without reverting the whole batch.
+
+This `fundingNonce` is the solver engine ordering nonce. It is separate from `replayAttackHeader.nonce`.
+
 ## Self-Execution Mode (No Signature Required)
 
 When PartyB is the transaction sender (`msg.sender`), signature verification is automatically skipped for operations where `signer == msg.sender`. This allows PartyB to execute operations directly without signing them.

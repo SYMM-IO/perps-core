@@ -14,7 +14,15 @@ import { IERC1271 } from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 
 interface ISymmio {
 	function isCallFromInstantLayer() external view returns (bool);
+
 	function adlClose(uint256 quoteId, uint256 amount, uint256 price) external;
+
+	function setFundingFee(
+		uint256[] calldata symbolIds,
+		int256[] calldata longFees,
+		int256[] calldata shortFees,
+		int256[] calldata marketPrices
+	) external;
 }
 
 /// @notice PartyB (solver/hedger) contract that manages positions and executes calls against Symmio
@@ -30,6 +38,7 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 	mapping(bytes4 => bool) public restrictedSelectors; // slot N+1
 	mapping(address => bool) public multicastWhitelist; // slot N+2
 	address public signer; // slot N+3 (was _guardCounter in v0.8.4, always 0 after tx)
+	uint256 public fundingNonce; // slot N+4: last accepted funding update nonce
 
 	/// @custom:oz-upgrades-unsafe-allow constructor
 	constructor() {
@@ -152,10 +161,44 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 		}
 	}
 
-	/// @notice Executes multiple calls to the Symmio contract
+	/// @notice Sets Symmio funding fees only if `nonce` is newer than the last accepted funding nonce.
+	/// @dev Stale nonce calls are skipped without reverting, so out-of-order engine responses cannot
+	///      overwrite a newer funding-rate update or break the surrounding PartyB template.
+	function setFundingFee(
+		uint256[] calldata symbolIds,
+		int256[] calldata longFees,
+		int256[] calldata shortFees,
+		int256[] calldata marketPrices,
+		uint256 nonce
+	) external whenNotPaused {
+		require(symmioAddress != address(0), "SymmioPartyB: Invalid address");
+		require(
+			hasRole(MANAGER_ROLE, msg.sender) || hasRole(TRUSTED_ROLE, msg.sender) || ISymmio(symmioAddress).isCallFromInstantLayer(),
+			"SymmioPartyB: Invalid access"
+		);
+		if (nonce < fundingNonce) return;
+		fundingNonce = nonce;
+		ISymmio(symmioAddress).setFundingFee(symbolIds, longFees, shortFees, marketPrices);
+	}
+
+	/// @notice Executes multiple calls to Symmio; entries targeting this PartyB's `setFundingFee`
+	///         selector are routed back to self so the nonce-gate runs.
 	/// @param _callDatas An array of call data to be used for the calls
 	function _call(bytes[] calldata _callDatas) external whenNotPaused {
-		for (uint8 i; i < _callDatas.length; i++) _executeCall(symmioAddress, _callDatas[i]);
+		for (uint8 i; i < _callDatas.length; i++) {
+			bytes calldata cd = _callDatas[i];
+			if (cd.length >= 4 && bytes4(cd[:4]) == this.setFundingFee.selector) {
+				(bool success, bytes memory resultData) = address(this).delegatecall(cd);
+				if (!success) {
+					if (resultData.length == 0) revert("SymmioPartyB: Execution reverted");
+					assembly {
+						revert(add(resultData, 32), mload(resultData))
+					}
+				}
+			} else {
+				_executeCall(symmioAddress, cd);
+			}
+		}
 	}
 
 	/// @notice Executes multiple calls to specified destination addresses

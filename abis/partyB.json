@@ -402,6 +402,19 @@
         "type": "function"
     },
     {
+        "inputs": [],
+        "name": "fundingNonce",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
         "inputs": [
             {
                 "internalType": "bytes32",
@@ -607,6 +620,39 @@
             }
         ],
         "name": "revokeRole",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256[]",
+                "name": "symbolIds",
+                "type": "uint256[]"
+            },
+            {
+                "internalType": "int256[]",
+                "name": "longFees",
+                "type": "int256[]"
+            },
+            {
+                "internalType": "int256[]",
+                "name": "shortFees",
+                "type": "int256[]"
+            },
+            {
+                "internalType": "int256[]",
+                "name": "marketPrices",
+                "type": "int256[]"
+            },
+            {
+                "internalType": "uint256",
+                "name": "nonce",
+                "type": "uint256"
+            }
+        ],
+        "name": "setFundingFee",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"

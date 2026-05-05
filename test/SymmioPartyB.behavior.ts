@@ -120,5 +120,43 @@ export function shouldBehaveLikeSymmioPartyB(): void {
 				expect(quoteAfter1.closedAmount).to.equal(0n)
 			})
 		})
+
+		describe("nonce-gated funding", function () {
+			it("skips stale nonce-gated funding updates without reverting", async function () {
+				const partyBAddress = await setupPartyBContract()
+				await context.pauseControlFacet.connect(context.signers.admin).activateAccumulatedFunding()
+
+				const setEpochCall = context.fundingRateFacet.interface.encodeFunctionData("setEpochDurations", [[1], [28800]])
+				await context.symmioPartyB.connect(context.signers.admin)._call([setEpochCall])
+
+				const newerFundingCall = context.symmioPartyB.interface.encodeFunctionData("setFundingFee", [
+					[1],
+					[decimal(2n, 14)],
+					[-decimal(2n, 14)],
+					[decimal(1n)],
+					2n,
+				])
+				await context.symmioPartyB.connect(context.signers.admin)._call([newerFundingCall])
+
+				let fundingFee = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, partyBAddress)
+				expect(await context.symmioPartyB.fundingNonce()).to.equal(2n)
+				expect(fundingFee.currentLongRate).to.equal(decimal(2n, 14))
+				expect(fundingFee.currentShortRate).to.equal(-decimal(2n, 14))
+
+				const staleFundingCall = context.symmioPartyB.interface.encodeFunctionData("setFundingFee", [
+					[1],
+					[decimal(9n, 14)],
+					[-decimal(9n, 14)],
+					[decimal(1n)],
+					1n,
+				])
+				await expect(context.symmioPartyB.connect(context.signers.admin)._call([staleFundingCall])).to.not.be.reverted
+
+				fundingFee = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, partyBAddress)
+				expect(await context.symmioPartyB.fundingNonce()).to.equal(2n)
+				expect(fundingFee.currentLongRate).to.equal(decimal(2n, 14))
+				expect(fundingFee.currentShortRate).to.equal(-decimal(2n, 14))
+			})
+		})
 	})
 }
