@@ -262,6 +262,24 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			await expect(user.deferredLiquidateAndSetSymbolPrices([1n], [decimal(8n)], [1n])).to.be.revertedWith("Accessibility: PartyA isn't solvent")
 		})
 
+		it("Should use the liquidation funding snapshot when an epoch passes before closing positions", async function () {
+			const price = decimal(572n, 16)
+			await user.liquidateAndSetSymbolPrices([1n], [price], [1n])
+
+			const fundingAtLiquidation = await getFundingFee()
+			await time.increase(500)
+			const fundingAfterDelay = await getFundingFee()
+			expect(fundingAfterDelay).to.be.greaterThan(fundingAtLiquidation)
+
+			await user.liquidatePendingPositions()
+			await user.liquidatePositions([1])
+
+			const liquidationState = await user.getLiquidatedStateOfPartyA()
+			expect(liquidationState.disputed).to.equal(false)
+			expect(liquidationState.partyAAccumulatedUpnl).to.equal(liquidationState.upnl)
+			await expect(user.settleLiquidation()).to.not.be.reverted
+		})
+
 		/**
 		 * INSURANCE VAULT TEST - NORMAL LIQUIDATION
 		 *

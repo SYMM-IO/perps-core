@@ -189,10 +189,10 @@ library PartyALiquidationFacetImpl {
 				quote
 			);
 
-			int256 accumulatedFundingFee = LibQuoteFunding.getAccumulatedFundingFee(quote.id);
-			int256 pnlWithFunding = (hasMadeProfit ? int256(amount) : -int256(amount)) - accumulatedFundingFee;
 			LiquidationSettlementState storage settlementState = accountLayout.settlementStates[partyA][quote.partyB];
 			LiquidationDetail storage liquidationDetail = accountLayout.liquidationDetails[partyA];
+			int256 accumulatedFundingFee = LibQuoteFunding.getAccumulatedFundingFeeAt(quote.id, liquidationDetail.timestamp);
+			int256 pnlWithFunding = (hasMadeProfit ? int256(amount) : -int256(amount)) - accumulatedFundingFee;
 
 			if (!settlementState.pending) {
 				settlementState.pending = true;
