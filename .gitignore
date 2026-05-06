@@ -39,5 +39,6 @@ pnpm-lock.yaml
 .venv
 
 CLAUDE.md
+AGENTS.md
 .codex/
 .DS_Store
