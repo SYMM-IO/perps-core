@@ -19,19 +19,29 @@ library LibQuoteFunding {
 	/// @param quoteId The quote ID to calculate funding for
 	/// @return fee The net funding fee (positive = trader pays, negative = trader receives)
 	function getAccumulatedFundingFee(uint256 quoteId) public view returns (int256 fee) {
+		return getAccumulatedFundingFeeAt(quoteId, block.timestamp);
+	}
+
+	/// @notice Calculates the accumulated funding fee for a position at a specific timestamp
+	/// @dev Used by liquidation to keep funding aligned with the liquidation snapshot.
+	/// @param quoteId The quote ID to calculate funding for
+	/// @param timestamp The timestamp to calculate funding at
+	/// @return fee The net funding fee (positive = trader pays, negative = trader receives)
+	function getAccumulatedFundingFeeAt(uint256 quoteId, uint256 timestamp) public view returns (int256 fee) {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		FundingFee storage fundingFee = FundingStorage.layout().fundingFees[quote.symbolId][quote.partyB];
 
 		// Early exit conditions:
 		// 1. No epoch duration set (accumulated funding not active)
 		if (fundingFee.epochDuration == 0) return 0;
+		if (timestamp <= quote.lastFundingPaymentTimestamp) return 0;
 
-		uint256 unpaidEpochs = LibFundingRate.getEpochsSince(fundingFee, quote.lastFundingPaymentTimestamp);
+		uint256 unpaidEpochs = LibFundingRate.getEpochsSinceAt(fundingFee, quote.lastFundingPaymentTimestamp, timestamp);
 
 		if (unpaidEpochs == 0) return 0;
 
 		// Calculate epochs in the weighted average
-		uint256 epochsSinceLastUpdate = LibFundingRate.getEpochsSinceLastUpdate(fundingFee);
+		uint256 epochsSinceLastUpdate = LibFundingRate.getEpochsSinceLastUpdateAt(fundingFee, timestamp);
 		uint256 epochsBeforeLastUpdate = fundingFee.lastUpdatedEpoch - fundingFee.startEpoch;
 
 		int256 beforeWeightedRate = quote.positionType == PositionType.LONG ? fundingFee.accumulatedLongRate : fundingFee.accumulatedShortRate;

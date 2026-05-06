@@ -15,22 +15,38 @@ library LibFundingRate {
 
 	/// @notice Returns the number of epochs elapsed since the last funding rate update.
 	function getEpochsSinceLastUpdate(FundingFee memory fundingFee) internal view returns (uint256) {
-		uint256 currentEpoch = getEpochOfTimestamp(block.timestamp, fundingFee.epochDuration);
-		uint256 epochsSinceLastUpdate = currentEpoch - fundingFee.lastUpdatedEpoch;
+		return getEpochsSinceLastUpdateAt(fundingFee, block.timestamp);
+	}
 
-		return epochsSinceLastUpdate;
+	/// @notice Returns the number of epochs elapsed since the last funding rate update at a specific timestamp.
+	function getEpochsSinceLastUpdateAt(FundingFee memory fundingFee, uint256 timestamp) internal pure returns (uint256) {
+		uint256 currentEpoch = getEpochOfTimestamp(timestamp, fundingFee.epochDuration);
+		require(currentEpoch >= fundingFee.lastUpdatedEpoch, "FundingRateFacet: Timestamp before last update");
+		return currentEpoch - fundingFee.lastUpdatedEpoch;
 	}
 
 	/// @notice Returns the number of epochs elapsed since the funding fee start epoch.
 	function getEpochsSinceStart(FundingFee memory fundingFee) internal view returns (uint256) {
-		uint256 currentEpoch = getEpochOfTimestamp(block.timestamp, fundingFee.epochDuration);
+		return getEpochsSinceStartAt(fundingFee, block.timestamp);
+	}
+
+	/// @notice Returns the number of epochs elapsed since the funding fee start epoch at a specific timestamp.
+	function getEpochsSinceStartAt(FundingFee memory fundingFee, uint256 timestamp) internal pure returns (uint256) {
+		uint256 currentEpoch = getEpochOfTimestamp(timestamp, fundingFee.epochDuration);
+		require(currentEpoch >= fundingFee.startEpoch, "FundingRateFacet: Timestamp before funding start");
 		return currentEpoch - fundingFee.startEpoch;
 	}
 
 	/// @notice Returns the number of epochs elapsed since the given timestamp.
 	function getEpochsSince(FundingFee memory fundingFee, uint256 timestamp) internal view returns (uint256) {
-		uint256 currentEpoch = getEpochOfTimestamp(block.timestamp, fundingFee.epochDuration);
-		uint256 lastUpdatedEpoch = getEpochOfTimestamp(timestamp, fundingFee.epochDuration);
+		return getEpochsSinceAt(fundingFee, timestamp, block.timestamp);
+	}
+
+	/// @notice Returns the number of epochs elapsed between two timestamps.
+	function getEpochsSinceAt(FundingFee memory fundingFee, uint256 fromTimestamp, uint256 toTimestamp) internal pure returns (uint256) {
+		uint256 currentEpoch = getEpochOfTimestamp(toTimestamp, fundingFee.epochDuration);
+		uint256 lastUpdatedEpoch = getEpochOfTimestamp(fromTimestamp, fundingFee.epochDuration);
+		require(currentEpoch >= lastUpdatedEpoch, "FundingRateFacet: Timestamp before funding timestamp");
 		return currentEpoch - lastUpdatedEpoch;
 	}
 
