@@ -21,6 +21,7 @@ import {
 } from "../../storages/AccountStorage.sol";
 import { AffiliateStorage, AffiliateState, HookContext } from "../../storages/AffiliateStorage.sol";
 import { LibQuoteParams, QuoteParams } from "../../libraries/LibQuoteParams.sol";
+import { LibAccountLayerAccessibility } from "../../libraries/LibAccountLayerAccessibility.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
 import { LibAccountLayerSafeCall } from "../../libraries/LibAccountLayerSafeCall.sol";
 import { LibAccountLayerSafeERC20 } from "../../libraries/LibAccountLayerSafeERC20.sol";
@@ -53,6 +54,28 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 
 		for (uint256 i = 0; i < accountsData.length; i++) {
 			createdAccounts[i] = _createSubAccount(affiliate, signer, accountsData[i]);
+		}
+
+		return createdAccounts;
+	}
+
+	/// @notice Creates one or more sub-accounts for a specified owner under the specified affiliate
+	/// @param owner The owner of the created sub-accounts
+	/// @param affiliate The affiliate address the sub-accounts belong to
+	/// @param accountsData Configuration for each sub-account to create
+	/// @return The deterministic addresses of the created sub-accounts
+	function createSubAccountsFor(
+		address owner,
+		address affiliate,
+		SubAccountCreationData[] memory accountsData
+	) external whenNotPaused nonReentrant onlyRole(LibAccountLayerAccessibility.ACCOUNT_CREATOR_ROLE) returns (address[] memory) {
+		if (owner == address(0)) revert ZeroAddress();
+		if (accountsData.length == 0) revert EmptyArray();
+
+		address[] memory createdAccounts = new address[](accountsData.length);
+
+		for (uint256 i = 0; i < accountsData.length; i++) {
+			createdAccounts[i] = _createSubAccount(affiliate, owner, accountsData[i]);
 		}
 
 		return createdAccounts;
@@ -142,6 +165,37 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		);
 
 		emit SubAccountDeleted(subAccount, owner, affiliate);
+	}
+
+	/// @notice Transfers ownership of a sub-account and all of its virtual accounts to a new owner
+	/// @param subAccount The sub-account address to transfer
+	/// @param newOwner The new owner of the sub-account
+	function transferSubAccountOwnership(address subAccount, address newOwner) external whenNotPaused nonReentrant onlyAccountOwner(subAccount) {
+		if (newOwner == address(0)) revert ZeroAddress();
+
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
+		SubAccountData storage s = ahLayout.subAccounts[subAccount];
+		if (!s.isExists) revert AccountDoesNotExist();
+
+		address oldOwner = s.owner;
+		if (oldOwner == newOwner) revert InvalidState();
+
+		address affiliate = s.affiliate;
+		address symmioCore = s.symmioCore;
+
+		ahLayout.userToSubAccounts[oldOwner].remove(subAccount);
+		ahLayout.userToSubAccounts[newOwner].add(subAccount);
+		s.owner = newOwner;
+
+		LibAccountLayerUtils.callHook(
+			affiliate,
+			subAccount,
+			symmioCore,
+			IAccountLayerHook.onSubAccountOwnershipTransfer.selector,
+			abi.encodeWithSelector(IAccountLayerHook.onSubAccountOwnershipTransfer.selector, subAccount, oldOwner, newOwner)
+		);
+
+		emit SubAccountOwnershipTransferred(subAccount, oldOwner, newOwner);
 	}
 
 	// ==================== Virtual Account Management ====================

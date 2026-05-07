@@ -13,6 +13,8 @@ interface ICoreFacetEvents {
 	event SubAccountCreated(address indexed account, address indexed owner, address indexed affiliate, string name);
 	/// @notice Emitted when a sub-account is deleted
 	event SubAccountDeleted(address indexed account, address indexed owner, address indexed affiliate);
+	/// @notice Emitted when ownership of a sub-account is transferred
+	event SubAccountOwnershipTransferred(address indexed account, address indexed oldOwner, address indexed newOwner);
 	/// @notice Emitted when a new virtual account is created
 	event VirtualAccountCreated(address indexed account, address indexed parent);
 	/// @notice Emitted when a previously deleted virtual account is reused
@@ -41,6 +43,13 @@ interface ICoreFacet is ICoreFacetEvents, IAccountLayerErrors {
 	/// @return The deterministic addresses of the created sub-accounts
 	function createSubAccounts(address affiliate, SubAccountCreationData[] memory accountsData) external returns (address[] memory);
 
+	/// @notice Creates one or more sub-accounts for a specified owner under the specified affiliate
+	/// @param owner The owner of the created sub-accounts
+	/// @param affiliate The affiliate address
+	/// @param accountsData Configuration for each sub-account to create
+	/// @return The deterministic addresses of the created sub-accounts
+	function createSubAccountsFor(address owner, address affiliate, SubAccountCreationData[] memory accountsData) external returns (address[] memory);
+
 	/// @notice Updates the display name of a sub-account
 	/// @param account The sub-account address
 	/// @param name The new name
@@ -54,6 +63,11 @@ interface ICoreFacet is ICoreFacetEvents, IAccountLayerErrors {
 	/// @notice Deletes a sub-account that has no active VAs, positions, or balance
 	/// @param subAccount The sub-account address to delete
 	function deleteSubAccount(address subAccount) external;
+
+	/// @notice Transfers ownership of a sub-account to a new owner
+	/// @param subAccount The sub-account address to transfer
+	/// @param newOwner The new owner of the sub-account
+	function transferSubAccountOwnership(address subAccount, address newOwner) external;
 
 	// ==================== Virtual Account Management ====================
 
