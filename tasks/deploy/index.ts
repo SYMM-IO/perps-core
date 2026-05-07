@@ -13,15 +13,7 @@ import { signatureVerifierTask } from "./signatureVerifier.js"
 import { stablecoinTask } from "./stablecoin.js"
 import { grantSymbolManagerDiamondRolesTask, grantSymbolManagerOperatorRolesTask, symbolManagerTask } from "./symbolManager.js"
 import { upgradeProxyTask } from "./upgrade.js"
-import {
-	checkDeploymentTask,
-	verifyAccountTask,
-	verifyAccountLayerTask,
-	verifyAffiliateTask,
-	verifyAllTask,
-	verifyDeploymentTask,
-	verifyInstantLayerTask,
-} from "./verify.js"
+import { checkDeploymentTask, verifyAllTask } from "./verify.js"
 
 export const deployTasks = [
 	accountLayerDiamondTask,
@@ -44,9 +36,4 @@ export const deployTasks = [
 	grantSymbolManagerOperatorRolesTask,
 	upgradeProxyTask,
 	verifyAllTask,
-	verifyDeploymentTask,
-	verifyAccountLayerTask,
-	verifyAffiliateTask,
-	verifyAccountTask,
-	verifyInstantLayerTask,
 ]

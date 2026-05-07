@@ -116,18 +116,19 @@ async function main() {
 	log.setSteps(3)
 
 	// Step 1: Boundary check
-	let t = log.step("Boundary check (getNextQuoteId)")
+	let t = log.step("Boundary check (lastQuoteId)")
 	const viewFacetQuote = await ethers.getContractAt("contracts/core/facets/ViewFacetQuote/ViewFacetQuote.sol:ViewFacetQuote", DIAMOND_ADDRESS)
-	const onChainNextQuoteId = toBigInt(await viewFacetQuote.getNextQuoteId())
+	// getNextQuoteId() returns the LAST assigned quote ID (not next available) — see QuoteStorage.lastId
+	const onChainLastQuoteId = toBigInt(await viewFacetQuote.getNextQuoteId())
 	const maxInputQuoteId = quoteIds.reduce((max, id) => {
 		const n = BigInt(id)
 		return n > max ? n : max
 	}, 0n)
 
-	if (maxInputQuoteId >= onChainNextQuoteId) {
-		log.warn(`Input contains quoteIds >= on-chain nextQuoteId (${onChainNextQuoteId}). Input may be stale.`)
+	if (maxInputQuoteId > onChainLastQuoteId) {
+		log.warn(`Input contains quoteIds > on-chain lastQuoteId (${onChainLastQuoteId}). Input may be stale.`)
 	} else {
-		log.ok(`Boundary OK — on-chain nextQuoteId=${onChainNextQuoteId}, input max=${maxInputQuoteId}`)
+		log.ok(`Boundary OK — on-chain lastQuoteId=${onChainLastQuoteId}, input max=${maxInputQuoteId}`)
 	}
 	log.stepDone(t)
 

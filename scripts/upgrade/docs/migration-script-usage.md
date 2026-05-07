@@ -35,10 +35,10 @@ Key features:
 
 ## Step 1: Prepare Migration Input
 
-Fetches data from the subgraph, validates the boundary against on-chain `getNextQuoteId()`, and writes a JSON file. **Can run before or after the diamondCut** — no v0.8.5-specific ABIs are used.
+Fetches data from the subgraph, validates the boundary against on-chain `getNextQuoteId()` (which returns the last assigned ID, not next available), and writes a JSON file. **Can run before or after the diamondCut** — no v0.8.5-specific ABIs are used.
 
 ```bash
-npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network mantle
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network mantle
 ```
 
 Output: `scripts/upgrade/output/migration-input.json`
@@ -53,19 +53,20 @@ Output: `scripts/upgrade/output/migration-input.json`
 
 ## Step 1b: Validate Migration Input (optional)
 
-Spot-checks the migration input against on-chain state. Uses raw `eth_call` for `getQuote()` to decode only the fields that exist in both v0.8.4 and v0.8.5 (`quoteStatus`, `partyA`, `partyB`, `symbolId`). **Can run before or after the diamondCut.**
+Two complementary scripts validate the migration input against on-chain state. Both use raw `eth_call` for `getQuote()` to work with v0.8.4 and v0.8.5. **Can run before or after the diamondCut.**
+
+### `validateMigrationInput.ts` -- random spot-checks
+
+Samples N random quotes and partyB balances to verify they exist on-chain. Good for catching systemic issues (wrong subgraph, stale data).
 
 ```bash
-npx hardhat run scripts/upgrade/validateMigrationInput.ts --network mantle
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/validateMigrationInput.ts --network mantle
 ```
 
-### What it checks
-
-- **Boundary**: on-chain `getNextQuoteId()` must exceed the max input quoteId
-- **Quote spot-check**: random sample of quotes verified via raw `eth_call` + manual ABI decoding (version-agnostic)
+What it checks:
+- **Boundary**: max input quoteId must not exceed on-chain `getNextQuoteId()` (last assigned ID)
+- **Quote spot-check**: random sample of quotes verified via raw `eth_call` + manual ABI decoding
 - **Balance spot-check**: random sample of partyB allocated balances verified via `allocatedBalanceOfPartyB()`
-
-### Env vars
 
 | Env var | Default | Description |
 |---------|---------|-------------|
@@ -73,12 +74,39 @@ npx hardhat run scripts/upgrade/validateMigrationInput.ts --network mantle
 | `MIGRATION_INPUT_FILE` | `scripts/upgrade/output/migration-input.json` | Input file to validate |
 | `SPOT_CHECK_COUNT` | `20` | Number of quotes/balances to spot-check |
 
-## Step 2: Run Migration
+### `validateMigrationEdgeCases.ts` -- deterministic corner cases
 
-Takes the validated input file and runs migration + verification.
+Targets edge cases that random sampling is unlikely to hit. Especially important on fork tests where the subgraph indexes the live chain beyond the fork block.
 
 ```bash
-DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/validateMigrationEdgeCases.ts --network mantle
+```
+
+What it checks:
+- **Boundary quote**: verifies the quote at `lastId` is included if it has a migratable status
+- **Fork drift**: ensures no quoteIds exceed on-chain `lastId`
+- **Gap scan**: scans first and last N quotes on-chain, flags active quotes missing from input
+- **PartyB completeness**: checks for empty `partyAs` arrays and duplicate partyB entries
+- **PENDING quotes**: samples PENDING quotes to verify zero-address partyB
+
+| Env var | Default | Description |
+|---------|---------|-------------|
+| `DIAMOND_ADDRESS` | from `upgrade.json` | Diamond proxy address |
+| `MIGRATION_INPUT_FILE` | `scripts/upgrade/output/migration-input.json` | Input file to validate |
+| `GAP_SCAN_RANGE` | `50` | Number of quotes to scan from each end (head + tail) |
+
+## Step 2: Run Migration
+
+Takes the validated input file and runs migration + verification. Any failure halts immediately. The migration report is always printed before exiting, even on failure.
+
+Built-in verification (step 4/4) checks:
+- `isQuoteMigrated()` for every quoteId — quotes with non-migratable on-chain status (CANCELED, CLOSED, etc.) are skipped, matching the contract's behavior
+- `isCrossLockedValuesMigrated()` for every partyB-partyA pair
+- Cross locked values sum matches per-partyA values
+- Aggregated positions match expected amounts from the input
+
+```bash
+USE_KEYSTORE=true DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
   npx hardhat run scripts/upgrade/runMigration.ts --network localhost
 ```
 
@@ -98,10 +126,10 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 | `chunkSize` | `50` | Items per migration transaction (quotes and partyAs) |
 | `dryRun` | `false` | Log operations without executing |
 | `fork` | `false` | Impersonate diamond owner instead of using deployer signer |
+| `skipPreCheck` | `false` | Skip on-chain pre-flight checks for already-migrated items (faster, may send no-op transactions) |
 | `progressFile` | `scripts/upgrade/output/migration-progress.json` | Resume file path |
 | `reportFile` | `scripts/upgrade/output/migration-report.json` | Report file path |
 | `outputDir` | `scripts/upgrade/output` | Output directory |
-| `strict` | `false` | Stop immediately on any failure |
 
 ### Env var overrides
 
@@ -112,10 +140,10 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 | `MIGRATE_CHUNK_SIZE` | `chunkSize` |
 | `DRY_RUN` | `dryRun` |
 | `FORK` | `fork` |
+| `SKIP_PRE_CHECK` | `skipPreCheck` |
 | `MIGRATE_PROGRESS_FILE` | `progressFile` |
 | `MIGRATE_REPORT_FILE` | `reportFile` |
 | `MIGRATION_OUTPUT_DIR` | `outputDir` |
-| `MIGRATE_STRICT` | `strict` |
 
 ## Low-Level API (`scripts/upgrade/migrate.ts`)
 
@@ -132,7 +160,7 @@ const input: MigrationInput = {
     ]
 }
 
-const report = await migrate(migrationFacet, input, {
+const report = await migrate(migrationFacet, viewFacetQuote, input, {
     chunkSize: 50,
     maxRetries: 3,
     confirmations: 1,
@@ -149,7 +177,7 @@ const report = await migrate(migrationFacet, input, {
 | `retryBackoffMultiplier` | 2 | Exponential backoff multiplier |
 | `confirmations` | 1 | Block confirmations to wait |
 | `progressFile` | `./migration-progress.json` | Progress file path (null to disable) |
-| `strict` | false | Throw error on any failure |
+| `skipPreCheck` | false | Skip on-chain pre-flight checks (faster, contract handles idempotency) |
 | `dryRun` | false | Log without executing transactions |
 
 ## Resume After Failure
@@ -158,12 +186,12 @@ The script automatically saves progress after each successful operation. If it f
 
 ```bash
 # First run - fails at chunk 5
-DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
+USE_KEYSTORE=true DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
   npx hardhat run scripts/upgrade/runMigration.ts --network localhost
 # Output: error at chunk 5
 
 # Second run - automatically resumes from chunk 5
-DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
+USE_KEYSTORE=true DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
   npx hardhat run scripts/upgrade/runMigration.ts --network localhost
 # Output: Resuming migration from quotes phase
 ```
@@ -175,7 +203,7 @@ The progress file is automatically deleted when migration completes successfully
 Test the migration without executing transactions:
 
 ```bash
-DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
+USE_KEYSTORE=true DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
   DRY_RUN=true npx hardhat run scripts/upgrade/runMigration.ts --network localhost
 ```
 
@@ -229,9 +257,6 @@ Quote migration calls `addConnection()` which checks `maxPartyAConnectionLimit`.
 
 ### Stuck migration
 Delete the progress file (`scripts/upgrade/output/migration-progress.json`) to start fresh. Already-migrated items will be skipped via on-chain checks.
-
-### Strict mode
-Use `strict: true` in config (or `MIGRATE_STRICT=true` env var) to stop immediately on any failure instead of continuing.
 
 ### Subgraph validation fails
 The subgraph may not be synced to the current block. Check the spot-check error message -- it tells you which field mismatched and whether the subgraph is stale.

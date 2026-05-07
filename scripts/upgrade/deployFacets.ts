@@ -1,14 +1,16 @@
 import fs from "fs"
 import path from "path"
 
+import connection from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
+import { verifyRpc } from "./utils/rpcCheck.js"
 import { deployFacets } from "./utils/upgradeHelpers.js"
 
 /**
  * Deploy v0.8.5 facets and libraries.
  *
  * Deploys all facet contracts and their library dependencies, saving
- * addresses to output/deployed-facets.json. Supports incremental
+ * addresses to output/deployed-facets-{network}.json. Supports incremental
  * deployment -- if the output file already exists, previously deployed
  * contracts are skipped.
  *
@@ -23,8 +25,10 @@ async function main() {
 	const t = log.timer()
 	if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
 
+	const networkName = connection.networkName
+	await verifyRpc()
 	log.header("Deploy v0.8.5 Facets")
-	const facetsOutFile = path.join(OUTPUT_DIR, "deployed-facets.json")
+	const facetsOutFile = path.join(OUTPUT_DIR, `deployed-facets-${networkName}.json`)
 	const facetData = await deployFacets(facetsOutFile)
 
 	log.success("Facet deployment complete", [

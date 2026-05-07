@@ -14,7 +14,7 @@ const DEFAULT_CONFIG: Required<MigrationConfig> = {
 	retryBackoffMultiplier: 2,
 	confirmations: 1,
 	progressFile: "./migration-progress.json",
-	strict: false,
+	skipPreCheck: false,
 	dryRun: false,
 }
 
@@ -35,8 +35,8 @@ export interface MigrationConfig {
 	confirmations?: number
 	/** File path for saving progress (enables resume) */
 	progressFile?: string | null
-	/** Throw error if any operation fails */
-	strict?: boolean
+	/** Skip pre-flight on-chain checks for already-migrated items (faster, may send no-op transactions) */
+	skipPreCheck?: boolean
 	/** Dry run mode - log operations without executing */
 	dryRun?: boolean
 }
@@ -83,14 +83,19 @@ export interface MigrationReport {
 	partyAsTotal: number
 	partyAsMigrated: number
 	operations: OperationResult[]
-	status: "success" | "partial_failure" | "failed"
+	status: "success" | "failed"
 }
 
 // =============================================================================
 // Main Migration Function
 // =============================================================================
 
-export async function migrate(migrationFacet: MigrationFacet, input: MigrationInput, config: MigrationConfig = {}): Promise<MigrationReport> {
+export async function migrate(
+	migrationFacet: MigrationFacet,
+	viewFacetQuote: { getQuote(quoteId: bigint): Promise<{ quoteStatus: bigint; partyA: string }> },
+	input: MigrationInput,
+	config: MigrationConfig = {},
+): Promise<MigrationReport> {
 	const cfg = { ...DEFAULT_CONFIG, ...config }
 	const startTime = Date.now()
 	const startedAt = new Date().toISOString()
@@ -136,140 +141,174 @@ export async function migrate(migrationFacet: MigrationFacet, input: MigrationIn
 	log("info", `  PartyBs:  ${partyBsMigrated}/${input.partyBTasks.length}`)
 	log("info", `  PartyAs:  ${partyAsMigrated}/${totalPartyAs}`)
 
-	// =========================================================================
-	// Phase 1: Migrate Quotes (Aggregated Positions)
-	// =========================================================================
+	let migrationError: Error | null = null
 
-	if (progress.phase === "quotes" || progress.phase === "balances") {
-		if (progress.phase === "quotes") {
-			logHeader("Phase 1: Migrating Quotes")
+	try {
+		// =========================================================================
+		// Phase 1: Migrate Quotes (Aggregated Positions)
+		// =========================================================================
 
-			const quoteChunks = chunkArray(input.quoteIds, cfg.chunkSize)
-			const startChunk = progress.lastProcessedQuoteChunk + 1
+		if (progress.phase === "quotes" || progress.phase === "balances") {
+			if (progress.phase === "quotes") {
+				logHeader("Phase 1: Migrating Quotes")
 
-			for (let i = startChunk; i < quoteChunks.length; i++) {
-				const chunk = quoteChunks[i]
-				const operation = `Migrate quotes (chunk ${i + 1}/${quoteChunks.length})`
-
-				const result = await executeOperation(
-					operation,
-					async () => {
-						if (cfg.dryRun) {
-							log("info", `  [DRY RUN] Would migrate ${chunk.length} quotes`)
-							return null
+				let quotesToMigrate = input.quoteIds
+				if (!cfg.skipPreCheck) {
+					// Filter out already-migrated and non-migratable quotes to avoid no-op transactions.
+					// Non-migratable statuses (CANCELED=3, CLOSED=7, LIQUIDATED=8, EXPIRED=9, LIQUIDATED_PENDING=10)
+					// are correctly skipped by the contract — no need to send them.
+					const MIGRATABLE = new Set([0, 1, 2, 4, 5, 6])
+					const pending: bigint[] = []
+					let alreadyMigrated = 0
+					let nonMigratable = 0
+					for (const quoteId of input.quoteIds) {
+						const migrated: boolean = await migrationFacet.isQuoteMigrated(quoteId)
+						if (migrated) {
+							alreadyMigrated++
+						} else {
+							const quote = await viewFacetQuote.getQuote(quoteId)
+							if (MIGRATABLE.has(Number(quote.quoteStatus))) {
+								pending.push(quoteId)
+							} else {
+								nonMigratable++
+							}
 						}
-						return migrationFacet.migrateQuotes(chunk)
-					},
-					cfg,
-				)
-
-				operations.push(result)
-
-				if (result.success) {
-					quotesMigrated += chunk.length
-					progress.quotesProcessed += chunk.length
-					progress.lastProcessedQuoteChunk = i
-					saveProgress(cfg.progressFile, progress)
-				} else if (cfg.strict) {
-					throw new Error(`Migration failed at ${operation}: ${result.error}`)
+					}
+					log("info", `  ${alreadyMigrated} already migrated, ${nonMigratable} non-migratable, ${pending.length} remaining`)
+					quotesToMigrate = pending
 				}
-			}
 
-			progress.phase = "balances"
-			saveProgress(cfg.progressFile, progress)
-		}
+				const quoteChunks = chunkArray(quotesToMigrate, cfg.chunkSize)
+				const startChunk = progress.lastProcessedQuoteChunk + 1
 
-		// =====================================================================
-		// Phase 2: Migrate PartyB Balances (Cross Bucket)
-		// =====================================================================
+				for (let i = startChunk; i < quoteChunks.length; i++) {
+					const chunk = quoteChunks[i]
+					const operation = `Migrate quotes (chunk ${i + 1}/${quoteChunks.length})`
 
-		logHeader("Phase 2: Migrating PartyB Balances")
+					const result = await executeOperation(
+						operation,
+						async () => {
+							if (cfg.dryRun) {
+								log("info", `  [DRY RUN] Would migrate ${chunk.length} quotes`)
+								return null
+							}
+							return migrationFacet.migrateQuotes(chunk)
+						},
+						cfg,
+					)
 
-		const startPartyB = progress.lastProcessedPartyB + 1
+					operations.push(result)
 
-		for (let i = startPartyB; i < input.partyBTasks.length; i++) {
-			const task = input.partyBTasks[i]
-			const partyB = task.partyB
-			const partyAs = deduplicateAddresses(task.partyAs)
-
-			log("info", `\nProcessing PartyB ${i + 1}/${input.partyBTasks.length}: ${formatAddress(partyB)}`)
-			log("info", `  PartyAs to process: ${partyAs.length}`)
-			partyAsTotal += partyAs.length
-
-			// No pre-check skip — the contract is idempotent (skips already-migrated pairs internally).
-			// A first-partyA-only check is unsafe: if the first partyA was migrated but others weren't,
-			// the whole partyB would be incorrectly skipped.
-
-			// Chunk partyAs to avoid gas/compute limits
-			const partyAChunks = chunkArray(partyAs, cfg.chunkSize)
-			let allChunksOk = true
-
-			// Resume from last successful partyA chunk if resuming the same partyB
-			const startPartyAChunk = i === startPartyB ? progress.lastProcessedPartyAChunk + 1 : 0
-
-			for (let j = startPartyAChunk; j < partyAChunks.length; j++) {
-				const partyAChunk = partyAChunks[j]
-				const chunkLabel = partyAChunks.length > 1 ? ` (chunk ${j + 1}/${partyAChunks.length})` : ""
-				const operation = `Migrate balances for ${formatAddress(partyB)}${chunkLabel}`
-
-				const result = await executeOperation(
-					operation,
-					async () => {
-						if (cfg.dryRun) {
-							log("info", `  [DRY RUN] Would migrate ${partyAChunk.length} partyA balances`)
-							return null
-						}
-						return migrationFacet.migrateCrossLockedValues(partyB, partyAChunk)
-					},
-					cfg,
-				)
-
-				operations.push(result)
-
-				if (result.success) {
-					partyAsMigrated += partyAChunk.length
-					progress.partyAsProcessed = partyAsMigrated
-					progress.lastProcessedPartyAChunk = j
-					saveProgress(cfg.progressFile, progress)
-				} else {
-					allChunksOk = false
-					if (cfg.strict) {
+					if (result.success) {
+						quotesMigrated += chunk.length
+						progress.quotesProcessed += chunk.length
+						progress.lastProcessedQuoteChunk = i
+						saveProgress(cfg.progressFile, progress)
+					} else {
 						throw new Error(`Migration failed at ${operation}: ${result.error}`)
 					}
 				}
+
+				progress.phase = "balances"
+				saveProgress(cfg.progressFile, progress)
 			}
 
-			if (allChunksOk) {
+			// =====================================================================
+			// Phase 2: Migrate PartyB Balances (Cross Bucket)
+			// =====================================================================
+
+			logHeader("Phase 2: Migrating PartyB Balances")
+
+			const startPartyB = progress.lastProcessedPartyB + 1
+
+			for (let i = startPartyB; i < input.partyBTasks.length; i++) {
+				const task = input.partyBTasks[i]
+				const partyB = task.partyB
+				const partyAs = deduplicateAddresses(task.partyAs)
+
+				log("info", `\nProcessing PartyB ${i + 1}/${input.partyBTasks.length}: ${formatAddress(partyB)}`)
+				partyAsTotal += partyAs.length
+
+				let partyAsToMigrate = partyAs
+				if (!cfg.skipPreCheck) {
+					// Filter out already-migrated partyAs to avoid no-op transactions
+					const pending: string[] = []
+					for (const partyA of partyAs) {
+						const migrated: boolean = await migrationFacet.isCrossLockedValuesMigrated(partyB, partyA)
+						if (!migrated) pending.push(partyA)
+					}
+					log("info", `  PartyAs: ${partyAs.length - pending.length} already migrated, ${pending.length} remaining`)
+
+					if (pending.length === 0) {
+						partyBsMigrated++
+						progress.partyBsProcessed = partyBsMigrated
+						progress.lastProcessedPartyB = i
+						progress.lastProcessedPartyAChunk = -1
+						saveProgress(cfg.progressFile, progress)
+						continue
+					}
+					partyAsToMigrate = pending
+				} else {
+					log("info", `  PartyAs to process: ${partyAs.length}`)
+				}
+
+				// Chunk partyAs to avoid gas/compute limits
+				const partyAChunks = chunkArray(partyAsToMigrate, cfg.chunkSize)
+
+				// Resume from last successful partyA chunk if resuming the same partyB
+				const startPartyAChunk = i === startPartyB ? progress.lastProcessedPartyAChunk + 1 : 0
+
+				for (let j = startPartyAChunk; j < partyAChunks.length; j++) {
+					const partyAChunk = partyAChunks[j]
+					const chunkLabel = partyAChunks.length > 1 ? ` (chunk ${j + 1}/${partyAChunks.length})` : ""
+					const operation = `Migrate balances for ${formatAddress(partyB)}${chunkLabel}`
+
+					const result = await executeOperation(
+						operation,
+						async () => {
+							if (cfg.dryRun) {
+								log("info", `  [DRY RUN] Would migrate ${partyAChunk.length} partyA balances`)
+								return null
+							}
+							return migrationFacet.migrateCrossLockedValues(partyB, partyAChunk)
+						},
+						cfg,
+					)
+
+					operations.push(result)
+
+					if (result.success) {
+						partyAsMigrated += partyAChunk.length
+						progress.partyAsProcessed = partyAsMigrated
+						progress.lastProcessedPartyAChunk = j
+						saveProgress(cfg.progressFile, progress)
+					} else {
+						throw new Error(`Migration failed at ${operation}: ${result.error}`)
+					}
+				}
+
 				partyBsMigrated++
 				progress.partyBsProcessed = partyBsMigrated
+				progress.lastProcessedPartyB = i
+				progress.lastProcessedPartyAChunk = -1
+				saveProgress(cfg.progressFile, progress)
 			}
-			progress.lastProcessedPartyB = i
-			progress.lastProcessedPartyAChunk = -1
+
+			progress.phase = "complete"
 			saveProgress(cfg.progressFile, progress)
 		}
-
-		progress.phase = "complete"
-		saveProgress(cfg.progressFile, progress)
+	} catch (error) {
+		migrationError = error instanceof Error ? error : new Error(String(error))
 	}
 
 	// =========================================================================
-	// Generate Report
+	// Generate Report (always — even on failure)
 	// =========================================================================
 
 	const finishedAt = new Date().toISOString()
 	const totalDuration = Date.now() - startTime
 
-	const successCount = operations.filter(o => o.success).length
-	const failureCount = operations.filter(o => !o.success).length
-
-	let status: MigrationReport["status"]
-	if (failureCount === 0) {
-		status = "success"
-	} else if (successCount > 0) {
-		status = "partial_failure"
-	} else {
-		status = "failed"
-	}
+	const status: MigrationReport["status"] = migrationError ? "failed" : "success"
 
 	const report: MigrationReport = {
 		startedAt,
@@ -287,13 +326,13 @@ export async function migrate(migrationFacet: MigrationFacet, input: MigrationIn
 
 	printReport(report)
 
-	// Clean up progress file on success
-	if (status === "success" && cfg.progressFile) {
-		deleteProgress(cfg.progressFile)
+	if (migrationError) {
+		throw migrationError
 	}
 
-	if (cfg.strict && status !== "success") {
-		throw new Error(`Migration completed with status: ${status}`)
+	// Clean up progress file on success
+	if (cfg.progressFile) {
+		deleteProgress(cfg.progressFile)
 	}
 
 	return report
@@ -531,21 +570,19 @@ Operations:
   Failed:   ${report.operations.filter(o => !o.success).length}
 `)
 
-	if (report.operations.some(o => !o.success)) {
-		console.log("Failed Operations:")
-		for (const op of report.operations.filter(o => !o.success)) {
-			console.log(`  - ${op.operation}: ${op.error}`)
+	if (report.status === "failed") {
+		const failedOps = report.operations.filter(o => !o.success)
+		if (failedOps.length > 0) {
+			console.log("Failed Operations:")
+			for (const op of failedOps) {
+				console.log(`  - ${op.operation}: ${op.error}`)
+			}
+			console.log("")
 		}
-		console.log("")
+		console.log(`Status: ❌ FAILED`)
+	} else {
+		console.log(`Status: ✅ SUCCESS`)
 	}
-
-	const statusIcon = {
-		success: "✅",
-		partial_failure: "⚠️",
-		failed: "❌",
-	}[report.status]
-
-	console.log(`Status: ${statusIcon} ${report.status.toUpperCase()}`)
 	console.log("=".repeat(70))
 }
 

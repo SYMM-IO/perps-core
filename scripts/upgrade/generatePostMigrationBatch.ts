@@ -1,8 +1,8 @@
 import fs from "fs"
 
-import { ethers } from "../../test/helpers/hardhat-connection.js"
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
-import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
+import { loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig.js"
 import { toHumanReadableSafeTxFromIface, type SafeBatch, type SafeTransaction } from "./utils/upgradeHelpers.js"
 
 /**
@@ -36,15 +36,16 @@ type CalldataTransaction = {
 type Config = {
 	diamondAddress?: string
 	safeAddress?: string
+	migrationRunner?: string
 	partyBs?: string[]
 }
 
-const CONFIG_FILE = process.env.POST_MIGRATION_CONFIG_FILE ?? "./scripts/upgrade/config/postMigration.json"
 const OUTPUT_DIR = "./scripts/upgrade/output"
 
-function loadConfig(): Config {
-	if (!fs.existsSync(CONFIG_FILE)) return {}
-	return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8")) as Config
+function loadConfig(networkName: string): Config {
+	const configFile = resolveConfigFile("postMigration", networkName, process.env.POST_MIGRATION_CONFIG_FILE)
+	if (!fs.existsSync(configFile)) return {}
+	return JSON.parse(fs.readFileSync(configFile, "utf-8")) as Config
 }
 
 function ensureDir(dir: string): void {
@@ -52,6 +53,7 @@ function ensureDir(dir: string): void {
 }
 
 const DIAMOND_ABI = [
+	"function revokeRole(address user, bytes32 role)",
 	"function unpauseGlobal()",
 	"function setCrossPartyBModeActivated(bool activated)",
 	"function setCrossPartyB(address partyB, bool enabled)",
@@ -61,18 +63,24 @@ const diamondIface = new ethers.Interface(DIAMOND_ABI)
 
 async function main() {
 	await verifyRpc()
-	const config = loadConfig()
-	const shared = loadUpgradeConfigShared()
+	const networkName = connection.networkName
+	const config = loadConfig(networkName)
+	const shared = loadUpgradeConfigShared(networkName)
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress ?? shared.diamondAddress
 	const SAFE_ADDRESS = process.env.SAFE_ADDRESS ?? config.safeAddress ?? shared.safeAddress
+	const MIGRATION_RUNNER = process.env.MIGRATION_RUNNER ?? config.migrationRunner ?? shared.migrationRunner
 	const partyBs = config.partyBs ?? []
 
 	if (!DIAMOND_ADDRESS || !ethers.isAddress(DIAMOND_ADDRESS)) {
 		throw new Error("DIAMOND_ADDRESS is required")
 	}
+	if (!MIGRATION_RUNNER || !ethers.isAddress(MIGRATION_RUNNER)) {
+		throw new Error("MIGRATION_RUNNER is required for role revocation (env var, postMigration.json, or upgrade.json)")
+	}
 
-	console.log(`Diamond: ${DIAMOND_ADDRESS}`)
-	console.log(`PartyBs: ${partyBs.length}`)
+	console.log(`Diamond:          ${DIAMOND_ADDRESS}`)
+	console.log(`Migration runner: ${MIGRATION_RUNNER}`)
+	console.log(`PartyBs:          ${partyBs.length}`)
 
 	for (const addr of partyBs) {
 		if (!ethers.isAddress(addr) || addr === ethers.ZeroAddress) {
@@ -93,14 +101,18 @@ async function main() {
 		})
 	}
 
-	// 1. Unpause
+	// 1. Revoke migration roles before unpause
+	addTx("revokeRole", [MIGRATION_RUNNER, ethers.id("MIGRATION_ROLE")], `revokeRole(MIGRATION_ROLE) <- ${MIGRATION_RUNNER}`)
+	addTx("revokeRole", [MIGRATION_RUNNER, ethers.id("SYMBOL_MANAGER_ROLE")], `revokeRole(SYMBOL_MANAGER_ROLE) <- ${MIGRATION_RUNNER}`)
+
+	// 2. Unpause
 	addTx("unpauseGlobal", [], "unpauseGlobal()")
 
-	// 2. Enable cross-PartyB mode (global feature flag)
+	// 3. Enable cross-PartyB mode (global feature flag)
 	if (partyBs.length > 0) {
 		addTx("setCrossPartyBModeActivated", [true], "setCrossPartyBModeActivated(true)")
 
-		// 3. Enable cross mode per PartyB
+		// 4. Enable cross mode per PartyB
 		for (const partyB of partyBs) {
 			addTx("setCrossPartyB", [partyB, true], `setCrossPartyB(${partyB}, true)`)
 		}
@@ -109,7 +121,7 @@ async function main() {
 	// Write output
 	ensureDir(OUTPUT_DIR)
 
-	const txsFile = `${OUTPUT_DIR}/post-migration-transactions.json`
+	const txsFile = `${OUTPUT_DIR}/post-migration-transactions-${networkName}.json`
 	const rawTxs = transactions.map(({ to, value, calldata, description }) => ({ to, value, calldata, description }))
 	fs.writeFileSync(txsFile, JSON.stringify(rawTxs, null, 2))
 	console.log(`\nWrote ${transactions.length} transactions to ${txsFile}`)
@@ -131,7 +143,7 @@ async function main() {
 			},
 			transactions: safeTxs,
 		}
-		const safeFile = `${OUTPUT_DIR}/post-migration-safe-batch.json`
+		const safeFile = `${OUTPUT_DIR}/post-migration-safe-batch-${networkName}.json`
 		fs.writeFileSync(safeFile, JSON.stringify(safeBatch, null, 2))
 		console.log(`Wrote Safe batch to ${safeFile}`)
 	}
