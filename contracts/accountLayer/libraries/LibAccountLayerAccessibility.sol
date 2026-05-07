@@ -17,6 +17,7 @@ library LibAccountLayerAccessibility {
 	bytes32 public constant DEPLOYER_ROLE = keccak256("DEPLOYER_ROLE");
 	bytes32 public constant APPROVER_ROLE = keccak256("APPROVER_ROLE");
 	bytes32 public constant DISTRIBUTOR_ROLE = keccak256("DISTRIBUTOR_ROLE");
+	bytes32 public constant ACCOUNT_CREATOR_ROLE = keccak256("ACCOUNT_CREATOR_ROLE");
 
 	/// @notice Checks whether a user has been granted a specific role
 	function hasRole(address user, bytes32 role) internal view returns (bool) {

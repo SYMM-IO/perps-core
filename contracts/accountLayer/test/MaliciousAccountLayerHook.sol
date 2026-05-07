@@ -17,6 +17,7 @@ contract MaliciousAccountLayerHook {
 	uint256 public onAccountCreationCallCount;
 	uint256 public onVirtualAccountCreationCallCount;
 	uint256 public onVirtualAccountDeletionCallCount;
+	uint256 public onSubAccountOwnershipTransferCallCount;
 
 	// Store the calldata to attempt during reentry
 	bytes public reentryCallData;
@@ -68,6 +69,14 @@ contract MaliciousAccountLayerHook {
 		}
 	}
 
+	function onSubAccountOwnershipTransfer(address account, address /* oldOwner */, address /* newOwner */) external {
+		onSubAccountOwnershipTransferCallCount++;
+
+		if (shouldAttemptReentry && accountLayer != address(0) && reentryCallData.length > 0) {
+			_attemptReentry(account);
+		}
+	}
+
 	function onCall(address account, bytes[] memory /* callDatas */) external {
 		if (shouldAttemptReentry && accountLayer != address(0) && reentryCallData.length > 0) {
 			_attemptReentry(account);
@@ -101,6 +110,7 @@ contract MaliciousAccountLayerHook {
 		onAccountCreationCallCount = 0;
 		onVirtualAccountCreationCallCount = 0;
 		onVirtualAccountDeletionCallCount = 0;
+		onSubAccountOwnershipTransferCallCount = 0;
 		targetAccount = address(0);
 	}
 }

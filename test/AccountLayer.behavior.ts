@@ -440,6 +440,51 @@ export function shouldBehaveLikeAccountLayer(): void {
 					context.alCoreFacet.connect(context.signers.user).createSubAccounts(context.signers.others[0].address, subAccountData),
 				).to.revertedWithCustomError(context.alCoreFacet, "AffiliateNotActive")
 			})
+
+			describe("createSubAccountsFor", async () => {
+				const accountCreatorRole = roleHash("ACCOUNT_CREATOR_ROLE")
+
+				it("should allow ACCOUNT_CREATOR_ROLE to create subAccounts for another owner", async () => {
+					const subAccountData = buildExampleSubAccountData()
+
+					await context.alControlFacet.connect(context.signers.admin).grantRole(context.signers.user.address, accountCreatorRole)
+					await expect(
+						context.alCoreFacet
+							.connect(context.signers.user)
+							.createSubAccountsFor(context.signers.user2.address, await context.accountManager.getAddress(), subAccountData),
+					).to.not.be.reverted
+
+					const userAccounts = await context.alViewFacet.getUserSubAccountsAddresses(context.signers.user.address, 0, 100)
+					const user2Accounts = await context.alViewFacet.getUserSubAccountsAddresses(context.signers.user2.address, 0, 100)
+					const createdAccount = user2Accounts[user2Accounts.length - 1]
+					const acc = await context.alViewFacet.getSubAccount(createdAccount)
+
+					expect(userAccounts).to.not.include(createdAccount)
+					expect(user2Accounts).to.include(createdAccount)
+					expect(acc.owner).to.equal(context.signers.user2.address)
+					expect(acc.isExists).to.true
+					expect(acc.name).to.equal(subAccountData[0].name)
+					expect(acc.affiliate).to.equal(await context.accountManager.getAddress())
+				})
+
+				it("should fail when caller does not have ACCOUNT_CREATOR_ROLE", async () => {
+					await expect(
+						context.alCoreFacet
+							.connect(context.signers.user)
+							.createSubAccountsFor(context.signers.user2.address, await context.accountManager.getAddress(), buildExampleSubAccountData()),
+					).to.be.revertedWithCustomError(context.alCoreFacet, "MustHaveRole")
+				})
+
+				it("should fail when owner is zero address", async () => {
+					await context.alControlFacet.connect(context.signers.admin).grantRole(context.signers.user.address, accountCreatorRole)
+
+					await expect(
+						context.alCoreFacet
+							.connect(context.signers.user)
+							.createSubAccountsFor(ZeroAddress, await context.accountManager.getAddress(), buildExampleSubAccountData()),
+					).to.be.revertedWithCustomError(context.alCoreFacet, "ZeroAddress")
+				})
+			})
 		})
 
 		describe("editAccountName", async () => {
@@ -489,6 +534,75 @@ export function shouldBehaveLikeAccountLayer(): void {
 				await expect(
 					context.alCoreFacet.connect(context.signers.user).editAccountName(context.signers.others[0], newAccountName),
 				).to.be.revertedWithCustomError(context.alCoreFacet, "NotOwner")
+			})
+		})
+
+		describe("transferSubAccountOwnership", async () => {
+			let subAccountAddress: string
+
+			beforeEach(async () => {
+				subAccountAddress = await createSubAccount(context.signers.user, [createSubAccountData("TRANSFER_ACCOUNT", 0, "TRANSFER")])
+			})
+
+			it("should transfer ownership and update owner indexes", async () => {
+				await expect(context.alCoreFacet.connect(context.signers.user).transferSubAccountOwnership(subAccountAddress, context.signers.user2.address))
+					.to.emit(context.alCoreFacet, "SubAccountOwnershipTransferred")
+					.withArgs(subAccountAddress, context.signers.user.address, context.signers.user2.address)
+
+				const acc = await context.alViewFacet.getSubAccount(subAccountAddress)
+				const oldOwnerAccounts = await context.alViewFacet.getUserSubAccountsAddresses(context.signers.user.address, 0, 100)
+				const newOwnerAccounts = await context.alViewFacet.getUserSubAccountsAddresses(context.signers.user2.address, 0, 100)
+
+				expect(acc.owner).to.equal(context.signers.user2.address)
+				expect(await context.alViewFacet.ownerOf(subAccountAddress)).to.equal(context.signers.user2.address)
+				expect(oldOwnerAccounts).to.not.include(subAccountAddress)
+				expect(newOwnerAccounts).to.include(subAccountAddress)
+			})
+
+			it("should move access from old owner to new owner", async () => {
+				await context.alCoreFacet.connect(context.signers.user).transferSubAccountOwnership(subAccountAddress, context.signers.user2.address)
+
+				await expect(
+					context.alCoreFacet.connect(context.signers.user).editAccountName(subAccountAddress, "OLD_OWNER_EDIT"),
+				).to.be.revertedWithCustomError(context.alCoreFacet, "NotOwner")
+
+				await expect(context.alCoreFacet.connect(context.signers.user2).editAccountName(subAccountAddress, "NEW_OWNER_EDIT")).to.not.be.reverted
+
+				const acc = await context.alViewFacet.getSubAccount(subAccountAddress)
+				expect(acc.name).to.equal("NEW_OWNER_EDIT")
+			})
+
+			it("should transfer ownership for virtual accounts through the parent subAccount", async () => {
+				const customSubAccount = await createSubAccount(context.signers.user, [createSubAccountData("CUSTOM_TRANSFER_ACCOUNT", 3, "TRANSFER")])
+				const metadata = ethers.keccak256(toUtf8Bytes("TRANSFER_VA"))
+				const virtualAccount = await context.alCoreFacet
+					.connect(context.signers.user)
+					.createCustomVirtualAccount.staticCall(customSubAccount, metadata, 0, 1)
+
+				await context.alCoreFacet.connect(context.signers.user).createCustomVirtualAccount(customSubAccount, metadata, 0, 1)
+				expect(await context.alViewFacet.ownerOf(virtualAccount)).to.equal(context.signers.user.address)
+
+				await context.alCoreFacet.connect(context.signers.user).transferSubAccountOwnership(customSubAccount, context.signers.user2.address)
+
+				expect(await context.alViewFacet.ownerOf(virtualAccount)).to.equal(context.signers.user2.address)
+			})
+
+			it("should fail when caller is not the current owner", async () => {
+				await expect(
+					context.alCoreFacet.connect(context.signers.user2).transferSubAccountOwnership(subAccountAddress, context.signers.others[0].address),
+				).to.be.revertedWithCustomError(context.alCoreFacet, "NotOwner")
+			})
+
+			it("should fail when new owner is zero address", async () => {
+				await expect(
+					context.alCoreFacet.connect(context.signers.user).transferSubAccountOwnership(subAccountAddress, ZeroAddress),
+				).to.be.revertedWithCustomError(context.alCoreFacet, "ZeroAddress")
+			})
+
+			it("should fail when new owner is already current owner", async () => {
+				await expect(
+					context.alCoreFacet.connect(context.signers.user).transferSubAccountOwnership(subAccountAddress, context.signers.user.address),
+				).to.be.revertedWithCustomError(context.alCoreFacet, "InvalidState")
 			})
 		})
 
@@ -2404,6 +2518,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 				onAccountCreation: IAccountLayerHook__factory.createInterface().getFunction("onAccountCreation").selector,
 				onVirtualAccountCreation: IAccountLayerHook__factory.createInterface().getFunction("onVirtualAccountCreation").selector,
 				onVirtualAccountDeletion: IAccountLayerHook__factory.createInterface().getFunction("onVirtualAccountDeletion").selector,
+				onSubAccountOwnershipTransfer: IAccountLayerHook__factory.createInterface().getFunction("onSubAccountOwnershipTransfer").selector,
 				onCall: IAccountLayerHook__factory.createInterface().getFunction("onCall").selector,
 			}
 			const SYMMIO_HOOK_SELECTORS = {
@@ -2520,6 +2635,42 @@ export function shouldBehaveLikeAccountLayer(): void {
 					await expect(
 						context.alCoreFacet.connect(context.signers.user).createSubAccounts(affiliateAddress, [createSubAccountData("NO_HOOK_ACCOUNT", 0)]),
 					).to.not.be.reverted
+				})
+			})
+
+			describe("onSubAccountOwnershipTransfer hook", async () => {
+				it("should call onSubAccountOwnershipTransfer hook when ownership is transferred", async () => {
+					const callCountBefore = await hookContract.getCallCount(HOOK_SELECTORS.onSubAccountOwnershipTransfer)
+
+					await context.alCoreFacet.connect(context.signers.user).transferSubAccountOwnership(subAccountAddress, context.signers.user2.address)
+
+					const callCountAfter = await hookContract.getCallCount(HOOK_SELECTORS.onSubAccountOwnershipTransfer)
+					expect(callCountAfter).to.equal(callCountBefore + 1n)
+					expect(await hookContract.wasHookCalledForAccount(subAccountAddress)).to.be.true
+					expect(await hookContract.getLastAccountForSelector(HOOK_SELECTORS.onSubAccountOwnershipTransfer)).to.equal(subAccountAddress)
+				})
+
+				it("should pass correct data to onSubAccountOwnershipTransfer hook after storage is updated", async () => {
+					await context.alCoreFacet.connect(context.signers.user).transferSubAccountOwnership(subAccountAddress, context.signers.user2.address)
+
+					const hookCallsCount = await hookContract.getHookCallsCount()
+					const [, data] = await hookContract.getHookCall(Number(hookCallsCount) - 1)
+					const [hookSubAccount, oldOwner, newOwner] = ethers.AbiCoder.defaultAbiCoder().decode(["address", "address", "address"], data)
+
+					expect(hookSubAccount).to.equal(subAccountAddress)
+					expect(oldOwner).to.equal(context.signers.user.address)
+					expect(newOwner).to.equal(context.signers.user2.address)
+					expect(await context.alViewFacet.ownerOf(subAccountAddress)).to.equal(context.signers.user2.address)
+				})
+
+				it("should revert ownership transfer if hook reverts", async () => {
+					await hookContract.setRevertForSelector(HOOK_SELECTORS.onSubAccountOwnershipTransfer, true, "Hook rejected ownership transfer")
+
+					await expect(
+						context.alCoreFacet.connect(context.signers.user).transferSubAccountOwnership(subAccountAddress, context.signers.user2.address),
+					).to.be.revertedWithCustomError(context.alCoreFacet, "HookFailed")
+
+					expect(await context.alViewFacet.ownerOf(subAccountAddress)).to.equal(context.signers.user.address)
 				})
 			})
 
