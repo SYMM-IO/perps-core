@@ -1,6 +1,6 @@
 /**
- * Deploy v0.8.5 peripheral contracts: AccountLayer Diamond, InstantLayer,
- * and SymmioPartyB implementation.
+ * Deploy v0.8.5 peripheral contracts: MuonSignatureVerifier, AccountLayer Diamond,
+ * InstantLayer, and SymmioPartyB implementation.
  *
  * These contracts are independent of the core diamond and can be deployed
  * before the upgrade. Resume-safe via state file.
@@ -12,53 +12,46 @@
  *   DEPLOY_PERIPHERALS_CONFIG=./path/to/config.json \
  *     npx hardhat run scripts/upgrade/deployPeripherals.ts --network arbitrum
  *
- * Config: scripts/upgrade/config/deployPeripherals.json
- *   {
- *     "protocolAdmin": "0x...",        // Address that owns peripherals and receives operational roles
- *     "symmioFeeReceiver": "0x...",    // Fee receiver for AccountLayer init (falls back to upgrade.json)
- *     "symmioPartyBAddress": "0x..."   // Existing SymmioPartyB proxy (falls back to upgrade.json)
- *   }
+ * Config: Reads from upgrade.json by default. Optional deployPeripherals.json overrides any field.
+ *   Required fields (from either source): diamondAddress, protocolAdmin, symmioFeeReceiver
  *
- * Falls back to upgrade.json for: diamondAddress, symmioFeeReceiver, symmioPartyBAddress
- *
- * Output: scripts/upgrade/output/deployed-peripherals.json
+ * Output: scripts/upgrade/output/deployed-peripherals-{network}.json
  */
 import fs from "fs"
 import path from "path"
 
-import { ethers } from "../../test/helpers/hardhat-connection.js"
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
-import { deployAccountLayerDiamond, deployInstantLayer } from "./utils/peripheralHelpers.js"
-import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
+import { deployAccountLayerDiamond, deployInstantLayer, deploySymbolManager } from "./utils/peripheralHelpers.js"
+import { verifyRpc } from "./utils/rpcCheck.js"
+import { loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig.js"
 
 type Config = {
 	diamondAddress?: string
 	protocolAdmin: string
 	symmioFeeReceiver: string
-	symmioPartyBAddress?: string
+	safeAddress?: string
 }
 
 type DeployedState = {
+	signatureVerifier?: string
 	accountLayer?: any
 	instantLayer?: any
 	symmioPartyBImplementation?: string
 }
 
-const CONFIG_FILE = process.env.DEPLOY_PERIPHERALS_CONFIG ?? "./scripts/upgrade/config/deployPeripherals.json"
 const OUTPUT_DIR = "./scripts/upgrade/output"
-const STATE_FILE = path.join(OUTPUT_DIR, "deployed-peripherals.json")
+let STATE_FILE = path.join(OUTPUT_DIR, "deployed-peripherals.json") // updated with network name in main()
 
-function loadConfig(): Config {
-	if (!fs.existsSync(CONFIG_FILE)) {
-		throw new Error(`Config file not found: ${CONFIG_FILE}\nCopy config/samples/deployPeripherals.sample.json and fill in the values.`)
-	}
-	const raw = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8")) as Config
-	const shared = loadUpgradeConfigShared()
+function loadConfig(networkName: string): Config {
+	const shared = loadUpgradeConfigShared(networkName)
+	const configFile = resolveConfigFile("deployPeripherals", networkName, process.env.DEPLOY_PERIPHERALS_CONFIG)
+	const raw: Partial<Config> = fs.existsSync(configFile) ? JSON.parse(fs.readFileSync(configFile, "utf-8")) : {}
 	return {
-		...raw,
 		diamondAddress: raw.diamondAddress ?? shared.diamondAddress,
+		protocolAdmin: raw.protocolAdmin ?? shared.protocolAdmin ?? "",
 		symmioFeeReceiver: raw.symmioFeeReceiver ?? shared.symmioFeeReceiver ?? "",
-		symmioPartyBAddress: raw.symmioPartyBAddress ?? shared.symmioPartyBAddress,
+		safeAddress: raw.safeAddress ?? shared.safeAddress,
 	}
 }
 
@@ -73,9 +66,12 @@ function saveState(state: DeployedState): void {
 }
 
 async function main() {
-	const config = loadConfig()
+	const networkName = connection.networkName
+	STATE_FILE = path.join(OUTPUT_DIR, `deployed-peripherals-${networkName}.json`)
 
-	const { diamondAddress, protocolAdmin, symmioFeeReceiver, symmioPartyBAddress } = config
+	const config = loadConfig(networkName)
+
+	const { diamondAddress, protocolAdmin, symmioFeeReceiver } = config
 
 	if (!diamondAddress || !ethers.isAddress(diamondAddress)) {
 		throw new Error("diamondAddress is required and must be a valid address")
@@ -86,23 +82,61 @@ async function main() {
 	if (!symmioFeeReceiver || !ethers.isAddress(symmioFeeReceiver)) {
 		throw new Error("symmioFeeReceiver is required and must be a valid address")
 	}
-	if (symmioPartyBAddress && !ethers.isAddress(symmioPartyBAddress)) {
-		throw new Error("symmioPartyBAddress must be a valid address")
-	}
-
+	await verifyRpc()
 	log.header("Deploy v0.8.5 Peripherals")
 	log.kv("Diamond (core)", log.addr(diamondAddress))
 	log.kv("Protocol admin", log.addr(protocolAdmin))
 	log.kv("Fee receiver", log.addr(symmioFeeReceiver))
-	log.kv("SymmioPartyB proxy", symmioPartyBAddress ? log.addr(symmioPartyBAddress) : "(not set)")
 
 	if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
 
-	log.setSteps(3)
+	log.setSteps(5)
+
+	// Deploy MuonSignatureVerifier
+	let t = log.step("MuonSignatureVerifier")
+	const state0 = loadState()
+	let signatureVerifierAddr: string
+
+	if (state0.signatureVerifier) {
+		signatureVerifierAddr = state0.signatureVerifier
+		log.deployed("MuonSignatureVerifier", signatureVerifierAddr, true)
+	} else {
+		const factory = await ethers.getContractFactory("MuonSignatureVerifier")
+		const contract = await factory.deploy(protocolAdmin)
+		signatureVerifierAddr = await contract.getAddress()
+		state0.signatureVerifier = signatureVerifierAddr
+		saveState(state0)
+		await contract.waitForDeployment()
+		log.deployed("MuonSignatureVerifier", signatureVerifierAddr)
+	}
+
+	// Write address back to upgrade config
+	const upgradeConfigPath = resolveConfigFile("upgrade", networkName, process.env.UPGRADE_CONFIG_FILE)
+	if (fs.existsSync(upgradeConfigPath)) {
+		const upgradeConfig = JSON.parse(fs.readFileSync(upgradeConfigPath, "utf-8"))
+		if (!upgradeConfig.newV085Parameters) upgradeConfig.newV085Parameters = {}
+		upgradeConfig.newV085Parameters.signatureVerifierAddress = signatureVerifierAddr
+		fs.writeFileSync(upgradeConfigPath, JSON.stringify(upgradeConfig, null, "\t") + "\n")
+		log.kv("Written signatureVerifierAddress to", upgradeConfigPath)
+	}
+	log.stepDone(t)
 
 	// Deploy AccountLayer Diamond
-	let t = log.step("AccountLayer Diamond")
+	t = log.step("AccountLayer Diamond")
 	const alResult = await deployAccountLayerDiamond(protocolAdmin, symmioFeeReceiver, STATE_FILE)
+
+	// Transfer AccountLayer ownership to Safe (two-step: Safe must call acceptOwnership)
+	const AL_NEW_OWNER = process.env.SAFE_ADDRESS ?? config.safeAddress
+	if (AL_NEW_OWNER && ethers.isAddress(AL_NEW_OWNER)) {
+		const alControlFacet = await ethers.getContractAt("contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet", alResult.diamondAddress)
+		try {
+			await (await alControlFacet.transferOwnership(AL_NEW_OWNER)).wait()
+			log.ok(`transferOwnership(${AL_NEW_OWNER}) on AccountLayer — new owner must call acceptOwnership()`)
+		} catch (e: any) {
+			// May fail if already transferred or caller is not the owner (e.g. re-run after ownership was already transferred)
+			log.ok(`transferOwnership skipped (already transferred or caller is not owner)`)
+		}
+	}
 	log.stepDone(t)
 
 	// Deploy InstantLayer
@@ -129,18 +163,22 @@ async function main() {
 	}
 	log.stepDone(t)
 
+	// Deploy SymmioSymbolManager
+	t = log.step("SymmioSymbolManager")
+	const smResult = await deploySymbolManager(diamondAddress, protocolAdmin, STATE_FILE)
+	log.stepDone(t)
+
 	// Summary
 	log.success("Peripheral deployment complete", [
+		["MuonSignatureVerifier", signatureVerifierAddr],
 		["AccountLayer Diamond", alResult.diamondAddress],
 		["InstantLayer", ilResult.address],
 		["SymmioPartyB impl", symmioPartyBImpl],
+		["SymmioSymbolManager", smResult.address],
 		["State file", STATE_FILE],
 	])
 
-	log.nextSteps([
-		"Run generateSafeBatch.ts (peripheral addresses are auto-loaded from deployed-peripherals.json)",
-		`Grant DEFAULT_ADMIN_ROLE on SymmioPartyB (${symmioPartyBAddress ?? "N/A"}) to the Safe before executing the upgrade batch`,
-	])
+	log.nextSteps([`Run generateSafeBatch.ts (peripheral addresses are auto-loaded from ${path.basename(STATE_FILE)})`])
 }
 
 main().catch(error => {

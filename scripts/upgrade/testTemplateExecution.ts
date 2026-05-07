@@ -20,13 +20,14 @@
  * Usage (fork, after forkUpgrade.ts):
  *   FORK=true npx hardhat run scripts/upgrade/testTemplateExecution.ts --network fork-arbitrum
  *
- * Auto-loads from upgrade.json + output files (deployed-accountlayer-instantlayer.json
+ * Auto-loads from upgrade-{network}.json + output files (deployed-accountlayer-instantlayer.json
  * or deployed-peripherals.json). Env vars and testTemplateExecution.json override.
  */
 import fs from "fs"
 
-import { ethers, networkHelpers } from "../../test/helpers/hardhat-connection.js"
+import connection, { ethers, networkHelpers } from "../../test/helpers/hardhat-connection.js"
 import { resolveOwner, impersonateAndFund } from "./utils/forkHelpers.js"
+import { resolveConfigFile } from "./utils/sharedConfig.js"
 
 // ============================================================================
 // Config
@@ -42,7 +43,6 @@ type Config = {
 }
 
 const CONFIG_FILE = process.env.TEST_TEMPLATE_CONFIG ?? "./scripts/upgrade/config/testTemplateExecution.json"
-const UPGRADE_CONFIG_FILE = process.env.UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/upgrade.json"
 const OUTPUT_DIR = "./scripts/upgrade/output"
 
 function loadConfig(): Config {
@@ -51,17 +51,18 @@ function loadConfig(): Config {
 	// Auto-load from upgrade config + output files (no manual config needed)
 	const config: Config = {}
 
-	// Read diamondAddress and symmioPartyBAddress from upgrade.json
-	if (fs.existsSync(UPGRADE_CONFIG_FILE)) {
-		const upgrade = JSON.parse(fs.readFileSync(UPGRADE_CONFIG_FILE, "utf-8"))
+	// Read diamondAddress and symmioPartyBAddress from upgrade config
+	const upgradeConfigFile = resolveConfigFile("upgrade", connection.networkName, process.env.UPGRADE_CONFIG_FILE)
+	if (fs.existsSync(upgradeConfigFile)) {
+		const upgrade = JSON.parse(fs.readFileSync(upgradeConfigFile, "utf-8"))
 		config.diamondAddress = upgrade.diamondAddress
 		config.symmioPartyBAddress = upgrade.symmioPartyBAddress
-		console.log(`Loaded diamond + partyB from ${UPGRADE_CONFIG_FILE}`)
+		console.log(`Loaded diamond + partyB from ${upgradeConfigFile}`)
 	}
 
 	// Read AL + IL from deployed output (forkUpgrade or deployPeripherals)
 	const alilFile = `${OUTPUT_DIR}/deployed-accountlayer-instantlayer.json`
-	const peripheralsFile = `${OUTPUT_DIR}/deployed-peripherals.json`
+	const peripheralsFile = `${OUTPUT_DIR}/deployed-peripherals-${connection.networkName}.json`
 
 	if (fs.existsSync(alilFile)) {
 		const alil = JSON.parse(fs.readFileSync(alilFile, "utf-8"))

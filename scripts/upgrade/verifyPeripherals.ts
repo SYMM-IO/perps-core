@@ -20,12 +20,14 @@
  */
 import fs from "fs"
 
-import { ethers } from "../../test/helpers/hardhat-connection.js"
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
+import { resolveConfigFile } from "./utils/sharedConfig.js"
 
 type Config = {
 	diamondAddress: string
 	accountLayerDiamondAddress: string
 	instantLayerAddress: string
+	symbolManagerAddress?: string
 	protocolAdmin?: string
 }
 
@@ -38,9 +40,11 @@ const ROLES = {
 	INSTANT_LAYER_ROLE: ethers.id("INSTANT_LAYER_ROLE"),
 	INTEGRATION_ADMIN_ROLE: ethers.id("INTEGRATION_ADMIN_ROLE"),
 	SIGNER_SETTER_ROLE: ethers.id("SIGNER_SETTER_ROLE"),
+	SYMBOL_MANAGER_ROLE: ethers.id("SYMBOL_MANAGER_ROLE"),
+	FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE: ethers.id("FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE"),
 }
 
-const UPGRADE_CONFIG_FILE = process.env.UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/upgrade.json"
+// Resolved with network name in loadConfig()
 const OUTPUT_DIR = "./scripts/upgrade/output"
 
 function loadConfig(): Config {
@@ -52,14 +56,16 @@ function loadConfig(): Config {
 	// Auto-load from upgrade.json + output files
 	const config: Partial<Config> = {}
 
-	if (fs.existsSync(UPGRADE_CONFIG_FILE)) {
-		const upgrade = JSON.parse(fs.readFileSync(UPGRADE_CONFIG_FILE, "utf-8"))
+	const upgradeConfigFile = resolveConfigFile("upgrade", networkName, process.env.UPGRADE_CONFIG_FILE)
+	if (fs.existsSync(upgradeConfigFile)) {
+		const upgrade = JSON.parse(fs.readFileSync(upgradeConfigFile, "utf-8"))
 		config.diamondAddress = upgrade.diamondAddress
-		console.log(`Loaded diamond from ${UPGRADE_CONFIG_FILE}`)
+		console.log(`Loaded diamond from ${upgradeConfigFile}`)
 	}
 
+	const networkName = connection.networkName
 	const alilFile = `${OUTPUT_DIR}/deployed-accountlayer-instantlayer.json`
-	const peripheralsFile = `${OUTPUT_DIR}/deployed-peripherals.json`
+	const peripheralsFile = `${OUTPUT_DIR}/deployed-peripherals-${networkName}.json`
 	if (fs.existsSync(alilFile)) {
 		const alil = JSON.parse(fs.readFileSync(alilFile, "utf-8"))
 		config.accountLayerDiamondAddress = alil.accountLayer?.diamond
@@ -69,7 +75,8 @@ function loadConfig(): Config {
 		const peripherals = JSON.parse(fs.readFileSync(peripheralsFile, "utf-8"))
 		config.accountLayerDiamondAddress = peripherals.accountLayer?.diamond
 		config.instantLayerAddress = peripherals.instantLayer?.address
-		console.log(`Loaded AL + IL from ${peripheralsFile}`)
+		config.symbolManagerAddress = peripherals.symbolManager?.address
+		console.log(`Loaded AL + IL + SM from ${peripheralsFile}`)
 	}
 
 	return config as Config
@@ -242,6 +249,32 @@ async function main() {
 		pass: globalHook.toLowerCase() === accountLayerDiamondAddress.toLowerCase(),
 		detail: `getAffiliateHook(address(0)) = ${globalHook}`,
 	})
+
+	// =========================================================================
+	// 9. Core Diamond - SymbolManager roles
+	// =========================================================================
+	const symbolManagerAddress = config.symbolManagerAddress
+	if (symbolManagerAddress && ethers.isAddress(symbolManagerAddress)) {
+		console.log("\n=== SymbolManager Wiring ===")
+		console.log(`SymbolManager:       ${symbolManagerAddress}`)
+
+		const smHasSymbolManager = await coreView.hasRole(symbolManagerAddress, ROLES.SYMBOL_MANAGER_ROLE)
+		results.push({
+			name: "Core: SM has SYMBOL_MANAGER_ROLE",
+			pass: smHasSymbolManager === true,
+			detail: `hasRole(SymbolManager, SYMBOL_MANAGER_ROLE) = ${smHasSymbolManager}`,
+		})
+
+		const smHasForceCloseGap = await coreView.hasRole(symbolManagerAddress, ROLES.FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE)
+		results.push({
+			name: "Core: SM has FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE",
+			pass: smHasForceCloseGap === true,
+			detail: `hasRole(SymbolManager, FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE) = ${smHasForceCloseGap}`,
+		})
+	} else {
+		console.log("\n=== SymbolManager Wiring ===")
+		console.log("No SymbolManager address found — skipping role checks")
+	}
 
 	// =========================================================================
 	// Summary
