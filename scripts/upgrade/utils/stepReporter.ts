@@ -24,7 +24,9 @@ export type TimestampedStep = {
  *   // ... do work ...
  *   stepReporter.finish(t)
  */
-export function createStepReporter<TStep extends TimestampedStep>(steps: TStep[]): {
+export function createStepReporter<TStep extends TimestampedStep>(
+	steps: TStep[],
+): {
 	finish: (timer: Timer) => void
 } {
 	return {

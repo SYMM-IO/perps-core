@@ -1,0 +1,15 @@
+{
+	"diamondAddress": "0x...",
+	"safeAddress": "0x...",
+	"muonUpnlValidTime": 60,
+	"muonPriceValidTime": 60,
+	"safeProposal": {
+		"enabled": false,
+		"submit": false,
+		"safeNonce": null,
+		"apiKeyEnvVar": "SAFE_SERVICE_API_KEY",
+		"senderAddress": "0x...",
+		"signatureEnvVar": "SAFE_PROPOSAL_SIGNATURE",
+		"origin": "Symmio: setMuonConfig(60, 60)"
+	}
+}
