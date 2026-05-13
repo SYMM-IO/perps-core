@@ -514,9 +514,7 @@ async function main() {
 				const priorProgress = JSON.parse(fs.readFileSync(migrateProgressFile, "utf-8"))
 				if (priorProgress && typeof priorProgress === "object") {
 					if (priorProgress.phase === "complete") {
-						log.warn(
-							`Progress file at ${migrateProgressFile} marks migration as complete. Re-running will be a no-op unless you delete it.`,
-						)
+						log.warn(`Progress file at ${migrateProgressFile} marks migration as complete. Re-running will be a no-op unless you delete it.`)
 					}
 					const priorQuotes = Number(priorProgress.quotesProcessed ?? 0)
 					if (priorQuotes > input.quoteIds.length) {

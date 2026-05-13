@@ -105,7 +105,10 @@ async function main() {
 
 	// Write report
 	if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
-	const reportFile = path.join(OUTPUT_DIR, NETWORK_SUFFIX ? `whitelist-symbol-types-report-${NETWORK_SUFFIX}.json` : "whitelist-symbol-types-report.json")
+	const reportFile = path.join(
+		OUTPUT_DIR,
+		NETWORK_SUFFIX ? `whitelist-symbol-types-report-${NETWORK_SUFFIX}.json` : "whitelist-symbol-types-report.json",
+	)
 	fs.writeFileSync(
 		reportFile,
 		JSON.stringify(

@@ -170,7 +170,9 @@ async function main() {
 		const t = kept[i]
 		console.log(`  ${i + 1}. revokeRole(${t.target}, ${t.roleDisplay})`)
 	}
-	console.log(`\nImport this file into the Safe Transaction Builder and execute from the Safe that has admin authority over these roles on ${diamond}.`)
+	console.log(
+		`\nImport this file into the Safe Transaction Builder and execute from the Safe that has admin authority over these roles on ${diamond}.`,
+	)
 }
 
 main().catch(err => {

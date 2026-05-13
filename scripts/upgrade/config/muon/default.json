@@ -1,0 +1,10 @@
+{
+	"muonUpnlValidTime": 60,
+	"muonPriceValidTime": 60,
+	"safeProposal": {
+		"enabled": false,
+		"submit": false,
+		"safeNonce": null,
+		"senderAddress": "0x8A82bCDB72FFA4181a81C13d434AaCB59E7f327F"
+	}
+}
