@@ -6,6 +6,7 @@ pragma solidity >=0.8.18;
 
 import { IControlEvents } from "./IControlEvents.sol";
 import { EntityMetadata } from "../../storages/MAStorage.sol";
+import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 interface IControlFacet is IControlEvents {
 	function transferOwnership(address owner) external;
@@ -33,6 +34,10 @@ interface IControlFacet is IControlEvents {
 	function deregisterAffiliate(address affiliate) external;
 
 	function setMuonConfig(uint256 upnlValidTime, uint256 priceValidTime) external;
+
+	/// @notice Sets or clears the UPNL signature validity override for one Muon function category.
+	/// @dev Pass a nonzero value to override the global UPNL validity. Pass zero to clear the override and use setMuonConfig's global value.
+	function setMuonFunctionUpnlValidTime(MuonFunction func, uint256 upnlValidTime) external;
 
 	function setMuonIds(uint256 muonAppId) external;
 

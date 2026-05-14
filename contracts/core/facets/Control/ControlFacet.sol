@@ -23,6 +23,7 @@ import { BridgeStorage } from "../../storages/BridgeStorage.sol";
 import { WithdrawStorage } from "../../storages/WithdrawStorage.sol";
 import { EntityMetadata } from "../../storages/MAStorage.sol";
 import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
+import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 import { Fee } from "../../storages/QuoteStorage.sol";
 
 contract ControlFacet is Accessibility, Ownable, IControlFacet {
@@ -166,6 +167,21 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		muonLayout.upnlValidTime = upnlValidTime;
 		muonLayout.priceValidTime = priceValidTime;
+	}
+
+	/// @notice Sets or clears a UPNL signature validity override for one Muon function category.
+	/// @dev Nonzero values override the global UPNL validity. Passing zero clears the override and falls back to setMuonConfig.
+	/// @param func The Muon function category to configure.
+	/// @param upnlValidTime Override duration in seconds, or zero to clear the override.
+	function setMuonFunctionUpnlValidTime(MuonFunction func, uint256 upnlValidTime) external onlyRole(LibAccessibility.MUON_SETTER_ROLE) {
+		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
+		if (upnlValidTime == 0) {
+			delete muonLayout.upnlValidTimeByFunction[func];
+			emit SetMuonFunctionUpnlValidTime(func, false, 0);
+			return;
+		}
+		muonLayout.upnlValidTimeByFunction[func] = upnlValidTime;
+		emit SetMuonFunctionUpnlValidTime(func, true, upnlValidTime);
 	}
 
 	/// @notice Sets the Muon application ID used to identify this protocol in the Muon oracle network.

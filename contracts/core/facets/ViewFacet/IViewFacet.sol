@@ -122,6 +122,10 @@ interface IViewFacet {
 
 	function getMuonConfig() external view returns (uint256 upnlValidTime, uint256 priceValidTime);
 
+	/// @notice Returns the effective UPNL validity for a Muon function and whether it comes from an override.
+	/// @dev When isOverridden is false, upnlValidTime is the global value from getMuonConfig.
+	function getMuonFunctionUpnlValidTime(MuonFunction func) external view returns (uint256 upnlValidTime, bool isOverridden);
+
 	function getMuonIds() external view returns (uint256 muonAppId);
 
 	function pauseState()

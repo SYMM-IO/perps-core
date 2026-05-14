@@ -508,6 +508,16 @@ contract ViewFacet is IViewFacet {
 		priceValidTime = MuonStorage.layout().priceValidTime;
 	}
 
+	/// @notice Returns the effective UPNL validity period for a Muon function category.
+	/// @return upnlValidTime The nonzero override, or the global UPNL validity when no override is set.
+	/// @return isOverridden True when the returned value comes from a nonzero per-function override.
+	function getMuonFunctionUpnlValidTime(MuonFunction func) external view returns (uint256 upnlValidTime, bool isOverridden) {
+		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
+		upnlValidTime = muonLayout.upnlValidTimeByFunction[func];
+		isOverridden = upnlValidTime != 0;
+		if (!isOverridden) upnlValidTime = muonLayout.upnlValidTime;
+	}
+
 	/// @notice Retrieves the Muon application ID.
 	/// @return muonAppId The Muon application ID.
 	function getMuonIds() external view returns (uint256 muonAppId) {

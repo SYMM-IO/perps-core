@@ -5,6 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { LibMuonLiquidation } from "../../libraries/muon/LibMuonLiquidation.sol";
+import { LibMuon } from "../../libraries/muon/LibMuon.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibQuote } from "../../libraries/LibQuote.sol";
 import { LibQuoteFunding } from "../../libraries/LibQuoteFunding.sol";
@@ -13,7 +14,7 @@ import { SharedEvents } from "../../libraries/SharedEvents.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
 import { LockedValues, QuoteStatus, Quote, QuoteStorage } from "../../storages/QuoteStorage.sol";
-import { LiquidationSig, MuonStorage } from "../../storages/MuonStorage.sol";
+import { LiquidationSig } from "../../storages/MuonStorage.sol";
 import { LiquidationType, LiquidationDetail, LiquidationSettlementState, Price, AccountStorage } from "../../storages/AccountStorage.sol";
 import { ClearingHouseStorage } from "../../storages/ClearingHouseStorage.sol";
 import { LibHook } from "../../libraries/LibHook.sol";
@@ -33,7 +34,10 @@ library PartyALiquidationFacetImpl {
 		require(!ClearingHouseStorage.layout().partyATakeoverDetails[partyA].inProgress, "LiquidationFacet: Takeover in progress");
 		require(QuoteStorage.layout().partyAPositionsCount[partyA] > 0, "LiquidationFacet: PartyA has no open positions");
 		LibMuonLiquidation.verifyLiquidationSig(liquidationSig, partyA, MuonFunction.LiquidationPartyA);
-		require(block.timestamp <= liquidationSig.timestamp + MuonStorage.layout().upnlValidTime, "LiquidationFacet: Expired signature");
+		require(
+			block.timestamp <= liquidationSig.timestamp + LibMuon.getUpnlValidTime(MuonFunction.LiquidationPartyA),
+			"LiquidationFacet: Expired signature"
+		);
 		int256 availableBalance = LibAccount.partyAAvailableBalanceForLiquidation(
 			liquidationSig.upnl,
 			accountLayout.allocatedBalances[partyA],

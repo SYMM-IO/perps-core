@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { IMuonSignatureVerifier } from "../interfaces/IMuonSignatureVerifier.sol";
+import { IMuonSignatureVerifier, MuonFunction } from "../interfaces/IMuonSignatureVerifier.sol";
 
 /// @notice Muon signature attesting to a single party's unrealized PnL
 struct SingleUpnlSig {
@@ -203,6 +203,9 @@ library MuonStorage {
 		/// @dev Kept for storage layout compatibility. Gateway signature checks are now
 		///      delegated to GlobalAppStorage.signatureVerifier contract.
 		address validGateway;
+		/// @notice Optional per-Muon-function UPNL signature validity period.
+		/// @dev Zero is the unset value. Unset functions use the global upnlValidTime configured by setMuonConfig.
+		mapping(MuonFunction => uint256) upnlValidTimeByFunction;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

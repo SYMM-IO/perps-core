@@ -47,6 +47,16 @@ library LibMuon {
 		// == ) ==
 	}
 
+	function getUpnlValidTime(MuonFunction func) internal view returns (uint256) {
+		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
+		uint256 functionValidTime = muonLayout.upnlValidTimeByFunction[func];
+		return functionValidTime == 0 ? muonLayout.upnlValidTime : functionValidTime;
+	}
+
+	function verifyUpnlTimestamp(uint256 timestamp, MuonFunction func) internal view {
+		require(block.timestamp <= timestamp + getUpnlValidTime(func), "LibMuon: Expired signature");
+	}
+
 	/// @notice Verifies Party B UPNL signature (uses per-partyA nonce in normal mode, zero in cross mode).
 	function verifyPartyBUpnl(SingleUpnlSig memory upnlSig, address partyB, address partyA, MuonFunction func) internal view {
 		verifyPartyBUpnl(upnlSig, partyB, partyA, false, func);
@@ -56,7 +66,7 @@ library LibMuon {
 	function verifyPartyBUpnl(SingleUpnlSig memory upnlSig, address partyB, address partyA, bool useCrossNonce, MuonFunction func) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		// == SignatureCheck( ==
-		require(block.timestamp <= upnlSig.timestamp + muonLayout.upnlValidTime, "LibMuon: Expired signature");
+		verifyUpnlTimestamp(upnlSig.timestamp, func);
 		// == ) ==
 		bytes32 hash = keccak256(
 			abi.encodePacked(

@@ -16,7 +16,7 @@ library LibMuonUnifiedSettlement {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
 		// == SignatureCheck( ==
-		require(block.timestamp <= settleSig.timestamp + muonLayout.upnlValidTime, "LibMuon: Expired signature");
+		LibMuon.verifyUpnlTimestamp(settleSig.timestamp, func);
 		// == ) ==
 
 		// Encode quote data
