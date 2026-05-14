@@ -6,7 +6,7 @@ import sha3 from "js-sha3"
 
 import { initializeFixture } from "./Initialize.fixture.js"
 import { ethers } from "./helpers/hardhat-connection.js"
-import { loadFixture } from "./helpers/network-helpers.js"
+import { loadFixture, time } from "./helpers/network-helpers.js"
 import { RunContext } from "./models/RunContext.js"
 
 const { keccak256 } = sha3
@@ -25,6 +25,8 @@ const EMERGENCY_ADMIN_ROLE = `0x${keccak256("EMERGENCY_ADMIN_ROLE")}`
 const UNSUSPENDER_ROLE = `0x${keccak256("UNSUSPENDER_ROLE")}`
 const INTEGRATION_ADMIN_ROLE = `0x${keccak256("INTEGRATION_ADMIN_ROLE")}`
 const MIGRATION_ROLE = `0x${keccak256("MIGRATION_ROLE")}`
+const MIN_AFFILIATE_SHUTDOWN_NOTICE = 14n * 24n * 60n * 60n
+const MAX_AFFILIATE_SHUTDOWN_NOTICE = 90n * 24n * 60n * 60n
 
 export function shouldBehaveLikeControlFacet(): void {
 	let context: RunContext
@@ -516,38 +518,76 @@ export function shouldBehaveLikeControlFacet(): void {
 		})
 	})
 
-	describe("setAffiliateOpenPositionsPaused", () => {
-		it("Should set and unset per-affiliate open positions pause", async function () {
+	describe("scheduleAffiliateShutdown", () => {
+		it("Should schedule and cancel an affiliate shutdown by affiliate manager", async function () {
 			const affiliate = await context.accountManager.getAddress()
-			expect(await context.viewFacet.isAffiliateOpenPositionsPaused(affiliate)).to.be.equal(false)
+			const shutdownAt = BigInt(await time.latest()) + MIN_AFFILIATE_SHUTDOWN_NOTICE + 10n
+			expect(await context.viewFacet.getAffiliateShutdownTime(affiliate)).to.be.equal(0)
 
-			await expect(context.pauseControlFacet.connect(owner).setAffiliateOpenPositionsPaused(affiliate, true))
-				.to.emit(context.pauseControlFacet, "SetAffiliateOpenPositionsPaused")
-				.withArgs(affiliate, true)
+			await expect(context.controlFacet.connect(owner).scheduleAffiliateShutdown(affiliate, shutdownAt))
+				.to.emit(context.controlFacet, "ScheduleAffiliateShutdown")
+				.withArgs(affiliate, shutdownAt)
 			expect(await context.viewFacet.isAffiliateOpenPositionsPaused(affiliate)).to.be.equal(true)
+			expect(await context.viewFacet.getAffiliateShutdownTime(affiliate)).to.be.equal(shutdownAt)
 
-			await expect(context.pauseControlFacet.connect(owner).setAffiliateOpenPositionsPaused(affiliate, false))
-				.to.emit(context.pauseControlFacet, "SetAffiliateOpenPositionsPaused")
-				.withArgs(affiliate, false)
+			await expect(context.controlFacet.connect(owner).cancelAffiliateShutdown(affiliate))
+				.to.emit(context.controlFacet, "CancelAffiliateShutdown")
+				.withArgs(affiliate)
 			expect(await context.viewFacet.isAffiliateOpenPositionsPaused(affiliate)).to.be.equal(false)
+			expect(await context.viewFacet.getAffiliateShutdownTime(affiliate)).to.be.equal(0)
 		})
 
-		it("Should require UNPAUSER_ROLE to unset affiliate open positions pause", async function () {
+		it("Should allow an affiliate address to schedule and cancel its own shutdown", async function () {
+			const affiliate = await user2.getAddress()
+			await context.controlFacet.connect(owner).registerAffiliate(affiliate)
+			const shutdownAt = BigInt(await time.latest()) + MIN_AFFILIATE_SHUTDOWN_NOTICE + 10n
+
+			await expect(context.controlFacet.connect(user2).scheduleAffiliateShutdown(affiliate, shutdownAt))
+				.to.emit(context.controlFacet, "ScheduleAffiliateShutdown")
+				.withArgs(affiliate, shutdownAt)
+
+			await expect(context.controlFacet.connect(user2).cancelAffiliateShutdown(affiliate))
+				.to.emit(context.controlFacet, "CancelAffiliateShutdown")
+				.withArgs(affiliate)
+		})
+
+		it("Should reject invalid shutdown dates and duplicate schedules", async function () {
 			const affiliate = await context.accountManager.getAddress()
-			await context.controlFacet.connect(owner).grantRole(await user2.getAddress(), PAUSER_ROLE)
+			const now = BigInt(await time.latest())
 
-			await context.pauseControlFacet.connect(user2).setAffiliateOpenPositionsPaused(affiliate, true)
-			await expect(context.pauseControlFacet.connect(user2).setAffiliateOpenPositionsPaused(affiliate, false)).to.be.revertedWith(
-				"Accessibility: Must have role",
-			)
+			await expect(
+				context.controlFacet.connect(owner).scheduleAffiliateShutdown(affiliate, now + MIN_AFFILIATE_SHUTDOWN_NOTICE - 10n),
+			).to.be.revertedWith("ControlFacet: Invalid shutdown time")
+			await expect(
+				context.controlFacet.connect(owner).scheduleAffiliateShutdown(affiliate, now + MAX_AFFILIATE_SHUTDOWN_NOTICE + 10n),
+			).to.be.revertedWith("ControlFacet: Invalid shutdown time")
 
-			await context.pauseControlFacet.connect(owner).setAffiliateOpenPositionsPaused(affiliate, false)
-			expect(await context.viewFacet.isAffiliateOpenPositionsPaused(affiliate)).to.be.equal(false)
+			await context.controlFacet.connect(owner).scheduleAffiliateShutdown(affiliate, now + MIN_AFFILIATE_SHUTDOWN_NOTICE + 10n)
+			await expect(
+				context.controlFacet.connect(owner).scheduleAffiliateShutdown(affiliate, now + MIN_AFFILIATE_SHUTDOWN_NOTICE + 20n),
+			).to.be.revertedWith("ControlFacet: Affiliate shutdown already scheduled")
 		})
 
-		it("Should revert on zero address", async function () {
-			await expect(context.pauseControlFacet.connect(owner).setAffiliateOpenPositionsPaused(ZeroAddress, true)).to.be.revertedWith(
-				"PauseControlFacet: Zero address",
+		it("Should reject unauthorized shutdown scheduling and cancellation", async function () {
+			const affiliate = await context.accountManager.getAddress()
+			const shutdownAt = BigInt(await time.latest()) + MIN_AFFILIATE_SHUTDOWN_NOTICE + 10n
+
+			await expect(context.controlFacet.connect(user2).scheduleAffiliateShutdown(affiliate, shutdownAt)).to.be.revertedWith(
+				"ControlFacet: Not authorized",
+			)
+			await expect(context.controlFacet.connect(user2).cancelAffiliateShutdown(affiliate)).to.be.revertedWith("ControlFacet: Not authorized")
+		})
+
+		it("Should reject zero address and missing schedule cancellation", async function () {
+			const affiliate = await context.accountManager.getAddress()
+			const shutdownAt = BigInt(await time.latest()) + MIN_AFFILIATE_SHUTDOWN_NOTICE + 10n
+
+			await expect(context.controlFacet.connect(owner).scheduleAffiliateShutdown(ZeroAddress, shutdownAt)).to.be.revertedWith(
+				"ControlFacet: Zero address",
+			)
+			await expect(context.controlFacet.connect(owner).cancelAffiliateShutdown(ZeroAddress)).to.be.revertedWith("ControlFacet: Zero address")
+			await expect(context.controlFacet.connect(owner).cancelAffiliateShutdown(affiliate)).to.be.revertedWith(
+				"ControlFacet: Affiliate shutdown not scheduled",
 			)
 		})
 	})

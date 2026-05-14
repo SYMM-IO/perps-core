@@ -428,10 +428,9 @@ library ClearingHouseFacetImpl {
 	) internal returns (uint256[] memory closedAmounts) {
 		require(affiliate != address(0), "ClearingHouseFacet: Zero affiliate");
 		require(quoteIds.length == prices.length, "ClearingHouseFacet: Invalid length");
-		require(
-			!MAStorage.layout().affiliateStatus[affiliate] || GlobalAppStorage.layout().affiliateOpenPositionsPaused[affiliate],
-			"ClearingHouseFacet: Affiliate is not shut down"
-		);
+		uint256 shutdownTime = GlobalAppStorage.layout().affiliateShutdownTime[affiliate];
+		require(shutdownTime != 0, "ClearingHouseFacet: Affiliate shutdown not scheduled");
+		require(block.timestamp >= shutdownTime, "ClearingHouseFacet: Affiliate shutdown date not reached");
 
 		closedAmounts = new uint256[](quoteIds.length);
 

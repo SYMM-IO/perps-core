@@ -82,8 +82,8 @@ library PartyAFacetImpl {
 
 		require(maLayout.affiliateStatus[affiliate] || affiliate == address(0), "PartyAFacet: Invalid affiliate");
 		require(
-			affiliate == address(0) || !GlobalAppStorage.layout().affiliateOpenPositionsPaused[affiliate],
-			"PartyAFacet: Affiliate open positions paused"
+			affiliate == address(0) || GlobalAppStorage.layout().affiliateShutdownTime[affiliate] == 0,
+			"PartyAFacet: Affiliate shutdown scheduled"
 		);
 
 		Fee memory fee;

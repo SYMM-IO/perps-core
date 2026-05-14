@@ -149,6 +149,8 @@ interface IViewFacet {
 
 	function isAffiliateOpenPositionsPaused(address affiliate) external view returns (bool isPaused);
 
+	function getAffiliateShutdownTime(address affiliate) external view returns (uint256 shutdownTime);
+
 	function getBalanceLimitPerUser() external view returns (uint256);
 
 	function verifyMuonTSSAndGateway(bytes32 hash, IMuonSignatureVerifier.SchnorrSign memory sign, bytes memory gatewaySignature) external view;

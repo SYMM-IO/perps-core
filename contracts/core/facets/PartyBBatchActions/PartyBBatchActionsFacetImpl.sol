@@ -59,8 +59,8 @@ library PartyBBatchActionsFacetImpl {
 			Quote storage quote = quoteLayout.quotes[quoteIds[i]];
 			require(maLayout.affiliateStatus[quote.affiliate] || quote.affiliate == address(0), "PartyBFacet: Invalid affiliate");
 			require(
-				quote.affiliate == address(0) || !appLayout.affiliateOpenPositionsPaused[quote.affiliate],
-				"PartyBFacet: Affiliate open positions paused"
+				quote.affiliate == address(0) || appLayout.affiliateShutdownTime[quote.affiliate] == 0,
+				"PartyBFacet: Affiliate shutdown scheduled"
 			);
 			require(
 				LibConnections.isSymbolAllowedForPartyA(quote.partyA, quote.symbolId),
