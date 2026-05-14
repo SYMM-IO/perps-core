@@ -133,4 +133,5 @@ interface IControlEvents {
 	event AccumulatedFundingActivated();
 	event SetCrossPartyB(address indexed partyB, bool enabled);
 	event SetPartyBOpenPositionsPausedForPartyB(address indexed partyB, bool status);
+	event SetAffiliateOpenPositionsPaused(address indexed affiliate, bool status);
 }

@@ -65,8 +65,9 @@ npx hardhat verify --network "$NETWORK" \
   --libraries project/contracts/core/libraries/LibQuoteFunding.sol:LibQuoteFunding:0x2777D873709B926E3Dc7C429B1357006CBfb5820 \
   0xd3deCabD4610F4A7B20f31fe1F71FFd9616F5F53 || true  # FundingRateFacet
 
-# ClearingHouseFacet: LibQuoteFunding
+# ClearingHouseFacet: LibQuoteClose, LibQuoteFunding
 npx hardhat verify --network "$NETWORK" \
+  --libraries project/contracts/core/libraries/LibQuoteClose.sol:LibQuoteClose:0xC3D31e27c0194832425AC45565CFa66350F23427 \
   --libraries project/contracts/core/libraries/LibQuoteFunding.sol:LibQuoteFunding:0x2777D873709B926E3Dc7C429B1357006CBfb5820 \
   0x6c12a69cc5fF6943d749e14a03F66e437ebbCf93 || true  # ClearingHouseFacet
 

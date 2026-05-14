@@ -80,6 +80,12 @@ library PartyAFacetImpl {
 			LibMuonPartyA.verifyPartyAUpnlAndPrice(upnlSig, signer, symbolId, MuonFunction.Trading);
 		}
 
+		require(maLayout.affiliateStatus[affiliate] || affiliate == address(0), "PartyAFacet: Invalid affiliate");
+		require(
+			affiliate == address(0) || !GlobalAppStorage.layout().affiliateOpenPositionsPaused[affiliate],
+			"PartyAFacet: Affiliate open positions paused"
+		);
+
 		Fee memory fee;
 		if (affiliateLayout.affiliateFeeForUser[affiliate][signer][symbolId].isSet) {
 			fee = affiliateLayout.affiliateFeeForUser[affiliate][signer][symbolId];
@@ -103,8 +109,6 @@ library PartyAFacetImpl {
 				"PartyAFacet: insufficient available balance"
 			);
 		}
-		require(maLayout.affiliateStatus[affiliate] || affiliate == address(0), "PartyAFacet: Invalid affiliate");
-
 		// lock funds the in middle of way — skip in instantOpenMode (will be written directly to lockedBalances)
 		bool _instantOpenMode = GlobalAppStorage.layout().instantOpenMode;
 		if (!_instantOpenMode) {

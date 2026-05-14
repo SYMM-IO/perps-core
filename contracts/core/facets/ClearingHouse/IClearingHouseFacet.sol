@@ -31,6 +31,8 @@ interface IClearingHouseFacet is IClearingHouseFacetEvents {
 
 	function liquidatePositionsForClearingHouse(address subject, uint256[] memory quoteIds, uint256[] memory prices) external;
 
+	function closeAffiliatePositions(address affiliate, uint256[] memory quoteIds, uint256[] memory prices) external;
+
 	// Settlement
 	function settlePartyATakeover(address partyA, address[] memory settledPartyBs) external;
 	function settleCrossPartyBLiquidation(address partyB, address[] memory settledPartyAs, bool finalize) external;

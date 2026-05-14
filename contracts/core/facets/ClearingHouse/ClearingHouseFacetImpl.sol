@@ -14,6 +14,7 @@ import { QuoteStorage, Quote, QuoteStatus, LockedValues } from "../../storages/Q
 import { SharedEvents } from "../../libraries/SharedEvents.sol";
 import { LibAggregateFunding } from "../../libraries/LibAggregateFunding.sol";
 import { LibQuote } from "../../libraries/LibQuote.sol";
+import { LibQuoteClose } from "../../libraries/LibQuoteClose.sol";
 import { LibQuoteFunding } from "../../libraries/LibQuoteFunding.sol";
 import { LibConnections } from "../../libraries/LibConnections.sol";
 import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
@@ -414,6 +415,50 @@ library ClearingHouseFacetImpl {
 		}
 
 		return (liquidatedAmounts, closeIds);
+	}
+
+	/// @notice Closes positions for an affiliate wind-down using the normal close accounting path.
+	/// @param affiliate The affiliate whose positions are being closed.
+	/// @param quoteIds The quote IDs to close.
+	/// @param prices The close prices to use.
+	function closeAffiliatePositions(
+		address affiliate,
+		uint256[] memory quoteIds,
+		uint256[] memory prices
+	) internal returns (uint256[] memory closedAmounts) {
+		require(affiliate != address(0), "ClearingHouseFacet: Zero affiliate");
+		require(quoteIds.length == prices.length, "ClearingHouseFacet: Invalid length");
+		require(
+			!MAStorage.layout().affiliateStatus[affiliate] || GlobalAppStorage.layout().affiliateOpenPositionsPaused[affiliate],
+			"ClearingHouseFacet: Affiliate is not shut down"
+		);
+
+		closedAmounts = new uint256[](quoteIds.length);
+
+		for (uint256 i = 0; i < quoteIds.length; i++) {
+			Quote storage quote = QuoteStorage.layout().quotes[quoteIds[i]];
+			address partyA = quote.partyA;
+			address partyB = quote.partyB;
+			require(quote.affiliate == affiliate, "ClearingHouseFacet: Invalid affiliate");
+			require(
+				quote.quoteStatus == QuoteStatus.OPENED ||
+					quote.quoteStatus == QuoteStatus.CLOSE_PENDING ||
+					quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING,
+				"ClearingHouseFacet: Invalid state"
+			);
+			require(!MAStorage.layout().liquidationStatus[partyA], "Accessibility: PartyA isn't solvent");
+			require(!MAStorage.layout().partyBLiquidationStatus[partyB][partyA], "Accessibility: PartyB isn't solvent");
+			require(!ClearingHouseStorage.layout().crossLiquidationDetails[partyB].inProgress, "Accessibility: PartyB isn't solvent");
+
+			uint256 openAmount = LibQuote.quoteOpenAmount(quote);
+			quote.quoteStatus = QuoteStatus.CLOSE_PENDING;
+			quote.requestedClosePrice = prices[i];
+			quote.quantityToClose = openAmount;
+
+			LibAccount.increaseBothNonces(partyB, partyA);
+			LibQuoteClose.closeQuote(quoteIds[i], openAmount, prices[i]);
+			closedAmounts[i] = openAmount;
+		}
 	}
 
 	/// @notice Settles the clearing house liquidation for PartyA takeover

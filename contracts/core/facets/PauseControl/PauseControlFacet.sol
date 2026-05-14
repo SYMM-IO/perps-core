@@ -161,6 +161,21 @@ contract PauseControlFacet is Accessibility, IPauseControlFacet {
 		emit SetPartyBOpenPositionsPausedForPartyB(partyB, status);
 	}
 
+	/// @notice Pauses or unpauses an affiliate from opening new positions.
+	/// @dev Existing positions can still be closed. Pending or locked quotes for the affiliate cannot be opened while paused.
+	/// @param affiliate The affiliate/frontend address to pause or unpause.
+	/// @param status True to block new position opening, false to allow.
+	function setAffiliateOpenPositionsPaused(address affiliate, bool status) external {
+		require(GlobalAppStorage.layout().signer == address(0), "Accessibility: Cannot call via proxy");
+		require(
+			LibAccessibility.hasRole(msg.sender, status ? LibAccessibility.PAUSER_ROLE : LibAccessibility.UNPAUSER_ROLE),
+			"Accessibility: Must have role"
+		);
+		require(affiliate != address(0), "PauseControlFacet: Zero address");
+		GlobalAppStorage.layout().affiliateOpenPositionsPaused[affiliate] = status;
+		emit SetAffiliateOpenPositionsPaused(affiliate, status);
+	}
+
 	/// @notice Sets the emergency status for multiple Party B addresses, enabling or disabling their emergency mode operations.
 	/// @param partyBs Array of Party B addresses to update emergency status for.
 	/// @param status True to enable emergency status, false to disable.

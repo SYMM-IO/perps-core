@@ -116,6 +116,20 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 			).to.be.revertedWith("PartyBFacet: Invalid length")
 		})
 
+		it("Should fail when affiliate open positions are paused", async function () {
+			const affiliate = await context.accountManager.getAddress()
+			await context.pauseControlFacet.connect(context.signers.admin).setAffiliateOpenPositionsPaused(affiliate, true)
+
+			const quoteIds = [1n, 2n]
+			const filledAmounts = [decimal(100n), decimal(100n)]
+			const openedPrices = [decimal(1n), decimal(1n)]
+			const upnlSig = await getDummyPairUpnlAndPricesSig([decimal(1n), decimal(1n)], [1n, 2n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions(quoteIds, filledAmounts, openedPrices, upnlSig),
+			).to.be.revertedWith("PartyBFacet: Affiliate open positions paused")
+		})
+
 		it("Should fail when sender is not partyB of quote", async function () {
 			const quoteIds = [1n, 2n]
 			const filledAmounts = [decimal(100n), decimal(100n)]
