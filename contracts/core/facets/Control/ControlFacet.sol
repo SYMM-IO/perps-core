@@ -27,6 +27,9 @@ import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 import { Fee } from "../../storages/QuoteStorage.sol";
 
 contract ControlFacet is Accessibility, Ownable, IControlFacet {
+	uint256 private constant MIN_AFFILIATE_SHUTDOWN_NOTICE = 14 days;
+	uint256 private constant MAX_AFFILIATE_SHUTDOWN_NOTICE = 90 days;
+
 	/// @notice Initiates a two-step ownership transfer to a new address. The new owner must call acceptOwnership() to complete the transfer.
 	/// @param owner The address of the pending new owner.
 	function transferOwnership(address owner) external onlyOwner {
@@ -149,6 +152,36 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		require(MAStorage.layout().affiliateStatus[affiliate], "ControlFacet: Address is not registered");
 		MAStorage.layout().affiliateStatus[affiliate] = false;
 		emit DeregisterAffiliate(affiliate);
+	}
+
+	/// @notice Schedules an affiliate shutdown. New positions are blocked immediately, and ClearingHouse can close remaining positions at shutdownTime.
+	/// @param affiliate The affiliate/frontend address being shut down.
+	/// @param shutdownTime The timestamp when ClearingHouse can close remaining positions.
+	function scheduleAffiliateShutdown(address affiliate, uint256 shutdownTime) external {
+		checkZeroAddress(affiliate);
+		address signer = LibSigner.getSigner();
+		require(LibAccessibility.hasRole(signer, LibAccessibility.AFFILIATE_MANAGER_ROLE) || signer == affiliate, "ControlFacet: Not authorized");
+		require(MAStorage.layout().affiliateStatus[affiliate], "ControlFacet: Invalid affiliate");
+		require(GlobalAppStorage.layout().affiliateShutdownTime[affiliate] == 0, "ControlFacet: Affiliate shutdown already scheduled");
+		require(
+			shutdownTime >= block.timestamp + MIN_AFFILIATE_SHUTDOWN_NOTICE && shutdownTime <= block.timestamp + MAX_AFFILIATE_SHUTDOWN_NOTICE,
+			"ControlFacet: Invalid shutdown time"
+		);
+
+		GlobalAppStorage.layout().affiliateShutdownTime[affiliate] = shutdownTime;
+		emit ScheduleAffiliateShutdown(affiliate, shutdownTime);
+	}
+
+	/// @notice Cancels a scheduled affiliate shutdown and restores normal opening through that affiliate.
+	/// @param affiliate The affiliate/frontend address whose shutdown is being cancelled.
+	function cancelAffiliateShutdown(address affiliate) external {
+		checkZeroAddress(affiliate);
+		address signer = LibSigner.getSigner();
+		require(LibAccessibility.hasRole(signer, LibAccessibility.AFFILIATE_MANAGER_ROLE) || signer == affiliate, "ControlFacet: Not authorized");
+		require(GlobalAppStorage.layout().affiliateShutdownTime[affiliate] != 0, "ControlFacet: Affiliate shutdown not scheduled");
+
+		delete GlobalAppStorage.layout().affiliateShutdownTime[affiliate];
+		emit CancelAffiliateShutdown(affiliate);
 	}
 
 	/// @notice Sets the metadata for an affiliate, including display name and other identifying information.

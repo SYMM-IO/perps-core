@@ -9,11 +9,12 @@ import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
 import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
 import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
-import { decimal, pausePartyB } from "./utils/Common.js"
+import { decimal, getBlockTimestamp, pausePartyB } from "./utils/Common.js"
 import { getDummyPairUpnlAndPricesSig } from "./utils/SignatureUtils.js"
 
 export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 	let context: RunContext, user: User, user2: User, hedger: Hedger, hedger2: Hedger
+	const MIN_AFFILIATE_SHUTDOWN_NOTICE = 14n * 24n * 60n * 60n
 
 	beforeEach(async function () {
 		context = await loadFixture(initializeFixture)
@@ -116,9 +117,11 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 			).to.be.revertedWith("PartyBFacet: Invalid length")
 		})
 
-		it("Should fail when affiliate open positions are paused", async function () {
+		it("Should fail when affiliate shutdown is scheduled", async function () {
 			const affiliate = await context.accountManager.getAddress()
-			await context.pauseControlFacet.connect(context.signers.admin).setAffiliateOpenPositionsPaused(affiliate, true)
+			await context.controlFacet
+				.connect(context.signers.admin)
+				.scheduleAffiliateShutdown(affiliate, (await getBlockTimestamp()) + MIN_AFFILIATE_SHUTDOWN_NOTICE + 10n)
 
 			const quoteIds = [1n, 2n]
 			const filledAmounts = [decimal(100n), decimal(100n)]
@@ -127,7 +130,7 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 
 			await expect(
 				context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions(quoteIds, filledAmounts, openedPrices, upnlSig),
-			).to.be.revertedWith("PartyBFacet: Affiliate open positions paused")
+			).to.be.revertedWith("PartyBFacet: Affiliate shutdown scheduled")
 		})
 
 		it("Should fail when sender is not partyB of quote", async function () {

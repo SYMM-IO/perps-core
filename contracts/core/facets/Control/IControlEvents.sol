@@ -99,6 +99,8 @@ interface IControlEvents {
 	event DeregisterPartyB(address partyB, uint256 index);
 	event RegisterAffiliate(address affiliate);
 	event DeregisterAffiliate(address affiliate);
+	event ScheduleAffiliateShutdown(address indexed affiliate, uint256 shutdownTime);
+	event CancelAffiliateShutdown(address indexed affiliate);
 	event AddBridge(address bridge);
 	event RemoveBridge(address bridge);
 	event SetLiquidationInsuranceVaultParams(address insuranceVault, uint256 maxLiquidationProfit);
@@ -133,5 +135,4 @@ interface IControlEvents {
 	event AccumulatedFundingActivated();
 	event SetCrossPartyB(address indexed partyB, bool enabled);
 	event SetPartyBOpenPositionsPausedForPartyB(address indexed partyB, bool status);
-	event SetAffiliateOpenPositionsPaused(address indexed affiliate, bool status);
 }

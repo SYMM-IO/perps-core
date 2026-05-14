@@ -27,8 +27,8 @@ library LibPartyBQuoteActions {
 		require(quote.quoteStatus == QuoteStatus.PENDING, "PartyBFacet: Invalid state");
 		require(MAStorage.layout().affiliateStatus[quote.affiliate] || quote.affiliate == address(0), "PartyBFacet: Invalid affiliate");
 		require(
-			quote.affiliate == address(0) || !GlobalAppStorage.layout().affiliateOpenPositionsPaused[quote.affiliate],
-			"PartyBFacet: Affiliate open positions paused"
+			quote.affiliate == address(0) || GlobalAppStorage.layout().affiliateShutdownTime[quote.affiliate] == 0,
+			"PartyBFacet: Affiliate shutdown scheduled"
 		);
 		require(block.timestamp <= quote.deadline, "PartyBFacet: Quote is expired");
 		require(quoteId <= quoteLayout.lastId, "PartyBFacet: Invalid quoteId");

@@ -33,6 +33,10 @@ interface IControlFacet is IControlEvents {
 
 	function deregisterAffiliate(address affiliate) external;
 
+	function scheduleAffiliateShutdown(address affiliate, uint256 shutdownTime) external;
+
+	function cancelAffiliateShutdown(address affiliate) external;
+
 	function setMuonConfig(uint256 upnlValidTime, uint256 priceValidTime) external;
 
 	/// @notice Sets or clears the UPNL signature validity override for one Muon function category.

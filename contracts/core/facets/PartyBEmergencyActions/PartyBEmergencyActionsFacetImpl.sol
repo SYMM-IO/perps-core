@@ -25,8 +25,12 @@ library PartyBEmergencyActionsFacetImpl {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		Symbol memory symbol = SymbolStorage.layout().symbols[quote.symbolId];
+		bool affiliateShutdownScheduled = quote.affiliate != address(0) && GlobalAppStorage.layout().affiliateShutdownTime[quote.affiliate] != 0;
 		require(
-			GlobalAppStorage.layout().emergencyMode || GlobalAppStorage.layout().partyBEmergencyStatus[quote.partyB] || !symbol.isValid,
+			GlobalAppStorage.layout().emergencyMode ||
+				GlobalAppStorage.layout().partyBEmergencyStatus[quote.partyB] ||
+				affiliateShutdownScheduled ||
+				!symbol.isValid,
 			"PartyBFacet: Operation not allowed. Either emergency mode must be active, party B must be in emergency status, or the symbol must be delisted"
 		);
 		require(quote.quoteStatus == QuoteStatus.OPENED || quote.quoteStatus == QuoteStatus.CLOSE_PENDING, "PartyBFacet: Invalid state");

@@ -53,8 +53,6 @@ interface IPauseControlFacet is IControlEvents {
 
 	function setPartyBOpenPositionsPaused(address partyB, bool status) external;
 
-	function setAffiliateOpenPositionsPaused(address affiliate, bool status) external;
-
 	function setPartyBEmergencyStatus(address[] memory partyBs, bool status) external;
 
 	function deprecateLegacyWithdrawal() external;

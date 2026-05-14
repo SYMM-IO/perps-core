@@ -38,10 +38,7 @@ library PartyBPositionActionsFacetImpl {
 
 		require(!appLayout.partyBOpenPositionsPausedPerPartyB[quote.partyB], "PartyBFacet: PartyB open positions paused");
 		require(MAStorage.layout().affiliateStatus[quote.affiliate] || quote.affiliate == address(0), "PartyBFacet: Invalid affiliate");
-		require(
-			quote.affiliate == address(0) || !appLayout.affiliateOpenPositionsPaused[quote.affiliate],
-			"PartyBFacet: Affiliate open positions paused"
-		);
+		require(quote.affiliate == address(0) || appLayout.affiliateShutdownTime[quote.affiliate] == 0, "PartyBFacet: Affiliate shutdown scheduled");
 		require(accountLayout.suspendedAddresses[quote.partyA] == false, "PartyBFacet: PartyA is suspended");
 		require(!accountLayout.suspendedAddresses[LibSigner.getSigner()], "PartyBFacet: Sender is Suspended");
 		require(!appLayout.partyBEmergencyStatus[quote.partyB], "PartyBFacet: PartyB is in emergency mode");

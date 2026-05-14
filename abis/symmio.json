@@ -2876,6 +2876,19 @@
     },
     {
         "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            }
+        ],
+        "name": "CancelAffiliateShutdown",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
         "inputs": [],
         "name": "DeactiveEmergencyMode",
         "type": "event"
@@ -3212,6 +3225,25 @@
         "anonymous": false,
         "inputs": [
             {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "shutdownTime",
+                "type": "uint256"
+            }
+        ],
+        "name": "ScheduleAffiliateShutdown",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
                 "indexed": false,
                 "internalType": "address",
                 "name": "partyB",
@@ -3317,25 +3349,6 @@
             }
         ],
         "name": "SetAffiliateFeeForUser",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "bool",
-                "name": "status",
-                "type": "bool"
-            }
-        ],
-        "name": "SetAffiliateOpenPositionsPaused",
         "type": "event"
     },
     {
@@ -6450,24 +6463,6 @@
     {
         "inputs": [
             {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "internalType": "bool",
-                "name": "status",
-                "type": "bool"
-            }
-        ],
-        "name": "setAffiliateOpenPositionsPaused",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
                 "internalType": "address[]",
                 "name": "partyBs",
                 "type": "address[]"
@@ -6993,6 +6988,25 @@
                 "internalType": "address",
                 "name": "hook",
                 "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            }
+        ],
+        "name": "getAffiliateShutdownTime",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "shutdownTime",
+                "type": "uint256"
             }
         ],
         "stateMutability": "view",
@@ -16975,6 +16989,19 @@
         "type": "function"
     },
     {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            }
+        ],
+        "name": "cancelAffiliateShutdown",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
         "inputs": [],
         "name": "cancelOwnershipTransfer",
         "outputs": [],
@@ -17158,6 +17185,24 @@
             }
         ],
         "name": "revokeRole",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "shutdownTime",
+                "type": "uint256"
+            }
+        ],
+        "name": "scheduleAffiliateShutdown",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"

@@ -577,11 +577,18 @@ contract ViewFacet is IViewFacet {
 		return GlobalAppStorage.layout().partyBOpenPositionsPausedPerPartyB[partyB];
 	}
 
-	/// @notice Returns whether an affiliate is paused from opening new positions.
+	/// @notice Returns whether an affiliate is in close-only mode because a shutdown is scheduled.
 	/// @param affiliate The address of the affiliate.
-	/// @return isPaused True if the affiliate is paused from opening new positions.
+	/// @return isPaused True if the affiliate has a scheduled shutdown.
 	function isAffiliateOpenPositionsPaused(address affiliate) external view returns (bool isPaused) {
-		return GlobalAppStorage.layout().affiliateOpenPositionsPaused[affiliate];
+		return GlobalAppStorage.layout().affiliateShutdownTime[affiliate] != 0;
+	}
+
+	/// @notice Returns the scheduled affiliate shutdown timestamp.
+	/// @param affiliate The address of the affiliate.
+	/// @return shutdownTime The timestamp after which ClearingHouse can close remaining affiliate positions, or zero if not scheduled.
+	function getAffiliateShutdownTime(address affiliate) external view returns (uint256 shutdownTime) {
+		return GlobalAppStorage.layout().affiliateShutdownTime[affiliate];
 	}
 
 	/// @notice Retrieves the balance limit per user.
