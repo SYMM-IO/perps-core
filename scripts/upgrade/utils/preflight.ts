@@ -36,6 +36,7 @@ const CHAIN_ID_BY_NETWORK: Record<string, number> = {
 	polygon: 137,
 	blast: 81457,
 	mode: 34443,
+	coti: 2632500,
 }
 
 /**

@@ -103,6 +103,14 @@ const customChains = [
 			browserURL: "https://bscscan.com",
 		},
 	},
+	{
+    network: "coti",
+    chainId: 2632500,
+    urls: {
+      apiURL: "https://mainnet.cotiscan.io/api",
+      browserURL: "https://mainnet.cotiscan.io",
+    },
+  }
 ]
 
 export default defineConfig({
@@ -198,6 +206,7 @@ export default defineConfig({
 		mantle2: createNetworkConfig("mantle2", "https://mantle.drpc.org"),
 		hyperevm: createNetworkConfig("hyperevm", "https://rpc.hyperliquid.xyz/evm"),
 		arbitrum: createNetworkConfig("arbitrum", "https://arbitrum.llamarpc.com"),
+		coti: createNetworkConfig("coti", "https://mainnet.coti.io/rpc"),
 		"fork-arbitrum": {
 			type: "edr-simulated",
 			chainId: 42161,
