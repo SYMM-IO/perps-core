@@ -1,6 +1,7 @@
 {
 	"muonUpnlValidTime": 60,
 	"muonPriceValidTime": 60,
+	"grantMuonSetterRole": false,
 	"safeProposal": {
 		"enabled": false,
 		"submit": false,

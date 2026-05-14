@@ -45,6 +45,7 @@ type ProposalConfig = {
 	submit?: boolean
 	signature?: string
 	signatureEnvVar?: string
+	multiSendAddress?: string
 }
 
 type MuonConfigFile = {
@@ -52,6 +53,7 @@ type MuonConfigFile = {
 	safeAddress?: string
 	muonUpnlValidTime?: number | string
 	muonPriceValidTime?: number | string
+	grantMuonSetterRole?: boolean
 	safeProposal?: ProposalConfig
 	proposal?: ProposalConfig
 }
@@ -80,12 +82,33 @@ type SafeSimulationStatus = {
 	reason?: string
 }
 
+type SafeExecutionPreflightStatus = {
+	ok: boolean
+	checkedCall: "grantRole" | "setMuonConfig"
+	reason?: string
+	note?: string
+}
+
 type SafeMultisigTransactionListResponse = {
 	next?: string | null
 	results?: Array<{ nonce?: number | string | null; isExecuted?: boolean; executed?: boolean }>
 }
 
+type SafeDelegateListResponse = {
+	next?: string | null
+	results?: Array<{ delegate?: string | null }>
+}
+
+type SafeServiceTransaction = {
+	to: string
+	value: string
+	data: string
+	operation: number
+}
+
 const OUTPUT_DIR = "./scripts/upgrade/output"
+const MUON_SETTER_ROLE = ethers.id("MUON_SETTER_ROLE")
+const DEFAULT_SAFE_MULTISEND_CALL_ONLY_ADDRESS = "0x9641d764fc13c8b624c04430c7356c1c7c8102e2"
 const SAFE_SERVICE_SLUGS_BY_CHAIN_ID: Record<string, string> = {
 	"1": "eth",
 	"10": "oeth",
@@ -93,10 +116,12 @@ const SAFE_SERVICE_SLUGS_BY_CHAIN_ID: Record<string, string> = {
 	"100": "gno",
 	"146": "sonic",
 	"137": "matic",
+	"999": "hyper",
 	"8453": "base",
 	"9745": "plasma",
 	"42161": "arb1",
 	"43114": "avax",
+	"5000": "mantle",
 	"80094": "berachain",
 }
 const SAFE_SERVICE_SLUGS_BY_NETWORK: Record<string, string> = {
@@ -105,12 +130,18 @@ const SAFE_SERVICE_SLUGS_BY_NETWORK: Record<string, string> = {
 	bera: "berachain",
 	berachain: "berachain",
 	bsc: "bnb",
+	hyperevm: "hyper",
+	mantle: "mantle",
 	polygon: "matic",
 	plasma: "plasma",
 	sonic: "sonic",
 }
 const viewFacetIface = new ethers.Interface(["function hasRole(address user, bytes32 role) view returns (bool)"])
-const controlFacetIface = new ethers.Interface(["function setMuonConfig(uint256 upnlValidTime, uint256 priceValidTime)"])
+const controlFacetIface = new ethers.Interface([
+	"function grantRole(address user, bytes32 role)",
+	"function setMuonConfig(uint256 upnlValidTime, uint256 priceValidTime)",
+])
+const multiSendIface = new ethers.Interface(["function multiSend(bytes transactions)"])
 const safeIface = new ethers.Interface([
 	"function nonce() view returns (uint256)",
 	"function getOwners() view returns (address[])",
@@ -198,7 +229,7 @@ async function estimateSafeTransaction(
 	safeServiceUrl: string,
 	safe: string,
 	apiKey: string | undefined,
-	tx: { to: string; value: string; data: string; operation: number },
+	tx: SafeServiceTransaction,
 ): Promise<unknown> {
 	const endpoint = `${normalizeServiceUrl(safeServiceUrl)}/safes/${safe}/multisig-transactions/estimations/`
 	const response = await fetch(endpoint, {
@@ -243,6 +274,29 @@ async function getQueuedSafeNonces(safeServiceUrl: string, safe: string, apiKey:
 	return nonces
 }
 
+async function getSafeDelegates(safeServiceUrl: string, safe: string, apiKey: string | undefined): Promise<string[]> {
+	const delegates: string[] = []
+	let nextUrl: string | null = `${normalizeServiceUrl(safeServiceUrl)}/delegates/?safe=${safe}&limit=100`
+
+	while (nextUrl) {
+		const response = await fetch(nextUrl, {
+			method: "GET",
+			headers: buildSafeServiceHeaders(apiKey),
+		})
+		const responseText = await response.text()
+		if (!response.ok) {
+			throw new Error(`Failed to read Safe delegates (${response.status} ${response.statusText}): ${responseText}`)
+		}
+		const page = JSON.parse(responseText) as SafeDelegateListResponse
+		for (const item of page.results ?? []) {
+			if (item.delegate && ethers.isAddress(item.delegate)) delegates.push(ethers.getAddress(item.delegate))
+		}
+		nextUrl = page.next ?? null
+	}
+
+	return delegates
+}
+
 async function resolveSafeNonce(
 	safeContract: ethers.Contract,
 	safeServiceUrl: string,
@@ -280,6 +334,69 @@ function getSafeSimulationStatus(result: unknown): SafeSimulationStatus {
 	return { ok: false, reason: "Simulation response did not include safeTxGas" }
 }
 
+function summarizeCallError(error: any): string {
+	const candidates = [error?.shortMessage, error?.reason, error?.info?.error?.message, error?.error?.message, error?.message].filter(
+		(value): value is string => typeof value === "string" && value.length > 0,
+	)
+	return candidates[0] ?? String(error)
+}
+
+async function checkSafeExecutionPreflight(
+	safe: string,
+	diamond: string,
+	includeGrantMuonSetterRole: boolean,
+	grantMuonSetterRoleData: string,
+	setMuonConfigData: string,
+): Promise<SafeExecutionPreflightStatus> {
+	const checkedCall = includeGrantMuonSetterRole ? "grantRole" : "setMuonConfig"
+	const data = includeGrantMuonSetterRole ? grantMuonSetterRoleData : setMuonConfigData
+
+	try {
+		await ethers.provider.call({ from: safe, to: diamond, data })
+		return {
+			ok: true,
+			checkedCall,
+			note: includeGrantMuonSetterRole
+				? "grantRole can be called from the Safe; setMuonConfig is expected to pass after the role is granted in the same batch."
+				: undefined,
+		}
+	} catch (error: any) {
+		return {
+			ok: false,
+			checkedCall,
+			reason: summarizeCallError(error),
+		}
+	}
+}
+
+function encodeMultiSendTransactions(transactions: SafeServiceTransaction[]): string {
+	return ethers.hexlify(
+		ethers.concat(
+			transactions.map(tx =>
+				ethers.concat([
+					ethers.toBeHex(tx.operation, 1),
+					ethers.getBytes(ethers.getAddress(tx.to)),
+					ethers.zeroPadValue(ethers.toBeHex(BigInt(tx.value)), 32),
+					ethers.zeroPadValue(ethers.toBeHex(ethers.getBytes(tx.data).length), 32),
+					ethers.getBytes(tx.data),
+				]),
+			),
+		),
+	)
+}
+
+function buildSafeServiceTransaction(transactions: SafeServiceTransaction[], proposalConfig: ProposalConfig): SafeServiceTransaction {
+	if (transactions.length === 1) return transactions[0]
+
+	const multiSendAddress = ethers.getAddress(proposalConfig.multiSendAddress ?? DEFAULT_SAFE_MULTISEND_CALL_ONLY_ADDRESS)
+	return {
+		to: multiSendAddress,
+		value: "0",
+		data: multiSendIface.encodeFunctionData("multiSend", [encodeMultiSendTransactions(transactions)]),
+		operation: 1,
+	}
+}
+
 async function main() {
 	const networkName = connection.networkName
 	const networkSuffix = baseNetworkName(networkName)
@@ -301,6 +418,8 @@ async function main() {
 
 	const diamond = ethers.getAddress(diamondRaw)
 	const safe = ethers.getAddress(safeRaw)
+	const grantMuonSetterRole = config.grantMuonSetterRole === true
+	const grantMuonSetterRoleData = controlFacetIface.encodeFunctionData("grantRole", [safe, MUON_SETTER_ROLE])
 	const setMuonConfigData = controlFacetIface.encodeFunctionData("setMuonConfig", [upnlValidTime, priceValidTime])
 
 	console.log(`Network:          ${networkName}`)
@@ -309,34 +428,52 @@ async function main() {
 	console.log(`Safe:             ${safe}`)
 	console.log(`UPNL valid time:  ${upnlValidTime}s`)
 	console.log(`Price valid time: ${priceValidTime}s`)
+	console.log(`Grant role:       ${grantMuonSetterRole ? "enabled if missing" : "disabled"}`)
 	console.log(`Config:           ${muonConfigFile}${fs.existsSync(muonConfigFile) ? "" : " (not found, using fallbacks)"}`)
 	console.log()
 
 	const viewFacet = new ethers.Contract(diamond, viewFacetIface, ethers.provider)
+	let hasMuonSetterRole: boolean | undefined
 	try {
-		const hasMuonSetterRole: boolean = await viewFacet.hasRole(safe, ethers.id("MUON_SETTER_ROLE"))
+		hasMuonSetterRole = await viewFacet.hasRole(safe, MUON_SETTER_ROLE)
 		if (!hasMuonSetterRole) {
-			console.log(`  ⚠ Safe ${safe} does NOT hold MUON_SETTER_ROLE on Diamond — grant it before executing this batch.`)
+			if (grantMuonSetterRole) {
+				console.log(`  Safe ${safe} does NOT hold MUON_SETTER_ROLE on Diamond. Adding grantRole to this batch.`)
+			} else {
+				console.log(`  ⚠ Safe ${safe} does NOT hold MUON_SETTER_ROLE on Diamond — grant it before executing this batch.`)
+			}
 			console.log()
 		}
 	} catch {
-		console.log("  ⚠ Could not verify MUON_SETTER_ROLE on the diamond. Continuing with batch generation.")
+		if (grantMuonSetterRole) {
+			console.log("  ⚠ Could not verify MUON_SETTER_ROLE on the diamond. Adding grantRole because grantMuonSetterRole=true.")
+		} else {
+			console.log("  ⚠ Could not verify MUON_SETTER_ROLE on the diamond. Continuing with batch generation.")
+		}
 		console.log()
 	}
 
-	const safeTx = toHumanReadableSafeTxFromIface(controlFacetIface, diamond, "setMuonConfig", [upnlValidTime, priceValidTime])
+	const includeGrantMuonSetterRole = grantMuonSetterRole && hasMuonSetterRole !== true
+	const safeTxs = [
+		...(includeGrantMuonSetterRole ? [toHumanReadableSafeTxFromIface(controlFacetIface, diamond, "grantRole", [safe, MUON_SETTER_ROLE])] : []),
+		toHumanReadableSafeTxFromIface(controlFacetIface, diamond, "setMuonConfig", [upnlValidTime, priceValidTime]),
+	]
+	const serviceTransactions: SafeServiceTransaction[] = [
+		...(includeGrantMuonSetterRole ? [{ to: diamond, value: "0", data: grantMuonSetterRoleData, operation: 0 }] : []),
+		{ to: diamond, value: "0", data: setMuonConfigData, operation: 0 },
+	]
 	const batch: SafeBatch = {
 		version: "1.0",
 		chainId,
 		createdAt: Date.now(),
 		meta: {
 			name: "Symmio — Set Muon Config",
-			description: `Set Muon UPNL/price validity to ${upnlValidTime}s/${priceValidTime}s on ${diamond}`,
+			description: `${includeGrantMuonSetterRole ? "Grant MUON_SETTER_ROLE and set" : "Set"} Muon UPNL/price validity to ${upnlValidTime}s/${priceValidTime}s on ${diamond}`,
 			txBuilderVersion: "1.18.0",
 			createdFromSafeAddress: safe,
 			createdFromOwnerAddress: "",
 		},
-		transactions: [safeTx],
+		transactions: safeTxs,
 	}
 
 	const chainOutputDir = path.join(OUTPUT_DIR, "muon", networkSuffix ?? networkName)
@@ -357,7 +494,12 @@ async function main() {
 
 	const safeServiceUrl = resolveSafeServiceUrl(chainId, networkSuffix, proposalConfig)
 	if (!safeServiceUrl) {
-		throw new Error(`No Safe Transaction Service URL mapping for network ${networkName} / chain ${chainId}. Set SAFE_SERVICE_URL for this run.`)
+		console.log(
+			`\nSafe service proposal is enabled, but no Safe Transaction Service URL mapping exists for network ${networkName} / chain ${chainId}.`,
+		)
+		console.log("Safe proposal simulation/submission is skipped. Import the generated batch into Safe Transaction Builder instead.")
+		console.log("If a custom Safe Transaction Service exists for this chain, set safeProposal.safeServiceUrl in the chain config.")
+		return
 	}
 
 	const configuredSender = process.env.SAFE_SENDER_ADDRESS ?? proposalConfig.senderAddress
@@ -374,11 +516,26 @@ async function main() {
 	)
 	console.log(`Selected Safe nonce:       ${safeNonce} (${nonceResolution.source})`)
 
+	const origin = process.env.SAFE_ORIGIN ?? proposalConfig.origin ?? `Symmio: setMuonConfig(${upnlValidTime}, ${priceValidTime}) on ${networkName}`
+	const serviceTx = buildSafeServiceTransaction(serviceTransactions, proposalConfig)
+	if (serviceTransactions.length > 1) {
+		console.log(`Safe proposal batch:       ${serviceTransactions.length} calls via MultiSend ${serviceTx.to}`)
+	}
+
+	console.log("\nChecking execution preflight from the Safe address:")
+	const executionPreflight = await checkSafeExecutionPreflight(safe, diamond, includeGrantMuonSetterRole, grantMuonSetterRoleData, setMuonConfigData)
+	if (executionPreflight.ok) {
+		console.log(`Execution preflight passed (${executionPreflight.checkedCall}).`)
+		if (executionPreflight.note) console.log(executionPreflight.note)
+	} else {
+		console.log(`Execution preflight failed (${executionPreflight.checkedCall}): ${executionPreflight.reason ?? "unknown reason"}`)
+	}
+
 	const safeTxHash = (await safeContract.getTransactionHash(
-		diamond,
-		0,
-		setMuonConfigData,
-		0,
+		serviceTx.to,
+		serviceTx.value,
+		serviceTx.data,
+		serviceTx.operation,
 		0,
 		0,
 		0,
@@ -386,14 +543,6 @@ async function main() {
 		ethers.ZeroAddress,
 		safeNonce,
 	)) as string
-
-	const origin = process.env.SAFE_ORIGIN ?? proposalConfig.origin ?? `Symmio: setMuonConfig(${upnlValidTime}, ${priceValidTime}) on ${networkName}`
-	const serviceTx = {
-		to: diamond,
-		value: "0",
-		data: setMuonConfigData,
-		operation: 0,
-	}
 
 	console.log("\nSimulating Safe transaction via Safe Transaction Service estimation:")
 	const simulationResult = await estimateSafeTransaction(safeServiceUrl, safe, apiKey, serviceTx)
@@ -405,10 +554,44 @@ async function main() {
 		console.log("\nSafe simulation passed.")
 	}
 
+	let submissionEligibility:
+		| {
+				ok: boolean
+				reason?: string
+				owners: string[]
+				delegates: string[]
+		  }
+		| undefined
+	if (submitSafeProposal) {
+		const owners = ((await safeContract.getOwners()) as string[]).map(owner => ethers.getAddress(owner))
+		let delegates: string[] = []
+		try {
+			delegates = await getSafeDelegates(safeServiceUrl, safe, apiKey)
+		} catch (error: any) {
+			console.log(`\nCould not read Safe delegates before submission: ${error.message ?? error}`)
+		}
+
+		const isOwner = owners.some(owner => owner.toLowerCase() === senderAddress.toLowerCase())
+		const isDelegate = delegates.some(delegate => delegate.toLowerCase() === senderAddress.toLowerCase())
+		submissionEligibility = {
+			ok: isOwner || isDelegate,
+			reason: isOwner || isDelegate ? undefined : "Sender is not a Safe owner or registered delegate",
+			owners,
+			delegates,
+		}
+
+		if (!submissionEligibility.ok) {
+			console.log(`\nSafe proposal submission is skipped: ${submissionEligibility.reason}.`)
+			console.log(`  Sender:    ${senderAddress}`)
+			console.log(`  Owners:    ${owners.join(", ")}`)
+			console.log(`  Delegates: ${delegates.length > 0 ? delegates.join(", ") : "(none)"}`)
+		}
+	}
+
 	const signatureEnvVar = proposalConfig.signatureEnvVar ?? "SAFE_PROPOSAL_SIGNATURE"
 	const configuredSignature = process.env[signatureEnvVar] ?? proposalConfig.signature
 	let payload: SafeProposalPayload | undefined
-	if (submitSafeProposal) {
+	if (submitSafeProposal && submissionEligibility?.ok && executionPreflight.ok) {
 		let safeSignature: string
 		if (configuredSignature) {
 			safeSignature = configuredSignature
@@ -465,8 +648,10 @@ async function main() {
 				nonceResolution,
 				safeTxHash,
 				serviceUrl: normalizeServiceUrl(safeServiceUrl),
+				executionPreflight,
 				simulationResult,
 				simulationStatus,
+				submissionEligibility,
 				submitSafeProposal,
 				proposal: proposalPreview,
 				payload,
@@ -481,10 +666,20 @@ async function main() {
 		console.log("\nSafe proposal submission is skipped because simulation did not pass.")
 		return
 	}
+	if (!executionPreflight.ok) {
+		console.log("\nSafe proposal submission is skipped because execution preflight did not pass.")
+		return
+	}
 
 	if (!submitSafeProposal) {
 		console.log("\nSafe proposal submission is skipped. Set safeProposal.submit=true from an environment that can sign as the Safe proposer.")
 		return
+	}
+	if (!submissionEligibility?.ok) {
+		return
+	}
+	if (!payload) {
+		throw new Error("Safe proposal payload was not built")
 	}
 
 	const endpoint = `${normalizeServiceUrl(safeServiceUrl)}/safes/${safe}/multisig-transactions/`

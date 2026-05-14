@@ -3,10 +3,12 @@
 	"safeAddress": "0x...",
 	"muonUpnlValidTime": 60,
 	"muonPriceValidTime": 60,
+	"grantMuonSetterRole": false,
 	"safeProposal": {
 		"enabled": false,
 		"submit": false,
 		"safeNonce": null,
+		"multiSendAddress": "0x9641d764fc13c8b624c04430c7356c1c7c8102e2",
 		"apiKeyEnvVar": "SAFE_SERVICE_API_KEY",
 		"senderAddress": "0x...",
 		"signatureEnvVar": "SAFE_PROPOSAL_SIGNATURE",
