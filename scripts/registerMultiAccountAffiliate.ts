@@ -12,7 +12,6 @@
  *   MULTI_ACCOUNT default 0x41a496361df4554bbBB03450506010E5eF4a7a9d
  *   DRY_RUN       "true" prints the tx and exits without sending
  */
-
 import hre from "hardhat"
 
 const DEFAULT_SYMMIO_CORE = "0xa805FE5baA301D4e72C789694F3967452c77D6fD"
@@ -34,17 +33,10 @@ async function main() {
 
 	const AFFILIATE_MANAGER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("AFFILIATE_MANAGER_ROLE"))
 
-	const core = await ethers.getContractAt(
-		"contracts/core/facets/Control/ControlFacet.sol:ControlFacet",
-		SYMMIO_CORE,
-		signer,
-	)
+	const core = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", SYMMIO_CORE, signer)
 	const coreView = new ethers.Contract(
 		SYMMIO_CORE,
-		[
-			"function hasRole(address user, bytes32 role) view returns (bool)",
-			"function isAffiliate(address affiliate) view returns (bool)",
-		],
+		["function hasRole(address user, bytes32 role) view returns (bool)", "function isAffiliate(address affiliate) view returns (bool)"],
 		signer,
 	)
 
@@ -80,7 +72,7 @@ async function main() {
 	console.log("\nDone.")
 }
 
-main().catch((err) => {
+main().catch(err => {
 	console.error(err)
 	process.exit(1)
 })
