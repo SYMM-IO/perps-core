@@ -84,8 +84,8 @@ async function main() {
 	log.info(`  per-tx avg:  ${Math.round(parTotalMs / SAMPLES)}ms`)
 	log.info("")
 	log.info("--- Parallel Estimates ---")
-	log.info(`  50 chunks:  ${fmt(parTotalMs / SAMPLES * 50)}`)
-	log.info(`  100 chunks: ${fmt(parTotalMs / SAMPLES * 100)}`)
+	log.info(`  50 chunks:  ${fmt((parTotalMs / SAMPLES) * 50)}`)
+	log.info(`  100 chunks: ${fmt((parTotalMs / SAMPLES) * 100)}`)
 }
 
 function fmt(ms: number): string {

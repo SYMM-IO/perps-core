@@ -135,7 +135,7 @@ async function main() {
 	// Suffix output artifacts with the base chain name (e.g. fork-base -> base) so
 	// running this against different chains doesn't clobber or mix state files.
 	const networkSuffix = baseNetworkName(connection.networkName)
-	const withSuffix = (baseName: string, ext = "json"): string => networkSuffix ? `${baseName}-${networkSuffix}.${ext}` : `${baseName}.${ext}`
+	const withSuffix = (baseName: string, ext = "json"): string => (networkSuffix ? `${baseName}-${networkSuffix}.${ext}` : `${baseName}.${ext}`)
 	const reportFile = `${outputDir}/${withSuffix("forkUpgrade-report")}`
 
 	const report: ForkUpgradeReport = {

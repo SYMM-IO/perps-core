@@ -104,13 +104,37 @@ const customChains = [
 		},
 	},
 	{
-    network: "coti",
-    chainId: 2632500,
-    urls: {
-      apiURL: "https://mainnet.cotiscan.io/api",
-      browserURL: "https://mainnet.cotiscan.io",
-    },
-  }
+		network: "coti",
+		chainId: 2632500,
+		urls: {
+			apiURL: "https://mainnet.cotiscan.io/api",
+			browserURL: "https://mainnet.cotiscan.io",
+		},
+	},
+	{
+		network: "sonic",
+		chainId: 146,
+		urls: {
+			apiURL: "https://api.sonicscan.org/api",
+			browserURL: "https://sonicscan.org",
+		},
+	},
+	{
+		network: "plasma",
+		chainId: 9745,
+		urls: {
+			apiURL: "https://api.routescan.io/v2/network/mainnet/evm/9745/etherscan",
+			browserURL: "https://plasmascan.to",
+		},
+	},
+	{
+		network: "bera",
+		chainId: 80094,
+		urls: {
+			apiURL: "https://api.berascan.com/api",
+			browserURL: "https://berascan.com",
+		},
+	},
 ]
 
 export default defineConfig({
@@ -148,6 +172,42 @@ export default defineConfig({
 		},
 		56: {
 			name: "BNB Smart Chain",
+			hardforkHistory: {
+				merge: { blockNumber: 0 },
+				shanghai: { blockNumber: 0 },
+				cancun: { blockNumber: 0 },
+			},
+		},
+		146: {
+			name: "Sonic",
+			chainType: "generic",
+			hardforkHistory: {
+				merge: { blockNumber: 0 },
+				shanghai: { blockNumber: 0 },
+				cancun: { blockNumber: 0 },
+			},
+		},
+		9745: {
+			name: "Plasma Mainnet Beta",
+			chainType: "generic",
+			hardforkHistory: {
+				merge: { blockNumber: 0 },
+				shanghai: { blockNumber: 0 },
+				cancun: { blockNumber: 0 },
+			},
+		},
+		80094: {
+			name: "Berachain",
+			chainType: "generic",
+			hardforkHistory: {
+				merge: { blockNumber: 0 },
+				shanghai: { blockNumber: 0 },
+				cancun: { blockNumber: 0 },
+			},
+		},
+		999: {
+			name: "HyperEVM",
+			chainType: "generic",
 			hardforkHistory: {
 				merge: { blockNumber: 0 },
 				shanghai: { blockNumber: 0 },
@@ -198,6 +258,9 @@ export default defineConfig({
 		},
 		bsc: createNetworkConfig("bsc", "https://bsc-rpc.publicnode.com"),
 		base: createNetworkConfig("base", "https://mainnet.base.org"),
+		sonic: createNetworkConfig("sonic", "https://rpc.soniclabs.com"),
+		plasma: createNetworkConfig("plasma", "https://rpc.plasma.to"),
+		bera: createNetworkConfig("bera", "https://rpc.berachain.com"),
 		polygon: createNetworkConfig("polygon", "https://polygon-rpc.com"),
 		iota: createNetworkConfig("iota", "https://json-rpc.evm.iotaledger.net"),
 		blast: createNetworkConfig("blast", "https://rpc.blast.io"),

@@ -132,9 +132,7 @@ async function main() {
 	const SAFE_ADDRESS = process.env.SAFE_ADDRESS ?? shared.safeAddress
 	const IL_ADDRESS = resolveInstantLayerAddress(networkName, shared)
 
-	const registerOnCore = process.env.REGISTER_ON_SYMMIO_CORE
-		? process.env.REGISTER_ON_SYMMIO_CORE === "1"
-		: (listConfig.registerOnSymmioCore ?? true)
+	const registerOnCore = process.env.REGISTER_ON_SYMMIO_CORE ? process.env.REGISTER_ON_SYMMIO_CORE === "1" : (listConfig.registerOnSymmioCore ?? true)
 	const registerOnIL = process.env.REGISTER_ON_INSTANT_LAYER
 		? process.env.REGISTER_ON_INSTANT_LAYER === "1"
 		: (listConfig.registerOnInstantLayer ?? false)
