@@ -27,7 +27,7 @@ const FacetLibraryDependencies: Record<string, string[]> = {
 	ViewFacetQuote: ["LibQuoteFunding"],
 	FundingRateFacet: ["LibQuoteFunding"],
 	PartyALiquidationFacet: ["LibQuoteFunding"],
-	ClearingHouseFacet: ["LibQuoteFunding"],
+	ClearingHouseFacet: ["LibQuoteClose", "LibQuoteFunding"],
 	SettlementFacet: ["LibSettlement"],
 }
 
@@ -95,6 +95,7 @@ async function main() {
 	}
 
 	const diamondCutFacet = await ethers.getContractAt("DiamondCutFacet", diamondAddress)
+	const diamondLoupeFacet = await ethers.getContractAt("DiamondLoupeFacet", diamondAddress)
 	const FacetFactory = await getFacetFactory(FACET_NAME)
 	const selectors = getSelectors(ethers, FacetFactory).selectors
 
@@ -106,19 +107,41 @@ async function main() {
 		console.log(`${FACET_NAME} deployed: ${facetAddress}`)
 	}
 
-	const tx = await diamondCutFacet.diamondCut(
-		[
-			{
-				facetAddress,
-				action: FacetCutAction.Replace,
-				functionSelectors: selectors,
-			},
-		],
-		ethers.ZeroAddress,
-		"0x",
-	)
+	const selectorsToAdd: string[] = []
+	const selectorsToReplace: string[] = []
+	for (const selector of selectors) {
+		const currentFacetAddress = await diamondLoupeFacet.facetAddress(selector)
+		if (currentFacetAddress === ethers.ZeroAddress) {
+			selectorsToAdd.push(selector)
+		} else {
+			selectorsToReplace.push(selector)
+		}
+	}
+
+	const diamondCut = [
+		...(selectorsToAdd.length > 0
+			? [
+					{
+						facetAddress,
+						action: FacetCutAction.Add,
+						functionSelectors: selectorsToAdd,
+					},
+				]
+			: []),
+		...(selectorsToReplace.length > 0
+			? [
+					{
+						facetAddress,
+						action: FacetCutAction.Replace,
+						functionSelectors: selectorsToReplace,
+					},
+				]
+			: []),
+	]
+
+	const tx = await diamondCutFacet.diamondCut(diamondCut, ethers.ZeroAddress, "0x")
 	await tx.wait()
-	console.log("Facet updated successfully.")
+	console.log(`Facet updated successfully. Added ${selectorsToAdd.length}, replaced ${selectorsToReplace.length}.`)
 }
 
 main().catch(error => {

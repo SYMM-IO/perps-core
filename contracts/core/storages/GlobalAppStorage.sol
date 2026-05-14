@@ -130,6 +130,10 @@ library GlobalAppStorage {
 		///      - Receive correct routing in distributeFromLiquidationEscrow / distributeForClearingHouse
 		///      Use this instead of deregisterPartyB when winding down a PartyB.
 		mapping(address => bool) partyBOpenPositionsPausedPerPartyB;
+		/// @notice Per-affiliate flag that prevents new positions from being opened through a frontend.
+		/// @dev When true for an affiliate, blocks new sendQuote calls, locking existing pending quotes,
+		///      and opening already locked quotes. Existing positions can still be closed normally.
+		mapping(address => bool) affiliateOpenPositionsPaused;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

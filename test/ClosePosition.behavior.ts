@@ -210,6 +210,30 @@ export function shouldBehaveLikeClosePosition(): void {
 		await expect(hedger.lockQuote(newQuote.id)).to.not.be.reverted
 	})
 
+	it("Should restrict an affiliate to closing positions only when affiliate open positions are paused", async function () {
+		const affiliate = await context.accountManager.getAddress()
+		await context.pauseControlFacet.connect(context.signers.admin).setAffiliateOpenPositionsPaused(affiliate, true)
+
+		await expect(user.sendQuote()).to.be.revertedWith("PartyAFacet: Affiliate open positions paused")
+		await expect(hedger.lockQuote(quote3JustSent.id)).to.be.revertedWith("PartyBFacet: Affiliate open positions paused")
+
+		await user.requestToClosePosition(quote1LongOpened.id, limitCloseRequestBuilder().build())
+		await expect(hedger.fillCloseRequest(quote1LongOpened.id, limitFillCloseRequestBuilder().build())).to.not.be.reverted
+
+		const closedQuote = await context.viewFacetQuote.getQuote(quote1LongOpened.id)
+		expect(closedQuote.quoteStatus).to.equal(QuoteStatus.CLOSED)
+	})
+
+	it("Should block opening a quote that was locked before the affiliate was paused", async function () {
+		const affiliate = await context.accountManager.getAddress()
+		const lockedQuoteId = quote3JustSent.id
+		await hedger.lockQuote(lockedQuoteId)
+
+		await context.pauseControlFacet.connect(context.signers.admin).setAffiliateOpenPositionsPaused(affiliate, true)
+
+		await expect(hedger.openPosition(lockedQuoteId)).to.be.revertedWith("PartyBFacet: Affiliate open positions paused")
+	})
+
 	it("Should fail on invalid quoteId", async function () {
 		await expect(user.requestToClosePosition(50)).to.be.revertedWith("Accessibility: Should be partyA of quote")
 	})

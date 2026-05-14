@@ -14,6 +14,7 @@ import { QuoteStorage, Quote, QuoteStatus, LockedValues, PositionType, OrderType
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
+import { MAStorage } from "../../storages/MAStorage.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { PairUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
@@ -36,6 +37,11 @@ library PartyBPositionActionsFacetImpl {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 
 		require(!appLayout.partyBOpenPositionsPausedPerPartyB[quote.partyB], "PartyBFacet: PartyB open positions paused");
+		require(MAStorage.layout().affiliateStatus[quote.affiliate] || quote.affiliate == address(0), "PartyBFacet: Invalid affiliate");
+		require(
+			quote.affiliate == address(0) || !appLayout.affiliateOpenPositionsPaused[quote.affiliate],
+			"PartyBFacet: Affiliate open positions paused"
+		);
 		require(accountLayout.suspendedAddresses[quote.partyA] == false, "PartyBFacet: PartyA is suspended");
 		require(!accountLayout.suspendedAddresses[LibSigner.getSigner()], "PartyBFacet: Sender is Suspended");
 		require(!appLayout.partyBEmergencyStatus[quote.partyB], "PartyBFacet: PartyB is in emergency mode");

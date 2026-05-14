@@ -577,6 +577,13 @@ contract ViewFacet is IViewFacet {
 		return GlobalAppStorage.layout().partyBOpenPositionsPausedPerPartyB[partyB];
 	}
 
+	/// @notice Returns whether an affiliate is paused from opening new positions.
+	/// @param affiliate The address of the affiliate.
+	/// @return isPaused True if the affiliate is paused from opening new positions.
+	function isAffiliateOpenPositionsPaused(address affiliate) external view returns (bool isPaused) {
+		return GlobalAppStorage.layout().affiliateOpenPositionsPaused[affiliate];
+	}
+
 	/// @notice Retrieves the balance limit per user.
 	/// @return The balance limit per user.
 	function getBalanceLimitPerUser() external view returns (uint256) {

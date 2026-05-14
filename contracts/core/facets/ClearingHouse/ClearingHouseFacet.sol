@@ -109,6 +109,21 @@ contract ClearingHouseFacet is Pausable, Accessibility, IClearingHouseFacet {
 		emit LiquidatePositionsForClearingHouse(subject, quoteIds, liquidatedAmounts, closeIds, prices);
 	}
 
+	/// @notice Closes open positions for an affiliate that is being wound down.
+	/// @dev The affiliate must either be deregistered or explicitly paused from opening positions.
+	///      This uses the normal close accounting path, not liquidation escrow accounting.
+	/// @param affiliate The affiliate/frontend whose positions are being closed.
+	/// @param quoteIds The affiliate quote IDs to close fully.
+	/// @param prices The close prices for each quote.
+	function closeAffiliatePositions(
+		address affiliate,
+		uint256[] memory quoteIds,
+		uint256[] memory prices
+	) external whenNotLiquidationPaused onlyRole(LibAccessibility.CLEARING_HOUSE_ROLE) {
+		uint256[] memory closedAmounts = ClearingHouseFacetImpl.closeAffiliatePositions(affiliate, quoteIds, prices);
+		emit CloseAffiliatePositions(affiliate, quoteIds, closedAmounts, prices);
+	}
+
 	/// @notice Settles the clearing house liquidation for PartyA takeover.
 	/// @dev Only applicable to PartyA takeover flow. Clears all liquidation state.
 	/// @param partyA The address of Party A.

@@ -516,6 +516,42 @@ export function shouldBehaveLikeControlFacet(): void {
 		})
 	})
 
+	describe("setAffiliateOpenPositionsPaused", () => {
+		it("Should set and unset per-affiliate open positions pause", async function () {
+			const affiliate = await context.accountManager.getAddress()
+			expect(await context.viewFacet.isAffiliateOpenPositionsPaused(affiliate)).to.be.equal(false)
+
+			await expect(context.pauseControlFacet.connect(owner).setAffiliateOpenPositionsPaused(affiliate, true))
+				.to.emit(context.pauseControlFacet, "SetAffiliateOpenPositionsPaused")
+				.withArgs(affiliate, true)
+			expect(await context.viewFacet.isAffiliateOpenPositionsPaused(affiliate)).to.be.equal(true)
+
+			await expect(context.pauseControlFacet.connect(owner).setAffiliateOpenPositionsPaused(affiliate, false))
+				.to.emit(context.pauseControlFacet, "SetAffiliateOpenPositionsPaused")
+				.withArgs(affiliate, false)
+			expect(await context.viewFacet.isAffiliateOpenPositionsPaused(affiliate)).to.be.equal(false)
+		})
+
+		it("Should require UNPAUSER_ROLE to unset affiliate open positions pause", async function () {
+			const affiliate = await context.accountManager.getAddress()
+			await context.controlFacet.connect(owner).grantRole(await user2.getAddress(), PAUSER_ROLE)
+
+			await context.pauseControlFacet.connect(user2).setAffiliateOpenPositionsPaused(affiliate, true)
+			await expect(context.pauseControlFacet.connect(user2).setAffiliateOpenPositionsPaused(affiliate, false)).to.be.revertedWith(
+				"Accessibility: Must have role",
+			)
+
+			await context.pauseControlFacet.connect(owner).setAffiliateOpenPositionsPaused(affiliate, false)
+			expect(await context.viewFacet.isAffiliateOpenPositionsPaused(affiliate)).to.be.equal(false)
+		})
+
+		it("Should revert on zero address", async function () {
+			await expect(context.pauseControlFacet.connect(owner).setAffiliateOpenPositionsPaused(ZeroAddress, true)).to.be.revertedWith(
+				"PauseControlFacet: Zero address",
+			)
+		})
+	})
+
 	describe("ExternalTransfer methods", function () {
 		it("Should allow admin to add external transfer targets", async function () {
 			await expect(

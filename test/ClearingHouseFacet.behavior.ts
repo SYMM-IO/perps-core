@@ -222,6 +222,71 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 		})
 	})
 
+	describe("closeAffiliatePositions", async function () {
+		it("Should allow Clearing House to close positions for a paused affiliate", async function () {
+			await hedger.lockQuote(1)
+			await hedger.openPosition(1)
+
+			const affiliate = await context.accountManager.getAddress()
+			await context.pauseControlFacet.connect(context.signers.admin).setAffiliateOpenPositionsPaused(affiliate, true)
+
+			const quoteBefore = await context.viewFacetQuote.getQuote(1)
+			const closePrice = quoteBefore.openedPrice
+
+			await expect(context.clearingHouseFacet.connect(context.signers.liquidator).closeAffiliatePositions(affiliate, [1], [closePrice]))
+				.to.emit(context.clearingHouseFacet, "CloseAffiliatePositions")
+				.withArgs(affiliate, [1], [quoteBefore.quantity - quoteBefore.closedAmount], [closePrice])
+
+			const quoteAfter = await context.viewFacetQuote.getQuote(1)
+			expect(quoteAfter.quoteStatus).to.equal(QuoteStatus.CLOSED)
+			expect(quoteAfter.closedAmount).to.equal(quoteAfter.quantity)
+		})
+
+		it("Should allow Clearing House to close positions for a deregistered affiliate", async function () {
+			await hedger.lockQuote(1)
+			await hedger.openPosition(1)
+
+			const affiliate = await context.accountManager.getAddress()
+			await context.controlFacet.connect(context.signers.admin).deregisterAffiliate(affiliate)
+
+			const quoteBefore = await context.viewFacetQuote.getQuote(1)
+			await expect(context.clearingHouseFacet.connect(context.signers.liquidator).closeAffiliatePositions(affiliate, [1], [quoteBefore.openedPrice]))
+				.to.not.be.reverted
+
+			const quoteAfter = await context.viewFacetQuote.getQuote(1)
+			expect(quoteAfter.quoteStatus).to.equal(QuoteStatus.CLOSED)
+		})
+
+		it("Should reject affiliate position close while affiliate is active and not paused", async function () {
+			await hedger.lockQuote(1)
+			await hedger.openPosition(1)
+
+			const affiliate = await context.accountManager.getAddress()
+			const quoteBefore = await context.viewFacetQuote.getQuote(1)
+
+			await expect(
+				context.clearingHouseFacet.connect(context.signers.liquidator).closeAffiliatePositions(affiliate, [1], [quoteBefore.openedPrice]),
+			).to.be.revertedWith("ClearingHouseFacet: Affiliate is not shut down")
+		})
+
+		it("Should reject affiliate position close when partyB is in cross liquidation", async function () {
+			await hedger.lockQuote(1)
+			await hedger.openPosition(1)
+
+			const affiliate = await context.accountManager.getAddress()
+			await context.pauseControlFacet.connect(context.signers.admin).setAffiliateOpenPositionsPaused(affiliate, true)
+			await migratePartyBToCross(context, hedger, [1])
+			await context.clearingHouseFacet
+				.connect(context.signers.liquidator)
+				.liquidateCrossPartyB(context.signers.hedger.getAddress(), "0x", BigInt("-999999999999999999999999999999"), await getBlockTimestamp())
+
+			const quoteBefore = await context.viewFacetQuote.getQuote(1)
+			await expect(
+				context.clearingHouseFacet.connect(context.signers.liquidator).closeAffiliatePositions(affiliate, [1], [quoteBefore.openedPrice]),
+			).to.be.revertedWith("Accessibility: PartyB isn't solvent")
+		})
+	})
+
 	describe("Cross liquidation (pending-only)", () => {
 		beforeEach(async () => {
 			// Create a pending quote for hedger without opening any positions

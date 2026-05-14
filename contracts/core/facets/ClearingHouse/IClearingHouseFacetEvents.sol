@@ -22,6 +22,7 @@ interface IClearingHouseFacetEvents {
 		uint256[] closeIds,
 		uint256[] prices
 	);
+	event CloseAffiliatePositions(address indexed affiliate, uint256[] quoteIds, uint256[] closedAmounts, uint256[] prices);
 
 	// Auto-takeover event (emitted from ClearingHouseFacetImpl library)
 	event AutoTakeoverPartyALiquidation(address indexed partyA, bytes liquidationId);

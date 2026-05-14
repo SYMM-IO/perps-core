@@ -25,6 +25,11 @@ library LibPartyBQuoteActions {
 
 		Quote storage quote = quoteLayout.quotes[quoteId];
 		require(quote.quoteStatus == QuoteStatus.PENDING, "PartyBFacet: Invalid state");
+		require(MAStorage.layout().affiliateStatus[quote.affiliate] || quote.affiliate == address(0), "PartyBFacet: Invalid affiliate");
+		require(
+			quote.affiliate == address(0) || !GlobalAppStorage.layout().affiliateOpenPositionsPaused[quote.affiliate],
+			"PartyBFacet: Affiliate open positions paused"
+		);
 		require(block.timestamp <= quote.deadline, "PartyBFacet: Quote is expired");
 		require(quoteId <= quoteLayout.lastId, "PartyBFacet: Invalid quoteId");
 		require(LibConnections.isSymbolAllowedForPartyB(signer, quote.symbolId), "PartyBFacet: symbol is not whitelisted");

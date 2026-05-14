@@ -57,6 +57,11 @@ library PartyBBatchActionsFacetImpl {
 		// Check symbol restrictions for all quotes
 		for (uint256 i = 0; i < quoteIds.length; i++) {
 			Quote storage quote = quoteLayout.quotes[quoteIds[i]];
+			require(maLayout.affiliateStatus[quote.affiliate] || quote.affiliate == address(0), "PartyBFacet: Invalid affiliate");
+			require(
+				quote.affiliate == address(0) || !appLayout.affiliateOpenPositionsPaused[quote.affiliate],
+				"PartyBFacet: Affiliate open positions paused"
+			);
 			require(
 				LibConnections.isSymbolAllowedForPartyA(quote.partyA, quote.symbolId),
 				"PartyBFacet: Symbol not allowed due to connection restrictions"
