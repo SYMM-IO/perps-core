@@ -5,6 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { EntityMetadata } from "../../storages/MAStorage.sol";
+import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 interface IControlEvents {
 	event RoleGranted(bytes32 role, address user);
@@ -12,6 +13,7 @@ interface IControlEvents {
 	event RoleAdminAdded(bytes32 role, address admin);
 	event RoleAdminRemoved(bytes32 role, address admin);
 	event SetMuonConfig(uint256 upnlValidTime, uint256 priceValidTime);
+	event SetMuonFunctionUpnlValidTime(MuonFunction indexed func, bool enabled, uint256 upnlValidTime);
 	event SetMuonIds(uint256 muonAppId);
 	event SetCollateral(address collateral);
 	event AddSymbol(

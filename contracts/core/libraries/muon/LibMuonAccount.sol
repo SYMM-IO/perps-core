@@ -14,7 +14,7 @@ library LibMuonAccount {
 	function verifyPartyAUpnl(SingleUpnlSig memory upnlSig, address partyA, MuonFunction func) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		// == SignatureCheck( ==
-		require(block.timestamp <= upnlSig.timestamp + muonLayout.upnlValidTime, "LibMuon: Expired signature");
+		LibMuon.verifyUpnlTimestamp(upnlSig.timestamp, func);
 		// == ) ==
 		bytes32 hash = keccak256(
 			abi.encodePacked(
@@ -35,7 +35,7 @@ library LibMuonAccount {
 	function verifyPartyAUpnlWithPendingBalance(SingleUpnlWithPendingBalanceSig memory upnlSig, address partyA, MuonFunction func) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		// == SignatureCheck( ==
-		require(block.timestamp <= upnlSig.timestamp + muonLayout.upnlValidTime, "LibMuon: Expired signature");
+		LibMuon.verifyUpnlTimestamp(upnlSig.timestamp, func);
 		// == ) ==
 		bytes32 hash = keccak256(
 			abi.encodePacked(

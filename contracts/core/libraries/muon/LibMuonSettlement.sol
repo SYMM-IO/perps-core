@@ -16,7 +16,7 @@ library LibMuonSettlement {
 	function verifySettlement(SettlementSig memory settleSig, address partyA, MuonFunction func) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		// == SignatureCheck( ==
-		require(block.timestamp <= settleSig.timestamp + muonLayout.upnlValidTime, "LibMuon: Expired signature");
+		LibMuon.verifyUpnlTimestamp(settleSig.timestamp, func);
 		// == ) ==
 		bytes memory encodedData;
 		uint256[] memory nonces = new uint256[](settleSig.quotesSettlementsData.length);

@@ -95,6 +95,14 @@ const customChains = [
 			browserURL: "https://hyperevmscan.io",
 		},
 	},
+	{
+		network: "sei",
+		chainId: 1329,
+		urls: {
+			apiURL: "https://seitrace.com/pacific-1/api",
+			browserURL: "https://seitrace.com",
+		},
+	},
 ]
 
 export default defineConfig({
@@ -115,6 +123,34 @@ export default defineConfig({
 				merge: { blockNumber: 0 },
 				shanghai: { blockNumber: 0 },
 				cancun: { blockNumber: 0 },
+			},
+		},
+		999: {
+			name: "HyperEVM",
+			hardforkHistory: {
+				merge: { blockNumber: 0 },
+				shanghai: { blockNumber: 0 },
+				cancun: { blockNumber: 0 },
+			},
+			blockExplorers: {
+				etherscan: {
+					name: "Hyperevmscan",
+					url: "https://hyperevmscan.io",
+				},
+			},
+		},
+		1329: {
+			name: "Sei",
+			hardforkHistory: {
+				merge: { blockNumber: 0 },
+				shanghai: { blockNumber: 0 },
+				cancun: { blockNumber: 0 },
+			},
+			blockExplorers: {
+				etherscan: {
+					name: "Seitrace",
+					url: "https://seitrace.com",
+				},
 			},
 		},
 	},
@@ -168,7 +204,19 @@ export default defineConfig({
 		mantle: createNetworkConfig("mantle", "https://mantle.drpc.org"),
 		mantle2: createNetworkConfig("mantle2", "https://mantle.drpc.org"),
 		hyperevm: createNetworkConfig("hyperevm", "https://rpc.hyperliquid.xyz/evm"),
+		sei: createNetworkConfig("sei", "https://evm-rpc.sei-apis.com"),
 		arbitrum: createNetworkConfig("arbitrum", "https://arbitrum.llamarpc.com"),
+		"fork-hyperevm": {
+			type: "edr-simulated",
+			chainId: 999,
+			blockGasLimit: 30_000_000,
+			allowUnlimitedContractSize: true,
+			hardfork: "cancun",
+			forking: {
+				url: process.env.RPC_HYPEREVM || "https://rpc.hyperliquid.xyz/evm",
+				blockNumber: Number(process.env.FORK_BLOCK_NUMBER || 0) || undefined,
+			},
+		},
 		"fork-arbitrum": {
 			type: "edr-simulated",
 			chainId: 42161,

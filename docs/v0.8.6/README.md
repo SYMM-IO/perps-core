@@ -26,6 +26,10 @@ Operational reference for the Express Provider bot. Covers state machines, timin
 
 ## Risk & Liquidation
 
+### [Muon UPNL Validity Overrides](muon-upnl-validity-overrides.md)
+
+Auditor and operator note for per-`MuonFunction` UPNL signature validity windows. Documents the single setter API, zero-clears semantics, fallback to global `setMuonConfig`, method groupings per Muon category, and effective validity resolution.
+
 ### [Liquidation Funding Snapshot Fix](liquidation-funding-snapshot-fix.md)
 
 Auditor note for the PartyA liquidation funding snapshot fix. Documents the timestamp mismatch between liquidation prices and accumulated funding, the root cause in live funding calculations, the timestamp-aware funding helpers, the liquidation-path change to use the liquidation snapshot timestamp, expected behavior, regression coverage, affected files, and verification commands.
@@ -37,16 +41,18 @@ Auditor note for the PartyA liquidation funding snapshot fix. Documents the time
 For protocol auditors:
 
 1. [AccountLayer Delegated Creation & Ownership Transfer](account-layer-ownership-delegation.md)
-2. [Liquidation Funding Snapshot Fix](liquidation-funding-snapshot-fix.md)
-3. [Express Withdrawal System Design](express-withdrawal-system-design.md)
-4. [Express Provider Bot Operations Checklist](express-bot-operations-checklist.md)
+2. [Muon UPNL Validity Overrides](muon-upnl-validity-overrides.md)
+3. [Liquidation Funding Snapshot Fix](liquidation-funding-snapshot-fix.md)
+4. [Express Withdrawal System Design](express-withdrawal-system-design.md)
+5. [Express Provider Bot Operations Checklist](express-bot-operations-checklist.md)
 
 For bot and operations teams:
 
 1. [Express Withdrawal System Design](express-withdrawal-system-design.md)
 2. [Express Provider Bot Operations Checklist](express-bot-operations-checklist.md)
-3. [Liquidation Funding Snapshot Fix](liquidation-funding-snapshot-fix.md)
-4. [AccountLayer Delegated Creation & Ownership Transfer](account-layer-ownership-delegation.md)
+3. [Muon UPNL Validity Overrides](muon-upnl-validity-overrides.md)
+4. [Liquidation Funding Snapshot Fix](liquidation-funding-snapshot-fix.md)
+5. [AccountLayer Delegated Creation & Ownership Transfer](account-layer-ownership-delegation.md)
 
 ---
 
@@ -58,5 +64,6 @@ docs/v0.8.6/
   account-layer-ownership-delegation.md
   express-withdrawal-system-design.md
   express-bot-operations-checklist.md
+  muon-upnl-validity-overrides.md
   liquidation-funding-snapshot-fix.md
 ```

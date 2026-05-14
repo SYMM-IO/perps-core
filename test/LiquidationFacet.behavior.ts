@@ -11,6 +11,16 @@ import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js
 import { decimal, getBlockTimestamp, getPriceFetcher, getTotalLockedValuesForQuoteIds, getTradingFeeForQuotes, unDecimal } from "./utils/Common.js"
 import { getDummyLiquidationSig, getDummyPriceSig, getDummySingleUpnlAndPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
 
+enum MuonFunction {
+	Trading,
+	AccountManagement,
+	Settlement,
+	ForceClose,
+	Funding,
+	LiquidationPartyA,
+	LiquidationPartyB,
+}
+
 /**
  * ========================================
  * LIQUIDATION TESTS
@@ -158,6 +168,41 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 	}
 
 	describe("Liquidate PartyA", async function () {
+		it("Should use separate UPNL validity windows for account management and liquidation", async function () {
+			await context.controlFacet.connect(context.signers.admin).setMuonFunctionUpnlValidTime(MuonFunction.AccountManagement, 10n)
+			let [accountValidTime, accountOverride] = await context.viewFacet.getMuonFunctionUpnlValidTime(MuonFunction.AccountManagement)
+			expect(accountValidTime).to.equal(10n)
+			expect(accountOverride).to.equal(true)
+
+			await context.controlFacet.connect(context.signers.admin).setMuonFunctionUpnlValidTime(MuonFunction.AccountManagement, 0n)
+			;[accountValidTime, accountOverride] = await context.viewFacet.getMuonFunctionUpnlValidTime(MuonFunction.AccountManagement)
+			expect(accountValidTime).to.equal(1000n)
+			expect(accountOverride).to.equal(false)
+
+			await context.controlFacet.connect(context.signers.admin).setMuonFunctionUpnlValidTime(MuonFunction.AccountManagement, 10n)
+			await context.controlFacet.connect(context.signers.admin).setMuonFunctionUpnlValidTime(MuonFunction.LiquidationPartyA, 120n)
+
+			const latest = BigInt(await time.latest())
+			const accountExpiredLiquidationValidTimestamp = latest - 11n
+
+			const deallocateSig = await getDummySingleUpnlSig()
+			deallocateSig.timestamp = accountExpiredLiquidationValidTimestamp
+			await expect(context.accountFacet.connect(user.signer).deallocate(1n, deallocateSig)).to.be.revertedWith("LibMuon: Expired signature")
+
+			const price = decimal(8n)
+			const upnl = (await user.getUpnl(getPriceFetcher([1n], [price]))) - (await context.viewFacetQuote.getSumQuoteFundingDebts([1n]))
+			const totalUnrealizedLoss =
+				(await user.getTotalUnrealisedLoss(getPriceFetcher([1n], [price]))) - (await context.viewFacetQuote.getSumQuoteFundingDebts([1n]))
+			const allocatedBalance = (await user.getBalanceInfo()).allocatedBalances
+			const liquidationSig = await getDummyLiquidationSig("0x10", upnl, [1n], [price], totalUnrealizedLoss, allocatedBalance)
+			liquidationSig.timestamp = accountExpiredLiquidationValidTimestamp
+			liquidationSig.liquidationTimestamp = accountExpiredLiquidationValidTimestamp
+
+			await expect(context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePartyA(user.address, liquidationSig)).to.not.be
+				.reverted
+			expect(await context.viewFacet.isPartyALiquidated(user.address)).to.be.true
+		})
+
 		it("Should fail on partyA having no open positions", async function () {
 			// liquidator has no open positions - liquidation should fail even with negative upnl signature
 			await expect(
