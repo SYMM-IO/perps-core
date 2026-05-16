@@ -20,6 +20,7 @@ import path from "path"
 
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import type { SymbolTypesInput } from "./fetchSymbolList.js"
+import { resolveConfiguredSigner } from "./utils/hardwareSigner.js"
 import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
 import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
@@ -85,19 +86,12 @@ async function main() {
 	await verifyRpc()
 
 	const migratorAddress = shared.migrationRunner
-	let signer
-	if (migratorAddress) {
-		const signers = await ethers.getSigners()
-		for (const s of signers) {
-			if ((await s.getAddress()).toLowerCase() === migratorAddress.toLowerCase()) {
-				signer = s
-				break
-			}
-		}
-		if (!signer) throw new Error(`No signer found for migrationRunner ${migratorAddress}. Add TEAM_MIGRATOR to the Hardhat keystore.`)
-	} else {
-		signer = await ethers.provider.getSigner()
-	}
+	const signer = await resolveConfiguredSigner({
+		role: "migrationRunner",
+		expectedAddress: migratorAddress,
+		envPrefix: "MIGRATION_RUNNER",
+		allowDefault: !migratorAddress,
+	})
 	log.info(`Signer: ${await signer.getAddress()}`)
 
 	const diamond = await ethers.getContractAt(

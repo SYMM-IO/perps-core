@@ -8,6 +8,7 @@ import path from "path"
 
 import { FacetCutAction, getSelectors } from "../../../tasks/utils/diamondCut.js"
 import { ethers } from "../../../test/helpers/hardhat-connection.js"
+import { loadDeploymentState, saveDeploymentState, resolveDeploymentStateMetadata, type DeploymentStateContext } from "./deploymentState.js"
 import { log } from "./log.js"
 
 // ============================================================================
@@ -52,6 +53,11 @@ export type AccountLayerInstantLayerReport = {
 }
 
 type DeployedState = {
+	metadata?: {
+		networkName?: string
+		chainId?: number
+		diamondAddress?: string
+	}
 	accountLayer?: {
 		diamondCutFacet?: string
 		diamond?: string
@@ -78,15 +84,10 @@ function ensureDir(dir: string): void {
 	}
 }
 
-function loadState(filePath: string): DeployedState {
-	if (!filePath || !fs.existsSync(filePath)) return {}
-	return JSON.parse(fs.readFileSync(filePath, "utf-8")) as DeployedState
-}
-
-function saveState(filePath: string, state: DeployedState): void {
+function saveState(filePath: string, state: DeployedState, metadata?: DeploymentStateContext): void {
 	if (!filePath) return
 	ensureDir(path.dirname(filePath))
-	fs.writeFileSync(filePath, JSON.stringify(state, null, 2))
+	saveDeploymentState(filePath, state, metadata)
 }
 
 // ============================================================================
@@ -98,8 +99,10 @@ export async function deployAccountLayerDiamond(
 	symmioFeeReceiver: string,
 	stateFile?: string,
 	adminSigner?: any,
+	stateContext?: DeploymentStateContext,
 ): Promise<AccountLayerDeployResult> {
-	const state = loadState(stateFile ?? "")
+	const metadata = stateFile ? await resolveDeploymentStateMetadata(stateContext) : undefined
+	const state = loadDeploymentState<DeployedState>(stateFile ?? "", metadata)
 	if (!state.accountLayer) state.accountLayer = {}
 	const al = state.accountLayer
 
@@ -115,7 +118,7 @@ export async function deployAccountLayerDiamond(
 		const contract = await factory.deploy()
 		diamondCutFacetAddress = await contract.getAddress()
 		al.diamondCutFacet = diamondCutFacetAddress
-		if (stateFile) saveState(stateFile, state)
+		if (stateFile) saveState(stateFile, state, metadata)
 		await contract.waitForDeployment()
 		log.deployed("DiamondCutFacet", diamondCutFacetAddress)
 	}
@@ -135,7 +138,7 @@ export async function deployAccountLayerDiamond(
 		const contract = await factory.deploy(deployOwner, diamondCutFacetAddress)
 		diamondAddress = await contract.getAddress()
 		al.diamond = diamondAddress
-		if (stateFile) saveState(stateFile, state)
+		if (stateFile) saveState(stateFile, state, metadata)
 		await contract.waitForDeployment()
 		log.deployed("Diamond", diamondAddress)
 	}
@@ -150,7 +153,7 @@ export async function deployAccountLayerDiamond(
 		const contract = await factory.deploy()
 		initAddress = await contract.getAddress()
 		al.init = initAddress
-		if (stateFile) saveState(stateFile, state)
+		if (stateFile) saveState(stateFile, state, metadata)
 		await contract.waitForDeployment()
 		log.deployed("Init", initAddress)
 	}
@@ -166,7 +169,7 @@ export async function deployAccountLayerDiamond(
 		const contract = await factory.deploy()
 		libraryAddresses["LibQuoteParams"] = await contract.getAddress()
 		al.libraries["LibQuoteParams"] = libraryAddresses["LibQuoteParams"]
-		if (stateFile) saveState(stateFile, state)
+		if (stateFile) saveState(stateFile, state, metadata)
 		await contract.waitForDeployment()
 		log.deployed("LibQuoteParams", libraryAddresses["LibQuoteParams"])
 	}
@@ -204,7 +207,7 @@ export async function deployAccountLayerDiamond(
 			facetAddress = await facet.getAddress()
 			facetAddresses[facetName] = facetAddress
 			al.facets[facetName] = facetAddress
-			if (stateFile) saveState(stateFile, state)
+			if (stateFile) saveState(stateFile, state, metadata)
 			await facet.waitForDeployment()
 			log.progress(i + 1, AccountLayerFacetNames.length, `${log.name(facetName)}  ${log.addr(facetAddress)}`)
 		}
@@ -261,7 +264,7 @@ export async function deployAccountLayerDiamond(
 		}
 
 		al.diamondCutComplete = true
-		if (stateFile) saveState(stateFile, state)
+		if (stateFile) saveState(stateFile, state, metadata)
 	}
 
 	log.ok(`AccountLayer Diamond: ${log.addr(diamondAddress)}`)
@@ -279,8 +282,14 @@ export async function deployAccountLayerDiamond(
 // Deploy InstantLayer
 // ============================================================================
 
-export async function deployInstantLayer(symmioAddress: string, protocolAdmin: string, stateFile?: string): Promise<InstantLayerDeployResult> {
-	const state = loadState(stateFile ?? "")
+export async function deployInstantLayer(
+	symmioAddress: string,
+	protocolAdmin: string,
+	stateFile?: string,
+	stateContext?: DeploymentStateContext,
+): Promise<InstantLayerDeployResult> {
+	const metadata = stateFile ? await resolveDeploymentStateMetadata({ diamondAddress: symmioAddress, ...stateContext }) : undefined
+	const state = loadDeploymentState<DeployedState>(stateFile ?? "", metadata)
 
 	if (state.instantLayer?.address) {
 		log.deployed("InstantLayer", state.instantLayer.address, true)
@@ -293,7 +302,7 @@ export async function deployInstantLayer(symmioAddress: string, protocolAdmin: s
 
 	if (!state.instantLayer) state.instantLayer = {}
 	state.instantLayer.address = address
-	if (stateFile) saveState(stateFile, state)
+	if (stateFile) saveState(stateFile, state, metadata)
 
 	await contract.waitForDeployment()
 	log.deployed("InstantLayer", address)
@@ -609,8 +618,14 @@ export type SymbolManagerDeployResult = {
 	address: string
 }
 
-export async function deploySymbolManager(diamondAddress: string, protocolAdmin: string, stateFile?: string): Promise<SymbolManagerDeployResult> {
-	const state = loadState(stateFile ?? "")
+export async function deploySymbolManager(
+	diamondAddress: string,
+	protocolAdmin: string,
+	stateFile?: string,
+	stateContext?: DeploymentStateContext,
+): Promise<SymbolManagerDeployResult> {
+	const metadata = stateFile ? await resolveDeploymentStateMetadata({ diamondAddress, ...stateContext }) : undefined
+	const state = loadDeploymentState<DeployedState>(stateFile ?? "", metadata)
 
 	if (state.symbolManager?.address) {
 		log.deployed("SymmioSymbolManager", state.symbolManager.address, true)
@@ -623,7 +638,7 @@ export async function deploySymbolManager(diamondAddress: string, protocolAdmin:
 
 	if (!state.symbolManager) state.symbolManager = {}
 	state.symbolManager.address = address
-	if (stateFile) saveState(stateFile, state)
+	if (stateFile) saveState(stateFile, state, metadata)
 
 	await contract.waitForDeployment()
 	log.deployed("SymmioSymbolManager", address)

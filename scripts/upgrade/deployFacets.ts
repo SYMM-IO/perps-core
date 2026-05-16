@@ -4,6 +4,7 @@ import path from "path"
 import connection from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
+import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 import { deployFacets } from "./utils/upgradeHelpers.js"
 
 /**
@@ -28,8 +29,11 @@ async function main() {
 	const networkName = connection.networkName
 	await verifyRpc()
 	log.header("Deploy v0.8.5 Facets")
+	const shared = loadUpgradeConfigShared(networkName)
+	const diamondAddress = process.env.DIAMOND_ADDRESS ?? shared.diamondAddress
+	if (!diamondAddress) throw new Error("DIAMOND_ADDRESS required (env or upgrade config) so deployed-facets state can be bound to a diamond.")
 	const facetsOutFile = path.join(OUTPUT_DIR, `deployed-facets-${networkName}.json`)
-	const facetData = await deployFacets(facetsOutFile)
+	const facetData = await deployFacets(facetsOutFile, { networkName, diamondAddress })
 
 	log.success("Facet deployment complete", [
 		["Facets", String(Object.keys(facetData.facets).length)],

@@ -21,7 +21,15 @@ import fs from "fs"
 import path from "path"
 
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
+import {
+	loadDeploymentState,
+	saveDeploymentState,
+	resolveDeploymentStateMetadata,
+	type DeploymentStateContext,
+	type DeploymentStateMetadata,
+} from "./utils/deploymentState.js"
 import { log } from "./utils/log.js"
+import { logUpgradeOwnershipSummary } from "./utils/ownership.js"
 import { deployAccountLayerDiamond, deployInstantLayer, deploySymbolManager } from "./utils/peripheralHelpers.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
 import { loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig.js"
@@ -34,10 +42,12 @@ type Config = {
 }
 
 type DeployedState = {
+	metadata?: DeploymentStateMetadata
 	signatureVerifier?: string
 	accountLayer?: any
 	instantLayer?: any
 	symmioPartyBImplementation?: string
+	symbolManager?: { address?: string }
 }
 
 const OUTPUT_DIR = "./scripts/upgrade/output"
@@ -55,14 +65,14 @@ function loadConfig(networkName: string): Config {
 	}
 }
 
-function loadState(): DeployedState {
+function loadState(metadata?: DeploymentStateMetadata): DeployedState {
 	if (!fs.existsSync(STATE_FILE)) return {}
-	return JSON.parse(fs.readFileSync(STATE_FILE, "utf-8")) as DeployedState
+	return loadDeploymentState<DeployedState>(STATE_FILE, metadata)
 }
 
-function saveState(state: DeployedState): void {
+function saveState(state: DeployedState, metadata?: DeploymentStateMetadata): void {
 	if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
-	fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2))
+	saveDeploymentState(STATE_FILE, state, metadata)
 }
 
 async function main() {
@@ -83,6 +93,8 @@ async function main() {
 		throw new Error("symmioFeeReceiver is required and must be a valid address")
 	}
 	await verifyRpc()
+	const deploymentStateContext: DeploymentStateContext = { networkName, diamondAddress }
+	const deploymentMetadata = await resolveDeploymentStateMetadata(deploymentStateContext)
 	log.header("Deploy v0.8.5 Peripherals")
 	log.kv("Diamond (core)", log.addr(diamondAddress))
 	log.kv("Protocol admin", log.addr(protocolAdmin))
@@ -94,7 +106,7 @@ async function main() {
 
 	// Deploy MuonSignatureVerifier
 	let t = log.step("MuonSignatureVerifier")
-	const state0 = loadState()
+	const state0 = loadState(deploymentMetadata)
 	let signatureVerifierAddr: string
 
 	if (state0.signatureVerifier) {
@@ -105,7 +117,7 @@ async function main() {
 		const contract = await factory.deploy(protocolAdmin)
 		signatureVerifierAddr = await contract.getAddress()
 		state0.signatureVerifier = signatureVerifierAddr
-		saveState(state0)
+		saveState(state0, deploymentMetadata)
 		await contract.waitForDeployment()
 		log.deployed("MuonSignatureVerifier", signatureVerifierAddr)
 	}
@@ -123,7 +135,7 @@ async function main() {
 
 	// Deploy AccountLayer Diamond
 	t = log.step("AccountLayer Diamond")
-	const alResult = await deployAccountLayerDiamond(protocolAdmin, symmioFeeReceiver, STATE_FILE)
+	const alResult = await deployAccountLayerDiamond(protocolAdmin, symmioFeeReceiver, STATE_FILE, undefined, deploymentStateContext)
 
 	// Transfer AccountLayer ownership to Safe (two-step: Safe must call acceptOwnership)
 	const AL_NEW_OWNER = process.env.SAFE_ADDRESS ?? config.safeAddress
@@ -141,12 +153,12 @@ async function main() {
 
 	// Deploy InstantLayer
 	t = log.step("InstantLayer")
-	const ilResult = await deployInstantLayer(diamondAddress, protocolAdmin, STATE_FILE)
+	const ilResult = await deployInstantLayer(diamondAddress, protocolAdmin, STATE_FILE, deploymentStateContext)
 	log.stepDone(t)
 
 	// Deploy SymmioPartyB implementation
 	t = log.step("SymmioPartyB Implementation")
-	const state = loadState()
+	const state = loadState(deploymentMetadata)
 	let symmioPartyBImpl: string
 
 	if (state.symmioPartyBImplementation) {
@@ -157,7 +169,7 @@ async function main() {
 		const contract = await factory.deploy()
 		symmioPartyBImpl = await contract.getAddress()
 		state.symmioPartyBImplementation = symmioPartyBImpl
-		saveState(state)
+		saveState(state, deploymentMetadata)
 		await contract.waitForDeployment()
 		log.deployed("SymmioPartyB", symmioPartyBImpl)
 	}
@@ -165,8 +177,22 @@ async function main() {
 
 	// Deploy SymmioSymbolManager
 	t = log.step("SymmioSymbolManager")
-	const smResult = await deploySymbolManager(diamondAddress, protocolAdmin, STATE_FILE)
+	const smResult = await deploySymbolManager(diamondAddress, protocolAdmin, STATE_FILE, deploymentStateContext)
 	log.stepDone(t)
+
+	await logUpgradeOwnershipSummary({
+		symmioCore: diamondAddress,
+		accountLayer: alResult.diamondAddress,
+		instantLayer: ilResult.address,
+		signatureVerifier: signatureVerifierAddr,
+		symbolManager: smResult.address,
+		symmioPartyBImplementation: symmioPartyBImpl,
+		knownAccounts: [
+			{ label: "protocolAdmin", address: protocolAdmin },
+			{ label: "safe", address: config.safeAddress },
+			{ label: "symmioFeeReceiver", address: symmioFeeReceiver },
+		],
+	})
 
 	// Summary
 	log.success("Peripheral deployment complete", [
