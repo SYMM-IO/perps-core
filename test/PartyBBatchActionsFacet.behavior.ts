@@ -14,7 +14,6 @@ import { getDummyPairUpnlAndPricesSig } from "./utils/SignatureUtils.js"
 
 export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 	let context: RunContext, user: User, user2: User, hedger: Hedger, hedger2: Hedger
-	const MIN_AFFILIATE_SHUTDOWN_NOTICE = 14n * 24n * 60n * 60n
 
 	beforeEach(async function () {
 		context = await loadFixture(initializeFixture)
@@ -119,9 +118,7 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 
 		it("Should fail when affiliate shutdown is scheduled", async function () {
 			const affiliate = await context.accountManager.getAddress()
-			await context.controlFacet
-				.connect(context.signers.admin)
-				.scheduleAffiliateShutdown(affiliate, (await getBlockTimestamp()) + MIN_AFFILIATE_SHUTDOWN_NOTICE + 10n)
+			await context.controlFacet.connect(context.signers.admin).scheduleAffiliateShutdown(affiliate, (await getBlockTimestamp()) + 10n)
 
 			const quoteIds = [1n, 2n]
 			const filledAmounts = [decimal(100n), decimal(100n)]

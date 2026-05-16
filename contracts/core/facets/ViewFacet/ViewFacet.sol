@@ -579,8 +579,8 @@ contract ViewFacet is IViewFacet {
 
 	/// @notice Returns whether an affiliate is in close-only mode because a shutdown is scheduled.
 	/// @param affiliate The address of the affiliate.
-	/// @return isPaused True if the affiliate has a scheduled shutdown.
-	function isAffiliateOpenPositionsPaused(address affiliate) external view returns (bool isPaused) {
+	/// @return isScheduled True if the affiliate has a scheduled shutdown.
+	function isAffiliateShutdownScheduled(address affiliate) external view returns (bool isScheduled) {
 		return GlobalAppStorage.layout().affiliateShutdownTime[affiliate] != 0;
 	}
 

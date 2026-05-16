@@ -26,6 +26,10 @@ Operational reference for the Express Provider bot. Covers state machines, timin
 
 ## Risk & Liquidation
 
+### [Affiliate Shutdown Flow](affiliate-shutdown-flow.md)
+
+Explains the frontend / affiliate shutdown flow: why it exists, how scheduling makes an affiliate close-only, how solvers close positions during the shutdown window, and how Clearing House can close remaining affiliate positions after the selected date.
+
 ### [Muon UPNL Validity Overrides](muon-upnl-validity-overrides.md)
 
 Auditor and operator note for per-`MuonFunction` UPNL signature validity windows. Documents the single setter API, zero-clears semantics, fallback to global `setMuonConfig`, method groupings per Muon category, and effective validity resolution.
@@ -41,18 +45,20 @@ Auditor note for the PartyA liquidation funding snapshot fix. Documents the time
 For protocol auditors:
 
 1. [AccountLayer Delegated Creation & Ownership Transfer](account-layer-ownership-delegation.md)
-2. [Muon UPNL Validity Overrides](muon-upnl-validity-overrides.md)
-3. [Liquidation Funding Snapshot Fix](liquidation-funding-snapshot-fix.md)
-4. [Express Withdrawal System Design](express-withdrawal-system-design.md)
-5. [Express Provider Bot Operations Checklist](express-bot-operations-checklist.md)
+2. [Affiliate Shutdown Flow](affiliate-shutdown-flow.md)
+3. [Muon UPNL Validity Overrides](muon-upnl-validity-overrides.md)
+4. [Liquidation Funding Snapshot Fix](liquidation-funding-snapshot-fix.md)
+5. [Express Withdrawal System Design](express-withdrawal-system-design.md)
+6. [Express Provider Bot Operations Checklist](express-bot-operations-checklist.md)
 
 For bot and operations teams:
 
 1. [Express Withdrawal System Design](express-withdrawal-system-design.md)
 2. [Express Provider Bot Operations Checklist](express-bot-operations-checklist.md)
-3. [Muon UPNL Validity Overrides](muon-upnl-validity-overrides.md)
-4. [Liquidation Funding Snapshot Fix](liquidation-funding-snapshot-fix.md)
-5. [AccountLayer Delegated Creation & Ownership Transfer](account-layer-ownership-delegation.md)
+3. [Affiliate Shutdown Flow](affiliate-shutdown-flow.md)
+4. [Muon UPNL Validity Overrides](muon-upnl-validity-overrides.md)
+5. [Liquidation Funding Snapshot Fix](liquidation-funding-snapshot-fix.md)
+6. [AccountLayer Delegated Creation & Ownership Transfer](account-layer-ownership-delegation.md)
 
 ---
 
@@ -64,6 +70,7 @@ docs/v0.8.6/
   account-layer-ownership-delegation.md
   express-withdrawal-system-design.md
   express-bot-operations-checklist.md
+  affiliate-shutdown-flow.md
   muon-upnl-validity-overrides.md
   liquidation-funding-snapshot-fix.md
 ```

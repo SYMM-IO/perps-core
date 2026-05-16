@@ -147,7 +147,7 @@ interface IViewFacet {
 
 	function isPartyBOpenPositionsPaused(address partyB) external view returns (bool isPaused);
 
-	function isAffiliateOpenPositionsPaused(address affiliate) external view returns (bool isPaused);
+	function isAffiliateShutdownScheduled(address affiliate) external view returns (bool isScheduled);
 
 	function getAffiliateShutdownTime(address affiliate) external view returns (uint256 shutdownTime);
 

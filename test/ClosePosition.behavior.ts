@@ -28,7 +28,6 @@ import {
 
 const WAD = 10n ** 18n
 const WAD_36 = 10n ** 36n
-const MIN_AFFILIATE_SHUTDOWN_NOTICE = 14n * 24n * 60n * 60n
 
 export function shouldBehaveLikeClosePosition(): void {
 	let user: User, hedger: Hedger, hedger2: Hedger
@@ -213,9 +212,7 @@ export function shouldBehaveLikeClosePosition(): void {
 
 	it("Should restrict an affiliate to closing positions only when affiliate shutdown is scheduled", async function () {
 		const affiliate = await context.accountManager.getAddress()
-		await context.controlFacet
-			.connect(context.signers.admin)
-			.scheduleAffiliateShutdown(affiliate, (await getBlockTimestamp()) + MIN_AFFILIATE_SHUTDOWN_NOTICE + 10n)
+		await context.controlFacet.connect(context.signers.admin).scheduleAffiliateShutdown(affiliate, (await getBlockTimestamp()) + 10n)
 
 		await expect(user.sendQuote()).to.be.revertedWith("PartyAFacet: Affiliate shutdown scheduled")
 		await expect(hedger.lockQuote(quote3JustSent.id)).to.be.revertedWith("PartyBFacet: Affiliate shutdown scheduled")
@@ -227,14 +224,12 @@ export function shouldBehaveLikeClosePosition(): void {
 		expect(closedQuote.quoteStatus).to.equal(QuoteStatus.CLOSED)
 	})
 
-	it("Should block opening a quote that was locked before the affiliate was paused", async function () {
+	it("Should block opening a quote that was locked before the affiliate shutdown was scheduled", async function () {
 		const affiliate = await context.accountManager.getAddress()
 		const lockedQuoteId = quote3JustSent.id
 		await hedger.lockQuote(lockedQuoteId)
 
-		await context.controlFacet
-			.connect(context.signers.admin)
-			.scheduleAffiliateShutdown(affiliate, (await getBlockTimestamp()) + MIN_AFFILIATE_SHUTDOWN_NOTICE + 10n)
+		await context.controlFacet.connect(context.signers.admin).scheduleAffiliateShutdown(affiliate, (await getBlockTimestamp()) + 10n)
 
 		await expect(hedger.openPosition(lockedQuoteId)).to.be.revertedWith("PartyBFacet: Affiliate shutdown scheduled")
 	})
