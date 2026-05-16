@@ -10,6 +10,7 @@ import { FacetCutAction, getSelectors } from "../../../tasks/utils/diamondCut.js
 import { ethers } from "../../../test/helpers/hardhat-connection.js"
 import { loadDeploymentState, saveDeploymentState, resolveDeploymentStateMetadata, type DeploymentStateContext } from "./deploymentState.js"
 import { log } from "./log.js"
+import { accountLayerCutTxOverrides, deployTxOverrides, writeTxOverrides } from "./txOverrides.js"
 
 // ============================================================================
 // Constants
@@ -115,7 +116,7 @@ export async function deployAccountLayerDiamond(
 		log.deployed("DiamondCutFacet", diamondCutFacetAddress, true)
 	} else {
 		const factory = await ethers.getContractFactory("DiamondCutFacet")
-		const contract = await factory.deploy()
+		const contract = await factory.deploy(deployTxOverrides())
 		diamondCutFacetAddress = await contract.getAddress()
 		al.diamondCutFacet = diamondCutFacetAddress
 		if (stateFile) saveState(stateFile, state, metadata)
@@ -135,7 +136,7 @@ export async function deployAccountLayerDiamond(
 	} else {
 		const factory = await ethers.getContractFactory("Diamond")
 		const deployOwner = adminSigner ? protocolAdmin : await deployer.getAddress()
-		const contract = await factory.deploy(deployOwner, diamondCutFacetAddress)
+		const contract = await factory.deploy(deployOwner, diamondCutFacetAddress, deployTxOverrides())
 		diamondAddress = await contract.getAddress()
 		al.diamond = diamondAddress
 		if (stateFile) saveState(stateFile, state, metadata)
@@ -150,7 +151,7 @@ export async function deployAccountLayerDiamond(
 		log.deployed("Init", initAddress, true)
 	} else {
 		const factory = await ethers.getContractFactory("contracts/accountLayer/Init.sol:Init")
-		const contract = await factory.deploy()
+		const contract = await factory.deploy(deployTxOverrides())
 		initAddress = await contract.getAddress()
 		al.init = initAddress
 		if (stateFile) saveState(stateFile, state, metadata)
@@ -166,7 +167,7 @@ export async function deployAccountLayerDiamond(
 		log.deployed("LibQuoteParams", libraryAddresses["LibQuoteParams"], true)
 	} else {
 		const factory = await ethers.getContractFactory("contracts/accountLayer/libraries/LibQuoteParams.sol:LibQuoteParams")
-		const contract = await factory.deploy()
+		const contract = await factory.deploy(deployTxOverrides())
 		libraryAddresses["LibQuoteParams"] = await contract.getAddress()
 		al.libraries["LibQuoteParams"] = libraryAddresses["LibQuoteParams"]
 		if (stateFile) saveState(stateFile, state, metadata)
@@ -200,7 +201,7 @@ export async function deployAccountLayerDiamond(
 			} else {
 				factory = await ethers.getContractFactory(contractPath)
 			}
-			const facet = await factory.deploy()
+			const facet = await factory.deploy(deployTxOverrides())
 			// Save address immediately after tx is submitted (before mining) so a crash
 			// during waitForDeployment doesn't lose the deployed address and cause a
 			// nonce-too-low error on retry.
@@ -254,7 +255,7 @@ export async function deployAccountLayerDiamond(
 				const isFirst = i === 0
 				const initTarget = isFirst ? initAddress : ethers.ZeroAddress
 				const initData = isFirst ? initCalldata : "0x"
-				const tx = await diamondCutContract.diamondCut(chunk, initTarget, initData)
+				const tx = await diamondCutContract.diamondCut(chunk, initTarget, initData, accountLayerCutTxOverrides())
 				const receipt = await tx.wait()
 				if (!receipt?.status) {
 					throw new Error(`AccountLayer diamond cut failed in chunk ${chunkNum}/${totalChunks}`)
@@ -297,7 +298,7 @@ export async function deployInstantLayer(
 	}
 
 	const factory = await ethers.getContractFactory("InstantLayer")
-	const contract = await factory.deploy(symmioAddress, protocolAdmin)
+	const contract = await factory.deploy(symmioAddress, protocolAdmin, deployTxOverrides())
 	const address = await contract.getAddress()
 
 	if (!state.instantLayer) state.instantLayer = {}
@@ -328,22 +329,22 @@ export async function wireAccountLayerInstantLayer(
 	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", diamondAddress, adminSigner)
 
 	// Grant INTEGRATION_ADMIN_ROLE to admin (needed for registerHook)
-	await (await controlFacet.grantRole(adminAddress, roleHash("INTEGRATION_ADMIN_ROLE"))).wait()
+	await (await controlFacet.grantRole(adminAddress, roleHash("INTEGRATION_ADMIN_ROLE"), writeTxOverrides())).wait()
 
 	// Grant roles to AccountLayer on Diamond
-	await (await controlFacet.grantRole(accountLayerDiamondAddress, roleHash("SIGNER_ADMIN_ROLE"))).wait()
+	await (await controlFacet.grantRole(accountLayerDiamondAddress, roleHash("SIGNER_ADMIN_ROLE"), writeTxOverrides())).wait()
 	log.ok("grantRole(AccountLayer, SIGNER_ADMIN_ROLE)")
-	await (await controlFacet.grantRole(accountLayerDiamondAddress, roleHash("AFFILIATE_MANAGER_ROLE"))).wait()
+	await (await controlFacet.grantRole(accountLayerDiamondAddress, roleHash("AFFILIATE_MANAGER_ROLE"), writeTxOverrides())).wait()
 	log.ok("grantRole(AccountLayer, AFFILIATE_MANAGER_ROLE)")
-	await (await controlFacet.grantRole(accountLayerDiamondAddress, roleHash("BALANCE_SETTLER_ROLE"))).wait()
+	await (await controlFacet.grantRole(accountLayerDiamondAddress, roleHash("BALANCE_SETTLER_ROLE"), writeTxOverrides())).wait()
 	log.ok("grantRole(AccountLayer, BALANCE_SETTLER_ROLE)")
 
 	// Grant InstantLayer role on Diamond
-	await (await controlFacet.grantRole(instantLayerAddress, roleHash("INSTANT_LAYER_ROLE"))).wait()
+	await (await controlFacet.grantRole(instantLayerAddress, roleHash("INSTANT_LAYER_ROLE"), writeTxOverrides())).wait()
 	log.ok("grantRole(InstantLayer, INSTANT_LAYER_ROLE)")
 
 	// Register AccountLayer as system hook on Diamond
-	await (await controlFacet.registerHook(ethers.ZeroAddress, accountLayerDiamondAddress)).wait()
+	await (await controlFacet.registerHook(ethers.ZeroAddress, accountLayerDiamondAddress, writeTxOverrides())).wait()
 	log.ok("registerHook(address(0), AccountLayer)")
 
 	// AccountLayer Diamond ControlFacet
@@ -354,24 +355,24 @@ export async function wireAccountLayerInstantLayer(
 	)
 
 	// Grant InstantLayer SIGNER_SETTER_ROLE on AccountLayer
-	await (await alControlFacet.grantRole(instantLayerAddress, roleHash("SIGNER_SETTER_ROLE"))).wait()
+	await (await alControlFacet.grantRole(instantLayerAddress, roleHash("SIGNER_SETTER_ROLE"), writeTxOverrides())).wait()
 	log.ok("grantRole(InstantLayer, SIGNER_SETTER_ROLE) on AccountLayer")
 
 	// Whitelist Symmio Core on AccountLayer
-	await (await alControlFacet.setWhitelistedSymmioCore(diamondAddress, true)).wait()
+	await (await alControlFacet.setWhitelistedSymmioCore(diamondAddress, true, writeTxOverrides())).wait()
 	log.ok("setWhitelistedSymmioCore(Diamond, true)")
 
 	// InstantLayer configuration
 	const instantLayer = await ethers.getContractAt("InstantLayer", instantLayerAddress, adminSigner)
 
 	// Set AccountLayer on InstantLayer
-	await (await instantLayer.setAccountLayer(accountLayerDiamondAddress)).wait()
+	await (await instantLayer.setAccountLayer(accountLayerDiamondAddress, writeTxOverrides())).wait()
 	log.ok("setAccountLayer(AccountLayer)")
 
 	// Whitelist Diamond and AccountLayer on InstantLayer
-	await (await instantLayer.setTargetWhitelist(diamondAddress, true)).wait()
+	await (await instantLayer.setTargetWhitelist(diamondAddress, true, writeTxOverrides())).wait()
 	log.ok("setTargetWhitelist(Diamond, true)")
-	await (await instantLayer.setTargetWhitelist(accountLayerDiamondAddress, true)).wait()
+	await (await instantLayer.setTargetWhitelist(accountLayerDiamondAddress, true, writeTxOverrides())).wait()
 	log.ok("setTargetWhitelist(AccountLayer, true)")
 }
 
@@ -405,7 +406,7 @@ export async function setupInstantLayerTemplates(instantLayerAddress: string, ad
 	const instantLayer = await ethers.getContractAt("InstantLayer", instantLayerAddress, adminSigner)
 
 	for (const template of templates) {
-		await (await instantLayer.addTemplate(template.name, template.operations)).wait()
+		await (await instantLayer.addTemplate(template.name, template.operations, writeTxOverrides())).wait()
 		log.ok(`${template.name} (${template.operations.length} ops)`)
 	}
 }
@@ -633,7 +634,7 @@ export async function deploySymbolManager(
 	}
 
 	const factory = await ethers.getContractFactory("SymmioSymbolManager")
-	const contract = await factory.deploy(diamondAddress, protocolAdmin)
+	const contract = await factory.deploy(diamondAddress, protocolAdmin, deployTxOverrides())
 	const address = await contract.getAddress()
 
 	if (!state.symbolManager) state.symbolManager = {}
@@ -653,9 +654,9 @@ export async function wireSymbolManager(diamondAddress: string, symbolManagerAdd
 	const roleHash = (name: string) => ethers.id(name)
 	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", diamondAddress, adminSigner)
 
-	await (await controlFacet.grantRole(symbolManagerAddress, roleHash("SYMBOL_MANAGER_ROLE"))).wait()
+	await (await controlFacet.grantRole(symbolManagerAddress, roleHash("SYMBOL_MANAGER_ROLE"), writeTxOverrides())).wait()
 	log.ok("grantRole(SymbolManager, SYMBOL_MANAGER_ROLE)")
-	await (await controlFacet.grantRole(symbolManagerAddress, roleHash("FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE"))).wait()
+	await (await controlFacet.grantRole(symbolManagerAddress, roleHash("FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE"), writeTxOverrides())).wait()
 	log.ok("grantRole(SymbolManager, FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE)")
 }
 

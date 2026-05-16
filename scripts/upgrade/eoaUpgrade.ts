@@ -50,6 +50,7 @@ import {
 } from "./utils/peripheralHelpers.js"
 import { runPreflight } from "./utils/preflight.js"
 import { resolveConfigFile } from "./utils/sharedConfig.js"
+import { deployTxOverrides, writeTxOverrides } from "./utils/txOverrides.js"
 import {
 	deployFacets,
 	buildDiamondCut,
@@ -75,6 +76,7 @@ type Config = {
 const OUTPUT_DIR = "./scripts/upgrade/output"
 const FULL_STAGE_ORDER = ["facets", "peripherals", "pause", "cut", "params", "wiring", "partyb", "migration"] as const
 type UpgradeStage = (typeof FULL_STAGE_ORDER)[number]
+const DEPLOY_ONLY_STAGES = new Set<UpgradeStage>(["facets", "peripherals"])
 
 type PeripheralsState = {
 	metadata?: DeploymentStateMetadata
@@ -171,6 +173,10 @@ function stageNames(stages: Set<UpgradeStage>): string {
 	return FULL_STAGE_ORDER.filter(stage => stages.has(stage)).join(", ")
 }
 
+function needsProtocolAdminSigner(stages: Set<UpgradeStage>): boolean {
+	return [...stages].some(stage => !DEPLOY_ONLY_STAGES.has(stage))
+}
+
 function normalizeSignatureVerifierParam(
 	stages: Set<UpgradeStage>,
 	newParams: NewV085Parameters,
@@ -234,7 +240,12 @@ function requirePeripheralAddresses(
 	return addresses
 }
 
-async function resolveUpgradeSigner(config: Config) {
+async function resolveUpgradeSigner(config: Config, stages: Set<UpgradeStage>) {
+	if (!needsProtocolAdminSigner(stages)) {
+		log.info("Deploy-only stages selected; using the default deployer signer.")
+		return ethers.provider.getSigner()
+	}
+
 	const protocolAdminAddress = config.protocolAdmin
 	if (!protocolAdminAddress) return ethers.provider.getSigner()
 
@@ -243,6 +254,49 @@ async function resolveUpgradeSigner(config: Config) {
 		expectedAddress: protocolAdminAddress,
 		envPrefix: "PROTOCOL_ADMIN",
 	})
+}
+
+function resolveDeploymentAdmin(config: Config, deployerAddress: string): string {
+	if (!config.protocolAdmin) {
+		log.warn("protocolAdmin is not configured; deployed peripherals will use the deployer as admin")
+		return deployerAddress
+	}
+	if (!ethers.isAddress(config.protocolAdmin)) {
+		throw new Error(`protocolAdmin is invalid: ${config.protocolAdmin}`)
+	}
+	return ethers.getAddress(config.protocolAdmin)
+}
+
+async function initiateAccountLayerOwnershipTransfer(accountLayerAddress: string, signer: any, newOwner: string): Promise<void> {
+	if (!ethers.isAddress(newOwner)) return
+
+	const accountLayer = new ethers.Contract(
+		accountLayerAddress,
+		["function owner() view returns (address)", "function pendingOwner() view returns (address)", "function transferOwnership(address owner)"],
+		signer,
+	)
+	const [owner, pendingOwner] = await Promise.all([accountLayer.owner(), accountLayer.pendingOwner()])
+	const normalizedNewOwner = ethers.getAddress(newOwner)
+	const normalizedOwner = ethers.getAddress(owner)
+	const normalizedPendingOwner = ethers.getAddress(pendingOwner)
+
+	if (normalizedOwner.toLowerCase() === normalizedNewOwner.toLowerCase()) {
+		log.ok(`AccountLayer owner already ${log.addr(normalizedNewOwner)}`)
+		return
+	}
+	if (normalizedPendingOwner.toLowerCase() === normalizedNewOwner.toLowerCase()) {
+		log.ok(`AccountLayer ownership transfer already pending to ${log.addr(normalizedNewOwner)}`)
+		return
+	}
+
+	const signerAddress = ethers.getAddress(await signer.getAddress())
+	if (normalizedOwner.toLowerCase() !== signerAddress.toLowerCase()) {
+		log.warn(`AccountLayer owner is ${normalizedOwner}, not deployer ${signerAddress}; ` + `skipping ownership transfer to ${normalizedNewOwner}.`)
+		return
+	}
+
+	await (await accountLayer.transferOwnership(normalizedNewOwner, writeTxOverrides())).wait()
+	log.ok(`AccountLayer ownership transfer initiated to ${log.addr(normalizedNewOwner)}`)
 }
 
 async function deploySignatureVerifier(
@@ -264,7 +318,7 @@ async function deploySignatureVerifier(
 	}
 
 	const factory = await ethers.getContractFactory("MuonSignatureVerifier")
-	const contract = await factory.deploy(protocolAdmin)
+	const contract = await factory.deploy(protocolAdmin, deployTxOverrides())
 	const address = await contract.getAddress()
 	state.signatureVerifier = address
 	savePeripheralsState(stateFile, state, metadata)
@@ -282,7 +336,7 @@ async function deploySymmioPartyBImplementation(stateFile: string, stateContext?
 	}
 
 	const factory = await ethers.getContractFactory("SymmioPartyB")
-	const contract = await factory.deploy()
+	const contract = await factory.deploy(deployTxOverrides())
 	const address = await contract.getAddress()
 	state.symmioPartyBImplementation = address
 	savePeripheralsState(stateFile, state, metadata)
@@ -294,11 +348,11 @@ async function deploySymmioPartyBImplementation(stateFile: string, stateContext?
 async function pauseSystem(diamondAddress: string, signer: any): Promise<void> {
 	const signerAddress = await signer.getAddress()
 	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", diamondAddress, signer)
-	await (await controlFacet.setAdmin(signerAddress)).wait()
+	await (await controlFacet.setAdmin(signerAddress, writeTxOverrides())).wait()
 	log.ok("Admin set")
-	await (await controlFacet.grantRole(signerAddress, ethers.id("PAUSER_ROLE"))).wait()
+	await (await controlFacet.grantRole(signerAddress, ethers.id("PAUSER_ROLE"), writeTxOverrides())).wait()
 	log.ok("PAUSER_ROLE granted")
-	await (await controlFacet.grantRole(signerAddress, ethers.id("UNPAUSER_ROLE"))).wait()
+	await (await controlFacet.grantRole(signerAddress, ethers.id("UNPAUSER_ROLE"), writeTxOverrides())).wait()
 	log.ok("UNPAUSER_ROLE granted")
 
 	const pauseHelper = new ethers.Contract(
@@ -308,7 +362,7 @@ async function pauseSystem(diamondAddress: string, signer: any): Promise<void> {
 	)
 	const pauseResult = await pauseHelper.pauseState()
 	if (!pauseResult.globalPaused) {
-		await (await pauseHelper.pauseGlobal()).wait()
+		await (await pauseHelper.pauseGlobal(writeTxOverrides())).wait()
 		log.ok("System paused (pauseGlobal)")
 	} else {
 		log.ok("System already paused")
@@ -335,13 +389,13 @@ async function registerPartyBs(diamondAddress: string, instantLayerAddress: stri
 
 	if (partyBsToRegister.length > 0 && registerOnSymmioCore) {
 		const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", diamondAddress, signer)
-		await (await controlFacet.grantRole(signerAddress, ethers.id("PARTY_B_MANAGER_ROLE"))).wait()
+		await (await controlFacet.grantRole(signerAddress, ethers.id("PARTY_B_MANAGER_ROLE"), writeTxOverrides())).wait()
 		log.ok("PARTY_B_MANAGER_ROLE granted")
 		const viewFacet = new ethers.Contract(diamondAddress, ["function isPartyB(address user) view returns (bool)"], signer)
 		for (const partyB of partyBsToRegister) {
 			const isRegistered: boolean = await viewFacet.isPartyB(partyB)
 			if (!isRegistered) {
-				await (await controlFacet.registerPartyB(partyB)).wait()
+				await (await controlFacet.registerPartyB(partyB, writeTxOverrides())).wait()
 				log.ok(`Registered ${log.addr(partyB)} on Diamond`)
 			} else {
 				log.ok(`${log.addr(partyB)} already registered on Diamond`)
@@ -359,7 +413,7 @@ async function registerPartyBs(diamondAddress: string, instantLayerAddress: stri
 		for (const partyB of partyBsToRegister) {
 			const isRegistered = await il.registeredPartyBs(partyB)
 			if (!isRegistered) {
-				await (await il.registerPartyBs([partyB])).wait()
+				await (await il.registerPartyBs([partyB], writeTxOverrides())).wait()
 				log.ok(`Registered ${log.addr(partyB)} on InstantLayer`)
 			} else {
 				log.ok(`${log.addr(partyB)} already registered on InstantLayer`)
@@ -399,8 +453,9 @@ async function main() {
 	log.kv("Stages", stageNames(stages))
 	log.kv("Diamond cut chunk size", String(DIAMOND_CUT_CHUNK_SIZE))
 
-	const signer = await resolveUpgradeSigner(config)
+	const signer = await resolveUpgradeSigner(config, stages)
 	const signerAddress = await signer.getAddress()
+	const deploymentAdmin = stages.has("peripherals") ? resolveDeploymentAdmin(config, signerAddress) : signerAddress
 
 	if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
 
@@ -422,9 +477,9 @@ async function main() {
 
 	if (stages.has("peripherals")) {
 		const t = log.step("Deploy peripherals")
-		const symmioFeeReceiver = config.symmioFeeReceiver || signerAddress
+		const symmioFeeReceiver = config.symmioFeeReceiver || deploymentAdmin
 		const signatureVerifier = await deploySignatureVerifier(
-			signerAddress,
+			deploymentAdmin,
 			peripheralsStateFile,
 			newParams.signatureVerifierAddress,
 			deploymentStateContext,
@@ -432,10 +487,18 @@ async function main() {
 		if (!newParams.signatureVerifierAddress || !ethers.isAddress(newParams.signatureVerifierAddress)) {
 			newParams.signatureVerifierAddress = signatureVerifier
 		}
-		const alResult = await deployAccountLayerDiamond(signerAddress, symmioFeeReceiver, peripheralsStateFile, signer, deploymentStateContext)
-		const ilResult = await deployInstantLayer(DIAMOND_ADDRESS, signerAddress, peripheralsStateFile, deploymentStateContext)
+		const accountLayerCutSigner = signerAddress.toLowerCase() === deploymentAdmin.toLowerCase() ? signer : undefined
+		const alResult = await deployAccountLayerDiamond(
+			deploymentAdmin,
+			symmioFeeReceiver,
+			peripheralsStateFile,
+			accountLayerCutSigner,
+			deploymentStateContext,
+		)
+		await initiateAccountLayerOwnershipTransfer(alResult.diamondAddress, signer, deploymentAdmin)
+		const ilResult = await deployInstantLayer(DIAMOND_ADDRESS, deploymentAdmin, peripheralsStateFile, deploymentStateContext)
 		await deploySymmioPartyBImplementation(peripheralsStateFile, deploymentStateContext)
-		const smResult = await deploySymbolManager(DIAMOND_ADDRESS, signerAddress, peripheralsStateFile, deploymentStateContext)
+		const smResult = await deploySymbolManager(DIAMOND_ADDRESS, deploymentAdmin, peripheralsStateFile, deploymentStateContext)
 		peripherals = {
 			signatureVerifier,
 			accountLayer: alResult.diamondAddress,
@@ -522,7 +585,7 @@ async function main() {
 		const t = log.step("Grant migration role")
 		if (MIGRATION_RUNNER) {
 			const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", DIAMOND_ADDRESS, signer)
-			await (await controlFacet.grantRole(MIGRATION_RUNNER, ethers.id("MIGRATION_ROLE"))).wait()
+			await (await controlFacet.grantRole(MIGRATION_RUNNER, ethers.id("MIGRATION_ROLE"), writeTxOverrides())).wait()
 			log.ok(`MIGRATION_ROLE granted to ${log.addr(MIGRATION_RUNNER)}`)
 		} else {
 			log.warn("No migration runner configured — skipping")
