@@ -27,7 +27,6 @@ import { getDummyLiquidationSig } from "./utils/SignatureUtils.js"
 
 export function shouldBehaveLikeClearingHouseFacet(): void {
 	let context: RunContext, user: User, user2: User, liquidator: User, hedger: Hedger, hedger2: Hedger
-	const MIN_AFFILIATE_SHUTDOWN_NOTICE = 14n * 24n * 60n * 60n
 
 	beforeEach(async function () {
 		context = await loadFixture(initializeFixture)
@@ -225,7 +224,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 
 	describe("closeAffiliatePositions", async function () {
 		const scheduleAffiliateShutdown = async (affiliate: string): Promise<bigint> => {
-			const shutdownAt = (await getBlockTimestamp()) + MIN_AFFILIATE_SHUTDOWN_NOTICE + 10n
+			const shutdownAt = (await getBlockTimestamp()) + 10n
 			await context.controlFacet.connect(context.signers.admin).scheduleAffiliateShutdown(affiliate, shutdownAt)
 			return shutdownAt
 		}

@@ -16,7 +16,6 @@ import { decimal, getBlockTimestamp, getQuoteQuantity, pausePartyB } from "./uti
 export function shouldBehaveLikeEmergencyClosePosition(): void {
 	let user: User, hedger: Hedger, hedger2: Hedger
 	let context: RunContext
-	const MIN_AFFILIATE_SHUTDOWN_NOTICE = 14n * 24n * 60n * 60n
 	let quote1LongOpened: QuoteStructOutput,
 		quote2ShortOpened: QuoteStructOutput,
 		quote3JustSent: QuoteStructOutput,
@@ -72,9 +71,7 @@ export function shouldBehaveLikeEmergencyClosePosition(): void {
 		describe("Affiliate shutdown scheduled", async function () {
 			beforeEach(async function () {
 				const affiliate = await context.accountManager.getAddress()
-				await context.controlFacet
-					.connect(context.signers.admin)
-					.scheduleAffiliateShutdown(affiliate, (await getBlockTimestamp()) + MIN_AFFILIATE_SHUTDOWN_NOTICE + 10n)
+				await context.controlFacet.connect(context.signers.admin).scheduleAffiliateShutdown(affiliate, (await getBlockTimestamp()) + 10n)
 			})
 
 			it("Should run successfully for a quote of the shutting down affiliate", async function () {

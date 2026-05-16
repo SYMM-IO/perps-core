@@ -25,8 +25,6 @@ const EMERGENCY_ADMIN_ROLE = `0x${keccak256("EMERGENCY_ADMIN_ROLE")}`
 const UNSUSPENDER_ROLE = `0x${keccak256("UNSUSPENDER_ROLE")}`
 const INTEGRATION_ADMIN_ROLE = `0x${keccak256("INTEGRATION_ADMIN_ROLE")}`
 const MIGRATION_ROLE = `0x${keccak256("MIGRATION_ROLE")}`
-const MIN_AFFILIATE_SHUTDOWN_NOTICE = 14n * 24n * 60n * 60n
-const MAX_AFFILIATE_SHUTDOWN_NOTICE = 90n * 24n * 60n * 60n
 
 export function shouldBehaveLikeControlFacet(): void {
 	let context: RunContext
@@ -521,26 +519,26 @@ export function shouldBehaveLikeControlFacet(): void {
 	describe("scheduleAffiliateShutdown", () => {
 		it("Should schedule and cancel an affiliate shutdown by affiliate manager", async function () {
 			const affiliate = await context.accountManager.getAddress()
-			const shutdownAt = BigInt(await time.latest()) + MIN_AFFILIATE_SHUTDOWN_NOTICE + 10n
+			const shutdownAt = BigInt(await time.latest()) + 10n
 			expect(await context.viewFacet.getAffiliateShutdownTime(affiliate)).to.be.equal(0)
 
 			await expect(context.controlFacet.connect(owner).scheduleAffiliateShutdown(affiliate, shutdownAt))
 				.to.emit(context.controlFacet, "ScheduleAffiliateShutdown")
 				.withArgs(affiliate, shutdownAt)
-			expect(await context.viewFacet.isAffiliateOpenPositionsPaused(affiliate)).to.be.equal(true)
+			expect(await context.viewFacet.isAffiliateShutdownScheduled(affiliate)).to.be.equal(true)
 			expect(await context.viewFacet.getAffiliateShutdownTime(affiliate)).to.be.equal(shutdownAt)
 
 			await expect(context.controlFacet.connect(owner).cancelAffiliateShutdown(affiliate))
 				.to.emit(context.controlFacet, "CancelAffiliateShutdown")
 				.withArgs(affiliate)
-			expect(await context.viewFacet.isAffiliateOpenPositionsPaused(affiliate)).to.be.equal(false)
+			expect(await context.viewFacet.isAffiliateShutdownScheduled(affiliate)).to.be.equal(false)
 			expect(await context.viewFacet.getAffiliateShutdownTime(affiliate)).to.be.equal(0)
 		})
 
 		it("Should allow an affiliate address to schedule and cancel its own shutdown", async function () {
 			const affiliate = await user2.getAddress()
 			await context.controlFacet.connect(owner).registerAffiliate(affiliate)
-			const shutdownAt = BigInt(await time.latest()) + MIN_AFFILIATE_SHUTDOWN_NOTICE + 10n
+			const shutdownAt = BigInt(await time.latest()) + 10n
 
 			await expect(context.controlFacet.connect(user2).scheduleAffiliateShutdown(affiliate, shutdownAt))
 				.to.emit(context.controlFacet, "ScheduleAffiliateShutdown")
@@ -551,26 +549,34 @@ export function shouldBehaveLikeControlFacet(): void {
 				.withArgs(affiliate)
 		})
 
-		it("Should reject invalid shutdown dates and duplicate schedules", async function () {
+		it("Should allow any nonzero shutdown date and reject duplicate schedules", async function () {
 			const affiliate = await context.accountManager.getAddress()
 			const now = BigInt(await time.latest())
+			const soonShutdownAt = now + 10n
+			const farShutdownAt = now + 3650n * 24n * 60n * 60n
 
-			await expect(
-				context.controlFacet.connect(owner).scheduleAffiliateShutdown(affiliate, now + MIN_AFFILIATE_SHUTDOWN_NOTICE - 10n),
-			).to.be.revertedWith("ControlFacet: Invalid shutdown time")
-			await expect(
-				context.controlFacet.connect(owner).scheduleAffiliateShutdown(affiliate, now + MAX_AFFILIATE_SHUTDOWN_NOTICE + 10n),
-			).to.be.revertedWith("ControlFacet: Invalid shutdown time")
+			await context.controlFacet.connect(owner).scheduleAffiliateShutdown(affiliate, soonShutdownAt)
+			expect(await context.viewFacet.getAffiliateShutdownTime(affiliate)).to.be.equal(soonShutdownAt)
+			await context.controlFacet.connect(owner).cancelAffiliateShutdown(affiliate)
 
-			await context.controlFacet.connect(owner).scheduleAffiliateShutdown(affiliate, now + MIN_AFFILIATE_SHUTDOWN_NOTICE + 10n)
-			await expect(
-				context.controlFacet.connect(owner).scheduleAffiliateShutdown(affiliate, now + MIN_AFFILIATE_SHUTDOWN_NOTICE + 20n),
-			).to.be.revertedWith("ControlFacet: Affiliate shutdown already scheduled")
+			await context.controlFacet.connect(owner).scheduleAffiliateShutdown(affiliate, farShutdownAt)
+			expect(await context.viewFacet.getAffiliateShutdownTime(affiliate)).to.be.equal(farShutdownAt)
+			await expect(context.controlFacet.connect(owner).scheduleAffiliateShutdown(affiliate, farShutdownAt + 10n)).to.be.revertedWith(
+				"ControlFacet: Affiliate shutdown already scheduled",
+			)
+		})
+
+		it("Should reject zero shutdown time", async function () {
+			const affiliate = await context.accountManager.getAddress()
+
+			await expect(context.controlFacet.connect(owner).scheduleAffiliateShutdown(affiliate, 0)).to.be.revertedWith(
+				"ControlFacet: Invalid shutdown time",
+			)
 		})
 
 		it("Should reject unauthorized shutdown scheduling and cancellation", async function () {
 			const affiliate = await context.accountManager.getAddress()
-			const shutdownAt = BigInt(await time.latest()) + MIN_AFFILIATE_SHUTDOWN_NOTICE + 10n
+			const shutdownAt = BigInt(await time.latest()) + 10n
 
 			await expect(context.controlFacet.connect(user2).scheduleAffiliateShutdown(affiliate, shutdownAt)).to.be.revertedWith(
 				"ControlFacet: Not authorized",
@@ -580,7 +586,7 @@ export function shouldBehaveLikeControlFacet(): void {
 
 		it("Should reject zero address and missing schedule cancellation", async function () {
 			const affiliate = await context.accountManager.getAddress()
-			const shutdownAt = BigInt(await time.latest()) + MIN_AFFILIATE_SHUTDOWN_NOTICE + 10n
+			const shutdownAt = BigInt(await time.latest()) + 10n
 
 			await expect(context.controlFacet.connect(owner).scheduleAffiliateShutdown(ZeroAddress, shutdownAt)).to.be.revertedWith(
 				"ControlFacet: Zero address",

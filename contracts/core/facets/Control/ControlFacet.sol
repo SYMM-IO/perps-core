@@ -27,9 +27,6 @@ import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 import { Fee } from "../../storages/QuoteStorage.sol";
 
 contract ControlFacet is Accessibility, Ownable, IControlFacet {
-	uint256 private constant MIN_AFFILIATE_SHUTDOWN_NOTICE = 14 days;
-	uint256 private constant MAX_AFFILIATE_SHUTDOWN_NOTICE = 90 days;
-
 	/// @notice Initiates a two-step ownership transfer to a new address. The new owner must call acceptOwnership() to complete the transfer.
 	/// @param owner The address of the pending new owner.
 	function transferOwnership(address owner) external onlyOwner {
@@ -163,10 +160,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		require(LibAccessibility.hasRole(signer, LibAccessibility.AFFILIATE_MANAGER_ROLE) || signer == affiliate, "ControlFacet: Not authorized");
 		require(MAStorage.layout().affiliateStatus[affiliate], "ControlFacet: Invalid affiliate");
 		require(GlobalAppStorage.layout().affiliateShutdownTime[affiliate] == 0, "ControlFacet: Affiliate shutdown already scheduled");
-		require(
-			shutdownTime >= block.timestamp + MIN_AFFILIATE_SHUTDOWN_NOTICE && shutdownTime <= block.timestamp + MAX_AFFILIATE_SHUTDOWN_NOTICE,
-			"ControlFacet: Invalid shutdown time"
-		);
+		require(shutdownTime != 0, "ControlFacet: Invalid shutdown time");
 
 		GlobalAppStorage.layout().affiliateShutdownTime[affiliate] = shutdownTime;
 		emit ScheduleAffiliateShutdown(affiliate, shutdownTime);

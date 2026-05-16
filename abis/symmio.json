@@ -8491,11 +8491,11 @@
                 "type": "address"
             }
         ],
-        "name": "isAffiliateOpenPositionsPaused",
+        "name": "isAffiliateShutdownScheduled",
         "outputs": [
             {
                 "internalType": "bool",
-                "name": "isPaused",
+                "name": "isScheduled",
                 "type": "bool"
             }
         ],
