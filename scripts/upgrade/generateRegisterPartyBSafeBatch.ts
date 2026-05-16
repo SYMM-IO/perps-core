@@ -41,6 +41,7 @@ import fs from "fs"
 import path from "path"
 
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
+import { loadDeploymentState, type DeploymentStateContext } from "./utils/deploymentState.js"
 import { baseNetworkName, loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig.js"
 import { toHumanReadableSafeTxFromIface, type SafeBatch, type SafeTransaction } from "./utils/upgradeHelpers.js"
 
@@ -76,18 +77,18 @@ function loadPartyBListConfig(networkSuffix: string | undefined): { file: string
 	return { file, config }
 }
 
-function resolveInstantLayerAddress(networkName: string, shared: { instantLayerAddress?: string }): string | undefined {
+function resolveInstantLayerAddress(
+	networkName: string,
+	shared: { instantLayerAddress?: string },
+	stateContext: DeploymentStateContext,
+): string | undefined {
 	if (process.env.INSTANT_LAYER_ADDRESS) return process.env.INSTANT_LAYER_ADDRESS
 	if (shared.instantLayerAddress) return shared.instantLayerAddress
 
 	const peripheralsFile = path.join(OUTPUT_DIR, `deployed-peripherals-${networkName}.json`)
 	if (fs.existsSync(peripheralsFile)) {
-		try {
-			const peripherals = JSON.parse(fs.readFileSync(peripheralsFile, "utf-8"))
-			if (peripherals.instantLayer?.address) return peripherals.instantLayer.address
-		} catch {
-			/* fall through */
-		}
+		const peripherals = loadDeploymentState<{ instantLayer?: { address?: string } }>(peripheralsFile, stateContext)
+		if (peripherals.instantLayer?.address) return peripherals.instantLayer.address
 	}
 
 	const alilFile = path.join(OUTPUT_DIR, "deployed-accountlayer-instantlayer.json")
@@ -130,7 +131,11 @@ async function main() {
 	const CHAIN_ID = process.env.CHAIN_ID ?? String(Number((await ethers.provider.getNetwork()).chainId))
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? shared.diamondAddress
 	const SAFE_ADDRESS = process.env.SAFE_ADDRESS ?? shared.safeAddress
-	const IL_ADDRESS = resolveInstantLayerAddress(networkName, shared)
+	const IL_ADDRESS = resolveInstantLayerAddress(networkName, shared, {
+		networkName: networkSuffix,
+		chainId: Number(CHAIN_ID),
+		diamondAddress: DIAMOND_ADDRESS,
+	})
 
 	const registerOnCore = process.env.REGISTER_ON_SYMMIO_CORE ? process.env.REGISTER_ON_SYMMIO_CORE === "1" : (listConfig.registerOnSymmioCore ?? true)
 	const registerOnIL = process.env.REGISTER_ON_INSTANT_LAYER

@@ -4,6 +4,7 @@ import path from "path"
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { getImpersonatedAdmin, impersonateAndFund } from "./utils/forkHelpers.js"
 import { log } from "./utils/log.js"
+import { logUpgradeOwnershipSummary } from "./utils/ownership.js"
 import { deployAccountLayerDiamond, deployInstantLayer, wireAccountLayerInstantLayer, setupInstantLayerTemplates } from "./utils/peripheralHelpers.js"
 import { runPreflight } from "./utils/preflight.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
@@ -137,6 +138,8 @@ async function main() {
 	const networkSuffix = baseNetworkName(connection.networkName)
 	const withSuffix = (baseName: string, ext = "json"): string => (networkSuffix ? `${baseName}-${networkSuffix}.${ext}` : `${baseName}.${ext}`)
 	const reportFile = `${outputDir}/${withSuffix("forkUpgrade-report")}`
+	const chainId = Number((await ethers.provider.getNetwork()).chainId)
+	const deploymentStateContext = { networkName: networkSuffix, chainId, diamondAddress: DIAMOND_ADDRESS }
 
 	const report: ForkUpgradeReport = {
 		status: "running",
@@ -337,7 +340,7 @@ async function main() {
 		t = log.step("Deploy v0.8.5 facets")
 		currentStep = "deploy_facets"
 		const facetsOutFile = `${outputDir}/${withSuffix("deployed-facets")}`
-		const { facets: newFacets, selectorSignatures } = await deployFacets(facetsOutFile)
+		const { facets: newFacets, selectorSignatures } = await deployFacets(facetsOutFile, deploymentStateContext)
 		log.ok(`${Object.keys(newFacets).length} facets ready`)
 		report.steps.push({
 			name: "deploy_facets",
@@ -435,8 +438,8 @@ async function main() {
 		const symmioFeeReceiver = config.symmioFeeReceiver || adminAddress
 		const alilStateFile = `${outputDir}/${withSuffix("deployed-accountlayer-instantlayer")}`
 
-		const alResult = await deployAccountLayerDiamond(adminAddress, symmioFeeReceiver, alilStateFile, admin)
-		const ilResult = await deployInstantLayer(DIAMOND_ADDRESS, adminAddress, alilStateFile)
+		const alResult = await deployAccountLayerDiamond(adminAddress, symmioFeeReceiver, alilStateFile, admin, deploymentStateContext)
+		const ilResult = await deployInstantLayer(DIAMOND_ADDRESS, adminAddress, alilStateFile, deploymentStateContext)
 		accountLayerAddress = alResult.diamondAddress
 		instantLayerAddress = ilResult.address
 
@@ -585,6 +588,18 @@ async function main() {
 
 		// ── Summary ──────────────────────────────────────────────────────
 		printStepTimings(report.steps, scriptTimer.ms())
+		await logUpgradeOwnershipSummary({
+			symmioCore: DIAMOND_ADDRESS,
+			accountLayer: accountLayerAddress,
+			instantLayer: instantLayerAddress,
+			signatureVerifier: newParams.signatureVerifierAddress,
+			knownAccounts: [
+				{ label: "impersonatedAdmin", address: adminAddress },
+				{ label: "configuredAdmin", address: ADMIN_ADDRESS },
+				{ label: "protocolAdmin", address: config.protocolAdmin },
+				{ label: "symmioFeeReceiver", address: config.symmioFeeReceiver },
+			],
+		})
 		log.success("Fork upgrade completed successfully", [
 			["Diamond", DIAMOND_ADDRESS],
 			["AccountLayer", accountLayerAddress],

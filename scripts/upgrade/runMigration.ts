@@ -4,6 +4,7 @@ import path from "path"
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { migrate, MigrationConfig, MigrationInput, MigrationReport } from "./migrate.js"
 import { getImpersonatedAdmin } from "./utils/forkHelpers.js"
+import { resolveConfiguredSigner } from "./utils/hardwareSigner.js"
 import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
 import { baseNetworkName, loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig.js"
@@ -440,19 +441,13 @@ async function main() {
 		if (isFork) {
 			admin = await getImpersonatedAdmin(DIAMOND_ADDRESS)
 		} else {
-			const signers = await ethers.getSigners()
 			const migratorAddress = upgradeShared.migrationRunner
-			if (migratorAddress) {
-				for (const s of signers) {
-					if ((await s.getAddress()).toLowerCase() === migratorAddress.toLowerCase()) {
-						admin = s
-						break
-					}
-				}
-				if (!admin) throw new Error(`No signer found for migrationRunner ${migratorAddress}. Add TEAM_MIGRATOR to the Hardhat keystore.`)
-			} else {
-				admin = signers[0]
-			}
+			admin = await resolveConfiguredSigner({
+				role: "migrationRunner",
+				expectedAddress: migratorAddress,
+				envPrefix: "MIGRATION_RUNNER",
+				allowDefault: !migratorAddress,
+			})
 		}
 		const adminAddress = await admin.getAddress()
 		report.protocolAdmin = adminAddress

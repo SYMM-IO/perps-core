@@ -30,7 +30,16 @@ import fs from "fs"
 import path from "path"
 
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
+import {
+	loadDeploymentState,
+	saveDeploymentState,
+	resolveDeploymentStateMetadata,
+	type DeploymentStateContext,
+	type DeploymentStateMetadata,
+} from "./utils/deploymentState.js"
+import { resolveConfiguredSigner } from "./utils/hardwareSigner.js"
 import { log } from "./utils/log.js"
+import { logUpgradeOwnershipSummary } from "./utils/ownership.js"
 import {
 	deployAccountLayerDiamond,
 	deployInstantLayer,
@@ -56,6 +65,7 @@ type Config = {
 	protocolAdmin?: string
 	migrationRunner?: string
 	symmioFeeReceiver?: string
+	safeAddress?: string
 	diamondCutChunkSize?: number
 	setupInstantLayerTemplates?: boolean
 	stages?: string[] | string
@@ -67,6 +77,7 @@ const FULL_STAGE_ORDER = ["facets", "peripherals", "pause", "cut", "params", "wi
 type UpgradeStage = (typeof FULL_STAGE_ORDER)[number]
 
 type PeripheralsState = {
+	metadata?: DeploymentStateMetadata
 	signatureVerifier?: string
 	accountLayer?: { diamond?: string }
 	instantLayer?: { address?: string }
@@ -79,6 +90,7 @@ type PeripheralsAddresses = {
 	accountLayer?: string
 	instantLayer?: string
 	symbolManager?: string
+	symmioPartyBImplementation?: string
 }
 
 function loadConfig(): Config {
@@ -159,11 +171,16 @@ function stageNames(stages: Set<UpgradeStage>): string {
 	return FULL_STAGE_ORDER.filter(stage => stages.has(stage)).join(", ")
 }
 
-function normalizeSignatureVerifierParam(stages: Set<UpgradeStage>, newParams: NewV085Parameters, peripheralsStateFile: string): void {
+function normalizeSignatureVerifierParam(
+	stages: Set<UpgradeStage>,
+	newParams: NewV085Parameters,
+	peripheralsStateFile: string,
+	stateContext: DeploymentStateContext,
+): void {
 	const configured = newParams.signatureVerifierAddress
 	if (configured && ethers.isAddress(configured)) return
 
-	const deployedVerifier = readPeripheralsAddresses(peripheralsStateFile).signatureVerifier
+	const deployedVerifier = readPeripheralsAddresses(peripheralsStateFile, stateContext).signatureVerifier
 	if (stages.has("params") && deployedVerifier) {
 		newParams.signatureVerifierAddress = deployedVerifier
 		return
@@ -180,29 +197,34 @@ function normalizeSignatureVerifierParam(stages: Set<UpgradeStage>, newParams: N
 	newParams.signatureVerifierAddress = undefined
 }
 
-function loadPeripheralsState(stateFile: string): PeripheralsState {
+function loadPeripheralsState(stateFile: string, stateContext?: DeploymentStateContext): PeripheralsState {
 	if (!fs.existsSync(stateFile)) return {}
-	return JSON.parse(fs.readFileSync(stateFile, "utf-8")) as PeripheralsState
+	return loadDeploymentState<PeripheralsState>(stateFile, stateContext)
 }
 
-function savePeripheralsState(stateFile: string, state: PeripheralsState): void {
+function savePeripheralsState(stateFile: string, state: PeripheralsState, metadata?: DeploymentStateMetadata): void {
 	const dir = path.dirname(stateFile)
 	if (dir && dir !== "." && !fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
-	fs.writeFileSync(stateFile, JSON.stringify(state, null, 2))
+	saveDeploymentState(stateFile, state, metadata)
 }
 
-function readPeripheralsAddresses(stateFile: string): PeripheralsAddresses {
-	const state = loadPeripheralsState(stateFile)
+function readPeripheralsAddresses(stateFile: string, stateContext?: DeploymentStateContext): PeripheralsAddresses {
+	const state = loadPeripheralsState(stateFile, stateContext)
 	return {
 		signatureVerifier: state.signatureVerifier,
 		accountLayer: state.accountLayer?.diamond,
 		instantLayer: state.instantLayer?.address,
 		symbolManager: state.symbolManager?.address,
+		symmioPartyBImplementation: state.symmioPartyBImplementation,
 	}
 }
 
-function requirePeripheralAddresses(stateFile: string, required: Array<keyof PeripheralsAddresses>): PeripheralsAddresses {
-	const addresses = readPeripheralsAddresses(stateFile)
+function requirePeripheralAddresses(
+	stateFile: string,
+	required: Array<keyof PeripheralsAddresses>,
+	stateContext?: DeploymentStateContext,
+): PeripheralsAddresses {
+	const addresses = readPeripheralsAddresses(stateFile, stateContext)
 	const missing = required.filter(key => !addresses[key])
 	if (missing.length > 0) {
 		throw new Error(
@@ -216,22 +238,26 @@ async function resolveUpgradeSigner(config: Config) {
 	const protocolAdminAddress = config.protocolAdmin
 	if (!protocolAdminAddress) return ethers.provider.getSigner()
 
-	const signers = await ethers.getSigners()
-	for (const signer of signers) {
-		if ((await signer.getAddress()).toLowerCase() === protocolAdminAddress.toLowerCase()) {
-			return signer
-		}
-	}
-	throw new Error(`No signer found for protocolAdmin ${protocolAdminAddress}. Add TEAM_DEPLOYER to the Hardhat keystore or env.`)
+	return resolveConfiguredSigner({
+		role: "protocolAdmin",
+		expectedAddress: protocolAdminAddress,
+		envPrefix: "PROTOCOL_ADMIN",
+	})
 }
 
-async function deploySignatureVerifier(protocolAdmin: string, stateFile: string, configuredAddress?: string): Promise<string> {
+async function deploySignatureVerifier(
+	protocolAdmin: string,
+	stateFile: string,
+	configuredAddress?: string,
+	stateContext?: DeploymentStateContext,
+): Promise<string> {
 	if (configuredAddress && ethers.isAddress(configuredAddress)) {
 		log.deployed("MuonSignatureVerifier", configuredAddress, true)
 		return configuredAddress
 	}
 
-	const state = loadPeripheralsState(stateFile)
+	const metadata = await resolveDeploymentStateMetadata(stateContext)
+	const state = loadPeripheralsState(stateFile, stateContext)
 	if (state.signatureVerifier) {
 		log.deployed("MuonSignatureVerifier", state.signatureVerifier, true)
 		return state.signatureVerifier
@@ -241,14 +267,15 @@ async function deploySignatureVerifier(protocolAdmin: string, stateFile: string,
 	const contract = await factory.deploy(protocolAdmin)
 	const address = await contract.getAddress()
 	state.signatureVerifier = address
-	savePeripheralsState(stateFile, state)
+	savePeripheralsState(stateFile, state, metadata)
 	await contract.waitForDeployment()
 	log.deployed("MuonSignatureVerifier", address)
 	return address
 }
 
-async function deploySymmioPartyBImplementation(stateFile: string): Promise<string> {
-	const state = loadPeripheralsState(stateFile)
+async function deploySymmioPartyBImplementation(stateFile: string, stateContext?: DeploymentStateContext): Promise<string> {
+	const metadata = await resolveDeploymentStateMetadata(stateContext)
+	const state = loadPeripheralsState(stateFile, stateContext)
 	if (state.symmioPartyBImplementation) {
 		log.deployed("SymmioPartyB", state.symmioPartyBImplementation, true)
 		return state.symmioPartyBImplementation
@@ -258,7 +285,7 @@ async function deploySymmioPartyBImplementation(stateFile: string): Promise<stri
 	const contract = await factory.deploy()
 	const address = await contract.getAddress()
 	state.symmioPartyBImplementation = address
-	savePeripheralsState(stateFile, state)
+	savePeripheralsState(stateFile, state, metadata)
 	await contract.waitForDeployment()
 	log.deployed("SymmioPartyB", address)
 	return address
@@ -354,9 +381,11 @@ async function main() {
 	const newParams = config.newV085Parameters ?? {}
 	const DIAMOND_CUT_CHUNK_SIZE = Number(process.env.DIAMOND_CUT_CHUNK_SIZE ?? config.diamondCutChunkSize ?? 6)
 	const networkName = connection.networkName
+	const chainId = Number((await ethers.provider.getNetwork()).chainId)
 	const facetsOutFile = process.env.FACETS_FILE ?? path.join(OUTPUT_DIR, `deployed-facets-${networkName}.json`)
 	const peripheralsStateFile = process.env.PERIPHERALS_FILE ?? path.join(OUTPUT_DIR, `deployed-peripherals-${networkName}.json`)
-	normalizeSignatureVerifierParam(stages, newParams, peripheralsStateFile)
+	const deploymentStateContext = { networkName, chainId, diamondAddress: DIAMOND_ADDRESS }
+	normalizeSignatureVerifierParam(stages, newParams, peripheralsStateFile, deploymentStateContext)
 
 	// Preflight — fail early with a clear message before any on-chain side effects.
 	await runPreflight(connection.networkName, {
@@ -380,11 +409,11 @@ async function main() {
 	let newFacets: Record<string, FacetInfo> | undefined
 	let selectorSignatures: Record<string, string> | undefined
 	let diamondCut: any[] | undefined
-	let peripherals: PeripheralsAddresses = readPeripheralsAddresses(peripheralsStateFile)
+	let peripherals: PeripheralsAddresses = readPeripheralsAddresses(peripheralsStateFile, deploymentStateContext)
 
 	if (stages.has("facets")) {
 		const t = log.step("Deploy v0.8.5 facets")
-		const deployed = await deployFacets(facetsOutFile)
+		const deployed = await deployFacets(facetsOutFile, deploymentStateContext)
 		newFacets = deployed.facets
 		selectorSignatures = deployed.selectorSignatures
 		log.ok(`${Object.keys(newFacets).length} facets ready`)
@@ -394,14 +423,19 @@ async function main() {
 	if (stages.has("peripherals")) {
 		const t = log.step("Deploy peripherals")
 		const symmioFeeReceiver = config.symmioFeeReceiver || signerAddress
-		const signatureVerifier = await deploySignatureVerifier(signerAddress, peripheralsStateFile, newParams.signatureVerifierAddress)
+		const signatureVerifier = await deploySignatureVerifier(
+			signerAddress,
+			peripheralsStateFile,
+			newParams.signatureVerifierAddress,
+			deploymentStateContext,
+		)
 		if (!newParams.signatureVerifierAddress || !ethers.isAddress(newParams.signatureVerifierAddress)) {
 			newParams.signatureVerifierAddress = signatureVerifier
 		}
-		const alResult = await deployAccountLayerDiamond(signerAddress, symmioFeeReceiver, peripheralsStateFile, signer)
-		const ilResult = await deployInstantLayer(DIAMOND_ADDRESS, signerAddress, peripheralsStateFile)
-		await deploySymmioPartyBImplementation(peripheralsStateFile)
-		const smResult = await deploySymbolManager(DIAMOND_ADDRESS, signerAddress, peripheralsStateFile)
+		const alResult = await deployAccountLayerDiamond(signerAddress, symmioFeeReceiver, peripheralsStateFile, signer, deploymentStateContext)
+		const ilResult = await deployInstantLayer(DIAMOND_ADDRESS, signerAddress, peripheralsStateFile, deploymentStateContext)
+		await deploySymmioPartyBImplementation(peripheralsStateFile, deploymentStateContext)
+		const smResult = await deploySymbolManager(DIAMOND_ADDRESS, signerAddress, peripheralsStateFile, deploymentStateContext)
 		peripherals = {
 			signatureVerifier,
 			accountLayer: alResult.diamondAddress,
@@ -415,7 +449,7 @@ async function main() {
 	if (needsDiamondCut) {
 		const t = log.step("Build diamond cut")
 		if (!newFacets || !selectorSignatures) {
-			const loaded = loadDeployedFacets(facetsOutFile)
+			const loaded = loadDeployedFacets(facetsOutFile, deploymentStateContext)
 			newFacets = loaded.facets
 			selectorSignatures = loaded.selectorSignatures
 		}
@@ -464,7 +498,10 @@ async function main() {
 
 	if (stages.has("wiring")) {
 		const t = log.step("Wire peripherals")
-		peripherals = { ...peripherals, ...requirePeripheralAddresses(peripheralsStateFile, ["accountLayer", "instantLayer", "symbolManager"]) }
+		peripherals = {
+			...peripherals,
+			...requirePeripheralAddresses(peripheralsStateFile, ["accountLayer", "instantLayer", "symbolManager"], deploymentStateContext),
+		}
 		await wireAccountLayerInstantLayer(DIAMOND_ADDRESS, peripherals.accountLayer!, peripherals.instantLayer!, signer)
 		if (config.setupInstantLayerTemplates !== false) {
 			await setupInstantLayerTemplates(peripherals.instantLayer!, signer)
@@ -475,8 +512,8 @@ async function main() {
 
 	if (stages.has("partyb")) {
 		const t = log.step("Deploy SymmioPartyB + register PartyBs")
-		await deploySymmioPartyBImplementation(peripheralsStateFile)
-		peripherals = { ...peripherals, ...readPeripheralsAddresses(peripheralsStateFile) }
+		await deploySymmioPartyBImplementation(peripheralsStateFile, deploymentStateContext)
+		peripherals = { ...peripherals, ...readPeripheralsAddresses(peripheralsStateFile, deploymentStateContext) }
 		await registerPartyBs(DIAMOND_ADDRESS, peripherals.instantLayer, signer)
 		log.stepDone(t)
 	}
@@ -493,7 +530,22 @@ async function main() {
 		log.stepDone(t)
 	}
 
-	peripherals = { ...peripherals, ...readPeripheralsAddresses(peripheralsStateFile) }
+	peripherals = { ...peripherals, ...readPeripheralsAddresses(peripheralsStateFile, deploymentStateContext) }
+	await logUpgradeOwnershipSummary({
+		symmioCore: DIAMOND_ADDRESS,
+		accountLayer: peripherals.accountLayer,
+		instantLayer: peripherals.instantLayer,
+		signatureVerifier: peripherals.signatureVerifier ?? newParams.signatureVerifierAddress,
+		symbolManager: peripherals.symbolManager,
+		symmioPartyBImplementation: peripherals.symmioPartyBImplementation,
+		knownAccounts: [
+			{ label: "signer", address: signerAddress },
+			{ label: "protocolAdmin", address: config.protocolAdmin },
+			{ label: "safe", address: config.safeAddress },
+			{ label: "migrationRunner", address: MIGRATION_RUNNER },
+			{ label: "symmioFeeReceiver", address: config.symmioFeeReceiver },
+		],
+	})
 	log.success("EOA upgrade completed successfully", [
 		["Diamond", DIAMOND_ADDRESS],
 		["Stages", stageNames(stages)],

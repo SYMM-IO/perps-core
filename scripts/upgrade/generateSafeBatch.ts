@@ -20,6 +20,7 @@ import fs from "fs"
 import path from "path"
 
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
+import { loadDeploymentState } from "./utils/deploymentState.js"
 import {
 	buildTemplateTransactions,
 	buildSymbolManagerWiringTransactions,
@@ -99,7 +100,8 @@ async function main() {
 
 	// Load deployed facets
 	const FACETS_FILE = process.env.FACETS_FILE ?? path.join(OUTPUT_DIR, `deployed-facets-${networkName}.json`)
-	const facetData = loadDeployedFacets(FACETS_FILE)
+	const deploymentStateContext = { networkName, chainId: Number(CHAIN_ID), diamondAddress: DIAMOND_ADDRESS }
+	const facetData = loadDeployedFacets(FACETS_FILE, deploymentStateContext)
 	console.log()
 
 	// Build diamond cut
@@ -127,7 +129,7 @@ async function main() {
 	const PERIPHERALS_FILE = process.env.PERIPHERALS_FILE ?? path.join(OUTPUT_DIR, `deployed-peripherals-${networkName}.json`)
 	let peripherals: DeployedPeripherals = {}
 	if (fs.existsSync(PERIPHERALS_FILE)) {
-		peripherals = JSON.parse(fs.readFileSync(PERIPHERALS_FILE, "utf-8"))
+		peripherals = loadDeploymentState<DeployedPeripherals>(PERIPHERALS_FILE, deploymentStateContext)
 		console.log(`Loaded peripherals from ${PERIPHERALS_FILE}`)
 	}
 

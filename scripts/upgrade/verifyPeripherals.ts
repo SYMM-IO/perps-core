@@ -21,6 +21,7 @@
 import fs from "fs"
 
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
+import { loadDeploymentState } from "./utils/deploymentState.js"
 import { resolveConfigFile } from "./utils/sharedConfig.js"
 
 type Config = {
@@ -47,7 +48,7 @@ const ROLES = {
 // Resolved with network name in loadConfig()
 const OUTPUT_DIR = "./scripts/upgrade/output"
 
-function loadConfig(): Config {
+async function loadConfig(): Promise<Config> {
 	// Try dedicated config first
 	if (fs.existsSync(CONFIG_FILE)) {
 		return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8")) as Config
@@ -55,6 +56,8 @@ function loadConfig(): Config {
 
 	// Auto-load from upgrade.json + output files
 	const config: Partial<Config> = {}
+	const networkName = connection.networkName
+	const chainId = Number((await ethers.provider.getNetwork()).chainId)
 
 	const upgradeConfigFile = resolveConfigFile("upgrade", networkName, process.env.UPGRADE_CONFIG_FILE)
 	if (fs.existsSync(upgradeConfigFile)) {
@@ -63,16 +66,20 @@ function loadConfig(): Config {
 		console.log(`Loaded diamond from ${upgradeConfigFile}`)
 	}
 
-	const networkName = connection.networkName
+	const stateContext = { networkName, chainId, diamondAddress: config.diamondAddress }
 	const alilFile = `${OUTPUT_DIR}/deployed-accountlayer-instantlayer.json`
 	const peripheralsFile = `${OUTPUT_DIR}/deployed-peripherals-${networkName}.json`
 	if (fs.existsSync(alilFile)) {
-		const alil = JSON.parse(fs.readFileSync(alilFile, "utf-8"))
+		const alil = loadDeploymentState<{ accountLayer?: { diamond?: string }; instantLayer?: { address?: string } }>(alilFile, stateContext)
 		config.accountLayerDiamondAddress = alil.accountLayer?.diamond
 		config.instantLayerAddress = alil.instantLayer?.address
 		console.log(`Loaded AL + IL from ${alilFile}`)
 	} else if (fs.existsSync(peripheralsFile)) {
-		const peripherals = JSON.parse(fs.readFileSync(peripheralsFile, "utf-8"))
+		const peripherals = loadDeploymentState<{
+			accountLayer?: { diamond?: string }
+			instantLayer?: { address?: string }
+			symbolManager?: { address?: string }
+		}>(peripheralsFile, stateContext)
 		config.accountLayerDiamondAddress = peripherals.accountLayer?.diamond
 		config.instantLayerAddress = peripherals.instantLayer?.address
 		config.symbolManagerAddress = peripherals.symbolManager?.address
@@ -85,7 +92,7 @@ function loadConfig(): Config {
 type CheckResult = { name: string; pass: boolean; detail: string }
 
 async function main() {
-	const config = loadConfig()
+	const config = await loadConfig()
 
 	const { diamondAddress, accountLayerDiamondAddress, instantLayerAddress } = config
 

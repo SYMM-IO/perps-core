@@ -7,6 +7,13 @@ import fs from "fs"
 import { FacetNames } from "../../../tasks/deploy/constants.js"
 import { FacetCutAction, getSelectors } from "../../../tasks/utils/diamondCut.js"
 import { ethers } from "../../../test/helpers/hardhat-connection.js"
+import {
+	loadDeploymentState,
+	saveDeploymentState,
+	resolveDeploymentStateMetadata,
+	validateDeploymentStateMetadata,
+	type DeploymentStateContext,
+} from "./deploymentState.js"
 import { log } from "./log.js"
 
 export type FacetInfo = {
@@ -79,18 +86,22 @@ export async function deployLibraries(): Promise<Record<string, string>> {
 	return libraries
 }
 
-export async function deployFacets(outputFile?: string): Promise<{ facets: Record<string, FacetInfo>; selectorSignatures: Record<string, string> }> {
+export async function deployFacets(
+	outputFile?: string,
+	stateContext?: DeploymentStateContext,
+): Promise<{ facets: Record<string, FacetInfo>; selectorSignatures: Record<string, string> }> {
+	const metadata = outputFile ? await resolveDeploymentStateMetadata(stateContext) : undefined
 	// Load previously deployed facets/libraries to resume after failures
 	let partial: { libraries?: Record<string, string>; facets?: Record<string, FacetInfo>; selectorSignatures?: Record<string, string> } = {}
 	if (outputFile && fs.existsSync(outputFile)) {
 		try {
-			partial = JSON.parse(fs.readFileSync(outputFile, "utf-8"))
+			partial = loadDeploymentState(outputFile, metadata)
 			const deployed = Object.keys(partial.facets ?? {})
 			if (deployed.length > 0) {
 				log.info(`Resuming: ${deployed.length}/${FacetNames.length} facets already deployed`)
 			}
-		} catch {
-			partial = {}
+		} catch (error) {
+			throw new Error(`Failed to load deployed facets state from ${outputFile}: ${(error as Error).message}`)
 		}
 	}
 
@@ -102,7 +113,7 @@ export async function deployFacets(outputFile?: string): Promise<{ facets: Recor
 		if (!outputFile) return
 		const dir = outputFile.substring(0, outputFile.lastIndexOf("/"))
 		if (dir && !fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
-		fs.writeFileSync(outputFile, JSON.stringify({ libraries, facets, selectorSignatures }, null, 2))
+		saveDeploymentState(outputFile, { libraries, facets, selectorSignatures }, metadata)
 	}
 
 	// Deploy or reuse libraries
@@ -908,11 +919,18 @@ export function buildUpgradeTransactions(
 // Facet loading
 // =============================================================================
 
-export function loadDeployedFacets(filePath: string): DeployedFacets {
+export function loadDeployedFacets(filePath: string, stateContext?: DeploymentStateContext): DeployedFacets {
 	if (!fs.existsSync(filePath)) {
 		throw new Error(`Deployed facets file not found: ${filePath}\nRun deployFacets.ts first, or set FACETS_FILE to a valid path.`)
 	}
 	const data = JSON.parse(fs.readFileSync(filePath, "utf-8")) as DeployedFacets
+	if (stateContext) {
+		validateDeploymentStateMetadata(filePath, data as unknown as Record<string, any>, {
+			networkName: stateContext.networkName,
+			chainId: stateContext.chainId,
+			diamondAddress: stateContext.diamondAddress,
+		})
+	}
 	log.ok(`Loaded ${Object.keys(data.facets).length} facets from ${filePath}`)
 	return data
 }

@@ -2,6 +2,7 @@ import fs from "fs"
 import path from "path"
 
 import { ethers } from "../../../test/helpers/hardhat-connection.js"
+import { validateDeploymentStateMetadata } from "./deploymentState.js"
 import { log } from "./log.js"
 
 /**
@@ -65,7 +66,7 @@ export async function runPreflight(networkName: string | undefined, ctx: Preflig
 		push(await checkSignatureVerifierHasCode(ctx.signatureVerifierAddress))
 		push(await checkSubgraphReachable(ctx.subgraphEndpoint))
 	}
-	push(checkStaleStateFiles(ctx.diamondAddress, ctx.stateFiles ?? []))
+	push(checkStaleStateFiles(baseName, ctx.expectedChainId, ctx.diamondAddress, ctx.stateFiles ?? []))
 
 	const failures = results.filter(r => !r.ok)
 	if (failures.length > 0) {
@@ -159,21 +160,25 @@ async function checkSubgraphReachable(endpoint?: string): Promise<CheckResult> {
  * otherwise skip deployment and apply a cut referencing addresses that have no
  * code on the current chain (we hit exactly this during fork-arbitrum testing).
  */
-function checkStaleStateFiles(diamondAddress: string | undefined, files: string[]): CheckResult {
+function checkStaleStateFiles(
+	networkName: string | undefined,
+	expectedChainId: number | undefined,
+	diamondAddress: string | undefined,
+	files: string[],
+): CheckResult {
 	if (!diamondAddress) return { name: "No stale state files", ok: true, message: "no diamondAddress to check against" }
 	const stale: string[] = []
 	for (const file of files) {
 		if (!fs.existsSync(file)) continue
 		try {
 			const data = JSON.parse(fs.readFileSync(file, "utf-8"))
-			const recorded = (data?.diamondAddress as string | undefined) ?? (data?.diamond as string | undefined)
-			if (recorded && recorded.toLowerCase() !== diamondAddress.toLowerCase()) {
-				stale.push(`${path.basename(file)} references ${recorded} but current diamond is ${diamondAddress}`)
-			}
-		} catch {
-			// File exists but isn't JSON we can validate — skip rather than error,
-			// since an unreadable file may be partial/corrupt from a prior crash
-			// and the running script will replace it anyway.
+			validateDeploymentStateMetadata(file, data, {
+				networkName,
+				chainId: expectedChainId,
+				diamondAddress,
+			})
+		} catch (error) {
+			stale.push(`${path.basename(file)}: ${(error as Error).message}`)
 		}
 	}
 	if (stale.length > 0) {
