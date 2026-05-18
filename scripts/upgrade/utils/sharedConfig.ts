@@ -7,6 +7,7 @@ import fs from "fs"
 export type UpgradeConfigShared = {
 	diamondAddress?: string
 	protocolAdmin?: string
+	upgradeOperator?: string
 	safeAddress?: string
 
 	migrationRunner?: string
@@ -15,7 +16,7 @@ export type UpgradeConfigShared = {
 	symmioFeeReceiver?: string
 	instantLayerAddress?: string
 	accountLayerDiamondAddress?: string
-	newV085Parameters?: { symbolType?: number }
+	newV085Parameters?: { symbolType?: number; signatureVerifierAddress?: string }
 }
 
 const CONFIG_DIR = "./scripts/upgrade/config"

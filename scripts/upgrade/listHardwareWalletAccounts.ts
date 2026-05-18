@@ -12,9 +12,9 @@
  *   HW_WALLET=ledger LEDGER_SCAN=true npx hardhat run scripts/upgrade/listHardwareWalletAccounts.ts --network coti
  *
  * Env overrides:
- *   EXPECTED_ADDRESS      Address to match (defaults to protocolAdmin, or migrationRunner when HARDWARE_ROLE=migrationRunner)
- *   HARDWARE_ROLE         protocolAdmin or migrationRunner (defaults to protocolAdmin)
- *   HARDWARE_ENV_PREFIX   Env prefix for role-specific vars (defaults to PROTOCOL_ADMIN or MIGRATION_RUNNER)
+ *   EXPECTED_ADDRESS      Address to match (defaults to protocolAdmin, upgradeOperator, or migrationRunner by HARDWARE_ROLE)
+ *   HARDWARE_ROLE         protocolAdmin, upgradeOperator, or migrationRunner (defaults to protocolAdmin)
+ *   HARDWARE_ENV_PREFIX   Env prefix for role-specific vars (defaults to PROTOCOL_ADMIN, UPGRADE_OPERATOR, or MIGRATION_RUNNER)
  *   LEDGER_PATH           Known path, if already known
  *   LEDGER_PATHS          Comma-separated extra paths to scan first
  *   LEDGER_ACCOUNT_COUNT  Ledger Live account count to scan (default 10)
@@ -28,9 +28,18 @@ async function main() {
 	const networkSuffix = baseNetworkName(connection.networkName)
 	const shared = loadUpgradeConfigShared(networkSuffix)
 	const role = process.env.HARDWARE_ROLE ?? "protocolAdmin"
-	const expectedAddress = process.env.EXPECTED_ADDRESS ?? (role === "migrationRunner" ? shared.migrationRunner : shared.protocolAdmin)
+	const expectedAddress =
+		process.env.EXPECTED_ADDRESS ??
+		(role === "migrationRunner" ? shared.migrationRunner : role === "upgradeOperator" ? shared.upgradeOperator : shared.protocolAdmin)
 	const envPrefix =
-		process.env.HARDWARE_ENV_PREFIX ?? (role === "migrationRunner" ? "MIGRATION_RUNNER" : role === "protocolAdmin" ? "PROTOCOL_ADMIN" : undefined)
+		process.env.HARDWARE_ENV_PREFIX ??
+		(role === "migrationRunner"
+			? "MIGRATION_RUNNER"
+			: role === "upgradeOperator"
+				? "UPGRADE_OPERATOR"
+				: role === "protocolAdmin"
+					? "PROTOCOL_ADMIN"
+					: undefined)
 
 	await printHardwareWalletDiscovery({
 		expectedAddress,

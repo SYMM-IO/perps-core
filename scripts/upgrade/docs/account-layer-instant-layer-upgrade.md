@@ -12,7 +12,7 @@ AccountLayer and InstantLayer are **entirely new in v0.8.5** -- they don't exist
 
 Contains 8 exported functions:
 
-#### `deployAccountLayerDiamond(adminAddress, symmioFeeReceiver, stateFile?)`
+#### `deployAccountLayerDiamond(protocolAdmin, symmioFeeReceiver, stateFile?)`
 
 Deploys the AccountLayer Diamond from scratch:
 
@@ -21,28 +21,29 @@ Deploys the AccountLayer Diamond from scratch:
 3. **Init contract** -- `contracts/accountLayer/Init.sol:Init`
 4. **LibQuoteParams library** -- needed by CoreFacet
 5. **7 facets:**
-   - CoreFacet (linked to LibQuoteParams)
-   - MarginFacet
-   - SymmioHookFacet
-   - ControlFacet
-   - ViewFacet
-   - AffiliateFacet
-   - DiamondLoupeFacet
+    - CoreFacet (linked to LibQuoteParams)
+    - MarginFacet
+    - SymmioHookFacet
+    - ControlFacet
+    - ViewFacet
+    - AffiliateFacet
+    - DiamondLoupeFacet
 6. **Diamond cut** -- adds all 7 facets in chunks of 3. The first chunk includes the Init call: `init(admin, symmioFeeReceiver, accountManagerBytecode)`. The AccountManager bytecode is read from `contracts/accountLayer/AccountManager.sol:AccountManager` -- it's stored in the diamond for later CREATE2 deployment when affiliates register.
 
-The Init grants the admin: `DEFAULT_ADMIN_ROLE`, `SETTER_ROLE`, `APPROVER_ROLE`, `PAUSER_ROLE`, `UNPAUSER_ROLE`.
+The Init grants `protocolAdmin`: `DEFAULT_ADMIN_ROLE`, `SETTER_ROLE`, `APPROVER_ROLE`, `PAUSER_ROLE`, `UNPAUSER_ROLE`.
 
 Resume-safe via `stateFile` -- each deployed contract is saved immediately. If the script crashes mid-way, re-running picks up from where it left off.
 
-#### `deployInstantLayer(symmioAddress, adminAddress, stateFile?)`
+#### `deployInstantLayer(symmioAddress, protocolAdmin, stateFile?)`
 
-Deploys a single `InstantLayer` contract. Constructor args: `(symmioAddress, admin)`. The constructor grants admin `DEFAULT_ADMIN_ROLE` and `SETTER_ROLE`.
+Deploys a single `InstantLayer` contract. Constructor args: `(symmioAddress, protocolAdmin)`. The constructor grants `protocolAdmin` `DEFAULT_ADMIN_ROLE` and `SETTER_ROLE`.
 
 #### `wireAccountLayerInstantLayer(diamondAddress, alDiamondAddress, ilAddress, adminSigner)`
 
 Executes all the integration wiring. This is the critical part -- without this, the contracts exist but can't talk to each other.
 
 **On core Diamond (via ControlFacet):**
+
 - `grantRole(admin, INTEGRATION_ADMIN_ROLE)` -- needed for registerHook
 - `grantRole(accountLayer, SIGNER_ADMIN_ROLE)` -- AL can manage signers
 - `grantRole(accountLayer, AFFILIATE_MANAGER_ROLE)` -- AL can manage affiliates
@@ -51,10 +52,12 @@ Executes all the integration wiring. This is the critical part -- without this, 
 - `registerHook(address(0), accountLayer)` -- registers AL as system hook for all quotes (address(0) = global hook)
 
 **On AccountLayer Diamond (via its ControlFacet):**
+
 - `grantRole(instantLayer, SIGNER_SETTER_ROLE)` -- IL can call setSigner during operation execution
 - `setWhitelistedSymmioCore(diamond, true)` -- affiliates can only register with whitelisted cores
 
 **On InstantLayer:**
+
 - `setAccountLayer(accountLayer)` -- IL knows where AL lives
 - `setTargetWhitelist(diamond, true)` -- operations can call diamond
 - `setTargetWhitelist(accountLayer, true)` -- operations can call AL
@@ -64,6 +67,7 @@ Executes all the integration wiring. This is the critical part -- without this, 
 Adds three templates:
 
 **InstantOpen (4 ops):**
+
 ```
 0. addMarginToNextVA                 -> no injection
 1. sendQuote                         -> returns quoteId
@@ -72,12 +76,14 @@ Adds three templates:
 ```
 
 **InstantClose (2 ops):**
+
 ```
 0. requestToClosePosition(quoteId, ...)
 1. fillCloseRequest(quoteId, ...)
 ```
 
 **InstantCloseWithAllocation (3 ops):**
+
 ```
 0. (independent)
 1. (independent)
@@ -86,7 +92,7 @@ Adds three templates:
 
 The piping is defined by `sourceIndices`, `insertionPoints`, and `sourceOffsets` arrays on each operation. These tell InstantLayer which return value from which previous operation to inject into which calldata offset.
 
-#### `buildWiringTransactions(diamondAddress, alDiamondAddress, ilAddress, adminAddress, partyBsForDiamond?, partyBsForInstantLayer?)`
+#### `buildWiringTransactions(diamondAddress, alDiamondAddress, ilAddress, protocolAdmin, partyBsForDiamond?, partyBsForInstantLayer?)`
 
 For the Safe path. Returns an array of `{ to, value, calldata, description }` objects -- the same wiring as `wireAccountLayerInstantLayer` but as raw calldata instead of executed transactions. These get appended to the Safe batch JSON.
 
@@ -101,6 +107,7 @@ Deploys a single `SymmioSymbolManager` contract. Constructor args: `(diamondAddr
 #### `wireSymbolManager(diamondAddress, symbolManagerAddress, adminSigner)`
 
 Grants two roles on the core Diamond to the SymbolManager (EOA path):
+
 - `grantRole(symbolManager, SYMBOL_MANAGER_ROLE)` -- allows symbol CRUD (addSymbols, setSymbolValidationState, setSymbolTradingFee, etc.)
 - `grantRole(symbolManager, FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE)` -- allows setForceCloseGapRatio
 
@@ -114,10 +121,10 @@ For the Safe path. Returns an array of `WiringTransaction` objects -- the same t
 
 New step 9 between "set v0.8.5 parameters" and "verify upgrade":
 
-1. Reads `symmioFeeReceiver` from config (defaults to admin address)
+1. Reads `symmioFeeReceiver` from config (defaults to `protocolAdmin`)
 2. Deploys AL diamond using `signers[0]` (anyone can deploy)
 3. Deploys IL using `signers[0]`
-4. Wires everything using the impersonated admin signer
+4. Wires everything using the impersonated `protocolAdmin` signer
 5. Sets up templates (unless `setupInstantLayerTemplates: false`)
 6. Saves addresses to `output/deployed-accountlayer-instantlayer.json`
 
@@ -127,7 +134,9 @@ The impersonated admin is used for wiring because only the diamond owner can cal
 
 New step 6 for AL + IL (migration role grant moved to step 9). New step 8 deploys SymmioSymbolManager and wires it (grants SYMBOL_MANAGER_ROLE + FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE on core Diamond).
 
-Same as fork but uses the connected EOA signer for both deployment and wiring.
+For deploy-only stages (`UPGRADE_STAGES=deploy`, or `facets,peripherals`), the script uses the default deployer signer as the gas payer. Deployed peripherals are initialized with `protocolAdmin`, `newV085Parameters.signatureVerifierAddress` is written back to `upgrade-{network}.json`, and AccountLayer ownership transfer is initiated to `protocolAdmin`.
+
+After deploy-only stages, run `acceptAccountLayerOwnership.ts` with the `protocolAdmin` signer. For the operator path, run `UPGRADE_STAGES=operator-grant` with `protocolAdmin`, then run role-based stages with `UPGRADE_SIGNER_ROLE=upgradeOperator`. The `cut` stage remains owner-only and must still be run by `protocolAdmin`. After migration, run `UPGRADE_STAGES=operator-revoke` with `protocolAdmin`; `protocolAdmin` should be the only remaining `DEFAULT_ADMIN_ROLE` holder.
 
 ### `generateSafeBatch.ts` (Safe multisig)
 
@@ -135,8 +144,8 @@ For Safe, the contracts must be deployed separately first (Safe can't deploy con
 
 ```json
 {
-  "accountLayerDiamondAddress": "0x...",
-  "instantLayerAddress": "0x..."
+	"accountLayerDiamondAddress": "0x...",
+	"instantLayerAddress": "0x..."
 }
 ```
 
@@ -151,6 +160,7 @@ SymbolManager wiring is independent -- if `symbolManagerAddress` is resolved (fr
 Added optional `signerOverride` parameter. Previously it always used `ethers.provider.getSigner()` which returns `signers[0]` -- fine for EOA path but wrong for fork path where the admin is an impersonated signer. Now `forkUpgrade.ts` passes the impersonated admin.
 
 This also fixed the **parameter gap** -- `forkUpgrade.ts` previously had an inline implementation that only handled 3 of 9 parameters (maxPartyAConnectionLimit, settlementCooldown, deallocateDebounceTime). Now it uses the shared `setV085Parameters` which handles all 9:
+
 - maxPartyAConnectionLimit
 - signatureVerifierAddress
 - liquidationInsuranceVault + maxLiquidationProfitPerPosition
@@ -164,12 +174,15 @@ This also fixed the **parameter gap** -- `forkUpgrade.ts` previously had an inli
 
 New fields in `upgrade-{network}.json`:
 
-| Field | Used by | Purpose |
-|-------|---------|---------|
-| `symmioFeeReceiver` | fork, EOA | Fee receiver address for AccountLayer Init. Defaults to admin. |
-| `setupInstantLayerTemplates` | fork, EOA | Whether to add OpenPosition/ClosePosition templates. Default: true. |
-| `accountLayerDiamondAddress` | Safe | Pre-deployed AccountLayer address for wiring. |
-| `instantLayerAddress` | Safe | Pre-deployed InstantLayer address for wiring. |
+| Field                        | Used by              | Purpose                                                                                                                                  |
+| ---------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `protocolAdmin`              | EOA, fork, Safe      | Permanent admin/current owner. For EOA-owned chains this can be a hardware wallet.                                                       |
+| `upgradeOperator`            | EOA operational flow | Optional temporary executor for scoped work; revoke all roles before unpause.                                                            |
+| `migrationRunner`            | EOA, Safe            | Address that runs migration; usually the `upgradeOperator`, but can be separate.                                                         |
+| `symmioFeeReceiver`          | fork, EOA            | Fee receiver address for AccountLayer Init. `deployPeripherals.ts` requires it; EOA deploy stages fall back to `protocolAdmin` if empty. |
+| `setupInstantLayerTemplates` | fork, EOA            | Whether to add OpenPosition/ClosePosition templates. Default: true.                                                                      |
+| `accountLayerDiamondAddress` | Safe                 | Pre-deployed AccountLayer address for wiring.                                                                                            |
+| `instantLayerAddress`        | Safe                 | Pre-deployed InstantLayer address for wiring.                                                                                            |
 
 ## Execution Order
 
@@ -194,9 +207,9 @@ The full fork rehearsal flow is now:
 16. Verify upgrade integrity (pre vs post snapshot)
 17. Grant MIGRATION_ROLE
 --- then separately ---
-16. prepareMigrationInput.ts
-17. runMigration.ts
-18. generatePostMigrationBatch.ts (unpause + enable cross mode)
+18. prepareMigrationInput.ts + fetchSymbolList.ts before pause in the production runbook
+19. runMigration.ts + setSymbolType.ts after diamondCut
+20. generatePostMigrationBatch.ts (role cleanup + unpause + enable cross mode)
 ```
 
 ## SymmioPartyB Handling

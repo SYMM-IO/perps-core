@@ -75,10 +75,10 @@ npx hardhat run scripts/upgrade/verifyPeripherals.ts --network localhost
 FORK=true npx hardhat run scripts/upgrade/testTemplateExecution.ts --network localhost
 ```
 
-| Script | What it checks |
-|--------|---------------|
-| `verifyDiamond.ts` | All v0.8.5 facet selectors registered on diamond |
-| `verifyPeripherals.ts` | AccountLayer + InstantLayer roles, hooks, whitelist, templates |
+| Script                     | What it checks                                                                                                                               |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `verifyDiamond.ts`         | All v0.8.5 facet selectors registered on diamond                                                                                             |
+| `verifyPeripherals.ts`     | AccountLayer + InstantLayer roles, hooks, whitelist, templates                                                                               |
 | `testTemplateExecution.ts` | Full trade flow via InstantLayer template (sendQuote -> lockQuote -> openPosition) with EIP-712 signatures, delegation, and result injection |
 
 ### Step 2: Prepare migration input
@@ -120,15 +120,18 @@ Facet deployment uses `signers[0]` (anyone can deploy contracts). Only `diamondC
 Migration input is fetched from the Goldsky stage subgraph, not scanned on-chain. This is much faster (a few HTTP requests vs thousands of RPC calls).
 
 **Queries used:**
+
 - `quotes(where: { quoteStatus_in: [0, 1, 2, 4, 5, 6] })` -- quotes needing migration (PENDING, LOCKED, CANCEL_PENDING, OPENED, CLOSE_PENDING, CANCEL_CLOSE_PENDING)
 - `latestAccountBalances(where: { accountType: "PARTY_B", counterParty_not: null })` -- partyB-per-partyA balance entries
 
 **Validation against on-chain (`validateMigrationInput.ts`):**
+
 - Boundary check: max subgraph quoteId must not exceed on-chain `getNextQuoteId()` (which returns the last assigned ID)
 - Quote spot-check: random sample of quotes verified against `getQuote()` on-chain (status, partyA, partyB, symbolId)
 - Balance spot-check: random sample of partyB allocated balances verified against `allocatedBalanceOfPartyB()` on-chain
 
 **Edge case validation (`validateMigrationEdgeCases.ts`):** Particularly important on forks where the subgraph indexes the live chain beyond the fork block:
+
 - Boundary quote: verifies the quote at `lastId` is included if it has a migratable status
 - Fork drift: ensures no quoteIds exceed on-chain `lastId` (the subgraph may have quotes created after the fork block)
 - Gap scan: scans first and last N quotes on-chain, flags active quotes missing from input
@@ -152,70 +155,71 @@ Config files support network-postfixed names (e.g. `upgrade-arbitrum.json`). Scr
 
 ### Upgrade config (`upgrade.json`)
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `diamondAddress` | string | -- | Diamond proxy address on the target network |
-| `adminAddress` | string | `""` | Address that receives role grants |
-| `safeAddress` | string | `""` | Gnosis Safe address (optional, for Safe path) |
-| `migrationRunner` | string | `""` | Address granted MIGRATION_ROLE (defaults to adminAddress) |
-| `diamondCutChunkSize` | number | `1000` | Max facet cuts per transaction |
-| `symmioFeeReceiver` | string | `""` | Fee receiver for AccountLayer Init (defaults to admin) |
-| `setupInstantLayerTemplates` | boolean | `true` | Setup OpenPosition/ClosePosition templates on InstantLayer |
-| `newV085Parameters` | object | -- | New v0.8.5 parameters to initialize (see below) |
+| Field                        | Type    | Default | Description                                                                          |
+| ---------------------------- | ------- | ------- | ------------------------------------------------------------------------------------ |
+| `diamondAddress`             | string  | --      | Diamond proxy address on the target network                                          |
+| `protocolAdmin`              | string  | `""`    | Permanent protocol admin/current owner to impersonate on the fork                    |
+| `upgradeOperator`            | string  | `""`    | Optional temporary scoped executor for EOA operational rehearsals                    |
+| `safeAddress`                | string  | `""`    | Gnosis Safe address (optional, for Safe path)                                        |
+| `migrationRunner`            | string  | `""`    | Address granted `MIGRATION_ROLE`; usually the `upgradeOperator`, but can be separate |
+| `diamondCutChunkSize`        | number  | `1000`  | Max facet cuts per transaction                                                       |
+| `symmioFeeReceiver`          | string  | `""`    | Fee receiver for AccountLayer Init (defaults to `protocolAdmin` in fork rehearsal)   |
+| `setupInstantLayerTemplates` | boolean | `true`  | Setup OpenPosition/ClosePosition templates on InstantLayer                           |
+| `newV085Parameters`          | object  | --      | New v0.8.5 parameters to initialize (see below)                                      |
 
 ### Upgrade env var overrides
 
-| Env var | Overrides |
-|---------|-----------|
-| `DIAMOND_ADDRESS` | `diamondAddress` |
-| `ADMIN_ADDRESS` | `adminAddress` |
-| `DIAMOND_CUT_CHUNK_SIZE` | `diamondCutChunkSize` |
-| `SUBGRAPH_ENDPOINT` | `subgraphEndpoint` |
-| `UPGRADE_CONFIG_FILE` | Config file path (default: `scripts/upgrade/config/upgrade-{network}.json`, falls back to `upgrade.json`) |
+| Env var                            | Overrides                                                                                                 |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `DIAMOND_ADDRESS`                  | `diamondAddress`                                                                                          |
+| `PROTOCOL_ADMIN` / `ADMIN_ADDRESS` | `protocolAdmin`                                                                                           |
+| `DIAMOND_CUT_CHUNK_SIZE`           | `diamondCutChunkSize`                                                                                     |
+| `SUBGRAPH_ENDPOINT`                | `subgraphEndpoint`                                                                                        |
+| `UPGRADE_CONFIG_FILE`              | Config file path (default: `scripts/upgrade/config/upgrade-{network}.json`, falls back to `upgrade.json`) |
 
 ### Prepare migration config (`prepareMigration.json`)
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `diamondAddress` | string | -- | Diamond proxy address |
-| `subgraphEndpoint` | string | Goldsky stage | Subgraph GraphQL endpoint |
-| `spotCheckCount` | number | `20` | Number of quotes/balances to spot-check |
-| `outputDir` | string | `scripts/upgrade/output` | Output directory |
-| `outputFile` | string | `scripts/upgrade/output/migration-input.json` | Output file path |
+| Field              | Type   | Default                                       | Description                             |
+| ------------------ | ------ | --------------------------------------------- | --------------------------------------- |
+| `diamondAddress`   | string | --                                            | Diamond proxy address                   |
+| `subgraphEndpoint` | string | Goldsky stage                                 | Subgraph GraphQL endpoint               |
+| `spotCheckCount`   | number | `20`                                          | Number of quotes/balances to spot-check |
+| `outputDir`        | string | `scripts/upgrade/output`                      | Output directory                        |
+| `outputFile`       | string | `scripts/upgrade/output/migration-input.json` | Output file path                        |
 
 ### Prepare migration env var overrides
 
-| Env var | Overrides |
-|---------|-----------|
-| `DIAMOND_ADDRESS` | `diamondAddress` |
-| `SUBGRAPH_ENDPOINT` | `subgraphEndpoint` |
-| `SPOT_CHECK_COUNT` | `spotCheckCount` |
-| `PREPARE_OUTPUT_FILE` | `outputFile` |
+| Env var                         | Overrides                                                                                                                   |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `DIAMOND_ADDRESS`               | `diamondAddress`                                                                                                            |
+| `SUBGRAPH_ENDPOINT`             | `subgraphEndpoint`                                                                                                          |
+| `SPOT_CHECK_COUNT`              | `spotCheckCount`                                                                                                            |
+| `PREPARE_OUTPUT_FILE`           | `outputFile`                                                                                                                |
 | `PREPARE_MIGRATION_CONFIG_FILE` | Config file path (default: `scripts/upgrade/config/prepareMigration-{network}.json`, falls back to `prepareMigration.json`) |
 
 ### Migration config (`migrate.json`)
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `diamondAddress` | string | -- | Diamond proxy address |
-| `migrationInputFile` | string | -- | Path to validated input JSON (required) |
-| `chunkSize` | number | `50` | Items per migration transaction (quotes and partyAs) |
-| `dryRun` | boolean | `false` | Log operations without executing |
-| `fork` | boolean | `false` | Impersonate diamond owner instead of using deployer signer |
-| `skipPreCheck` | boolean | `false` | Skip on-chain pre-flight checks (faster, may send no-op transactions) |
-| `progressFile` | string | `scripts/upgrade/output/migration-progress.json` | Resume file path |
-| `reportFile` | string | `scripts/upgrade/output/migration-report.json` | Report file path |
+| Field                | Type    | Default                                          | Description                                                           |
+| -------------------- | ------- | ------------------------------------------------ | --------------------------------------------------------------------- |
+| `diamondAddress`     | string  | --                                               | Diamond proxy address                                                 |
+| `migrationInputFile` | string  | --                                               | Path to validated input JSON (required)                               |
+| `chunkSize`          | number  | `50`                                             | Items per migration transaction (quotes and partyAs)                  |
+| `dryRun`             | boolean | `false`                                          | Log operations without executing                                      |
+| `fork`               | boolean | `false`                                          | Impersonate diamond owner instead of using deployer signer            |
+| `skipPreCheck`       | boolean | `false`                                          | Skip on-chain pre-flight checks (faster, may send no-op transactions) |
+| `progressFile`       | string  | `scripts/upgrade/output/migration-progress.json` | Resume file path                                                      |
+| `reportFile`         | string  | `scripts/upgrade/output/migration-report.json`   | Report file path                                                      |
 
 ### Migration env var overrides
 
-| Env var | Overrides |
-|---------|-----------|
-| `DIAMOND_ADDRESS` | `diamondAddress` |
-| `MIGRATION_INPUT_FILE` | `migrationInputFile` |
-| `MIGRATE_CHUNK_SIZE` | `chunkSize` |
-| `DRY_RUN` | `dryRun` |
-| `FORK` | `fork` |
-| `SKIP_PRE_CHECK` | `skipPreCheck` |
+| Env var                 | Overrides                                                                                                 |
+| ----------------------- | --------------------------------------------------------------------------------------------------------- |
+| `DIAMOND_ADDRESS`       | `diamondAddress`                                                                                          |
+| `MIGRATION_INPUT_FILE`  | `migrationInputFile`                                                                                      |
+| `MIGRATE_CHUNK_SIZE`    | `chunkSize`                                                                                               |
+| `DRY_RUN`               | `dryRun`                                                                                                  |
+| `FORK`                  | `fork`                                                                                                    |
+| `SKIP_PRE_CHECK`        | `skipPreCheck`                                                                                            |
 | `MIGRATION_CONFIG_FILE` | Config file path (default: `scripts/upgrade/config/migrate-{network}.json`, falls back to `migrate.json`) |
 
 ## newV085Parameters
@@ -223,9 +227,11 @@ Config files support network-postfixed names (e.g. `upgrade-arbitrum.json`). Scr
 These are parameters that **only exist in v0.8.5** (not in v0.8.4 storage). After `diamondCut`, they default to 0 and must be initialized.
 
 **Must-set (blocks migration if 0):**
+
 - `maxPartyAConnectionLimit` -- migration calls `addConnection()` which checks this limit
 
 **Should-set (needed for v0.8.5 features to work):**
+
 - `signatureVerifierAddress` -- Muon signature verifier contract
 - `liquidationInsuranceVault` + `maxLiquidationProfitPerPosition` -- insurance vault config
 - `softLiquidationPenaltyCollector` -- soft liquidation penalty receiver

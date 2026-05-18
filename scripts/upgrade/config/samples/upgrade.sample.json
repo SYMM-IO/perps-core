@@ -1,6 +1,7 @@
 {
 	"diamondAddress": "0x...",
 	"protocolAdmin": "0x...",
+	"upgradeOperator": "0x...",
 	"safeAddress": "0x...",
 	"migrationRunner": "0x...",
 	"timelockAddress": "",
