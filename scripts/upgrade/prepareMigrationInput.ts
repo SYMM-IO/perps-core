@@ -37,6 +37,8 @@ const DEFAULT_SUBGRAPH_ENDPOINT = "https://api.goldsky.com/api/public/project_cm
 type PrepareConfig = {
 	diamondAddress?: string
 	subgraphEndpoint?: string
+	subgraphEndpoints?: string[]
+	subgraphPageSize?: number
 	spotCheckCount?: number
 	outputFile?: string
 	outputDir?: string
@@ -58,6 +60,7 @@ type PrepareReport = {
 	durationMs?: number
 	diamondAddress?: string
 	subgraphEndpoint?: string
+	subgraphEndpoints?: string[]
 	steps: StepResult[]
 	error?: string
 }
@@ -105,6 +108,22 @@ function toBigInt(value: unknown): bigint {
 	return BigInt((value as any).toString())
 }
 
+function parseOptionalPositiveInt(value: unknown): number | undefined {
+	if (value === undefined || value === null || value === "") return undefined
+	const parsed = Number(value)
+	if (!Number.isInteger(parsed) || parsed <= 0) {
+		throw new Error(`Expected positive integer, got: ${value}`)
+	}
+	return parsed
+}
+
+function parseStringList(value: unknown): string[] | undefined {
+	if (value === undefined || value === null || value === "") return undefined
+	const items = Array.isArray(value) ? value : String(value).split(",")
+	const parsed = items.map(item => String(item).trim()).filter(Boolean)
+	return parsed.length > 0 ? parsed : undefined
+}
+
 async function main() {
 	const scriptTimer = log.timer()
 	await verifyRpc()
@@ -116,7 +135,14 @@ async function main() {
 	const config = loadConfig(networkSuffix)
 	const shared = loadUpgradeConfigShared(networkSuffix)
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress ?? shared.diamondAddress
-	const SUBGRAPH_ENDPOINT = process.env.SUBGRAPH_ENDPOINT || config.subgraphEndpoint || shared.subgraphEndpoint || DEFAULT_SUBGRAPH_ENDPOINT
+	const SUBGRAPH_ENDPOINTS =
+		parseStringList(process.env.SUBGRAPH_ENDPOINTS) ??
+		parseStringList(process.env.SUBGRAPH_ENDPOINT) ??
+		parseStringList(config.subgraphEndpoints) ??
+		parseStringList(config.subgraphEndpoint) ??
+		parseStringList(shared.subgraphEndpoints) ??
+		parseStringList(shared.subgraphEndpoint) ?? [DEFAULT_SUBGRAPH_ENDPOINT]
+	const SUBGRAPH_PAGE_SIZE = parseOptionalPositiveInt(process.env.SUBGRAPH_PAGE_SIZE ?? config.subgraphPageSize)
 	const outputDir = process.env.PREPARE_OUTPUT_DIR ?? config.outputDir ?? "./scripts/upgrade/output"
 	const outputFile = process.env.PREPARE_OUTPUT_FILE ?? config.outputFile ?? `${outputDir}/${withSuffix("migration-input")}`
 	const reportFile = `${outputDir}/${withSuffix("prepareMigrationInput-report")}`
@@ -141,21 +167,28 @@ async function main() {
 			throw new Error(`Invalid DIAMOND_ADDRESS: ${DIAMOND_ADDRESS}`)
 		}
 		report.diamondAddress = DIAMOND_ADDRESS
-		report.subgraphEndpoint = SUBGRAPH_ENDPOINT
+		report.subgraphEndpoint = SUBGRAPH_ENDPOINTS[0]
+		report.subgraphEndpoints = SUBGRAPH_ENDPOINTS
 		report.steps.push({ name: "validate_inputs", status: "ok", details: { diamondAddress: DIAMOND_ADDRESS } })
 		currentStep = null
 		tryWriteReport(reportFile, report)
 
 		log.header("Prepare Migration Input")
 		log.kv("Diamond", log.addr(DIAMOND_ADDRESS))
-		log.kv("Subgraph", SUBGRAPH_ENDPOINT)
+		if (SUBGRAPH_ENDPOINTS.length === 1) {
+			log.kv("Subgraph", SUBGRAPH_ENDPOINTS[0])
+		} else {
+			log.kv("Subgraphs", `${SUBGRAPH_ENDPOINTS.length} endpoints`)
+			SUBGRAPH_ENDPOINTS.forEach((endpoint, i) => log.detail(`${i + 1}. ${endpoint}`))
+		}
+		if (SUBGRAPH_PAGE_SIZE) log.kv("Subgraph page size", String(SUBGRAPH_PAGE_SIZE))
 
 		log.setSteps(3)
 
 		// Step 1: Fetch open quotes from subgraph
 		let t = log.step("Fetch open quotes from subgraph")
 		currentStep = "fetch_open_quotes"
-		const quotesResult = await fetchOpenQuotes(SUBGRAPH_ENDPOINT)
+		const quotesResult = await fetchOpenQuotes(SUBGRAPH_ENDPOINTS, SUBGRAPH_PAGE_SIZE)
 		log.stats([
 			["Open quotes", quotesResult.quotes.length],
 			["Unique partyAs", quotesResult.partyAs.length],
@@ -168,6 +201,8 @@ async function main() {
 				quotesCount: quotesResult.quotes.length,
 				partyAsCount: quotesResult.partyAs.length,
 				partyBsCount: quotesResult.partyBs.length,
+				pageSize: SUBGRAPH_PAGE_SIZE ?? "default",
+				endpointsCount: SUBGRAPH_ENDPOINTS.length,
 			},
 		})
 		currentStep = null
@@ -254,7 +289,8 @@ async function main() {
 		const output = {
 			generatedAt: new Date().toISOString(),
 			diamondAddress: DIAMOND_ADDRESS,
-			subgraphEndpoint: SUBGRAPH_ENDPOINT,
+			subgraphEndpoint: SUBGRAPH_ENDPOINTS[0],
+			subgraphEndpoints: SUBGRAPH_ENDPOINTS,
 			validation: {
 				onChainLastQuoteId: onChainLastQuoteId.toString(),
 				maxSubgraphQuoteId: maxSubgraphQuoteId.toString(),

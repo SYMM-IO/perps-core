@@ -12,6 +12,7 @@ export type UpgradeConfigShared = {
 
 	migrationRunner?: string
 	subgraphEndpoint?: string
+	subgraphEndpoints?: string[]
 	spotCheckCount?: number
 	symmioFeeReceiver?: string
 	instantLayerAddress?: string
