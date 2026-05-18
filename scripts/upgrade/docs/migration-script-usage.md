@@ -40,7 +40,7 @@ Key features:
 
 ## Step 1: Prepare Migration Input
 
-Fetches data from the subgraph, validates the boundary against on-chain `getNextQuoteId()` (which returns the last assigned ID, not next available), and writes a JSON file. **Can run before or after the diamondCut** — no v0.8.5-specific ABIs are used.
+Fetches data from the subgraph, validates the boundary against on-chain `getNextQuoteId()` (which returns the last assigned ID, not next available), and writes a JSON file. Quote pagination uses `quoteId` and filters open/migratable statuses locally to avoid slow subgraph `quoteStatus_in` queries. **Can run before or after the diamondCut** — no v0.8.5-specific ABIs are used.
 
 ```bash
 USE_KEYSTORE=true npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network mantle
@@ -50,11 +50,16 @@ Output: `scripts/upgrade/output/migration-input.json`
 
 ### Env vars
 
-| Env var               | Default                                       | Description               |
-| --------------------- | --------------------------------------------- | ------------------------- |
-| `DIAMOND_ADDRESS`     | from `upgrade.json`                           | Diamond proxy address     |
-| `SUBGRAPH_ENDPOINT`   | from `upgrade.json`                           | Subgraph GraphQL endpoint |
-| `PREPARE_OUTPUT_FILE` | `scripts/upgrade/output/migration-input.json` | Output file path          |
+| Env var                    | Default                                       | Description                                                               |
+| -------------------------- | --------------------------------------------- | ------------------------------------------------------------------------- |
+| `DIAMOND_ADDRESS`          | from `upgrade.json`                           | Diamond proxy address                                                     |
+| `SUBGRAPH_ENDPOINT`        | from `upgrade.json`                           | Subgraph GraphQL endpoint                                                 |
+| `SUBGRAPH_ENDPOINTS`       | --                                            | Comma-separated fallback subgraph endpoints tried before each retry wait  |
+| `SUBGRAPH_PAGE_SIZE`       | `1000`                                        | Subgraph pagination size. Use `500` or `250` if the endpoint returns 504. |
+| `SUBGRAPH_MAX_RETRIES`     | `5`                                           | Number of retries per subgraph request before reducing page size/failing  |
+| `SUBGRAPH_RETRY_DELAY_MS`  | `2000`                                        | Base retry delay in milliseconds                                          |
+| `SUBGRAPH_TIMEOUT_MS`      | `60000`                                       | Per-request timeout in milliseconds                                       |
+| `PREPARE_OUTPUT_FILE`      | `scripts/upgrade/output/migration-input.json` | Output file path                                                          |
 
 ## Step 1b: Validate Migration Input (optional)
 

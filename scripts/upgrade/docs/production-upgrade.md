@@ -768,7 +768,7 @@ USE_KEYSTORE=true npx hardhat run scripts/upgrade/fetchSymbolList.ts --network a
 
 What it does:
 
-- Fetches all open quotes from the subgraph
+- Fetches quotes from the subgraph by `quoteId` and filters open/migratable statuses locally
 - Fetches all PartyB-per-PartyA balance entries from the subgraph
 - Validates boundary against on-chain `getNextQuoteId()` (returns last assigned ID, not next available)
 - Computes expected aggregated positions for post-migration verification
@@ -939,6 +939,7 @@ The migration report includes:
 | `timelockAddress`            | string  | `""`    | **TimeLock** contract address -- set if diamond is owned by a timelock (used by `generateTimelockBatch.ts`)                                                                               |
 | `diamondCutChunkSize`        | number  | `1000`  | Max facet selector changes per `diamondCut` transaction (increase only if hitting gas limits)                                                                                             |
 | `subgraphEndpoint`           | string  | `""`    | Goldsky / TheGraph subgraph URL for this chain (used by `prepareMigrationInput.ts`)                                                                                                       |
+| `subgraphEndpoints`          | string[] | `[]`    | Optional ordered fallback list of subgraph endpoints. Used by `prepareMigrationInput.ts` when set.                                                                                        |
 | `spotCheckCount`             | number  | `20`    | Number of random quotes/balances to verify against on-chain state during migration prep                                                                                                   |
 | `symmioFeeReceiver`          | string  | `""`    | **Fees MultiSig** -- receives protocol fees in AccountLayer. `deployPeripherals.ts` requires this; `eoaUpgrade.ts` deploy stages fall back to `protocolAdmin` if empty.                   |
 | `setupInstantLayerTemplates` | boolean | `true`  | Whether to register OpenPosition + ClosePosition templates on InstantLayer                                                                                                                |
@@ -959,11 +960,13 @@ Note: `protocolAdmin` here is the admin for the **newly deployed** MuonSignature
 
 ### Prepare migration config (`prepareMigration-{network}.json`)
 
-| Field            | Type   | What to put here                                                                                |
-| ---------------- | ------ | ----------------------------------------------------------------------------------------------- |
-| `spotCheckCount` | number | Number of random entries to verify against on-chain (default 20). Falls back to `upgrade.json`. |
-| `outputDir`      | string | Output directory (default `./scripts/upgrade/output`)                                           |
-| `outputFile`     | string | Output file path (default `./scripts/upgrade/output/migration-input.json`)                      |
+| Field               | Type     | What to put here                                                                                              |
+| ------------------- | -------- | ------------------------------------------------------------------------------------------------------------- |
+| `subgraphEndpoints` | string[] | Optional ordered fallback list of subgraph endpoints. The script tries each endpoint before waiting/retrying. |
+| `subgraphPageSize`  | number   | Optional subgraph page size. Lower this (for example `500` or `250`) if the gateway returns 504.              |
+| `spotCheckCount`    | number   | Number of random entries to verify against on-chain (default 20). Falls back to `upgrade.json`.               |
+| `outputDir`         | string   | Output directory (default `./scripts/upgrade/output`)                                                         |
+| `outputFile`        | string   | Output file path (default `./scripts/upgrade/output/migration-input.json`)                                    |
 
 ### Migration config (`migrate-{network}.json`)
 
@@ -994,6 +997,12 @@ Note: `protocolAdmin` here is the admin for the **newly deployed** MuonSignature
 | `SYMBOL_MANAGER_ADDRESS`                                                           | Override SymmioSymbolManager address for Safe batch wiring                                                                                                                 |
 | `NETWORK`                                                                          | Network name for `ts-node` scripts (e.g. `arbitrum`) -- resolves output file names. Not needed for `npx hardhat run` scripts (uses `--network` flag automatically)         |
 | `UPGRADE_CONFIG_FILE`                                                              | Config file path (default: `scripts/upgrade/config/upgrade-{network}.json`, falls back to `upgrade.json`)                                                                  |
+| `SUBGRAPH_ENDPOINTS`                                                               | Comma-separated ordered fallback list of subgraph endpoints. Each retry cycle tries all endpoints before sleeping.                                                         |
+| `SUBGRAPH_PAGE_SIZE`                                                               | Page size for subgraph pagination in migration/symbol fetchers. Use a smaller value if the endpoint returns 504.                                                           |
+| `SUBGRAPH_MIN_PAGE_SIZE`                                                           | Minimum page size for automatic retry page splitting. Defaults to `100`.                                                                                                   |
+| `SUBGRAPH_MAX_RETRIES`                                                             | Number of retries per subgraph request before reducing page size or failing. Defaults to `5`.                                                                              |
+| `SUBGRAPH_RETRY_DELAY_MS`                                                          | Base retry delay in milliseconds. Delay increases linearly by attempt. Defaults to `2000`.                                                                                |
+| `SUBGRAPH_TIMEOUT_MS`                                                              | Per-request subgraph timeout in milliseconds. Defaults to `60000`.                                                                                                        |
 | `HARDWARE_WALLET_RPC_URL` / `HW_WALLET_RPC_URL` / `EXTERNAL_WALLET_RPC_URL`        | External wallet RPC that exposes the hardware-wallet account for signer resolution                                                                                         |
 | `PROTOCOL_ADMIN_RPC_URL` / `UPGRADE_OPERATOR_RPC_URL` / `MIGRATION_RUNNER_RPC_URL` | Role-specific external wallet RPCs; these take precedence for the matching role                                                                                            |
 | `HW_WALLET=ledger` / `HARDWARE_WALLET=ledger`                                      | Enable direct Ledger signer support                                                                                                                                        |
@@ -1016,7 +1025,7 @@ All chain-specific config files support network-postfixed names (e.g. `upgrade-a
 | ---------------------------------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
 | `upgrade-{network}.json`           | `eoaUpgrade.ts`, `applyUpgrade.ts`, `generateSafeBatch.ts`, `generateTimelockBatch.ts` | `protocolAdmin`, `upgradeOperator`, `timelockAddress`, `newV085Parameters`, `diamondCutChunkSize`, `migrationRunner` | -- (source of truth)                                   |
 | `deployPeripherals-{network}.json` | `deployPeripherals.ts`                                                                 | `protocolAdmin`                                                                                                      | `diamondAddress`, `symmioFeeReceiver`, `safeAddress`   |
-| `prepareMigration-{network}.json`  | `prepareMigrationInput.ts`                                                             | `outputDir`, `outputFile`                                                                                            | `diamondAddress`, `subgraphEndpoint`, `spotCheckCount` |
+| `prepareMigration-{network}.json`  | `prepareMigrationInput.ts`                                                             | `subgraphEndpoints`, `subgraphPageSize`, `outputDir`, `outputFile`                                                    | `diamondAddress`, `subgraphEndpoint`, `spotCheckCount` |
 | `migrate-{network}.json`           | `runMigration.ts`                                                                      | `migrationInputFile`, `chunkSize`, `dryRun`, `fork`                                                                  | `diamondAddress`                                       |
 | `postMigration-{network}.json`     | `generatePostMigrationBatch.ts`                                                        | `partyBs`                                                                                                            | `diamondAddress`, `safeAddress`                        |
 | `partyBList-{network}.json`        | `whitelistSymbolTypes.ts`                                                              | `partyBs`                                                                                                            | `diamondAddress`, `newV085Parameters.symbolType`       |

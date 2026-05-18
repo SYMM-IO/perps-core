@@ -1,3 +1,5 @@
 {
+	"subgraphEndpoints": [],
+	"subgraphPageSize": 500,
 	"spotCheckCount": 20
 }
