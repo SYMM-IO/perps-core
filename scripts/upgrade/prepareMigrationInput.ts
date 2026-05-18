@@ -135,8 +135,7 @@ async function main() {
 	const config = loadConfig(networkSuffix)
 	const shared = loadUpgradeConfigShared(networkSuffix)
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress ?? shared.diamondAddress
-	const SUBGRAPH_ENDPOINTS =
-		parseStringList(process.env.SUBGRAPH_ENDPOINTS) ??
+	const SUBGRAPH_ENDPOINTS = parseStringList(process.env.SUBGRAPH_ENDPOINTS) ??
 		parseStringList(process.env.SUBGRAPH_ENDPOINT) ??
 		parseStringList(config.subgraphEndpoints) ??
 		parseStringList(config.subgraphEndpoint) ??

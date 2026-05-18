@@ -1,5 +1,6 @@
 import {
 	AbstractSigner,
+	Interface,
 	Signature,
 	Transaction,
 	copyRequest,
@@ -15,6 +16,11 @@ import {
 	type TypedDataDomain,
 	type TypedDataField,
 } from "ethers"
+import fs from "node:fs"
+import { createRequire } from "node:module"
+import path from "node:path"
+import { stdin as input, stdout as output } from "node:process"
+import { createInterface } from "node:readline/promises"
 
 import { ethers } from "../../../test/helpers/hardhat-connection.js"
 import { log } from "./log.js"
@@ -38,6 +44,73 @@ type HardwareDiscoveryOptions = {
 }
 
 const EXTERNAL_RPC_ENV_NAMES = ["HARDWARE_WALLET_RPC_URL", "HW_WALLET_RPC_URL", "EXTERNAL_WALLET_RPC_URL"]
+const requireFromProject = createRequire(`${process.cwd()}/package.json`)
+const EXPLORER_TX_URL_BY_CHAIN_ID: Record<string, string> = {
+	"56": "https://bscscan.com/tx/",
+	"137": "https://polygonscan.com/tx/",
+	"999": "https://hyperevmscan.io/tx/",
+	"1101": "https://zkevm.polygonscan.com/tx/",
+	"5000": "https://mantlescan.xyz/tx/",
+	"8453": "https://basescan.org/tx/",
+	"8822": "https://explorer.evm.iota.org/tx/",
+	"34443": "https://modescan.io/tx/",
+	"42161": "https://arbiscan.io/tx/",
+	"81457": "https://blastscan.io/tx/",
+	"146": "https://sonicscan.org/tx/",
+	"9745": "https://plasmascan.to/tx/",
+	"80094": "https://berascan.com/tx/",
+	"2632500": "https://mainnet.cotiscan.io/tx/",
+}
+const KNOWN_ROLE_NAMES = [
+	"DEFAULT_ADMIN_ROLE",
+	"PAUSER_ROLE",
+	"UNPAUSER_ROLE",
+	"PROTOCOL_CONFIG_ROLE",
+	"COOLDOWN_ADMIN_ROLE",
+	"FEE_ADMIN_ROLE",
+	"INTEGRATION_ADMIN_ROLE",
+	"PARTY_B_MANAGER_ROLE",
+	"MIGRATION_ROLE",
+	"SYMBOL_MANAGER_ROLE",
+	"FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE",
+	"SETTER_ROLE",
+	"OPERATOR_ROLE",
+	"REVOKER_ROLE",
+	"TRUSTED_ROLE",
+	"MANAGER_ROLE",
+	"SIGNER_ADMIN_ROLE",
+	"AFFILIATE_MANAGER_ROLE",
+	"BALANCE_SETTLER_ROLE",
+	"INSTANT_LAYER_ROLE",
+	"SIGNER_SETTER_ROLE",
+]
+const ROLE_NAME_BY_HASH = new Map<string, string>([
+	[ethers.ZeroHash.toLowerCase(), "DEFAULT_ADMIN_ROLE (0x00)"],
+	...KNOWN_ROLE_NAMES.map(name => [ethers.id(name).toLowerCase(), name] as const),
+])
+
+type CalldataDecoder = {
+	iface: Interface
+	source: string
+}
+
+type DecodedArgument = {
+	index: number
+	name: string
+	type: string
+	value: unknown
+	decoded?: string
+}
+
+type DecodedCalldata = {
+	function: string
+	name: string
+	selector: string
+	abiSource: string
+	arguments: DecodedArgument[]
+}
+
+let calldataDecoders: CalldataDecoder[] | undefined
 
 function optionalEnvNames(envPrefix: string | undefined, suffix: string): string[] {
 	return envPrefix ? [`${envPrefix}_${suffix}`] : []
@@ -107,14 +180,16 @@ function wantsLedger(envPrefix?: string): boolean {
 	return false
 }
 
-async function dynamicImport(moduleName: string): Promise<any> {
-	const importer = new Function("moduleName", "return import(moduleName)") as (moduleName: string) => Promise<any>
-	return importer(moduleName)
-}
-
 async function loadLedgerModules(): Promise<LedgerModules> {
 	try {
-		const [transportModule, ethModule] = await Promise.all([dynamicImport("@ledgerhq/hw-transport-node-hid"), dynamicImport("@ledgerhq/hw-app-eth")])
+		// Avoid the USB event binding from the main transport; plain HID is enough for scripted signing.
+		let transportModule
+		try {
+			transportModule = requireFromProject("@ledgerhq/hw-transport-node-hid-noevents")
+		} catch {
+			transportModule = requireFromProject("@ledgerhq/hw-transport-node-hid")
+		}
+		const ethModule = requireFromProject("@ledgerhq/hw-app-eth")
 		return {
 			transport: transportModule.default ?? transportModule,
 			eth: ethModule.default ?? ethModule,
@@ -186,6 +261,177 @@ function ledgerV(value: string | number): bigint | number {
 	return parsed <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(parsed) : parsed
 }
 
+function isLockedDeviceError(error: unknown): boolean {
+	const err = error as { statusText?: string; id?: string; statusCode?: number; message?: string }
+	return err.statusText === "LOCKED_DEVICE" || err.id === "LockedDevice" || err.statusCode === 0x5515 || /locked device/i.test(err.message ?? "")
+}
+
+function formatOptionalBigInt(value: bigint | null): string {
+	return value == null ? "(none)" : value.toString()
+}
+
+function formatTxData(data: string): string {
+	if (!data || data === "0x") return "0x"
+	return data
+}
+
+function artifactFiles(dir: string): string[] {
+	if (!fs.existsSync(dir)) return []
+	const files: string[] = []
+	for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+		const fullPath = path.join(dir, entry.name)
+		if (entry.isDirectory()) files.push(...artifactFiles(fullPath))
+		else if (entry.isFile() && entry.name.endsWith(".json") && !entry.name.endsWith(".dbg.json")) files.push(fullPath)
+	}
+	return files
+}
+
+function loadCalldataDecoders(): CalldataDecoder[] {
+	if (calldataDecoders) return calldataDecoders
+
+	const root = path.resolve(process.cwd(), "artifacts/contracts")
+	calldataDecoders = []
+	for (const file of artifactFiles(root)) {
+		try {
+			const artifact = JSON.parse(fs.readFileSync(file, "utf-8")) as { abi?: unknown[] }
+			if (!Array.isArray(artifact.abi) || !artifact.abi.some(item => (item as { type?: string }).type === "function")) continue
+			calldataDecoders.push({
+				iface: new ethers.Interface(artifact.abi),
+				source: path.relative(process.cwd(), file),
+			})
+		} catch {
+			// Ignore malformed or non-standard artifact files; this is best-effort review output.
+		}
+	}
+	return calldataDecoders
+}
+
+function formatDecodedValue(value: unknown): unknown {
+	if (typeof value === "bigint") return value.toString()
+	if (typeof value === "string") return ethers.isAddress(value) ? ethers.getAddress(value) : value
+	if (Array.isArray(value)) return value.map(formatDecodedValue)
+	if (value && typeof value === "object") {
+		const entries = Object.entries(value).filter(([key]) => Number.isNaN(Number(key)))
+		if (entries.length === 0) return String(value)
+		return Object.fromEntries(entries.map(([key, item]) => [key, formatDecodedValue(item)]))
+	}
+	return value
+}
+
+function roleNameFor(inputName: string, inputType: string, value: unknown): string | undefined {
+	if (inputType !== "bytes32" || typeof value !== "string") return undefined
+	if (inputName.toLowerCase() !== "role" && !inputName.toLowerCase().endsWith("role")) return undefined
+	return ROLE_NAME_BY_HASH.get(value.toLowerCase())
+}
+
+function decodeCalldata(data: string): DecodedCalldata | undefined {
+	if (!data || data === "0x" || data.length < 10) return undefined
+	const selector = data.slice(0, 10)
+	for (const decoder of loadCalldataDecoders()) {
+		try {
+			const parsed = decoder.iface.parseTransaction({ data, value: 0 })
+			if (!parsed) continue
+			return {
+				function: parsed.signature,
+				name: parsed.name,
+				selector,
+				abiSource: decoder.source,
+				arguments: parsed.fragment.inputs.map((input, index) => {
+					const value = formatDecodedValue(parsed.args[index])
+					const arg: DecodedArgument = {
+						index,
+						name: input.name || `arg${index}`,
+						type: input.type,
+						value,
+					}
+					const roleName = roleNameFor(arg.name, input.type, value)
+					if (roleName) arg.decoded = roleName
+					return arg
+				}),
+			}
+		} catch {
+			// Try the next artifact; selectors are matched by Interface.parseTransaction.
+		}
+	}
+	return undefined
+}
+
+async function promptLedger(action: string): Promise<void> {
+	log.warn(`Unlock Ledger and open the Ethereum app, then review and approve ${action} on the device.`)
+	if (!input.isTTY || process.env.LEDGER_CONFIRM_PROMPT === "false") return
+
+	const rl = createInterface({ input, output })
+	try {
+		await rl.question("Press Enter when the Ledger is unlocked and ready...")
+	} finally {
+		rl.close()
+	}
+}
+
+async function withLedgerPrompt<T>(action: string, run: () => Promise<T>): Promise<T> {
+	for (let attempt = 1; ; attempt++) {
+		await promptLedger(action)
+		try {
+			return await run()
+		} catch (error) {
+			if (!isLockedDeviceError(error) || attempt >= 3) throw error
+			log.warn("Ledger is still locked. Unlock it and try again.")
+		}
+	}
+}
+
+function logLedgerTransactionReview(path: string, signerAddress: string | undefined, tx: Transaction): void {
+	const data = formatTxData(tx.data)
+	const decoded = decodeCalldata(data)
+	log.header("Ledger Transaction Review")
+	log.kv("Ledger path", path)
+	if (signerAddress) log.kv("Expected signer", log.addr(signerAddress))
+	log.kv("Chain ID", tx.chainId.toString())
+	log.kv("Nonce", tx.nonce.toString())
+	log.kv("To", tx.to ?? "(contract creation)")
+	log.kv("Value", tx.value.toString())
+	log.kv("Type", tx.type === null ? "(legacy/default)" : tx.type.toString())
+	log.kv("Gas limit", tx.gasLimit.toString())
+	log.kv("Gas price", formatOptionalBigInt(tx.gasPrice))
+	log.kv("Max fee per gas", formatOptionalBigInt(tx.maxFeePerGas))
+	log.kv("Max priority fee", formatOptionalBigInt(tx.maxPriorityFeePerGas))
+	log.kv("Data bytes", String(data === "0x" ? 0 : (data.length - 2) / 2))
+	log.kv("Selector", data.length >= 10 ? data.slice(0, 10) : "(none)")
+	log.kv("Unsigned hash", tx.unsignedHash)
+	log.info("Decoded calldata:")
+	if (decoded) log.info(JSON.stringify(decoded, null, 2))
+	else log.info(data === "0x" ? "(empty calldata)" : "(no local ABI match found)")
+	log.info("Calldata:")
+	log.info(data)
+}
+
+function logLedgerMessageReview(path: string, signerAddress: string | undefined, message: string | Uint8Array): void {
+	const bytes = typeof message === "string" ? getBytes(ethers.toUtf8Bytes(message)) : getBytes(message)
+	log.header("Ledger Message Review")
+	log.kv("Ledger path", path)
+	if (signerAddress) log.kv("Expected signer", log.addr(signerAddress))
+	log.kv("Bytes", String(bytes.length))
+	log.kv("Message hex", hexlify(bytes))
+	if (typeof message === "string") {
+		log.info("Message text:")
+		log.info(message)
+	}
+}
+
+function explorerTxUrl(chainId: bigint, hash: string): string | undefined {
+	const prefix = EXPLORER_TX_URL_BY_CHAIN_ID[chainId.toString()]
+	return prefix ? `${prefix}${hash}` : undefined
+}
+
+async function logSubmittedTransaction(provider: Provider, response: TransactionResponse): Promise<void> {
+	const network = await provider.getNetwork()
+	const url = explorerTxUrl(network.chainId, response.hash)
+	log.header("Transaction Submitted")
+	log.kv("Hash", response.hash)
+	if (url) log.kv("Explorer", url)
+	else log.kv("Explorer", `(no explorer configured for chain ${network.chainId.toString()})`)
+}
+
 class LedgerSigner extends AbstractSigner<Provider> {
 	private cachedAddress?: string
 
@@ -193,19 +439,31 @@ class LedgerSigner extends AbstractSigner<Provider> {
 		private readonly path: string,
 		provider: Provider,
 		private readonly app: any,
+		expectedAddress?: string,
 	) {
 		super(provider)
+		this.cachedAddress = expectedAddress ? ethers.getAddress(expectedAddress) : undefined
 	}
 
 	connect(provider: null | Provider): Signer {
 		if (!provider) throw new Error("LedgerSigner requires a provider")
-		return new LedgerSigner(this.path, provider, this.app)
+		return new LedgerSigner(this.path, provider, this.app, this.cachedAddress)
 	}
 
 	async getAddress(): Promise<string> {
 		if (this.cachedAddress) return this.cachedAddress
 		const result = await this.app.getAddress(this.path, false)
 		const address = ethers.getAddress(result.address)
+		this.cachedAddress = address
+		return address
+	}
+
+	private async verifyLedgerAddress(): Promise<string> {
+		const result = await this.app.getAddress(this.path, false)
+		const address = ethers.getAddress(result.address)
+		if (this.cachedAddress && address.toLowerCase() !== this.cachedAddress.toLowerCase()) {
+			throw new Error(`Ledger path ${this.path} returned ${address}, expected ${this.cachedAddress}`)
+		}
 		this.cachedAddress = address
 		return address
 	}
@@ -220,7 +478,7 @@ class LedgerSigner extends AbstractSigner<Provider> {
 		if (to != null) request.to = to
 		if (from != null) request.from = from
 		if (request.from != null) {
-			const signerAddress = await this.getAddress()
+			const signerAddress = this.cachedAddress ?? (await this.getAddress())
 			if (ethers.getAddress(String(request.from)) !== signerAddress) {
 				throw new Error(`Transaction from address mismatch: ${request.from} is not ${signerAddress}`)
 			}
@@ -228,7 +486,11 @@ class LedgerSigner extends AbstractSigner<Provider> {
 		}
 
 		const txObj = Transaction.from(request as TransactionLike<string>)
-		const signature = await this.app.signTransaction(this.path, txObj.unsignedSerialized.slice(2))
+		logLedgerTransactionReview(this.path, this.cachedAddress, txObj)
+		const signature = await withLedgerPrompt("this transaction", async () => {
+			await this.verifyLedgerAddress()
+			return this.app.signTransaction(this.path, txObj.unsignedSerialized.slice(2), null)
+		})
 		txObj.signature = Signature.from({
 			r: ensureHex(signature.r),
 			s: ensureHex(signature.s),
@@ -238,13 +500,18 @@ class LedgerSigner extends AbstractSigner<Provider> {
 	}
 
 	async sendTransaction(tx: TransactionRequest): Promise<TransactionResponse> {
-		log.warn("Waiting for Ledger confirmation. Review the transaction on the device.")
-		return super.sendTransaction(tx)
+		const response = await super.sendTransaction(tx)
+		await logSubmittedTransaction(this.provider, response)
+		return response
 	}
 
 	async signMessage(message: string | Uint8Array): Promise<string> {
 		const bytes = typeof message === "string" ? getBytes(ethers.toUtf8Bytes(message)) : getBytes(message)
-		const signature = await this.app.signPersonalMessage(this.path, hexlify(bytes).slice(2))
+		logLedgerMessageReview(this.path, this.cachedAddress, message)
+		const signature = await withLedgerPrompt("this message", async () => {
+			await this.verifyLedgerAddress()
+			return this.app.signPersonalMessage(this.path, hexlify(bytes).slice(2))
+		})
 		return Signature.from({
 			r: ensureHex(signature.r),
 			s: ensureHex(signature.s),
@@ -259,7 +526,7 @@ class LedgerSigner extends AbstractSigner<Provider> {
 
 async function openLedgerApp(): Promise<any> {
 	const modules = await loadLedgerModules()
-	const transport = await modules.transport.create()
+	const transport = typeof modules.transport.open === "function" ? await modules.transport.open(undefined) : await modules.transport.create()
 	return new modules.eth(transport)
 }
 
@@ -267,6 +534,12 @@ async function resolveLedgerSigner(expectedAddress: string, envPrefix?: string):
 	if (!wantsLedger(envPrefix)) return undefined
 
 	const app = await openLedgerApp()
+	const explicitPath = configuredLedgerPath(envPrefix)
+	if (explicitPath) {
+		log.ok(`Resolved ${log.addr(expectedAddress)} from configured Ledger path ${explicitPath}`)
+		return new LedgerSigner(explicitPath, ethers.provider, app, expectedAddress)
+	}
+
 	const paths = buildLedgerCandidatePaths(envPrefix)
 	log.info(`Scanning Ledger derivation paths (${paths.length}) for ${log.addr(expectedAddress)}...`)
 
@@ -275,7 +548,7 @@ async function resolveLedgerSigner(expectedAddress: string, envPrefix?: string):
 		const address = ethers.getAddress(result.address)
 		if (matchesAddress(address, expectedAddress)) {
 			log.ok(`Resolved ${log.addr(expectedAddress)} from Ledger path ${path}`)
-			return new LedgerSigner(path, ethers.provider, app)
+			return new LedgerSigner(path, ethers.provider, app, address)
 		}
 	}
 
