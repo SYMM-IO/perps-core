@@ -19,6 +19,7 @@
  */
 import { verifyContract } from "@nomicfoundation/hardhat-verify/verify"
 import fs from "fs"
+import type { VerificationProvidersConfig } from "hardhat/types/config"
 import path from "path"
 
 // Import to initialize the hardhat connection (needed for auto-detect)
@@ -74,6 +75,8 @@ type ContractToVerify = {
 	libraries: Record<string, string> // FQN → address for --libraries-path
 	contract?: string // --contract flag for CLI
 }
+
+type VerificationProviderName = keyof VerificationProvidersConfig
 
 // ============================================================================
 // Helpers
@@ -377,7 +380,22 @@ const isTransient = (msg: string) =>
 const MAX_ATTEMPTS = 3
 const RETRY_DELAY_MS = 8000
 
-async function runVerify(c: ContractToVerify): Promise<"verified" | "already" | "failed"> {
+const VERIFICATION_PROVIDERS = new Set<VerificationProviderName>(["etherscan", "blockscout", "sourcify"])
+
+function resolveVerificationProvider(networkName: string): VerificationProviderName | undefined {
+	const explicitProvider = process.env.VERIFY_PROVIDER ?? process.env.VERIFICATION_PROVIDER
+	if (explicitProvider) {
+		if (!VERIFICATION_PROVIDERS.has(explicitProvider as VerificationProviderName)) {
+			throw new Error(`Invalid VERIFY_PROVIDER=${explicitProvider}; expected etherscan, blockscout, or sourcify`)
+		}
+		return explicitProvider as VerificationProviderName
+	}
+
+	if (networkName === "coti") return "blockscout"
+	return undefined
+}
+
+async function runVerify(c: ContractToVerify, provider?: VerificationProviderName): Promise<"verified" | "already" | "failed"> {
 	let lastErr: any
 	for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
 		try {
@@ -387,6 +405,7 @@ async function runVerify(c: ContractToVerify): Promise<"verified" | "already" | 
 					constructorArgs: c.constructorArgs,
 					libraries: c.libraries,
 					contract: c.contract,
+					provider,
 				},
 				hre as any,
 				() => {}, // suppress internal console.log
@@ -421,6 +440,8 @@ async function main() {
 
 	const networkName = connection.networkName
 	if (!networkName) throw new Error("Could not determine network name. Make sure to pass --network <name>.")
+	const verificationProvider = resolveVerificationProvider(networkName)
+	if (verificationProvider) log.info(`Verification provider: ${verificationProvider}`)
 	CONFIG_FILE = resolveConfigFile("upgrade", networkName, process.env.UPGRADE_CONFIG_FILE)
 
 	const FACETS_FILE = path.join(OUTPUT_DIR, `deployed-facets-${networkName}.json`)
@@ -495,7 +516,7 @@ async function main() {
 		const libInfo = libCount > 0 ? ` (${libCount} libs)` : ""
 		log.info(`[${idx}/${skip + contracts.length}] ${c.name} at ${c.address}${libInfo}`)
 
-		const result = await runVerify(c)
+		const result = await runVerify(c, verificationProvider)
 		switch (result) {
 			case "verified":
 				verified++

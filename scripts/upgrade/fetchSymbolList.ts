@@ -1,8 +1,8 @@
 /**
  * Fetch symbols from the subgraph and write the input file for setSymbolType.ts.
  *
- * Run before setSymbolType.ts — run during the pause window to capture any
- * symbols added during the timelock delay.
+ * Run before pause, then use the generated file during the migration window
+ * when setSymbolType.ts backfills symbolType.
  *
  * Run:
  *   npx hardhat run scripts/upgrade/fetchSymbolList.ts --network <network>

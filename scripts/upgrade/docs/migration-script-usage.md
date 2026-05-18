@@ -11,11 +11,13 @@ Migration is a three-step process:
 3. **Run migration** (`runMigration.ts`) -- executes migration using the validated input, then verifies results on-chain. **Requires v0.8.5 (after diamondCut).**
 
 The low-level migration logic lives in `scripts/upgrade/migrate.ts`, which handles:
+
 - Migrating quotes to populate aggregated positions
 - Backfilling PartyA <-> PartyB connections for active positions (`connectedPartyBs` / `isConnectedPartyB`)
 - Migrating partyB balances to the master bucket
 
 Key features:
+
 - **Automatic resume** - If interrupted, continues from where it left off
 - **Retry with backoff** - Failed transactions are retried automatically
 - **Dry run mode** - Test without executing transactions
@@ -25,13 +27,16 @@ Key features:
 ## Prerequisites
 
 **For `prepareMigrationInput.ts` and `validateMigrationInput.ts`:**
-1. The system should be globally paused (to prevent state drift between subgraph and migration)
+
+1. For production, prepare the migration input before pause to keep the maintenance window short. Run it as close to pause as practical, then validate it; if validation reports drift, rerun preparation.
 2. Diamond can be v0.8.4 or v0.8.5 — both scripts are version-agnostic
 
 **For `runMigration.ts`:**
+
 1. The upgrade (diamondCut) must already be applied (v0.8.5)
-2. The executor address must have `MIGRATION_ROLE` granted
+2. The configured `migrationRunner` must have `MIGRATION_ROLE` granted
 3. `maxPartyAConnectionLimit` must be set (defaults to 0 after upgrade, which blocks `addConnection()`)
+4. The system should be paused before executing migration transactions.
 
 ## Step 1: Prepare Migration Input
 
@@ -45,11 +50,11 @@ Output: `scripts/upgrade/output/migration-input.json`
 
 ### Env vars
 
-| Env var | Default | Description |
-|---------|---------|-------------|
-| `DIAMOND_ADDRESS` | from `upgrade.json` | Diamond proxy address |
-| `SUBGRAPH_ENDPOINT` | from `upgrade.json` | Subgraph GraphQL endpoint |
-| `PREPARE_OUTPUT_FILE` | `scripts/upgrade/output/migration-input.json` | Output file path |
+| Env var               | Default                                       | Description               |
+| --------------------- | --------------------------------------------- | ------------------------- |
+| `DIAMOND_ADDRESS`     | from `upgrade.json`                           | Diamond proxy address     |
+| `SUBGRAPH_ENDPOINT`   | from `upgrade.json`                           | Subgraph GraphQL endpoint |
+| `PREPARE_OUTPUT_FILE` | `scripts/upgrade/output/migration-input.json` | Output file path          |
 
 ## Step 1b: Validate Migration Input (optional)
 
@@ -64,15 +69,16 @@ USE_KEYSTORE=true npx hardhat run scripts/upgrade/validateMigrationInput.ts --ne
 ```
 
 What it checks:
+
 - **Boundary**: max input quoteId must not exceed on-chain `getNextQuoteId()` (last assigned ID)
 - **Quote spot-check**: random sample of quotes verified via raw `eth_call` + manual ABI decoding
 - **Balance spot-check**: random sample of partyB allocated balances verified via `allocatedBalanceOfPartyB()`
 
-| Env var | Default | Description |
-|---------|---------|-------------|
-| `DIAMOND_ADDRESS` | from `upgrade.json` | Diamond proxy address |
-| `MIGRATION_INPUT_FILE` | `scripts/upgrade/output/migration-input.json` | Input file to validate |
-| `SPOT_CHECK_COUNT` | `20` | Number of quotes/balances to spot-check |
+| Env var                | Default                                       | Description                             |
+| ---------------------- | --------------------------------------------- | --------------------------------------- |
+| `DIAMOND_ADDRESS`      | from `upgrade.json`                           | Diamond proxy address                   |
+| `MIGRATION_INPUT_FILE` | `scripts/upgrade/output/migration-input.json` | Input file to validate                  |
+| `SPOT_CHECK_COUNT`     | `20`                                          | Number of quotes/balances to spot-check |
 
 ### `validateMigrationEdgeCases.ts` -- deterministic corner cases
 
@@ -83,23 +89,27 @@ USE_KEYSTORE=true npx hardhat run scripts/upgrade/validateMigrationEdgeCases.ts 
 ```
 
 What it checks:
+
 - **Boundary quote**: verifies the quote at `lastId` is included if it has a migratable status
 - **Fork drift**: ensures no quoteIds exceed on-chain `lastId`
 - **Gap scan**: scans first and last N quotes on-chain, flags active quotes missing from input
 - **PartyB completeness**: checks for empty `partyAs` arrays and duplicate partyB entries
 - **PENDING quotes**: samples PENDING quotes to verify zero-address partyB
 
-| Env var | Default | Description |
-|---------|---------|-------------|
-| `DIAMOND_ADDRESS` | from `upgrade.json` | Diamond proxy address |
-| `MIGRATION_INPUT_FILE` | `scripts/upgrade/output/migration-input.json` | Input file to validate |
-| `GAP_SCAN_RANGE` | `50` | Number of quotes to scan from each end (head + tail) |
+| Env var                | Default                                       | Description                                          |
+| ---------------------- | --------------------------------------------- | ---------------------------------------------------- |
+| `DIAMOND_ADDRESS`      | from `upgrade.json`                           | Diamond proxy address                                |
+| `MIGRATION_INPUT_FILE` | `scripts/upgrade/output/migration-input.json` | Input file to validate                               |
+| `GAP_SCAN_RANGE`       | `50`                                          | Number of quotes to scan from each end (head + tail) |
 
 ## Step 2: Run Migration
 
 Takes the validated input file and runs migration + verification. Any failure halts immediately. The migration report is always printed before exiting, even on failure.
 
+On production networks, `runMigration.ts` resolves the signer from `upgrade-{network}.json` `migrationRunner`. If that address is a hardware wallet or external wallet, expose it with `MIGRATION_RUNNER_RPC_URL` or the generic `HARDWARE_WALLET_RPC_URL`; direct Ledger scanning also works with `HW_WALLET=ledger LEDGER_SCAN=true` or a known `LEDGER_PATH`.
+
 Built-in verification (step 4/4) checks:
+
 - `isQuoteMigrated()` for every quoteId — quotes with non-migratable on-chain status (CANCELED, CLOSED, etc.) are skipped, matching the contract's behavior
 - `isCrossLockedValuesMigrated()` for every partyB-partyA pair
 - Cross locked values sum matches per-partyA values
@@ -120,30 +130,33 @@ Copy and edit the sample config:
 cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/migrate.json
 ```
 
-| Field | Default | Description |
-|-------|---------|-------------|
-| `migrationInputFile` | -- | Path to validated input JSON (required) |
-| `chunkSize` | `50` | Items per migration transaction (quotes and partyAs) |
-| `dryRun` | `false` | Log operations without executing |
-| `fork` | `false` | Impersonate diamond owner instead of using deployer signer |
-| `skipPreCheck` | `false` | Skip on-chain pre-flight checks for already-migrated items (faster, may send no-op transactions) |
-| `progressFile` | `scripts/upgrade/output/migration-progress.json` | Resume file path |
-| `reportFile` | `scripts/upgrade/output/migration-report.json` | Report file path |
-| `outputDir` | `scripts/upgrade/output` | Output directory |
+| Field                | Default                                          | Description                                                                                      |
+| -------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `migrationInputFile` | --                                               | Path to validated input JSON (required)                                                          |
+| `chunkSize`          | `50`                                             | Items per migration transaction (quotes and partyAs)                                             |
+| `dryRun`             | `false`                                          | Log operations without executing                                                                 |
+| `fork`               | `false`                                          | Impersonate diamond owner instead of using deployer signer                                       |
+| `skipPreCheck`       | `false`                                          | Skip on-chain pre-flight checks for already-migrated items (faster, may send no-op transactions) |
+| `progressFile`       | `scripts/upgrade/output/migration-progress.json` | Resume file path                                                                                 |
+| `reportFile`         | `scripts/upgrade/output/migration-report.json`   | Report file path                                                                                 |
+| `outputDir`          | `scripts/upgrade/output`                         | Output directory                                                                                 |
 
 ### Env var overrides
 
-| Env var | Overrides |
-|---------|-----------|
-| `DIAMOND_ADDRESS` | `diamondAddress` |
-| `MIGRATION_INPUT_FILE` | `migrationInputFile` |
-| `MIGRATE_CHUNK_SIZE` | `chunkSize` |
-| `DRY_RUN` | `dryRun` |
-| `FORK` | `fork` |
-| `SKIP_PRE_CHECK` | `skipPreCheck` |
-| `MIGRATE_PROGRESS_FILE` | `progressFile` |
-| `MIGRATE_REPORT_FILE` | `reportFile` |
-| `MIGRATION_OUTPUT_DIR` | `outputDir` |
+| Env var                                                 | Overrides                                                                     |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `DIAMOND_ADDRESS`                                       | `diamondAddress`                                                              |
+| `MIGRATION_INPUT_FILE`                                  | `migrationInputFile`                                                          |
+| `MIGRATION_RUNNER_RPC_URL`                              | Role-specific external wallet RPC for the configured `migrationRunner` signer |
+| `HARDWARE_WALLET_RPC_URL` / `HW_WALLET_RPC_URL`         | Generic external wallet RPC fallback for hardware-wallet signers              |
+| `HW_WALLET=ledger` / `LEDGER_SCAN=true` / `LEDGER_PATH` | Direct Ledger signer discovery when no external wallet RPC is used            |
+| `MIGRATE_CHUNK_SIZE`                                    | `chunkSize`                                                                   |
+| `DRY_RUN`                                               | `dryRun`                                                                      |
+| `FORK`                                                  | `fork`                                                                        |
+| `SKIP_PRE_CHECK`                                        | `skipPreCheck`                                                                |
+| `MIGRATE_PROGRESS_FILE`                                 | `progressFile`                                                                |
+| `MIGRATE_REPORT_FILE`                                   | `reportFile`                                                                  |
+| `MIGRATION_OUTPUT_DIR`                                  | `outputDir`                                                                   |
 
 ## Low-Level API (`scripts/upgrade/migrate.ts`)
 
@@ -169,16 +182,16 @@ const report = await migrate(migrationFacet, viewFacetQuote, input, {
 
 ### Configuration Options
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `chunkSize` | 50 | Items per transaction batch |
-| `maxRetries` | 3 | Retry attempts for failed transactions |
-| `retryDelayMs` | 2000 | Initial delay between retries (ms) |
-| `retryBackoffMultiplier` | 2 | Exponential backoff multiplier |
-| `confirmations` | 1 | Block confirmations to wait |
-| `progressFile` | `./migration-progress.json` | Progress file path (null to disable) |
-| `skipPreCheck` | false | Skip on-chain pre-flight checks (faster, contract handles idempotency) |
-| `dryRun` | false | Log without executing transactions |
+| Option                   | Default                     | Description                                                            |
+| ------------------------ | --------------------------- | ---------------------------------------------------------------------- |
+| `chunkSize`              | 50                          | Items per transaction batch                                            |
+| `maxRetries`             | 3                           | Retry attempts for failed transactions                                 |
+| `retryDelayMs`           | 2000                        | Initial delay between retries (ms)                                     |
+| `retryBackoffMultiplier` | 2                           | Exponential backoff multiplier                                         |
+| `confirmations`          | 1                           | Block confirmations to wait                                            |
+| `progressFile`           | `./migration-progress.json` | Progress file path (null to disable)                                   |
+| `skipPreCheck`           | false                       | Skip on-chain pre-flight checks (faster, contract handles idempotency) |
+| `dryRun`                 | false                       | Log without executing transactions                                     |
 
 ## Resume After Failure
 
@@ -237,6 +250,7 @@ USE_KEYSTORE=true DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/o
 ## Post-Migration Verification
 
 `runMigration.ts` automatically verifies after migration:
+
 - **Quote migration**: checks `isQuoteMigrated()` for every quote ID
 - **PartyB migration**: checks `isCrossLockedValuesMigrated()` and verifies master balance equals sum of per-partyA allocated balances
 - **Aggregated positions**: if `expectedAggregates` are present in the input file, verifies `getPartyBAggregatedPositionBySymbolPerPartyA()` matches expected long/short amounts
@@ -244,19 +258,25 @@ USE_KEYSTORE=true DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/o
 ## Troubleshooting
 
 ### "Already migrated" warnings
+
 Normal if resuming -- the script checks on-chain state and skips completed work.
 
 ### Transaction failures
+
 The script retries with exponential backoff. Check:
+
 - RPC endpoint health
 - Executor has sufficient gas
 - Executor has `MIGRATION_ROLE`
 
 ### "PartyA max connection limit exceeded"
+
 Quote migration calls `addConnection()` which checks `maxPartyAConnectionLimit`. This defaults to 0 after upgrade and must be set via `ControlFacet.setMaxPartyAConnectionLimit()` before migrating.
 
 ### Stuck migration
+
 Delete the progress file (`scripts/upgrade/output/migration-progress.json`) to start fresh. Already-migrated items will be skipped via on-chain checks.
 
 ### Subgraph validation fails
+
 The subgraph may not be synced to the current block. Check the spot-check error message -- it tells you which field mismatched and whether the subgraph is stale.

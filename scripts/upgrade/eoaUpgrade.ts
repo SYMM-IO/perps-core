@@ -18,6 +18,8 @@
  *   wiring        Wire AccountLayer/InstantLayer/templates/SymbolManager roles
  *   partyb        Register PartyBs from partyBList config
  *   migration     Grant MIGRATION_ROLE
+ *   operator-grant Grant temporary operator roles (protocolAdmin signer)
+ *   operator-revoke Revoke temporary operator roles (protocolAdmin signer)
  *
  * Usage:
  *   npx hardhat run scripts/upgrade/eoaUpgrade.ts --network localhost
@@ -64,6 +66,7 @@ import {
 type Config = {
 	diamondAddress?: string
 	protocolAdmin?: string
+	upgradeOperator?: string
 	migrationRunner?: string
 	symmioFeeReceiver?: string
 	safeAddress?: string
@@ -75,8 +78,32 @@ type Config = {
 
 const OUTPUT_DIR = "./scripts/upgrade/output"
 const FULL_STAGE_ORDER = ["facets", "peripherals", "pause", "cut", "params", "wiring", "partyb", "migration"] as const
-type UpgradeStage = (typeof FULL_STAGE_ORDER)[number]
+const OPERATOR_STAGE_ORDER = ["operator-grant", "operator-revoke"] as const
+const ALL_STAGE_ORDER = [...FULL_STAGE_ORDER, ...OPERATOR_STAGE_ORDER] as const
+type UpgradeStage = (typeof ALL_STAGE_ORDER)[number]
 const DEPLOY_ONLY_STAGES = new Set<UpgradeStage>(["facets", "peripherals"])
+
+const CORE_OPERATOR_GRANT_ROLES = [
+	"DEFAULT_ADMIN_ROLE",
+	"PAUSER_ROLE",
+	"UNPAUSER_ROLE",
+	"PROTOCOL_CONFIG_ROLE",
+	"COOLDOWN_ADMIN_ROLE",
+	"FEE_ADMIN_ROLE",
+	"INTEGRATION_ADMIN_ROLE",
+	"PARTY_B_MANAGER_ROLE",
+] as const
+const CORE_OPERATOR_REVOKE_ROLES = [
+	"PAUSER_ROLE",
+	"UNPAUSER_ROLE",
+	"PROTOCOL_CONFIG_ROLE",
+	"COOLDOWN_ADMIN_ROLE",
+	"FEE_ADMIN_ROLE",
+	"INTEGRATION_ADMIN_ROLE",
+	"PARTY_B_MANAGER_ROLE",
+	"DEFAULT_ADMIN_ROLE",
+] as const
+const CORE_MIGRATION_RUNNER_ROLES = ["MIGRATION_ROLE", "SYMBOL_MANAGER_ROLE"] as const
 
 type PeripheralsState = {
 	metadata?: DeploymentStateMetadata
@@ -95,8 +122,12 @@ type PeripheralsAddresses = {
 	symmioPartyBImplementation?: string
 }
 
+function upgradeConfigFile(): string {
+	return resolveConfigFile("upgrade", connection.networkName, process.env.UPGRADE_CONFIG_FILE)
+}
+
 function loadConfig(): Config {
-	const CONFIG_FILE = resolveConfigFile("upgrade", connection.networkName, process.env.UPGRADE_CONFIG_FILE)
+	const CONFIG_FILE = upgradeConfigFile()
 	if (!fs.existsSync(CONFIG_FILE)) return {}
 	return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8")) as Config
 }
@@ -161,8 +192,20 @@ function parseStageList(config: Config): Set<UpgradeStage> {
 			case "grant-migration-role":
 				add("migration")
 				break
+			case "operator":
+			case "operator-grant":
+			case "grant-operator":
+			case "grant-operator-roles":
+				add("operator-grant")
+				break
+			case "operator-revoke":
+			case "revoke-operator":
+			case "revoke-operator-roles":
+			case "cleanup-operator":
+				add("operator-revoke")
+				break
 			default:
-				throw new Error(`Unknown UPGRADE_STAGES token "${token}". Valid stages: ${FULL_STAGE_ORDER.join(", ")} plus alias "deploy".`)
+				throw new Error(`Unknown UPGRADE_STAGES token "${token}". Valid stages: ${ALL_STAGE_ORDER.join(", ")} plus alias "deploy".`)
 		}
 	}
 
@@ -170,11 +213,20 @@ function parseStageList(config: Config): Set<UpgradeStage> {
 }
 
 function stageNames(stages: Set<UpgradeStage>): string {
-	return FULL_STAGE_ORDER.filter(stage => stages.has(stage)).join(", ")
+	return ALL_STAGE_ORDER.filter(stage => stages.has(stage)).join(", ")
 }
 
 function needsProtocolAdminSigner(stages: Set<UpgradeStage>): boolean {
 	return [...stages].some(stage => !DEPLOY_ONLY_STAGES.has(stage))
+}
+
+function signerRoleOverride(): "protocolAdmin" | "upgradeOperator" | undefined {
+	const raw = process.env.UPGRADE_SIGNER_ROLE ?? process.env.EOA_UPGRADE_SIGNER_ROLE
+	if (!raw) return undefined
+	const normalized = raw.trim().toLowerCase()
+	if (["protocoladmin", "protocol-admin", "admin", "owner"].includes(normalized)) return "protocolAdmin"
+	if (["upgradeoperator", "upgrade-operator", "operator"].includes(normalized)) return "upgradeOperator"
+	throw new Error(`Invalid UPGRADE_SIGNER_ROLE: ${raw}. Use protocolAdmin or upgradeOperator.`)
 }
 
 function normalizeSignatureVerifierParam(
@@ -246,6 +298,22 @@ async function resolveUpgradeSigner(config: Config, stages: Set<UpgradeStage>) {
 		return ethers.provider.getSigner()
 	}
 
+	const signerRole = signerRoleOverride()
+	if (signerRole === "upgradeOperator") {
+		if (stages.has("cut")) {
+			throw new Error("UPGRADE_SIGNER_ROLE=upgradeOperator cannot run the cut stage; diamondCut is owner-only and must be run by protocolAdmin.")
+		}
+		if (stages.has("operator-grant") || stages.has("operator-revoke")) {
+			throw new Error("operator-grant/operator-revoke must be run by protocolAdmin.")
+		}
+		const operatorAddress = resolveUpgradeOperatorAddress(config)
+		return resolveConfiguredSigner({
+			role: "upgradeOperator",
+			expectedAddress: operatorAddress,
+			envPrefix: "UPGRADE_OPERATOR",
+		})
+	}
+
 	const protocolAdminAddress = config.protocolAdmin
 	if (!protocolAdminAddress) return ethers.provider.getSigner()
 
@@ -254,6 +322,20 @@ async function resolveUpgradeSigner(config: Config, stages: Set<UpgradeStage>) {
 		expectedAddress: protocolAdminAddress,
 		envPrefix: "PROTOCOL_ADMIN",
 	})
+}
+
+function resolveUpgradeOperatorAddress(config: Config): string {
+	const raw = process.env.UPGRADE_OPERATOR ?? config.upgradeOperator ?? config.migrationRunner
+	if (!raw || !ethers.isAddress(raw)) {
+		throw new Error("upgradeOperator is required and must be a valid address (or set UPGRADE_OPERATOR / migrationRunner)")
+	}
+	return ethers.getAddress(raw)
+}
+
+function normalizeOptionalAddress(address: string | undefined): string | undefined {
+	if (!address) return undefined
+	if (!ethers.isAddress(address)) throw new Error(`Invalid address: ${address}`)
+	return ethers.getAddress(address)
 }
 
 function resolveDeploymentAdmin(config: Config, deployerAddress: string): string {
@@ -265,6 +347,28 @@ function resolveDeploymentAdmin(config: Config, deployerAddress: string): string
 		throw new Error(`protocolAdmin is invalid: ${config.protocolAdmin}`)
 	}
 	return ethers.getAddress(config.protocolAdmin)
+}
+
+function writeSignatureVerifierToUpgradeConfig(signatureVerifierAddress: string): void {
+	if (!ethers.isAddress(signatureVerifierAddress)) return
+
+	const CONFIG_FILE = upgradeConfigFile()
+	if (!fs.existsSync(CONFIG_FILE)) {
+		log.warn(`Upgrade config not found; cannot write signatureVerifierAddress: ${CONFIG_FILE}`)
+		return
+	}
+
+	const upgradeConfig = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8"))
+	if (!upgradeConfig.newV085Parameters) upgradeConfig.newV085Parameters = {}
+	const current = upgradeConfig.newV085Parameters.signatureVerifierAddress
+	if (current && ethers.isAddress(current) && ethers.getAddress(current) === ethers.getAddress(signatureVerifierAddress)) {
+		log.kv("signatureVerifierAddress already in", CONFIG_FILE)
+		return
+	}
+
+	upgradeConfig.newV085Parameters.signatureVerifierAddress = ethers.getAddress(signatureVerifierAddress)
+	fs.writeFileSync(CONFIG_FILE, JSON.stringify(upgradeConfig, null, "\t") + "\n")
+	log.kv("Written signatureVerifierAddress to", CONFIG_FILE)
 }
 
 async function initiateAccountLayerOwnershipTransfer(accountLayerAddress: string, signer: any, newOwner: string): Promise<void> {
@@ -345,15 +449,177 @@ async function deploySymmioPartyBImplementation(stateFile: string, stateContext?
 	return address
 }
 
+const CORE_ACCESS_ABI = [
+	"function owner() view returns (address)",
+	"function hasRole(address user, bytes32 role) view returns (bool)",
+	"function isRoleAdmin(address user, bytes32 role) view returns (bool)",
+	"function setAdmin(address user)",
+	"function grantRole(address user, bytes32 role)",
+	"function revokeRole(address user, bytes32 role)",
+]
+
+const ACCOUNT_LAYER_ACCESS_ABI = [
+	"function hasRole(address user, bytes32 role) view returns (bool)",
+	"function grantRole(address user, bytes32 role)",
+	"function revokeRole(address user, bytes32 role)",
+]
+
+const STANDARD_ACCESS_ABI = [
+	"function hasRole(bytes32 role, address account) view returns (bool)",
+	"function grantRole(bytes32 role, address account)",
+	"function revokeRole(bytes32 role, address account)",
+]
+
+async function grantCoreRoleIfMissing(controlFacet: any, account: string, roleName: string): Promise<void> {
+	const role = ethers.id(roleName)
+	if (await controlFacet.hasRole(account, role)) {
+		log.ok(`${roleName} already granted to ${log.addr(account)}`)
+		return
+	}
+	await (await controlFacet.grantRole(account, role, writeTxOverrides())).wait()
+	log.ok(`${roleName} granted to ${log.addr(account)}`)
+}
+
+async function revokeCoreRoleIfPresent(controlFacet: any, account: string, roleName: string): Promise<void> {
+	const role = ethers.id(roleName)
+	if (!(await controlFacet.hasRole(account, role))) {
+		log.ok(`${roleName} already absent from ${log.addr(account)}`)
+		return
+	}
+	await (await controlFacet.revokeRole(account, role, writeTxOverrides())).wait()
+	log.ok(`${roleName} revoked from ${log.addr(account)}`)
+}
+
+async function grantCoreDefaultAdminIfMissing(controlFacet: any, account: string): Promise<void> {
+	const role = ethers.id("DEFAULT_ADMIN_ROLE")
+	if (await controlFacet.hasRole(account, role)) {
+		log.ok(`DEFAULT_ADMIN_ROLE already granted to ${log.addr(account)}`)
+		return
+	}
+	await (await controlFacet.setAdmin(account, writeTxOverrides())).wait()
+	log.ok(`DEFAULT_ADMIN_ROLE granted to ${log.addr(account)}`)
+}
+
+async function grantAccountLayerRoleIfMissing(accountLayerAddress: string, signer: any, account: string, roleName: string): Promise<void> {
+	const contract = new ethers.Contract(accountLayerAddress, ACCOUNT_LAYER_ACCESS_ABI, signer)
+	const role = ethers.id(roleName)
+	if (await contract.hasRole(account, role)) {
+		log.ok(`AccountLayer ${roleName} already granted to ${log.addr(account)}`)
+		return
+	}
+	await (await contract.grantRole(account, role, writeTxOverrides())).wait()
+	log.ok(`AccountLayer ${roleName} granted to ${log.addr(account)}`)
+}
+
+async function revokeAccountLayerRoleIfPresent(accountLayerAddress: string, signer: any, account: string, roleName: string): Promise<void> {
+	const contract = new ethers.Contract(accountLayerAddress, ACCOUNT_LAYER_ACCESS_ABI, signer)
+	const role = ethers.id(roleName)
+	if (!(await contract.hasRole(account, role))) {
+		log.ok(`AccountLayer ${roleName} already absent from ${log.addr(account)}`)
+		return
+	}
+	await (await contract.revokeRole(account, role, writeTxOverrides())).wait()
+	log.ok(`AccountLayer ${roleName} revoked from ${log.addr(account)}`)
+}
+
+async function grantStandardRoleIfMissing(contractAddress: string, signer: any, label: string, account: string, roleName: string): Promise<void> {
+	const contract = new ethers.Contract(contractAddress, STANDARD_ACCESS_ABI, signer)
+	const role = ethers.id(roleName)
+	if (await contract.hasRole(role, account)) {
+		log.ok(`${label} ${roleName} already granted to ${log.addr(account)}`)
+		return
+	}
+	await (await contract.grantRole(role, account, writeTxOverrides())).wait()
+	log.ok(`${label} ${roleName} granted to ${log.addr(account)}`)
+}
+
+async function revokeStandardRoleIfPresent(contractAddress: string, signer: any, label: string, account: string, roleName: string): Promise<void> {
+	const contract = new ethers.Contract(contractAddress, STANDARD_ACCESS_ABI, signer)
+	const role = ethers.id(roleName)
+	if (!(await contract.hasRole(role, account))) {
+		log.ok(`${label} ${roleName} already absent from ${log.addr(account)}`)
+		return
+	}
+	await (await contract.revokeRole(role, account, writeTxOverrides())).wait()
+	log.ok(`${label} ${roleName} revoked from ${log.addr(account)}`)
+}
+
+async function grantTemporaryOperatorRoles(diamondAddress: string, peripherals: PeripheralsAddresses, config: Config, signer: any): Promise<void> {
+	const operator = resolveUpgradeOperatorAddress(config)
+	const migrationRunner = normalizeOptionalAddress(config.migrationRunner) ?? operator
+	const signerAddress = ethers.getAddress(await signer.getAddress())
+	const controlFacet = new ethers.Contract(diamondAddress, CORE_ACCESS_ABI, signer)
+
+	log.info(`Temporary upgrade operator: ${log.addr(operator)}`)
+	if (migrationRunner.toLowerCase() !== operator.toLowerCase()) {
+		log.info(`Migration runner: ${log.addr(migrationRunner)}`)
+	}
+
+	await grantCoreDefaultAdminIfMissing(controlFacet, signerAddress)
+	await grantCoreDefaultAdminIfMissing(controlFacet, operator)
+	for (const roleName of CORE_OPERATOR_GRANT_ROLES) {
+		if (roleName === "DEFAULT_ADMIN_ROLE") continue
+		await grantCoreRoleIfMissing(controlFacet, operator, roleName)
+	}
+	for (const roleName of CORE_MIGRATION_RUNNER_ROLES) {
+		await grantCoreRoleIfMissing(controlFacet, migrationRunner, roleName)
+	}
+
+	if (!peripherals.signatureVerifier || !peripherals.accountLayer || !peripherals.instantLayer) {
+		throw new Error("operator-grant requires deployed peripherals. Run UPGRADE_STAGES=deploy first.")
+	}
+
+	await grantStandardRoleIfMissing(peripherals.signatureVerifier, signer, "MuonSignatureVerifier", operator, "SETTER_ROLE")
+	await grantAccountLayerRoleIfMissing(peripherals.accountLayer, signer, operator, "DEFAULT_ADMIN_ROLE")
+	await grantAccountLayerRoleIfMissing(peripherals.accountLayer, signer, operator, "SETTER_ROLE")
+	await grantStandardRoleIfMissing(peripherals.instantLayer, signer, "InstantLayer", operator, "SETTER_ROLE")
+}
+
+async function revokeTemporaryOperatorRoles(diamondAddress: string, peripherals: PeripheralsAddresses, config: Config, signer: any): Promise<void> {
+	const operator = resolveUpgradeOperatorAddress(config)
+	const protocolAdmin = normalizeOptionalAddress(config.protocolAdmin)
+	const migrationRunner = normalizeOptionalAddress(config.migrationRunner) ?? operator
+	const controlFacet = new ethers.Contract(diamondAddress, CORE_ACCESS_ABI, signer)
+
+	if (protocolAdmin) {
+		await grantCoreDefaultAdminIfMissing(controlFacet, protocolAdmin)
+	}
+
+	for (const roleName of CORE_MIGRATION_RUNNER_ROLES) {
+		if (!protocolAdmin || migrationRunner.toLowerCase() !== protocolAdmin.toLowerCase()) {
+			await revokeCoreRoleIfPresent(controlFacet, migrationRunner, roleName)
+		}
+	}
+	if (!protocolAdmin || operator.toLowerCase() !== protocolAdmin.toLowerCase()) {
+		for (const roleName of CORE_OPERATOR_REVOKE_ROLES) {
+			await revokeCoreRoleIfPresent(controlFacet, operator, roleName)
+		}
+	}
+
+	if (peripherals.signatureVerifier && (!protocolAdmin || operator.toLowerCase() !== protocolAdmin.toLowerCase())) {
+		await revokeStandardRoleIfPresent(peripherals.signatureVerifier, signer, "MuonSignatureVerifier", operator, "SETTER_ROLE")
+	}
+	if (peripherals.accountLayer && (!protocolAdmin || operator.toLowerCase() !== protocolAdmin.toLowerCase())) {
+		await revokeAccountLayerRoleIfPresent(peripherals.accountLayer, signer, operator, "SETTER_ROLE")
+		await revokeAccountLayerRoleIfPresent(peripherals.accountLayer, signer, operator, "DEFAULT_ADMIN_ROLE")
+	}
+	if (peripherals.instantLayer && (!protocolAdmin || operator.toLowerCase() !== protocolAdmin.toLowerCase())) {
+		await revokeStandardRoleIfPresent(peripherals.instantLayer, signer, "InstantLayer", operator, "SETTER_ROLE")
+	}
+}
+
 async function pauseSystem(diamondAddress: string, signer: any): Promise<void> {
 	const signerAddress = await signer.getAddress()
-	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", diamondAddress, signer)
-	await (await controlFacet.setAdmin(signerAddress, writeTxOverrides())).wait()
-	log.ok("Admin set")
-	await (await controlFacet.grantRole(signerAddress, ethers.id("PAUSER_ROLE"), writeTxOverrides())).wait()
-	log.ok("PAUSER_ROLE granted")
-	await (await controlFacet.grantRole(signerAddress, ethers.id("UNPAUSER_ROLE"), writeTxOverrides())).wait()
-	log.ok("UNPAUSER_ROLE granted")
+	const controlFacet = new ethers.Contract(diamondAddress, CORE_ACCESS_ABI, signer)
+	const defaultAdminRole = ethers.id("DEFAULT_ADMIN_ROLE")
+	if (!(await controlFacet.hasRole(signerAddress, defaultAdminRole))) {
+		const owner = ethers.getAddress(await controlFacet.owner())
+		if (owner.toLowerCase() === ethers.getAddress(signerAddress).toLowerCase()) {
+			await grantCoreDefaultAdminIfMissing(controlFacet, signerAddress)
+		}
+	}
+	await grantCoreRoleIfMissing(controlFacet, signerAddress, "PAUSER_ROLE")
+	await grantCoreRoleIfMissing(controlFacet, signerAddress, "UNPAUSER_ROLE")
 
 	const pauseHelper = new ethers.Contract(
 		diamondAddress,
@@ -487,6 +753,7 @@ async function main() {
 		if (!newParams.signatureVerifierAddress || !ethers.isAddress(newParams.signatureVerifierAddress)) {
 			newParams.signatureVerifierAddress = signatureVerifier
 		}
+		writeSignatureVerifierToUpgradeConfig(signatureVerifier)
 		const accountLayerCutSigner = signerAddress.toLowerCase() === deploymentAdmin.toLowerCase() ? signer : undefined
 		const alResult = await deployAccountLayerDiamond(
 			deploymentAdmin,
@@ -505,6 +772,13 @@ async function main() {
 			instantLayer: ilResult.address,
 			symbolManager: smResult.address,
 		}
+		log.stepDone(t)
+	}
+
+	if (stages.has("operator-grant")) {
+		const t = log.step("Grant temporary operator roles")
+		peripherals = { ...peripherals, ...readPeripheralsAddresses(peripheralsStateFile, deploymentStateContext) }
+		await grantTemporaryOperatorRoles(DIAMOND_ADDRESS, peripherals, config, signer)
 		log.stepDone(t)
 	}
 
@@ -593,6 +867,13 @@ async function main() {
 		log.stepDone(t)
 	}
 
+	if (stages.has("operator-revoke")) {
+		const t = log.step("Revoke temporary operator roles")
+		peripherals = { ...peripherals, ...readPeripheralsAddresses(peripheralsStateFile, deploymentStateContext) }
+		await revokeTemporaryOperatorRoles(DIAMOND_ADDRESS, peripherals, config, signer)
+		log.stepDone(t)
+	}
+
 	peripherals = { ...peripherals, ...readPeripheralsAddresses(peripheralsStateFile, deploymentStateContext) }
 	await logUpgradeOwnershipSummary({
 		symmioCore: DIAMOND_ADDRESS,
@@ -604,6 +885,7 @@ async function main() {
 		knownAccounts: [
 			{ label: "signer", address: signerAddress },
 			{ label: "protocolAdmin", address: config.protocolAdmin },
+			{ label: "upgradeOperator", address: config.upgradeOperator },
 			{ label: "safe", address: config.safeAddress },
 			{ label: "migrationRunner", address: MIGRATION_RUNNER },
 			{ label: "symmioFeeReceiver", address: config.symmioFeeReceiver },

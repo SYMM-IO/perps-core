@@ -205,6 +205,22 @@ export default defineConfig({
 				cancun: { blockNumber: 0 },
 			},
 		},
+		2632500: {
+			name: "COTI",
+			chainType: "generic",
+			hardforkHistory: {
+				merge: { blockNumber: 0 },
+				shanghai: { blockNumber: 0 },
+				cancun: { blockNumber: 0 },
+			},
+			blockExplorers: {
+				blockscout: {
+					name: "COTI Scan",
+					url: "https://mainnet.cotiscan.io",
+					apiUrl: "https://mainnet.cotiscan.io/api",
+				},
+			},
+		},
 		999: {
 			name: "HyperEVM",
 			chainType: "generic",
