@@ -4,7 +4,6 @@
  * Fetches open quotes, partyB balance data, and symbols from the Goldsky stage subgraph
  * with pagination (max 1000 per request).
  */
-
 import { log } from "./log.js"
 
 const DEFAULT_PAGE_SIZE = 1000
@@ -140,7 +139,11 @@ async function requestGraphQL(endpoint: string, query: string): Promise<any> {
 			signal: controller.signal,
 		})
 		if (!response.ok) {
-			throw new SubgraphRequestError(`Subgraph request failed: ${response.status} ${response.statusText}`, response.status, isRetriableStatus(response.status))
+			throw new SubgraphRequestError(
+				`Subgraph request failed: ${response.status} ${response.statusText}`,
+				response.status,
+				isRetriableStatus(response.status),
+			)
 		}
 		const json = await response.json()
 		if (json.errors) {
@@ -372,7 +375,9 @@ export async function fetchSymbols(endpoint: SubgraphEndpointInput, pageSize?: n
 
 		allSymbols.push(...symbols)
 		const nextCursor = symbols.length > 0 ? symbols[symbols.length - 1].id : cursor
-		log.detail(`symbols page ${page}: cursor>${cursor}, fetched=${symbols.length}, total=${allSymbols.length}, nextCursor=${nextCursor}, ${Date.now() - pageStart}ms`)
+		log.detail(
+			`symbols page ${page}: cursor>${cursor}, fetched=${symbols.length}, total=${allSymbols.length}, nextCursor=${nextCursor}, ${Date.now() - pageStart}ms`,
+		)
 		if (symbols.length < currentPageSize) break
 		lastId = nextCursor
 	}
