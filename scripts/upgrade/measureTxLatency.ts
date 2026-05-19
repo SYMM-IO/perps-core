@@ -11,7 +11,9 @@
  *   SAMPLES=5 USE_KEYSTORE=true npx hardhat run scripts/upgrade/measureTxLatency.ts --network <network>
  */
 import { ethers } from "../../test/helpers/hardhat-connection.js"
+import type { TransactionResponse } from "ethers"
 import { log } from "./utils/log.js"
+import { writeTxOverrides } from "./utils/txOverrides.js"
 
 async function main() {
 	const SAMPLES = Number(process.env.SAMPLES ?? 3)
@@ -30,7 +32,7 @@ async function main() {
 
 	for (let i = 0; i < SAMPLES; i++) {
 		const t0 = performance.now()
-		const tx = await signer.sendTransaction({ to, value: 0n })
+		const tx = await signer.sendTransaction({ to, value: 0n, ...writeTxOverrides() })
 		const tSent = performance.now()
 		const receipt = await tx.wait()
 		const tMined = performance.now()
@@ -61,11 +63,12 @@ async function main() {
 	log.info("")
 	log.info("=== Parallel ===")
 	const baseNonce = await signer.getNonce()
+	const txOverrides = writeTxOverrides()
 	const parT0 = performance.now()
-	const txPromises = Array.from({ length: SAMPLES }, (_, i) => signer.sendTransaction({ to, value: 0n, nonce: baseNonce + i }))
+	const txPromises = Array.from({ length: SAMPLES }, (_, i) => signer.sendTransaction({ to, value: 0n, nonce: baseNonce + i, ...txOverrides }))
 	const txs = await Promise.all(txPromises)
 	const parTSent = performance.now()
-	const receipts = await Promise.all(txs.map(tx => tx.wait()))
+	const receipts = await Promise.all(txs.map((tx: TransactionResponse) => tx.wait()))
 	const parTMined = performance.now()
 
 	const parSubmitMs = Math.round(parTSent - parT0)
