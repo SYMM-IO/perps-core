@@ -81,6 +81,7 @@ const FULL_STAGE_ORDER = ["facets", "peripherals", "pause", "cut", "params", "wi
 const OPERATOR_STAGE_ORDER = ["operator-grant", "operator-revoke"] as const
 const ALL_STAGE_ORDER = [...FULL_STAGE_ORDER, ...OPERATOR_STAGE_ORDER] as const
 type UpgradeStage = (typeof ALL_STAGE_ORDER)[number]
+type OperatorRoleStage = (typeof OPERATOR_STAGE_ORDER)[number]
 const DEPLOY_ONLY_STAGES = new Set<UpgradeStage>(["facets", "peripherals"])
 
 const CORE_OPERATOR_GRANT_ROLES = [
@@ -120,6 +121,45 @@ type PeripheralsAddresses = {
 	instantLayer?: string
 	symbolManager?: string
 	symmioPartyBImplementation?: string
+}
+
+type OperatorRoleActionStatus = "already-present" | "granted" | "already-absent" | "revoked" | "failed"
+type OperatorRoleActionOperation = "grant" | "revoke" | "setAdmin"
+type OperatorRoleReportStatus = "running" | "success" | "failed"
+
+type OperatorRoleAction = {
+	index: number
+	timestamp: string
+	stage: OperatorRoleStage
+	operation: OperatorRoleActionOperation
+	targetLabel: string
+	targetAddress: string
+	account: string
+	roleName: string
+	roleHash: string
+	status: OperatorRoleActionStatus
+	txHash?: string
+	blockNumber?: number
+	error?: string
+}
+
+type OperatorRoleReport = {
+	status: OperatorRoleReportStatus
+	stage: OperatorRoleStage
+	networkName: string
+	chainId: number
+	diamondAddress: string
+	signer: string
+	protocolAdmin?: string
+	upgradeOperator?: string
+	migrationRunner?: string
+	startedAt: string
+	updatedAt: string
+	finishedAt?: string
+	outputFile: string
+	summary: Record<OperatorRoleActionStatus, number>
+	actions: OperatorRoleAction[]
+	error?: string
 }
 
 function upgradeConfigFile(): string {
@@ -470,81 +510,445 @@ const STANDARD_ACCESS_ABI = [
 	"function revokeRole(bytes32 role, address account)",
 ]
 
-async function grantCoreRoleIfMissing(controlFacet: any, account: string, roleName: string): Promise<void> {
+function emptyOperatorRoleSummary(): Record<OperatorRoleActionStatus, number> {
+	return {
+		"already-present": 0,
+		granted: 0,
+		"already-absent": 0,
+		revoked: 0,
+		failed: 0,
+	}
+}
+
+function createOperatorRoleReport(
+	stage: OperatorRoleStage,
+	networkName: string,
+	chainId: number,
+	diamondAddress: string,
+	signer: string,
+	config: Config,
+	migrationRunner: string | undefined,
+): OperatorRoleReport {
+	const outputFile = path.join(OUTPUT_DIR, `${stage}-report-${networkName}.json`)
+	const upgradeOperator = process.env.UPGRADE_OPERATOR ?? config.upgradeOperator ?? config.migrationRunner
+	return {
+		status: "running",
+		stage,
+		networkName,
+		chainId,
+		diamondAddress: ethers.getAddress(diamondAddress),
+		signer: ethers.getAddress(signer),
+		protocolAdmin: normalizeOptionalAddress(config.protocolAdmin),
+		upgradeOperator: normalizeOptionalAddress(upgradeOperator),
+		migrationRunner: normalizeOptionalAddress(migrationRunner),
+		startedAt: new Date().toISOString(),
+		updatedAt: new Date().toISOString(),
+		outputFile,
+		summary: emptyOperatorRoleSummary(),
+		actions: [],
+	}
+}
+
+function writeOperatorRoleReport(report: OperatorRoleReport): void {
+	report.updatedAt = new Date().toISOString()
+	report.summary = emptyOperatorRoleSummary()
+	for (const action of report.actions) report.summary[action.status]++
+	const dir = path.dirname(report.outputFile)
+	if (dir && !fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+	fs.writeFileSync(report.outputFile, JSON.stringify(report, null, 2))
+}
+
+function recordOperatorRoleAction(report: OperatorRoleReport | undefined, action: Omit<OperatorRoleAction, "index" | "timestamp" | "stage">): void {
+	if (!report) return
+	report.actions.push({
+		index: report.actions.length + 1,
+		timestamp: new Date().toISOString(),
+		stage: report.stage,
+		...action,
+	})
+	writeOperatorRoleReport(report)
+}
+
+function finishOperatorRoleReport(report: OperatorRoleReport, status: Exclude<OperatorRoleReportStatus, "running">, error?: unknown): void {
+	report.status = status
+	report.finishedAt = new Date().toISOString()
+	if (error !== undefined) report.error = errorMessage(error)
+	writeOperatorRoleReport(report)
+}
+
+function roleHash(roleName: string): string {
+	return ethers.id(roleName)
+}
+
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error)
+}
+
+async function grantCoreRoleIfMissing(
+	controlFacet: any,
+	targetAddress: string,
+	account: string,
+	roleName: string,
+	report?: OperatorRoleReport,
+): Promise<void> {
 	const role = ethers.id(roleName)
 	if (await controlFacet.hasRole(account, role)) {
 		log.ok(`${roleName} already granted to ${log.addr(account)}`)
+		recordOperatorRoleAction(report, {
+			operation: "grant",
+			targetLabel: "Symmio Core Diamond",
+			targetAddress,
+			account: ethers.getAddress(account),
+			roleName,
+			roleHash: role,
+			status: "already-present",
+		})
 		return
 	}
-	await (await controlFacet.grantRole(account, role, writeTxOverrides())).wait()
-	log.ok(`${roleName} granted to ${log.addr(account)}`)
+	try {
+		const tx = await controlFacet.grantRole(account, role, writeTxOverrides())
+		const receipt = await tx.wait()
+		log.ok(`${roleName} granted to ${log.addr(account)}`)
+		recordOperatorRoleAction(report, {
+			operation: "grant",
+			targetLabel: "Symmio Core Diamond",
+			targetAddress,
+			account: ethers.getAddress(account),
+			roleName,
+			roleHash: role,
+			status: "granted",
+			txHash: tx.hash,
+			blockNumber: receipt?.blockNumber,
+		})
+	} catch (error) {
+		recordOperatorRoleAction(report, {
+			operation: "grant",
+			targetLabel: "Symmio Core Diamond",
+			targetAddress,
+			account: ethers.getAddress(account),
+			roleName,
+			roleHash: role,
+			status: "failed",
+			error: errorMessage(error),
+		})
+		throw error
+	}
 }
 
-async function revokeCoreRoleIfPresent(controlFacet: any, account: string, roleName: string): Promise<void> {
+async function revokeCoreRoleIfPresent(
+	controlFacet: any,
+	targetAddress: string,
+	account: string,
+	roleName: string,
+	report?: OperatorRoleReport,
+): Promise<void> {
 	const role = ethers.id(roleName)
 	if (!(await controlFacet.hasRole(account, role))) {
 		log.ok(`${roleName} already absent from ${log.addr(account)}`)
+		recordOperatorRoleAction(report, {
+			operation: "revoke",
+			targetLabel: "Symmio Core Diamond",
+			targetAddress,
+			account: ethers.getAddress(account),
+			roleName,
+			roleHash: role,
+			status: "already-absent",
+		})
 		return
 	}
-	await (await controlFacet.revokeRole(account, role, writeTxOverrides())).wait()
-	log.ok(`${roleName} revoked from ${log.addr(account)}`)
+	try {
+		const tx = await controlFacet.revokeRole(account, role, writeTxOverrides())
+		const receipt = await tx.wait()
+		log.ok(`${roleName} revoked from ${log.addr(account)}`)
+		recordOperatorRoleAction(report, {
+			operation: "revoke",
+			targetLabel: "Symmio Core Diamond",
+			targetAddress,
+			account: ethers.getAddress(account),
+			roleName,
+			roleHash: role,
+			status: "revoked",
+			txHash: tx.hash,
+			blockNumber: receipt?.blockNumber,
+		})
+	} catch (error) {
+		recordOperatorRoleAction(report, {
+			operation: "revoke",
+			targetLabel: "Symmio Core Diamond",
+			targetAddress,
+			account: ethers.getAddress(account),
+			roleName,
+			roleHash: role,
+			status: "failed",
+			error: errorMessage(error),
+		})
+		throw error
+	}
 }
 
-async function grantCoreDefaultAdminIfMissing(controlFacet: any, account: string): Promise<void> {
-	const role = ethers.id("DEFAULT_ADMIN_ROLE")
+async function grantCoreDefaultAdminIfMissing(controlFacet: any, targetAddress: string, account: string, report?: OperatorRoleReport): Promise<void> {
+	const roleName = "DEFAULT_ADMIN_ROLE"
+	const role = roleHash(roleName)
 	if (await controlFacet.hasRole(account, role)) {
 		log.ok(`DEFAULT_ADMIN_ROLE already granted to ${log.addr(account)}`)
+		recordOperatorRoleAction(report, {
+			operation: "setAdmin",
+			targetLabel: "Symmio Core Diamond",
+			targetAddress,
+			account: ethers.getAddress(account),
+			roleName,
+			roleHash: role,
+			status: "already-present",
+		})
 		return
 	}
-	await (await controlFacet.setAdmin(account, writeTxOverrides())).wait()
-	log.ok(`DEFAULT_ADMIN_ROLE granted to ${log.addr(account)}`)
+	try {
+		const tx = await controlFacet.setAdmin(account, writeTxOverrides())
+		const receipt = await tx.wait()
+		log.ok(`DEFAULT_ADMIN_ROLE granted to ${log.addr(account)}`)
+		recordOperatorRoleAction(report, {
+			operation: "setAdmin",
+			targetLabel: "Symmio Core Diamond",
+			targetAddress,
+			account: ethers.getAddress(account),
+			roleName,
+			roleHash: role,
+			status: "granted",
+			txHash: tx.hash,
+			blockNumber: receipt?.blockNumber,
+		})
+	} catch (error) {
+		recordOperatorRoleAction(report, {
+			operation: "setAdmin",
+			targetLabel: "Symmio Core Diamond",
+			targetAddress,
+			account: ethers.getAddress(account),
+			roleName,
+			roleHash: role,
+			status: "failed",
+			error: errorMessage(error),
+		})
+		throw error
+	}
 }
 
-async function grantAccountLayerRoleIfMissing(accountLayerAddress: string, signer: any, account: string, roleName: string): Promise<void> {
+async function grantAccountLayerRoleIfMissing(
+	accountLayerAddress: string,
+	signer: any,
+	account: string,
+	roleName: string,
+	report?: OperatorRoleReport,
+): Promise<void> {
 	const contract = new ethers.Contract(accountLayerAddress, ACCOUNT_LAYER_ACCESS_ABI, signer)
-	const role = ethers.id(roleName)
+	const role = roleHash(roleName)
 	if (await contract.hasRole(account, role)) {
 		log.ok(`AccountLayer ${roleName} already granted to ${log.addr(account)}`)
+		recordOperatorRoleAction(report, {
+			operation: "grant",
+			targetLabel: "AccountLayer",
+			targetAddress: ethers.getAddress(accountLayerAddress),
+			account: ethers.getAddress(account),
+			roleName,
+			roleHash: role,
+			status: "already-present",
+		})
 		return
 	}
-	await (await contract.grantRole(account, role, writeTxOverrides())).wait()
-	log.ok(`AccountLayer ${roleName} granted to ${log.addr(account)}`)
+	try {
+		const tx = await contract.grantRole(account, role, writeTxOverrides())
+		const receipt = await tx.wait()
+		log.ok(`AccountLayer ${roleName} granted to ${log.addr(account)}`)
+		recordOperatorRoleAction(report, {
+			operation: "grant",
+			targetLabel: "AccountLayer",
+			targetAddress: ethers.getAddress(accountLayerAddress),
+			account: ethers.getAddress(account),
+			roleName,
+			roleHash: role,
+			status: "granted",
+			txHash: tx.hash,
+			blockNumber: receipt?.blockNumber,
+		})
+	} catch (error) {
+		recordOperatorRoleAction(report, {
+			operation: "grant",
+			targetLabel: "AccountLayer",
+			targetAddress: ethers.getAddress(accountLayerAddress),
+			account: ethers.getAddress(account),
+			roleName,
+			roleHash: role,
+			status: "failed",
+			error: errorMessage(error),
+		})
+		throw error
+	}
 }
 
-async function revokeAccountLayerRoleIfPresent(accountLayerAddress: string, signer: any, account: string, roleName: string): Promise<void> {
+async function revokeAccountLayerRoleIfPresent(
+	accountLayerAddress: string,
+	signer: any,
+	account: string,
+	roleName: string,
+	report?: OperatorRoleReport,
+): Promise<void> {
 	const contract = new ethers.Contract(accountLayerAddress, ACCOUNT_LAYER_ACCESS_ABI, signer)
-	const role = ethers.id(roleName)
+	const role = roleHash(roleName)
 	if (!(await contract.hasRole(account, role))) {
 		log.ok(`AccountLayer ${roleName} already absent from ${log.addr(account)}`)
+		recordOperatorRoleAction(report, {
+			operation: "revoke",
+			targetLabel: "AccountLayer",
+			targetAddress: ethers.getAddress(accountLayerAddress),
+			account: ethers.getAddress(account),
+			roleName,
+			roleHash: role,
+			status: "already-absent",
+		})
 		return
 	}
-	await (await contract.revokeRole(account, role, writeTxOverrides())).wait()
-	log.ok(`AccountLayer ${roleName} revoked from ${log.addr(account)}`)
+	try {
+		const tx = await contract.revokeRole(account, role, writeTxOverrides())
+		const receipt = await tx.wait()
+		log.ok(`AccountLayer ${roleName} revoked from ${log.addr(account)}`)
+		recordOperatorRoleAction(report, {
+			operation: "revoke",
+			targetLabel: "AccountLayer",
+			targetAddress: ethers.getAddress(accountLayerAddress),
+			account: ethers.getAddress(account),
+			roleName,
+			roleHash: role,
+			status: "revoked",
+			txHash: tx.hash,
+			blockNumber: receipt?.blockNumber,
+		})
+	} catch (error) {
+		recordOperatorRoleAction(report, {
+			operation: "revoke",
+			targetLabel: "AccountLayer",
+			targetAddress: ethers.getAddress(accountLayerAddress),
+			account: ethers.getAddress(account),
+			roleName,
+			roleHash: role,
+			status: "failed",
+			error: errorMessage(error),
+		})
+		throw error
+	}
 }
 
-async function grantStandardRoleIfMissing(contractAddress: string, signer: any, label: string, account: string, roleName: string): Promise<void> {
+async function grantStandardRoleIfMissing(
+	contractAddress: string,
+	signer: any,
+	label: string,
+	account: string,
+	roleName: string,
+	report?: OperatorRoleReport,
+): Promise<void> {
 	const contract = new ethers.Contract(contractAddress, STANDARD_ACCESS_ABI, signer)
-	const role = ethers.id(roleName)
+	const role = roleHash(roleName)
 	if (await contract.hasRole(role, account)) {
 		log.ok(`${label} ${roleName} already granted to ${log.addr(account)}`)
+		recordOperatorRoleAction(report, {
+			operation: "grant",
+			targetLabel: label,
+			targetAddress: ethers.getAddress(contractAddress),
+			account: ethers.getAddress(account),
+			roleName,
+			roleHash: role,
+			status: "already-present",
+		})
 		return
 	}
-	await (await contract.grantRole(role, account, writeTxOverrides())).wait()
-	log.ok(`${label} ${roleName} granted to ${log.addr(account)}`)
+	try {
+		const tx = await contract.grantRole(role, account, writeTxOverrides())
+		const receipt = await tx.wait()
+		log.ok(`${label} ${roleName} granted to ${log.addr(account)}`)
+		recordOperatorRoleAction(report, {
+			operation: "grant",
+			targetLabel: label,
+			targetAddress: ethers.getAddress(contractAddress),
+			account: ethers.getAddress(account),
+			roleName,
+			roleHash: role,
+			status: "granted",
+			txHash: tx.hash,
+			blockNumber: receipt?.blockNumber,
+		})
+	} catch (error) {
+		recordOperatorRoleAction(report, {
+			operation: "grant",
+			targetLabel: label,
+			targetAddress: ethers.getAddress(contractAddress),
+			account: ethers.getAddress(account),
+			roleName,
+			roleHash: role,
+			status: "failed",
+			error: errorMessage(error),
+		})
+		throw error
+	}
 }
 
-async function revokeStandardRoleIfPresent(contractAddress: string, signer: any, label: string, account: string, roleName: string): Promise<void> {
+async function revokeStandardRoleIfPresent(
+	contractAddress: string,
+	signer: any,
+	label: string,
+	account: string,
+	roleName: string,
+	report?: OperatorRoleReport,
+): Promise<void> {
 	const contract = new ethers.Contract(contractAddress, STANDARD_ACCESS_ABI, signer)
-	const role = ethers.id(roleName)
+	const role = roleHash(roleName)
 	if (!(await contract.hasRole(role, account))) {
 		log.ok(`${label} ${roleName} already absent from ${log.addr(account)}`)
+		recordOperatorRoleAction(report, {
+			operation: "revoke",
+			targetLabel: label,
+			targetAddress: ethers.getAddress(contractAddress),
+			account: ethers.getAddress(account),
+			roleName,
+			roleHash: role,
+			status: "already-absent",
+		})
 		return
 	}
-	await (await contract.revokeRole(role, account, writeTxOverrides())).wait()
-	log.ok(`${label} ${roleName} revoked from ${log.addr(account)}`)
+	try {
+		const tx = await contract.revokeRole(role, account, writeTxOverrides())
+		const receipt = await tx.wait()
+		log.ok(`${label} ${roleName} revoked from ${log.addr(account)}`)
+		recordOperatorRoleAction(report, {
+			operation: "revoke",
+			targetLabel: label,
+			targetAddress: ethers.getAddress(contractAddress),
+			account: ethers.getAddress(account),
+			roleName,
+			roleHash: role,
+			status: "revoked",
+			txHash: tx.hash,
+			blockNumber: receipt?.blockNumber,
+		})
+	} catch (error) {
+		recordOperatorRoleAction(report, {
+			operation: "revoke",
+			targetLabel: label,
+			targetAddress: ethers.getAddress(contractAddress),
+			account: ethers.getAddress(account),
+			roleName,
+			roleHash: role,
+			status: "failed",
+			error: errorMessage(error),
+		})
+		throw error
+	}
 }
 
-async function grantTemporaryOperatorRoles(diamondAddress: string, peripherals: PeripheralsAddresses, config: Config, signer: any): Promise<void> {
+async function grantTemporaryOperatorRoles(
+	diamondAddress: string,
+	peripherals: PeripheralsAddresses,
+	config: Config,
+	signer: any,
+	report?: OperatorRoleReport,
+): Promise<void> {
 	const operator = resolveUpgradeOperatorAddress(config)
 	const migrationRunner = normalizeOptionalAddress(config.migrationRunner) ?? operator
 	const signerAddress = ethers.getAddress(await signer.getAddress())
@@ -555,56 +959,62 @@ async function grantTemporaryOperatorRoles(diamondAddress: string, peripherals: 
 		log.info(`Migration runner: ${log.addr(migrationRunner)}`)
 	}
 
-	await grantCoreDefaultAdminIfMissing(controlFacet, signerAddress)
-	await grantCoreDefaultAdminIfMissing(controlFacet, operator)
+	await grantCoreDefaultAdminIfMissing(controlFacet, diamondAddress, signerAddress, report)
+	await grantCoreDefaultAdminIfMissing(controlFacet, diamondAddress, operator, report)
 	for (const roleName of CORE_OPERATOR_GRANT_ROLES) {
 		if (roleName === "DEFAULT_ADMIN_ROLE") continue
-		await grantCoreRoleIfMissing(controlFacet, operator, roleName)
+		await grantCoreRoleIfMissing(controlFacet, diamondAddress, operator, roleName, report)
 	}
 	for (const roleName of CORE_MIGRATION_RUNNER_ROLES) {
-		await grantCoreRoleIfMissing(controlFacet, migrationRunner, roleName)
+		await grantCoreRoleIfMissing(controlFacet, diamondAddress, migrationRunner, roleName, report)
 	}
 
 	if (!peripherals.signatureVerifier || !peripherals.accountLayer || !peripherals.instantLayer) {
 		throw new Error("operator-grant requires deployed peripherals. Run UPGRADE_STAGES=deploy first.")
 	}
 
-	await grantStandardRoleIfMissing(peripherals.signatureVerifier, signer, "MuonSignatureVerifier", operator, "SETTER_ROLE")
-	await grantAccountLayerRoleIfMissing(peripherals.accountLayer, signer, operator, "DEFAULT_ADMIN_ROLE")
-	await grantAccountLayerRoleIfMissing(peripherals.accountLayer, signer, operator, "SETTER_ROLE")
-	await grantStandardRoleIfMissing(peripherals.instantLayer, signer, "InstantLayer", operator, "SETTER_ROLE")
+	await grantStandardRoleIfMissing(peripherals.signatureVerifier, signer, "MuonSignatureVerifier", operator, "SETTER_ROLE", report)
+	await grantAccountLayerRoleIfMissing(peripherals.accountLayer, signer, operator, "DEFAULT_ADMIN_ROLE", report)
+	await grantAccountLayerRoleIfMissing(peripherals.accountLayer, signer, operator, "SETTER_ROLE", report)
+	await grantStandardRoleIfMissing(peripherals.instantLayer, signer, "InstantLayer", operator, "SETTER_ROLE", report)
 }
 
-async function revokeTemporaryOperatorRoles(diamondAddress: string, peripherals: PeripheralsAddresses, config: Config, signer: any): Promise<void> {
+async function revokeTemporaryOperatorRoles(
+	diamondAddress: string,
+	peripherals: PeripheralsAddresses,
+	config: Config,
+	signer: any,
+	report?: OperatorRoleReport,
+): Promise<void> {
 	const operator = resolveUpgradeOperatorAddress(config)
 	const protocolAdmin = normalizeOptionalAddress(config.protocolAdmin)
 	const migrationRunner = normalizeOptionalAddress(config.migrationRunner) ?? operator
 	const controlFacet = new ethers.Contract(diamondAddress, CORE_ACCESS_ABI, signer)
 
 	if (protocolAdmin) {
-		await grantCoreDefaultAdminIfMissing(controlFacet, protocolAdmin)
+		await grantCoreDefaultAdminIfMissing(controlFacet, diamondAddress, protocolAdmin, report)
 	}
 
 	for (const roleName of CORE_MIGRATION_RUNNER_ROLES) {
 		if (!protocolAdmin || migrationRunner.toLowerCase() !== protocolAdmin.toLowerCase()) {
-			await revokeCoreRoleIfPresent(controlFacet, migrationRunner, roleName)
+			await revokeCoreRoleIfPresent(controlFacet, diamondAddress, migrationRunner, roleName, report)
 		}
 	}
 	if (!protocolAdmin || operator.toLowerCase() !== protocolAdmin.toLowerCase()) {
 		for (const roleName of CORE_OPERATOR_REVOKE_ROLES) {
-			await revokeCoreRoleIfPresent(controlFacet, operator, roleName)
+			await revokeCoreRoleIfPresent(controlFacet, diamondAddress, operator, roleName, report)
 		}
 	}
 
 	if (peripherals.signatureVerifier && (!protocolAdmin || operator.toLowerCase() !== protocolAdmin.toLowerCase())) {
-		await revokeStandardRoleIfPresent(peripherals.signatureVerifier, signer, "MuonSignatureVerifier", operator, "SETTER_ROLE")
+		await revokeStandardRoleIfPresent(peripherals.signatureVerifier, signer, "MuonSignatureVerifier", operator, "SETTER_ROLE", report)
 	}
 	if (peripherals.accountLayer && (!protocolAdmin || operator.toLowerCase() !== protocolAdmin.toLowerCase())) {
-		await revokeAccountLayerRoleIfPresent(peripherals.accountLayer, signer, operator, "SETTER_ROLE")
-		await revokeAccountLayerRoleIfPresent(peripherals.accountLayer, signer, operator, "DEFAULT_ADMIN_ROLE")
+		await revokeAccountLayerRoleIfPresent(peripherals.accountLayer, signer, operator, "SETTER_ROLE", report)
+		await revokeAccountLayerRoleIfPresent(peripherals.accountLayer, signer, operator, "DEFAULT_ADMIN_ROLE", report)
 	}
 	if (peripherals.instantLayer && (!protocolAdmin || operator.toLowerCase() !== protocolAdmin.toLowerCase())) {
-		await revokeStandardRoleIfPresent(peripherals.instantLayer, signer, "InstantLayer", operator, "SETTER_ROLE")
+		await revokeStandardRoleIfPresent(peripherals.instantLayer, signer, "InstantLayer", operator, "SETTER_ROLE", report)
 	}
 }
 
@@ -615,11 +1025,11 @@ async function pauseSystem(diamondAddress: string, signer: any): Promise<void> {
 	if (!(await controlFacet.hasRole(signerAddress, defaultAdminRole))) {
 		const owner = ethers.getAddress(await controlFacet.owner())
 		if (owner.toLowerCase() === ethers.getAddress(signerAddress).toLowerCase()) {
-			await grantCoreDefaultAdminIfMissing(controlFacet, signerAddress)
+			await grantCoreDefaultAdminIfMissing(controlFacet, diamondAddress, signerAddress)
 		}
 	}
-	await grantCoreRoleIfMissing(controlFacet, signerAddress, "PAUSER_ROLE")
-	await grantCoreRoleIfMissing(controlFacet, signerAddress, "UNPAUSER_ROLE")
+	await grantCoreRoleIfMissing(controlFacet, diamondAddress, signerAddress, "PAUSER_ROLE")
+	await grantCoreRoleIfMissing(controlFacet, diamondAddress, signerAddress, "UNPAUSER_ROLE")
 
 	const pauseHelper = new ethers.Contract(
 		diamondAddress,
@@ -778,7 +1188,16 @@ async function main() {
 	if (stages.has("operator-grant")) {
 		const t = log.step("Grant temporary operator roles")
 		peripherals = { ...peripherals, ...readPeripheralsAddresses(peripheralsStateFile, deploymentStateContext) }
-		await grantTemporaryOperatorRoles(DIAMOND_ADDRESS, peripherals, config, signer)
+		const report = createOperatorRoleReport("operator-grant", networkName, chainId, DIAMOND_ADDRESS, signerAddress, config, MIGRATION_RUNNER)
+		writeOperatorRoleReport(report)
+		log.info(`Role report: ${report.outputFile}`)
+		try {
+			await grantTemporaryOperatorRoles(DIAMOND_ADDRESS, peripherals, config, signer, report)
+			finishOperatorRoleReport(report, "success")
+		} catch (error) {
+			finishOperatorRoleReport(report, "failed", error)
+			throw error
+		}
 		log.stepDone(t)
 	}
 
@@ -870,7 +1289,16 @@ async function main() {
 	if (stages.has("operator-revoke")) {
 		const t = log.step("Revoke temporary operator roles")
 		peripherals = { ...peripherals, ...readPeripheralsAddresses(peripheralsStateFile, deploymentStateContext) }
-		await revokeTemporaryOperatorRoles(DIAMOND_ADDRESS, peripherals, config, signer)
+		const report = createOperatorRoleReport("operator-revoke", networkName, chainId, DIAMOND_ADDRESS, signerAddress, config, MIGRATION_RUNNER)
+		writeOperatorRoleReport(report)
+		log.info(`Role report: ${report.outputFile}`)
+		try {
+			await revokeTemporaryOperatorRoles(DIAMOND_ADDRESS, peripherals, config, signer, report)
+			finishOperatorRoleReport(report, "success")
+		} catch (error) {
+			finishOperatorRoleReport(report, "failed", error)
+			throw error
+		}
 		log.stepDone(t)
 	}
 
