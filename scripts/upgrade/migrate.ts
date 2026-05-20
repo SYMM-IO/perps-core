@@ -90,13 +90,40 @@ export interface MigrationReport {
 	status: "success" | "failed"
 }
 
+type MigrationQuoteView = {
+	quoteStatus: bigint
+	partyA: string
+	quantity: bigint
+	closedAmount: bigint
+}
+
+const FEE_RESERVATION_STATUSES = new Set([0, 1, 2])
+const ACTIVE_POSITION_STATUSES = new Set([4, 5, 6])
+
+function quoteOpenAmount(quote: MigrationQuoteView): bigint {
+	return BigInt(quote.quantity) - BigInt(quote.closedAmount)
+}
+
+function isZeroAddress(address: string): boolean {
+	return eth.getAddress(address) === eth.ZeroAddress
+}
+
+function migrationSkipReason(quote: MigrationQuoteView): string | undefined {
+	if (isZeroAddress(quote.partyA)) return "non-existent quote"
+	const status = Number(quote.quoteStatus)
+	if (FEE_RESERVATION_STATUSES.has(status)) return undefined
+	if (!ACTIVE_POSITION_STATUSES.has(status)) return `status=${status}`
+	if (quoteOpenAmount(quote) <= 0n) return `status=${status} with zero open amount`
+	return undefined
+}
+
 // =============================================================================
 // Main Migration Function
 // =============================================================================
 
 export async function migrate(
 	migrationFacet: MigrationFacet,
-	viewFacetQuote: { getQuote(quoteId: bigint): Promise<{ quoteStatus: bigint; partyA: string }> },
+	viewFacetQuote: { getQuote(quoteId: bigint): Promise<MigrationQuoteView> },
 	input: MigrationInput,
 	config: MigrationConfig = {},
 ): Promise<MigrationReport> {
@@ -160,25 +187,28 @@ export async function migrate(
 				if (!cfg.skipPreCheck) {
 					// Filter out already-migrated and non-migratable quotes to avoid no-op transactions.
 					// Non-migratable statuses (CANCELED=3, CLOSED=7, LIQUIDATED=8, EXPIRED=9, LIQUIDATED_PENDING=10)
-					// are correctly skipped by the contract — no need to send them.
-					const MIGRATABLE = new Set([0, 1, 2, 4, 5, 6])
+					// and active-position quotes with zero open amount are correctly skipped by the contract — no need to send them.
 					const pending: bigint[] = []
 					let alreadyMigrated = 0
 					let nonMigratable = 0
+					let zeroOpenActive = 0
 					for (const quoteId of input.quoteIds) {
 						const migrated: boolean = await migrationFacet.isQuoteMigrated(quoteId)
 						if (migrated) {
 							alreadyMigrated++
 						} else {
 							const quote = await viewFacetQuote.getQuote(quoteId)
-							if (MIGRATABLE.has(Number(quote.quoteStatus))) {
+							const skipReason = migrationSkipReason(quote)
+							if (!skipReason) {
 								pending.push(quoteId)
 							} else {
 								nonMigratable++
+								if (skipReason.includes("zero open amount")) zeroOpenActive++
 							}
 						}
 					}
 					log("info", `  ${alreadyMigrated} already migrated, ${nonMigratable} non-migratable, ${pending.length} remaining`)
+					if (zeroOpenActive > 0) log("info", `  ${zeroOpenActive} active-status quote(s) skipped because openAmount=0`)
 					if (alreadyMigrated > quotesMigrated) {
 						quotesMigrated = alreadyMigrated
 						progress.quotesProcessed = alreadyMigrated

@@ -153,6 +153,33 @@ function toBigInt(value: unknown): bigint {
 	return BigInt((value as any).toString())
 }
 
+type MigrationQuoteView = {
+	quoteStatus: bigint
+	partyA: string
+	quantity: bigint
+	closedAmount: bigint
+}
+
+const FEE_RESERVATION_STATUSES = new Set([0, 1, 2])
+const ACTIVE_POSITION_STATUSES = new Set([4, 5, 6])
+
+function quoteOpenAmount(quote: MigrationQuoteView): bigint {
+	return toBigInt(quote.quantity) - toBigInt(quote.closedAmount)
+}
+
+function isZeroAddress(address: string): boolean {
+	return ethers.getAddress(address) === ethers.ZeroAddress
+}
+
+function migrationSkipReason(quote: MigrationQuoteView): string | undefined {
+	if (isZeroAddress(quote.partyA)) return "non-existent quote"
+	const status = Number(quote.quoteStatus)
+	if (FEE_RESERVATION_STATUSES.has(status)) return undefined
+	if (!ACTIVE_POSITION_STATUSES.has(status)) return `status=${status}`
+	if (quoteOpenAmount(quote) <= 0n) return `status=${status} with zero open amount`
+	return undefined
+}
+
 function loadMigrationInput(filePath: string): {
 	input: MigrationInput
 	expectedAggregates: Map<string, { long: bigint; short: bigint }> | null
@@ -232,9 +259,6 @@ function loadMigrationInput(filePath: string): {
 	}
 }
 
-// Statuses that migrateQuotes processes and marks as migrated
-const MIGRATABLE_STATUSES = new Set([0, 1, 2, 4, 5, 6])
-
 export async function verifyMigration(
 	migrationFacet: any,
 	viewFacet: any,
@@ -247,13 +271,14 @@ export async function verifyMigration(
 	for (const quoteId of openQuoteIds) {
 		const migrated = await migrationFacet.isQuoteMigrated(quoteId)
 		if (!migrated) {
-			// Check on-chain status — the contract skips non-migratable statuses (CANCELED, CLOSED, etc.)
+			// Check on-chain state — the contract skips non-migratable statuses
+			// and active-position quotes whose open amount is already zero.
 			const quote = await viewFacetQuote.getQuote(quoteId)
-			const status = Number(quote.quoteStatus)
-			if (!MIGRATABLE_STATUSES.has(status)) {
+			const skipReason = migrationSkipReason(quote)
+			if (skipReason) {
 				continue // correctly skipped by contract
 			}
-			throw new Error(`Quote ${quoteId.toString()} not migrated (status=${status})`)
+			throw new Error(`Quote ${quoteId.toString()} not migrated (status=${Number(quote.quoteStatus)}, openAmount=${quoteOpenAmount(quote)})`)
 		}
 	}
 
@@ -354,13 +379,14 @@ const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? configFile.diamondAddress
 const DEFAULT_OUTPUT_DIR = "./scripts/upgrade/output"
 const outputDir = process.env.MIGRATION_OUTPUT_DIR ?? configFile.outputDir ?? DEFAULT_OUTPUT_DIR
 const MIGRATION_INPUT_FILE = process.env.MIGRATION_INPUT_FILE ?? configFile.migrationInputFile ?? `${outputDir}/${withSuffix("migration-input")}`
+const DRY_RUN = parseBool(process.env.DRY_RUN, configFile.dryRun ?? false)
 
 const DEFAULT_PROGRESS_FILE = `${outputDir}/${withSuffix("migration-progress")}`
 let migrateProgressFile = process.env.MIGRATE_PROGRESS_FILE ?? configFile.progressFile ?? DEFAULT_PROGRESS_FILE
-const DEFAULT_REPORT_FILE = `${outputDir}/${withSuffix("migration-report")}`
-let migrateReportFile = process.env.MIGRATE_REPORT_FILE ?? configFile.reportFile ?? DEFAULT_REPORT_FILE
+const DEFAULT_REPORT_FILE = `${outputDir}/${withSuffix(DRY_RUN ? "migration-report-dry-run" : "migration-report")}`
+let migrateReportFile = process.env.MIGRATE_REPORT_FILE ?? (DRY_RUN ? undefined : configFile.reportFile) ?? DEFAULT_REPORT_FILE
 
-if (path.resolve(migrateProgressFile) === path.resolve(MIGRATION_CONFIG_FILE)) {
+if (!DRY_RUN && path.resolve(migrateProgressFile) === path.resolve(MIGRATION_CONFIG_FILE)) {
 	console.warn("migrateProgressFile matches migration config file; falling back to default progress file.")
 	migrateProgressFile = DEFAULT_PROGRESS_FILE
 }
@@ -375,9 +401,9 @@ if (path.resolve(migrateReportFile) === path.resolve(migrateProgressFile)) {
 
 const MIGRATION_CONFIG: MigrationConfig = {
 	chunkSize: Number(process.env.MIGRATE_CHUNK_SIZE ?? configFile.chunkSize ?? "50"),
-	dryRun: parseBool(process.env.DRY_RUN, configFile.dryRun ?? false),
+	dryRun: DRY_RUN,
 	skipPreCheck: parseBool(process.env.SKIP_PRE_CHECK, configFile.skipPreCheck ?? false),
-	progressFile: migrateProgressFile,
+	progressFile: DRY_RUN ? null : migrateProgressFile,
 }
 
 async function main() {
@@ -389,7 +415,7 @@ async function main() {
 		startedAt: new Date(startedAtMs).toISOString(),
 		migrationInputFile: MIGRATION_INPUT_FILE,
 		outputDir,
-		progressFile: migrateProgressFile,
+		progressFile: MIGRATION_CONFIG.progressFile ?? undefined,
 		reportFile: migrateReportFile,
 		config: {
 			chunkSize: MIGRATION_CONFIG.chunkSize,
@@ -438,8 +464,14 @@ async function main() {
 		currentStep = "resolve_signer"
 		const isFork = parseBool(process.env.FORK, configFile.fork ?? false)
 		let admin
-		if (isFork) {
+		let adminAddress: string
+		if (MIGRATION_CONFIG.dryRun) {
+			admin = ethers.provider
+			adminAddress = upgradeShared.migrationRunner ?? ethers.ZeroAddress
+			log.info("Dry run: using provider-only contract runner; no signer will be resolved")
+		} else if (isFork) {
 			admin = await getImpersonatedAdmin(DIAMOND_ADDRESS)
+			adminAddress = await admin.getAddress()
 		} else {
 			const migratorAddress = upgradeShared.migrationRunner
 			admin = await resolveConfiguredSigner({
@@ -448,8 +480,8 @@ async function main() {
 				envPrefix: "MIGRATION_RUNNER",
 				allowDefault: !migratorAddress,
 			})
+			adminAddress = await admin.getAddress()
 		}
-		const adminAddress = await admin.getAddress()
 		report.protocolAdmin = adminAddress
 		report.steps.push({
 			name: "resolve_signer",
@@ -462,7 +494,7 @@ async function main() {
 		log.kv("Diamond", log.addr(DIAMOND_ADDRESS))
 		log.kv("Admin", log.addr(adminAddress))
 		log.kv("Input file", MIGRATION_INPUT_FILE!)
-		log.kv("Progress file", migrateProgressFile)
+		log.kv("Progress file", MIGRATION_CONFIG.progressFile ?? "disabled for dry run")
 		log.kv("Chunk size", String(MIGRATION_CONFIG.chunkSize))
 		if (MIGRATION_CONFIG.dryRun) log.kv("Mode", "DRY RUN")
 
@@ -504,7 +536,7 @@ async function main() {
 		// counts would resume mid-way through a different quoteIds list, silently
 		// skipping quotes. Detect this by comparing saved progress totals against the
 		// current input totals. A completed phase="complete" is explicitly surfaced too.
-		if (fs.existsSync(migrateProgressFile)) {
+		if (!MIGRATION_CONFIG.dryRun && fs.existsSync(migrateProgressFile)) {
 			try {
 				const priorProgress = JSON.parse(fs.readFileSync(migrateProgressFile, "utf-8"))
 				if (priorProgress && typeof priorProgress === "object") {
@@ -571,7 +603,17 @@ async function main() {
 
 		// Verify migration
 		t = log.step("Verify migration")
-		if (input.quoteIds.length > 0 || input.partyBTasks.length > 0) {
+		if (MIGRATION_CONFIG.dryRun) {
+			log.info("Skipping verification because dry run does not submit transactions")
+			report.verification = {
+				performed: false,
+				quoteChecks: 0,
+				partyBChecks: 0,
+				aggregateChecks: 0,
+			}
+			report.steps.push({ name: "verify_migration", status: "ok", details: { skipped: true, reason: "dryRun" } })
+			tryWriteReport(migrateReportFile, report)
+		} else if (input.quoteIds.length > 0 || input.partyBTasks.length > 0) {
 			currentStep = "verify_migration"
 			log.info(
 				`Verifying ${log.commaNumber(input.quoteIds.length)} quotes, ${input.partyBTasks.length} partyBs, ${log.commaNumber(expectedAggregates?.size ?? 0)} aggregates...`,
@@ -604,12 +646,16 @@ async function main() {
 
 		report.status = "success"
 
-		log.success("Migration completed successfully", [
+		log.success(MIGRATION_CONFIG.dryRun ? "Migration dry run completed successfully" : "Migration completed successfully", [
 			["Diamond", DIAMOND_ADDRESS],
 			["Duration", scriptTimer.fmt()],
 			["Report", migrateReportFile],
 		])
-		log.nextSteps(["Verify the migration report in " + migrateReportFile, "Unpause the system when ready"])
+		if (MIGRATION_CONFIG.dryRun) {
+			log.nextSteps(["Review the dry-run report in " + migrateReportFile, "Run again without DRY_RUN=true when ready to execute"])
+		} else {
+			log.nextSteps(["Verify the migration report in " + migrateReportFile, "Unpause the system when ready"])
+		}
 	} catch (error) {
 		if (currentStep) {
 			report.steps.push({
