@@ -6,7 +6,7 @@ import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
 import { baseNetworkName, loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig.js"
 import { createStepReporter } from "./utils/stepReporter.js"
-import { fetchOpenQuotes } from "./utils/subgraphHelpers.js"
+import { deleteOpenQuotesProgress, fetchOpenQuotes } from "./utils/subgraphHelpers.js"
 
 /**
  * Prepare migration input from subgraph data.
@@ -39,6 +39,7 @@ type PrepareConfig = {
 	subgraphEndpoint?: string
 	subgraphEndpoints?: string[]
 	subgraphPageSize?: number
+	subgraphProgressFile?: string
 	spotCheckCount?: number
 	outputFile?: string
 	outputDir?: string
@@ -61,6 +62,7 @@ type PrepareReport = {
 	diamondAddress?: string
 	subgraphEndpoint?: string
 	subgraphEndpoints?: string[]
+	subgraphProgressFile?: string
 	steps: StepResult[]
 	error?: string
 }
@@ -145,6 +147,9 @@ async function main() {
 	const outputDir = process.env.PREPARE_OUTPUT_DIR ?? config.outputDir ?? "./scripts/upgrade/output"
 	const outputFile = process.env.PREPARE_OUTPUT_FILE ?? config.outputFile ?? `${outputDir}/${withSuffix("migration-input")}`
 	const reportFile = `${outputDir}/${withSuffix("prepareMigrationInput-report")}`
+	const resumeSubgraphFetch = process.env.SUBGRAPH_RESUME !== "false"
+	const openQuotesProgressFile =
+		process.env.SUBGRAPH_PROGRESS_FILE ?? config.subgraphProgressFile ?? `${outputDir}/${withSuffix("prepareMigrationInput-openQuotes-progress")}`
 
 	const report: PrepareReport = {
 		status: "running",
@@ -168,6 +173,7 @@ async function main() {
 		report.diamondAddress = DIAMOND_ADDRESS
 		report.subgraphEndpoint = SUBGRAPH_ENDPOINTS[0]
 		report.subgraphEndpoints = SUBGRAPH_ENDPOINTS
+		report.subgraphProgressFile = openQuotesProgressFile
 		report.steps.push({ name: "validate_inputs", status: "ok", details: { diamondAddress: DIAMOND_ADDRESS } })
 		currentStep = null
 		tryWriteReport(reportFile, report)
@@ -181,13 +187,20 @@ async function main() {
 			SUBGRAPH_ENDPOINTS.forEach((endpoint, i) => log.detail(`${i + 1}. ${endpoint}`))
 		}
 		if (SUBGRAPH_PAGE_SIZE) log.kv("Subgraph page size", String(SUBGRAPH_PAGE_SIZE))
+		log.kv("Subgraph resume", resumeSubgraphFetch ? "enabled" : "disabled")
+		if (resumeSubgraphFetch) log.kv("Progress file", openQuotesProgressFile)
 
 		log.setSteps(3)
 
 		// Step 1: Fetch open quotes from subgraph
 		let t = log.step("Fetch open quotes from subgraph")
 		currentStep = "fetch_open_quotes"
-		const quotesResult = await fetchOpenQuotes(SUBGRAPH_ENDPOINTS, SUBGRAPH_PAGE_SIZE)
+		const quotesResult = await fetchOpenQuotes(SUBGRAPH_ENDPOINTS, {
+			pageSize: SUBGRAPH_PAGE_SIZE,
+			progressFile: openQuotesProgressFile,
+			resume: resumeSubgraphFetch,
+			keepProgressOnComplete: true,
+		})
 		log.stats([
 			["Open quotes", quotesResult.quotes.length],
 			["Unique partyAs", quotesResult.partyAs.length],
@@ -202,6 +215,8 @@ async function main() {
 				partyBsCount: quotesResult.partyBs.length,
 				pageSize: SUBGRAPH_PAGE_SIZE ?? "default",
 				endpointsCount: SUBGRAPH_ENDPOINTS.length,
+				progressFile: openQuotesProgressFile,
+				resume: resumeSubgraphFetch,
 			},
 		})
 		currentStep = null
@@ -300,6 +315,7 @@ async function main() {
 		}
 
 		writeJson(outputFile, output)
+		deleteOpenQuotesProgress(openQuotesProgressFile)
 		log.ok(`Written to ${outputFile}`)
 		log.stats([
 			["Quote IDs", quoteIds.length],
