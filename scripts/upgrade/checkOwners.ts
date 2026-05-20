@@ -12,6 +12,7 @@
  *   SYMBOL_MANAGER_ADDRESS
  *   SYMMIO_PARTYB_IMPLEMENTATION
  *   PERIPHERALS_FILE
+ *   UPGRADE_OPERATOR
  */
 import fs from "fs"
 import path from "path"
@@ -26,6 +27,7 @@ type UpgradeConfig = {
 	protocolAdmin?: string
 	safeAddress?: string
 	migrationRunner?: string
+	upgradeOperator?: string
 	symmioFeeReceiver?: string
 	instantLayerAddress?: string
 	accountLayerDiamondAddress?: string
@@ -255,6 +257,7 @@ async function main() {
 			{ label: "protocolAdmin", address: upgradeConfig.protocolAdmin },
 			{ label: "safe", address: upgradeConfig.safeAddress },
 			{ label: "migrationRunner", address: upgradeConfig.migrationRunner },
+			{ label: "upgradeOperator", address: process.env.UPGRADE_OPERATOR ?? upgradeConfig.upgradeOperator },
 			{ label: "symmioFeeReceiver", address: upgradeConfig.symmioFeeReceiver },
 		],
 	})
