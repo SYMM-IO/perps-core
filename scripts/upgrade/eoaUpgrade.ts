@@ -18,8 +18,14 @@
  *   wiring        Wire AccountLayer/InstantLayer/templates/SymbolManager roles
  *   partyb        Register PartyBs from partyBList config
  *   migration     Grant MIGRATION_ROLE
+ *   cross-mode    Enable global cross-PartyB mode (migrationRunner signer)
+ *   cross-partyb  Enable cross mode for configured PartyBs (migrationRunner signer)
+ *   migration-revoke Revoke MIGRATION_ROLE from migrationRunner
+ *   symbol-revoke Revoke SYMBOL_MANAGER_ROLE from migrationRunner
+ *   unpause       Unpause the system
  *   operator-grant Grant temporary operator roles (protocolAdmin signer)
- *   operator-revoke Revoke temporary operator roles (protocolAdmin signer)
+ *   operator-revoke Revoke temporary non-admin operator roles (upgradeOperator signer)
+ *   operator-admin-revoke Revoke temporary DEFAULT_ADMIN_ROLE grants (protocolAdmin signer)
  *
  * Usage:
  *   npx hardhat run scripts/upgrade/eoaUpgrade.ts --network localhost
@@ -76,13 +82,22 @@ type Config = {
 	newV085Parameters?: NewV085Parameters
 }
 
+type PostMigrationConfig = {
+	diamondAddress?: string
+	safeAddress?: string
+	migrationRunner?: string
+	partyBs?: string[]
+}
+
 const OUTPUT_DIR = "./scripts/upgrade/output"
 const FULL_STAGE_ORDER = ["facets", "peripherals", "pause", "cut", "params", "wiring", "partyb", "migration"] as const
-const OPERATOR_STAGE_ORDER = ["operator-grant", "operator-revoke"] as const
-const ALL_STAGE_ORDER = [...FULL_STAGE_ORDER, ...OPERATOR_STAGE_ORDER] as const
+const POST_MIGRATION_STAGE_ORDER = ["cross-mode", "cross-partyb", "migration-revoke", "symbol-revoke", "unpause"] as const
+const OPERATOR_STAGE_ORDER = ["operator-grant", "operator-revoke", "operator-admin-revoke"] as const
+const ALL_STAGE_ORDER = [...FULL_STAGE_ORDER, ...POST_MIGRATION_STAGE_ORDER, ...OPERATOR_STAGE_ORDER] as const
 type UpgradeStage = (typeof ALL_STAGE_ORDER)[number]
 type OperatorRoleStage = (typeof OPERATOR_STAGE_ORDER)[number]
 const DEPLOY_ONLY_STAGES = new Set<UpgradeStage>(["facets", "peripherals"])
+const MIGRATION_RUNNER_STAGES = new Set<UpgradeStage>(["cross-mode", "cross-partyb"])
 
 const CORE_OPERATOR_GRANT_ROLES = [
 	"DEFAULT_ADMIN_ROLE",
@@ -102,7 +117,6 @@ const CORE_OPERATOR_REVOKE_ROLES = [
 	"FEE_ADMIN_ROLE",
 	"INTEGRATION_ADMIN_ROLE",
 	"PARTY_B_MANAGER_ROLE",
-	"DEFAULT_ADMIN_ROLE",
 ] as const
 const CORE_MIGRATION_RUNNER_ROLES = ["MIGRATION_ROLE", "SYMBOL_MANAGER_ROLE"] as const
 
@@ -172,6 +186,12 @@ function loadConfig(): Config {
 	return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8")) as Config
 }
 
+function loadPostMigrationConfig(networkName: string): PostMigrationConfig {
+	const configFile = resolveConfigFile("postMigration", networkName, process.env.POST_MIGRATION_CONFIG_FILE)
+	if (!fs.existsSync(configFile)) return {}
+	return JSON.parse(fs.readFileSync(configFile, "utf-8")) as PostMigrationConfig
+}
+
 function parseStageList(config: Config): Set<UpgradeStage> {
 	const raw = process.env.UPGRADE_STAGES ?? process.env.EOA_UPGRADE_STAGES ?? config.stages
 	if (!raw || (Array.isArray(raw) && raw.length === 0)) return new Set(FULL_STAGE_ORDER)
@@ -232,6 +252,32 @@ function parseStageList(config: Config): Set<UpgradeStage> {
 			case "grant-migration-role":
 				add("migration")
 				break
+			case "cross-mode":
+			case "cross-partyb-mode":
+			case "enable-cross-mode":
+				add("cross-mode")
+				break
+			case "cross-partyb":
+			case "cross-partybs":
+			case "enable-cross-partyb":
+			case "enable-cross-partybs":
+				add("cross-partyb")
+				break
+			case "migration-revoke":
+			case "revoke-migration":
+			case "revoke-migration-role":
+				add("migration-revoke")
+				break
+			case "symbol-revoke":
+			case "revoke-symbol":
+			case "revoke-symbol-role":
+			case "revoke-symbol-manager-role":
+				add("symbol-revoke")
+				break
+			case "unpause":
+			case "unpause-global":
+				add("unpause")
+				break
 			case "operator":
 			case "operator-grant":
 			case "grant-operator":
@@ -243,6 +289,12 @@ function parseStageList(config: Config): Set<UpgradeStage> {
 			case "revoke-operator-roles":
 			case "cleanup-operator":
 				add("operator-revoke")
+				break
+			case "operator-admin-revoke":
+			case "revoke-operator-admin":
+			case "revoke-operator-default-admin":
+			case "cleanup-operator-admin":
+				add("operator-admin-revoke")
 				break
 			default:
 				throw new Error(`Unknown UPGRADE_STAGES token "${token}". Valid stages: ${ALL_STAGE_ORDER.join(", ")} plus alias "deploy".`)
@@ -260,13 +312,18 @@ function needsProtocolAdminSigner(stages: Set<UpgradeStage>): boolean {
 	return [...stages].some(stage => !DEPLOY_ONLY_STAGES.has(stage))
 }
 
-function signerRoleOverride(): "protocolAdmin" | "upgradeOperator" | undefined {
+function hasOnlyMigrationRunnerStages(stages: Set<UpgradeStage>): boolean {
+	return stages.size > 0 && [...stages].every(stage => MIGRATION_RUNNER_STAGES.has(stage))
+}
+
+function signerRoleOverride(): "protocolAdmin" | "upgradeOperator" | "migrationRunner" | undefined {
 	const raw = process.env.UPGRADE_SIGNER_ROLE ?? process.env.EOA_UPGRADE_SIGNER_ROLE
 	if (!raw) return undefined
 	const normalized = raw.trim().toLowerCase()
 	if (["protocoladmin", "protocol-admin", "admin", "owner"].includes(normalized)) return "protocolAdmin"
 	if (["upgradeoperator", "upgrade-operator", "operator"].includes(normalized)) return "upgradeOperator"
-	throw new Error(`Invalid UPGRADE_SIGNER_ROLE: ${raw}. Use protocolAdmin or upgradeOperator.`)
+	if (["migrationrunner", "migration-runner", "migrator"].includes(normalized)) return "migrationRunner"
+	throw new Error(`Invalid UPGRADE_SIGNER_ROLE: ${raw}. Use protocolAdmin, upgradeOperator, or migrationRunner.`)
 }
 
 function normalizeSignatureVerifierParam(
@@ -339,12 +396,46 @@ async function resolveUpgradeSigner(config: Config, stages: Set<UpgradeStage>) {
 	}
 
 	const signerRole = signerRoleOverride()
+	if (!signerRole && hasOnlyMigrationRunnerStages(stages)) {
+		const migrationRunnerAddress = normalizeOptionalAddress(process.env.MIGRATION_RUNNER ?? config.migrationRunner)
+		if (!migrationRunnerAddress) {
+			throw new Error("migrationRunner is required for cross-mode/cross-partyb stages.")
+		}
+		return resolveConfiguredSigner({
+			role: "migrationRunner",
+			expectedAddress: migrationRunnerAddress,
+			envPrefix: "MIGRATION_RUNNER",
+		})
+	}
+	if (signerRole === "migrationRunner") {
+		if (!hasOnlyMigrationRunnerStages(stages)) {
+			throw new Error("UPGRADE_SIGNER_ROLE=migrationRunner can only run cross-mode/cross-partyb stages.")
+		}
+		const migrationRunnerAddress = normalizeOptionalAddress(process.env.MIGRATION_RUNNER ?? config.migrationRunner)
+		if (!migrationRunnerAddress) {
+			throw new Error("migrationRunner is required for UPGRADE_SIGNER_ROLE=migrationRunner.")
+		}
+		return resolveConfiguredSigner({
+			role: "migrationRunner",
+			expectedAddress: migrationRunnerAddress,
+			envPrefix: "MIGRATION_RUNNER",
+		})
+	}
 	if (signerRole === "upgradeOperator") {
 		if (stages.has("cut")) {
 			throw new Error("UPGRADE_SIGNER_ROLE=upgradeOperator cannot run the cut stage; diamondCut is owner-only and must be run by protocolAdmin.")
 		}
-		if (stages.has("operator-grant") || stages.has("operator-revoke")) {
-			throw new Error("operator-grant/operator-revoke must be run by protocolAdmin.")
+		if (stages.has("operator-grant") || stages.has("operator-admin-revoke")) {
+			throw new Error("operator-grant/operator-admin-revoke must be run by protocolAdmin.")
+		}
+		if ([...stages].some(stage => MIGRATION_RUNNER_STAGES.has(stage))) {
+			const migrationRunnerAddress = normalizeOptionalAddress(process.env.MIGRATION_RUNNER ?? config.migrationRunner)
+			const operatorAddress = resolveUpgradeOperatorAddress(config)
+			if (migrationRunnerAddress && migrationRunnerAddress.toLowerCase() !== operatorAddress.toLowerCase()) {
+				throw new Error(
+					"cross-mode/cross-partyb stages require UPGRADE_SIGNER_ROLE=migrationRunner when migrationRunner differs from upgradeOperator.",
+				)
+			}
 		}
 		const operatorAddress = resolveUpgradeOperatorAddress(config)
 		return resolveConfiguredSigner({
@@ -376,6 +467,40 @@ function normalizeOptionalAddress(address: string | undefined): string | undefin
 	if (!address) return undefined
 	if (!ethers.isAddress(address)) throw new Error(`Invalid address: ${address}`)
 	return ethers.getAddress(address)
+}
+
+function parseAddressList(value: string | undefined): string[] {
+	if (!value?.trim()) return []
+	return value
+		.split(",")
+		.map(item => item.trim())
+		.filter(Boolean)
+}
+
+function normalizeAddressList(addresses: string[], label: string): string[] {
+	const unique = new Map<string, string>()
+	for (const address of addresses) {
+		if (!ethers.isAddress(address) || address === ethers.ZeroAddress) {
+			throw new Error(`Invalid ${label} address: ${address}`)
+		}
+		const normalized = ethers.getAddress(address)
+		unique.set(normalized.toLowerCase(), normalized)
+	}
+	return [...unique.values()]
+}
+
+function resolveMigrationRunnerAddress(config: Config, postMigrationConfig: PostMigrationConfig): string {
+	const raw = process.env.MIGRATION_RUNNER ?? postMigrationConfig.migrationRunner ?? config.migrationRunner
+	if (!raw || !ethers.isAddress(raw) || raw === ethers.ZeroAddress) {
+		throw new Error("migrationRunner is required and must be a valid address.")
+	}
+	return ethers.getAddress(raw)
+}
+
+function resolvePostMigrationPartyBs(postMigrationConfig: PostMigrationConfig): string[] {
+	const fromEnv = parseAddressList(process.env.POST_MIGRATION_PARTYBS ?? process.env.CROSS_PARTYBS ?? process.env.PARTYBS)
+	const partyBs = fromEnv.length > 0 ? fromEnv : (postMigrationConfig.partyBs ?? [])
+	return normalizeAddressList(partyBs, "PartyB")
 }
 
 function resolveDeploymentAdmin(config: Config, deployerAddress: string): string {
@@ -508,6 +633,7 @@ const STANDARD_ACCESS_ABI = [
 	"function hasRole(bytes32 role, address account) view returns (bool)",
 	"function grantRole(bytes32 role, address account)",
 	"function revokeRole(bytes32 role, address account)",
+	"function renounceRole(bytes32 role, address account)",
 ]
 
 function emptyOperatorRoleSummary(): Record<OperatorRoleActionStatus, number> {
@@ -942,6 +1068,59 @@ async function revokeStandardRoleIfPresent(
 	}
 }
 
+async function renounceStandardRoleIfPresent(
+	contractAddress: string,
+	signer: any,
+	label: string,
+	account: string,
+	roleName: string,
+	report?: OperatorRoleReport,
+): Promise<void> {
+	const contract = new ethers.Contract(contractAddress, STANDARD_ACCESS_ABI, signer)
+	const role = roleHash(roleName)
+	if (!(await contract.hasRole(role, account))) {
+		log.ok(`${label} ${roleName} already absent from ${log.addr(account)}`)
+		recordOperatorRoleAction(report, {
+			operation: "revoke",
+			targetLabel: label,
+			targetAddress: ethers.getAddress(contractAddress),
+			account: ethers.getAddress(account),
+			roleName,
+			roleHash: role,
+			status: "already-absent",
+		})
+		return
+	}
+	try {
+		const tx = await contract.renounceRole(role, account, writeTxOverrides())
+		const receipt = await tx.wait()
+		log.ok(`${label} ${roleName} renounced by ${log.addr(account)}`)
+		recordOperatorRoleAction(report, {
+			operation: "revoke",
+			targetLabel: label,
+			targetAddress: ethers.getAddress(contractAddress),
+			account: ethers.getAddress(account),
+			roleName,
+			roleHash: role,
+			status: "revoked",
+			txHash: tx.hash,
+			blockNumber: receipt?.blockNumber,
+		})
+	} catch (error) {
+		recordOperatorRoleAction(report, {
+			operation: "revoke",
+			targetLabel: label,
+			targetAddress: ethers.getAddress(contractAddress),
+			account: ethers.getAddress(account),
+			roleName,
+			roleHash: role,
+			status: "failed",
+			error: errorMessage(error),
+		})
+		throw error
+	}
+}
+
 async function grantTemporaryOperatorRoles(
 	diamondAddress: string,
 	peripherals: PeripheralsAddresses,
@@ -988,18 +1167,14 @@ async function revokeTemporaryOperatorRoles(
 ): Promise<void> {
 	const operator = resolveUpgradeOperatorAddress(config)
 	const protocolAdmin = normalizeOptionalAddress(config.protocolAdmin)
-	const migrationRunner = normalizeOptionalAddress(config.migrationRunner) ?? operator
+	const signerAddress = ethers.getAddress(await signer.getAddress())
+	const signerIsOperator = signerAddress.toLowerCase() === operator.toLowerCase()
 	const controlFacet = new ethers.Contract(diamondAddress, CORE_ACCESS_ABI, signer)
 
-	if (protocolAdmin) {
+	if (protocolAdmin && !signerIsOperator) {
 		await grantCoreDefaultAdminIfMissing(controlFacet, diamondAddress, protocolAdmin, report)
 	}
 
-	for (const roleName of CORE_MIGRATION_RUNNER_ROLES) {
-		if (!protocolAdmin || migrationRunner.toLowerCase() !== protocolAdmin.toLowerCase()) {
-			await revokeCoreRoleIfPresent(controlFacet, diamondAddress, migrationRunner, roleName, report)
-		}
-	}
 	if (!protocolAdmin || operator.toLowerCase() !== protocolAdmin.toLowerCase()) {
 		for (const roleName of CORE_OPERATOR_REVOKE_ROLES) {
 			await revokeCoreRoleIfPresent(controlFacet, diamondAddress, operator, roleName, report)
@@ -1007,14 +1182,44 @@ async function revokeTemporaryOperatorRoles(
 	}
 
 	if (peripherals.signatureVerifier && (!protocolAdmin || operator.toLowerCase() !== protocolAdmin.toLowerCase())) {
-		await revokeStandardRoleIfPresent(peripherals.signatureVerifier, signer, "MuonSignatureVerifier", operator, "SETTER_ROLE", report)
+		if (signerIsOperator) {
+			await renounceStandardRoleIfPresent(peripherals.signatureVerifier, signer, "MuonSignatureVerifier", operator, "SETTER_ROLE", report)
+		} else {
+			await revokeStandardRoleIfPresent(peripherals.signatureVerifier, signer, "MuonSignatureVerifier", operator, "SETTER_ROLE", report)
+		}
 	}
 	if (peripherals.accountLayer && (!protocolAdmin || operator.toLowerCase() !== protocolAdmin.toLowerCase())) {
 		await revokeAccountLayerRoleIfPresent(peripherals.accountLayer, signer, operator, "SETTER_ROLE", report)
-		await revokeAccountLayerRoleIfPresent(peripherals.accountLayer, signer, operator, "DEFAULT_ADMIN_ROLE", report)
 	}
 	if (peripherals.instantLayer && (!protocolAdmin || operator.toLowerCase() !== protocolAdmin.toLowerCase())) {
-		await revokeStandardRoleIfPresent(peripherals.instantLayer, signer, "InstantLayer", operator, "SETTER_ROLE", report)
+		if (signerIsOperator) {
+			await renounceStandardRoleIfPresent(peripherals.instantLayer, signer, "InstantLayer", operator, "SETTER_ROLE", report)
+		} else {
+			await revokeStandardRoleIfPresent(peripherals.instantLayer, signer, "InstantLayer", operator, "SETTER_ROLE", report)
+		}
+	}
+}
+
+async function revokeTemporaryOperatorAdminRoles(
+	diamondAddress: string,
+	peripherals: PeripheralsAddresses,
+	config: Config,
+	signer: any,
+	report?: OperatorRoleReport,
+): Promise<void> {
+	const operator = resolveUpgradeOperatorAddress(config)
+	const protocolAdmin = normalizeOptionalAddress(config.protocolAdmin)
+	const controlFacet = new ethers.Contract(diamondAddress, CORE_ACCESS_ABI, signer)
+
+	if (protocolAdmin) {
+		await grantCoreDefaultAdminIfMissing(controlFacet, diamondAddress, protocolAdmin, report)
+	}
+
+	if (!protocolAdmin || operator.toLowerCase() !== protocolAdmin.toLowerCase()) {
+		await revokeCoreRoleIfPresent(controlFacet, diamondAddress, operator, "DEFAULT_ADMIN_ROLE", report)
+	}
+	if (peripherals.accountLayer && (!protocolAdmin || operator.toLowerCase() !== protocolAdmin.toLowerCase())) {
+		await revokeAccountLayerRoleIfPresent(peripherals.accountLayer, signer, operator, "DEFAULT_ADMIN_ROLE", report)
 	}
 }
 
@@ -1042,6 +1247,77 @@ async function pauseSystem(diamondAddress: string, signer: any): Promise<void> {
 		log.ok("System paused (pauseGlobal)")
 	} else {
 		log.ok("System already paused")
+	}
+}
+
+async function unpauseSystem(diamondAddress: string, signer: any): Promise<void> {
+	const signerAddress = await signer.getAddress()
+	const controlFacet = new ethers.Contract(diamondAddress, CORE_ACCESS_ABI, signer)
+	const defaultAdminRole = ethers.id("DEFAULT_ADMIN_ROLE")
+	if (!(await controlFacet.hasRole(signerAddress, defaultAdminRole))) {
+		const owner = ethers.getAddress(await controlFacet.owner())
+		if (owner.toLowerCase() === ethers.getAddress(signerAddress).toLowerCase()) {
+			await grantCoreDefaultAdminIfMissing(controlFacet, diamondAddress, signerAddress)
+		}
+	}
+	await grantCoreRoleIfMissing(controlFacet, diamondAddress, signerAddress, "UNPAUSER_ROLE")
+
+	const pauseHelper = new ethers.Contract(
+		diamondAddress,
+		["function pauseState() view returns (bool globalPaused, bool, bool, bool, bool, bool, bool)", "function unpauseGlobal() external"],
+		signer,
+	)
+	const pauseResult = await pauseHelper.pauseState()
+	if (pauseResult.globalPaused) {
+		await (await pauseHelper.unpauseGlobal(writeTxOverrides())).wait()
+		log.ok("System unpaused (unpauseGlobal)")
+	} else {
+		log.ok("System already unpaused")
+	}
+}
+
+async function revokeMigrationRunnerRole(diamondAddress: string, signer: any, migrationRunner: string, roleName: string): Promise<void> {
+	const controlFacet = new ethers.Contract(diamondAddress, CORE_ACCESS_ABI, signer)
+	await revokeCoreRoleIfPresent(controlFacet, diamondAddress, migrationRunner, roleName)
+}
+
+async function enableCrossPartyBMode(diamondAddress: string, signer: any): Promise<void> {
+	const diamond = new ethers.Contract(
+		diamondAddress,
+		["function isCrossPartyBModeActivated() view returns (bool)", "function setCrossPartyBModeActivated(bool activated)"],
+		signer,
+	)
+	if (await diamond.isCrossPartyBModeActivated()) {
+		log.ok("Cross-PartyB mode already enabled")
+		return
+	}
+	await (await diamond.setCrossPartyBModeActivated(true, writeTxOverrides())).wait()
+	log.ok("Cross-PartyB mode enabled")
+}
+
+async function enableCrossPartyBs(diamondAddress: string, signer: any, partyBs: string[]): Promise<void> {
+	if (partyBs.length === 0) {
+		throw new Error("No PartyBs configured. Set postMigration-{network}.json partyBs or POST_MIGRATION_PARTYBS.")
+	}
+	const diamond = new ethers.Contract(
+		diamondAddress,
+		[
+			"function isCrossPartyBModeActivated() view returns (bool)",
+			"function isCrossPartyB(address partyB) view returns (bool)",
+			"function setCrossPartyB(address partyB, bool enabled)",
+		],
+		signer,
+	)
+	if (!(await diamond.isCrossPartyBModeActivated())) {
+		throw new Error("Cross-PartyB mode is not enabled. Run UPGRADE_STAGES=cross-mode first.")
+	}
+	for (const partyB of partyBs) {
+		if (await diamond.isCrossPartyB(partyB)) {
+			log.ok(`Cross-PartyB already enabled for ${log.addr(partyB)}`)
+			continue
+		}
+		await (await diamond.setCrossPartyB(partyB, true, writeTxOverrides())).wait()
+		log.ok(`Cross-PartyB enabled for ${log.addr(partyB)}`)
 	}
 }
 
@@ -1103,14 +1379,15 @@ async function registerPartyBs(diamondAddress: string, instantLayerAddress: stri
 async function main() {
 	const scriptTimer = log.timer()
 	const config = loadConfig()
+	const networkName = connection.networkName
+	const postMigrationConfig = loadPostMigrationConfig(networkName)
 	const stages = parseStageList(config)
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress
 	if (!DIAMOND_ADDRESS) throw new Error("DIAMOND_ADDRESS required (env or config)")
 
-	const MIGRATION_RUNNER = config.migrationRunner ?? config.protocolAdmin
+	const MIGRATION_RUNNER = process.env.MIGRATION_RUNNER ?? postMigrationConfig.migrationRunner ?? config.migrationRunner ?? config.protocolAdmin
 	const newParams = config.newV085Parameters ?? {}
 	const DIAMOND_CUT_CHUNK_SIZE = Number(process.env.DIAMOND_CUT_CHUNK_SIZE ?? config.diamondCutChunkSize ?? 6)
-	const networkName = connection.networkName
 	const chainId = Number((await ethers.provider.getNetwork()).chainId)
 	const facetsOutFile = process.env.FACETS_FILE ?? path.join(OUTPUT_DIR, `deployed-facets-${networkName}.json`)
 	const peripheralsStateFile = process.env.PERIPHERALS_FILE ?? path.join(OUTPUT_DIR, `deployed-peripherals-${networkName}.json`)
@@ -1286,14 +1563,63 @@ async function main() {
 		log.stepDone(t)
 	}
 
+	if (stages.has("cross-mode")) {
+		const t = log.step("Enable global cross-PartyB mode")
+		await enableCrossPartyBMode(DIAMOND_ADDRESS, signer)
+		log.stepDone(t)
+	}
+
+	if (stages.has("cross-partyb")) {
+		const t = log.step("Enable cross mode for PartyBs")
+		const partyBs = resolvePostMigrationPartyBs(postMigrationConfig)
+		await enableCrossPartyBs(DIAMOND_ADDRESS, signer, partyBs)
+		log.stepDone(t)
+	}
+
+	if (stages.has("migration-revoke")) {
+		const t = log.step("Revoke migration role")
+		const migrationRunner = resolveMigrationRunnerAddress(config, postMigrationConfig)
+		await revokeMigrationRunnerRole(DIAMOND_ADDRESS, signer, migrationRunner, "MIGRATION_ROLE")
+		log.stepDone(t)
+	}
+
+	if (stages.has("symbol-revoke")) {
+		const t = log.step("Revoke symbol manager role")
+		const migrationRunner = resolveMigrationRunnerAddress(config, postMigrationConfig)
+		await revokeMigrationRunnerRole(DIAMOND_ADDRESS, signer, migrationRunner, "SYMBOL_MANAGER_ROLE")
+		log.stepDone(t)
+	}
+
+	if (stages.has("unpause")) {
+		const t = log.step("Unpause system")
+		await unpauseSystem(DIAMOND_ADDRESS, signer)
+		log.stepDone(t)
+	}
+
 	if (stages.has("operator-revoke")) {
-		const t = log.step("Revoke temporary operator roles")
+		const t = log.step("Revoke temporary non-admin operator roles")
 		peripherals = { ...peripherals, ...readPeripheralsAddresses(peripheralsStateFile, deploymentStateContext) }
 		const report = createOperatorRoleReport("operator-revoke", networkName, chainId, DIAMOND_ADDRESS, signerAddress, config, MIGRATION_RUNNER)
 		writeOperatorRoleReport(report)
 		log.info(`Role report: ${report.outputFile}`)
 		try {
 			await revokeTemporaryOperatorRoles(DIAMOND_ADDRESS, peripherals, config, signer, report)
+			finishOperatorRoleReport(report, "success")
+		} catch (error) {
+			finishOperatorRoleReport(report, "failed", error)
+			throw error
+		}
+		log.stepDone(t)
+	}
+
+	if (stages.has("operator-admin-revoke")) {
+		const t = log.step("Revoke temporary operator admin roles")
+		peripherals = { ...peripherals, ...readPeripheralsAddresses(peripheralsStateFile, deploymentStateContext) }
+		const report = createOperatorRoleReport("operator-admin-revoke", networkName, chainId, DIAMOND_ADDRESS, signerAddress, config, MIGRATION_RUNNER)
+		writeOperatorRoleReport(report)
+		log.info(`Role report: ${report.outputFile}`)
+		try {
+			await revokeTemporaryOperatorAdminRoles(DIAMOND_ADDRESS, peripherals, config, signer, report)
 			finishOperatorRoleReport(report, "success")
 		} catch (error) {
 			finishOperatorRoleReport(report, "failed", error)

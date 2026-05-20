@@ -6,6 +6,8 @@ export type TxOverrides = {
 
 const DEFAULT_DEPLOY_GAS_LIMIT = 8_000_000n
 const DEFAULT_TX_GAS_LIMIT = 1_500_000n
+const DEFAULT_MIGRATION_GAS_LIMIT = 8_000_000n
+const DEFAULT_SET_SYMBOL_TYPES_GAS_LIMIT = 5_000_000n
 const DEFAULT_ACCOUNT_LAYER_CUT_GAS_LIMIT = 8_000_000n
 const DEFAULT_DIAMOND_CUT_GAS_LIMIT = 20_000_000n
 
@@ -39,6 +41,16 @@ export function deployTxOverrides(): TxOverrides {
 
 export function writeTxOverrides(): TxOverrides {
 	const limit = gasLimit(["TX_GAS_LIMIT", "GAS_LIMIT"], DEFAULT_TX_GAS_LIMIT)
+	return limit ? { gasLimit: limit } : {}
+}
+
+export function migrationTxOverrides(): TxOverrides {
+	const limit = gasLimit(["MIGRATION_GAS_LIMIT", "MIGRATE_GAS_LIMIT", "TX_GAS_LIMIT", "GAS_LIMIT"], DEFAULT_MIGRATION_GAS_LIMIT)
+	return limit ? { gasLimit: limit } : {}
+}
+
+export function setSymbolTypesTxOverrides(): TxOverrides {
+	const limit = gasLimit(["SET_SYMBOL_TYPES_GAS_LIMIT", "SYMBOL_TYPES_GAS_LIMIT", "TX_GAS_LIMIT", "GAS_LIMIT"], DEFAULT_SET_SYMBOL_TYPES_GAS_LIMIT)
 	return limit ? { gasLimit: limit } : {}
 }
 

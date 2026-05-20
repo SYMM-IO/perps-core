@@ -309,7 +309,8 @@ For an EOA-owned diamond, keep these actors separate:
 
 - `diamondCut()`
 - accepting AccountLayer ownership after deployment
-- granting and revoking temporary operator roles (`operator-grant` / `operator-revoke`)
+- granting temporary operator roles (`operator-grant`)
+- removing the temporary operator `DEFAULT_ADMIN_ROLE` grants (`operator-admin-revoke`)
 - final cleanup verification
 
 `upgradeOperator` can perform scoped work after `operator-grant`:
@@ -319,6 +320,7 @@ For an EOA-owned diamond, keep these actors separate:
 - AccountLayer / InstantLayer / SymbolManager wiring
 - PartyB registration
 - migration role grants, migration, and post-migration symbol updates
+- migration/symbol role revokes and non-admin operator cleanup (`migration-revoke`, `symbol-revoke`, `operator-revoke`)
 
 End state requirement: `upgradeOperator` and `migrationRunner` should have no temporary roles left. Only `protocolAdmin` should retain `DEFAULT_ADMIN_ROLE`.
 
@@ -347,7 +349,7 @@ Once a path is known, pin it with `LEDGER_PATH` or the role-specific `PROTOCOL_A
 1. **Upgrade** (`eoaUpgrade.ts`) -- deploy facets, pause, diamondCut, set params, deploy AL + IL + SymbolManager, wire, grant migration role
 2. **Prepare migration input** (`prepareMigrationInput.ts`)
 3. **Run migration** (`runMigration.ts`)
-4. **Post-migration** (`generatePostMigrationBatch.ts`) -- unpause, enable cross-PartyB mode
+4. **Post-migration** (`eoaUpgrade.ts` post stages, or `generatePostMigrationBatch.ts` for Safe calldata) -- unpause, optionally enable cross-PartyB mode, then revoke temporary migration/symbol roles
 
 Use this only when the connected signer is allowed to perform all privileged actions. For the two-admin model, prefer the staged flow below.
 
@@ -357,14 +359,17 @@ Use this only when the connected signer is allowed to perform all privileged act
 2. **Accept AccountLayer ownership** (`acceptAccountLayerOwnership.ts`) -- run with `protocolAdmin`.
 3. **Validate and verify deployed contracts before pause** -- run bytecode verification for core facets and peripherals, then block-explorer verification for all deployed libraries/facets/peripherals.
 4. **Bootstrap temporary roles** (`UPGRADE_STAGES=operator-grant`) -- `protocolAdmin` grants temporary core/peripheral roles to `upgradeOperator` and migration/symbol roles to `migrationRunner`.
-5. **Prepare migration and symbol inputs before pause** -- run `prepareMigrationInput.ts`, validators, and `fetchSymbolList.ts` while the system is still live to keep the pause window short. Run this as close to pause as practical; if validation detects drift, rerun the preparation. `prepareMigrationInput.ts` checkpoints completed open-quote pages, so a failed subgraph fetch resumes from the last saved globalCounter cursor.
-6. **Pause with operator** (`UPGRADE_SIGNER_ROLE=upgradeOperator UPGRADE_STAGES=pause`) -- operator pauses after inputs are prepared.
+5. **Pause with operator** (`UPGRADE_SIGNER_ROLE=upgradeOperator UPGRADE_STAGES=pause`) -- operator pauses before the migration/symbol snapshots are prepared.
+6. **Prepare migration and symbol inputs after pause** -- run `prepareMigrationInput.ts`, validators, and `fetchSymbolList.ts` against paused state. This makes the inputs stable before migration. `prepareMigrationInput.ts` checkpoints completed open-quote pages, so a failed subgraph fetch resumes from the last saved globalCounter cursor.
 7. **Apply diamondCut with owner** (`UPGRADE_STAGES=cut`) -- `protocolAdmin` runs the owner-only diamond cut. This cannot be delegated by role.
 8. **Operator setup** (`UPGRADE_SIGNER_ROLE=upgradeOperator UPGRADE_STAGES=params,wiring,partyb,migration`) -- operator sets v0.8.5 params, seeds Muon verifier, wires peripherals, registers PartyBs, and grants migration role.
-9. **Migration and symbol update** -- `runMigration.ts`, then `setSymbolType.ts` and `whitelistSymbolTypes.ts` with the pre-pause input files.
-10. **Post-migration** -- execute post-migration txs to revoke migration/symbol roles, unpause, and enable cross-PartyB mode.
-11. **Cleanup** (`UPGRADE_STAGES=operator-revoke`) -- `protocolAdmin` revokes temporary roles from `upgradeOperator` / `migrationRunner`, including temporary `DEFAULT_ADMIN_ROLE`.
-12. **Verify** -- run `checkOwners.ts` and role-specific checks; only `protocolAdmin` should retain permanent admin roles.
+9. **Migration and symbol update** -- `runMigration.ts`, then `setSymbolType.ts` and `whitelistSymbolTypes.ts` with the paused-state input files.
+10. **Unpause** (`UPGRADE_SIGNER_ROLE=upgradeOperator UPGRADE_STAGES=unpause`) -- unpause immediately after migration and symbol whitelisting, while `upgradeOperator` still has `UNPAUSER_ROLE`.
+11. **Optional cross-mode** (`UPGRADE_SIGNER_ROLE=migrationRunner UPGRADE_STAGES=cross-mode,cross-partyb`) -- enable only if this deployment is ready for cross-PartyB mode; run before `MIGRATION_ROLE` is revoked.
+12. **Revoke migration/symbol roles** -- `upgradeOperator`, while still holding temporary `DEFAULT_ADMIN_ROLE`, revokes temporary `MIGRATION_ROLE` and `SYMBOL_MANAGER_ROLE` from `migrationRunner`.
+13. **Operator non-admin cleanup** (`UPGRADE_SIGNER_ROLE=upgradeOperator UPGRADE_STAGES=operator-revoke`) -- `upgradeOperator` revokes its own temporary non-admin roles.
+14. **Operator admin cleanup** (`UPGRADE_STAGES=operator-admin-revoke`) -- `protocolAdmin` revokes the temporary `DEFAULT_ADMIN_ROLE` grants from `upgradeOperator`.
+15. **Verify** -- run `checkOwners.ts` and role-specific checks; only `protocolAdmin` should retain permanent admin roles.
 
 **EOA operator path commands:**
 
@@ -395,7 +400,12 @@ HARDWARE_WALLET_RPC_URL=http://127.0.0.1:<port> \
 UPGRADE_STAGES=operator-grant \
 npx hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
 
-# 5. Prepare migration + symbol inputs before pause.
+# 5. Pause with upgradeOperator.
+USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
+UPGRADE_SIGNER_ROLE=upgradeOperator UPGRADE_STAGES=pause \
+npx hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
+
+# 6. Prepare migration + symbol inputs after pause.
 USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
 npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network coti
 
@@ -407,11 +417,6 @@ npx hardhat run scripts/upgrade/validateMigrationEdgeCases.ts --network coti
 
 USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
 npx hardhat run scripts/upgrade/fetchSymbolList.ts --network coti
-
-# 6. Pause with upgradeOperator.
-USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
-UPGRADE_SIGNER_ROLE=upgradeOperator UPGRADE_STAGES=pause \
-npx hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
 
 # 7. Apply owner-only diamondCut with protocolAdmin.
 USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
@@ -429,19 +434,45 @@ USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
 npx hardhat run scripts/upgrade/runMigration.ts --network coti
 
 USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
+SET_SYMBOL_TYPES_GAS_LIMIT=5000000 CHUNK_SIZE=100 \
 npx hardhat run scripts/upgrade/setSymbolType.ts --network coti
 
 USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
+WHITELIST_SIGNER_ROLE=upgradeOperator TX_GAS_LIMIT=1500000 \
 npx hardhat run scripts/upgrade/whitelistSymbolTypes.ts --network coti
 
-# 10. Generate post-migration revoke/unpause/cross-mode txs and execute them from protocolAdmin.
+# 10. Unpause immediately with upgradeOperator.
 USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
-npx hardhat run scripts/upgrade/generatePostMigrationBatch.ts --network coti
+UPGRADE_SIGNER_ROLE=upgradeOperator UPGRADE_STAGES=unpause \
+npx hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
 
-# 11. After post-migration txs, revoke temporary operator roles with protocolAdmin.
+# 11. Optional: enable cross mode before revoking MIGRATION_ROLE.
+USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
+UPGRADE_SIGNER_ROLE=migrationRunner UPGRADE_STAGES=cross-mode \
+npx hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
+
+USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
+UPGRADE_SIGNER_ROLE=migrationRunner UPGRADE_STAGES=cross-partyb \
+npx hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
+
+# 12. Revoke migrationRunner roles with upgradeOperator.
+USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
+UPGRADE_SIGNER_ROLE=upgradeOperator UPGRADE_STAGES=migration-revoke \
+npx hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
+
+USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
+UPGRADE_SIGNER_ROLE=upgradeOperator UPGRADE_STAGES=symbol-revoke \
+npx hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
+
+# 13. Revoke temporary non-admin operator roles with upgradeOperator.
+USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
+UPGRADE_SIGNER_ROLE=upgradeOperator UPGRADE_STAGES=operator-revoke \
+npx hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
+
+# 14. Revoke temporary DEFAULT_ADMIN_ROLE grants with protocolAdmin.
 USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
 HARDWARE_WALLET_RPC_URL=http://127.0.0.1:<port> \
-UPGRADE_STAGES=operator-revoke \
+UPGRADE_STAGES=operator-admin-revoke \
 npx hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
 ```
 
@@ -503,7 +534,7 @@ Every Symmio deployment has a standard set of contracts and roles. The table bel
 **Notes:**
 
 - `protocolAdmin` is the address that should remain privileged after cleanup. In the EOA path this is usually the hardware wallet owner.
-- `upgradeOperator` is intentionally temporary. Grant it only scoped roles needed for the maintenance window and revoke them before unpause.
+- `upgradeOperator` is intentionally temporary. Grant it only scoped roles needed for the maintenance window, keep `UNPAUSER_ROLE` until the system is unpaused, then revoke it during final cleanup.
 - If the diamond is owned by a **TimeLock** that is itself owned by the Main MultiSig, set `safeAddress` to the Main MultiSig and `timelockAddress` to the TimeLock.
 - `migrationRunner` is the address granted `MIGRATION_ROLE` to execute `migrateQuotes()` and `migrateCrossLockedValues()`.
 - Contracts like Collateral, Pauser, RebalancerToMsig, CallProxy Liquidator, and Fees Manager are **not** part of the upgrade config -- they are unchanged by the v0.8.5 upgrade. A new `SymmioSymbolManager` is deployed and wired during the upgrade (see `deployPeripherals.ts`).
@@ -559,7 +590,7 @@ npx hardhat run scripts/upgrade/runMigration.ts --network fork-arbitrum
 
 - Migration correctness -- `forkUpgrade.ts` step 11 verifies pre/post upgrade snapshots; `runMigration.ts` verifies all migrated data
 - v0.8.5 parameter values -- check on-chain after batch execution
-- Cross-PartyB mode -- enabled post-migration via `generatePostMigrationBatch.ts`
+- Cross-PartyB mode -- enabled post-migration via `UPGRADE_STAGES=cross-mode,cross-partyb`
 
 ## EOA: Single Script Upgrade
 
@@ -758,7 +789,7 @@ The script exits non-zero if any check fails and prints per-file issue lists (ex
 
 ## Step 3: Prepare Migration + Symbol Inputs
 
-Fetches subgraph data and builds the migration input file before the pause window. This uses only version-agnostic on-chain calls (`getNextQuoteId`, which returns the last assigned ID), so it can run before the diamondCut. Run it as close to pause as practical; if validation detects drift, rerun the preparation.
+Fetches subgraph data and builds the migration input file. In the EOA/operator path used for COTI, run this after `pauseGlobal()` so the migration and symbol inputs are based on paused state. This uses only version-agnostic on-chain calls (`getNextQuoteId`, which returns the last assigned ID), so it can still run before the diamondCut.
 
 ```bash
 USE_KEYSTORE=true npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network arbitrum
@@ -799,14 +830,14 @@ USE_KEYSTORE=true npx hardhat run scripts/upgrade/validateMigrationEdgeCases.ts 
 
 ## Step 4: Run Migration + Symbol Updates
 
-Execute migration using the validated input file. Then use the pre-pause symbol input to backfill `symbolType` and whitelist that symbol type for PartyBs. The executor must have `MIGRATION_ROLE`; symbol updates use the configured `migrationRunner` signer and require `SYMBOL_MANAGER_ROLE` / `PARTY_B_MANAGER_ROLE`.
+Execute migration using the validated paused-state input file. Then use the paused-state symbol input to backfill `symbolType` and whitelist that symbol type for PartyBs. The executor must have `MIGRATION_ROLE`; symbol updates use the configured `migrationRunner` signer and require `SYMBOL_MANAGER_ROLE` / `PARTY_B_MANAGER_ROLE`.
 
 ```bash
 USE_KEYSTORE=true DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
   npx hardhat run scripts/upgrade/runMigration.ts --network arbitrum
 
-USE_KEYSTORE=true npx hardhat run scripts/upgrade/setSymbolType.ts --network arbitrum
-USE_KEYSTORE=true npx hardhat run scripts/upgrade/whitelistSymbolTypes.ts --network arbitrum
+USE_KEYSTORE=true SET_SYMBOL_TYPES_GAS_LIMIT=5000000 npx hardhat run scripts/upgrade/setSymbolType.ts --network arbitrum
+USE_KEYSTORE=true WHITELIST_SIGNER_ROLE=upgradeOperator npx hardhat run scripts/upgrade/whitelistSymbolTypes.ts --network arbitrum
 ```
 
 What it does:
@@ -830,31 +861,45 @@ USE_KEYSTORE=true DRY_RUN=true DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scri
 
 ## Step 5: Post-Migration
 
-After `migration-report.json` shows `"status": "success"`, generate and execute post-migration transactions.
+After `migration-report.json` shows `"status": "success"` and symbol whitelisting is complete, unpause first with `upgradeOperator`. Cross-mode setup is optional; if used, it must happen before `MIGRATION_ROLE` is revoked.
 
 ```bash
-USE_KEYSTORE=true DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/generatePostMigrationBatch.ts --network arbitrum
+USE_KEYSTORE=true UPGRADE_SIGNER_ROLE=upgradeOperator UPGRADE_STAGES=unpause \
+  npx hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
 
-# With Safe batch output
-USE_KEYSTORE=true DIAMOND_ADDRESS=0x... SAFE_ADDRESS=0x... npx hardhat run scripts/upgrade/generatePostMigrationBatch.ts --network arbitrum
+# Optional cross-mode setup.
+USE_KEYSTORE=true UPGRADE_SIGNER_ROLE=migrationRunner UPGRADE_STAGES=cross-mode \
+  npx hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
+
+USE_KEYSTORE=true UPGRADE_SIGNER_ROLE=migrationRunner UPGRADE_STAGES=cross-partyb \
+  npx hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
+
+USE_KEYSTORE=true UPGRADE_SIGNER_ROLE=upgradeOperator UPGRADE_STAGES=migration-revoke \
+  npx hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
+
+USE_KEYSTORE=true UPGRADE_SIGNER_ROLE=upgradeOperator UPGRADE_STAGES=symbol-revoke \
+  npx hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
+
+USE_KEYSTORE=true UPGRADE_SIGNER_ROLE=upgradeOperator UPGRADE_STAGES=operator-revoke \
+  npx hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
+
+USE_KEYSTORE=true UPGRADE_STAGES=operator-admin-revoke \
+  npx hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
 ```
 
-PartyB addresses are read from `postMigration.json` config (`partyBs` array).
+PartyB addresses are read from `postMigration.json` config (`partyBs` array), or from `POST_MIGRATION_PARTYBS` / `CROSS_PARTYBS` / `PARTYBS`.
 
-The generated transactions, in order:
+The stages, in order:
 
-| #   | Transaction                         | Purpose                               |
-| --- | ----------------------------------- | ------------------------------------- |
-| 1   | `revokeRole(MIGRATION_ROLE)`        | Remove temporary migration permission |
-| 2   | `revokeRole(SYMBOL_MANAGER_ROLE)`   | Remove temporary symbol permission    |
-| 3   | `unpauseGlobal()`                   | Resume system operations              |
-| 4   | `setCrossPartyBModeActivated(true)` | Enable cross-PartyB feature flag      |
-| 5+  | `setCrossPartyB(partyB, true)`      | Enable cross mode per PartyB          |
-
-Output:
-
-- `scripts/upgrade/output/post-migration-transactions.json` -- raw calldata (always)
-- `scripts/upgrade/output/post-migration-safe-batch.json` -- Safe batch (if SAFE_ADDRESS set)
+| #   | Transaction                         | Purpose                                   |
+| --- | ----------------------------------- | ----------------------------------------- |
+| 1   | `unpauseGlobal()`                   | Resume system operations                  |
+| 2   | `setCrossPartyBModeActivated(true)` | Optional: enable cross-PartyB feature     |
+| 3   | `setCrossPartyB(partyB, true)`      | Optional: enable cross mode per PartyB    |
+| 4   | `revokeRole(MIGRATION_ROLE)`        | Remove temporary migration permission     |
+| 5   | `revokeRole(SYMBOL_MANAGER_ROLE)`   | Remove temporary symbol permission        |
+| 6   | `operator-revoke`                   | Remove temporary non-admin operator roles |
+| 7   | `operator-admin-revoke`             | Remove temporary operator default admin   |
 
 ## Production Verification
 
@@ -934,7 +979,7 @@ The migration report includes:
 | ---------------------------- | -------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `diamondAddress`             | string   | --      | **Symmio** diamond proxy address (the main protocol contract)                                                                                                                             |
 | `protocolAdmin`              | string   | `""`    | Permanent protocol admin / current v0.8.4 owner. For EOA-owned chains this can be the hardware wallet owner and should be the only address that keeps `DEFAULT_ADMIN_ROLE` after cleanup. |
-| `upgradeOperator`            | string   | `""`    | Optional temporary executor for scoped operational work. Grant only the required roles for the maintenance window and revoke them before unpause.                                         |
+| `upgradeOperator`            | string   | `""`    | Optional temporary executor for scoped operational work. Grant only the required roles for the maintenance window and revoke them after unpause during final cleanup.                     |
 | `safeAddress`                | string   | `""`    | **Main MultiSig** -- the Gnosis Safe used in Safe Transaction Builder (Safe path only)                                                                                                    |
 | `migrationRunner`            | string   | `""`    | Address that will run `migrateQuotes` / `migrateCrossLockedValues`. Usually the `upgradeOperator`, but can be separate.                                                                   |
 | `timelockAddress`            | string   | `""`    | **TimeLock** contract address -- set if diamond is owned by a timelock (used by `generateTimelockBatch.ts`)                                                                               |
@@ -986,40 +1031,43 @@ Note: `protocolAdmin` here is the admin for the **newly deployed** MuonSignature
 
 ### Env var overrides
 
-| Env var                                                                            | Overrides                                                                                                                                                                  |
-| ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `USE_KEYSTORE`                                                                     | Set to `true` to use Hardhat keystore keys and RPC overrides (required for all `npx hardhat run` commands on live networks)                                                |
-| `TEAM_DEPLOYER` / `TEAM_UPGRADE_OPERATOR` / `TEAM_MIGRATOR`                        | Private-key slots loaded by `hardhat.config.ts`; keep `upgradeOperator` and `migrationRunner` in separate keystore entries                                                 |
-| `DIAMOND_ADDRESS`                                                                  | `diamondAddress`                                                                                                                                                           |
-| `UPGRADE_STAGES` / `EOA_UPGRADE_STAGES`                                            | Comma-separated EOA stages (`deploy`, `facets`, `peripherals`, `operator-grant`, `pause`, `cut`, `params`, `wiring`, `partyb`, `migration`, `operator-revoke`)             |
-| `UPGRADE_SIGNER_ROLE` / `EOA_UPGRADE_SIGNER_ROLE`                                  | Signer role for non-owner stages. Use `upgradeOperator` to run operator stages after `operator-grant`; `cut`, `operator-grant`, and `operator-revoke` use `protocolAdmin`. |
-| `UPGRADE_OPERATOR`                                                                 | Override `upgradeOperator` from config                                                                                                                                     |
-| `FACETS_FILE`                                                                      | Path to `deployed-facets-{network}.json` (overrides network-based resolution)                                                                                              |
-| `PERIPHERALS_FILE`                                                                 | Path to `deployed-peripherals-{network}.json` (overrides network-based resolution)                                                                                         |
-| `SYMBOL_MANAGER_ADDRESS`                                                           | Override SymmioSymbolManager address for Safe batch wiring                                                                                                                 |
-| `NETWORK`                                                                          | Network name for `ts-node` scripts (e.g. `arbitrum`) -- resolves output file names. Not needed for `npx hardhat run` scripts (uses `--network` flag automatically)         |
-| `UPGRADE_CONFIG_FILE`                                                              | Config file path (default: `scripts/upgrade/config/upgrade-{network}.json`, falls back to `upgrade.json`)                                                                  |
-| `SUBGRAPH_ENDPOINTS`                                                               | Comma-separated ordered fallback list of subgraph endpoints. Each retry cycle tries all endpoints before sleeping.                                                         |
-| `SUBGRAPH_PAGE_SIZE`                                                               | Page size for subgraph pagination in migration/symbol fetchers. Use a smaller value if the endpoint returns 504.                                                           |
-| `SUBGRAPH_MIN_PAGE_SIZE`                                                           | Minimum page size for automatic retry page splitting. Defaults to `10`.                                                                                                    |
-| `SUBGRAPH_MAX_RETRIES`                                                             | Number of retries per subgraph request before reducing page size or failing. Defaults to `5`.                                                                              |
-| `SUBGRAPH_RETRY_DELAY_MS`                                                          | Base retry delay in milliseconds. Delay increases linearly by attempt. Defaults to `2000`.                                                                                 |
-| `SUBGRAPH_TIMEOUT_MS`                                                              | Per-request subgraph timeout in milliseconds. Defaults to `60000`.                                                                                                         |
-| `SUBGRAPH_RESUME`                                                                  | Set to `false` to ignore an existing `prepareMigrationInput.ts` open-quotes checkpoint and start a fresh subgraph scan. Defaults to resume enabled.                        |
-| `SUBGRAPH_PROGRESS_FILE`                                                           | Override the `prepareMigrationInput.ts` open-quotes checkpoint path. Defaults to `output/prepareMigrationInput-openQuotes-progress-{network}.json`.                        |
-| `HARDWARE_WALLET_RPC_URL` / `HW_WALLET_RPC_URL` / `EXTERNAL_WALLET_RPC_URL`        | External wallet RPC that exposes the hardware-wallet account for signer resolution                                                                                         |
-| `PROTOCOL_ADMIN_RPC_URL` / `UPGRADE_OPERATOR_RPC_URL` / `MIGRATION_RUNNER_RPC_URL` | Role-specific external wallet RPCs; these take precedence for the matching role                                                                                            |
-| `HW_WALLET=ledger` / `HARDWARE_WALLET=ledger`                                      | Enable direct Ledger signer support                                                                                                                                        |
-| `LEDGER_PATH` / `HW_LEDGER_PATH`                                                   | Known Ledger derivation path                                                                                                                                               |
-| `LEDGER_PATHS` / `HW_LEDGER_PATHS`                                                 | Comma-separated extra Ledger paths to scan first                                                                                                                           |
-| `LEDGER_SCAN=true` / `HW_LEDGER_SCAN=true`                                         | Scan common Ledger paths when the path is unknown                                                                                                                          |
-| `LEDGER_ACCOUNT_COUNT` / `LEDGER_ADDRESS_COUNT`                                    | Ledger scan ranges for account-based and legacy address-index paths                                                                                                        |
-| `EXPECTED_ADDRESS` / `HARDWARE_ROLE`                                               | Hardware wallet discovery filters used by `listHardwareWalletAccounts.ts`                                                                                                  |
-| `EXPLICIT_GAS_LIMITS` / `USE_EXPLICIT_GAS_LIMITS`                                  | Force explicit gas limits. Defaults to enabled on `coti`.                                                                                                                  |
-| `DEPLOY_GAS_LIMIT`                                                                 | Gas limit for deployments; falls back to COTI default when explicit limits are enabled                                                                                     |
-| `TX_GAS_LIMIT` / `GAS_LIMIT`                                                       | Gas limit for normal write transactions                                                                                                                                    |
-| `ACCOUNT_LAYER_CUT_GAS_LIMIT`                                                      | Gas limit for AccountLayer diamond cuts                                                                                                                                    |
-| `DIAMOND_CUT_GAS_LIMIT`                                                            | Gas limit for core diamond cuts                                                                                                                                            |
+| Env var                                                                            | Overrides                                                                                                                                                                                                                                                             |
+| ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `USE_KEYSTORE`                                                                     | Set to `true` to use Hardhat keystore keys and RPC overrides (required for all `npx hardhat run` commands on live networks)                                                                                                                                           |
+| `TEAM_DEPLOYER` / `TEAM_UPGRADE_OPERATOR` / `TEAM_MIGRATOR`                        | Private-key slots loaded by `hardhat.config.ts`; keep `upgradeOperator` and `migrationRunner` in separate keystore entries                                                                                                                                            |
+| `DIAMOND_ADDRESS`                                                                  | `diamondAddress`                                                                                                                                                                                                                                                      |
+| `UPGRADE_STAGES` / `EOA_UPGRADE_STAGES`                                            | Comma-separated EOA stages (`deploy`, `facets`, `peripherals`, `operator-grant`, `pause`, `cut`, `params`, `wiring`, `partyb`, `migration`, `cross-mode`, `cross-partyb`, `migration-revoke`, `symbol-revoke`, `unpause`, `operator-revoke`, `operator-admin-revoke`) |
+| `UPGRADE_SIGNER_ROLE` / `EOA_UPGRADE_SIGNER_ROLE`                                  | Signer role for non-owner stages. Use `upgradeOperator` after `operator-grant` for operator stages, role revokes, and unpause; use `migrationRunner` for cross-mode stages; use `protocolAdmin` for `cut`, `operator-grant`, and `operator-admin-revoke`.             |
+| `UPGRADE_OPERATOR`                                                                 | Override `upgradeOperator` from config                                                                                                                                                                                                                                |
+| `POST_MIGRATION_PARTYBS` / `CROSS_PARTYBS` / `PARTYBS`                             | Comma-separated PartyBs for `UPGRADE_STAGES=cross-partyb`; overrides `postMigration-{network}.json`                                                                                                                                                                   |
+| `FACETS_FILE`                                                                      | Path to `deployed-facets-{network}.json` (overrides network-based resolution)                                                                                                                                                                                         |
+| `PERIPHERALS_FILE`                                                                 | Path to `deployed-peripherals-{network}.json` (overrides network-based resolution)                                                                                                                                                                                    |
+| `SYMBOL_MANAGER_ADDRESS`                                                           | Override SymmioSymbolManager address for Safe batch wiring                                                                                                                                                                                                            |
+| `NETWORK`                                                                          | Network name for `ts-node` scripts (e.g. `arbitrum`) -- resolves output file names. Not needed for `npx hardhat run` scripts (uses `--network` flag automatically)                                                                                                    |
+| `UPGRADE_CONFIG_FILE`                                                              | Config file path (default: `scripts/upgrade/config/upgrade-{network}.json`, falls back to `upgrade.json`)                                                                                                                                                             |
+| `SUBGRAPH_ENDPOINTS`                                                               | Comma-separated ordered fallback list of subgraph endpoints. Each retry cycle tries all endpoints before sleeping.                                                                                                                                                    |
+| `SUBGRAPH_PAGE_SIZE`                                                               | Page size for subgraph pagination in migration/symbol fetchers. Use a smaller value if the endpoint returns 504.                                                                                                                                                      |
+| `SUBGRAPH_MIN_PAGE_SIZE`                                                           | Minimum page size for automatic retry page splitting. Defaults to `10`.                                                                                                                                                                                               |
+| `SUBGRAPH_MAX_RETRIES`                                                             | Number of retries per subgraph request before reducing page size or failing. Defaults to `5`.                                                                                                                                                                         |
+| `SUBGRAPH_RETRY_DELAY_MS`                                                          | Base retry delay in milliseconds. Delay increases linearly by attempt. Defaults to `2000`.                                                                                                                                                                            |
+| `SUBGRAPH_TIMEOUT_MS`                                                              | Per-request subgraph timeout in milliseconds. Defaults to `60000`.                                                                                                                                                                                                    |
+| `SUBGRAPH_RESUME`                                                                  | Set to `false` to ignore an existing `prepareMigrationInput.ts` open-quotes checkpoint and start a fresh subgraph scan. Defaults to resume enabled.                                                                                                                   |
+| `SUBGRAPH_PROGRESS_FILE`                                                           | Override the `prepareMigrationInput.ts` open-quotes checkpoint path. Defaults to `output/prepareMigrationInput-openQuotes-progress-{network}.json`.                                                                                                                   |
+| `HARDWARE_WALLET_RPC_URL` / `HW_WALLET_RPC_URL` / `EXTERNAL_WALLET_RPC_URL`        | External wallet RPC that exposes the hardware-wallet account for signer resolution                                                                                                                                                                                    |
+| `PROTOCOL_ADMIN_RPC_URL` / `UPGRADE_OPERATOR_RPC_URL` / `MIGRATION_RUNNER_RPC_URL` | Role-specific external wallet RPCs; these take precedence for the matching role                                                                                                                                                                                       |
+| `HW_WALLET=ledger` / `HARDWARE_WALLET=ledger`                                      | Enable direct Ledger signer support                                                                                                                                                                                                                                   |
+| `LEDGER_PATH` / `HW_LEDGER_PATH`                                                   | Known Ledger derivation path                                                                                                                                                                                                                                          |
+| `LEDGER_PATHS` / `HW_LEDGER_PATHS`                                                 | Comma-separated extra Ledger paths to scan first                                                                                                                                                                                                                      |
+| `LEDGER_SCAN=true` / `HW_LEDGER_SCAN=true`                                         | Scan common Ledger paths when the path is unknown                                                                                                                                                                                                                     |
+| `LEDGER_ACCOUNT_COUNT` / `LEDGER_ADDRESS_COUNT`                                    | Ledger scan ranges for account-based and legacy address-index paths                                                                                                                                                                                                   |
+| `EXPECTED_ADDRESS` / `HARDWARE_ROLE`                                               | Hardware wallet discovery filters used by `listHardwareWalletAccounts.ts`                                                                                                                                                                                             |
+| `EXPLICIT_GAS_LIMITS` / `USE_EXPLICIT_GAS_LIMITS`                                  | Force explicit gas limits. Defaults to enabled on `coti`.                                                                                                                                                                                                             |
+| `DEPLOY_GAS_LIMIT`                                                                 | Gas limit for deployments; falls back to COTI default when explicit limits are enabled                                                                                                                                                                                |
+| `TX_GAS_LIMIT` / `GAS_LIMIT`                                                       | Gas limit for normal write transactions                                                                                                                                                                                                                               |
+| `MIGRATION_GAS_LIMIT` / `MIGRATE_GAS_LIMIT`                                        | Gas limit for `runMigration.ts` migration transactions; falls back to `TX_GAS_LIMIT` / `GAS_LIMIT`, then the COTI migration default.                                                                                                                                  |
+| `SET_SYMBOL_TYPES_GAS_LIMIT` / `SYMBOL_TYPES_GAS_LIMIT`                            | Gas limit for `setSymbolType.ts` transactions; falls back to `TX_GAS_LIMIT` / `GAS_LIMIT`, then the COTI symbol-type default.                                                                                                                                         |
+| `ACCOUNT_LAYER_CUT_GAS_LIMIT`                                                      | Gas limit for AccountLayer diamond cuts                                                                                                                                                                                                                               |
+| `DIAMOND_CUT_GAS_LIMIT`                                                            | Gas limit for core diamond cuts                                                                                                                                                                                                                                       |
 
 ### Config files by script
 
@@ -1031,7 +1079,7 @@ All chain-specific config files support network-postfixed names (e.g. `upgrade-a
 | `deployPeripherals-{network}.json` | `deployPeripherals.ts`                                                                 | `protocolAdmin`                                                                                                      | `diamondAddress`, `symmioFeeReceiver`, `safeAddress`   |
 | `prepareMigration-{network}.json`  | `prepareMigrationInput.ts`                                                             | `subgraphEndpoints`, `subgraphPageSize`, `subgraphProgressFile`, `outputDir`, `outputFile`                           | `diamondAddress`, `subgraphEndpoint`, `spotCheckCount` |
 | `migrate-{network}.json`           | `runMigration.ts`                                                                      | `migrationInputFile`, `chunkSize`, `dryRun`, `fork`                                                                  | `diamondAddress`                                       |
-| `postMigration-{network}.json`     | `generatePostMigrationBatch.ts`                                                        | `partyBs`                                                                                                            | `diamondAddress`, `safeAddress`                        |
+| `postMigration-{network}.json`     | `eoaUpgrade.ts` post stages / `generatePostMigrationBatch.ts`                          | `partyBs`                                                                                                            | `diamondAddress`, `safeAddress`                        |
 | `partyBList-{network}.json`        | `whitelistSymbolTypes.ts`                                                              | `partyBs`                                                                                                            | `diamondAddress`, `newV085Parameters.symbolType`       |
 | `instantLayerTemplates.json`       | `generateTemplateBatch.ts`                                                             | `templates`                                                                                                          | `safeAddress`, `instantLayerAddress`                   |
 

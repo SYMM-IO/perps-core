@@ -24,6 +24,7 @@ import { resolveConfiguredSigner } from "./utils/hardwareSigner.js"
 import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
 import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
+import { setSymbolTypesTxOverrides } from "./utils/txOverrides.js"
 
 const OUTPUT_DIR = "./scripts/upgrade/output"
 
@@ -113,7 +114,7 @@ async function main() {
 	log.info(`Sending ${chunks.length} chunk transactions sequentially...`)
 	for (const chunk of chunks) {
 		log.info(`Submitting chunk ${chunk.index} (${chunk.symbolIds.length} symbols)...`)
-		const tx = await diamond.setSymbolTypes(chunk.symbolIds, chunk.symbolTypes)
+		const tx = await diamond.setSymbolTypes(chunk.symbolIds, chunk.symbolTypes, setSymbolTypesTxOverrides())
 		const receipt = await tx.wait()
 		log.ok(`  chunk ${chunk.index}: tx ${receipt.hash} (gas: ${receipt.gasUsed})`)
 	}

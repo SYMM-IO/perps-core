@@ -136,7 +136,7 @@ New step 6 for AL + IL (migration role grant moved to step 9). New step 8 deploy
 
 For deploy-only stages (`UPGRADE_STAGES=deploy`, or `facets,peripherals`), the script uses the default deployer signer as the gas payer. Deployed peripherals are initialized with `protocolAdmin`, `newV085Parameters.signatureVerifierAddress` is written back to `upgrade-{network}.json`, and AccountLayer ownership transfer is initiated to `protocolAdmin`.
 
-After deploy-only stages, run `acceptAccountLayerOwnership.ts` with the `protocolAdmin` signer. For the operator path, run `UPGRADE_STAGES=operator-grant` with `protocolAdmin`, then run role-based stages with `UPGRADE_SIGNER_ROLE=upgradeOperator`. The `cut` stage remains owner-only and must still be run by `protocolAdmin`. After migration, run `UPGRADE_STAGES=operator-revoke` with `protocolAdmin`; `protocolAdmin` should be the only remaining `DEFAULT_ADMIN_ROLE` holder.
+After deploy-only stages, run `acceptAccountLayerOwnership.ts` with the `protocolAdmin` signer. For the operator path, run `UPGRADE_STAGES=operator-grant` with `protocolAdmin`, then run role-based stages with `UPGRADE_SIGNER_ROLE=upgradeOperator`. The `cut` stage remains owner-only and must still be run by `protocolAdmin`. After migration and unpause, run `migration-revoke`, `symbol-revoke`, and `operator-revoke` with `UPGRADE_SIGNER_ROLE=upgradeOperator`; only the final `operator-admin-revoke` stage is run by `protocolAdmin` to remove the temporary `DEFAULT_ADMIN_ROLE` grants.
 
 ### `generateSafeBatch.ts` (Safe multisig)
 

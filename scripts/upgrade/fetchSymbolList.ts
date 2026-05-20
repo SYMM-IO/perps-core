@@ -1,7 +1,7 @@
 /**
  * Fetch symbols from the subgraph and write the input file for setSymbolType.ts.
  *
- * Run before pause, then use the generated file during the migration window
+ * In the EOA/operator upgrade path, run after pause and use the generated file
  * when setSymbolType.ts backfills symbolType.
  *
  * Run:
