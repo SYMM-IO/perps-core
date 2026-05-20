@@ -453,11 +453,12 @@ npx hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
 
     ```bash
     npx hardhat keystore set TEAM_DEPLOYER          # deployment payer or protocolAdmin key, depending on stage
-    npx hardhat keystore set TEAM_MIGRATOR          # migrationRunner / temporary operator key
+    npx hardhat keystore set TEAM_UPGRADE_OPERATOR  # temporary upgradeOperator key
+    npx hardhat keystore set TEAM_MIGRATOR          # migrationRunner key
     npx hardhat keystore set RPC_ARBITRUM           # optional RPC override (per network)
     ```
 
-    Scripts auto-select the correct signer by matching the address from `upgrade.json` (`protocolAdmin` / `migrationRunner`) against available signers. For hardware-wallet `protocolAdmin` flows, use `HARDWARE_WALLET_RPC_URL` or direct Ledger scanning instead of storing the owner key in the keystore.
+    Scripts auto-select the correct signer by matching the address from `upgrade.json` (`protocolAdmin` / `upgradeOperator` / `migrationRunner`) against available signers. For hardware-wallet `protocolAdmin` flows, use `HARDWARE_WALLET_RPC_URL` or direct Ledger scanning instead of storing the owner key in the keystore.
 
     **Important:** keystore values are only read when `USE_KEYSTORE=true` is set. Without it, `hardhat.config.ts` falls back to public RPCs (e.g. `arbitrum.llamarpc.com`) and the `DUMMY_PRIVATE_KEY`. Prefix every hardhat command that needs the real keys / RPCs:
 
@@ -988,6 +989,7 @@ Note: `protocolAdmin` here is the admin for the **newly deployed** MuonSignature
 | Env var                                                                            | Overrides                                                                                                                                                                  |
 | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `USE_KEYSTORE`                                                                     | Set to `true` to use Hardhat keystore keys and RPC overrides (required for all `npx hardhat run` commands on live networks)                                                |
+| `TEAM_DEPLOYER` / `TEAM_UPGRADE_OPERATOR` / `TEAM_MIGRATOR`                        | Private-key slots loaded by `hardhat.config.ts`; keep `upgradeOperator` and `migrationRunner` in separate keystore entries                                                 |
 | `DIAMOND_ADDRESS`                                                                  | `diamondAddress`                                                                                                                                                           |
 | `UPGRADE_STAGES` / `EOA_UPGRADE_STAGES`                                            | Comma-separated EOA stages (`deploy`, `facets`, `peripherals`, `operator-grant`, `pause`, `cut`, `params`, `wiring`, `partyb`, `migration`, `operator-revoke`)             |
 | `UPGRADE_SIGNER_ROLE` / `EOA_UPGRADE_SIGNER_ROLE`                                  | Signer role for non-owner stages. Use `upgradeOperator` to run operator stages after `operator-grant`; `cut`, `operator-grant`, and `operator-revoke` use `protocolAdmin`. |
