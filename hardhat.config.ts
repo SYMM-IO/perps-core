@@ -17,13 +17,14 @@ const DUMMY_PRIVATE_KEY = "0xec81e00837948239d5927bcb2b785675552bc92f1d2607ee91c
 const useKeystore = process.env.USE_KEYSTORE === "true"
 const protocolAdminKey = process.env.TEAM_DEPLOYER || (useKeystore ? configVariable("TEAM_DEPLOYER") : DUMMY_PRIVATE_KEY)
 const migratorKey = process.env.TEAM_MIGRATOR || (useKeystore ? configVariable("TEAM_MIGRATOR") : undefined)
+const upgradeOperatorKey = process.env.TEAM_UPGRADE_OPERATOR || (useKeystore ? configVariable("TEAM_UPGRADE_OPERATOR") : undefined)
 const etherscanApiKey = process.env.ETHERSCAN_APIKEY || (useKeystore ? configVariable("ETHERSCAN_APIKEY") : "")
 
 const createNetworkConfig = (network: string, defaultUrl: string) =>
 	({
 		type: "http",
 		url: process.env[`RPC_${network.toUpperCase()}`] || (useKeystore ? configVariable(`RPC_${network.toUpperCase()}`) : defaultUrl) || defaultUrl,
-		accounts: [protocolAdminKey, migratorKey].filter(Boolean),
+		accounts: [protocolAdminKey, migratorKey, upgradeOperatorKey].filter(Boolean),
 	}) as {
 		type: "http"
 		url: string
