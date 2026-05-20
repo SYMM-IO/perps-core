@@ -583,7 +583,7 @@ export async function resolveConfiguredSigner(options: ResolveSignerOptions): Pr
 	throw new Error(
 		`${options.role}: no signer found for ${expectedAddress}.\n` +
 			`Options:\n` +
-			`  - Set TEAM_DEPLOYER / TEAM_MIGRATOR or USE_KEYSTORE=true if this is a managed key.\n` +
+			`  - Set TEAM_DEPLOYER / TEAM_UPGRADE_OPERATOR / TEAM_MIGRATOR or USE_KEYSTORE=true if this is a managed key.\n` +
 			`  - Use an external wallet RPC that exposes the hardware account: HARDWARE_WALLET_RPC_URL=http://127.0.0.1:<port>.\n` +
 			`  - Use direct Ledger scanning: HW_WALLET=ledger LEDGER_SCAN=true, or set LEDGER_PATH once known.`,
 	)
