@@ -126,6 +126,19 @@ function parseStringList(value: unknown): string[] | undefined {
 	return parsed.length > 0 ? parsed : undefined
 }
 
+const FEE_RESERVATION_STATUSES = new Set([0, 1, 2])
+const ACTIVE_POSITION_STATUSES = new Set([4, 5, 6])
+
+function quoteOpenAmount(quote: { quantity: string; closedAmount: string }): bigint {
+	return BigInt(quote.quantity) - BigInt(quote.closedAmount)
+}
+
+function shouldIncludeQuoteForMigration(quote: { quoteStatus: number; quantity: string; closedAmount: string }): boolean {
+	if (FEE_RESERVATION_STATUSES.has(quote.quoteStatus)) return true
+	if (!ACTIVE_POSITION_STATUSES.has(quote.quoteStatus)) return false
+	return quoteOpenAmount(quote) > 0n
+}
+
 async function main() {
 	const scriptTimer = log.timer()
 	await verifyRpc()
@@ -261,13 +274,24 @@ async function main() {
 		currentStep = "build_input"
 
 		// Quote IDs
-		const quoteIds = quotesResult.quotes.map(q => q.quoteId).sort((a, b) => Number(BigInt(a) - BigInt(b)))
+		const zeroOpenActiveQuotes = quotesResult.quotes.filter(q => ACTIVE_POSITION_STATUSES.has(q.quoteStatus) && quoteOpenAmount(q) <= 0n)
+		if (zeroOpenActiveQuotes.length > 0) {
+			log.warn(
+				`Skipping ${zeroOpenActiveQuotes.length} active-status quote(s) with zero open amount: ` +
+					`${zeroOpenActiveQuotes
+						.slice(0, 10)
+						.map(q => q.quoteId)
+						.join(", ")}${zeroOpenActiveQuotes.length > 10 ? "..." : ""}`,
+			)
+		}
+		const quotesForMigration = quotesResult.quotes.filter(shouldIncludeQuoteForMigration)
+		const quoteIds = quotesForMigration.map(q => q.quoteId).sort((a, b) => Number(BigInt(a) - BigInt(b)))
 
 		// PartyB tasks derived from active quotes (not from all historical balance entries).
 		// Only partyB-partyA pairs with active quotes have non-zero locked values to migrate.
 		// PENDING quotes have partyB = address(0) and don't contribute to partyB locked values.
 		const partyBTaskMap = new Map<string, Set<string>>()
-		for (const q of quotesResult.quotes) {
+		for (const q of quotesForMigration) {
 			if (!q.partyB || q.partyB === "0x0000000000000000000000000000000000000000") continue
 			if (!partyBTaskMap.has(q.partyB)) {
 				partyBTaskMap.set(q.partyB, new Set())
@@ -285,10 +309,9 @@ async function main() {
 		// Only OPENED(4), CLOSE_PENDING(5), CANCEL_CLOSE_PENDING(6) get aggregated positions.
 		// PENDING(0), LOCKED(1), CANCEL_PENDING(2) only get fee reservation — no aggregated positions.
 		const expectedAggregates: Record<string, { long: string; short: string }> = {}
-		for (const q of quotesResult.quotes) {
+		for (const q of quotesForMigration) {
 			if (q.quoteStatus !== 4 && q.quoteStatus !== 5 && q.quoteStatus !== 6) continue
-			const openAmount = BigInt(q.quantity) - BigInt(q.closedAmount)
-			if (openAmount <= 0n) continue
+			const openAmount = quoteOpenAmount(q)
 			const key = `${q.partyB}-${q.partyA}-${q.symbolId}`
 			if (!expectedAggregates[key]) {
 				expectedAggregates[key] = { long: "0", short: "0" }
@@ -308,6 +331,9 @@ async function main() {
 			validation: {
 				onChainLastQuoteId: onChainLastQuoteId.toString(),
 				maxSubgraphQuoteId: maxSubgraphQuoteId.toString(),
+			},
+			skippedQuoteIds: {
+				zeroOpenActive: zeroOpenActiveQuotes.map(q => q.quoteId),
 			},
 			quoteIds,
 			partyBTasks,

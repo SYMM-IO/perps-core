@@ -32,13 +32,15 @@ import { baseNetworkName, loadUpgradeConfigShared } from "./utils/sharedConfig.j
 //   0: id                                 11-14: initialLockedValues (cva, lf, partyAmm, partyBmm)
 //   1: partyBsWhiteList (pointer)         15-18: lockedValues       (cva, lf, partyAmm, partyBmm)
 //   2: symbolId                           20: partyA
-//                                         21: partyB
-//                                         22: quoteStatus
+//   9: quantity                           21: partyB
+//   10: closedAmount                      22: quoteStatus
 
 const GET_QUOTE_SELECTOR = ethers.id("getQuote(uint256)").slice(0, 10)
 
 type DecodedQuote = {
 	symbolId: string
+	quantity: bigint
+	closedAmount: bigint
 	partyA: string
 	partyB: string
 	quoteStatus: number
@@ -53,6 +55,8 @@ function decodeQuoteFields(data: string): DecodedQuote {
 
 	return {
 		symbolId: wordBig(2).toString(),
+		quantity: wordBig(9),
+		closedAmount: wordBig(10),
 		initialLockedValues: { cva: wordBig(11), lf: wordBig(12), partyAmm: wordBig(13), partyBmm: wordBig(14) },
 		lockedValues: { cva: wordBig(15), lf: wordBig(16), partyAmm: wordBig(17), partyBmm: wordBig(18) },
 		partyA: ethers.getAddress("0x" + word(20).slice(24)),
@@ -68,8 +72,9 @@ async function rawGetQuote(diamondAddress: string, quoteId: bigint): Promise<Dec
 	return decodeQuoteFields(result)
 }
 
-// Statuses that require migration
-const MIGRATABLE_STATUSES = new Set([0, 1, 2, 4, 5, 6])
+// Statuses that require migration. Active position statuses also need openAmount > 0.
+const FEE_RESERVATION_STATUSES = new Set([0, 1, 2])
+const ACTIVE_POSITION_STATUSES = new Set([4, 5, 6])
 // PENDING=0, LOCKED=1, CANCEL_PENDING=2, OPENED=4, CLOSE_PENDING=5, CANCEL_CLOSE_PENDING=6
 
 const STATUS_NAMES: Record<number, string> = {
@@ -88,6 +93,17 @@ const STATUS_NAMES: Record<number, string> = {
 
 function statusName(status: number): string {
 	return STATUS_NAMES[status] ?? `UNKNOWN(${status})`
+}
+
+function quoteOpenAmount(quote: DecodedQuote): bigint {
+	return quote.quantity - quote.closedAmount
+}
+
+function needsMigration(quote: DecodedQuote): boolean {
+	if (quote.partyA === ethers.ZeroAddress) return false
+	if (FEE_RESERVATION_STATUSES.has(quote.quoteStatus)) return true
+	if (!ACTIVE_POSITION_STATUSES.has(quote.quoteStatus)) return false
+	return quoteOpenAmount(quote) > 0n
 }
 
 // ── Config ──────────────────────────────────────────────────────────
@@ -150,7 +166,7 @@ async function main() {
 	const boundaryQuote = await rawGetQuote(DIAMOND_ADDRESS, onChainLastQuoteId)
 	log.info(`Quote ${onChainLastQuoteId}: status=${statusName(boundaryQuote.quoteStatus)}, partyA=${log.truncAddr(boundaryQuote.partyA)}`)
 
-	if (MIGRATABLE_STATUSES.has(boundaryQuote.quoteStatus)) {
+	if (needsMigration(boundaryQuote)) {
 		if (quoteIdSet.has(onChainLastQuoteId)) {
 			log.ok(`Boundary quote ${onChainLastQuoteId} is ${statusName(boundaryQuote.quoteStatus)} and IS in migration input`)
 		} else {
@@ -186,7 +202,7 @@ async function main() {
 	for (let id = 1n; id <= headEnd; id++) {
 		gapsChecked++
 		const quote = await rawGetQuote(DIAMOND_ADDRESS, id)
-		if (MIGRATABLE_STATUSES.has(quote.quoteStatus) && !quoteIdSet.has(id)) {
+		if (needsMigration(quote) && !quoteIdSet.has(id)) {
 			gapsMissing++
 			missingDetails.push(`  quote ${id}: ${statusName(quote.quoteStatus)} (partyA=${log.truncAddr(quote.partyA)})`)
 		}
@@ -197,7 +213,7 @@ async function main() {
 	for (let id = tailStart > headEnd ? tailStart : headEnd + 1n; id <= onChainLastQuoteId; id++) {
 		gapsChecked++
 		const quote = await rawGetQuote(DIAMOND_ADDRESS, id)
-		if (MIGRATABLE_STATUSES.has(quote.quoteStatus) && !quoteIdSet.has(id)) {
+		if (needsMigration(quote) && !quoteIdSet.has(id)) {
 			gapsMissing++
 			missingDetails.push(`  quote ${id}: ${statusName(quote.quoteStatus)} (partyA=${log.truncAddr(quote.partyA)})`)
 		}
@@ -349,7 +365,7 @@ async function main() {
 		const quoteId = BigInt(quoteIds[idx])
 		const quote = await rawGetQuote(DIAMOND_ADDRESS, quoteId)
 		if (quote.quoteStatus === 0) continue // PENDING: may legitimately have zeros pre-lock
-		if (!MIGRATABLE_STATUSES.has(quote.quoteStatus)) continue
+		if (!needsMigration(quote)) continue
 		const sum = quote.initialLockedValues.cva + quote.initialLockedValues.lf + quote.initialLockedValues.partyAmm + quote.initialLockedValues.partyBmm
 		if (sum === 0n) {
 			log.warn(`Quote ${quoteId} (${statusName(quote.quoteStatus)}): initialLockedValues are all zero`)

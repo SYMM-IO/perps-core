@@ -10,8 +10,9 @@
  *   # Custom sample count (default 3):
  *   SAMPLES=5 USE_KEYSTORE=true npx hardhat run scripts/upgrade/measureTxLatency.ts --network <network>
  */
-import { ethers } from "../../test/helpers/hardhat-connection.js"
 import type { TransactionResponse } from "ethers"
+
+import { ethers } from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
 import { writeTxOverrides } from "./utils/txOverrides.js"
 
