@@ -2,7 +2,8 @@
  * Whitelist a symbol type for a list of PartyBs on the Symmio diamond.
  *
  * Reads PartyB addresses from a config file and symbolType from upgrade.json,
- * then calls whitelistSymbolType() for each PartyB. Requires PARTY_B_MANAGER_ROLE.
+ * then calls whitelistSymbolType() for each PartyB. Requires PARTY_B_MANAGER_ROLE
+ * or the PartyB itself.
  *
  * Run:
  *   npx hardhat run scripts/upgrade/whitelistSymbolTypes.ts --network <network>
@@ -22,6 +23,7 @@ import { resolveConfiguredSigner } from "./utils/hardwareSigner.js"
 import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
 import { baseNetworkName, loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig.js"
+import { writeTxOverrides } from "./utils/txOverrides.js"
 
 type WhitelistConfig = {
 	partyBs: Record<string, string[]>
@@ -36,6 +38,7 @@ async function main() {
 
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? shared.diamondAddress
 	const SYMBOL_TYPE = Number(process.env.SYMBOL_TYPE ?? shared.newV085Parameters?.symbolType ?? 1)
+	const WHITELIST_SIGNER_ROLE = (process.env.WHITELIST_SIGNER_ROLE ?? "upgradeOperator").trim()
 	const DRY_RUN = process.env.DRY_RUN === "true"
 
 	if (!DIAMOND_ADDRESS || !ethers.isAddress(DIAMOND_ADDRESS)) {
@@ -60,6 +63,7 @@ async function main() {
 
 	log.info(`Diamond:     ${DIAMOND_ADDRESS}`)
 	log.info(`Symbol type: ${SYMBOL_TYPE}`)
+	log.info(`Signer role: ${WHITELIST_SIGNER_ROLE}`)
 	log.info(`PartyBs:     ${partyBs.length}`)
 	log.info(`Dry run:     ${DRY_RUN}`)
 	log.info(`Config:      ${CONFIG_FILE}`)
@@ -75,12 +79,12 @@ async function main() {
 
 	await verifyRpc()
 
-	const migratorAddress = shared.migrationRunner
+	const signerConfig = resolveWhitelistSigner(shared, WHITELIST_SIGNER_ROLE)
 	const signer = await resolveConfiguredSigner({
-		role: "migrationRunner",
-		expectedAddress: migratorAddress,
-		envPrefix: "MIGRATION_RUNNER",
-		allowDefault: !migratorAddress,
+		role: signerConfig.role,
+		expectedAddress: signerConfig.expectedAddress,
+		envPrefix: signerConfig.envPrefix,
+		allowDefault: !signerConfig.expectedAddress,
 	})
 	log.info(`Signer: ${await signer.getAddress()}`)
 
@@ -89,7 +93,7 @@ async function main() {
 	let success = 0
 	for (const partyB of partyBs) {
 		log.info(`Whitelisting symbolType=${SYMBOL_TYPE} for ${partyB}...`)
-		const tx = await diamond.whitelistSymbolType(partyB, BigInt(SYMBOL_TYPE))
+		const tx = await diamond.whitelistSymbolType(partyB, BigInt(SYMBOL_TYPE), writeTxOverrides())
 		const receipt = await tx.wait()
 		log.ok(`  tx: ${receipt.hash} (gas: ${receipt.gasUsed})`)
 		success++
@@ -118,6 +122,32 @@ async function main() {
 		),
 	)
 	log.ok(`Report: ${reportFile}`)
+}
+
+function resolveWhitelistSigner(shared: ReturnType<typeof loadUpgradeConfigShared>, rawRole: string) {
+	const normalized = rawRole.toLowerCase()
+	if (["upgradeoperator", "upgrade-operator", "operator", "partybmanager", "party-b-manager"].includes(normalized)) {
+		return {
+			role: "upgradeOperator",
+			expectedAddress: shared.upgradeOperator,
+			envPrefix: "UPGRADE_OPERATOR",
+		}
+	}
+	if (["migrationrunner", "migration-runner", "migrator"].includes(normalized)) {
+		return {
+			role: "migrationRunner",
+			expectedAddress: shared.migrationRunner,
+			envPrefix: "MIGRATION_RUNNER",
+		}
+	}
+	if (["default", "deployer"].includes(normalized)) {
+		return {
+			role: "default",
+			expectedAddress: undefined,
+			envPrefix: undefined,
+		}
+	}
+	throw new Error(`Invalid WHITELIST_SIGNER_ROLE: ${rawRole}. Use upgradeOperator, migrationRunner, or default.`)
 }
 
 main().catch(error => {

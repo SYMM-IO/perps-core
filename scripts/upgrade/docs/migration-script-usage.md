@@ -28,7 +28,7 @@ Key features:
 
 **For `prepareMigrationInput.ts` and `validateMigrationInput.ts`:**
 
-1. For production, prepare the migration input before pause to keep the maintenance window short. Run it as close to pause as practical, then validate it; if validation reports drift, rerun preparation.
+1. For the EOA/operator production path, prepare the migration input after pause so the migration data is based on paused state. Run it before migration and validate it; if validation reports drift, rerun preparation.
 2. Diamond can be v0.8.4 or v0.8.5 — both scripts are version-agnostic
 
 **For `runMigration.ts`:**
@@ -153,20 +153,23 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 
 ### Env var overrides
 
-| Env var                                                 | Overrides                                                                     |
-| ------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `DIAMOND_ADDRESS`                                       | `diamondAddress`                                                              |
-| `MIGRATION_INPUT_FILE`                                  | `migrationInputFile`                                                          |
-| `MIGRATION_RUNNER_RPC_URL`                              | Role-specific external wallet RPC for the configured `migrationRunner` signer |
-| `HARDWARE_WALLET_RPC_URL` / `HW_WALLET_RPC_URL`         | Generic external wallet RPC fallback for hardware-wallet signers              |
-| `HW_WALLET=ledger` / `LEDGER_SCAN=true` / `LEDGER_PATH` | Direct Ledger signer discovery when no external wallet RPC is used            |
-| `MIGRATE_CHUNK_SIZE`                                    | `chunkSize`                                                                   |
-| `DRY_RUN`                                               | `dryRun`                                                                      |
-| `FORK`                                                  | `fork`                                                                        |
-| `SKIP_PRE_CHECK`                                        | `skipPreCheck`                                                                |
-| `MIGRATE_PROGRESS_FILE`                                 | `progressFile`                                                                |
-| `MIGRATE_REPORT_FILE`                                   | `reportFile`                                                                  |
-| `MIGRATION_OUTPUT_DIR`                                  | `outputDir`                                                                   |
+| Env var                                                 | Overrides                                                                          |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `DIAMOND_ADDRESS`                                       | `diamondAddress`                                                                   |
+| `MIGRATION_INPUT_FILE`                                  | `migrationInputFile`                                                               |
+| `MIGRATION_RUNNER_RPC_URL`                              | Role-specific external wallet RPC for the configured `migrationRunner` signer      |
+| `HARDWARE_WALLET_RPC_URL` / `HW_WALLET_RPC_URL`         | Generic external wallet RPC fallback for hardware-wallet signers                   |
+| `HW_WALLET=ledger` / `LEDGER_SCAN=true` / `LEDGER_PATH` | Direct Ledger signer discovery when no external wallet RPC is used                 |
+| `MIGRATE_CHUNK_SIZE`                                    | `chunkSize`                                                                        |
+| `DRY_RUN`                                               | `dryRun`                                                                           |
+| `FORK`                                                  | `fork`                                                                             |
+| `SKIP_PRE_CHECK`                                        | `skipPreCheck`                                                                     |
+| `MIGRATION_GAS_LIMIT` / `MIGRATE_GAS_LIMIT`             | Explicit gas limit for migration transactions; falls back to `TX_GAS_LIMIT`        |
+| `SET_SYMBOL_TYPES_GAS_LIMIT` / `SYMBOL_TYPES_GAS_LIMIT` | Explicit gas limit for `setSymbolTypes` transactions; falls back to `TX_GAS_LIMIT` |
+| `WHITELIST_SIGNER_ROLE`                                 | Signer for `whitelistSymbolTypes.ts`; defaults to `upgradeOperator`                |
+| `MIGRATE_PROGRESS_FILE`                                 | `progressFile`                                                                     |
+| `MIGRATE_REPORT_FILE`                                   | `reportFile`                                                                       |
+| `MIGRATION_OUTPUT_DIR`                                  | `outputDir`                                                                        |
 
 ## Low-Level API (`scripts/upgrade/migrate.ts`)
 
