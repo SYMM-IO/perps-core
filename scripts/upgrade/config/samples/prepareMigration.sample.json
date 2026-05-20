@@ -1,5 +1,6 @@
 {
 	"subgraphEndpoints": [],
 	"subgraphPageSize": 500,
+	"subgraphProgressFile": "",
 	"spotCheckCount": 20
 }
