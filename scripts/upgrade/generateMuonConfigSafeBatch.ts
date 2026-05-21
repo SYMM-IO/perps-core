@@ -21,7 +21,8 @@
  *   SAFE_SERVICE_URL,
  *   SAFE_SERVICE_API_KEY,
  *   SAFE_SENDER_ADDRESS,
- *   SAFE_ORIGIN
+ *   SAFE_ORIGIN,
+ *   TEAM_PROPOSER (private key loaded by hardhat.config.ts from .env or keystore)
  *
  * Outputs:
  *   scripts/upgrade/output/muon/<network>/safe-batch.json
@@ -596,15 +597,24 @@ async function main() {
 		if (configuredSignature) {
 			safeSignature = configuredSignature
 		} else {
-			const senderSigner = configuredSender ? await ethers.provider.getSigner(configuredSender) : await ethers.provider.getSigner()
-			const signerAddress = ethers.getAddress(await senderSigner.getAddress())
-			if (signerAddress !== senderAddress) {
-				throw new Error(`Resolved signer ${signerAddress} does not match configured Safe proposal sender ${senderAddress}`)
-			}
+			try {
+				const senderSigner = configuredSender ? await ethers.provider.getSigner(configuredSender) : await ethers.provider.getSigner()
+				const signerAddress = ethers.getAddress(await senderSigner.getAddress())
+				if (signerAddress !== senderAddress) {
+					throw new Error(`Resolved signer ${signerAddress} does not match configured Safe proposal sender ${senderAddress}`)
+				}
 
-			// Safe supports eth_sign signatures by storing v + 4.
-			const rawSignature = await senderSigner.signMessage(ethers.getBytes(safeTxHash))
-			safeSignature = buildEthSignSafeSignature(rawSignature)
+				// Safe supports eth_sign signatures by storing v + 4.
+				const rawSignature = await senderSigner.signMessage(ethers.getBytes(safeTxHash))
+				safeSignature = buildEthSignSafeSignature(rawSignature)
+			} catch (error: any) {
+				throw new Error(
+					`Safe proposal sender ${senderAddress} is not available for signing. ` +
+						`Load the matching private key as TEAM_PROPOSER in .env, or run ` +
+						`npx hardhat keystore set TEAM_PROPOSER and rerun with USE_KEYSTORE=true. ` +
+						`Original error: ${error?.message ?? error}`,
+				)
+			}
 		}
 		payload = {
 			...serviceTx,
