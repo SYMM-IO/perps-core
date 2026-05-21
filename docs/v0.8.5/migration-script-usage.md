@@ -144,6 +144,22 @@ NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyDeploy.ts
 NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
 ```
 
+Common live-network examples:
+
+```bash
+# BSC
+NETWORK=bsc RPC_URL=https://bsc-rpc.publicnode.com npx ts-node scripts/upgrade/verifyDeploy.ts
+NETWORK=bsc RPC_URL=https://bsc-rpc.publicnode.com npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
+
+# Arbitrum
+NETWORK=arbitrum RPC_URL=https://arb1.arbitrum.io/rpc npx ts-node scripts/upgrade/verifyDeploy.ts
+NETWORK=arbitrum RPC_URL=https://arb1.arbitrum.io/rpc npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
+
+# COTI
+NETWORK=coti RPC_URL=https://mainnet.coti.io/rpc npx ts-node scripts/upgrade/verifyDeploy.ts
+NETWORK=coti RPC_URL=https://mainnet.coti.io/rpc npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
+```
+
 `verifyPeripheralsDeploy.ts` also picks up the `MuonSignatureVerifier` address from `upgrade-{network}.json` (`newV085Parameters.signatureVerifierAddress`).
 
 ### 4. Generate Safe batch
@@ -334,6 +350,22 @@ Run **after** the wiring batch (`safe-batch.json`) has been executed by the mult
 ```bash
 USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyDiamond.ts --network <network>
 USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyPeripherals.ts --network <network>
+```
+
+For one-off live RPC overrides, use Hardhat's `RPC_<NETWORK>` env var:
+
+```bash
+# BSC
+RPC_BSC=https://bsc-rpc.publicnode.com npx hardhat run scripts/upgrade/verifyDiamond.ts --network bsc
+RPC_BSC=https://bsc-rpc.publicnode.com npx hardhat run scripts/upgrade/verifyPeripherals.ts --network bsc
+
+# Arbitrum
+RPC_ARBITRUM=https://arb1.arbitrum.io/rpc npx hardhat run scripts/upgrade/verifyDiamond.ts --network arbitrum
+RPC_ARBITRUM=https://arb1.arbitrum.io/rpc npx hardhat run scripts/upgrade/verifyPeripherals.ts --network arbitrum
+
+# COTI
+RPC_COTI=https://mainnet.coti.io/rpc npx hardhat run scripts/upgrade/verifyDiamond.ts --network coti
+RPC_COTI=https://mainnet.coti.io/rpc npx hardhat run scripts/upgrade/verifyPeripherals.ts --network coti
 ```
 
 - `verifyDiamond.ts` -- confirms all v0.8.5 facet selectors are registered on the diamond.
