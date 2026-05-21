@@ -909,13 +909,29 @@ Compares the on-chain deployed bytecode against locally compiled Hardhat artifac
 
 ```bash
 # Core facets: reads deployed-facets-{network}.json
-NETWORK=mantle RPC_URL=https://rpc.mantle.xyz npx ts-node scripts/upgrade/verifyDeploy.ts
+NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyDeploy.ts
 
 # Peripherals: reads deployed-peripherals-{network}.json
-NETWORK=mantle RPC_URL=https://rpc.mantle.xyz npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
+NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
 ```
 
-These scripts run standalone via `ts-node` (not `npx hardhat run`), so they use the `NETWORK` env var to resolve the correct output file (e.g. `NETWORK=arbitrum` -> `deployed-facets-arbitrum.json`). Both also read from `scripts/upgrade/output/`. `verifyPeripheralsDeploy.ts` also picks up the `MuonSignatureVerifier` address from `upgrade.json` (`newV085Parameters.signatureVerifierAddress`).
+Common live-network examples:
+
+```bash
+# BSC
+NETWORK=bsc RPC_URL=https://bsc-rpc.publicnode.com npx ts-node scripts/upgrade/verifyDeploy.ts
+NETWORK=bsc RPC_URL=https://bsc-rpc.publicnode.com npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
+
+# Arbitrum
+NETWORK=arbitrum RPC_URL=https://arb1.arbitrum.io/rpc npx ts-node scripts/upgrade/verifyDeploy.ts
+NETWORK=arbitrum RPC_URL=https://arb1.arbitrum.io/rpc npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
+
+# COTI
+NETWORK=coti RPC_URL=https://mainnet.coti.io/rpc npx ts-node scripts/upgrade/verifyDeploy.ts
+NETWORK=coti RPC_URL=https://mainnet.coti.io/rpc npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
+```
+
+These scripts run standalone via `ts-node` (not `npx hardhat run`), so they use the `NETWORK` env var to resolve the correct output file (e.g. `NETWORK=arbitrum` -> `deployed-facets-arbitrum.json`). Both also read from `scripts/upgrade/output/`. `verifyPeripheralsDeploy.ts` also picks up the `MuonSignatureVerifier` address from `upgrade-{network}.json` (`newV085Parameters.signatureVerifierAddress`).
 
 Override env vars (takes precedence over `NETWORK`-based resolution):
 
@@ -941,7 +957,7 @@ After correctness verifications (bytecode + calldata), verify on the block explo
 USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyContracts.ts --network <network>
 ```
 
-Verifies all libraries, core facets, AccountLayer contracts (DiamondCutFacet, Diamond, Init, libraries, facets), InstantLayer, SymmioSymbolManager, and SymmioPartyB implementation. Library dependencies and contract path disambiguation are handled automatically. Addresses are read dynamically from `scripts/upgrade/output/deployed-facets-{network}.json` and `deployed-peripherals-{network}.json` (resolved from `--network`), constructor args from `config/upgrade.json`. Resume with `SKIP=N` if a contract fails.
+Verifies all libraries, core facets, AccountLayer contracts (DiamondCutFacet, Diamond, Init, libraries, facets), InstantLayer, SymmioSymbolManager, and SymmioPartyB implementation. Library dependencies and contract path disambiguation are handled automatically. Addresses are read dynamically from `scripts/upgrade/output/deployed-facets-{network}.json` and `deployed-peripherals-{network}.json` (resolved from `--network`), constructor args from `config/upgrade-{network}.json`. Resume with `SKIP=N` if a contract fails.
 
 The script defaults to Hardhat Verify's Etherscan provider. COTI automatically uses the Blockscout provider because COTI Scan is Blockscout-based. Override with `VERIFY_PROVIDER=etherscan`, `VERIFY_PROVIDER=blockscout`, or `VERIFY_PROVIDER=sourcify` when needed.
 
@@ -951,10 +967,26 @@ After the diamondCut + wiring batch:
 
 ```bash
 # Verify all v0.8.5 facet selectors are registered
-USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyDiamond.ts --network arbitrum
+RPC_<NETWORK>=<rpc> npx hardhat run scripts/upgrade/verifyDiamond.ts --network <network>
 
 # Verify AccountLayer + InstantLayer wiring (roles, hooks, templates)
-USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyPeripherals.ts --network arbitrum
+RPC_<NETWORK>=<rpc> npx hardhat run scripts/upgrade/verifyPeripherals.ts --network <network>
+```
+
+Common live-network examples:
+
+```bash
+# BSC
+RPC_BSC=https://bsc-rpc.publicnode.com npx hardhat run scripts/upgrade/verifyDiamond.ts --network bsc
+RPC_BSC=https://bsc-rpc.publicnode.com npx hardhat run scripts/upgrade/verifyPeripherals.ts --network bsc
+
+# Arbitrum
+RPC_ARBITRUM=https://arb1.arbitrum.io/rpc npx hardhat run scripts/upgrade/verifyDiamond.ts --network arbitrum
+RPC_ARBITRUM=https://arb1.arbitrum.io/rpc npx hardhat run scripts/upgrade/verifyPeripherals.ts --network arbitrum
+
+# COTI
+RPC_COTI=https://mainnet.coti.io/rpc npx hardhat run scripts/upgrade/verifyDiamond.ts --network coti
+RPC_COTI=https://mainnet.coti.io/rpc npx hardhat run scripts/upgrade/verifyPeripherals.ts --network coti
 ```
 
 Also review `upgrade-details.json` for the full selector diff (added, replaced, removed).
@@ -1034,6 +1066,8 @@ Note: `protocolAdmin` here is the admin for the **newly deployed** MuonSignature
 | Env var                                                                            | Overrides                                                                                                                                                                                                                                                             |
 | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `USE_KEYSTORE`                                                                     | Set to `true` to use Hardhat keystore keys and RPC overrides (required for all `npx hardhat run` commands on live networks)                                                                                                                                           |
+| `RPC_<NETWORK>`                                                                    | One-off or keystore-backed RPC override for Hardhat scripts (for example `RPC_BSC`, `RPC_ARBITRUM`, `RPC_COTI`)                                                                                                                                                       |
+| `RPC_URL`                                                                          | RPC endpoint for standalone `ts-node` verification scripts (`verifyDeploy.ts`, `verifyPeripheralsDeploy.ts`)                                                                                                                                                          |
 | `TEAM_DEPLOYER` / `TEAM_UPGRADE_OPERATOR` / `TEAM_MIGRATOR`                        | Private-key slots loaded by `hardhat.config.ts`; keep `upgradeOperator` and `migrationRunner` in separate keystore entries                                                                                                                                            |
 | `DIAMOND_ADDRESS`                                                                  | `diamondAddress`                                                                                                                                                                                                                                                      |
 | `UPGRADE_STAGES` / `EOA_UPGRADE_STAGES`                                            | Comma-separated EOA stages (`deploy`, `facets`, `peripherals`, `operator-grant`, `pause`, `cut`, `params`, `wiring`, `partyb`, `migration`, `cross-mode`, `cross-partyb`, `migration-revoke`, `symbol-revoke`, `unpause`, `operator-revoke`, `operator-admin-revoke`) |
