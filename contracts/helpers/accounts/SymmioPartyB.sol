@@ -32,6 +32,8 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 	bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 	bytes32 public constant UNPAUSER_ROLE = keccak256("UNPAUSER_ROLE");
 	bytes32 public constant SETTER_ROLE = keccak256("SETTER_ROLE");
+	uint8 private constant FUNDING_SKIP_STALE_NONCE = 0;
+	uint8 private constant FUNDING_SKIP_EXPIRED_DEADLINE = 1;
 
 	// Storage layout matches v0.8.4 SymmioPartyB for upgrade compatibility
 	address public symmioAddress; // slot N+0
@@ -64,6 +66,13 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 	/// @notice Emitted when an `adlClose` attempt reverts for a quote, including the raw revert data
 	/// @dev The raw data is the ABI-encoded revert payload (e.g., `Error(string)` / `Panic(uint256)` / custom error)
 	event ADLSkip(uint256 quoteId, uint256 amount, uint256 price, bytes revertData);
+
+	/// @notice Emitted when a funding update is skipped instead of forwarded to Symmio
+	/// @param nonce The solver engine funding nonce supplied by the call
+	/// @param currentNonce The last accepted funding nonce stored before this call
+	/// @param deadline The timestamp after which the update is no longer valid
+	/// @param reason Skip reason: 0 = stale nonce, 1 = expired deadline
+	event FundingFeeUpdateSkipped(uint256 nonce, uint256 currentNonce, uint256 deadline, uint8 reason);
 
 	/// @notice Emitted when the Symmio address is updated
 	event SetSymmioAddress(address oldSymmioAddress, address newSymmioAddress);
@@ -161,22 +170,31 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 		}
 	}
 
-	/// @notice Sets Symmio funding fees only if `nonce` is newer than the last accepted funding nonce.
-	/// @dev Stale nonce calls are skipped without reverting, so out-of-order engine responses cannot
-	///      overwrite a newer funding-rate update or break the surrounding PartyB template.
+	/// @notice Sets Symmio funding fees unless the update is expired or `nonce` is older than the last accepted funding nonce.
+	/// @dev Expired and lower nonce calls are skipped without reverting. Equal nonce calls are accepted so the
+	///      engine can replace or retry the latest funding update without breaking the surrounding PartyB template.
 	function setFundingFee(
 		uint256[] calldata symbolIds,
 		int256[] calldata longFees,
 		int256[] calldata shortFees,
 		int256[] calldata marketPrices,
-		uint256 nonce
+		uint256 nonce,
+		uint256 deadline
 	) external whenNotPaused {
 		require(symmioAddress != address(0), "SymmioPartyB: Invalid address");
 		require(
 			hasRole(MANAGER_ROLE, msg.sender) || hasRole(TRUSTED_ROLE, msg.sender) || ISymmio(symmioAddress).isCallFromInstantLayer(),
 			"SymmioPartyB: Invalid access"
 		);
-		if (nonce < fundingNonce) return;
+		uint256 currentNonce = fundingNonce;
+		if (block.timestamp > deadline) {
+			emit FundingFeeUpdateSkipped(nonce, currentNonce, deadline, FUNDING_SKIP_EXPIRED_DEADLINE);
+			return;
+		}
+		if (nonce < currentNonce) {
+			emit FundingFeeUpdateSkipped(nonce, currentNonce, deadline, FUNDING_SKIP_STALE_NONCE);
+			return;
+		}
 		fundingNonce = nonce;
 		ISymmio(symmioAddress).setFundingFee(symbolIds, longFees, shortFees, marketPrices);
 	}

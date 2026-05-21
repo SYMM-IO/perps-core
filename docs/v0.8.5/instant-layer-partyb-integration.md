@@ -247,15 +247,15 @@ await instantLayer.executeBatch(
 );
 ```
 
-### Funding Updates With Engine Nonce
+### Funding Updates With Engine Nonce And Deadline
 
-Funding-rate updates are the only PartyB calls that must include the solver engine nonce. For these calls, do not encode Symmio core `setFundingFee(...)` directly.
+Funding-rate updates are the only PartyB calls that must include the solver engine nonce and deadline. For these calls, do not encode Symmio core `setFundingFee(...)` directly.
 
-Encode `setFundingFee` from the `SymmioPartyB` ABI instead. It has the same funding parameters plus `fundingNonce` as the last argument:
+Encode `setFundingFee` from the `SymmioPartyB` ABI instead. It has the same funding parameters plus `fundingNonce` and `deadline` as the final arguments:
 
 ```typescript
 const partyBInterface = new ethers.Interface([
-  "function setFundingFee(uint256[] symbolIds,int256[] longFees,int256[] shortFees,int256[] marketPrices,uint256 fundingNonce)"
+  "function setFundingFee(uint256[] symbolIds,int256[] longFees,int256[] shortFees,int256[] marketPrices,uint256 fundingNonce,uint256 deadline)"
 ]);
 
 const fundingCallData = partyBInterface.encodeFunctionData("setFundingFee", [
@@ -263,11 +263,16 @@ const fundingCallData = partyBInterface.encodeFunctionData("setFundingFee", [
   longFees,
   shortFees,
   marketPrices,
-  fundingNonce
+  fundingNonce,
+  deadline
 ]);
 ```
 
-Use `fundingCallData` as the PartyB operation calldata, the same place you would put `lockQuote` or `openPosition` calldata. The nonce is not a new top-level field and should not be placed in `replayAttackHeader.nonce`. `SymmioPartyB._call` checks `fundingNonce`; if it is newer than the last accepted funding nonce, it forwards the funding update to Symmio. If it is stale or equal, it skips the funding update without reverting the whole batch.
+Use `fundingCallData` as the PartyB operation calldata, the same place you would put `lockQuote` or `openPosition` calldata. The nonce is not a new top-level field and should not be placed in `replayAttackHeader.nonce`. `deadline` is a Unix timestamp. If `block.timestamp` is greater than `deadline`, `SymmioPartyB` skips the funding update without reverting the whole batch and emits `FundingFeeUpdateSkipped(..., reason = 1)`.
+
+`SymmioPartyB._call` also checks `fundingNonce`; if it is lower than the last accepted funding nonce, it skips the funding update without reverting the whole batch and emits `FundingFeeUpdateSkipped(..., reason = 0)`. If the deadline has not passed and the nonce is equal to or greater than the last accepted funding nonce, it forwards the funding update to Symmio and stores that nonce.
+
+Equal nonces are intentionally accepted. The solver engine can use the same funding nonce to replace or retry the latest funding update; only strictly older nonces are treated as stale.
 
 This `fundingNonce` is the solver engine ordering nonce. It is separate from `replayAttackHeader.nonce`.
 

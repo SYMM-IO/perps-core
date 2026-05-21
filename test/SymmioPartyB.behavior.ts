@@ -2,7 +2,7 @@ import { expect } from "chai"
 
 import { initializeFixture } from "./Initialize.fixture.js"
 import { ethers } from "./helpers/hardhat-connection.js"
-import { loadFixture } from "./helpers/network-helpers.js"
+import { loadFixture, time } from "./helpers/network-helpers.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
@@ -125,6 +125,7 @@ export function shouldBehaveLikeSymmioPartyB(): void {
 			it("skips stale nonce-gated funding updates without reverting", async function () {
 				const partyBAddress = await setupPartyBContract()
 				await context.pauseControlFacet.connect(context.signers.admin).activateAccumulatedFunding()
+				const deadline = BigInt(await time.latest()) + 3600n
 
 				const setEpochCall = context.fundingRateFacet.interface.encodeFunctionData("setEpochDurations", [[1], [28800]])
 				await context.symmioPartyB.connect(context.signers.admin)._call([setEpochCall])
@@ -135,6 +136,7 @@ export function shouldBehaveLikeSymmioPartyB(): void {
 					[-decimal(2n, 14)],
 					[decimal(1n)],
 					2n,
+					deadline,
 				])
 				await context.symmioPartyB.connect(context.signers.admin)._call([newerFundingCall])
 
@@ -149,13 +151,45 @@ export function shouldBehaveLikeSymmioPartyB(): void {
 					[-decimal(9n, 14)],
 					[decimal(1n)],
 					1n,
+					deadline,
 				])
-				await expect(context.symmioPartyB.connect(context.signers.admin)._call([staleFundingCall])).to.not.be.reverted
+				await expect(context.symmioPartyB.connect(context.signers.admin)._call([staleFundingCall]))
+					.to.emit(context.symmioPartyB, "FundingFeeUpdateSkipped")
+					.withArgs(1n, 2n, deadline, 0)
 
 				fundingFee = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, partyBAddress)
 				expect(await context.symmioPartyB.fundingNonce()).to.equal(2n)
 				expect(fundingFee.currentLongRate).to.equal(decimal(2n, 14))
 				expect(fundingFee.currentShortRate).to.equal(-decimal(2n, 14))
+			})
+
+			it("skips expired deadline funding updates without reverting", async function () {
+				const partyBAddress = await setupPartyBContract()
+				await context.pauseControlFacet.connect(context.signers.admin).activateAccumulatedFunding()
+
+				const setEpochCall = context.fundingRateFacet.interface.encodeFunctionData("setEpochDurations", [[1], [28800]])
+				await context.symmioPartyB.connect(context.signers.admin)._call([setEpochCall])
+
+				const latest = BigInt(await time.latest())
+				const expiredDeadline = latest + 10n
+				await time.increase(11)
+
+				const expiredFundingCall = context.symmioPartyB.interface.encodeFunctionData("setFundingFee", [
+					[1],
+					[decimal(9n, 14)],
+					[-decimal(9n, 14)],
+					[decimal(1n)],
+					3n,
+					expiredDeadline,
+				])
+				await expect(context.symmioPartyB.connect(context.signers.admin)._call([expiredFundingCall]))
+					.to.emit(context.symmioPartyB, "FundingFeeUpdateSkipped")
+					.withArgs(3n, 0n, expiredDeadline, 1)
+
+				const fundingFee = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, partyBAddress)
+				expect(await context.symmioPartyB.fundingNonce()).to.equal(0n)
+				expect(fundingFee.currentLongRate).to.equal(0n)
+				expect(fundingFee.currentShortRate).to.equal(0n)
 			})
 		})
 	})
