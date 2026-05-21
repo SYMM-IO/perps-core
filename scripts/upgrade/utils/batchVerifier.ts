@@ -176,8 +176,8 @@ type DeployedFacets = {
 export async function loadVerifyContext(inputs: VerifyContextInputs): Promise<LoadedContext> {
 	const { networkName, outputDir, configDir, paths = {} } = inputs
 
-	const upgradeFile = paths.upgradeConfig ?? path.join(configDir, "upgrade.json")
-	const partyBListFile = paths.partyBListConfig ?? path.join(configDir, "partyBList.json")
+	const upgradeFile = paths.upgradeConfig ?? resolveNetworkConfigFile(configDir, "upgrade", networkName)
+	const partyBListFile = paths.partyBListConfig ?? resolveNetworkConfigFile(configDir, "partyBList", networkName)
 	const templatesFile = paths.instantLayerTemplatesConfig ?? path.join(configDir, "instantLayerTemplates.json")
 	const deployedFacetsFile = paths.deployedFacets ?? path.join(outputDir, `deployed-facets-${networkName}.json`)
 	const deployedPeripheralsFile = paths.deployedPeripherals ?? path.join(outputDir, `deployed-peripherals-${networkName}.json`)
@@ -273,6 +273,12 @@ export async function loadVerifyContext(inputs: VerifyContextInputs): Promise<Lo
 		selectorSignatures: deployedFacetsJson.selectorSignatures ?? {},
 		files,
 	}
+}
+
+function resolveNetworkConfigFile(configDir: string, baseName: string, networkName: string): string {
+	const networkSpecific = path.join(configDir, `${baseName}-${networkName}.json`)
+	if (fs.existsSync(networkSpecific)) return networkSpecific
+	return path.join(configDir, `${baseName}.json`)
 }
 
 function collectChunked(dir: string, prefix: string): string[] {
