@@ -72,15 +72,15 @@
         "inputs": [
             {
                 "indexed": false,
-                "internalType": "uint256",
-                "name": "nonce",
-                "type": "uint256"
+                "internalType": "uint256[]",
+                "name": "symbolIds",
+                "type": "uint256[]"
             },
             {
                 "indexed": false,
-                "internalType": "uint256",
-                "name": "currentNonce",
-                "type": "uint256"
+                "internalType": "uint256[]",
+                "name": "nonces",
+                "type": "uint256[]"
             },
             {
                 "indexed": false,
@@ -433,7 +433,13 @@
         "type": "function"
     },
     {
-        "inputs": [],
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
         "name": "fundingNonce",
         "outputs": [
             {
@@ -678,9 +684,9 @@
                 "type": "int256[]"
             },
             {
-                "internalType": "uint256",
-                "name": "nonce",
-                "type": "uint256"
+                "internalType": "uint256[]",
+                "name": "nonces",
+                "type": "uint256[]"
             },
             {
                 "internalType": "uint256",
