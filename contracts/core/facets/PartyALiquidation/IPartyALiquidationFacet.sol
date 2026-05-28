@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { IPartyALiquidationEvents } from "./IPartyALiquidationEvents.sol";
+import { IPartyALiquidationEvents } from "../../interfaces/IPartyALiquidationEvents.sol";
 import { LiquidationSig, DeferredLiquidationSig } from "../../storages/MuonStorage.sol";
 
 interface IPartyALiquidationFacet is IPartyALiquidationEvents {

@@ -6,15 +6,17 @@ pragma solidity >=0.8.18;
 
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
-import { ClearingHouseStorage } from "../../storages/ClearingHouseStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
 import { LibMuon } from "../../libraries/muon/LibMuon.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
+import { LibPartyBState } from "../../libraries/extensions/LibPartyBState.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { SingleUpnlSig } from "../../storages/MuonStorage.sol";
 import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library PartyBAccountFacetImpl {
+	using LibPartyBState for address;
+
 	/// @notice Moves collateral from Party B's balance to allocated balance for a given Party A
 	function allocateForPartyB(uint256 amount, address partyA) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
@@ -22,10 +24,7 @@ library PartyBAccountFacetImpl {
 		address signer = LibSigner.getSigner();
 		require(!maLayout.crossModeEnabledForPartyB[signer] || partyA == address(0), "PartyBFacet: Cross partyB mode is active");
 		require(accountLayout.balances[signer] >= amount, "AccountFacet: Insufficient balance");
-		require(
-			!maLayout.partyBLiquidationStatus[signer][partyA] && !ClearingHouseStorage.layout().crossLiquidationDetails[signer].inProgress,
-			"AccountFacet: PartyB isn't solvent"
-		);
+		signer.requireNotLiquidating(partyA);
 		accountLayout.balances[signer] -= amount;
 		accountLayout.partyBAllocatedBalances[signer][partyA] += amount;
 	}
@@ -70,13 +69,12 @@ library PartyBAccountFacetImpl {
 	function transferAllocation(uint256 amount, address origin, address recipient, SingleUpnlSig memory upnlSig) internal {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		ClearingHouseStorage.Layout storage chLayout = ClearingHouseStorage.layout();
 		address signer = LibSigner.getSigner();
-		require(!maLayout.partyBLiquidationStatus[signer][origin], "PartyBFacet: PartyB isn't solvent");
-		require(!maLayout.partyBLiquidationStatus[signer][recipient], "PartyBFacet: PartyB isn't solvent");
+		signer.requireNotLiquidatingAgainst(origin);
+		signer.requireNotLiquidatingAgainst(recipient);
 		require(!maLayout.liquidationStatus[origin], "PartyBFacet: Origin isn't solvent");
 		require(!maLayout.liquidationStatus[recipient], "PartyBFacet: Recipient isn't solvent");
-		require(!chLayout.crossLiquidationDetails[signer].inProgress, "PartyBFacet: PartyB isn't solvent");
+		signer.requireNotCrossLiquidating();
 
 		// Not to be in cross partyB mode as when it's activated there is no point on transferAllocation
 		require(!maLayout.crossModeEnabledForPartyB[signer], "PartyBFacet: Cross partyB mode is active");

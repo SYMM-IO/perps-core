@@ -268,7 +268,7 @@ interface VerificationResult {
 	hint?: string
 }
 
-const EXPECTED_CORE_FACETS = 29
+const EXPECTED_CORE_FACETS = 30
 const EXPECTED_ACCOUNTLAYER_FACETS = 8
 
 function roleHash(ethers: any, role: string): string {
@@ -1251,10 +1251,13 @@ async function verifyLiquidatorFull(
 	console.log("")
 	console.log(`   ${c.dim}-- Allowed selectors --${c.reset}`)
 	const partyA = await ethers.getContractAt("IPartyALiquidationFacet", ethers.ZeroAddress)
+	const partyASnapshot = await ethers.getContractAt("IPartyALiquidationSnapshotFacet", ethers.ZeroAddress)
 	const partyB = await ethers.getContractAt("IPartyBLiquidationFacet", ethers.ZeroAddress)
 	const expected: Array<[string, string]> = [
 		["liquidatePartyA", partyA.interface.getFunction("liquidatePartyA").selector],
 		["setSymbolsPrice", partyA.interface.getFunction("setSymbolsPrice").selector],
+		["liquidatePartyAWithSnapshot", partyASnapshot.interface.getFunction("liquidatePartyAWithSnapshot").selector],
+		["singleStepLiquidatePartyAWithSnapshot", partyASnapshot.interface.getFunction("singleStepLiquidatePartyAWithSnapshot").selector],
 		["deferredLiquidatePartyA", partyA.interface.getFunction("deferredLiquidatePartyA").selector],
 		["deferredSetSymbolsPrice", partyA.interface.getFunction("deferredSetSymbolsPrice").selector],
 		["liquidatePendingPositionsPartyA", partyA.interface.getFunction("liquidatePendingPositionsPartyA").selector],

@@ -4,7 +4,15 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { MuonStorage, SingleUpnlSig, LiquidationSig, DeferredLiquidationSig, QuotePriceSig } from "../../storages/MuonStorage.sol";
+import {
+	MuonStorage,
+	SingleUpnlSig,
+	LiquidationSig,
+	DeferredLiquidationSig,
+	QuotePriceSig,
+	LiquidationSnapshotSig,
+	LiquidationPartyBSymbolState
+} from "../../storages/MuonStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { LibMuon } from "./LibMuon.sol";
 import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
@@ -37,6 +45,35 @@ library LibMuonLiquidation {
 			)
 		);
 		LibMuon.verifyTSSAndGateway(hash, liquidationSig.sigs, liquidationSig.gatewaySignature, func);
+	}
+
+	/// @notice Verifies a liquidation snapshot signature that commits historical insolvency plus PartyB-symbol price and funding states.
+	function verifyLiquidationSnapshotSig(LiquidationSnapshotSig memory liquidationSig, address partyA, MuonFunction func) internal view {
+		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
+		bytes32 hash = keccak256(
+			abi.encodePacked(
+				muonLayout.muonAppId,
+				liquidationSig.reqId,
+				liquidationSig.liquidationId,
+				address(this),
+				"verifyLiquidationSnapshotSig",
+				partyA,
+				AccountStorage.layout().partyANonces[partyA],
+				liquidationSig.upnl,
+				liquidationSig.totalUnrealizedLoss,
+				_hashPartyBSymbolStates(liquidationSig.states),
+				liquidationSig.timestamp,
+				liquidationSig.liquidationBlockNumber,
+				liquidationSig.liquidationTimestamp,
+				liquidationSig.liquidationAllocatedBalance,
+				LibMuon.getChainId()
+			)
+		);
+		LibMuon.verifyTSSAndGateway(hash, liquidationSig.sigs, liquidationSig.gatewaySignature, func);
+	}
+
+	function _hashPartyBSymbolStates(LiquidationPartyBSymbolState[] memory states) private pure returns (bytes32) {
+		return keccak256(abi.encode(states));
 	}
 
 	/// @notice Verifies a deferred liquidation signature that includes block number and timestamp data.

@@ -155,7 +155,7 @@ export function shouldBehaveLikeSettlement(): void {
 					],
 				),
 			),
-		).to.be.revertedWith("LibSettlement: Invalid state")
+		).to.be.revertedWith("LibQuote: Invalid state")
 	})
 
 	it("Should fail if the newPrice hasn't move to the right direction (Both for short and long)", async function () {
@@ -213,7 +213,7 @@ export function shouldBehaveLikeSettlement(): void {
 					],
 				),
 			),
-		).to.be.revertedWith("LibSettlement: PartyB is in liquidation process")
+		).to.be.revertedWith("PartyBState: PartyB is in liquidation")
 	})
 
 	it("Should fail if partyB is not solvent", async function () {

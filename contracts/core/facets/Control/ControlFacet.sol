@@ -497,6 +497,14 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		appLayout.legacyDeallocateDeprecated = deprecated;
 	}
 
+	/// @notice Enables or disables legacy PartyA liquidation pricing. When deprecated, liquidators must use signed PartyB-symbol state.
+	/// @param deprecated True to deprecate legacy PartyA liquidation entrypoints, false to allow them.
+	function setLegacyPartyALiquidationDeprecated(bool deprecated) external onlyRole(LibAccessibility.PROTOCOL_CONFIG_ROLE) {
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		emit SetLegacyPartyALiquidationDeprecated(appLayout.legacyPartyALiquidationDeprecated, deprecated);
+		appLayout.legacyPartyALiquidationDeprecated = deprecated;
+	}
+
 	/// @notice Registers a bridge contract.
 	/// @param bridge The address of the bridge contract to authorize.
 	function addBridge(address bridge) external onlyRole(LibAccessibility.BRIDGE_MANAGER_ROLE) {

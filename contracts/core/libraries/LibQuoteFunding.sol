@@ -29,16 +29,13 @@ library LibQuoteFunding {
 	/// @return fee The net funding fee (positive = trader pays, negative = trader receives)
 	function getAccumulatedFundingFeeAt(uint256 quoteId, uint256 timestamp) public view returns (int256 fee) {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-		FundingFee storage fundingFee = FundingStorage.layout().fundingFees[quote.symbolId][quote.partyB];
+		FundingFee memory fundingFee = getFundingFeeAt(quote.symbolId, quote.partyB, timestamp);
 
 		// Early exit conditions:
 		// 1. No epoch duration set (accumulated funding not active)
 		if (fundingFee.epochDuration == 0) return 0;
+		if (fundingFee.startEpoch == 0 && fundingFee.startEpochTimeStamp == 0) return 0;
 		if (timestamp <= quote.lastFundingPaymentTimestamp) return 0;
-
-		uint256 unpaidEpochs = LibFundingRate.getEpochsSinceAt(fundingFee, quote.lastFundingPaymentTimestamp, timestamp);
-
-		if (unpaidEpochs == 0) return 0;
 
 		// Calculate epochs in the weighted average
 		uint256 epochsSinceLastUpdate = LibFundingRate.getEpochsSinceLastUpdateAt(fundingFee, timestamp);
@@ -51,6 +48,29 @@ library LibQuoteFunding {
 
 		// Subtract already paid amount
 		fee = (int256(LibQuote.quoteOpenAmount(quote)) * (currentFee - quote.accumulatedPaidFunding)) / 1e18;
+	}
+
+	/// @notice Calculates accumulated funding from a Muon-signed cumulative funding snapshot.
+	function getAccumulatedFundingFeeFromSnapshot(
+		uint256 quoteId,
+		int256 cumulativeLongFee,
+		int256 cumulativeShortFee,
+		uint256 timestamp
+	) public view returns (int256 fee) {
+		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		if (timestamp <= quote.lastFundingPaymentTimestamp) return 0;
+		int256 cumulativeFee = quote.positionType == PositionType.LONG ? cumulativeLongFee : cumulativeShortFee;
+		fee = (int256(LibQuote.quoteOpenAmount(quote)) * (cumulativeFee - quote.accumulatedPaidFunding)) / 1e18;
+	}
+
+	function getFundingFeeAt(uint256 symbolId, address partyB, uint256 timestamp) internal view returns (FundingFee memory fundingFee) {
+		FundingStorage.Layout storage fundingLayout = FundingStorage.layout();
+		FundingFee storage currentFundingFee = fundingLayout.fundingFees[symbolId][partyB];
+
+		FundingFee memory zeroFundingFee;
+		if (currentFundingFee.epochDuration == 0) return currentFundingFee;
+		if (timestamp < currentFundingFee.startEpochTimeStamp) return zeroFundingFee;
+		return currentFundingFee;
 	}
 
 	/// @notice Charges accumulated funding fee for a position

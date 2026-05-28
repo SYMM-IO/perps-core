@@ -97,6 +97,30 @@ struct LiquidationSig {
 	IMuonSignatureVerifier.SchnorrSign sigs; // Schnorr signature for additional verification
 }
 
+/// @notice Muon-signed price and cumulative funding state for one PartyB-symbol pair in liquidation settlement.
+struct LiquidationPartyBSymbolState {
+	address partyB;
+	uint256 symbolId;
+	uint256 price;
+	int256 cumulativeLongFee;
+	int256 cumulativeShortFee;
+}
+
+/// @notice Liquidation signature that freezes historical insolvency data and per-PartyB symbol price/funding state.
+struct LiquidationSnapshotSig {
+	bytes reqId;
+	uint256 timestamp;
+	bytes liquidationId;
+	int256 upnl;
+	int256 totalUnrealizedLoss;
+	LiquidationPartyBSymbolState[] states;
+	uint256 liquidationBlockNumber;
+	uint256 liquidationTimestamp;
+	uint256 liquidationAllocatedBalance;
+	bytes gatewaySignature;
+	IMuonSignatureVerifier.SchnorrSign sigs;
+}
+
 /// @notice Muon signature attesting to current prices for a set of quotes
 struct QuotePriceSig {
 	bytes reqId;

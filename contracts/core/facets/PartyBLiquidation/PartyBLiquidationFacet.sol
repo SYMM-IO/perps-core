@@ -29,7 +29,7 @@ contract PartyBLiquidationFacet is Pausable, Accessibility, IPartyBLiquidationFa
 		onlyRole(LibAccessibility.PARTYB_LIQUIDATOR_ROLE)
 	{
 		emit LiquidatePartyB(msg.sender, partyB, partyA, AccountStorage.layout().partyBAllocatedBalances[partyB][partyA], upnlSig.upnl);
-		PartyBLiquidationFacetImpl.liquidatePartyB(partyB, partyA, upnlSig);
+		PartyBLiquidationFacetImpl.startPartyBLiquidation(partyB, partyA, upnlSig);
 	}
 
 	/// @notice Liquidates positions of Party B for a given Party A.

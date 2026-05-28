@@ -6,15 +6,19 @@ pragma solidity >=0.8.18;
 
 import { MAStorage } from "../storages/MAStorage.sol";
 import { AccountStorage } from "../storages/AccountStorage.sol";
-import { ClearingHouseStorage } from "../storages/ClearingHouseStorage.sol";
-import { QuoteStorage, Quote, PositionType, QuoteStatus } from "../storages/QuoteStorage.sol";
+import { QuoteStorage, Quote, PositionType } from "../storages/QuoteStorage.sol";
 import { SettlementSig, QuoteSettlementData, UnifiedSettlementSig, UnifiedQuoteSettlementData } from "../storages/MuonStorage.sol";
 import { LibQuote } from "./LibQuote.sol";
+import { LibQuoteState } from "./extensions/LibQuoteState.sol";
 import { LibAccount } from "./LibAccount.sol";
+import { LibPartyBState } from "./extensions/LibPartyBState.sol";
 import { SharedEvents } from "./SharedEvents.sol";
 import { LibSigner } from "./LibSigner.sol";
 
 library LibSettlement {
+	using LibPartyBState for address;
+	using LibQuoteState for Quote;
+
 	/// @notice Settles unrealized PnL by adjusting opened prices for quotes between Party A and multiple Party Bs.
 	/// @return newPartyBsAllocatedBalances The updated allocated balances for each Party B after settlement.
 	function settleUpnl(
@@ -51,12 +55,7 @@ library LibSettlement {
 			Quote storage quote = quoteLayout.quotes[data.quoteId];
 			uint256 oldOpenedPrice = quote.openedPrice;
 			require(quote.partyA == partyA, "LibSettlement: PartyA is invalid");
-			require(
-				quote.quoteStatus == QuoteStatus.OPENED ||
-					quote.quoteStatus == QuoteStatus.CLOSE_PENDING ||
-					quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING,
-				"LibSettlement: Invalid state"
-			);
+			quote.requireOpenPosition();
 			require(data.partyBUpnlIndex <= settleSig.upnlPartyBs.length, "LibSettlement: Invalid partyBUpnlIndex in signature");
 			require(
 				partyBs[data.partyBUpnlIndex] == address(0) || partyBs[data.partyBUpnlIndex] == quote.partyB,
@@ -77,11 +76,7 @@ library LibSettlement {
 				LibAccount.partyBAvailableBalanceForLiquidation(settleSig.upnlPartyBs[i], partyB, partyA) >= 0,
 				"LibSettlement: PartyB should be solvent"
 			);
-			require(!MAStorage.layout().partyBLiquidationStatus[partyB][partyA], "LibSettlement: PartyB is in liquidation process");
-			require(
-				!ClearingHouseStorage.layout().crossLiquidationDetails[partyB].inProgress,
-				"LibSettlement: PartyB is in cross liquidation process"
-			);
+			partyB.requireNotLiquidating(partyA);
 
 			if (!privilegedMode && signer != partyB) {
 				require(
@@ -163,7 +158,7 @@ library LibSettlement {
 		}
 
 		// 4. Validate partyB not in cross liquidation
-		require(!ClearingHouseStorage.layout().crossLiquidationDetails[partyB].inProgress, "LibSettlement: PartyB is in cross liquidation process");
+		partyB.requireNotCrossLiquidating();
 
 		// 5. Validate partyB solvency based on mode
 		if (isCrossPartyB) {
@@ -185,7 +180,7 @@ library LibSettlement {
 				"LibSettlement: PartyA is insolvent"
 			);
 			require(!maLayout.liquidationStatus[partyA], "LibSettlement: PartyA is in liquidation");
-			require(!maLayout.partyBLiquidationStatus[partyB][partyA], "LibSettlement: PartyB is in liquidation with partyA");
+			partyB.requireNotLiquidatingAgainst(partyA);
 		}
 
 		// 7. Process quotes and calculate settlement amounts per partyA
@@ -200,12 +195,7 @@ library LibSettlement {
 			require(quote.partyB == partyB, "LibSettlement: Invalid partyB for quote");
 			require(data.partyAIndex < sig.partyAs.length, "LibSettlement: Invalid partyAIndex");
 			require(quote.partyA == sig.partyAs[data.partyAIndex], "LibSettlement: Invalid partyA for quote");
-			require(
-				quote.quoteStatus == QuoteStatus.OPENED ||
-					quote.quoteStatus == QuoteStatus.CLOSE_PENDING ||
-					quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING,
-				"LibSettlement: Invalid quote state"
-			);
+			quote.requireOpenPosition();
 
 			// Validate price range
 			_validatePriceInRange(quote.openedPrice, data.currentPrice, updatedPrices[i]);

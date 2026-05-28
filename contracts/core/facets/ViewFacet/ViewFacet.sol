@@ -213,6 +213,12 @@ contract ViewFacet is IViewFacet {
 		return GlobalAppStorage.layout().legacyDeallocateDeprecated;
 	}
 
+	/// @notice Checks if legacy PartyA liquidation pricing is deprecated.
+	/// @return A boolean indicating whether legacy PartyA liquidation entrypoints are disabled.
+	function isLegacyPartyALiquidationDeprecated() external view returns (bool) {
+		return GlobalAppStorage.layout().legacyPartyALiquidationDeprecated;
+	}
+
 	/// @notice Returns the allocated balances of Party Bs for a specific Party A.
 	/// @param partyA The address of Party A.
 	/// @param partyBs The addresses of Party Bs.

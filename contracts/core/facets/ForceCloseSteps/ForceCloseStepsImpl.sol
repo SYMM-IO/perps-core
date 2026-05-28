@@ -114,7 +114,13 @@ library ForceCloseStepsImpl {
 				detail.partyBState = PartyBForceCloseState.CLOSED_SOLVENT;
 			} else {
 				uint256 reservedBalance = accountLayout.reserveVault[partyB];
-				upnlPartyB = LibForceActions.liquidatePartyB(quoteId, detail.closePrice, reservedBalance, detail.upnlPartyB, detail.currentPrice);
+				upnlPartyB = LibForceActions.startPartyBLiquidationForForceClose(
+					quoteId,
+					detail.closePrice,
+					reservedBalance,
+					detail.upnlPartyB,
+					detail.currentPrice
+				);
 				detail.partyBState = PartyBForceCloseState.CLOSED_LIQUIDATED;
 			}
 		}

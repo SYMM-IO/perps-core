@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Muon UPNL Validity Overrides - Symmio Core v0.8.6</title>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+	</head>
+	<body class="doc-page">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="doc-topbar">
+			<a class="brand" href="../index.html"
+				><span class="brand-mark">8.6</span><span><strong>Symmio Docs</strong><small>v0.8.6 reference</small></span></a
+			>
+			<nav class="top-actions" aria-label="Page actions">
+				<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+			</nav>
+		</header>
+		<div class="reader-shell">
+			<aside class="toc-panel side-toc" aria-label="Page navigation">
+				<a class="button primary back-home" href="../index.html">Back to home</a>
+				<div class="toc-card">
+					<p class="toc-title">On this page</p>
+					<a class="toc-link level-2" href="#summary">Summary</a>
+					<a class="toc-link level-2" href="#api-changes">API Changes</a>
+					<a class="toc-link level-3" href="#set-or-clear-a-per-function-override">Set or clear a per-function override</a>
+					<a class="toc-link level-3" href="#read-the-effective-validity">Read the effective validity</a>
+					<a class="toc-link level-2" href="#storage-model">Storage Model</a>
+					<a class="toc-link level-2" href="#muonfunction-categories">MuonFunction Categories</a>
+					<a class="toc-link level-2" href="#effective-validity-resolution">Effective Validity Resolution</a>
+				</div>
+			</aside>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">v0.8.6</a><span>/</span><strong>Muon</strong></nav>
+					<div class="reader-title-row">
+						<div>
+							<h1>Muon UPNL Validity Overrides</h1>
+							<p class="hero-copy">
+								Operators can now set different UPNL freshness windows for different Muon operation types instead of forcing every
+								action to share one global timeout.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<p>Version: v0.8.6 release note.</p>
+					<p>
+						This document describes the per-function Muon UPNL signature validity configuration added in v0.8.6. The change lets operators
+						use different freshness windows for different protocol operation categories while keeping the existing global
+						<code>setMuonConfig</code> value as the fallback.
+					</p>
+					<hr />
+					<h2 id="summary">Summary</h2>
+					<p>Before this change, every UPNL-based Muon signature used the same global validity window:</p>
+					<pre><code class="language-solidity">setMuonConfig(upnlValidTime, priceValidTime)
+</code></pre>
+					<p>
+						That made short-window account operations and longer-window liquidation operations share one value, even though their
+						operational needs are different. For example, deallocation can reasonably require a very fresh signature such as
+						<code>10</code> seconds, while PartyA liquidation may need a larger submission window such as <code>120</code> seconds.
+					</p>
+					<p>v0.8.6 adds optional overrides by <code>MuonFunction</code>:</p>
+					<pre><code class="language-solidity">setMuonFunctionUpnlValidTime(func, upnlValidTime)
+</code></pre>
+					<p>The override is intentionally controlled by a single setter:</p>
+					<ul>
+						<li>Passing a nonzero <code>upnlValidTime</code> sets the override for that function category.</li>
+						<li>Passing <code>0</code> clears the override for that function category.</li>
+						<li>
+							A cleared or unset function category falls back to the global <code>upnlValidTime</code> from <code>setMuonConfig</code>.
+						</li>
+					</ul>
+					<p>
+						There is no separate <code>clear</code> method and no separate <code>hasOverride</code> storage flag. In the per-function
+						mapping, <code>0</code> is the unset value.
+					</p>
+					<hr />
+					<h2 id="api-changes">API Changes</h2>
+					<h3 id="set-or-clear-a-per-function-override">Set or clear a per-function override</h3>
+					<pre><code class="language-solidity">function setMuonFunctionUpnlValidTime(
+    MuonFunction func,
+    uint256 upnlValidTime
+) external;
+</code></pre>
+					<p>Access control:</p>
+					<ul>
+						<li>Caller must have <code>MUON_SETTER_ROLE</code>.</li>
+					</ul>
+					<p>Behavior:</p>
+					<ul>
+						<li>If <code>upnlValidTime &gt; 0</code>, the value is stored in <code>MuonStorage.upnlValidTimeByFunction[func]</code>.</li>
+						<li>If <code>upnlValidTime == 0</code>, the stored override is deleted.</li>
+						<li>After deletion, the function category inherits the global <code>upnlValidTime</code>.</li>
+					</ul>
+					<p>The setter emits:</p>
+					<pre><code class="language-solidity">event SetMuonFunctionUpnlValidTime(
+    MuonFunction indexed func,
+    bool enabled,
+    uint256 upnlValidTime
+);
+</code></pre>
+					<p>Event semantics:</p>
+					<ul>
+						<li><code>enabled == true</code>: a nonzero override was set.</li>
+						<li><code>enabled == false</code>: the override was cleared.</li>
+						<li>When clearing, <code>upnlValidTime</code> is emitted as <code>0</code>.</li>
+					</ul>
+					<h3 id="read-the-effective-validity">Read the effective validity</h3>
+					<pre><code class="language-solidity">function getMuonFunctionUpnlValidTime(
+    MuonFunction func
+) external view returns (uint256 upnlValidTime, bool isOverridden);
+</code></pre>
+					<p>Return semantics:</p>
+					<ul>
+						<li>If an override is set, <code>upnlValidTime</code> is the override and <code>isOverridden == true</code>.</li>
+						<li>
+							If no override is set, <code>upnlValidTime</code> is the global value from <code>getMuonConfig()</code> and
+							<code>isOverridden == false</code>.
+						</li>
+					</ul>
+					<p>This view returns the effective value used by verification, not the raw mapping slot.</p>
+					<hr />
+					<h2 id="storage-model">Storage Model</h2>
+					<p>The new storage field is:</p>
+					<pre><code class="language-solidity">mapping(MuonFunction =&gt; uint256) upnlValidTimeByFunction;
+</code></pre>
+					<p>The mapping is optional configuration. It does not replace the global <code>upnlValidTime</code>.</p>
+					<p>The invariant is:</p>
+					<pre><code class="language-text">effectiveUpnlValidTime(func) =
+  upnlValidTimeByFunction[func] == 0
+    ? global upnlValidTime
+    : upnlValidTimeByFunction[func]
+</code></pre>
+					<p>
+						Operational note: <code>0</code> is reserved as "unset" for per-function overrides. Do not use <code>0</code> as an
+						intentional validity window. Operators should keep the global <code>upnlValidTime</code> configured to a nonzero value.
+					</p>
+					<hr />
+					<h2 id="muonfunction-categories">MuonFunction Categories</h2>
+					<p>
+						The categories are the same <code>MuonFunction</code> enum used by the signature verifier's key and gateway authorization
+						system:
+					</p>
+					<pre><code class="language-solidity">enum MuonFunction {
+    Trading,
+    AccountManagement,
+    Settlement,
+    ForceClose,
+    Funding,
+    LiquidationPartyA,
+    LiquidationPartyB
+}
+</code></pre>
+					<p>The intended method grouping is:</p>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Category</th>
+									<th>Methods / flows</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td><code>Trading</code></td>
+									<td>
+										<code>sendQuote</code>, <code>lockQuote</code>, <code>openPosition</code>, <code>fillCloseRequest</code>,
+										<code>fillCloseRequestToLiquidation</code>, <code>emergencyClosePosition</code>, <code>openPositions</code>,
+										<code>closePositions</code>
+									</td>
+								</tr>
+								<tr>
+									<td><code>AccountManagement</code></td>
+									<td>
+										<code>deallocate</code>, <code>safeDeallocate</code>, <code>deallocateForPartyB</code>, transfer-allocation
+										flows that verify account UPNL
+									</td>
+								</tr>
+								<tr>
+									<td><code>Settlement</code></td>
+									<td><code>settleUpnl</code>, <code>settleUpnlUnified</code>, isolated and cross-PartyB settlement signatures</td>
+								</tr>
+								<tr>
+									<td><code>ForceClose</code></td>
+									<td>
+										<code>requestToClosePosition</code>, <code>forceClosePosition</code>, force-close settlement, legacy
+										force-close settlement, final force-close steps
+									</td>
+								</tr>
+								<tr>
+									<td><code>Funding</code></td>
+									<td><code>chargeFundingRate</code>, <code>chargeAccumulatedFundingFee</code></td>
+								</tr>
+								<tr>
+									<td><code>LiquidationPartyA</code></td>
+									<td>
+										<code>liquidatePartyA</code>, <code>setSymbolsPrice</code>, <code>deferredLiquidatePartyA</code>,
+										<code>deferredSetSymbolsPrice</code>, <code>liquidatePartyAWithSnapshot</code>,
+										<code>singleStepLiquidatePartyAWithSnapshot</code>
+									</td>
+								</tr>
+								<tr>
+									<td><code>LiquidationPartyB</code></td>
+									<td><code>liquidatePartyB</code>, <code>liquidatePositionsPartyB</code></td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						Treat this table as the operation-level policy surface. It controls the freshness window for timestamp checks, while the same
+						enum also controls which Muon public keys and gateway signers are authorized to sign each category.
+					</p>
+					<p>
+						Important distinction: the category is passed to the signature verifier for key and gateway authorization on all grouped
+						calls, but the per-function validity window only applies where the on-chain code checks signature freshness against
+						<code>block.timestamp</code>.
+					</p>
+					<hr />
+					<h2 id="effective-validity-resolution">Effective Validity Resolution</h2>
+					<p>UPNL timestamp checks now go through:</p>
+					<pre><code class="language-solidity">LibMuon.verifyUpnlTimestamp(timestamp, func)
+</code></pre>
+					<p>which resolves the effective validity with:</p>
+					<pre><code class="language-solidity">LibMuon.getUpnlValidTime(func)
+</code></pre>
+					<p>
+						This helper first checks <code>upnlValidTimeByFunction[func]</code>. If the mapping value is zero, it falls back to the global
+						<code>MuonStorage.upnlValidTime</code>.
+					</p>
+					<p>The change was applied across the Muon helper libraries that validate UPNL-bearing signatures:</p>
+					<pre><code class="language-text">LibMuonAccount
+LibMuonPartyA
+LibMuonPartyB
+LibMuonPartyBBatchActions
+LibMuonFundingRate
+LibMuonForceActions
+LibMuonSettlement
+LibMuonUnifiedSettlement
+LibMuon
+</code></pre>
+					<p>
+						PartyA liquidation also uses <code>LibMuon.getUpnlValidTime(MuonFunction.LiquidationPartyA)</code> for its explicit
+						liquidation signature freshness check, so it no longer reads the global <code>upnlValidTime</code> directly.
+					</p>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Protocol, operations, and integration notes.</span>
+		</footer>
+	</body>
+</html>

@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>PartyA Liquidation Funding Snapshot Fix - Symmio Core v0.8.6</title>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+	</head>
+	<body class="doc-page">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="doc-topbar">
+			<a class="brand" href="../index.html"
+				><span class="brand-mark">8.6</span><span><strong>Symmio Docs</strong><small>v0.8.6 reference</small></span></a
+			>
+			<nav class="top-actions" aria-label="Page actions">
+				<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+			</nav>
+		</header>
+		<div class="reader-shell">
+			<aside class="toc-panel side-toc" aria-label="Page navigation">
+				<a class="button primary back-home" href="../index.html">Back to home</a>
+				<div class="toc-card">
+					<p class="toc-title">On this page</p>
+					<a class="toc-link level-2" href="#summary">Summary</a>
+					<a class="toc-link level-2" href="#affected-scenario">Affected Scenario</a>
+					<a class="toc-link level-2" href="#why-the-old-timestamp-fix-was-not-enough">Why The Old Timestamp Fix Was Not Enough</a>
+					<a class="toc-link level-2" href="#impact">Impact</a>
+					<a class="toc-link level-2" href="#new-muon-payload">New Muon Payload</a>
+					<a class="toc-link level-2" href="#what-changed-on-chain">What Changed On-Chain</a>
+					<a class="toc-link level-2" href="#settlement-behavior-after-the-fix">Settlement Behavior After The Fix</a>
+					<a class="toc-link level-2" href="#why-we-did-not-store-funding-history">Why We Did Not Store Funding History</a>
+					<a class="toc-link level-2" href="#legacy-deprecation-flag">Legacy Deprecation Flag</a>
+					<a class="toc-link level-2" href="#expected-result">Expected Result</a>
+					<a class="toc-link level-2" href="#related-snapshot-entrypoints">Related Snapshot Entrypoints</a>
+				</div>
+			</aside>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">v0.8.6</a><span>/</span><strong>Liquidation</strong></nav>
+					<div class="reader-title-row">
+						<div>
+							<h1>PartyA Liquidation Funding Snapshot Fix</h1>
+							<p class="hero-copy">
+								This fix makes liquidation settlement use the same funding state that Muon signed when PartyA became liquidatable, so
+								later PartyB funding updates cannot change the liquidation debt.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="summary">Summary</h2>
+					<p>
+						PartyA liquidation is supposed to settle from the accounting snapshot that made PartyA liquidatable. That snapshot includes
+						PartyA UPNL, liquidation prices, and the funding debt implied by those prices and funding accumulators.
+					</p>
+					<p>
+						Before this fix, the legacy liquidation path froze symbol prices from the Muon liquidation signature, but accumulated funding
+						could still be derived from funding storage later, when <code>liquidatePositionsPartyA</code> was called. If PartyB changed
+						funding after PartyA was marked liquidated, settlement could use the liquidation price from one moment and funding state from
+						another.
+					</p>
+					<p>
+						The fix adds a Muon-signed snapshot path. Muon now signs PartyA historical insolvency data plus the price and cumulative
+						funding values needed for each <code>(PartyB, symbolId)</code> pair. Once the snapshot path is used for a liquidation, every
+						liquidated quote must have a matching signed snapshot. If accumulated funding was not active for a pair at the liquidation
+						timestamp, Muon should still include that pair with the liquidation price and zero cumulative long/short funding values.
+						Missing snapshot coverage reverts instead of falling back to live funding.
+					</p>
+					<h2 id="affected-scenario">Affected Scenario</h2>
+					<p>The risky flow was:</p>
+					<ol>
+						<li>PartyA becomes liquidatable.</li>
+						<li>Liquidator calls <code>liquidatePartyA(partyA, liquidationSig)</code>.</li>
+						<li>Liquidator calls <code>setSymbolsPrice(partyA, liquidationSig)</code>.</li>
+						<li>PartyB updates funding for one of PartyA's markets.</li>
+						<li>Liquidator later calls <code>liquidatePositionsPartyA(partyA, quoteIds)</code>.</li>
+						<li>Settlement is calculated with frozen liquidation prices, but funding may come from the later funding state.</li>
+					</ol>
+					<p>
+						This could happen naturally, not only through a malicious timing attempt. Some solvers update funding frequently and may batch
+						<code>setFundingFee</code> with open/close operations in the Instant Layer. If PartyA is marked liquidated between those
+						solver operations and the later liquidation-close transaction, the liquidation path must not let the later funding update
+						change PartyA's liquidation debt.
+					</p>
+					<h2 id="why-the-old-timestamp-fix-was-not-enough">Why The Old Timestamp Fix Was Not Enough</h2>
+					<p>
+						A previous mitigation aligned liquidation funding calculations to the liquidation timestamp by using
+						<code>getAccumulatedFundingFeeAt(quoteId, liquidationTimestamp)</code>. That helps when the chain can still reconstruct the
+						old funding accumulator from current storage.
+					</p>
+					<p>
+						The remaining problem is that current storage does not keep a full history of replaced funding state. If PartyB changes the
+						current long/short rate, or changes epoch duration, the contract may no longer have enough information to reconstruct exactly
+						what Muon saw at the liquidation timestamp. Asking the contract to store every historical funding change would push extra
+						storage writes into normal solver operations.
+					</p>
+					<p>
+						That tradeoff is especially bad for solvers that update funding often. The liquidation fix should not make every normal open,
+						close, or funding update more expensive.
+					</p>
+					<h2 id="impact">Impact</h2>
+					<p>
+						The issue could affect liquidation accounting whenever funding changed between the liquidation snapshot and position
+						liquidation.
+					</p>
+					<p>Possible outcomes:</p>
+					<ul>
+						<li>
+							PartyA liquidation could dispute because <code>partyAAccumulatedUpnl</code> no longer matched the signed liquidation UPNL.
+						</li>
+						<li>PartyA-level totals could appear close enough while value still shifted between PartyBs.</li>
+						<li>Liquidation debt could depend on keeper timing around funding updates.</li>
+						<li>Funding updates after liquidation could affect a debt value that should have been fixed at the liquidation snapshot.</li>
+					</ul>
+					<p>
+						The root invariant is simple: once PartyA is proven liquidatable at timestamp <code>T</code>, later PartyB funding changes
+						must not change the liquidation settlement for timestamp <code>T</code>.
+					</p>
+					<h2 id="new-muon-payload">New Muon Payload</h2>
+					<p>The snapshot path uses <code>LiquidationSnapshotSig</code>:</p>
+					<pre><code class="language-solidity">struct LiquidationPartyBSymbolState {
+    address partyB;
+    uint256 symbolId;
+    uint256 price;
+    int256 cumulativeLongFee;
+    int256 cumulativeShortFee;
+}
+
+struct LiquidationSnapshotSig {
+    bytes reqId;
+    uint256 timestamp;
+    bytes liquidationId;
+    int256 upnl;
+    int256 totalUnrealizedLoss;
+    LiquidationPartyBSymbolState[] states;
+    uint256 liquidationBlockNumber;
+    uint256 liquidationTimestamp;
+    uint256 liquidationAllocatedBalance;
+    bytes gatewaySignature;
+    IMuonSignatureVerifier.SchnorrSign sigs;
+}
+</code></pre>
+					<p>Each <code>states</code> entry freezes one PartyB-symbol pair:</p>
+					<ul>
+						<li><code>partyB</code>: the solver side of the position.</li>
+						<li><code>symbolId</code>: the market.</li>
+						<li><code>price</code>: liquidation price for that PartyB-symbol pair.</li>
+						<li><code>cumulativeLongFee</code>: cumulative long funding value at the liquidation timestamp.</li>
+						<li><code>cumulativeShortFee</code>: cumulative short funding value at the liquidation timestamp.</li>
+					</ul>
+					<p>
+						Snapshot liquidation always uses signed historical insolvency fields. <code>liquidationBlockNumber</code>,
+						<code>liquidationTimestamp</code>, and <code>liquidationAllocatedBalance</code> must be nonzero and signed by Muon.
+					</p>
+					<p>
+						There is no live/deferred selector in this payload. Snapshot setup always supplies the signed historical timestamp and
+						allocated balance to the shared PartyA liquidation start helper; the legacy live path uses that same helper with current
+						values after performing its live-only expiry and open-position checks.
+					</p>
+					<p>
+						Muon signs the same core liquidation fields as before, plus the hash of <code>states</code> and the historical insolvency
+						fields. The signature is verified through <code>verifyLiquidationSnapshotSig</code>, so a legacy liquidation
+						signature cannot be reused as a snapshot signature.
+					</p>
+					<h2 id="what-changed-on-chain">What Changed On-Chain</h2>
+					<p>The fix adds two storage concepts to <code>AccountStorage</code>:</p>
+					<pre><code class="language-solidity">mapping(address =&gt; mapping(bytes32 =&gt; bool)) liquidationUsesPartyBSymbolSnapshots;
+mapping(address =&gt; mapping(bytes32 =&gt; mapping(address =&gt; mapping(uint256 =&gt; LiquidationPartyBSymbolSnapshot)))) liquidationPartyBSymbolSnapshots;
+</code></pre>
+					<p>The first mapping is the snapshot marker. It says that a PartyA liquidation uses signed PartyB-symbol snapshots.</p>
+					<p>The second mapping stores the actual snapshot for:</p>
+					<pre><code class="language-text">partyA -&gt; liquidationSnapshotKey -&gt; partyB -&gt; symbolId
+</code></pre>
+					<p>The stored snapshot contains:</p>
+					<pre><code class="language-solidity">struct LiquidationPartyBSymbolSnapshot {
+    bool isSet;
+    uint256 price;
+    int256 cumulativeLongFee;
+    int256 cumulativeShortFee;
+}
+</code></pre>
+					<p>
+						The <code>liquidationSnapshotKey</code> is computed from the active liquidation id, liquidation timestamp, and PartyA nonce.
+						This avoids storing the same timestamp and liquidation id inside every individual snapshot.
+					</p>
+					<p>The external API for this path lives on the separate <code>PartyALiquidationSnapshotFacet</code>:</p>
+					<pre><code class="language-solidity">liquidatePartyAWithSnapshot(address partyA, LiquidationSnapshotSig liquidationSig)
+singleStepLiquidatePartyAWithSnapshot(address partyA, LiquidationSnapshotSig liquidationSig, uint256[] quoteIds)
+</code></pre>
+					<p>
+						The snapshot facet emits <code>SetPartyALiquidationSnapshot</code> with <code>partyBs</code>, <code>symbolIds</code>,
+						<code>prices</code>, and cumulative funding arrays. It also emits the legacy <code>SetSymbolsPrices</code> event for
+						compatibility with existing liquidation indexers.
+					</p>
+					<h2 id="settlement-behavior-after-the-fix">Settlement Behavior After The Fix</h2>
+					<p>
+						When <code>liquidatePositionsPartyA</code> processes a quote, it checks whether the active liquidation uses signed
+						PartyB-symbol snapshots.
+					</p>
+					<p>If snapshot-backed pricing is active:</p>
+					<ul>
+						<li>the quote must have a snapshot for <code>(quote.partyB, quote.symbolId)</code>;</li>
+						<li>the close price comes from that snapshot;</li>
+						<li>accumulated funding is calculated from the signed cumulative long/short values;</li>
+						<li>pairs without accumulated funding active at the liquidation timestamp are represented by zero cumulative values; and</li>
+						<li>missing state reverts with <code>LiquidationFacet: Missing signed state</code>.</li>
+					</ul>
+					<p>If snapshot-backed pricing is not active:</p>
+					<ul>
+						<li>the legacy path remains unchanged;</li>
+						<li>price comes from <code>setSymbolsPrice</code>; and</li>
+						<li>funding is calculated with <code>getAccumulatedFundingFeeAt(quote.id, liquidationDetail.timestamp)</code>.</li>
+					</ul>
+					<p>
+						Snapshot-backed pricing is all-or-nothing for an active liquidation. Once the snapshot marker is set, the liquidation cannot
+						silently mix signed funding for some quotes with legacy funding for others.
+					</p>
+					<h2 id="why-we-did-not-store-funding-history">Why We Did Not Store Funding History</h2>
+					<p>
+						An on-chain funding-history fix would require normal solver operations to write additional history whenever funding changes or
+						when open/close logic moves accumulated funding state. That would make the common path more expensive for every market, even
+						though liquidation is the uncommon path.
+					</p>
+					<p>The snapshot design moves the cost to liquidation:</p>
+					<ul>
+						<li>
+							normal <code>setFundingFee</code>, open, close, and accumulated funding charge flows do not write liquidation history;
+						</li>
+						<li>liquidators write only the PartyB-symbol states needed for the liquidation they are processing;</li>
+						<li>
+							large PartyA accounts still use explicit <code>quoteIds</code> batching and never require iterating every PartyA position
+							on-chain; and
+						</li>
+						<li>deployments can keep the legacy path during migration, then disable it with a feature flag.</li>
+					</ul>
+					<h2 id="legacy-deprecation-flag">Legacy Deprecation Flag</h2>
+					<p>Governance can require the new snapshot flow by calling:</p>
+					<pre><code class="language-solidity">setLegacyPartyALiquidationDeprecated(true)
+</code></pre>
+					<p>When enabled, these legacy start entrypoints revert with <code>LiquidationFacet: Legacy liquidation deprecated</code>:</p>
+					<ul>
+						<li><code>liquidatePartyA</code></li>
+						<li><code>deferredLiquidatePartyA</code></li>
+					</ul>
+					<p>
+						The flag does not block <code>liquidatePartyAWithSnapshot</code>, <code>singleStepLiquidatePartyAWithSnapshot</code>,
+						pending-position liquidation, open-position liquidation, settlement, or dispute resolution. Existing legacy liquidations that
+						already started can still set prices through <code>setSymbolsPrice</code> or <code>deferredSetSymbolsPrice</code>, then
+						continue through <code>liquidatePositionsPartyA</code> and <code>settlePartyALiquidation</code>.
+					</p>
+					<h2 id="expected-result">Expected Result</h2>
+					<p>
+						After this fix, PartyB can update funding after PartyA is marked liquidated, but that update does not change snapshot-backed
+						liquidation settlement for the already captured liquidation timestamp.
+					</p>
+					<p>The expected behavior is:</p>
+					<ul>
+						<li>PartyA debt is fixed to the Muon-signed liquidation snapshot.</li>
+						<li>Later funding changes are ignored for that snapshot-backed liquidation.</li>
+						<li>Missing PartyB-symbol coverage fails explicitly.</li>
+						<li>Large liquidations remain batchable.</li>
+						<li>Normal solver funding updates do not become more expensive just to support historical liquidation reads.</li>
+					</ul>
+					<h2 id="related-snapshot-entrypoints">Related Snapshot Entrypoints</h2>
+					<p>
+						<code>liquidatePartyAWithSnapshot</code> is the staged starter for this payload.
+						<code>singleStepLiquidatePartyAWithSnapshot</code> is the full single-transaction path for accounts that can be closed and
+						settled immediately. Both are documented separately in
+						<a href="partya-liquidation-snapshot-entrypoints.html">PartyA Liquidation Snapshot Entrypoints</a>.
+					</p>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Protocol, operations, and integration notes.</span>
+		</footer>
+	</body>
+</html>

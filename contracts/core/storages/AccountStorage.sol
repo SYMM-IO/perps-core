@@ -93,6 +93,7 @@ struct LiquidationDetail {
 	uint256 liquidationFee;
 	uint256 timestamp;
 	uint256 involvedPartyBCounts;
+	/// @dev Sum of finalized per-PartyB expected settlement amounts; used to verify the signed PartyA uPNL.
 	int256 partyAAccumulatedUpnl;
 	bool disputed;
 	uint256 liquidationTimestamp;
@@ -104,6 +105,14 @@ struct LiquidationDetail {
 struct Price {
 	uint256 price;
 	uint256 timestamp;
+}
+
+/// @notice Price and funding snapshot committed by Muon for one PartyB-symbol pair during PartyA liquidation.
+struct LiquidationPartyBSymbolSnapshot {
+	bool isSet;
+	uint256 price;
+	int256 cumulativeLongFee;
+	int256 cumulativeShortFee;
 }
 
 /// @title AccountStorage
@@ -173,9 +182,9 @@ library AccountStorage {
 		///      consistent prices throughout the liquidation process.
 		mapping(address => mapping(uint256 => Price)) symbolsPrices;
 		/// @notice Addresses participating in a user's liquidation
-		/// @dev Exactly two liquidators are recorded: [0] from liquidatePartyA/deferredLiquidatePartyA,
-		///      [1] from setSymbolsPrice/determineLiquidationType. The liquidation fee is split
-		///      50/50 between them. Cleared after liquidation completes.
+		/// @dev [0] is the account that starts liquidation. [1], when present, is the first account
+		///      that supplies the liquidation prices. The liquidation fee is split 50/50 when both
+		///      are recorded; otherwise the starter receives the full fee. Cleared after settlement.
 		mapping(address => address[]) liquidators;
 		/// @notice Reimbursement owed to PartyA, used by clearing house takeover flow
 		/// @dev In CH takeover: stores pending fees added by liquidatePendingPositionsForClearingHouse.
@@ -222,6 +231,11 @@ library AccountStorage {
 		///      settlePartyALiquidation by subtracting this reserve from effective available balance
 		///      during deallocateForPartyB.
 		mapping(address => uint256) partyBLiquidationSettlementReserve;
+		/// @notice Whether an active PartyA liquidation uses signed PartyB-symbol snapshots.
+		/// @dev Keyed by PartyA and liquidationId.
+		mapping(address => mapping(bytes => bool)) liquidationUsesPartyBSymbolSnapshots;
+		/// @notice Signed price and cumulative funding snapshots per PartyA liquidation, PartyB, and symbol.
+		mapping(address => mapping(bytes => mapping(address => mapping(uint256 => LiquidationPartyBSymbolSnapshot)))) liquidationPartyBSymbolSnapshots;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

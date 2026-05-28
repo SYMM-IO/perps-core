@@ -82,6 +82,8 @@ interface IViewFacet {
 
 	function isCrossPartyBModeActivated() external view returns (bool);
 
+	function isLegacyPartyALiquidationDeprecated() external view returns (bool);
+
 	function isPartyALiquidated(address partyA) external view returns (bool);
 
 	function isPartyBLiquidated(address partyB, address partyA) external view returns (bool);

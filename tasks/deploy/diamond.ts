@@ -22,9 +22,21 @@ const FacetLibraryDependencies: Record<string, string[]> = {
 	ForceCloseStepsFacet: ["LibForceActions", "LibSettlement"],
 	ViewFacetQuote: ["LibQuoteFunding"],
 	FundingRateFacet: ["LibQuoteFunding"],
-	PartyALiquidationFacet: ["LibQuoteFunding"],
+	PartyALiquidationFacet: ["LibPartyALiquidationLegacySetup", "LibPartyALiquidationProcess"],
+	PartyALiquidationSnapshotFacet: ["LibPartyALiquidationSnapshotSetup", "LibPartyALiquidationProcess"],
 	ClearingHouseFacet: ["LibQuoteClose", "LibQuoteFunding"],
 	SettlementFacet: ["LibSettlement"],
+}
+
+const LibraryLinkReferences: Record<string, string> = {
+	LibQuoteFunding: "project/contracts/core/libraries/LibQuoteFunding.sol:LibQuoteFunding",
+	LibQuoteClose: "project/contracts/core/libraries/LibQuoteClose.sol:LibQuoteClose",
+	LibForceActions: "project/contracts/core/libraries/LibForceActions.sol:LibForceActions",
+	LibSettlement: "project/contracts/core/libraries/LibSettlement.sol:LibSettlement",
+	LibPartyALiquidationProcess: "project/contracts/core/libraries/liquidation/LibPartyALiquidationProcess.sol:LibPartyALiquidationProcess",
+	LibPartyALiquidationSnapshotSetup:
+		"project/contracts/core/libraries/liquidation/LibPartyALiquidationSnapshotSetup.sol:LibPartyALiquidationSnapshotSetup",
+	LibPartyALiquidationLegacySetup: "project/contracts/core/libraries/liquidation/LibPartyALiquidationLegacySetup.sol:LibPartyALiquidationLegacySetup",
 }
 
 type DeployDiamondArgs = {
@@ -202,7 +214,7 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 	} else {
 		const LibQuoteCloseFactory = await ethers.getContractFactory("LibQuoteClose", {
 			libraries: {
-				"project/contracts/core/libraries/LibQuoteFunding.sol:LibQuoteFunding": libraryAddresses["LibQuoteFunding"],
+				[LibraryLinkReferences.LibQuoteFunding]: libraryAddresses["LibQuoteFunding"],
 			},
 		})
 		const libQuoteClose = await LibQuoteCloseFactory.deploy()
@@ -226,7 +238,7 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 	} else {
 		const LibForceActionsFactory = await ethers.getContractFactory("LibForceActions", {
 			libraries: {
-				"project/contracts/core/libraries/LibQuoteClose.sol:LibQuoteClose": libraryAddresses["LibQuoteClose"],
+				[LibraryLinkReferences.LibQuoteClose]: libraryAddresses["LibQuoteClose"],
 			},
 		})
 		const libForceActions = await LibForceActionsFactory.deploy()
@@ -259,6 +271,72 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 		// Save checkpoint
 		if (checkpoint) {
 			diamondCheckpoint.libraries!["LibSettlement"] = createDeployedContract(libraryAddresses["LibSettlement"])
+			checkpoint.contracts.diamond = diamondCheckpoint
+			saveCheckpoint(checkpoint)
+		}
+	}
+
+	// Deploy LibPartyALiquidationProcess (depends on LibQuoteFunding)
+	if (libraryAddresses["LibPartyALiquidationProcess"]) {
+		logger.info(`  ⏭ LibPartyALiquidationProcess already deployed at ${libraryAddresses["LibPartyALiquidationProcess"]}`)
+	} else {
+		const LibPartyALiquidationProcessFactory = await ethers.getContractFactory("LibPartyALiquidationProcess", {
+			libraries: {
+				[LibraryLinkReferences.LibQuoteFunding]: libraryAddresses["LibQuoteFunding"],
+			},
+		})
+		const libPartyALiquidationProcess = await LibPartyALiquidationProcessFactory.deploy()
+		await libPartyALiquidationProcess.waitForDeployment()
+		receipt = (await libPartyALiquidationProcess.deploymentTransaction()!.wait())!
+		totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
+		libraryAddresses["LibPartyALiquidationProcess"] = await libPartyALiquidationProcess.getAddress()
+		logger.deployed("LibPartyALiquidationProcess", libraryAddresses["LibPartyALiquidationProcess"])
+
+		// Save checkpoint
+		if (checkpoint) {
+			diamondCheckpoint.libraries!["LibPartyALiquidationProcess"] = createDeployedContract(libraryAddresses["LibPartyALiquidationProcess"])
+			checkpoint.contracts.diamond = diamondCheckpoint
+			saveCheckpoint(checkpoint)
+		}
+	}
+
+	// Deploy PartyA liquidation snapshot setup implementation library
+	if (libraryAddresses["LibPartyALiquidationSnapshotSetup"]) {
+		logger.info(`  ⏭ LibPartyALiquidationSnapshotSetup already deployed at ${libraryAddresses["LibPartyALiquidationSnapshotSetup"]}`)
+	} else {
+		const LibPartyALiquidationSnapshotSetupFactory = await ethers.getContractFactory("LibPartyALiquidationSnapshotSetup")
+		const libPartyALiquidationSnapshotSetup = await LibPartyALiquidationSnapshotSetupFactory.deploy()
+		await libPartyALiquidationSnapshotSetup.waitForDeployment()
+		receipt = (await libPartyALiquidationSnapshotSetup.deploymentTransaction()!.wait())!
+		totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
+		libraryAddresses["LibPartyALiquidationSnapshotSetup"] = await libPartyALiquidationSnapshotSetup.getAddress()
+		logger.deployed("LibPartyALiquidationSnapshotSetup", libraryAddresses["LibPartyALiquidationSnapshotSetup"])
+
+		// Save checkpoint
+		if (checkpoint) {
+			diamondCheckpoint.libraries!["LibPartyALiquidationSnapshotSetup"] = createDeployedContract(
+				libraryAddresses["LibPartyALiquidationSnapshotSetup"],
+			)
+			checkpoint.contracts.diamond = diamondCheckpoint
+			saveCheckpoint(checkpoint)
+		}
+	}
+
+	// Deploy legacy PartyA liquidation setup implementation library
+	if (libraryAddresses["LibPartyALiquidationLegacySetup"]) {
+		logger.info(`  ⏭ LibPartyALiquidationLegacySetup already deployed at ${libraryAddresses["LibPartyALiquidationLegacySetup"]}`)
+	} else {
+		const LibPartyALiquidationLegacySetupFactory = await ethers.getContractFactory("LibPartyALiquidationLegacySetup")
+		const libPartyALiquidationLegacySetup = await LibPartyALiquidationLegacySetupFactory.deploy()
+		await libPartyALiquidationLegacySetup.waitForDeployment()
+		receipt = (await libPartyALiquidationLegacySetup.deploymentTransaction()!.wait())!
+		totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
+		libraryAddresses["LibPartyALiquidationLegacySetup"] = await libPartyALiquidationLegacySetup.getAddress()
+		logger.deployed("LibPartyALiquidationLegacySetup", libraryAddresses["LibPartyALiquidationLegacySetup"])
+
+		// Save checkpoint
+		if (checkpoint) {
+			diamondCheckpoint.libraries!["LibPartyALiquidationLegacySetup"] = createDeployedContract(libraryAddresses["LibPartyALiquidationLegacySetup"])
 			checkpoint.contracts.diamond = diamondCheckpoint
 			saveCheckpoint(checkpoint)
 		}
@@ -299,7 +377,7 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 			if (requiredLibraries && requiredLibraries.length > 0) {
 				const libraries: Record<string, string> = {}
 				for (const lib of requiredLibraries) {
-					libraries[`project/contracts/core/libraries/${lib}.sol:${lib}`] = libraryAddresses[lib]
+					libraries[LibraryLinkReferences[lib]] = libraryAddresses[lib]
 				}
 				FacetFactory = await ethers.getContractFactory(facetName, { libraries })
 			} else {
@@ -436,6 +514,21 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 			{
 				name: "LibSettlement",
 				address: libraryAddresses["LibSettlement"],
+				constructorArguments: [],
+			},
+			{
+				name: "LibPartyALiquidationProcess",
+				address: libraryAddresses["LibPartyALiquidationProcess"],
+				constructorArguments: [],
+			},
+			{
+				name: "LibPartyALiquidationSnapshotSetup",
+				address: libraryAddresses["LibPartyALiquidationSnapshotSetup"],
+				constructorArguments: [],
+			},
+			{
+				name: "LibPartyALiquidationLegacySetup",
+				address: libraryAddresses["LibPartyALiquidationLegacySetup"],
 				constructorArguments: [],
 			},
 			...deployedFacets.map(facet => ({

@@ -7,9 +7,11 @@ pragma solidity >=0.8.18;
 import { LibMuonFundingRate } from "../../libraries/muon/LibMuonFundingRate.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibQuote } from "../../libraries/LibQuote.sol";
+import { LibQuoteState } from "../../libraries/extensions/LibQuoteState.sol";
 import { LibQuoteFunding } from "../../libraries/LibQuoteFunding.sol";
 import { LibFundingRate } from "../../libraries/LibFundingRate.sol";
-import { QuoteStorage, Quote, QuoteStatus } from "../../storages/QuoteStorage.sol";
+import { LibPartyBState } from "../../libraries/extensions/LibPartyBState.sol";
+import { QuoteStorage, Quote } from "../../storages/QuoteStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { FundingStorage, FundingFee } from "../../storages/FundingStorage.sol";
@@ -18,7 +20,6 @@ import { MAStorage } from "../../storages/MAStorage.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { PairUpnlSig } from "../../storages/MuonStorage.sol";
 import { PositionType } from "../../storages/QuoteStorage.sol";
-import { ClearingHouseStorage } from "../../storages/ClearingHouseStorage.sol";
 import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 /// @title FundingRateFacetImpl
@@ -27,6 +28,9 @@ import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 ///      1. Direct funding rate: Immediate price adjustment based on funding rate
 ///      2. Accumulated funding: Tracks funding over epochs and applies in bulk
 library FundingRateFacetImpl {
+	using LibPartyBState for address;
+	using LibQuoteState for Quote;
+
 	/// @notice Applies direct funding rate to open positions
 	/// @dev This adjusts the open price of positions based on the funding rate.
 	///      A positive rate on a LONG position increases openedPrice (hurts PartyA),
@@ -40,8 +44,7 @@ library FundingRateFacetImpl {
 
 		// Verify the signature contains valid unrealized PnL data
 		address signer = LibSigner.getSigner();
-		require(!MAStorage.layout().partyBLiquidationStatus[signer][partyA], "PartyBFacet: PartyB is in liquidation process");
-		require(!ClearingHouseStorage.layout().crossLiquidationDetails[signer].inProgress, "PartyBFacet: PartyB is in cross liquidation process");
+		signer.requireNotLiquidating(partyA);
 		require(quoteIds.length == rates.length && quoteIds.length > 0, "ChargeFundingFacet: Length not match");
 
 		int256 partyBAvailableBalance = LibAccount.partyBAvailableBalanceForLiquidation(upnlSig.upnlPartyB, signer, partyA);
@@ -62,12 +65,7 @@ library FundingRateFacetImpl {
 			// Validate quote ownership and status
 			require(quote.partyA == partyA, "ChargeFundingFacet: Invalid quote");
 			require(quote.partyB == signer, "ChargeFundingFacet: Sender isn't partyB of quote");
-			require(
-				quote.quoteStatus == QuoteStatus.OPENED ||
-					quote.quoteStatus == QuoteStatus.CLOSE_PENDING ||
-					quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING,
-				"ChargeFundingFacet: Invalid state"
-			);
+			quote.requireOpenPosition();
 
 			// Ensure we're not mixing funding systems
 			require(
@@ -289,12 +287,7 @@ library FundingRateFacetImpl {
 			Quote storage quote = QuoteStorage.layout().quotes[quoteIds[i]];
 			require(quote.partyA == partyA, "FundingRateFacet: Invalid quote");
 			require(quote.partyB == partyB, "FundingRateFacet: Sender isn't partyB of quote");
-			require(
-				quote.quoteStatus == QuoteStatus.OPENED ||
-					quote.quoteStatus == QuoteStatus.CLOSE_PENDING ||
-					quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING,
-				"FundingRateFacet: Invalid state"
-			);
+			quote.requireOpenPosition();
 
 			// Delegate to library function that handles the actual fee calculation
 			LibQuoteFunding.chargeAccumulatedFundingFee(quoteIds[i]);

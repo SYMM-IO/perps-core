@@ -14,9 +14,11 @@ import { QuoteStorage, Quote, QuoteStatus, LockedValues } from "../../storages/Q
 import { SharedEvents } from "../../libraries/SharedEvents.sol";
 import { LibAggregateFunding } from "../../libraries/LibAggregateFunding.sol";
 import { LibQuote } from "../../libraries/LibQuote.sol";
+import { LibQuoteState } from "../../libraries/extensions/LibQuoteState.sol";
 import { LibQuoteClose } from "../../libraries/LibQuoteClose.sol";
 import { LibQuoteFunding } from "../../libraries/LibQuoteFunding.sol";
 import { LibConnections } from "../../libraries/LibConnections.sol";
+import { LibPartyBState } from "../../libraries/extensions/LibPartyBState.sol";
 import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibHook } from "../../libraries/LibHook.sol";
@@ -24,6 +26,8 @@ import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 
 library ClearingHouseFacetImpl {
 	using LockedValuesOps for LockedValues;
+	using LibPartyBState for address;
+	using LibQuoteState for Quote;
 
 	/// @dev Special allocation key used to pull from partyAReimbursement in deallocateForClearingHouse
 	address internal constant REIMBURSEMENT_KEY = address(1);
@@ -183,9 +187,8 @@ library ClearingHouseFacetImpl {
 				// Receiver is a partyA or other address
 				if (maLayout.liquidationStatus[receivers[i]]) {
 					// PartyA is being liquidated — route to reimbursement so funds survive settlement.
-					// No BalanceChangePartyA event here: reimbursement is escrow, not usable balance.
-					// The event will be emitted at settlement when reimbursement becomes allocatedBalances.
 					accountLayout.partyAReimbursement[receivers[i]] += amount;
+					emit SharedEvents.BalanceChangePartyA(receivers[i], amount, SharedEvents.BalanceChangeType.REIMBURSEMENT_IN);
 				} else {
 					accountLayout.allocatedBalances[receivers[i]] += amount;
 					emit SharedEvents.BalanceChangePartyA(receivers[i], amount, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
@@ -239,6 +242,7 @@ library ClearingHouseFacetImpl {
 							uint256 fee = LibQuote.getOpenTradingFee(quote.id);
 							LibAccount.releaseReservedOpenTradingFee(partyA, fee);
 							accountLayout.partyAReimbursement[partyA] += fee;
+							emit SharedEvents.BalanceChangePartyA(partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
 						} else {
 							LibAccount.refundOpenTradingFee(quote.id, partyA);
 						}
@@ -278,8 +282,7 @@ library ClearingHouseFacetImpl {
 				uint256 fee = LibQuote.getOpenTradingFee(quote.id);
 				LibAccount.releaseReservedOpenTradingFee(partyA, fee);
 				accountLayout.partyAReimbursement[partyA] += fee;
-				// No BalanceChangePartyA event: reimbursement is escrow during takeover.
-				// settlePartyATakeover handles final fund distribution.
+				emit SharedEvents.BalanceChangePartyA(partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
 				quote.quoteStatus = QuoteStatus.LIQUIDATED_PENDING;
 				quote.statusModifyTimestamp = block.timestamp;
 				liquidatedAmounts[index] = quote.quantity;
@@ -306,7 +309,6 @@ library ClearingHouseFacetImpl {
 	) internal returns (uint256[] memory liquidatedAmounts, uint256[] memory closeIds) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		MAStorage.Layout storage maLayout = MAStorage.layout();
 
 		require(quoteIds.length == prices.length, "ClearingHouseFacet: Invalid length");
 
@@ -325,12 +327,7 @@ library ClearingHouseFacetImpl {
 			address partyA = quote.partyA;
 			address partyB = quote.partyB;
 
-			require(
-				quote.quoteStatus == QuoteStatus.OPENED ||
-					quote.quoteStatus == QuoteStatus.CLOSE_PENDING ||
-					quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING,
-				"ClearingHouseFacet: Invalid state"
-			);
+			quote.requireOpenPosition();
 
 			// Validate the quote belongs to the subject
 			if (liqType == LiquidationType.CROSS_PARTY_B) {
@@ -338,11 +335,7 @@ library ClearingHouseFacetImpl {
 				_autoTakeoverPartyALiquidation(partyA);
 			} else {
 				require(partyA == subject, "ClearingHouseFacet: Invalid party");
-				require(!maLayout.partyBLiquidationStatus[partyB][partyA], "ClearingHouseFacet: PartyB is in liquidation process");
-				require(
-					!ClearingHouseStorage.layout().crossLiquidationDetails[partyB].inProgress,
-					"ClearingHouseFacet: PartyB is in cross liquidation process"
-				);
+				partyB.requireNotLiquidating(partyA);
 			}
 
 			closeIds[i] = quoteLayout.closeIds[quote.id];
@@ -439,15 +432,9 @@ library ClearingHouseFacetImpl {
 			address partyA = quote.partyA;
 			address partyB = quote.partyB;
 			require(quote.affiliate == affiliate, "ClearingHouseFacet: Invalid affiliate");
-			require(
-				quote.quoteStatus == QuoteStatus.OPENED ||
-					quote.quoteStatus == QuoteStatus.CLOSE_PENDING ||
-					quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING,
-				"ClearingHouseFacet: Invalid state"
-			);
+			quote.requireOpenPosition();
 			require(!MAStorage.layout().liquidationStatus[partyA], "Accessibility: PartyA isn't solvent");
-			require(!MAStorage.layout().partyBLiquidationStatus[partyB][partyA], "Accessibility: PartyB isn't solvent");
-			require(!ClearingHouseStorage.layout().crossLiquidationDetails[partyB].inProgress, "Accessibility: PartyB isn't solvent");
+			partyB.requireNotLiquidating(partyA);
 
 			uint256 openAmount = LibQuote.quoteOpenAmount(quote);
 			quote.quoteStatus = QuoteStatus.CLOSE_PENDING;
@@ -501,7 +488,9 @@ library ClearingHouseFacetImpl {
 			accountLayout.partyAReimbursement[partyA] = 0;
 			accountLayout.partyADeferredBalance[partyA] = 0;
 			accountLayout.allocatedBalances[partyA] += totalRelease;
-			emit SharedEvents.BalanceChangePartyA(partyA, totalRelease, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+			if (deferredBalance > 0) {
+				emit SharedEvents.BalanceChangePartyA(partyA, deferredBalance, SharedEvents.BalanceChangeType.DEFERRED_BALANCE_IN);
+			}
 		}
 
 		// Clear locked balances

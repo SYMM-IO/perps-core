@@ -26,9 +26,21 @@ const FacetLibraryDependencies: Record<string, string[]> = {
 	ForceCloseStepsFacet: ["LibForceActions", "LibSettlement"],
 	ViewFacetQuote: ["LibQuoteFunding"],
 	FundingRateFacet: ["LibQuoteFunding"],
-	PartyALiquidationFacet: ["LibQuoteFunding"],
+	PartyALiquidationFacet: ["LibPartyALiquidationLegacySetup", "LibPartyALiquidationProcess"],
+	PartyALiquidationSnapshotFacet: ["LibPartyALiquidationSnapshotSetup", "LibPartyALiquidationProcess"],
 	ClearingHouseFacet: ["LibQuoteClose", "LibQuoteFunding"],
 	SettlementFacet: ["LibSettlement"],
+}
+
+const LibraryLinkReferences: Record<string, string> = {
+	LibQuoteFunding: "project/contracts/core/libraries/LibQuoteFunding.sol:LibQuoteFunding",
+	LibQuoteClose: "project/contracts/core/libraries/LibQuoteClose.sol:LibQuoteClose",
+	LibForceActions: "project/contracts/core/libraries/LibForceActions.sol:LibForceActions",
+	LibSettlement: "project/contracts/core/libraries/LibSettlement.sol:LibSettlement",
+	LibPartyALiquidationProcess: "project/contracts/core/libraries/liquidation/LibPartyALiquidationProcess.sol:LibPartyALiquidationProcess",
+	LibPartyALiquidationSnapshotSetup:
+		"project/contracts/core/libraries/liquidation/LibPartyALiquidationSnapshotSetup.sol:LibPartyALiquidationSnapshotSetup",
+	LibPartyALiquidationLegacySetup: "project/contracts/core/libraries/liquidation/LibPartyALiquidationLegacySetup.sol:LibPartyALiquidationLegacySetup",
 }
 
 function validateAddress(label: string, value: string | undefined): string {
@@ -49,7 +61,7 @@ async function deployLibraries(): Promise<Record<string, string>> {
 
 	const LibQuoteCloseFactory = await ethers.getContractFactory("LibQuoteClose", {
 		libraries: {
-			"project/contracts/core/libraries/LibQuoteFunding.sol:LibQuoteFunding": libraries.LibQuoteFunding,
+			[LibraryLinkReferences.LibQuoteFunding]: libraries.LibQuoteFunding,
 		},
 	})
 	const libQuoteClose = await LibQuoteCloseFactory.deploy()
@@ -58,7 +70,7 @@ async function deployLibraries(): Promise<Record<string, string>> {
 
 	const LibForceActionsFactory = await ethers.getContractFactory("LibForceActions", {
 		libraries: {
-			"project/contracts/core/libraries/LibQuoteClose.sol:LibQuoteClose": libraries.LibQuoteClose,
+			[LibraryLinkReferences.LibQuoteClose]: libraries.LibQuoteClose,
 		},
 	})
 	const libForceActions = await LibForceActionsFactory.deploy()
@@ -69,6 +81,25 @@ async function deployLibraries(): Promise<Record<string, string>> {
 	const libSettlement = await LibSettlementFactory.deploy()
 	await libSettlement.waitForDeployment()
 	libraries.LibSettlement = await libSettlement.getAddress()
+
+	const LibPartyALiquidationProcessFactory = await ethers.getContractFactory("LibPartyALiquidationProcess", {
+		libraries: {
+			[LibraryLinkReferences.LibQuoteFunding]: libraries.LibQuoteFunding,
+		},
+	})
+	const libPartyALiquidationProcess = await LibPartyALiquidationProcessFactory.deploy()
+	await libPartyALiquidationProcess.waitForDeployment()
+	libraries.LibPartyALiquidationProcess = await libPartyALiquidationProcess.getAddress()
+
+	const LibPartyALiquidationSnapshotSetupFactory = await ethers.getContractFactory("LibPartyALiquidationSnapshotSetup")
+	const libPartyALiquidationSnapshotSetup = await LibPartyALiquidationSnapshotSetupFactory.deploy()
+	await libPartyALiquidationSnapshotSetup.waitForDeployment()
+	libraries.LibPartyALiquidationSnapshotSetup = await libPartyALiquidationSnapshotSetup.getAddress()
+
+	const LibPartyALiquidationLegacySetupFactory = await ethers.getContractFactory("LibPartyALiquidationLegacySetup")
+	const libPartyALiquidationLegacySetup = await LibPartyALiquidationLegacySetupFactory.deploy()
+	await libPartyALiquidationLegacySetup.waitForDeployment()
+	libraries.LibPartyALiquidationLegacySetup = await libPartyALiquidationLegacySetup.getAddress()
 
 	return libraries
 }
@@ -82,7 +113,7 @@ async function getFacetFactory(name: string): Promise<any> {
 	const deployed = await deployLibraries()
 	const linked: Record<string, string> = {}
 	for (const lib of libs) {
-		linked[`project/contracts/core/libraries/${lib}.sol:${lib}`] = deployed[lib]
+		linked[LibraryLinkReferences[lib]] = deployed[lib]
 	}
 	return ethers.getContractFactory(name, { libraries: linked })
 }
@@ -106,6 +137,7 @@ async function main() {
 		facetAddress = await facet.getAddress()
 		console.log(`${FACET_NAME} deployed: ${facetAddress}`)
 	}
+	const deployedFacetAddress = validateAddress("facetAddress", facetAddress)
 
 	const selectorsToAdd: string[] = []
 	const selectorsToReplace: string[] = []
@@ -122,7 +154,7 @@ async function main() {
 		...(selectorsToAdd.length > 0
 			? [
 					{
-						facetAddress,
+						facetAddress: deployedFacetAddress,
 						action: FacetCutAction.Add,
 						functionSelectors: selectorsToAdd,
 					},
@@ -131,7 +163,7 @@ async function main() {
 		...(selectorsToReplace.length > 0
 			? [
 					{
-						facetAddress,
+						facetAddress: deployedFacetAddress,
 						action: FacetCutAction.Replace,
 						functionSelectors: selectorsToReplace,
 					},
