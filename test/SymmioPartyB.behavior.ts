@@ -38,6 +38,17 @@ export function shouldBehaveLikeSymmioPartyB(): void {
 		return partyBAddress
 	}
 
+	const setupSecondFundingSymbol = async () => {
+		await context.symbolControlFacet
+			.connect(context.signers.admin)
+			.addSymbol("ETHUSDT", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+		await context.symbolControlFacet.connect(context.signers.admin).setSymbolTypes([2], [1])
+	}
+
+	const partyBFundingInterface = new ethers.Interface([
+		"function setFundingFee(uint256[] symbolIds,int256[] longFees,int256[] shortFees,int256[] marketPrices,uint256[] nonces,uint256 deadline)",
+	])
+
 	const openWithPartyBContract = async (partyBAddress: string): Promise<bigint> => {
 		await user.sendQuote(limitQuoteRequestBuilder().partyBWhiteList([partyBAddress]).build())
 		const quoteId = await context.viewFacetQuote.getNextQuoteId()
@@ -130,37 +141,139 @@ export function shouldBehaveLikeSymmioPartyB(): void {
 				const setEpochCall = context.fundingRateFacet.interface.encodeFunctionData("setEpochDurations", [[1], [28800]])
 				await context.symmioPartyB.connect(context.signers.admin)._call([setEpochCall])
 
-				const newerFundingCall = context.symmioPartyB.interface.encodeFunctionData("setFundingFee", [
+				const newerFundingCall = partyBFundingInterface.encodeFunctionData("setFundingFee", [
 					[1],
 					[decimal(2n, 14)],
 					[-decimal(2n, 14)],
 					[decimal(1n)],
-					2n,
+					[2n],
 					deadline,
 				])
 				await context.symmioPartyB.connect(context.signers.admin)._call([newerFundingCall])
 
 				let fundingFee = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, partyBAddress)
-				expect(await context.symmioPartyB.fundingNonce()).to.equal(2n)
+				expect(await context.symmioPartyB.fundingNonce(1)).to.equal(2n)
 				expect(fundingFee.currentLongRate).to.equal(decimal(2n, 14))
 				expect(fundingFee.currentShortRate).to.equal(-decimal(2n, 14))
 
-				const staleFundingCall = context.symmioPartyB.interface.encodeFunctionData("setFundingFee", [
+				const staleFundingCall = partyBFundingInterface.encodeFunctionData("setFundingFee", [
 					[1],
 					[decimal(9n, 14)],
 					[-decimal(9n, 14)],
 					[decimal(1n)],
-					1n,
+					[1n],
 					deadline,
 				])
 				await expect(context.symmioPartyB.connect(context.signers.admin)._call([staleFundingCall]))
 					.to.emit(context.symmioPartyB, "FundingFeeUpdateSkipped")
-					.withArgs(1n, 2n, deadline, 0)
+					.withArgs([1n], [1n], deadline, 0)
 
 				fundingFee = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, partyBAddress)
-				expect(await context.symmioPartyB.fundingNonce()).to.equal(2n)
+				expect(await context.symmioPartyB.fundingNonce(1)).to.equal(2n)
 				expect(fundingFee.currentLongRate).to.equal(decimal(2n, 14))
 				expect(fundingFee.currentShortRate).to.equal(-decimal(2n, 14))
+			})
+
+			it("keeps nonce-gated funding updates independent per symbol", async function () {
+				const partyBAddress = await setupPartyBContract()
+				await setupSecondFundingSymbol()
+				await context.pauseControlFacet.connect(context.signers.admin).activateAccumulatedFunding()
+				const deadline = BigInt(await time.latest()) + 3600n
+
+				const setEpochCall = context.fundingRateFacet.interface.encodeFunctionData("setEpochDurations", [
+					[1, 2],
+					[28800, 28800],
+				])
+				await context.symmioPartyB.connect(context.signers.admin)._call([setEpochCall])
+
+				const symbol1FundingCall = partyBFundingInterface.encodeFunctionData("setFundingFee", [
+					[1],
+					[decimal(2n, 14)],
+					[-decimal(2n, 14)],
+					[decimal(1n)],
+					[2n],
+					deadline,
+				])
+				await context.symmioPartyB.connect(context.signers.admin)._call([symbol1FundingCall])
+
+				const symbol2FundingCall = partyBFundingInterface.encodeFunctionData("setFundingFee", [
+					[2],
+					[decimal(7n, 14)],
+					[-decimal(7n, 14)],
+					[decimal(1n)],
+					[1n],
+					deadline,
+				])
+				await context.symmioPartyB.connect(context.signers.admin)._call([symbol2FundingCall])
+
+				const symbol1FundingFee = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, partyBAddress)
+				const symbol2FundingFee = await context.viewFacetSymbol.getFundingFeesOfPartyB(2, partyBAddress)
+				expect(await context.symmioPartyB.fundingNonce(1)).to.equal(2n)
+				expect(await context.symmioPartyB.fundingNonce(2)).to.equal(1n)
+				expect(symbol1FundingFee.currentLongRate).to.equal(decimal(2n, 14))
+				expect(symbol1FundingFee.currentShortRate).to.equal(-decimal(2n, 14))
+				expect(symbol2FundingFee.currentLongRate).to.equal(decimal(7n, 14))
+				expect(symbol2FundingFee.currentShortRate).to.equal(-decimal(7n, 14))
+			})
+
+			it("requires one funding nonce per symbol", async function () {
+				const deadline = BigInt(await time.latest()) + 3600n
+				const mismatchedFundingCall = partyBFundingInterface.encodeFunctionData("setFundingFee", [
+					[1, 2],
+					[decimal(2n, 14), decimal(7n, 14)],
+					[-decimal(2n, 14), -decimal(7n, 14)],
+					[decimal(1n), decimal(1n)],
+					[2n],
+					deadline,
+				])
+
+				await expect(context.symmioPartyB.connect(context.signers.admin)._call([mismatchedFundingCall])).to.be.revertedWith(
+					"SymmioPartyB: Array length mismatch",
+				)
+			})
+
+			it("skips only stale symbols in mixed funding batches", async function () {
+				const partyBAddress = await setupPartyBContract()
+				await setupSecondFundingSymbol()
+				await context.pauseControlFacet.connect(context.signers.admin).activateAccumulatedFunding()
+				const deadline = BigInt(await time.latest()) + 3600n
+
+				const setEpochCall = context.fundingRateFacet.interface.encodeFunctionData("setEpochDurations", [
+					[1, 2],
+					[28800, 28800],
+				])
+				await context.symmioPartyB.connect(context.signers.admin)._call([setEpochCall])
+
+				const symbol1NewerFundingCall = partyBFundingInterface.encodeFunctionData("setFundingFee", [
+					[1],
+					[decimal(3n, 14)],
+					[-decimal(3n, 14)],
+					[decimal(1n)],
+					[3n],
+					deadline,
+				])
+				await context.symmioPartyB.connect(context.signers.admin)._call([symbol1NewerFundingCall])
+
+				const mixedFundingCall = partyBFundingInterface.encodeFunctionData("setFundingFee", [
+					[1, 2],
+					[decimal(9n, 14), decimal(4n, 14)],
+					[-decimal(9n, 14), -decimal(4n, 14)],
+					[decimal(1n), decimal(1n)],
+					[2n, 2n],
+					deadline,
+				])
+				await expect(context.symmioPartyB.connect(context.signers.admin)._call([mixedFundingCall]))
+					.to.emit(context.symmioPartyB, "FundingFeeUpdateSkipped")
+					.withArgs([1n], [2n], deadline, 0)
+
+				const symbol1FundingFee = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, partyBAddress)
+				const symbol2FundingFee = await context.viewFacetSymbol.getFundingFeesOfPartyB(2, partyBAddress)
+				expect(await context.symmioPartyB.fundingNonce(1)).to.equal(3n)
+				expect(await context.symmioPartyB.fundingNonce(2)).to.equal(2n)
+				expect(symbol1FundingFee.currentLongRate).to.equal(decimal(3n, 14))
+				expect(symbol1FundingFee.currentShortRate).to.equal(-decimal(3n, 14))
+				expect(symbol2FundingFee.currentLongRate).to.equal(decimal(4n, 14))
+				expect(symbol2FundingFee.currentShortRate).to.equal(-decimal(4n, 14))
 			})
 
 			it("skips expired deadline funding updates without reverting", async function () {
@@ -174,20 +287,20 @@ export function shouldBehaveLikeSymmioPartyB(): void {
 				const expiredDeadline = latest + 10n
 				await time.increase(11)
 
-				const expiredFundingCall = context.symmioPartyB.interface.encodeFunctionData("setFundingFee", [
+				const expiredFundingCall = partyBFundingInterface.encodeFunctionData("setFundingFee", [
 					[1],
 					[decimal(9n, 14)],
 					[-decimal(9n, 14)],
 					[decimal(1n)],
-					3n,
+					[3n],
 					expiredDeadline,
 				])
 				await expect(context.symmioPartyB.connect(context.signers.admin)._call([expiredFundingCall]))
 					.to.emit(context.symmioPartyB, "FundingFeeUpdateSkipped")
-					.withArgs(3n, 0n, expiredDeadline, 1)
+					.withArgs([1n], [3n], expiredDeadline, 1)
 
 				const fundingFee = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, partyBAddress)
-				expect(await context.symmioPartyB.fundingNonce()).to.equal(0n)
+				expect(await context.symmioPartyB.fundingNonce(1)).to.equal(0n)
 				expect(fundingFee.currentLongRate).to.equal(0n)
 				expect(fundingFee.currentShortRate).to.equal(0n)
 			})

@@ -40,7 +40,8 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 	mapping(bytes4 => bool) public restrictedSelectors; // slot N+1
 	mapping(address => bool) public multicastWhitelist; // slot N+2
 	address public signer; // slot N+3 (was _guardCounter in v0.8.4, always 0 after tx)
-	uint256 public fundingNonce; // slot N+4: last accepted funding update nonce
+	uint256 private deprecatedFundingNonce; // slot N+4: deprecated global funding nonce
+	mapping(uint256 => uint256) public fundingNonce; // slot N+5: symbolId => last accepted funding update nonce
 
 	/// @custom:oz-upgrades-unsafe-allow constructor
 	constructor() {
@@ -68,11 +69,11 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 	event ADLSkip(uint256 quoteId, uint256 amount, uint256 price, bytes revertData);
 
 	/// @notice Emitted when a funding update is skipped instead of forwarded to Symmio
-	/// @param nonce The solver engine funding nonce supplied by the call
-	/// @param currentNonce The last accepted funding nonce stored before this call
+	/// @param symbolIds The symbols whose funding updates were skipped
+	/// @param nonces The solver engine funding nonces supplied for the skipped symbols
 	/// @param deadline The timestamp after which the update is no longer valid
 	/// @param reason Skip reason: 0 = stale nonce, 1 = expired deadline
-	event FundingFeeUpdateSkipped(uint256 nonce, uint256 currentNonce, uint256 deadline, uint8 reason);
+	event FundingFeeUpdateSkipped(uint256[] symbolIds, uint256[] nonces, uint256 deadline, uint8 reason);
 
 	/// @notice Emitted when the Symmio address is updated
 	event SetSymmioAddress(address oldSymmioAddress, address newSymmioAddress);
@@ -170,15 +171,15 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 		}
 	}
 
-	/// @notice Sets Symmio funding fees unless the update is expired or `nonce` is older than the last accepted funding nonce.
-	/// @dev Expired and lower nonce calls are skipped without reverting. Equal nonce calls are accepted so the
+	/// @notice Sets Symmio funding fees unless the update is expired or a symbol's nonce is older than its last accepted funding nonce.
+	/// @dev Expired and lower nonce symbol updates are skipped without reverting. Equal nonce updates are accepted so the
 	///      engine can replace or retry the latest funding update without breaking the surrounding PartyB template.
 	function setFundingFee(
 		uint256[] calldata symbolIds,
 		int256[] calldata longFees,
 		int256[] calldata shortFees,
 		int256[] calldata marketPrices,
-		uint256 nonce,
+		uint256[] calldata nonces,
 		uint256 deadline
 	) external whenNotPaused {
 		require(symmioAddress != address(0), "SymmioPartyB: Invalid address");
@@ -186,17 +187,83 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 			hasRole(MANAGER_ROLE, msg.sender) || hasRole(TRUSTED_ROLE, msg.sender) || ISymmio(symmioAddress).isCallFromInstantLayer(),
 			"SymmioPartyB: Invalid access"
 		);
-		uint256 currentNonce = fundingNonce;
+
+		uint256 len = symbolIds.length;
 		if (block.timestamp > deadline) {
-			emit FundingFeeUpdateSkipped(nonce, currentNonce, deadline, FUNDING_SKIP_EXPIRED_DEADLINE);
+			emit FundingFeeUpdateSkipped(symbolIds, nonces, deadline, FUNDING_SKIP_EXPIRED_DEADLINE);
 			return;
 		}
-		if (nonce < currentNonce) {
-			emit FundingFeeUpdateSkipped(nonce, currentNonce, deadline, FUNDING_SKIP_STALE_NONCE);
+		require(
+			longFees.length == len && shortFees.length == len && marketPrices.length == len && nonces.length == len,
+			"SymmioPartyB: Array length mismatch"
+		);
+
+		uint256 staleCount;
+		for (uint256 i = 0; i < len; ) {
+			if (nonces[i] < fundingNonce[symbolIds[i]]) staleCount++;
+			unchecked {
+				i++;
+			}
+		}
+
+		if (staleCount == len) {
+			emit FundingFeeUpdateSkipped(symbolIds, nonces, deadline, FUNDING_SKIP_STALE_NONCE);
 			return;
 		}
-		fundingNonce = nonce;
-		ISymmio(symmioAddress).setFundingFee(symbolIds, longFees, shortFees, marketPrices);
+		if (staleCount == 0) {
+			for (uint256 i = 0; i < len; ) {
+				fundingNonce[symbolIds[i]] = nonces[i];
+				unchecked {
+					i++;
+				}
+			}
+			ISymmio(symmioAddress).setFundingFee(symbolIds, longFees, shortFees, marketPrices);
+			return;
+		}
+
+		uint256 acceptedCount = len - staleCount;
+		uint256[] memory skippedSymbolIds = new uint256[](staleCount);
+		uint256[] memory skippedNonces = new uint256[](staleCount);
+		uint256[] memory acceptedSymbolIds = new uint256[](acceptedCount);
+		int256[] memory acceptedLongFees = new int256[](acceptedCount);
+		int256[] memory acceptedShortFees = new int256[](acceptedCount);
+		int256[] memory acceptedMarketPrices = new int256[](acceptedCount);
+		uint256 skippedIndex;
+		uint256 acceptedIndex;
+
+		for (uint256 i = 0; i < len; ) {
+			uint256 symbolId;
+			uint256 nonce;
+			int256 longFee;
+			int256 shortFee;
+			int256 marketPrice;
+			assembly ("memory-safe") {
+				let itemOffset := mul(i, 32)
+				symbolId := calldataload(add(symbolIds.offset, itemOffset))
+				nonce := calldataload(add(nonces.offset, itemOffset))
+				longFee := calldataload(add(longFees.offset, itemOffset))
+				shortFee := calldataload(add(shortFees.offset, itemOffset))
+				marketPrice := calldataload(add(marketPrices.offset, itemOffset))
+			}
+			if (nonce < fundingNonce[symbolId]) {
+				skippedSymbolIds[skippedIndex] = symbolId;
+				skippedNonces[skippedIndex] = nonce;
+				skippedIndex++;
+			} else {
+				fundingNonce[symbolId] = nonce;
+				acceptedSymbolIds[acceptedIndex] = symbolId;
+				acceptedLongFees[acceptedIndex] = longFee;
+				acceptedShortFees[acceptedIndex] = shortFee;
+				acceptedMarketPrices[acceptedIndex] = marketPrice;
+				acceptedIndex++;
+			}
+			unchecked {
+				i++;
+			}
+		}
+
+		emit FundingFeeUpdateSkipped(skippedSymbolIds, skippedNonces, deadline, FUNDING_SKIP_STALE_NONCE);
+		ISymmio(symmioAddress).setFundingFee(acceptedSymbolIds, acceptedLongFees, acceptedShortFees, acceptedMarketPrices);
 	}
 
 	/// @notice Executes multiple calls to Symmio; entries targeting this PartyB's `setFundingFee`
