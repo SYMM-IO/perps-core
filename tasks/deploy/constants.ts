@@ -10,6 +10,7 @@ export const FacetNames = [
 	"PauseControlFacet",
 	"DiamondLoupeFacet",
 	"PartyALiquidationFacet",
+	"PartyALiquidationSnapshotFacet",
 	"PartyBLiquidationFacet",
 	"PartyAFacet",
 	"BridgeFacet",

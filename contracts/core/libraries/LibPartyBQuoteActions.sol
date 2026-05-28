@@ -5,16 +5,17 @@
 pragma solidity >=0.8.18;
 
 import { QuoteStorage, Quote, LockedValues, QuoteStatus } from "../storages/QuoteStorage.sol";
-import { ClearingHouseStorage } from "../storages/ClearingHouseStorage.sol";
 import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
 import { MAStorage } from "../storages/MAStorage.sol";
 import { LibAccount } from "./LibAccount.sol";
 import { LibConnections } from "./LibConnections.sol";
+import { LibPartyBState } from "./extensions/LibPartyBState.sol";
 import { LibSigner } from "./LibSigner.sol";
 import { LockedValuesOps } from "./LibLockedValues.sol";
 
 library LibPartyBQuoteActions {
 	using LockedValuesOps for LockedValues;
+	using LibPartyBState for address;
 
 	/// @notice Locks a pending quote for Party B, validating whitelist, symbol restrictions, and solvency.
 	function lockQuote(uint256 quoteId) internal {
@@ -37,8 +38,7 @@ library LibPartyBQuoteActions {
 			LibConnections.isSymbolAllowedForPartyA(quote.partyA, quote.symbolId),
 			"PartyBFacet: Symbol not allowed due to connection restrictions"
 		);
-		require(!MAStorage.layout().partyBLiquidationStatus[signer][quote.partyA], "PartyBFacet: PartyB isn't solvent");
-		require(!ClearingHouseStorage.layout().crossLiquidationDetails[signer].inProgress, "PartyBFacet: PartyB is in cross liquidation process");
+		signer.requireNotLiquidating(quote.partyA);
 		bool isValidPartyB;
 		if (quote.partyBsWhiteList.length == 0) {
 			require(signer != quote.partyA, "PartyBFacet: PartyA can't be partyB too");

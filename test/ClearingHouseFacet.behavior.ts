@@ -25,6 +25,26 @@ import { decimal, getBlockTimestamp, getPriceFetcher, getTradingFeeForQuotes } f
 import { migratePartyBToCross } from "./utils/CrossPartyB.js"
 import { getDummyLiquidationSig } from "./utils/SignatureUtils.js"
 
+enum BalanceChangeType {
+	ALLOCATE,
+	DEALLOCATE,
+	PLATFORM_FEE_IN,
+	PLATFORM_FEE_OUT,
+	REALIZED_PNL_IN,
+	REALIZED_PNL_OUT,
+	CVA_IN,
+	CVA_OUT,
+	LF_IN,
+	LF_OUT,
+	FUNDING_FEE_IN,
+	FUNDING_FEE_OUT,
+	DEFERRED_BALANCE_IN,
+	DEFERRED_BALANCE_OUT,
+	REIMBURSEMENT_IN,
+}
+
+const balanceChangeInterface = new ethers.Interface(["event BalanceChangePartyA(address indexed partyA, uint256 amount, uint8 _type)"])
+
 export function shouldBehaveLikeClearingHouseFacet(): void {
 	let context: RunContext, user: User, user2: User, liquidator: User, hedger: Hedger, hedger2: Hedger
 
@@ -217,7 +237,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					context.clearingHouseFacet
 						.connect(context.signers.liquidator)
 						.liquidateCrossPartyB(context.signers.hedger.getAddress(), "0x", BigInt("-999999999999999999999999999999"), await getBlockTimestamp()),
-				).to.revertedWith("Accessibility: PartyB isn't solvent")
+				).to.revertedWith("PartyBState: PartyB is in cross liquidation")
 			})
 		})
 	})
@@ -289,7 +309,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			const quoteBefore = await context.viewFacetQuote.getQuote(1)
 			await expect(
 				context.clearingHouseFacet.connect(context.signers.liquidator).closeAffiliatePositions(affiliate, [1], [quoteBefore.openedPrice]),
-			).to.be.revertedWith("Accessibility: PartyB isn't solvent")
+			).to.be.revertedWith("PartyBState: PartyB is in liquidation")
 		})
 	})
 
@@ -313,7 +333,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			expect(await context.viewFacet.getPartyBCrossLiquidationStatus(context.signers.hedger)).to.equal(true)
 
 			// on cross liquidation is actived, partyB operations should not allowed
-			await expect(hedger.lockQuote(2, decimal(1_000_000n))).to.be.revertedWith("PartyBFacet: PartyB is in cross liquidation process")
+			await expect(hedger.lockQuote(2, decimal(1_000_000n))).to.be.revertedWith("PartyBState: PartyB is in liquidation")
 
 			// Liquidate pending quotes
 			await context.clearingHouseFacet
@@ -1469,7 +1489,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					context.clearingHouseFacet
 						.connect(context.signers.liquidator)
 						.liquidatePositionsForClearingHouse(context.signers.user.address, [1n], [decimal(25n)]),
-				).to.be.revertedWith("ClearingHouseFacet: PartyB is in cross liquidation process")
+				).to.be.revertedWith("PartyBState: PartyB is in liquidation")
 			})
 
 			it("should not increment partyA nonce during partyA takeover position liquidation", async () => {
@@ -1870,7 +1890,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				// Normal liquidatePositionsPartyA should fail for cross-liquidated partyB
 				await expect(
 					context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePositionsPartyA(context.signers.user.address, [1n]),
-				).to.be.revertedWith("LiquidationFacet: PartyB is in cross liquidation process")
+				).to.be.revertedWith("PartyBState: PartyB is in liquidation")
 			})
 		})
 
@@ -1898,16 +1918,40 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			it("should route funds to partyAReimbursement when partyA is liquidated", async () => {
 				const crossDetails = await context.viewFacet.getCrossLiquidationDetails(context.signers.hedger.address)
 				const distributeAmount = crossDetails.deallocatedPool > 0n ? crossDetails.deallocatedPool : 0n
-				if (distributeAmount == 0n) return // nothing to distribute
+				expect(distributeAmount).to.be.greaterThan(0n)
 
 				const reimbursementBefore = await context.viewFacet.partyAReimbursement(context.signers.user.address)
 
-				await context.clearingHouseFacet
+				const distributeTx = await context.clearingHouseFacet
 					.connect(context.signers.liquidator)
 					.distributeForClearingHouse(context.signers.hedger.address, [context.signers.user.address], [ZeroAddress], [distributeAmount])
+				const receipt = await distributeTx.wait()
+				const partyAEvents = (receipt?.logs ?? []).flatMap(log => {
+					try {
+						const parsed = balanceChangeInterface.parseLog({ topics: log.topics as string[], data: log.data })
+						if (parsed?.name !== "BalanceChangePartyA") return []
+						return [
+							{
+								partyA: parsed.args.partyA as string,
+								amount: parsed.args.amount as bigint,
+								changeType: parsed.args._type as bigint,
+							},
+						]
+					} catch {
+						return []
+					}
+				})
 
 				const reimbursementAfter = await context.viewFacet.partyAReimbursement(context.signers.user.address)
 				expect(reimbursementAfter).to.equal(reimbursementBefore + distributeAmount)
+				expect(
+					partyAEvents.some(
+						event =>
+							event.partyA.toLowerCase() === context.signers.user.address.toLowerCase() &&
+							event.amount === distributeAmount &&
+							event.changeType === BigInt(BalanceChangeType.REIMBURSEMENT_IN),
+					),
+				).to.equal(true)
 			})
 		})
 

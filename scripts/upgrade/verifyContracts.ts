@@ -112,6 +112,12 @@ function librariesFromArtifact(fqn: string, allAddresses: Record<string, string>
 }
 
 function coreLibFqn(name: string): string {
+	const special: Record<string, string> = {
+		LibPartyALiquidationSnapshotSetup: "contracts/core/libraries/liquidation/LibPartyALiquidationSnapshotSetup.sol:LibPartyALiquidationSnapshotSetup",
+		LibPartyALiquidationLegacySetup: "contracts/core/libraries/liquidation/LibPartyALiquidationLegacySetup.sol:LibPartyALiquidationLegacySetup",
+		LibPartyALiquidationProcess: "contracts/core/libraries/liquidation/LibPartyALiquidationProcess.sol:LibPartyALiquidationProcess",
+	}
+	if (special[name]) return special[name]
 	return `contracts/core/libraries/${name}.sol:${name}`
 }
 
@@ -235,7 +241,15 @@ function buildContractList(
 	}
 
 	// ── Core Libraries (ordered: deps first) ────────────────────────────
-	const libOrder = ["LibQuoteFunding", "LibSettlement", "LibQuoteClose", "LibForceActions"]
+	const libOrder = [
+		"LibQuoteFunding",
+		"LibPartyALiquidationProcess",
+		"LibPartyALiquidationSnapshotSetup",
+		"LibPartyALiquidationLegacySetup",
+		"LibSettlement",
+		"LibQuoteClose",
+		"LibForceActions",
+	]
 	for (const name of libOrder) {
 		const address = libraries[name]
 		if (!address) continue

@@ -9,17 +9,21 @@ import { LibQuoteClose } from "../../libraries/LibQuoteClose.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibQuote } from "../../libraries/LibQuote.sol";
+import { LibQuoteState } from "../../libraries/extensions/LibQuoteState.sol";
+import { LibPartyBState } from "../../libraries/extensions/LibPartyBState.sol";
 import { LibPartiesEvents } from "../../libraries/LibPartiesEvents.sol";
 import { Symbol, SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { QuoteStorage, Quote, QuoteStatus, OrderType } from "../../storages/QuoteStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
-import { ClearingHouseStorage } from "../../storages/ClearingHouseStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
 import { PairUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
 import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library PartyBEmergencyActionsFacetImpl {
+	using LibPartyBState for address;
+	using LibQuoteState for Quote;
+
 	/// @notice Closes a position fully during emergency mode, symbol delisting, or partyB emergency status
 	function emergencyClosePosition(uint256 quoteId, PairUpnlAndPriceSig memory upnlSig) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
@@ -65,16 +69,11 @@ library PartyBEmergencyActionsFacetImpl {
 
 		require(quote.partyB == signer, "PartyBFacet: Sender isn't partyB of quote");
 		require(MAStorage.layout().adlEnabled[signer], "PartyBFacet: ADL disabled");
-		require(!ClearingHouseStorage.layout().crossLiquidationDetails[signer].inProgress, "PartyBFacet: PartyB is in cross liquidation process");
-		require(!maLayout.partyBLiquidationStatus[quote.partyB][quote.partyA], "PartyBFacet: PartyB is liquidated");
+		signer.requireNotCrossLiquidating();
+		quote.partyB.requireNotLiquidatingAgainst(quote.partyA);
 		require(!maLayout.liquidationStatus[quote.partyA], "PartyAFacet: PartyA is in liquidation process");
 
-		require(
-			quote.quoteStatus == QuoteStatus.OPENED ||
-				quote.quoteStatus == QuoteStatus.CLOSE_PENDING ||
-				quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING,
-			"PartyBFacet: Invalid state"
-		);
+		quote.requireOpenPosition();
 
 		// Get quote related data
 		uint256 openAmount = LibQuote.quoteOpenAmount(quote);

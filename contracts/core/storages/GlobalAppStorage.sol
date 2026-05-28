@@ -134,6 +134,9 @@ library GlobalAppStorage {
 		/// @dev Nonzero values immediately put the affiliate in close-only mode. Once block.timestamp
 		///      reaches this value, ClearingHouse can close the affiliate's remaining open positions.
 		mapping(address => uint256) affiliateShutdownTime;
+		/// @notice Disables legacy PartyA liquidation entrypoints that rely on symbol-level prices.
+		/// @dev When true, liquidators must use the signed PartyB-symbol price/funding state path.
+		bool legacyPartyALiquidationDeprecated;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

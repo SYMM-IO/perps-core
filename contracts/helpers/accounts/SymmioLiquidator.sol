@@ -12,6 +12,7 @@ import { IERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/interface
 import { SafeERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 
 import { IPartyALiquidationFacet } from "../../core/facets/PartyALiquidation/IPartyALiquidationFacet.sol";
+import { IPartyALiquidationSnapshotFacet } from "../../core/facets/PartyALiquidationSnapshot/IPartyALiquidationSnapshotFacet.sol";
 import { IPartyBLiquidationFacet } from "../../core/facets/PartyBLiquidation/IPartyBLiquidationFacet.sol";
 
 /// @notice Proxy call contract for liquidation bots. Operators execute liquidation calls
@@ -64,6 +65,12 @@ contract SymmioLiquidator is Initializable, PausableUpgradeable, AccessControlUp
 
 		_setAllowedSelector(IPartyALiquidationFacet.liquidatePartyA.selector, true);
 		_setAllowedSelector(IPartyALiquidationFacet.setSymbolsPrice.selector, true);
+		_setAllowedSelector(IPartyALiquidationSnapshotFacet.liquidatePartyAWithSnapshot.selector, true);
+		_setAllowedSelector(IPartyALiquidationSnapshotFacet.setSymbolsPriceWithSnapshot.selector, true);
+		_setAllowedSelector(IPartyALiquidationSnapshotFacet.liquidatePendingPositionsPartyAWithSnapshot.selector, true);
+		_setAllowedSelector(IPartyALiquidationSnapshotFacet.liquidatePositionsPartyAWithSnapshot.selector, true);
+		_setAllowedSelector(IPartyALiquidationSnapshotFacet.settlePartyALiquidationWithSnapshot.selector, true);
+		_setAllowedSelector(IPartyALiquidationSnapshotFacet.singleStepLiquidatePartyAWithSnapshot.selector, true);
 		_setAllowedSelector(IPartyALiquidationFacet.deferredLiquidatePartyA.selector, true);
 		_setAllowedSelector(IPartyALiquidationFacet.deferredSetSymbolsPrice.selector, true);
 		_setAllowedSelector(IPartyALiquidationFacet.liquidatePendingPositionsPartyA.selector, true);

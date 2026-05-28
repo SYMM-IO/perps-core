@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>AccountLayer Delegated Creation &amp; Ownership Transfer - Symmio Core v0.8.6</title>
+	<link rel="stylesheet" href="../assets/v086-docs.css">
+	<script src="../assets/v086-docs.js" defer></script>
+</head>
+<body class="doc-page">
+	<a class="skip-link" href="#full-document">Skip to document</a>
+	
+	<header class="doc-topbar">
+		<a class="brand" href="../index.html"><span class="brand-mark">8.6</span><span><strong>Symmio Docs</strong><small>v0.8.6 reference</small></span></a>
+		<nav class="top-actions" aria-label="Page actions">
+			<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+		</nav>
+	</header>
+	<div class="reader-shell">
+		<aside class="toc-panel side-toc" aria-label="Page navigation">
+			<a class="button primary back-home" href="../index.html">Back to home</a>
+			<div class="toc-card">
+				<p class="toc-title">On this page</p>
+				<a class="toc-link level-2" href="#summary">Summary</a>
+<a class="toc-link level-2" href="#changed-interfaces">Changed Interfaces</a>
+<a class="toc-link level-3" href="#corefacet-createsubaccountsfor">`CoreFacet.createSubAccountsFor`</a>
+<a class="toc-link level-3" href="#corefacet-transfersubaccountownership">`CoreFacet.transferSubAccountOwnership`</a>
+<a class="toc-link level-3" href="#iaccountlayerhook-onsubaccountownershiptransfer">`IAccountLayerHook.onSubAccountOwnershipTransfer`</a>
+<a class="toc-link level-2" href="#storage-impact">Storage Impact</a>
+<a class="toc-link level-2" href="#ownership-resolution">Ownership Resolution</a>
+<a class="toc-link level-2" href="#hook-ordering-revert-semantics">Hook Ordering &amp; Revert Semantics</a>
+<a class="toc-link level-2" href="#security-considerations">Security Considerations</a>
+<a class="toc-link level-3" href="#role-granted-account-creation">Role-granted account creation</a>
+<a class="toc-link level-3" href="#direct-ownership-transfer">Direct ownership transfer</a>
+<a class="toc-link level-3" href="#existing-instantlayer-delegations">Existing InstantLayer delegations</a>
+<a class="toc-link level-3" href="#affiliate-hook-liveness">Affiliate hook liveness</a>
+<a class="toc-link level-3" href="#no-symmio-core-balance-movement">No Symmio core balance movement</a>
+<a class="toc-link level-2" href="#events">Events</a>
+<a class="toc-link level-3" href="#subaccountownershiptransferred">`SubAccountOwnershipTransferred`</a>
+<a class="toc-link level-2" href="#review-checklist">Review Checklist</a>
+<a class="toc-link level-2" href="#test-coverage">Test Coverage</a>
+			</div>
+		</aside>
+		<main class="reader-main">
+			<header class="reader-hero">
+				<nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">v0.8.6</a><span>/</span><strong>AccountLayer</strong></nav>
+				<div class="reader-title-row">
+					<div>
+						<h1>AccountLayer Delegated Creation &amp; Ownership Transfer</h1>
+						<p class="hero-copy">v0.8.6 lets approved creators open SubAccounts for other owners and lets ownership move directly, while preserving hooks, permissions, and existing account state.</p>
+					</div>
+				</div>
+			</header>
+	
+			
+	
+			<article class="doc-article" id="full-document">
+				<p>Version: v0.8.6 release note.</p>
+<p>This document describes two AccountLayer changes that affect account ownership and affiliate observability:</p>
+<ol>
+<li>Role-gated creation of SubAccounts for another owner.</li>
+<li>Direct owner-initiated transfer of SubAccount ownership to another address.</li>
+</ol>
+<p>The changes are intentionally narrow. They do not change the existing self-service SubAccount creation path, virtual account address derivation, Symmio core balance accounting, or virtual account lifecycle logic.</p>
+<hr>
+<h2 id="summary">Summary</h2>
+<p>The AccountLayer now supports a protocol-authorized account creator role. A caller with <code>ACCOUNT_CREATOR_ROLE</code> can create SubAccounts for a specified owner by calling <code>createSubAccountsFor(owner, affiliate, accountsData)</code>.</p>
+<p>SubAccount owners can also transfer ownership directly with <code>transferSubAccountOwnership(subAccount, newOwner)</code>. This updates the stored owner and the owner-to-SubAccount indexes. Since Virtual Account ownership resolves through the parent SubAccount, all Virtual Accounts under the transferred SubAccount become controlled by the new owner automatically.</p>
+<p>Affiliate hooks can observe ownership transfers through <code>onSubAccountOwnershipTransfer(subAccount, oldOwner, newOwner)</code>.</p>
+<hr>
+<h2 id="changed-interfaces">Changed Interfaces</h2>
+<h3 id="corefacet-createsubaccountsfor"><code>CoreFacet.createSubAccountsFor</code></h3>
+<pre><code class="language-solidity">function createSubAccountsFor(
+    address owner,
+    address affiliate,
+    SubAccountCreationData[] memory accountsData
+) external returns (address[] memory);
+</code></pre>
+<p>Access control:</p>
+<ul>
+<li>Caller must have <code>ACCOUNT_CREATOR_ROLE</code>.</li>
+<li><code>owner</code> must not be <code>address(0)</code>.</li>
+<li><code>accountsData</code> must not be empty.</li>
+</ul>
+<p>Behavior:</p>
+<ul>
+<li>Uses the same internal <code>_createSubAccount</code> path as <code>createSubAccounts</code>.</li>
+<li>The SubAccount owner is set to the supplied <code>owner</code>, not the caller.</li>
+<li>The SubAccount is added to <code>userToSubAccounts[owner]</code>.</li>
+<li>The existing <code>SubAccountCreated(account, owner, affiliate, name)</code> event is emitted.</li>
+<li>The existing <code>onAccountCreation(owner, subAccount, metadata)</code> affiliate hook is called if registered.</li>
+</ul>
+<h3 id="corefacet-transfersubaccountownership"><code>CoreFacet.transferSubAccountOwnership</code></h3>
+<pre><code class="language-solidity">function transferSubAccountOwnership(address subAccount, address newOwner) external;
+</code></pre>
+<p>Access control:</p>
+<ul>
+<li>Caller must be the current owner of <code>subAccount</code>.</li>
+<li>Ownership is checked through the existing AccountLayer signer resolution path, so calls through AccountManager compatibility flows keep the same authentication model.</li>
+</ul>
+<p>Validation:</p>
+<ul>
+<li><code>newOwner</code> must not be <code>address(0)</code>.</li>
+<li><code>subAccount</code> must exist and must be an active SubAccount.</li>
+<li><code>newOwner</code> must differ from the current owner.</li>
+</ul>
+<p>Behavior:</p>
+<ul>
+<li>Removes <code>subAccount</code> from <code>userToSubAccounts[oldOwner]</code>.</li>
+<li>Adds <code>subAccount</code> to <code>userToSubAccounts[newOwner]</code>.</li>
+<li>Updates <code>AccountStorage.subAccounts[subAccount].owner</code>.</li>
+<li>Calls the affiliate transfer hook after storage is updated.</li>
+<li>Emits <code>SubAccountOwnershipTransferred(subAccount, oldOwner, newOwner)</code>.</li>
+</ul>
+<h3 id="iaccountlayerhook-onsubaccountownershiptransfer"><code>IAccountLayerHook.onSubAccountOwnershipTransfer</code></h3>
+<pre><code class="language-solidity">function onSubAccountOwnershipTransfer(
+    address subAccount,
+    address oldOwner,
+    address newOwner
+) external;
+</code></pre>
+<p>The hook is called after the owner field and enumerable indexes have been updated. If the hook queries <code>ownerOf(subAccount)</code>, it observes <code>newOwner</code>.</p>
+<p>If the hook reverts, the entire transfer reverts, including the owner/index updates. This matches the existing AccountLayer lifecycle hook behavior for SubAccount creation and deletion.</p>
+<hr>
+<h2 id="storage-impact">Storage Impact</h2>
+<p>No new storage variables are introduced.</p>
+<p>The new account creator role uses the existing AccountLayer role storage:</p>
+<pre><code class="language-solidity">mapping(address =&gt; mapping(bytes32 =&gt; bool)) hasRole;
+</code></pre>
+<p>Ownership transfer mutates only existing account storage:</p>
+<pre><code class="language-solidity">mapping(address =&gt; SubAccountData) subAccounts;
+mapping(address =&gt; EnumerableSet.AddressSet) userToSubAccounts;
+</code></pre>
+<p>The operation updates <code>subAccounts[subAccount].owner</code> and moves the SubAccount address between the two owner index sets.</p>
+<hr>
+<h2 id="ownership-resolution">Ownership Resolution</h2>
+<p>SubAccounts store their owner directly:</p>
+<pre><code class="language-solidity">SubAccountData.owner
+</code></pre>
+<p>Virtual Accounts do not store their own owner. <code>LibAccountLayerUtils.resolveAccountOwner(account)</code> resolves a VA owner through its parent SubAccount. Therefore, transferring a SubAccount also transfers effective control of all currently active, inactive, and future Virtual Accounts under that SubAccount.</p>
+<p>Implications:</p>
+<ul>
+<li>The new owner can execute all owner-gated operations for the SubAccount.</li>
+<li>The old owner loses direct owner-gated access immediately.</li>
+<li>Owner-gated Virtual Account actions follow the parent SubAccount owner after transfer.</li>
+<li>Any balances, allocations, pending quotes, open positions, and reusable VA pools remain attached to the same SubAccount/VA addresses.</li>
+<li>Existing InstantLayer delegations intentionally remain active after the transfer. See the security note below.</li>
+</ul>
+<p>The transfer is a true ownership transfer, not an empty-account-only migration.</p>
+<hr>
+<h2 id="hook-ordering-revert-semantics">Hook Ordering &amp; Revert Semantics</h2>
+<p>The transfer sequence is:</p>
+<ol>
+<li>Validate caller and <code>newOwner</code>.</li>
+<li>Read <code>oldOwner</code>, <code>affiliate</code>, and <code>symmioCore</code>.</li>
+<li>Remove the SubAccount from <code>oldOwner</code>'s enumerable set.</li>
+<li>Add the SubAccount to <code>newOwner</code>'s enumerable set.</li>
+<li>Set <code>subAccounts[subAccount].owner = newOwner</code>.</li>
+<li>Call <code>onSubAccountOwnershipTransfer(subAccount, oldOwner, newOwner)</code> if the affiliate registered a hook for that selector.</li>
+<li>Emit <code>SubAccountOwnershipTransferred</code>.</li>
+</ol>
+<p>The hook is deliberately called after storage mutation so downstream affiliate systems can read the final owner state. Solidity transaction atomicity means any hook revert rolls back the storage mutation and event emission.</p>
+<p>The existing hook signer-clearing protection still applies. <code>LibAccountLayerUtils.callHook</code> clears <code>globalSigner</code> before external hook execution and restores it afterward, preventing the hook from re-entering AccountLayer while inheriting the transferring user's signer context.</p>
+<hr>
+<h2 id="security-considerations">Security Considerations</h2>
+<h3 id="role-granted-account-creation">Role-granted account creation</h3>
+<p><code>ACCOUNT_CREATOR_ROLE</code> can create SubAccounts for arbitrary non-zero owners under active affiliates. This role should be granted only to trusted automation, onboarding, migration, or protocol-operated services.</p>
+<p>The role does not grant ownership over the created accounts. The created SubAccount is controlled by the supplied <code>owner</code>.</p>
+<h3 id="direct-ownership-transfer">Direct ownership transfer</h3>
+<p>Ownership transfer is immediate and does not require recipient acceptance. A typo in <code>newOwner</code> transfers control to that address atomically. This is a product decision that trades two-step safety for simple user-controlled transfer.</p>
+<p>The function does not require the SubAccount to be empty. A user can transfer an account with balances, allocated margin, pending quotes, open positions, and active Virtual Accounts. Treat this as intentional behavior.</p>
+<h3 id="existing-instantlayer-delegations">Existing InstantLayer delegations</h3>
+<p>Ownership transfer intentionally does not clear InstantLayer delegations for the SubAccount or for Virtual Accounts that resolve to that SubAccount. Delegations are stored by canonical account, delegated signer, and selector; they are not bound to the owner that granted them.</p>
+<p>This means a delegated signer approved before the transfer may still be able to execute the delegated selector after the SubAccount owner changes. During InstantLayer execution, AccountLayer resolves the current owner and sets that owner as the effective signer, so the delegated call can pass owner-gated AccountLayer checks unless the delegation has been revoked or expired.</p>
+<p>Operationally, transferring a SubAccount with active InstantLayer delegations should be treated as transferring an account with outstanding approvals that intentionally move with the account. The new owner or migration process should enumerate known delegates/selectors and revoke anything that should not survive the transfer. Do not read "old owner loses direct access" as "all previously granted delegated access is removed."</p>
+<h3 id="affiliate-hook-liveness">Affiliate hook liveness</h3>
+<p>A registered transfer hook can revert and block ownership transfer for SubAccounts under that affiliate. This mirrors existing hook liveness risk for account creation and deletion. Affiliates should use simple, reliable hooks for lifecycle observability and keep heavier logic off-chain where possible.</p>
+<h3 id="no-symmio-core-balance-movement">No Symmio core balance movement</h3>
+<p>Transfer only changes AccountLayer ownership metadata and indexes. It does not call into the Symmio core to move balances, deallocate collateral, settle positions, or alter quote ownership. The same virtual addresses continue to hold the same Symmio-side balances and positions.</p>
+<hr>
+<h2 id="events">Events</h2>
+<h3 id="subaccountownershiptransferred"><code>SubAccountOwnershipTransferred</code></h3>
+<pre><code class="language-solidity">event SubAccountOwnershipTransferred(
+    address indexed account,
+    address indexed oldOwner,
+    address indexed newOwner
+);
+</code></pre>
+<p>Indexers should update the owner of <code>account</code> from <code>oldOwner</code> to <code>newOwner</code>. They should also treat all Virtual Accounts whose parent is <code>account</code> as effectively owned by <code>newOwner</code> from the same transaction onward.</p>
+<p>Existing <code>SubAccountCreated</code> semantics remain unchanged for self-service creation. For role-gated delegated creation, the <code>owner</code> argument is the supplied target owner.</p>
+<hr>
+<h2 id="review-checklist">Review Checklist</h2>
+<ul>
+<li>Verify <code>createSubAccounts</code> remains self-service and still uses <code>LibAccountLayerUtils.getSigner()</code>.</li>
+<li>Verify <code>createSubAccountsFor</code> is gated by <code>ACCOUNT_CREATOR_ROLE</code>.</li>
+<li>Verify delegated creation stores the supplied <code>owner</code>, not <code>msg.sender</code>.</li>
+<li>Verify delegated creation still validates affiliate state, Symmio core whitelist, name length, isolation type, and single-VA-mode constraints through <code>_createSubAccount</code>.</li>
+<li>Verify <code>transferSubAccountOwnership</code> is gated by <code>onlyAccountOwner(subAccount)</code>.</li>
+<li>Verify zero-address and same-owner transfers revert.</li>
+<li>Verify owner indexes are updated consistently with <code>SubAccountData.owner</code>.</li>
+<li>Verify Virtual Account owner resolution changes through the parent SubAccount without mutating VA storage.</li>
+<li>Verify pre-transfer InstantLayer delegations remain active for the transferred SubAccount/VA selectors unless explicitly revoked or expired.</li>
+<li>Verify hook execution observes the final owner and reverts the whole transfer on failure.</li>
+<li>Verify signer clearing still applies during the new hook callback.</li>
+</ul>
+<hr>
+<h2 id="test-coverage">Test Coverage</h2>
+<p>The AccountLayer behavior tests cover:</p>
+<ul>
+<li>Successful delegated creation by an <code>ACCOUNT_CREATOR_ROLE</code> holder.</li>
+<li>Rejection of delegated creation by a caller without the role.</li>
+<li>Rejection of delegated creation to <code>address(0)</code>.</li>
+<li>Owner/index correctness after delegated creation.</li>
+<li>Successful direct ownership transfer.</li>
+<li>Old owner access loss and new owner access gain.</li>
+<li>Virtual Account ownership resolution through transferred parent SubAccounts.</li>
+<li>Rejection of non-owner, zero-owner, and same-owner transfers.</li>
+<li>Affiliate hook invocation and encoded arguments.</li>
+<li>Hook visibility of final owner state.</li>
+<li>Hook revert rolling back the transfer.</li>
+</ul>
+			</article>
+		</main>
+	</div>
+	
+	<footer class="site-footer">
+		<span>Symmio Core v0.8.6 documentation.</span>
+		<span>Protocol, operations, and integration notes.</span>
+	</footer>
+</body>
+</html>

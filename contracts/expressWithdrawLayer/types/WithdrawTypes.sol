@@ -11,7 +11,7 @@ pragma solidity >=0.8.18;
 ///                                   │  ├──[lockWithdraw]──► LOCKED ────┤
 ///                                   │  │                      │        │
 ///                                   │  │                      ├────────┤
-///                                   │  ├──[onWithdrawComplete (STANDARD)]──► FINALIZED
+///                                   │  ├──[onWithdrawComplete (STANDARD)]──► FINALIZED ──[processWithdraw]──► PROCESSED
 ///                                   │  │
 ///                                   │  └──[onWithdrawCancelRequest]──► CANCELLED
 ///                                   │
@@ -21,9 +21,9 @@ pragma solidity >=0.8.18;
 enum Status {
 	NONE, // Default value; no withdrawal exists for this (user, requestId) pair.
 	ACCEPTED, // ExpressProvider accepted the request; funds are reserved but not yet transferred to the user.
-	LOCKED, // A LOCKER_ROLE account placed a temporary hold; transitions to PROCESSED after the cooldown period via unlockAndProcess.
-	PROCESSED, // Funds have been collected from pools / credit and transferred to the user; awaiting SYMMIO cooldown reimbursement.
-	FINALIZED, // Terminal success — SYMMIO reimbursed the provider and pools / credit debt are settled.
+	LOCKED, // A LOCKER_ROLE account placed a temporary hold; STANDARD can be unlocked and processed after SYMMIO finalization.
+	PROCESSED, // Funds were transferred to the user. For STANDARD this is the post-FINALIZED user payout state.
+	FINALIZED, // INSTANT/IMMEDIATE terminal success; for STANDARD, tokens arrived and are awaiting processWithdraw.
 	CANCELLED, // Terminal — the request was cancelled (only possible from ACCEPTED before processing).
 	SUSPENDED // Terminal hold — the request was suspended (possible from ACCEPTED, LOCKED, or PROCESSED; PROCESSED triggers a rollback).
 }

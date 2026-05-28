@@ -7,9 +7,9 @@ pragma solidity >=0.8.18;
 import { LibMuonPartyBBatchActions } from "../../libraries/muon/LibMuonPartyBBatchActions.sol";
 import { LibSolvency } from "../../libraries/LibSolvency.sol";
 import { LibPartyBPositionsActions } from "../../libraries/LibPartyBPositionsActions.sol";
+import { LibPartyBState } from "../../libraries/extensions/LibPartyBState.sol";
 import { QuoteStorage, Quote, PositionType, OrderType, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
-import { ClearingHouseStorage } from "../../storages/ClearingHouseStorage.sol";
 import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
 import { LibConnections } from "../../libraries/LibConnections.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
@@ -25,6 +25,7 @@ import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library PartyBBatchActionsFacetImpl {
 	using LockedValuesOps for LockedValues;
+	using LibPartyBState for address;
 
 	// NOTE: Solidity v0.8.18 doesn't support emitting events via qualified identifiers
 	// like `emit IPartiesEvents.OpenPosition(...)`. To keep event signatures consistent
@@ -81,11 +82,7 @@ library PartyBBatchActionsFacetImpl {
 
 		// Solvency checks
 		require(!maLayout.liquidationStatus[firstQuote.partyA], "PartyBFacet: PartyA isn't solvent");
-		require(!maLayout.partyBLiquidationStatus[firstQuote.partyB][firstQuote.partyA], "PartyBFacet: PartyB isn't solvent");
-		require(
-			!ClearingHouseStorage.layout().crossLiquidationDetails[firstQuote.partyB].inProgress,
-			"PartyBFacet: PartyB is in cross liquidation process"
-		);
+		firstQuote.partyB.requireNotLiquidating(firstQuote.partyA);
 
 		if (requireMuonAndSolvencyChecks) {
 			// Verify the upnl and prices
@@ -187,11 +184,7 @@ library PartyBBatchActionsFacetImpl {
 
 		// Solvency checks
 		require(!maLayout.liquidationStatus[firstQuotePartyA], "PartyBFacet: PartyA isn't solvent");
-		require(!maLayout.partyBLiquidationStatus[firstQuotePartyB][firstQuotePartyA], "PartyBFacet: PartyB isn't solvent");
-		require(
-			!ClearingHouseStorage.layout().crossLiquidationDetails[firstQuotePartyB].inProgress,
-			"PartyBFacet: PartyB is in cross liquidation process"
-		);
+		firstQuotePartyB.requireNotLiquidating(firstQuotePartyA);
 
 		LibAccount.increaseBothNonces(firstQuotePartyB, firstQuotePartyA);
 

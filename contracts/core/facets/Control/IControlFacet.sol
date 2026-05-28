@@ -147,6 +147,8 @@ interface IControlFacet is IControlEvents {
 
 	function setLegacyDeallocateDeprecated(bool deprecated) external;
 
+	function setLegacyPartyALiquidationDeprecated(bool deprecated) external;
+
 	function setCrossPartyBModeActivated(bool activated) external;
 
 	function setCrossPartyB(address partyB, bool enabled) external;

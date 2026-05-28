@@ -95,6 +95,7 @@ interface IControlEvents {
 	event SetBalanceLimitPerUser(uint256 balanceLimitPerUser);
 	event SetCrossPartyBModeActivated(bool oldValue, bool newValue);
 	event SetLegacyDeallocateDeprecated(bool oldValue, bool newValue);
+	event SetLegacyPartyALiquidationDeprecated(bool oldValue, bool newValue);
 	event RegisterPartyB(address partyB);
 	event DeregisterPartyB(address partyB, uint256 index);
 	event RegisterAffiliate(address affiliate);

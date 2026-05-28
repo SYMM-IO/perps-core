@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>PartyA Liquidation Snapshot Entrypoints - Symmio Core v0.8.6</title>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+	</head>
+	<body class="doc-page">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="doc-topbar">
+			<a class="brand" href="../index.html"
+				><span class="brand-mark">8.6</span><span><strong>Symmio Docs</strong><small>v0.8.6 reference</small></span></a
+			>
+			<nav class="top-actions" aria-label="Page actions">
+				<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+			</nav>
+		</header>
+		<div class="reader-shell">
+			<aside class="toc-panel side-toc" aria-label="Page navigation">
+				<a class="button primary back-home" href="../index.html">Back to home</a>
+				<div class="toc-card">
+					<p class="toc-title">On this page</p>
+					<a class="toc-link level-2" href="#summary">Summary</a>
+					<a class="toc-link level-2" href="#facet-and-entrypoints">Facet And Entrypoints</a>
+					<a class="toc-link level-2" href="#signed-snapshot-payload">Signed Snapshot Payload</a>
+					<a class="toc-link level-2" href="#historical-proof">Historical Proof</a>
+					<a class="toc-link level-2" href="#staged-flow">Staged Flow</a>
+					<a class="toc-link level-2" href="#single-step-flow">Single-Step Flow</a>
+					<a class="toc-link level-2" href="#snapshot-coverage-rules">Snapshot Coverage Rules</a>
+					<a class="toc-link level-2" href="#legacy-deprecation-relationship">Legacy Deprecation Relationship</a>
+					<a class="toc-link level-2" href="#operator-checklist">Operator Checklist</a>
+				</div>
+			</aside>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">v0.8.6</a><span>/</span><strong>Liquidation</strong></nav>
+					<div class="reader-title-row">
+						<div>
+							<h1>PartyA Liquidation Snapshot Entrypoints</h1>
+							<p class="hero-copy">
+								The snapshot facet is the explicit PartyA liquidation path for Muon-signed price, funding, and historical insolvency
+								state. It supports both staged liquidation and full single-transaction completion.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="summary">Summary</h2>
+					<p>
+						v0.8.6 adds a dedicated <code>PartyALiquidationSnapshotFacet</code> for PartyA liquidations that use a full Muon-signed
+						snapshot. The snapshot includes PartyA historical insolvency data and the per-<code>(PartyB, symbolId)</code> price/funding
+						states used later by liquidation settlement.
+					</p>
+					<p>
+						This is not a new liquidation type. The protocol still uses the existing <code>NORMAL</code>, <code>LATE</code>, and
+						<code>OVERDUE</code> liquidation semantics. The change is the entrypoint and signature model: liquidators now submit one
+						signed snapshot payload instead of combining a legacy liquidation signature with a separate price-setting step.
+					</p>
+					<h2 id="facet-and-entrypoints">Facet And Entrypoints</h2>
+					<p>The new external interface is:</p>
+					<pre><code class="language-solidity">interface IPartyALiquidationSnapshotFacet {
+    function liquidatePartyAWithSnapshot(
+        address partyA,
+        LiquidationSnapshotSig memory liquidationSig
+    ) external;
+
+    function singleStepLiquidatePartyAWithSnapshot(
+        address partyA,
+        LiquidationSnapshotSig memory liquidationSig,
+        uint256[] memory quoteIds
+    ) external;
+}
+</code></pre>
+					<p>
+						Both functions live on <code>PartyALiquidationSnapshotFacet</code> and require <code>LIQUIDATOR_ROLE</code>. The facet is
+						separate from the legacy <code>PartyALiquidationFacet</code>, which keeps the new integration surface easy to remove or evolve
+						independently after the old entrypoints are fully deprecated.
+					</p>
+					<p>
+						Snapshot calls keep emitting the legacy <code>SetSymbolsPrices</code> event for compatibility. They also emit
+						<code>SetPartyALiquidationSnapshot</code>, which includes the PartyB dimension and cumulative funding fields needed to
+						reconstruct the signed snapshot exactly.
+					</p>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Entrypoint</th>
+									<th>Use</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td><code>liquidatePartyAWithSnapshot</code></td>
+									<td>
+										Starts a snapshot-backed PartyA liquidation and stores the signed PartyB-symbol states. The liquidator then
+										continues through the existing pending-position, open-position, and settlement functions.
+									</td>
+								</tr>
+								<tr>
+									<td><code>singleStepLiquidatePartyAWithSnapshot</code></td>
+									<td>
+										Starts the snapshot liquidation, handles pending quotes, liquidates the provided open positions, derives the
+										PartyBs from those quotes, settles, and reverts unless the liquidation fully completes.
+									</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<h2 id="signed-snapshot-payload">Signed Snapshot Payload</h2>
+					<p>The snapshot path uses <code>LiquidationSnapshotSig</code>:</p>
+					<pre><code class="language-solidity">struct LiquidationPartyBSymbolState {
+    address partyB;
+    uint256 symbolId;
+    uint256 price;
+    int256 cumulativeLongFee;
+    int256 cumulativeShortFee;
+}
+
+struct LiquidationSnapshotSig {
+    bytes reqId;
+    uint256 timestamp;
+    bytes liquidationId;
+    int256 upnl;
+    int256 totalUnrealizedLoss;
+    LiquidationPartyBSymbolState[] states;
+    uint256 liquidationBlockNumber;
+    uint256 liquidationTimestamp;
+    uint256 liquidationAllocatedBalance;
+    bytes gatewaySignature;
+    IMuonSignatureVerifier.SchnorrSign sigs;
+}
+</code></pre>
+					<p>
+						Muon signs the PartyA historical insolvency fields, the hash of <code>states</code>, the deployment address, chain id,
+						PartyA nonce, and the liquidation id. Snapshot liquidation always follows the historical insolvency path.
+					</p>
+					<p>
+						The snapshot payload does not include a live/deferred selector. The three historical fields below are always required, and
+						the snapshot setup library passes them into <code>LibPartyALiquidationShared.startPartyALiquidation</code>. Legacy live
+						liquidation reaches the same shared helper by passing current timestamp and current allocated balance instead.
+					</p>
+					<h2 id="historical-proof">Historical Proof</h2>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Field</th>
+									<th>Field rules</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td><code>liquidationBlockNumber</code></td>
+									<td>Must be nonzero and signed by Muon.</td>
+								</tr>
+								<tr>
+									<td><code>liquidationTimestamp</code></td>
+									<td>Must be nonzero and match the stored liquidation timestamp.</td>
+								</tr>
+								<tr>
+									<td><code>liquidationAllocatedBalance</code></td>
+									<td>
+										Must be nonzero and is the allocated balance used for the historical insolvency check.
+									</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						If the account has current excess balance when the historical proof is used, that excess is moved to
+						<code>partyADeferredBalance</code> before liquidation starts.
+					</p>
+					<h2 id="staged-flow">Staged Flow</h2>
+					<p>
+						Use the staged flow when PartyA has many positions, the liquidation needs batching, or settlement has to be split by PartyB:
+					</p>
+					<pre><code class="language-text">liquidatePartyAWithSnapshot
+liquidatePendingPositionsPartyA
+liquidatePositionsPartyA
+settlePartyALiquidation
+</code></pre>
+					<p>
+						<code>liquidatePartyAWithSnapshot</code> marks PartyA as liquidated and stores the signed PartyB-symbol snapshots. The later
+						liquidation functions use those stored snapshots for close price and accumulated funding calculations.
+					</p>
+					<h2 id="single-step-flow">Single-Step Flow</h2>
+					<p>
+						<code>singleStepLiquidatePartyAWithSnapshot</code> is the one-transaction path for accounts that can be fully closed and
+						settled in one call:
+					</p>
+					<pre><code class="language-solidity">singleStepLiquidatePartyAWithSnapshot(
+    partyA,
+    liquidationSnapshotSig,
+    quoteIds
+)
+</code></pre>
+					<p>The function performs these steps in order:</p>
+					<ol>
+						<li>Verifies the Muon snapshot signature.</li>
+						<li>Starts the PartyA liquidation using the signed historical insolvency fields.</li>
+						<li>Stores every signed PartyB-symbol snapshot.</li>
+						<li>Liquidates PartyA's pending quotes.</li>
+						<li>Liquidates the provided open <code>quoteIds</code>.</li>
+						<li>Derives the PartyB settlement list from <code>quoteIds</code>.</li>
+						<li>Settles PartyA liquidation for those PartyBs.</li>
+						<li>Reverts unless the liquidation is fully complete.</li>
+					</ol>
+					<p>
+						The single-step function has no <code>liquidatePending</code> flag because pending quotes are always handled. It also has no
+						<code>partyBs</code> input because the settlement list is derived from the provided quotes.
+					</p>
+					<p>
+						Use the staged flow instead if the supplied <code>quoteIds</code> do not cover every open position and PartyB needed to finish
+						settlement in the same transaction.
+					</p>
+					<h2 id="snapshot-coverage-rules">Snapshot Coverage Rules</h2>
+					<p>For every quote liquidated under the snapshot-backed path, the contract looks up:</p>
+					<pre><code class="language-text">snapshot[partyA][liquidationSnapshotKey][quote.partyB][quote.symbolId]
+</code></pre>
+					<p>If that snapshot is not set, <code>liquidatePositionsPartyA</code> reverts with:</p>
+					<pre><code class="language-text">LiquidationFacet: Missing signed state
+</code></pre>
+					<p>
+						Multiple quotes with the same PartyB and symbol share one snapshot. If the same symbol appears under different PartyBs, each
+						PartyB needs its own snapshot. If accumulated funding was not active for one of those pairs at the liquidation timestamp, Muon
+						should still include the pair with zero cumulative long/short funding values. The contract does not enforce same-symbol price
+						equality across PartyBs.
+					</p>
+					<h2 id="legacy-deprecation-relationship">Legacy Deprecation Relationship</h2>
+					<p><code>setLegacyPartyALiquidationDeprecated(true)</code> disables new legacy liquidation starts:</p>
+					<ul>
+						<li><code>liquidatePartyA</code></li>
+						<li><code>deferredLiquidatePartyA</code></li>
+					</ul>
+					<p>
+						The flag does not disable <code>liquidatePartyAWithSnapshot</code> or <code>singleStepLiquidatePartyAWithSnapshot</code>.
+						Existing legacy liquidations that already started can still call <code>setSymbolsPrice</code> or
+						<code>deferredSetSymbolsPrice</code>, then continue through pending-position liquidation, open-position liquidation,
+						settlement, and dispute resolution. This avoids stranding a PartyA between the legacy start and price-setting steps during
+						migration.
+					</p>
+					<h2 id="operator-checklist">Operator Checklist</h2>
+					<p>Before submitting a snapshot liquidation, confirm:</p>
+					<ul>
+						<li>the Muon payload is <code>LiquidationSnapshotSig</code>;</li>
+						<li>
+							<code>liquidationBlockNumber</code>, <code>liquidationTimestamp</code>, and
+							<code>liquidationAllocatedBalance</code> are present, nonzero, and signed by Muon;
+						</li>
+						<li><code>states</code> covers every <code>(PartyB, symbolId)</code> pair needed by the quotes to close;</li>
+						<li><code>quoteIds</code> is small enough for one transaction when using the single-step entrypoint;</li>
+						<li>single-step usage can fully finish liquidation and settlement; and</li>
+						<li>large accounts use the staged flow instead of forcing all work into one transaction.</li>
+					</ul>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Protocol, operations, and integration notes.</span>
+		</footer>
+	</body>
+</html>

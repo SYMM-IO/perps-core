@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Symmio Core v0.8.6 Documentation</title>
+		<link rel="stylesheet" href="assets/v086-docs.css" />
+		<script src="assets/v086-docs.js" defer></script>
+	</head>
+	<body class="index-page">
+		<a class="skip-link" href="#docs">Skip to docs</a>
+
+		<header class="site-hero">
+			<nav class="crumbs" aria-label="Breadcrumb"><a href="../">docs</a><span>/</span><strong>v0.8.6</strong></nav>
+			<div class="hero-layout hero-layout-single">
+				<div>
+					<p class="eyebrow">Technical Review Docs</p>
+					<h1>Symmio Core v0.8.6 Changelog</h1>
+					<p class="hero-copy">
+						v0.8.6 adds credit-backed Express Withdrawal, AccountLayer delegated ownership controls, affiliate shutdown handling, Muon
+						UPNL freshness overrides, PartyA liquidation funding snapshot fixes, and liquidation-fee recipient cleanup. The update is
+						mainly about faster withdrawals, cleaner account administration, and safer liquidation settlement.
+					</p>
+					<div class="hero-actions">
+						<a class="button primary" href="#docs">Browse docs</a>
+					</div>
+				</div>
+			</div>
+		</header>
+		<main class="index-shell">
+			<section class="release-highlights" aria-labelledby="release-highlights-title">
+				<div class="section-heading">
+					<p class="eyebrow">Changelog</p>
+					<h2 id="release-highlights-title">Release highlights</h2>
+				</div>
+				<div class="change-list">
+					<div class="change-item">
+						<div class="change-meta">
+							<strong>Liquidation</strong>
+							<span>PartyA LF recipient</span>
+						</div>
+						<div class="change-copy">
+							<h3>PartyA liquidation fee is paid only to the liquidation starter.</h3>
+							<p>
+								Price-setting and later liquidation calls no longer create extra LF recipients. The LF is paid only after final
+								settlement, so the starter already has incentive to complete the liquidation flow. If a liquidator misbehaves, the
+								protocol can deactivate that liquidator through role/admin controls instead of splitting LF across steps.
+							</p>
+						</div>
+					</div>
+					<div class="change-item">
+						<div class="change-meta">
+							<strong>Events</strong>
+							<span>BalanceChange typing</span>
+						</div>
+						<div class="change-copy">
+							<h3>Reimbursement credits now have their own balance-change type.</h3>
+							<p>
+								Clearing-house distributions routed into a liquidating PartyA's reimbursement bucket emit
+								<code>REIMBURSEMENT_IN</code> instead of pretending the allocated balance received immediate realized PnL. This keeps
+								event consumers aligned with the bucket that actually changes before final liquidation settlement.
+							</p>
+						</div>
+					</div>
+				</div>
+			</section>
+			<section id="docs" class="doc-browser" aria-labelledby="docs-title">
+				<div class="section-heading">
+					<p class="eyebrow">Documents</p>
+					<h2 id="docs-title">Changelog pages</h2>
+				</div>
+				<div class="doc-list">
+					<a class="doc-list-item" href="pages/express-withdrawal-system-design.html">
+						<span class="doc-list-index">01</span>
+						<span class="doc-list-main">
+							<span class="category">Express Withdrawal</span>
+							<strong>Express Withdrawal System Design</strong>
+							<span>Withdrawal speeds, provider pools, credit-line funding, signatures, safety mechanisms, and known risks.</span>
+						</span>
+						<span class="doc-list-action">Open</span>
+					</a>
+					<a class="doc-list-item" href="pages/express-bot-operations-checklist.html">
+						<span class="doc-list-index">02</span>
+						<span class="doc-list-main">
+							<span class="category">Express Withdrawal</span>
+							<strong>Express Provider Bot Operations Checklist</strong>
+							<span>Option construction, providerData encoding, signatures, scheduling, settlement, and failure handling.</span>
+						</span>
+						<span class="doc-list-action">Open</span>
+					</a>
+					<a class="doc-list-item" href="pages/account-layer-ownership-delegation.html">
+						<span class="doc-list-index">03</span>
+						<span class="doc-list-main">
+							<span class="category">AccountLayer</span>
+							<strong>AccountLayer Delegated Creation &amp; Ownership Transfer</strong>
+							<span
+								>Delegated SubAccount creation, direct ownership transfer, affiliate hooks, event expectations, and security
+								notes.</span
+							>
+						</span>
+						<span class="doc-list-action">Open</span>
+					</a>
+					<a class="doc-list-item" href="pages/liquidation-funding-snapshot-fix.html">
+						<span class="doc-list-index">04</span>
+						<span class="doc-list-main">
+							<span class="category">Liquidation</span>
+							<strong>PartyA Liquidation Funding Snapshot Fix</strong>
+							<span>Funding snapshot race, Muon-signed PartyB-symbol state, settlement expectations, and compatibility notes.</span>
+						</span>
+						<span class="doc-list-action">Open</span>
+					</a>
+					<a class="doc-list-item" href="pages/partya-liquidation-snapshot-entrypoints.html">
+						<span class="doc-list-index">05</span>
+						<span class="doc-list-main">
+							<span class="category">Liquidation</span>
+							<strong>PartyA Liquidation Snapshot Entrypoints</strong>
+							<span>Final snapshot facet API, historical insolvency proof, staged liquidation flow, and single-step completion rules.</span>
+						</span>
+						<span class="doc-list-action">Open</span>
+					</a>
+					<a class="doc-list-item" href="pages/affiliate-shutdown-flow.html">
+						<span class="doc-list-index">06</span>
+						<span class="doc-list-main">
+							<span class="category">Clearing House</span>
+							<strong>Affiliate Shutdown Flow</strong>
+							<span>Close-only affiliate wind-down, scheduled shutdown behavior, solver routes, and clearing-house cleanup.</span>
+						</span>
+						<span class="doc-list-action">Open</span>
+					</a>
+					<a class="doc-list-item" href="pages/muon-upnl-validity-overrides.html">
+						<span class="doc-list-index">07</span>
+						<span class="doc-list-main">
+							<span class="category">Muon</span>
+							<strong>Muon UPNL Validity Overrides</strong>
+							<span>Per-MuonFunction UPNL validity overrides, zero-clear behavior, fallback resolution, and storage model.</span>
+						</span>
+						<span class="doc-list-action">Open</span>
+					</a>
+				</div>
+			</section>
+		</main>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Protocol, operations, and integration notes.</span>
+		</footer>
+	</body>
+</html>

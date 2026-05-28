@@ -1,4 +1,5 @@
 import { assert, expect } from "chai"
+import { readFileSync } from "fs"
 
 import { FacetCutAction, getSelectors } from "../tasks/utils/diamondCut.js"
 import { initializeFixture } from "./Initialize.fixture.js"
@@ -27,6 +28,11 @@ function haveSameMembers(array1: any[], array2: any[]) {
 	return true
 }
 
+function deployedBytecodeSize(artifactPath: string) {
+	const artifact = JSON.parse(readFileSync(artifactPath, "utf8"))
+	return (artifact.deployedBytecode.length - 2) / 2
+}
+
 export function shouldBehaveLikeDiamond(): void {
 	const addresses: string[] = []
 	let selectors: string[] = []
@@ -36,12 +42,35 @@ export function shouldBehaveLikeDiamond(): void {
 		this.context = await loadFixture(initializeFixture)
 	})
 
-	it("should have 29 facets", async function () {
+	it("should have 30 facets", async function () {
 		const context: RunContext = this.context
 		for (const address of await context.diamondLoupeFacet.facetAddresses()) {
 			addresses.push(address)
 		}
-		assert.equal(addresses.length, 29)
+		assert.equal(addresses.length, 30)
+	})
+
+	it("keeps new AccountStorage snapshot fields after existing layout fields", async function () {
+		const source = readFileSync("contracts/core/storages/AccountStorage.sol", "utf8")
+
+		const lastExistingLayoutField = source.indexOf("partyBLiquidationSettlementReserve")
+		const snapshotFlagField = source.indexOf("liquidationUsesPartyBSymbolSnapshots")
+		const snapshotStateField = source.indexOf("liquidationPartyBSymbolSnapshots")
+
+		expect(snapshotFlagField).to.be.greaterThan(lastExistingLayoutField)
+		expect(snapshotStateField).to.be.greaterThan(lastExistingLayoutField)
+	})
+
+	it("keeps PartyA liquidation facets comfortably below the bytecode limit", async function () {
+		const partyALiquidationSize = deployedBytecodeSize(
+			"artifacts/contracts/core/facets/PartyALiquidation/PartyALiquidationFacet.sol/PartyALiquidationFacet.json",
+		)
+		const snapshotLiquidationSize = deployedBytecodeSize(
+			"artifacts/contracts/core/facets/PartyALiquidationSnapshot/PartyALiquidationSnapshotFacet.sol/PartyALiquidationSnapshotFacet.json",
+		)
+
+		expect(partyALiquidationSize).to.be.lessThan(20000)
+		expect(snapshotLiquidationSize).to.be.lessThan(20000)
 	})
 
 	it("facets should have the right function selectors -- call to facetFunctionSelectors function", async function () {

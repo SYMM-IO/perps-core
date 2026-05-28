@@ -60,7 +60,7 @@ export function shouldBehaveLikeFundingRate(): void {
 
 	it("Should fail on invalid quote state", async function () {
 		await expect(hedger.chargeFundingRate(await context.signers.user.getAddress(), [3], [1], await getDummyPairUpnlSig())).to.be.revertedWith(
-			"ChargeFundingFacet: Invalid state",
+			"LibQuote: Invalid state",
 		)
 	})
 
@@ -455,7 +455,7 @@ export function shouldBehaveLikeFundingRate(): void {
 							[3],
 							await getDummyPairUpnlSig(),
 						),
-				).to.revertedWith("FundingRateFacet: Invalid state")
+				).to.revertedWith("LibQuote: Invalid state")
 			})
 		})
 
@@ -464,6 +464,55 @@ export function shouldBehaveLikeFundingRate(): void {
 				// Set initial block timestamp to a known value
 				await time.setNextBlockTimestamp(2000000000)
 				await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [400])
+			})
+
+			it("should roll accumulated funding only when an update crosses an epoch boundary", async () => {
+				const startTime = await time.latest()
+
+				await time.setNextBlockTimestamp(startTime + 100)
+				await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(2n, 16)], [0], [decimal(1n)])
+				const fundingRate1 = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger.address)
+				expect(fundingRate1.currentLongRate).to.equal(decimal(2n, 16))
+				expect(fundingRate1.accumulatedLongRate).to.equal(0n)
+
+				await time.setNextBlockTimestamp(startTime + 200)
+				await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(3n, 16)], [0], [decimal(1n)])
+				const fundingRate2 = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger.address)
+				expect(fundingRate2.currentLongRate).to.equal(decimal(3n, 16))
+				expect(fundingRate2.accumulatedLongRate).to.equal(0n)
+
+				await time.setNextBlockTimestamp(startTime + 800)
+				await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(4n, 16)], [0], [decimal(1n)])
+				const fundingRate3 = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger.address)
+				expect(fundingRate3.currentLongRate).to.equal(decimal(4n, 16))
+				expect(fundingRate3.accumulatedLongRate).to.equal(decimal(3n, 16))
+
+				await time.setNextBlockTimestamp(startTime + 900)
+				await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(5n, 16)], [0], [decimal(1n)])
+				const fundingRate4 = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger.address)
+				expect(fundingRate4.currentLongRate).to.equal(decimal(5n, 16))
+				expect(fundingRate4.accumulatedLongRate).to.equal(decimal(3n, 16))
+			})
+
+			it("should roll accumulated funding when opening a position crosses an epoch boundary", async () => {
+				const startTime = await time.latest()
+
+				await time.setNextBlockTimestamp(startTime + 100)
+				await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(2n, 16)], [0], [decimal(1n)])
+
+				const quoteId = await user.sendQuote(
+					limitQuoteRequestBuilder()
+						.deadline(BigInt(startTime + 1000))
+						.build(),
+				)
+				await hedger.lockQuote(quoteId)
+
+				await time.setNextBlockTimestamp(startTime + 800)
+				await hedger.openPosition(quoteId)
+
+				const fundingRate = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger.address)
+				expect(fundingRate.lastUpdatedEpoch).to.equal(BigInt(Math.floor((startTime + 800) / 400)))
+				expect(fundingRate.accumulatedLongRate).to.equal(decimal(2n, 16))
 			})
 
 			it("should correctly accumulate and charge funding rates across multiple epochs", async () => {
@@ -836,6 +885,45 @@ export function shouldBehaveLikeFundingRate(): void {
 			// New epoch tracking starts from 0
 			const newEpochsBefore = fundingAfter.lastUpdatedEpoch - fundingAfter.startEpoch
 			expect(newEpochsBefore).to.equal(0n)
+		})
+
+		it("should charge snapshotted funding immediately after changing duration", async () => {
+			const startTime = 2000000000
+
+			await time.setNextBlockTimestamp(startTime)
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [10])
+
+			await time.setNextBlockTimestamp(startTime + 1)
+			await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(5n, 16)], [0], [decimal(1n)])
+
+			await time.setNextBlockTimestamp(startTime + 2)
+			const quoteId = await user.sendQuote()
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(quoteId)
+
+			await time.setNextBlockTimestamp(startTime + 12)
+			await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(5n, 16)], [0], [decimal(1n)])
+
+			await time.setNextBlockTimestamp(startTime + 13)
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [1000])
+
+			const beforeBalance = (await user.getBalanceInfo()).allocatedBalances
+
+			await time.setNextBlockTimestamp(startTime + 14)
+			await context.fundingRateFacet
+				.connect(context.signers.hedger)
+				.chargeAccumulatedFundingFee(
+					await context.signers.user.getAddress(),
+					await context.signers.hedger.getAddress(),
+					[quoteId],
+					await getDummyPairUpnlSig(),
+				)
+
+			const afterBalance = (await user.getBalanceInfo()).allocatedBalances
+			const quote = await context.viewFacetQuote.getQuote(quoteId)
+
+			expect(afterBalance - beforeBalance).to.equal(-decimal(5n))
+			expect(quote.accumulatedPaidFunding).to.equal(decimal(5n, 16))
 		})
 
 		it("should handle multiple successive duration changes correctly", async () => {

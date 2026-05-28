@@ -89,7 +89,7 @@ library ForceActionsFacetImpl {
 		(succeed, ) = LibForceActions.closeQuoteWithReserveFallback(quoteId, sig.currentPrice, sig.upnlPartyB, closePrice);
 
 		if (!succeed) {
-			upnlPartyB = LibForceActions.liquidatePartyB(quoteId, closePrice, reservedBalance, sig.upnlPartyB, sig.currentPrice);
+			upnlPartyB = LibForceActions.startPartyBLiquidationForForceClose(quoteId, closePrice, reservedBalance, sig.upnlPartyB, sig.currentPrice);
 		}
 	}
 

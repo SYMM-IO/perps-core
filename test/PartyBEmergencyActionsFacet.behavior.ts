@@ -167,7 +167,7 @@ export function shouldBehaveLikePartyBEmergencyActionsFacet(): void {
 					.liquidatePartyB(await hedger.getAddress(), await user.getAddress(), await getDummySingleUpnlSig(decimal(-100n)))
 
 				await expect(context.partyBEmergencyActionsFacet.connect(hedger.signer).adlClose(quoteId, decimal(10n), decimal(1n))).to.be.revertedWith(
-					"PartyBFacet: PartyB is liquidated",
+					"PartyBState: PartyB is in liquidation",
 				)
 			})
 
@@ -192,7 +192,7 @@ export function shouldBehaveLikePartyBEmergencyActionsFacet(): void {
 					.liquidateCrossPartyB(await hedger.getAddress(), "0x01", decimal(-500000n), await getBlockTimestamp())
 
 				await expect(context.partyBEmergencyActionsFacet.connect(hedger.signer).adlClose(quoteId, decimal(10n), decimal(1n))).to.be.revertedWith(
-					"PartyBFacet: PartyB is in cross liquidation process",
+					"PartyBState: PartyB is in cross liquidation",
 				)
 			})
 		})

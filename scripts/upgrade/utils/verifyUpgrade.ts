@@ -8,7 +8,7 @@
 import { FacetNames } from "../../../tasks/deploy/constants.js"
 import { getSelectors } from "../../../tasks/utils/diamondCut.js"
 import { ethers } from "../../../test/helpers/hardhat-connection.js"
-import { type FacetInfo, FacetLibraryDependencies } from "./upgradeHelpers.js"
+import { type FacetInfo, FacetLibraryDependencies, LibraryLinkReferences } from "./upgradeHelpers.js"
 
 const DIAMOND_CUT_SELECTOR = "0x1f931c1c"
 
@@ -102,7 +102,7 @@ export async function verifyAgainstArtifacts(diamondAddress: string): Promise<vo
 		if (requiredLibs && requiredLibs.length > 0) {
 			const linked: Record<string, string> = {}
 			for (const lib of requiredLibs) {
-				linked[`project/contracts/core/libraries/${lib}.sol:${lib}`] = DUMMY_LIB
+				linked[LibraryLinkReferences[lib]] = DUMMY_LIB
 			}
 			factory = await ethers.getContractFactory(facetName, { libraries: linked })
 		} else {

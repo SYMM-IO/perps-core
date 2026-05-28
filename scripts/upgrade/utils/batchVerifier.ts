@@ -19,6 +19,7 @@ import { buildTemplateTransactions, buildWiringTransactions } from "./peripheral
 import {
 	buildUpgradeTransactions,
 	FacetLibraryDependencies,
+	LibraryLinkReferences,
 	type NewV085Parameters,
 	type SafeTransaction,
 	toHumanReadableSafeTxFromIface,
@@ -503,7 +504,7 @@ async function verifyDeployedFacetsAgainstArtifacts(ctx: LoadedContext, issues: 
 		if (requiredLibs && requiredLibs.length > 0) {
 			const linked: Record<string, string> = {}
 			for (const lib of requiredLibs) {
-				linked[`project/contracts/core/libraries/${lib}.sol:${lib}`] = DUMMY_LIB
+				linked[LibraryLinkReferences[lib]] = DUMMY_LIB
 			}
 			factory = await ethers.getContractFactory(facetName, { libraries: linked })
 		} else {

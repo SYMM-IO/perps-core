@@ -20,6 +20,7 @@ import type {
 	ForceCloseStepsFacet,
 	FundingRateFacet,
 	PartyALiquidationFacet,
+	PartyALiquidationSnapshotFacet,
 	PartyBLiquidationFacet,
 	PartyAFacet,
 	PartyBBatchActionsFacet,
@@ -67,6 +68,7 @@ export class RunContext {
 	viewFacetQuote!: ViewFacetQuote
 	viewFacetAggregate!: ViewFacetAggregate
 	partyALiquidationFacet!: PartyALiquidationFacet
+	partyALiquidationSnapshotFacet!: PartyALiquidationSnapshotFacet
 	partyBLiquidationFacet!: PartyBLiquidationFacet
 	controlFacet!: ControlFacet
 	symbolControlFacet!: SymbolControlFacet
@@ -151,6 +153,7 @@ export async function createRunContext(diamond: string, collateral: string, only
 	context.viewFacetQuote = await ethers.getContractAt("ViewFacetQuote", diamond)
 	context.viewFacetAggregate = await ethers.getContractAt("ViewFacetAggregate", diamond)
 	context.partyALiquidationFacet = await ethers.getContractAt("PartyALiquidationFacet", diamond)
+	context.partyALiquidationSnapshotFacet = await ethers.getContractAt("PartyALiquidationSnapshotFacet", diamond)
 	context.partyBLiquidationFacet = await ethers.getContractAt("PartyBLiquidationFacet", diamond)
 	context.controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", diamond)
 	context.symbolControlFacet = await ethers.getContractAt("SymbolControlFacet", diamond)

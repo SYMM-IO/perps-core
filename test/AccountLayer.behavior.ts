@@ -4995,7 +4995,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 				// Lock the second quote so it becomes LOCKED (eligible for liquidation cancel)
 				await hedger.lockQuote(allQuoteIds[1])
 
-				// Liquidate partyB (isolated) — this cancels pending quotes via LibLiquidation.liquidatePartyB
+				// Liquidate partyB (isolated) - this cancels pending quotes via LibPartyBLiquidation.startPartyBLiquidation
 				// Our new callCancelQuoteHooks should fire for the locked quote
 				await context.partyBLiquidationFacet
 					.connect(context.signers.liquidator)
@@ -5476,11 +5476,11 @@ export function shouldBehaveLikeAccountLayer(): void {
 				const quotesBeforeLiq = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
 				const quoteId = quotesBeforeLiq[0]
 
-				// Lock the quote — LOCKED is eligible for isolated partyB pending cancel
+				// Lock the quote - LOCKED is eligible for isolated partyB pending cancel
 				await hedger.lockQuote(quoteId)
 				expect((await context.viewFacetQuote.getQuote(quoteId)).quoteStatus).to.equal(1n) // LOCKED
 
-				// Liquidate partyB (isolated) — cancels the LOCKED pending quote via LibLiquidation.liquidatePartyB
+				// Liquidate partyB (isolated) - cancels the LOCKED pending quote via LibPartyBLiquidation.startPartyBLiquidation
 				await context.partyBLiquidationFacet
 					.connect(context.signers.liquidator)
 					.liquidatePartyB(context.signers.hedger.address, virtualAccountAddress, await getDummySingleUpnlSig(decimal(-336n)))
@@ -5489,7 +5489,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 				const quotesAfterLiq = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
 				expect(quotesAfterLiq.length).to.equal(0)
 
-				// No open positions — partyA NOT liquidated — VA deleted immediately
+				// No open positions - partyA NOT liquidated - VA deleted immediately
 				expect(await context.viewFacet.isPartyALiquidated(virtualAccountAddress)).to.be.false
 				const vaData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
 				expect(vaData.isExists).to.be.false

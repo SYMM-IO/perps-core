@@ -14,7 +14,7 @@ import { LibQuoteClose } from "./LibQuoteClose.sol";
 import { LibAccount } from "./LibAccount.sol";
 import { LibSolvency } from "./LibSolvency.sol";
 import { LibMuonForceActions } from "./muon/LibMuonForceActions.sol";
-import { LibLiquidation } from "./LibLiquidation.sol";
+import { LibPartyBLiquidation } from "./liquidation/LibPartyBLiquidation.sol";
 import { LibHook } from "./LibHook.sol";
 import { MuonFunction } from "../interfaces/IMuonSignatureVerifier.sol";
 
@@ -51,8 +51,8 @@ library LibForceActions {
 		return closePrice;
 	}
 
-	/// @notice Liquidates Party B during a force close by adding reserved balance and triggering liquidation.
-	function liquidatePartyB(
+	/// @notice Starts PartyB liquidation during a force close by adding reserved balance and triggering liquidation.
+	function startPartyBLiquidationForForceClose(
 		uint256 quoteId,
 		uint256 closePrice,
 		uint256 reservedBalance,
@@ -75,7 +75,7 @@ library LibForceActions {
 			diff = diff * -1;
 		}
 		upnlPartyB = sigUpnlPartyB + diff;
-		LibLiquidation.liquidatePartyB(partyB, partyA, upnlPartyB, block.timestamp);
+		LibPartyBLiquidation.startPartyBLiquidation(partyB, partyA, upnlPartyB, block.timestamp);
 	}
 
 	/// @notice Validates all preconditions for a force close including signature, cooldowns, and price bounds.

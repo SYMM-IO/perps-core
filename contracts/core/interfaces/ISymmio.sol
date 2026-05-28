@@ -10,6 +10,7 @@ import { ISymbolControlFacet } from "../facets/SymbolControl/ISymbolControlFacet
 import { IPauseControlFacet } from "../facets/PauseControl/IPauseControlFacet.sol";
 import { IFundingRateFacet } from "../facets/FundingRate/IFundingRateFacet.sol";
 import { IPartyALiquidationFacet } from "../facets/PartyALiquidation/IPartyALiquidationFacet.sol";
+import { IPartyALiquidationSnapshotFacet } from "../facets/PartyALiquidationSnapshot/IPartyALiquidationSnapshotFacet.sol";
 import { IPartyBLiquidationFacet } from "../facets/PartyBLiquidation/IPartyBLiquidationFacet.sol";
 import { IPartyAFacet } from "../facets/PartyA/IPartyAFacet.sol";
 import { IBridgeFacet } from "../facets/Bridge/IBridgeFacet.sol";
@@ -39,6 +40,7 @@ interface ISymmio is
 	IPartyBBatchActionsFacet,
 	IPartyAFacet,
 	IPartyALiquidationFacet,
+	IPartyALiquidationSnapshotFacet,
 	IPartyBLiquidationFacet,
 	IViewFacet,
 	IViewFacetSymbol,
@@ -61,7 +63,8 @@ interface ISymmio is
 		FUNDING_FEE_IN,
 		FUNDING_FEE_OUT,
 		DEFERRED_BALANCE_IN,
-		DEFERRED_BALANCE_OUT
+		DEFERRED_BALANCE_OUT,
+		REIMBURSEMENT_IN
 	}
 
 	/// @notice Emitted when a PartyA's allocated balance changes

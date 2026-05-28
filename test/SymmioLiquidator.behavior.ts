@@ -37,6 +37,14 @@ export function shouldBehaveLikeSymmioLiquidator(): void {
 		const HARDCODED_PARTY_A = [
 			"liquidatePartyA",
 			"setSymbolsPrice",
+			"liquidatePartyAWithSnapshot",
+			"setSymbolsPriceWithSnapshot",
+			"liquidatePendingPositionsPartyAWithSnapshot",
+			"liquidatePositionsPartyAWithSnapshot",
+			"settlePartyALiquidationWithSnapshot",
+			"singleStepLiquidatePartyAWithSnapshot",
+		] as const
+		const HARDCODED_PARTY_A_LEGACY = [
 			"deferredLiquidatePartyA",
 			"deferredSetSymbolsPrice",
 			"liquidatePendingPositionsPartyA",
@@ -46,9 +54,10 @@ export function shouldBehaveLikeSymmioLiquidator(): void {
 		const HARDCODED_PARTY_B = ["liquidatePartyB", "liquidatePositionsPartyB"] as const
 
 		// Explicitly NOT hardcoded by design
-		const NOT_HARDCODED_PARTY_A = ["resolveLiquidationDispute"] as const
+		const NOT_HARDCODED_PARTY_A = ["resolveLiquidationDispute", "resolveLiquidationDisputeWithSnapshot"] as const
 
 		let partyALiquidationIface: any
+		let partyALiquidationSnapshotIface: any
 		let partyBLiquidationIface: any
 
 		beforeEach(async function () {
@@ -78,6 +87,7 @@ export function shouldBehaveLikeSymmioLiquidator(): void {
 			await liquidator.connect(admin).grantRole(UNPAUSER_ROLE, unpauser.address)
 
 			partyALiquidationIface = (await ethers.getContractAt("IPartyALiquidationFacet", ethers.ZeroAddress)).interface
+			partyALiquidationSnapshotIface = (await ethers.getContractAt("IPartyALiquidationSnapshotFacet", ethers.ZeroAddress)).interface
 			partyBLiquidationIface = (await ethers.getContractAt("IPartyBLiquidationFacet", ethers.ZeroAddress)).interface
 		})
 
@@ -90,6 +100,19 @@ export function shouldBehaveLikeSymmioLiquidator(): void {
 
 			it("hardcodes PartyA liquidation selectors", async function () {
 				for (const name of HARDCODED_PARTY_A) {
+					const iface =
+						name == "liquidatePartyAWithSnapshot" ||
+						name == "setSymbolsPriceWithSnapshot" ||
+						name == "liquidatePendingPositionsPartyAWithSnapshot" ||
+						name == "liquidatePositionsPartyAWithSnapshot" ||
+						name == "settlePartyALiquidationWithSnapshot" ||
+						name == "singleStepLiquidatePartyAWithSnapshot"
+							? partyALiquidationSnapshotIface
+							: partyALiquidationIface
+					const sel = iface.getFunction(name).selector
+					expect(await liquidator.allowedSelectors(sel), `expected ${name} allowed`).to.equal(true)
+				}
+				for (const name of HARDCODED_PARTY_A_LEGACY) {
 					const sel = partyALiquidationIface.getFunction(name).selector
 					expect(await liquidator.allowedSelectors(sel), `expected ${name} allowed`).to.equal(true)
 				}
@@ -104,7 +127,8 @@ export function shouldBehaveLikeSymmioLiquidator(): void {
 
 			it("does NOT hardcode resolveLiquidationDispute", async function () {
 				for (const name of NOT_HARDCODED_PARTY_A) {
-					const sel = partyALiquidationIface.getFunction(name).selector
+					const iface = name == "resolveLiquidationDisputeWithSnapshot" ? partyALiquidationSnapshotIface : partyALiquidationIface
+					const sel = iface.getFunction(name).selector
 					expect(await liquidator.allowedSelectors(sel), `expected ${name} NOT allowed`).to.equal(false)
 				}
 			})

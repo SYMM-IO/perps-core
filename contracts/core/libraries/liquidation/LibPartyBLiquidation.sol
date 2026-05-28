@@ -4,26 +4,25 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { QuoteStorage, Quote, LockedValues, QuoteStatus } from "../storages/QuoteStorage.sol";
-import { LiquidationType, LiquidationDetail, AccountStorage } from "../storages/AccountStorage.sol";
-import { MAStorage } from "../storages/MAStorage.sol";
-import { SharedEvents } from "../libraries/SharedEvents.sol";
-import { LibAccount } from "./LibAccount.sol";
-import { LibQuote } from "./LibQuote.sol";
-import { LibSigner } from "./LibSigner.sol";
-import { LockedValuesOps } from "./LibLockedValues.sol";
-import { LibConnections } from "./LibConnections.sol";
-import { LibHook } from "./LibHook.sol";
+import { QuoteStorage, Quote, LockedValues, QuoteStatus } from "../../storages/QuoteStorage.sol";
+import { AccountStorage } from "../../storages/AccountStorage.sol";
+import { MAStorage } from "../../storages/MAStorage.sol";
+import { SharedEvents } from "../SharedEvents.sol";
+import { LibAccount } from "../LibAccount.sol";
+import { LibSigner } from "../LibSigner.sol";
+import { LockedValuesOps } from "../LibLockedValues.sol";
+import { LibConnections } from "../LibConnections.sol";
+import { LibHook } from "../LibHook.sol";
 
-library LibLiquidation {
+library LibPartyBLiquidation {
 	using LockedValuesOps for LockedValues;
 
-	/// @notice Liquidates Party B.
+	/// @notice Starts PartyB liquidation.
 	/// @param partyB The address of Party B.
 	/// @param partyA The address of Party A.
 	/// @param upnlPartyB The unrealized profit and loss of Party B.
 	/// @param timestamp The timestamp of the liquidation.
-	function liquidatePartyB(address partyB, address partyA, int256 upnlPartyB, uint256 timestamp) internal {
+	function startPartyBLiquidation(address partyB, address partyA, int256 upnlPartyB, uint256 timestamp) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
@@ -114,34 +113,5 @@ library LibLiquidation {
 			accountLayout.allocatedBalances[LibSigner.getSigner()] += liquidatorShare;
 			emit SharedEvents.BalanceChangePartyA(LibSigner.getSigner(), liquidatorShare, SharedEvents.BalanceChangeType.LF_IN);
 		}
-	}
-
-	/// @notice Determines the liquidation type (NORMAL, LATE, or OVERDUE) based on Party A's deficit.
-	function determineLiquidationType(address partyA, int256 availableBalance) internal {
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		MAStorage.Layout storage maLayout = MAStorage.layout();
-		LiquidationDetail storage detail = accountLayout.liquidationDetails[partyA];
-
-		if (detail.liquidationType != LiquidationType.NONE) return;
-
-		if (uint256(-availableBalance) < accountLayout.lockedBalances[partyA].lf) {
-			uint256 remainingLf = accountLayout.lockedBalances[partyA].lf - uint256(-availableBalance);
-			uint256 maxLf = maLayout.maxLiquidationProfitPerPosition * QuoteStorage.layout().partyAPositionsCount[partyA];
-			if (remainingLf > maxLf) {
-				accountLayout.balances[maLayout.liquidationInsuranceVault] += remainingLf - maxLf;
-				remainingLf = maxLf;
-			}
-			detail.liquidationType = LiquidationType.NORMAL;
-			detail.liquidationFee = remainingLf;
-		} else if (uint256(-availableBalance) <= accountLayout.lockedBalances[partyA].lf + accountLayout.lockedBalances[partyA].cva) {
-			uint256 deficit = uint256(-availableBalance) - accountLayout.lockedBalances[partyA].lf;
-			detail.liquidationType = LiquidationType.LATE;
-			detail.deficit = deficit;
-		} else {
-			uint256 deficit = uint256(-availableBalance) - accountLayout.lockedBalances[partyA].lf - accountLayout.lockedBalances[partyA].cva;
-			detail.liquidationType = LiquidationType.OVERDUE;
-			detail.deficit = deficit;
-		}
-		accountLayout.liquidators[partyA].push(msg.sender);
 	}
 }

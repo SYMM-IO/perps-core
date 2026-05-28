@@ -110,8 +110,9 @@ contract ClearingHouseFacet is Pausable, Accessibility, IClearingHouseFacet {
 	}
 
 	/// @notice Closes open positions for an affiliate that is being wound down.
-	/// @dev The affiliate must either be deregistered or explicitly paused from opening positions.
+	/// @dev The affiliate must have a shutdown timestamp scheduled and reached.
 	///      This uses the normal close accounting path, not liquidation escrow accounting.
+	///      CLEARING_HOUSE_ROLE is trusted to provide the shutdown settlement prices.
 	/// @param affiliate The affiliate/frontend whose positions are being closed.
 	/// @param quoteIds The affiliate quote IDs to close fully.
 	/// @param prices The close prices for each quote.

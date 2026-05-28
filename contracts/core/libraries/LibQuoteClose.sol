@@ -14,16 +14,17 @@ import { AffiliateStorage } from "../storages/AffiliateStorage.sol";
 import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
 import { SymbolStorage } from "../storages/SymbolStorage.sol";
 import { FundingStorage } from "../storages/FundingStorage.sol";
-import { ClearingHouseStorage } from "../storages/ClearingHouseStorage.sol";
 import { AffiliateStorage } from "../storages/AffiliateStorage.sol";
 import { MAStorage } from "../storages/MAStorage.sol";
 import { ISymmioHook } from "../interfaces/ISymmioHook.sol";
 import { LibAccount } from "./LibAccount.sol";
+import { LibPartyBState } from "./extensions/LibPartyBState.sol";
 import { LockedValuesOps } from "./LibLockedValues.sol";
 import { LibHook } from "./LibHook.sol";
 
 library LibQuoteClose {
 	using LockedValuesOps for LockedValues;
+	using LibPartyBState for address;
 
 	/// @notice Closes a quote.
 	/// @param quoteId The ID of the quote to close.
@@ -189,8 +190,7 @@ library LibQuoteClose {
 			"LibQuote: Invalid state"
 		);
 		require(!MAStorage.layout().liquidationStatus[quote.partyA], "LibQuote: PartyA isn't solvent");
-		require(!MAStorage.layout().partyBLiquidationStatus[quote.partyB][quote.partyA], "LibQuote: PartyB isn't solvent");
-		require(!ClearingHouseStorage.layout().crossLiquidationDetails[quote.partyB].inProgress, "LibQuote: PartyB is in cross liquidation process");
+		quote.partyB.requireNotLiquidating(quote.partyA);
 
 		if (quote.quoteStatus == QuoteStatus.PENDING || quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING) {
 			quote.statusModifyTimestamp = block.timestamp;

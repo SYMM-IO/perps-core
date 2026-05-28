@@ -9,11 +9,13 @@ import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
 import { AccountStorage } from "../storages/AccountStorage.sol";
 import { Quote, QuoteStatus, QuoteStorage } from "../storages/QuoteStorage.sol";
 import { TradingModeStorage } from "../storages/TradingModeStorage.sol";
-import { ClearingHouseStorage } from "../storages/ClearingHouseStorage.sol";
 import { LibAccessibility } from "../libraries/LibAccessibility.sol";
+import { LibPartyBState } from "../libraries/extensions/LibPartyBState.sol";
 import { LibSigner } from "../libraries/LibSigner.sol";
 
 abstract contract Accessibility {
+	using LibPartyBState for address;
+
 	modifier onlyPartyB() {
 		require(MAStorage.layout().partyBStatus[LibSigner.getSigner()], "Accessibility: Should be partyB");
 		_;
@@ -71,21 +73,19 @@ abstract contract Accessibility {
 	}
 
 	modifier notLiquidatedPartyB(address partyB, address partyA) {
-		require(!MAStorage.layout().partyBLiquidationStatus[partyB][partyA], "Accessibility: PartyB isn't solvent");
-		require(!ClearingHouseStorage.layout().crossLiquidationDetails[partyB].inProgress, "Accessibility: PartyB isn't solvent");
+		partyB.requireNotLiquidating(partyA);
 		_;
 	}
 
 	modifier notCrossLiquidatedPartyB(address partyB) {
-		require(!ClearingHouseStorage.layout().crossLiquidationDetails[partyB].inProgress, "Accessibility: PartyB isn't solvent");
+		partyB.requireNotCrossLiquidating();
 		_;
 	}
 
 	modifier notLiquidated(uint256 quoteId) {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		require(!MAStorage.layout().liquidationStatus[quote.partyA], "Accessibility: PartyA isn't solvent");
-		require(!MAStorage.layout().partyBLiquidationStatus[quote.partyB][quote.partyA], "Accessibility: PartyB isn't solvent");
-		require(!ClearingHouseStorage.layout().crossLiquidationDetails[quote.partyB].inProgress, "Accessibility: PartyB isn't solvent");
+		quote.partyB.requireNotLiquidating(quote.partyA);
 		require(
 			quote.quoteStatus != QuoteStatus.LIQUIDATED &&
 				quote.quoteStatus != QuoteStatus.LIQUIDATED_PENDING &&

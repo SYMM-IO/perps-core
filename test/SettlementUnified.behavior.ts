@@ -171,7 +171,7 @@ export function shouldBehaveLikeSettlementUnified(): void {
 				[0n],
 				[{ quoteId: longClosed, currentPrice: decimal(5n, 17), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct],
 			)
-			await expect(hedger.settleUpnlUnified([decimal(6n, 17)], sig)).to.be.revertedWith("LibSettlement: Invalid quote state")
+			await expect(hedger.settleUpnlUnified([decimal(6n, 17)], sig)).to.be.revertedWith("LibQuote: Invalid state")
 		})
 
 		it("Should fail when updated price is out of range", async function () {
@@ -196,7 +196,7 @@ export function shouldBehaveLikeSettlementUnified(): void {
 				[0n],
 				[{ quoteId: longHedger1, currentPrice: decimal(5n, 17), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct],
 			)
-			await expect(hedger.settleUpnlUnified([decimal(6n, 17)], sig)).to.be.revertedWith("LibSettlement: PartyB is in liquidation with partyA")
+			await expect(hedger.settleUpnlUnified([decimal(6n, 17)], sig)).to.be.revertedWith("PartyBState: PartyB is in liquidation")
 		})
 
 		it("Should settle successfully for single partyA", async function () {
