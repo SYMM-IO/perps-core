@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>PartyA Liquidation Fee Recipient Cleanup - Symmio Core v0.8.6</title>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+	</head>
+	<body class="doc-page">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="doc-topbar">
+			<a class="brand" href="../index.html"
+				><span class="brand-mark">8.6</span><span><strong>Symmio Docs</strong><small>v0.8.6 reference</small></span></a
+			>
+			<nav class="top-actions" aria-label="Page actions">
+				<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+			</nav>
+		</header>
+
+		<div class="reader-shell">
+			<aside class="toc-panel side-toc" aria-label="Page navigation">
+				<a class="button primary back-home" href="../index.html">Back to home</a>
+				<div class="toc-card">
+					<p class="toc-title">On this page</p>
+					<a class="toc-link level-2" href="#summary">Summary</a>
+					<a class="toc-link level-2" href="#what-changed">What Changed</a>
+					<a class="toc-link level-2" href="#final-settlement-accounting">Final Settlement Accounting</a>
+				</div>
+			</aside>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">v0.8.6</a><span>/</span><strong>Liquidation</strong></nav>
+					<div class="reader-title-row">
+						<div>
+							<h1>PartyA Liquidation Fee Recipient Cleanup</h1>
+							<p class="hero-copy">
+								PartyA liquidation LF needed one clear recipient, so final settlement pays the capped fee to the liquidation starter.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="summary">Summary</h2>
+					<p>
+						PartyA LF now has one receiver: <code>liquidators[partyA][0]</code>, the address that started the PartyA liquidation.
+					</p>
+					<p>
+						Before v0.8.6, PartyA LF was split between two receivers: the caller that started liquidation and the first caller that set
+						liquidation prices. In practice, a single liquidator now performs all liquidation steps almost every time. Competition is at
+						the first liquidation call, not at each later step.
+					</p>
+					<p>
+						v0.8.6 removes the second receiver and pays the capped LF only to the starter at final settlement. The protocol monitors
+						liquidator performance and suspends or removes bad actors when needed.
+					</p>
+
+					<h2 id="what-changed">What Changed</h2>
+					<p>
+						Before v0.8.6: PartyA LF was split 50/50 between <code>liquidators[partyA][0]</code> and
+						<code>liquidators[partyA][1]</code>.
+					</p>
+					<p>
+						<code>liquidators[partyA][0]</code> was the caller of <code>liquidatePartyA</code> or
+						<code>deferredLiquidatePartyA</code>. <code>liquidators[partyA][1]</code> was the first caller of
+						<code>setSymbolsPrice</code> or <code>deferredSetSymbolsPrice</code>; later price-setting calls did not add more LF receivers.
+					</p>
+					<p>
+						After v0.8.6: one PartyA LF receiver. The final capped LF goes to <code>liquidators[partyA][0]</code> because that is the
+						competitive step. Price setters do not receive PartyA LF.
+					</p>
+					<p>
+						P.S. The cap logic did not change. PartyA LF is still limited by
+						<code>maxLiquidationProfitPerPosition * partyAPositionsCount[partyA]</code>, and any amount above the cap goes to the
+						liquidation insurance vault.
+					</p>
+
+					<h2 id="final-settlement-accounting">Final Settlement Accounting</h2>
+					<p>
+						The LF is handled during PartyA liquidation finalization, after deferred balance and reimbursement accounting have been
+						resolved.
+					</p>
+					<pre><code class="language-solidity">// Pay capped LF to the liquidation starter.
+uint256 lf = accountLayout.liquidationDetails[partyA].liquidationFee;
+if (lf &gt; 0) {
+    emit SharedEvents.BalanceChangePartyA(partyA, lf, SharedEvents.BalanceChangeType.LF_OUT);
+    address liquidationStarter = accountLayout.liquidators[partyA][0];
+    accountLayout.allocatedBalances[liquidationStarter] += lf;
+    emit SharedEvents.BalanceChangePartyA(liquidationStarter, lf, SharedEvents.BalanceChangeType.LF_IN);
+}
+</code></pre>
+					<p>The resulting balance movement is:</p>
+					<ul>
+						<li><code>BalanceChangePartyA(partyA, lf, LF_OUT)</code> for the liquidated PartyA.</li>
+						<li><code>allocatedBalances[liquidationStarter] += lf</code>.</li>
+						<li><code>BalanceChangePartyA(liquidationStarter, lf, LF_IN)</code> for the starter.</li>
+					</ul>
+					<p>If the capped LF is zero, no LF balance-change events are emitted.</p>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Protocol, operations, and integration notes.</span>
+		</footer>
+	</body>
+</html>

@@ -72,7 +72,7 @@
 <a class="toc-link level-3" href="#9-5-bot-checklist-for-validators">9.5 Bot Checklist for Validators</a>
 <a class="toc-link level-3" href="#9-6-edge-cases">9.6 Edge Cases</a>
 <a class="toc-link level-2" href="#10-credit-line-system">10. Credit Line System</a>
-<a class="toc-link level-3" href="#10-1-virtualprovider-is-deprecated">10.1 VirtualProvider is DEPRECATED</a>
+<a class="toc-link level-3" href="#10-1-virtualprovider-is-deprecated">10.1 VirtualProvider is Replaced by Credit Line</a>
 <a class="toc-link level-3" href="#10-2-credit-debt-lifecycle">10.2 Credit Debt Lifecycle</a>
 <a class="toc-link level-3" href="#10-3-bot-monitoring-for-credit-lines">10.3 Bot Monitoring for Credit Lines</a>
 <a class="toc-link level-3" href="#10-4-how-credit-lines-work">10.4 How Credit Lines Work</a>
@@ -2679,7 +2679,7 @@ Correct strategy:
 </tr>
 </tbody>
 </table></div>
-<p><strong>Per-affiliate config note:</strong> <code>setValidator</code>, <code>setMinValidatorSignatures</code>, and <code>setValidatorApprovalTimeout</code> are all per-affiliate (commit 11891d89). The bot must read each value via the affiliate-keyed getter; if the affiliate has not been customized, the contract automatically falls back to the <code>address(0)</code> defaults set by the protocol. The same fallback applies to <code>isValidator(affiliate, signer)</code>.</p>
+<p><strong>Per-affiliate validator config:</strong> Validator policy is not one global value. The bot must read validator status, signature threshold, and approval timeout for the withdrawal's affiliate; if that affiliate has no custom value, the contract falls back to the <code>address(0)</code> defaults. This lets one affiliate require stricter validator coverage without forcing the same rule on every integration.</p>
 <h4 id="numeric-example-validator-attestation-for-immediate">Numeric Example: Validator Attestation for IMMEDIATE</h4>
 <pre><code>Scenario: Bot gathers validator sigs, checks timestamps, decides if enough valid sigs
 
@@ -2754,8 +2754,9 @@ Step 4 — Bot considers: what if Alice acted on SYMMIO between T=102 and submis
 </code></pre>
 <hr>
 <h2 id="10-credit-line-system">10. Credit Line System</h2>
-<h3 id="10-1-virtualprovider-is-deprecated">10.1 VirtualProvider is DEPRECATED</h3>
-<p>The <code>virtualProvider</code> field in <code>WithdrawReceiverPart</code> <strong>must be <code>address(0)</code></strong>. Any part with a non-zero <code>virtualProvider</code> causes the contract to revert with <code>VirtualProviderMustBeZero</code>. The Credit Line system fully replaces VirtualProvider for fast withdrawals.</p>
+<h3 id="10-1-virtualprovider-is-deprecated">10.1 VirtualProvider is Replaced by Credit Line</h3>
+<p>Earlier fast-withdrawal wiring used <code>virtualProvider</code> inside each withdrawal part. v0.8.6 does not route Express liquidity through that field. The funding split is signed explicitly as <code>affiliateAmount</code> and <code>creditAmount</code>, and <code>LibParts</code> rejects any Express-owned part whose <code>virtualProvider</code> is nonzero.</p>
+<p>For the bot, every Express part must set <code>virtualProvider</code> to <code>address(0)</code>. Credit capacity is handled by the signed option and <code>LibCreditLine</code>, not by deploying or monitoring VirtualProvider contracts.</p>
 <pre><code>// In LibParts.computeAmounts and transferToReceivers:
 if (parts[i].virtualProvider != address(0)) revert LibErrors.VirtualProviderMustBeZero();
 </code></pre>
@@ -2871,7 +2872,6 @@ coverLoss:           affiliateBalances[affiliate] -= covered amount, badDebt += 
    where <code>address(this)</code> is the ExpressProvider diamond and <code>symmio</code> is the configured SYMMIO core address. Binding both addresses prevents cross-deployment replay (commit ddb90f8c). Invalid signatures revert in the <code>MuonSignatureVerifier</code>.</li>
 <li><strong>Debt caps:</strong> Both absolute and percentage caps are checked against <code>totalDebt + badDebt + creditAmount</code>.</li>
 </ol>
-<aside class="callout callout-note"><strong>Note</strong> <code>AffiliateCredit</code> (the per-affiliate credit struct) is now defined in <code>types/CreditTypes.sol</code> (commit 61ec950e), but it is still stored within <code>CreditLineStorage.affiliates[affiliate]</code>.</aside>
 <p><strong>Flow during acceptance (<code>onWithdrawRequest</code>):</strong></p>
 <ol>
 <li>Bot signs option with <code>creditAmount &gt; 0</code> and provides encoded <code>CreditData</code> as <code>creditDataRaw</code>.</li>
@@ -3149,7 +3149,7 @@ Step 4c -- Post-payout rollback (suspend after PROCESSED, rare):
 </ul>
 <hr>
 <h3 id="10-7-affiliate-cap-self-service-fee">10.7 Affiliate Cap Self-Service &amp; Fee</h3>
-<p>Affiliates can now adjust their own credit line cap without an admin call. See design doc §5.5 for the full model. Operational notes:</p>
+<p>Cap changes matter to the bot because they decide whether queued STANDARD withdrawals can be accelerated. When a credit cap is full, the bot may accept the request as STANDARD so the user transaction succeeds; if the affiliate raises capacity before cooldown ends, that same request can be promoted through <code>accelerateWithdraw</code>. v0.8.6 lets affiliates adjust their own caps with <code>setMyCreditLineConfig</code>, while a quota and fee throttle discourages repeated cap churn.</p>
 <p><strong>Decreases are always free.</strong> When a frontend needs to tighten risk (e.g., an anomaly spike, a pool running low, a governance decision), it should call <code>setMyCreditLineConfig</code> with lower values immediately. The on-chain classifier treats "neither dimension loosened" as a decrease -- no fee, no counter bump, no delay. Tightening is the protocol's preferred risk response.</p>
 <p><strong>Increases are throttled and can cost fees.</strong> Each affiliate gets <code>maxFreePerWindow</code> free increases per <code>windowDuration</code>. Once the quota is exhausted in the current window, the next increase pulls <code>feeAmount</code> of the protocol-configured fee token from the affiliate's wallet.</p>
 <p><strong>Before submitting a cap change, a frontend should:</strong></p>
@@ -3543,7 +3543,7 @@ Step 2D — Bot sees: WithdrawFinalized(user, reqId) at T+43200
     D --&gt;|STANDARD at FINALIZED| FAIL4[&quot;REVERT:\nInvalidStatusForSuspend&quot;]
     D --&gt;|CANCELLED/SUSPENDED| FAIL5[&quot;REVERT:\nInvalidStatusForSuspend (terminal)&quot;]
 </code></pre>
-<p>Note: <code>forceCancelWithdraw</code> and <code>onForceWithdrawCancel</code> were removed (commits 40d5fd99 and eabd1f3f). All cancellation paths formerly served by force-cancel are now handled by <code>onWithdrawSuspend</code>, including the post-payout rollback path from PROCESSED.</p>
+<p>There is no separate force-cancel callback for the bot to model. Pre-payout user cancellation enters <code>onWithdrawCancelRequest</code>, but any SYMMIO-driven forced stop is expressed through <code>onWithdrawSuspend</code>. That keeps the dangerous case -- a withdrawal already paid to the user with possible active credit -- on one rollback path: restore sponsor state, record pool loss, call <code>LibCreditLine.coverLoss</code>, and mark the request suspended.</p>
 <h3 id="13-2-cancellation-matrix">13.2 Cancellation Matrix</h3>
 <div class="table-wrap"><table>
 <thead>

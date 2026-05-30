@@ -3,7 +3,7 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<title>PartyA Liquidation Funding Snapshot Fix - Symmio Core v0.8.6</title>
+		<title>PartyA Liquidation Snapshot Flow - Symmio Core v0.8.6</title>
 		<link rel="stylesheet" href="../assets/v086-docs.css" />
 		<script src="../assets/v086-docs.js" defer></script>
 	</head>
@@ -25,15 +25,12 @@
 					<p class="toc-title">On this page</p>
 					<a class="toc-link level-2" href="#summary">Summary</a>
 					<a class="toc-link level-2" href="#affected-scenario">Affected Scenario</a>
-					<a class="toc-link level-2" href="#why-the-old-timestamp-fix-was-not-enough">Why The Old Timestamp Fix Was Not Enough</a>
 					<a class="toc-link level-2" href="#impact">Impact</a>
 					<a class="toc-link level-2" href="#new-muon-payload">New Muon Payload</a>
-					<a class="toc-link level-2" href="#what-changed-on-chain">What Changed On-Chain</a>
-					<a class="toc-link level-2" href="#settlement-behavior-after-the-fix">Settlement Behavior After The Fix</a>
-					<a class="toc-link level-2" href="#why-we-did-not-store-funding-history">Why We Did Not Store Funding History</a>
-					<a class="toc-link level-2" href="#legacy-deprecation-flag">Legacy Deprecation Flag</a>
-					<a class="toc-link level-2" href="#expected-result">Expected Result</a>
-					<a class="toc-link level-2" href="#related-snapshot-entrypoints">Related Snapshot Entrypoints</a>
+					<a class="toc-link level-2" href="#snapshot-storage-model">Snapshot Storage Model</a>
+					<a class="toc-link level-2" href="#method-order-before-and-now">Method Order Before And Now</a>
+					<a class="toc-link level-2" href="#new-settlement-behavior">New Settlement Behavior</a>
+					<a class="toc-link level-2" href="#price-only-deprecation-flag">Price-Only Deprecation Flag</a>
 				</div>
 			</aside>
 			<main class="reader-main">
@@ -41,10 +38,10 @@
 					<nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">v0.8.6</a><span>/</span><strong>Liquidation</strong></nav>
 					<div class="reader-title-row">
 						<div>
-							<h1>PartyA Liquidation Funding Snapshot Fix</h1>
+							<h1>PartyA Liquidation Snapshot Flow</h1>
 							<p class="hero-copy">
-								This fix makes liquidation settlement use the same funding state that Muon signed when PartyA became liquidatable, so
-								later PartyB funding updates cannot change the liquidation debt.
+								The v0.8.6 snapshot liquidation path makes settlement use the same funding state that Muon signed when PartyA became
+								liquidatable, so later PartyB funding updates cannot change the liquidation debt.
 							</p>
 						</div>
 					</div>
@@ -57,17 +54,14 @@
 						PartyA UPNL, liquidation prices, and the funding debt implied by those prices and funding accumulators.
 					</p>
 					<p>
-						Before this fix, the legacy liquidation path froze symbol prices from the Muon liquidation signature, but accumulated funding
-						could still be derived from funding storage later, when <code>liquidatePositionsPartyA</code> was called. If PartyB changed
-						funding after PartyA was marked liquidated, settlement could use the liquidation price from one moment and funding state from
-						another.
+						Before v0.8.6, the price-only liquidation path froze symbol prices from the Muon liquidation signature, but accumulated
+						funding could still be derived from funding storage later, when <code>liquidatePositionsPartyA</code> was called. If an epoch
+						passed and funding was rolled, or if epoch duration changed after funding accrued, settlement could mix frozen liquidation
+						prices with the wrong funding value.
 					</p>
 					<p>
-						The fix adds a Muon-signed snapshot path. Muon now signs PartyA historical insolvency data plus the price and cumulative
-						funding values needed for each <code>(PartyB, symbolId)</code> pair. Once the snapshot path is used for a liquidation, every
-						liquidated quote must have a matching signed snapshot. If accumulated funding was not active for a pair at the liquidation
-						timestamp, Muon should still include that pair with the liquidation price and zero cumulative long/short funding values.
-						Missing snapshot coverage reverts instead of falling back to live funding.
+						v0.8.6 adds a Muon-signed snapshot liquidation path. Muon now signs PartyA historical insolvency data plus the price and
+						cumulative funding values needed for each <code>(PartyB, symbolId)</code> pair.
 					</p>
 					<h2 id="affected-scenario">Affected Scenario</h2>
 					<p>The risky flow was:</p>
@@ -75,50 +69,33 @@
 						<li>PartyA becomes liquidatable.</li>
 						<li>Liquidator calls <code>liquidatePartyA(partyA, liquidationSig)</code>.</li>
 						<li>Liquidator calls <code>setSymbolsPrice(partyA, liquidationSig)</code>.</li>
-						<li>PartyB updates funding for one of PartyA's markets.</li>
+						<li>An epoch passes and funding is rolled, or epoch duration changes after funding has accrued.</li>
 						<li>Liquidator later calls <code>liquidatePositionsPartyA(partyA, quoteIds)</code>.</li>
-						<li>Settlement is calculated with frozen liquidation prices, but funding may come from the later funding state.</li>
+						<li>
+							Settlement is calculated with frozen liquidation prices, but funding may be reconstructed from storage that has moved past
+							the liquidation timestamp.
+						</li>
 					</ol>
 					<p>
-						This could happen naturally, not only through a malicious timing attempt. Some solvers update funding frequently and may batch
-						<code>setFundingFee</code> with open/close operations in the Instant Layer. If PartyA is marked liquidated between those
-						solver operations and the later liquidation-close transaction, the liquidation path must not let the later funding update
-						change PartyA's liquidation debt.
-					</p>
-					<h2 id="why-the-old-timestamp-fix-was-not-enough">Why The Old Timestamp Fix Was Not Enough</h2>
-					<p>
-						A previous mitigation aligned liquidation funding calculations to the liquidation timestamp by using
-						<code>getAccumulatedFundingFeeAt(quoteId, liquidationTimestamp)</code>. That helps when the chain can still reconstruct the
-						old funding accumulator from current storage.
-					</p>
-					<p>
-						The remaining problem is that current storage does not keep a full history of replaced funding state. If PartyB changes the
-						current long/short rate, or changes epoch duration, the contract may no longer have enough information to reconstruct exactly
-						what Muon saw at the liquidation timestamp. Asking the contract to store every historical funding change would push extra
-						storage writes into normal solver operations.
-					</p>
-					<p>
-						That tradeoff is especially bad for solvers that update funding often. The liquidation fix should not make every normal open,
-						close, or funding update more expensive.
+						Same-epoch funding updates are not the issue. The issue is losing historical reconstruction: live storage no longer returns
+						the funding value Muon saw at liquidation time.
 					</p>
 					<h2 id="impact">Impact</h2>
 					<p>
-						The issue could affect liquidation accounting whenever funding changed between the liquidation snapshot and position
-						liquidation.
+						The issue could affect liquidation accounting when live funding storage no longer reconstructs the funding value at the
+						liquidation timestamp.
 					</p>
-					<p>Possible outcomes:</p>
+					<p>Actual outcomes:</p>
 					<ul>
 						<li>
-							PartyA liquidation could dispute because <code>partyAAccumulatedUpnl</code> no longer matched the signed liquidation UPNL.
+							Most affected liquidations disputed because <code>partyAAccumulatedUpnl</code> no longer matched the signed liquidation
+							UPNL.
 						</li>
-						<li>PartyA-level totals could appear close enough while value still shifted between PartyBs.</li>
-						<li>Liquidation debt could depend on keeper timing around funding updates.</li>
-						<li>Funding updates after liquidation could affect a debt value that should have been fixed at the liquidation snapshot.</li>
+						<li>
+							In rare cases, wrong funding debts across positions or PartyBs could cancel out so PartyA's total UPNL stayed unchanged,
+							allowing liquidation to pass with wrong settlement accounting.
+						</li>
 					</ul>
-					<p>
-						The root invariant is simple: once PartyA is proven liquidatable at timestamp <code>T</code>, later PartyB funding changes
-						must not change the liquidation settlement for timestamp <code>T</code>.
-					</p>
 					<h2 id="new-muon-payload">New Muon Payload</h2>
 					<p>The snapshot path uses <code>LiquidationSnapshotSig</code>:</p>
 					<pre><code class="language-solidity">struct LiquidationPartyBSymbolState {
@@ -152,27 +129,33 @@ struct LiquidationSnapshotSig {
 						<li><code>cumulativeShortFee</code>: cumulative short funding value at the liquidation timestamp.</li>
 					</ul>
 					<p>
-						Snapshot liquidation always uses signed historical insolvency fields. <code>liquidationBlockNumber</code>,
-						<code>liquidationTimestamp</code>, and <code>liquidationAllocatedBalance</code> must be nonzero and signed by Muon.
+						When the snapshot flow was added, the liquidation start path was refactored around historical insolvency data. That removed
+						the need for a separate snapshot-specific deferred signature. <code>LiquidationSnapshotSig</code> carries
+						<code>liquidationBlockNumber</code>, <code>liquidationTimestamp</code>, and <code>liquidationAllocatedBalance</code> directly.
 					</p>
 					<p>
-						There is no live/deferred selector in this payload. Snapshot setup always supplies the signed historical timestamp and
-						allocated balance to the shared PartyA liquidation start helper; the legacy live path uses that same helper with current
-						values after performing its live-only expiry and open-position checks.
+						The same change also reorganized the liquidation code so the price-only and snapshot paths reuse the same core liquidation
+						process logic. The refactor split path-specific setup into smaller libraries and did not change the existing price-only
+						liquidation rules.
 					</p>
 					<p>
-						Muon signs the same core liquidation fields as before, plus the hash of <code>states</code> and the historical insolvency
-						fields. The signature is verified through <code>verifyLiquidationSnapshotSig</code>, so a legacy liquidation
-						signature cannot be reused as a snapshot signature.
+						In the multi-step path, <code>liquidatePartyAWithSnapshot</code> starts liquidation with no PartyB-symbol states. A later
+						<code>setSymbolsPriceWithSnapshot</code> call submits those states for the same liquidation and stores the signed prices and
+						funding values.
 					</p>
-					<h2 id="what-changed-on-chain">What Changed On-Chain</h2>
-					<p>The fix adds two storage concepts to <code>AccountStorage</code>:</p>
-					<pre><code class="language-solidity">mapping(address =&gt; mapping(bytes32 =&gt; bool)) liquidationUsesPartyBSymbolSnapshots;
-mapping(address =&gt; mapping(bytes32 =&gt; mapping(address =&gt; mapping(uint256 =&gt; LiquidationPartyBSymbolSnapshot)))) liquidationPartyBSymbolSnapshots;
+					<h2 id="snapshot-storage-model">Snapshot Storage Model</h2>
+					<p>The snapshot path adds two storage concepts to <code>AccountStorage</code>:</p>
+					<pre><code class="language-solidity">mapping(address =&gt; mapping(bytes =&gt; bool)) liquidationUsesPartyBSymbolSnapshots;
+mapping(address =&gt; mapping(bytes =&gt; mapping(address =&gt; mapping(uint256 =&gt; LiquidationPartyBSymbolSnapshot)))) liquidationPartyBSymbolSnapshots;
 </code></pre>
-					<p>The first mapping is the snapshot marker. It says that a PartyA liquidation uses signed PartyB-symbol snapshots.</p>
-					<p>The second mapping stores the actual snapshot for:</p>
-					<pre><code class="language-text">partyA -&gt; liquidationSnapshotKey -&gt; partyB -&gt; symbolId
+					<p>
+						<code>liquidationUsesPartyBSymbolSnapshots</code> is needed because the same open-position liquidation code supports both
+						paths. For a normal price-only liquidation, it reads <code>symbolsPrices</code> and reconstructs funding with
+						<code>getAccumulatedFundingFeeAt</code>. For a snapshot-backed liquidation, it must read signed PartyB-symbol data instead.
+						The marker tells the liquidation code which source is allowed.
+					</p>
+					<p><code>liquidationPartyBSymbolSnapshots</code> stores the signed data for:</p>
+					<pre><code class="language-text">partyA -&gt; liquidationId -&gt; partyB -&gt; symbolId
 </code></pre>
 					<p>The stored snapshot contains:</p>
 					<pre><code class="language-solidity">struct LiquidationPartyBSymbolSnapshot {
@@ -182,23 +165,91 @@ mapping(address =&gt; mapping(bytes32 =&gt; mapping(address =&gt; mapping(uint25
     int256 cumulativeShortFee;
 }
 </code></pre>
-					<p>
-						The <code>liquidationSnapshotKey</code> is computed from the active liquidation id, liquidation timestamp, and PartyA nonce.
-						This avoids storing the same timestamp and liquidation id inside every individual snapshot.
-					</p>
-					<p>The external API for this path lives on the separate <code>PartyALiquidationSnapshotFacet</code>:</p>
-					<pre><code class="language-solidity">liquidatePartyAWithSnapshot(address partyA, LiquidationSnapshotSig liquidationSig)
-singleStepLiquidatePartyAWithSnapshot(address partyA, LiquidationSnapshotSig liquidationSig, uint256[] quoteIds)
-</code></pre>
+					<p>The key is the signed <code>liquidationId</code> stored for the active PartyA liquidation.</p>
+					<p>In the multi-step path, these fields are populated in two calls:</p>
+					<ul>
+						<li>
+							<code>liquidatePartyAWithSnapshot</code> starts liquidation and sets
+							<code>liquidationUsesPartyBSymbolSnapshots[partyA][liquidationId] = true</code>. This call requires an empty
+							<code>states</code> array.
+						</li>
+						<li>
+							<code>setSymbolsPriceWithSnapshot</code> verifies that the signed <code>liquidationId</code> and timestamp match the active
+							liquidation, then writes each <code>states</code> entry into <code>liquidationPartyBSymbolSnapshots</code>.
+						</li>
+					</ul>
 					<p>
 						The snapshot facet emits <code>SetPartyALiquidationSnapshot</code> with <code>partyBs</code>, <code>symbolIds</code>,
-						<code>prices</code>, and cumulative funding arrays. It also emits the legacy <code>SetSymbolsPrices</code> event for
+						<code>prices</code>, and cumulative funding arrays. It also emits the existing <code>SetSymbolsPrices</code> event for
 						compatibility with existing liquidation indexers.
 					</p>
-					<h2 id="settlement-behavior-after-the-fix">Settlement Behavior After The Fix</h2>
+					<h2 id="method-order-before-and-now">Method Order Before And Now</h2>
+					<p>The liquidation phases stay the same. What changes in v0.8.6 is the setup and price/funding source.</p>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Path</th>
+									<th>Liquidator call order</th>
+									<th>Price and funding source</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Before v0.8.6, normal price-only</td>
+									<td>
+										<ol>
+											<li><code>liquidatePartyA(partyA, liquidationSig)</code></li>
+											<li><code>setSymbolsPrice(partyA, liquidationSig)</code></li>
+											<li><code>liquidatePendingPositionsPartyA(partyA)</code></li>
+											<li><code>liquidatePositionsPartyA(partyA, quoteIds)</code></li>
+											<li><code>settlePartyALiquidation(partyA, partyBs)</code></li>
+										</ol>
+									</td>
+									<td>
+										Prices came from <code>setSymbolsPrice</code>. Funding was reconstructed later from
+										<code>getAccumulatedFundingFeeAt</code>.
+									</td>
+								</tr>
+								<tr>
+									<td>Before v0.8.6, deferred price-only</td>
+									<td>
+										<ol>
+											<li><code>deferredLiquidatePartyA(partyA, deferredLiquidationSig)</code></li>
+											<li><code>deferredSetSymbolsPrice(partyA, deferredLiquidationSig)</code></li>
+											<li><code>liquidatePendingPositionsPartyA(partyA)</code></li>
+											<li><code>liquidatePositionsPartyA(partyA, quoteIds)</code></li>
+											<li><code>settlePartyALiquidation(partyA, partyBs)</code></li>
+										</ol>
+									</td>
+									<td>
+										Prices came from <code>deferredSetSymbolsPrice</code>. Funding was still reconstructed later from
+										<code>getAccumulatedFundingFeeAt</code>.
+									</td>
+								</tr>
+								<tr>
+									<td>v0.8.6 snapshot</td>
+									<td>
+										<ol>
+											<li><code>liquidatePartyAWithSnapshot(partyA, liquidationSnapshotSig)</code> with empty <code>states</code></li>
+											<li><code>setSymbolsPriceWithSnapshot(partyA, liquidationSnapshotSig)</code> with signed <code>states</code></li>
+											<li><code>liquidatePendingPositionsPartyAWithSnapshot(partyA)</code></li>
+											<li><code>liquidatePositionsPartyAWithSnapshot(partyA, quoteIds)</code></li>
+											<li><code>settlePartyALiquidationWithSnapshot(partyA, partyBs)</code></li>
+										</ol>
+									</td>
+									<td>
+										Prices and cumulative funding come from the signed PartyB-symbol snapshot stored by
+										<code>setSymbolsPriceWithSnapshot</code>.
+									</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<h2 id="new-settlement-behavior">New Settlement Behavior</h2>
 					<p>
-						When <code>liquidatePositionsPartyA</code> processes a quote, it checks whether the active liquidation uses signed
-						PartyB-symbol snapshots.
+						When <code>liquidatePositionsPartyA</code> processes a quote, it reads
+						<code>liquidationUsesPartyBSymbolSnapshots[partyA][liquidationId]</code> to decide which accounting path to use.
 					</p>
 					<p>If snapshot-backed pricing is active:</p>
 					<ul>
@@ -210,67 +261,23 @@ singleStepLiquidatePartyAWithSnapshot(address partyA, LiquidationSnapshotSig liq
 					</ul>
 					<p>If snapshot-backed pricing is not active:</p>
 					<ul>
-						<li>the legacy path remains unchanged;</li>
+						<li>the non-snapshot path remains unchanged;</li>
 						<li>price comes from <code>setSymbolsPrice</code>; and</li>
 						<li>funding is calculated with <code>getAccumulatedFundingFeeAt(quote.id, liquidationDetail.timestamp)</code>.</li>
 					</ul>
 					<p>
 						Snapshot-backed pricing is all-or-nothing for an active liquidation. Once the snapshot marker is set, the liquidation cannot
-						silently mix signed funding for some quotes with legacy funding for others.
+						silently mix signed funding for some quotes with live-storage funding for others.
 					</p>
-					<h2 id="why-we-did-not-store-funding-history">Why We Did Not Store Funding History</h2>
-					<p>
-						An on-chain funding-history fix would require normal solver operations to write additional history whenever funding changes or
-						when open/close logic moves accumulated funding state. That would make the common path more expensive for every market, even
-						though liquidation is the uncommon path.
-					</p>
-					<p>The snapshot design moves the cost to liquidation:</p>
-					<ul>
-						<li>
-							normal <code>setFundingFee</code>, open, close, and accumulated funding charge flows do not write liquidation history;
-						</li>
-						<li>liquidators write only the PartyB-symbol states needed for the liquidation they are processing;</li>
-						<li>
-							large PartyA accounts still use explicit <code>quoteIds</code> batching and never require iterating every PartyA position
-							on-chain; and
-						</li>
-						<li>deployments can keep the legacy path during migration, then disable it with a feature flag.</li>
-					</ul>
-					<h2 id="legacy-deprecation-flag">Legacy Deprecation Flag</h2>
-					<p>Governance can require the new snapshot flow by calling:</p>
+					<h2 id="price-only-deprecation-flag">Price-Only Deprecation Flag</h2>
+					<p>Admins can require the new snapshot flow by calling:</p>
 					<pre><code class="language-solidity">setLegacyPartyALiquidationDeprecated(true)
 </code></pre>
-					<p>When enabled, these legacy start entrypoints revert with <code>LiquidationFacet: Legacy liquidation deprecated</code>:</p>
+					<p>When enabled, these price-only liquidation entrypoints revert with <code>LiquidationFacet: Legacy liquidation deprecated</code>:</p>
 					<ul>
 						<li><code>liquidatePartyA</code></li>
 						<li><code>deferredLiquidatePartyA</code></li>
 					</ul>
-					<p>
-						The flag does not block <code>liquidatePartyAWithSnapshot</code>, <code>singleStepLiquidatePartyAWithSnapshot</code>,
-						pending-position liquidation, open-position liquidation, settlement, or dispute resolution. Existing legacy liquidations that
-						already started can still set prices through <code>setSymbolsPrice</code> or <code>deferredSetSymbolsPrice</code>, then
-						continue through <code>liquidatePositionsPartyA</code> and <code>settlePartyALiquidation</code>.
-					</p>
-					<h2 id="expected-result">Expected Result</h2>
-					<p>
-						After this fix, PartyB can update funding after PartyA is marked liquidated, but that update does not change snapshot-backed
-						liquidation settlement for the already captured liquidation timestamp.
-					</p>
-					<p>The expected behavior is:</p>
-					<ul>
-						<li>PartyA debt is fixed to the Muon-signed liquidation snapshot.</li>
-						<li>Later funding changes are ignored for that snapshot-backed liquidation.</li>
-						<li>Missing PartyB-symbol coverage fails explicitly.</li>
-						<li>Large liquidations remain batchable.</li>
-						<li>Normal solver funding updates do not become more expensive just to support historical liquidation reads.</li>
-					</ul>
-					<h2 id="related-snapshot-entrypoints">Related Snapshot Entrypoints</h2>
-					<p>
-						<code>liquidatePartyAWithSnapshot</code> is the staged starter for this payload.
-						<code>singleStepLiquidatePartyAWithSnapshot</code> is the full single-transaction path for accounts that can be closed and
-						settled immediately. Both are documented separately in
-						<a href="partya-liquidation-snapshot-entrypoints.html">PartyA Liquidation Snapshot Entrypoints</a>.
-					</p>
 				</article>
 			</main>
 		</div>

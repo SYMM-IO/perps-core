@@ -126,6 +126,7 @@
 			<article class="doc-article" id="full-document">
 				<h2 id="1-the-problem">1. The Problem</h2>
 <p>SYMMIO enforces a 12-hour withdrawal cooldown on all user withdrawals. This cooldown exists for security, but it creates a poor user experience -- users who want to move funds quickly are stuck waiting half a day. The Express Withdrawal System solves this by introducing a provider that fronts funds to users immediately or near-immediately, then gets reimbursed when SYMMIO releases the actual tokens after cooldown.</p>
+<aside class="callout callout-note"><strong>Operator guide</strong> The detailed bot runbook is kept separately as the <a href="express-bot-operations-checklist.html">Express Provider Bot Operations Checklist</a>. It is an integration guide, not a standalone changelog item.</aside>
 <h2 id="2-the-solution">2. The Solution</h2>
 <p>An ExpressProvider contract fronts funds from liquidity pools and credit lines so users can withdraw in seconds instead of hours, then automatically gets reimbursed when SYMMIO's 12-hour cooldown expires.</p>
 <h2 id="3-how-it-works-high-level">3. How It Works (High Level)</h2>
@@ -1080,11 +1081,11 @@ function claimOperatorFees(address affiliate, address to) external onlyRole(FEE_
 </table></div>
 <p>Roles are stored in diamond storage and managed via <code>grantRole</code>/<code>revokeRole</code> on <code>ControlFacet</code> (owner-only).</p>
 <h3 id="10-2-credit-line-access-control">10.2 Credit Line Access Control</h3>
-<p>Credit line operations no longer use separate OZ AccessControl roles. Since the credit line logic is integrated into the ExpressProvider diamond:</p>
+<p>Credit used to be a separate management surface, which meant operators had to reason about another contract and another role set. In this design, the credit line is part of the ExpressProvider diamond: the same withdrawal flow that reserves, activates, settles, releases, or covers credit debt updates <code>CreditLineStorage</code> through <code>LibCreditLine</code>.</p>
 <ul>
 <li><strong>Configuration</strong> (Muon config, protocol caps, affiliate caps, pause, blacklist): Controlled by <code>SETTER_ROLE</code> on the diamond</li>
-<li><strong>Debt lifecycle</strong> (<code>reserveDebt</code>, <code>activate</code>, <code>settle</code>, <code>releaseReservation</code>, <code>coverLoss</code>): Called internally by <code>LibCreditLine</code> from within the diamond's facets -- no external role needed</li>
-<li>The old <code>EXPRESS_PROVIDER_ROLE</code>, <code>PROTOCOL_ADMIN_ROLE</code>, and <code>AFFILIATE_ADMIN_ROLE</code> on the standalone CreditLineManager no longer exist</li>
+<li><strong>Debt lifecycle</strong> (<code>reserveDebt</code>, <code>activate</code>, <code>settle</code>, <code>releaseReservation</code>, <code>coverLoss</code>): Called internally from the withdrawal hooks and operator flows</li>
+<li><strong>Removed external credit roles:</strong> there is no standalone <code>EXPRESS_PROVIDER_ROLE</code>, <code>PROTOCOL_ADMIN_ROLE</code>, or <code>AFFILIATE_ADMIN_ROLE</code> to grant for credit debt accounting.</li>
 </ul>
 <h3 id="10-3-validator-registration">10.3 Validator Registration</h3>
 <p>Validators are not a role -- they are registered per-affiliate via <code>setValidator(affiliate, validator, enabled)</code> (SETTER_ROLE). Using <code>address(0)</code> as affiliate sets a default validator for all affiliates. The fallback logic checks affiliate-specific registration first, then falls back to the <code>address(0)</code> default.</p>

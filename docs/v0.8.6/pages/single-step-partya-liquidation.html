@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Single-Step PartyA Liquidation - Symmio Core v0.8.6</title>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+	</head>
+	<body class="doc-page">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="doc-topbar">
+			<a class="brand" href="../index.html"
+				><span class="brand-mark">8.6</span><span><strong>Symmio Docs</strong><small>v0.8.6 reference</small></span></a
+			>
+			<nav class="top-actions" aria-label="Page actions">
+				<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+			</nav>
+		</header>
+
+		<div class="reader-shell">
+			<aside class="toc-panel side-toc" aria-label="Page navigation">
+				<a class="button primary back-home" href="../index.html">Back to home</a>
+				<div class="toc-card">
+					<p class="toc-title">On this page</p>
+					<a class="toc-link level-2" href="#summary">Summary</a>
+					<a class="toc-link level-2" href="#api">API</a>
+				</div>
+			</aside>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">v0.8.6</a><span>/</span><strong>Liquidation</strong></nav>
+					<div class="reader-title-row">
+						<div>
+							<h1>Single-Step PartyA Liquidation</h1>
+							<p class="hero-copy">
+								Small snapshot liquidations do not need the full multi-step sequence when every close and settlement fits in one
+								transaction.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="summary">Summary</h2>
+					<p>
+						Snapshot liquidation makes settlement use signed historical funding, but it does not by itself make liquidation shorter to
+						run. Without the single-step wrapper, liquidation still has multiple calls for start, snapshot state submission, pending quote
+						handling, open-position liquidation, and PartyB settlement.
+					</p>
+					<p>
+						The wrapper became more useful after the AccountLayer changes in v0.8.5. Many accounts now carry positions in a single market,
+						and some hold only one open position. For those accounts, the full snapshot liquidation can often fit in one transaction.
+					</p>
+					<p>
+						<code>singleStepLiquidatePartyAWithSnapshot</code> is the compact path for accounts where all of that work fits in one
+						transaction. It uses the same signed snapshot payload, closes the supplied <code>quoteIds</code>, settles the supplied
+						<code>partyBs</code>, and reverts if anything remains unfinished.
+					</p>
+
+					<h2 id="api">API</h2>
+					<pre><code class="language-solidity">singleStepLiquidatePartyAWithSnapshot(
+    partyA,
+    liquidationSnapshotSig,
+    quoteIds,
+    partyBs
+)
+</code></pre>
+					<p>The function takes the inputs needed to finish the liquidation:</p>
+					<ul>
+						<li><code>partyA</code>: the account being liquidated.</li>
+						<li><code>liquidationSnapshotSig</code>: the Muon-signed historical insolvency and PartyB-symbol snapshot payload.</li>
+						<li><code>quoteIds</code>: open positions to close in this transaction.</li>
+						<li><code>partyBs</code>: PartyB settlement buckets to settle in this transaction.</li>
+					</ul>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Protocol, operations, and integration notes.</span>
+		</footer>
+	</body>
+</html>

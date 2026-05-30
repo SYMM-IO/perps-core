@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>BalanceChange Event Cleanup - Symmio Core v0.8.6</title>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+	</head>
+	<body class="doc-page">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="doc-topbar">
+			<a class="brand" href="../index.html"
+				><span class="brand-mark">8.6</span><span><strong>Symmio Docs</strong><small>v0.8.6 reference</small></span></a
+			>
+			<nav class="top-actions" aria-label="Page actions">
+				<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+			</nav>
+		</header>
+
+		<div class="reader-shell">
+			<aside class="toc-panel side-toc" aria-label="Page navigation">
+				<a class="button primary back-home" href="../index.html">Back to home</a>
+				<div class="toc-card">
+					<p class="toc-title">On this page</p>
+					<a class="toc-link level-2" href="#summary">Summary</a>
+					<a class="toc-link level-2" href="#why-event-labels-changed">Why Event Labels Changed</a>
+					<a class="toc-link level-2" href="#balancechange-type-model">BalanceChange Type Model</a>
+					<a class="toc-link level-2" href="#consumer-impact">Consumer Impact</a>
+				</div>
+			</aside>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">v0.8.6</a><span>/</span><strong>Events</strong></nav>
+					<div class="reader-title-row">
+						<div>
+							<h1>BalanceChange Event Cleanup</h1>
+							<p class="hero-copy">
+								v0.8.6 makes liquidation and clearing-house balance events describe the bucket that actually changes.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="summary">Summary</h2>
+					<p>
+						Some liquidation-time credits used to be emitted as realized PnL even when storage moved the amount into a more specific
+						bucket, such as reimbursement, deferred balance, released pending fees, or LF. That forced indexers to infer accounting meaning
+						from surrounding flow.
+					</p>
+					<p>
+						v0.8.6 makes those events follow the bucket that actually changes. The new enum value is <code>REIMBURSEMENT_IN</code>, and
+						related liquidation/Clearing House flows now use existing specific types instead of overloading realized PnL.
+					</p>
+
+					<h2 id="why-event-labels-changed">Why Event Labels Changed</h2>
+					<p>
+						The old event stream often answered only "PartyA balance increased." For liquidation and Clearing House flows, that was not
+						enough: reimbursement, deferred balance, released open fees, and LF are different accounting buckets.
+					</p>
+					<ul>
+						<li>
+							<strong>Clearing House reimbursement credits:</strong> credits to <code>partyAReimbursement</code> emit
+							<code>REIMBURSEMENT_IN</code>.
+						</li>
+						<li>
+							<strong>Pending-fee reimbursement:</strong> released open-fee reserves moved into <code>partyAReimbursement</code> emit
+							<code>PLATFORM_FEE_IN</code>.
+						</li>
+						<li>
+							<strong>Deferred balance release:</strong> deferred excess returned to PartyA emits <code>DEFERRED_BALANCE_IN</code>.
+						</li>
+						<li>
+							<strong>PartyA liquidation fee:</strong> final settlement emits <code>LF_OUT</code> from the liquidated PartyA and
+							<code>LF_IN</code> to the liquidation starter.
+						</li>
+					</ul>
+					<p>
+						The shared idea is the same in every case: event labels should describe accounting movement, not just the fact that a balance
+						increased.
+					</p>
+
+					<h2 id="balancechange-type-model">BalanceChange Type Model</h2>
+					<p>
+						<code>REIMBURSEMENT_IN</code> is appended after <code>DEFERRED_BALANCE_OUT</code>. That keeps every existing
+						<code>BalanceChangeType</code> integer stable, so consumers add the new trailing label without shifting older decoders:
+					</p>
+					<pre><code class="language-solidity">enum BalanceChangeType {
+    ALLOCATE,
+    DEALLOCATE,
+    PLATFORM_FEE_IN,
+    PLATFORM_FEE_OUT,
+    REALIZED_PNL_IN,
+    REALIZED_PNL_OUT,
+    CVA_IN,
+    CVA_OUT,
+    LF_IN,
+    LF_OUT,
+    FUNDING_FEE_IN,
+    FUNDING_FEE_OUT,
+    DEFERRED_BALANCE_IN,
+    DEFERRED_BALANCE_OUT,
+    REIMBURSEMENT_IN
+}
+</code></pre>
+					<p>
+						Clearing House distribution selects the emitted type from the receiver path:
+					</p>
+					<ul>
+						<li>
+							PartyB receiver: credit <code>partyBAllocatedBalances</code> and emit
+							<code>BalanceChangePartyB(..., REALIZED_PNL_IN)</code>.
+						</li>
+						<li>
+							Liquidating PartyA receiver: credit <code>partyAReimbursement</code> and emit
+							<code>BalanceChangePartyA(..., REIMBURSEMENT_IN)</code>.
+						</li>
+						<li>
+							Non-liquidating PartyA or other receiver: credit <code>allocatedBalances</code> and emit
+							<code>BalanceChangePartyA(..., REALIZED_PNL_IN)</code>.
+						</li>
+					</ul>
+					<pre><code class="language-solidity">if (maLayout.liquidationStatus[receivers[i]]) {
+    accountLayout.partyAReimbursement[receivers[i]] += amount;
+    emit SharedEvents.BalanceChangePartyA(receivers[i], amount, SharedEvents.BalanceChangeType.REIMBURSEMENT_IN);
+} else {
+    accountLayout.allocatedBalances[receivers[i]] += amount;
+    emit SharedEvents.BalanceChangePartyA(receivers[i], amount, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+}
+</code></pre>
+
+					<h2 id="consumer-impact">Consumer Impact</h2>
+					<p>
+						Event consumers should stop treating all liquidation-time PartyA credits as realized PnL. In v0.8.6, the event type carries
+						more bucket information:
+					</p>
+					<ul>
+						<li><code>REIMBURSEMENT_IN</code> maps to <code>partyAReimbursement</code>.</li>
+						<li><code>PLATFORM_FEE_IN</code> can represent released open fees moved into the reimbursement bucket during liquidation.</li>
+						<li><code>DEFERRED_BALANCE_IN</code> maps to deferred excess returned to PartyA.</li>
+						<li><code>LF_IN</code> for PartyA liquidation finalization maps to the liquidation starter's allocated balance.</li>
+					</ul>
+					<p>
+						Existing enum values keep their prior numeric positions. Consumers that decode <code>BalanceChangeType</code> by integer
+						should add the new trailing value without shifting older labels.
+					</p>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Protocol, operations, and integration notes.</span>
+		</footer>
+	</body>
+</html>

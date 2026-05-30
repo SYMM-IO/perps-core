@@ -47,11 +47,14 @@
 				</header>
 
 				<article class="doc-article" id="full-document">
-					<p>Version: v0.8.6 release note.</p>
 					<p>
-						This document describes the per-function Muon UPNL signature validity configuration added in v0.8.6. The change lets operators
-						use different freshness windows for different protocol operation categories while keeping the existing global
-						<code>setMuonConfig</code> value as the fallback.
+						Before v0.8.6, every UPNL-bearing Muon signature shared the same global freshness window from <code>setMuonConfig</code>. That
+						forced fast account-management operations and slower liquidation flows to use one timeout, even though they have different
+						operational needs.
+					</p>
+					<p>
+						v0.8.6 keeps the global value as the fallback, but lets operators override the UPNL validity window per
+						<code>MuonFunction</code> category.
 					</p>
 					<hr />
 					<h2 id="summary">Summary</h2>
@@ -63,17 +66,10 @@
 						operational needs are different. For example, deallocation can reasonably require a very fresh signature such as
 						<code>10</code> seconds, while PartyA liquidation may need a larger submission window such as <code>120</code> seconds.
 					</p>
-					<p>v0.8.6 adds optional overrides by <code>MuonFunction</code>:</p>
+					<p>The fix is intentionally small: each <code>MuonFunction</code> can optionally override the global UPNL validity window.</p>
 					<pre><code class="language-solidity">setMuonFunctionUpnlValidTime(func, upnlValidTime)
 </code></pre>
-					<p>The override is intentionally controlled by a single setter:</p>
-					<ul>
-						<li>Passing a nonzero <code>upnlValidTime</code> sets the override for that function category.</li>
-						<li>Passing <code>0</code> clears the override for that function category.</li>
-						<li>
-							A cleared or unset function category falls back to the global <code>upnlValidTime</code> from <code>setMuonConfig</code>.
-						</li>
-					</ul>
+					<p>A nonzero value sets the category-specific window. Passing <code>0</code> clears that category and makes it inherit the global <code>upnlValidTime</code> again.</p>
 					<p>
 						There is no separate <code>clear</code> method and no separate <code>hasOverride</code> storage flag. In the per-function
 						mapping, <code>0</code> is the unset value.
@@ -221,14 +217,15 @@
 					</p>
 					<hr />
 					<h2 id="effective-validity-resolution">Effective Validity Resolution</h2>
-					<p>UPNL timestamp checks now go through:</p>
+					<p>Adding the configuration alone was not enough; every UPNL freshness check needed to resolve the correct window for its operation category.</p>
+					<p>v0.8.6 routes those checks through:</p>
 					<pre><code class="language-solidity">LibMuon.verifyUpnlTimestamp(timestamp, func)
 </code></pre>
-					<p>which resolves the effective validity with:</p>
+					<p>That helper resolves the effective validity with:</p>
 					<pre><code class="language-solidity">LibMuon.getUpnlValidTime(func)
 </code></pre>
 					<p>
-						This helper first checks <code>upnlValidTimeByFunction[func]</code>. If the mapping value is zero, it falls back to the global
+						<code>LibMuon.getUpnlValidTime(func)</code> first checks <code>upnlValidTimeByFunction[func]</code>. If the mapping value is zero, it falls back to the global
 						<code>MuonStorage.upnlValidTime</code>.
 					</p>
 					<p>The change was applied across the Muon helper libraries that validate UPNL-bearing signatures:</p>
