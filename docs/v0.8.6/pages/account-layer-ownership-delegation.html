@@ -55,17 +55,14 @@
 			
 	
 			<article class="doc-article" id="full-document">
-				<p>Version: v0.8.6 release note.</p>
-<p>This document describes two AccountLayer changes that affect account ownership and affiliate observability:</p>
-<ol>
-<li>Role-gated creation of SubAccounts for another owner.</li>
-<li>Direct owner-initiated transfer of SubAccount ownership to another address.</li>
-</ol>
+<p>Before v0.8.6, SubAccount creation was mostly self-service: the signer created accounts for itself. That was limiting for protocol-run onboarding, migration, or automation flows that need to prepare accounts for a target owner without becoming that owner.</p>
+<p>v0.8.6 keeps the existing self-service path unchanged and adds a narrow delegated path. A caller with <code>ACCOUNT_CREATOR_ROLE</code> can call <code>createSubAccountsFor(owner, affiliate, accountsData)</code>, and the created SubAccounts are owned by the supplied <code>owner</code>, not by the caller.</p>
+<p>The same release also adds direct ownership transfer for existing SubAccounts. Instead of treating transfer like an empty-account migration, <code>transferSubAccountOwnership(subAccount, newOwner)</code> moves the stored owner and owner indexes while keeping the same SubAccount, Virtual Accounts, balances, positions, and affiliate state attached to the same addresses.</p>
 <p>The changes are intentionally narrow. They do not change the existing self-service SubAccount creation path, virtual account address derivation, Symmio core balance accounting, or virtual account lifecycle logic.</p>
 <hr>
 <h2 id="summary">Summary</h2>
-<p>The AccountLayer now supports a protocol-authorized account creator role. A caller with <code>ACCOUNT_CREATOR_ROLE</code> can create SubAccounts for a specified owner by calling <code>createSubAccountsFor(owner, affiliate, accountsData)</code>.</p>
-<p>SubAccount owners can also transfer ownership directly with <code>transferSubAccountOwnership(subAccount, newOwner)</code>. This updates the stored owner and the owner-to-SubAccount indexes. Since Virtual Account ownership resolves through the parent SubAccount, all Virtual Accounts under the transferred SubAccount become controlled by the new owner automatically.</p>
+<p>Delegated creation uses the same internal creation path as normal SubAccount creation, but writes the supplied owner into storage. Ownership transfer updates the stored owner and the owner-to-SubAccount indexes.</p>
+<p>Since Virtual Account ownership resolves through the parent SubAccount, all Virtual Accounts under the transferred SubAccount become controlled by the new owner automatically.</p>
 <p>Affiliate hooks can observe ownership transfers through <code>onSubAccountOwnershipTransfer(subAccount, oldOwner, newOwner)</code>.</p>
 <hr>
 <h2 id="changed-interfaces">Changed Interfaces</h2>
@@ -123,27 +120,27 @@
 <p>If the hook reverts, the entire transfer reverts, including the owner/index updates. This matches the existing AccountLayer lifecycle hook behavior for SubAccount creation and deletion.</p>
 <hr>
 <h2 id="storage-impact">Storage Impact</h2>
-<p>No new storage variables are introduced.</p>
-<p>The new account creator role uses the existing AccountLayer role storage:</p>
-<pre><code class="language-solidity">mapping(address =&gt; mapping(bytes32 =&gt; bool)) hasRole;
-</code></pre>
-<p>Ownership transfer mutates only existing account storage:</p>
+<p>The change does not add a second ownership model. AccountLayer already stores SubAccount ownership and owner indexes, so delegated creation and transfer reuse those fields.</p>
 <pre><code class="language-solidity">mapping(address =&gt; SubAccountData) subAccounts;
 mapping(address =&gt; EnumerableSet.AddressSet) userToSubAccounts;
 </code></pre>
-<p>The operation updates <code>subAccounts[subAccount].owner</code> and moves the SubAccount address between the two owner index sets.</p>
+<p>Delegated creation writes the supplied owner into the existing SubAccount record. Ownership transfer updates <code>subAccounts[subAccount].owner</code> and moves the SubAccount address from the old owner's index set to the new owner's index set.</p>
+<p>The new creator permission also reuses existing AccountLayer role storage:</p>
+<pre><code class="language-solidity">mapping(address =&gt; mapping(bytes32 =&gt; bool)) hasRole;
+</code></pre>
 <hr>
 <h2 id="ownership-resolution">Ownership Resolution</h2>
 <p>SubAccounts store their owner directly:</p>
 <pre><code class="language-solidity">SubAccountData.owner
 </code></pre>
-<p>Virtual Accounts do not store their own owner. <code>LibAccountLayerUtils.resolveAccountOwner(account)</code> resolves a VA owner through its parent SubAccount. Therefore, transferring a SubAccount also transfers effective control of all currently active, inactive, and future Virtual Accounts under that SubAccount.</p>
+<p>Virtual Accounts do not store their own owner. Their owner is resolved through the parent SubAccount with <code>LibAccountLayerUtils.resolveAccountOwner(account)</code>.</p>
+<p>That design is what makes transfer small and predictable: changing the SubAccount owner also changes effective control of all current, inactive, and future Virtual Accounts under that SubAccount, without rewriting VA storage.</p>
+<p>Balances, allocations, pending quotes, open positions, and reusable VA pools stay attached to the same SubAccount and VA addresses. Only owner resolution changes.</p>
 <p>Implications:</p>
 <ul>
 <li>The new owner can execute all owner-gated operations for the SubAccount.</li>
 <li>The old owner loses direct owner-gated access immediately.</li>
 <li>Owner-gated Virtual Account actions follow the parent SubAccount owner after transfer.</li>
-<li>Any balances, allocations, pending quotes, open positions, and reusable VA pools remain attached to the same SubAccount/VA addresses.</li>
 <li>Existing InstantLayer delegations intentionally remain active after the transfer. See the security note below.</li>
 </ul>
 <p>The transfer is a true ownership transfer, not an empty-account-only migration.</p>

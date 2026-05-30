@@ -36,8 +36,8 @@
 						<div>
 							<h1>Symmio Core v0.8.6 Overview</h1>
 							<p class="hero-copy">
-								Start here for the v0.8.6 change map: faster withdrawals, cleaner AccountLayer ownership, safer liquidation
-								accounting, and operational shutdown/freshness controls.
+								Start here to read v0.8.6 as a set of targeted fixes: faster exits without removing withdrawal cooldown protections,
+								cleaner AccountLayer and affiliate operations, and safer liquidation/freshness handling.
 							</p>
 						</div>
 					</div>
@@ -45,15 +45,18 @@
 
 				<article class="doc-article" id="full-document">
 					<p>
-						Symmio v0.8.6 focuses on AccountLayer ownership and admin surfaces, Express Withdrawal design and operations, and liquidation
-						accounting fixes. Use this page as the entry point for protocol teams reviewing the release delta.
+						Use this page as the release-delta map. The changes are grouped around three problems: users needed faster withdrawals
+						without bypassing the 12-hour safety model, operators needed clearer account and affiliate lifecycle controls, and liquidation
+						accounting needed signed historical state instead of mutable live funding reads.
 					</p>
 
 					<h2 id="review-order">Suggested Review Order</h2>
 					<h3 id="protocol-review">Protocol review</h3>
 					<ol>
-						<li><a href="liquidation-funding-snapshot-fix.html">PartyA Liquidation Funding Snapshot Fix</a></li>
-						<li><a href="partya-liquidation-snapshot-entrypoints.html">PartyA Liquidation Snapshot Entrypoints</a></li>
+						<li><a href="liquidation-funding-snapshot-fix.html">PartyA Liquidation Snapshot Flow</a></li>
+						<li><a href="single-step-partya-liquidation.html">Single-Step PartyA Liquidation</a></li>
+						<li><a href="partya-liquidation-fee-recipient.html">PartyA Liquidation Fee Recipient Cleanup</a></li>
+						<li><a href="balance-change-event-cleanup.html">BalanceChange Event Cleanup</a></li>
 						<li><a href="muon-upnl-validity-overrides.html">Muon UPNL Validity Overrides</a></li>
 						<li><a href="account-layer-ownership-delegation.html">AccountLayer Delegated Creation &amp; Ownership Transfer</a></li>
 						<li><a href="affiliate-shutdown-flow.html">Affiliate Shutdown Flow</a></li>
@@ -67,8 +70,10 @@
 						<li><a href="express-bot-operations-checklist.html">Express Provider Bot Operations Checklist</a></li>
 						<li><a href="affiliate-shutdown-flow.html">Affiliate Shutdown Flow</a></li>
 						<li><a href="muon-upnl-validity-overrides.html">Muon UPNL Validity Overrides</a></li>
-						<li><a href="liquidation-funding-snapshot-fix.html">PartyA Liquidation Funding Snapshot Fix</a></li>
-						<li><a href="partya-liquidation-snapshot-entrypoints.html">PartyA Liquidation Snapshot Entrypoints</a></li>
+						<li><a href="liquidation-funding-snapshot-fix.html">PartyA Liquidation Snapshot Flow</a></li>
+						<li><a href="single-step-partya-liquidation.html">Single-Step PartyA Liquidation</a></li>
+						<li><a href="partya-liquidation-fee-recipient.html">PartyA Liquidation Fee Recipient Cleanup</a></li>
+						<li><a href="balance-change-event-cleanup.html">BalanceChange Event Cleanup</a></li>
 						<li><a href="account-layer-ownership-delegation.html">AccountLayer Delegated Creation &amp; Ownership Transfer</a></li>
 					</ol>
 
@@ -79,8 +84,10 @@
 						<li><a href="express-bot-operations-checklist.html">Express Provider Bot Operations Checklist</a></li>
 						<li><a href="affiliate-shutdown-flow.html">Affiliate Shutdown Flow</a></li>
 						<li><a href="muon-upnl-validity-overrides.html">Muon UPNL Validity Overrides</a></li>
-						<li><a href="liquidation-funding-snapshot-fix.html">PartyA Liquidation Funding Snapshot Fix</a></li>
-						<li><a href="partya-liquidation-snapshot-entrypoints.html">PartyA Liquidation Snapshot Entrypoints</a></li>
+						<li><a href="liquidation-funding-snapshot-fix.html">PartyA Liquidation Snapshot Flow</a></li>
+						<li><a href="single-step-partya-liquidation.html">Single-Step PartyA Liquidation</a></li>
+						<li><a href="partya-liquidation-fee-recipient.html">PartyA Liquidation Fee Recipient Cleanup</a></li>
+						<li><a href="balance-change-event-cleanup.html">BalanceChange Event Cleanup</a></li>
 					</ul>
 				</article>
 			</main>

@@ -17,57 +17,22 @@
 					<p class="eyebrow">Technical Review Docs</p>
 					<h1>Symmio Core v0.8.6 Changelog</h1>
 					<p class="hero-copy">
-						v0.8.6 adds credit-backed Express Withdrawal, AccountLayer delegated ownership controls, affiliate shutdown handling, Muon
-						UPNL freshness overrides, PartyA liquidation funding snapshot fixes, and liquidation-fee recipient cleanup. The update is
-						mainly about faster withdrawals, cleaner account administration, and safer liquidation settlement.
+						v0.8.6 is mostly about removing operational weak spots: withdrawals were safe but slow, AccountLayer ownership flows were too
+						rigid for delegated operations, and PartyA liquidation settlement could depend on funding state that changed later. The release
+						adds Express Withdrawal, delegated ownership controls, shutdown and freshness controls, and snapshot-backed liquidation
+						settlement.
 					</p>
 					<div class="hero-actions">
-						<a class="button primary" href="#docs">Browse docs</a>
+						<a class="button primary" href="#docs">View changelog</a>
 					</div>
 				</div>
 			</div>
 		</header>
 		<main class="index-shell">
-			<section class="release-highlights" aria-labelledby="release-highlights-title">
-				<div class="section-heading">
-					<p class="eyebrow">Changelog</p>
-					<h2 id="release-highlights-title">Release highlights</h2>
-				</div>
-				<div class="change-list">
-					<div class="change-item">
-						<div class="change-meta">
-							<strong>Liquidation</strong>
-							<span>PartyA LF recipient</span>
-						</div>
-						<div class="change-copy">
-							<h3>PartyA liquidation fee is paid only to the liquidation starter.</h3>
-							<p>
-								Price-setting and later liquidation calls no longer create extra LF recipients. The LF is paid only after final
-								settlement, so the starter already has incentive to complete the liquidation flow. If a liquidator misbehaves, the
-								protocol can deactivate that liquidator through role/admin controls instead of splitting LF across steps.
-							</p>
-						</div>
-					</div>
-					<div class="change-item">
-						<div class="change-meta">
-							<strong>Events</strong>
-							<span>BalanceChange typing</span>
-						</div>
-						<div class="change-copy">
-							<h3>Reimbursement credits now have their own balance-change type.</h3>
-							<p>
-								Clearing-house distributions routed into a liquidating PartyA's reimbursement bucket emit
-								<code>REIMBURSEMENT_IN</code> instead of pretending the allocated balance received immediate realized PnL. This keeps
-								event consumers aligned with the bucket that actually changes before final liquidation settlement.
-							</p>
-						</div>
-					</div>
-				</div>
-			</section>
 			<section id="docs" class="doc-browser" aria-labelledby="docs-title">
 				<div class="section-heading">
-					<p class="eyebrow">Documents</p>
-					<h2 id="docs-title">Changelog pages</h2>
+					<p class="eyebrow">Changelog</p>
+					<h2 id="docs-title">All v0.8.6 changes</h2>
 				</div>
 				<div class="doc-list">
 					<a class="doc-list-item" href="pages/express-withdrawal-system-design.html">
@@ -75,66 +40,96 @@
 						<span class="doc-list-main">
 							<span class="category">Express Withdrawal</span>
 							<strong>Express Withdrawal System Design</strong>
-							<span>Withdrawal speeds, provider pools, credit-line funding, signatures, safety mechanisms, and known risks.</span>
+							<span
+								>SYMMIO's 12-hour cooldown protects withdrawals but slows exits. ExpressProvider fronts pool and credit-backed funds,
+								then reconciles when the normal withdrawal finalizes.</span
+							>
 						</span>
-						<span class="doc-list-action">Open</span>
-					</a>
-					<a class="doc-list-item" href="pages/express-bot-operations-checklist.html">
-						<span class="doc-list-index">02</span>
-						<span class="doc-list-main">
-							<span class="category">Express Withdrawal</span>
-							<strong>Express Provider Bot Operations Checklist</strong>
-							<span>Option construction, providerData encoding, signatures, scheduling, settlement, and failure handling.</span>
-						</span>
-						<span class="doc-list-action">Open</span>
+						<span class="doc-list-action">Open change</span>
 					</a>
 					<a class="doc-list-item" href="pages/account-layer-ownership-delegation.html">
-						<span class="doc-list-index">03</span>
+						<span class="doc-list-index">02</span>
 						<span class="doc-list-main">
 							<span class="category">AccountLayer</span>
 							<strong>AccountLayer Delegated Creation &amp; Ownership Transfer</strong>
 							<span
-								>Delegated SubAccount creation, direct ownership transfer, affiliate hooks, event expectations, and security
-								notes.</span
+								>Account creation and ownership handoff were tied too closely to the caller-owner model. v0.8.6 adds role-gated
+								creation for a target owner and direct owner-initiated SubAccount transfer.</span
 							>
 						</span>
-						<span class="doc-list-action">Open</span>
+						<span class="doc-list-action">Open change</span>
 					</a>
 					<a class="doc-list-item" href="pages/liquidation-funding-snapshot-fix.html">
+						<span class="doc-list-index">03</span>
+						<span class="doc-list-main">
+							<span class="category">Liquidation</span>
+							<strong>PartyA Liquidation Snapshot Flow</strong>
+							<span
+								>Funding at the liquidation timestamp could become unreconstructable after funding state moved. Snapshot liquidation
+								stores the signed PartyB-symbol funding state before positions are closed.</span
+							>
+						</span>
+						<span class="doc-list-action">Open change</span>
+					</a>
+					<a class="doc-list-item" href="pages/single-step-partya-liquidation.html">
 						<span class="doc-list-index">04</span>
 						<span class="doc-list-main">
 							<span class="category">Liquidation</span>
-							<strong>PartyA Liquidation Funding Snapshot Fix</strong>
-							<span>Funding snapshot race, Muon-signed PartyB-symbol state, settlement expectations, and compatibility notes.</span>
+							<strong>Single-Step PartyA Liquidation</strong>
+							<span
+								>After the v0.8.5 AccountLayer changes, many accounts carry one market or one position. This wrapper completes those
+								small snapshot liquidations in one all-or-revert transaction.</span
+							>
 						</span>
-						<span class="doc-list-action">Open</span>
+						<span class="doc-list-action">Open change</span>
 					</a>
-					<a class="doc-list-item" href="pages/partya-liquidation-snapshot-entrypoints.html">
+					<a class="doc-list-item" href="pages/partya-liquidation-fee-recipient.html">
 						<span class="doc-list-index">05</span>
 						<span class="doc-list-main">
 							<span class="category">Liquidation</span>
-							<strong>PartyA Liquidation Snapshot Entrypoints</strong>
-							<span>Final snapshot facet API, historical insolvency proof, staged liquidation flow, and single-step completion rules.</span>
+							<strong>PartyA Liquidation Fee Recipient Cleanup</strong>
+							<span
+								>Final PartyA LF accounting needed one unambiguous recipient. v0.8.6 records the liquidation starter and pays the capped
+								fee only to that address.</span
+							>
 						</span>
-						<span class="doc-list-action">Open</span>
+						<span class="doc-list-action">Open change</span>
+					</a>
+					<a class="doc-list-item" href="pages/balance-change-event-cleanup.html">
+						<span class="doc-list-index">06</span>
+						<span class="doc-list-main">
+							<span class="category">Events</span>
+							<strong>BalanceChange Event Cleanup</strong>
+							<span
+								>Several balance movements reused generic event types, making indexer interpretation harder. v0.8.6 emits specific types
+								for reimbursement, deferred-balance, fee, and LF movements.</span
+							>
+						</span>
+						<span class="doc-list-action">Open change</span>
 					</a>
 					<a class="doc-list-item" href="pages/affiliate-shutdown-flow.html">
-						<span class="doc-list-index">06</span>
+						<span class="doc-list-index">07</span>
 						<span class="doc-list-main">
 							<span class="category">Clearing House</span>
 							<strong>Affiliate Shutdown Flow</strong>
-							<span>Close-only affiliate wind-down, scheduled shutdown behavior, solver routes, and clearing-house cleanup.</span>
+							<span
+								>Deregistration stopped new affiliate relationships, but it did not give existing positions a clean exit path. v0.8.6
+								adds scheduled close-only shutdown, a solver window, and a Clearing House backstop.</span
+							>
 						</span>
-						<span class="doc-list-action">Open</span>
+						<span class="doc-list-action">Open change</span>
 					</a>
 					<a class="doc-list-item" href="pages/muon-upnl-validity-overrides.html">
-						<span class="doc-list-index">07</span>
+						<span class="doc-list-index">08</span>
 						<span class="doc-list-main">
 							<span class="category">Muon</span>
 							<strong>Muon UPNL Validity Overrides</strong>
-							<span>Per-MuonFunction UPNL validity overrides, zero-clear behavior, fallback resolution, and storage model.</span>
+							<span
+								>One global UPNL freshness window forced every Muon flow to share the same tolerance. v0.8.6 adds optional
+								per-function overrides that fall back to the global value when unset.</span
+							>
 						</span>
-						<span class="doc-list-action">Open</span>
+						<span class="doc-list-action">Open change</span>
 					</a>
 				</div>
 			</section>
