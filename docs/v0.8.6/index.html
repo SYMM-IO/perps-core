@@ -101,8 +101,8 @@
 							<span class="category">Events</span>
 							<strong>BalanceChange Event Cleanup</strong>
 							<span
-								>Several balance movements reused generic event types, making indexer interpretation harder. v0.8.6 emits specific types
-								for reimbursement, deferred-balance, fee, and LF movements.</span
+								>Before, some reimbursement, fee, deferred-balance, and LF movements were missing or mislabeled. v0.8.6 emits the
+								matching BalanceChange type for each bucket.</span
 							>
 						</span>
 						<span class="doc-list-action">Open change</span>

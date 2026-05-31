@@ -1887,19 +1887,6 @@ tr:last-child td {
 	color: var(--accent-strong);
 }
 
-.glossary-term {
-	border-bottom: 1px dotted color-mix(in srgb, var(--accent) 58%, var(--line-strong));
-	color: var(--ink);
-	cursor: help;
-	text-decoration: none;
-	text-underline-offset: 0.18em;
-}
-
-.glossary-term:hover,
-.glossary-term:focus-visible {
-	color: var(--accent-strong);
-}
-
 .empty-state,
 .no-results {
 	display: block;
