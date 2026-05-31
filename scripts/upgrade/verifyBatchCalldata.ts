@@ -145,6 +145,7 @@ async function main() {
 	log.kv("Timelock", ctx.timelockAddress ?? "(unset)")
 	log.kv("AccountLayer", ctx.accountLayerAddress ?? "(unset)")
 	log.kv("InstantLayer", ctx.instantLayerAddress ?? "(unset)")
+	log.kv("SymbolManager", ctx.symbolManagerAddress ?? "(unset)")
 	log.kv("Signature verifier", ctx.signatureVerifierAddress ?? "(unset)")
 	log.kv("PartyBs to register", String(ctx.partyBsToRegister.length))
 	log.kv("Templates", String(ctx.templates.length))
