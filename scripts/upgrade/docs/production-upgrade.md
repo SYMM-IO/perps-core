@@ -40,8 +40,8 @@ BEFORE PAUSE (no downtime)
 
 VERIFY DEPLOYED BYTECODE (local vs on-chain)
 ═════════════════════════════════════════════
-  NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyDeploy.ts
-  NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
+  NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyCoreBytecode.ts
+  NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyPeripheralBytecode.ts
 
   Compares on-chain bytecode against locally compiled artifacts.
   Handles library linking (core facets) and immutable variables (peripherals).
@@ -56,12 +56,13 @@ VERIFY GENERATED CALLDATA (local repo vs on-disk JSON)
   / timelock-{schedule,execute} / post-migration / symbol-role / add-templates
   JSON files. Run before signing anything in the Safe UI.
 
-VERIFY DEPLOYED CONTRACTS (block explorer)
-═══════════════════════════════════════════
-  USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyContracts.ts --network <network>
+VERIFY DEPLOYED CONTRACTS (block explorer source + ABI)
+═════════════════════════════════════════════════════════
+  USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyBlockExplorer.ts --network <network>
 
-  Verifies all libraries, facets, and peripherals (AL, IL, PartyB impl,
-  SymbolManager) on the block explorer. Run after correctness verifications.
+  Publishes/verifies source + ABI for all libraries, facets, and peripherals
+  (AL, IL, PartyB impl, SymbolManager) on the block explorer. This is separate
+  from bytecode parity and final wiring/state verification.
 
 
 PAUSE (execute via Safe UI)
@@ -166,8 +167,8 @@ BEFORE PAUSE (no downtime)
 
 VERIFY DEPLOYED BYTECODE (local vs on-chain)
 ═════════════════════════════════════════════
-  NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyDeploy.ts
-  NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
+  NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyCoreBytecode.ts
+  NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyPeripheralBytecode.ts
 
 VERIFY GENERATED CALLDATA (local repo vs on-disk JSON)
 ═══════════════════════════════════════════════════════
@@ -179,7 +180,7 @@ VERIFY GENERATED CALLDATA (local repo vs on-disk JSON)
 
 VERIFY DEPLOYED CONTRACTS (block explorer)
 ═══════════════════════════════════════════
-  USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyContracts.ts --network <network>
+  USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyBlockExplorer.ts --network <network>
 
 
 SCHEDULE DIAMONDCUT (T=0, system still live)
@@ -224,8 +225,8 @@ POST-DIAMONDCUT (T=delay, after diamondCut)
 
 VERIFY
 ══════
-  verifyDiamond.ts
-  verifyPeripherals.ts
+  verifyDiamondSelectors.ts
+  verifyPeripheralWiring.ts
 
 
 PREPARE MIGRATION + SYMBOL INPUTS (before pause — version-agnostic)
@@ -386,13 +387,13 @@ npx hardhat run scripts/upgrade/acceptAccountLayerOwnership.ts --network coti
 
 # 3. Validate deployed bytecode and verify deployed contracts before pause.
 NETWORK=coti RPC_URL=https://mainnet.coti.io/rpc \
-npx ts-node scripts/upgrade/verifyDeploy.ts
+npx ts-node scripts/upgrade/verifyCoreBytecode.ts
 
 NETWORK=coti RPC_URL=https://mainnet.coti.io/rpc \
-npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
+npx ts-node scripts/upgrade/verifyPeripheralBytecode.ts
 
 USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
-npx hardhat run scripts/upgrade/verifyContracts.ts --network coti
+npx hardhat run scripts/upgrade/verifyBlockExplorer.ts --network coti
 
 # 4. Grant temporary operator roles with protocolAdmin.
 USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
@@ -549,8 +550,8 @@ Before running the upgrade in production, test the full flow on localhost:
 
 ```bash
 npx hardhat run scripts/upgrade/eoaUpgrade.ts --network docker
-npx hardhat run scripts/upgrade/verifyDiamond.ts --network docker
-npx hardhat run scripts/upgrade/verifyPeripherals.ts --network docker
+npx hardhat run scripts/upgrade/verifyDiamondSelectors.ts --network docker
+npx hardhat run scripts/upgrade/verifyPeripheralWiring.ts --network docker
 npx hardhat run scripts/upgrade/testTemplateExecution.ts --network docker
 ```
 
@@ -563,8 +564,8 @@ Test against real on-chain state before production:
 npx hardhat run scripts/upgrade/forkUpgrade.ts --network fork-arbitrum
 
 # 2. Verify (all auto-load from upgrade.json + output files)
-npx hardhat run scripts/upgrade/verifyDiamond.ts --network fork-arbitrum
-npx hardhat run scripts/upgrade/verifyPeripherals.ts --network fork-arbitrum
+npx hardhat run scripts/upgrade/verifyDiamondSelectors.ts --network fork-arbitrum
+npx hardhat run scripts/upgrade/verifyPeripheralWiring.ts --network fork-arbitrum
 FORK=true npx hardhat run scripts/upgrade/testTemplateExecution.ts --network fork-arbitrum
 
 # 3. Run migration
@@ -574,15 +575,15 @@ npx hardhat run scripts/upgrade/runMigration.ts --network fork-arbitrum
 
 ### Verification scripts
 
-| Script                       | What it checks                                                                                                                                                                                                                      |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `verifyDeploy.ts`            | Bytecode verification of deployed core facets against local compiled artifacts (library linking aware). Uses `NETWORK` env var to resolve `output/deployed-facets-{network}.json`                                                   |
-| `verifyPeripheralsDeploy.ts` | Bytecode verification of deployed peripherals (AccountLayer, InstantLayer, SymmioPartyB impl, SymmioSymbolManager, MuonSignatureVerifier) against local compiled artifacts. Handles library linking and immutable variable masking. |
-| `verifyBatchCalldata.ts`     | All generated Safe batches + `diamondcut-calldata-{network}.json` byte-match what the current repo + config would produce. Run **before signing** in the Safe UI. See [Step 2c](#step-2c-verify-generated-calldata-recommended)     |
-| `verifyContracts.ts`         | Block explorer verification of all deployed contracts (libraries, facets, peripherals). Reads from deploy output files and handles library linking automatically. Run **after** correctness verifications.                          |
-| `verifyDiamond.ts`           | All v0.8.5 facet selectors registered on diamond                                                                                                                                                                                    |
-| `verifyPeripherals.ts`       | AccountLayer + InstantLayer roles, hooks, whitelist, templates                                                                                                                                                                      |
-| `testTemplateExecution.ts`   | Full end-to-end: affiliate registration, sub-account, PartyB UUPS upgrade, EIP-712 delegation, sendQuote -> lockQuote -> openPosition via InstantLayer template                                                                     |
+| Script                        | What it checks                                                                                                                                                                                                                      |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `verifyCoreBytecode.ts`       | Bytecode verification of deployed core facets against local compiled artifacts (library linking aware). Uses `NETWORK` env var to resolve `output/deployed-facets-{network}.json`                                                   |
+| `verifyPeripheralBytecode.ts` | Bytecode verification of deployed peripherals (AccountLayer, InstantLayer, SymmioPartyB impl, SymmioSymbolManager, MuonSignatureVerifier) against local compiled artifacts. Handles library linking and immutable variable masking. |
+| `verifyBatchCalldata.ts`      | All generated Safe batches + `diamondcut-calldata-{network}.json` byte-match what the current repo + config would produce. Run **before signing** in the Safe UI. See [Step 2c](#step-2c-verify-generated-calldata-recommended)     |
+| `verifyBlockExplorer.ts`      | Block explorer source + ABI publication/verification for all deployed contracts. Reads deploy output files and handles library linking automatically. Run **after** correctness verifications.                                      |
+| `verifyDiamondSelectors.ts`   | All v0.8.5 facet selectors registered on diamond                                                                                                                                                                                    |
+| `verifyPeripheralWiring.ts`   | AccountLayer + InstantLayer roles, hooks, whitelist, templates                                                                                                                                                                      |
+| `testTemplateExecution.ts`    | Full end-to-end: affiliate registration, sub-account, PartyB UUPS upgrade, EIP-712 delegation, sendQuote -> lockQuote -> openPosition via InstantLayer template                                                                     |
 
 `testTemplateExecution.ts` auto-loads `diamondAddress` from `upgrade.json`, and `accountLayerDiamondAddress` + `instantLayerAddress` from the output files. No manual config needed.
 
@@ -903,41 +904,49 @@ The stages, in order:
 
 ## Production Verification
 
+There are three distinct verification gates:
+
+| Gate                        | Scripts                                                  | Purpose                                                              |
+| --------------------------- | -------------------------------------------------------- | -------------------------------------------------------------------- |
+| Bytecode parity             | `verifyCoreBytecode.ts`, `verifyPeripheralBytecode.ts`   | Compare deployed online bytecode against local repo artifacts        |
+| Block explorer source + ABI | `verifyBlockExplorer.ts`                                 | Publish/verify source and ABI metadata for the already deployed code |
+| Final wiring/state          | `verifyDiamondSelectors.ts`, `verifyPeripheralWiring.ts` | Confirm diamond selectors, roles, hooks, whitelists, and templates   |
+
 ### Bytecode verification (local vs on-chain)
 
 Compares the on-chain deployed bytecode against locally compiled Hardhat artifacts. This is independent of block explorer verification and works for any RPC-accessible network.
 
 ```bash
 # Core facets: reads deployed-facets-{network}.json
-NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyDeploy.ts
+NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyCoreBytecode.ts
 
 # Peripherals: reads deployed-peripherals-{network}.json
-NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
+NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyPeripheralBytecode.ts
 ```
 
 Common live-network examples:
 
 ```bash
 # BSC
-NETWORK=bsc RPC_URL=https://bsc-rpc.publicnode.com npx ts-node scripts/upgrade/verifyDeploy.ts
-NETWORK=bsc RPC_URL=https://bsc-rpc.publicnode.com npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
+NETWORK=bsc RPC_URL=https://bsc-rpc.publicnode.com npx ts-node scripts/upgrade/verifyCoreBytecode.ts
+NETWORK=bsc RPC_URL=https://bsc-rpc.publicnode.com npx ts-node scripts/upgrade/verifyPeripheralBytecode.ts
 
 # Arbitrum
-NETWORK=arbitrum RPC_URL=https://arb1.arbitrum.io/rpc npx ts-node scripts/upgrade/verifyDeploy.ts
-NETWORK=arbitrum RPC_URL=https://arb1.arbitrum.io/rpc npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
+NETWORK=arbitrum RPC_URL=https://arb1.arbitrum.io/rpc npx ts-node scripts/upgrade/verifyCoreBytecode.ts
+NETWORK=arbitrum RPC_URL=https://arb1.arbitrum.io/rpc npx ts-node scripts/upgrade/verifyPeripheralBytecode.ts
 
 # COTI
-NETWORK=coti RPC_URL=https://mainnet.coti.io/rpc npx ts-node scripts/upgrade/verifyDeploy.ts
-NETWORK=coti RPC_URL=https://mainnet.coti.io/rpc npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
+NETWORK=coti RPC_URL=https://mainnet.coti.io/rpc npx ts-node scripts/upgrade/verifyCoreBytecode.ts
+NETWORK=coti RPC_URL=https://mainnet.coti.io/rpc npx ts-node scripts/upgrade/verifyPeripheralBytecode.ts
 ```
 
-These scripts run standalone via `ts-node` (not `npx hardhat run`), so they use the `NETWORK` env var to resolve the correct output file (e.g. `NETWORK=arbitrum` -> `deployed-facets-arbitrum.json`). Both also read from `scripts/upgrade/output/`. `verifyPeripheralsDeploy.ts` also picks up the `MuonSignatureVerifier` address from `upgrade-{network}.json` (`newV085Parameters.signatureVerifierAddress`).
+These scripts run standalone via `ts-node` (not `npx hardhat run`), so they use the `NETWORK` env var to resolve the correct output file (e.g. `NETWORK=arbitrum` -> `deployed-facets-arbitrum.json`). Both also read from `scripts/upgrade/output/`. `verifyPeripheralBytecode.ts` also picks up the `MuonSignatureVerifier` address from `upgrade-{network}.json` (`newV085Parameters.signatureVerifierAddress`). For legacy operator commands, the old `NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyPeripherals.ts` alias still delegates to `verifyPeripheralBytecode.ts`; prefer the explicit `verifyPeripheralBytecode.ts` command in new runbooks.
 
 Override env vars (takes precedence over `NETWORK`-based resolution):
 
 ```bash
-FACETS_FILE=./output/deployed-facets-arbitrum.json RPC_URL=https://arb1.arbitrum.io/rpc npx ts-node scripts/upgrade/verifyDeploy.ts
-PERIPHERALS_FILE=./output/deployed-peripherals-arbitrum.json RPC_URL=https://arb1.arbitrum.io/rpc npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
+FACETS_FILE=./output/deployed-facets-arbitrum.json RPC_URL=https://arb1.arbitrum.io/rpc npx ts-node scripts/upgrade/verifyCoreBytecode.ts
+PERIPHERALS_FILE=./output/deployed-peripherals-arbitrum.json RPC_URL=https://arb1.arbitrum.io/rpc npx ts-node scripts/upgrade/verifyPeripheralBytecode.ts
 ```
 
 **When to run:** after `deployFacets.ts` / `deployPeripherals.ts` and before applying the diamondCut, to confirm the standalone pre-deployed bytecodes match the local compiled source.
@@ -949,44 +958,44 @@ PERIPHERALS_FILE=./output/deployed-peripherals-arbitrum.json RPC_URL=https://arb
 
 **Prerequisites:** Run `npx hardhat compile` first. Artifacts must be present in `artifacts/contracts/`.
 
-### Block explorer verification
+### Block explorer source + ABI verification
 
-After correctness verifications (bytecode + calldata), verify on the block explorer:
+After correctness verifications (bytecode + calldata), publish/verify source and ABI on the block explorer:
 
 ```bash
-USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyContracts.ts --network <network>
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyBlockExplorer.ts --network <network>
 ```
 
-Verifies all libraries, core facets, AccountLayer contracts (DiamondCutFacet, Diamond, Init, libraries, facets), InstantLayer, SymmioSymbolManager, and SymmioPartyB implementation. Library dependencies and contract path disambiguation are handled automatically. Addresses are read dynamically from `scripts/upgrade/output/deployed-facets-{network}.json` and `deployed-peripherals-{network}.json` (resolved from `--network`), constructor args from `config/upgrade-{network}.json`. Resume with `SKIP=N` if a contract fails.
+Publishes/verifies all libraries, core facets, AccountLayer contracts (DiamondCutFacet, Diamond, Init, libraries, facets), InstantLayer, SymmioSymbolManager, and SymmioPartyB implementation. Library dependencies and contract path disambiguation are handled automatically. Addresses are read dynamically from `scripts/upgrade/output/deployed-facets-{network}.json` and `deployed-peripherals-{network}.json` (resolved from `--network`), constructor args from `config/upgrade-{network}.json`. Resume with `SKIP=N` if a contract fails.
 
 The script defaults to Hardhat Verify's Etherscan provider. COTI automatically uses the Blockscout provider because COTI Scan is Blockscout-based. Override with `VERIFY_PROVIDER=etherscan`, `VERIFY_PROVIDER=blockscout`, or `VERIFY_PROVIDER=sourcify` when needed.
 
-### On-chain verification
+### Final wiring/state verification
 
 After the diamondCut + wiring batch:
 
 ```bash
 # Verify all v0.8.5 facet selectors are registered
-RPC_<NETWORK>=<rpc> npx hardhat run scripts/upgrade/verifyDiamond.ts --network <network>
+RPC_<NETWORK>=<rpc> npx hardhat run scripts/upgrade/verifyDiamondSelectors.ts --network <network>
 
 # Verify AccountLayer + InstantLayer wiring (roles, hooks, templates)
-RPC_<NETWORK>=<rpc> npx hardhat run scripts/upgrade/verifyPeripherals.ts --network <network>
+RPC_<NETWORK>=<rpc> npx hardhat run scripts/upgrade/verifyPeripheralWiring.ts --network <network>
 ```
 
 Common live-network examples:
 
 ```bash
 # BSC
-RPC_BSC=https://bsc-rpc.publicnode.com npx hardhat run scripts/upgrade/verifyDiamond.ts --network bsc
-RPC_BSC=https://bsc-rpc.publicnode.com npx hardhat run scripts/upgrade/verifyPeripherals.ts --network bsc
+RPC_BSC=https://bsc-rpc.publicnode.com npx hardhat run scripts/upgrade/verifyDiamondSelectors.ts --network bsc
+RPC_BSC=https://bsc-rpc.publicnode.com npx hardhat run scripts/upgrade/verifyPeripheralWiring.ts --network bsc
 
 # Arbitrum
-RPC_ARBITRUM=https://arb1.arbitrum.io/rpc npx hardhat run scripts/upgrade/verifyDiamond.ts --network arbitrum
-RPC_ARBITRUM=https://arb1.arbitrum.io/rpc npx hardhat run scripts/upgrade/verifyPeripherals.ts --network arbitrum
+RPC_ARBITRUM=https://arb1.arbitrum.io/rpc npx hardhat run scripts/upgrade/verifyDiamondSelectors.ts --network arbitrum
+RPC_ARBITRUM=https://arb1.arbitrum.io/rpc npx hardhat run scripts/upgrade/verifyPeripheralWiring.ts --network arbitrum
 
 # COTI
-RPC_COTI=https://mainnet.coti.io/rpc npx hardhat run scripts/upgrade/verifyDiamond.ts --network coti
-RPC_COTI=https://mainnet.coti.io/rpc npx hardhat run scripts/upgrade/verifyPeripherals.ts --network coti
+RPC_COTI=https://mainnet.coti.io/rpc npx hardhat run scripts/upgrade/verifyDiamondSelectors.ts --network coti
+RPC_COTI=https://mainnet.coti.io/rpc npx hardhat run scripts/upgrade/verifyPeripheralWiring.ts --network coti
 ```
 
 Also review `upgrade-details.json` for the full selector diff (added, replaced, removed).
@@ -1067,7 +1076,7 @@ Note: `protocolAdmin` here is the admin for the **newly deployed** MuonSignature
 | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `USE_KEYSTORE`                                                                     | Set to `true` to use Hardhat keystore keys and RPC overrides (required for all `npx hardhat run` commands on live networks)                                                                                                                                           |
 | `RPC_<NETWORK>`                                                                    | One-off or keystore-backed RPC override for Hardhat scripts (for example `RPC_BSC`, `RPC_ARBITRUM`, `RPC_COTI`)                                                                                                                                                       |
-| `RPC_URL`                                                                          | RPC endpoint for standalone `ts-node` verification scripts (`verifyDeploy.ts`, `verifyPeripheralsDeploy.ts`)                                                                                                                                                          |
+| `RPC_URL`                                                                          | RPC endpoint for standalone `ts-node` verification scripts (`verifyCoreBytecode.ts`, `verifyPeripheralBytecode.ts`)                                                                                                                                                   |
 | `TEAM_DEPLOYER` / `TEAM_UPGRADE_OPERATOR` / `TEAM_MIGRATOR`                        | Private-key slots loaded by `hardhat.config.ts`; keep `upgradeOperator` and `migrationRunner` in separate keystore entries                                                                                                                                            |
 | `DIAMOND_ADDRESS`                                                                  | `diamondAddress`                                                                                                                                                                                                                                                      |
 | `UPGRADE_STAGES` / `EOA_UPGRADE_STAGES`                                            | Comma-separated EOA stages (`deploy`, `facets`, `peripherals`, `operator-grant`, `pause`, `cut`, `params`, `wiring`, `partyb`, `migration`, `cross-mode`, `cross-partyb`, `migration-revoke`, `symbol-revoke`, `unpause`, `operator-revoke`, `operator-admin-revoke`) |

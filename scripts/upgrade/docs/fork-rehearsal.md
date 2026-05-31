@@ -66,20 +66,20 @@ Run after forkUpgrade to confirm the upgrade is correct before migration. All sc
 
 ```bash
 # Verify all v0.8.5 facet selectors are registered
-npx hardhat run scripts/upgrade/verifyDiamond.ts --network localhost
+npx hardhat run scripts/upgrade/verifyDiamondSelectors.ts --network localhost
 
 # Verify AccountLayer + InstantLayer wiring (roles, hooks, templates)
-npx hardhat run scripts/upgrade/verifyPeripherals.ts --network localhost
+npx hardhat run scripts/upgrade/verifyPeripheralWiring.ts --network localhost
 
 # End-to-end: affiliate, sub-account, PartyB upgrade, EIP-712 delegation, template execution
 FORK=true npx hardhat run scripts/upgrade/testTemplateExecution.ts --network localhost
 ```
 
-| Script                     | What it checks                                                                                                                               |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `verifyDiamond.ts`         | All v0.8.5 facet selectors registered on diamond                                                                                             |
-| `verifyPeripherals.ts`     | AccountLayer + InstantLayer roles, hooks, whitelist, templates                                                                               |
-| `testTemplateExecution.ts` | Full trade flow via InstantLayer template (sendQuote -> lockQuote -> openPosition) with EIP-712 signatures, delegation, and result injection |
+| Script                      | What it checks                                                                                                                               |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `verifyDiamondSelectors.ts` | All v0.8.5 facet selectors registered on diamond                                                                                             |
+| `verifyPeripheralWiring.ts` | AccountLayer + InstantLayer roles, hooks, whitelist, templates                                                                               |
+| `testTemplateExecution.ts`  | Full trade flow via InstantLayer template (sendQuote -> lockQuote -> openPosition) with EIP-712 signatures, delegation, and result injection |
 
 ### Step 2: Prepare migration input
 
@@ -179,15 +179,15 @@ Config files support network-postfixed names (e.g. `upgrade-arbitrum.json`). Scr
 
 ### Prepare migration config (`prepareMigration.json`)
 
-| Field               | Type     | Default                                       | Description                                                 |
-| ------------------- | -------- | --------------------------------------------- | ----------------------------------------------------------- |
-| `diamondAddress`    | string   | --                                            | Diamond proxy address                                       |
-| `subgraphEndpoint`  | string   | Goldsky stage                                 | Subgraph GraphQL endpoint                                   |
-| `subgraphEndpoints` | string[] | `[]`                                          | Ordered fallback list of subgraph endpoints                 |
+| Field               | Type     | Default                                       | Description                                                  |
+| ------------------- | -------- | --------------------------------------------- | ------------------------------------------------------------ |
+| `diamondAddress`    | string   | --                                            | Diamond proxy address                                        |
+| `subgraphEndpoint`  | string   | Goldsky stage                                 | Subgraph GraphQL endpoint                                    |
+| `subgraphEndpoints` | string[] | `[]`                                          | Ordered fallback list of subgraph endpoints                  |
 | `subgraphPageSize`  | number   | `1000`                                        | Subgraph pagination size; lower if gateway requests time out |
-| `spotCheckCount`    | number   | `20`                                          | Number of quotes/balances to spot-check                     |
-| `outputDir`         | string   | `scripts/upgrade/output`                      | Output directory                                            |
-| `outputFile`        | string   | `scripts/upgrade/output/migration-input.json` | Output file path                                            |
+| `spotCheckCount`    | number   | `20`                                          | Number of quotes/balances to spot-check                      |
+| `outputDir`         | string   | `scripts/upgrade/output`                      | Output directory                                             |
+| `outputFile`        | string   | `scripts/upgrade/output/migration-input.json` | Output file path                                             |
 
 ### Prepare migration env var overrides
 
@@ -195,9 +195,9 @@ Config files support network-postfixed names (e.g. `upgrade-arbitrum.json`). Scr
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `DIAMOND_ADDRESS`               | `diamondAddress`                                                                                                            |
 | `SUBGRAPH_ENDPOINT`             | `subgraphEndpoint`                                                                                                          |
-| `SUBGRAPH_ENDPOINTS`            | Comma-separated ordered fallback list of subgraph endpoints. Each retry cycle tries all endpoints before sleeping.           |
-| `SUBGRAPH_PAGE_SIZE`            | Subgraph pagination size. Use `500` or `250` if the endpoint returns 504.                                                    |
-| `SUBGRAPH_MAX_RETRIES`          | Number of retries per subgraph request before reducing page size or failing.                                                 |
+| `SUBGRAPH_ENDPOINTS`            | Comma-separated ordered fallback list of subgraph endpoints. Each retry cycle tries all endpoints before sleeping.          |
+| `SUBGRAPH_PAGE_SIZE`            | Subgraph pagination size. Use `500` or `250` if the endpoint returns 504.                                                   |
+| `SUBGRAPH_MAX_RETRIES`          | Number of retries per subgraph request before reducing page size or failing.                                                |
 | `SPOT_CHECK_COUNT`              | `spotCheckCount`                                                                                                            |
 | `PREPARE_OUTPUT_FILE`           | `outputFile`                                                                                                                |
 | `PREPARE_MIGRATION_CONFIG_FILE` | Config file path (default: `scripts/upgrade/config/prepareMigration-{network}.json`, falls back to `prepareMigration.json`) |
