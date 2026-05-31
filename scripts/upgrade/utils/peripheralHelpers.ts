@@ -91,6 +91,42 @@ function saveState(filePath: string, state: DeployedState, metadata?: Deployment
 	saveDeploymentState(filePath, state, metadata)
 }
 
+function parseNonNegativeIntEnv(name: string, fallback: number): number {
+	const value = process.env[name]
+	if (value === undefined || value.trim() === "") return fallback
+	const parsed = Number(value)
+	return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback
+}
+
+function sleep(ms: number): Promise<void> {
+	return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error)
+}
+
+async function withPartyBPrefilterRetry<T>(label: string, read: () => Promise<T>): Promise<T> {
+	const maxRetries = parseNonNegativeIntEnv("PARTYB_PREFILTER_MAX_RETRIES", 4)
+	const baseDelayMs = parseNonNegativeIntEnv("PARTYB_PREFILTER_RETRY_DELAY_MS", 1_000)
+	let attempt = 0
+	let delay = baseDelayMs
+
+	while (true) {
+		try {
+			return await read()
+		} catch (error) {
+			attempt += 1
+			if (attempt > maxRetries) {
+				throw new Error(`${label} failed after ${maxRetries} retries: ${errorMessage(error)}`)
+			}
+			log.warn(`${label} failed (${errorMessage(error)}); retry ${attempt}/${maxRetries} in ${delay}ms`)
+			await sleep(delay)
+			delay = Math.min(delay * 2, 10_000)
+		}
+	}
+}
+
 // ============================================================================
 // Deploy AccountLayer Diamond
 // ============================================================================
@@ -458,8 +494,8 @@ export async function filterUnregisteredPartyBs(
 
 	for (const raw of partyBs) {
 		const addr = ethers.getAddress(raw)
-		const onDiamond: boolean | null = diamond ? await diamond.isPartyB(addr) : null
-		const onInstantLayer: boolean | null = il ? await il.registeredPartyBs(addr) : null
+		const onDiamond: boolean | null = diamond ? await withPartyBPrefilterRetry(`isPartyB(${addr})`, () => diamond.isPartyB(addr)) : null
+		const onInstantLayer: boolean | null = il ? await withPartyBPrefilterRetry(`registeredPartyBs(${addr})`, () => il.registeredPartyBs(addr)) : null
 		states.push({ address: addr, onDiamond, onInstantLayer })
 		if (diamond && onDiamond === false) partyBsForDiamond.push(addr)
 		if (il && onInstantLayer === false) partyBsForInstantLayer.push(addr)
