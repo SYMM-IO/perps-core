@@ -164,27 +164,29 @@ Config files support network-postfixed names (e.g. `upgrade-arbitrum.json`). Scr
 
 ### Upgrade config (`upgrade.json`)
 
-| Field                        | Type    | Default | Description                                                                          |
-| ---------------------------- | ------- | ------- | ------------------------------------------------------------------------------------ |
-| `diamondAddress`             | string  | --      | Diamond proxy address on the target network                                          |
-| `protocolAdmin`              | string  | `""`    | Protocol admin/Safe address for production ownership context                         |
-| `upgradeOperator`            | string  | `""`    | Optional temporary scoped executor for EOA operational rehearsals                    |
-| `safeAddress`                | string  | `""`    | Gnosis Safe address (optional, for Safe path)                                        |
-| `migrationRunner`            | string  | `""`    | Address granted `MIGRATION_ROLE`; usually the `upgradeOperator`, but can be separate |
-| `diamondCutChunkSize`        | number  | `1000`  | Max facet cuts per transaction                                                       |
-| `symmioFeeReceiver`          | string  | `""`    | Fee receiver for AccountLayer Init (defaults to the impersonated fork owner)         |
-| `setupInstantLayerTemplates` | boolean | `true`  | Setup OpenPosition/ClosePosition templates on InstantLayer                           |
-| `newV085Parameters`          | object  | --      | New v0.8.5 parameters to initialize (see below)                                      |
+| Field                        | Type    | Default | Description                                                                     |
+| ---------------------------- | ------- | ------- | ------------------------------------------------------------------------------- |
+| `diamondAddress`             | string  | --      | Diamond proxy address on the target network                                     |
+| `protocolAdmin`              | string  | `""`    | Default admin / role admin used for fork role grants and post-cut wiring        |
+| `upgradeOperator`            | string  | `""`    | Optional temporary scoped executor for EOA operational rehearsals               |
+| `safeAddress`                | string  | `""`    | Gnosis Safe address (optional, for Safe path)                                   |
+| `migrationRunner`            | string  | `""`    | Address granted `MIGRATION_ROLE` and impersonated by `runMigration.ts` on forks |
+| `diamondCutChunkSize`        | number  | `1000`  | Max facet cuts per transaction                                                  |
+| `symmioFeeReceiver`          | string  | `""`    | Fee receiver for AccountLayer Init (defaults to `protocolAdmin`)                |
+| `setupInstantLayerTemplates` | boolean | `true`  | Setup OpenPosition/ClosePosition templates on InstantLayer                      |
+| `newV085Parameters`          | object  | --      | New v0.8.5 parameters to initialize (see below)                                 |
 
 ### Upgrade env var overrides
 
-| Env var                                | Overrides                                                                                                 |
-| -------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `DIAMOND_ADDRESS`                      | `diamondAddress`                                                                                          |
-| `FORK_ADMIN_ADDRESS` / `ADMIN_ADDRESS` | Explicit fork owner override; otherwise `forkUpgrade.ts` reads the diamond owner from LibDiamond storage  |
-| `DIAMOND_CUT_CHUNK_SIZE`               | `diamondCutChunkSize`                                                                                     |
-| `SUBGRAPH_ENDPOINT`                    | `subgraphEndpoint`                                                                                        |
-| `UPGRADE_CONFIG_FILE`                  | Config file path (default: `scripts/upgrade/config/upgrade-{network}.json`, falls back to `upgrade.json`) |
+| Env var                                                       | Overrides                                                                                                 |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `DIAMOND_ADDRESS`                                             | `diamondAddress`                                                                                          |
+| `FORK_OWNER_ADDRESS` / `FORK_ADMIN_ADDRESS` / `ADMIN_ADDRESS` | Explicit diamond owner override; otherwise `forkUpgrade.ts` reads the owner from LibDiamond storage       |
+| `PROTOCOL_ADMIN`                                              | Override `protocolAdmin` for role/default-admin wiring                                                    |
+| `FORK_MIGRATION_RUNNER_ADDRESS` / `MIGRATION_RUNNER_ADDRESS`  | Override the fork migration signer granted `MIGRATION_ROLE`                                               |
+| `DIAMOND_CUT_CHUNK_SIZE`                                      | `diamondCutChunkSize`                                                                                     |
+| `SUBGRAPH_ENDPOINT`                                           | `subgraphEndpoint`                                                                                        |
+| `UPGRADE_CONFIG_FILE`                                         | Config file path (default: `scripts/upgrade/config/upgrade-{network}.json`, falls back to `upgrade.json`) |
 
 ### Prepare migration config (`prepareMigration.json`)
 
@@ -268,7 +270,7 @@ If `FORK_BLOCK_NUMBER` is not set, the fork uses the latest block. This can caus
 The fork node uses `blockGasLimit: 30_000_000`. If diamond cut transactions fail with out-of-gas, reduce `diamondCutChunkSize`.
 
 **"LibDiamond: Must be contract owner"**
-The impersonated account is not the actual diamond owner. By default `forkUpgrade.ts` reads the owner from LibDiamond storage. If you need to override it, set `FORK_ADMIN_ADDRESS` or `ADMIN_ADDRESS` to the exact owner address to impersonate.
+The impersonated owner is not the actual diamond owner. By default `forkUpgrade.ts` reads the owner from LibDiamond storage and uses it only for owner-only calls (`setAdmin`, `diamondCut`). `protocolAdmin` remains the DEFAULT_ADMIN_ROLE / role-wiring actor. If you need to override the owner, set `FORK_OWNER_ADDRESS`, `FORK_ADMIN_ADDRESS`, or `ADMIN_ADDRESS` to the exact owner address to impersonate.
 
 **Migration fails with "maxPartyAConnectionLimit" error**
 Set `maxPartyAConnectionLimit` in `newV085Parameters` (defaults to 0 after upgrade, which blocks `addConnection()`).

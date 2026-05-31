@@ -3,7 +3,7 @@ import path from "path"
 
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { migrate, MigrationConfig, MigrationInput, MigrationReport } from "./migrate.js"
-import { getImpersonatedAdmin } from "./utils/forkHelpers.js"
+import { getImpersonatedAdmin, impersonateAndFund } from "./utils/forkHelpers.js"
 import { resolveConfiguredSigner } from "./utils/hardwareSigner.js"
 import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
@@ -470,8 +470,15 @@ async function main() {
 			adminAddress = upgradeShared.migrationRunner ?? ethers.ZeroAddress
 			log.info("Dry run: using provider-only contract runner; no signer will be resolved")
 		} else if (isFork) {
-			admin = await getImpersonatedAdmin(DIAMOND_ADDRESS)
-			adminAddress = await admin.getAddress()
+			const forkMigrationRunner = process.env.FORK_MIGRATION_RUNNER_ADDRESS ?? process.env.MIGRATION_RUNNER_ADDRESS ?? upgradeShared.migrationRunner
+			if (forkMigrationRunner && ethers.isAddress(forkMigrationRunner)) {
+				admin = await impersonateAndFund(forkMigrationRunner)
+				adminAddress = await admin.getAddress()
+				log.ok(`Fork migration runner impersonated: ${log.addr(adminAddress)}`)
+			} else {
+				admin = await getImpersonatedAdmin(DIAMOND_ADDRESS)
+				adminAddress = await admin.getAddress()
+			}
 		} else {
 			const migratorAddress = upgradeShared.migrationRunner
 			admin = await resolveConfiguredSigner({
