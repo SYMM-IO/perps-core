@@ -15,7 +15,12 @@ import path from "path"
 import { FacetNames } from "../../../tasks/deploy/constants.js"
 import { getSelectors } from "../../../tasks/utils/diamondCut.js"
 import { ethers } from "../../../test/helpers/hardhat-connection.js"
-import { buildTemplateTransactions, buildWiringTransactions, filterUnregisteredPartyBs } from "./peripheralHelpers.js"
+import {
+	buildSymbolManagerWiringTransactions,
+	buildTemplateTransactions,
+	buildWiringTransactions,
+	filterUnregisteredPartyBs,
+} from "./peripheralHelpers.js"
 import {
 	buildUpgradeTransactions,
 	FacetLibraryDependencies,
@@ -86,6 +91,7 @@ export type LoadedContext = {
 	// Deploy outputs
 	accountLayerAddress?: string
 	instantLayerAddress?: string
+	symbolManagerAddress?: string
 	signatureVerifierAddress?: string
 	deployedFacets: Record<string, { address: string; selectors: string[] }>
 	selectorSignatures: Record<string, string>
@@ -149,6 +155,7 @@ type UpgradeConfig = {
 	setupInstantLayerTemplates?: boolean
 	accountLayerDiamondAddress?: string
 	instantLayerAddress?: string
+	symbolManagerAddress?: string
 	newV085Parameters?: NewV085Parameters
 }
 
@@ -165,6 +172,7 @@ type TemplatesConfig = {
 type DeployedPeripherals = {
 	accountLayer?: { diamond?: string }
 	instantLayer?: { address?: string }
+	symbolManager?: { address?: string }
 	signatureVerifier?: string
 }
 
@@ -204,6 +212,7 @@ export async function loadVerifyContext(inputs: VerifyContextInputs): Promise<Lo
 
 	const accountLayerAddress = upgradeConfig.accountLayerDiamondAddress ?? deployedPeripherals.accountLayer?.diamond
 	const instantLayerAddress = upgradeConfig.instantLayerAddress ?? deployedPeripherals.instantLayer?.address
+	const symbolManagerAddress = upgradeConfig.symbolManagerAddress ?? deployedPeripherals.symbolManager?.address
 	const signatureVerifierAddress = upgradeConfig.newV085Parameters?.signatureVerifierAddress ?? deployedPeripherals.signatureVerifier
 
 	// Load full partyB list; per-target gates (registerOnSymmioCore,
@@ -267,6 +276,7 @@ export async function loadVerifyContext(inputs: VerifyContextInputs): Promise<Lo
 		templates: templatesConfig.templates ?? [],
 		accountLayerAddress: accountLayerAddress && ethers.isAddress(accountLayerAddress) ? ethers.getAddress(accountLayerAddress) : undefined,
 		instantLayerAddress: instantLayerAddress && ethers.isAddress(instantLayerAddress) ? ethers.getAddress(instantLayerAddress) : undefined,
+		symbolManagerAddress: symbolManagerAddress && ethers.isAddress(symbolManagerAddress) ? ethers.getAddress(symbolManagerAddress) : undefined,
 		signatureVerifierAddress:
 			signatureVerifierAddress && ethers.isAddress(signatureVerifierAddress) ? ethers.getAddress(signatureVerifierAddress) : undefined,
 		deployedFacets: deployedFacetsJson.facets,
@@ -360,6 +370,18 @@ function buildExpectedSafeTxs(ctx: LoadedContext): { pauseSafeTxs: SafeTransacti
 			for (const tx of templates) {
 				safeTxs.push(toHumanReadableSafeTxFromIface(tx.iface, tx.to, tx.methodName, tx.args))
 			}
+		}
+		if (ctx.safeAddress) {
+			const acceptOwnershipIface = new ethers.Interface(["function acceptOwnership()"])
+			safeTxs.push(toHumanReadableSafeTxFromIface(acceptOwnershipIface, ctx.accountLayerAddress, "acceptOwnership", []))
+		}
+	}
+
+	// SymbolManager wiring is independent of AccountLayer/InstantLayer.
+	if (ctx.symbolManagerAddress) {
+		const symbolManagerWiring = buildSymbolManagerWiringTransactions(ctx.diamondAddress, ctx.symbolManagerAddress)
+		for (const tx of symbolManagerWiring) {
+			safeTxs.push(toHumanReadableSafeTxFromIface(tx.iface, tx.to, tx.methodName, tx.args))
 		}
 	}
 
