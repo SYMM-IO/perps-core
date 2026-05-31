@@ -310,6 +310,17 @@ export default defineConfig({
 				blockNumber: Number(process.env.FORK_BLOCK_NUMBER || 0) || undefined,
 			},
 		},
+		"fork-bsc": {
+			type: "edr-simulated",
+			chainId: 56,
+			blockGasLimit: 30_000_000,
+			allowUnlimitedContractSize: true,
+			hardfork: "cancun",
+			forking: {
+				url: process.env.RPC_BSC || (useKeystore ? configVariable("RPC_BSC") : "https://bsc-rpc.publicnode.com") || "https://bsc-rpc.publicnode.com",
+				blockNumber: Number(process.env.FORK_BLOCK_NUMBER || 0) || undefined,
+			},
+		},
 		"fork-mantle": {
 			type: "edr-simulated",
 			chainId: 5000,
