@@ -1,0 +1,32 @@
+{
+	"diamondAddress": "0x91Cf2D8Ed503EC52768999aA6D8DBeA6e52dbe43",
+	"protocolAdmin": "0x5146C35725d9b8F11A84ebD4a3abe9845698Ada9",
+	"safeAddress": "0x5146C35725d9b8F11A84ebD4a3abe9845698Ada9",
+	"migrationRunner": "0x3d3829fC319B918ed0A26D7e2f59E7E629eE8F3A",
+	"timelockAddress": "0x92e89bb3ce2cea34df6168010bbefce2997b014d",
+	"diamondCutChunkSize": 30,
+	"subgraphEndpoint": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/base_analytics/stage/gn",
+	"spotCheckCount": 20,
+	"symmioFeeReceiver": "0xfFb5d13CE2888f86b0A02ac29B4e07B2f26B34Ac",
+	"setupInstantLayerTemplates": true,
+	"newV085Parameters": {
+		"maxPartyAConnectionLimit": 5,
+		"signatureVerifierAddress": "0x0Ae899A702b9a7E6fbAd661117F0b1B002eD18F1",
+		"liquidationInsuranceVault": "0x5146C35725d9b8F11A84ebD4a3abe9845698Ada9",
+		"maxLiquidationProfitPerPosition": "1000000000000000000",
+		"softLiquidationPenaltyCollector": "0x5146C35725d9b8F11A84ebD4a3abe9845698Ada9",
+		"minAffiliateFee": "100000000000000000",
+		"unbindCooldown": 86400,
+		"maxWithdrawParts": 5,
+		"minWithdrawCooldown": 43200,
+		"symbolType": 1,
+		"muonPublicKeys": [
+			{
+				"x": "28816647750548585451357630311330111079635661660584752231799347508659086631222",
+				"parity": 0
+			}
+		],
+		"muonGatewaySigners": ["0xF621f85f20BBe733699306D336230184621dBe60"],
+		"muonFunctionPermissions": ["Trading", "AccountManagement", "Settlement", "ForceClose", "Funding", "LiquidationPartyA", "LiquidationPartyB"]
+	}
+}

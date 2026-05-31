@@ -1,0 +1,31 @@
+{
+	"diamondAddress": "0x9A9F48888600FC9c05f11E03Eab575EBB2Fc2c8f",
+	"protocolAdmin": "0xa85A4A81274a0db6ee873e3068fF76e8a3e27Ac2",
+	"safeAddress": "0xa85A4A81274a0db6ee873e3068fF76e8a3e27Ac2",
+	"migrationRunner": "0x3d3829fC319B918ed0A26D7e2f59E7E629eE8F3A",
+	"timelockAddress": "0xCb850319Cb6B907c7A2ebAb71980147D19d6e3A1",
+	"diamondCutChunkSize": 30,
+	"subgraphEndpoint": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/bnb_analytics/stage/gn",
+	"spotCheckCount": 20,
+	"symmioFeeReceiver": "0x10e9794f1D57512b1205F4a5394c384bE89942AF",
+	"setupInstantLayerTemplates": true,
+	"newV085Parameters": {
+		"maxPartyAConnectionLimit": 5,
+		"signatureVerifierAddress": "0x27b26291Dd1Ab2cB68C818d1cBC9b3C92AAdAc86",
+		"liquidationInsuranceVault": "0xa85A4A81274a0db6ee873e3068fF76e8a3e27Ac2",
+		"maxLiquidationProfitPerPosition": "1000000000000000000",
+		"softLiquidationPenaltyCollector": "0xa85A4A81274a0db6ee873e3068fF76e8a3e27Ac2",
+		"minAffiliateFee": "100000000000000000",
+		"unbindCooldown": 86400,
+		"maxWithdrawParts": 5,
+		"minWithdrawCooldown": 43200,
+		"symbolType": 1,
+		"muonPublicKeys": [
+			{
+				"x": "28816647750548585451357630311330111079635661660584752231799347508659086631222",
+				"parity": 0
+			}
+		],
+		"muonGatewaySigners": ["0xF621f85f20BBe733699306D336230184621dBe60"]
+	}
+}

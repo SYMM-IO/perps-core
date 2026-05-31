@@ -1,0 +1,10 @@
+{
+	"migrationInputFile": "./scripts/upgrade/output/migration-input-coti.json",
+	"chunkSize": 50,
+	"dryRun": false,
+	"fork": false,
+	"skipPreCheck": true,
+	"outputDir": "./scripts/upgrade/output",
+	"progressFile": "./scripts/upgrade/output/migration-progress-coti.json",
+	"reportFile": "./scripts/upgrade/output/migration-report-coti.json"
+}
