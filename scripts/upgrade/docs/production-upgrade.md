@@ -30,8 +30,12 @@ BEFORE PAUSE (no downtime)
         │                              │
         └──────────┬───────────────────┘
                    ▼
+         fetchSolverList.ts
+         (writes partyBList-{network}.json from subgraph Solver entities)
+                   │
+                   ▼
          generateSafeBatch.ts
-         (reads both, no on-chain actions)
+         (reads deployments + partyBList, no on-chain actions)
                    │
          ┌─────────┴──────────┐
          ▼                    ▼
@@ -149,8 +153,12 @@ BEFORE PAUSE (no downtime)
         │                              │
         └──────────┬───────────────────┘
                    ▼
+         fetchSolverList.ts
+         (writes partyBList-{network}.json from subgraph Solver entities)
+                   │
+                   ▼
          generateSafeBatch.ts
-         (reads both, no on-chain actions)
+         (reads deployments + partyBList, no on-chain actions)
                    │
          ┌─────────┴──────────┐
          ▼                    ▼
@@ -506,11 +514,14 @@ npx hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
     cp scripts/upgrade/config/samples/prepareMigration.sample.json scripts/upgrade/config/prepareMigration-<network>.json
     cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/migrate-<network>.json
     cp scripts/upgrade/config/samples/postMigration.sample.json scripts/upgrade/config/postMigration-<network>.json
-    cp scripts/upgrade/config/samples/partyBList.sample.json scripts/upgrade/config/partyBList-<network>.json
     cp scripts/upgrade/config/samples/instantLayerTemplates.sample.json scripts/upgrade/config/instantLayerTemplates.json
     cp scripts/upgrade/config/samples/deployPeripherals.sample.json scripts/upgrade/config/deployPeripherals-<network>.json
     # edit upgrade-<network>.json with all shared fields (diamondAddress, subgraphEndpoint, safeAddress, etc.)
     # other config files only need script-specific fields -- they fall back to upgrade-<network>.json for shared values
+    ```
+    Build `partyBList-<network>.json` from the subgraph instead of maintaining it manually:
+    ```bash
+    SOLVER_CHAINS=<network> npx ts-node scripts/upgrade/fetchSolverList.ts
     ```
     Config files use network-postfixed names (e.g. `upgrade-arbitrum.json`, `partyBList-arbitrum.json`). Scripts resolve config files by trying `{name}-{network}.json` first, falling back to `{name}.json`. Env var overrides (e.g. `UPGRADE_CONFIG_FILE`) take top priority.
 
@@ -526,7 +537,7 @@ Every Symmio deployment has a standard set of contracts and roles. The table bel
 | **Upgrade operator** (temporary scoped executor)                      | any EOA or multisig           | `upgradeOperator`                                             | `upgrade.json`                                                         |
 | **Fees MultiSig** (receives protocol fees)                            | `0x273a...3f12`               | `symmioFeeReceiver`                                           | `upgrade.json` (other scripts fall back to this)                       |
 | **SignatureVerifier** (Muon signature verification contract)          | `0x94eE...FC2`                | `newV085Parameters.signatureVerifierAddress`                  | `upgrade.json`                                                         |
-| **PartyB list** (for Diamond + IL registration + symbol whitelisting) | --                            | `partyBs` + `registerOnSymmioCore` + `registerOnInstantLayer` | `config/partyBList-{network}.json`                                     |
+| **PartyB list** (for Diamond + IL registration + symbol whitelisting) | --                            | `partyBs` + `registerOnSymmioCore` + `registerOnInstantLayer` | `fetchSolverList.ts` -> `config/partyBList-{network}.json`             |
 | **TimeLock** (12H or 3D, if diamond owner is a timelock)              | `0xA75F...c63`                | `timelockAddress`                                             | `upgrade.json` (used by `generateTimelockBatch.ts` to wrap diamondCut) |
 | **Migration runner** (address that will call migration functions)     | any EOA or multisig           | `migrationRunner`                                             | `upgrade.json` (usually `upgradeOperator`)                             |
 | **PartyB addresses** (all active PartyBs to enable cross mode)        | `[0x...]`                     | `partyBs`                                                     | `postMigration.json`                                                   |
@@ -697,7 +708,7 @@ The script applies all facet cuts in a **single transaction** (no chunking neede
 
 Generates Safe Transaction Builder JSON for the full upgrade (roles, pause, params, migration role, AccountLayer/InstantLayer/SymbolManager wiring) plus separate diamondCut calldata.
 
-**Prerequisites:** Run `deployFacets.ts` and `deployPeripherals.ts` first. The script auto-loads `deployed-facets-{network}.json` and `deployed-peripherals-{network}.json` from the output directory -- no manual address copy needed. PartyB registration reads from `config/partyBList-{network}.json`: entries are registered on core Diamond when `registerOnSymmioCore` is true (default) and on InstantLayer when `registerOnInstantLayer` is true (default). The generator pre-filters both lists against live on-chain state, so batches are safe to regenerate and re-run. Config and env vars override auto-loaded values if set.
+**Prerequisites:** Run `deployFacets.ts`, `deployPeripherals.ts`, and `fetchSolverList.ts` first. The script auto-loads `deployed-facets-{network}.json` and `deployed-peripherals-{network}.json` from the output directory -- no manual address copy needed. PartyB registration reads from `config/partyBList-{network}.json`: entries are registered on core Diamond when `registerOnSymmioCore` is true (default) and on InstantLayer when `registerOnInstantLayer` is true (default). `fetchSolverList.ts` writes both flags as true for every generated chain file; `generateSafeBatch.ts` then pre-filters both lists against live on-chain registration state, so already-registered solvers are skipped and batches are safe to regenerate and re-run. Config and env vars override auto-loaded values if set.
 
 ```bash
 USE_KEYSTORE=true npx hardhat run scripts/upgrade/generateSafeBatch.ts --network arbitrum
@@ -1123,7 +1134,7 @@ All chain-specific config files support network-postfixed names (e.g. `upgrade-a
 | `prepareMigration-{network}.json`  | `prepareMigrationInput.ts`                                                             | `subgraphEndpoints`, `subgraphPageSize`, `subgraphProgressFile`, `outputDir`, `outputFile`                           | `diamondAddress`, `subgraphEndpoint`, `spotCheckCount` |
 | `migrate-{network}.json`           | `runMigration.ts`                                                                      | `migrationInputFile`, `chunkSize`, `dryRun`, `fork`                                                                  | `diamondAddress`                                       |
 | `postMigration-{network}.json`     | `eoaUpgrade.ts` post stages / `generatePostMigrationBatch.ts`                          | `partyBs`                                                                                                            | `diamondAddress`, `safeAddress`                        |
-| `partyBList-{network}.json`        | `whitelistSymbolTypes.ts`                                                              | `partyBs`                                                                                                            | `diamondAddress`, `newV085Parameters.symbolType`       |
+| `partyBList-{network}.json`        | `generateSafeBatch.ts`, `whitelistSymbolTypes.ts`                                      | `partyBs`, `registerOnSymmioCore`, `registerOnInstantLayer`                                                          | `diamondAddress`, `newV085Parameters.symbolType`       |
 | `instantLayerTemplates.json`       | `generateTemplateBatch.ts`                                                             | `templates`                                                                                                          | `safeAddress`, `instantLayerAddress`                   |
 
 ## newV085Parameters
