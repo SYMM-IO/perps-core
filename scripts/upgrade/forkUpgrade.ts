@@ -34,6 +34,7 @@ const DEFAULT_SUBGRAPH_ENDPOINT = "https://api.goldsky.com/api/public/project_cm
 type ForkUpgradeConfig = {
 	diamondAddress?: string
 	protocolAdmin?: string
+	migrationRunner?: string
 	diamondCutChunkSize?: number
 	subgraphEndpoint?: string
 	spotCheckCount?: number
@@ -64,6 +65,7 @@ type ForkUpgradeReport = {
 	finishedAt?: string
 	durationMs?: number
 	diamondAddress?: string
+	diamondOwner?: string
 	protocolAdmin?: string
 	steps: StepResult[]
 	error?: string
@@ -152,7 +154,10 @@ async function main() {
 	const config = loadConfig(connection.networkName)
 
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress
-	const ADMIN_OVERRIDE = process.env.FORK_ADMIN_ADDRESS ?? process.env.ADMIN_ADDRESS
+	const OWNER_OVERRIDE = process.env.FORK_OWNER_ADDRESS ?? process.env.FORK_ADMIN_ADDRESS ?? process.env.ADMIN_ADDRESS
+	const PROTOCOL_ADMIN_ADDRESS = process.env.PROTOCOL_ADMIN ?? config.protocolAdmin
+	const MIGRATION_RUNNER_ADDRESS =
+		process.env.FORK_MIGRATION_RUNNER_ADDRESS ?? process.env.MIGRATION_RUNNER_ADDRESS ?? config.migrationRunner ?? PROTOCOL_ADMIN_ADDRESS
 	const DIAMOND_CUT_CHUNK_SIZE = Number(process.env.DIAMOND_CUT_CHUNK_SIZE ?? config.diamondCutChunkSize ?? 6)
 	const SUBGRAPH_ENDPOINT = process.env.SUBGRAPH_ENDPOINT || config.subgraphEndpoint || DEFAULT_SUBGRAPH_ENDPOINT
 	const RUN_MIGRATION = parseBool(process.env.FORK_RUN_MIGRATION, config.runMigration ?? false)
@@ -227,13 +232,25 @@ async function main() {
 
 		log.setSteps(11 + (RUN_MIGRATION ? 2 : 0))
 
-		// ── Step 1: Resolve + impersonate admin ──────────────────────────
-		let t = log.step("Resolve and impersonate admin")
+		// ── Step 1: Resolve + impersonate fork actors ────────────────────
+		let t = log.step("Resolve and impersonate fork actors")
 		currentStep = "impersonate_admin"
-		const admin = await getImpersonatedAdmin(DIAMOND_ADDRESS, ADMIN_OVERRIDE)
-		const adminAddress = await admin.getAddress()
-		report.protocolAdmin = adminAddress
-		report.steps.push({ name: "impersonate_admin", status: "ok", details: { adminAddress } })
+		const ownerSigner = await getImpersonatedAdmin(DIAMOND_ADDRESS, OWNER_OVERRIDE)
+		const ownerAddress = await ownerSigner.getAddress()
+		const protocolAdminAddress = PROTOCOL_ADMIN_ADDRESS && ethers.isAddress(PROTOCOL_ADMIN_ADDRESS) ? PROTOCOL_ADMIN_ADDRESS : ownerAddress
+		const protocolAdminSigner =
+			protocolAdminAddress.toLowerCase() === ownerAddress.toLowerCase() ? ownerSigner : await impersonateAndFund(protocolAdminAddress)
+		const migrationRunnerAddress =
+			MIGRATION_RUNNER_ADDRESS && ethers.isAddress(MIGRATION_RUNNER_ADDRESS) ? MIGRATION_RUNNER_ADDRESS : protocolAdminAddress
+		log.ok(`Protocol admin: ${log.addr(protocolAdminAddress)}`)
+		log.ok(`Migration runner: ${log.addr(migrationRunnerAddress)}`)
+		report.diamondOwner = ownerAddress
+		report.protocolAdmin = protocolAdminAddress
+		report.steps.push({
+			name: "impersonate_admin",
+			status: "ok",
+			details: { ownerAddress, protocolAdminAddress, migrationRunnerAddress },
+		})
 		currentStep = null
 		tryWriteReport(reportFile, report)
 		finishStep(t)
@@ -241,12 +258,17 @@ async function main() {
 		// ── Step 2: Connect facets ───────────────────────────────────────
 		t = log.step("Connect to existing facets")
 		currentStep = "connect_facets"
-		const viewFacet = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", DIAMOND_ADDRESS, admin)
-		const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", DIAMOND_ADDRESS, admin)
+		const viewFacet = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", DIAMOND_ADDRESS, ownerSigner)
+		const controlFacetOwner = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", DIAMOND_ADDRESS, ownerSigner)
+		const controlFacetAdmin = await ethers.getContractAt(
+			"contracts/core/facets/Control/ControlFacet.sol:ControlFacet",
+			DIAMOND_ADDRESS,
+			protocolAdminSigner,
+		)
 		const pauseControlFacet = await ethers.getContractAt(
 			"contracts/core/facets/PauseControl/PauseControlFacet.sol:PauseControlFacet",
 			DIAMOND_ADDRESS,
-			admin,
+			protocolAdminSigner,
 		)
 		log.ok("ViewFacet, ControlFacet, PauseControlFacet connected")
 		report.steps.push({ name: "connect_facets", status: "ok" })
@@ -291,7 +313,7 @@ async function main() {
 			[
 				"function getQuote(uint256) view returns (tuple(uint256 id,address[] partyBsWhiteList,uint256 symbolId,uint8 positionType,uint8 orderType,uint256 openedPrice,uint256 initialOpenedPrice,uint256 requestedOpenPrice,uint256 marketPrice,uint256 quantity,uint256 closedAmount,tuple(uint256 cva,uint256 lf,uint256 partyAmm,uint256 partyBmm) initialLockedValues,tuple(uint256 cva,uint256 lf,uint256 partyAmm,uint256 partyBmm) lockedValues,uint256 maxFundingRate,address partyA,address partyB,uint8 quoteStatus,uint256 avgClosedPrice,uint256 requestedClosePrice,uint256 quantityToClose,uint256 parentId,uint256 createTimestamp,uint256 statusModifyTimestamp,uint256 lastFundingPaymentTimestamp,uint256 deadline,uint256 tradingFee,address affiliate))",
 			],
-			admin,
+			ownerSigner,
 		)
 
 		// Pick random sample of quote IDs from subgraph
@@ -343,18 +365,18 @@ async function main() {
 		// ── Step 5: Pause system ─────────────────────────────────────────
 		t = log.step("Pause system")
 		currentStep = "pause_system"
-		await (await controlFacet.setAdmin(adminAddress)).wait()
-		log.ok("Admin set")
-		await (await controlFacet.grantRole(adminAddress, ethers.id("PAUSER_ROLE"))).wait()
-		log.ok("PAUSER_ROLE granted")
-		await (await controlFacet.grantRole(adminAddress, ethers.id("UNPAUSER_ROLE"))).wait()
-		log.ok("UNPAUSER_ROLE granted")
+		await (await controlFacetOwner.setAdmin(protocolAdminAddress)).wait()
+		log.ok(`DEFAULT_ADMIN_ROLE granted to protocol admin ${log.addr(protocolAdminAddress)}`)
+		await (await controlFacetAdmin.grantRole(protocolAdminAddress, ethers.id("PAUSER_ROLE"))).wait()
+		log.ok("PAUSER_ROLE granted to protocol admin")
+		await (await controlFacetAdmin.grantRole(protocolAdminAddress, ethers.id("UNPAUSER_ROLE"))).wait()
+		log.ok("UNPAUSER_ROLE granted to protocol admin")
 
 		// Use v0.8.4-compatible ABI for pauseState (v0.8.4 returns 7 bools, v0.8.5 returns 8)
 		const pauseChecker = new ethers.Contract(
 			DIAMOND_ADDRESS,
 			["function pauseState() view returns (bool globalPaused, bool, bool, bool, bool, bool, bool)"],
-			admin,
+			protocolAdminSigner,
 		)
 		const pauseResult = await pauseChecker.pauseState()
 		let pausedByScript = false
@@ -455,7 +477,7 @@ async function main() {
 		tryWriteReport(reportFile, report)
 
 		currentStep = "apply_diamond_cut"
-		await applyDiamondCut(DIAMOND_ADDRESS, diamondCut, admin, DIAMOND_CUT_CHUNK_SIZE)
+		await applyDiamondCut(DIAMOND_ADDRESS, diamondCut, ownerSigner, DIAMOND_CUT_CHUNK_SIZE)
 		log.ok("Diamond cut applied")
 		report.steps.push({ name: "apply_diamond_cut", status: "ok" })
 		currentStep = null
@@ -465,7 +487,7 @@ async function main() {
 		// ── Step 8: Set new v0.8.5 parameters ───────────────────────────
 		t = log.step("Set v0.8.5 parameters")
 		currentStep = "set_v085_parameters"
-		await (await controlFacet.setAdmin(adminAddress)).wait()
+		await (await controlFacetOwner.setAdmin(protocolAdminAddress)).wait()
 
 		// Fork-only: grant SETTER_ROLE on the existing MuonSignatureVerifier to our
 		// impersonated signer. On production the Safe already holds this role; on a fork
@@ -480,19 +502,19 @@ async function main() {
 					"function grantRole(bytes32,address)",
 				],
 				newParams.signatureVerifierAddress,
-				admin,
+				protocolAdminSigner,
 			)
 			const setterRole = await verifierAccess.SETTER_ROLE()
-			if (!(await verifierAccess.hasRole(setterRole, adminAddress))) {
+			if (!(await verifierAccess.hasRole(setterRole, protocolAdminAddress))) {
 				const defaultAdminRole = await verifierAccess.DEFAULT_ADMIN_ROLE()
 				const verifierAdmin = await verifierAccess.getRoleMember(defaultAdminRole, 0)
 				const verifierAdminSigner = await impersonateAndFund(verifierAdmin)
-				await (await verifierAccess.connect(verifierAdminSigner).grantRole(setterRole, adminAddress)).wait()
-				log.ok(`Fork patch: SETTER_ROLE granted to ${log.addr(adminAddress)} on verifier (via ${log.addr(verifierAdmin)})`)
+				await (await verifierAccess.connect(verifierAdminSigner).grantRole(setterRole, protocolAdminAddress)).wait()
+				log.ok(`Fork patch: SETTER_ROLE granted to ${log.addr(protocolAdminAddress)} on verifier (via ${log.addr(verifierAdmin)})`)
 			}
 		}
 
-		await setV085Parameters(DIAMOND_ADDRESS, newParams, admin)
+		await setV085Parameters(DIAMOND_ADDRESS, newParams, protocolAdminSigner)
 		if (Object.keys(newParams).length === 0) {
 			log.info("(no parameters configured)")
 		}
@@ -504,18 +526,24 @@ async function main() {
 		// ── Step 9: Deploy AccountLayer + InstantLayer ───────────────────
 		t = log.step("Deploy AccountLayer + InstantLayer")
 		currentStep = "deploy_account_instant_layer"
-		const symmioFeeReceiver = config.symmioFeeReceiver || adminAddress
+		const symmioFeeReceiver = config.symmioFeeReceiver || protocolAdminAddress
 		const alilStateFile = `${outputDir}/${withSuffix("deployed-accountlayer-instantlayer")}`
 
-		const alResult = await deployAccountLayerDiamond(adminAddress, symmioFeeReceiver, alilStateFile, admin, deploymentStateContext)
-		const ilResult = await deployInstantLayer(DIAMOND_ADDRESS, adminAddress, alilStateFile, deploymentStateContext)
+		const alResult = await deployAccountLayerDiamond(
+			protocolAdminAddress,
+			symmioFeeReceiver,
+			alilStateFile,
+			protocolAdminSigner,
+			deploymentStateContext,
+		)
+		const ilResult = await deployInstantLayer(DIAMOND_ADDRESS, protocolAdminAddress, alilStateFile, deploymentStateContext)
 		accountLayerAddress = alResult.diamondAddress
 		instantLayerAddress = ilResult.address
 
-		await wireAccountLayerInstantLayer(DIAMOND_ADDRESS, alResult.diamondAddress, ilResult.address, admin)
+		await wireAccountLayerInstantLayer(DIAMOND_ADDRESS, alResult.diamondAddress, ilResult.address, protocolAdminSigner)
 
 		if (config.setupInstantLayerTemplates !== false) {
-			await setupInstantLayerTemplates(ilResult.address, admin)
+			await setupInstantLayerTemplates(ilResult.address, protocolAdminSigner)
 		}
 
 		report.steps.push({
@@ -551,12 +579,12 @@ async function main() {
 			if (partyBsToRegister.length > 0 && registerOnSymmioCore) {
 				// Diamond registration — needs PARTY_B_MANAGER_ROLE. Admin is DEFAULT_ADMIN
 				// so grant-to-self is safe and idempotent.
-				await (await controlFacet.grantRole(adminAddress, ethers.id("PARTY_B_MANAGER_ROLE"))).wait()
-				log.ok("PARTY_B_MANAGER_ROLE granted")
+				await (await controlFacetAdmin.grantRole(protocolAdminAddress, ethers.id("PARTY_B_MANAGER_ROLE"))).wait()
+				log.ok("PARTY_B_MANAGER_ROLE granted to protocol admin")
 				for (const partyB of partyBsToRegister) {
 					const isRegistered = await viewFacet.isPartyB(partyB)
 					if (!isRegistered) {
-						await (await controlFacet.registerPartyB(partyB)).wait()
+						await (await controlFacetAdmin.registerPartyB(partyB)).wait()
 						log.ok(`Registered ${log.addr(partyB)} on Diamond`)
 						registeredOnDiamond.push(partyB)
 					} else {
@@ -568,7 +596,7 @@ async function main() {
 			}
 
 			if (listConfig.registerOnInstantLayer) {
-				const il = await ethers.getContractAt("InstantLayer", ilResult.address, admin)
+				const il = await ethers.getContractAt("InstantLayer", ilResult.address, protocolAdminSigner)
 				for (const partyB of partyBsToRegister) {
 					const isRegistered = await il.registeredPartyBs(partyB)
 					if (!isRegistered) {
@@ -607,7 +635,7 @@ async function main() {
 		const viewFacetQuote = await ethers.getContractAt(
 			"contracts/core/facets/ViewFacetQuote/ViewFacetQuote.sol:ViewFacetQuote",
 			DIAMOND_ADDRESS,
-			admin,
+			ownerSigner,
 		)
 
 		log.info(`Verifying ${preQuoteSnapshots.length} quotes...`)
@@ -647,9 +675,9 @@ async function main() {
 
 		// ── Grant migration role ─────────────────────────────────────────
 		currentStep = "grant_migration_role"
-		await (await controlFacet.grantRole(adminAddress, ethers.id("MIGRATION_ROLE"))).wait()
-		log.ok(`MIGRATION_ROLE granted to ${log.addr(adminAddress)}`)
-		report.steps.push({ name: "grant_migration_role", status: "ok" })
+		await (await controlFacetAdmin.grantRole(migrationRunnerAddress, ethers.id("MIGRATION_ROLE"))).wait()
+		log.ok(`MIGRATION_ROLE granted to ${log.addr(migrationRunnerAddress)}`)
+		report.steps.push({ name: "grant_migration_role", status: "ok", details: { migrationRunnerAddress } })
 		currentStep = null
 		tryWriteReport(reportFile, report)
 
@@ -660,6 +688,7 @@ async function main() {
 				NETWORK_ALIAS: networkSuffix,
 				DIAMOND_ADDRESS,
 				FORK: "true",
+				FORK_MIGRATION_RUNNER_ADDRESS: migrationRunnerAddress,
 				MIGRATION_INPUT_FILE: migrationInputFile,
 				MIGRATE_PROGRESS_FILE: migrationProgressFile,
 				MIGRATE_REPORT_FILE: migrationReportFile,
@@ -687,14 +716,19 @@ async function main() {
 			instantLayer: instantLayerAddress,
 			signatureVerifier: newParams.signatureVerifierAddress,
 			knownAccounts: [
-				{ label: "impersonatedAdmin", address: adminAddress },
-				{ label: "adminOverride", address: ADMIN_OVERRIDE },
+				{ label: "diamondOwner", address: ownerAddress },
+				{ label: "ownerOverride", address: OWNER_OVERRIDE },
 				{ label: "protocolAdmin", address: config.protocolAdmin },
+				{ label: "activeProtocolAdmin", address: protocolAdminAddress },
+				{ label: "migrationRunner", address: migrationRunnerAddress },
 				{ label: "symmioFeeReceiver", address: config.symmioFeeReceiver },
 			],
 		})
 		log.success("Fork upgrade completed successfully", [
 			["Diamond", DIAMOND_ADDRESS],
+			["Diamond owner", ownerAddress],
+			["Protocol admin", protocolAdminAddress],
+			["Migration runner", migrationRunnerAddress],
 			["AccountLayer", accountLayerAddress],
 			["InstantLayer", instantLayerAddress],
 			["Duration", scriptTimer.fmt()],
