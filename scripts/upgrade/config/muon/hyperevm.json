@@ -1,0 +1,12 @@
+{
+	"diamondAddress": "0x57331038c21982116EE9b0906E4a5c5cB52dcE2e",
+	"safeAddress": "0x5146C35725d9b8F11A84ebD4a3abe9845698Ada9",
+	"muonUpnlValidTime": 60,
+	"muonPriceValidTime": 60,
+	"grantMuonSetterRole": true,
+	"safeProposal": {
+		"enabled": true,
+		"submit": true,
+		"safeNonce": null
+	}
+}
