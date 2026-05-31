@@ -174,6 +174,14 @@ NETWORK=coti RPC_URL=https://mainnet.coti.io/rpc npx ts-node scripts/upgrade/ver
 
 ### 4. Generate Safe batch
 
+Fetch the chain's current Solver entities from the subgraph first. This writes `scripts/upgrade/config/partyBList-{network}.json`, which `generateSafeBatch.ts` uses for PartyB registration and `whitelistSymbolTypes.ts` later uses for symbol-type whitelisting.
+
+```bash
+SOLVER_CHAINS=<network> npx ts-node scripts/upgrade/fetchSolverList.ts
+```
+
+The generated PartyB list sets `registerOnInstantLayer` and `registerOnSymmioCore` to `true` for every chain. `generateSafeBatch.ts` checks live on-chain state and skips solvers that are already registered on Core or InstantLayer.
+
 ```bash
 USE_KEYSTORE=true npx hardhat run scripts/upgrade/generateSafeBatch.ts --network <network>
 ```
@@ -196,7 +204,7 @@ The Safe batch includes:
 6. Grant MIGRATION_ROLE and SYMBOL_MANAGER_ROLE to `migrationRunner`
 7. Peripheral wiring (roles + hooks between Diamond, AccountLayer, InstantLayer)
 8. SymbolManager wiring (SYMBOL_MANAGER_ROLE + FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE on Diamond)
-9. `registerPartyBs()` on InstantLayer (reads PartyB list from `config/partyBList-{network}.json`)
+9. `registerPartyB()` on Core Diamond + `registerPartyBs()` on InstantLayer (reads generated Solver list from `config/partyBList-{network}.json`)
 
 The diamondCut is **not** in the Safe batch -- it's separate so it can be routed through the timelock.
 
@@ -397,6 +405,7 @@ Phase 1: Prepare (can be done in advance, no downtime)
        verifyCoreBytecode.ts                (core facets bytecode + library linking)
        verifyPeripheralBytecode.ts     (peripherals bytecode + immutables)
        verifyBlockExplorer.ts             (block explorer source + ABI verification)
+  fetchSolverList.ts             (writes partyBList-{network}.json from Solver entities)
   generateSafeBatch.ts
   generateTimelockBatch.ts
   generatePostMigrationBatch.ts
@@ -459,6 +468,7 @@ Same as above but skip `generateTimelockBatch.ts` and include the diamondCut dir
 | File                                  | Producer                       | Consumer                                         |
 | ------------------------------------- | ------------------------------ | ------------------------------------------------ |
 | `muon-config.json`                    | readMuonConfig.ts              | Human review (paste into upgrade-{network}.json) |
+| `partyBList-{network}.json`           | fetchSolverList.ts             | generateSafeBatch.ts / whitelistSymbolTypes.ts   |
 | `deployed-facets-{network}.json`      | deployFacets.ts                | generateSafeBatch.ts                             |
 | `deployed-peripherals-{network}.json` | deployPeripherals.ts           | generateSafeBatch.ts                             |
 | `safe-batch.json`                     | generateSafeBatch.ts           | Safe TX Builder                                  |
