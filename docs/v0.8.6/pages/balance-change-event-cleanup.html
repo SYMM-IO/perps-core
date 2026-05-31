@@ -25,9 +25,11 @@
 				<div class="toc-card">
 					<p class="toc-title">On this page</p>
 					<a class="toc-link level-2" href="#summary">Summary</a>
-					<a class="toc-link level-2" href="#why-event-labels-changed">Why Event Labels Changed</a>
-					<a class="toc-link level-2" href="#balancechange-type-model">BalanceChange Type Model</a>
-					<a class="toc-link level-2" href="#consumer-impact">Consumer Impact</a>
+					<a class="toc-link level-2" href="#clearing-house-reimbursements">Clearing House Reimbursements</a>
+					<a class="toc-link level-2" href="#released-open-fees">Released Open Fees</a>
+					<a class="toc-link level-2" href="#deferred-balance-release">Deferred Balance Release</a>
+					<a class="toc-link level-2" href="#liquidation-fee-events">Liquidation Fee Events</a>
+					<a class="toc-link level-2" href="#enum-compatibility">Enum Compatibility</a>
 				</div>
 			</aside>
 
@@ -38,7 +40,7 @@
 						<div>
 							<h1>BalanceChange Event Cleanup</h1>
 							<p class="hero-copy">
-								v0.8.6 makes liquidation and clearing-house balance events describe the bucket that actually changes.
+								v0.8.6 cleans up liquidation and Clearing House balance events so the emitted type matches the bucket that changed.
 							</p>
 						</div>
 					</div>
@@ -47,105 +49,115 @@
 				<article class="doc-article" id="full-document">
 					<h2 id="summary">Summary</h2>
 					<p>
-						Some liquidation-time credits used to be emitted as realized PnL even when storage moved the amount into a more specific
-						bucket, such as reimbursement, deferred balance, released pending fees, or LF. That forced indexers to infer accounting meaning
-						from surrounding flow.
+						Before v0.8.6, a few liquidation and Clearing House paths either skipped <code>BalanceChangePartyA</code> events or reused
+						generic realized-PnL labels while updating more specific accounting buckets. That made it hard for indexers to tell whether a
+						PartyA credit was reimbursement, a returned fee reserve, deferred balance, or liquidation fee.
 					</p>
 					<p>
-						v0.8.6 makes those events follow the bucket that actually changes. The new enum value is <code>REIMBURSEMENT_IN</code>, and
-						related liquidation/Clearing House flows now use existing specific types instead of overloading realized PnL.
+						v0.8.6 keeps realized PnL events for real PnL movement and uses specific labels for the other buckets. The only new enum value
+						is <code>REIMBURSEMENT_IN</code>; the remaining fixes use existing <code>PLATFORM_FEE_IN</code>,
+						<code>DEFERRED_BALANCE_IN</code>, <code>LF_IN</code>, and <code>LF_OUT</code> labels.
 					</p>
 
-					<h2 id="why-event-labels-changed">Why Event Labels Changed</h2>
+					<h2 id="clearing-house-reimbursements">Clearing House Reimbursements</h2>
 					<p>
-						The old event stream often answered only "PartyA balance increased." For liquidation and Clearing House flows, that was not
-						enough: reimbursement, deferred balance, released open fees, and LF are different accounting buckets.
+						<strong>Before:</strong> when <code>distributeForClearingHouse</code> paid a liquidating PartyA, the amount was routed into
+						<code>partyAReimbursement</code>, but no <code>BalanceChangePartyA</code> event was emitted at that point. Consumers could only
+						see the later settlement release, which made the reimbursement look like generic balance movement.
 					</p>
-					<ul>
-						<li>
-							<strong>Clearing House reimbursement credits:</strong> credits to <code>partyAReimbursement</code> emit
-							<code>REIMBURSEMENT_IN</code>.
-						</li>
-						<li>
-							<strong>Pending-fee reimbursement:</strong> released open-fee reserves moved into <code>partyAReimbursement</code> emit
-							<code>PLATFORM_FEE_IN</code>.
-						</li>
-						<li>
-							<strong>Deferred balance release:</strong> deferred excess returned to PartyA emits <code>DEFERRED_BALANCE_IN</code>.
-						</li>
-						<li>
-							<strong>PartyA liquidation fee:</strong> final settlement emits <code>LF_OUT</code> from the liquidated PartyA and
-							<code>LF_IN</code> to the liquidation starter.
-						</li>
-					</ul>
+					<pre><code class="language-solidity">accountLayout.partyAReimbursement[receivers[i]] += amount;
+// no BalanceChangePartyA event in the old path
+</code></pre>
 					<p>
-						The shared idea is the same in every case: event labels should describe accounting movement, not just the fact that a balance
-						increased.
+						<strong>Now:</strong> the reimbursement bucket update emits <code>REIMBURSEMENT_IN</code> immediately. PartyB receivers still
+						use <code>BalanceChangePartyB(..., REALIZED_PNL_IN)</code>, and non-liquidating PartyA receivers still use
+						<code>REALIZED_PNL_IN</code>.
+					</p>
+					<pre><code class="language-solidity">accountLayout.partyAReimbursement[receivers[i]] += amount;
+emit SharedEvents.BalanceChangePartyA(receivers[i], amount, SharedEvents.BalanceChangeType.REIMBURSEMENT_IN);
+</code></pre>
+					<p>
+						Code reference: <code>contracts/core/facets/ClearingHouse/ClearingHouseFacetImpl.sol:181-195</code>.
 					</p>
 
-					<h2 id="balancechange-type-model">BalanceChange Type Model</h2>
+					<h2 id="released-open-fees">Released Open Fees</h2>
 					<p>
-						<code>REIMBURSEMENT_IN</code> is appended after <code>DEFERRED_BALANCE_OUT</code>. That keeps every existing
-						<code>BalanceChangeType</code> integer stable, so consumers add the new trailing label without shifting older decoders:
+						<strong>Before:</strong> Clearing House pending-quote cleanup released PartyA's reserved open trading fee and added it to
+						<code>partyAReimbursement</code>, but those paths did not emit the fee event. That made released fee reserves look the same as
+						any other reimbursement or later balance release.
 					</p>
-					<pre><code class="language-solidity">enum BalanceChangeType {
-    ALLOCATE,
-    DEALLOCATE,
-    PLATFORM_FEE_IN,
-    PLATFORM_FEE_OUT,
-    REALIZED_PNL_IN,
-    REALIZED_PNL_OUT,
-    CVA_IN,
-    CVA_OUT,
-    LF_IN,
-    LF_OUT,
-    FUNDING_FEE_IN,
-    FUNDING_FEE_OUT,
-    DEFERRED_BALANCE_IN,
-    DEFERRED_BALANCE_OUT,
-    REIMBURSEMENT_IN
+					<p>
+						<strong>Now:</strong> when the reserved fee is released into <code>partyAReimbursement</code>, the code emits
+						<code>PLATFORM_FEE_IN</code>. This is used in both the cross-PartyB pending quote cleanup and the PartyA takeover pending quote
+						cleanup.
+					</p>
+					<pre><code class="language-solidity">uint256 fee = LibQuote.getOpenTradingFee(quote.id);
+LibAccount.releaseReservedOpenTradingFee(partyA, fee);
+accountLayout.partyAReimbursement[partyA] += fee;
+emit SharedEvents.BalanceChangePartyA(partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
+</code></pre>
+					<p>
+						Code references: <code>contracts/core/facets/ClearingHouse/ClearingHouseFacetImpl.sol:241-245</code> and
+						<code>contracts/core/facets/ClearingHouse/ClearingHouseFacetImpl.sol:282-285</code>.
+					</p>
+
+					<h2 id="deferred-balance-release">Deferred Balance Release</h2>
+					<p>
+						<strong>Before:</strong> <code>settlePartyATakeover</code> released
+						<code>partyAReimbursement + partyADeferredBalance</code> into PartyA allocated balance and emitted one
+						<code>REALIZED_PNL_IN</code> event for the combined amount. That mixed two different sources and mislabeled deferred balance as
+						realized PnL.
+					</p>
+					<pre><code class="language-solidity">accountLayout.allocatedBalances[partyA] += totalRelease;
+emit SharedEvents.BalanceChangePartyA(partyA, totalRelease, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+</code></pre>
+					<p>
+						<strong>Now:</strong> deferred balance release emits <code>DEFERRED_BALANCE_IN</code>. Reimbursement is not emitted again at
+						final release because it was already classified when it entered the reimbursement bucket.
+					</p>
+					<pre><code class="language-solidity">accountLayout.allocatedBalances[partyA] += totalRelease;
+if (deferredBalance &gt; 0) {
+    emit SharedEvents.BalanceChangePartyA(partyA, deferredBalance, SharedEvents.BalanceChangeType.DEFERRED_BALANCE_IN);
 }
 </code></pre>
 					<p>
-						Clearing House distribution selects the emitted type from the receiver path:
+						Code references: <code>contracts/core/facets/ClearingHouse/ClearingHouseFacetImpl.sol:483-493</code> and
+						<code>contracts/core/libraries/liquidation/LibPartyALiquidationProcess.sol:372-376</code>.
 					</p>
-					<ul>
-						<li>
-							PartyB receiver: credit <code>partyBAllocatedBalances</code> and emit
-							<code>BalanceChangePartyB(..., REALIZED_PNL_IN)</code>.
-						</li>
-						<li>
-							Liquidating PartyA receiver: credit <code>partyAReimbursement</code> and emit
-							<code>BalanceChangePartyA(..., REIMBURSEMENT_IN)</code>.
-						</li>
-						<li>
-							Non-liquidating PartyA or other receiver: credit <code>allocatedBalances</code> and emit
-							<code>BalanceChangePartyA(..., REALIZED_PNL_IN)</code>.
-						</li>
-					</ul>
-					<pre><code class="language-solidity">if (maLayout.liquidationStatus[receivers[i]]) {
-    accountLayout.partyAReimbursement[receivers[i]] += amount;
-    emit SharedEvents.BalanceChangePartyA(receivers[i], amount, SharedEvents.BalanceChangeType.REIMBURSEMENT_IN);
-} else {
-    accountLayout.allocatedBalances[receivers[i]] += amount;
-    emit SharedEvents.BalanceChangePartyA(receivers[i], amount, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
-}
-</code></pre>
 
-					<h2 id="consumer-impact">Consumer Impact</h2>
+					<h2 id="liquidation-fee-events">Liquidation Fee Events</h2>
 					<p>
-						Event consumers should stop treating all liquidation-time PartyA credits as realized PnL. In v0.8.6, the event type carries
-						more bucket information:
+						<strong>Before:</strong> PartyA liquidation fee settlement emitted only inbound <code>LF_IN</code> events to liquidators. The
+						event stream did not show the matching <code>LF_OUT</code> from the liquidated PartyA, and older settlement split the fee across
+						two liquidator slots.
+					</p>
+					<p>
+						<strong>Now:</strong> final settlement emits both sides of the movement: <code>LF_OUT</code> from the liquidated PartyA, then
+						<code>LF_IN</code> to the recorded liquidation starter.
+					</p>
+					<pre><code class="language-solidity">emit SharedEvents.BalanceChangePartyA(partyA, lf, SharedEvents.BalanceChangeType.LF_OUT);
+address liquidationStarter = accountLayout.liquidators[partyA][0];
+accountLayout.allocatedBalances[liquidationStarter] += lf;
+emit SharedEvents.BalanceChangePartyA(liquidationStarter, lf, SharedEvents.BalanceChangeType.LF_IN);
+</code></pre>
+					<p>
+						Code reference: <code>contracts/core/libraries/liquidation/LibPartyALiquidationProcess.sol:379-385</code>.
+					</p>
+
+					<h2 id="enum-compatibility">Enum Compatibility</h2>
+					<p>
+						<code>REIMBURSEMENT_IN</code> is appended after <code>DEFERRED_BALANCE_OUT</code>. Existing integer values keep the same
+						positions, so consumers that decode <code>BalanceChangeType</code> by integer only need to add the new trailing value.
 					</p>
 					<ul>
-						<li><code>REIMBURSEMENT_IN</code> maps to <code>partyAReimbursement</code>.</li>
-						<li><code>PLATFORM_FEE_IN</code> can represent released open fees moved into the reimbursement bucket during liquidation.</li>
-						<li><code>DEFERRED_BALANCE_IN</code> maps to deferred excess returned to PartyA.</li>
-						<li><code>LF_IN</code> for PartyA liquidation finalization maps to the liquidation starter's allocated balance.</li>
+						<li><code>REALIZED_PNL_IN</code> still means a realized-PnL credit to an allocated balance.</li>
+						<li><code>REIMBURSEMENT_IN</code> means a credit to <code>partyAReimbursement</code>.</li>
+						<li><code>PLATFORM_FEE_IN</code> means released fee reserve returning to PartyA accounting.</li>
+						<li><code>DEFERRED_BALANCE_IN</code> means deferred balance returned to PartyA allocated balance.</li>
 					</ul>
 					<p>
-						Existing enum values keep their prior numeric positions. Consumers that decode <code>BalanceChangeType</code> by integer
-						should add the new trailing value without shifting older labels.
+						Code references: <code>contracts/core/libraries/SharedEvents.sol:8-23</code> and
+						<code>contracts/core/interfaces/ISymmio.sol:52-67</code>.
 					</p>
 				</article>
 			</main>

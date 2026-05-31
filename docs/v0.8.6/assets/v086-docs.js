@@ -1086,71 +1086,7 @@
 		})
 	}
 
-	const installGlossary = () => {
-		const article = document.querySelector(".doc-article")
-		if (!article) return
-		const terms = [
-			["CreditLineManager", "Per-affiliate policy contract that tracks reserved, active, settled, and released credit debt."],
-			["ExpressProvider", "Express Withdrawal contract that advances user funds from pools and credit lines before standard finalization."],
-			["AccountLayer", "Account abstraction layer that owns SubAccounts, permissions, affiliate hooks, and ownership transfers."],
-			["SubAccount", "Trading account controlled through AccountLayer ownership and permissions."],
-			["Express Withdrawal", "Fast withdrawal system that pays the user before the normal SYMMIO cooldown completes."],
-			["PartyA", "The trader side of a SYMMIO quote or account."],
-			["PartyB", "The solver or counterparty side of a SYMMIO quote."],
-			["Muon", "Off-chain oracle/signature network used by SYMMIO to attest prices, UPNL, and related state."],
-			["UPNL", "Unrealized profit and loss used in solvency, liquidation, and settlement checks."],
-			["affiliate pool", "Affiliate-backed liquidity balance used by Express Withdrawal for affiliate-specific funding and loss coverage."],
-			["funding accumulator", "Stored funding value used to calculate funding debt over time."],
-			["liquidation", "Settlement path used when an account is no longer sufficiently collateralized."],
-		]
-		const used = new Set()
-		const pattern = new RegExp(`\\b(${terms.map(([term]) => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})\\b`, "g")
-		const definitions = new Map(terms.map(([term, definition]) => [term.toLowerCase(), definition]))
-		const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT, {
-			acceptNode(node) {
-				const parent = node.parentElement
-				if (!parent || !node.nodeValue || !pattern.test(node.nodeValue)) return NodeFilter.FILTER_REJECT
-				pattern.lastIndex = 0
-				if (parent.closest("a, abbr, button, code, pre, h1, h2, h3, h4, h5, h6, script, style")) return NodeFilter.FILTER_REJECT
-				return NodeFilter.FILTER_ACCEPT
-			},
-		})
-		const nodes = []
-		while (nodes.length < terms.length) {
-			const node = walker.nextNode()
-			if (!node) break
-			nodes.push(node)
-		}
-		nodes.forEach((node) => {
-			const source = node.nodeValue || ""
-			let cursor = 0
-			let changed = false
-			const fragment = document.createDocumentFragment()
-			for (const match of source.matchAll(pattern)) {
-				const term = match[0]
-				const key = term.toLowerCase()
-				if (used.has(key)) continue
-				const definition = definitions.get(key)
-				if (!definition) continue
-				fragment.append(document.createTextNode(source.slice(cursor, match.index)))
-				const abbr = document.createElement("abbr")
-				abbr.className = "glossary-term"
-				abbr.title = definition
-				abbr.tabIndex = 0
-				abbr.textContent = term
-				fragment.append(abbr)
-				cursor = match.index + term.length
-				used.add(key)
-				changed = true
-			}
-			if (!changed) return
-			fragment.append(document.createTextNode(source.slice(cursor)))
-			node.parentNode.replaceChild(fragment, node)
-		})
-	}
-
 	installHeadingLinks()
-	installGlossary()
 
 	const tocLinks = Array.from(document.querySelectorAll(".toc-link"))
 	if (tocLinks.length) {
