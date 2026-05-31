@@ -152,7 +152,7 @@ async function main() {
 	const config = loadConfig(connection.networkName)
 
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress
-	const ADMIN_ADDRESS = process.env.PROTOCOL_ADMIN ?? process.env.ADMIN_ADDRESS ?? (config.protocolAdmin || undefined)
+	const ADMIN_OVERRIDE = process.env.FORK_ADMIN_ADDRESS ?? process.env.ADMIN_ADDRESS
 	const DIAMOND_CUT_CHUNK_SIZE = Number(process.env.DIAMOND_CUT_CHUNK_SIZE ?? config.diamondCutChunkSize ?? 6)
 	const SUBGRAPH_ENDPOINT = process.env.SUBGRAPH_ENDPOINT || config.subgraphEndpoint || DEFAULT_SUBGRAPH_ENDPOINT
 	const RUN_MIGRATION = parseBool(process.env.FORK_RUN_MIGRATION, config.runMigration ?? false)
@@ -230,7 +230,7 @@ async function main() {
 		// ── Step 1: Resolve + impersonate admin ──────────────────────────
 		let t = log.step("Resolve and impersonate admin")
 		currentStep = "impersonate_admin"
-		const admin = await getImpersonatedAdmin(DIAMOND_ADDRESS, ADMIN_ADDRESS)
+		const admin = await getImpersonatedAdmin(DIAMOND_ADDRESS, ADMIN_OVERRIDE)
 		const adminAddress = await admin.getAddress()
 		report.protocolAdmin = adminAddress
 		report.steps.push({ name: "impersonate_admin", status: "ok", details: { adminAddress } })
@@ -688,7 +688,7 @@ async function main() {
 			signatureVerifier: newParams.signatureVerifierAddress,
 			knownAccounts: [
 				{ label: "impersonatedAdmin", address: adminAddress },
-				{ label: "configuredAdmin", address: ADMIN_ADDRESS },
+				{ label: "adminOverride", address: ADMIN_OVERRIDE },
 				{ label: "protocolAdmin", address: config.protocolAdmin },
 				{ label: "symmioFeeReceiver", address: config.symmioFeeReceiver },
 			],
