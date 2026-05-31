@@ -4,6 +4,7 @@ import path from "path"
 import { ethers } from "../../../test/helpers/hardhat-connection.js"
 import { validateDeploymentStateMetadata } from "./deploymentState.js"
 import { log } from "./log.js"
+import { baseNetworkName } from "./sharedConfig.js"
 
 /**
  * Preflight checks that should run before any upgrade/migration script starts
@@ -47,7 +48,7 @@ const CHAIN_ID_BY_NETWORK: Record<string, number> = {
  */
 export async function runPreflight(networkName: string | undefined, ctx: PreflightContext): Promise<void> {
 	log.header("Preflight Checks")
-	const baseName = networkName && networkName.startsWith("fork-") ? networkName.slice("fork-".length) : networkName
+	const baseName = baseNetworkName(networkName)
 	if (baseName && ctx.expectedChainId === undefined && CHAIN_ID_BY_NETWORK[baseName] !== undefined) {
 		ctx.expectedChainId = CHAIN_ID_BY_NETWORK[baseName]
 	}
