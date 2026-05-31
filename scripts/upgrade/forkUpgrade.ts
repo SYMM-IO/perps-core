@@ -1,3 +1,4 @@
+import { spawnSync } from "child_process"
 import fs from "fs"
 import path from "path"
 
@@ -16,11 +17,11 @@ import { deployFacets, buildDiamondCut, applyDiamondCut, setV085Parameters, type
 const DEFAULT_SUBGRAPH_ENDPOINT = "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/arbitrum_analytics/stage/gn"
 
 /**
- * Fork Upgrade Script (upgrade only, no migration)
+ * Fork Upgrade Script (upgrade by default; optional migration)
  *
  * Impersonates the on-chain diamond owner and runs the v0.8.4 -> v0.8.5
- * upgrade on a forked network. Migration is a separate step -- run
- * prepareMigrationInput.ts then runMigration.ts after this completes.
+ * upgrade on a forked network. Set FORK_RUN_MIGRATION=true to also prepare
+ * migration input after pause and run migration after the diamondCut.
  *
  * Usage:
  *   DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/forkUpgrade.ts --network localhost
@@ -38,6 +39,13 @@ type ForkUpgradeConfig = {
 	spotCheckCount?: number
 	symmioFeeReceiver?: string
 	setupInstantLayerTemplates?: boolean
+	runMigration?: boolean
+	validateMigrationInput?: boolean
+	validateMigrationEdgeCases?: boolean
+	migrationInputFile?: string
+	migrationProgressFile?: string
+	migrationReportFile?: string
+	migrationGapScanRange?: number
 	newV085Parameters?: NewV085Parameters
 }
 
@@ -106,6 +114,23 @@ function tryWriteReport(filePath: string, report: ForkUpgradeReport): void {
 	}
 }
 
+function runHardhatScript(scriptPath: string, networkName: string, envOverrides: Record<string, string | number | boolean | undefined>): void {
+	const env: NodeJS.ProcessEnv = { ...process.env }
+	for (const [key, value] of Object.entries(envOverrides)) {
+		if (value === undefined) continue
+		env[key] = String(value)
+	}
+
+	const result = spawnSync("npx", ["hardhat", "run", scriptPath, "--network", networkName], {
+		stdio: "inherit",
+		env,
+	})
+
+	if (result.error) throw result.error
+	if (result.signal) throw new Error(`${scriptPath} terminated with signal ${result.signal}`)
+	if (result.status !== 0) throw new Error(`${scriptPath} exited with status ${result.status ?? "unknown"}`)
+}
+
 function printStepTimings(steps: StepResult[], totalMs: number): void {
 	const timed = steps.filter(s => typeof s.durationMs === "number")
 	if (timed.length === 0) return
@@ -130,6 +155,9 @@ async function main() {
 	const ADMIN_ADDRESS = process.env.PROTOCOL_ADMIN ?? process.env.ADMIN_ADDRESS ?? (config.protocolAdmin || undefined)
 	const DIAMOND_CUT_CHUNK_SIZE = Number(process.env.DIAMOND_CUT_CHUNK_SIZE ?? config.diamondCutChunkSize ?? 6)
 	const SUBGRAPH_ENDPOINT = process.env.SUBGRAPH_ENDPOINT || config.subgraphEndpoint || DEFAULT_SUBGRAPH_ENDPOINT
+	const RUN_MIGRATION = parseBool(process.env.FORK_RUN_MIGRATION, config.runMigration ?? false)
+	const VALIDATE_MIGRATION_INPUT = parseBool(process.env.FORK_VALIDATE_MIGRATION_INPUT, config.validateMigrationInput ?? RUN_MIGRATION)
+	const VALIDATE_MIGRATION_EDGE_CASES = parseBool(process.env.FORK_VALIDATE_MIGRATION_EDGE_CASES, config.validateMigrationEdgeCases ?? RUN_MIGRATION)
 	const newParams = config.newV085Parameters ?? {}
 
 	const outputDir = "./scripts/upgrade/output"
@@ -138,6 +166,11 @@ async function main() {
 	const networkSuffix = baseNetworkName(connection.networkName)
 	const withSuffix = (baseName: string, ext = "json"): string => (networkSuffix ? `${baseName}-${networkSuffix}.${ext}` : `${baseName}.${ext}`)
 	const reportFile = `${outputDir}/${withSuffix("forkUpgrade-report")}`
+	const migrationInputFile = process.env.MIGRATION_INPUT_FILE ?? config.migrationInputFile ?? `${outputDir}/${withSuffix("migration-input")}`
+	const migrationProgressFile =
+		process.env.MIGRATE_PROGRESS_FILE ?? config.migrationProgressFile ?? `${outputDir}/${withSuffix("migration-progress")}`
+	const migrationReportFile = process.env.MIGRATE_REPORT_FILE ?? config.migrationReportFile ?? `${outputDir}/${withSuffix("migration-report")}`
+	const migrationGapScanRange = process.env.GAP_SCAN_RANGE ?? config.migrationGapScanRange
 	const chainId = Number((await ethers.provider.getNetwork()).chainId)
 	const deploymentStateContext = { networkName: networkSuffix, chainId, diamondAddress: DIAMOND_ADDRESS }
 
@@ -190,8 +223,9 @@ async function main() {
 		log.header("Symmio v0.8.5 Fork Upgrade")
 		log.kv("Diamond", log.addr(DIAMOND_ADDRESS))
 		log.kv("Subgraph", SUBGRAPH_ENDPOINT)
+		if (RUN_MIGRATION) log.kv("Fork migration", "enabled")
 
-		log.setSteps(11)
+		log.setSteps(11 + (RUN_MIGRATION ? 2 : 0))
 
 		// ── Step 1: Resolve + impersonate admin ──────────────────────────
 		let t = log.step("Resolve and impersonate admin")
@@ -335,6 +369,41 @@ async function main() {
 		currentStep = null
 		tryWriteReport(reportFile, report)
 		finishStep(t)
+
+		if (RUN_MIGRATION) {
+			t = log.step("Prepare migration input from paused state")
+			currentStep = "prepare_migration_input"
+			const childEnv = {
+				NETWORK_ALIAS: networkSuffix,
+				DIAMOND_ADDRESS,
+				SUBGRAPH_ENDPOINT,
+				PREPARE_OUTPUT_FILE: migrationInputFile,
+				MIGRATION_INPUT_FILE: migrationInputFile,
+				SUBGRAPH_RESUME: process.env.SUBGRAPH_RESUME ?? "false",
+				GAP_SCAN_RANGE: migrationGapScanRange,
+			}
+
+			runHardhatScript("scripts/upgrade/prepareMigrationInput.ts", connection.networkName, childEnv)
+			if (VALIDATE_MIGRATION_INPUT) {
+				runHardhatScript("scripts/upgrade/validateMigrationInput.ts", connection.networkName, childEnv)
+			}
+			if (VALIDATE_MIGRATION_EDGE_CASES) {
+				runHardhatScript("scripts/upgrade/validateMigrationEdgeCases.ts", connection.networkName, childEnv)
+			}
+
+			report.steps.push({
+				name: "prepare_migration_input",
+				status: "ok",
+				details: {
+					migrationInputFile,
+					validateMigrationInput: VALIDATE_MIGRATION_INPUT,
+					validateMigrationEdgeCases: VALIDATE_MIGRATION_EDGE_CASES,
+				},
+			})
+			currentStep = null
+			tryWriteReport(reportFile, report)
+			finishStep(t)
+		}
 
 		// ── Step 6: Deploy v0.8.5 facets ─────────────────────────────────
 		t = log.step("Deploy v0.8.5 facets")
@@ -584,6 +653,30 @@ async function main() {
 		currentStep = null
 		tryWriteReport(reportFile, report)
 
+		if (RUN_MIGRATION) {
+			const t = log.step("Run fork migration")
+			currentStep = "run_migration"
+			runHardhatScript("scripts/upgrade/runMigration.ts", connection.networkName, {
+				NETWORK_ALIAS: networkSuffix,
+				DIAMOND_ADDRESS,
+				FORK: "true",
+				MIGRATION_INPUT_FILE: migrationInputFile,
+				MIGRATE_PROGRESS_FILE: migrationProgressFile,
+				MIGRATE_REPORT_FILE: migrationReportFile,
+			})
+			report.steps.push({
+				name: "run_migration",
+				status: "ok",
+				details: {
+					migrationInputFile,
+					migrationReportFile,
+				},
+			})
+			currentStep = null
+			tryWriteReport(reportFile, report)
+			finishStep(t)
+		}
+
 		report.status = "success"
 
 		// ── Summary ──────────────────────────────────────────────────────
@@ -606,11 +699,15 @@ async function main() {
 			["InstantLayer", instantLayerAddress],
 			["Duration", scriptTimer.fmt()],
 		])
-		log.nextSteps([
-			"Run prepareMigrationInput.ts to fetch + validate migration data from subgraph",
-			"Run runMigration.ts with the validated input file",
-			"Unpause the system after migration is complete",
-		])
+		log.nextSteps(
+			RUN_MIGRATION
+				? ["Review the migration report", "Unpause the system after migration is complete"]
+				: [
+						"Run prepareMigrationInput.ts to fetch + validate migration data from subgraph",
+						"Run runMigration.ts with the validated input file",
+						"Unpause the system after migration is complete",
+					],
+		)
 	} catch (error) {
 		if (currentStep) {
 			report.steps.push({

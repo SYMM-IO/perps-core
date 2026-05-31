@@ -4,11 +4,11 @@ Rehearse the full v0.8.4 -> v0.8.5 upgrade + migration on a fork of a live netwo
 
 ## Overview
 
-The fork rehearsal mirrors the production flow with three separate steps:
+The fork rehearsal mirrors the production flow with three separate steps, or one integrated fork run when `FORK_RUN_MIGRATION=true`:
 
 1. **Upgrade** (`forkUpgrade.ts`) -- impersonate admin, pause, deploy facets, diamondCut, set params, deploy AccountLayer + InstantLayer + SymmioSymbolManager, wire integrations
-2. **Prepare migration input** (`prepareMigrationInput.ts`) -- fetch from subgraph, validate against on-chain
-3. **Migrate** (`runMigration.ts`) -- run migration + verify using the validated input
+2. **Prepare migration input** (`prepareMigrationInput.ts`) -- after pause, fetch candidates from subgraph, derive PartyB tasks from on-chain quotes, validate against on-chain
+3. **Migrate** (`runMigration.ts`) -- after diamondCut and `MIGRATION_ROLE`, run migration + verify using the validated input
 
 In production, step 1 is done by the admin (EOA via `applyUpgrade.ts`) or multisig (via `generateSafeBatch.ts`), followed by a delay for the subgraph to sync, then steps 2 and 3.
 
@@ -60,6 +60,15 @@ npx hardhat run scripts/upgrade/forkUpgrade.ts --network localhost
 
 Output: `scripts/upgrade/output/forkUpgrade-report.json`, `deployed-facets.json`, `deployed-accountlayer-instantlayer.json`, `deployed-symbolmanager.json`
 
+To run the fork upgrade and migration in one rehearsal, enable the migration phase:
+
+```bash
+NETWORK_ALIAS=base FORK_RUN_MIGRATION=true GAP_SCAN_RANGE=10 \
+  npx hardhat run scripts/upgrade/forkUpgrade.ts --network localhost
+```
+
+In this mode, `forkUpgrade.ts` prepares and validates the migration input immediately after `pauseGlobal()`, then continues with the diamondCut, wiring, `MIGRATION_ROLE`, and `runMigration.ts`.
+
 ### Step 1.5: Verify upgrade
 
 Run after forkUpgrade to confirm the upgrade is correct before migration. All scripts auto-load addresses from `upgrade.json` and output files.
@@ -83,7 +92,7 @@ FORK=true npx hardhat run scripts/upgrade/testTemplateExecution.ts --network loc
 
 ### Step 2: Prepare migration input
 
-Fetches open quotes and partyB balances from the subgraph, validates them against on-chain state (boundary check, spot-checks, balance verification), and writes a validated JSON file.
+Fetches open quotes from the subgraph after the system is paused, reads the selected quotes from on-chain `getQuote()`, derives PartyB tasks from that paused state, and writes a validated JSON file.
 
 ```bash
 DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network localhost
