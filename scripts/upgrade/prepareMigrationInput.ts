@@ -12,8 +12,10 @@ import { deleteOpenQuotesProgress, fetchOpenQuotes } from "./utils/subgraphHelpe
  * Prepare migration input from subgraph data.
  *
  * Fetches open quotes and partyB balances from the subgraph, validates the
- * boundary against on-chain getNextQuoteId(), and writes a JSON file for
- * runMigration.ts. Can run before or after the diamondCut.
+ * boundary against on-chain getNextQuoteId(), derives PartyB tasks from
+ * paused on-chain quote fields, and writes a JSON file for runMigration.ts.
+ * Operational runbooks should run this after pause; it can run before or
+ * after the diamondCut.
  *
  * Critical-path script: kept short and reliable so it can run during the
  * pause window. Optional checks (on-chain balance snapshot, on-chain spot
@@ -128,6 +130,18 @@ function parseStringList(value: unknown): string[] | undefined {
 
 const FEE_RESERVATION_STATUSES = new Set([0, 1, 2])
 const ACTIVE_POSITION_STATUSES = new Set([4, 5, 6])
+const GET_QUOTE_SELECTOR = ethers.id("getQuote(uint256)").slice(0, 10)
+
+type MigrationQuoteFields = {
+	quoteId: string
+	partyA: string
+	partyB: string
+	symbolId: string
+	positionType: number
+	quantity: string
+	closedAmount: string
+	quoteStatus: number
+}
 
 function quoteOpenAmount(quote: { quantity: string; closedAmount: string }): bigint {
 	return BigInt(quote.quantity) - BigInt(quote.closedAmount)
@@ -137,6 +151,59 @@ function shouldIncludeQuoteForMigration(quote: { quoteStatus: number; quantity: 
 	if (FEE_RESERVATION_STATUSES.has(quote.quoteStatus)) return true
 	if (!ACTIVE_POSITION_STATUSES.has(quote.quoteStatus)) return false
 	return quoteOpenAmount(quote) > 0n
+}
+
+function decodeQuoteFields(quoteId: string, data: string): MigrationQuoteFields {
+	const tupleStart = 66
+	const word = (index: number): string => data.slice(tupleStart + index * 64, tupleStart + (index + 1) * 64)
+	const wordBig = (index: number): bigint => BigInt("0x" + word(index))
+
+	return {
+		quoteId,
+		symbolId: wordBig(2).toString(),
+		positionType: Number(wordBig(3)),
+		quantity: wordBig(9).toString(),
+		closedAmount: wordBig(10).toString(),
+		partyA: ethers.getAddress("0x" + word(20).slice(24)),
+		partyB: ethers.getAddress("0x" + word(21).slice(24)),
+		quoteStatus: Number(wordBig(22)),
+	}
+}
+
+async function rawGetQuote(diamondAddress: string, quoteId: string): Promise<MigrationQuoteFields> {
+	const calldata =
+		GET_QUOTE_SELECTOR +
+		ethers.AbiCoder.defaultAbiCoder()
+			.encode(["uint256"], [BigInt(quoteId)])
+			.slice(2)
+	const result = await ethers.provider.call({ to: diamondAddress, data: calldata })
+	if (!result || result === "0x") throw new Error(`getQuote(${quoteId}) returned empty data`)
+	return decodeQuoteFields(quoteId, result)
+}
+
+async function loadOnChainQuoteFields(diamondAddress: string, quoteIds: string[]): Promise<MigrationQuoteFields[]> {
+	const quotes: MigrationQuoteFields[] = []
+	for (let i = 0; i < quoteIds.length; i++) {
+		quotes.push(await rawGetQuote(diamondAddress, quoteIds[i]))
+		if ((i + 1) % 50 === 0 || i + 1 === quoteIds.length) {
+			log.detail(`on-chain quote fields: ${i + 1}/${quoteIds.length}`)
+		}
+	}
+	return quotes
+}
+
+function countSubgraphPairMismatches(subgraphQuotes: MigrationQuoteFields[], onChainQuotes: MigrationQuoteFields[]): number {
+	const subgraphById = new Map(subgraphQuotes.map(q => [q.quoteId, q]))
+	let mismatches = 0
+	for (const onChain of onChainQuotes) {
+		const subgraph = subgraphById.get(onChain.quoteId)
+		if (!subgraph) continue
+		const subgraphPartyA = ethers.isAddress(subgraph.partyA) ? ethers.getAddress(subgraph.partyA) : subgraph.partyA
+		const subgraphPartyB =
+			subgraph.partyB && ethers.isAddress(subgraph.partyB) ? ethers.getAddress(subgraph.partyB) : (subgraph.partyB ?? ethers.ZeroAddress)
+		if (subgraphPartyA !== onChain.partyA || subgraphPartyB !== onChain.partyB) mismatches++
+	}
+	return mismatches
 }
 
 async function main() {
@@ -284,7 +351,30 @@ async function main() {
 						.join(", ")}${zeroOpenActiveQuotes.length > 10 ? "..." : ""}`,
 			)
 		}
-		const quotesForMigration = quotesResult.quotes.filter(shouldIncludeQuoteForMigration)
+		const subgraphQuotesForMigration = quotesResult.quotes.filter(shouldIncludeQuoteForMigration)
+		const candidateQuoteIds = subgraphQuotesForMigration.map(q => q.quoteId).sort((a, b) => Number(BigInt(a) - BigInt(b)))
+
+		// The subgraph is used to discover candidate quote IDs, but the paused
+		// diamond is the source of truth for partyA/partyB pairs and aggregate
+		// fields. This prevents stale subgraph fields from producing incomplete
+		// partyBTasks during fork rehearsals or live pause windows.
+		log.info(`Reading ${candidateQuoteIds.length} selected quote(s) from on-chain getQuote()...`)
+		const onChainCandidateQuotes = await loadOnChainQuoteFields(DIAMOND_ADDRESS, candidateQuoteIds)
+		const subgraphPairMismatches = countSubgraphPairMismatches(
+			subgraphQuotesForMigration.map(q => ({
+				...q,
+				partyB: q.partyB ?? ethers.ZeroAddress,
+			})),
+			onChainCandidateQuotes,
+		)
+		if (subgraphPairMismatches > 0) {
+			log.warn(`${subgraphPairMismatches} selected quote(s) had subgraph partyA/partyB drift; using on-chain fields`)
+		}
+
+		const quotesForMigration = onChainCandidateQuotes.filter(shouldIncludeQuoteForMigration)
+		if (quotesForMigration.length !== onChainCandidateQuotes.length) {
+			log.warn(`Filtered ${onChainCandidateQuotes.length - quotesForMigration.length} selected quote(s) after on-chain status/open-amount check`)
+		}
 		const quoteIds = quotesForMigration.map(q => q.quoteId).sort((a, b) => Number(BigInt(a) - BigInt(b)))
 
 		// PartyB tasks derived from active quotes (not from all historical balance entries).
