@@ -2,5 +2,6 @@
 	"chunkSize": 50,
 	"dryRun": false,
 	"fork": false,
+	"deployedFacetsFile": "",
 	"skipPreCheck": true
 }

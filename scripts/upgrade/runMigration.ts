@@ -2,7 +2,10 @@ import fs from "fs"
 import path from "path"
 
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
-import { migrate, MigrationConfig, MigrationInput, MigrationReport } from "./migrate.js"
+import type { MigrationConfig, MigrationInput, MigrationReport } from "./migrate.js"
+import { migrate } from "./migrate.js"
+import type { DeployedFacetsSummary } from "./utils/deployedFacets.js"
+import { loadDeployedFacetsForNetwork, verifyMigrationSurfaceOnDiamond } from "./utils/deployedFacets.js"
 import { getImpersonatedAdmin, impersonateAndFund } from "./utils/forkHelpers.js"
 import { resolveConfiguredSigner } from "./utils/hardwareSigner.js"
 import { log } from "./utils/log.js"
@@ -37,13 +40,22 @@ type MigrationOnDemandReport = {
 	outputDir?: string
 	progressFile?: string
 	reportFile?: string
+	deployedFacetsFile?: string
 	config?: Record<string, unknown>
+	deployedFacets?: DeployedFacetsSummary
 	input?: {
 		quoteIdsTotal: number
 		partyBTasksTotal: number
 		aggregateKeys: number
 	}
 	migrationReport?: MigrationReport
+	roleChecks?: {
+		migrationRole: {
+			address: string
+			roleHash: string
+			hasRole: boolean
+		}
+	}
 	verification?: {
 		performed: boolean
 		quoteChecks: number
@@ -86,6 +98,7 @@ type MigrationConfigFile = {
 	progressFile?: string
 	reportFile?: string
 	outputDir?: string
+	deployedFacetsFile?: string
 }
 
 const MIGRATION_CONFIG_FILE = resolveConfigFile("migrate", NETWORK_SUFFIX, process.env.MIGRATION_CONFIG_FILE)
@@ -153,6 +166,18 @@ function toBigInt(value: unknown): bigint {
 	return BigInt((value as any).toString())
 }
 
+function sameAddress(a: string, b: string): boolean {
+	try {
+		return ethers.getAddress(a) === ethers.getAddress(b)
+	} catch {
+		return false
+	}
+}
+
+function samePath(a: string, b: string): boolean {
+	return path.resolve(a) === path.resolve(b)
+}
+
 type MigrationQuoteView = {
 	quoteStatus: bigint
 	partyA: string
@@ -183,6 +208,10 @@ function migrationSkipReason(quote: MigrationQuoteView): string | undefined {
 function loadMigrationInput(filePath: string): {
 	input: MigrationInput
 	expectedAggregates: Map<string, { long: bigint; short: bigint }> | null
+	source: {
+		diamondAddress?: string
+		deployedFacetsFile?: string
+	}
 } {
 	let raw: string
 	try {
@@ -204,6 +233,9 @@ function loadMigrationInput(filePath: string): {
 	}
 	if (data.partyBTasks && !Array.isArray(data.partyBTasks)) {
 		throw new Error("Migration input partyBTasks must be an array.")
+	}
+	if (data.diamondAddress && (typeof data.diamondAddress !== "string" || !ethers.isAddress(data.diamondAddress))) {
+		throw new Error(`Migration input diamondAddress is invalid: ${data.diamondAddress}`)
 	}
 
 	const quoteIds = (data.quoteIds ?? []).map((id: string | number, index: number) => {
@@ -250,12 +282,42 @@ function loadMigrationInput(filePath: string): {
 		}
 	}
 
+	const deployedFacetsFile =
+		typeof data.deployedFacetsFile === "string"
+			? data.deployedFacetsFile
+			: data.deployedFacets && typeof data.deployedFacets === "object" && typeof data.deployedFacets.file === "string"
+				? data.deployedFacets.file
+				: undefined
+
 	return {
 		input: {
 			quoteIds: quoteIds.sort((a: bigint, b: bigint) => (a < b ? -1 : a > b ? 1 : 0)),
 			partyBTasks: partyBTasks.sort((a: PartyBTask, b: PartyBTask) => a.partyB.localeCompare(b.partyB)),
 		},
 		expectedAggregates,
+		source: {
+			diamondAddress: data.diamondAddress ? ethers.getAddress(data.diamondAddress) : undefined,
+			deployedFacetsFile,
+		},
+	}
+}
+
+function validateMigrationInputSource(
+	source: { diamondAddress?: string; deployedFacetsFile?: string },
+	diamondAddress: string,
+	deployedFacetsFile: string,
+): void {
+	if (source.diamondAddress && !sameAddress(source.diamondAddress, diamondAddress)) {
+		throw new Error(
+			`Migration input was prepared for diamond ${source.diamondAddress}, but runMigration resolved ${diamondAddress}. ` +
+				`Regenerate the input or set DIAMOND_ADDRESS to the prepared diamond.`,
+		)
+	}
+	if (source.deployedFacetsFile && !samePath(source.deployedFacetsFile, deployedFacetsFile)) {
+		throw new Error(
+			`Migration input references deployed facets ${source.deployedFacetsFile}, but runMigration resolved ${deployedFacetsFile}. ` +
+				`Use the same FACETS_FILE/DEPLOYED_FACETS_FILE as prepareMigrationInput.ts or regenerate the input.`,
+		)
 	}
 }
 
@@ -372,6 +434,9 @@ if (configFile.reportFile && typeof configFile.reportFile !== "string") {
 if (configFile.outputDir && typeof configFile.outputDir !== "string") {
 	throw new Error("outputDir must be a string path.")
 }
+if (configFile.deployedFacetsFile !== undefined && configFile.deployedFacetsFile !== "" && typeof configFile.deployedFacetsFile !== "string") {
+	throw new Error("deployedFacetsFile must be a string path.")
+}
 
 const upgradeShared = loadUpgradeConfigShared(NETWORK_SUFFIX)
 const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? configFile.diamondAddress ?? upgradeShared.diamondAddress
@@ -379,6 +444,8 @@ const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? configFile.diamondAddress
 const DEFAULT_OUTPUT_DIR = "./scripts/upgrade/output"
 const outputDir = process.env.MIGRATION_OUTPUT_DIR ?? configFile.outputDir ?? DEFAULT_OUTPUT_DIR
 const MIGRATION_INPUT_FILE = process.env.MIGRATION_INPUT_FILE ?? configFile.migrationInputFile ?? `${outputDir}/${withSuffix("migration-input")}`
+const DEPLOYED_FACETS_FILE =
+	process.env.FACETS_FILE || process.env.DEPLOYED_FACETS_FILE || configFile.deployedFacetsFile || `${outputDir}/${withSuffix("deployed-facets")}`
 const DRY_RUN = parseBool(process.env.DRY_RUN, configFile.dryRun ?? false)
 
 const DEFAULT_PROGRESS_FILE = `${outputDir}/${withSuffix("migration-progress")}`
@@ -405,6 +472,27 @@ const MIGRATION_CONFIG: MigrationConfig = {
 	skipPreCheck: parseBool(process.env.SKIP_PRE_CHECK, configFile.skipPreCheck ?? false),
 	progressFile: DRY_RUN ? null : migrateProgressFile,
 }
+const MIGRATION_ROLE = ethers.id("MIGRATION_ROLE")
+
+async function hasMigrationRole(diamondAddress: string, account: string): Promise<boolean> {
+	const viewFacet = await ethers.getContractAt(["function hasRole(address user, bytes32 role) view returns (bool)"], diamondAddress)
+	return viewFacet.hasRole(account, MIGRATION_ROLE)
+}
+
+async function checkMigrationRole(diamondAddress: string, account: string, required: boolean): Promise<boolean> {
+	const normalized = ethers.getAddress(account)
+	const hasRole = await hasMigrationRole(diamondAddress, normalized)
+	log.kv("MIGRATION_ROLE", hasRole ? `yes (${log.addr(normalized)})` : `no (${log.addr(normalized)})`)
+	if (!hasRole) {
+		const message =
+			`${normalized} does not have MIGRATION_ROLE on ${diamondAddress}. ` + `Execute the Safe role-grant batch before running migration.`
+		if (required) {
+			throw new Error(`${message} Set SKIP_MIGRATION_ROLE_CHECK=true only if you are intentionally bypassing this preflight.`)
+		}
+		log.warn(`${message} Dry run will continue because no transactions are submitted.`)
+	}
+	return hasRole
+}
 
 async function main() {
 	const scriptTimer = log.timer()
@@ -417,6 +505,7 @@ async function main() {
 		outputDir,
 		progressFile: MIGRATION_CONFIG.progressFile ?? undefined,
 		reportFile: migrateReportFile,
+		deployedFacetsFile: DEPLOYED_FACETS_FILE,
 		config: {
 			chunkSize: MIGRATION_CONFIG.chunkSize,
 			dryRun: MIGRATION_CONFIG.dryRun,
@@ -453,6 +542,7 @@ async function main() {
 			details: {
 				diamondAddress: DIAMOND_ADDRESS,
 				migrationInputFile: MIGRATION_INPUT_FILE,
+				deployedFacetsFile: DEPLOYED_FACETS_FILE,
 			},
 		})
 		currentStep = null
@@ -463,12 +553,25 @@ async function main() {
 		// Resolve signer — fork: impersonate diamond owner, production: find migrator signer (must have MIGRATION_ROLE)
 		currentStep = "resolve_signer"
 		const isFork = parseBool(process.env.FORK, configFile.fork ?? false)
+		const skipMigrationRoleCheck = parseBool(process.env.SKIP_MIGRATION_ROLE_CHECK, false)
 		let admin
 		let adminAddress: string
 		if (MIGRATION_CONFIG.dryRun) {
 			admin = ethers.provider
-			adminAddress = upgradeShared.migrationRunner ?? ethers.ZeroAddress
-			log.info("Dry run: using provider-only contract runner; no signer will be resolved")
+			if (isFork) {
+				adminAddress =
+					process.env.FORK_MIGRATION_RUNNER_ADDRESS ?? process.env.MIGRATION_RUNNER_ADDRESS ?? upgradeShared.migrationRunner ?? ethers.ZeroAddress
+			} else {
+				const migratorAddress = upgradeShared.migrationRunner
+				const signer = await resolveConfiguredSigner({
+					role: "migrationRunner",
+					expectedAddress: migratorAddress,
+					envPrefix: "MIGRATION_RUNNER",
+					allowDefault: !migratorAddress,
+				})
+				adminAddress = await signer.getAddress()
+			}
+			log.info("Dry run: resolved migrationRunner for role preflight; using provider-only contract runner")
 		} else if (isFork) {
 			const forkMigrationRunner = process.env.FORK_MIGRATION_RUNNER_ADDRESS ?? process.env.MIGRATION_RUNNER_ADDRESS ?? upgradeShared.migrationRunner
 			if (forkMigrationRunner && ethers.isAddress(forkMigrationRunner)) {
@@ -489,11 +592,25 @@ async function main() {
 			})
 			adminAddress = await admin.getAddress()
 		}
+
+		let migrationRoleOk: boolean | undefined
+		if (skipMigrationRoleCheck) {
+			log.warn("Skipping MIGRATION_ROLE preflight because SKIP_MIGRATION_ROLE_CHECK=true")
+		} else {
+			migrationRoleOk = await checkMigrationRole(DIAMOND_ADDRESS, adminAddress, !MIGRATION_CONFIG.dryRun)
+			report.roleChecks = {
+				migrationRole: {
+					address: ethers.getAddress(adminAddress),
+					roleHash: MIGRATION_ROLE,
+					hasRole: migrationRoleOk,
+				},
+			}
+		}
 		report.protocolAdmin = adminAddress
 		report.steps.push({
 			name: "resolve_signer",
 			status: "ok",
-			details: { adminAddress },
+			details: { adminAddress, migrationRole: migrationRoleOk ?? "skipped" },
 		})
 		currentStep = null
 		tryWriteReport(migrateReportFile, report)
@@ -501,37 +618,18 @@ async function main() {
 		log.kv("Diamond", log.addr(DIAMOND_ADDRESS))
 		log.kv("Admin", log.addr(adminAddress))
 		log.kv("Input file", MIGRATION_INPUT_FILE!)
+		log.kv("Deployed facets", DEPLOYED_FACETS_FILE)
 		log.kv("Progress file", MIGRATION_CONFIG.progressFile ?? "disabled for dry run")
 		log.kv("Chunk size", String(MIGRATION_CONFIG.chunkSize))
 		if (MIGRATION_CONFIG.dryRun) log.kv("Mode", "DRY RUN")
 
-		log.setSteps(4)
-
-		// Connect facets
-		let t = log.step("Connect facets")
-		currentStep = "connect_facets"
-		const migrationFacet = await ethers.getContractAt("contracts/core/facets/Migration/MigrationFacet.sol:MigrationFacet", DIAMOND_ADDRESS, admin)
-		const viewFacet = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", DIAMOND_ADDRESS, admin)
-		const viewFacetQuote = await ethers.getContractAt(
-			"contracts/core/facets/ViewFacetQuote/ViewFacetQuote.sol:ViewFacetQuote",
-			DIAMOND_ADDRESS,
-			admin,
-		)
-		const viewFacetAggregate = await ethers.getContractAt(
-			"contracts/core/facets/ViewFacetAggregate/ViewFacetAggregate.sol:ViewFacetAggregate",
-			DIAMOND_ADDRESS,
-			admin,
-		)
-		log.ok("MigrationFacet, ViewFacet, ViewFacetQuote, ViewFacetAggregate connected")
-		report.steps.push({ name: "connect_facets", status: "ok" })
-		currentStep = null
-		tryWriteReport(migrateReportFile, report)
-		finishStep(t)
+		log.setSteps(5)
 
 		// Load validated input
-		t = log.step("Load migration input")
+		let t = log.step("Load migration input")
 		currentStep = "load_input"
-		const { input, expectedAggregates } = loadMigrationInput(MIGRATION_INPUT_FILE!)
+		const { input, expectedAggregates, source } = loadMigrationInput(MIGRATION_INPUT_FILE!)
+		validateMigrationInputSource(source, DIAMOND_ADDRESS, DEPLOYED_FACETS_FILE)
 		log.stats([
 			["Quote IDs", input.quoteIds.length],
 			["PartyB tasks", input.partyBTasks.length],
@@ -582,6 +680,49 @@ async function main() {
 		tryWriteReport(migrateReportFile, report)
 		finishStep(t)
 
+		// Verify deployed facets artifact and live post-cut surface
+		t = log.step("Verify deployed facets artifact")
+		currentStep = "verify_deployed_facets"
+		const deployedFacets = await loadDeployedFacetsForNetwork(
+			DEPLOYED_FACETS_FILE,
+			{ networkName: NETWORK_SUFFIX, diamondAddress: DIAMOND_ADDRESS },
+			{ required: true, validateMigrationSurface: true },
+		)
+		await verifyMigrationSurfaceOnDiamond(DIAMOND_ADDRESS, deployedFacets.state!)
+		report.deployedFacets = deployedFacets.summary
+		log.ok(
+			`Migration surface matches ${DEPLOYED_FACETS_FILE} (${deployedFacets.summary.facetCount} facets, ${deployedFacets.summary.selectorCount} selectors)`,
+		)
+		report.steps.push({
+			name: "verify_deployed_facets",
+			status: "ok",
+			details: deployedFacets.summary as unknown as Record<string, unknown>,
+		})
+		currentStep = null
+		tryWriteReport(migrateReportFile, report)
+		finishStep(t)
+
+		// Connect facets
+		t = log.step("Connect facets")
+		currentStep = "connect_facets"
+		const migrationFacet = await ethers.getContractAt("contracts/core/facets/Migration/MigrationFacet.sol:MigrationFacet", DIAMOND_ADDRESS, admin)
+		const viewFacet = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", DIAMOND_ADDRESS, admin)
+		const viewFacetQuote = await ethers.getContractAt(
+			"contracts/core/facets/ViewFacetQuote/ViewFacetQuote.sol:ViewFacetQuote",
+			DIAMOND_ADDRESS,
+			admin,
+		)
+		const viewFacetAggregate = await ethers.getContractAt(
+			"contracts/core/facets/ViewFacetAggregate/ViewFacetAggregate.sol:ViewFacetAggregate",
+			DIAMOND_ADDRESS,
+			admin,
+		)
+		log.ok("MigrationFacet, ViewFacet, ViewFacetQuote, ViewFacetAggregate connected")
+		report.steps.push({ name: "connect_facets", status: "ok" })
+		currentStep = null
+		tryWriteReport(migrateReportFile, report)
+		finishStep(t)
+
 		// Run migration
 		t = log.step("Execute migration")
 		if (input.quoteIds.length === 0 && input.partyBTasks.length === 0) {
@@ -591,7 +732,7 @@ async function main() {
 		} else {
 			currentStep = "migrate"
 			log.info(`Migrating ${log.commaNumber(input.quoteIds.length)} quotes across ${input.partyBTasks.length} partyBs...`)
-			const migrationReport = await migrate(migrationFacet, viewFacetQuote, input, MIGRATION_CONFIG)
+			const migrationReport = await migrate(migrationFacet as any, viewFacetQuote, input, MIGRATION_CONFIG)
 			report.migrationReport = migrationReport
 			report.steps.push({
 				name: "migrate",
@@ -653,11 +794,14 @@ async function main() {
 
 		report.status = "success"
 
-		log.success(MIGRATION_CONFIG.dryRun ? "Migration dry run completed successfully" : "Migration completed successfully", [
-			["Diamond", DIAMOND_ADDRESS],
-			["Duration", scriptTimer.fmt()],
-			["Report", migrateReportFile],
-		])
+		const summary: Array<[string, string]> = [["Diamond", DIAMOND_ADDRESS]]
+		if (report.roleChecks?.migrationRole) {
+			const roleCheck = report.roleChecks.migrationRole
+			summary.push(["MIGRATION_ROLE", `${roleCheck.hasRole ? "yes" : "no"} (${log.addr(roleCheck.address)})`])
+		}
+		summary.push(["Duration", scriptTimer.fmt()], ["Report", migrateReportFile])
+
+		log.success(MIGRATION_CONFIG.dryRun ? "Migration dry run completed successfully" : "Migration completed successfully", summary)
 		if (MIGRATION_CONFIG.dryRun) {
 			log.nextSteps(["Review the dry-run report in " + migrateReportFile, "Run again without DRY_RUN=true when ready to execute"])
 		} else {

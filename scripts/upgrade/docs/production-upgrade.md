@@ -807,13 +807,16 @@ The script exits non-zero if any check fails and prints per-file issue lists (ex
 
 ## Step 3: Prepare Migration + Symbol Inputs
 
-Fetches subgraph data and builds the migration input file. In the EOA/operator path used for COTI, run this after `pauseGlobal()` so the migration and symbol inputs are based on paused state. This uses only version-agnostic on-chain calls (`getNextQuoteId`, which returns the last assigned ID), so it can still run before the diamondCut.
+Fetches subgraph data and builds the migration input file. In the EOA/operator path used for COTI, run this after `pauseGlobal()` so the migration and symbol inputs are based on paused state. This uses only version-agnostic on-chain calls (`getNextQuoteId`, which returns the last assigned ID), so it can still run before the diamondCut. Hardhat upgrade scripts that run the shared RPC check print the resolved `Network` and `RPC URL` before the chain/block check.
 
 ```bash
 USE_KEYSTORE=true npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network arbitrum
 USE_KEYSTORE=true npx hardhat run scripts/upgrade/validateMigrationInput.ts --network arbitrum
 USE_KEYSTORE=true npx hardhat run scripts/upgrade/validateMigrationEdgeCases.ts --network arbitrum
 USE_KEYSTORE=true npx hardhat run scripts/upgrade/fetchSymbolList.ts --network arbitrum
+
+# Dry run: fetch and print symbols without writing the symbol input file.
+DRY_RUN=true USE_KEYSTORE=true npx hardhat run scripts/upgrade/fetchSymbolList.ts --network arbitrum
 ```
 
 What it does:
@@ -848,7 +851,7 @@ USE_KEYSTORE=true npx hardhat run scripts/upgrade/validateMigrationEdgeCases.ts 
 
 ## Step 4: Run Migration + Symbol Updates
 
-Execute migration using the validated paused-state input file. Then use the paused-state symbol input to backfill `symbolType` and whitelist that symbol type for PartyBs. The executor must have `MIGRATION_ROLE`; symbol updates use the configured `migrationRunner` signer and require `SYMBOL_MANAGER_ROLE` / `PARTY_B_MANAGER_ROLE`.
+Execute migration using the validated paused-state input file. Then use the paused-state symbol input to backfill `symbolType` and whitelist that symbol type for PartyBs. The executor must have `MIGRATION_ROLE`; `runMigration.ts` checks this role for the resolved `migrationRunner` before executing. In dry-run mode, a missing role is reported as a warning and the dry run continues. `setSymbolType.ts` similarly checks `SYMBOL_MANAGER_ROLE`, and `whitelistSymbolTypes.ts` checks `PARTY_B_MANAGER_ROLE`; both include the result in their dry-run summaries. Symbol updates use the configured `migrationRunner` signer and require `SYMBOL_MANAGER_ROLE` / `PARTY_B_MANAGER_ROLE`.
 
 ```bash
 USE_KEYSTORE=true DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
@@ -875,7 +878,12 @@ If the script fails (RPC error, gas issue), re-run the same command. It reads `m
 ```bash
 USE_KEYSTORE=true DRY_RUN=true DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
   npx hardhat run scripts/upgrade/runMigration.ts --network arbitrum
+
+USE_KEYSTORE=true DRY_RUN=true npx hardhat run scripts/upgrade/setSymbolType.ts --network arbitrum
+USE_KEYSTORE=true DRY_RUN=true WHITELIST_SIGNER_ROLE=upgradeOperator npx hardhat run scripts/upgrade/whitelistSymbolTypes.ts --network arbitrum
 ```
+
+`fetchSymbolList.ts` dry run does not write the symbol input file. `setSymbolType.ts` and `whitelistSymbolTypes.ts` dry runs do not submit transactions; both still write dry-run reports with their role preflight results.
 
 ## Step 5: Post-Migration
 
@@ -1092,8 +1100,12 @@ Note: `protocolAdmin` here is the admin for the **newly deployed** MuonSignature
 | Env var                                                                            | Overrides                                                                                                                                                                                                                                                             |
 | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `USE_KEYSTORE`                                                                     | Set to `true` to use Hardhat keystore keys and RPC overrides (required for all `npx hardhat run` commands on live networks)                                                                                                                                           |
-| `RPC_<NETWORK>`                                                                    | One-off or keystore-backed RPC override for Hardhat scripts (for example `RPC_BSC`, `RPC_ARBITRUM`, `RPC_COTI`)                                                                                                                                                       |
+| `RPC_<NETWORK>`                                                                    | One-off or keystore-backed RPC override for Hardhat scripts (for example `RPC_BASE`, `RPC_BSC`, `RPC_ARBITRUM`, `RPC_COTI`)                                                                                                                                           |
 | `RPC_URL`                                                                          | RPC endpoint for standalone `ts-node` verification scripts (`verifyCoreBytecode.ts`, `verifyPeripheralBytecode.ts`)                                                                                                                                                   |
+| `DRY_RUN`                                                                          | Preview supported migration/symbol scripts without writing or submitting where applicable (`runMigration.ts`, `fetchSymbolList.ts`, `setSymbolType.ts`, `whitelistSymbolTypes.ts`)                                                                                    |
+| `SKIP_MIGRATION_ROLE_CHECK`                                                        | Skip the resolved signer `MIGRATION_ROLE` preflight in `runMigration.ts`                                                                                                                                                                                              |
+| `SKIP_SYMBOL_MANAGER_ROLE_CHECK`                                                   | Skip the `SYMBOL_MANAGER_ROLE` preflight in `setSymbolType.ts`                                                                                                                                                                                                        |
+| `SKIP_PARTY_B_MANAGER_ROLE_CHECK`                                                  | Skip the `PARTY_B_MANAGER_ROLE` preflight in `whitelistSymbolTypes.ts`                                                                                                                                                                                                |
 | `TEAM_DEPLOYER` / `TEAM_UPGRADE_OPERATOR` / `TEAM_MIGRATOR`                        | Private-key slots loaded by `hardhat.config.ts`; keep `upgradeOperator` and `migrationRunner` in separate keystore entries                                                                                                                                            |
 | `DIAMOND_ADDRESS`                                                                  | `diamondAddress`                                                                                                                                                                                                                                                      |
 | `UPGRADE_STAGES` / `EOA_UPGRADE_STAGES`                                            | Comma-separated EOA stages (`deploy`, `facets`, `peripherals`, `operator-grant`, `pause`, `cut`, `params`, `wiring`, `partyb`, `migration`, `cross-mode`, `cross-partyb`, `migration-revoke`, `symbol-revoke`, `unpause`, `operator-revoke`, `operator-admin-revoke`) |

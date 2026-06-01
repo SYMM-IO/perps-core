@@ -27,6 +27,13 @@ import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 import { setSymbolTypesTxOverrides } from "./utils/txOverrides.js"
 
 const OUTPUT_DIR = "./scripts/upgrade/output"
+const SYMBOL_MANAGER_ROLE = ethers.id("SYMBOL_MANAGER_ROLE")
+
+type RoleCheck = {
+	address: string
+	roleHash: string
+	hasRole: boolean
+}
 
 function resolveSymbolTypesInputFile(networkName: string): string {
 	const suffix = `-symbol-types-input-${networkName}.json`
@@ -48,6 +55,48 @@ function resolveSymbolTypesInputFile(networkName: string): string {
 	return path.join(OUTPUT_DIR, matches[0].name)
 }
 
+async function hasSymbolManagerRole(diamondAddress: string, account: string): Promise<boolean> {
+	const viewFacet = await ethers.getContractAt(["function hasRole(address user, bytes32 role) view returns (bool)"], diamondAddress)
+	return viewFacet.hasRole(account, SYMBOL_MANAGER_ROLE)
+}
+
+async function checkSymbolManagerRole(diamondAddress: string, account: string, required: boolean): Promise<RoleCheck> {
+	const normalized = ethers.getAddress(account)
+	const hasRole = await hasSymbolManagerRole(diamondAddress, normalized)
+	log.kv("SYMBOL_MANAGER_ROLE", hasRole ? `yes (${log.addr(normalized)})` : `no (${log.addr(normalized)})`)
+	if (!hasRole) {
+		const message =
+			`${normalized} does not have SYMBOL_MANAGER_ROLE on ${diamondAddress}. ` + "Execute the Safe role-grant batch before setting symbol types."
+		if (required) {
+			throw new Error(`${message} Set SKIP_SYMBOL_MANAGER_ROLE_CHECK=true only if you are intentionally bypassing this preflight.`)
+		}
+		log.warn(`${message} Dry run will continue because no transactions are submitted.`)
+	}
+	return { address: normalized, roleHash: SYMBOL_MANAGER_ROLE, hasRole }
+}
+
+function roleCheckSummary(roleCheck: RoleCheck | undefined, skipped: boolean): string | undefined {
+	if (roleCheck) return `${roleCheck.hasRole ? "yes" : "no"} (${log.addr(roleCheck.address)})`
+	if (skipped) return "skipped"
+	return undefined
+}
+
+function logRunSummary(
+	title: string,
+	diamondAddress: string,
+	roleCheck: RoleCheck | undefined,
+	roleCheckSkipped: boolean,
+	totalSet: number,
+	dryRun: boolean,
+	reportFile: string,
+): void {
+	const summary: Array<[string, string]> = [["Diamond", diamondAddress]]
+	const roleSummary = roleCheckSummary(roleCheck, roleCheckSkipped)
+	if (roleSummary) summary.push(["SYMBOL_MANAGER_ROLE", roleSummary])
+	summary.push(["Symbols", String(totalSet)], ["Dry run", String(dryRun)], ["Report", reportFile])
+	log.success(title, summary)
+}
+
 async function main() {
 	const networkName = connection.networkName
 	const shared = loadUpgradeConfigShared(networkName)
@@ -55,6 +104,7 @@ async function main() {
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? shared.diamondAddress
 	const CHUNK_SIZE = Number(process.env.CHUNK_SIZE ?? 100)
 	const DRY_RUN = process.env.DRY_RUN === "true"
+	const SKIP_SYMBOL_MANAGER_ROLE_CHECK = process.env.SKIP_SYMBOL_MANAGER_ROLE_CHECK === "true"
 	const inputFile = process.env.SYMBOL_TYPES_INPUT_FILE ?? resolveSymbolTypesInputFile(networkName)
 
 	if (!DIAMOND_ADDRESS || !ethers.isAddress(DIAMOND_ADDRESS)) {
@@ -66,6 +116,32 @@ async function main() {
 
 	const input: SymbolTypesInput = JSON.parse(fs.readFileSync(inputFile, "utf-8"))
 	const { symbols, symbolType } = input
+
+	await verifyRpc()
+
+	const migratorAddress = process.env.MIGRATION_RUNNER ?? shared.migrationRunner
+	let signer: Awaited<ReturnType<typeof resolveConfiguredSigner>> | undefined
+	let signerAddress: string
+	if (DRY_RUN && migratorAddress && ethers.isAddress(migratorAddress)) {
+		signerAddress = ethers.getAddress(migratorAddress)
+		log.info(`Signer: ${signerAddress} (configured migrationRunner; dry run uses no signer)`)
+	} else {
+		signer = await resolveConfiguredSigner({
+			role: "migrationRunner",
+			expectedAddress: migratorAddress,
+			envPrefix: "MIGRATION_RUNNER",
+			allowDefault: !migratorAddress,
+		})
+		signerAddress = await signer.getAddress()
+		log.info(`Signer: ${signerAddress}`)
+	}
+
+	let roleCheck: RoleCheck | undefined
+	if (SKIP_SYMBOL_MANAGER_ROLE_CHECK) {
+		log.warn("Skipping SYMBOL_MANAGER_ROLE preflight because SKIP_SYMBOL_MANAGER_ROLE_CHECK=true")
+	} else {
+		roleCheck = await checkSymbolManagerRole(DIAMOND_ADDRESS, signerAddress, !DRY_RUN)
+	}
 
 	log.info(`Diamond:     ${DIAMOND_ADDRESS}`)
 	log.info(`Symbol type: ${symbolType}`)
@@ -80,20 +156,18 @@ async function main() {
 
 	if (DRY_RUN) {
 		log.warn("DRY RUN — no transactions submitted")
-		writeReport(DIAMOND_ADDRESS, input, 0, true, networkName)
+		const reportFile = writeReport(DIAMOND_ADDRESS, input, 0, true, networkName, roleCheck)
+		logRunSummary(
+			"Set symbolType dry run completed successfully",
+			DIAMOND_ADDRESS,
+			roleCheck,
+			SKIP_SYMBOL_MANAGER_ROLE_CHECK,
+			symbols.length,
+			true,
+			reportFile,
+		)
 		return
 	}
-
-	await verifyRpc()
-
-	const migratorAddress = shared.migrationRunner
-	const signer = await resolveConfiguredSigner({
-		role: "migrationRunner",
-		expectedAddress: migratorAddress,
-		envPrefix: "MIGRATION_RUNNER",
-		allowDefault: !migratorAddress,
-	})
-	log.info(`Signer: ${await signer.getAddress()}`)
 
 	const diamond = await ethers.getContractAt(
 		["function setSymbolTypes(uint256[] calldata symbolIds, uint256[] calldata symbolTypes)"],
@@ -121,10 +195,18 @@ async function main() {
 	const totalSet = symbols.length
 
 	log.ok(`\nSet symbolType=${symbolType} for ${totalSet} symbols on ${DIAMOND_ADDRESS}`)
-	writeReport(DIAMOND_ADDRESS, input, totalSet, false, networkName)
+	const reportFile = writeReport(DIAMOND_ADDRESS, input, totalSet, false, networkName, roleCheck)
+	logRunSummary("Symbol types updated successfully", DIAMOND_ADDRESS, roleCheck, SKIP_SYMBOL_MANAGER_ROLE_CHECK, totalSet, false, reportFile)
 }
 
-function writeReport(diamondAddress: string, input: SymbolTypesInput, totalSet: number, dryRun: boolean, networkName: string) {
+function writeReport(
+	diamondAddress: string,
+	input: SymbolTypesInput,
+	totalSet: number,
+	dryRun: boolean,
+	networkName: string,
+	roleCheck?: RoleCheck,
+): string {
 	if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
 	const reportFile = path.join(OUTPUT_DIR, `set-symbol-types-report-${networkName}.json`)
 	fs.writeFileSync(
@@ -135,6 +217,11 @@ function writeReport(diamondAddress: string, input: SymbolTypesInput, totalSet: 
 				diamondAddress,
 				symbolType: input.symbolType,
 				dryRun,
+				roleChecks: roleCheck
+					? {
+							symbolManagerRole: roleCheck,
+						}
+					: undefined,
 				totalSet,
 				symbols: input.symbols.map(s => ({ symbolId: s.symbolId, name: s.name })),
 			},
@@ -143,6 +230,7 @@ function writeReport(diamondAddress: string, input: SymbolTypesInput, totalSet: 
 		),
 	)
 	log.ok(`Report: ${reportFile}`)
+	return reportFile
 }
 
 main().catch(error => {

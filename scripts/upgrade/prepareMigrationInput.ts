@@ -2,6 +2,7 @@ import fs from "fs"
 import path from "path"
 
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
+import { loadDeployedFacetsForNetwork } from "./utils/deployedFacets.js"
 import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
 import { baseNetworkName, loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig.js"
@@ -45,6 +46,7 @@ type PrepareConfig = {
 	spotCheckCount?: number
 	outputFile?: string
 	outputDir?: string
+	deployedFacetsFile?: string
 }
 
 type StepResult = {
@@ -62,6 +64,7 @@ type PrepareReport = {
 	finishedAt?: string
 	durationMs?: number
 	diamondAddress?: string
+	deployedFacetsFile?: string
 	subgraphEndpoint?: string
 	subgraphEndpoints?: string[]
 	subgraphProgressFile?: string
@@ -215,6 +218,9 @@ async function main() {
 	const withSuffix = (baseName: string): string => (networkSuffix ? `${baseName}-${networkSuffix}.json` : `${baseName}.json`)
 
 	const config = loadConfig(networkSuffix)
+	if (config.deployedFacetsFile !== undefined && config.deployedFacetsFile !== "" && typeof config.deployedFacetsFile !== "string") {
+		throw new Error("deployedFacetsFile must be a string path.")
+	}
 	const shared = loadUpgradeConfigShared(networkSuffix)
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress ?? shared.diamondAddress
 	const SUBGRAPH_ENDPOINTS = parseStringList(process.env.SUBGRAPH_ENDPOINTS) ??
@@ -226,6 +232,8 @@ async function main() {
 	const SUBGRAPH_PAGE_SIZE = parseOptionalPositiveInt(process.env.SUBGRAPH_PAGE_SIZE ?? config.subgraphPageSize)
 	const outputDir = process.env.PREPARE_OUTPUT_DIR ?? config.outputDir ?? "./scripts/upgrade/output"
 	const outputFile = process.env.PREPARE_OUTPUT_FILE ?? config.outputFile ?? `${outputDir}/${withSuffix("migration-input")}`
+	const deployedFacetsFile =
+		process.env.FACETS_FILE || process.env.DEPLOYED_FACETS_FILE || config.deployedFacetsFile || `${outputDir}/${withSuffix("deployed-facets")}`
 	const reportFile = `${outputDir}/${withSuffix("prepareMigrationInput-report")}`
 	const resumeSubgraphFetch = process.env.SUBGRAPH_RESUME !== "false"
 	const openQuotesProgressFile =
@@ -251,6 +259,7 @@ async function main() {
 			throw new Error(`Invalid DIAMOND_ADDRESS: ${DIAMOND_ADDRESS}`)
 		}
 		report.diamondAddress = DIAMOND_ADDRESS
+		report.deployedFacetsFile = deployedFacetsFile
 		report.subgraphEndpoint = SUBGRAPH_ENDPOINTS[0]
 		report.subgraphEndpoints = SUBGRAPH_ENDPOINTS
 		report.subgraphProgressFile = openQuotesProgressFile
@@ -269,6 +278,7 @@ async function main() {
 		if (SUBGRAPH_PAGE_SIZE) log.kv("Subgraph page size", String(SUBGRAPH_PAGE_SIZE))
 		log.kv("Subgraph resume", resumeSubgraphFetch ? "enabled" : "disabled")
 		if (resumeSubgraphFetch) log.kv("Progress file", openQuotesProgressFile)
+		log.kv("Deployed facets", deployedFacetsFile)
 
 		log.setSteps(3)
 
@@ -339,6 +349,16 @@ async function main() {
 		// Step 3: Build migration input
 		t = log.step("Build migration input")
 		currentStep = "build_input"
+		const deployedFacets = await loadDeployedFacetsForNetwork(
+			deployedFacetsFile,
+			{ networkName: networkSuffix, diamondAddress: DIAMOND_ADDRESS },
+			{ required: false, validateMigrationSurface: true },
+		)
+		if (deployedFacets.summary.exists) {
+			log.ok(`Deployed facets artifact found (${deployedFacets.summary.facetCount} facets, ${deployedFacets.summary.selectorCount} selectors)`)
+		} else {
+			log.warn(`Deployed facets artifact not found yet: ${deployedFacetsFile}`)
+		}
 
 		// Quote IDs
 		const zeroOpenActiveQuotes = quotesResult.quotes.filter(q => ACTIVE_POSITION_STATUSES.has(q.quoteStatus) && quoteOpenAmount(q) <= 0n)
@@ -416,6 +436,8 @@ async function main() {
 		const output = {
 			generatedAt: new Date().toISOString(),
 			diamondAddress: DIAMOND_ADDRESS,
+			deployedFacetsFile,
+			deployedFacets: deployedFacets.summary,
 			subgraphEndpoint: SUBGRAPH_ENDPOINTS[0],
 			subgraphEndpoints: SUBGRAPH_ENDPOINTS,
 			validation: {
