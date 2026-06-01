@@ -1,0 +1,14 @@
+{
+	"generatedAt": "2026-05-31T08:06:23.410Z",
+	"source": {
+		"chain": "coti",
+		"subgraphEndpoints": ["https://graph-symmio.prvx.io/subgraphs/name/coti-perps-analytics"],
+		"solverCount": 3
+	},
+	"partyBs": {
+		"AgentSolver": ["0x61109a6eb070a860b1da2a38f93ca2b884b54f90"],
+		"PerpsHub": ["0x9fa4923601b951d22bf72311b69251f196c9d69d", "0xb6e3b44975f2966707a91747f89d2002ff8d62db"]
+	},
+	"registerOnInstantLayer": true,
+	"registerOnSymmioCore": true
+}
