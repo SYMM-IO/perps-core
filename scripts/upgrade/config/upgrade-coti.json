@@ -12,7 +12,7 @@
 		"maxPartyAConnectionLimit": 5,
 		"signatureVerifierAddress": "0x18eCbfAb4F8772842BEe44B22FA035adbf4c4c4e",
 		"liquidationInsuranceVault": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94",
-		"maxLiquidationProfitPerPosition": "1000000000000000000",
+		"maxLiquidationProfitPerPosition": "100000000000000000000",
 		"softLiquidationPenaltyCollector": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94",
 		"minAffiliateFee": "100000000000000000",
 		"unbindCooldown": 86400,

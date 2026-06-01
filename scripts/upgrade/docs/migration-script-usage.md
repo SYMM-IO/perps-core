@@ -21,6 +21,7 @@ Key features:
 - **Automatic resume** - If interrupted, continues from where it left off
 - **Retry with backoff** - Failed transactions are retried automatically
 - **Dry run mode** - Test without executing transactions
+- **RPC visibility** - Hardhat upgrade scripts that run the shared RPC check print the resolved network and RPC URL before chain checks
 - **Progress tracking** - Saves state to file after each operation
 - **Post-migration verification** - Checks `isQuoteMigrated`, master balances, and aggregated positions
 
@@ -65,6 +66,29 @@ Output: `scripts/upgrade/output/migration-input.json`
 | `PREPARE_OUTPUT_FILE`     | `scripts/upgrade/output/migration-input.json`                     | Output file path                                                          |
 
 The progress file is kept while later preparation steps run, then removed after `migration-input-{network}.json` is written successfully. Delete the progress file or set `SUBGRAPH_RESUME=false` to force a fresh subgraph scan.
+
+## Step 1a: Fetch Symbol List
+
+Fetches symbols from the configured subgraph and writes the input consumed by `setSymbolType.ts`.
+
+```bash
+USE_KEYSTORE=true RPC_BASE=https://base.drpc.org \
+  npx hardhat run scripts/upgrade/fetchSymbolList.ts --network base
+```
+
+Dry run mode fetches and prints the symbols, prints the planned output path, and does not write the symbol input file:
+
+```bash
+DRY_RUN=true USE_KEYSTORE=true RPC_BASE=https://base.drpc.org \
+  npx hardhat run scripts/upgrade/fetchSymbolList.ts --network base
+```
+
+| Env var                   | Default                                                 | Description                                       |
+| ------------------------- | ------------------------------------------------------- | ------------------------------------------------- |
+| `SUBGRAPH_ENDPOINT`       | from `upgrade-{network}.json`                           | Subgraph GraphQL endpoint                         |
+| `SYMBOL_TYPE`             | `newV085Parameters.symbolType` from `upgrade-{network}` | Symbol type to write for every fetched symbol     |
+| `SYMBOL_TYPES_INPUT_FILE` | `output/{count}-symbol-types-input-{network}.json`      | Output path for the generated symbol input        |
+| `DRY_RUN`                 | `false`                                                 | Fetch and print only; do not write the input file |
 
 ## Step 1b: Validate Migration Input (optional)
 
@@ -116,7 +140,13 @@ What it checks:
 
 Takes the validated input file and runs migration + verification. Any failure halts immediately. The migration report is always printed before exiting, even on failure.
 
-On production networks, `runMigration.ts` resolves the signer from `upgrade-{network}.json` `migrationRunner`. If that address is a hardware wallet or external wallet, expose it with `MIGRATION_RUNNER_RPC_URL` or the generic `HARDWARE_WALLET_RPC_URL`; direct Ledger scanning also works with `HW_WALLET=ledger LEDGER_SCAN=true` or a known `LEDGER_PATH`.
+On production networks, `runMigration.ts` resolves the signer from `upgrade-{network}.json` `migrationRunner`. Dry runs resolve the same signer for preflight checks, but still connect migration contracts with a provider-only runner so no transactions can be submitted. If that address is a hardware wallet or external wallet, expose it with `MIGRATION_RUNNER_RPC_URL` or the generic `HARDWARE_WALLET_RPC_URL`; direct Ledger scanning also works with `HW_WALLET=ledger LEDGER_SCAN=true` or a known `LEDGER_PATH`.
+
+Before migration execution, the script checks that the resolved signer has `MIGRATION_ROLE` on the diamond. In dry-run mode, a missing role is reported as a warning and the dry run continues. In execution mode, a missing role fails early. To bypass only this preflight in execution mode, set `SKIP_MIGRATION_ROLE_CHECK=true`.
+
+`setSymbolType.ts` does the same style of preflight for `SYMBOL_MANAGER_ROLE`. In dry-run mode it checks the configured `migrationRunner` address, prints the result in the terminal summary, and continues if missing. In execution mode, the resolved signer must have the role unless `SKIP_SYMBOL_MANAGER_ROLE_CHECK=true` is set.
+
+`whitelistSymbolTypes.ts` also preflights `PARTY_B_MANAGER_ROLE` for the configured `WHITELIST_SIGNER_ROLE`. In dry-run mode it checks the configured signer address, writes a dry-run report, prints the role result in the terminal summary, and continues if missing. In execution mode, the signer must have `PARTY_B_MANAGER_ROLE` unless `SKIP_PARTY_B_MANAGER_ROLE_CHECK=true` is set.
 
 Built-in verification (step 4/4) checks:
 
@@ -164,9 +194,12 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 | `DRY_RUN`                                               | `dryRun`                                                                           |
 | `FORK`                                                  | `fork`                                                                             |
 | `SKIP_PRE_CHECK`                                        | `skipPreCheck`                                                                     |
+| `SKIP_MIGRATION_ROLE_CHECK`                             | Skip the signer `MIGRATION_ROLE` preflight                                         |
 | `MIGRATION_GAS_LIMIT` / `MIGRATE_GAS_LIMIT`             | Explicit gas limit for migration transactions; falls back to `TX_GAS_LIMIT`        |
 | `SET_SYMBOL_TYPES_GAS_LIMIT` / `SYMBOL_TYPES_GAS_LIMIT` | Explicit gas limit for `setSymbolTypes` transactions; falls back to `TX_GAS_LIMIT` |
 | `WHITELIST_SIGNER_ROLE`                                 | Signer for `whitelistSymbolTypes.ts`; defaults to `upgradeOperator`                |
+| `SKIP_SYMBOL_MANAGER_ROLE_CHECK`                        | Skip the `SYMBOL_MANAGER_ROLE` preflight in `setSymbolType.ts`                     |
+| `SKIP_PARTY_B_MANAGER_ROLE_CHECK`                       | Skip the `PARTY_B_MANAGER_ROLE` preflight in `whitelistSymbolTypes.ts`             |
 | `MIGRATE_PROGRESS_FILE`                                 | `progressFile`                                                                     |
 | `MIGRATE_REPORT_FILE`                                   | `reportFile`                                                                       |
 | `MIGRATION_OUTPUT_DIR`                                  | `outputDir`                                                                        |
@@ -232,6 +265,31 @@ Test the migration without executing transactions:
 USE_KEYSTORE=true DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
   DRY_RUN=true npx hardhat run scripts/upgrade/runMigration.ts --network localhost
 ```
+
+Live BSC dry run with signer role preflight:
+
+```bash
+DRY_RUN=true USE_KEYSTORE=true RPC_BSC=https://bsc-rpc.publicnode.com \
+  npx hardhat run scripts/upgrade/runMigration.ts --network bsc
+```
+
+Symbol helper dry runs:
+
+```bash
+# Fetch and print symbols without writing the symbol input file.
+DRY_RUN=true USE_KEYSTORE=true RPC_BASE=https://base.drpc.org \
+  npx hardhat run scripts/upgrade/fetchSymbolList.ts --network base
+
+# Preview setSymbolType transactions without submitting.
+DRY_RUN=true USE_KEYSTORE=true RPC_BASE=https://base.drpc.org \
+  npx hardhat run scripts/upgrade/setSymbolType.ts --network base
+
+# Preview PartyB symbol-type whitelisting without submitting.
+DRY_RUN=true USE_KEYSTORE=true RPC_BASE=https://base.drpc.org \
+  npx hardhat run scripts/upgrade/whitelistSymbolTypes.ts --network base
+```
+
+These Hardhat scripts print `Network` and `RPC URL` before the chain/block check. URL username, password, and query strings are masked in the log output.
 
 ## Migration Report
 

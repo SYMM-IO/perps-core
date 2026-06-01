@@ -32,6 +32,57 @@ type WhitelistConfig = {
 const NETWORK_SUFFIX = baseNetworkName(connection.networkName)
 const CONFIG_FILE = resolveConfigFile("partyBList", NETWORK_SUFFIX, process.env.WHITELIST_CONFIG_FILE)
 const OUTPUT_DIR = "./scripts/upgrade/output"
+const PARTY_B_MANAGER_ROLE = ethers.id("PARTY_B_MANAGER_ROLE")
+
+type RoleCheck = {
+	address: string
+	roleHash: string
+	hasRole: boolean
+}
+
+async function hasPartyBManagerRole(diamondAddress: string, account: string): Promise<boolean> {
+	const viewFacet = await ethers.getContractAt(["function hasRole(address user, bytes32 role) view returns (bool)"], diamondAddress)
+	return viewFacet.hasRole(account, PARTY_B_MANAGER_ROLE)
+}
+
+async function checkPartyBManagerRole(diamondAddress: string, account: string, required: boolean): Promise<RoleCheck> {
+	const normalized = ethers.getAddress(account)
+	const hasRole = await hasPartyBManagerRole(diamondAddress, normalized)
+	log.kv("PARTY_B_MANAGER_ROLE", hasRole ? `yes (${log.addr(normalized)})` : `no (${log.addr(normalized)})`)
+	if (!hasRole) {
+		const message =
+			`${normalized} does not have PARTY_B_MANAGER_ROLE on ${diamondAddress}. ` +
+			"Execute the Safe role-grant batch before whitelisting symbol types."
+		if (required) {
+			throw new Error(`${message} Set SKIP_PARTY_B_MANAGER_ROLE_CHECK=true only if you are intentionally bypassing this preflight.`)
+		}
+		log.warn(`${message} Dry run will continue because no transactions are submitted.`)
+	}
+	return { address: normalized, roleHash: PARTY_B_MANAGER_ROLE, hasRole }
+}
+
+function roleCheckSummary(roleCheck: RoleCheck | undefined, skipped: boolean): string | undefined {
+	if (roleCheck) return `${roleCheck.hasRole ? "yes" : "no"} (${log.addr(roleCheck.address)})`
+	if (skipped) return "skipped"
+	return undefined
+}
+
+function logRunSummary(
+	title: string,
+	diamondAddress: string,
+	roleCheck: RoleCheck | undefined,
+	roleCheckSkipped: boolean,
+	partyBsCount: number,
+	success: number,
+	dryRun: boolean,
+	reportFile: string,
+): void {
+	const summary: Array<[string, string]> = [["Diamond", diamondAddress]]
+	const roleSummary = roleCheckSummary(roleCheck, roleCheckSkipped)
+	if (roleSummary) summary.push(["PARTY_B_MANAGER_ROLE", roleSummary])
+	summary.push(["PartyBs", String(partyBsCount)], ["Whitelisted", String(success)], ["Dry run", String(dryRun)], ["Report", reportFile])
+	log.success(title, summary)
+}
 
 async function main() {
 	const shared = loadUpgradeConfigShared(NETWORK_SUFFIX)
@@ -40,6 +91,7 @@ async function main() {
 	const SYMBOL_TYPE = Number(process.env.SYMBOL_TYPE ?? shared.newV085Parameters?.symbolType ?? 1)
 	const WHITELIST_SIGNER_ROLE = (process.env.WHITELIST_SIGNER_ROLE ?? "upgradeOperator").trim()
 	const DRY_RUN = process.env.DRY_RUN === "true"
+	const SKIP_PARTY_B_MANAGER_ROLE_CHECK = process.env.SKIP_PARTY_B_MANAGER_ROLE_CHECK === "true"
 
 	if (!DIAMOND_ADDRESS || !ethers.isAddress(DIAMOND_ADDRESS)) {
 		throw new Error("DIAMOND_ADDRESS is required (env var or upgrade.json)")
@@ -61,6 +113,32 @@ async function main() {
 		}
 	}
 
+	await verifyRpc()
+
+	const signerConfig = resolveWhitelistSigner(shared, WHITELIST_SIGNER_ROLE)
+	let signer: Awaited<ReturnType<typeof resolveConfiguredSigner>> | undefined
+	let signerAddress: string
+	if (DRY_RUN && signerConfig.expectedAddress && ethers.isAddress(signerConfig.expectedAddress)) {
+		signerAddress = ethers.getAddress(signerConfig.expectedAddress)
+		log.info(`Signer: ${signerAddress} (configured ${signerConfig.role}; dry run uses no signer)`)
+	} else {
+		signer = await resolveConfiguredSigner({
+			role: signerConfig.role,
+			expectedAddress: signerConfig.expectedAddress,
+			envPrefix: signerConfig.envPrefix,
+			allowDefault: !signerConfig.expectedAddress,
+		})
+		signerAddress = await signer.getAddress()
+		log.info(`Signer: ${signerAddress}`)
+	}
+
+	let roleCheck: RoleCheck | undefined
+	if (SKIP_PARTY_B_MANAGER_ROLE_CHECK) {
+		log.warn("Skipping PARTY_B_MANAGER_ROLE preflight because SKIP_PARTY_B_MANAGER_ROLE_CHECK=true")
+	} else {
+		roleCheck = await checkPartyBManagerRole(DIAMOND_ADDRESS, signerAddress, !DRY_RUN)
+	}
+
 	log.info(`Diamond:     ${DIAMOND_ADDRESS}`)
 	log.info(`Symbol type: ${SYMBOL_TYPE}`)
 	log.info(`Signer role: ${WHITELIST_SIGNER_ROLE}`)
@@ -74,19 +152,21 @@ async function main() {
 
 	if (DRY_RUN) {
 		log.warn("DRY RUN — no transactions submitted")
+		const reportFile = writeReport(DIAMOND_ADDRESS, SYMBOL_TYPE, partyBs, 0, true, roleCheck)
+		logRunSummary(
+			"Whitelist symbolType dry run completed successfully",
+			DIAMOND_ADDRESS,
+			roleCheck,
+			SKIP_PARTY_B_MANAGER_ROLE_CHECK,
+			partyBs.length,
+			0,
+			true,
+			reportFile,
+		)
 		return
 	}
 
-	await verifyRpc()
-
-	const signerConfig = resolveWhitelistSigner(shared, WHITELIST_SIGNER_ROLE)
-	const signer = await resolveConfiguredSigner({
-		role: signerConfig.role,
-		expectedAddress: signerConfig.expectedAddress,
-		envPrefix: signerConfig.envPrefix,
-		allowDefault: !signerConfig.expectedAddress,
-	})
-	log.info(`Signer: ${await signer.getAddress()}`)
+	if (!signer) throw new Error("Signer was not resolved for live whitelist execution")
 
 	const diamond = await ethers.getContractAt(["function whitelistSymbolType(address partyB, uint256 symbolType)"], DIAMOND_ADDRESS, signer)
 
@@ -100,8 +180,20 @@ async function main() {
 	}
 
 	log.ok(`\nWhitelisted symbolType=${SYMBOL_TYPE} for ${success}/${partyBs.length} PartyBs`)
+	const reportFile = writeReport(DIAMOND_ADDRESS, SYMBOL_TYPE, partyBs, success, false, roleCheck)
+	logRunSummary(
+		"Symbol type whitelist updated successfully",
+		DIAMOND_ADDRESS,
+		roleCheck,
+		SKIP_PARTY_B_MANAGER_ROLE_CHECK,
+		partyBs.length,
+		success,
+		false,
+		reportFile,
+	)
+}
 
-	// Write report
+function writeReport(diamondAddress: string, symbolType: number, partyBs: string[], success: number, dryRun: boolean, roleCheck?: RoleCheck): string {
 	if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
 	const reportFile = path.join(
 		OUTPUT_DIR,
@@ -112,8 +204,14 @@ async function main() {
 		JSON.stringify(
 			{
 				generatedAt: new Date().toISOString(),
-				diamondAddress: DIAMOND_ADDRESS,
-				symbolType: SYMBOL_TYPE,
+				diamondAddress,
+				symbolType,
+				dryRun,
+				roleChecks: roleCheck
+					? {
+							partyBManagerRole: roleCheck,
+						}
+					: undefined,
 				partyBs,
 				success,
 			},
@@ -122,6 +220,7 @@ async function main() {
 		),
 	)
 	log.ok(`Report: ${reportFile}`)
+	return reportFile
 }
 
 function resolveWhitelistSigner(shared: ReturnType<typeof loadUpgradeConfigShared>, rawRole: string) {
