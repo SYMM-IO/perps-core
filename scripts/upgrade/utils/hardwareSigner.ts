@@ -22,8 +22,9 @@ import path from "node:path"
 import { stdin as input, stdout as output } from "node:process"
 import { createInterface } from "node:readline/promises"
 
-import { ethers } from "../../../test/helpers/hardhat-connection.js"
+import connection, { ethers } from "../../../test/helpers/hardhat-connection.js"
 import { log } from "./log.js"
+import { baseNetworkName, resolveConfigFile } from "./sharedConfig.js"
 
 type LedgerModules = {
 	transport: any
@@ -41,6 +42,37 @@ type HardwareDiscoveryOptions = {
 	expectedAddress?: string
 	role?: string
 	envPrefix?: string
+}
+
+type LedgerConfigEntry = {
+	address?: string
+	path: string
+	role?: string
+	roles?: string[]
+	envPrefix?: string
+	envPrefixes?: string[]
+	label?: string
+}
+
+type LedgerConfigValue =
+	| string
+	| {
+			address?: string
+			path: string
+	  }
+
+type LedgerConfig = {
+	accounts?: LedgerConfigEntry[]
+	pathsByAddress?: Record<string, string>
+	roles?: Record<string, LedgerConfigValue>
+	envPrefixes?: Record<string, LedgerConfigValue>
+	defaultPath?: string
+	paths?: string[]
+}
+
+type LedgerPathMatch = {
+	path: string
+	source: string
 }
 
 const EXTERNAL_RPC_ENV_NAMES = ["HARDWARE_WALLET_RPC_URL", "HW_WALLET_RPC_URL", "EXTERNAL_WALLET_RPC_URL"]
@@ -111,6 +143,7 @@ type DecodedCalldata = {
 }
 
 let calldataDecoders: CalldataDecoder[] | undefined
+let ledgerConfigCache: { file: string; config: LedgerConfig } | undefined | null
 
 function optionalEnvNames(envPrefix: string | undefined, suffix: string): string[] {
 	return envPrefix ? [`${envPrefix}_${suffix}`] : []
@@ -132,6 +165,107 @@ function normalizeAddress(address: string | undefined): string | undefined {
 
 function matchesAddress(actual: string, expected: string): boolean {
 	return actual.toLowerCase() === expected.toLowerCase()
+}
+
+function normalizeOptionalConfigAddress(address: string | undefined): string | undefined {
+	if (!address) return undefined
+	if (!ethers.isAddress(address)) throw new Error(`Invalid Ledger config address: ${address}`)
+	return ethers.getAddress(address)
+}
+
+function normalizeRoleName(role: string | undefined): string | undefined {
+	return role?.trim().toLowerCase()
+}
+
+function normalizeEnvPrefix(envPrefix: string | undefined): string | undefined {
+	return envPrefix?.trim().toUpperCase()
+}
+
+function loadLedgerConfig(): { file: string; config: LedgerConfig } | undefined {
+	if (ledgerConfigCache !== undefined) return ledgerConfigCache ?? undefined
+
+	const networkSuffix = baseNetworkName(connection.networkName)
+	const file = resolveConfigFile("ledger", networkSuffix, process.env.LEDGER_CONFIG_FILE)
+	if (!fs.existsSync(file)) {
+		ledgerConfigCache = null
+		return undefined
+	}
+
+	ledgerConfigCache = {
+		file,
+		config: JSON.parse(fs.readFileSync(file, "utf-8")) as LedgerConfig,
+	}
+	return ledgerConfigCache
+}
+
+function ledgerConfigValuePath(
+	value: LedgerConfigValue | undefined,
+	expectedAddress: string | undefined,
+	source: string,
+): LedgerPathMatch | undefined {
+	if (!value) return undefined
+	if (typeof value === "string") return { path: value, source }
+	const configuredAddress = normalizeOptionalConfigAddress(value.address)
+	if (configuredAddress && expectedAddress && !matchesAddress(configuredAddress, expectedAddress)) return undefined
+	return { path: value.path, source }
+}
+
+function configuredLedgerPathFromConfig(expectedAddress?: string, envPrefix?: string, role?: string): LedgerPathMatch | undefined {
+	const loaded = loadLedgerConfig()
+	if (!loaded) return undefined
+
+	const expected = expectedAddress ? ethers.getAddress(expectedAddress) : undefined
+	const roleKey = normalizeRoleName(role)
+	const envKey = normalizeEnvPrefix(envPrefix)
+	const { config, file } = loaded
+
+	if (expected && config.pathsByAddress) {
+		for (const [address, ledgerPath] of Object.entries(config.pathsByAddress)) {
+			if (matchesAddress(ethers.getAddress(address), expected)) {
+				return { path: ledgerPath, source: `${file}:pathsByAddress.${ethers.getAddress(address)}` }
+			}
+		}
+	}
+
+	if (roleKey && config.roles) {
+		for (const [configuredRole, value] of Object.entries(config.roles)) {
+			if (normalizeRoleName(configuredRole) === roleKey) {
+				const match = ledgerConfigValuePath(value, expected, `${file}:roles.${configuredRole}`)
+				if (match) return match
+			}
+		}
+	}
+
+	if (envKey && config.envPrefixes) {
+		for (const [configuredPrefix, value] of Object.entries(config.envPrefixes)) {
+			if (normalizeEnvPrefix(configuredPrefix) === envKey) {
+				const match = ledgerConfigValuePath(value, expected, `${file}:envPrefixes.${configuredPrefix}`)
+				if (match) return match
+			}
+		}
+	}
+
+	for (const [index, account] of (config.accounts ?? []).entries()) {
+		const configuredAddress = normalizeOptionalConfigAddress(account.address)
+		const addressMatches = !configuredAddress || !expected || matchesAddress(configuredAddress, expected)
+		if (!addressMatches) continue
+
+		const roles = [account.role, ...(account.roles ?? [])].map(normalizeRoleName).filter(Boolean)
+		const envPrefixes = [account.envPrefix, ...(account.envPrefixes ?? [])].map(normalizeEnvPrefix).filter(Boolean)
+		if (!configuredAddress && roles.length === 0 && envPrefixes.length === 0) continue
+
+		const roleMatches = !roleKey || roles.length === 0 || roles.includes(roleKey)
+		const envMatches = !envKey || envPrefixes.length === 0 || envPrefixes.includes(envKey)
+		const addressSpecific = configuredAddress && expected && matchesAddress(configuredAddress, expected)
+
+		if (addressSpecific || (roleMatches && envMatches)) {
+			return { path: account.path, source: `${file}:accounts[${index}]${account.label ? ` (${account.label})` : ""}` }
+		}
+	}
+
+	if (config.defaultPath) return { path: config.defaultPath, source: `${file}:defaultPath` }
+
+	return undefined
 }
 
 async function findHardhatSigner(expectedAddress: string): Promise<Signer | undefined> {
@@ -171,12 +305,13 @@ async function resolveExternalRpcSigner(expectedAddress: string, envPrefix?: str
 	return undefined
 }
 
-function wantsLedger(envPrefix?: string): boolean {
+function wantsLedger(envPrefix?: string, expectedAddress?: string, role?: string): boolean {
 	const mode = firstEnv([...optionalEnvNames(envPrefix, "WALLET"), "HARDWARE_WALLET", "HW_WALLET"])
 	if (mode && mode.toLowerCase() === "ledger") return true
 	if (process.env.LEDGER === "true" || process.env.HW_LEDGER === "true") return true
 	if (firstEnv([...optionalEnvNames(envPrefix, "LEDGER_PATH"), "LEDGER_PATH", "HW_LEDGER_PATH"])) return true
 	if (process.env.LEDGER_SCAN === "true" || process.env.HW_LEDGER_SCAN === "true") return true
+	if (configuredLedgerPathFromConfig(expectedAddress, envPrefix, role)) return true
 	return false
 }
 
@@ -202,18 +337,28 @@ async function loadLedgerModules(): Promise<LedgerModules> {
 	}
 }
 
-function configuredLedgerPath(envPrefix?: string): string | undefined {
-	return firstEnv([...optionalEnvNames(envPrefix, "LEDGER_PATH"), "LEDGER_PATH", "HW_LEDGER_PATH"])
+function configuredLedgerPath(envPrefix?: string, expectedAddress?: string, role?: string): LedgerPathMatch | undefined {
+	const envPath = firstEnv([...optionalEnvNames(envPrefix, "LEDGER_PATH"), "LEDGER_PATH", "HW_LEDGER_PATH"])
+	if (envPath) return { path: envPath, source: envPrefix ? `${envPrefix}_LEDGER_PATH/env` : "LEDGER_PATH/env" }
+	return configuredLedgerPathFromConfig(expectedAddress, envPrefix, role)
 }
 
-function configuredLedgerPathList(envPrefix?: string): string[] {
+function configuredLedgerPathList(envPrefix?: string): LedgerPathMatch[] {
 	const raw = firstEnv([...optionalEnvNames(envPrefix, "LEDGER_PATHS"), "LEDGER_PATHS", "HW_LEDGER_PATHS"])
-	return raw
+	const paths = raw
 		? raw
 				.split(",")
 				.map(p => p.trim())
 				.filter(Boolean)
+				.map(path => ({ path, source: envPrefix ? `${envPrefix}_LEDGER_PATHS/env` : "LEDGER_PATHS/env" }))
 		: []
+	const loaded = loadLedgerConfig()
+	if (loaded) {
+		for (const path of loaded.config.paths ?? []) {
+			paths.push({ path, source: `${loaded.file}:paths` })
+		}
+	}
+	return paths
 }
 
 function ledgerScanRange(envPrefix: string | undefined, key: string, fallback: number): number {
@@ -224,15 +369,15 @@ function ledgerScanRange(envPrefix: string | undefined, key: string, fallback: n
 	return parsed
 }
 
-export function buildLedgerCandidatePaths(envPrefix?: string): string[] {
+export function buildLedgerCandidatePaths(envPrefix?: string, expectedAddress?: string, role?: string): string[] {
 	const paths: string[] = []
 	const add = (path: string) => {
 		if (!paths.includes(path)) paths.push(path)
 	}
 
-	for (const path of configuredLedgerPathList(envPrefix)) add(path)
-	const explicitPath = configuredLedgerPath(envPrefix)
-	if (explicitPath) add(explicitPath)
+	for (const match of configuredLedgerPathList(envPrefix)) add(match.path)
+	const explicitPath = configuredLedgerPath(envPrefix, expectedAddress, role)
+	if (explicitPath) add(explicitPath.path)
 
 	const accountCount = ledgerScanRange(envPrefix, "ACCOUNT_COUNT", 10)
 	const addressCount = ledgerScanRange(envPrefix, "ADDRESS_COUNT", 20)
@@ -530,17 +675,18 @@ async function openLedgerApp(): Promise<any> {
 	return new modules.eth(transport)
 }
 
-async function resolveLedgerSigner(expectedAddress: string, envPrefix?: string): Promise<Signer | undefined> {
-	if (!wantsLedger(envPrefix)) return undefined
+async function resolveLedgerSigner(expectedAddress: string, envPrefix?: string, role?: string): Promise<Signer | undefined> {
+	if (!wantsLedger(envPrefix, expectedAddress, role)) return undefined
 
 	const app = await openLedgerApp()
-	const explicitPath = configuredLedgerPath(envPrefix)
+	const explicitPath = configuredLedgerPath(envPrefix, expectedAddress, role)
 	if (explicitPath) {
-		log.ok(`Resolved ${log.addr(expectedAddress)} from configured Ledger path ${explicitPath}`)
-		return new LedgerSigner(explicitPath, ethers.provider, app, expectedAddress)
+		log.ok(`Resolved ${log.addr(expectedAddress)} from configured Ledger path ${explicitPath.path}`)
+		log.info(`  source: ${explicitPath.source}`)
+		return new LedgerSigner(explicitPath.path, ethers.provider, app, expectedAddress)
 	}
 
-	const paths = buildLedgerCandidatePaths(envPrefix)
+	const paths = buildLedgerCandidatePaths(envPrefix, expectedAddress, role)
 	log.info(`Scanning Ledger derivation paths (${paths.length}) for ${log.addr(expectedAddress)}...`)
 
 	for (const path of paths) {
@@ -554,7 +700,8 @@ async function resolveLedgerSigner(expectedAddress: string, envPrefix?: string):
 
 	throw new Error(
 		`Ledger is connected, but ${expectedAddress} was not found in scanned paths. ` +
-			`Set LEDGER_PATH if you know it, or increase LEDGER_ACCOUNT_COUNT / LEDGER_ADDRESS_COUNT.`,
+			`Set LEDGER_PATH or scripts/upgrade/config/ledger-${baseNetworkName(connection.networkName) ?? connection.networkName}.json if you know it, ` +
+			`or increase LEDGER_ACCOUNT_COUNT / LEDGER_ADDRESS_COUNT.`,
 	)
 }
 
@@ -577,7 +724,7 @@ export async function resolveConfiguredSigner(options: ResolveSignerOptions): Pr
 	const externalRpcSigner = await resolveExternalRpcSigner(expectedAddress, options.envPrefix)
 	if (externalRpcSigner) return externalRpcSigner
 
-	const ledgerSigner = await resolveLedgerSigner(expectedAddress, options.envPrefix)
+	const ledgerSigner = await resolveLedgerSigner(expectedAddress, options.envPrefix, options.role)
 	if (ledgerSigner) return ledgerSigner
 
 	throw new Error(
@@ -593,9 +740,16 @@ export async function printHardwareWalletDiscovery(options: HardwareDiscoveryOpt
 	const expectedAddress = normalizeAddress(options.expectedAddress)
 	const label = options.role ?? "hardware wallet"
 	const rpcUrl = firstEnv([...optionalEnvNames(options.envPrefix, "RPC_URL"), ...EXTERNAL_RPC_ENV_NAMES])
+	const ledgerConfig = loadLedgerConfig()
+	const configuredPath = configuredLedgerPath(options.envPrefix, expectedAddress, options.role)
 
 	log.header("Hardware Wallet Discovery")
 	if (expectedAddress) log.kv("Expected", `${log.addr(expectedAddress)} (${label})`)
+	if (ledgerConfig) log.kv("Ledger config", ledgerConfig.file)
+	if (configuredPath) {
+		log.kv("Configured Ledger path", configuredPath.path)
+		log.kv("Ledger path source", configuredPath.source)
+	}
 
 	if (rpcUrl) {
 		const provider = new ethers.JsonRpcProvider(rpcUrl)
@@ -609,9 +763,9 @@ export async function printHardwareWalletDiscovery(options: HardwareDiscoveryOpt
 		log.blank()
 	}
 
-	if (wantsLedger(options.envPrefix)) {
+	if (wantsLedger(options.envPrefix, expectedAddress, options.role)) {
 		const app = await openLedgerApp()
-		const paths = buildLedgerCandidatePaths(options.envPrefix)
+		const paths = configuredPath ? [configuredPath.path] : buildLedgerCandidatePaths(options.envPrefix, expectedAddress, options.role)
 		log.info(`Ledger paths scanned: ${paths.length}`)
 		for (const path of paths) {
 			const result = await app.getAddress(path, false)

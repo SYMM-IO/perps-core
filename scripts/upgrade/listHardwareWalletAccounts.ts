@@ -17,6 +17,7 @@
  *   HARDWARE_ENV_PREFIX   Env prefix for role-specific vars (defaults to PROTOCOL_ADMIN, UPGRADE_OPERATOR, or MIGRATION_RUNNER)
  *   LEDGER_PATH           Known path, if already known
  *   LEDGER_PATHS          Comma-separated extra paths to scan first
+ *   LEDGER_CONFIG_FILE    Shared non-secret Ledger path config override
  *   LEDGER_ACCOUNT_COUNT  Ledger Live account count to scan (default 10)
  *   LEDGER_ADDRESS_COUNT  Address-index count to scan for legacy paths (default 20)
  */
