@@ -30,7 +30,7 @@ type ScriptStep = {
 }
 
 type MigrationOnDemandReport = {
-	status: "running" | "success" | "failed"
+	status: "running" | "success" | "failed" | "blocked"
 	startedAt: string
 	finishedAt?: string
 	durationMs?: number
@@ -479,17 +479,12 @@ async function hasMigrationRole(diamondAddress: string, account: string): Promis
 	return viewFacet.hasRole(account, MIGRATION_ROLE)
 }
 
-async function checkMigrationRole(diamondAddress: string, account: string, required: boolean): Promise<boolean> {
+async function checkMigrationRole(diamondAddress: string, account: string): Promise<boolean> {
 	const normalized = ethers.getAddress(account)
 	const hasRole = await hasMigrationRole(diamondAddress, normalized)
 	log.kv("MIGRATION_ROLE", hasRole ? `yes (${log.addr(normalized)})` : `no (${log.addr(normalized)})`)
 	if (!hasRole) {
-		const message =
-			`${normalized} does not have MIGRATION_ROLE on ${diamondAddress}. ` + `Execute the Safe role-grant batch before running migration.`
-		if (required) {
-			throw new Error(`${message} Set SKIP_MIGRATION_ROLE_CHECK=true only if you are intentionally bypassing this preflight.`)
-		}
-		log.warn(`${message} Dry run will continue because no transactions are submitted.`)
+		log.warn(`${normalized} does not have MIGRATION_ROLE on ${diamondAddress}. Execute the Safe role-grant batch before running migration.`)
 	}
 	return hasRole
 }
@@ -597,7 +592,7 @@ async function main() {
 		if (skipMigrationRoleCheck) {
 			log.warn("Skipping MIGRATION_ROLE preflight because SKIP_MIGRATION_ROLE_CHECK=true")
 		} else {
-			migrationRoleOk = await checkMigrationRole(DIAMOND_ADDRESS, adminAddress, !MIGRATION_CONFIG.dryRun)
+			migrationRoleOk = await checkMigrationRole(DIAMOND_ADDRESS, adminAddress)
 			report.roleChecks = {
 				migrationRole: {
 					address: ethers.getAddress(adminAddress),
@@ -614,6 +609,24 @@ async function main() {
 		})
 		currentStep = null
 		tryWriteReport(migrateReportFile, report)
+
+		if (!MIGRATION_CONFIG.dryRun && !skipMigrationRoleCheck && migrationRoleOk === false) {
+			report.status = "blocked"
+			report.error = `${ethers.getAddress(adminAddress)} is missing MIGRATION_ROLE on ${ethers.getAddress(DIAMOND_ADDRESS)}`
+			tryWriteReport(migrateReportFile, report)
+
+			log.failure(
+				"Migration blocked",
+				`${ethers.getAddress(adminAddress)} does not have MIGRATION_ROLE on ${ethers.getAddress(DIAMOND_ADDRESS)}. No migration transactions were sent.`,
+			)
+			log.nextSteps([
+				"Execute the Safe role-grant batch for MIGRATION_ROLE.",
+				"Re-run runMigration.ts after the role is granted.",
+				"Use SKIP_MIGRATION_ROLE_CHECK=true only if you intentionally want to let the transaction path fail on-chain.",
+			])
+			process.exitCode = 1
+			return
+		}
 
 		log.kv("Diamond", log.addr(DIAMOND_ADDRESS))
 		log.kv("Admin", log.addr(adminAddress))
