@@ -351,7 +351,13 @@ HW_WALLET=ledger LEDGER_SCAN=true \
   npx hardhat run scripts/upgrade/listHardwareWalletAccounts.ts --network coti
 ```
 
-Once a path is known, pin it with `LEDGER_PATH` or the role-specific `PROTOCOL_ADMIN_LEDGER_PATH` / `UPGRADE_OPERATOR_LEDGER_PATH` / `MIGRATION_RUNNER_LEDGER_PATH`. For a non-admin signer, use `HARDWARE_ROLE=upgradeOperator` or `HARDWARE_ROLE=migrationRunner` so discovery compares against that config field.
+Once a path is known, pin it in a shared non-secret Ledger config so every Ledger-aware script can reuse it without scanning:
+
+```bash
+cp scripts/upgrade/config/samples/ledger.sample.json scripts/upgrade/config/ledger-<network>.json
+```
+
+Set the discovered `address` and `path` under `accounts`. The signer helper reads `ledger-<network>.json` first, then `ledger.json`; env overrides such as `LEDGER_PATH` and role-specific `PROTOCOL_ADMIN_LEDGER_PATH` still take precedence. For a non-admin signer, use `HARDWARE_ROLE=upgradeOperator` or `HARDWARE_ROLE=migrationRunner` during discovery so it compares against that config field.
 
 **Single script:**
 
@@ -1110,6 +1116,7 @@ Note: `protocolAdmin` here is the admin for the **newly deployed** MuonSignature
 | `HARDWARE_WALLET_RPC_URL` / `HW_WALLET_RPC_URL` / `EXTERNAL_WALLET_RPC_URL`        | External wallet RPC that exposes the hardware-wallet account for signer resolution                                                                                                                                                                                    |
 | `PROTOCOL_ADMIN_RPC_URL` / `UPGRADE_OPERATOR_RPC_URL` / `MIGRATION_RUNNER_RPC_URL` | Role-specific external wallet RPCs; these take precedence for the matching role                                                                                                                                                                                       |
 | `HW_WALLET=ledger` / `HARDWARE_WALLET=ledger`                                      | Enable direct Ledger signer support                                                                                                                                                                                                                                   |
+| `LEDGER_CONFIG_FILE`                                                               | Override the shared non-secret Ledger path config. Defaults to `scripts/upgrade/config/ledger-{network}.json`, then `ledger.json`                                                                                                                                     |
 | `LEDGER_PATH` / `HW_LEDGER_PATH`                                                   | Known Ledger derivation path                                                                                                                                                                                                                                          |
 | `LEDGER_PATHS` / `HW_LEDGER_PATHS`                                                 | Comma-separated extra Ledger paths to scan first                                                                                                                                                                                                                      |
 | `LEDGER_SCAN=true` / `HW_LEDGER_SCAN=true`                                         | Scan common Ledger paths when the path is unknown                                                                                                                                                                                                                     |
@@ -1148,7 +1155,7 @@ These parameters **only exist in v0.8.5** (not in v0.8.4 storage). After `diamon
 | `muonPublicKeys`                  | array            | TSS public keys to seed on the verifier. Each entry: `{ "x": "uint256", "parity": 0\|1 }`. Read from `readMuonConfig.ts` |
 | `muonGatewaySigners`              | string[]         | Gateway signer addresses to seed on the verifier. Read from the v0.8.4 diamond via `readMuonConfig.ts`                   |
 | `liquidationInsuranceVault`       | address          | Address that receives liquidation insurance -- typically the **Fees MultiSig**                                           |
-| `maxLiquidationProfitPerPosition` | string (wei)     | Max profit kept from liquidation per position. Example: `"1000000000000000000"` = 1 token                                |
+| `maxLiquidationProfitPerPosition` | string (wei)     | Max profit kept from liquidation per position. Example: `"100000000000000000000"` = 100 tokens                           |
 | `softLiquidationPenaltyCollector` | address          | Address that receives soft liquidation penalties -- typically the **Fees MultiSig**                                      |
 | `minAffiliateFee`                 | string (wei)     | Minimum affiliate fee floor. Example: `"100000000000000000"` = 0.1 token                                                 |
 | `unbindCooldown`                  | number (seconds) | Cooldown before a PartyA can unbind from a PartyB. Example: `86400` = 1 day                                              |
@@ -1156,6 +1163,19 @@ These parameters **only exist in v0.8.5** (not in v0.8.4 storage). After `diamon
 | `minWithdrawCooldown`             | number (seconds) | Min time between withdrawal parts. Example: `43200` = 12 hours                                                           |
 
 Existing v0.8.4 parameters (cooldowns, limits, fee shares, etc.) are preserved in storage and NOT overwritten.
+
+To update `liquidationInsuranceVault` / `maxLiquidationProfitPerPosition` on a diamond that is already upgraded, use the standalone one-off script. It reads the same `upgrade-{network}.json` target values, writes a calldata report and Safe batch by default, and for multisig chains it also prepares a Safe Transaction Service proposal when `safeAddress` is configured. Direct on-chain broadcast only happens when `EXECUTE=true` is set:
+
+```bash
+npx hardhat run scripts/upgrade/updateLiquidationInsuranceVaultParams.ts --network <network>
+
+EXECUTE=true USE_KEYSTORE=true npx hardhat run scripts/upgrade/updateLiquidationInsuranceVaultParams.ts --network <network>
+
+SUBMIT_SAFE_PROPOSAL=1 USE_KEYSTORE=true npx hardhat run scripts/upgrade/updateLiquidationInsuranceVaultParams.ts --network <network>
+
+SUBMIT_SAFE_PROPOSAL=1 SAFE_SENDER_ADDRESS=0x... SAFE_PROPOSER_WALLET=ledger \
+  npx hardhat run scripts/upgrade/updateLiquidationInsuranceVaultParams.ts --network <network>
+```
 
 ## Troubleshooting
 

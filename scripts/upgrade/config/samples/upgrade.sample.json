@@ -19,7 +19,7 @@
 		"muonFunctionPermissions": ["Trading", "AccountManagement", "Settlement", "ForceClose", "Funding", "LiquidationPartyA", "LiquidationPartyB"],
 
 		"liquidationInsuranceVault": "0x...",
-		"maxLiquidationProfitPerPosition": "1000000000000000000",
+		"maxLiquidationProfitPerPosition": "100000000000000000000",
 
 		"softLiquidationPenaltyCollector": "0x...",
 

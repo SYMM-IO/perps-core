@@ -17,7 +17,12 @@ export type UpgradeConfigShared = {
 	symmioFeeReceiver?: string
 	instantLayerAddress?: string
 	accountLayerDiamondAddress?: string
-	newV085Parameters?: { symbolType?: number; signatureVerifierAddress?: string }
+	newV085Parameters?: {
+		symbolType?: number
+		signatureVerifierAddress?: string
+		liquidationInsuranceVault?: string
+		maxLiquidationProfitPerPosition?: string
+	}
 }
 
 const CONFIG_DIR = "./scripts/upgrade/config"
