@@ -101,7 +101,7 @@ library MigrationFacetImpl {
 		if (quote.accumulatedPaidFunding != 0) return;
 
 		// Update accumulated rates to current epoch
-		LibFundingRate.updateAccumulatedRates(fundingFee);
+		LibFundingRate.updateAccumulatedRatesAndEmit(fundingFee, quote.symbolId, quote.partyB);
 
 		// Calculate the current accumulated fee that would be used for this position type
 		int256 rate = quote.positionType == PositionType.LONG ? fundingFee.accumulatedLongRate : fundingFee.accumulatedShortRate;

@@ -123,7 +123,7 @@ library LibQuoteFunding {
 		FundingFee storage fundingFee = FundingStorage.layout().fundingFees[quote.symbolId][quote.partyB];
 
 		if (fundingFee.epochDuration > 0) {
-			LibFundingRate.updateAccumulatedRates(fundingFee);
+			LibFundingRate.updateAccumulatedRatesAndEmit(fundingFee, quote.symbolId, quote.partyB);
 			int256 snapshot = quote.positionType == PositionType.LONG ? fundingFee.snapshotLongFee : fundingFee.snapshotShortFee;
 			quote.accumulatedPaidFunding =
 				snapshot +

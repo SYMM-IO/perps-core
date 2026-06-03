@@ -11,7 +11,7 @@ import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest.js
 import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { decimal, getBlockTimestamp, getQuoteQuantity, unDecimal } from "./utils/Common.js"
-import { getDummyHighLowPriceSig, getDummyPairUpnlSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
+import { getDummyHighLowPriceSig, getDummyPairUpnlAndPriceSig, getDummyPairUpnlSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
 
 export function shouldBehaveLikeFundingRate(): void {
 	let context: RunContext, user: User, hedger: Hedger, hedger2: Hedger
@@ -457,6 +457,49 @@ export function shouldBehaveLikeFundingRate(): void {
 						),
 				).to.revertedWith("LibQuote: Invalid state")
 			})
+		})
+
+		it("emits symbol partyB funding state when close rolls accumulated rates", async () => {
+			const startTime = 2000000000n
+			const epochDuration = 400n
+			const setRateTimestamp = startTime + 100n
+			const closeTimestamp = startTime + 800n
+
+			await time.setNextBlockTimestamp(startTime)
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [epochDuration])
+
+			await time.setNextBlockTimestamp(setRateTimestamp)
+			await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(2n, 16)], [0], [decimal(1n)])
+
+			await user.requestToClosePosition(
+				1,
+				limitCloseRequestBuilder()
+					.deadline(startTime + 1000n)
+					.build(),
+			)
+
+			await time.setNextBlockTimestamp(closeTimestamp)
+			const tx = context.partyBPositionActionsFacet
+				.connect(context.signers.hedger)
+				.fillCloseRequest(1, decimal(100n), decimal(1n), await getDummyPairUpnlAndPriceSig(decimal(1n)))
+
+			await expect(tx)
+				.to.emit(context.fundingRateFacet, "AccumulatedFundingStateUpdated")
+				.withArgs(
+					1,
+					context.signers.hedger.address,
+					decimal(2n, 16),
+					0,
+					decimal(2n, 16),
+					0,
+					closeTimestamp / epochDuration,
+					closeTimestamp,
+					setRateTimestamp,
+					setRateTimestamp / epochDuration,
+					epochDuration,
+					0,
+					0,
+				)
 		})
 
 		describe("funding rate accumulation over multiple epochs", () => {
