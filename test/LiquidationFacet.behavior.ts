@@ -418,7 +418,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			await expect(user.deferredLiquidateAndSetSymbolPrices([1n], [decimal(8n)], [1n])).to.be.revertedWith("Accessibility: PartyA isn't solvent")
 		})
 
-		it("Should use the liquidation funding snapshot when an epoch passes before closing positions", async function () {
+		it("Should use current funding for legacy liquidation when an epoch passes before closing positions", async function () {
 			const price = decimal(572n, 16)
 			await user.liquidateAndSetSymbolPrices([1n], [price], [1n])
 
@@ -431,9 +431,20 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			await user.liquidatePositions([1])
 
 			const liquidationState = await user.getLiquidatedStateOfPartyA()
-			expect(liquidationState.disputed).to.equal(false)
-			expect(liquidationState.partyAAccumulatedUpnl).to.equal(liquidationState.upnl)
-			await expect(user.settleLiquidation()).to.not.be.reverted
+			expect(liquidationState.disputed).to.equal(true)
+			expect(liquidationState.partyAAccumulatedUpnl).to.not.equal(liquidationState.upnl)
+			await expect(user.settleLiquidation()).to.be.revertedWith("LiquidationFacet: PartyA liquidation process get disputed")
+		})
+
+		it("Should not block legacy liquidation when PartyB rolls funding after prices are set", async function () {
+			const price = decimal(572n, 16)
+			await user.liquidateAndSetSymbolPrices([1n], [price], [1n])
+
+			await time.increase(500)
+			await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(3n, 16)], [decimal(2n, 16)], [decimal(1n)])
+
+			await user.liquidatePendingPositions()
+			await expect(user.liquidatePositions([1])).to.not.be.reverted
 		})
 
 		it("Should use signed funding state when PartyB rolls funding after the liquidation snapshot", async function () {
