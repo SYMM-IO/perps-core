@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Accumulated Funding State Event - Symmio Core v0.8.6</title>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+	</head>
+	<body class="doc-page">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="doc-topbar">
+			<a class="brand" href="../index.html"
+				><span class="brand-mark">8.6</span><span><strong>Symmio Docs</strong><small>v0.8.6 reference</small></span></a
+			>
+			<nav class="top-actions" aria-label="Page actions">
+				<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+			</nav>
+		</header>
+
+		<div class="reader-shell">
+			<aside class="toc-panel side-toc" aria-label="Page navigation">
+				<a class="button primary back-home" href="../index.html">Back to home</a>
+				<div class="toc-card">
+					<p class="toc-title">On this page</p>
+					<a class="toc-link level-2" href="#summary">Summary</a>
+					<a class="toc-link level-2" href="#event-payload">Event Payload</a>
+					<a class="toc-link level-2" href="#emission-points">Emission Points</a>
+					<a class="toc-link level-2" href="#indexer-notes">Indexer Notes</a>
+				</div>
+			</aside>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">v0.8.6</a><span>/</span><strong>Events</strong></nav>
+					<div class="reader-title-row">
+						<div>
+							<h1>Accumulated Funding State Event</h1>
+							<p class="hero-copy">
+								v0.8.6 emits the final symbol and PartyB accumulated funding state whenever the new accumulated funding system rolls
+								or reconfigures that state.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="summary">Summary</h2>
+					<p>
+						The accumulated funding system keeps mutable funding state per <code>(symbolId, partyB)</code>. Before this enhancement,
+						off-chain indexers could see some user intent events, such as funding fee updates, but they could not reliably observe every
+						derived state roll. A quote close, quote funding charge, open-position sync, liquidation sync, or migration initialization can
+						call the shared accumulated-rate updater and change the symbol/PartyB funding rollup.
+					</p>
+					<p>
+						v0.8.6 adds a dedicated state event for this rollup. The event is about symbol/PartyB funding state only; it does not emit
+						per-quote <code>accumulatedPaidFunding</code> changes.
+					</p>
+
+					<h2 id="event-payload">Event Payload</h2>
+					<pre><code class="language-solidity">event AccumulatedFundingStateUpdated(
+    uint256 indexed symbolId,
+    address indexed partyB,
+    int256 currentLongRate,
+    int256 currentShortRate,
+    int256 accumulatedLongRate,
+    int256 accumulatedShortRate,
+    uint256 lastUpdatedEpoch,
+    uint256 lastUpdatedTimeStamp,
+    uint256 startEpochTimeStamp,
+    uint256 startEpoch,
+    uint256 epochDuration,
+    int256 snapshotLongFee,
+    int256 snapshotShortFee
+);
+</code></pre>
+					<p>
+						The payload mirrors the persisted <code>FundingFee</code> struct after the state transition has completed. Consumers can index
+						by <code>symbolId</code> and <code>partyB</code>, then replace their local copy with the emitted fields.
+					</p>
+
+					<h2 id="emission-points">Emission Points</h2>
+					<p>The event is emitted after final storage writes in the direct configuration paths:</p>
+					<ul>
+						<li><code>setEpochDurations</code></li>
+						<li><code>updateAccumulatedFundingFee</code></li>
+						<li><code>setFundingFee</code>, <code>setLongFundingFee</code>, and <code>setShortFundingFee</code></li>
+					</ul>
+					<p>
+						It is also emitted by the shared accumulated-rate update path when elapsed epochs actually roll the symbol/PartyB state. That
+						covers quote-driven flows such as position close and accumulated funding charge, plus funding initialization during migration.
+					</p>
+
+					<h2 id="indexer-notes">Indexer Notes</h2>
+					<ul>
+						<li>The event is declared in the funding facet ABI for decoding on the core diamond address.</li>
+						<li>Only one log is emitted per changed <code>(symbolId, partyB)</code> state update.</li>
+						<li>Rate setter input events remain useful for intent, but this event is the canonical final-state record.</li>
+						<li>If an accumulated-rate updater is called without a state roll, no state event is emitted from that helper.</li>
+					</ul>
+					<p>
+						Code references: <code>contracts/core/facets/FundingRate/IFundingRateEvents.sol</code>,
+						<code>contracts/core/libraries/LibFundingRate.sol</code>, and <code>contracts/core/libraries/LibQuoteFunding.sol</code>.
+					</p>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Protocol, operations, and integration notes.</span>
+		</footer>
+	</body>
+</html>

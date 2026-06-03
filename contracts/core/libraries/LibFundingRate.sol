@@ -7,6 +7,22 @@ pragma solidity >=0.8.18;
 import { FundingFee } from "../storages/FundingStorage.sol";
 
 library LibFundingRate {
+	event AccumulatedFundingStateUpdated(
+		uint256 indexed symbolId,
+		address indexed partyB,
+		int256 currentLongRate,
+		int256 currentShortRate,
+		int256 accumulatedLongRate,
+		int256 accumulatedShortRate,
+		uint256 lastUpdatedEpoch,
+		uint256 lastUpdatedTimeStamp,
+		uint256 startEpochTimeStamp,
+		uint256 startEpoch,
+		uint256 epochDuration,
+		int256 snapshotLongFee,
+		int256 snapshotShortFee
+	);
+
 	/// @notice Returns the epoch number for a given timestamp and epoch duration.
 	function getEpochOfTimestamp(uint256 timestamp, uint256 epochDuration) internal pure returns (uint256) {
 		require(epochDuration > 0, "FundingRateFacet: Zero epoch duration");
@@ -51,14 +67,16 @@ library LibFundingRate {
 	}
 
 	/// @notice Updates the weighted average accumulated funding rates based on elapsed epochs.
-	function updateAccumulatedRates(FundingFee storage fundingFee) internal returns (int256 accumulatedLongRate, int256 accumulatedShortRate) {
+	function updateAccumulatedRates(
+		FundingFee storage fundingFee
+	) internal returns (int256 accumulatedLongRate, int256 accumulatedShortRate, bool stateUpdated) {
 		uint256 newEpochs = getEpochsSinceLastUpdate(fundingFee);
 		uint256 previousEpochs = fundingFee.lastUpdatedEpoch - fundingFee.startEpoch;
 
 		if (previousEpochs == 0 && newEpochs == 0) {
 			accumulatedLongRate = int256(fundingFee.accumulatedLongRate);
 			accumulatedShortRate = int256(fundingFee.accumulatedShortRate);
-			return (accumulatedLongRate, accumulatedShortRate);
+			return (accumulatedLongRate, accumulatedShortRate, false);
 		}
 
 		uint256 totalEpochs = previousEpochs + newEpochs;
@@ -72,6 +90,35 @@ library LibFundingRate {
 		fundingFee.lastUpdatedEpoch = getEpochOfTimestamp(block.timestamp, fundingFee.epochDuration);
 		fundingFee.lastUpdatedTimeStamp = block.timestamp;
 
-		return (fundingFee.accumulatedLongRate, fundingFee.accumulatedShortRate);
+		return (fundingFee.accumulatedLongRate, fundingFee.accumulatedShortRate, true);
+	}
+
+	/// @notice Updates accumulated rates and emits the funding state when symbol/PartyB storage changes.
+	function updateAccumulatedRatesAndEmit(
+		FundingFee storage fundingFee,
+		uint256 symbolId,
+		address partyB
+	) internal returns (int256 accumulatedLongRate, int256 accumulatedShortRate, bool stateUpdated) {
+		(accumulatedLongRate, accumulatedShortRate, stateUpdated) = updateAccumulatedRates(fundingFee);
+		if (stateUpdated) emitAccumulatedFundingStateUpdated(symbolId, partyB, fundingFee);
+	}
+
+	/// @notice Emits the full symbol/PartyB accumulated funding state after callers finish mutating it.
+	function emitAccumulatedFundingStateUpdated(uint256 symbolId, address partyB, FundingFee storage fundingFee) internal {
+		emit AccumulatedFundingStateUpdated(
+			symbolId,
+			partyB,
+			fundingFee.currentLongRate,
+			fundingFee.currentShortRate,
+			fundingFee.accumulatedLongRate,
+			fundingFee.accumulatedShortRate,
+			fundingFee.lastUpdatedEpoch,
+			fundingFee.lastUpdatedTimeStamp,
+			fundingFee.startEpochTimeStamp,
+			fundingFee.startEpoch,
+			fundingFee.epochDuration,
+			fundingFee.snapshotLongFee,
+			fundingFee.snapshotShortFee
+		);
 	}
 }

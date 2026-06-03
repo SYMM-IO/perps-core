@@ -190,6 +190,7 @@ library FundingRateFacetImpl {
 			// Update epoch duration
 			fundingFee.lastUpdatedEpoch = LibFundingRate.getEpochOfTimestamp(timestampForEpoch, durations[i]);
 			fundingFee.epochDuration = durations[i];
+			LibFundingRate.emitAccumulatedFundingStateUpdated(symbolIds[i], partyB, fundingFee);
 		}
 	}
 
@@ -210,8 +211,9 @@ library FundingRateFacetImpl {
 			"FundingRateFacet: Invalid length"
 		);
 
+		address partyB = LibSigner.getSigner();
 		for (uint256 i = 0; i < symbolIds.length; i++) {
-			FundingFee storage fundingFee = FundingStorage.layout().fundingFees[symbolIds[i]][LibSigner.getSigner()];
+			FundingFee storage fundingFee = FundingStorage.layout().fundingFees[symbolIds[i]][partyB];
 
 			require(fundingFee.epochDuration > 0, "FundingRateFacet: Epoch duration not set");
 			LibFundingRate.updateAccumulatedRates(fundingFee);
@@ -224,6 +226,7 @@ library FundingRateFacetImpl {
 				fundingFee.startEpoch = LibFundingRate.getEpochOfTimestamp(block.timestamp, fundingFee.epochDuration);
 				fundingFee.startEpochTimeStamp = block.timestamp;
 			}
+			LibFundingRate.emitAccumulatedFundingStateUpdated(symbolIds[i], partyB, fundingFee);
 		}
 	}
 
