@@ -405,7 +405,7 @@ library LibPartyALiquidationProcess {
 			// Legacy flow uses per-symbol prices stored during the price setup step.
 			Price storage price = accountLayout.symbolsPrices[partyA][quote.symbolId];
 			require(price.timestamp == liquidationDetail.timestamp, "LiquidationFacet: Price should be set");
-			return (price.price, LibQuoteFunding.getAccumulatedFundingFeeAt(quote.id, liquidationDetail.timestamp));
+			return (price.price, LibQuoteFunding.getAccumulatedFundingFee(quote.id));
 		}
 
 		// Snapshot flow uses Muon-signed PartyB-symbol state captured at liquidation time.
