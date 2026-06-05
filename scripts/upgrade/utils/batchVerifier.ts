@@ -15,6 +15,7 @@ import path from "path"
 import { FacetNames } from "../../../tasks/deploy/constants.js"
 import { getSelectors } from "../../../tasks/utils/diamondCut.js"
 import { ethers } from "../../../test/helpers/hardhat-connection.js"
+import { MUON_FUNCTION_NAMES, validateMuonVerifierConfig } from "./muonVerifierConfig.js"
 import {
 	buildSymbolManagerWiringTransactions,
 	buildTemplateTransactions,
@@ -67,6 +68,9 @@ export type VerifyContextInputs = {
 	// Optional cross-check toggle: verify each facet's selectors in
 	// deployed-facets-{network}.json match the locally compiled facet ABI.
 	verifyFacetSelectorsAgainstArtifacts?: boolean
+	// Optional optimization: checks that do not need generator-equivalent PartyB
+	// registration filtering can avoid on-chain reads.
+	skipPartyBStateFilter?: boolean
 }
 
 export type LoadedContext = {
@@ -229,7 +233,7 @@ export async function loadVerifyContext(inputs: VerifyContextInputs): Promise<Lo
 	// agree; if one filters and the other doesn't, byte-compare drifts.
 	let partyBsForDiamond: string[] = []
 	let partyBsForInstantLayer: string[] = []
-	if (partyBsToRegister.length > 0) {
+	if (partyBsToRegister.length > 0 && !inputs.skipPartyBStateFilter) {
 		const filtered = await filterUnregisteredPartyBs(
 			ethers.provider,
 			ethers.getAddress(diamondAddress),
@@ -425,6 +429,83 @@ export function verifySafeBatch(ctx: LoadedContext): FileCheck {
 	const expected = buildExpectedSafeTxs(ctx).safeTxs
 	compareTxLists("safe-batch", expected, batch.transactions, check.issues)
 	checkSafeHeader(batch, ctx.safeAddress, check.issues)
+	check.ok = check.issues.length === 0
+	return check
+}
+
+const MUON_VERIFIER_IFACE = new ethers.Interface([
+	"function addPublicKey(tuple(uint256 x, uint8 parity) pubKey)",
+	"function addGatewaySigner(address signer)",
+	"function setPublicKeyPermissions(tuple(uint256 x, uint8 parity) pubKey, uint8[] functions, bool allowed)",
+	"function setGatewaySignerPermissions(address signer, uint8[] functions, bool allowed)",
+])
+
+function hasExactCall(batch: SafeBatchFile, to: string, methodName: string, args: unknown[]): boolean {
+	const data = MUON_VERIFIER_IFACE.encodeFunctionData(methodName, args)
+	return batch.transactions.some(tx => eqAddr(tx.to, to) && eqBytes(tx.data, data))
+}
+
+export function verifyMuonVerifierSafeBatch(ctx: LoadedContext): FileCheck {
+	const check: FileCheck = { file: ctx.files.safeBatch, label: "muon-verifier-safe-batch", ok: true, issues: [] }
+	const params = ctx.newParams
+	const publicKeys = params.muonPublicKeys ?? []
+	const gatewaySigners = params.muonGatewaySigners ?? []
+	const permissionNames = params.muonFunctionPermissions ?? []
+
+	const configProblems = validateMuonVerifierConfig(params)
+	for (const problem of configProblems) {
+		check.issues.push(`upgrade config: ${problem}`)
+	}
+
+	if (publicKeys.length === 0 && gatewaySigners.length === 0) {
+		;(check as FileCheck & { summary?: string }).summary = "no Muon keys/gateways configured"
+		check.ok = check.issues.length === 0
+		return check
+	}
+
+	const verifierAddress = params.signatureVerifierAddress ?? ctx.signatureVerifierAddress
+	if (!verifierAddress || !ethers.isAddress(verifierAddress)) {
+		check.issues.push("signatureVerifierAddress is required when Muon public keys or gateway signers are configured")
+		check.ok = false
+		return check
+	}
+	const verifier = ethers.getAddress(verifierAddress)
+
+	if (!fs.existsSync(ctx.files.safeBatch)) {
+		check.issues.push(`missing generated safe batch: ${ctx.files.safeBatch}`)
+		check.ok = false
+		return check
+	}
+
+	const batch = readJson<SafeBatchFile>(ctx.files.safeBatch)
+	const permissionIndices = permissionNames.map(name => MUON_FUNCTION_NAMES.indexOf(name))
+	const canCheckPermissions = permissionIndices.length > 0 && permissionIndices.every(index => index >= 0)
+
+	for (const key of publicKeys) {
+		const pubKeyTuple = { x: key.x, parity: key.parity }
+		if (!hasExactCall(batch, verifier, "addPublicKey", [pubKeyTuple])) {
+			check.issues.push(`missing addPublicKey(x=${key.x.slice(0, 10)}..., parity=${key.parity}) on ${verifier}`)
+		}
+		if (canCheckPermissions && !hasExactCall(batch, verifier, "setPublicKeyPermissions", [pubKeyTuple, permissionIndices, true])) {
+			check.issues.push(
+				`missing setPublicKeyPermissions(x=${key.x.slice(0, 10)}..., parity=${key.parity}, [${permissionNames.join(", ")}], true) on ${verifier}`,
+			)
+		}
+	}
+
+	for (const signer of gatewaySigners) {
+		const gateway = ethers.isAddress(signer) ? ethers.getAddress(signer) : signer
+		if (!ethers.isAddress(gateway)) continue
+		if (!hasExactCall(batch, verifier, "addGatewaySigner", [gateway])) {
+			check.issues.push(`missing addGatewaySigner(${gateway}) on ${verifier}`)
+		}
+		if (canCheckPermissions && !hasExactCall(batch, verifier, "setGatewaySignerPermissions", [gateway, permissionIndices, true])) {
+			check.issues.push(`missing setGatewaySignerPermissions(${gateway}, [${permissionNames.join(", ")}], true) on ${verifier}`)
+		}
+	}
+
+	;(check as FileCheck & { summary?: string }).summary =
+		`${publicKeys.length} public key(s), ${gatewaySigners.length} gateway signer(s), ${permissionNames.length} function permission(s)`
 	check.ok = check.issues.length === 0
 	return check
 }

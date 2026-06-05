@@ -20,6 +20,7 @@ import fs from "fs"
 import path from "path"
 
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
+import { verifyMuonVerifierSafeBatch, type LoadedContext } from "./utils/batchVerifier.js"
 import { loadDeploymentState } from "./utils/deploymentState.js"
 import {
 	buildTemplateTransactions,
@@ -55,6 +56,7 @@ type DeployedPeripherals = {
 	accountLayer?: { diamond?: string }
 	instantLayer?: { address?: string }
 	symbolManager?: { address?: string }
+	signatureVerifier?: string
 }
 
 const OUTPUT_DIR = "./scripts/upgrade/output"
@@ -63,6 +65,20 @@ function loadConfig(networkName: string): Config {
 	const configFile = resolveConfigFile("upgrade", networkName, process.env.UPGRADE_CONFIG_FILE)
 	if (!fs.existsSync(configFile)) return {}
 	return JSON.parse(fs.readFileSync(configFile, "utf-8")) as Config
+}
+
+function assertMuonVerifierSafeBatch(check: ReturnType<typeof verifyMuonVerifierSafeBatch>): void {
+	const summary = (check as typeof check & { summary?: string }).summary
+	if (check.ok) {
+		console.log(`\nGenerated Safe batch verification: ${check.label}${summary ? ` (${summary})` : ""}`)
+		return
+	}
+
+	console.error(`\nGenerated Safe batch verification failed: ${check.label}`)
+	for (const issue of check.issues) {
+		console.error(`  - ${issue}`)
+	}
+	throw new Error(`Generated ${path.basename(check.file)} failed Muon verifier permission verification`)
 }
 
 async function main() {
@@ -280,6 +296,46 @@ async function main() {
 	}
 	fs.writeFileSync(batchFile, JSON.stringify(batch, null, 2))
 	console.log(`Safe batch:               ${batchFile}`)
+
+	const verifierContext: LoadedContext = {
+		networkName,
+		outputDir: OUTPUT_DIR,
+		diamondAddress: ethers.getAddress(DIAMOND_ADDRESS),
+		protocolAdmin: ethers.getAddress(PROTOCOL_ADMIN),
+		safeAddress: SAFE_ADDRESS,
+		migrationRunner: ethers.getAddress(MIGRATION_RUNNER),
+		diamondCutChunkSize: DIAMOND_CUT_CHUNK_SIZE,
+		setupInstantLayerTemplates: config.setupInstantLayerTemplates !== false,
+		newParams,
+		partyBsToRegister: partyBsFromConfig.map(address => ethers.getAddress(address)),
+		registerOnSymmioCore,
+		registerOnInstantLayer,
+		partyBsForDiamond,
+		partyBsForInstantLayer,
+		templates: [],
+		accountLayerAddress: AL_ADDRESS && ethers.isAddress(AL_ADDRESS) ? ethers.getAddress(AL_ADDRESS) : undefined,
+		instantLayerAddress: IL_ADDRESS && ethers.isAddress(IL_ADDRESS) ? ethers.getAddress(IL_ADDRESS) : undefined,
+		symbolManagerAddress: SM_ADDRESS && ethers.isAddress(SM_ADDRESS) ? ethers.getAddress(SM_ADDRESS) : undefined,
+		signatureVerifierAddress:
+			newParams.signatureVerifierAddress && ethers.isAddress(newParams.signatureVerifierAddress)
+				? ethers.getAddress(newParams.signatureVerifierAddress)
+				: peripherals.signatureVerifier,
+		deployedFacets: facetData.facets,
+		selectorSignatures: facetData.selectorSignatures,
+		files: {
+			pauseSafeBatch: pauseFile,
+			safeBatch: batchFile,
+			diamondCutCalldata: path.join(OUTPUT_DIR, `diamondcut-calldata-${networkName}.json`),
+			timelockSchedule: [],
+			timelockExecute: [],
+			postMigrationSafeBatch: path.join(OUTPUT_DIR, `post-migration-safe-batch-${networkName}.json`),
+			postMigrationTransactions: path.join(OUTPUT_DIR, `post-migration-transactions-${networkName}.json`),
+			grantSymbolRoleSafeBatch: path.join(OUTPUT_DIR, `grant-symbol-role-safe-batch-${networkName}.json`),
+			revokeSymbolRoleSafeBatch: path.join(OUTPUT_DIR, `revoke-symbol-role-safe-batch-${networkName}.json`),
+			addTemplatesSafeBatch: path.join(OUTPUT_DIR, `add-templates-safe-batch-${networkName}.json`),
+		},
+	}
+	assertMuonVerifierSafeBatch(verifyMuonVerifierSafeBatch(verifierContext))
 
 	// 2. Diamond cut calldata (separate)
 	const diamondCutFile = path.join(OUTPUT_DIR, `diamondcut-calldata-${networkName}.json`)

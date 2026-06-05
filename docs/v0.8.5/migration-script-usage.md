@@ -100,12 +100,13 @@ Add the output to `upgrade-{network}.json`:
     "signatureVerifierAddress": "0x...",
     "muonPublicKeys": [{ "x": "123...", "parity": 1 }],
     "muonGatewaySigners": ["0x..."],
+    "muonFunctionPermissions": ["Trading", "AccountManagement", "Settlement", "ForceClose", "Funding", "LiquidationPartyA", "LiquidationPartyB"],
     ...
   }
 }
 ```
 
-When `signatureVerifierAddress`, `muonPublicKeys`, and `muonGatewaySigners` are all set, the upgrade scripts automatically include `addPublicKey()` and `addGatewaySigner()` calls on the `MuonSignatureVerifier` in the Safe batch (or execute them directly in the EOA path). The Safe must have `SETTER_ROLE` on the verifier contract.
+When `signatureVerifierAddress`, `muonPublicKeys`, `muonGatewaySigners`, and `muonFunctionPermissions` are set, the upgrade scripts automatically include `addPublicKey()`, `addGatewaySigner()`, `setPublicKeyPermissions()`, and `setGatewaySignerPermissions()` calls on the `MuonSignatureVerifier` in the Safe batch (or execute them directly in the EOA path). The Safe must have `SETTER_ROLE` on the verifier contract.
 
 ### 1. Deploy facets
 
@@ -187,6 +188,7 @@ USE_KEYSTORE=true npx hardhat run scripts/upgrade/generateSafeBatch.ts --network
 ```
 
 Builds the upgrade transaction set by diffing the live diamond against deployed facets. Automatically loads peripheral addresses from step 2 output.
+After writing `safe-batch-{network}.json`, the script immediately verifies the generated Muon verifier section. If configured Muon public keys or gateway signers are missing `addPublicKey`, `addGatewaySigner`, `setPublicKeyPermissions`, or `setGatewaySignerPermissions` calls, generation exits non-zero and the Safe artifact must not be signed.
 
 Output:
 
@@ -200,13 +202,20 @@ The Safe batch includes:
 2. `pauseGlobal()`
 3. Grant PROTOCOL_CONFIG_ROLE, COOLDOWN_ADMIN_ROLE, FEE_ADMIN_ROLE to `protocolAdmin`
 4. Set v0.8.5 parameters (including `setSignatureVerifierAddress`)
-5. Seed MuonSignatureVerifier with TSS public keys and gateway signers (if configured in `newV085Parameters`)
+5. Seed MuonSignatureVerifier with TSS public keys, gateway signers, and per-function permissions (if configured in `newV085Parameters`)
 6. Grant MIGRATION_ROLE and SYMBOL_MANAGER_ROLE to `migrationRunner`
 7. Peripheral wiring (roles + hooks between Diamond, AccountLayer, InstantLayer)
 8. SymbolManager wiring (SYMBOL_MANAGER_ROLE + FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE on Diamond)
 9. `registerPartyB()` on Core Diamond + `registerPartyBs()` on InstantLayer (reads generated Solver list from `config/partyBList-{network}.json`)
 
 The diamondCut is **not** in the Safe batch -- it's separate so it can be routed through the timelock.
+
+Standalone verification can be run immediately after generation or later before signing:
+
+```bash
+NETWORKS=<network> ONLY=muon-verifier-safe-batch VERIFY_ARTIFACTS=false \
+  npx hardhat run scripts/upgrade/verifyBatchCalldata.ts --network default
+```
 
 ### 5. Generate timelock batches (Path A only)
 
@@ -406,7 +415,8 @@ Phase 1: Prepare (can be done in advance, no downtime)
        verifyPeripheralBytecode.ts     (peripherals bytecode + immutables)
        verifyBlockExplorer.ts             (block explorer source + ABI verification)
   fetchSolverList.ts             (writes partyBList-{network}.json from Solver entities)
-  generateSafeBatch.ts
+  generateSafeBatch.ts           (writes Safe batches + runs Muon verifier Safe-batch check)
+  verifyBatchCalldata.ts         (standalone generated-calldata check before signing)
   generateTimelockBatch.ts
   generatePostMigrationBatch.ts
   fetchSymbolList.ts              (off critical path — fetch symbols from subgraph)
@@ -460,6 +470,7 @@ Same as above but skip `generateTimelockBatch.ts` and include the diamondCut dir
 | `verifyBlockExplorer.ts`        | After bytecode parity checks        | Block-explorer source + ABI publication/verification of libraries, facets, and peripherals                                   |
 | `validateMigrationInput.ts`     | After `prepareMigrationInput.ts`    | Random spot-check of quotes and partyB balances against on-chain                                                             |
 | `validateMigrationEdgeCases.ts` | After `prepareMigrationInput.ts`    | Deterministic boundary, fork drift, gap scan, and partyB completeness checks                                                 |
+| `verifyBatchCalldata.ts`        | After `generateSafeBatch.ts`        | Standalone check that generated Safe batches match current config, including Muon verifier key/gateway permission calls      |
 | `verifyDiamondSelectors.ts`     | After `safe-batch.json` is executed | All v0.8.5 facet selectors registered on the diamond                                                                         |
 | `verifyPeripheralWiring.ts`     | After `safe-batch.json` is executed | AccountLayer + InstantLayer roles, hooks, whitelist, templates wired correctly                                               |
 

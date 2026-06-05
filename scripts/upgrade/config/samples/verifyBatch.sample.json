@@ -2,6 +2,8 @@
 	"_comment": "Optional config for scripts/upgrade/verifyBatchCalldata.ts. All fields optional — script falls back to --network / upgrade.json / deployed-facets-{network}.json / deployed-peripherals-{network}.json.",
 
 	"networkName": "arbitrum",
+	"_network_names_comment": "Optional multi-network sweep. Env NETWORKS=arbitrum,base,bsc overrides both networkName and networkNames.",
+	"networkNames": ["arbitrum"],
 	"outputDir": "./scripts/upgrade/output",
 	"configDir": "./scripts/upgrade/config",
 
@@ -9,6 +11,7 @@
 	"only": [
 		"pause-safe-batch",
 		"safe-batch",
+		"muon-verifier-safe-batch",
 		"diamondcut-calldata",
 		"timelock-schedule-safe-batch",
 		"timelock-execute-safe-batch",

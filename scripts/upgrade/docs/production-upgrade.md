@@ -721,6 +721,8 @@ Generates Safe Transaction Builder JSON for the full upgrade (roles, pause, para
 USE_KEYSTORE=true npx hardhat run scripts/upgrade/generateSafeBatch.ts --network arbitrum
 ```
 
+After writing `safe-batch-{network}.json`, `generateSafeBatch.ts` immediately runs the `muon-verifier-safe-batch` check against the generated file. If configured Muon public keys or gateway signers are missing registration or permission transactions, generation exits non-zero before the artifact is handed to operators.
+
 Output:
 
 - `scripts/upgrade/output/pause-safe-batch.json` -- Safe batch for pause (grantRole PAUSER/UNPAUSER + pauseGlobal)
@@ -774,6 +776,7 @@ What it checks, per file:
 | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pause-safe-batch-{network}.json`                                                              | Exactly the 3 expected txs (grant PAUSER, grant UNPAUSER, pauseGlobal) on the diamond                                                                                                                                                                   |
 | `safe-batch-{network}.json`                                                                    | Every non-diamondCut tx byte-matches the current generator output (roles, v0.8.5 params, Muon verifier key/gateway registration and permission seeding, AL/IL wiring, SymbolManager wiring, PartyB registration, templates)                             |
+| `muon-verifier-safe-batch`                                                                     | Explicitly checks `safe-batch-{network}.json` has `addPublicKey`, `addGatewaySigner`, `setPublicKeyPermissions`, and `setGatewaySignerPermissions` for every configured Muon key/gateway signer                                                         |
 | `diamondcut-calldata-{network}.json`                                                           | Decodes each chunk; asserts facetAddress ∈ deployed-facets, selectors belong to their facet, `_init == 0x0`, `_calldata == 0x`, no duplicate selectors across chunks. Optionally cross-checks `deployed-facets.json` selectors against the compiled ABI |
 | `timelock-{schedule,execute}-safe-batch-{network}-N.json`                                      | Each file targets `timelockAddress`; inner calldata equals `diamondcut-calldata.chunks[N]`; predecessor chain is consistent and starts at `0x0`; salts match `keccak256(abi.encode(chainId, diamond, "diamondCut-v0.8.5", N))`                          |
 | `post-migration-{safe-batch,transactions}-{network}.json`                                      | `revokeRole` × 2, `unpauseGlobal`, `setCrossPartyBModeActivated(true)`, `setCrossPartyB(partyB, true)` × N (reading PartyBs from `postMigration.json`)                                                                                                  |
@@ -787,6 +790,7 @@ Every Safe batch also asserts `meta.createdFromSafeAddress == upgrade.json.safeA
 | Field                                  | Description                                                                                                                                                                                                                |
 | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `networkName`                          | Override the network suffix used to resolve files (default: from `--network`)                                                                                                                                              |
+| `networkNames`                         | Verify multiple generated network artifact sets in one run. Env `NETWORKS=a,b,c` overrides both `networkName` and `networkNames`                                                                                           |
 | `outputDir`                            | Directory containing the generated JSON files (default: `./scripts/upgrade/output`)                                                                                                                                        |
 | `configDir`                            | Directory containing `upgrade-{network}.json` / `partyBList-{network}.json` / `instantLayerTemplates.json`                                                                                                                 |
 | `only`                                 | Array of labels to verify; omit to verify all. Env `ONLY=a,b,c` overrides                                                                                                                                                  |
@@ -797,11 +801,21 @@ Every Safe batch also asserts `meta.createdFromSafeAddress == upgrade.json.safeA
 Available labels (for `only` / `skip` / env `ONLY` / `SKIP`):
 
 ```
-pause-safe-batch, safe-batch, diamondcut-calldata,
+pause-safe-batch, safe-batch, muon-verifier-safe-batch,
+diamondcut-calldata,
 timelock-schedule-safe-batch, timelock-execute-safe-batch,
 post-migration-safe-batch, post-migration-transactions,
 grant-symbol-role-safe-batch, revoke-symbol-role-safe-batch,
 add-templates-safe-batch
+```
+
+To sweep only the Muon verifier key/gateway registration and permission calls across every generated network artifact set:
+
+```bash
+NETWORKS=arbitrum,base,bsc \
+ONLY=muon-verifier-safe-batch \
+VERIFY_ARTIFACTS=false \
+npx hardhat run scripts/upgrade/verifyBatchCalldata.ts --network default
 ```
 
 The script exits non-zero if any check fails and prints per-file issue lists (expected vs actual selector, `to`, or calldata) to make diagnosis straightforward.
