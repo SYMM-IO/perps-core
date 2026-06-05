@@ -13,6 +13,7 @@
 import fs from "fs"
 
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
+import { DEFAULT_MUON_FUNCTION_PERMISSIONS } from "./utils/muonVerifierConfig.js"
 import { baseNetworkName, loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 
 type MuonConfigOutput = {
@@ -25,6 +26,7 @@ type MuonConfigOutput = {
 	signatureVerifierAddress?: string
 	muonPublicKeys: Array<{ x: string; parity: number }>
 	muonGatewaySigners: string[]
+	muonFunctionPermissions: string[]
 	configSnippet: Record<string, any>
 }
 
@@ -64,6 +66,9 @@ function buildConfigSnippet(output: Omit<MuonConfigOutput, "configSnippet">): Re
 	if (output.muonGatewaySigners.length > 0) {
 		configSnippet.muonGatewaySigners = output.muonGatewaySigners
 	}
+	if (output.muonPublicKeys.length > 0 || output.muonGatewaySigners.length > 0) {
+		configSnippet.muonFunctionPermissions = output.muonFunctionPermissions
+	}
 	return configSnippet
 }
 
@@ -85,6 +90,7 @@ async function readV084Config(diamondAddress: string): Promise<MuonConfigOutput>
 		priceValidTime: priceValidTime.toString(),
 		muonPublicKeys,
 		muonGatewaySigners,
+		muonFunctionPermissions: DEFAULT_MUON_FUNCTION_PERMISSIONS,
 	}
 
 	return {
@@ -119,6 +125,7 @@ async function readV085Config(diamondAddress: string): Promise<MuonConfigOutput>
 		signatureVerifierAddress,
 		muonPublicKeys: publicKeysRaw.map(normalizePublicKey),
 		muonGatewaySigners: gatewaySignersRaw.map((address: string) => ethers.getAddress(address)),
+		muonFunctionPermissions: DEFAULT_MUON_FUNCTION_PERMISSIONS,
 	}
 
 	return {
@@ -166,6 +173,7 @@ async function main() {
 	for (const signer of output.muonGatewaySigners) {
 		console.log(`    ${signer}`)
 	}
+	console.log(`  function perms:  ${output.muonFunctionPermissions.join(", ")}`)
 	console.log()
 
 	if (output.muonPublicKeys.length === 0 && output.muonGatewaySigners.length === 0) {

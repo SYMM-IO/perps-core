@@ -1398,6 +1398,7 @@ async function main() {
 	await runPreflight(connection.networkName, {
 		diamondAddress: DIAMOND_ADDRESS,
 		signatureVerifierAddress: newParams.signatureVerifierAddress,
+		newV085Parameters: stages.has("params") ? newParams : undefined,
 		stateFiles: [facetsOutFile, peripheralsStateFile],
 	})
 

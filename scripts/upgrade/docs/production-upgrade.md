@@ -301,7 +301,7 @@ TIMELINE
 
 ## EOA Path
 
-**Pre-requisites (if upgrading from v0.8.4):** Run `readMuonConfig.ts` to capture TSS key + gateway (see [Read Muon Config](#read-muon-config-from-v084-diamond)). The `MuonSignatureVerifier` is deployed automatically by `deployPeripherals.ts` and the EOA path seeds it from `muonPublicKeys`/`muonGatewaySigners` in config.
+**Pre-requisites (if upgrading from v0.8.4):** Run `readMuonConfig.ts` to capture TSS key + gateway (see [Read Muon Config](#read-muon-config-from-v084-diamond)). The `MuonSignatureVerifier` is deployed automatically by `deployPeripherals.ts` and the EOA path seeds it from `muonPublicKeys`/`muonGatewaySigners`, then configures `muonFunctionPermissions` for those keys and gateways.
 
 ### EOA Admin Model
 
@@ -663,7 +663,8 @@ Add the output to `upgrade.json` -> `newV085Parameters`:
 
 ```json
 "muonPublicKeys": [{ "x": "123...", "parity": 1 }],
-"muonGatewaySigners": ["0x..."]
+"muonGatewaySigners": ["0x..."],
+"muonFunctionPermissions": ["Trading", "AccountManagement", "Settlement", "ForceClose", "Funding", "LiquidationPartyA", "LiquidationPartyB"]
 ```
 
 Output: `scripts/upgrade/output/muon-config.json`
@@ -674,7 +675,7 @@ Output: `scripts/upgrade/output/muon-config.json`
 
 `deployPeripherals.ts` handles this automatically — it deploys `MuonSignatureVerifier(protocolAdmin)` and writes the address back to `upgrade.json` → `newV085Parameters.signatureVerifierAddress`. No separate step is needed.
 
-TSS public keys and gateway signers are seeded automatically by the upgrade scripts (from `muonPublicKeys` and `muonGatewaySigners` in config). The Safe must have `SETTER_ROLE` on the verifier.
+TSS public keys, gateway signers, and per-function permissions are seeded automatically by the upgrade scripts (from `muonPublicKeys`, `muonGatewaySigners`, and `muonFunctionPermissions` in config). The Safe must have `SETTER_ROLE` on the verifier.
 
 If upgrading a chain that already runs v0.8.5 (or where the verifier was deployed previously), skip this step and use the existing verifier address.
 
@@ -714,7 +715,7 @@ The script applies all facet cuts in a **single transaction** (no chunking neede
 
 Generates Safe Transaction Builder JSON for the full upgrade (roles, pause, params, migration role, AccountLayer/InstantLayer/SymbolManager wiring) plus separate diamondCut calldata.
 
-**Prerequisites:** Run `deployFacets.ts`, `deployPeripherals.ts`, and `fetchSolverList.ts` first. The script auto-loads `deployed-facets-{network}.json` and `deployed-peripherals-{network}.json` from the output directory -- no manual address copy needed. PartyB registration reads from `config/partyBList-{network}.json`: entries are registered on core Diamond when `registerOnSymmioCore` is true (default) and on InstantLayer when `registerOnInstantLayer` is true (default). `fetchSolverList.ts` writes both flags as true for every generated chain file; `generateSafeBatch.ts` then pre-filters both lists against live on-chain registration state, so already-registered solvers are skipped and batches are safe to regenerate and re-run. Config and env vars override auto-loaded values if set.
+**Prerequisites:** Run `deployFacets.ts`, `deployPeripherals.ts`, and `fetchSolverList.ts` first. The script auto-loads `deployed-facets-{network}.json` and `deployed-peripherals-{network}.json` from the output directory -- no manual address copy needed. If `muonPublicKeys` or `muonGatewaySigners` are configured, `muonFunctionPermissions` must also be configured so the post-diamondCut batch includes `setPublicKeyPermissions` and `setGatewaySignerPermissions`. PartyB registration reads from `config/partyBList-{network}.json`: entries are registered on core Diamond when `registerOnSymmioCore` is true (default) and on InstantLayer when `registerOnInstantLayer` is true (default). `fetchSolverList.ts` writes both flags as true for every generated chain file; `generateSafeBatch.ts` then pre-filters both lists against live on-chain registration state, so already-registered solvers are skipped and batches are safe to regenerate and re-run. Config and env vars override auto-loaded values if set.
 
 ```bash
 USE_KEYSTORE=true npx hardhat run scripts/upgrade/generateSafeBatch.ts --network arbitrum
@@ -772,7 +773,7 @@ What it checks, per file:
 | File                                                                                           | Checks                                                                                                                                                                                                                                                  |
 | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pause-safe-batch-{network}.json`                                                              | Exactly the 3 expected txs (grant PAUSER, grant UNPAUSER, pauseGlobal) on the diamond                                                                                                                                                                   |
-| `safe-batch-{network}.json`                                                                    | Every non-diamondCut tx byte-matches the current generator output (roles, v0.8.5 params, Muon verifier seeding, AL/IL wiring, SymbolManager wiring, PartyB registration, templates)                                                                     |
+| `safe-batch-{network}.json`                                                                    | Every non-diamondCut tx byte-matches the current generator output (roles, v0.8.5 params, Muon verifier key/gateway registration and permission seeding, AL/IL wiring, SymbolManager wiring, PartyB registration, templates)                             |
 | `diamondcut-calldata-{network}.json`                                                           | Decodes each chunk; asserts facetAddress ∈ deployed-facets, selectors belong to their facet, `_init == 0x0`, `_calldata == 0x`, no duplicate selectors across chunks. Optionally cross-checks `deployed-facets.json` selectors against the compiled ABI |
 | `timelock-{schedule,execute}-safe-batch-{network}-N.json`                                      | Each file targets `timelockAddress`; inner calldata equals `diamondcut-calldata.chunks[N]`; predecessor chain is consistent and starts at `0x0`; salts match `keccak256(abi.encode(chainId, diamond, "diamondCut-v0.8.5", N))`                          |
 | `post-migration-{safe-batch,transactions}-{network}.json`                                      | `revokeRole` × 2, `unpauseGlobal`, `setCrossPartyBModeActivated(true)`, `setCrossPartyB(partyB, true)` × N (reading PartyBs from `postMigration.json`)                                                                                                  |
@@ -1160,19 +1161,20 @@ All chain-specific config files support network-postfixed names (e.g. `upgrade-a
 
 These parameters **only exist in v0.8.5** (not in v0.8.4 storage). After `diamondCut`, they default to 0 and must be initialized.
 
-| Parameter                         | Type             | What to put here                                                                                                         |
-| --------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `maxPartyAConnectionLimit`        | number           | **REQUIRED** -- max PartyBs a PartyA can connect to. Migration fails if 0. Typical value: `5`                            |
-| `signatureVerifierAddress`        | address          | **SignatureVerifier** contract address -- the Muon oracle signature verification contract from your deployment           |
-| `muonPublicKeys`                  | array            | TSS public keys to seed on the verifier. Each entry: `{ "x": "uint256", "parity": 0\|1 }`. Read from `readMuonConfig.ts` |
-| `muonGatewaySigners`              | string[]         | Gateway signer addresses to seed on the verifier. Read from the v0.8.4 diamond via `readMuonConfig.ts`                   |
-| `liquidationInsuranceVault`       | address          | Address that receives liquidation insurance -- typically the **Fees MultiSig**                                           |
-| `maxLiquidationProfitPerPosition` | string (wei)     | Max profit kept from liquidation per position. Example: `"100000000000000000000"` = 100 tokens                           |
-| `softLiquidationPenaltyCollector` | address          | Address that receives soft liquidation penalties -- typically the **Fees MultiSig**                                      |
-| `minAffiliateFee`                 | string (wei)     | Minimum affiliate fee floor. Example: `"100000000000000000"` = 0.1 token                                                 |
-| `unbindCooldown`                  | number (seconds) | Cooldown before a PartyA can unbind from a PartyB. Example: `86400` = 1 day                                              |
-| `maxWithdrawParts`                | number           | Max parts a withdrawal can be split into. Example: `5`                                                                   |
-| `minWithdrawCooldown`             | number (seconds) | Min time between withdrawal parts. Example: `43200` = 12 hours                                                           |
+| Parameter                         | Type             | What to put here                                                                                                                 |
+| --------------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `maxPartyAConnectionLimit`        | number           | **REQUIRED** -- max PartyBs a PartyA can connect to. Migration fails if 0. Typical value: `5`                                    |
+| `signatureVerifierAddress`        | address          | **SignatureVerifier** contract address -- the Muon oracle signature verification contract from your deployment                   |
+| `muonPublicKeys`                  | array            | TSS public keys to seed on the verifier. Each entry: `{ "x": "uint256", "parity": 0\|1 }`. Read from `readMuonConfig.ts`         |
+| `muonGatewaySigners`              | string[]         | Gateway signer addresses to seed on the verifier. Read from the v0.8.4 diamond via `readMuonConfig.ts`                           |
+| `muonFunctionPermissions`         | string[]         | Per-function verifier permissions to grant to configured TSS keys and gateway signers. Required when keys/signers are configured |
+| `liquidationInsuranceVault`       | address          | Address that receives liquidation insurance -- typically the **Fees MultiSig**                                                   |
+| `maxLiquidationProfitPerPosition` | string (wei)     | Max profit kept from liquidation per position. Example: `"100000000000000000000"` = 100 tokens                                   |
+| `softLiquidationPenaltyCollector` | address          | Address that receives soft liquidation penalties -- typically the **Fees MultiSig**                                              |
+| `minAffiliateFee`                 | string (wei)     | Minimum affiliate fee floor. Example: `"100000000000000000"` = 0.1 token                                                         |
+| `unbindCooldown`                  | number (seconds) | Cooldown before a PartyA can unbind from a PartyB. Example: `86400` = 1 day                                                      |
+| `maxWithdrawParts`                | number           | Max parts a withdrawal can be split into. Example: `5`                                                                           |
+| `minWithdrawCooldown`             | number (seconds) | Min time between withdrawal parts. Example: `43200` = 12 hours                                                                   |
 
 Existing v0.8.4 parameters (cooldowns, limits, fee shares, etc.) are preserved in storage and NOT overwritten.
 
