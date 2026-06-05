@@ -45,6 +45,7 @@ import {
 	verifyAddTemplatesBatch,
 	verifyDiamondCutCalldata,
 	verifyPauseSafeBatch,
+	verifyMuonVerifierSafeBatch,
 	verifyPostMigrationSafeBatch,
 	verifyPostMigrationTransactions,
 	verifySafeBatch,
@@ -59,6 +60,7 @@ import { log } from "./utils/log.js"
 
 type VerifyBatchConfig = {
 	networkName?: string
+	networkNames?: string[]
 	outputDir?: string
 	configDir?: string
 	only?: string[]
@@ -72,6 +74,7 @@ const DEFAULT_CONFIG_FILE = "./scripts/upgrade/config/verifyBatch.json"
 const ALL_LABELS = [
 	"pause-safe-batch",
 	"safe-batch",
+	"muon-verifier-safe-batch",
 	"diamondcut-calldata",
 	"timelock-schedule-safe-batch",
 	"timelock-execute-safe-batch",
@@ -113,68 +116,37 @@ function pickLabels(cfg: VerifyBatchConfig): Set<string> {
 	return base
 }
 
+function pickNetworkNames(cfg: VerifyBatchConfig): string[] {
+	const networksEnv = parseCsvEnv("NETWORKS")
+	const names = networksEnv ?? cfg.networkNames ?? [process.env.NETWORK_NAME ?? cfg.networkName ?? connection.networkName]
+	return names
+		.map(name => name.trim())
+		.filter(Boolean)
+		.filter((name, index, all) => all.indexOf(name) === index)
+}
+
 async function main() {
 	log.header("Verify batch calldata against local repo")
 
 	const cfg = loadVerifyBatchConfig()
-	const networkName = process.env.NETWORK_NAME ?? cfg.networkName ?? connection.networkName
+	const networkNames = pickNetworkNames(cfg)
 	const outputDir = path.resolve(process.env.OUTPUT_DIR ?? cfg.outputDir ?? "./scripts/upgrade/output")
 	const configDir = path.resolve(cfg.configDir ?? "./scripts/upgrade/config")
 	const verifyArtifacts = (process.env.VERIFY_ARTIFACTS ?? String(cfg.verifyFacetSelectorsAgainstArtifacts ?? true)).toLowerCase() !== "false"
+	const labels = pickLabels(cfg)
 
-	log.kv("Network", networkName)
+	log.kv("Networks", networkNames.join(", "))
 	log.kv("Output dir", outputDir)
 	log.kv("Config dir", configDir)
 	log.kv("Artifact cross-check", String(verifyArtifacts))
-
-	// Map user-facing "paths" keys to the camelCased keys of LoadedContext.paths
-	const pathOverrides = cfg.paths ? Object.fromEntries(Object.entries(cfg.paths).map(([k, v]) => [k, path.resolve(v)])) : {}
-
-	const ctx = await loadVerifyContext({
-		networkName,
-		outputDir,
-		configDir,
-		paths: pathOverrides,
-		verifyFacetSelectorsAgainstArtifacts: verifyArtifacts,
-	})
-
-	log.kv("Diamond", ctx.diamondAddress)
-	log.kv("Safe", ctx.safeAddress || "(unset)")
-	log.kv("Protocol admin", ctx.protocolAdmin)
-	log.kv("Migration runner", ctx.migrationRunner)
-	log.kv("Timelock", ctx.timelockAddress ?? "(unset)")
-	log.kv("AccountLayer", ctx.accountLayerAddress ?? "(unset)")
-	log.kv("InstantLayer", ctx.instantLayerAddress ?? "(unset)")
-	log.kv("SymbolManager", ctx.symbolManagerAddress ?? "(unset)")
-	log.kv("Signature verifier", ctx.signatureVerifierAddress ?? "(unset)")
-	log.kv("PartyBs to register", String(ctx.partyBsToRegister.length))
-	log.kv("Templates", String(ctx.templates.length))
-	log.kv("Deployed facets", String(Object.keys(ctx.deployedFacets).length))
-	log.blank()
-
-	const labels = pickLabels(cfg)
 	log.info(`Running checks: ${[...labels].join(", ")}`)
 	log.blank()
 
 	const checks: FileCheck[] = []
 
-	const run = async (label: string, runner: () => Promise<FileCheck> | FileCheck): Promise<void> => {
-		if (!labels.has(label)) return
-		const result = await runner()
-		checks.push(result)
-		printCheck(result)
+	for (const networkName of networkNames) {
+		checks.push(...(await runNetworkChecks(networkName, cfg, outputDir, configDir, verifyArtifacts, labels)))
 	}
-
-	await run("pause-safe-batch", () => verifyPauseSafeBatch(ctx))
-	await run("safe-batch", () => verifySafeBatch(ctx))
-	await run("diamondcut-calldata", () => verifyDiamondCutCalldata(ctx, { verifySelectorsAgainstArtifacts: verifyArtifacts }))
-	await run("timelock-schedule-safe-batch", () => verifyTimelockBatches(ctx, "schedule", {}))
-	await run("timelock-execute-safe-batch", () => verifyTimelockBatches(ctx, "execute", {}))
-	await run("post-migration-safe-batch", () => verifyPostMigrationSafeBatch(ctx))
-	await run("post-migration-transactions", () => verifyPostMigrationTransactions(ctx))
-	await run("grant-symbol-role-safe-batch", () => verifySingleRoleBatch(ctx, "grant"))
-	await run("revoke-symbol-role-safe-batch", () => verifySingleRoleBatch(ctx, "revoke"))
-	await run("add-templates-safe-batch", () => verifyAddTemplatesBatch(ctx))
 
 	// Summary
 	log.blank()
@@ -200,6 +172,65 @@ async function main() {
 	log.info(`Skipped: ${skipped.length}`)
 	log.info(`Failed:  ${failed.length}`)
 	process.exitCode = 1
+}
+
+async function runNetworkChecks(
+	networkName: string,
+	cfg: VerifyBatchConfig,
+	outputDir: string,
+	configDir: string,
+	verifyArtifacts: boolean,
+	labels: Set<string>,
+): Promise<FileCheck[]> {
+	log.header(`Network: ${networkName}`)
+
+	// Map user-facing "paths" keys to the camelCased keys of LoadedContext.paths
+	const pathOverrides = cfg.paths ? Object.fromEntries(Object.entries(cfg.paths).map(([k, v]) => [k, path.resolve(v)])) : {}
+
+	const ctx = await loadVerifyContext({
+		networkName,
+		outputDir,
+		configDir,
+		paths: pathOverrides,
+		verifyFacetSelectorsAgainstArtifacts: verifyArtifacts,
+		skipPartyBStateFilter: !labels.has("safe-batch"),
+	})
+
+	log.kv("Diamond", ctx.diamondAddress)
+	log.kv("Safe", ctx.safeAddress || "(unset)")
+	log.kv("Protocol admin", ctx.protocolAdmin)
+	log.kv("Migration runner", ctx.migrationRunner)
+	log.kv("Timelock", ctx.timelockAddress ?? "(unset)")
+	log.kv("AccountLayer", ctx.accountLayerAddress ?? "(unset)")
+	log.kv("InstantLayer", ctx.instantLayerAddress ?? "(unset)")
+	log.kv("SymbolManager", ctx.symbolManagerAddress ?? "(unset)")
+	log.kv("Signature verifier", ctx.signatureVerifierAddress ?? "(unset)")
+	log.kv("PartyBs to register", String(ctx.partyBsToRegister.length))
+	log.kv("Templates", String(ctx.templates.length))
+	log.kv("Deployed facets", String(Object.keys(ctx.deployedFacets).length))
+	log.blank()
+
+	const checks: FileCheck[] = []
+	const run = async (label: string, runner: () => Promise<FileCheck> | FileCheck): Promise<void> => {
+		if (!labels.has(label)) return
+		const result = await runner()
+		checks.push(result)
+		printCheck(result)
+	}
+
+	await run("pause-safe-batch", () => verifyPauseSafeBatch(ctx))
+	await run("safe-batch", () => verifySafeBatch(ctx))
+	await run("muon-verifier-safe-batch", () => verifyMuonVerifierSafeBatch(ctx))
+	await run("diamondcut-calldata", () => verifyDiamondCutCalldata(ctx, { verifySelectorsAgainstArtifacts: verifyArtifacts }))
+	await run("timelock-schedule-safe-batch", () => verifyTimelockBatches(ctx, "schedule", {}))
+	await run("timelock-execute-safe-batch", () => verifyTimelockBatches(ctx, "execute", {}))
+	await run("post-migration-safe-batch", () => verifyPostMigrationSafeBatch(ctx))
+	await run("post-migration-transactions", () => verifyPostMigrationTransactions(ctx))
+	await run("grant-symbol-role-safe-batch", () => verifySingleRoleBatch(ctx, "grant"))
+	await run("revoke-symbol-role-safe-batch", () => verifySingleRoleBatch(ctx, "revoke"))
+	await run("add-templates-safe-batch", () => verifyAddTemplatesBatch(ctx))
+
+	return checks
 }
 
 function printCheck(check: FileCheck): void {
