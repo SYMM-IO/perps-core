@@ -201,6 +201,7 @@ async function main() {
 		await runPreflight(connection.networkName, {
 			diamondAddress: DIAMOND_ADDRESS,
 			signatureVerifierAddress: newParams.signatureVerifierAddress,
+			newV085Parameters: newParams,
 			subgraphEndpoint: SUBGRAPH_ENDPOINT,
 			stateFiles: [
 				`${outputDir}/${withSuffix("deployed-facets")}`,

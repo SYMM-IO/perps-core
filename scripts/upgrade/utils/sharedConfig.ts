@@ -1,5 +1,7 @@
 import fs from "fs"
 
+import type { MuonPublicKey } from "./muonVerifierConfig.js"
+
 /**
  * Shared fields from upgrade.json that other config files can fall back to,
  * avoiding duplication of diamondAddress, subgraphEndpoint, etc.
@@ -20,6 +22,9 @@ export type UpgradeConfigShared = {
 	newV085Parameters?: {
 		symbolType?: number
 		signatureVerifierAddress?: string
+		muonPublicKeys?: MuonPublicKey[]
+		muonGatewaySigners?: string[]
+		muonFunctionPermissions?: string[]
 		liquidationInsuranceVault?: string
 		maxLiquidationProfitPerPosition?: string
 	}

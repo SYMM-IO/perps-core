@@ -4,6 +4,7 @@ import path from "path"
 import { ethers } from "../../../test/helpers/hardhat-connection.js"
 import { validateDeploymentStateMetadata } from "./deploymentState.js"
 import { log } from "./log.js"
+import { validateMuonVerifierConfig, type MuonVerifierConfig } from "./muonVerifierConfig.js"
 import { baseNetworkName } from "./sharedConfig.js"
 
 /**
@@ -20,6 +21,7 @@ import { baseNetworkName } from "./sharedConfig.js"
 export type PreflightContext = {
 	diamondAddress?: string
 	signatureVerifierAddress?: string
+	newV085Parameters?: MuonVerifierConfig
 	subgraphEndpoint?: string
 	expectedChainId?: number
 	/** Paths of state files that must (if they exist) be consistent with the current run. */
@@ -61,6 +63,7 @@ export async function runPreflight(networkName: string | undefined, ctx: Preflig
 	}
 
 	push(checkRequiredConfigFields(ctx))
+	push(checkMuonVerifierConfig(ctx.newV085Parameters))
 	if (!ctx.offline) {
 		push(await checkChainId(ctx.expectedChainId))
 		push(await checkDiamondHasCode(ctx.diamondAddress))
@@ -74,6 +77,19 @@ export async function runPreflight(networkName: string | undefined, ctx: Preflig
 		const msg = failures.map(f => `  - ${f.name}${f.message ? `: ${f.message}` : ""}`).join("\n")
 		throw new Error(`Preflight failed with ${failures.length} check(s):\n${msg}`)
 	}
+}
+
+/**
+ * Catches: Muon public keys/gateway signers are registered on the new external
+ * verifier, but their category permissions are missing. In v0.8.5 the verifier
+ * checks both the key/signer presence and the per-function permission mapping.
+ */
+function checkMuonVerifierConfig(params?: MuonVerifierConfig): CheckResult {
+	const problems = validateMuonVerifierConfig(params)
+	if (problems.length > 0) {
+		return { name: "Muon verifier config", ok: false, message: problems.join("; ") }
+	}
+	return { name: "Muon verifier config", ok: true }
 }
 
 /**

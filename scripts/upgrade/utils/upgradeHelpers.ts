@@ -15,7 +15,10 @@ import {
 	type DeploymentStateContext,
 } from "./deploymentState.js"
 import { log } from "./log.js"
+import { MUON_FUNCTION_NAMES, requireMuonVerifierConfig, type MuonPublicKey } from "./muonVerifierConfig.js"
 import { deployTxOverrides, diamondCutTxOverrides, writeTxOverrides } from "./txOverrides.js"
+
+export { MUON_FUNCTION_NAMES, type MuonPublicKey } from "./muonVerifierConfig.js"
 
 export type FacetInfo = {
 	address: string
@@ -315,13 +318,6 @@ export async function applyDiamondCut(diamondAddress: string, diamondCut: any[],
 // EOA parameter setter
 // =============================================================================
 
-export const MUON_FUNCTION_NAMES = ["Trading", "AccountManagement", "Settlement", "ForceClose", "Funding", "LiquidationPartyA", "LiquidationPartyB"]
-
-export type MuonPublicKey = {
-	x: string
-	parity: number
-}
-
 export type NewV085Parameters = {
 	maxPartyAConnectionLimit?: number
 	signatureVerifierAddress?: string
@@ -338,6 +334,8 @@ export type NewV085Parameters = {
 }
 
 export async function setV085Parameters(diamondAddress: string, params: NewV085Parameters, signerOverride?: any): Promise<void> {
+	requireMuonVerifierConfig(params)
+
 	const signer = signerOverride ?? (await ethers.provider.getSigner())
 	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", diamondAddress, signer)
 
@@ -618,6 +616,8 @@ export function buildUpgradeTransactions(
 	chunkSize: number,
 	newParams: NewV085Parameters,
 ): UpgradeTransactionResult {
+	requireMuonVerifierConfig(newParams)
+
 	const pauseSafeTxs: SafeTransaction[] = []
 	const pauseBreakdown: string[] = []
 	const pauseTxIdx = { value: 1 }

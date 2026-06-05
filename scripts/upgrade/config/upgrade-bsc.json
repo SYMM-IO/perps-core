@@ -26,6 +26,7 @@
 				"parity": 0
 			}
 		],
-		"muonGatewaySigners": ["0xF621f85f20BBe733699306D336230184621dBe60"]
+		"muonGatewaySigners": ["0xF621f85f20BBe733699306D336230184621dBe60"],
+		"muonFunctionPermissions": ["Trading", "AccountManagement", "Settlement", "ForceClose", "Funding", "LiquidationPartyA", "LiquidationPartyB"]
 	}
 }
