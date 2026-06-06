@@ -137,6 +137,11 @@ library GlobalAppStorage {
 		/// @notice Disables legacy PartyA liquidation entrypoints that rely on symbol-level prices.
 		/// @dev When true, liquidators must use the signed PartyB-symbol price/funding state path.
 		bool legacyPartyALiquidationDeprecated;
+		/// @notice Stops express providers from advancing locked withdrawal collateral early.
+		/// @dev Used as a surgical emergency stop for credit-line-backed express withdrawals.
+		///      Finalization, cancellation, and suspension remain available so in-flight
+		///      withdrawals can unwind or settle normally.
+		bool withdrawAdvancePaused;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

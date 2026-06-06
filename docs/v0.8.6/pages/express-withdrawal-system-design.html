@@ -224,7 +224,7 @@
 <p>Pools have a hard limit: the operator must have pre-deposited enough tokens. The <strong>credit line</strong> removes this constraint by letting the affiliate withdraw more than what's in the pools, backed by the affiliate's <em>eligible balance</em> as attested by the Muon oracle.</p>
 <p><strong>How it works:</strong></p>
 <p>The Muon oracle computes an aggregate "eligible base" for each affiliate off-chain — roughly, how much value the affiliate's users have that is eligible for withdrawal from SYMMIO. The oracle signs an attestation: "Affiliate X has Y eligible base." The ExpressProvider uses this attestation to determine how much credit the affiliate can take on.</p>
-<p>When a withdrawal uses credit, the ExpressProvider doesn't front its own tokens for the credit portion. Instead, it calls <code>advanceWithdraw</code> on SYMMIO, which releases the credit amount directly from SYMMIO's collateral to the provider. The provider records this as <strong>affiliate debt</strong> — the affiliate now owes that amount back. When the withdrawal finalizes, SYMMIO releases only the non-advanced remainder (<code>totalExpressAmount - advancedAmount</code>) to the provider, and the debt is settled.</p>
+<p>When a withdrawal uses credit, the ExpressProvider doesn't front its own tokens for the credit portion. Instead, it calls <code>advanceWithdraw</code> on SYMMIO, which releases the credit amount directly from SYMMIO's collateral to the provider. The provider records this as <strong>affiliate debt</strong> — the affiliate now owes that amount back. When the withdrawal finalizes, SYMMIO releases only the non-advanced remainder (<code>totalExpressAmount - advancedAmount</code>) to the provider, and the debt is settled. SYMMIO core can stop this release path with <code>pauseWithdrawAdvance()</code> while still allowing withdrawal finalization, cancellation, and suspension callbacks to continue.</p>
 <p><strong>The debt lifecycle:</strong></p>
 <pre><code>RESERVE ──→ ACTIVATE ──→ SETTLE
    │                        ↑
@@ -241,7 +241,7 @@
 <li><strong>Protocol caps</strong>: <code>protocolMaxDebt</code> (absolute cap) and <code>protocolMaxDebtBps</code> (percentage of eligible base). Set by admin. Cannot be loosened by affiliates.</li>
 <li><strong>Affiliate caps</strong>: <code>affiliateMaxDebt</code> and <code>affiliateMaxDebtBps</code>. Must be stricter than or equal to protocol caps.</li>
 <li><strong>Effective cap</strong> = min(protocol cap, affiliate cap). Both absolute and BPS caps must pass.</li>
-<li><strong>Pause</strong>: <code>setCreditLinePaused(affiliate, true)</code> disables all credit for an affiliate.</li>
+<li><strong>Pause</strong>: <code>setCreditLinePaused(affiliate, true)</code> disables all new credit reservations and blocks activation of already-reserved, not-yet-paid credit for an affiliate.</li>
 <li><strong>Blacklist</strong>: <code>setCreditLineBlacklisted(affiliate, user, true)</code> blocks a specific user from using credit.</li>
 </ul>
 <p>Credit is <strong>not supported for STANDARD withdrawals</strong> — only IMMEDIATE and INSTANT, because STANDARD doesn't front capital.</p>

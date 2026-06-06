@@ -2993,6 +2993,12 @@
     },
     {
         "anonymous": false,
+        "inputs": [],
+        "name": "PauseWithdrawAdvance",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
         "inputs": [
             {
                 "indexed": false,
@@ -4356,6 +4362,12 @@
         "anonymous": false,
         "inputs": [],
         "name": "UnpausePartyBOpenPositions",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [],
+        "name": "UnpauseWithdrawAdvance",
         "type": "event"
     },
     {
@@ -6480,6 +6492,13 @@
         "type": "function"
     },
     {
+        "inputs": [],
+        "name": "pauseWithdrawAdvance",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
         "inputs": [
             {
                 "internalType": "address[]",
@@ -6587,6 +6606,13 @@
     {
         "inputs": [],
         "name": "unpausePartyBOpenPositions",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "unpauseWithdrawAdvance",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -9122,6 +9148,11 @@
             {
                 "internalType": "bool",
                 "name": "partyBOpenPositionsPaused",
+                "type": "bool"
+            },
+            {
+                "internalType": "bool",
+                "name": "withdrawAdvancePaused",
                 "type": "bool"
             }
         ],

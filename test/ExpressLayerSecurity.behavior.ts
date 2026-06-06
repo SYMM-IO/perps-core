@@ -2378,6 +2378,151 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)).to.be.revert(ethers) // CreditLinePaused
 		})
 
+		it("should reject activation when paused after reservation", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, botSigner, user, receiver, context, affiliate, operator } = fixture
+			const expressAddr = await expressProvider.getAddress()
+			const withdrawAmount = 500n * 10n ** 18n
+			const creditAmount = 200n * 10n ** 18n
+
+			const parts = [
+				{
+					id: 0n,
+					amount: withdrawAmount,
+					chainId: 31337n,
+					receiver: receiver.address,
+					virtualProvider: ethers.ZeroAddress,
+					expressProvider: expressAddr,
+				},
+			]
+			const partsHash = computePartsHash(parts)
+			const deadline = (await ethers.provider.getBlock("latest"))!.timestamp + 3600
+			const now = (await ethers.provider.getBlock("latest"))!.timestamp
+
+			const signature = await signWithdrawOption(expressProvider, botSigner, {
+				user: user.address,
+				nonce: 0n,
+				optionType: 1,
+				availableAt: 0,
+				affiliate,
+				affiliateAmount: 0n,
+				creditAmount,
+				fee: 0n,
+				operatorFee: 0n,
+				partsHash,
+				deadline,
+			})
+
+			const creditDataRaw = buildCreditData(10_000n * 10n ** 18n, now)
+			const providerData = encodeProviderData(
+				0n,
+				1,
+				0,
+				affiliate,
+				0n,
+				creditAmount,
+				0n,
+				0n,
+				deadline,
+				signature,
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				creditDataRaw,
+			)
+
+			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
+			const requestId = await context.viewFacet.getLastWithdrawRequestId(user.address)
+			expect(await expressProvider.creditLineReservedDebt(affiliate)).to.equal(creditAmount)
+
+			await expressProvider.setCreditLinePaused(affiliate, true)
+			await time.increase(21)
+
+			await expect(expressProvider.connect(operator).processWithdraw(user.address, requestId, parts)).to.be.revert(ethers) // CreditLinePaused
+			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).status).to.equal(1n) // ACCEPTED
+			expect(await expressProvider.creditLineReservedDebt(affiliate)).to.equal(creditAmount)
+			expect(await expressProvider.creditLineActiveDebt(affiliate)).to.equal(0n)
+		})
+
+		it("should let core pause withdraw advances independently", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, botSigner, user, receiver, context, affiliate, operator } = fixture
+			const expressAddr = await expressProvider.getAddress()
+			const withdrawAmount = 500n * 10n ** 18n
+			const creditAmount = 200n * 10n ** 18n
+
+			const parts = [
+				{
+					id: 0n,
+					amount: withdrawAmount,
+					chainId: 31337n,
+					receiver: receiver.address,
+					virtualProvider: ethers.ZeroAddress,
+					expressProvider: expressAddr,
+				},
+			]
+			const partsHash = computePartsHash(parts)
+			const deadline = (await ethers.provider.getBlock("latest"))!.timestamp + 3600
+			const now = (await ethers.provider.getBlock("latest"))!.timestamp
+
+			const signature = await signWithdrawOption(expressProvider, botSigner, {
+				user: user.address,
+				nonce: 0n,
+				optionType: 1,
+				availableAt: 0,
+				affiliate,
+				affiliateAmount: 0n,
+				creditAmount,
+				fee: 0n,
+				operatorFee: 0n,
+				partsHash,
+				deadline,
+			})
+
+			const creditDataRaw = buildCreditData(10_000n * 10n ** 18n, now)
+			const providerData = encodeProviderData(
+				0n,
+				1,
+				0,
+				affiliate,
+				0n,
+				creditAmount,
+				0n,
+				0n,
+				deadline,
+				signature,
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				creditDataRaw,
+			)
+
+			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
+			const requestId = await context.viewFacet.getLastWithdrawRequestId(user.address)
+
+			await (context.pauseControlFacet as any).connect(context.signers.admin).pauseWithdrawAdvance()
+			expect((await context.viewFacet.pauseState()).withdrawAdvancePaused).to.equal(true)
+			await time.increase(21)
+
+			await expect(expressProvider.connect(operator).processWithdraw(user.address, requestId, parts)).to.be.revertedWith(
+				"Pausable: Withdraw advance paused",
+			)
+			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).status).to.equal(1n) // ACCEPTED
+			expect(await expressProvider.creditLineReservedDebt(affiliate)).to.equal(creditAmount)
+
+			await context.controlFacet
+				.connect(context.signers.admin)
+				.grantRole(context.signers.admin.address, ethers.keccak256(ethers.toUtf8Bytes("UNPAUSER_ROLE")))
+			await (context.pauseControlFacet as any).connect(context.signers.admin).unpauseWithdrawAdvance()
+			expect((await context.viewFacet.pauseState()).withdrawAdvancePaused).to.equal(false)
+
+			await expressProvider.connect(operator).processWithdraw(user.address, requestId, parts)
+			expect(await expressProvider.creditLineReservedDebt(affiliate)).to.equal(0n)
+			expect(await expressProvider.creditLineActiveDebt(affiliate)).to.equal(creditAmount)
+		})
+
 		it("should reject reserve for blacklisted user", async function () {
 			const fixture = await deployFixture()
 			const { expressProvider, botSigner, user, receiver, context, affiliate, collateral } = fixture

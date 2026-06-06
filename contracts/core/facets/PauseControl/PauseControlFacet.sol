@@ -68,6 +68,12 @@ contract PauseControlFacet is Accessibility, IPauseControlFacet {
 		emit PauseInstantLayer();
 	}
 
+	/// @notice Pauses early withdrawal advances from registered express providers.
+	function pauseWithdrawAdvance() external onlyRole(LibAccessibility.PAUSER_ROLE) {
+		GlobalAppStorage.layout().withdrawAdvancePaused = true;
+		emit PauseWithdrawAdvance();
+	}
+
 	/// @notice Activates emergency mode which enables emergency withdrawals and restricts normal protocol operations.
 	function activeEmergencyMode() external onlyRole(LibAccessibility.EMERGENCY_ADMIN_ROLE) {
 		GlobalAppStorage.layout().emergencyMode = true;
@@ -126,6 +132,12 @@ contract PauseControlFacet is Accessibility, IPauseControlFacet {
 	function unpauseInstantLayer() external onlyRole(LibAccessibility.UNPAUSER_ROLE) {
 		GlobalAppStorage.layout().instantLayerPaused = false;
 		emit UnpauseInstantLayer();
+	}
+
+	/// @notice Resumes early withdrawal advances from registered express providers.
+	function unpauseWithdrawAdvance() external onlyRole(LibAccessibility.UNPAUSER_ROLE) {
+		GlobalAppStorage.layout().withdrawAdvancePaused = false;
+		emit UnpauseWithdrawAdvance();
 	}
 
 	/// @notice Deactivates emergency mode, returning the protocol to normal operations and disabling emergency withdrawals.
