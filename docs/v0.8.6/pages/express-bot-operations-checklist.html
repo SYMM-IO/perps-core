@@ -2833,7 +2833,7 @@ coverLoss:           affiliateBalances[affiliate] -= covered amount, badDebt += 
 <p><code>ControlFacet</code> exposes the <strong>5 credit line setters</strong> (<code>setCreditLineMuonConfig</code>, <code>setCreditLineProtocolConfig</code>, <code>setCreditLineAffiliateConfig</code>, <code>setCreditLinePaused</code>, <code>setCreditLineBlacklisted</code>) alongside the other admin setters. All credit line <strong>read</strong> functions (<code>creditLineTotalDebt</code>, <code>creditLineReservedDebt</code>, <code>creditLineActiveDebt</code>, <code>creditLineSignatureVerifier</code>, <code>creditLineMuonAppId</code>, <code>creditLineMuonFreshnessWindow</code>, <code>creditLineProtocolMaxDebt</code>, <code>creditLineProtocolMaxDebtBps</code>, <code>creditLineAffiliateMaxDebt</code>, <code>creditLineAffiliateMaxDebtBps</code>, <code>creditLineRequestDebt</code>, <code>creditLineRequestActivated</code>, <code>creditLinePaused</code>, <code>creditLineBlacklisted</code>) live on <strong><code>ViewFacet</code></strong>. All are called on the diamond address.</p>
 <ul>
 <li>[ ] <strong>Check <code>creditLineTotalDebt(affiliate)</code> and <code>creditLineBadDebt(affiliate)</code></strong> -- <code>creditLineTotalDebt</code> is reserved + active debt only. Cap checks also include bad debt, so use <code>reserved + active + badDebt</code> when estimating remaining capacity.</li>
-<li>[ ] <strong>Check <code>creditLinePaused(affiliate)</code></strong> -- if <code>true</code>, all <code>reserveDebt</code> calls revert <code>CreditLinePaused</code>. The bot must not sign options with <code>creditAmount &gt; 0</code> for this affiliate.</li>
+<li>[ ] <strong>Check <code>creditLinePaused(affiliate)</code></strong> -- if <code>true</code>, all <code>reserveDebt</code> calls and later credit activation attempts revert <code>CreditLinePaused</code>. The bot must not sign or process options with <code>creditAmount &gt; 0</code> for this affiliate.</li>
 <li>[ ] <strong>Check <code>creditLineBlacklisted(affiliate, user)</code></strong> -- if <code>true</code> for the requesting user, <code>reserveDebt</code> reverts <code>UserBlacklisted</code>. The bot must reject credit for blacklisted users.</li>
 <li>[ ] <strong>Monitor debt cap headroom:</strong><ul>
 <li><code>protocolMaxDebt</code> and <code>affiliateMaxDebt</code> -- absolute caps (0 = no limit). The effective cap is the tighter (non-zero minimum) of the two.</li>
@@ -5079,7 +5079,7 @@ Step 3 — Bot sees: WithdrawFinalized event for W1 (pools replenished)
 <tr>
 <td><code>setCreditLinePaused(affiliate, paused)</code></td>
 <td><code>SETTER_ROLE</code></td>
-<td>Pause/unpause credit line for an affiliate</td>
+<td>Pause/unpause credit line reservations and activation for an affiliate</td>
 </tr>
 <tr>
 <td><code>setCreditLineBlacklisted(affiliate, user, status)</code></td>
@@ -5295,6 +5295,12 @@ What-if: credit line invariant fails (totalDebt != reservedDebt + activeDebt)?
   Bot stops offering credit-backed withdrawals for that affiliate.
   Pool-only withdrawals from the general and affiliate pools can continue.
   Bot alerts ops to investigate the credit line state on the diamond.
+
+What-if: SYMMIO core pauses withdraw advances?
+  Core pauseControl.pauseWithdrawAdvance() makes every provider-side
+  advanceWithdraw call revert. Bot stops processing credit-backed INSTANT,
+  IMMEDIATE, and acceleration paths, but may continue non-credit recovery
+  actions such as cancellation, suspension handling, and finalization.
 </code></pre>
 <hr>
 <h2 id="quick-reference-complete-bot-action-timeline">Quick Reference: Complete Bot Action Timeline</h2>

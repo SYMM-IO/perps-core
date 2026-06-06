@@ -70,7 +70,7 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	/// @param user The owner of the withdrawal request.
 	/// @param requestId ID of the withdrawal request.
 	/// @param amount Amount of collateral to advance.
-	function advanceWithdraw(address user, uint256 requestId, uint256 amount) external notSuspended(user) {
+	function advanceWithdraw(address user, uint256 requestId, uint256 amount) external notSuspended(user) whenNotWithdrawAdvancePaused {
 		WithdrawFacetImpl.advanceWithdraw(user, requestId, amount);
 		emit WithdrawAdvanced(requestId, user, amount);
 	}

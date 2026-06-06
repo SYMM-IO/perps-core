@@ -142,6 +142,8 @@ library LibCreditLine {
 
 	function _activateDebt(address affiliate, address user, uint256 requestId) private {
 		AffiliateCredit storage ac = CreditLineStorage.layout().affiliates[affiliate];
+		if (ac.paused) revert CreditLinePaused();
+
 		bytes32 key = _key(user, requestId);
 		uint256 amount = ac.requestDebt[key];
 		if (amount == 0) revert NoDebtForRequest();
