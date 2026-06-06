@@ -219,8 +219,8 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		)
 	}
 
-	// Helper: accept an INSTANT withdrawal and return parts + requestId
-	async function acceptInstant(fixture: any, opts?: { withdrawAmount?: bigint; affiliateAmount?: bigint; creditAmount?: bigint }) {
+	// Helper: accept a WINDOWED withdrawal and return parts + requestId
+	async function acceptWindowed(fixture: any, opts?: { withdrawAmount?: bigint; affiliateAmount?: bigint; creditAmount?: bigint }) {
 		const { botSigner, user, receiver, expressProvider, context, affiliate } = fixture
 		const withdrawAmount = opts?.withdrawAmount ?? 500n * 10n ** 18n
 		const affiliateAmount = opts?.affiliateAmount ?? 0n
@@ -322,11 +322,11 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 	// ═══════════════════════════════════════════════════════════════════
 
 	describe("Acceptance", function () {
-		it("should accept valid INSTANT withdrawal and verify pool locks", async function () {
+		it("should accept valid WINDOWED withdrawal and verify pool locks", async function () {
 			const fixture = await deployFixture()
 			const { expressProvider, user, affiliate } = fixture
 			const affiliateAmount = 200n * 10n ** 18n
-			const { withdrawAmount, requestId } = await acceptInstant(fixture, { affiliateAmount })
+			const { withdrawAmount, requestId } = await acceptWindowed(fixture, { affiliateAmount })
 
 			// Pool balances locked
 			expect(await expressProvider.lockedGeneralBalance()).to.equal(withdrawAmount - affiliateAmount)
@@ -335,7 +335,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			// WithdrawInfo stored
 			const info = await expressProvider.getWithdrawInfo(user.address, requestId)
 			expect(info.status).to.equal(1n) // ACCEPTED
-			expect(info.optionType).to.equal(1n) // INSTANT
+			expect(info.optionType).to.equal(1n) // WINDOWED
 			expect(info.expressAmount).to.equal(withdrawAmount)
 			expect(info.generalAmount).to.equal(withdrawAmount - affiliateAmount)
 			expect(info.affiliateAmount).to.equal(affiliateAmount)
@@ -398,7 +398,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			)
 		})
 
-		it("should reject insufficient general balance (INSTANT)", async function () {
+		it("should reject insufficient general balance (WINDOWED)", async function () {
 			const fixture = await deployFixture()
 			const { botSigner, user, receiver, expressProvider, context, affiliate } = fixture
 			const withdrawAmount = 20_000n * 10n ** 18n // more than 10,000 general pool
@@ -531,7 +531,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			const { botSigner, user, receiver, expressProvider, context, affiliate } = fixture
 
 			// First: accept a valid withdrawal (consumes nonce 0)
-			await acceptInstant(fixture)
+			await acceptWindowed(fixture)
 			expect(await expressProvider.nonces(user.address)).to.equal(1n)
 
 			// Second: try to replay with nonce 0
@@ -578,7 +578,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			const { botSigner, user, receiver, expressProvider, context, affiliate } = fixture
 
 			// Accept first withdrawal (consumes nonce 0, next expected is 1)
-			await acceptInstant(fixture)
+			await acceptWindowed(fixture)
 			expect(await expressProvider.nonces(user.address)).to.equal(1n)
 
 			// Try to use nonce 2 (skipping 1)
@@ -710,7 +710,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			const { user, expressProvider } = fixture
 			const withdrawAmount = 500n * 10n ** 18n
 			const affiliateAmount = withdrawAmount
-			const { requestId } = await acceptInstant(fixture, { withdrawAmount, affiliateAmount })
+			const { requestId } = await acceptWindowed(fixture, { withdrawAmount, affiliateAmount })
 
 			const info = await expressProvider.getWithdrawInfo(user.address, requestId)
 			expect(info.status).to.equal(1n)
@@ -832,10 +832,10 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 	// ═══════════════════════════════════════════════════════════════════
 
 	describe("Processing", function () {
-		it("INSTANT: process after securityWindow by operator", async function () {
+		it("WINDOWED: process after securityWindow by operator", async function () {
 			const fixture = await deployFixture()
 			const { operator, user, receiver, expressProvider, collateral } = fixture
-			const { parts, requestId, withdrawAmount } = await acceptInstant(fixture)
+			const { parts, requestId, withdrawAmount } = await acceptWindowed(fixture)
 
 			await ethers.provider.send("evm_increaseTime", [21])
 			await ethers.provider.send("evm_mine", [])
@@ -847,10 +847,10 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			expect(info.status).to.equal(3n) // PROCESSED
 		})
 
-		it("INSTANT: reject before securityWindow (TooEarly)", async function () {
+		it("WINDOWED: reject before securityWindow (TooEarly)", async function () {
 			const fixture = await deployFixture()
 			const { operator, user, expressProvider } = fixture
-			const { parts, requestId } = await acceptInstant(fixture)
+			const { parts, requestId } = await acceptWindowed(fixture)
 
 			// Do not advance time - still within 20s security window
 			await expect(expressProvider.connect(operator).processWithdraw(user.address, requestId, parts)).to.be.revertedWithCustomError(
@@ -859,10 +859,10 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			)
 		})
 
-		it("INSTANT: permissionless processing after securityWindow + tolerancePeriod", async function () {
+		it("WINDOWED: permissionless processing after securityWindow + tolerancePeriod", async function () {
 			const fixture = await deployFixture()
 			const { user, receiver, expressProvider, collateral } = fixture
-			const { parts, requestId, withdrawAmount } = await acceptInstant(fixture)
+			const { parts, requestId, withdrawAmount } = await acceptWindowed(fixture)
 
 			// Advance past securityWindow (20) + tolerancePeriod (60) = 80s
 			await ethers.provider.send("evm_increaseTime", [81])
@@ -873,10 +873,10 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			expect(await collateral.balanceOf(receiver.address)).to.equal(withdrawAmount)
 		})
 
-		it("INSTANT: reject permissionless before tolerance expires", async function () {
+		it("WINDOWED: reject permissionless before tolerance expires", async function () {
 			const fixture = await deployFixture()
 			const { user, expressProvider } = fixture
-			const { parts, requestId } = await acceptInstant(fixture)
+			const { parts, requestId } = await acceptWindowed(fixture)
 
 			// Advance 30s: past securityWindow (20) but not past securityWindow + tolerancePeriod (80)
 			await ethers.provider.send("evm_increaseTime", [30])
@@ -888,10 +888,10 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			)
 		})
 
-		it("INSTANT: process at exact securityWindow boundary", async function () {
+		it("WINDOWED: process at exact securityWindow boundary", async function () {
 			const fixture = await deployFixture()
 			const { operator, user, receiver, expressProvider, collateral } = fixture
-			const { parts, requestId, withdrawAmount } = await acceptInstant(fixture)
+			const { parts, requestId, withdrawAmount } = await acceptWindowed(fixture)
 
 			// Advance exactly 20s (securityWindow)
 			await ethers.provider.send("evm_increaseTime", [20])
@@ -915,14 +915,14 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			)
 		})
 
-		it("STANDARD: process immediately after finalization by operator", async function () {
+		it("STANDARD: process right after finalization by operator", async function () {
 			const fixture = await deployFixture()
 			const { operator, user, receiver, expressProvider, collateral } = fixture
 			const { parts, requestId, withdrawAmount } = await acceptStandard(fixture)
 
 			await finalizeStandard(fixture, requestId, withdrawAmount)
 
-			// Operator can process immediately after finalization
+			// Operator can process right after finalization
 			await expressProvider.connect(operator).processWithdraw(user.address, requestId, parts)
 			expect(await collateral.balanceOf(receiver.address)).to.equal(withdrawAmount)
 		})
@@ -967,7 +967,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		it("should reject double processWithdraw (second call reverts)", async function () {
 			const fixture = await deployFixture()
 			const { operator, user, expressProvider } = fixture
-			const { parts, requestId } = await acceptInstant(fixture)
+			const { parts, requestId } = await acceptWindowed(fixture)
 
 			await ethers.provider.send("evm_increaseTime", [21])
 			await ethers.provider.send("evm_mine", [])
@@ -984,7 +984,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		it("should reject processWithdraw with parts mismatch", async function () {
 			const fixture = await deployFixture()
 			const { operator, user, receiver, expressProvider } = fixture
-			const { requestId } = await acceptInstant(fixture)
+			const { requestId } = await acceptWindowed(fixture)
 
 			await ethers.provider.send("evm_increaseTime", [21])
 			await ethers.provider.send("evm_mine", [])
@@ -1010,7 +1010,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		it("should reject processWithdraw on CANCELLED (NotAccepted)", async function () {
 			const fixture = await deployFixture()
 			const { operator, user, expressProvider, context } = fixture
-			const { parts, requestId } = await acceptInstant(fixture)
+			const { parts, requestId } = await acceptWindowed(fixture)
 
 			await context.withdrawFacet.connect(user).requestCancelWithdraw(requestId)
 
@@ -1026,7 +1026,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		it("should reject processWithdraw on SUSPENDED (NotAccepted)", async function () {
 			const fixture = await deployFixture()
 			const { operator, user, expressProvider, context } = fixture
-			const { parts, requestId } = await acceptInstant(fixture)
+			const { parts, requestId } = await acceptWindowed(fixture)
 
 			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(user.address)
 			await context.withdrawFacet.connect(context.signers.admin).suspendWithdrawRequest(user.address, requestId)
@@ -1139,14 +1139,14 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			)
 		})
 
-		it("securityWindow minimum allows near-immediate operator processing", async function () {
+		it("securityWindow minimum allows near-zero-delay operator processing", async function () {
 			const fixture = await deployFixture()
 			const { operator, user, receiver, expressProvider, collateral } = fixture
 
 			// Set securityWindow to minimum (10s)
 			await expressProvider.setSecurityWindow(10)
 
-			const { parts, requestId, withdrawAmount } = await acceptInstant(fixture)
+			const { parts, requestId, withdrawAmount } = await acceptWindowed(fixture)
 
 			// Advance past the 10s securityWindow
 			await ethers.provider.send("evm_increaseTime", [11])
@@ -1164,14 +1164,14 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			await expect(expressProvider.setSecurityWindow(9)).to.be.revertedWithCustomError(expressProvider, "SecurityWindowTooLow")
 		})
 
-		it("tolerancePeriod minimum allows near-immediate permissionless processing after securityWindow", async function () {
+		it("tolerancePeriod minimum allows near-zero-delay permissionless processing after securityWindow", async function () {
 			const fixture = await deployFixture()
 			const { user, receiver, expressProvider, collateral } = fixture
 
 			// Set tolerancePeriod to minimum (10s)
 			await expressProvider.setTolerancePeriod(10)
 
-			const { parts, requestId, withdrawAmount } = await acceptInstant(fixture)
+			const { parts, requestId, withdrawAmount } = await acceptWindowed(fixture)
 
 			// Advance past securityWindow (20s) + tolerancePeriod (10s)
 			await ethers.provider.send("evm_increaseTime", [31])
@@ -1195,11 +1195,11 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 	// ═══════════════════════════════════════════════════════════════════
 
 	describe("Finalization", function () {
-		it("INSTANT: replenish pools after cooldown", async function () {
+		it("WINDOWED: replenish pools after cooldown", async function () {
 			const fixture = await deployFixture()
 			const { operator, user, expressProvider, context, collateral, generalFunding } = fixture
 			const affiliateAmount = 200n * 10n ** 18n
-			const { parts, requestId, withdrawAmount } = await acceptInstant(fixture, { affiliateAmount })
+			const { parts, requestId, withdrawAmount } = await acceptWindowed(fixture, { affiliateAmount })
 
 			// Process
 			await ethers.provider.send("evm_increaseTime", [21])
@@ -1291,12 +1291,12 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 	})
 
 	describe("onWithdrawComplete status guards", function () {
-		it("finalize before process reverts for INSTANT and leaves state recoverable", async function () {
+		it("finalize before process reverts for WINDOWED and leaves state recoverable", async function () {
 			const fixture = await deployFixture()
 			const { user, operator, expressProvider, context, generalFunding, affiliateFunding, affiliate } = fixture
 
 			const affiliateAmount = 200n * 10n ** 18n
-			const { parts, requestId, withdrawAmount } = await acceptInstant(fixture, { affiliateAmount })
+			const { parts, requestId, withdrawAmount } = await acceptWindowed(fixture, { affiliateAmount })
 
 			const generalAfterAccept = await expressProvider.generalBalance()
 			const affiliateAfterAccept = await expressProvider.affiliateBalances(affiliate)
@@ -1335,10 +1335,10 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			expect(await expressProvider.lockedAffiliateBalances(affiliate)).to.equal(0n)
 		})
 
-		it("finalize on CANCELLED INSTANT reverts (core blocks before express hook)", async function () {
+		it("finalize on CANCELLED WINDOWED reverts (core blocks before express hook)", async function () {
 			const fixture = await deployFixture()
 			const { user, expressProvider, context } = fixture
-			const { requestId } = await acceptInstant(fixture)
+			const { requestId } = await acceptWindowed(fixture)
 
 			await context.withdrawFacet.connect(user).requestCancelWithdraw(requestId)
 
@@ -1350,10 +1350,10 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).status).to.equal(5n)
 		})
 
-		it("finalize on SUSPENDED INSTANT (pre-process) reverts (core suspender gate fires first)", async function () {
+		it("finalize on SUSPENDED WINDOWED (pre-process) reverts (core suspender gate fires first)", async function () {
 			const fixture = await deployFixture()
 			const { user, expressProvider, context } = fixture
-			const { requestId } = await acceptInstant(fixture)
+			const { requestId } = await acceptWindowed(fixture)
 
 			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(user.address)
 			await context.withdrawFacet.connect(context.signers.admin).suspendWithdrawRequest(user.address, requestId)
@@ -1366,12 +1366,12 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).status).to.equal(6n)
 		})
 
-		it("finalize on LOCKED INSTANT reverts and keeps the lock", async function () {
+		it("finalize on LOCKED WINDOWED reverts and keeps the lock", async function () {
 			const fixture = await deployFixture()
 			const { user, locker, unlocker, expressProvider, context } = fixture
 
 			const affiliateAmount = 200n * 10n ** 18n
-			const { parts, requestId } = await acceptInstant(fixture, { affiliateAmount })
+			const { parts, requestId } = await acceptWindowed(fixture, { affiliateAmount })
 
 			await expressProvider.connect(locker).lockWithdraw(user.address, requestId)
 			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).status).to.equal(2n)
@@ -1393,12 +1393,12 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).status).to.equal(4n)
 		})
 
-		it("process then finalize restores pools for INSTANT", async function () {
+		it("process then finalize restores pools for WINDOWED", async function () {
 			const fixture = await deployFixture()
 			const { user, expressProvider, context, generalFunding, affiliateFunding, affiliate } = fixture
 
 			const affiliateAmount = 200n * 10n ** 18n
-			const { parts, requestId } = await acceptInstant(fixture, { affiliateAmount })
+			const { parts, requestId } = await acceptWindowed(fixture, { affiliateAmount })
 
 			await ethers.provider.send("evm_increaseTime", [21])
 			await ethers.provider.send("evm_mine", [])
@@ -1492,7 +1492,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			expect(userBalanceBefore - balanceAfter).to.equal(creditAmount)
 		})
 
-		it("IMMEDIATE with credit advances from core in the same tx", async function () {
+		it("SAME_TX with credit advances from core in the same tx", async function () {
 			const fixture = await deployFixture()
 			const { user, receiver, botSigner, expressProvider, context, affiliate, collateral } = fixture
 
@@ -1787,11 +1787,11 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 	// ═══════════════════════════════════════════════════════════════════
 
 	describe("Cancellation", function () {
-		it("should cancel INSTANT before processing", async function () {
+		it("should cancel WINDOWED before processing", async function () {
 			const fixture = await deployFixture()
 			const { user, expressProvider, context, generalFunding, affiliateFunding, affiliate } = fixture
 			const affiliateAmount = 200n * 10n ** 18n
-			const { requestId } = await acceptInstant(fixture, { affiliateAmount })
+			const { requestId } = await acceptWindowed(fixture, { affiliateAmount })
 
 			await context.withdrawFacet.connect(user).requestCancelWithdraw(requestId)
 
@@ -1805,10 +1805,10 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			expect(info.status).to.equal(5n) // CANCELLED
 		})
 
-		it("should reject cancel INSTANT after processing", async function () {
+		it("should reject cancel WINDOWED after processing", async function () {
 			const fixture = await deployFixture()
 			const { operator, user, expressProvider, context } = fixture
-			const { parts, requestId } = await acceptInstant(fixture)
+			const { parts, requestId } = await acceptWindowed(fixture)
 
 			// Process first
 			await ethers.provider.send("evm_increaseTime", [21])
@@ -1853,10 +1853,10 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 	// ═══════════════════════════════════════════════════════════════════
 
 	describe("Suspension", function () {
-		it("should suspend ACCEPTED INSTANT (unlock pools)", async function () {
+		it("should suspend ACCEPTED WINDOWED (unlock pools)", async function () {
 			const fixture = await deployFixture()
 			const { user, expressProvider, context, generalFunding } = fixture
-			const { requestId, withdrawAmount } = await acceptInstant(fixture)
+			const { requestId, withdrawAmount } = await acceptWindowed(fixture)
 
 			// Verify pools are locked
 			expect(await expressProvider.lockedGeneralBalance()).to.equal(withdrawAmount)
@@ -1875,7 +1875,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		it("should suspend LOCKED withdrawal", async function () {
 			const fixture = await deployFixture()
 			const { user, expressProvider, context, generalFunding, locker } = fixture
-			const { requestId } = await acceptInstant(fixture)
+			const { requestId } = await acceptWindowed(fixture)
 
 			// Lock first
 			await expressProvider.connect(locker).lockWithdraw(user.address, requestId)
@@ -1897,7 +1897,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		it("should revert suspend on FINALIZED", async function () {
 			const fixture = await deployFixture()
 			const { operator, user, expressProvider, context, collateral } = fixture
-			const { parts, requestId, withdrawAmount } = await acceptInstant(fixture)
+			const { parts, requestId, withdrawAmount } = await acceptWindowed(fixture)
 
 			// Process
 			await ethers.provider.send("evm_increaseTime", [21])
@@ -1929,7 +1929,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		it("should revert suspend on already CANCELLED", async function () {
 			const fixture = await deployFixture()
 			const { user, expressProvider, context } = fixture
-			const { requestId } = await acceptInstant(fixture)
+			const { requestId } = await acceptWindowed(fixture)
 
 			// Cancel first
 			await context.withdrawFacet.connect(user).requestCancelWithdraw(requestId)
@@ -1950,7 +1950,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		it("should lock ACCEPTED withdrawal", async function () {
 			const fixture = await deployFixture()
 			const { user, expressProvider, locker } = fixture
-			const { requestId } = await acceptInstant(fixture)
+			const { requestId } = await acceptWindowed(fixture)
 
 			await expressProvider.connect(locker).lockWithdraw(user.address, requestId)
 
@@ -1978,7 +1978,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		it("should reject lock on already LOCKED", async function () {
 			const fixture = await deployFixture()
 			const { user, expressProvider, locker } = fixture
-			const { requestId } = await acceptInstant(fixture)
+			const { requestId } = await acceptWindowed(fixture)
 
 			await expressProvider.connect(locker).lockWithdraw(user.address, requestId)
 
@@ -1991,7 +1991,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		it("should reject lock on PROCESSED", async function () {
 			const fixture = await deployFixture()
 			const { operator, user, expressProvider, locker } = fixture
-			const { parts, requestId } = await acceptInstant(fixture)
+			const { parts, requestId } = await acceptWindowed(fixture)
 
 			await ethers.provider.send("evm_increaseTime", [21])
 			await ethers.provider.send("evm_mine", [])
@@ -2019,7 +2019,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		it("should reject lock on CANCELLED", async function () {
 			const fixture = await deployFixture()
 			const { user, expressProvider, context, locker } = fixture
-			const { requestId } = await acceptInstant(fixture)
+			const { requestId } = await acceptWindowed(fixture)
 
 			await context.withdrawFacet.connect(user).requestCancelWithdraw(requestId)
 
@@ -2029,10 +2029,10 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			)
 		})
 
-		it("should unlockAndProcess on LOCKED INSTANT", async function () {
+		it("should unlockAndProcess on LOCKED WINDOWED", async function () {
 			const fixture = await deployFixture()
 			const { user, receiver, expressProvider, collateral, locker, unlocker } = fixture
-			const { parts, requestId, withdrawAmount } = await acceptInstant(fixture)
+			const { parts, requestId, withdrawAmount } = await acceptWindowed(fixture)
 
 			await expressProvider.connect(locker).lockWithdraw(user.address, requestId)
 
@@ -2103,7 +2103,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		it("should reject unlockAndProcess on non-LOCKED (ACCEPTED)", async function () {
 			const fixture = await deployFixture()
 			const { user, expressProvider, unlocker } = fixture
-			const { parts, requestId } = await acceptInstant(fixture)
+			const { parts, requestId } = await acceptWindowed(fixture)
 
 			await expect(expressProvider.connect(unlocker).unlockAndProcess(user.address, requestId, parts)).to.be.revertedWithCustomError(
 				expressProvider,
@@ -2114,7 +2114,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		it("should reject unlockAndProcess on PROCESSED", async function () {
 			const fixture = await deployFixture()
 			const { operator, user, expressProvider, unlocker } = fixture
-			const { parts, requestId } = await acceptInstant(fixture)
+			const { parts, requestId } = await acceptWindowed(fixture)
 
 			await ethers.provider.send("evm_increaseTime", [21])
 			await ethers.provider.send("evm_mine", [])
@@ -2129,7 +2129,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		it("should reject double unlockAndProcess", async function () {
 			const fixture = await deployFixture()
 			const { user, expressProvider, locker, unlocker } = fixture
-			const { parts, requestId } = await acceptInstant(fixture)
+			const { parts, requestId } = await acceptWindowed(fixture)
 
 			await expressProvider.connect(locker).lockWithdraw(user.address, requestId)
 			await expressProvider.connect(unlocker).unlockAndProcess(user.address, requestId, parts)
@@ -2144,7 +2144,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		it("should reject unlockAndProcess on CANCELLED", async function () {
 			const fixture = await deployFixture()
 			const { user, expressProvider, unlocker, context } = fixture
-			const { parts, requestId } = await acceptInstant(fixture)
+			const { parts, requestId } = await acceptWindowed(fixture)
 
 			await context.withdrawFacet.connect(user).requestCancelWithdraw(requestId)
 
@@ -2157,7 +2157,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		it("should reject unlockAndProcess on SUSPENDED after LOCKED→SUSPEND", async function () {
 			const fixture = await deployFixture()
 			const { user, expressProvider, locker, unlocker, context } = fixture
-			const { parts, requestId } = await acceptInstant(fixture)
+			const { parts, requestId } = await acceptWindowed(fixture)
 
 			await expressProvider.connect(locker).lockWithdraw(user.address, requestId)
 			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(user.address)
@@ -2169,10 +2169,10 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			)
 		})
 
-		it("should reject unlockAndProcess on FINALIZED INSTANT", async function () {
+		it("should reject unlockAndProcess on FINALIZED WINDOWED", async function () {
 			const fixture = await deployFixture()
 			const { operator, user, expressProvider, unlocker, context } = fixture
-			const { parts, requestId } = await acceptInstant(fixture)
+			const { parts, requestId } = await acceptWindowed(fixture)
 
 			await ethers.provider.send("evm_increaseTime", [21])
 			await ethers.provider.send("evm_mine", [])
@@ -2188,10 +2188,10 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			)
 		})
 
-		it("should processWithdraw on LOCKED INSTANT after cooldown", async function () {
+		it("should processWithdraw on LOCKED WINDOWED after cooldown", async function () {
 			const fixture = await deployFixture()
 			const { user, receiver, expressProvider, collateral, locker } = fixture
-			const { parts, requestId, withdrawAmount } = await acceptInstant(fixture)
+			const { parts, requestId, withdrawAmount } = await acceptWindowed(fixture)
 
 			// Lock the withdrawal
 			await expressProvider.connect(locker).lockWithdraw(user.address, requestId)
@@ -2237,7 +2237,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			expect(info.status).to.equal(3n) // PROCESSED
 		})
 
-		it("should reject processWithdraw on LOCKED INSTANT before cooldown", async function () {
+		it("should reject processWithdraw on LOCKED WINDOWED before cooldown", async function () {
 			const fixture = await deployFixture()
 			const { botSigner, operator, user, receiver, expressProvider, context, affiliate, locker } = fixture
 			const withdrawAmount = 500n * 10n ** 18n
@@ -2299,7 +2299,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			const fixture = await deployFixture()
 			const { locker, user, expressProvider } = fixture
 
-			const { requestId } = await acceptInstant(fixture)
+			const { requestId } = await acceptWindowed(fixture)
 			await expressProvider.connect(locker).lockWithdraw(user.address, requestId)
 
 			const info = await expressProvider.getWithdrawInfo(user.address, requestId)
@@ -2317,7 +2317,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 	// ═══════════════════════════════════════════════════════════════════
 
 	describe("Credit Line Integration", function () {
-		it("should reserve credit on INSTANT acceptance", async function () {
+		it("should reserve credit on WINDOWED acceptance", async function () {
 			const fixture = await deployFixture()
 			const { expressProvider, botSigner, user, receiver, context, affiliate } = fixture
 			const expressAddr = await expressProvider.getAddress()
@@ -3237,7 +3237,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 	// ═══════════════════════════════════════════════════════════════════
 
 	describe("Liquidity Race Conditions", function () {
-		it("second user's INSTANT withdrawal should revert when first depletes pool", async function () {
+		it("second user's WINDOWED withdrawal should revert when first depletes pool", async function () {
 			const fixture = await deployFixture()
 			const { botSigner, user, receiver, expressProvider, context, affiliate } = fixture
 
@@ -3408,7 +3408,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			expect(requestId).to.equal(1n)
 		})
 
-		it("two IMMEDIATE withdrawals racing — second reverts on insufficient pool", async function () {
+		it("two SAME_TX withdrawals racing — second reverts on insufficient pool", async function () {
 			const fixture = await deployFixture()
 			const { botSigner, user, receiver, expressProvider, context, affiliate, collateral } = fixture
 
@@ -3443,7 +3443,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 				return validator1.signTypedData(domain, types, { user: u, nonce, amount, timestamp: ts, symmioNonce: 0n, symmio: context.diamond })
 			}
 
-			// User 1: IMMEDIATE (8,000 tokens)
+			// User 1: SAME_TX (8,000 tokens)
 			const parts1 = [
 				{
 					id: 0n,
@@ -3474,14 +3474,14 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			const valSig1 = await signValApproval(user.address, 0n, withdrawAmount, now)
 			const pd1 = encodeProviderData(0n, 0, 0, affiliate, 0n, 0n, 0n, 0n, deadline, sig1, undefined, [valSig1], [now])
 
-			// User 1 gets funds immediately
+			// User 1 gets funds right away
 			await context.withdrawFacet.connect(user).initiateWithdraw(parts1, false, pd1)
 			expect(await collateral.balanceOf(receiver.address)).to.equal(withdrawAmount)
 
 			// Pool deducted: 10,000 - 8,000 = 2,000 remaining
 			expect(await expressProvider.generalBalance()).to.equal(2_000n * 10n ** 18n)
 
-			// User 2: IMMEDIATE (8,000 tokens) — should fail
+			// User 2: SAME_TX (8,000 tokens) — should fail
 			const parts2 = [
 				{
 					id: 0n,
@@ -3523,7 +3523,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		it("after processWithdraw, status is PROCESSED", async function () {
 			const fixture = await deployFixture()
 			const { operator, user, expressProvider, context } = fixture
-			const { parts, requestId } = await acceptInstant(fixture)
+			const { parts, requestId } = await acceptWindowed(fixture)
 
 			await ethers.provider.send("evm_increaseTime", [21])
 			await ethers.provider.send("evm_mine", [])
@@ -3539,7 +3539,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		it("after finalization, status is FINALIZED", async function () {
 			const fixture = await deployFixture()
 			const { operator, user, expressProvider, context } = fixture
-			const { parts, requestId, withdrawAmount } = await acceptInstant(fixture)
+			const { parts, requestId, withdrawAmount } = await acceptWindowed(fixture)
 
 			// Process
 			await ethers.provider.send("evm_increaseTime", [21])
@@ -3558,7 +3558,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		it("after cancel, status is CANCELLED", async function () {
 			const fixture = await deployFixture()
 			const { user, expressProvider, context } = fixture
-			const { requestId } = await acceptInstant(fixture)
+			const { requestId } = await acceptWindowed(fixture)
 
 			await context.withdrawFacet.connect(user).requestCancelWithdraw(requestId)
 
@@ -3569,7 +3569,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		it("after suspend, status is SUSPENDED", async function () {
 			const fixture = await deployFixture()
 			const { user, expressProvider, context } = fixture
-			const { requestId } = await acceptInstant(fixture)
+			const { requestId } = await acceptWindowed(fixture)
 
 			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(user.address)
 			await context.withdrawFacet.connect(context.signers.admin).suspendWithdrawRequest(user.address, requestId)
@@ -3584,10 +3584,10 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 
 			expect(await expressProvider.nonces(user.address)).to.equal(0n)
 
-			await acceptInstant(fixture)
+			await acceptWindowed(fixture)
 			expect(await expressProvider.nonces(user.address)).to.equal(1n)
 
-			await acceptInstant(fixture)
+			await acceptWindowed(fixture)
 			expect(await expressProvider.nonces(user.address)).to.equal(2n)
 
 			await acceptStandard(fixture)
@@ -3595,7 +3595,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		})
 	})
 
-	describe("IMMEDIATE (same-tx transfer)", function () {
+	describe("SAME_TX (same-tx transfer)", function () {
 		async function signValidatorApproval(
 			expressProvider: any,
 			validator: any,
@@ -3673,7 +3673,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			// Single tx: initiateWithdraw -> onWithdrawRequest -> funds transferred
 			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
 
-			// User has funds immediately (same tx)
+			// User has funds in the same transaction (same tx)
 			expect(await collateral.balanceOf(receiver.address)).to.equal(withdrawAmount)
 
 			// Status is PROCESSED (skipped ACCEPTED)
@@ -3684,7 +3684,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			expect(coreRequest.status).to.equal(WithdrawStatus.PROVIDER_ACCEPTED)
 		})
 
-		it("should reject IMMEDIATE without validators enabled", async function () {
+		it("should reject SAME_TX without validators enabled", async function () {
 			const fixture = await deployFixture()
 			const { botSigner, user, receiver, expressProvider, context, affiliate } = fixture
 
@@ -3725,7 +3725,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 
 			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)).to.be.revertedWithCustomError(
 				expressProvider,
-				"ValidatorsRequiredForImmediate",
+				"ValidatorsRequiredForSameTx",
 			)
 		})
 
@@ -3804,7 +3804,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			expect(await expressProvider.pendingOperatorFees(user.address, requestId)).to.equal(0n)
 		})
 
-		it("should replenish pools on finalization (same as INSTANT)", async function () {
+		it("should replenish pools on finalization (same as WINDOWED)", async function () {
 			const fixture = await deployFixture()
 			const { botSigner, user, receiver, expressProvider, context, affiliate, collateral } = fixture
 
@@ -3873,7 +3873,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			expect(info.status).to.equal(4n) // FINALIZED
 		})
 
-		it("should not allow processWithdraw on IMMEDIATE (already PROCESSED)", async function () {
+		it("should not allow processWithdraw on SAME_TX (already PROCESSED)", async function () {
 			const fixture = await deployFixture()
 			const { botSigner, operator, user, receiver, expressProvider, context, affiliate } = fixture
 
@@ -4107,7 +4107,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 	})
 
 	describe("Post payout rollback bookkeeping", function () {
-		async function setupInstantWithSponsor(
+		async function setupWindowedWithSponsor(
 			fixture: any,
 			opts: { sponsorAmount: bigint; fee: bigint; affiliateAmount: bigint; creditAmount: bigint },
 		) {
@@ -4177,7 +4177,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 
 			const fee = 10n * 10n ** 18n
 			const sponsorAmount = 100n * 10n ** 18n
-			const { requestId } = await setupInstantWithSponsor(fixture, {
+			const { requestId } = await setupWindowedWithSponsor(fixture, {
 				sponsorAmount,
 				fee,
 				affiliateAmount: 100n * 10n ** 18n,
@@ -4277,7 +4277,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 
 			const fee = 10n * 10n ** 18n
 			const sponsorAmount = 100n * 10n ** 18n
-			const { requestId } = await setupInstantWithSponsor(fixture, {
+			const { requestId } = await setupWindowedWithSponsor(fixture, {
 				sponsorAmount,
 				fee,
 				affiliateAmount: 100n * 10n ** 18n,
@@ -4533,8 +4533,8 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			const fixture = await deployFixture()
 			const { user, expressProvider, deployer, locker, unlocker, operator } = fixture
 
-			const { parts: parts1, requestId: id1 } = await acceptInstant(fixture)
-			const { parts: parts2, requestId: id2 } = await acceptInstant(fixture)
+			const { parts: parts1, requestId: id1 } = await acceptWindowed(fixture)
+			const { parts: parts2, requestId: id2 } = await acceptWindowed(fixture)
 			await expressProvider.connect(locker).lockWithdraw(user.address, id2)
 
 			await expressProvider.connect(deployer).setPaused(true)
@@ -4604,12 +4604,12 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			)
 		})
 
-		it("pause allows onWithdrawCancelRequest — in-flight INSTANT can still cancel via core", async function () {
+		it("pause allows onWithdrawCancelRequest — in-flight WINDOWED can still cancel via core", async function () {
 			const fixture = await deployFixture()
 			const { user, expressProvider, context, deployer, generalFunding, affiliateFunding, affiliate } = fixture
 
 			const affiliateAmount = 200n * 10n ** 18n
-			const { requestId } = await acceptInstant(fixture, { affiliateAmount })
+			const { requestId } = await acceptWindowed(fixture, { affiliateAmount })
 
 			await expressProvider.connect(deployer).setPaused(true)
 
@@ -4622,7 +4622,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			expect(await expressProvider.lockedAffiliateBalances(affiliate)).to.equal(0n)
 		})
 
-		it("pause allows onWithdrawSuspend — PROCESSED INSTANT can still suspend with coverLoss", async function () {
+		it("pause allows onWithdrawSuspend — PROCESSED WINDOWED can still suspend with coverLoss", async function () {
 			const fixture = await deployFixture()
 			const { user, expressProvider, context, deployer, affiliate, affiliateFunding } = fixture
 
@@ -4705,12 +4705,12 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			expect(info.finalizedAt).to.be.greaterThan(0n)
 		})
 
-		it("pause allows onWithdrawComplete for PROCESSED INSTANT — pools replenished and debt settled", async function () {
+		it("pause allows onWithdrawComplete for PROCESSED WINDOWED — pools replenished and debt settled", async function () {
 			const fixture = await deployFixture()
 			const { user, expressProvider, context, deployer, operator, affiliate, generalFunding, affiliateFunding } = fixture
 
 			const affiliateAmount = 200n * 10n ** 18n
-			const { parts, requestId } = await acceptInstant(fixture, { affiliateAmount })
+			const { parts, requestId } = await acceptWindowed(fixture, { affiliateAmount })
 
 			await ethers.provider.send("evm_increaseTime", [21])
 			await ethers.provider.send("evm_mine", [])
@@ -4731,7 +4731,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			const fixture = await deployFixture()
 			const { user, expressProvider, context, deployer, operator, receiver, collateral } = fixture
 
-			const { parts, requestId, withdrawAmount } = await acceptInstant(fixture)
+			const { parts, requestId, withdrawAmount } = await acceptWindowed(fixture)
 			const receiverBefore = await collateral.balanceOf(receiver.address)
 
 			await expressProvider.connect(deployer).setPaused(true)
@@ -4994,7 +4994,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			return await expressProvider.creditLineBadDebt(affiliate)
 		}
 
-		// Build credit-backed INSTANT provider data without submitting it yet.
+		// Build credit-backed WINDOWED provider data without submitting it yet.
 		async function buildCreditWithdraw(fixture: any, opts: { creditAmount: bigint; withdrawAmount: bigint; nonceOverride?: bigint }) {
 			const { user, botSigner, receiver, expressProvider, affiliate } = fixture
 			const expressAddr = await expressProvider.getAddress()
@@ -5271,7 +5271,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 	})
 
 	describe("Per-request fee escrow", function () {
-		async function acceptInstantWithFees(fixture: any, opts: { fee: bigint; operatorFee: bigint; sponsorAmount?: bigint }) {
+		async function acceptWindowedWithFees(fixture: any, opts: { fee: bigint; operatorFee: bigint; sponsorAmount?: bigint }) {
 			const { user, botSigner, receiver, expressProvider, context, affiliate, deployer, collateral } = fixture
 
 			const feeRate = (opts.fee * 10000n) / (500n * 10n ** 18n)
@@ -5323,13 +5323,13 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			return { parts, requestId, withdrawAmount }
 		}
 
-		it("INSTANT process puts fees in pending; finalize promotes to claimable", async function () {
+		it("WINDOWED process puts fees in pending; finalize promotes to claimable", async function () {
 			const fixture = await deployFixture()
 			const { expressProvider, user, affiliate, context } = fixture
 
 			const fee = 5n * 10n ** 18n
 			const operatorFee = 1n * 10n ** 18n
-			const { requestId } = await acceptInstantWithFees(fixture, { fee, operatorFee })
+			const { requestId } = await acceptWindowedWithFees(fixture, { fee, operatorFee })
 
 			expect(await expressProvider.pendingFees(user.address, requestId)).to.equal(fee)
 			expect(await expressProvider.pendingOperatorFees(user.address, requestId)).to.equal(operatorFee)
@@ -5351,7 +5351,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			const { expressProvider, deployer, affiliate, user } = fixture
 
 			const fee = 5n * 10n ** 18n
-			const { requestId } = await acceptInstantWithFees(fixture, { fee, operatorFee: 0n })
+			const { requestId } = await acceptWindowedWithFees(fixture, { fee, operatorFee: 0n })
 
 			expect(await expressProvider.pendingFees(user.address, requestId)).to.equal(fee)
 			expect(await expressProvider.collectedFees(affiliate)).to.equal(0n)
@@ -5368,7 +5368,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 
 			const fee = 5n * 10n ** 18n
 			const operatorFee = 1n * 10n ** 18n
-			const { requestId } = await acceptInstantWithFees(fixture, { fee, operatorFee })
+			const { requestId } = await acceptWindowedWithFees(fixture, { fee, operatorFee })
 
 			expect(await expressProvider.pendingFees(user.address, requestId)).to.equal(fee)
 			expect(await expressProvider.pendingOperatorFees(user.address, requestId)).to.equal(operatorFee)
@@ -5399,7 +5399,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			await collateral.connect(deployer).approve(await expressProvider.getAddress(), sponsorAmount)
 			await expressProvider.connect(deployer).depositSponsorBalance(affiliate, sponsorAmount)
 
-			const { requestId } = await acceptInstantWithFees(fixture, { fee, operatorFee })
+			const { requestId } = await acceptWindowedWithFees(fixture, { fee, operatorFee })
 
 			const sponsorCoverage = (await expressProvider.getWithdrawInfo(user.address, requestId)).sponsorCoverage
 			expect(sponsorCoverage).to.equal(4n * 10n ** 18n)

@@ -45,7 +45,7 @@ contract OperatorFacet is IOperatorFacet, Pausable, ReentrancyGuard {
 		uint256 processableAt;
 		if (isLockedAfterCooldown) {
 			processableAt = info.cooldownEndTime;
-		} else if (info.optionType == OptionType.INSTANT) {
+		} else if (info.optionType == OptionType.WINDOWED) {
 			processableAt = info.acceptedAt + s.securityWindow;
 		} else {
 			processableAt = info.finalizedAt;

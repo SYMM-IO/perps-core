@@ -680,26 +680,26 @@
 			const validatorsReady = validatorCount > 0
 			const fastFundingAvailable = requestAmount > 0 && fastAllocation.unfunded <= 0
 
-			const immediateReasons = []
-			if (!validatorsReady) immediateReasons.push("validator signatures are not configured")
-			if (!fastFundingAvailable) immediateReasons.push(`${formatAmount(fastAllocation.unfunded)} remains unfunded after pools and credit`)
-			if (creditBlockedReason && fastAllocation.unfunded > 0) immediateReasons.push(creditBlockedReason)
-			const instantReasons = []
-			if (riskCheck !== "LOW") instantReasons.push("risk check is high, so the bot should not sign the fast path")
-			if (!fastFundingAvailable) instantReasons.push(`${formatAmount(fastAllocation.unfunded)} remains unfunded after pools and credit`)
-			if (creditBlockedReason && fastAllocation.unfunded > 0) instantReasons.push(creditBlockedReason)
+			const sameTxReasons = []
+			if (!validatorsReady) sameTxReasons.push("validator signatures are not configured")
+			if (!fastFundingAvailable) sameTxReasons.push(`${formatAmount(fastAllocation.unfunded)} remains unfunded after pools and credit`)
+			if (creditBlockedReason && fastAllocation.unfunded > 0) sameTxReasons.push(creditBlockedReason)
+			const windowedReasons = []
+			if (riskCheck !== "LOW") windowedReasons.push("risk check is high, so the bot should not sign the fast path")
+			if (!fastFundingAvailable) windowedReasons.push(`${formatAmount(fastAllocation.unfunded)} remains unfunded after pools and credit`)
+			if (creditBlockedReason && fastAllocation.unfunded > 0) windowedReasons.push(creditBlockedReason)
 
 			const options = [
 				{
-					type: "IMMEDIATE",
+					type: "SAME_TX",
 					available: validatorsReady && fastFundingAvailable,
-					reason: immediateReasons.length ? immediateReasons.join("; ") : "Same-transaction payout can be signed because validators are configured and the request can be fully funded.",
+					reason: sameTxReasons.length ? sameTxReasons.join("; ") : "Same-transaction payout can be signed because validators are configured and the request can be fully funded.",
 					allocation: fastAllocation,
 				},
 				{
-					type: "INSTANT",
+					type: "WINDOWED",
 					available: riskCheck === "LOW" && fastFundingAvailable,
-					reason: instantReasons.length ? instantReasons.join("; ") : "The request can be processed after the security window using the computed pool and credit split.",
+					reason: windowedReasons.length ? windowedReasons.join("; ") : "The request can be processed after the security window using the computed pool and credit split.",
 					allocation: fastAllocation,
 				},
 				{
@@ -713,8 +713,8 @@
 			const warnings = []
 			if (creditBlockedReason) warnings.push(`Credit capacity is zero because ${creditBlockedReason}.`)
 			if (requestAmount > 0 && fastAllocation.unfunded > 0) warnings.push("Fast options cannot cover the full request with the current pools and credit capacity; STANDARD remains the fallback.")
-			if (!validatorsReady) warnings.push("IMMEDIATE requires minValidatorSignatures above zero.")
-			if (riskCheck !== "LOW") warnings.push("INSTANT should not be signed while the risk check is high.")
+			if (!validatorsReady) warnings.push("SAME_TX requires minValidatorSignatures above zero.")
+			if (riskCheck !== "LOW") warnings.push("WINDOWED should not be signed while the risk check is high.")
 			result.innerHTML = `
 				<div class="result-metrics">
 					<span><small>Recommended offer</small><strong>${escapeHtml(recommended.type)}</strong></span>
@@ -759,7 +759,7 @@
 			const permissionless = securityWindow + tolerancePeriod
 			result.innerHTML = `
 				<div class="timeline-item"><span>Accept</span><strong>T + 0s</strong><small>Request enters ExpressProvider state.</small></div>
-				<div class="timeline-item"><span>Operator</span><strong>T + ${formatDuration(securityWindow)}</strong><small>Operator can process INSTANT if not locked.</small></div>
+				<div class="timeline-item"><span>Operator</span><strong>T + ${formatDuration(securityWindow)}</strong><small>Operator can process WINDOWED if not locked.</small></div>
 				<div class="timeline-item"><span>Fallback</span><strong>T + ${formatDuration(permissionless)}</strong><small>Anyone can process after tolerance expires.</small></div>
 				<div class="timeline-item"><span>STANDARD</span><strong>T + ${formatDuration(cooldown)}</strong><small>SYMMIO cooldown target before finalization.</small></div>
 			`

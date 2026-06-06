@@ -38,7 +38,7 @@ library LibErrors {
 	error InvalidStatusForSuspend();
 	error ArrayLengthMismatch();
 	error InvalidOptionType();
-	error ValidatorsRequiredForImmediate();
+	error ValidatorsRequiredForSameTx();
 	error FeeMismatch();
 	error OperatorFeeMismatch();
 	error FundingSplitExceedsExpress();

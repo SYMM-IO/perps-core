@@ -19,8 +19,8 @@ const STATUS_CANCELLED = 5n
 const STATUS_SUSPENDED = 6n
 
 // WithdrawInfo.optionType values
-const OPT_IMMEDIATE = 0n
-const OPT_INSTANT = 1n
+const OPT_SAME_TX = 0n
+const OPT_WINDOWED = 1n
 const OPT_STANDARD = 2n
 
 export function shouldBehaveLikeExpressLayerAccelerate(): void {
@@ -240,7 +240,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 	}
 
 	// Bump the user's core deallocate timestamp to now so cooldownEndTime = now + 12h.
-	// Without this, cooldownEndTime = now (floor), and accelerate's timing guard fires immediately.
+	// Without this, cooldownEndTime = now (floor), and accelerate's timing guard fires at once.
 	async function triggerRecentDeallocate(fixture: any) {
 		const { context, user, deployer } = fixture
 		await context.controlFacet.connect(deployer).grantRole(user.address, ethers.keccak256(ethers.toUtf8Bytes("BALANCE_SETTLER_ROLE")))
@@ -288,8 +288,8 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 		return { parts, requestId, withdrawAmount, partsHash }
 	}
 
-	// Accept an INSTANT withdrawal — used to pre-consume credit cap for retry tests.
-	async function acceptInstantWithCredit(fixture: any, opts: { withdrawAmount: bigint; creditAmount: bigint }) {
+	// Accept a WINDOWED withdrawal — used to pre-consume credit cap for retry tests.
+	async function acceptWindowedWithCredit(fixture: any, opts: { withdrawAmount: bigint; creditAmount: bigint }) {
 		const { botSigner, user, receiver, expressProvider, context, affiliate } = fixture
 		const expressAddr = await expressProvider.getAddress()
 
@@ -368,7 +368,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 	// ═══════════════════════════════════════════════════════════════════
 
 	describe("Happy Path", function () {
-		it("accelerates STANDARD → INSTANT: random caller submits bot-signed offer, user paid", async function () {
+		it("accelerates STANDARD → WINDOWED: random caller submits bot-signed offer, user paid", async function () {
 			const fixture = await deployFixture()
 			const { expressProvider, user, affiliate, randomCaller, receiver, collateral } = fixture
 
@@ -418,7 +418,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			// Info mutated
 			const info = await expressProvider.getWithdrawInfo(user.address, requestId)
 			expect(info.status).to.equal(STATUS_PROCESSED)
-			expect(info.optionType).to.equal(OPT_INSTANT)
+			expect(info.optionType).to.equal(OPT_WINDOWED)
 			expect(info.creditAmount).to.equal(creditAmount)
 			expect(info.affiliateAmount).to.equal(affiliateAmount)
 			expect(info.generalAmount).to.equal(withdrawAmount - creditAmount - affiliateAmount)
@@ -525,7 +525,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 
 			const info = await expressProvider.getWithdrawInfo(user.address, requestId)
 			expect(info.status).to.equal(STATUS_PROCESSED)
-			expect(info.optionType).to.equal(OPT_INSTANT)
+			expect(info.optionType).to.equal(OPT_WINDOWED)
 			expect(info.generalAmount).to.equal(withdrawAmount)
 			expect(info.affiliateAmount).to.equal(0n)
 			expect(info.creditAmount).to.equal(0n)
@@ -936,11 +936,11 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 	// ═══════════════════════════════════════════════════════════════════
 
 	describe("Wrong-State Guards", function () {
-		it("reverts AccelerateOnlyFromStandardAccepted when target is INSTANT", async function () {
+		it("reverts AccelerateOnlyFromStandardAccepted when target is WINDOWED", async function () {
 			const fixture = await deployFixture()
 			const { expressProvider, user, randomCaller } = fixture
 
-			const { parts, requestId } = await acceptInstantWithCredit(fixture, {
+			const { parts, requestId } = await acceptWindowedWithCredit(fixture, {
 				withdrawAmount: 500n * 10n ** 18n,
 				creditAmount: 100n * 10n ** 18n,
 			})
@@ -1179,7 +1179,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 	// ═══════════════════════════════════════════════════════════════════
 
 	describe("Post-Acceleration Lifecycle", function () {
-		it("on core finalization: settles credit and credits pools back (parity with native INSTANT)", async function () {
+		it("on core finalization: settles credit and credits pools back (parity with native WINDOWED)", async function () {
 			const fixture = await deployFixture()
 			const { expressProvider, context, user, affiliate, randomCaller } = fixture
 
@@ -1201,7 +1201,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 
 			const generalAfterAccel = await expressProvider.generalBalance()
 
-			// Advance past cooldown and finalize via core → onWithdrawComplete runs INSTANT branch
+			// Advance past cooldown and finalize via core → onWithdrawComplete runs WINDOWED branch
 			await ethers.provider.send("evm_increaseTime", [12 * 3600 + 1])
 			await ethers.provider.send("evm_mine", [])
 			await context.withdrawFacet.finalizeWithdrawRequest(user.address, requestId)

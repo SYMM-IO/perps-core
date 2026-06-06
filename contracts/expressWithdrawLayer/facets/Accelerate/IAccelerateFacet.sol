@@ -7,8 +7,8 @@ pragma solidity >=0.8.18;
 import { WithdrawReceiverPart } from "../../../core/storages/WithdrawStorage.sol";
 
 interface IAccelerateEvents {
-	/// @notice Emitted when an ACCEPTED STANDARD withdrawal is promoted to INSTANT-style
-	///         processing and immediately paid out to the user.
+	/// @notice Emitted when an ACCEPTED STANDARD withdrawal is promoted to WINDOWED-style
+	///         processing and paid out without waiting for cooldown.
 	event WithdrawAccelerated(
 		address indexed user,
 		uint256 indexed requestId,
@@ -20,7 +20,7 @@ interface IAccelerateEvents {
 }
 
 interface IAccelerateFacet is IAccelerateEvents {
-	/// @notice Promote an ACCEPTED STANDARD withdrawal into INSTANT-style processing.
+	/// @notice Promote an ACCEPTED STANDARD withdrawal into WINDOWED-style processing.
 	///         Permissionless — any caller with a valid bot-signed offer may invoke.
 	/// @dev Reverts atomically on cap breach, leaving the STANDARD state intact so the bot
 	///      or the frontend can retry later with the same signature once capacity frees up.

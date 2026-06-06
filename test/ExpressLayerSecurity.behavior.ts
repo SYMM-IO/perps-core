@@ -235,8 +235,8 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 		return validator.signTypedData(domain, types, params)
 	}
 
-	// Helper: create a standard instant withdrawal via real Symmio
-	async function initiateInstantWithdraw(
+	// Helper: create a default WINDOWED withdrawal via real Symmio
+	async function initiateWindowedWithdraw(
 		fixture: any,
 		opts?: {
 			withdrawAmount?: bigint
@@ -1104,7 +1104,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			const fixture = await deployFixture()
 			const { expressProvider, context, user, botSigner } = fixture
 
-			const { parts, providerData } = await initiateInstantWithdraw(fixture)
+			const { parts, providerData } = await initiateWindowedWithdraw(fixture)
 
 			await expressProvider.revokeRole(SIGNER_ROLE, botSigner.address)
 
@@ -1865,7 +1865,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			const { locker, user, expressProvider, context } = fixture
 
 			// Create an accepted withdrawal first
-			const { parts, providerData } = await initiateInstantWithdraw(fixture)
+			const { parts, providerData } = await initiateWindowedWithdraw(fixture)
 			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
 
 			// Verify the withdrawal is in ACCEPTED status
@@ -1884,7 +1884,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			const { locker, unlocker, user, receiver, expressProvider, context, collateral } = fixture
 
 			// Create an accepted withdrawal first
-			const { parts, providerData, withdrawAmount } = await initiateInstantWithdraw(fixture)
+			const { parts, providerData, withdrawAmount } = await initiateWindowedWithdraw(fixture)
 			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
 
 			// Lock with the locker
@@ -2116,7 +2116,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			const { deployer, operator, user, receiver, expressProvider, collateral, context, affiliate, botSigner } = await deployFixture()
 			const withdrawAmount = 10_000n * 10n ** 18n
 
-			// Accept an INSTANT that locks the entire general balance
+			// Accept a WINDOWED withdrawal that locks the entire general balance
 			const expressAddr = await expressProvider.getAddress()
 			const parts = [
 				{

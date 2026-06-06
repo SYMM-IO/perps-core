@@ -28,11 +28,11 @@ import { ReentrancyGuard } from "../../utils/ReentrancyGuard.sol";
 
 /// @title AccelerateFacet
 /// @notice Permissionless entrypoint that promotes an ACCEPTED STANDARD withdrawal to
-///         INSTANT-style processing once the affiliate credit cap has capacity. The bot
+///         WINDOWED-style processing once the affiliate credit cap has capacity. The bot
 ///         signs a fresh `AccelerateOffer` off-chain; any caller (bot, frontend, user)
 ///         can submit it here. On success: credit is reserved and activated (advancing
 ///         collateral from core), pool funds are locked and deducted, and the user is
-///         paid immediately. On cap breach: the whole tx reverts atomically, preserving
+///         paid without waiting for cooldown. On cap breach: the whole tx reverts atomically, preserving
 ///         the STANDARD request so the same signature can be retried later.
 contract AccelerateFacet is IAccelerateFacet, IOperatorEvents, Pausable, ReentrancyGuard {
 	function accelerateWithdraw(
@@ -81,7 +81,7 @@ contract AccelerateFacet is IAccelerateFacet, IOperatorEvents, Pausable, Reentra
 
 		// Update info with the new funding split; `expressAmount`, `fee`, `sponsorCoverage`,
 		// `cooldownEndTime`, `acceptedAt`, and `partsHash` are intentionally preserved.
-		info.optionType = OptionType.INSTANT;
+		info.optionType = OptionType.WINDOWED;
 		info.generalAmount = newGeneralAmount;
 		info.affiliateAmount = offer.affiliateAmount;
 		info.creditAmount = offer.creditAmount;

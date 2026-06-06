@@ -17,21 +17,21 @@ pragma solidity >=0.8.18;
 ///                                   │
 ///                                   └──[onWithdrawSuspend]──► SUSPENDED ◄── (also from LOCKED, PROCESSED)
 ///
-///  IMMEDIATE bypasses ACCEPTED: onWithdrawRequest sets PROCESSED directly.
+///  SAME_TX bypasses ACCEPTED: onWithdrawRequest sets PROCESSED directly.
 enum Status {
 	NONE, // Default value; no withdrawal exists for this (user, requestId) pair.
 	ACCEPTED, // ExpressProvider accepted the request; funds are reserved but not yet transferred to the user.
 	LOCKED, // A LOCKER_ROLE account placed a temporary hold; STANDARD can be unlocked and processed after SYMMIO finalization.
 	PROCESSED, // Funds were transferred to the user. For STANDARD this is the post-FINALIZED user payout state.
-	FINALIZED, // INSTANT/IMMEDIATE terminal success; for STANDARD, tokens arrived and are awaiting processWithdraw.
+	FINALIZED, // WINDOWED/SAME_TX terminal success; for STANDARD, tokens arrived and are awaiting processWithdraw.
 	CANCELLED, // Terminal — the request was cancelled (only possible from ACCEPTED before processing).
 	SUSPENDED // Terminal hold — the request was suspended (possible from ACCEPTED, LOCKED, or PROCESSED; PROCESSED triggers a rollback).
 }
 
-/// @notice Withdrawal speed tier — determines how and when capital is fronted.
+/// @notice Withdrawal option tier -- determines when payout is processed.
 enum OptionType {
-	IMMEDIATE,
-	INSTANT,
+	SAME_TX,
+	WINDOWED,
 	STANDARD
 }
 
