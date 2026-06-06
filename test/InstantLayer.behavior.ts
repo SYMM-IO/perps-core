@@ -11,6 +11,8 @@ import { QuoteStatus } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
+import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
+import { limitFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest.js"
 import { limitOpenRequestBuilder, OpenRequest } from "./models/requestModels/OpenRequest.js"
 import { limitQuoteRequestBuilder, QuoteRequest } from "./models/requestModels/QuoteRequest.js"
 import { decimal, getBlockTimestamp } from "./utils/Common.js"
@@ -33,6 +35,9 @@ const DEFAULT_DEADLINE_OFFSET = 300n
 const DEFAULT_EXPIRY_OFFSET = 3600n
 const MIN_REVOCATION_COOLDOWN = 5 * 60 // 5 minutes
 const MAX_REVOCATION_COOLDOWN = 30 * 24 * 3600 // 30 days
+
+const INSTANT_OPEN_WITH_CUSTOM_VA_TEMPLATE_NAME = "InstantOpenWithCustomVA"
+const INSTANT_CLOSE_WITH_PARENT_ALLOCATION_TEMPLATE_NAME = "InstantCloseWithParentAllocation"
 
 // ════════════════════════════════════════════════════════════════════════════════
 // HELPER TYPES
@@ -104,6 +109,33 @@ function createSignedOperation(
 		maxUses: 1,
 		replayAttackHeader: { nonce, deadline, salt: generateSalt() },
 	}
+}
+
+function instantOpenWithCustomVATemplateOps(): InstantLayer.OperationStruct[] {
+	return [
+		{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] },
+		{ insertionPoints: [0], sourceIndices: [0], sourceOffsets: [0] },
+		{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] },
+		{ insertionPoints: [0], sourceIndices: [2], sourceOffsets: [0] },
+		{ insertionPoints: [0], sourceIndices: [2], sourceOffsets: [0] },
+	]
+}
+
+function instantCloseWithParentAllocationTemplateOps(): InstantLayer.OperationStruct[] {
+	return [
+		{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] },
+		{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] },
+		{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] },
+		{ insertionPoints: [0], sourceIndices: [2], sourceOffsets: [0] },
+	]
+}
+
+function normalizeTemplateOps(ops: any[]): { insertionPoints: number[]; sourceIndices: number[]; sourceOffsets: number[] }[] {
+	return ops.map(op => ({
+		insertionPoints: op.insertionPoints.map(Number),
+		sourceIndices: op.sourceIndices.map(Number),
+		sourceOffsets: op.sourceOffsets.map(Number),
+	}))
 }
 
 async function increaseTime(seconds: number): Promise<void> {
@@ -2841,6 +2873,115 @@ export function shouldBehaveLikeInstantLayer(): void {
 		})
 
 		describe("executeTemplate - Successful Execution", function () {
+			async function executeInstantOpenWithCustomVA() {
+				const customSubAccount = execCtx.accounts[0].accountAddress
+				const partyBAddress = await execCtx.context.symmioPartyB.getAddress()
+				const virtualIsolationType = 0 // POSITION
+				const symbolId = execCtx.requestSendQuote.symbolId
+				const transferAmount = decimal(1000n)
+				const quoteId = (await ctx.context.viewFacetQuote.getNextQuoteId()) + 1n
+
+				const predictedVirtualAccount = await execCtx.context.alViewFacet.predictNextVirtualAccountAddress(
+					customSubAccount,
+					virtualIsolationType,
+					symbolId,
+				)
+
+				await execCtx.context.collateral.connect(execCtx.partyA1.signer).approve(execCtx.context.diamond, ethers.MaxUint256)
+				await execCtx.context.collateral.connect(execCtx.partyA1.signer).mint(execCtx.partyA1.address, transferAmount)
+				await execCtx.context.accountFacet.connect(execCtx.partyA1.signer).depositFor(customSubAccount, transferAmount)
+				const customSubAccountBalanceBefore = await ctx.context.viewFacet.balanceOf(customSubAccount)
+
+				const createVirtualAccountCallData = execCtx.context.alCoreFacet.interface.encodeFunctionData("createCustomVirtualAccount", [
+					customSubAccount,
+					ethers.keccak256(toUtf8Bytes("INSTANT_LAYER_CUSTOM_VA")),
+					virtualIsolationType,
+					symbolId,
+				])
+				const addMarginCallData = execCtx.context.alMarginFacet.interface.encodeFunctionData("addMargin", [ZeroAddress, transferAmount])
+				const lockQuoteCallData = execCtx.context.partyBQuoteActionsFacet.interface.encodeFunctionData("lockQuote", [
+					0,
+					await getDummySingleUpnlSig(10n),
+				])
+				const openQuoteCallData = execCtx.context.partyBPositionActionsFacet.interface.encodeFunctionData("openPosition", [
+					0,
+					execCtx.requestOpenQuote.filledAmount,
+					execCtx.requestOpenQuote.openPrice,
+					await getDummyPairUpnlAndPriceSig(10n),
+				])
+
+				await ctx.context.instantLayer.addTemplate(INSTANT_OPEN_WITH_CUSTOM_VA_TEMPLATE_NAME, instantOpenWithCustomVATemplateOps())
+				const templateId = (await ctx.context.instantLayer.getNextTemplateId()) - 1n
+				const template = await ctx.context.instantLayer.getTemplate(templateId)
+				expect(template.name).to.equal(INSTANT_OPEN_WITH_CUSTOM_VA_TEMPLATE_NAME)
+				expect(normalizeTemplateOps(template.operations)).to.deep.equal(instantOpenWithCustomVATemplateOps())
+
+				const createVirtualAccountOp = createSignedOperation(
+					execCtx.partyA1.address,
+					execCtx.context.accountLayerDiamond,
+					createVirtualAccountCallData,
+					{ addr: customSubAccount, isPartyB: false },
+					0n,
+					execCtx.deadline,
+				)
+				const addMarginOp = createSignedOperation(
+					execCtx.partyA1.address,
+					execCtx.context.accountLayerDiamond,
+					addMarginCallData,
+					{ addr: customSubAccount, isPartyB: false },
+					0n,
+					execCtx.deadline,
+				)
+				const sendQuoteOp = createSignedOperation(
+					execCtx.partyA1.address,
+					execCtx.symmioAddress,
+					execCtx.quoteCallData,
+					{ addr: predictedVirtualAccount, isPartyB: false },
+					0n,
+					execCtx.deadline,
+				)
+				const lockQuoteOp = createSignedOperation(
+					partyBAddress,
+					execCtx.symmioAddress,
+					lockQuoteCallData,
+					{ addr: partyBAddress, isPartyB: true },
+					0n,
+					execCtx.deadline,
+				)
+				const openQuoteOp = createSignedOperation(
+					partyBAddress,
+					execCtx.symmioAddress,
+					openQuoteCallData,
+					{ addr: partyBAddress, isPartyB: true },
+					0n,
+					execCtx.deadline,
+				)
+
+				const createVirtualAccountSig = await signOperation(execCtx.context.signers.user, execCtx.domain, execCtx.types, createVirtualAccountOp)
+				const addMarginSig = await signOperation(execCtx.context.signers.user, execCtx.domain, execCtx.types, addMarginOp)
+				const sendQuoteSig = await signOperation(execCtx.context.signers.user, execCtx.domain, execCtx.types, sendQuoteOp)
+				const lockQuoteSig = await signOperation(execCtx.partyB1.signer, execCtx.domain, execCtx.types, lockQuoteOp)
+				const openQuoteSig = await signOperation(execCtx.partyB1.signer, execCtx.domain, execCtx.types, openQuoteOp)
+
+				await expect(
+					ctx.context.instantLayer.executeTemplate(
+						templateId,
+						[createVirtualAccountOp, addMarginOp, sendQuoteOp, lockQuoteOp, openQuoteOp],
+						[createVirtualAccountSig, addMarginSig, sendQuoteSig, lockQuoteSig, openQuoteSig],
+						[[], [], [], [], []],
+						[[], [], [], [], []],
+					),
+				).not.to.be.reverted
+
+				return {
+					customSubAccount,
+					customSubAccountBalanceBefore,
+					predictedVirtualAccount,
+					quoteId,
+					transferAmount,
+				}
+			}
+
 			it("executes allocateForPartyB after PartyA sends quote (partyA injected from view op)", async function () {
 				const partyBAddress = await execCtx.context.symmioPartyB.getAddress()
 				const partyAAccount = execCtx.accounts[0].accountAddress
@@ -2986,6 +3127,114 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 				expect(quote1.quoteStatus).to.equal(QuoteStatus.OPENED)
 				expect(quote2.quoteStatus).to.equal(QuoteStatus.PENDING)
+			})
+
+			it("executes InstantOpenWithCustomVA using the final template definition", async function () {
+				const { customSubAccount, customSubAccountBalanceBefore, predictedVirtualAccount, quoteId, transferAmount } =
+					await executeInstantOpenWithCustomVA()
+
+				const virtualAccounts = await execCtx.context.alViewFacet.getVirtualAccountsAddressesOfSubAccount(customSubAccount, 0, 10)
+				expect(virtualAccounts).to.deep.equal([predictedVirtualAccount])
+				expect(await ctx.context.viewFacet.balanceOf(customSubAccount)).to.equal(customSubAccountBalanceBefore - transferAmount)
+
+				const quote = await ctx.context.viewFacetQuote.getQuote(quoteId)
+				expect(quote.partyA).to.equal(predictedVirtualAccount)
+				expect(quote.quoteStatus).to.equal(QuoteStatus.OPENED)
+				const openTradingFee = (quote.quantity * quote.requestedOpenPrice * quote.tradingFee) / 10n ** 36n
+				expect(await ctx.context.viewFacet.allocatedBalanceOfPartyA(predictedVirtualAccount)).to.equal(transferAmount - openTradingFee)
+			})
+
+			it("executes InstantCloseWithParentAllocation and allocates the swept parent balance", async function () {
+				const { customSubAccount, predictedVirtualAccount, quoteId } = await executeInstantOpenWithCustomVA()
+				const partyBAddress = await execCtx.context.symmioPartyB.getAddress()
+				await execCtx.context.controlFacet.connect(execCtx.context.signers.admin).registerHook(ZeroAddress, execCtx.context.accountLayerDiamond)
+
+				const closeRequest = limitCloseRequestBuilder().build()
+				const requestCloseCallData = execCtx.context.partyAFacet.interface.encodeFunctionData("requestToClosePosition", [
+					quoteId,
+					closeRequest.closePrice,
+					closeRequest.quantityToClose,
+					closeRequest.orderType,
+					await closeRequest.deadline,
+				])
+				const fillCloseRequest = limitFillCloseRequestBuilder().build()
+				const fillCloseCallData = execCtx.context.partyBPositionActionsFacet.interface.encodeFunctionData("fillCloseRequest", [
+					quoteId,
+					fillCloseRequest.filledAmount,
+					fillCloseRequest.closedPrice,
+					await getDummyPairUpnlAndPriceSig(BigInt(fillCloseRequest.price), BigInt(fillCloseRequest.upnlPartyA), BigInt(fillCloseRequest.upnlPartyB)),
+				])
+				const balanceOfCallData = execCtx.context.viewFacet.interface.encodeFunctionData("balanceOf", [customSubAccount])
+				const allocateCallData = execCtx.context.accountFacet.interface.encodeFunctionData("allocate", [0])
+
+				await ctx.context.instantLayer.addTemplate(INSTANT_CLOSE_WITH_PARENT_ALLOCATION_TEMPLATE_NAME, instantCloseWithParentAllocationTemplateOps())
+				const templateId = (await ctx.context.instantLayer.getNextTemplateId()) - 1n
+				const template = await ctx.context.instantLayer.getTemplate(templateId)
+				expect(template.name).to.equal(INSTANT_CLOSE_WITH_PARENT_ALLOCATION_TEMPLATE_NAME)
+				expect(normalizeTemplateOps(template.operations)).to.deep.equal(instantCloseWithParentAllocationTemplateOps())
+
+				const requestCloseOp = createSignedOperation(
+					execCtx.partyA1.address,
+					execCtx.symmioAddress,
+					requestCloseCallData,
+					{ addr: predictedVirtualAccount, isPartyB: false },
+					0n,
+					execCtx.deadline,
+				)
+				const fillCloseOp = createSignedOperation(
+					partyBAddress,
+					execCtx.symmioAddress,
+					fillCloseCallData,
+					{ addr: partyBAddress, isPartyB: true },
+					0n,
+					execCtx.deadline,
+				)
+				const balanceOfOp = createSignedOperation(
+					execCtx.partyA1.address,
+					execCtx.symmioAddress,
+					balanceOfCallData,
+					{ addr: customSubAccount, isPartyB: false },
+					0n,
+					execCtx.deadline,
+				)
+				const allocateOp = createSignedOperation(
+					execCtx.partyA1.address,
+					execCtx.symmioAddress,
+					allocateCallData,
+					{ addr: customSubAccount, isPartyB: false },
+					0n,
+					execCtx.deadline,
+				)
+
+				const requestCloseSig = await signOperation(execCtx.partyA1.signer, execCtx.domain, execCtx.types, requestCloseOp)
+				const fillCloseSig = await signOperation(execCtx.partyB1.signer, execCtx.domain, execCtx.types, fillCloseOp)
+				const balanceOfSig = await signOperation(execCtx.partyA1.signer, execCtx.domain, execCtx.types, balanceOfOp)
+				const allocateSig = await signOperation(execCtx.partyA1.signer, execCtx.domain, execCtx.types, allocateOp)
+
+				const parentAllocatedBefore = await ctx.context.viewFacet.allocatedBalanceOfPartyA(customSubAccount)
+				const virtualAllocatedBefore = await ctx.context.viewFacet.allocatedBalanceOfPartyA(predictedVirtualAccount)
+				expect(await ctx.context.viewFacet.balanceOf(customSubAccount)).to.equal(0n)
+				expect(virtualAllocatedBefore).to.be.gt(0n)
+
+				await expect(
+					ctx.context.instantLayer.executeTemplate(
+						templateId,
+						[requestCloseOp, fillCloseOp, balanceOfOp, allocateOp],
+						[requestCloseSig, fillCloseSig, balanceOfSig, allocateSig],
+						[[], [], [], []],
+						[[], [], [], []],
+					),
+				).not.to.be.reverted
+
+				const quoteAfterClose = await ctx.context.viewFacetQuote.getQuote(quoteId)
+				expect(quoteAfterClose.quoteStatus).to.equal(QuoteStatus.CLOSED)
+
+				const virtualAccountData = await execCtx.context.alViewFacet.getVirtualAccount(predictedVirtualAccount)
+				expect(virtualAccountData.isExists).to.be.false
+				expect(await execCtx.context.alViewFacet.getVirtualAccountsAddressesOfSubAccount(customSubAccount, 0, 10)).to.deep.equal([])
+				expect(await ctx.context.viewFacet.allocatedBalanceOfPartyA(predictedVirtualAccount)).to.equal(0n)
+				expect(await ctx.context.viewFacet.balanceOf(customSubAccount)).to.equal(0n)
+				expect(await ctx.context.viewFacet.allocatedBalanceOfPartyA(customSubAccount)).to.be.gt(parentAllocatedBefore)
 			})
 		})
 

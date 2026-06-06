@@ -1197,21 +1197,7 @@ async function registerDummyAffiliate(
 }
 
 /**
- * Sets up InstantLayer templates for OpenPosition and ClosePosition flows
- *
- * OpenPosition Template (6 operations):
- * 0. predictNextVirtualAccountAddress -> returns virtualAccount address
- * 1. addMargin(virtualAccount, amount) -> virtualAccount from op 0
- * 2. sendQuoteWithAffiliateAndData -> returns quoteId
- * 3. allocateForPartyB(amount, partyA) -> partyA from op 0
- * 4. lockQuote(quoteId, upnlSig) -> quoteId from op 2
- * 5. openPosition(quoteId, filledAmount, openedPrice, upnlSig) -> quoteId from op 2
- *
- * ClosePosition Template (4 operations):
- * 0. predictNextVirtualAccountAddress -> returns virtualAccount address
- * 1. requestToClosePosition(quoteId, closePrice, quantityToClose, orderType, deadline) -> no dependencies
- * 2. fillCloseRequest(quoteId, filledAmount, closedPrice, upnlSig) -> no dependencies
- * 3. deallocateForPartyB(amount, partyA, upnlSig) -> partyA from op 0
+ * Sets up InstantLayer templates for standard and custom-VA open/close flows.
  */
 async function setupInstantLayerTemplates(hre: any, deployedContracts: DeployedContracts, checkpoint: DeploymentCheckpoint): Promise<void> {
 	const { ethers } = await getConnection(hre)
@@ -1252,6 +1238,29 @@ async function setupInstantLayerTemplates(hre: any, deployedContracts: DeployedC
 			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 2
 		]
 		await instantLayer.connect(deployer).addTemplate("InstantCloseWithAllocation", instantCloseWithAllocationOps)
+	})
+
+	// InstantOpenWithCustomVA Template (5 ops)
+	await checkpointedStep(checkpoint, "templates.instantOpenWithCustomVA", "Adding InstantOpenWithCustomVA template", async () => {
+		const instantOpenWithCustomVAOps = [
+			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 0: create custom VA
+			{ sourceIndices: [0], insertionPoints: [0], sourceOffsets: [0] }, // op 1: addMargin - VA from op 0
+			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 2: sendQuote - returns quoteId
+			{ sourceIndices: [2], insertionPoints: [0], sourceOffsets: [0] }, // op 3: lockQuote - quoteId from op 2
+			{ sourceIndices: [2], insertionPoints: [0], sourceOffsets: [0] }, // op 4: openPosition - quoteId from op 2
+		]
+		await instantLayer.connect(deployer).addTemplate("InstantOpenWithCustomVA", instantOpenWithCustomVAOps)
+	})
+
+	// InstantCloseWithParentAllocation Template (4 ops)
+	await checkpointedStep(checkpoint, "templates.instantCloseWithParentAllocation", "Adding InstantCloseWithParentAllocation template", async () => {
+		const instantCloseWithParentAllocationOps = [
+			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 0: request close
+			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 1: fill close
+			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 2: balanceOf(parent)
+			{ sourceIndices: [2], insertionPoints: [0], sourceOffsets: [0] }, // op 3: allocate - amount from op 2
+		]
+		await instantLayer.connect(deployer).addTemplate("InstantCloseWithParentAllocation", instantCloseWithParentAllocationOps)
 	})
 
 	console.log("  InstantLayer templates setup complete!")
