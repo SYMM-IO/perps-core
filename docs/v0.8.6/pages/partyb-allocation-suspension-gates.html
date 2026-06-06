@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>PartyB Allocation Suspension Gates - Symmio Core v0.8.6</title>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+	</head>
+	<body class="doc-page">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="doc-topbar">
+			<a class="brand" href="../index.html"
+				><span class="brand-mark">8.6</span><span><strong>Symmio Docs</strong><small>v0.8.6 reference</small></span></a
+			>
+			<nav class="top-actions" aria-label="Page actions">
+				<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+			</nav>
+		</header>
+
+		<div class="reader-shell">
+			<aside class="toc-panel side-toc" aria-label="Page navigation">
+				<a class="button primary back-home" href="../index.html">Back to home</a>
+				<div class="toc-card">
+					<p class="toc-title">On this page</p>
+					<a class="toc-link level-2" href="#summary">Summary</a>
+					<a class="toc-link level-2" href="#what-changed">What Changed</a>
+				</div>
+			</aside>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">v0.8.6</a><span>/</span><strong>PartyB</strong></nav>
+					<div class="reader-title-row">
+						<div>
+							<h1>PartyB Allocation Suspension Gates</h1>
+							<p class="hero-copy">
+								Suspended PartyBs can no longer manage allocation through allocate or allocation-transfer actions.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="summary">Summary</h2>
+					<p>
+						v0.8.6 aligns PartyB allocation management with suspension semantics. When a PartyB is suspended, it can no longer call
+						<code>allocateForPartyB</code> or <code>transferAllocation</code>.
+					</p>
+
+					<h2 id="what-changed">What Changed</h2>
+					<ul>
+						<li><code>allocateForPartyB</code> now checks that the PartyB signer is not suspended.</li>
+						<li><code>transferAllocation</code> now checks that the PartyB signer is not suspended.</li>
+						<li><code>transferAllocation</code> is also explicitly restricted to registered PartyBs.</li>
+					</ul>
+					<p>
+						This is a consistency hardening change: suspended PartyBs should not be able to move allocation between PartyA buckets after
+						the protocol has frozen their account.
+					</p>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Protocol, operations, and integration notes.</span>
+		</footer>
+	</body>
+</html>
