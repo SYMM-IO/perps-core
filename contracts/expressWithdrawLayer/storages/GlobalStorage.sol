@@ -31,7 +31,7 @@ library GlobalStorage {
 		bool initialized;
 		// ── Reentrancy guard ──
 		uint256 reentrancyStatus;
-		// ── Accelerate (promote STANDARD → INSTANT) per-request nonce ──
+		// ── Accelerate (promote STANDARD -> WINDOWED) per-request nonce ──
 		mapping(address => mapping(uint256 => uint256)) accelerateNonces;
 		// ── Global kill switch ──
 		/// @dev When true, all user-facing mutations revert. Core callbacks that must succeed

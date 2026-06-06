@@ -543,10 +543,10 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 	})
 
 	// ═══════════════════════════════════════════════════════════════════
-	//                    FEE DEDUCTION - INSTANT
+	//                    FEE DEDUCTION - WINDOWED
 	// ═══════════════════════════════════════════════════════════════════
 
-	describe("Fee Deduction - INSTANT", function () {
+	describe("Fee Deduction - WINDOWED", function () {
 		it("should deduct fee from single express-only part", async function () {
 			const { botSigner, operator, user, receiver, expressProvider, context, affiliate, collateral } = await deployFixture()
 

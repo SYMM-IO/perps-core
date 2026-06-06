@@ -54,8 +54,8 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 		ComputedAmounts memory amounts = LibParts.computeAmounts(withdrawRequest.parts, offer.affiliateAmount, offer.creditAmount);
 
 		uint256 minSigs = _getMinValidatorSignatures(v, offer.affiliate);
-		if (optType == OptionType.IMMEDIATE && minSigs == 0) {
-			revert LibErrors.ValidatorsRequiredForImmediate();
+		if (optType == OptionType.SAME_TX && minSigs == 0) {
+			revert LibErrors.ValidatorsRequiredForSameTx();
 		}
 
 		uint256 feeBasis = amounts.expressAmount;
@@ -108,7 +108,7 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 
 		emit WithdrawAccepted(withdrawRequest.user, withdrawRequest.id, offer.optionType);
 
-		if (optType == OptionType.IMMEDIATE) {
+		if (optType == OptionType.SAME_TX) {
 			_unlockAndDeductPools(info);
 			info.status = Status.PROCESSED;
 			LibCreditLine.activate(g.symmio, withdrawRequest.user, withdrawRequest.id, info);
@@ -402,7 +402,7 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 			info.sponsorCoverage = 0;
 		}
 
-		if (info.optionType == OptionType.INSTANT || info.optionType == OptionType.IMMEDIATE) {
+		if (info.optionType == OptionType.WINDOWED || info.optionType == OptionType.SAME_TX) {
 			PoolStorage.Layout storage p = PoolStorage.layout();
 			p.lockedGeneralBalance -= info.generalAmount;
 			if (info.affiliateAmount > 0) {

@@ -28,7 +28,7 @@
 <a class="toc-link level-3" href="#expressprovider-internal-status">ExpressProvider Internal Status</a>
 <a class="toc-link level-3" href="#state-transition-diagrams">State Transition Diagrams</a>
 <a class="toc-link level-3" href="#transition-triggers">Transition Triggers</a>
-<a class="toc-link level-3" href="#numeric-example-state-transitions-for-a-500-usdc-instant-withdrawal">Numeric Example: State Transitions for a 500 USDC INSTANT Withdrawal</a>
+<a class="toc-link level-3" href="#numeric-example-state-transitions-for-a-500-usdc-windowed-withdrawal">Numeric Example: State Transitions for a 500 USDC WINDOWED Withdrawal</a>
 <a class="toc-link level-2" href="#3-timing">3. Timing</a>
 <a class="toc-link level-3" href="#3-1-processableat-lookup-table">3.1 processableAt Lookup Table</a>
 <a class="toc-link level-3" href="#3-2-security-window-tolerance-period">3.2 Security Window &amp; Tolerance Period</a>
@@ -44,8 +44,8 @@
 <a class="toc-link level-3" href="#4-5-nonce-management">4.5 Nonce Management</a>
 <a class="toc-link level-3" href="#4-6-signing-requirements">4.6 Signing Requirements</a>
 <a class="toc-link level-2" href="#5-withdrawal-flows">5. Withdrawal Flows</a>
-<a class="toc-link level-3" href="#5-1-immediate-optiontype-0">5.1 IMMEDIATE (optionType = 0)</a>
-<a class="toc-link level-3" href="#5-2-instant-optiontype-1">5.2 INSTANT (optionType = 1)</a>
+<a class="toc-link level-3" href="#5-1-same-tx-optiontype-0">5.1 SAME_TX (optionType = 0)</a>
+<a class="toc-link level-3" href="#5-2-windowed-optiontype-1">5.2 WINDOWED (optionType = 1)</a>
 <a class="toc-link level-3" href="#5-3-standard-optiontype-2">5.3 STANDARD (optionType = 2)</a>
 <a class="toc-link level-3" href="#5-4-credit-backed-withdrawal">5.4 Credit-Backed Withdrawal</a>
 <a class="toc-link level-2" href="#6-processing-finalization">6. Processing &amp; Finalization</a>
@@ -77,7 +77,7 @@
 <a class="toc-link level-3" href="#10-3-bot-monitoring-for-credit-lines">10.3 Bot Monitoring for Credit Lines</a>
 <a class="toc-link level-3" href="#10-4-how-credit-lines-work">10.4 How Credit Lines Work</a>
 <a class="toc-link level-3" href="#10-5-bot-decision-logic-for-credit">10.5 Bot Decision Logic for Credit</a>
-<a class="toc-link level-3" href="#10-6-cap-aware-accelerate-polling-standard-instant">10.6 Cap-Aware Accelerate Polling (STANDARD → INSTANT)</a>
+<a class="toc-link level-3" href="#10-6-cap-aware-accelerate-polling-standard-windowed">10.6 Cap-Aware Accelerate Polling (STANDARD → WINDOWED)</a>
 <a class="toc-link level-3" href="#10-7-affiliate-cap-self-service-fee">10.7 Affiliate Cap Self-Service &amp; Fee</a>
 <a class="toc-link level-2" href="#11-multi-part-withdrawals">11. Multi-Part Withdrawals</a>
 <a class="toc-link level-3" href="#11-1-part-classification">11.1 Part Classification</a>
@@ -114,7 +114,7 @@
 <a class="toc-link level-3" href="#15-9-standard-processwithdraw-too-early">15.9 STANDARD processWithdraw Too Early</a>
 <a class="toc-link level-3" href="#15-10-non-existent-withdrawal">15.10 Non-Existent Withdrawal</a>
 <a class="toc-link level-3" href="#15-11-zero-amount-parts">15.11 Zero-Amount Parts</a>
-<a class="toc-link level-3" href="#15-12-immediate-cannot-be-cancelled-already-processed-but-can-trigger-suspend-with-post-payout-rollback">15.12 IMMEDIATE Cannot Be Cancelled (already PROCESSED), but CAN trigger suspend with post-payout rollback</a>
+<a class="toc-link level-3" href="#15-12-same-tx-cannot-be-cancelled-already-processed-but-can-trigger-suspend-with-post-payout-rollback">15.12 SAME_TX Cannot Be Cancelled (already PROCESSED), but CAN trigger suspend with post-payout rollback</a>
 <a class="toc-link level-3" href="#15-13-duplicate-finalization-callback">15.13 Duplicate Finalization Callback</a>
 <a class="toc-link level-2" href="#part-v-operations">Part V: Operations</a>
 <a class="toc-link level-2" href="#16-pool-management">16. Pool Management</a>
@@ -135,20 +135,20 @@
 <a class="toc-link level-2" href="#quick-reference-complete-bot-action-timeline">Quick Reference: Complete Bot Action Timeline</a>
 <a class="toc-link level-2" href="#part-vi-reference">Part VI: Reference</a>
 <a class="toc-link level-2" href="#19-complete-state-x-option-type-decision-matrix">19. Complete State x Option Type Decision Matrix</a>
-<a class="toc-link level-3" href="#immediate-x-none">IMMEDIATE x NONE</a>
-<a class="toc-link level-3" href="#immediate-x-accepted">IMMEDIATE x ACCEPTED</a>
-<a class="toc-link level-3" href="#immediate-x-locked">IMMEDIATE x LOCKED</a>
-<a class="toc-link level-3" href="#immediate-x-processed">IMMEDIATE x PROCESSED</a>
-<a class="toc-link level-3" href="#immediate-x-finalized">IMMEDIATE x FINALIZED</a>
-<a class="toc-link level-3" href="#immediate-x-cancelled">IMMEDIATE x CANCELLED</a>
-<a class="toc-link level-3" href="#immediate-x-suspended">IMMEDIATE x SUSPENDED</a>
-<a class="toc-link level-3" href="#instant-x-none">INSTANT x NONE</a>
-<a class="toc-link level-3" href="#instant-x-accepted">INSTANT x ACCEPTED</a>
-<a class="toc-link level-3" href="#instant-x-locked">INSTANT x LOCKED</a>
-<a class="toc-link level-3" href="#instant-x-processed">INSTANT x PROCESSED</a>
-<a class="toc-link level-3" href="#instant-x-finalized">INSTANT x FINALIZED</a>
-<a class="toc-link level-3" href="#instant-x-cancelled">INSTANT x CANCELLED</a>
-<a class="toc-link level-3" href="#instant-x-suspended">INSTANT x SUSPENDED</a>
+<a class="toc-link level-3" href="#same-tx-x-none">SAME_TX x NONE</a>
+<a class="toc-link level-3" href="#same-tx-x-accepted">SAME_TX x ACCEPTED</a>
+<a class="toc-link level-3" href="#same-tx-x-locked">SAME_TX x LOCKED</a>
+<a class="toc-link level-3" href="#same-tx-x-processed">SAME_TX x PROCESSED</a>
+<a class="toc-link level-3" href="#same-tx-x-finalized">SAME_TX x FINALIZED</a>
+<a class="toc-link level-3" href="#same-tx-x-cancelled">SAME_TX x CANCELLED</a>
+<a class="toc-link level-3" href="#same-tx-x-suspended">SAME_TX x SUSPENDED</a>
+<a class="toc-link level-3" href="#windowed-x-none">WINDOWED x NONE</a>
+<a class="toc-link level-3" href="#windowed-x-accepted">WINDOWED x ACCEPTED</a>
+<a class="toc-link level-3" href="#windowed-x-locked">WINDOWED x LOCKED</a>
+<a class="toc-link level-3" href="#windowed-x-processed">WINDOWED x PROCESSED</a>
+<a class="toc-link level-3" href="#windowed-x-finalized">WINDOWED x FINALIZED</a>
+<a class="toc-link level-3" href="#windowed-x-cancelled">WINDOWED x CANCELLED</a>
+<a class="toc-link level-3" href="#windowed-x-suspended">WINDOWED x SUSPENDED</a>
 <a class="toc-link level-3" href="#standard-x-none">STANDARD x NONE</a>
 <a class="toc-link level-3" href="#standard-x-accepted">STANDARD x ACCEPTED</a>
 <a class="toc-link level-3" href="#standard-x-locked">STANDARD x LOCKED</a>
@@ -204,14 +204,14 @@
 </thead>
 <tbody>
 <tr>
-<td>IMMEDIATE</td>
+<td>SAME_TX</td>
 <td>0</td>
 <td>Same-transaction transfer. Fastest possible.</td>
 <td>Yes (same-tx)</td>
 <td>No</td>
 </tr>
 <tr>
-<td>INSTANT</td>
+<td>WINDOWED</td>
 <td>1</td>
 <td>~20 seconds. Capital fronted from pools.</td>
 <td>Yes (pools locked)</td>
@@ -246,7 +246,7 @@
 <tr>
 <td><code>ACCEPTED</code></td>
 <td>1</td>
-<td>Withdrawal accepted, funds locked (INSTANT/IMMEDIATE). Awaiting processing</td>
+<td>Withdrawal accepted, funds locked (WINDOWED/SAME_TX). Awaiting processing</td>
 </tr>
 <tr>
 <td><code>LOCKED</code></td>
@@ -261,7 +261,7 @@
 <tr>
 <td><code>FINALIZED</code></td>
 <td>4</td>
-<td>Terminal for INSTANT/IMMEDIATE; for STANDARD, tokens arrived and await processing</td>
+<td>Terminal for WINDOWED/SAME_TX; for STANDARD, tokens arrived and await processing</td>
 </tr>
 <tr>
 <td><code>CANCELLED</code></td>
@@ -276,7 +276,7 @@
 </tbody>
 </table></div>
 <h3 id="state-transition-diagrams">State Transition Diagrams</h3>
-<h4 id="immediate-state-machine">IMMEDIATE State Machine</h4>
+<h4 id="same-tx-state-machine">SAME_TX State Machine</h4>
 <pre><code class="language-mermaid">stateDiagram-v2
     [*] --&gt; NONE
     NONE --&gt; PROCESSED : onWithdrawRequest\n(same-tx transfer)
@@ -289,7 +289,7 @@
         No processWithdraw needed.
     end note
 </code></pre>
-<h4 id="instant-state-machine">INSTANT State Machine</h4>
+<h4 id="windowed-state-machine">WINDOWED State Machine</h4>
 <pre><code class="language-mermaid">stateDiagram-v2
     [*] --&gt; NONE
     NONE --&gt; ACCEPTED : onWithdrawRequest
@@ -344,13 +344,13 @@
 <tr>
 <td>NONE</td>
 <td>ACCEPTED</td>
-<td><code>onWithdrawRequest</code> (INSTANT/STANDARD)</td>
+<td><code>onWithdrawRequest</code> (WINDOWED/STANDARD)</td>
 <td>SYMMIO callback</td>
 </tr>
 <tr>
 <td>NONE</td>
 <td>PROCESSED</td>
-<td><code>onWithdrawRequest</code> (IMMEDIATE, same-tx transfer)</td>
+<td><code>onWithdrawRequest</code> (SAME_TX, same-tx transfer)</td>
 <td>SYMMIO callback</td>
 </tr>
 <tr>
@@ -422,8 +422,8 @@
 </tbody>
 </table></div>
 <p>Note: <code>onWithdrawSuspend</code> handles all cancellation paths from non-terminal states. Suspend can happen at any point (<code>ACCEPTED</code>, <code>LOCKED</code>, or <code>PROCESSED</code>) and triggers a rollback (covering credit loss, returning funds to pools) when called from <code>PROCESSED</code>. The contract callback list is exactly: <code>onWithdrawRequest</code>, <code>onWithdrawComplete</code>, <code>onWithdrawCancelRequest</code>, <code>onWithdrawSuspend</code>.</p>
-<h3 id="numeric-example-state-transitions-for-a-500-usdc-instant-withdrawal">Numeric Example: State Transitions for a 500 USDC INSTANT Withdrawal</h3>
-<pre><code>Scenario: Single-part INSTANT withdrawal, no credit, no sponsor
+<h3 id="numeric-example-state-transitions-for-a-500-usdc-windowed-withdrawal">Numeric Example: State Transitions for a 500 USDC WINDOWED Withdrawal</h3>
+<pre><code>Scenario: Single-part WINDOWED withdrawal, no credit, no sponsor
 
 Setup:
   generalBalance          = 10,000 USDC   lockedGeneralBalance          = 0
@@ -456,10 +456,10 @@ Step 1 — Bot sees: user requests a 500 USDC express withdrawal quote
     - generalBalance - lockedGeneralBalance &gt;= generalAmount?   10,000 &gt;= 300?   YES
     - affiliateBalances[aff] - lockedAffiliateBalances[aff] &gt;= affiliateAmount?   5,000 &gt;= 200?   YES
     - fee + operatorFee &lt;= feeBasis?   3.5e6 &lt;= 500e6?   YES
-  Decision: Offer INSTANT (optionType=1). Sign EIP-712 option with nonce=7, deadline=now+60s.
+  Decision: Offer WINDOWED (optionType=1). Sign EIP-712 option with nonce=7, deadline=now+60s.
 
     What if generalBalance were only 200 USDC?
-      300 &gt; 200 — bot cannot offer INSTANT. Must fall back to STANDARD.
+      300 &gt; 200 — bot cannot offer WINDOWED. Must fall back to STANDARD.
 
     What if feeRate were 10000 (100%) and operatorFee were 1e6?
       fee = 500e6, fee + operatorFee = 501e6 &gt; 500e6 — reverts FeesExceedExpressAmount.
@@ -501,7 +501,7 @@ Step 3 — Bot sees: securityWindow has elapsed (T0 + 20s)
       Bot (LOCKER_ROLE) calls lockWithdraw(user, reqId), setting status = LOCKED.
       processWithdraw then reverts NotAccepted.
       Resolution requires either:
-        (a) UNLOCK_ROLE calls unlockAndProcess — immediately processes the withdrawal, or
+        (a) UNLOCK_ROLE calls unlockAndProcess -- processes the withdrawal, or
         (b) Bot waits until cooldownEndTime (T0+12h), at which point processWithdraw
             becomes callable even for LOCKED requests (risk window is over).
 
@@ -563,13 +563,13 @@ by option type, status, and caller role. This table is the definitive reference.
 </thead>
 <tbody>
 <tr>
-<td>INSTANT</td>
+<td>WINDOWED</td>
 <td>ACCEPTED</td>
 <td><code>acceptedAt + securityWindow</code></td>
 <td><code>acceptedAt + securityWindow + tolerancePeriod</code></td>
 </tr>
 <tr>
-<td>INSTANT</td>
+<td>WINDOWED</td>
 <td>LOCKED</td>
 <td><code>cooldownEndTime</code> (only if <code>block.timestamp &gt;= cooldownEndTime</code>)</td>
 <td><code>cooldownEndTime + tolerancePeriod</code></td>
@@ -587,7 +587,7 @@ by option type, status, and caller role. This table is the definitive reference.
 <td><code>cooldownEndTime + tolerancePeriod</code></td>
 </tr>
 <tr>
-<td>IMMEDIATE</td>
+<td>SAME_TX</td>
 <td>N/A</td>
 <td>N/A (processed atomically inside <code>onWithdrawRequest</code>)</td>
 <td>N/A</td>
@@ -604,9 +604,9 @@ by option type, status, and caller role. This table is the definitive reference.
   anyone can process after an additional <code>tolerancePeriod</code> delay.</li>
 </ul>
 <h3 id="3-2-security-window-tolerance-period">3.2 Security Window &amp; Tolerance Period</h3>
-<p>The security window is the mandatory delay after acceptance before the operator can process an INSTANT withdrawal. The tolerance period is the additional delay after which anyone (not just the operator) can process permissionlessly.</p>
+<p>The security window is the mandatory delay after acceptance before the operator can process a WINDOWED withdrawal. The tolerance period is the additional delay after which anyone (not just the operator) can process permissionlessly.</p>
 <pre><code class="language-mermaid">gantt
-    title Processing Windows (INSTANT example)
+    title Processing Windows (WINDOWED example)
     dateFormat X
     axisFormat %s
 
@@ -625,12 +625,12 @@ by option type, status, and caller role. This table is the definitive reference.
     dateFormat X
     axisFormat %Hh
 
-    section IMMEDIATE
+    section SAME_TX
     Accept+Transfer (same tx) :done, 0, 1
     SYMMIO Cooldown (12h)     :active, 0, 43200
     Finalization              :milestone, 43200, 43200
 
-    section INSTANT
+    section WINDOWED
     Accept                    :done, 0, 1
     Security Window (20s)     :crit, 0, 20
     Process                   :milestone, 20, 20
@@ -658,7 +658,7 @@ by option type, status, and caller role. This table is the definitive reference.
 <td><code>securityWindow</code></td>
 <td>20s</td>
 <td>SETTER_ROLE</td>
-<td>Min delay before operator <code>processWithdraw</code> for INSTANT</td>
+<td>Min delay before operator <code>processWithdraw</code> for WINDOWED</td>
 </tr>
 <tr>
 <td><code>tolerancePeriod</code></td>
@@ -721,7 +721,7 @@ by option type, status, and caller role. This table is the definitive reference.
 </tr>
 <tr>
 <td>Cooldown already elapsed (<code>deallocateTimestamp + 12h &lt; now</code>)</td>
-<td><code>cooldownEndTime = block.timestamp</code>, finalization possible immediately</td>
+<td><code>cooldownEndTime = block.timestamp</code>, finalization possible right away</td>
 </tr>
 <tr>
 <td>LOCKED after cooldown</td>
@@ -737,7 +737,7 @@ Shared parameters:
   tolerancePeriod  = 60
 
 ────────────────────────────────────────────────────────────
-Withdrawal A (INSTANT, ACCEPTED):
+Withdrawal A (WINDOWED, ACCEPTED):
   acceptedAt = 1700000000
 
   Bot (OPERATOR_ROLE):
@@ -760,7 +760,7 @@ Withdrawal B (STANDARD, FINALIZED):
     processableAt = finalizedAt
                   = 1700043200
     SYMMIO's 12h cooldown already served as the security window.
-    Call processWithdraw immediately after finalization.
+    Call processWithdraw right after finalization.
 
   Anyone (no OPERATOR_ROLE):
     processableAt = finalizedAt + tolerancePeriod
@@ -768,7 +768,7 @@ Withdrawal B (STANDARD, FINALIZED):
                   = 1700043260
 
 ────────────────────────────────────────────────────────────
-Withdrawal C (INSTANT, LOCKED — cooldown expired):
+Withdrawal C (WINDOWED, LOCKED — cooldown expired):
   acceptedAt      = 1700000000
   cooldownEndTime = 1700043200 (12h later)
   block.timestamp = 1700050000 (well past cooldown)
@@ -807,8 +807,8 @@ Withdrawal D (STANDARD, LOCKED — cooldown expired, not yet finalized):
     Same auto-finalize behavior applies.
 
 ────────────────────────────────────────────────────────────
-Withdrawal E (IMMEDIATE):
-  Not applicable. IMMEDIATE withdrawals are processed atomically inside
+Withdrawal E (SAME_TX):
+  Not applicable. SAME_TX withdrawals are processed atomically inside
   onWithdrawRequest. The status goes directly to PROCESSED. There is no
   processWithdraw call and no processableAt computation.
 </code></pre>
@@ -832,7 +832,7 @@ Step 1 — Bot sees: WithdrawAccepted event for Alice, 500 USDC STANDARD, req#42
     withdrawInfos[Alice][42].cooldownEndTime = 1_700_000_000
   Bot checks: cooldownEndTime &lt;= block.timestamp?
     1_700_000_000 &lt;= 1_700_000_000 --&gt; yes, cooldown already expired
-  Decision: call finalizeWithdrawRequest(Alice, 42) immediately
+  Decision: call finalizeWithdrawRequest(Alice, 42) right away
     (no need to schedule a 12-hour timer)
 
 Step 2 — Bot sees: WithdrawFinalized event for (Alice, req#42)
@@ -844,11 +844,11 @@ Step 2 — Bot sees: WithdrawFinalized event for (Alice, req#42)
   Decision: call processWithdraw(Alice, 42, parts) in the next block
     Total user wait: ~2 blocks (a few seconds)
 
-What-if: same withdrawal as INSTANT instead of STANDARD?
+What-if: same withdrawal as WINDOWED instead of STANDARD?
   Bot checks: processableAt = acceptedAt + securityWindow
     = 1_700_000_000 + 20 = 1_700_000_020
   Decision: wait 20s for the risk-check window, then call processWithdraw
-  But finalization can happen almost immediately after processing
+  But finalization can happen almost right away after processing
   Pool replenishment: ~20s instead of the usual ~12h
 </code></pre>
 <hr>
@@ -867,10 +867,10 @@ What-if: same withdrawal as INSTANT instead of STANDARD?
 
     C --&gt; D{minValidatorSignatures&amp;#40;affiliate&amp;#41; &gt; 0\nAND sufficient liquidity?}
     D --&gt;|Yes| D1[Gather validator sigs]
-    D1 --&gt; D2[Offer IMMEDIATE]
+    D1 --&gt; D2[Offer SAME_TX]
 
     C --&gt; E{Unlocked liquidity\n&gt;= amount?}
-    E --&gt;|Yes| E1[Offer INSTANT]
+    E --&gt;|Yes| E1[Offer WINDOWED]
 
     C --&gt; G[Always offer STANDARD]
 
@@ -880,8 +880,8 @@ What-if: same withdrawal as INSTANT instead of STANDARD?
 </code></pre>
 <pre><code class="language-mermaid">flowchart LR
     subgraph &quot;For each user withdrawal request&quot;
-        A{Validators enabled\n&amp; liquidity OK?} --&gt;|Yes| IM[IMMEDIATE]
-        B{Unlocked liquidity\n&gt;= amount?} --&gt;|Yes| IN[INSTANT]
+        A{Validators enabled\n&amp; liquidity OK?} --&gt;|Yes| IM[SAME_TX]
+        B{Unlocked liquidity\n&gt;= amount?} --&gt;|Yes| IN[WINDOWED]
         D[Always] --&gt; ST[STANDARD]
     end
 </code></pre>
@@ -896,7 +896,7 @@ What-if: same withdrawal as INSTANT instead of STANDARD?
 <li>[ ] Check available general pool: <code>generalBalance - lockedGeneralBalance &gt;= generalAmount</code></li>
 <li>[ ] Check available affiliate pool: <code>affiliateBalances[affiliate] - lockedAffiliateBalances[affiliate] &gt;= affiliateAmount</code></li>
 <li>[ ] Check credit line capacity: <code>expressProvider.creditLineTotalDebt(affiliate) + expressProvider.creditLineBadDebt(affiliate)</code> if using credit</li>
-<li>[ ] For IMMEDIATE: verify <code>minValidatorSignatures(affiliate) &gt; 0</code> (falls back to <code>address(0)</code> default)</li>
+<li>[ ] For SAME_TX: verify <code>minValidatorSignatures(affiliate) &gt; 0</code> (falls back to <code>address(0)</code> default)</li>
 <li>[ ] If validators required: gather &gt;= <code>minValidatorSignatures(affiliate)</code> attestations from validators registered for this affiliate (or <code>address(0)</code> default)</li>
 <li>[ ] Construct <code>WithdrawReceiverPart[]</code> array</li>
 <li>[ ] Compute <code>partsHash = keccak256(abi.encode(parts))</code></li>
@@ -1109,8 +1109,8 @@ Step 4 -- What happens on-chain at acceptance (for reference)
     User deposited 1,500, got back 1,500 - 7 = 1,493.
     Credit line: 100 USDC active debt, settled on finalization.
 </code></pre>
-<h4 id="numeric-example-bot-action-timeline-for-a-500-usdc-instant">Numeric Example: Bot Action Timeline for a 500 USDC INSTANT</h4>
-<pre><code>Scenario: User requests 500 USDC INSTANT withdrawal; bot shepherds it through
+<h4 id="numeric-example-bot-action-timeline-for-a-500-usdc-windowed">Numeric Example: Bot Action Timeline for a 500 USDC WINDOWED</h4>
+<pre><code>Scenario: User requests 500 USDC WINDOWED withdrawal; bot shepherds it through
           sign -&gt; accept -&gt; risk-check -&gt; process -&gt; finalize.
 
 Setup:
@@ -1144,13 +1144,13 @@ Step 1 -- Bot sees: User requests withdrawal options for 500 USDC
     affiliateAmount = 200e6 (bot chooses to draw 200 from affiliate pool)
     generalAmount = 500 - 200 = 300e6
 
-  Bot checks: &quot;Can I offer INSTANT?&quot;
+  Bot checks: &quot;Can I offer WINDOWED?&quot;
     Unlocked general (8,000e6) &gt;= generalAmount (300e6)?  YES
     Unlocked affiliate (3,000e6) &gt;= affiliateAmount (200e6)?  YES
-    INSTANT is feasible.
+    WINDOWED is feasible.
 
-  Bot checks: &quot;Can I offer IMMEDIATE?&quot;
-    minValidatorSignatures(0xAff) = 0 -- NO (validators required for IMMEDIATE)
+  Bot checks: &quot;Can I offer SAME_TX?&quot;
+    minValidatorSignatures(0xAff) = 0 -- NO (validators required for SAME_TX)
 
   Bot computes fee:
     feeBasis = expressAmount = 500e6
@@ -1163,19 +1163,19 @@ Step 1 -- Bot sees: User requests withdrawal options for 500 USDC
   Bot computes partsHash = keccak256(abi.encode(parts))
 
   Bot signs EIP-712 WithdrawOption:
-    { user: 0xUser, nonce: 3, optionType: 1 (INSTANT), availableAt: 0,
+    { user: 0xUser, nonce: 3, optionType: 1 (WINDOWED), availableAt: 0,
       affiliate: 0xAff, affiliateAmount: 200e6, fee: 2.5e6, operatorFee: 1e6,
       maxUserFee: 3.5e6, partsHash: &lt;hash&gt;, deadline: now+3600 }
 
-  Decision: Return signed INSTANT option to user.
+  Decision: Return signed WINDOWED option to user.
 
   What if unlocked general were only 100e6?
-    generalAmount (300e6) &gt; 100e6 -- INSTANT not feasible.
+    generalAmount (300e6) &gt; 100e6 -- WINDOWED not feasible.
     Bot must fall back to STANDARD.
 
 ----------------------------------------------------------------------
 
-Step 2 -- Bot sees: WithdrawAccepted(0xUser, 7, INSTANT)
+Step 2 -- Bot sees: WithdrawAccepted(0xUser, 7, WINDOWED)
   (T=5s, on-chain event from ExpressProvider)
 
   Bot reads on-chain:
@@ -1189,7 +1189,7 @@ Step 2 -- Bot sees: WithdrawAccepted(0xUser, 7, INSTANT)
     Earliest = acceptedAt + securityWindow = T+5s + 20s = T+25s
 
   Decision: Schedule processWithdraw(0xUser, 7, parts) for T=25s.
-            Start risk check immediately (20s security window).
+            Start risk check at acceptance (20s security window).
 
   What if bot detects suspicious activity during risk check?
     Bot calls lockWithdraw(0xUser, 7) using LOCKER_ROLE.
@@ -1271,7 +1271,7 @@ Step 4 -- Bot sees: cooldownEndTime reached
 </code></pre>
 <hr>
 <h2 id="5-withdrawal-flows">5. Withdrawal Flows</h2>
-<h3 id="5-1-immediate-optiontype-0">5.1 IMMEDIATE (optionType = 0)</h3>
+<h3 id="5-1-same-tx-optiontype-0">5.1 SAME_TX (optionType = 0)</h3>
 <p><strong>User experience:</strong> Same-transaction transfer. Fastest possible.</p>
 <pre><code class="language-mermaid">sequenceDiagram
     participant U as User
@@ -1303,7 +1303,7 @@ Step 4 -- Bot sees: cooldownEndTime reached
 </code></pre>
 <p><strong>Prerequisites:</strong></p>
 <ul>
-<li>[ ] <code>minValidatorSignatures(affiliate) &gt; 0</code> (REQUIRED, reverts <code>ValidatorsRequiredForImmediate</code> otherwise; falls back to <code>minValidatorSignatures(address(0))</code> default)</li>
+<li>[ ] <code>minValidatorSignatures(affiliate) &gt; 0</code> (REQUIRED, reverts <code>ValidatorsRequiredForSameTx</code> otherwise; falls back to <code>minValidatorSignatures(address(0))</code> default)</li>
 <li>[ ] Sufficient general pool liquidity</li>
 <li>[ ] Sufficient affiliate pool liquidity (if affiliateAmount &gt; 0)</li>
 <li>[ ] Sufficient credit line capacity (if creditAmount &gt; 0)</li>
@@ -1311,7 +1311,7 @@ Step 4 -- Bot sees: cooldownEndTime reached
 </ul>
 <p><strong>Bot checklist:</strong></p>
 <ul>
-<li>[ ] Gather &gt;= <code>minValidatorSignatures(affiliate)</code> validator sigs before offering IMMEDIATE (from validators registered for this affiliate or <code>address(0)</code> default)</li>
+<li>[ ] Gather &gt;= <code>minValidatorSignatures(affiliate)</code> validator sigs before offering SAME_TX (from validators registered for this affiliate or <code>address(0)</code> default)</li>
 <li>[ ] Validator sigs must be address-sorted ascending (dedup check)</li>
 <li>[ ] Each validator timestamp must be within <code>validatorApprovalTimeout(affiliate)</code> of current time</li>
 <li>[ ] Verify <code>symmioNonce</code> matches user's current SYMMIO nonce</li>
@@ -1320,8 +1320,8 @@ Step 4 -- Bot sees: cooldownEndTime reached
 <li>[ ] Cannot be cancelled once accepted (funds already transferred)</li>
 <li>[ ] Cannot be locked (already PROCESSED)</li>
 </ul>
-<h4 id="numeric-example-immediate-1-000-usdc">Numeric Example: IMMEDIATE 1,000 USDC</h4>
-<pre><code>Scenario: Credit-backed IMMEDIATE withdrawal with express + credit line, no sponsor
+<h4 id="numeric-example-same-tx-1-000-usdc">Numeric Example: SAME_TX 1,000 USDC</h4>
+<pre><code>Scenario: Credit-backed SAME_TX withdrawal with express + credit line, no sponsor
 
 Setup:
   generalBalance          = 10,000 USDC   lockedGeneralBalance          = 0
@@ -1334,15 +1334,15 @@ Setup:
 
 Step 1 — Bot sees: user requests an express withdrawal for 1,000 USDC
   Bot reads on-chain:
-    - minValidatorSignatures(aff)                            = 2 (must be &gt; 0 for IMMEDIATE; reverts
-      ValidatorsRequiredForImmediate otherwise)
+    - minValidatorSignatures(aff)                            = 2 (must be &gt; 0 for SAME_TX; reverts
+      ValidatorsRequiredForSameTx otherwise)
     - generalBalance - lockedGeneralBalance                 = 10,000 - 0 = 10,000 USDC available
     - affiliateBalances[aff] - lockedAffiliateBalances[aff] = 5,000 - 0  = 5,000 USDC available
     - creditLine availableCredit                              = 3,000 USDC available
     - nonces[user]                                          = 3
     - affiliateConfigs[aff].feeRate                         = 100 bps (1%)
     - affiliateConfigs[aff].operatorFee                     = 2e6 (2 USDC)
-  Bot decides: This user qualifies for IMMEDIATE. Validators are configured, and pools
+  Bot decides: This user qualifies for SAME_TX. Validators are configured, and pools
   plus credit line have sufficient liquidity.
   Bot constructs parts:
     Part 1: { amount: 1000e6, expressProvider: EP, virtualProvider: 0x0, receiver: 0xUser }
@@ -1362,16 +1362,16 @@ Step 1 — Bot sees: user requests an express withdrawal for 1,000 USDC
     - affiliateBalances[aff] - lockedAffiliateBalances[aff] &gt;= affiliateAmount?   5,000 &gt;= 300?   YES
     - creditLine availableCredit &gt;= creditAmount?   3,000 &gt;= 200?   YES
     - fee + operatorFee &lt;= feeBasis?   12e6 &lt;= 1,000e6?   YES
-  Decision: Offer IMMEDIATE (optionType=0). Proceed to gather validator attestations.
+  Decision: Offer SAME_TX (optionType=0). Proceed to gather validator attestations.
 
     What if creditLine availableCredit were only 150 USDC?
       200 &gt; 150 — LibCreditLine would revert InsufficientCredit during reserveDebt.
       Bot must reduce creditAmount to 150 (and increase generalAmount to 550),
-      or fall back to INSTANT without credit.
+      or fall back to WINDOWED without credit.
 
     What if minValidatorSignatures(aff) were 0?
-      Contract reverts ValidatorsRequiredForImmediate. Bot cannot offer IMMEDIATE.
-      Must fall back to INSTANT (optionType=1), which adds a securityWindow delay.
+      Contract reverts ValidatorsRequiredForSameTx. Bot cannot offer SAME_TX.
+      Must fall back to WINDOWED (optionType=1), which adds a securityWindow delay.
 
 Step 2 — Bot sees: validator attestations gathered
   Bot reads on-chain:
@@ -1410,7 +1410,7 @@ Step 3 — Bot sees: user submits withdrawal (SYMMIO calls onWithdrawRequest —
      - Each timestamp within 30s?   YES
      - Addresses sorted ascending?   YES
      - nonceOfPartyA(user) == symmioNonce?   42 == 42?   YES (reverts InvalidNonce otherwise)
-  d. Lock general + affiliate pools (_lockFunds, IMMEDIATE path):
+  d. Lock general + affiliate pools (_lockFunds, SAME_TX path):
      - lockedGeneralBalance:          0 + 500 = 500
      - lockedAffiliateBalances[aff]:  0 + 300 = 300
   e. Reserve and activate credit line debt:
@@ -1422,7 +1422,7 @@ Step 3 — Bot sees: user submits withdrawal (SYMMIO calls onWithdrawRequest —
      - SYMMIO.advanceWithdraw(user, reqId, 200e6)
   g. Lock fee (sponsor coverage = 0, so userFee = totalFee = 12 USDC)
   h. acceptWithdrawRequest on SYMMIO
-  i. IMMEDIATE path — _collectAndTransfer runs IN THE SAME TX:
+  i. SAME_TX path — _collectAndTransfer runs IN THE SAME TX:
      userFee = totalFee - sponsorCoverage = 12 - 0 = 12 USDC
      Fee deduction from the single part (feeRemaining = 12e6):
        Part 1 (1000 express):
@@ -1441,10 +1441,10 @@ Step 3 — Bot sees: user submits withdrawal (SYMMIO calls onWithdrawRequest —
 
   Result: User receives 988 USDC in the same transaction as initiateWithdraw.
 
-    What if the bot had offered INSTANT (optionType=1) instead?
+    What if the bot had offered WINDOWED (optionType=1) instead?
       Step (i) would NOT execute. Status would be ACCEPTED, not PROCESSED.
       The user would wait securityWindow (20s) before the bot calls processWithdraw.
-      IMMEDIATE skips that wait by requiring validators upfront as a substitute for
+      SAME_TX skips that wait by requiring validators upfront as a substitute for
       the post-acceptance risk window.
 
 Step 4 — Bot sees: cooldownEndTime reached (T0 + 12h)
@@ -1474,7 +1474,7 @@ Step 4 — Bot sees: cooldownEndTime reached (T0 + 12h)
       finalization for this request. Bot should schedule this call reliably.
 
 Result:
-  User received 988 USDC instantly (same transaction, zero wait).
+  User received 988 USDC in the same transaction (same transaction, zero wait).
   Pools are fully restored to pre-withdrawal levels after 12h.
   Credit line debt is fully settled after 12h (no outstanding debt remains).
   Bot earned 12 USDC total (10 affiliate fee + 2 operator fee).
@@ -1482,7 +1482,7 @@ Result:
     + 200 USDC credit line debt (settled on finalization).
 </code></pre>
 <hr>
-<h3 id="5-2-instant-optiontype-1">5.2 INSTANT (optionType = 1)</h3>
+<h3 id="5-2-windowed-optiontype-1">5.2 WINDOWED (optionType = 1)</h3>
 <p><strong>User experience:</strong> ~20 seconds. Capital fronted from pools.</p>
 <pre><code class="language-mermaid">sequenceDiagram
     participant U as User
@@ -1522,7 +1522,7 @@ Result:
 <li>[ ] Monitor for user-initiated cancel (status goes CANCELLED, cancel scheduled processing)</li>
 <li>[ ] Cancellable while ACCEPTED (before processing)</li>
 </ul>
-<h4 id="numeric-example-instant-500-usdc">Numeric Example: INSTANT 500 USDC</h4>
+<h4 id="numeric-example-windowed-500-usdc">Numeric Example: WINDOWED 500 USDC</h4>
 <pre><code>Scenario: User requests 500 USDC express withdrawal; bot fronts capital from pools
           with sponsor-covered fees, then processes after the security window.
 
@@ -1546,10 +1546,10 @@ Step 1 — Bot sees: User requests a 500 USDC withdrawal through this affiliate.
   Bot decides pool split:
     - affiliateAmount = 200   (bot chooses how much to draw from affiliate pool)
     - generalAmount   = 500 - 200 = 300
-  Bot checks: Can INSTANT work?
+  Bot checks: Ca WINDOWED work?
     - unlocked general (10,000) &gt;= generalAmount (300)?  YES
     - unlocked affiliate (5,000) &gt;= affiliateAmount (200)?  YES
-    --&gt; Both pools have enough. INSTANT is feasible.
+    --&gt; Both pools have enough. WINDOWED is feasible.
   Bot computes fees (must match on-chain affiliateConfigs exactly):
     - feeBasis    = expressAmount = 500
     - fee         = 500 * 50 / 10,000 = 2.50 USDC
@@ -1560,17 +1560,17 @@ Step 1 — Bot sees: User requests a 500 USDC withdrawal through this affiliate.
     - maxWithdrawAmount = 0 (no cap)      --&gt; feeBearingAmount 500 is allowed
     - sponsorCoverage = min(sponsorBal=100, maxCoverage=3.50) = 3.50
     - actualUserFee = 3.50 - 3.50 = 0    --&gt; user pays nothing
-  Decision: Sign INSTANT option (optionType=1), nonce=5, maxUserFee=0.
+  Decision: Sign WINDOWED option (optionType=1), nonce=5, maxUserFee=0.
 
   What if unlocked general was only 200 instead of 10,000?
     200 &lt; generalAmount (300) --&gt; _lockFunds would revert InsufficientGeneralBalance.
-    Bot cannot offer INSTANT. Must fall back to STANDARD.
+    Bot cannot offer WINDOWED. Must fall back to STANDARD.
 
 Step 2 — Bot sees: WithdrawAccepted event (SYMMIO called onWithdrawRequest).
   What happened on-chain during acceptance:
     Contract verified the bot's EIP-712 signature and nonce.
     Contract verified fee == feeBasis * feeRate / 10000 and operatorFee == affiliateConfigs.operatorFee.
-    _lockFunds (INSTANT path):
+    _lockFunds (WINDOWED path):
       - lockedGeneralBalance:          0 --&gt; 300   (300 locked from general pool)
       - lockedAffiliateBalances:       0 --&gt; 200   (200 locked from affiliate pool)
     _lockFee (sponsor coverage):
@@ -1643,7 +1643,7 @@ Step 5 — Bot sees: block.timestamp &gt;= cooldownEndTime (~T0 + 12h).
 
   BRANCH — What if user had cancelled at T0+10s (before processing)?
     SYMMIO calls onWithdrawCancelRequest.
-    Contract checks: INSTANT --&gt; cancellable.
+    Contract checks: WINDOWED --&gt; cancellable.
     Contract checks: status == ACCEPTED? YES --&gt; allowed.
     _releaseWithdraw:
       - lockedGeneralBalance:    300 --&gt; 0
@@ -1684,7 +1684,7 @@ Step 5 — Bot sees: block.timestamp &gt;= cooldownEndTime (~T0 + 12h).
 <p><strong>Bot checklist:</strong></p>
 <ul>
 <li>[ ] Do NOT call <code>processWithdraw</code> before finalization (reverts <code>NotFinalized</code>)</li>
-<li>[ ] Operator can process immediately after finalization</li>
+<li>[ ] Operator can process right after finalization</li>
 <li>[ ] Anyone can process after finalization + <code>tolerancePeriod</code></li>
 <li>[ ] Schedule <code>finalizeWithdrawRequest</code> on SYMMIO at <code>cooldownEndTime</code></li>
 <li>[ ] After <code>onWithdrawComplete</code>, call <code>processWithdraw</code></li>
@@ -1707,8 +1707,8 @@ Step 1 — Bot sees: User requests withdrawal of 1,000 USDC
     - generalBalance - lockedGeneralBalance = 10,000 - 8,000 = 2,000 (unlocked general)
     - affiliateBalances - lockedAffiliateBalances = 5,000 - 4,600 = 400 (unlocked affiliate)
     - affiliateConfigs[affiliate] = { feeRate: 50, operatorFee: 0 }
-  Bot checks: Can I offer INSTANT?
-    INSTANT requires locking generalAmount from the general pool immediately.
+  Bot checks: Can I offer WINDOWED?
+    WINDOWED requires locking generalAmount from the general pool at acceptance.
     expressAmount = 1,000, affiliateAmount = 400, generalAmount = 1,000 - 400 = 600.
     Unlocked general = 2,000 &gt;= 600. FEASIBLE, but bot prefers STANDARD for this user.
   Decision: Offer STANDARD. No capital fronting, no pool locks.
@@ -1766,7 +1766,7 @@ Step 5 — Bot sees: WithdrawFinalized event
     - optionType = STANDARD → processableAt = finalizedAt
   Bot checks: Am I OPERATOR_ROLE? YES → processableAt = finalizedAt (no tolerancePeriod).
     block.timestamp &gt;= processableAt? YES.
-  Decision: Call processWithdraw(user, reqId, parts) immediately.
+  Decision: Call processWithdraw(user, reqId, parts) right away.
 
     What if I'm NOT OPERATOR_ROLE?
       processableAt = finalizedAt + tolerancePeriod = T+12h + 60s.
@@ -1798,14 +1798,14 @@ Final accounting:
 </code></pre>
 <hr>
 <h3 id="5-4-credit-backed-withdrawal">5.4 Credit-Backed Withdrawal</h3>
-<p>For IMMEDIATE and INSTANT options, the bot can include a <code>creditAmount</code> in the signed option to draw from the affiliate's credit line (configured on <code>ControlFacet</code> and processed by <code>LibCreditLine</code> within the ExpressProvider diamond). This supplements pool liquidity:</p>
+<p>For SAME_TX and WINDOWED options, the bot can include a <code>creditAmount</code> in the signed option to draw from the affiliate's credit line (configured on <code>ControlFacet</code> and processed by <code>LibCreditLine</code> within the ExpressProvider diamond). This supplements pool liquidity:</p>
 <ul>
 <li><code>generalAmount = expressAmount - affiliateAmount - creditAmount</code></li>
 <li>Credit requires a valid Muon oracle attestation (<code>CreditData</code>)</li>
 <li>Credit is NOT supported for STANDARD (<code>CreditNotSupportedForStandard</code> error)</li>
 <li>Credit debt follows the lifecycle: reserved → activated → settled (see Section 10)</li>
 </ul>
-<p>When pool liquidity alone is insufficient for INSTANT but the affiliate has eligible credit capacity, the bot can offer a credit-backed option:</p>
+<p>When pool liquidity alone is insufficient for WINDOWED but the affiliate has eligible credit capacity, the bot can offer a credit-backed option:</p>
 <pre><code>Example: 500 USDC withdrawal
   - affiliateAmount = 100 (from affiliate pool)
   - creditAmount = 200 (from credit line)
@@ -1832,12 +1832,12 @@ Final accounting:
 </thead>
 <tbody>
 <tr>
-<td>IMMEDIATE</td>
+<td>SAME_TX</td>
 <td>N/A (already processed)</td>
 <td><code>cooldownEndTime</code></td>
 </tr>
 <tr>
-<td>INSTANT</td>
+<td>WINDOWED</td>
 <td><code>acceptedAt + securityWindow</code></td>
 <td><code>cooldownEndTime</code></td>
 </tr>
@@ -1851,13 +1851,13 @@ Final accounting:
 <h3 id="6-2-processing-processwithdraw">6.2 Processing (<code>processWithdraw</code>)</h3>
 <ul>
 <li>[ ] Verify status is correct for the option type:<ul>
-<li>INSTANT: must be ACCEPTED (or LOCKED after cooldown)</li>
+<li>WINDOWED: must be ACCEPTED (or LOCKED after cooldown)</li>
 <li>STANDARD: must be FINALIZED (or LOCKED after cooldown)</li>
 </ul>
 </li>
 <li>[ ] Provide exact <code>parts</code> array (verified against stored <code>partsHash</code>)</li>
 <li>[ ] Check timing:<ul>
-<li>INSTANT: <code>block.timestamp &gt;= acceptedAt + securityWindow</code></li>
+<li>WINDOWED: <code>block.timestamp &gt;= acceptedAt + securityWindow</code></li>
 <li>STANDARD: <code>block.timestamp &gt;= finalizedAt</code> (operator) or <code>+ tolerancePeriod</code> (anyone)</li>
 <li>LOCKED after cooldown: <code>block.timestamp &gt;= cooldownEndTime</code></li>
 </ul>
@@ -1871,13 +1871,13 @@ Final accounting:
 <li>[ ] Must wait until <code>block.timestamp &gt;= cooldownEndTime</code></li>
 <li>[ ] SYMMIO transfers express-only token amounts to ExpressProvider</li>
 <li>[ ] SYMMIO calls <code>onWithdrawComplete</code> on ExpressProvider</li>
-<li>[ ] Pools are replenished (INSTANT/IMMEDIATE) or tokens arrive (STANDARD)</li>
+<li>[ ] Pools are replenished (WINDOWED/SAME_TX) or tokens arrive (STANDARD)</li>
 <li>[ ] Verify status becomes FINALIZED (or stays LOCKED for STANDARD)</li>
 </ul>
 <h3 id="6-4-permissionless-fallback">6.4 Permissionless Fallback</h3>
 <h4 id="processing-timeline">Processing Timeline</h4>
 <pre><code class="language-mermaid">gantt
-    title Processing Windows (INSTANT example)
+    title Processing Windows (WINDOWED example)
     dateFormat X
     axisFormat %s
 
@@ -1900,7 +1900,7 @@ Final accounting:
 </thead>
 <tbody>
 <tr>
-<td>INSTANT</td>
+<td>WINDOWED</td>
 <td><code>acceptedAt + securityWindow</code></td>
 <td><code>acceptedAt + securityWindow + tolerancePeriod</code></td>
 </tr>
@@ -1928,9 +1928,9 @@ Final accounting:
 Setup:
   securityWindow = 20s, tolerancePeriod = 60s
 
---- Sub-scenario 1: INSTANT ---
+--- Sub-scenario 1: WINDOWED ---
 
-Step 1 — Bot sees: WithdrawAccepted(user, reqId, INSTANT) at T=100
+Step 1 — Bot sees: WithdrawAccepted(user, reqId, WINDOWED) at T=100
   Bot reads on-chain: acceptedAt = 100, status = ACCEPTED
   Bot checks: When can I (OPERATOR_ROLE) call processWithdraw?
     - processableAt = acceptedAt + securityWindow = 100 + 20 = 120
@@ -1956,7 +1956,7 @@ Step 1 — Bot sees: WithdrawFinalized(user, reqId) at T=43200
   Bot checks: When can I call processWithdraw?
     - processableAt = finalizedAt = 43200 for OPERATOR_ROLE
     - STANDARD has no additional securityWindow (12h cooldown was the safety window)
-  Decision: Call processWithdraw immediately — operator can process right now.
+  Decision: Call processWithdraw right after — operator can process right now.
 
 Step 2 — Bot checks: What is the permissionless deadline?
     - Anyone's processableAt = finalizedAt + tolerancePeriod = 43200 + 60 = 43260
@@ -1965,7 +1965,7 @@ Step 2 — Bot checks: What is the permissionless deadline?
   Decision: Execute processWithdraw now. If bot misses T=43260, any user can
             step in and complete the withdrawal permissionlessly.
 
---- Sub-scenario 3: LOCKED INSTANT after cooldown ---
+--- Sub-scenario 3: LOCKED WINDOWED after cooldown ---
 
 Step 1 — Bot sees: block.timestamp approaching T=43200 (cooldownEndTime)
   Bot reads on-chain: status = LOCKED, cooldownEndTime = 43200
@@ -1989,8 +1989,8 @@ Step 2 — Bot checks: When does exclusivity end?
     E[Event Received] --&gt; T{Event Type?}
 
     T --&gt;|WithdrawAccepted| A1{optionType?}
-    A1 --&gt;|IMMEDIATE| A2[No action needed\nAlready PROCESSED]
-    A1 --&gt;|INSTANT| A3[&quot;Schedule processWithdraw\nat acceptedAt + securityWindow&quot;]
+    A1 --&gt;|SAME_TX| A2[No action needed\nAlready PROCESSED]
+    A1 --&gt;|WINDOWED| A3[&quot;Schedule processWithdraw\nat acceptedAt + securityWindow&quot;]
     A1 --&gt;|STANDARD| A5[&quot;Wait for WithdrawFinalized\nthen schedule processWithdraw&quot;]
 
     T --&gt;|WithdrawProcessed| B1[&quot;Schedule finalizeWithdrawRequest\nat cooldownEndTime&quot;]
@@ -2027,7 +2027,7 @@ Step 2 — Bot checks: When does exclusivity end?
 <tr>
 <td><code>WithdrawAccepted(user, requestId, optionType)</code></td>
 <td>ExpressProvider</td>
-<td>Schedule <code>processWithdraw</code> at appropriate time (skip for IMMEDIATE)</td>
+<td>Schedule <code>processWithdraw</code> at appropriate time (skip for SAME_TX)</td>
 </tr>
 <tr>
 <td><code>WithdrawProcessed(user, requestId)</code></td>
@@ -2124,8 +2124,8 @@ Step 2 — Bot checks: When does exclusivity end?
 <li>[ ] Detect if someone else (permissionless user) already processed the withdrawal</li>
 <li>[ ] If <code>WithdrawProcessed</code> received for a withdrawal bot didn't process, cancel bot's scheduled processing</li>
 </ul>
-<h4 id="numeric-example-event-sequence-for-instant-with-lock">Numeric Example: Event Sequence for INSTANT with Lock</h4>
-<pre><code>Scenario: INSTANT withdrawal accepted, then risk-locked before processing
+<h4 id="numeric-example-event-sequence-for-windowed-with-lock">Numeric Example: Event Sequence for WINDOWED with Lock</h4>
+<pre><code>Scenario: WINDOWED withdrawal accepted, then risk-locked before processing
 
 Setup:
   generalBalance         = 5,000 USDC
@@ -2135,11 +2135,11 @@ Setup:
   cooldownEndTime        = T + 43,200s (12h)
   User: 0xAlice, requestId: 5, generalAmount: 800 USDC
 
-Step 1 — Bot sees: WithdrawAccepted(0xAlice, 5, INSTANT) at T=0s (block 100)
+Step 1 — Bot sees: WithdrawAccepted(0xAlice, 5, WINDOWED) at T=0s (block 100)
   Bot reads on-chain:
     withdrawInfos[Alice][5].status     = ACCEPTED
     withdrawInfos[Alice][5].acceptedAt = T
-    withdrawInfos[Alice][5].optionType = INSTANT
+    withdrawInfos[Alice][5].optionType = WINDOWED
   Bot checks:
     processableAt = acceptedAt + securityWindow = T + 20s
     Current time T=0s &lt; T+20s — too early to process
@@ -2448,14 +2448,14 @@ Setup:
   sponsorBalances[aff] = 10 USDC
   sponsorConfigs[aff] = { maxFeePerWithdraw: 8, maxWithdrawAmount: 0 (no cap) }
 
-Step 1 — Bot sees: Alice requests 500 USDC INSTANT, fee = 5 USDC, operatorFee = 1
+Step 1 — Bot sees: Alice requests 500 USDC WINDOWED, fee = 5 USDC, operatorFee = 1
   Bot reads: sponsorBalances[aff] = 10
   Bot computes: totalFee = 5 + 1 = 6
     sponsorCoverage = min(10, min(8, 6)) = 6
     maxUserFee = 6 - 6 = 0
   BUT WAIT — Bob's request is also pending...
 
-Step 2 — Bot sees: Bob requests 500 USDC INSTANT, fee = 5, operatorFee = 1
+Step 2 — Bot sees: Bob requests 500 USDC WINDOWED, fee = 5, operatorFee = 1
   Bot reads: sponsorBalances[aff] = 10 (hasn't changed yet — Alice's tx not mined)
   Bot naively computes: sponsorCoverage = 6, maxUserFee = 0
 
@@ -2477,7 +2477,7 @@ Correct strategy:
 Setup:
   sponsorBalances[aff] = 50 USDC
   sponsorConfigs[aff] = { maxFeePerWithdraw: 10, maxWithdrawAmount: 0 }
-  Alice requests 1000 USDC INSTANT, fee = 20 USDC, operatorFee = 5
+  Alice requests 1000 USDC WINDOWED, fee = 20 USDC, operatorFee = 5
 
 Step 1 — Bot computes expected fees:
   totalFee = 20 + 5 = 25
@@ -2509,7 +2509,7 @@ Best practice:
 Setup:
   sponsorBalances[aff] = 100 USDC
   sponsorConfigs[aff] = { maxFeePerWithdraw: 20, maxWithdrawAmount: 0 }
-  Alice requests 500 USDC INSTANT, fee = 10, operatorFee = 5
+  Alice requests 500 USDC WINDOWED, fee = 10, operatorFee = 5
 
 Step 1 — Bot reads on-chain state and signs:
   totalFee = 10 + 5 = 15
@@ -2586,8 +2586,8 @@ Correct strategy:
 <td>No</td>
 </tr>
 <tr>
-<td>IMMEDIATE option type</td>
-<td>ALWAYS required (reverts <code>ValidatorsRequiredForImmediate</code> if disabled)</td>
+<td>SAME_TX option type</td>
+<td>ALWAYS required (reverts <code>ValidatorsRequiredForSameTx</code> if disabled)</td>
 </tr>
 </tbody>
 </table></div>
@@ -2680,7 +2680,7 @@ Correct strategy:
 </tbody>
 </table></div>
 <p><strong>Per-affiliate validator config:</strong> Validator policy is not one global value. The bot must read validator status, signature threshold, and approval timeout for the withdrawal's affiliate; if that affiliate has no custom value, the contract falls back to the <code>address(0)</code> defaults. This lets one affiliate require stricter validator coverage without forcing the same rule on every integration.</p>
-<h4 id="numeric-example-validator-attestation-for-immediate">Numeric Example: Validator Attestation for IMMEDIATE</h4>
+<h4 id="numeric-example-validator-attestation-for-same-tx">Numeric Example: Validator Attestation for SAME_TX</h4>
 <pre><code>Scenario: Bot gathers validator sigs, checks timestamps, decides if enough valid sigs
 
 Setup:
@@ -2695,14 +2695,14 @@ Setup:
     nonceOfPartyA(Alice)     = 12 (SYMMIO nonce)
     totalAmount = 1,000e6 (1,000 USDC -- the full SYMMIO request total; validators sign this, NOT the express portion)
 
-Step 1 — Bot sees: Alice requests IMMEDIATE withdrawal of 1,000 USDC
+Step 1 — Bot sees: Alice requests SAME_TX withdrawal of 1,000 USDC
   Bot reads on-chain:
     minValidatorSignatures(affiliate)  = 2
     validatorApprovalTimeout(affiliate) = 30s
     nonces[Alice]           = 5
     nonceOfPartyA(Alice)      = 12
   Bot checks:
-    IMMEDIATE requires minValidatorSignatures(affiliate) &gt; 0? YES (2 &gt; 0) — validators enabled
+    SAME_TX requires minValidatorSignatures(affiliate) &gt; 0? YES (2 &gt; 0) — validators enabled
     Need &gt;= 2 valid signatures from distinct registered validators
   Decision: Request attestations from V1, V2 (and optionally V3 as backup)
 
@@ -2805,7 +2805,7 @@ coverLoss:           affiliateBalances[affiliate] -= covered amount, badDebt += 
 </tr>
 <tr>
 <td><code>activate</code></td>
-<td><code>processWithdraw</code> / <code>unlockAndProcess</code> / inline IMMEDIATE in <code>onWithdrawRequest</code> -- moves reserved -&gt; active and calls <code>ISymmio.advanceWithdraw</code></td>
+<td><code>processWithdraw</code> / <code>unlockAndProcess</code> / inline SAME_TX in <code>onWithdrawRequest</code> -- moves reserved -&gt; active and calls <code>ISymmio.advanceWithdraw</code></td>
 <td>OperatorFacetImpl / SymmioHookFacetImpl via LibCreditLine.activate</td>
 </tr>
 <tr>
@@ -2878,7 +2878,7 @@ coverLoss:           affiliateBalances[affiliate] -= covered amount, badDebt += 
 <li><code>SymmioHookFacetImpl</code> calls <code>LibCreditLine.reserveDebt</code>.</li>
 <li><code>reserveDebt</code> verifies pause/blacklist, Muon signature, and caps. Records <code>requestDebt[key] = creditAmount</code>, increments <code>reservedDebt</code> in <code>CreditLineStorage</code>.</li>
 </ol>
-<p><strong>Flow during processing (<code>processWithdraw</code>, <code>unlockAndProcess</code>, or IMMEDIATE inline):</strong></p>
+<p><strong>Flow during processing (<code>processWithdraw</code>, <code>unlockAndProcess</code>, or SAME_TX inline):</strong></p>
 <ol>
 <li><code>LibCreditLine.activate</code> moves debt from reserved to active within <code>CreditLineStorage</code>.</li>
 <li><code>LibCreditLine.activate</code> calls <code>SYMMIO.advanceWithdraw(user, requestId, creditAmount)</code> -- SYMMIO transfers <code>creditAmount</code> of collateral to the ExpressProvider, which can then pay the user.</li>
@@ -2909,8 +2909,8 @@ coverLoss:           affiliateBalances[affiliate] -= covered amount, badDebt += 
   6. If any check fails: reject credit, or sign with creditAmount = 0
 </code></pre>
 <section class="tool-panel" data-express-funding-tool aria-label="Express amount split calculator"></section>
-<h4 id="numeric-example-instant-withdrawal-with-credit-line">Numeric Example: INSTANT Withdrawal with Credit Line</h4>
-<pre><code>Scenario: 500 USDC INSTANT withdrawal, 200 USDC backed by credit line
+<h4 id="numeric-example-windowed-withdrawal-with-credit-line">Numeric Example: WINDOWED Withdrawal with Credit Line</h4>
+<pre><code>Scenario: 500 USDC WINDOWED withdrawal, 200 USDC backed by credit line
 
 Setup:
   Affiliate: 0xAffiliate
@@ -2946,11 +2946,11 @@ Step 1 -- Bot sees: withdrawal request for 500 USDC from 0xAlice
     effectiveMaxBps = min(protocolMaxDebtBps, affiliateMaxDebtBps) -- say 1000 (10%)
     200 &lt;= 50,000 * 1000 / 10,000 = 5,000 -&gt; within percentage cap -&gt; OK
 
-  Decision: Sign INSTANT option with creditAmount = 200e6 and include CreditData.
+  Decision: Sign WINDOWED option with creditAmount = 200e6 and include CreditData.
 
 Step 2 -- On-chain acceptance (SymmioHookFacet.onWithdrawRequest):
   Contract validates parts: virtualProvider == address(0) -&gt; OK
-  Contract checks: optionType == INSTANT, creditAmount &gt; 0 -&gt; not STANDARD -&gt; OK
+  Contract checks: optionType == WINDOWED, creditAmount &gt; 0 -&gt; not STANDARD -&gt; OK
   LibCreditLine.reserveDebt(0xAffiliate, 0xAlice, reqId=7, 200e6, creditData):
     Verifies: not paused, not blacklisted -&gt; OK
     Verifies: timestamp + 60 &gt;= block.timestamp -&gt; fresh -&gt; OK
@@ -2964,7 +2964,7 @@ Step 2 -- On-chain acceptance (SymmioHookFacet.onWithdrawRequest):
   Contract locks pools:
     generalBalance: 2,000 -&gt; 1,800 (locked 200)
     affiliateBalances[0xAffiliate]: 500 -&gt; 400 (locked 100)
-  Emits WithdrawAccepted(0xAlice, 7, INSTANT)
+  Emits WithdrawAccepted(0xAlice, 7, WINDOWED)
 
 Step 3 -- Bot processes after security window (20s):
   Bot checks: block.timestamp &gt;= acceptedAt + 20s -&gt; YES
@@ -3041,12 +3041,12 @@ Step 4c -- Post-payout rollback (suspend after PROCESSED, rare):
     only onWithdrawSuspend can reach this rollback path.
 </code></pre>
 <hr>
-<h3 id="10-6-cap-aware-accelerate-polling-standard-instant">10.6 Cap-Aware Accelerate Polling (STANDARD → INSTANT)</h3>
-<p>When the credit cap is full at options-API time, the bot signs a STANDARD offer so the user's <code>initiateWithdraw</code> always succeeds (the UI tells them they may have to wait up to 12 hours). But the request is kept alive for promotion: every ~30 minutes the bot re-checks cap headroom and, if possible, submits <code>accelerateWithdraw</code> with a fresh bot signature to pay the user immediately.</p>
+<h3 id="10-6-cap-aware-accelerate-polling-standard-windowed">10.6 Cap-Aware Accelerate Polling (STANDARD → WINDOWED)</h3>
+<p>When the credit cap is full at options-API time, the bot signs a STANDARD offer so the user's <code>initiateWithdraw</code> always succeeds (the UI tells them they may have to wait up to 12 hours). But the request is kept alive for promotion: every ~30 minutes the bot re-checks cap headroom and, if possible, submits <code>accelerateWithdraw</code> with a fresh bot signature to pay the user without waiting for cooldown.</p>
 <p>See <code>expressWithdrawLayer/facets/Accelerate/AccelerateFacet.sol</code> and design doc §5.4 for the on-chain contract.</p>
 <p><strong>Bot responsibilities:</strong></p>
 <ol>
-<li><strong>Decision at sign time.</strong> If the user would have qualified for INSTANT but the cap is full, sign STANDARD and mark the request as an accelerate candidate in the bot's state store.</li>
+<li><strong>Decision at sign time.</strong> If the user would have qualified for WINDOWED but the cap is full, sign STANDARD and mark the request as an accelerate candidate in the bot's state store.</li>
 </ol>
 <pre><code>    if user-requested-speed == STANDARD:
         sign STANDARD (normal path)
@@ -3055,7 +3055,7 @@ Step 4c -- Post-payout rollback (suspend after PROCESSED, rare):
         sign STANDARD (creditAmount = 0)
         enqueue(user, requestId) for accelerate retry
     else:
-        sign INSTANT (normal path)
+        sign WINDOWED (normal path)
 </code></pre>
 <ol start="2">
 <li>
@@ -3073,7 +3073,7 @@ Step 4c -- Post-payout rollback (suspend after PROCESSED, rare):
 <li>
 <p><strong>Frontend manual trigger.</strong> When an affiliate raises <code>affiliateMaxDebt</code> by calling <code>ControlFacet.setCreditLineAffiliateConfig(affiliate, maxDebt, maxDebtBps)</code>, the frontend can either:</p>
 <ul>
-<li>Send a webhook to the bot to trigger an immediate re-check instead of waiting for the next 30-minute tick, <strong>or</strong></li>
+<li>Send a webhook to the bot to trigger an on-demand re-check instead of waiting for the next 30-minute tick, <strong>or</strong></li>
 <li>Fetch a fresh <code>AccelerateOffer</code> from the bot's API and have its own backend submit <code>accelerateWithdraw</code>. The contract is permissionless; the bot signature alone is sufficient.</li>
 </ul>
 </li>
@@ -3150,7 +3150,7 @@ Step 4c -- Post-payout rollback (suspend after PROCESSED, rare):
 <hr>
 <h3 id="10-7-affiliate-cap-self-service-fee">10.7 Affiliate Cap Self-Service &amp; Fee</h3>
 <p>Cap changes matter to the bot because they decide whether queued STANDARD withdrawals can be accelerated. When a credit cap is full, the bot may accept the request as STANDARD so the user transaction succeeds; if the affiliate raises capacity before cooldown ends, that same request can be promoted through <code>accelerateWithdraw</code>. v0.8.6 lets affiliates adjust their own caps with <code>setMyCreditLineConfig</code>, while a quota and fee throttle discourages repeated cap churn.</p>
-<p><strong>Decreases are always free.</strong> When a frontend needs to tighten risk (e.g., an anomaly spike, a pool running low, a governance decision), it should call <code>setMyCreditLineConfig</code> with lower values immediately. The on-chain classifier treats "neither dimension loosened" as a decrease -- no fee, no counter bump, no delay. Tightening is the protocol's preferred risk response.</p>
+<p><strong>Decreases are always free.</strong> When a frontend needs to tighten risk (e.g., an anomaly spike, a pool running low, a governance decision), it should call <code>setMyCreditLineConfig</code> with lower values right away. The on-chain classifier treats "neither dimension loosened" as a decrease -- no fee, no counter bump, no delay. Tightening is the protocol's preferred risk response.</p>
 <p><strong>Increases are throttled and can cost fees.</strong> Each affiliate gets <code>maxFreePerWindow</code> free increases per <code>windowDuration</code>. Once the quota is exhausted in the current window, the next increase pulls <code>feeAmount</code> of the protocol-configured fee token from the affiliate's wallet.</p>
 <p><strong>Before submitting a cap change, a frontend should:</strong></p>
 <ol>
@@ -3262,7 +3262,7 @@ Step 4c -- Post-payout rollback (suspend after PROCESSED, rare):
 <li>[ ] Bot MUST store and replay the exact same parts array</li>
 </ul>
 <h4 id="numeric-example-3-part-express-withdrawal-with-credit">Numeric Example: 3-Part Express Withdrawal with Credit</h4>
-<pre><code>Scenario: Bot handles a multi-part INSTANT withdrawal with credit line
+<pre><code>Scenario: Bot handles a multi-part WINDOWED withdrawal with credit line
 
 Setup:
   generalBalance = 5,000 USDC,   lockedGeneralBalance = 4,500 USDC (500 unlocked)
@@ -3306,7 +3306,7 @@ Step 4 -- Bot computes fees:
   Bot checks: sponsorBalances[0xAffiliate] = 0 -&gt; no sponsor coverage
     sponsorCoverage = 0, userFee = 15, maxUserFee = 15
   Bot checks: totalFee (15) &lt;= feeBasis (1,300) -&gt; OK (fees do not exceed amount)
-  Decision: Sign INSTANT option with these fee values.
+  Decision: Sign WINDOWED option with these fee values.
 
 Step 5 -- Bot checks credit line capacity before signing:
   Bot reads on-chain:
@@ -3315,7 +3315,7 @@ Step 5 -- Bot checks credit line capacity before signing:
   At acceptance: reserveDebt(600) reserves 600 USDC on the credit line.
     Decision: Reject the request or offer a smaller amount.
 
-Step 6 -- Bot observes: WithdrawAccepted(0xAlice, 99, INSTANT) event
+Step 6 -- Bot observes: WithdrawAccepted(0xAlice, 99, WINDOWED) event
   Bot reads on-chain (what the contract did during acceptance):
     lockedGeneralBalance: 4,500 -&gt; 5,000 (+500 generalAmount)
     lockedAffiliateBalances[0xAffiliate]: 0 -&gt; 200 (+200 affiliateAmount)
@@ -3447,11 +3447,11 @@ Step 7 -- Bot processes after security window:
 <li>[ ] After cooldown expires: LOCKED withdrawals become processable (the lock is no longer effective)</li>
 <li>[ ] For LOCKED STANDARD after finalization: only UNLOCK_ROLE can resolve</li>
 </ul>
-<h4 id="numeric-example-locked-instant-all-resolution-paths">Numeric Example: LOCKED INSTANT — All Resolution Paths</h4>
-<pre><code>Scenario: INSTANT withdrawal gets risk-locked — bot navigates the possible outcomes
+<h4 id="numeric-example-locked-windowed-all-resolution-paths">Numeric Example: LOCKED WINDOWED — All Resolution Paths</h4>
+<pre><code>Scenario: WINDOWED withdrawal gets risk-locked — bot navigates the possible outcomes
 
 Setup:
-  INSTANT 500 USDC (generalAmount = 350, affiliateAmount = 150)
+  WINDOWED 500 USDC (generalAmount = 350, affiliateAmount = 150)
   acceptedAt = T=0, cooldownEndTime = T+43200 (T+12h)
   securityWindow = 20s, tolerancePeriod = 60s
   sponsorCoverage locked = 5 USDC, fee = 2.5 USDC, operatorFee = 0.5 USDC
@@ -3501,8 +3501,8 @@ Step 2B — Bot sees: block.timestamp reaches T+43200 (cooldown expired)
 Step 2C — Bot sees: WithdrawSuspended(user, reqId) at T=600s
   Bot reads on-chain: status == SUSPENDED
   Bot checks: What did _releaseWithdraw clean up?
-    - lockedGeneralBalance decreased by 350 (INSTANT unlocks general lock)
-    - lockedAffiliateBalances[aff] decreased by 150 (INSTANT unlocks affiliate lock)
+    - lockedGeneralBalance decreased by 350 (WINDOWED unlocks general lock)
+    - lockedAffiliateBalances[aff] decreased by 150 (WINDOWED unlocks affiliate lock)
     - Credit line reservation released (if creditAmount &gt; 0)
     - sponsorBalances[aff] += 5 (sponsor coverage refunded)
   Decision: Withdrawal is terminated. Cancel ALL scheduled actions for
@@ -3601,14 +3601,14 @@ Step 2D — Bot sees: WithdrawFinalized(user, reqId) at T+43200
 </table></div>
 <p>Notes:</p>
 <ul>
-<li>IMMEDIATE transitions directly from NONE to PROCESSED in <code>onWithdrawRequest</code>, so it can never be cancelled (status is never ACCEPTED). It CAN be suspended (PROCESSED is a valid suspend state) and triggers the post-payout rollback.</li>
+<li>SAME_TX transitions directly from NONE to PROCESSED in <code>onWithdrawRequest</code>, so it can never be cancelled (status is never ACCEPTED). It CAN be suspended (PROCESSED is a valid suspend state) and triggers the post-payout rollback.</li>
 <li>STANDARD at FINALIZED cannot be suspended (raises <code>InvalidStatusForSuspend</code>).</li>
 </ul>
 <h3 id="13-3-what-gets-released-on-cancel-suspend">13.3 What Gets Released on Cancel/Suspend</h3>
 <p><strong>On user cancel from ACCEPTED (<code>onWithdrawCancelRequest</code>):</strong></p>
 <ul>
-<li>[ ] <code>lockedGeneralBalance -= generalAmount</code> (INSTANT/IMMEDIATE only)</li>
-<li>[ ] <code>lockedAffiliateBalances[affiliate] -= affiliateAmount</code> (INSTANT/IMMEDIATE only)</li>
+<li>[ ] <code>lockedGeneralBalance -= generalAmount</code> (WINDOWED/SAME_TX only)</li>
+<li>[ ] <code>lockedAffiliateBalances[affiliate] -= affiliateAmount</code> (WINDOWED/SAME_TX only)</li>
 <li>[ ] <code>generalBalance</code> and <code>affiliateBalances</code> values unchanged (locks are released, not balances)</li>
 <li>[ ] Credit line reservation released via <code>LibCreditLine.releaseReservation</code> (if creditAmount &gt; 0)</li>
 <li>[ ] Sponsor coverage refunded: <code>sponsorBalances[affiliate] += sponsorCoverage</code></li>
@@ -3671,7 +3671,7 @@ Step 2D — Bot sees: WithdrawFinalized(user, reqId) at T+43200
 
     A --&gt;|Validation| V{Which?}
     V --&gt; V1[&quot;InvalidOptionType → Use optionType 0-2&quot;]
-    V --&gt; V2[&quot;ValidatorsRequiredForImmediate → Register validators for affiliate&quot;]
+    V --&gt; V2[&quot;ValidatorsRequiredForSameTx → Register validators for affiliate&quot;]
     V --&gt; V3[&quot;InvalidAddressBytesLength → Fix receiver encoding&quot;]
     V --&gt; V4[&quot;CreditNotSupportedForStandard → creditAmount must be 0 for STANDARD&quot;]
     V --&gt; V5[&quot;VirtualProviderMustBeZero → set virtualProvider = address(0)&quot;]
@@ -3747,7 +3747,7 @@ Step 2D — Bot sees: WithdrawFinalized(user, reqId) at T+43200
 <tbody>
 <tr>
 <td><code>InsufficientGeneralBalance</code></td>
-<td>INSTANT/IMMEDIATE generalAmount &gt; available</td>
+<td>WINDOWED/SAME_TX generalAmount &gt; available</td>
 <td>Reduce amount or wait for pool refill</td>
 </tr>
 <tr>
@@ -3884,12 +3884,12 @@ Step 2D — Bot sees: WithdrawFinalized(user, reqId) at T+43200
 <tr>
 <td><code>InvalidOptionType</code></td>
 <td><code>offer.optionType &gt; 2</code> in <code>onWithdrawRequest</code></td>
-<td>Use only 0 (IMMEDIATE), 1 (INSTANT), or 2 (STANDARD)</td>
+<td>Use only 0 (SAME_TX), 1 (WINDOWED), or 2 (STANDARD)</td>
 </tr>
 <tr>
-<td><code>ValidatorsRequiredForImmediate</code></td>
-<td>IMMEDIATE option when <code>minValidatorSignatures(affiliate) == 0</code></td>
-<td>Do not offer IMMEDIATE unless validators are configured for this affiliate (or <code>address(0)</code> default); fall back to INSTANT</td>
+<td><code>ValidatorsRequiredForSameTx</code></td>
+<td>SAME_TX option when <code>minValidatorSignatures(affiliate) == 0</code></td>
+<td>Do not offer SAME_TX unless validators are configured for this affiliate (or <code>address(0)</code> default); fall back to WINDOWED</td>
 </tr>
 <tr>
 <td><code>InvalidAddressBytesLength</code></td>
@@ -3997,7 +3997,7 @@ Step 2D — Bot sees: WithdrawFinalized(user, reqId) at T+43200
 <pre><code>Bot sees: User requests a withdrawal. Bot has option type value from config/logic.
 
 Bot checks:
-  optionType must be 0 (IMMEDIATE), 1 (INSTANT), or 2 (STANDARD).
+  optionType must be 0 (SAME_TX), 1 (WINDOWED), or 2 (STANDARD).
   Any value &gt; 2 will cause onWithdrawRequest to revert InvalidOptionType.
 
 Decision:
@@ -4012,30 +4012,30 @@ Scenario:
   -&gt; Contract checks: 3 &gt; 2 -&gt; REVERT InvalidOptionType
   -&gt; Bot detects revert, fixes routing logic, re-signs with correct type
 </code></pre>
-<h4 id="validatorsrequiredforimmediate">ValidatorsRequiredForImmediate</h4>
-<pre><code>Bot sees: User requests fastest possible withdrawal. Bot considers IMMEDIATE.
+<h4 id="validatorsrequiredforsametx">ValidatorsRequiredForSameTx</h4>
+<pre><code>Bot sees: User requests fastest possible withdrawal. Bot considers SAME_TX.
 
 Bot checks:
   Read minValidatorSignatures(affiliate) on-chain (falls back to address(0) default).
-  If minValidatorSignatures(affiliate) == 0, IMMEDIATE is not available.
-  Contract enforces: if optionType == IMMEDIATE &amp;&amp; minValidatorSignatures(affiliate) == 0,
-  revert ValidatorsRequiredForImmediate.
+  If minValidatorSignatures(affiliate) == 0, SAME_TX is not available.
+  Contract enforces: if optionType == SAME_TX &amp;&amp; minValidatorSignatures(affiliate) == 0,
+  revert ValidatorsRequiredForSameTx.
 
 Decision:
   If minValidatorSignatures(affiliate) == 0:
-    Do NOT offer IMMEDIATE. Fall back to INSTANT (next fastest option).
-    INSTANT provides funds after securityWindow (default 20s), which is still fast.
+    Do NOT offer SAME_TX. Fall back to WINDOWED (next fastest option).
+    WINDOWED provides funds after securityWindow (default 20s), which is still fast.
   If minValidatorSignatures(affiliate) &gt; 0:
     Gather at least minValidatorSignatures(affiliate) validator attestations from
-    validators registered for this affiliate (or address(0) default), then sign IMMEDIATE.
+    validators registered for this affiliate (or address(0) default), then sign SAME_TX.
 
 Scenario:
   minValidatorSignatures(affiliate) = 0 (validators not yet configured for this affiliate)
-  Bot signs IMMEDIATE option for Alice, 1000 USDC
-  -&gt; onWithdrawRequest checks: ot == IMMEDIATE &amp;&amp; minValidatorSignatures(affiliate) == 0
-  -&gt; REVERT ValidatorsRequiredForImmediate
+  Bot signs SAME_TX option for Alice, 1000 USDC
+  -&gt; onWithdrawRequest checks: ot == SAME_TX &amp;&amp; minValidatorSignatures(affiliate) == 0
+  -&gt; REVERT ValidatorsRequiredForSameTx
   -&gt; Bot reads minValidatorSignatures(affiliate) = 0
-  -&gt; Bot re-signs as INSTANT instead. User gets funds after 20s security window.
+  -&gt; Bot re-signs as WINDOWED instead. User gets funds after 20s security window.
 </code></pre>
 <h4 id="feesexceedexpressamount">FeesExceedExpressAmount</h4>
 <pre><code>Bot sees: User requests withdrawal. Bot computes fee and operatorFee from on-chain config.
@@ -4093,7 +4093,7 @@ Bot checks:
     includes `NotAccepted`, `NotFinalized`, `NotLocked`, but NOT `NotProcessed`.
     The contract check that previously raised `NotProcessed` in
     onWithdrawComplete was removed (commit 1ae4b688 &quot;remove unreachable
-    NotProcessed check in onWithdrawComplete&quot;). For INSTANT/IMMEDIATE,
+    NotProcessed check in onWithdrawComplete&quot;). For WINDOWED/SAME_TX,
     onWithdrawComplete is unreachable for status != PROCESSED via SYMMIO's
     own state machine, so no on-chain check is needed.
 
@@ -4111,17 +4111,17 @@ Decision:
 
     Note over EP: generalBalance = 10,000\nlockedGeneralBalance = 0
 
-    U1-&gt;&gt;EP: INSTANT 8,000 USDC
+    U1-&gt;&gt;EP: WINDOWED 8,000 USDC
     Note over EP: Lock 8,000\nlockedGeneral = 8,000\navailable = 2,000
 
-    U2-&gt;&gt;EP: INSTANT 8,000 USDC
+    U2-&gt;&gt;EP: WINDOWED 8,000 USDC
     Note over EP: 8,000 &gt; available 2,000
     EP--&gt;&gt;U2: REVERT: InsufficientGeneralBalance
 
     Note over EP: User1 cancels
     U1-&gt;&gt;EP: cancel → lockedGeneral = 0\navailable = 10,000
 
-    U2-&gt;&gt;EP: INSTANT 8,000 USDC (retry)
+    U2-&gt;&gt;EP: WINDOWED 8,000 USDC (retry)
     Note over EP: 8,000 &lt;= 10,000 ✓
     EP--&gt;&gt;U2: ACCEPTED
 </code></pre>
@@ -4134,7 +4134,7 @@ Decision:
 </thead>
 <tbody>
 <tr>
-<td>Two INSTANT withdrawals for more than half the pool</td>
+<td>Two WINDOWED withdrawals for more than half the pool</td>
 <td>Second reverts <code>InsufficientGeneralBalance</code></td>
 </tr>
 <tr>
@@ -4142,7 +4142,7 @@ Decision:
 <td>Succeeds (pool freed)</td>
 </tr>
 <tr>
-<td>Two IMMEDIATE withdrawals racing</td>
+<td>Two SAME_TX withdrawals racing</td>
 <td>Second reverts (funds transferred atomically in first's tx)</td>
 </tr>
 <tr>
@@ -4194,7 +4194,7 @@ Decision:
 </tr>
 <tr>
 <td><code>securityWindow</code> changed</td>
-<td>Affects timing for unprocessed INSTANT withdrawals</td>
+<td>Affects timing for unprocessed WINDOWED withdrawals</td>
 </tr>
 <tr>
 <td><code>tolerancePeriod</code> changed</td>
@@ -4243,7 +4243,7 @@ Decision:
 Setup:
   nonces(Alice) = 5
   Alice has two pending withdrawal requests queued in bot's inbox:
-    Request A: 500 USDC INSTANT
+    Request A: 500 USDC WINDOWED
     Request B: 300 USDC STANDARD
 
 Step 1 — Bot sees: two withdrawal requests from Alice arrive nearly simultaneously
@@ -4281,8 +4281,8 @@ Setup:
   nonces(Alice) = 5
   nonces(Bob)   = 3
   Bot receives three withdrawal requests nearly simultaneously:
-    Request 1: Alice, 500 USDC INSTANT
-    Request 2: Bob,   300 USDC INSTANT
+    Request 1: Alice, 500 USDC WINDOWED
+    Request 2: Bob,   300 USDC WINDOWED
     Request 3: Alice, 200 USDC STANDARD
 
 --- Different users CAN be signed in parallel (independent nonces) ---
@@ -4355,7 +4355,7 @@ Correct strategy:
 </tr>
 <tr>
 <td>cooldownEndTime in the past (user deallocated long ago)</td>
-<td>Cooldown already expired, finalization possible immediately</td>
+<td>Cooldown already expired, finalization possible right away</td>
 </tr>
 <tr>
 <td><code>securityWindow &lt; 10</code></td>
@@ -4454,7 +4454,7 @@ changes occur while the bot has in-flight withdrawals, pending options, or sched
 Setup:
   affiliateConfigs[0xAffiliate].feeRate     = 50 bps
   affiliateConfigs[0xAffiliate].operatorFee = 1 USDC
-  User: Alice, withdrawal amount: 5,000 USDC INSTANT
+  User: Alice, withdrawal amount: 5,000 USDC WINDOWED
   Bot signed fee = 5,000 * 50 / 10,000 = 25 USDC, operatorFee = 1 USDC
 
 Step 1 — Bot sees: Alice requests a withdrawal option
@@ -4506,11 +4506,11 @@ Step 4 — Bot sees: AffiliateConfigUpdated(0xAffiliate, 100, 2_000000)
 
 Setup:
   securityWindow = 20s
-  User: Alice, requestId: 42, INSTANT withdrawal, 3,000 USDC
+  User: Alice, requestId: 42, WINDOWED withdrawal, 3,000 USDC
   withdrawInfos[Alice][42].status     = ACCEPTED
   withdrawInfos[Alice][42].acceptedAt = T
 
-Step 1 — Bot sees: WithdrawAccepted(Alice, 42, INSTANT) at T=0s
+Step 1 — Bot sees: WithdrawAccepted(Alice, 42, WINDOWED) at T=0s
   Bot reads on-chain:
     securityWindow = 20s
     acceptedAt     = T
@@ -4664,12 +4664,12 @@ Validator config monitoring (per-affiliate, with address(0) fallback):
   - ValidatorUpdated(affiliate, validator, enabled): a validator was added/removed
     for affiliate (or address(0) default). Re-gather validator sets if affected.
   - MinValidatorSignaturesUpdated(affiliate, n): the threshold changed; bot may
-    need to gather more signatures, or IMMEDIATE may newly become unavailable.
+    need to gather more signatures, or SAME_TX may newly become unavailable.
   - ValidatorApprovalTimeoutUpdated(affiliate, t): freshness window changed;
     re-gather sigs if existing ones may now be expired.
 
   Bot must read the per-affiliate value first; if zero, fall back to address(0)
-  default. Always re-read before signing IMMEDIATE options.
+  default. Always re-read before signing SAME_TX options.
 </code></pre>
 <h4 id="scenario-5-sponsor-replacement">Scenario 5: Sponsor Replacement</h4>
 <pre><code>Scenario: A new sponsor deposits for an affiliate that already has a sponsor
@@ -4731,7 +4731,7 @@ Setup:
 
 Step 1 — Bot sees: WithdrawAccepted(user, reqId, STANDARD) at T=0
   Bot reads: status = ACCEPTED, optionType = STANDARD
-  Bot INCORRECTLY schedules processWithdraw at T+20s (confusing with INSTANT logic)
+  Bot INCORRECTLY schedules processWithdraw at T+20s (confusing with WINDOWED logic)
 
 Step 2 — Bot calls processWithdraw at T+20s
   Contract checks: optionType == STANDARD, status != FINALIZED, not isLockedAfterCooldown
@@ -4740,7 +4740,7 @@ Step 2 — Bot calls processWithdraw at T+20s
 Correct behavior:
   For STANDARD, bot should NOT schedule processWithdraw at acceptance.
   Instead, wait for WithdrawFinalized event (onWithdrawComplete callback at ~T+12h).
-  Then call processWithdraw immediately after finalization.
+  Then call processWithdraw right after finalization.
 </code></pre>
 <h3 id="15-10-non-existent-withdrawal">15.10 Non-Existent Withdrawal</h3>
 <pre><code>Scenario: Bot references a (user, requestId) that was never accepted
@@ -4749,7 +4749,7 @@ Setup: No withdrawal exists for (Alice, requestId=99)
 
 Step 1 — Bot calls processWithdraw(Alice, 99, parts)
   Contract reads: withdrawInfos[Alice][99] — all fields zero-initialized
-  status = 0 (NONE), optionType = 0 (IMMEDIATE), generalAmount = 0, etc.
+  status = 0 (NONE), optionType = 0 (SAME_TX), generalAmount = 0, etc.
   Contract checks: status != ACCEPTED → reverts NotAccepted
 
 Bot mitigation: Always track accepted withdrawals via WithdrawAccepted events.
@@ -4767,13 +4767,13 @@ On-chain behavior:
 Bot consideration: Zero-amount parts waste gas but don't cause reverts.
   Decision: Filter out zero-amount parts before signing. No benefit to including them.
 </code></pre>
-<h3 id="15-12-immediate-cannot-be-cancelled-already-processed-but-can-trigger-suspend-with-post-payout-rollback">15.12 IMMEDIATE Cannot Be Cancelled (already PROCESSED), but CAN trigger suspend with post-payout rollback</h3>
-<pre><code>Scenario: IMMEDIATE withdrawal — state transitions documented
+<h3 id="15-12-same-tx-cannot-be-cancelled-already-processed-but-can-trigger-suspend-with-post-payout-rollback">15.12 SAME_TX Cannot Be Cancelled (already PROCESSED), but CAN trigger suspend with post-payout rollback</h3>
+<pre><code>Scenario: SAME_TX withdrawal — state transitions documented
 
-Setup: IMMEDIATE 1,000 USDC. onWithdrawRequest transitions directly NONE → PROCESSED
+Setup: SAME_TX 1,000 USDC. onWithdrawRequest transitions directly NONE → PROCESSED
   (atomic accept + payout in the same tx). Per the Status enum state-transition
-  comments: &quot;ACCEPTED → PROCESSED (onWithdrawRequest for IMMEDIATE mode)&quot; — there
-  is no ACCEPTED state visible to other callbacks for IMMEDIATE.
+  comments: &quot;ACCEPTED → PROCESSED (onWithdrawRequest for SAME_TX mode)&quot; — there
+  is no ACCEPTED state visible to other callbacks for SAME_TX.
 
 Impossible actions (revert):
   lockWithdraw: status is PROCESSED (not ACCEPTED) → NotAccepted
@@ -4786,19 +4786,19 @@ Possible action:
     from unlocked affiliate balance, records any uncovered amount as badDebt
     (funds were already paid out at acceptance), then sets status → SUSPENDED.
 
-Bot implication: Risk for IMMEDIATE must be caught BEFORE acceptance.
-  This is why minValidatorSignatures(affiliate) &gt; 0 is required for IMMEDIATE.
+Bot implication: Risk for SAME_TX must be caught BEFORE acceptance.
+  This is why minValidatorSignatures(affiliate) &gt; 0 is required for SAME_TX.
   Validators serve as the pre-acceptance risk check since lock/cancel are
   impossible after acceptance. The only post-acceptance lever is SYMMIO calling
   onWithdrawSuspend, which assigns the covered loss to the affiliate pool and
   tracks any uncovered amount as badDebt.
-  If validators are unavailable, bot MUST offer INSTANT instead (which allows
+  If validators are unavailable, bot MUST offer WINDOWED instead (which allows
   post-acceptance locking via lockWithdraw before payout).
 </code></pre>
 <h3 id="15-13-duplicate-finalization-callback">15.13 Duplicate Finalization Callback</h3>
 <pre><code>Scenario: onWithdrawComplete called twice for same withdrawal
 
-Setup: INSTANT 500 USDC, status = PROCESSED after normal processing
+Setup: WINDOWED 500 USDC, status = PROCESSED after normal processing
 
 Step 1 — onWithdrawComplete called (T+12h):
   Status: PROCESSED → FINALIZED. Pools replenished, credit settled.
@@ -4809,7 +4809,7 @@ Step 2 — onWithdrawComplete called again (hypothetical):
   &quot;remove unreachable NotProcessed check in onWithdrawComplete&quot;). Instead:
     - For STANDARD: requires status ACCEPTED or LOCKED, otherwise reverts
       InvalidStatusForStandard.
-    - For INSTANT/IMMEDIATE: SYMMIO's own state machine prevents a duplicate
+    - For WINDOWED/SAME_TX: SYMMIO's own state machine prevents a duplicate
       call from being routed. Inside the express provider, no on-chain check
       against duplicate calls is needed because the path is unreachable.
 
@@ -4821,7 +4821,7 @@ Bot implication: No action needed. SYMMIO won't call twice. The bot does not
 <h2 id="16-pool-management">16. Pool Management</h2>
 <h3 id="16-1-pool-lifecycle-diagram">16.1 Pool Lifecycle Diagram</h3>
 <pre><code class="language-mermaid">flowchart TD
-    subgraph &quot;INSTANT/IMMEDIATE Lifecycle&quot;
+    subgraph &quot;WINDOWED/SAME_TX Lifecycle&quot;
         A1[&quot;depositToGeneral\n+10,000&quot;] --&gt; B1[&quot;Lock on accept\nlockedGeneral += 500&quot;]
         B1 --&gt; C1[&quot;Process: deduct\ngeneralBalance -= 500\nUser gets 500&quot;]
         C1 --&gt; D1[&quot;Finalize: replenish\ngeneralBalance += 500\n(SYMMIO sends tokens back)&quot;]
@@ -4850,7 +4850,7 @@ Bot implication: No action needed. SYMMIO won't call twice. The bot does not
 <tr>
 <td>General (<code>generalBalance</code>)</td>
 <td><code>depositToGeneral</code></td>
-<td>INSTANT/IMMEDIATE general portion</td>
+<td>WINDOWED/SAME_TX general portion</td>
 <td><code>lockedGeneralBalance</code></td>
 </tr>
 <tr>
@@ -4883,7 +4883,7 @@ totalAvailable = availableGeneral + availableAffiliate + availableCredit
 <ul>
 <li>[ ] Track available liquidity across all pools</li>
 <li>[ ] Alert when available liquidity drops below threshold</li>
-<li>[ ] Do not offer INSTANT/IMMEDIATE if insufficient liquidity</li>
+<li>[ ] Do not offer WINDOWED/SAME_TX if insufficient liquidity</li>
 <li>[ ] Monitor <code>GeneralDeposit</code>/<code>GeneralWithdraw</code> and <code>AffiliateDeposit</code>/<code>AffiliateWithdraw</code> events</li>
 <li>[ ] Verify <code>withdrawFromGeneral</code> / <code>withdrawFromAffiliate</code> cannot touch locked funds (enforced on-chain)</li>
 <li>[ ] Monitor <code>creditLineTotalDebt(affiliate)</code>, <code>creditLineBadDebt(affiliate)</code>, <code>creditLinePaused(affiliate)</code>, and debt cap headroom via the diamond</li>
@@ -4900,7 +4900,7 @@ Setup:
   Available affiliate        = 5_000  - 0     = 5_000
   Total available            = 15_000
 
-Step 1 — Bot sees: 3 INSTANT withdrawals accepted in rapid succession
+Step 1 — Bot sees: 3 WINDOWED withdrawals accepted in rapid succession
   W1: 3_000 USDC (general=2_000, affiliate=1_000)
   W2: 4_000 USDC (general=3_000, affiliate=1_000)
   W3: 2_000 USDC (general=1_500, affiliate=500)
@@ -4916,14 +4916,14 @@ Step 2 — Bot sees: new request from Bob for 5_000 USDC via FrontA
   Bot reads on-chain (same state as above):
     Available general   = 3_500
     Available affiliate = 2_500
-  Bot checks: can INSTANT work?
+  Bot checks: ca WINDOWED work?
     If affiliateAmount = 1_500, generalAmount = 3_500
       3_500 &lt;= 3_500 available general --&gt; fits (barely)
     If affiliateAmount = 1_000, generalAmount = 4_000
       4_000 &gt; 3_500 available general --&gt; would revert InsufficientGeneralBalance
   Decision tree:
-    INSTANT with affiliateAmount=1_500 --&gt; sign it (tight but feasible)
-    INSTANT with affiliateAmount=1_000 --&gt; reject (insufficient general)
+    WINDOWED with affiliateAmount=1_500 --&gt; sign it (tight but feasible)
+    WINDOWED with affiliateAmount=1_000 --&gt; reject (insufficient general)
     STANDARD                           --&gt; always available (no pool lock)
 
 Step 3 — Bot sees: WithdrawFinalized event for W1 (pools replenished)
@@ -4936,7 +4936,7 @@ Step 3 — Bot sees: WithdrawFinalized event for W1 (pools replenished)
     Available general   = 10_000 - 3_500 = 6_500
     Available affiliate = 5_000  - 1_500 = 3_500
     Total available     = 10_000
-  Decision: capacity restored; resume offering INSTANT for larger requests
+  Decision: capacity restored; resume offering WINDOWED for larger requests
 </code></pre>
 <hr>
 <h2 id="17-access-control">17. Access Control</h2>
@@ -5216,7 +5216,7 @@ Step 3 — Bot sees: WithdrawFinalized event for W1 (pools replenished)
 </tr>
 <tr>
 <td>Validator service offline</td>
-<td>IMMEDIATE unavailable unless the effective validator requirement is 0 after <code>address(0)</code> fallback; other types still work</td>
+<td>SAME_TX unavailable unless the effective validator requirement is 0 after <code>address(0)</code> fallback; other types still work</td>
 </tr>
 <tr>
 <td>Insufficient pool liquidity</td>
@@ -5298,8 +5298,8 @@ What-if: credit line invariant fails (totalDebt != reservedDebt + activeDebt)?
 
 What-if: SYMMIO core pauses withdraw advances?
   Core pauseControl.pauseWithdrawAdvance() makes every provider-side
-  advanceWithdraw call revert. Bot stops processing credit-backed INSTANT,
-  IMMEDIATE, and acceleration paths, but may continue non-credit recovery
+  advanceWithdraw call revert. Bot stops processing credit-backed WINDOWED,
+  SAME_TX, and acceleration paths, but may continue non-credit recovery
   actions such as cancellation, suspension handling, and finalization.
 </code></pre>
 <hr>
@@ -5321,10 +5321,10 @@ What-if: SYMMIO core pauses withdraw advances?
     EP-&gt;&gt;SYMMIO: acceptWithdrawRequest
     EP--&gt;&gt;Bot: WithdrawAccepted event
 
-    alt IMMEDIATE
+    alt SAME_TX
         Note over EP: Funds already transferred
         Note over EP: Status = PROCESSED
-    else INSTANT
+    else WINDOWED
         Note over Bot: Wait 20s (securityWindow)
         Bot-&gt;&gt;EP: processWithdraw
         Note over EP: Status = PROCESSED
@@ -5346,7 +5346,7 @@ What-if: SYMMIO core pauses withdraw advances?
 <hr>
 <h2 id="part-vi-reference">Part VI: Reference</h2>
 <h2 id="19-complete-state-x-option-type-decision-matrix">19. Complete State x Option Type Decision Matrix</h2>
-<p>This section provides a definitive lookup table for every combination of <strong>ExpressProvider Status</strong> (7 values: NONE, ACCEPTED, LOCKED, PROCESSED, FINALIZED, CANCELLED, SUSPENDED) and <strong>OptionType</strong> (3 values: IMMEDIATE, INSTANT, STANDARD). That is 21 cells total.</p>
+<p>This section provides a definitive lookup table for every combination of <strong>ExpressProvider Status</strong> (7 values: NONE, ACCEPTED, LOCKED, PROCESSED, FINALIZED, CANCELLED, SUSPENDED) and <strong>OptionType</strong> (3 values: SAME_TX, WINDOWED, STANDARD). That is 21 cells total.</p>
 <p>Each cell tells the bot exactly what to do, what to watch for, what actions are available (and to whom), what will revert, and what timers should be running. Impossible combinations -- those that can never occur due to the state machine design -- are marked as such with an explanation.</p>
 <p><strong>Default contract parameters used in numeric scenarios:</strong></p>
 <ul>
@@ -5355,12 +5355,12 @@ What-if: SYMMIO core pauses withdraw advances?
 <li><code>validatorApprovalTimeout(affiliate) = 30s</code></li>
 </ul>
 <hr>
-<h3 id="immediate-x-none">IMMEDIATE x NONE</h3>
-<p><strong>Bot situation:</strong> No withdrawal exists yet for this (user, requestId). The bot may be about to sign an IMMEDIATE option.</p>
+<h3 id="same-tx-x-none">SAME_TX x NONE</h3>
+<p><strong>Bot situation:</strong> No withdrawal exists yet for this (user, requestId). The bot may be about to sign a SAME_TX option.</p>
 <p><strong>Bot should:</strong></p>
 <ol>
-<li>Pre-sign the EIP-712 WithdrawOption with <code>optionType = 0 (IMMEDIATE)</code></li>
-<li>Ensure <code>minValidatorSignatures(affiliate) &gt; 0</code> (contract reverts otherwise: <code>ValidatorsRequiredForImmediate</code>)</li>
+<li>Pre-sign the EIP-712 WithdrawOption with <code>optionType = 0 (SAME_TX)</code></li>
+<li>Ensure <code>minValidatorSignatures(affiliate) &gt; 0</code> (contract reverts otherwise: <code>ValidatorsRequiredForSameTx</code>)</li>
 <li>Gather validator signatures (each from a registered validator for this affiliate or <code>address(0)</code> default, within <code>validatorApprovalTimeout(affiliate)</code>)</li>
 <li>Verify sufficient general + affiliate pool liquidity for the express amount</li>
 <li>Verify credit line capacity (if creditAmount &gt; 0)</li>
@@ -5368,24 +5368,24 @@ What-if: SYMMIO core pauses withdraw advances?
 <p><strong>Available actions:</strong></p>
 <ul>
 <li>User: calls <code>initiateWithdraw</code> on SYMMIO, which triggers <code>onWithdrawRequest</code> on ExpressProvider</li>
-<li>No bot action needed after signing -- IMMEDIATE processes entirely within <code>onWithdrawRequest</code></li>
+<li>No bot action needed after signing -- SAME_TX processes entirely within <code>onWithdrawRequest</code></li>
 </ul>
 <p><strong>Will revert:</strong></p>
 <ul>
-<li><code>processWithdraw</code>: status is <code>NONE</code>, reverts with <code>NotAccepted</code> (INSTANT path) or <code>NotFinalized</code> (STANDARD path)</li>
+<li><code>processWithdraw</code>: status is <code>NONE</code>, reverts with <code>NotAccepted</code> (WINDOWED path) or <code>NotFinalized</code> (STANDARD path)</li>
 <li><code>lockWithdraw</code>: reverts with <code>NotAccepted</code></li>
 <li><code>unlockAndProcess</code>: reverts with <code>NotLocked</code></li>
 </ul>
-<p><strong>Timers:</strong> None. IMMEDIATE is fire-and-forget from the bot's perspective.</p>
+<p><strong>Timers:</strong> None. SAME_TX is fire-and-forget from the bot's perspective.</p>
 <hr>
-<h3 id="immediate-x-accepted">IMMEDIATE x ACCEPTED</h3>
-<p><strong>Impossible.</strong> IMMEDIATE withdrawals skip ACCEPTED entirely. In <code>onWithdrawRequest</code>, when <code>optionType == IMMEDIATE</code>, the contract sets <code>info.status = Status.PROCESSED</code> directly after the same-tx transfer. The <code>else</code> branch that sets <code>Status.ACCEPTED</code> is not reached for IMMEDIATE.</p>
+<h3 id="same-tx-x-accepted">SAME_TX x ACCEPTED</h3>
+<p><strong>Impossible.</strong> SAME_TX withdrawals skip ACCEPTED entirely. In <code>onWithdrawRequest</code>, when <code>optionType == SAME_TX</code>, the contract sets <code>info.status = Status.PROCESSED</code> directly after the same-tx transfer. The <code>else</code> branch that sets <code>Status.ACCEPTED</code> is not reached for SAME_TX.</p>
 <hr>
-<h3 id="immediate-x-locked">IMMEDIATE x LOCKED</h3>
-<p><strong>Impossible.</strong> <code>lockWithdraw</code> requires <code>info.status == ACCEPTED</code> (reverts with <code>NotAccepted</code> otherwise). Since IMMEDIATE never enters ACCEPTED, it can never be locked.</p>
+<h3 id="same-tx-x-locked">SAME_TX x LOCKED</h3>
+<p><strong>Impossible.</strong> <code>lockWithdraw</code> requires <code>info.status == ACCEPTED</code> (reverts with <code>NotAccepted</code> otherwise). Since SAME_TX never enters ACCEPTED, it can never be locked.</p>
 <hr>
-<h3 id="immediate-x-processed">IMMEDIATE x PROCESSED</h3>
-<p><strong>Bot situation:</strong> IMMEDIATE withdrawal completed in one transaction. Funds already transferred to the user. Awaiting SYMMIO's 12-hour finalization to replenish pools. SYMMIO may also suspend the withdrawal during the cooldown, in which case the contract takes the post-payout rollback path (covers credit loss from unlocked affiliate balance and records any shortfall as <code>badDebt</code>).</p>
+<h3 id="same-tx-x-processed">SAME_TX x PROCESSED</h3>
+<p><strong>Bot situation:</strong> SAME_TX withdrawal completed in one transaction. Funds already transferred to the user. Awaiting SYMMIO's 12-hour finalization to replenish pools. SYMMIO may also suspend the withdrawal during the cooldown, in which case the contract takes the post-payout rollback path (covers credit loss from unlocked affiliate balance and records any shortfall as <code>badDebt</code>).</p>
 <p><strong>Bot should:</strong></p>
 <ol>
 <li>Timer set: call <code>finalizeWithdrawRequest(user, reqId)</code> on SYMMIO at <code>cooldownEndTime</code></li>
@@ -5420,7 +5420,7 @@ SYMMIO calls: EP.onWithdrawComplete(...)
 Result: status -&gt; FINALIZED, generalBalance += generalAmount, affiliateBalances[aff] += affiliateAmount
 </code></pre>
 <hr>
-<h3 id="immediate-x-finalized">IMMEDIATE x FINALIZED</h3>
+<h3 id="same-tx-x-finalized">SAME_TX x FINALIZED</h3>
 <p><strong>Bot situation:</strong> Terminal state. SYMMIO has finalized and pools are replenished. No further action needed.</p>
 <p><strong>Bot should:</strong></p>
 <ol>
@@ -5438,21 +5438,21 @@ Result: status -&gt; FINALIZED, generalBalance += generalAmount, affiliateBalanc
 </ul>
 <p><strong>Timers:</strong> None.</p>
 <hr>
-<h3 id="immediate-x-cancelled">IMMEDIATE x CANCELLED</h3>
-<p><strong>Impossible.</strong> IMMEDIATE goes directly from NONE to PROCESSED in <code>onWithdrawRequest</code>. The <code>onWithdrawCancelRequest</code> callback requires <code>status == ACCEPTED</code>. Since IMMEDIATE never enters ACCEPTED, cancellation is unreachable. (<code>onForceWithdrawCancel</code> was removed in commit eabd1f3f.)</p>
+<h3 id="same-tx-x-cancelled">SAME_TX x CANCELLED</h3>
+<p><strong>Impossible.</strong> SAME_TX goes directly from NONE to PROCESSED in <code>onWithdrawRequest</code>. The <code>onWithdrawCancelRequest</code> callback requires <code>status == ACCEPTED</code>. Since SAME_TX never enters ACCEPTED, cancellation is unreachable. (<code>onForceWithdrawCancel</code> was removed in commit eabd1f3f.)</p>
 <hr>
-<h3 id="immediate-x-suspended">IMMEDIATE x SUSPENDED</h3>
-<p><strong>Reachable only via post-payout rollback from PROCESSED.</strong> <code>onWithdrawSuspend</code> accepts <code>status == ACCEPTED</code>, <code>status == LOCKED</code>, or <code>status == PROCESSED</code>. Because IMMEDIATE skips ACCEPTED and LOCKED, the only way an IMMEDIATE withdrawal can land in SUSPENDED is via <code>onWithdrawSuspend</code> called from PROCESSED (during the SYMMIO cooldown). That path runs <code>_handleProcessedRollback</code>: it deducts up to the unlocked affiliate balance to absorb the credit loss, records any deficit as <code>badDebt</code>, settles the debt, then transitions to SUSPENDED.</p>
+<h3 id="same-tx-x-suspended">SAME_TX x SUSPENDED</h3>
+<p><strong>Reachable only via post-payout rollback from PROCESSED.</strong> <code>onWithdrawSuspend</code> accepts <code>status == ACCEPTED</code>, <code>status == LOCKED</code>, or <code>status == PROCESSED</code>. Because SAME_TX skips ACCEPTED and LOCKED, the only way a SAME_TX withdrawal can land in SUSPENDED is via <code>onWithdrawSuspend</code> called from PROCESSED (during the SYMMIO cooldown). That path runs <code>_handleProcessedRollback</code>: it deducts up to the unlocked affiliate balance to absorb the credit loss, records any deficit as <code>badDebt</code>, settles the debt, then transitions to SUSPENDED.</p>
 <p><strong>Bot situation when seen:</strong> Terminal state. The bot should archive the withdrawal, log the rollback for compliance review, and reconcile how much credit loss was covered by the affiliate pool versus recorded as <code>badDebt</code>.</p>
 <hr>
-<h3 id="instant-x-none">INSTANT x NONE</h3>
-<p><strong>Bot situation:</strong> No withdrawal exists yet. The bot may be about to sign an INSTANT option.</p>
+<h3 id="windowed-x-none">WINDOWED x NONE</h3>
+<p><strong>Bot situation:</strong> No withdrawal exists yet. The bot may be about to sign a WINDOWED option.</p>
 <p><strong>Bot should:</strong></p>
 <ol>
 <li>Check that <code>generalBalance - lockedGeneralBalance &gt;= generalAmount</code> (else <code>InsufficientGeneralBalance</code>)</li>
 <li>Check that <code>affiliateBalances[aff] - lockedAffiliateBalances[aff] &gt;= affiliateAmount</code> (else <code>InsufficientAffiliateBalance</code>)</li>
 <li>Check credit line capacity (if creditAmount &gt; 0)</li>
-<li>Sign the EIP-712 WithdrawOption with <code>optionType = 1 (INSTANT)</code>, <code>availableAt = 0</code></li>
+<li>Sign the EIP-712 WithdrawOption with <code>optionType = 1 (WINDOWED)</code>, <code>availableAt = 0</code></li>
 <li>Optionally gather validator signatures (if <code>minValidatorSignatures(affiliate) &gt; 0</code>)</li>
 </ol>
 <p><strong>Available actions:</strong></p>
@@ -5465,8 +5465,8 @@ Result: status -&gt; FINALIZED, generalBalance += generalAmount, affiliateBalanc
 </ul>
 <p><strong>Timers:</strong> None yet.</p>
 <hr>
-<h3 id="instant-x-accepted">INSTANT x ACCEPTED</h3>
-<p><strong>Bot situation:</strong> INSTANT withdrawal accepted, funds locked in pools. Waiting for securityWindow before processing.</p>
+<h3 id="windowed-x-accepted">WINDOWED x ACCEPTED</h3>
+<p><strong>Bot situation:</strong> WINDOWED withdrawal accepted, funds locked in pools. Waiting for securityWindow before processing.</p>
 <p><strong>Bot should:</strong></p>
 <ol>
 <li>Risk check is running</li>
@@ -5508,8 +5508,8 @@ At T=1700000081:
 Anyone can call processWithdraw(user, reqId, parts)
 </code></pre>
 <hr>
-<h3 id="instant-x-locked">INSTANT x LOCKED</h3>
-<p><strong>Bot situation:</strong> INSTANT withdrawal was risk-flagged by the LOCKER_ROLE. Funds remain locked in pools. Processing is blocked.</p>
+<h3 id="windowed-x-locked">WINDOWED x LOCKED</h3>
+<p><strong>Bot situation:</strong> WINDOWED withdrawal was risk-flagged by the LOCKER_ROLE. Funds remain locked in pools. Processing is blocked.</p>
 <p><strong>Bot should:</strong></p>
 <ol>
 <li>Investigate the risk flag</li>
@@ -5520,7 +5520,7 @@ Anyone can call processWithdraw(user, reqId, parts)
 </ol>
 <p><strong>Available actions:</strong></p>
 <ul>
-<li>UNLOCK_ROLE: <code>unlockAndProcess(user, reqId, parts)</code> (immediate, no time gate)</li>
+<li>UNLOCK_ROLE: <code>unlockAndProcess(user, reqId, parts)</code> (no-delay, no time gate)</li>
 <li>OPERATOR_ROLE: <code>processWithdraw(user, reqId, parts)</code> after <code>cooldownEndTime</code> (locked-after-cooldown path)</li>
 <li>Anyone: <code>processWithdraw(user, reqId, parts)</code> after <code>cooldownEndTime + tolerancePeriod</code></li>
 <li>SYMMIO (callback): <code>onWithdrawSuspend</code> transitions to SUSPENDED (releases pool locks and credit reservation)</li>
@@ -5549,7 +5549,7 @@ processableAt = 1700043200 + 60 = 1700043260
 1700043261 &gt;= 1700043260? YES -- permissionless process
 </code></pre>
 <hr>
-<h3 id="instant-x-processed">INSTANT x PROCESSED</h3>
+<h3 id="windowed-x-processed">WINDOWED x PROCESSED</h3>
 <p><strong>Bot situation:</strong> Funds have been transferred to the user. Awaiting SYMMIO finalization to replenish pools. SYMMIO may also suspend the withdrawal during the cooldown, in which case the contract takes the post-payout rollback path (covers credit loss from unlocked affiliate balance and records any shortfall as <code>badDebt</code>).</p>
 <p><strong>Bot should:</strong></p>
 <ol>
@@ -5585,7 +5585,7 @@ Result: status -&gt; FINALIZED
   affiliateBalances[affiliate] += affiliateAmount
 </code></pre>
 <hr>
-<h3 id="instant-x-finalized">INSTANT x FINALIZED</h3>
+<h3 id="windowed-x-finalized">WINDOWED x FINALIZED</h3>
 <p><strong>Bot situation:</strong> Terminal state. SYMMIO finalized, pools replenished. No further action.</p>
 <p><strong>Bot should:</strong></p>
 <ol>
@@ -5593,10 +5593,10 @@ Result: status -&gt; FINALIZED
 <li>Remove all timers</li>
 </ol>
 <p><strong>Available actions:</strong> None.</p>
-<p><strong>Will revert:</strong> All state-changing functions revert (same as IMMEDIATE x FINALIZED).</p>
+<p><strong>Will revert:</strong> All state-changing functions revert (same as SAME_TX x FINALIZED).</p>
 <p><strong>Timers:</strong> None.</p>
 <hr>
-<h3 id="instant-x-cancelled">INSTANT x CANCELLED</h3>
+<h3 id="windowed-x-cancelled">WINDOWED x CANCELLED</h3>
 <p><strong>Bot situation:</strong> Terminal state. The withdrawal was cancelled by the user via <code>onWithdrawCancelRequest</code> (only reachable from ACCEPTED). All pool locks released, credit reservation released, sponsor coverage refunded. (<code>onForceWithdrawCancel</code> was removed in commit eabd1f3f.)</p>
 <p><strong>Bot should:</strong></p>
 <ol>
@@ -5608,7 +5608,7 @@ Result: status -&gt; FINALIZED
 <p><strong>Will revert:</strong> All state-changing functions revert.</p>
 <p><strong>Timers:</strong> None.</p>
 <hr>
-<h3 id="instant-x-suspended">INSTANT x SUSPENDED</h3>
+<h3 id="windowed-x-suspended">WINDOWED x SUSPENDED</h3>
 <p><strong>Bot situation:</strong> Terminal state. A SYMMIO operator suspended this withdrawal via <code>onWithdrawSuspend</code>. Reachable from ACCEPTED, LOCKED, or PROCESSED:</p>
 <ul>
 <li>From ACCEPTED/LOCKED: pool locks released, credit reservation released, sponsor coverage refunded.</li>
@@ -5679,7 +5679,7 @@ SYMMIO calls: EP.onWithdrawComplete(...)
   finalizedAt = block.timestamp
   Tokens are now held by ExpressProvider
 
-Bot immediately calls: processWithdraw(user, reqId, parts)
+Bot calls processWithdraw right away(user, reqId, parts)
   status == FINALIZED? YES
   processableAt = finalizedAt (STANDARD, operator)
   block.timestamp &gt;= finalizedAt? YES
@@ -5744,7 +5744,7 @@ Scenario B -- locked-after-cooldown path:
 <hr>
 <h3 id="standard-x-processed">STANDARD x PROCESSED</h3>
 <p><strong>Bot situation:</strong> Tokens have been forwarded to the user. For STANDARD, this is the effective terminal state from the user's perspective. The FINALIZED transition already happened before PROCESSED.</p>
-<p>Note: Unlike INSTANT/IMMEDIATE where PROCESSED -&gt; FINALIZED, for STANDARD the flow is ACCEPTED -&gt; FINALIZED -&gt; PROCESSED (or LOCKED -&gt; PROCESSED via unlockAndProcess/locked-after-cooldown). The <code>onWithdrawComplete</code> callback that would transition PROCESSED -&gt; FINALIZED does not apply here because STANDARD's <code>onWithdrawComplete</code> requires <code>status == ACCEPTED || status == LOCKED</code>.</p>
+<p>Note: Unlike WINDOWED/SAME_TX where PROCESSED -&gt; FINALIZED, for STANDARD the flow is ACCEPTED -&gt; FINALIZED -&gt; PROCESSED (or LOCKED -&gt; PROCESSED via unlockAndProcess/locked-after-cooldown). The <code>onWithdrawComplete</code> callback that would transition PROCESSED -&gt; FINALIZED does not apply here because STANDARD's <code>onWithdrawComplete</code> requires <code>status == ACCEPTED || status == LOCKED</code>.</p>
 <p><strong>Bot should:</strong></p>
 <ol>
 <li>Archive this withdrawal</li>
@@ -5766,13 +5766,13 @@ Scenario B -- locked-after-cooldown path:
 <p><strong>Bot situation:</strong> SYMMIO has sent the tokens to ExpressProvider via <code>onWithdrawComplete</code>. The contract holds the tokens and is ready for the bot to forward them to the user via <code>processWithdraw</code>.</p>
 <p><strong>Bot should:</strong></p>
 <ol>
-<li>Immediately call <code>processWithdraw(user, reqId, parts)</code> to forward tokens to receivers</li>
+<li>Call <code>processWithdraw(user, reqId, parts)</code> to forward tokens to receivers</li>
 <li>For STANDARD, <code>processableAt = finalizedAt</code> (operator) or <code>finalizedAt + tolerancePeriod</code> (anyone)</li>
 <li>Since finalization just happened, the operator can typically process in the same block or next block</li>
 </ol>
 <p><strong>Available actions:</strong></p>
 <ul>
-<li>OPERATOR_ROLE: <code>processWithdraw(user, reqId, parts)</code> immediately (processableAt = finalizedAt, which is now)</li>
+<li>OPERATOR_ROLE: <code>processWithdraw(user, reqId, parts)</code> right away (processableAt = finalizedAt, which is now)</li>
 <li>Anyone: <code>processWithdraw(user, reqId, parts)</code> after <code>finalizedAt + tolerancePeriod</code></li>
 </ul>
 <p><strong>Will revert:</strong></p>
@@ -5791,7 +5791,7 @@ Bot calls: SYMMIO.finalizeWithdrawRequest(user, reqId)
 SYMMIO calls: EP.onWithdrawComplete(...)
   status = FINALIZED, finalizedAt = 1700043200
 
-Bot immediately calls: processWithdraw(user, reqId, parts)
+Bot calls processWithdraw right away(user, reqId, parts)
   status == FINALIZED? YES
   processableAt = finalizedAt = 1700043200
   hasRole(OPERATOR_ROLE)? YES -&gt; no tolerancePeriod added
@@ -5832,8 +5832,8 @@ Non-operator at T=1700043250:
 <thead>
 <tr>
 <th>Status \ OptionType</th>
-<th>IMMEDIATE</th>
-<th>INSTANT</th>
+<th>SAME_TX</th>
+<th>WINDOWED</th>
 <th>STANDARD</th>
 </tr>
 </thead>
@@ -5887,8 +5887,8 @@ Non-operator at T=1700043250:
 <thead>
 <tr>
 <th>Aspect</th>
-<th>IMMEDIATE</th>
-<th>INSTANT</th>
+<th>SAME_TX</th>
+<th>WINDOWED</th>
 <th>STANDARD</th>
 </tr>
 </thead>

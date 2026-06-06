@@ -5,7 +5,7 @@
 pragma solidity >=0.8.18;
 
 /// @notice Bot-signed payload that authorizes promoting an already-ACCEPTED STANDARD
-///         withdrawal into INSTANT-style processing once the affiliate credit cap has
+///         withdrawal into WINDOWED-style processing once the affiliate credit cap has
 ///         freed up. Covered by a SIGNER_ROLE ECDSA signature bound via EIP-712 to
 ///         `(user, requestId, nonce, affiliateAmount, creditAmount, partsHash, deadline)`.
 struct AccelerateOffer {
