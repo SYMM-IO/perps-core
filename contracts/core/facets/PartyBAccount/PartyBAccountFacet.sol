@@ -21,7 +21,7 @@ contract PartyBAccountFacet is Accessibility, Pausable, IPartyBAccountFacet {
 	function allocateForPartyB(
 		uint256 amount,
 		address partyA
-	) public whenNotPartyBActionsPaused notLiquidatedPartyB(LibSigner.getSigner(), partyA) onlyPartyB {
+	) public whenNotPartyBActionsPaused notLiquidatedPartyB(LibSigner.getSigner(), partyA) notSuspended(LibSigner.getSigner()) onlyPartyB {
 		address signer = LibSigner.getSigner();
 		PartyBAccountFacetImpl.allocateForPartyB(amount, partyA);
 		emit AllocateForPartyB(signer, partyA, amount, AccountStorage.layout().partyBAllocatedBalances[signer][partyA]);
@@ -56,7 +56,12 @@ contract PartyBAccountFacet is Accessibility, Pausable, IPartyBAccountFacet {
 	/// @param origin The address of the party A whose allocation is being transferred.
 	/// @param recipient The address of the party A who will receive the transferred allocation.
 	/// @param upnlSig The Muon signature for SingleUpnlSig.
-	function transferAllocation(uint256 amount, address origin, address recipient, SingleUpnlSig memory upnlSig) external whenNotPartyBActionsPaused {
+	function transferAllocation(
+		uint256 amount,
+		address origin,
+		address recipient,
+		SingleUpnlSig memory upnlSig
+	) external whenNotPartyBActionsPaused notSuspended(LibSigner.getSigner()) onlyPartyB {
 		address signer = LibSigner.getSigner();
 		PartyBAccountFacetImpl.transferAllocation(amount, origin, recipient, upnlSig);
 		emit TransferAllocation(

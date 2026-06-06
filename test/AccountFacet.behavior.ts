@@ -1007,6 +1007,48 @@ export function shouldBehaveLikeAccountFacet(): void {
 			const allocatedAfter = await context.viewFacet.allocatedBalanceOfPartyB(hedgerAddress, userAddress)
 			expect(allocatedBefore - allocatedAfter).to.equal(deallocateAmount)
 		})
+
+		it("Should transfer allocation between partyA buckets", async () => {
+			const transferAmount = BALANCES.DEALLOCATE_AMOUNT
+			const hedgerAddress = await hedger.getAddress()
+			const originAddress = await user.getAddress()
+			const recipientAddress = context.signers.user2.address
+
+			const originAllocatedBefore = await context.viewFacet.allocatedBalanceOfPartyB(hedgerAddress, originAddress)
+			const recipientAllocatedBefore = await context.viewFacet.allocatedBalanceOfPartyB(hedgerAddress, recipientAddress)
+
+			await context.partyBAccountFacet
+				.connect(context.signers.hedger)
+				.transferAllocation(transferAmount, originAddress, recipientAddress, await getDummySingleUpnlSig())
+
+			const originAllocatedAfter = await context.viewFacet.allocatedBalanceOfPartyB(hedgerAddress, originAddress)
+			const recipientAllocatedAfter = await context.viewFacet.allocatedBalanceOfPartyB(hedgerAddress, recipientAddress)
+
+			expect(originAllocatedBefore - originAllocatedAfter).to.equal(transferAmount)
+			expect(recipientAllocatedAfter - recipientAllocatedBefore).to.equal(transferAmount)
+		})
+
+		it("Should fail to transfer allocation when partyB is suspended", async () => {
+			const transferAmount = BALANCES.DEALLOCATE_AMOUNT
+			const originAddress = await user.getAddress()
+			const recipientAddress = context.signers.user2.address
+
+			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(await hedger.getAddress())
+
+			await expect(
+				context.partyBAccountFacet
+					.connect(context.signers.hedger)
+					.transferAllocation(transferAmount, originAddress, recipientAddress, await getDummySingleUpnlSig()),
+			).to.be.revertedWith("Accessibility: Sender is Suspended")
+		})
+
+		it("Should fail to allocate for partyB when partyB is suspended", async () => {
+			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(await hedger.getAddress())
+
+			await expect(
+				context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(BALANCES.SMALL_AMOUNT, await user.getAddress()),
+			).to.be.revertedWith("Accessibility: Sender is Suspended")
+		})
 	})
 
 	describe("Deallocate", async function () {
