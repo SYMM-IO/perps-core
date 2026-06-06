@@ -536,6 +536,44 @@ code {
 	font-weight: 760;
 }
 
+.minor-improvements {
+	margin-top: 36px;
+}
+
+.minor-improvement-list {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 10px;
+}
+
+.minor-improvement-item {
+	display: grid;
+	gap: 6px;
+	padding: 16px 18px;
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+	background: var(--surface-soft);
+	color: var(--ink);
+	text-decoration: none;
+}
+
+.minor-improvement-item:hover {
+	border-color: var(--line-strong);
+	background: var(--surface-tint);
+	color: var(--ink);
+}
+
+.minor-improvement-item strong {
+	color: var(--ink);
+	font-size: 17px;
+	line-height: 1.22;
+}
+
+.minor-improvement-item > span:last-child {
+	color: var(--muted);
+	font-size: 14px;
+}
+
 .doc-card {
 	display: flex;
 	flex-direction: column;
@@ -1974,6 +2012,7 @@ tr:last-child td {
 		.tool-heading,
 		.tool-grid,
 		.tool-grid-compact,
+		.minor-improvement-list,
 		.option-card-grid,
 		.option-spend-grid,
 		.timeline-track,
