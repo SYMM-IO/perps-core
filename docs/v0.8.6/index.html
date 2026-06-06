@@ -32,7 +32,7 @@
 			<section id="docs" class="doc-browser" aria-labelledby="docs-title">
 				<div class="section-heading">
 					<p class="eyebrow">Changelog</p>
-					<h2 id="docs-title">All v0.8.6 changes</h2>
+					<h2 id="docs-title">New features</h2>
 				</div>
 				<div class="doc-list">
 					<a class="doc-list-item" href="pages/express-withdrawal-system-design.html">
@@ -83,44 +83,8 @@
 						</span>
 						<span class="doc-list-action">Open change</span>
 					</a>
-					<a class="doc-list-item" href="pages/partya-liquidation-fee-recipient.html">
-						<span class="doc-list-index">05</span>
-						<span class="doc-list-main">
-							<span class="category">Liquidation</span>
-							<strong>PartyA Liquidation Fee Recipient Cleanup</strong>
-							<span
-								>Final PartyA LF accounting needed one unambiguous recipient. v0.8.6 records the liquidation starter and pays the capped
-								fee only to that address.</span
-							>
-						</span>
-						<span class="doc-list-action">Open change</span>
-					</a>
-					<a class="doc-list-item" href="pages/balance-change-event-cleanup.html">
-						<span class="doc-list-index">06</span>
-						<span class="doc-list-main">
-							<span class="category">Events</span>
-							<strong>BalanceChange Event Cleanup</strong>
-							<span
-								>Before, some reimbursement, fee, deferred-balance, and LF movements were missing or mislabeled. v0.8.6 emits the
-								matching BalanceChange type for each bucket.</span
-							>
-						</span>
-						<span class="doc-list-action">Open change</span>
-					</a>
-					<a class="doc-list-item" href="pages/accumulated-funding-state-event.html">
-						<span class="doc-list-index">07</span>
-						<span class="doc-list-main">
-							<span class="category">Events</span>
-							<strong>Accumulated Funding State Event</strong>
-							<span
-								>Off-chain indexers can now observe the final symbol and PartyB accumulated funding state whenever the new funding
-								system rolls or reconfigures that state.</span
-							>
-						</span>
-						<span class="doc-list-action">Open change</span>
-					</a>
 					<a class="doc-list-item" href="pages/affiliate-shutdown-flow.html">
-						<span class="doc-list-index">08</span>
+						<span class="doc-list-index">05</span>
 						<span class="doc-list-main">
 							<span class="category">Clearing House</span>
 							<strong>Affiliate Shutdown Flow</strong>
@@ -132,7 +96,7 @@
 						<span class="doc-list-action">Open change</span>
 					</a>
 					<a class="doc-list-item" href="pages/muon-upnl-validity-overrides.html">
-						<span class="doc-list-index">09</span>
+						<span class="doc-list-index">06</span>
 						<span class="doc-list-main">
 							<span class="category">Muon</span>
 							<strong>Muon UPNL Validity Overrides</strong>
@@ -143,6 +107,31 @@
 						</span>
 						<span class="doc-list-action">Open change</span>
 					</a>
+				</div>
+				<div class="minor-improvements" aria-labelledby="minor-improvements-title">
+					<div class="section-heading">
+						<p class="eyebrow">Changelog</p>
+						<h2 id="minor-improvements-title">Minor improvements</h2>
+					</div>
+					<div class="minor-improvement-list">
+						<a class="minor-improvement-item" href="pages/partya-liquidation-fee-recipient.html">
+							<span class="category">Liquidation</span>
+							<strong>PartyA Liquidation Fee Recipient Cleanup</strong>
+							<span>Records the liquidation starter as the unambiguous recipient for capped PartyA liquidation fees.</span>
+						</a>
+						<a class="minor-improvement-item" href="pages/balance-change-event-cleanup.html">
+							<span class="category">Events</span>
+							<strong>BalanceChange Event Cleanup</strong>
+							<span
+								>Emits the matching <code>BalanceChange</code> type for reimbursement, fee, deferred-balance, and LF movements.</span
+							>
+						</a>
+						<a class="minor-improvement-item" href="pages/accumulated-funding-state-event.html">
+							<span class="category">Events</span>
+							<strong>Accumulated Funding State Event</strong>
+							<span>Lets indexers observe final symbol and PartyB accumulated funding state after funding rolls or reconfiguration.</span>
+						</a>
+					</div>
 				</div>
 			</section>
 		</main>
