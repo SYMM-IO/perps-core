@@ -385,11 +385,11 @@ async function main() {
 		console.log("    isWhitelistedSymmioCore ✓")
 	})
 
-	await check("InstantLayer templates registered (nextTemplateId >= 3)", async () => {
+	await check("InstantLayer templates registered (nextTemplateId >= 5)", async () => {
 		const il = await ethers.getContractAt("InstantLayer", newIlAddress)
 		// nextTemplateId increments for each addTemplate call
 		const nextId: bigint = await (il as any).nextTemplateId()
-		if (nextId < 3n) throw new Error(`Expected at least 3 templates, got nextTemplateId=${nextId}`)
+		if (nextId < 5n) throw new Error(`Expected at least 5 templates, got nextTemplateId=${nextId}`)
 		console.log(`    nextTemplateId = ${nextId} (${nextId} templates added)`)
 	})
 

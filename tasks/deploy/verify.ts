@@ -1019,7 +1019,13 @@ async function verifyInstantLayerFull(
 				templateNames.push(template.name)
 			}
 
-			const expectedTemplates = ["InstantOpen", "InstantClose", "InstantCloseWithAllocation"]
+			const expectedTemplates = [
+				"InstantOpen",
+				"InstantClose",
+				"InstantCloseWithAllocation",
+				"InstantOpenWithCustomVA",
+				"InstantCloseWithParentAllocation",
+			]
 			for (const name of expectedTemplates) {
 				if (templateNames.includes(name)) {
 					pushAndLog(results, { category: cat, check: `${name} template`, status: "pass", actual: "configured" })
