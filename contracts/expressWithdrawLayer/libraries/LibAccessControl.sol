@@ -19,18 +19,17 @@ library LibAccessControl {
 	bytes32 public constant WITHDRAWER_ROLE = keccak256("WITHDRAWER_ROLE");
 	bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
-	bytes32 public constant WITHDRAW_OPTION_TYPEHASH =
-		keccak256(
-			"WithdrawOption(address user,uint256 nonce,uint8 optionType,uint256 availableAt,address affiliate,uint256 affiliateAmount,uint256 creditAmount,uint256 fee,uint256 operatorFee,uint256 maxUserFee,bytes32 partsHash,uint256 deadline)"
-		);
+	bytes32 public constant WITHDRAW_OPTION_TYPEHASH = keccak256(
+		"WithdrawOption(address user,uint256 nonce,uint8 optionType,uint256 availableAt,address affiliate,uint256 affiliateAmount,uint256 creditAmount,uint256 fee,uint256 operatorFee,uint256 maxUserFee,bytes32 partsHash,uint256 deadline)"
+	);
 
-	bytes32 public constant ACCELERATE_OFFER_TYPEHASH =
-		keccak256(
-			"AccelerateOffer(address user,uint256 requestId,uint256 nonce,uint256 affiliateAmount,uint256 creditAmount,bytes32 partsHash,uint256 deadline)"
-		);
+	bytes32 public constant ACCELERATE_OFFER_TYPEHASH = keccak256(
+		"AccelerateOffer(address user,uint256 requestId,uint256 nonce,uint256 affiliateAmount,uint256 creditAmount,bytes32 partsHash,uint256 deadline)"
+	);
 
-	bytes32 public constant VALIDATOR_APPROVAL_TYPEHASH =
-		keccak256("ValidatorApproval(address user,uint256 nonce,uint256 amount,uint256 timestamp,uint256 symmioNonce,address symmio)");
+	bytes32 public constant VALIDATOR_APPROVAL_TYPEHASH = keccak256(
+		"ValidatorApproval(address user,uint256 nonce,uint256 amount,uint256 timestamp,uint256 symmioNonce,address symmio)"
+	);
 
 	bytes32 private constant TYPE_HASH = keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
 

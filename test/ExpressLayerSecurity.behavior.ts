@@ -1020,6 +1020,56 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			expect(info.status).to.equal(1n) // ACCEPTED
 		})
 
+		it("should not require validator signatures for STANDARD even when validators are configured", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, context, user } = fixture
+
+			const signers = await ethers.getSigners()
+			const validator1 = signers[6]
+			await expressProvider.setValidator(fixture.affiliate, validator1.address, true)
+			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 1)
+
+			const withdrawAmount = 500n * 10n ** 18n
+			const expressAddr = await expressProvider.getAddress()
+			const parts = [
+				{
+					id: 0n,
+					amount: withdrawAmount,
+					chainId: 31337n,
+					receiver: fixture.receiver.address,
+					virtualProvider: ethers.ZeroAddress,
+					expressProvider: expressAddr,
+				},
+			]
+
+			const partsHash = computePartsHash(parts)
+			const now = (await ethers.provider.getBlock("latest"))!.timestamp
+			const deadline = now + 3600
+			const nonce = await expressProvider.nonces(user.address)
+
+			const signature = await signWithdrawOption(expressProvider, fixture.botSigner, {
+				user: user.address,
+				nonce,
+				optionType: 2,
+				availableAt: 0,
+				affiliate: fixture.affiliate,
+				affiliateAmount: 0n,
+				creditAmount: 0n,
+				fee: 0n,
+				operatorFee: 0n,
+				partsHash,
+				deadline,
+			})
+
+			const providerData = encodeProviderData(nonce, 2, 0, fixture.affiliate, 0n, 0n, 0n, 0n, deadline, signature)
+
+			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
+
+			const info = await expressProvider.getWithdrawInfo(user.address, 1)
+			expect(info.status).to.equal(1n) // ACCEPTED
+			expect(info.optionType).to.equal(2n) // STANDARD
+		})
+
 		it("should expose default validator config through view getters", async function () {
 			const fixture = await deployFixture()
 			const { expressProvider, affiliate } = fixture

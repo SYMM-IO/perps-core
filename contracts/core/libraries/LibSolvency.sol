@@ -280,10 +280,11 @@ library LibSolvency {
 		int256 totalRate = int256(unlockRate) + pnlRate - int256(feeRate);
 
 		// First check if full close (quantityToClose) keeps PartyA solvent
-		int256 balanceAfterFullClose = currentBalance +
-			int256((quote.quantityToClose * unlockRate) / 1e18) +
-			(pnlRate * int256(quote.quantityToClose)) / 1e18 -
-			int256((quote.quantityToClose * feeRate) / 1e18);
+		int256 balanceAfterFullClose =
+			currentBalance +
+				int256((quote.quantityToClose * unlockRate) / 1e18) +
+				(pnlRate * int256(quote.quantityToClose)) / 1e18 -
+				int256((quote.quantityToClose * feeRate) / 1e18);
 
 		if (balanceAfterFullClose >= 0) {
 			// Full close is safe
