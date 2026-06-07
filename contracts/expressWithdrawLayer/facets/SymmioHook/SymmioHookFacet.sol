@@ -63,7 +63,7 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 		if (offer.operatorFee != f.affiliateConfigs[offer.affiliate].operatorFee) revert LibErrors.OperatorFeeMismatch();
 		if (offer.fee + offer.operatorFee > feeBasis) revert LibErrors.FeesExceedExpressAmount();
 
-		if (minSigs > 0) {
+		if (optType != OptionType.STANDARD && minSigs > 0) {
 			_validateValidators(offer.affiliate, withdrawRequest.user, offer.nonce, withdrawRequest.totalAmount, validatorData);
 		}
 
