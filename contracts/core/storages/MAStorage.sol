@@ -145,6 +145,9 @@ library MAStorage {
 		///      isolated per-PartyA allocations. When true, uses address(0) for allocation
 		///      mappings and has different liquidation flow via ClearingHouse.
 		mapping(address => bool) crossModeEnabledForPartyB;
+		/// @notice Optional receiver for a PartyB's operational fees
+		/// @dev address(0) means operational fees are credited to the PartyB itself.
+		mapping(address => address) operationalFeeReceivers;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { Quote } from "../../storages/QuoteStorage.sol";
+import { Quote, SolverFeeState } from "../../storages/QuoteStorage.sol";
 
 interface IViewFacetQuote {
 	struct Bitmap {
@@ -18,6 +18,8 @@ interface IViewFacetQuote {
 	}
 
 	function getQuote(uint256 quoteId) external view returns (Quote memory);
+
+	function getSolverFeeState(uint256 quoteId) external view returns (SolverFeeState memory);
 
 	function getQuotesByParent(uint256 quoteId, uint256 size) external view returns (Quote[] memory);
 

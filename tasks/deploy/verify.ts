@@ -268,7 +268,7 @@ interface VerificationResult {
 	hint?: string
 }
 
-const EXPECTED_CORE_FACETS = 30
+const EXPECTED_CORE_FACETS = 31
 const EXPECTED_ACCOUNTLAYER_FACETS = 8
 
 function roleHash(ethers: any, role: string): string {
@@ -1530,6 +1530,50 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 					}
 				} catch (e: any) {
 					pushAndLog(results, { category: "Core Diamond", check: "Facet count", status: "fail", message: e.message?.slice(0, 120) })
+				}
+
+				// Check solver-fee facet selectors are installed and the legacy no-affiliate sendQuote is removed (v0.8.6)
+				try {
+					const loupe = await ethers.getContractAt("IDiamondLoupe", addresses.diamond)
+					const solverFeeInterface = (await ethers.getContractAt("IPartyBSolverFeeActionsFacet", ethers.ZeroAddress)).interface
+					const missing: string[] = []
+					for (const fragment of solverFeeInterface.fragments) {
+						if (fragment.type !== "function") continue
+						const fn = fragment as any
+						if ((await loupe.facetAddress(fn.selector)) === ethers.ZeroAddress) {
+							missing.push(fn.name)
+						}
+					}
+					if (missing.length === 0) {
+						pushAndLog(results, { category: "Core Diamond", check: "Solver-fee facet selectors", status: "pass" })
+					} else {
+						pushAndLog(results, {
+							category: "Core Diamond",
+							check: "Solver-fee facet selectors",
+							status: "fail",
+							message: `Missing fee-aware selectors: ${missing.join(", ")}`,
+							hint: "Run deploy:diamond to add PartyBSolverFeeActionsFacet via diamondCut",
+						})
+					}
+
+					const legacySendQuoteSelector = ethers
+						.id(
+							"sendQuote(address[],uint256,uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,(bytes,uint256,int256,uint256,bytes,(uint256,address,address)))",
+						)
+						.slice(0, 10)
+					if ((await loupe.facetAddress(legacySendQuoteSelector)) === ethers.ZeroAddress) {
+						pushAndLog(results, { category: "Core Diamond", check: "Legacy no-affiliate sendQuote removed", status: "pass" })
+					} else {
+						pushAndLog(results, {
+							category: "Core Diamond",
+							check: "Legacy no-affiliate sendQuote removed",
+							status: "warn",
+							message: "Legacy no-affiliate sendQuote selector is still installed",
+							hint: "v0.8.6 removes the no-affiliate sendQuote; run deploy:diamond to update PartyAFacet selectors",
+						})
+					}
+				} catch (e: any) {
+					pushAndLog(results, { category: "Core Diamond", check: "Solver-fee facet selectors", status: "fail", message: e.message?.slice(0, 120) })
 				}
 
 				// Check owner (and pending owner if transfer in progress)

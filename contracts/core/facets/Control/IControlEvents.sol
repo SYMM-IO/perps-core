@@ -27,6 +27,7 @@ interface IControlEvents {
 		uint256 fundingRateWindowTime
 	);
 	event SetFeeCollector(address affiliate, address oldFeeCollector, address newFeeCollector);
+	event SetOperationalFeeReceiver(address indexed partyB, address indexed receiver);
 	event SetAffiliateFeeForUser(
 		address affiliate,
 		address user,
