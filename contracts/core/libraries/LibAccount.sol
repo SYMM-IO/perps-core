@@ -265,6 +265,14 @@ library LibAccount {
 		return appLayout.affiliateFeeCollector[affiliate] == address(0) ? appLayout.defaultFeeCollector : appLayout.affiliateFeeCollector[affiliate];
 	}
 
+	/// @notice Resolves the operational fee receiver for a PartyB.
+	/// @param partyB The PartyB whose operational fee receiver is being resolved.
+	/// @return The configured receiver, or the PartyB itself when no custom receiver is set.
+	function getOperationalFeeReceiver(address partyB) internal view returns (address) {
+		address receiver = MAStorage.layout().operationalFeeReceivers[partyB];
+		return receiver == address(0) ? partyB : receiver;
+	}
+
 	/// @notice Returns PartyA's effective allocated balance used for balance limit checks.
 	/// @dev Includes reserved open fees from pending/locked quotes
 	function effectiveAllocatedBalance(address partyA) internal view returns (uint256) {

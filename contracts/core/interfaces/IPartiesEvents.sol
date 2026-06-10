@@ -34,6 +34,15 @@ interface IPartiesEvents {
 	// paramsData is abi.encode(symbolId, positionType, orderType, price, marketPrice, quantity, cva, lf, partyAmm, partyBmm, tradingFee, deadline)
 	event SendQuote(address partyA, uint256 quoteId, address[] partyBsWhiteList, address affiliate, bytes paramsData, bytes data);
 
+	/// @notice Emitted with SendQuote when PartyA supplies non-zero solver fee caps.
+	event SendQuoteSolverFeeCaps(
+		address indexed partyA,
+		uint256 indexed quoteId,
+		uint256 maxOperationalFee,
+		uint256 maxOpenSolverFeeRate,
+		uint256 maxCloseSolverFeeRate
+	);
+
 	/// @notice Emitted when a pending quote expires before being locked
 	event ExpireQuoteOpen(QuoteStatus quoteStatus, uint256 quoteId);
 
@@ -69,4 +78,20 @@ interface IPartiesEvents {
 
 	/// @notice Emitted when a PartyB is liquidated against a specific PartyA
 	event LiquidatePartyB(address liquidator, address partyB, address partyA, uint256 partyBAllocatedBalance, int256 upnl);
+
+	/// @notice Emitted when PartyB charges a user-approved operational fee from PartyA allocated balance.
+	event OperationalFeeCharged(
+		uint256 indexed quoteId,
+		address indexed partyA,
+		address indexed partyB,
+		address receiver,
+		uint256 symbolId,
+		uint256 amount
+	);
+
+	/// @notice Emitted when PartyB charges a user-approved open solver fee from PartyA allocated balance.
+	event OpenSolverFeeCharged(uint256 indexed quoteId, address indexed partyA, address indexed partyB, uint256 symbolId, uint256 amount);
+
+	/// @notice Emitted when PartyB charges a user-approved close solver fee from PartyA allocated balance.
+	event CloseSolverFeeCharged(uint256 indexed quoteId, address indexed partyA, address indexed partyB, uint256 symbolId, uint256 amount);
 }

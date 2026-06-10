@@ -18,9 +18,9 @@
 					<h1>Symmio Core v0.8.6 Changelog</h1>
 					<p class="hero-copy">
 						v0.8.6 is mostly about removing operational weak spots: withdrawals were safe but slow, AccountLayer ownership flows were too
-						rigid for delegated operations, and PartyA liquidation settlement could depend on funding state that changed later. The release
-						adds Express Withdrawal, delegated ownership controls, shutdown and freshness controls, and snapshot-backed liquidation
-						settlement.
+						rigid for delegated operations, and PartyA liquidation settlement could depend on funding state that changed later. The
+						release adds Express Withdrawal, delegated ownership controls, shutdown and freshness controls, and snapshot-backed
+						liquidation settlement.
 					</p>
 					<div class="hero-actions">
 						<a class="button primary" href="#docs">View changelog</a>
@@ -107,6 +107,18 @@
 						</span>
 						<span class="doc-list-action">Open change</span>
 					</a>
+					<a class="doc-list-item" href="pages/solver-fees.html">
+						<span class="doc-list-index">07</span>
+						<span class="doc-list-main">
+							<span class="category">Fees</span>
+								<strong>Solver Fees</strong>
+								<span
+									>v0.8.6 adds explicit operational and solver fees, charged from PartyA allocated balance and bounded by user-approved
+									caps plus execution-time solvency checks.</span
+								>
+						</span>
+						<span class="doc-list-action">Open change</span>
+					</a>
 				</div>
 				<div class="minor-improvements" aria-labelledby="minor-improvements-title">
 					<div class="section-heading">
@@ -129,7 +141,9 @@
 						<a class="minor-improvement-item" href="pages/accumulated-funding-state-event.html">
 							<span class="category">Events</span>
 							<strong>Accumulated Funding State Event</strong>
-							<span>Lets indexers observe final symbol and PartyB accumulated funding state after funding rolls or reconfiguration.</span>
+							<span
+								>Lets indexers observe final symbol and PartyB accumulated funding state after funding rolls or reconfiguration.</span
+							>
 						</a>
 						<a class="minor-improvement-item" href="pages/partyb-allocation-suspension-gates.html">
 							<span class="category">PartyB</span>

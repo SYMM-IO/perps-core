@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { PositionType, OrderType } from "../storages/QuoteStorage.sol";
+import { PositionType, OrderType, SolverFeeCaps } from "../storages/QuoteStorage.sol";
 
 /// @title LibSendQuoteEvents
 /// @notice Library to help emit SendQuote events while avoiding stack too deep errors
@@ -30,6 +30,13 @@ library LibSendQuoteEvents {
 
 	// paramsData is abi.encode(symbolId, positionType, orderType, price, marketPrice, quantity, cva, lf, partyAmm, partyBmm, tradingFee, deadline)
 	event SendQuote(address partyA, uint256 quoteId, address[] partyBsWhiteList, address affiliate, bytes paramsData, bytes data);
+	event SendQuoteSolverFeeCaps(
+		address indexed partyA,
+		uint256 indexed quoteId,
+		uint256 maxOperationalFee,
+		uint256 maxOpenSolverFeeRate,
+		uint256 maxCloseSolverFeeRate
+	);
 
 	/// @notice Parameters for emitting SendQuote events, grouped to avoid stack too deep errors.
 	struct SendQuoteEventParams {
@@ -49,6 +56,7 @@ library LibSendQuoteEvents {
 		uint256 tradingFee;
 		uint256 deadline;
 		address affiliate;
+		SolverFeeCaps solverFeeCaps;
 		bytes data;
 	}
 
@@ -90,5 +98,19 @@ library LibSendQuoteEvents {
 			params.deadline
 		);
 		emit SendQuote(params.partyA, params.quoteId, params.partyBsWhiteList, params.affiliate, paramsData, params.data);
+
+		if (
+			params.solverFeeCaps.maxOperationalFee > 0 ||
+			params.solverFeeCaps.maxOpenSolverFeeRate > 0 ||
+			params.solverFeeCaps.maxCloseSolverFeeRate > 0
+		) {
+			emit SendQuoteSolverFeeCaps(
+				params.partyA,
+				params.quoteId,
+				params.solverFeeCaps.maxOperationalFee,
+				params.solverFeeCaps.maxOpenSolverFeeRate,
+				params.solverFeeCaps.maxCloseSolverFeeRate
+			);
+		}
 	}
 }

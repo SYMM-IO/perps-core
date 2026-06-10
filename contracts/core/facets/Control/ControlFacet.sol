@@ -251,6 +251,15 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		GlobalAppStorage.layout().affiliateFeeCollector[affiliate] = feeCollector;
 	}
 
+	/// @notice Sets the account that receives this PartyB's operational fees.
+	/// @dev Passing address(0) resets the receiver to the PartyB's own free balance.
+	/// @param receiver The account to credit for future operational fee charges.
+	function setOperationalFeeReceiver(address receiver) external onlyPartyB {
+		address partyB = LibSigner.getSigner();
+		MAStorage.layout().operationalFeeReceivers[partyB] = receiver;
+		emit SetOperationalFeeReceiver(partyB, receiver);
+	}
+
 	/// @notice Sets the trading fees for a specific affiliate and symbol. Fees are charged when opening and closing positions.
 	/// @param affiliate The address of the affiliate whose trading fees are being set.
 	/// @param symbolIds The list of trading symbol IDs (0 for default fee across all symbols).

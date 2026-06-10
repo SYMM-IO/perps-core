@@ -23,6 +23,7 @@ export const FacetNames = [
 	"ForceCloseStepsFacet",
 	"SettlementFacet",
 	"PartyBPositionActionsFacet",
+	"PartyBSolverFeeActionsFacet",
 	"PartyBQuoteActionsFacet",
 	"ClearingHouseFacet",
 	"PartyBBatchActionsFacet",

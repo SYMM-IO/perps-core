@@ -5,7 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { AccountStorage } from "../../storages/AccountStorage.sol";
-import { QuoteStorage, Quote, QuoteStatus } from "../../storages/QuoteStorage.sol";
+import { QuoteStorage, Quote, QuoteStatus, SolverFeeState } from "../../storages/QuoteStorage.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { IViewFacetQuote } from "./IViewFacetQuote.sol";
 import { LibQuoteFunding } from "../../libraries/LibQuoteFunding.sol";
@@ -16,6 +16,13 @@ contract ViewFacetQuote is IViewFacetQuote {
 	/// @return The details of the quote.
 	function getQuote(uint256 quoteId) external view returns (Quote memory) {
 		return QuoteStorage.layout().quotes[quoteId];
+	}
+
+	/// @notice Returns solver fee caps and charged amounts for a quote.
+	/// @param quoteId The ID of the quote.
+	/// @return The solver fee state for the quote.
+	function getSolverFeeState(uint256 quoteId) external view returns (SolverFeeState memory) {
+		return QuoteStorage.layout().solverFeeStates[quoteId];
 	}
 
 	/// @notice Returns an array of quotes following the parentId chain (each quote's parentId points to the child/remainder quote created from a partial fill).

@@ -77,6 +77,8 @@ interface IControlFacet is IControlEvents {
 
 	function setFeeCollector(address affiliate, address feeCollector) external;
 
+	function setOperationalFeeReceiver(address receiver) external;
+
 	function setLiquidationTimeout(uint256 liquidationTimeout) external;
 
 	function setBalanceLimitPerUser(uint256 balanceLimitPerUser) external;

@@ -11,7 +11,7 @@ import { LibQuoteClose } from "../../libraries/LibQuoteClose.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
 import { SharedEvents } from "../../libraries/SharedEvents.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
-import { QuoteStorage, Quote, QuoteStatus, LockedValues, PositionType, OrderType } from "../../storages/QuoteStorage.sol";
+import { QuoteStorage, Quote, QuoteStatus, LockedValues, PositionType, OrderType, SolverFeeCaps } from "../../storages/QuoteStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
@@ -43,7 +43,8 @@ library PartyAFacetImpl {
 		uint256 deadline,
 		address affiliate,
 		SingleUpnlAndPriceSig memory upnlSig,
-		bytes memory data
+		bytes memory data,
+		SolverFeeCaps memory solverFeeCaps
 	) internal {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
@@ -157,6 +158,9 @@ library PartyAFacetImpl {
 			quoteLayout.partyAPendingQuotes[signer].push(currentId);
 		}
 		quoteLayout.quotes[currentId] = quote;
+		quoteLayout.solverFeeStates[currentId].maxOperationalFee = solverFeeCaps.maxOperationalFee;
+		quoteLayout.solverFeeStates[currentId].maxOpenSolverFeeRate = solverFeeCaps.maxOpenSolverFeeRate;
+		quoteLayout.solverFeeStates[currentId].maxCloseSolverFeeRate = solverFeeCaps.maxCloseSolverFeeRate;
 
 		uint256 feeAmount = LibQuote.getOpenTradingFee(currentId);
 		require(accountLayout.allocatedBalances[signer] >= feeAmount, "PartyAFacet: Insufficient allocated balance for fee");

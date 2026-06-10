@@ -13,7 +13,7 @@ import { LockedValuesOps } from "./LibLockedValues.sol";
 library LibSolvency {
 	using LockedValuesOps for LockedValues;
 
-	/// @notice Checks whether both parties (Party A and Party B) will remain solvent after opening positions for given quotes.
+	/// @notice Reverts unless both parties (Party A and Party B) remain solvent after opening positions for given quotes.
 	/// @param quoteIds The IDs of the quotes for which the positions are being opened.
 	/// @param filledAmounts The amounts of the quotes that will be filled by opening the positions.
 	/// @param marketPrices The market prices of positions that will be opened.
@@ -21,8 +21,7 @@ library LibSolvency {
 	/// @param upnlPartyA The upnl of partyA
 	/// @param partyB Address of partyB
 	/// @param partyA Address of partyA
-	/// @return A boolean indicating whether both parties remain solvent after opening the positions.
-	function isSolventAfterOpenPosition(
+	function requireSolventAfterOpenPosition(
 		uint256[] memory quoteIds,
 		uint256[] memory filledAmounts,
 		uint256[] memory marketPrices,
@@ -30,10 +29,42 @@ library LibSolvency {
 		int256 upnlPartyA,
 		address partyB,
 		address partyA
-	) internal view returns (bool) {
+	) internal view {
+		(int256 partyBAvailableBalance, int256 partyAAvailableBalance) = getAvailableBalanceAfterOpenPosition(
+			quoteIds,
+			filledAmounts,
+			marketPrices,
+			upnlPartyB,
+			upnlPartyA,
+			partyB,
+			partyA
+		);
+		require(partyBAvailableBalance >= 0 && partyAAvailableBalance >= 0, "LibSolvency: Available balance is lower than zero");
+	}
+
+	/// @notice Calculates the available balances for Party A and Party B after opening positions for given quotes.
+	/// @param quoteIds The IDs of the quotes for which the positions are being opened.
+	/// @param filledAmounts The amounts of the quotes that will be filled by opening the positions.
+	/// @param marketPrices The market prices of positions that will be opened.
+	/// @param upnlPartyB The upnl of partyB
+	/// @param upnlPartyA The upnl of partyA
+	/// @param partyB Address of partyB
+	/// @param partyA Address of partyA
+	/// @return partyBAvailableBalance The available balance for Party B after opening the positions.
+	/// @return partyAAvailableBalance The available balance for Party A after opening the positions.
+	function getAvailableBalanceAfterOpenPosition(
+		uint256[] memory quoteIds,
+		uint256[] memory filledAmounts,
+		uint256[] memory marketPrices,
+		int256 upnlPartyB,
+		int256 upnlPartyA,
+		address partyB,
+		address partyA
+	) internal view returns (int256 partyBAvailableBalance, int256 partyAAvailableBalance) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		int256 partyBAvailableBalance = LibAccount.partyBAvailableBalanceForLiquidation(upnlPartyB, partyB, partyA);
-		int256 partyAAvailableBalance = LibAccount.partyAAvailableBalanceForLiquidation(
+
+		partyBAvailableBalance = LibAccount.partyBAvailableBalanceForLiquidation(upnlPartyB, partyB, partyA);
+		partyAAvailableBalance = LibAccount.partyAAvailableBalanceForLiquidation(
 			upnlPartyA,
 			AccountStorage.layout().allocatedBalances[partyA],
 			partyA
@@ -67,8 +98,6 @@ library LibSolvency {
 				}
 			}
 		}
-		require(partyBAvailableBalance >= 0 && partyAAvailableBalance >= 0, "LibSolvency: Available balance is lower than zero");
-		return true;
 	}
 
 	/// @notice Calculates the available balances for Party A and Party B after closing positions for given quotes.
@@ -140,7 +169,7 @@ library LibSolvency {
 		}
 	}
 
-	/// @notice Checks whether both parties (Party A and Party B) will remain solvent after closing positions for given quotes.
+	/// @notice Reverts unless both parties (Party A and Party B) remain solvent after closing positions for given quotes.
 	/// @param quoteIds The IDs of the quotes for which the positions are being closed.
 	/// @param filledAmounts The amounts of the quotes that will be filled by closing the positions.
 	/// @param closedPrices The prices at which the positions will be closed.
@@ -149,8 +178,7 @@ library LibSolvency {
 	/// @param upnlPartyA The upnl of partyA
 	/// @param partyB Address of partyB
 	/// @param partyA Address of partyA
-	/// @return A boolean indicating whether both parties remain solvent after closing the positions.
-	function isSolventAfterClosePosition(
+	function requireSolventAfterClosePosition(
 		uint256[] memory quoteIds,
 		uint256[] memory filledAmounts,
 		uint256[] memory closedPrices,
@@ -159,7 +187,7 @@ library LibSolvency {
 		int256 upnlPartyA,
 		address partyB,
 		address partyA
-	) internal view returns (bool) {
+	) internal view {
 		(int256 partyBAvailableBalance, int256 partyAAvailableBalance) = getAvailableBalanceAfterClosePosition(
 			quoteIds,
 			filledAmounts,
@@ -171,7 +199,6 @@ library LibSolvency {
 			partyA
 		);
 		require(partyBAvailableBalance >= 0 && partyAAvailableBalance >= 0, "LibSolvency: Available balance is lower than zero");
-		return true;
 	}
 
 	/// @notice Calculates the maximum close amount that keeps PartyA at the edge of liquidation (available balance = 0).
@@ -222,13 +249,15 @@ library LibSolvency {
 	/// @param closedPrice The price at which the position would be closed
 	/// @param marketPrice The current market price
 	/// @param upnlPartyA The unrealized PnL of PartyA
+	/// @param solverFeeAmount The total extra solver-side fee that will be deducted from PartyA allocated balance (0 for fee-less flows)
 	/// @return maxCloseAmount The maximum amount that can be closed while keeping PartyA solvent
 	/// @return canCloseAll True if the full quantityToClose can be closed without making PartyA insolvent
 	function calculateMaxCloseAmountToLiquidation(
 		uint256 quoteId,
 		uint256 closedPrice,
 		uint256 marketPrice,
-		int256 upnlPartyA
+		int256 upnlPartyA,
+		uint256 solverFeeAmount
 	) internal view returns (uint256 maxCloseAmount, bool canCloseAll) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote storage quote = quoteLayout.quotes[quoteId];
@@ -249,7 +278,11 @@ library LibSolvency {
 
 		// Calculate fee rate per unit of close amount (scaled by 1e18)
 		// feeRate = closedPrice * closeFee / 1e18 (since closeFee is already in 1e18 scale)
-		uint256 feeRate = (closedPrice * quote.closeFee) / 1e18;
+		// Rounded UP: the actual close fee in getAvailableBalanceAfterClosePosition is
+		// (x * closedPrice * closeFee) / 1e36, and flooring the rate here would underestimate that
+		// deduction, letting the model report a balance a few wei above the real one and making the
+		// subsequent solvency check revert at the exact liquidation edge.
+		uint256 feeRate = (closedPrice * quote.closeFee + 1e18 - 1) / 1e18;
 
 		// Calculate pnl effect per unit based on position type and price direction
 		// This matches the logic in getAvailableBalanceAfterClosePosition
@@ -278,13 +311,15 @@ library LibSolvency {
 		// Total rate = unlockRate + pnlRate - feeRate (all scaled by 1e18 relative to close amount)
 		// Note: pnlRate is price difference per unit, unlockRate and feeRate are scaled by 1e18
 		int256 totalRate = int256(unlockRate) + pnlRate - int256(feeRate);
+		int256 solverFeeEffect = int256(solverFeeAmount);
 
 		// First check if full close (quantityToClose) keeps PartyA solvent
 		int256 balanceAfterFullClose =
 			currentBalance +
 				int256((quote.quantityToClose * unlockRate) / 1e18) +
 				(pnlRate * int256(quote.quantityToClose)) / 1e18 -
-				int256((quote.quantityToClose * feeRate) / 1e18);
+				int256((quote.quantityToClose * feeRate) / 1e18) -
+				solverFeeEffect;
 
 		if (balanceAfterFullClose >= 0) {
 			// Full close is safe
@@ -301,20 +336,22 @@ library LibSolvency {
 		// totalRate < 0: Closing is HARMFUL - this is the partial close case
 		// We need to limit how much we close to avoid making PartyA insolvent
 
-		if (currentBalance <= 0) {
+		int256 currentBalanceAfterSolverFee = currentBalance - solverFeeEffect;
+
+		if (currentBalanceAfterSolverFee <= 0) {
 			// PartyA already insolvent, closing makes it worse
 			// Can't close anything without making it worse
 			return (0, false);
 		}
 
-		// currentBalance > 0, totalRate < 0
-		// Find x such that: currentBalance + x * totalRate / 1e18 = 0
-		// x = currentBalance * 1e18 / (-totalRate)
+		// currentBalanceAfterSolverFee > 0, totalRate < 0
+		// Find x such that: currentBalanceAfterSolverFee + x * totalRate / 1e18 = 0
+		// x = currentBalanceAfterSolverFee * 1e18 / (-totalRate)
 		//
 		// Note: Integer division rounds DOWN intentionally. This is conservative:
 		// - We close slightly less than what would bring balance to exactly 0
-		// - Guarantees: currentBalance + (maxCloseAmount * totalRate / 1e18) >= 0
-		maxCloseAmount = (uint256(currentBalance) * 1e18) / uint256(-totalRate);
+		// - Guarantees: currentBalanceAfterSolverFee + (maxCloseAmount * totalRate / 1e18) >= 0
+		maxCloseAmount = (uint256(currentBalanceAfterSolverFee) * 1e18) / uint256(-totalRate);
 
 		// Cap at quantityToClose (safety check, shouldn't be needed given balanceAfterFullClose < 0)
 		if (maxCloseAmount > quote.quantityToClose) {
