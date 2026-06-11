@@ -100,17 +100,17 @@ library MigrationFacetImpl {
 		// Skip if already initialized (non-zero value)
 		if (quote.accumulatedPaidFunding != 0) return;
 
-		// Update accumulated rates to current epoch
-		LibFundingRate.updateAccumulatedRatesAndEmit(fundingFee, quote.symbolId, quote.partyB);
+		// Calculate the current cumulative fee for this position type lazily,
+		// without rolling the symbol/PartyB funding state
+		uint256 epochsSinceLastUpdate = LibFundingRate.getEpochsSinceLastUpdate(fundingFee);
+		uint256 epochsBeforeLastUpdate = fundingFee.lastUpdatedEpoch - fundingFee.startEpoch;
 
-		// Calculate the current accumulated fee that would be used for this position type
-		int256 rate = quote.positionType == PositionType.LONG ? fundingFee.accumulatedLongRate : fundingFee.accumulatedShortRate;
-
-		// Set the accumulatedPaidFunding to snapshot + current rate * epochs since start
-		// This means when funding is charged later, it will be calculated relative to this baseline
+		int256 accumulatedRate = quote.positionType == PositionType.LONG ? fundingFee.accumulatedLongRate : fundingFee.accumulatedShortRate;
+		int256 currentRate = quote.positionType == PositionType.LONG ? fundingFee.currentLongRate : fundingFee.currentShortRate;
 		int256 snapshot = quote.positionType == PositionType.LONG ? fundingFee.snapshotLongFee : fundingFee.snapshotShortFee;
-		uint256 epochsSinceStart = LibFundingRate.getEpochsSinceStart(fundingFee);
-		quote.accumulatedPaidFunding = snapshot + rate * int256(epochsSinceStart);
+
+		// Set the accumulatedPaidFunding baseline; funding charged later is relative to this
+		quote.accumulatedPaidFunding = snapshot + (accumulatedRate * int256(epochsBeforeLastUpdate)) + (currentRate * int256(epochsSinceLastUpdate));
 	}
 
 	/// @notice Migrates partyB locked/pending locked values to the cross bucket (address(0))

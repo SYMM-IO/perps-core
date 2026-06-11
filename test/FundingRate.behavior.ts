@@ -459,7 +459,7 @@ export function shouldBehaveLikeFundingRate(): void {
 			})
 		})
 
-		it("emits symbol partyB funding state when close rolls accumulated rates", async () => {
+		it("does not roll symbol partyB funding state when close charges funding", async () => {
 			const startTime = 2000000000n
 			const epochDuration = 400n
 			const setRateTimestamp = startTime + 100n
@@ -483,23 +483,17 @@ export function shouldBehaveLikeFundingRate(): void {
 				.connect(context.signers.hedger)
 				.fillCloseRequest(1, decimal(100n), decimal(1n), await getDummyPairUpnlAndPriceSig(decimal(1n)))
 
-			await expect(tx)
-				.to.emit(context.fundingRateFacet, "AccumulatedFundingStateUpdated")
-				.withArgs(
-					1,
-					context.signers.hedger.address,
-					decimal(2n, 16),
-					0,
-					decimal(2n, 16),
-					0,
-					closeTimestamp / epochDuration,
-					closeTimestamp,
-					setRateTimestamp,
-					setRateTimestamp / epochDuration,
-					epochDuration,
-					0,
-					0,
-				)
+			await expect(tx).to.not.emit(context.fundingRateFacet, "AccumulatedFundingStateUpdated")
+
+			// Symbol/PartyB state stays at the last solver update; the quote settles via lazy extrapolation
+			const fundingFee = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger.address)
+			expect(fundingFee.accumulatedLongRate).to.equal(0n)
+			expect(fundingFee.lastUpdatedEpoch).to.equal(setRateTimestamp / epochDuration)
+			expect(fundingFee.lastUpdatedTimeStamp).to.equal(setRateTimestamp)
+
+			// Two epochs elapsed at 0.02 → cumulative baseline recorded on the quote
+			const quote = await context.viewFacetQuote.getQuote(1)
+			expect(quote.accumulatedPaidFunding).to.equal(decimal(4n, 16))
 		})
 
 		describe("funding rate accumulation over multiple epochs", () => {
@@ -537,7 +531,7 @@ export function shouldBehaveLikeFundingRate(): void {
 				expect(fundingRate4.accumulatedLongRate).to.equal(decimal(3n, 16))
 			})
 
-			it("should roll accumulated funding when opening a position crosses an epoch boundary", async () => {
+			it("should not roll symbol funding state when opening a position", async () => {
 				const startTime = await time.latest()
 
 				await time.setNextBlockTimestamp(startTime + 100)
@@ -553,9 +547,14 @@ export function shouldBehaveLikeFundingRate(): void {
 				await time.setNextBlockTimestamp(startTime + 800)
 				await hedger.openPosition(quoteId)
 
+				// Symbol/PartyB state stays at the last solver update
 				const fundingRate = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger.address)
-				expect(fundingRate.lastUpdatedEpoch).to.equal(BigInt(Math.floor((startTime + 800) / 400)))
-				expect(fundingRate.accumulatedLongRate).to.equal(decimal(2n, 16))
+				expect(fundingRate.lastUpdatedEpoch).to.equal(BigInt(Math.floor((startTime + 100) / 400)))
+				expect(fundingRate.accumulatedLongRate).to.equal(0n)
+
+				// Baseline = two epochs of lazy extrapolation at the current rate
+				const quote = await context.viewFacetQuote.getQuote(quoteId)
+				expect(quote.accumulatedPaidFunding).to.equal(decimal(4n, 16))
 			})
 
 			it("should correctly accumulate and charge funding rates across multiple epochs", async () => {
@@ -593,7 +592,8 @@ export function shouldBehaveLikeFundingRate(): void {
 				const fundingRate3 = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger)
 				const quote1 = await context.viewFacetQuote.getQuote(4)
 				expect(fundingRate3.currentLongRate).to.equal(decimal(3n, 16))
-				expect(fundingRate3.accumulatedLongRate).to.equal(decimal(3n, 16))
+				// Position open no longer rolls symbol funding state
+				expect(fundingRate3.accumulatedLongRate).to.equal(0n)
 				expect(quote1.lastFundingPaymentTimestamp).to.approximately(startTime + 500, 10)
 
 				//* Move to t+700: Update funding fee
@@ -734,7 +734,8 @@ export function shouldBehaveLikeFundingRate(): void {
 				const fundingRate10 = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger)
 
 				expect(fundingRate10.currentLongRate).to.equal(decimal(5n, 16))
-				expect(fundingRate10.accumulatedLongRate).to.equal(decimal(325n, 14))
+				// Charging funding no longer rolls symbol state; it stays at the t+1800 solver update
+				expect(fundingRate10.accumulatedLongRate).to.equal(decimal(15n, 15))
 
 				expect(quote4.accumulatedPaidFunding).to.approximately(decimal(155n, 15), decimal(1n, 13))
 				expect(quote4.lastFundingPaymentTimestamp).to.equal(await time.latest())

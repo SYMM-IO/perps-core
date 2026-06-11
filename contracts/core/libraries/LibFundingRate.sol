@@ -93,16 +93,6 @@ library LibFundingRate {
 		return (fundingFee.accumulatedLongRate, fundingFee.accumulatedShortRate, true);
 	}
 
-	/// @notice Updates accumulated rates and emits the funding state when symbol/PartyB storage changes.
-	function updateAccumulatedRatesAndEmit(
-		FundingFee storage fundingFee,
-		uint256 symbolId,
-		address partyB
-	) internal returns (int256 accumulatedLongRate, int256 accumulatedShortRate, bool stateUpdated) {
-		(accumulatedLongRate, accumulatedShortRate, stateUpdated) = updateAccumulatedRates(fundingFee);
-		if (stateUpdated) emitAccumulatedFundingStateUpdated(symbolId, partyB, fundingFee);
-	}
-
 	/// @notice Emits the full symbol/PartyB accumulated funding state after callers finish mutating it.
 	function emitAccumulatedFundingStateUpdated(uint256 symbolId, address partyB, FundingFee storage fundingFee) internal {
 		emit AccumulatedFundingStateUpdated(
