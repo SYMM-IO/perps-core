@@ -230,6 +230,25 @@ export function shouldBehaveLikeMultiAccount() {
 				await multiAccount.connect(context.signers.user2)._call(partyAAccount, [sendQuote1])
 				expect((await context.viewFacetQuote.getQuote(1)).quoteStatus).to.be.equal(QuoteStatus.PENDING)
 			})
+
+			it("should block an unauthorized caller even while the InstantLayer flag is set", async () => {
+				// Simulate being mid-InstantLayer-batch: the global ambient flag is true for everyone.
+				await context.controlFacet.connect(context.signers.admin).grantRole(await context.signers.admin.getAddress(), ethers.id("INSTANT_LAYER_ROLE"))
+				await context.controlFacet.connect(context.signers.admin).setCallFromInstantLayer(true)
+
+				const quoteRequest1 = limitQuoteRequestBuilder()
+					.affiliate(await multiAccount.getAddress())
+					.build()
+				const sendQuote1 = context.partyAFacet.interface.encodeFunctionData(
+					"sendQuoteWithAffiliate",
+					await getListFormatOfQuoteRequest(quoteRequest1),
+				)
+
+				// user2 is neither the owner nor delegated; the ambient flag must NOT grant them account access.
+				await expect(multiAccount.connect(context.signers.user2)._call(partyAAccount, [sendQuote1])).to.be.revertedWith(
+					"MultiAccount: Unauthorized access",
+				)
+			})
 		})
 
 		describe("Balance Management", function () {

@@ -13,7 +13,7 @@ import { SignatureChecker } from "@openzeppelin/contracts/utils/cryptography/Sig
 import { IERC1271 } from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 
 interface ISymmio {
-	function isCallFromInstantLayer() external view returns (bool);
+	function hasRole(address user, bytes32 role) external view returns (bool);
 
 	function adlClose(uint256 quoteId, uint256 amount, uint256 price) external;
 
@@ -32,6 +32,9 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 	bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 	bytes32 public constant UNPAUSER_ROLE = keccak256("UNPAUSER_ROLE");
 	bytes32 public constant SETTER_ROLE = keccak256("SETTER_ROLE");
+	/// @dev The Symmio CORE diamond's INSTANT_LAYER_ROLE. The InstantLayer holds this role on core, so checking the
+	///      direct caller against it authorizes only the real InstantLayer -- not arbitrary code running during a batch.
+	bytes32 private constant CORE_INSTANT_LAYER_ROLE = keccak256("INSTANT_LAYER_ROLE");
 	uint8 private constant FUNDING_SKIP_STALE_NONCE = 0;
 	uint8 private constant FUNDING_SKIP_EXPIRED_DEADLINE = 1;
 
@@ -128,7 +131,9 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 		require(amounts.length == len && prices.length == len, "SymmioPartyB: Array length mismatch");
 		require(symmioAddress != address(0), "SymmioPartyB: Invalid address");
 		require(
-			hasRole(MANAGER_ROLE, msg.sender) || hasRole(TRUSTED_ROLE, msg.sender) || ISymmio(symmioAddress).isCallFromInstantLayer(),
+			hasRole(MANAGER_ROLE, msg.sender) ||
+				hasRole(TRUSTED_ROLE, msg.sender) ||
+				ISymmio(symmioAddress).hasRole(msg.sender, CORE_INSTANT_LAYER_ROLE),
 			"SymmioPartyB: Invalid access"
 		);
 
@@ -153,7 +158,9 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 				_checkRole(MANAGER_ROLE, msg.sender);
 			} else {
 				require(
-					hasRole(MANAGER_ROLE, msg.sender) || hasRole(TRUSTED_ROLE, msg.sender) || ISymmio(symmioAddress).isCallFromInstantLayer(),
+					hasRole(MANAGER_ROLE, msg.sender) ||
+						hasRole(TRUSTED_ROLE, msg.sender) ||
+						ISymmio(symmioAddress).hasRole(msg.sender, CORE_INSTANT_LAYER_ROLE),
 					"SymmioPartyB: Invalid access"
 				);
 			}
@@ -184,7 +191,9 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 	) external whenNotPaused {
 		require(symmioAddress != address(0), "SymmioPartyB: Invalid address");
 		require(
-			hasRole(MANAGER_ROLE, msg.sender) || hasRole(TRUSTED_ROLE, msg.sender) || ISymmio(symmioAddress).isCallFromInstantLayer(),
+			hasRole(MANAGER_ROLE, msg.sender) ||
+				hasRole(TRUSTED_ROLE, msg.sender) ||
+				ISymmio(symmioAddress).hasRole(msg.sender, CORE_INSTANT_LAYER_ROLE),
 			"SymmioPartyB: Invalid access"
 		);
 
