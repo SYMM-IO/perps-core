@@ -1090,39 +1090,74 @@
 
 	const tocLinks = Array.from(document.querySelectorAll(".toc-link"))
 	if (tocLinks.length) {
+		const tocScroller = document.querySelector(".side-toc .toc-card") || document.querySelector(".toc-panel")
 		const byId = new Map()
 		tocLinks.forEach((link) => {
-			const id = decodeURIComponent((link.getAttribute("href") || "").replace(/^#/, ""))
+			let id = ""
+			try {
+				id = decodeURIComponent((link.getAttribute("href") || "").replace(/^#/, ""))
+			} catch (_error) {
+				id = ""
+			}
 			if (id) byId.set(id, link)
 			link.addEventListener("click", () => {
-				if (id) setActiveToc(id)
+				if (id) setActiveToc(id, { scroll: false })
 			})
 		})
-		function setActiveToc(id) {
-			tocLinks.forEach((link) => link.classList.remove("is-active"))
+		const headings = Array.from(document.querySelectorAll(".doc-article h2[id], .doc-article h3[id]")).filter((heading) => byId.has(heading.id))
+		let activeId = ""
+		let ticking = false
+		function setActiveToc(id, options = {}) {
 			const active = byId.get(id)
-			if (active) active.classList.add("is-active")
+			if (!active || activeId === id) return
+			if (activeId && byId.has(activeId)) {
+				const previous = byId.get(activeId)
+				previous.classList.remove("is-active")
+				previous.removeAttribute("aria-current")
+			}
+			activeId = id
+			active.classList.add("is-active")
+			active.setAttribute("aria-current", "location")
+			if (options.scroll !== false && tocScroller && tocScroller.scrollHeight > tocScroller.clientHeight) {
+				const panelRect = tocScroller.getBoundingClientRect()
+				const activeRect = active.getBoundingClientRect()
+				if (activeRect.top < panelRect.top + 12) {
+					tocScroller.scrollTop = Math.max(0, tocScroller.scrollTop + activeRect.top - panelRect.top - 18)
+				} else if (activeRect.bottom > panelRect.bottom - 12) {
+					tocScroller.scrollTop = tocScroller.scrollTop + activeRect.bottom - panelRect.bottom + 18
+				}
+			}
 		}
-		const initialHash = decodeURIComponent(window.location.hash.replace(/^#/, ""))
-		if (initialHash && byId.has(initialHash)) setActiveToc(initialHash)
-		window.addEventListener("hashchange", () => {
-			const id = decodeURIComponent(window.location.hash.replace(/^#/, ""))
+		function activeFromScroll() {
+			ticking = false
+			if (!headings.length) return
+			const marker = 118
+			let current = headings[0]
+			for (const heading of headings) {
+				if (heading.getBoundingClientRect().top <= marker) current = heading
+				else break
+			}
+			setActiveToc(current.id)
+		}
+		function requestActiveFromScroll() {
+			if (ticking) return
+			ticking = true
+			window.requestAnimationFrame(activeFromScroll)
+		}
+		function activeFromHash() {
+			let id = ""
+			try {
+				id = decodeURIComponent(window.location.hash.replace(/^#/, ""))
+			} catch (_error) {
+				id = ""
+			}
 			if (id && byId.has(id)) setActiveToc(id)
-		})
-		if (!("IntersectionObserver" in window)) {
-			const firstId = tocLinks[0] ? decodeURIComponent((tocLinks[0].getAttribute("href") || "").replace(/^#/, "")) : ""
-			if (!initialHash && firstId) setActiveToc(firstId)
-			return
+			else activeFromScroll()
 		}
-		const observer = new IntersectionObserver(
-			(entries) => {
-				entries.forEach((entry) => {
-					if (!entry.isIntersecting) return
-					setActiveToc(entry.target.id)
-				})
-			},
-			{ rootMargin: "-18% 0px -72% 0px", threshold: 0.01 }
-		)
-		document.querySelectorAll(".doc-article h2[id], .doc-article h3[id]").forEach((heading) => observer.observe(heading))
+		window.addEventListener("scroll", requestActiveFromScroll, { passive: true })
+		window.addEventListener("resize", requestActiveFromScroll)
+		window.addEventListener("hashchange", activeFromHash)
+		activeFromHash()
+		window.setTimeout(activeFromHash, 80)
 	}
 })()

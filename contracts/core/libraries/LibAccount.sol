@@ -123,7 +123,7 @@ library LibAccount {
 				) -
 				considering_mm;
 		}
-		return available;
+		return available - int256(partyBLiquidationSettlementReserve(accountLayout, partyB));
 	}
 
 	/// @notice Calculates the available balance for Party B.
@@ -148,7 +148,7 @@ library LibAccount {
 				int256(accountLayout.partyBLockedBalances[partyB][allocationKey].cva + accountLayout.partyBLockedBalances[partyB][allocationKey].lf) -
 				considering_mm;
 		}
-		return available;
+		return available - int256(partyBLiquidationSettlementReserve(accountLayout, partyB));
 	}
 
 	/// @notice Calculates the available balance for liquidation for Party B.
@@ -157,11 +157,25 @@ library LibAccount {
 	/// @param partyA The address of Party A.
 	/// @return The available balance for liquidation for Party B.
 	function partyBAvailableBalanceForLiquidation(int256 upnl, address partyB, address partyA) internal view returns (int256) {
+		return partyBAvailableBalanceForLiquidation(upnl, partyB, partyA, true);
+	}
+
+	function partyBAvailableBalanceForLiquidation(
+		int256 upnl,
+		address partyB,
+		address partyA,
+		bool applyLiquidationSettlementReserve
+	) internal view returns (int256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address allocationKey = partyBAllocationKey(partyB, partyA);
 		int256 a = int256(accountLayout.partyBAllocatedBalances[partyB][allocationKey]) -
-			int256(accountLayout.partyBLockedBalances[partyB][allocationKey].cva + accountLayout.partyBLockedBalances[partyB][allocationKey].lf);
+			int256(accountLayout.partyBLockedBalances[partyB][allocationKey].cva + accountLayout.partyBLockedBalances[partyB][allocationKey].lf) -
+			int256(applyLiquidationSettlementReserve ? partyBLiquidationSettlementReserve(accountLayout, partyB) : 0);
 		return a + upnl;
+	}
+
+	function partyBLiquidationSettlementReserve(AccountStorage.Layout storage accountLayout, address partyB) internal view returns (uint256) {
+		return MAStorage.layout().crossModeEnabledForPartyB[partyB] ? accountLayout.partyBLiquidationSettlementReserve[partyB] : 0;
 	}
 
 	/// @notice Returns the key used for balance allocation mapping in Party B. Returns address(0) for cross partyB mode or partyA for isolated mode.
