@@ -1181,6 +1181,41 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			expect(finalRequest.status).to.equal(WithdrawStatus.COMPLETED)
 		})
 
+		it("Should cap advanceWithdraw at the express-only amount in a mixed classic+express request", async function () {
+			await userDeposit("100")
+			const epAddress = await expressProvider.getAddress()
+
+			// Mixed request: one classic part (50, no provider) + one express part (50, EP).
+			// totalAmount = 100, express-only = 50.
+			const classicPart = await buildPart("50")
+			const expressPart = await buildPart("50", { expressProvider: epAddress })
+
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw([classicPart, expressPart], false, "0x")
+			await expressProvider.acceptWithdrawRequest(user.address, 1)
+
+			// Advancing more than the express-only portion (50) must revert even though it is <= totalAmount (100).
+			// Otherwise the provider seizes the user's classic funds and bricks finalize.
+			await expect(expressProvider.advanceWithdraw(user.address, 1, ethers.parseUnits("80", 18))).to.be.revertedWith(
+				"WithdrawFacet : Advance exceeds express amount",
+			)
+		})
+
+		it("Should allow advanceWithdraw up to the express-only amount in a mixed request", async function () {
+			await userDeposit("100")
+			const epAddress = await expressProvider.getAddress()
+
+			const classicPart = await buildPart("50")
+			const expressPart = await buildPart("50", { expressProvider: epAddress })
+
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw([classicPart, expressPart], false, "0x")
+			await expressProvider.acceptWithdrawRequest(user.address, 1)
+
+			await expect(expressProvider.advanceWithdraw(user.address, 1, ethers.parseUnits("50", 18))).not.to.be.reverted
+
+			const acceptedRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
+			expect(acceptedRequest.advancedAmount).to.equal(ethers.parseUnits("50", 18))
+		})
+
 		it("Should reject withdraw if provider wants", async function () {
 			await userDeposit("100")
 			const epAddress = await expressProvider.getAddress()
