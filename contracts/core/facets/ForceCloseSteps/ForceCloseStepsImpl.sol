@@ -159,7 +159,7 @@ library ForceCloseStepsImpl {
 
 		// Use the unified settlement function with privilegedMode=true
 		int256[] memory settleAmountsPerPartyA;
-		(newPartyAsAllocatedBalances, settleAmountsPerPartyA) = LibSettlement.settleUpnlUnified(sig, updatedPrices, true);
+		(newPartyAsAllocatedBalances, settleAmountsPerPartyA) = LibSettlement.settleUpnlUnified(sig, updatedPrices, true, true);
 
 		// Settlement signatures do not include the force-close quote price/currentPrice, so we only shift uPNL by the
 		// realized settlement delta and keep currentPrice unchanged (it should be refreshed via refresh/finalize sig).
