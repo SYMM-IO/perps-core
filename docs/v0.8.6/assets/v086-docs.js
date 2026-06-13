@@ -42,6 +42,85 @@
 		})
 	})
 
+	const railStorage = {
+		get(key) {
+			try {
+				return window.localStorage ? localStorage.getItem(key) : null
+			} catch (_error) {
+				return null
+			}
+		},
+		set(key, value) {
+			try {
+				if (window.localStorage) localStorage.setItem(key, value)
+			} catch (_error) {
+				// Storage can be unavailable for local previews; the rail controls still work for this page load.
+			}
+		},
+	}
+
+	const installRailControls = () => {
+		const body = document.body
+		if (!body || !body.classList.contains("doc-page")) return
+
+		const actionMount = document.querySelector(".doc-topbar .top-actions") || document.querySelector(".doc-topbar")
+		if (!actionMount || actionMount.querySelector("[data-rail-collapse]")) return
+
+		const controls = document.createElement("div")
+		controls.className = "toolbar-island-controls"
+		controls.setAttribute("aria-label", "Documentation layout")
+
+		const rails = [
+			{
+				side: "left",
+				label: "Docs",
+				className: "rail-left-collapsed",
+				key: "v086-docs-rail-left-collapsed",
+				rail: document.querySelector(".doc-sidebar"),
+				id: "docs-left-rail",
+				collapseLabel: "Collapse documentation navigation",
+				expandLabel: "Expand documentation navigation",
+			},
+			{
+				side: "right",
+				label: "TOC",
+				className: "rail-right-collapsed",
+				key: "v086-docs-rail-right-collapsed",
+				rail: document.querySelector(".toc-panel.side-toc"),
+				id: "docs-right-rail",
+				collapseLabel: "Collapse page table of contents",
+				expandLabel: "Expand page table of contents",
+			},
+		]
+
+		rails.forEach((config) => {
+			if (!config.rail) return
+			if (!config.rail.id) config.rail.id = config.id
+
+			const button = document.createElement("button")
+			button.type = "button"
+			button.className = "button ghost rail-toggle"
+			button.dataset.railCollapse = config.side
+			button.setAttribute("aria-controls", config.rail.id)
+
+			const sync = (collapsed, persist = true) => {
+				body.classList.toggle(config.className, collapsed)
+				button.textContent = config.label
+				button.setAttribute("aria-expanded", String(!collapsed))
+				button.setAttribute("aria-label", collapsed ? config.expandLabel : config.collapseLabel)
+				if (persist) railStorage.set(config.key, String(collapsed))
+			}
+
+			sync(railStorage.get(config.key) === "true", false)
+			button.addEventListener("click", () => sync(!body.classList.contains(config.className)))
+			controls.append(button)
+		})
+
+		if (controls.children.length) actionMount.prepend(controls)
+	}
+
+	installRailControls()
+
 	const normalize = (value) => value.toLowerCase().replace(/\s+/g, " ").trim()
 	const escapeHtml = (value) =>
 		value
