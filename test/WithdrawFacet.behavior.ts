@@ -1223,6 +1223,37 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			expect(updatedWithdrawRequest.status).to.equal(WithdrawStatus.CANCELLED)
 		})
 
+		it("Should block provider reentrant cancel acceptance during finalize", async function () {
+			await userDeposit("100")
+
+			const MaliciousProvider = await ethers.getContractFactory("contracts/core/test/MaliciousAdvanceProvider.sol:MaliciousAdvanceProvider")
+			const maliciousProvider = await MaliciousProvider.deploy(context.diamond)
+			await maliciousProvider.waitForDeployment()
+			const maliciousProviderAddress = await maliciousProvider.getAddress()
+
+			await context.controlFacet.connect(context.signers.admin).registerExpressProvider(maliciousProviderAddress)
+
+			const benignParts = [await buildPart("50", { expressProvider: maliciousProviderAddress })]
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(benignParts, false, "0x")
+
+			const attackParts = [await buildPart("50", { expressProvider: maliciousProviderAddress })]
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(attackParts, false, "0x")
+			await context.withdrawFacet.connect(context.signers.user).requestCancelWithdraw(2)
+
+			const balanceBeforeFinalize = await context.viewFacet.balanceOf(user.address)
+			await maliciousProvider.setCancelAttack(true)
+			await time.increase(1000)
+
+			await expect(context.withdrawFacet.finalizeWithdrawRequest(user.address, 2)).not.to.reverted
+
+			expect(await maliciousProvider.cancelAcceptedCount()).to.equal(0n)
+			expect(await maliciousProvider.cancelRejectedCount()).to.equal(1n)
+			expect(await context.viewFacet.balanceOf(user.address)).to.equal(balanceBeforeFinalize)
+
+			const finalRequest = await context.viewFacet.getWithdrawRequests(user.address, 2)
+			expect(finalRequest.status).to.equal(WithdrawStatus.COMPLETED)
+		})
+
 		it("Should fail to accept cancel withdraw with invalid id", async function () {
 			await userDeposit("100")
 			const epAddress = await expressProvider.getAddress()

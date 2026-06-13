@@ -310,6 +310,8 @@ library WithdrawFacetImpl {
 
 	/// @notice Provider accepts a cancellation request, refunding the user and marking as CANCELLED
 	function acceptWithdrawCancelRequest(address user, uint256 requestId) internal {
+		require(!WithdrawStorage.layout().finalizingInProgress, "WithdrawFacet : Cannot accept cancel during finalize callback");
+
 		WithdrawRequest storage withdrawRequest = _getWithdrawRequest(user, requestId);
 
 		require(withdrawRequest.status == WithdrawStatus.CANCEL_REQUESTED, "WithdrawFacet : Invalid withdraw request status");
