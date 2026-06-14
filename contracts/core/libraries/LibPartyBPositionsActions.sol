@@ -165,7 +165,7 @@ library LibPartyBPositionsActions {
 
 			quoteLayout.quoteIdsOf[quote.partyA].push(currentId);
 			quoteLayout.quotes[currentId] = q;
-			_splitSolverFeeState(quoteLayout, quote.id, currentId, filledAmount, quote.quantity);
+			_splitSolverFeeState(quoteLayout, quote.id, currentId);
 			Quote storage newQuote = quoteLayout.quotes[currentId];
 			remainingQuoteFee = LibQuote.getOpenTradingFee(newQuote.id);
 
@@ -200,9 +200,10 @@ library LibPartyBPositionsActions {
 		quote.quoteStatus = QuoteStatus.OPENED;
 		LibQuote.addToOpenPositions(quoteId);
 
-		uint256 openFee = quote.orderType == OrderType.LIMIT
-			? (filledAmount * quote.requestedOpenPrice * quote.tradingFee) / 1e36
-			: (filledAmount * quote.marketPrice * quote.tradingFee) / 1e36;
+		uint256 openFee =
+			quote.orderType == OrderType.LIMIT
+				? (filledAmount * quote.requestedOpenPrice * quote.tradingFee) / 1e36
+				: (filledAmount * quote.marketPrice * quote.tradingFee) / 1e36;
 		if (!_instantOpenMode) {
 			LibAccount.realizeOpenTradingFee(quote.partyA, quoteFeeBeforeOpen - remainingQuoteFee);
 		}
@@ -328,31 +329,13 @@ library LibPartyBPositionsActions {
 		require(filledAmount <= quote.quantityToClose, "PartyBFacet: Invalid filledAmount");
 	}
 
-	function _splitSolverFeeState(
-		QuoteStorage.Layout storage quoteLayout,
-		uint256 openedQuoteId,
-		uint256 childQuoteId,
-		uint256 filledAmount,
-		uint256 originalQuantity
-	) private {
+	/// @notice On a partial open, the child (remainder) quote inherits the same solver-fee rate caps as the opened
+	///         quote. Rate caps are notional-relative, so they are copied unchanged rather than split pro-rata; the
+	///         opened state already holds these caps from quote creation.
+	function _splitSolverFeeState(QuoteStorage.Layout storage quoteLayout, uint256 openedQuoteId, uint256 childQuoteId) private {
 		SolverFeeState storage openedState = quoteLayout.solverFeeStates[openedQuoteId];
-		uint256 originalMaxOperationalFee = openedState.maxOperationalFee;
-		uint256 originalMaxOpenSolverFeeRate = openedState.maxOpenSolverFeeRate;
-		uint256 originalMaxCloseSolverFeeRate = openedState.maxCloseSolverFeeRate;
-		uint256 chargedOperationalFee = openedState.chargedOperationalFee;
-
-		uint256 openedMaxOperationalFee = (originalMaxOperationalFee * filledAmount) / originalQuantity;
-		if (chargedOperationalFee > openedMaxOperationalFee) {
-			openedMaxOperationalFee = chargedOperationalFee;
-		}
-
-		openedState.maxOperationalFee = openedMaxOperationalFee;
-		openedState.maxOpenSolverFeeRate = originalMaxOpenSolverFeeRate;
-		openedState.maxCloseSolverFeeRate = originalMaxCloseSolverFeeRate;
-
 		SolverFeeState storage childState = quoteLayout.solverFeeStates[childQuoteId];
-		childState.maxOperationalFee = originalMaxOperationalFee - openedMaxOperationalFee;
-		childState.maxOpenSolverFeeRate = originalMaxOpenSolverFeeRate;
-		childState.maxCloseSolverFeeRate = originalMaxCloseSolverFeeRate;
+		childState.openRateCap = openedState.openRateCap;
+		childState.closeRateCap = openedState.closeRateCap;
 	}
 }

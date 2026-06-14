@@ -41,6 +41,12 @@ library SharedEvents {
 
 	event BalanceChangePartyB(address indexed partyB, address indexed partyA, uint256 amount, BalanceChangeType _type);
 
+	/// @notice Emitted whenever a registered charger draws a standing operational fee from a payer.
+	/// @dev `receiver` is intentionally not indexed: off-chain accounting keys on `charger` (the canonical
+	///      query key, e.g. a solver or relayer) and `payer`; the receiver is the charger's
+	///      configured payout address and is derivable from `charger`.
+	event OperationalFeeCharged(address indexed payer, address indexed charger, address receiver, uint256 amount);
+
 	event TradeVolumeRecorded(
 		uint256 quoteId,
 		uint256 amount,

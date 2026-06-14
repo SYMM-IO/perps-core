@@ -158,9 +158,8 @@ library PartyAFacetImpl {
 			quoteLayout.partyAPendingQuotes[signer].push(currentId);
 		}
 		quoteLayout.quotes[currentId] = quote;
-		quoteLayout.solverFeeStates[currentId].maxOperationalFee = solverFeeCaps.maxOperationalFee;
-		quoteLayout.solverFeeStates[currentId].maxOpenSolverFeeRate = solverFeeCaps.maxOpenSolverFeeRate;
-		quoteLayout.solverFeeStates[currentId].maxCloseSolverFeeRate = solverFeeCaps.maxCloseSolverFeeRate;
+		quoteLayout.solverFeeStates[currentId].openRateCap = solverFeeCaps.openRateCap;
+		quoteLayout.solverFeeStates[currentId].closeRateCap = solverFeeCaps.closeRateCap;
 
 		uint256 feeAmount = LibQuote.getOpenTradingFee(currentId);
 		require(accountLayout.allocatedBalances[signer] >= feeAmount, "PartyAFacet: Insufficient allocated balance for fee");

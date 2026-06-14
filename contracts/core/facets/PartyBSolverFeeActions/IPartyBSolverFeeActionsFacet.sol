@@ -8,21 +8,13 @@ import { IPartiesEvents } from "../../interfaces/IPartiesEvents.sol";
 import { PairUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
 
 interface IPartyBSolverFeeActionsFacet is IPartiesEvents {
-	function openPosition(
-		uint256 quoteId,
-		uint256 filledAmount,
-		uint256 openedPrice,
-		PairUpnlAndPriceSig memory upnlSig,
-		uint256 operationalFee,
-		uint256 solverFee
-	) external;
+	function openPosition(uint256 quoteId, uint256 filledAmount, uint256 openedPrice, PairUpnlAndPriceSig memory upnlSig, uint256 solverFee) external;
 
 	function fillCloseRequest(
 		uint256 quoteId,
 		uint256 filledAmount,
 		uint256 closedPrice,
 		PairUpnlAndPriceSig memory upnlSig,
-		uint256 operationalFee,
 		uint256 solverFee
 	) external;
 
@@ -30,7 +22,6 @@ interface IPartyBSolverFeeActionsFacet is IPartiesEvents {
 		uint256 quoteId,
 		uint256 closedPrice,
 		PairUpnlAndPriceSig memory upnlSig,
-		uint256 operationalFee,
 		uint256 solverFee
 	) external returns (uint256 filledAmount);
 }

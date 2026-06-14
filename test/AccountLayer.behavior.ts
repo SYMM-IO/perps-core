@@ -38,7 +38,7 @@ const roleHash = (name: string) => ethers.keccak256(toUtf8Bytes(name))
 const SEND_QUOTE_WITH_AFFILIATE_SIGNATURE =
 	"sendQuoteWithAffiliate(address[],uint256,uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,address,(bytes,uint256,int256,uint256,bytes,(uint256,address,address)))"
 const SEND_QUOTE_WITH_SOLVER_FEE_CAPS_SIGNATURE =
-	"sendQuote(address[],uint256,uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256,uint256,address,(bytes,uint256,int256,uint256,bytes,(uint256,address,address)),bytes,(uint256,uint256,uint256))"
+	"sendQuote(address[],uint256,uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256,uint256,address,(bytes,uint256,int256,uint256,bytes,(uint256,address,address)),bytes,(uint256,uint256))"
 
 export function shouldBehaveLikeAccountLayer(): void {
 	let context: RunContext, user: User, hedger: Hedger
@@ -78,7 +78,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 			ZeroAddress,
 			await quoteRequest.upnlSig,
 			"0x",
-			{ maxOperationalFee: decimal(1n), maxOpenSolverFeeRate: 0, maxCloseSolverFeeRate: 0 },
+			{ openRateCap: 0, closeRateCap: 0 },
 		])
 	}
 

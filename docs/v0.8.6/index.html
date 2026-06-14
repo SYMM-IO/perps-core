@@ -4,11 +4,21 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<title>Symmio Core v0.8.6 Documentation</title>
+		<link rel="icon" type="image/svg+xml" href="assets/symmio-mark.svg" />
 		<link rel="stylesheet" href="assets/v086-docs.css" />
 		<script src="assets/v086-docs.js" defer></script>
 	</head>
 	<body class="index-page">
 		<a class="skip-link" href="#docs">Skip to docs</a>
+
+		<header class="doc-topbar">
+			<a class="brand" href="index.html"
+				><span class="brand-mark">8.6</span><span><strong>Symmio Docs</strong><small>v0.8.6 reference</small></span></a
+			>
+			<nav class="top-actions" aria-label="Page actions">
+				<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+			</nav>
+		</header>
 
 		<header class="site-hero">
 			<nav class="crumbs" aria-label="Breadcrumb"><a href="../">docs</a><span>/</span><strong>v0.8.6</strong></nav>
@@ -113,8 +123,20 @@
 							<span class="category">Fees</span>
 								<strong>Solver Fees</strong>
 								<span
-									>v0.8.6 adds explicit operational and solver fees, charged from PartyA allocated balance and bounded by user-approved
+									>v0.8.6 adds explicit solver rate fees, charged from PartyA allocated balance and bounded by user-approved notional-rate
 									caps plus execution-time solvency checks.</span
+								>
+						</span>
+						<span class="doc-list-action">Open change</span>
+					</a>
+					<a class="doc-list-item" href="pages/operational-fees.html">
+						<span class="doc-list-index">08</span>
+						<span class="doc-list-main">
+							<span class="category">Fees</span>
+								<strong>Operational Fees</strong>
+								<span
+									>A unified per-op fee primitive shared by solvers and registered relayers, backed by a standing per-(payer, charger)
+									allowance with timelocked reductions and a priority multiplier.</span
 								>
 						</span>
 						<span class="doc-list-action">Open change</span>

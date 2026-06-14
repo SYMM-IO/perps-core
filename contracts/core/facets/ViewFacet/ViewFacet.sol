@@ -16,6 +16,8 @@ import { WithdrawStorage, WithdrawRequest, WithdrawStatus } from "../../storages
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
 import { MAStorage, EntityMetadata } from "../../storages/MAStorage.sol";
+import { OperationalFeeStorage, AllowanceState } from "../../storages/OperationalFeeStorage.sol";
+import { LibOperationalFee } from "../../libraries/LibOperationalFee.sol";
 import { QuoteStorage, LockedValues, Fee } from "../../storages/QuoteStorage.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { MuonStorage } from "../../storages/MuonStorage.sol";
@@ -193,10 +195,37 @@ contract ViewFacet is IViewFacet {
 		return AccountStorage.layout().partyBAllocatedBalances[partyB][partyA];
 	}
 
-	/// @notice Returns the effective account that receives a PartyB's operational fees.
-	/// @dev If no custom receiver is set, the PartyB itself receives operational fees.
-	function getOperationalFeeReceiver(address partyB) external view returns (address) {
-		return LibAccount.getOperationalFeeReceiver(partyB);
+	/// @notice Returns the effective account that receives a charger's operational fees.
+	/// @dev If no custom receiver is set, the charger itself receives operational fees.
+	function getOperationalFeeReceiver(address charger) external view returns (address) {
+		return LibAccount.getOperationalFeeReceiver(charger);
+	}
+
+	function getOperationalFeeAllowance(
+		address payer,
+		address charger
+	)
+		external
+		view
+		returns (uint256 allowance, uint256 charged, uint256 remaining, uint256 pendingAllowance, uint256 reductionReadyAt, uint256 feeMultiplier)
+	{
+		AllowanceState storage s = OperationalFeeStorage.layout().allowances[payer][charger];
+		charged = s.charged;
+		feeMultiplier = LibOperationalFee.effectiveFeeMultiplier(s);
+		if (s.reductionReadyAt != 0 && block.timestamp >= s.reductionReadyAt) {
+			allowance = s.pendingAllowance;
+			pendingAllowance = 0;
+			reductionReadyAt = 0;
+		} else {
+			allowance = s.allowance;
+			pendingAllowance = s.pendingAllowance;
+			reductionReadyAt = s.reductionReadyAt;
+		}
+		remaining = allowance > charged ? allowance - charged : 0;
+	}
+
+	function isOperationalFeeCharger(address charger) external view returns (bool) {
+		return LibOperationalFee.isCharger(charger);
 	}
 
 	/// @notice Returns the balance of cross partyB (aggregated allocated balance).

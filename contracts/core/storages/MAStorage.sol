@@ -145,9 +145,17 @@ library MAStorage {
 		///      isolated per-PartyA allocations. When true, uses address(0) for allocation
 		///      mappings and has different liquidation flow via ClearingHouse.
 		mapping(address => bool) crossModeEnabledForPartyB;
-		/// @notice Optional receiver for a PartyB's operational fees
-		/// @dev address(0) means operational fees are credited to the PartyB itself.
+		/// @notice Optional receiver for a charger's operational fees
+		/// @dev address(0) means operational fees are credited to the charger itself.
+		///      Generalized from per-PartyB to per-charger in v0.8.6.
 		mapping(address => address) operationalFeeReceivers;
+		/// @notice Registry of non-PartyB addresses authorized to charge the standing operational fee.
+		/// @dev Registered PartyBs are operational-fee chargers by default; this registry is for services such as relayers.
+		mapping(address => bool) operationalFeeChargers;
+		/// @notice Timelock (seconds) before a requested operational-fee allowance reduction takes effect.
+		/// @dev Instant raises bypass this; only reductions/revokes are delayed. Protects a solver that
+		///      already hedged from a revoke front-run. Set by COOLDOWN_ADMIN_ROLE (a timing knob, like the other cooldowns).
+		uint256 operationalFeeReductionDelay;
 	}
 
 	function layout() internal pure returns (Layout storage l) {
