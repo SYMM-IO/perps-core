@@ -82,19 +82,16 @@ struct Fee {
 
 /// @notice User-approved solver fee caps supplied when a quote is created
 struct SolverFeeCaps {
-	uint256 maxOperationalFee;
-	uint256 maxOpenSolverFeeRate;
-	uint256 maxCloseSolverFeeRate;
+	uint256 openRateCap;
+	uint256 closeRateCap;
 }
 
 /// @notice Tracks approved caps and cumulative solver fee charges for a quote
 struct SolverFeeState {
-	uint256 maxOperationalFee;
-	uint256 maxOpenSolverFeeRate;
-	uint256 maxCloseSolverFeeRate;
-	uint256 chargedOperationalFee;
-	uint256 chargedOpenSolverFee;
-	uint256 chargedCloseSolverFee;
+	uint256 openRateCap;
+	uint256 closeRateCap;
+	uint256 openFeeCharged;
+	uint256 closeFeeCharged;
 }
 
 /// @title QuoteStorage

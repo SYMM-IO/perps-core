@@ -80,7 +80,17 @@ interface IViewFacet {
 
 	function getDefaultFeeCollector() external view returns (address);
 
-	function getOperationalFeeReceiver(address partyB) external view returns (address);
+	function getOperationalFeeReceiver(address charger) external view returns (address);
+
+	function getOperationalFeeAllowance(
+		address payer,
+		address charger
+	)
+		external
+		view
+		returns (uint256 allowance, uint256 charged, uint256 remaining, uint256 pendingAllowance, uint256 reductionReadyAt, uint256 feeMultiplier);
+
+	function isOperationalFeeCharger(address charger) external view returns (bool);
 
 	function isCrossPartyBModeActivated() external view returns (bool);
 

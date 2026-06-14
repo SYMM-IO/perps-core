@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Operational Fees - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+	</head>
+	<body class="doc-page">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="doc-topbar">
+			<a class="brand" href="../index.html"
+				><span class="brand-mark">8.6</span><span><strong>Symmio Docs</strong><small>v0.8.6 reference</small></span></a
+			>
+			<nav class="top-actions" aria-label="Page actions">
+				<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+			</nav>
+		</header>
+
+		<div class="reader-shell">
+			<aside class="doc-sidebar" aria-label="Documentation navigation">
+				<a class="button primary back-home" href="../index.html">Back to index</a>
+				<div class="side-card">
+					<p class="side-label">Docs</p>
+					<a class="side-link" href="../pages/overview.html"><small>Overview</small><span>Symmio Core v0.8.6 Overview</span></a>
+					<a class="side-link" href="../pages/express-withdrawal-system-design.html"
+						><small>Express Withdrawal</small><span>Express Withdrawal System Design</span></a
+					>
+					<a class="side-link" href="../pages/account-layer-ownership-delegation.html"
+						><small>AccountLayer</small><span>AccountLayer Delegated Creation &amp; Ownership Transfer</span></a
+					>
+					<a class="side-link" href="../pages/liquidation-funding-snapshot-fix.html"
+						><small>Liquidation</small><span>PartyA Liquidation Snapshot Flow</span></a
+					>
+					<a class="side-link" href="../pages/single-step-partya-liquidation.html"
+						><small>Liquidation</small><span>Single-Step PartyA Liquidation</span></a
+					>
+					<a class="side-link" href="../pages/affiliate-shutdown-flow.html"
+						><small>Clearing House</small><span>Affiliate Shutdown Flow</span></a
+					>
+					<a class="side-link" href="../pages/muon-upnl-validity-overrides.html"
+						><small>Muon</small><span>Muon UPNL Validity Overrides</span></a
+					>
+					<a class="side-link" href="../pages/solver-fees.html"><small>Fees</small><span>Solver Fees</span></a>
+					<a class="side-link is-active" href="../pages/operational-fees.html"><small>Fees</small><span>Operational Fees</span></a>
+					<a class="side-link" href="../pages/partya-liquidation-fee-recipient.html"
+						><small>Liquidation</small><span>PartyA Liquidation Fee Recipient Cleanup</span></a
+					>
+					<a class="side-link" href="../pages/balance-change-event-cleanup.html"
+						><small>Events</small><span>BalanceChange Event Cleanup</span></a
+					>
+					<a class="side-link" href="../pages/lazy-accumulated-funding.html"><small>Funding</small><span>Lazy Accumulated Funding</span></a>
+					<a class="side-link" href="../pages/partyb-allocation-suspension-gates.html"
+						><small>PartyB</small><span>Allocation Suspension Gates</span></a
+					>
+					<a class="side-link" href="../pages/cross-partyb-liquidation-reserve.html"
+						><small>Liquidation</small><span>Cross-PartyB Liquidation Reserve Enforcement</span></a
+					>
+					<a class="side-link" href="../pages/express-bot-operations-checklist.html"
+						><small>Express Withdrawal</small><span>Express Provider Bot Operations Checklist</span></a
+					>
+				</div>
+			</aside>
+			<aside class="toc-panel side-toc" aria-label="Page navigation">
+				<div class="toc-card">
+					<p class="toc-title">On this page</p>
+					<a class="toc-link level-2" href="#summary">Summary</a>
+					<a class="toc-link level-2" href="#why-unified">Why This Exists</a>
+					<a class="toc-link level-2" href="#trust-model">Trust Model</a>
+					<a class="toc-link level-2" href="#fee-source">Fee Source (Perps-Core Payer + Free-First)</a>
+					<a class="toc-link level-2" href="#solvency">Solvency</a>
+					<a class="toc-link level-2" href="#timelocked-reductions">Timelocked Reductions</a>
+					<a class="toc-link level-2" href="#priority-multiplier">Priority Multiplier</a>
+					<a class="toc-link level-2" href="#gasless-grant">Gasless Grant</a>
+					<a class="toc-link level-2" href="#charging-while-relaying">Charging While Relaying</a>
+				</div>
+			</aside>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">v0.8.6</a><span>/</span><strong>Fees</strong></nav>
+					<div class="reader-title-row">
+						<div>
+							<h1>Operational Fees</h1>
+							<p class="hero-copy">
+								A fee primitive for per-operation work that should not be embedded in quote pricing.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="summary">Summary</h2>
+					<p>
+						v0.8.6 introduces a standing per-(payer, charger) operational-fee allowance. A charger can be a solver (PartyB) or a
+						registered relayer. Each charge draws from the named payer's Symmio collateral balance and counts against that allowance.
+					</p>
+					<p>
+						The same allowance can carry a simple priority multiplier. <code>10000</code> means normal priority; a higher value tells
+						relayers and solvers that this payer is willing to pay above the normal fee when capacity is tight.
+					</p>
+					<p>
+						The debit draws the payer's <strong>free balance first</strong>, then <strong>allocated margin as fallback</strong>. Fees land
+						in the charger's configured receiver account (defaulting to the charger itself). A charge reverts if the resolved receiver is
+						the payer, so a charger cannot route a payer's operational fee back into the same free-balance bucket.
+					</p>
+					<p>
+						This is separate from the v0.8.6 solver <strong>rate</strong> fee, which is notional-based, per-quote, and stored in
+						<code>SolverFeeCaps</code>.
+					</p>
+
+					<h2 id="why-unified">Why This Exists</h2>
+					<p>
+						Some service costs are flat per-operation charges rather than notional-based trading fees. Operational fees give those costs a
+						dedicated path, outside open and close price semantics.
+					</p>
+					<h2 id="trust-model">Trust Model</h2>
+					<p>
+						The allowance grant is the consent. Core does not require the payer to sign each specific operation or quote; it only checks
+						<code>charged + amount &lt;= allowance[payer][charger]</code> before collecting the fee.
+					</p>
+					<p>The authority is bounded by four controls:</p>
+					<ol>
+						<li>
+							<strong>Registry</strong>: registered PartyBs are chargers by default. Non-PartyB services, such as relayers, must be
+							registered by governance (<code>FEE_ADMIN_ROLE</code>) before they can charge.
+						</li>
+						<li>
+							<strong>Allowance budget</strong>: each payer grants an independent budget to each charger, so one charger cannot spend
+							another charger's allowance.
+						</li>
+						<li>
+							<strong>Timelocked reductions + governance unregister</strong>: a payer can walk away after the delay; governance can
+							disable an explicitly registered service charger via <code>unregisterOperationalFeeCharger</code>.
+						</li>
+						<li>
+							<strong>Guards</strong>: the charge path has no external-call surface, and the payer must not be suspended or under
+							active PartyA liquidation.
+						</li>
+					</ol>
+
+					<h2 id="fee-source">Fee Source (Perps-Core Payer + Free-First)</h2>
+					<p>
+						In perps-core, the fee source is simply the <code>payer</code> address passed to
+						<code>chargeOperationalFee(payer, amount)</code>. Core does not derive the payer from a quote, the signer, the relayed
+						operation, or any account hierarchy.
+					</p>
+					<p>
+						For that named payer, core checks <code>allowance[payer][charger]</code>, debits <code>balances[payer]</code> first, then
+						falls back to <code>allocatedBalances[payer]</code> if free balance is not enough. The charged amount is credited to the
+						charger's configured receiver.
+					</p>
+
+					<p>
+						<strong>AccountLayer accounts:</strong> users operating through SubAccounts or virtual accounts may want operational fees to
+						come from a parent SubAccount instead of the VA that appears in the signed operation. Perps-core will not resolve that
+						relationship. The solver or relayer should determine the intended payer before calling core, whether in service code or an
+						on-chain relayer contract, and pass that address to <code>chargeOperationalFee</code>.
+					</p>
+
+					<h3>Example: AccountLayer VA charged to parent SubAccount</h3>
+					<p>
+						A user has a SubAccount <code>SA</code> and a virtual account <code>VA-BTC-Long</code>. The signed operation acts on the VA,
+						but the integration wants the fee to come from the parent SubAccount.
+					</p>
+					<ol>
+						<li>
+							The user grants <code>allowance[SA][relayer] = N</code>.
+						</li>
+						<li>A registered relayer receives a "remove margin from <code>VA-BTC-Long</code>" signed op.</li>
+						<li>
+							The relayer determines <code>VA-BTC-Long</code>'s parent SubAccount before charging and calls
+							<code>chargeOperationalFee(SA, fee)</code>. The fee is drawn from <code>SA</code>'s <strong>free</strong> balance; no
+							<code>VA-BTC-Long</code> margin is touched.
+						</li>
+						<li>
+							The relayer submits <code>InstantLayer.executeBatch</code> for the signed operation.
+						</li>
+					</ol>
+
+					<h2 id="solvency">Solvency</h2>
+					<p>
+						<code>chargeOperationalFee</code> is hierarchy-blind and signature-free: it always debits the named payer free-first, and the
+						allocated remainder (if any) is bounded by a <strong>balance-only guard</strong>. It never runs a full liquidatability check,
+						because the charge entrypoint carries no Muon upnl signature for the payer.
+					</p>
+					<p>
+						This relaxed check is intentional for operational fees. Solvers and relayers are trusted charging parties (registered PartyBs
+						or governance-registered services), these fees are expected to be small per-operation amounts, and the payer's allowance caps
+						the total spend. Core therefore checks that any allocated remainder exists, but does not require a full liquidatability
+						signature for this path.
+					</p>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Portion</th>
+									<th>Source</th>
+									<th>Solvency check</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Free balance</td>
+									<td><code>balances[payer]</code></td>
+									<td>None (not margin)</td>
+								</tr>
+								<tr>
+									<td>Allocated remainder</td>
+									<td><code>allocatedBalances[payer]</code></td>
+									<td>
+										<strong>Balance-only guard</strong> (<code>allocatedBalances[payer] &gt;= remainder</code>); no full
+										liquidatability check (no sig available)
+									</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						This is the same treatment for every charger, including the solver. The solver's separate per-quote rate
+						<code>solverFee</code>, charged inside the fee-aware trading methods, is the only fee that folds into the Muon
+						<code>_requireSolventAfterSolverFee</code> liquidatability check (see <a href="../pages/solver-fees.html">Solver Fees</a>).
+					</p>
+
+					<h2 id="timelocked-reductions">Timelocked Reductions</h2>
+					<p>
+						Operational-fee allowance is a standing budget from a payer to a charger. Increasing that budget is immediate, so a user can
+						top up a solver or relayer whenever more operational-fee room is needed.
+					</p>
+					<p>
+						Reducing or revoking the budget is delayed. During that delay, the previous allowance remains active. This prevents a payer
+						from approving an operation, letting a trusted charger take on the work, and then revoking the budget before the small
+						operational fee can be collected.
+					</p>
+					<p>
+						Once the delay has passed, the reduction is handled through lazy evaluation. View calls report the lower effective allowance
+						automatically, and the next state-changing use of that allowance folds the pending value into storage before continuing. The
+						user does not need a second transaction. If the new allowance is already consumed, future charges simply stop until the payer
+						raises the budget again.
+					</p>
+
+					<h2 id="priority-multiplier">Priority Multiplier</h2>
+					<p>
+						Each payer can attach a fee multiplier to a charger's allowance. The default is <code>10000</code>, or 1x. A higher value is a
+						priority signal for trusted chargers: if a relayer or solver cannot handle every request, it can prefer work from payers who
+						accepted a higher multiplier.
+					</p>
+					<p>
+						The multiplier does not replace the allowance. The allowance is still the hard spend budget, and the charger can never draw
+						more than the payer approved.
+					</p>
+
+					<h2 id="gasless-grant">Gasless Grant</h2>
+					<p>
+						Operational-fee approval is a normal core call. To grant an allowance without gas, the user signs an InstantLayer
+						<code>SignedOperation</code> targeting the approval call.
+					</p>
+					<p>
+						A relayer can include the allowance or multiplier increase first, then charge its operational fee in the same transaction, so
+						the setup itself can be gasless.
+					</p>
+
+					<h2 id="charging-while-relaying">Charging While Relaying</h2>
+					<p>
+						When a relayer pays gas for a user's signed operation, it can collect the operational fee in that same transaction. The
+						transaction charges the selected payer, then executes the signed operation. If execution reverts, the charge reverts with it.
+					</p>
+
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Protocol, operations, and integration notes.</span>
+		</footer>
+	</body>
+</html>

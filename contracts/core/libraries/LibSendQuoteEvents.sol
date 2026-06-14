@@ -30,13 +30,7 @@ library LibSendQuoteEvents {
 
 	// paramsData is abi.encode(symbolId, positionType, orderType, price, marketPrice, quantity, cva, lf, partyAmm, partyBmm, tradingFee, deadline)
 	event SendQuote(address partyA, uint256 quoteId, address[] partyBsWhiteList, address affiliate, bytes paramsData, bytes data);
-	event SendQuoteSolverFeeCaps(
-		address indexed partyA,
-		uint256 indexed quoteId,
-		uint256 maxOperationalFee,
-		uint256 maxOpenSolverFeeRate,
-		uint256 maxCloseSolverFeeRate
-	);
+	event SendQuoteSolverFeeCaps(address indexed partyA, uint256 indexed quoteId, uint256 openRateCap, uint256 closeRateCap);
 
 	/// @notice Parameters for emitting SendQuote events, grouped to avoid stack too deep errors.
 	struct SendQuoteEventParams {
@@ -99,18 +93,8 @@ library LibSendQuoteEvents {
 		);
 		emit SendQuote(params.partyA, params.quoteId, params.partyBsWhiteList, params.affiliate, paramsData, params.data);
 
-		if (
-			params.solverFeeCaps.maxOperationalFee > 0 ||
-			params.solverFeeCaps.maxOpenSolverFeeRate > 0 ||
-			params.solverFeeCaps.maxCloseSolverFeeRate > 0
-		) {
-			emit SendQuoteSolverFeeCaps(
-				params.partyA,
-				params.quoteId,
-				params.solverFeeCaps.maxOperationalFee,
-				params.solverFeeCaps.maxOpenSolverFeeRate,
-				params.solverFeeCaps.maxCloseSolverFeeRate
-			);
+		if (params.solverFeeCaps.openRateCap > 0 || params.solverFeeCaps.closeRateCap > 0) {
+			emit SendQuoteSolverFeeCaps(params.partyA, params.quoteId, params.solverFeeCaps.openRateCap, params.solverFeeCaps.closeRateCap);
 		}
 	}
 }

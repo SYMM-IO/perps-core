@@ -132,11 +132,13 @@ interface ISymmio {
 		address expressProvider;
 	}
 
-	/// @notice Solver fee caps approved by PartyA when sending a quote
+	/// @notice Solver fee caps approved by PartyA when sending a quote.
+	/// @dev Mirror of core's QuoteStorage.SolverFeeCaps -- keep the field types in sync. LibQuoteParams derives
+	///      the sendQuote selector from this interface, and that selector depends on this struct's ABI tuple
+	///      shape; changing its field types would make the selector diverge from the core diamond's.
 	struct SolverFeeCaps {
-		uint256 maxOperationalFee;
-		uint256 maxOpenSolverFeeRate;
-		uint256 maxCloseSolverFeeRate;
+		uint256 openRateCap;
+		uint256 closeRateCap;
 	}
 
 	/// @notice Sends a quote with an affiliate. Declared only so LibQuoteParams can derive its selector.

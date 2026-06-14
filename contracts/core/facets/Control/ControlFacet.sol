@@ -25,6 +25,7 @@ import { EntityMetadata } from "../../storages/MAStorage.sol";
 import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
 import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 import { Fee } from "../../storages/QuoteStorage.sol";
+import { LibOperationalFee } from "../../libraries/LibOperationalFee.sol";
 
 contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Initiates a two-step ownership transfer to a new address. The new owner must call acceptOwnership() to complete the transfer.
@@ -125,6 +126,39 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		MAStorage.layout().partyBList[index] = MAStorage.layout().partyBList[lastIndex];
 		MAStorage.layout().partyBList.pop();
 		emit DeregisterPartyB(partyB, index);
+	}
+
+	/// @notice Registers a non-PartyB address as an operational-fee charger.
+	/// @dev Registered PartyBs are operational-fee chargers by default.
+	function registerOperationalFeeCharger(address charger) external onlyRole(LibAccessibility.FEE_ADMIN_ROLE) {
+		checkZeroAddress(charger);
+		require(!LibOperationalFee.isCharger(charger), "ControlFacet: Already a charger");
+		MAStorage.layout().operationalFeeChargers[charger] = true;
+		emit OperationalFeeChargerRegistered(charger);
+	}
+
+	/// @notice Removes an explicitly registered operational-fee charger.
+	/// @dev Registered PartyBs remain chargers while their PartyB registration is active.
+	function unregisterOperationalFeeCharger(address charger) external onlyRole(LibAccessibility.FEE_ADMIN_ROLE) {
+		require(MAStorage.layout().operationalFeeChargers[charger], "ControlFacet: Not a charger");
+		MAStorage.layout().operationalFeeChargers[charger] = false;
+		emit OperationalFeeChargerUnregistered(charger);
+	}
+
+	/// @notice Sets the timelock applied to operational-fee allowance reductions.
+	function setOperationalFeeReductionDelay(uint256 delay) external onlyRole(LibAccessibility.COOLDOWN_ADMIN_ROLE) {
+		emit OperationalFeeReductionDelaySet(MAStorage.layout().operationalFeeReductionDelay, delay);
+		MAStorage.layout().operationalFeeReductionDelay = delay;
+	}
+
+	/// @notice A registered charger sets the receiver of its operational fees (address(0) = self).
+	/// @dev Caller is resolved via LibSigner.getSigner() (consistent with approveOperationalFee), so a
+	///      charger can set its receiver directly or through the signer/proxy mechanism.
+	function setOperationalFeeReceiver(address receiver) external {
+		address charger = LibSigner.getSigner();
+		require(LibOperationalFee.isCharger(charger), "OperationalFee: Not a registered charger");
+		MAStorage.layout().operationalFeeReceivers[charger] = receiver;
+		emit SetOperationalFeeReceiver(charger, receiver);
 	}
 
 	/// @notice Sets the metadata for a Party B, including display name and other identifying information.
@@ -249,15 +283,6 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		require(MAStorage.layout().affiliateStatus[affiliate], "ControlFacet: Invalid affiliate");
 		emit SetFeeCollector(affiliate, GlobalAppStorage.layout().affiliateFeeCollector[affiliate], feeCollector);
 		GlobalAppStorage.layout().affiliateFeeCollector[affiliate] = feeCollector;
-	}
-
-	/// @notice Sets the account that receives this PartyB's operational fees.
-	/// @dev Passing address(0) resets the receiver to the PartyB's own free balance.
-	/// @param receiver The account to credit for future operational fee charges.
-	function setOperationalFeeReceiver(address receiver) external onlyPartyB {
-		address partyB = LibSigner.getSigner();
-		MAStorage.layout().operationalFeeReceivers[partyB] = receiver;
-		emit SetOperationalFeeReceiver(partyB, receiver);
 	}
 
 	/// @notice Sets the trading fees for a specific affiliate and symbol. Fees are charged when opening and closing positions.

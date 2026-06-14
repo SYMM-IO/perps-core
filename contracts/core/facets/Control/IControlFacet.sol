@@ -29,6 +29,14 @@ interface IControlFacet is IControlEvents {
 
 	function deregisterPartyB(address partyB, uint256 index) external;
 
+	function registerOperationalFeeCharger(address charger) external;
+
+	function unregisterOperationalFeeCharger(address charger) external;
+
+	function setOperationalFeeReductionDelay(uint256 delay) external;
+
+	function setOperationalFeeReceiver(address receiver) external;
+
 	function registerAffiliate(address affiliate) external;
 
 	function deregisterAffiliate(address affiliate) external;
@@ -76,8 +84,6 @@ interface IControlFacet is IControlEvents {
 	function setUnbindCooldown(uint256 unbindCooldown) external;
 
 	function setFeeCollector(address affiliate, address feeCollector) external;
-
-	function setOperationalFeeReceiver(address receiver) external;
 
 	function setLiquidationTimeout(uint256 liquidationTimeout) external;
 

@@ -168,9 +168,10 @@ library LibAccount {
 	) internal view returns (int256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address allocationKey = partyBAllocationKey(partyB, partyA);
-		int256 a = int256(accountLayout.partyBAllocatedBalances[partyB][allocationKey]) -
-			int256(accountLayout.partyBLockedBalances[partyB][allocationKey].cva + accountLayout.partyBLockedBalances[partyB][allocationKey].lf) -
-			int256(applyLiquidationSettlementReserve ? partyBLiquidationSettlementReserve(accountLayout, partyB) : 0);
+		int256 a =
+			int256(accountLayout.partyBAllocatedBalances[partyB][allocationKey]) -
+				int256(accountLayout.partyBLockedBalances[partyB][allocationKey].cva + accountLayout.partyBLockedBalances[partyB][allocationKey].lf) -
+				int256(applyLiquidationSettlementReserve ? partyBLiquidationSettlementReserve(accountLayout, partyB) : 0);
 		return a + upnl;
 	}
 
@@ -278,12 +279,12 @@ library LibAccount {
 		return appLayout.affiliateFeeCollector[affiliate] == address(0) ? appLayout.defaultFeeCollector : appLayout.affiliateFeeCollector[affiliate];
 	}
 
-	/// @notice Resolves the operational fee receiver for a PartyB.
-	/// @param partyB The PartyB whose operational fee receiver is being resolved.
-	/// @return The configured receiver, or the PartyB itself when no custom receiver is set.
-	function getOperationalFeeReceiver(address partyB) internal view returns (address) {
-		address receiver = MAStorage.layout().operationalFeeReceivers[partyB];
-		return receiver == address(0) ? partyB : receiver;
+	/// @notice Resolves the operational fee receiver for a charger.
+	/// @param charger The registered charger whose operational fee receiver is being resolved.
+	/// @return The configured receiver, or the charger itself when no custom receiver is set.
+	function getOperationalFeeReceiver(address charger) internal view returns (address) {
+		address receiver = MAStorage.layout().operationalFeeReceivers[charger];
+		return receiver == address(0) ? charger : receiver;
 	}
 
 	/// @notice Returns PartyA's effective allocated balance used for balance limit checks.

@@ -1502,49 +1502,6 @@
         "anonymous": false,
         "inputs": [
             {
-                "indexed": true,
-                "internalType": "uint256",
-                "name": "quoteId",
-                "type": "uint256"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "partyA",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "receiver",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "symbolId",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            }
-        ],
-        "name": "OperationalFeeCharged",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
                 "indexed": false,
                 "internalType": "address",
                 "name": "partyA",
@@ -1828,19 +1785,13 @@
             {
                 "indexed": false,
                 "internalType": "uint256",
-                "name": "maxOperationalFee",
+                "name": "openRateCap",
                 "type": "uint256"
             },
             {
                 "indexed": false,
                 "internalType": "uint256",
-                "name": "maxOpenSolverFeeRate",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "maxCloseSolverFeeRate",
+                "name": "closeRateCap",
                 "type": "uint256"
             }
         ],
@@ -3093,6 +3044,51 @@
     },
     {
         "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "charger",
+                "type": "address"
+            }
+        ],
+        "name": "OperationalFeeChargerRegistered",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "charger",
+                "type": "address"
+            }
+        ],
+        "name": "OperationalFeeChargerUnregistered",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "oldDelay",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "newDelay",
+                "type": "uint256"
+            }
+        ],
+        "name": "OperationalFeeReductionDelaySet",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
         "inputs": [],
         "name": "PauseAccounting",
         "type": "event"
@@ -4085,7 +4081,7 @@
             {
                 "indexed": true,
                 "internalType": "address",
-                "name": "partyB",
+                "name": "charger",
                 "type": "address"
             },
             {
@@ -7914,7 +7910,56 @@
         "inputs": [
             {
                 "internalType": "address",
-                "name": "partyB",
+                "name": "payer",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "charger",
+                "type": "address"
+            }
+        ],
+        "name": "getOperationalFeeAllowance",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "allowance",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "charged",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "remaining",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "pendingAllowance",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "reductionReadyAt",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "feeMultiplier",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "charger",
                 "type": "address"
             }
         ],
@@ -8856,6 +8901,25 @@
     {
         "inputs": [],
         "name": "isLegacyPartyALiquidationDeprecated",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "charger",
+                "type": "address"
+            }
+        ],
+        "name": "isOperationalFeeCharger",
         "outputs": [
             {
                 "internalType": "bool",
@@ -11856,17 +11920,12 @@
                 "components": [
                     {
                         "internalType": "uint256",
-                        "name": "maxOperationalFee",
+                        "name": "openRateCap",
                         "type": "uint256"
                     },
                     {
                         "internalType": "uint256",
-                        "name": "maxOpenSolverFeeRate",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "maxCloseSolverFeeRate",
+                        "name": "closeRateCap",
                         "type": "uint256"
                     }
                 ],
@@ -15198,32 +15257,22 @@
                 "components": [
                     {
                         "internalType": "uint256",
-                        "name": "maxOperationalFee",
+                        "name": "openRateCap",
                         "type": "uint256"
                     },
                     {
                         "internalType": "uint256",
-                        "name": "maxOpenSolverFeeRate",
+                        "name": "closeRateCap",
                         "type": "uint256"
                     },
                     {
                         "internalType": "uint256",
-                        "name": "maxCloseSolverFeeRate",
+                        "name": "openFeeCharged",
                         "type": "uint256"
                     },
                     {
                         "internalType": "uint256",
-                        "name": "chargedOperationalFee",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "chargedOpenSolverFee",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "chargedCloseSolverFee",
+                        "name": "closeFeeCharged",
                         "type": "uint256"
                     }
                 ],
@@ -15692,11 +15741,6 @@
             },
             {
                 "internalType": "uint256",
-                "name": "operationalFee",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
                 "name": "solverFee",
                 "type": "uint256"
             }
@@ -15776,11 +15820,6 @@
                 "internalType": "struct PairUpnlAndPriceSig",
                 "name": "upnlSig",
                 "type": "tuple"
-            },
-            {
-                "internalType": "uint256",
-                "name": "operationalFee",
-                "type": "uint256"
             },
             {
                 "internalType": "uint256",
@@ -15874,11 +15913,6 @@
                 "internalType": "struct PairUpnlAndPriceSig",
                 "name": "upnlSig",
                 "type": "tuple"
-            },
-            {
-                "internalType": "uint256",
-                "name": "operationalFee",
-                "type": "uint256"
             },
             {
                 "internalType": "uint256",
@@ -16113,6 +16147,87 @@
         "anonymous": false,
         "inputs": [
             {
+                "indexed": true,
+                "internalType": "address",
+                "name": "payer",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "charger",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "newAllowance",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "readyAt",
+                "type": "uint256"
+            }
+        ],
+        "name": "OperationalFeeAllowanceReductionRequested",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "payer",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "charger",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "newAllowance",
+                "type": "uint256"
+            }
+        ],
+        "name": "OperationalFeeAllowanceSet",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "payer",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "charger",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "feeMultiplier",
+                "type": "uint256"
+            }
+        ],
+        "name": "OperationalFeeMultiplierSet",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
                 "indexed": false,
                 "internalType": "address",
                 "name": "sender",
@@ -16174,6 +16289,65 @@
             }
         ],
         "name": "allocate",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address[]",
+                "name": "chargers",
+                "type": "address[]"
+            },
+            {
+                "internalType": "uint256[]",
+                "name": "amounts",
+                "type": "uint256[]"
+            }
+        ],
+        "name": "approveOperationalFee",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address[]",
+                "name": "chargers",
+                "type": "address[]"
+            },
+            {
+                "internalType": "uint256[]",
+                "name": "amounts",
+                "type": "uint256[]"
+            },
+            {
+                "internalType": "uint256[]",
+                "name": "feeMultipliers",
+                "type": "uint256[]"
+            }
+        ],
+        "name": "approveOperationalFeeWithMultiplier",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "payer",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "chargeOperationalFee",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -18310,6 +18484,19 @@
         "inputs": [
             {
                 "internalType": "address",
+                "name": "charger",
+                "type": "address"
+            }
+        ],
+        "name": "registerOperationalFeeCharger",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
                 "name": "partyB",
                 "type": "address"
             }
@@ -18967,6 +19154,19 @@
     {
         "inputs": [
             {
+                "internalType": "uint256",
+                "name": "delay",
+                "type": "uint256"
+            }
+        ],
+        "name": "setOperationalFeeReductionDelay",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
                 "internalType": "address",
                 "name": "partyB",
                 "type": "address"
@@ -19161,6 +19361,19 @@
             }
         ],
         "name": "unregisterExpressProvider",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "charger",
+                "type": "address"
+            }
+        ],
+        "name": "unregisterOperationalFeeCharger",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -19906,6 +20119,37 @@
             }
         ],
         "name": "BalanceChangePartyB",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "payer",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "charger",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "receiver",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "OperationalFeeCharged",
         "type": "event"
     },
     {

@@ -10,9 +10,11 @@ import { IAccountFacet } from "./IAccountFacet.sol";
 import { AccountFacetImpl } from "./AccountFacetImpl.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
+import { OperationalFeeStorage, AllowanceState } from "../../storages/OperationalFeeStorage.sol";
 import { SharedEvents } from "../../libraries/SharedEvents.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
+import { LibOperationalFee } from "../../libraries/LibOperationalFee.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
 import { SingleUpnlSig, SingleUpnlWithPendingBalanceSig } from "../../storages/MuonStorage.sol";
 
@@ -221,5 +223,50 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		emit Withdraw(signer, signer, amountInCollateralDecimals);
 		emit Deposit(signer, user, amountInCollateralDecimals);
 		emit Deposit(signer, user, amountInCollateralDecimals, false);
+	}
+
+	/// @notice Charge a standing operational fee from `payer`'s balance. Caller (msg.sender) is the charger.
+	/// @dev Free-first then allocated; the allocated portion is guarded by balance only (no oracle sig here).
+	///      Payer guards (suspended / under-liquidation) live in LibOperationalFee.charge so the solver path
+	///      enforces them too. No reentrancy guard: the charge path is pure storage + events with no external
+	///      call, so it cannot be re-entered (consistent with this facet's other balance methods).
+	function chargeOperationalFee(address payer, uint256 amount) external whenNotAccountingPaused {
+		LibOperationalFee.charge(payer, msg.sender, amount);
+	}
+
+	function _setOperationalFeeAllowance(address payer, address charger, uint256 amount) private {
+		LibOperationalFee.setAllowance(payer, charger, amount);
+		AllowanceState storage s = OperationalFeeStorage.layout().allowances[payer][charger];
+		if (s.reductionReadyAt != 0 && s.pendingAllowance == amount) {
+			emit OperationalFeeAllowanceReductionRequested(payer, charger, amount, s.reductionReadyAt);
+		} else {
+			emit OperationalFeeAllowanceSet(payer, charger, amount);
+		}
+	}
+
+	/// @notice ERC20-approve-style: set the caller's operational-fee allowance to each charger (absolute amount).
+	/// @dev Batch so a payer can approve multiple chargers (e.g. a solver and a relayer) in one tx.
+	///      Per charger: a raise (or equal) applies instantly; a reduction is timelocked (see LibOperationalFee).
+	function approveOperationalFee(address[] calldata chargers, uint256[] calldata amounts) external {
+		require(chargers.length == amounts.length, "AccountFacet: Length mismatch");
+		address payer = LibSigner.getSigner();
+		for (uint256 i = 0; i < chargers.length; i++) {
+			_setOperationalFeeAllowance(payer, chargers[i], amounts[i]);
+		}
+	}
+
+	/// @notice Set allowance and the charger's priority multiplier in one call. 10000 is the normal 1x multiplier.
+	function approveOperationalFeeWithMultiplier(
+		address[] calldata chargers,
+		uint256[] calldata amounts,
+		uint256[] calldata feeMultipliers
+	) external {
+		require(chargers.length == amounts.length && chargers.length == feeMultipliers.length, "AccountFacet: Length mismatch");
+		address payer = LibSigner.getSigner();
+		for (uint256 i = 0; i < chargers.length; i++) {
+			_setOperationalFeeAllowance(payer, chargers[i], amounts[i]);
+			LibOperationalFee.setFeeMultiplier(payer, chargers[i], feeMultipliers[i]);
+			emit OperationalFeeMultiplierSet(payer, chargers[i], feeMultipliers[i]);
+		}
 	}
 }

@@ -70,7 +70,7 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 			affiliate,
 			upnlSig,
 			"",
-			SolverFeeCaps({ maxOperationalFee: 0, maxOpenSolverFeeRate: 0, maxCloseSolverFeeRate: 0 })
+			SolverFeeCaps({ openRateCap: 0, closeRateCap: 0 })
 		);
 
 		quoteId = QuoteStorage.layout().lastId;
@@ -93,7 +93,7 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 				tradingFee: quote.tradingFee,
 				deadline: deadline,
 				affiliate: affiliate,
-				solverFeeCaps: SolverFeeCaps({ maxOperationalFee: 0, maxOpenSolverFeeRate: 0, maxCloseSolverFeeRate: 0 }),
+				solverFeeCaps: SolverFeeCaps({ openRateCap: 0, closeRateCap: 0 }),
 				data: ""
 			})
 		);
@@ -153,7 +153,7 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 			affiliate,
 			upnlSig,
 			data,
-			SolverFeeCaps({ maxOperationalFee: 0, maxOpenSolverFeeRate: 0, maxCloseSolverFeeRate: 0 })
+			SolverFeeCaps({ openRateCap: 0, closeRateCap: 0 })
 		);
 
 		quoteId = QuoteStorage.layout().lastId;
@@ -176,7 +176,7 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 				tradingFee: quote.tradingFee,
 				deadline: deadline,
 				affiliate: affiliate,
-				solverFeeCaps: SolverFeeCaps({ maxOperationalFee: 0, maxOpenSolverFeeRate: 0, maxCloseSolverFeeRate: 0 }),
+				solverFeeCaps: SolverFeeCaps({ openRateCap: 0, closeRateCap: 0 }),
 				data: data
 			})
 		);
