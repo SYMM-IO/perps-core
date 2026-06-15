@@ -254,7 +254,7 @@ library WithdrawFacetImpl {
 		require(withdrawRequest.status == WithdrawStatus.PROVIDER_ACCEPTED, "WithdrawFacet : Invalid withdraw request status");
 		require(msg.sender == withdrawRequest.provider, "WithdrawFacet : Not allowed to advance withdrawal");
 
-		uint256 expressAmount = withdrawRequest.totalAmount - withdrawRequest.totalVirtualAmount;
+		uint256 expressAmount = _totalExpressAmount(withdrawRequest);
 		require(withdrawRequest.advancedAmount + amount <= expressAmount, "WithdrawFacet : Advance exceeds express amount");
 
 		withdrawRequest.advancedAmount += amount;
@@ -310,6 +310,8 @@ library WithdrawFacetImpl {
 
 	/// @notice Provider accepts a cancellation request, refunding the user and marking as CANCELLED
 	function acceptWithdrawCancelRequest(address user, uint256 requestId) internal {
+		require(!WithdrawStorage.layout().finalizingInProgress, "WithdrawFacet : Cannot accept cancel during finalize callback");
+
 		WithdrawRequest storage withdrawRequest = _getWithdrawRequest(user, requestId);
 
 		require(withdrawRequest.status == WithdrawStatus.CANCEL_REQUESTED, "WithdrawFacet : Invalid withdraw request status");
@@ -375,6 +377,19 @@ library WithdrawFacetImpl {
 	// ----------------------
 	// Internal helper utils
 	// ----------------------
+
+	/// @notice Sums the express-only portion of a request: parts served by an express provider that are not virtual.
+	/// @dev This is the only amount an express provider may advance against and be reimbursed for at finalize.
+	///      Classic parts (no provider) and virtual parts are excluded, so an express provider can never advance
+	///      against funds it does not service. Mirrors the express-only accumulation in finalizeWithdrawRequest.
+	function _totalExpressAmount(WithdrawRequest storage withdrawRequest) internal view returns (uint256 total) {
+		for (uint256 i = 0; i < withdrawRequest.parts.length; i++) {
+			WithdrawReceiverPart storage part = withdrawRequest.parts[i];
+			if (part.expressProvider != address(0) && part.virtualProvider == address(0)) {
+				total += part.amount;
+			}
+		}
+	}
 
 	/// @notice Retrieves a withdrawal request by user and ID, validating that the ID exists
 	function _getWithdrawRequest(address user, uint256 requestId) internal view returns (WithdrawRequest storage) {

@@ -16,13 +16,15 @@ import { WithdrawStorage, WithdrawRequest, WithdrawStatus } from "../../storages
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
 import { MAStorage, EntityMetadata } from "../../storages/MAStorage.sol";
+import { OperationalFeeStorage, AllowanceState } from "../../storages/OperationalFeeStorage.sol";
+import { LibOperationalFee } from "../../libraries/LibOperationalFee.sol";
 import { QuoteStorage, LockedValues, Fee } from "../../storages/QuoteStorage.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { MuonStorage } from "../../storages/MuonStorage.sol";
 import { IMuonSignatureVerifier, MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
-import { MigrationStorage } from "../../storages/MigrationStorage.sol";
 import { BridgeStorage, BridgeTransaction } from "../../storages/BridgeStorage.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
+import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { IViewFacet } from "./IViewFacet.sol";
 
@@ -191,6 +193,39 @@ contract ViewFacet is IViewFacet {
 	/// @return The allocated balance of Party B for Party A.
 	function allocatedBalanceOfPartyB(address partyB, address partyA) external view returns (uint256) {
 		return AccountStorage.layout().partyBAllocatedBalances[partyB][partyA];
+	}
+
+	/// @notice Returns the effective account that receives a charger's operational fees.
+	/// @dev If no custom receiver is set, the charger itself receives operational fees.
+	function getOperationalFeeReceiver(address charger) external view returns (address) {
+		return LibAccount.getOperationalFeeReceiver(charger);
+	}
+
+	function getOperationalFeeAllowance(
+		address payer,
+		address charger
+	)
+		external
+		view
+		returns (uint256 allowance, uint256 charged, uint256 remaining, uint256 pendingAllowance, uint256 reductionReadyAt, uint256 feeMultiplier)
+	{
+		AllowanceState storage s = OperationalFeeStorage.layout().allowances[payer][charger];
+		charged = s.charged;
+		feeMultiplier = LibOperationalFee.effectiveFeeMultiplier(s);
+		if (s.reductionReadyAt != 0 && block.timestamp >= s.reductionReadyAt) {
+			allowance = s.pendingAllowance;
+			pendingAllowance = 0;
+			reductionReadyAt = 0;
+		} else {
+			allowance = s.allowance;
+			pendingAllowance = s.pendingAllowance;
+			reductionReadyAt = s.reductionReadyAt;
+		}
+		remaining = allowance > charged ? allowance - charged : 0;
+	}
+
+	function isOperationalFeeCharger(address charger) external view returns (bool) {
+		return LibOperationalFee.isCharger(charger);
 	}
 
 	/// @notice Returns the balance of cross partyB (aggregated allocated balance).
@@ -947,18 +982,22 @@ contract ViewFacet is IViewFacet {
 	/// @notice Calculates the maximum close amount that keeps PartyA at the liquidation threshold.
 	/// @dev Use this to preview the result of `fillCloseRequestToLiquidation` before calling it.
 	///      This helps frontends determine if a partial close is possible and what amount will be filled.
+	///      For solver-fee-aware close-to-liquidation flows, `solverFeeAmount` should be the total
+	///      operational plus solver fee that will be charged with the close; pass 0 for fee-less flows.
 	/// @param quoteId The ID of the quote with a pending close request.
 	/// @param closedPrice The price at which the position would be closed.
 	/// @param marketPrice The current market price.
 	/// @param upnlPartyA The unrealized PnL of PartyA.
-	/// @return maxCloseAmount The maximum amount that can be closed while keeping PartyA solvent.
-	/// @return canCloseAll True if the full quantityToClose can be closed without making PartyA insolvent.
+	/// @param solverFeeAmount The total extra solver-side fee that will be deducted from PartyA allocated balance (0 for fee-less flows).
+	/// @return maxCloseAmount The maximum amount that can be closed while keeping PartyA solvent after the solver fee.
+	/// @return canCloseAll True if the full quantityToClose can be closed without making PartyA insolvent after the solver fee.
 	function getMaxCloseAmountToLiquidation(
 		uint256 quoteId,
 		uint256 closedPrice,
 		uint256 marketPrice,
-		int256 upnlPartyA
+		int256 upnlPartyA,
+		uint256 solverFeeAmount
 	) external view returns (uint256 maxCloseAmount, bool canCloseAll) {
-		return LibSolvency.calculateMaxCloseAmountToLiquidation(quoteId, closedPrice, marketPrice, upnlPartyA);
+		return LibSolvency.calculateMaxCloseAmountToLiquidation(quoteId, closedPrice, marketPrice, upnlPartyA, solverFeeAmount);
 	}
 }

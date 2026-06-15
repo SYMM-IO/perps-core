@@ -21,6 +21,7 @@ import { IDiamondCut } from "../../diamond/facets/DiamondCut/IDiamondCut.sol";
 import { IDiamondLoupe } from "../../diamond/facets/DiamondLoup/IDiamondLoupe.sol";
 import { IPartyBQuoteActionsFacet } from "../facets/PartyBQuoteActions/IPartyBQuoteActionsFacet.sol";
 import { IPartyBPositionActionsFacet } from "../facets/PartyBPositionActions/IPartyBPositionActionsFacet.sol";
+import { IPartyBSolverFeeActionsFacet } from "../facets/PartyBSolverFeeActions/IPartyBSolverFeeActionsFacet.sol";
 import { IForceActionsFacet } from "../facets/ForceActions/IForceActionsFacet.sol";
 import { ISettlementFacet } from "../facets/Settlement/ISettlementFacet.sol";
 import { IPartyBBatchActionsFacet } from "../facets/PartyBBatchActions/IPartyBBatchActionsFacet.sol";
@@ -37,6 +38,7 @@ interface ISymmio is
 	IForceActionsFacet,
 	IPartyBQuoteActionsFacet,
 	IPartyBPositionActionsFacet,
+	IPartyBSolverFeeActionsFacet,
 	IPartyBBatchActionsFacet,
 	IPartyAFacet,
 	IPartyALiquidationFacet,
@@ -64,7 +66,10 @@ interface ISymmio is
 		FUNDING_FEE_OUT,
 		DEFERRED_BALANCE_IN,
 		DEFERRED_BALANCE_OUT,
-		REIMBURSEMENT_IN
+		REIMBURSEMENT_IN,
+		OPERATIONAL_FEE_OUT,
+		OPEN_SOLVER_FEE_OUT,
+		CLOSE_SOLVER_FEE_OUT
 	}
 
 	/// @notice Emitted when a PartyA's allocated balance changes

@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Cross-PartyB Liquidation Reserve Enforcement - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+	</head>
+	<body class="doc-page">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="doc-topbar">
+			<a class="brand" href="../index.html"
+				><span class="brand-mark">8.6</span><span><strong>Symmio Docs</strong><small>v0.8.6 reference</small></span></a
+			>
+			<nav class="top-actions" aria-label="Page actions">
+				<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+			</nav>
+		</header>
+
+		<div class="reader-shell">
+		<aside class="doc-sidebar" aria-label="Documentation navigation">
+			<a class="button primary back-home" href="../index.html">Back to index</a>
+			<div class="side-card">
+				<p class="side-label">Docs</p>
+				<a class="side-link" href="../pages/overview.html"><small>Overview</small><span>Symmio Core v0.8.6 Overview</span></a>
+				<a class="side-link" href="../pages/express-withdrawal-system-design.html"><small>Express Withdrawal</small><span>Express Withdrawal System Design</span></a>
+				<a class="side-link" href="../pages/account-layer-ownership-delegation.html"><small>AccountLayer</small><span>AccountLayer Delegated Creation &amp; Ownership Transfer</span></a>
+				<a class="side-link" href="../pages/liquidation-funding-snapshot-fix.html"><small>Liquidation</small><span>PartyA Liquidation Snapshot Flow</span></a>
+				<a class="side-link" href="../pages/single-step-partya-liquidation.html"><small>Liquidation</small><span>Single-Step PartyA Liquidation</span></a>
+				<a class="side-link" href="../pages/affiliate-shutdown-flow.html"><small>Clearing House</small><span>Affiliate Shutdown Flow</span></a>
+				<a class="side-link" href="../pages/muon-upnl-validity-overrides.html"><small>Muon</small><span>Muon UPNL Validity Overrides</span></a>
+				<a class="side-link" href="../pages/solver-fees.html"><small>Fees</small><span>Solver Fees</span></a>
+				<a class="side-link" href="../pages/operational-fees.html"><small>Fees</small><span>Operational Fees</span></a>
+				<a class="side-link" href="../pages/partya-liquidation-fee-recipient.html"><small>Liquidation</small><span>PartyA Liquidation Fee Recipient Cleanup</span></a>
+				<a class="side-link" href="../pages/balance-change-event-cleanup.html"><small>Events</small><span>BalanceChange Event Cleanup</span></a>
+				<a class="side-link" href="../pages/lazy-accumulated-funding.html"><small>Funding</small><span>Lazy Accumulated Funding</span></a>
+				<a class="side-link" href="../pages/partyb-allocation-suspension-gates.html"><small>PartyB</small><span>Allocation Suspension Gates</span></a>
+				<a class="side-link is-active" href="../pages/cross-partyb-liquidation-reserve.html"><small>Liquidation</small><span>Cross-PartyB Liquidation Reserve Enforcement</span></a>
+				<a class="side-link" href="../pages/express-bot-operations-checklist.html"><small>Express Withdrawal</small><span>Express Provider Bot Operations Checklist</span></a>
+			</div>
+		</aside>
+			<aside class="toc-panel side-toc" aria-label="Page navigation">
+				<div class="toc-card">
+					<p class="toc-title">On this page</p>
+					<a class="toc-link level-2" href="#summary">Summary</a>
+					<a class="toc-link level-2" href="#the-bug">The Bug</a>
+					<a class="toc-link level-2" href="#affected-paths">Affected Paths</a>
+					<a class="toc-link level-2" href="#fix">Fix</a>
+					<a class="toc-link level-2" href="#settlement-top-up-exception">Settlement Top-Up Exception</a>
+					<a class="toc-link level-2" href="#verification">Verification</a>
+				</div>
+			</aside>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">v0.8.6</a><span>/</span><strong>Liquidation</strong></nav>
+					<div class="reader-title-row">
+						<div>
+							<h1>Cross-PartyB Liquidation Reserve Enforcement</h1>
+							<p class="hero-copy">
+								v0.8.6 makes pending cross-PartyB liquidation settlement reserves reduce the shared PartyB availability used by quote,
+								solvency, and liquidation checks.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="summary">Summary</h2>
+					<p>
+						When a PartyA is liquidated against a cross-mode PartyB, the liquidation path can release the PartyB's locked overlay before
+						the PartyB's positive PnL owed to the liquidated PartyA is actually paid. The owed amount is tracked as a pending settlement
+						state and accumulated in <code>partyBLiquidationSettlementReserve[partyB]</code>.
+					</p>
+					<p>
+						That reserve must behave like unavailable capital until <code>settlePartyALiquidation</code> consumes it or the Clearing House
+						takeover path clears it. v0.8.6 moves the reserve check into the shared PartyB availability helpers so it is enforced
+						consistently across cross-bucket operations.
+					</p>
+
+					<h2 id="the-bug">The Bug</h2>
+					<aside class="callout callout-note">
+						<strong>Cross-PartyB liquidation settlement reserve was only enforced during deallocation.</strong>
+						The reserve was subtracted in <code>deallocateForPartyB</code>, but not in the shared helpers used by
+						<code>lockQuote</code>, open-position solvency, funding solvency, settlement solvency, or
+						<code>liquidateCrossPartyB</code> eligibility. That meant those paths could still read the PartyB's raw cross allocation as if
+						the reserved amount was free capital.
+					</aside>
+					<p>
+						The risky window existed after <code>liquidatePositionsPartyA</code> freed the cross PartyB locked balances but before the
+						liquidator completed <code>settlePartyALiquidation</code>. During that window, raw
+						<code>partyBAllocatedBalances[partyB][address(0)]</code> had not yet been debited for the pending settlement.
+					</p>
+
+					<h2 id="affected-paths">Affected Paths</h2>
+					<p>The reserve now applies to the shared cross-mode PartyB availability used by:</p>
+					<ul>
+						<li><code>lockQuote</code>, through <code>partyBAvailableForQuote</code>.</li>
+						<li><code>deallocateForPartyB</code> and <code>transferAllocation</code>, through the same quote-availability helper.</li>
+						<li>Open/close/funding/settlement solvency checks, through <code>partyBAvailableBalanceForLiquidation</code>.</li>
+						<li><code>liquidateCrossPartyB</code> eligibility, so a PartyB can be liquidatable once reserved debt is counted.</li>
+					</ul>
+					<p>
+						For isolated PartyBs, the helper returns a zero reserve. The reserve is only subtracted while the PartyB is currently in
+						cross-mode accounting.
+					</p>
+
+					<h2 id="fix">Fix</h2>
+					<p>
+						The fix centralizes reserve enforcement in <code>LibAccount</code>. Both quote availability and liquidation-style availability
+						subtract <code>partyBLiquidationSettlementReserve</code> for cross-mode PartyBs.
+					</p>
+					<pre><code class="language-solidity">return available - int256(partyBLiquidationSettlementReserve(accountLayout, partyB));
+
+function partyBAvailableBalanceForLiquidation(
+    int256 upnl,
+    address partyB,
+    address partyA
+) internal view returns (int256) {
+    return partyBAvailableBalanceForLiquidation(upnl, partyB, partyA, true);
+}
+</code></pre>
+					<p>
+						The old one-off subtraction was removed from <code>PartyBAccountFacetImpl.deallocateForPartyB</code>. Deallocation now uses
+						the same reserve-aware helper as quote locking, which avoids double-counting and keeps all cross-bucket availability checks on
+						one rule.
+					</p>
+
+					<h2 id="settlement-top-up-exception">Settlement Top-Up Exception</h2>
+					<p>
+						One path intentionally bypasses the reserve check: <code>settlePartyBUpnlForLiquidation</code>. That function exists so a
+						liquidator can realize a cross PartyB's positive uPNL from other solvent PartyAs before paying the pending liquidation
+						settlement. If the reserve were applied to that pre-settlement solvency check, the top-up path could be blocked by the same
+						reserve it is trying to fund.
+					</p>
+					<p>
+						To keep the bypass narrow, <code>LibSettlement.settleUpnlUnified</code> now accepts an explicit
+						<code>applyPartyBLiquidationReserve</code> flag. Normal settlement and force-close settlement pass <code>true</code>.
+						<code>settlePartyBUpnlForLiquidation</code> passes <code>false</code> and then requires the PartyB's cross allocated balance to
+						be non-decreasing.
+					</p>
+					<pre><code class="language-solidity">uint256 partyBBalanceBefore = accountLayout.partyBAllocatedBalances[sig.partyB][address(0)];
+LibSettlement.settleUpnlUnified(sig, updatedPrices, true, false);
+require(
+    accountLayout.partyBAllocatedBalances[sig.partyB][address(0)] &gt;= partyBBalanceBefore,
+    "SettlementFacet: PartyB balance decreased"
+);
+</code></pre>
+
+					<h2 id="verification">Verification</h2>
+					<ul>
+						<li>Reserve-aware quote locking is covered by both failing and passing boundary tests.</li>
+						<li>
+							Cross-PartyB liquidation eligibility is covered where raw availability is solvent but reserve-adjusted availability is
+							insolvent.
+						</li>
+						<li>
+							The liquidation top-up path is covered by <code>SettlePartyBUpnlForLiquidation</code>, including the shortfall case that
+							needs the reserve bypass.
+						</li>
+						<li>The full parallel suite passes with 49 suites and 2202 tests.</li>
+					</ul>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Protocol, operations, and integration notes.</span>
+		</footer>
+	</body>
+</html>

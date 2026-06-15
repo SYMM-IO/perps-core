@@ -6,6 +6,7 @@ import { WithdrawRequest, WithdrawReceiverPart } from "../storages/WithdrawStora
 
 interface ISymmioCore {
 	function acceptWithdrawRequest(address user, uint256 requestId) external;
+	function acceptWithdrawCancelRequest(address user, uint256 requestId) external;
 	function advanceWithdraw(address user, uint256 requestId, uint256 amount) external;
 }
 
@@ -15,6 +16,9 @@ contract MaliciousAdvanceProvider is IExpressProvider {
 	uint256 public extraExtracted;
 	bool public attackOnComplete;
 	uint256 public attackAmount;
+	bool public cancelAttackOnComplete;
+	uint256 public cancelAcceptedCount;
+	uint256 public cancelRejectedCount;
 
 	constructor(address _symmio) {
 		symmio = _symmio;
@@ -25,6 +29,10 @@ contract MaliciousAdvanceProvider is IExpressProvider {
 		attackAmount = amount;
 	}
 
+	function setCancelAttack(bool enabled) external {
+		cancelAttackOnComplete = enabled;
+	}
+
 	function onWithdrawRequest(WithdrawRequest memory r, address) external override {
 		ISymmioCore(symmio).acceptWithdrawRequest(r.user, r.id);
 	}
@@ -33,6 +41,13 @@ contract MaliciousAdvanceProvider is IExpressProvider {
 		if (attackOnComplete && attackAmount > 0) {
 			ISymmioCore(symmio).advanceWithdraw(r.user, r.id, attackAmount);
 			extraExtracted += attackAmount;
+		}
+		if (cancelAttackOnComplete) {
+			try ISymmioCore(symmio).acceptWithdrawCancelRequest(r.user, r.id) {
+				cancelAcceptedCount += 1;
+			} catch {
+				cancelRejectedCount += 1;
+			}
 		}
 	}
 

@@ -121,7 +121,8 @@ library LibSettlement {
 	function settleUpnlUnified(
 		UnifiedSettlementSig memory sig,
 		uint256[] memory updatedPrices,
-		bool privilegedMode
+		bool privilegedMode,
+		bool applyPartyBLiquidationReserve
 	) public returns (uint256[] memory newPartyAsAllocatedBalances, int256[] memory settleAmountsPerPartyA) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
@@ -162,11 +163,19 @@ library LibSettlement {
 
 		// 5. Validate partyB solvency based on mode
 		if (isCrossPartyB) {
-			require(LibAccount.partyBAvailableBalanceForLiquidation(sig.upnlPartyB, partyB, address(0)) >= 0, "LibSettlement: PartyB is insolvent");
+			require(
+				LibAccount.partyBAvailableBalanceForLiquidation(sig.upnlPartyB, partyB, address(0), applyPartyBLiquidationReserve) >= 0,
+				"LibSettlement: PartyB is insolvent"
+			);
 		} else {
 			for (uint256 i = 0; i < sig.partyAs.length; i++) {
 				require(
-					LibAccount.partyBAvailableBalanceForLiquidation(sig.upnlPartyBPerPartyA[i], partyB, sig.partyAs[i]) >= 0,
+					LibAccount.partyBAvailableBalanceForLiquidation(
+						sig.upnlPartyBPerPartyA[i],
+						partyB,
+						sig.partyAs[i],
+						applyPartyBLiquidationReserve
+					) >= 0,
 					"LibSettlement: PartyB is insolvent for partyA"
 				);
 			}

@@ -15,4 +15,7 @@ interface IAccountEvents {
 	event InternalTransfer(address sender, address user, uint256 userNewAllocatedBalance, uint256 amount);
 	event InternalTransferToBalance(address sender, address user, uint256 userNewBalance, uint256 amount);
 	event DepositVirtualFunds(address indexed provider, uint256 amount);
+	event OperationalFeeAllowanceSet(address indexed payer, address indexed charger, uint256 newAllowance);
+	event OperationalFeeAllowanceReductionRequested(address indexed payer, address indexed charger, uint256 newAllowance, uint256 readyAt);
+	event OperationalFeeMultiplierSet(address indexed payer, address indexed charger, uint256 feeMultiplier);
 }

@@ -132,6 +132,70 @@ interface ISymmio {
 		address expressProvider;
 	}
 
+	/// @notice Solver fee caps approved by PartyA when sending a quote.
+	/// @dev Mirror of core's QuoteStorage.SolverFeeCaps -- keep the field types in sync. LibQuoteParams derives
+	///      the sendQuote selector from this interface, and that selector depends on this struct's ABI tuple
+	///      shape; changing its field types would make the selector diverge from the core diamond's.
+	struct SolverFeeCaps {
+		uint256 openRateCap;
+		uint256 closeRateCap;
+	}
+
+	/// @notice Sends a quote with an affiliate. Declared only so LibQuoteParams can derive its selector.
+	function sendQuoteWithAffiliate(
+		address[] memory partyBsWhiteList,
+		uint256 symbolId,
+		PositionType positionType,
+		OrderType orderType,
+		uint256 price,
+		uint256 quantity,
+		uint256 cva,
+		uint256 lf,
+		uint256 partyAmm,
+		uint256 partyBmm,
+		uint256 maxFundingRate,
+		uint256 deadline,
+		address affiliate,
+		SingleUpnlAndPriceSig memory upnlSig
+	) external returns (uint256);
+
+	/// @notice Sends a quote with an affiliate and custom data. Declared only so LibQuoteParams can derive its selector.
+	function sendQuoteWithAffiliateAndData(
+		address[] memory partyBsWhiteList,
+		uint256 symbolId,
+		PositionType positionType,
+		OrderType orderType,
+		uint256 price,
+		uint256 quantity,
+		uint256 cva,
+		uint256 lf,
+		uint256 partyAmm,
+		uint256 partyBmm,
+		uint256 deadline,
+		address affiliate,
+		SingleUpnlAndPriceSig memory upnlSig,
+		bytes memory data
+	) external returns (uint256 quoteId);
+
+	/// @notice Sends a quote with affiliate, custom data, and solver fee caps. Declared only so LibQuoteParams can derive its selector.
+	function sendQuote(
+		address[] memory partyBsWhiteList,
+		uint256 symbolId,
+		PositionType positionType,
+		OrderType orderType,
+		uint256 price,
+		uint256 quantity,
+		uint256 cva,
+		uint256 lf,
+		uint256 partyAmm,
+		uint256 partyBmm,
+		uint256 deadline,
+		address affiliate,
+		SingleUpnlAndPriceSig memory upnlSig,
+		bytes memory data,
+		SolverFeeCaps memory solverFeeCaps
+	) external returns (uint256 quoteId);
+
 	/// @notice Deposits collateral for a user
 	/// @param user The user address
 	/// @param amount The amount to deposit

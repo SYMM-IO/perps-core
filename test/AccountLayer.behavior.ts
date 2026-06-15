@@ -35,12 +35,16 @@ type SubAccountCreationDataStruct = {
 }
 
 const roleHash = (name: string) => ethers.keccak256(toUtf8Bytes(name))
+const SEND_QUOTE_WITH_AFFILIATE_SIGNATURE =
+	"sendQuoteWithAffiliate(address[],uint256,uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,address,(bytes,uint256,int256,uint256,bytes,(uint256,address,address)))"
+const SEND_QUOTE_WITH_SOLVER_FEE_CAPS_SIGNATURE =
+	"sendQuote(address[],uint256,uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256,uint256,address,(bytes,uint256,int256,uint256,bytes,(uint256,address,address)),bytes,(uint256,uint256))"
 
 export function shouldBehaveLikeAccountLayer(): void {
 	let context: RunContext, user: User, hedger: Hedger
 
 	const createSendQuoteCallData = async (quoteRequest = limitQuoteRequestBuilder().build()) => {
-		return context.partyAFacet.interface.encodeFunctionData("sendQuote", [
+		return context.partyAFacet.interface.encodeFunctionData(SEND_QUOTE_WITH_AFFILIATE_SIGNATURE, [
 			quoteRequest.partyBWhiteList,
 			quoteRequest.symbolId,
 			quoteRequest.positionType,
@@ -53,7 +57,28 @@ export function shouldBehaveLikeAccountLayer(): void {
 			quoteRequest.partyBmm,
 			quoteRequest.maxFundingRate,
 			await quoteRequest.deadline,
+			ZeroAddress,
 			await quoteRequest.upnlSig,
+		])
+	}
+
+	const createSolverFeeSendQuoteCallData = async (quoteRequest = limitQuoteRequestBuilder().build()) => {
+		return context.partyAFacet.interface.encodeFunctionData(SEND_QUOTE_WITH_SOLVER_FEE_CAPS_SIGNATURE, [
+			quoteRequest.partyBWhiteList,
+			quoteRequest.symbolId,
+			quoteRequest.positionType,
+			quoteRequest.orderType,
+			quoteRequest.price,
+			quoteRequest.quantity,
+			quoteRequest.cva,
+			quoteRequest.lf,
+			quoteRequest.partyAmm,
+			quoteRequest.partyBmm,
+			await quoteRequest.deadline,
+			ZeroAddress,
+			await quoteRequest.upnlSig,
+			"0x",
+			{ openRateCap: 0, closeRateCap: 0 },
 		])
 	}
 
@@ -1192,6 +1217,28 @@ export function shouldBehaveLikeAccountLayer(): void {
 					const activeVA = await context.alViewFacet.getActiveVAByKey(marketSubAccount, 1, 1)
 					expect(activeVA).to.equal(ZeroAddress)
 				})
+			})
+		})
+
+		describe("solver-fee sendQuote routing", async () => {
+			it("routes the solver-fee capped sendQuote variant through virtual account handling", async () => {
+				// Regression test: the v0.8.6 sendQuote (with SolverFeeCaps) selector must be recognized by
+				// LibQuoteParams/CoreFacet so VA isolation handling applies instead of falling through to
+				// the unvalidated _executeWithSigner path.
+				const subAccountData = [createSubAccountData("SOLVER_FEE_VA", 1, "MARKET")]
+				const subAccount = await createSubAccountAndDeposit(context.signers.user, subAccountData, BALANCES.DEPOSIT_AMOUNT)
+
+				const quoteRequest = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.LONG).build()
+				await context.alMarginFacet.connect(context.signers.user).addMarginToNextVA(subAccount, 1, quoteRequest.symbolId, decimal(500n))
+
+				const callData = await createSolverFeeSendQuoteCallData(quoteRequest)
+				await context.alCoreFacet.connect(context.signers.user)._call(subAccount, [callData])
+
+				const virtualAccounts = await context.alViewFacet.getVirtualAccountsAddressesOfSubAccount(subAccount, 0, 10)
+				expect(virtualAccounts.length).to.equal(1)
+
+				const quoteIds = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccounts[0], 0, 10)
+				expect(quoteIds.length).to.equal(1)
 			})
 		})
 

@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { QuoteStorage, Quote, LockedValues, PositionType, OrderType, QuoteStatus } from "../storages/QuoteStorage.sol";
+import { QuoteStorage, Quote, LockedValues, PositionType, OrderType, QuoteStatus, SolverFeeState } from "../storages/QuoteStorage.sol";
 import { AccountStorage } from "../storages/AccountStorage.sol";
 import { AffiliateStorage } from "../storages/AffiliateStorage.sol";
 import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
@@ -14,6 +14,7 @@ import { LibQuote } from "./LibQuote.sol";
 import { LibQuoteClose } from "./LibQuoteClose.sol";
 import { LibQuoteFunding } from "./LibQuoteFunding.sol";
 import { LibAccount } from "./LibAccount.sol";
+import { LibSolvency } from "./LibSolvency.sol";
 import { LockedValuesOps } from "./LibLockedValues.sol";
 import { LibHook } from "./LibHook.sol";
 import { ISymmioHook } from "../interfaces/ISymmioHook.sol";
@@ -164,6 +165,7 @@ library LibPartyBPositionsActions {
 
 			quoteLayout.quoteIdsOf[quote.partyA].push(currentId);
 			quoteLayout.quotes[currentId] = q;
+			_splitSolverFeeState(quoteLayout, quote.id, currentId);
 			Quote storage newQuote = quoteLayout.quotes[currentId];
 			remainingQuoteFee = LibQuote.getOpenTradingFee(newQuote.id);
 
@@ -198,10 +200,9 @@ library LibPartyBPositionsActions {
 		quote.quoteStatus = QuoteStatus.OPENED;
 		LibQuote.addToOpenPositions(quoteId);
 
-		uint256 openFee =
-			quote.orderType == OrderType.LIMIT
-				? (filledAmount * quote.requestedOpenPrice * quote.tradingFee) / 1e36
-				: (filledAmount * quote.marketPrice * quote.tradingFee) / 1e36;
+		uint256 openFee = quote.orderType == OrderType.LIMIT
+			? (filledAmount * quote.requestedOpenPrice * quote.tradingFee) / 1e36
+			: (filledAmount * quote.marketPrice * quote.tradingFee) / 1e36;
 		if (!_instantOpenMode) {
 			LibAccount.realizeOpenTradingFee(quote.partyA, quoteFeeBeforeOpen - remainingQuoteFee);
 		}
@@ -255,5 +256,85 @@ library LibPartyBPositionsActions {
 			quote.affiliate,
 			SharedEvents.TradingFeeType.OPEN
 		);
+	}
+
+	/// @notice Validates a close-to-liquidation request and computes the amount that keeps PartyA at the
+	///         liquidation edge, reserving room for `solverFeeAmount` (pass 0 for the legacy fee-less path).
+	///         Shared by PartyBPositionActionsFacetImpl and PartyBSolverFeeActionsFacet so the validation
+	///         and rounding rules cannot diverge between the two close-to-liquidation paths.
+	/// @dev Does NOT verify the Muon signature or any party's solvency; callers remain responsible for that.
+	function calculateCloseToLiquidationAmount(
+		uint256 quoteId,
+		uint256 closedPrice,
+		uint256 marketPrice,
+		int256 upnlPartyA,
+		uint256 solverFeeAmount
+	) internal view returns (uint256 filledAmount) {
+		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
+
+		require(
+			quote.quoteStatus == QuoteStatus.CLOSE_PENDING || quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING,
+			"PartyBFacet: Invalid state"
+		);
+		require(block.timestamp <= quote.deadline, "PartyBFacet: Quote is expired");
+
+		// Validate closed price based on position type
+		if (quote.positionType == PositionType.LONG) {
+			require(closedPrice >= quote.requestedClosePrice, "PartyBFacet: Closed price isn't valid");
+		} else {
+			require(closedPrice <= quote.requestedClosePrice, "PartyBFacet: Closed price isn't valid");
+		}
+
+		// Only applicable for LIMIT orders - MARKET orders must be filled completely
+		require(quote.orderType == OrderType.LIMIT, "PartyBFacet: Only LIMIT orders supported");
+
+		// Calculate max close amount that keeps PartyA at liquidation threshold
+		(uint256 maxCloseAmount, bool canCloseAll) = LibSolvency.calculateMaxCloseAmountToLiquidation(
+			quoteId,
+			closedPrice,
+			marketPrice,
+			upnlPartyA,
+			solverFeeAmount
+		);
+
+		if (canCloseAll) {
+			// Full close is safe
+			filledAmount = quote.quantityToClose;
+		} else {
+			// Need to close partial amount
+			filledAmount = maxCloseAmount;
+
+			// Calculate remaining position value after this close
+			uint256 openAmount = LibQuote.quoteOpenAmount(quote);
+			uint256 remainingAmount = openAmount - filledAmount;
+
+			// Check minAcceptableQuoteValue constraint for remaining position
+			// Only check if there will be a remaining position (not a full close)
+			if (remainingAmount > 0) {
+				// Match LibQuoteClose rounding for remaining locked values
+				uint256 remainingCva = quote.lockedValues.cva - ((quote.lockedValues.cva * filledAmount) / openAmount);
+				uint256 remainingLf = quote.lockedValues.lf - ((quote.lockedValues.lf * filledAmount) / openAmount);
+				uint256 remainingPartyAmm = quote.lockedValues.partyAmm - ((quote.lockedValues.partyAmm * filledAmount) / openAmount);
+				uint256 remainingLockedValue = remainingCva + remainingLf + remainingPartyAmm;
+				require(
+					remainingLockedValue == 0 || remainingLockedValue >= symbolLayout.symbols[quote.symbolId].minAcceptableQuoteValue,
+					"PartyBFacet: Remaining quote value is low"
+				);
+			}
+		}
+
+		require(filledAmount > 0, "PartyBFacet: Cannot close any amount");
+		require(filledAmount <= quote.quantityToClose, "PartyBFacet: Invalid filledAmount");
+	}
+
+	/// @notice On a partial open, the child (remainder) quote inherits the same solver-fee rate caps as the opened
+	///         quote. Rate caps are notional-relative, so they are copied unchanged rather than split pro-rata; the
+	///         opened state already holds these caps from quote creation.
+	function _splitSolverFeeState(QuoteStorage.Layout storage quoteLayout, uint256 openedQuoteId, uint256 childQuoteId) private {
+		SolverFeeState storage openedState = quoteLayout.solverFeeStates[openedQuoteId];
+		SolverFeeState storage childState = quoteLayout.solverFeeStates[childQuoteId];
+		childState.openRateCap = openedState.openRateCap;
+		childState.closeRateCap = openedState.closeRateCap;
 	}
 }

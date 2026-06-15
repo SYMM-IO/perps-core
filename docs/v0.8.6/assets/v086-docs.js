@@ -17,10 +17,64 @@
 		},
 	}
 	const themeButtons = Array.from(document.querySelectorAll("[data-theme-toggle]"))
+	const icons = {
+		arrowLeft: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>',
+		bookOpen: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>',
+		check: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg>',
+		copy: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>',
+		eyeOff: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m2 2 20 20"/><path d="M10.6 10.6a2 2 0 0 0 2.8 2.8"/><path d="M16.7 16.7A10.8 10.8 0 0 1 12 18C7 18 3.7 14.9 2 12c.8-1.4 2.1-2.8 3.6-3.9"/><path d="M9.9 5.2A10.6 10.6 0 0 1 12 5c5 0 8.3 3.1 10 7a12.7 12.7 0 0 1-2.1 3.1"/></svg>',
+		expand: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6"/><path d="m21 3-7 7"/><path d="M9 21H3v-6"/><path d="m3 21 7-7"/></svg>',
+		fileDown: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 12v6"/><path d="m9 15 3 3 3-3"/></svg>',
+		home: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>',
+		list: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>',
+		moon: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5 7 7 0 1 0 20.5 14.5"/></svg>',
+		sun: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.9 4.9 1.4 1.4"/><path d="m17.7 17.7 1.4 1.4"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.3 17.7-1.4 1.4"/><path d="m19.1 4.9-1.4 1.4"/></svg>',
+		wrap: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h14a4 4 0 0 1 0 8H7"/><path d="m10 12-3 3 3 3"/></svg>',
+	}
+	const setIconLabel = (element, icon, label) => {
+		element.innerHTML = `${icon}<span>${label}</span>`
+	}
+	const installButtonIcons = () => {
+		document.querySelectorAll(".doc-page .top-actions").forEach((actions) => {
+			if (!actions.querySelector('a[href="../index.html"]')) {
+				const home = document.createElement("a")
+				home.className = "button ghost"
+				home.href = "../index.html"
+				home.setAttribute("aria-label", "Go home")
+				setIconLabel(home, icons.home, "Home")
+				actions.prepend(home)
+			}
+		})
+		document.querySelectorAll(".top-actions a.button, .hero-actions a.button, .back-home").forEach((button) => {
+			const label = (button.textContent || "").replace(/\s+/g, " ").trim()
+			if (!label || button.dataset.iconified) return
+			if (label === "Home") setIconLabel(button, icons.home, label)
+			else if (label === "Back to index") setIconLabel(button, icons.arrowLeft, label)
+			else if (/^View/i.test(label)) setIconLabel(button, icons.bookOpen, label)
+			button.dataset.iconified = "true"
+		})
+	}
+	const installPdfExport = () => {
+		document.querySelectorAll(".doc-topbar .top-actions").forEach((actions) => {
+			if (actions.querySelector("[data-pdf-export]")) return
+			const button = document.createElement("button")
+			button.type = "button"
+			button.className = "button ghost pdf-export"
+			button.dataset.pdfExport = "true"
+			button.setAttribute("aria-label", "Export this page to PDF")
+			button.setAttribute("title", "Export this page to PDF")
+			setIconLabel(button, icons.fileDown, "PDF")
+			button.addEventListener("click", () => window.print())
+
+			const themeButton = actions.querySelector("[data-theme-toggle]")
+			if (themeButton) actions.insertBefore(button, themeButton)
+			else actions.append(button)
+		})
+	}
 	const syncThemeButtons = () => {
 		const isDark = root.dataset.theme === "dark"
 		themeButtons.forEach((button) => {
-			button.textContent = isDark ? "Light" : "Dark"
+			setIconLabel(button, isDark ? icons.sun : icons.moon, isDark ? "Light" : "Dark")
 			button.setAttribute("aria-pressed", String(isDark))
 		})
 	}
@@ -31,6 +85,8 @@
 		root.dataset.theme = "dark"
 	}
 	syncThemeButtons()
+	installButtonIcons()
+	installPdfExport()
 
 	themeButtons.forEach((button) => {
 		button.addEventListener("click", () => {
@@ -41,6 +97,56 @@
 			window.dispatchEvent(new CustomEvent("v086-docs:themechange", { detail: { theme: next } }))
 		})
 	})
+
+	const railStorage = {
+		get(key) {
+			try {
+				return window.localStorage ? localStorage.getItem(key) : null
+			} catch (_error) {
+				return null
+			}
+		},
+		set(key, value) {
+			try {
+				if (window.localStorage) localStorage.setItem(key, value)
+			} catch (_error) {
+				// Storage can be unavailable for local previews; the rail controls still work for this page load.
+			}
+		},
+	}
+
+	const installRailControls = () => {
+		const body = document.body
+		if (!body || !body.classList.contains("doc-page")) return
+
+		const sectionPanel = document.querySelector(".toc-panel.side-toc")
+		const sectionCard = document.querySelector(".side-toc .toc-card")
+		if (!sectionPanel || !sectionCard || sectionCard.querySelector("[data-sections-toggle]")) return
+		if (!sectionPanel.id) sectionPanel.id = "docs-sections-rail"
+
+		const title = sectionCard.querySelector(".toc-title")
+		if (title) title.textContent = "Sections"
+
+		const button = document.createElement("button")
+		button.type = "button"
+		button.className = "section-toggle"
+		button.dataset.sectionsToggle = "true"
+		button.setAttribute("aria-controls", sectionPanel.id)
+
+		const sync = (collapsed, persist = true) => {
+			body.classList.toggle("rail-right-collapsed", collapsed)
+			setIconLabel(button, collapsed ? icons.list : icons.eyeOff, collapsed ? "Sections" : "Hide")
+			button.setAttribute("aria-expanded", String(!collapsed))
+			button.setAttribute("aria-label", collapsed ? "Show sections sidebar" : "Hide sections sidebar")
+			if (persist) railStorage.set("v086-docs-sections-collapsed", String(collapsed))
+		}
+
+		sync(railStorage.get("v086-docs-sections-collapsed") === "true", false)
+		button.addEventListener("click", () => sync(!body.classList.contains("rail-right-collapsed")))
+		sectionCard.prepend(button)
+	}
+
+	installRailControls()
 
 	const normalize = (value) => value.toLowerCase().replace(/\s+/g, " ").trim()
 	const escapeHtml = (value) =>
@@ -285,6 +391,11 @@
 		let startY = 0
 		let originX = 0
 		let originY = 0
+		let backdropClickCandidate = false
+		let backdropStartX = 0
+		let backdropStartY = 0
+		const backdropClickThreshold = 6
+		const diagramContentSelector = ".diagram-modal-canvas > .mermaid, .diagram-modal-canvas > .diagram-fallback"
 		const zoomLabel = modal.querySelector("[data-diagram-zoom='reset']")
 		const minScale = 0.35
 		const maxScale = 4
@@ -362,7 +473,10 @@
 		modal.querySelector("[data-diagram-zoom='out']").addEventListener("click", () => zoomBy(1 / 1.18))
 		modal.querySelector("[data-diagram-zoom='reset']").addEventListener("click", reset)
 		modal.addEventListener("click", (event) => {
-			if (event.target === modal) close()
+			const target = event.target
+			if (!(target instanceof Element)) return
+			if (target.closest(`${diagramContentSelector}, .diagram-modal-actions`)) return
+			close()
 		})
 		stage.addEventListener(
 			"wheel",
@@ -377,6 +491,10 @@
 		)
 		stage.addEventListener("pointerdown", (event) => {
 			if (event.button !== 0) return
+			event.preventDefault()
+			backdropClickCandidate = event.target instanceof Element && !event.target.closest(diagramContentSelector)
+			backdropStartX = event.clientX
+			backdropStartY = event.clientY
 			dragging = true
 			stage.setPointerCapture(event.pointerId)
 			startX = event.clientX
@@ -387,20 +505,42 @@
 		})
 		stage.addEventListener("pointermove", (event) => {
 			if (!dragging) return
+			event.preventDefault()
+			if (backdropClickCandidate && Math.hypot(event.clientX - backdropStartX, event.clientY - backdropStartY) > backdropClickThreshold) {
+				backdropClickCandidate = false
+			}
 			x = originX + event.clientX - startX
 			y = originY + event.clientY - startY
 			applyTransform()
 		})
 		const stopDragging = (event) => {
+			const shouldCloseFromBackdrop = backdropClickCandidate
+			backdropClickCandidate = false
 			dragging = false
 			stage.classList.remove("is-dragging")
 			if (stage.hasPointerCapture(event.pointerId)) stage.releasePointerCapture(event.pointerId)
+			if (shouldCloseFromBackdrop) close()
 		}
 		stage.addEventListener("pointerup", stopDragging)
 		stage.addEventListener("pointercancel", stopDragging)
 		document.addEventListener("keydown", onKeydown)
 		modal.querySelector("[data-diagram-close]").focus()
 		applyTransform()
+	}
+
+	const enhanceMermaidSvg = (svg) => {
+		if (!svg) return
+		const softenRect = (rect, radius) => {
+			const rx = rect.getAttribute("rx")
+			const ry = rect.getAttribute("ry")
+			if (!rx || rx === "0") rect.setAttribute("rx", radius)
+			if (!ry || ry === "0") rect.setAttribute("ry", radius)
+		}
+		svg.dataset.styled = "true"
+		svg.querySelectorAll(".node, .state, .actor").forEach((node) => {
+			node.querySelectorAll("rect").forEach((rect) => softenRect(rect, "6"))
+		})
+		svg.querySelectorAll(".cluster rect, .note, .labelBox, .edgeLabel rect").forEach((rect) => softenRect(rect, "5"))
 	}
 
 	const installMermaidDiagrams = async () => {
@@ -419,13 +559,26 @@
 			const openButton = document.createElement("button")
 			openButton.type = "button"
 			openButton.className = "diagram-open-button"
-			openButton.textContent = "Full screen"
+			setIconLabel(openButton, icons.expand, "Full screen")
 			openButton.setAttribute("aria-label", `Open ${captionText} diagram full screen`)
-			openButton.addEventListener("click", () => openDiagramViewer(frame, captionText))
+			const openDiagram = () => openDiagramViewer(frame, captionText)
+			openButton.addEventListener("click", openDiagram)
 			caption.append(captionLabel, openButton)
 			const canvas = document.createElement("div")
 			canvas.className = "diagram-fallback"
 			canvas.dataset.diagramIndex = String(index)
+			canvas.setAttribute("role", "button")
+			canvas.setAttribute("tabindex", "0")
+			canvas.setAttribute("aria-label", `Open ${captionText} diagram full screen`)
+			canvas.addEventListener("click", (event) => {
+				if (event.target.closest("button, a")) return
+				openDiagram()
+			})
+			canvas.addEventListener("keydown", (event) => {
+				if (event.key !== "Enter" && event.key !== " ") return
+				event.preventDefault()
+				openDiagram()
+			})
 			fillFallbackDiagram(canvas, source)
 			frame.append(caption, canvas)
 			if (pre) pre.replaceWith(frame)
@@ -442,27 +595,27 @@
 			const mermaid = module.default || module
 			const mermaidTheme = root.dataset.theme === "dark"
 				? {
-						background: "#0f1513",
-						mainBkg: "#17211d",
-						primaryColor: "#17211d",
-						primaryBorderColor: "#5f756d",
+						background: "#0b0f0e",
+						mainBkg: "#241816",
+						primaryColor: "#241816",
+						primaryBorderColor: "#ff8f83",
 						primaryTextColor: "#f1f7f4",
-						secondaryColor: "#162724",
-						secondaryBorderColor: "#65d7c5",
+						secondaryColor: "#241816",
+						secondaryBorderColor: "#ff8f83",
 						secondaryTextColor: "#f1f7f4",
 						tertiaryColor: "#292512",
 						tertiaryBorderColor: "#e7c965",
 						tertiaryTextColor: "#f1f7f4",
-						lineColor: "#9aaca5",
+						lineColor: "#aaa29d",
 						textColor: "#f1f7f4",
 						nodeTextColor: "#f1f7f4",
-						clusterBkg: "#121b18",
-						clusterBorder: "#4d625b",
-						edgeLabelBackground: "#17211d",
-						actorBkg: "#17211d",
-						actorBorder: "#5f756d",
+						clusterBkg: "#121110",
+						clusterBorder: "#5d4742",
+						edgeLabelBackground: "#15110f",
+						actorBkg: "#241816",
+						actorBorder: "#ff8f83",
 						actorTextColor: "#f1f7f4",
-						actorLineColor: "#9aaca5",
+						actorLineColor: "#aaa29d",
 						noteBkgColor: "#292512",
 						noteTextColor: "#f1f7f4",
 						noteBorderColor: "#e7c965",
@@ -473,9 +626,9 @@
 					}
 				: {
 						background: "#ffffff",
-						mainBkg: "#f5f5f5",
-						primaryColor: "#f5f5f5",
-						primaryBorderColor: "#bdbdbd",
+						mainBkg: "#fff1ef",
+						primaryColor: "#fff1ef",
+						primaryBorderColor: "#ff6f61",
 						primaryTextColor: "#0a0a0a",
 						secondaryColor: "#fff1ef",
 						secondaryBorderColor: "#ff6f61",
@@ -524,8 +677,10 @@
 				const { frame, canvas, source } = diagrams[index]
 				const svg = node.querySelector("svg")
 				if (svg) {
+					const renderedSvg = svg.cloneNode(true)
+					enhanceMermaidSvg(renderedSvg)
 					canvas.className = "mermaid"
-					canvas.replaceChildren(svg.cloneNode(true))
+					canvas.replaceChildren(renderedSvg)
 					frame.classList.add("is-rendered")
 				} else {
 					frame.classList.add("is-fallback")
@@ -1033,25 +1188,25 @@
 		actions.className = "code-actions"
 		const wrap = document.createElement("button")
 		wrap.type = "button"
-		wrap.textContent = "Wrap"
+		setIconLabel(wrap, icons.wrap, "Wrap")
 		wrap.addEventListener("click", () => {
 			frame.classList.toggle("is-wrapped")
-			wrap.textContent = frame.classList.contains("is-wrapped") ? "Unwrap" : "Wrap"
+			setIconLabel(wrap, icons.wrap, frame.classList.contains("is-wrapped") ? "Unwrap" : "Wrap")
 		})
 		const copy = document.createElement("button")
 		copy.type = "button"
-		copy.textContent = "Copy"
+		setIconLabel(copy, icons.copy, "Copy")
 		copy.addEventListener("click", async () => {
 			try {
 				await navigator.clipboard.writeText(pre.textContent || "")
-				copy.textContent = "Copied"
+				setIconLabel(copy, icons.check, "Copied")
 				window.setTimeout(() => {
-					copy.textContent = "Copy"
+					setIconLabel(copy, icons.copy, "Copy")
 				}, 1200)
 			} catch (_error) {
-				copy.textContent = "Select"
+				setIconLabel(copy, icons.check, "Select")
 				window.setTimeout(() => {
-					copy.textContent = "Copy"
+					setIconLabel(copy, icons.copy, "Copy")
 				}, 1200)
 			}
 		})
@@ -1090,39 +1245,109 @@
 
 	const tocLinks = Array.from(document.querySelectorAll(".toc-link"))
 	if (tocLinks.length) {
+		const tocScroller = document.querySelector(".side-toc .toc-card") || document.querySelector(".toc-panel")
 		const byId = new Map()
 		tocLinks.forEach((link) => {
-			const id = decodeURIComponent((link.getAttribute("href") || "").replace(/^#/, ""))
+			let id = ""
+			try {
+				id = decodeURIComponent((link.getAttribute("href") || "").replace(/^#/, ""))
+			} catch (_error) {
+				id = ""
+			}
 			if (id) byId.set(id, link)
-			link.addEventListener("click", () => {
-				if (id) setActiveToc(id)
+			link.addEventListener("click", (event) => {
+				const heading = id ? document.getElementById(id) : null
+				if (!heading) return
+				event.preventDefault()
+				holdClickedSection(id)
+				if (id) setActiveToc(id, { scroll: false })
+				window.history.pushState(null, "", `#${encodeURIComponent(id)}`)
+				scrollToHeading(heading)
 			})
 		})
-		function setActiveToc(id) {
-			tocLinks.forEach((link) => link.classList.remove("is-active"))
+		const headings = Array.from(document.querySelectorAll(".doc-article h2[id], .doc-article h3[id]")).filter((heading) => byId.has(heading.id))
+		let activeId = ""
+		let ticking = false
+		let lockedActiveId = ""
+		function setActiveToc(id, options = {}) {
 			const active = byId.get(id)
-			if (active) active.classList.add("is-active")
+			if (!active || activeId === id) return
+			if (activeId && byId.has(activeId)) {
+				const previous = byId.get(activeId)
+				previous.classList.remove("is-active")
+				previous.removeAttribute("aria-current")
+			}
+			activeId = id
+			active.classList.add("is-active")
+			active.setAttribute("aria-current", "location")
+			if (options.scroll !== false && tocScroller && tocScroller.scrollHeight > tocScroller.clientHeight) {
+				const panelRect = tocScroller.getBoundingClientRect()
+				const activeRect = active.getBoundingClientRect()
+				if (activeRect.top < panelRect.top + 12) {
+					tocScroller.scrollTop = Math.max(0, tocScroller.scrollTop + activeRect.top - panelRect.top - 18)
+				} else if (activeRect.bottom > panelRect.bottom - 12) {
+					tocScroller.scrollTop = tocScroller.scrollTop + activeRect.bottom - panelRect.bottom + 18
+				}
+			}
 		}
-		const initialHash = decodeURIComponent(window.location.hash.replace(/^#/, ""))
-		if (initialHash && byId.has(initialHash)) setActiveToc(initialHash)
-		window.addEventListener("hashchange", () => {
-			const id = decodeURIComponent(window.location.hash.replace(/^#/, ""))
+		function activeFromScroll() {
+			ticking = false
+			if (!headings.length) return
+			if (lockedActiveId && byId.has(lockedActiveId)) {
+				setActiveToc(lockedActiveId)
+				return
+			}
+			const marker = getAnchorOffset() + 2
+			let current = headings[0]
+			for (const heading of headings) {
+				if (heading.getBoundingClientRect().top <= marker) current = heading
+				else break
+			}
+			setActiveToc(current.id)
+		}
+		function getAnchorOffset() {
+			const header = document.querySelector(".doc-topbar")
+			const headerBottom = header ? header.getBoundingClientRect().bottom : 0
+			return Math.max(96, Math.ceil(headerBottom + 24))
+		}
+		function scrollToHeading(heading) {
+			const targetTop = heading.getBoundingClientRect().top + window.scrollY - getAnchorOffset()
+			window.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" })
+		}
+		function requestActiveFromScroll() {
+			if (ticking) return
+			ticking = true
+			window.requestAnimationFrame(activeFromScroll)
+		}
+		function holdClickedSection(id) {
+			lockedActiveId = id
+		}
+		function unlockClickedSection() {
+			if (!lockedActiveId) return
+			lockedActiveId = ""
+			requestActiveFromScroll()
+		}
+		function activeFromHash() {
+			let id = ""
+			try {
+				id = decodeURIComponent(window.location.hash.replace(/^#/, ""))
+			} catch (_error) {
+				id = ""
+			}
 			if (id && byId.has(id)) setActiveToc(id)
-		})
-		if (!("IntersectionObserver" in window)) {
-			const firstId = tocLinks[0] ? decodeURIComponent((tocLinks[0].getAttribute("href") || "").replace(/^#/, "")) : ""
-			if (!initialHash && firstId) setActiveToc(firstId)
-			return
+			else activeFromScroll()
 		}
-		const observer = new IntersectionObserver(
-			(entries) => {
-				entries.forEach((entry) => {
-					if (!entry.isIntersecting) return
-					setActiveToc(entry.target.id)
-				})
-			},
-			{ rootMargin: "-18% 0px -72% 0px", threshold: 0.01 }
-		)
-		document.querySelectorAll(".doc-article h2[id], .doc-article h3[id]").forEach((heading) => observer.observe(heading))
+		window.addEventListener("scroll", requestActiveFromScroll, { passive: true })
+		window.addEventListener("resize", requestActiveFromScroll)
+		window.addEventListener("hashchange", activeFromHash)
+		window.addEventListener("wheel", unlockClickedSection, { passive: true })
+		window.addEventListener("touchstart", unlockClickedSection, { passive: true })
+		window.addEventListener("keydown", (event) => {
+			if (["ArrowDown", "ArrowUp", "Home", "End", "PageDown", "PageUp", " "].includes(event.key)) {
+				unlockClickedSection()
+			}
+		})
+		activeFromHash()
+		window.setTimeout(activeFromHash, 80)
 	}
 })()

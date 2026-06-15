@@ -80,6 +80,18 @@ interface IViewFacet {
 
 	function getDefaultFeeCollector() external view returns (address);
 
+	function getOperationalFeeReceiver(address charger) external view returns (address);
+
+	function getOperationalFeeAllowance(
+		address payer,
+		address charger
+	)
+		external
+		view
+		returns (uint256 allowance, uint256 charged, uint256 remaining, uint256 pendingAllowance, uint256 reductionReadyAt, uint256 feeMultiplier);
+
+	function isOperationalFeeCharger(address charger) external view returns (bool);
+
 	function isCrossPartyBModeActivated() external view returns (bool);
 
 	function isLegacyPartyALiquidationDeprecated() external view returns (bool);
@@ -222,7 +234,8 @@ interface IViewFacet {
 		uint256 quoteId,
 		uint256 closedPrice,
 		uint256 marketPrice,
-		int256 upnlPartyA
+		int256 upnlPartyA,
+		uint256 solverFeeAmount
 	) external view returns (uint256 maxCloseAmount, bool canCloseAll);
 
 	function partyAReimbursement(address partyA) external view returns (uint256);

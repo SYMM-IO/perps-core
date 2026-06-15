@@ -304,7 +304,22 @@ export function shouldBehaveLikeSendQuote(): void {
 		await expect(
 			context.partyAFacet
 				.connect(liquidator)
-				.sendQuote([], 1, 0, 0, decimal(1n), decimal(100n), decimal(3n), decimal(22n), decimal(75n), decimal(50n), 1, getBlockTimestamp(1000n), sig),
+				.sendQuoteWithAffiliate(
+					[],
+					1,
+					0,
+					0,
+					decimal(1n),
+					decimal(100n),
+					decimal(3n),
+					decimal(22n),
+					decimal(75n),
+					decimal(50n),
+					1,
+					getBlockTimestamp(1000n),
+					ethers.ZeroAddress,
+					sig,
+				),
 		).to.be.revertedWith("PartyAFacet: Liquidator can't be partyA")
 	})
 
@@ -337,6 +352,7 @@ export function shouldBehaveLikeSendQuote(): void {
 		)
 
 		// Verify decoded params match the quote from storage
+		expect((paramsData.length - 2) / 64).to.equal(12)
 		expect(decodedParams[0]).to.equal(quote.symbolId) // symbolId
 		expect(decodedParams[1]).to.equal(BigInt(quote.positionType)) // positionType
 		expect(decodedParams[2]).to.equal(BigInt(quote.orderType)) // orderType
@@ -422,6 +438,7 @@ export function shouldBehaveLikeSendQuote(): void {
 		const decodedParams = decodeSendQuoteParamsDataManual(paramsData)
 
 		// Verify decoded params match the quote from storage
+		expect((paramsData.length - 2) / 64).to.equal(12)
 		expect(decodedParams.symbolId).to.equal(quote.symbolId)
 		expect(BigInt(decodedParams.positionType)).to.equal(BigInt(quote.positionType))
 		expect(BigInt(decodedParams.orderType)).to.equal(BigInt(quote.orderType))

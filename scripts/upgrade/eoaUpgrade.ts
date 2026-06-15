@@ -109,7 +109,10 @@ async function main() {
 				break
 			}
 		}
-		if (!signer) throw new Error(`No signer found for protocolAdmin ${protocolAdminAddress}. Add TEAM_DEPLOYER to the Hardhat keystore.`)
+		if (!signer)
+			throw new Error(
+				`No signer found for protocolAdmin ${protocolAdminAddress}. Add NEW_DEPLOYER (or legacy TEAM_DEPLOYER) to the Hardhat keystore.`,
+			)
 	} else {
 		signer = await ethers.provider.getSigner()
 	}
