@@ -90,6 +90,24 @@ export function shouldBehaveLikeSymmioPartyB(): void {
 
 				await expect(context.symmioPartyB.connect(context.signers.user)._call([callData])).to.be.reverted
 			})
+
+			it("blocks an unprivileged caller even while the InstantLayer flag is set", async function () {
+				// Simulate being mid-InstantLayer-batch: the global ambient flag is true for everyone.
+				await context.controlFacet.connect(context.signers.admin).grantRole(await context.signers.admin.getAddress(), ethers.id("INSTANT_LAYER_ROLE"))
+				await context.controlFacet.connect(context.signers.admin).setCallFromInstantLayer(true)
+
+				const callData = context.viewFacet.interface.encodeFunctionData("getCollateral", [])
+				// A caller with no role and no INSTANT_LAYER_ROLE must be rejected despite the ambient flag.
+				await expect(context.symmioPartyB.connect(context.signers.user)._call([callData])).to.be.revertedWith("SymmioPartyB: Invalid access")
+			})
+
+			it("allows a caller holding INSTANT_LAYER_ROLE on core (the InstantLayer path)", async function () {
+				await context.controlFacet.connect(context.signers.admin).grantRole(await context.signers.user2.getAddress(), ethers.id("INSTANT_LAYER_ROLE"))
+
+				const callData = context.viewFacet.interface.encodeFunctionData("getCollateral", [])
+				// The InstantLayer is identified by holding INSTANT_LAYER_ROLE on core, not by the ambient flag.
+				await expect(context.symmioPartyB.connect(context.signers.user2)._call([callData])).to.not.be.revertedWith("SymmioPartyB: Invalid access")
+			})
 		})
 
 		describe("adlClose", function () {

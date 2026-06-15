@@ -11,6 +11,7 @@ import { Pausable } from "../../utils/Pausable.sol";
 import { QuoteStorage, Quote, QuoteStatus } from "../../storages/QuoteStorage.sol";
 import { PairUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
 import { LibSendQuoteEvents } from "../../libraries/LibSendQuoteEvents.sol";
+import { LibSolverFee } from "../../libraries/LibSolverFee.sol";
 
 contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionActionsFacet {
 	/// @notice Opens a position for the specified quote. The opened position's size can't be excessively small or large.
@@ -49,6 +50,7 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 						tradingFee: newQuote.tradingFee,
 						deadline: newQuote.deadline,
 						affiliate: newQuote.affiliate,
+						solverFeeCaps: LibSolverFee.caps(QuoteStorage.layout().solverFeeStates[newId]),
 						data: newQuote.data
 					})
 				);
@@ -97,6 +99,10 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 	///         Use this when the standard fillCloseRequest would revert due to PartyA insolvency.
 	///         This calculates and closes only the amount that brings PartyA to approximately 0 available balance.
 	///         Reverts if even a full close keeps PartyA insolvent.
+	/// @dev IMPORTANT BACKWARD-COMPATIBILITY WARNING:
+	///      This legacy method accounts for the protocol closeFee only. It does NOT reserve balance for solver
+	///      fees charged through the solver-fee API. If a solver fee will be charged for this close, call
+	///      the fee-aware PartyBSolverFeeActionsFacet.fillCloseRequestToLiquidation overload instead.
 	/// @param quoteId The ID of the quote for which the close request is filled.
 	/// @param closedPrice The closed price for the close request.
 	/// @param upnlSig The Muon signature containing PairUpnlAndPriceSig data.

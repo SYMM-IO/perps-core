@@ -15,7 +15,9 @@ const DUMMY_PRIVATE_KEY = "0xec81e00837948239d5927bcb2b785675552bc92f1d2607ee91c
 // Use process.env directly to avoid hardhat-keystore password prompts.
 // Fall back to configVariable() only when USE_KEYSTORE=true is explicitly set.
 const useKeystore = process.env.USE_KEYSTORE === "true"
-const protocolAdminKey = process.env.TEAM_DEPLOYER || (useKeystore ? configVariable("TEAM_DEPLOYER") : DUMMY_PRIVATE_KEY)
+const keystoreDeployerKey = process.env.KEYSTORE_DEPLOYER_KEY || "NEW_DEPLOYER"
+const protocolAdminKey =
+	process.env.NEW_DEPLOYER || process.env.TEAM_DEPLOYER || (useKeystore ? configVariable(keystoreDeployerKey) : DUMMY_PRIVATE_KEY)
 const etherscanApiKey = process.env.ETHERSCAN_APIKEY || (useKeystore ? configVariable("ETHERSCAN_APIKEY") : "")
 
 const createNetworkConfig = (network: string, defaultUrl: string) =>

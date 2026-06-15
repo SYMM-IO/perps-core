@@ -9,13 +9,11 @@ import { LibSolvency } from "../../libraries/LibSolvency.sol";
 import { LibPartyBPositionsActions } from "../../libraries/LibPartyBPositionsActions.sol";
 import { LibConnections } from "../../libraries/LibConnections.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
-import { LibQuote } from "../../libraries/LibQuote.sol";
-import { QuoteStorage, Quote, QuoteStatus, LockedValues, PositionType, OrderType } from "../../storages/QuoteStorage.sol";
+import { QuoteStorage, Quote, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
-import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { PairUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
@@ -67,7 +65,7 @@ library PartyBPositionActionsFacetImpl {
 			quoteIds[0] = quoteId;
 			filledAmounts[0] = filledAmount;
 			marketPrices[0] = upnlSig.price;
-			LibSolvency.isSolventAfterOpenPosition(
+			LibSolvency.requireSolventAfterOpenPosition(
 				quoteIds,
 				filledAmounts,
 				marketPrices,
@@ -97,7 +95,7 @@ library PartyBPositionActionsFacetImpl {
 			filledAmounts[0] = filledAmount;
 			closedPrices[0] = closedPrice;
 			marketPrices[0] = upnlSig.price;
-			LibSolvency.isSolventAfterClosePosition(
+			LibSolvency.requireSolventAfterClosePosition(
 				quoteIds,
 				filledAmounts,
 				closedPrices,
@@ -124,30 +122,26 @@ library PartyBPositionActionsFacetImpl {
 		quote.quantityToClose = 0;
 	}
 
-	/// @notice Fills a close request up to the maximum amount that keeps PartyA at the edge of liquidation
+	/// @notice Fills a close request up to the maximum amount that keeps PartyA at the edge of liquidation.
+	/// @dev IMPORTANT BACKWARD-COMPATIBILITY WARNING:
+	///      This legacy method reserves room for protocol closeFee only. It does NOT reserve room for solver fees
+	///      charged through LibSolverFee, so a solver fee charged after this call can still make PartyA liquidatable.
+	///      Use the fee-aware PartyBSolverFeeActionsFacet.fillCloseRequestToLiquidation overload when the close will include solver fees.
 	function fillCloseRequestToLiquidation(
 		uint256 quoteId,
 		uint256 closedPrice,
 		PairUpnlAndPriceSig memory upnlSig
 	) internal returns (uint256 filledAmount) {
+		return _fillCloseRequestToLiquidation(quoteId, closedPrice, upnlSig, 0);
+	}
+
+	function _fillCloseRequestToLiquidation(
+		uint256 quoteId,
+		uint256 closedPrice,
+		PairUpnlAndPriceSig memory upnlSig,
+		uint256 solverFeeAmount
+	) private returns (uint256 filledAmount) {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
-
-		require(
-			quote.quoteStatus == QuoteStatus.CLOSE_PENDING || quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING,
-			"PartyBFacet: Invalid state"
-		);
-		require(block.timestamp <= quote.deadline, "PartyBFacet: Quote is expired");
-
-		// Validate closed price based on position type
-		if (quote.positionType == PositionType.LONG) {
-			require(closedPrice >= quote.requestedClosePrice, "PartyBFacet: Closed price isn't valid");
-		} else {
-			require(closedPrice <= quote.requestedClosePrice, "PartyBFacet: Closed price isn't valid");
-		}
-
-		// Only applicable for LIMIT orders - MARKET orders must be filled completely
-		require(quote.orderType == OrderType.LIMIT, "PartyBFacet: Only LIMIT orders supported");
 
 		// Verify signature
 		if (
@@ -157,42 +151,14 @@ library PartyBPositionActionsFacetImpl {
 			LibMuonPartyB.verifyPairUpnlAndPrice(upnlSig, quote.partyB, quote.partyA, quote.symbolId, MuonFunction.Trading);
 		}
 
-		// Calculate max close amount that keeps PartyA at liquidation threshold
-		(uint256 maxCloseAmount, bool canCloseAll) = LibSolvency.calculateMaxCloseAmountToLiquidation(
+		// Validate the request and calculate the max close amount that keeps PartyA at liquidation threshold
+		filledAmount = LibPartyBPositionsActions.calculateCloseToLiquidationAmount(
 			quoteId,
 			closedPrice,
 			upnlSig.price,
-			upnlSig.upnlPartyA
+			upnlSig.upnlPartyA,
+			solverFeeAmount
 		);
-
-		if (canCloseAll) {
-			// Full close is safe - delegate to normal fillCloseRequest
-			filledAmount = quote.quantityToClose;
-		} else {
-			// Need to close partial amount
-			filledAmount = maxCloseAmount;
-
-			// Calculate remaining position value after this close
-			uint256 openAmount = LibQuote.quoteOpenAmount(quote);
-			uint256 remainingAmount = openAmount - filledAmount;
-
-			// Check minAcceptableQuoteValue constraint for remaining position
-			// Only check if there will be a remaining position (not a full close)
-			if (remainingAmount > 0) {
-				// Match LibQuoteClose rounding for remaining locked values
-				uint256 remainingCva = quote.lockedValues.cva - ((quote.lockedValues.cva * filledAmount) / openAmount);
-				uint256 remainingLf = quote.lockedValues.lf - ((quote.lockedValues.lf * filledAmount) / openAmount);
-				uint256 remainingPartyAmm = quote.lockedValues.partyAmm - ((quote.lockedValues.partyAmm * filledAmount) / openAmount);
-				uint256 remainingLockedValue = remainingCva + remainingLf + remainingPartyAmm;
-				require(
-					remainingLockedValue == 0 || remainingLockedValue >= symbolLayout.symbols[quote.symbolId].minAcceptableQuoteValue,
-					"PartyBFacet: Remaining quote value is low"
-				);
-			}
-		}
-
-		require(filledAmount > 0, "PartyBFacet: Cannot close any amount");
-		require(filledAmount <= quote.quantityToClose, "PartyBFacet: Invalid filledAmount");
 
 		// Verify PartyB solvency after close
 		if (

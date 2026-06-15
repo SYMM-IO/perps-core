@@ -4,11 +4,21 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<title>Symmio Core v0.8.6 Documentation</title>
+		<link rel="icon" type="image/svg+xml" href="assets/symmio-mark.svg" />
 		<link rel="stylesheet" href="assets/v086-docs.css" />
 		<script src="assets/v086-docs.js" defer></script>
 	</head>
 	<body class="index-page">
 		<a class="skip-link" href="#docs">Skip to docs</a>
+
+		<header class="doc-topbar">
+			<a class="brand" href="index.html"
+				><span class="brand-mark">8.6</span><span><strong>Symmio Docs</strong><small>v0.8.6 reference</small></span></a
+			>
+			<nav class="top-actions" aria-label="Page actions">
+				<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+			</nav>
+		</header>
 
 		<header class="site-hero">
 			<nav class="crumbs" aria-label="Breadcrumb"><a href="../">docs</a><span>/</span><strong>v0.8.6</strong></nav>
@@ -18,9 +28,9 @@
 					<h1>Symmio Core v0.8.6 Changelog</h1>
 					<p class="hero-copy">
 						v0.8.6 is mostly about removing operational weak spots: withdrawals were safe but slow, AccountLayer ownership flows were too
-						rigid for delegated operations, and PartyA liquidation settlement could depend on funding state that changed later. The release
-						adds Express Withdrawal, delegated ownership controls, shutdown and freshness controls, and snapshot-backed liquidation
-						settlement.
+						rigid for delegated operations, and PartyA liquidation settlement could depend on funding state that changed later. The
+						release adds Express Withdrawal, delegated ownership controls, shutdown and freshness controls, and snapshot-backed
+						liquidation settlement.
 					</p>
 					<div class="hero-actions">
 						<a class="button primary" href="#docs">View changelog</a>
@@ -107,6 +117,30 @@
 						</span>
 						<span class="doc-list-action">Open change</span>
 					</a>
+					<a class="doc-list-item" href="pages/solver-fees.html">
+						<span class="doc-list-index">07</span>
+						<span class="doc-list-main">
+							<span class="category">Fees</span>
+								<strong>Solver Fees</strong>
+								<span
+									>v0.8.6 adds explicit solver rate fees, charged from PartyA allocated balance and bounded by user-approved notional-rate
+									caps plus execution-time solvency checks.</span
+								>
+						</span>
+						<span class="doc-list-action">Open change</span>
+					</a>
+					<a class="doc-list-item" href="pages/operational-fees.html">
+						<span class="doc-list-index">08</span>
+						<span class="doc-list-main">
+							<span class="category">Fees</span>
+								<strong>Operational Fees</strong>
+								<span
+									>A unified per-op fee primitive shared by solvers and registered relayers, backed by a standing per-(payer, charger)
+									allowance with timelocked reductions and a priority multiplier.</span
+								>
+						</span>
+						<span class="doc-list-action">Open change</span>
+					</a>
 				</div>
 				<div class="minor-improvements" aria-labelledby="minor-improvements-title">
 					<div class="section-heading">
@@ -126,15 +160,23 @@
 								>Emits the matching <code>BalanceChange</code> type for reimbursement, fee, deferred-balance, and LF movements.</span
 							>
 						</a>
-						<a class="minor-improvement-item" href="pages/accumulated-funding-state-event.html">
-							<span class="category">Events</span>
-							<strong>Accumulated Funding State Event</strong>
-							<span>Lets indexers observe final symbol and PartyB accumulated funding state after funding rolls or reconfiguration.</span>
+						<a class="minor-improvement-item" href="pages/lazy-accumulated-funding.html">
+							<span class="category">Funding</span>
+							<strong>Lazy Accumulated Funding</strong>
+							<span
+								>Quote flows no longer roll the symbol/PartyB funding state; funding settles lazily from persisted state, which now
+								changes -- and emits its final state -- only on solver configuration.</span
+							>
 						</a>
 						<a class="minor-improvement-item" href="pages/partyb-allocation-suspension-gates.html">
 							<span class="category">PartyB</span>
 							<strong>Allocation Suspension Gates</strong>
 							<span>Suspended PartyBs can no longer allocate or transfer allocation between PartyA buckets.</span>
+						</a>
+						<a class="minor-improvement-item" href="pages/cross-partyb-liquidation-reserve.html">
+							<span class="category">Liquidation</span>
+							<strong>Cross-PartyB Liquidation Reserve Enforcement</strong>
+							<span>Pending cross-PartyB liquidation settlement reserves now reduce shared quote, solvency, and liquidation availability.</span>
 						</a>
 					</div>
 				</div>

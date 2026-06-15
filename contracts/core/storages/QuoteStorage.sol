@@ -80,6 +80,20 @@ struct Fee {
 	bool isSet;
 }
 
+/// @notice User-approved solver fee caps supplied when a quote is created
+struct SolverFeeCaps {
+	uint256 openRateCap;
+	uint256 closeRateCap;
+}
+
+/// @notice Tracks approved caps and cumulative solver fee charges for a quote
+struct SolverFeeState {
+	uint256 openRateCap;
+	uint256 closeRateCap;
+	uint256 openFeeCharged;
+	uint256 closeFeeCharged;
+}
+
 /// @title QuoteStorage
 /// @notice All quote/position data and aggregated metrics for efficient calculations
 library QuoteStorage {
@@ -135,6 +149,8 @@ library QuoteStorage {
 		/// @dev When a close is requested, this links the quote to its close ID.
 		///      Used to match close events to specific close requests.
 		mapping(uint256 => uint256) closeIds;
+		/// @notice Solver fee caps and cumulative charges keyed by quote ID.
+		mapping(uint256 => SolverFeeState) solverFeeStates;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

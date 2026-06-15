@@ -36,7 +36,7 @@ library SettlementFacetImpl {
 	) internal returns (uint256[] memory newPartyAsAllocatedBalances) {
 		bool isCrossPartyB = MAStorage.layout().crossModeEnabledForPartyB[sig.partyB];
 		LibMuonUnifiedSettlement.verifyUnifiedSettlement(sig, isCrossPartyB, MuonFunction.Settlement);
-		(newPartyAsAllocatedBalances, ) = LibSettlement.settleUpnlUnified(sig, updatedPrices, false);
+		(newPartyAsAllocatedBalances, ) = LibSettlement.settleUpnlUnified(sig, updatedPrices, false, true);
 	}
 
 	/// @notice Settles a cross-mode PartyB's uPNL from OTHER solvent counterparties during PartyA liquidation.
@@ -63,6 +63,8 @@ library SettlementFacetImpl {
 		}
 
 		LibMuonUnifiedSettlement.verifyUnifiedSettlement(sig, true, MuonFunction.Settlement);
-		(newPartyAsAllocatedBalances, ) = LibSettlement.settleUpnlUnified(sig, updatedPrices, true);
+		uint256 partyBBalanceBefore = accountLayout.partyBAllocatedBalances[sig.partyB][address(0)];
+		(newPartyAsAllocatedBalances, ) = LibSettlement.settleUpnlUnified(sig, updatedPrices, true, false);
+		require(accountLayout.partyBAllocatedBalances[sig.partyB][address(0)] >= partyBBalanceBefore, "SettlementFacet: PartyB balance decreased");
 	}
 }

@@ -6,6 +6,7 @@ pragma solidity >=0.8.18;
 
 import { LibMuonPartyBBatchActions } from "../../libraries/muon/LibMuonPartyBBatchActions.sol";
 import { LibSolvency } from "../../libraries/LibSolvency.sol";
+import { LibSolverFee } from "../../libraries/LibSolverFee.sol";
 import { LibPartyBPositionsActions } from "../../libraries/LibPartyBPositionsActions.sol";
 import { LibPartyBState } from "../../libraries/extensions/LibPartyBState.sol";
 import { QuoteStorage, Quote, PositionType, OrderType, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
@@ -125,6 +126,7 @@ library PartyBBatchActionsFacetImpl {
 							tradingFee: newQuote.tradingFee,
 							deadline: newQuote.deadline,
 							affiliate: newQuote.affiliate,
+							solverFeeCaps: LibSolverFee.caps(QuoteStorage.layout().solverFeeStates[newId]),
 							data: newQuote.data
 						})
 					);
@@ -134,7 +136,7 @@ library PartyBBatchActionsFacetImpl {
 			}
 		}
 		if (requireMuonAndSolvencyChecks) {
-			LibSolvency.isSolventAfterOpenPosition(
+			LibSolvency.requireSolventAfterOpenPosition(
 				quoteIds,
 				filledAmounts,
 				upnlSig.prices,
@@ -170,7 +172,7 @@ library PartyBBatchActionsFacetImpl {
 		if (requireMuonAndSolvencyChecks) {
 			// Verify the upnl and prices
 			LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuotePartyB, firstQuotePartyA, quoteIds, MuonFunction.Trading);
-			LibSolvency.isSolventAfterClosePosition(
+			LibSolvency.requireSolventAfterClosePosition(
 				quoteIds,
 				filledAmounts,
 				closedPrices,

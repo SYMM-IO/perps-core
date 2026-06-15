@@ -48,4 +48,5 @@ pnpm-lock.yaml
 CLAUDE.md
 AGENTS.md
 .codex/
+/docs/superpowers/
 .DS_Store

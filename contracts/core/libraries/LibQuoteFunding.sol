@@ -117,18 +117,26 @@ library LibQuoteFunding {
 	}
 
 	/// @notice Updates the accumulated paid funding for a quote
+	/// @dev Computes the cumulative fee lazily (snapshot + weighted history + current-rate extrapolation)
+	///      without rolling the symbol/PartyB funding state; that state only changes when the solver
+	///      updates rates or epoch duration.
 	/// @param quoteId The quote ID to update the accumulated paid funding for
 	function updateAccumulatedPaidFunding(uint256 quoteId) public {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		FundingFee storage fundingFee = FundingStorage.layout().fundingFees[quote.symbolId][quote.partyB];
 
 		if (fundingFee.epochDuration > 0) {
-			LibFundingRate.updateAccumulatedRatesAndEmit(fundingFee, quote.symbolId, quote.partyB);
+			uint256 epochsSinceLastUpdate = LibFundingRate.getEpochsSinceLastUpdate(fundingFee);
+			uint256 epochsBeforeLastUpdate = fundingFee.lastUpdatedEpoch - fundingFee.startEpoch;
+
+			int256 accumulatedRate = quote.positionType == PositionType.LONG ? fundingFee.accumulatedLongRate : fundingFee.accumulatedShortRate;
+			int256 currentRate = quote.positionType == PositionType.LONG ? fundingFee.currentLongRate : fundingFee.currentShortRate;
 			int256 snapshot = quote.positionType == PositionType.LONG ? fundingFee.snapshotLongFee : fundingFee.snapshotShortFee;
+
 			quote.accumulatedPaidFunding =
 				snapshot +
-				(quote.positionType == PositionType.LONG ? fundingFee.accumulatedLongRate : fundingFee.accumulatedShortRate) *
-					int256(LibFundingRate.getEpochsSinceStart(fundingFee));
+				(accumulatedRate * int256(epochsBeforeLastUpdate)) +
+				(currentRate * int256(epochsSinceLastUpdate));
 		}
 	}
 }

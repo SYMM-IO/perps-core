@@ -10,7 +10,7 @@ import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
 import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
-import { decimal } from "./utils/Common.js"
+import { decimal, getBlockTimestamp } from "./utils/Common.js"
 import { migratePartyBToCross } from "./utils/CrossPartyB.js"
 import { getDummySingleUpnlSig, getDummyUnifiedSettlementSig } from "./utils/SignatureUtils.js"
 
@@ -18,12 +18,12 @@ import { getDummySingleUpnlSig, getDummyUnifiedSettlementSig } from "./utils/Sig
  * Tests for cross-mode PartyB settlement reserve.
  *
  * Vulnerability: After liquidatePositionsPartyA closes positions with a cross-mode PartyB,
- * the PartyB's cross bucket locked balances decrease immediately but the settlement PnL is
- * deferred. This inflates the available balance, allowing PartyB to deallocate funds that
+ * the PartyB's cross bucket locked balances decrease immediately but positive settlement PnL
+ * remains deferred. This inflates the available balance, allowing PartyB to reuse funds that
  * are owed to the pending liquidation settlement.
  *
  * Fix: Track a conservative reserve = max(0, actualAmount) across pending liquidation
- * settlements. Subtract this reserve from effective available balance during deallocation.
+ * settlements. Subtract this reserve from shared cross-bucket availability checks.
  */
 export function shouldBehaveLikeCrossPartyBSettlementReserve(): void {
 	let context: RunContext
@@ -115,6 +115,69 @@ export function shouldBehaveLikeCrossPartyBSettlementReserve(): void {
 			await expect(
 				context.partyBAccountFacet.connect(hedger.signer).deallocateForPartyB(decimal(170n), ZeroAddress, await getDummySingleUpnlSig(decimal(50n))),
 			).to.not.be.reverted
+		})
+
+		it("Should prevent cross-mode PartyB from locking quotes with reserved settlement funds", async function () {
+			const crossBalance = await hedger.getBalanceInfoCrossPartyB()
+			const reserve = await context.viewFacet.getPartyBLiquidationSettlementReserve(hedgerAddr)
+			const rawAvailable = crossBalance.allocatedBalances + decimal(50n) - crossBalance.totalLockedPartyB - crossBalance.totalPendingLockedPartyB
+			const effectiveAvailable = rawAvailable - reserve
+			const requiredForPartyB = decimal(200n)
+
+			expect(rawAvailable).to.equal(decimal(225n))
+			expect(reserve).to.equal(decimal(50n))
+			expect(effectiveAvailable).to.equal(decimal(175n))
+			expect(rawAvailable).to.be.gte(requiredForPartyB)
+			expect(effectiveAvailable).to.be.lt(requiredForPartyB)
+
+			const quoteD = await user2.sendQuote(
+				limitQuoteRequestBuilder()
+					.partyBWhiteList([hedgerAddr])
+					.cva(decimal(60n))
+					.lf(decimal(10n))
+					.partyAmm(decimal(10n))
+					.partyBmm(decimal(130n))
+					.build(),
+			)
+
+			await expect(
+				context.partyBQuoteActionsFacet.connect(hedger.signer).lockQuote(quoteD, await getDummySingleUpnlSig(decimal(50n))),
+			).to.be.revertedWith("PartyBFacet: insufficient available balance")
+		})
+
+		it("Should allow cross-mode PartyB to lock quotes within non-reserved available balance", async function () {
+			const quoteD = await user2.sendQuote(
+				limitQuoteRequestBuilder()
+					.partyBWhiteList([hedgerAddr])
+					.cva(decimal(50n))
+					.lf(decimal(10n))
+					.partyAmm(decimal(10n))
+					.partyBmm(decimal(100n))
+					.build(),
+			)
+
+			await expect(context.partyBQuoteActionsFacet.connect(hedger.signer).lockQuote(quoteD, await getDummySingleUpnlSig(decimal(50n)))).to.not.be
+				.reverted
+		})
+
+		it("Should include reserve when checking cross-mode PartyB liquidation eligibility", async function () {
+			const crossBalance = await hedger.getBalanceInfoCrossPartyB()
+			const reserve = await context.viewFacet.getPartyBLiquidationSettlementReserve(hedgerAddr)
+			const rawBeforeUpnl = crossBalance.allocatedBalances - crossBalance.lockedCva - crossBalance.lockedLf
+			const rawTarget = reserve / 2n
+			const upnl = rawTarget - rawBeforeUpnl
+
+			expect(reserve).to.equal(decimal(50n))
+			expect(rawBeforeUpnl + upnl).to.equal(rawTarget)
+			expect(rawBeforeUpnl - reserve + upnl).to.equal(-rawTarget)
+
+			await context.controlFacet
+				.connect(context.signers.admin)
+				.grantRole(context.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("CLEARING_HOUSE_ROLE")))
+
+			await expect(
+				context.clearingHouseFacet.connect(context.signers.liquidator).liquidateCrossPartyB(hedgerAddr, "0x1234", upnl, await getBlockTimestamp()),
+			).to.emit(context.clearingHouseFacet, "LiquidateCrossPartyB")
 		})
 
 		it("Should clear reserve after settlement completes", async function () {
