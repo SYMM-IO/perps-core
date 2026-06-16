@@ -225,9 +225,11 @@ library AccountStorage {
 		/// @notice PartyA's excess balance from deferred liquidation (current balance minus historical insolvency point)
 		/// @dev Always returned to partyA at settlement regardless of liquidation type. Not accessible by clearing house.
 		mapping(address => uint256) partyADeferredBalance;
-		/// @notice Conservative reserve of funds a cross-mode PartyB owes to pending PartyA liquidation settlements.
+		/// @notice Conservative reserve of funds PartyB owes to pending PartyA liquidation settlements.
 		/// @dev Equals the sum of max(0, actualAmount) across all pending settlementStates for this PartyB.
-		///      Prevents cross-mode PartyB from extracting funds between liquidatePositionsPartyA and
+		///      It is tracked for all PartyBs and applied only in cross mode. This prevents PartyB from
+		///      switching modes between liquidatePositionsPartyA and settlePartyALiquidation, and prevents
+		///      cross-mode PartyB from extracting funds between liquidatePositionsPartyA and
 		///      settlePartyALiquidation by subtracting this reserve from effective available balance
 		///      during deallocateForPartyB.
 		mapping(address => uint256) partyBLiquidationSettlementReserve;
@@ -236,6 +238,9 @@ library AccountStorage {
 		mapping(address => mapping(bytes => bool)) liquidationUsesPartyBSymbolSnapshots;
 		/// @notice Signed price and cumulative funding snapshots per PartyA liquidation, PartyB, and symbol.
 		mapping(address => mapping(bytes => mapping(address => mapping(uint256 => LiquidationPartyBSymbolSnapshot)))) liquidationPartyBSymbolSnapshots;
+		/// @notice Per-settlement contribution included in partyBLiquidationSettlementReserve.
+		/// @dev Keyed by PartyA then PartyB so reserve cleanup is independent from the PartyB's current mode.
+		mapping(address => mapping(address => uint256)) partyBLiquidationSettlementReserveContributions;
 	}
 
 	function layout() internal pure returns (Layout storage l) {
