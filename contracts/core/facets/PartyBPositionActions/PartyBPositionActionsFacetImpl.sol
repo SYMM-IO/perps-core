@@ -81,33 +81,7 @@ library PartyBPositionActionsFacetImpl {
 
 	/// @notice Verifies solvency and fills a close request for a single quote
 	function fillCloseRequest(uint256 quoteId, uint256 filledAmount, uint256 closedPrice, PairUpnlAndPriceSig memory upnlSig) internal {
-		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-		if (
-			TradingModeStorage.layout().bindState[quote.partyA].partyB != LibSigner.getSigner() ||
-			!TradingModeStorage.layout().isPartyBBindable[LibSigner.getSigner()]
-		) {
-			LibMuonPartyB.verifyPairUpnlAndPrice(upnlSig, quote.partyB, quote.partyA, quote.symbolId, MuonFunction.Trading);
-			uint256[] memory quoteIds = new uint256[](1);
-			uint256[] memory filledAmounts = new uint256[](1);
-			uint256[] memory closedPrices = new uint256[](1);
-			uint256[] memory marketPrices = new uint256[](1);
-			quoteIds[0] = quoteId;
-			filledAmounts[0] = filledAmount;
-			closedPrices[0] = closedPrice;
-			marketPrices[0] = upnlSig.price;
-			LibSolvency.requireSolventAfterClosePosition(
-				quoteIds,
-				filledAmounts,
-				closedPrices,
-				marketPrices,
-				upnlSig.upnlPartyB,
-				upnlSig.upnlPartyA,
-				quote.partyB,
-				quote.partyA
-			);
-		}
-		LibAccount.increaseBothNonces(quote.partyB, quote.partyA);
-		LibPartyBPositionsActions.fillCloseRequest(quoteId, filledAmount, closedPrice);
+		_fillCloseRequest(quoteId, filledAmount, closedPrice, upnlSig);
 	}
 
 	/// @notice Accepts a cancel close request, returning the quote to OPENED status
@@ -132,39 +106,28 @@ library PartyBPositionActionsFacetImpl {
 		uint256 closedPrice,
 		PairUpnlAndPriceSig memory upnlSig
 	) internal returns (uint256 filledAmount) {
-		return _fillCloseRequestToLiquidation(quoteId, closedPrice, upnlSig, 0);
-	}
-
-	function _fillCloseRequestToLiquidation(
-		uint256 quoteId,
-		uint256 closedPrice,
-		PairUpnlAndPriceSig memory upnlSig,
-		uint256 solverFeeAmount
-	) private returns (uint256 filledAmount) {
-		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-
-		// Verify signature
-		if (
-			TradingModeStorage.layout().bindState[quote.partyA].partyB != LibSigner.getSigner() ||
-			!TradingModeStorage.layout().isPartyBBindable[LibSigner.getSigner()]
-		) {
-			LibMuonPartyB.verifyPairUpnlAndPrice(upnlSig, quote.partyB, quote.partyA, quote.symbolId, MuonFunction.Trading);
-		}
-
 		// Validate the request and calculate the max close amount that keeps PartyA at liquidation threshold
-		filledAmount = LibPartyBPositionsActions.calculateCloseToLiquidationAmount(
+		(filledAmount, ) = LibPartyBPositionsActions.calculateCloseToLiquidationAmount(
 			quoteId,
+			type(uint256).max,
 			closedPrice,
 			upnlSig.price,
 			upnlSig.upnlPartyA,
-			solverFeeAmount
+			0
 		);
 
-		// Verify PartyB solvency after close
-		if (
-			TradingModeStorage.layout().bindState[quote.partyA].partyB != LibSigner.getSigner() ||
-			!TradingModeStorage.layout().isPartyBBindable[LibSigner.getSigner()]
-		) {
+		_fillCloseRequest(quoteId, filledAmount, closedPrice, upnlSig);
+
+		return filledAmount;
+	}
+
+	function _fillCloseRequest(uint256 quoteId, uint256 filledAmount, uint256 closedPrice, PairUpnlAndPriceSig memory upnlSig) private {
+		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		TradingModeStorage.Layout storage tradingModeLayout = TradingModeStorage.layout();
+		address signer = LibSigner.getSigner();
+		if (tradingModeLayout.bindState[quote.partyA].partyB != signer || !tradingModeLayout.isPartyBBindable[signer]) {
+			LibMuonPartyB.verifyPairUpnlAndPrice(upnlSig, quote.partyB, quote.partyA, quote.symbolId, MuonFunction.Trading);
+
 			uint256[] memory quoteIds = new uint256[](1);
 			uint256[] memory filledAmounts = new uint256[](1);
 			uint256[] memory closedPrices = new uint256[](1);
@@ -174,8 +137,7 @@ library PartyBPositionActionsFacetImpl {
 			closedPrices[0] = closedPrice;
 			marketPrices[0] = upnlSig.price;
 
-			// Only check PartyB solvency - PartyA is intentionally at liquidation threshold
-			(int256 partyBAvailableBalance, ) = LibSolvency.getAvailableBalanceAfterClosePosition(
+			LibSolvency.requireSolventAfterClosePosition(
 				quoteIds,
 				filledAmounts,
 				closedPrices,
@@ -185,12 +147,9 @@ library PartyBPositionActionsFacetImpl {
 				quote.partyB,
 				quote.partyA
 			);
-			require(partyBAvailableBalance >= 0, "PartyBFacet: PartyB will be insolvent");
 		}
 
 		LibAccount.increaseBothNonces(quote.partyB, quote.partyA);
 		LibPartyBPositionsActions.fillCloseRequest(quoteId, filledAmount, closedPrice);
-
-		return filledAmount;
 	}
 }

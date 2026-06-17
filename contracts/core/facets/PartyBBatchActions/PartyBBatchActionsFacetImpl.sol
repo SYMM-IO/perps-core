@@ -28,13 +28,6 @@ library PartyBBatchActionsFacetImpl {
 	using LockedValuesOps for LockedValues;
 	using LibPartyBState for address;
 
-	// NOTE: Solidity v0.8.18 doesn't support emitting events via qualified identifiers
-	// like `emit IPartiesEvents.OpenPosition(...)`. To keep event signatures consistent
-	// with `IPartiesEvents`, we redeclare the required events here and emit them unqualified.
-	event AcceptCancelRequest(uint256 quoteId, QuoteStatus quoteStatus);
-	event OpenPosition(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 openedPrice); // for backward compatibility
-	event OpenPosition(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 openedPrice, LockedValues lockedValues);
-
 	/// @notice Opens multiple positions in a single transaction with shared solvency verification
 	function openPositions(
 		uint256[] memory quoteIds,
@@ -103,8 +96,7 @@ library PartyBBatchActionsFacetImpl {
 			}
 			// Emitting events here in the impl is against our standards in these contracts,
 			// but given that this contract is getting too large and we can't return the ids, we are allowing it here.
-			emit LibPartiesEvents.OpenPosition(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], openedPrices[i]);
-			emit LibPartiesEvents.OpenPosition(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], openedPrices[i], quote.lockedValues);
+			LibPartiesEvents.emitOpenPosition(quote, quoteIds[i], filledAmounts[i], openedPrices[i]);
 			if (newId != 0) {
 				Quote storage newQuote = QuoteStorage.layout().quotes[newId];
 				if (newQuote.quoteStatus == QuoteStatus.PENDING) {
