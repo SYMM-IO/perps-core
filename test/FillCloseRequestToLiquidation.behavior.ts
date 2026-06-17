@@ -157,7 +157,7 @@ export function shouldBehaveLikeFillCloseRequestToLiquidation(): void {
 					1,
 					limitFillCloseRequestBuilder().closedPrice(closePrice).upnlPartyB(decimal(-4000n)).price(marketPrice).build(),
 				),
-			).to.be.revertedWith("PartyBFacet: PartyB will be insolvent")
+			).to.be.revertedWith("LibSolvency: Available balance is lower than zero")
 		})
 	})
 

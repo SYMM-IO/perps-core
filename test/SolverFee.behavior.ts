@@ -24,6 +24,8 @@ const FILL_CLOSE_TO_LIQUIDATION_BASE =
 	"fillCloseRequestToLiquidation(uint256,uint256,(bytes,uint256,int256,int256,uint256,bytes,(uint256,address,address)))"
 const FILL_CLOSE_TO_LIQUIDATION_WITH_SOLVER_FEE =
 	"fillCloseRequestToLiquidation(uint256,uint256,(bytes,uint256,int256,int256,uint256,bytes,(uint256,address,address)),uint256)"
+const FILL_CLOSE_TO_LIQUIDATION_WITH_MAX_AND_SOLVER_FEE =
+	"fillCloseRequestToLiquidation(uint256,uint256,uint256,(bytes,uint256,int256,int256,uint256,bytes,(uint256,address,address)),uint256)"
 const SEND_QUOTE_SOLVER_FEE_CAPS_EVENT =
 	"event SendQuoteSolverFeeCaps(address indexed partyA,uint256 indexed quoteId,uint256 openRateCap,uint256 closeRateCap)"
 const BALANCE_CHANGE_PARTY_A_EVENT = "event BalanceChangePartyA(address indexed partyA,uint256 amount,uint8 _type)"
@@ -475,7 +477,14 @@ export function shouldBehaveLikeSolverFee(): void {
 		const targetAvailable = decimal(5n)
 		const balanceInfo = await user.getBalanceInfo()
 		const upnlPartyA = targetAvailable - (balanceInfo.allocatedBalances - balanceInfo.lockedCva - balanceInfo.lockedLf)
-		const fillToLiquidationWithFee = (context.partyBSolverFeeActionsFacet.connect(hedger.signer) as any)[FILL_CLOSE_TO_LIQUIDATION_WITH_SOLVER_FEE]
+		const fillToLiquidationWithFee = (quoteId: any, closedPrice: any, upnlSig: any, solverFee: any) =>
+			(context.partyBSolverFeeActionsFacet.connect(hedger.signer) as any)[FILL_CLOSE_TO_LIQUIDATION_WITH_MAX_AND_SOLVER_FEE](
+				quoteId,
+				ethers.MaxUint256,
+				closedPrice,
+				upnlSig,
+				solverFee,
+			)
 		const [legacyMaxCloseAmount] = await (context.viewFacet as any).getMaxCloseAmountToLiquidation(quoteId, closePrice, marketPrice, upnlPartyA, 0n)
 		const [solverAwareMaxCloseAmount, canCloseAll] = await (context.viewFacet as any).getMaxCloseAmountToLiquidation(
 			quoteId,
@@ -540,6 +549,7 @@ export function shouldBehaveLikeSolverFee(): void {
 		const openWithFeeSelector = ethers.id(OPEN_POSITION_WITH_SOLVER_FEE).slice(0, 10)
 		const closeWithFeeSelector = ethers.id(FILL_CLOSE_WITH_SOLVER_FEE).slice(0, 10)
 		const closeToLiquidationWithFeeSelector = ethers.id(FILL_CLOSE_TO_LIQUIDATION_WITH_SOLVER_FEE).slice(0, 10)
+		const closeToLiquidationWithMaxAndFeeSelector = ethers.id(FILL_CLOSE_TO_LIQUIDATION_WITH_MAX_AND_SOLVER_FEE).slice(0, 10)
 		const legacyOpenAndChargeSelector = ethers
 			.id("openPositionAndChargeFee(uint256,uint256,uint256,(bytes,uint256,int256,int256,uint256,bytes,(uint256,address,address)),uint256,uint256)")
 			.slice(0, 10)
@@ -559,7 +569,9 @@ export function shouldBehaveLikeSolverFee(): void {
 
 		expect(await context.diamondLoupeFacet.facetAddress(openWithFeeSelector)).to.not.equal(ethers.ZeroAddress)
 		expect(await context.diamondLoupeFacet.facetAddress(closeWithFeeSelector)).to.not.equal(ethers.ZeroAddress)
-		expect(await context.diamondLoupeFacet.facetAddress(closeToLiquidationWithFeeSelector)).to.not.equal(ethers.ZeroAddress)
+		// the no-maxQuantity fee-aware overload was removed; the maxQuantity variant is the only fee-aware close-to-liquidation
+		expect(await context.diamondLoupeFacet.facetAddress(closeToLiquidationWithFeeSelector)).to.equal(ethers.ZeroAddress)
+		expect(await context.diamondLoupeFacet.facetAddress(closeToLiquidationWithMaxAndFeeSelector)).to.not.equal(ethers.ZeroAddress)
 		expect(await context.diamondLoupeFacet.facetAddress(legacyOpenAndChargeSelector)).to.equal(ethers.ZeroAddress)
 		expect(await context.diamondLoupeFacet.facetAddress(legacyCloseAndChargeSelector)).to.equal(ethers.ZeroAddress)
 		expect(await context.diamondLoupeFacet.facetAddress(legacyCloseToLiquidationAndChargeSelector)).to.equal(ethers.ZeroAddress)
@@ -634,7 +646,14 @@ export function shouldBehaveLikeSolverFee(): void {
 		await context.pauseControlFacet.connect(admin).pausePartyBActions()
 		await expect(fillCloseWithFees(quoteId, decimal(1n))).to.be.revertedWith("Pausable: PartyB actions paused")
 
-		const fillToLiquidationWithFee = (context.partyBSolverFeeActionsFacet.connect(hedger.signer) as any)[FILL_CLOSE_TO_LIQUIDATION_WITH_SOLVER_FEE]
+		const fillToLiquidationWithFee = (quoteId: any, closedPrice: any, upnlSig: any, solverFee: any) =>
+			(context.partyBSolverFeeActionsFacet.connect(hedger.signer) as any)[FILL_CLOSE_TO_LIQUIDATION_WITH_MAX_AND_SOLVER_FEE](
+				quoteId,
+				ethers.MaxUint256,
+				closedPrice,
+				upnlSig,
+				solverFee,
+			)
 		await expect(
 			fillToLiquidationWithFee(quoteId, decimal(1n), await getDummyPairUpnlAndPriceSig(decimal(1n), 0n, 0n), decimal(1n)),
 		).to.be.revertedWith("Pausable: PartyB actions paused")
@@ -683,7 +702,14 @@ export function shouldBehaveLikeSolverFee(): void {
 
 		// Second half via close-to-liquidation: cumulative notional 100, cap 2, already charged 1
 		await user.requestToClosePosition(quoteId, limitCloseRequestBuilder().quantityToClose(halfAmount).build())
-		const fillToLiquidationWithFee = (context.partyBSolverFeeActionsFacet.connect(hedger.signer) as any)[FILL_CLOSE_TO_LIQUIDATION_WITH_SOLVER_FEE]
+		const fillToLiquidationWithFee = (quoteId: any, closedPrice: any, upnlSig: any, solverFee: any) =>
+			(context.partyBSolverFeeActionsFacet.connect(hedger.signer) as any)[FILL_CLOSE_TO_LIQUIDATION_WITH_MAX_AND_SOLVER_FEE](
+				quoteId,
+				ethers.MaxUint256,
+				closedPrice,
+				upnlSig,
+				solverFee,
+			)
 
 		await expect(
 			fillToLiquidationWithFee(quoteId, decimal(1n), await getDummyPairUpnlAndPriceSig(decimal(1n), 0n, 0n), decimal(1n) + 1n),
@@ -698,6 +724,35 @@ export function shouldBehaveLikeSolverFee(): void {
 		expect(finalQuote.quoteStatus).to.equal(QuoteStatus.CLOSED)
 		expect(finalQuote.closedAmount).to.equal(quote.quantity)
 		expect(state.closeFeeCharged).to.equal(decimal(2n))
+	})
+
+	it("pro-rates fee-aware close-to-liquidation solver fee by maxQuantity", async function () {
+		const quoteId = await sendQuoteWithSolverFeeCaps(NO_SOLVER_FEE, "max-close-to-liquidation", undefined, decimal(2n, 16))
+		await openQuote(quoteId)
+		await requestClose(quoteId)
+
+		const quote = await context.viewFacetQuote.getQuote(quoteId)
+		const maxQuantity = quote.quantityToClose / 4n
+		const solverFee = decimal(5n, 17)
+		// PartyA is solvent (upnl 0, closePrice == marketPrice) so the uncapped close would be the full quantityToClose.
+		// maxQuantity caps the fill to 1/4, and the absolute solver fee is pro-rated to the amount actually closed:
+		// chargedFee = solverFee * filledAmount / uncappedAmount.
+		const expectedFee = (solverFee * maxQuantity) / quote.quantityToClose
+		const fillToLiquidationWithMaxAndFee = (context.partyBSolverFeeActionsFacet.connect(hedger.signer) as any)[
+			FILL_CLOSE_TO_LIQUIDATION_WITH_MAX_AND_SOLVER_FEE
+		]
+
+		await expect(fillToLiquidationWithMaxAndFee(quoteId, maxQuantity, decimal(1n), await getDummyPairUpnlAndPriceSig(decimal(1n), 0n, 0n), solverFee))
+			.to.emit(context.partyBQuoteActionsFacet, "CloseSolverFeeCharged")
+			.withArgs(quoteId, await user.getAddress(), await hedger.getAddress(), 1n, expectedFee)
+
+		const finalQuote = await context.viewFacetQuote.getQuote(quoteId)
+		const state = await getSolverFeeState(quoteId)
+		expect(finalQuote.quoteStatus).to.equal(QuoteStatus.CLOSE_PENDING)
+		expect(finalQuote.closedAmount).to.equal(maxQuantity)
+		expect(finalQuote.quantityToClose).to.equal(quote.quantityToClose - maxQuantity)
+		expect(expectedFee).to.be.lessThan(solverFee)
+		expect(state.closeFeeCharged).to.equal(expectedFee)
 	})
 
 	it("rejects fee-aware close-to-liquidation when the solver fee consumes the entire closeable balance", async function () {
@@ -723,7 +778,14 @@ export function shouldBehaveLikeSolverFee(): void {
 		expect(maxCloseAmount).to.equal(0n)
 		expect(canCloseAll).to.equal(false)
 
-		const fillToLiquidationWithFee = (context.partyBSolverFeeActionsFacet.connect(hedger.signer) as any)[FILL_CLOSE_TO_LIQUIDATION_WITH_SOLVER_FEE]
+		const fillToLiquidationWithFee = (quoteId: any, closedPrice: any, upnlSig: any, solverFee: any) =>
+			(context.partyBSolverFeeActionsFacet.connect(hedger.signer) as any)[FILL_CLOSE_TO_LIQUIDATION_WITH_MAX_AND_SOLVER_FEE](
+				quoteId,
+				ethers.MaxUint256,
+				closedPrice,
+				upnlSig,
+				solverFee,
+			)
 		await expect(
 			fillToLiquidationWithFee(quoteId, closePrice, await getDummyPairUpnlAndPriceSig(marketPrice, upnlPartyA, 0n), solverFee),
 		).to.be.revertedWith("PartyBFacet: Cannot close any amount")

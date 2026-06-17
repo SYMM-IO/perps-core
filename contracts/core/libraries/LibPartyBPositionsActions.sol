@@ -264,13 +264,22 @@ library LibPartyBPositionsActions {
 	///         Shared by PartyBPositionActionsFacetImpl and PartyBSolverFeeActionsFacet so the validation
 	///         and rounding rules cannot diverge between the two close-to-liquidation paths.
 	/// @dev Does NOT verify the Muon signature or any party's solvency; callers remain responsible for that.
+	/// @param maxQuantity Ceiling on the close amount. The result is capped to `maxQuantity` and never exceeds it,
+	///        even when keeping PartyA solvent would require closing more. When the cap binds the result can leave
+	///        PartyA below the liquidation edge; the caller's solvency check then reverts (see
+	///        PartyBPositionActionsFacetImpl). Pass `type(uint256).max` for the uncapped (legacy) path.
+	/// @return filledAmount The close amount after applying both the liquidation limit and the `maxQuantity` cap.
+	/// @return uncappedAmount The close amount the liquidation limit alone would allow, before the `maxQuantity`
+	///         cap; equals `filledAmount` when the cap does not bind. Fee-aware callers use the
+	///         `filledAmount / uncappedAmount` ratio to pro-rate an absolute solver fee to the amount actually closed.
 	function calculateCloseToLiquidationAmount(
 		uint256 quoteId,
+		uint256 maxQuantity,
 		uint256 closedPrice,
 		uint256 marketPrice,
 		int256 upnlPartyA,
 		uint256 solverFeeAmount
-	) internal view returns (uint256 filledAmount) {
+	) internal view returns (uint256 filledAmount, uint256 uncappedAmount) {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
 
@@ -305,24 +314,29 @@ library LibPartyBPositionsActions {
 		} else {
 			// Need to close partial amount
 			filledAmount = maxCloseAmount;
+		}
 
-			// Calculate remaining position value after this close
+		// Liquidation-limited amount before the maxQuantity cap, so fee-aware callers can pro-rate an absolute fee.
+		uncappedAmount = filledAmount;
+
+		if (filledAmount > maxQuantity) {
+			filledAmount = maxQuantity;
+		}
+
+		// Re-check minAcceptableQuoteValue only when the close was reduced below the requested amount -- a partial close
+		// (maxCloseAmount) or a maxQuantity cap creates a new remaining position. A full fill of the requested amount was
+		// already validated against minAcceptableQuoteValue at request time.
+		if (filledAmount < quote.quantityToClose) {
 			uint256 openAmount = LibQuote.quoteOpenAmount(quote);
-			uint256 remainingAmount = openAmount - filledAmount;
-
-			// Check minAcceptableQuoteValue constraint for remaining position
-			// Only check if there will be a remaining position (not a full close)
-			if (remainingAmount > 0) {
-				// Match LibQuoteClose rounding for remaining locked values
-				uint256 remainingCva = quote.lockedValues.cva - ((quote.lockedValues.cva * filledAmount) / openAmount);
-				uint256 remainingLf = quote.lockedValues.lf - ((quote.lockedValues.lf * filledAmount) / openAmount);
-				uint256 remainingPartyAmm = quote.lockedValues.partyAmm - ((quote.lockedValues.partyAmm * filledAmount) / openAmount);
-				uint256 remainingLockedValue = remainingCva + remainingLf + remainingPartyAmm;
-				require(
-					remainingLockedValue == 0 || remainingLockedValue >= symbolLayout.symbols[quote.symbolId].minAcceptableQuoteValue,
-					"PartyBFacet: Remaining quote value is low"
-				);
-			}
+			// Match LibQuoteClose rounding for remaining locked values
+			uint256 remainingCva = quote.lockedValues.cva - ((quote.lockedValues.cva * filledAmount) / openAmount);
+			uint256 remainingLf = quote.lockedValues.lf - ((quote.lockedValues.lf * filledAmount) / openAmount);
+			uint256 remainingPartyAmm = quote.lockedValues.partyAmm - ((quote.lockedValues.partyAmm * filledAmount) / openAmount);
+			uint256 remainingLockedValue = remainingCva + remainingLf + remainingPartyAmm;
+			require(
+				remainingLockedValue == 0 || remainingLockedValue >= symbolLayout.symbols[quote.symbolId].minAcceptableQuoteValue,
+				"PartyBFacet: Remaining quote value is low"
+			);
 		}
 
 		require(filledAmount > 0, "PartyBFacet: Cannot close any amount");

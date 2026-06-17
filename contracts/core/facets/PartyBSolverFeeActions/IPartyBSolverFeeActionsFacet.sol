@@ -20,6 +20,7 @@ interface IPartyBSolverFeeActionsFacet is IPartiesEvents {
 
 	function fillCloseRequestToLiquidation(
 		uint256 quoteId,
+		uint256 maxQuantity,
 		uint256 closedPrice,
 		PairUpnlAndPriceSig memory upnlSig,
 		uint256 solverFee
