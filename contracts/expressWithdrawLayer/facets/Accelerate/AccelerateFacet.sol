@@ -64,6 +64,10 @@ contract AccelerateFacet is IAccelerateFacet, IOperatorEvents, Pausable, Reentra
 			revert LibErrors.FundingSplitExceedsExpress();
 		}
 		uint256 newGeneralAmount = info.expressAmount - offer.affiliateAmount - offer.creditAmount;
+		if (offer.accelerationFee > info.maxAccelerationFee) revert LibErrors.AccelerationFeeExceedsMaximum();
+
+		uint256 operatorFee = FeeStorage.layout().operatorFees[user][requestId];
+		if (info.fee + operatorFee + offer.accelerationFee > info.expressAmount) revert LibErrors.FeesExceedExpressAmount();
 
 		// ── Effects ──
 		g.accelerateNonces[user][requestId]++;
@@ -79,12 +83,13 @@ contract AccelerateFacet is IAccelerateFacet, IOperatorEvents, Pausable, Reentra
 		// Lock new pool allocations against current balances.
 		_lockPools(affiliate, newGeneralAmount, offer.affiliateAmount);
 
-		// Update info with the new funding split; `expressAmount`, `fee`, `sponsorCoverage`,
+		// Update info with the new funding split; `expressAmount`, `sponsorCoverage`,
 		// `cooldownEndTime`, `acceptedAt`, and `partsHash` are intentionally preserved.
 		info.optionType = OptionType.WINDOWED;
 		info.generalAmount = newGeneralAmount;
 		info.affiliateAmount = offer.affiliateAmount;
 		info.creditAmount = offer.creditAmount;
+		info.accelerationFee = offer.accelerationFee;
 
 		_unlockAndDeductPools(info);
 		info.status = Status.PROCESSED;
@@ -110,6 +115,7 @@ contract AccelerateFacet is IAccelerateFacet, IOperatorEvents, Pausable, Reentra
 				offer.nonce,
 				offer.affiliateAmount,
 				offer.creditAmount,
+				offer.accelerationFee,
 				partsHash,
 				offer.deadline
 			)
@@ -137,14 +143,15 @@ contract AccelerateFacet is IAccelerateFacet, IOperatorEvents, Pausable, Reentra
 	function _collectAndTransfer(address user, uint256 requestId, WithdrawReceiverPart[] calldata parts, WithdrawInfo storage info) internal {
 		FeeStorage.Layout storage f = FeeStorage.layout();
 		uint256 operatorFee = f.operatorFees[user][requestId];
-		uint256 totalFee = info.fee + operatorFee;
+		uint256 affiliateFee = info.fee + info.accelerationFee;
+		uint256 totalFee = affiliateFee + operatorFee;
 		uint256 userFee = totalFee - info.sponsorCoverage;
 
 		if (info.optionType == OptionType.STANDARD) {
-			if (info.fee > 0) f.collectedFees[info.affiliate] += info.fee;
+			if (affiliateFee > 0) f.collectedFees[info.affiliate] += affiliateFee;
 			if (operatorFee > 0) f.collectedOperatorFees[info.affiliate] += operatorFee;
 		} else {
-			if (info.fee > 0) f.pendingFees[user][requestId] = info.fee;
+			if (affiliateFee > 0) f.pendingFees[user][requestId] = affiliateFee;
 			if (operatorFee > 0) f.pendingOperatorFees[user][requestId] = operatorFee;
 		}
 

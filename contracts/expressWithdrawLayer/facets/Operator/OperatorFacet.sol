@@ -102,14 +102,15 @@ contract OperatorFacet is IOperatorFacet, Pausable, ReentrancyGuard {
 	function _collectAndTransfer(address user, uint256 requestId, WithdrawReceiverPart[] calldata parts, WithdrawInfo storage info) internal {
 		FeeStorage.Layout storage f = FeeStorage.layout();
 		uint256 operatorFee = f.operatorFees[user][requestId];
-		uint256 totalFee = info.fee + operatorFee;
+		uint256 affiliateFee = info.fee + info.accelerationFee;
+		uint256 totalFee = affiliateFee + operatorFee;
 		uint256 userFee = totalFee - info.sponsorCoverage;
 
 		if (info.optionType == OptionType.STANDARD) {
-			if (info.fee > 0) f.collectedFees[info.affiliate] += info.fee;
+			if (affiliateFee > 0) f.collectedFees[info.affiliate] += affiliateFee;
 			if (operatorFee > 0) f.collectedOperatorFees[info.affiliate] += operatorFee;
 		} else {
-			if (info.fee > 0) f.pendingFees[user][requestId] = info.fee;
+			if (affiliateFee > 0) f.pendingFees[user][requestId] = affiliateFee;
 			if (operatorFee > 0) f.pendingOperatorFees[user][requestId] = operatorFee;
 		}
 

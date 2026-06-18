@@ -96,6 +96,7 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 		info.fee = offer.fee;
 		info.finalizedAt = 0;
 		info.sponsorCoverage = 0;
+		info.maxAccelerationFee = offer.maxAccelerationFee;
 		f.operatorFees[withdrawRequest.user][withdrawRequest.id] = offer.operatorFee;
 
 		_lockFee(withdrawRequest.user, withdrawRequest.id, info);
@@ -228,9 +229,10 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 			offer.fee,
 			offer.operatorFee,
 			offer.maxUserFee,
+			offer.maxAccelerationFee,
 			offer.deadline,
 			offer.signature
-		) = abi.decode(offerData, (uint256, uint8, uint256, address, uint256, uint256, uint256, uint256, uint256, uint256, bytes));
+		) = abi.decode(offerData, (uint256, uint8, uint256, address, uint256, uint256, uint256, uint256, uint256, uint256, uint256, bytes));
 
 		if (block.timestamp > offer.deadline) revert LibErrors.OfferExpired();
 		if (g.nonces[withdrawRequest.user] != offer.nonce) revert LibErrors.InvalidNonce();
@@ -254,6 +256,7 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 				offer.fee,
 				offer.operatorFee,
 				offer.maxUserFee,
+				offer.maxAccelerationFee,
 				partsHash,
 				offer.deadline
 			)
@@ -364,17 +367,18 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 		FeeStorage.Layout storage f = FeeStorage.layout();
 
 		uint256 operatorFee = f.operatorFees[user][requestId];
-		uint256 totalFee = info.fee + operatorFee;
+		uint256 affiliateFee = info.fee + info.accelerationFee;
+		uint256 totalFee = affiliateFee + operatorFee;
 		uint256 userFee = totalFee - info.sponsorCoverage;
 
 		// STANDARD's onWithdrawComplete fires before processing, so fees go straight to
 		// claimable. Non-STANDARD sits in PROCESSED until finalize and is post-payout rollback
 		// eligible, so fees stay in per-request escrow.
 		if (info.optionType == OptionType.STANDARD) {
-			if (info.fee > 0) f.collectedFees[info.affiliate] += info.fee;
+			if (affiliateFee > 0) f.collectedFees[info.affiliate] += affiliateFee;
 			if (operatorFee > 0) f.collectedOperatorFees[info.affiliate] += operatorFee;
 		} else {
-			if (info.fee > 0) f.pendingFees[user][requestId] = info.fee;
+			if (affiliateFee > 0) f.pendingFees[user][requestId] = affiliateFee;
 			if (operatorFee > 0) f.pendingOperatorFees[user][requestId] = operatorFee;
 		}
 
@@ -432,17 +436,21 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 
 		uint256 pf = f.pendingFees[user][requestId];
 		uint256 pof = f.pendingOperatorFees[user][requestId];
+		uint256 accelerationFee = info.accelerationFee;
+		if (accelerationFee > pf) accelerationFee = pf;
+		uint256 baseFee = pf - accelerationFee;
 
 		uint256 remaining = coverage;
-		uint256 takeAff = remaining < pf ? remaining : pf;
-		pf -= takeAff;
+		uint256 takeAff = remaining < baseFee ? remaining : baseFee;
+		baseFee -= takeAff;
 		remaining -= takeAff;
 
 		uint256 takeOp = remaining < pof ? remaining : pof;
 		pof -= takeOp;
 		remaining -= takeOp;
 
-		if (pf > 0) f.collectedFees[affiliate] += pf;
+		uint256 collectedAffiliateFee = baseFee + accelerationFee;
+		if (collectedAffiliateFee > 0) f.collectedFees[affiliate] += collectedAffiliateFee;
 		if (pof > 0) f.collectedOperatorFees[affiliate] += pof;
 		delete f.pendingFees[user][requestId];
 		delete f.pendingOperatorFees[user][requestId];

@@ -51,4 +51,6 @@ struct WithdrawInfo {
 	bytes32 partsHash;
 	uint256 fee;
 	uint256 sponsorCoverage;
+	uint256 maxAccelerationFee;
+	uint256 accelerationFee;
 }
