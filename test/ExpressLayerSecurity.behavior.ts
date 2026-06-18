@@ -107,11 +107,13 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			fee: bigint
 			operatorFee: bigint
 			maxUserFee?: bigint
+			maxAccelerationFee?: bigint
 			partsHash: string
 			deadline: number
 		},
 	) {
 		const maxUserFee = params.maxUserFee ?? params.fee + params.operatorFee
+		const maxAccelerationFee = params.maxAccelerationFee ?? 0n
 		const domain = {
 			name: "ExpressProvider",
 			version: "1",
@@ -130,6 +132,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				{ name: "fee", type: "uint256" },
 				{ name: "operatorFee", type: "uint256" },
 				{ name: "maxUserFee", type: "uint256" },
+				{ name: "maxAccelerationFee", type: "uint256" },
 				{ name: "partsHash", type: "bytes32" },
 				{ name: "deadline", type: "uint256" },
 			],
@@ -145,6 +148,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			fee: params.fee,
 			operatorFee: params.operatorFee,
 			maxUserFee,
+			maxAccelerationFee,
 			partsHash: params.partsHash,
 			deadline: params.deadline,
 		}
@@ -178,11 +182,13 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 		validatorTimestamps?: number[],
 		symmioNonce?: bigint,
 		creditDataRaw?: string,
+		maxAccelerationFee?: bigint,
 	): string {
 		const muf = maxUserFee ?? fee + operatorFee
+		const maf = maxAccelerationFee ?? 0n
 		const offerData = ethers.AbiCoder.defaultAbiCoder().encode(
-			["uint256", "uint8", "uint256", "address", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "bytes"],
-			[nonce, optionType, availableAt, affiliate, affiliateAmount, creditAmount, fee, operatorFee, muf, deadline, signature],
+			["uint256", "uint8", "uint256", "address", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "bytes"],
+			[nonce, optionType, availableAt, affiliate, affiliateAmount, creditAmount, fee, operatorFee, muf, maf, deadline, signature],
 		)
 		const validatorData = ethers.AbiCoder.defaultAbiCoder().encode(
 			["bytes[]", "uint256[]", "uint256"],
