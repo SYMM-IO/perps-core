@@ -138,9 +138,6 @@ library LibPartyALiquidationProcess {
 				settlementState.pending = true;
 				liquidationDetail.involvedPartyBCounts += 1;
 			}
-			// Remember the reserve contribution before this quote mutates actualAmount.
-			int256 actualAmountBefore = settlementState.actualAmount;
-
 			if (liquidationDetail.liquidationType == LiquidationType.NORMAL) {
 				settlementState.cva += quote.lockedValues.cva;
 				settlementState.actualAmount += pnlWithFunding;
@@ -166,12 +163,8 @@ library LibPartyALiquidationProcess {
 				}
 			}
 
-			// Sync settlement reserve after the actualAmount update.
-			// Reserve = sum of max(0, actualAmount) across pending settlements.
-			// This prevents PartyB from deallocating funds owed to pending liquidation settlements.
-			if (maLayout.crossModeEnabledForPartyB[quote.partyB]) {
-				_syncPartyBLiquidationSettlementReserve(accountLayout, quote.partyB, actualAmountBefore, settlementState.actualAmount);
-			}
+			// Track the settlement reserve for all modes; LibAccount applies it only in cross mode.
+			LibAccount.syncPartyBLiquidationSettlementReserve(accountLayout, partyA, quote.partyB, settlementState.actualAmount);
 
 			// Close the quote and update accumulated PartyA uPNL when this PartyB has no remaining positions.
 			LibAccount.subFromPartyBLockedBalances(quote);
@@ -247,14 +240,10 @@ library LibPartyALiquidationProcess {
 		accountLayout.liquidationDetails[partyA].disputed = disputed;
 		require(partyBs.length == amounts.length, "LiquidationFacet: Invalid length");
 
-		// Override PartyB settlement buckets and keep cross-mode settlement reserves in sync.
+		// Override PartyB settlement buckets and keep settlement reserves in sync.
 		for (uint256 i = 0; i < partyBs.length; i++) {
-			// Update settlement reserve for cross-mode PartyBs when dispute overrides actualAmount
-			if (maLayout.crossModeEnabledForPartyB[partyBs[i]]) {
-				int256 oldAmount = accountLayout.settlementStates[partyA][partyBs[i]].actualAmount;
-				_syncPartyBLiquidationSettlementReserve(accountLayout, partyBs[i], oldAmount, amounts[i]);
-			}
 			accountLayout.settlementStates[partyA][partyBs[i]].actualAmount = amounts[i];
+			LibAccount.syncPartyBLiquidationSettlementReserve(accountLayout, partyA, partyBs[i], amounts[i]);
 		}
 		return accountLayout.liquidationDetails[partyA].liquidationId;
 	}
@@ -317,10 +306,6 @@ library LibPartyALiquidationProcess {
 					// PartyB can fully pay PartyA
 					partyBAllocatedBalance -= uint256(partyAReceivableFromPartyB);
 					settleAmounts[i] = partyAReceivableFromPartyB;
-					// Clear the non-negative settlement reserve contribution for cross-mode PartyBs.
-					if (maLayout.crossModeEnabledForPartyB[partyB]) {
-						accountLayout.partyBLiquidationSettlementReserve[partyB] -= uint256(partyAReceivableFromPartyB);
-					}
 				} else {
 					// PartyB cannot fully pay PartyA
 					// Cross-mode PartyBs must settle uPNL first via settlePartyBUpnlForLiquidation
@@ -334,6 +319,7 @@ library LibPartyALiquidationProcess {
 			}
 			accountLayout.partyBAllocatedBalances[partyB][allocKey] = partyBAllocatedBalance;
 
+			LibAccount.syncPartyBLiquidationSettlementReserve(accountLayout, partyA, partyB, 0);
 			delete accountLayout.settlementStates[partyA][partyB];
 		}
 
@@ -422,21 +408,6 @@ library LibPartyALiquidationProcess {
 				liquidationDetail.timestamp
 			)
 		);
-	}
-
-	function _syncPartyBLiquidationSettlementReserve(
-		AccountStorage.Layout storage accountLayout,
-		address partyB,
-		int256 oldActualAmount,
-		int256 newActualAmount
-	) private {
-		uint256 oldContrib = oldActualAmount > 0 ? uint256(oldActualAmount) : 0;
-		uint256 newContrib = newActualAmount > 0 ? uint256(newActualAmount) : 0;
-		if (newContrib > oldContrib) {
-			accountLayout.partyBLiquidationSettlementReserve[partyB] += (newContrib - oldContrib);
-		} else if (oldContrib > newContrib) {
-			accountLayout.partyBLiquidationSettlementReserve[partyB] -= (oldContrib - newContrib);
-		}
 	}
 
 	function _requireActivePartyALiquidationAndRecordAction(MAStorage.Layout storage maLayout, address partyA) private {

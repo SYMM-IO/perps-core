@@ -12,6 +12,7 @@ import { QuoteStorage, Quote, QuoteStatus } from "../../storages/QuoteStorage.so
 import { PairUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
 import { LibSendQuoteEvents } from "../../libraries/LibSendQuoteEvents.sol";
 import { LibSolverFee } from "../../libraries/LibSolverFee.sol";
+import { LibPartiesEvents } from "../../libraries/LibPartiesEvents.sol";
 
 contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionActionsFacet {
 	/// @notice Opens a position for the specified quote. The opened position's size can't be excessively small or large.
@@ -27,8 +28,7 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 	) external whenNotPartyBOpenPositionsPaused onlyPartyBOfQuote(quoteId) notLiquidated(quoteId) {
 		uint256 newId = PartyBPositionActionsFacetImpl.openPosition(quoteId, filledAmount, openedPrice, upnlSig);
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-		emit OpenPosition(quoteId, quote.partyA, quote.partyB, filledAmount, openedPrice);
-		emit OpenPosition(quoteId, quote.partyA, quote.partyB, filledAmount, openedPrice, quote.lockedValues);
+		LibPartiesEvents.emitOpenPosition(quote, quoteId, filledAmount, openedPrice);
 		if (newId != 0) {
 			Quote storage newQuote = QuoteStorage.layout().quotes[newId];
 			if (newQuote.quoteStatus == QuoteStatus.PENDING) {
@@ -75,17 +75,7 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote storage quote = quoteLayout.quotes[quoteId];
 		PartyBPositionActionsFacetImpl.fillCloseRequest(quoteId, filledAmount, closedPrice, upnlSig);
-		emit FillCloseRequest(quoteId, quote.partyA, quote.partyB, filledAmount, closedPrice, quote.quoteStatus, quoteLayout.closeIds[quoteId]);
-		emit FillCloseRequest(
-			quoteId,
-			quote.partyA,
-			quote.partyB,
-			filledAmount,
-			closedPrice,
-			quote.quoteStatus,
-			quoteLayout.closeIds[quoteId],
-			quote.lockedValues
-		);
+		LibPartiesEvents.emitFillCloseRequest(quoteLayout, quote, quoteId, filledAmount, closedPrice);
 	}
 
 	/// @notice Accepts a cancel close request for the specified quote.
@@ -115,16 +105,6 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote storage quote = quoteLayout.quotes[quoteId];
 		filledAmount = PartyBPositionActionsFacetImpl.fillCloseRequestToLiquidation(quoteId, closedPrice, upnlSig);
-		emit FillCloseRequest(quoteId, quote.partyA, quote.partyB, filledAmount, closedPrice, quote.quoteStatus, quoteLayout.closeIds[quoteId]);
-		emit FillCloseRequest(
-			quoteId,
-			quote.partyA,
-			quote.partyB,
-			filledAmount,
-			closedPrice,
-			quote.quoteStatus,
-			quoteLayout.closeIds[quoteId],
-			quote.lockedValues
-		);
+		LibPartiesEvents.emitFillCloseRequest(quoteLayout, quote, quoteId, filledAmount, closedPrice);
 	}
 }

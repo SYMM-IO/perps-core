@@ -178,6 +178,22 @@ library LibAccount {
 		return MAStorage.layout().crossModeEnabledForPartyB[partyB] ? accountLayout.partyBLiquidationSettlementReserve[partyB] : 0;
 	}
 
+	function syncPartyBLiquidationSettlementReserve(
+		AccountStorage.Layout storage accountLayout,
+		address partyA,
+		address partyB,
+		int256 newActualAmount
+	) internal {
+		uint256 oldContrib = accountLayout.partyBLiquidationSettlementReserveContributions[partyA][partyB];
+		uint256 newContrib = newActualAmount > 0 ? uint256(newActualAmount) : 0;
+		if (newContrib > oldContrib) {
+			accountLayout.partyBLiquidationSettlementReserve[partyB] += (newContrib - oldContrib);
+		} else if (oldContrib > newContrib) {
+			accountLayout.partyBLiquidationSettlementReserve[partyB] -= (oldContrib - newContrib);
+		}
+		accountLayout.partyBLiquidationSettlementReserveContributions[partyA][partyB] = newContrib;
+	}
+
 	/// @notice Returns the key used for balance allocation mapping in Party B. Returns address(0) for cross partyB mode or partyA for isolated mode.
 	/// @param partyB The address of Party B.
 	/// @param partyA The address of Party A.

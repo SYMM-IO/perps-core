@@ -96,8 +96,8 @@ export function shouldBehaveLikeCrossPartyBSettlementReserve(): void {
 			expect(reserve).to.equal(decimal(50n))
 		})
 
-		it("Should not create reserve for isolated-mode PartyB", async function () {
-			// hedger2 (isolated) also has a settlement with user, but no reserve
+		it("Should not create reserve when PartyB does not owe PartyA", async function () {
+			// hedger2 also has a settlement with user, but user lost against hedger2.
 			const reserve = await context.viewFacet.getPartyBLiquidationSettlementReserve(hedger2Addr)
 			expect(reserve).to.equal(0n)
 		})
@@ -251,6 +251,107 @@ export function shouldBehaveLikeCrossPartyBSettlementReserve(): void {
 			await expect(
 				context.partyBAccountFacet.connect(hedger.signer).deallocateForPartyB(decimal(170n), ZeroAddress, await getDummySingleUpnlSig(decimal(50n))),
 			).to.not.be.reverted
+		})
+	})
+
+	describe("Mode switch after isolated liquidation settlement", function () {
+		async function setupIsolatedPositiveSettlement() {
+			const scenarioContext = await loadFixture(initializeFixture)
+
+			const scenarioUser = new User(scenarioContext, scenarioContext.signers.user)
+			await scenarioUser.setup()
+			await scenarioUser.setBalances(decimal(5000n), decimal(1000n), decimal(300n))
+			const scenarioUserAddr = await scenarioUser.getAddress()
+
+			const scenarioHedger = new Hedger(scenarioContext, scenarioContext.signers.hedger)
+			await scenarioHedger.setup()
+			await scenarioHedger.setBalances(decimal(10000n), decimal(10000n))
+			const scenarioHedgerAddr = await scenarioHedger.getAddress()
+
+			const scenarioHedger2 = new Hedger(scenarioContext, scenarioContext.signers.hedger2)
+			await scenarioHedger2.setup()
+			await scenarioHedger2.setBalances(decimal(10000n), decimal(10000n))
+			const scenarioHedger2Addr = await scenarioHedger2.getAddress()
+
+			const losingQuote = await scenarioUser.sendQuote(
+				limitQuoteRequestBuilder().quantity(decimal(1000n)).partyBWhiteList([scenarioHedger2Addr]).build(),
+			)
+			await scenarioHedger2.lockQuote(losingQuote)
+			await scenarioHedger2.openPosition(losingQuote, limitOpenRequestBuilder().filledAmount(decimal(1000n)).price(decimal(1n)).build())
+
+			const positiveSettlementQuote = await scenarioUser.sendQuote(
+				limitQuoteRequestBuilder().positionType(PositionType.SHORT).partyBWhiteList([scenarioHedgerAddr]).build(),
+			)
+			await scenarioHedger.lockQuote(positiveSettlementQuote)
+			await scenarioHedger.openPosition(positiveSettlementQuote)
+
+			expect(await scenarioContext.viewFacet.isCrossPartyB(scenarioHedgerAddr)).to.equal(false)
+
+			await scenarioUser.liquidateAndSetSymbolPrices([1n], [decimal(5n, 17)], [losingQuote, positiveSettlementQuote])
+			await scenarioUser.liquidatePositions([losingQuote, positiveSettlementQuote])
+
+			return { scenarioContext, scenarioUserAddr, scenarioHedger, scenarioHedgerAddr }
+		}
+
+		it("Should settle when an isolated-created positive settlement later becomes cross-mode", async function () {
+			const { scenarioContext, scenarioUserAddr, scenarioHedger, scenarioHedgerAddr } = await setupIsolatedPositiveSettlement()
+
+			expect(await scenarioContext.viewFacet.getPartyBLiquidationSettlementReserve(scenarioHedgerAddr)).to.equal(decimal(50n))
+
+			await scenarioContext.controlFacet.connect(scenarioContext.signers.admin).setCrossPartyBModeActivated(true)
+			await scenarioContext.partyBAccountFacet.connect(scenarioHedger.signer).activateCrossPartyB()
+			await scenarioContext.partyBAccountFacet.connect(scenarioHedger.signer).allocateForPartyB(decimal(100n), ZeroAddress)
+
+			await expect(
+				scenarioContext.partyALiquidationFacet
+					.connect(scenarioContext.signers.liquidator)
+					.settlePartyALiquidation(scenarioUserAddr, [scenarioHedgerAddr]),
+			).to.not.be.reverted
+
+			expect(await scenarioContext.viewFacet.getPartyBLiquidationSettlementReserve(scenarioHedgerAddr)).to.equal(0n)
+		})
+
+		it("Should let takeover clear an isolated-created positive settlement after PartyB becomes cross-mode", async function () {
+			const { scenarioContext, scenarioUserAddr, scenarioHedger, scenarioHedgerAddr } = await setupIsolatedPositiveSettlement()
+
+			expect(await scenarioContext.viewFacet.getPartyBLiquidationSettlementReserve(scenarioHedgerAddr)).to.equal(decimal(50n))
+
+			await scenarioContext.controlFacet.connect(scenarioContext.signers.admin).setCrossPartyBModeActivated(true)
+			await scenarioContext.partyBAccountFacet.connect(scenarioHedger.signer).activateCrossPartyB()
+			await scenarioContext.partyBAccountFacet.connect(scenarioHedger.signer).allocateForPartyB(decimal(100n), ZeroAddress)
+			await scenarioContext.controlFacet
+				.connect(scenarioContext.signers.admin)
+				.grantRole(scenarioContext.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("CLEARING_HOUSE_ROLE")))
+
+			await scenarioContext.clearingHouseFacet.connect(scenarioContext.signers.liquidator).takeoverPartyALiquidation(scenarioUserAddr)
+			// Both hedger (positive settlement) and hedger2 (negative settlement) are pending; takeover must
+			// clear every pending settlement in a single call, otherwise the completeness gate reverts.
+			await expect(
+				scenarioContext.clearingHouseFacet
+					.connect(scenarioContext.signers.liquidator)
+					.settlePartyATakeover(scenarioUserAddr, [scenarioHedgerAddr, scenarioContext.signers.hedger2.address]),
+			).to.not.be.reverted
+
+			expect(await scenarioContext.viewFacet.getPartyBLiquidationSettlementReserve(scenarioHedgerAddr)).to.equal(0n)
+		})
+
+		it("Should revert takeover settlement when a pending PartyB is omitted", async function () {
+			const { scenarioContext, scenarioUserAddr, scenarioHedger, scenarioHedgerAddr } = await setupIsolatedPositiveSettlement()
+
+			await scenarioContext.controlFacet.connect(scenarioContext.signers.admin).setCrossPartyBModeActivated(true)
+			await scenarioContext.partyBAccountFacet.connect(scenarioHedger.signer).activateCrossPartyB()
+			await scenarioContext.partyBAccountFacet.connect(scenarioHedger.signer).allocateForPartyB(decimal(100n), ZeroAddress)
+			await scenarioContext.controlFacet
+				.connect(scenarioContext.signers.admin)
+				.grantRole(scenarioContext.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("CLEARING_HOUSE_ROLE")))
+
+			await scenarioContext.clearingHouseFacet.connect(scenarioContext.signers.liquidator).takeoverPartyALiquidation(scenarioUserAddr)
+
+			// hedger2 also has a pending settlement; omitting it would strand that state once
+			// liquidationDetails is deleted, so the call must revert.
+			await expect(
+				scenarioContext.clearingHouseFacet.connect(scenarioContext.signers.liquidator).settlePartyATakeover(scenarioUserAddr, [scenarioHedgerAddr]),
+			).to.be.revertedWith("ClearingHouseFacet: Unsettled PartyB remaining")
 		})
 	})
 

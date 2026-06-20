@@ -391,6 +391,8 @@
 		let startY = 0
 		let originX = 0
 		let originY = 0
+		let dragMoved = false
+		let lastDragEndedAt = 0
 		let backdropClickCandidate = false
 		let backdropStartX = 0
 		let backdropStartY = 0
@@ -475,6 +477,7 @@
 		modal.addEventListener("click", (event) => {
 			const target = event.target
 			if (!(target instanceof Element)) return
+			if (Date.now() - lastDragEndedAt < 200) return
 			if (target.closest(`${diagramContentSelector}, .diagram-modal-actions`)) return
 			close()
 		})
@@ -495,6 +498,7 @@
 			backdropClickCandidate = event.target instanceof Element && !event.target.closest(diagramContentSelector)
 			backdropStartX = event.clientX
 			backdropStartY = event.clientY
+			dragMoved = false
 			dragging = true
 			stage.setPointerCapture(event.pointerId)
 			startX = event.clientX
@@ -506,7 +510,9 @@
 		stage.addEventListener("pointermove", (event) => {
 			if (!dragging) return
 			event.preventDefault()
-			if (backdropClickCandidate && Math.hypot(event.clientX - backdropStartX, event.clientY - backdropStartY) > backdropClickThreshold) {
+			const dragDistance = Math.hypot(event.clientX - backdropStartX, event.clientY - backdropStartY)
+			if (dragDistance > backdropClickThreshold) {
+				dragMoved = true
 				backdropClickCandidate = false
 			}
 			x = originX + event.clientX - startX
@@ -514,8 +520,10 @@
 			applyTransform()
 		})
 		const stopDragging = (event) => {
-			const shouldCloseFromBackdrop = backdropClickCandidate
+			const shouldCloseFromBackdrop = backdropClickCandidate && !dragMoved
+			if (dragMoved) lastDragEndedAt = Date.now()
 			backdropClickCandidate = false
+			dragMoved = false
 			dragging = false
 			stage.classList.remove("is-dragging")
 			if (stage.hasPointerCapture(event.pointerId)) stage.releasePointerCapture(event.pointerId)
