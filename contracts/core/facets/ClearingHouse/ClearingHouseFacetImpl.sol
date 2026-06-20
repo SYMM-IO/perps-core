@@ -469,16 +469,22 @@ library ClearingHouseFacetImpl {
 		// Clear settlement states for partyBs explicitly provided by the clearing house.
 		// This is needed because the normal liquidation flow may have set settlement states
 		// for partyBs whose connections were already removed from connectedPartyBs.
+		uint256 clearedSettlements = 0;
 		for (uint256 i = 0; i < settledPartyBs.length; i++) {
-			// Clear settlement reserve for cross-mode PartyBs before deleting state
-			if (accountLayout.settlementStates[partyA][settledPartyBs[i]].pending && maLayout.crossModeEnabledForPartyB[settledPartyBs[i]]) {
-				int256 amount = accountLayout.settlementStates[partyA][settledPartyBs[i]].actualAmount;
-				if (amount > 0) {
-					accountLayout.partyBLiquidationSettlementReserve[settledPartyBs[i]] -= uint256(amount);
-				}
+			// Clear any settlement reserve contribution before deleting state.
+			if (accountLayout.settlementStates[partyA][settledPartyBs[i]].pending) {
+				LibAccount.syncPartyBLiquidationSettlementReserve(accountLayout, partyA, settledPartyBs[i], 0);
+				clearedSettlements += 1;
 			}
 			delete accountLayout.settlementStates[partyA][settledPartyBs[i]];
 		}
+		// Every pending settlement created by the normal liquidation flow must be cleared here.
+		// Otherwise its settlement state and reserve contribution would be stranded once
+		// liquidationDetails is deleted below, permanently locking the PartyB's reserved collateral.
+		require(
+			clearedSettlements == accountLayout.liquidationDetails[partyA].involvedPartyBCounts,
+			"ClearingHouseFacet: Unsettled PartyB remaining"
+		);
 
 		// Release all escrowed balances back to partyA
 		uint256 reimbursement = accountLayout.partyAReimbursement[partyA];

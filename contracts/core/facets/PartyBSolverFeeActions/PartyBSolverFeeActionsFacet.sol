@@ -66,33 +66,56 @@ contract PartyBSolverFeeActionsFacet is Accessibility, Pausable, IPartyBSolverFe
 		_callPositionFacet(abi.encodeCall(IPartyBPositionActionsFacet.fillCloseRequest, (quoteId, filledAmount, closedPrice, upnlSig)));
 	}
 
-	/// @notice Fills a close request up to liquidation and atomically charges the solver rate fee.
-	/// @dev This method reserves room for the solver rate fee in the close-to-liquidation amount before deducting it.
-	///      The amount calculation is shared with the legacy PartyBPositionActionsFacet.fillCloseRequestToLiquidation
-	///      via LibPartyBPositionsActions. Operational fees are charged separately via AccountFacet.chargeOperationalFee,
-	///      exactly like any other registered charger. The rate fee is charged BEFORE the close executes (see fillCloseRequest).
+	/// @notice Fills a close request up to the lesser of `maxQuantity` and liquidation, atomically charging the solver rate fee.
+	/// @dev Reserves room for the solver rate fee in the close-to-liquidation amount before deducting it. The amount
+	///      calculation is shared with the fee-less PartyBPositionActionsFacet.fillCloseRequestToLiquidation via
+	///      LibPartyBPositionsActions. Operational fees are charged separately via AccountFacet.chargeOperationalFee,
+	///      like any other registered charger. The rate fee is charged before the close executes (see fillCloseRequest).
+	///      Pass `type(uint256).max` as `maxQuantity` for an uncapped close-to-liquidation.
 	/// @param quoteId The ID of the quote for which the close request is filled.
+	/// @param maxQuantity The maximum quantity PartyB is willing to close in this transaction; caps the fill.
 	/// @param closedPrice The closed price for the close request.
 	/// @param upnlSig The Muon signature containing PairUpnlAndPriceSig data.
-	/// @param solverFee Solver fee to charge against the quote's close solver fee rate cap.
+	/// @param solverFee Absolute solver fee sized for the liquidation-limited close; pro-rated down to the amount
+	///        actually closed when `maxQuantity` caps the fill. Charged against the quote's close solver fee rate cap.
 	/// @return filledAmount The actual amount that was filled.
 	function fillCloseRequestToLiquidation(
 		uint256 quoteId,
+		uint256 maxQuantity,
 		uint256 closedPrice,
 		PairUpnlAndPriceSig memory upnlSig,
 		uint256 solverFee
 	) external whenNotPartyBActionsPaused onlyPartyBOfQuote(quoteId) notLiquidated(quoteId) returns (uint256 filledAmount) {
-		filledAmount = LibPartyBPositionsActions.calculateCloseToLiquidationAmount(
+		return _fillCloseRequestToLiquidation(quoteId, maxQuantity, closedPrice, upnlSig, solverFee);
+	}
+
+	/// @dev The caller passes `solverFee` as an absolute amount sized for the liquidation-limited close. When
+	///      `maxQuantity` caps the fill below that amount, the fee is pro-rated to what is actually closed
+	///      (`solverFee * filledAmount / uncappedAmount`) so the effective fee rate -- and therefore the close-rate
+	///      cap check in LibSolverFee -- stays consistent regardless of the cap. The amount math still reserves room
+	///      for the full `solverFee`, which only ever over-reserves and so keeps PartyA solvent.
+	function _fillCloseRequestToLiquidation(
+		uint256 quoteId,
+		uint256 maxQuantity,
+		uint256 closedPrice,
+		PairUpnlAndPriceSig memory upnlSig,
+		uint256 solverFee
+	) private returns (uint256 filledAmount) {
+		uint256 uncappedAmount;
+		(filledAmount, uncappedAmount) = LibPartyBPositionsActions.calculateCloseToLiquidationAmount(
 			quoteId,
+			maxQuantity,
 			closedPrice,
 			upnlSig.price,
 			upnlSig.upnlPartyA,
 			solverFee
 		);
 		if (solverFee > 0) {
-			LibSolverFee.chargeCloseFeeIfAny(quoteId, solverFee, filledAmount, closedPrice);
+			// Pro-rate the absolute fee to the amount actually closed when maxQuantity caps the fill below the liquidation limit.
+			uint256 chargedFee = filledAmount == uncappedAmount ? solverFee : (solverFee * filledAmount) / uncappedAmount;
+			LibSolverFee.chargeCloseFeeIfAny(quoteId, chargedFee, filledAmount, closedPrice);
 			Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-			emit CloseSolverFeeCharged(quoteId, quote.partyA, quote.partyB, quote.symbolId, solverFee);
+			emit CloseSolverFeeCharged(quoteId, quote.partyA, quote.partyB, quote.symbolId, chargedFee);
 		}
 		_callPositionFacet(abi.encodeCall(IPartyBPositionActionsFacet.fillCloseRequest, (quoteId, filledAmount, closedPrice, upnlSig)));
 	}
