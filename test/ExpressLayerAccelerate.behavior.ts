@@ -22,6 +22,7 @@ const STATUS_SUSPENDED = 6n
 const OPT_SAME_TX = 0n
 const OPT_WINDOWED = 1n
 const OPT_STANDARD = 2n
+const DEFAULT_ACCELERATION_FEE = 1n
 
 export function shouldBehaveLikeExpressLayerAccelerate(): void {
 	async function deployFixture() {
@@ -316,7 +317,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			maxUserFee: opts?.maxUserFee,
 			partsHash,
 			deadline,
-			maxAccelerationFee: opts?.maxAccelerationFee,
+			maxAccelerationFee: opts?.maxAccelerationFee ?? DEFAULT_ACCELERATION_FEE,
 		})
 
 		const providerData = encodeWithdrawProviderData(
@@ -328,7 +329,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			deadline,
 			signature,
 			undefined,
-			opts?.maxAccelerationFee ?? 0n,
+			opts?.maxAccelerationFee ?? DEFAULT_ACCELERATION_FEE,
 			opts?.fee ?? 0n,
 			opts?.operatorFee ?? 0n,
 			opts?.maxUserFee,
@@ -405,12 +406,19 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			nonce: opts.nonce,
 			affiliateAmount: opts.affiliateAmount,
 			creditAmount: opts.creditAmount,
-			accelerationFee: opts.accelerationFee,
+			accelerationFee: opts.accelerationFee ?? DEFAULT_ACCELERATION_FEE,
 			partsHash: opts.partsHash,
 			deadline,
 		})
 
-		const offerData = encodeAccelerateOfferData(opts.nonce, opts.affiliateAmount, opts.creditAmount, opts.accelerationFee ?? 0n, deadline, sig)
+		const offerData = encodeAccelerateOfferData(
+			opts.nonce,
+			opts.affiliateAmount,
+			opts.creditAmount,
+			opts.accelerationFee ?? DEFAULT_ACCELERATION_FEE,
+			deadline,
+			sig,
+		)
 		const creditDataRaw = opts.creditAmount > 0n ? buildCreditData(10_000n * 10n ** 18n, now) : "0x"
 
 		return { offerData, creditDataRaw, deadline }
@@ -488,7 +496,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			expect(await expressProvider.creditLineActiveDebt(affiliate)).to.equal(creditAmount)
 
 			// User paid
-			expect(await collateral.balanceOf(receiver.address)).to.equal(receiverBefore + withdrawAmount)
+			expect(await collateral.balanceOf(receiver.address)).to.equal(receiverBefore + withdrawAmount - DEFAULT_ACCELERATION_FEE)
 
 			// Nonce bumped
 			expect(await expressProvider.accelerateNonce(user.address, requestId)).to.equal(1n)
@@ -523,7 +531,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			// Credit carries the whole request
 			expect(await expressProvider.creditLineActiveDebt(affiliate)).to.equal(withdrawAmount)
 			// User paid
-			expect(await collateral.balanceOf(receiver.address)).to.equal(receiverBefore + withdrawAmount)
+			expect(await collateral.balanceOf(receiver.address)).to.equal(receiverBefore + withdrawAmount - DEFAULT_ACCELERATION_FEE)
 		})
 
 		it("accelerates with creditAmount = 0 (pool-only, no credit)", async function () {
@@ -552,7 +560,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			expect(await expressProvider.creditLineActiveDebt(affiliate)).to.equal(0n)
 			expect(await expressProvider.creditLineReservedDebt(affiliate)).to.equal(0n)
 			// User paid
-			expect(await collateral.balanceOf(receiver.address)).to.equal(receiverBefore + withdrawAmount)
+			expect(await collateral.balanceOf(receiver.address)).to.equal(receiverBefore + withdrawAmount - DEFAULT_ACCELERATION_FEE)
 		})
 
 		it("accelerates with affiliateAmount = 0 AND creditAmount = 0 (all general)", async function () {
@@ -589,7 +597,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			expect(await expressProvider.creditLineActiveDebt(affiliate)).to.equal(0n)
 			expect(await expressProvider.creditLineReservedDebt(affiliate)).to.equal(0n)
 			// User paid
-			expect(await collateral.balanceOf(receiver.address)).to.equal(receiverBefore + withdrawAmount)
+			expect(await collateral.balanceOf(receiver.address)).to.equal(receiverBefore + withdrawAmount - DEFAULT_ACCELERATION_FEE)
 		})
 
 		it("accelerate callable by user themselves (permissionless)", async function () {
@@ -611,7 +619,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 
 			const before = await collateral.balanceOf(receiver.address)
 			await expressProvider.connect(user).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw)
-			expect(await collateral.balanceOf(receiver.address)).to.equal(before + withdrawAmount)
+			expect(await collateral.balanceOf(receiver.address)).to.equal(before + withdrawAmount - DEFAULT_ACCELERATION_FEE)
 		})
 	})
 
@@ -835,10 +843,11 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 				nonce: 0n,
 				affiliateAmount: 0n,
 				creditAmount: 100n * 10n ** 18n,
+				accelerationFee: DEFAULT_ACCELERATION_FEE,
 				partsHash,
 				deadline: nextTs,
 			})
-			const offerData = encodeAccelerateOfferData(0n, 0n, 100n * 10n ** 18n, 0n, nextTs, sig)
+			const offerData = encodeAccelerateOfferData(0n, 0n, 100n * 10n ** 18n, DEFAULT_ACCELERATION_FEE, nextTs, sig)
 			const creditDataRaw = buildCreditData(10_000n * 10n ** 18n, nextTs)
 
 			await ethers.provider.send("evm_setNextBlockTimestamp", [nextTs])
@@ -1275,9 +1284,10 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			const { expressProvider, user, requestId: _unused, randomCaller, receiver, collateral } = fixture as any
 			void _unused
 
-			const accelerationFee = 7n * 10n ** 18n
+			const maxAccelerationFee = 7n * 10n ** 18n
+			const accelerationFee = 3n * 10n ** 18n
 			const { parts, requestId, partsHash, withdrawAmount } = await acceptStandard(fixture, {
-				maxAccelerationFee: 10n * 10n ** 18n,
+				maxAccelerationFee,
 			})
 
 			const infoBefore = await expressProvider.getWithdrawInfo(user.address, requestId)
@@ -1332,6 +1342,214 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			).to.be.revertedWithCustomError(expressProvider, "AccelerationFeeExceedsMaximum")
 		})
 
+		it("allows zero-fee acceleration when the bot signs zero and the user authorized zero max acceleration fee", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, user, randomCaller, receiver, collateral } = fixture
+
+			const { parts, requestId, partsHash, withdrawAmount } = await acceptStandard(fixture, {
+				maxAccelerationFee: 0n,
+			})
+			const receiverBefore = await collateral.balanceOf(receiver.address)
+
+			const { offerData, creditDataRaw } = await buildAccelerateCall(fixture, {
+				user: user.address,
+				requestId,
+				parts,
+				nonce: 0n,
+				affiliateAmount: 0n,
+				creditAmount: 0n,
+				accelerationFee: 0n,
+				partsHash,
+			})
+
+			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw)
+
+			const infoAfter = await expressProvider.getWithdrawInfo(user.address, requestId)
+			expect(infoAfter.status).to.equal(STATUS_PROCESSED)
+			expect(infoAfter.accelerationFee).to.equal(0n)
+			expect(await expressProvider.pendingFees(user.address, requestId)).to.equal(0n)
+			expect(await collateral.balanceOf(receiver.address)).to.equal(receiverBefore + withdrawAmount)
+		})
+
+		it("allows sponsor-covered base fees to leave the full express amount available for acceleration fee", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, user, randomCaller, receiver, collateral, affiliate, deployer } = fixture
+
+			const withdrawAmount = 100n * 10n ** 18n
+			const fee = 80n * 10n ** 18n
+			const operatorFee = 10n * 10n ** 18n
+			const sponsorCoverage = fee + operatorFee
+			const maxAccelerationFee = withdrawAmount
+
+			await expressProvider.connect(deployer).setAffiliateConfig(affiliate, 8000, operatorFee)
+			await collateral.mint(deployer.address, sponsorCoverage)
+			await collateral.connect(deployer).approve(await expressProvider.getAddress(), sponsorCoverage)
+			await expressProvider.connect(deployer).depositSponsorBalance(affiliate, sponsorCoverage)
+
+			const { parts, requestId, partsHash } = await acceptStandard(fixture, {
+				withdrawAmount,
+				fee,
+				operatorFee,
+				maxUserFee: 0n,
+				maxAccelerationFee,
+			})
+			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).sponsorCoverage).to.equal(sponsorCoverage)
+
+			const receiverBefore = await collateral.balanceOf(receiver.address)
+			const { offerData, creditDataRaw } = await buildAccelerateCall(fixture, {
+				user: user.address,
+				requestId,
+				parts,
+				nonce: 0n,
+				affiliateAmount: 0n,
+				creditAmount: 0n,
+				accelerationFee: maxAccelerationFee,
+				partsHash,
+			})
+
+			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw)
+
+			const infoAfter = await expressProvider.getWithdrawInfo(user.address, requestId)
+			expect(infoAfter.status).to.equal(STATUS_PROCESSED)
+			expect(infoAfter.accelerationFee).to.equal(maxAccelerationFee)
+			expect(await expressProvider.pendingFees(user.address, requestId)).to.equal(fee + maxAccelerationFee)
+			expect(await expressProvider.pendingOperatorFees(user.address, requestId)).to.equal(operatorFee)
+			expect(await collateral.balanceOf(receiver.address)).to.equal(receiverBefore)
+		})
+
+		it("rejects a STANDARD option whose base fees plus max acceleration fee exceed the express amount", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, affiliate, deployer } = fixture
+
+			const withdrawAmount = 100n * 10n ** 18n
+			const fee = 80n * 10n ** 18n
+			const operatorFee = 10n * 10n ** 18n
+			await expressProvider.connect(deployer).setAffiliateConfig(affiliate, 8000, operatorFee)
+
+			await expect(
+				acceptStandard(fixture, {
+					withdrawAmount,
+					fee,
+					operatorFee,
+					maxAccelerationFee: 20n * 10n ** 18n,
+				}),
+			).to.be.revertedWithCustomError(expressProvider, "FeesExceedExpressAmount")
+		})
+
+		it("rejects a STANDARD option when sponsor coverage is insufficient for the max acceleration fee envelope", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, affiliate, deployer, collateral } = fixture
+
+			const withdrawAmount = 100n * 10n ** 18n
+			const fee = 80n * 10n ** 18n
+			const operatorFee = 10n * 10n ** 18n
+			const sponsorCoverage = 50n * 10n ** 18n
+			await expressProvider.connect(deployer).setAffiliateConfig(affiliate, 8000, operatorFee)
+			await collateral.mint(deployer.address, sponsorCoverage)
+			await collateral.connect(deployer).approve(await expressProvider.getAddress(), sponsorCoverage)
+			await expressProvider.connect(deployer).depositSponsorBalance(affiliate, sponsorCoverage)
+
+			await expect(
+				acceptStandard(fixture, {
+					withdrawAmount,
+					fee,
+					operatorFee,
+					maxUserFee: fee + operatorFee - sponsorCoverage,
+					maxAccelerationFee: 61n * 10n ** 18n,
+				}),
+			).to.be.revertedWithCustomError(expressProvider, "FeesExceedExpressAmount")
+		})
+
+		it("rejects an impossible operator fee envelope", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, affiliate, deployer } = fixture
+
+			const withdrawAmount = 100n * 10n ** 18n
+			const operatorFee = ethers.MaxUint256
+			await expressProvider.connect(deployer).setAffiliateConfig(affiliate, 0, operatorFee)
+
+			await expect(
+				acceptStandard(fixture, {
+					withdrawAmount,
+					operatorFee,
+					maxAccelerationFee: 0n,
+				}),
+			).to.be.revertedWithCustomError(expressProvider, "FeesExceedExpressAmount")
+		})
+
+		it("binds accelerationFee into the accelerate offer signature", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, user, randomCaller, botSigner } = fixture
+
+			const { parts, requestId, partsHash } = await acceptStandard(fixture, {
+				maxAccelerationFee: 10n * 10n ** 18n,
+			})
+			const now = (await ethers.provider.getBlock("latest"))!.timestamp
+			const deadline = now + 3600
+			const signedFee = 3n * 10n ** 18n
+			const tamperedFee = 4n * 10n ** 18n
+			const signature = await signAccelerateOffer(expressProvider, botSigner, {
+				user: user.address,
+				requestId,
+				nonce: 0n,
+				affiliateAmount: 0n,
+				creditAmount: 0n,
+				accelerationFee: signedFee,
+				partsHash,
+				deadline,
+			})
+			const offerData = encodeAccelerateOfferData(0n, 0n, 0n, tamperedFee, deadline, signature)
+
+			await expect(
+				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x"),
+			).to.be.revertedWithCustomError(expressProvider, "InvalidAccelerateSigner")
+		})
+
+		it("binds maxAccelerationFee into the initial withdraw option signature", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, user, receiver, context, affiliate, botSigner } = fixture
+
+			await triggerRecentDeallocate(fixture)
+			const withdrawAmount = 500n * 10n ** 18n
+			const expressAddr = await expressProvider.getAddress()
+			const parts = [
+				{
+					id: 0n,
+					amount: withdrawAmount,
+					chainId: 31337n,
+					receiver: receiver.address,
+					virtualProvider: ethers.ZeroAddress,
+					expressProvider: expressAddr,
+				},
+			]
+			const partsHash = computePartsHash(parts)
+			const now = (await ethers.provider.getBlock("latest"))!.timestamp
+			const deadline = now + 24 * 3600
+			const nonce = await expressProvider.nonces(user.address)
+			const signedMaxAccelerationFee = 5n * 10n ** 18n
+			const tamperedMaxAccelerationFee = 6n * 10n ** 18n
+			const signature = await signWithdrawOption(expressProvider, botSigner, {
+				user: user.address,
+				nonce,
+				optionType: 2,
+				affiliate,
+				affiliateAmount: 0n,
+				creditAmount: 0n,
+				fee: 0n,
+				operatorFee: 0n,
+				maxUserFee: 0n,
+				maxAccelerationFee: signedMaxAccelerationFee,
+				partsHash,
+				deadline,
+			})
+			const providerData = encodeWithdrawProviderData(nonce, 2, affiliate, 0n, 0n, deadline, signature, undefined, tamperedMaxAccelerationFee)
+
+			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)).to.be.revertedWithCustomError(
+				expressProvider,
+				"InvalidSigner",
+			)
+		})
+
 		it("keeps acceleration fee user-paid when sponsor-covered operator fee is restored after suspend", async function () {
 			const fixture = await deployFixture()
 			const { expressProvider, user, randomCaller, affiliate, deployer, collateral, context } = fixture
@@ -1348,10 +1566,11 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			const { parts, requestId, partsHash } = await acceptStandard(fixture, {
 				operatorFee,
 				maxUserFee: 0n,
-				maxAccelerationFee: 10n * 10n ** 18n,
+				maxAccelerationFee: accelerationFee,
 			})
 
-			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).sponsorCoverage).to.equal(operatorFee)
+			const infoBefore = await expressProvider.getWithdrawInfo(user.address, requestId)
+			expect(infoBefore.sponsorCoverage).to.equal(operatorFee)
 
 			const { offerData, creditDataRaw } = await buildAccelerateCall(fixture, {
 				user: user.address,
