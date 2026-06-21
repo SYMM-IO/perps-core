@@ -15,6 +15,7 @@
 import fs from "fs"
 import path from "path"
 
+import connection from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
 import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 import { fetchSymbols } from "./utils/subgraphHelpers.js"
@@ -29,10 +30,18 @@ export type SymbolTypesInput = {
 	symbols: { symbolId: string; name: string }[]
 }
 
-async function main() {
-	const shared = loadUpgradeConfigShared()
+function resolveSubgraphEndpoint(networkName: string, shared: ReturnType<typeof loadUpgradeConfigShared>): string {
+	const endpoint = process.env.SUBGRAPH_ENDPOINT ?? shared.subgraphEndpoint
+	if (endpoint) return endpoint
+	if (networkName === "arbitrum" || networkName === "fork-arbitrum") return DEFAULT_SUBGRAPH_ENDPOINT
+	throw new Error(`SUBGRAPH_ENDPOINT is required for ${networkName}. Set it in env or upgrade-${networkName}.json.`)
+}
 
-	const SUBGRAPH_ENDPOINT = process.env.SUBGRAPH_ENDPOINT ?? shared.subgraphEndpoint ?? DEFAULT_SUBGRAPH_ENDPOINT
+async function main() {
+	const networkName = connection.networkName
+	const shared = loadUpgradeConfigShared(networkName)
+
+	const SUBGRAPH_ENDPOINT = resolveSubgraphEndpoint(networkName, shared)
 	const SYMBOL_TYPE = process.env.SYMBOL_TYPE !== undefined ? Number(process.env.SYMBOL_TYPE) : shared.newV085Parameters?.symbolType
 	const outputFile = process.env.SYMBOL_TYPES_INPUT_FILE ?? path.join(OUTPUT_DIR, "symbol-types-input.json")
 

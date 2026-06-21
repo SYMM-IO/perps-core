@@ -1,7 +1,7 @@
 import fs from "fs"
 import path from "path"
 
-import { ethers } from "../../test/helpers/hardhat-connection.js"
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { getImpersonatedAdmin } from "./utils/forkHelpers.js"
 import { log } from "./utils/log.js"
 import { deployAccountLayerDiamond, deployInstantLayer, wireAccountLayerInstantLayer, setupInstantLayerTemplates } from "./utils/peripheralHelpers.js"
@@ -30,6 +30,7 @@ const DEFAULT_SUBGRAPH_ENDPOINT = "https://api.goldsky.com/api/public/project_cm
 type ForkUpgradeConfig = {
 	diamondAddress?: string
 	protocolAdmin?: string
+	adminAddress?: string
 	diamondCutChunkSize?: number
 	subgraphEndpoint?: string
 	spotCheckCount?: number
@@ -55,13 +56,20 @@ type ForkUpgradeReport = {
 	error?: string
 }
 
-function loadConfig(): ForkUpgradeConfig {
-	const CONFIG_FILE = resolveConfigFile("upgrade", undefined, process.env.UPGRADE_CONFIG_FILE)
+function loadConfig(networkName: string): ForkUpgradeConfig {
+	const CONFIG_FILE = resolveConfigFile("upgrade", networkName, process.env.UPGRADE_CONFIG_FILE)
 	if (!fs.existsSync(CONFIG_FILE)) return {}
 	const raw = fs.readFileSync(CONFIG_FILE, "utf-8")
 	const data = JSON.parse(raw)
 	if (!data || typeof data !== "object") throw new Error("Config must be a JSON object.")
 	return data as ForkUpgradeConfig
+}
+
+function resolveSubgraphEndpoint(networkName: string, config: ForkUpgradeConfig): string {
+	const endpoint = process.env.SUBGRAPH_ENDPOINT || config.subgraphEndpoint
+	if (endpoint) return endpoint
+	if (networkName === "arbitrum" || networkName === "fork-arbitrum") return DEFAULT_SUBGRAPH_ENDPOINT
+	throw new Error(`SUBGRAPH_ENDPOINT is required for ${networkName}. Set it in env or upgrade-${networkName}.json.`)
 }
 
 function parseBool(value: string | boolean | undefined, fallback: boolean): boolean {
@@ -104,12 +112,13 @@ async function main() {
 	const scriptTimer = log.timer()
 	await verifyRpc()
 	const startedAtMs = Date.now()
-	const config = loadConfig()
+	const networkName = connection.networkName
+	const config = loadConfig(networkName)
 
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress
-	const ADMIN_ADDRESS = process.env.PROTOCOL_ADMIN ?? process.env.ADMIN_ADDRESS ?? (config.protocolAdmin || undefined)
+	const ADMIN_ADDRESS = process.env.PROTOCOL_ADMIN ?? process.env.ADMIN_ADDRESS ?? (config.protocolAdmin || config.adminAddress || undefined)
 	const DIAMOND_CUT_CHUNK_SIZE = Number(process.env.DIAMOND_CUT_CHUNK_SIZE ?? config.diamondCutChunkSize ?? 6)
-	const SUBGRAPH_ENDPOINT = process.env.SUBGRAPH_ENDPOINT || config.subgraphEndpoint || DEFAULT_SUBGRAPH_ENDPOINT
+	const SUBGRAPH_ENDPOINT = resolveSubgraphEndpoint(networkName, config)
 	const newParams = config.newV085Parameters ?? {}
 
 	const outputDir = "./scripts/upgrade/output"
@@ -381,7 +390,7 @@ async function main() {
 		// ── Step 10: Register PartyBs on InstantLayer ───────────────────
 		t = log.step("Register PartyBs on InstantLayer")
 		currentStep = "register_partybs"
-		const PARTYB_LIST_FILE = resolveConfigFile("partyBList", undefined, process.env.PARTYB_LIST_FILE)
+		const PARTYB_LIST_FILE = resolveConfigFile("partyBList", networkName, process.env.PARTYB_LIST_FILE)
 		const registeredPartyBs: string[] = []
 
 		if (fs.existsSync(PARTYB_LIST_FILE)) {

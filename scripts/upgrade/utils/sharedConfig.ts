@@ -7,6 +7,7 @@ import fs from "fs"
 export type UpgradeConfigShared = {
 	diamondAddress?: string
 	protocolAdmin?: string
+	adminAddress?: string
 	safeAddress?: string
 
 	migrationRunner?: string
@@ -20,7 +21,7 @@ export type UpgradeConfigShared = {
 
 const CONFIG_DIR = "./scripts/upgrade/config"
 
-let cachedConfig: UpgradeConfigShared | null = null
+const cachedConfigs = new Map<string, UpgradeConfigShared>()
 
 /**
  * Resolve a config file path with network-name fallback.
@@ -42,16 +43,23 @@ export function resolveConfigFile(baseName: string, networkName?: string, envOve
  * Returns an empty object if the file doesn't exist.
  */
 export function loadUpgradeConfigShared(networkName?: string): UpgradeConfigShared {
-	if (cachedConfig !== null) return cachedConfig
 	const configPath = resolveConfigFile("upgrade", networkName, process.env.UPGRADE_CONFIG_FILE)
+	const cachedConfig = cachedConfigs.get(configPath)
+	if (cachedConfig) return cachedConfig
 	if (!fs.existsSync(configPath)) {
-		cachedConfig = {}
-		return cachedConfig
+		const empty = {}
+		cachedConfigs.set(configPath, empty)
+		return empty
 	}
 	try {
-		cachedConfig = JSON.parse(fs.readFileSync(configPath, "utf-8")) as UpgradeConfigShared
+		const parsed = JSON.parse(fs.readFileSync(configPath, "utf-8")) as UpgradeConfigShared
+		const normalized = {
+			...parsed,
+			protocolAdmin: parsed.protocolAdmin ?? parsed.adminAddress,
+		}
+		cachedConfigs.set(configPath, normalized)
 	} catch {
-		cachedConfig = {}
+		cachedConfigs.set(configPath, {})
 	}
-	return cachedConfig
+	return cachedConfigs.get(configPath)!
 }

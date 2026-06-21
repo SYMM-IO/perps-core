@@ -18,7 +18,7 @@
 import fs from "fs"
 import path from "path"
 
-import { ethers } from "../../test/helpers/hardhat-connection.js"
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import type { SymbolTypesInput } from "./prepareSymbolTypes.js"
 import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
@@ -27,7 +27,8 @@ import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 const OUTPUT_DIR = "./scripts/upgrade/output"
 
 async function main() {
-	const shared = loadUpgradeConfigShared()
+	const networkName = connection.networkName
+	const shared = loadUpgradeConfigShared(networkName)
 
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? shared.diamondAddress
 	const CHUNK_SIZE = Number(process.env.CHUNK_SIZE ?? 100)
