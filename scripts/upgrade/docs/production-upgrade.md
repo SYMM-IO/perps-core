@@ -313,55 +313,62 @@ TIMELINE
 - Deployment info for the target network (see [Address Mapping](#address-mapping) below)
 - Subgraph endpoint synced to current chain state (for migration)
 - Hardhat keystore with two private keys and optional RPC override (`RPC_<NETWORK>`):
-  ```bash
-  npx hardhat keystore set NEW_DEPLOYER            # protocolAdmin / diamond owner key (override name via KEYSTORE_DEPLOYER_KEY)
-  npx hardhat keystore set TEAM_MIGRATOR            # migrationRunner key (MIGRATION_ROLE)
-  npx hardhat keystore set RPC_ARBITRUM           # optional RPC override (per network)
-  ```
-  Scripts auto-select the correct signer by matching the address from `upgrade.json` (`protocolAdmin` / `migrationRunner`) against available signers. No env var switching needed.
 
-  **Important:** keystore values are only read when `USE_KEYSTORE=true` is set. Without it, `hardhat.config.ts` falls back to public RPCs (e.g. `arbitrum.llamarpc.com`) and the `DUMMY_PRIVATE_KEY`. Prefix every hardhat command that needs the real keys / RPCs:
-  ```bash
-  USE_KEYSTORE=true npx hardhat run scripts/upgrade/<script>.ts --network <network>
-  ```
-  Or export it once per shell: `export USE_KEYSTORE=true`. Alternatively, pass the RPC inline for one-offs: `RPC_ARBITRUM=https://... npx hardhat run ...`.
+    ```bash
+    npx hardhat keystore set NEW_DEPLOYER            # protocolAdmin / diamond owner key (override name via KEYSTORE_DEPLOYER_KEY)
+    npx hardhat keystore set TEAM_MIGRATOR            # migrationRunner key (MIGRATION_ROLE)
+    npx hardhat keystore set RPC_ARBITRUM           # optional RPC override (per network)
+    ```
+
+    Scripts auto-select the correct signer by matching the address from `upgrade.json` (`protocolAdmin` / `migrationRunner`) against available signers. No env var switching needed.
+
+    **Important:** keystore values are only read when `USE_KEYSTORE=true` is set. Without it, `hardhat.config.ts` falls back to public RPCs (e.g. `arbitrum.llamarpc.com`) and the `DUMMY_PRIVATE_KEY`. Prefix every hardhat command that needs the real keys / RPCs:
+
+    ```bash
+    USE_KEYSTORE=true npx hardhat run scripts/upgrade/<script>.ts --network <network>
+    ```
+
+    Or export it once per shell: `export USE_KEYSTORE=true`. Alternatively, pass the RPC inline for one-offs: `RPC_ARBITRUM=https://... npx hardhat run ...`.
+
 - Config files (replace `<network>` with your target network, e.g. `arbitrum`):
-  ```bash
-  cp scripts/upgrade/config/samples/upgrade.sample.json scripts/upgrade/config/upgrade-<network>.json
-  cp scripts/upgrade/config/samples/prepareMigration.sample.json scripts/upgrade/config/prepareMigration-<network>.json
-  cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/migrate-<network>.json
-  cp scripts/upgrade/config/samples/postMigration.sample.json scripts/upgrade/config/postMigration-<network>.json
-  cp scripts/upgrade/config/samples/partyBList.sample.json scripts/upgrade/config/partyBList-<network>.json
-  cp scripts/upgrade/config/samples/partyBRegistration.sample.json scripts/upgrade/config/partyBRegistration-<network>.json
-  cp scripts/upgrade/config/samples/instantLayerTemplates.sample.json scripts/upgrade/config/instantLayerTemplates.json
-  cp scripts/upgrade/config/samples/deployPeripherals.sample.json scripts/upgrade/config/deployPeripherals-<network>.json
-  # edit upgrade-<network>.json with all shared fields (diamondAddress, subgraphEndpoint, safeAddress, etc.)
-  # other config files only need script-specific fields -- they fall back to upgrade-<network>.json for shared values
-  ```
-  Config files use network-postfixed names (e.g. `upgrade-arbitrum.json`, `partyBList-arbitrum.json`). Scripts resolve config files by trying `{name}-{network}.json` first, falling back to `{name}.json`. Env var overrides (e.g. `UPGRADE_CONFIG_FILE`) take top priority.
+    ```bash
+    cp scripts/upgrade/config/samples/upgrade.sample.json scripts/upgrade/config/upgrade-<network>.json
+    cp scripts/upgrade/config/samples/prepareMigration.sample.json scripts/upgrade/config/prepareMigration-<network>.json
+    cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/migrate-<network>.json
+    cp scripts/upgrade/config/samples/postMigration.sample.json scripts/upgrade/config/postMigration-<network>.json
+    cp scripts/upgrade/config/samples/partyBList.sample.json scripts/upgrade/config/partyBList-<network>.json
+    cp scripts/upgrade/config/samples/partyBRegistration.sample.json scripts/upgrade/config/partyBRegistration-<network>.json
+    cp scripts/upgrade/config/samples/instantLayerTemplates.sample.json scripts/upgrade/config/instantLayerTemplates.json
+    cp scripts/upgrade/config/samples/deployPeripherals.sample.json scripts/upgrade/config/deployPeripherals-<network>.json
+    # edit upgrade-<network>.json with all shared fields (diamondAddress, subgraphEndpoint, safeAddress, etc.)
+    # other config files only need script-specific fields -- they fall back to upgrade-<network>.json for shared values
+    ```
+    Config files use network-postfixed names (e.g. `upgrade-arbitrum.json`, `partyBList-arbitrum.json`). Scripts resolve config files by trying `{name}-{network}.json` first, falling back to `{name}.json`. Env var overrides (e.g. `UPGRADE_CONFIG_FILE`) take top priority.
 
 ## Address Mapping
 
 Every Symmio deployment has a standard set of contracts and roles. The table below maps these to the config fields used by the upgrade scripts.
 
-| Deployment name | Example | Config field | Where it goes |
-|----------------|---------|-------------|---------------|
-| **Symmio** (diamond proxy) | `0x2Ecc...38B5` | `diamondAddress` | `upgrade.json` (other scripts fall back to this) |
-| **Main MultiSig** (Gnosis Safe that owns the diamond) | `0x0C83...AFC4` | `safeAddress` | `upgrade.json` (other scripts fall back to this) |
-| **Main MultiSig** (also receives role grants) | `0x0C83...AFC4` | `adminAddress` | `upgrade.json`, `deployPeripherals.json` |
-| **Fees MultiSig** (receives protocol fees) | `0x273a...3f12` | `symmioFeeReceiver` | `upgrade.json` (other scripts fall back to this) |
-| **SignatureVerifier** (Muon signature verification contract) | `0x94eE...FC2` | `newV085Parameters.signatureVerifierAddress` | `upgrade.json` |
-| **PartyB list** (for IL registration + symbol whitelisting) | -- | `partyBs` + `registerOnInstantLayer` | `config/partyBList-{network}.json` |
-| **New PartyB onboarding** (register/bindable/metadata/symbols/IL) | -- | `partyBs` + per-step flags | `config/partyBRegistration-{network}.json` |
-| **TimeLock** (12H or 3D, if diamond owner is a timelock) | `0xA75F...c63` | `timelockAddress` | `upgrade.json` (used by `generateTimelockBatch.ts` to wrap diamondCut) |
-| **Migration runner** (address that will call migration functions) | any EOA or multisig | `migrationRunner` | `upgrade.json` (defaults to `adminAddress`) |
-| **PartyB addresses** (all active PartyBs to enable cross mode) | `[0x...]` | `partyBs` | `postMigration.json` |
-| **Subgraph endpoint** (Goldsky/TheGraph for this chain) | `https://api.goldsky.com/...` | `subgraphEndpoint` | `upgrade.json` (other scripts fall back to this) |
+| Deployment name                                                   | Example                       | Config field                                 | Where it goes                                                          |
+| ----------------------------------------------------------------- | ----------------------------- | -------------------------------------------- | ---------------------------------------------------------------------- |
+| **Symmio** (diamond proxy)                                        | `0x2Ecc...38B5`               | `diamondAddress`                             | `upgrade.json` (other scripts fall back to this)                       |
+| **Main MultiSig** (Gnosis Safe that owns the diamond)             | `0x0C83...AFC4`               | `safeAddress`                                | `upgrade.json` (other scripts fall back to this)                       |
+| **Protocol admin** (receives role grants)                         | `0x0C83...AFC4`               | `protocolAdmin`                              | `upgrade.json`, `deployPeripherals.json`                               |
+| **Fees MultiSig** (receives protocol fees)                        | `0x273a...3f12`               | `symmioFeeReceiver`                          | `upgrade.json` (other scripts fall back to this)                       |
+| **SignatureVerifier** (Muon signature verification contract)      | `0x94eE...FC2`                | `newV085Parameters.signatureVerifierAddress` | `upgrade.json`                                                         |
+| **PartyB list** (for IL registration + symbol whitelisting)       | --                            | `partyBs` + `registerOnInstantLayer`         | `config/partyBList-{network}.json`                                     |
+| **New PartyB onboarding** (register/bindable/metadata/symbols/IL) | --                            | `partyBs` + per-step flags                   | `config/partyBRegistration-{network}.json`                             |
+| **TimeLock** (12H or 3D, if diamond owner is a timelock)          | `0xA75F...c63`                | `timelockAddress`                            | `upgrade.json` (used by `generateTimelockBatch.ts` to wrap diamondCut) |
+| **Migration runner** (address that will call migration functions) | any EOA or multisig           | `migrationRunner`                            | `upgrade.json` (defaults to `protocolAdmin`)                           |
+| **PartyB addresses** (all active PartyBs to enable cross mode)    | `[0x...]`                     | `partyBs`                                    | `postMigration.json`                                                   |
+| **Subgraph endpoint** (Goldsky/TheGraph for this chain)           | `https://api.goldsky.com/...` | `subgraphEndpoint`                           | `upgrade.json` (other scripts fall back to this)                       |
 
 **Notes:**
-- `adminAddress` and `safeAddress` are often the same address (the Main MultiSig). Use `adminAddress` for the address that should receive role grants; use `safeAddress` for the Safe Transaction Builder target.
-- If the diamond is owned by a **TimeLock** that is itself owned by the Main MultiSig, set `safeAddress` to the Main MultiSig and `adminAddress` to the TimeLock (since the TimeLock is the actual diamond owner that executes role grants).
-- `migrationRunner` defaults to `adminAddress` if not set. This is the address granted `MIGRATION_ROLE` to execute `migrateQuotes()` and `migrateCrossLockedValues()`.
+
+- `protocolAdmin` and `safeAddress` are often the same address (the Main MultiSig). Use `protocolAdmin` for the address that should receive role grants; use `safeAddress` for the Safe Transaction Builder target.
+- If the diamond is owned by a **TimeLock** that is itself owned by the Main MultiSig, set `safeAddress` to the Main MultiSig and `protocolAdmin` to the TimeLock (since the TimeLock is the actual diamond owner that executes role grants).
+- `migrationRunner` defaults to `protocolAdmin` if not set. This is the address granted `MIGRATION_ROLE` to execute `migrateQuotes()` and `migrateCrossLockedValues()`.
+- `adminAddress` is accepted as a legacy alias in older local configs, but new configs should use `protocolAdmin`.
 - Contracts like Collateral, Pauser, RebalancerToMsig, CallProxy Liquidator, and Fees Manager are **not** part of the upgrade config -- they are unchanged by the v0.8.5 upgrade. A new `SymmioSymbolManager` is deployed and wired during the upgrade (see `deployPeripherals.ts`).
 
 ## Testing
@@ -399,19 +406,20 @@ npx hardhat run scripts/upgrade/runMigration.ts --network fork-arbitrum
 
 ### Verification scripts
 
-| Script | What it checks |
-|--------|---------------|
-| `verifyDeploy.ts` | Bytecode verification of deployed core facets against local compiled artifacts (library linking aware). Uses `NETWORK` env var to resolve `output/deployed-facets-{network}.json` |
+| Script                       | What it checks                                                                                                                                                                                                                      |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `verifyDeploy.ts`            | Bytecode verification of deployed core facets against local compiled artifacts (library linking aware). Uses `NETWORK` env var to resolve `output/deployed-facets-{network}.json`                                                   |
 | `verifyPeripheralsDeploy.ts` | Bytecode verification of deployed peripherals (AccountLayer, InstantLayer, SymmioPartyB impl, SymmioSymbolManager, MuonSignatureVerifier) against local compiled artifacts. Handles library linking and immutable variable masking. |
-| `verifyBatchCalldata.ts` | All generated Safe batches + `diamondcut-calldata-{network}.json` byte-match what the current repo + config would produce. Run **before signing** in the Safe UI. See [Step 2c](#step-2c-verify-generated-calldata-recommended) |
-| `verifyContracts.ts` | Block explorer verification of all deployed contracts (libraries, facets, peripherals). Reads from deploy output files and handles library linking automatically. Run **after** correctness verifications. |
-| `verifyDiamond.ts` | All v0.8.5 facet selectors registered on diamond |
-| `verifyPeripherals.ts` | AccountLayer + InstantLayer roles, hooks, whitelist, templates |
-| `testTemplateExecution.ts` | Full end-to-end: affiliate registration, sub-account, PartyB UUPS upgrade, EIP-712 delegation, sendQuote -> lockQuote -> openPosition via InstantLayer template |
+| `verifyBatchCalldata.ts`     | All generated Safe batches + `diamondcut-calldata-{network}.json` byte-match what the current repo + config would produce. Run **before signing** in the Safe UI. See [Step 2c](#step-2c-verify-generated-calldata-recommended)     |
+| `verifyContracts.ts`         | Block explorer verification of all deployed contracts (libraries, facets, peripherals). Reads from deploy output files and handles library linking automatically. Run **after** correctness verifications.                          |
+| `verifyDiamond.ts`           | All v0.8.5 facet selectors registered on diamond                                                                                                                                                                                    |
+| `verifyPeripherals.ts`       | AccountLayer + InstantLayer roles, hooks, whitelist, templates                                                                                                                                                                      |
+| `testTemplateExecution.ts`   | Full end-to-end: affiliate registration, sub-account, PartyB UUPS upgrade, EIP-712 delegation, sendQuote -> lockQuote -> openPosition via InstantLayer template                                                                     |
 
 `testTemplateExecution.ts` auto-loads `diamondAddress` from `upgrade.json`, and `accountLayerDiamondAddress` + `instantLayerAddress` from the output files. No manual config needed.
 
 **What is NOT covered by these scripts** (verified elsewhere):
+
 - Migration correctness -- `forkUpgrade.ts` step 11 verifies pre/post upgrade snapshots; `runMigration.ts` verifies all migrated data
 - v0.8.5 parameter values -- check on-chain after batch execution
 - Cross-PartyB mode -- enabled post-migration via `generatePostMigrationBatch.ts`
@@ -429,21 +437,22 @@ DIAMOND_ADDRESS=0x... USE_KEYSTORE=true npx hardhat run scripts/upgrade/eoaUpgra
 
 What it does (in order):
 
-| Step | Action |
-|------|--------|
-| 1 | Deploy v0.8.5 libraries + facets (resume-safe via `deployed-facets-{network}.json`) |
-| 2 | Build diamond cut (diff current vs new selectors) |
-| 3 | `setAdmin` + grant `PAUSER_ROLE`/`UNPAUSER_ROLE` + `pauseGlobal()` |
-| 4 | Apply diamond cut (single transaction) |
-| 5 | Set new v0.8.5 parameters from config (`newV085Parameters`) |
-| 6 | Deploy AccountLayer Diamond + InstantLayer, wire integrations, setup templates |
-| 7 | Deploy SymmioPartyB implementation + register PartyBs on InstantLayer |
-| 8 | Deploy SymmioSymbolManager, grant `SYMBOL_MANAGER_ROLE` + `FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE` on core Diamond |
-| 9 | Grant `MIGRATION_ROLE` to configured `migrationRunner` |
+| Step | Action                                                                                                       |
+| ---- | ------------------------------------------------------------------------------------------------------------ |
+| 1    | Deploy v0.8.5 libraries + facets (resume-safe via `deployed-facets-{network}.json`)                          |
+| 2    | Build diamond cut (diff current vs new selectors)                                                            |
+| 3    | `setAdmin` + grant `PAUSER_ROLE`/`UNPAUSER_ROLE` + `pauseGlobal()`                                           |
+| 4    | Apply diamond cut (single transaction)                                                                       |
+| 5    | Set new v0.8.5 parameters from config (`newV085Parameters`)                                                  |
+| 6    | Deploy AccountLayer Diamond + InstantLayer, wire integrations, setup templates                               |
+| 7    | Deploy SymmioPartyB implementation + register PartyBs on InstantLayer                                        |
+| 8    | Deploy SymmioSymbolManager, grant `SYMBOL_MANAGER_ROLE` + `FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE` on core Diamond |
+| 9    | Grant `MIGRATION_ROLE` to configured `migrationRunner`                                                       |
 
 After completion, the system is paused and ready for migration. Continue with [Step 3: Prepare Migration Input](#step-3-prepare-migration-input).
 
 Output:
+
 - `scripts/upgrade/output/deployed-facets-{network}.json` -- deployed facet addresses
 - `scripts/upgrade/output/deployed-accountlayer-instantlayer.json` -- AccountLayer + InstantLayer addresses
 - `scripts/upgrade/output/deployed-symbolmanager.json` -- SymmioSymbolManager address
@@ -510,6 +519,7 @@ FACETS_FILE=./path/to/deployed-facets-arbitrum.json USE_KEYSTORE=true npx hardha
 ```
 
 Output:
+
 - `scripts/upgrade/output/upgrade-details.json` -- selector changes (add/replace/remove)
 
 The script applies all facet cuts in a **single transaction** (no chunking needed for EOA).
@@ -520,22 +530,27 @@ Generates Safe Transaction Builder JSON for the full upgrade (roles, pause, para
 
 **Prerequisites:** Run `deployFacets.ts` and `deployPeripherals.ts` first. The script auto-loads `deployed-facets-{network}.json` and `deployed-peripherals-{network}.json` from the output directory -- no manual address copy needed. InstantLayer PartyB registration reads from `config/partyBList-{network}.json` (when `registerOnInstantLayer` is true). Config and env vars override auto-loaded values if set.
 
+`deployPeripherals.ts` verifies that AccountLayer ownership is already held by the Safe or pending for the Safe. `generateSafeBatch.ts` only adds `acceptOwnership()` when the Safe is the pending owner; if ownership is pointed somewhere else, regenerate only after fixing the transfer.
+
 ```bash
 USE_KEYSTORE=true npx hardhat run scripts/upgrade/generateSafeBatch.ts --network arbitrum
 ```
 
 Output:
+
 - `scripts/upgrade/output/pause-safe-batch.json` -- Safe batch for pause (grantRole PAUSER/UNPAUSER + pauseGlobal)
 - `scripts/upgrade/output/safe-batch.json` -- Safe batch for post-diamondCut (roles, params, wiring, accept AL ownership)
 - `scripts/upgrade/output/diamondcut-calldata.json` -- raw diamondCut calldata chunks
 - `scripts/upgrade/output/upgrade-details.json` -- selector changes + breakdown
 
 **Direct (Safe owns diamond):**
+
 1. Import `pause-safe-batch.json` → execute (pause system)
 2. Execute the diamondCut calldata from `diamondcut-calldata.json` as a separate Safe tx
 3. Import `safe-batch.json` → execute (roles + params + wiring + accept AL ownership)
 
 **TimeLock (TimeLock owns diamond):**
+
 1. Run `generateTimelockBatch.ts` first (see [Step 2b](#step-2b-wrap-diamondcut-for-timelock))
 2. Import `timelock-schedule-safe-batch.json` → execute (schedules diamondCut, timer starts)
 3. Wait for timelock delay (system still live)
@@ -554,6 +569,7 @@ USE_KEYSTORE=true npx hardhat run scripts/upgrade/generateTimelockBatch.ts --net
 ```
 
 Output:
+
 - `scripts/upgrade/output/timelock-schedule-safe-batch.json` -- Safe batch to schedule the diamondCut (execute immediately at T=0)
 - `scripts/upgrade/output/timelock-execute-safe-batch.json` -- Safe batch to execute after timelock delay
 
@@ -569,29 +585,29 @@ npx hardhat run scripts/upgrade/verifyBatchCalldata.ts --network arbitrum
 
 What it checks, per file:
 
-| File | Checks |
-|------|--------|
-| `pause-safe-batch-{network}.json` | Exactly the 3 expected txs (grant PAUSER, grant UNPAUSER, pauseGlobal) on the diamond |
-| `safe-batch-{network}.json` | Every non-diamondCut tx byte-matches the current generator output (roles, v0.8.5 params, Muon verifier seeding, AL/IL wiring, SymbolManager wiring, PartyB registration, templates) |
-| `diamondcut-calldata-{network}.json` | Decodes each chunk; asserts facetAddress ∈ deployed-facets, selectors belong to their facet, `_init == 0x0`, `_calldata == 0x`, no duplicate selectors across chunks. Optionally cross-checks `deployed-facets.json` selectors against the compiled ABI |
-| `timelock-{schedule,execute}-safe-batch-{network}-N.json` | Each file targets `timelockAddress`; inner calldata equals `diamondcut-calldata.chunks[N]`; predecessor chain is consistent and starts at `0x0`; salts match `keccak256(abi.encode(chainId, diamond, "diamondCut-v0.8.5", N))` |
-| `post-migration-{safe-batch,transactions}-{network}.json` | `revokeRole` × 2, `unpauseGlobal`, `setCrossPartyBModeActivated(true)`, `setCrossPartyB(partyB, true)` × N (reading PartyBs from `postMigration.json`) |
-| `grant-symbol-role-safe-batch-{network}.json` / `revoke-symbol-role-safe-batch-{network}.json` | Single `grantRole` / `revokeRole` for `SYMBOL_MANAGER_ROLE` targeting `migrationRunner` |
-| `add-templates-safe-batch-{network}.json` | One `addTemplate` tx per entry in `config/instantLayerTemplates.json`, targeting `instantLayerAddress` |
+| File                                                                                           | Checks                                                                                                                                                                                                                                                  |
+| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pause-safe-batch-{network}.json`                                                              | Exactly the 3 expected txs (grant PAUSER, grant UNPAUSER, pauseGlobal) on the diamond                                                                                                                                                                   |
+| `safe-batch-{network}.json`                                                                    | Every non-diamondCut tx byte-matches the current generator output (roles, v0.8.5 params, Muon verifier seeding, AL/IL wiring, SymbolManager wiring, PartyB registration, templates)                                                                     |
+| `diamondcut-calldata-{network}.json`                                                           | Decodes each chunk; asserts facetAddress ∈ deployed-facets, selectors belong to their facet, `_init == 0x0`, `_calldata == 0x`, no duplicate selectors across chunks. Optionally cross-checks `deployed-facets.json` selectors against the compiled ABI |
+| `timelock-{schedule,execute}-safe-batch-{network}-N.json`                                      | Each file targets `timelockAddress`; inner calldata equals `diamondcut-calldata.chunks[N]`; predecessor chain is consistent and starts at `0x0`; salts match `keccak256(abi.encode(chainId, diamond, "diamondCut-v0.8.5", N))`                          |
+| `post-migration-{safe-batch,transactions}-{network}.json`                                      | `revokeRole` × 2, `unpauseGlobal`, `setCrossPartyBModeActivated(true)`, `setCrossPartyB(partyB, true)` × N (reading PartyBs from `postMigration.json`)                                                                                                  |
+| `grant-symbol-role-safe-batch-{network}.json` / `revoke-symbol-role-safe-batch-{network}.json` | Single `grantRole` / `revokeRole` for `SYMBOL_MANAGER_ROLE` targeting `migrationRunner`                                                                                                                                                                 |
+| `add-templates-safe-batch-{network}.json`                                                      | One `addTemplate` tx per entry in `config/instantLayerTemplates.json`, targeting `instantLayerAddress`                                                                                                                                                  |
 
 Every Safe batch also asserts `meta.createdFromSafeAddress == upgrade.json.safeAddress`.
 
 **Configuration** (`config/verifyBatch.json`, optional — see `config/samples/verifyBatch.sample.json`):
 
-| Field | Description |
-|-------|-------------|
-| `networkName` | Override the network suffix used to resolve files (default: from `--network`) |
-| `outputDir` | Directory containing the generated JSON files (default: `./scripts/upgrade/output`) |
-| `configDir` | Directory containing `upgrade-{network}.json` / `partyBList-{network}.json` / `instantLayerTemplates.json` |
-| `only` | Array of labels to verify; omit to verify all. Env `ONLY=a,b,c` overrides |
-| `skip` | Array of labels to skip (applied after `only`). Env `SKIP=a,b` overrides |
+| Field                                  | Description                                                                                                                                                                                                                |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `networkName`                          | Override the network suffix used to resolve files (default: from `--network`)                                                                                                                                              |
+| `outputDir`                            | Directory containing the generated JSON files (default: `./scripts/upgrade/output`)                                                                                                                                        |
+| `configDir`                            | Directory containing `upgrade-{network}.json` / `partyBList-{network}.json` / `instantLayerTemplates.json`                                                                                                                 |
+| `only`                                 | Array of labels to verify; omit to verify all. Env `ONLY=a,b,c` overrides                                                                                                                                                  |
+| `skip`                                 | Array of labels to skip (applied after `only`). Env `SKIP=a,b` overrides                                                                                                                                                   |
 | `verifyFacetSelectorsAgainstArtifacts` | When true (default), the selectors recorded in `deployed-facets-{network}.json` are cross-checked against the locally compiled facet ABIs — catches a tampered deployed-facets file. Env `VERIFY_ARTIFACTS=false` disables |
-| `paths` | Per-file overrides for every input the verifier reads (batch files, deploy outputs, configs). Useful for verifying artifacts from another branch or a different output directory |
+| `paths`                                | Per-file overrides for every input the verifier reads (batch files, deploy outputs, configs). Useful for verifying artifacts from another branch or a different output directory                                           |
 
 Available labels (for `only` / `skip` / env `ONLY` / `SKIP`):
 
@@ -607,14 +623,15 @@ The script exits non-zero if any check fails and prints per-file issue lists (ex
 
 ## Step 3: Prepare Migration Input
 
-Fetches subgraph data and builds the migration input file. **Can run before or after the diamondCut** — uses only version-agnostic on-chain calls (`getNextQuoteId`, which returns the last assigned ID). Run it early (e.g. right after pausing) to minimize downtime.
+Fetches candidate subgraph data, filters it to the quotes `MigrationFacetImpl` actually marks, and builds the migration input file. **Can run before or after the diamondCut** — uses only version-agnostic on-chain calls (`getNextQuoteId`, which returns the last assigned ID). Run it early (e.g. right after pausing) to minimize downtime.
 
 ```bash
 USE_KEYSTORE=true npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network arbitrum
 ```
 
 What it does:
-- Fetches all open quotes from the subgraph
+
+- Fetches candidate quotes from the subgraph and filters out contract-skipped quotes, including active quotes with `quantity == closedAmount`
 - Fetches all PartyB-per-PartyA balance entries from the subgraph
 - Validates boundary against on-chain `getNextQuoteId()` (returns last assigned ID, not next available)
 - Computes expected aggregated positions for post-migration verification
@@ -648,6 +665,7 @@ USE_KEYSTORE=true DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/o
 ```
 
 What it does:
+
 - **Phase 1: Quote migration** -- calls `migrateQuotes()` in chunks (populates aggregated positions, connections, funding baselines)
 - **Phase 2: PartyB balance migration** -- calls `migrateCrossLockedValues()` in chunks per PartyB (aggregates per-PartyA balances into cross bucket)
 - **Verification** -- checks every quote is migrated, master balances match, aggregated positions correct
@@ -680,13 +698,14 @@ PartyB addresses are read from `postMigration.json` config (`partyBs` array).
 
 The generated transactions, in order:
 
-| # | Transaction | Purpose |
-|---|------------|---------|
-| 1 | `unpauseGlobal()` | Resume system operations |
-| 2 | `setCrossPartyBModeActivated(true)` | Enable cross-PartyB feature flag |
-| 3+ | `setCrossPartyB(partyB, true)` | Enable cross mode per PartyB |
+| #   | Transaction                         | Purpose                          |
+| --- | ----------------------------------- | -------------------------------- |
+| 1   | `unpauseGlobal()`                   | Resume system operations         |
+| 2   | `setCrossPartyBModeActivated(true)` | Enable cross-PartyB feature flag |
+| 3+  | `setCrossPartyB(partyB, true)`      | Enable cross mode per PartyB     |
 
 Output:
+
 - `scripts/upgrade/output/post-migration-transactions.json` -- raw calldata (always)
 - `scripts/upgrade/output/post-migration-safe-batch.json` -- Safe batch (if SAFE_ADDRESS set)
 
@@ -716,6 +735,7 @@ PERIPHERALS_FILE=./output/deployed-peripherals-arbitrum.json RPC_URL=https://arb
 **When to run:** after `deployFacets.ts` / `deployPeripherals.ts` and before applying the diamondCut, to confirm the standalone pre-deployed bytecodes match the local compiled source.
 
 **What they handle:**
+
 - **Library linking** -- facets that use external libraries (e.g. `LibQuoteFunding`, `LibSettlement`) have placeholder slots in compiled bytecode. The scripts extract actual library addresses from on-chain bytecode and substitute them before comparing.
 - **Immutable variables** -- contracts like `InstantLayer` and `SymmioPartyB` embed constructor-set values (EIP-712 domain, symmio address, etc.) in deployed bytecode. The scripts mask these regions using `immutableReferences` from the artifact before comparing, and report the on-chain values.
 
@@ -752,7 +772,8 @@ jq '{status, error}' scripts/upgrade/output/migration-report.json
 ```
 
 The migration report includes:
-- `quoteChecks` -- number of quotes verified as migrated
+
+- `quoteChecks` -- number of quotes checked; terminal statuses and active quotes with `quantity == closedAmount` are treated as contract-skipped
 - `partyBChecks` -- number of PartyBs with verified master balances
 - `aggregateChecks` -- number of aggregated position entries verified
 
@@ -760,19 +781,19 @@ The migration report includes:
 
 ### Upgrade config (`upgrade-{network}.json`)
 
-| Field | Type | Default | What to put here |
-|-------|------|---------|-----------------|
-| `diamondAddress` | string | -- | **Symmio** diamond proxy address (the main protocol contract) |
-| `adminAddress` | string | `""` | **Main MultiSig** (or TimeLock) -- the address that owns the diamond and will receive role grants |
-| `safeAddress` | string | `""` | **Main MultiSig** -- the Gnosis Safe used in Safe Transaction Builder (Safe path only) |
-| `migrationRunner` | string | `""` | Address that will run `migrateQuotes` / `migrateCrossLockedValues` (defaults to `adminAddress` if empty) |
-| `timelockAddress` | string | `""` | **TimeLock** contract address -- set if diamond is owned by a timelock (used by `generateTimelockBatch.ts`) |
-| `diamondCutChunkSize` | number | `1000` | Max facet selector changes per `diamondCut` transaction (increase only if hitting gas limits) |
-| `subgraphEndpoint` | string | `""` | Goldsky / TheGraph subgraph URL for this chain (used by `prepareMigrationInput.ts`) |
-| `spotCheckCount` | number | `20` | Number of random quotes/balances to verify against on-chain state during migration prep |
-| `symmioFeeReceiver` | string | `""` | **Fees MultiSig** -- receives protocol fees in AccountLayer (defaults to `adminAddress` if empty) |
-| `setupInstantLayerTemplates` | boolean | `true` | Whether to register OpenPosition + ClosePosition templates on InstantLayer |
-| `newV085Parameters` | object | -- | New v0.8.5 parameters (see [newV085Parameters](#newv085parameters) below) |
+| Field                        | Type    | Default | What to put here                                                                                            |
+| ---------------------------- | ------- | ------- | ----------------------------------------------------------------------------------------------------------- |
+| `diamondAddress`             | string  | --      | **Symmio** diamond proxy address (the main protocol contract)                                               |
+| `protocolAdmin`              | string  | `""`    | **Main MultiSig** (or TimeLock) -- the address that owns the diamond and will receive role grants           |
+| `safeAddress`                | string  | `""`    | **Main MultiSig** -- the Gnosis Safe used in Safe Transaction Builder (Safe path only)                      |
+| `migrationRunner`            | string  | `""`    | Address that will run `migrateQuotes` / `migrateCrossLockedValues` (defaults to `protocolAdmin` if empty)   |
+| `timelockAddress`            | string  | `""`    | **TimeLock** contract address -- set if diamond is owned by a timelock (used by `generateTimelockBatch.ts`) |
+| `diamondCutChunkSize`        | number  | `1000`  | Max facet selector changes per `diamondCut` transaction (increase only if hitting gas limits)               |
+| `subgraphEndpoint`           | string  | `""`    | Goldsky / TheGraph subgraph URL for this chain (used by `prepareMigrationInput.ts`)                         |
+| `spotCheckCount`             | number  | `20`    | Number of random quotes/balances to verify against on-chain state during migration prep                     |
+| `symmioFeeReceiver`          | string  | `""`    | **Fees MultiSig** -- receives protocol fees in AccountLayer (defaults to `protocolAdmin` if empty)          |
+| `setupInstantLayerTemplates` | boolean | `true`  | Whether to register OpenPosition + ClosePosition templates on InstantLayer                                  |
+| `newV085Parameters`          | object  | --      | New v0.8.5 parameters (see [newV085Parameters](#newv085parameters) below)                                   |
 
 `accountLayerDiamondAddress`, `instantLayerAddress`, `symbolManagerAddress`, and `symmioPartyBImplementation` are auto-loaded from `deployed-peripherals-{network}.json` (resolved from the `--network` flag). They can still be set in config or env vars as overrides.
 
@@ -780,47 +801,47 @@ The migration report includes:
 
 ### Deploy peripherals config (`deployPeripherals-{network}.json`)
 
-Note: `adminAddress` here is **different** from `upgrade.json`. In `upgrade.json` it's the diamond owner (e.g. TimeLock). Here it's the admin for the **newly deployed** AccountLayer, InstantLayer, and SymmioSymbolManager contracts -- typically the **Main MultiSig** directly.
+Note: `protocolAdmin` here is **different** from a timelock `protocolAdmin` in `upgrade.json` when the core diamond is timelock-owned. Here it is the admin for the **newly deployed** AccountLayer, InstantLayer, and SymmioSymbolManager contracts -- typically the **Main MultiSig** directly.
 
-| Field | Type | What to put here |
-|-------|------|-----------------|
-| `adminAddress` | string | **Main MultiSig** -- will be set as owner/admin for the new AccountLayer, InstantLayer, and SymmioSymbolManager contracts |
-| `symmioFeeReceiver` | string | **Fees MultiSig** -- fee receiver for AccountLayer initialization. Falls back to `upgrade.json`. |
+| Field               | Type   | What to put here                                                                                                          |
+| ------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `protocolAdmin`     | string | **Main MultiSig** -- will be set as owner/admin for the new AccountLayer, InstantLayer, and SymmioSymbolManager contracts |
+| `symmioFeeReceiver` | string | **Fees MultiSig** -- fee receiver for AccountLayer initialization. Falls back to `upgrade.json`.                          |
 
 ### Prepare migration config (`prepareMigration-{network}.json`)
 
-| Field | Type | What to put here |
-|-------|------|-----------------|
+| Field            | Type   | What to put here                                                                                |
+| ---------------- | ------ | ----------------------------------------------------------------------------------------------- |
 | `spotCheckCount` | number | Number of random entries to verify against on-chain (default 20). Falls back to `upgrade.json`. |
-| `outputDir` | string | Output directory (default `./scripts/upgrade/output`) |
-| `outputFile` | string | Output file path (default `./scripts/upgrade/output/migration-input.json`) |
+| `outputDir`      | string | Output directory (default `./scripts/upgrade/output`)                                           |
+| `outputFile`     | string | Output file path (default `./scripts/upgrade/output/migration-input.json`)                      |
 
 ### Migration config (`migrate-{network}.json`)
 
-| Field | Type | What to put here |
-|-------|------|-----------------|
-| `migrationInputFile` | string | Path to `migration-input.json` (output of previous step) |
-| `chunkSize` | number | Quotes per `migrateQuotes` transaction (default 50) |
-| `dryRun` | boolean | `true` to simulate without sending transactions |
-| `fork` | boolean | `true` if running on a fork network |
+| Field                | Type    | What to put here                                         |
+| -------------------- | ------- | -------------------------------------------------------- |
+| `migrationInputFile` | string  | Path to `migration-input.json` (output of previous step) |
+| `chunkSize`          | number  | Quotes per `migrateQuotes` transaction (default 50)      |
+| `dryRun`             | boolean | `true` to simulate without sending transactions          |
+| `fork`               | boolean | `true` if running on a fork network                      |
 
 ### Post-migration config (`postMigration-{network}.json`)
 
-| Field | Type | What to put here |
-|-------|------|-----------------|
+| Field     | Type     | What to put here                                                 |
+| --------- | -------- | ---------------------------------------------------------------- |
 | `partyBs` | string[] | List of all active **PartyB** addresses to enable cross mode for |
 
 ### Env var overrides
 
-| Env var | Overrides |
-|---------|-----------|
-| `USE_KEYSTORE` | Set to `true` to use Hardhat keystore keys and RPC overrides (required for all `npx hardhat run` commands on live networks) |
-| `DIAMOND_ADDRESS` | `diamondAddress` |
-| `FACETS_FILE` | Path to `deployed-facets-{network}.json` (overrides network-based resolution) |
-| `PERIPHERALS_FILE` | Path to `deployed-peripherals-{network}.json` (overrides network-based resolution) |
-| `SYMBOL_MANAGER_ADDRESS` | Override SymmioSymbolManager address for Safe batch wiring |
-| `NETWORK` | Network name for `ts-node` scripts (e.g. `arbitrum`) -- resolves output file names. Not needed for `npx hardhat run` scripts (uses `--network` flag automatically) |
-| `UPGRADE_CONFIG_FILE` | Config file path (default: `scripts/upgrade/config/upgrade-{network}.json`, falls back to `upgrade.json`) |
+| Env var                  | Overrides                                                                                                                                                          |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `USE_KEYSTORE`           | Set to `true` to use Hardhat keystore keys and RPC overrides (required for all `npx hardhat run` commands on live networks)                                        |
+| `DIAMOND_ADDRESS`        | `diamondAddress`                                                                                                                                                   |
+| `FACETS_FILE`            | Path to `deployed-facets-{network}.json` (overrides network-based resolution)                                                                                      |
+| `PERIPHERALS_FILE`       | Path to `deployed-peripherals-{network}.json` (overrides network-based resolution)                                                                                 |
+| `SYMBOL_MANAGER_ADDRESS` | Override SymmioSymbolManager address for Safe batch wiring                                                                                                         |
+| `NETWORK`                | Network name for `ts-node` scripts (e.g. `arbitrum`) -- resolves output file names. Not needed for `npx hardhat run` scripts (uses `--network` flag automatically) |
+| `UPGRADE_CONFIG_FILE`    | Config file path (default: `scripts/upgrade/config/upgrade-{network}.json`, falls back to `upgrade.json`)                                                          |
 
 ### PartyB registration / onboarding
 
@@ -852,34 +873,34 @@ Outputs are written under `scripts/upgrade/output/` as `partyb-registration-safe
 
 All chain-specific config files support network-postfixed names (e.g. `upgrade-arbitrum.json`). Scripts try `{name}-{network}.json` first, fall back to `{name}.json`. Per-script configs only need script-specific fields -- they fall back to `upgrade-{network}.json` for shared fields.
 
-| Config file | Script | Script-specific fields | Shared fields (from `upgrade-{network}.json`) |
-|-------------|--------|----------------------|-------------------------------------|
-| `upgrade-{network}.json` | `eoaUpgrade.ts`, `applyUpgrade.ts`, `generateSafeBatch.ts`, `generateTimelockBatch.ts` | `adminAddress`, `timelockAddress`, `newV085Parameters`, `diamondCutChunkSize`, `migrationRunner` | -- (source of truth) |
-| `deployPeripherals-{network}.json` | `deployPeripherals.ts` | `adminAddress` | `diamondAddress`, `symmioFeeReceiver` |
-| `prepareMigration-{network}.json` | `prepareMigrationInput.ts` | `outputDir`, `outputFile` | `diamondAddress`, `subgraphEndpoint`, `spotCheckCount` |
-| `migrate-{network}.json` | `runMigration.ts` | `migrationInputFile`, `chunkSize`, `dryRun`, `fork` | `diamondAddress` |
-| `postMigration-{network}.json` | `generatePostMigrationBatch.ts` | `partyBs` | `diamondAddress`, `safeAddress` |
-| `partyBList-{network}.json` | `whitelistSymbolTypes.ts` | `partyBs` | `diamondAddress`, `newV085Parameters.symbolType` |
-| `partyBRegistration-{network}.json` | `registerPartyB.ts` | `partyBs`, `defaults`, optional Safe submission fields | `diamondAddress`, `safeAddress`, `instantLayerAddress` |
-| `instantLayerTemplates.json` | `generateTemplateBatch.ts` | `templates` | `safeAddress`, `instantLayerAddress` |
+| Config file                         | Script                                                                                 | Script-specific fields                                                                            | Shared fields (from `upgrade-{network}.json`)          |
+| ----------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `upgrade-{network}.json`            | `eoaUpgrade.ts`, `applyUpgrade.ts`, `generateSafeBatch.ts`, `generateTimelockBatch.ts` | `protocolAdmin`, `timelockAddress`, `newV085Parameters`, `diamondCutChunkSize`, `migrationRunner` | -- (source of truth)                                   |
+| `deployPeripherals-{network}.json`  | `deployPeripherals.ts`                                                                 | `protocolAdmin`                                                                                   | `diamondAddress`, `symmioFeeReceiver`                  |
+| `prepareMigration-{network}.json`   | `prepareMigrationInput.ts`                                                             | `outputDir`, `outputFile`                                                                         | `diamondAddress`, `subgraphEndpoint`, `spotCheckCount` |
+| `migrate-{network}.json`            | `runMigration.ts`                                                                      | `migrationInputFile`, `chunkSize`, `dryRun`, `fork`                                               | `diamondAddress`                                       |
+| `postMigration-{network}.json`      | `generatePostMigrationBatch.ts`                                                        | `partyBs`                                                                                         | `diamondAddress`, `safeAddress`                        |
+| `partyBList-{network}.json`         | `whitelistSymbolTypes.ts`                                                              | `partyBs`                                                                                         | `diamondAddress`, `newV085Parameters.symbolType`       |
+| `partyBRegistration-{network}.json` | `registerPartyB.ts`                                                                    | `partyBs`, `defaults`, optional Safe submission fields                                            | `diamondAddress`, `safeAddress`, `instantLayerAddress` |
+| `instantLayerTemplates.json`        | `generateTemplateBatch.ts`                                                             | `templates`                                                                                       | `safeAddress`, `instantLayerAddress`                   |
 
 ## newV085Parameters
 
 These parameters **only exist in v0.8.5** (not in v0.8.4 storage). After `diamondCut`, they default to 0 and must be initialized.
 
-| Parameter | Type | What to put here |
-|-----------|------|-----------------|
-| `maxPartyAConnectionLimit` | number | **REQUIRED** -- max PartyBs a PartyA can connect to. Migration fails if 0. Typical value: `5` |
-| `signatureVerifierAddress` | address | **SignatureVerifier** contract address -- the Muon oracle signature verification contract from your deployment |
-| `muonPublicKeys` | array | TSS public keys to seed on the verifier. Each entry: `{ "x": "uint256", "parity": 0|1 }`. Read from the v0.8.4 diamond via `readMuonConfig.ts` |
-| `muonGatewaySigners` | string[] | Gateway signer addresses to seed on the verifier. Read from the v0.8.4 diamond via `readMuonConfig.ts` |
-| `liquidationInsuranceVault` | address | Address that receives liquidation insurance -- typically the **Fees MultiSig** |
-| `maxLiquidationProfitPerPosition` | string (wei) | Max profit kept from liquidation per position. Example: `"1000000000000000000"` = 1 token |
-| `softLiquidationPenaltyCollector` | address | Address that receives soft liquidation penalties -- typically the **Fees MultiSig** |
-| `minAffiliateFee` | string (wei) | Minimum affiliate fee floor. Example: `"100000000000000000"` = 0.1 token |
-| `unbindCooldown` | number (seconds) | Cooldown before a PartyA can unbind from a PartyB. Example: `86400` = 1 day |
-| `maxWithdrawParts` | number | Max parts a withdrawal can be split into. Example: `5` |
-| `minWithdrawCooldown` | number (seconds) | Min time between withdrawal parts. Example: `43200` = 12 hours |
+| Parameter                         | Type             | What to put here                                                                                                                                  |
+| --------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `maxPartyAConnectionLimit`        | number           | **REQUIRED** -- max PartyBs a PartyA can connect to. Migration fails if 0. Typical value: `5`                                                     |
+| `signatureVerifierAddress`        | address          | **SignatureVerifier** contract address -- the Muon oracle signature verification contract from your deployment                                    |
+| `muonPublicKeys`                  | array            | TSS public keys to seed on the verifier. Each entry: `{ "x": "uint256", "parity": 0 or 1 }`. Read from the v0.8.4 diamond via `readMuonConfig.ts` |
+| `muonGatewaySigners`              | string[]         | Gateway signer addresses to seed on the verifier. Read from the v0.8.4 diamond via `readMuonConfig.ts`                                            |
+| `liquidationInsuranceVault`       | address          | Address that receives liquidation insurance -- typically the **Fees MultiSig**                                                                    |
+| `maxLiquidationProfitPerPosition` | string (wei)     | Max profit kept from liquidation per position. Example: `"1000000000000000000"` = 1 token                                                         |
+| `softLiquidationPenaltyCollector` | address          | Address that receives soft liquidation penalties -- typically the **Fees MultiSig**                                                               |
+| `minAffiliateFee`                 | string (wei)     | Minimum affiliate fee floor. Example: `"100000000000000000"` = 0.1 token                                                                          |
+| `unbindCooldown`                  | number (seconds) | Cooldown before a PartyA can unbind from a PartyB. Example: `86400` = 1 day                                                                       |
+| `maxWithdrawParts`                | number           | Max parts a withdrawal can be split into. Example: `5`                                                                                            |
+| `minWithdrawCooldown`             | number (seconds) | Min time between withdrawal parts. Example: `43200` = 12 hours                                                                                    |
 
 Existing v0.8.4 parameters (cooldowns, limits, fee shares, etc.) are preserved in storage and NOT overwritten.
 
