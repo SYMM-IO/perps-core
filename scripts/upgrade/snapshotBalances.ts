@@ -1,10 +1,10 @@
 import fs from "fs"
 import path from "path"
 
-import { ethers } from "../../test/helpers/hardhat-connection.js"
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
-import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
+import { loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig.js"
 import { fetchPartyBBalances } from "./utils/subgraphHelpers.js"
 
 /**
@@ -68,6 +68,13 @@ const DEFAULT_OUTPUT_DIR = "./scripts/upgrade/output"
 const DEFAULT_INPUT_FILE = `${DEFAULT_OUTPUT_DIR}/migration-input.json`
 const DEFAULT_OUTPUT_FILE = `${DEFAULT_OUTPUT_DIR}/balance-snapshot.json`
 
+function loadMigrationInputFileFromConfig(networkName: string): string | undefined {
+	const configFile = resolveConfigFile("migrate", networkName, process.env.MIGRATION_CONFIG_FILE)
+	if (!fs.existsSync(configFile)) return undefined
+	const data = JSON.parse(fs.readFileSync(configFile, "utf-8")) as { migrationInputFile?: string }
+	return data.migrationInputFile
+}
+
 function ensureParentDir(filePath: string): void {
 	const dir = path.dirname(filePath)
 	if (dir && dir !== "." && !fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
@@ -121,9 +128,10 @@ async function runWithConcurrency<T, R>(items: T[], concurrency: number, worker:
 async function main() {
 	const scriptTimer = log.timer()
 	await verifyRpc()
-	const shared = loadUpgradeConfigShared()
+	const networkName = connection.networkName
+	const shared = loadUpgradeConfigShared(networkName)
 
-	const inputFile = process.env.MIGRATION_INPUT_FILE ?? DEFAULT_INPUT_FILE
+	const inputFile = process.env.MIGRATION_INPUT_FILE ?? loadMigrationInputFileFromConfig(networkName) ?? DEFAULT_INPUT_FILE
 	const outputFile = process.env.SNAPSHOT_OUTPUT_FILE ?? DEFAULT_OUTPUT_FILE
 	const concurrency = Math.max(1, Number(process.env.SNAPSHOT_CONCURRENCY ?? 8))
 	const maxRetries = Math.max(0, Number(process.env.SNAPSHOT_MAX_RETRIES ?? 5))

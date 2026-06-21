@@ -19,11 +19,12 @@
  */
 import fs from "fs"
 
+import connection from "../../test/helpers/hardhat-connection.js"
 import { resolveConfigFile } from "./utils/sharedConfig.js"
 import { verifyAgainstArtifacts } from "./utils/verifyUpgrade.js"
 
 function loadConfig(): { diamondAddress?: string } {
-	const configFile = resolveConfigFile("upgrade", undefined, process.env.UPGRADE_CONFIG_FILE)
+	const configFile = resolveConfigFile("upgrade", connection.networkName, process.env.UPGRADE_CONFIG_FILE)
 	if (!fs.existsSync(configFile)) return {}
 	return JSON.parse(fs.readFileSync(configFile, "utf-8"))
 }

@@ -17,7 +17,7 @@
 import fs from "fs"
 import path from "path"
 
-import { ethers } from "../../test/helpers/hardhat-connection.js"
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
 import { loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig.js"
@@ -26,11 +26,12 @@ type WhitelistConfig = {
 	partyBs: Record<string, string[]>
 }
 
-const CONFIG_FILE = resolveConfigFile("partyBList", undefined, process.env.WHITELIST_CONFIG_FILE)
 const OUTPUT_DIR = "./scripts/upgrade/output"
 
 async function main() {
-	const shared = loadUpgradeConfigShared()
+	const networkName = connection.networkName
+	const CONFIG_FILE = resolveConfigFile("partyBList", networkName, process.env.WHITELIST_CONFIG_FILE)
+	const shared = loadUpgradeConfigShared(networkName)
 
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? shared.diamondAddress
 	const SYMBOL_TYPE = Number(process.env.SYMBOL_TYPE ?? shared.newV085Parameters?.symbolType ?? 1)

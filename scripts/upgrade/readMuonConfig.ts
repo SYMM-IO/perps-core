@@ -12,7 +12,7 @@
  */
 import fs from "fs"
 
-import { ethers } from "../../test/helpers/hardhat-connection.js"
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 
 // v0.8.4 ViewFacet ABI (subset — getMuonIds returns the public key + gateway)
@@ -22,7 +22,7 @@ const V084_VIEW_ABI = [
 ]
 
 async function main() {
-	const shared = loadUpgradeConfigShared()
+	const shared = loadUpgradeConfigShared(connection.networkName)
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? shared.diamondAddress
 	if (!DIAMOND_ADDRESS) throw new Error("DIAMOND_ADDRESS required (env var or upgrade.json)")
 
