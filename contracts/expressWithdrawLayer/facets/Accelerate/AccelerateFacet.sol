@@ -67,7 +67,10 @@ contract AccelerateFacet is IAccelerateFacet, IOperatorEvents, Pausable, Reentra
 		if (offer.accelerationFee > info.maxAccelerationFee) revert LibErrors.AccelerationFeeExceedsMaximum();
 
 		uint256 operatorFee = FeeStorage.layout().operatorFees[user][requestId];
-		if (info.fee + operatorFee + offer.accelerationFee > info.expressAmount) revert LibErrors.FeesExceedExpressAmount();
+		uint256 totalFee = info.fee + operatorFee + offer.accelerationFee;
+		if (info.sponsorCoverage > totalFee) revert LibErrors.FeesExceedExpressAmount();
+		uint256 userFee = totalFee - info.sponsorCoverage;
+		if (userFee > info.expressAmount) revert LibErrors.FeesExceedExpressAmount();
 
 		// ── Effects ──
 		g.accelerateNonces[user][requestId]++;

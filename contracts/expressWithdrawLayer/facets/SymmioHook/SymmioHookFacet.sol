@@ -61,7 +61,8 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 		uint256 feeBasis = amounts.expressAmount;
 		if (offer.fee != (feeBasis * f.affiliateConfigs[offer.affiliate].feeRate) / 10000) revert LibErrors.FeeMismatch();
 		if (offer.operatorFee != f.affiliateConfigs[offer.affiliate].operatorFee) revert LibErrors.OperatorFeeMismatch();
-		if (offer.fee + offer.operatorFee > feeBasis) revert LibErrors.FeesExceedExpressAmount();
+		if (offer.fee > feeBasis || offer.operatorFee > feeBasis - offer.fee) revert LibErrors.FeesExceedExpressAmount();
+		uint256 baseFees = offer.fee + offer.operatorFee;
 
 		if (optType != OptionType.STANDARD && minSigs > 0) {
 			_validateValidators(offer.affiliate, withdrawRequest.user, offer.nonce, withdrawRequest.totalAmount, validatorData);
@@ -101,9 +102,12 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 
 		_lockFee(withdrawRequest.user, withdrawRequest.id, info);
 
-		uint256 totalFee = offer.fee + offer.operatorFee;
+		uint256 totalFee = baseFees;
 		uint256 actualUserFee = totalFee - info.sponsorCoverage;
 		if (actualUserFee > offer.maxUserFee) revert LibErrors.UserFeeExceedsMaximum();
+		if (optType == OptionType.STANDARD && offer.maxAccelerationFee > feeBasis - actualUserFee) {
+			revert LibErrors.FeesExceedExpressAmount();
+		}
 
 		ISymmio(g.symmio).acceptWithdrawRequest(withdrawRequest.user, withdrawRequest.id);
 
