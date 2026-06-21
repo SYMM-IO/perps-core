@@ -124,6 +124,7 @@ POST-UPGRADE PATCHES (if needed after unpause)
 ═══════════════════════════════════════════════
   generateSymbolTypeRoleBatch.ts   (grant/revoke SYMBOL_MANAGER_ROLE via Safe)
   generateTemplateBatch.ts         (add InstantLayer templates via Safe)
+  registerPartyB.ts                (register/onboard new PartyBs, direct or Safe proposal)
   whitelistSymbolTypes.ts          (whitelist symbol type per PartyB)
 ```
 
@@ -331,6 +332,7 @@ TIMELINE
   cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/migrate-<network>.json
   cp scripts/upgrade/config/samples/postMigration.sample.json scripts/upgrade/config/postMigration-<network>.json
   cp scripts/upgrade/config/samples/partyBList.sample.json scripts/upgrade/config/partyBList-<network>.json
+  cp scripts/upgrade/config/samples/partyBRegistration.sample.json scripts/upgrade/config/partyBRegistration-<network>.json
   cp scripts/upgrade/config/samples/instantLayerTemplates.sample.json scripts/upgrade/config/instantLayerTemplates.json
   cp scripts/upgrade/config/samples/deployPeripherals.sample.json scripts/upgrade/config/deployPeripherals-<network>.json
   # edit upgrade-<network>.json with all shared fields (diamondAddress, subgraphEndpoint, safeAddress, etc.)
@@ -350,6 +352,7 @@ Every Symmio deployment has a standard set of contracts and roles. The table bel
 | **Fees MultiSig** (receives protocol fees) | `0x273a...3f12` | `symmioFeeReceiver` | `upgrade.json` (other scripts fall back to this) |
 | **SignatureVerifier** (Muon signature verification contract) | `0x94eE...FC2` | `newV085Parameters.signatureVerifierAddress` | `upgrade.json` |
 | **PartyB list** (for IL registration + symbol whitelisting) | -- | `partyBs` + `registerOnInstantLayer` | `config/partyBList-{network}.json` |
+| **New PartyB onboarding** (register/bindable/metadata/symbols/IL) | -- | `partyBs` + per-step flags | `config/partyBRegistration-{network}.json` |
 | **TimeLock** (12H or 3D, if diamond owner is a timelock) | `0xA75F...c63` | `timelockAddress` | `upgrade.json` (used by `generateTimelockBatch.ts` to wrap diamondCut) |
 | **Migration runner** (address that will call migration functions) | any EOA or multisig | `migrationRunner` | `upgrade.json` (defaults to `adminAddress`) |
 | **PartyB addresses** (all active PartyBs to enable cross mode) | `[0x...]` | `partyBs` | `postMigration.json` |
@@ -819,6 +822,32 @@ Note: `adminAddress` here is **different** from `upgrade.json`. In `upgrade.json
 | `NETWORK` | Network name for `ts-node` scripts (e.g. `arbitrum`) -- resolves output file names. Not needed for `npx hardhat run` scripts (uses `--network` flag automatically) |
 | `UPGRADE_CONFIG_FILE` | Config file path (default: `scripts/upgrade/config/upgrade-{network}.json`, falls back to `upgrade.json`) |
 
+### PartyB registration / onboarding
+
+Use `registerPartyB.ts` when a new solver needs core `PartyB` registration plus any independent follow-up steps: bindability, metadata, symbol type whitelist, explicit symbol whitelist, and optional InstantLayer registration.
+
+Default mode only prints a config overview, reads current on-chain state, writes a report, and writes a Safe Transaction Builder batch:
+
+```bash
+npx hardhat run scripts/upgrade/registerPartyB.ts --network <network>
+```
+
+Direct execution is gated by an interactive human-readable calldata preview:
+
+```bash
+EXECUTE=true npx hardhat run scripts/upgrade/registerPartyB.ts --network <network>
+```
+
+Safe Transaction Service submission is also gated by the same calldata preview. When more than one call is included, provide the Safe MultiSend address:
+
+```bash
+SUBMIT_SAFE_PROPOSAL=true SAFE_MULTISEND_ADDRESS=<multisend> \
+SAFE_SUBMITTER_ADDRESS=<owner-or-delegate> SAFE_SUBMITTER_PRIVATE_KEY=<key> \
+npx hardhat run scripts/upgrade/registerPartyB.ts --network <network>
+```
+
+Outputs are written under `scripts/upgrade/output/` as `partyb-registration-safe-batch-<network>.json`, `partyb-registration-report-<network>.json`, and, when requested, `partyb-registration-safe-proposal-<network>.json`.
+
 ### Config files by script
 
 All chain-specific config files support network-postfixed names (e.g. `upgrade-arbitrum.json`). Scripts try `{name}-{network}.json` first, fall back to `{name}.json`. Per-script configs only need script-specific fields -- they fall back to `upgrade-{network}.json` for shared fields.
@@ -831,6 +860,7 @@ All chain-specific config files support network-postfixed names (e.g. `upgrade-a
 | `migrate-{network}.json` | `runMigration.ts` | `migrationInputFile`, `chunkSize`, `dryRun`, `fork` | `diamondAddress` |
 | `postMigration-{network}.json` | `generatePostMigrationBatch.ts` | `partyBs` | `diamondAddress`, `safeAddress` |
 | `partyBList-{network}.json` | `whitelistSymbolTypes.ts` | `partyBs` | `diamondAddress`, `newV085Parameters.symbolType` |
+| `partyBRegistration-{network}.json` | `registerPartyB.ts` | `partyBs`, `defaults`, optional Safe submission fields | `diamondAddress`, `safeAddress`, `instantLayerAddress` |
 | `instantLayerTemplates.json` | `generateTemplateBatch.ts` | `templates` | `safeAddress`, `instantLayerAddress` |
 
 ## newV085Parameters
