@@ -176,6 +176,34 @@ function boolEnv(name: string, fallback = false): boolean {
 	return /^(1|true|yes)$/i.test(value)
 }
 
+const COLOR_ENABLED = boolEnv("FORCE_COLOR") || (!process.env.NO_COLOR && output.isTTY)
+const ANSI = {
+	reset: "\x1b[0m",
+	bold: "\x1b[1m",
+	dim: "\x1b[2m",
+	red: "\x1b[31m",
+	green: "\x1b[32m",
+	yellow: "\x1b[33m",
+	blue: "\x1b[34m",
+	cyan: "\x1b[36m",
+	gray: "\x1b[90m",
+}
+
+const paint = {
+	bold: (value: string) => color(ANSI.bold, value),
+	dim: (value: string) => color(ANSI.dim, value),
+	red: (value: string) => color(ANSI.red, value),
+	green: (value: string) => color(ANSI.green, value),
+	yellow: (value: string) => color(ANSI.yellow, value),
+	blue: (value: string) => color(ANSI.blue, value),
+	cyan: (value: string) => color(ANSI.cyan, value),
+	gray: (value: string) => color(ANSI.gray, value),
+}
+
+function color(code: string, value: string): string {
+	return COLOR_ENABLED ? `${code}${value}${ANSI.reset}` : value
+}
+
 function firstString(...values: unknown[]): string | undefined {
 	for (const value of values) {
 		if (typeof value === "string" && value.trim().length > 0) return value.trim()
@@ -508,6 +536,64 @@ function formatArg(value: any): string {
 	return String(value)
 }
 
+function stripAnsi(value: string): string {
+	return value.replace(/\x1b\[[0-9;]*m/g, "")
+}
+
+function visibleLength(value: string): number {
+	return stripAnsi(value).length
+}
+
+function padCell(value: string, width: number): string {
+	return value + " ".repeat(Math.max(0, width - visibleLength(value)))
+}
+
+function renderTable(headers: string[], rows: string[][]): string {
+	const widths = headers.map((header, index) => Math.max(visibleLength(header), ...rows.map(row => visibleLength(row[index] ?? ""))))
+	const border = `+${widths.map(width => "-".repeat(width + 2)).join("+")}+`
+	const renderRow = (cells: string[]) => `| ${cells.map((cell, index) => padCell(cell, widths[index])).join(" | ")} |`
+	return [
+		paint.gray(border),
+		renderRow(headers.map(header => paint.bold(header))),
+		paint.gray(border),
+		...rows.map(renderRow),
+		paint.gray(border),
+	].join("\n")
+}
+
+function section(title: string): void {
+	console.log("")
+	console.log(paint.bold(paint.cyan(title)))
+	console.log(paint.gray("-".repeat(title.length)))
+}
+
+function formatAddress(address: string | undefined): string {
+	return address ? paint.cyan(address) : paint.dim("(missing)")
+}
+
+function formatMaybe(value: string | undefined): string {
+	return value ? paint.cyan(value) : paint.dim("(not set)")
+}
+
+function formatBool(value: boolean | undefined, options: { trueLabel?: string; falseLabel?: string; falseIsBad?: boolean } = {}): string {
+	if (value === undefined) return paint.yellow("unknown")
+	if (value) return paint.green(options.trueLabel ?? "true")
+	return options.falseIsBad ? paint.red(options.falseLabel ?? "false") : paint.dim(options.falseLabel ?? "false")
+}
+
+function formatMatch(value: boolean | "unknown"): string {
+	if (value === "unknown") return paint.yellow("unknown")
+	return value ? paint.green("matches") : paint.red("differs")
+}
+
+function formatList(values: Array<string | bigint>): string {
+	return values.length > 0 ? values.map(value => String(value)).join(", ") : paint.dim("(none)")
+}
+
+function formatMethod(call: PlannedCall): string {
+	return `${call.methodName}(${call.args.map(formatArg).join(", ")})`
+}
+
 function printConfigOverview(params: {
 	networkName: string
 	chainId: bigint
@@ -524,73 +610,120 @@ function printConfigOverview(params: {
 	force: boolean
 	partyBs: PartyBPlan[]
 }) {
+	section("PartyB Registration Config Overview")
+	console.log(
+		renderTable(
+			["Field", "Value", "Source"],
+			[
+				["Network", `${paint.blue(params.networkName)} ${paint.dim(`(chainId ${params.chainId})`)}`, "hardhat"],
+				[
+					"Upgrade config",
+					`${params.upgradeConfigFile} ${fs.existsSync(params.upgradeConfigFile) ? paint.green("(found)") : paint.yellow("(missing)")}`,
+					"resolved",
+				],
+				["PartyB config", params.partyBConfigFile, "resolved"],
+				["Diamond", formatAddress(params.diamond.value), params.diamond.source],
+				["Safe", formatAddress(params.safe.value), params.safe.source],
+				["InstantLayer", formatAddress(params.instantLayer.value), params.instantLayer.source],
+				["Safe service URL", params.safeServiceUrl ? paint.cyan(params.safeServiceUrl) : paint.dim("(auto/unused)"), "config/env"],
+				["Safe MultiSend", formatMaybe(params.safeMultiSendAddress), "config/env"],
+				[
+					"Mode",
+					params.execute
+						? paint.yellow("direct execution")
+						: params.submitSafeProposal
+							? paint.yellow("Safe proposal")
+							: paint.green("generate files only"),
+					"env",
+				],
+				["Preflight", params.skipPreflight ? paint.yellow("skipped") : paint.green("enabled"), "env"],
+				["Force include calls", formatBool(params.force), "env"],
+				["PartyBs in config", paint.bold(String(params.partyBs.length)), "config"],
+			],
+		),
+	)
+
 	console.log("")
-	console.log("PartyB Registration Config Overview")
-	console.log("-----------------------------------")
-	console.log(`Network:              ${params.networkName} (chainId ${params.chainId})`)
-	console.log(`Upgrade config:       ${params.upgradeConfigFile} (${fs.existsSync(params.upgradeConfigFile) ? "found" : "missing"})`)
-	console.log(`PartyB config:        ${params.partyBConfigFile}`)
-	console.log(`Diamond:              ${params.diamond.value || "(missing)"} (${params.diamond.source})`)
-	console.log(`Safe:                 ${params.safe.value || "(missing)"} (${params.safe.source})`)
-	console.log(`InstantLayer:         ${params.instantLayer.value || "(missing)"} (${params.instantLayer.source})`)
-	console.log(`Safe service URL:     ${params.safeServiceUrl || "(auto/unused)"}`)
-	console.log(`Safe MultiSend:       ${params.safeMultiSendAddress || "(not set)"}`)
-	console.log(`Mode:                 ${params.execute ? "direct execution" : params.submitSafeProposal ? "Safe proposal" : "generate files only"}`)
-	console.log(`Preflight:            ${params.skipPreflight ? "skipped" : "enabled"}`)
-	console.log(`Force include calls:  ${params.force}`)
-	console.log(`PartyBs in config:    ${params.partyBs.length}`)
-	for (const partyB of params.partyBs) {
-		console.log(`  - ${partyB.label}: ${partyB.address}`)
-		console.log(
-			`    core=${partyB.registerOnCore}, bindable=${partyB.setBindable ? partyB.bindable : "(unchanged)"}, metadata=${Boolean(
-				partyB.metadata,
-			)}, symbolTypes=[${partyB.symbolTypes.join(", ")}], symbolIds=[${partyB.symbolIds.join(", ")}], instantLayer=${partyB.registerOnInstantLayer}`,
-		)
-	}
-	console.log("")
+	console.log(
+		renderTable(
+			["PartyB", "Address", "Core", "Bindable", "Metadata", "Symbol types", "Symbol IDs", "InstantLayer"],
+			params.partyBs.map(partyB => [
+				paint.bold(partyB.label),
+				paint.cyan(partyB.address),
+				formatBool(partyB.registerOnCore),
+				partyB.setBindable ? formatBool(partyB.bindable) : paint.dim("(unchanged)"),
+				formatBool(Boolean(partyB.metadata)),
+				formatList(partyB.symbolTypes),
+				formatList(partyB.symbolIds),
+				formatBool(partyB.registerOnInstantLayer),
+			]),
+		),
+	)
 }
 
 function printStateOverview(partyBs: PartyBPlan[], states: Map<string, CurrentState>) {
-	console.log("Current On-chain State")
-	console.log("----------------------")
-	for (const partyB of partyBs) {
-		const state = states.get(partyB.address)!
-		console.log(`- ${partyB.label}: ${partyB.address}`)
-		console.log(`  isPartyB: ${state.isPartyB === undefined ? "unknown" : state.isPartyB}`)
-		console.log(`  isBindable: ${state.isBindable === undefined ? "unknown" : state.isBindable}`)
-		if (partyB.metadata) {
-			const match = metadataEquals(state.metadata, partyB.metadata)
-			console.log(`  metadata matches desired: ${state.metadata ? match : "unknown"}`)
-		}
-		for (const symbolType of partyB.symbolTypes) {
-			const value = state.whitelistedSymbolTypes[symbolType.toString()]
-			console.log(`  symbolType ${symbolType} whitelisted: ${value === undefined ? "unknown" : value}`)
-		}
-		if (partyB.registerOnInstantLayer) {
-			console.log(`  registeredOnInstantLayer: ${state.registeredOnInstantLayer === undefined ? "unknown" : state.registeredOnInstantLayer}`)
-		}
-		for (const error of state.errors) console.log(`  warning: ${error}`)
-	}
-	console.log("")
+	section("Current On-chain State")
+	console.log(
+		renderTable(
+			["PartyB", "Address", "isPartyB", "Bindable", "Metadata", "Symbol types", "InstantLayer", "Warnings"],
+			partyBs.map(partyB => {
+				const state = states.get(partyB.address)!
+				const metadataMatch = partyB.metadata ? metadataEquals(state.metadata, partyB.metadata) : "unknown"
+				const symbolTypes =
+					partyB.symbolTypes.length === 0
+						? paint.dim("(none)")
+						: partyB.symbolTypes
+								.map(symbolType => {
+									const value = state.whitelistedSymbolTypes[symbolType.toString()]
+									return `${symbolType}:${formatBool(value, { trueLabel: "yes", falseLabel: "no", falseIsBad: true })}`
+								})
+								.join(", ")
+				return [
+					paint.bold(partyB.label),
+					paint.cyan(partyB.address),
+					formatBool(state.isPartyB, { trueLabel: "yes", falseLabel: "no", falseIsBad: partyB.registerOnCore }),
+					formatBool(state.isBindable, { trueLabel: "yes", falseLabel: "no", falseIsBad: partyB.setBindable && partyB.bindable }),
+					partyB.metadata ? formatMatch(metadataMatch) : paint.dim("(not checked)"),
+					symbolTypes,
+					partyB.registerOnInstantLayer
+						? formatBool(state.registeredOnInstantLayer, { trueLabel: "yes", falseLabel: "no", falseIsBad: true })
+						: paint.dim("(not checked)"),
+					state.errors.length > 0 ? paint.yellow(state.errors.join("; ")) : paint.green("none"),
+				]
+			}),
+		),
+	)
 }
 
 function printHumanReadableCalls(title: string, calls: PlannedCall[]) {
-	console.log(title)
-	console.log("-".repeat(title.length))
+	section(title)
 	if (calls.length === 0) {
-		console.log("No calls.")
-		console.log("")
+		console.log(paint.green("No calls."))
 		return
 	}
 
-	calls.forEach((call, index) => {
-		console.log(`${index + 1}. ${call.label}`)
-		console.log(`   Target:   ${call.toLabel} (${call.to})`)
-		console.log(`   Method:   ${call.methodName}(${call.args.map(formatArg).join(", ")})`)
-		if (call.skipReason) console.log(`   Skip:     ${call.skipReason}`)
-		console.log(`   Calldata: ${call.safeTx.data}`)
-	})
+	const hasSkipReason = calls.some(call => call.skipReason)
+	console.log(
+		renderTable(
+			hasSkipReason ? ["#", "Action", "Target", "Method", "Skip"] : ["#", "Action", "Target", "Method"],
+			calls.map((call, index) => {
+				const row = [
+					paint.bold(String(index + 1)),
+					call.skipReason ? paint.dim(call.label) : paint.bold(call.label),
+					`${call.toLabel} ${paint.dim(`(${call.to})`)}`,
+					formatMethod(call),
+				]
+				if (hasSkipReason) row.push(call.skipReason ? paint.yellow(call.skipReason) : paint.green("included"))
+				return row
+			}),
+		),
+	)
+
 	console.log("")
+	console.log(paint.bold("Calldata"))
+	for (const [index, call] of calls.entries()) {
+		console.log(`${paint.bold(`${index + 1}.`)} ${paint.gray(call.safeTx.data)}`)
+	}
 }
 
 async function requireConfirmation(action: string, calls: PlannedCall[]) {
@@ -853,17 +986,25 @@ async function buildAndMaybeSubmitSafeProposal(params: {
 		return report
 	}
 
-	console.log("")
-	console.log("Safe proposal transaction")
-	console.log("-------------------------")
-	console.log(`Safe:      ${params.safeAddress}`)
-	console.log(`Target:    ${params.proposalTx.to}`)
-	console.log(`Operation: ${params.proposalTx.operation === 1 ? "delegatecall" : "call"}`)
-	console.log(`Nonce:     ${safeNonce}`)
-	console.log(`Safe hash: ${safeTxHash}`)
-	console.log(`Calldata:  ${params.proposalTx.data}`)
-	if (params.proposalTx.multiSendData) console.log(`MultiSend inner data: ${params.proposalTx.multiSendData}`)
-	console.log("")
+	section("Safe Proposal Transaction")
+	console.log(
+		renderTable(
+			["Field", "Value"],
+			[
+				["Safe", paint.cyan(params.safeAddress)],
+				["Target", paint.cyan(params.proposalTx.to)],
+				["Operation", params.proposalTx.operation === 1 ? paint.yellow("delegatecall") : paint.green("call")],
+				["Nonce", paint.bold(String(safeNonce))],
+				["Safe hash", paint.cyan(safeTxHash)],
+				["Calldata", paint.gray(params.proposalTx.data)],
+			],
+		),
+	)
+	if (params.proposalTx.multiSendData) {
+		console.log("")
+		console.log(paint.bold("MultiSend inner data"))
+		console.log(paint.gray(params.proposalTx.multiSendData))
+	}
 
 	await requireConfirmation("submit Safe proposal", params.calls)
 	const signer = await getSafeSubmitterSigner(params.safeSubmitterAddress, params.safeSubmitterPrivateKey, params.safeSubmitterKeyName)
