@@ -11,7 +11,8 @@
  *
  * Safe Transaction Service proposal:
  *   SUBMIT_SAFE_PROPOSAL=true SAFE_MULTISEND_ADDRESS=<multisend> \
- *     SAFE_SUBMITTER_ADDRESS=<owner-or-delegate> SAFE_SUBMITTER_PRIVATE_KEY=<key> \
+ *     SAFE_SUBMITTER_ADDRESS=<owner-or-delegate> \
+ *     SAFE_SUBMITTER_KEY_NAME=TEAM_PROPOSER USE_KEYSTORE=true \
  *     npx hardhat run scripts/upgrade/registerPartyB.ts --network <network>
  *
  * Config:
