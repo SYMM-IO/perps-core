@@ -107,6 +107,18 @@ type PlannedCall = {
 	skipReason?: string
 }
 
+type HumanReadablePlannedCall = {
+	label: string
+	to: string
+	value: string
+	operation: string
+	method: string
+	args: string[]
+	contractMethod?: SafeTransaction["contractMethod"]
+	contractInputsValues?: SafeTransaction["contractInputsValues"]
+	calldata: string
+}
+
 type SafeProposalTx = {
 	to: string
 	value: string
@@ -600,6 +612,73 @@ function formatMethod(call: PlannedCall): string {
 	return `${call.methodName}(${call.args.map(formatArg).join(", ")})`
 }
 
+function describeSafeOperation(operation: number): string {
+	return operation === 1 ? "delegatecall (MultiSend)" : "call"
+}
+
+function describePlannedCall(call: PlannedCall): HumanReadablePlannedCall {
+	return {
+		label: call.label,
+		to: call.to,
+		value: call.safeTx.value,
+		operation: describeSafeOperation(0),
+		method: call.methodName,
+		args: call.args.map(formatArg),
+		contractMethod: call.safeTx.contractMethod,
+		contractInputsValues: call.safeTx.contractInputsValues,
+		calldata: call.safeTx.data,
+	}
+}
+
+function buildSafeDataDecodedFromCall(call: HumanReadablePlannedCall) {
+	return {
+		method: call.method,
+		parameters: (call.contractMethod?.inputs ?? []).map(input => ({
+			name: input.name,
+			type: input.type,
+			value: call.contractInputsValues?.[input.name] ?? "",
+			components: input.components,
+		})),
+	}
+}
+
+function buildProposalDataDecoded(proposalTx: SafeProposalTx, humanReadableCalls: HumanReadablePlannedCall[]) {
+	if (proposalTx.operation === 1) {
+		return {
+			method: "multiSend",
+			target: proposalTx.to,
+			operation: describeSafeOperation(proposalTx.operation),
+			parameters: [
+				{
+					name: "transactions",
+					type: "bytes",
+					value: proposalTx.multiSendData,
+					valueDecoded: humanReadableCalls.map(call => ({
+						operation: 0,
+						operationName: call.operation,
+						to: call.to,
+						value: call.value,
+						data: call.calldata,
+						dataDecoded: buildSafeDataDecodedFromCall(call),
+					})),
+				},
+			],
+		}
+	}
+
+	const call = humanReadableCalls[0]
+	return {
+		target: proposalTx.to,
+		operation: describeSafeOperation(proposalTx.operation),
+		...buildSafeDataDecodedFromCall(call),
+	}
+}
+
+function stripRawCalldata(call: HumanReadablePlannedCall) {
+	const { calldata: _calldata, ...decodedCall } = call
+	return decodedCall
+}
+
 function printConfigOverview(params: {
 	networkName: string
 	chainId: bigint
@@ -749,6 +828,22 @@ function printHumanReadableCalls(title: string, calls: PlannedCall[]) {
 	for (const [index, call] of calls.entries()) {
 		console.log(`${paint.bold(`${index + 1}.`)} ${paint.gray(call.safeTx.data)}`)
 	}
+}
+
+function printSafeDecodedPreview(title: string, calls: PlannedCall[]) {
+	section(title)
+	console.log(
+		renderTable(
+			["#", "Action", "Target", "Decoded method", "Decoded inputs"],
+			calls.map((call, index) => [
+				paint.bold(String(index + 1)),
+				paint.bold(call.label),
+				`${call.toLabel} ${paint.dim(`(${call.to})`)}`,
+				call.methodName,
+				JSON.stringify(call.safeTx.contractInputsValues ?? {}, jsonReplacer),
+			]),
+		),
+	)
 }
 
 async function requireConfirmation(action: string, calls: PlannedCall[]) {
@@ -958,6 +1053,9 @@ async function buildAndMaybeSubmitSafeProposal(params: {
 	if (typedDataHash.toLowerCase() !== safeTxHash.toLowerCase()) {
 		throw new Error(`Safe typed-data hash ${typedDataHash} did not match on-chain getTransactionHash ${safeTxHash}`)
 	}
+	const humanReadableCalls = params.calls.map(describePlannedCall)
+	const decodedCalls = humanReadableCalls.map(stripRawCalldata)
+	const dataDecoded = buildProposalDataDecoded(params.proposalTx, humanReadableCalls)
 
 	const proposal = {
 		to: safeTx.to,
@@ -988,20 +1086,35 @@ async function buildAndMaybeSubmitSafeProposal(params: {
 		submitSafeProposal: params.submitSafeProposal,
 		submitted: false,
 		proposal,
+		safePreview: {
+			to: proposal.to,
+			value: proposal.value,
+			operation: {
+				value: proposal.operation,
+				label: describeSafeOperation(proposal.operation),
+			},
+			nonce: safeNonce,
+			safeTxHash,
+			data: dataDecoded,
+			calls: decodedCalls,
+		},
 		safeTx: {
 			...proposal,
 			gasToken: ethers.ZeroAddress,
 			refundReceiver: ethers.ZeroAddress,
+			dataDecoded,
 		},
-		multiSend: params.proposalTx.operation === 1 ? { to: params.proposalTx.to, transactionsData: params.proposalTx.multiSendData } : undefined,
+		dataDecoded,
+		multiSend:
+			params.proposalTx.operation === 1
+				? {
+						to: params.proposalTx.to,
+						transactionsData: params.proposalTx.multiSendData,
+						decodedCalls,
+					}
+				: undefined,
 		owners: safeInfo.owners,
-		humanReadableCalls: params.calls.map(call => ({
-			label: call.label,
-			to: call.to,
-			method: call.methodName,
-			args: call.args.map(formatArg),
-			calldata: call.safeTx.data,
-		})),
+		humanReadableCalls,
 	}
 	writeJson(params.proposalFile, report)
 
@@ -1021,15 +1134,14 @@ async function buildAndMaybeSubmitSafeProposal(params: {
 				["Operation", params.proposalTx.operation === 1 ? paint.yellow("delegatecall") : paint.green("call")],
 				["Nonce", paint.bold(String(safeNonce))],
 				["Safe hash", paint.cyan(safeTxHash)],
-				["Calldata", paint.gray(params.proposalTx.data)],
+				[
+					"Decoded data",
+					params.proposalTx.operation === 1 ? `multiSend(${params.calls.length} inner transaction(s))` : `${params.calls[0].methodName}(...)`,
+				],
 			],
 		),
 	)
-	if (params.proposalTx.multiSendData) {
-		console.log("")
-		console.log(paint.bold("MultiSend inner data"))
-		console.log(paint.gray(params.proposalTx.multiSendData))
-	}
+	printSafeDecodedPreview("Safe decoded call preview", params.calls)
 
 	await requireConfirmation("submit Safe proposal", params.calls)
 	const signer = await getSafeSubmitterSigner(params.safeSubmitterAddress, params.safeSubmitterPrivateKey, params.safeSubmitterKeyName)
