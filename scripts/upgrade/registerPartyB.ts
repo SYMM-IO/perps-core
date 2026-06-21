@@ -10,9 +10,11 @@
  *   EXECUTE=true npx hardhat run scripts/upgrade/registerPartyB.ts --network <network>
  *
  * Safe Transaction Service proposal:
- *   SUBMIT_SAFE_PROPOSAL=true SAFE_SUBMITTER_ADDRESS=<owner-or-delegate> \
- *     SAFE_SUBMITTER_KEY_NAME=TEAM_PROPOSER USE_KEYSTORE=true \
- *     npx hardhat run scripts/upgrade/registerPartyB.ts --network <network>
+ *   USE_KEYSTORE=true SUBMIT_SAFE_PROPOSAL=true \
+ *     npx hardhat run --no-compile scripts/upgrade/registerPartyB.ts --network <network>
+ *
+ * In proposal mode Hardhat loads signer[0] from TEAM_PROPOSER by default. Override with
+ * SAFE_SUBMITTER_ADDRESS/SAFE_SUBMITTER_KEY_NAME only when you need a different Safe owner/delegate.
  *
  * Config:
  *   scripts/upgrade/config/partyBRegistration-<network>.json
@@ -131,7 +133,19 @@ type SafeProposalTx = {
 type SafeInfo = {
 	nonce?: number
 	owners?: string[]
+	threshold?: number
 	version?: string
+}
+
+type DelegateInfo = {
+	delegate?: string
+	delegator?: string
+}
+
+type SafeDelegatesResult = {
+	delegates: string[]
+	fetched: boolean
+	error?: string
 }
 
 type SafeDeployment = {
@@ -215,6 +229,7 @@ const instantLayerIface = new ethers.Interface([
 const safeIface = new ethers.Interface([
 	"function nonce() view returns (uint256)",
 	"function getOwners() view returns (address[])",
+	"function getThreshold() view returns (uint256)",
 	"function getTransactionHash(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,uint256 nonce) view returns (bytes32)",
 ])
 const multiSendIface = new ethers.Interface(["function multiSend(bytes transactions)"])
@@ -272,6 +287,13 @@ function firstString(...values: unknown[]): string | undefined {
 		if (typeof value === "string" && value.trim().length > 0) return value.trim()
 	}
 	return undefined
+}
+
+function firstStringWithSource(...entries: Array<[unknown, string]>): SourceValue<string | undefined> {
+	for (const [value, source] of entries) {
+		if (typeof value === "string" && value.trim().length > 0) return { value: value.trim(), source }
+	}
+	return { value: undefined, source: "not set" }
 }
 
 function readJsonIfExists<T>(file: string): T | undefined {
@@ -815,7 +837,7 @@ function printSafeFrontDecodeCheck(check: SafeFrontDecodeCheck) {
 		console.log(`Safe Transaction Builder import: ${check.importBatchFile}`)
 	}
 	if (!check.ok) {
-		console.log(paint.red("Safe Front will not be able to verify every inner call in human-readable form for this API proposal."))
+		console.log(paint.yellow("Safe Front may show one or more inner calls as raw calldata for this API proposal."))
 	}
 }
 
@@ -826,6 +848,8 @@ function printConfigOverview(params: {
 	partyBConfigFile: string
 	diamond: SourceValue<string | undefined>
 	safe: SourceValue<string | undefined>
+	safeTxCreator: SourceValue<string | undefined>
+	safeSubmitter: SourceValue<string | undefined>
 	instantLayer: SourceValue<string | undefined>
 	safeServiceUrl?: string
 	safeMultiSend: SourceValue<string | undefined>
@@ -849,6 +873,8 @@ function printConfigOverview(params: {
 				["PartyB config", params.partyBConfigFile, "resolved"],
 				["Diamond", formatAddress(params.diamond.value), params.diamond.source],
 				["Safe", formatAddress(params.safe.value), params.safe.source],
+				["Safe tx creator", formatAddress(params.safeTxCreator.value), params.safeTxCreator.source],
+				["Safe proposer/sender", formatAddress(params.safeSubmitter.value), params.safeSubmitter.source],
 				["InstantLayer", formatAddress(params.instantLayer.value), params.instantLayer.source],
 				["Safe service URL", params.safeServiceUrl ? paint.cyan(params.safeServiceUrl) : paint.dim("(auto/unused)"), "config/env"],
 				["Safe MultiSend", formatMaybe(params.safeMultiSend.value), params.safeMultiSend.source],
@@ -984,6 +1010,102 @@ function printSafeDecodedPreview(title: string, calls: PlannedCall[]) {
 			]),
 		),
 	)
+}
+
+function printSafeProposalOverview(params: {
+	networkName: string
+	chainId: bigint
+	safeAddress: string
+	safeInfo: SafeInfo
+	safeDelegates: SafeDelegatesResult
+	safeServiceUrl: string
+	safeTxCreatorAddress: string
+	safeSubmitterAddress: string
+	safeSubmitterSource: string
+	safeNonce: number
+	safeTxHash: string
+	proposalTx: SafeProposalTx
+	calls: PlannedCall[]
+}) {
+	const owners = params.safeInfo.owners ?? []
+	const delegates = params.safeDelegates.delegates
+	const submitterIsOwner = owners.some(owner => owner.toLowerCase() === params.safeSubmitterAddress.toLowerCase())
+	const submitterIsDelegate = delegates.some(delegate => delegate.toLowerCase() === params.safeSubmitterAddress.toLowerCase())
+	const submitterCanSubmit = submitterIsOwner || submitterIsDelegate
+	const eligibility = submitterCanSubmit
+		? paint.green("yes")
+		: params.safeDelegates.fetched
+			? paint.red("no")
+			: paint.yellow(`unknown (${params.safeDelegates.error ?? "delegate lookup failed"})`)
+	const target =
+		params.proposalTx.operation === 1
+			? `Safe MultiSend ${paint.dim(`(${params.proposalTx.to})`)}`
+			: `${params.calls[0]?.toLabel ?? "Target"} ${paint.dim(`(${params.proposalTx.to})`)}`
+	const txShape =
+		params.proposalTx.operation === 1
+			? `single Safe tx wrapping ${params.calls.length} inner call(s)`
+			: `single Safe tx calling ${params.calls[0]?.methodName ?? "target"}`
+
+	section("Safe Proposal Overview")
+	console.log(
+		renderTable(
+			["Field", "Value"],
+			[
+				["Network", `${paint.blue(params.networkName)} ${paint.dim(`(chainId ${params.chainId})`)}`],
+				["Safe", paint.cyan(params.safeAddress)],
+				["Safe version", params.safeInfo.version ? paint.cyan(params.safeInfo.version) : paint.yellow("unknown")],
+				["Safe service", paint.cyan(params.safeServiceUrl)],
+				["Nonce", paint.bold(String(params.safeNonce))],
+				["Threshold", params.safeInfo.threshold === undefined ? paint.yellow("unknown") : paint.bold(String(params.safeInfo.threshold))],
+				["Owners", owners.length > 0 ? paint.bold(String(owners.length)) : paint.yellow("unknown")],
+				["Delegates", params.safeDelegates.fetched ? paint.bold(String(delegates.length)) : paint.yellow("lookup failed")],
+				["Safe tx creator", paint.cyan(params.safeTxCreatorAddress)],
+				["Safe proposer/sender", paint.cyan(params.safeSubmitterAddress)],
+				["Proposer source", params.safeSubmitterSource],
+				["Proposer is owner", formatBool(submitterIsOwner)],
+				["Proposer is delegate", params.safeDelegates.fetched ? formatBool(submitterIsDelegate) : paint.yellow("unknown")],
+				["Can submit proposal", eligibility],
+				["Target", target],
+				["Operation", params.proposalTx.operation === 1 ? paint.yellow(describeSafeOperation(1)) : paint.green(describeSafeOperation(0))],
+				["Transaction shape", paint.bold(txShape)],
+				[
+					"MultiSend source",
+					params.proposalTx.operation === 1 ? (params.proposalTx.multiSendAddressSource ?? paint.yellow("unknown")) : paint.dim("(not used)"),
+				],
+				["Safe tx hash", paint.cyan(params.safeTxHash)],
+			],
+		),
+	)
+
+	if (owners.length > 0) {
+		console.log("")
+		console.log(paint.bold("Safe owners"))
+		console.log(
+			renderTable(
+				["#", "Owner", "Proposer"],
+				owners.map((owner, index) => [
+					paint.bold(String(index + 1)),
+					paint.cyan(owner),
+					owner.toLowerCase() === params.safeSubmitterAddress.toLowerCase() ? paint.green("yes") : paint.dim("no"),
+				]),
+			),
+		)
+	}
+
+	if (delegates.length > 0) {
+		console.log("")
+		console.log(paint.bold("Safe delegates"))
+		console.log(
+			renderTable(
+				["#", "Delegate", "Proposer"],
+				delegates.map((delegate, index) => [
+					paint.bold(String(index + 1)),
+					paint.cyan(delegate),
+					delegate.toLowerCase() === params.safeSubmitterAddress.toLowerCase() ? paint.green("yes") : paint.dim("no"),
+				]),
+			),
+		)
+	}
 }
 
 async function requireConfirmation(action: string, calls: PlannedCall[]) {
@@ -1177,17 +1299,78 @@ async function getSafeSubmitterSigner(safeSubmitterAddress: string, safeSubmitte
 	return wallet
 }
 
+async function resolveSafeSubmitterAddress(params: {
+	configuredAddress?: string
+	configuredSource?: string
+	submitSafeProposal: boolean
+	safeSubmitterPrivateKey?: string
+	safeSubmitterKeyName: string
+}): Promise<SourceValue<string | undefined>> {
+	if (params.configuredAddress) {
+		const configured = parseAddress(params.configuredAddress, "safeSubmitterAddress")
+		if (params.submitSafeProposal) {
+			const signer = (await ethers.getSigners())[0]
+			if (signer) {
+				const signerAddress = ethers.getAddress(await signer.getAddress())
+				const signerSource = `hardhat signer[0] (${params.safeSubmitterKeyName})`
+				return {
+					value: configured,
+					source:
+						signerAddress.toLowerCase() === configured.toLowerCase()
+							? `${params.configuredSource ?? "config/env"}; matches ${signerSource}`
+							: `${params.configuredSource ?? "config/env"}; ${signerSource} is ${signerAddress}`,
+				}
+			}
+		}
+		return {
+			value: configured,
+			source: params.configuredSource ?? "config/env",
+		}
+	}
+	if (!params.submitSafeProposal) return { value: undefined, source: "not set" }
+
+	const signers = await ethers.getSigners()
+	const signer = signers[0]
+	if (signer) {
+		return {
+			value: ethers.getAddress(await signer.getAddress()),
+			source: `hardhat signer[0] (${params.safeSubmitterKeyName})`,
+		}
+	}
+
+	const privateKey = params.safeSubmitterPrivateKey || (await resolveConfigVar(params.safeSubmitterKeyName))
+	return {
+		value: ethers.getAddress(new ethers.Wallet(privateKey).address),
+		source: `config variable ${params.safeSubmitterKeyName}`,
+	}
+}
+
 async function getSafeInfo(safeAddress: string, serviceUrl: string): Promise<SafeInfo> {
 	const safe = new ethers.Contract(safeAddress, safeIface, ethers.provider)
-	const [onChainNonce, onChainOwners, serviceInfo] = await Promise.all([
+	const [onChainNonce, onChainOwners, onChainThreshold, serviceInfo] = await Promise.all([
 		safe.nonce().then((value: bigint) => Number(value)),
 		safe.getOwners().then((owners: string[]) => owners.map(owner => ethers.getAddress(owner))),
+		safe.getThreshold().then((value: bigint) => Number(value)),
 		fetchJson<SafeInfo>(`${serviceUrl}/safes/${safeAddress}/`).catch(() => undefined),
 	])
 	return {
 		nonce: serviceInfo?.nonce ?? onChainNonce,
 		owners: (serviceInfo?.owners ?? onChainOwners).map((owner: string) => ethers.getAddress(owner)),
+		threshold: serviceInfo?.threshold ?? onChainThreshold,
 		version: serviceInfo?.version,
+	}
+}
+
+async function getSafeDelegates(safeAddress: string, serviceUrl: string): Promise<SafeDelegatesResult> {
+	try {
+		const response = await fetchJson<{ results?: DelegateInfo[] }>(`${serviceUrl}/delegates/?safe=${safeAddress}&limit=100`)
+		const delegates = (response.results ?? [])
+			.map(delegate => delegate.delegate)
+			.filter((delegate): delegate is string => Boolean(delegate))
+			.map(delegate => ethers.getAddress(delegate))
+		return { delegates, fetched: true }
+	} catch (err) {
+		return { delegates: [], fetched: false, error: getErrorMessage(err) }
 	}
 }
 
@@ -1204,6 +1387,7 @@ async function buildAndMaybeSubmitSafeProposal(params: {
 	safeAddress: string
 	safeTxCreatorAddress: string
 	safeSubmitterAddress: string
+	safeSubmitterSource: string
 	safeSubmitterPrivateKey?: string
 	safeSubmitterKeyName: string
 	safeServiceUrl: string
@@ -1215,8 +1399,13 @@ async function buildAndMaybeSubmitSafeProposal(params: {
 	safeBatchFile?: string
 }) {
 	const safe = new ethers.Contract(params.safeAddress, safeIface, ethers.provider)
-	const safeInfo = await getSafeInfo(params.safeAddress, params.safeServiceUrl)
+	const [safeInfo, safeDelegates] = await Promise.all([
+		getSafeInfo(params.safeAddress, params.safeServiceUrl),
+		getSafeDelegates(params.safeAddress, params.safeServiceUrl),
+	])
 	const safeNonce = params.safeNonceOverride ?? safeInfo.nonce ?? Number(await safe.nonce())
+	const submitterIsOwner = Boolean(safeInfo.owners?.some(owner => owner.toLowerCase() === params.safeSubmitterAddress.toLowerCase()))
+	const submitterIsDelegate = safeDelegates.delegates.some(delegate => delegate.toLowerCase() === params.safeSubmitterAddress.toLowerCase())
 	const safeTx = {
 		to: params.proposalTx.to,
 		value: BigInt(params.proposalTx.value),
@@ -1274,6 +1463,7 @@ async function buildAndMaybeSubmitSafeProposal(params: {
 		typedDataHash,
 		creatorAddress: params.safeTxCreatorAddress,
 		submitterAddress: params.safeSubmitterAddress,
+		submitterSource: params.safeSubmitterSource,
 		submitterKeyName: params.safeSubmitterKeyName,
 		submitSafeProposal: params.submitSafeProposal,
 		submitted: false,
@@ -1307,6 +1497,13 @@ async function buildAndMaybeSubmitSafeProposal(params: {
 					}
 				: undefined,
 		owners: safeInfo.owners,
+		threshold: safeInfo.threshold,
+		delegates: safeDelegates.delegates,
+		delegatesFetched: safeDelegates.fetched,
+		delegateFetchError: safeDelegates.error,
+		submitterIsOwner,
+		submitterIsDelegate,
+		submitterCanSubmit: submitterIsOwner || submitterIsDelegate,
 		humanReadableCalls,
 	}
 	const shouldCheckSafeFrontDecode = boolEnv("CHECK_SAFE_FRONT_DECODE", params.submitSafeProposal)
@@ -1326,32 +1523,41 @@ async function buildAndMaybeSubmitSafeProposal(params: {
 		writeJson(params.proposalFile, report)
 		return report
 	}
-	if (report.safeFrontDecodeCheck && !report.safeFrontDecodeCheck.ok && !boolEnv("ALLOW_UNDECODED_SAFE_FRONT")) {
+	if (report.safeFrontDecodeCheck && !report.safeFrontDecodeCheck.ok) {
+		report.safeFrontDecodeWarning =
+			"Safe Front decoder did not decode every inner call. Review the Transaction Builder import batch and local decoded preview before confirming."
+		console.log(paint.yellow(report.safeFrontDecodeWarning))
+		writeJson(params.proposalFile, report)
+	}
+	if (
+		report.safeFrontDecodeCheck &&
+		!report.safeFrontDecodeCheck.ok &&
+		boolEnv("REQUIRE_SAFE_FRONT_DECODE") &&
+		!boolEnv("ALLOW_UNDECODED_SAFE_FRONT")
+	) {
 		report.submissionSkippedReason =
-			"Safe Front decode check failed; set ALLOW_UNDECODED_SAFE_FRONT=true only after reviewing the Transaction Builder import batch."
+			"Safe Front decode check failed and REQUIRE_SAFE_FRONT_DECODE=true; set ALLOW_UNDECODED_SAFE_FRONT=true only after reviewing the Transaction Builder import batch."
 		writeJson(params.proposalFile, report)
 		throw new Error(
 			"Safe Front cannot decode every call in this proposal. Review/import the Safe Transaction Builder batch or set ALLOW_UNDECODED_SAFE_FRONT=true after manual review.",
 		)
 	}
 
-	section("Safe Proposal Transaction")
-	console.log(
-		renderTable(
-			["Field", "Value"],
-			[
-				["Safe", paint.cyan(params.safeAddress)],
-				["Target", paint.cyan(params.proposalTx.to)],
-				["Operation", params.proposalTx.operation === 1 ? paint.yellow("delegatecall") : paint.green("call")],
-				["Nonce", paint.bold(String(safeNonce))],
-				["Safe hash", paint.cyan(safeTxHash)],
-				[
-					"Decoded data",
-					params.proposalTx.operation === 1 ? `multiSend(${params.calls.length} inner transaction(s))` : `${params.calls[0].methodName}(...)`,
-				],
-			],
-		),
-	)
+	printSafeProposalOverview({
+		networkName: params.networkName,
+		chainId: params.chainId,
+		safeAddress: params.safeAddress,
+		safeInfo,
+		safeDelegates,
+		safeServiceUrl: params.safeServiceUrl,
+		safeTxCreatorAddress: params.safeTxCreatorAddress,
+		safeSubmitterAddress: params.safeSubmitterAddress,
+		safeSubmitterSource: params.safeSubmitterSource,
+		safeNonce,
+		safeTxHash,
+		proposalTx: params.proposalTx,
+		calls: params.calls,
+	})
 	printSafeDecodedPreview("Safe decoded call preview", params.calls)
 
 	await requireConfirmation("submit Safe proposal", params.calls)
@@ -1420,14 +1626,34 @@ async function main() {
 	const safeAddress = parseOptionalAddress(safe.value, "safeAddress")
 	const instantLayerAddress = parseOptionalAddress(instantLayer.value, "instantLayerAddress")
 	const partyBs = normalizePartyBEntries(config)
-	const safeTxCreatorAddress = parseOptionalAddress(
-		firstString(process.env.SAFE_TX_CREATOR_ADDRESS, process.env.SAFE_PROPOSER_ADDRESS, config.safeTxCreatorAddress),
-		"safeTxCreatorAddress",
+	const safeSubmitterPrivateKey = firstString(
+		process.env.SAFE_SUBMITTER_PRIVATE_KEY,
+		process.env.SAFE_SIGNER_PRIVATE_KEY,
+		process.env.SAFE_PROPOSER_PRIVATE_KEY,
 	)
-	const safeSubmitterAddress = parseOptionalAddress(
-		firstString(process.env.SAFE_SUBMITTER_ADDRESS, process.env.SAFE_SIGNER_ADDRESS, config.safeSubmitterAddress, safeTxCreatorAddress),
-		"safeSubmitterAddress",
+	const safeSubmitterKeyName =
+		process.env.SAFE_SUBMITTER_KEY_NAME || process.env.SAFE_SIGNER_KEY_NAME || process.env.SAFE_PROPOSER_KEY_NAME || "TEAM_PROPOSER"
+	const safeTxCreatorRaw = firstStringWithSource(
+		[process.env.SAFE_TX_CREATOR_ADDRESS, "env:SAFE_TX_CREATOR_ADDRESS"],
+		[process.env.SAFE_PROPOSER_ADDRESS, "env:SAFE_PROPOSER_ADDRESS"],
+		[config.safeTxCreatorAddress, "partyBRegistration.safeTxCreatorAddress"],
 	)
+	const safeTxCreator: SourceValue<string | undefined> = {
+		value: parseOptionalAddress(safeTxCreatorRaw.value, "safeTxCreatorAddress"),
+		source: safeTxCreatorRaw.source,
+	}
+	const safeSubmitterRaw = firstStringWithSource(
+		[process.env.SAFE_SUBMITTER_ADDRESS, "env:SAFE_SUBMITTER_ADDRESS"],
+		[process.env.SAFE_SIGNER_ADDRESS, "env:SAFE_SIGNER_ADDRESS"],
+		[config.safeSubmitterAddress, "partyBRegistration.safeSubmitterAddress"],
+	)
+	const safeSubmitter = await resolveSafeSubmitterAddress({
+		configuredAddress: safeSubmitterRaw.value,
+		configuredSource: safeSubmitterRaw.source,
+		submitSafeProposal,
+		safeSubmitterPrivateKey,
+		safeSubmitterKeyName,
+	})
 	const safeServiceUrlOverride = firstString(process.env.SAFE_SERVICE_URL, config.safeServiceUrl)
 	const safeServiceUrl = submitSafeProposal ? getSafeServiceUrl(chainId, safeServiceUrlOverride) : safeServiceUrlOverride
 	const safeMultiSendOverride = resolveString(
@@ -1459,6 +1685,8 @@ async function main() {
 		partyBConfigFile: configFile,
 		diamond: { ...diamond, value: diamondAddress },
 		safe: { ...safe, value: safeAddress },
+		safeTxCreator,
+		safeSubmitter,
 		instantLayer: { ...instantLayer, value: instantLayerAddress },
 		safeServiceUrl,
 		safeMultiSend,
@@ -1492,7 +1720,7 @@ async function main() {
 	const proposalFile = path.join(OUTPUT_DIR, `partyb-registration-safe-proposal-${outputSuffix}.json`)
 
 	if (safeAddress) {
-		const safeBatch = buildSafeBatch(chainId, safeAddress, safeTxCreatorAddress ?? "", included, networkName)
+		const safeBatch = buildSafeBatch(chainId, safeAddress, safeTxCreator.value ?? safeSubmitter.value ?? "", included, networkName)
 		writeJson(safeBatchFile, safeBatch)
 		console.log(`Safe batch: ${safeBatchFile}`)
 	} else {
@@ -1507,6 +1735,11 @@ async function main() {
 		upgradeConfigFile,
 		diamondAddress,
 		safeAddress,
+		safeTxCreatorAddress: safeTxCreator.value,
+		safeTxCreatorSource: safeTxCreator.source,
+		safeSubmitterAddress: safeSubmitter.value,
+		safeSubmitterSource: safeSubmitter.source,
+		safeSubmitterKeyName,
 		instantLayerAddress,
 		safeMultiSendAddress: safeMultiSend.value,
 		safeMultiSendSource: safeMultiSend.source,
@@ -1551,21 +1784,17 @@ async function main() {
 
 	if (submitSafeProposal) {
 		if (!safeAddress) throw new Error("SAFE_ADDRESS or safeAddress is required for SUBMIT_SAFE_PROPOSAL=true")
-		if (!safeSubmitterAddress) throw new Error("SAFE_SUBMITTER_ADDRESS/SAFE_SIGNER_ADDRESS or safeSubmitterAddress is required")
+		if (!safeSubmitter.value) throw new Error("Could not resolve Safe proposer/sender address from config/env or Hardhat signer[0]")
 		const proposalTx = buildSafeProposalTx(included, safeMultiSend)
 		report.safeProposal = await buildAndMaybeSubmitSafeProposal({
 			chainId,
 			networkName,
 			safeAddress,
-			safeTxCreatorAddress: safeTxCreatorAddress ?? safeSubmitterAddress,
-			safeSubmitterAddress,
-			safeSubmitterPrivateKey: firstString(
-				process.env.SAFE_SUBMITTER_PRIVATE_KEY,
-				process.env.SAFE_SIGNER_PRIVATE_KEY,
-				process.env.SAFE_PROPOSER_PRIVATE_KEY,
-			),
-			safeSubmitterKeyName:
-				process.env.SAFE_SUBMITTER_KEY_NAME || process.env.SAFE_SIGNER_KEY_NAME || process.env.SAFE_PROPOSER_KEY_NAME || "TEAM_PROPOSER",
+			safeTxCreatorAddress: safeTxCreator.value ?? safeSubmitter.value,
+			safeSubmitterAddress: safeSubmitter.value,
+			safeSubmitterSource: safeSubmitter.source,
+			safeSubmitterPrivateKey,
+			safeSubmitterKeyName,
 			safeServiceUrl: safeServiceUrl!,
 			safeNonceOverride: parseSafeNonceOverride(firstString(process.env.SAFE_NONCE, process.env.SAFE_TX_NONCE)),
 			calls: included,
