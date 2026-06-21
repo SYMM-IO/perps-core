@@ -1,10 +1,12 @@
 import fs from "fs"
 import path from "path"
 
-import { ethers } from "../../test/helpers/hardhat-connection.js"
-import { migrate, MigrationConfig, MigrationInput, MigrationReport } from "./migrate.js"
+import type { MigrationFacet } from "../../src/types/index.js"
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
+import { migrate, MigrationConfig, MigrationInput, MigrationQuoteView, MigrationReport } from "./migrate.js"
 import { getImpersonatedAdmin } from "./utils/forkHelpers.js"
 import { log } from "./utils/log.js"
+import { quoteRequiresMigration, quoteStatusName, quoteStatusNumber } from "./utils/migrationQuoteRules.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
 import { loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig.js"
 
@@ -75,7 +77,8 @@ type MigrationConfigFile = {
 	outputDir?: string
 }
 
-const MIGRATION_CONFIG_FILE = resolveConfigFile("migrate", undefined, process.env.MIGRATION_CONFIG_FILE)
+const networkName = connection.networkName
+const MIGRATION_CONFIG_FILE = resolveConfigFile("migrate", networkName, process.env.MIGRATION_CONFIG_FILE)
 
 function loadMigrationConfigFile(): MigrationConfigFile {
 	const configPath = MIGRATION_CONFIG_FILE
@@ -219,9 +222,6 @@ function loadMigrationInput(filePath: string): {
 	}
 }
 
-// Statuses that migrateQuotes processes and marks as migrated
-const MIGRATABLE_STATUSES = new Set([0, 1, 2, 4, 5, 6])
-
 export async function verifyMigration(
 	migrationFacet: any,
 	viewFacet: any,
@@ -234,13 +234,12 @@ export async function verifyMigration(
 	for (const quoteId of openQuoteIds) {
 		const migrated = await migrationFacet.isQuoteMigrated(quoteId)
 		if (!migrated) {
-			// Check on-chain status — the contract skips non-migratable statuses (CANCELED, CLOSED, etc.)
+			// Check on-chain state — the contract skips terminal statuses and active positions with zero open amount.
 			const quote = await viewFacetQuote.getQuote(quoteId)
-			const status = Number(quote.quoteStatus)
-			if (!MIGRATABLE_STATUSES.has(status)) {
-				continue // correctly skipped by contract
+			if (!quoteRequiresMigration(quote)) {
+				continue
 			}
-			throw new Error(`Quote ${quoteId.toString()} not migrated (status=${status})`)
+			throw new Error(`Quote ${quoteId.toString()} not migrated (status=${quoteStatusName(quoteStatusNumber(quote))})`)
 		}
 	}
 
@@ -331,7 +330,7 @@ if (configFile.outputDir && typeof configFile.outputDir !== "string") {
 	throw new Error("outputDir must be a string path.")
 }
 
-const upgradeShared = loadUpgradeConfigShared()
+const upgradeShared = loadUpgradeConfigShared(networkName)
 const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? configFile.diamondAddress ?? upgradeShared.diamondAddress
 const MIGRATION_INPUT_FILE = process.env.MIGRATION_INPUT_FILE ?? configFile.migrationInputFile
 
@@ -457,13 +456,17 @@ async function main() {
 		// Connect facets
 		let t = log.step("Connect facets")
 		currentStep = "connect_facets"
-		const migrationFacet = await ethers.getContractAt("contracts/core/facets/Migration/MigrationFacet.sol:MigrationFacet", DIAMOND_ADDRESS, admin)
+		const migrationFacet = (await ethers.getContractAt(
+			"contracts/core/facets/Migration/MigrationFacet.sol:MigrationFacet",
+			DIAMOND_ADDRESS,
+			admin,
+		)) as unknown as MigrationFacet
 		const viewFacet = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", DIAMOND_ADDRESS, admin)
-		const viewFacetQuote = await ethers.getContractAt(
+		const viewFacetQuote = (await ethers.getContractAt(
 			"contracts/core/facets/ViewFacetQuote/ViewFacetQuote.sol:ViewFacetQuote",
 			DIAMOND_ADDRESS,
 			admin,
-		)
+		)) as unknown as MigrationQuoteView
 		const viewFacetAggregate = await ethers.getContractAt(
 			"contracts/core/facets/ViewFacetAggregate/ViewFacetAggregate.sol:ViewFacetAggregate",
 			DIAMOND_ADDRESS,

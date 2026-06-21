@@ -1,8 +1,9 @@
 import fs from "fs"
 import path from "path"
 
-import { ethers } from "../../test/helpers/hardhat-connection.js"
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
+import { quoteRequiresMigration } from "./utils/migrationQuoteRules.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
 import { loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig.js"
 import { fetchOpenQuotes } from "./utils/subgraphHelpers.js"
@@ -57,14 +58,19 @@ type PrepareReport = {
 	error?: string
 }
 
-const CONFIG_FILE = resolveConfigFile("prepareMigration", undefined, process.env.PREPARE_MIGRATION_CONFIG_FILE)
-
-function loadConfig(): PrepareConfig {
-	if (!fs.existsSync(CONFIG_FILE)) return {}
-	const raw = fs.readFileSync(CONFIG_FILE, "utf-8")
+function loadConfig(configFile: string): PrepareConfig {
+	if (!fs.existsSync(configFile)) return {}
+	const raw = fs.readFileSync(configFile, "utf-8")
 	const data = JSON.parse(raw)
 	if (!data || typeof data !== "object") throw new Error("Config must be a JSON object.")
 	return data as PrepareConfig
+}
+
+function resolveSubgraphEndpoint(networkName: string, config: PrepareConfig, shared: ReturnType<typeof loadUpgradeConfigShared>): string {
+	const endpoint = process.env.SUBGRAPH_ENDPOINT || config.subgraphEndpoint || shared.subgraphEndpoint
+	if (endpoint) return endpoint
+	if (networkName === "arbitrum" || networkName === "fork-arbitrum") return DEFAULT_SUBGRAPH_ENDPOINT
+	throw new Error(`SUBGRAPH_ENDPOINT is required for ${networkName}. Set it in env or upgrade-${networkName}.json.`)
 }
 
 function formatError(error: unknown): string {
@@ -105,11 +111,13 @@ async function main() {
 	const scriptTimer = log.timer()
 	await verifyRpc()
 	const startedAtMs = Date.now()
-	const config = loadConfig()
+	const networkName = connection.networkName
+	const configFile = resolveConfigFile("prepareMigration", networkName, process.env.PREPARE_MIGRATION_CONFIG_FILE)
+	const config = loadConfig(configFile)
 
-	const shared = loadUpgradeConfigShared()
+	const shared = loadUpgradeConfigShared(networkName)
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress ?? shared.diamondAddress
-	const SUBGRAPH_ENDPOINT = process.env.SUBGRAPH_ENDPOINT || config.subgraphEndpoint || shared.subgraphEndpoint || DEFAULT_SUBGRAPH_ENDPOINT
+	const SUBGRAPH_ENDPOINT = resolveSubgraphEndpoint(networkName, config, shared)
 	const outputDir = process.env.PREPARE_OUTPUT_DIR ?? config.outputDir ?? "./scripts/upgrade/output"
 	const outputFile = process.env.PREPARE_OUTPUT_FILE ?? config.outputFile ?? `${outputDir}/migration-input.json`
 	const reportFile = `${outputDir}/prepareMigrationInput-report.json`
@@ -202,14 +210,20 @@ async function main() {
 		t = log.step("Build migration input")
 		currentStep = "build_input"
 
+		const quotesForMigration = quotesResult.quotes.filter(q => quoteRequiresMigration(q))
+		const skippedByContract = quotesResult.quotes.length - quotesForMigration.length
+		if (skippedByContract > 0) {
+			log.info(`Filtered ${skippedByContract} quotes that MigrationFacetImpl would skip`)
+		}
+
 		// Quote IDs
-		const quoteIds = quotesResult.quotes.map(q => q.quoteId).sort((a, b) => Number(BigInt(a) - BigInt(b)))
+		const quoteIds = quotesForMigration.map(q => q.quoteId).sort((a, b) => Number(BigInt(a) - BigInt(b)))
 
 		// PartyB tasks derived from active quotes (not from all historical balance entries).
 		// Only partyB-partyA pairs with active quotes have non-zero locked values to migrate.
 		// PENDING quotes have partyB = address(0) and don't contribute to partyB locked values.
 		const partyBTaskMap = new Map<string, Set<string>>()
-		for (const q of quotesResult.quotes) {
+		for (const q of quotesForMigration) {
 			if (!q.partyB || q.partyB === "0x0000000000000000000000000000000000000000") continue
 			if (!partyBTaskMap.has(q.partyB)) {
 				partyBTaskMap.set(q.partyB, new Set())
@@ -227,7 +241,7 @@ async function main() {
 		// Only OPENED(4), CLOSE_PENDING(5), CANCEL_CLOSE_PENDING(6) get aggregated positions.
 		// PENDING(0), LOCKED(1), CANCEL_PENDING(2) only get fee reservation — no aggregated positions.
 		const expectedAggregates: Record<string, { long: string; short: string }> = {}
-		for (const q of quotesResult.quotes) {
+		for (const q of quotesForMigration) {
 			if (q.quoteStatus !== 4 && q.quoteStatus !== 5 && q.quoteStatus !== 6) continue
 			const openAmount = BigInt(q.quantity) - BigInt(q.closedAmount)
 			if (openAmount <= 0n) continue
@@ -259,6 +273,7 @@ async function main() {
 		log.ok(`Written to ${outputFile}`)
 		log.stats([
 			["Quote IDs", quoteIds.length],
+			["Contract-skipped quotes", skippedByContract],
 			["PartyB tasks", partyBTasks.length],
 			["Aggregate keys", Object.keys(expectedAggregates).length],
 		])
@@ -270,6 +285,7 @@ async function main() {
 				quoteIds: quoteIds.length,
 				partyBTasks: partyBTasks.length,
 				aggregateKeys: Object.keys(expectedAggregates).length,
+				skippedByContract,
 			},
 		})
 		currentStep = null

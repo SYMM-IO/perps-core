@@ -1,9 +1,10 @@
 import fs from "fs"
 
-import { ethers } from "../../test/helpers/hardhat-connection.js"
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
+import { quoteRequiresMigration, quoteStatusName } from "./utils/migrationQuoteRules.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
-import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
+import { loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig.js"
 
 /**
  * Validate migration input edge cases against on-chain state.
@@ -29,17 +30,27 @@ import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 // ── Raw getQuote decoding (same as validateMigrationInput.ts) ───────
 //
 // Tuple field layout (head offsets, 0-indexed):
-//   0: id              2: symbolId        20: partyA
-//   21: partyB         22: quoteStatus
+//   0: id              2: symbolId        9: quantity
+//   10: closedAmount   20: partyA         21: partyB
+//   22: quoteStatus
 
 const GET_QUOTE_SELECTOR = ethers.id("getQuote(uint256)").slice(0, 10)
 
-function decodeQuoteFields(data: string): { symbolId: string; partyA: string; partyB: string; quoteStatus: number } {
+function decodeQuoteFields(data: string): {
+	symbolId: string
+	partyA: string
+	partyB: string
+	quoteStatus: number
+	quantity: string
+	closedAmount: string
+} {
 	const tupleStart = 66
 	const word = (index: number): string => data.slice(tupleStart + index * 64, tupleStart + (index + 1) * 64)
 
 	return {
 		symbolId: BigInt("0x" + word(2)).toString(),
+		quantity: BigInt("0x" + word(9)).toString(),
+		closedAmount: BigInt("0x" + word(10)).toString(),
 		partyA: ethers.getAddress("0x" + word(20).slice(24)),
 		partyB: ethers.getAddress("0x" + word(21).slice(24)),
 		quoteStatus: Number(BigInt("0x" + word(22))),
@@ -49,38 +60,27 @@ function decodeQuoteFields(data: string): { symbolId: string; partyA: string; pa
 async function rawGetQuote(
 	diamondAddress: string,
 	quoteId: bigint,
-): Promise<{ symbolId: string; partyA: string; partyB: string; quoteStatus: number }> {
+): Promise<{ symbolId: string; partyA: string; partyB: string; quoteStatus: number; quantity: string; closedAmount: string }> {
 	const calldata = GET_QUOTE_SELECTOR + ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [quoteId]).slice(2)
 	const result = await ethers.provider.call({ to: diamondAddress, data: calldata })
 	if (!result || result === "0x") throw new Error(`getQuote(${quoteId}) returned empty data`)
 	return decodeQuoteFields(result)
 }
 
-// Statuses that require migration
-const MIGRATABLE_STATUSES = new Set([0, 1, 2, 4, 5, 6])
-// PENDING=0, LOCKED=1, CANCEL_PENDING=2, OPENED=4, CLOSE_PENDING=5, CANCEL_CLOSE_PENDING=6
-
-const STATUS_NAMES: Record<number, string> = {
-	0: "PENDING",
-	1: "LOCKED",
-	2: "CANCEL_PENDING",
-	3: "CANCELED",
-	4: "OPENED",
-	5: "CLOSE_PENDING",
-	6: "CANCEL_CLOSE_PENDING",
-	7: "CLOSED",
-	8: "LIQUIDATED",
-	9: "EXPIRED",
-	10: "LIQUIDATED_PENDING",
-}
-
 function statusName(status: number): string {
-	return STATUS_NAMES[status] ?? `UNKNOWN(${status})`
+	return quoteStatusName(status)
 }
 
 // ── Config ──────────────────────────────────────────────────────────
 
 const DEFAULT_INPUT_FILE = "./scripts/upgrade/output/migration-input.json"
+
+function loadMigrationInputFileFromConfig(networkName: string): string | undefined {
+	const configFile = resolveConfigFile("migrate", networkName, process.env.MIGRATION_CONFIG_FILE)
+	if (!fs.existsSync(configFile)) return undefined
+	const data = JSON.parse(fs.readFileSync(configFile, "utf-8")) as { migrationInputFile?: string }
+	return data.migrationInputFile
+}
 
 function toBigInt(value: unknown): bigint {
 	if (typeof value === "bigint") return value
@@ -95,9 +95,10 @@ async function main() {
 	const scriptTimer = log.timer()
 	await verifyRpc()
 
-	const shared = loadUpgradeConfigShared()
+	const networkName = connection.networkName
+	const shared = loadUpgradeConfigShared(networkName)
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? shared.diamondAddress
-	const INPUT_FILE = process.env.MIGRATION_INPUT_FILE ?? DEFAULT_INPUT_FILE
+	const INPUT_FILE = process.env.MIGRATION_INPUT_FILE ?? loadMigrationInputFileFromConfig(networkName) ?? DEFAULT_INPUT_FILE
 	// How many quotes to scan from each end (head and tail) for gap detection
 	const GAP_SCAN_RANGE = Number(process.env.GAP_SCAN_RANGE ?? 50)
 
@@ -135,7 +136,7 @@ async function main() {
 	const boundaryQuote = await rawGetQuote(DIAMOND_ADDRESS, onChainLastQuoteId)
 	log.info(`Quote ${onChainLastQuoteId}: status=${statusName(boundaryQuote.quoteStatus)}, partyA=${log.truncAddr(boundaryQuote.partyA)}`)
 
-	if (MIGRATABLE_STATUSES.has(boundaryQuote.quoteStatus)) {
+	if (quoteRequiresMigration(boundaryQuote)) {
 		if (quoteIdSet.has(onChainLastQuoteId)) {
 			log.ok(`Boundary quote ${onChainLastQuoteId} is ${statusName(boundaryQuote.quoteStatus)} and IS in migration input`)
 		} else {
@@ -171,7 +172,7 @@ async function main() {
 	for (let id = 1n; id <= headEnd; id++) {
 		gapsChecked++
 		const quote = await rawGetQuote(DIAMOND_ADDRESS, id)
-		if (MIGRATABLE_STATUSES.has(quote.quoteStatus) && !quoteIdSet.has(id)) {
+		if (quoteRequiresMigration(quote) && !quoteIdSet.has(id)) {
 			gapsMissing++
 			missingDetails.push(`  quote ${id}: ${statusName(quote.quoteStatus)} (partyA=${log.truncAddr(quote.partyA)})`)
 		}
@@ -182,7 +183,7 @@ async function main() {
 	for (let id = tailStart > headEnd ? tailStart : headEnd + 1n; id <= onChainLastQuoteId; id++) {
 		gapsChecked++
 		const quote = await rawGetQuote(DIAMOND_ADDRESS, id)
-		if (MIGRATABLE_STATUSES.has(quote.quoteStatus) && !quoteIdSet.has(id)) {
+		if (quoteRequiresMigration(quote) && !quoteIdSet.has(id)) {
 			gapsMissing++
 			missingDetails.push(`  quote ${id}: ${statusName(quote.quoteStatus)} (partyA=${log.truncAddr(quote.partyA)})`)
 		}

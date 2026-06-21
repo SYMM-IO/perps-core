@@ -2,6 +2,7 @@ import { ethers as eth } from "ethers"
 import * as fs from "fs"
 
 import { MigrationFacet } from "../../src/types/index.js"
+import { quoteRequiresMigration } from "./utils/migrationQuoteRules.js"
 
 // =============================================================================
 // Configuration
@@ -53,6 +54,10 @@ export interface MigrationInput {
 	partyBTasks: PartyBMigrationTask[]
 }
 
+export type MigrationQuoteView = {
+	getQuote(quoteId: bigint): Promise<{ quoteStatus: bigint; partyA: string; quantity?: bigint; closedAmount?: bigint }>
+}
+
 export interface MigrationProgress {
 	startedAt: string
 	phase: "quotes" | "balances" | "complete"
@@ -92,7 +97,7 @@ export interface MigrationReport {
 
 export async function migrate(
 	migrationFacet: MigrationFacet,
-	viewFacetQuote: { getQuote(quoteId: bigint): Promise<{ quoteStatus: bigint; partyA: string }> },
+	viewFacetQuote: MigrationQuoteView,
 	input: MigrationInput,
 	config: MigrationConfig = {},
 ): Promise<MigrationReport> {
@@ -154,27 +159,25 @@ export async function migrate(
 
 				let quotesToMigrate = input.quoteIds
 				if (!cfg.skipPreCheck) {
-					// Filter out already-migrated and non-migratable quotes to avoid no-op transactions.
-					// Non-migratable statuses (CANCELED=3, CLOSED=7, LIQUIDATED=8, EXPIRED=9, LIQUIDATED_PENDING=10)
-					// are correctly skipped by the contract — no need to send them.
-					const MIGRATABLE = new Set([0, 1, 2, 4, 5, 6])
+					// Filter out already-migrated and contract-skipped quotes to avoid no-op transactions.
+					// MigrationFacetImpl marks pending/locked quotes and active positions with openAmount > 0.
 					const pending: bigint[] = []
 					let alreadyMigrated = 0
-					let nonMigratable = 0
+					let skippedByContract = 0
 					for (const quoteId of input.quoteIds) {
 						const migrated: boolean = await migrationFacet.isQuoteMigrated(quoteId)
 						if (migrated) {
 							alreadyMigrated++
 						} else {
 							const quote = await viewFacetQuote.getQuote(quoteId)
-							if (MIGRATABLE.has(Number(quote.quoteStatus))) {
+							if (quoteRequiresMigration(quote)) {
 								pending.push(quoteId)
 							} else {
-								nonMigratable++
+								skippedByContract++
 							}
 						}
 					}
-					log("info", `  ${alreadyMigrated} already migrated, ${nonMigratable} non-migratable, ${pending.length} remaining`)
+					log("info", `  ${alreadyMigrated} already migrated, ${skippedByContract} skipped by contract, ${pending.length} remaining`)
 					quotesToMigrate = pending
 				}
 
