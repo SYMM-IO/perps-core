@@ -34,6 +34,7 @@ import {
 type Config = {
 	diamondAddress?: string
 	protocolAdmin?: string
+	adminAddress?: string
 	safeAddress?: string
 	migrationRunner?: string
 	diamondCutChunkSize?: number
@@ -53,10 +54,29 @@ type DeployedPeripherals = {
 
 const OUTPUT_DIR = "./scripts/upgrade/output"
 
+const ACCOUNT_LAYER_OWNERSHIP_ABI = ["function owner() view returns (address)", "function pendingOwner() view returns (address)"]
+
 function loadConfig(networkName: string): Config {
 	const configFile = resolveConfigFile("upgrade", networkName, process.env.UPGRADE_CONFIG_FILE)
 	if (!fs.existsSync(configFile)) return {}
 	return JSON.parse(fs.readFileSync(configFile, "utf-8")) as Config
+}
+
+async function shouldAcceptAccountLayerOwnership(accountLayerAddress: string, safeAddress: string): Promise<boolean> {
+	const viewFacet = new ethers.Contract(accountLayerAddress, ACCOUNT_LAYER_OWNERSHIP_ABI, ethers.provider)
+	const owner = ethers.getAddress(await viewFacet.owner())
+	const pendingOwner = ethers.getAddress(await viewFacet.pendingOwner())
+	const safe = ethers.getAddress(safeAddress)
+
+	if (owner === safe) {
+		console.log(`  AccountLayer owner is already Safe ${safe}; skipping acceptOwnership`)
+		return false
+	}
+	if (pendingOwner === safe) return true
+
+	throw new Error(
+		`AccountLayer ownership is not pending for Safe ${safe}. owner=${owner}, pendingOwner=${pendingOwner}. Run deployPeripherals.ts and verify transferOwnership first.`,
+	)
 }
 
 async function main() {
@@ -65,7 +85,7 @@ async function main() {
 
 	const CHAIN_ID = process.env.CHAIN_ID ?? String(Number((await ethers.provider.getNetwork()).chainId))
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress
-	const PROTOCOL_ADMIN = process.env.PROTOCOL_ADMIN ?? process.env.ADMIN_ADDRESS ?? config.protocolAdmin
+	const PROTOCOL_ADMIN = process.env.PROTOCOL_ADMIN ?? process.env.ADMIN_ADDRESS ?? config.protocolAdmin ?? config.adminAddress
 	const MIGRATION_RUNNER = process.env.MIGRATION_RUNNER ?? config.migrationRunner ?? PROTOCOL_ADMIN
 	const safeRaw = process.env.SAFE_ADDRESS ?? config.safeAddress
 	const SAFE_ADDRESS = safeRaw ? ethers.getAddress(safeRaw) : undefined
@@ -169,7 +189,7 @@ async function main() {
 			console.log(`  Added ${templateTxs.length} template transactions`)
 		}
 		// Accept AccountLayer ownership (two-step: deployPeripherals called transferOwnership, Safe must acceptOwnership)
-		if (SAFE_ADDRESS) {
+		if (SAFE_ADDRESS && (await shouldAcceptAccountLayerOwnership(AL_ADDRESS, SAFE_ADDRESS))) {
 			const acceptOwnershipIface = new ethers.Interface(["function acceptOwnership()"])
 			result.safeTxs.push(toHumanReadableSafeTxFromIface(acceptOwnershipIface, AL_ADDRESS, "acceptOwnership", []))
 			result.breakdown.push(`${result.breakdown.length + 1}. [ownership] acceptOwnership() on AccountLayer`)

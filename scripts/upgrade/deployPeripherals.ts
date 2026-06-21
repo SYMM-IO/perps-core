@@ -29,6 +29,7 @@ import { loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig
 type Config = {
 	diamondAddress?: string
 	protocolAdmin: string
+	adminAddress?: string
 	symmioFeeReceiver: string
 	safeAddress?: string
 }
@@ -49,7 +50,7 @@ function loadConfig(networkName: string): Config {
 	const raw: Partial<Config> = fs.existsSync(configFile) ? JSON.parse(fs.readFileSync(configFile, "utf-8")) : {}
 	return {
 		diamondAddress: raw.diamondAddress ?? shared.diamondAddress,
-		protocolAdmin: raw.protocolAdmin ?? shared.protocolAdmin ?? "",
+		protocolAdmin: raw.protocolAdmin ?? raw.adminAddress ?? shared.protocolAdmin ?? "",
 		symmioFeeReceiver: raw.symmioFeeReceiver ?? shared.symmioFeeReceiver ?? "",
 		safeAddress: raw.safeAddress ?? shared.safeAddress,
 	}
@@ -63,6 +64,42 @@ function loadState(): DeployedState {
 function saveState(state: DeployedState): void {
 	if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
 	fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2))
+}
+
+async function ensureAccountLayerOwnershipTransfer(accountLayerAddress: string, newOwner: string): Promise<void> {
+	const normalizedNewOwner = ethers.getAddress(newOwner)
+	const viewFacet = await ethers.getContractAt("contracts/accountLayer/facets/View/ViewFacet.sol:ViewFacet", accountLayerAddress)
+	const controlFacet = await ethers.getContractAt("contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet", accountLayerAddress)
+
+	const ownerBefore = ethers.getAddress(await viewFacet.owner())
+	const pendingOwnerBefore = ethers.getAddress(await viewFacet.pendingOwner())
+
+	if (ownerBefore === normalizedNewOwner) {
+		log.ok(`AccountLayer owner is already ${normalizedNewOwner}`)
+		return
+	}
+	if (pendingOwnerBefore === normalizedNewOwner) {
+		log.ok(`AccountLayer ownership already pending for ${normalizedNewOwner}`)
+		return
+	}
+
+	try {
+		await (await controlFacet.transferOwnership(normalizedNewOwner)).wait()
+	} catch (error) {
+		throw new Error(
+			`Failed to transfer AccountLayer ownership to ${normalizedNewOwner}. Current owner=${ownerBefore}, pendingOwner=${pendingOwnerBefore}. ${(error as Error).message}`,
+		)
+	}
+
+	const ownerAfter = ethers.getAddress(await viewFacet.owner())
+	const pendingOwnerAfter = ethers.getAddress(await viewFacet.pendingOwner())
+	if (ownerAfter !== normalizedNewOwner && pendingOwnerAfter !== normalizedNewOwner) {
+		throw new Error(
+			`AccountLayer ownership transfer did not set the Safe as owner or pending owner. owner=${ownerAfter}, pendingOwner=${pendingOwnerAfter}`,
+		)
+	}
+
+	log.ok(`transferOwnership(${normalizedNewOwner}) on AccountLayer — new owner must call acceptOwnership()`)
 }
 
 async function main() {
@@ -128,14 +165,7 @@ async function main() {
 	// Transfer AccountLayer ownership to Safe (two-step: Safe must call acceptOwnership)
 	const AL_NEW_OWNER = process.env.SAFE_ADDRESS ?? config.safeAddress
 	if (AL_NEW_OWNER && ethers.isAddress(AL_NEW_OWNER)) {
-		const alControlFacet = await ethers.getContractAt("contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet", alResult.diamondAddress)
-		try {
-			await (await alControlFacet.transferOwnership(AL_NEW_OWNER)).wait()
-			log.ok(`transferOwnership(${AL_NEW_OWNER}) on AccountLayer — new owner must call acceptOwnership()`)
-		} catch (e: any) {
-			// May fail if already transferred or caller is not the owner (e.g. re-run after ownership was already transferred)
-			log.ok(`transferOwnership skipped (already transferred or caller is not owner)`)
-		}
+		await ensureAccountLayerOwnershipTransfer(alResult.diamondAddress, AL_NEW_OWNER)
 	}
 	log.stepDone(t)
 

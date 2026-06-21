@@ -41,6 +41,7 @@ import { deployFacets, buildDiamondCut, applyDiamondCut, setV085Parameters, type
 type Config = {
 	diamondAddress?: string
 	protocolAdmin?: string
+	adminAddress?: string
 	migrationRunner?: string
 	symmioFeeReceiver?: string
 	setupInstantLayerTemplates?: boolean
@@ -61,7 +62,7 @@ async function main() {
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress
 	if (!DIAMOND_ADDRESS) throw new Error("DIAMOND_ADDRESS required (env or config)")
 
-	const MIGRATION_RUNNER = config.migrationRunner ?? config.protocolAdmin
+	const MIGRATION_RUNNER = config.migrationRunner ?? config.protocolAdmin ?? config.adminAddress
 	const newParams = config.newV085Parameters ?? {}
 
 	log.header("Symmio v0.8.5 EOA Upgrade")
@@ -98,9 +99,8 @@ async function main() {
 
 	// Step 3: Pause system
 	t = log.step("Pause system")
-	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", DIAMOND_ADDRESS)
 	let signer
-	const protocolAdminAddress = config.protocolAdmin
+	const protocolAdminAddress = config.protocolAdmin ?? config.adminAddress
 	if (protocolAdminAddress) {
 		const signers = await ethers.getSigners()
 		for (const s of signers) {
@@ -117,6 +117,7 @@ async function main() {
 		signer = await ethers.provider.getSigner()
 	}
 	const signerAddress = await signer.getAddress()
+	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", DIAMOND_ADDRESS, signer)
 	await (await controlFacet.setAdmin(signerAddress)).wait()
 	log.ok("Admin set")
 	await (await controlFacet.grantRole(signerAddress, ethers.id("PAUSER_ROLE"))).wait()
@@ -142,14 +143,14 @@ async function main() {
 
 	// Step 4: Apply diamond cut
 	t = log.step("Apply diamond cut")
-	await applyDiamondCut(DIAMOND_ADDRESS, diamondCut)
+	await applyDiamondCut(DIAMOND_ADDRESS, diamondCut, signer)
 	log.ok("Diamond cut applied")
 	log.stepDone(t)
 
 	// Step 5: Set v0.8.5 parameters
 	t = log.step("Set v0.8.5 parameters")
 	if (Object.keys(newParams).length > 0) {
-		await setV085Parameters(DIAMOND_ADDRESS, newParams)
+		await setV085Parameters(DIAMOND_ADDRESS, newParams, signer)
 	} else {
 		log.info("(no parameters configured)")
 	}
