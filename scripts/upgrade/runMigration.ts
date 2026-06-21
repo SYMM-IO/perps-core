@@ -244,10 +244,10 @@ export async function verifyMigration(
 	}
 
 	for (const task of partyBTasks) {
-		if (task.partyAs.length > 0) {
-			const migrated = await migrationFacet.isCrossLockedValuesMigrated(task.partyB, task.partyAs[0])
+		for (const partyA of task.partyAs) {
+			const migrated = await migrationFacet.isCrossLockedValuesMigrated(task.partyB, partyA)
 			if (!migrated) {
-				throw new Error(`PartyB ${task.partyB} not migrated`)
+				throw new Error(`PartyB ${task.partyB} / PartyA ${partyA} not migrated`)
 			}
 		}
 

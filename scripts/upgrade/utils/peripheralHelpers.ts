@@ -3,6 +3,7 @@
  *
  * These contracts are new in v0.8.5 and must be deployed fresh during the upgrade.
  */
+import type { Interface } from "ethers"
 import fs from "fs"
 import path from "path"
 
@@ -410,7 +411,7 @@ export type WiringTransaction = {
 	value: string
 	calldata: string
 	description: string
-	iface: ethers.Interface
+	iface: Interface
 	methodName: string
 	args: any[]
 }
@@ -445,7 +446,7 @@ export function buildWiringTransactions(
 	const proxyAdminIface = new ethers.Interface(["function upgrade(address proxy, address implementation)"])
 
 	// Helper to reduce repetition
-	const push = (to: string, iface: ethers.Interface, methodName: string, args: any[], description: string) => {
+	const push = (to: string, iface: Interface, methodName: string, args: any[], description: string) => {
 		txs.push({
 			to,
 			value: "0",
@@ -589,7 +590,7 @@ export function buildSymbolManagerWiringTransactions(diamondAddress: string, sym
 
 	const controlFacetIface = new ethers.Interface(["function grantRole(address account, bytes32 role)"])
 
-	const push = (to: string, iface: ethers.Interface, methodName: string, args: any[], description: string) => {
+	const push = (to: string, iface: Interface, methodName: string, args: any[], description: string) => {
 		txs.push({
 			to,
 			value: "0",
