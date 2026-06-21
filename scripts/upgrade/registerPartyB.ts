@@ -132,6 +132,47 @@ type SafeInfo = {
 	owners?: string[]
 }
 
+type SafeDecodedParameter = {
+	name?: string
+	type?: string
+	value?: string
+	valueDecoded?: unknown
+}
+
+type SafeDecodedData = {
+	method?: string
+	parameters?: SafeDecodedParameter[]
+}
+
+type SafeDecodedInnerTransaction = {
+	operation?: number
+	to?: string
+	value?: string
+	data?: string
+	dataDecoded?: SafeDecodedData | null
+}
+
+type SafeFrontDecodeCallCheck = {
+	label: string
+	to: string
+	expectedMethod: string
+	decodedMethod?: string
+	decoded: boolean
+	issue?: string
+}
+
+type SafeFrontDecodeCheck = {
+	checked: boolean
+	ok: boolean
+	serviceUrl: string
+	proposalTarget: string
+	proposalMethod?: string
+	importBatchFile?: string
+	calls: SafeFrontDecodeCallCheck[]
+	issues: string[]
+	note: string
+}
+
 const OUTPUT_DIR = process.env.PARTYB_REGISTRATION_OUTPUT_DIR || "./scripts/upgrade/output"
 const SAFE_TX_BUILDER_VERSION = "1.18.0"
 const SAFE_SERVICE_SLUG_BY_CHAIN_ID: Record<string, string> = {
@@ -679,6 +720,95 @@ function stripRawCalldata(call: HumanReadablePlannedCall) {
 	return decodedCall
 }
 
+function getDecodedInnerTransactions(dataDecoded: SafeDecodedData | undefined): SafeDecodedInnerTransaction[] {
+	const transactions = dataDecoded?.parameters?.find(param => param.name === "transactions")?.valueDecoded
+	return Array.isArray(transactions) ? (transactions as SafeDecodedInnerTransaction[]) : []
+}
+
+async function decodeWithSafeService(safeServiceUrl: string, to: string, data: string): Promise<{ decoded?: SafeDecodedData; error?: string }> {
+	try {
+		return {
+			decoded: await fetchJson<SafeDecodedData>(`${safeServiceUrl}/data-decoder/`, {
+				method: "POST",
+				body: JSON.stringify({ to, data }),
+			}),
+		}
+	} catch (err) {
+		return { error: getErrorMessage(err) }
+	}
+}
+
+async function checkSafeFrontDecode(params: {
+	safeServiceUrl: string
+	proposalTx: SafeProposalTx
+	calls: PlannedCall[]
+	safeBatchFile?: string
+}): Promise<SafeFrontDecodeCheck> {
+	const issues: string[] = []
+	const proposalDecode = await decodeWithSafeService(params.safeServiceUrl, params.proposalTx.to, params.proposalTx.data)
+	if (proposalDecode.error) issues.push(`Safe decoder could not decode proposal transaction: ${proposalDecode.error}`)
+
+	const proposalDecoded = proposalDecode.decoded
+	const innerTransactions = params.proposalTx.operation === 1 ? getDecodedInnerTransactions(proposalDecoded) : []
+	const callChecks = params.calls.map((call, index): SafeFrontDecodeCallCheck => {
+		const decoded = params.proposalTx.operation === 1 ? innerTransactions[index]?.dataDecoded : proposalDecoded
+		const decodedMethod = decoded?.method
+		const methodMatches = decodedMethod === call.methodName
+		const issue = methodMatches
+			? undefined
+			: decodedMethod
+				? `Safe decoder returned ${decodedMethod}, expected ${call.methodName}`
+				: "Safe decoder returned no method; Safe Front may show raw calldata for this call"
+		if (issue) issues.push(`${call.label}: ${issue}`)
+		return {
+			label: call.label,
+			to: call.to,
+			expectedMethod: call.methodName,
+			decodedMethod,
+			decoded: methodMatches,
+			issue,
+		}
+	})
+
+	if (params.proposalTx.operation === 1 && proposalDecoded?.method !== "multiSend") {
+		issues.push(`Safe decoder returned proposal method ${proposalDecoded?.method ?? "(none)"}, expected multiSend`)
+	}
+
+	return {
+		checked: true,
+		ok: issues.length === 0,
+		serviceUrl: params.safeServiceUrl,
+		proposalTarget: params.proposalTx.to,
+		proposalMethod: proposalDecoded?.method,
+		importBatchFile: params.safeBatchFile,
+		calls: callChecks,
+		issues,
+		note: "Safe Front decodes API-submitted transactions from the Safe decoder service. The Transaction Builder batch remains the human-readable Safe Front import artifact.",
+	}
+}
+
+function printSafeFrontDecodeCheck(check: SafeFrontDecodeCheck) {
+	section("Safe Front decode check")
+	console.log(
+		renderTable(
+			["#", "Action", "Expected", "Safe decoder", "Result"],
+			check.calls.map((call, index) => [
+				paint.bold(String(index + 1)),
+				paint.bold(call.label),
+				call.expectedMethod,
+				call.decodedMethod ?? paint.dim("(not decoded)"),
+				call.decoded ? paint.green("human-readable") : paint.red("raw in Safe Front"),
+			]),
+		),
+	)
+	if (check.importBatchFile) {
+		console.log(`Safe Transaction Builder import: ${check.importBatchFile}`)
+	}
+	if (!check.ok) {
+		console.log(paint.red("Safe Front will not be able to verify every inner call in human-readable form for this API proposal."))
+	}
+}
+
 function printConfigOverview(params: {
 	networkName: string
 	chainId: bigint
@@ -1021,6 +1151,7 @@ async function buildAndMaybeSubmitSafeProposal(params: {
 	proposalTx: SafeProposalTx
 	submitSafeProposal: boolean
 	proposalFile: string
+	safeBatchFile?: string
 }) {
 	const safe = new ethers.Contract(params.safeAddress, safeIface, ethers.provider)
 	const safeInfo = await getSafeInfo(params.safeAddress, params.safeServiceUrl)
@@ -1116,12 +1247,30 @@ async function buildAndMaybeSubmitSafeProposal(params: {
 		owners: safeInfo.owners,
 		humanReadableCalls,
 	}
+	const shouldCheckSafeFrontDecode = boolEnv("CHECK_SAFE_FRONT_DECODE", params.submitSafeProposal)
+	if (shouldCheckSafeFrontDecode) {
+		report.safeFrontDecodeCheck = await checkSafeFrontDecode({
+			safeServiceUrl: params.safeServiceUrl,
+			proposalTx: params.proposalTx,
+			calls: params.calls,
+			safeBatchFile: params.safeBatchFile,
+		})
+		printSafeFrontDecodeCheck(report.safeFrontDecodeCheck)
+	}
 	writeJson(params.proposalFile, report)
 
 	if (!params.submitSafeProposal) {
 		report.submissionSkippedReason = "SUBMIT_SAFE_PROPOSAL is not true"
 		writeJson(params.proposalFile, report)
 		return report
+	}
+	if (report.safeFrontDecodeCheck && !report.safeFrontDecodeCheck.ok && !boolEnv("ALLOW_UNDECODED_SAFE_FRONT")) {
+		report.submissionSkippedReason =
+			"Safe Front decode check failed; set ALLOW_UNDECODED_SAFE_FRONT=true only after reviewing the Transaction Builder import batch."
+		writeJson(params.proposalFile, report)
+		throw new Error(
+			"Safe Front cannot decode every call in this proposal. Review/import the Safe Transaction Builder batch or set ALLOW_UNDECODED_SAFE_FRONT=true after manual review.",
+		)
 	}
 
 	section("Safe Proposal Transaction")
@@ -1342,6 +1491,7 @@ async function main() {
 			proposalTx,
 			submitSafeProposal,
 			proposalFile,
+			safeBatchFile: safeAddress ? safeBatchFile : undefined,
 		})
 		writeJson(reportFile, report)
 		console.log(`Safe proposal report: ${proposalFile}`)
