@@ -586,6 +586,12 @@ function formatMatch(value: boolean | "unknown"): string {
 	return value ? paint.green("matches") : paint.red("differs")
 }
 
+function formatMetadataValue(value: string | undefined): string {
+	if (value === undefined) return paint.yellow("unavailable")
+	if (value.length === 0) return paint.dim("(empty)")
+	return value
+}
+
 function formatList(values: Array<string | bigint>): string {
 	return values.length > 0 ? values.map(value => String(value)).join(", ") : paint.dim("(none)")
 }
@@ -693,6 +699,25 @@ function printStateOverview(partyBs: PartyBPlan[], states: Map<string, CurrentSt
 			}),
 		),
 	)
+
+	const metadataRows = partyBs
+		.map(partyB => {
+			const state = states.get(partyB.address)!
+			if (!state.metadata) return undefined
+			return [
+				paint.bold(partyB.label),
+				paint.cyan(partyB.address),
+				formatMetadataValue(state.metadata.name),
+				formatMetadataValue(state.metadata.brandColor),
+				formatMetadataValue(state.metadata.metadata),
+			]
+		})
+		.filter((row): row is string[] => row !== undefined)
+	if (metadataRows.length > 0) {
+		console.log("")
+		console.log(paint.bold("On-chain metadata"))
+		console.log(renderTable(["PartyB", "Address", "On-chain name", "On-chain brand color", "On-chain metadata"], metadataRows))
+	}
 }
 
 function printHumanReadableCalls(title: string, calls: PlannedCall[]) {
