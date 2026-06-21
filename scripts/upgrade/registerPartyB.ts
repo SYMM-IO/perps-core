@@ -15,6 +15,7 @@
  *
  * In proposal mode Hardhat loads signer[0] from TEAM_PROPOSER by default. Override with
  * SAFE_SUBMITTER_ADDRESS/SAFE_SUBMITTER_KEY_NAME only when you need a different Safe owner/delegate.
+ * Override automatic first-unqueued Safe nonce selection with SAFE_NONCE=<n> or SAFE_TX_NONCE=<n>.
  *
  * Config:
  *   scripts/upgrade/config/partyBRegistration-<network>.json
@@ -135,6 +136,35 @@ type SafeInfo = {
 	owners?: string[]
 	threshold?: number
 	version?: string
+}
+
+type SafeQueuedTransaction = {
+	nonce?: number
+	to?: string
+	data?: string | null
+	operation?: number
+	safeTxHash?: string
+	contractTransactionHash?: string
+	submissionDate?: string
+	origin?: string
+	proposer?: string
+	proposedByDelegate?: string
+}
+
+type SafeQueuedTransactionsResult = {
+	transactions: SafeQueuedTransaction[]
+	fetched: boolean
+	count?: number
+	error?: string
+}
+
+type SafeNonceResolution = {
+	nonce: number
+	onChainNonce: number
+	queuedNonces: number[]
+	source: string
+	override?: number
+	warnings: string[]
 }
 
 type DelegateInfo = {
@@ -1023,6 +1053,9 @@ function printSafeProposalOverview(params: {
 	safeSubmitterAddress: string
 	safeSubmitterSource: string
 	safeNonce: number
+	nonceResolution: SafeNonceResolution
+	queuedTransactions: SafeQueuedTransactionsResult
+	existingProposal?: SafeQueuedTransaction
 	safeTxHash: string
 	proposalTx: SafeProposalTx
 	calls: PlannedCall[]
@@ -1045,6 +1078,11 @@ function printSafeProposalOverview(params: {
 		params.proposalTx.operation === 1
 			? `single Safe tx wrapping ${params.calls.length} inner call(s)`
 			: `single Safe tx calling ${params.calls[0]?.methodName ?? "target"}`
+	const queuedNonceList = params.queuedTransactions.fetched
+		? params.nonceResolution.queuedNonces.length > 0
+			? params.nonceResolution.queuedNonces.join(", ")
+			: "(none)"
+		: `unknown (${params.queuedTransactions.error ?? "fetch failed"})`
 
 	section("Safe Proposal Overview")
 	console.log(
@@ -1055,10 +1093,15 @@ function printSafeProposalOverview(params: {
 				["Safe", paint.cyan(params.safeAddress)],
 				["Safe version", params.safeInfo.version ? paint.cyan(params.safeInfo.version) : paint.yellow("unknown")],
 				["Safe service", paint.cyan(params.safeServiceUrl)],
-				["Nonce", paint.bold(String(params.safeNonce))],
+				["Selected nonce", paint.bold(String(params.safeNonce))],
+				["Nonce source", params.nonceResolution.source],
+				["On-chain nonce", paint.bold(String(params.nonceResolution.onChainNonce))],
+				["Queued pending nonces", params.queuedTransactions.fetched ? paint.yellow(queuedNonceList) : paint.yellow(queuedNonceList)],
+				["Nonce override", "SAFE_NONCE=<n> or SAFE_TX_NONCE=<n>"],
 				["Threshold", params.safeInfo.threshold === undefined ? paint.yellow("unknown") : paint.bold(String(params.safeInfo.threshold))],
 				["Owners", owners.length > 0 ? paint.bold(String(owners.length)) : paint.yellow("unknown")],
 				["Delegates", params.safeDelegates.fetched ? paint.bold(String(delegates.length)) : paint.yellow("lookup failed")],
+				["Already queued", params.existingProposal ? paint.green("yes") : paint.dim("no")],
 				["Safe tx creator", paint.cyan(params.safeTxCreatorAddress)],
 				["Safe proposer/sender", paint.cyan(params.safeSubmitterAddress)],
 				["Proposer source", params.safeSubmitterSource],
@@ -1105,6 +1148,11 @@ function printSafeProposalOverview(params: {
 				]),
 			),
 		)
+	}
+
+	if (params.nonceResolution.warnings.length > 0) {
+		console.log("")
+		for (const warning of params.nonceResolution.warnings) console.log(paint.yellow(`Nonce warning: ${warning}`))
 	}
 }
 
@@ -1374,6 +1422,71 @@ async function getSafeDelegates(safeAddress: string, serviceUrl: string): Promis
 	}
 }
 
+async function getQueuedSafeTransactions(safeAddress: string, serviceUrl: string): Promise<SafeQueuedTransactionsResult> {
+	try {
+		const transactions: SafeQueuedTransaction[] = []
+		let url: string | undefined = `${serviceUrl}/safes/${safeAddress}/multisig-transactions/?executed=false&trusted=true&limit=100`
+		let count: number | undefined
+		while (url) {
+			const response: { count?: number; next?: string | null; results?: SafeQueuedTransaction[] } = await fetchJson(url)
+			count = response.count ?? count
+			transactions.push(...(response.results ?? []))
+			url = response.next ?? undefined
+		}
+		return { transactions, fetched: true, count }
+	} catch (err) {
+		return { transactions: [], fetched: false, error: getErrorMessage(err) }
+	}
+}
+
+function resolveSafeNonce(onChainNonce: number, queuedTransactions: SafeQueuedTransaction[], requestedNonce?: number): SafeNonceResolution {
+	const queuedNonces = Array.from(
+		new Set(queuedTransactions.map(tx => tx.nonce).filter((nonce): nonce is number => typeof nonce === "number" && nonce >= onChainNonce)),
+	).sort((a, b) => a - b)
+	const queuedSet = new Set(queuedNonces)
+	const warnings: string[] = []
+
+	if (requestedNonce !== undefined) {
+		if (requestedNonce < onChainNonce) warnings.push(`Requested Safe nonce ${requestedNonce} is lower than on-chain Safe nonce ${onChainNonce}`)
+		if (queuedSet.has(requestedNonce)) {
+			warnings.push(`Requested Safe nonce ${requestedNonce} is already used by at least one pending Safe transaction`)
+		}
+		return { nonce: requestedNonce, onChainNonce, queuedNonces, source: "env override", override: requestedNonce, warnings }
+	}
+
+	let nonce = onChainNonce
+	while (queuedSet.has(nonce)) nonce++
+	if (nonce !== onChainNonce) warnings.push(`On-chain Safe nonce ${onChainNonce} is already queued; using first unqueued nonce ${nonce}`)
+	return { nonce, onChainNonce, queuedNonces, source: nonce === onChainNonce ? "on-chain nonce" : "first unqueued nonce", warnings }
+}
+
+function summarizeQueuedTransactions(transactions: SafeQueuedTransaction[]): Array<Record<string, unknown>> {
+	return transactions
+		.filter(tx => typeof tx.nonce === "number")
+		.map(tx => ({
+			nonce: tx.nonce,
+			safeTxHash: tx.safeTxHash ?? tx.contractTransactionHash,
+			to: tx.to,
+			operation: tx.operation,
+			submissionDate: tx.submissionDate,
+			origin: tx.origin,
+			proposer: tx.proposer,
+			proposedByDelegate: tx.proposedByDelegate,
+		}))
+}
+
+function findMatchingQueuedProposal(queuedTransactions: SafeQueuedTransaction[], proposalTx: SafeProposalTx, requestedNonce?: number) {
+	return queuedTransactions.find(tx => {
+		if (!tx.to || !tx.data) return false
+		if (requestedNonce !== undefined && tx.nonce !== requestedNonce) return false
+		return (
+			ethers.getAddress(tx.to).toLowerCase() === proposalTx.to.toLowerCase() &&
+			tx.data.toLowerCase() === proposalTx.data.toLowerCase() &&
+			Number(tx.operation ?? 0) === proposalTx.operation
+		)
+	})
+}
+
 function parseSafeNonceOverride(value: string | undefined): number | undefined {
 	if (!value) return undefined
 	const parsed = Number(BigInt(value))
@@ -1399,11 +1512,32 @@ async function buildAndMaybeSubmitSafeProposal(params: {
 	safeBatchFile?: string
 }) {
 	const safe = new ethers.Contract(params.safeAddress, safeIface, ethers.provider)
-	const [safeInfo, safeDelegates] = await Promise.all([
+	const [safeInfo, safeDelegates, queuedTransactions] = await Promise.all([
 		getSafeInfo(params.safeAddress, params.safeServiceUrl),
 		getSafeDelegates(params.safeAddress, params.safeServiceUrl),
+		getQueuedSafeTransactions(params.safeAddress, params.safeServiceUrl),
 	])
-	const safeNonce = params.safeNonceOverride ?? safeInfo.nonce ?? Number(await safe.nonce())
+	const onChainNonce = safeInfo.nonce ?? Number(await safe.nonce())
+	const baseNonceResolution = resolveSafeNonce(
+		onChainNonce,
+		queuedTransactions.fetched ? queuedTransactions.transactions : [],
+		params.safeNonceOverride,
+	)
+	if (!queuedTransactions.fetched) {
+		baseNonceResolution.warnings.push(`Could not fetch queued Safe transactions: ${queuedTransactions.error ?? "unknown error"}`)
+	}
+	const existingProposal = queuedTransactions.fetched
+		? findMatchingQueuedProposal(queuedTransactions.transactions, params.proposalTx, params.safeNonceOverride)
+		: undefined
+	const nonceResolution =
+		existingProposal?.nonce !== undefined
+			? {
+					...baseNonceResolution,
+					nonce: Number(existingProposal.nonce),
+					source: "matching queued proposal",
+				}
+			: baseNonceResolution
+	const safeNonce = nonceResolution.nonce
 	const submitterIsOwner = Boolean(safeInfo.owners?.some(owner => owner.toLowerCase() === params.safeSubmitterAddress.toLowerCase()))
 	const submitterIsDelegate = safeDelegates.delegates.some(delegate => delegate.toLowerCase() === params.safeSubmitterAddress.toLowerCase())
 	const safeTx = {
@@ -1434,6 +1568,10 @@ async function buildAndMaybeSubmitSafeProposal(params: {
 	if (typedDataHash.toLowerCase() !== safeTxHash.toLowerCase()) {
 		throw new Error(`Safe typed-data hash ${typedDataHash} did not match on-chain getTransactionHash ${safeTxHash}`)
 	}
+	const existingSafeTxHash = existingProposal?.safeTxHash || existingProposal?.contractTransactionHash
+	if (existingSafeTxHash && existingSafeTxHash.toLowerCase() !== safeTxHash.toLowerCase()) {
+		throw new Error(`Queued Safe tx hash ${existingSafeTxHash} did not match computed hash ${safeTxHash}`)
+	}
 	const humanReadableCalls = params.calls.map(describePlannedCall)
 	const decodedCalls = humanReadableCalls.map(stripRawCalldata)
 	const dataDecoded = buildProposalDataDecoded(params.proposalTx, humanReadableCalls)
@@ -1459,6 +1597,11 @@ async function buildAndMaybeSubmitSafeProposal(params: {
 		safe: params.safeAddress,
 		serviceUrl: params.safeServiceUrl,
 		safeNonce,
+		nonceResolution,
+		queuedTransactionsFetched: queuedTransactions.fetched,
+		queuedTransactionsCount: queuedTransactions.count ?? queuedTransactions.transactions.length,
+		queuedTransactionsError: queuedTransactions.error,
+		queuedTransactions: summarizeQueuedTransactions(queuedTransactions.transactions),
 		safeTxHash,
 		typedDataHash,
 		creatorAddress: params.safeTxCreatorAddress,
@@ -1504,6 +1647,8 @@ async function buildAndMaybeSubmitSafeProposal(params: {
 		submitterIsOwner,
 		submitterIsDelegate,
 		submitterCanSubmit: submitterIsOwner || submitterIsDelegate,
+		alreadyQueued: Boolean(existingProposal),
+		matchingQueuedProposal: existingProposal ? summarizeQueuedTransactions([existingProposal])[0] : undefined,
 		humanReadableCalls,
 	}
 	const shouldCheckSafeFrontDecode = boolEnv("CHECK_SAFE_FRONT_DECODE", params.submitSafeProposal)
@@ -1554,11 +1699,20 @@ async function buildAndMaybeSubmitSafeProposal(params: {
 		safeSubmitterAddress: params.safeSubmitterAddress,
 		safeSubmitterSource: params.safeSubmitterSource,
 		safeNonce,
+		nonceResolution,
+		queuedTransactions,
+		existingProposal,
 		safeTxHash,
 		proposalTx: params.proposalTx,
 		calls: params.calls,
 	})
 	printSafeDecodedPreview("Safe decoded call preview", params.calls)
+	if (existingProposal) {
+		report.submissionSkippedReason = "Matching Safe proposal already queued"
+		writeJson(params.proposalFile, report)
+		console.log(paint.green(`Matching Safe proposal already queued: ${safeTxHash}`))
+		return report
+	}
 
 	await requireConfirmation("submit Safe proposal", params.calls)
 	const signer = await getSafeSubmitterSigner(params.safeSubmitterAddress, params.safeSubmitterPrivateKey, params.safeSubmitterKeyName)
