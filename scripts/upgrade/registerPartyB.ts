@@ -10,8 +10,7 @@
  *   EXECUTE=true npx hardhat run scripts/upgrade/registerPartyB.ts --network <network>
  *
  * Safe Transaction Service proposal:
- *   SUBMIT_SAFE_PROPOSAL=true SAFE_MULTISEND_ADDRESS=<multisend> \
- *     SAFE_SUBMITTER_ADDRESS=<owner-or-delegate> \
+ *   SUBMIT_SAFE_PROPOSAL=true SAFE_SUBMITTER_ADDRESS=<owner-or-delegate> \
  *     SAFE_SUBMITTER_KEY_NAME=TEAM_PROPOSER USE_KEYSTORE=true \
  *     npx hardhat run scripts/upgrade/registerPartyB.ts --network <network>
  *
@@ -126,11 +125,21 @@ type SafeProposalTx = {
 	data: string
 	operation: number
 	multiSendData?: string
+	multiSendAddressSource?: string
 }
 
 type SafeInfo = {
 	nonce?: number
 	owners?: string[]
+	version?: string
+}
+
+type SafeDeployment = {
+	version: string
+	contracts: Array<{
+		contractName: string
+		address: string
+	}>
 }
 
 type SafeDecodedParameter = {
@@ -819,7 +828,7 @@ function printConfigOverview(params: {
 	safe: SourceValue<string | undefined>
 	instantLayer: SourceValue<string | undefined>
 	safeServiceUrl?: string
-	safeMultiSendAddress?: string
+	safeMultiSend: SourceValue<string | undefined>
 	execute: boolean
 	submitSafeProposal: boolean
 	skipPreflight: boolean
@@ -842,7 +851,7 @@ function printConfigOverview(params: {
 				["Safe", formatAddress(params.safe.value), params.safe.source],
 				["InstantLayer", formatAddress(params.instantLayer.value), params.instantLayer.source],
 				["Safe service URL", params.safeServiceUrl ? paint.cyan(params.safeServiceUrl) : paint.dim("(auto/unused)"), "config/env"],
-				["Safe MultiSend", formatMaybe(params.safeMultiSendAddress), "config/env"],
+				["Safe MultiSend", formatMaybe(params.safeMultiSend.value), params.safeMultiSend.source],
 				[
 					"Mode",
 					params.execute
@@ -1041,6 +1050,55 @@ function buildSafeBatch(chainId: bigint, safeAddress: string, ownerAddress: stri
 	}
 }
 
+function normalizeSafeVersion(version: string | undefined): string | undefined {
+	return version?.match(/^\d+\.\d+\.\d+/)?.[0]
+}
+
+async function resolveSafeMultiSendAddress(params: {
+	chainId: bigint
+	safeAddress: string
+	safeServiceUrl: string
+	override?: SourceValue<string | undefined>
+}): Promise<SourceValue<string | undefined>> {
+	if (params.override?.value) {
+		return {
+			value: parseAddress(params.override.value, "safeMultiSendAddress"),
+			source: params.override.source,
+		}
+	}
+
+	const safeInfo = await getSafeInfo(params.safeAddress, params.safeServiceUrl)
+	const safeVersion = normalizeSafeVersion(safeInfo.version)
+	const query = new URLSearchParams({ contract: "MultiSend" })
+	if (safeVersion) query.set("version", safeVersion)
+
+	const deployments = await fetchJson<SafeDeployment[]>(`${params.safeServiceUrl}/about/deployments/?${query.toString()}`)
+	const candidates = deployments.flatMap(deployment =>
+		deployment.contracts
+			.filter(contract => contract.contractName === "MultiSend" && ethers.isAddress(contract.address))
+			.map(contract => ({
+				address: ethers.getAddress(contract.address),
+				version: deployment.version,
+			})),
+	)
+	if (candidates.length === 0) {
+		throw new Error(
+			`Could not discover Safe MultiSend for chainId ${params.chainId}${safeVersion ? ` and Safe version ${safeVersion}` : ""}; set SAFE_MULTISEND_ADDRESS or partyBRegistration.safeMultiSendAddress`,
+		)
+	}
+
+	const selected = candidates[0]
+	const code = await ethers.provider.getCode(selected.address)
+	if (code === "0x") {
+		throw new Error(`Safe service returned MultiSend ${selected.address}, but no bytecode exists at that address on chainId ${params.chainId}`)
+	}
+
+	return {
+		value: selected.address,
+		source: `Safe service deployment ${selected.version}${safeInfo.version ? ` for Safe ${safeInfo.version}` : ""}`,
+	}
+}
+
 function encodeMultiSendTransactions(transactions: SafeTransaction[]): string {
 	return ethers.concat(
 		transactions.map(tx => {
@@ -1050,22 +1108,23 @@ function encodeMultiSendTransactions(transactions: SafeTransaction[]): string {
 	)
 }
 
-function buildSafeProposalTx(calls: PlannedCall[], safeMultiSendAddress?: string): SafeProposalTx {
+function buildSafeProposalTx(calls: PlannedCall[], safeMultiSend: SourceValue<string | undefined>): SafeProposalTx {
 	if (calls.length === 1) {
 		const tx = calls[0].safeTx
 		return { to: tx.to, value: tx.value, data: tx.data, operation: 0 }
 	}
-	if (!safeMultiSendAddress) {
-		throw new Error("SAFE_MULTISEND_ADDRESS or partyBRegistration.safeMultiSendAddress is required to submit multiple calls as one Safe proposal")
+	if (!safeMultiSend.value) {
+		throw new Error("Safe MultiSend address is required to submit multiple calls as one Safe proposal")
 	}
 
 	const multiSendData = encodeMultiSendTransactions(calls.map(call => call.safeTx))
 	return {
-		to: safeMultiSendAddress,
+		to: safeMultiSend.value,
 		value: "0",
 		data: multiSendIface.encodeFunctionData("multiSend", [multiSendData]),
 		operation: 1,
 		multiSendData,
+		multiSendAddressSource: safeMultiSend.source,
 	}
 }
 
@@ -1128,6 +1187,7 @@ async function getSafeInfo(safeAddress: string, serviceUrl: string): Promise<Saf
 	return {
 		nonce: serviceInfo?.nonce ?? onChainNonce,
 		owners: (serviceInfo?.owners ?? onChainOwners).map((owner: string) => ethers.getAddress(owner)),
+		version: serviceInfo?.version,
 	}
 }
 
@@ -1241,6 +1301,7 @@ async function buildAndMaybeSubmitSafeProposal(params: {
 			params.proposalTx.operation === 1
 				? {
 						to: params.proposalTx.to,
+						addressSource: params.proposalTx.multiSendAddressSource,
 						transactionsData: params.proposalTx.multiSendData,
 						decodedCalls,
 					}
@@ -1368,10 +1429,28 @@ async function main() {
 		"safeSubmitterAddress",
 	)
 	const safeServiceUrlOverride = firstString(process.env.SAFE_SERVICE_URL, config.safeServiceUrl)
-	const safeMultiSendAddress = parseOptionalAddress(
-		firstString(process.env.SAFE_MULTISEND_ADDRESS, config.safeMultiSendAddress),
+	const safeServiceUrl = submitSafeProposal ? getSafeServiceUrl(chainId, safeServiceUrlOverride) : safeServiceUrlOverride
+	const safeMultiSendOverride = resolveString(
+		process.env.SAFE_MULTISEND_ADDRESS,
+		config.safeMultiSendAddress,
+		undefined,
+		"SAFE_MULTISEND_ADDRESS",
+		"safeMultiSendAddress",
 		"safeMultiSendAddress",
 	)
+	let safeMultiSend = {
+		value: parseOptionalAddress(safeMultiSendOverride.value, "safeMultiSendAddress"),
+		source: safeMultiSendOverride.source,
+	}
+	if (submitSafeProposal) {
+		if (!safeAddress) throw new Error("SAFE_ADDRESS or safeAddress is required for SUBMIT_SAFE_PROPOSAL=true")
+		safeMultiSend = await resolveSafeMultiSendAddress({
+			chainId,
+			safeAddress,
+			safeServiceUrl: safeServiceUrl!,
+			override: safeMultiSend,
+		})
+	}
 
 	printConfigOverview({
 		networkName,
@@ -1381,8 +1460,8 @@ async function main() {
 		diamond: { ...diamond, value: diamondAddress },
 		safe: { ...safe, value: safeAddress },
 		instantLayer: { ...instantLayer, value: instantLayerAddress },
-		safeServiceUrl: safeServiceUrlOverride,
-		safeMultiSendAddress,
+		safeServiceUrl,
+		safeMultiSend,
 		execute,
 		submitSafeProposal,
 		skipPreflight,
@@ -1429,6 +1508,8 @@ async function main() {
 		diamondAddress,
 		safeAddress,
 		instantLayerAddress,
+		safeMultiSendAddress: safeMultiSend.value,
+		safeMultiSendSource: safeMultiSend.source,
 		execute,
 		submitSafeProposal,
 		skipPreflight,
@@ -1471,8 +1552,7 @@ async function main() {
 	if (submitSafeProposal) {
 		if (!safeAddress) throw new Error("SAFE_ADDRESS or safeAddress is required for SUBMIT_SAFE_PROPOSAL=true")
 		if (!safeSubmitterAddress) throw new Error("SAFE_SUBMITTER_ADDRESS/SAFE_SIGNER_ADDRESS or safeSubmitterAddress is required")
-		const safeServiceUrl = getSafeServiceUrl(chainId, safeServiceUrlOverride)
-		const proposalTx = buildSafeProposalTx(included, safeMultiSendAddress)
+		const proposalTx = buildSafeProposalTx(included, safeMultiSend)
 		report.safeProposal = await buildAndMaybeSubmitSafeProposal({
 			chainId,
 			networkName,
@@ -1486,7 +1566,7 @@ async function main() {
 			),
 			safeSubmitterKeyName:
 				process.env.SAFE_SUBMITTER_KEY_NAME || process.env.SAFE_SIGNER_KEY_NAME || process.env.SAFE_PROPOSER_KEY_NAME || "TEAM_PROPOSER",
-			safeServiceUrl,
+			safeServiceUrl: safeServiceUrl!,
 			safeNonceOverride: parseSafeNonceOverride(firstString(process.env.SAFE_NONCE, process.env.SAFE_TX_NONCE)),
 			calls: included,
 			proposalTx,
