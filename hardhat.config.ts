@@ -15,9 +15,17 @@ const DUMMY_PRIVATE_KEY = "0xec81e00837948239d5927bcb2b785675552bc92f1d2607ee91c
 // Use process.env directly to avoid hardhat-keystore password prompts.
 // Fall back to configVariable() only when USE_KEYSTORE=true is explicitly set.
 const useKeystore = process.env.USE_KEYSTORE === "true"
-const keystoreDeployerKey = process.env.KEYSTORE_DEPLOYER_KEY || "NEW_DEPLOYER"
+const submitSafeProposal = process.env.SUBMIT_SAFE_PROPOSAL === "true"
+const safeProposalKeyName =
+	process.env.SAFE_SUBMITTER_KEY_NAME || process.env.SAFE_SIGNER_KEY_NAME || process.env.SAFE_PROPOSER_KEY_NAME || "TEAM_PROPOSER"
+const safeProposalPrivateKey =
+	process.env.SAFE_SUBMITTER_PRIVATE_KEY || process.env.SAFE_SIGNER_PRIVATE_KEY || process.env.SAFE_PROPOSER_PRIVATE_KEY || process.env.TEAM_PROPOSER
+const keystoreDeployerKey = process.env.KEYSTORE_DEPLOYER_KEY || (submitSafeProposal ? safeProposalKeyName : "NEW_DEPLOYER")
 const protocolAdminKey =
-	process.env.NEW_DEPLOYER || process.env.TEAM_DEPLOYER || (useKeystore ? configVariable(keystoreDeployerKey) : DUMMY_PRIVATE_KEY)
+	process.env.NEW_DEPLOYER ||
+	process.env.TEAM_DEPLOYER ||
+	(submitSafeProposal ? safeProposalPrivateKey : undefined) ||
+	(useKeystore ? configVariable(keystoreDeployerKey) : DUMMY_PRIVATE_KEY)
 const etherscanApiKey = process.env.ETHERSCAN_APIKEY || (useKeystore ? configVariable("ETHERSCAN_APIKEY") : "")
 
 const createNetworkConfig = (network: string, defaultUrl: string) =>
