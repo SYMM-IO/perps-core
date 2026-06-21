@@ -2,6 +2,7 @@
  * Diamond upgrade utilities — deploy facets, build diamondCut, apply it.
  * Extracted from upgradeTest.ts for use by forkUpgrade.ts.
  */
+import type { Interface } from "ethers"
 import fs from "fs"
 
 import { FacetNames } from "../../../tasks/deploy/constants.js"
@@ -593,7 +594,7 @@ function argToString(value: any): string {
 	return String(value)
 }
 
-export function toHumanReadableSafeTxFromIface(iface: ethers.Interface, to: string, methodName: string, args: any[]): SafeTransaction {
+export function toHumanReadableSafeTxFromIface(iface: Interface, to: string, methodName: string, args: any[]): SafeTransaction {
 	const fragment = iface.getFunction(methodName)
 	if (!fragment) throw new Error(`Unknown method: ${methodName}`)
 

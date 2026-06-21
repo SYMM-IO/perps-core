@@ -182,7 +182,7 @@ export async function migrate(
 				}
 
 				const quoteChunks = chunkArray(quotesToMigrate, cfg.chunkSize)
-				const startChunk = progress.lastProcessedQuoteChunk + 1
+				const startChunk = cfg.skipPreCheck ? progress.lastProcessedQuoteChunk + 1 : 0
 
 				for (let i = startChunk; i < quoteChunks.length; i++) {
 					const chunk = quoteChunks[i]
@@ -259,7 +259,7 @@ export async function migrate(
 				const partyAChunks = chunkArray(partyAsToMigrate, cfg.chunkSize)
 
 				// Resume from last successful partyA chunk if resuming the same partyB
-				const startPartyAChunk = i === startPartyB ? progress.lastProcessedPartyAChunk + 1 : 0
+				const startPartyAChunk = cfg.skipPreCheck && i === startPartyB ? progress.lastProcessedPartyAChunk + 1 : 0
 
 				for (let j = startPartyAChunk; j < partyAChunks.length; j++) {
 					const partyAChunk = partyAChunks[j]

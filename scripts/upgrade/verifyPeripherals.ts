@@ -55,6 +55,7 @@ function loadConfig(): Config {
 
 	// Auto-load from upgrade.json + output files
 	const config: Partial<Config> = {}
+	const networkName = connection.networkName
 
 	const upgradeConfigFile = resolveConfigFile("upgrade", networkName, process.env.UPGRADE_CONFIG_FILE)
 	if (fs.existsSync(upgradeConfigFile)) {
@@ -63,7 +64,6 @@ function loadConfig(): Config {
 		console.log(`Loaded diamond from ${upgradeConfigFile}`)
 	}
 
-	const networkName = connection.networkName
 	const alilFile = `${OUTPUT_DIR}/deployed-accountlayer-instantlayer.json`
 	const peripheralsFile = `${OUTPUT_DIR}/deployed-peripherals-${networkName}.json`
 	if (fs.existsSync(alilFile)) {
