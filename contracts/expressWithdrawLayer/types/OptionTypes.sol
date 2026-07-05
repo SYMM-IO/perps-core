@@ -15,6 +15,7 @@ struct WithdrawOffer {
 	uint256 fee;
 	uint256 operatorFee;
 	uint256 maxUserFee;
+	uint256 maxAccelerationFee;
 	uint256 deadline;
 	bytes signature;
 }
