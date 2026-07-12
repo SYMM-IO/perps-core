@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { AffiliateConfig, SponsorConfig } from "../../types/ConfigTypes.sol";
+import { AffiliateConfig } from "../../types/ConfigTypes.sol";
 import { AffiliateCredit } from "../../types/CreditTypes.sol";
 import { WithdrawInfo } from "../../types/WithdrawTypes.sol";
 
@@ -102,21 +102,6 @@ contract ViewFacet is IViewFacet {
 
 	function pendingOperatorFees(address user, uint256 requestId) external view returns (uint256) {
 		return FeeStorage.layout().pendingOperatorFees[user][requestId];
-	}
-
-	// ── Sponsorship ──
-
-	function sponsorBalances(address affiliate) external view returns (uint256) {
-		return FeeStorage.layout().sponsorBalances[affiliate];
-	}
-
-	function sponsors(address affiliate) external view returns (address) {
-		return FeeStorage.layout().sponsors[affiliate];
-	}
-
-	function sponsorConfigs(address affiliate) external view returns (uint256 maxFeePerWithdraw, uint256 maxWithdrawAmount) {
-		SponsorConfig storage cfg = FeeStorage.layout().sponsorConfigs[affiliate];
-		return (cfg.maxFeePerWithdraw, cfg.maxWithdrawAmount);
 	}
 
 	// ── Validators ──

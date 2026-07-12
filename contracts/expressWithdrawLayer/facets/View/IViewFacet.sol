@@ -54,14 +54,6 @@ interface IViewFacet {
 
 	function pendingOperatorFees(address user, uint256 requestId) external view returns (uint256);
 
-	// ── Sponsorship ──
-
-	function sponsorBalances(address affiliate) external view returns (uint256);
-
-	function sponsors(address affiliate) external view returns (address);
-
-	function sponsorConfigs(address affiliate) external view returns (uint256 maxFeePerWithdraw, uint256 maxWithdrawAmount);
-
 	// ── Validators ──
 
 	function minValidatorSignatures(address affiliate) external view returns (uint256);
