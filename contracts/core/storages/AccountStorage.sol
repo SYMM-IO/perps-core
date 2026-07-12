@@ -241,6 +241,11 @@ library AccountStorage {
 		/// @notice Per-settlement contribution included in partyBLiquidationSettlementReserve.
 		/// @dev Keyed by PartyA then PartyB so reserve cleanup is independent from the PartyB's current mode.
 		mapping(address => mapping(address => uint256)) partyBLiquidationSettlementReserveContributions;
+		/// @notice Net funding fee included in each pending PartyA liquidation settlement.
+		/// @dev Positive means PartyA owes PartyB. Kept separately so settlement balance-change events
+		///      can classify funding and realized PnL without changing the public settlement-state tuple.
+		///      Pre-upgrade pending settlements retain the legacy realized-PnL-only classification because this value is zero.
+		mapping(address => mapping(address => int256)) partyALiquidationSettlementFundingFees;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

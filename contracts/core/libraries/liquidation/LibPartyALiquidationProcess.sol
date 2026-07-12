@@ -4,6 +4,8 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
+import { SignedMath } from "@openzeppelin/contracts/utils/math/SignedMath.sol";
 import { LibAccount } from "../LibAccount.sol";
 import { LibConnections } from "../LibConnections.sol";
 import { LibHook } from "../LibHook.sol";
@@ -132,6 +134,7 @@ library LibPartyALiquidationProcess {
 
 			LiquidationSettlementState storage settlementState = accountLayout.settlementStates[partyA][quote.partyB];
 			int256 pnlWithFunding = (hasMadeProfit ? int256(amount) : -int256(amount)) - accumulatedFundingFee;
+			accountLayout.partyALiquidationSettlementFundingFees[partyA][quote.partyB] += accumulatedFundingFee;
 
 			// Open or update the pending settlement bucket for this PartyB.
 			if (!settlementState.pending) {
@@ -279,6 +282,7 @@ library LibPartyALiquidationProcess {
 
 			// Positive means PartyB owes PartyA; negative means PartyA owes PartyB.
 			int256 partyAReceivableFromPartyB = settlementState.actualAmount;
+			int256 fundingFee = accountLayout.partyALiquidationSettlementFundingFees[partyA][partyB];
 			uint256 cva = settlementState.cva;
 
 			// Use correct allocation key based on cross mode
@@ -294,12 +298,6 @@ library LibPartyALiquidationProcess {
 			// Apply PartyB realized PnL, or for isolated PartyB pay out whatever allocation remains.
 			if (partyAReceivableFromPartyB < 0) {
 				partyBAllocatedBalance += uint256(-partyAReceivableFromPartyB);
-				emit SharedEvents.BalanceChangePartyB(
-					partyB,
-					partyA,
-					uint256(-partyAReceivableFromPartyB),
-					SharedEvents.BalanceChangeType.REALIZED_PNL_IN
-				);
 				settleAmounts[i] = partyAReceivableFromPartyB;
 			} else {
 				if (partyBAllocatedBalance >= uint256(partyAReceivableFromPartyB)) {
@@ -315,18 +313,52 @@ library LibPartyALiquidationProcess {
 					settleAmounts[i] = int256(partyBAllocatedBalance);
 					partyBAllocatedBalance = 0;
 				}
-				emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(settleAmounts[i]), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
 			}
 			accountLayout.partyBAllocatedBalances[partyB][allocKey] = partyBAllocatedBalance;
+			fundingFee = _scaleFundingFeeForSettlement(fundingFee, settlementState.expectedAmount, settleAmounts[i]);
+			_emitPartyBSettlementBalanceChanges(partyB, partyA, settleAmounts[i], fundingFee);
 
 			LibAccount.syncPartyBLiquidationSettlementReserve(accountLayout, partyA, partyB, 0);
 			delete accountLayout.settlementStates[partyA][partyB];
+			delete accountLayout.partyALiquidationSettlementFundingFees[partyA][partyB];
 		}
 
 		// Once every PartyB bucket is settled, release PartyA-side balances and close the liquidation.
 		if (accountLayout.liquidationDetails[partyA].involvedPartyBCounts == 0) {
 			_finalizePartyALiquidation(accountLayout, maLayout, partyA, liquidationId);
 			fullySettled = true;
+		}
+	}
+
+	/// @dev Scales funding when a haircut, dispute override, or isolated payout cap reduces the final settlement.
+	///      If an override changes direction or settles nothing, its funding component cannot be inferred and is classified as zero.
+	function _scaleFundingFeeForSettlement(int256 fundingFee, int256 expectedAmount, int256 settledAmount) private pure returns (int256) {
+		if (fundingFee == 0 || expectedAmount == settledAmount) return fundingFee;
+		if (expectedAmount == 0 || settledAmount == 0 || (expectedAmount > 0) != (settledAmount > 0)) return 0;
+
+		uint256 expectedAbs = SignedMath.abs(expectedAmount);
+		uint256 settledAbs = SignedMath.abs(settledAmount);
+		if (settledAbs >= expectedAbs) return fundingFee;
+
+		uint256 scaledFundingAbs = Math.mulDiv(SignedMath.abs(fundingFee), settledAbs, expectedAbs);
+		return fundingFee > 0 ? int256(scaledFundingAbs) : -int256(scaledFundingAbs);
+	}
+
+	/// @dev Splits the final net PartyB settlement into funding and realized-PnL classifications.
+	///      `partyAReceivableFromPartyB` is positive when PartyB pays PartyA, while `fundingFee`
+	///      is positive when PartyA pays PartyB. Their residual is the realized price PnL.
+	function _emitPartyBSettlementBalanceChanges(address partyB, address partyA, int256 partyAReceivableFromPartyB, int256 fundingFee) private {
+		if (fundingFee > 0) {
+			emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(fundingFee), SharedEvents.BalanceChangeType.FUNDING_FEE_IN);
+		} else if (fundingFee < 0) {
+			emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(-fundingFee), SharedEvents.BalanceChangeType.FUNDING_FEE_OUT);
+		}
+
+		int256 realizedPnl = partyAReceivableFromPartyB + fundingFee;
+		if (realizedPnl > 0) {
+			emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(realizedPnl), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
+		} else if (realizedPnl < 0) {
+			emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(-realizedPnl), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 		}
 	}
 

@@ -477,6 +477,7 @@ library ClearingHouseFacetImpl {
 				clearedSettlements += 1;
 			}
 			delete accountLayout.settlementStates[partyA][settledPartyBs[i]];
+			delete accountLayout.partyALiquidationSettlementFundingFees[partyA][settledPartyBs[i]];
 		}
 		// Every pending settlement created by the normal liquidation flow must be cleared here.
 		// Otherwise its settlement state and reserve contribution would be stranded once
