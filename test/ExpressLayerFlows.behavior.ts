@@ -4113,199 +4113,6 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 	})
 
 	describe("Post payout rollback bookkeeping", function () {
-		async function setupWindowedWithSponsor(
-			fixture: any,
-			opts: { sponsorAmount: bigint; fee: bigint; affiliateAmount: bigint; creditAmount: bigint },
-		) {
-			const { user, botSigner, receiver, expressProvider, context, affiliate, deployer, collateral } = fixture
-			await expressProvider.connect(deployer).setAffiliateConfig(affiliate, 200, 0)
-
-			await collateral.mint(deployer.address, opts.sponsorAmount)
-			await collateral.connect(deployer).approve(await expressProvider.getAddress(), opts.sponsorAmount)
-			await expressProvider.connect(deployer).depositSponsorBalance(affiliate, opts.sponsorAmount)
-
-			const withdrawAmount = 500n * 10n ** 18n
-			const expressAddr = await expressProvider.getAddress()
-			const now = (await ethers.provider.getBlock("latest"))!.timestamp
-			const deadline = now + 3600
-			const parts = [
-				{
-					id: 0n,
-					amount: withdrawAmount,
-					chainId: 31337n,
-					receiver: receiver.address,
-					virtualProvider: ethers.ZeroAddress,
-					expressProvider: expressAddr,
-				},
-			]
-			const signature = await signWithdrawOption(expressProvider, botSigner, {
-				user: user.address,
-				nonce: 0n,
-				optionType: 1,
-				availableAt: 0,
-				affiliate,
-				affiliateAmount: opts.affiliateAmount,
-				creditAmount: opts.creditAmount,
-				fee: opts.fee,
-				operatorFee: 0n,
-				maxUserFee: opts.fee,
-				partsHash: computePartsHash(parts),
-				deadline,
-			})
-			const creditDataRaw = buildCreditData(100_000n * 10n ** 18n, now)
-			const providerData = encodeProviderData(
-				0n,
-				1,
-				0,
-				affiliate,
-				opts.affiliateAmount,
-				opts.creditAmount,
-				opts.fee,
-				0n,
-				deadline,
-				signature,
-				opts.fee,
-				undefined,
-				undefined,
-				creditDataRaw,
-			)
-			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
-			const requestId = await context.viewFacet.getLastWithdrawRequestId(user.address)
-			await ethers.provider.send("evm_increaseTime", [21])
-			await ethers.provider.send("evm_mine", [])
-			await expressProvider.connect(fixture.operator).processWithdraw(user.address, requestId, parts)
-			return { requestId, withdrawAmount }
-		}
-
-		it("restores sponsor balance from pending fee escrow on post-processed suspend", async function () {
-			const fixture = await deployFixture()
-			const { user, expressProvider, context, affiliate } = fixture
-
-			const fee = 10n * 10n ** 18n
-			const sponsorAmount = 100n * 10n ** 18n
-			const { requestId } = await setupWindowedWithSponsor(fixture, {
-				sponsorAmount,
-				fee,
-				affiliateAmount: 100n * 10n ** 18n,
-				creditAmount: 100n * 10n ** 18n,
-			})
-
-			expect(await expressProvider.sponsorBalances(affiliate)).to.equal(sponsorAmount - fee)
-			expect(await expressProvider.pendingFees(user.address, requestId)).to.equal(fee)
-			expect(await expressProvider.collectedFees(affiliate)).to.equal(0n)
-
-			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(user.address)
-			await context.withdrawFacet.connect(context.signers.admin).suspendWithdrawRequest(user.address, requestId)
-
-			expect(await expressProvider.sponsorBalances(affiliate)).to.equal(sponsorAmount)
-			expect(await expressProvider.pendingFees(user.address, requestId)).to.equal(0n)
-			expect(await expressProvider.collectedFees(affiliate)).to.equal(0n)
-			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).sponsorCoverage).to.equal(0n)
-		})
-
-		it("sponsor restoration drains collected operator fees when affiliate fee is zero", async function () {
-			const fixture = await deployFixture()
-			const { user, botSigner, receiver, expressProvider, context, affiliate, deployer, collateral } = fixture
-
-			const operatorFee = 10n * 10n ** 18n
-			await expressProvider.connect(deployer).setAffiliateConfig(affiliate, 0, operatorFee)
-
-			const sponsorAmount = 100n * 10n ** 18n
-			await collateral.mint(deployer.address, sponsorAmount)
-			await collateral.connect(deployer).approve(await expressProvider.getAddress(), sponsorAmount)
-			await expressProvider.connect(deployer).depositSponsorBalance(affiliate, sponsorAmount)
-
-			const withdrawAmount = 500n * 10n ** 18n
-			const expressAddr = await expressProvider.getAddress()
-			const now = (await ethers.provider.getBlock("latest"))!.timestamp
-			const deadline = now + 3600
-			const parts = [
-				{
-					id: 0n,
-					amount: withdrawAmount,
-					chainId: 31337n,
-					receiver: receiver.address,
-					virtualProvider: ethers.ZeroAddress,
-					expressProvider: expressAddr,
-				},
-			]
-			const signature = await signWithdrawOption(expressProvider, botSigner, {
-				user: user.address,
-				nonce: 0n,
-				optionType: 1,
-				availableAt: 0,
-				affiliate,
-				affiliateAmount: 100n * 10n ** 18n,
-				creditAmount: 50n * 10n ** 18n,
-				fee: 0n,
-				operatorFee,
-				maxUserFee: 0n,
-				partsHash: computePartsHash(parts),
-				deadline,
-			})
-			const creditDataRaw = buildCreditData(100_000n * 10n ** 18n, now)
-			const providerData = encodeProviderData(
-				0n,
-				1,
-				0,
-				affiliate,
-				100n * 10n ** 18n,
-				50n * 10n ** 18n,
-				0n,
-				operatorFee,
-				deadline,
-				signature,
-				0n,
-				undefined,
-				undefined,
-				creditDataRaw,
-			)
-			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
-			const requestId = await context.viewFacet.getLastWithdrawRequestId(user.address)
-			await ethers.provider.send("evm_increaseTime", [21])
-			await ethers.provider.send("evm_mine", [])
-			await expressProvider.connect(fixture.operator).processWithdraw(user.address, requestId, parts)
-
-			expect(await expressProvider.pendingOperatorFees(user.address, requestId)).to.equal(operatorFee)
-			expect(await expressProvider.collectedOperatorFees(affiliate)).to.equal(0n)
-
-			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(user.address)
-			await context.withdrawFacet.connect(context.signers.admin).suspendWithdrawRequest(user.address, requestId)
-
-			expect(await expressProvider.sponsorBalances(affiliate)).to.equal(sponsorAmount)
-			expect(await expressProvider.pendingOperatorFees(user.address, requestId)).to.equal(0n)
-			expect(await expressProvider.collectedOperatorFees(affiliate)).to.equal(0n)
-		})
-
-		it("sponsor restoration is unaffected by an attempted claimFees before the rollback", async function () {
-			const fixture = await deployFixture()
-			const { user, expressProvider, context, affiliate, deployer } = fixture
-
-			const fee = 10n * 10n ** 18n
-			const sponsorAmount = 100n * 10n ** 18n
-			const { requestId } = await setupWindowedWithSponsor(fixture, {
-				sponsorAmount,
-				fee,
-				affiliateAmount: 100n * 10n ** 18n,
-				creditAmount: 100n * 10n ** 18n,
-			})
-
-			await expect(expressProvider.connect(deployer).claimFees(affiliate, deployer.address)).to.be.revertedWithCustomError(
-				expressProvider,
-				"NoFeesToClaim",
-			)
-			expect(await expressProvider.collectedFees(affiliate)).to.equal(0n)
-			expect(await expressProvider.pendingFees(user.address, requestId)).to.equal(fee)
-
-			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(user.address)
-			await context.withdrawFacet.connect(context.signers.admin).suspendWithdrawRequest(user.address, requestId)
-
-			expect(await expressProvider.sponsorBalances(affiliate)).to.equal(sponsorAmount)
-			expect(await expressProvider.pendingFees(user.address, requestId)).to.equal(0n)
-			expect(await expressProvider.collectedFees(affiliate)).to.equal(0n)
-			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).sponsorCoverage).to.equal(0n)
-		})
-
 		it("accumulates generalBadDebt equal to the lost generalAmount on post-processed suspend", async function () {
 			const fixture = await deployFixture()
 			const { user, expressProvider, context } = fixture
@@ -4585,11 +4392,6 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			await expect(expressProvider.connect(deployer).depositToAffiliate(affiliate, 1n)).to.be.revertedWithCustomError(expressProvider, "Paused")
 			await expect(expressProvider.connect(deployer).withdrawFromGeneral(1n)).to.be.revertedWithCustomError(expressProvider, "Paused")
 			await expect(expressProvider.connect(deployer).withdrawFromAffiliate(affiliate, 1n)).to.be.revertedWithCustomError(expressProvider, "Paused")
-			await expect(expressProvider.connect(deployer).depositSponsorBalance(affiliate, 1n)).to.be.revertedWithCustomError(expressProvider, "Paused")
-			await expect(expressProvider.connect(deployer).withdrawSponsorBalance(affiliate, 1n, receiver.address)).to.be.revertedWithCustomError(
-				expressProvider,
-				"Paused",
-			)
 			await expect(expressProvider.connect(deployer).claimFees(affiliate, receiver.address)).to.be.revertedWithCustomError(expressProvider, "Paused")
 			await expect(expressProvider.connect(deployer).claimOperatorFees(affiliate, receiver.address)).to.be.revertedWithCustomError(
 				expressProvider,
@@ -5277,17 +5079,11 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 	})
 
 	describe("Per-request fee escrow", function () {
-		async function acceptWindowedWithFees(fixture: any, opts: { fee: bigint; operatorFee: bigint; sponsorAmount?: bigint }) {
-			const { user, botSigner, receiver, expressProvider, context, affiliate, deployer, collateral } = fixture
+		async function acceptWindowedWithFees(fixture: any, opts: { fee: bigint; operatorFee: bigint }) {
+			const { user, botSigner, receiver, expressProvider, context, affiliate, deployer } = fixture
 
 			const feeRate = (opts.fee * 10000n) / (500n * 10n ** 18n)
 			await expressProvider.connect(deployer).setAffiliateConfig(affiliate, feeRate, opts.operatorFee)
-
-			if (opts.sponsorAmount && opts.sponsorAmount > 0n) {
-				await collateral.mint(deployer.address, opts.sponsorAmount)
-				await collateral.connect(deployer).approve(await expressProvider.getAddress(), opts.sponsorAmount)
-				await expressProvider.connect(deployer).depositSponsorBalance(affiliate, opts.sponsorAmount)
-			}
 
 			const withdrawAmount = 500n * 10n ** 18n
 			const expressAddr = await expressProvider.getAddress()
@@ -5365,68 +5161,6 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			await expect(expressProvider.connect(deployer).claimFees(affiliate, deployer.address)).to.be.revertedWithCustomError(
 				expressProvider,
 				"NoFeesToClaim",
-			)
-		})
-
-		it("post-payout suspend with no sponsor: leftover pending promotes to claimable", async function () {
-			const fixture = await deployFixture()
-			const { expressProvider, user, affiliate, context } = fixture
-
-			const fee = 5n * 10n ** 18n
-			const operatorFee = 1n * 10n ** 18n
-			const { requestId } = await acceptWindowedWithFees(fixture, { fee, operatorFee })
-
-			expect(await expressProvider.pendingFees(user.address, requestId)).to.equal(fee)
-			expect(await expressProvider.pendingOperatorFees(user.address, requestId)).to.equal(operatorFee)
-			expect(await expressProvider.collectedFees(affiliate)).to.equal(0n)
-			expect(await expressProvider.collectedOperatorFees(affiliate)).to.equal(0n)
-
-			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(user.address)
-			await context.withdrawFacet.connect(context.signers.admin).suspendWithdrawRequest(user.address, requestId)
-
-			expect(await expressProvider.collectedFees(affiliate)).to.equal(fee)
-			expect(await expressProvider.collectedOperatorFees(affiliate)).to.equal(operatorFee)
-			expect(await expressProvider.pendingFees(user.address, requestId)).to.equal(0n)
-			expect(await expressProvider.pendingOperatorFees(user.address, requestId)).to.equal(0n)
-			expect(await expressProvider.sponsorBalances(affiliate)).to.equal(0n)
-		})
-
-		it("post-payout suspend with partial sponsor: sponsor refunded in full, leftover promoted", async function () {
-			const fixture = await deployFixture()
-			const { expressProvider, user, affiliate, context, deployer, collateral } = fixture
-
-			const fee = 5n * 10n ** 18n
-			const operatorFee = 5n * 10n ** 18n
-			const totalFee = fee + operatorFee
-			const sponsorAmount = 100n * 10n ** 18n
-			await expressProvider.connect(deployer).setSponsorConfig(affiliate, 4n * 10n ** 18n, 0)
-
-			await collateral.mint(deployer.address, sponsorAmount)
-			await collateral.connect(deployer).approve(await expressProvider.getAddress(), sponsorAmount)
-			await expressProvider.connect(deployer).depositSponsorBalance(affiliate, sponsorAmount)
-
-			const { requestId } = await acceptWindowedWithFees(fixture, { fee, operatorFee })
-
-			const sponsorCoverage = (await expressProvider.getWithdrawInfo(user.address, requestId)).sponsorCoverage
-			expect(sponsorCoverage).to.equal(4n * 10n ** 18n)
-
-			expect(await expressProvider.pendingFees(user.address, requestId)).to.equal(fee)
-			expect(await expressProvider.pendingOperatorFees(user.address, requestId)).to.equal(operatorFee)
-			expect(await expressProvider.sponsorBalances(affiliate)).to.equal(sponsorAmount - sponsorCoverage)
-
-			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(user.address)
-			await context.withdrawFacet.connect(context.signers.admin).suspendWithdrawRequest(user.address, requestId)
-
-			// Drain order is pendingFees first, then pendingOperatorFees:
-			//   pf=5 - takeAff=4 = 1  → collectedFees     += 1
-			//   pof=5 - takeOp=0 = 5  → collectedOperatorFees += 5
-			expect(await expressProvider.sponsorBalances(affiliate)).to.equal(sponsorAmount)
-			expect(await expressProvider.pendingFees(user.address, requestId)).to.equal(0n)
-			expect(await expressProvider.pendingOperatorFees(user.address, requestId)).to.equal(0n)
-			expect(await expressProvider.collectedFees(affiliate)).to.equal(fee - sponsorCoverage)
-			expect(await expressProvider.collectedOperatorFees(affiliate)).to.equal(operatorFee)
-			expect(totalFee - sponsorCoverage).to.equal(
-				(await expressProvider.collectedFees(affiliate)) + (await expressProvider.collectedOperatorFees(affiliate)),
 			)
 		})
 

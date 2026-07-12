@@ -12,7 +12,6 @@ interface ISymmioHookEvents {
 	event WithdrawFinalized(address indexed user, uint256 indexed requestId);
 	event WithdrawCancelled(address indexed user, uint256 indexed requestId);
 	event WithdrawSuspended(address indexed user, uint256 indexed requestId);
-	event SponsorCoverageRestored(address indexed user, uint256 indexed requestId, address indexed affiliate, uint256 restored, uint256 shortfall);
 	event GeneralBadDebtAccrued(address indexed user, uint256 indexed requestId, uint256 amount);
 }
 
