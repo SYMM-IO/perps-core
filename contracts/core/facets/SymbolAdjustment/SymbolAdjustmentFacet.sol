@@ -46,11 +46,12 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		emit AdjustmentScheduled(symbolId, adjustment.scheduledCount - 1, factor, effectiveTimestamp);
 	}
 
-	/// @notice Cancels the in-flight SCHEDULED adjustment. Allowed even after effective time (unfreezes a postponed action).
+	/// @notice Cancels the in-flight SCHEDULED adjustment when no restatement window is open. Allowed after effective time.
 	function cancelAdjustment(uint256 symbolId) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
 		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
 		require(adjustment.state != AdjustmentState.NONE, "SymbolAdjustmentFacet: No adjustment");
 		require(adjustment.state == AdjustmentState.SCHEDULED, "SymbolAdjustmentFacet: Invalid state");
+		require(!adjustment.restating, "SymbolAdjustmentFacet: Restatement in progress");
 		adjustment.state = AdjustmentState.CANCELLED;
 		emit AdjustmentCancelled(symbolId, adjustment.scheduledCount - 1);
 	}
@@ -60,6 +61,7 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
 		require(adjustment.state != AdjustmentState.NONE, "SymbolAdjustmentFacet: No adjustment");
 		require(adjustment.state == AdjustmentState.SCHEDULED, "SymbolAdjustmentFacet: Invalid state");
+		require(!adjustment.restating, "SymbolAdjustmentFacet: Restatement in progress");
 		require(block.timestamp >= adjustment.effectiveTimestamp, "SymbolAdjustmentFacet: Not effective yet");
 		uint256 newCumulative = _prospectiveCumulativeFactor(symbolId, adjustment);
 		require(newCumulative != 0, "SymbolAdjustmentFacet: Cumulative factor underflow");
@@ -68,24 +70,34 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		emit PriceAdjustmentConfirmed(symbolId, adjustment.scheduledCount - 1, newCumulative);
 	}
 
-	/// @notice Opens a restatement window and freezes the symbol until abort or finalization.
+	/// @notice Opens a frozen restatement window either directly from an effective SCHEDULED adjustment or from an already-active factor.
+	/// @dev Direct restatement avoids activating the scheduled factor in `cumulativeFactor`; Muon and normal trading never use that temporary basis.
 	function startRestatement(uint256 symbolId) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
 		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
 		require(!adjustment.restating, "SymbolAdjustmentFacet: Already restating");
-		require(!LibSymbolAdjustment.hasScheduledAdjustment(symbolId), "SymbolAdjustmentFacet: Adjustment in flight");
-		require(LibSymbolAdjustment.activeCumulativeFactor(symbolId) != 1e18, "SymbolAdjustmentFacet: No active factor");
+		uint256 factor;
+		if (adjustment.state == AdjustmentState.SCHEDULED) {
+			require(block.timestamp >= adjustment.effectiveTimestamp, "SymbolAdjustmentFacet: Not effective yet");
+			factor = _prospectiveCumulativeFactor(symbolId, adjustment);
+		} else {
+			factor = LibSymbolAdjustment.activeCumulativeFactor(symbolId);
+		}
+		require(factor != 0, "SymbolAdjustmentFacet: Cumulative factor underflow");
+		require(factor != 1e18, "SymbolAdjustmentFacet: No adjustment factor");
 		adjustment.restating = true;
 		adjustment.restatementMutated = false;
+		adjustment.restatementFactor = factor;
 		adjustment.restatementEpoch += 1;
-		emit RestatementStarted(symbolId, adjustment.restatementEpoch, adjustment.cumulativeFactor);
+		emit RestatementStarted(symbolId, adjustment.restatementEpoch, factor);
 	}
 
-	/// @notice Aborts a restatement only while it is still mutation-free, preserving the active factor for a corrected retry.
+	/// @notice Aborts only a mutation-free window, returning to the prior active-factor state or the scheduled transition freeze.
 	function abortRestatement(uint256 symbolId) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
 		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
 		require(adjustment.restating, "SymbolAdjustmentFacet: No restatement in progress");
 		require(!adjustment.restatementMutated, "SymbolAdjustmentFacet: Restatement already mutated");
 		adjustment.restating = false;
+		adjustment.restatementFactor = 0;
 		emit RestatementAborted(symbolId, adjustment.restatementEpoch);
 	}
 
@@ -95,7 +107,7 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
 		require(adjustment.restating, "SymbolAdjustmentFacet: No restatement in progress");
 		uint256 epoch = adjustment.restatementEpoch;
-		uint256 factor = adjustment.cumulativeFactor;
+		uint256 factor = adjustment.restatementFactor;
 		bool isManager = LibAccessibility.hasRole(msg.sender, LibAccessibility.SYMBOL_MANAGER_ROLE);
 		for (uint256 i = 0; i < quoteIds.length; i++) {
 			_restateQuote(quoteIds[i], symbolId, epoch, factor, isManager);
@@ -177,15 +189,16 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		}
 	}
 
-	/// @notice Closes the manager-controlled window, resets the active factor, and unfreezes the symbol.
+	/// @notice Closes the manager-controlled window, marks a direct/confirmed adjustment applied, clears factors, and unfreezes the symbol.
 	function finalizeRestatement(uint256 symbolId) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
 		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
 		require(adjustment.restating, "SymbolAdjustmentFacet: No restatement in progress");
-		if (adjustment.state == AdjustmentState.PRICE_ADJUSTED) {
+		if (adjustment.state == AdjustmentState.PRICE_ADJUSTED || adjustment.state == AdjustmentState.SCHEDULED) {
 			adjustment.state = AdjustmentState.APPLIED;
 		}
 		adjustment.cumulativeFactor = 1e18;
 		adjustment.restating = false;
+		adjustment.restatementFactor = 0;
 		emit RestatementFinalized(symbolId, adjustment.restatementEpoch);
 	}
 
@@ -199,19 +212,26 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		return LibSymbolAdjustment.activeCumulativeFactor(symbolId);
 	}
 
-	/// @notice Returns the factor Muon should publish after the current scheduled adjustment becomes effective.
-	/// @dev Includes the scheduled factor while getCumulativeFactor intentionally returns only the active factor.
+	/// @notice Returns the factor that confirmation would activate or direct restatement would select for the current scheduled adjustment.
+	/// @dev Muon uses this value only for the active-factor route; getCumulativeFactor intentionally returns only confirmed trading state.
 	function getProspectiveCumulativeFactor(uint256 symbolId) external view returns (uint256) {
 		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
 		return _prospectiveCumulativeFactor(symbolId, adjustment);
 	}
 
-	/// @notice Previews every quote field that applyAdjustment will rewrite and reverts on unsafe rounding.
+	/// @notice Previews every quote field using the open window, scheduled prospective, or confirmed active factor and reverts on unsafe rounding.
 	function previewQuoteAdjustment(uint256 symbolId, uint256 quoteId) external view returns (QuoteAdjustmentPreview memory preview) {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		require(quote.symbolId == symbolId, "SymbolAdjustmentFacet: Wrong symbol");
-		uint256 factor = LibSymbolAdjustment.activeCumulativeFactor(symbolId);
-		require(factor != 1e18, "SymbolAdjustmentFacet: No active factor");
+		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
+		uint256 factor =
+			adjustment.restating
+				? adjustment.restatementFactor
+				: adjustment.state == AdjustmentState.SCHEDULED
+					? _prospectiveCumulativeFactor(symbolId, adjustment)
+					: LibSymbolAdjustment.activeCumulativeFactor(symbolId);
+		require(factor != 0, "SymbolAdjustmentFacet: Cumulative factor underflow");
+		require(factor != 1e18, "SymbolAdjustmentFacet: No adjustment factor");
 		return _previewQuote(quote, factor);
 	}
 

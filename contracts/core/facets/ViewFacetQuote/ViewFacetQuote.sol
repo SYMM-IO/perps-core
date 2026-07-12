@@ -21,14 +21,15 @@ contract ViewFacetQuote is IViewFacetQuote {
 		return QuoteStorage.layout().quotes[quoteId];
 	}
 
-	/// @notice Returns a quote normalized to the venue's current confirmed unit basis.
+	/// @notice Returns a quote normalized to the venue basis selected by the active factor or frozen restatement window.
 	/// @dev The normalized values are intended for valuation, display, and external hedging. Core execution calls still expect raw stored units.
 	function getQuoteInVenueUnits(uint256 quoteId) external view returns (VenueQuoteView memory) {
 		return _getQuoteInVenueUnits(quoteId);
 	}
 
 	/// @notice Returns quotes normalized to venue units from one atomic on-chain snapshot.
-	/// @dev During restatement, already-restated quotes are returned unchanged while remaining quotes receive the active cumulative factor.
+	/// @dev During restatement, already-restated quotes are unchanged while remaining quotes receive the window's restatement factor. This also
+	///      supports direct restatement, where the scheduled factor is never activated for Muon or normal trading.
 	function getQuotesInVenueUnits(uint256[] calldata quoteIds) external view returns (VenueQuoteView[] memory quotes) {
 		quotes = new VenueQuoteView[](quoteIds.length);
 		for (uint256 i = 0; i < quoteIds.length; i++) quotes[i] = _getQuoteInVenueUnits(quoteIds[i]);
@@ -39,7 +40,12 @@ contract ViewFacetQuote is IViewFacetQuote {
 		SymbolAdjustmentStorage.Layout storage adjustmentLayout = SymbolAdjustmentStorage.layout();
 		SymbolAdjustment storage adjustment = adjustmentLayout.adjustments[quote.symbolId];
 		bool restatedInCurrentWindow = adjustment.restating && adjustmentLayout.quoteRestatedEpoch[quoteId] == adjustment.restatementEpoch;
-		uint256 factor = restatedInCurrentWindow ? 1e18 : LibSymbolAdjustment.activeCumulativeFactor(quote.symbolId);
+		uint256 factor =
+			restatedInCurrentWindow
+				? 1e18
+				: adjustment.restating
+					? adjustment.restatementFactor
+					: LibSymbolAdjustment.activeCumulativeFactor(quote.symbolId);
 
 		result.quote = LibQuoteAdjustment.toVenueUnits(quote, factor);
 		result.factorApplied = factor;

@@ -6767,7 +6767,7 @@
             {
                 "indexed": false,
                 "internalType": "uint256",
-                "name": "cumulativeFactor",
+                "name": "restatementFactor",
                 "type": "uint256"
             }
         ],
@@ -6989,6 +6989,11 @@
                         "internalType": "bool",
                         "name": "restatementMutated",
                         "type": "bool"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "restatementFactor",
+                        "type": "uint256"
                     }
                 ],
                 "internalType": "struct SymbolAdjustment",
