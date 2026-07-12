@@ -467,6 +467,23 @@ event WithdrawSpeedUpAccepted(uint256 requestId, address user, uint256 newCooldo
 
 **Migration:** The old single-step `Withdraw(address, address, uint256)` is still emitted (from `WithdrawFacetImpl`) for backward compatibility. However, the full withdrawal lifecycle now flows through `WithdrawInitiated` -> `WithdrawAccepted` -> `WithdrawFinalized`. Indexers tracking withdrawal status should listen to all lifecycle events.
 
+### 5.6 SymbolAdjustmentFacet Events (new facet)
+
+Handles corporate-action-style symbol adjustments (e.g. a CRWD-style 4:1 split): a registry lifecycle for scheduling/confirming a price factor, a freeze gate across quote-specific trading, funding, liquidation-price, and settlement paths, and an optional restatement window that rescales eligible open quotes while force-expiring pending quotes.
+
+| New Event | Parameters | Notes |
+|---|---|---|
+| `AdjustmentScheduled` | `(uint256 indexed symbolId, uint256 adjustmentIndex, uint256 factor, uint256 effectiveTimestamp)` | Corporate action registered; symbol freezes at effectiveTimestamp |
+| `AdjustmentCancelled` | `(uint256 indexed symbolId, uint256 adjustmentIndex)` | Scheduled adjustment cancelled; symbol unfreezes if it was frozen |
+| `PriceAdjustmentConfirmed` | `(uint256 indexed symbolId, uint256 adjustmentIndex, uint256 newCumulativeFactor)` | Oracle factor live; symbol unfrozen |
+| `RestatementStarted` | `(uint256 indexed symbolId, uint256 epoch, uint256 cumulativeFactor)` | Restatement window opened and symbol frozen |
+| `RestatementAborted` | `(uint256 indexed symbolId, uint256 epoch)` | Mutation-free restatement aborted; active factor preserved and symbol unfrozen |
+| `QuoteAdjusted` | `(uint256 indexed quoteId, uint256 indexed symbolId, uint256 epoch, uint256 factor, uint256 oldQuantity, uint256 newQuantity, uint256 oldOpenedPrice, uint256 newOpenedPrice)` | Position restated to new units |
+| `PendingQuoteCancelledByAdjustment` | `(uint256 indexed quoteId, uint256 indexed symbolId)` | Pending quote force-expired during freeze |
+| `RestatementFinalized` | `(uint256 indexed symbolId, uint256 epoch)` | Factor reset to 1e18; symbol unfrozen |
+
+**Migration:** Indexers and the Muon app must track all eight events. During the transition, `getCumulativeFactor` still returns the active factor while `getProspectiveCumulativeFactor` includes the SCHEDULED step. `AdjustmentCancelled` and `RestatementAborted` are distinct unfreeze signals. `RestatementStarted` identifies the frozen epoch and active factor; `QuoteAdjusted` and `PendingQuoteCancelledByAdjustment` describe processed work. Core does not accept off-chain inventory counts or prove completeness before `RestatementFinalized`; the symbol manager and indexer must reconcile the full open and pending inventory before finalization. The facet upgrade must remove the legacy `startRestatement(uint256,uint256,uint256)` selector and add `startRestatement(uint256)`; the one-facet updater now removes selectors absent from the replacement facet ABI.
+
 ---
 
 ## 6. New AccountLayer Diamond Events

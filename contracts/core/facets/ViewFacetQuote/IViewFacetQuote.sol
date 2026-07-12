@@ -7,6 +7,16 @@ pragma solidity >=0.8.18;
 import { Quote, SolverFeeState } from "../../storages/QuoteStorage.sol";
 
 interface IViewFacetQuote {
+	/// @notice A quote represented in the venue's current confirmed unit basis.
+	/// @dev `quote` is for valuation and external hedging; Core execution still expects the raw stored quote returned by getQuote.
+	struct VenueQuoteView {
+		Quote quote;
+		uint256 factorApplied;
+		uint256 restatementEpoch;
+		bool storedInVenueUnits;
+		bool symbolFrozen;
+	}
+
 	struct Bitmap {
 		uint256 size;
 		BitmapElement[] elements;
@@ -18,6 +28,10 @@ interface IViewFacetQuote {
 	}
 
 	function getQuote(uint256 quoteId) external view returns (Quote memory);
+
+	function getQuoteInVenueUnits(uint256 quoteId) external view returns (VenueQuoteView memory);
+
+	function getQuotesInVenueUnits(uint256[] calldata quoteIds) external view returns (VenueQuoteView[] memory);
 
 	function getSolverFeeState(uint256 quoteId) external view returns (SolverFeeState memory);
 

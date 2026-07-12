@@ -17,6 +17,7 @@ import { LibAccount } from "./LibAccount.sol";
 import { LibSolvency } from "./LibSolvency.sol";
 import { LockedValuesOps } from "./LibLockedValues.sol";
 import { LibHook } from "./LibHook.sol";
+import { LibSymbolAdjustment } from "./LibSymbolAdjustment.sol";
 import { ISymmioHook } from "../interfaces/ISymmioHook.sol";
 
 library LibPartyBPositionsActions {
@@ -25,6 +26,7 @@ library LibPartyBPositionsActions {
 	/// @notice Validates and fills a close request by checking state, expiry, price, and amount constraints.
 	function fillCloseRequest(uint256 quoteId, uint256 filledAmount, uint256 closedPrice) internal {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
 		require(
 			quote.quoteStatus == QuoteStatus.CLOSE_PENDING || quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING,
 			"PartyBFacet: Invalid state"
@@ -50,6 +52,7 @@ library LibPartyBPositionsActions {
 
 		Quote storage quote = quoteLayout.quotes[quoteId];
 		require(SymbolStorage.layout().symbols[quote.symbolId].isValid, "PartyBFacet: Symbol is not valid");
+		LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
 		require(quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING, "PartyBFacet: Invalid state");
 		require(block.timestamp <= quote.deadline, "PartyBFacet: Quote is expired");
 

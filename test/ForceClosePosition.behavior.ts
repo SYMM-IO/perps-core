@@ -315,6 +315,56 @@ export function shouldBehaveLikeForceClosePosition(): void {
 			})
 		})
 
+		it("Should fail forceClosePosition while symbol is frozen", async function () {
+			const sigTimes = await prepareSigTimes(100n)
+			const gapRatio2 = await context.viewFacetSymbol.forceCloseGapRatio(quote2ShortOpened.symbolId)
+			const dummySig = await getDummyHighLowPriceSig(
+				sigTimes[0], // startTime
+				sigTimes[1], // endTime
+				BigInt(quote2ShortOpened.requestedClosePrice) + unDecimal(BigInt(quote2ShortOpened.requestedClosePrice) * BigInt(gapRatio2)) - decimal(1n), // lowest
+				decimal(3n), // highest
+				decimal(2n), // currentPrice
+				decimal(2n), // averagePrice
+				quote2ShortOpened.symbolId, // symbolId
+				0n, // upnlPartyB
+				0n, // upnlPartyA
+			)
+
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(quote2ShortOpened.symbolId, decimal(4n), now - 1n)
+
+			await expect(user.forceClosePosition(quote2ShortOpened.id, dummySig)).to.be.revertedWith("LibSymbolAdjustment: Symbol is frozen")
+		})
+
+		it("Should fail finalizeForceClose when a symbol adjustment freezes the symbol between init and finalize", async function () {
+			const sigTimes = await prepareSigTimes(100n)
+			const gapRatio2 = await context.viewFacetSymbol.forceCloseGapRatio(quote2ShortOpened.symbolId)
+			const dummySig = await getDummyHighLowPriceSig(
+				sigTimes[0], // startTime
+				sigTimes[1], // endTime
+				BigInt(quote2ShortOpened.requestedClosePrice) + unDecimal(BigInt(quote2ShortOpened.requestedClosePrice) * BigInt(gapRatio2)) - decimal(1n), // lowest
+				decimal(3n), // highest
+				decimal(2n), // currentPrice
+				decimal(2n), // averagePrice
+				quote2ShortOpened.symbolId, // symbolId
+				0n, // upnlPartyB
+				0n, // upnlPartyA
+			)
+
+			// Step 1: initialize force close while the symbol is still unfrozen — succeeds.
+			await context.forceCloseStepsFacet.initializeForceClose(quote2ShortOpened.id, dummySig)
+
+			// Straddle the window: a corporate action gets scheduled with a past-effective timestamp,
+			// freezing the symbol immediately, in between init and finalize.
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(quote2ShortOpened.symbolId, decimal(4n), now - 1n)
+
+			// Step 3: finalizeForceClose must now revert because the symbol is frozen.
+			await expect(
+				context.forceCloseStepsFacet.finalizeForceClose(quote2ShortOpened.id, await getDummyPairUpnlAndPriceSig(decimal(2n), 0n, 0n)),
+			).to.be.revertedWith("LibSymbolAdjustment: Symbol is frozen")
+		})
+
 		it("increments partyA and partyB nonces on solvent forceClosePosition", async function () {
 			const partyA = await user.getAddress()
 			const partyB = await hedger.getAddress()

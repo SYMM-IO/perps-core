@@ -176,11 +176,16 @@ library LibQuoteClose {
 	/// @param quoteId The ID of the quote to expire.
 	/// @return result The resulting status of the quote after expiration.
 	function expireQuote(uint256 quoteId) public returns (QuoteStatus result) {
+		require(block.timestamp > QuoteStorage.layout().quotes[quoteId].deadline, "LibQuote: Quote isn't expired");
+		result = forceExpireQuote(quoteId);
+	}
+
+	/// @notice expireQuote without the deadline gate — only exposed via privileged facet paths
+	function forceExpireQuote(uint256 quoteId) public returns (QuoteStatus result) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
 		Quote storage quote = quoteLayout.quotes[quoteId];
-		require(block.timestamp > quote.deadline, "LibQuote: Quote isn't expired");
 		require(
 			quote.quoteStatus == QuoteStatus.PENDING ||
 				quote.quoteStatus == QuoteStatus.CANCEL_PENDING ||

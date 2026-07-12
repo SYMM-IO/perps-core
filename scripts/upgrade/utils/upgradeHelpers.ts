@@ -44,6 +44,7 @@ export const FacetLibraryDependencies: Record<string, string[]> = {
 	PartyALiquidationSnapshotFacet: ["LibPartyALiquidationSnapshotSetup", "LibPartyALiquidationProcess"],
 	ClearingHouseFacet: ["LibQuoteClose", "LibQuoteFunding"],
 	SettlementFacet: ["LibSettlement"],
+	SymbolAdjustmentFacet: ["LibQuoteFunding", "LibQuoteClose"],
 }
 
 export const LibraryLinkReferences: Record<string, string> = {

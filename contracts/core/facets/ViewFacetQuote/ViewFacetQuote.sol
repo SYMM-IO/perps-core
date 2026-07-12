@@ -7,8 +7,11 @@ pragma solidity >=0.8.18;
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { QuoteStorage, Quote, QuoteStatus, SolverFeeState } from "../../storages/QuoteStorage.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
+import { SymbolAdjustmentStorage, SymbolAdjustment } from "../../storages/SymbolAdjustmentStorage.sol";
 import { IViewFacetQuote } from "./IViewFacetQuote.sol";
 import { LibQuoteFunding } from "../../libraries/LibQuoteFunding.sol";
+import { LibQuoteAdjustment } from "../../libraries/LibQuoteAdjustment.sol";
+import { LibSymbolAdjustment } from "../../libraries/LibSymbolAdjustment.sol";
 
 contract ViewFacetQuote is IViewFacetQuote {
 	/// @notice Returns the details of a quote by its ID.
@@ -16,6 +19,33 @@ contract ViewFacetQuote is IViewFacetQuote {
 	/// @return The details of the quote.
 	function getQuote(uint256 quoteId) external view returns (Quote memory) {
 		return QuoteStorage.layout().quotes[quoteId];
+	}
+
+	/// @notice Returns a quote normalized to the venue's current confirmed unit basis.
+	/// @dev The normalized values are intended for valuation, display, and external hedging. Core execution calls still expect raw stored units.
+	function getQuoteInVenueUnits(uint256 quoteId) external view returns (VenueQuoteView memory) {
+		return _getQuoteInVenueUnits(quoteId);
+	}
+
+	/// @notice Returns quotes normalized to venue units from one atomic on-chain snapshot.
+	/// @dev During restatement, already-restated quotes are returned unchanged while remaining quotes receive the active cumulative factor.
+	function getQuotesInVenueUnits(uint256[] calldata quoteIds) external view returns (VenueQuoteView[] memory quotes) {
+		quotes = new VenueQuoteView[](quoteIds.length);
+		for (uint256 i = 0; i < quoteIds.length; i++) quotes[i] = _getQuoteInVenueUnits(quoteIds[i]);
+	}
+
+	function _getQuoteInVenueUnits(uint256 quoteId) internal view returns (VenueQuoteView memory result) {
+		Quote memory quote = QuoteStorage.layout().quotes[quoteId];
+		SymbolAdjustmentStorage.Layout storage adjustmentLayout = SymbolAdjustmentStorage.layout();
+		SymbolAdjustment storage adjustment = adjustmentLayout.adjustments[quote.symbolId];
+		bool restatedInCurrentWindow = adjustment.restating && adjustmentLayout.quoteRestatedEpoch[quoteId] == adjustment.restatementEpoch;
+		uint256 factor = restatedInCurrentWindow ? 1e18 : LibSymbolAdjustment.activeCumulativeFactor(quote.symbolId);
+
+		result.quote = LibQuoteAdjustment.toVenueUnits(quote, factor);
+		result.factorApplied = factor;
+		result.restatementEpoch = adjustment.restatementEpoch;
+		result.storedInVenueUnits = factor == 1e18;
+		result.symbolFrozen = LibSymbolAdjustment.isFrozen(quote.symbolId);
 	}
 
 	/// @notice Returns solver fee caps and charged amounts for a quote.

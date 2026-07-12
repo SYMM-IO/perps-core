@@ -6,6 +6,7 @@ pragma solidity >=0.8.18;
 
 import { LibSettlement } from "../../libraries/LibSettlement.sol";
 import { LibForceActions } from "../../libraries/LibForceActions.sol";
+import { LibSymbolAdjustment } from "../../libraries/LibSymbolAdjustment.sol";
 import { QuoteStorage, Quote, LockedValues } from "../../storages/QuoteStorage.sol";
 import { AccountStorage, ForceCloseDetail, PartyBForceCloseState } from "../../storages/AccountStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
@@ -90,6 +91,7 @@ library ForceCloseStepsImpl {
 		require(detail.inProgress, "ForceActionsFacet: Invalid state");
 
 		address partyB = QuoteStorage.layout().quotes[quoteId].partyB;
+		LibSymbolAdjustment.requireNotFrozen(QuoteStorage.layout().quotes[quoteId].symbolId);
 		bool isCrossPartyB = MAStorage.layout().crossModeEnabledForPartyB[partyB];
 
 		if (isCrossPartyB) {

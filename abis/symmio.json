@@ -6563,6 +6563,574 @@
         "type": "function"
     },
     {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "adjustmentIndex",
+                "type": "uint256"
+            }
+        ],
+        "name": "AdjustmentCancelled",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "adjustmentIndex",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "factor",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "effectiveTimestamp",
+                "type": "uint256"
+            }
+        ],
+        "name": "AdjustmentScheduled",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            }
+        ],
+        "name": "PendingQuoteCancelledByAdjustment",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "adjustmentIndex",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "newCumulativeFactor",
+                "type": "uint256"
+            }
+        ],
+        "name": "PriceAdjustmentConfirmed",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "epoch",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "factor",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "oldQuantity",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "newQuantity",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "oldOpenedPrice",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "newOpenedPrice",
+                "type": "uint256"
+            }
+        ],
+        "name": "QuoteAdjusted",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "epoch",
+                "type": "uint256"
+            }
+        ],
+        "name": "RestatementAborted",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "epoch",
+                "type": "uint256"
+            }
+        ],
+        "name": "RestatementFinalized",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "epoch",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "cumulativeFactor",
+                "type": "uint256"
+            }
+        ],
+        "name": "RestatementStarted",
+        "type": "event"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            }
+        ],
+        "name": "abortRestatement",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256[]",
+                "name": "quoteIds",
+                "type": "uint256[]"
+            }
+        ],
+        "name": "applyAdjustment",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            }
+        ],
+        "name": "cancelAdjustment",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256[]",
+                "name": "quoteIds",
+                "type": "uint256[]"
+            }
+        ],
+        "name": "cancelPendingQuotes",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            }
+        ],
+        "name": "confirmPriceAdjusted",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            }
+        ],
+        "name": "finalizeRestatement",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            }
+        ],
+        "name": "getCumulativeFactor",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            }
+        ],
+        "name": "getProspectiveCumulativeFactor",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            }
+        ],
+        "name": "getQuoteRestatedEpoch",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            }
+        ],
+        "name": "getRestatementState",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "restating",
+                "type": "bool"
+            },
+            {
+                "internalType": "uint256",
+                "name": "epoch",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            }
+        ],
+        "name": "getSymbolAdjustment",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "factor",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "effectiveTimestamp",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "enum AdjustmentState",
+                        "name": "state",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "scheduledCount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "cumulativeFactor",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "restatementEpoch",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "restating",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "restatementMutated",
+                        "type": "bool"
+                    }
+                ],
+                "internalType": "struct SymbolAdjustment",
+                "name": "",
+                "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            }
+        ],
+        "name": "isSymbolFrozen",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            }
+        ],
+        "name": "previewQuoteAdjustment",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "factor",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "quantity",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "openedPrice",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "initialOpenedPrice",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "requestedOpenPrice",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "marketPrice",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "closedAmount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "avgClosedPrice",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "quantityToClose",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "requestedClosePrice",
+                        "type": "uint256"
+                    }
+                ],
+                "internalType": "struct ISymbolAdjustmentFacet.QuoteAdjustmentPreview",
+                "name": "preview",
+                "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "factor",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "effectiveTimestamp",
+                "type": "uint256"
+            }
+        ],
+        "name": "scheduleAdjustment",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            }
+        ],
+        "name": "startRestatement",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
         "inputs": [],
         "name": "activateAccumulatedFunding",
         "outputs": [],
@@ -14557,6 +15125,248 @@
     {
         "inputs": [
             {
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            }
+        ],
+        "name": "getQuoteInVenueUnits",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "id",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "address[]",
+                                "name": "partyBsWhiteList",
+                                "type": "address[]"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "symbolId",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "enum PositionType",
+                                "name": "positionType",
+                                "type": "uint8"
+                            },
+                            {
+                                "internalType": "enum OrderType",
+                                "name": "orderType",
+                                "type": "uint8"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "openedPrice",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "initialOpenedPrice",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "requestedOpenPrice",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "marketPrice",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "quantity",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "closedAmount",
+                                "type": "uint256"
+                            },
+                            {
+                                "components": [
+                                    {
+                                        "internalType": "uint256",
+                                        "name": "cva",
+                                        "type": "uint256"
+                                    },
+                                    {
+                                        "internalType": "uint256",
+                                        "name": "lf",
+                                        "type": "uint256"
+                                    },
+                                    {
+                                        "internalType": "uint256",
+                                        "name": "partyAmm",
+                                        "type": "uint256"
+                                    },
+                                    {
+                                        "internalType": "uint256",
+                                        "name": "partyBmm",
+                                        "type": "uint256"
+                                    }
+                                ],
+                                "internalType": "struct LockedValues",
+                                "name": "initialLockedValues",
+                                "type": "tuple"
+                            },
+                            {
+                                "components": [
+                                    {
+                                        "internalType": "uint256",
+                                        "name": "cva",
+                                        "type": "uint256"
+                                    },
+                                    {
+                                        "internalType": "uint256",
+                                        "name": "lf",
+                                        "type": "uint256"
+                                    },
+                                    {
+                                        "internalType": "uint256",
+                                        "name": "partyAmm",
+                                        "type": "uint256"
+                                    },
+                                    {
+                                        "internalType": "uint256",
+                                        "name": "partyBmm",
+                                        "type": "uint256"
+                                    }
+                                ],
+                                "internalType": "struct LockedValues",
+                                "name": "lockedValues",
+                                "type": "tuple"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "maxFundingRate",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "partyA",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "partyB",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "enum QuoteStatus",
+                                "name": "quoteStatus",
+                                "type": "uint8"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "avgClosedPrice",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "requestedClosePrice",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "quantityToClose",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "parentId",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "createTimestamp",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "statusModifyTimestamp",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "lastFundingPaymentTimestamp",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "deadline",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "tradingFee",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "affiliate",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "int256",
+                                "name": "accumulatedPaidFunding",
+                                "type": "int256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "closeFee",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "bytes",
+                                "name": "data",
+                                "type": "bytes"
+                            }
+                        ],
+                        "internalType": "struct Quote",
+                        "name": "quote",
+                        "type": "tuple"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "factorApplied",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "restatementEpoch",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "storedInVenueUnits",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "symbolFrozen",
+                        "type": "bool"
+                    }
+                ],
+                "internalType": "struct IViewFacetQuote.VenueQuoteView",
+                "name": "",
+                "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
                 "internalType": "address",
                 "name": "partyA",
                 "type": "address"
@@ -14992,6 +15802,248 @@
                     }
                 ],
                 "internalType": "struct Quote[]",
+                "name": "",
+                "type": "tuple[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256[]",
+                "name": "quoteIds",
+                "type": "uint256[]"
+            }
+        ],
+        "name": "getQuotesInVenueUnits",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "id",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "address[]",
+                                "name": "partyBsWhiteList",
+                                "type": "address[]"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "symbolId",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "enum PositionType",
+                                "name": "positionType",
+                                "type": "uint8"
+                            },
+                            {
+                                "internalType": "enum OrderType",
+                                "name": "orderType",
+                                "type": "uint8"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "openedPrice",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "initialOpenedPrice",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "requestedOpenPrice",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "marketPrice",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "quantity",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "closedAmount",
+                                "type": "uint256"
+                            },
+                            {
+                                "components": [
+                                    {
+                                        "internalType": "uint256",
+                                        "name": "cva",
+                                        "type": "uint256"
+                                    },
+                                    {
+                                        "internalType": "uint256",
+                                        "name": "lf",
+                                        "type": "uint256"
+                                    },
+                                    {
+                                        "internalType": "uint256",
+                                        "name": "partyAmm",
+                                        "type": "uint256"
+                                    },
+                                    {
+                                        "internalType": "uint256",
+                                        "name": "partyBmm",
+                                        "type": "uint256"
+                                    }
+                                ],
+                                "internalType": "struct LockedValues",
+                                "name": "initialLockedValues",
+                                "type": "tuple"
+                            },
+                            {
+                                "components": [
+                                    {
+                                        "internalType": "uint256",
+                                        "name": "cva",
+                                        "type": "uint256"
+                                    },
+                                    {
+                                        "internalType": "uint256",
+                                        "name": "lf",
+                                        "type": "uint256"
+                                    },
+                                    {
+                                        "internalType": "uint256",
+                                        "name": "partyAmm",
+                                        "type": "uint256"
+                                    },
+                                    {
+                                        "internalType": "uint256",
+                                        "name": "partyBmm",
+                                        "type": "uint256"
+                                    }
+                                ],
+                                "internalType": "struct LockedValues",
+                                "name": "lockedValues",
+                                "type": "tuple"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "maxFundingRate",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "partyA",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "partyB",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "enum QuoteStatus",
+                                "name": "quoteStatus",
+                                "type": "uint8"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "avgClosedPrice",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "requestedClosePrice",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "quantityToClose",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "parentId",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "createTimestamp",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "statusModifyTimestamp",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "lastFundingPaymentTimestamp",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "deadline",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "tradingFee",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "affiliate",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "int256",
+                                "name": "accumulatedPaidFunding",
+                                "type": "int256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "closeFee",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "bytes",
+                                "name": "data",
+                                "type": "bytes"
+                            }
+                        ],
+                        "internalType": "struct Quote",
+                        "name": "quote",
+                        "type": "tuple"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "factorApplied",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "restatementEpoch",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "storedInVenueUnits",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "symbolFrozen",
+                        "type": "bool"
+                    }
+                ],
+                "internalType": "struct IViewFacetQuote.VenueQuoteView[]",
                 "name": "",
                 "type": "tuple[]"
             }

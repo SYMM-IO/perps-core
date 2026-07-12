@@ -10,6 +10,7 @@ import { LibQuote } from "../../libraries/LibQuote.sol";
 import { LibQuoteState } from "../../libraries/extensions/LibQuoteState.sol";
 import { LibQuoteFunding } from "../../libraries/LibQuoteFunding.sol";
 import { LibFundingRate } from "../../libraries/LibFundingRate.sol";
+import { LibSymbolAdjustment } from "../../libraries/LibSymbolAdjustment.sol";
 import { LibPartyBState } from "../../libraries/extensions/LibPartyBState.sol";
 import { QuoteStorage, Quote } from "../../storages/QuoteStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
@@ -60,6 +61,7 @@ library FundingRateFacetImpl {
 		// Process each position
 		for (uint256 i = 0; i < quoteIds.length; i++) {
 			Quote storage quote = QuoteStorage.layout().quotes[quoteIds[i]];
+			LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
 			uint256 oldOpenedPrice = quote.openedPrice;
 
 			// Validate quote ownership and status
@@ -156,6 +158,7 @@ library FundingRateFacetImpl {
 		require(symbolIds.length == durations.length, "FundingRateFacet: Invalid length");
 
 		for (uint256 i = 0; i < symbolIds.length; i++) {
+			LibSymbolAdjustment.requireNotFrozen(symbolIds[i]);
 			FundingFee storage fundingFee = FundingStorage.layout().fundingFees[symbolIds[i]][partyB];
 			uint256 timestampForEpoch = 0;
 
@@ -213,6 +216,7 @@ library FundingRateFacetImpl {
 
 		address partyB = LibSigner.getSigner();
 		for (uint256 i = 0; i < symbolIds.length; i++) {
+			LibSymbolAdjustment.requireNotFrozen(symbolIds[i]);
 			FundingFee storage fundingFee = FundingStorage.layout().fundingFees[symbolIds[i]][partyB];
 
 			require(fundingFee.epochDuration > 0, "FundingRateFacet: Epoch duration not set");
@@ -288,6 +292,7 @@ library FundingRateFacetImpl {
 		// Apply accumulated funding to each position
 		for (uint256 i = 0; i < quoteIds.length; i++) {
 			Quote storage quote = QuoteStorage.layout().quotes[quoteIds[i]];
+			LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
 			require(quote.partyA == partyA, "FundingRateFacet: Invalid quote");
 			require(quote.partyB == partyB, "FundingRateFacet: Sender isn't partyB of quote");
 			quote.requireOpenPosition();

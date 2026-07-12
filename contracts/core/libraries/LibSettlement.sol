@@ -12,6 +12,7 @@ import { LibQuote } from "./LibQuote.sol";
 import { LibQuoteState } from "./extensions/LibQuoteState.sol";
 import { LibAccount } from "./LibAccount.sol";
 import { LibPartyBState } from "./extensions/LibPartyBState.sol";
+import { LibSymbolAdjustment } from "./LibSymbolAdjustment.sol";
 import { SharedEvents } from "./SharedEvents.sol";
 import { LibSigner } from "./LibSigner.sol";
 
@@ -53,6 +54,7 @@ library LibSettlement {
 		for (uint256 i = 0; i < settleSig.quotesSettlementsData.length; i++) {
 			QuoteSettlementData memory data = settleSig.quotesSettlementsData[i];
 			Quote storage quote = quoteLayout.quotes[data.quoteId];
+			LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
 			uint256 oldOpenedPrice = quote.openedPrice;
 			require(quote.partyA == partyA, "LibSettlement: PartyA is invalid");
 			quote.requireOpenPosition();
@@ -198,6 +200,7 @@ library LibSettlement {
 		for (uint256 i = 0; i < sig.quotesSettlementsData.length; i++) {
 			UnifiedQuoteSettlementData memory data = sig.quotesSettlementsData[i];
 			Quote storage quote = quoteLayout.quotes[data.quoteId];
+			LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
 			uint256 oldOpenedPrice = quote.openedPrice;
 
 			// Validate quote
