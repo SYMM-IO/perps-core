@@ -239,6 +239,75 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 	})
 
 	describe("restatement window", function () {
+		it("should start directly from an effective scheduled adjustment without activating the trading factor", async function () {
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
+
+			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID))
+				.to.emit(context.symbolAdjustmentFacet, "RestatementStarted")
+				.withArgs(SYMBOL_ID, 1, decimal(4n))
+
+			const adjustment = await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)
+			expect(adjustment.state).to.equal(1) // SCHEDULED: the Muon trading factor was never confirmed
+			expect(adjustment.restatementFactor).to.equal(decimal(4n))
+			expect(await context.symbolAdjustmentFacet.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(1n))
+			expect(await context.symbolAdjustmentFacet.getProspectiveCumulativeFactor(SYMBOL_ID)).to.equal(decimal(4n))
+			expect(await context.symbolAdjustmentFacet.isSymbolFrozen(SYMBOL_ID)).to.be.true
+
+			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)).to.be.revertedWith(
+				"SymbolAdjustmentFacet: Restatement in progress",
+			)
+			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).cancelAdjustment(SYMBOL_ID)).to.be.revertedWith(
+				"SymbolAdjustmentFacet: Restatement in progress",
+			)
+
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(SYMBOL_ID)
+			const finalized = await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)
+			expect(finalized.state).to.equal(3) // APPLIED
+			expect(finalized.restatementFactor).to.equal(0n)
+			expect(await context.symbolAdjustmentFacet.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(1n))
+			expect(await context.symbolAdjustmentFacet.isSymbolFrozen(SYMBOL_ID)).to.be.false
+		})
+
+		it("should not start direct restatement before the scheduled adjustment is effective", async function () {
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now + 1000n)
+			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)).to.be.revertedWith(
+				"SymbolAdjustmentFacet: Not effective yet",
+			)
+		})
+
+		it("should fold existing active factors and the scheduled factor into one direct restatement factor", async function () {
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(2n), now)
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(3n), now)
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+
+			const adjustment = await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)
+			expect(adjustment.restatementFactor).to.equal(decimal(6n))
+			expect(await context.symbolAdjustmentFacet.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(2n))
+			expect(await context.symbolAdjustmentFacet.getProspectiveCumulativeFactor(SYMBOL_ID)).to.equal(decimal(6n))
+		})
+
+		it("should abort a mutation-free direct window back to the scheduled freeze", async function () {
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).abortRestatement(SYMBOL_ID)
+
+			const adjustment = await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)
+			expect(adjustment.state).to.equal(1) // SCHEDULED
+			expect(adjustment.restating).to.be.false
+			expect(adjustment.restatementFactor).to.equal(0n)
+			expect(await context.symbolAdjustmentFacet.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(1n))
+			expect(await context.symbolAdjustmentFacet.isSymbolFrozen(SYMBOL_ID)).to.be.true
+
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)
+			expect(await context.symbolAdjustmentFacet.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(4n))
+			expect(await context.symbolAdjustmentFacet.isSymbolFrozen(SYMBOL_ID)).to.be.false
+		})
+
 		it("should open and close a restatement window", async function () {
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
@@ -255,9 +324,9 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			expect(adjustment.scheduledCount).to.equal(1)
 		})
 
-		it("should refuse restatement without an active factor", async function () {
+		it("should refuse restatement without a scheduled or active factor", async function () {
 			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)).to.be.revertedWith(
-				"SymbolAdjustmentFacet: No active factor",
+				"SymbolAdjustmentFacet: No adjustment factor",
 			)
 		})
 
@@ -363,6 +432,37 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			expect(finalizedView.factorApplied).to.equal(decimal(1n))
 			expect(finalizedView.storedInVenueUnits).to.be.true
 			expect(finalizedView.symbolFrozen).to.be.false
+		})
+
+		it("should normalize a mixed book during direct restatement without activating the Muon factor", async function () {
+			const restatedId = await openPositionForUser()
+			const unrestatedId = await openPositionForUser()
+			const restatedBefore = await context.viewFacetQuote.getQuote(restatedId)
+			const unrestatedBefore = await context.viewFacetQuote.getQuote(unrestatedId)
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
+
+			expect(await context.symbolAdjustmentFacet.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(1n))
+			expect((await context.symbolAdjustmentFacet.previewQuoteAdjustment(SYMBOL_ID, restatedId)).factor).to.equal(decimal(4n))
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [restatedId])
+
+			const venueViews = await context.viewFacetQuote.getQuotesInVenueUnits([restatedId, unrestatedId])
+			expect(venueViews[0].factorApplied).to.equal(decimal(1n))
+			expect(venueViews[0].storedInVenueUnits).to.be.true
+			expect(venueViews[0].quote.quantity).to.equal(restatedBefore.quantity * 4n)
+			expect(venueViews[0].quote.openedPrice).to.equal(restatedBefore.openedPrice / 4n)
+
+			expect(venueViews[1].factorApplied).to.equal(decimal(4n))
+			expect(venueViews[1].storedInVenueUnits).to.be.false
+			expect(venueViews[1].symbolFrozen).to.be.true
+			expect(venueViews[1].quote.quantity).to.equal(unrestatedBefore.quantity * 4n)
+			expect(venueViews[1].quote.openedPrice).to.equal(unrestatedBefore.openedPrice / 4n)
+
+			await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [unrestatedId])
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(SYMBOL_ID)
+			expect(await context.symbolAdjustmentFacet.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(1n))
+			expect(await context.symbolAdjustmentFacet.isSymbolFrozen(SYMBOL_ID)).to.be.false
 		})
 
 		it("should scale quantity x4 and openedPrice /4 preserving notional and locked values", async function () {

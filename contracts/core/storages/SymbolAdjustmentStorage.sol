@@ -20,7 +20,7 @@ enum AdjustmentState {
 ///         history lives in events rather than storage.
 struct SymbolAdjustment {
 	/// @notice Latest scheduled adjustment's 1e18-scaled units multiplier: 4:1 split -> 4e18, 1:10 reverse split -> 0.1e18.
-	/// @dev Used to calculate the prospective cumulative factor and then activate that factor when Muon's adjusted price is confirmed.
+	/// @dev Used to calculate the prospective cumulative factor for either direct restatement or activation after Muon's adjusted price is confirmed.
 	uint256 factor;
 	/// @notice Venue timestamp at which the latest scheduled adjustment takes effect.
 	/// @dev Used to freeze trading automatically once due and to prevent price-factor confirmation before the venue has applied the adjustment.
@@ -32,7 +32,8 @@ struct SymbolAdjustment {
 	/// @dev Supplies a stable zero-based event index (`scheduledCount - 1`) so off-chain consumers can distinguish successive adjustments.
 	uint256 scheduledCount;
 	/// @notice 1e18-scaled product of confirmed factors not yet absorbed by physical quote restatement; 0 means unset and is read as 1e18.
-	/// @dev Used by Muon-facing views, trading calculations, and quote-restatement previews until finalization resets the active factor to 1e18.
+	/// @dev Used by Muon-facing views and normal trading calculations. Direct restatement deliberately leaves it unchanged and uses
+	///      `restatementFactor` instead; finalization resets it to 1e18 after all selected factors are folded into quote storage.
 	uint256 cumulativeFactor;
 	/// @notice Monotonically increasing identifier of the latest restatement window.
 	/// @dev Stamped into `quoteRestatedEpoch` so the same quote cannot be rewritten twice in one window while still allowing a later window
@@ -45,6 +46,10 @@ struct SymbolAdjustment {
 	/// @dev Used only by `abortRestatement`: once true, abort is forbidden because reopening trading would expose partially restated inventory.
 	///      This is a mutation-safety flag, not a completeness check; finalization remains a SYMBOL_MANAGER_ROLE decision.
 	bool restatementMutated;
+	/// @notice 1e18-scaled factor selected for the current restatement window; 0 when no window is open.
+	/// @dev Lets operations restate directly from SCHEDULED without activating `cumulativeFactor` for Muon or normal trading. Quote rewrites and
+	///      normalized mixed-book views use this value until abort or finalization clears it.
+	uint256 restatementFactor;
 }
 
 /// @title SymbolAdjustmentStorage

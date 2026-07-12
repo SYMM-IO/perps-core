@@ -23,7 +23,7 @@ interface ISymbolAdjustmentFacet {
 	event AdjustmentScheduled(uint256 indexed symbolId, uint256 adjustmentIndex, uint256 factor, uint256 effectiveTimestamp);
 	event AdjustmentCancelled(uint256 indexed symbolId, uint256 adjustmentIndex);
 	event PriceAdjustmentConfirmed(uint256 indexed symbolId, uint256 adjustmentIndex, uint256 newCumulativeFactor);
-	event RestatementStarted(uint256 indexed symbolId, uint256 epoch, uint256 cumulativeFactor);
+	event RestatementStarted(uint256 indexed symbolId, uint256 epoch, uint256 restatementFactor);
 	event RestatementAborted(uint256 indexed symbolId, uint256 epoch);
 	event QuoteAdjusted(
 		uint256 indexed quoteId,
@@ -44,6 +44,7 @@ interface ISymbolAdjustmentFacet {
 
 	function confirmPriceAdjusted(uint256 symbolId) external;
 
+	/// @notice Starts a frozen restatement from either an effective scheduled adjustment or an already-confirmed active factor.
 	function startRestatement(uint256 symbolId) external;
 
 	function abortRestatement(uint256 symbolId) external;

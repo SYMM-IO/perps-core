@@ -7,7 +7,7 @@ pragma solidity >=0.8.18;
 import { Quote, SolverFeeState } from "../../storages/QuoteStorage.sol";
 
 interface IViewFacetQuote {
-	/// @notice A quote represented in the venue's current confirmed unit basis.
+	/// @notice A quote represented in the venue basis selected by the active factor or frozen restatement window.
 	/// @dev `quote` is for valuation and external hedging; Core execution still expects the raw stored quote returned by getQuote.
 	struct VenueQuoteView {
 		Quote quote;
