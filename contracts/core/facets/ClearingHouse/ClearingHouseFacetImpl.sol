@@ -18,6 +18,7 @@ import { LibQuoteState } from "../../libraries/extensions/LibQuoteState.sol";
 import { LibQuoteClose } from "../../libraries/LibQuoteClose.sol";
 import { LibQuoteFunding } from "../../libraries/LibQuoteFunding.sol";
 import { LibConnections } from "../../libraries/LibConnections.sol";
+import { LibSymbolAdjustment } from "../../libraries/LibSymbolAdjustment.sol";
 import { LibPartyBState } from "../../libraries/extensions/LibPartyBState.sol";
 import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
@@ -324,6 +325,7 @@ library ClearingHouseFacetImpl {
 
 		for (uint256 i = 0; i < quoteIds.length; i++) {
 			Quote storage quote = quoteLayout.quotes[quoteIds[i]];
+			LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
 			address partyA = quote.partyA;
 			address partyB = quote.partyB;
 
@@ -429,6 +431,7 @@ library ClearingHouseFacetImpl {
 
 		for (uint256 i = 0; i < quoteIds.length; i++) {
 			Quote storage quote = QuoteStorage.layout().quotes[quoteIds[i]];
+			LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
 			address partyA = quote.partyA;
 			address partyB = quote.partyB;
 			require(quote.affiliate == affiliate, "ClearingHouseFacet: Invalid affiliate");

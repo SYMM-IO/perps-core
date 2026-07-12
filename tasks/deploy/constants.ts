@@ -7,6 +7,7 @@ export const FacetNames = [
 	"MigrationFacet",
 	"contracts/core/facets/Control/ControlFacet.sol:ControlFacet",
 	"SymbolControlFacet",
+	"SymbolAdjustmentFacet",
 	"PauseControlFacet",
 	"DiamondLoupeFacet",
 	"PartyALiquidationFacet",

@@ -8,6 +8,7 @@ import { LibMuonLiquidation } from "../muon/LibMuonLiquidation.sol";
 import { LibMuon } from "../muon/LibMuon.sol";
 import { LibPartyALiquidationSnapshotGuards } from "./LibPartyALiquidationSnapshotGuards.sol";
 import { LibPartyALiquidationShared } from "./LibPartyALiquidationShared.sol";
+import { LibSymbolAdjustment } from "../LibSymbolAdjustment.sol";
 import { AccountStorage, Price } from "../../storages/AccountStorage.sol";
 import { ClearingHouseStorage } from "../../storages/ClearingHouseStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
@@ -66,6 +67,7 @@ library LibPartyALiquidationLegacySetup {
 		LibPartyALiquidationShared.validateLiquidationPriceSetup(partyA, liquidationSig.liquidationId);
 		uint256 liquidationTimestamp = accountLayout.liquidationDetails[partyA].timestamp;
 		for (uint256 index = 0; index < liquidationSig.symbolIds.length; index++) {
+			LibSymbolAdjustment.requireNotFrozen(liquidationSig.symbolIds[index]);
 			accountLayout.symbolsPrices[partyA][liquidationSig.symbolIds[index]] = Price(liquidationSig.prices[index], liquidationTimestamp);
 		}
 	}
@@ -84,6 +86,7 @@ library LibPartyALiquidationLegacySetup {
 		LibPartyALiquidationShared.validateLiquidationPriceSetup(partyA, liquidationSig.liquidationId);
 		uint256 liquidationTimestamp = accountLayout.liquidationDetails[partyA].timestamp;
 		for (uint256 index = 0; index < liquidationSig.symbolIds.length; index++) {
+			LibSymbolAdjustment.requireNotFrozen(liquidationSig.symbolIds[index]);
 			accountLayout.symbolsPrices[partyA][liquidationSig.symbolIds[index]] = Price(liquidationSig.prices[index], liquidationTimestamp);
 		}
 	}
