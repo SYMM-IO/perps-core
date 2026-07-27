@@ -31,6 +31,11 @@ library LibSymbolAdjustment {
 		return f == 0 ? 1e18 : f;
 	}
 
+	/// @notice Current physical price/quantity basis version for a symbol.
+	function basisVersion(uint256 symbolId) internal view returns (uint256) {
+		return SymbolAdjustmentStorage.layout().adjustments[symbolId].basisVersion;
+	}
+
 	/// @notice Marks that a quote mutation occurred during the current restatement window.
 	/// @dev Used to prevent aborting after either a physical quote rewrite or a pending-inventory removal.
 	function recordRestatementMutation(uint256 symbolId) internal {

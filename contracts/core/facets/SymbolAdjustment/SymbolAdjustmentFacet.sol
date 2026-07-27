@@ -199,6 +199,7 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		adjustment.cumulativeFactor = 1e18;
 		adjustment.restating = false;
 		adjustment.restatementFactor = 0;
+		adjustment.basisVersion += 1;
 		emit RestatementFinalized(symbolId, adjustment.restatementEpoch);
 	}
 

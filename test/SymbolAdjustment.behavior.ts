@@ -1,6 +1,7 @@
 import { expect } from "chai"
 
 import { initializeFixture } from "./Initialize.fixture.js"
+import { ethers } from "./helpers/hardhat-connection.js"
 import { loadFixture, time } from "./helpers/network-helpers.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
@@ -8,10 +9,17 @@ import { User } from "./models/User.js"
 import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
 import { emergencyCloseRequestBuilder } from "./models/requestModels/EmergencyCloseRequest.js"
 import { limitFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest.js"
-import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
+import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { decimal, getBlockTimestamp } from "./utils/Common.js"
 import { migratePartyBToCross } from "./utils/CrossPartyB.js"
-import { getDummyPairUpnlSig } from "./utils/SignatureUtils.js"
+import {
+	getDummyHighLowPriceSig,
+	getDummyPairUpnlAndPriceSig,
+	getDummyPairUpnlSig,
+	getDummySettlementSig,
+	getDummySingleUpnlAndPriceSig,
+	getDummyUnifiedSettlementSig,
+} from "./utils/SignatureUtils.js"
 
 export function shouldBehaveLikeSymbolAdjustment(): void {
 	let context: RunContext
@@ -726,6 +734,447 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 				limitFillCloseRequestBuilder().filledAmount(closePendingAfter.quantityToClose).closedPrice(closePendingAfter.requestedClosePrice).build(),
 			)
 			expect((await context.viewFacetQuote.getQuote(closePendingId)).quoteStatus).to.equal(7) // CLOSED
+		})
+	})
+
+	describe("force-close basis invalidation", function () {
+		let user: User, hedger: Hedger
+
+		beforeEach(async function () {
+			user = new User(context, context.signers.user)
+			await user.setup()
+			await user.setBalances(decimal(2_000n), decimal(1_000n), decimal(500n))
+
+			hedger = new Hedger(context, context.signers.hedger)
+			await hedger.setup()
+			await hedger.setBalances(decimal(4_000n), decimal(4_000n))
+			await context.controlFacet.connect(context.signers.admin).setForceCloseMinSigPeriod(10)
+		})
+
+		async function createClosePendingPosition() {
+			const quoteId = await user.sendQuote(limitQuoteRequestBuilder().build())
+			await hedger.lockQuote(quoteId, 0n, decimal(4n))
+			await hedger.openPosition(quoteId)
+
+			const opened = await context.viewFacetQuote.getQuote(quoteId)
+			await user.requestToClosePosition(
+				quoteId,
+				limitCloseRequestBuilder()
+					.quantityToClose(opened.quantity)
+					.closePrice(opened.openedPrice)
+					.deadline((await getBlockTimestamp()) + 3_000n)
+					.build(),
+			)
+			return quoteId
+		}
+
+		async function createHighLowSig(quoteId: bigint) {
+			const quote = await context.viewFacetQuote.getQuote(quoteId)
+			const now = await getBlockTimestamp()
+			const [firstCooldown, secondCooldown] = await context.viewFacet.forceCloseCooldowns()
+			const startTime = now + firstCooldown
+			const endTime = startTime + 10n
+			await time.increase(firstCooldown + 10n + secondCooldown + 1n)
+			return getDummyHighLowPriceSig(startTime, endTime, 0n, quote.openedPrice * 2n, quote.openedPrice, quote.openedPrice, quote.symbolId, 0n, 0n)
+		}
+
+		async function restateQuote(quoteId: bigint) {
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [quoteId])
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(SYMBOL_ID)
+		}
+
+		async function highLowHash(quoteId: bigint, sig: Awaited<ReturnType<typeof getDummyHighLowPriceSig>>, basisVersion: bigint) {
+			const quote = await context.viewFacetQuote.getQuote(quoteId)
+			const network = await ethers.provider.getNetwork()
+			return ethers.solidityPackedKeccak256(
+				[
+					"uint256",
+					"bytes",
+					"address",
+					"address",
+					"address",
+					"uint256",
+					"uint256",
+					"int256",
+					"int256",
+					"uint256",
+					"uint256",
+					"uint256",
+					"uint256",
+					"uint256",
+					"uint256",
+					"uint256",
+					"uint256",
+					"uint256",
+					"uint256",
+				],
+				[
+					await context.viewFacet.getMuonIds(),
+					sig.reqId,
+					context.diamond,
+					quote.partyB,
+					quote.partyA,
+					await context.viewFacet.nonceOfPartyB(quote.partyB, quote.partyA),
+					await context.viewFacet.nonceOfPartyA(quote.partyA),
+					sig.upnlPartyB,
+					sig.upnlPartyA,
+					quote.symbolId,
+					basisVersion,
+					sig.currentPrice,
+					sig.startTime,
+					sig.endTime,
+					sig.lowest,
+					sig.highest,
+					sig.averagePrice,
+					sig.timestamp,
+					network.chainId,
+				],
+			)
+		}
+
+		async function pairUpnlAndPriceHash(quoteId: bigint, sig: Awaited<ReturnType<typeof getDummyPairUpnlAndPriceSig>>, basisVersion: bigint) {
+			const quote = await context.viewFacetQuote.getQuote(quoteId)
+			const network = await ethers.provider.getNetwork()
+			return ethers.solidityPackedKeccak256(
+				[
+					"uint256",
+					"bytes",
+					"address",
+					"address",
+					"address",
+					"uint256",
+					"uint256",
+					"int256",
+					"int256",
+					"uint256",
+					"uint256",
+					"uint256",
+					"uint256",
+					"uint256",
+				],
+				[
+					await context.viewFacet.getMuonIds(),
+					sig.reqId,
+					context.diamond,
+					quote.partyB,
+					quote.partyA,
+					await context.viewFacet.nonceOfPartyB(quote.partyB, quote.partyA),
+					await context.viewFacet.nonceOfPartyA(quote.partyA),
+					sig.upnlPartyB,
+					sig.upnlPartyA,
+					quote.symbolId,
+					basisVersion,
+					sig.price,
+					sig.timestamp,
+					network.chainId,
+				],
+			)
+		}
+
+		async function partyAUpnlAndPriceHash(partyA: string, sig: Awaited<ReturnType<typeof getDummySingleUpnlAndPriceSig>>, basisVersion: bigint) {
+			const network = await ethers.provider.getNetwork()
+			return ethers.solidityPackedKeccak256(
+				["uint256", "bytes", "address", "address", "uint256", "int256", "uint256", "uint256", "uint256", "uint256", "uint256"],
+				[
+					await context.viewFacet.getMuonIds(),
+					sig.reqId,
+					context.diamond,
+					partyA,
+					await context.viewFacet.nonceOfPartyA(partyA),
+					sig.upnl,
+					SYMBOL_ID,
+					basisVersion,
+					sig.price,
+					sig.timestamp,
+					network.chainId,
+				],
+			)
+		}
+
+		async function unifiedSettlementHash(sig: Awaited<ReturnType<typeof getDummyUnifiedSettlementSig>>) {
+			const partyANonces = await Promise.all(sig.partyAs.map(partyA => context.viewFacet.nonceOfPartyA(partyA)))
+			const partyBNonces = await Promise.all(sig.partyAs.map(partyA => context.viewFacet.nonceOfPartyB(sig.partyB, partyA)))
+			const encodedData = ethers.concat(
+				await Promise.all(
+					sig.quotesSettlementsData.map(async data => {
+						const quote = await context.viewFacetQuote.getQuote(data.quoteId)
+						const basisVersion = (await context.symbolAdjustmentFacet.getSymbolAdjustment(quote.symbolId)).basisVersion
+						return ethers.solidityPacked(
+							["uint256", "uint256", "uint8", "uint256"],
+							[data.quoteId, data.currentPrice, data.partyAIndex, basisVersion],
+						)
+					}),
+				),
+			)
+			const network = await ethers.provider.getNetwork()
+			return ethers.solidityPackedKeccak256(
+				[
+					"uint256",
+					"bytes",
+					"address",
+					"bytes",
+					"bool",
+					"address",
+					"uint256[]",
+					"uint256[]",
+					"bytes",
+					"int256[]",
+					"address[]",
+					"int256[]",
+					"uint256",
+					"uint256",
+				],
+				[
+					await context.viewFacet.getMuonIds(),
+					sig.reqId,
+					context.diamond,
+					ethers.toUtf8Bytes("verifyUnifiedSettlement"),
+					false,
+					sig.partyB,
+					partyBNonces,
+					partyANonces,
+					encodedData,
+					sig.upnlPartyBPerPartyA,
+					sig.partyAs,
+					sig.upnlPartyAs,
+					sig.timestamp,
+					network.chainId,
+				],
+			)
+		}
+
+		async function settlementHash(sig: Awaited<ReturnType<typeof getDummySettlementSig>>, partyA: string) {
+			const nonces = await Promise.all(
+				sig.quotesSettlementsData.map(async data => {
+					const quote = await context.viewFacetQuote.getQuote(data.quoteId)
+					return context.viewFacet.nonceOfPartyB(quote.partyB, partyA)
+				}),
+			)
+			const encodedData = ethers.concat(
+				await Promise.all(
+					sig.quotesSettlementsData.map(async data => {
+						const quote = await context.viewFacetQuote.getQuote(data.quoteId)
+						const basisVersion = (await context.symbolAdjustmentFacet.getSymbolAdjustment(quote.symbolId)).basisVersion
+						return ethers.solidityPacked(
+							["uint256", "uint256", "uint8", "uint256"],
+							[data.quoteId, data.currentPrice, data.partyBUpnlIndex, basisVersion],
+						)
+					}),
+				),
+			)
+			const network = await ethers.provider.getNetwork()
+			return ethers.solidityPackedKeccak256(
+				["uint256", "bytes", "address", "bytes", "uint256[]", "uint256", "bytes", "int256[]", "int256", "uint256", "uint256"],
+				[
+					await context.viewFacet.getMuonIds(),
+					sig.reqId,
+					context.diamond,
+					ethers.toUtf8Bytes("verifySettlement"),
+					nonces,
+					await context.viewFacet.nonceOfPartyA(partyA),
+					encodedData,
+					sig.upnlPartyBs,
+					sig.upnlPartyA,
+					sig.timestamp,
+					network.chainId,
+				],
+			)
+		}
+
+		it("rejects a high/low signature made for the pre-restatement basis", async function () {
+			const quoteId = await createClosePendingPosition()
+			const oldSig = await createHighLowSig(quoteId)
+			const oldBasisVersion = (await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)).basisVersion
+
+			const verifierFactory = await ethers.getContractFactory("HashCheckingMuonSignatureVerifier")
+			const verifier = await verifierFactory.deploy()
+			await context.controlFacet.connect(context.signers.admin).setSignatureVerifierAddress(await verifier.getAddress())
+			await verifier.setExpectedHash(await highLowHash(quoteId, oldSig, oldBasisVersion))
+
+			await restateQuote(quoteId)
+			const newBasisVersion = (await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)).basisVersion
+			expect(newBasisVersion).to.equal(oldBasisVersion + 1n)
+
+			await expect(user.forceClosePosition(quoteId, oldSig)).to.be.revertedWith("HashCheckingMuonSignatureVerifier: unexpected hash")
+
+			const freshSig = await createHighLowSig(quoteId)
+			await verifier.setExpectedHash(await highLowHash(quoteId, freshSig, newBasisVersion))
+			await expect(user.forceClosePosition(quoteId, freshSig)).not.to.be.reverted
+		})
+
+		it("rejects a PartyA uPNL and price signature made for the pre-restatement basis", async function () {
+			const quoteId = await createClosePendingPosition()
+			const oldSig = await getDummySingleUpnlAndPriceSig(decimal(1n), 0n)
+			const oldBasisVersion = (await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)).basisVersion
+			const partyA = await context.signers.user.getAddress()
+
+			const verifierFactory = await ethers.getContractFactory("HashCheckingMuonSignatureVerifier")
+			const verifier = await verifierFactory.deploy()
+			await context.controlFacet.connect(context.signers.admin).setSignatureVerifierAddress(await verifier.getAddress())
+			await verifier.setExpectedHash(await partyAUpnlAndPriceHash(partyA, oldSig, oldBasisVersion))
+
+			await restateQuote(quoteId)
+			const restatedQuote = await context.viewFacetQuote.getQuote(quoteId)
+			const newBasisVersion = (await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)).basisVersion
+			expect(newBasisVersion).to.equal(oldBasisVersion + 1n)
+
+			await expect(
+				user.sendQuote(marketQuoteRequestBuilder().price(restatedQuote.openedPrice).upnlSig(Promise.resolve(oldSig)).build()),
+			).to.be.revertedWith("HashCheckingMuonSignatureVerifier: unexpected hash")
+
+			const freshSig = await getDummySingleUpnlAndPriceSig(restatedQuote.openedPrice, 0n)
+			await verifier.setExpectedHash(await partyAUpnlAndPriceHash(partyA, freshSig, newBasisVersion))
+			const freshQuoteId = await user.sendQuote(
+				marketQuoteRequestBuilder().price(restatedQuote.openedPrice).upnlSig(Promise.resolve(freshSig)).build(),
+			)
+			expect((await context.viewFacetQuote.getQuote(freshQuoteId)).marketPrice).to.equal(freshSig.price)
+		})
+
+		it("keeps a high/low signature valid when an unmutated restatement is aborted and cancelled", async function () {
+			const quoteId = await createClosePendingPosition()
+			const sig = await createHighLowSig(quoteId)
+			const basisVersion = (await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)).basisVersion
+
+			const verifierFactory = await ethers.getContractFactory("HashCheckingMuonSignatureVerifier")
+			const verifier = await verifierFactory.deploy()
+			await context.controlFacet.connect(context.signers.admin).setSignatureVerifierAddress(await verifier.getAddress())
+			await verifier.setExpectedHash(await highLowHash(quoteId, sig, basisVersion))
+
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).abortRestatement(SYMBOL_ID)
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).cancelAdjustment(SYMBOL_ID)
+
+			expect((await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)).basisVersion).to.equal(basisVersion)
+			await expect(user.forceClosePosition(quoteId, sig)).not.to.be.reverted
+		})
+
+		it("requires a three-step force close to be reinitialized after a restatement", async function () {
+			const quoteId = await createClosePendingPosition()
+			const oldSig = await createHighLowSig(quoteId)
+			await context.forceCloseStepsFacet.initializeForceClose(quoteId, oldSig)
+			const detailBeforeRestatement = await context.viewFacet.forceCloseDetails(quoteId)
+
+			await restateQuote(quoteId)
+			const restatedQuote = await context.viewFacetQuote.getQuote(quoteId)
+			await expect(
+				context.forceCloseStepsFacet.finalizeForceClose(quoteId, await getDummyPairUpnlAndPriceSig(restatedQuote.openedPrice, 0n, 0n)),
+			).to.be.revertedWith("ForceActionsFacet: Symbol basis changed")
+
+			const staleDetail = await context.viewFacet.forceCloseDetails(quoteId)
+			expect(staleDetail.inProgress).to.equal(true)
+			expect(staleDetail.basisVersion).to.equal(detailBeforeRestatement.basisVersion)
+			expect(staleDetail.priceSigId).to.equal(detailBeforeRestatement.priceSigId)
+			expect(staleDetail.timestamp).to.equal(detailBeforeRestatement.timestamp)
+			expect(staleDetail.upnlPartyB).to.equal(detailBeforeRestatement.upnlPartyB)
+			expect(staleDetail.currentPrice).to.equal(detailBeforeRestatement.currentPrice)
+
+			const freshSig = await createHighLowSig(quoteId)
+			await context.forceCloseStepsFacet.initializeForceClose(quoteId, freshSig)
+			expect((await context.viewFacet.forceCloseDetails(quoteId)).basisVersion).to.equal(
+				(await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)).basisVersion,
+			)
+			await context.forceCloseStepsFacet.finalizeForceClose(quoteId, await getDummyPairUpnlAndPriceSig(restatedQuote.openedPrice, 0n, 0n))
+
+			const finalizedDetail = await context.viewFacet.forceCloseDetails(quoteId)
+			expect(finalizedDetail.inProgress).to.equal(false)
+			expect(finalizedDetail.basisVersion).to.equal(0n)
+		})
+
+		it("rejects a pair uPNL and price signature made for the pre-restatement basis", async function () {
+			const quoteId = await createClosePendingPosition()
+			const oldQuote = await context.viewFacetQuote.getQuote(quoteId)
+			const oldPairSig = await getDummyPairUpnlAndPriceSig(oldQuote.openedPrice, 0n, 0n)
+			const oldBasisVersion = (await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)).basisVersion
+
+			await restateQuote(quoteId)
+			await context.forceCloseStepsFacet.initializeForceClose(quoteId, await createHighLowSig(quoteId))
+
+			const verifierFactory = await ethers.getContractFactory("HashCheckingMuonSignatureVerifier")
+			const verifier = await verifierFactory.deploy()
+			await context.controlFacet.connect(context.signers.admin).setSignatureVerifierAddress(await verifier.getAddress())
+			await verifier.setExpectedHash(await pairUpnlAndPriceHash(quoteId, oldPairSig, oldBasisVersion))
+
+			await expect(context.forceCloseStepsFacet.finalizeForceClose(quoteId, oldPairSig)).to.be.revertedWith(
+				"HashCheckingMuonSignatureVerifier: unexpected hash",
+			)
+
+			const freshPairSig = await getDummyPairUpnlAndPriceSig((await context.viewFacetQuote.getQuote(quoteId)).openedPrice, 0n, 0n)
+			await verifier.setExpectedHash(await pairUpnlAndPriceHash(quoteId, freshPairSig, oldBasisVersion + 1n))
+			await expect(context.forceCloseStepsFacet.finalizeForceClose(quoteId, freshPairSig)).not.to.be.reverted
+		})
+
+		it("rejects a pre-restatement unified settlement signature from an in-progress force close", async function () {
+			const quoteId = await createClosePendingPosition()
+			const oldQuote = await context.viewFacetQuote.getQuote(quoteId)
+			await context.forceCloseStepsFacet.initializeForceClose(quoteId, await createHighLowSig(quoteId))
+			const oldSettlementSig = await getDummyUnifiedSettlementSig(
+				oldQuote.partyB,
+				0n,
+				[0n],
+				[oldQuote.partyA],
+				[0n],
+				[{ quoteId, currentPrice: oldQuote.openedPrice * 2n, partyAIndex: 0 }],
+			)
+
+			const verifierFactory = await ethers.getContractFactory("HashCheckingMuonSignatureVerifier")
+			const verifier = await verifierFactory.deploy()
+			await context.controlFacet.connect(context.signers.admin).setSignatureVerifierAddress(await verifier.getAddress())
+			await verifier.setExpectedHash(await unifiedSettlementHash(oldSettlementSig))
+
+			await restateQuote(quoteId)
+			await expect(
+				context.forceCloseStepsFacet.connect(context.signers.user).settleUpnlForForceClose(quoteId, oldSettlementSig, [oldQuote.openedPrice]),
+			).to.be.revertedWith("HashCheckingMuonSignatureVerifier: unexpected hash")
+
+			const freshHighLowSig = await createHighLowSig(quoteId)
+			const currentBasisVersion = (await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)).basisVersion
+			await verifier.setExpectedHash(await highLowHash(quoteId, freshHighLowSig, currentBasisVersion))
+			await context.forceCloseStepsFacet.initializeForceClose(quoteId, freshHighLowSig)
+
+			const restatedQuote = await context.viewFacetQuote.getQuote(quoteId)
+			const freshSettlementSig = await getDummyUnifiedSettlementSig(
+				restatedQuote.partyB,
+				0n,
+				[0n],
+				[restatedQuote.partyA],
+				[0n],
+				[{ quoteId, currentPrice: restatedQuote.openedPrice * 2n, partyAIndex: 0 }],
+			)
+			const updatedPrice = (restatedQuote.openedPrice * 3n) / 2n
+			await verifier.setExpectedHash(await unifiedSettlementHash(freshSettlementSig))
+			await expect(context.forceCloseStepsFacet.connect(context.signers.user).settleUpnlForForceClose(quoteId, freshSettlementSig, [updatedPrice]))
+				.not.to.be.reverted
+		})
+
+		it("rejects a pre-restatement legacy settlement signature", async function () {
+			const quoteId = await createClosePendingPosition()
+			const oldQuote = await context.viewFacetQuote.getQuote(quoteId)
+			const oldSettlementSig = await getDummySettlementSig(0n, [0n], [{ quoteId, currentPrice: oldQuote.openedPrice * 2n, partyBUpnlIndex: 0 }])
+
+			const verifierFactory = await ethers.getContractFactory("HashCheckingMuonSignatureVerifier")
+			const verifier = await verifierFactory.deploy()
+			await context.controlFacet.connect(context.signers.admin).setSignatureVerifierAddress(await verifier.getAddress())
+			await verifier.setExpectedHash(await settlementHash(oldSettlementSig, oldQuote.partyA))
+
+			await restateQuote(quoteId)
+			await expect(hedger.settleUpnl(oldQuote.partyA, [oldQuote.openedPrice], oldSettlementSig)).to.be.revertedWith(
+				"HashCheckingMuonSignatureVerifier: unexpected hash",
+			)
+
+			const restatedQuote = await context.viewFacetQuote.getQuote(quoteId)
+			const freshSettlementSig = await getDummySettlementSig(
+				0n,
+				[0n],
+				[{ quoteId, currentPrice: restatedQuote.openedPrice * 2n, partyBUpnlIndex: 0 }],
+			)
+			const updatedPrice = (restatedQuote.openedPrice * 3n) / 2n
+			await verifier.setExpectedHash(await settlementHash(freshSettlementSig, restatedQuote.partyA))
+			await expect(hedger.settleUpnl(restatedQuote.partyA, [updatedPrice], freshSettlementSig)).not.to.be.reverted
 		})
 	})
 }
