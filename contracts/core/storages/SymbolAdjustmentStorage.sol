@@ -50,6 +50,10 @@ struct SymbolAdjustment {
 	/// @dev Lets operations restate directly from SCHEDULED without activating `cumulativeFactor` for Muon or normal trading. Quote rewrites and
 	///      normalized mixed-book views use this value until abort or finalization clears it.
 	uint256 restatementFactor;
+	/// @notice Monotonically increasing identifier of the symbol's physical price/quantity basis.
+	/// @dev Advances only after a restatement finalizes. Price-bearing Muon payloads and deferred workflows bind to this value so values from the
+	///      previous basis cannot be executed after quote storage has been rewritten.
+	uint256 basisVersion;
 }
 
 /// @title SymbolAdjustmentStorage
