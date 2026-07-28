@@ -46,6 +46,7 @@
 					<a class="side-link is-active" href="../pages/solver-fees.html"><small>Fees</small><span>Solver Fees</span></a>
 					<a class="side-link" href="../pages/operational-fees.html"><small>Fees</small><span>Operational Fees</span></a>
 					<a class="side-link" href="../pages/symbol-adjustment.html"><small>Symbols</small><span>Symbol Corporate-Action Adjustment</span></a>
+					<a class="side-link" href="../pages/instant-open-gas-optimization.html"><small>Performance</small><span>InstantOpen Gas Optimization</span></a>
 					<a class="side-link" href="../pages/partya-liquidation-fee-recipient.html"
 						><small>Liquidation</small><span>PartyA Liquidation Fee Recipient Cleanup</span></a
 					>
@@ -201,7 +202,7 @@ struct SolverFeeState {
 						<a href="../pages/operational-fees.html">Operational Fees</a>.
 					</p>
 					<p>
-						For execution paths with solver fees, PartyB uses the fee-aware <code>PartyBSolverFeeActionsFacet</code> methods. These carry
+						For execution paths with solver fees, PartyB uses the fee-aware <code>PartyBExecutionFacet</code> methods. These carry
 						only the per-quote rate <code>solverFee</code> -- they do not bundle an operational fee. The solver charges operational fees
 						separately via <code>AccountFacet.chargeOperationalFee(address payer, uint256 amount)</code>, exactly like any other
 						registered charger (see <a href="../pages/operational-fees.html">Operational Fees</a>):
@@ -342,17 +343,17 @@ event BalanceChangePartyA(
 					<ol>
 						<li>PartyA sends a quote with open-side and close-side solver fee rate caps.</li>
 						<li>
-							PartyB locks and opens the quote with the fee-aware <code>PartyBSolverFeeActionsFacet.openPosition</code> overload when an
+							PartyB locks and opens the quote with the fee-aware <code>PartyBExecutionFacet.openPosition</code> overload when an
 							open solver fee should be charged.
 						</li>
 						<li>For close, PartyA uses the existing close method; close solver fee caps come from the original quote.</li>
 						<li>
-							PartyB fills normal close requests with the fee-aware <code>PartyBSolverFeeActionsFacet.fillCloseRequest</code> overload
+							PartyB fills normal close requests with the fee-aware <code>PartyBExecutionFacet.fillCloseRequest</code> overload
 							when a close solver fee should be charged.
 						</li>
 						<li>
 							For close-to-liquidation flows with solver fees, PartyB should call the fee-aware
-							<code>PartyBSolverFeeActionsFacet.fillCloseRequestToLiquidation</code> overload. The legacy
+							<code>PartyBExecutionFacet.fillCloseRequestToLiquidation</code> overload. The legacy
 							<code>fillCloseRequestToLiquidation</code> method is protocol-close-fee-only.
 						</li>
 					</ol>

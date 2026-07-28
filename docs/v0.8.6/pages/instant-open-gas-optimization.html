@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>InstantOpen Gas Optimization - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+	</head>
+	<body class="doc-page">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="doc-topbar">
+			<a class="brand" href="../index.html"
+				><span class="brand-mark">8.6</span><span><strong>Symmio Docs</strong><small>v0.8.6 reference</small></span></a
+			>
+			<nav class="top-actions" aria-label="Page actions">
+				<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+			</nav>
+		</header>
+
+		<div class="reader-shell">
+			<aside class="doc-sidebar" aria-label="Documentation navigation">
+				<a class="button primary back-home" href="../index.html">Back to index</a>
+				<div class="side-card">
+					<p class="side-label">Docs</p>
+					<a class="side-link" href="../pages/overview.html"><small>Overview</small><span>Symmio Core v0.8.6 Overview</span></a>
+					<a class="side-link" href="../pages/express-withdrawal-system-design.html"
+						><small>Express Withdrawal</small><span>Express Withdrawal System Design</span></a
+					>
+					<a class="side-link" href="../pages/account-layer-ownership-delegation.html"
+						><small>AccountLayer</small><span>AccountLayer Delegated Creation &amp; Ownership Transfer</span></a
+					>
+					<a class="side-link" href="../pages/liquidation-funding-snapshot-fix.html"
+						><small>Liquidation</small><span>PartyA Liquidation Snapshot Flow</span></a
+					>
+					<a class="side-link" href="../pages/single-step-partya-liquidation.html"
+						><small>Liquidation</small><span>Single-Step PartyA Liquidation</span></a
+					>
+					<a class="side-link" href="../pages/affiliate-shutdown-flow.html"
+						><small>Clearing House</small><span>Affiliate Shutdown Flow</span></a
+					>
+					<a class="side-link" href="../pages/muon-upnl-validity-overrides.html"
+						><small>Muon</small><span>Muon UPNL Validity Overrides</span></a
+					>
+					<a class="side-link" href="../pages/solver-fees.html"><small>Fees</small><span>Solver Fees</span></a>
+					<a class="side-link" href="../pages/operational-fees.html"><small>Fees</small><span>Operational Fees</span></a>
+					<a class="side-link is-active" href="../pages/instant-open-gas-optimization.html"
+						><small>Performance</small><span>InstantOpen Gas Optimization</span></a
+					>
+					<a class="side-link" href="../pages/partya-liquidation-fee-recipient.html"
+						><small>Liquidation</small><span>PartyA Liquidation Fee Recipient Cleanup</span></a
+					>
+					<a class="side-link" href="../pages/balance-change-event-cleanup.html"
+						><small>Events</small><span>BalanceChange Event Cleanup</span></a
+					>
+					<a class="side-link" href="../pages/lazy-accumulated-funding.html"><small>Funding</small><span>Lazy Accumulated Funding</span></a>
+					<a class="side-link" href="../pages/partyb-allocation-suspension-gates.html"
+						><small>PartyB</small><span>Allocation Suspension Gates</span></a
+					>
+					<a class="side-link" href="../pages/cross-partyb-liquidation-reserve.html"
+						><small>Liquidation</small><span>Cross-PartyB Liquidation Reserve Enforcement</span></a
+					>
+					<a class="side-link" href="../pages/express-bot-operations-checklist.html"
+						><small>Express Withdrawal</small><span>Express Provider Bot Operations Checklist</span></a
+					>
+				</div>
+			</aside>
+			<aside class="toc-panel side-toc" aria-label="Page navigation">
+				<div class="toc-card">
+					<p class="toc-title">On this page</p>
+					<a class="toc-link level-2" href="#summary">Summary</a>
+					<a class="toc-link level-2" href="#old-flow">The Four-Operation Flow</a>
+					<a class="toc-link level-2" href="#lock-and-open">lockAndOpenPosition</a>
+					<a class="toc-link level-2" href="#call-with-margin">_callWithMargin</a>
+					<a class="toc-link level-2" href="#two-op-template">The Two-Operation Template</a>
+				</div>
+			</aside>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">v0.8.6</a><span>/</span><strong>Performance</strong></nav>
+					<div class="reader-title-row">
+						<div>
+							<h1>InstantOpen Gas Optimization</h1>
+							<p class="hero-copy">
+								Two additive entrypoints collapse the atomic InstantOpen flow from four signed operations to two, cutting roughly 127k
+								gas without changing any existing selector, event, or storage slot.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="summary">Summary</h2>
+					<p>
+						The complete atomic InstantOpen transaction -- margin, quote, lock, open -- was executed as four separately signed
+						InstantLayer operations. v0.8.6 adds two combined entrypoints that preserve the exact same state transitions and events
+						while removing two operations from the template:
+					</p>
+					<ul>
+						<li>
+							<code>PartyBExecutionFacet.lockAndOpenPosition</code> on the Symmio core, which locks a pending quote and opens it in one
+							call, charging the solver rate fee atomically like the facet's other fee-aware actions.
+						</li>
+						<li>
+							<code>CoreFacet._callWithMargin</code> on the AccountLayer, which pre-funds the next virtual account and executes the
+							Symmio core calls under a single authorization.
+						</li>
+					</ul>
+					<p>
+						Both are purely additive. <code>lockQuote</code>, <code>openPosition</code>, <code>addMarginToNextVA</code>, and
+						<code>_call</code> are unchanged and remain the supported path for every flow that does not need the combined form.
+					</p>
+
+					<h2 id="old-flow">The Four-Operation Flow</h2>
+					<p>The template executed by <code>InstantLayer.executeTemplate</code> carried four signed operations:</p>
+					<ol>
+						<li><code>addMarginToNextVA</code> -- signed by the user, targeting the AccountLayer.</li>
+						<li><code>sendQuote</code> -- signed by the user, targeting the core through AccountLayer routing.</li>
+						<li><code>lockQuote</code> -- signed by the solver.</li>
+						<li><code>openPosition</code> -- signed by the solver, with the quote id injected from the send result.</li>
+					</ol>
+					<p>Each operation carries fixed per-operation overhead regardless of what it does:</p>
+					<ul>
+						<li>A cold <code>operationUsageCount</code> storage write for replay protection (~22.1k).</li>
+						<li>EIP-712 hashing over the full operation calldata plus signature verification (~9-11k).</li>
+						<li>A round trip through the SymmioPartyB wrapper or the AccountLayer, with its signer toggles and owner lookups.</li>
+						<li>Its own signature and calldata bytes in the transaction.</li>
+					</ul>
+
+					<h2 id="lock-and-open">lockAndOpenPosition</h2>
+					<p>
+						The combined entry lives on <code>PartyBExecutionFacet</code> -- the fee-aware solver execution surface, renamed from
+						<code>PartyBSolverFeeActionsFacet</code> now that it carries every trade action a solver performs (fee-aware open, this
+						combined lock+open, and the close fills). It is the successor of the v0.8.4
+						<code>PartyBGroupActionsFacet.lockAndOpenQuote</code>, which was dropped in the 0.8.5 restructuring:
+					</p>
+					<pre><code>function lockAndOpenPosition(
+    uint256 quoteId,
+    uint256 filledAmount,
+    uint256 openedPrice,
+    SingleUpnlSig memory lockSig,
+    PairUpnlAndPriceSig memory upnlSig,
+    uint256 solverFee
+) external whenNotPartyBOpenPositionsPaused onlyPartyB notLiquidated(quoteId)</code></pre>
+					<p>
+						The implementation is composition, not reimplementation: each leg runs the real facet function --
+						<code>lockQuote</code> then <code>openPosition</code> -- through a self-delegatecall into the diamond, the same pattern
+						the facet already uses for its fee-aware actions. Their modifiers, guards, hook handling, post-hook binding re-check,
+						and events all execute verbatim, so the combined path cannot drift from the sequential one. Events arrive in exactly
+						the sequential order (<code>LockQuote</code>, then the open's internal events, then <code>OpenPosition</code>), and
+						partial fills behave identically, including the child quote and its <code>SendQuote</code> events.
+					</p>
+					<p>
+						<code>solverFee</code> makes it fee-aware like the rest of the facet: a non-zero fee is charged after the open against
+						the quote's user-approved open rate cap, with the same solvency guard and <code>OpenSolverFeeCharged</code> event as the
+						fee-aware <code>openPosition</code>. Pass 0 for fee-less execution.
+					</p>
+					<p>What it removes from the flow:</p>
+					<ul>
+						<li>One full InstantLayer operation: replay-protection write, EIP-712 hash, signature verification.</li>
+						<li>One SymmioPartyB round trip with its role checks and call frames.</li>
+						<li>One set of InstantLayer operation calldata and one solver signature per open.</li>
+					</ul>
+
+					<h2 id="call-with-margin">_callWithMargin</h2>
+					<p>The AccountLayer <code>CoreFacet</code> gains a margin-aware variant of <code>_call</code>:</p>
+					<pre><code>function _callWithMargin(
+    address account,
+    VirtualAccountIsolationType isolationType,
+    uint256 symbolId,
+    uint256 marginAmount,
+    bytes[] calldata callDatas
+) external whenNotPaused nonReentrant onlyAccountOwner(account) returns (bytes[] memory)</code></pre>
+					<p>
+						It performs the <code>addMarginToNextVA</code> work and then the standard <code>_call</code> execution under one
+						authorization check and one reentrancy guard. The margin-to-next-VA logic now lives in
+						<code>LibAccountLayerMargin</code>, shared by both <code>MarginFacet.addMarginToNextVA</code> and this function, so there
+						is a single copy of the isolation-type validation and address prediction.
+					</p>
+					<p>
+						The safety property that makes this sound: the predicted VA address and the VA that <code>sendQuote</code> routing
+						creates or reuses are computed in the same call with no external state-changing call between them, so they cannot
+						diverge. The margin always lands on the account the quote is opened under.
+					</p>
+
+					<h2 id="two-op-template">The Two-Operation Template</h2>
+					<p>With both entrypoints, the InstantOpen template becomes:</p>
+					<ol>
+						<li><code>_callWithMargin(subAccount, isolationType, symbolId, margin, [sendQuote])</code> -- signed by the user.</li>
+						<li><code>lockAndOpenPosition(quoteId, filledAmount, openedPrice, lockSig, upnlSig, solverFee)</code> -- signed by the solver.</li>
+					</ol>
+					<p>
+						One signature from the user and one from the solver, instead of two each. The quote id still flows from the first
+						operation into the second through the template's result injection.
+					</p>
+					<p>
+						<strong>Injection offset:</strong> because operation 0 targets the AccountLayer directly rather than the core, its result
+						is the raw ABI-encoded <code>bytes[]</code> return value. The quote id sits at byte offset <strong>128</strong> within
+						that result, so the template's second operation uses <code>sourceOffsets: [128]</code> (versus <code>[0]</code> for
+						core-targeted operations whose nested result is unwrapped by InstantLayer).
+					</p>
+
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Protocol, operations, and integration notes.</span>
+		</footer>
+	</body>
+</html>
