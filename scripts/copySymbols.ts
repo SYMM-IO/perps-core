@@ -11,7 +11,7 @@
  *     are discarded.
  *
  * Usage (flags are env vars — hardhat 3 `run` does not pass CLI args through):
- *   RPC_ARBITRUM=<url> NEW_DEPLOYER=<pk> [DRY_RUN=true] [TARGET=core|manager] \
+ *   RPC_ARBITRUM=<url> TEAM_DEPLOYER=<pk> [DRY_RUN=true] [TARGET=core|manager] \
  *   [BATCH_SIZE=25] npx hardhat run scripts/copySymbols.ts --network polygon
  *
  * Env vars:

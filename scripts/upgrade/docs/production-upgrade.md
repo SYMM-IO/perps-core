@@ -315,7 +315,7 @@ TIMELINE
 - Hardhat keystore with two private keys and optional RPC override (`RPC_<NETWORK>`):
 
     ```bash
-    npx hardhat keystore set NEW_DEPLOYER            # protocolAdmin / diamond owner key (override name via KEYSTORE_DEPLOYER_KEY)
+    npx hardhat keystore set TEAM_DEPLOYER           # protocolAdmin / diamond owner key (override name via KEYSTORE_DEPLOYER_KEY)
     npx hardhat keystore set TEAM_MIGRATOR            # migrationRunner key (MIGRATION_ROLE)
     npx hardhat keystore set RPC_ARBITRUM           # optional RPC override (per network)
     ```
