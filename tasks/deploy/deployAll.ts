@@ -885,7 +885,9 @@ async function setupSystem(
 	const [deployer] = await ethers.getSigners()
 	const deployerAddress = deployer.address
 
-	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", deployedContracts.diamond!)
+	// IControlFacet is the compatibility ABI spanning ControlFacet and the
+	// size-isolated transient selectors in ExecutionContextFacet at the same diamond address.
+	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/IControlFacet.sol:IControlFacet", deployedContracts.diamond!)
 	const viewFacet = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", deployedContracts.diamond!)
 	const alControlFacet = await ethers.getContractAt(
 		"contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet",
@@ -1023,6 +1025,21 @@ async function setupSystem(
 	// InstantLayer SIGNER_SETTER_ROLE on AccountLayerDiamond (allows InstantLayer to call setSigner)
 	await checkpointedStep(checkpoint, "setup.ilRoleOnAL", "Granting SIGNER_SETTER_ROLE on AccountLayerDiamond", async () => {
 		await send(alControlFacet.connect(deployer).grantRole(deployedContracts.instantLayer!, roleHash("SIGNER_SETTER_ROLE")), "grantRole")
+	})
+
+	// Keep the deployed InstantLayer address and its legacy setter calldata compatible
+	// with the transient execution context. These mappings are separately
+	// namespaced and do not alter any existing quote, position, or signer storage.
+	await checkpointedStep(checkpoint, "setup.ilTransientOnDiamond", "Enabling the legacy execution-context adapter on Diamond", async () => {
+		if (!(await controlFacet.legacyExecutionContextAdapterEnabled(deployedContracts.instantLayer!))) {
+			await controlFacet.connect(deployer).setLegacyExecutionContextAdapter(deployedContracts.instantLayer!, true)
+		}
+	})
+
+	await checkpointedStep(checkpoint, "setup.ilTransientOnAL", "Enabling the legacy signer adapter on AccountLayerDiamond", async () => {
+		if (!(await alControlFacet.legacySignerAdapterEnabled(deployedContracts.instantLayer!))) {
+			await alControlFacet.connect(deployer).setLegacySignerAdapter(deployedContracts.instantLayer!, true)
+		}
 	})
 
 	// Whitelist Symmio Core

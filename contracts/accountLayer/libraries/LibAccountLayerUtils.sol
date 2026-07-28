@@ -11,6 +11,7 @@ import { AffiliateStorage, HookContext } from "../storages/AffiliateStorage.sol"
 import { ISymmio } from "../interfaces/ISymmio.sol";
 import { IMultiAccount } from "../interfaces/IMultiAccount.sol";
 import { IAccountLayerErrors } from "../interfaces/IAccountLayerErrors.sol";
+import { LibAccountLayerSigner } from "./LibAccountLayerSigner.sol";
 
 /// @notice Utility library for account resolution, signer management, hook execution, and address generation
 library LibAccountLayerUtils {
@@ -21,8 +22,7 @@ library LibAccountLayerUtils {
 
 	/// @notice Returns the current effective signer (globalSigner if set, otherwise msg.sender)
 	function getSigner() internal view returns (address) {
-		address signer = AccountStorage.layout().globalSigner;
-		return signer == address(0) ? msg.sender : signer;
+		return LibAccountLayerSigner.signer();
 	}
 
 	/// @notice Resolves an account to the sub-account that owns its delegation grants
@@ -37,8 +37,10 @@ library LibAccountLayerUtils {
 
 	/// @notice Reverts when the active signer session may not act on the given account
 	/// @dev A zero scope means the session is unconfined, which is how every direct caller behaves.
+	///      The scope is read from whichever mechanism owns the active signer, so a delegated
+	///      session is confined identically on the persistent and transient paths.
 	function requireAccountInScope(address account) internal view {
-		address scope = AccountStorage.layout().scopedAccount;
+		address scope = LibAccountLayerSigner.effectiveScope();
 		if (scope == address(0)) return;
 		if (canonicalAccountScope(account) != scope) revert IAccountLayerErrors.AccountOutOfScope(scope, account);
 	}
@@ -46,9 +48,15 @@ library LibAccountLayerUtils {
 	/// @notice Executes a call on the Symmio core with setSigner(account), then clears the signer
 	function executeWithSigner(address account, bytes memory callData) internal returns (bytes memory) {
 		address core = getRelatedCore(account);
-		ISymmio(core).setSigner(account);
+		return executeWithSignerOnCore(core, account, callData);
+	}
+
+	/// @notice Executes a core call using the same persistent/transient signer mechanism
+	///         as the current AccountLayer execution context.
+	function executeWithSignerOnCore(address core, address signer, bytes memory callData) internal returns (bytes memory) {
+		bool usesTransientSigner = beginCoreSigner(core, signer);
 		(bool success, bytes memory result) = core.call(callData);
-		ISymmio(core).setSigner(address(0));
+		endCoreSigner(core, usesTransientSigner);
 
 		if (!success) {
 			assembly {
@@ -57,6 +65,25 @@ library LibAccountLayerUtils {
 		}
 
 		return result;
+	}
+
+	/// @notice Begins a core signer scope and reports which mechanism must clear it.
+	function beginCoreSigner(address core, address signer) internal returns (bool usesTransientSigner) {
+		usesTransientSigner = LibAccountLayerSigner.isTransientSignerActive();
+		if (usesTransientSigner) {
+			ISymmio(core).setTransientSigner(signer);
+		} else {
+			ISymmio(core).setSigner(signer);
+		}
+	}
+
+	/// @notice Ends a signer scope created by beginCoreSigner.
+	function endCoreSigner(address core, bool usesTransientSigner) internal {
+		if (usesTransientSigner) {
+			ISymmio(core).setTransientSigner(address(0));
+		} else {
+			ISymmio(core).setSigner(address(0));
+		}
 	}
 
 	/// @notice Resolves the Symmio core address associated with an account
@@ -159,16 +186,21 @@ library LibAccountLayerUtils {
 		return address(0);
 	}
 
-	/// @notice Calls the affiliate's registered hook for a given selector with signer protection
+	/// @notice Calls the affiliate's registered hook with signer and core execution-context protection.
 	function callHook(address affiliate, address account, address symmioCore, bytes4 selector, bytes memory data) internal {
 		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
-		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		address hook = afLayout.affiliates[affiliate].hooks[selector];
 		if (hook == address(0)) return;
 
 		// Save and clear signer before external call to prevent hook from impersonating user
-		address previousSigner = ahLayout.globalSigner;
-		ahLayout.globalSigner = address(0);
+		(address previousSigner, bool wasTransientScoped) = LibAccountLayerSigner.clearSignerForExternalCall();
+		bool coreContextSuspended;
+		// InstantLayer keeps the core context active across AccountLayer operations. Suspend
+		// it as well so an affiliate hook cannot call core directly with transaction-wide
+		// privileges. Core-originated system hooks are already scoped by LibHook.safeCall.
+		if (msg.sender != symmioCore && (wasTransientScoped || ISymmio(symmioCore).isCallFromInstantLayer())) {
+			coreContextSuspended = ISymmio(symmioCore).suspendExecutionContextForExternalCall();
+		}
 
 		// Set hook context before calling
 		afLayout.hookContext = HookContext({ account: account, affiliate: affiliate, symmioCore: symmioCore, isActive: true, activeHook: hook });
@@ -178,8 +210,9 @@ library LibAccountLayerUtils {
 		// Clear hook context after call
 		delete afLayout.hookContext;
 
-		// Restore signer after hook call
-		ahLayout.globalSigner = previousSigner;
+		// Restore both contexts before propagating a hook failure.
+		if (coreContextSuspended) ISymmio(symmioCore).restoreExecutionContextAfterExternalCall();
+		LibAccountLayerSigner.restoreSignerAfterExternalCall(previousSigner, wasTransientScoped);
 
 		if (!success) {
 			revert IAccountLayerErrors.HookFailed(result);

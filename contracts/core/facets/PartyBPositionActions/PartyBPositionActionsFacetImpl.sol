@@ -28,7 +28,7 @@ library PartyBPositionActionsFacetImpl {
 		uint256 filledAmount,
 		uint256 openedPrice,
 		PairUpnlAndPriceSig memory upnlSig
-	) internal returns (uint256 currentId) {
+	) public returns (uint256 currentId) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 
