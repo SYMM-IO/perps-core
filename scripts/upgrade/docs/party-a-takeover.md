@@ -33,14 +33,15 @@ Example:
 The script derives all other inputs:
 
 - active quote IDs and the remaining quantities;
-- current Muon prices and symbols;
+- the Muon-signed prices frozen by the original liquidation;
 - accrued funding debt;
 - PartyA price PnL and the net PartyB claim;
 - PartyA allocation and reimbursement amounts;
 - the takeover pool distribution amount;
 - the PartyB settlement cleanup list.
 
-No private key, price, quote ID, or transfer amount belongs in the config.
+No private key, price, quote ID, or transfer amount belongs in the config. Current market prices are
+not used because `LATE` and `OVERDUE` positions must retain the original liquidation accounting.
 
 Override the config path with `PARTY_A_TAKEOVER_CONFIG_FILE`.
 
@@ -54,8 +55,8 @@ TAKEOVER_STEP=inspect \
 npx hardhat run scripts/upgrade/runPartyATakeover.ts --network hyperevm
 ```
 
-It prints the current takeover state, obtains fresh prices from the SYMMIO Muon oracle, reads funding
-debt, and calculates the current PartyB claim.
+It prints the current takeover state, reads the original liquidation prices from contract storage,
+reads accrued funding debt, and calculates the PartyB claim.
 
 ## Authenticated dry run
 
@@ -88,9 +89,9 @@ Supported steps:
 
 | Step         | Action                                                                        |
 | ------------ | ----------------------------------------------------------------------------- |
-| `inspect`    | Read state, fetch Muon prices, and calculate accounting                       |
+| `inspect`    | Read state, recover frozen liquidation prices, and calculate accounting       |
 | `pending`    | Call `liquidatePendingPositionsForClearingHouse(partyA, [])` when needed      |
-| `positions`  | Fetch fresh prices and close every open position in bounded batches           |
+| `positions`  | Close every open position at its frozen liquidation price in bounded batches  |
 | `deallocate` | Pull PartyA allocation and reimbursement into the takeover pool               |
 | `distribute` | Credit the complete recovery pool to PartyB's isolated PartyA bucket          |
 | `settle`     | Derive the settlement cleanup list and call `settlePartyATakeover`            |
@@ -121,8 +122,8 @@ expected post-state.
 
 ## Accounting journal
 
-After each confirmed position-close transaction, the runner writes the quote price, price PnL,
-funding debt, net PartyA PnL, Muon block/timestamp, and receipt to:
+After each confirmed position-close transaction, the runner writes the quote, symbol, frozen price
+source and timestamp, price PnL, funding debt, net PartyA PnL, and receipt to:
 
 ```text
 scripts/upgrade/output/party-a-takeover-<chainId>-<partyA>.json
@@ -132,6 +133,19 @@ This ignored local file is the proof used by a later `distribute` invocation. Di
 when no confirmed journal exists or when the confirmed PartyB claim is smaller than the recovery pool.
 
 Override the path with `PARTY_A_TAKEOVER_JOURNAL_FILE`, for example when rehearsing on a fork.
+
+## Frozen liquidation prices
+
+The ClearingHouse close function accepts raw `prices[]` without verifying a new Muon signature. The
+runner does not interpret that as permission to reprice an already-liquidated position. It recovers
+the values committed during the original liquidation:
+
+- legacy liquidation: `AccountStorage.symbolsPrices[partyA][symbolId]`;
+- snapshot liquidation: the signed PartyB-symbol snapshot for the liquidation ID.
+
+The storage locations are derived from the append-only `AccountStorage.Layout` used by this contract
+version. The runner fails closed when a legacy price timestamp does not equal the active liquidation
+timestamp, when a signed snapshot is missing, or when any stored price is zero.
 
 ## HyperEVM big-block mode
 
