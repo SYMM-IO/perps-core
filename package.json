@@ -69,6 +69,8 @@
 	"scripts": {
 		"postinstall": "node scripts/patch-hardhat-verify.js",
 		"prepare": "husky",
+		"abi:diamond": "node scripts/exportDiamondAbi.mjs",
+		"test:diamond-abi": "node --test test/scripts/diamondAbi.test.mjs",
 		"clean": "shx rm -rf ./artifacts ./cache ./coverage ./src/types ./coverage.json && yarn typechain",
 		"compile": "hardhat compile",
 		"coverage": "hardhat test mocha --coverage",
