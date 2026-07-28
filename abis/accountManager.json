@@ -160,6 +160,11 @@
     },
     {
         "inputs": [],
+        "name": "MarginKeyMismatch",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "MustBeRoleAdmin",
         "type": "error"
     },

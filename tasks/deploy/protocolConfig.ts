@@ -116,6 +116,17 @@ export const DEFAULT_PROTOCOL_CONFIG: ProtocolConfig = {
 				{ sourceIndices: [2], insertionPoints: [0], sourceOffsets: [0] }, // allocate
 			],
 		},
+		{
+			// Gas-optimized open via _callWithMargin + lockAndOpenPosition. Op 0 targets the
+			// AccountLayer directly, so its raw result is the abi-encoded bytes[] return value:
+			// [0x20][len=1][0x20][elemLen=32][quoteId] — the quoteId sits at byte offset 128.
+			name: "InstantOpenCompact",
+			instantOpenMode: true,
+			operations: [
+				{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // _callWithMargin([sendQuote]) on AccountLayer
+				{ sourceIndices: [0], insertionPoints: [0], sourceOffsets: [128] }, // lockAndOpenPosition - quoteId from op 0
+			],
+		},
 	],
 }
 

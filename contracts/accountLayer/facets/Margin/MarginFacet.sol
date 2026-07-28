@@ -11,6 +11,7 @@ import { AccountLayerPausable } from "../../utils/AccountLayerPausable.sol";
 import { AccountLayerReentrancyGuard } from "../../utils/AccountLayerReentrancyGuard.sol";
 import { AccountStorage, VirtualAccountIsolationType, SubAccountIsolationType } from "../../storages/AccountStorage.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
+import { LibAccountLayerMargin } from "../../libraries/LibAccountLayerMargin.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
 
 /// @notice Facet for transferring margin between sub-accounts and virtual accounts
@@ -44,28 +45,7 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 		uint256 symbolId,
 		uint256 amount
 	) external whenNotPaused nonReentrant onlyAccountOwner(subAccount) {
-		if (amount == 0) revert ZeroAmount();
-
-		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
-		if (!ahLayout.subAccounts[subAccount].isExists) revert AccountDoesNotExist();
-		SubAccountIsolationType subIsolation = ahLayout.subAccounts[subAccount].isolationType;
-
-		bool validIsolation = false;
-		if (subIsolation == SubAccountIsolationType.POSITION) {
-			validIsolation = isolationType == VirtualAccountIsolationType.POSITION;
-		} else if (subIsolation == SubAccountIsolationType.MARKET) {
-			validIsolation = isolationType == VirtualAccountIsolationType.MARKET;
-		} else if (subIsolation == SubAccountIsolationType.MARKET_DIRECTION) {
-			validIsolation = isolationType == VirtualAccountIsolationType.MARKET_LONG || isolationType == VirtualAccountIsolationType.MARKET_SHORT;
-		}
-
-		if (!validIsolation) revert InvalidIsolationType();
-
-		address predictedVA = _predictNextVirtualAccountAddress(subAccount, isolationType, symbolId);
-
-		LibAccountLayerUtils.executeWithSigner(subAccount, abi.encodeWithSelector(ISymmio.internalTransfer.selector, predictedVA, amount));
-
-		emit AddMargin(predictedVA, subAccount, amount);
+		LibAccountLayerMargin.addMarginToNextVA(subAccount, isolationType, symbolId, amount);
 	}
 
 	/// @notice Deallocates and transfers margin from a virtual account back to its parent sub-account
@@ -146,29 +126,6 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 	}
 
 	// ==================== Internal Functions ====================
-
-	function _predictNextVirtualAccountAddress(
-		address subAccount,
-		VirtualAccountIsolationType isolationType,
-		uint256 symbolId
-	) private view returns (address) {
-		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
-
-		if (ahLayout.subAccounts[subAccount].singleVAMode) {
-			address existingVA = ahLayout.activeVAByKey[subAccount][isolationType][symbolId];
-			if (existingVA != address(0) && ahLayout.virtualAccounts[existingVA].isExists) {
-				return existingVA;
-			}
-		}
-
-		address[] storage pool = ahLayout.deletedVirtualAccountsPool[subAccount][isolationType][symbolId];
-		if (pool.length > 0) {
-			return pool[pool.length - 1];
-		}
-
-		uint256 nextNonce = ahLayout.subAccountVirtualNonces[subAccount] + 1;
-		return LibAccountLayerUtils.generateVirtualAccountAddress(subAccount, nextNonce);
-	}
 
 	function _executeWithSymmioSigner(address symmio, address signer, bytes memory callData) private returns (bytes memory) {
 		AccountStorage.Layout storage ahLayout = AccountStorage.layout();

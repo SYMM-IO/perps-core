@@ -26,7 +26,7 @@ import type {
 	PartyAFacet,
 	PartyBBatchActionsFacet,
 	PartyBPositionActionsFacet,
-	PartyBSolverFeeActionsFacet,
+	PartyBExecutionFacet,
 	PartyBQuoteActionsFacet,
 	SettlementFacet,
 	ViewFacetSymbol,
@@ -64,7 +64,7 @@ export class RunContext {
 	partyBBatchActionsFacet!: PartyBBatchActionsFacet
 	partyBQuoteActionsFacet!: PartyBQuoteActionsFacet
 	partyBPositionActionsFacet!: PartyBPositionActionsFacet
-	partyBSolverFeeActionsFacet!: PartyBSolverFeeActionsFacet
+	partyBExecutionFacet!: PartyBExecutionFacet
 	bridgeFacet!: BridgeFacet
 	viewFacet!: ViewFacet
 	viewFacetSymbol!: ViewFacetSymbol
@@ -151,7 +151,7 @@ export async function createRunContext(diamond: string, collateral: string, only
 	context.partyBBatchActionsFacet = await ethers.getContractAt("PartyBBatchActionsFacet", diamond)
 	context.partyBQuoteActionsFacet = await ethers.getContractAt("PartyBQuoteActionsFacet", diamond)
 	context.partyBPositionActionsFacet = await ethers.getContractAt("PartyBPositionActionsFacet", diamond)
-	context.partyBSolverFeeActionsFacet = await ethers.getContractAt("PartyBSolverFeeActionsFacet", diamond)
+	context.partyBExecutionFacet = await ethers.getContractAt("PartyBExecutionFacet", diamond)
 	context.bridgeFacet = await ethers.getContractAt("BridgeFacet", diamond)
 	context.viewFacet = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", diamond)
 	context.viewFacetSymbol = await ethers.getContractAt("ViewFacetSymbol", diamond)

@@ -22,6 +22,9 @@ import { AffiliateStorage, AffiliateState, HookContext } from "../../storages/Af
 import { LibQuoteParams, QuoteParams } from "../../libraries/LibQuoteParams.sol";
 import { LibAccountLayerAccessibility } from "../../libraries/LibAccountLayerAccessibility.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
+import { LibAccountLayerMargin } from "../../libraries/LibAccountLayerMargin.sol";
+import { LibAccountLayerSafeCall } from "../../libraries/LibAccountLayerSafeCall.sol";
+import { LibAccountLayerSafeERC20 } from "../../libraries/LibAccountLayerSafeERC20.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
 import { IAccountLayerHook } from "../../interfaces/IAccountLayerHook.sol";
 import { IMultiAccount } from "../../interfaces/IMultiAccount.sol";
@@ -288,6 +291,39 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		address account,
 		bytes[] calldata callDatas
 	) external whenNotPaused nonReentrant onlyAccountOwner(account) returns (bytes[] memory) {
+		return _executeCalls(account, callDatas, false, VirtualAccountIsolationType.POSITION, 0);
+	}
+
+	/// @notice Pre-funds the next virtual account and executes Symmio core calls in a single transaction
+	/// @dev Equivalent to addMarginToNextVA followed by _call, but with one authorization and one
+	///      reentrancy guard. The margin lands on the predicted next VA and the sendQuote routing in
+	///      the calls then creates or reuses that same VA — both computed atomically in this call.
+	///      Every sendQuote in callDatas is validated against the margin key, so the margin cannot be
+	///      routed to a different VA than the quote opens under.
+	/// @param account The sub-account to fund and execute calls for
+	/// @param isolationType The isolation type matching the sub-account's strategy
+	/// @param symbolId The symbol ID for the target virtual account
+	/// @param marginAmount The amount to transfer to the next VA via internalTransfer
+	/// @param callDatas Array of encoded function calls to execute on the Symmio core
+	/// @return Array of return data from each call
+	function _callWithMargin(
+		address account,
+		VirtualAccountIsolationType isolationType,
+		uint256 symbolId,
+		uint256 marginAmount,
+		bytes[] calldata callDatas
+	) external whenNotPaused nonReentrant onlyAccountOwner(account) returns (bytes[] memory) {
+		LibAccountLayerMargin.addMarginToNextVA(account, isolationType, symbolId, marginAmount);
+		return _executeCalls(account, callDatas, true, isolationType, symbolId);
+	}
+
+	function _executeCalls(
+		address account,
+		bytes[] calldata callDatas,
+		bool enforceMarginKey,
+		VirtualAccountIsolationType marginIsolationType,
+		uint256 marginSymbolId
+	) private returns (bytes[] memory) {
 		if (callDatas.length == 0) revert EmptyArray();
 
 		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
@@ -316,6 +352,10 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 				selector == LibQuoteParams.SEND_QUOTE_WITH_AFFILIATE_AND_DATA_SELECTOR
 			) {
 				QuoteParams memory p = LibQuoteParams.decodeQuoteParams(cd);
+
+				if (enforceMarginKey) {
+					LibAccountLayerMargin.validateQuoteMatchesMarginKey(p, marginIsolationType, marginSymbolId);
+				}
 
 				if (isVirtualAccount) {
 					results[i] = _handleVirtualAccountSendQuote(account, cd, p);

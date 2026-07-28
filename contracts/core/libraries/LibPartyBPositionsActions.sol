@@ -263,7 +263,7 @@ library LibPartyBPositionsActions {
 
 	/// @notice Validates a close-to-liquidation request and computes the amount that keeps PartyA at the
 	///         liquidation edge, reserving room for `solverFeeAmount` (pass 0 for the legacy fee-less path).
-	///         Shared by PartyBPositionActionsFacetImpl and PartyBSolverFeeActionsFacet so the validation
+	///         Shared by PartyBPositionActionsFacetImpl and PartyBExecutionFacet so the validation
 	///         and rounding rules cannot diverge between the two close-to-liquidation paths.
 	/// @dev Does NOT verify the Muon signature or any party's solvency; callers remain responsible for that.
 	/// @param maxQuantity Ceiling on the close amount. The result is capped to `maxQuantity` and never exceeds it,
