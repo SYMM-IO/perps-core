@@ -1,15 +1,26 @@
 # PartyA ClearingHouse takeover runner
 
-`scripts/upgrade/runPartyATakeover.ts` completes or resumes an `OVERDUE` PartyA liquidation after
-`takeoverPartyALiquidation(partyA)` has already been called.
+`scripts/upgrade/runPartyATakeover.ts` initiates, completes, or resumes a PartyA ClearingHouse
+takeover. `TAKEOVER_STEP=all` calls `takeoverPartyALiquidation(partyA)` automatically when the PartyA
+is liquidated but the takeover has not started.
 
 The runner is intentionally limited to a single configured PartyB. It refuses:
 
-- non-`OVERDUE` liquidations;
+- non-`OVERDUE` liquidations that still have open or pending positions;
 - open positions belonging to a different PartyB;
-- distributions without a confirmed close-accounting journal;
+- settlement states in which the configured PartyB owes PartyA after CVA;
 - settlement states that cannot be explained by the configured PartyB;
 - live execution by a signer without `CLEARING_HOUSE_ROLE`.
+
+`NORMAL` and `LATE` liquidations are supported after their open and pending positions have already
+been processed. In that stage, the runner derives PartyB's remaining recovery from the existing
+settlement state:
+
+```text
+PartyB recovery = settlement CVA - settlement actualAmount
+```
+
+This includes both CVA returned to PartyB and a negative PartyA PnL amount.
 
 ## Minimum safe config
 
@@ -70,8 +81,9 @@ TAKEOVER_STEP=positions \
 npx hardhat run scripts/upgrade/runPartyATakeover.ts --network hyperevm
 ```
 
-For `TAKEOVER_STEP=all`, a live-RPC dry run can only static-call the pending and position-close calls.
-Later calls depend on state changes that a read-only RPC cannot persist.
+For `TAKEOVER_STEP=all`, when takeover has not started, a live-RPC dry run static-calls the takeover
+transaction and prints the derived recovery target. Later calls depend on the takeover state change,
+which a read-only RPC cannot persist. Use the fork rehearsal for a stateful proof of every step.
 
 ## Execute one step
 
@@ -90,12 +102,13 @@ Supported steps:
 | Step         | Action                                                                        |
 | ------------ | ----------------------------------------------------------------------------- |
 | `inspect`    | Read state, recover frozen liquidation prices, and calculate accounting       |
+| `takeover`   | Initiate takeover when PartyA is liquidated and no takeover is active          |
 | `pending`    | Call `liquidatePendingPositionsForClearingHouse(partyA, [])` when needed      |
 | `positions`  | Close every open position at its frozen liquidation price in bounded batches  |
-| `deallocate` | Pull PartyA allocation and reimbursement into the takeover pool               |
-| `distribute` | Credit the complete recovery pool to PartyB's isolated PartyA bucket          |
+| `deallocate` | Pull only the outstanding PartyB recovery from PartyA allocation/reimbursement |
+| `distribute` | Credit PartyB's confirmed recovery and return any excess pool to PartyA        |
 | `settle`     | Derive the settlement cleanup list and call `settlePartyATakeover`            |
-| `all`        | Run `pending`, `positions`, `deallocate`, `distribute`, and `settle` in order |
+| `all`        | Run `takeover` through `settle` in order, skipping completed stages           |
 
 The default position batch size is one quote to remain comfortably below HyperEVM's fast-block gas
 limit. Override it with `POSITION_BATCH_SIZE` only after reviewing the printed gas estimates.
@@ -112,8 +125,9 @@ npx hardhat run scripts/upgrade/runPartyATakeover.ts --network hyperevm
 
 Every step is resumable:
 
+- an already-active takeover is reused;
 - already-empty pending/open-position sets are skipped;
-- empty PartyA allocation/reimbursement is skipped;
+- only the outstanding confirmed PartyB recovery is deallocated;
 - an empty takeover pool is skipped;
 - an already-settled takeover is reported as complete.
 
@@ -122,15 +136,18 @@ expected post-state.
 
 ## Accounting journal
 
-After each confirmed position-close transaction, the runner writes the quote, symbol, frozen price
-source and timestamp, price PnL, funding debt, net PartyA PnL, and receipt to:
+After each confirmed position-close or recovery-distribution transaction, the runner writes its
+accounting inputs and receipt to:
 
 ```text
 scripts/upgrade/output/party-a-takeover-<chainId>-<partyA>.json
 ```
 
-This ignored local file is the proof used by a later `distribute` invocation. Distribution is refused
-when no confirmed journal exists or when the confirmed PartyB claim is smaller than the recovery pool.
+For positions closed by the runner, this ignored local file records the quote, symbol, frozen price
+source and timestamp, price PnL, funding debt, and net PartyA PnL. For a liquidation that reached the
+settlement stage before takeover, the on-chain pending settlement is the accounting source instead.
+Confirmed distributions are journaled so rerunning later stages does not deallocate the same recovery
+twice.
 
 Override the path with `PARTY_A_TAKEOVER_JOURNAL_FILE`, for example when rehearsing on a fork.
 
