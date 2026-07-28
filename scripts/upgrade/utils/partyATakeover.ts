@@ -2,7 +2,7 @@ import fs from "node:fs"
 
 import { ethers } from "../../../test/helpers/hardhat-connection.js"
 
-export const PARTY_A_TAKEOVER_STEPS = ["inspect", "pending", "positions", "deallocate", "distribute", "settle", "all"] as const
+export const PARTY_A_TAKEOVER_STEPS = ["inspect", "takeover", "pending", "positions", "deallocate", "distribute", "settle", "all"] as const
 
 export type PartyATakeoverStep = (typeof PARTY_A_TAKEOVER_STEPS)[number]
 
@@ -18,6 +18,13 @@ export type PositionAccounting = {
 	fundingDebt: bigint
 	partyANetPnl: bigint
 	partyBClaim: bigint
+}
+
+export type RecoveryDeallocation = {
+	remainingClaim: bigint
+	fromPartyAAllocation: bigint
+	fromReimbursement: bigint
+	shortfall: bigint
 }
 
 export type FrozenLiquidationPriceRequest = {
@@ -117,6 +124,46 @@ export function calculatePositionAccounting(
 		fundingDebt,
 		partyANetPnl,
 		partyBClaim: partyANetPnl < 0n ? -partyANetPnl : 0n,
+	}
+}
+
+/**
+ * Returns the net amount owed to PartyB by an already-created normal-liquidation
+ * settlement bucket. A positive result must be routed to PartyB; a negative result
+ * means PartyB owes PartyA and requires a different clearing-house distribution.
+ */
+export function calculatePartyBSettlementRecovery(actualAmount: bigint, cva: bigint): bigint {
+	return cva - actualAmount
+}
+
+export function calculateRecoveryDeallocation(
+	partyBClaim: bigint,
+	confirmedDistributed: bigint,
+	deallocatedPool: bigint,
+	partyAAllocated: bigint,
+	reimbursement: bigint,
+): RecoveryDeallocation {
+	for (const [name, value] of [
+		["partyBClaim", partyBClaim],
+		["confirmedDistributed", confirmedDistributed],
+		["deallocatedPool", deallocatedPool],
+		["partyAAllocated", partyAAllocated],
+		["reimbursement", reimbursement],
+	] as const) {
+		if (value < 0n) throw new Error(`${name} cannot be negative`)
+	}
+
+	const accountedRecovery = confirmedDistributed + deallocatedPool
+	const remainingClaim = partyBClaim > accountedRecovery ? partyBClaim - accountedRecovery : 0n
+	const fromPartyAAllocation = remainingClaim < partyAAllocated ? remainingClaim : partyAAllocated
+	const afterAllocation = remainingClaim - fromPartyAAllocation
+	const fromReimbursement = afterAllocation < reimbursement ? afterAllocation : reimbursement
+
+	return {
+		remainingClaim,
+		fromPartyAAllocation,
+		fromReimbursement,
+		shortfall: afterAllocation - fromReimbursement,
 	}
 }
 

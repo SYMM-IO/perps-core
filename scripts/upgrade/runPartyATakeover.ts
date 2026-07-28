@@ -7,7 +7,7 @@
  *   scripts/upgrade/config/partyATakeover.json
  *
  * TAKEOVER_STEP:
- *   inspect (default), pending, positions, deallocate, distribute, settle, all
+ *   inspect (default), takeover, pending, positions, deallocate, distribute, settle, all
  *
  * Dry run is the default. Set DRY_RUN=false and USE_KEYSTORE=true to submit.
  *
@@ -27,7 +27,9 @@ import path from "node:path"
 import connection, { ethers, networkHelpers } from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
 import {
+	calculatePartyBSettlementRecovery,
 	calculatePositionAccounting,
+	calculateRecoveryDeallocation,
 	formatSigned,
 	loadPartyATakeoverConfig,
 	parsePartyATakeoverStep,
@@ -76,6 +78,12 @@ type ConfirmedPositionRecord = {
 	blockNumber: number
 }
 
+type ConfirmedDistributionRecord = {
+	amount: string
+	transactionHash: string
+	blockNumber: number
+}
+
 type TakeoverJournal = {
 	version: 2
 	chainId: number
@@ -84,6 +92,7 @@ type TakeoverJournal = {
 	partyB: string
 	updatedAt: string
 	positions: Record<string, ConfirmedPositionRecord>
+	distributions?: ConfirmedDistributionRecord[]
 }
 
 type TakeoverContext = {
@@ -117,6 +126,9 @@ type TakeoverSnapshot = {
 	liquidationPriceTimestamp: bigint
 	configuredReceiverIsPartyB: boolean
 	settlementPending: boolean
+	settlementActualAmount: bigint
+	settlementExpectedAmount: bigint
+	settlementCva: bigint
 	openPositions: OpenPosition[]
 }
 
@@ -172,6 +184,9 @@ function loadJournal(file: string, config: PartyATakeoverConfig): TakeoverJourna
 	if (!journal.positions || typeof journal.positions !== "object" || Array.isArray(journal.positions)) {
 		throw new Error(`Takeover journal positions must be an object: ${file}`)
 	}
+	if (journal.distributions !== undefined && !Array.isArray(journal.distributions)) {
+		throw new Error(`Takeover journal distributions must be an array: ${file}`)
+	}
 	return journal
 }
 
@@ -184,6 +199,19 @@ function writeJournal(file: string, journal: TakeoverJournal): void {
 function confirmedPartyBClaim(journal: TakeoverJournal): bigint {
 	const partyANetPnl = Object.values(journal.positions).reduce((total, position) => total + BigInt(position.partyANetPnl), 0n)
 	return partyANetPnl < 0n ? -partyANetPnl : 0n
+}
+
+function confirmedPartyBDistribution(journal: TakeoverJournal): bigint {
+	return (journal.distributions ?? []).reduce((total, distribution) => total + BigInt(distribution.amount), 0n)
+}
+
+function settlementPartyBClaim(snapshot: TakeoverSnapshot): bigint {
+	if (!snapshot.settlementPending) return 0n
+	const recovery = calculatePartyBSettlementRecovery(snapshot.settlementActualAmount, snapshot.settlementCva)
+	if (recovery < 0n) {
+		throw new Error(`Configured PartyB owes PartyA ${ethers.formatEther(-recovery)} after CVA; automatic distribution is not supported`)
+	}
+	return recovery
 }
 
 async function readUsingBigBlocks(config: PartyATakeoverConfig, signerAddress: string): Promise<boolean | undefined> {
@@ -246,6 +274,9 @@ async function readSnapshot(context: TakeoverContext): Promise<TakeoverSnapshot>
 		liquidationPriceTimestamp: liquidationDetail.timestamp,
 		configuredReceiverIsPartyB,
 		settlementPending: settlementStates[0].pending,
+		settlementActualAmount: settlementStates[0].actualAmount,
+		settlementExpectedAmount: settlementStates[0].expectedAmount,
+		settlementCva: settlementStates[0].cva,
 		openPositions,
 	}
 }
@@ -254,11 +285,37 @@ function assertActiveTakeover(snapshot: TakeoverSnapshot): void {
 	if (!snapshot.isLiquidated || !snapshot.takeoverInProgress) {
 		throw new Error("PartyA does not have an active ClearingHouse takeover")
 	}
-	if (snapshot.liquidationType !== 3) {
-		throw new Error(`This runner only automates OVERDUE PartyA takeovers; current liquidationType is ${snapshot.liquidationType}`)
+	if (!snapshot.configuredReceiverIsPartyB) {
+		throw new Error("Configured partyB is not registered as a PartyB")
+	}
+}
+
+function assertSupportedTakeoverStage(snapshot: TakeoverSnapshot): void {
+	if (!snapshot.isLiquidated) {
+		throw new Error("PartyA is not being liquidated")
 	}
 	if (!snapshot.configuredReceiverIsPartyB) {
 		throw new Error("Configured partyB is not registered as a PartyB")
+	}
+	if (snapshot.involvedPartyBCounts > 1n || (snapshot.involvedPartyBCounts === 1n) !== snapshot.settlementPending) {
+		throw new Error(
+			`This runner requires zero or one explainable PartyB settlement: involvedPartyBCounts=${snapshot.involvedPartyBCounts}, ` +
+				`configured PartyB pending=${snapshot.settlementPending}`,
+		)
+	}
+	if (snapshot.liquidationType !== 3 && (snapshot.openPositionsCount !== 0n || snapshot.pendingQuoteIds.length !== 0)) {
+		throw new Error(
+			`Liquidation type ${snapshot.liquidationType} is only supported after all open and pending positions were processed; ` +
+				"this runner still limits position-closing automation to OVERDUE liquidations.",
+		)
+	}
+
+	const settlementRecovery = calculatePartyBSettlementRecovery(snapshot.settlementActualAmount, snapshot.settlementCva)
+	if (snapshot.settlementPending && settlementRecovery < 0n) {
+		throw new Error(
+			`Configured PartyB owes PartyA ${ethers.formatEther(-settlementRecovery)} after CVA. ` +
+				"This runner only automates PartyA-to-PartyB recovery and refuses to take over this state.",
+		)
 	}
 }
 
@@ -277,10 +334,11 @@ function assertConfiguredCounterparty(context: TakeoverContext, positions: OpenP
 }
 
 function logSnapshot(snapshot: TakeoverSnapshot): void {
+	const liquidationTypes = ["NONE", "NORMAL", "LATE", "OVERDUE"]
 	log.stats([
 		["Liquidated", String(snapshot.isLiquidated)],
 		["Takeover active", String(snapshot.takeoverInProgress)],
-		["Liquidation type", String(snapshot.liquidationType)],
+		["Liquidation type", `${liquidationTypes[snapshot.liquidationType] ?? "UNKNOWN"} (${snapshot.liquidationType})`],
 		["Open positions", snapshot.openPositionsCount.toString()],
 		["Pending quotes", snapshot.pendingQuoteIds.length],
 		["PartyA allocated", ethers.formatEther(snapshot.partyAAllocated)],
@@ -291,6 +349,12 @@ function logSnapshot(snapshot: TakeoverSnapshot): void {
 		["Takeover pool", ethers.formatEther(snapshot.deallocatedPool)],
 		["Pending settlements", snapshot.involvedPartyBCounts.toString()],
 	])
+	if (snapshot.settlementPending) {
+		log.detail(`Settlement actual amount: ${formatSigned(snapshot.settlementActualAmount)}`)
+		log.detail(`Settlement expected amount: ${formatSigned(snapshot.settlementExpectedAmount)}`)
+		log.detail(`Settlement CVA: ${ethers.formatEther(snapshot.settlementCva)}`)
+		log.detail(`PartyB recovery from settlement: ${ethers.formatEther(settlementPartyBClaim(snapshot))}`)
+	}
 }
 
 async function buildPositionPlan(
@@ -393,19 +457,47 @@ async function inspect(context: TakeoverContext): Promise<TakeoverSnapshot> {
 		log.ok("PartyA takeover is already settled")
 		return snapshot
 	}
-	assertActiveTakeover(snapshot)
+	assertSupportedTakeoverStage(snapshot)
 	assertConfiguredCounterparty(context, snapshot.openPositions)
+	if (!snapshot.takeoverInProgress) {
+		log.info("PartyA is eligible for ClearingHouse takeover at its current liquidation stage")
+	}
 
 	if (snapshot.openPositions.length > 0) {
 		const plan = await buildPositionPlan(context, snapshot)
 		logPositionPlan(plan, snapshot.liquidationPriceTimestamp)
 		const recoverable = snapshot.partyAAllocated + snapshot.reimbursement + snapshot.deallocatedPool
 		log.info(`Currently recoverable PartyA funds: ${ethers.formatEther(recoverable)}`)
-		if (plan.totalPartyBClaim < recoverable) {
-			log.warn("PartyB claim is smaller than currently recoverable funds; automatic full-pool distribution will be refused")
+	}
+	const journal = loadJournal(context.journalFile, context.config)
+	const claim = confirmedPartyBClaim(journal) + settlementPartyBClaim(snapshot)
+	const distributed = confirmedPartyBDistribution(journal)
+	log.info(`Total confirmed PartyB recovery target: ${ethers.formatEther(claim)}`)
+	if (distributed > 0n) log.info(`Confirmed recovery already distributed: ${ethers.formatEther(distributed)}`)
+	return snapshot
+}
+
+async function takeover(context: TakeoverContext): Promise<void> {
+	const snapshot = await readSnapshot(context)
+	if (!snapshot.isLiquidated) {
+		log.ok("PartyA liquidation is already settled; takeover step skipped")
+		return
+	}
+	if (snapshot.takeoverInProgress) {
+		log.ok("ClearingHouse takeover is already active; step skipped")
+		return
+	}
+	assertSupportedTakeoverStage(snapshot)
+	assertConfiguredCounterparty(context, snapshot.openPositions)
+
+	await submitChecked(context, "Initiate PartyA takeover", context.clearingHouse.takeoverPartyALiquidation, [context.config.partyA])
+
+	if (!context.dryRun) {
+		const after = await readSnapshot(context)
+		if (!after.isLiquidated || !after.takeoverInProgress) {
+			throw new Error("Takeover initiation post-state verification failed")
 		}
 	}
-	return snapshot
 }
 
 async function processPending(context: TakeoverContext): Promise<void> {
@@ -492,22 +584,41 @@ async function deallocate(context: TakeoverContext): Promise<void> {
 		throw new Error("Close all open and pending positions before deallocating PartyA funds")
 	}
 
+	const journal = loadJournal(context.journalFile, context.config)
+	const partyBClaim = confirmedPartyBClaim(journal) + settlementPartyBClaim(snapshot)
+	const confirmedDistributed = confirmedPartyBDistribution(journal)
+	const plan = calculateRecoveryDeallocation(
+		partyBClaim,
+		confirmedDistributed,
+		snapshot.deallocatedPool,
+		snapshot.partyAAllocated,
+		snapshot.reimbursement,
+	)
+	log.info(`PartyB recovery target: ${ethers.formatEther(partyBClaim)}`)
+	log.info(`Recovery still to fund: ${ethers.formatEther(plan.remainingClaim)}`)
+
 	const parties: string[] = []
 	const allocationKeys: string[] = []
 	const amounts: bigint[] = []
-	if (snapshot.partyAAllocated > 0n) {
+	if (plan.fromPartyAAllocation > 0n) {
 		parties.push(context.config.partyA)
 		allocationKeys.push(ethers.ZeroAddress)
-		amounts.push(snapshot.partyAAllocated)
+		amounts.push(plan.fromPartyAAllocation)
 	}
-	if (snapshot.reimbursement > 0n) {
+	if (plan.fromReimbursement > 0n) {
 		parties.push(context.config.partyA)
 		allocationKeys.push(REIMBURSEMENT_KEY)
-		amounts.push(snapshot.reimbursement)
+		amounts.push(plan.fromReimbursement)
 	}
 	if (amounts.length === 0) {
-		log.ok("No PartyA allocation or reimbursement to deallocate; step skipped")
+		if (plan.shortfall > 0n) {
+			log.warn(`PartyA recovery shortfall: ${ethers.formatEther(plan.shortfall)}`)
+		}
+		log.ok("No additional PartyA recovery needs to be deallocated; step skipped")
 		return
+	}
+	if (plan.shortfall > 0n) {
+		log.warn(`PartyA cannot fully cover PartyB; expected recovery shortfall: ${ethers.formatEther(plan.shortfall)}`)
 	}
 
 	const expectedPool = snapshot.deallocatedPool + amounts.reduce((total, amount) => total + amount, 0n)
@@ -520,7 +631,11 @@ async function deallocate(context: TakeoverContext): Promise<void> {
 
 	if (!context.dryRun) {
 		const after = await readSnapshot(context)
-		if (after.partyAAllocated !== 0n || after.reimbursement !== 0n || after.deallocatedPool !== expectedPool) {
+		if (
+			after.partyAAllocated !== snapshot.partyAAllocated - plan.fromPartyAAllocation ||
+			after.reimbursement !== snapshot.reimbursement - plan.fromReimbursement ||
+			after.deallocatedPool !== expectedPool
+		) {
 			throw new Error("Deallocation post-state verification failed")
 		}
 	}
@@ -538,29 +653,50 @@ async function distribute(context: TakeoverContext): Promise<void> {
 	}
 
 	const journal = loadJournal(context.journalFile, context.config)
-	const partyBClaim = confirmedPartyBClaim(journal)
-	if (partyBClaim === 0n) {
-		throw new Error(
-			`No confirmed PartyB claim found in ${context.journalFile}. ` + "Run the positions step through this runner before distributing funds.",
-		)
-	}
-	if (partyBClaim < snapshot.deallocatedPool) {
-		throw new Error(
-			`Confirmed PartyB claim ${partyBClaim} is smaller than takeover pool ${snapshot.deallocatedPool}; ` + "manual split distribution is required.",
-		)
-	}
+	const partyBClaim = confirmedPartyBClaim(journal) + settlementPartyBClaim(snapshot)
+	const confirmedDistributed = confirmedPartyBDistribution(journal)
+	const remainingPartyBClaim = partyBClaim > confirmedDistributed ? partyBClaim - confirmedDistributed : 0n
+	const partyBAmount = snapshot.deallocatedPool < remainingPartyBClaim ? snapshot.deallocatedPool : remainingPartyBClaim
+	const partyARefund = snapshot.deallocatedPool - partyBAmount
 
 	const partyBBefore = snapshot.partyBAllocated
-	await submitChecked(context, "Distribute recovery to PartyB", context.clearingHouse.distributeForClearingHouse, [
+	const receivers: string[] = []
+	const allocationKeys: string[] = []
+	const amounts: bigint[] = []
+	if (partyBAmount > 0n) {
+		receivers.push(context.config.partyB)
+		allocationKeys.push(context.config.partyA)
+		amounts.push(partyBAmount)
+	}
+	if (partyARefund > 0n) {
+		receivers.push(context.config.partyA)
+		allocationKeys.push(ethers.ZeroAddress)
+		amounts.push(partyARefund)
+	}
+
+	const receipt = await submitChecked(context, "Distribute takeover pool", context.clearingHouse.distributeForClearingHouse, [
 		context.config.partyA,
-		[context.config.partyB],
-		[context.config.partyA],
-		[snapshot.deallocatedPool],
+		receivers,
+		allocationKeys,
+		amounts,
 	])
 
 	if (!context.dryRun) {
+		if (partyBAmount > 0n) {
+			journal.distributions = journal.distributions ?? []
+			journal.distributions.push({
+				amount: partyBAmount.toString(),
+				transactionHash: receipt.hash,
+				blockNumber: receipt.blockNumber,
+			})
+			writeJournal(context.journalFile, journal)
+		}
 		const after = await readSnapshot(context)
-		if (after.deallocatedPool !== 0n || after.partyBAllocated !== partyBBefore + snapshot.deallocatedPool) {
+		if (
+			after.deallocatedPool !== 0n ||
+			after.partyBAllocated !== partyBBefore + partyBAmount ||
+			after.reimbursement !== snapshot.reimbursement + partyARefund
+		) {
 			throw new Error("Distribution post-state verification failed")
 		}
 	}
@@ -579,8 +715,20 @@ async function settle(context: TakeoverContext): Promise<void> {
 	if (snapshot.deallocatedPool !== 0n) {
 		throw new Error("Takeover pool still contains undistributed funds")
 	}
-	if (snapshot.partyAAllocated !== 0n || snapshot.reimbursement !== 0n) {
-		throw new Error("PartyA still has recoverable allocation or reimbursement; run deallocate and distribute first")
+
+	const journal = loadJournal(context.journalFile, context.config)
+	const partyBClaim = confirmedPartyBClaim(journal) + settlementPartyBClaim(snapshot)
+	const confirmedDistributed = confirmedPartyBDistribution(journal)
+	const remainingPartyBClaim = partyBClaim > confirmedDistributed ? partyBClaim - confirmedDistributed : 0n
+	const recoverablePartyAFunds = snapshot.partyAAllocated + snapshot.reimbursement
+	if (remainingPartyBClaim > 0n && recoverablePartyAFunds > 0n) {
+		throw new Error(
+			`PartyB still has ${ethers.formatEther(remainingPartyBClaim)} of unfunded recovery while PartyA has ` +
+				`${ethers.formatEther(recoverablePartyAFunds)} recoverable; run deallocate and distribute first`,
+		)
+	}
+	if (remainingPartyBClaim > 0n) {
+		log.warn(`Settling with an uncovered PartyB shortfall of ${ethers.formatEther(remainingPartyBClaim)}`)
 	}
 
 	let settledPartyBs: string[]
@@ -622,7 +770,7 @@ async function main() {
 	const positionBatchSize = parsePositiveInteger(process.env.POSITION_BATCH_SIZE, DEFAULT_POSITION_BATCH_SIZE, "POSITION_BATCH_SIZE")
 
 	log.header("Symmio PartyA ClearingHouse Takeover")
-	log.setSteps(step === "inspect" ? 2 : step === "all" ? (dryRun ? 4 : 7) : 3)
+	log.setSteps(step === "inspect" ? 2 : step === "all" ? 8 : 3)
 
 	const rpcTimer = log.step("Verify RPC and configuration")
 	await verifyRpc(config.chainId)
@@ -704,7 +852,14 @@ async function main() {
 	}
 	if (dryRun && step === "all") {
 		log.warn("DRY RUN — dependent later steps cannot be statefully simulated against a live RPC")
-		log.info("The current pending and positions calls will be static-called; no transactions will be submitted")
+		if (!initial.takeoverInProgress) {
+			log.info("The takeover call will be static-called; later calls require its state change and cannot be preflighted on the live RPC")
+			const takeoverTimer = log.step("Preflight takeover initiation")
+			await takeover(context)
+			log.stepDone(takeoverTimer)
+			return
+		}
+		log.info("The current pending and position calls will be static-called; no transactions will be submitted")
 		const pendingTimer = log.step("Preflight pending quotes")
 		await processPending(context)
 		log.stepDone(pendingTimer)
@@ -717,6 +872,7 @@ async function main() {
 	const actions =
 		step === "all"
 			? ([
+					["Initiate or resume takeover", takeover],
 					["Process pending quotes", processPending],
 					["Close open positions", processPositions],
 					["Deallocate PartyA recovery", deallocate],
@@ -726,6 +882,7 @@ async function main() {
 			: ([
 					[
 						{
+							takeover: "Initiate takeover",
 							pending: "Process pending quotes",
 							positions: "Close open positions",
 							deallocate: "Deallocate PartyA recovery",
@@ -733,6 +890,7 @@ async function main() {
 							settle: "Settle takeover",
 						}[step],
 						{
+							takeover,
 							pending: processPending,
 							positions: processPositions,
 							deallocate,
@@ -757,6 +915,7 @@ async function main() {
 			["Takeover active", String(finalSnapshot.takeoverInProgress)],
 			["Open positions", finalSnapshot.openPositionsCount.toString()],
 			["Pending quotes", String(finalSnapshot.pendingQuoteIds.length)],
+			["PartyA allocated", ethers.formatEther(finalSnapshot.partyAAllocated)],
 			["PartyB isolated", ethers.formatEther(finalSnapshot.partyBAllocated)],
 			["Journal", context.journalFile],
 		])
