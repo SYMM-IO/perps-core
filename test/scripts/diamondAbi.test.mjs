@@ -1,12 +1,15 @@
+import { parseArguments } from "../../scripts/exportDiamondAbi.mjs";
 import {
 	extractAbiFromEtherscanApi,
 	extractAbiFromEtherscanHtml,
 	findMatchingArtifact,
 	findSelectorMatchingArtifact,
+	fetchVerifiedAbi,
 	matchArtifactRuntime,
 	mergeLiveFacetAbis,
 	normalizeLiveFacets,
 	parseDiamondAbiConfig,
+	resolveChainProfile,
 	resolveFunctionsFromAbiSnapshots,
 } from "../../scripts/utils/diamondAbi.mjs";
 import { FunctionFragment } from "ethers";
@@ -64,57 +67,44 @@ const error = {
 const alphaSelector = FunctionFragment.from(alpha).selector.toLowerCase();
 const betaSelector = FunctionFragment.from(beta).selector.toLowerCase();
 
-function baseConfig(overrides = {}) {
+function baseConfig(diamonds = {}) {
 	return {
-		schemaVersion: 1,
-		name: "test-chain",
-		chainId: 999,
-		diamondAddress: DIAMOND,
-		rpc: {
-			url: "https://rpc.example",
-			urlEnv: "RPC_TEST_CHAIN",
+		diamonds: {
+			core: DIAMOND,
+			"account-layer": "0x00000000000000000000000000000000000000a1",
+			...diamonds,
 		},
-		explorers: [
-			{
-				type: "etherscan-html",
-				browserUrl: "https://explorer.example",
-			},
-		],
-		request: {
-			concurrency: 2,
-			attempts: 2,
-			timeoutMs: 1_000,
-		},
-		localArtifacts: {
-			directory: "artifacts/contracts",
-			allowSelectorOnlyFallback: true,
-		},
-		abiSnapshots: [
-			{
-				type: "git",
-				label: "v1",
-				ref: "version_1",
-				path: "abis/diamond.json",
-			},
-		],
-		outputDirectory: "scripts/output/diamond-abi/test-chain",
-		...overrides,
 	};
 }
 
-test("validates and normalizes a per-chain config", () => {
+test("validates a minimal multi-Diamond chain config", () => {
 	const config = parseDiamondAbiConfig(baseConfig());
-	assert.equal(config.chainId, 999);
-	assert.equal(config.diamondAddress, DIAMOND);
-	assert.equal(config.localArtifacts.allowSelectorOnlyFallback, true);
-	assert.deepEqual(config.abiSnapshots[0], {
-		type: "git",
-		label: "v1",
-		ref: "version_1",
-		path: "abis/diamond.json",
-	});
+	assert.deepEqual(config.diamonds, [
+		{ label: "core", address: DIAMOND },
+		{ label: "account-layer", address: FACET_A },
+	]);
 
-	assert.throws(() => parseDiamondAbiConfig(baseConfig({ diamondAddress: "0x1234" })), /diamondAddress is not a valid EVM address/);
+	assert.throws(() => parseDiamondAbiConfig(baseConfig({ broken: "0x1234" })), /diamonds.broken is not a valid EVM address/);
+	assert.throws(() => parseDiamondAbiConfig(baseConfig({ Core: FACET_B })), /diamond label "Core"/);
+	assert.throws(() => parseDiamondAbiConfig({ ...baseConfig(), chainId: 999 }), /only "diamonds" belongs/);
+	assert.throws(() => parseDiamondAbiConfig({ diamonds: { core: DIAMOND, duplicate: DIAMOND } }), /duplicates diamonds.core/);
+});
+
+test("derives public chain metadata and supports selecting one Diamond", () => {
+	const profile = resolveChainProfile("HyperEVM");
+	assert.equal(profile.name, "hyperevm");
+	assert.equal(profile.expectedChainId, 999);
+	assert.equal(profile.rpc.urlEnv, "RPC_HYPEREVM");
+	assert.equal(profile.explorers.at(-1).browserUrl, "https://hyperevmscan.io");
+	assert.throws(() => resolveChainProfile("unknown"), /unsupported chain/);
+
+	assert.deepEqual(parseArguments(["--chain", "hyperevm", "--diamond", "account-layer"], {}), {
+		help: false,
+		chain: "hyperevm",
+		configFile: "scripts/config/diamond-abi/hyperevm.json",
+		diamondLabel: "account-layer",
+		outputDirectory: undefined,
+	});
 });
 
 test("extracts verified ABI arrays from Etherscan API and HTML responses", () => {
@@ -133,6 +123,33 @@ test("extracts verified ABI arrays from Etherscan API and HTML responses", () =>
 	);
 	assert.throws(() => extractAbiFromEtherscanApi({ status: "0", result: "not verified" }), /not verified/);
 	assert.throws(() => extractAbiFromEtherscanHtml("<html></html>"), /Contract ABI section was not found/);
+});
+
+test("does not retry non-retryable explorer responses", async () => {
+	let requests = 0;
+	await assert.rejects(
+		fetchVerifiedAbi(
+			FACET_A,
+			{
+				chainId: 999,
+				explorers: [{ type: "etherscan-html", browserUrl: "https://explorer.example" }],
+				request: { concurrency: 1, attempts: 3, timeoutMs: 1_000 },
+			},
+			{
+				targetRuntimeCode: "0x6000",
+				fetchImpl: async () => {
+					requests += 1;
+					return {
+						ok: false,
+						status: 403,
+						text: async () => "forbidden",
+					};
+				},
+			},
+		),
+		/HTTP 403/,
+	);
+	assert.equal(requests, 1);
 });
 
 test("normalizes loupe output and rejects duplicate selector assignments", () => {
