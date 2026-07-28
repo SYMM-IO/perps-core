@@ -8,6 +8,7 @@ import {
 	mergeLiveFacetAbis,
 	normalizeLiveFacets,
 	parseDiamondAbiConfig,
+	resolveChainProfile,
 	resolveFunctionsFromAbiSnapshots,
 	resolveRpcUrl,
 } from "./utils/diamondAbi.mjs";
@@ -25,18 +26,20 @@ const LOUPE_ABI = ["function facets() view returns (tuple(address facetAddress, 
 function usage() {
 	return [
 		"Usage:",
-		"  node scripts/exportDiamondAbi.mjs --chain <name>",
-		"  node scripts/exportDiamondAbi.mjs --config <file> [--output <directory>]",
+		"  node scripts/exportDiamondAbi.mjs --chain <name> [--diamond <label>]",
+		"  node scripts/exportDiamondAbi.mjs --config <file> [--chain <name>] [--diamond <label>] [--output <directory>]",
 		"",
 		"Defaults:",
 		"  --config scripts/config/diamond-abi/<chain>.json",
 		"  --chain  $DIAMOND_ABI_CHAIN",
+		"  omit --diamond to export every Diamond in the selected chain config",
 	].join("\n");
 }
 
 export function parseArguments(argv, environment = process.env) {
 	let chain = environment.DIAMOND_ABI_CHAIN?.trim();
 	let configFile;
+	let diamondLabel;
 	let outputDirectory;
 
 	for (let index = 0; index < argv.length; index++) {
@@ -50,6 +53,11 @@ export function parseArguments(argv, environment = process.env) {
 		if (argument === "--config") {
 			configFile = argv[++index];
 			if (!configFile) throw new Error("--config requires a value");
+			continue;
+		}
+		if (argument === "--diamond") {
+			diamondLabel = argv[++index];
+			if (!diamondLabel) throw new Error("--diamond requires a value");
 			continue;
 		}
 		if (argument === "--output") {
@@ -69,11 +77,12 @@ export function parseArguments(argv, environment = process.env) {
 		help: false,
 		chain,
 		configFile,
+		diamondLabel,
 		outputDirectory,
 	};
 }
 
-async function loadConfig(configFile, outputOverride) {
+async function loadConfig(configFile) {
 	const body = await fs.readFile(configFile, "utf8");
 	let raw;
 	try {
@@ -82,11 +91,7 @@ async function loadConfig(configFile, outputOverride) {
 		const message = error instanceof Error ? error.message : String(error);
 		throw new Error(`invalid JSON in ${configFile}: ${message}`);
 	}
-	const config = parseDiamondAbiConfig(raw);
-	return {
-		...config,
-		outputDirectory: outputOverride ?? config.outputDirectory,
-	};
+	return parseDiamondAbiConfig(raw);
 }
 
 async function listJsonFiles(directory) {
@@ -105,6 +110,7 @@ async function loadArtifactCandidates(directory) {
 	try {
 		files = await listJsonFiles(resolvedDirectory);
 	} catch (error) {
+		if (error?.code === "ENOENT") return [];
 		const message = error instanceof Error ? error.message : String(error);
 		throw new Error(`cannot read local artifact directory ${resolvedDirectory}: ${message}`);
 	}
@@ -138,37 +144,96 @@ async function loadArtifactCandidates(directory) {
 	return artifacts;
 }
 
-async function loadAbiSnapshots(configuredSnapshots) {
+function parseAbiSnapshot(body, snapshot) {
+	let abi;
+	try {
+		abi = JSON.parse(body);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		throw new Error(`ABI snapshot ${snapshot.label} is not valid JSON: ${message}`);
+	}
+	if (!Array.isArray(abi)) throw new Error(`ABI snapshot ${snapshot.label} is not an ABI array`);
+	return { ...snapshot, abi };
+}
+
+async function discoverVersionRefs() {
+	let stdout;
+	try {
+		({ stdout } = await execFileAsync(
+			"git",
+			["for-each-ref", "--format=%(refname:short)", "refs/heads/version_*", "refs/remotes/origin/version_*"],
+			{ maxBuffer: 2 * 1024 * 1024 },
+		));
+	} catch {
+		return [];
+	}
+
+	const available = new Set(
+		stdout
+			.split(/\r?\n/)
+			.map(value => value.trim())
+			.filter(Boolean),
+	);
+	const versions = new Set([...available].map(ref => ref.replace(/^origin\//, "")));
+	return [...versions]
+		.sort((left, right) => right.localeCompare(left, undefined, { numeric: true }))
+		.map(version => (available.has(version) ? version : `origin/${version}`));
+}
+
+async function loadAbiSnapshots(directory = "abis") {
 	const snapshots = [];
-	for (const snapshot of configuredSnapshots) {
-		let body;
-		if (snapshot.type === "file") {
-			body = await fs.readFile(snapshot.path, "utf8");
-		} else {
+	const resolvedDirectory = path.resolve(directory);
+
+	let workingTreeFiles = [];
+	try {
+		workingTreeFiles = await listJsonFiles(resolvedDirectory);
+	} catch {
+		// A checkout without generated ABI files can still use explorer and compiled-artifact sources.
+	}
+	for (const file of workingTreeFiles.sort()) {
+		const relativePath = path.relative(process.cwd(), file);
+		snapshots.push(
+			parseAbiSnapshot(await fs.readFile(file, "utf8"), {
+				type: "file",
+				label: `working-tree:${relativePath}`,
+				path: relativePath,
+			}),
+		);
+	}
+
+	for (const ref of await discoverVersionRefs()) {
+		let files;
+		try {
+			const result = await execFileAsync("git", ["ls-tree", "-r", "--name-only", ref, "--", directory], {
+				maxBuffer: 2 * 1024 * 1024,
+			});
+			files = result.stdout
+				.split(/\r?\n/)
+				.map(value => value.trim())
+				.filter(value => value.endsWith(".json"))
+				.sort();
+		} catch {
+			continue;
+		}
+		for (const file of files) {
 			try {
-				const result = await execFileAsync("git", ["show", `${snapshot.ref}:${snapshot.path}`], {
+				const result = await execFileAsync("git", ["show", `${ref}:${file}`], {
 					maxBuffer: 20 * 1024 * 1024,
 				});
-				body = result.stdout;
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				throw new Error(`cannot load ABI snapshot ${snapshot.label} from ${snapshot.ref}:${snapshot.path}: ${message}`);
+				snapshots.push(
+					parseAbiSnapshot(result.stdout, {
+						type: "git",
+						label: `${ref}:${file}`,
+						ref,
+						path: file,
+					}),
+				);
+			} catch {
+				// Ignore files absent or invalid on a historical branch.
 			}
 		}
-
-		let abi;
-		try {
-			abi = JSON.parse(body);
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			throw new Error(`ABI snapshot ${snapshot.label} is not valid JSON: ${message}`);
-		}
-		if (!Array.isArray(abi)) throw new Error(`ABI snapshot ${snapshot.label} is not an ABI array`);
-		snapshots.push({
-			...snapshot,
-			abi,
-		});
 	}
+
 	return snapshots;
 }
 
@@ -181,14 +246,17 @@ function uniqueAddresses(facets, diamondAddress) {
 }
 
 export async function exportDiamondAbi(config, options = {}) {
-	const rpc = resolveRpcUrl(config, options.environment);
+	const rpc = options.rpc ?? resolveRpcUrl(config, options.environment);
 	const provider = options.provider ?? new JsonRpcProvider(rpc.url);
 	const network = await provider.getNetwork();
-	if (network.chainId !== BigInt(config.chainId)) {
-		throw new Error(`RPC chain ID mismatch: config expects ${config.chainId}, RPC returned ${network.chainId}`);
+	const chainId = Number(network.chainId);
+	if (!Number.isSafeInteger(chainId) || chainId <= 0) throw new Error(`RPC returned unsupported chain ID ${network.chainId}`);
+	if (config.expectedChainId !== undefined && chainId !== config.expectedChainId) {
+		throw new Error(`RPC chain ID mismatch: ${config.name} expects ${config.expectedChainId}, RPC returned ${chainId}`);
 	}
+	const runtimeConfig = { ...config, chainId };
 
-	const blockNumber = await provider.getBlockNumber();
+	const blockNumber = options.blockNumber ?? (await provider.getBlockNumber());
 	const diamondCode = await provider.getCode(config.diamondAddress, blockNumber);
 	if (diamondCode === "0x") {
 		throw new Error(`no contract code at diamondAddress ${config.diamondAddress} at block ${blockNumber}`);
@@ -197,20 +265,20 @@ export async function exportDiamondAbi(config, options = {}) {
 	const loupe = new Contract(config.diamondAddress, LOUPE_ABI, provider);
 	const liveFacets = normalizeLiveFacets(await loupe.facets({ blockTag: blockNumber }));
 	const selectorCount = liveFacets.reduce((total, facet) => total + facet.functionSelectors.length, 0);
-	console.log(`Diamond: ${config.diamondAddress}`);
-	console.log(`Chain:   ${config.name} (${config.chainId})`);
+	console.log(`Diamond: ${config.diamondLabel} (${config.diamondAddress})`);
+	console.log(`Chain:   ${config.name} (${chainId})`);
 	console.log(`Block:   ${blockNumber}`);
 	console.log(`Live:    ${liveFacets.length} facets, ${selectorCount} selectors`);
 
 	const addresses = uniqueAddresses(liveFacets, config.diamondAddress);
 	const facetByAddress = new Map(liveFacets.map(facet => [facet.address.toLowerCase(), facet]));
-	const localArtifacts = config.localArtifacts ? await loadArtifactCandidates(config.localArtifacts.directory) : [];
-	const abiSnapshots = await loadAbiSnapshots(config.abiSnapshots);
-	if (config.localArtifacts) {
+	const localArtifacts = options.localArtifacts ?? (await loadArtifactCandidates("artifacts/contracts"));
+	const abiSnapshots = options.abiSnapshots ?? (await loadAbiSnapshots());
+	if (options.localArtifacts === undefined) {
 		console.log(`Local:   ${localArtifacts.length} compiled runtime artifact(s) available for verified fallback`);
 	}
-	if (abiSnapshots.length > 0) {
-		console.log(`ABI refs: ${abiSnapshots.map(snapshot => snapshot.label).join(", ")}`);
+	if (options.abiSnapshots === undefined && abiSnapshots.length > 0) {
+		console.log(`ABI refs: ${abiSnapshots.length} working-tree and version-branch snapshot(s) discovered`);
 	}
 	let completed = 0;
 	const fetched = await mapWithConcurrency(
@@ -219,30 +287,38 @@ export async function exportDiamondAbi(config, options = {}) {
 		async address => {
 			const deployedCode = await provider.getCode(address, blockNumber);
 			if (deployedCode === "0x") throw new Error(`no contract code at live ABI target ${address} at block ${blockNumber}`);
+			const facet = facetByAddress.get(address.toLowerCase());
+			const exactArtifact = findMatchingArtifact(deployedCode, facet?.functionSelectors ?? [], localArtifacts);
+			if (exactArtifact) {
+				return {
+					abi: exactArtifact.abi,
+					source: {
+						type: "local-artifact-bytecode-match",
+						file: exactArtifact.file,
+						contractName: exactArtifact.contractName,
+						sourceName: exactArtifact.sourceName,
+						linkedLibraries: exactArtifact.linkedLibraries,
+					},
+				};
+			}
 			try {
-				return await fetchVerifiedAbi(address, config, {
+				return await fetchVerifiedAbi(address, runtimeConfig, {
 					...options,
 					targetRuntimeCode: deployedCode,
 				});
 			} catch (explorerError) {
-				const facet = facetByAddress.get(address.toLowerCase());
-				if (!facet) throw explorerError;
-				const exactArtifact = findMatchingArtifact(deployedCode, facet.functionSelectors, localArtifacts);
-				if (exactArtifact) {
+				if (!facet) {
+					const message = explorerError instanceof Error ? explorerError.message : String(explorerError);
 					return {
-						abi: exactArtifact.abi,
+						abi: [],
 						source: {
-							type: "local-artifact-bytecode-match",
-							file: exactArtifact.file,
-							contractName: exactArtifact.contractName,
-							sourceName: exactArtifact.sourceName,
-							linkedLibraries: exactArtifact.linkedLibraries,
+							type: "diamond-edge-unavailable",
+							runtimeBytecodeMatch: false,
+							warning: `Diamond fallback/receive ABI was unavailable: ${message}`,
 						},
 					};
 				}
-				const selectorArtifact = config.localArtifacts?.allowSelectorOnlyFallback
-					? findSelectorMatchingArtifact(facet.functionSelectors, localArtifacts)
-					: undefined;
+				const selectorArtifact = findSelectorMatchingArtifact(facet.functionSelectors, localArtifacts);
 				if (selectorArtifact) {
 					return {
 						abi: selectorArtifact.abi,
@@ -294,9 +370,10 @@ export async function exportDiamondAbi(config, options = {}) {
 		generatedAt,
 		chain: {
 			name: config.name,
-			chainId: config.chainId,
+			chainId,
 			rpcSource: rpc.source,
 		},
+		diamondLabel: config.diamondLabel,
 		diamondAddress: getAddress(config.diamondAddress),
 		blockNumber,
 		facetCount: liveFacets.length,
@@ -305,9 +382,14 @@ export async function exportDiamondAbi(config, options = {}) {
 		abiSha256,
 		diamondAbiSource: diamondFetched?.source,
 		diamondEdgeEntryCount: merged.diamondEdgeEntryCount,
-		warnings: merged.facets
-			.filter(facet => facet.abiSource.type === "local-artifact-selector-match" || facet.abiSource.type === "local-abi-snapshot-selector-match")
-			.map(facet => `${facet.address} uses ${facet.abiSource.type} only; return types and non-function entries are not bytecode-proven.`),
+		warnings: [
+			...(diamondFetched?.source.warning ? [diamondFetched.source.warning] : []),
+			...merged.facets
+				.filter(
+					facet => facet.abiSource.type === "local-artifact-selector-match" || facet.abiSource.type === "local-abi-snapshot-selector-match",
+				)
+				.map(facet => `${facet.address} uses ${facet.abiSource.type} only; return types and non-function entries are not bytecode-proven.`),
+		],
 		facets: merged.facets,
 		outputs: {
 			abi: path.relative(process.cwd(), abiFile),
@@ -332,8 +414,52 @@ async function main() {
 		console.log(usage());
 		return;
 	}
-	const config = await loadConfig(args.configFile, args.outputDirectory);
-	await exportDiamondAbi(config);
+	const chain = (args.chain ?? path.basename(args.configFile, path.extname(args.configFile))).toLowerCase();
+	const chainConfig = await loadConfig(args.configFile);
+	const profile = resolveChainProfile(chain);
+	const selectedDiamonds = args.diamondLabel ? chainConfig.diamonds.filter(diamond => diamond.label === args.diamondLabel) : chainConfig.diamonds;
+	if (selectedDiamonds.length === 0) {
+		throw new Error(
+			`Diamond "${args.diamondLabel}" is not configured for ${chain}; available labels: ${chainConfig.diamonds
+				.map(diamond => diamond.label)
+				.join(", ")}`,
+		);
+	}
+
+	const rpc = resolveRpcUrl(profile);
+	const provider = new JsonRpcProvider(rpc.url);
+	const network = await provider.getNetwork();
+	if (Number(network.chainId) !== profile.expectedChainId) {
+		throw new Error(`RPC chain ID mismatch: ${chain} expects ${profile.expectedChainId}, RPC returned ${network.chainId}`);
+	}
+	const blockNumber = await provider.getBlockNumber();
+	const localArtifacts = await loadArtifactCandidates("artifacts/contracts");
+	const abiSnapshots = await loadAbiSnapshots();
+	const outputRoot = path.resolve(args.outputDirectory ?? path.join("scripts", "output", "diamond-abi", chain));
+
+	console.log(`Chain config: ${args.configFile}`);
+	console.log(`RPC source:   ${rpc.source}`);
+	console.log(`Diamonds:     ${selectedDiamonds.map(diamond => diamond.label).join(", ")}`);
+	console.log(`Local:        ${localArtifacts.length} compiled runtime artifact(s)`);
+	console.log(`ABI refs:     ${abiSnapshots.length} working-tree and version-branch snapshot(s)`);
+
+	for (const diamond of selectedDiamonds) {
+		await exportDiamondAbi(
+			{
+				...profile,
+				diamondLabel: diamond.label,
+				diamondAddress: diamond.address,
+				outputDirectory: path.join(outputRoot, diamond.label),
+			},
+			{
+				provider,
+				rpc,
+				blockNumber,
+				localArtifacts,
+				abiSnapshots,
+			},
+		);
+	}
 }
 
 const invokedDirectly = process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
