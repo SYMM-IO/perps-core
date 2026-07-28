@@ -92,7 +92,7 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 	/// @dev IMPORTANT BACKWARD-COMPATIBILITY WARNING:
 	///      This legacy method accounts for the protocol closeFee only. It does NOT reserve balance for solver
 	///      fees charged through the solver-fee API. If a solver fee will be charged for this close, call
-	///      the fee-aware PartyBSolverFeeActionsFacet.fillCloseRequestToLiquidation overload instead.
+	///      the fee-aware PartyBExecutionFacet.fillCloseRequestToLiquidation overload instead.
 	/// @param quoteId The ID of the quote for which the close request is filled.
 	/// @param closedPrice The closed price for the close request.
 	/// @param upnlSig The Muon signature containing PairUpnlAndPriceSig data.

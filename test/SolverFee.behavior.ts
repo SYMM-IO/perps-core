@@ -186,7 +186,7 @@ export function shouldBehaveLikeSolverFee(): void {
 		upnlPartyB: bigint = 0n,
 	) {
 		const quote = await context.viewFacetQuote.getQuote(quoteId)
-		const openWithFee = (context.partyBSolverFeeActionsFacet.connect(hedger.signer) as any)[OPEN_POSITION_WITH_SOLVER_FEE]
+		const openWithFee = (context.partyBExecutionFacet.connect(hedger.signer) as any)[OPEN_POSITION_WITH_SOLVER_FEE]
 		return openWithFee(
 			quoteId,
 			filledAmount ?? quote.quantity,
@@ -205,7 +205,7 @@ export function shouldBehaveLikeSolverFee(): void {
 		upnlPartyB: bigint = 0n,
 	) {
 		const quote = await context.viewFacetQuote.getQuote(quoteId)
-		const fillWithFee = (context.partyBSolverFeeActionsFacet.connect(hedger.signer) as any)[FILL_CLOSE_WITH_SOLVER_FEE]
+		const fillWithFee = (context.partyBExecutionFacet.connect(hedger.signer) as any)[FILL_CLOSE_WITH_SOLVER_FEE]
 		return fillWithFee(
 			quoteId,
 			filledAmount ?? quote.quantityToClose,
@@ -325,7 +325,7 @@ export function shouldBehaveLikeSolverFee(): void {
 
 		const allocateCall = context.partyBAccountFacet.interface.encodeFunctionData("allocateForPartyB", [notional, await user.getAddress()])
 		const lockCall = context.partyBQuoteActionsFacet.interface.encodeFunctionData("lockQuote", [quoteId, await getDummySingleUpnlSig(0n)])
-		const openWithFeeCall = context.partyBSolverFeeActionsFacet.interface.encodeFunctionData(OPEN_POSITION_WITH_SOLVER_FEE, [
+		const openWithFeeCall = context.partyBExecutionFacet.interface.encodeFunctionData(OPEN_POSITION_WITH_SOLVER_FEE, [
 			quoteId,
 			quote.quantity,
 			quote.requestedOpenPrice,
@@ -354,7 +354,7 @@ export function shouldBehaveLikeSolverFee(): void {
 		await hedger.lockQuote(quoteId)
 		const quote = await context.viewFacetQuote.getQuote(quoteId)
 		const upnlPartyA = await upnlForTargetAvailableAfterOpen(quoteId, decimal(2n))
-		const openWithFee = (context.partyBSolverFeeActionsFacet.connect(hedger.signer) as any)[OPEN_POSITION_WITH_SOLVER_FEE]
+		const openWithFee = (context.partyBExecutionFacet.connect(hedger.signer) as any)[OPEN_POSITION_WITH_SOLVER_FEE]
 
 		await expect(
 			openWithFee(
@@ -378,7 +378,7 @@ export function shouldBehaveLikeSolverFee(): void {
 		await hedger.lockQuote(quoteId)
 		const quote = await context.viewFacetQuote.getQuote(quoteId)
 		const upnlPartyA = await upnlForTargetAvailableAfterOpen(quoteId, decimal(5n, 17))
-		const openWithFee = (context.partyBSolverFeeActionsFacet.connect(hedger.signer) as any)[OPEN_POSITION_WITH_SOLVER_FEE]
+		const openWithFee = (context.partyBExecutionFacet.connect(hedger.signer) as any)[OPEN_POSITION_WITH_SOLVER_FEE]
 
 		await expect(
 			openWithFee(
@@ -405,7 +405,7 @@ export function shouldBehaveLikeSolverFee(): void {
 		const quoteId = await sendQuoteWithSolverFeeCaps(decimal(100n))
 		await hedger.lockQuote(quoteId)
 		const quote = await context.viewFacetQuote.getQuote(quoteId)
-		const openWithFeeAsOtherPartyB = (context.partyBSolverFeeActionsFacet.connect(context.signers.hedger2) as any)[OPEN_POSITION_WITH_SOLVER_FEE]
+		const openWithFeeAsOtherPartyB = (context.partyBExecutionFacet.connect(context.signers.hedger2) as any)[OPEN_POSITION_WITH_SOLVER_FEE]
 
 		await expect(
 			openWithFeeAsOtherPartyB(
@@ -478,7 +478,7 @@ export function shouldBehaveLikeSolverFee(): void {
 		const balanceInfo = await user.getBalanceInfo()
 		const upnlPartyA = targetAvailable - (balanceInfo.allocatedBalances - balanceInfo.lockedCva - balanceInfo.lockedLf)
 		const fillToLiquidationWithFee = (quoteId: any, closedPrice: any, upnlSig: any, solverFee: any) =>
-			(context.partyBSolverFeeActionsFacet.connect(hedger.signer) as any)[FILL_CLOSE_TO_LIQUIDATION_WITH_MAX_AND_SOLVER_FEE](
+			(context.partyBExecutionFacet.connect(hedger.signer) as any)[FILL_CLOSE_TO_LIQUIDATION_WITH_MAX_AND_SOLVER_FEE](
 				quoteId,
 				ethers.MaxUint256,
 				closedPrice,
@@ -647,7 +647,7 @@ export function shouldBehaveLikeSolverFee(): void {
 		await expect(fillCloseWithFees(quoteId, decimal(1n))).to.be.revertedWith("Pausable: PartyB actions paused")
 
 		const fillToLiquidationWithFee = (quoteId: any, closedPrice: any, upnlSig: any, solverFee: any) =>
-			(context.partyBSolverFeeActionsFacet.connect(hedger.signer) as any)[FILL_CLOSE_TO_LIQUIDATION_WITH_MAX_AND_SOLVER_FEE](
+			(context.partyBExecutionFacet.connect(hedger.signer) as any)[FILL_CLOSE_TO_LIQUIDATION_WITH_MAX_AND_SOLVER_FEE](
 				quoteId,
 				ethers.MaxUint256,
 				closedPrice,
@@ -703,7 +703,7 @@ export function shouldBehaveLikeSolverFee(): void {
 		// Second half via close-to-liquidation: cumulative notional 100, cap 2, already charged 1
 		await user.requestToClosePosition(quoteId, limitCloseRequestBuilder().quantityToClose(halfAmount).build())
 		const fillToLiquidationWithFee = (quoteId: any, closedPrice: any, upnlSig: any, solverFee: any) =>
-			(context.partyBSolverFeeActionsFacet.connect(hedger.signer) as any)[FILL_CLOSE_TO_LIQUIDATION_WITH_MAX_AND_SOLVER_FEE](
+			(context.partyBExecutionFacet.connect(hedger.signer) as any)[FILL_CLOSE_TO_LIQUIDATION_WITH_MAX_AND_SOLVER_FEE](
 				quoteId,
 				ethers.MaxUint256,
 				closedPrice,
@@ -738,7 +738,7 @@ export function shouldBehaveLikeSolverFee(): void {
 		// maxQuantity caps the fill to 1/4, and the absolute solver fee is pro-rated to the amount actually closed:
 		// chargedFee = solverFee * filledAmount / uncappedAmount.
 		const expectedFee = (solverFee * maxQuantity) / quote.quantityToClose
-		const fillToLiquidationWithMaxAndFee = (context.partyBSolverFeeActionsFacet.connect(hedger.signer) as any)[
+		const fillToLiquidationWithMaxAndFee = (context.partyBExecutionFacet.connect(hedger.signer) as any)[
 			FILL_CLOSE_TO_LIQUIDATION_WITH_MAX_AND_SOLVER_FEE
 		]
 
@@ -779,7 +779,7 @@ export function shouldBehaveLikeSolverFee(): void {
 		expect(canCloseAll).to.equal(false)
 
 		const fillToLiquidationWithFee = (quoteId: any, closedPrice: any, upnlSig: any, solverFee: any) =>
-			(context.partyBSolverFeeActionsFacet.connect(hedger.signer) as any)[FILL_CLOSE_TO_LIQUIDATION_WITH_MAX_AND_SOLVER_FEE](
+			(context.partyBExecutionFacet.connect(hedger.signer) as any)[FILL_CLOSE_TO_LIQUIDATION_WITH_MAX_AND_SOLVER_FEE](
 				quoteId,
 				ethers.MaxUint256,
 				closedPrice,
