@@ -134,7 +134,7 @@ DEPLOY_LOG_LEVEL=minimal ./utils/runTestsInParallel.sh
 
 ### Exporting a deployed Diamond ABI
 
-Use the read-only live exporter to assemble a Diamond ABI from its current facet map:
+Use the read-only live exporter to assemble ABIs for every named Diamond in a chain config:
 
 ```bash
 npm run abi:diamond -- --chain hyperevm
