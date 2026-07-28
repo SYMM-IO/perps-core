@@ -2,6 +2,85 @@ import { ErrorFragment, EventFragment, Fragment, FunctionFragment, getAddress, i
 
 const ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
 const SELECTOR_PATTERN = /^0x[0-9a-fA-F]{8}$/;
+const DIAMOND_LABEL_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const DEFAULT_REQUEST = Object.freeze({
+	concurrency: 4,
+	attempts: 3,
+	timeoutMs: 30_000,
+});
+const ETHERSCAN_V2 = Object.freeze({
+	type: "etherscan-v2",
+	apiUrl: "https://api.etherscan.io/v2/api",
+	apiKeyEnv: "ETHERSCAN_APIKEY",
+});
+const PUBLIC_CHAIN_PROFILES = Object.freeze({
+	arbitrum: {
+		chainId: 42161,
+		rpcUrl: "https://arbitrum.llamarpc.com",
+		rpcUrlEnv: "RPC_ARBITRUM",
+		explorerUrl: "https://arbiscan.io",
+	},
+	base: {
+		chainId: 8453,
+		rpcUrl: "https://mainnet.base.org",
+		rpcUrlEnv: "RPC_BASE",
+		explorerUrl: "https://basescan.org",
+	},
+	blast: {
+		chainId: 81457,
+		rpcUrl: "https://rpc.blast.io",
+		rpcUrlEnv: "RPC_BLAST",
+		explorerUrl: "https://blastscan.io",
+	},
+	bsc: {
+		chainId: 56,
+		rpcUrl: "https://binance.llamarpc.com",
+		rpcUrlEnv: "RPC_BSC",
+		explorerUrl: "https://bscscan.com",
+	},
+	hyperevm: {
+		chainId: 999,
+		rpcUrl: "https://rpc.hyperliquid.xyz/evm",
+		rpcUrlEnv: "RPC_HYPEREVM",
+		explorerUrl: "https://hyperevmscan.io",
+	},
+	iota: {
+		chainId: 8822,
+		rpcUrl: "https://json-rpc.evm.iotaledger.net",
+		rpcUrlEnv: "RPC_IOTA",
+		explorerUrl: "https://explorer.evm.iota.org",
+	},
+	mantle: {
+		chainId: 5000,
+		rpcUrl: "https://mantle.drpc.org",
+		rpcUrlEnv: "RPC_MANTLE",
+		explorerUrl: "https://mantlescan.xyz",
+	},
+	mantle2: {
+		chainId: 5000,
+		rpcUrl: "https://mantle.drpc.org",
+		rpcUrlEnv: "RPC_MANTLE2",
+		explorerUrl: "https://mantlescan.xyz",
+	},
+	mode: {
+		chainId: 34443,
+		rpcUrl: "https://mainnet.mode.network",
+		rpcUrlEnv: "RPC_MODE",
+		explorerUrl: "https://modescan.io",
+	},
+	polygon: {
+		chainId: 137,
+		rpcUrl: "https://polygon-rpc.com",
+		rpcUrlEnv: "RPC_POLYGON",
+		explorerUrl: "https://polygonscan.com",
+	},
+	sei: {
+		chainId: 1329,
+		rpcUrl: "https://evm-rpc.sei-apis.com",
+		rpcUrlEnv: "RPC_SEI",
+		explorerUrl: "https://seitrace.com",
+	},
+});
 
 function requireObject(value, label) {
 	if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -77,86 +156,65 @@ function normalizeExplorer(source, index) {
 	throw new Error(`explorers[${index}].type is unsupported: ${type}`);
 }
 
-function normalizeAbiSnapshot(snapshot, index) {
-	const value = requireObject(snapshot, `abiSnapshots[${index}]`);
-	const type = requireString(value.type, `abiSnapshots[${index}].type`);
-	const label = value.label === undefined ? `${type}:${index}` : requireString(value.label, `abiSnapshots[${index}].label`);
-
-	if (type === "file") {
-		return {
-			type,
-			label,
-			path: requireString(value.path, `abiSnapshots[${index}].path`),
-		};
-	}
-	if (type === "git") {
-		return {
-			type,
-			label,
-			ref: requireString(value.ref, `abiSnapshots[${index}].ref`),
-			path: requireString(value.path, `abiSnapshots[${index}].path`),
-		};
-	}
-	throw new Error(`abiSnapshots[${index}].type is unsupported: ${type}`);
-}
-
 export function parseDiamondAbiConfig(raw) {
 	const value = requireObject(raw, "config");
-	const name = requireString(value.name, "name");
-	const chainId = requirePositiveInteger(value.chainId, "chainId");
-	const diamondAddress = requireString(value.diamondAddress, "diamondAddress");
+	const rawDiamonds = requireObject(value.diamonds, "diamonds");
+	const entries = Object.entries(rawDiamonds);
+	if (entries.length === 0) throw new Error("diamonds must contain at least one named address");
 
-	if (!ADDRESS_PATTERN.test(diamondAddress) || !isAddress(diamondAddress)) {
-		throw new Error(`diamondAddress is not a valid EVM address: ${diamondAddress}`);
+	const seenAddresses = new Map();
+	const diamonds = entries.map(([rawLabel, rawAddress]) => {
+		const label = requireString(rawLabel, "diamond label");
+		if (!DIAMOND_LABEL_PATTERN.test(label)) {
+			throw new Error(`diamond label "${label}" must use lowercase letters, digits, and single hyphens`);
+		}
+		const address = requireString(rawAddress, `diamonds.${label}`);
+		if (!ADDRESS_PATTERN.test(address) || !isAddress(address)) {
+			throw new Error(`diamonds.${label} is not a valid EVM address: ${address}`);
+		}
+		const checksummedAddress = getAddress(address);
+		const previous = seenAddresses.get(checksummedAddress.toLowerCase());
+		if (previous) {
+			throw new Error(`diamonds.${label} duplicates diamonds.${previous} at ${checksummedAddress}`);
+		}
+		seenAddresses.set(checksummedAddress.toLowerCase(), label);
+		return { label, address: checksummedAddress };
+	});
+
+	const extraKeys = Object.keys(value).filter(key => key !== "diamonds");
+	if (extraKeys.length > 0) {
+		throw new Error(`unsupported chain config field(s): ${extraKeys.join(", ")}; only "diamonds" belongs in this file`);
 	}
 
-	const rpc = requireObject(value.rpc, "rpc");
-	const rpcUrl = normalizeUrl(rpc.url, "rpc.url");
-	const rpcUrlEnv = rpc.urlEnv === undefined ? undefined : requireString(rpc.urlEnv, "rpc.urlEnv");
+	return { diamonds };
+}
 
-	if (!Array.isArray(value.explorers) || value.explorers.length === 0) {
-		throw new Error("explorers must contain at least one ABI source");
+export function resolveChainProfile(chain) {
+	const key = requireString(chain, "chain").toLowerCase();
+	const raw = PUBLIC_CHAIN_PROFILES[key];
+	if (!raw) {
+		throw new Error(
+			`unsupported chain "${key}"; add its public RPC and explorer metadata to PUBLIC_CHAIN_PROFILES, not to the Diamond address config`,
+		);
 	}
-
-	const request = value.request === undefined ? {} : requireObject(value.request, "request");
-	const concurrency = request.concurrency === undefined ? 4 : requirePositiveInteger(request.concurrency, "request.concurrency");
-	const attempts = request.attempts === undefined ? 3 : requirePositiveInteger(request.attempts, "request.attempts");
-	const timeoutMs = request.timeoutMs === undefined ? 30_000 : requirePositiveInteger(request.timeoutMs, "request.timeoutMs");
-	const localArtifacts =
-		value.localArtifacts === undefined
-			? undefined
-			: {
-					directory: requireString(requireObject(value.localArtifacts, "localArtifacts").directory, "localArtifacts.directory"),
-					allowSelectorOnlyFallback: requireObject(value.localArtifacts, "localArtifacts").allowSelectorOnlyFallback === true,
-				};
-
 	return {
-		schemaVersion: value.schemaVersion === undefined ? 1 : requirePositiveInteger(value.schemaVersion, "schemaVersion"),
-		name,
-		chainId,
-		diamondAddress: getAddress(diamondAddress),
+		name: key,
+		expectedChainId: raw.chainId,
 		rpc: {
-			url: rpcUrl,
-			urlEnv: rpcUrlEnv,
+			url: normalizeUrl(raw.rpcUrl, `${key}.rpcUrl`),
+			urlEnv: raw.rpcUrlEnv,
 		},
-		explorers: value.explorers.map(normalizeExplorer),
-		request: {
-			concurrency,
-			attempts,
-			timeoutMs,
-		},
-		localArtifacts,
-		abiSnapshots: Array.isArray(value.abiSnapshots) ? value.abiSnapshots.map(normalizeAbiSnapshot) : [],
-		outputDirectory: requireString(value.outputDirectory, "outputDirectory"),
+		explorers: [normalizeExplorer(ETHERSCAN_V2, 0), normalizeExplorer({ type: "etherscan-html", browserUrl: raw.explorerUrl }, 1)],
+		request: { ...DEFAULT_REQUEST },
 	};
 }
 
-export function resolveRpcUrl(config, environment = process.env) {
-	const envName = config.rpc.urlEnv;
+export function resolveRpcUrl(profile, environment = process.env) {
+	const envName = profile.rpc.urlEnv;
 	const envValue = envName ? environment[envName]?.trim() : undefined;
 	return {
-		url: envValue || config.rpc.url,
-		source: envValue ? `env:${envName}` : "config",
+		url: envValue || profile.rpc.url,
+		source: envValue ? `env:${envName}` : "public-profile",
 	};
 }
 
@@ -286,9 +344,11 @@ async function fetchTextWithRetry(url, options, request, fetchImpl) {
 			const body = await response.text();
 			if (response.ok) return body;
 			const error = new Error(`HTTP ${response.status}`);
-			if (!retryableStatus(response.status)) throw error;
+			error.retryable = retryableStatus(response.status);
+			if (!error.retryable) throw error;
 			lastError = error;
 		} catch (error) {
+			if (error?.retryable === false) throw error;
 			lastError = error;
 		} finally {
 			clearTimeout(timeout);
