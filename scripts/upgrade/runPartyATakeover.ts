@@ -30,10 +30,9 @@ import {
 	calculatePositionAccounting,
 	formatSigned,
 	loadPartyATakeoverConfig,
-	MuonPriceResult,
-	parseMuonPriceResponse,
 	parsePartyATakeoverStep,
 	PartyATakeoverConfig,
+	readFrozenLiquidationPrices,
 } from "./utils/partyATakeover.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
 import { resolveConfigFile } from "./utils/sharedConfig.js"
@@ -42,15 +41,10 @@ const CLEARING_HOUSE_ROLE = ethers.id("CLEARING_HOUSE_ROLE")
 const REIMBURSEMENT_KEY = "0x0000000000000000000000000000000000000001"
 const FAST_BLOCK_GAS_SAFETY_LIMIT = 1_900_000n
 const DEFAULT_POSITION_BATCH_SIZE = 1
-const DEFAULT_MUON_ENDPOINTS = [
-	"https://muon-oracle1.rasa.capital/v1/",
-	"https://muon-oracle2.rasa.capital/v1/",
-	"https://muon-oracle3.rasa.capital/v1/",
-	"https://muon-oracle4.rasa.capital/v1/",
-]
 
 type OpenPosition = {
 	id: bigint
+	symbolId: bigint
 	positionType: bigint
 	openedPrice: bigint
 	quantity: bigint
@@ -61,8 +55,9 @@ type OpenPosition = {
 
 type PositionPlanItem = {
 	quoteId: bigint
-	symbol: string
+	symbolId: bigint
 	price: bigint
+	priceSource: "legacy-symbol" | "party-b-symbol-snapshot"
 	fundingDebt: bigint
 	pricePnl: bigint
 	partyANetPnl: bigint
@@ -70,20 +65,19 @@ type PositionPlanItem = {
 
 type ConfirmedPositionRecord = {
 	quoteId: string
-	symbol: string
+	symbolId: string
 	price: string
+	priceSource: "legacy-symbol" | "party-b-symbol-snapshot"
+	liquidationPriceTimestamp: number
 	fundingDebt: string
 	pricePnl: string
 	partyANetPnl: string
-	oracleBlockNumber: string
-	oracleTimestamp: number
-	oracleEndpoint: string
 	transactionHash: string
 	blockNumber: number
 }
 
 type TakeoverJournal = {
-	version: 1
+	version: 2
 	chainId: number
 	diamondAddress: string
 	partyA: string
@@ -119,6 +113,8 @@ type TakeoverSnapshot = {
 	pendingQuoteIds: bigint[]
 	involvedPartyBCounts: bigint
 	liquidationType: number
+	liquidationId: string
+	liquidationPriceTimestamp: bigint
 	configuredReceiverIsPartyB: boolean
 	settlementPending: boolean
 	openPositions: OpenPosition[]
@@ -143,7 +139,7 @@ function journalPath(config: PartyATakeoverConfig): string {
 
 function newJournal(config: PartyATakeoverConfig): TakeoverJournal {
 	return {
-		version: 1,
+		version: 2,
 		chainId: config.chainId,
 		diamondAddress: config.diamondAddress,
 		partyA: config.partyA,
@@ -165,7 +161,7 @@ function loadJournal(file: string, config: PartyATakeoverConfig): TakeoverJourna
 	}
 
 	if (
-		journal.version !== 1 ||
+		journal.version !== 2 ||
 		journal.chainId !== config.chainId ||
 		journal.diamondAddress.toLowerCase() !== config.diamondAddress.toLowerCase() ||
 		journal.partyA.toLowerCase() !== config.partyA.toLowerCase() ||
@@ -246,6 +242,8 @@ async function readSnapshot(context: TakeoverContext): Promise<TakeoverSnapshot>
 		pendingQuoteIds: [...pendingQuoteIds],
 		involvedPartyBCounts: liquidationDetail.involvedPartyBCounts,
 		liquidationType: Number(liquidationDetail.liquidationType),
+		liquidationId: liquidationDetail.liquidationId,
+		liquidationPriceTimestamp: liquidationDetail.timestamp,
 		configuredReceiverIsPartyB,
 		settlementPending: settlementStates[0].pending,
 		openPositions,
@@ -295,38 +293,22 @@ function logSnapshot(snapshot: TakeoverSnapshot): void {
 	])
 }
 
-async function fetchMuonPrices(config: PartyATakeoverConfig, quoteIds: bigint[]): Promise<{ endpoint: string; result: MuonPriceResult }> {
-	for (const endpoint of DEFAULT_MUON_ENDPOINTS) {
-		try {
-			const url = new URL(endpoint)
-			url.searchParams.set("app", "symmio")
-			url.searchParams.set("method", "price")
-			url.searchParams.set("params[quoteIds]", JSON.stringify(quoteIds.map(quoteId => Number(quoteId))))
-			url.searchParams.set("params[chainId]", String(config.chainId))
-			url.searchParams.set("params[symmio]", config.diamondAddress)
-
-			const response = await fetch(url, { signal: AbortSignal.timeout(20_000) })
-			if (!response.ok) {
-				throw new Error(`HTTP ${response.status}`)
-			}
-			const parsed = parseMuonPriceResponse(await response.json(), config.chainId, config.diamondAddress, quoteIds)
-			return { endpoint, result: parsed }
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error)
-			log.warn(`Muon endpoint failed (${endpoint}): ${message}`)
-		}
-	}
-	throw new Error("All configured Muon oracle endpoints failed")
-}
-
 async function buildPositionPlan(
 	context: TakeoverContext,
-	positions: OpenPosition[],
-): Promise<{ endpoint: string; oracle: MuonPriceResult; items: PositionPlanItem[]; totalPartyBClaim: bigint }> {
+	snapshot: TakeoverSnapshot,
+): Promise<{ items: PositionPlanItem[]; totalPartyBClaim: bigint }> {
+	const positions = snapshot.openPositions
 	assertConfiguredCounterparty(context, positions)
 	const quoteIds = positions.map(position => position.id)
-	const [{ endpoint, result: oracle }, fundingDebts] = await Promise.all([
-		fetchMuonPrices(context.config, quoteIds),
+	const [frozenPrices, fundingDebts] = await Promise.all([
+		readFrozenLiquidationPrices(
+			ethers.provider,
+			context.config.diamondAddress,
+			context.config.partyA,
+			snapshot.liquidationId,
+			snapshot.liquidationPriceTimestamp,
+			positions.map(position => ({ partyB: position.partyB, symbolId: position.symbolId })),
+		),
 		context.quoteView.getQuoteFundingDebts(quoteIds),
 	])
 
@@ -335,14 +317,15 @@ async function buildPositionPlan(
 		const accounting = calculatePositionAccounting(
 			Number(position.positionType),
 			position.openedPrice,
-			oracle.prices[index],
+			frozenPrices[index].price,
 			openAmount,
 			fundingDebts[index],
 		)
 		return {
 			quoteId: position.id,
-			symbol: oracle.symbols[index],
-			price: oracle.prices[index],
+			symbolId: position.symbolId,
+			price: frozenPrices[index].price,
+			priceSource: frozenPrices[index].source,
 			fundingDebt: fundingDebts[index],
 			pricePnl: accounting.pricePnl,
 			partyANetPnl: accounting.partyANetPnl,
@@ -351,19 +334,19 @@ async function buildPositionPlan(
 
 	const totalPartyANetPnl = items.reduce((total, item) => total + item.partyANetPnl, 0n)
 	const totalPartyBClaim = totalPartyANetPnl < 0n ? -totalPartyANetPnl : 0n
-	return { endpoint, oracle, items, totalPartyBClaim }
+	return { items, totalPartyBClaim }
 }
 
-function logPositionPlan(plan: Awaited<ReturnType<typeof buildPositionPlan>>): void {
+function logPositionPlan(plan: Awaited<ReturnType<typeof buildPositionPlan>>, liquidationPriceTimestamp: bigint): void {
 	for (const item of plan.items) {
-		log.info(`Quote ${item.quoteId} — ${item.symbol}`)
-		log.detail(`Price: ${ethers.formatEther(item.price)} (${item.price})`)
+		log.info(`Quote ${item.quoteId} — symbol ${item.symbolId}`)
+		log.detail(`Frozen liquidation price: ${ethers.formatEther(item.price)} (${item.price})`)
+		log.detail(`Price source: ${item.priceSource}`)
 		log.detail(`Price PnL for PartyA: ${formatSigned(item.pricePnl)}`)
 		log.detail(`Funding debt: ${formatSigned(item.fundingDebt)}`)
 		log.detail(`Net PnL for PartyA: ${formatSigned(item.partyANetPnl)}`)
 	}
-	log.info(`Muon block: ${plan.oracle.latestBlockNumber}`)
-	log.info(`Muon time:  ${new Date(plan.oracle.timestamp * 1000).toISOString()}`)
+	log.info(`Liquidation price time: ${new Date(Number(liquidationPriceTimestamp) * 1000).toISOString()}`)
 	log.info(`PartyB claim at planned close prices: ${ethers.formatEther(plan.totalPartyBClaim)}`)
 }
 
@@ -414,8 +397,8 @@ async function inspect(context: TakeoverContext): Promise<TakeoverSnapshot> {
 	assertConfiguredCounterparty(context, snapshot.openPositions)
 
 	if (snapshot.openPositions.length > 0) {
-		const plan = await buildPositionPlan(context, snapshot.openPositions)
-		logPositionPlan(plan)
+		const plan = await buildPositionPlan(context, snapshot)
+		logPositionPlan(plan, snapshot.liquidationPriceTimestamp)
 		const recoverable = snapshot.partyAAllocated + snapshot.reimbursement + snapshot.deallocatedPool
 		log.info(`Currently recoverable PartyA funds: ${ethers.formatEther(recoverable)}`)
 		if (plan.totalPartyBClaim < recoverable) {
@@ -458,11 +441,12 @@ async function processPositions(context: TakeoverContext): Promise<void> {
 		return
 	}
 
-	const plan = await buildPositionPlan(context, snapshot.openPositions)
-	logPositionPlan(plan)
+	const plan = await buildPositionPlan(context, snapshot)
+	logPositionPlan(plan, snapshot.liquidationPriceTimestamp)
 	if (plan.totalPartyBClaim === 0n) {
 		throw new Error("Configured PartyB has no net claim at the planned close prices; automatic recovery routing is not safe")
 	}
+	const journal = context.dryRun ? undefined : loadJournal(context.journalFile, context.config)
 
 	for (let start = 0; start < plan.items.length; start += context.positionBatchSize) {
 		const batch = plan.items.slice(start, start + context.positionBatchSize)
@@ -474,18 +458,17 @@ async function processPositions(context: TakeoverContext): Promise<void> {
 		)
 
 		if (!context.dryRun) {
-			const journal = loadJournal(context.journalFile, context.config)
+			if (!journal) throw new Error("Takeover journal was not initialized")
 			for (const item of batch) {
 				journal.positions[item.quoteId.toString()] = {
 					quoteId: item.quoteId.toString(),
-					symbol: item.symbol,
+					symbolId: item.symbolId.toString(),
 					price: item.price.toString(),
+					priceSource: item.priceSource,
+					liquidationPriceTimestamp: Number(snapshot.liquidationPriceTimestamp),
 					fundingDebt: item.fundingDebt.toString(),
 					pricePnl: item.pricePnl.toString(),
 					partyANetPnl: item.partyANetPnl.toString(),
-					oracleBlockNumber: plan.oracle.latestBlockNumber,
-					oracleTimestamp: plan.oracle.timestamp,
-					oracleEndpoint: plan.endpoint,
 					transactionHash: receipt.hash,
 					blockNumber: receipt.blockNumber,
 				}

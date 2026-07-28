@@ -20,13 +20,24 @@ export type PositionAccounting = {
 	partyBClaim: bigint
 }
 
-export type MuonPriceResult = {
-	quoteIds: bigint[]
-	prices: bigint[]
-	symbols: string[]
-	latestBlockNumber: string
-	timestamp: number
+export type FrozenLiquidationPriceRequest = {
+	partyB: string
+	symbolId: bigint
 }
+
+export type FrozenLiquidationPrice = FrozenLiquidationPriceRequest & {
+	price: bigint
+	source: "legacy-symbol" | "party-b-symbol-snapshot"
+}
+
+type StorageReader = {
+	getStorage(address: string, position: string): Promise<string>
+}
+
+const ACCOUNT_STORAGE_SLOT = BigInt(ethers.keccak256(ethers.toUtf8Bytes("diamond.standard.storage.account")))
+const SYMBOLS_PRICES_OFFSET = 12n
+const LIQUIDATION_USES_PARTY_B_SYMBOL_SNAPSHOTS_OFFSET = 24n
+const LIQUIDATION_PARTY_B_SYMBOL_SNAPSHOTS_OFFSET = 25n
 
 export function parsePartyATakeoverStep(value: string | undefined): PartyATakeoverStep {
 	const normalized = (value ?? "inspect").trim().toLowerCase()
@@ -109,60 +120,105 @@ export function calculatePositionAccounting(
 	}
 }
 
-export function parseMuonPriceResponse(value: unknown, expectedChainId: number, expectedSymmio: string, expectedQuoteIds: bigint[]): MuonPriceResult {
-	if (!value || typeof value !== "object" || Array.isArray(value)) {
-		throw new Error("Muon response must be a JSON object")
-	}
+function fixedKeyMappingSlot(key: string, slot: bigint): string {
+	return ethers.keccak256(ethers.concat([ethers.zeroPadValue(key, 32), ethers.toBeHex(slot, 32)]))
+}
 
-	const response = value as any
-	if (response.success !== true) {
-		throw new Error(`Muon request failed: ${response.error?.message ?? response.message ?? "unknown error"}`)
-	}
+function uintKeyMappingSlot(key: bigint, slot: string): string {
+	return ethers.keccak256(ethers.concat([ethers.toBeHex(key, 32), slot]))
+}
 
-	const data = response.result?.data
-	const result = data?.result
-	if (!result || typeof result !== "object") {
-		throw new Error("Muon response is missing result.data.result")
-	}
-	if (String(result.chainId) !== String(expectedChainId)) {
-		throw new Error(`Muon chainId mismatch: expected ${expectedChainId}, got ${String(result.chainId)}`)
-	}
-	if (String(result.symmio).toLowerCase() !== expectedSymmio.toLowerCase()) {
-		throw new Error(`Muon Symmio address mismatch: expected ${expectedSymmio}, got ${String(result.symmio)}`)
-	}
+function bytesKeyMappingSlot(key: string, slot: string): string {
+	if (!ethers.isHexString(key)) throw new Error(`Invalid bytes mapping key: ${key}`)
+	return ethers.keccak256(ethers.concat([key, slot]))
+}
 
-	if (!Array.isArray(result.quoteIds) || !Array.isArray(result.prices) || !Array.isArray(result.symbols)) {
-		throw new Error("Muon response quoteIds, prices, and symbols must be arrays")
-	}
-	if (result.quoteIds.length !== expectedQuoteIds.length || result.prices.length !== expectedQuoteIds.length) {
-		throw new Error(`Muon response length mismatch: expected ${expectedQuoteIds.length} quote(s)`)
-	}
-
-	const quoteIds = result.quoteIds.map((quoteId: unknown) => BigInt(String(quoteId)))
-	const prices = result.prices.map((price: unknown) => BigInt(String(price)))
-	const symbols = result.symbols.map((symbol: unknown) => String(symbol))
-
-	for (let i = 0; i < expectedQuoteIds.length; i++) {
-		if (quoteIds[i] !== expectedQuoteIds[i]) {
-			throw new Error(`Muon quote order mismatch at index ${i}: expected ${expectedQuoteIds[i]}, got ${quoteIds[i]}`)
-		}
-		if (prices[i] <= 0n) {
-			throw new Error(`Muon returned a non-positive price for quote ${quoteIds[i]}`)
-		}
-	}
-
-	const timestamp = Number(data.timestamp)
-	if (!Number.isSafeInteger(timestamp) || timestamp <= 0) {
-		throw new Error(`Invalid Muon timestamp: ${String(data.timestamp)}`)
-	}
-
+export function legacyLiquidationPriceSlots(partyA: string, symbolId: bigint): { price: string; timestamp: string } {
+	const partyASlot = fixedKeyMappingSlot(partyA, ACCOUNT_STORAGE_SLOT + SYMBOLS_PRICES_OFFSET)
+	const price = uintKeyMappingSlot(symbolId, partyASlot)
 	return {
-		quoteIds,
-		prices,
-		symbols,
-		latestBlockNumber: String(result.latestBlockNumber),
-		timestamp,
+		price,
+		timestamp: ethers.toBeHex(BigInt(price) + 1n, 32),
 	}
+}
+
+export function liquidationSnapshotFlagSlot(partyA: string, liquidationId: string): string {
+	const partyASlot = fixedKeyMappingSlot(partyA, ACCOUNT_STORAGE_SLOT + LIQUIDATION_USES_PARTY_B_SYMBOL_SNAPSHOTS_OFFSET)
+	return bytesKeyMappingSlot(liquidationId, partyASlot)
+}
+
+export function partyBSymbolSnapshotSlots(partyA: string, liquidationId: string, partyB: string, symbolId: bigint): { isSet: string; price: string } {
+	const partyASlot = fixedKeyMappingSlot(partyA, ACCOUNT_STORAGE_SLOT + LIQUIDATION_PARTY_B_SYMBOL_SNAPSHOTS_OFFSET)
+	const liquidationSlot = bytesKeyMappingSlot(liquidationId, partyASlot)
+	const partyBSlot = fixedKeyMappingSlot(partyB, BigInt(liquidationSlot))
+	const isSet = uintKeyMappingSlot(symbolId, partyBSlot)
+	return {
+		isSet,
+		price: ethers.toBeHex(BigInt(isSet) + 1n, 32),
+	}
+}
+
+export async function readFrozenLiquidationPrices(
+	provider: StorageReader,
+	diamondAddress: string,
+	partyA: string,
+	liquidationId: string,
+	liquidationTimestamp: bigint,
+	requests: FrozenLiquidationPriceRequest[],
+): Promise<FrozenLiquidationPrice[]> {
+	if (!ethers.isAddress(diamondAddress) || !ethers.isAddress(partyA)) {
+		throw new Error("Invalid address while reading frozen liquidation prices")
+	}
+	if (!ethers.isHexString(liquidationId) || ethers.dataLength(liquidationId) === 0) {
+		throw new Error("Liquidation ID is empty or invalid")
+	}
+	if (liquidationTimestamp <= 0n) {
+		throw new Error("Liquidation price timestamp is missing")
+	}
+
+	const snapshotFlag = BigInt(await provider.getStorage(diamondAddress, liquidationSnapshotFlagSlot(partyA, liquidationId)))
+	if (snapshotFlag !== 0n && snapshotFlag !== 1n) {
+		throw new Error(`Invalid liquidation snapshot flag storage value: ${snapshotFlag}`)
+	}
+	const source: FrozenLiquidationPrice["source"] = snapshotFlag === 1n ? "party-b-symbol-snapshot" : "legacy-symbol"
+
+	return Promise.all(
+		requests.map(async request => {
+			if (!ethers.isAddress(request.partyB) || request.symbolId < 0n) {
+				throw new Error(`Invalid frozen-price request for symbol ${request.symbolId}`)
+			}
+
+			if (source === "party-b-symbol-snapshot") {
+				const slots = partyBSymbolSnapshotSlots(partyA, liquidationId, request.partyB, request.symbolId)
+				const [isSet, price] = await Promise.all([provider.getStorage(diamondAddress, slots.isSet), provider.getStorage(diamondAddress, slots.price)])
+				if (BigInt(isSet) !== 1n) {
+					throw new Error(`Missing signed liquidation snapshot for PartyB ${request.partyB}, symbol ${request.symbolId}`)
+				}
+				const parsedPrice = BigInt(price)
+				if (parsedPrice <= 0n) {
+					throw new Error(`Invalid signed liquidation snapshot price for PartyB ${request.partyB}, symbol ${request.symbolId}`)
+				}
+				return { ...request, price: parsedPrice, source }
+			}
+
+			const slots = legacyLiquidationPriceSlots(partyA, request.symbolId)
+			const [price, timestamp] = await Promise.all([
+				provider.getStorage(diamondAddress, slots.price),
+				provider.getStorage(diamondAddress, slots.timestamp),
+			])
+			const parsedTimestamp = BigInt(timestamp)
+			if (parsedTimestamp !== liquidationTimestamp) {
+				throw new Error(
+					`Frozen liquidation price timestamp mismatch for symbol ${request.symbolId}: ` + `expected ${liquidationTimestamp}, got ${parsedTimestamp}`,
+				)
+			}
+			const parsedPrice = BigInt(price)
+			if (parsedPrice <= 0n) {
+				throw new Error(`Invalid frozen liquidation price for symbol ${request.symbolId}`)
+			}
+			return { ...request, price: parsedPrice, source }
+		}),
+	)
 }
 
 export function formatSigned(value: bigint): string {
