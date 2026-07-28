@@ -54,10 +54,10 @@ Store the RPC and the private key used by the role admin:
 
 ```bash
 npx hardhat keystore set RPC_HYPEREVM
-npx hardhat keystore set NEW_DEPLOYER
+npx hardhat keystore set TEAM_DEPLOYER
 ```
 
-`NEW_DEPLOYER` is the default signer key name. To use a different keystore
+`TEAM_DEPLOYER` is the default signer key name. To use a different keystore
 entry, set `KEYSTORE_DEPLOYER_KEY` when running the script.
 
 ## Dry run
@@ -74,7 +74,7 @@ Use the real signer for a complete authorization and static-call preflight:
 
 ```bash
 USE_KEYSTORE=true \
-KEYSTORE_DEPLOYER_KEY=NEW_DEPLOYER \
+KEYSTORE_DEPLOYER_KEY=TEAM_DEPLOYER \
 npx hardhat run scripts/upgrade/grantRoles.ts --network hyperevm
 ```
 
@@ -88,7 +88,7 @@ Only set `DRY_RUN=false` after the authenticated dry run succeeds:
 
 ```bash
 USE_KEYSTORE=true \
-KEYSTORE_DEPLOYER_KEY=NEW_DEPLOYER \
+KEYSTORE_DEPLOYER_KEY=TEAM_DEPLOYER \
 DRY_RUN=false \
 npx hardhat run scripts/upgrade/grantRoles.ts --network hyperevm
 ```

@@ -13,8 +13,8 @@
  *
  * Usage:
  *   USE_KEYSTORE=false npx hardhat run scripts/upgrade/grantRoles.ts --network hyperevm
- *   USE_KEYSTORE=true KEYSTORE_DEPLOYER_KEY=NEW_DEPLOYER npx hardhat run scripts/upgrade/grantRoles.ts --network hyperevm
- *   USE_KEYSTORE=true KEYSTORE_DEPLOYER_KEY=NEW_DEPLOYER DRY_RUN=false npx hardhat run scripts/upgrade/grantRoles.ts --network hyperevm
+ *   USE_KEYSTORE=true KEYSTORE_DEPLOYER_KEY=TEAM_DEPLOYER npx hardhat run scripts/upgrade/grantRoles.ts --network hyperevm
+ *   USE_KEYSTORE=true KEYSTORE_DEPLOYER_KEY=TEAM_DEPLOYER DRY_RUN=false npx hardhat run scripts/upgrade/grantRoles.ts --network hyperevm
  */
 import fs from "node:fs"
 

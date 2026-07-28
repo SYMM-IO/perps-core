@@ -20,9 +20,8 @@ const safeProposalKeyName =
 	process.env.SAFE_SUBMITTER_KEY_NAME || process.env.SAFE_SIGNER_KEY_NAME || process.env.SAFE_PROPOSER_KEY_NAME || "TEAM_PROPOSER"
 const safeProposalPrivateKey =
 	process.env.SAFE_SUBMITTER_PRIVATE_KEY || process.env.SAFE_SIGNER_PRIVATE_KEY || process.env.SAFE_PROPOSER_PRIVATE_KEY || process.env.TEAM_PROPOSER
-const keystoreDeployerKey = process.env.KEYSTORE_DEPLOYER_KEY || (submitSafeProposal ? safeProposalKeyName : "NEW_DEPLOYER")
+const keystoreDeployerKey = process.env.KEYSTORE_DEPLOYER_KEY || (submitSafeProposal ? safeProposalKeyName : "TEAM_DEPLOYER")
 const protocolAdminKey =
-	process.env.NEW_DEPLOYER ||
 	process.env.TEAM_DEPLOYER ||
 	(submitSafeProposal ? safeProposalPrivateKey : undefined) ||
 	(useKeystore ? configVariable(keystoreDeployerKey) : DUMMY_PRIVATE_KEY)
