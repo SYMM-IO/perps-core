@@ -1,0 +1,55 @@
+{
+	"schemaVersion": 1,
+	"name": "hyperevm",
+	"chainId": 999,
+	"diamondAddress": "0x99641E06d38F327166b3a48f86Ca2cbB3B4fB7EB",
+	"rpc": {
+		"url": "https://rpc.hyperliquid.xyz/evm",
+		"urlEnv": "RPC_HYPEREVM"
+	},
+	"explorers": [
+		{
+			"type": "etherscan-v2",
+			"apiUrl": "https://api.etherscan.io/v2/api",
+			"apiKeyEnv": "ETHERSCAN_APIKEY"
+		},
+		{
+			"type": "etherscan-html",
+			"browserUrl": "https://hyperevmscan.io"
+		},
+		{
+			"type": "etherscan-html",
+			"browserUrl": "https://basescan.org",
+			"runtimeMatch": {
+				"chainId": 8453,
+				"rpc": {
+					"url": "https://mainnet.base.org",
+					"urlEnv": "RPC_BASE"
+				}
+			}
+		}
+	],
+	"request": {
+		"concurrency": 4,
+		"attempts": 3,
+		"timeoutMs": 30000
+	},
+	"localArtifacts": {
+		"directory": "artifacts/contracts",
+		"allowSelectorOnlyFallback": true
+	},
+	"abiSnapshots": [
+		{
+			"type": "file",
+			"label": "working-tree-v0.8.6",
+			"path": "abis/symmio.json"
+		},
+		{
+			"type": "git",
+			"label": "version-0.8.5",
+			"ref": "version_0.8.5",
+			"path": "abis/symmio.json"
+		}
+	],
+	"outputDirectory": "scripts/output/diamond-abi/hyperevm"
+}
