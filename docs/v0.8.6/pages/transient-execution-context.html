@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Transient Execution Context - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+	</head>
+	<body class="doc-page">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="doc-topbar">
+			<a class="brand" href="../index.html"
+				><span class="brand-mark">8.6</span><span><strong>Symmio Docs</strong><small>v0.8.6 reference</small></span></a
+			>
+			<nav class="top-actions" aria-label="Page actions">
+				<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+			</nav>
+		</header>
+
+		<div class="reader-shell">
+			<aside class="doc-sidebar" aria-label="Documentation navigation">
+				<a class="button primary back-home" href="../index.html">Back to index</a>
+				<div class="side-card">
+					<p class="side-label">Docs</p>
+					<a class="side-link" href="../pages/overview.html"><small>Overview</small><span>Symmio Core v0.8.6 Overview</span></a>
+					<a class="side-link" href="../pages/express-withdrawal-system-design.html"
+						><small>Express Withdrawal</small><span>Express Withdrawal System Design</span></a
+					>
+					<a class="side-link" href="../pages/account-layer-ownership-delegation.html"
+						><small>AccountLayer</small><span>AccountLayer Delegated Creation &amp; Ownership Transfer</span></a
+					>
+					<a class="side-link" href="../pages/liquidation-funding-snapshot-fix.html"
+						><small>Liquidation</small><span>PartyA Liquidation Snapshot Flow</span></a
+					>
+					<a class="side-link" href="../pages/single-step-partya-liquidation.html"
+						><small>Liquidation</small><span>Single-Step PartyA Liquidation</span></a
+					>
+					<a class="side-link" href="../pages/affiliate-shutdown-flow.html"
+						><small>Clearing House</small><span>Affiliate Shutdown Flow</span></a
+					>
+					<a class="side-link" href="../pages/muon-upnl-validity-overrides.html"
+						><small>Muon</small><span>Muon UPNL Validity Overrides</span></a
+					>
+					<a class="side-link" href="../pages/solver-fees.html"><small>Fees</small><span>Solver Fees</span></a>
+					<a class="side-link" href="../pages/operational-fees.html"><small>Fees</small><span>Operational Fees</span></a>
+					<a class="side-link" href="../pages/instant-open-gas-optimization.html"
+						><small>Performance</small><span>InstantOpen Gas Optimization</span></a
+					>
+					<a class="side-link is-active" href="../pages/transient-execution-context.html"
+						><small>Performance</small><span>Transient Execution Context</span></a
+					>
+					<a class="side-link" href="../pages/partya-liquidation-fee-recipient.html"
+						><small>Liquidation</small><span>PartyA Liquidation Fee Recipient Cleanup</span></a
+					>
+					<a class="side-link" href="../pages/balance-change-event-cleanup.html"
+						><small>Events</small><span>BalanceChange Event Cleanup</span></a
+					>
+					<a class="side-link" href="../pages/lazy-accumulated-funding.html"><small>Funding</small><span>Lazy Accumulated Funding</span></a>
+					<a class="side-link" href="../pages/partyb-allocation-suspension-gates.html"
+						><small>PartyB</small><span>Allocation Suspension Gates</span></a
+					>
+					<a class="side-link" href="../pages/cross-partyb-liquidation-reserve.html"
+						><small>Liquidation</small><span>Cross-PartyB Liquidation Reserve Enforcement</span></a
+					>
+					<a class="side-link" href="../pages/express-bot-operations-checklist.html"
+						><small>Express Withdrawal</small><span>Express Provider Bot Operations Checklist</span></a
+					>
+				</div>
+			</aside>
+			<aside class="toc-panel side-toc" aria-label="Page navigation">
+				<div class="toc-card">
+					<p class="toc-title">On this page</p>
+					<a class="toc-link level-2" href="#summary">Summary</a>
+					<a class="toc-link level-2" href="#authority">The Three Pieces of Authority</a>
+					<a class="toc-link level-2" href="#context-word">The Live Context Word</a>
+					<a class="toc-link level-2" href="#fallback">The Fallback Rule</a>
+					<a class="toc-link level-2" href="#signer">Why the Signer Needs Two Slots</a>
+					<a class="toc-link level-2" href="#snapshot">The Suspend Snapshot</a>
+					<a class="toc-link level-2" href="#lifecycle">Lifecycle Rules</a>
+					<a class="toc-link level-2" href="#compat">Compatibility and Rollback</a>
+				</div>
+			</aside>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">v0.8.6</a><span>/</span><strong>Performance</strong></nav>
+					<div class="reader-title-row">
+						<div>
+							<h1>Transient Execution Context</h1>
+							<p class="hero-copy">
+								InstantLayer batches carried their authority in persistent storage flags, paying SSTORE to raise and lower them on
+								every call. That authority now lives in EIP-1153 transient storage for exactly one transaction, saving roughly 22k gas
+								per batch while keeping every deployed InstantLayer working unchanged.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="summary">Summary</h2>
+					<p>
+						An InstantLayer batch runs with temporary privileges on the Symmio core: the call is routed by InstantLayer, it may use
+						atomic-open accounting shortcuts, and it may act on behalf of a delegated signer. Those three facts were stored in
+						<code>GlobalAppStorage</code> as ordinary state, so every batch paid to write them on the way in and again on the way out,
+						and they were only ever cleared because the caller remembered to clear them.
+					</p>
+					<p>
+						<code>LibExecutionContext</code> moves that authority into EIP-1153 transient storage, which the EVM discards automatically
+						at the end of the transaction -- including on revert. A new <code>ExecutionContextFacet</code> owns the lifecycle,
+						<code>LibAccountLayerSigner</code> mirrors the model for the AccountLayer diamond, and the persistent fields remain readable
+						as a fallback so nothing that has not migrated changes behaviour.
+					</p>
+					<p>
+						This requires solc 0.8.34 with a Cancun EVM target. Chains without Cancun cannot run the transient path; the legacy
+						persistent route is retained for exactly that reason.
+					</p>
+
+					<h2 id="authority">The Three Pieces of Authority</h2>
+					<p>
+						"Execution context" is a deliberately narrow term here. It is not a caller address, and it does not replace signature
+						verification. It is the temporary authority a batch carries, and it comes in three parts held in three separate places:
+					</p>
+					<ol>
+						<li>
+							<strong>The context word</strong> -- one transient slot packing "a scope is live", "routed by InstantLayer" and
+							"atomic-open permitted" into three bits.
+						</li>
+						<li>
+							<strong>The signer</strong> -- <em>two</em> transient slots, a value and an active marker. The reason for the pair is
+							explained below; it is the single most misread part of the design.
+						</li>
+						<li>
+							<strong>Per-caller snapshots</strong> -- one transient slot per address, used when a trusted router suspends the context
+							across its own untrusted call.
+						</li>
+					</ol>
+					<p>
+						All of it is shared by every facet reached through the diamond's <code>delegatecall</code>, which is what makes it behave
+						like a transaction-wide global rather than a parameter.
+					</p>
+
+					<h2 id="context-word">The Live Context Word</h2>
+					<p>Three bits of a single 256-bit word, held in a namespaced transient slot:</p>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Bit</th>
+									<th>Constant</th>
+									<th>Meaning</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td><code>0</code></td>
+									<td><code>INSTANT_CONTEXT_ACTIVE</code></td>
+									<td>A scope is currently open.</td>
+								</tr>
+								<tr>
+									<td><code>1</code></td>
+									<td><code>CALL_FROM_INSTANT_LAYER</code></td>
+									<td>This call is routed by InstantLayer.</td>
+								</tr>
+								<tr>
+									<td><code>2</code></td>
+									<td><code>INSTANT_OPEN_MODE</code></td>
+									<td>Atomic-open accounting shortcuts are permitted.</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						Bit 0 looks redundant next to bit 1, because <code>beginInstantLayerExecution</code> always sets both. It is not. Bit 0
+						answers a different question -- not "does the caller have routing authority" but "is a scope open at all". That distinction
+						is what every reader keys on, and it is why a scope opened with atomic-open disabled is still distinguishable from no scope.
+					</p>
+					<p>
+						Packing all three into one word is where the gas saving comes from: opening a scope is one <code>tstore</code>, where the old
+						flags cost two <code>SSTORE</code>s to raise and two more to clear.
+					</p>
+
+					<h2 id="fallback">The Fallback Rule</h2>
+					<p>
+						Every public reader follows the same shape: consult the live scope, and only when no scope is open read the persistent field.
+					</p>
+					<pre><code>function isCallFromInstantLayer() internal view returns (bool) {
+	uint256 context = _instantLayerContext();
+	if (context &amp; INSTANT_CONTEXT_ACTIVE != 0) return context &amp; CALL_FROM_INSTANT_LAYER != 0;
+	return GlobalAppStorage.layout().callFromInstantLayer;
+}</code></pre>
+					<p>
+						With no scope open the library is behaviourally invisible, which is what lets this ship without migrating every caller at
+						once. <code>isInstantOpenMode</code> has the identical structure.
+					</p>
+					<p>
+						<code>isTransientContextActive</code> deliberately breaks the pattern and never falls back. The two are easy to confuse and
+						are not interchangeable:
+					</p>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Reader</th>
+									<th>Question it answers</th>
+									<th>Falls back?</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td><code>isCallFromInstantLayer</code></td>
+									<td>Does the caller have routing authority?</td>
+									<td>Yes -- a persistent flag can grant it too.</td>
+								</tr>
+								<tr>
+									<td><code>isTransientContextActive</code></td>
+									<td>Is a transient scope open?</td>
+									<td>No -- only bit 0 can answer this.</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						Callers deciding <em>which storage mechanism to write</em> -- notably <code>ControlFacet.setSigner</code> -- must use the
+						second. Using the first would let a persistent flag steer them into writing transient state that no scope is going to clean
+						up.
+					</p>
+
+					<h2 id="signer">Why the Signer Needs Two Slots</h2>
+					<p>The transient signer is stored as two transient words:</p>
+					<ul>
+						<li>a <strong>value</strong> slot holding the address;</li>
+						<li>
+							an <strong>active marker</strong> recording that transient storage -- not the persistent <code>signer</code> field --
+							currently owns the signer.
+						</li>
+					</ul>
+					<p>
+						They are separate because of external calls. Before core hands control to untrusted code -- an affiliate hook, a token with
+						callbacks -- it must clear the signer so the callee cannot act as the user. But it also has to remember <em>which</em>
+						mechanism to put back. Clearing only the value while leaving the marker set is precisely the <strong>suspended</strong>
+						state: transient storage still owns the signer, but no address is installed.
+					</p>
+					<p>
+						This is why <code>restoreSignerAfterExternalCall</code> checks a deliberately different set of slots in each branch, which
+						reads like an inconsistency until the nested case is considered:
+					</p>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Suspended from</th>
+									<th>Checks on return</th>
+									<th>Why</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Transient storage</td>
+									<td>Both value slots empty. Marker <em>not</em> checked.</td>
+									<td>
+										The marker is legitimately either state: 1 if nothing touched it, 0 if a nested trusted scope opened and correctly
+										closed itself, since closing writes the shared marker to 0.
+									</td>
+								</tr>
+								<tr>
+									<td>Persistent storage</td>
+									<td>Both value slots empty <em>and</em> marker clear.</td>
+									<td>
+										No transient scope was open at the boundary, so a set marker can only mean untrusted code opened one and left it
+										open.
+									</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						Both branches fail closed. Restoring on top of a signer the callee installed would bless that value for the rest of the
+						transaction, so the boundary reverts instead.
+					</p>
+					<p>
+						One further consequence: <code>configuredSigner()</code> and <code>signer()</code> are not interchangeable. The first returns
+						the raw value and can be <code>address(0)</code>; the second falls back to <code>msg.sender</code> and therefore can never be
+						zero. Access-control guards must use the first, because a guard written against the second would see <code>msg.sender</code>
+						and conclude no signer was installed.
+					</p>
+
+					<h2 id="snapshot">The Suspend Snapshot</h2>
+					<p>
+						When a boundary suspends the context it builds a second value. A snapshot is never written back into the live slot while the
+						suspension lasts -- it is returned to the caller, or parked in that caller's own transient slot -- which is what makes reusing
+						the low bits safe.
+					</p>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Bit</th>
+									<th>Role</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td><code>255</code></td>
+									<td>
+										Marks a real snapshot. Set unconditionally so a populated snapshot can never be confused with the <code>0</code>
+										sentinel meaning "there was nothing to suspend".
+									</td>
+								</tr>
+								<tr>
+									<td><code>254</code></td>
+									<td>
+										The suspended authority came from transient storage. This is the <em>only</em> discriminator <code>restore</code>
+										uses to decide which source to write back.
+									</td>
+								</tr>
+								<tr>
+									<td><code>1</code>&ndash;<code>2</code></td>
+									<td>The suspended routing and atomic-open flags, carrying the same meaning as in the live word.</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						Bits 1&ndash;2 keeping their live-word meaning is deliberate: it lets the transient branch recover the original context with a
+						single mask rather than rebuilding it flag by flag.
+					</p>
+					<pre><code>if (snapshot &amp; EXTERNAL_CONTEXT_SNAPSHOT_TRANSIENT != 0) {
+	_setInstantLayerContext(snapshot &amp; INSTANT_CONTEXT_FLAGS);
+} else {
+	globalLayout.callFromInstantLayer = snapshot &amp; EXTERNAL_CONTEXT_SNAPSHOT_PERSISTENT_CALL != 0;
+	globalLayout.instantOpenMode = snapshot &amp; EXTERNAL_CONTEXT_SNAPSHOT_PERSISTENT_OPEN != 0;
+}</code></pre>
+					<p>
+						The two encodings do disagree about bit 0 -- a transient snapshot inherits it from the live word, a persistent one never sets
+						it, because the persistent branch builds its snapshot flag by flag. That difference is inert only because nothing ever reads
+						bit 0 back out of a snapshot; bit 254 alone decides interpretation.
+					</p>
+					<p>
+						Before writing a snapshot back, <code>restoreExecutionContextAfterExternalCall</code> requires <em>both</em> sources to be
+						empty. The suspension emptied them, so anything present on return was installed during the untrusted call, and restoring over
+						it would let a hook smuggle privilege past the boundary.
+					</p>
+					<p>
+						For cross-contract use -- AccountLayer calling out to an affiliate hook -- the router cannot hold the snapshot in memory
+						across its own call, so core parks it in a slot derived from <code>keccak256(namespace, msg.sender)</code>. The router
+						therefore cannot choose what it restores, cannot reach another router's snapshot, and cannot suspend twice: a second suspend
+						would overwrite the first, so it is rejected outright.
+					</p>
+
+					<h2 id="lifecycle">Lifecycle Rules</h2>
+					<p>Three rules make the scope trustworthy, each with its own error:</p>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Rule</th>
+									<th>Error</th>
+									<th>Reason</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>A scope cannot nest.</td>
+									<td><code>TransientContextAlreadyActive</code></td>
+									<td>Two batches must never silently share one grant of authority.</td>
+								</tr>
+								<tr>
+									<td>A scope that was never opened cannot be closed.</td>
+									<td><code>TransientContextNotActive</code></td>
+									<td>Makes an unbalanced teardown loud instead of silent.</td>
+								</tr>
+								<tr>
+									<td>A scope cannot end while a signer is installed.</td>
+									<td><code>TransientSignerNotCleared</code></td>
+									<td>
+										A transient signer outlives the call unless cleared. Ending its owning scope would leave an identity every later
+										call still reads, with nothing to attribute it to.
+									</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						The third is the one worth internalising: it enforces unwind order, not tidiness. InstantLayer must clear its per-operation
+						signer before closing the batch scope.
+					</p>
+
+					<h2 id="compat">Compatibility and Rollback</h2>
+					<p>
+						An already-deployed InstantLayer cannot be changed, and redeploying one would invalidate its EIP-712 verifying address along
+						with every template and signed operation. Instead both diamonds carry a per-caller adapter map:
+					</p>
+					<ul>
+						<li>
+							Core: <code>setLegacyExecutionContextAdapter(instantLayer, true)</code> routes that caller's existing
+							<code>setCallFromInstantLayer</code> and <code>setInstantOpenMode</code> calls into transient state, with identical
+							calldata.
+						</li>
+						<li>
+							AccountLayer: <code>setLegacySignerAdapter(router, true)</code> does the same for that router's <code>setSigner</code>
+							calls.
+						</li>
+					</ul>
+					<p>
+						Enabling an adapter selects a storage mechanism. It does not grant the router any privilege, and it is refused while any
+						persistent context or signer is still set, so a deployment can never have both mechanisms simultaneously believable.
+					</p>
+					<p>
+						Newly deployed InstantLayers use the native path directly and expose <code>setTransientContextEnabled(false)</code>, which
+						replays the exact historical setter sequence. Combined with disabling the two adapters, that is a complete rollback to
+						persistent storage without touching a template or a signature.
+					</p>
+					<p>
+						The <code>configure:transient-context</code> Hardhat task performs the adapter configuration against an existing
+						deployment, reads back both sides, and fails rather than reporting success on a partial configuration.
+					</p>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Protocol, operations, and integration notes.</span>
+		</footer>
+	</body>
+</html>

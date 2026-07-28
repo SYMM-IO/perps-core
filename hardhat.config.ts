@@ -271,8 +271,9 @@ export default defineConfig({
 	solidity: {
 		profiles: {
 			default: {
-				version: "0.8.18",
+				version: "0.8.34",
 				settings: {
+					evmVersion: "cancun",
 					metadata: {
 						bytecodeHash: "none",
 					},
@@ -284,8 +285,9 @@ export default defineConfig({
 				},
 			},
 			production: {
-				version: "0.8.18",
+				version: "0.8.34",
 				settings: {
+					evmVersion: "cancun",
 					metadata: {
 						bytecodeHash: "none",
 					},
@@ -303,7 +305,7 @@ export default defineConfig({
 			type: "edr-simulated",
 			blockGasLimit: 30_000_000,
 			allowUnlimitedContractSize: true,
-			hardfork: "shanghai",
+			hardfork: "cancun",
 		},
 		docker: {
 			type: "http",

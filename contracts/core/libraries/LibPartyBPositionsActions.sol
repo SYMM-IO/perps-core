@@ -8,6 +8,7 @@ import { QuoteStorage, Quote, LockedValues, PositionType, OrderType, QuoteStatus
 import { AccountStorage } from "../storages/AccountStorage.sol";
 import { AffiliateStorage } from "../storages/AffiliateStorage.sol";
 import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
+import { LibExecutionContext } from "./LibExecutionContext.sol";
 import { SymbolStorage } from "../storages/SymbolStorage.sol";
 import { SharedEvents } from "./SharedEvents.sol";
 import { LibQuote } from "./LibQuote.sol";
@@ -56,7 +57,7 @@ library LibPartyBPositionsActions {
 		require(quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING, "PartyBFacet: Invalid state");
 		require(block.timestamp <= quote.deadline, "PartyBFacet: Quote is expired");
 
-		bool _instantOpenMode = GlobalAppStorage.layout().instantOpenMode;
+		bool _instantOpenMode = LibExecutionContext.isInstantOpenMode();
 		if (_instantOpenMode) {
 			require(quote.quantity == filledAmount, "PartyBFacet: InstantOpen requires full fill");
 		}

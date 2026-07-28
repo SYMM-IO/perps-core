@@ -14,7 +14,7 @@ import { logger } from "./logger.js"
 // Define which facets need which external libraries (based on compiled artifacts)
 const FacetLibraryDependencies: Record<string, string[]> = {
 	PartyAFacet: ["LibQuoteClose"],
-	PartyBPositionActionsFacet: ["LibQuoteClose", "LibQuoteFunding"],
+	PartyBPositionActionsFacet: ["PartyBPositionActionsFacetImpl", "LibQuoteClose"],
 	PartyBBatchActionsFacet: ["LibQuoteClose", "LibQuoteFunding"],
 	PartyBEmergencyActionsFacet: ["LibQuoteClose"],
 	PartyBQuoteActionsFacet: ["LibQuoteClose"],
@@ -30,6 +30,8 @@ const FacetLibraryDependencies: Record<string, string[]> = {
 }
 
 const LibraryLinkReferences: Record<string, string> = {
+	PartyBPositionActionsFacetImpl:
+		"project/contracts/core/facets/PartyBPositionActions/PartyBPositionActionsFacetImpl.sol:PartyBPositionActionsFacetImpl",
 	LibQuoteFunding: "project/contracts/core/libraries/LibQuoteFunding.sol:LibQuoteFunding",
 	LibQuoteClose: "project/contracts/core/libraries/LibQuoteClose.sol:LibQuoteClose",
 	LibForceActions: "project/contracts/core/libraries/LibForceActions.sol:LibForceActions",
@@ -253,6 +255,28 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 		// Save checkpoint
 		if (checkpoint) {
 			diamondCheckpoint.libraries!["LibQuoteClose"] = createDeployedContract(libraryAddresses["LibQuoteClose"])
+			checkpoint.contracts.diamond = diamondCheckpoint
+			saveCheckpoint(checkpoint)
+		}
+	}
+
+	// Public position implementation keeps the PartyB facet below EIP-170.
+	if (libraryAddresses["PartyBPositionActionsFacetImpl"]) {
+		logger.info(`  ⏭ PartyBPositionActionsFacetImpl already deployed at ${libraryAddresses["PartyBPositionActionsFacetImpl"]}`)
+	} else {
+		const factory = await ethers.getContractFactory("PartyBPositionActionsFacetImpl", {
+			libraries: {
+				[LibraryLinkReferences.LibQuoteFunding]: libraryAddresses["LibQuoteFunding"],
+			},
+		})
+		const library = await factory.deploy()
+		await library.waitForDeployment()
+		receipt = (await library.deploymentTransaction()!.wait())!
+		totalGasUsed += BigInt(receipt.gasUsed.toString())
+		libraryAddresses["PartyBPositionActionsFacetImpl"] = await library.getAddress()
+		logger.deployed("PartyBPositionActionsFacetImpl", libraryAddresses["PartyBPositionActionsFacetImpl"])
+		if (checkpoint) {
+			diamondCheckpoint.libraries!["PartyBPositionActionsFacetImpl"] = createDeployedContract(libraryAddresses["PartyBPositionActionsFacetImpl"])
 			checkpoint.contracts.diamond = diamondCheckpoint
 			saveCheckpoint(checkpoint)
 		}

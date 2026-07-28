@@ -12,6 +12,7 @@ import { AccountLayerReentrancyGuard } from "../../utils/AccountLayerReentrancyG
 import { AccountStorage, VirtualAccountIsolationType, SubAccountIsolationType } from "../../storages/AccountStorage.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
 import { LibAccountLayerMargin } from "../../libraries/LibAccountLayerMargin.sol";
+import { LibAccountLayerSigner } from "../../libraries/LibAccountLayerSigner.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
 
 /// @notice Facet for transferring margin between sub-accounts and virtual accounts
@@ -128,22 +129,9 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 	// ==================== Internal Functions ====================
 
 	function _executeWithSymmioSigner(address symmio, address signer, bytes memory callData) private returns (bytes memory) {
-		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
-		address previousSigner = ahLayout.globalSigner;
-		ahLayout.globalSigner = address(0);
-
-		ISymmio(symmio).setSigner(signer);
-		(bool success, bytes memory result) = symmio.call(callData);
-		ISymmio(symmio).setSigner(address(0));
-
-		ahLayout.globalSigner = previousSigner;
-
-		if (!success) {
-			assembly {
-				revert(add(result, 32), mload(result))
-			}
-		}
-
+		(address previousSigner, bool wasTransientScoped) = LibAccountLayerSigner.clearSignerForExternalCall();
+		bytes memory result = LibAccountLayerUtils.executeWithSignerOnCore(symmio, signer, callData);
+		LibAccountLayerSigner.restoreSignerAfterExternalCall(previousSigner, wasTransientScoped);
 		return result;
 	}
 }
