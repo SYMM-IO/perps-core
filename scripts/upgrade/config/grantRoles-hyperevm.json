@@ -1,0 +1,10 @@
+{
+	"chainId": 999,
+	"diamondAddress": "0x99641E06d38F327166b3a48f86Ca2cbB3B4fB7EB",
+	"grants": [
+		{
+			"account": "0x00c2796b3AD3369D604E009D75204D7a15Cc584b",
+			"roles": ["CLEARING_HOUSE_ROLE"]
+		}
+	]
+}
