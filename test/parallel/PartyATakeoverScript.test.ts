@@ -1,7 +1,9 @@
 import { expect } from "chai"
 
 import {
+	calculatePartyBSettlementRecovery,
 	calculatePositionAccounting,
+	calculateRecoveryDeallocation,
 	legacyLiquidationPriceSlots,
 	liquidationSnapshotFlagSlot,
 	parsePartyATakeoverConfig,
@@ -41,8 +43,29 @@ describe("PartyA takeover script utilities", function () {
 
 	it("accepts only the supported resumable steps", function () {
 		expect(parsePartyATakeoverStep(undefined)).to.equal("inspect")
+		expect(parsePartyATakeoverStep("TAKEOVER")).to.equal("takeover")
 		expect(parsePartyATakeoverStep("POSITIONS")).to.equal("positions")
-		expect(() => parsePartyATakeoverStep("takeover")).to.throw("Invalid TAKEOVER_STEP")
+		expect(() => parsePartyATakeoverStep("unknown")).to.throw("Invalid TAKEOVER_STEP")
+	})
+
+	it("calculates the PartyB recovery from a pending settlement including CVA", function () {
+		expect(calculatePartyBSettlementRecovery(-75_507_285_791_911_167n, 18_985_759_790_773_963n)).to.equal(94_493_045_582_685_130n)
+		expect(calculatePartyBSettlementRecovery(20n, 5n)).to.equal(-15n)
+	})
+
+	it("deallocates only the outstanding claim and reports a shortfall", function () {
+		expect(calculateRecoveryDeallocation(100n, 10n, 20n, 50n, 15n)).to.deep.equal({
+			remainingClaim: 70n,
+			fromPartyAAllocation: 50n,
+			fromReimbursement: 15n,
+			shortfall: 5n,
+		})
+		expect(calculateRecoveryDeallocation(100n, 80n, 20n, 50n, 15n)).to.deep.equal({
+			remainingClaim: 0n,
+			fromPartyAAllocation: 0n,
+			fromReimbursement: 0n,
+			shortfall: 0n,
+		})
 	})
 
 	it("normalizes the minimum safe config", function () {
