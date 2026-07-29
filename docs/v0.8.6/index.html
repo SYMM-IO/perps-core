@@ -163,21 +163,8 @@
 							<span class="category">Performance</span>
 							<strong>InstantOpen Gas Optimization</strong>
 							<span
-								>The atomic margin-quote-lock-open flow ran as four signed operations and sat close to the HyperEVM small-block limit.
-								Two additive entrypoints collapse it to two operations and cut roughly 155k gas.</span
-							>
-						</span>
-						<span class="doc-list-action">Open change</span>
-					</a>
-					<a class="doc-list-item" href="pages/transient-execution-context.html">
-						<span class="doc-list-index">10</span>
-						<span class="doc-list-main">
-							<span class="category">Performance</span>
-							<strong>Transient Execution Context</strong>
-							<span
-								>InstantLayer authority lived in persistent storage flags that every batch paid to raise and lower. It now lives in
-								EIP-1153 transient storage for exactly one transaction, saving roughly 22k gas per batch with no change to any
-								deployed InstantLayer.</span
+								>Two optimizations on the same flow: two additive entrypoints collapse the four-operation template to two, and batch
+								authority moves into EIP-1153 transient storage. Roughly 126k and 22k gas respectively.</span
 							>
 						</span>
 						<span class="doc-list-action">Open change</span>
