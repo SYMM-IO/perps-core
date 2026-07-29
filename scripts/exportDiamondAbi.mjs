@@ -32,13 +32,14 @@ const MINIMAL_PROXY_RUNTIME = /^0x363d3d373d3d3d363d73([0-9a-f]{40})5af43d82803e
 function usage() {
 	return [
 		"Usage:",
-		"  node scripts/exportDiamondAbi.mjs --chain <name> [--target <label>]",
-		"  node scripts/exportDiamondAbi.mjs --config <file> [--chain <name>] [--target <label>] [--output <directory>]",
+		"  node scripts/exportDiamondAbi.mjs --chain <name> [--target <label>] [--allow-partial]",
+		"  node scripts/exportDiamondAbi.mjs --config <file> [--chain <name>] [--target <label>] [--output <directory>] [--allow-partial]",
 		"",
 		"Defaults:",
 		"  --config scripts/config/diamond-abi/<chain>.json",
 		"  --chain  $DIAMOND_ABI_CHAIN",
 		"  omit --target to export every target in the selected chain config",
+		"  incomplete resolution writes report.json and abi.partial.json, then exits 2 unless --allow-partial is set",
 		"  --diamond is retained as a deprecated alias for --target",
 	].join("\n");
 }
@@ -48,6 +49,7 @@ export function parseArguments(argv, environment = process.env) {
 	let configFile;
 	let targetLabel;
 	let outputDirectory;
+	let allowPartial = false;
 
 	for (let index = 0; index < argv.length; index++) {
 		const argument = argv[index];
@@ -72,6 +74,10 @@ export function parseArguments(argv, environment = process.env) {
 			if (!outputDirectory) throw new Error("--output requires a value");
 			continue;
 		}
+		if (argument === "--allow-partial") {
+			allowPartial = true;
+			continue;
+		}
 		throw new Error(`unknown argument: ${argument}`);
 	}
 
@@ -86,6 +92,7 @@ export function parseArguments(argv, environment = process.env) {
 		configFile,
 		targetLabel,
 		outputDirectory,
+		allowPartial,
 	};
 }
 
@@ -1100,7 +1107,14 @@ async function main() {
 		);
 		targetResults.push({ label: target.label, result });
 	}
-	assertCompleteTargetResults(targetResults);
+	if (args.allowPartial) {
+		const incomplete = targetResults.filter(target => !target.result.complete);
+		if (incomplete.length > 0) {
+			console.warn(`Partial ABI output explicitly allowed for: ${incomplete.map(target => target.label).join(", ")}`);
+		}
+	} else {
+		assertCompleteTargetResults(targetResults);
+	}
 }
 
 const invokedDirectly = process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
