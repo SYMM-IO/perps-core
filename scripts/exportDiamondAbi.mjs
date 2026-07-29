@@ -1,18 +1,20 @@
 #!/usr/bin/env node
 
 import {
+	extractDispatcherSelectors,
 	findMatchingArtifact,
+	findSelectorMatchingAbiSnapshot,
 	findSelectorMatchingArtifact,
 	fetchVerifiedAbi,
 	mapWithConcurrency,
 	mergeLiveFacetAbis,
 	normalizeLiveFacets,
-	parseDiamondAbiConfig,
+	parseAbiTargetConfig,
 	resolveChainProfile,
 	resolveFunctionsFromAbiSnapshots,
 	resolveRpcUrl,
 } from "./utils/diamondAbi.mjs";
-import { Contract, JsonRpcProvider, getAddress, sha256, toUtf8Bytes } from "ethers";
+import { Contract, JsonRpcProvider, getAddress, keccak256, sha256, toUtf8Bytes } from "ethers";
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -26,20 +28,21 @@ const LOUPE_ABI = ["function facets() view returns (tuple(address facetAddress, 
 function usage() {
 	return [
 		"Usage:",
-		"  node scripts/exportDiamondAbi.mjs --chain <name> [--diamond <label>]",
-		"  node scripts/exportDiamondAbi.mjs --config <file> [--chain <name>] [--diamond <label>] [--output <directory>]",
+		"  node scripts/exportDiamondAbi.mjs --chain <name> [--target <label>]",
+		"  node scripts/exportDiamondAbi.mjs --config <file> [--chain <name>] [--target <label>] [--output <directory>]",
 		"",
 		"Defaults:",
 		"  --config scripts/config/diamond-abi/<chain>.json",
 		"  --chain  $DIAMOND_ABI_CHAIN",
-		"  omit --diamond to export every Diamond in the selected chain config",
+		"  omit --target to export every target in the selected chain config",
+		"  --diamond is retained as a deprecated alias for --target",
 	].join("\n");
 }
 
 export function parseArguments(argv, environment = process.env) {
 	let chain = environment.DIAMOND_ABI_CHAIN?.trim();
 	let configFile;
-	let diamondLabel;
+	let targetLabel;
 	let outputDirectory;
 
 	for (let index = 0; index < argv.length; index++) {
@@ -55,9 +58,9 @@ export function parseArguments(argv, environment = process.env) {
 			if (!configFile) throw new Error("--config requires a value");
 			continue;
 		}
-		if (argument === "--diamond") {
-			diamondLabel = argv[++index];
-			if (!diamondLabel) throw new Error("--diamond requires a value");
+		if (argument === "--target" || argument === "--diamond") {
+			targetLabel = argv[++index];
+			if (!targetLabel) throw new Error(`${argument} requires a value`);
 			continue;
 		}
 		if (argument === "--output") {
@@ -77,7 +80,7 @@ export function parseArguments(argv, environment = process.env) {
 		help: false,
 		chain,
 		configFile,
-		diamondLabel,
+		targetLabel,
 		outputDirectory,
 	};
 }
@@ -91,7 +94,7 @@ async function loadConfig(configFile) {
 		const message = error instanceof Error ? error.message : String(error);
 		throw new Error(`invalid JSON in ${configFile}: ${message}`);
 	}
-	return parseDiamondAbiConfig(raw);
+	return parseAbiTargetConfig(raw);
 }
 
 async function listJsonFiles(directory) {
@@ -132,13 +135,13 @@ async function loadArtifactCandidates(directory) {
 		) {
 			continue;
 		}
-		if (artifact.immutableReferences && Object.keys(artifact.immutableReferences).length > 0) continue;
 		artifacts.push({
 			file: path.relative(process.cwd(), file),
 			contractName: artifact.contractName,
 			sourceName: artifact.sourceName,
 			abi: artifact.abi,
 			deployedBytecode: artifact.deployedBytecode,
+			immutableReferences: artifact.immutableReferences ?? {},
 		});
 	}
 	return artifacts;
@@ -245,6 +248,136 @@ function uniqueAddresses(facets, diamondAddress) {
 	return addresses;
 }
 
+export function countAbiEntries(abi) {
+	return abi.reduce((counts, item) => {
+		const current = Object.hasOwn(counts, item.type) ? counts[item.type] : 0;
+		counts[item.type] = current + 1;
+		return counts;
+	}, {});
+}
+
+async function detectDiamondFacets(provider, address, blockNumber) {
+	const loupe = new Contract(address, LOUPE_ABI, provider);
+	try {
+		return normalizeLiveFacets(await loupe.facets({ blockTag: blockNumber }));
+	} catch (error) {
+		if (error?.code === "CALL_EXCEPTION" || error?.code === "BAD_DATA" || error?.code === "BUFFER_OVERRUN") {
+			return undefined;
+		}
+		const message = error instanceof Error ? error.message : String(error);
+		throw new Error(`could not detect whether ${address} implements the Diamond loupe at block ${blockNumber}: ${message}`);
+	}
+}
+
+export async function exportContractAbi(config, options = {}) {
+	const rpc = options.rpc ?? resolveRpcUrl(config, options.environment);
+	const provider = options.provider ?? new JsonRpcProvider(rpc.url);
+	const network = await provider.getNetwork();
+	const chainId = Number(network.chainId);
+	if (!Number.isSafeInteger(chainId) || chainId <= 0) throw new Error(`RPC returned unsupported chain ID ${network.chainId}`);
+	if (config.expectedChainId !== undefined && chainId !== config.expectedChainId) {
+		throw new Error(`RPC chain ID mismatch: ${config.name} expects ${config.expectedChainId}, RPC returned ${chainId}`);
+	}
+
+	const blockNumber = options.blockNumber ?? (await provider.getBlockNumber());
+	const deployedCode = await provider.getCode(config.targetAddress, blockNumber);
+	if (deployedCode === "0x") {
+		throw new Error(`no contract code at target ${config.targetLabel} (${config.targetAddress}) at block ${blockNumber}`);
+	}
+
+	const localArtifacts = options.localArtifacts ?? (await loadArtifactCandidates("artifacts/contracts"));
+	const abiSnapshots = options.abiSnapshots ?? (await loadAbiSnapshots());
+	const exactArtifact = findMatchingArtifact(deployedCode, [], localArtifacts);
+	let resolved;
+	if (exactArtifact) {
+		resolved = {
+			abi: exactArtifact.abi,
+			source: {
+				type: "local-artifact-bytecode-match",
+				file: exactArtifact.file,
+				contractName: exactArtifact.contractName,
+				sourceName: exactArtifact.sourceName,
+				linkedLibraries: exactArtifact.linkedLibraries,
+				immutableReferenceCount: exactArtifact.immutableReferenceCount,
+			},
+		};
+	} else {
+		try {
+			resolved = await fetchVerifiedAbi(config.targetAddress, { ...config, chainId }, options);
+		} catch (error) {
+			const dispatcherSelectors = extractDispatcherSelectors(deployedCode);
+			const snapshot = findSelectorMatchingAbiSnapshot(dispatcherSelectors, abiSnapshots);
+			if (!snapshot) {
+				const message = error instanceof Error ? error.message : String(error);
+				throw new Error(
+					`no bytecode-matching local artifact, verified explorer ABI, or ABI snapshot covering ${dispatcherSelectors.length} dispatcher selector(s) was found for ${config.targetLabel} (${config.targetAddress}): ${message}`,
+				);
+			}
+			resolved = {
+				abi: snapshot.abi,
+				source: {
+					type: "local-abi-snapshot-dispatcher-match",
+					snapshot: {
+						type: snapshot.type,
+						label: snapshot.label,
+						path: snapshot.path,
+						...(snapshot.ref ? { ref: snapshot.ref } : {}),
+					},
+					dispatcherSelectorCount: dispatcherSelectors.length,
+					extraSnapshotSelectorCount: snapshot.extraSelectorCount,
+					runtimeBytecodeMatch: false,
+					warning:
+						"Every dispatcher selector is covered by one ABI snapshot, but return types and non-function ABI entries are not bytecode-proven.",
+				},
+			};
+		}
+	}
+
+	const generatedAt = new Date().toISOString();
+	const outputDirectory = path.resolve(config.outputDirectory);
+	const abiFile = path.join(outputDirectory, "abi.json");
+	const manifestFile = path.join(outputDirectory, "manifest.json");
+	const abiBody = `${JSON.stringify(resolved.abi, null, 2)}\n`;
+	const abiSha256 = sha256(toUtf8Bytes(abiBody));
+	const manifest = {
+		schemaVersion: 1,
+		generatedAt,
+		chain: {
+			name: config.name,
+			chainId,
+			rpcSource: rpc.source,
+		},
+		targetLabel: config.targetLabel,
+		targetType: "contract",
+		targetAddress: getAddress(config.targetAddress),
+		blockNumber,
+		runtimeCodeHash: keccak256(deployedCode),
+		abiEntryCounts: countAbiEntries(resolved.abi),
+		abiSha256,
+		abiSource: resolved.source,
+		warnings: resolved.source.warning ? [resolved.source.warning] : [],
+		outputs: {
+			abi: path.relative(process.cwd(), abiFile),
+			manifest: path.relative(process.cwd(), manifestFile),
+		},
+	};
+
+	await fs.mkdir(outputDirectory, { recursive: true });
+	await fs.writeFile(abiFile, abiBody);
+	await fs.writeFile(manifestFile, `${JSON.stringify(manifest, null, 2)}\n`);
+
+	console.log(`Target:   ${config.targetLabel} (${config.targetAddress})`);
+	console.log(`Type:     contract`);
+	console.log(`Chain:    ${config.name} (${chainId})`);
+	console.log(`Block:    ${blockNumber}`);
+	console.log(`Source:   ${resolved.source.type}`);
+	console.log(`ABI:      ${abiFile}`);
+	console.log(`Manifest: ${manifestFile}`);
+	console.log(`SHA-256:  ${abiSha256}`);
+
+	return { abiFile, manifestFile, manifest, abi: resolved.abi };
+}
+
 export async function exportDiamondAbi(config, options = {}) {
 	const rpc = options.rpc ?? resolveRpcUrl(config, options.environment);
 	const provider = options.provider ?? new JsonRpcProvider(rpc.url);
@@ -263,7 +396,7 @@ export async function exportDiamondAbi(config, options = {}) {
 	}
 
 	const loupe = new Contract(config.diamondAddress, LOUPE_ABI, provider);
-	const liveFacets = normalizeLiveFacets(await loupe.facets({ blockTag: blockNumber }));
+	const liveFacets = options.liveFacets ?? normalizeLiveFacets(await loupe.facets({ blockTag: blockNumber }));
 	const selectorCount = liveFacets.reduce((total, facet) => total + facet.functionSelectors.length, 0);
 	console.log(`Diamond: ${config.diamondLabel} (${config.diamondAddress})`);
 	console.log(`Chain:   ${config.name} (${chainId})`);
@@ -298,6 +431,7 @@ export async function exportDiamondAbi(config, options = {}) {
 						contractName: exactArtifact.contractName,
 						sourceName: exactArtifact.sourceName,
 						linkedLibraries: exactArtifact.linkedLibraries,
+						immutableReferenceCount: exactArtifact.immutableReferenceCount,
 					},
 				};
 			}
@@ -373,6 +507,9 @@ export async function exportDiamondAbi(config, options = {}) {
 			chainId,
 			rpcSource: rpc.source,
 		},
+		targetLabel: config.diamondLabel,
+		targetType: "diamond",
+		targetAddress: getAddress(config.diamondAddress),
 		diamondLabel: config.diamondLabel,
 		diamondAddress: getAddress(config.diamondAddress),
 		blockNumber,
@@ -408,6 +545,32 @@ export async function exportDiamondAbi(config, options = {}) {
 	return { abiFile, manifestFile, manifest, abi: merged.abi };
 }
 
+export async function exportAbiTarget(config, options = {}) {
+	const provider = options.provider ?? new JsonRpcProvider((options.rpc ?? resolveRpcUrl(config, options.environment)).url);
+	const blockNumber = options.blockNumber ?? (await provider.getBlockNumber());
+	const liveFacets = await detectDiamondFacets(provider, config.targetAddress, blockNumber);
+	if (liveFacets) {
+		return exportDiamondAbi(
+			{
+				...config,
+				diamondLabel: config.targetLabel,
+				diamondAddress: config.targetAddress,
+			},
+			{
+				...options,
+				provider,
+				blockNumber,
+				liveFacets,
+			},
+		);
+	}
+	return exportContractAbi(config, {
+		...options,
+		provider,
+		blockNumber,
+	});
+}
+
 async function main() {
 	const args = parseArguments(process.argv.slice(2));
 	if (args.help) {
@@ -417,11 +580,11 @@ async function main() {
 	const chain = (args.chain ?? path.basename(args.configFile, path.extname(args.configFile))).toLowerCase();
 	const chainConfig = await loadConfig(args.configFile);
 	const profile = resolveChainProfile(chain);
-	const selectedDiamonds = args.diamondLabel ? chainConfig.diamonds.filter(diamond => diamond.label === args.diamondLabel) : chainConfig.diamonds;
-	if (selectedDiamonds.length === 0) {
+	const selectedTargets = args.targetLabel ? chainConfig.targets.filter(target => target.label === args.targetLabel) : chainConfig.targets;
+	if (selectedTargets.length === 0) {
 		throw new Error(
-			`Diamond "${args.diamondLabel}" is not configured for ${chain}; available labels: ${chainConfig.diamonds
-				.map(diamond => diamond.label)
+			`Target "${args.targetLabel}" is not configured for ${chain}; available labels: ${chainConfig.targets
+				.map(target => target.label)
 				.join(", ")}`,
 		);
 	}
@@ -439,17 +602,17 @@ async function main() {
 
 	console.log(`Chain config: ${args.configFile}`);
 	console.log(`RPC source:   ${rpc.source}`);
-	console.log(`Diamonds:     ${selectedDiamonds.map(diamond => diamond.label).join(", ")}`);
+	console.log(`Targets:      ${selectedTargets.map(target => target.label).join(", ")}`);
 	console.log(`Local:        ${localArtifacts.length} compiled runtime artifact(s)`);
 	console.log(`ABI refs:     ${abiSnapshots.length} working-tree and version-branch snapshot(s)`);
 
-	for (const diamond of selectedDiamonds) {
-		await exportDiamondAbi(
+	for (const target of selectedTargets) {
+		await exportAbiTarget(
 			{
 				...profile,
-				diamondLabel: diamond.label,
-				diamondAddress: diamond.address,
-				outputDirectory: path.join(outputRoot, diamond.label),
+				targetLabel: target.label,
+				targetAddress: target.address,
+				outputDirectory: path.join(outputRoot, target.label),
 			},
 			{
 				provider,

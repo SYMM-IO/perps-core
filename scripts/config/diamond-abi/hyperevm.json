@@ -1,6 +1,7 @@
 {
-	"diamonds": {
+	"targets": {
 		"core": "0x99641E06d38F327166b3a48f86Ca2cbB3B4fB7EB",
-		"account-layer": "0x812e98F31A4EfFC09dD82e6e87ff7456151a0dFB"
+		"account-layer": "0x812e98F31A4EfFC09dD82e6e87ff7456151a0dFB",
+		"instant-layer": "0xCeE28784EFE6EEaf6da977D3F1d0cf05E62717eB"
 	}
 }

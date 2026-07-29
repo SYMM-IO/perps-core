@@ -2,7 +2,7 @@ import { ErrorFragment, EventFragment, Fragment, FunctionFragment, getAddress, i
 
 const ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
 const SELECTOR_PATTERN = /^0x[0-9a-fA-F]{8}$/;
-const DIAMOND_LABEL_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const TARGET_LABEL_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const DEFAULT_REQUEST = Object.freeze({
 	concurrency: 4,
 	attempts: 3,
@@ -156,38 +156,40 @@ function normalizeExplorer(source, index) {
 	throw new Error(`explorers[${index}].type is unsupported: ${type}`);
 }
 
-export function parseDiamondAbiConfig(raw) {
+export function parseAbiTargetConfig(raw) {
 	const value = requireObject(raw, "config");
-	const rawDiamonds = requireObject(value.diamonds, "diamonds");
-	const entries = Object.entries(rawDiamonds);
-	if (entries.length === 0) throw new Error("diamonds must contain at least one named address");
+	const rawTargets = requireObject(value.targets, "targets");
+	const entries = Object.entries(rawTargets);
+	if (entries.length === 0) throw new Error("targets must contain at least one named address");
 
 	const seenAddresses = new Map();
-	const diamonds = entries.map(([rawLabel, rawAddress]) => {
-		const label = requireString(rawLabel, "diamond label");
-		if (!DIAMOND_LABEL_PATTERN.test(label)) {
-			throw new Error(`diamond label "${label}" must use lowercase letters, digits, and single hyphens`);
+	const targets = entries.map(([rawLabel, rawAddress]) => {
+		const label = requireString(rawLabel, "target label");
+		if (!TARGET_LABEL_PATTERN.test(label)) {
+			throw new Error(`target label "${label}" must use lowercase letters, digits, and single hyphens`);
 		}
-		const address = requireString(rawAddress, `diamonds.${label}`);
+		const address = requireString(rawAddress, `targets.${label}`);
 		if (!ADDRESS_PATTERN.test(address) || !isAddress(address)) {
-			throw new Error(`diamonds.${label} is not a valid EVM address: ${address}`);
+			throw new Error(`targets.${label} is not a valid EVM address: ${address}`);
 		}
 		const checksummedAddress = getAddress(address);
 		const previous = seenAddresses.get(checksummedAddress.toLowerCase());
 		if (previous) {
-			throw new Error(`diamonds.${label} duplicates diamonds.${previous} at ${checksummedAddress}`);
+			throw new Error(`targets.${label} duplicates targets.${previous} at ${checksummedAddress}`);
 		}
 		seenAddresses.set(checksummedAddress.toLowerCase(), label);
 		return { label, address: checksummedAddress };
 	});
 
-	const extraKeys = Object.keys(value).filter(key => key !== "diamonds");
+	const extraKeys = Object.keys(value).filter(key => key !== "targets");
 	if (extraKeys.length > 0) {
-		throw new Error(`unsupported chain config field(s): ${extraKeys.join(", ")}; only "diamonds" belongs in this file`);
+		throw new Error(`unsupported chain config field(s): ${extraKeys.join(", ")}; only "targets" belongs in this file`);
 	}
 
-	return { diamonds };
+	return { targets };
 }
+
+export const parseDiamondAbiConfig = parseAbiTargetConfig;
 
 export function resolveChainProfile(chain) {
 	const key = requireString(chain, "chain").toLowerCase();
@@ -223,6 +225,31 @@ export function normalizeSelector(value, label = "selector") {
 		throw new Error(`${label} is not a bytes4 selector: ${String(value)}`);
 	}
 	return value.toLowerCase();
+}
+
+export function extractDispatcherSelectors(runtimeCode) {
+	if (typeof runtimeCode !== "string" || !/^0x[0-9a-fA-F]+$/.test(runtimeCode) || runtimeCode.length % 2 !== 0) {
+		throw new Error("runtime bytecode is invalid");
+	}
+	const code = runtimeCode.slice(2);
+	const selectors = [];
+	const seen = new Set();
+
+	for (let byteOffset = 0; byteOffset < code.length / 2; ) {
+		const opcode = Number.parseInt(code.slice(byteOffset * 2, byteOffset * 2 + 2), 16);
+		const pushWidth = opcode >= 0x60 && opcode <= 0x7f ? opcode - 0x5f : 0;
+		if (opcode === 0x63) {
+			const selector = `0x${code.slice((byteOffset + 1) * 2, (byteOffset + 5) * 2)}`.toLowerCase();
+			const nextOpcode = Number.parseInt(code.slice((byteOffset + 5) * 2, (byteOffset + 6) * 2), 16);
+			if (nextOpcode === 0x14 && !seen.has(selector)) {
+				seen.add(selector);
+				selectors.push(selector);
+			}
+		}
+		byteOffset += pushWidth + 1;
+	}
+
+	return selectors;
 }
 
 export function normalizeLiveFacets(rawFacets) {
@@ -504,7 +531,7 @@ export async function fetchVerifiedAbi(address, config, options = {}) {
 	throw new Error(`no verified ABI source succeeded for ${address}: ${failures.join("; ")}`);
 }
 
-export function matchArtifactRuntime(deployedCode, compiledCode) {
+export function matchArtifactRuntime(deployedCode, compiledCode, immutableReferences = {}) {
 	if (typeof deployedCode !== "string" || !/^0x[0-9a-fA-F]+$/.test(deployedCode)) {
 		throw new Error("deployed runtime bytecode is invalid");
 	}
@@ -531,9 +558,31 @@ export function matchArtifactRuntime(deployedCode, compiledCode) {
 		linked = linked.replaceAll(`__$${hash}$__`, address.slice(2).toLowerCase());
 	}
 
+	let comparableDeployed = deployed;
+	let comparableCompiled = linked;
+	let immutableReferenceCount = 0;
+	for (const references of Object.values(immutableReferences ?? {})) {
+		if (!Array.isArray(references)) throw new Error("artifact immutableReferences is invalid");
+		for (const reference of references) {
+			const start = reference?.start;
+			const length = reference?.length;
+			if (!Number.isSafeInteger(start) || start < 0 || !Number.isSafeInteger(length) || length <= 0) {
+				throw new Error("artifact immutableReferences contains an invalid range");
+			}
+			const startIndex = start * 2;
+			const endIndex = (start + length) * 2;
+			if (endIndex > comparableDeployed.length) return { match: false, linkedLibraries: {}, immutableReferenceCount: 0 };
+			const mask = "0".repeat(endIndex - startIndex);
+			comparableDeployed = `${comparableDeployed.slice(0, startIndex)}${mask}${comparableDeployed.slice(endIndex)}`;
+			comparableCompiled = `${comparableCompiled.slice(0, startIndex)}${mask}${comparableCompiled.slice(endIndex)}`;
+			immutableReferenceCount += 1;
+		}
+	}
+
 	return {
-		match: linked === deployed,
+		match: comparableCompiled === comparableDeployed,
 		linkedLibraries,
+		immutableReferenceCount,
 	};
 }
 
@@ -551,6 +600,35 @@ function abiFunctionSelectors(abi) {
 	return selectors;
 }
 
+export function findSelectorMatchingAbiSnapshot(installedSelectors, snapshots) {
+	const selectors = installedSelectors.map((selector, index) => normalizeSelector(selector, `installedSelectors[${index}]`));
+	if (selectors.length === 0) return undefined;
+	const installed = new Set(selectors);
+	const matches = [];
+
+	for (const snapshot of snapshots) {
+		const snapshotSelectors = abiFunctionSelectors(snapshot.abi);
+		if (!selectors.every(selector => snapshotSelectors.has(selector))) continue;
+		const abi = snapshot.abi.filter(item => {
+			if (item?.type !== "function") return true;
+			try {
+				return installed.has(FunctionFragment.from(item).selector.toLowerCase());
+			} catch {
+				return false;
+			}
+		});
+		matches.push({
+			...snapshot,
+			abi,
+			extraSelectorCount: snapshotSelectors.size - selectors.length,
+		});
+	}
+
+	if (matches.length === 0) return undefined;
+	matches.sort((left, right) => left.extraSelectorCount - right.extraSelectorCount);
+	return matches[0];
+}
+
 function artifactScore(artifact) {
 	let score = 0;
 	if (/Facet$/.test(artifact.contractName)) score += 10;
@@ -565,13 +643,14 @@ export function findMatchingArtifact(deployedCode, installedSelectors, artifacts
 	const matches = [];
 
 	for (const artifact of artifacts) {
-		const runtimeMatch = matchArtifactRuntime(deployedCode, artifact.deployedBytecode);
+		const runtimeMatch = matchArtifactRuntime(deployedCode, artifact.deployedBytecode, artifact.immutableReferences);
 		if (!runtimeMatch.match) continue;
 		const artifactSelectors = abiFunctionSelectors(artifact.abi);
 		if (!selectors.every(selector => artifactSelectors.has(selector))) continue;
 		matches.push({
 			...artifact,
 			linkedLibraries: runtimeMatch.linkedLibraries,
+			immutableReferenceCount: runtimeMatch.immutableReferenceCount,
 		});
 	}
 
