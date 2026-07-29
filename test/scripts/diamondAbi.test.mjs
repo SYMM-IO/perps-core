@@ -1,5 +1,6 @@
 import { countAbiEntries, parseArguments } from "../../scripts/exportDiamondAbi.mjs";
 import {
+	analyzeSelectorsAgainstAbiSources,
 	extractDispatcherSelectors,
 	extractAbiFromEtherscanApi,
 	extractAbiFromEtherscanHtml,
@@ -267,6 +268,72 @@ test("resolves installed functions from ordered ABI snapshots", () => {
 		["new", "old"],
 	);
 	assert.equal(resolveFunctionsFromAbiSnapshots([betaSelector], [{ type: "file", label: "none", abi: [alpha] }]), undefined);
+});
+
+test("reports matched, unmatched, and local-only ABI selectors", () => {
+	const unknownSelector = "0x12345678";
+	const analysis = analyzeSelectorsAgainstAbiSources(
+		[alphaSelector, unknownSelector],
+		[
+			{
+				type: "file",
+				label: "working-tree:abis/example.json",
+				path: "abis/example.json",
+				abi: [alpha, unused],
+			},
+		],
+	);
+
+	assert.equal(analysis.status, "partial");
+	assert.deepEqual(
+		analysis.matched.map(({ selector, signature, outputsBytecodeProven }) => ({
+			selector,
+			signature,
+			outputsBytecodeProven,
+		})),
+		[{ selector: alphaSelector, signature: "alpha(uint256)", outputsBytecodeProven: false }],
+	);
+	assert.deepEqual(analysis.unmatched, [{ selector: unknownSelector }]);
+	assert.deepEqual(
+		analysis.localOnly.map(({ selector, signatures }) => ({ selector, signatures })),
+		[{ selector: FunctionFragment.from(unused).selector.toLowerCase(), signatures: ["unused()"] }],
+	);
+	assert.deepEqual(analysis.ambiguous, []);
+});
+
+test("reports selector collisions as ambiguous instead of choosing silently", () => {
+	const burn = {
+		type: "function",
+		name: "burn",
+		inputs: [{ name: "value", type: "uint256" }],
+		outputs: [],
+		stateMutability: "nonpayable",
+	};
+	const collate = {
+		type: "function",
+		name: "collate_propagate_storage",
+		inputs: [{ name: "value", type: "bytes16" }],
+		outputs: [],
+		stateMutability: "nonpayable",
+	};
+	const collisionSelector = FunctionFragment.from(burn).selector.toLowerCase();
+	assert.equal(collisionSelector, FunctionFragment.from(collate).selector.toLowerCase());
+
+	const analysis = analyzeSelectorsAgainstAbiSources(
+		[collisionSelector],
+		[
+			{ type: "file", label: "burn", abi: [burn] },
+			{ type: "file", label: "collate", abi: [collate] },
+		],
+	);
+
+	assert.equal(analysis.status, "ambiguous");
+	assert.deepEqual(analysis.unmatched, []);
+	assert.deepEqual(analysis.matched, []);
+	assert.deepEqual(
+		analysis.ambiguous[0].candidates.map(candidate => candidate.signature),
+		["burn(uint256)", "collate_propagate_storage(bytes16)"],
+	);
 });
 
 test("merges only installed functions while deduplicating events and errors", () => {

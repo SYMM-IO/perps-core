@@ -600,6 +600,122 @@ function abiFunctionSelectors(abi) {
 	return selectors;
 }
 
+function abiSourceSummary(source) {
+	return {
+		type: source.type,
+		label: source.label,
+		...(source.path ? { path: source.path } : {}),
+		...(source.ref ? { ref: source.ref } : {}),
+		...(source.file ? { file: source.file } : {}),
+		...(source.contractName ? { contractName: source.contractName } : {}),
+		...(source.sourceName ? { sourceName: source.sourceName } : {}),
+	};
+}
+
+function abiVariantKey(item) {
+	return Fragment.from(item).format("json");
+}
+
+export function analyzeSelectorsAgainstAbiSources(installedSelectors, sources, options = {}) {
+	const selectors = installedSelectors.map((selector, index) => normalizeSelector(selector, `installedSelectors[${index}]`));
+	const uniqueSelectors = [...new Set(selectors)];
+	if (uniqueSelectors.length !== selectors.length) throw new Error("installedSelectors contains duplicates");
+	const installed = new Set(uniqueSelectors);
+	const candidatesBySelector = new Map(uniqueSelectors.map(selector => [selector, []]));
+	const localOnlyBySelector = new Map();
+	const invalidAbiEntries = [];
+
+	for (const [sourceIndex, source] of sources.entries()) {
+		if (!Array.isArray(source?.abi)) throw new Error(`sources[${sourceIndex}].abi must be an ABI array`);
+		const summary = abiSourceSummary(source);
+		for (const [abiIndex, item] of source.abi.entries()) {
+			if (item?.type !== "function") continue;
+			let fragment;
+			try {
+				fragment = FunctionFragment.from(item);
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				invalidAbiEntries.push({
+					source: summary,
+					abiIndex,
+					error: message,
+				});
+				continue;
+			}
+			const candidate = {
+				selector: fragment.selector.toLowerCase(),
+				signature: fragment.format("sighash"),
+				abi: item,
+				abiVariant: abiVariantKey(item),
+				source: summary,
+			};
+			const bucket = installed.has(candidate.selector) ? candidatesBySelector : localOnlyBySelector;
+			const existing = bucket.get(candidate.selector) ?? [];
+			existing.push(candidate);
+			bucket.set(candidate.selector, existing);
+		}
+	}
+
+	const matched = [];
+	const ambiguous = [];
+	const unmatched = [];
+	for (const selector of uniqueSelectors) {
+		const candidates = candidatesBySelector.get(selector);
+		if (candidates.length === 0) {
+			unmatched.push({ selector });
+			continue;
+		}
+
+		const bySignature = new Map();
+		for (const candidate of candidates) {
+			const values = bySignature.get(candidate.signature) ?? [];
+			values.push(candidate);
+			bySignature.set(candidate.signature, values);
+		}
+		if (bySignature.size > 1) {
+			ambiguous.push({
+				selector,
+				candidates: [...bySignature.entries()].map(([signature, values]) => ({
+					signature,
+					sources: values.map(value => value.source),
+				})),
+			});
+			continue;
+		}
+
+		const signatureCandidates = candidates;
+		const selected = signatureCandidates[0];
+		const variantCount = new Set(signatureCandidates.map(candidate => candidate.abiVariant)).size;
+		matched.push({
+			selector,
+			signature: selected.signature,
+			abi: selected.abi,
+			source: selected.source,
+			corroboratingSources: signatureCandidates.slice(1).map(candidate => candidate.source),
+			abiVariantCount: variantCount,
+			outputsBytecodeProven: options.outputsBytecodeProven === true,
+		});
+	}
+
+	const localOnly = [...localOnlyBySelector.entries()]
+		.sort(([left], [right]) => left.localeCompare(right))
+		.map(([selector, candidates]) => ({
+			selector,
+			signatures: [...new Set(candidates.map(candidate => candidate.signature))],
+			sources: candidates.map(candidate => candidate.source),
+		}));
+
+	return {
+		status: ambiguous.length > 0 ? "ambiguous" : unmatched.length > 0 ? "partial" : "complete",
+		installedSelectorCount: uniqueSelectors.length,
+		matched,
+		unmatched,
+		ambiguous,
+		localOnly,
+		invalidAbiEntries,
+	};
+}
+
 export function findSelectorMatchingAbiSnapshot(installedSelectors, snapshots) {
 	const selectors = installedSelectors.map((selector, index) => normalizeSelector(selector, `installedSelectors[${index}]`));
 	if (selectors.length === 0) return undefined;
