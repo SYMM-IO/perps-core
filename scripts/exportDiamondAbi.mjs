@@ -14,7 +14,7 @@ import {
 	resolveChainProfile,
 	resolveRpcUrl,
 } from "./utils/diamondAbi.mjs";
-import { Contract, FunctionFragment, JsonRpcProvider, getAddress, keccak256, sha256, toUtf8Bytes } from "ethers";
+import { Contract, FunctionFragment, Interface, JsonRpcProvider, getAddress, keccak256, sha256, toUtf8Bytes } from "ethers";
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -24,6 +24,10 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 const LOUPE_ABI = ["function facets() view returns (tuple(address facetAddress, bytes4[] functionSelectors)[] facets_)"];
+const BEACON_INTERFACE = new Interface(["function implementation() view returns (address)"]);
+const EIP1967_IMPLEMENTATION_SLOT = `0x${(BigInt(keccak256(toUtf8Bytes("eip1967.proxy.implementation"))) - 1n).toString(16).padStart(64, "0")}`;
+const EIP1967_BEACON_SLOT = `0x${(BigInt(keccak256(toUtf8Bytes("eip1967.proxy.beacon"))) - 1n).toString(16).padStart(64, "0")}`;
+const MINIMAL_PROXY_RUNTIME = /^0x363d3d373d3d3d363d73([0-9a-f]{40})5af43d82803e903d91602b57fd5bf3$/i;
 
 function usage() {
 	return [
@@ -404,6 +408,128 @@ async function writePartialOutputs(outputDirectory, abi, report) {
 	return { partialAbiFile, reportFile, abiSha256 };
 }
 
+function addressFromStorage(value) {
+	if (typeof value !== "string" || !/^0x[0-9a-fA-F]*$/.test(value)) return undefined;
+	const encoded = value.slice(2).padStart(64, "0");
+	if (encoded.length !== 64) return undefined;
+	const rawAddress = encoded.slice(-40);
+	if (/^0+$/.test(rawAddress)) return undefined;
+	return getAddress(`0x${rawAddress}`);
+}
+
+async function readStorageAddress(provider, address, slot, blockNumber, warnings) {
+	if (typeof provider.getStorage !== "function") {
+		warnings.push(`Provider does not expose getStorage; EIP-1967 proxy detection was skipped for ${address}.`);
+		return undefined;
+	}
+	try {
+		return addressFromStorage(await provider.getStorage(address, slot, blockNumber));
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		warnings.push(`Could not read EIP-1967 storage at ${address}: ${message}`);
+		return undefined;
+	}
+}
+
+async function readBeaconImplementation(provider, beaconAddress, blockNumber) {
+	const result = await provider.call(
+		{
+			to: beaconAddress,
+			data: BEACON_INTERFACE.encodeFunctionData("implementation"),
+		},
+		blockNumber,
+	);
+	const [implementationAddress] = BEACON_INTERFACE.decodeFunctionResult("implementation", result);
+	return getAddress(implementationAddress);
+}
+
+function minimalProxyImplementation(runtimeCode) {
+	const match = runtimeCode.match(MINIMAL_PROXY_RUNTIME);
+	return match ? getAddress(`0x${match[1]}`) : undefined;
+}
+
+export async function resolveProxyRuntime(provider, targetAddress, blockNumber, options = {}) {
+	const maxDepth = options.maxDepth ?? 8;
+	if (!Number.isSafeInteger(maxDepth) || maxDepth <= 0) throw new Error("maxDepth must be a positive integer");
+	const warnings = [];
+	const chain = [];
+	const seen = new Set();
+	let runtimeAddress = getAddress(targetAddress);
+	let runtimeCode = options.targetCode ?? (await provider.getCode(runtimeAddress, blockNumber));
+
+	for (let depth = 0; depth < maxDepth; depth++) {
+		if (runtimeCode === "0x") throw new Error(`no contract code at proxy resolution target ${runtimeAddress} at block ${blockNumber}`);
+		const addressKey = runtimeAddress.toLowerCase();
+		if (seen.has(addressKey)) throw new Error(`proxy implementation cycle detected at ${runtimeAddress}`);
+		seen.add(addressKey);
+
+		let proxyType;
+		let implementationAddress = minimalProxyImplementation(runtimeCode);
+		let beaconAddress;
+		if (implementationAddress) {
+			proxyType = "eip-1167";
+		} else {
+			const [slotImplementation, slotBeacon] = await Promise.all([
+				readStorageAddress(provider, runtimeAddress, EIP1967_IMPLEMENTATION_SLOT, blockNumber, warnings),
+				readStorageAddress(provider, runtimeAddress, EIP1967_BEACON_SLOT, blockNumber, warnings),
+			]);
+			if (slotImplementation && slotBeacon) {
+				warnings.push(`${runtimeAddress} has both EIP-1967 implementation and beacon slots set; the implementation slot takes precedence.`);
+			}
+			if (slotImplementation) {
+				proxyType = "eip-1967";
+				implementationAddress = slotImplementation;
+			} else if (slotBeacon) {
+				proxyType = "eip-1967-beacon";
+				beaconAddress = slotBeacon;
+				try {
+					implementationAddress = await readBeaconImplementation(provider, beaconAddress, blockNumber);
+				} catch (error) {
+					const message = error instanceof Error ? error.message : String(error);
+					throw new Error(`could not resolve implementation from beacon ${beaconAddress} at block ${blockNumber}: ${message}`);
+				}
+			}
+		}
+
+		if (!implementationAddress) {
+			return {
+				targetAddress: getAddress(targetAddress),
+				runtimeAddress,
+				runtimeCode,
+				runtimeCodeHash: keccak256(runtimeCode),
+				chain,
+				warnings,
+			};
+		}
+		if (seen.has(implementationAddress.toLowerCase())) {
+			throw new Error(`proxy implementation cycle detected from ${runtimeAddress} to ${implementationAddress}`);
+		}
+
+		chain.push({
+			type: proxyType,
+			proxyAddress: runtimeAddress,
+			proxyRuntimeCodeHash: keccak256(runtimeCode),
+			...(beaconAddress ? { beaconAddress } : {}),
+			implementationAddress,
+		});
+		runtimeAddress = implementationAddress;
+		runtimeCode = await provider.getCode(runtimeAddress, blockNumber);
+	}
+
+	throw new Error(`proxy resolution exceeded maximum depth ${maxDepth} from ${targetAddress}`);
+}
+
+function proxyResolutionReport(resolution) {
+	if (!resolution || resolution.chain.length === 0) return undefined;
+	return {
+		targetAddress: resolution.targetAddress,
+		runtimeAddress: resolution.runtimeAddress,
+		runtimeCodeHash: resolution.runtimeCodeHash,
+		chain: resolution.chain,
+		warnings: resolution.warnings,
+	};
+}
+
 async function detectDiamondFacets(provider, address, blockNumber) {
 	const loupe = new Contract(address, LOUPE_ABI, provider);
 	try {
@@ -428,10 +554,12 @@ export async function exportContractAbi(config, options = {}) {
 	}
 
 	const blockNumber = options.blockNumber ?? (await provider.getBlockNumber());
-	const deployedCode = await provider.getCode(config.targetAddress, blockNumber);
+	const runtimeAddress = getAddress(config.runtimeAddress ?? config.targetAddress);
+	const deployedCode = options.runtimeCode ?? (await provider.getCode(runtimeAddress, blockNumber));
 	if (deployedCode === "0x") {
-		throw new Error(`no contract code at target ${config.targetLabel} (${config.targetAddress}) at block ${blockNumber}`);
+		throw new Error(`no contract code at runtime target ${config.targetLabel} (${runtimeAddress}) at block ${blockNumber}`);
 	}
+	const proxy = proxyResolutionReport(config.proxyResolution);
 
 	const localArtifacts = options.localArtifacts ?? (await loadArtifactCandidates("artifacts/contracts"));
 	const abiSnapshots = options.abiSnapshots ?? (await loadAbiSnapshots());
@@ -463,7 +591,7 @@ export async function exportContractAbi(config, options = {}) {
 		let explorerFailure;
 		let explorerCandidate;
 		try {
-			explorerCandidate = await fetchVerifiedAbi(config.targetAddress, { ...config, chainId }, options);
+			explorerCandidate = await fetchVerifiedAbi(runtimeAddress, { ...config, chainId }, options);
 			const explorerAnalysis = analyzeSelectorsAgainstAbiSources(
 				dispatcherSelectors,
 				[{ ...explorerCandidate.source, label: explorerCandidate.source.url, abi: explorerCandidate.abi }],
@@ -591,19 +719,22 @@ export async function exportContractAbi(config, options = {}) {
 			rpcSource: rpc.source,
 		},
 		targetLabel: config.targetLabel,
-		targetType: "contract",
+		targetType: proxy ? "proxy" : "contract",
 		targetAddress: getAddress(config.targetAddress),
+		runtimeAddress,
 		blockNumber,
 		runtimeCodeHash: keccak256(deployedCode),
+		...(proxy ? { proxy } : {}),
 		selectorSource: resolved.selectorSource,
 		selectorVerification,
 		abiEntryCounts: countAbiEntries(resolved.abi),
 		abiSource: resolved.source,
-		warnings: resolved.source.warning ? [resolved.source.warning] : [],
+		warnings: [...(resolved.source.warning ? [resolved.source.warning] : []), ...(proxy?.warnings ?? [])],
 	};
 
 	console.log(`Target:   ${config.targetLabel} (${config.targetAddress})`);
-	console.log(`Type:     contract`);
+	console.log(`Type:     ${proxy ? "proxy" : "contract"}`);
+	if (proxy) console.log(`Runtime:  ${runtimeAddress} (${proxy.chain.length} proxy hop(s))`);
 	console.log(`Chain:    ${config.name} (${chainId})`);
 	console.log(`Block:    ${blockNumber}`);
 	console.log(`Source:   ${resolved.source.type}`);
@@ -634,6 +765,7 @@ export async function exportDiamondAbi(config, options = {}) {
 		throw new Error(`RPC chain ID mismatch: ${config.name} expects ${config.expectedChainId}, RPC returned ${chainId}`);
 	}
 	const runtimeConfig = { ...config, chainId };
+	const proxy = proxyResolutionReport(config.proxyResolution);
 
 	const blockNumber = options.blockNumber ?? (await provider.getBlockNumber());
 	const diamondCode = await provider.getCode(config.diamondAddress, blockNumber);
@@ -823,6 +955,7 @@ export async function exportDiamondAbi(config, options = {}) {
 	const warnings = [
 		...(diamondFetched?.source.warning ? [diamondFetched.source.warning] : []),
 		...facetResolutions.flatMap(resolution => (resolution.resolved.source.warning ? [resolution.resolved.source.warning] : [])),
+		...(proxy?.warnings ?? []),
 	];
 
 	const generatedAt = new Date().toISOString();
@@ -837,8 +970,9 @@ export async function exportDiamondAbi(config, options = {}) {
 			rpcSource: rpc.source,
 		},
 		targetLabel: config.diamondLabel,
-		targetType: "diamond",
+		targetType: proxy ? "diamond-proxy" : "diamond",
 		targetAddress: getAddress(config.diamondAddress),
+		...(proxy ? { runtimeAddress: proxy.runtimeAddress, proxy } : {}),
 		diamondLabel: config.diamondLabel,
 		diamondAddress: getAddress(config.diamondAddress),
 		blockNumber,
@@ -875,6 +1009,11 @@ export async function exportDiamondAbi(config, options = {}) {
 export async function exportAbiTarget(config, options = {}) {
 	const provider = options.provider ?? new JsonRpcProvider((options.rpc ?? resolveRpcUrl(config, options.environment)).url);
 	const blockNumber = options.blockNumber ?? (await provider.getBlockNumber());
+	const targetCode = await provider.getCode(config.targetAddress, blockNumber);
+	if (targetCode === "0x") {
+		throw new Error(`no contract code at target ${config.targetLabel} (${config.targetAddress}) at block ${blockNumber}`);
+	}
+	const proxyResolution = await resolveProxyRuntime(provider, config.targetAddress, blockNumber, { targetCode });
 	const liveFacets = await detectDiamondFacets(provider, config.targetAddress, blockNumber);
 	if (liveFacets) {
 		return exportDiamondAbi(
@@ -882,6 +1021,7 @@ export async function exportAbiTarget(config, options = {}) {
 				...config,
 				diamondLabel: config.targetLabel,
 				diamondAddress: config.targetAddress,
+				proxyResolution,
 			},
 			{
 				...options,
@@ -891,11 +1031,19 @@ export async function exportAbiTarget(config, options = {}) {
 			},
 		);
 	}
-	return exportContractAbi(config, {
-		...options,
-		provider,
-		blockNumber,
-	});
+	return exportContractAbi(
+		{
+			...config,
+			runtimeAddress: proxyResolution.runtimeAddress,
+			proxyResolution,
+		},
+		{
+			...options,
+			provider,
+			blockNumber,
+			runtimeCode: proxyResolution.runtimeCode,
+		},
+	);
 }
 
 async function main() {

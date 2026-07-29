@@ -4,6 +4,7 @@ import {
 	exportContractAbi,
 	exportDiamondAbi,
 	parseArguments,
+	resolveProxyRuntime,
 } from "../../scripts/exportDiamondAbi.mjs";
 import {
 	analyzeSelectorsAgainstAbiSources,
@@ -32,6 +33,9 @@ import test from "node:test";
 const FACET_A = "0x00000000000000000000000000000000000000A1";
 const FACET_B = "0x00000000000000000000000000000000000000b2";
 const DIAMOND = "0x00000000000000000000000000000000000000D4";
+const EIP1967_IMPLEMENTATION_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
+const EIP1967_BEACON_SLOT = "0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50";
+const ZERO_STORAGE = `0x${"00".repeat(32)}`;
 
 const alpha = {
 	type: "function",
@@ -109,6 +113,10 @@ function exportConfig(outputDirectory, overrides = {}) {
 		request: { concurrency: 2, attempts: 1, timeoutMs: 100 },
 		...overrides,
 	};
+}
+
+function encodeAddressWord(address) {
+	return `0x${"00".repeat(12)}${address.slice(2).toLowerCase()}`;
 }
 
 test("validates a minimal multi-target chain config", () => {
@@ -233,6 +241,65 @@ test("matches constructor-set immutable runtime regions", () => {
 		match: true,
 		linkedLibraries: {},
 		immutableReferenceCount: 1,
+	});
+});
+
+test("resolves an EIP-1967 implementation at the pinned block", async () => {
+	const provider = {
+		getCode: async address => (address.toLowerCase() === DIAMOND.toLowerCase() ? "0x6000" : "0x6001"),
+		getStorage: async (address, slot) =>
+			address.toLowerCase() === DIAMOND.toLowerCase() && slot === EIP1967_IMPLEMENTATION_SLOT ? encodeAddressWord(FACET_A) : ZERO_STORAGE,
+	};
+
+	const resolution = await resolveProxyRuntime(provider, DIAMOND, 123);
+
+	assert.equal(resolution.runtimeAddress, FACET_A);
+	assert.equal(resolution.runtimeCode, "0x6001");
+	assert.deepEqual(resolution.chain, [
+		{
+			type: "eip-1967",
+			proxyAddress: DIAMOND,
+			proxyRuntimeCodeHash: "0x07ad118d6cc8642c86c03827f276d8b791a65e5c99a3845faf186be720a1455d",
+			implementationAddress: FACET_A,
+		},
+	]);
+});
+
+test("resolves an EIP-1167 minimal proxy implementation", async () => {
+	const minimalCode = `0x363d3d373d3d3d363d73${FACET_A.slice(2).toLowerCase()}5af43d82803e903d91602b57fd5bf3`;
+	const provider = {
+		getCode: async address => (address.toLowerCase() === DIAMOND.toLowerCase() ? minimalCode : "0x6001"),
+		getStorage: async () => ZERO_STORAGE,
+	};
+
+	const resolution = await resolveProxyRuntime(provider, DIAMOND, 123);
+
+	assert.equal(resolution.runtimeAddress, FACET_A);
+	assert.equal(resolution.chain.length, 1);
+	assert.equal(resolution.chain[0].type, "eip-1167");
+	assert.equal(resolution.chain[0].implementationAddress, FACET_A);
+});
+
+test("resolves an EIP-1967 beacon implementation", async () => {
+	const provider = {
+		getCode: async address => (address.toLowerCase() === FACET_A.toLowerCase() ? "0x6001" : "0x6000"),
+		getStorage: async (address, slot) =>
+			address.toLowerCase() === DIAMOND.toLowerCase() && slot === EIP1967_BEACON_SLOT ? encodeAddressWord(FACET_B) : ZERO_STORAGE,
+		call: async transaction => {
+			assert.equal(transaction.to, FACET_B);
+			return encodeAddressWord(FACET_A);
+		},
+	};
+
+	const resolution = await resolveProxyRuntime(provider, DIAMOND, 123);
+
+	assert.equal(resolution.runtimeAddress, FACET_A);
+	assert.deepEqual(resolution.chain[0], {
+		type: "eip-1967-beacon",
+		proxyAddress: DIAMOND,
+		proxyRuntimeCodeHash: "0x07ad118d6cc8642c86c03827f276d8b791a65e5c99a3845faf186be720a1455d",
+		beaconAddress: FACET_B,
+		implementationAddress: FACET_A,
 	});
 });
 
@@ -366,7 +433,7 @@ test("reports selector collisions as ambiguous instead of choosing silently", ()
 	);
 });
 
-test("writes a complete report beside an exact-bytecode contract ABI", async t => {
+test("writes proxy provenance beside an exact implementation-bytecode ABI", async t => {
 	const outputDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "diamond-abi-complete-"));
 	t.after(() => fs.rm(outputDirectory, { recursive: true, force: true }));
 	const artifact = {
@@ -377,19 +444,44 @@ test("writes a complete report beside an exact-bytecode contract ABI", async t =
 		deployedBytecode: "0x6000",
 		immutableReferences: {},
 	};
+	const proxyResolution = {
+		targetAddress: DIAMOND,
+		runtimeAddress: FACET_A,
+		runtimeCode: "0x6000",
+		runtimeCodeHash: "0x07ad118d6cc8642c86c03827f276d8b791a65e5c99a3845faf186be720a1455d",
+		chain: [
+			{
+				type: "eip-1967",
+				proxyAddress: DIAMOND,
+				proxyRuntimeCodeHash: "0x1234",
+				implementationAddress: FACET_A,
+			},
+		],
+		warnings: [],
+	};
 
-	const result = await exportContractAbi(exportConfig(outputDirectory), {
-		provider: mockProvider(),
-		rpc: { url: "http://rpc.example", source: "test" },
-		blockNumber: 123,
-		localArtifacts: [artifact],
-		abiSnapshots: [],
-	});
+	const result = await exportContractAbi(
+		exportConfig(outputDirectory, {
+			runtimeAddress: FACET_A,
+			proxyResolution,
+		}),
+		{
+			provider: mockProvider(),
+			rpc: { url: "http://rpc.example", source: "test" },
+			blockNumber: 123,
+			localArtifacts: [artifact],
+			abiSnapshots: [],
+			runtimeCode: "0x6000",
+		},
+	);
 	const report = JSON.parse(await fs.readFile(result.reportFile, "utf8"));
 	const manifest = JSON.parse(await fs.readFile(result.manifestFile, "utf8"));
 
 	assert.equal(result.complete, true);
 	assert.equal(report.status, "complete");
+	assert.equal(report.targetType, "proxy");
+	assert.equal(report.runtimeAddress, FACET_A);
+	assert.equal(report.proxy.chain[0].implementationAddress, FACET_A);
 	assert.equal(report.selectorSource, "exact-artifact-bound-to-runtime-bytecode");
 	assert.equal(report.selectorVerification.matched[0].signature, "alpha(uint256)");
 	assert.equal(report.selectorVerification.matched[0].fullAbiArtifactProven, true);
