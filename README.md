@@ -134,7 +134,8 @@ DEPLOY_LOG_LEVEL=minimal ./utils/runTestsInParallel.sh
 
 ### Exporting deployed contract ABIs
 
-Use the read-only live exporter to assemble ABIs for every named Diamond or standard contract in a chain config:
+Use the read-only live exporter to assemble ABIs and selector-provenance reports for every named Diamond,
+proxy, or standard contract in a chain config:
 
 ```bash
 npm run abi:diamond -- --chain hyperevm
