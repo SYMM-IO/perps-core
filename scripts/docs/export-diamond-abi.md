@@ -1,15 +1,17 @@
-# Export a live Diamond ABI
+# Export live Diamond and contract ABIs
 
-`exportDiamondAbi.mjs` builds an interaction ABI for an EIP-2535 Diamond from its current on-chain facet map. It is read-only and does not need a signer.
+`exportDiamondAbi.mjs` builds interaction ABIs for named contracts. It detects on-chain whether each
+target implements the EIP-2535 Diamond loupe, so the address config does not need a type field. It is
+read-only and does not need a signer.
 
 The exporter:
 
 1. Pins the current RPC block.
-2. Calls `facets()` on the Diamond loupe.
-3. Fetches the ABI for every live facet.
-4. Keeps only function ABI entries whose selectors are installed on that facet.
-5. Deduplicates events and errors.
-6. Writes an ABI and a provenance manifest.
+2. Attempts `facets()` to distinguish Diamonds from standard contracts.
+3. For a Diamond, resolves every live facet and keeps only installed function selectors.
+4. For a standard contract, resolves one ABI from matching runtime bytecode, a verified explorer, or
+   an exact dispatcher-selector snapshot.
+5. Writes a separate ABI and provenance manifest for every target.
 
 Bytecode alone cannot reveal function return types, event definitions, parameter names, or custom errors. The manifest therefore records where every facet ABI came from and warns when only selector-level proof was available.
 
@@ -20,9 +22,10 @@ public metadata service:
 
 ```json
 {
-	"diamonds": {
+	"targets": {
 		"core": "0x99641E06d38F327166b3a48f86Ca2cbB3B4fB7EB",
-		"account-layer": "0x812e98F31A4EfFC09dD82e6e87ff7456151a0dFB"
+		"account-layer": "0x812e98F31A4EfFC09dD82e6e87ff7456151a0dFB",
+		"instant-layer": "0xCeE28784EFE6EEaf6da977D3F1d0cf05E62717eB"
 	}
 }
 ```
@@ -32,27 +35,30 @@ artifact directory, current ABI files, version-branch ABI snapshots, and output 
 automatically.
 
 Compile first so unverified explorer contracts can be compared with local runtime artifacts, then
-export every configured Diamond:
+export every configured target:
 
 ```bash
 npm run compile
 npm run abi:diamond -- --chain hyperevm
 ```
 
-Select one Diamond by label when needed:
+Select one target by label when needed:
 
 ```bash
-npm run abi:diamond -- --chain hyperevm --diamond core
-npm run abi:diamond -- --chain hyperevm --diamond account-layer
+npm run abi:diamond -- --chain hyperevm --target core
+npm run abi:diamond -- --chain hyperevm --target account-layer
+npm run abi:diamond -- --chain hyperevm --target instant-layer
 ```
 
-Each Diamond receives a separate ignored output directory:
+Each target receives a separate ignored output directory:
 
 ```text
 scripts/output/diamond-abi/hyperevm/core/abi.json
 scripts/output/diamond-abi/hyperevm/core/manifest.json
 scripts/output/diamond-abi/hyperevm/account-layer/abi.json
 scripts/output/diamond-abi/hyperevm/account-layer/manifest.json
+scripts/output/diamond-abi/hyperevm/instant-layer/abi.json
+scripts/output/diamond-abi/hyperevm/instant-layer/manifest.json
 ```
 
 Use `abi.json` with the Diamond address, not with individual facet addresses:
@@ -95,9 +101,10 @@ Only add labels and addresses:
 
 ```json
 {
-	"diamonds": {
+	"targets": {
 		"core": "0x...",
-		"account-layer": "0x..."
+		"account-layer": "0x...",
+		"instant-layer": "0x..."
 	}
 }
 ```
@@ -118,7 +125,7 @@ node scripts/exportDiamondAbi.mjs \
   --output /tmp/diamond-abi-<chain>
 ```
 
-The output override is a root directory; each selected Diamond still receives its own label
+The output override is a root directory; each selected target still receives its own label
 subdirectory.
 
 Public metadata for the repository's supported networks lives in `PUBLIC_CHAIN_PROFILES` in
@@ -133,11 +140,21 @@ Sources are tried automatically in this order:
 1. A local compiled artifact when its linked runtime bytecode matches on-chain exactly.
 2. Etherscan V2 API ABI for a verified contract.
 3. ABI embedded in an Etherscan-family verified source page.
-4. A local artifact whose function selectors match.
-5. Current or historical repository ABI snapshots whose function selectors match.
+4. For Diamond facets, a local artifact whose function selectors match.
+5. For Diamond facets, current or historical repository ABI snapshots whose function selectors
+   match.
 
-The final selector-only fallback is useful for older, unverified facets, but it has a strict limitation: selectors prove function names and input types, not outputs or non-function ABI entries. Review `manifest.json.warnings` before treating such entries as fully verified.
+For a standard contract without a bytecode match or verified explorer page, the exporter extracts the
+`PUSH4 <selector> EQ` dispatcher entries and requires one repository ABI snapshot to cover all of
+them. It filters out snapshot functions that are not deployed.
 
-The exporter fails if any live selector cannot be resolved. It also verifies that the merged ABI contains exactly one function for every selector returned by the loupe.
+Selector-only fallbacks have a strict limitation: selectors prove function names and input types,
+not outputs or non-function ABI entries. Review `manifest.json.warnings` before treating such entries
+as fully verified.
 
-Rerun the export after every Diamond cut. The ABI and manifest are a snapshot of the block recorded in `manifest.json`, not a permanent statement about an upgradeable contract.
+For Diamonds, the exporter fails if any live selector cannot be resolved and verifies that the merged
+ABI contains exactly one function for every selector returned by the loupe. For standard contracts,
+every extracted dispatcher selector must be covered by the chosen ABI snapshot.
+
+Rerun the export after every Diamond cut or contract redeployment. The ABI and manifest are snapshots
+of the block recorded in `manifest.json`, not permanent statements about upgradeable contracts.
