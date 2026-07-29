@@ -147,8 +147,10 @@ test("derives public chain metadata and supports selecting one target", () => {
 		configFile: "scripts/config/diamond-abi/hyperevm.json",
 		targetLabel: "account-layer",
 		outputDirectory: undefined,
+		allowPartial: false,
 	});
 	assert.equal(parseArguments(["--chain", "hyperevm", "--diamond", "core"], {}).targetLabel, "core");
+	assert.equal(parseArguments(["--chain", "hyperevm", "--allow-partial"], {}).allowPartial, true);
 });
 
 test("extracts verified ABI arrays from Etherscan API and HTML responses", () => {
