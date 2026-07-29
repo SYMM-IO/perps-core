@@ -1,13 +1,16 @@
-import { parseArguments } from "../../scripts/exportDiamondAbi.mjs";
+import { countAbiEntries, parseArguments } from "../../scripts/exportDiamondAbi.mjs";
 import {
+	extractDispatcherSelectors,
 	extractAbiFromEtherscanApi,
 	extractAbiFromEtherscanHtml,
 	findMatchingArtifact,
+	findSelectorMatchingAbiSnapshot,
 	findSelectorMatchingArtifact,
 	fetchVerifiedAbi,
 	matchArtifactRuntime,
 	mergeLiveFacetAbis,
 	normalizeLiveFacets,
+	parseAbiTargetConfig,
 	parseDiamondAbiConfig,
 	resolveChainProfile,
 	resolveFunctionsFromAbiSnapshots,
@@ -67,30 +70,31 @@ const error = {
 const alphaSelector = FunctionFragment.from(alpha).selector.toLowerCase();
 const betaSelector = FunctionFragment.from(beta).selector.toLowerCase();
 
-function baseConfig(diamonds = {}) {
+function baseConfig(targets = {}) {
 	return {
-		diamonds: {
+		targets: {
 			core: DIAMOND,
 			"account-layer": "0x00000000000000000000000000000000000000a1",
-			...diamonds,
+			...targets,
 		},
 	};
 }
 
-test("validates a minimal multi-Diamond chain config", () => {
-	const config = parseDiamondAbiConfig(baseConfig());
-	assert.deepEqual(config.diamonds, [
+test("validates a minimal multi-target chain config", () => {
+	const config = parseAbiTargetConfig(baseConfig());
+	assert.deepEqual(config.targets, [
 		{ label: "core", address: DIAMOND },
 		{ label: "account-layer", address: FACET_A },
 	]);
+	assert.deepEqual(parseDiamondAbiConfig(baseConfig()), config);
 
-	assert.throws(() => parseDiamondAbiConfig(baseConfig({ broken: "0x1234" })), /diamonds.broken is not a valid EVM address/);
-	assert.throws(() => parseDiamondAbiConfig(baseConfig({ Core: FACET_B })), /diamond label "Core"/);
-	assert.throws(() => parseDiamondAbiConfig({ ...baseConfig(), chainId: 999 }), /only "diamonds" belongs/);
-	assert.throws(() => parseDiamondAbiConfig({ diamonds: { core: DIAMOND, duplicate: DIAMOND } }), /duplicates diamonds.core/);
+	assert.throws(() => parseAbiTargetConfig(baseConfig({ broken: "0x1234" })), /targets.broken is not a valid EVM address/);
+	assert.throws(() => parseAbiTargetConfig(baseConfig({ Core: FACET_B })), /target label "Core"/);
+	assert.throws(() => parseAbiTargetConfig({ ...baseConfig(), chainId: 999 }), /only "targets" belongs/);
+	assert.throws(() => parseAbiTargetConfig({ targets: { core: DIAMOND, duplicate: DIAMOND } }), /duplicates targets.core/);
 });
 
-test("derives public chain metadata and supports selecting one Diamond", () => {
+test("derives public chain metadata and supports selecting one target", () => {
 	const profile = resolveChainProfile("HyperEVM");
 	assert.equal(profile.name, "hyperevm");
 	assert.equal(profile.expectedChainId, 999);
@@ -98,13 +102,14 @@ test("derives public chain metadata and supports selecting one Diamond", () => {
 	assert.equal(profile.explorers.at(-1).browserUrl, "https://hyperevmscan.io");
 	assert.throws(() => resolveChainProfile("unknown"), /unsupported chain/);
 
-	assert.deepEqual(parseArguments(["--chain", "hyperevm", "--diamond", "account-layer"], {}), {
+	assert.deepEqual(parseArguments(["--chain", "hyperevm", "--target", "account-layer"], {}), {
 		help: false,
 		chain: "hyperevm",
 		configFile: "scripts/config/diamond-abi/hyperevm.json",
-		diamondLabel: "account-layer",
+		targetLabel: "account-layer",
 		outputDirectory: undefined,
 	});
+	assert.equal(parseArguments(["--chain", "hyperevm", "--diamond", "core"], {}).targetLabel, "core");
 });
 
 test("extracts verified ABI arrays from Etherscan API and HTML responses", () => {
@@ -184,6 +189,45 @@ test("matches local runtime artifacts with Solidity library placeholders", () =>
 		[hash]: "0x1111111111111111111111111111111111111111",
 	});
 	assert.equal(matchArtifactRuntime(`0x61${library}61`, compiled).match, false);
+});
+
+test("matches constructor-set immutable runtime regions", () => {
+	const compiled = `0x60${"00".repeat(32)}61`;
+	const deployed = `0x60${"ab".repeat(32)}61`;
+	const immutableReferences = {
+		1: [{ start: 1, length: 32 }],
+	};
+	assert.equal(matchArtifactRuntime(deployed, compiled).match, false);
+	assert.deepEqual(matchArtifactRuntime(deployed, compiled, immutableReferences), {
+		match: true,
+		linkedLibraries: {},
+		immutableReferenceCount: 1,
+	});
+});
+
+test("extracts dispatcher selectors and chooses the narrowest covering ABI snapshot", () => {
+	const runtimeCode = `0x63${alphaSelector.slice(2)}14600063${betaSelector.slice(2)}14`;
+	assert.deepEqual(extractDispatcherSelectors(runtimeCode), [alphaSelector, betaSelector]);
+
+	const match = findSelectorMatchingAbiSnapshot(
+		[alphaSelector, betaSelector],
+		[
+			{ type: "file", label: "wide", path: "wide.json", abi: [alpha, beta, unused, event] },
+			{ type: "file", label: "exact", path: "exact.json", abi: [alpha, beta, event, error] },
+		],
+	);
+	assert.equal(match.label, "exact");
+	assert.equal(match.extraSelectorCount, 0);
+	assert.deepEqual(match.abi, [alpha, beta, event, error]);
+});
+
+test("counts constructor ABI entries without inherited-property collisions", () => {
+	assert.deepEqual(countAbiEntries([{ type: "constructor", inputs: [] }, alpha, event, error]), {
+		constructor: 1,
+		function: 1,
+		event: 1,
+		error: 1,
+	});
 });
 
 test("prefers bytecode matches and can fall back to narrow selector matches", () => {
