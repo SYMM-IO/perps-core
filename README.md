@@ -132,9 +132,9 @@ DEPLOY_LOG_LEVEL=verbose npx hardhat test mocha
 DEPLOY_LOG_LEVEL=minimal ./utils/runTestsInParallel.sh
 ```
 
-### Exporting a deployed Diamond ABI
+### Exporting deployed contract ABIs
 
-Use the read-only live exporter to assemble ABIs for every named Diamond in a chain config:
+Use the read-only live exporter to assemble ABIs for every named Diamond or standard contract in a chain config:
 
 ```bash
 npm run abi:diamond -- --chain hyperevm
