@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import {
+	analyzeSelectorsAgainstAbiSources,
 	extractDispatcherSelectors,
 	findMatchingArtifact,
 	findSelectorMatchingAbiSnapshot,
@@ -11,10 +12,9 @@ import {
 	normalizeLiveFacets,
 	parseAbiTargetConfig,
 	resolveChainProfile,
-	resolveFunctionsFromAbiSnapshots,
 	resolveRpcUrl,
 } from "./utils/diamondAbi.mjs";
-import { Contract, JsonRpcProvider, getAddress, keccak256, sha256, toUtf8Bytes } from "ethers";
+import { Contract, FunctionFragment, JsonRpcProvider, getAddress, keccak256, sha256, toUtf8Bytes } from "ethers";
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -256,6 +256,154 @@ export function countAbiEntries(abi) {
 	}, {});
 }
 
+function selectorProof(source) {
+	if (source.type === "local-artifact-bytecode-match") return "exact-bytecode";
+	if (source.type === "etherscan-v2" || source.type === "etherscan-html") return "verified-explorer";
+	return "selector-match";
+}
+
+function abiFunctionSelectors(abi) {
+	return abi.flatMap(item => {
+		if (item?.type !== "function") return [];
+		try {
+			return [FunctionFragment.from(item).selector.toLowerCase()];
+		} catch {
+			return [];
+		}
+	});
+}
+
+function abiFromAnalysis(sourceAbi, analysis, includeNonFunctions = true) {
+	return [...(includeNonFunctions ? sourceAbi.filter(item => item?.type !== "function") : []), ...analysis.matched.map(match => match.abi)];
+}
+
+function selectorAnalysisReport(analysis, source, context = {}) {
+	return {
+		status: analysis.status,
+		installedSelectorCount: analysis.installedSelectorCount,
+		matched: analysis.matched.map(({ abi: _abi, outputsBytecodeProven, corroboratingSources, ...match }) => ({
+			...context,
+			...match,
+			corroboratingSourceCount: corroboratingSources.length,
+			...(corroboratingSources.length > 0 ? { corroboratingSources: corroboratingSources.slice(0, 5) } : {}),
+			proof: selectorProof(source),
+			outputsBytecodeProven,
+			fullAbiArtifactProven: source.type === "local-artifact-bytecode-match",
+		})),
+		unmatched: analysis.unmatched.map(item => ({ ...context, ...item })),
+		ambiguous: analysis.ambiguous.map(item => ({ ...context, ...item })),
+		localOnly: analysis.localOnly.map(item => ({ ...context, ...item })),
+		invalidAbiEntries: analysis.invalidAbiEntries.map(item => ({ ...context, ...item })),
+	};
+}
+
+function analyzeResolvedAbi(installedSelectors, resolved, context = {}) {
+	const analysis =
+		resolved.selectorAnalysis ??
+		analyzeSelectorsAgainstAbiSources(
+			installedSelectors,
+			[
+				{
+					...resolved.source,
+					label: resolved.source.label ?? resolved.source.file ?? resolved.source.url ?? resolved.source.type,
+					abi: resolved.abi,
+				},
+			],
+			{ outputsBytecodeProven: false },
+		);
+	return {
+		analysis,
+		report: selectorAnalysisReport(analysis, resolved.source, context),
+	};
+}
+
+function combineSelectorReports(reports) {
+	const combined = {
+		status: reports.some(report => report.status === "ambiguous")
+			? "ambiguous"
+			: reports.some(report => report.status !== "complete")
+				? "partial"
+				: "complete",
+		installedSelectorCount: reports.reduce((total, report) => total + report.installedSelectorCount, 0),
+		matched: reports.flatMap(report => report.matched),
+		unmatched: reports.flatMap(report => report.unmatched),
+		ambiguous: reports.flatMap(report => report.ambiguous),
+		localOnly: reports.flatMap(report => report.localOnly),
+		invalidAbiEntries: reports.flatMap(report => report.invalidAbiEntries),
+	};
+	return combined;
+}
+
+export function assertCompleteTargetResults(targetResults) {
+	const incompleteTargets = targetResults.filter(target => !target.result.complete);
+	if (incompleteTargets.length === 0) return;
+	const error = new Error(
+		`ABI resolution is incomplete for ${incompleteTargets.map(target => target.label).join(", ")}; review ${incompleteTargets
+			.map(target => target.result.reportFile)
+			.join(", ")}`,
+	);
+	error.exitCode = 2;
+	throw error;
+}
+
+async function writeJson(file, value) {
+	await fs.mkdir(path.dirname(file), { recursive: true });
+	await fs.writeFile(file, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+async function writeCompleteOutputs(outputDirectory, abi, manifest, report) {
+	const abiFile = path.join(outputDirectory, "abi.json");
+	const manifestFile = path.join(outputDirectory, "manifest.json");
+	const reportFile = path.join(outputDirectory, "report.json");
+	const partialAbiFile = path.join(outputDirectory, "abi.partial.json");
+	const abiBody = `${JSON.stringify(abi, null, 2)}\n`;
+	const abiSha256 = sha256(toUtf8Bytes(abiBody));
+	await fs.mkdir(outputDirectory, { recursive: true });
+	await fs.rm(partialAbiFile, { force: true });
+	await fs.writeFile(abiFile, abiBody);
+	await writeJson(manifestFile, {
+		...manifest,
+		abiSha256,
+		outputs: {
+			abi: path.relative(process.cwd(), abiFile),
+			manifest: path.relative(process.cwd(), manifestFile),
+			report: path.relative(process.cwd(), reportFile),
+		},
+	});
+	await writeJson(reportFile, {
+		...report,
+		abiSha256,
+		outputs: {
+			abi: path.relative(process.cwd(), abiFile),
+			manifest: path.relative(process.cwd(), manifestFile),
+			report: path.relative(process.cwd(), reportFile),
+		},
+	});
+	return { abiFile, manifestFile, reportFile, abiSha256 };
+}
+
+async function writePartialOutputs(outputDirectory, abi, report) {
+	const abiFile = path.join(outputDirectory, "abi.json");
+	const manifestFile = path.join(outputDirectory, "manifest.json");
+	const partialAbiFile = path.join(outputDirectory, "abi.partial.json");
+	const reportFile = path.join(outputDirectory, "report.json");
+	const abiBody = `${JSON.stringify(abi, null, 2)}\n`;
+	const abiSha256 = sha256(toUtf8Bytes(abiBody));
+	await fs.mkdir(outputDirectory, { recursive: true });
+	await fs.rm(abiFile, { force: true });
+	await fs.rm(manifestFile, { force: true });
+	await fs.writeFile(partialAbiFile, abiBody);
+	await writeJson(reportFile, {
+		...report,
+		partialAbiSha256: abiSha256,
+		outputs: {
+			partialAbi: path.relative(process.cwd(), partialAbiFile),
+			report: path.relative(process.cwd(), reportFile),
+		},
+	});
+	return { partialAbiFile, reportFile, abiSha256 };
+}
+
 async function detectDiamondFacets(provider, address, blockNumber) {
 	const loupe = new Contract(address, LOUPE_ABI, provider);
 	try {
@@ -287,35 +435,85 @@ export async function exportContractAbi(config, options = {}) {
 
 	const localArtifacts = options.localArtifacts ?? (await loadArtifactCandidates("artifacts/contracts"));
 	const abiSnapshots = options.abiSnapshots ?? (await loadAbiSnapshots());
+	const dispatcherSelectors = extractDispatcherSelectors(deployedCode);
 	const exactArtifact = findMatchingArtifact(deployedCode, [], localArtifacts);
 	let resolved;
 	if (exactArtifact) {
+		const installedSelectors = abiFunctionSelectors(exactArtifact.abi);
+		const source = {
+			type: "local-artifact-bytecode-match",
+			file: exactArtifact.file,
+			contractName: exactArtifact.contractName,
+			sourceName: exactArtifact.sourceName,
+			linkedLibraries: exactArtifact.linkedLibraries,
+			immutableReferenceCount: exactArtifact.immutableReferenceCount,
+		};
 		resolved = {
 			abi: exactArtifact.abi,
-			source: {
-				type: "local-artifact-bytecode-match",
-				file: exactArtifact.file,
-				contractName: exactArtifact.contractName,
-				sourceName: exactArtifact.sourceName,
-				linkedLibraries: exactArtifact.linkedLibraries,
-				immutableReferenceCount: exactArtifact.immutableReferenceCount,
-			},
+			source,
+			installedSelectors,
+			selectorSource: "exact-artifact-bound-to-runtime-bytecode",
+			selectorAnalysis: analyzeSelectorsAgainstAbiSources(
+				installedSelectors,
+				[{ ...source, label: exactArtifact.file, abi: exactArtifact.abi }],
+				{ outputsBytecodeProven: false },
+			),
 		};
 	} else {
+		let explorerFailure;
+		let explorerCandidate;
 		try {
-			resolved = await fetchVerifiedAbi(config.targetAddress, { ...config, chainId }, options);
-		} catch (error) {
-			const dispatcherSelectors = extractDispatcherSelectors(deployedCode);
-			const snapshot = findSelectorMatchingAbiSnapshot(dispatcherSelectors, abiSnapshots);
-			if (!snapshot) {
-				const message = error instanceof Error ? error.message : String(error);
-				throw new Error(
-					`no bytecode-matching local artifact, verified explorer ABI, or ABI snapshot covering ${dispatcherSelectors.length} dispatcher selector(s) was found for ${config.targetLabel} (${config.targetAddress}): ${message}`,
-				);
+			explorerCandidate = await fetchVerifiedAbi(config.targetAddress, { ...config, chainId }, options);
+			const explorerAnalysis = analyzeSelectorsAgainstAbiSources(
+				dispatcherSelectors,
+				[{ ...explorerCandidate.source, label: explorerCandidate.source.url, abi: explorerCandidate.abi }],
+				{ outputsBytecodeProven: false },
+			);
+			if (dispatcherSelectors.length > 0 && explorerAnalysis.status === "complete") {
+				resolved = {
+					...explorerCandidate,
+					abi: abiFromAnalysis(explorerCandidate.abi, explorerAnalysis),
+					installedSelectors: dispatcherSelectors,
+					selectorSource: "runtime-dispatcher",
+					selectorAnalysis: explorerAnalysis,
+				};
 			}
-			resolved = {
-				abi: snapshot.abi,
-				source: {
+		} catch (error) {
+			explorerFailure = error instanceof Error ? error.message : String(error);
+		}
+
+		if (!resolved) {
+			const selectorArtifact = dispatcherSelectors.length > 0 ? findSelectorMatchingArtifact(dispatcherSelectors, localArtifacts) : undefined;
+			if (selectorArtifact) {
+				const source = {
+					type: "local-artifact-dispatcher-match",
+					file: selectorArtifact.file,
+					contractName: selectorArtifact.contractName,
+					sourceName: selectorArtifact.sourceName,
+					runtimeBytecodeMatch: false,
+					warning:
+						"Every dispatcher selector matches this local artifact, but return types and non-function ABI entries are not bytecode-proven.",
+				};
+				const analysis = analyzeSelectorsAgainstAbiSources(
+					dispatcherSelectors,
+					[{ ...source, label: selectorArtifact.file, abi: selectorArtifact.abi }],
+					{ outputsBytecodeProven: false },
+				);
+				resolved = {
+					abi: abiFromAnalysis(selectorArtifact.abi, analysis),
+					source,
+					installedSelectors: dispatcherSelectors,
+					selectorSource: "runtime-dispatcher",
+					selectorAnalysis: analysis,
+				};
+			}
+		}
+
+		if (!resolved) {
+			const snapshot = findSelectorMatchingAbiSnapshot(dispatcherSelectors, abiSnapshots);
+			if (snapshot) {
+				const originalSnapshot = abiSnapshots.find(candidate => candidate.label === snapshot.label) ?? snapshot;
+				const source = {
 					type: "local-abi-snapshot-dispatcher-match",
 					snapshot: {
 						type: snapshot.type,
@@ -328,20 +526,65 @@ export async function exportContractAbi(config, options = {}) {
 					runtimeBytecodeMatch: false,
 					warning:
 						"Every dispatcher selector is covered by one ABI snapshot, but return types and non-function ABI entries are not bytecode-proven.",
+				};
+				const analysis = analyzeSelectorsAgainstAbiSources(dispatcherSelectors, [{ ...originalSnapshot, abi: originalSnapshot.abi }], {
+					outputsBytecodeProven: false,
+				});
+				resolved = {
+					abi: snapshot.abi,
+					source,
+					installedSelectors: dispatcherSelectors,
+					selectorSource: "runtime-dispatcher",
+					selectorAnalysis: analysis,
+				};
+			}
+		}
+
+		if (!resolved) {
+			const candidateSources = [
+				...(explorerCandidate ? [{ ...explorerCandidate.source, label: explorerCandidate.source.url, abi: explorerCandidate.abi }] : []),
+				...localArtifacts.map(artifact => ({
+					type: "local-artifact",
+					label: artifact.file,
+					file: artifact.file,
+					contractName: artifact.contractName,
+					sourceName: artifact.sourceName,
+					abi: artifact.abi,
+				})),
+				...abiSnapshots,
+			];
+			const analysis = analyzeSelectorsAgainstAbiSources(dispatcherSelectors, candidateSources, {
+				includeLocalOnly: false,
+				outputsBytecodeProven: false,
+			});
+			const warning =
+				dispatcherSelectors.length === 0
+					? "No standard dispatcher selectors could be extracted from runtime bytecode."
+					: `${analysis.unmatched.length} selector(s) are unmatched and ${analysis.ambiguous.length} selector(s) are ambiguous.`;
+			resolved = {
+				abi: analysis.matched.map(match => match.abi),
+				source: {
+					type: "selector-resolution-incomplete",
+					dispatcherSelectorCount: dispatcherSelectors.length,
+					runtimeBytecodeMatch: false,
+					...(explorerFailure ? { explorerFailure } : {}),
+					warning,
 				},
+				installedSelectors: dispatcherSelectors,
+				selectorSource: "runtime-dispatcher",
+				selectorAnalysis: analysis,
 			};
 		}
 	}
 
 	const generatedAt = new Date().toISOString();
 	const outputDirectory = path.resolve(config.outputDirectory);
-	const abiFile = path.join(outputDirectory, "abi.json");
-	const manifestFile = path.join(outputDirectory, "manifest.json");
-	const abiBody = `${JSON.stringify(resolved.abi, null, 2)}\n`;
-	const abiSha256 = sha256(toUtf8Bytes(abiBody));
-	const manifest = {
+	const { analysis, report: selectorVerification } = analyzeResolvedAbi(resolved.installedSelectors, resolved);
+	const complete = analysis.status === "complete";
+	const baseReport = {
 		schemaVersion: 1,
 		generatedAt,
+		status: complete ? "complete" : "incomplete",
 		chain: {
 			name: config.name,
 			chainId,
@@ -352,30 +595,33 @@ export async function exportContractAbi(config, options = {}) {
 		targetAddress: getAddress(config.targetAddress),
 		blockNumber,
 		runtimeCodeHash: keccak256(deployedCode),
+		selectorSource: resolved.selectorSource,
+		selectorVerification,
 		abiEntryCounts: countAbiEntries(resolved.abi),
-		abiSha256,
 		abiSource: resolved.source,
 		warnings: resolved.source.warning ? [resolved.source.warning] : [],
-		outputs: {
-			abi: path.relative(process.cwd(), abiFile),
-			manifest: path.relative(process.cwd(), manifestFile),
-		},
 	};
-
-	await fs.mkdir(outputDirectory, { recursive: true });
-	await fs.writeFile(abiFile, abiBody);
-	await fs.writeFile(manifestFile, `${JSON.stringify(manifest, null, 2)}\n`);
 
 	console.log(`Target:   ${config.targetLabel} (${config.targetAddress})`);
 	console.log(`Type:     contract`);
 	console.log(`Chain:    ${config.name} (${chainId})`);
 	console.log(`Block:    ${blockNumber}`);
 	console.log(`Source:   ${resolved.source.type}`);
-	console.log(`ABI:      ${abiFile}`);
-	console.log(`Manifest: ${manifestFile}`);
-	console.log(`SHA-256:  ${abiSha256}`);
+	console.log(`Selectors: ${analysis.matched.length} matched, ${analysis.unmatched.length} unmatched, ${analysis.ambiguous.length} ambiguous`);
 
-	return { abiFile, manifestFile, manifest, abi: resolved.abi };
+	if (complete) {
+		const outputs = await writeCompleteOutputs(outputDirectory, resolved.abi, baseReport, baseReport);
+		console.log(`ABI:      ${outputs.abiFile}`);
+		console.log(`Manifest: ${outputs.manifestFile}`);
+		console.log(`Report:   ${outputs.reportFile}`);
+		console.log(`SHA-256:  ${outputs.abiSha256}`);
+		return { ...outputs, complete, manifest: { ...baseReport, abiSha256: outputs.abiSha256 }, abi: resolved.abi };
+	}
+
+	const outputs = await writePartialOutputs(outputDirectory, resolved.abi, baseReport);
+	console.log(`Partial:  ${outputs.partialAbiFile}`);
+	console.log(`Report:   ${outputs.reportFile}`);
+	return { ...outputs, complete, report: baseReport, abi: resolved.abi };
 }
 
 export async function exportDiamondAbi(config, options = {}) {
@@ -435,54 +681,118 @@ export async function exportDiamondAbi(config, options = {}) {
 					},
 				};
 			}
+			let explorerCandidate;
+			let explorerFailure;
 			try {
-				return await fetchVerifiedAbi(address, runtimeConfig, {
+				explorerCandidate = await fetchVerifiedAbi(address, runtimeConfig, {
 					...options,
 					targetRuntimeCode: deployedCode,
 				});
+				if (!facet) return explorerCandidate;
+				const explorerAnalysis = analyzeSelectorsAgainstAbiSources(
+					facet.functionSelectors,
+					[{ ...explorerCandidate.source, label: explorerCandidate.source.url, abi: explorerCandidate.abi }],
+					{ outputsBytecodeProven: false },
+				);
+				if (explorerAnalysis.status === "complete") {
+					return {
+						...explorerCandidate,
+						selectorAnalysis: explorerAnalysis,
+					};
+				}
 			} catch (explorerError) {
-				if (!facet) {
-					const message = explorerError instanceof Error ? explorerError.message : String(explorerError);
-					return {
-						abi: [],
-						source: {
-							type: "diamond-edge-unavailable",
-							runtimeBytecodeMatch: false,
-							warning: `Diamond fallback/receive ABI was unavailable: ${message}`,
-						},
-					};
-				}
-				const selectorArtifact = findSelectorMatchingArtifact(facet.functionSelectors, localArtifacts);
-				if (selectorArtifact) {
-					return {
-						abi: selectorArtifact.abi,
-						source: {
-							type: "local-artifact-selector-match",
-							file: selectorArtifact.file,
-							contractName: selectorArtifact.contractName,
-							sourceName: selectorArtifact.sourceName,
-							runtimeBytecodeMatch: false,
-							warning:
-								"Function selectors match, but return types and non-function ABI entries cannot be proven from on-chain bytecode.",
-						},
-					};
-				}
-				const snapshotFunctions = resolveFunctionsFromAbiSnapshots(facet.functionSelectors, abiSnapshots);
-				if (!snapshotFunctions) {
-					const message = explorerError instanceof Error ? explorerError.message : String(explorerError);
-					throw new Error(`${message}; no local artifact or ABI snapshot covers every installed selector`);
-				}
+				explorerFailure = explorerError instanceof Error ? explorerError.message : String(explorerError);
+			}
+			if (!facet) {
 				return {
-					abi: snapshotFunctions.abi,
+					abi: [],
 					source: {
-						type: "local-abi-snapshot-selector-match",
-						snapshots: snapshotFunctions.snapshots,
-						functions: snapshotFunctions.functions,
+						type: "diamond-edge-unavailable",
 						runtimeBytecodeMatch: false,
-						warning: "Function selectors match configured ABI snapshots, but return types cannot be proven from on-chain bytecode.",
+						warning: `Diamond fallback/receive ABI was unavailable: ${explorerFailure ?? "verified explorer ABI was incomplete"}`,
 					},
 				};
 			}
+
+			const selectorArtifact = findSelectorMatchingArtifact(facet.functionSelectors, localArtifacts);
+			if (selectorArtifact) {
+				const source = {
+					type: "local-artifact-selector-match",
+					file: selectorArtifact.file,
+					contractName: selectorArtifact.contractName,
+					sourceName: selectorArtifact.sourceName,
+					runtimeBytecodeMatch: false,
+					warning: "Function selectors match, but return types and non-function ABI entries cannot be proven from on-chain bytecode.",
+				};
+				return {
+					abi: selectorArtifact.abi,
+					source,
+					selectorAnalysis: analyzeSelectorsAgainstAbiSources(
+						facet.functionSelectors,
+						[{ ...source, label: selectorArtifact.file, abi: selectorArtifact.abi }],
+						{ outputsBytecodeProven: false },
+					),
+				};
+			}
+
+			const snapshotAnalysis = analyzeSelectorsAgainstAbiSources(facet.functionSelectors, abiSnapshots, {
+				includeLocalOnly: false,
+				outputsBytecodeProven: false,
+			});
+			if (snapshotAnalysis.status === "complete") {
+				const snapshots = new Map();
+				for (const match of snapshotAnalysis.matched) {
+					for (const source of [match.source, ...match.corroboratingSources]) {
+						const label = source.label ?? source.path ?? source.type;
+						snapshots.set(label, source);
+					}
+				}
+				return {
+					abi: snapshotAnalysis.matched.map(match => match.abi),
+					source: {
+						type: "local-abi-snapshot-selector-match",
+						snapshots: [...snapshots.values()],
+						functions: snapshotAnalysis.matched.map(match => ({
+							selector: match.selector,
+							signature: match.signature,
+							snapshot: match.source.label,
+						})),
+						runtimeBytecodeMatch: false,
+						warning: "Function selectors match configured ABI snapshots, but return types cannot be proven from on-chain bytecode.",
+					},
+					selectorAnalysis: snapshotAnalysis,
+				};
+			}
+
+			const combinedAnalysis = analyzeSelectorsAgainstAbiSources(
+				facet.functionSelectors,
+				[
+					...(explorerCandidate ? [{ ...explorerCandidate.source, label: explorerCandidate.source.url, abi: explorerCandidate.abi }] : []),
+					...localArtifacts.map(artifact => ({
+						type: "local-artifact",
+						label: artifact.file,
+						file: artifact.file,
+						contractName: artifact.contractName,
+						sourceName: artifact.sourceName,
+						abi: artifact.abi,
+					})),
+					...abiSnapshots,
+				],
+				{ includeLocalOnly: false, outputsBytecodeProven: false },
+			);
+			return {
+				abi: combinedAnalysis.matched.map(match => match.abi),
+				source: {
+					type: combinedAnalysis.status === "complete" ? "combined-selector-match" : "selector-resolution-incomplete",
+					runtimeBytecodeMatch: false,
+					...(explorerFailure ? { explorerFailure } : {}),
+					warning:
+						combinedAnalysis.status === "complete"
+							? "Installed selectors were resolved across multiple ABI sources; return types are source-derived."
+							: `${combinedAnalysis.unmatched.length} selector(s) are unmatched and ${combinedAnalysis.ambiguous.length} selector(s) are ambiguous.`,
+				},
+				selectorAnalysis: combinedAnalysis,
+			};
 		},
 		(address, _index, result) => {
 			completed += 1;
@@ -491,17 +801,36 @@ export async function exportDiamondAbi(config, options = {}) {
 	);
 	const fetchedByAddress = new Map(addresses.map((address, index) => [address.toLowerCase(), fetched[index]]));
 	const diamondFetched = fetchedByAddress.get(config.diamondAddress.toLowerCase());
-	const merged = mergeLiveFacetAbis(liveFacets, fetchedByAddress, diamondFetched?.abi);
+	const facetResolutions = liveFacets.map(facet => {
+		const resolved = fetchedByAddress.get(facet.address.toLowerCase());
+		const resolution = analyzeResolvedAbi(facet.functionSelectors, resolved, { facetAddress: facet.address });
+		return { facet, resolved, ...resolution };
+	});
+	const selectorVerification = combineSelectorReports(facetResolutions.map(resolution => resolution.report));
+	const complete = selectorVerification.status === "complete";
+	const merged = complete ? mergeLiveFacetAbis(liveFacets, fetchedByAddress, diamondFetched?.abi) : undefined;
+	const abi = complete ? merged.abi : facetResolutions.flatMap(resolution => resolution.analysis.matched.map(match => match.abi));
+	const facets = complete
+		? merged.facets
+		: facetResolutions.map(resolution => ({
+				address: resolution.facet.address,
+				abiSource: resolution.resolved.source,
+				fetchedAbiEntries: resolution.resolved.abi.length,
+				functions: resolution.analysis.matched.map(({ selector, signature }) => ({ selector, signature })),
+				unmatchedSelectors: resolution.analysis.unmatched.map(item => item.selector),
+				ambiguousSelectors: resolution.analysis.ambiguous.map(item => item.selector),
+			}));
+	const warnings = [
+		...(diamondFetched?.source.warning ? [diamondFetched.source.warning] : []),
+		...facetResolutions.flatMap(resolution => (resolution.resolved.source.warning ? [resolution.resolved.source.warning] : [])),
+	];
 
 	const generatedAt = new Date().toISOString();
 	const outputDirectory = path.resolve(config.outputDirectory);
-	const abiFile = path.join(outputDirectory, "abi.json");
-	const manifestFile = path.join(outputDirectory, "manifest.json");
-	const abiBody = `${JSON.stringify(merged.abi, null, 2)}\n`;
-	const abiSha256 = sha256(toUtf8Bytes(abiBody));
-	const manifest = {
+	const baseReport = {
 		schemaVersion: 1,
 		generatedAt,
+		status: complete ? "complete" : "incomplete",
 		chain: {
 			name: config.name,
 			chainId,
@@ -514,35 +843,33 @@ export async function exportDiamondAbi(config, options = {}) {
 		diamondAddress: getAddress(config.diamondAddress),
 		blockNumber,
 		facetCount: liveFacets.length,
-		selectorCount: merged.selectorCount,
-		abiEntryCounts: merged.counts,
-		abiSha256,
+		runtimeCodeHash: keccak256(diamondCode),
+		selectorSource: "diamond-loupe",
+		selectorCount,
+		selectorVerification,
+		abiEntryCounts: countAbiEntries(abi),
 		diamondAbiSource: diamondFetched?.source,
-		diamondEdgeEntryCount: merged.diamondEdgeEntryCount,
-		warnings: [
-			...(diamondFetched?.source.warning ? [diamondFetched.source.warning] : []),
-			...merged.facets
-				.filter(
-					facet => facet.abiSource.type === "local-artifact-selector-match" || facet.abiSource.type === "local-abi-snapshot-selector-match",
-				)
-				.map(facet => `${facet.address} uses ${facet.abiSource.type} only; return types and non-function entries are not bytecode-proven.`),
-		],
-		facets: merged.facets,
-		outputs: {
-			abi: path.relative(process.cwd(), abiFile),
-			manifest: path.relative(process.cwd(), manifestFile),
-		},
+		diamondEdgeEntryCount: merged?.diamondEdgeEntryCount ?? 0,
+		warnings,
+		facets,
 	};
 
-	await fs.mkdir(outputDirectory, { recursive: true });
-	await fs.writeFile(abiFile, abiBody);
-	await fs.writeFile(manifestFile, `${JSON.stringify(manifest, null, 2)}\n`);
+	console.log(
+		`Selectors: ${selectorVerification.matched.length} matched, ${selectorVerification.unmatched.length} unmatched, ${selectorVerification.ambiguous.length} ambiguous`,
+	);
+	if (complete) {
+		const outputs = await writeCompleteOutputs(outputDirectory, abi, baseReport, baseReport);
+		console.log(`ABI:      ${outputs.abiFile}`);
+		console.log(`Manifest: ${outputs.manifestFile}`);
+		console.log(`Report:   ${outputs.reportFile}`);
+		console.log(`SHA-256:  ${outputs.abiSha256}`);
+		return { ...outputs, complete, manifest: { ...baseReport, abiSha256: outputs.abiSha256 }, abi };
+	}
 
-	console.log(`ABI:      ${abiFile}`);
-	console.log(`Manifest: ${manifestFile}`);
-	console.log(`SHA-256:  ${abiSha256}`);
-
-	return { abiFile, manifestFile, manifest, abi: merged.abi };
+	const outputs = await writePartialOutputs(outputDirectory, abi, baseReport);
+	console.log(`Partial:  ${outputs.partialAbiFile}`);
+	console.log(`Report:   ${outputs.reportFile}`);
+	return { ...outputs, complete, report: baseReport, abi };
 }
 
 export async function exportAbiTarget(config, options = {}) {
@@ -606,8 +933,9 @@ async function main() {
 	console.log(`Local:        ${localArtifacts.length} compiled runtime artifact(s)`);
 	console.log(`ABI refs:     ${abiSnapshots.length} working-tree and version-branch snapshot(s)`);
 
+	const targetResults = [];
 	for (const target of selectedTargets) {
-		await exportAbiTarget(
+		const result = await exportAbiTarget(
 			{
 				...profile,
 				targetLabel: target.label,
@@ -622,7 +950,9 @@ async function main() {
 				abiSnapshots,
 			},
 		);
+		targetResults.push({ label: target.label, result });
 	}
+	assertCompleteTargetResults(targetResults);
 }
 
 const invokedDirectly = process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
@@ -630,6 +960,6 @@ if (invokedDirectly) {
 	main().catch(error => {
 		const message = error instanceof Error ? error.message : String(error);
 		console.error(`Diamond ABI export failed: ${message}`);
-		process.exitCode = 1;
+		process.exitCode = Number.isSafeInteger(error?.exitCode) ? error.exitCode : 1;
 	});
 }

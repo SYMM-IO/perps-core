@@ -1,4 +1,10 @@
-import { countAbiEntries, parseArguments } from "../../scripts/exportDiamondAbi.mjs";
+import {
+	assertCompleteTargetResults,
+	countAbiEntries,
+	exportContractAbi,
+	exportDiamondAbi,
+	parseArguments,
+} from "../../scripts/exportDiamondAbi.mjs";
 import {
 	analyzeSelectorsAgainstAbiSources,
 	extractDispatcherSelectors,
@@ -18,6 +24,9 @@ import {
 } from "../../scripts/utils/diamondAbi.mjs";
 import { FunctionFragment } from "ethers";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 const FACET_A = "0x00000000000000000000000000000000000000A1";
@@ -78,6 +87,27 @@ function baseConfig(targets = {}) {
 			"account-layer": "0x00000000000000000000000000000000000000a1",
 			...targets,
 		},
+	};
+}
+
+function mockProvider(code = "0x6000") {
+	return {
+		getNetwork: async () => ({ chainId: 999n }),
+		getBlockNumber: async () => 123,
+		getCode: async () => code,
+	};
+}
+
+function exportConfig(outputDirectory, overrides = {}) {
+	return {
+		name: "test",
+		expectedChainId: 999,
+		targetLabel: "target",
+		targetAddress: DIAMOND,
+		outputDirectory,
+		explorers: [],
+		request: { concurrency: 2, attempts: 1, timeoutMs: 100 },
+		...overrides,
 	};
 }
 
@@ -333,6 +363,108 @@ test("reports selector collisions as ambiguous instead of choosing silently", ()
 	assert.deepEqual(
 		analysis.ambiguous[0].candidates.map(candidate => candidate.signature),
 		["burn(uint256)", "collate_propagate_storage(bytes16)"],
+	);
+});
+
+test("writes a complete report beside an exact-bytecode contract ABI", async t => {
+	const outputDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "diamond-abi-complete-"));
+	t.after(() => fs.rm(outputDirectory, { recursive: true, force: true }));
+	const artifact = {
+		file: "artifacts/Alpha.json",
+		contractName: "Alpha",
+		sourceName: "contracts/Alpha.sol",
+		abi: [alpha, event],
+		deployedBytecode: "0x6000",
+		immutableReferences: {},
+	};
+
+	const result = await exportContractAbi(exportConfig(outputDirectory), {
+		provider: mockProvider(),
+		rpc: { url: "http://rpc.example", source: "test" },
+		blockNumber: 123,
+		localArtifacts: [artifact],
+		abiSnapshots: [],
+	});
+	const report = JSON.parse(await fs.readFile(result.reportFile, "utf8"));
+	const manifest = JSON.parse(await fs.readFile(result.manifestFile, "utf8"));
+
+	assert.equal(result.complete, true);
+	assert.equal(report.status, "complete");
+	assert.equal(report.selectorSource, "exact-artifact-bound-to-runtime-bytecode");
+	assert.equal(report.selectorVerification.matched[0].signature, "alpha(uint256)");
+	assert.equal(report.selectorVerification.matched[0].fullAbiArtifactProven, true);
+	assert.equal(manifest.outputs.report, path.relative(process.cwd(), result.reportFile));
+	await assert.rejects(fs.access(path.join(outputDirectory, "abi.partial.json")), error => error?.code === "ENOENT");
+});
+
+test("writes a partial contract report before returning incomplete resolution", async t => {
+	const outputDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "diamond-abi-partial-contract-"));
+	t.after(() => fs.rm(outputDirectory, { recursive: true, force: true }));
+	const unknownSelector = "0x12345678";
+	const runtimeCode = `0x63${alphaSelector.slice(2)}14600063${unknownSelector.slice(2)}146000`;
+
+	const result = await exportContractAbi(exportConfig(outputDirectory), {
+		provider: mockProvider(runtimeCode),
+		rpc: { url: "http://rpc.example", source: "test" },
+		blockNumber: 123,
+		localArtifacts: [],
+		abiSnapshots: [{ type: "file", label: "alpha", path: "abis/alpha.json", abi: [alpha] }],
+	});
+	const report = JSON.parse(await fs.readFile(result.reportFile, "utf8"));
+	const partialAbi = JSON.parse(await fs.readFile(result.partialAbiFile, "utf8"));
+
+	assert.equal(result.complete, false);
+	assert.equal(report.status, "incomplete");
+	assert.equal(report.selectorVerification.status, "partial");
+	assert.deepEqual(report.selectorVerification.unmatched, [{ selector: unknownSelector }]);
+	assert.deepEqual(
+		partialAbi.filter(item => item.type === "function").map(item => item.name),
+		["alpha"],
+	);
+	await assert.rejects(fs.access(path.join(outputDirectory, "abi.json")), error => error?.code === "ENOENT");
+	await assert.rejects(fs.access(path.join(outputDirectory, "manifest.json")), error => error?.code === "ENOENT");
+});
+
+test("writes facet addresses beside unmatched Diamond selectors", async t => {
+	const outputDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "diamond-abi-partial-diamond-"));
+	t.after(() => fs.rm(outputDirectory, { recursive: true, force: true }));
+	const unknownSelector = "0x12345678";
+	const liveFacets = [{ address: FACET_A, functionSelectors: [alphaSelector, unknownSelector] }];
+
+	const result = await exportDiamondAbi(
+		exportConfig(outputDirectory, {
+			diamondLabel: "diamond",
+			diamondAddress: DIAMOND,
+		}),
+		{
+			provider: mockProvider(),
+			rpc: { url: "http://rpc.example", source: "test" },
+			blockNumber: 123,
+			liveFacets,
+			localArtifacts: [],
+			abiSnapshots: [{ type: "file", label: "alpha", path: "abis/alpha.json", abi: [alpha] }],
+		},
+	);
+	const report = JSON.parse(await fs.readFile(result.reportFile, "utf8"));
+
+	assert.equal(result.complete, false);
+	assert.equal(report.selectorSource, "diamond-loupe");
+	assert.equal(report.selectorVerification.matched[0].facetAddress, FACET_A);
+	assert.deepEqual(report.selectorVerification.unmatched, [{ facetAddress: FACET_A, selector: unknownSelector }]);
+	assert.deepEqual(report.facets[0].unmatchedSelectors, [unknownSelector]);
+});
+
+test("uses exit code 2 after incomplete target reports have been written", () => {
+	assert.doesNotThrow(() => assertCompleteTargetResults([{ label: "core", result: { complete: true } }]));
+	assert.throws(
+		() =>
+			assertCompleteTargetResults([
+				{
+					label: "instant-layer",
+					result: { complete: false, reportFile: "/tmp/instant-layer/report.json" },
+				},
+			]),
+		error => error?.exitCode === 2 && error.message.includes("instant-layer") && error.message.includes("/tmp/instant-layer/report.json"),
 	);
 });
 

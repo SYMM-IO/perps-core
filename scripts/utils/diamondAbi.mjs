@@ -649,6 +649,7 @@ export function analyzeSelectorsAgainstAbiSources(installedSelectors, sources, o
 				abiVariant: abiVariantKey(item),
 				source: summary,
 			};
+			if (!installed.has(candidate.selector) && options.includeLocalOnly === false) continue;
 			const bucket = installed.has(candidate.selector) ? candidatesBySelector : localOnlyBySelector;
 			const existing = bucket.get(candidate.selector) ?? [];
 			existing.push(candidate);
