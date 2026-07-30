@@ -12,8 +12,15 @@ import { AccountStorage } from "../storages/AccountStorage.sol";
 ///      been verified by the routing layer. It is not a signature cache. The separate
 ///      active marker lets an external-call boundary clear the signer value temporarily
 ///      while still remembering that the outer scope must be restored from EIP-1153 state.
+///
+///      PRE-CANCUN PORT
+///      This is the AccountLayer half of the transient surface; core's half is
+///      LibExecutionContext, whose header carries the full porting checklist. Between
+///      them they are the only production files emitting tload/tstore.
+///      For a pre-Cancun build, reimplement _transientLoad/_transientStore at the bottom of
+///      this file against a persistent slot-keyed mapping; configuredSigner() and every
+///      boundary check above them then work unchanged, so no call site changes.
 library LibAccountLayerSigner {
-	bytes32 private constant SIGNER_CONFIG_SLOT = keccak256("symmio.account-layer.signer.config");
 	bytes32 private constant TRANSIENT_SIGNER_SLOT = keccak256("symmio.account-layer.transient.signer");
 	bytes32 private constant TRANSIENT_SIGNER_ACTIVE_SLOT = keccak256("symmio.account-layer.transient.signer.active");
 	bytes32 private constant TRANSIENT_SIGNER_SCOPE_SLOT = keccak256("symmio.account-layer.transient.signer.scope");
@@ -25,31 +32,11 @@ library LibAccountLayerSigner {
 	///      the boundary fails closed instead.
 	error ExternalCallSignerWasModified();
 
-	struct ConfigLayout {
-		/// @notice Legacy routers whose unchanged setSigner(address) sequence should be
-		///         adapted to transient EIP-1153 state.
-		mapping(address => bool) legacySetSignerUsesTransientScope;
-	}
-
-	/// @notice Configures the compatibility adapter for one legacy setSigner caller.
-	/// @dev This does not authorize the caller and does not install a signer.
-	function configureLegacySetSignerAdapter(address legacyRouter, bool enabled) internal {
-		_configLayout().legacySetSignerUsesTransientScope[legacyRouter] = enabled;
-	}
-
-	/// @notice Returns whether a caller's legacy setSigner calls use transient storage.
-	function legacySetSignerUsesTransientScope(address legacyRouter) internal view returns (bool) {
-		return _configLayout().legacySetSignerUsesTransientScope[legacyRouter];
-	}
-
 	/// @notice Whether a transient signer scope is currently open.
 	/// @dev Also decides which mechanism the AccountLayer uses when it opens a matching signer
 	///      scope on core, so the two layers never disagree about signer lifetime.
-	function isTransientSignerActive() internal view returns (bool active) {
-		bytes32 slot = TRANSIENT_SIGNER_ACTIVE_SLOT;
-		assembly ("memory-safe") {
-			active := tload(slot)
-		}
+	function isTransientSignerActive() internal view returns (bool) {
+		return _transientLoad(TRANSIENT_SIGNER_ACTIVE_SLOT) != TRANSIENT_SIGNER_INACTIVE;
 	}
 
 	/// @notice Returns the raw configured signer, without falling back to msg.sender.
@@ -78,26 +65,17 @@ library LibAccountLayerSigner {
 	/// @notice Installs the effective signer for the current transaction, confined to one account family.
 	/// @dev Transient counterpart of the persistent scoped-signer session: a router executing on
 	///      behalf of a delegate supplies the account family the delegation was granted over, and
-	///      requireAccountInScope rejects anything outside it. A zero scope is unconfined.
+	///      requireAccountInScope rejects anything outside it. A zero scope is unconfined, and
+	///      clearing the signer always clears the scope with it.
 	function setTransientSignerScoped(address signerOrZero, address scope) internal {
-		bytes32 signerSlot = TRANSIENT_SIGNER_SLOT;
-		bytes32 activeSlot = TRANSIENT_SIGNER_ACTIVE_SLOT;
-		bytes32 scopeSlot = TRANSIENT_SIGNER_SCOPE_SLOT;
-		uint256 active = signerOrZero == address(0) ? TRANSIENT_SIGNER_INACTIVE : TRANSIENT_SIGNER_ACTIVE;
-		if (signerOrZero == address(0)) scope = address(0);
-		assembly ("memory-safe") {
-			tstore(signerSlot, signerOrZero)
-			tstore(activeSlot, active)
-			tstore(scopeSlot, scope)
-		}
+		_setTransientSignerValue(signerOrZero);
+		_transientStore(TRANSIENT_SIGNER_ACTIVE_SLOT, signerOrZero == address(0) ? TRANSIENT_SIGNER_INACTIVE : TRANSIENT_SIGNER_ACTIVE);
+		_transientStore(TRANSIENT_SIGNER_SCOPE_SLOT, signerOrZero == address(0) ? 0 : uint256(uint160(scope)));
 	}
 
 	/// @notice Returns the transient account scope confining the current signer session.
-	function transientScope() internal view returns (address value) {
-		bytes32 slot = TRANSIENT_SIGNER_SCOPE_SLOT;
-		assembly ("memory-safe") {
-			value := tload(slot)
-		}
+	function transientScope() internal view returns (address) {
+		return address(uint160(_transientLoad(TRANSIENT_SIGNER_SCOPE_SLOT)));
 	}
 
 	/// @notice Returns the account scope confining the active signer session, if any.
@@ -144,37 +122,38 @@ library LibAccountLayerSigner {
 	/// @notice Returns the raw transient-storage signer value, ignoring the active marker.
 	/// @dev Used by boundary checks that must assert the value slot is genuinely empty. For the
 	///      effective signer use signer() or configuredSigner().
-	function transientSigner() internal view returns (address value) {
-		bytes32 slot = TRANSIENT_SIGNER_SLOT;
-		assembly ("memory-safe") {
-			value := tload(slot)
-		}
+	function transientSigner() internal view returns (address) {
+		return address(uint160(_transientLoad(TRANSIENT_SIGNER_SLOT)));
 	}
 
 	/// @dev Writes the signer value while leaving the active marker untouched, which is how a
 	///      suspended scope stays identifiable as transient with no signer installed.
 	function _setTransientSignerValue(address signerOrZero) private {
-		bytes32 slot = TRANSIENT_SIGNER_SLOT;
-		assembly ("memory-safe") {
-			tstore(slot, signerOrZero)
-		}
+		_transientStore(TRANSIENT_SIGNER_SLOT, uint256(uint160(signerOrZero)));
 	}
 
 	/// @dev Restore the value and active marker because a nested trusted scope may have
 	///      cleared both while the outer signer was suspended.
 	function _restoreTransientSigner(address signer_) private {
-		bytes32 signerSlot = TRANSIENT_SIGNER_SLOT;
-		bytes32 activeSlot = TRANSIENT_SIGNER_ACTIVE_SLOT;
+		_setTransientSignerValue(signer_);
+		_transientStore(TRANSIENT_SIGNER_ACTIVE_SLOT, TRANSIENT_SIGNER_ACTIVE);
+	}
+
+	// ── The only EIP-1153 primitives in the AccountLayer diamond ──────────────
+	// Mirror of the pair at the bottom of LibExecutionContext. Every transient read
+	// and write above funnels through these two, which is what keeps the PRE-CANCUN
+	// PORT a two-function change here as well. New transient state should add a slot
+	// constant and a typed accessor calling these, not another assembly block.
+
+	function _transientLoad(bytes32 slot) private view returns (uint256 value) {
 		assembly ("memory-safe") {
-			tstore(signerSlot, signer_)
-			tstore(activeSlot, TRANSIENT_SIGNER_ACTIVE)
+			value := tload(slot)
 		}
 	}
 
-	function _configLayout() private pure returns (ConfigLayout storage layout_) {
-		bytes32 slot = SIGNER_CONFIG_SLOT;
+	function _transientStore(bytes32 slot, uint256 value) private {
 		assembly ("memory-safe") {
-			layout_.slot := slot
+			tstore(slot, value)
 		}
 	}
 }

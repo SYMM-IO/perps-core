@@ -30,8 +30,27 @@ import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
 ///      Every public reader prefers the live transient scope and otherwise returns the
 ///      persistent field. With no scope open the library is behaviourally invisible,
 ///      which is what lets unmigrated callers keep working unchanged.
+///
+///      PRE-CANCUN PORT
+///      This library and LibAccountLayerSigner are the only production files that emit
+///      tload/tstore. Nothing else under contracts/ does, so a pre-Cancun target is a
+///      contained change rather than a codebase-wide one:
+///        1. evmVersion "paris" in hardhat.config.ts. Needed for PUSH0, not only for
+///           transient storage -- a pre-Shanghai chain rejects PUSH0 as well, so the
+///           compiler settings break it independently of anything in this file.
+///        2. Reimplement _transientLoad/_transientStore -- at the bottom of this file,
+///           and their counterparts in LibAccountLayerSigner -- against a persistent
+///           slot-keyed mapping. Everything layered above them (bit packing, snapshot
+///           encoding, the fail-closed boundary checks, the read fallbacks) then works
+///           unchanged, because the only property any of it relies on is that a write is
+///           visible to later reads in the same transaction. The one behaviour genuinely
+///           lost is that transient storage also self-clears at transaction end; that is
+///           safe to give up here only because every scope is strictly paired and
+///           endInstantLayerExecution() writes 0 explicitly.
+///      Nothing else to configure: ControlFacet's legacy setCallFromInstantLayer /
+///      setInstantOpenMode selectors route into this library unconditionally, so a
+///      persistent build follows purely from step 2 and there is no flag to unset.
 library LibExecutionContext {
-	bytes32 private constant EXECUTION_CONTEXT_CONFIG_SLOT = keccak256("symmio.core.execution-context.config");
 	bytes32 private constant TRANSIENT_SIGNER_SLOT = keccak256("symmio.core.transient.signer");
 	bytes32 private constant TRANSIENT_SIGNER_ACTIVE_SLOT = keccak256("symmio.core.transient.signer.active");
 	bytes32 private constant TRANSIENT_INSTANT_LAYER_CONTEXT_SLOT = keccak256("symmio.core.transient.instant-layer.context");
@@ -98,12 +117,6 @@ library LibExecutionContext {
 	/// @dev A signer was left installed by the external call. Same fail-closed reasoning.
 	error ExternalCallSignerWasModified();
 
-	struct ConfigLayout {
-		/// @notice Existing InstantLayer deployments whose legacy true/false setter
-		///         sequence should be backed by EIP-1153 state.
-		mapping(address => bool) legacyExecutionContextAdapters;
-	}
-
 	/// @notice Starts a transient InstantLayer execution context.
 	/// @dev `callFromInstantLayer` is always true for this context. InstantLayer must end
 	///      the scope before returning so later calls in an outer multicast cannot inherit
@@ -112,10 +125,7 @@ library LibExecutionContext {
 		if (_instantLayerContext() & INSTANT_CONTEXT_ACTIVE != 0) revert TransientContextAlreadyActive();
 		uint256 context = INSTANT_CONTEXT_ACTIVE | CALL_FROM_INSTANT_LAYER;
 		if (instantOpenMode) context |= INSTANT_OPEN_MODE;
-		bytes32 slot = TRANSIENT_INSTANT_LAYER_CONTEXT_SLOT;
-		assembly ("memory-safe") {
-			tstore(slot, context)
-		}
+		_setInstantLayerContext(context);
 	}
 
 	/// @notice Ends the current transient InstantLayer execution context.
@@ -127,10 +137,7 @@ library LibExecutionContext {
 	function endInstantLayerExecution() internal {
 		if (_instantLayerContext() & INSTANT_CONTEXT_ACTIVE == 0) revert TransientContextNotActive();
 		if (isTransientSignerActive()) revert TransientSignerNotCleared();
-		bytes32 slot = TRANSIENT_INSTANT_LAYER_CONTEXT_SLOT;
-		assembly ("memory-safe") {
-			tstore(slot, 0)
-		}
+		_setInstantLayerContext(0);
 	}
 
 	/// @notice Updates instant-open mode inside an active transient execution context.
@@ -144,21 +151,7 @@ library LibExecutionContext {
 		} else {
 			context &= ~INSTANT_OPEN_MODE;
 		}
-		bytes32 slot = TRANSIENT_INSTANT_LAYER_CONTEXT_SLOT;
-		assembly ("memory-safe") {
-			tstore(slot, context)
-		}
-	}
-
-	/// @notice Configures whether one InstantLayer's legacy setters write transient storage.
-	/// @dev Pure configuration: it neither authorizes the caller nor opens a scope.
-	function setLegacyExecutionContextAdapter(address legacyInstantLayer, bool enabled) internal {
-		_configLayout().legacyExecutionContextAdapters[legacyInstantLayer] = enabled;
-	}
-
-	/// @notice Returns the configured storage mechanism for one InstantLayer's legacy setters.
-	function legacyExecutionContextAdapterEnabled(address legacyInstantLayer) internal view returns (bool) {
-		return _configLayout().legacyExecutionContextAdapters[legacyInstantLayer];
+		_setInstantLayerContext(context);
 	}
 
 	/// @notice Returns whether the effective context is an InstantLayer call.
@@ -188,11 +181,8 @@ library LibExecutionContext {
 	/// @notice Returns true when a transient signer override is installed.
 	/// @dev The active marker is separate from the signer value because hook boundaries
 	///      temporarily clear the value while retaining which storage mechanism to restore.
-	function isTransientSignerActive() internal view returns (bool active) {
-		bytes32 slot = TRANSIENT_SIGNER_ACTIVE_SLOT;
-		assembly ("memory-safe") {
-			active := tload(slot)
-		}
+	function isTransientSignerActive() internal view returns (bool) {
+		return _transientLoad(TRANSIENT_SIGNER_ACTIVE_SLOT) != TRANSIENT_SIGNER_INACTIVE;
 	}
 
 	/// @notice Returns the raw configured signer without falling back to msg.sender.
@@ -216,13 +206,8 @@ library LibExecutionContext {
 	///      are required to start transient signer scopes only while the persistent signer is
 	///      clear, so the two mechanisms cannot be ambiguously mixed.
 	function setTransientSigner(address signerOrZero) internal {
-		bytes32 signerSlot = TRANSIENT_SIGNER_SLOT;
-		bytes32 activeSlot = TRANSIENT_SIGNER_ACTIVE_SLOT;
-		uint256 active = signerOrZero == address(0) ? TRANSIENT_SIGNER_INACTIVE : TRANSIENT_SIGNER_ACTIVE;
-		assembly ("memory-safe") {
-			tstore(signerSlot, signerOrZero)
-			tstore(activeSlot, active)
-		}
+		_setTransientSignerValue(signerOrZero);
+		_transientStore(TRANSIENT_SIGNER_ACTIVE_SLOT, signerOrZero == address(0) ? TRANSIENT_SIGNER_INACTIVE : TRANSIENT_SIGNER_ACTIVE);
 	}
 
 	/// @notice Temporarily clears the effective signer across an untrusted external call.
@@ -346,46 +331,30 @@ library LibExecutionContext {
 	/// @notice Returns the raw transient-storage signer value, ignoring the active marker.
 	/// @dev Callers wanting the effective signer should use signer() or configuredSigner().
 	///      This exists so boundary checks can assert the value slot is genuinely empty.
-	function transientSigner() internal view returns (address value) {
-		bytes32 slot = TRANSIENT_SIGNER_SLOT;
-		assembly ("memory-safe") {
-			value := tload(slot)
-		}
+	function transientSigner() internal view returns (address) {
+		return address(uint160(_transientLoad(TRANSIENT_SIGNER_SLOT)));
 	}
 
 	/// @dev Writes the signer value while leaving the active marker untouched, which is how a
 	///      suspended scope stays identifiable as transient with no signer installed.
 	function _setTransientSignerValue(address signerOrZero) private {
-		bytes32 slot = TRANSIENT_SIGNER_SLOT;
-		assembly ("memory-safe") {
-			tstore(slot, signerOrZero)
-		}
+		_transientStore(TRANSIENT_SIGNER_SLOT, uint256(uint160(signerOrZero)));
 	}
 
 	/// @dev Restores both pieces of a suspended signer scope. A trusted nested call may
 	///      legitimately end its own signer scope, clearing the shared active bit before
 	///      control returns to the outer boundary.
 	function _restoreTransientSigner(address signer_) private {
-		bytes32 signerSlot = TRANSIENT_SIGNER_SLOT;
-		bytes32 activeSlot = TRANSIENT_SIGNER_ACTIVE_SLOT;
-		assembly ("memory-safe") {
-			tstore(signerSlot, signer_)
-			tstore(activeSlot, TRANSIENT_SIGNER_ACTIVE)
-		}
+		_setTransientSignerValue(signer_);
+		_transientStore(TRANSIENT_SIGNER_ACTIVE_SLOT, TRANSIENT_SIGNER_ACTIVE);
 	}
 
 	function _setInstantLayerContext(uint256 context) private {
-		bytes32 slot = TRANSIENT_INSTANT_LAYER_CONTEXT_SLOT;
-		assembly ("memory-safe") {
-			tstore(slot, context)
-		}
+		_transientStore(TRANSIENT_INSTANT_LAYER_CONTEXT_SLOT, context);
 	}
 
-	function _instantLayerContext() private view returns (uint256 context) {
-		bytes32 slot = TRANSIENT_INSTANT_LAYER_CONTEXT_SLOT;
-		assembly ("memory-safe") {
-			context := tload(slot)
-		}
+	function _instantLayerContext() private view returns (uint256) {
+		return _transientLoad(TRANSIENT_INSTANT_LAYER_CONTEXT_SLOT);
 	}
 
 	/// @dev Snapshots are namespaced per caller so two trusted routers can hold suspended
@@ -393,6 +362,13 @@ library LibExecutionContext {
 	function _externalCallContextSlot(address caller) private pure returns (bytes32) {
 		return keccak256(abi.encode(EXTERNAL_CALL_CONTEXT_NAMESPACE, caller));
 	}
+
+	// ── The only EIP-1153 primitives in the core diamond ──────────────────────
+	// Every transient read and write above funnels through these two. Nothing else
+	// in contracts/core touches tload/tstore, which is what makes the PRE-CANCUN
+	// PORT in the header a two-function change rather than a rewrite. Keep it that
+	// way: new transient state should add a slot constant and a typed accessor that
+	// calls these, not another assembly block.
 
 	function _transientLoad(bytes32 slot) private view returns (uint256 value) {
 		assembly ("memory-safe") {
@@ -403,13 +379,6 @@ library LibExecutionContext {
 	function _transientStore(bytes32 slot, uint256 value) private {
 		assembly ("memory-safe") {
 			tstore(slot, value)
-		}
-	}
-
-	function _configLayout() private pure returns (ConfigLayout storage layout_) {
-		bytes32 slot = EXECUTION_CONTEXT_CONFIG_SLOT;
-		assembly ("memory-safe") {
-			layout_.slot := slot
 		}
 	}
 }

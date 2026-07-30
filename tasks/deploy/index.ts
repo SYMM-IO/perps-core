@@ -12,14 +12,12 @@ import { partyBTask } from "./partyB.js"
 import { signatureVerifierTask } from "./signatureVerifier.js"
 import { stablecoinTask } from "./stablecoin.js"
 import { grantSymbolManagerDiamondRolesTask, grantSymbolManagerOperatorRolesTask, symbolManagerTask } from "./symbolManager.js"
-import { configureTransientContextTask } from "./transientContext.js"
 import { upgradeProxyTask } from "./upgrade.js"
 import { checkDeploymentTask, verifyAllTask } from "./verify.js"
 
 export const deployTasks = [
 	accountLayerDiamondTask,
 	checkDeploymentTask,
-	configureTransientContextTask,
 	create2FactoryTask,
 	deployAllTask,
 	diamondTask,

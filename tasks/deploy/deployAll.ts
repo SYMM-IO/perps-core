@@ -1027,20 +1027,9 @@ async function setupSystem(
 		await send(alControlFacet.connect(deployer).grantRole(deployedContracts.instantLayer!, roleHash("SIGNER_SETTER_ROLE")), "grantRole")
 	})
 
-	// Keep the deployed InstantLayer address and its legacy setter calldata compatible
-	// with the transient execution context. These mappings are separately
-	// namespaced and do not alter any existing quote, position, or signer storage.
-	await checkpointedStep(checkpoint, "setup.ilTransientOnDiamond", "Enabling the legacy execution-context adapter on Diamond", async () => {
-		if (!(await controlFacet.legacyExecutionContextAdapterEnabled(deployedContracts.instantLayer!))) {
-			await controlFacet.connect(deployer).setLegacyExecutionContextAdapter(deployedContracts.instantLayer!, true)
-		}
-	})
-
-	await checkpointedStep(checkpoint, "setup.ilTransientOnAL", "Enabling the legacy signer adapter on AccountLayerDiamond", async () => {
-		if (!(await alControlFacet.legacySignerAdapterEnabled(deployedContracts.instantLayer!))) {
-			await alControlFacet.connect(deployer).setLegacySignerAdapter(deployedContracts.instantLayer!, true)
-		}
-	})
+	// No transient-context configuration step: the legacy setCallFromInstantLayer /
+	// setInstantOpenMode / setSigner selectors route into EIP-1153 state unconditionally,
+	// so deployed and newly deployed callers already share one mechanism.
 
 	// Whitelist Symmio Core
 	await checkpointedStep(checkpoint, "setup.alWhitelistSymmio", "Whitelisting Symmio Core on AccountLayerDiamond", async () => {

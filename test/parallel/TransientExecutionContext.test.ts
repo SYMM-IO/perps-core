@@ -24,20 +24,15 @@ async function setupTransientContextFixture() {
 }
 
 describe("Transient execution context", function () {
-	it("keeps persistent callers operational and bounds the Cancun context lifetime", async function () {
+	it("leaves the legacy and native selector sequences observably identical, and bounds the context lifetime", async function () {
 		const { context, probe } = await loadFixture(setupTransientContextFixture)
 		const core = context.diamond
 		const accountLayer = context.accountLayerDiamond
 		const owner = context.signers.user.address
 		const account = context.signers.user2.address
 
-		await probe.runPersistentContext(core, accountLayer, owner, account, 2)
-		expect(await context.viewFacet.isCallFromInstantLayer()).to.equal(false)
-		expect(await context.viewFacet.getSigner()).to.equal(context.signers.admin.address)
-		expect(await context.alViewFacet.getSigner()).to.equal(context.signers.admin.address)
-
-		await context.controlFacet.setLegacyExecutionContextAdapter(await probe.getAddress(), true)
-		await context.alControlFacet.setLegacySignerAdapter(await probe.getAddress(), true)
+		// No per-caller configuration exists any more: the legacy selectors route into
+		// EIP-1153 state on their own, so this is the deployed-InstantLayer path verbatim.
 		await probe.runPersistentContext(core, accountLayer, owner, account, 2)
 		expect(await context.viewFacet.isCallFromInstantLayer()).to.equal(false)
 		expect(await context.viewFacet.getSigner()).to.equal(context.signers.admin.address)
@@ -62,11 +57,10 @@ describe("Transient execution context", function () {
 		expect(await context.viewFacet.isCallFromInstantLayer()).to.equal(false)
 	})
 
-	it("applies the same checked lifecycle to configured legacy selectors", async function () {
+	it("applies the same checked lifecycle to the legacy selectors, with no configuration step", async function () {
 		const { context, probe } = await loadFixture(setupTransientContextFixture)
 		const core = context.diamond
 		const executionContext = await ethers.getContractAt("ExecutionContextFacet", core)
-		await context.controlFacet.setLegacyExecutionContextAdapter(await probe.getAddress(), true)
 
 		await expect(probe.legacyBeginTwice(core)).to.be.revertedWithCustomError(executionContext, "TransientContextAlreadyActive")
 		await expect(probe.legacyEndWithoutBegin(core)).to.be.revertedWithCustomError(executionContext, "TransientContextNotActive")
@@ -86,24 +80,26 @@ describe("Transient execution context", function () {
 		expect(await context.viewFacet.isCallFromInstantLayer()).to.equal(false)
 	})
 
-	it("uses less gas with the unchanged legacy selectors and event stream", async function () {
+	// The old persistent-vs-transient gas comparison is gone: these selectors no longer have a
+	// persistent path to measure against. What is still worth tracking is that the deployed
+	// legacy sequence costs about the same as the native one, since both now avoid the SSTOREs.
+	it("costs comparable gas through the legacy selectors and the native ones", async function () {
 		const { context, probe } = await loadFixture(setupTransientContextFixture)
 		const args = [context.diamond, context.accountLayerDiamond, context.signers.user.address, context.signers.user2.address, 2] as const
 
-		const persistentReceipt = await (await probe.runPersistentContext(...args)).wait()
-		await context.controlFacet.setLegacyExecutionContextAdapter(await probe.getAddress(), true)
-		await context.alControlFacet.setLegacySignerAdapter(await probe.getAddress(), true)
-		const compatibleReceipt = await (await probe.runPersistentContext(...args)).wait()
-		if (!persistentReceipt || !compatibleReceipt) throw new Error("Missing context benchmark receipt")
+		const legacyReceipt = await (await probe.runPersistentContext(...args)).wait()
+		const nativeReceipt = await (await probe.runTransientContext(...args)).wait()
+		if (!legacyReceipt || !nativeReceipt) throw new Error("Missing context benchmark receipt")
 
-		const saved = persistentReceipt.gasUsed - compatibleReceipt.gasUsed
-		const externallyVisibleLogs = (receipt: typeof persistentReceipt) =>
-			receipt.logs.map(log => ({ address: log.address, topics: [...log.topics], data: log.data }))
-		expect(externallyVisibleLogs(compatibleReceipt)).to.deep.equal(externallyVisibleLogs(persistentReceipt))
 		console.log(
-			`TRANSIENT_CONTEXT_GAS ${JSON.stringify({ persistent: persistentReceipt.gasUsed.toString(), compatibleLegacy: compatibleReceipt.gasUsed.toString(), saved: saved.toString() })}`,
+			`TRANSIENT_CONTEXT_GAS ${JSON.stringify({ legacySelectors: legacyReceipt.gasUsed.toString(), nativeSelectors: nativeReceipt.gasUsed.toString() })}`,
 		)
-		expect(compatibleReceipt.gasUsed).to.be.lessThan(persistentReceipt.gasUsed)
+
+		// The legacy route makes more external calls (two setters per boundary instead of one),
+		// so it is expected to be slightly dearer -- but only by call overhead, never by a
+		// reintroduced cold SSTORE, which would put it tens of thousands of gas above native.
+		expect(legacyReceipt.gasUsed).to.be.lessThan(nativeReceipt.gasUsed + 30_000n)
+		expect(await context.viewFacet.isCallFromInstantLayer()).to.equal(false)
 	})
 
 	it("keeps existing InstantLayer EIP-712 signatures valid at the same verifying address", async function () {
@@ -112,8 +108,6 @@ describe("Transient execution context", function () {
 		const user = context.signers.user
 
 		await context.controlFacet.grantRole(instantLayerAddress, role("INSTANT_LAYER_ROLE"))
-		await context.controlFacet.setLegacyExecutionContextAdapter(instantLayerAddress, true)
-		await context.alControlFacet.setLegacySignerAdapter(instantLayerAddress, true)
 		await context.instantLayer.setAccountLayer(context.accountLayerDiamond)
 		await context.instantLayer.setTransientContextEnabled(false)
 
@@ -150,14 +144,14 @@ describe("Transient execution context", function () {
 		const { context, probe } = await loadFixture(setupTransientContextFixture)
 		const admin = context.signers.admin
 
+		// Core still has a persistent signer field and the two mechanisms stay exclusive there.
 		await context.controlFacet.connect(admin).setSigner(context.signers.user.address)
 		await expect(context.controlFacet.connect(admin).setTransientSigner(context.signers.user2.address)).to.be.reverted
 		await context.controlFacet.connect(admin).setSigner(ethers.ZeroAddress)
 
-		await context.alControlFacet.connect(admin).setSigner(context.signers.user.address)
-		await expect(context.alControlFacet.connect(admin).setTransientSigner(context.signers.user2.address)).to.be.reverted
-		await context.alControlFacet.connect(admin).setSigner(ethers.ZeroAddress)
-
+		// AccountLayer's setSigner now installs a transient scope rather than a persistent signer,
+		// so exclusivity there is enforced against a live scope instead -- see the probe below,
+		// which performs both writes inside one transaction.
 		await expect(
 			probe.setCoreTransientThenPersistent(context.diamond, context.signers.user.address, context.signers.user2.address),
 		).to.be.revertedWith("ControlFacet: Transient signer is set")

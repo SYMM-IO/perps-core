@@ -13,8 +13,6 @@ describe("ExecutionContextFacet deployment", function () {
 		const legacySelector = context.controlFacet.interface.getFunction("setCallFromInstantLayer")!.selector
 		const pauseSelector = context.pauseControlFacet.interface.getFunction("pauseGlobal")!.selector
 		const nativeFunctions = [
-			"setLegacyExecutionContextAdapter",
-			"legacyExecutionContextAdapterEnabled",
 			"beginInstantLayerExecution",
 			"endInstantLayerExecution",
 			"suspendExecutionContextForExternalCall",
@@ -41,15 +39,18 @@ describe("ExecutionContextFacet deployment", function () {
 		expect(executionSize).to.be.lessThanOrEqual(24_576)
 
 		const focusedEvents = executionContext.interface.fragments.filter(fragment => fragment.type === "event").map(fragment => fragment.name)
-		expect(focusedEvents).to.have.members(["LegacyExecutionContextAdapterUpdated", "SignerSet"])
-		expect(focusedEvents).to.have.length(2)
+		expect(focusedEvents).to.have.members(["SignerSet"])
+		expect(focusedEvents).to.have.length(1)
+	})
 
-		const caller = context.signers.others[0].address
-		await expect(context.controlFacet.setLegacyExecutionContextAdapter(caller, true))
-			.to.emit(executionContext, "LegacyExecutionContextAdapterUpdated")
-			.withArgs(caller, true)
-		expect(await context.controlFacet.legacyExecutionContextAdapterEnabled(caller)).to.equal(true)
-		await context.controlFacet.setLegacyExecutionContextAdapter(caller, false)
-		expect(await context.controlFacet.legacyExecutionContextAdapterEnabled(caller)).to.equal(false)
+	it("exposes no per-caller adapter configuration, since legacy selectors route to transient state unconditionally", async function () {
+		const context = await loadFixture(initializeFixture)
+		const executionContext = await ethers.getContractAt("IExecutionContextFacet", context.diamond)
+
+		const names = executionContext.interface.fragments
+			.filter(fragment => fragment.type === "function")
+			.map(fragment => (fragment as { name: string }).name)
+		expect(names).to.not.include("setLegacyExecutionContextAdapter")
+		expect(names).to.not.include("legacyExecutionContextAdapterEnabled")
 	})
 })

@@ -9,14 +9,6 @@ import { IExecutionContextEvents } from "./IExecutionContextEvents.sol";
 /// @notice Transient execution authority exposed by the core Diamond.
 /// @dev Every selector in this interface is implemented by ExecutionContextFacet.
 interface IExecutionContextFacet is IExecutionContextEvents {
-	/// @notice Routes an older InstantLayer's existing setter sequence through transient storage.
-	function setLegacyExecutionContextAdapter(address legacyInstantLayer, bool enabled) external;
-
-	/// @notice Returns whether the compatibility adapter is enabled for an older InstantLayer.
-	/// @param legacyInstantLayer The InstantLayer address to query.
-	/// @return Whether that caller's legacy setter sequence is backed by transient storage.
-	function legacyExecutionContextAdapterEnabled(address legacyInstantLayer) external view returns (bool);
-
 	/// @notice Opens the transient InstantLayer authority scope for the whole batch.
 	/// @dev Callable only by the InstantLayer role, and only while no persistent instant flag is
 	///      set. Reverts if a scope is already open, so two nested batches cannot share authority.
