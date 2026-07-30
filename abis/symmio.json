@@ -3170,25 +3170,6 @@
     },
     {
         "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "legacyInstantLayer",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "bool",
-                "name": "enabled",
-                "type": "bool"
-            }
-        ],
-        "name": "LegacyExecutionContextAdapterUpdated",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
         "inputs": [],
         "name": "LegacyFundingDeprecated",
         "type": "event"
@@ -16050,45 +16031,8 @@
         "type": "function"
     },
     {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "legacyInstantLayer",
-                "type": "address"
-            }
-        ],
-        "name": "legacyExecutionContextAdapterEnabled",
-        "outputs": [
-            {
-                "internalType": "bool",
-                "name": "",
-                "type": "bool"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
         "inputs": [],
         "name": "restoreExecutionContextAfterExternalCall",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "legacyInstantLayer",
-                "type": "address"
-            },
-            {
-                "internalType": "bool",
-                "name": "enabled",
-                "type": "bool"
-            }
-        ],
-        "name": "setLegacyExecutionContextAdapter",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"

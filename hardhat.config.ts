@@ -268,6 +268,15 @@ export default defineConfig({
 			},
 		},
 	},
+	// evmVersion "cancun" is load-bearing, not incidental. LibExecutionContext and
+	// LibAccountLayerSigner emit EIP-1153 tload/tstore, and solc rejects those below cancun
+	// with a hard error and no bytecode (verified on 0.8.34, 2026-07) rather than silently
+	// producing something that reverts on chain.
+	// Every chain we target supports Cancun except COTI (chain 2632500), which is pre-Shanghai
+	// and rejects PUSH0 too -- so it is broken by these settings independently of the transient
+	// execution context, and would need its own build at evmVersion "paris" together with
+	// persistent-only variants of those two libraries. Full checklist in the PRE-CANCUN PORT
+	// block at the top of contracts/core/libraries/LibExecutionContext.sol.
 	solidity: {
 		profiles: {
 			default: {

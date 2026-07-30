@@ -22,8 +22,6 @@ interface IControlFacetEvents {
 	/// @param signer The signer the scope applies to
 	/// @param scope Canonical sub-account the session is confined to, or address(0) when unconfined
 	event SignerScopeUpdated(address indexed signer, address indexed scope);
-	/// @notice Emitted when a legacy setSigner caller's storage adapter configuration changes.
-	event LegacySignerAdapterUpdated(address indexed legacyRouter, bool enabled);
 	/// @notice Emitted when the Symmio fee receiver address is changed
 	event SymmioFeeReceiverUpdated(address indexed oldReceiver, address indexed newReceiver);
 	/// @notice Emitted when a Symmio core diamond is added to or removed from the whitelist
@@ -106,16 +104,6 @@ interface IControlFacet is IControlFacetEvents, IAccountLayerErrors {
 	/// @param scope Canonical sub-account to confine the session to (address(0) for unconfined)
 	function setTransientSignerScoped(address signerOrZero, address scope) external;
 
-	/// @notice Configures a legacy router's setSigner calls to use transient storage.
-	/// @dev One-time administration, not a runtime command: it selects how that router's calls
-	///      are stored. It neither installs a signer nor authorizes the router.
-	/// @param legacyRouter The router whose setSigner calls are adapted
-	/// @param enabled True to back that router's calls with transient storage
-	function setLegacySignerAdapter(address legacyRouter, bool enabled) external;
-
-	/// @notice Reports the configured storage mechanism for a legacy setSigner caller.
-	/// @dev This does not report whether the caller is currently executing.
-	function legacySignerAdapterEnabled(address legacyRouter) external view returns (bool);
 
 	// ==================== Affiliate Configuration ====================
 

@@ -14,28 +14,6 @@ import { LibExecutionContext } from "../../libraries/LibExecutionContext.sol";
 /// @dev Legacy setCallFromInstantLayer, setInstantOpenMode, and setSigner selectors remain
 ///      in ControlFacet and adapt into the same LibExecutionContext state.
 contract ExecutionContextFacet is Accessibility, IExecutionContextFacet {
-	/// @notice Configures an existing InstantLayer caller to use transient state while
-	///         retaining its deployed true/false setter sequence and EIP-712 verifying address.
-	function setLegacyExecutionContextAdapter(address legacyInstantLayer, bool enabled) external onlyRole(LibAccessibility.PROTOCOL_CONFIG_ROLE) {
-		require(legacyInstantLayer != address(0), "ControlFacet: Zero address");
-		if (enabled) {
-			GlobalAppStorage.Layout storage globalLayout = GlobalAppStorage.layout();
-			require(
-				!globalLayout.callFromInstantLayer && !globalLayout.instantOpenMode && globalLayout.signer == address(0),
-				"ControlFacet: Persistent execution context is set"
-			);
-		}
-		LibExecutionContext.setLegacyExecutionContextAdapter(legacyInstantLayer, enabled);
-		emit LegacyExecutionContextAdapterUpdated(legacyInstantLayer, enabled);
-	}
-
-	/// @notice Reports how a configured InstantLayer's legacy setters are stored.
-	/// @dev This is a static configuration flag, not a report of whether that caller is
-	///      currently mid-execution.
-	function legacyExecutionContextAdapterEnabled(address legacyInstantLayer) external view returns (bool) {
-		return LibExecutionContext.legacyExecutionContextAdapterEnabled(legacyInstantLayer);
-	}
-
 	/// @notice Opens one explicit InstantLayer authority scope for the current transaction.
 	function beginInstantLayerExecution(bool instantOpenMode) external onlyRole(LibAccessibility.INSTANT_LAYER_ROLE) {
 		GlobalAppStorage.Layout storage globalLayout = GlobalAppStorage.layout();
