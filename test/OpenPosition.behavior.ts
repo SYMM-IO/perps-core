@@ -16,7 +16,7 @@ import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/re
 import { OpenPositionValidator } from "./models/validators/OpenPositionValidator.js"
 import { decimal, getQuoteQuantity, pausePartyB } from "./utils/Common.js"
 import { migratePartyBToCross } from "./utils/CrossPartyB.js"
-import { getDummyPairUpnlAndPriceSig, getDummyPairUpnlAndPricesSig } from "./utils/SignatureUtils.js"
+import { getDummyPairUpnlAndPriceSig, getDummyPairUpnlAndPricesSig, getDummySingleUpnlAndPriceSig } from "./utils/SignatureUtils.js"
 
 export function shouldBehaveLikeOpenPosition(): void {
 	let context: RunContext, user: User, user2: User, hedger: Hedger, hedger2: Hedger
@@ -257,6 +257,60 @@ export function shouldBehaveLikeOpenPosition(): void {
 			})
 		})
 
+		it("Should refund excess provisional market fee when executed fee is lower", async function () {
+			const requestedOpenPrice = decimal(1n)
+			const provisionalMarketPrice = decimal(1n)
+			const openedPrice = decimal(9n, 17)
+			const quoteId = await user2.sendQuote(
+				marketQuoteRequestBuilder().price(requestedOpenPrice).upnlSig(getDummySingleUpnlAndPriceSig(provisionalMarketPrice)).build(),
+			)
+			await hedger.lockQuote(quoteId)
+
+			const quoteBeforeOpen = await context.viewFacetQuote.getQuote(quoteId)
+			const feeCollector = await context.viewFacet.getFeeCollector(quoteBeforeOpen.affiliate)
+			const feeCollectorBefore = await context.viewFacet.balanceOf(feeCollector)
+			const allocatedBefore = (await user2.getBalanceInfo()).allocatedBalances
+			const expectedReservedFee = (quoteBeforeOpen.quantity * quoteBeforeOpen.marketPrice * quoteBeforeOpen.tradingFee) / 10n ** 36n
+			const expectedExecutedFee = (quoteBeforeOpen.quantity * openedPrice * quoteBeforeOpen.tradingFee) / 10n ** 36n
+
+			await hedger.openPosition(
+				quoteId,
+				marketOpenRequestBuilder().filledAmount(quoteBeforeOpen.quantity).openPrice(openedPrice).price(provisionalMarketPrice).build(),
+			)
+
+			const feeCollectorAfter = await context.viewFacet.balanceOf(feeCollector)
+			const allocatedAfter = (await user2.getBalanceInfo()).allocatedBalances
+			expect(feeCollectorAfter - feeCollectorBefore).to.equal(expectedExecutedFee)
+			expect(allocatedAfter - allocatedBefore).to.equal(expectedReservedFee - expectedExecutedFee)
+		})
+
+		it("Should debit the market fee shortfall when executed fee is higher", async function () {
+			const requestedOpenPrice = decimal(1n)
+			const provisionalMarketPrice = decimal(9n, 17)
+			const openedPrice = decimal(1n)
+			const quoteId = await user2.sendQuote(
+				marketQuoteRequestBuilder().price(requestedOpenPrice).upnlSig(getDummySingleUpnlAndPriceSig(provisionalMarketPrice)).build(),
+			)
+			await hedger.lockQuote(quoteId)
+
+			const quoteBeforeOpen = await context.viewFacetQuote.getQuote(quoteId)
+			const feeCollector = await context.viewFacet.getFeeCollector(quoteBeforeOpen.affiliate)
+			const feeCollectorBefore = await context.viewFacet.balanceOf(feeCollector)
+			const allocatedBefore = (await user2.getBalanceInfo()).allocatedBalances
+			const expectedReservedFee = (quoteBeforeOpen.quantity * quoteBeforeOpen.marketPrice * quoteBeforeOpen.tradingFee) / 10n ** 36n
+			const expectedExecutedFee = (quoteBeforeOpen.quantity * openedPrice * quoteBeforeOpen.tradingFee) / 10n ** 36n
+
+			await hedger.openPosition(
+				quoteId,
+				marketOpenRequestBuilder().filledAmount(quoteBeforeOpen.quantity).openPrice(openedPrice).price(provisionalMarketPrice).build(),
+			)
+
+			const feeCollectorAfter = await context.viewFacet.balanceOf(feeCollector)
+			const allocatedAfter = (await user2.getBalanceInfo()).allocatedBalances
+			expect(feeCollectorAfter - feeCollectorBefore).to.equal(expectedExecutedFee)
+			expect(allocatedBefore - allocatedAfter).to.equal(expectedExecutedFee - expectedReservedFee)
+		})
+
 		it("Should check sig when not bind", async function () {
 			await expect(
 				hedger.openPosition(
@@ -318,6 +372,43 @@ export function shouldBehaveLikeOpenPosition(): void {
 			expect(afterNonceA).to.equal(beforeNonceA + 1n)
 			expect(afterNonceB).to.equal(beforeNonceB + 1n)
 			expect(afterNonceBCross).to.equal(beforeNonceBCross + 1n)
+		})
+
+		it("Should charge the executed market fee in bind mode even when the provisional market price is zero", async function () {
+			await hedger.openPosition(1)
+			await user.requestToCancelQuote(2)
+			await hedger2.acceptCancelRequest(2)
+			await user.requestToCancelQuote(3)
+			await user.requestToCancelQuote(4)
+
+			await context.controlFacet
+				.connect(context.signers.admin)
+				.grantRole(context.signers.admin, ethers.keccak256(toUtf8Bytes("BINDABLE_SETTER_ROLE")))
+			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, true)
+			await context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
+
+			const quoteId = await user.sendQuote(
+				marketQuoteRequestBuilder()
+					.partyBWhiteList([context.signers.hedger.address])
+					.price(decimal(2n))
+					.upnlSig(getDummySingleUpnlAndPriceSig(0n))
+					.build(),
+			)
+			await hedger.lockQuote(quoteId)
+
+			const quoteBeforeOpen = await context.viewFacetQuote.getQuote(quoteId)
+			const feeCollector = await context.viewFacet.getFeeCollector(quoteBeforeOpen.affiliate)
+			const feeCollectorBefore = await context.viewFacet.balanceOf(feeCollector)
+			const allocatedBefore = (await user.getBalanceInfo()).allocatedBalances
+			const openedPrice = decimal(15n, 17)
+			const expectedExecutedFee = (quoteBeforeOpen.quantity * openedPrice * quoteBeforeOpen.tradingFee) / 10n ** 36n
+
+			await hedger.openPosition(quoteId, marketOpenRequestBuilder().filledAmount(quoteBeforeOpen.quantity).openPrice(openedPrice).price(0n).build())
+
+			const feeCollectorAfter = await context.viewFacet.balanceOf(feeCollector)
+			const allocatedAfter = (await user.getBalanceInfo()).allocatedBalances
+			expect(feeCollectorAfter - feeCollectorBefore).to.equal(expectedExecutedFee)
+			expect(allocatedBefore - allocatedAfter).to.equal(expectedExecutedFee)
 		})
 
 		describe("Connections: Is Symbol Allowed For PartyA)", function () {

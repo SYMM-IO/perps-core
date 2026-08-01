@@ -379,6 +379,22 @@ library LibAccount {
 		_decreaseReservedOpenTradingFee(partyA, fee);
 	}
 
+	/// @notice Applies the delta between provisional and executed open trading fee to PartyA's allocated balance.
+	/// @dev Reservation accounting is handled separately so pending/locked quote semantics stay provisional.
+	function trueUpOpenTradingFee(address partyA, uint256 provisionalFee, uint256 executedFee) internal {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		if (executedFee > provisionalFee) {
+			uint256 delta = executedFee - provisionalFee;
+			require(accountLayout.allocatedBalances[partyA] >= delta, "LibAccount: Insufficient allocated balance for fee true-up");
+			accountLayout.allocatedBalances[partyA] -= delta;
+			emit SharedEvents.BalanceChangePartyA(partyA, delta, SharedEvents.BalanceChangeType.PLATFORM_FEE_OUT);
+		} else if (provisionalFee > executedFee) {
+			uint256 delta = provisionalFee - executedFee;
+			accountLayout.allocatedBalances[partyA] += delta;
+			emit SharedEvents.BalanceChangePartyA(partyA, delta, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
+		}
+	}
+
 	/// @notice Refunds the open trading fee for a quote back to Party A's allocated balance.
 	/// @param quoteId The ID of the quote whose fee is being refunded.
 	/// @param partyA The address of Party A receiving the refund.

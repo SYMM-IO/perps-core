@@ -10,10 +10,10 @@ import { QuoteStatus } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
-import { limitOpenRequestBuilder, OpenRequest } from "./models/requestModels/OpenRequest.js"
-import { limitQuoteRequestBuilder, QuoteRequest } from "./models/requestModels/QuoteRequest.js"
+import { limitOpenRequestBuilder, marketOpenRequestBuilder, OpenRequest } from "./models/requestModels/OpenRequest.js"
+import { limitQuoteRequestBuilder, marketQuoteRequestBuilder, QuoteRequest } from "./models/requestModels/QuoteRequest.js"
 import { decimal, getBlockTimestamp } from "./utils/Common.js"
-import { getDummyPairUpnlAndPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
+import { getDummyPairUpnlAndPriceSig, getDummySingleUpnlAndPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
 
 // ════════════════════════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -188,7 +188,7 @@ export function shouldBehaveLikeInstantOpenMode(): void {
 	})
 
 	// Helper: execute send+lock+open template
-	async function executeSendLockOpen(): Promise<void> {
+	async function executeSendLockOpen() {
 		const partyBAddress = await context.symmioPartyB.getAddress()
 
 		const sendOp = createSignedOperation(
@@ -206,7 +206,7 @@ export function shouldBehaveLikeInstantOpenMode(): void {
 		const lockSig = await signOperation(partyB1.signer, domain, types, lockOp)
 		const openSig = await signOperation(partyB1.signer, domain, types, openOp)
 
-		await context.instantLayer.executeTemplate(templateId, [sendOp, lockOp, openOp], [sendSig, lockSig, openSig], [[], [], []], [[], [], []])
+		return await context.instantLayer.executeTemplate(templateId, [sendOp, lockOp, openOp], [sendSig, lockSig, openSig], [[], [], []], [[], [], []])
 	}
 
 	// ──────────────────────────────────────────────────────────────────────────
@@ -369,6 +369,82 @@ export function shouldBehaveLikeInstantOpenMode(): void {
 
 			const feeCollectorAfter = await context.viewFacet.balanceOf(feeCollector)
 			expect(feeCollectorAfter).to.be.gt(feeCollectorBefore)
+		})
+
+		it("should true up market fee to the executed amount in instantOpenMode", async function () {
+			const MockHook = await ethers.getContractFactory("MockHook")
+			const affiliateHook = await MockHook.deploy()
+			await affiliateHook.waitForDeployment()
+			await context.controlFacet.connect(context.signers.admin).registerHook(context.accountManager, await affiliateHook.getAddress())
+
+			const provisionalMarketPrice = decimal(9n, 17)
+			const openedPrice = decimal(11n, 17)
+			requestSendQuote = marketQuoteRequestBuilder()
+				.partyBWhiteList([await context.symmioPartyB.getAddress()])
+				.affiliate(context.accountManager)
+				.price(decimal(12n, 17))
+				.upnlSig(getDummySingleUpnlAndPriceSig(provisionalMarketPrice))
+				.build()
+			requestOpenQuote = marketOpenRequestBuilder()
+				.filledAmount(requestSendQuote.quantity)
+				.openPrice(openedPrice)
+				.price(provisionalMarketPrice)
+				.build()
+
+			quoteCallData = context.partyAFacet.interface.encodeFunctionData("sendQuoteWithAffiliate", [
+				requestSendQuote.partyBWhiteList,
+				requestSendQuote.symbolId,
+				requestSendQuote.positionType,
+				requestSendQuote.orderType,
+				requestSendQuote.price,
+				requestSendQuote.quantity,
+				requestSendQuote.cva,
+				requestSendQuote.lf,
+				requestSendQuote.partyAmm,
+				requestSendQuote.partyBmm,
+				requestSendQuote.maxFundingRate,
+				await requestSendQuote.deadline,
+				requestSendQuote.affiliate,
+				await requestSendQuote.upnlSig,
+			])
+			openQuoteCallData = context.partyBPositionActionsFacet.interface.encodeFunctionData("openPosition", [
+				0,
+				requestOpenQuote.filledAmount,
+				requestOpenQuote.openPrice,
+				await getDummyPairUpnlAndPriceSig(BigInt(requestOpenQuote.price)),
+			])
+
+			const feeCollector = await context.viewFacet.getFeeCollector(context.accountManager)
+			const feeCollectorBefore = await context.viewFacet.balanceOf(feeCollector)
+			const allocatedBefore = (await context.viewFacet.balanceInfoOfPartyA(accounts[0].accountAddress))[0]
+			const eventInterface = new ethers.Interface([
+				"event TradingFeeCharged(uint256 indexed quoteId,uint256 fee,address partyA,address partyB,uint256 symbolId,address affiliate,uint8 feeType)",
+			])
+
+			await context.instantLayer.setTemplateInstantOpenMode(templateId, true)
+			const tx = await executeSendLockOpen()
+			const receipt = await tx.wait()
+
+			const quote = await context.viewFacetQuote.getQuote(1)
+			const expectedExecutedFee = (quote.quantity * openedPrice * quote.tradingFee) / 10n ** 36n
+			const feeCollectorAfter = await context.viewFacet.balanceOf(feeCollector)
+			const allocatedAfter = (await context.viewFacet.balanceInfoOfPartyA(quote.partyA))[0]
+			expect(allocatedBefore - allocatedAfter).to.equal(expectedExecutedFee)
+			expect(feeCollectorAfter - feeCollectorBefore).to.equal(expectedExecutedFee)
+
+			const [, hookFeeAmount] = await affiliateHook.getLastOpenFeeCall()
+			expect(hookFeeAmount).to.equal(expectedExecutedFee)
+
+			const feeEvent = receipt.logs
+				.map(log => {
+					try {
+						return eventInterface.parseLog(log)
+					} catch {
+						return null
+					}
+				})
+				.find(log => log?.name === "TradingFeeCharged")
+			expect(feeEvent?.args.fee).to.equal(expectedExecutedFee)
 		})
 	})
 
