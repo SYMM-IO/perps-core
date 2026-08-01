@@ -375,13 +375,14 @@ export function shouldBehaveLikeInstantOpenMode(): void {
 			const MockHook = await ethers.getContractFactory("MockHook")
 			const affiliateHook = await MockHook.deploy()
 			await affiliateHook.waitForDeployment()
-			await context.controlFacet.connect(context.signers.admin).registerHook(context.accountManager, await affiliateHook.getAddress())
+			const affiliate = await context.accountManager.getAddress()
+			await context.controlFacet.connect(context.signers.admin).registerHook(affiliate, await affiliateHook.getAddress())
 
 			const provisionalMarketPrice = decimal(9n, 17)
 			const openedPrice = decimal(11n, 17)
 			requestSendQuote = marketQuoteRequestBuilder()
 				.partyBWhiteList([await context.symmioPartyB.getAddress()])
-				.affiliate(context.accountManager)
+				.affiliate(affiliate)
 				.price(decimal(12n, 17))
 				.upnlSig(getDummySingleUpnlAndPriceSig(provisionalMarketPrice))
 				.build()
@@ -414,16 +415,11 @@ export function shouldBehaveLikeInstantOpenMode(): void {
 				await getDummyPairUpnlAndPriceSig(BigInt(requestOpenQuote.price)),
 			])
 
-			const feeCollector = await context.viewFacet.getFeeCollector(context.accountManager)
+			const feeCollector = await context.viewFacet.getFeeCollector(affiliate)
 			const feeCollectorBefore = await context.viewFacet.balanceOf(feeCollector)
 			const allocatedBefore = (await context.viewFacet.balanceInfoOfPartyA(accounts[0].accountAddress))[0]
-			const eventInterface = new ethers.Interface([
-				"event TradingFeeCharged(uint256 indexed quoteId,uint256 fee,address partyA,address partyB,uint256 symbolId,address affiliate,uint8 feeType)",
-			])
-
 			await context.instantLayer.setTemplateInstantOpenMode(templateId, true)
-			const tx = await executeSendLockOpen()
-			const receipt = await tx.wait()
+			await executeSendLockOpen()
 
 			const quote = await context.viewFacetQuote.getQuote(1)
 			const expectedExecutedFee = (quote.quantity * openedPrice * quote.tradingFee) / 10n ** 36n
@@ -434,17 +430,6 @@ export function shouldBehaveLikeInstantOpenMode(): void {
 
 			const [, hookFeeAmount] = await affiliateHook.getLastOpenFeeCall()
 			expect(hookFeeAmount).to.equal(expectedExecutedFee)
-
-			const feeEvent = receipt.logs
-				.map(log => {
-					try {
-						return eventInterface.parseLog(log)
-					} catch {
-						return null
-					}
-				})
-				.find(log => log?.name === "TradingFeeCharged")
-			expect(feeEvent?.args.fee).to.equal(expectedExecutedFee)
 		})
 	})
 

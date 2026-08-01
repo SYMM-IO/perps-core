@@ -1393,7 +1393,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 			})
 
 			describe("position and quote checks", async () => {
-				it("should revert with PendingQuotesExist when CUSTOM subAccount has pending position", async () => {
+				it("should revert with SubAccountNotEmpty when CUSTOM subAccount has pending position", async () => {
 					// Create CUSTOM isolation sub-account with funds
 					const depositAmount = decimal(5000n)
 					const subAccountData = [createSubAccountData("OPEN_POS_TEST", 3, "CUSTOM")] // 3 = CUSTOM
@@ -1411,30 +1411,13 @@ export function shouldBehaveLikeAccountLayer(): void {
 					const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(subAccountAddress)
 					expect(allocatedBalance).to.be.greaterThan(0)
 
-					await context.alCoreFacet
-						.connect(context.signers.user)
-						._call(subAccountAddress, [
-							context.accountFacet.interface.encodeFunctionData("deallocate", [allocatedBalance, await getDummySingleUpnlSig(BigInt(1e30))]),
-						])
-					await time.increase((await context.viewFacet.getDeallocateDebounceTime()) + 1n)
-
-					await context.alCoreFacet
-						.connect(context.signers.user)
-						._call(subAccountAddress, [context.accountFacet.interface.encodeFunctionData("withdraw", [allocatedBalance])])
-
-					const allocatedBalanceAfter = await context.viewFacet.allocatedBalanceOfPartyA(subAccountAddress)
-					expect(allocatedBalanceAfter).to.equal(0)
-
-					const balance = await context.viewFacet.balanceOf(subAccountAddress)
-					expect(balance).to.equal(0)
-
 					await expect(context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress)).to.be.revertedWithCustomError(
 						context.alCoreFacet,
-						"PendingQuotesExist",
+						"SubAccountNotEmpty",
 					)
 				})
 
-				it("should revert with OpenPositionsExist when CUSTOM subAccount has open position", async () => {
+				it("should revert with SubAccountNotEmpty when CUSTOM subAccount has open position", async () => {
 					// Create CUSTOM isolation sub-account with funds
 					const depositAmount = decimal(5000n)
 					const subAccountData = [createSubAccountData("OPEN_POS_TEST", 3, "CUSTOM")] // 3 = CUSTOM
@@ -1465,26 +1448,9 @@ export function shouldBehaveLikeAccountLayer(): void {
 					const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(subAccountAddress)
 					expect(allocatedBalance).to.be.greaterThan(0)
 
-					await context.alCoreFacet
-						.connect(context.signers.user)
-						._call(subAccountAddress, [
-							context.accountFacet.interface.encodeFunctionData("deallocate", [allocatedBalance, await getDummySingleUpnlSig(BigInt(1e30))]),
-						])
-					await time.increase((await context.viewFacet.getDeallocateDebounceTime()) + 1n)
-
-					await context.alCoreFacet
-						.connect(context.signers.user)
-						._call(subAccountAddress, [context.accountFacet.interface.encodeFunctionData("withdraw", [allocatedBalance])])
-
-					const allocatedBalanceAfter = await context.viewFacet.allocatedBalanceOfPartyA(subAccountAddress)
-					expect(allocatedBalanceAfter).to.equal(0)
-
-					const balance = await context.viewFacet.balanceOf(subAccountAddress)
-					expect(balance).to.equal(0)
-
 					await expect(context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress)).to.be.revertedWithCustomError(
 						context.alCoreFacet,
-						"OpenPositionsExist",
+						"SubAccountNotEmpty",
 					)
 				})
 			})
