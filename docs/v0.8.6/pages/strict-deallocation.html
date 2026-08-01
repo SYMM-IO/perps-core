@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Strict Deallocation - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+	</head>
+	<body class="doc-page">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="doc-topbar">
+			<a class="brand" href="../index.html"
+				><span class="brand-mark">8.6</span><span><strong>Symmio Docs</strong><small>v0.8.6 reference</small></span></a
+			>
+			<nav class="top-actions" aria-label="Page actions">
+				<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+			</nav>
+		</header>
+
+		<div class="reader-shell">
+			<aside class="doc-sidebar" aria-label="Documentation navigation">
+				<a class="button primary back-home" href="../index.html">Back to index</a>
+				<div class="side-card">
+					<p class="side-label">Docs</p>
+					<a class="side-link" href="../pages/express-withdrawal-system-design.html"
+						><small>Express Withdrawal</small><span>Express Withdrawal System Design</span></a
+					>
+					<a class="side-link" href="../pages/account-layer-ownership-delegation.html"
+						><small>AccountLayer</small><span>AccountLayer Delegated Creation &amp; Ownership Transfer</span></a
+					>
+					<a class="side-link" href="../pages/liquidation-funding-snapshot-fix.html"
+						><small>Liquidation</small><span>PartyA Liquidation Snapshot Flow</span></a
+					>
+					<a class="side-link" href="../pages/single-step-partya-liquidation.html"
+						><small>Liquidation</small><span>Single-Step PartyA Liquidation</span></a
+					>
+					<a class="side-link" href="../pages/affiliate-shutdown-flow.html"
+						><small>Clearing House</small><span>Affiliate Shutdown Flow</span></a
+					>
+					<a class="side-link" href="../pages/muon-upnl-validity-overrides.html"
+						><small>Muon</small><span>Muon UPNL Validity Overrides</span></a
+					>
+					<a class="side-link" href="../pages/solver-fees.html"><small>Fees</small><span>Solver Fees</span></a>
+					<a class="side-link" href="../pages/operational-fees.html"><small>Fees</small><span>Operational Fees</span></a>
+					<a class="side-link" href="../pages/partya-liquidation-fee-recipient.html"
+						><small>Liquidation</small><span>PartyA Liquidation Fee Recipient Cleanup</span></a
+					>
+					<a class="side-link" href="../pages/balance-change-event-cleanup.html"
+						><small>Events</small><span>BalanceChange Event Cleanup</span></a
+					>
+					<a class="side-link" href="../pages/lazy-accumulated-funding.html"
+						><small>Funding</small><span>Lazy Accumulated Funding</span></a
+					>
+					<a class="side-link" href="../pages/partyb-allocation-suspension-gates.html"
+						><small>PartyB</small><span>Allocation Suspension Gates</span></a
+					>
+					<a class="side-link" href="../pages/cross-partyb-liquidation-reserve.html"
+						><small>Liquidation</small><span>Cross-PartyB Liquidation Reserve Enforcement</span></a
+					>
+					<a class="side-link is-active" href="../pages/strict-deallocation.html"
+						><small>Accounts</small><span>Strict Deallocation</span></a
+					>
+					<a class="side-link" href="../pages/express-bot-operations-checklist.html"
+						><small>Express Withdrawal</small><span>Express Provider Bot Operations Checklist</span></a
+					>
+				</div>
+			</aside>
+			<aside class="toc-panel side-toc" aria-label="Page navigation">
+				<div class="toc-card">
+					<p class="toc-title">On this page</p>
+					<a class="toc-link level-2" href="#the-two-limits">The Two Deallocation Limits</a>
+					<a class="toc-link level-2" href="#why-the-floor-exists">Why the Raw Floor Exists</a>
+					<a class="toc-link level-2" href="#partya-policy">PartyA Policy</a>
+					<a class="toc-link level-2" href="#partyb-policy">PartyB Policy</a>
+					<a class="toc-link level-2" href="#cross-mode">Cross-Mode Buckets</a>
+					<a class="toc-link level-2" href="#view-functions">New View Functions</a>
+					<a class="toc-link level-2" href="#integration-flow">Integration Flow</a>
+				</div>
+			</aside>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">v0.8.6</a><span>/</span><strong>Accounts</strong></nav>
+					<div class="reader-title-row">
+						<div>
+							<h1>Strict Deallocation</h1>
+							<p class="hero-copy">
+								Deallocation now preserves raw collateral that later liquidation accounting may consume, even when positive uPnL makes
+								the account appear highly solvent.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<p>
+						A deallocation can be economically solvent at the moment it executes and still remove collateral that a later liquidation
+						expects to find in storage. v0.8.6 separates those concerns. The existing uPnL-aware availability check remains, and a
+						second raw-allocation floor protects the collateral represented by locked and pending positions.
+					</p>
+
+					<h2 id="the-two-limits">The Two Deallocation Limits</h2>
+					<p>Every protected deallocation is bounded by two independent amounts:</p>
+					<ol>
+						<li>
+							<strong>Available balance</strong> answers whether the account remains solvent for the supplied uPnL after the requested
+							amount leaves.
+						</li>
+						<li>
+							<strong>Raw allocation above the protected floor</strong> answers whether storage still contains the CVA and liquidation
+							fee collateral associated with locked and pending positions.
+						</li>
+					</ol>
+					<p>The permitted amount is the smaller limit. Positive uPnL can increase the first limit, but it never increases the second.</p>
+					<pre><code>protectedFloor = lockedCva + lockedLf + pendingLockedCva + pendingLockedLf
+
+remainingRawAllocation &gt;= protectedFloor</code></pre>
+					<p>
+						Maintenance margin is intentionally not part of this new floor. It remains part of the existing availability calculation.
+						The floor is limited to values that later liquidation accounting takes directly from raw allocated balance.
+					</p>
+
+					<h2 id="why-the-floor-exists">Why the Raw Floor Exists</h2>
+					<p>
+						Consider a PartyB with a large positive uPnL. The availability calculation may allow nearly all raw collateral to be
+						deallocated because the unrealized profit keeps the account solvent. If the market then reverses, PartyB liquidation
+						computes a residual liquidation fee and subtracts it from <code>partyBAllocatedBalances</code>.
+					</p>
+					<p>
+						Without the floor, that subtraction can exceed the remaining raw allocation and revert. The connection is insolvent, but
+						liquidation cannot begin until collateral is added again. Strict deallocation prevents this state from being created by a
+						valid deallocation.
+					</p>
+					<aside class="callout callout-note">
+						<strong>uPnL proves economic capacity; it is not stored collateral.</strong>
+						The new check does not reject positive uPnL. It prevents that uPnL from replacing raw allocation required by a later
+						unsigned liquidation subtraction.
+					</aside>
+
+					<h2 id="partya-policy">PartyA Policy</h2>
+					<p>
+						The raw floor is always enabled for PartyA. Both <code>deallocate</code> and <code>safeDeallocate</code> require the remaining
+						allocation to cover locked and pending CVA plus liquidation fee. There is no user-level toggle.
+					</p>
+					<p>
+						<code>safeDeallocate</code> also retains its separate Muon <code>pendingBalance</code> reservation for operations that are
+						committed off-chain but not yet represented by an on-chain quote. That value is not the same as
+						<code>pendingLockedBalances</code>, and both protections apply at the same time.
+					</p>
+					<pre><code>availableBalance &gt;= pendingBalance + amount
+remainingRawAllocation &gt;= protectedFloor</code></pre>
+
+					<h2 id="partyb-policy">PartyB Policy</h2>
+					<p>
+						PartyB protection is configured per solver and is disabled by default for backward compatibility. A PartyB manager can
+						enable or disable it for a registered solver:
+					</p>
+					<pre><code class="language-solidity">setPartyBStrictDeallocation(address partyB, bool enabled)
+isPartyBStrictDeallocationEnabled(address partyB) returns (bool)</code></pre>
+					<p>
+						When enabled, the floor applies to <code>deallocateForPartyB</code> and to the origin bucket of
+						<code>transferAllocation</code>. Covering the transfer path matters because otherwise protected collateral could be moved to
+						an empty allocation bucket and deallocated from there.
+					</p>
+					<p>
+						When disabled, PartyB retains the existing uPnL-aware deallocation behavior. Integrators should query the flag rather than
+						assuming that every solver follows the same policy.
+					</p>
+
+					<h2 id="cross-mode">Cross-Mode Buckets</h2>
+					<p>
+						For a cross-mode PartyB, positions are backed by the aggregate <code>address(0)</code> allocation bucket. Strict
+						deallocation therefore measures both raw allocation and locked requirements against that aggregate bucket. Frontends
+						should also use <code>address(0)</code> when previewing a normal cross-bucket deallocation.
+					</p>
+					<p>
+						A per-PartyA bucket created before cross mode is a migration remainder, not backing for the active cross pool. Deallocating
+						that legacy bucket keeps its historical rule: the active cross pool must be solvent, but the requested amount is not capped
+						by cross availability and the strict raw floor is not applied to the legacy bucket. This allows stranded allocation to be
+						drained after migration.
+					</p>
+
+					<h2 id="view-functions">New View Functions</h2>
+					<p>Three view functions were added:</p>
+					<pre><code class="language-solidity">maxDeallocatableForPartyA(address partyA, int256 upnl)
+
+maxSafeDeallocatableForPartyA(
+    address partyA,
+    int256 upnl,
+    uint256 pendingBalance
+)
+
+maxDeallocatableForPartyB(
+    address partyB,
+    address partyA,
+    int256 upnl
+)</code></pre>
+					<p>
+						For a cross-mode PartyB, use <code>address(0)</code> for the active cross bucket or the original PartyA address for a legacy
+						bucket.
+					</p>
+					<aside class="callout callout-note">
+						<strong>The view does not verify its inputs.</strong>
+						The deallocation transaction remains authoritative and still requires a valid Muon signature.
+					</aside>
+
+					<h2 id="integration-flow">Integration Flow</h2>
+					<ol>
+						<li>Obtain the fresh uPnL and, for safe PartyA deallocation, the pending balance that will be signed by Muon.</li>
+						<li>
+							Call the matching maximum view. For PartyB, pass the PartyA address in isolated mode, <code>address(0)</code> for the active
+							cross bucket, or the original PartyA address when draining a legacy bucket.
+						</li>
+						<li>Clamp the requested amount to the returned maximum and construct the corresponding deallocation transaction.</li>
+						<li>
+							Treat a later transaction revert as authoritative: account state, policy, nonce, or signed uPnL may have changed after the
+							preview.
+						</li>
+					</ol>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Protocol, operations, and integration notes.</span>
+		</footer>
+	</body>
+</html>
