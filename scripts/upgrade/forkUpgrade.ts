@@ -33,6 +33,9 @@ const DEFAULT_SUBGRAPH_ENDPOINT = "https://api.goldsky.com/api/public/project_cm
 
 type ForkUpgradeConfig = {
 	diamondAddress?: string
+	accountLayerDiamondAddress?: string
+	accountLayerOwner?: string
+	accountLayerAdmin?: string
 	protocolAdmin?: string
 	migrationRunner?: string
 	diamondCutChunkSize?: number
@@ -48,6 +51,39 @@ type ForkUpgradeConfig = {
 	migrationReportFile?: string
 	migrationGapScanRange?: number
 	newV085Parameters?: NewV085Parameters
+}
+
+async function hasAccountLayerWiringAuthority(diamondAddress: string, account: string): Promise<boolean> {
+	const access = await ethers.getContractAt(
+		["function hasRole(address,bytes32) view returns (bool)", "function isRoleAdmin(address,bytes32) view returns (bool)"],
+		diamondAddress,
+	)
+	return (await access.isRoleAdmin(account, ethers.id("SIGNER_SETTER_ROLE"))) && (await access.hasRole(account, ethers.id("SETTER_ROLE")))
+}
+
+async function resolveAccountLayerAdmin(diamondAddress: string, ownerSigner: any, coreAdminSigner: any, configuredAdmin?: string): Promise<any> {
+	const ownerAddress = await ownerSigner.getAddress()
+	const coreAdminAddress = await coreAdminSigner.getAddress()
+	const candidates = [configuredAdmin, coreAdminAddress, ownerAddress].filter(
+		(address, index, all): address is string =>
+			Boolean(address) && all.findIndex(candidate => candidate?.toLowerCase() === address!.toLowerCase()) === index,
+	)
+
+	for (const address of candidates) {
+		if (!ethers.isAddress(address) || address === ethers.ZeroAddress) {
+			if (address === configuredAdmin) throw new Error(`Invalid AccountLayer admin address: ${address}`)
+			continue
+		}
+		if (!(await hasAccountLayerWiringAuthority(diamondAddress, address))) continue
+		if (address.toLowerCase() === ownerAddress.toLowerCase()) return ownerSigner
+		if (address.toLowerCase() === coreAdminAddress.toLowerCase()) return coreAdminSigner
+		return impersonateAndFund(address)
+	}
+
+	throw new Error(
+		"No AccountLayer configuration admin was found with role-admin authority for SIGNER_SETTER_ROLE and SETTER_ROLE. " +
+			"Set ACCOUNT_LAYER_ADMIN (or accountLayerAdmin in the upgrade config).",
+	)
 }
 
 type StepResult = {
@@ -432,7 +468,7 @@ async function main() {
 		t = log.step("Deploy v0.8.5 facets")
 		currentStep = "deploy_facets"
 		const facetsOutFile = `${outputDir}/${withSuffix("deployed-facets")}`
-		const { facets: newFacets, selectorSignatures } = await deployFacets(facetsOutFile, deploymentStateContext)
+		const { facets: newFacets, selectorSignatures } = await deployFacets(facetsOutFile, "core", deploymentStateContext)
 		log.ok(`${Object.keys(newFacets).length} facets ready`)
 		report.steps.push({
 			name: "deploy_facets",
@@ -524,24 +560,48 @@ async function main() {
 		tryWriteReport(reportFile, report)
 		finishStep(t)
 
-		// ── Step 9: Deploy AccountLayer + InstantLayer ───────────────────
-		t = log.step("Deploy AccountLayer + InstantLayer")
+		// ── Step 9: Upgrade/deploy AccountLayer + deploy InstantLayer ────
+		t = log.step("Upgrade AccountLayer + deploy InstantLayer")
 		currentStep = "deploy_account_instant_layer"
 		const symmioFeeReceiver = config.symmioFeeReceiver || protocolAdminAddress
 		const alilStateFile = `${outputDir}/${withSuffix("deployed-accountlayer-instantlayer")}`
+		let accountLayerAdminSigner = protocolAdminSigner
 
-		const alResult = await deployAccountLayerDiamond(
-			protocolAdminAddress,
-			symmioFeeReceiver,
-			alilStateFile,
-			protocolAdminSigner,
-			deploymentStateContext,
-		)
+		const existingAccountLayer = process.env.ACCOUNT_LAYER_DIAMOND_ADDRESS ?? config.accountLayerDiamondAddress
+		if (existingAccountLayer) {
+			if (!ethers.isAddress(existingAccountLayer) || existingAccountLayer === ethers.ZeroAddress) {
+				throw new Error(`Invalid AccountLayer diamond address: ${existingAccountLayer}`)
+			}
+			const accountLayerOwnerSigner = await getImpersonatedAdmin(existingAccountLayer, process.env.ACCOUNT_LAYER_OWNER ?? config.accountLayerOwner)
+			accountLayerAdminSigner = await resolveAccountLayerAdmin(
+				existingAccountLayer,
+				accountLayerOwnerSigner,
+				protocolAdminSigner,
+				process.env.ACCOUNT_LAYER_ADMIN ?? config.accountLayerAdmin,
+			)
+			const accountLayerFacetsFile = `${outputDir}/${withSuffix("deployed-accountlayer-facets")}`
+			const accountLayerFacets = await deployFacets(accountLayerFacetsFile, "accountLayer", {
+				...deploymentStateContext,
+				diamondAddress: existingAccountLayer,
+			})
+			const accountLayerDiff = await buildDiamondCut(existingAccountLayer, accountLayerFacets.facets, accountLayerFacets.selectorSignatures)
+			await applyDiamondCut(existingAccountLayer, accountLayerDiff.diamondCut, accountLayerOwnerSigner, DIAMOND_CUT_CHUNK_SIZE)
+			accountLayerAddress = existingAccountLayer
+			log.ok(`AccountLayer upgraded in place (${accountLayerDiff.selectorChanges.length} selector changes)`)
+		} else {
+			const alResult = await deployAccountLayerDiamond(
+				protocolAdminAddress,
+				symmioFeeReceiver,
+				alilStateFile,
+				protocolAdminSigner,
+				deploymentStateContext,
+			)
+			accountLayerAddress = alResult.diamondAddress
+		}
 		const ilResult = await deployInstantLayer(DIAMOND_ADDRESS, protocolAdminAddress, alilStateFile, deploymentStateContext)
-		accountLayerAddress = alResult.diamondAddress
 		instantLayerAddress = ilResult.address
 
-		await wireAccountLayerInstantLayer(DIAMOND_ADDRESS, alResult.diamondAddress, ilResult.address, protocolAdminSigner)
+		await wireAccountLayerInstantLayer(DIAMOND_ADDRESS, accountLayerAddress, ilResult.address, protocolAdminSigner, accountLayerAdminSigner)
 
 		if (config.setupInstantLayerTemplates !== false) {
 			await setupInstantLayerTemplates(ilResult.address, protocolAdminSigner)
@@ -551,7 +611,8 @@ async function main() {
 			name: "deploy_account_instant_layer",
 			status: "ok",
 			details: {
-				accountLayerDiamond: alResult.diamondAddress,
+				accountLayerDiamond: accountLayerAddress,
+				accountLayerMode: existingAccountLayer ? "upgrade" : "deploy",
 				instantLayer: ilResult.address,
 			},
 		})

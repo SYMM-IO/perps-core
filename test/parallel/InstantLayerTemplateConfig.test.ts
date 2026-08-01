@@ -22,7 +22,13 @@ describe("InstantLayer template config", function () {
 			"InstantCloseWithAllocation",
 			"InstantOpenWithCustomVA",
 			"InstantCloseWithParentAllocation",
+			"InstantOpenCompact",
 		])
+		expect(templates.find(template => template.name === "InstantOpenCompact")?.operations).to.deep.equal([
+			{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] },
+			{ insertionPoints: [0], sourceIndices: [0], sourceOffsets: [128] },
+		])
+		expect(templates.find(template => template.name === "InstantOpenCompact")?.instantOpenMode).to.equal(true)
 		expect(templates.find(template => template.name === "InstantOpenWithCustomVA")?.operations).to.deep.equal([
 			{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] },
 			{ insertionPoints: [0], sourceIndices: [0], sourceOffsets: [0] },

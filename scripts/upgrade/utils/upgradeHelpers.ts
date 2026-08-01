@@ -4,7 +4,6 @@
  */
 import fs from "fs"
 
-import { FacetNames } from "../../../tasks/deploy/constants.js"
 import { FacetCutAction, getSelectors } from "../../../tasks/utils/diamondCut.js"
 import { ethers } from "../../../test/helpers/hardhat-connection.js"
 import {
@@ -14,6 +13,14 @@ import {
 	validateDeploymentStateMetadata,
 	type DeploymentStateContext,
 } from "./deploymentState.js"
+import {
+	FacetSpecs,
+	ensureLibraries,
+	getFacetLibraryDependencies,
+	getLibraryLinkReferences,
+	getLinkedContractFactory,
+	type DiamondScope,
+} from "../../../utils/deploymentManifest.js"
 import { log } from "./log.js"
 import { MUON_FUNCTION_NAMES, requireMuonVerifierConfig, type MuonPublicKey } from "./muonVerifierConfig.js"
 import { deployTxOverrides, diamondCutTxOverrides, writeTxOverrides } from "./txOverrides.js"
@@ -40,107 +47,40 @@ const IGNORE_REMOVE_SELECTORS = new Set<string>([
 	"0x1f931c1c", // diamondCut
 ])
 
-// Facet => required libraries for linking
-export const FacetLibraryDependencies: Record<string, string[]> = {
-	PartyAFacet: ["LibQuoteClose"],
-	PartyBPositionActionsFacet: ["LibQuoteClose", "LibQuoteFunding"],
-	PartyBBatchActionsFacet: ["LibQuoteClose", "LibQuoteFunding"],
-	PartyBEmergencyActionsFacet: ["LibQuoteClose"],
-	PartyBQuoteActionsFacet: ["LibQuoteClose"],
-	ForceActionsFacet: ["LibForceActions", "LibSettlement"],
-	ForceCloseStepsFacet: ["LibForceActions", "LibSettlement"],
-	ViewFacetQuote: ["LibQuoteFunding"],
-	FundingRateFacet: ["LibQuoteFunding"],
-	PartyALiquidationFacet: ["LibPartyALiquidationLegacySetup", "LibPartyALiquidationProcess"],
-	PartyALiquidationSnapshotFacet: ["LibPartyALiquidationSnapshotSetup", "LibPartyALiquidationProcess"],
-	ClearingHouseFacet: ["LibQuoteClose", "LibQuoteFunding"],
-	SettlementFacet: ["LibSettlement"],
-	SymbolAdjustmentFacet: ["LibQuoteFunding", "LibQuoteClose"],
+export const FacetLibraryDependencies = getFacetLibraryDependencies("core")
+export const LibraryLinkReferences = getLibraryLinkReferences("core")
+
+export async function deployLibraries(
+	existing: Record<string, string> = {},
+	onDeployed?: (name: string, address: string, libraries: Record<string, string>) => Promise<void> | void,
+): Promise<Record<string, string>> {
+	return deployLibrariesForScope("core", existing, onDeployed)
 }
 
-export const LibraryLinkReferences: Record<string, string> = {
-	LibQuoteFunding: "project/contracts/core/libraries/LibQuoteFunding.sol:LibQuoteFunding",
-	LibQuoteClose: "project/contracts/core/libraries/LibQuoteClose.sol:LibQuoteClose",
-	LibForceActions: "project/contracts/core/libraries/LibForceActions.sol:LibForceActions",
-	LibSettlement: "project/contracts/core/libraries/LibSettlement.sol:LibSettlement",
-	LibPartyALiquidationProcess: "project/contracts/core/libraries/liquidation/LibPartyALiquidationProcess.sol:LibPartyALiquidationProcess",
-	LibPartyALiquidationSnapshotSetup:
-		"project/contracts/core/libraries/liquidation/LibPartyALiquidationSnapshotSetup.sol:LibPartyALiquidationSnapshotSetup",
-	LibPartyALiquidationLegacySetup: "project/contracts/core/libraries/liquidation/LibPartyALiquidationLegacySetup.sol:LibPartyALiquidationLegacySetup",
-}
-
-export async function deployLibraries(existing: Record<string, string> = {}): Promise<Record<string, string>> {
-	const libraries: Record<string, string> = { ...existing }
-
-	if (!libraries.LibQuoteFunding) {
-		const LibQuoteFundingFactory = await ethers.getContractFactory("LibQuoteFunding")
-		const libQuoteFunding = await LibQuoteFundingFactory.deploy(deployTxOverrides())
-		await libQuoteFunding.waitForDeployment()
-		libraries.LibQuoteFunding = await libQuoteFunding.getAddress()
-	}
-
-	if (!libraries.LibQuoteClose) {
-		const LibQuoteCloseFactory = await ethers.getContractFactory("LibQuoteClose", {
-			libraries: {
-				[LibraryLinkReferences.LibQuoteFunding]: libraries.LibQuoteFunding,
-			},
-		})
-		const libQuoteClose = await LibQuoteCloseFactory.deploy(deployTxOverrides())
-		await libQuoteClose.waitForDeployment()
-		libraries.LibQuoteClose = await libQuoteClose.getAddress()
-	}
-
-	if (!libraries.LibForceActions) {
-		const LibForceActionsFactory = await ethers.getContractFactory("LibForceActions", {
-			libraries: {
-				[LibraryLinkReferences.LibQuoteClose]: libraries.LibQuoteClose,
-			},
-		})
-		const libForceActions = await LibForceActionsFactory.deploy(deployTxOverrides())
-		await libForceActions.waitForDeployment()
-		libraries.LibForceActions = await libForceActions.getAddress()
-	}
-
-	if (!libraries.LibSettlement) {
-		const LibSettlementFactory = await ethers.getContractFactory("LibSettlement")
-		const libSettlement = await LibSettlementFactory.deploy(deployTxOverrides())
-		await libSettlement.waitForDeployment()
-		libraries.LibSettlement = await libSettlement.getAddress()
-	}
-
-	if (!libraries.LibPartyALiquidationProcess) {
-		const LibPartyALiquidationProcessFactory = await ethers.getContractFactory("LibPartyALiquidationProcess", {
-			libraries: {
-				[LibraryLinkReferences.LibQuoteFunding]: libraries.LibQuoteFunding,
-			},
-		})
-		const libPartyALiquidationProcess = await LibPartyALiquidationProcessFactory.deploy(deployTxOverrides())
-		await libPartyALiquidationProcess.waitForDeployment()
-		libraries.LibPartyALiquidationProcess = await libPartyALiquidationProcess.getAddress()
-	}
-
-	if (!libraries.LibPartyALiquidationSnapshotSetup) {
-		const LibPartyALiquidationSnapshotSetupFactory = await ethers.getContractFactory("LibPartyALiquidationSnapshotSetup")
-		const libPartyALiquidationSnapshotSetup = await LibPartyALiquidationSnapshotSetupFactory.deploy(deployTxOverrides())
-		await libPartyALiquidationSnapshotSetup.waitForDeployment()
-		libraries.LibPartyALiquidationSnapshotSetup = await libPartyALiquidationSnapshotSetup.getAddress()
-	}
-
-	if (!libraries.LibPartyALiquidationLegacySetup) {
-		const LibPartyALiquidationLegacySetupFactory = await ethers.getContractFactory("LibPartyALiquidationLegacySetup")
-		const libPartyALiquidationLegacySetup = await LibPartyALiquidationLegacySetupFactory.deploy(deployTxOverrides())
-		await libPartyALiquidationLegacySetup.waitForDeployment()
-		libraries.LibPartyALiquidationLegacySetup = await libPartyALiquidationLegacySetup.getAddress()
-	}
-
-	return libraries
+export async function deployLibrariesForScope(
+	scope: DiamondScope,
+	existing: Record<string, string> = {},
+	onDeployed?: (name: string, address: string, libraries: Record<string, string>) => Promise<void> | void,
+): Promise<Record<string, string>> {
+	const checkpoint = { ...existing }
+	return ensureLibraries({
+		ethers,
+		scope,
+		existing,
+		onDeployed: async (name, address) => {
+			checkpoint[name] = address
+			await onDeployed?.(name, address, { ...checkpoint })
+		},
+	})
 }
 
 export async function deployFacets(
 	outputFile?: string,
+	scope: DiamondScope = "core",
 	stateContext?: DeploymentStateContext,
 ): Promise<{ facets: Record<string, FacetInfo>; selectorSignatures: Record<string, string> }> {
 	const metadata = outputFile ? await resolveDeploymentStateMetadata(stateContext) : undefined
+	const desiredFacets = Object.values(FacetSpecs[scope])
 	// Load previously deployed facets/libraries to resume after failures
 	let partial: { libraries?: Record<string, string>; facets?: Record<string, FacetInfo>; selectorSignatures?: Record<string, string> } = {}
 	if (outputFile && fs.existsSync(outputFile)) {
@@ -148,7 +88,7 @@ export async function deployFacets(
 			partial = loadDeploymentState(outputFile, metadata)
 			const deployed = Object.keys(partial.facets ?? {})
 			if (deployed.length > 0) {
-				log.info(`Resuming: ${deployed.length}/${FacetNames.length} facets already deployed`)
+				log.info(`Resuming: ${deployed.length}/${desiredFacets.length} ${scope} facets already deployed`)
 			}
 		} catch (error) {
 			throw new Error(`Failed to load deployed facets state from ${outputFile}: ${(error as Error).message}`)
@@ -166,33 +106,24 @@ export async function deployFacets(
 		saveDeploymentState(outputFile, { libraries, facets, selectorSignatures }, metadata)
 	}
 
-	// Deploy or reuse libraries
+	// Deploy or reuse libraries. Persist each address immediately so an interrupted
+	// deployment resumes without redeploying already-mined contracts.
 	log.info("Libraries:")
-	if (
-		libraries.LibQuoteFunding &&
-		libraries.LibQuoteClose &&
-		libraries.LibForceActions &&
-		libraries.LibSettlement &&
-		libraries.LibPartyALiquidationProcess &&
-		libraries.LibPartyALiquidationSnapshotSetup &&
-		libraries.LibPartyALiquidationLegacySetup
-	) {
-		for (const [name, addr] of Object.entries(libraries)) {
-			log.deployed(name, addr, true)
-		}
-	} else {
-		libraries = await deployLibraries(libraries)
-		for (const [name, addr] of Object.entries(libraries)) {
-			log.deployed(name, addr)
-		}
+	const reusedLibraries = new Set(Object.keys(libraries))
+	libraries = await deployLibrariesForScope(scope, libraries, (name, address, current) => {
+		libraries = current
+		log.deployed(name, address)
 		save()
+	})
+	for (const name of reusedLibraries) {
+		log.deployed(name, libraries[name], true)
 	}
 
-	log.info(`Facets (${FacetNames.length}):`)
+	log.info(`${scope} facets (${desiredFacets.length}):`)
 	let deployedCount = 0
-	for (let i = 0; i < FacetNames.length; i++) {
-		const facetName = FacetNames[i]
-		const shortName = facetName.includes(":") ? facetName.split(":").pop()! : facetName
+	for (let i = 0; i < desiredFacets.length; i++) {
+		const facetSpec = desiredFacets[i]
+		const shortName = facetSpec.name
 
 		if (facets[shortName]) {
 			log.skipped(shortName, facets[shortName].address)
@@ -200,18 +131,7 @@ export async function deployFacets(
 			continue
 		}
 
-		const requiredLibraries = FacetLibraryDependencies[shortName]
-		let facetFactory
-
-		if (requiredLibraries && requiredLibraries.length > 0) {
-			const linked: Record<string, string> = {}
-			for (const lib of requiredLibraries) {
-				linked[LibraryLinkReferences[lib]] = libraries[lib]
-			}
-			facetFactory = await ethers.getContractFactory(facetName, { libraries: linked })
-		} else {
-			facetFactory = await ethers.getContractFactory(facetName)
-		}
+		const facetFactory = await getLinkedContractFactory(ethers, scope, facetSpec, libraries)
 
 		const facet = await facetFactory.deploy(deployTxOverrides())
 		await facet.waitForDeployment()
@@ -229,7 +149,7 @@ export async function deployFacets(
 			}
 		}
 		deployedCount++
-		log.progress(deployedCount, FacetNames.length, `${log.name(shortName)}  ${log.addr(address)}`)
+		log.progress(deployedCount, desiredFacets.length, `${log.name(shortName)}  ${log.addr(address)}`)
 		save()
 	}
 
@@ -269,6 +189,10 @@ export async function buildDiamondCut(
 	for (const [selector, currentFacetAddress] of currentSelectors) {
 		if (newSelectors.has(selector)) {
 			const toFacetAddress = newSelectors.get(selector)!
+			if (currentFacetAddress.toLowerCase() === toFacetAddress.toLowerCase()) {
+				newSelectors.delete(selector)
+				continue
+			}
 			actions[selector] = {
 				action: FacetCutAction.Replace,
 				facetAddress: toFacetAddress,
@@ -641,6 +565,44 @@ export function toHumanReadableSafeTx(to: string, methodName: string, args: any[
 	return toHumanReadableSafeTxFromIface(diamondIface, to, methodName, args)
 }
 
+export function encodeDiamondCutChunks(diamondCut: any[], chunkSize: number): DiamondCutCalldata[] {
+	const chunks: any[][] = []
+	for (let i = 0; i < diamondCut.length; i += chunkSize) chunks.push(diamondCut.slice(i, i + chunkSize))
+	return chunks.map((chunk, i) => {
+		const selectorCount = chunk.reduce((sum: number, cut: any) => sum + cut.functionSelectors.length, 0)
+		const cutTuples = chunk.map((cut: any) => [cut.facetAddress, cut.action, cut.functionSelectors])
+		return {
+			calldata: diamondIface.encodeFunctionData("diamondCut", [cutTuples, ethers.ZeroAddress, "0x"]),
+			description: `diamondCut chunk ${i + 1}/${chunks.length} (${chunk.length} cuts, ${selectorCount} selectors)`,
+		}
+	})
+}
+
+export function buildRollbackDiamondCut(selectorChanges: SelectorChange[]): any[] {
+	const grouped = new Map<string, { facetAddress: string; action: FacetCutAction; functionSelectors: string[] }>()
+	for (const change of selectorChanges) {
+		let action: FacetCutAction
+		let facetAddress: string
+		if (change.action === "add") {
+			action = FacetCutAction.Remove
+			facetAddress = ethers.ZeroAddress
+		} else if (change.action === "replace") {
+			action = FacetCutAction.Replace
+			if (!change.fromFacetAddress) throw new Error(`Cannot roll back replacement of ${change.selector}: missing original facet`)
+			facetAddress = change.fromFacetAddress
+		} else {
+			action = FacetCutAction.Add
+			if (!change.fromFacetAddress) throw new Error(`Cannot roll back removal of ${change.selector}: missing original facet`)
+			facetAddress = change.fromFacetAddress
+		}
+		const key = `${action}:${facetAddress.toLowerCase()}`
+		const cut = grouped.get(key) ?? { facetAddress, action, functionSelectors: [] }
+		cut.functionSelectors.push(change.selector)
+		grouped.set(key, cut)
+	}
+	return [...grouped.values()]
+}
+
 function addTx(
 	safeTxs: SafeTransaction[],
 	calldataTxs: CalldataTransaction[],
@@ -696,19 +658,7 @@ export function buildUpgradeTransactions(
 	const diamondCutInsertionIndex = 0
 
 	// Build diamond cut chunks
-	const chunks: any[][] = []
-	for (let i = 0; i < diamondCut.length; i += chunkSize) {
-		chunks.push(diamondCut.slice(i, i + chunkSize))
-	}
-
-	const diamondCutCalldataChunks: DiamondCutCalldata[] = chunks.map((chunk, i) => {
-		const selectorCount = chunk.reduce((sum: number, cut: any) => sum + cut.functionSelectors.length, 0)
-		const cutTuples = chunk.map((cut: any) => [cut.facetAddress, cut.action, cut.functionSelectors])
-		return {
-			calldata: diamondIface.encodeFunctionData("diamondCut", [cutTuples, ethers.ZeroAddress, "0x"]),
-			description: `diamondCut chunk ${i + 1}/${chunks.length} (${chunk.length} cuts, ${selectorCount} selectors)`,
-		}
-	})
+	const diamondCutCalldataChunks = encodeDiamondCutChunks(diamondCut, chunkSize)
 
 	// Add diamond cut entries to breakdown (in correct position)
 	for (const chunk of diamondCutCalldataChunks) {

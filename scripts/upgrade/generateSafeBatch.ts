@@ -5,7 +5,9 @@
  * builds the diamondCut against the live diamond, and outputs:
  *   1. safe-batch.json            -- human-readable Safe Transaction Builder JSON (non-diamondCut)
  *   2. diamondcut-calldata.json   -- raw diamondCut calldata chunks
- *   3. upgrade-details.json       -- selector changes + transaction breakdown
+ *   3. accountlayer-diamondcut-calldata.json -- emitted when an existing AccountLayer facet set is present
+ *   4. rollback-*.json            -- reverse cuts captured from the live loupe state
+ *   5. upgrade-details.json       -- selector changes + transaction breakdown
  *
  * Usage:
  *   npx hardhat run scripts/upgrade/generateSafeBatch.ts --network arbitrum
@@ -31,7 +33,9 @@ import {
 import { resolveConfigFile } from "./utils/sharedConfig.js"
 import {
 	buildDiamondCut,
+	buildRollbackDiamondCut,
 	buildUpgradeTransactions,
+	encodeDiamondCutChunks,
 	loadDeployedFacets,
 	toHumanReadableSafeTxFromIface,
 	type NewV085Parameters,
@@ -154,6 +158,31 @@ async function main() {
 	const IL_ADDRESS = process.env.INSTANT_LAYER_ADDRESS ?? (config.instantLayerAddress || peripherals.instantLayer?.address)
 	const SM_ADDRESS = process.env.SYMBOL_MANAGER_ADDRESS ?? (config.symbolManagerAddress || peripherals.symbolManager?.address)
 
+	let accountLayerUpgrade:
+		| {
+				diamondAddress: string
+				chunks: ReturnType<typeof encodeDiamondCutChunks>
+				rollbackChunks: ReturnType<typeof encodeDiamondCutChunks>
+				selectorChanges: Awaited<ReturnType<typeof buildDiamondCut>>["selectorChanges"]
+		  }
+		| undefined
+	if (AL_ADDRESS && ethers.isAddress(AL_ADDRESS)) {
+		const accountLayerFacetsFile = process.env.ACCOUNT_LAYER_FACETS_FILE ?? path.join(OUTPUT_DIR, `deployed-accountlayer-facets-${networkName}.json`)
+		if (fs.existsSync(accountLayerFacetsFile)) {
+			const accountLayerFacets = loadDeployedFacets(accountLayerFacetsFile, { ...deploymentStateContext, diamondAddress: AL_ADDRESS })
+			const accountLayerDiff = await buildDiamondCut(AL_ADDRESS, accountLayerFacets.facets, accountLayerFacets.selectorSignatures)
+			accountLayerUpgrade = {
+				diamondAddress: AL_ADDRESS,
+				chunks: encodeDiamondCutChunks(accountLayerDiff.diamondCut, DIAMOND_CUT_CHUNK_SIZE),
+				rollbackChunks: encodeDiamondCutChunks(buildRollbackDiamondCut(accountLayerDiff.selectorChanges), DIAMOND_CUT_CHUNK_SIZE),
+				selectorChanges: accountLayerDiff.selectorChanges,
+			}
+			console.log(`AccountLayer selector changes: ${accountLayerDiff.selectorChanges.length}; calldata chunks: ${accountLayerUpgrade.chunks.length}`)
+		} else {
+			console.log(`AccountLayer facets file not found at ${accountLayerFacetsFile}; no AccountLayer cut will be generated.`)
+		}
+	}
+
 	// Load PartyB list for Diamond + InstantLayer registration from partyBList.json.
 	// Each target has its own gate: registerOnSymmioCore, registerOnInstantLayer.
 	// Both default to true when the list file exists.
@@ -232,12 +261,18 @@ async function main() {
 			}
 			console.log(`  Added ${templateTxs.length} template transactions`)
 		}
-		// Accept AccountLayer ownership (two-step: deployPeripherals called transferOwnership, Safe must acceptOwnership)
-		if (SAFE_ADDRESS) {
+		// Fresh peripheral deployments transfer AccountLayer ownership in two steps.
+		// Existing AccountLayers are normally already Safe-owned, so only add the
+		// acceptance transaction when the live pending owner is this Safe.
+		const accountLayerOwnership = await ethers.getContractAt(["function pendingOwner() view returns (address)"], AL_ADDRESS)
+		const pendingAccountLayerOwner = await accountLayerOwnership.pendingOwner()
+		if (pendingAccountLayerOwner.toLowerCase() === SAFE_ADDRESS.toLowerCase()) {
 			const acceptOwnershipIface = new ethers.Interface(["function acceptOwnership()"])
 			result.safeTxs.push(toHumanReadableSafeTxFromIface(acceptOwnershipIface, AL_ADDRESS, "acceptOwnership", []))
 			result.breakdown.push(`${result.breakdown.length + 1}. [ownership] acceptOwnership() on AccountLayer`)
 			console.log(`  Added acceptOwnership transaction`)
+		} else if (pendingAccountLayerOwner !== ethers.ZeroAddress) {
+			console.log(`  WARN: AccountLayer pending owner is ${pendingAccountLayerOwner}, not Safe ${SAFE_ADDRESS}; acceptance was not added`)
 		}
 	} else if (AL_ADDRESS || IL_ADDRESS) {
 		console.log("\nWARN: Both accountLayerDiamondAddress and instantLayerAddress must be set for wiring. Skipping.")
@@ -355,6 +390,54 @@ async function main() {
 	)
 	console.log(`DiamondCut calldata:      ${diamondCutFile}`)
 
+	const rollbackDiamondCutFile = path.join(OUTPUT_DIR, `rollback-diamondcut-calldata-${networkName}.json`)
+	fs.writeFileSync(
+		rollbackDiamondCutFile,
+		JSON.stringify(
+			{
+				generatedAt: new Date().toISOString(),
+				diamondAddress: DIAMOND_ADDRESS,
+				chunks: encodeDiamondCutChunks(buildRollbackDiamondCut(selectorChanges), DIAMOND_CUT_CHUNK_SIZE),
+			},
+			null,
+			2,
+		),
+	)
+	console.log(`Rollback cut calldata:   ${rollbackDiamondCutFile}`)
+
+	if (accountLayerUpgrade) {
+		const accountLayerDiamondCutFile = path.join(OUTPUT_DIR, `accountlayer-diamondcut-calldata-${networkName}.json`)
+		fs.writeFileSync(
+			accountLayerDiamondCutFile,
+			JSON.stringify(
+				{
+					generatedAt: new Date().toISOString(),
+					diamondAddress: accountLayerUpgrade.diamondAddress,
+					chunks: accountLayerUpgrade.chunks,
+					selectorChanges: accountLayerUpgrade.selectorChanges,
+				},
+				null,
+				2,
+			),
+		)
+		console.log(`AccountLayer cut calldata: ${accountLayerDiamondCutFile}`)
+
+		const accountLayerRollbackFile = path.join(OUTPUT_DIR, `accountlayer-rollback-diamondcut-calldata-${networkName}.json`)
+		fs.writeFileSync(
+			accountLayerRollbackFile,
+			JSON.stringify(
+				{
+					generatedAt: new Date().toISOString(),
+					diamondAddress: accountLayerUpgrade.diamondAddress,
+					chunks: accountLayerUpgrade.rollbackChunks,
+				},
+				null,
+				2,
+			),
+		)
+		console.log(`AccountLayer rollback:    ${accountLayerRollbackFile}`)
+	}
+
 	// 3. Details file
 	const detailsFile = path.join(OUTPUT_DIR, `upgrade-details-${networkName}.json`)
 	fs.writeFileSync(
@@ -368,9 +451,11 @@ async function main() {
 				chainId: CHAIN_ID,
 				safeBatchTransactionCount: result.safeTxs.length,
 				diamondCutChunks: result.diamondCutCalldataChunks.length,
+				accountLayerDiamondCutChunks: accountLayerUpgrade?.chunks.length ?? 0,
 				chunkSize: DIAMOND_CUT_CHUNK_SIZE,
 				breakdown: result.breakdown,
 				selectorChanges: result.selectorChanges,
+				accountLayerSelectorChanges: accountLayerUpgrade?.selectorChanges ?? [],
 			},
 			null,
 			2,
@@ -390,8 +475,9 @@ async function main() {
 
 	console.log("\nExecution order:")
 	console.log(`  1. Import pause-safe-batch-${networkName}.json → execute from Safe (pause system)`)
-	console.log(`  2. Execute diamondCut from diamondcut-calldata-${networkName}.json (via timelock or direct)`)
-	console.log(`  3. Import safe-batch-${networkName}.json → execute from Safe (roles + params + wiring + accept AL ownership)`)
+	console.log(`  2. Execute core diamondCut from diamondcut-calldata-${networkName}.json (via timelock or direct)`)
+	if (accountLayerUpgrade) console.log(`  3. Execute AccountLayer diamondCut from accountlayer-diamondcut-calldata-${networkName}.json`)
+	console.log(`  ${accountLayerUpgrade ? 4 : 3}. Import safe-batch-${networkName}.json → execute from Safe (roles + params + wiring)`)
 }
 
 main().catch(error => {

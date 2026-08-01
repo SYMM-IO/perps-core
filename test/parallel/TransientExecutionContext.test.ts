@@ -160,7 +160,7 @@ describe("Transient execution context", function () {
 		).to.be.revertedWith("ControlFacet: Transient signer is set")
 	})
 
-	it("provides an authorized rollback to the legacy InstantLayer route", async function () {
+	it("provides an authorized switch to the legacy selector-compatible route", async function () {
 		const { context } = await loadFixture(setupTransientContextFixture)
 		expect(await context.instantLayer.transientContextEnabled()).to.equal(true)
 		await expect(context.instantLayer.connect(context.signers.user).setTransientContextEnabled(false)).to.be.reverted

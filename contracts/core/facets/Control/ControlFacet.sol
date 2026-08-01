@@ -621,33 +621,6 @@ contract ControlFacet is Accessibility, Ownable, IControlEvents {
 		emit RegisterHook(affiliate, hook);
 	}
 
-	/// @notice Sets the flag indicating if the current operation is being executed via the instant layer.
-	/// @dev Instant layer sets this flag to true before execution and MUST reset it back to false after its operation.
-	///      Deployed callers keep this selector and its exact calldata, but internally it opens and closes the
-	///      same EIP-1153 scope that beginInstantLayerExecution/endInstantLayerExecution use. The legacy
-	///      two-call sequence and the explicit single call are therefore behaviourally identical, which is what
-	///      lets un-redeployed InstantLayers share one mechanism with new ones instead of diverging.
-	/// @param callFromInstantLayer True when entering instant layer execution, false when exiting.
-	function setCallFromInstantLayer(bool callFromInstantLayer) external onlyRole(LibAccessibility.INSTANT_LAYER_ROLE) {
-		GlobalAppStorage.Layout storage globalLayout = GlobalAppStorage.layout();
-		require(!(callFromInstantLayer && globalLayout.instantLayerPaused), "ControlFacet: Instant Layer Paused");
-
-		if (callFromInstantLayer) {
-			require(!globalLayout.callFromInstantLayer && !globalLayout.instantOpenMode, "ControlFacet: Persistent instant context is set");
-			LibExecutionContext.beginInstantLayerExecution(false);
-		} else {
-			LibExecutionContext.endInstantLayerExecution();
-		}
-	}
-
-	/// @notice Sets the flag to skip pending balance tracking in atomic open flows.
-	/// @dev Requires a live scope, which the mandatory setCallFromInstantLayer(true) already established.
-	///      Deployed InstantLayers always call these two setters as an ordered pair.
-	/// @param instantOpenMode True when entering instant open execution, false when exiting.
-	function setInstantOpenMode(bool instantOpenMode) external onlyRole(LibAccessibility.INSTANT_LAYER_ROLE) {
-		LibExecutionContext.setInstantOpenMode(instantOpenMode);
-	}
-
 	/// @notice Enables or disables Auto-Deleveraging (ADL) for a Party B. When enabled, positions can be force-closed to reduce risk.
 	/// @param partyB The address of the Party B to configure ADL for.
 	/// @param enabled True to enable ADL for this Party B, false to disable.

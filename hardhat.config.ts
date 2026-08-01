@@ -346,7 +346,7 @@ export default defineConfig({
 			type: "edr-simulated",
 			chainId: 999,
 			blockGasLimit: 30_000_000,
-			allowUnlimitedContractSize: true,
+			allowUnlimitedContractSize: false,
 			hardfork: "cancun",
 			forking: {
 				url: process.env.RPC_HYPEREVM || "https://rpc.hyperliquid.xyz/evm",
@@ -358,7 +358,7 @@ export default defineConfig({
 			type: "edr-simulated",
 			chainId: 42161,
 			blockGasLimit: 30_000_000,
-			allowUnlimitedContractSize: true,
+			allowUnlimitedContractSize: false,
 			hardfork: "cancun",
 			forking: {
 				url: rpcUrl("arbitrum", "https://arbitrum.drpc.org"),
@@ -369,7 +369,7 @@ export default defineConfig({
 			type: "edr-simulated",
 			chainId: 8453,
 			blockGasLimit: 30_000_000,
-			allowUnlimitedContractSize: true,
+			allowUnlimitedContractSize: false,
 			hardfork: "cancun",
 			forking: {
 				url: rpcUrl("base", "https://base.drpc.org"),
@@ -391,7 +391,7 @@ export default defineConfig({
 			type: "edr-simulated",
 			chainId: 5000,
 			blockGasLimit: 30_000_000,
-			allowUnlimitedContractSize: true,
+			allowUnlimitedContractSize: false,
 			hardfork: "cancun",
 			forking: {
 				url: rpcUrl("mantle", "https://mantle.drpc.org"),

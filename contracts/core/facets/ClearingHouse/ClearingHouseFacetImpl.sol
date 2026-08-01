@@ -52,7 +52,7 @@ library ClearingHouseFacetImpl {
 	}
 
 	/// @notice Initiates clearing house liquidation for a cross-margin PartyB
-	function liquidateCrossPartyB(address partyB, bytes memory liquidationId, int256 upnl, uint256 timestamp) internal {
+	function liquidateCrossPartyB(address partyB, bytes memory liquidationId, int256 upnl, uint256 timestamp) public {
 		ClearingHouseStorage.Layout storage chLayout = ClearingHouseStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 
@@ -70,7 +70,7 @@ library ClearingHouseFacetImpl {
 	}
 
 	/// @notice Takes over a stuck PartyA liquidation
-	function takeoverPartyALiquidation(address partyA) internal returns (bytes memory liquidationId) {
+	function takeoverPartyALiquidation(address partyA) public returns (bytes memory liquidationId) {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		ClearingHouseStorage.Layout storage chLayout = ClearingHouseStorage.layout();
 
@@ -85,12 +85,7 @@ library ClearingHouseFacetImpl {
 	/// @param parties The parties to pull funds from
 	/// @param allocationKeys The allocation keys for each party
 	/// @param amounts The amounts to pull from each party
-	function deallocateForClearingHouse(
-		address subject,
-		address[] memory parties,
-		address[] memory allocationKeys,
-		uint256[] memory amounts
-	) internal {
+	function deallocateForClearingHouse(address subject, address[] memory parties, address[] memory allocationKeys, uint256[] memory amounts) public {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
 		require(parties.length == allocationKeys.length && parties.length == amounts.length, "ClearingHouseFacet: Invalid length");
@@ -153,7 +148,7 @@ library ClearingHouseFacetImpl {
 		address[] memory receivers,
 		address[] memory allocationKeys,
 		uint256[] memory amounts
-	) internal {
+	) public {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 
 		require(receivers.length == allocationKeys.length && receivers.length == amounts.length, "ClearingHouseFacet: Invalid length");
@@ -209,7 +204,7 @@ library ClearingHouseFacetImpl {
 	function liquidatePendingPositionsForClearingHouse(
 		address subject,
 		address[] memory counterparties
-	) internal returns (uint256[] memory liquidatedAmounts) {
+	) public returns (uint256[] memory liquidatedAmounts) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
@@ -299,7 +294,7 @@ library ClearingHouseFacetImpl {
 		address subject,
 		uint256[] memory quoteIds,
 		uint256[] memory prices
-	) internal returns (uint256[] memory liquidatedAmounts, uint256[] memory closeIds) {
+	) public returns (uint256[] memory liquidatedAmounts, uint256[] memory closeIds) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 
@@ -412,7 +407,7 @@ library ClearingHouseFacetImpl {
 		address affiliate,
 		uint256[] memory quoteIds,
 		uint256[] memory prices
-	) internal returns (uint256[] memory closedAmounts) {
+	) public returns (uint256[] memory closedAmounts) {
 		require(affiliate != address(0), "ClearingHouseFacet: Zero affiliate");
 		require(quoteIds.length == prices.length, "ClearingHouseFacet: Invalid length");
 		uint256 shutdownTime = GlobalAppStorage.layout().affiliateShutdownTime[affiliate];
@@ -446,7 +441,7 @@ library ClearingHouseFacetImpl {
 	/// @param partyA The partyA being settled
 	/// @param settledPartyBs PartyBs whose settlement states should be cleaned up
 	///        (includes partyBs processed by normal flow before takeover whose connections were already removed)
-	function settlePartyATakeover(address partyA, address[] memory settledPartyBs) internal returns (bytes memory liquidationId) {
+	function settlePartyATakeover(address partyA, address[] memory settledPartyBs) public returns (bytes memory liquidationId) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
@@ -519,7 +514,7 @@ library ClearingHouseFacetImpl {
 	/// @param partyB The cross partyB being settled
 	/// @param settledPartyAs The partyAs whose liquidation hooks should be called in this batch
 	/// @param finalize Whether to finalize the settlement (checks all positions closed and funds distributed)
-	function settleCrossPartyBLiquidation(address partyB, address[] memory settledPartyAs, bool finalize) internal {
+	function settleCrossPartyBLiquidation(address partyB, address[] memory settledPartyAs, bool finalize) public {
 		ClearingHouseStorage.Layout storage chLayout = ClearingHouseStorage.layout();
 		CrossLiquidationDetail storage detail = chLayout.crossLiquidationDetails[partyB];
 
@@ -574,7 +569,7 @@ library ClearingHouseFacetImpl {
 	}
 
 	/// @notice Applies a soft liquidation penalty to a Party B by deducting from their allocated and/or deposit balances.
-	function softPartyBLiquidation(address partyB, address partyA, uint256 penaltyFromAllocated, uint256 penaltyFromBalance) internal {
+	function softPartyBLiquidation(address partyB, address partyA, uint256 penaltyFromAllocated, uint256 penaltyFromBalance) public {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		GlobalAppStorage.Layout storage globalLayout = GlobalAppStorage.layout();
 
@@ -611,7 +606,7 @@ library ClearingHouseFacetImpl {
 		address[] memory receivers,
 		address[] memory allocationKeys,
 		uint256[] memory amounts
-	) internal {
+	) public {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		require(receivers.length == allocationKeys.length && receivers.length == amounts.length, "ClearingHouseFacet: Invalid length");

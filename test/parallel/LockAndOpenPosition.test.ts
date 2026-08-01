@@ -167,7 +167,7 @@ describe("LockAndOpenPosition", function () {
 
 		await expect(lockAndOpen(3n, quantity, openPrice, solverFee))
 			.to.emit(context.partyBExecutionFacet, "OpenSolverFeeCharged")
-			.withArgs(3, (await context.viewFacetQuote.getQuote(3)).partyA, hedgerAddress, request.symbolId, solverFee)
+			.withArgs(3, (await context.viewFacetQuote.getQuote(3)).partyA, hedgerAddress, hedgerAddress, request.symbolId, solverFee)
 	})
 
 	it("should fail when caller is not a partyB", async function () {
