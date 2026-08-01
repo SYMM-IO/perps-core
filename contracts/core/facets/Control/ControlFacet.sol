@@ -622,6 +622,16 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		emit SetADLEnabled(partyB, enabled);
 	}
 
+	/// @notice Controls whether a Party B must keep locked and pending CVA + LF allocated when deallocating.
+	/// @dev The protection is disabled by default and configured independently for each Party B.
+	/// @param partyB The Party B whose deallocation protection is being configured.
+	/// @param enabled True to prevent positive uPnL from replacing allocated CVA + LF, false to retain legacy behavior.
+	function setPartyBStrictDeallocation(address partyB, bool enabled) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
+		require(MAStorage.layout().partyBStatus[partyB], "ControlFacet: Address is not PartyB");
+		MAStorage.layout().strictDeallocationEnabledForPartyB[partyB] = enabled;
+		emit SetPartyBStrictDeallocation(partyB, enabled);
+	}
+
 	/// @notice Sets the maximum number of partial withdrawals allowed. Withdrawals can be split to manage liquidity.
 	/// @param _maxWithdrawParts The maximum number of parts a single withdrawal can be divided into.
 	function setMaxWithdrawParts(uint256 _maxWithdrawParts) external onlyRole(LibAccessibility.PROTOCOL_CONFIG_ROLE) {

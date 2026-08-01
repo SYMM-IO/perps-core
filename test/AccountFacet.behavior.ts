@@ -46,8 +46,19 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 	const UPNL_VALUES = {
 		ZERO: 0n,
+		POSITIVE_LARGE: decimal(1_000_000n),
 		NEGATIVE_SMALL: -decimal(50n),
 		NEGATIVE_LARGE: -decimal(350n),
+	}
+
+	async function openDefaultPosition(): Promise<void> {
+		hedger = new Hedger(context, context.signers.hedger)
+		await hedger.setup()
+		await hedger.setBalances(BALANCES.LARGE_AMOUNT, BALANCES.LARGE_AMOUNT)
+
+		const quoteId = await user.sendQuote()
+		await hedger.lockQuote(quoteId)
+		await hedger.openPosition(quoteId)
 	}
 
 	describe("Deposit", async function () {
@@ -952,6 +963,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 	describe("deallocateForPartyB", () => {
 		const QUOTE_NOTIONAL_MULTIPLIER = decimal(12n, 17)
+		let quoteId: bigint
 
 		beforeEach(async () => {
 			context = await loadFixture(initializeFixture)
@@ -964,7 +976,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await hedger.setup()
 			await hedger.setBalances(BALANCES.LARGE_AMOUNT, BALANCES.LARGE_AMOUNT)
 
-			const quoteId = await user.sendQuote()
+			quoteId = await user.sendQuote()
 			const quote = await context.viewFacetQuote.getQuote(quoteId)
 
 			const notional = (quote.quantity * quote.requestedOpenPrice) / decimal(1n)
@@ -1006,6 +1018,115 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 			const allocatedAfter = await context.viewFacet.allocatedBalanceOfPartyB(hedgerAddress, userAddress)
 			expect(allocatedBefore - allocatedAfter).to.equal(deallocateAmount)
+		})
+
+		it("Should preserve legacy PartyB behavior by default when positive uPnL covers CVA and LF", async () => {
+			const hedgerAddress = await hedger.getAddress()
+			const userAddress = await user.getAddress()
+			await hedger.openPosition(quoteId)
+
+			expect(await context.viewFacet.isPartyBStrictDeallocationEnabled(hedgerAddress)).to.equal(false)
+			const allocated = await context.viewFacet.allocatedBalanceOfPartyB(hedgerAddress, userAddress)
+			expect(await context.viewFacet.maxDeallocatableForPartyB(hedgerAddress, userAddress, UPNL_VALUES.POSITIVE_LARGE)).to.equal(allocated)
+
+			await context.partyBAccountFacet
+				.connect(context.signers.hedger)
+				.deallocateForPartyB(allocated, userAddress, await getDummySingleUpnlSig(UPNL_VALUES.POSITIVE_LARGE))
+
+			expect(await context.viewFacet.allocatedBalanceOfPartyB(hedgerAddress, userAddress)).to.equal(0n)
+			await context.controlFacet.connect(context.signers.admin).setPartyBStrictDeallocation(hedgerAddress, true)
+			expect(await context.viewFacet.maxDeallocatableForPartyB(hedgerAddress, userAddress, UPNL_VALUES.POSITIVE_LARGE)).to.equal(0n)
+		})
+
+		it("Should keep PartyB CVA and LF allocated when per-solver protection is enabled", async () => {
+			const hedgerAddress = await hedger.getAddress()
+			const userAddress = await user.getAddress()
+			await hedger.openPosition(quoteId)
+			await context.controlFacet.connect(context.signers.admin).setPartyBStrictDeallocation(hedgerAddress, true)
+
+			const balanceInfo = await hedger.getBalanceInfo(userAddress)
+			const protectedBalance = balanceInfo.lockedCva + balanceInfo.lockedLf + balanceInfo.pendingLockedCva + balanceInfo.pendingLockedLf
+			const deallocateToProtection = balanceInfo.allocatedBalances - protectedBalance
+			expect(await context.viewFacet.maxDeallocatableForPartyB(hedgerAddress, userAddress, UPNL_VALUES.POSITIVE_LARGE)).to.equal(
+				deallocateToProtection,
+			)
+
+			await expect(
+				context.partyBAccountFacet
+					.connect(context.signers.hedger)
+					.deallocateForPartyB(deallocateToProtection + 1n, userAddress, await getDummySingleUpnlSig(UPNL_VALUES.POSITIVE_LARGE)),
+			).to.be.revertedWith("AccountFacet: CVA and LF must remain allocated")
+
+			await context.partyBAccountFacet
+				.connect(context.signers.hedger)
+				.deallocateForPartyB(deallocateToProtection, userAddress, await getDummySingleUpnlSig(UPNL_VALUES.POSITIVE_LARGE))
+
+			expect(await context.viewFacet.allocatedBalanceOfPartyB(hedgerAddress, userAddress)).to.equal(protectedBalance)
+
+			// A later one-token deficit leaves residual LF. The protected raw allocation prevents
+			// LibPartyBLiquidation from underflowing when it subtracts that residual LF.
+			await expect(
+				context.partyBLiquidationFacet
+					.connect(context.signers.liquidator)
+					.liquidatePartyB(hedgerAddress, userAddress, await getDummySingleUpnlSig(-decimal(1n))),
+			).to.not.be.reverted
+		})
+
+		it("Should keep aggregate PartyB CVA and LF allocated in cross mode when per-solver protection is enabled", async () => {
+			const hedgerAddress = await hedger.getAddress()
+			await hedger.openPosition(quoteId)
+			const pendingQuoteId = await user.sendQuote()
+			await hedger.lockQuote(pendingQuoteId)
+			await migratePartyBToCross(context, hedger, [quoteId, pendingQuoteId])
+			await context.controlFacet.connect(context.signers.admin).setPartyBStrictDeallocation(hedgerAddress, true)
+
+			const balanceInfo = await hedger.getBalanceInfoCrossPartyB()
+			const protectedBalance = balanceInfo.lockedCva + balanceInfo.lockedLf + balanceInfo.pendingLockedCva + balanceInfo.pendingLockedLf
+			const deallocateToProtection = balanceInfo.allocatedBalances - protectedBalance
+			expect(await context.viewFacet.maxDeallocatableForPartyB(hedgerAddress, ZeroAddress, UPNL_VALUES.POSITIVE_LARGE)).to.equal(
+				deallocateToProtection,
+			)
+
+			await expect(
+				context.partyBAccountFacet
+					.connect(context.signers.hedger)
+					.deallocateForPartyB(deallocateToProtection + 1n, ZeroAddress, await getDummySingleUpnlSig(UPNL_VALUES.POSITIVE_LARGE)),
+			).to.be.revertedWith("AccountFacet: CVA and LF must remain allocated")
+
+			await context.partyBAccountFacet
+				.connect(context.signers.hedger)
+				.deallocateForPartyB(deallocateToProtection, ZeroAddress, await getDummySingleUpnlSig(UPNL_VALUES.POSITIVE_LARGE))
+
+			expect((await hedger.getBalanceInfoCrossPartyB()).allocatedBalances).to.equal(protectedBalance)
+
+			await context.controlFacet
+				.connect(context.signers.admin)
+				.grantRole(context.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("CLEARING_HOUSE_ROLE")))
+			const liquidationUpnl = -(balanceInfo.pendingLockedCva + balanceInfo.pendingLockedLf + 1n)
+			await expect(
+				context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidateCrossPartyB(hedgerAddress, "0x01", liquidationUpnl, await getBlockTimestamp()),
+			).to.not.be.reverted
+
+			expect(await context.viewFacet.getPartyBCrossLiquidationStatus(hedgerAddress)).to.equal(true)
+		})
+
+		it("Should not let an enabled PartyB bypass CVA and LF protection through transferAllocation", async () => {
+			const hedgerAddress = await hedger.getAddress()
+			const userAddress = await user.getAddress()
+			await hedger.openPosition(quoteId)
+			await context.controlFacet.connect(context.signers.admin).setPartyBStrictDeallocation(hedgerAddress, true)
+
+			const balanceInfo = await hedger.getBalanceInfo(userAddress)
+			const protectedBalance = balanceInfo.lockedCva + balanceInfo.lockedLf + balanceInfo.pendingLockedCva + balanceInfo.pendingLockedLf
+			const excessiveTransfer = balanceInfo.allocatedBalances - protectedBalance + 1n
+
+			await expect(
+				context.partyBAccountFacet
+					.connect(context.signers.hedger)
+					.transferAllocation(excessiveTransfer, userAddress, context.signers.user2.address, await getDummySingleUpnlSig(UPNL_VALUES.POSITIVE_LARGE)),
+			).to.be.revertedWith("PartyBFacet: CVA and LF must remain allocated")
 		})
 
 		it("Should transfer allocation between partyA buckets", async () => {
@@ -1074,6 +1195,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should fail on available balance is lower than zero", async function () {
+			expect(await context.viewFacet.maxDeallocatableForPartyA(await user.getAddress(), UPNL_VALUES.NEGATIVE_LARGE)).to.equal(0n)
 			await expect(
 				context.accountFacet
 					.connect(context.signers.user)
@@ -1098,6 +1220,28 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 			expect(await context.viewFacet.balanceOf(userAddress)).to.equal(deallocateAmount)
 			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(expectedAllocated)
+		})
+
+		it("Should keep PartyA CVA and LF allocated even with large positive uPnL", async function () {
+			const userAddress = await user.getAddress()
+			await openDefaultPosition()
+
+			const balanceInfo = await user.getBalanceInfo()
+			const protectedBalance = balanceInfo.lockedCva + balanceInfo.lockedLf + balanceInfo.pendingLockedCva + balanceInfo.pendingLockedLf
+			const deallocateToProtection = balanceInfo.allocatedBalances - protectedBalance
+			expect(await context.viewFacet.maxDeallocatableForPartyA(userAddress, UPNL_VALUES.POSITIVE_LARGE)).to.equal(deallocateToProtection)
+
+			await expect(
+				context.accountFacet
+					.connect(context.signers.user)
+					.deallocate(deallocateToProtection + 1n, await getDummySingleUpnlSig(UPNL_VALUES.POSITIVE_LARGE)),
+			).to.be.revertedWith("AccountFacet: CVA and LF must remain allocated")
+
+			await context.accountFacet
+				.connect(context.signers.user)
+				.deallocate(deallocateToProtection, await getDummySingleUpnlSig(UPNL_VALUES.POSITIVE_LARGE))
+
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(protectedBalance)
 		})
 
 		it("Should fail to deallocate too often", async function () {
@@ -1180,6 +1324,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			// Trying to deallocate 150 should fail
 			const pendingBalance = decimal(200n)
 			const deallocateAmount = decimal(150n)
+			expect(await context.viewFacet.maxSafeDeallocatableForPartyA(await user.getAddress(), UPNL_VALUES.ZERO, pendingBalance)).to.equal(decimal(100n))
 			await expect(
 				context.accountFacet
 					.connect(context.signers.user)
@@ -1198,6 +1343,28 @@ export function shouldBehaveLikeAccountFacet(): void {
 			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(expectedAllocated)
 		})
 
+		it("Should keep PartyA CVA and LF allocated in safeDeallocate even with large positive uPnL", async function () {
+			const userAddress = await user.getAddress()
+			await openDefaultPosition()
+
+			const balanceInfo = await user.getBalanceInfo()
+			const protectedBalance = balanceInfo.lockedCva + balanceInfo.lockedLf + balanceInfo.pendingLockedCva + balanceInfo.pendingLockedLf
+			const deallocateToProtection = balanceInfo.allocatedBalances - protectedBalance
+			expect(await context.viewFacet.maxSafeDeallocatableForPartyA(userAddress, UPNL_VALUES.POSITIVE_LARGE, 0n)).to.equal(deallocateToProtection)
+
+			await expect(
+				context.accountFacet
+					.connect(context.signers.user)
+					.safeDeallocate(deallocateToProtection + 1n, await getDummySingleUpnlWithPendingBalanceSig(UPNL_VALUES.POSITIVE_LARGE)),
+			).to.be.revertedWith("AccountFacet: CVA and LF must remain allocated")
+
+			await context.accountFacet
+				.connect(context.signers.user)
+				.safeDeallocate(deallocateToProtection, await getDummySingleUpnlWithPendingBalanceSig(UPNL_VALUES.POSITIVE_LARGE))
+
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(protectedBalance)
+		})
+
 		it("Should safeDeallocate with pending balance when enough available", async function () {
 			const userAddress = await context.signers.user.getAddress()
 			// Allocated: 300, pendingBalance: 100, deallocate: 50
@@ -1205,6 +1372,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			const pendingBalance = decimal(100n)
 			const deallocateAmount = BALANCES.DEALLOCATE_AMOUNT
 			const expectedAllocated = BALANCES.DEPOSIT_AMOUNT - deallocateAmount
+			expect(await context.viewFacet.maxSafeDeallocatableForPartyA(userAddress, UPNL_VALUES.ZERO, pendingBalance)).to.equal(decimal(200n))
 
 			await context.accountFacet
 				.connect(context.signers.user)

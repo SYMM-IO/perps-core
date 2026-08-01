@@ -949,6 +949,30 @@ export function shouldBehaveLikeControlFacet(): void {
 		})
 	})
 
+	describe("setPartyBStrictDeallocation", () => {
+		it("should be disabled by default and allow Party B manager to enable it per solver", async () => {
+			expect(await context.viewFacet.isPartyBStrictDeallocationEnabled(hedger.address)).to.equal(false)
+
+			await expect(context.controlFacet.connect(owner).setPartyBStrictDeallocation(hedger.address, true))
+				.to.emit(context.controlFacet, "SetPartyBStrictDeallocation")
+				.withArgs(hedger.address, true)
+
+			expect(await context.viewFacet.isPartyBStrictDeallocationEnabled(hedger.address)).to.equal(true)
+		})
+
+		it("should reject callers without Party B manager role", async () => {
+			await expect(context.controlFacet.connect(user2).setPartyBStrictDeallocation(hedger.address, true)).to.be.revertedWith(
+				"Accessibility: Must have role",
+			)
+		})
+
+		it("should reject a non-PartyB address", async () => {
+			await expect(context.controlFacet.connect(owner).setPartyBStrictDeallocation(user2.address, true)).to.be.revertedWith(
+				"ControlFacet: Address is not PartyB",
+			)
+		})
+	})
+
 	describe("SetPartyBBindable", () => {
 		// BINDABLE_SETTER_ROLE was merged into PARTY_B_MANAGER_ROLE, so no separate grant needed
 

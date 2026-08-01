@@ -122,6 +122,7 @@ interface IControlEvents {
 	event RemoveRelayerForExternalTransferTarget(address target);
 	event RegisterHook(address affiliate, address hook);
 	event SetADLEnabled(address partyB, bool enabled);
+	event SetPartyBStrictDeallocation(address indexed partyB, bool enabled);
 	event SetEntityMetadata(address entity, EntityMetadata metadata);
 	event SetMaxPartyAConnectionLimit(uint256 maxLimit);
 	event SetMaxWithdrawParts(uint256 maxWithdrawParts);
