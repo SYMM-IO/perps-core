@@ -363,6 +363,7 @@ async function compile() {
 	console.log(style("cyan", "  ⟳ Compiling contracts..."))
 	try {
 		execSync("npx hardhat compile --quiet", { stdio: "pipe" })
+		execSync("node utils/check-contract-sizes.mjs", { stdio: "inherit" })
 		console.log(style("brightGreen", "  ✓ Compilation complete!"))
 	} catch (e) {
 		console.error(style("brightRed", "  ✗ Compilation failed!"))

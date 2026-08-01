@@ -1,5 +1,18 @@
 # Production Upgrade (v0.8.4 -> v0.8.5)
 
+> **v0.8.6 linked-facet upgrade:** deploy both scoped facet sets before pausing:
+>
+> ```bash
+> npx hardhat run scripts/upgrade/deployFacets.ts --network <network>
+> DIAMOND_SCOPE=accountLayer npx hardhat run scripts/upgrade/deployFacets.ts --network <network>
+> ```
+>
+> Set `accountLayerDiamondAddress` in `upgrade-<network>.json`. `generateSafeBatch.ts` then emits core and
+> AccountLayer forward cuts plus rollback cuts for both diamonds. Execute core first and AccountLayer second.
+> If rollback is required, reverse that order: AccountLayer first, core second. The single-facet
+> `updateFacet.ts` command supports `DIAMOND_SCOPE=accountLayer`, but it is an operational fallback rather than
+> the production batch workflow. Run `yarn check:contract-size` before generating any release calldata.
+
 ## Overview
 
 The production upgrade flow depends on whether the diamond is owned by an EOA or a multisig (Gnosis Safe). In both paths, all contract deployments happen **before** the system is paused to minimize downtime.

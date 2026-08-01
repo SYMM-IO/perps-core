@@ -1,5 +1,8 @@
 {
 	"diamondAddress": "0x...",
+	"accountLayerDiamondAddress": "0x...",
+	"accountLayerOwner": "0x...",
+	"accountLayerAdmin": "0x...",
 	"protocolAdmin": "0x...",
 	"upgradeOperator": "0x...",
 	"safeAddress": "0x...",

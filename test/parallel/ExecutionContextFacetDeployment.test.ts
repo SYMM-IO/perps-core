@@ -10,7 +10,10 @@ describe("ExecutionContextFacet deployment", function () {
 		const core = context.diamond
 		const executionContext = await ethers.getContractAt("IExecutionContextFacet", core)
 
-		const legacySelector = context.controlFacet.interface.getFunction("setCallFromInstantLayer")!.selector
+		// setSigner is the legacy selector that remains on ControlFacet; the legacy instant-context
+		// selectors (setCallFromInstantLayer, setInstantOpenMode) are hosted by ExecutionContextFacet
+		// alongside the native ABI they adapt into.
+		const legacySelector = context.controlFacet.interface.getFunction("setSigner")!.selector
 		const pauseSelector = context.pauseControlFacet.interface.getFunction("pauseGlobal")!.selector
 		const nativeFunctions = [
 			"beginInstantLayerExecution",

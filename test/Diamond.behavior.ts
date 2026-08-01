@@ -42,12 +42,12 @@ export function shouldBehaveLikeDiamond(): void {
 		this.context = await loadFixture(initializeFixture)
 	})
 
-	it("should have 32 facets", async function () {
+	it("should have 33 facets", async function () {
 		const context: RunContext = this.context
 		for (const address of await context.diamondLoupeFacet.facetAddresses()) {
 			addresses.push(address)
 		}
-		assert.equal(addresses.length, 32)
+		assert.equal(addresses.length, 33)
 	})
 
 	it("keeps new AccountStorage snapshot fields after existing layout fields", async function () {

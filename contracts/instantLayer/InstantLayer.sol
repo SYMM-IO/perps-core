@@ -178,9 +178,9 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @notice Counter for generating unique sequential template IDs
 	uint256 public nextTemplateId;
 
-	/// @notice Whether execution uses EIP-1153 contexts instead of persistent mode/signer slots.
-	/// @dev Defaults to true for Cancun-compatible deployments. It can be disabled without
-	///      changing any signed-operation or template format.
+	/// @notice Whether execution uses the native begin/end context selectors.
+	/// @dev Both settings use EIP-1153 transient storage in this build. Disabling the flag
+	///      selects the historical setter sequence without changing signed operations or templates.
 	bool public transientContextEnabled;
 
 	/* ═══════════════════════════════ STRUCTS ═══════════════════════════════ */
@@ -634,11 +634,10 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		emit TargetWhitelistUpdated(target, allowed);
 	}
 
-	/// @notice Enables the Cancun transient execution path.
-	/// @dev Disabling restores the exact legacy setter sequence. If this InstantLayer address
-	///      has legacy adapters enabled on core and AccountLayer, disable those adapters as well
-	///      to return all the way to persistent storage.
-	///      This switch does not alter signed data or templates.
+	/// @notice Selects the native begin/end execution-context selectors.
+	/// @dev Disabling selects the historical mode and signer setters. Both selector routes
+	///      write transient storage in this build; this is not a persistent-storage rollback.
+	///      The switch does not alter signed data or templates.
 	function setTransientContextEnabled(bool enabled) external onlyRole(SETTER_ROLE) {
 		transientContextEnabled = enabled;
 		emit TransientContextEnabledUpdated(enabled);
@@ -782,12 +781,12 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		if (!template.active) revert TemplateNotActive(templateId);
 		if (signedOps.length != template.operations.length) revert TemplateOperationLengthMismatch();
 
-		// One core authority scope wraps the entire template. Cancun deployments use
-		// transient storage; disabling the feature replays the historical persistent
-		// setter sequence without changing templates or signed operations.
+		// One core authority scope wraps the entire template. The flag selects between
+		// the native begin/end interface and the historical setter-compatible interface;
+		// both routes use transient storage in this build.
 		bool useInstantOpen = templateInstantOpenMode[templateId];
-		bool usesTransientContext = transientContextEnabled;
-		if (usesTransientContext) {
+		bool usesNativeContextSelectors = transientContextEnabled;
+		if (usesNativeContextSelectors) {
 			symmio.beginInstantLayerExecution(useInstantOpen);
 		} else {
 			symmio.setCallFromInstantLayer(true);
@@ -811,7 +810,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			finalCallData = _insertResults(finalCallData, op.insertionPoints, op.sourceIndices, op.sourceOffsets, results);
 
 			// Execute the operation and capture result
-			(success, results[i]) = _executeOperationSafe(signedOp, finalCallData, usesTransientContext);
+			(success, results[i]) = _executeOperationSafe(signedOp, finalCallData, usesNativeContextSelectors);
 
 			if (!success) {
 				revert OperationFailed(i, results[i]);
@@ -820,7 +819,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 		// Close the same mechanism that opened the scope, so a later call in an outer
 		// multicast cannot inherit this batch's authority.
-		if (usesTransientContext) {
+		if (usesNativeContextSelectors) {
 			symmio.endInstantLayerExecution();
 		} else {
 			if (useInstantOpen) {
@@ -851,8 +850,8 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 		// Independent batches still need one shared routing-authority scope, but never
 		// enable the atomic-open accounting mode reserved for configured templates.
-		bool usesTransientContext = transientContextEnabled;
-		if (usesTransientContext) {
+		bool usesNativeContextSelectors = transientContextEnabled;
+		if (usesNativeContextSelectors) {
 			symmio.beginInstantLayerExecution(false);
 		} else {
 			symmio.setCallFromInstantLayer(true);
@@ -869,14 +868,14 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			bytes memory callData = _applyFlexFills(signedOps[i], fills[i], flexFillerSignatures[i], opHash);
 
 			// Execute with (potentially modified) calldata
-			(success, results[i]) = _executeOperationSafe(signedOps[i], callData, usesTransientContext);
+			(success, results[i]) = _executeOperationSafe(signedOps[i], callData, usesNativeContextSelectors);
 
 			if (!success) {
 				revert OperationFailed(i, results[i]);
 			}
 		}
 
-		if (usesTransientContext) {
+		if (usesNativeContextSelectors) {
 			symmio.endInstantLayerExecution();
 		} else {
 			symmio.setCallFromInstantLayer(false);
@@ -966,13 +965,13 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	///
 	/// @param signedOp Signed operation containing routing information
 	/// @param callData Prepared calldata (may include injected results)
-	/// @param usesTransientContext Whether this batch began with the transient EIP-1153 context path
+	/// @param usesNativeContextSelectors Whether this batch began with the native begin/end selector path
 	/// @return success True if operation succeeded
 	/// @return result  Return data from the operation
 	function _executeOperationSafe(
 		SignedOperation calldata signedOp,
 		bytes memory callData,
-		bool usesTransientContext
+		bool usesNativeContextSelectors
 	) private returns (bool success, bytes memory result) {
 		bytes[] memory callDatas = new bytes[](1);
 		callDatas[0] = callData;
@@ -990,9 +989,9 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			// holds. When a delegate is driving the operation, hand the AccountLayer the account family
 			// the delegation was granted over so it can reject anything outside it. Owners stay unscoped.
 			// AccountLayer must use the same signer lifetime as the surrounding core scope. Mixing
-			// transient and persistent setters would leave ambiguous authority.
+			// the two selector protocols would leave ambiguous authority.
 			address scope = signedOp.signer == owner ? address(0) : _canonicalDelegator(signedOp.signerAccount.addr);
-			if (usesTransientContext) {
+			if (usesNativeContextSelectors) {
 				IAccountLayerDiamond(accountLayer).setTransientSignerScoped(owner, scope);
 			} else {
 				IAccountLayerDiamond(accountLayer).setSignerScoped(owner, scope);
@@ -1003,7 +1002,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			} else {
 				(success, result) = accountLayer.call(callData);
 			}
-			if (usesTransientContext) {
+			if (usesNativeContextSelectors) {
 				IAccountLayerDiamond(accountLayer).setTransientSigner(address(0));
 			} else {
 				IAccountLayerDiamond(accountLayer).setSigner(address(0));

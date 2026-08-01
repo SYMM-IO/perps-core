@@ -9,28 +9,13 @@ import path from "path"
 import { FacetCutAction, getSelectors } from "../../../tasks/utils/diamondCut.js"
 import { ethers } from "../../../test/helpers/hardhat-connection.js"
 import { loadDeploymentState, saveDeploymentState, resolveDeploymentStateMetadata, type DeploymentStateContext } from "./deploymentState.js"
+import { AccountLayerFacetNames, ensureLibraries, getFacetSpec, getLinkedContractFactory } from "../../../utils/deploymentManifest.js"
 import { log } from "./log.js"
 import { accountLayerCutTxOverrides, deployTxOverrides, writeTxOverrides } from "./txOverrides.js"
 
 // ============================================================================
 // Constants
 // ============================================================================
-
-const AccountLayerFacetNames = ["CoreFacet", "MarginFacet", "SymmioHookFacet", "ControlFacet", "ViewFacet", "AffiliateFacet", "DiamondLoupeFacet"]
-
-const AccountLayerFacetLibraryDependencies: Record<string, string[]> = {
-	CoreFacet: ["LibQuoteParams"],
-}
-
-const AccountLayerFacetPathMap: Record<string, string> = {
-	CoreFacet: "contracts/accountLayer/facets/Core/CoreFacet.sol:CoreFacet",
-	MarginFacet: "contracts/accountLayer/facets/Margin/MarginFacet.sol:MarginFacet",
-	SymmioHookFacet: "contracts/accountLayer/facets/SymmioHook/SymmioHookFacet.sol:SymmioHookFacet",
-	ControlFacet: "contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet",
-	ViewFacet: "contracts/accountLayer/facets/View/ViewFacet.sol:ViewFacet",
-	AffiliateFacet: "contracts/accountLayer/facets/Affiliate/AffiliateFacet.sol:AffiliateFacet",
-	DiamondLoupeFacet: "DiamondLoupeFacet",
-}
 
 // ============================================================================
 // Types
@@ -195,21 +180,22 @@ export async function deployAccountLayerDiamond(
 		log.deployed("Init", initAddress)
 	}
 
-	// 4. LibQuoteParams library
+	// 4. AccountLayer libraries
 	if (!al.libraries) al.libraries = {}
 	const libraryAddresses: Record<string, string> = { ...al.libraries }
-
-	if (libraryAddresses["LibQuoteParams"]) {
-		log.deployed("LibQuoteParams", libraryAddresses["LibQuoteParams"], true)
-	} else {
-		const factory = await ethers.getContractFactory("contracts/accountLayer/libraries/LibQuoteParams.sol:LibQuoteParams")
-		const contract = await factory.deploy(deployTxOverrides())
-		libraryAddresses["LibQuoteParams"] = await contract.getAddress()
-		al.libraries["LibQuoteParams"] = libraryAddresses["LibQuoteParams"]
-		if (stateFile) saveState(stateFile, state, metadata)
-		await contract.waitForDeployment()
-		log.deployed("LibQuoteParams", libraryAddresses["LibQuoteParams"])
-	}
+	const ensuredLibraries = await ensureLibraries({
+		ethers,
+		scope: "accountLayer",
+		existing: libraryAddresses,
+		onReused: (name, address) => log.deployed(name, address, true),
+		onDeployed: (name, address) => {
+			libraryAddresses[name] = address
+			al.libraries![name] = address
+			if (stateFile) saveState(stateFile, state, metadata)
+			log.deployed(name, address)
+		},
+	})
+	Object.assign(libraryAddresses, ensuredLibraries)
 
 	// 5. Deploy 7 facets
 	if (!al.facets) al.facets = {}
@@ -219,24 +205,14 @@ export async function deployAccountLayerDiamond(
 
 	for (let i = 0; i < AccountLayerFacetNames.length; i++) {
 		const facetName = AccountLayerFacetNames[i]
-		const contractPath = AccountLayerFacetPathMap[facetName]
+		const facetSpec = getFacetSpec("accountLayer", facetName)
 
 		let facetAddress: string
 		if (facetAddresses[facetName]) {
 			facetAddress = facetAddresses[facetName]
 			log.skipped(facetName, facetAddress)
 		} else {
-			const requiredLibraries = AccountLayerFacetLibraryDependencies[facetName]
-			let factory
-			if (requiredLibraries && requiredLibraries.length > 0) {
-				const libraries: Record<string, string> = {}
-				for (const lib of requiredLibraries) {
-					libraries[`project/contracts/accountLayer/libraries/${lib}.sol:${lib}`] = libraryAddresses[lib]
-				}
-				factory = await ethers.getContractFactory(contractPath, { libraries })
-			} else {
-				factory = await ethers.getContractFactory(contractPath)
-			}
+			const factory = await getLinkedContractFactory(ethers, "accountLayer", facetSpec, libraryAddresses)
 			const facet = await factory.deploy(deployTxOverrides())
 			// Save address immediately after tx is submitted (before mining) so a crash
 			// during waitForDeployment doesn't lose the deployed address and cause a
@@ -250,7 +226,7 @@ export async function deployAccountLayerDiamond(
 		}
 
 		// Get selectors for diamond cut
-		const facet = await ethers.getContractAt(contractPath, facetAddress)
+		const facet = await ethers.getContractAt(facetSpec.artifact, facetAddress)
 		cut.push({
 			facetAddress,
 			action: FacetCutAction.Add,
@@ -265,7 +241,7 @@ export async function deployAccountLayerDiamond(
 		// Verify on-chain: try calling admin() from AccountLayer ControlFacet
 		let alreadyDone = false
 		try {
-			const controlFacet = await ethers.getContractAt(AccountLayerFacetPathMap["ControlFacet"], diamondAddress)
+			const controlFacet = await ethers.getContractAt(getFacetSpec("accountLayer", "ControlFacet").artifact, diamondAddress)
 			await controlFacet.admin()
 			alreadyDone = true
 			log.ok("Diamond cut already complete (verified on-chain)")
@@ -355,6 +331,7 @@ export async function wireAccountLayerInstantLayer(
 	accountLayerDiamondAddress: string,
 	instantLayerAddress: string,
 	adminSigner: any,
+	accountLayerAdminSigner: any = adminSigner,
 ): Promise<void> {
 	log.info("Wiring:")
 
@@ -387,7 +364,7 @@ export async function wireAccountLayerInstantLayer(
 	const alControlFacet = await ethers.getContractAt(
 		"contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet",
 		accountLayerDiamondAddress,
-		adminSigner,
+		accountLayerAdminSigner,
 	)
 
 	// Grant InstantLayer SIGNER_SETTER_ROLE on AccountLayer

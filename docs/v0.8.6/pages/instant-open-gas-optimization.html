@@ -573,7 +573,8 @@
 						<code>SETTER_ROLE</code> and enabled by default. The flag changes only which selectors InstantLayer invokes: enabled uses the
 						native begin/end and transient-signer selectors; disabled uses the historical mode and signer setters. Both sequences write
 						transient storage in this build, although the historical selector sequence uses extra writes to toggle InstantOpen mode. This
-						is a selector-compatibility control, not a storage rollback. Templates and signatures remain unchanged.
+						is a selector-compatibility control, not a storage rollback. The existing public flag and setter names are retained for ABI
+						compatibility. Templates and signatures remain unchanged.
 					</p>
 
 					<h3>What a Pre-Cancun Build Requires</h3>

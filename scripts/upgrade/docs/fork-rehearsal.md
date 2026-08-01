@@ -26,8 +26,8 @@ In production, step 1 is done by the admin (EOA via `applyUpgrade.ts`) or multis
 "fork-base": {
     type: "edr-simulated",
     blockGasLimit: 30_000_000,
-    allowUnlimitedContractSize: true,
-    hardfork: "shanghai",
+    allowUnlimitedContractSize: false,
+    hardfork: "cancun",
     forking: {
         url: "https://base.drpc.org",
         blockNumber: Number(process.env.FORK_BLOCK_NUMBER || 0) || undefined,
@@ -68,6 +68,20 @@ NETWORK_ALIAS=base FORK_RUN_MIGRATION=true GAP_SCAN_RANGE=10 \
 ```
 
 In this mode, `forkUpgrade.ts` prepares and validates the migration input immediately after `pauseGlobal()`, then continues with the diamondCut, wiring, `MIGRATION_ROLE`, and `runMigration.ts`.
+
+For an existing AccountLayer diamond, set `accountLayerDiamondAddress` in the upgrade config or pass
+`ACCOUNT_LAYER_DIAMOND_ADDRESS`. The rehearsal then deploys the complete linked AccountLayer facet set,
+builds a live loupe diff, applies it through the AccountLayer owner, and records the existing diamond in the report.
+If the address is omitted, the historical v0.8.4 -> v0.8.5 path still deploys AccountLayer fresh.
+
+Ownership and configuration authority may be separate. The script resolves the cut signer from live diamond storage;
+set `ACCOUNT_LAYER_OWNER` only to override that owner. For post-cut wiring it checks the configured AccountLayer admin,
+the core admin, and the AccountLayer owner for both `SIGNER_SETTER_ROLE` admin authority and `SETTER_ROLE`. Set
+`ACCOUNT_LAYER_ADMIN` when none of the defaults holds both permissions.
+
+The current release requires Cancun/EIP-1153. Fork profiles use `hardfork: "cancun"` and enforce EIP-170 during
+deployment. Do not rehearse an unsupported target by overriding the fork to Cancun and treating that as proof of
+target-chain compatibility.
 
 ### Step 1.5: Verify upgrade
 
@@ -167,6 +181,9 @@ Config files support network-postfixed names (e.g. `upgrade-arbitrum.json`). Scr
 | Field                        | Type    | Default | Description                                                                     |
 | ---------------------------- | ------- | ------- | ------------------------------------------------------------------------------- |
 | `diamondAddress`             | string  | --      | Diamond proxy address on the target network                                     |
+| `accountLayerDiamondAddress` | string  | --      | Existing AccountLayer diamond to upgrade in place; omit only for the historical fresh-deploy path |
+| `accountLayerOwner`          | string  | live owner | Optional fork-only override for the AccountLayer diamond-cut owner              |
+| `accountLayerAdmin`          | string  | discovered | AccountLayer role admin used for post-cut wiring when ownership and role administration differ |
 | `protocolAdmin`              | string  | `""`    | Default admin / role admin used for fork role grants and post-cut wiring        |
 | `upgradeOperator`            | string  | `""`    | Optional temporary scoped executor for EOA operational rehearsals               |
 | `safeAddress`                | string  | `""`    | Gnosis Safe address (optional, for Safe path)                                   |
@@ -182,6 +199,9 @@ Config files support network-postfixed names (e.g. `upgrade-arbitrum.json`). Scr
 | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | `DIAMOND_ADDRESS`                                             | `diamondAddress`                                                                                          |
 | `FORK_OWNER_ADDRESS` / `FORK_ADMIN_ADDRESS` / `ADMIN_ADDRESS` | Explicit diamond owner override; otherwise `forkUpgrade.ts` reads the owner from LibDiamond storage       |
+| `ACCOUNT_LAYER_DIAMOND_ADDRESS`                               | `accountLayerDiamondAddress`                                                                              |
+| `ACCOUNT_LAYER_OWNER`                                         | `accountLayerOwner`                                                                                       |
+| `ACCOUNT_LAYER_ADMIN`                                         | `accountLayerAdmin`                                                                                       |
 | `PROTOCOL_ADMIN`                                              | Override `protocolAdmin` for role/default-admin wiring                                                    |
 | `FORK_MIGRATION_RUNNER_ADDRESS` / `MIGRATION_RUNNER_ADDRESS`  | Override the fork migration signer granted `MIGRATION_ROLE`                                               |
 | `DIAMOND_CUT_CHUNK_SIZE`                                      | `diamondCutChunkSize`                                                                                     |
