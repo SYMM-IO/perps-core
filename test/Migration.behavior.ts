@@ -11,9 +11,9 @@ import { User } from "./models/User.js"
 import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
 import { limitFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest.js"
 import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
-import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
-import { decimal } from "./utils/Common.js"
-import { getDummyLiquidationSig, getDummyPairUpnlAndPricesSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
+import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
+import { decimal, getOpenTradingFeeForQuoteWithFilledAmount } from "./utils/Common.js"
+import { getDummyLiquidationSig, getDummyPairUpnlAndPricesSig, getDummySingleUpnlAndPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
 
 export function shouldBehaveLikeMigration(): void {
 	let context: RunContext
@@ -66,6 +66,28 @@ export function shouldBehaveLikeMigration(): void {
 		it("Should return false for non-migrated quotes", async function () {
 			expect(await context.migrationFacet.isQuoteMigrated(1)).to.equal(false)
 			expect(await context.migrationFacet.isQuoteMigrated(999)).to.equal(false)
+		})
+
+		it("Should preserve provisional market fee reservations across migrateQuotes", async function () {
+			const provisionalMarketPrice = decimal(9n, 17)
+			const quoteId = await user.sendQuote(
+				marketQuoteRequestBuilder()
+					.partyBWhiteList([await hedger.getAddress()])
+					.upnlSig(getDummySingleUpnlAndPriceSig(provisionalMarketPrice))
+					.build(),
+			)
+			const quote = await context.viewFacetQuote.getQuote(quoteId)
+			const reservedFeeBeforeMigration = await getOpenTradingFeeForQuoteWithFilledAmount(context, quoteId, quote.quantity)
+			const allocatedBeforeCancel = (await user.getBalanceInfo()).allocatedBalances
+
+			await context.migrationFacet.connect(context.signers.admin).migrateQuotes([quoteId])
+
+			const reservedFeeAfterMigration = await getOpenTradingFeeForQuoteWithFilledAmount(context, quoteId, quote.quantity)
+			expect(reservedFeeAfterMigration).to.equal(reservedFeeBeforeMigration)
+
+			await user.requestToCancelQuote(quoteId)
+			const allocatedAfterCancel = (await user.getBalanceInfo()).allocatedBalances
+			expect(allocatedAfterCancel - allocatedBeforeCancel).to.equal(reservedFeeBeforeMigration)
 		})
 
 		it("Should backfill connectedPartyBs after migration", async function () {
