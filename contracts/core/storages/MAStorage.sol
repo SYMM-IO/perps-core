@@ -156,6 +156,9 @@ library MAStorage {
 		/// @dev Instant raises bypass this; only reductions/revokes are delayed. Protects a solver that
 		///      already hedged from a revoke front-run. Set by COOLDOWN_ADMIN_ROLE (a timing knob, like the other cooldowns).
 		uint256 operationalFeeReductionDelay;
+		/// @notice Whether Party B must keep its locked and pending CVA + LF backed by allocated collateral when deallocating.
+		/// @dev Disabled by default for backward compatibility. Configured per Party B by PARTY_B_MANAGER_ROLE.
+		mapping(address => bool) strictDeallocationEnabledForPartyB;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

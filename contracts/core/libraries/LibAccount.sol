@@ -24,6 +24,29 @@ library LibAccount {
 		return accountLayout.pendingLockedBalances[partyA].totalForPartyA() + accountLayout.lockedBalances[partyA].totalForPartyA();
 	}
 
+	/// @notice Returns Party A's locked and pending CVA + LF that must remain backed by allocated collateral during deallocation.
+	function partyADeallocateCvaLfRequirement(address partyA) internal view returns (uint256) {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		return
+			accountLayout.lockedBalances[partyA].cva +
+			accountLayout.lockedBalances[partyA].lf +
+			accountLayout.pendingLockedBalances[partyA].cva +
+			accountLayout.pendingLockedBalances[partyA].lf;
+	}
+
+	/// @notice Returns the maximum Party A amount permitted by solvency, pending-balance, and raw CVA + LF deallocation checks.
+	function partyAMaxDeallocatable(int256 upnl, address partyA, uint256 pendingBalance) internal view returns (uint256) {
+		int256 availableBalance = partyAAvailableForQuote(upnl, partyA);
+		if (availableBalance <= 0 || uint256(availableBalance) <= pendingBalance) return 0;
+
+		uint256 availableAfterPending = uint256(availableBalance) - pendingBalance;
+		uint256 allocatedBalance = AccountStorage.layout().allocatedBalances[partyA];
+		uint256 requirement = partyADeallocateCvaLfRequirement(partyA);
+		uint256 allocationAboveRequirement = allocatedBalance > requirement ? allocatedBalance - requirement : 0;
+
+		return availableAfterPending < allocationAboveRequirement ? availableAfterPending : allocationAboveRequirement;
+	}
+
 	/// @notice Calculates the total locked balances of Party B for a specific Party A.
 	/// @param partyB The address of Party B.
 	/// @param partyA The address of Party A.
@@ -34,6 +57,37 @@ library LibAccount {
 		return
 			accountLayout.partyBPendingLockedBalances[partyB][allocationKey].totalForPartyB() +
 			accountLayout.partyBLockedBalances[partyB][allocationKey].totalForPartyB();
+	}
+
+	/// @notice Returns Party B's locked and pending CVA + LF for the allocation bucket used by its current margin mode.
+	function partyBDeallocateCvaLfRequirement(address partyB, address partyA) internal view returns (uint256) {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		address allocationKey = partyBAllocationKey(partyB, partyA);
+		return
+			accountLayout.partyBLockedBalances[partyB][allocationKey].cva +
+			accountLayout.partyBLockedBalances[partyB][allocationKey].lf +
+			accountLayout.partyBPendingLockedBalances[partyB][allocationKey].cva +
+			accountLayout.partyBPendingLockedBalances[partyB][allocationKey].lf;
+	}
+
+	/// @notice Returns the maximum Party B amount permitted by the current margin mode, solvency, and strict-deallocation policy.
+	function partyBMaxDeallocatable(int256 upnl, address partyB, address partyA) internal view returns (uint256) {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		MAStorage.Layout storage maLayout = MAStorage.layout();
+		bool isCrossMode = maLayout.crossModeEnabledForPartyB[partyB];
+		address allocationKey = isCrossMode ? address(0) : partyA;
+		int256 availableBalance = partyBAvailableForQuote(upnl, partyB, allocationKey);
+		if (availableBalance < 0) return 0;
+
+		uint256 allocatedBalance = accountLayout.partyBAllocatedBalances[partyB][partyA];
+		if (isCrossMode && partyA != address(0)) return allocatedBalance;
+
+		uint256 maxDeallocatable = uint256(availableBalance) < allocatedBalance ? uint256(availableBalance) : allocatedBalance;
+		if (!maLayout.strictDeallocationEnabledForPartyB[partyB]) return maxDeallocatable;
+
+		uint256 requirement = partyBDeallocateCvaLfRequirement(partyB, allocationKey);
+		uint256 allocationAboveRequirement = allocatedBalance > requirement ? allocatedBalance - requirement : 0;
+		return maxDeallocatable < allocationAboveRequirement ? maxDeallocatable : allocationAboveRequirement;
 	}
 
 	/// @notice Calculates the available balance for a quote for Party A.

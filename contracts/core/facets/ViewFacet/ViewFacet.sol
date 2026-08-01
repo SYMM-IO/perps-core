@@ -195,6 +195,26 @@ contract ViewFacet is IViewFacet {
 		return AccountStorage.layout().partyBAllocatedBalances[partyB][partyA];
 	}
 
+	/// @notice Returns the maximum amount Party A can deallocate for the supplied uPnL.
+	/// @dev Excludes operational gates such as pause state, cooldowns, and signature validity.
+	function maxDeallocatableForPartyA(address partyA, int256 upnl) external view returns (uint256) {
+		return LibAccount.partyAMaxDeallocatable(upnl, partyA, 0);
+	}
+
+	/// @notice Returns the maximum amount Party A can safe-deallocate for the supplied uPnL and off-chain pending balance.
+	/// @dev pendingBalance is the value carried by SingleUpnlWithPendingBalanceSig, not pending locked quote collateral.
+	///      Excludes operational gates such as pause state, cooldowns, and signature validity.
+	function maxSafeDeallocatableForPartyA(address partyA, int256 upnl, uint256 pendingBalance) external view returns (uint256) {
+		return LibAccount.partyAMaxDeallocatable(upnl, partyA, pendingBalance);
+	}
+
+	/// @notice Returns the maximum amount Party B can deallocate from the requested allocation bucket for the supplied uPnL.
+	/// @dev Use partyA = address(0) for the active cross-mode bucket. Legacy per-PartyA buckets retain their drain semantics.
+	///      Excludes operational gates such as pause state and signature validity.
+	function maxDeallocatableForPartyB(address partyB, address partyA, int256 upnl) external view returns (uint256) {
+		return LibAccount.partyBMaxDeallocatable(upnl, partyB, partyA);
+	}
+
 	/// @notice Returns the effective account that receives a charger's operational fees.
 	/// @dev If no custom receiver is set, the charger itself receives operational fees.
 	function getOperationalFeeReceiver(address charger) external view returns (address) {
@@ -737,6 +757,12 @@ contract ViewFacet is IViewFacet {
 	/// @return Whether ADL is enabled for the party B.
 	function isADLEnabled(address partyB) external view returns (bool) {
 		return MAStorage.layout().adlEnabled[partyB];
+	}
+
+	/// @notice Returns whether a Party B must keep locked and pending CVA + LF allocated when deallocating.
+	/// @param partyB The Party B to query.
+	function isPartyBStrictDeallocationEnabled(address partyB) external view returns (bool) {
+		return MAStorage.layout().strictDeallocationEnabledForPartyB[partyB];
 	}
 
 	/// @notice Returns the effective signer address, falling back to msg.sender if no signer is set.

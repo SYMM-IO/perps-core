@@ -103,6 +103,10 @@ library AccountFacetImpl {
 		int256 availableBalance = LibAccount.partyAAvailableForQuote(upnlSig.upnl, signer);
 		require(availableBalance >= 0, "AccountFacet: Available balance is lower than zero");
 		require(uint256(availableBalance) >= amount, "AccountFacet: partyA will be liquidatable");
+		require(
+			accountLayout.allocatedBalances[signer] - amount >= LibAccount.partyADeallocateCvaLfRequirement(signer),
+			"AccountFacet: CVA and LF must remain allocated"
+		);
 
 		_executeDeallocate(signer, amount);
 	}
@@ -120,6 +124,10 @@ library AccountFacetImpl {
 		int256 availableBalance = LibAccount.partyAAvailableForQuote(upnlSig.upnl, signer);
 		require(availableBalance >= 0, "AccountFacet: Available balance is lower than zero");
 		require(uint256(availableBalance) >= upnlSig.pendingBalance + amount, "AccountFacet: Insufficient balance considering pending allocations");
+		require(
+			accountLayout.allocatedBalances[signer] - amount >= LibAccount.partyADeallocateCvaLfRequirement(signer),
+			"AccountFacet: CVA and LF must remain allocated"
+		);
 
 		_executeDeallocate(signer, amount);
 	}

@@ -40,6 +40,12 @@ interface IViewFacet {
 
 	function allocatedBalanceOfPartyA(address partyA) external view returns (uint256);
 
+	function maxDeallocatableForPartyA(address partyA, int256 upnl) external view returns (uint256);
+
+	function maxSafeDeallocatableForPartyA(address partyA, int256 upnl, uint256 pendingBalance) external view returns (uint256);
+
+	function maxDeallocatableForPartyB(address partyB, address partyA, int256 upnl) external view returns (uint256);
+
 	function isCrossPartyB(address partyB) external view returns (bool);
 
 	function isLegacyDeallocateDeprecated() external view returns (bool);
@@ -191,6 +197,8 @@ interface IViewFacet {
 	function getAffiliateFee(address affiliate, uint256 symbolId) external view returns (Fee memory);
 
 	function isADLEnabled(address partyB) external view returns (bool);
+
+	function isPartyBStrictDeallocationEnabled(address partyB) external view returns (bool);
 
 	function getSigner() external view returns (address);
 

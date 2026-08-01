@@ -51,6 +51,13 @@ library PartyBAccountFacetImpl {
 		// Normal deallocation (isolated mode or cross bucket) requires availableBalance >= amount.
 		if (!isCrossMode || partyA == address(0)) {
 			require(uint256(availableBalance) >= amount, "AccountFacet: Will be liquidatable");
+			if (MAStorage.layout().strictDeallocationEnabledForPartyB[signer]) {
+				require(
+					accountLayout.partyBAllocatedBalances[signer][partyA] - amount >=
+						LibAccount.partyBDeallocateCvaLfRequirement(signer, verifyPartyA),
+					"AccountFacet: CVA and LF must remain allocated"
+				);
+			}
 		}
 
 		accountLayout.partyBAllocatedBalances[signer][partyA] -= amount;
@@ -78,6 +85,12 @@ library PartyBAccountFacetImpl {
 		int256 availableBalance = LibAccount.partyBAvailableForQuote(upnlSig.upnl, signer, origin);
 		require(availableBalance >= 0, "PartyBFacet: Available balance is lower than zero");
 		require(uint256(availableBalance) >= amount, "PartyBFacet: Will be liquidatable");
+		if (maLayout.strictDeallocationEnabledForPartyB[signer]) {
+			require(
+				accountLayout.partyBAllocatedBalances[signer][origin] - amount >= LibAccount.partyBDeallocateCvaLfRequirement(signer, origin),
+				"PartyBFacet: CVA and LF must remain allocated"
+			);
+		}
 
 		accountLayout.partyBAllocatedBalances[signer][origin] -= amount;
 		// allocate for recipient

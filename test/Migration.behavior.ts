@@ -318,6 +318,7 @@ export function shouldBehaveLikeMigration(): void {
 
 			// Deallocating per partyA should succeed — legacy drain only requires cross solvency (>= 0)
 			const deallocateAmount = decimal(100n)
+			expect(await context.viewFacet.maxDeallocatableForPartyB(partyB, partyA, 0n)).to.equal(allocateAmount)
 			await expect(
 				context.partyBAccountFacet.connect(context.signers.hedger).deallocateForPartyB(deallocateAmount, partyA, await getDummySingleUpnlSig(0n)),
 			).to.not.be.reverted
@@ -337,6 +338,7 @@ export function shouldBehaveLikeMigration(): void {
 			await context.controlFacet.connect(context.signers.admin).setCrossPartyB(partyB, true)
 
 			// Deallocating with negative upnl should fail (cross bucket available balance < 0)
+			expect(await context.viewFacet.maxDeallocatableForPartyB(partyB, partyA, decimal(-100n))).to.equal(0n)
 			await expect(
 				context.partyBAccountFacet
 					.connect(context.signers.hedger)

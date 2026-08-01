@@ -105,6 +105,8 @@ interface IControlFacet is IControlEvents {
 
 	function setADLEnabled(address partyB, bool enabled) external;
 
+	function setPartyBStrictDeallocation(address partyB, bool enabled) external;
+
 	function setCallFromInstantLayer(bool callFromInstantLayer) external;
 
 	function setInstantOpenMode(bool instantOpenMode) external;
