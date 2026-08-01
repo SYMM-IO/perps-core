@@ -11,7 +11,7 @@ import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest.js
 import { limitFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest.js"
 import { limitOpenRequestBuilder, marketOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
 import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
-import { decimal, getBlockTimestamp, getQuoteQuantity } from "./utils/Common.js"
+import { decimal, getBlockTimestamp, getQuoteOpenTradingFeeAtPrice, getQuoteQuantity } from "./utils/Common.js"
 import { migratePartyBToCross } from "./utils/CrossPartyB.js"
 import { getDummyHighLowPriceSig, getDummySingleUpnlAndPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
 
@@ -584,7 +584,7 @@ export function shouldBehaveLikeHooks(): void {
 			)
 			await hedger.lockQuote(quoteId)
 			const quote = await context.viewFacetQuote.getQuote(quoteId)
-			const expectedExecutedFee = (quote.quantity * openedPrice * quote.tradingFee) / 10n ** 36n
+			const expectedExecutedFee = getQuoteOpenTradingFeeAtPrice(quote, quote.quantity, openedPrice)
 
 			await hedger.openPosition(
 				quoteId,

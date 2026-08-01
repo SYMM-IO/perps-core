@@ -152,6 +152,27 @@ export async function getOpenTradingFeeForQuotes(context: RunContext, quoteIds: 
 	return out
 }
 
+export function getTradingFeeAtPrice(amount: bigint, tradingPrice: bigint, tradingFee: bigint): bigint {
+	return unDecimal(amount * tradingPrice * tradingFee, 36)
+}
+
+export function getQuoteOpenTradingFeeAtPrice(quote: QuoteStructOutput, amount: bigint, tradingPrice: bigint): bigint {
+	return getTradingFeeAtPrice(amount, tradingPrice, quote.tradingFee)
+}
+
+export function getTrueUpInsolvencyUpnl(
+	allocatedBefore: bigint,
+	lockedCva: bigint,
+	lockedLf: bigint,
+	reservedFee: bigint,
+	executedFee: bigint,
+): { trueUpDelta: bigint; freeBalanceBeforeTrueUp: bigint; upnlPartyA: bigint } {
+	const trueUpDelta = executedFee - reservedFee
+	const freeBalanceBeforeTrueUp = allocatedBefore - (lockedCva + lockedLf)
+	const upnlPartyA = -freeBalanceBeforeTrueUp + trueUpDelta - 1n
+	return { trueUpDelta, freeBalanceBeforeTrueUp, upnlPartyA }
+}
+
 function getQuoteTradingFeeWithAmount(quote: QuoteStructOutput, amount: bigint, useExecutedPriceForOpened: boolean): bigint {
 	const tradingPrice =
 		quote.orderType === BigInt(OrderType.LIMIT)
@@ -159,7 +180,7 @@ function getQuoteTradingFeeWithAmount(quote: QuoteStructOutput, amount: bigint, 
 			: useExecutedPriceForOpened && quote.openedPrice !== 0n
 				? quote.openedPrice
 				: quote.marketPrice
-	return unDecimal(amount * tradingPrice * quote.tradingFee, 36)
+	return getTradingFeeAtPrice(amount, tradingPrice, quote.tradingFee)
 }
 
 export async function pausePartyB(context: RunContext): Promise<void> {

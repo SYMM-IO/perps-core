@@ -12,7 +12,7 @@ import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
 import { limitOpenRequestBuilder, marketOpenRequestBuilder, OpenRequest } from "./models/requestModels/OpenRequest.js"
 import { limitQuoteRequestBuilder, marketQuoteRequestBuilder, QuoteRequest } from "./models/requestModels/QuoteRequest.js"
-import { decimal, getBlockTimestamp } from "./utils/Common.js"
+import { decimal, getBlockTimestamp, getTradingFeeAtPrice, getTrueUpInsolvencyUpnl } from "./utils/Common.js"
 import { getDummyPairUpnlAndPriceSig, getDummySingleUpnlAndPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -115,32 +115,9 @@ export function shouldBehaveLikeInstantOpenMode(): void {
 			.build()
 		requestOpenQuote = limitOpenRequestBuilder().build()
 
-		const { partyAFacet, partyBPositionActionsFacet, partyBQuoteActionsFacet, bindingFacet } = context
-
-		quoteCallData = partyAFacet.interface.encodeFunctionData("sendQuoteWithAffiliate", [
-			requestSendQuote.partyBWhiteList,
-			requestSendQuote.symbolId,
-			requestSendQuote.positionType,
-			requestSendQuote.orderType,
-			requestSendQuote.price,
-			requestSendQuote.quantity,
-			requestSendQuote.cva,
-			requestSendQuote.lf,
-			requestSendQuote.partyAmm,
-			requestSendQuote.partyBmm,
-			requestSendQuote.maxFundingRate,
-			await requestSendQuote.deadline,
-			requestSendQuote.affiliate,
-			await requestSendQuote.upnlSig,
-		])
+		const { partyBQuoteActionsFacet, bindingFacet } = context
 
 		lockQuoteCallData = partyBQuoteActionsFacet.interface.encodeFunctionData("lockQuote", [0, await getDummySingleUpnlSig(10n)])
-		openQuoteCallData = partyBPositionActionsFacet.interface.encodeFunctionData("openPosition", [
-			0,
-			requestOpenQuote.filledAmount,
-			requestOpenQuote.openPrice,
-			await getDummyPairUpnlAndPriceSig(10n),
-		])
 		bindToPartyBCallData = bindingFacet.interface.encodeFunctionData("bindToPartyB", [await context.symmioPartyB.getAddress()])
 
 		types = cloneTypes()
@@ -162,6 +139,7 @@ export function shouldBehaveLikeInstantOpenMode(): void {
 		await context.symmioPartyB.connect(partyA1.signer)._approve(context.collateral, decimal(30n))
 		await context.collateral.connect(partyA1.signer).mint(accounts[0].accountAddress, decimal(30n))
 		await context.accountFacet.connect(partyA1.signer).internalTransfer(accounts[0].accountAddress, decimal(1000n))
+		await setSendLockOpenRequests(requestSendQuote, requestOpenQuote)
 
 		// Setup delegation
 		const selectorQuote = quoteCallData.slice(0, 10)
@@ -207,6 +185,34 @@ export function shouldBehaveLikeInstantOpenMode(): void {
 		const openSig = await signOperation(partyB1.signer, domain, types, openOp)
 
 		return await context.instantLayer.executeTemplate(templateId, [sendOp, lockOp, openOp], [sendSig, lockSig, openSig], [[], [], []], [[], [], []])
+	}
+
+	async function setSendLockOpenRequests(sendRequest: QuoteRequest, openRequest: OpenRequest) {
+		requestSendQuote = sendRequest
+		requestOpenQuote = openRequest
+
+		quoteCallData = context.partyAFacet.interface.encodeFunctionData("sendQuoteWithAffiliate", [
+			requestSendQuote.partyBWhiteList,
+			requestSendQuote.symbolId,
+			requestSendQuote.positionType,
+			requestSendQuote.orderType,
+			requestSendQuote.price,
+			requestSendQuote.quantity,
+			requestSendQuote.cva,
+			requestSendQuote.lf,
+			requestSendQuote.partyAmm,
+			requestSendQuote.partyBmm,
+			requestSendQuote.maxFundingRate,
+			await requestSendQuote.deadline,
+			requestSendQuote.affiliate,
+			await requestSendQuote.upnlSig,
+		])
+		openQuoteCallData = context.partyBPositionActionsFacet.interface.encodeFunctionData("openPosition", [
+			0,
+			requestOpenQuote.filledAmount,
+			requestOpenQuote.openPrice,
+			await getDummyPairUpnlAndPriceSig(BigInt(requestOpenQuote.price), BigInt(requestOpenQuote.upnlPartyA), BigInt(requestOpenQuote.upnlPartyB)),
+		])
 	}
 
 	// ──────────────────────────────────────────────────────────────────────────
@@ -380,40 +386,16 @@ export function shouldBehaveLikeInstantOpenMode(): void {
 
 			const provisionalMarketPrice = decimal(9n, 17)
 			const openedPrice = decimal(11n, 17)
-			requestSendQuote = marketQuoteRequestBuilder()
+			const quoteRequest = marketQuoteRequestBuilder()
 				.partyBWhiteList([await context.symmioPartyB.getAddress()])
 				.affiliate(affiliate)
 				.price(decimal(12n, 17))
 				.upnlSig(getDummySingleUpnlAndPriceSig(provisionalMarketPrice))
 				.build()
-			requestOpenQuote = marketOpenRequestBuilder()
-				.filledAmount(requestSendQuote.quantity)
-				.openPrice(openedPrice)
-				.price(provisionalMarketPrice)
-				.build()
-
-			quoteCallData = context.partyAFacet.interface.encodeFunctionData("sendQuoteWithAffiliate", [
-				requestSendQuote.partyBWhiteList,
-				requestSendQuote.symbolId,
-				requestSendQuote.positionType,
-				requestSendQuote.orderType,
-				requestSendQuote.price,
-				requestSendQuote.quantity,
-				requestSendQuote.cva,
-				requestSendQuote.lf,
-				requestSendQuote.partyAmm,
-				requestSendQuote.partyBmm,
-				requestSendQuote.maxFundingRate,
-				await requestSendQuote.deadline,
-				requestSendQuote.affiliate,
-				await requestSendQuote.upnlSig,
-			])
-			openQuoteCallData = context.partyBPositionActionsFacet.interface.encodeFunctionData("openPosition", [
-				0,
-				requestOpenQuote.filledAmount,
-				requestOpenQuote.openPrice,
-				await getDummyPairUpnlAndPriceSig(BigInt(requestOpenQuote.price)),
-			])
+			await setSendLockOpenRequests(
+				quoteRequest,
+				marketOpenRequestBuilder().filledAmount(quoteRequest.quantity).openPrice(openedPrice).price(provisionalMarketPrice).build(),
+			)
 
 			const feeCollector = await context.viewFacet.getFeeCollector(affiliate)
 			const feeCollectorBefore = await context.viewFacet.balanceOf(feeCollector)
@@ -422,7 +404,7 @@ export function shouldBehaveLikeInstantOpenMode(): void {
 			await executeSendLockOpen()
 
 			const quote = await context.viewFacetQuote.getQuote(1)
-			const expectedExecutedFee = (quote.quantity * openedPrice * quote.tradingFee) / 10n ** 36n
+			const expectedExecutedFee = getTradingFeeAtPrice(quote.quantity, openedPrice, quote.tradingFee)
 			const feeCollectorAfter = await context.viewFacet.balanceOf(feeCollector)
 			const allocatedAfter = (await context.viewFacet.balanceInfoOfPartyA(quote.partyA))[0]
 			expect(allocatedBefore - allocatedAfter).to.equal(expectedExecutedFee)
@@ -430,6 +412,55 @@ export function shouldBehaveLikeInstantOpenMode(): void {
 
 			const [, hookFeeAmount] = await affiliateHook.getLastOpenFeeCall()
 			expect(hookFeeAmount).to.equal(expectedExecutedFee)
+		})
+
+		it("should fail when the executed-fee true-up makes the direct instant-open core path insolvent", async function () {
+			const regularUser = new User(context, context.signers.user2)
+			await regularUser.setup()
+			await regularUser.setBalances(decimal(2000n), decimal(1000n), decimal(500n))
+
+			const regularHedger = new Hedger(context, context.signers.hedger2)
+			await regularHedger.setup()
+			await regularHedger.setBalances(decimal(4000n), decimal(4000n))
+
+			const provisionalMarketPrice = decimal(9n, 17)
+			const openedPrice = decimal(1n)
+			const quoteRequest = marketQuoteRequestBuilder()
+				.partyBWhiteList([await regularHedger.getAddress()])
+				.price(decimal(1n))
+				.upnlSig(getDummySingleUpnlAndPriceSig(provisionalMarketPrice))
+				.build()
+			await context.controlFacet.connect(context.signers.admin).setInstantOpenMode(true)
+			const quoteId = await regularUser.sendQuote(quoteRequest)
+			await regularHedger.lockQuote(quoteId)
+
+			const quoteBeforeOpen = await context.viewFacetQuote.getQuote(quoteId)
+			const allocatedBefore = await context.viewFacet.allocatedBalanceOfPartyA(await regularUser.getAddress())
+			const reservedFee = getTradingFeeAtPrice(quoteBeforeOpen.quantity, quoteBeforeOpen.marketPrice, quoteBeforeOpen.tradingFee)
+			const executedFee = getTradingFeeAtPrice(quoteBeforeOpen.quantity, openedPrice, quoteBeforeOpen.tradingFee)
+			const { trueUpDelta, freeBalanceBeforeTrueUp, upnlPartyA } = getTrueUpInsolvencyUpnl(
+				allocatedBefore,
+				quoteBeforeOpen.lockedValues.cva,
+				quoteBeforeOpen.lockedValues.lf,
+				reservedFee,
+				executedFee,
+			)
+
+			expect(trueUpDelta).to.be.greaterThan(0n)
+			expect(freeBalanceBeforeTrueUp + upnlPartyA).to.equal(trueUpDelta - 1n)
+			expect(freeBalanceBeforeTrueUp - trueUpDelta + upnlPartyA).to.equal(-1n)
+
+			await expect(
+				regularHedger.openPosition(
+					quoteId,
+					marketOpenRequestBuilder()
+						.filledAmount(quoteBeforeOpen.quantity)
+						.openPrice(openedPrice)
+						.price(provisionalMarketPrice)
+						.upnlPartyA(upnlPartyA)
+						.build(),
+				),
+			).to.be.revertedWith("LibSolvency: Available balance is lower than zero")
 		})
 	})
 
