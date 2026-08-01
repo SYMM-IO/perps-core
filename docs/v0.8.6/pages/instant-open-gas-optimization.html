@@ -25,7 +25,6 @@
 				<a class="button primary back-home" href="../index.html">Back to index</a>
 				<div class="side-card">
 					<p class="side-label">Docs</p>
-					<a class="side-link" href="../pages/overview.html"><small>Overview</small><span>Symmio Core v0.8.6 Overview</span></a>
 					<a class="side-link" href="../pages/express-withdrawal-system-design.html"
 						><small>Express Withdrawal</small><span>Express Withdrawal System Design</span></a
 					>
@@ -71,18 +70,21 @@
 				<div class="toc-card">
 					<p class="toc-title">On this page</p>
 					<a class="toc-link level-2" href="#summary">Summary</a>
-					<a class="toc-link level-2" href="#old-flow">The Four-Operation Flow</a>
-					<a class="toc-link level-2" href="#lock-and-open">lockAndOpenPosition</a>
-					<a class="toc-link level-2" href="#call-with-margin">_callWithMargin</a>
-					<a class="toc-link level-2" href="#two-op-template">The Two-Operation Template</a>
+					<a class="toc-link level-2" href="#operation-compression">Two Operations Instead of Four</a>
+					<a class="toc-link level-3" href="#old-flow">The Existing Four-Operation Template</a>
+					<a class="toc-link level-3" href="#lock-and-open">Combined Core Entry</a>
+					<a class="toc-link level-3" href="#call-with-margin">Combined AccountLayer Entry</a>
+					<a class="toc-link level-3" href="#two-op-template">The Compact Template</a>
 					<a class="toc-link level-2" href="#transient">Transient Execution Context</a>
-					<a class="toc-link level-2" href="#authority">The Three Pieces of Authority</a>
-					<a class="toc-link level-2" href="#context-word">The Live Context Word</a>
-					<a class="toc-link level-2" href="#fallback">The Fallback Rule</a>
-					<a class="toc-link level-2" href="#signer">Why the Signer Needs Two Slots</a>
-					<a class="toc-link level-2" href="#snapshot">The Suspend Snapshot</a>
-					<a class="toc-link level-2" href="#lifecycle">Lifecycle Rules</a>
-					<a class="toc-link level-2" href="#compat">Compatibility and Rollback</a>
+					<a class="toc-link level-3" href="#authority">The Authority Carried by a Batch</a>
+					<a class="toc-link level-3" href="#context-word">The Core Live Context Word</a>
+					<a class="toc-link level-3" href="#fallback">The Fallback Rule</a>
+					<a class="toc-link level-3" href="#signer">Why the Transient Signer Uses Two Slots</a>
+					<a class="toc-link level-2" href="#suspend-overview">Suspending Authority Around Hooks</a>
+					<a class="toc-link level-3" href="#signer-restoration">How Alice Is Restored After a Hook</a>
+					<a class="toc-link level-3" href="#snapshot">How the Snapshot Is Encoded</a>
+					<a class="toc-link level-3" href="#lifecycle">Closing the Batch Scope</a>
+					<a class="toc-link level-2" href="#compat">Compatibility and Pre-Cancun Porting</a>
 				</div>
 			</aside>
 
@@ -93,67 +95,65 @@
 						<div>
 							<h1>InstantOpen Gas Optimization</h1>
 							<p class="hero-copy">
-								Two independent optimizations on the same flow. Two additive entrypoints collapse the atomic InstantOpen template
-								from four signed operations to two, and the authority a batch carries moves from persistent storage into EIP-1153
-								transient slots. Measured at roughly 126k and 22k gas respectively, with no change to any existing selector,
-								event, or storage slot.
+								v0.8.6 lowers atomic InstantOpen gas in two independent ways. It adds an opt-in two-operation
+								<code>InstantOpenCompact</code> template beside the existing four-operation template, while EIP-1153 transient storage
+								removes persistent writes for temporary batch authority. The focused compact-template benchmark measures roughly
+								<strong>126k gas saved</strong> and enforces a 120k regression floor.
 							</p>
 						</div>
 					</div>
 				</header>
 
-				<article class="doc-article" id="full-document">
+				<article class="doc-article" id="full-document" tabindex="-1" data-disable-function-reference>
 					<h2 id="summary">Summary</h2>
 					<p>
-						v0.8.6 cuts the cost of the atomic InstantOpen flow twice over, on two independent axes. This page covers both.
+						The existing atomic InstantOpen template crosses InstantLayer four times: the user funds the next virtual account and sends
+						the quote, then the solver locks the quote and opens the position. v0.8.6 adds an optional
+						<code>InstantOpenCompact</code> template that joins each pair, reducing the same trade to two signed operations. The
+						four-operation template and its individual calls remain available.
 					</p>
 					<p>
-						First, the operation count. The complete transaction -- margin, quote, lock, open -- was executed as four separately
-						signed InstantLayer operations. Two combined entrypoints preserve the exact same state transitions and events while
-						removing two operations from the template:
-					</p>
-					<ul>
-						<li>
-							<code>PartyBExecutionFacet.lockAndOpenPosition</code> on the Symmio core, which locks a pending quote and opens it in one
-							call, charging the solver rate fee atomically like the facet's other fee-aware actions.
-						</li>
-						<li>
-							<code>CoreFacet._callWithMargin</code> on the AccountLayer, which pre-funds the next virtual account and executes the
-							Symmio core calls under a single authorization.
-						</li>
-					</ul>
-					<p>
-						Both are purely additive. <code>lockQuote</code>, <code>openPosition</code>, <code>addMarginToNextVA</code>, and
-						<code>_call</code> are unchanged and remain the supported path for every flow that does not need the combined form.
-					</p>
-					<p>
-						Second, the authority a batch carries while it runs. That moved out of persistent storage and into EIP-1153 transient
-						slots, which is the subject of the second half of this page starting at
-						<a href="#transient">Transient Execution Context</a>.
+						Independently, temporary batch authority now lives in <a href="#transient">EIP-1153 transient storage</a> instead of being
+						written to persistent fields around every batch. The trading flow stays the same while its execution overhead falls.
 					</p>
 
-					<h2 id="old-flow">The Four-Operation Flow</h2>
-					<p>The template executed by <code>InstantLayer.executeTemplate</code> carried four signed operations:</p>
+					<h2 id="operation-compression">Two Operations Instead of Four</h2>
+					<p>
+						The original flow separates two user actions from two solver actions. Each action travels through its own signed InstantLayer
+						operation even though the actions in each pair always belong to the same atomic trade.
+					</p>
+
+					<h3 id="old-flow">The Existing Four-Operation Template</h3>
+					<p>
+						The existing <code>InstantOpen</code> template executed by <code>InstantLayer.executeTemplate</code> carries four signed
+						operations:
+					</p>
 					<ol>
-						<li><code>addMarginToNextVA</code> -- signed by the user, targeting the AccountLayer.</li>
-						<li><code>sendQuote</code> -- signed by the user, targeting the core through AccountLayer routing.</li>
-						<li><code>lockQuote</code> -- signed by the solver.</li>
-						<li><code>openPosition</code> -- signed by the solver, with the quote id injected from the send result.</li>
+						<li><code>addMarginToNextVA</code>, signed by the user and sent to the AccountLayer.</li>
+						<li><code>sendQuote</code>, signed by the user and routed through the AccountLayer to core.</li>
+						<li><code>lockQuote</code>, signed by the solver with the quote id injected from the send result.</li>
+						<li><code>openPosition</code>, signed by the solver with the quote id injected from the send result.</li>
 					</ol>
 					<p>Each operation carries fixed per-operation overhead regardless of what it does:</p>
 					<ul>
-						<li>A cold <code>operationUsageCount</code> storage write for replay protection (~22.1k).</li>
-						<li>EIP-712 hashing over the full operation calldata plus signature verification (~9-11k).</li>
-						<li>A round trip through the SymmioPartyB wrapper or the AccountLayer, with its signer toggles and owner lookups.</li>
-						<li>Its own signature and calldata bytes in the transaction.</li>
+						<li>An <code>operationUsageCount</code> read/write for replay protection, creating a slot on first use.</li>
+						<li>EIP-712 hashing over the operation calldata, plus signature verification when the signer and executor differ.</li>
+						<li>
+							A routing round trip through either SymmioPartyB or AccountLayer, including the applicable role checks, signer toggles and
+							owner lookups.
+						</li>
+						<li>Its own signed-operation envelope, authorization payload and calldata bytes.</li>
 					</ul>
-
-					<h2 id="lock-and-open">lockAndOpenPosition</h2>
 					<p>
-						The combined entry lives on <code>PartyBExecutionFacet</code> -- the fee-aware solver execution surface, renamed from
-						<code>PartyBSolverFeeActionsFacet</code> now that it carries every trade action a solver performs (fee-aware open, this
-						combined lock+open, and the close fills). It is the successor of the v0.8.4
-						<code>PartyBGroupActionsFacet.lockAndOpenQuote</code>, which was dropped in the 0.8.5 restructuring:
+						The compact template removes one user operation envelope and one solver operation envelope. The two combined entrypoints
+						preserve the work performed inside each pair.
+					</p>
+
+					<h3 id="lock-and-open">Combined Core Entry: lockAndOpenPosition</h3>
+					<p>
+						The solver's compact operation first runs the existing <code>lockQuote</code> path. If the lock succeeds, it continues
+						directly into <code>openPosition</code>. Both paths are reached through self-delegatecall, so their guards, hooks, post-hook
+						binding checks, and events still run in the same order. The combined entrypoint is:
 					</p>
 					<pre><code>function lockAndOpenPosition(
     uint256 quoteId,
@@ -164,27 +164,27 @@
     uint256 solverFee
 ) external whenNotPartyBOpenPositionsPaused onlyPartyB notLiquidated(quoteId)</code></pre>
 					<p>
-						The implementation is composition, not reimplementation: each leg runs the real facet function --
-						<code>lockQuote</code> then <code>openPosition</code> -- through a self-delegatecall into the diamond, the same pattern
-						the facet already uses for its fee-aware actions. Their modifiers, guards, hook handling, post-hook binding re-check,
-						and events all execute verbatim, so the combined path cannot drift from the sequential one. Events arrive in exactly
-						the sequential order (<code>LockQuote</code>, then the open's internal events, then <code>OpenPosition</code>), and
-						partial fills behave identically, including the child quote and its <code>SendQuote</code> events.
+						Event order remains <code>LockQuote</code>, the internal open events, then <code>OpenPosition</code>.
+						<code>InstantOpenCompact</code> requires <code>filledAmount == quote.quantity</code>, so the compact template never creates a
+						remainder quote. When the entrypoint is used outside InstantOpen mode, partial fills retain the existing child-quote and
+						<code>SendQuote</code> behavior.
 					</p>
 					<p>
-						<code>solverFee</code> makes it fee-aware like the rest of the facet: a non-zero fee is charged after the open against
-						the quote's user-approved open rate cap, with the same solvency guard and <code>OpenSolverFeeCharged</code> event as the
-						fee-aware <code>openPosition</code>. Pass 0 for fee-less execution.
+						A non-zero <code>solverFee</code> is charged after the open, subject to the quote's user-approved open-rate cap. The combined
+						path uses the same solvency guard and emits the same <code>OpenSolverFeeCharged</code> event as fee-aware
+						<code>openPosition</code>. A zero <code>solverFee</code> leaves the open fee-free.
 					</p>
-					<p>What it removes from the flow:</p>
-					<ul>
-						<li>One full InstantLayer operation: replay-protection write, EIP-712 hash, signature verification.</li>
-						<li>One SymmioPartyB round trip with its role checks and call frames.</li>
-						<li>One set of InstantLayer operation calldata and one solver signature per open.</li>
-					</ul>
+					<p>
+						Joining lock and open removes the solver's second signed operation and the extra SymmioPartyB routing round trip. The user's
+						two operations are compressed in the same way on the AccountLayer side.
+					</p>
 
-					<h2 id="call-with-margin">_callWithMargin</h2>
-					<p>The AccountLayer <code>CoreFacet</code> gains a margin-aware variant of <code>_call</code>:</p>
+					<h3 id="call-with-margin">Combined AccountLayer Entry: _callWithMargin</h3>
+					<p>
+						The user's compact operation enters AccountLayer once. It resolves the next virtual account from the supplied isolation type
+						and symbol, transfers margin to that account, and then continues through the existing <code>_call</code> path. The combined
+						entrypoint is:
+					</p>
 					<pre><code>function _callWithMargin(
     address account,
     VirtualAccountIsolationType isolationType,
@@ -193,81 +193,70 @@
     bytes[] calldata callDatas
 ) external whenNotPaused nonReentrant onlyAccountOwner(account) returns (bytes[] memory)</code></pre>
 					<p>
-						It performs the <code>addMarginToNextVA</code> work and then the standard <code>_call</code> execution under one
-						authorization check and one reentrancy guard. The margin-to-next-VA logic now lives in
-						<code>LibAccountLayerMargin</code>, shared by both <code>MarginFacet.addMarginToNextVA</code> and this function, so there
-						is a single copy of the isolation-type validation and address prediction.
+						Both steps share one owner authorization and one reentrancy guard. The margin-to-next-VA logic lives in
+						<code>LibAccountLayerMargin</code>, shared by <code>MarginFacet.addMarginToNextVA</code> and this function, so address
+						prediction and isolation validation still have one implementation.
 					</p>
 					<p>
-						The safety property that makes this sound: the predicted VA address and the VA that <code>sendQuote</code> routing
-						creates or reuses are computed in the same call with no external state-changing call between them, so they cannot
-						diverge. The margin always lands on the account the quote is opened under.
+						In <code>InstantOpenCompact</code>, <code>callDatas</code> contains exactly one supported <code>sendQuote</code> call.
+						<code>_executeCalls</code> verifies that the quote uses the same symbol and market-direction key as the prefunded margin. A
+						mismatch reverts before another virtual account can use that margin. The public entrypoint also accepts other non-empty
+						calldata arrays, so this routing guarantee applies specifically to supported <code>sendQuote</code> payloads.
 					</p>
 
-					<h2 id="two-op-template">The Two-Operation Template</h2>
-					<p>With both entrypoints, the InstantOpen template becomes:</p>
+					<h3 id="two-op-template">The Compact Two-Operation Template</h3>
+					<p>The separately registered <code>InstantOpenCompact</code> template uses two operations:</p>
 					<ol>
-						<li><code>_callWithMargin(subAccount, isolationType, symbolId, margin, [sendQuote])</code> -- signed by the user.</li>
-						<li><code>lockAndOpenPosition(quoteId, filledAmount, openedPrice, lockSig, upnlSig, solverFee)</code> -- signed by the solver.</li>
+						<li><code>_callWithMargin(subAccount, isolationType, symbolId, margin, [sendQuote])</code>, signed by the user.</li>
+						<li>
+							<code>lockAndOpenPosition(quoteId, filledAmount, openedPrice, lockSig, upnlSig, solverFee)</code>, signed by the solver.
+						</li>
 					</ol>
 					<p>
-						One signature from the user and one from the solver, instead of two each. The quote id still flows from the first
+						One user-signed operation and one solver-signed operation, instead of two each. The quote id still flows from the first
 						operation into the second through the template's result injection.
 					</p>
 					<p>
-						<strong>Injection offset:</strong> because operation 0 targets the AccountLayer directly rather than the core, its result
-						is the raw ABI-encoded <code>bytes[]</code> return value. The quote id sits at byte offset <strong>128</strong> within
-						that result, so the template's second operation uses <code>sourceOffsets: [128]</code> (versus <code>[0]</code> for
-						core-targeted operations whose nested result is unwrapped by InstantLayer).
+						After the first operation sends the quote, AccountLayer returns the quote id inside its ABI-encoded <code>bytes[]</code>
+						result. Because this operation targets AccountLayer directly, the wrapper places the id at byte offset
+						<strong>128</strong>: <code>[bytes[] offset][array length][element offset][element length][quoteId]</code>. The template reads
+						that value with <code>sourceOffsets: [128]</code> and injects it into the solver's combined lock-and-open call.
 					</p>
-
 
 					<h2 id="transient">Transient Execution Context</h2>
 					<p>
-						An InstantLayer batch runs with temporary privileges on the Symmio core: the call is routed by InstantLayer, it may use
-						atomic-open accounting shortcuts, and it may act on behalf of a delegated signer. Those three facts were stored in
-						<code>GlobalAppStorage</code> as ordinary state, so every batch paid to write them on the way in and again on the way out,
-						and they were only ever cleared because the caller remembered to clear them.
+						Compression removes two signed operation envelopes, but the operations that remain still need temporary authority. Core must
+						know that a call is routed by InstantLayer, whether InstantOpen accounting is active, and which signer is acting. That
+						authority exists only while the batch runs; this interval is the <strong>execution scope</strong>.
 					</p>
 					<p>
-						<code>LibExecutionContext</code> moves that authority into EIP-1153 transient storage, which the EVM discards automatically
-						at the end of the transaction -- including on revert. A new <code>ExecutionContextFacet</code> owns the lifecycle,
-						<code>LibAccountLayerSigner</code> mirrors the model for the AccountLayer diamond, and the persistent fields remain readable
-						as a fallback so nothing that has not migrated changes behaviour.
+						Before this optimization, core kept its mode flags and signer in <code>GlobalAppStorage</code>, while AccountLayer kept its
+						signer in <code>AccountStorage</code>. Every batch wrote the applicable fields on entry and cleared them on exit.
 					</p>
 					<p>
-						This requires solc 0.8.34 with a Cancun EVM target. Chains without Cancun cannot run the transient path; the legacy
-						persistent route is retained for exactly that reason.
+						v0.8.6 moves this authority into EIP-1153 transient storage, which the EVM discards when the transaction ends or reverts. The
+						following sections track it from batch entry through final cleanup. This build therefore requires a Cancun-compatible chain.
 					</p>
 
-					<h2 id="authority">The Three Pieces of Authority</h2>
-					<p>
-						"Execution context" is a deliberately narrow term here. It is not a caller address, and it does not replace signature
-						verification. It is the temporary authority a batch carries, and it comes in three parts held in three separate places:
-					</p>
+					<h3 id="authority">The Authority Carried by a Batch</h3>
+					<p>The active execution context has two pieces:</p>
 					<ol>
-						<li>
-							<strong>The context word</strong> -- one transient slot packing "a scope is live", "routed by InstantLayer" and
-							"atomic-open permitted" into three bits.
-						</li>
-						<li>
-							<strong>The signer</strong> -- <em>two</em> transient slots, a value and an active marker. The reason for the pair is
-							explained below; it is the single most misread part of the design.
-						</li>
-						<li>
-							<strong>Per-caller snapshots</strong> -- one transient slot per address, used when a trusted router suspends the context
-							across its own untrusted call.
-						</li>
+						<li><strong>The live context word:</strong> the routing and InstantOpen accounting flags currently in effect.</li>
+						<li><strong>The effective signer:</strong> the already-authorized acting identity currently installed in that diamond.</li>
 					</ol>
 					<p>
-						All of it is shared by every facet reached through the diamond's <code>delegatecall</code>, which is what makes it behave
-						like a transaction-wide global rather than a parameter.
+						The live word and signer slots reside in the transient-storage context of the diamond using them, so every facet reached
+						through <code>delegatecall</code> sees the same values. Core's <code>LibExecutionContext</code> owns the word and core signer;
+						<code>LibAccountLayerSigner</code> applies the same signer model to the AccountLayer diamond.
 					</p>
 
-					<h2 id="context-word">The Live Context Word</h2>
-					<p>Three bits of a single 256-bit word, held in a namespaced transient slot:</p>
+					<h3 id="context-word">The Core Live Context Word</h3>
+					<p>The core live word uses its lowest three bits: one source marker and two authority flags. Bits 3&ndash;255 remain zero.</p>
 					<div class="table-wrap">
 						<table>
+							<caption>
+								Core live execution-context word
+							</caption>
 							<thead>
 								<tr>
 									<th>Bit</th>
@@ -279,175 +268,224 @@
 								<tr>
 									<td><code>0</code></td>
 									<td><code>INSTANT_CONTEXT_ACTIVE</code></td>
-									<td>A scope is currently open.</td>
+									<td>Transient storage is authoritative; readers must not fall back.</td>
 								</tr>
 								<tr>
 									<td><code>1</code></td>
 									<td><code>CALL_FROM_INSTANT_LAYER</code></td>
-									<td>This call is routed by InstantLayer.</td>
+									<td>The current execution is treated as routed by InstantLayer.</td>
 								</tr>
 								<tr>
 									<td><code>2</code></td>
 									<td><code>INSTANT_OPEN_MODE</code></td>
-									<td>Atomic-open accounting shortcuts are permitted.</td>
+									<td>InstantOpen accounting mode is enabled.</td>
 								</tr>
 							</tbody>
 						</table>
 					</div>
 					<p>
-						Bit 0 looks redundant next to bit 1, because <code>beginInstantLayerExecution</code> always sets both. It is not. Bit 0
-						answers a different question -- not "does the caller have routing authority" but "is a scope open at all". That distinction
-						is what every reader keys on, and it is why a scope opened with atomic-open disabled is still distinguishable from no scope.
-					</p>
-					<p>
-						Packing all three into one word is where the gas saving comes from: opening a scope is one <code>tstore</code>, where the old
-						flags cost two <code>SSTORE</code>s to raise and two more to clear.
+						On the native begin/end path, packing these flags makes the live-word lifecycle two writes: one <code>tstore</code> to open it
+						and one to clear it. Signer-slot writes are separate. The historical persistent mode flags required two <code>SSTORE</code>s
+						on entry and two more on exit.
 					</p>
 
-					<h2 id="fallback">The Fallback Rule</h2>
+					<h3 id="fallback">The Fallback Rule</h3>
 					<p>
-						Every public reader follows the same shape: consult the live scope, and only when no scope is open read the persistent field.
+						The two core mode readers, <code>isCallFromInstantLayer()</code> and <code>isInstantOpenMode()</code>, consult the live
+						transient word first and read their persistent fields only when no transient scope is active:
 					</p>
 					<pre><code>function isCallFromInstantLayer() internal view returns (bool) {
-	uint256 context = _instantLayerContext();
-	if (context &amp; INSTANT_CONTEXT_ACTIVE != 0) return context &amp; CALL_FROM_INSTANT_LAYER != 0;
-	return GlobalAppStorage.layout().callFromInstantLayer;
-}</code></pre>
+		uint256 context = _instantLayerContext();
+		if (context &amp; INSTANT_CONTEXT_ACTIVE != 0) return context &amp; CALL_FROM_INSTANT_LAYER != 0;
+		return GlobalAppStorage.layout().callFromInstantLayer;
+	}</code></pre>
 					<p>
-						With no scope open the library is behaviourally invisible, which is what lets this ship without migrating every caller at
-						once. <code>isInstantOpenMode</code> has the identical structure.
+						Bit 0 decides which source answers the question. When it is set, the transient word is authoritative, so a clear bit 2 means
+						InstantOpen mode is explicitly off. When bit 0 is clear, the reader ignores the transient flags and falls back to the
+						persistent compatibility fields. <code>isInstantOpenMode()</code> follows the same structure.
 					</p>
 					<p>
-						<code>isTransientContextActive</code> deliberately breaks the pattern and never falls back. The two are easy to confuse and
-						are not interchangeable:
+						<code>isCallFromInstantLayer()</code> therefore answers whether routing authority is effective, including a persistent
+						fallback. <code>isTransientContextActive()</code> asks the narrower question of whether a transient scope is open and reads
+						bit 0 only. <code>ControlFacet.setSigner</code> uses that narrower reader to avoid selecting transient signer storage when no
+						transient scope exists to own it.
 					</p>
-					<div class="table-wrap">
-						<table>
-							<thead>
-								<tr>
-									<th>Reader</th>
-									<th>Question it answers</th>
-									<th>Falls back?</th>
-								</tr>
-							</thead>
-							<tbody>
-								<tr>
-									<td><code>isCallFromInstantLayer</code></td>
-									<td>Does the caller have routing authority?</td>
-									<td>Yes -- a persistent flag can grant it too.</td>
-								</tr>
-								<tr>
-									<td><code>isTransientContextActive</code></td>
-									<td>Is a transient scope open?</td>
-									<td>No -- only bit 0 can answer this.</td>
-								</tr>
-							</tbody>
-						</table>
-					</div>
 					<p>
-						Callers deciding <em>which storage mechanism to write</em> -- notably <code>ControlFacet.setSigner</code> -- must use the
-						second. Using the first would let a persistent flag steer them into writing transient state that no scope is going to clean
-						up.
+						The live-word panel follows the same source rule across the no-scope, routing-only, and InstantOpen states.
 					</p>
 
-					<h2 id="signer">Why the Signer Needs Two Slots</h2>
-					<p>The transient signer is stored as two transient words:</p>
-					<ul>
-						<li>a <strong>value</strong> slot holding the address;</li>
-						<li>
-							an <strong>active marker</strong> recording that transient storage -- not the persistent <code>signer</code> field --
-							currently owns the signer.
-						</li>
-					</ul>
+					<section class="tool-panel" data-word-reader-tool="live" aria-label="Interactive live context word reader"></section>
+
+					<h3 id="signer">Why the Transient Signer Uses Two Slots</h3>
 					<p>
-						They are separate because of external calls. Before core hands control to untrusted code -- an affiliate hook, a token with
-						callbacks -- it must clear the signer so the callee cannot act as the user. But it also has to remember <em>which</em>
-						mechanism to put back. Clearing only the value while leaving the marker set is precisely the <strong>suspended</strong>
-						state: transient storage still owns the signer, but no address is installed.
+						Each diamond resolves an already-authorized acting identity. The installed value is not a signature cache and is not
+						necessarily the EIP-712 signer. <code>configuredSigner()</code> returns that raw installed value and may return
+						<code>address(0)</code>; <code>signer()</code> returns the acting identity and falls back to <code>msg.sender</code> when no
+						value is installed. Guards that distinguish an installed signer from a direct caller read <code>configuredSigner()</code>.
 					</p>
 					<p>
-						This is why <code>restoreSignerAfterExternalCall</code> checks a deliberately different set of slots in each branch, which
-						reads like an inconsistency until the nested case is considered:
-					</p>
-					<div class="table-wrap">
-						<table>
-							<thead>
-								<tr>
-									<th>Suspended from</th>
-									<th>Checks on return</th>
-									<th>Why</th>
-								</tr>
-							</thead>
-							<tbody>
-								<tr>
-									<td>Transient storage</td>
-									<td>Both value slots empty. Marker <em>not</em> checked.</td>
-									<td>
-										The marker is legitimately either state: 1 if nothing touched it, 0 if a nested trusted scope opened and correctly
-										closed itself, since closing writes the shared marker to 0.
-									</td>
-								</tr>
-								<tr>
-									<td>Persistent storage</td>
-									<td>Both value slots empty <em>and</em> marker clear.</td>
-									<td>
-										No transient scope was open at the boundary, so a set marker can only mean untrusted code opened one and left it
-										open.
-									</td>
-								</tr>
-							</tbody>
-						</table>
-					</div>
-					<p>
-						Both branches fail closed. Restoring on top of a signer the callee installed would bless that value for the rest of the
-						transaction, so the boundary reverts instead.
+						For PartyA operations, InstantLayer installs the canonical owner in AccountLayer; AccountLayer then installs the routed
+						sub-account or virtual account in core. For PartyB operations, InstantLayer calls the registered PartyB contract, and core
+						resolves that contract through the <code>msg.sender</code> fallback. InstantLayer does not install a separate PartyB signer.
 					</p>
 					<p>
-						One further consequence: <code>configuredSigner()</code> and <code>signer()</code> are not interchangeable. The first returns
-						the raw value and can be <code>address(0)</code>; the second falls back to <code>msg.sender</code> and therefore can never be
-						zero. Access-control guards must use the first, because a guard written against the second would see <code>msg.sender</code>
-						and conclude no signer was installed.
+						A transient signer needs two slots. The first holds the signer address. The second holds a simple yes-or-no flag called the
+						<strong>active marker</strong>. That marker answers one question for <code>configuredSigner()</code>: should it read the
+						transient value slot, or the older persistent signer field? The marker is not an identity and grants no authority by itself.
+					</p>
+					<p>
+						Suppose the transient signer is Alice. During the operation, the value slot contains Alice and the marker is set. Before a
+						hook runs, <code>clearSignerForExternalCall()</code> saves Alice and clears only the value slot. The state is now “marker set,
+						value empty.” Readers continue to use the transient slot, but find no signer there, so Alice's authority is hidden instead of
+						falling through to the persistent signer field.
+					</p>
+					<p>
+						The helper also returns <code>wasTransientScoped = true</code>. The trusted boundary keeps that flag with Alice's saved
+						address so it knows where to restore her after the hook returns.
 					</p>
 
-					<h2 id="snapshot">The Suspend Snapshot</h2>
+					<h2 id="suspend-overview">Suspending Authority Around Hooks</h2>
 					<p>
-						When a boundary suspends the context it builds a second value. A snapshot is never written back into the live slot while the
-						suspension lasts -- it is returned to the caller, or parked in that caller's own transient slot -- which is what makes reusing
-						the low bits safe.
+						At a protected hook boundary, the surrounding batch scope may span the external call, but its authority must not. Core's
+						<code>LibHook</code> clears the effective signer and suspends the core routing and InstantOpen context before the hook runs.
+						AccountLayer affiliate-hook routing applies the same two protections across the AccountLayer and core diamonds.
 					</p>
-					<div class="table-wrap">
-						<table>
-							<thead>
-								<tr>
-									<th>Bit</th>
-									<th>Role</th>
-								</tr>
-							</thead>
-							<tbody>
-								<tr>
-									<td><code>255</code></td>
-									<td>
-										Marks a real snapshot. Set unconditionally so a populated snapshot can never be confused with the <code>0</code>
-										sentinel meaning "there was nothing to suspend".
-									</td>
-								</tr>
-								<tr>
-									<td><code>254</code></td>
-									<td>
-										The suspended authority came from transient storage. This is the <em>only</em> discriminator <code>restore</code>
-										uses to decide which source to write back.
-									</td>
-								</tr>
-								<tr>
-									<td><code>1</code>&ndash;<code>2</code></td>
-									<td>The suspended routing and atomic-open flags, carrying the same meaning as in the live word.</td>
-								</tr>
-							</tbody>
-						</table>
-					</div>
 					<p>
-						Bits 1&ndash;2 keeping their live-word meaning is deliberate: it lets the transient branch recover the original context with a
-						single mask rather than rebuilding it flag by flag.
+						To make that suspension reversible, the trusted boundary saves the live context in a snapshot held in caller memory or a
+						caller-specific transient slot. It carries the previous signer and its source flag separately. The snapshot is saved data,
+						not active authority.
+					</p>
+					<p>
+						This full suspension is specific to hook boundaries. ERC-20 and generic external-call wrappers clear the signer only; they do
+						not suspend the core execution context. The figure follows the full hook boundary from suspension to restoration:
+					</p>
+
+					<figure class="scope-timeline" aria-labelledby="scope-timeline-title">
+						<figcaption>
+							<strong id="scope-timeline-title">The batch scope spans the hook call; its authority does not</strong>
+							<span>Authority is cleared before control leaves trusted code and restored only after validation.</span>
+						</figcaption>
+						<div class="scope-timeline-scroll">
+							<div
+								class="scope-timeline-chart"
+								role="img"
+								aria-label="Batch authority is active in trusted protocol code. Before a hook runs, core clears the signer, snapshots the routing and InstantOpen context, and clears the live context. After the hook returns, core verifies and restores the context, then verifies and restores the signer."
+							>
+								<div class="scope-timeline-row">
+									<strong class="scope-timeline-label">Batch authority</strong>
+									<div class="scope-timeline-bars">
+										<span class="scope-timeline-bar is-active"><strong>Active</strong></span>
+										<span class="scope-timeline-bar is-suspended"
+											><strong>Cleared for hook</strong><small>No outer batch authority</small></span
+										>
+										<span class="scope-timeline-bar is-active"><strong>Restored</strong></span>
+									</div>
+								</div>
+								<div class="scope-timeline-boundary-row" aria-hidden="true">
+									<span></span>
+									<div class="scope-timeline-boundaries">
+										<span></span>
+										<span class="scope-timeline-boundary">Clear signer, then snapshot + clear context &darr;</span>
+										<span class="scope-timeline-boundary">&uarr; Verify + restore context, then signer</span>
+									</div>
+								</div>
+								<div class="scope-timeline-row">
+									<strong class="scope-timeline-label">Code running</strong>
+									<div class="scope-timeline-runners">
+										<span class="scope-timeline-run"><strong>Trusted protocol code</strong></span>
+										<span class="scope-timeline-run is-external"
+											><strong>External hook</strong><small>Callbacks have no outer batch authority</small></span
+										>
+										<span class="scope-timeline-run"><strong>Trusted protocol code</strong></span>
+									</div>
+								</div>
+								<div class="scope-timeline-time" aria-hidden="true">
+									<span>Before hook</span>
+									<strong>Time &rarr;</strong>
+									<span>After return</span>
+								</div>
+							</div>
+						</div>
+					</figure>
+
+					<p>
+						When the hook returns, <code>LibHook</code> restores the execution context first and then turns to the saved signer. Each
+						restoration validates the boundary state before writing the saved authority back. A failed validation reverts the entire
+						parent operation.
+					</p>
+					<p>
+						Suspension is reversible and does not end the surrounding logical batch scope. Ending is one-way final cleanup after all
+						operations have completed and the per-operation signer has been cleared.
+					</p>
+
+					<h3 id="signer-restoration">How Alice Is Restored After a Hook</h3>
+					<p>Assume Alice is the transient signer. Her journey across the hook has three stages.</p>
+
+					<h4>Before the hook: Alice is active</h4>
+					<p>
+						The transient value contains Alice and the marker is set. This tells <code>configuredSigner()</code> to return Alice from
+						transient storage. In short: <code>marker = 1</code> and <code>value = Alice</code>.
+					</p>
+
+					<h4>While the hook runs: Alice is hidden</h4>
+					<p>
+						Before calling the hook, the protocol saves Alice and remembers that she came from transient storage. It then clears the
+						value but leaves the marker set. The saved information is now “Alice, from transient storage,” while the live state is
+						<code>marker = 1</code> and <code>value = empty</code>. Because the transient value is empty, the hook cannot act as Alice.
+					</p>
+
+					<h4>After the hook returns: Alice is restored</h4>
+					<p>
+						The protocol first checks that the hook left no signer in either the transient value or the persistent field. If both are
+						empty, it writes Alice back and sets the marker. The state returns to <code>marker = 1</code> and
+						<code>value = Alice</code>. Alice becomes the signer again only after this check succeeds.
+					</p>
+					<p>
+						If the hook left any signer address behind, the protocol does not overwrite it. The whole parent operation reverts with
+						<code>ExternalCallSignerWasModified</code>.
+					</p>
+
+					<h4>Example: a nested trusted call uses Bob</h4>
+					<p>
+						While Alice is hidden, trusted protocol code may temporarily install Bob as its own transient signer. When that inner call
+						finishes, it clears Bob and the shared marker. This does not erase the outer boundary's saved note: “Alice, from transient
+						storage.” After confirming that both signer addresses are empty, the boundary sets the marker again and restores Alice.
+					</p>
+
+					<h4>Example: Alice came from persistent storage</h4>
+					<p>
+						In this older path, the boundary saves the note “Alice, from persistent storage,” then clears the persistent field before the
+						hook runs. Because no transient signer existed at the start, the marker must still be clear when the hook returns. A set marker
+						means the hook path opened a transient scope and left it open, so restoration reverts. If the marker and both signer addresses
+						are empty, Alice is written back to the persistent field.
+					</p>
+
+					<h3 id="snapshot">How the Snapshot Is Encoded</h3>
+					<p>
+						When core suspends an execution context, it copies the routing and InstantOpen values into a separate 256-bit snapshot. The
+						snapshot remains in trusted caller memory or in a caller-specific transient slot. It is never written into the live context
+						slot while the external call is running.
+					</p>
+					<p>
+						Every non-zero snapshot sets bit 255, distinguishing saved context from the <code>0</code> value that means nothing was
+						suspended. Bit 254 records whether the saved context came from transient storage. The remaining low bits carry the authority
+						that must return: routing in bit 1 and InstantOpen mode in bit 2.
+					</p>
+					<p>
+						A transient snapshot copies the entire live word, including its source marker in bit 0. A persistent snapshot is assembled
+						from the two compatibility fields and leaves bit 0 clear. Restoration chooses the destination from bit 254, so bit 0 remains
+						part of the saved live word rather than acting as the source discriminator. A suspended transient InstantOpen scope therefore
+						prints as <code>0xc000…0007</code>: the high <code>c</code> contains bits 255 and 254, while the low <code>7</code> contains
+						bits 0&ndash;2.
+					</p>
+					<p>
+						To restore a transient snapshot, the library needs only the original live-word bits. <code>INSTANT_CONTEXT_FLAGS</code>
+						combines the three live constants:
+					</p>
+					<pre><code>INSTANT_CONTEXT_ACTIVE | CALL_FROM_INSTANT_LAYER | INSTANT_OPEN_MODE</code></pre>
+					<p>
+						The resulting mask has bits 0&ndash;2 set. <code>snapshot &amp; INSTANT_CONTEXT_FLAGS</code> removes the snapshot markers in
+						bits 254&ndash;255 and leaves the original live word.
 					</p>
 					<pre><code>if (snapshot &amp; EXTERNAL_CONTEXT_SNAPSHOT_TRANSIENT != 0) {
 	_setInstantLayerContext(snapshot &amp; INSTANT_CONTEXT_FLAGS);
@@ -455,89 +493,102 @@
 	globalLayout.callFromInstantLayer = snapshot &amp; EXTERNAL_CONTEXT_SNAPSHOT_PERSISTENT_CALL != 0;
 	globalLayout.instantOpenMode = snapshot &amp; EXTERNAL_CONTEXT_SNAPSHOT_PERSISTENT_OPEN != 0;
 }</code></pre>
+
+					<section class="tool-panel" data-word-reader-tool="snapshot" aria-label="Interactive snapshot word reader"></section>
 					<p>
-						The two encodings do disagree about bit 0 -- a transient snapshot inherits it from the live word, a persistent one never sets
-						it, because the persistent branch builds its snapshot flag by flag. That difference is inert only because nothing ever reads
-						bit 0 back out of a snapshot; bit 254 alone decides interpretation.
+						Before writing a snapshot back, <code>restoreExecutionContextAfterExternalCall</code> requires the transient live word and
+						both persistent mode fields to be empty. Suspension clears the active source; transient-scope entry guards guarantee the
+						inactive persistent mode fields were already empty. Anything present on return was therefore installed during the hook.
+						Restoration fails closed instead of overwriting that state.
 					</p>
 					<p>
-						Before writing a snapshot back, <code>restoreExecutionContextAfterExternalCall</code> requires <em>both</em> sources to be
-						empty. The suspension emptied them, so anything present on return was installed during the untrusted call, and restoring over
-						it would let a hook smuggle privilege past the boundary.
+						For the cross-contract AccountLayer path, core does not return the raw snapshot to the router. It stores the snapshot in
+						<code>keccak256(abi.encode(namespace, msg.sender))</code>, preventing the router from substituting a value, restoring another
+						router's snapshot, or suspending twice before restore.
 					</p>
 					<p>
-						For cross-contract use -- AccountLayer calling out to an affiliate hook -- the router cannot hold the snapshot in memory
-						across its own call, so core parks it in a slot derived from <code>keccak256(namespace, msg.sender)</code>. The router
-						therefore cannot choose what it restores, cannot reach another router's snapshot, and cannot suspend twice: a second suspend
-						would overwrite the first, so it is rejected outright.
+						The caller examples in the snapshot-slot panel use the same namespace with three illustrative addresses. Each address
+						produces a different slot, so one router cannot reach another router's saved context.
 					</p>
 
-					<h2 id="lifecycle">Lifecycle Rules</h2>
-					<p>Three rules make the scope trustworthy, each with its own error:</p>
-					<div class="table-wrap">
-						<table>
-							<thead>
-								<tr>
-									<th>Rule</th>
-									<th>Error</th>
-									<th>Reason</th>
-								</tr>
-							</thead>
-							<tbody>
-								<tr>
-									<td>A scope cannot nest.</td>
-									<td><code>TransientContextAlreadyActive</code></td>
-									<td>Two batches must never silently share one grant of authority.</td>
-								</tr>
-								<tr>
-									<td>A scope that was never opened cannot be closed.</td>
-									<td><code>TransientContextNotActive</code></td>
-									<td>Makes an unbalanced teardown loud instead of silent.</td>
-								</tr>
-								<tr>
-									<td>A scope cannot end while a signer is installed.</td>
-									<td><code>TransientSignerNotCleared</code></td>
-									<td>
-										A transient signer outlives the call unless cleared. Ending its owning scope would leave an identity every later
-										call still reads, with nothing to attribute it to.
-									</td>
-								</tr>
-							</tbody>
-						</table>
-					</div>
+					<section class="tool-panel" data-slot-address-tool aria-label="Caller-scoped snapshot slots"></section>
+
+					<h3 id="lifecycle">Closing the Batch Scope</h3>
 					<p>
-						The third is the one worth internalising: it enforces unwind order, not tidiness. InstantLayer must clear its per-operation
-						signer before closing the batch scope.
+						A batch opens one transient scope. <code>beginInstantLayerExecution</code> rejects a second live scope with
+						<code>TransientContextAlreadyActive</code>, preventing two batches from sharing one grant of authority.
+					</p>
+					<p>
+						After the final operation, the authorized router clears its per-operation signer before InstantLayer closes the scope.
+						<code>endInstantLayerExecution</code> rejects an unmatched close with <code>TransientContextNotActive</code> and rejects a
+						close while the signer is still installed with <code>TransientSignerNotCleared</code>. The order matters because a transient
+						signer would otherwise remain readable for the rest of the transaction with no active scope responsible for it.
+					</p>
+					<p>
+						The lifecycle panel follows the clean path from scope creation through signer cleanup and final close. At the hook boundary,
+						the live word becomes <code>0</code> while the trusted boundary holds the snapshot. A clean return restores the context and
+						signer; a callback path that leaves either kind of authority behind stops at the corresponding restoration error.
+					</p>
+					<p>
+						The historical persistent-field path begins from pre-existing <code>GlobalAppStorage</code> values and applies the same
+						suspend-and-restore boundary. It is distinct from both the pre-Cancun storage port and the runtime selector switch described
+						next.
 					</p>
 
-					<h2 id="compat">Compatibility and Rollback</h2>
+					<section class="tool-panel" data-context-lifecycle-tool aria-label="Execution context lifecycle walkthrough"></section>
+
+					<h2 id="compat">Compatibility and Pre-Cancun Porting</h2>
+					<h3>Keeping Existing Deployments Compatible</h3>
 					<p>
-						An already-deployed InstantLayer cannot be changed, and redeploying one would invalidate its EIP-712 verifying address along
-						with every template and signed operation. Instead both diamonds carry a per-caller adapter map:
+						Existing deployments preserve their InstantLayer address because it is the EIP-712 verifying contract. Their historical
+						selector calldata remains valid because both diamonds translate those calls internally to transient state:
 					</p>
 					<ul>
 						<li>
-							Core: <code>setLegacyExecutionContextAdapter(instantLayer, true)</code> routes that caller's existing
-							<code>setCallFromInstantLayer</code> and <code>setInstantOpenMode</code> calls into transient state, with identical
-							calldata.
+							Core: <code>setCallFromInstantLayer(bool)</code> opens and closes the same EIP-1153 scope that
+							<code>beginInstantLayerExecution</code> and <code>endInstantLayerExecution</code> use, and
+							<code>setInstantOpenMode(bool)</code> writes the same bit as the native toggle.
 						</li>
 						<li>
-							AccountLayer: <code>setLegacySignerAdapter(router, true)</code> does the same for that router's <code>setSigner</code>
-							calls.
+							AccountLayer: <code>setSigner(address)</code> installs and clears the same transient signer scope that
+							<code>setTransientSigner</code> uses.
 						</li>
 					</ul>
 					<p>
-						Enabling an adapter selects a storage mechanism. It does not grant the router any privilege, and it is refused while any
-						persistent context or signer is still set, so a deployment can never have both mechanisms simultaneously believable.
+						Translation applies to every authorized caller rather than a configured allowlist. <code>AffiliateFacet</code> grants
+						<code>SIGNER_SETTER_ROLE</code> to each AccountManager it deploys, so the caller set grows at runtime. The
+						<code>hasRole</code> mapping is not enumerable, which makes a complete per-address migration impossible. Unconditional
+						translation keeps all authorized callers on the same storage mechanism.
 					</p>
 					<p>
-						Newly deployed InstantLayers use the native path directly and expose <code>setTransientContextEnabled(false)</code>, which
-						replays the exact historical setter sequence. Combined with disabling the two adapters, that is a complete rollback to
-						persistent storage without touching a template or a signature.
+						Translation grants no new privilege. Existing role gates remain unchanged, and both storage mechanisms fail closed when state
+						from the other mechanism is already active. <code>setCallFromInstantLayer(true)</code> reverts if either persistent mode field
+						is set. A non-zero AccountLayer <code>setSigner</code> cannot overwrite either a persistent signer or a populated transient
+						signer value.
+					</p>
+
+					<h3>What the Runtime Switch Changes</h3>
+					<p>
+						InstantLayer contracts deployed from the current source expose <code>setTransientContextEnabled(bool)</code>, gated by
+						<code>SETTER_ROLE</code> and enabled by default. The flag changes only which selectors InstantLayer invokes: enabled uses the
+						native begin/end and transient-signer selectors; disabled uses the historical mode and signer setters. Both sequences write
+						transient storage in this build, although the historical selector sequence uses extra writes to toggle InstantOpen mode. This
+						is a selector-compatibility control, not a storage rollback. Templates and signatures remain unchanged.
+					</p>
+
+					<h3>What a Pre-Cancun Build Requires</h3>
+					<p>
+						The current source compiles with solc 0.8.34 for the Cancun EVM and cannot execute on a pre-Cancun chain. No production entry
+						path initiates persistent mode authority, although suspension and restoration still protect pre-existing compatibility
+						values. Core's legacy <code>setSigner</code> also continues to write the persistent core signer when no transient execution
+						scope is active.
 					</p>
 					<p>
-						The <code>configure:transient-context</code> Hardhat task performs the adapter configuration against an existing
-						deployment, reads back both sides, and fails rather than reporting success on a partial configuration.
+						A pre-Cancun deployment therefore needs a separate build targeting <code>evmVersion "paris"</code>. Its
+						<code>_transientLoad</code> and <code>_transientStore</code> helpers, together with their
+						<code>LibAccountLayerSigner</code> counterparts, use a slot-keyed persistent mapping instead. The packed context lifecycle,
+						active bit, signer marker, and snapshot encoding remain unchanged; the PRE-CANCUN PORT block in
+						<code>LibExecutionContext.sol</code> marks the implementation boundaries that change.
 					</p>
 				</article>
 			</main>
