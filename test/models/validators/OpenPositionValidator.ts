@@ -7,6 +7,7 @@ import {
 	getTotalPartyBLockedValuesForQuotes,
 	getTradingFeeForQuotes,
 	getTradingFeeForQuoteWithFilledAmount,
+	getOpenTradingFeeForQuoteWithFilledAmount,
 } from "../../utils/Common.js"
 import { logger } from "../../utils/LoggerUtils.js"
 import { expectToBeApproximately } from "../../utils/SafeMath.js"
@@ -120,6 +121,9 @@ export class OpenPositionValidator implements TransactionValidator {
 		// Check Balances partyA
 		const newBalanceInfoPartyA = await arg.user.getBalanceInfo()
 		const oldBalanceInfoPartyA = arg.beforeOutput.balanceInfoPartyA
+		const reservedOpenFee = await getOpenTradingFeeForQuoteWithFilledAmount(context, oldQuote.id!, arg.fillAmount)
+		const executedOpenFee = await getTradingFeeForQuoteWithFilledAmount(context, newQuote.id!, arg.fillAmount)
+		const feeTrueUpDelta = executedOpenFee > reservedOpenFee ? executedOpenFee - reservedOpenFee : reservedOpenFee - executedOpenFee
 		if (oldQuote.quoteStatus == BigInt(QuoteStatus.CANCEL_PENDING)) {
 			expect(newBalanceInfoPartyA.totalPendingLockedPartyA).to.be.equal(
 				(oldBalanceInfoPartyA.totalPendingLockedPartyA - oldLockedValuesPartyA).toString(),
@@ -128,12 +132,14 @@ export class OpenPositionValidator implements TransactionValidator {
 			expectToBeApproximately(newBalanceInfoPartyA.totalPendingLockedPartyA, oldBalanceInfoPartyA.totalPendingLockedPartyA - partialLockedValues)
 		}
 		expectToBeApproximately(newBalanceInfoPartyA.totalLockedPartyA, oldBalanceInfoPartyA.totalLockedPartyA + partialWithPriceLockedValuesPartyA)
+		let expectedAllocatedBalance = oldBalanceInfoPartyA.allocatedBalances
+		if (executedOpenFee > reservedOpenFee) expectedAllocatedBalance -= feeTrueUpDelta
+		else expectedAllocatedBalance += feeTrueUpDelta
 		if (arg.newQuoteTargetStatus == QuoteStatus.CANCELED) {
-			expect(newBalanceInfoPartyA.allocatedBalances).to.be.equal(
-				(oldBalanceInfoPartyA.allocatedBalances + (await getTradingFeeForQuotes(context, [arg.newQuoteId!]))).toString(),
-			)
+			expectedAllocatedBalance += await getTradingFeeForQuotes(context, [arg.newQuoteId!])
+			expect(newBalanceInfoPartyA.allocatedBalances).to.be.equal(expectedAllocatedBalance.toString())
 		} else {
-			expect(newBalanceInfoPartyA.allocatedBalances).to.be.equal(oldBalanceInfoPartyA.allocatedBalances.toString())
+			expect(newBalanceInfoPartyA.allocatedBalances).to.be.equal(expectedAllocatedBalance.toString())
 		}
 
 		// Check Balances partyB

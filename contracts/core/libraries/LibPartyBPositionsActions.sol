@@ -59,15 +59,12 @@ library LibPartyBPositionsActions {
 		}
 
 		uint256 quoteFeeBeforeOpen = LibQuote.getOpenTradingFee(quote.id);
+		uint256 provisionalOpenFee = LibQuote.getOpenTradingFeeReserved(quote, filledAmount);
 		uint256 remainingQuoteFee = 0;
-
-		address feeCollector = LibAccount.getFeeCollector(quote.affiliate);
 		if (quote.orderType == OrderType.LIMIT) {
 			require(quote.quantity >= filledAmount && filledAmount > 0, "PartyBFacet: Invalid filledAmount");
-			accountLayout.balances[feeCollector] += (filledAmount * quote.requestedOpenPrice * quote.tradingFee) / 1e36;
 		} else {
 			require(quote.quantity == filledAmount, "PartyBFacet: Invalid filledAmount");
-			accountLayout.balances[feeCollector] += (filledAmount * quote.marketPrice * quote.tradingFee) / 1e36;
 		}
 		if (quote.positionType == PositionType.LONG) {
 			require(openedPrice <= quote.requestedOpenPrice, "PartyBFacet: Opened price isn't valid");
@@ -78,6 +75,8 @@ library LibPartyBPositionsActions {
 		quote.openedPrice = openedPrice;
 		quote.initialOpenedPrice = openedPrice;
 		quote.statusModifyTimestamp = block.timestamp;
+		uint256 executedOpenFee = LibQuote.getOpenTradingFeeExecuted(quote, filledAmount);
+		LibAccount.trueUpOpenTradingFee(quote.partyA, provisionalOpenFee, executedOpenFee);
 
 		LibQuoteFunding.updateAccumulatedPaidFunding(quoteId);
 		if (!_instantOpenMode) {
@@ -196,14 +195,11 @@ library LibPartyBPositionsActions {
 			"PartyBFacet: Leverage is high"
 		);
 
+		accountLayout.balances[LibAccount.getFeeCollector(quote.affiliate)] += executedOpenFee;
 		quoteLayout.partyBPositionsCount[quote.partyB][address(0)] += 1;
 		quote.quoteStatus = QuoteStatus.OPENED;
 		LibQuote.addToOpenPositions(quoteId);
 
-		uint256 openFee =
-			quote.orderType == OrderType.LIMIT
-				? (filledAmount * quote.requestedOpenPrice * quote.tradingFee) / 1e36
-				: (filledAmount * quote.marketPrice * quote.tradingFee) / 1e36;
 		if (!_instantOpenMode) {
 			LibAccount.realizeOpenTradingFee(quote.partyA, quoteFeeBeforeOpen - remainingQuoteFee);
 		}
@@ -220,7 +216,7 @@ library LibPartyBPositionsActions {
 				affiliateHook,
 				abi.encodeCall(
 					ISymmioHook.onFeeCharged,
-					(quoteId, openFee, quote.partyA, quote.partyB, quote.symbolId, quote.affiliate, ISymmioHook.TradingFeeType.OPEN)
+					(quoteId, executedOpenFee, quote.partyA, quote.partyB, quote.symbolId, quote.affiliate, ISymmioHook.TradingFeeType.OPEN)
 				),
 				quoteId
 			);
@@ -233,7 +229,7 @@ library LibPartyBPositionsActions {
 				systemHook,
 				abi.encodeCall(
 					ISymmioHook.onFeeCharged,
-					(quoteId, openFee, quote.partyA, quote.partyB, quote.symbolId, quote.affiliate, ISymmioHook.TradingFeeType.OPEN)
+					(quoteId, executedOpenFee, quote.partyA, quote.partyB, quote.symbolId, quote.affiliate, ISymmioHook.TradingFeeType.OPEN)
 				),
 				quoteId
 			);
@@ -250,7 +246,7 @@ library LibPartyBPositionsActions {
 		);
 		emit SharedEvents.TradingFeeCharged(
 			quote.id,
-			openFee,
+			executedOpenFee,
 			quote.partyA,
 			quote.partyB,
 			quote.symbolId,

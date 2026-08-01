@@ -9,11 +9,11 @@ import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
 import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
 import { limitFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest.js"
-import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
-import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
+import { limitOpenRequestBuilder, marketOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
+import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { decimal, getBlockTimestamp, getQuoteQuantity } from "./utils/Common.js"
 import { migratePartyBToCross } from "./utils/CrossPartyB.js"
-import { getDummyHighLowPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
+import { getDummyHighLowPriceSig, getDummySingleUpnlAndPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
 
 export function shouldBehaveLikeHooks(): void {
 	let user: User, hedger: Hedger
@@ -565,6 +565,36 @@ export function shouldBehaveLikeHooks(): void {
 			// Verify system hook also received the fee callback
 			const [, , , , , , , systemFeeCalls] = await systemHook.getLastOpenFeeCall()
 			expect(systemFeeCalls).to.equal(1n)
+		})
+
+		it("Should pass executed market open fee to hooks", async function () {
+			const MockHook = await ethers.getContractFactory("MockHook")
+			const affiliateHook = await MockHook.deploy()
+			await affiliateHook.waitForDeployment()
+			const systemHook = await MockHook.deploy()
+			await systemHook.waitForDeployment()
+
+			await context.controlFacet.connect(context.signers.admin).registerHook(context.accountManager, await affiliateHook.getAddress())
+			await context.controlFacet.connect(context.signers.admin).registerHook(ethers.ZeroAddress, await systemHook.getAddress())
+
+			const provisionalMarketPrice = decimal(9n, 17)
+			const openedPrice = decimal(11n, 17)
+			const quoteId = await user.sendQuote(
+				marketQuoteRequestBuilder().price(decimal(12n, 17)).upnlSig(getDummySingleUpnlAndPriceSig(provisionalMarketPrice)).build(),
+			)
+			await hedger.lockQuote(quoteId)
+			const quote = await context.viewFacetQuote.getQuote(quoteId)
+			const expectedExecutedFee = (quote.quantity * openedPrice * quote.tradingFee) / 10n ** 36n
+
+			await hedger.openPosition(
+				quoteId,
+				marketOpenRequestBuilder().filledAmount(quote.quantity).openPrice(openedPrice).price(provisionalMarketPrice).build(),
+			)
+
+			const [, affiliateFeeAmount] = await affiliateHook.getLastOpenFeeCall()
+			const [, systemFeeAmount] = await systemHook.getLastOpenFeeCall()
+			expect(affiliateFeeAmount).to.equal(expectedExecutedFee)
+			expect(systemFeeAmount).to.equal(expectedExecutedFee)
 		})
 
 		it("Should call onFeeCharged with CLOSE fee type on closePosition", async function () {

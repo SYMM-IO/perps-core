@@ -13,6 +13,8 @@ import { LibUtils } from "./LibUtils.sol";
 library LibQuote {
 	using LockedValuesOps for LockedValues;
 
+	uint256 private constant OPEN_FEE_SCALE = 1e36;
+
 	/// @notice Calculates the remaining open amount of a quote.
 	/// @param quote The quote for which to calculate the remaining open amount.
 	/// @return The remaining open amount of the quote.
@@ -477,10 +479,32 @@ library LibQuote {
 	function getOpenTradingFee(uint256 quoteId) internal view returns (uint256 fee) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote storage quote = quoteLayout.quotes[quoteId];
-		if (quote.orderType == OrderType.LIMIT) {
-			fee = (LibQuote.quoteOpenAmount(quote) * quote.requestedOpenPrice * quote.tradingFee) / 1e36;
-		} else {
-			fee = (LibQuote.quoteOpenAmount(quote) * quote.marketPrice * quote.tradingFee) / 1e36;
-		}
+		return getOpenTradingFeeReserved(quote, LibQuote.quoteOpenAmount(quote));
+	}
+
+	/// @notice Gets the provisional open trading fee that remains reserved for a quote amount.
+	/// @dev Market quotes reserve against request-time marketPrice until they are actually opened.
+	function getOpenTradingFeeReserved(Quote storage quote, uint256 amount) internal view returns (uint256 fee) {
+		return _getOpenTradingFee(amount, quote.orderType == OrderType.LIMIT ? quote.requestedOpenPrice : quote.marketPrice, quote.tradingFee);
+	}
+
+	/// @notice Gets the provisional open trading fee for an in-memory quote amount.
+	function getOpenTradingFeeReservedMem(Quote memory quote, uint256 amount) internal pure returns (uint256 fee) {
+		return _getOpenTradingFee(amount, quote.orderType == OrderType.LIMIT ? quote.requestedOpenPrice : quote.marketPrice, quote.tradingFee);
+	}
+
+	/// @notice Gets the realized open trading fee for an opened quote amount.
+	/// @dev Limit quotes continue to realize against requestedOpenPrice; market quotes realize against openedPrice.
+	function getOpenTradingFeeExecuted(Quote storage quote, uint256 amount) internal view returns (uint256 fee) {
+		return _getOpenTradingFee(amount, quote.orderType == OrderType.LIMIT ? quote.requestedOpenPrice : quote.openedPrice, quote.tradingFee);
+	}
+
+	/// @notice Gets the realized open trading fee for an opened in-memory quote amount.
+	function getOpenTradingFeeExecutedMem(Quote memory quote, uint256 amount) internal pure returns (uint256 fee) {
+		return _getOpenTradingFee(amount, quote.orderType == OrderType.LIMIT ? quote.requestedOpenPrice : quote.openedPrice, quote.tradingFee);
+	}
+
+	function _getOpenTradingFee(uint256 amount, uint256 tradingPrice, uint256 tradingFee) private pure returns (uint256 fee) {
+		return (amount * tradingPrice * tradingFee) / OPEN_FEE_SCALE;
 	}
 }
