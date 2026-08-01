@@ -11,29 +11,29 @@
 	<body class="index-page">
 		<a class="skip-link" href="#docs">Skip to docs</a>
 
-		<header class="doc-topbar">
-			<a class="brand" href="index.html"
-				><span class="brand-mark">8.6</span><span><strong>Symmio Docs</strong><small>v0.8.6 reference</small></span></a
-			>
-			<nav class="top-actions" aria-label="Page actions">
-				<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
-			</nav>
-		</header>
-
 		<header class="site-hero">
-			<nav class="crumbs" aria-label="Breadcrumb"><a href="../">docs</a><span>/</span><strong>v0.8.6</strong></nav>
-			<div class="hero-layout hero-layout-single">
-				<div>
-					<p class="eyebrow">Technical Review Docs</p>
-					<h1>Symmio Core v0.8.6 Changelog</h1>
-					<p class="hero-copy">
-						v0.8.6 is mostly about removing operational weak spots: withdrawals were safe but slow, AccountLayer ownership flows were too
-						rigid for delegated operations, and PartyA liquidation settlement could depend on funding state that changed later. The
-						release adds Express Withdrawal, delegated ownership controls, shutdown and freshness controls, and snapshot-backed
-						liquidation settlement.
-					</p>
-					<div class="hero-actions">
-						<a class="button primary" href="#docs">View changelog</a>
+			<div class="doc-topbar index-toolbar">
+				<a class="brand" href="index.html"
+					><span class="brand-mark">8.6</span><span><strong>Docs</strong><small>v0.8.6</small></span></a
+				>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+			<div class="index-hero-content">
+				<div class="hero-layout hero-layout-single">
+					<div class="hero-intro">
+						<p class="eyebrow">Core release</p>
+						<h1>Symmio Core <span>v0.8.6</span></h1>
+						<p class="hero-copy">
+							A technical guide to the release: faster withdrawals, delegated AccountLayer ownership, safer liquidation settlement,
+							and tighter operational controls.
+						</p>
+					</div>
+					<div class="release-summary" role="list" aria-label="Release contents">
+						<div role="listitem"><strong>08</strong><span>New features</span></div>
+						<div role="listitem"><strong>05</strong><span>Minor improvements</span></div>
+						<div role="listitem"><strong>14</strong><span>Technical notes</span></div>
 					</div>
 				</div>
 			</div>
@@ -55,7 +55,6 @@
 								then reconciles when the normal withdrawal finalizes.</span
 							>
 						</span>
-						<span class="doc-list-action">Open change</span>
 					</a>
 					<a class="doc-list-item" href="pages/account-layer-ownership-delegation.html">
 						<span class="doc-list-index">02</span>
@@ -67,7 +66,6 @@
 								creation for a target owner and direct owner-initiated SubAccount transfer.</span
 							>
 						</span>
-						<span class="doc-list-action">Open change</span>
 					</a>
 					<a class="doc-list-item" href="pages/liquidation-funding-snapshot-fix.html">
 						<span class="doc-list-index">03</span>
@@ -79,7 +77,6 @@
 								stores the signed PartyB-symbol funding state before positions are closed.</span
 							>
 						</span>
-						<span class="doc-list-action">Open change</span>
 					</a>
 					<a class="doc-list-item" href="pages/single-step-partya-liquidation.html">
 						<span class="doc-list-index">04</span>
@@ -91,7 +88,6 @@
 								small snapshot liquidations in one all-or-revert transaction.</span
 							>
 						</span>
-						<span class="doc-list-action">Open change</span>
 					</a>
 					<a class="doc-list-item" href="pages/affiliate-shutdown-flow.html">
 						<span class="doc-list-index">05</span>
@@ -103,7 +99,6 @@
 								adds scheduled close-only shutdown, a solver window, and a Clearing House backstop.</span
 							>
 						</span>
-						<span class="doc-list-action">Open change</span>
 					</a>
 					<a class="doc-list-item" href="pages/muon-upnl-validity-overrides.html">
 						<span class="doc-list-index">06</span>
@@ -115,7 +110,6 @@
 								per-function overrides that fall back to the global value when unset.</span
 							>
 						</span>
-						<span class="doc-list-action">Open change</span>
 					</a>
 					<a class="doc-list-item" href="pages/solver-fees.html">
 						<span class="doc-list-index">07</span>
@@ -127,7 +121,6 @@
 									caps plus execution-time solvency checks.</span
 								>
 						</span>
-						<span class="doc-list-action">Open change</span>
 					</a>
 					<a class="doc-list-item" href="pages/operational-fees.html">
 						<span class="doc-list-index">08</span>
@@ -139,7 +132,6 @@
 									allowance with timelocked reductions and a priority multiplier.</span
 								>
 						</span>
-						<span class="doc-list-action">Open change</span>
 					</a>
 				</div>
 				<div class="minor-improvements" aria-labelledby="minor-improvements-title">

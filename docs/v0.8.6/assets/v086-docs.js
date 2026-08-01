@@ -148,6 +148,60 @@
 
 	installRailControls()
 
+	const installArcReaderChrome = () => {
+		const body = document.body
+		if (!body || !body.classList.contains("doc-page")) return
+
+		const topbar = document.querySelector(".doc-topbar")
+		const sectionCard = document.querySelector(".side-toc .toc-card")
+		const pageHeading = document.querySelector(".reader-hero h1")
+		if (!topbar || !sectionCard || !pageHeading || sectionCard.querySelector(".arc-rail-header")) return
+
+		const brand = topbar.querySelector(".brand")
+		const actions = topbar.querySelector(".top-actions")
+		const sectionToggle = sectionCard.querySelector("[data-sections-toggle]")
+		const category = document.querySelector(".reader-hero .crumbs strong")
+
+		if (!pageHeading.id) pageHeading.id = "document-title"
+
+		const railHeader = document.createElement("div")
+		railHeader.className = "arc-rail-header"
+
+		const railTop = document.createElement("div")
+		railTop.className = "arc-rail-top"
+
+		if (brand) {
+			brand.classList.add("arc-rail-brand")
+			railTop.append(brand)
+		}
+
+		const railActions = document.createElement("div")
+		railActions.className = "arc-rail-actions"
+		if (actions) railActions.append(actions)
+		if (sectionToggle) railActions.append(sectionToggle)
+		railTop.append(railActions)
+
+		const pageLink = document.createElement("a")
+		const pageTitle = (pageHeading.textContent || document.title).trim()
+		const compactPageTitle = pageTitle.replace(/\s*[-–—]\s*Design Document\s*$/i, "").trim()
+		pageLink.className = "arc-rail-page"
+		pageLink.href = `#${pageHeading.id}`
+		pageLink.setAttribute("aria-label", `Current page: ${pageTitle}`)
+		pageLink.innerHTML = `<span>${escapeHtml(category ? category.textContent || "Document" : "Document")}</span><strong>${escapeHtml(
+			compactPageTitle || pageTitle
+		)}</strong>`
+
+		railHeader.append(railTop, pageLink)
+		sectionCard.prepend(railHeader)
+
+		const sectionList = document.createElement("div")
+		sectionList.className = "arc-section-list"
+		Array.from(sectionCard.children).forEach((child) => {
+			if (child.matches(".toc-title, .toc-link, .toc-empty")) sectionList.append(child)
+		})
+		sectionCard.append(sectionList)
+	}
+
 	const normalize = (value) => value.toLowerCase().replace(/\s+/g, " ").trim()
 	const escapeHtml = (value) =>
 		value
@@ -156,6 +210,8 @@
 			.replace(/>/g, "&gt;")
 			.replace(/"/g, "&quot;")
 			.replace(/'/g, "&#39;")
+
+	installArcReaderChrome()
 
 	const installFilter = (input, items, emptyLabel) => {
 		if (!input || !items.length) return
@@ -1212,7 +1268,14 @@
 					setIconLabel(copy, icons.copy, "Copy")
 				}, 1200)
 			} catch (_error) {
-				setIconLabel(copy, icons.check, "Select")
+				const selection = window.getSelection()
+				if (selection) {
+					const range = document.createRange()
+					range.selectNodeContents(pre)
+					selection.removeAllRanges()
+					selection.addRange(range)
+				}
+				setIconLabel(copy, icons.check, selection ? "Selected" : "Copy unavailable")
 				window.setTimeout(() => {
 					setIconLabel(copy, icons.copy, "Copy")
 				}, 1200)
@@ -1222,7 +1285,9 @@
 		toolbar.append(actions)
 		pre.before(frame)
 		frame.append(toolbar, pre)
-		if (code && code.classList.contains("language-solidity")) installFunctionReference(frame, code.textContent || "")
+		if (code && code.classList.contains("language-solidity") && !pre.closest("[data-disable-function-reference]")) {
+			installFunctionReference(frame, code.textContent || "")
+		}
 	})
 
 	const installHeadingLinks = () => {
@@ -1233,13 +1298,16 @@
 			anchor.className = "heading-anchor"
 			anchor.textContent = "#"
 			anchor.setAttribute("aria-label", `Copy link to ${heading.textContent || "section"}`)
+			const defaultLabel = anchor.getAttribute("aria-label")
 			anchor.addEventListener("click", async () => {
 				const url = `${window.location.href.split("#")[0]}#${heading.id}`
 				try {
 					await navigator.clipboard.writeText(url)
-					anchor.textContent = "Copied"
+					anchor.textContent = "✓"
+					anchor.setAttribute("aria-label", "Section link copied")
 					window.setTimeout(() => {
 						anchor.textContent = "#"
+						anchor.setAttribute("aria-label", defaultLabel)
 					}, 1100)
 				} catch (_error) {
 					window.location.hash = heading.id
@@ -1253,7 +1321,10 @@
 
 	const tocLinks = Array.from(document.querySelectorAll(".toc-link"))
 	if (tocLinks.length) {
-		const tocScroller = document.querySelector(".side-toc .toc-card") || document.querySelector(".toc-panel")
+		const tocScroller =
+			document.querySelector(".side-toc .arc-section-list") ||
+			document.querySelector(".side-toc .toc-card") ||
+			document.querySelector(".toc-panel")
 		const byId = new Map()
 		tocLinks.forEach((link) => {
 			let id = ""
@@ -1277,6 +1348,7 @@
 		let activeId = ""
 		let ticking = false
 		let lockedActiveId = ""
+		let unlockTimer = 0
 		function setActiveToc(id, options = {}) {
 			const active = byId.get(id)
 			if (!active || activeId === id) return
@@ -1316,7 +1388,7 @@
 		function getAnchorOffset() {
 			const header = document.querySelector(".doc-topbar")
 			const headerBottom = header ? header.getBoundingClientRect().bottom : 0
-			return Math.max(96, Math.ceil(headerBottom + 24))
+			return Math.max(28, Math.ceil(headerBottom + 20))
 		}
 		function scrollToHeading(heading) {
 			const targetTop = heading.getBoundingClientRect().top + window.scrollY - getAnchorOffset()
@@ -1329,9 +1401,12 @@
 		}
 		function holdClickedSection(id) {
 			lockedActiveId = id
+			window.clearTimeout(unlockTimer)
+			unlockTimer = window.setTimeout(unlockClickedSection, 1200)
 		}
 		function unlockClickedSection() {
 			if (!lockedActiveId) return
+			window.clearTimeout(unlockTimer)
 			lockedActiveId = ""
 			requestActiveFromScroll()
 		}
@@ -1348,6 +1423,7 @@
 		window.addEventListener("scroll", requestActiveFromScroll, { passive: true })
 		window.addEventListener("resize", requestActiveFromScroll)
 		window.addEventListener("hashchange", activeFromHash)
+		window.addEventListener("scrollend", unlockClickedSection, { passive: true })
 		window.addEventListener("wheel", unlockClickedSection, { passive: true })
 		window.addEventListener("touchstart", unlockClickedSection, { passive: true })
 		window.addEventListener("keydown", (event) => {
