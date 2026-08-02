@@ -89,6 +89,41 @@ function parsePartyAReimbursementChangeLogs(logs: readonly EvmLog[]) {
 	})
 }
 
+function parsePartyABalanceChangeLogs(logs: readonly EvmLog[]) {
+	return logs.flatMap(log => {
+		try {
+			const parsed = balanceChangeInterface.parseLog({ topics: log.topics as string[], data: log.data })
+			if (parsed?.name !== "BalanceChangePartyA") return []
+			return [
+				{
+					partyA: parsed.args.partyA as string,
+					amount: parsed.args.amount as bigint,
+					changeType: parsed.args._type as bigint,
+				},
+			]
+		} catch {
+			return []
+		}
+	})
+}
+
+/** Signed allocated-balance delta a BalanceChangePartyA log represents, per the v0.8.6 direction contract. */
+function signedAllocatedDelta(changeType: bigint, amount: bigint): bigint {
+	const inbound = new Set(
+		[
+			BalanceChangeType.ALLOCATE,
+			BalanceChangeType.PLATFORM_FEE_IN,
+			BalanceChangeType.REALIZED_PNL_IN,
+			BalanceChangeType.CVA_IN,
+			BalanceChangeType.LF_IN,
+			BalanceChangeType.FUNDING_FEE_IN,
+			BalanceChangeType.DEFERRED_BALANCE_IN,
+			BalanceChangeType.REIMBURSEMENT_IN,
+		].map(BigInt),
+	)
+	return inbound.has(changeType) ? amount : -amount
+}
+
 function parsePartyALiquidationSettlementLogs(logs: readonly EvmLog[]) {
 	return logs.flatMap(log => {
 		try {
@@ -1377,6 +1412,105 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			expect(lfInEvents.length).to.be.equal(1)
 			expect(lfInEvents[0].partyA.toLowerCase()).to.be.equal(liquidationStarter.address.toLowerCase())
 			expect(lfInEvents[0].amount).to.be.equal(expectedLf)
+		})
+
+		/**
+		 * LF CLAMP TEST — LF_OUT is not PartyA's total LF payment
+		 *
+		 * The liquidation fee is sized at liquidation start from the Muon-signed
+		 * `liquidationAllocatedBalance` (the allocation at the time of insolvency), but finalization
+		 * debits the LIVE allocation. Nothing on-chain couples the two, so the fee can exceed what
+		 * the live allocation still holds. `_finalizePartyALiquidation` then clamps the debit to
+		 * `min(lf, previousAllocatedBalance)` — emitting the full fee against a smaller bucket would
+		 * break the exact-replay guarantee that BalanceChangePartyA makes.
+		 *
+		 * Setup (quote 1 is SHORT, 100 units @ 1.0, CVA 22, LF 3):
+		 *   price 0.755 puts PartyA in PROFIT, so it stays live-solvent and liquidation start sweeps the
+		 *   surplus into deferred balance, leaving only `CVA + LF - upnl` allocated -- a little over 1 token.
+		 *   The signed historical allocation is then chosen (below) so the liquidation classifies as NORMAL
+		 *   while the resulting fee lands above that remaining allocation.
+		 *
+		 * Demonstrates: LF_OUT < LF_IN, the difference is derivable from the same receipt, per-account
+		 * replay stays exact, and the LF leg alone does not net to zero across accounts.
+		 */
+		it("Should clamp PartyA LF_OUT to the live allocation while the starter still receives the full fee", async function () {
+			// High cap so the fee itself is never reduced by the insurance-vault clamp.
+			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(context.signers.others[0].address, decimal(100n))
+
+			const userAddress = await context.signers.user.getAddress()
+			const hedgerAddress = await context.signers.hedger.getAddress()
+			const starter = context.signers.liquidator
+
+			const price = decimal(755n, 15)
+			const fundingFee = await getFundingFee()
+			const upnl = (await user.getUpnl(getPriceFetcher([1n], [price]))) - fundingFee
+			const totalUnrealizedLoss = (await user.getTotalUnrealisedLoss(getPriceFetcher([1n], [price]))) - fundingFee
+
+			// Liquidation start moves the live surplus to deferred balance, leaving exactly this behind:
+			const balanceInfo = await user.getBalanceInfo()
+			const allocationAfterStart = balanceInfo.lockedCva + balanceInfo.lockedLf - upnl
+
+			// Pick the signed historical allocation so the liquidation is NORMAL *and* the resulting fee
+			// exceeds `allocationAfterStart`. Writing `A` for that value, the fee is `lockedLf - (A - signed)`,
+			// so the window is `2A - lockedLf < signed < A`; take its midpoint. Derived from live state
+			// rather than hardcoded so accrued funding cannot drift the test out of the window.
+			const signedHistoricalAllocation = (3n * allocationAfterStart - balanceInfo.lockedLf) / 2n
+			expect(signedHistoricalAllocation).to.be.greaterThan(2n * allocationAfterStart - balanceInfo.lockedLf)
+			expect(signedHistoricalAllocation).to.be.lessThan(allocationAfterStart)
+
+			// The deferred path is the one that honours the signed allocation; plain `liquidatePartyA`
+			// substitutes the live balance and so can never produce this divergence.
+			const liquidationSig = await getDummyLiquidationSig("0x10", upnl, [1n], [price], totalUnrealizedLoss, signedHistoricalAllocation)
+			await context.partyALiquidationFacet.connect(starter).deferredLiquidatePartyA(userAddress, liquidationSig)
+			await context.partyALiquidationFacet.connect(starter).deferredSetSymbolsPrice(userAddress, liquidationSig)
+
+			// LF only exists for NORMAL liquidation; guard the branch this test is about.
+			expect((await user.getLiquidatedStateOfPartyA()).liquidationType).to.be.equal(LiquidationType.NORMAL)
+
+			await user.liquidatePendingPositions(starter)
+			await user.liquidatePositions([1], starter)
+
+			const totalLf = (await user.getLiquidatedStateOfPartyA()).liquidationFee
+			const allocationBeforeFinalize = (await user.getBalanceInfo()).allocatedBalances
+			const starterBalanceBefore = await context.viewFacet.allocatedBalanceOfPartyA(starter.address)
+
+			// The premise: the fee is larger than the live allocation, so the clamp must engage.
+			expect(totalLf).to.be.greaterThan(0n)
+			expect(allocationBeforeFinalize).to.be.lessThan(totalLf)
+
+			const settleTx = await context.partyALiquidationFacet.connect(starter).settlePartyALiquidation(userAddress, [hedgerAddress])
+			const receipt = await settleTx.wait()
+			const partyAEvents = parsePartyABalanceChangeLogs(receipt?.logs ?? [])
+
+			const lfOutEvents = partyAEvents.filter(event => event.changeType === BigInt(BalanceChangeType.LF_OUT))
+			const lfInEvents = partyAEvents.filter(event => event.changeType === BigInt(BalanceChangeType.LF_IN))
+
+			// The starter is credited the WHOLE fee.
+			expect(lfInEvents.length).to.be.equal(1)
+			expect(lfInEvents[0].partyA.toLowerCase()).to.be.equal(starter.address.toLowerCase())
+			expect(lfInEvents[0].amount).to.be.equal(totalLf)
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(starter.address)).to.be.equal(starterBalanceBefore + totalLf)
+
+			// PartyA is debited only what its live allocation held — strictly less than the fee.
+			expect(lfOutEvents.length).to.be.equal(1)
+			expect(lfOutEvents[0].partyA.toLowerCase()).to.be.equal(userAddress.toLowerCase())
+			expect(lfOutEvents[0].amount).to.be.equal(allocationBeforeFinalize)
+			expect(lfOutEvents[0].amount).to.be.lessThan(lfInEvents[0].amount)
+
+			// The remainder documented as `lfFromRestOfLiquidation` is derivable from this receipt alone.
+			const lfFromRestOfLiquidation = lfInEvents[0].amount - lfOutEvents[0].amount
+			expect(lfFromRestOfLiquidation).to.be.greaterThan(0n)
+			expect(lfFromRestOfLiquidation).to.be.equal(totalLf - allocationBeforeFinalize)
+
+			// Per-account replay still reconstructs PartyA's allocated balance exactly.
+			const partyADelta = partyAEvents
+				.filter(event => event.partyA.toLowerCase() === userAddress.toLowerCase())
+				.reduce((total, event) => total + signedAllocatedDelta(event.changeType, event.amount), 0n)
+			expect(allocationBeforeFinalize + partyADelta).to.be.equal((await user.getBalanceInfo()).allocatedBalances)
+
+			// But the LF leg alone does not net to zero across accounts — a global
+			// "credits equal debits" check must exempt the finalization receipt.
+			expect(lfInEvents[0].amount - lfOutEvents[0].amount).to.not.be.equal(0n)
 		})
 
 		/**

@@ -512,28 +512,72 @@ event SettlePartyALiquidation(
 									</td>
 								</tr>
 								<tr>
-									<td>LF paid by the liquidated PartyA</td>
-									<td>Use <code>BalanceChangePartyA(partyA, amount, LF_OUT)</code> in the final settlement receipt.</td>
-									<td>The event amount is the exact debit from the liquidated user's allocated balance.</td>
+									<td>Total LF received by the liquidation starter</td>
+									<td>
+										Use <code>BalanceChangePartyA(recipient, amount, LF_IN)</code> in the final settlement receipt. This is the whole
+										capped liquidation fee; LF exists only for <code>NORMAL</code> liquidation, so <code>LATE</code>,
+										<code>OVERDUE</code>, and takeover-cleared liquidations emit none.
+									</td>
+									<td>The event address and amount are the exact recipient allocation credit.</td>
 								</tr>
 								<tr>
-									<td>LF received by the liquidation starter</td>
-									<td>Use <code>BalanceChangePartyA(recipient, amount, LF_IN)</code> in that same final receipt.</td>
-									<td>The event address and amount are the exact recipient allocation credit.</td>
+									<td>LF funded from the liquidated PartyA's allocation</td>
+									<td>
+										Use <code>BalanceChangePartyA(partyA, amount, LF_OUT)</code> in that same final receipt. This is only the part of
+										the fee the live allocation could cover, not PartyA's total economic LF payment.
+									</td>
+									<td>
+										The event amount is the exact debit from the liquidated user's allocated balance. Treat an absent
+										<code>LF_OUT</code> as zero, not as missing data.
+									</td>
+								</tr>
+								<tr>
+									<td>LF funded through the rest of the liquidation</td>
+									<td>
+										Derive it as <code>LF_IN - LF_OUT</code> within the final receipt. It is the remainder of the fee, already taken
+										out of PartyA earlier in the liquidation as deferred balance and PartyB settlement.
+									</td>
+									<td>
+										No allocated-balance event carries this component, because no allocated balance moves for it in this receipt.
+										Never replay it as a delta.
+									</td>
 								</tr>
 							</tbody>
 						</table>
 					</div>
 					<pre><code>partyAPaidCva(liquidationId) = sum(all extended cvaAmounts)
 partyBReceivedCva(liquidationId, partyB) = sum(cvaAmounts[i] where partyBs[i] == partyB)
-partyAPaidLf(partyA, liquidationId) = sum(LF_OUT for partyA in the final settlement receipt)
-starterReceivedLf(liquidationId) = sum(LF_IN recipient credits in that receipt)</code></pre>
+// The final settlement receipt is the settlement call that also emits FullyLiquidatedPartyA.
+// Read LF_OUT and REALIZED_PNL_OUT on partyA, and LF_IN on the starter, from that receipt.
+// A component with no event is zero, not unknown.
+totalLf(liquidationId)            = LF_IN credited to the liquidation starter
+lfFromPartyAAllocation(partyA)    = LF_OUT debited from partyA          // clamped to the live allocation
+lfFromRestOfLiquidation(partyA)   = totalLf - lfFromPartyAAllocation    // >= 0, no allocated-balance event
+partyAAllocationBeforeFinalize    = LF_OUT + REALIZED_PNL_OUT on partyA // the allocation liquidation consumed
+clampFired(partyA)                = totalLf &gt; lfFromPartyAAllocation</code></pre>
 					<p>
 						A settlement call emits its balance changes before the legacy and extended <code>SettlePartyALiquidation</code> events. Buffer
 						the complete receipt, process it in <code>logIndex</code> order, and then attach the later extended event's
 						<code>liquidationId</code>, <code>partyBs</code>, and <code>allocationKeys</code>. Paginated settlement contributes one
 						extended event per processed batch; aggregate all batches sharing the liquidation ID.
 					</p>
+					<aside class="callout callout-note">
+						<strong>PartyA <code>LF_OUT</code> can be smaller than <code>LF_IN</code>.</strong> The fee is sized at liquidation start from
+						the Muon-signed <code>liquidationAllocatedBalance</code>, the allocation at the time of insolvency. Finalization debits the
+						<em>live</em> allocation, which can be lower by then, so the contract debits only what that allocation still holds. That is
+						deliberate: emitting the full fee against a smaller bucket would break exact replay. Read the difference as
+						<code>LF_IN - LF_OUT</code>; it is fully observable from the same receipt, and <code>LF_IN &gt; LF_OUT</code> is the signal that
+						the clamp fired. Sum the actual <code>LF_OUT</code> debit for “LF taken from live allocation” and the <code>LF_IN</code> credit
+						for “LF received”; do not force the two to be equal.
+					</aside>
+					<aside class="callout callout-warning">
+						<strong>Per-account replay stays exact; cross-account conservation does not.</strong> When the clamp fires, the starter is
+						credited the full fee while PartyA is debited less, so allocated balance in that receipt is not conserved across accounts. Each
+						individual account still reconstructs exactly from its own events, which is the guarantee this page makes. An indexer that also
+						runs a global “credits equal debits” check must exempt the finalization receipt, or reconcile it using
+						<code>lfFromRestOfLiquidation</code> above — the value left PartyA earlier in the liquidation, as
+						<code>DEFERRED_BALANCE_OUT</code> at start and as PartyB settlement deltas, and both of those are already in the ledger.
+					</aside>
 
 					<h3>PartyB liquidation</h3>
 					<div class="table-wrap">
@@ -649,6 +693,17 @@ starterReceivedLf(liquidationId) = sum(LF_IN recipient credits in that receipt)<
 									<td>Final PartyA liquidation used whole-balance assignments with an incomplete event explanation.</td>
 									<td>LF, realized PnL, deferred, and reimbursement components explain the complete allocation replacement.</td>
 									<td>Apply every component in log order; do not infer one synthetic net event.</td>
+								</tr>
+								<tr>
+									<td>PartyA <code>LF_OUT</code> was read as the liquidated user's total LF payment.</td>
+									<td>
+										It is only the part funded from the live allocation, so it can be smaller than the starter's
+										<code>LF_IN</code>, or absent entirely.
+									</td>
+									<td>
+										Report received LF from <code>LF_IN</code>, the allocated debit from <code>LF_OUT</code>, and the remainder as
+										<code>LF_IN - LF_OUT</code>. Exempt the finalization receipt from any cross-account conservation check.
+									</td>
 								</tr>
 								<tr>
 									<td>An operational-fee event reports the full charge.</td>
