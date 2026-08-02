@@ -43,9 +43,72 @@ enum BalanceChangeType {
 	FUNDING_FEE_OUT,
 	DEFERRED_BALANCE_IN,
 	DEFERRED_BALANCE_OUT,
+	REIMBURSEMENT_IN,
 }
 
-const balanceChangeInterface = new ethers.Interface(["event BalanceChangePartyA(address indexed partyA, uint256 amount, uint8 _type)"])
+enum ReimbursementChangeType {
+	CLEARING_HOUSE_IN,
+	PLATFORM_FEE_IN,
+	CLEARING_HOUSE_OUT,
+	RELEASE_TO_ALLOCATED,
+	MOVE_TO_LIQUIDATION_ESCROW,
+}
+
+const balanceChangeInterface = new ethers.Interface([
+	"event BalanceChangePartyA(address indexed partyA, uint256 amount, uint8 _type)",
+	"event BalanceChangePartyB(address indexed partyB, address indexed partyA, uint256 amount, uint8 _type)",
+])
+
+const reimbursementChangeInterface = new ethers.Interface([
+	"event PartyAReimbursementChange(address indexed partyA, uint256 amount, uint256 newBalance, uint8 _type)",
+])
+
+const partyALiquidationSettlementInterface = new ethers.Interface([
+	"event SettlePartyALiquidation(address partyA, address[] partyBs, int256[] amounts, bytes liquidationId)",
+	"event SettlePartyALiquidation(address partyA, address[] partyBs, address[] allocationKeys, int256[] amounts, uint256[] cvaAmounts, bytes liquidationId)",
+])
+
+type EvmLog = { topics: readonly string[]; data: string }
+
+function parsePartyAReimbursementChangeLogs(logs: readonly EvmLog[]) {
+	return logs.flatMap(log => {
+		try {
+			const parsed = reimbursementChangeInterface.parseLog({ topics: log.topics as string[], data: log.data })
+			if (parsed?.name !== "PartyAReimbursementChange") return []
+			return [
+				{
+					partyA: parsed.args.partyA as string,
+					amount: parsed.args.amount as bigint,
+					newBalance: parsed.args.newBalance as bigint,
+					changeType: parsed.args._type as bigint,
+				},
+			]
+		} catch {
+			return []
+		}
+	})
+}
+
+function parsePartyALiquidationSettlementLogs(logs: readonly EvmLog[]) {
+	return logs.flatMap(log => {
+		try {
+			const parsed = partyALiquidationSettlementInterface.parseLog({ topics: log.topics as string[], data: log.data })
+			if (parsed?.name !== "SettlePartyALiquidation") return []
+			return [
+				{
+					partyA: parsed.args.partyA as string,
+					partyBs: [...parsed.args.partyBs] as string[],
+					allocationKeys: parsed.fragment.inputs.length === 6 ? ([...parsed.args.allocationKeys] as string[]) : undefined,
+					amounts: [...parsed.args.amounts] as bigint[],
+					cvaAmounts: parsed.fragment.inputs.length === 6 ? ([...parsed.args.cvaAmounts] as bigint[]) : undefined,
+					liquidationId: parsed.args.liquidationId as string,
+				},
+			]
+		} catch {
+			return []
+		}
+	})
+}
 
 /**
  * ========================================
@@ -427,7 +490,29 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			const fundingAfterDelay = await getFundingFee()
 			expect(fundingAfterDelay).to.be.greaterThan(fundingAtLiquidation)
 
-			await user.liquidatePendingPositions()
+			const userAddress = await user.getAddress()
+			const pendingQuoteIds = await context.viewFacetQuote.getPartyAPendingQuotes(userAddress)
+			const expectedReturnedFees = await getTradingFeeForQuotes(context, pendingQuoteIds)
+			const reimbursementBefore = await context.viewFacet.partyAReimbursement(userAddress)
+			const pendingLiquidationTx = await context.partyALiquidationFacet
+				.connect(context.signers.liquidator)
+				.liquidatePendingPositionsPartyA(userAddress)
+			const pendingLiquidationReceipt = await pendingLiquidationTx.wait()
+			const partyABalanceEvents = (pendingLiquidationReceipt?.logs ?? []).flatMap(log => {
+				try {
+					const parsed = balanceChangeInterface.parseLog({ topics: log.topics as string[], data: log.data })
+					return parsed?.name === "BalanceChangePartyA" ? [parsed] : []
+				} catch {
+					return []
+				}
+			})
+			const reimbursementEvents = parsePartyAReimbursementChangeLogs(pendingLiquidationReceipt?.logs ?? []).filter(
+				event => event.partyA.toLowerCase() === userAddress.toLowerCase(),
+			)
+			expect(partyABalanceEvents).to.have.length(0)
+			expect(reimbursementEvents.every(event => event.changeType === BigInt(ReimbursementChangeType.PLATFORM_FEE_IN))).to.equal(true)
+			expect(reimbursementEvents.reduce((sum, event) => sum + event.amount, 0n)).to.equal(expectedReturnedFees)
+			expect(reimbursementEvents.at(-1)?.newBalance).to.equal(reimbursementBefore + expectedReturnedFees)
 			await user.liquidatePositions([1])
 
 			const liquidationState = await user.getLiquidatedStateOfPartyA()
@@ -757,6 +842,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 		it("Should single-step liquidate and settle a simple PartyA with signed PartyB-symbol snapshot", async function () {
 			const price = decimal(572n, 16)
 			const quoteIds = [1n]
+			const userBalanceBefore = await user.getBalanceInfo()
 			const fundingDebt = await context.viewFacetQuote.getSumQuoteFundingDebts(quoteIds)
 			const upnl = (await user.getUpnl(getPriceFetcher([1n], [price]))) - fundingDebt
 			const totalUnrealizedLoss = (await user.getTotalUnrealisedLoss(getPriceFetcher([1n], [price]))) - fundingDebt
@@ -764,16 +850,21 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			const liquidationSig = await getDummyLiquidationSig("0x10", upnl, [1n], [price], totalUnrealizedLoss, allocatedBalance)
 			const partyANonceBefore = await context.viewFacet.nonceOfPartyA(user.address)
 
-			await expect(
-				context.partyALiquidationSnapshotFacet
-					.connect(context.signers.liquidator)
-					.singleStepLiquidatePartyAWithSnapshot(
-						user.address,
-						buildLiquidationSnapshotSig(liquidationSig, [await getSignedLiquidationSnapshotState(context.signers.hedger.address, 1n, price)]),
-						quoteIds,
-						[context.signers.hedger.address],
-					),
-			).to.not.be.reverted
+			const singleStepTx = await context.partyALiquidationSnapshotFacet
+				.connect(context.signers.liquidator)
+				.singleStepLiquidatePartyAWithSnapshot(
+					user.address,
+					buildLiquidationSnapshotSig(liquidationSig, [await getSignedLiquidationSnapshotState(context.signers.hedger.address, 1n, price)]),
+					quoteIds,
+					[context.signers.hedger.address],
+				)
+			const singleStepReceipt = await singleStepTx.wait()
+			const settlementEvents = parsePartyALiquidationSettlementLogs(singleStepReceipt?.logs ?? [])
+			const extendedSettlementEvents = settlementEvents.filter(event => event.cvaAmounts !== undefined)
+			expect(settlementEvents.filter(event => event.cvaAmounts === undefined)).to.have.length(1)
+			expect(extendedSettlementEvents).to.have.length(1)
+			expect(extendedSettlementEvents[0].allocationKeys).to.deep.equal([user.address])
+			expect(extendedSettlementEvents[0].cvaAmounts).to.deep.equal([userBalanceBefore.lockedCva])
 
 			expect((await context.viewFacetQuote.getQuote(1)).quoteStatus).to.equal(QuoteStatus.LIQUIDATED)
 			expect((await context.viewFacetQuote.getQuote(2)).quoteStatus).to.equal(QuoteStatus.LIQUIDATED_PENDING)
@@ -1380,13 +1471,59 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 							return []
 						}
 					})
+					const partyBCvaEvents = (receipt?.logs ?? []).flatMap(log => {
+						try {
+							const parsed = balanceChangeInterface.parseLog({ topics: log.topics as string[], data: log.data })
+							if (parsed?.name !== "BalanceChangePartyB" || parsed.args._type !== BigInt(BalanceChangeType.CVA_IN)) return []
+							return [
+								{
+									partyB: parsed.args.partyB as string,
+									allocationKey: parsed.args.partyA as string,
+									amount: parsed.args.amount as bigint,
+								},
+							]
+						} catch {
+							return []
+						}
+					})
+					const settlementEvents = parsePartyALiquidationSettlementLogs(receipt?.logs ?? [])
+					const reimbursementBucketEvents = parsePartyAReimbursementChangeLogs(receipt?.logs ?? []).filter(
+						event => event.partyA.toLowerCase() === userAddress.toLowerCase(),
+					)
+					const legacySettlementEvents = settlementEvents.filter(event => event.cvaAmounts === undefined)
+					const extendedSettlementEvents = settlementEvents.filter(event => event.cvaAmounts !== undefined)
 					const hasPartyAEvent = (amount: bigint, changeType: BalanceChangeType) =>
 						partyAEvents.some(
 							event => event.partyA.toLowerCase() === userAddress.toLowerCase() && event.amount === amount && event.changeType === BigInt(changeType),
 						)
-					expect(hasPartyAEvent(userBalance.lockedCva, BalanceChangeType.CVA_OUT)).to.be.equal(true)
-					expect(hasPartyAEvent(diff, BalanceChangeType.LF_OUT)).to.be.equal(true)
+					expect(legacySettlementEvents).to.have.length(1)
+					expect(extendedSettlementEvents).to.have.length(1)
+					expect(extendedSettlementEvents[0].partyA.toLowerCase()).to.equal(userAddress.toLowerCase())
+					expect(extendedSettlementEvents[0].partyBs.map(partyB => partyB.toLowerCase())).to.deep.equal([hedgerAddress.toLowerCase()])
+					expect(extendedSettlementEvents[0].allocationKeys?.map(allocationKey => allocationKey.toLowerCase())).to.deep.equal([
+						userAddress.toLowerCase(),
+					])
+					expect(extendedSettlementEvents[0].cvaAmounts).to.deep.equal([userBalance.lockedCva])
+					expect(partyBCvaEvents).to.deep.equal([{ partyB: hedgerAddress, allocationKey: userAddress, amount: userBalance.lockedCva }])
+					expect(reimbursementBucketEvents).to.deep.equal(
+						reimbursement > 0n
+							? [
+									{
+										partyA: userAddress,
+										amount: reimbursement,
+										newBalance: 0n,
+										changeType: BigInt(ReimbursementChangeType.RELEASE_TO_ALLOCATED),
+									},
+								]
+							: [],
+					)
+					expect(hasPartyAEvent(userBalance.lockedCva, BalanceChangeType.CVA_OUT)).to.be.equal(false)
+					const lfFromAllocated = diff < userBalance.allocatedBalances ? diff : userBalance.allocatedBalances
+					expect(hasPartyAEvent(lfFromAllocated, BalanceChangeType.LF_OUT)).to.be.equal(lfFromAllocated > 0n)
+					const realizedDebit = userBalance.allocatedBalances - lfFromAllocated
+					expect(hasPartyAEvent(realizedDebit, BalanceChangeType.REALIZED_PNL_OUT)).to.be.equal(realizedDebit > 0n)
 					expect(hasPartyAEvent(reimbursement, BalanceChangeType.PLATFORM_FEE_IN)).to.be.equal(false)
+					expect(hasPartyAEvent(reimbursement, BalanceChangeType.REIMBURSEMENT_IN)).to.be.equal(reimbursement > 0n)
 
 					expect(await context.viewFacet.allocatedBalanceOfPartyB(hedgerAddress, userAddress)).to.be.equal(partyBAfter)
 					let balanceInfoOfLiquidator = await liquidator.getBalanceInfo()
@@ -1443,9 +1580,33 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 				await user.liquidatePositions([1])
 
 				const userAddress = await context.signers.user.getAddress()
+				const hedgerAddress = await context.signers.hedger.getAddress()
 				const reimbursement = await context.viewFacet.partyAReimbursement(userAddress)
 
-				await user.settleLiquidation()
+				const settleTx = await context.partyALiquidationFacet
+					.connect(context.signers.liquidator)
+					.settlePartyALiquidation(userAddress, [hedgerAddress])
+				const settleReceipt = await settleTx.wait()
+				const extendedSettlementEvents = parsePartyALiquidationSettlementLogs(settleReceipt?.logs ?? []).filter(
+					event => event.cvaAmounts !== undefined,
+				)
+				const reimbursementBucketEvents = parsePartyAReimbursementChangeLogs(settleReceipt?.logs ?? []).filter(
+					event => event.partyA.toLowerCase() === userAddress.toLowerCase(),
+				)
+				expect(extendedSettlementEvents).to.have.length(1)
+				expect(extendedSettlementEvents[0].cvaAmounts).to.deep.equal([userBalance.lockedCva - liquidationState["deficit"]])
+				expect(reimbursementBucketEvents).to.deep.equal(
+					reimbursement > 0n
+						? [
+								{
+									partyA: userAddress,
+									amount: reimbursement,
+									newBalance: 0n,
+									changeType: BigInt(ReimbursementChangeType.MOVE_TO_LIQUIDATION_ESCROW),
+								},
+							]
+						: [],
+				)
 				const fundingFee = await getFundingFee()
 				expect((await hedger.getBalanceInfo(await user.getAddress())).allocatedBalances).to.be.equal(partyBAfter - fundingFee)
 				// In LATE liquidation, liquidator gets nothing (LF exhausted)
@@ -1484,9 +1645,33 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 				await user.liquidatePositions([1n])
 
 				const userAddress = await context.signers.user.getAddress()
+				const hedgerAddress = await context.signers.hedger.getAddress()
 				const reimbursement = await context.viewFacet.partyAReimbursement(userAddress)
 
-				await user.settleLiquidation()
+				const settleTx = await context.partyALiquidationFacet
+					.connect(context.signers.liquidator)
+					.settlePartyALiquidation(userAddress, [hedgerAddress])
+				const settleReceipt = await settleTx.wait()
+				const extendedSettlementEvents = parsePartyALiquidationSettlementLogs(settleReceipt?.logs ?? []).filter(
+					event => event.cvaAmounts !== undefined,
+				)
+				const reimbursementBucketEvents = parsePartyAReimbursementChangeLogs(settleReceipt?.logs ?? []).filter(
+					event => event.partyA.toLowerCase() === userAddress.toLowerCase(),
+				)
+				expect(extendedSettlementEvents).to.have.length(1)
+				expect(extendedSettlementEvents[0].cvaAmounts).to.deep.equal([0n])
+				expect(reimbursementBucketEvents).to.deep.equal(
+					reimbursement > 0n
+						? [
+								{
+									partyA: userAddress,
+									amount: reimbursement,
+									newBalance: 0n,
+									changeType: BigInt(ReimbursementChangeType.MOVE_TO_LIQUIDATION_ESCROW),
+								},
+							]
+						: [],
+				)
 
 				// PartyB gets reduced payout due to deficit - verify it's reduced from their original balance
 				const hedgerBalanceAfter = await hedger.getBalanceInfo(await user.getAddress())
@@ -1862,9 +2047,10 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 
 			// UPNL of -336 makes PartyB insolvent
 			// This means PartyB owes 336 tokens more than they have
-			await context.partyBLiquidationFacet
+			const liquidationTx = await context.partyBLiquidationFacet
 				.connect(context.signers.liquidator)
 				.liquidatePartyB(hedgerAddress, userAddress, await getDummySingleUpnlSig(decimal(-336n)))
+			const liquidationReceipt = await liquidationTx.wait()
 
 			// After liquidation, all PartyB balances should be zeroed
 			let balanceInfo: BalanceInfo = await hedger.getBalanceInfo(userAddress)
@@ -1885,6 +2071,39 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			// (partyB's balance is transferred to partyA during liquidation)
 			const partyABalanceAfter = (await user.getBalanceInfo()).allocatedBalances
 			expect(partyABalanceAfter).to.be.greaterThan(partyABalanceBefore)
+
+			const partyBEvents = (liquidationReceipt?.logs ?? []).flatMap(log => {
+				try {
+					const parsed = balanceChangeInterface.parseLog({ topics: log.topics as string[], data: log.data })
+					if (
+						parsed?.name !== "BalanceChangePartyB" ||
+						parsed.args.partyB.toLowerCase() !== hedgerAddress.toLowerCase() ||
+						parsed.args.partyA.toLowerCase() !== userAddress.toLowerCase()
+					)
+						return []
+					return [{ amount: parsed.args.amount as bigint, changeType: parsed.args._type as bigint }]
+				} catch {
+					return []
+				}
+			})
+			const realizedOut = partyBEvents
+				.filter(event => event.changeType === BigInt(BalanceChangeType.REALIZED_PNL_OUT))
+				.reduce((sum, event) => sum + event.amount, 0n)
+			const lfOut = partyBEvents.filter(event => event.changeType === BigInt(BalanceChangeType.LF_OUT)).reduce((sum, event) => sum + event.amount, 0n)
+			const partyARealizedIn = (liquidationReceipt?.logs ?? []).flatMap(log => {
+				try {
+					const parsed = balanceChangeInterface.parseLog({ topics: log.topics as string[], data: log.data })
+					return parsed?.name === "BalanceChangePartyA" &&
+						parsed.args.partyA.toLowerCase() === userAddress.toLowerCase() &&
+						parsed.args._type === BigInt(BalanceChangeType.REALIZED_PNL_IN)
+						? [parsed.args.amount as bigint]
+						: []
+				} catch {
+					return []
+				}
+			})
+			expect(partyARealizedIn).to.deep.equal([realizedOut])
+			expect(realizedOut + lfOut).to.equal(partyBAllocatedBefore)
 
 			// PartyA nonce should increment after partyB liquidation
 			const partyANonceAfter = await context.viewFacet.nonceOfPartyA(userAddress)

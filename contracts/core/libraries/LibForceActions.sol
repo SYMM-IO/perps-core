@@ -58,7 +58,7 @@ library LibForceActions {
 		uint256 reservedBalance,
 		int256 sigUpnlPartyB,
 		uint256 sigCurrentPrice
-	) public returns (int256 upnlPartyB) {
+	) public returns (int256 upnlPartyB, uint256 allocatedBalanceBeforeLiquidation) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote storage quote = quoteLayout.quotes[quoteId];
@@ -66,8 +66,7 @@ library LibForceActions {
 		address partyB = quote.partyB;
 
 		accountLayout.reserveVault[quote.partyB] = 0;
-		accountLayout.partyBAllocatedBalances[partyB][partyA] += reservedBalance;
-		emit SharedEvents.BalanceChangePartyB(partyB, partyA, reservedBalance, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+		LibAccount.increasePartyBAllocatedBalance(partyB, partyA, reservedBalance, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 
 		// diff = PnL increment for partyB from moving currentPrice -> closePrice
 		int256 diff = (int256(quote.quantityToClose) * (int256(closePrice) - int256(sigCurrentPrice))) / 1e18;
@@ -75,6 +74,7 @@ library LibForceActions {
 			diff = diff * -1;
 		}
 		upnlPartyB = sigUpnlPartyB + diff;
+		allocatedBalanceBeforeLiquidation = accountLayout.partyBAllocatedBalances[partyB][partyA];
 		LibPartyBLiquidation.startPartyBLiquidation(partyB, partyA, upnlPartyB, block.timestamp);
 	}
 
@@ -165,9 +165,7 @@ library LibForceActions {
 			uint256 available = uint256(-partyBAvailableBalance);
 
 			accountLayout.reserveVault[partyB] -= available;
-
-			accountLayout.partyBAllocatedBalances[partyB][allocationKey] += available;
-			emit SharedEvents.BalanceChangePartyB(partyB, quote.partyA, available, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+			LibAccount.increasePartyBAllocatedBalance(partyB, allocationKey, available, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 
 			LibAccount.increaseBothNonces(partyB, quote.partyA);
 

@@ -94,20 +94,26 @@ library LibSettlement {
 
 			totalSettlementAmount += settlementAmount;
 			if (settlementAmount >= 0) {
-				accountLayout.partyBAllocatedBalances[partyB][allocKey] -= uint256(settlementAmount);
-				emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
+				LibAccount.decreasePartyBAllocatedBalance(
+					partyB,
+					allocKey,
+					uint256(settlementAmount),
+					SharedEvents.BalanceChangeType.REALIZED_PNL_OUT
+				);
 			} else {
-				accountLayout.partyBAllocatedBalances[partyB][allocKey] += uint256(-settlementAmount);
-				emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(-settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+				LibAccount.increasePartyBAllocatedBalance(
+					partyB,
+					allocKey,
+					uint256(-settlementAmount),
+					SharedEvents.BalanceChangeType.REALIZED_PNL_IN
+				);
 			}
 			newPartyBsAllocatedBalances[i] = accountLayout.partyBAllocatedBalances[partyB][allocKey];
 		}
 		if (totalSettlementAmount >= 0) {
-			accountLayout.allocatedBalances[partyA] += uint256(totalSettlementAmount);
-			emit SharedEvents.BalanceChangePartyA(partyA, uint256(totalSettlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+			LibAccount.increasePartyAAllocatedBalance(partyA, uint256(totalSettlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 		} else {
-			accountLayout.allocatedBalances[partyA] -= uint256(-totalSettlementAmount);
-			emit SharedEvents.BalanceChangePartyA(partyA, uint256(-totalSettlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
+			LibAccount.decreasePartyAAllocatedBalance(partyA, uint256(-totalSettlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
 		}
 	}
 
@@ -219,8 +225,6 @@ library LibSettlement {
 
 		// 8. Apply settlements per partyA
 		newPartyAsAllocatedBalances = new uint256[](sig.partyAs.length);
-		int256 partyBNetDelta;
-
 		for (uint256 i = 0; i < sig.partyAs.length; i++) {
 			address partyA = sig.partyAs[i];
 			int256 settlementAmount = settleAmountsPerPartyA[i];
@@ -237,42 +241,56 @@ library LibSettlement {
 			// Update nonces
 			LibAccount.increaseBothNonces(partyB, partyA);
 
-			// Emit partyB balance change events per partyA
-			if (settlementAmount >= 0) {
-				emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
-			} else {
-				emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(-settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
-			}
-
-			// For cross partyB, accumulate delta and apply once after loop to avoid intermediate underflow
-			if (isCrossPartyB) {
-				partyBNetDelta -= settlementAmount;
-			} else {
+			if (!isCrossPartyB) {
 				if (settlementAmount >= 0) {
-					accountLayout.partyBAllocatedBalances[partyB][partyA] -= uint256(settlementAmount);
+					LibAccount.decreasePartyBAllocatedBalance(
+						partyB,
+						partyA,
+						uint256(settlementAmount),
+						SharedEvents.BalanceChangeType.REALIZED_PNL_OUT
+					);
 				} else {
-					accountLayout.partyBAllocatedBalances[partyB][partyA] += uint256(-settlementAmount);
+					LibAccount.increasePartyBAllocatedBalance(
+						partyB,
+						partyA,
+						uint256(-settlementAmount),
+						SharedEvents.BalanceChangeType.REALIZED_PNL_IN
+					);
 				}
 			}
 
 			// Update partyA balance
 			if (settlementAmount >= 0) {
-				accountLayout.allocatedBalances[partyA] += uint256(settlementAmount);
-				emit SharedEvents.BalanceChangePartyA(partyA, uint256(settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+				LibAccount.increasePartyAAllocatedBalance(partyA, uint256(settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 			} else {
-				accountLayout.allocatedBalances[partyA] -= uint256(-settlementAmount);
-				emit SharedEvents.BalanceChangePartyA(partyA, uint256(-settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
+				LibAccount.decreasePartyAAllocatedBalance(partyA, uint256(-settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
 			}
 
 			newPartyAsAllocatedBalances[i] = accountLayout.allocatedBalances[partyA];
 		}
 
-		// Apply accumulated cross partyB balance delta once
+		// Apply cross-pool credits before debits so offsetting settlements cannot cause an intermediate underflow.
+		// Each mutation emits the shared address(0) bucket key and its own reason from LibAccount.
 		if (isCrossPartyB) {
-			if (partyBNetDelta >= 0) {
-				accountLayout.partyBAllocatedBalances[partyB][address(0)] += uint256(partyBNetDelta);
-			} else {
-				accountLayout.partyBAllocatedBalances[partyB][address(0)] -= uint256(-partyBNetDelta);
+			for (uint256 i = 0; i < sig.partyAs.length; i++) {
+				if (settleAmountsPerPartyA[i] < 0) {
+					LibAccount.increasePartyBAllocatedBalance(
+						partyB,
+						address(0),
+						uint256(-settleAmountsPerPartyA[i]),
+						SharedEvents.BalanceChangeType.REALIZED_PNL_IN
+					);
+				}
+			}
+			for (uint256 i = 0; i < sig.partyAs.length; i++) {
+				if (settleAmountsPerPartyA[i] >= 0) {
+					LibAccount.decreasePartyBAllocatedBalance(
+						partyB,
+						address(0),
+						uint256(settleAmountsPerPartyA[i]),
+						SharedEvents.BalanceChangeType.REALIZED_PNL_OUT
+					);
+				}
 			}
 		}
 	}

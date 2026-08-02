@@ -84,7 +84,10 @@ library ForceCloseStepsImpl {
 	/// @param quoteId The ID of the quote for which the position should be forced to close.
 	/// @return isPartyBSolvent Whether PartyB remained solvent after the close.
 	/// @return upnlPartyB The upnl used for liquidation (only set for normal partyB when isPartyBSolvent is false).
-	function finalizeForceClose(uint256 quoteId) internal returns (bool isPartyBSolvent, int256 upnlPartyB) {
+	/// @return partyBAllocatedBalanceBeforeLiquidation PartyB's allocation immediately before it is cleared by liquidation.
+	function finalizeForceClose(
+		uint256 quoteId
+	) internal returns (bool isPartyBSolvent, int256 upnlPartyB, uint256 partyBAllocatedBalanceBeforeLiquidation) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[quoteId];
 		require(detail.inProgress, "ForceActionsFacet: Invalid state");
@@ -114,7 +117,7 @@ library ForceCloseStepsImpl {
 				detail.partyBState = PartyBForceCloseState.CLOSED_SOLVENT;
 			} else {
 				uint256 reservedBalance = accountLayout.reserveVault[partyB];
-				upnlPartyB = LibForceActions.startPartyBLiquidationForForceClose(
+				(upnlPartyB, partyBAllocatedBalanceBeforeLiquidation) = LibForceActions.startPartyBLiquidationForForceClose(
 					quoteId,
 					detail.closePrice,
 					reservedBalance,

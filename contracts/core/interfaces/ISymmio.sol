@@ -72,9 +72,25 @@ interface ISymmio is
 		CLOSE_SOLVER_FEE_OUT
 	}
 
-	/// @notice Emitted when a PartyA's allocated balance changes
+	/// @notice Reasons for exact changes to PartyA's liquidation reimbursement bucket.
+	enum ReimbursementChangeType {
+		CLEARING_HOUSE_IN,
+		PLATFORM_FEE_IN,
+		CLEARING_HOUSE_OUT,
+		RELEASE_TO_ALLOCATED,
+		MOVE_TO_LIQUIDATION_ESCROW
+	}
+
+	/// @notice Emitted only when a PartyA's allocated balance changes.
+	/// @dev `amount` is the absolute allocated-balance delta represented by `_type`.
 	event BalanceChangePartyA(address indexed partyA, uint256 amount, BalanceChangeType _type);
 
-	/// @notice Emitted when a PartyB's allocated balance changes for a specific PartyA
+	/// @notice Emitted only when a PartyB allocated-balance bucket changes.
+	/// @dev `partyA` is the exact storage key: the PartyA address for isolated allocations or address(0) for cross mode.
+	///      `amount` is the absolute allocated-balance delta represented by `_type`.
 	event BalanceChangePartyB(address indexed partyB, address indexed partyA, uint256 amount, BalanceChangeType _type);
+
+	/// @notice Emitted only when PartyA's liquidation reimbursement bucket changes.
+	/// @dev `amount` is the absolute bucket delta and `newBalance` is the post-change bucket balance.
+	event PartyAReimbursementChange(address indexed partyA, uint256 amount, uint256 newBalance, ReimbursementChangeType _type);
 }

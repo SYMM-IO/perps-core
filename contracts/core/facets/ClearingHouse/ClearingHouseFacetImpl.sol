@@ -114,19 +114,17 @@ library ClearingHouseFacetImpl {
 			if (isPartyA) {
 				if (allocationKey == address(0)) {
 					require(accountLayout.allocatedBalances[party] >= amount, "ClearingHouseFacet: Insufficient allocated balance");
-					accountLayout.allocatedBalances[party] -= amount;
-					emit SharedEvents.BalanceChangePartyA(party, amount, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
+					LibAccount.decreasePartyAAllocatedBalance(party, amount, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
 				} else if (liqType == LiquidationType.PARTY_A_TAKEOVER && allocationKey == REIMBURSEMENT_KEY) {
 					require(accountLayout.partyAReimbursement[party] >= amount, "ClearingHouseFacet: Insufficient reimbursement");
-					accountLayout.partyAReimbursement[party] -= amount;
+					LibAccount.decreasePartyAReimbursement(party, amount, SharedEvents.ReimbursementChangeType.CLEARING_HOUSE_OUT);
 				} else {
 					revert("ClearingHouseFacet: Invalid allocation key for partyA");
 				}
 			} else {
 				// Pulling from partyB's allocated balances
 				require(accountLayout.partyBAllocatedBalances[party][allocationKey] >= amount, "ClearingHouseFacet: Insufficient allocated balance");
-				accountLayout.partyBAllocatedBalances[party][allocationKey] -= amount;
-				emit SharedEvents.BalanceChangePartyB(party, allocationKey, amount, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
+				LibAccount.decreasePartyBAllocatedBalance(party, allocationKey, amount, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
 			}
 
 			totalDeallocated += amount;
@@ -155,7 +153,6 @@ library ClearingHouseFacetImpl {
 		address[] memory allocationKeys,
 		uint256[] memory amounts
 	) internal {
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 
 		require(receivers.length == allocationKeys.length && receivers.length == amounts.length, "ClearingHouseFacet: Invalid length");
@@ -181,17 +178,14 @@ library ClearingHouseFacetImpl {
 			// Credit to the appropriate receiver bucket
 			if (maLayout.partyBStatus[receivers[i]]) {
 				// Receiver is a partyB - use their appropriate bucket (cross or isolated)
-				accountLayout.partyBAllocatedBalances[receivers[i]][allocationKeys[i]] += amount;
-				emit SharedEvents.BalanceChangePartyB(receivers[i], allocationKeys[i], amount, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+				LibAccount.increasePartyBAllocatedBalance(receivers[i], allocationKeys[i], amount, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 			} else {
 				// Receiver is a partyA or other address
 				if (maLayout.liquidationStatus[receivers[i]]) {
 					// PartyA is being liquidated — route to reimbursement so funds survive settlement.
-					accountLayout.partyAReimbursement[receivers[i]] += amount;
-					emit SharedEvents.BalanceChangePartyA(receivers[i], amount, SharedEvents.BalanceChangeType.REIMBURSEMENT_IN);
+					LibAccount.increasePartyAReimbursement(receivers[i], amount, SharedEvents.ReimbursementChangeType.CLEARING_HOUSE_IN);
 				} else {
-					accountLayout.allocatedBalances[receivers[i]] += amount;
-					emit SharedEvents.BalanceChangePartyA(receivers[i], amount, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+					LibAccount.increasePartyAAllocatedBalance(receivers[i], amount, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 				}
 			}
 		}
@@ -241,8 +235,7 @@ library ClearingHouseFacetImpl {
 						if (MAStorage.layout().liquidationStatus[partyA]) {
 							uint256 fee = LibQuote.getOpenTradingFee(quote.id);
 							LibAccount.releaseReservedOpenTradingFee(partyA, fee);
-							accountLayout.partyAReimbursement[partyA] += fee;
-							emit SharedEvents.BalanceChangePartyA(partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
+							LibAccount.increasePartyAReimbursement(partyA, fee, SharedEvents.ReimbursementChangeType.PLATFORM_FEE_IN);
 						} else {
 							LibAccount.refundOpenTradingFee(quote.id, partyA);
 						}
@@ -281,8 +274,7 @@ library ClearingHouseFacetImpl {
 				}
 				uint256 fee = LibQuote.getOpenTradingFee(quote.id);
 				LibAccount.releaseReservedOpenTradingFee(partyA, fee);
-				accountLayout.partyAReimbursement[partyA] += fee;
-				emit SharedEvents.BalanceChangePartyA(partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
+				LibAccount.increasePartyAReimbursement(partyA, fee, SharedEvents.ReimbursementChangeType.PLATFORM_FEE_IN);
 				quote.quoteStatus = QuoteStatus.LIQUIDATED_PENDING;
 				quote.statusModifyTimestamp = block.timestamp;
 				liquidatedAmounts[index] = quote.quantity;
@@ -489,13 +481,14 @@ library ClearingHouseFacetImpl {
 		// Release all escrowed balances back to partyA
 		uint256 reimbursement = accountLayout.partyAReimbursement[partyA];
 		uint256 deferredBalance = accountLayout.partyADeferredBalance[partyA];
-		uint256 totalRelease = reimbursement + deferredBalance;
-		if (totalRelease > 0) {
-			accountLayout.partyAReimbursement[partyA] = 0;
+		if (reimbursement + deferredBalance > 0) {
 			accountLayout.partyADeferredBalance[partyA] = 0;
-			accountLayout.allocatedBalances[partyA] += totalRelease;
 			if (deferredBalance > 0) {
-				emit SharedEvents.BalanceChangePartyA(partyA, deferredBalance, SharedEvents.BalanceChangeType.DEFERRED_BALANCE_IN);
+				LibAccount.increasePartyAAllocatedBalance(partyA, deferredBalance, SharedEvents.BalanceChangeType.DEFERRED_BALANCE_IN);
+			}
+			if (reimbursement > 0) {
+				LibAccount.decreasePartyAReimbursement(partyA, reimbursement, SharedEvents.ReimbursementChangeType.RELEASE_TO_ALLOCATED);
+				LibAccount.increasePartyAAllocatedBalance(partyA, reimbursement, SharedEvents.BalanceChangeType.REIMBURSEMENT_IN);
 			}
 		}
 
@@ -590,8 +583,7 @@ library ClearingHouseFacetImpl {
 					penaltyFromAllocated <= accountLayout.partyBAllocatedBalances[partyB][partyA],
 					"ClearingHouse: Insufficient Allocated Balance"
 				);
-				accountLayout.partyBAllocatedBalances[partyB][partyA] -= penaltyFromAllocated;
-				emit SharedEvents.BalanceChangePartyB(partyB, partyA, penaltyFromAllocated, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
+				LibAccount.decreasePartyBAllocatedBalance(partyB, partyA, penaltyFromAllocated, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
 			}
 
 			if (penaltyFromBalance != 0) {
@@ -624,11 +616,14 @@ library ClearingHouseFacetImpl {
 		for (uint256 i = 0; i < receivers.length; i++) {
 			if (amounts[i] == 0) continue;
 			if (maLayout.partyBStatus[receivers[i]]) {
-				accountLayout.partyBAllocatedBalances[receivers[i]][allocationKeys[i]] += amounts[i];
-				emit SharedEvents.BalanceChangePartyB(receivers[i], allocationKeys[i], amounts[i], SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+				LibAccount.increasePartyBAllocatedBalance(
+					receivers[i],
+					allocationKeys[i],
+					amounts[i],
+					SharedEvents.BalanceChangeType.REALIZED_PNL_IN
+				);
 			} else {
-				accountLayout.allocatedBalances[receivers[i]] += amounts[i];
-				emit SharedEvents.BalanceChangePartyA(receivers[i], amounts[i], SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+				LibAccount.increasePartyAAllocatedBalance(receivers[i], amounts[i], SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 			}
 			totalDistributed += amounts[i];
 		}
