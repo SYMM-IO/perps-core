@@ -1,6 +1,8 @@
 import { expect } from "chai"
+import { ZeroAddress } from "ethers"
 
 import type { UnifiedQuoteSettlementDataStruct } from "../src/types/facets/Settlement/ISettlementFacet.js"
+import { ISymmio__factory } from "../src/types/factories/core/interfaces/ISymmio__factory.js"
 import { initializeFixture } from "./Initialize.fixture.js"
 import { loadFixture } from "./helpers/network-helpers.js"
 import { PositionType } from "./models/Enums.js"
@@ -11,6 +13,8 @@ import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js
 import { decimal, unDecimal } from "./utils/Common.js"
 import { migratePartyBToCross } from "./utils/CrossPartyB.js"
 import { getDummySingleUpnlSig, getDummyUnifiedSettlementSig } from "./utils/SignatureUtils.js"
+
+const REALIZED_PNL_IN = 4n
 
 export function shouldBehaveLikeSettlementUnified(): void {
 	let context: RunContext, user: User, user2: User, hedger: Hedger, hedger2: Hedger
@@ -344,13 +348,16 @@ export function shouldBehaveLikeSettlementUnified(): void {
 
 			const partyABalanceBefore = await user.getBalanceInfo()
 			const partyBBalanceBefore = await hedger.getBalanceInfoCrossPartyB()
+			const expectedLoss = unDecimal((quoteBefore.openedPrice - updatedPrice) * quoteBefore.quantity)
+			const symmio = ISymmio__factory.connect(await context.settlementFacet.getAddress(), context.signers.hedger)
 
-			await hedger.settleUpnlUnified([updatedPrice], sig)
+			await expect(context.settlementFacet.connect(context.signers.hedger).settleUpnlUnified(sig, [updatedPrice]))
+				.to.emit(symmio, "BalanceChangePartyB")
+				.withArgs(partyB, ZeroAddress, expectedLoss, REALIZED_PNL_IN)
 
 			const partyABalanceAfter = await user.getBalanceInfo()
 			const partyBBalanceAfter = await hedger.getBalanceInfoCrossPartyB()
 
-			const expectedLoss = unDecimal((quoteBefore.openedPrice - updatedPrice) * quoteBefore.quantity)
 			expect(partyABalanceBefore.allocatedBalances - partyABalanceAfter.allocatedBalances).to.be.eq(expectedLoss)
 			// In cross partyB mode, balance is at address(0)
 			expect(partyBBalanceAfter.allocatedBalances - partyBBalanceBefore.allocatedBalances).to.be.eq(expectedLoss)

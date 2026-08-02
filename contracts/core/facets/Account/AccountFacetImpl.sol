@@ -15,6 +15,7 @@ import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { SingleUpnlSig, SingleUpnlWithPendingBalanceSig } from "../../storages/MuonStorage.sol";
 import { LibSafeERC20 } from "../../libraries/LibSafeERC20.sol";
+import { SharedEvents } from "../../libraries/SharedEvents.sol";
 import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library AccountFacetImpl {
@@ -72,9 +73,9 @@ library AccountFacetImpl {
 	function deallocateSuspendedUser(address user, uint256 amount) internal returns (uint256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		require(accountLayout.allocatedBalances[user] >= amount, "AccountFacet: Insufficient allocated Balance");
-		accountLayout.allocatedBalances[user] -= amount;
+		uint256 newAllocatedBalance = LibAccount.decreasePartyAAllocatedBalance(user, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
 		accountLayout.balances[user] += amount;
-		return accountLayout.allocatedBalances[user];
+		return newAllocatedBalance;
 	}
 
 	/// @notice Moves funds from the user's available balance to their allocated (tradeable) balance.
@@ -86,7 +87,7 @@ library AccountFacetImpl {
 		);
 		require(accountLayout.balances[user] >= amount, "AccountFacet: Insufficient balance");
 		accountLayout.balances[user] -= amount;
-		accountLayout.allocatedBalances[user] += amount;
+		LibAccount.increasePartyAAllocatedBalance(user, amount, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
 	/// @notice Deallocates funds from the signer's allocated balance after verifying solvency via a Muon UPNL signature.
@@ -158,7 +159,7 @@ library AccountFacetImpl {
 		);
 		require(accountLayout.balances[signer] >= amount, "AccountFacet: Insufficient balance");
 		accountLayout.balances[signer] -= amount;
-		accountLayout.allocatedBalances[user] += amount;
+		LibAccount.increasePartyAAllocatedBalance(user, amount, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
 	/// @notice Transfers funds from the signer's available balance to the recipient's available balance (not allocated).
@@ -175,7 +176,7 @@ library AccountFacetImpl {
 	/// @notice Executes the deallocation by moving funds from allocated to available balance and recording the timestamp.
 	function _executeDeallocate(address signer, uint256 amount) private {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		accountLayout.allocatedBalances[signer] -= amount;
+		LibAccount.decreasePartyAAllocatedBalance(signer, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
 		accountLayout.balances[signer] += amount;
 		accountLayout.deallocateTimestamp[signer] = block.timestamp;
 	}

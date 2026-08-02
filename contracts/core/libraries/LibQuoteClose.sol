@@ -80,26 +80,21 @@ library LibQuoteClose {
 				accountLayout.partyBAllocatedBalances[quote.partyB][allocationKey] >= pnl,
 				"LibQuote: PartyA should first exit its positions that are incurring losses"
 			);
-			accountLayout.allocatedBalances[quote.partyA] += pnl;
-			emit SharedEvents.BalanceChangePartyA(quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
-			accountLayout.partyBAllocatedBalances[quote.partyB][allocationKey] -= pnl;
-			emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
+			LibAccount.increasePartyAAllocatedBalance(quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+			LibAccount.decreasePartyBAllocatedBalance(quote.partyB, allocationKey, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
 		} else {
 			require(
 				accountLayout.allocatedBalances[quote.partyA] >= pnl,
 				"LibQuote: PartyA should first exit its positions that are currently in profit."
 			);
-			accountLayout.allocatedBalances[quote.partyA] -= pnl;
-			emit SharedEvents.BalanceChangePartyA(quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
-			accountLayout.partyBAllocatedBalances[quote.partyB][allocationKey] += pnl;
-			emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+			LibAccount.decreasePartyAAllocatedBalance(quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
+			LibAccount.increasePartyBAllocatedBalance(quote.partyB, allocationKey, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 		}
 
 		quote.avgClosedPrice = (quote.avgClosedPrice * quote.closedAmount + filledAmount * closedPrice) / (quote.closedAmount + filledAmount);
 
 		uint256 fee = (filledAmount * closedPrice * quote.closeFee) / 1e36;
-		accountLayout.allocatedBalances[quote.partyA] -= fee;
-		emit SharedEvents.BalanceChangePartyA(quote.partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_OUT);
+		LibAccount.decreasePartyAAllocatedBalance(quote.partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_OUT);
 		emit SharedEvents.TradingFeeCharged(
 			quote.id,
 			fee,

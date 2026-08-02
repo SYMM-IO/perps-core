@@ -9,7 +9,6 @@ import { LibFundingRate } from "./LibFundingRate.sol";
 import { LibQuote } from "./LibQuote.sol";
 import { LibAggregateFunding } from "./LibAggregateFunding.sol";
 import { QuoteStorage, Quote, PositionType } from "../storages/QuoteStorage.sol";
-import { AccountStorage } from "../storages/AccountStorage.sol";
 import { FundingStorage, FundingFee } from "../storages/FundingStorage.sol";
 import { LibAccount } from "./LibAccount.sol";
 
@@ -77,8 +76,6 @@ library LibQuoteFunding {
 	/// @dev Transfers funds between parties based on calculated fee
 	/// @param quoteId The position ID to charge funding for
 	function chargeAccumulatedFundingFee(uint256 quoteId) public {
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-
 		// Load the position
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 
@@ -100,19 +97,13 @@ library LibQuoteFunding {
 		if (fee > 0) {
 			// Positive fee: Trader (PartyA) pays Market Maker (PartyB)
 			uint256 feeInUint = uint256(fee);
-			accountLayout.allocatedBalances[quote.partyA] -= feeInUint;
-			accountLayout.partyBAllocatedBalances[quote.partyB][partyBAllocationKey] += feeInUint;
-
-			emit SharedEvents.BalanceChangePartyA(quote.partyA, feeInUint, SharedEvents.BalanceChangeType.FUNDING_FEE_OUT);
-			emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, feeInUint, SharedEvents.BalanceChangeType.FUNDING_FEE_IN);
+			LibAccount.decreasePartyAAllocatedBalance(quote.partyA, feeInUint, SharedEvents.BalanceChangeType.FUNDING_FEE_OUT);
+			LibAccount.increasePartyBAllocatedBalance(quote.partyB, partyBAllocationKey, feeInUint, SharedEvents.BalanceChangeType.FUNDING_FEE_IN);
 		} else if (fee < 0) {
 			// Negative fee: Market Maker (PartyB) pays Trader (PartyA)
 			uint256 feeInUint = uint256(-fee);
-			accountLayout.partyBAllocatedBalances[quote.partyB][partyBAllocationKey] -= feeInUint;
-			accountLayout.allocatedBalances[quote.partyA] += feeInUint;
-
-			emit SharedEvents.BalanceChangePartyA(quote.partyA, feeInUint, SharedEvents.BalanceChangeType.FUNDING_FEE_IN);
-			emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, feeInUint, SharedEvents.BalanceChangeType.FUNDING_FEE_OUT);
+			LibAccount.decreasePartyBAllocatedBalance(quote.partyB, partyBAllocationKey, feeInUint, SharedEvents.BalanceChangeType.FUNDING_FEE_OUT);
+			LibAccount.increasePartyAAllocatedBalance(quote.partyA, feeInUint, SharedEvents.BalanceChangeType.FUNDING_FEE_IN);
 		}
 	}
 

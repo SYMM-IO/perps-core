@@ -136,7 +136,20 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 				"LibQuote: PartyA should first exit its positions that are incurring losses",
 			)
 
-			await user.settleAndForceClosePosition(quote1LongOpened.id, highLowSig, settlementSig, [decimal(5n)])
+			const tx = await context.forceActionsFacet
+				.connect(context.signers.others[0])
+				.settleAndForceClosePosition(quote1LongOpened.id, highLowSig, settlementSig, [decimal(5n)])
+			const receipt = await tx.wait()
+			const settleEvent = (receipt?.logs ?? []).flatMap(log => {
+				try {
+					const parsed = context.forceActionsFacet.interface.parseLog(log)
+					return parsed?.name === "SettleUpnl" ? [parsed] : []
+				} catch {
+					return []
+				}
+			})[0]
+			expect(settleEvent.args.partyA).to.equal(await user.getAddress())
+			expect(settleEvent.args.newPartyBsAllocatedBalances).to.have.length(settlementSig.upnlPartyBs.length)
 
 			expect((await context.viewFacetQuote.getQuote(quote1LongOpened.id)).quoteStatus).to.be.eq(QuoteStatus.CLOSED)
 			expect((await context.viewFacetQuote.getQuote(quote2ShortOpened.id)).openedPrice).to.be.eq(decimal(5n))

@@ -9,7 +9,6 @@ import { Pausable } from "../../utils/Pausable.sol";
 import { IPartyBAccountFacet } from "./IPartyBAccountFacet.sol";
 import { PartyBAccountFacetImpl } from "./PartyBAccountFacetImpl.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
-import { SharedEvents } from "../../libraries/SharedEvents.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { SingleUpnlSig } from "../../storages/MuonStorage.sol";
 
@@ -25,7 +24,6 @@ contract PartyBAccountFacet is Accessibility, Pausable, IPartyBAccountFacet {
 		address signer = LibSigner.getSigner();
 		PartyBAccountFacetImpl.allocateForPartyB(amount, partyA);
 		emit AllocateForPartyB(signer, partyA, amount, AccountStorage.layout().partyBAllocatedBalances[signer][partyA]);
-		emit SharedEvents.BalanceChangePartyB(signer, partyA, amount, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
 	/// @notice Allows Party B to deallocate a specified amount of collateral
@@ -48,7 +46,6 @@ contract PartyBAccountFacet is Accessibility, Pausable, IPartyBAccountFacet {
 		address signer = LibSigner.getSigner();
 		PartyBAccountFacetImpl.deallocateForPartyB(amount, partyA, upnlSig);
 		emit DeallocateForPartyB(signer, partyA, amount, AccountStorage.layout().partyBAllocatedBalances[signer][partyA]);
-		emit SharedEvents.BalanceChangePartyB(signer, partyA, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
 	}
 
 	/// @notice Allows transferring the allocation of partyB from one party A to another.
@@ -71,8 +68,6 @@ contract PartyBAccountFacet is Accessibility, Pausable, IPartyBAccountFacet {
 			recipient,
 			AccountStorage.layout().partyBAllocatedBalances[signer][recipient]
 		);
-		emit SharedEvents.BalanceChangePartyB(signer, origin, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
-		emit SharedEvents.BalanceChangePartyB(signer, recipient, amount, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
 	/// @notice Deposits from the caller's balance into the specified partyB's emergency reserve vault.

@@ -7,6 +7,7 @@ pragma solidity >=0.8.18;
 import { AccountStorage } from "../storages/AccountStorage.sol";
 import { QuoteStorage, Quote, SolverFeeCaps, SolverFeeState } from "../storages/QuoteStorage.sol";
 import { SharedEvents } from "./SharedEvents.sol";
+import { LibAccount } from "./LibAccount.sol";
 
 library LibSolverFee {
 	function chargeOpenFeeIfAny(uint256 quoteId, uint256 solverFee) internal {
@@ -65,8 +66,7 @@ library LibSolverFee {
 	function _collectSolverFee(address partyA, address receiver, uint256 amount, SharedEvents.BalanceChangeType changeType) private {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		require(accountLayout.allocatedBalances[partyA] >= amount, "SolverFee: Insufficient allocated balance");
-		accountLayout.allocatedBalances[partyA] -= amount;
-		emit SharedEvents.BalanceChangePartyA(partyA, amount, changeType);
+		LibAccount.decreasePartyAAllocatedBalance(partyA, amount, changeType);
 		accountLayout.balances[receiver] += amount;
 	}
 }
