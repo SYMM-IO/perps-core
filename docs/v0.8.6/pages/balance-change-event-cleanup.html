@@ -532,14 +532,25 @@ event SettlePartyALiquidation(
 									</td>
 								</tr>
 								<tr>
-									<td>LF funded through the rest of the liquidation</td>
+									<td>LF the live allocation could no longer cover</td>
 									<td>
-										Derive it as <code>LF_IN - LF_OUT</code> within the final receipt. It is the remainder of the fee, already taken
-										out of PartyA earlier in the liquidation as deferred balance and PartyB settlement.
+										Derive it as <code>LF_IN - LF_OUT</code> within the final receipt. This part of the fee left PartyA earlier in
+										the liquidation, swept into deferred balance by the start-of-liquidation available-balance move.
 									</td>
 									<td>
 										No allocated-balance event carries this component, because no allocated balance moves for it in this receipt.
 										Never replay it as a delta.
+									</td>
+								</tr>
+								<tr>
+									<td>What the liquidation actually cost PartyA in LF</td>
+									<td>
+										The whole locked LF, from <code>lockedValues.lf</code> on the position — not <code>LF_OUT</code>, and not
+										<code>LF_IN</code> either. It splits into the fee the starter earns and the shortfall the protocol absorbs.
+									</td>
+									<td>
+										Not derivable from the balance-change ledger alone. Read it from the position's locked values; the ledger only
+										shows the slice that was still in allocated when the fee was debited.
 									</td>
 								</tr>
 							</tbody>
@@ -554,7 +565,16 @@ totalLf(liquidationId)            = LF_IN credited to the liquidation starter
 lfFromPartyAAllocation(partyA)    = LF_OUT debited from partyA          // clamped to the live allocation
 lfFromRestOfLiquidation(partyA)   = totalLf - lfFromPartyAAllocation    // >= 0, no allocated-balance event
 partyAAllocationBeforeFinalize    = LF_OUT + REALIZED_PNL_OUT on partyA // the allocation liquidation consumed
-clampFired(partyA)                = totalLf &gt; lfFromPartyAAllocation</code></pre>
+clampFired(partyA)                = totalLf &gt; lfFromPartyAAllocation
+
+// What the liquidation COST PartyA in LF is the whole locked LF, and it is not any single event:
+//   lockedLf = totalLf + shortfall
+//              |         `- absorbed covering the deficit, earned by nobody
+//              `- earned by the liquidation starter
+// LF_OUT is only the slice of that cost still sitting in allocated at finalization; the rest left
+// PartyA earlier, swept into deferred balance at liquidation start. Three different quantities:
+//   LF_OUT &lt;= totalLf (LF_IN) &lt;= lockedLf
+partyALfCost(partyA)              = lockedValues.lf on the liquidated position</code></pre>
 					<p>
 						A settlement call emits its balance changes before the legacy and extended <code>SettlePartyALiquidation</code> events. Buffer
 						the complete receipt, process it in <code>logIndex</code> order, and then attach the later extended event's
@@ -562,13 +582,27 @@ clampFired(partyA)                = totalLf &gt; lfFromPartyAAllocation</code></
 						extended event per processed batch; aggregate all batches sharing the liquidation ID.
 					</p>
 					<aside class="callout callout-note">
-						<strong>PartyA <code>LF_OUT</code> can be smaller than <code>LF_IN</code>.</strong> The fee is sized at liquidation start from
-						the Muon-signed <code>liquidationAllocatedBalance</code>, the allocation at the time of insolvency. Finalization debits the
-						<em>live</em> allocation, which can be lower by then, so the contract debits only what that allocation still holds. That is
-						deliberate: emitting the full fee against a smaller bucket would break exact replay. Read the difference as
+						<strong><code>LF_OUT</code> is not what the liquidation cost PartyA.</strong> The fee is sized against <em>locked</em> LF, but
+						debited from <em>allocated</em> balance, and those two can hold different amounts by the time finalization runs. Liquidation
+						start moves <code>allocated - (lockedCva + lockedLf) + upnl</code> into deferred balance; when <code>upnl</code> is positive
+						that sweep carries off part of the LF backing, leaving less allocated than the fee. Finalization then debits only what remains,
+						because emitting the full fee against a smaller bucket would break exact replay. So <code>LF_OUT</code> is the slice of the cost
+						that was still in allocated at that moment -- the rest already left PartyA, in the deferred sweep. Read the difference as
 						<code>LF_IN - LF_OUT</code>; it is fully observable from the same receipt, and <code>LF_IN &gt; LF_OUT</code> is the signal that
-						the clamp fired. Sum the actual <code>LF_OUT</code> debit for “LF taken from live allocation” and the <code>LF_IN</code> credit
-						for “LF received”; do not force the two to be equal.
+						the clamp fired.
+					</aside>
+					<aside class="callout callout-note">
+						<strong>Worked example.</strong> A PartyA holding 496 allocated, CVA 22, locked LF 3, unrealized profit 23.5, insolvent at the
+						signed snapshot by a shortfall of 0.75. Start sweeps 494.5 into deferred, leaving 1.5 allocated. The fee is
+						<code>lockedLf - shortfall</code> = 2.25, but only 1.5 is left to debit:
+						<pre><code>LF_OUT  1.50   debited from PartyA's remaining allocation
+LF_IN   2.25   credited to the liquidation starter
+gap     0.75   left PartyA earlier, in the 494.5 deferred sweep
+
+PartyA's actual LF cost = lockedLf = 3.00 = 2.25 to the starter + 0.75 absorbed
+Final balances: PartyA 497.5, PartyB 358.5, starter 2.25 -- total tracked value falls by 0.75.</code></pre>
+						None of the three numbers is interchangeable: 1.50 is the allocated debit, 2.25 is what the starter earned, 3.00 is what PartyA
+						paid. Total protocol value never rises across the receipt.
 					</aside>
 					<aside class="callout callout-warning">
 						<strong>Per-account replay stays exact; cross-account conservation does not.</strong> When the clamp fires, the starter is
@@ -702,7 +736,8 @@ clampFired(partyA)                = totalLf &gt; lfFromPartyAAllocation</code></
 									</td>
 									<td>
 										Report received LF from <code>LF_IN</code>, the allocated debit from <code>LF_OUT</code>, and the remainder as
-										<code>LF_IN - LF_OUT</code>. Exempt the finalization receipt from any cross-account conservation check.
+										<code>LF_IN - LF_OUT</code>. For what the liquidation cost PartyA, use the position's locked LF, which the
+										balance-change ledger does not carry. Exempt the finalization receipt from any cross-account conservation check.
 									</td>
 								</tr>
 								<tr>
