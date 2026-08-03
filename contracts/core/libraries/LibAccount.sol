@@ -467,17 +467,15 @@ library LibAccount {
 	/// @dev Only the difference moves; sendQuote already debited the reserved amount. The reservation in
 	///      partyAReservedOpenFees is deliberately left alone and unwound by realizeOpenTradingFee against
 	///      the reserved amount, so pending and locked quote accounting stays on the request-time basis.
-	///      The require mirrors the identical guard sendQuote puts on the reserved fee, so an unaffordable
-	///      shortfall reverts by name instead of panicking inside the decrease. It is not a solvency check:
-	///      callers must still verify solvency after this runs.
+	///      Composes entirely from the allocated-balance wrappers: they own the storage write and the ledger
+	///      event, and their checked subtraction is what reverts when PartyA cannot cover the shortfall.
+	///      That revert is not a solvency check; callers must still verify solvency after this runs.
 	/// @param partyA The PartyA whose allocated balance absorbs the difference.
 	/// @param reservedFee The fee debited at sendQuote, priced at the request-time basis.
 	/// @param executedFee The fee actually owed, priced at the execution basis.
 	function applyOpenTradingFeeDelta(address partyA, uint256 reservedFee, uint256 executedFee) internal {
 		if (executedFee > reservedFee) {
-			uint256 shortfall = executedFee - reservedFee;
-			require(AccountStorage.layout().allocatedBalances[partyA] >= shortfall, "LibAccount: Insufficient allocated balance for open fee");
-			decreasePartyAAllocatedBalance(partyA, shortfall, SharedEvents.BalanceChangeType.PLATFORM_FEE_OUT);
+			decreasePartyAAllocatedBalance(partyA, executedFee - reservedFee, SharedEvents.BalanceChangeType.PLATFORM_FEE_OUT);
 		} else if (reservedFee > executedFee) {
 			increasePartyAAllocatedBalance(partyA, reservedFee - executedFee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
 		}
