@@ -239,7 +239,7 @@ export function shouldBehaveLikeOperationalFee(): void {
 			expect(await (context.viewFacet as any).getOperationalFeeReceiver(charger)).to.equal(charger)
 
 			const receiver = context.signers.feeCollector.address
-			await expect((context.controlFacet.connect(chargerSigner) as any).setOperationalFeeReceiver(receiver))
+			await expect((context.controlFacet.connect(chargerSigner) as any).setOperationalFeeReceiver(charger, receiver))
 				.to.emit(context.controlFacet, "SetOperationalFeeReceiver")
 				.withArgs(charger, receiver)
 			expect(await (context.viewFacet as any).getOperationalFeeReceiver(charger)).to.equal(receiver)
@@ -254,7 +254,7 @@ export function shouldBehaveLikeOperationalFee(): void {
 			const facet = context.accountFacet as any
 			const payer = await user.getAddress()
 			const receiver = context.signers.feeCollector.address
-			await (context.controlFacet.connect(chargerSigner) as any).setOperationalFeeReceiver(receiver)
+			await (context.controlFacet.connect(chargerSigner) as any).setOperationalFeeReceiver(charger, receiver)
 
 			const chargerBalanceBefore = await context.viewFacet.balanceOf(charger)
 			const receiverBalanceBefore = await context.viewFacet.balanceOf(receiver)
@@ -278,7 +278,7 @@ export function shouldBehaveLikeOperationalFee(): void {
 			const hedgerAddr = await hedger.getAddress()
 			const receiver = context.signers.feeCollector.address
 
-			await expect((context.controlFacet.connect(hedger.signer) as any).setOperationalFeeReceiver(receiver))
+			await expect((context.controlFacet.connect(hedger.signer) as any).setOperationalFeeReceiver(hedgerAddr, receiver))
 				.to.emit(context.controlFacet, "SetOperationalFeeReceiver")
 				.withArgs(hedgerAddr, receiver)
 
@@ -290,7 +290,7 @@ export function shouldBehaveLikeOperationalFee(): void {
 			const free = await context.viewFacet.balanceOf(payer)
 
 			await (context.accountFacet.connect(user.signer) as any).approveOperationalFee([charger], [decimal(5000n)])
-			await (context.controlFacet.connect(chargerSigner) as any).setOperationalFeeReceiver(payer)
+			await (context.controlFacet.connect(chargerSigner) as any).setOperationalFeeReceiver(charger, payer)
 
 			await expect((context.accountFacet.connect(chargerSigner) as any).chargeOperationalFee(payer, free + decimal(100n))).to.be.revertedWith(
 				"OperationalFee: Receiver is payer",
@@ -298,9 +298,34 @@ export function shouldBehaveLikeOperationalFee(): void {
 		})
 
 		it("rejects a non-charger setting a receiver", async function () {
-			await expect((context.controlFacet.connect(user.signer) as any).setOperationalFeeReceiver(user.signer.address)).to.be.revertedWith(
-				"OperationalFee: Not a registered charger",
+			await expect(
+				(context.controlFacet.connect(user.signer) as any).setOperationalFeeReceiver(user.signer.address, user.signer.address),
+			).to.be.revertedWith("OperationalFee: Not a registered charger")
+		})
+
+		it("allows FEE_ADMIN_ROLE to set a charger's receiver on its behalf", async function () {
+			const receiver = context.signers.feeCollector.address
+
+			await expect((context.controlFacet.connect(admin) as any).setOperationalFeeReceiver(charger, receiver))
+				.to.emit(context.controlFacet, "SetOperationalFeeReceiver")
+				.withArgs(charger, receiver)
+
+			expect(await (context.viewFacet as any).getOperationalFeeReceiver(charger)).to.equal(receiver)
+		})
+
+		it("rejects an unauthorized third party setting another charger's receiver", async function () {
+			await expect((context.controlFacet.connect(user.signer) as any).setOperationalFeeReceiver(charger, user.signer.address)).to.be.revertedWith(
+				"ControlFacet: Not authorized",
 			)
+		})
+
+		it("resets to the charger itself when the receiver is cleared", async function () {
+			const receiver = context.signers.feeCollector.address
+			await (context.controlFacet.connect(chargerSigner) as any).setOperationalFeeReceiver(charger, receiver)
+			expect(await (context.viewFacet as any).getOperationalFeeReceiver(charger)).to.equal(receiver)
+
+			await (context.controlFacet.connect(chargerSigner) as any).setOperationalFeeReceiver(charger, ethers.ZeroAddress)
+			expect(await (context.viewFacet as any).getOperationalFeeReceiver(charger)).to.equal(charger)
 		})
 	})
 

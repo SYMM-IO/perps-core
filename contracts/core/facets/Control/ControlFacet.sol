@@ -151,14 +151,32 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		MAStorage.layout().operationalFeeReductionDelay = delay;
 	}
 
-	/// @notice A registered charger sets the receiver of its operational fees (address(0) = self).
-	/// @dev Caller is resolved via LibSigner.getSigner() (consistent with approveOperationalFee), so a
-	///      charger can set its receiver directly or through the signer/proxy mechanism.
-	function setOperationalFeeReceiver(address receiver) external {
-		address charger = LibSigner.getSigner();
+	/// @notice Sets the receiver of a registered charger's operational fees (address(0) = the charger itself).
+	/// @dev Callable by the charger itself or by FEE_ADMIN_ROLE, which is also the role that registers chargers.
+	///      Caller is resolved via LibSigner.getSigner() (consistent with approveOperationalFee), so a charger
+	///      can set its receiver directly or through the signer/proxy mechanism.
+	/// @param charger The registered charger whose operational fee receiver is being set.
+	/// @param receiver The account to credit, or address(0) to reset to the charger itself.
+	function setOperationalFeeReceiver(address charger, address receiver) external {
+		address sender = LibSigner.getSigner();
+		require(LibAccessibility.hasRole(sender, LibAccessibility.FEE_ADMIN_ROLE) || sender == charger, "ControlFacet: Not authorized");
 		require(LibOperationalFee.isCharger(charger), "OperationalFee: Not a registered charger");
 		MAStorage.layout().operationalFeeReceivers[charger] = receiver;
 		emit SetOperationalFeeReceiver(charger, receiver);
+	}
+
+	/// @notice Sets the receiver of a Party B's solver fees (address(0) = the Party B itself).
+	/// @dev Callable by the Party B itself or by PARTY_B_MANAGER_ROLE, mirroring the authorization used for
+	///      symbol listings in SymbolControlFacet. The receiver is resolved at charge time, so a change only
+	///      affects subsequent solver fees, never ones already collected.
+	/// @param partyB The registered Party B whose solver fee receiver is being set.
+	/// @param receiver The account to credit, or address(0) to reset to the Party B itself.
+	function setSolverFeeReceiver(address partyB, address receiver) external {
+		address sender = LibSigner.getSigner();
+		require(LibAccessibility.hasRole(sender, LibAccessibility.PARTY_B_MANAGER_ROLE) || sender == partyB, "ControlFacet: Not authorized");
+		require(MAStorage.layout().partyBStatus[partyB], "ControlFacet: Address is not registered");
+		MAStorage.layout().solverFeeReceivers[partyB] = receiver;
+		emit SetSolverFeeReceiver(partyB, receiver);
 	}
 
 	/// @notice Sets the metadata for a Party B, including display name and other identifying information.

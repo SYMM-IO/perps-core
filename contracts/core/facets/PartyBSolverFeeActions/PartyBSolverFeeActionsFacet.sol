@@ -34,9 +34,9 @@ contract PartyBSolverFeeActionsFacet is Accessibility, Pausable, IPartyBSolverFe
 		_callPositionFacet(abi.encodeCall(IPartyBPositionActionsFacet.openPosition, (quoteId, filledAmount, openedPrice, upnlSig)));
 		if (solverFee > 0) {
 			_requireSolventAfterSolverFee(quoteId, filledAmount, 0, false, upnlSig, solverFee);
-			LibSolverFee.chargeOpenFeeIfAny(quoteId, solverFee);
+			address receiver = LibSolverFee.chargeOpenFeeIfAny(quoteId, solverFee);
 			Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-			emit OpenSolverFeeCharged(quoteId, quote.partyA, quote.partyB, quote.symbolId, solverFee);
+			emit OpenSolverFeeCharged(quoteId, quote.partyA, quote.partyB, receiver, quote.symbolId, solverFee);
 		}
 	}
 
@@ -59,9 +59,9 @@ contract PartyBSolverFeeActionsFacet is Accessibility, Pausable, IPartyBSolverFe
 	) external whenNotPartyBActionsPaused onlyPartyBOfQuote(quoteId) notLiquidated(quoteId) {
 		if (solverFee > 0) {
 			_requireSolventAfterSolverFee(quoteId, filledAmount, closedPrice, true, upnlSig, solverFee);
-			LibSolverFee.chargeCloseFeeIfAny(quoteId, solverFee, filledAmount, closedPrice);
+			address receiver = LibSolverFee.chargeCloseFeeIfAny(quoteId, solverFee, filledAmount, closedPrice);
 			Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-			emit CloseSolverFeeCharged(quoteId, quote.partyA, quote.partyB, quote.symbolId, solverFee);
+			emit CloseSolverFeeCharged(quoteId, quote.partyA, quote.partyB, receiver, quote.symbolId, solverFee);
 		}
 		_callPositionFacet(abi.encodeCall(IPartyBPositionActionsFacet.fillCloseRequest, (quoteId, filledAmount, closedPrice, upnlSig)));
 	}
@@ -113,9 +113,9 @@ contract PartyBSolverFeeActionsFacet is Accessibility, Pausable, IPartyBSolverFe
 		if (solverFee > 0) {
 			// Pro-rate the absolute fee to the amount actually closed when maxQuantity caps the fill below the liquidation limit.
 			uint256 chargedFee = filledAmount == uncappedAmount ? solverFee : (solverFee * filledAmount) / uncappedAmount;
-			LibSolverFee.chargeCloseFeeIfAny(quoteId, chargedFee, filledAmount, closedPrice);
+			address receiver = LibSolverFee.chargeCloseFeeIfAny(quoteId, chargedFee, filledAmount, closedPrice);
 			Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-			emit CloseSolverFeeCharged(quoteId, quote.partyA, quote.partyB, quote.symbolId, chargedFee);
+			emit CloseSolverFeeCharged(quoteId, quote.partyA, quote.partyB, receiver, quote.symbolId, chargedFee);
 		}
 		_callPositionFacet(abi.encodeCall(IPartyBPositionActionsFacet.fillCloseRequest, (quoteId, filledAmount, closedPrice, upnlSig)));
 	}

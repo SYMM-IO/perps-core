@@ -542,10 +542,9 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		// Sync bind state with parent account
 		ISymmio symmio = ISymmio(parent.symmioCore);
 		ISymmio.BindState memory parentBindState = symmio.getBindState(parentAccount);
-		address parentPartyB =
-			parentBindState.status == ISymmio.BindStatus.BOUND || parentBindState.status == ISymmio.BindStatus.PENDING_UNBIND
-				? parentBindState.partyB
-				: address(0);
+		address parentPartyB = parentBindState.status == ISymmio.BindStatus.BOUND || parentBindState.status == ISymmio.BindStatus.PENDING_UNBIND
+			? parentBindState.partyB
+			: address(0);
 		ISymmio.BindState memory vaBindState = symmio.getBindState(reusedAccount);
 
 		if (vaBindState.partyB != parentPartyB) {
@@ -670,8 +669,9 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 			virtualAccount = _getOrCreateVirtualAccount(account, hex"", VirtualAccountIsolationType.MARKET, p.symbolId);
 
 		if (accountData.isolationType == SubAccountIsolationType.MARKET_DIRECTION) {
-			VirtualAccountIsolationType vType =
-				p.positionType == ISymmio.PositionType.LONG ? VirtualAccountIsolationType.MARKET_LONG : VirtualAccountIsolationType.MARKET_SHORT;
+			VirtualAccountIsolationType vType = p.positionType == ISymmio.PositionType.LONG
+				? VirtualAccountIsolationType.MARKET_LONG
+				: VirtualAccountIsolationType.MARKET_SHORT;
 
 			virtualAccount = _getOrCreateVirtualAccount(account, hex"", vType, p.symbolId);
 		}
