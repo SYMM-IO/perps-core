@@ -298,6 +298,14 @@ contract ViewFacet is IViewFacet {
 		return LibAccountLayerUtils.getSigner();
 	}
 
+	/// @notice Returns the account family the current signer session is confined to
+	/// @dev Zero means the session is unconfined. Non-zero only while a caller is executing on behalf
+	///      of a delegate, and always cleared with the signer, so this reads zero between transactions.
+	/// @return The canonical sub-account of the active scope, or address(0)
+	function getSignerScope() external view returns (address) {
+		return AccountStorage.layout().scopedAccount;
+	}
+
 	/// @notice Returns the Symmio core address associated with an account
 	/// @param account The sub-account, virtual account, or legacy account address
 	/// @return The Symmio core diamond address
