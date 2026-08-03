@@ -66,7 +66,10 @@ library ForceActionsFacetImpl {
 	}
 
 	/// @notice Executes a force close for a non-cross partyB, using the reserve vault fallback and triggering liquidation if partyB is insolvent.
-	function forceClose(uint256 quoteId, HighLowPriceSig memory sig) internal returns (uint256 closePrice, int256 upnlPartyB, bool succeed) {
+	function forceClose(
+		uint256 quoteId,
+		HighLowPriceSig memory sig
+	) internal returns (uint256 closePrice, int256 upnlPartyB, bool succeed, uint256 partyBAllocatedBalanceBeforeLiquidation) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address partyB = QuoteStorage.layout().quotes[quoteId].partyB;
 
@@ -89,18 +92,28 @@ library ForceActionsFacetImpl {
 		(succeed, ) = LibForceActions.closeQuoteWithReserveFallback(quoteId, sig.currentPrice, sig.upnlPartyB, closePrice);
 
 		if (!succeed) {
-			upnlPartyB = LibForceActions.startPartyBLiquidationForForceClose(quoteId, closePrice, reservedBalance, sig.upnlPartyB, sig.currentPrice);
+			(upnlPartyB, partyBAllocatedBalanceBeforeLiquidation) = LibForceActions.startPartyBLiquidationForForceClose(
+				quoteId,
+				closePrice,
+				reservedBalance,
+				sig.upnlPartyB,
+				sig.currentPrice
+			);
 		}
 	}
 
 	/// @notice Settles UPNL before a force close operation using the legacy settlement signature format.
 	/// @dev DEPRECATED: Use settleUpnlUnified in ForceCloseStepsImpl instead,
 	///      which supports both crossPartyB and normal partyB modes with a unified signature format.
-	function settleUPNL(uint256 quoteId, SettlementSig memory sig, uint256[] memory updatedPrices) internal {
+	function settleUPNL(
+		uint256 quoteId,
+		SettlementSig memory sig,
+		uint256[] memory updatedPrices
+	) internal returns (uint256[] memory newPartyBsAllocatedBalances) {
 		address partyA = QuoteStorage.layout().quotes[quoteId].partyA;
 
 		//realize uPNL
 		LibMuonSettlement.verifySettlement(sig, partyA, MuonFunction.ForceClose);
-		LibSettlement.settleUpnl(sig, updatedPrices, partyA, true);
+		newPartyBsAllocatedBalances = LibSettlement.settleUpnl(sig, updatedPrices, partyA, true);
 	}
 }

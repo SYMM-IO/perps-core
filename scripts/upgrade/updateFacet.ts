@@ -30,6 +30,7 @@ const FacetLibraryDependencies: Record<string, string[]> = {
 	PartyALiquidationSnapshotFacet: ["LibPartyALiquidationSnapshotSetup", "LibPartyALiquidationProcess"],
 	ClearingHouseFacet: ["LibQuoteClose", "LibQuoteFunding"],
 	SettlementFacet: ["LibSettlement"],
+	SymbolAdjustmentFacet: ["LibQuoteFunding", "LibQuoteClose"],
 }
 
 const LibraryLinkReferences: Record<string, string> = {
@@ -141,12 +142,23 @@ async function main() {
 
 	const selectorsToAdd: string[] = []
 	const selectorsToReplace: string[] = []
+	const currentFacetAddresses = new Set<string>()
 	for (const selector of selectors) {
 		const currentFacetAddress = await diamondLoupeFacet.facetAddress(selector)
 		if (currentFacetAddress === ethers.ZeroAddress) {
 			selectorsToAdd.push(selector)
 		} else {
 			selectorsToReplace.push(selector)
+			currentFacetAddresses.add(currentFacetAddress.toLowerCase())
+		}
+	}
+
+	const newSelectorSet = new Set(selectors.map((selector: string) => selector.toLowerCase()))
+	const selectorsToRemove = new Set<string>()
+	for (const currentFacetAddress of currentFacetAddresses) {
+		const currentFacetSelectors: string[] = await diamondLoupeFacet.facetFunctionSelectors(currentFacetAddress)
+		for (const selector of currentFacetSelectors) {
+			if (!newSelectorSet.has(selector.toLowerCase())) selectorsToRemove.add(selector)
 		}
 	}
 
@@ -169,11 +181,20 @@ async function main() {
 					},
 				]
 			: []),
+		...(selectorsToRemove.size > 0
+			? [
+					{
+						facetAddress: ethers.ZeroAddress,
+						action: FacetCutAction.Remove,
+						functionSelectors: Array.from(selectorsToRemove),
+					},
+				]
+			: []),
 	]
 
 	const tx = await diamondCutFacet.diamondCut(diamondCut, ethers.ZeroAddress, "0x")
 	await tx.wait()
-	console.log(`Facet updated successfully. Added ${selectorsToAdd.length}, replaced ${selectorsToReplace.length}.`)
+	console.log(`Facet updated successfully. Added ${selectorsToAdd.length}, replaced ${selectorsToReplace.length}, removed ${selectorsToRemove.size}.`)
 }
 
 main().catch(error => {

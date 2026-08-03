@@ -8,6 +8,7 @@ import { QuoteStorage, Quote, LockedValues, PositionType, OrderType, QuoteStatus
 import { AggregatedDataStorage, PartiesAggregatedPositions } from "../storages/AggregatedDataStorage.sol";
 import { LockedValuesOps } from "./LibLockedValues.sol";
 import { LibAggregateFunding } from "./LibAggregateFunding.sol";
+import { LibSymbolAdjustment } from "./LibSymbolAdjustment.sol";
 import { LibUtils } from "./LibUtils.sol";
 
 library LibQuote {
@@ -26,6 +27,7 @@ library LibQuote {
 	/// @param quote The quote to remove from the pending quotes.
 	function removeFromPartyAPendingQuotes(Quote storage quote) internal {
 		LibUtils.removeFromArray(QuoteStorage.layout().partyAPendingQuotes[quote.partyA], quote.id);
+		LibSymbolAdjustment.recordRestatementMutation(quote.symbolId);
 	}
 
 	/// @notice Removes a quote from the pending quotes of Party B.

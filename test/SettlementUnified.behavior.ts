@@ -1,6 +1,8 @@
 import { expect } from "chai"
+import { ZeroAddress } from "ethers"
 
 import type { UnifiedQuoteSettlementDataStruct } from "../src/types/facets/Settlement/ISettlementFacet.js"
+import { ISymmio__factory } from "../src/types/factories/core/interfaces/ISymmio__factory.js"
 import { initializeFixture } from "./Initialize.fixture.js"
 import { loadFixture } from "./helpers/network-helpers.js"
 import { PositionType } from "./models/Enums.js"
@@ -8,9 +10,11 @@ import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
-import { decimal, unDecimal } from "./utils/Common.js"
+import { decimal, getBlockTimestamp, unDecimal } from "./utils/Common.js"
 import { migratePartyBToCross } from "./utils/CrossPartyB.js"
 import { getDummySingleUpnlSig, getDummyUnifiedSettlementSig } from "./utils/SignatureUtils.js"
+
+const REALIZED_PNL_IN = 4n
 
 export function shouldBehaveLikeSettlementUnified(): void {
 	let context: RunContext, user: User, user2: User, hedger: Hedger, hedger2: Hedger
@@ -75,6 +79,23 @@ export function shouldBehaveLikeSettlementUnified(): void {
 		it("Should fail when quotes array is empty", async function () {
 			const sig = await getDummyUnifiedSettlementSig(await hedger.getAddress(), 0n, [0n], [await user.getAddress()], [0n], [])
 			await expect(hedger.settleUpnlUnified([], sig)).to.be.revertedWith("LibSettlement: Empty quotes array")
+		})
+
+		it("Should fail to settle a quote whose symbol is frozen", async function () {
+			const partyA = await user.getAddress()
+			const partyB = await hedger.getAddress()
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(1, decimal(4n), now - 1n)
+
+			const sig = await getDummyUnifiedSettlementSig(
+				partyB,
+				0n,
+				[0n],
+				[partyA],
+				[0n],
+				[{ quoteId: longHedger1, currentPrice: decimal(5n, 17), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct],
+			)
+			await expect(hedger.settleUpnlUnified([decimal(6n, 17)], sig)).to.be.revertedWith("LibSymbolAdjustment: Symbol is frozen")
 		})
 
 		it("Should fail when partyAs array is empty", async function () {
@@ -344,13 +365,16 @@ export function shouldBehaveLikeSettlementUnified(): void {
 
 			const partyABalanceBefore = await user.getBalanceInfo()
 			const partyBBalanceBefore = await hedger.getBalanceInfoCrossPartyB()
+			const expectedLoss = unDecimal((quoteBefore.openedPrice - updatedPrice) * quoteBefore.quantity)
+			const symmio = ISymmio__factory.connect(await context.settlementFacet.getAddress(), context.signers.hedger)
 
-			await hedger.settleUpnlUnified([updatedPrice], sig)
+			await expect(context.settlementFacet.connect(context.signers.hedger).settleUpnlUnified(sig, [updatedPrice]))
+				.to.emit(symmio, "BalanceChangePartyB")
+				.withArgs(partyB, ZeroAddress, expectedLoss, REALIZED_PNL_IN)
 
 			const partyABalanceAfter = await user.getBalanceInfo()
 			const partyBBalanceAfter = await hedger.getBalanceInfoCrossPartyB()
 
-			const expectedLoss = unDecimal((quoteBefore.openedPrice - updatedPrice) * quoteBefore.quantity)
 			expect(partyABalanceBefore.allocatedBalances - partyABalanceAfter.allocatedBalances).to.be.eq(expectedLoss)
 			// In cross partyB mode, balance is at address(0)
 			expect(partyBBalanceAfter.allocatedBalances - partyBBalanceBefore.allocatedBalances).to.be.eq(expectedLoss)

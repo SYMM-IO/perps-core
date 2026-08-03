@@ -275,7 +275,7 @@ export function shouldBehaveLikeSolverFee(): void {
 		const txPromise = openQuoteWithFees(quoteId, decimal(1n))
 		await expect(txPromise)
 			.to.emit(context.partyBQuoteActionsFacet, "OpenSolverFeeCharged")
-			.withArgs(quoteId, await user.getAddress(), await hedger.getAddress(), 1n, decimal(1n))
+			.withArgs(quoteId, await user.getAddress(), await hedger.getAddress(), await hedger.getAddress(), 1n, decimal(1n))
 		const balanceEvents = await getPartyABalanceChangeEvents(await txPromise)
 
 		const partyAAllocatedAfter = (await user.getBalanceInfo()).allocatedBalances
@@ -303,7 +303,7 @@ export function shouldBehaveLikeSolverFee(): void {
 		const txPromise = fillCloseWithFees(quoteId, decimal(1n))
 		await expect(txPromise)
 			.to.emit(context.partyBQuoteActionsFacet, "CloseSolverFeeCharged")
-			.withArgs(quoteId, await user.getAddress(), await hedger.getAddress(), 1n, decimal(1n))
+			.withArgs(quoteId, await user.getAddress(), await hedger.getAddress(), await hedger.getAddress(), 1n, decimal(1n))
 		const balanceEvents = await getPartyABalanceChangeEvents(await txPromise)
 
 		const state = await getSolverFeeState(quoteId)
@@ -338,7 +338,7 @@ export function shouldBehaveLikeSolverFee(): void {
 
 		await expect(context.symmioPartyB.connect(context.signers.admin)._call([allocateCall, lockCall, openWithFeeCall]))
 			.to.emit(context.partyBQuoteActionsFacet, "OpenSolverFeeCharged")
-			.withArgs(quoteId, await user.getAddress(), partyBAddress, 1n, decimal(1n))
+			.withArgs(quoteId, await user.getAddress(), partyBAddress, partyBAddress, 1n, decimal(1n))
 
 		const partyAAllocatedAfter = (await user.getBalanceInfo()).allocatedBalances
 		const partyBBalanceAfter = await context.viewFacet.balanceOf(partyBAddress)
@@ -366,7 +366,7 @@ export function shouldBehaveLikeSolverFee(): void {
 			),
 		)
 			.to.emit(context.partyBQuoteActionsFacet, "OpenSolverFeeCharged")
-			.withArgs(quoteId, await user.getAddress(), await hedger.getAddress(), 1n, decimal(1n))
+			.withArgs(quoteId, await user.getAddress(), await hedger.getAddress(), await hedger.getAddress(), 1n, decimal(1n))
 
 		const state = await getSolverFeeState(quoteId)
 		expect(state.openFeeCharged).to.equal(decimal(1n))
@@ -499,7 +499,7 @@ export function shouldBehaveLikeSolverFee(): void {
 
 		await expect(fillToLiquidationWithFee(quoteId, closePrice, await getDummyPairUpnlAndPriceSig(marketPrice, upnlPartyA, 0n), decimal(1n)))
 			.to.emit(context.partyBQuoteActionsFacet, "CloseSolverFeeCharged")
-			.withArgs(quoteId, await user.getAddress(), await hedger.getAddress(), 1n, decimal(1n))
+			.withArgs(quoteId, await user.getAddress(), await hedger.getAddress(), await hedger.getAddress(), 1n, decimal(1n))
 
 		const state = await getSolverFeeState(quoteId)
 		expect(state.closeFeeCharged).to.equal(decimal(1n))
@@ -716,7 +716,7 @@ export function shouldBehaveLikeSolverFee(): void {
 		).to.be.revertedWith("SolverFee: Solver fee rate cap exceeded")
 		await expect(fillToLiquidationWithFee(quoteId, decimal(1n), await getDummyPairUpnlAndPriceSig(decimal(1n), 0n, 0n), decimal(1n)))
 			.to.emit(context.partyBQuoteActionsFacet, "CloseSolverFeeCharged")
-			.withArgs(quoteId, await user.getAddress(), await hedger.getAddress(), 1n, decimal(1n))
+			.withArgs(quoteId, await user.getAddress(), await hedger.getAddress(), await hedger.getAddress(), 1n, decimal(1n))
 
 		// PartyA was fully solvent, so the close-to-liquidation path closed the entire remaining amount
 		const finalQuote = await context.viewFacetQuote.getQuote(quoteId)
@@ -744,7 +744,7 @@ export function shouldBehaveLikeSolverFee(): void {
 
 		await expect(fillToLiquidationWithMaxAndFee(quoteId, maxQuantity, decimal(1n), await getDummyPairUpnlAndPriceSig(decimal(1n), 0n, 0n), solverFee))
 			.to.emit(context.partyBQuoteActionsFacet, "CloseSolverFeeCharged")
-			.withArgs(quoteId, await user.getAddress(), await hedger.getAddress(), 1n, expectedFee)
+			.withArgs(quoteId, await user.getAddress(), await hedger.getAddress(), await hedger.getAddress(), 1n, expectedFee)
 
 		const finalQuote = await context.viewFacetQuote.getQuote(quoteId)
 		const state = await getSolverFeeState(quoteId)
@@ -814,5 +814,130 @@ export function shouldBehaveLikeSolverFee(): void {
 		expect(finalQuote.quoteStatus).to.equal(QuoteStatus.CLOSED)
 		expect(state.openFeeCharged).to.equal(0n)
 		expect(state.closeFeeCharged).to.equal(0n)
+	})
+
+	describe("Solver fee receiver", () => {
+		it("defaults to the PartyB itself", async function () {
+			expect(await (context.viewFacet as any).getSolverFeeReceiver(await hedger.getAddress())).to.equal(await hedger.getAddress())
+		})
+
+		it("lets a PartyB set its own receiver", async function () {
+			const partyB = await hedger.getAddress()
+			const receiver = context.signers.feeCollector.address
+
+			await expect((context.controlFacet.connect(hedger.signer) as any).setSolverFeeReceiver(partyB, receiver))
+				.to.emit(context.controlFacet, "SetSolverFeeReceiver")
+				.withArgs(partyB, receiver)
+
+			expect(await (context.viewFacet as any).getSolverFeeReceiver(partyB)).to.equal(receiver)
+		})
+
+		it("lets PARTY_B_MANAGER_ROLE set a PartyB's receiver on its behalf", async function () {
+			const partyB = await hedger.getAddress()
+			const receiver = context.signers.feeCollector.address
+
+			await expect((context.controlFacet.connect(context.signers.admin) as any).setSolverFeeReceiver(partyB, receiver))
+				.to.emit(context.controlFacet, "SetSolverFeeReceiver")
+				.withArgs(partyB, receiver)
+
+			expect(await (context.viewFacet as any).getSolverFeeReceiver(partyB)).to.equal(receiver)
+		})
+
+		it("rejects an unauthorized third party setting a PartyB's receiver", async function () {
+			await expect(
+				(context.controlFacet.connect(user.signer) as any).setSolverFeeReceiver(await hedger.getAddress(), user.signer.address),
+			).to.be.revertedWith("ControlFacet: Not authorized")
+		})
+
+		it("rejects setting a receiver for an unregistered PartyB", async function () {
+			await expect(
+				(context.controlFacet.connect(user.signer) as any).setSolverFeeReceiver(user.signer.address, context.signers.feeCollector.address),
+			).to.be.revertedWith("ControlFacet: Address is not registered")
+		})
+
+		it("resets to the PartyB itself when the receiver is cleared", async function () {
+			const partyB = await hedger.getAddress()
+			await (context.controlFacet.connect(hedger.signer) as any).setSolverFeeReceiver(partyB, context.signers.feeCollector.address)
+			expect(await (context.viewFacet as any).getSolverFeeReceiver(partyB)).to.equal(context.signers.feeCollector.address)
+
+			await (context.controlFacet.connect(hedger.signer) as any).setSolverFeeReceiver(partyB, ethers.ZeroAddress)
+			expect(await (context.viewFacet as any).getSolverFeeReceiver(partyB)).to.equal(partyB)
+		})
+
+		it("credits the configured receiver on open; PartyB free balance stays flat", async function () {
+			const partyB = await hedger.getAddress()
+			const receiver = context.signers.feeCollector.address
+			await (context.controlFacet.connect(hedger.signer) as any).setSolverFeeReceiver(partyB, receiver)
+
+			const quoteId = await sendQuoteWithSolverFeeCaps(decimal(2n, 16))
+			await hedger.lockQuote(quoteId)
+
+			const partyAAllocatedBefore = (await user.getBalanceInfo()).allocatedBalances
+			const partyBBalanceBefore = await context.viewFacet.balanceOf(partyB)
+			const receiverBalanceBefore = await context.viewFacet.balanceOf(receiver)
+
+			await expect(openQuoteWithFees(quoteId, decimal(1n)))
+				.to.emit(context.partyBQuoteActionsFacet, "OpenSolverFeeCharged")
+				.withArgs(quoteId, await user.getAddress(), partyB, receiver, 1n, decimal(1n))
+
+			expect(partyAAllocatedBefore - (await user.getBalanceInfo()).allocatedBalances).to.equal(decimal(1n))
+			expect(await context.viewFacet.balanceOf(receiver)).to.equal(receiverBalanceBefore + decimal(1n))
+			expect(await context.viewFacet.balanceOf(partyB)).to.equal(partyBBalanceBefore) // PartyB itself gets nothing
+			expect((await getSolverFeeState(quoteId)).openFeeCharged).to.equal(decimal(1n))
+		})
+
+		it("credits the configured receiver on close", async function () {
+			const partyB = await hedger.getAddress()
+			const receiver = context.signers.feeCollector.address
+			await (context.controlFacet.connect(hedger.signer) as any).setSolverFeeReceiver(partyB, receiver)
+
+			const quoteId = await sendQuoteWithSolverFeeCaps(decimal(2n, 16))
+			await openQuote(quoteId)
+			await requestClose(quoteId)
+
+			const receiverBalanceBefore = await context.viewFacet.balanceOf(receiver)
+
+			await expect(fillCloseWithFees(quoteId, decimal(1n)))
+				.to.emit(context.partyBQuoteActionsFacet, "CloseSolverFeeCharged")
+				.withArgs(quoteId, await user.getAddress(), partyB, receiver, 1n, decimal(1n))
+
+			expect(await context.viewFacet.balanceOf(receiver)).to.equal(receiverBalanceBefore + decimal(1n))
+			expect((await getSolverFeeState(quoteId)).closeFeeCharged).to.equal(decimal(1n))
+		})
+
+		it("rejects routing a solver fee back to PartyA", async function () {
+			// Would move PartyA's allocated balance into free balance without setting deallocateTimestamp,
+			// sidestepping the withdraw cooldown.
+			const partyB = await hedger.getAddress()
+			await (context.controlFacet.connect(hedger.signer) as any).setSolverFeeReceiver(partyB, await user.getAddress())
+
+			const quoteId = await sendQuoteWithSolverFeeCaps(decimal(2n, 16))
+			await hedger.lockQuote(quoteId)
+
+			await expect(openQuoteWithFees(quoteId, decimal(1n))).to.be.revertedWith("SolverFee: Receiver is partyA")
+		})
+
+		it("applies a receiver change only to subsequent fees", async function () {
+			const partyB = await hedger.getAddress()
+			const receiver = context.signers.feeCollector.address
+
+			// First fee is charged with no receiver configured, so it lands on the PartyB itself.
+			const quoteId = await sendQuoteWithSolverFeeCaps(decimal(2n, 16))
+			await hedger.lockQuote(quoteId)
+			const partyBBalanceBefore = await context.viewFacet.balanceOf(partyB)
+			await openQuoteWithFees(quoteId, decimal(1n))
+			expect(await context.viewFacet.balanceOf(partyB)).to.equal(partyBBalanceBefore + decimal(1n))
+
+			// Redirecting afterwards leaves the collected fee alone and only affects the close fee.
+			await (context.controlFacet.connect(hedger.signer) as any).setSolverFeeReceiver(partyB, receiver)
+			const partyBBalanceAfterOpen = await context.viewFacet.balanceOf(partyB)
+			const receiverBalanceBefore = await context.viewFacet.balanceOf(receiver)
+
+			await requestClose(quoteId)
+			await fillCloseWithFees(quoteId, decimal(1n))
+
+			expect(await context.viewFacet.balanceOf(receiver)).to.equal(receiverBalanceBefore + decimal(1n))
+			expect(await context.viewFacet.balanceOf(partyB)).to.equal(partyBBalanceAfterOpen)
+		})
 	})
 }

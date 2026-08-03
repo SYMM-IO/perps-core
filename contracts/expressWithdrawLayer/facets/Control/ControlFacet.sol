@@ -7,7 +7,7 @@ pragma solidity >=0.8.18;
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import { AffiliateConfig, SponsorConfig } from "../../types/ConfigTypes.sol";
+import { AffiliateConfig } from "../../types/ConfigTypes.sol";
 import { AffiliateCredit } from "../../types/CreditTypes.sol";
 
 import { LibAccessControl } from "../../libraries/LibAccessControl.sol";
@@ -223,35 +223,6 @@ contract ControlFacet is IControlFacet, Pausable, ReentrancyGuard {
 		f.collectedOperatorFees[affiliate] = 0;
 		g.collateral.safeTransfer(to, amount);
 		emit OperatorFeesClaimed(affiliate, amount);
-	}
-
-	// ── Sponsor management ──
-
-	function depositSponsorBalance(address affiliate, uint256 amount) external nonReentrant whenNotPaused {
-		FeeStorage.Layout storage f = FeeStorage.layout();
-		GlobalStorage.Layout storage g = GlobalStorage.layout();
-		g.collateral.safeTransferFrom(msg.sender, address(this), amount);
-		f.sponsorBalances[affiliate] += amount;
-		if (f.sponsors[affiliate] == address(0)) {
-			f.sponsors[affiliate] = msg.sender;
-		}
-		emit SponsorDeposit(affiliate, amount);
-	}
-
-	function withdrawSponsorBalance(address affiliate, uint256 amount, address to) external nonReentrant whenNotPaused {
-		LibAccessControl.enforceRole(LibAccessControl.SPONSOR_MANAGER_ROLE);
-		FeeStorage.Layout storage f = FeeStorage.layout();
-		GlobalStorage.Layout storage g = GlobalStorage.layout();
-		if (f.sponsorBalances[affiliate] < amount) revert LibErrors.InsufficientSponsorBalance();
-		f.sponsorBalances[affiliate] -= amount;
-		g.collateral.safeTransfer(to, amount);
-		emit SponsorWithdraw(affiliate, amount);
-	}
-
-	function setSponsorConfig(address affiliate, uint256 maxFeePerWithdraw, uint256 maxWithdrawAmount) external {
-		LibAccessControl.enforceRole(LibAccessControl.SETTER_ROLE);
-		FeeStorage.layout().sponsorConfigs[affiliate] = SponsorConfig(maxFeePerWithdraw, maxWithdrawAmount);
-		emit SponsorConfigUpdated(affiliate, maxFeePerWithdraw, maxWithdrawAmount);
 	}
 
 	// ── General pool ──

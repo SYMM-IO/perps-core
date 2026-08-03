@@ -7,6 +7,7 @@ pragma solidity >=0.8.18;
 import { LibMuonLiquidation } from "../muon/LibMuonLiquidation.sol";
 import { LibPartyALiquidationSnapshotGuards } from "./LibPartyALiquidationSnapshotGuards.sol";
 import { LibPartyALiquidationShared } from "./LibPartyALiquidationShared.sol";
+import { LibSymbolAdjustment } from "../LibSymbolAdjustment.sol";
 import { AccountStorage, LiquidationDetail, LiquidationPartyBSymbolSnapshot } from "../../storages/AccountStorage.sol";
 import { ClearingHouseStorage } from "../../storages/ClearingHouseStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
@@ -63,6 +64,7 @@ library LibPartyALiquidationSnapshotSetup {
 		LibPartyALiquidationShared.validateLiquidationPriceSetup(partyA, liquidationSig.liquidationId);
 
 		for (uint256 index = 0; index < liquidationSig.states.length; index++) {
+			LibSymbolAdjustment.requireNotFrozen(liquidationSig.states[index].symbolId);
 			accountLayout.liquidationPartyBSymbolSnapshots[partyA][liquidationSig.liquidationId][liquidationSig.states[index].partyB][
 				liquidationSig.states[index].symbolId
 			] = LiquidationPartyBSymbolSnapshot({

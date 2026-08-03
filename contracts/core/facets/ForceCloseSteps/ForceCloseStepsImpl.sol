@@ -6,6 +6,7 @@ pragma solidity >=0.8.18;
 
 import { LibSettlement } from "../../libraries/LibSettlement.sol";
 import { LibForceActions } from "../../libraries/LibForceActions.sol";
+import { LibSymbolAdjustment } from "../../libraries/LibSymbolAdjustment.sol";
 import { QuoteStorage, Quote, LockedValues } from "../../storages/QuoteStorage.sol";
 import { AccountStorage, ForceCloseDetail, PartyBForceCloseState } from "../../storages/AccountStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
@@ -46,6 +47,7 @@ library ForceCloseStepsImpl {
 		detail.upnlPartyB = sig.upnlPartyB;
 		detail.currentPrice = sig.currentPrice;
 		detail.partyBState = PartyBForceCloseState.NONE;
+		detail.basisVersion = LibSymbolAdjustment.basisVersion(QuoteStorage.layout().quotes[quoteId].symbolId);
 		detail.inProgress = true;
 	}
 
@@ -84,12 +86,18 @@ library ForceCloseStepsImpl {
 	/// @param quoteId The ID of the quote for which the position should be forced to close.
 	/// @return isPartyBSolvent Whether PartyB remained solvent after the close.
 	/// @return upnlPartyB The upnl used for liquidation (only set for normal partyB when isPartyBSolvent is false).
-	function finalizeForceClose(uint256 quoteId) internal returns (bool isPartyBSolvent, int256 upnlPartyB) {
+	/// @return partyBAllocatedBalanceBeforeLiquidation PartyB's allocation immediately before it is cleared by liquidation.
+	function finalizeForceClose(
+		uint256 quoteId
+	) internal returns (bool isPartyBSolvent, int256 upnlPartyB, uint256 partyBAllocatedBalanceBeforeLiquidation) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[quoteId];
 		require(detail.inProgress, "ForceActionsFacet: Invalid state");
 
-		address partyB = QuoteStorage.layout().quotes[quoteId].partyB;
+		Quote memory quote = QuoteStorage.layout().quotes[quoteId];
+		address partyB = quote.partyB;
+		LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
+		require(detail.basisVersion == LibSymbolAdjustment.basisVersion(quote.symbolId), "ForceActionsFacet: Symbol basis changed");
 		bool isCrossPartyB = MAStorage.layout().crossModeEnabledForPartyB[partyB];
 
 		if (isCrossPartyB) {
@@ -114,7 +122,7 @@ library ForceCloseStepsImpl {
 				detail.partyBState = PartyBForceCloseState.CLOSED_SOLVENT;
 			} else {
 				uint256 reservedBalance = accountLayout.reserveVault[partyB];
-				upnlPartyB = LibForceActions.startPartyBLiquidationForForceClose(
+				(upnlPartyB, partyBAllocatedBalanceBeforeLiquidation) = LibForceActions.startPartyBLiquidationForForceClose(
 					quoteId,
 					detail.closePrice,
 					reservedBalance,
@@ -130,6 +138,7 @@ library ForceCloseStepsImpl {
 		detail.timestamp = block.timestamp;
 		detail.upnlPartyB = 0;
 		detail.currentPrice = 0;
+		detail.basisVersion = 0;
 	}
 
 	/// @notice Settles UPNL using unified settlement during the force close workflow and adjusts the stored partyB UPNL snapshot.

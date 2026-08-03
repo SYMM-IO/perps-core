@@ -76,6 +76,9 @@ struct ForceCloseDetail {
 	PartyBForceCloseState partyBState;
 	/// @notice Whether a 3-step force close workflow is active for this quoteId.
 	bool inProgress;
+	/// @notice Symbol price/quantity basis version when the close price was calculated.
+	/// @dev Finalization rejects the workflow if a physical restatement advanced this version.
+	uint256 basisVersion;
 }
 
 /// @notice Complete liquidation state for a PartyA being liquidated
@@ -186,9 +189,9 @@ library AccountStorage {
 		///      that supplies the liquidation prices. The liquidation fee is split 50/50 when both
 		///      are recorded; otherwise the starter receives the full fee. Cleared after settlement.
 		mapping(address => address[]) liquidators;
-		/// @notice Reimbursement owed to PartyA, used by clearing house takeover flow
-		/// @dev In CH takeover: stores pending fees added by liquidatePendingPositionsForClearingHouse.
-		///      CH can pull via deallocateForClearingHouse(REIMBURSEMENT_KEY). Released at settlePartyATakeover.
+		/// @notice Pending credits owed to a liquidating PartyA but not yet restored to allocated balance
+		/// @dev Accumulates released open-fee reserves and Clearing House-routed credits. NORMAL liquidation or takeover settlement can restore it;
+		///      LATE/OVERDUE settlement moves it to liquidation escrow, and takeover can pull it through REIMBURSEMENT_KEY.
 		mapping(address => uint256) partyAReimbursement;
 		/// @notice UPNL settlement state between PartyA-PartyB pairs during liquidation
 		/// @dev Used during PartyA liquidation to track UPNL reconciliation with each PartyB.
@@ -241,6 +244,11 @@ library AccountStorage {
 		/// @notice Per-settlement contribution included in partyBLiquidationSettlementReserve.
 		/// @dev Keyed by PartyA then PartyB so reserve cleanup is independent from the PartyB's current mode.
 		mapping(address => mapping(address => uint256)) partyBLiquidationSettlementReserveContributions;
+		/// @notice Net funding fee included in each pending PartyA liquidation settlement.
+		/// @dev Positive means PartyA owes PartyB. Kept separately so settlement balance-change events
+		///      can classify funding and realized PnL without changing the public settlement-state tuple.
+		///      Pre-upgrade pending settlements retain the legacy realized-PnL-only classification because this value is zero.
+		mapping(address => mapping(address => int256)) partyALiquidationSettlementFundingFees;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

@@ -8,7 +8,7 @@ import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
-import { decimal, unDecimal } from "./utils/Common.js"
+import { decimal, getBlockTimestamp, unDecimal } from "./utils/Common.js"
 import { getDummySettlementSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
 
 export function shouldBehaveLikeSettlement(): void {
@@ -76,6 +76,28 @@ export function shouldBehaveLikeSettlement(): void {
 
 	it("Should fail when settlementData.length != updatedPrices.length", async function () {
 		await expect(hedger.settleUpnl(await user.getAddress(), [1n])).to.be.revertedWith("LibSettlement: Invalid length")
+	})
+
+	it("Should fail to settle a quote whose symbol is frozen", async function () {
+		const now = await getBlockTimestamp()
+		await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(1, decimal(4n), now - 1n)
+		await expect(
+			hedger.settleUpnl(
+				await user.getAddress(),
+				[decimal(5n, 17)],
+				getDummySettlementSig(
+					0n,
+					[0n],
+					[
+						{
+							quoteId: shortHedger2,
+							currentPrice: 0n,
+							partyBUpnlIndex: 0n,
+						} as QuoteSettlementDataStructOutput,
+					],
+				),
+			),
+		).to.be.revertedWith("LibSymbolAdjustment: Symbol is frozen")
 	})
 
 	it("Should fail when when partyA is insolvent", async function () {

@@ -80,26 +80,21 @@ library LibQuoteClose {
 				accountLayout.partyBAllocatedBalances[quote.partyB][allocationKey] >= pnl,
 				"LibQuote: PartyA should first exit its positions that are incurring losses"
 			);
-			accountLayout.allocatedBalances[quote.partyA] += pnl;
-			emit SharedEvents.BalanceChangePartyA(quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
-			accountLayout.partyBAllocatedBalances[quote.partyB][allocationKey] -= pnl;
-			emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
+			LibAccount.increasePartyAAllocatedBalance(quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+			LibAccount.decreasePartyBAllocatedBalance(quote.partyB, allocationKey, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
 		} else {
 			require(
 				accountLayout.allocatedBalances[quote.partyA] >= pnl,
 				"LibQuote: PartyA should first exit its positions that are currently in profit."
 			);
-			accountLayout.allocatedBalances[quote.partyA] -= pnl;
-			emit SharedEvents.BalanceChangePartyA(quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
-			accountLayout.partyBAllocatedBalances[quote.partyB][allocationKey] += pnl;
-			emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+			LibAccount.decreasePartyAAllocatedBalance(quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
+			LibAccount.increasePartyBAllocatedBalance(quote.partyB, allocationKey, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 		}
 
 		quote.avgClosedPrice = (quote.avgClosedPrice * quote.closedAmount + filledAmount * closedPrice) / (quote.closedAmount + filledAmount);
 
 		uint256 fee = (filledAmount * closedPrice * quote.closeFee) / 1e36;
-		accountLayout.allocatedBalances[quote.partyA] -= fee;
-		emit SharedEvents.BalanceChangePartyA(quote.partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_OUT);
+		LibAccount.decreasePartyAAllocatedBalance(quote.partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_OUT);
 		emit SharedEvents.TradingFeeCharged(
 			quote.id,
 			fee,
@@ -176,11 +171,16 @@ library LibQuoteClose {
 	/// @param quoteId The ID of the quote to expire.
 	/// @return result The resulting status of the quote after expiration.
 	function expireQuote(uint256 quoteId) public returns (QuoteStatus result) {
+		require(block.timestamp > QuoteStorage.layout().quotes[quoteId].deadline, "LibQuote: Quote isn't expired");
+		result = forceExpireQuote(quoteId);
+	}
+
+	/// @notice expireQuote without the deadline gate — only exposed via privileged facet paths
+	function forceExpireQuote(uint256 quoteId) public returns (QuoteStatus result) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
 		Quote storage quote = quoteLayout.quotes[quoteId];
-		require(block.timestamp > quote.deadline, "LibQuote: Quote isn't expired");
 		require(
 			quote.quoteStatus == QuoteStatus.PENDING ||
 				quote.quoteStatus == QuoteStatus.CANCEL_PENDING ||

@@ -256,7 +256,18 @@ export function shouldBehaveLikeForceClosePosition(): void {
 					0n, // upnlPartyB
 					0n, // upnlPartyA
 				)
-				await user.forceClosePosition(quote2ShortOpened.id, dummySig)
+				const allocatedBeforeLiquidation = (await hedger.getBalanceInfo(userAddress)).allocatedBalances
+				const tx = await context.forceActionsFacet.connect(context.signers.user).forceClosePosition(quote2ShortOpened.id, dummySig)
+				const receipt = await tx.wait()
+				const liquidationEvent = (receipt?.logs ?? []).flatMap(log => {
+					try {
+						const parsed = context.forceActionsFacet.interface.parseLog(log)
+						return parsed?.name === "LiquidatePartyB" ? [parsed] : []
+					} catch {
+						return []
+					}
+				})[0]
+				expect(liquidationEvent.args.partyBAllocatedBalance).to.equal(allocatedBeforeLiquidation)
 
 				// PartyB should be marked as liquidated with zero allocation
 				let balanceInfo: BalanceInfo = await hedger.getBalanceInfo(userAddress)
@@ -313,6 +324,56 @@ export function shouldBehaveLikeForceClosePosition(): void {
 				},
 				beforeOutput: beforeOut,
 			})
+		})
+
+		it("Should fail forceClosePosition while symbol is frozen", async function () {
+			const sigTimes = await prepareSigTimes(100n)
+			const gapRatio2 = await context.viewFacetSymbol.forceCloseGapRatio(quote2ShortOpened.symbolId)
+			const dummySig = await getDummyHighLowPriceSig(
+				sigTimes[0], // startTime
+				sigTimes[1], // endTime
+				BigInt(quote2ShortOpened.requestedClosePrice) + unDecimal(BigInt(quote2ShortOpened.requestedClosePrice) * BigInt(gapRatio2)) - decimal(1n), // lowest
+				decimal(3n), // highest
+				decimal(2n), // currentPrice
+				decimal(2n), // averagePrice
+				quote2ShortOpened.symbolId, // symbolId
+				0n, // upnlPartyB
+				0n, // upnlPartyA
+			)
+
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(quote2ShortOpened.symbolId, decimal(4n), now - 1n)
+
+			await expect(user.forceClosePosition(quote2ShortOpened.id, dummySig)).to.be.revertedWith("LibSymbolAdjustment: Symbol is frozen")
+		})
+
+		it("Should fail finalizeForceClose when a symbol adjustment freezes the symbol between init and finalize", async function () {
+			const sigTimes = await prepareSigTimes(100n)
+			const gapRatio2 = await context.viewFacetSymbol.forceCloseGapRatio(quote2ShortOpened.symbolId)
+			const dummySig = await getDummyHighLowPriceSig(
+				sigTimes[0], // startTime
+				sigTimes[1], // endTime
+				BigInt(quote2ShortOpened.requestedClosePrice) + unDecimal(BigInt(quote2ShortOpened.requestedClosePrice) * BigInt(gapRatio2)) - decimal(1n), // lowest
+				decimal(3n), // highest
+				decimal(2n), // currentPrice
+				decimal(2n), // averagePrice
+				quote2ShortOpened.symbolId, // symbolId
+				0n, // upnlPartyB
+				0n, // upnlPartyA
+			)
+
+			// Step 1: initialize force close while the symbol is still unfrozen — succeeds.
+			await context.forceCloseStepsFacet.initializeForceClose(quote2ShortOpened.id, dummySig)
+
+			// Straddle the window: a corporate action gets scheduled with a past-effective timestamp,
+			// freezing the symbol immediately, in between init and finalize.
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(quote2ShortOpened.symbolId, decimal(4n), now - 1n)
+
+			// Step 3: finalizeForceClose must now revert because the symbol is frozen.
+			await expect(
+				context.forceCloseStepsFacet.finalizeForceClose(quote2ShortOpened.id, await getDummyPairUpnlAndPriceSig(decimal(2n), 0n, 0n)),
+			).to.be.revertedWith("LibSymbolAdjustment: Symbol is frozen")
 		})
 
 		it("increments partyA and partyB nonces on solvent forceClosePosition", async function () {
@@ -562,6 +623,44 @@ export function shouldBehaveLikeForceClosePosition(): void {
 				// The force-closed quote should still be CLOSE_PENDING (not CLOSED) since partyB was liquidated
 				const quoteAfter = await context.viewFacetQuote.getQuote(quote1LongOpened.id)
 				expect(quoteAfter.quoteStatus).to.equal(QuoteStatus.CLOSE_PENDING)
+			})
+
+			it("reports the pre-liquidation allocation in the three-step flow", async function () {
+				const sigTimes = await prepareSigTimes(100n)
+				const partyAAddress = await user.getAddress()
+				const liquidatingSig = await getDummyHighLowPriceSig(
+					sigTimes[0],
+					sigTimes[1],
+					decimal(1n),
+					decimal(12n),
+					decimal(5n),
+					decimal(10n),
+					quote1LongOpened.symbolId,
+					-decimal(5000n),
+					decimal(5000n),
+				)
+				const allocatedBeforeLiquidation = (await hedger.getBalanceInfo(partyAAddress)).allocatedBalances
+
+				await context.forceCloseStepsFacet.initializeForceClose(quote1LongOpened.id, liquidatingSig)
+				const tx = await context.forceCloseStepsFacet.finalizeForceClose(
+					quote1LongOpened.id,
+					await getDummyPairUpnlAndPriceSig(
+						BigInt(liquidatingSig.currentPrice),
+						BigInt(liquidatingSig.upnlPartyA),
+						BigInt(liquidatingSig.upnlPartyB),
+					),
+				)
+				const receipt = await tx.wait()
+				const liquidationEvent = (receipt?.logs ?? []).flatMap(log => {
+					try {
+						const parsed = context.forceCloseStepsFacet.interface.parseLog(log)
+						return parsed?.name === "LiquidatePartyB" ? [parsed] : []
+					} catch {
+						return []
+					}
+				})[0]
+
+				expect(liquidationEvent.args.partyBAllocatedBalance).to.equal(allocatedBeforeLiquidation)
 			})
 
 			it("uses reserve vault to keep partyB solvent during force close", async function () {

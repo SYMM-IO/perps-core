@@ -44,11 +44,12 @@
 					>
 					<a class="side-link" href="../pages/solver-fees.html"><small>Fees</small><span>Solver Fees</span></a>
 					<a class="side-link" href="../pages/operational-fees.html"><small>Fees</small><span>Operational Fees</span></a>
+					<a class="side-link" href="../pages/symbol-adjustment.html"><small>Symbols</small><span>Symbol Corporate-Action Adjustment</span></a>
 					<a class="side-link" href="../pages/partya-liquidation-fee-recipient.html"
 						><small>Liquidation</small><span>PartyA Liquidation Fee Recipient Cleanup</span></a
 					>
 					<a class="side-link" href="../pages/balance-change-event-cleanup.html"
-						><small>Events</small><span>BalanceChange Event Cleanup</span></a
+						><small>Events &amp; Indexing</small><span>Allocated Balance Event Ledger</span></a
 					>
 					<a class="side-link" href="../pages/lazy-accumulated-funding.html"><small>Funding</small><span>Lazy Accumulated Funding</span></a>
 					<a class="side-link" href="../pages/partyb-allocation-suspension-gates.html"
@@ -114,9 +115,6 @@
 						>8.2 Fee Deduction Order (in `transferToReceivers`)</a
 					>
 					<a class="toc-link level-3" href="#8-3-bot-must-read-before-signing">8.3 Bot Must Read Before Signing</a>
-					<a class="toc-link level-3" href="#8-4-sponsor-coverage-flow">8.4 Sponsor Coverage Flow</a>
-					<a class="toc-link level-3" href="#8-5-sponsor-scenarios">8.5 Sponsor Scenarios</a>
-					<a class="toc-link level-3" href="#8-6-bot-checklist-for-sponsors">8.6 Bot Checklist for Sponsors</a>
 					<a class="toc-link level-2" href="#9-validator-system">9. Validator System</a>
 					<a class="toc-link level-3" href="#9-1-validator-attestation-flow">9.1 Validator Attestation Flow</a>
 					<a class="toc-link level-3" href="#9-2-when-validators-are-required">9.2 When Validators Are Required</a>
@@ -358,12 +356,12 @@
 								<tr>
 									<td><code>CANCELLED</code></td>
 									<td>5</td>
-									<td>Terminal. All locks released, sponsor refunded</td>
+									<td>Terminal. All locks released</td>
 								</tr>
 								<tr>
 									<td><code>SUSPENDED</code></td>
 									<td>6</td>
-									<td>Terminal. All locks released, sponsor refunded</td>
+									<td>Terminal. All locks released</td>
 								</tr>
 							</tbody>
 						</table>
@@ -526,13 +524,12 @@
 					<h3 id="numeric-example-state-transitions-for-a-500-usdc-windowed-withdrawal">
 						Numeric Example: State Transitions for a 500 USDC WINDOWED Withdrawal
 					</h3>
-					<pre><code>Scenario: Single-part WINDOWED withdrawal, no credit, no sponsor
+					<pre><code>Scenario: Single-part WINDOWED withdrawal, no credit
 
 Setup:
   generalBalance          = 10,000 USDC   lockedGeneralBalance          = 0
   affiliateBalances[aff]  =  5,000 USDC   lockedAffiliateBalances[aff]  = 0
   affiliateConfigs[aff]   = { feeRate: 50 (0.5%), operatorFee: 1e6 (1 USDC) }
-  sponsorBalances[aff]    = 0 USDC
   securityWindow          = 20s           tolerancePeriod               = 60s
   nonces[user]            = 7
 
@@ -553,7 +550,6 @@ Step 1 — Bot sees: user requests a 500 USDC express withdrawal quote
     - fee                  = 500e6 * 50 / 10000 = 2,500,000 (2.5 USDC)
     - operatorFee          = 1e6 (must match on-chain config exactly; reverts OperatorFeeMismatch otherwise)
     - totalFee             = 2.5 + 1 = 3.5 USDC
-    - sponsorCoverage      = 0 (no sponsor balance)
     - maxUserFee           = 3.5 USDC
   Bot checks:
     - generalBalance - lockedGeneralBalance &gt;= generalAmount?   10,000 &gt;= 300?   YES
@@ -613,7 +609,6 @@ Step 3 — Bot sees: securityWindow has elapsed (T0 + 20s)
       T0+25 &lt; T0+80 — reverts TooEarly. Permissionless fallback activates at T0+80.
 
   Contract executes processWithdraw:
-    - userFee = totalFee - sponsorCoverage = 3.5 - 0 = 3.5 USDC
     - Fee cascading across parts:
         feeRemaining = 3.5e6
         Part 1 (500 express-only): deduction = min(3.5e6, 500e6) = 3.5e6
@@ -987,12 +982,11 @@ What-if: same withdrawal as WINDOWED instead of STANDARD?
     A[User requests withdrawal options] --&gt; B[Read on-chain state]
     B --&gt; B1[&quot;nonces(user)&quot;]
     B --&gt; B2[&quot;affiliateConfigs(affiliate)&quot;]
-    B --&gt; B3[&quot;sponsorBalances(affiliate)&quot;]
     B --&gt; B4[&quot;generalBalance, lockedGeneralBalance&quot;]
     B --&gt; B5[&quot;affiliateBalances, lockedAffiliateBalances&quot;]
     B --&gt; B6[&quot;expressProvider.creditLineTotalDebt(affiliate)&quot;]
 
-    B1 &amp; B2 &amp; B3 &amp; B4 &amp; B5 &amp; B6 --&gt; C{Compute available liquidity}
+	B1 &amp; B2 &amp; B4 &amp; B5 &amp; B6 --&gt; C{Compute available liquidity}
 
     C --&gt; D{minValidatorSignatures&amp;#40;affiliate&amp;#41; &gt; 0\nAND sufficient liquidity?}
     D --&gt;|Yes| D1[Gather validator sigs]
@@ -1001,10 +995,10 @@ What-if: same withdrawal as WINDOWED instead of STANDARD?
     C --&gt; E{Unlocked liquidity\n&gt;= amount?}
     E --&gt;|Yes| E1[Offer WINDOWED]
 
-    C --&gt; G[Always offer STANDARD]
+	C --&gt; G[Always offer STANDARD]
 
-    D2 &amp; E1 &amp; G --&gt; H[Compute fees &amp; sponsor coverage]
-    H --&gt; I[Sign EIP-712 WithdrawOption]
+	D2 &amp; E1 &amp; G --&gt; H[Compute fees]
+	H --&gt; I[Sign EIP-712 WithdrawOption]
     I --&gt; J[Return options to user]
 </code></pre>
 					<pre><code class="language-mermaid">flowchart LR
@@ -1019,8 +1013,7 @@ What-if: same withdrawal as WINDOWED instead of STANDARD?
 						<li>[ ] Read <code>expressProvider.nonces(user)</code> for current nonce</li>
 						<li>[ ] Read <code>affiliateConfigs(affiliate)</code> for <code>feeRate</code> and <code>operatorFee</code></li>
 						<li>[ ] Compute fee: <code>fee = expressAmount * feeRate / 10000</code></li>
-						<li>[ ] Read <code>sponsorBalances(affiliate)</code> and <code>sponsorConfigs(affiliate)</code> for sponsor coverage</li>
-						<li>[ ] Compute <code>maxUserFee = (fee + operatorFee) - sponsorCoverage</code></li>
+						<li>[ ] Set <code>maxUserFee &gt;= fee + operatorFee</code></li>
 						<li>
 							[ ] If signing STANDARD as an accelerate candidate, compute <code>maxAccelerationFee</code> as the user's upper bound for
 							a later acceleration premium
@@ -1138,7 +1131,7 @@ What-if: same withdrawal as WINDOWED instead of STANDARD?
 						<li>[ ] <code>creditAmount</code> -- amount drawn from credit line (0 unless credit-backed; must be 0 for STANDARD)</li>
 						<li>[ ] <code>fee</code> -- must equal <code>(feeBasis * feeRate) / 10000</code> on-chain</li>
 						<li>[ ] <code>operatorFee</code> -- must match <code>affiliateConfigs[affiliate].operatorFee</code> exactly</li>
-						<li>[ ] <code>maxUserFee</code> -- max fee user pays after sponsor coverage</li>
+						<li>[ ] <code>maxUserFee</code> -- max affiliate plus operator fee the user authorizes</li>
 						<li>[ ] <code>maxAccelerationFee</code> -- max extra fee user authorizes if STANDARD is accelerated</li>
 						<li>[ ] <code>partsHash</code> -- <code>keccak256(abi.encode(parts))</code></li>
 						<li>[ ] <code>deadline</code> -- signature expiry timestamp (future)</li>
@@ -1163,8 +1156,6 @@ Setup:
   expressProvider.creditLineTotalDebt(0xAff) = 200e6 USDC (existing debt)
   credit line protocolMaxDebt                = 5,000e6   (plenty of headroom)
   affiliateConfigs(0xAff)  = { feeRate: 100 bps, operatorFee: 2e6 }
-  sponsorBalances(0xAff)   = 10e6 USDC
-  sponsorConfigs(0xAff)    = { maxFeePerWithdraw: 0, maxWithdrawAmount: 0 } (no caps)
 
 ----------------------------------------------------------------------
 
@@ -1225,12 +1216,7 @@ Step 3 -- Bot computes: Fee computation
 
   Bot checks: fee + operatorFee (17e6) &lt;= feeBasis (1,500e6)?  YES
 
-  Bot computes sponsor coverage:
-    sponsorBalances(0xAff) = 10e6
-    sponsorConfigs: maxFeePerWithdraw = 0 (no cap), maxWithdrawAmount = 0 (no cap)
-    maxCoverage = min(totalFee, no-cap) = 17e6
-    sponsorCoverage = min(sponsorBal=10e6, maxCoverage=17e6) = 10e6
-    maxUserFee = 17 - 10 = 7e6  (user pays 7 USDC out of 17 total)
+	maxUserFee = 17e6  (user pays the full 17 USDC fee)
 
   partsHash = keccak256(abi.encode(parts))  -- bot MUST store this
 
@@ -1249,27 +1235,26 @@ Step 4 -- What happens on-chain at acceptance (for reference)
     6. Lock affiliate pool: lockedAffiliateBalances[0xAff] += 1,000e6
     7. Reserve credit: LibCreditLine.reserveDebt(affiliate, user, reqId, 100e6, creditData)
        creditLineReservedDebt(affiliate) += 100e6
-    8. Lock sponsor coverage: sponsorBalances[0xAff] -= 10e6 (now 0)
-    9. Store WithdrawInfo with partsHash, creditAmount=100
-   10. Status = ACCEPTED
+	8. Store WithdrawInfo with partsHash, creditAmount=100
+	9. Status = ACCEPTED
 
   At processWithdraw:
     1. Activate credit: LibCreditLine.activate -&gt; reservedDebt -= 100, activeDebt += 100
     2. Advance from core: SYMMIO.advanceWithdraw(user, reqId, 100e6)
-    3. Fee deduction cascades across parts in order:
-       userFee = 17 - 10 (sponsor) = 7e6 remaining
-       Part 0 (1,000e6): deduction = min(7e6, 1,000e6) = 7e6
-         Transfer 1,000 - 7 = 993e6 USDC to 0xReceiverA
-         feeRemaining = 0
+	3. Fee deduction cascades across parts in order:
+	   userFee = fee + operatorFee = 17e6
+	   Part 0 (1,000e6): deduction = min(17e6, 1,000e6) = 17e6
+	     Transfer 1,000 - 17 = 983e6 USDC to 0xReceiverA
+	     feeRemaining = 0
        Part 1 (500e6): deduction = 0
          Transfer 500e6 USDC to 0xReceiverB
 
   Net result:
-    0xReceiverA gets 993 USDC
+	0xReceiverA gets 983 USDC
     0xReceiverB gets 500 USDC
     collectedFees[0xAff] += 15e6
     collectedOperatorFees[0xAff] += 2e6
-    User deposited 1,500, got back 1,500 - 7 = 1,493.
+	User deposited 1,500, got back 1,500 - 17 = 1,483.
     Credit line: 100 USDC active debt, settled on finalization.
 </code></pre>
 					<h4 id="numeric-example-bot-action-timeline-for-a-500-usdc-windowed">
@@ -1285,7 +1270,6 @@ Setup:
   lockedAffiliateBalances  =      0e6 USDC
   nonces(0xUser)           = 3
   affiliateConfigs(0xAff)  = { feeRate: 50 bps, operatorFee: 1e6 }
-  sponsorBalances(0xAff)   = 0                (no sponsor -- user pays full fee)
   securityWindow           = 20s
   tolerancePeriod          = 60s
   cooldownEndTime will be  = T+12h            (set by SYMMIO at acceptance)
@@ -1300,7 +1284,6 @@ Step 1 -- Bot sees: User requests withdrawal options for 500 USDC
     affiliateConfigs(0xAff).feeRate = 50, .operatorFee = 1e6
     generalBalance - lockedGeneralBalance = 10,000 - 2,000 = 8,000e6 unlocked
     affiliateBalances[0xAff] - lockedAffiliateBalances[0xAff] = 3,000 - 0 = 3,000e6 unlocked
-    sponsorBalances(0xAff) = 0
     minValidatorSignatures(0xAff) = 0
 
   Bot decides the parts split:
@@ -1321,8 +1304,7 @@ Step 1 -- Bot sees: User requests withdrawal options for 500 USDC
     feeBasis = expressAmount = 500e6
     fee = 500e6 * 50 / 10000 = 2.5e6 (2.50 USDC)
     operatorFee = 1e6 (1.00 USDC)
-    sponsorCoverage = 0 (no sponsor balance)
-    maxUserFee = 2.5e6 + 1e6 - 0 = 3.5e6
+	maxUserFee = 2.5e6 + 1e6 = 3.5e6
     Check: fee + operatorFee (3.5e6) &lt;= feeBasis (500e6)?  YES
 
   Bot computes partsHash = keccak256(abi.encode(parts))
@@ -1379,7 +1361,6 @@ Step 3 -- Bot sees: securityWindow elapsed, time to process
   On-chain effect:
     _collectAndTransfer runs:
       totalFee = 2.5e6 + 1e6 = 3.5e6
-      sponsorCoverage = 0
       userFee = 3.5e6
       collectedFees[0xAff] += 2.5e6
       collectedOperatorFees[0xAff] += 1e6
@@ -1431,7 +1412,6 @@ Step 4 -- Bot sees: cooldownEndTime reached
   What if SYMMIO suspended the withdrawal before T=12h?
     Status was already PROCESSED, so the post-payout rollback path runs.
     Affiliate credit loss is covered from the affiliate pool where possible,
-    pending sponsor coverage is restored, and the bot should archive the request
     as SUSPENDED.
 </code></pre>
 					<hr />
@@ -1495,7 +1475,7 @@ Step 4 -- Bot sees: cooldownEndTime reached
 						<li>[ ] Cannot be locked (already PROCESSED)</li>
 					</ul>
 					<h4 id="numeric-example-same-tx-1-000-usdc">Numeric Example: SAME_TX 1,000 USDC</h4>
-					<pre><code>Scenario: Credit-backed SAME_TX withdrawal with express + credit line, no sponsor
+					<pre><code>Scenario: Credit-backed SAME_TX withdrawal with express + credit line
 
 Setup:
   generalBalance          = 10,000 USDC   lockedGeneralBalance          = 0
@@ -1504,7 +1484,6 @@ Setup:
   minValidatorSignatures(aff)  = 2        validatorApprovalTimeout(aff)      = 30s
   creditLine availableCredit  =  3,000 USDC   creditLine outstandingDebt   = 0
   nonces[user]            = 3
-  sponsorBalances[aff]    = 0 USDC (no sponsor)
 
 Step 1 — Bot sees: user requests an express withdrawal for 1,000 USDC
   Bot reads on-chain:
@@ -1529,7 +1508,6 @@ Step 1 — Bot sees: user requests an express withdrawal for 1,000 USDC
     - fee                  = feeBasis * feeRate / 10000 = 1,000e6 * 100 / 10000 = 10e6 (10 USDC)
     - operatorFee          = 2e6 (must match on-chain config exactly)
     - totalFee             = 10 + 2 = 12 USDC
-    - sponsorCoverage      = 0 (no sponsor)
     - maxUserFee           = 12 USDC
   Bot checks before signing:
     - generalBalance - lockedGeneralBalance &gt;= generalAmount?   10,000 &gt;= 500?   YES
@@ -1594,10 +1572,8 @@ Step 3 — Bot sees: user submits withdrawal (SYMMIO calls onWithdrawRequest —
      - creditLine outstandingDebt:  0 + 200     = 200
   f. Advance credit-backed funds from SYMMIO:
      - SYMMIO.advanceWithdraw(user, reqId, 200e6)
-  g. Lock fee (sponsor coverage = 0, so userFee = totalFee = 12 USDC)
   h. acceptWithdrawRequest on SYMMIO
   i. SAME_TX path — _collectAndTransfer runs IN THE SAME TX:
-     userFee = totalFee - sponsorCoverage = 12 - 0 = 12 USDC
      Fee deduction from the single part (feeRemaining = 12e6):
        Part 1 (1000 express):
          deduction = min(12e6, 1000e6) = 12e6
@@ -1700,7 +1676,6 @@ Result:
 					</ul>
 					<h4 id="numeric-example-windowed-500-usdc">Numeric Example: WINDOWED 500 USDC</h4>
 					<pre><code>Scenario: User requests 500 USDC express withdrawal; bot fronts capital from pools
-          with sponsor-covered fees, then processes after the security window.
 
 Setup:
   generalBalance              = 10,000 USDC
@@ -1710,15 +1685,12 @@ Setup:
   affiliateConfigs[affiliate] = { feeRate: 50 bps (0.5%), operatorFee: 1 USDC }
   securityWindow              = 20s
   tolerancePeriod             = 60s
-  sponsorBalances[affiliate]  = 100 USDC
-  sponsorConfigs[affiliate]   = { maxFeePerWithdraw: 0, maxWithdrawAmount: 0 }  (no caps)
   nonces[user]                = 5
 
 Step 1 — Bot sees: User requests a 500 USDC withdrawal through this affiliate.
   Bot reads on-chain:
     - unlocked general   = generalBalance - lockedGeneralBalance = 10,000 - 0 = 10,000
     - unlocked affiliate = affiliateBalances - lockedAffiliateBalances = 5,000 - 0 = 5,000
-    - sponsorBalances[affiliate] = 100 (sponsor active, no caps)
   Bot decides pool split:
     - affiliateAmount = 200   (bot chooses how much to draw from affiliate pool)
     - generalAmount   = 500 - 200 = 300
@@ -1728,15 +1700,11 @@ Step 1 — Bot sees: User requests a 500 USDC withdrawal through this affiliate.
     --&gt; Both pools have enough. WINDOWED is feasible.
   Bot computes fees (must match on-chain affiliateConfigs exactly):
     - feeBasis    = expressAmount = 500
-    - fee         = 500 * 50 / 10,000 = 2.50 USDC
-    - operatorFee = 1 USDC
-    - totalFee    = 2.50 + 1 = 3.50 USDC
-  Bot reasons about sponsor coverage:
-    - maxFeePerWithdraw = 0 (no cap)      --&gt; maxCoverage = totalFee = 3.50
-    - maxWithdrawAmount = 0 (no cap)      --&gt; feeBearingAmount 500 is allowed
-    - sponsorCoverage = min(sponsorBal=100, maxCoverage=3.50) = 3.50
-    - actualUserFee = 3.50 - 3.50 = 0    --&gt; user pays nothing
-  Decision: Sign WINDOWED option (optionType=1), nonce=5, maxUserFee=0.
+	- fee         = 500 * 50 / 10,000 = 2.50 USDC
+	- operatorFee = 1 USDC
+	- totalFee    = 2.50 + 1 = 3.50 USDC
+	- userFee     = fee + operatorFee = 3.50 USDC
+	Decision: Sign WINDOWED option (optionType=1), nonce=5, maxUserFee=3.50.
 
   What if unlocked general was only 200 instead of 10,000?
     200 &lt; generalAmount (300) --&gt; _lockFunds would revert InsufficientGeneralBalance.
@@ -1749,10 +1717,7 @@ Step 2 — Bot sees: WithdrawAccepted event (SYMMIO called onWithdrawRequest).
     _lockFunds (WINDOWED path):
       - lockedGeneralBalance:          0 --&gt; 300   (300 locked from general pool)
       - lockedAffiliateBalances:       0 --&gt; 200   (200 locked from affiliate pool)
-    _lockFee (sponsor coverage):
-      - sponsorBalances[affiliate]:  100 --&gt; 96.50 (3.50 locked for this withdrawal)
-      - info.sponsorCoverage = 3.50
-    actualUserFee = 3.50 - 3.50 = 0 &lt;= maxUserFee (0)? YES
+	userFee = 3.50 &lt;= maxUserFee (3.50)? YES
     nonces[user] = 5 --&gt; 6
     Status = ACCEPTED
   Bot reads on-chain:
@@ -1784,13 +1749,11 @@ Step 4 — Bot sees: block.timestamp &gt;= T0 + 20s (securityWindow elapsed).
     - block.timestamp = T0 + 20s
     - processableAt = acceptedAt + securityWindow = T0 + 20s
   Bot checks: block.timestamp (T0+20) &gt;= processableAt (T0+20)?  YES
-  Decision: Process now. Call processWithdraw(user, reqId, parts).
-  Contract executes _collectAndTransfer:
-    - userFee = totalFee - sponsorCoverage = 3.50 - 3.50 = 0
-    - feeRemaining = 0
-    - Part 1 (500 express-only): deduction = min(0, 500e6) = 0
-        collateral.safeTransfer(receiver, 500e6)
-    - User receives: 500 USDC (full amount — sponsor paid all fees)
+	Decision: Process now. Call processWithdraw(user, reqId, parts).
+	Contract executes _collectAndTransfer:
+	- feeRemaining = 3.50
+	- Part 1 (500 express-only): deduction = min(3.50, 500e6) = 3.50
+	    collateral.safeTransfer(receiver, 496.50e6)
   Contract updates pools:
     - lockedGeneralBalance:        300 --&gt; 0
     - lockedAffiliateBalances:     200 --&gt; 0
@@ -1815,7 +1778,6 @@ Step 5 — Bot sees: block.timestamp &gt;= cooldownEndTime (~T0 + 12h).
     - generalBalance:    9,700 + 300 = 10,000  (restored)
     - affiliateBalances: 4,800 + 200 = 5,000  (restored)
   Status = FINALIZED
-  Sponsor balance stays at 96.50 (fees were earned, not refunded).
 
   BRANCH — What if user had cancelled at T0+10s (before processing)?
     SYMMIO calls onWithdrawCancelRequest.
@@ -1824,7 +1786,6 @@ Step 5 — Bot sees: block.timestamp &gt;= cooldownEndTime (~T0 + 12h).
     _releaseWithdraw:
       - lockedGeneralBalance:    300 --&gt; 0
       - lockedAffiliateBalances: 200 --&gt; 0
-      - sponsorBalances:       96.50 + 3.50 = 100  (sponsor coverage refunded)
     Status = CANCELLED. User receives nothing. All pools fully restored.
 </code></pre>
 					<hr />
@@ -1875,7 +1836,6 @@ Setup:
   generalBalance = 10,000 USDC, lockedGeneralBalance = 8,000
   affiliateBalances[affiliate] = 5,000, lockedAffiliateBalances[affiliate] = 4,600
   affiliateConfigs[affiliate] = { feeRate: 50 bps (0.5%), operatorFee: 0 }
-  sponsorBalances[affiliate] = 0, nonces[user] = 0
   NOTE: Credit is NOT supported for STANDARD (CreditNotSupportedForStandard error).
 
 Step 1 — Bot sees: User requests withdrawal of 1,000 USDC
@@ -1900,7 +1860,6 @@ Step 2 — Bot constructs parts and signs
     generalAmount = expressAmount - affiliateAmount = 1,000 - 400 = 600
     feeBasis = expressAmount = 1,000
     fee = 1,000 * 50 / 10,000 = 5 USDC
-    operatorFee = 0, totalFee = 5, sponsorCoverage = 0, maxUserFee = 5
   Decision: Sign STANDARD option with nonce=0, affiliateAmount=400, fee=5, availableAt=0
 
 Step 3 — Bot sees: WithdrawAccepted event (SYMMIO called onWithdrawRequest)
@@ -1920,7 +1879,7 @@ Step 3 — Bot sees: WithdrawAccepted event (SYMMIO called onWithdrawRequest)
     What if user cancels at T=5min?
       STANDARD + ACCEPTED is cancellable. onWithdrawCancelRequest triggers _releaseWithdraw:
         No pool unlocking needed (pools were never locked for STANDARD).
-        Status = CANCELLED. No pool changes, no sponsor refund (sponsor=0).
+        Status = CANCELLED. No pool changes.
 
 Step 4 — Bot sees: block.timestamp &gt;= cooldownEndTime (T=12h)
   Bot reads on-chain:
@@ -1949,7 +1908,6 @@ Step 5 — Bot sees: WithdrawFinalized event
       At T+12h: REVERT TooEarly. Must wait until T+12h+60s.
 
   Fee cascading in transferToReceivers:
-    userFee = fee + operatorFee - sponsorCoverage = 5 + 0 - 0 = 5
     feeRemaining = 5
 
     Part 0 (400, affiliate pool):
@@ -2275,11 +2233,7 @@ Step 2 — Bot checks: When does exclusivity end?
 									<td>ExpressProvider</td>
 									<td>Update cached fee config. Re-sign any pending options</td>
 								</tr>
-								<tr>
-									<td><code>SponsorConfigUpdated(affiliate, ...)</code></td>
-									<td>ExpressProvider</td>
-									<td>Update cached sponsor config</td>
-								</tr>
+
 								<tr>
 									<td><code>MinValidatorSignaturesUpdated(affiliate, min)</code></td>
 									<td>ExpressProvider</td>
@@ -2316,16 +2270,6 @@ Step 2 — Bot checks: When does exclusivity end?
 									<td><code>AffiliateWithdraw(affiliate, amount)</code></td>
 									<td>ExpressProvider</td>
 									<td>Update per-affiliate liquidity tracking</td>
-								</tr>
-								<tr>
-									<td><code>SponsorDeposit(affiliate, amount)</code></td>
-									<td>ExpressProvider</td>
-									<td>Update sponsor balance tracking</td>
-								</tr>
-								<tr>
-									<td><code>SponsorWithdraw(affiliate, amount)</code></td>
-									<td>ExpressProvider</td>
-									<td>Update sponsor balance tracking</td>
 								</tr>
 							</tbody>
 						</table>
@@ -2408,12 +2352,10 @@ Step 4 — Bot sees: cooldownEndTime reached at T=43,200s (~block 43400)
     E --&gt; F[&quot;fee == (feeBasis × feeRate) / 10,000 ?&quot;]
     F --&gt;|No| F1[&quot;REVERT: FeeMismatch&quot;]
     F --&gt;|Yes| G[&quot;operatorFee == config.operatorFee ?&quot;]
-    G --&gt;|No| G1[&quot;REVERT: OperatorFeeMismatch&quot;]
-    G --&gt;|Yes| H[&quot;fee + operatorFee &lt;= feeBasis ?&quot;]
-    H --&gt;|No| H1[&quot;REVERT: FeesExceedExpressAmount&quot;]
-    H --&gt;|Yes| I[Compute sponsor coverage]
-    I --&gt; J[&quot;actualUserFee = totalFee - sponsorCoverage&quot;]
-    J --&gt; K[&quot;actualUserFee &lt;= maxUserFee ?&quot;]
+	G --&gt;|No| G1[&quot;REVERT: OperatorFeeMismatch&quot;]
+	G --&gt;|Yes| H[&quot;fee + operatorFee &lt;= feeBasis ?&quot;]
+	H --&gt;|No| H1[&quot;REVERT: FeesExceedExpressAmount&quot;]
+	H --&gt;|Yes| K[&quot;totalFee &lt;= maxUserFee ?&quot;]
     K --&gt;|No| K1[&quot;REVERT: UserFeeExceedsMaximum&quot;]
     K --&gt;|Yes| L[Fee accepted ✓]
 </code></pre>
@@ -2451,7 +2393,6 @@ Setup:
   affiliate              = 0xFrontend
   feeRate                = 150 bps (1.5%)
   operatorFee            = 0 USDC
-  sponsorBalance         = 0 USDC (no sponsor)
   expressAmount          = 1,000 USDC (all 3 parts combined, express-only)
   Parts (order matters for fee cascading):
     Part 0: { amount: 100 USDC, express-only, virtualProvider: 0x0, receiver: 0xA }
@@ -2462,14 +2403,12 @@ Step 1 — Bot sees: withdraw request from Alice for 1,000 USDC across 3 parts
   Bot reads on-chain:
     affiliateConfigs[0xFrontend].feeRate    = 150
     affiliateConfigs[0xFrontend].operatorFee = 0
-    sponsorBalances[0xFrontend]             = 0
   Bot checks:
     feeBasis   = expressAmount = 1,000 USDC
     fee        = (1,000 * 150) / 10,000 = 15 USDC
     operatorFee = 0 USDC
     totalFee   = 15 + 0 = 15 USDC
     fee + operatorFee (15) &lt;= feeBasis (1,000)? YES
-    sponsorCoverage = 0 (no sponsor)
     userFee    = 15 - 0 = 15 USDC
   Decision: Sign option with fee=15, operatorFee=0, maxUserFee=15
 
@@ -2514,260 +2453,6 @@ Step 2 — Bot pre-computes: how will 15 USDC fee cascade across parts?
     If different from signed fee -&gt; Reverts: FeeMismatch
     Bot's signed option becomes invalid — must re-sign with current rate
 </code></pre>
-					<h3 id="8-4-sponsor-coverage-flow">8.4 Sponsor Coverage Flow</h3>
-					<pre><code class="language-mermaid">flowchart TD
-    A[&quot;totalFee = fee + operatorFee&quot;] --&gt; B{totalFee == 0?}
-    B --&gt;|Yes| SKIP[No coverage needed]
-    B --&gt;|No| C{&quot;sponsorBalances[affiliate] == 0?&quot;}
-    C --&gt;|Yes| NOSPONSOR[&quot;No sponsor: userFee = totalFee&quot;]
-    C --&gt;|No| D{&quot;maxWithdrawAmount &gt; 0 AND\nfeeBearingAmount &gt; maxWithdrawAmount?&quot;}
-    D --&gt;|Yes| TOOBIG[&quot;Withdrawal too large:\nuserFee = totalFee\nsponsor skipped&quot;]
-    D --&gt;|No| E[&quot;maxCoverage = (maxFeePerWithdraw == 0)\n? totalFee\n: min(totalFee, maxFeePerWithdraw)&quot;]
-    E --&gt; F[&quot;sponsorCoverage = min(sponsorBalance, maxCoverage)&quot;]
-    F --&gt; G[&quot;sponsorBalance -= sponsorCoverage&quot;]
-    G --&gt; H[&quot;actualUserFee = totalFee - sponsorCoverage&quot;]
-    H --&gt; I{&quot;actualUserFee &lt;= maxUserFee?&quot;}
-    I --&gt;|No| REVERT[&quot;REVERT: UserFeeExceedsMaximum&quot;]
-    I --&gt;|Yes| OK[&quot;Coverage locked ✓&quot;]
-</code></pre>
-					<h3 id="8-5-sponsor-scenarios">8.5 Sponsor Scenarios</h3>
-					<div class="table-wrap">
-						<table>
-							<thead>
-								<tr>
-									<th>Scenario</th>
-									<th>Bot Must Handle</th>
-								</tr>
-							</thead>
-							<tbody>
-								<tr>
-									<td>Full sponsor coverage</td>
-									<td><code>maxUserFee = 0</code>, user pays nothing</td>
-								</tr>
-								<tr>
-									<td>Partial sponsor coverage</td>
-									<td><code>maxUserFee = totalFee - min(sponsorBalance, maxCoverage)</code></td>
-								</tr>
-								<tr>
-									<td>No sponsor</td>
-									<td><code>maxUserFee = totalFee</code></td>
-								</tr>
-								<tr>
-									<td>Sponsor drained between sign and tx</td>
-									<td>Reverts <code>UserFeeExceedsMaximum</code> if <code>maxUserFee</code> was set too low</td>
-								</tr>
-								<tr>
-									<td>Sponsor balance changes mid-flight</td>
-									<td>Coverage locked at acceptance time, not processing time</td>
-								</tr>
-								<tr>
-									<td>Cancel/suspend refunds sponsor</td>
-									<td><code>sponsorBalances[affiliate] += info.sponsorCoverage</code></td>
-								</tr>
-								<tr>
-									<td>maxWithdrawAmount gate</td>
-									<td>Large withdrawals skip sponsorship entirely</td>
-								</tr>
-								<tr>
-									<td>maxFeePerWithdraw cap</td>
-									<td>Sponsor covers at most this much per withdrawal</td>
-								</tr>
-								<tr>
-									<td>Both caps active</td>
-									<td>Both checked independently</td>
-								</tr>
-								<tr>
-									<td>Zero caps</td>
-									<td>0 means "no limit" for both settings</td>
-								</tr>
-							</tbody>
-						</table>
-					</div>
-					<h3 id="8-6-bot-checklist-for-sponsors">8.6 Bot Checklist for Sponsors</h3>
-					<ul>
-						<li>[ ] Read <code>sponsorBalances(affiliate)</code> at signing time</li>
-						<li>[ ] Read <code>sponsorConfigs(affiliate)</code> for caps</li>
-						<li>[ ] Compute expected <code>sponsorCoverage</code> using the same formula as the contract</li>
-						<li>[ ] Set <code>maxUserFee</code> = <code>totalFee - sponsorCoverage</code></li>
-						<li>[ ] Account for concurrent withdrawals draining sponsor between sign and execution</li>
-						<li>[ ] Consider setting <code>maxUserFee</code> slightly higher than computed to absorb race conditions</li>
-						<li>[ ] After cancel/suspend: sponsor balance is restored (update tracking)</li>
-					</ul>
-					<h4 id="numeric-example-sponsor-coverage-with-caps">Numeric Example: Sponsor Coverage with Caps</h4>
-					<pre><code>Scenario: Bot checks sponsor balance and caps, decides user fee vs sponsor fee
-
-Setup:
-  affiliate              = 0xFrontend
-  feeRate                = 200 bps (2%)
-  operatorFee            = 5 USDC
-  sponsorBalances[0xFrontend]         = 100 USDC
-  sponsorConfigs[0xFrontend]:
-    maxFeePerWithdraw    = 8 USDC
-    maxWithdrawAmount    = 600 USDC
-
---- Scenario A: 500 USDC withdrawal (within maxWithdrawAmount) ---
-
-Step 1 — Bot sees: Alice requests express withdrawal of 500 USDC
-  Bot reads on-chain:
-    affiliateConfigs[0xFrontend].feeRate     = 200
-    affiliateConfigs[0xFrontend].operatorFee = 5e6
-    sponsorBalances[0xFrontend]              = 100e6
-    sponsorConfigs[0xFrontend].maxFeePerWithdraw  = 8e6
-    sponsorConfigs[0xFrontend].maxWithdrawAmount  = 600e6
-  Bot checks (replaying _lockFee logic):
-    feeBasis        = 500 USDC
-    fee             = (500 * 200) / 10,000 = 10 USDC
-    totalFee        = 10 + 5 = 15 USDC
-    feeBearingAmount = 500 &lt;= maxWithdrawAmount (600)? YES -&gt; sponsor eligible
-    maxCoverage     = min(totalFee, maxFeePerWithdraw) = min(15, 8) = 8 USDC
-    sponsorCoverage = min(sponsorBalance, maxCoverage) = min(100, 8) = 8 USDC
-    actualUserFee   = totalFee - sponsorCoverage = 15 - 8 = 7 USDC
-  Decision: Sign option with fee=10, operatorFee=5, maxUserFee=7
-    On-chain: sponsorBalances[0xFrontend] decreases 100 -&gt; 92
-
---- Scenario B: 700 USDC withdrawal (exceeds maxWithdrawAmount) ---
-
-Step 1 — Bot sees: Bob requests express withdrawal of 700 USDC
-  Bot reads on-chain: (same config as above)
-  Bot checks:
-    feeBasis         = 700 USDC
-    fee              = (700 * 200) / 10,000 = 14 USDC
-    totalFee         = 14 + 5 = 19 USDC
-    feeBearingAmount = 700 &gt; maxWithdrawAmount (600)? YES -&gt; sponsor SKIPPED
-    (contract: if config.maxWithdrawAmount &gt; 0 &amp;&amp; feeBearingAmount &gt; config.maxWithdrawAmount: return)
-    sponsorCoverage  = 0
-    actualUserFee    = 19 USDC
-  Decision: Sign option with fee=14, operatorFee=5, maxUserFee=19
-    Bot does NOT assume sponsor will cover anything — the withdrawal is too large
-
---- Scenario C: concurrent race (two users, sponsor has only 10 USDC) ---
-
-Setup change: sponsorBalances[0xFrontend] = 10 USDC
-
-Step 1 — Bot sees: Alice and Bob both request 500 USDC withdrawals simultaneously
-  Bot reads on-chain:
-    sponsorBalances[0xFrontend] = 10 USDC
-  Bot checks for Alice:
-    totalFee = 15, maxCoverage = min(15, 8) = 8, sponsorCoverage = min(10, 8) = 8
-    actualUserFee = 15 - 8 = 7  -&gt; sign maxUserFee = 7
-  Bot checks for Bob:
-    totalFee = 15, maxCoverage = min(15, 8) = 8, sponsorCoverage = min(10, 8) = 8
-    actualUserFee = 15 - 8 = 7  -&gt; sign maxUserFee = 7
-
-  What happens if Alice's tx lands first?
-    Alice acceptance: sponsorCoverage = 8, sponsorBalance: 10 -&gt; 2
-    Bob acceptance: maxCoverage = min(15, 8) = 8, but min(2, 8) = 2
-    Bob's actualUserFee = 15 - 2 = 13
-    13 &gt; maxUserFee (7) -&gt; REVERT: UserFeeExceedsMaximum
-    Bob's withdrawal fails
-
-  Decision: For concurrent requests, bot should sign maxUserFee = totalFee (15)
-    as worst case (sponsor fully drained before this tx lands)
-    This guarantees acceptance even if sponsor balance drops to 0
-    User sees lower actual fee if sponsor has funds, higher if drained
-</code></pre>
-					<h4 id="numeric-example-sponsor-concurrent-depletion-simplified-setup">
-						Numeric Example: Sponsor Concurrent Depletion (Simplified Setup)
-					</h4>
-					<pre><code>Scenario: Two users request withdrawals concurrently, sponsor has limited balance
-
-Setup:
-  sponsorBalances[aff] = 10 USDC
-  sponsorConfigs[aff] = { maxFeePerWithdraw: 8, maxWithdrawAmount: 0 (no cap) }
-
-Step 1 — Bot sees: Alice requests 500 USDC WINDOWED, fee = 5 USDC, operatorFee = 1
-  Bot reads: sponsorBalances[aff] = 10
-  Bot computes: totalFee = 5 + 1 = 6
-    sponsorCoverage = min(10, min(8, 6)) = 6
-    maxUserFee = 6 - 6 = 0
-  BUT WAIT — Bob's request is also pending...
-
-Step 2 — Bot sees: Bob requests 500 USDC WINDOWED, fee = 5, operatorFee = 1
-  Bot reads: sponsorBalances[aff] = 10 (hasn't changed yet — Alice's tx not mined)
-  Bot naively computes: sponsorCoverage = 6, maxUserFee = 0
-
-Step 3 — Alice's tx mines first:
-  sponsorBalances = 10 - 6 = 4
-
-Step 4 — Bob's tx mines second:
-  sponsorCoverage = min(4, min(8, 6)) = 4
-  actualUserFee = 6 - 4 = 2
-  But bot signed maxUserFee = 0 → REVERTS UserFeeExceedsMaximum
-
-Correct strategy:
-  For concurrent requests, bot should sign maxUserFee = totalFee (worst case: sponsor drained)
-  OR serialize: wait for Alice's tx to confirm before signing Bob's option
-</code></pre>
-					<h4 id="best-practice-maxuserfee-safety-margin">Best Practice: maxUserFee Safety Margin</h4>
-					<pre><code>Scenario: Bot uses maxUserFee = totalFee as a safety margin
-
-Setup:
-  sponsorBalances[aff] = 50 USDC
-  sponsorConfigs[aff] = { maxFeePerWithdraw: 10, maxWithdrawAmount: 0 }
-  Alice requests 1000 USDC WINDOWED, fee = 20 USDC, operatorFee = 5
-
-Step 1 — Bot computes expected fees:
-  totalFee = 20 + 5 = 25
-  expectedSponsorCoverage = min(50, min(10, 25)) = 10
-  expectedUserFee = 25 - 10 = 15
-
-Step 2 — Bot signs maxUserFee = totalFee (25), NOT expectedUserFee (15)
-  This way, even if the sponsor is completely drained before Alice's tx lands,
-  the user pays at most totalFee (25) — the contract never charges more than totalFee.
-
-Step 3 — What actually happens on-chain:
-  Case A: sponsor still has funds   → actualUserFee = 25 - 10 = 15 (user pays 15)
-  Case B: sponsor drained to 3 USDC → actualUserFee = 25 - 3  = 22 (user pays 22, still &lt;= 25)
-  Case C: sponsor fully drained     → actualUserFee = 25 - 0  = 25 (user pays 25, still &lt;= 25)
-  All three cases succeed because maxUserFee = totalFee covers the worst case.
-
-  If bot had signed maxUserFee = 15 (expectedUserFee):
-    Cases B and C would revert UserFeeExceedsMaximum.
-
-Best practice:
-  - Bot computes expectedUserFee for display to the user (&quot;estimated fee: 15, max fee: 25&quot;)
-  - Bot signs maxUserFee = totalFee for the on-chain option
-  - User is informed of the fee range upfront: they pay at most totalFee, likely less if sponsor active
-  - This eliminates all sponsor-related race condition reverts
-</code></pre>
-					<h4 id="numeric-example-sponsor-config-change-between-signing-and-execution">
-						Numeric Example: Sponsor Config Change Between Signing and Execution
-					</h4>
-					<pre><code>Scenario: Admin changes sponsor config after bot signs option but before user submits
-
-Setup:
-  sponsorBalances[aff] = 100 USDC
-  sponsorConfigs[aff] = { maxFeePerWithdraw: 20, maxWithdrawAmount: 0 }
-  Alice requests 500 USDC WINDOWED, fee = 10, operatorFee = 5
-
-Step 1 — Bot reads on-chain state and signs:
-  totalFee = 10 + 5 = 15
-  maxCoverage = min(15, 20) = 15
-  sponsorCoverage = min(100, 15) = 15
-  actualUserFee = 15 - 15 = 0
-  Bot signs maxUserFee = 0 (expecting full sponsor coverage)
-
-Step 2 — Admin calls setSponsorConfig(aff, maxFeePerWithdraw=5, maxWithdrawAmount=0)
-  sponsorConfigs[aff].maxFeePerWithdraw is now 5 (was 20)
-
-Step 3 — Alice submits the signed option to SYMMIO, which calls onWithdrawRequest:
-  On-chain _lockFee computes:
-    totalFee = 15
-    maxCoverage = min(15, 5) = 5       ← reduced by new config
-    sponsorCoverage = min(100, 5) = 5
-    actualUserFee = 15 - 5 = 10
-  Check: actualUserFee (10) &gt; maxUserFee (0)?  YES → REVERT UserFeeExceedsMaximum
-
-  Alice's withdrawal fails because the sponsor config changed after signing.
-
-Correct strategy:
-  - Sign maxUserFee = totalFee to absorb config changes
-  - OR monitor setSponsorConfig / SponsorConfigUpdated events
-    and invalidate in-flight options when config changes
-  - Invalidation approach: set short option deadlines (e.g., 60 seconds)
-    so stale options expire quickly and users re-request fresh ones
-</code></pre>
-					<hr />
 					<h2 id="9-validator-system">9. Validator System</h2>
 					<h3 id="9-1-validator-attestation-flow">9.1 Validator Attestation Flow</h3>
 					<pre><code class="language-mermaid">sequenceDiagram
@@ -3335,7 +3020,7 @@ Step 1 -- Bot sees: withdrawal request for 500 USDC from 0xAlice
   Bot computes fee:
     fee = 500 * 100 / 10,000 = 5 USDC (1% of 500)
     operatorFee = 0
-    userFee = 5 USDC (no sponsor)
+    userFee = 5 USDC
 
   Bot reads credit line state on the diamond:
     expressProvider.creditLinePaused(0xAffiliate) = false -&gt; OK
@@ -3785,7 +3470,6 @@ Setup:
   affiliateBalances[0xAffiliate] = 200 USDC, lockedAffiliateBalances[0xAffiliate] = 0
   creditLine available capacity = 1,000 USDC
   affiliateConfigs[0xAffiliate] = { feeRate: 100 (1%), operatorFee: 2e6 }
-  sponsorBalances[0xAffiliate] = 0 (no sponsor)
 
 Step 1 -- Bot sees: 0xAlice requests withdrawal of 1,300 USDC total, split into 3 parts:
   Part 0: { amount: 300, expressProvider: EP, virtualProvider: 0x0, receiver: 0xA }
@@ -3819,8 +3503,6 @@ Step 4 -- Bot computes fees:
     fee = 1,300 * 100 / 10,000 = 13 USDC
     operatorFee = 2 USDC
     totalFee = 13 + 2 = 15 USDC
-  Bot checks: sponsorBalances[0xAffiliate] = 0 -&gt; no sponsor coverage
-    sponsorCoverage = 0, userFee = 15, maxUserFee = 15
   Bot checks: totalFee (15) &lt;= feeBasis (1,300) -&gt; OK (fees do not exceed amount)
   Decision: Sign WINDOWED option with these fee values.
 
@@ -3980,7 +3662,6 @@ Setup:
   WINDOWED 500 USDC (generalAmount = 350, affiliateAmount = 150)
   acceptedAt = T=0, cooldownEndTime = T+43200 (T+12h)
   securityWindow = 20s, tolerancePeriod = 60s
-  sponsorCoverage locked = 5 USDC, fee = 2.5 USDC, operatorFee = 0.5 USDC
   creditAmount = 100 (credit line reservation active in CreditLineStorage)
   lockedGeneralBalance includes 350, lockedAffiliateBalances[aff] includes 150
 
@@ -4000,7 +3681,6 @@ Step 2A — Bot sees: WithdrawUnlockedAndProcessed(user, reqId) at T=300s
     - lockedAffiliateBalances[aff] decreased by 150
     - generalBalance decreased by 350, affiliateBalances[aff] decreased by 150
     - Credit line debt activated and advanced from SYMMIO (100 USDC)
-    - Fees collected: 2.5 (affiliate) + 0.5 (operator); sponsor covered 5 -&gt; userFee = 0
   Decision: No further action needed on ExpressProvider side.
             Schedule finalizeWithdrawRequest on SYMMIO at T+43200 (cooldown end)
             so pools get replenished when SYMMIO reimburses.
@@ -4030,7 +3710,6 @@ Step 2C — Bot sees: WithdrawSuspended(user, reqId) at T=600s
     - lockedGeneralBalance decreased by 350 (WINDOWED unlocks general lock)
     - lockedAffiliateBalances[aff] decreased by 150 (WINDOWED unlocks affiliate lock)
     - Credit line reservation released (if creditAmount &gt; 0)
-    - sponsorBalances[aff] += 5 (sponsor coverage refunded)
   Decision: Withdrawal is terminated. Cancel ALL scheduled actions for
             (user, reqId). Do not attempt processWithdraw (reverts NotAccepted)
             or finalizeWithdrawRequest (withdrawal is dead on SYMMIO side).
@@ -4058,23 +3737,15 @@ Step 2D — Bot sees: WithdrawFinalized(user, reqId) at T+43200
     A{Who is cancelling?} --&gt;|User&lt;br/&gt;onWithdrawCancelRequest| B{Status?}
     A --&gt;|SYMMIO suspend&lt;br/&gt;onWithdrawSuspend| D{Status?}
 
-    B --&gt;|ACCEPTED| OK1[&quot;CANCELLED ✓\nreleases pool locks +\ncredit reservation +\nrefunds sponsor coverage&quot;]
     B --&gt;|LOCKED| FAIL1[&quot;REVERT: NotAccepted\n(only ACCEPTED accepted)&quot;]
     B --&gt;|PROCESSED| FAIL2[&quot;REVERT: NotAccepted&quot;]
     B --&gt;|FINALIZED/CANCELLED/SUSPENDED| FAIL3[&quot;REVERT (terminal)&quot;]
 
-    D --&gt;|ACCEPTED| OK2[&quot;SUSPENDED ✓\nreleases pool locks +\ncredit reservation +\nrefunds sponsor coverage&quot;]
-    D --&gt;|LOCKED| OK3[&quot;SUSPENDED ✓\nreleases pool locks +\ncredit reservation +\nrefunds sponsor coverage&quot;]
     D --&gt;|PROCESSED| OK4[&quot;SUSPENDED ✓\npost-payout rollback:\ncoverLoss debits affiliate pool&quot;]
     D --&gt;|STANDARD at FINALIZED| FAIL4[&quot;REVERT:\nInvalidStatusForSuspend&quot;]
     D --&gt;|CANCELLED/SUSPENDED| FAIL5[&quot;REVERT:\nInvalidStatusForSuspend (terminal)&quot;]
 </code></pre>
-					<p>
-						There is no separate force-cancel callback for the bot to model. Pre-payout user cancellation enters
-						<code>onWithdrawCancelRequest</code>, but any SYMMIO-driven forced stop is expressed through <code>onWithdrawSuspend</code>.
-						That keeps the dangerous case -- a withdrawal already paid to the user with possible active credit -- on one rollback path:
-						restore sponsor state, record pool loss, call <code>LibCreditLine.coverLoss</code>, and mark the request suspended.
-					</p>
+
 					<h3 id="13-2-cancellation-matrix">13.2 Cancellation Matrix</h3>
 					<div class="table-wrap">
 						<table>
@@ -4093,18 +3764,7 @@ Step 2D — Bot sees: WithdrawFinalized(user, reqId) at T+43200
 									<td>revert</td>
 									<td>No withdrawal exists</td>
 								</tr>
-								<tr>
-									<td>ACCEPTED</td>
-									<td>CANCELLED</td>
-									<td>SUSPENDED</td>
-									<td>Releases pool locks, credit reservation, refunds sponsor coverage</td>
-								</tr>
-								<tr>
-									<td>LOCKED</td>
-									<td>revert (<code>NotAccepted</code>)</td>
-									<td>SUSPENDED</td>
-									<td>Suspend releases pool locks, credit reservation, refunds sponsor coverage</td>
-								</tr>
+
 								<tr>
 									<td>PROCESSED</td>
 									<td>revert (<code>NotAccepted</code>)</td>
@@ -4153,12 +3813,11 @@ Step 2D — Bot sees: WithdrawFinalized(user, reqId) at T+43200
 							[ ] <code>generalBalance</code> and <code>affiliateBalances</code> values unchanged (locks are released, not balances)
 						</li>
 						<li>[ ] Credit line reservation released via <code>LibCreditLine.releaseReservation</code> (if creditAmount &gt; 0)</li>
-						<li>[ ] Sponsor coverage refunded: <code>sponsorBalances[affiliate] += sponsorCoverage</code></li>
+
 						<li>[ ] Status set to CANCELLED</li>
 					</ul>
 					<p><strong>On suspend from ACCEPTED or LOCKED (<code>onWithdrawSuspend</code>):</strong></p>
 					<ul>
-						<li>[ ] Same release flow as user cancel (pool locks, credit reservation, sponsor coverage)</li>
 						<li>[ ] Status set to SUSPENDED</li>
 					</ul>
 					<p><strong>On suspend from PROCESSED (post-payout rollback path):</strong></p>
@@ -4168,7 +3827,7 @@ Step 2D — Bot sees: WithdrawFinalized(user, reqId) at T+43200
 							credit loss as <code>badDebt</code>
 						</li>
 						<li>[ ] Pools were already deducted at processing time -- nothing to unlock</li>
-						<li>[ ] Pending sponsor coverage is restored to sponsor balance before remaining user-paid fees are marked collected</li>
+
 						<li>[ ] Status set to SUSPENDED</li>
 					</ul>
 					<p>
@@ -4190,10 +3849,6 @@ Step 2D — Bot sees: WithdrawFinalized(user, reqId) at T+43200
 						<li>
 							[ ] Update internal liquidity tracking (pools restored on cancel/ACCEPTED-suspend/LOCKED-suspend; affiliate pool debited
 							on PROCESSED-suspend rollback)
-						</li>
-						<li>
-							[ ] Update sponsor balance tracking (coverage refunded on cancel/ACCEPTED-suspend/LOCKED-suspend and restored from pending
-							fee escrow on PROCESSED-suspend)
 						</li>
 					</ul>
 					<hr />
@@ -4357,11 +4012,7 @@ Step 2D — Bot sees: WithdrawFinalized(user, reqId) at T+43200
 									<td><code>fee + operatorFee &gt; feeBasis</code></td>
 									<td>Reduce fees or increase amount</td>
 								</tr>
-								<tr>
-									<td><code>UserFeeExceedsMaximum</code></td>
-									<td>User fee after sponsor &gt; maxUserFee</td>
-									<td>Increase maxUserFee or ensure sponsor coverage</td>
-								</tr>
+
 								<tr>
 									<td><code>FeeRateExceeds100Percent</code></td>
 									<td>feeRate &gt; 10000 on config</td>
@@ -4376,11 +4027,6 @@ Step 2D — Bot sees: WithdrawFinalized(user, reqId) at T+43200
 									<td><code>NoOperatorFeesToClaim</code></td>
 									<td><code>collectedOperatorFees == 0</code></td>
 									<td>No action needed</td>
-								</tr>
-								<tr>
-									<td><code>InsufficientSponsorBalance</code></td>
-									<td>Withdraw exceeds sponsor balance</td>
-									<td>Reduce amount</td>
 								</tr>
 							</tbody>
 						</table>
@@ -4728,10 +4374,6 @@ Decision:
 								<tr>
 									<td>Two SAME_TX withdrawals racing</td>
 									<td>Second reverts (funds transferred atomically in first's tx)</td>
-								</tr>
-								<tr>
-									<td>Sponsor balance drained between sign and execution</td>
-									<td>Reverts <code>UserFeeExceedsMaximum</code> if maxUserFee too low</td>
 								</tr>
 							</tbody>
 						</table>
@@ -5273,57 +4915,6 @@ Validator config monitoring (per-affiliate, with address(0) fallback):
   Bot must read the per-affiliate value first; if zero, fall back to address(0)
   default. Always re-read before signing SAME_TX options.
 </code></pre>
-					<h4 id="scenario-5-sponsor-replacement">Scenario 5: Sponsor Replacement</h4>
-					<pre><code>Scenario: A new sponsor deposits for an affiliate that already has a sponsor
-
-Setup:
-  sponsors[0xAffiliate]        = Sponsor A (0xSponsorA)
-  sponsorBalances[0xAffiliate] = 100 USDC (deposited by Sponsor A)
-  sponsorConfigs[0xAffiliate]  = { maxFeePerWithdraw: 5, maxWithdrawAmount: 0 }
-  Bot is signing options that assume sponsor coverage of up to 5 USDC per withdrawal
-
-Step 1 — Sponsor B calls: depositSponsorBalance(0xAffiliate, 50 USDC)
-  On-chain state changes:
-    sponsorBalances[0xAffiliate] = 100 + 50 = 150 USDC
-    sponsors[0xAffiliate]        = 0xSponsorA  (UNCHANGED — only set when previously address(0))
-  Event emitted: SponsorDeposit(0xAffiliate, 50)
-
-Step 2 — Consequences:
-  Sponsor A's identity is preserved (sponsors[0xAffiliate] remains 0xSponsorA)
-  Sponsor B's 50 USDC is added to the pool but the sponsor identity is still A
-  The sponsor identity is only set on the FIRST deposit (when sponsors[affiliate] == address(0))
-  withdrawSponsorBalance is SPONSOR_MANAGER_ROLE-gated — admin controls withdrawals
-
-Step 3 — Bot sees: SponsorDeposit(0xAffiliate, 50)
-  Bot reads on-chain:
-    sponsorBalances[0xAffiliate] = 150 USDC
-    sponsors[0xAffiliate]        = 0xSponsorA (unchanged — only set on first deposit)
-  Bot checks:
-    Sponsor identity unchanged — deposit just increased balance
-    sponsorConfigs[0xAffiliate] unchanged — same fee coverage limits
-    sponsorBalances increased — more coverage available (150 vs 100)
-  Decision:
-    1. Update cached sponsorBalance: 150 USDC
-    2. Pending options are NOT invalidated (sponsor identity does not affect
-       option validity — only sponsorBalances and sponsorConfigs matter)
-
-  What if SPONSOR_MANAGER_ROLE admin withdraws, draining the balance?
-    Admin calls withdrawSponsorBalance(0xAffiliate, 150, to) — withdraws 150 USDC
-    sponsorBalances[0xAffiliate] = 0
-    Bot sees: SponsorWithdraw(0xAffiliate, 150)
-    All pending options with sponsor coverage assumptions become risky:
-      - If maxUserFee was set low (expecting sponsor coverage), withdrawal will
-        revert UserFeeExceedsMaximum when sponsor balance is insufficient
-    Decision: re-evaluate all pending options for 0xAffiliate
-      - Re-read sponsorBalances[0xAffiliate] = 0
-      - Options that rely on sponsor coverage must be re-signed with higher maxUserFee
-        (or user must accept paying fees themselves)
-
-  What if sponsors[0xAffiliate] was address(0) initially?
-    First depositor (anyone) becomes the recorded sponsor identity.
-    Subsequent depositors do NOT change the sponsor identity — they only add to the balance.
-    The sponsor identity field is informational; withdrawSponsorBalance is SPONSOR_MANAGER_ROLE-gated.
-</code></pre>
 					<h3 id="15-8-locked-scenario">15.8 LOCKED Scenario</h3>
 					<h3 id="15-9-standard-processwithdraw-too-early">15.9 STANDARD processWithdraw Too Early</h3>
 					<pre><code>Scenario: Bot accidentally calls processWithdraw on STANDARD before finalization
@@ -5470,12 +5061,6 @@ Bot implication: No action needed. SYMMIO won't call twice. The bot does not
 									<td>Credit-backed portions (non-STANDARD)</td>
 									<td><code>creditLineReservedDebt</code> / <code>creditLineActiveDebt</code></td>
 								</tr>
-								<tr>
-									<td>Sponsor (<code>sponsorBalances[affiliate]</code>)</td>
-									<td><code>depositSponsorBalance</code></td>
-									<td>Fee coverage</td>
-									<td><code>info.sponsorCoverage</code> (stored on WithdrawInfo)</td>
-								</tr>
 							</tbody>
 						</table>
 					</div>
@@ -5563,7 +5148,6 @@ Step 3 — Bot sees: WithdrawFinalized event for W1 (pools replenished)
         ADMIN[&quot;DEFAULT_ADMIN_ROLE\n(Multisig)&quot;]
         SETTER[&quot;SETTER_ROLE&quot;]
         WITHDRAWER[&quot;WITHDRAWER_ROLE&quot;]
-        SPONSOR_MGR[&quot;SPONSOR_MANAGER_ROLE&quot;]
         FEE_CLAIMER[&quot;FEE_CLAIMER_ROLE&quot;]
     end
 
@@ -5578,7 +5162,6 @@ Step 3 — Bot sees: WithdrawFinalized event for W1 (pools replenished)
         VALIDATORS[&quot;Validators\n(Per-affiliate, not a role)\nRegistered via setValidator&quot;]
     end
 
-    ADMIN --&gt;|grants/revokes| SETTER &amp; WITHDRAWER &amp; SPONSOR_MGR &amp; FEE_CLAIMER
     ADMIN --&gt;|grants/revokes| OPERATOR &amp; SIGNER &amp; LOCKER &amp; UNLOCKER
     ADMIN --&gt;|diamondCut| EP[&quot;ExpressProvider&quot;]
     SETTER --&gt;|setValidator| VALIDATORS
@@ -5591,7 +5174,6 @@ Step 3 — Bot sees: WithdrawFinalized event for W1 (pools replenished)
     SETTER --&gt;|set* config| EP
     WITHDRAWER --&gt;|withdraw pools| EP
     FEE_CLAIMER --&gt;|claim fees| EP
-    SPONSOR_MGR --&gt;|withdraw sponsor| EP
 </code></pre>
 					<h3 id="17-2-expressprovider-roles">17.2 ExpressProvider Roles</h3>
 					<div class="table-wrap">
@@ -5653,12 +5235,7 @@ Step 3 — Bot sees: WithdrawFinalized event for W1 (pools replenished)
 									<td>Admin</td>
 									<td><code>withdrawFromGeneral</code>, <code>withdrawFromAffiliate</code></td>
 								</tr>
-								<tr>
-									<td><code>SPONSOR_MANAGER_ROLE</code></td>
-									<td><code>keccak256("SPONSOR_MANAGER_ROLE")</code></td>
-									<td>Admin</td>
-									<td><code>withdrawSponsorBalance</code></td>
-								</tr>
+
 								<tr>
 									<td><code>FEE_CLAIMER_ROLE</code></td>
 									<td><code>keccak256("FEE_CLAIMER_ROLE")</code></td>
@@ -5806,7 +5383,6 @@ Step 3 — Bot sees: WithdrawFinalized event for W1 (pools replenished)
 					<h2 id="18-operational-invariants">18. Operational Invariants</h2>
 					<h3 id="18-1-invariant-check-diagram">18.1 Invariant Check Diagram</h3>
 					<pre><code class="language-mermaid">flowchart TD
-    A[&quot;Token balance check&quot;] --&gt; B[&quot;collateral.balanceOf(EP) &gt;= \ngeneralBalance + Σ(affiliateBalances)\n+ Σ(collectedFees) + Σ(collectedOperatorFees)\n+ Σ(sponsorBalances)\n+ finalized STANDARD tokens&quot;]
 
     C[&quot;Credit line invariant&quot;] --&gt; D[&quot;creditLineTotalDebt(aff) ==\ncreditLineReservedDebt(aff) +\ncreditLineActiveDebt(aff)&quot;]
     C --&gt; E[&quot;Cap usage includes\ncreditLineTotalDebt(aff) +\ncreditLineBadDebt(aff)&quot;]
@@ -5818,13 +5394,6 @@ Step 3 — Bot sees: WithdrawFinalized event for W1 (pools replenished)
 </code></pre>
 					<h3 id="18-2-accounting-invariants">18.2 Accounting Invariants</h3>
 					<ul>
-						<li>
-							[ ]
-							<code
-								>collateral.balanceOf(expressProvider) &gt;= generalBalance + sum(affiliateBalances) + sum(collectedFees) +
-								sum(collectedOperatorFees) + sum(sponsorBalances) + (tokens from finalized STANDARD awaiting processing)</code
-							>
-						</li>
 						<li>
 							[ ]
 							<code>creditLineTotalDebt(affiliate) == creditLineReservedDebt(affiliate) + creditLineActiveDebt(affiliate)</code> (credit
@@ -5890,10 +5459,7 @@ Step 3 — Bot sees: WithdrawFinalized event for W1 (pools replenished)
 									<td>Insufficient pool liquidity</td>
 									<td>Only STANDARD available (no capital fronting)</td>
 								</tr>
-								<tr>
-									<td>Sponsor drained</td>
-									<td>Users pay full fees; system still functional</td>
-								</tr>
+
 								<tr>
 									<td>Config change invalidates pending sigs</td>
 									<td>Re-sign options with updated config</td>
@@ -5920,8 +5486,6 @@ Step 1 — Bot runs: scheduled invariant check (all passing)
     collectedFees[FrontendB]                  = 20
     collectedOperatorFees[FrontendA]          = 10
     collectedOperatorFees[FrontendB]          = 5
-    sponsorBalances[FrontendA]                = 200
-    sponsorBalances[FrontendB]                = 0
     Finalized STANDARD awaiting processing    = 1_215
 
   Bot checks: token balance invariant
@@ -5982,7 +5546,6 @@ What-if: SYMMIO core pauses withdraw advances?
     participant EP as ExpressProvider
 
     User-&gt;&gt;Bot: Request withdrawal options
-    Bot-&gt;&gt;EP: Read nonce, config, liquidity, sponsor
     Bot-&gt;&gt;Bot: Compute fees, gather validators
     Bot-&gt;&gt;Bot: Sign EIP-712 option
     Bot--&gt;&gt;User: Return options
@@ -6365,11 +5928,7 @@ Result: status -&gt; FINALIZED
 					<p><strong>Timers:</strong> None.</p>
 					<hr />
 					<h3 id="windowed-x-cancelled">WINDOWED x CANCELLED</h3>
-					<p>
-						<strong>Bot situation:</strong> Terminal state. The withdrawal was cancelled by the user via
-						<code>onWithdrawCancelRequest</code> (only reachable from ACCEPTED). All pool locks released, credit reservation released,
-						sponsor coverage refunded. (<code>onForceWithdrawCancel</code> was removed in commit eabd1f3f.)
-					</p>
+
 					<p><strong>Bot should:</strong></p>
 					<ol>
 						<li>Archive this withdrawal</li>
@@ -6386,7 +5945,6 @@ Result: status -&gt; FINALIZED
 						<code>onWithdrawSuspend</code>. Reachable from ACCEPTED, LOCKED, or PROCESSED:
 					</p>
 					<ul>
-						<li>From ACCEPTED/LOCKED: pool locks released, credit reservation released, sponsor coverage refunded.</li>
 						<li>
 							From PROCESSED (post-payout): <code>_handleProcessedRollback</code> deducts up to the unlocked affiliate balance to absorb
 							the credit loss, records any deficit as <code>badDebt</code>, and settles the debt.
@@ -6639,12 +6197,7 @@ Non-operator at T=1700043250:
 </code></pre>
 					<hr />
 					<h3 id="standard-x-cancelled">STANDARD x CANCELLED</h3>
-					<p>
-						<strong>Bot situation:</strong> Terminal state. Withdrawal was cancelled by the user via
-						<code>onWithdrawCancelRequest</code> (only reachable from ACCEPTED). Since STANDARD does not front capital, there are no pool
-						locks to release. Credit reservation is released, sponsor coverage is refunded. (<code>onForceWithdrawCancel</code> was
-						removed in commit eabd1f3f.)
-					</p>
+
 					<p><strong>Bot should:</strong></p>
 					<ol>
 						<li>Archive this withdrawal</li>
@@ -6655,10 +6208,7 @@ Non-operator at T=1700043250:
 					<p><strong>Timers:</strong> None.</p>
 					<hr />
 					<h3 id="standard-x-suspended">STANDARD x SUSPENDED</h3>
-					<p>
-						<strong>Bot situation:</strong> Terminal state. SYMMIO operator suspended the withdrawal. Since STANDARD does not front
-						capital, there are no pool locks to release. Credit reservation is released, sponsor coverage is refunded.
-					</p>
+
 					<p><strong>Bot should:</strong></p>
 					<ol>
 						<li>Archive this withdrawal</li>

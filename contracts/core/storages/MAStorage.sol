@@ -159,6 +159,11 @@ library MAStorage {
 		/// @notice Whether Party B must keep its locked and pending CVA + LF backed by allocated collateral when deallocating.
 		/// @dev Disabled by default for backward compatibility. Configured per Party B by PARTY_B_MANAGER_ROLE.
 		mapping(address => bool) strictDeallocationEnabledForPartyB;
+		/// @notice Optional receiver for a Party B's solver fees
+		/// @dev address(0) means solver fees are credited to the Party B itself. Mirrors `operationalFeeReceivers`,
+		///      but kept separate so a solver can route trading revenue and operational costs to different accounts.
+		///      Set by the Party B itself or by PARTY_B_MANAGER_ROLE.
+		mapping(address => address) solverFeeReceivers;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

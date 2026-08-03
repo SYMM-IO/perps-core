@@ -10,6 +10,7 @@ import { LibQuote } from "../../libraries/LibQuote.sol";
 import { LibQuoteState } from "../../libraries/extensions/LibQuoteState.sol";
 import { LibConnections } from "../../libraries/LibConnections.sol";
 import { LibPartyBLiquidation } from "../../libraries/liquidation/LibPartyBLiquidation.sol";
+import { LibSymbolAdjustment } from "../../libraries/LibSymbolAdjustment.sol";
 import { SharedEvents } from "../../libraries/SharedEvents.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
@@ -55,6 +56,7 @@ library PartyBLiquidationFacetImpl {
 
 		for (uint256 i = 0; i < priceSig.quoteIds.length; i++) {
 			Quote storage quote = quoteLayout.quotes[priceSig.quoteIds[i]];
+			LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
 			quote.requireOpenPosition();
 			require(quote.partyA == partyA && quote.partyB == partyB, "LiquidationFacet: Invalid party");
 
@@ -74,8 +76,7 @@ library PartyBLiquidationFacetImpl {
 		}
 		if (maLayout.partyBPositionLiquidatorsShare[partyB][partyA] > 0) {
 			uint256 lf = maLayout.partyBPositionLiquidatorsShare[partyB][partyA] * priceSig.quoteIds.length;
-			accountLayout.allocatedBalances[msg.sender] += lf;
-			emit SharedEvents.BalanceChangePartyA(msg.sender, lf, SharedEvents.BalanceChangeType.LF_IN);
+			LibAccount.increasePartyAAllocatedBalance(msg.sender, lf, SharedEvents.BalanceChangeType.LF_IN);
 		}
 
 		if (quoteLayout.partyBPositionsCount[partyB][partyA] == 0) {

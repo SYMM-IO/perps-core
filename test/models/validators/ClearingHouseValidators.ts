@@ -252,6 +252,8 @@ export class DistributeForCHValidator implements TransactionValidator {
 			const isPartyB = await context.viewFacet.isPartyB(receiver)
 			if (isPartyB) {
 				receiverBalances.push(await context.viewFacet.allocatedBalanceOfPartyB(receiver, key))
+			} else if (await context.viewFacet.isPartyALiquidated(receiver)) {
+				receiverBalances.push(await context.viewFacet.partyAReimbursement(receiver))
 			} else {
 				receiverBalances.push(await context.viewFacet.allocatedBalanceOfPartyA(receiver))
 			}
@@ -284,6 +286,8 @@ export class DistributeForCHValidator implements TransactionValidator {
 			let newBalance: bigint
 			if (isPartyB) {
 				newBalance = await context.viewFacet.allocatedBalanceOfPartyB(receiver, key)
+			} else if (await context.viewFacet.isPartyALiquidated(receiver)) {
+				newBalance = await context.viewFacet.partyAReimbursement(receiver)
 			} else {
 				newBalance = await context.viewFacet.allocatedBalanceOfPartyA(receiver)
 			}
