@@ -1408,25 +1408,12 @@ export function shouldBehaveLikeAccountLayer(): void {
 					const pendingQuotes = await context.viewFacetQuote.getPartyAPendingQuotes(subAccountAddress)
 					expect(pendingQuotes.length).to.equal(1)
 
+					// The account cannot be drained first: the pending quote keeps its CVA and LF locked in
+					// allocated balance, and core forbids deallocating below that floor. deleteSubAccount
+					// therefore has to report the pending quote rather than a balance the caller cannot clear.
 					const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(subAccountAddress)
 					expect(allocatedBalance).to.be.greaterThan(0)
-
-					await context.alCoreFacet
-						.connect(context.signers.user)
-						._call(subAccountAddress, [
-							context.accountFacet.interface.encodeFunctionData("deallocate", [allocatedBalance, await getDummySingleUpnlSig(BigInt(1e30))]),
-						])
-					await time.increase((await context.viewFacet.getDeallocateDebounceTime()) + 1n)
-
-					await context.alCoreFacet
-						.connect(context.signers.user)
-						._call(subAccountAddress, [context.accountFacet.interface.encodeFunctionData("withdraw", [allocatedBalance])])
-
-					const allocatedBalanceAfter = await context.viewFacet.allocatedBalanceOfPartyA(subAccountAddress)
-					expect(allocatedBalanceAfter).to.equal(0)
-
-					const balance = await context.viewFacet.balanceOf(subAccountAddress)
-					expect(balance).to.equal(0)
+					expect(await context.viewFacet.maxDeallocatableForPartyA(subAccountAddress, BigInt(1e30))).to.be.lessThan(allocatedBalance)
 
 					await expect(context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress)).to.be.revertedWithCustomError(
 						context.alCoreFacet,
@@ -1462,25 +1449,12 @@ export function shouldBehaveLikeAccountLayer(): void {
 					const positionCount = await context.viewFacetQuote.partyAPositionsCount(subAccountAddress)
 					expect(positionCount).to.equal(1)
 
+					// The account cannot be drained first: the open position keeps its CVA and LF locked in
+					// allocated balance, and core forbids deallocating below that floor. deleteSubAccount
+					// therefore has to report the open position rather than a balance the caller cannot clear.
 					const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(subAccountAddress)
 					expect(allocatedBalance).to.be.greaterThan(0)
-
-					await context.alCoreFacet
-						.connect(context.signers.user)
-						._call(subAccountAddress, [
-							context.accountFacet.interface.encodeFunctionData("deallocate", [allocatedBalance, await getDummySingleUpnlSig(BigInt(1e30))]),
-						])
-					await time.increase((await context.viewFacet.getDeallocateDebounceTime()) + 1n)
-
-					await context.alCoreFacet
-						.connect(context.signers.user)
-						._call(subAccountAddress, [context.accountFacet.interface.encodeFunctionData("withdraw", [allocatedBalance])])
-
-					const allocatedBalanceAfter = await context.viewFacet.allocatedBalanceOfPartyA(subAccountAddress)
-					expect(allocatedBalanceAfter).to.equal(0)
-
-					const balance = await context.viewFacet.balanceOf(subAccountAddress)
-					expect(balance).to.equal(0)
+					expect(await context.viewFacet.maxDeallocatableForPartyA(subAccountAddress, BigInt(1e30))).to.be.lessThan(allocatedBalance)
 
 					await expect(context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress)).to.be.revertedWithCustomError(
 						context.alCoreFacet,
