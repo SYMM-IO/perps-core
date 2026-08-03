@@ -577,10 +577,10 @@ export function shouldBehaveLikeHooks(): void {
 			await context.controlFacet.connect(context.signers.admin).registerHook(context.accountManager, await affiliateHook.getAddress())
 			await context.controlFacet.connect(context.signers.admin).registerHook(ethers.ZeroAddress, await systemHook.getAddress())
 
-			const provisionalMarketPrice = decimal(9n, 17)
+			const signedMarketPrice = decimal(9n, 17)
 			const openedPrice = decimal(11n, 17)
 			const quoteId = await user.sendQuote(
-				marketQuoteRequestBuilder().price(decimal(12n, 17)).upnlSig(getDummySingleUpnlAndPriceSig(provisionalMarketPrice)).build(),
+				marketQuoteRequestBuilder().price(decimal(12n, 17)).upnlSig(getDummySingleUpnlAndPriceSig(signedMarketPrice)).build(),
 			)
 			await hedger.lockQuote(quoteId)
 			const quote = await context.viewFacetQuote.getQuote(quoteId)
@@ -588,7 +588,7 @@ export function shouldBehaveLikeHooks(): void {
 
 			await hedger.openPosition(
 				quoteId,
-				marketOpenRequestBuilder().filledAmount(quote.quantity).openPrice(openedPrice).price(provisionalMarketPrice).build(),
+				marketOpenRequestBuilder().filledAmount(quote.quantity).openPrice(openedPrice).price(signedMarketPrice).build(),
 			)
 
 			const [, affiliateFeeAmount] = await affiliateHook.getLastOpenFeeCall()

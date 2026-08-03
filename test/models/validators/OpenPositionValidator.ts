@@ -123,7 +123,7 @@ export class OpenPositionValidator implements TransactionValidator {
 		const oldBalanceInfoPartyA = arg.beforeOutput.balanceInfoPartyA
 		const reservedOpenFee = await getOpenTradingFeeForQuoteWithFilledAmount(context, oldQuote.id!, arg.fillAmount)
 		const executedOpenFee = await getTradingFeeForQuoteWithFilledAmount(context, newQuote.id!, arg.fillAmount)
-		const feeTrueUpDelta = executedOpenFee > reservedOpenFee ? executedOpenFee - reservedOpenFee : reservedOpenFee - executedOpenFee
+		const openFeeDelta = executedOpenFee > reservedOpenFee ? executedOpenFee - reservedOpenFee : reservedOpenFee - executedOpenFee
 		if (oldQuote.quoteStatus == BigInt(QuoteStatus.CANCEL_PENDING)) {
 			expect(newBalanceInfoPartyA.totalPendingLockedPartyA).to.be.equal(
 				(oldBalanceInfoPartyA.totalPendingLockedPartyA - oldLockedValuesPartyA).toString(),
@@ -133,8 +133,8 @@ export class OpenPositionValidator implements TransactionValidator {
 		}
 		expectToBeApproximately(newBalanceInfoPartyA.totalLockedPartyA, oldBalanceInfoPartyA.totalLockedPartyA + partialWithPriceLockedValuesPartyA)
 		let expectedAllocatedBalance = oldBalanceInfoPartyA.allocatedBalances
-		if (executedOpenFee > reservedOpenFee) expectedAllocatedBalance -= feeTrueUpDelta
-		else expectedAllocatedBalance += feeTrueUpDelta
+		if (executedOpenFee > reservedOpenFee) expectedAllocatedBalance -= openFeeDelta
+		else expectedAllocatedBalance += openFeeDelta
 		if (arg.newQuoteTargetStatus == QuoteStatus.CANCELED) {
 			expectedAllocatedBalance += await getTradingFeeForQuotes(context, [arg.newQuoteId!])
 			expect(newBalanceInfoPartyA.allocatedBalances).to.be.equal(expectedAllocatedBalance.toString())

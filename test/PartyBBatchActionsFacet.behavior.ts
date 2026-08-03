@@ -234,13 +234,13 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 
 		it("Should true up executed market fees during batch open", async function () {
 			const requestedOpenPrice = decimal(1n)
-			const provisionalMarketPrice = decimal(9n, 17)
+			const signedMarketPrice = decimal(9n, 17)
 			const openedPrice = decimal(1n)
 			const quoteId = await user.sendQuote(
 				marketQuoteRequestBuilder()
 					.partyBWhiteList([await hedger.getAddress()])
 					.price(requestedOpenPrice)
-					.upnlSig(getDummySingleUpnlAndPriceSig(provisionalMarketPrice))
+					.upnlSig(getDummySingleUpnlAndPriceSig(signedMarketPrice))
 					.build(),
 			)
 			await hedger.lockQuote(quoteId)
@@ -251,7 +251,7 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 			const feeCollector = await context.viewFacet.getFeeCollector(quoteBeforeOpen.affiliate)
 			const feeCollectorBefore = await context.viewFacet.balanceOf(feeCollector)
 			const allocatedBefore = (await user.getBalanceInfo()).allocatedBalances
-			const upnlSig = await getDummyPairUpnlAndPricesSig([provisionalMarketPrice], [1n])
+			const upnlSig = await getDummyPairUpnlAndPricesSig([signedMarketPrice], [1n])
 
 			await context.partyBBatchActionsFacet
 				.connect(context.signers.hedger)

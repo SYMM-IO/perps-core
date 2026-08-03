@@ -14,7 +14,9 @@ import { LibUtils } from "./LibUtils.sol";
 library LibQuote {
 	using LockedValuesOps for LockedValues;
 
-	uint256 private constant OPEN_FEE_SCALE = 1e36;
+	/// @dev Trading fees are `amount * price * feeRate`, where all three carry 18 decimals. Dividing by
+	///      1e36 cancels the price and fee-rate scales and leaves the fee in collateral's 18-decimal form.
+	uint256 private constant TRADING_FEE_SCALE = 1e36;
 
 	/// @notice Calculates the remaining open amount of a quote.
 	/// @param quote The quote for which to calculate the remaining open amount.
@@ -481,32 +483,26 @@ library LibQuote {
 	function getOpenTradingFee(uint256 quoteId) internal view returns (uint256 fee) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote storage quote = quoteLayout.quotes[quoteId];
-		return getOpenTradingFeeReserved(quote, LibQuote.quoteOpenAmount(quote));
+		return getReservedOpenTradingFee(quote, LibQuote.quoteOpenAmount(quote));
 	}
 
-	/// @notice Gets the provisional open trading fee that remains reserved for a quote amount.
-	/// @dev Market quotes reserve against request-time marketPrice until they are actually opened.
-	function getOpenTradingFeeReserved(Quote storage quote, uint256 amount) internal view returns (uint256 fee) {
-		return _getOpenTradingFee(amount, quote.orderType == OrderType.LIMIT ? quote.requestedOpenPrice : quote.marketPrice, quote.tradingFee);
+	/// @notice Gets the open trading fee reserved for `amount` of a quote that has not opened yet.
+	/// @dev Priced at the request-time basis: requestedOpenPrice for limit quotes, marketPrice for market quotes.
+	///      This is what sendQuote debits and reserves, so every refund path (cancel, expire, force cancel,
+	///      liquidation, clearing-house takeover) must keep using it to give back exactly what was taken.
+	function getReservedOpenTradingFee(Quote storage quote, uint256 amount) internal view returns (uint256 fee) {
+		return _openTradingFeeAt(amount, quote.orderType == OrderType.LIMIT ? quote.requestedOpenPrice : quote.marketPrice, quote.tradingFee);
 	}
 
-	/// @notice Gets the provisional open trading fee for an in-memory quote amount.
-	function getOpenTradingFeeReservedMem(Quote memory quote, uint256 amount) internal pure returns (uint256 fee) {
-		return _getOpenTradingFee(amount, quote.orderType == OrderType.LIMIT ? quote.requestedOpenPrice : quote.marketPrice, quote.tradingFee);
+	/// @notice Gets the open trading fee actually owed for `amount` of a quote that has just opened.
+	/// @dev Priced at the execution basis: openedPrice for market quotes. Limit quotes stay on
+	///      requestedOpenPrice, which is the price they were validated against, so their reserved and
+	///      executed fees are identical and no adjustment is ever needed.
+	function getExecutedOpenTradingFee(Quote storage quote, uint256 amount) internal view returns (uint256 fee) {
+		return _openTradingFeeAt(amount, quote.orderType == OrderType.LIMIT ? quote.requestedOpenPrice : quote.openedPrice, quote.tradingFee);
 	}
 
-	/// @notice Gets the realized open trading fee for an opened quote amount.
-	/// @dev Limit quotes continue to realize against requestedOpenPrice; market quotes realize against openedPrice.
-	function getOpenTradingFeeExecuted(Quote storage quote, uint256 amount) internal view returns (uint256 fee) {
-		return _getOpenTradingFee(amount, quote.orderType == OrderType.LIMIT ? quote.requestedOpenPrice : quote.openedPrice, quote.tradingFee);
-	}
-
-	/// @notice Gets the realized open trading fee for an opened in-memory quote amount.
-	function getOpenTradingFeeExecutedMem(Quote memory quote, uint256 amount) internal pure returns (uint256 fee) {
-		return _getOpenTradingFee(amount, quote.orderType == OrderType.LIMIT ? quote.requestedOpenPrice : quote.openedPrice, quote.tradingFee);
-	}
-
-	function _getOpenTradingFee(uint256 amount, uint256 tradingPrice, uint256 tradingFee) private pure returns (uint256 fee) {
-		return (amount * tradingPrice * tradingFee) / OPEN_FEE_SCALE;
+	function _openTradingFeeAt(uint256 amount, uint256 tradingPrice, uint256 feeRate) private pure returns (uint256 fee) {
+		return (amount * tradingPrice * feeRate) / TRADING_FEE_SCALE;
 	}
 }

@@ -68,12 +68,12 @@ export function shouldBehaveLikeMigration(): void {
 			expect(await context.migrationFacet.isQuoteMigrated(999)).to.equal(false)
 		})
 
-		it("Should preserve provisional market fee reservations across migrateQuotes", async function () {
-			const provisionalMarketPrice = decimal(9n, 17)
+		it("Should preserve the reserved market fee across migrateQuotes", async function () {
+			const signedMarketPrice = decimal(9n, 17)
 			const quoteId = await user.sendQuote(
 				marketQuoteRequestBuilder()
 					.partyBWhiteList([await hedger.getAddress()])
-					.upnlSig(getDummySingleUpnlAndPriceSig(provisionalMarketPrice))
+					.upnlSig(getDummySingleUpnlAndPriceSig(signedMarketPrice))
 					.build(),
 			)
 			const quote = await context.viewFacetQuote.getQuote(quoteId)

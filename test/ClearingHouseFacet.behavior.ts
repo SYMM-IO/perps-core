@@ -1122,7 +1122,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			await context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(decimal(500n), user.address)
 		})
 
-		it("should keep provisional reserved-fee semantics for pending market quotes during takeover", async () => {
+		it("should keep the reserved-fee basis for pending market quotes during takeover", async () => {
 			const marketQuoteId = BigInt(
 				await user.sendQuote(
 					marketQuoteRequestBuilder()
@@ -2458,15 +2458,15 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 	 * the liquidation escrow. The clearing house can then distribute these funds
 	 * to partyA, partyB, or split between them.
 	 */
-	it("should include provisional market pending fees in clearing-house escrow", async function () {
+	it("should escrow pending market fees at the reserved basis", async function () {
 		await hedger.lockQuote(1)
 		await hedger.openPosition(1)
 		await hedger.lockQuote(2)
 		await hedger.lockQuote(5)
 
-		const provisionalMarketPrice = decimal(9n, 17)
+		const signedMarketPrice = decimal(9n, 17)
 		await user.requestToCancelQuote(3)
-		const marketQuoteId = await user.sendQuote(marketQuoteRequestBuilder().upnlSig(getDummySingleUpnlAndPriceSig(provisionalMarketPrice)).build())
+		const marketQuoteId = await user.sendQuote(marketQuoteRequestBuilder().upnlSig(getDummySingleUpnlAndPriceSig(signedMarketPrice)).build())
 		const expectedFeesWithMarket = await getTradingFeeForQuotes(context, [2n, 4n, 5n, marketQuoteId])
 
 		await user.liquidateAndSetSymbolPrices([1n], [decimal(22n)], [1n])
