@@ -18,6 +18,19 @@ import { migratePartyBToCross } from "./utils/CrossPartyB.js"
 import { getDummySingleUpnlSig, getDummySingleUpnlWithPendingBalanceSig } from "./utils/SignatureUtils.js"
 
 const SUSPENDED_FUNDS_WITHDRAWER_ROLE = ethers.keccak256(toUtf8Bytes("SUSPENDED_FUNDS_WITHDRAWER_ROLE"))
+const partyABalanceChangeInterface = new ethers.Interface(["event BalanceChangePartyA(address indexed partyA, uint256 amount, uint8 _type)"])
+const DEALLOCATE_BALANCE_CHANGE = 1n
+
+function parsePartyABalanceChanges(receipt: any): any[] {
+	return receipt.logs.flatMap((log: any) => {
+		try {
+			const parsed = partyABalanceChangeInterface.parseLog(log)
+			return parsed?.name === "BalanceChangePartyA" ? [parsed] : []
+		} catch {
+			return []
+		}
+	})
+}
 
 export function shouldBehaveLikeAccountFacet(): void {
 	let context: RunContext, user: User, user2: User, hedger: Hedger, hedger2: Hedger
@@ -647,7 +660,12 @@ export function shouldBehaveLikeAccountFacet(): void {
 				const initialBalance = await context.viewFacet.balanceOf(userAddress)
 				const initialRecipientBalance = await context.viewFacet.balanceOf(recipient)
 
-				await context.accountFacet.connect(context.signers.admin).deallocateSuspendedUserFunds(userAddress, allocatedAmountStr)
+				const tx = await context.accountFacet.connect(context.signers.admin).deallocateSuspendedUserFunds(userAddress, allocatedAmountStr)
+				const receipt = await tx.wait()
+				const balanceChanges = parsePartyABalanceChanges(receipt).filter(event => event.args.partyA === userAddress)
+				expect(balanceChanges.length).to.equal(1)
+				expect(balanceChanges[0].args.amount).to.equal(allocatedAmount)
+				expect(balanceChanges[0].args._type).to.equal(DEALLOCATE_BALANCE_CHANGE)
 				expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(initialAllocated - allocatedAmount)
 				expect(await context.viewFacet.balanceOf(userAddress)).to.equal(initialBalance + allocatedAmount)
 
@@ -695,6 +713,13 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 			expect(await context.viewFacet.balanceOf(userAddress)).to.equal(expectedBalance)
 			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(BALANCES.ALLOCATE_AMOUNT)
+		})
+
+		it("Should not emit an allocated-balance event for a zero-value no-op", async function () {
+			const tx = await context.accountFacet.connect(context.signers.user).allocate(0n)
+			const receipt = await tx.wait()
+
+			expect(parsePartyABalanceChanges(receipt)).to.have.length(0)
 		})
 
 		it("Should not bypass balance limit via sendQuote and cancel fee refund cycle", async function () {

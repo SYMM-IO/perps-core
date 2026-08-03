@@ -186,9 +186,9 @@ library AccountStorage {
 		///      that supplies the liquidation prices. The liquidation fee is split 50/50 when both
 		///      are recorded; otherwise the starter receives the full fee. Cleared after settlement.
 		mapping(address => address[]) liquidators;
-		/// @notice Reimbursement owed to PartyA, used by clearing house takeover flow
-		/// @dev In CH takeover: stores pending fees added by liquidatePendingPositionsForClearingHouse.
-		///      CH can pull via deallocateForClearingHouse(REIMBURSEMENT_KEY). Released at settlePartyATakeover.
+		/// @notice Pending credits owed to a liquidating PartyA but not yet restored to allocated balance
+		/// @dev Accumulates released open-fee reserves and Clearing House-routed credits. NORMAL liquidation or takeover settlement can restore it;
+		///      LATE/OVERDUE settlement moves it to liquidation escrow, and takeover can pull it through REIMBURSEMENT_KEY.
 		mapping(address => uint256) partyAReimbursement;
 		/// @notice UPNL settlement state between PartyA-PartyB pairs during liquidation
 		/// @dev Used during PartyA liquidation to track UPNL reconciliation with each PartyB.

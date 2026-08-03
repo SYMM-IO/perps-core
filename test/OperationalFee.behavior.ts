@@ -167,7 +167,7 @@ export function shouldBehaveLikeOperationalFee(): void {
 			expect(charged[0].args.amount).to.equal(decimal(2n))
 
 			const balanceChanges = parseLogs(receipt, partyABalanceChangeInterface, "BalanceChangePartyA").filter(p => p.args._type === OPERATIONAL_FEE_OUT)
-			expect(balanceChanges.some(p => p.args.partyA === payer && p.args.amount === decimal(2n))).to.equal(true)
+			expect(balanceChanges).to.have.length(0)
 
 			expect(await context.viewFacet.balanceOf(payer)).to.equal(freeBefore - decimal(2n))
 			expect((await user.getBalanceInfo()).allocatedBalances).to.equal(allocatedBefore) // allocated untouched
@@ -187,7 +187,12 @@ export function shouldBehaveLikeOperationalFee(): void {
 			const alloc = (await user.getBalanceInfo()).allocatedBalances // 1500
 
 			// charge free + 100 allocated
-			await (context.accountFacet.connect(chargerSigner) as any).chargeOperationalFee(payer, free + decimal(100n))
+			const tx = await (context.accountFacet.connect(chargerSigner) as any).chargeOperationalFee(payer, free + decimal(100n))
+			const receipt = await tx.wait()
+			const balanceChanges = parseLogs(receipt, partyABalanceChangeInterface, "BalanceChangePartyA").filter(p => p.args._type === OPERATIONAL_FEE_OUT)
+			expect(balanceChanges).to.have.length(1)
+			expect(balanceChanges[0].args.partyA).to.equal(payer)
+			expect(balanceChanges[0].args.amount).to.equal(decimal(100n))
 			expect(await context.viewFacet.balanceOf(payer)).to.equal(0n)
 			expect((await user.getBalanceInfo()).allocatedBalances).to.equal(alloc - decimal(100n))
 

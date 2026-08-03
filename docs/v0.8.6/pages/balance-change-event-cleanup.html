@@ -3,7 +3,7 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<title>BalanceChange Event Cleanup - Symmio Core v0.8.6</title>
+		<title>Allocated Balance Event Ledger &amp; Indexer Changelog - Symmio Core v0.8.6</title>
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
 		<link rel="stylesheet" href="../assets/v086-docs.css" />
 		<script src="../assets/v086-docs.js" defer></script>
@@ -21,165 +21,741 @@
 		</header>
 
 		<div class="reader-shell">
-		<aside class="doc-sidebar" aria-label="Documentation navigation">
-			<a class="button primary back-home" href="../index.html">Back to index</a>
-			<div class="side-card">
-				<p class="side-label">Docs</p>
-				<a class="side-link" href="../pages/express-withdrawal-system-design.html"><small>Express Withdrawal</small><span>Express Withdrawal System Design</span></a>
-				<a class="side-link" href="../pages/account-layer-ownership-delegation.html"><small>AccountLayer</small><span>AccountLayer Delegated Creation &amp; Ownership Transfer</span></a>
-				<a class="side-link" href="../pages/liquidation-funding-snapshot-fix.html"><small>Liquidation</small><span>PartyA Liquidation Snapshot Flow</span></a>
-				<a class="side-link" href="../pages/single-step-partya-liquidation.html"><small>Liquidation</small><span>Single-Step PartyA Liquidation</span></a>
-				<a class="side-link" href="../pages/affiliate-shutdown-flow.html"><small>Clearing House</small><span>Affiliate Shutdown Flow</span></a>
-				<a class="side-link" href="../pages/muon-upnl-validity-overrides.html"><small>Muon</small><span>Muon UPNL Validity Overrides</span></a>
-				<a class="side-link" href="../pages/solver-fees.html"><small>Fees</small><span>Solver Fees</span></a>
-				<a class="side-link" href="../pages/operational-fees.html"><small>Fees</small><span>Operational Fees</span></a>
-				<a class="side-link" href="../pages/partya-liquidation-fee-recipient.html"><small>Liquidation</small><span>PartyA Liquidation Fee Recipient Cleanup</span></a>
-				<a class="side-link is-active" href="../pages/balance-change-event-cleanup.html"><small>Events</small><span>BalanceChange Event Cleanup</span></a>
-				<a class="side-link" href="../pages/lazy-accumulated-funding.html"><small>Funding</small><span>Lazy Accumulated Funding</span></a>
-				<a class="side-link" href="../pages/partyb-allocation-suspension-gates.html"><small>PartyB</small><span>Allocation Suspension Gates</span></a>
-				<a class="side-link" href="../pages/cross-partyb-liquidation-reserve.html"><small>Liquidation</small><span>Cross-PartyB Liquidation Reserve Enforcement</span></a>
-				<a class="side-link" href="../pages/strict-deallocation.html"><small>Accounts</small><span>Strict Deallocation</span></a>
-				<a class="side-link" href="../pages/express-bot-operations-checklist.html"><small>Express Withdrawal</small><span>Express Provider Bot Operations Checklist</span></a>
-			</div>
-		</aside>
+			<aside class="doc-sidebar" aria-label="Documentation navigation">
+				<a class="button primary back-home" href="../index.html">Back to index</a>
+				<div class="side-card">
+					<p class="side-label">Docs</p>
+					<a class="side-link" href="../pages/express-withdrawal-system-design.html"
+						><small>Express Withdrawal</small><span>Express Withdrawal System Design</span></a
+					>
+					<a class="side-link" href="../pages/account-layer-ownership-delegation.html"
+						><small>AccountLayer</small><span>AccountLayer Delegated Creation &amp; Ownership Transfer</span></a
+					>
+					<a class="side-link" href="../pages/liquidation-funding-snapshot-fix.html"
+						><small>Liquidation</small><span>PartyA Liquidation Snapshot Flow</span></a
+					>
+					<a class="side-link" href="../pages/single-step-partya-liquidation.html"
+						><small>Liquidation</small><span>Single-Step PartyA Liquidation</span></a
+					>
+					<a class="side-link" href="../pages/affiliate-shutdown-flow.html"
+						><small>Clearing House</small><span>Affiliate Shutdown Flow</span></a
+					>
+					<a class="side-link" href="../pages/muon-upnl-validity-overrides.html"
+						><small>Muon</small><span>Muon UPNL Validity Overrides</span></a
+					>
+					<a class="side-link" href="../pages/solver-fees.html"><small>Fees</small><span>Solver Fees</span></a>
+					<a class="side-link" href="../pages/operational-fees.html"><small>Fees</small><span>Operational Fees</span></a>
+					<a class="side-link" href="../pages/partya-liquidation-fee-recipient.html"
+						><small>Liquidation</small><span>PartyA Liquidation Fee Recipient Cleanup</span></a
+					>
+					<a class="side-link is-active" href="../pages/balance-change-event-cleanup.html"
+						><small>Events &amp; Indexing</small><span>Allocated Balance Event Ledger</span></a
+					>
+					<a class="side-link" href="../pages/lazy-accumulated-funding.html"><small>Funding</small><span>Lazy Accumulated Funding</span></a>
+					<a class="side-link" href="../pages/partyb-allocation-suspension-gates.html"
+						><small>PartyB</small><span>Allocation Suspension Gates</span></a
+					>
+					<a class="side-link" href="../pages/cross-partyb-liquidation-reserve.html"
+						><small>Liquidation</small><span>Cross-PartyB Liquidation Reserve Enforcement</span></a
+					>
+					<a class="side-link" href="../pages/strict-deallocation.html"><small>Accounts</small><span>Strict Deallocation</span></a>
+					<a class="side-link" href="../pages/express-bot-operations-checklist.html"
+						><small>Express Withdrawal</small><span>Express Provider Bot Operations Checklist</span></a
+					>
+				</div>
+			</aside>
 			<aside class="toc-panel side-toc" aria-label="Page navigation">
 				<div class="toc-card">
 					<p class="toc-title">On this page</p>
-					<a class="toc-link level-2" href="#summary">Summary</a>
-					<a class="toc-link level-2" href="#clearing-house-reimbursements">Clearing House Reimbursements</a>
-					<a class="toc-link level-2" href="#released-open-fees">Released Open Fees</a>
-					<a class="toc-link level-2" href="#deferred-balance-release">Deferred Balance Release</a>
-					<a class="toc-link level-2" href="#liquidation-fee-events">Liquidation Fee Events</a>
-					<a class="toc-link level-2" href="#enum-compatibility">Enum Compatibility</a>
+					<a class="toc-link level-2" href="#overview">Overview</a>
+					<a class="toc-link level-2" href="#reconstruction-contract">Reconstruction Contract</a>
+					<a class="toc-link level-2" href="#balance-change-types">Balance Change Types</a>
+					<a class="toc-link level-2" href="#partyb-allocation-keys">PartyB Allocation Keys</a>
+					<a class="toc-link level-2" href="#reimbursement-ledger">Reimbursement Ledger</a>
+					<a class="toc-link level-2" href="#liquidation-and-cva">Liquidation &amp; CVA</a>
+					<a class="toc-link level-2" href="#v086-liquidation-accounting">v0.8.6 Liquidation Accounting</a>
+					<a class="toc-link level-2" href="#indexer-changelog">Indexer Changelog</a>
 				</div>
 			</aside>
 
 			<main class="reader-main">
 				<header class="reader-hero">
-					<nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">v0.8.6</a><span>/</span><strong>Events</strong></nav>
+					<nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">v0.8.6</a><span>/</span><strong>Feature</strong></nav>
 					<div class="reader-title-row">
 						<div>
-							<h1>BalanceChange Event Cleanup</h1>
+							<h1>Allocated Balance Event Ledger</h1>
 							<p class="hero-copy">
-								v0.8.6 cleans up liquidation and Clearing House balance events so the emitted type matches the bucket that changed.
+								v0.8.6 makes PartyA and PartyB allocated balances reconstructible from exact storage-backed deltas while preserving
+								liquidation, CVA, fee-return, and reimbursement context in dedicated events.
 							</p>
 						</div>
 					</div>
 				</header>
 
 				<article class="doc-article" id="full-document">
-					<h2 id="summary">Summary</h2>
+					<h2 id="overview">Overview</h2>
 					<p>
-						Before v0.8.6, a few liquidation and Clearing House paths either skipped <code>BalanceChangePartyA</code> events or reused
-						generic realized-PnL labels while updating more specific accounting buckets. That made it hard for indexers to tell whether a
-						PartyA credit was reimbursement, a returned fee reserve, deferred balance, or liquidation fee.
+						This feature turns <code>BalanceChangePartyA</code> and <code>BalanceChangePartyB</code> into a deterministic delta ledger for
+						the core Diamond's allocated-balance mappings. Every non-zero PartyA or PartyB allocated-balance mutation goes through a
+						<code>LibAccount</code> increase or decrease method. That method writes storage and emits the matching event with the caller's
+						reason as one operation.
 					</p>
+					<aside class="callout callout-invariant">
+						<strong>Post-upgrade guarantee.</strong> Starting from a known state checkpoint, applying every successful
+						<code>BalanceChangePartyA</code> or <code>BalanceChangePartyB</code> log in chain order reconstructs the corresponding
+						allocated balance. Events that describe reimbursement, settlement, fees, or liquidation add context; they must not be applied
+						as a second allocated-balance delta.
+					</aside>
 					<p>
-						v0.8.6 keeps realized PnL events for real PnL movement and uses specific labels for the other buckets. The only new enum value
-						is <code>REIMBURSEMENT_IN</code>; the remaining fixes use existing <code>PLATFORM_FEE_IN</code>,
-						<code>DEFERRED_BALANCE_IN</code>, <code>LF_IN</code>, and <code>LF_OUT</code> labels.
-					</p>
-
-					<h2 id="clearing-house-reimbursements">Clearing House Reimbursements</h2>
-					<p>
-						<strong>Before:</strong> when <code>distributeForClearingHouse</code> paid a liquidating PartyA, the amount was routed into
-						<code>partyAReimbursement</code>, but no <code>BalanceChangePartyA</code> event was emitted at that point. Consumers could only
-						see the later settlement release, which made the reimbursement look like generic balance movement.
-					</p>
-					<pre><code class="language-solidity">accountLayout.partyAReimbursement[receivers[i]] += amount;
-// no BalanceChangePartyA event in the old path
-</code></pre>
-					<p>
-						<strong>Now:</strong> the reimbursement bucket update emits <code>REIMBURSEMENT_IN</code> immediately. PartyB receivers still
-						use <code>BalanceChangePartyB(..., REALIZED_PNL_IN)</code>, and non-liquidating PartyA receivers still use
-						<code>REALIZED_PNL_IN</code>.
-					</p>
-					<pre><code class="language-solidity">accountLayout.partyAReimbursement[receivers[i]] += amount;
-emit SharedEvents.BalanceChangePartyA(receivers[i], amount, SharedEvents.BalanceChangeType.REIMBURSEMENT_IN);
-</code></pre>
-					<p>
-						Code reference: <code>contracts/core/facets/ClearingHouse/ClearingHouseFacetImpl.sol:181-195</code>.
+						The scope is deliberately exact. Allocated balance is not free balance, reserved open fees, locked or pending collateral,
+						deferred balance, reimbursement, or liquidation escrow. v0.8.6 keeps those movements observable without placing false entries
+						in the allocated ledger.
 					</p>
 
-					<h2 id="released-open-fees">Released Open Fees</h2>
-					<p>
-						<strong>Before:</strong> Clearing House pending-quote cleanup released PartyA's reserved open trading fee and added it to
-						<code>partyAReimbursement</code>, but those paths did not emit the fee event. That made released fee reserves look the same as
-						any other reimbursement or later balance release.
-					</p>
-					<p>
-						<strong>Now:</strong> when the reserved fee is released into <code>partyAReimbursement</code>, the code emits
-						<code>PLATFORM_FEE_IN</code>. This is used in both the cross-PartyB pending quote cleanup and the PartyA takeover pending quote
-						cleanup.
-					</p>
-					<pre><code class="language-solidity">uint256 fee = LibQuote.getOpenTradingFee(quote.id);
-LibAccount.releaseReservedOpenTradingFee(partyA, fee);
-accountLayout.partyAReimbursement[partyA] += fee;
-emit SharedEvents.BalanceChangePartyA(partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
-</code></pre>
-					<p>
-						Code references: <code>contracts/core/facets/ClearingHouse/ClearingHouseFacetImpl.sol:241-245</code> and
-						<code>contracts/core/facets/ClearingHouse/ClearingHouseFacetImpl.sol:282-285</code>.
-					</p>
+					<h2 id="reconstruction-contract">Reconstruction Contract</h2>
+					<pre><code class="language-solidity">event BalanceChangePartyA(
+    address indexed partyA,
+    uint256 amount,
+    BalanceChangeType _type
+);
 
-					<h2 id="deferred-balance-release">Deferred Balance Release</h2>
+event BalanceChangePartyB(
+    address indexed partyB,
+    address indexed partyA,
+    uint256 amount,
+    BalanceChangeType _type
+);</code></pre>
+					<h3>Mutation ownership</h3>
 					<p>
-						<strong>Before:</strong> <code>settlePartyATakeover</code> released
-						<code>partyAReimbursement + partyADeferredBalance</code> into PartyA allocated balance and emitted one
-						<code>REALIZED_PNL_IN</code> event for the combined amount. That mixed two different sources and mislabeled deferred balance as
-						realized PnL.
+						The storage write and its event cannot drift apart: all direct writes to the two allocated-balance mappings are confined to
+						these four helpers, and every caller must supply the reason.
 					</p>
-					<pre><code class="language-solidity">accountLayout.allocatedBalances[partyA] += totalRelease;
-emit SharedEvents.BalanceChangePartyA(partyA, totalRelease, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
-</code></pre>
+					<div class="table-wrap">
+						<table class="enum-table">
+							<thead>
+								<tr>
+									<th><code>LibAccount</code> helper</th>
+									<th>Storage key</th>
+									<th>Emission</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td><code>increasePartyAAllocatedBalance</code></td>
+									<td><code>allocatedBalances[partyA]</code></td>
+									<td>Inbound <code>BalanceChangePartyA</code></td>
+								</tr>
+								<tr>
+									<td><code>decreasePartyAAllocatedBalance</code></td>
+									<td><code>allocatedBalances[partyA]</code></td>
+									<td>Outbound <code>BalanceChangePartyA</code></td>
+								</tr>
+								<tr>
+									<td><code>increasePartyBAllocatedBalance</code></td>
+									<td><code>partyBAllocatedBalances[partyB][allocationKey]</code></td>
+									<td>Inbound <code>BalanceChangePartyB</code> with <code>allocationKey</code></td>
+								</tr>
+								<tr>
+									<td><code>decreasePartyBAllocatedBalance</code></td>
+									<td><code>partyBAllocatedBalances[partyB][allocationKey]</code></td>
+									<td>Outbound <code>BalanceChangePartyB</code> with <code>allocationKey</code></td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
 					<p>
-						<strong>Now:</strong> deferred balance release emits <code>DEFERRED_BALANCE_IN</code>. Reimbursement is not emitted again at
-						final release because it was already classified when it entered the reimbursement bucket.
-					</p>
-					<pre><code class="language-solidity">accountLayout.allocatedBalances[partyA] += totalRelease;
-if (deferredBalance &gt; 0) {
-    emit SharedEvents.BalanceChangePartyA(partyA, deferredBalance, SharedEvents.BalanceChangeType.DEFERRED_BALANCE_IN);
-}
-</code></pre>
-					<p>
-						Code references: <code>contracts/core/facets/ClearingHouse/ClearingHouseFacetImpl.sol:483-493</code> and
-						<code>contracts/core/libraries/liquidation/LibPartyALiquidationProcess.sol:372-376</code>.
-					</p>
-
-					<h2 id="liquidation-fee-events">Liquidation Fee Events</h2>
-					<p>
-						<strong>Before:</strong> PartyA liquidation fee settlement emitted only inbound <code>LF_IN</code> events to liquidators. The
-						event stream did not show the matching <code>LF_OUT</code> from the liquidated PartyA, and older settlement split the fee across
-						two liquidator slots.
+						Each helper calculates the post-write value once, stores it, emits only when <code>amount &gt; 0</code>, and returns that
+						calculated value for action events that expose <code>newAllocatedBalance</code>.
 					</p>
 					<p>
-						<strong>Now:</strong> final settlement emits both sides of the movement: <code>LF_OUT</code> from the liquidated PartyA, then
-						<code>LF_IN</code> to the recorded liquidation starter.
+						<code>amount</code> is always an absolute, non-negative delta. Direction comes from <code>_type</code>. For one PartyA address
+						or one PartyB allocation key, the reconstruction equation is:
 					</p>
-					<pre><code class="language-solidity">emit SharedEvents.BalanceChangePartyA(partyA, lf, SharedEvents.BalanceChangeType.LF_OUT);
-address liquidationStarter = accountLayout.liquidators[partyA][0];
-accountLayout.allocatedBalances[liquidationStarter] += lf;
-emit SharedEvents.BalanceChangePartyA(liquidationStarter, lf, SharedEvents.BalanceChangeType.LF_IN);
-</code></pre>
-					<p>
-						Code reference: <code>contracts/core/libraries/liquidation/LibPartyALiquidationProcess.sol:379-385</code>.
-					</p>
-
-					<h2 id="enum-compatibility">Enum Compatibility</h2>
-					<p>
-						<code>REIMBURSEMENT_IN</code> is appended after <code>DEFERRED_BALANCE_OUT</code>. Existing integer values keep the same
-						positions, so consumers that decode <code>BalanceChangeType</code> by integer only need to add the new trailing value.
-					</p>
+					<pre><code>allocatedAfter = allocatedBefore + sum(inbound amounts) - sum(outbound amounts)</code></pre>
 					<ul>
-						<li><code>REALIZED_PNL_IN</code> still means a realized-PnL credit to an allocated balance.</li>
-						<li><code>REIMBURSEMENT_IN</code> means a credit to <code>partyAReimbursement</code>.</li>
-						<li><code>PLATFORM_FEE_IN</code> means released fee reserve returning to PartyA accounting.</li>
-						<li><code>DEFERRED_BALANCE_IN</code> means deferred balance returned to PartyA allocated balance.</li>
+						<li>Process logs by <code>blockNumber</code>, <code>transactionIndex</code>, then <code>logIndex</code>.</li>
+						<li>Use only logs from the intended core Diamond deployment and the ABI active at that block.</li>
+						<li>Zero-value calls do not change storage and do not emit a balance-change event.</li>
+						<li>Reverted transactions contribute neither state changes nor surviving logs.</li>
+						<li>Several valid deltas may occur in one transaction. Apply all of them; do not net or deduplicate by transaction hash.</li>
 					</ul>
+					<aside class="callout callout-note">
+						<strong>Checkpoint requirement.</strong> Pre-v0.8.6 history is not retroactively corrected. For each deployment, select a
+						finalized block at or after activation, read the on-chain balances at that block, and replay events from the next block. Store
+						the checkpoint block hash so normal reorg handling cannot silently move the baseline.
+					</aside>
+
+					<h2 id="balance-change-types">Balance Change Types</h2>
 					<p>
-						Code references: <code>contracts/core/libraries/SharedEvents.sol:8-23</code> and
-						<code>contracts/core/interfaces/ISymmio.sol:52-67</code>.
+						The existing <code>BalanceChangeType</code> enum and both existing event signatures remain unchanged. The table below is the
+						v0.8.6 direction contract. “Inbound” adds <code>amount</code>; “outbound” subtracts it.
 					</p>
+					<div class="table-wrap">
+						<table class="enum-table">
+							<thead>
+								<tr>
+									<th>Ordinal</th>
+									<th>Type</th>
+									<th>Direction</th>
+									<th>v0.8.6 meaning</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>0</td>
+									<td><code>ALLOCATE</code></td>
+									<td>Inbound</td>
+									<td>Free collateral enters PartyA allocation or a PartyB allocation bucket.</td>
+								</tr>
+								<tr>
+									<td>1</td>
+									<td><code>DEALLOCATE</code></td>
+									<td>Outbound</td>
+									<td>Allocation returns to free balance, including suspended-user deallocation.</td>
+								</tr>
+								<tr>
+									<td>2</td>
+									<td><code>PLATFORM_FEE_IN</code></td>
+									<td>Inbound</td>
+									<td>A reserved open fee is refunded directly into PartyA allocation.</td>
+								</tr>
+								<tr>
+									<td>3</td>
+									<td><code>PLATFORM_FEE_OUT</code></td>
+									<td>Outbound</td>
+									<td>PartyA allocation pays or reserves a platform trading fee.</td>
+								</tr>
+								<tr>
+									<td>4</td>
+									<td><code>REALIZED_PNL_IN</code></td>
+									<td>Inbound</td>
+									<td>Realized settlement, close, liquidation, or Clearing House value enters allocation.</td>
+								</tr>
+								<tr>
+									<td>5</td>
+									<td><code>REALIZED_PNL_OUT</code></td>
+									<td>Outbound</td>
+									<td>Realized settlement, close, liquidation, penalty, or Clearing House value leaves allocation.</td>
+								</tr>
+								<tr>
+									<td>6</td>
+									<td><code>CVA_IN</code></td>
+									<td>Inbound</td>
+									<td>Returned liquidation CVA enters the exact PartyB allocation bucket.</td>
+								</tr>
+								<tr>
+									<td>7</td>
+									<td><code>CVA_OUT</code></td>
+									<td>Not emitted</td>
+									<td>
+										Retained for ABI compatibility. v0.8.6 PartyA settlement does not emit it where PartyA allocation does not
+										change.
+									</td>
+								</tr>
+								<tr>
+									<td>8</td>
+									<td><code>LF_IN</code></td>
+									<td>Inbound</td>
+									<td>A capped liquidation fee enters the liquidation starter or liquidator's PartyA allocation.</td>
+								</tr>
+								<tr>
+									<td>9</td>
+									<td><code>LF_OUT</code></td>
+									<td>Outbound</td>
+									<td>Liquidation fee value leaves a liquidated PartyA or PartyB allocation.</td>
+								</tr>
+								<tr>
+									<td>10</td>
+									<td><code>FUNDING_FEE_IN</code></td>
+									<td>Inbound</td>
+									<td>Funding settlement enters PartyA allocation or the exact PartyB bucket.</td>
+								</tr>
+								<tr>
+									<td>11</td>
+									<td><code>FUNDING_FEE_OUT</code></td>
+									<td>Outbound</td>
+									<td>Funding settlement leaves PartyA allocation or the exact PartyB bucket.</td>
+								</tr>
+								<tr>
+									<td>12</td>
+									<td><code>DEFERRED_BALANCE_IN</code></td>
+									<td>Inbound</td>
+									<td>Deferred PartyA value survives liquidation and re-enters allocation.</td>
+								</tr>
+								<tr>
+									<td>13</td>
+									<td><code>DEFERRED_BALANCE_OUT</code></td>
+									<td>Outbound</td>
+									<td>Available PartyA allocation moves into deferred balance at liquidation start.</td>
+								</tr>
+								<tr>
+									<td>14</td>
+									<td><code>REIMBURSEMENT_IN</code></td>
+									<td>Inbound</td>
+									<td>Reimbursement actually leaves its bucket and enters PartyA allocation.</td>
+								</tr>
+								<tr>
+									<td>15</td>
+									<td><code>OPERATIONAL_FEE_OUT</code></td>
+									<td>Outbound</td>
+									<td>Only the portion of an operational fee taken from PartyA allocation.</td>
+								</tr>
+								<tr>
+									<td>16</td>
+									<td><code>OPEN_SOLVER_FEE_OUT</code></td>
+									<td>Outbound</td>
+									<td>An open solver fee leaves PartyA allocation for PartyB free balance.</td>
+								</tr>
+								<tr>
+									<td>17</td>
+									<td><code>CLOSE_SOLVER_FEE_OUT</code></td>
+									<td>Outbound</td>
+									<td>A close solver fee leaves PartyA allocation for PartyB free balance.</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						An indexer should reject or quarantine an unknown ordinal instead of guessing its direction. Future releases may append new
+						types, so direction belongs in versioned indexer configuration rather than a suffix-only parser.
+					</p>
+
+					<h2 id="partyb-allocation-keys">PartyB Allocation Keys</h2>
+					<p>
+						For <code>BalanceChangePartyB</code>, the indexed field named <code>partyA</code> is the exact second key of
+						<code>partyBAllocatedBalances[partyB][allocationKey]</code>. Treat the event's accounting key as:
+					</p>
+					<pre><code>partyBAllocationKey = (partyB, event.partyA)</code></pre>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>PartyB mode</th>
+									<th><code>event.partyA</code></th>
+									<th>Meaning</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Isolated</td>
+									<td>The PartyA address</td>
+									<td>One PartyB bucket dedicated to that PartyA.</td>
+								</tr>
+								<tr>
+									<td>Cross</td>
+									<td><code>address(0)</code></td>
+									<td>The shared cross-mode PartyB allocation bucket.</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<aside class="callout callout-note">
+						<strong>The field name is historical.</strong> In <code>BalanceChangePartyB</code>, <code>partyA</code> means “PartyB
+						allocation key.” It is a trader address for an isolated PartyB and <code>address(0)</code> for a cross-mode PartyB. Always
+						index the balance under <code>(event.partyB, event.partyA)</code> exactly as emitted.
+					</aside>
+					<h3>Why unified cross settlement writes credits before debits</h3>
+					<p>
+						All PartyAs share one cross-mode PartyB bucket. The contract credits that bucket for every PartyA loss before applying any
+						PartyA gain, so an offsetting batch cannot fail from a temporary underflow caused only by input order. For example, from a
+						starting bucket of 100, Alice paying the solver 30 and the solver paying Bob 50 emits <code>REALIZED_PNL_IN 30</code>, then
+						<code>REALIZED_PNL_OUT 50</code>, both against <code>(solver, address(0))</code>; the final bucket is 80. Apply both logs by
+						<code>logIndex</code>. Use <code>SettleUpnlUnified</code> for the affected PartyAs and final balance checkpoints, not to
+						replace the zero-address ledger key.
+					</p>
+
+					<h2 id="reimbursement-ledger">Reimbursement Ledger</h2>
+					<p>
+						While PartyA is liquidating, Clearing House distributions and returned pending-open fees can enter
+						<code>partyAReimbursement</code>. That bucket has a separate exact event because it is not allocated balance.
+					</p>
+					<pre><code class="language-solidity">event PartyAReimbursementChange(
+    address indexed partyA,
+    uint256 amount,
+    uint256 newBalance,
+    ReimbursementChangeType _type
+);</code></pre>
+					<div class="table-wrap">
+						<table class="enum-table">
+							<thead>
+								<tr>
+									<th>Ordinal</th>
+									<th>Type</th>
+									<th>Direction</th>
+									<th>Destination or source</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>0</td>
+									<td><code>CLEARING_HOUSE_IN</code></td>
+									<td>Inbound</td>
+									<td>Clearing House distribution enters reimbursement.</td>
+								</tr>
+								<tr>
+									<td>1</td>
+									<td><code>PLATFORM_FEE_IN</code></td>
+									<td>Inbound</td>
+									<td>A released pending-open fee enters reimbursement.</td>
+								</tr>
+								<tr>
+									<td>2</td>
+									<td><code>CLEARING_HOUSE_OUT</code></td>
+									<td>Outbound</td>
+									<td>Clearing House deallocation removes reimbursement.</td>
+								</tr>
+								<tr>
+									<td>3</td>
+									<td><code>RELEASE_TO_ALLOCATED</code></td>
+									<td>Outbound</td>
+									<td>Reimbursement leaves this bucket before entering PartyA allocation.</td>
+								</tr>
+								<tr>
+									<td>4</td>
+									<td><code>MOVE_TO_LIQUIDATION_ESCROW</code></td>
+									<td>Outbound</td>
+									<td>Late or overdue reimbursement moves into liquidation escrow.</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						For every reimbursement event, verify <code>previousBalance ± amount == newBalance</code>. A normal liquidation or Clearing
+						House takeover emits <code>RELEASE_TO_ALLOCATED</code>, then a separate <code>BalanceChangePartyA(REIMBURSEMENT_IN)</code>. A
+						late or overdue liquidation emits <code>MOVE_TO_LIQUIDATION_ESCROW</code> and <code>LiquidationEscrowCreated</code>, but no
+						allocated credit.
+					</p>
+
+					<h2 id="liquidation-and-cva">Liquidation &amp; CVA</h2>
+					<p>PartyA liquidation settlement keeps the original event and emits an overloaded enrichment for the same call:</p>
+					<pre><code class="language-solidity">event SettlePartyALiquidation(
+    address partyA,
+    address[] partyBs,
+    int256[] amounts,
+    bytes liquidationId
+);
+
+event SettlePartyALiquidation(
+    address partyA,
+    address[] partyBs,
+    address[] allocationKeys,
+    int256[] amounts,
+    uint256[] cvaAmounts,
+    bytes liquidationId
+);</code></pre>
+					<ul>
+						<li>All arrays in the extended event have the same length and align by index.</li>
+						<li>
+							<code>allocationKeys[i]</code> is the exact PartyB storage key: PartyA in isolated mode or <code>address(0)</code> in
+							cross mode.
+						</li>
+						<li><code>amounts[i] &gt; 0</code> means PartyB paid PartyA; <code>amounts[i] &lt; 0</code> means PartyA paid PartyB.</li>
+						<li>
+							<code>cvaAmounts[i]</code> is the CVA returned to that PartyB bucket: full in normal liquidation, haircut in late
+							liquidation, and zero in overdue liquidation.
+						</li>
+						<li>Paginated settlement emits one legacy event and one extended event for each processed batch.</li>
+					</ul>
+					<aside class="callout callout-important">
+						<strong>Do not double count.</strong> The two settlement overloads describe the same call. Neither is an additional
+						allocated-balance delta. PartyB's actual CVA allocation credit is already emitted as <code>BalanceChangePartyB(CVA_IN)</code>;
+						the extended event supplies PartyA attribution and the exact bucket key.
+					</aside>
+					<p>
+						Final PartyA settlement also replaces the pre-finalization allocation with the values that survive liquidation. The emitted
+						breakdown debits the allocation-funded liquidation fee as <code>LF_OUT</code>, debits the remaining old allocation as
+						<code>REALIZED_PNL_OUT</code>, then credits surviving deferred or normal reimbursement values. The signed sum equals the exact
+						before/after PartyA allocated-balance delta.
+					</p>
+
+					<h2 id="v086-liquidation-accounting">v0.8.6 Liquidation Accounting</h2>
+					<p>
+						v0.8.6 exposes the exact amount on both sides whenever the protocol records CVA or LF as its own liquidation component. Keep
+						economic attribution separate from allocated-balance replay: settlement events identify who paid and received, while
+						<code>BalanceChangePartyA</code> and <code>BalanceChangePartyB</code> identify the storage delta that actually occurred.
+					</p>
+					<aside class="callout callout-important">
+						<strong>Count each payment once.</strong> The extended settlement event is attribution metadata, not another balance delta.
+						Apply the matching balance-change event to storage, and use the contextual event only to attach the liquidation, payer,
+						recipient, and exact allocation key.
+					</aside>
+
+					<h3>PartyA liquidation</h3>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Value</th>
+									<th>Economic record</th>
+									<th>Allocated-balance record</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>CVA paid by the liquidated PartyA</td>
+									<td>
+										For every extended <code>SettlePartyALiquidation</code>, sum <code>cvaAmounts[i]</code> by
+										<code>liquidationId</code>. <code>partyA</code> is the payer and <code>partyBs[i]</code> is the receiving
+										solver.
+									</td>
+									<td>
+										The same non-zero amount is emitted once as <code>BalanceChangePartyB(CVA_IN)</code> against
+										<code>(partyBs[i], allocationKeys[i])</code>. There is no PartyA <code>CVA_OUT</code> delta.
+									</td>
+								</tr>
+								<tr>
+									<td>CVA received by a PartyB</td>
+									<td><code>cvaAmounts[i]</code> is that solver's exact severity-adjusted receipt, including zero.</td>
+									<td>
+										Apply only the matching non-zero <code>CVA_IN</code> event. A zero metadata amount has no balance-change log
+										and no storage effect.
+									</td>
+								</tr>
+								<tr>
+									<td>Total LF received by the liquidation starter</td>
+									<td>
+										Use <code>BalanceChangePartyA(recipient, amount, LF_IN)</code> in the final settlement receipt. This is the whole
+										capped liquidation fee; LF exists only for <code>NORMAL</code> liquidation, so <code>LATE</code>,
+										<code>OVERDUE</code>, and takeover-cleared liquidations emit none.
+									</td>
+									<td>The event address and amount are the exact recipient allocation credit.</td>
+								</tr>
+								<tr>
+									<td>LF funded from the liquidated PartyA's allocation</td>
+									<td>
+										Use <code>BalanceChangePartyA(partyA, amount, LF_OUT)</code> in that same final receipt. This is only the part of
+										the fee the live allocation could cover, not PartyA's total economic LF payment.
+									</td>
+									<td>
+										The event amount is the exact debit from the liquidated user's allocated balance. Treat an absent
+										<code>LF_OUT</code> as zero, not as missing data.
+									</td>
+								</tr>
+								<tr>
+									<td>LF the live allocation could no longer cover</td>
+									<td>
+										Derive it as <code>LF_IN - LF_OUT</code> within the final receipt. This part of the fee left PartyA earlier in
+										the liquidation, swept into deferred balance by the start-of-liquidation available-balance move.
+									</td>
+									<td>
+										No allocated-balance event carries this component, because no allocated balance moves for it in this receipt.
+										Never replay it as a delta.
+									</td>
+								</tr>
+								<tr>
+									<td>What the liquidation actually cost PartyA in LF</td>
+									<td>
+										The whole locked LF, from <code>lockedValues.lf</code> on the position — not <code>LF_OUT</code>, and not
+										<code>LF_IN</code> either. It splits into the fee the starter earns and the shortfall the protocol absorbs.
+									</td>
+									<td>
+										Not derivable from the balance-change ledger alone. Read it from the position's locked values; the ledger only
+										shows the slice that was still in allocated when the fee was debited.
+									</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<pre><code>partyAPaidCva(liquidationId) = sum(all extended cvaAmounts)
+partyBReceivedCva(liquidationId, partyB) = sum(cvaAmounts[i] where partyBs[i] == partyB)
+// The final settlement receipt is the settlement call that also emits FullyLiquidatedPartyA.
+// Read LF_OUT and REALIZED_PNL_OUT on partyA, and LF_IN on the starter, from that receipt.
+// A component with no event is zero, not unknown.
+totalLf(liquidationId)            = LF_IN credited to the liquidation starter
+lfFromPartyAAllocation(partyA)    = LF_OUT debited from partyA          // clamped to the live allocation
+lfFromRestOfLiquidation(partyA)   = totalLf - lfFromPartyAAllocation    // >= 0, no allocated-balance event
+partyAAllocationBeforeFinalize    = LF_OUT + REALIZED_PNL_OUT on partyA // the allocation liquidation consumed
+clampFired(partyA)                = totalLf &gt; lfFromPartyAAllocation
+
+// What the liquidation COST PartyA in LF is the whole locked LF, and it is not any single event:
+//   lockedLf = totalLf + shortfall
+//              |         `- absorbed covering the deficit, earned by nobody
+//              `- earned by the liquidation starter
+// LF_OUT is only the slice of that cost still sitting in allocated at finalization; the rest left
+// PartyA earlier, swept into deferred balance at liquidation start. Three different quantities:
+//   LF_OUT &lt;= totalLf (LF_IN) &lt;= lockedLf
+partyALfCost(partyA)              = lockedValues.lf on the liquidated position</code></pre>
+					<p>
+						A settlement call emits its balance changes before the legacy and extended <code>SettlePartyALiquidation</code> events. Buffer
+						the complete receipt, process it in <code>logIndex</code> order, and then attach the later extended event's
+						<code>liquidationId</code>, <code>partyBs</code>, and <code>allocationKeys</code>. Paginated settlement contributes one
+						extended event per processed batch; aggregate all batches sharing the liquidation ID.
+					</p>
+					<aside class="callout callout-note">
+						<strong><code>LF_OUT</code> is not what the liquidation cost PartyA.</strong> The fee is sized against <em>locked</em> LF, but
+						debited from <em>allocated</em> balance, and those two can hold different amounts by the time finalization runs. Liquidation
+						start moves <code>allocated - (lockedCva + lockedLf) + upnl</code> into deferred balance; when <code>upnl</code> is positive
+						that sweep carries off part of the LF backing, leaving less allocated than the fee. Finalization then debits only what remains,
+						because emitting the full fee against a smaller bucket would break exact replay. So <code>LF_OUT</code> is the slice of the cost
+						that was still in allocated at that moment -- the rest already left PartyA, in the deferred sweep. Read the difference as
+						<code>LF_IN - LF_OUT</code>; it is fully observable from the same receipt, and <code>LF_IN &gt; LF_OUT</code> is the signal that
+						the clamp fired.
+					</aside>
+					<aside class="callout callout-note">
+						<strong>Worked example.</strong> A PartyA holding 496 allocated, CVA 22, locked LF 3, unrealized profit 23.5, insolvent at the
+						signed snapshot by a shortfall of 0.75. Start sweeps 494.5 into deferred, leaving 1.5 allocated. The fee is
+						<code>lockedLf - shortfall</code> = 2.25, but only 1.5 is left to debit:
+						<pre><code>LF_OUT  1.50   debited from PartyA's remaining allocation
+LF_IN   2.25   credited to the liquidation starter
+gap     0.75   left PartyA earlier, in the 494.5 deferred sweep
+
+PartyA's actual LF cost = lockedLf = 3.00 = 2.25 to the starter + 0.75 absorbed
+Final balances: PartyA 497.5, PartyB 358.5, starter 2.25 -- total tracked value falls by 0.75.</code></pre>
+						None of the three numbers is interchangeable: 1.50 is the allocated debit, 2.25 is what the starter earned, 3.00 is what PartyA
+						paid. Total protocol value never rises across the receipt.
+					</aside>
+					<aside class="callout callout-warning">
+						<strong>Per-account replay stays exact; cross-account conservation does not.</strong> When the clamp fires, the starter is
+						credited the full fee while PartyA is debited less, so allocated balance in that receipt is not conserved across accounts. Each
+						individual account still reconstructs exactly from its own events, which is the guarantee this page makes. An indexer that also
+						runs a global “credits equal debits” check must exempt the finalization receipt, or reconcile it using
+						<code>lfFromRestOfLiquidation</code> above — the value left PartyA earlier in the liquidation, as
+						<code>DEFERRED_BALANCE_OUT</code> at start and as PartyB settlement deltas, and both of those are already in the ledger.
+					</aside>
+
+					<h3>PartyB liquidation</h3>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Value</th>
+									<th>Exact v0.8.6 record</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>LF removed from the liquidated PartyB</td>
+									<td>
+										<code>BalanceChangePartyB(partyB, partyA, remainingLf, LF_OUT)</code> is the exact solver allocation debit.
+									</td>
+								</tr>
+								<tr>
+									<td>LF received by liquidators</td>
+									<td>
+										Sum <code>BalanceChangePartyA(recipient, amount, LF_IN)</code> from the start call and every
+										<code>LiquidatePositionsPartyB</code> batch. Each event is an exact recipient allocation credit.
+									</td>
+								</tr>
+								<tr>
+									<td>Allocation transferred to PartyA</td>
+									<td>
+										The exact transfer is the matching <code>REALIZED_PNL_OUT</code> debit from PartyB and
+										<code>REALIZED_PNL_IN</code> credit to PartyA.
+									</td>
+								</tr>
+								<tr>
+									<td>CVA paid by PartyB</td>
+									<td>
+										The isolated PartyB liquidation flow does not expose a standalone realized CVA component. Do not label the
+										quote CVA sum as CVA paid; it is locked exposure, while the actual combined transfer is recorded as realized
+										PnL.
+									</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<aside class="callout callout-note">
+						<strong>PartyB LF can contain distribution dust.</strong> <code>LF_OUT</code> records the full
+						<code>remainingLf</code> removed from the solver bucket. Recipient <code>LF_IN</code> values use the configured liquidator
+						split and a per-position integer division. Sum the actual <code>LF_IN</code> credits for “received LF”; do not force that sum
+						to equal <code>LF_OUT</code>.
+					</aside>
+					<aside class="callout callout-warning">
+						<strong>Takeover stops direct CVA/LF accounting.</strong> If Clearing House takeover clears a pending PartyA settlement or
+						liquidation fee, preserve amounts already emitted but do not synthesize the cleared remainder. Later Clearing House
+						distributions follow their own realized-PnL, reimbursement, and escrow events; they are not direct <code>CVA_IN</code> or
+						<code>LF_IN</code> payments.
+					</aside>
+
+					<h2 id="indexer-changelog">Indexer Changelog</h2>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Before v0.8.6</th>
+									<th>v0.8.6 behavior</th>
+									<th>Required migration</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Some allocation writes and events were separate operations.</td>
+									<td>Four <code>LibAccount</code> methods own PartyA/PartyB increases and decreases plus non-zero emission.</td>
+									<td>Use balance-change logs as the canonical post-upgrade delta ledger.</td>
+								</tr>
+								<tr>
+									<td>Suspended-user deallocation could miss its PartyA delta.</td>
+									<td>It emits the exact <code>DEALLOCATE</code> amount.</td>
+									<td>Do not add a path-specific workaround after activation.</td>
+								</tr>
+								<tr>
+									<td>PartyB events could use the economic PartyA instead of the mutated cross bucket.</td>
+									<td>The indexed field is always the exact allocation key.</td>
+									<td>Key cross balances by <code>(partyB, address(0))</code>.</td>
+								</tr>
+								<tr>
+									<td>
+										Pending fee returns and Clearing House reimbursement could appear as PartyA allocated credits before
+										allocation changed.
+									</td>
+									<td>They emit <code>PartyAReimbursementChange</code>.</td>
+									<td>
+										Move these values to the reimbursement ledger and wait for <code>RELEASE_TO_ALLOCATED</code> plus
+										<code>REIMBURSEMENT_IN</code>.
+									</td>
+								</tr>
+								<tr>
+									<td>Reimbursement reductions had no exact event stream.</td>
+									<td>Every reduction emits amount, reason, and post-balance.</td>
+									<td>
+										Apply <code>CLEARING_HOUSE_OUT</code>, <code>RELEASE_TO_ALLOCATED</code>, or
+										<code>MOVE_TO_LIQUIDATION_ESCROW</code>.
+									</td>
+								</tr>
+								<tr>
+									<td>PartyA <code>CVA_OUT</code> could be emitted when PartyA allocation did not change.</td>
+									<td>
+										CVA is exposed through the extended settlement event; the actual PartyB allocation credit remains
+										<code>CVA_IN</code>.
+									</td>
+									<td>
+										Stop applying PartyA <code>CVA_OUT</code> after activation and consume aligned <code>cvaAmounts</code> as
+										metadata.
+									</td>
+								</tr>
+								<tr>
+									<td>Final PartyA liquidation used whole-balance assignments with an incomplete event explanation.</td>
+									<td>LF, realized PnL, deferred, and reimbursement components explain the complete allocation replacement.</td>
+									<td>Apply every component in log order; do not infer one synthetic net event.</td>
+								</tr>
+								<tr>
+									<td>PartyA <code>LF_OUT</code> was read as the liquidated user's total LF payment.</td>
+									<td>
+										It is only the part funded from the live allocation, so it can be smaller than the starter's
+										<code>LF_IN</code>, or absent entirely.
+									</td>
+									<td>
+										Report received LF from <code>LF_IN</code>, the allocated debit from <code>LF_OUT</code>, and the remainder as
+										<code>LF_IN - LF_OUT</code>. For what the liquidation cost PartyA, use the position's locked LF, which the
+										balance-change ledger does not carry. Exempt the finalization receipt from any cross-account conservation check.
+									</td>
+								</tr>
+								<tr>
+									<td>An operational-fee event reports the full charge.</td>
+									<td>The balance event reports only allocated spillover.</td>
+									<td>
+										Use <code>OperationalFeeCharged</code> for fee reporting and <code>OPERATIONAL_FEE_OUT</code> for allocated
+										accounting.
+									</td>
+								</tr>
+								<tr>
+									<td>Force-close result payloads could omit or misidentify balance context.</td>
+									<td>Legacy and atomic force-close summaries carry the corrected PartyA and PartyB balance values.</td>
+									<td>Update decoders, but continue using balance-change events as the delta source.</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
 				</article>
 			</main>
 		</div>
