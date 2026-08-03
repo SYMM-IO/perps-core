@@ -6,7 +6,6 @@ pragma solidity >=0.8.18;
 
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
-import { SponsorConfig } from "../../types/ConfigTypes.sol";
 import { CreditData } from "../../types/CreditTypes.sol";
 import { WithdrawOffer, ComputedAmounts } from "../../types/OptionTypes.sol";
 import { WithdrawReceiverPart, WithdrawRequest } from "../../../core/storages/WithdrawStorage.sol";
@@ -96,16 +95,11 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 		info.partsHash = keccak256(abi.encode(withdrawRequest.parts));
 		info.fee = offer.fee;
 		info.finalizedAt = 0;
-		info.sponsorCoverage = 0;
 		info.maxAccelerationFee = offer.maxAccelerationFee;
 		f.operatorFees[withdrawRequest.user][withdrawRequest.id] = offer.operatorFee;
 
-		_lockFee(withdrawRequest.user, withdrawRequest.id, info);
-
-		uint256 totalFee = baseFees;
-		uint256 actualUserFee = totalFee - info.sponsorCoverage;
-		if (actualUserFee > offer.maxUserFee) revert LibErrors.UserFeeExceedsMaximum();
-		if (optType == OptionType.STANDARD && offer.maxAccelerationFee > feeBasis - actualUserFee) {
+		if (baseFees > offer.maxUserFee) revert LibErrors.UserFeeExceedsMaximum();
+		if (optType == OptionType.STANDARD && offer.maxAccelerationFee > feeBasis - baseFees) {
 			revert LibErrors.FeesExceedExpressAmount();
 		}
 
@@ -286,31 +280,6 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 		p.lockedAffiliateBalances[offer.affiliate] += offer.affiliateAmount;
 	}
 
-	function _lockFee(address user, uint256 requestId, WithdrawInfo storage info) internal {
-		FeeStorage.Layout storage f = FeeStorage.layout();
-
-		uint256 totalFee = info.fee + f.operatorFees[user][requestId];
-		if (totalFee == 0) return;
-
-		uint256 sponsorBal = f.sponsorBalances[info.affiliate];
-		if (sponsorBal == 0) return;
-
-		SponsorConfig storage config = f.sponsorConfigs[info.affiliate];
-		uint256 feeBearingAmount = info.expressAmount;
-		if (config.maxWithdrawAmount > 0 && feeBearingAmount > config.maxWithdrawAmount) return;
-
-		uint256 maxCoverage = totalFee;
-		if (config.maxFeePerWithdraw > 0 && maxCoverage > config.maxFeePerWithdraw) {
-			maxCoverage = config.maxFeePerWithdraw;
-		}
-
-		uint256 sponsorCoverage = sponsorBal < maxCoverage ? sponsorBal : maxCoverage;
-		if (sponsorCoverage > 0) {
-			f.sponsorBalances[info.affiliate] -= sponsorCoverage;
-			info.sponsorCoverage = sponsorCoverage;
-		}
-	}
-
 	// ═══════════════════════════════════════════════════════════════════
 	//                     INTERNAL: VALIDATORS
 	// ═══════════════════════════════════════════════════════════════════
@@ -372,8 +341,7 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 
 		uint256 operatorFee = f.operatorFees[user][requestId];
 		uint256 affiliateFee = info.fee + info.accelerationFee;
-		uint256 totalFee = affiliateFee + operatorFee;
-		uint256 userFee = totalFee - info.sponsorCoverage;
+		uint256 userFee = affiliateFee + operatorFee;
 
 		// STANDARD's onWithdrawComplete fires before processing, so fees go straight to
 		// claimable. Non-STANDARD sits in PROCESSED until finalize and is post-payout rollback
@@ -404,12 +372,6 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 	}
 
 	function _releaseWithdraw(address user, uint256 requestId, WithdrawInfo storage info) internal {
-		if (info.sponsorCoverage > 0) {
-			FeeStorage.Layout storage f = FeeStorage.layout();
-			f.sponsorBalances[info.affiliate] += info.sponsorCoverage;
-			info.sponsorCoverage = 0;
-		}
-
 		if (info.optionType == OptionType.WINDOWED || info.optionType == OptionType.SAME_TX) {
 			PoolStorage.Layout storage p = PoolStorage.layout();
 			p.lockedGeneralBalance -= info.generalAmount;
@@ -425,44 +387,20 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
 		if (info.optionType == OptionType.STANDARD) revert LibErrors.InvalidPostPayoutRollback();
 
-		_restoreSponsor(user, requestId, info);
+		_promotePendingFees(user, requestId, info.affiliate);
 		_recordGeneralLoss(user, requestId, info);
 		LibCreditLine.coverLoss(g.collateral, g.symmio, user, requestId, info);
 	}
 
-	/// @dev Drains pending fees up to sponsorCoverage back to the sponsor, then promotes the
-	///      leftover (user-paid portion) to the affiliate's claimable buckets.
-	function _restoreSponsor(address user, uint256 requestId, WithdrawInfo storage info) internal {
+	/// @dev Promotes escrowed fees to the affiliate's claimable buckets after a post-payout suspension.
+	function _promotePendingFees(address user, uint256 requestId, address affiliate) internal {
 		FeeStorage.Layout storage f = FeeStorage.layout();
-		address affiliate = info.affiliate;
-		uint256 coverage = info.sponsorCoverage;
-		info.sponsorCoverage = 0;
-
 		uint256 pf = f.pendingFees[user][requestId];
 		uint256 pof = f.pendingOperatorFees[user][requestId];
-		uint256 accelerationFee = info.accelerationFee;
-		if (accelerationFee > pf) accelerationFee = pf;
-		uint256 baseFee = pf - accelerationFee;
-
-		uint256 remaining = coverage;
-		uint256 takeAff = remaining < baseFee ? remaining : baseFee;
-		baseFee -= takeAff;
-		remaining -= takeAff;
-
-		uint256 takeOp = remaining < pof ? remaining : pof;
-		pof -= takeOp;
-		remaining -= takeOp;
-
-		uint256 collectedAffiliateFee = baseFee + accelerationFee;
-		if (collectedAffiliateFee > 0) f.collectedFees[affiliate] += collectedAffiliateFee;
+		if (pf > 0) f.collectedFees[affiliate] += pf;
 		if (pof > 0) f.collectedOperatorFees[affiliate] += pof;
 		delete f.pendingFees[user][requestId];
 		delete f.pendingOperatorFees[user][requestId];
-
-		uint256 restored = coverage - remaining;
-		if (restored > 0) f.sponsorBalances[affiliate] += restored;
-
-		emit SponsorCoverageRestored(user, requestId, affiliate, restored, remaining);
 	}
 
 	function _recordGeneralLoss(address user, uint256 requestId, WithdrawInfo storage info) internal {

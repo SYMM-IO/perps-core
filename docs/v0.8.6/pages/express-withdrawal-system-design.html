@@ -109,7 +109,6 @@
 					<a class="toc-link level-3" href="#8-5-fee-deduction">8.5 Fee Deduction</a>
 					<a class="toc-link level-3" href="#8-6-fee-accumulation-and-collection">8.6 Fee Accumulation and Collection</a>
 					<a class="toc-link level-3" href="#8-7-fee-flow">8.7 Fee Flow</a>
-					<a class="toc-link level-3" href="#8-8-fee-sponsorship">8.8 Fee Sponsorship</a>
 					<a class="toc-link level-2" href="#9-credit-line-technical-reference">9. Credit Line — Technical Reference</a>
 					<a class="toc-link level-3" href="#9-1-architecture">9.1 Architecture</a>
 					<a class="toc-link level-3" href="#9-2-muon-verification">9.2 Muon Verification</a>
@@ -648,10 +647,9 @@
 					</ul>
 					<p>
 						<strong>Preserved fields:</strong> <code>expressAmount</code>, <code>fee</code>, <code>operatorFee</code>,
-						<code>sponsorCoverage</code>, <code>cooldownEndTime</code>, <code>acceptedAt</code>, <code>partsHash</code>. Successful
-						acceleration stores the bot-signed <code>accelerationFee</code> separately on <code>WithdrawInfo</code> before payout. This
-						lets STANDARD remain cheap or free when it is not accelerated, while charging only the actually used acceleration premium when
-						the request is upgraded.
+						<code>cooldownEndTime</code>, <code>acceptedAt</code>, <code>partsHash</code>. Successful acceleration stores the bot-signed
+						<code>accelerationFee</code> separately on <code>WithdrawInfo</code> before payout. This lets STANDARD remain cheap or free
+						when it is not accelerated, while charging only the actually used acceleration premium when the request is upgraded.
 					</p>
 					<p>
 						<strong>Permissioning:</strong> <code>accelerateWithdraw</code> is permissionless. The caller is not verified. All trust comes
@@ -927,13 +925,12 @@ capChangeAffiliateState(address affiliate) returns (uint256 count, uint256 epoch
 					<ol>
 						<li>Unlocks pool counter locks for pre-payout ACCEPTED/LOCKED withdrawals</li>
 						<li>Releases credit line reservation (if <code>creditAmount &gt; 0</code>)</li>
-						<li>Refunds sponsor coverage to sponsor balance</li>
 						<li>Sets status to <code>SUSPENDED</code></li>
 					</ol>
 					<p>
 						If the withdrawal was already PROCESSED, including SAME_TX after same-transaction payout,
 						<code>_handleProcessedRollback</code> is called instead. That path removes expected inflows, covers credit loss from the
-						affiliate pool, and restores any pending sponsor coverage that had not been claimed as collected fees.
+						affiliate pool, and promotes pending fees to their claimable buckets.
 					</p>
 					<p>
 						Note: SAME_TX withdrawals cannot be cancelled after acceptance because the funds are already transferred in the same
@@ -1112,8 +1109,8 @@ verifyingContract: &lt;ExpressProvider proxy address&gt;
 							<code>maxAccelerationFee</code>. It is charged only when acceleration succeeds.
 						</li>
 						<li>
-							<code>operatorFee</code>, <code>sponsorCoverage</code>, <code>expressAmount</code>, and <code>cooldownEndTime</code> are
-							NOT in the accelerate offer -- they are pinned from the original STANDARD accept and reused unchanged.
+							<code>operatorFee</code>, <code>expressAmount</code>, and <code>cooldownEndTime</code> are NOT in the accelerate offer --
+							they are pinned from the original STANDARD accept and reused unchanged.
 						</li>
 					</ul>
 					<h3 id="7-6-validator-approval-signature">7.6 Validator Approval Signature</h3>
@@ -1263,8 +1260,7 @@ if (info.fee + operatorFee + offer.accelerationFee &gt; info.expressAmount) reve
 					<p>
 						On success, <code>info.accelerationFee = offer.accelerationFee</code> before transfer. Payout and settlement use
 						<code>info.fee + info.accelerationFee + operatorFee</code>, so the existing fee deduction and pending-fee settlement paths
-						account for the acceleration premium. Sponsor coverage remains the amount locked during the original STANDARD acceptance;
-						acceleration fees are user-paid unless a later version adds an explicit acceleration sponsor lock.
+						account for the acceleration premium. The user pays this premium together with the base and operator fees.
 					</p>
 					<p>
 						The bot should compute <code>accelerationFee</code> from the current acceleration economics, normally using remaining cooldown
@@ -1273,15 +1269,10 @@ if (info.fee + operatorFee + offer.accelerationFee &gt; info.expressAmount) reve
 						in the bot.
 					</p>
 					<h3 id="8-5-fee-deduction">8.5 Fee Deduction</h3>
-					<p>Fees are deducted during payout, but sponsor coverage is locked earlier during <code>onWithdrawRequest</code>:</p>
+					<p>Fees are validated during <code>onWithdrawRequest</code> and deducted during payout:</p>
 					<ul>
 						<li>
-							On acceptance, the contract locks <code>sponsorCoverage</code> by deducting up to <code>totalFee</code> from
-							<code>sponsorBalances[affiliate]</code>.
-						</li>
-						<li>
-							During payout, only the remaining <code>userFee = totalFee - sponsorCoverage</code> is deducted from the user's withdrawal
-							amount.
+							During payout, <code>userFee = fee + operatorFee + accelerationFee</code> is deducted from the user's withdrawal amount.
 						</li>
 						<li>
 							Fees are deducted from the collateral transfers by cascading across parts: the <code>userFee</code> is subtracted from the
@@ -1292,17 +1283,14 @@ if (info.fee + operatorFee + offer.accelerationFee &gt; info.expressAmount) reve
 							For <strong>STANDARD</strong>: the fee is deducted from the forwarded tokens during <code>processWithdraw</code>, same as
 							for WINDOWED.
 						</li>
-						<li>
-							The full fee is always added to <code>collectedFees[affiliate]</code> regardless of whether the sponsor or user paid it.
-						</li>
+						<li>The affiliate fee is added to <code>collectedFees[affiliate]</code> when it becomes claimable.</li>
 						<li>
 							<strong>Operator fee</strong>: Accumulated separately per affiliate in <code>collectedOperatorFees[affiliate]</code>.
 							Claimable by admin via <code>claimOperatorFees(affiliate)</code>. Combined with the affiliate fee for total fee deduction.
 						</li>
 						<li>
-							<strong>maxUserFee guarantee</strong>: After sponsor coverage is locked at acceptance, the contract validates
-							<code>actualUserFee &lt;= maxUserFee</code>. If the sponsor balance was drained and the user would pay more than promised,
-							the tx reverts.
+							<strong>maxUserFee guarantee</strong>: The contract validates <code>fee + operatorFee &lt;= maxUserFee</code> at
+							acceptance.
 						</li>
 					</ul>
 					<h3 id="8-6-fee-accumulation-and-collection">8.6 Fee Accumulation and Collection</h3>
@@ -1321,117 +1309,30 @@ function claimOperatorFees(address affiliate, address to) external onlyRole(FEE_
 					</p>
 					<h3 id="8-7-fee-flow">8.7 Fee Flow</h3>
 					<pre><code class="language-mermaid">sequenceDiagram
-    participant Sponsor
-    participant Admin
-    participant Bot
-    participant Express as ExpressProvider
-    participant User
+	participant Admin
+	participant Bot
+	participant Express as ExpressProvider
+	participant User
 
-    Admin-&gt;&gt;Express: setAffiliateConfig(affiliate, 50, 1e6)
-    Note over Express: feeRate=50bp (0.5%), operatorFee=1 USDC
-    Sponsor-&gt;&gt;Express: depositSponsorBalance(affiliate, 100 USDC)
-    Note over Express: sponsorBalances[affiliate] = 100 USDC
+	Admin-&gt;&gt;Express: setAffiliateConfig(affiliate, 50, 1e6)
+	Note over Express: feeRate=50bp (0.5%), operatorFee=1 USDC
 
-    User-&gt;&gt;Bot: Request withdrawal (1000 USDC)
-    Bot-&gt;&gt;Bot: fee = 1000 * 50 / 10000 = 5 USDC
-    Bot-&gt;&gt;Bot: Sign EIP-712 option (fee=5)
-    Bot-&gt;&gt;User: Return signed option
+	User-&gt;&gt;Bot: Request withdrawal (1000 USDC)
+	Bot-&gt;&gt;Bot: fee = 1000 * 50 / 10000 = 5 USDC
+	Bot-&gt;&gt;Bot: Sign EIP-712 option (fee=5, operatorFee=1)
+	Bot-&gt;&gt;User: Return signed option
 
-    User-&gt;&gt;Express: (via SYMMIO) onWithdrawRequest
-    Express-&gt;&gt;Express: Verify fee matches on-chain feeRate &amp; operatorFee
-    Express-&gt;&gt;Express: Lock sponsorCoverage = 5 at acceptance
+	User-&gt;&gt;Express: (via SYMMIO) onWithdrawRequest
+	Express-&gt;&gt;Express: Verify fee matches on-chain feeRate &amp; operatorFee
 
-    Bot-&gt;&gt;Express: processWithdraw
-    Express-&gt;&gt;User: Transfer 1000 USDC (full amount, fee sponsored)
-    Express-&gt;&gt;Express: collectedFees[affiliate] += 5
+	Bot-&gt;&gt;Express: processWithdraw
+	Express-&gt;&gt;User: Transfer 994 USDC (1000 - 5 - 1)
+	Express-&gt;&gt;Express: collectedFees[affiliate] += 5
+	Express-&gt;&gt;Express: collectedOperatorFees[affiliate] += 1
 
-    Admin-&gt;&gt;Express: claimFees(affiliate)
-    Express-&gt;&gt;Admin: Transfer 5 USDC
+	Admin-&gt;&gt;Express: claimFees(affiliate)
+	Express-&gt;&gt;Admin: Transfer 5 USDC
 </code></pre>
-					<p><strong>When sponsor balance is insufficient:</strong></p>
-					<pre><code class="language-mermaid">sequenceDiagram
-    participant Bot
-    participant Express as ExpressProvider
-    participant User
-
-    Note over Express: sponsorBalances[affiliate] = 2 USDC, fee = 5 USDC
-    Note over Express: onWithdrawRequest locks sponsorCoverage = 2
-
-    Bot-&gt;&gt;Express: processWithdraw
-    Express-&gt;&gt;Express: Remaining 3 USDC deducted from user's withdrawal
-    Express-&gt;&gt;User: Transfer 997 USDC (1000 - 3 user portion)
-    Express-&gt;&gt;Express: collectedFees[affiliate] += 5 (full fee)
-</code></pre>
-					<h3 id="8-8-fee-sponsorship">8.8 Fee Sponsorship</h3>
-					<p>
-						Fee sponsorship is a deposit-based on-chain mechanism that allows sponsors to fund withdrawal fees on behalf of an affiliate's
-						users.
-					</p>
-					<h4 id="sponsor-balance-management">Sponsor Balance Management</h4>
-					<p>Each affiliate has a <code>sponsorBalances</code> mapping that holds collateral deposited by sponsors:</p>
-					<pre><code class="language-solidity">mapping(address =&gt; uint256) public sponsorBalances;  // affiliate =&gt; sponsor balance
-</code></pre>
-					<ul>
-						<li>
-							<strong><code>depositSponsorBalance(address affiliate, uint256 amount)</code></strong> -- Anyone can deposit collateral to
-							fund fee sponsorship for an affiliate. The caller must have approved the collateral token for the ExpressProvider. The
-							<code>sponsors[affiliate]</code> mapping records the first depositor and is not overwritten by later deposits.
-						</li>
-						<li>
-							<strong><code>withdrawSponsorBalance(address affiliate, uint256 amount, address to)</code></strong> --
-							<code>SPONSOR_MANAGER_ROLE</code> only. Withdraws unused sponsor funds to the specified <code>to</code> address.
-						</li>
-						<li>
-							<strong><code>setSponsorConfig(address affiliate, uint256 maxFeePerWithdraw, uint256 maxWithdrawAmount)</code></strong> --
-							<code>SETTER_ROLE</code> only. Configures caps on sponsorship: <code>maxFeePerWithdraw</code> limits how much the sponsor
-							covers per withdrawal (0 = no limit), and <code>maxWithdrawAmount</code> restricts sponsorship to withdrawals whose total
-							fee-bearing amount (<code>expressAmount</code>) is at or below this size (0 = no limit).
-						</li>
-					</ul>
-					<h4 id="sponsorship-locking-and-payout">Sponsorship Locking and Payout</h4>
-					<p>When <code>onWithdrawRequest</code> accepts a withdrawal with a fee:</p>
-					<ol>
-						<li>The contract checks <code>sponsorBalances[affiliate]</code> and <code>sponsorConfigs[affiliate]</code>.</li>
-						<li>
-							It locks up to <code>totalFee</code> as <code>sponsorCoverage</code> at acceptance, deducting that amount from
-							<code>sponsorBalances[affiliate]</code>.
-						</li>
-						<li>The locked coverage is stored on <code>WithdrawInfo</code>, making the later payout deterministic.</li>
-						<li>
-							During <code>processWithdraw</code>, <code>unlockAndProcess</code>, or the inline SAME_TX path, the user only pays
-							<code>totalFee - sponsorCoverage</code>.
-						</li>
-						<li>If the withdrawal is cancelled or suspended before payout, the locked sponsor coverage is refunded.</li>
-					</ol>
-					<h4 id="key-properties">Key Properties</h4>
-					<ul>
-						<li>
-							<strong>Permissionless deposits</strong>: Anyone (the affiliate operator, a third party, or the protocol itself) can
-							deposit sponsor funds. This enables flexible sponsorship arrangements.
-						</li>
-						<li>
-							<strong>Role-controlled withdrawals</strong>: Only <code>SPONSOR_MANAGER_ROLE</code> can withdraw unused sponsor funds (to
-							a specified <code>to</code> address), preventing unauthorized draining.
-						</li>
-						<li>
-							<strong>Deterministic coverage locking</strong>: Sponsor coverage is locked at acceptance time (in
-							<code>onWithdrawRequest</code>), making the fee split deterministic. If the withdrawal is cancelled or suspended, the
-							locked sponsor coverage is refunded.
-						</li>
-						<li>
-							<strong>Coverage as lump sum</strong>: Sponsorship covers up to <code>totalFee</code> (affiliate fee + operator fee) as a
-							single amount. There is no priority ordering between fee types -- the sponsor covers whatever it can of the combined
-							total.
-						</li>
-						<li>
-							<strong>Graceful degradation</strong>: When the sponsor balance runs out, the system falls back to deducting fees from the
-							user's withdrawal. There is no hard dependency on sponsorship being funded.
-						</li>
-						<li>
-							<strong>Full fee accounting</strong>: <code>collectedFees</code> always reflects the total fee charged, regardless of who
-							paid. This keeps fee accounting clean for the admin.
-						</li>
-					</ul>
 					<h2 id="9-credit-line-technical-reference">9. Credit Line — Technical Reference</h2>
 					<p>See Section 4.2 for the conceptual overview. This section covers implementation details.</p>
 					<h3 id="9-1-architecture">9.1 Architecture</h3>
@@ -1555,11 +1456,6 @@ function claimOperatorFees(address affiliate, address to) external onlyRole(FEE_
 										Set all contract parameters: affiliate configs, security window, tolerance period, validators, credit line
 										configs (protocol, affiliate, Muon, pause, blacklist)
 									</td>
-								</tr>
-								<tr>
-									<td><code>SPONSOR_MANAGER_ROLE</code></td>
-									<td>Deployer/multisig</td>
-									<td>Withdraw sponsor balances (<code>withdrawSponsorBalance</code>)</td>
 								</tr>
 								<tr>
 									<td><code>FEE_CLAIMER_ROLE</code></td>
@@ -2029,11 +1925,6 @@ function setCreditLineAffiliateConfig(
 function setCreditLinePaused(address affiliate, bool paused) external;     // Setter only
 function setCreditLineBlacklisted(address affiliate, address user, bool blacklisted) external; // Setter only
 
-// Fee sponsorship
-function depositSponsorBalance(address affiliate, uint256 amount) external; // Anyone
-function withdrawSponsorBalance(address affiliate, uint256 amount, address to) external; // SPONSOR_MANAGER_ROLE
-function setSponsorConfig(address affiliate, uint256 maxFeePerWithdraw, uint256 maxWithdrawAmount) external; // Setter only
-
 // Role management (owner-only, via ControlFacet)
 function grantRole(bytes32 role, address account) external;   // Diamond owner only
 function revokeRole(bytes32 role, address account) external;  // Diamond owner only
@@ -2064,10 +1955,7 @@ function creditLineBlacklisted(address affiliate, address user) external view re
 // Fee queries
 function affiliateConfigs(address affiliate) external view returns (uint256 feeRate, uint256 operatorFee);
 function collectedFees(address affiliate) external view returns (uint256);
-function sponsorBalances(address affiliate) external view returns (uint256);
 function collectedOperatorFees(address affiliate) external view returns (uint256);
-function sponsors(address affiliate) external view returns (address);
-function sponsorConfigs(address affiliate) external view returns (uint256 maxFeePerWithdraw, uint256 maxWithdrawAmount);
 
 // Security getters
 function securityWindow() external view returns (uint256);
@@ -2110,11 +1998,10 @@ struct WithdrawInfo {
     address affiliate;            // which affiliate pool was used
     uint256 acceptedAt;           // block.timestamp when accepted
     uint256 finalizedAt;          // block.timestamp when onWithdrawComplete called (STANDARD only)
-    uint256 cooldownEndTime;      // when SYMMIO's 12h cooldown expires
-    bytes32 partsHash;            // keccak256(abi.encode(parts)) for integrity check
-    uint256 fee;                  // base affiliate fee in collateral decimals
-    uint256 sponsorCoverage;      // how much of the fee the sponsor covers (locked at acceptance)
-    uint256 maxAccelerationFee;   // max extra fee user authorized for STANDARD acceleration
+	uint256 cooldownEndTime;      // when SYMMIO's 12h cooldown expires
+	bytes32 partsHash;            // keccak256(abi.encode(parts)) for integrity check
+	uint256 fee;                  // base affiliate fee in collateral decimals
+	uint256 maxAccelerationFee;   // max extra fee user authorized for STANDARD acceleration
     uint256 accelerationFee;      // extra fee charged only after successful STANDARD acceleration
 }
 
@@ -2147,17 +2034,11 @@ struct ComputedAmounts {
     uint256 generalAmount;        // expressAmount - affiliateAmount - creditAmount
 }
 
-struct SponsorConfig {
-    uint256 maxFeePerWithdraw;    // max fee sponsor covers per withdrawal (0 = no limit)
-    uint256 maxWithdrawAmount;    // only sponsor withdrawals whose express fee-bearing amount &lt;= this (0 = no limit)
-}
-
 // ExpressProvider roles
 OPERATOR_ROLE        = keccak256(&quot;OPERATOR_ROLE&quot;)
 LOCKER_ROLE          = keccak256(&quot;LOCKER_ROLE&quot;)
 SIGNER_ROLE          = keccak256(&quot;SIGNER_ROLE&quot;)
 SETTER_ROLE          = keccak256(&quot;SETTER_ROLE&quot;)
-SPONSOR_MANAGER_ROLE = keccak256(&quot;SPONSOR_MANAGER_ROLE&quot;)
 FEE_CLAIMER_ROLE     = keccak256(&quot;FEE_CLAIMER_ROLE&quot;)
 UNLOCK_ROLE          = keccak256(&quot;UNLOCK_ROLE&quot;)
 WITHDRAWER_ROLE      = keccak256(&quot;WITHDRAWER_ROLE&quot;)

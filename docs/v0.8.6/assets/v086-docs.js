@@ -832,12 +832,10 @@
 					</div>
 				</div>
 				<div class="tool-input-group">
-					<strong>Fees & sponsorship</strong>
+					<strong>Fees</strong>
 					<div class="tool-grid tool-grid-compact">
 						<label>Affiliate fee bps<input type="number" min="0" max="10000" step="1" value="80" data-fee-bps></label>
 						<label>Operator fee<input type="number" min="0" step="0.01" value="1" data-operator-fee></label>
-						<label>Sponsor balance<input type="number" min="0" step="0.01" value="0" data-sponsor-balance></label>
-						<label>Sponsor max fee<input type="number" min="0" step="0.01" value="0" data-sponsor-max-fee></label>
 					</div>
 				</div>
 			</div>
@@ -887,8 +885,6 @@
 			const creditBlocked = mount.querySelector("[data-credit-blocked]").value
 			const feeBps = readNumber(mount, "[data-fee-bps]")
 			const operatorFee = readNumber(mount, "[data-operator-fee]")
-			const sponsorBalance = readNumber(mount, "[data-sponsor-balance]")
-			const sponsorMaxFee = readNumber(mount, "[data-sponsor-max-fee]")
 
 			const protocolBpsLimit = protocolMaxBps > 0 ? eligibleBase * protocolMaxBps / 10000 : Infinity
 			const affiliateBpsLimit = affiliateMaxBps > 0 ? eligibleBase * affiliateMaxBps / 10000 : Infinity
@@ -901,9 +897,7 @@
 
 			const feeAmount = requestAmount * feeBps / 10000
 			const totalFee = feeAmount + operatorFee
-			const sponsorLimit = sponsorMaxFee > 0 ? sponsorMaxFee : totalFee
-			const sponsorCoverage = Math.min(sponsorBalance, sponsorLimit, totalFee)
-			const userFee = Math.max(0, totalFee - sponsorCoverage)
+			const userFee = totalFee
 			const netUserAmount = Math.max(0, requestAmount - userFee)
 			const poolDraw = fastAllocation.affiliateAmount + fastAllocation.generalAmount
 			const validatorsReady = validatorCount > 0
@@ -953,7 +947,7 @@
 				</div>
 				<div class="option-card-grid">${options.map(optionCard).join("")}</div>
 				<p>Effective credit cap is <strong>${describeLimit(effectiveDebtLimit)}</strong>; current debt is <strong>${formatAmount(currentDebt)}</strong>; usable credit for this request is <strong>${formatAmount(creditCapacity)}</strong>.</p>
-				<p>Fee is <strong>${formatAmount(feeAmount)}</strong> plus operator fee <strong>${formatAmount(operatorFee)}</strong>; sponsor covers <strong>${formatAmount(sponsorCoverage)}</strong>; user pays <strong>${formatAmount(userFee)}</strong>.</p>
+				<p>Fee is <strong>${formatAmount(feeAmount)}</strong> plus operator fee <strong>${formatAmount(operatorFee)}</strong>; user pays <strong>${formatAmount(userFee)}</strong>.</p>
 				${warnings.length ? `<ul class="tool-warnings">${warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>` : '<p class="tool-ok">Current config supports a fast offer and a standard fallback.</p>'}
 			`
 		}

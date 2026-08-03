@@ -13,7 +13,6 @@ library LibErrors {
 	error FeeRateExceeds100Percent();
 	error NoFeesToClaim();
 	error NoOperatorFeesToClaim();
-	error InsufficientSponsorBalance();
 	error InsufficientUnlockedGeneralBalance();
 	error InsufficientUnlockedAffiliateBalance();
 	error FeesExceedExpressAmount();
