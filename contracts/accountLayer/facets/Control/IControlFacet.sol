@@ -18,6 +18,10 @@ interface IControlFacetEvents {
 	event AccountManagerImplementationUpdated(bytes oldImplementation, bytes newImplementation);
 	/// @notice Emitted when the global signer is changed
 	event SignerUpdated(address oldSigner, address newSigner);
+	/// @notice Emitted when the signer session's account scope is changed
+	/// @param signer The signer the scope applies to
+	/// @param scope Canonical sub-account the session is confined to, or address(0) when unconfined
+	event SignerScopeUpdated(address indexed signer, address indexed scope);
 	/// @notice Emitted when the Symmio fee receiver address is changed
 	event SymmioFeeReceiverUpdated(address indexed oldReceiver, address indexed newReceiver);
 	/// @notice Emitted when a Symmio core diamond is added to or removed from the whitelist
@@ -81,6 +85,11 @@ interface IControlFacet is IControlFacetEvents, IAccountLayerErrors {
 	/// @notice Sets the global signer for protocol-level operations
 	/// @param _signer The new signer address
 	function setSigner(address _signer) external;
+
+	/// @notice Sets the global signer and confines the session to a single account family
+	/// @param _signer The new signer address
+	/// @param _scope Canonical sub-account to confine the session to (address(0) for unconfined)
+	function setSignerScoped(address _signer, address _scope) external;
 
 	// ==================== Affiliate Configuration ====================
 

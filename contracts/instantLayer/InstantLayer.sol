@@ -935,7 +935,11 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			// Route to AccountLayer (wrapping Symmio calls via _call, or direct AL calls)
 			if (accountLayer == address(0)) revert AccountLayerNotSet();
 			address owner = _getAccountOwner(signedOp.signerAccount.addr);
-			IAccountLayerDiamond(accountLayer).setSigner(owner);
+			// The AccountLayer signer is the owner, which by itself authorizes every account that owner
+			// holds. When a delegate is driving the operation, hand the AccountLayer the account family
+			// the delegation was granted over so it can reject anything outside it. Owners stay unscoped.
+			address scope = signedOp.signer == owner ? address(0) : _canonicalDelegator(signedOp.signerAccount.addr);
+			IAccountLayerDiamond(accountLayer).setSignerScoped(owner, scope);
 			if (signedOp.target == address(symmio)) {
 				(success, result) = accountLayer.call(abi.encodeWithSelector(ICoreFacet._call.selector, signedOp.signerAccount.addr, callDatas));
 				decodeNestedResult = true;

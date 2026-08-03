@@ -144,6 +144,14 @@ library AccountStorage {
 		/// Used to defer VA deletion until distributeForClearingHouse has credited the VA's share,
 		/// even when the final hook fires with a different partyB.
 		mapping(address => EnumerableSet.AddressSet) vaPendingCrossLiqPartyBs;
+		/// @notice Account family the current signer session is confined to, or zero when unconfined.
+		/// @dev Set alongside globalSigner by callers that act on behalf of a delegate rather than the
+		///      owner. globalSigner answers "who is acting"; this answers "on which account they may act".
+		///      Without it, onlyAccountOwner passes for every account the owner holds, so a delegation
+		///      granted over one sub-account would reach its siblings. Holds the canonical sub-account:
+		///      virtual accounts resolve to their parent, so a scope covers a sub-account and its VAs --
+		///      exactly the family a delegation grant covers. Always cleared with the signer.
+		address scopedAccount;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

@@ -47,6 +47,10 @@ interface IAccountLayerErrors {
 	error PositionTypeNotAllowedForThisAccount();
 	error SymbolNotAllowedForThisAccount();
 	error SelectorNotAllowed(bytes4 selector);
+	/// @notice The signer session is confined to one account family and the call targeted a different one
+	/// @param scope Canonical sub-account the session is confined to
+	/// @param account Account the call attempted to act on
+	error AccountOutOfScope(address scope, address account);
 	error UnauthorizedHookCaller();
 	error HookFailed(bytes reason);
 	error HookActionFailed(bytes reason);

@@ -95,6 +95,9 @@ interface IViewFacet {
 	/// @notice Returns the current effective signer
 	function getSigner() external view returns (address);
 
+	/// @notice Returns the account family the current signer session is confined to, or address(0) when unconfined
+	function getSignerScope() external view returns (address);
+
 	/// @notice Returns the Symmio core address associated with an account
 	/// @param account The account address
 	function getRelatedCore(address account) external view returns (address);
