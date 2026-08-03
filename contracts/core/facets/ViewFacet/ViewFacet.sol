@@ -221,6 +221,12 @@ contract ViewFacet is IViewFacet {
 		return LibAccount.getOperationalFeeReceiver(charger);
 	}
 
+	/// @notice Returns the effective account that receives a Party B's solver fees.
+	/// @dev If no custom receiver is set, the Party B itself receives solver fees.
+	function getSolverFeeReceiver(address partyB) external view returns (address) {
+		return LibAccount.getSolverFeeReceiver(partyB);
+	}
+
 	function getOperationalFeeAllowance(
 		address payer,
 		address charger

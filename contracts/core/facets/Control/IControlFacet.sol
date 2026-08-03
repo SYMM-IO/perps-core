@@ -35,7 +35,9 @@ interface IControlFacet is IControlEvents {
 
 	function setOperationalFeeReductionDelay(uint256 delay) external;
 
-	function setOperationalFeeReceiver(address receiver) external;
+	function setOperationalFeeReceiver(address charger, address receiver) external;
+
+	function setSolverFeeReceiver(address partyB, address receiver) external;
 
 	function registerAffiliate(address affiliate) external;
 

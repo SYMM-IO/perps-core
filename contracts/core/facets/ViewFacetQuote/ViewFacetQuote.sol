@@ -40,12 +40,11 @@ contract ViewFacetQuote is IViewFacetQuote {
 		SymbolAdjustmentStorage.Layout storage adjustmentLayout = SymbolAdjustmentStorage.layout();
 		SymbolAdjustment storage adjustment = adjustmentLayout.adjustments[quote.symbolId];
 		bool restatedInCurrentWindow = adjustment.restating && adjustmentLayout.quoteRestatedEpoch[quoteId] == adjustment.restatementEpoch;
-		uint256 factor =
-			restatedInCurrentWindow
-				? 1e18
-				: adjustment.restating
-					? adjustment.restatementFactor
-					: LibSymbolAdjustment.activeCumulativeFactor(quote.symbolId);
+		uint256 factor = restatedInCurrentWindow
+			? 1e18
+			: adjustment.restating
+				? adjustment.restatementFactor
+				: LibSymbolAdjustment.activeCumulativeFactor(quote.symbolId);
 
 		result.quote = LibQuoteAdjustment.toVenueUnits(quote, factor);
 		result.factorApplied = factor;

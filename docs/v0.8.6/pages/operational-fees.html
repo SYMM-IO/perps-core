@@ -156,6 +156,20 @@
 						falls back to <code>allocatedBalances[payer]</code> if free balance is not enough. The charged amount is credited to the
 						charger's configured receiver.
 					</p>
+					<p>That receiver is configured with:</p>
+					<pre><code class="language-solidity">function setOperationalFeeReceiver(address charger, address receiver) external;
+</code></pre>
+					<p>
+						The caller must be either the charger itself or an address holding <code>FEE_ADMIN_ROLE</code> -- the same role that registers
+						chargers in the first place. Passing <code>address(0)</code> resets the receiver back to the charger. The receiver is resolved
+						at charge time, so a change only affects subsequent fees.
+						<code>ViewFacet.getOperationalFeeReceiver(charger)</code> returns the effective receiver.
+					</p>
+					<p>
+						Solver <strong>rate</strong> fees have a parallel but independent setting, <code>ControlFacet.setSolverFeeReceiver</code>,
+						gated by <code>PARTY_B_MANAGER_ROLE</code> instead. Keeping the two separate lets a solver route flat operational costs and
+						per-notional trading revenue to different accounts. See <a href="../pages/solver-fees.html">Solver Fees</a>.
+					</p>
 
 					<p>
 						<strong>AccountLayer accounts:</strong> users operating through SubAccounts or virtual accounts may want operational fees to

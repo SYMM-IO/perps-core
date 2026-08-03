@@ -225,12 +225,11 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		require(quote.symbolId == symbolId, "SymbolAdjustmentFacet: Wrong symbol");
 		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
-		uint256 factor =
-			adjustment.restating
-				? adjustment.restatementFactor
-				: adjustment.state == AdjustmentState.SCHEDULED
-					? _prospectiveCumulativeFactor(symbolId, adjustment)
-					: LibSymbolAdjustment.activeCumulativeFactor(symbolId);
+		uint256 factor = adjustment.restating
+			? adjustment.restatementFactor
+			: adjustment.state == AdjustmentState.SCHEDULED
+				? _prospectiveCumulativeFactor(symbolId, adjustment)
+				: LibSymbolAdjustment.activeCumulativeFactor(symbolId);
 		require(factor != 0, "SymbolAdjustmentFacet: Cumulative factor underflow");
 		require(factor != 1e18, "SymbolAdjustmentFacet: No adjustment factor");
 		return _previewQuote(quote, factor);

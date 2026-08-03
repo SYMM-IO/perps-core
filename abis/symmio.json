@@ -1138,6 +1138,12 @@
             },
             {
                 "indexed": false,
+                "internalType": "address",
+                "name": "receiver",
+                "type": "address"
+            },
+            {
+                "indexed": false,
                 "internalType": "uint256",
                 "name": "symbolId",
                 "type": "uint256"
@@ -1480,6 +1486,12 @@
                 "indexed": true,
                 "internalType": "address",
                 "name": "partyB",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "receiver",
                 "type": "address"
             },
             {
@@ -4251,6 +4263,25 @@
             }
         ],
         "name": "SetSoftLiquidationPenaltyCollector",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "receiver",
+                "type": "address"
+            }
+        ],
+        "name": "SetSolverFeeReceiver",
         "type": "event"
     },
     {
@@ -8923,6 +8954,25 @@
     {
         "inputs": [],
         "name": "getSoftLiquidationPenaltyCollector",
+        "outputs": [
+            {
+                "internalType": "address",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            }
+        ],
+        "name": "getSolverFeeReceiver",
         "outputs": [
             {
                 "internalType": "address",
@@ -20377,6 +20427,11 @@
         "inputs": [
             {
                 "internalType": "address",
+                "name": "charger",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
                 "name": "receiver",
                 "type": "address"
             }
@@ -20544,6 +20599,24 @@
             }
         ],
         "name": "setSoftLiquidationPenaltyCollector",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "receiver",
+                "type": "address"
+            }
+        ],
+        "name": "setSolverFeeReceiver",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"

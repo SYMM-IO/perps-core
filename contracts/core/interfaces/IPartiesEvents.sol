@@ -74,8 +74,24 @@ interface IPartiesEvents {
 	event LiquidatePartyB(address liquidator, address partyB, address partyA, uint256 partyBAllocatedBalance, int256 upnl);
 
 	/// @notice Emitted when PartyB charges a user-approved open solver fee from PartyA allocated balance.
-	event OpenSolverFeeCharged(uint256 indexed quoteId, address indexed partyA, address indexed partyB, uint256 symbolId, uint256 amount);
+	/// @dev `receiver` is the account actually credited: the PartyB itself unless it configured a solver fee receiver.
+	event OpenSolverFeeCharged(
+		uint256 indexed quoteId,
+		address indexed partyA,
+		address indexed partyB,
+		address receiver,
+		uint256 symbolId,
+		uint256 amount
+	);
 
 	/// @notice Emitted when PartyB charges a user-approved close solver fee from PartyA allocated balance.
-	event CloseSolverFeeCharged(uint256 indexed quoteId, address indexed partyA, address indexed partyB, uint256 symbolId, uint256 amount);
+	/// @dev `receiver` is the account actually credited: the PartyB itself unless it configured a solver fee receiver.
+	event CloseSolverFeeCharged(
+		uint256 indexed quoteId,
+		address indexed partyA,
+		address indexed partyB,
+		address receiver,
+		uint256 symbolId,
+		uint256 amount
+	);
 }
