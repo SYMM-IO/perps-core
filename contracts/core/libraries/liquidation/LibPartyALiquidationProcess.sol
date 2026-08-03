@@ -67,7 +67,7 @@ library LibPartyALiquidationProcess {
 			}
 
 			// Refund PartyA's reserved open fee into reimbursement, then mark the quote as liquidated.
-			uint256 fee = LibQuote.getOpenTradingFee(quote.id);
+			uint256 fee = LibQuote.getReservedOpenTradingFee(quote, LibQuote.quoteOpenAmount(quote));
 			LibAccount.releaseReservedOpenTradingFee(partyA, fee);
 			LibAccount.increasePartyAReimbursement(partyA, fee, SharedEvents.ReimbursementChangeType.PLATFORM_FEE_IN);
 			quote.quoteStatus = QuoteStatus.LIQUIDATED_PENDING;

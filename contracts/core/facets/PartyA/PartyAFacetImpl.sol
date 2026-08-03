@@ -163,7 +163,7 @@ library PartyAFacetImpl {
 		quoteLayout.solverFeeStates[currentId].openRateCap = solverFeeCaps.openRateCap;
 		quoteLayout.solverFeeStates[currentId].closeRateCap = solverFeeCaps.closeRateCap;
 
-		uint256 feeAmount = LibQuote.getOpenTradingFee(currentId);
+		uint256 feeAmount = LibQuote.getReservedOpenTradingFee(quoteLayout.quotes[currentId], quantity);
 		require(accountLayout.allocatedBalances[signer] >= feeAmount, "PartyAFacet: Insufficient allocated balance for fee");
 		LibAccount.decreasePartyAAllocatedBalance(signer, feeAmount, SharedEvents.BalanceChangeType.PLATFORM_FEE_OUT);
 		if (!_instantOpenMode) {
