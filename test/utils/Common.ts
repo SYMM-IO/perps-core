@@ -4,7 +4,7 @@ import type { QuoteStructOutput, SymbolStructOutput } from "../../src/types/inte
 import { network } from "../helpers/hardhat-connection.js"
 import { time } from "../helpers/network-helpers.js"
 import { OrderType, QuoteStatus } from "../models/Enums.js"
-import { RunContext } from "../models/RunContext.js"
+import type { RunContext } from "../models/RunContext.js"
 import { safeDiv } from "./SafeMath.js"
 
 const defaultSerializer = new JsonSerializer()
@@ -119,7 +119,7 @@ export async function getTradingFeeForQuotes(context: RunContext, quoteIds: bigi
 export async function getTradingFeeForQuoteWithFilledAmount(context: RunContext, quoteId: bigint, filledAmounts: bigint): Promise<bigint> {
 	let out = 0n
 	let q = await context.viewFacetQuote.getQuote(quoteId)
-	let tf = (await context.viewFacetSymbol.getSymbol(q.symbolId)).tradingFee
+	let tf = q.tradingFee
 	if (q.orderType === BigInt(OrderType.LIMIT)) out += unDecimal(filledAmounts * q.requestedOpenPrice * tf, 36)
 	else out += unDecimal(filledAmounts * q.marketPrice * tf, 36)
 	return out

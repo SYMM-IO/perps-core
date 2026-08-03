@@ -6,7 +6,7 @@ import type { LiquidationSigStruct } from "../../src/types/facets/PartyALiquidat
 import type { QuoteStructOutput, SettlementSigStruct } from "../../src/types/interfaces/ISymmio.js"
 import { setBalance } from "../helpers/network-helpers.js"
 import { getPriceFetcher, serializeToJson, unDecimal } from "../utils/Common.js"
-import { logger } from "../utils/LoggerUtils.js"
+import { logDetailedDebug } from "../utils/LoggerUtils.js"
 import { getPrice } from "../utils/PriceUtils.js"
 import { getDummyLiquidationSig } from "../utils/SignatureUtils.js"
 import { runTx } from "../utils/TxUtils.js"
@@ -40,7 +40,7 @@ export class User extends PartyEntity {
 	}
 
 	public async sendQuote(request: QuoteRequest = limitQuoteRequestBuilder().build()): Promise<bigint> {
-		logger.detailedDebug(
+		await logDetailedDebug(async () =>
 			serializeToJson({
 				request: request,
 				userBalanceInfo: await this.getBalanceInfo(),
@@ -77,14 +77,14 @@ export class User extends PartyEntity {
 
 			if (sendQuoteEvent && sendQuoteEvent.args) {
 				const id = sendQuoteEvent.args.quoteId
-				return id.toString()
+				return BigInt(id)
 			}
 		}
 		throw new Error("SendQuote event not found in transaction receipt")
 	}
 
 	public async sendQuoteWithData(request: QuoteRequestWithData = limitQuoteRequestWithDataBuilder().build()): Promise<bigint> {
-		logger.detailedDebug(
+		await logDetailedDebug(async () =>
 			serializeToJson({
 				request: request,
 				userBalanceInfo: await this.getBalanceInfo(),
@@ -118,14 +118,14 @@ export class User extends PartyEntity {
 
 			if (sendQuoteEvent && sendQuoteEvent.args) {
 				const id = sendQuoteEvent.args.quoteId
-				return id.toString()
+				return BigInt(id)
 			}
 		}
 		throw new Error("SendQuote event not found in transaction receipt")
 	}
 
 	public async requestToCancelQuote(id: BigNumberish) {
-		logger.detailedDebug(
+		await logDetailedDebug(async () =>
 			serializeToJson({
 				request: "RequestToCancelQuote",
 				userBalanceInfo: await this.getBalanceInfo(),
@@ -136,7 +136,7 @@ export class User extends PartyEntity {
 	}
 
 	public async forceCancelQuote(id: BigNumberish) {
-		logger.detailedDebug(
+		await logDetailedDebug(async () =>
 			serializeToJson({
 				request: "ForceCancelQuote",
 				userBalanceInfo: await this.getBalanceInfo(),
@@ -147,7 +147,7 @@ export class User extends PartyEntity {
 	}
 
 	public async forceCancelCloseRequest(id: BigNumberish) {
-		logger.detailedDebug(
+		await logDetailedDebug(async () =>
 			serializeToJson({
 				request: "ForceCancelCloseRequest",
 				userBalanceInfo: await this.getBalanceInfo(),
@@ -177,7 +177,7 @@ export class User extends PartyEntity {
 	}
 
 	public async requestToClosePosition(id: BigNumberish, request: CloseRequest = limitCloseRequestBuilder().build()) {
-		logger.detailedDebug(
+		await logDetailedDebug(async () =>
 			serializeToJson({
 				request: request,
 				userBalanceInfo: await this.getBalanceInfo(),
@@ -192,7 +192,7 @@ export class User extends PartyEntity {
 	}
 
 	public async forceClosePosition(id: BigNumberish, signature: HighLowPriceSigStruct) {
-		logger.detailedDebug(
+		await logDetailedDebug(async () =>
 			serializeToJson({
 				signature: signature,
 				userBalanceInfo: await this.getBalanceInfo(),
@@ -208,7 +208,7 @@ export class User extends PartyEntity {
 		settleSig: SettlementSigStruct,
 		updatedPrices: bigint[],
 	) {
-		logger.detailedDebug(
+		await logDetailedDebug(async () =>
 			serializeToJson({
 				highLowPriceSigStruct: highLowPriceSigStruct,
 				settleSig: settleSig,
@@ -221,7 +221,7 @@ export class User extends PartyEntity {
 	}
 
 	public async requestToCancelCloseRequest(id: BigNumberish) {
-		logger.detailedDebug(
+		await logDetailedDebug(async () =>
 			serializeToJson({
 				request: "RequestToCancelCloseRequest",
 				userBalanceInfo: await this.getBalanceInfo(),
@@ -331,10 +331,12 @@ export class User extends PartyEntity {
 		let openPositions: QuoteStructOutput[] = []
 		const pageSize = 30
 		let last = 0
+		const partyA = await this.getAddress()
 		while (true) {
-			let page = await this.context.viewFacetQuote.getPartyAOpenPositions(this.getAddress(), last, pageSize)
+			let page = await this.context.viewFacetQuote.getPartyAOpenPositions(partyA, last, pageSize)
 			openPositions.push(...page)
 			if (page.length < pageSize) break
+			last += page.length
 		}
 		return openPositions
 	}
