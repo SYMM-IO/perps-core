@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Delegation Account Scope - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+	</head>
+	<body class="doc-page">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="doc-topbar">
+			<a class="brand" href="../index.html"
+				><span class="brand-mark">8.6</span><span><strong>Symmio Docs</strong><small>v0.8.6 reference</small></span></a
+			>
+			<nav class="top-actions" aria-label="Page actions">
+				<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+			</nav>
+		</header>
+
+		<div class="reader-shell">
+			<aside class="doc-sidebar" aria-label="Documentation navigation">
+				<a class="button primary back-home" href="../index.html">Back to index</a>
+				<div class="side-card">
+					<p class="side-label">Docs</p>
+					<a class="side-link" href="../pages/express-withdrawal-system-design.html"
+						><small>Express Withdrawal</small><span>Express Withdrawal System Design</span></a
+					>
+					<a class="side-link" href="../pages/account-layer-ownership-delegation.html"
+						><small>AccountLayer</small><span>AccountLayer Delegated Creation &amp; Ownership Transfer</span></a
+					>
+					<a class="side-link" href="../pages/liquidation-funding-snapshot-fix.html"
+						><small>Liquidation</small><span>PartyA Liquidation Snapshot Flow</span></a
+					>
+					<a class="side-link" href="../pages/single-step-partya-liquidation.html"
+						><small>Liquidation</small><span>Single-Step PartyA Liquidation</span></a
+					>
+					<a class="side-link" href="../pages/affiliate-shutdown-flow.html"
+						><small>Clearing House</small><span>Affiliate Shutdown Flow</span></a
+					>
+					<a class="side-link" href="../pages/muon-upnl-validity-overrides.html"
+						><small>Muon</small><span>Muon UPNL Validity Overrides</span></a
+					>
+					<a class="side-link" href="../pages/solver-fees.html"><small>Fees</small><span>Solver Fees</span></a>
+					<a class="side-link" href="../pages/operational-fees.html"><small>Fees</small><span>Operational Fees</span></a>
+					<a class="side-link" href="../pages/symbol-adjustment.html"><small>Symbols</small><span>Symbol Corporate-Action Adjustment</span></a>
+					<a class="side-link" href="../pages/partya-liquidation-fee-recipient.html"
+						><small>Liquidation</small><span>PartyA Liquidation Fee Recipient Cleanup</span></a
+					>
+					<a class="side-link" href="../pages/balance-change-event-cleanup.html"
+						><small>Events &amp; Indexing</small><span>Allocated Balance Event Ledger</span></a
+					>
+					<a class="side-link" href="../pages/lazy-accumulated-funding.html"><small>Funding</small><span>Lazy Accumulated Funding</span></a>
+					<a class="side-link" href="../pages/partyb-allocation-suspension-gates.html"
+						><small>PartyB</small><span>Allocation Suspension Gates</span></a
+					>
+					<a class="side-link" href="../pages/cross-partyb-liquidation-reserve.html"
+						><small>Liquidation</small><span>Cross-PartyB Liquidation Reserve Enforcement</span></a
+					>
+					<a class="side-link is-active" href="../pages/delegation-account-scope.html"><small>AccountLayer</small><span>Delegation Account Scope</span></a>
+					<a class="side-link" href="../pages/strict-deallocation.html"><small>Accounts</small><span>Strict Deallocation</span></a>
+					<a class="side-link" href="../pages/express-bot-operations-checklist.html"
+						><small>Express Withdrawal</small><span>Express Provider Bot Operations Checklist</span></a
+					>
+				</div>
+			</aside>
+			<aside class="toc-panel side-toc" aria-label="Page navigation">
+				<div class="toc-card">
+					<p class="toc-title">On this page</p>
+					<a class="toc-link level-2" href="#summary">Summary</a>
+						<a class="toc-link level-2" href="#what-changed">What Changed</a>
+						<a class="toc-link level-2" href="#what-a-delegation-covers">What a Delegation Covers</a>
+						<a class="toc-link level-2" href="#how-the-scope-is-set">How the Scope Is Set</a>
+					</div>
+				</aside>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">v0.8.6</a><span>/</span><strong>AccountLayer</strong></nav>
+					<div class="reader-title-row">
+						<div>
+							<h1>Delegation Account Scope</h1>
+							<p class="hero-copy">
+								A delegation was enforced against the account owner rather than the delegated account, so v0.8.6 confines a
+								delegated operation to the account family it was granted over.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="summary">Summary</h2>
+					<p>
+						A delegation names one account and one set of selectors. Before v0.8.6 it was enforced as one <em>owner</em> and one set
+						of selectors, which is a wider grant than the user agreed to.
+					</p>
+					<p>
+						A delegate approved for SubAccount <code>A</code> could run the delegated selectors against any other SubAccount held by
+						the same owner. Approving a bot to trade one account effectively approved it across every account that user held.
+					</p>
+					<p>
+						v0.8.6 confines a delegated operation to the account family the delegation was granted over. Anything else is rejected
+						with <code>AccountOutOfScope</code> and the whole operation reverts, so no balance or ownership change lands.
+					</p>
+
+					<h2 id="what-changed">What Changed</h2>
+					<p>
+						Before v0.8.6: InstantLayer executed a delegated operation as the account <em>owner</em>. The AccountLayer then checked
+						ownership of whichever account the call named, and an owner owns all of their SubAccounts, so that check passed for every
+						one of them. The delegation was checked against <code>A</code> while the call was allowed against <code>B</code>.
+					</p>
+					<p>
+						After v0.8.6: the session carries the delegated account family alongside the signer. Ownership is checked as before, and
+						a second check rejects any account outside that family.
+					</p>
+					<p>
+						Nothing about granting or revoking a delegation changed. Existing delegations keep working, and they now reach only the
+						account they already named.
+					</p>
+
+					<h2 id="what-a-delegation-covers">What a Delegation Covers</h2>
+					<p>The grant covers the named SubAccount together with its Virtual Accounts.</p>
+					<pre><code>scope = virtualAccount.isExists ? virtualAccount.parentAccount : account
+
+allowed(target) = owner(target) == signer AND canonical(target) == scope</code></pre>
+					<p>
+						Virtual Accounts are inside the grant because a SubAccount and its VAs are one trading unit. Margin moves between them in
+						normal use: <code>addMargin</code> is called on a Virtual Account but draws the collateral from its parent. A delegate
+						that could not reach Virtual Accounts could not trade the account it was approved for.
+					</p>
+					<p>
+						The grant stops there. A second SubAccount of the same owner, and any Virtual Account beneath it, is outside the
+						delegation even though one person owns both.
+					</p>
+					<p>
+						The scope resolves through the same rule the delegation itself is keyed by, so the enforced family and the granted family
+						are the same set. A delegation recorded against a Virtual Account and a delegation recorded against its parent are one
+						grant, not two.
+					</p>
+
+					<h2 id="how-the-scope-is-set">How the Scope Is Set</h2>
+					<p>
+						InstantLayer is the only caller that opens a confined session. When it executes an operation whose signer is not the
+						account owner, it resolves the delegation key for the named account and installs it alongside the owner.
+					</p>
+					<pre><code class="language-solidity">address scope = signedOp.signer == owner
+    ? address(0)
+    : _canonicalDelegator(signedOp.signerAccount.addr);
+
+IAccountLayerDiamond(accountLayer).setSignerScoped(owner, scope);</code></pre>
+					<p>
+						An owner-signed operation passes <code>address(0)</code> and runs unconfined, exactly as before. The scope applies to both
+						routes InstantLayer uses: operations targeting Symmio, which are wrapped through <code>_call</code>, and direct
+						AccountLayer calls such as <code>addMargin</code> or <code>transferSubAccountOwnership</code>.
+					</p>
+					<p>
+						The session is cleared with the signer when the operation finishes. <code>setSigner</code> always writes a zero scope, so
+						a caller that clears through the original entry point can never leave a confinement behind for the next one, and callers
+						that never open a scoped session — AccountManager, direct users, protocol operations — are unaffected.
+					</p>
+					<p>
+						<code>ViewFacet.getSignerScope</code> reports the active scope, or <code>address(0)</code> when the session is
+						unconfined. Because the scope is opened and cleared inside one transaction, it reads zero between transactions and is
+						only meaningful to an observer inside the call.
+					</p>
+					<p>
+						<code>AccountOutOfScope</code> is raised inside the AccountLayer, so a caller going through InstantLayer receives it
+						wrapped as <code>OperationFailed(index, reason)</code> with the scope rejection as the inner reason, rather than as a
+						top-level revert.
+					</p>
+					<aside class="callout callout-note">
+						<strong>The scope narrows; it never widens.</strong>
+						Ownership is still checked first and is still required. A confined session can only reach a subset of what the owner
+						could reach, so no delegation gains reach it did not already have.
+					</aside>
+
+					</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Protocol, operations, and integration notes.</span>
+		</footer>
+	</body>
+</html>

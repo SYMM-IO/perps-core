@@ -10,6 +10,22 @@
         "type": "error"
     },
     {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "scope",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            }
+        ],
+        "name": "AccountOutOfScope",
+        "type": "error"
+    },
+    {
         "inputs": [],
         "name": "AffiliateNotActive",
         "type": "error"
@@ -1476,6 +1492,19 @@
     {
         "inputs": [],
         "name": "getSigner",
+        "outputs": [
+            {
+                "internalType": "address",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "getSignerScope",
         "outputs": [
             {
                 "internalType": "address",
@@ -3306,6 +3335,25 @@
         "anonymous": false,
         "inputs": [
             {
+                "indexed": true,
+                "internalType": "address",
+                "name": "signer",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "scope",
+                "type": "address"
+            }
+        ],
+        "name": "SignerScopeUpdated",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
                 "indexed": false,
                 "internalType": "address",
                 "name": "oldSigner",
@@ -3544,6 +3592,24 @@
             }
         ],
         "name": "setSigner",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "_signer",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "_scope",
+                "type": "address"
+            }
+        ],
+        "name": "setSignerScoped",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"

@@ -6,7 +6,7 @@ pragma solidity >=0.8.18;
 
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import { AccountStorage } from "../storages/AccountStorage.sol";
+import { AccountStorage, VirtualAccountData } from "../storages/AccountStorage.sol";
 import { AffiliateStorage, HookContext } from "../storages/AffiliateStorage.sol";
 import { ISymmio } from "../interfaces/ISymmio.sol";
 import { IMultiAccount } from "../interfaces/IMultiAccount.sol";
@@ -23,6 +23,24 @@ library LibAccountLayerUtils {
 	function getSigner() internal view returns (address) {
 		address signer = AccountStorage.layout().globalSigner;
 		return signer == address(0) ? msg.sender : signer;
+	}
+
+	/// @notice Resolves an account to the sub-account that owns its delegation grants
+	/// @dev Mirrors the delegation key used by callers such as the InstantLayer: an existing virtual
+	///      account resolves to its parent, anything else (sub-accounts, legacy accounts, and deleted
+	///      VAs) resolves to itself. Keeping the two definitions identical is what makes an enforced
+	///      scope mean the same set of accounts as the grant that produced it.
+	function canonicalAccountScope(address account) internal view returns (address) {
+		VirtualAccountData storage vData = AccountStorage.layout().virtualAccounts[account];
+		return vData.isExists ? vData.parentAccount : account;
+	}
+
+	/// @notice Reverts when the active signer session may not act on the given account
+	/// @dev A zero scope means the session is unconfined, which is how every direct caller behaves.
+	function requireAccountInScope(address account) internal view {
+		address scope = AccountStorage.layout().scopedAccount;
+		if (scope == address(0)) return;
+		if (canonicalAccountScope(account) != scope) revert IAccountLayerErrors.AccountOutOfScope(scope, account);
 	}
 
 	/// @notice Executes a call on the Symmio core with setSigner(account), then clears the signer
