@@ -1283,6 +1283,11 @@ table {
 	font-size: 14px;
 }
 
+.enum-table td:nth-child(2) code {
+	overflow-wrap: normal;
+	white-space: nowrap;
+}
+
 table caption {
 	padding: 9px 12px;
 	border-bottom: 1px solid var(--line);

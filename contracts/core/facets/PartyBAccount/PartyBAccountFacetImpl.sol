@@ -13,6 +13,7 @@ import { LibPartyBState } from "../../libraries/extensions/LibPartyBState.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { SingleUpnlSig } from "../../storages/MuonStorage.sol";
 import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
+import { SharedEvents } from "../../libraries/SharedEvents.sol";
 
 library PartyBAccountFacetImpl {
 	using LibPartyBState for address;
@@ -26,7 +27,7 @@ library PartyBAccountFacetImpl {
 		require(accountLayout.balances[signer] >= amount, "AccountFacet: Insufficient balance");
 		signer.requireNotLiquidating(partyA);
 		accountLayout.balances[signer] -= amount;
-		accountLayout.partyBAllocatedBalances[signer][partyA] += amount;
+		LibAccount.increasePartyBAllocatedBalance(signer, partyA, amount, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
 	/// @notice Moves collateral from Party B's allocated balance back to free balance after solvency check.
@@ -60,7 +61,7 @@ library PartyBAccountFacetImpl {
 			}
 		}
 
-		accountLayout.partyBAllocatedBalances[signer][partyA] -= amount;
+		LibAccount.decreasePartyBAllocatedBalance(signer, partyA, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
 		accountLayout.balances[signer] += amount;
 		accountLayout.deallocateTimestamp[signer] = block.timestamp;
 	}
@@ -92,9 +93,9 @@ library PartyBAccountFacetImpl {
 			);
 		}
 
-		accountLayout.partyBAllocatedBalances[signer][origin] -= amount;
+		LibAccount.decreasePartyBAllocatedBalance(signer, origin, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
 		// allocate for recipient
-		accountLayout.partyBAllocatedBalances[signer][recipient] += amount;
+		LibAccount.increasePartyBAllocatedBalance(signer, recipient, amount, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
 	/// @notice Deposits from the caller's balance into the specified partyB's emergency reserve vault

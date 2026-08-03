@@ -16,6 +16,82 @@ import { LibQuote } from "./LibQuote.sol";
 library LibAccount {
 	using LockedValuesOps for LockedValues;
 
+	/// @notice Increases PartyA allocated balance and emits the matching non-zero ledger delta.
+	function increasePartyAAllocatedBalance(
+		address partyA,
+		uint256 amount,
+		SharedEvents.BalanceChangeType reason
+	) internal returns (uint256 newAllocatedBalance) {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		newAllocatedBalance = accountLayout.allocatedBalances[partyA] + amount;
+		accountLayout.allocatedBalances[partyA] = newAllocatedBalance;
+		if (amount > 0) emit SharedEvents.BalanceChangePartyA(partyA, amount, reason);
+	}
+
+	/// @notice Decreases PartyA allocated balance and emits the matching non-zero ledger delta.
+	function decreasePartyAAllocatedBalance(
+		address partyA,
+		uint256 amount,
+		SharedEvents.BalanceChangeType reason
+	) internal returns (uint256 newAllocatedBalance) {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		newAllocatedBalance = accountLayout.allocatedBalances[partyA] - amount;
+		accountLayout.allocatedBalances[partyA] = newAllocatedBalance;
+		if (amount > 0) emit SharedEvents.BalanceChangePartyA(partyA, amount, reason);
+	}
+
+	/// @notice Increases PartyA's liquidation reimbursement bucket and emits its exact non-zero delta.
+	function increasePartyAReimbursement(
+		address partyA,
+		uint256 amount,
+		SharedEvents.ReimbursementChangeType reason
+	) internal returns (uint256 newReimbursementBalance) {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		newReimbursementBalance = accountLayout.partyAReimbursement[partyA] + amount;
+		accountLayout.partyAReimbursement[partyA] = newReimbursementBalance;
+		if (amount > 0) emit SharedEvents.PartyAReimbursementChange(partyA, amount, newReimbursementBalance, reason);
+	}
+
+	/// @notice Decreases PartyA's liquidation reimbursement bucket and emits its exact non-zero delta.
+	function decreasePartyAReimbursement(
+		address partyA,
+		uint256 amount,
+		SharedEvents.ReimbursementChangeType reason
+	) internal returns (uint256 newReimbursementBalance) {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		newReimbursementBalance = accountLayout.partyAReimbursement[partyA] - amount;
+		accountLayout.partyAReimbursement[partyA] = newReimbursementBalance;
+		if (amount > 0) emit SharedEvents.PartyAReimbursementChange(partyA, amount, newReimbursementBalance, reason);
+	}
+
+	/// @notice Increases a PartyB allocation bucket and emits the matching non-zero ledger delta.
+	/// @param allocationKey The exact PartyB storage bucket and event key, which can be address(0) in cross mode.
+	function increasePartyBAllocatedBalance(
+		address partyB,
+		address allocationKey,
+		uint256 amount,
+		SharedEvents.BalanceChangeType reason
+	) internal returns (uint256 newAllocatedBalance) {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		newAllocatedBalance = accountLayout.partyBAllocatedBalances[partyB][allocationKey] + amount;
+		accountLayout.partyBAllocatedBalances[partyB][allocationKey] = newAllocatedBalance;
+		if (amount > 0) emit SharedEvents.BalanceChangePartyB(partyB, allocationKey, amount, reason);
+	}
+
+	/// @notice Decreases a PartyB allocation bucket and emits the matching non-zero ledger delta.
+	/// @param allocationKey The exact PartyB storage bucket and event key, which can be address(0) in cross mode.
+	function decreasePartyBAllocatedBalance(
+		address partyB,
+		address allocationKey,
+		uint256 amount,
+		SharedEvents.BalanceChangeType reason
+	) internal returns (uint256 newAllocatedBalance) {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		newAllocatedBalance = accountLayout.partyBAllocatedBalances[partyB][allocationKey] - amount;
+		accountLayout.partyBAllocatedBalances[partyB][allocationKey] = newAllocatedBalance;
+		if (amount > 0) emit SharedEvents.BalanceChangePartyB(partyB, allocationKey, amount, reason);
+	}
+
 	/// @notice Calculates the total locked balances of Party A.
 	/// @param partyA The address of Party A.
 	/// @return The total locked balances of Party A.
@@ -385,8 +461,7 @@ library LibAccount {
 	function refundOpenTradingFee(uint256 quoteId, address partyA) internal {
 		uint256 fee = LibQuote.getOpenTradingFee(quoteId);
 		releaseReservedOpenTradingFee(partyA, fee);
-		AccountStorage.layout().allocatedBalances[partyA] += fee;
-		emit SharedEvents.BalanceChangePartyA(partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
+		increasePartyAAllocatedBalance(partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
 	}
 
 	/// @notice Converts an amount from collateral decimals to 18 decimals.

@@ -36,6 +36,16 @@ interface IPartyALiquidationEvents {
 	);
 	event LiquidatePendingPositionsPartyA(address liquidator, address partyA, uint256[] quoteIds, uint256[] liquidatedAmounts, bytes liquidationId);
 	event SettlePartyALiquidation(address partyA, address[] partyBs, int256[] amounts, bytes liquidationId);
+	/// @notice Extended settlement event exposing the exact PartyB allocation keys and CVA releases.
+	/// @dev Array values at index `i` belong to `partyBs[i]`. The legacy overload above is still emitted for compatibility.
+	event SettlePartyALiquidation(
+		address partyA,
+		address[] partyBs,
+		address[] allocationKeys,
+		int256[] amounts,
+		uint256[] cvaAmounts,
+		bytes liquidationId
+	);
 	event LiquidationDisputed(address partyA, bytes liquidationId);
 	event ResolveLiquidationDispute(address partyA, address[] partyBs, int256[] amounts, bool disputed, bytes liquidationId);
 	event FullyLiquidatedPartyA(address partyA, bytes liquidationId);

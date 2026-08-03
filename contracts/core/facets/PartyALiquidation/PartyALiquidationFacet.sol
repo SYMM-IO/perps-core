@@ -111,11 +111,15 @@ contract PartyALiquidationFacet is Pausable, Accessibility, IPartyALiquidationFa
 	/// @param partyA The address of Party A to settle liquidation for.
 	/// @param partyBs An array of addresses representing Party Bs involved in the settlement.
 	function settlePartyALiquidation(address partyA, address[] memory partyBs) external whenNotLiquidationPaused {
-		(int256[] memory settleAmounts, bytes memory liquidationId, bool fullySettled) = LibPartyALiquidationProcess.settlePartyALiquidation(
-			partyA,
-			partyBs
-		);
+		(
+			int256[] memory settleAmounts,
+			address[] memory allocationKeys,
+			uint256[] memory cvaAmounts,
+			bytes memory liquidationId,
+			bool fullySettled
+		) = LibPartyALiquidationProcess.settlePartyALiquidation(partyA, partyBs);
 		emit SettlePartyALiquidation(partyA, partyBs, settleAmounts, liquidationId);
+		emit SettlePartyALiquidation(partyA, partyBs, allocationKeys, settleAmounts, cvaAmounts, liquidationId);
 		if (fullySettled) {
 			emit FullyLiquidatedPartyA(partyA, liquidationId);
 		}

@@ -27,12 +27,12 @@
 						<h1>Symmio Core <span>v0.8.6</span></h1>
 						<p class="hero-copy">
 							A technical guide to the release: faster withdrawals, delegated AccountLayer ownership, safer liquidation settlement,
-							and tighter operational controls.
+							reconstructible allocated-balance events, and tighter operational controls.
 						</p>
 					</div>
 					<div class="release-summary" role="list" aria-label="Release contents">
-						<div role="listitem"><strong>08</strong><span>New features</span></div>
-						<div role="listitem"><strong>06</strong><span>Minor improvements</span></div>
+						<div role="listitem"><strong>09</strong><span>New features</span></div>
+						<div role="listitem"><strong>05</strong><span>Minor improvements</span></div>
 						<div role="listitem"><strong>15</strong><span>Technical notes</span></div>
 					</div>
 				</div>
@@ -115,22 +115,33 @@
 						<span class="doc-list-index">07</span>
 						<span class="doc-list-main">
 							<span class="category">Fees</span>
-								<strong>Solver Fees</strong>
-								<span
-									>v0.8.6 adds explicit solver rate fees, charged from PartyA allocated balance and bounded by user-approved notional-rate
-									caps plus execution-time solvency checks.</span
-								>
+							<strong>Solver Fees</strong>
+							<span
+								>v0.8.6 adds explicit solver rate fees, charged from PartyA allocated balance and bounded by user-approved
+								notional-rate caps plus execution-time solvency checks.</span
+							>
 						</span>
 					</a>
 					<a class="doc-list-item" href="pages/operational-fees.html">
 						<span class="doc-list-index">08</span>
 						<span class="doc-list-main">
 							<span class="category">Fees</span>
-								<strong>Operational Fees</strong>
-								<span
-									>A unified per-op fee primitive shared by solvers and registered relayers, backed by a standing per-(payer, charger)
-									allowance with timelocked reductions and a priority multiplier.</span
-								>
+							<strong>Operational Fees</strong>
+							<span
+								>A unified per-op fee primitive shared by solvers and registered relayers, backed by a standing per-(payer, charger)
+								allowance with timelocked reductions and a priority multiplier.</span
+							>
+						</span>
+					</a>
+					<a class="doc-list-item" href="pages/balance-change-event-cleanup.html">
+						<span class="doc-list-index">09</span>
+						<span class="doc-list-main">
+							<span class="category">Events &amp; Indexing</span>
+							<strong>Allocated Balance Event Ledger</strong>
+							<span
+								>Every PartyA and PartyB allocated-balance mutation now emits an exact storage-backed delta. Dedicated reimbursement
+								and liquidation settlement events preserve lifecycle context without corrupting the allocated ledger.</span
+							>
 						</span>
 					</a>
 				</div>
@@ -144,13 +155,6 @@
 							<span class="category">Liquidation</span>
 							<strong>PartyA Liquidation Fee Recipient Cleanup</strong>
 							<span>Records the liquidation starter as the unambiguous recipient for capped PartyA liquidation fees.</span>
-						</a>
-						<a class="minor-improvement-item" href="pages/balance-change-event-cleanup.html">
-							<span class="category">Events</span>
-							<strong>BalanceChange Event Cleanup</strong>
-							<span
-								>Emits the matching <code>BalanceChange</code> type for reimbursement, fee, deferred-balance, and LF movements.</span
-							>
 						</a>
 						<a class="minor-improvement-item" href="pages/lazy-accumulated-funding.html">
 							<span class="category">Funding</span>
@@ -168,14 +172,17 @@
 						<a class="minor-improvement-item" href="pages/cross-partyb-liquidation-reserve.html">
 							<span class="category">Liquidation</span>
 							<strong>Cross-PartyB Liquidation Reserve Enforcement</strong>
-							<span>Pending cross-PartyB liquidation settlement reserves now reduce shared quote, solvency, and liquidation availability.</span>
+							<span
+								>Pending cross-PartyB liquidation settlement reserves now reduce shared quote, solvency, and liquidation
+								availability.</span
+							>
 						</a>
 						<a class="minor-improvement-item" href="pages/strict-deallocation.html">
 							<span class="category">Accounts</span>
 							<strong>Strict Deallocation</strong>
 							<span
-								>PartyA and opted-in PartyBs preserve raw liquidation collateral during deallocation, with public views for the maximum safe
-								amount.</span
+								>PartyA and opted-in PartyBs preserve raw liquidation collateral during deallocation, with public views for the
+								maximum safe amount.</span
 							>
 						</a>
 					</div>

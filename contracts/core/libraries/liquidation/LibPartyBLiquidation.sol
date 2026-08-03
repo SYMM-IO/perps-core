@@ -75,20 +75,13 @@ library LibPartyBLiquidation {
 
 		// Update allocated balances for Party A
 		uint256 value = accountLayout.partyBAllocatedBalances[partyB][partyA] - remainingLf;
-		accountLayout.allocatedBalances[partyA] += value;
-		emit SharedEvents.BalanceChangePartyA(partyA, value, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+		LibAccount.increasePartyAAllocatedBalance(partyA, value, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 
 		// Clear pending quotes and reset balances for Party B
 		delete quoteLayout.partyBPendingQuotes[partyB][partyA];
 		LibConnections.removeConnectionIfNoPositions(partyA, partyB);
-		emit SharedEvents.BalanceChangePartyB(
-			partyB,
-			partyA,
-			accountLayout.partyBAllocatedBalances[partyB][partyA],
-			SharedEvents.BalanceChangeType.REALIZED_PNL_OUT
-		);
-
-		accountLayout.partyBAllocatedBalances[partyB][partyA] = 0;
+		LibAccount.decreasePartyBAllocatedBalance(partyB, partyA, value, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
+		LibAccount.decreasePartyBAllocatedBalance(partyB, partyA, remainingLf, SharedEvents.BalanceChangeType.LF_OUT);
 
 		// Subtract from cross bucket before zeroing per-partyA balances
 		LockedValues memory lv = accountLayout.partyBLockedBalances[partyB][partyA];
@@ -110,8 +103,7 @@ library LibPartyBLiquidation {
 
 		// Transfer liquidator share to the liquidator
 		if (liquidatorShare > 0) {
-			accountLayout.allocatedBalances[LibSigner.getSigner()] += liquidatorShare;
-			emit SharedEvents.BalanceChangePartyA(LibSigner.getSigner(), liquidatorShare, SharedEvents.BalanceChangeType.LF_IN);
+			LibAccount.increasePartyAAllocatedBalance(LibSigner.getSigner(), liquidatorShare, SharedEvents.BalanceChangeType.LF_IN);
 		}
 	}
 }

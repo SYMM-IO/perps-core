@@ -74,8 +74,7 @@ library PartyBLiquidationFacetImpl {
 		}
 		if (maLayout.partyBPositionLiquidatorsShare[partyB][partyA] > 0) {
 			uint256 lf = maLayout.partyBPositionLiquidatorsShare[partyB][partyA] * priceSig.quoteIds.length;
-			accountLayout.allocatedBalances[msg.sender] += lf;
-			emit SharedEvents.BalanceChangePartyA(msg.sender, lf, SharedEvents.BalanceChangeType.LF_IN);
+			LibAccount.increasePartyAAllocatedBalance(msg.sender, lf, SharedEvents.BalanceChangeType.LF_IN);
 		}
 
 		if (quoteLayout.partyBPositionsCount[partyB][partyA] == 0) {
