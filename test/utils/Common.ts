@@ -160,24 +160,30 @@ export function getQuoteOpenTradingFeeAtPrice(quote: QuoteStructOutput, amount: 
 	return getTradingFeeAtPrice(amount, tradingPrice, quote.tradingFee)
 }
 
-export function getTrueUpInsolvencyUpnl(
+/**
+ * Picks an unrealized PnL that leaves PartyA exactly one wei short of covering the open-fee shortfall:
+ * solvent right up until the delta is applied, insolvent immediately after. Used to prove the debit
+ * lands early enough for the caller's solvency check to reject the whole open.
+ */
+export function getOpenFeeDeltaInsolvencyUpnl(
 	allocatedBefore: bigint,
 	lockedCva: bigint,
 	lockedLf: bigint,
 	reservedFee: bigint,
 	executedFee: bigint,
-): { trueUpDelta: bigint; freeBalanceBeforeTrueUp: bigint; upnlPartyA: bigint } {
-	const trueUpDelta = executedFee - reservedFee
-	const freeBalanceBeforeTrueUp = allocatedBefore - (lockedCva + lockedLf)
-	const upnlPartyA = -freeBalanceBeforeTrueUp + trueUpDelta - 1n
-	return { trueUpDelta, freeBalanceBeforeTrueUp, upnlPartyA }
+): { feeShortfall: bigint; freeBalanceBeforeDelta: bigint; upnlPartyA: bigint } {
+	const feeShortfall = executedFee - reservedFee
+	const freeBalanceBeforeDelta = allocatedBefore - (lockedCva + lockedLf)
+	const upnlPartyA = -freeBalanceBeforeDelta + feeShortfall - 1n
+	return { feeShortfall, freeBalanceBeforeDelta, upnlPartyA }
 }
 
-function getQuoteTradingFeeWithAmount(quote: QuoteStructOutput, amount: bigint, useExecutedPriceForOpened: boolean): bigint {
+/** Mirrors LibQuote: limit quotes price off requestedOpenPrice, market quotes off marketPrice (reserved) or openedPrice (executed). */
+function getQuoteTradingFeeWithAmount(quote: QuoteStructOutput, amount: bigint, useExecutedBasis: boolean): bigint {
 	const tradingPrice =
 		quote.orderType === BigInt(OrderType.LIMIT)
 			? quote.requestedOpenPrice
-			: useExecutedPriceForOpened && quote.openedPrice !== 0n
+			: useExecutedBasis && quote.openedPrice !== 0n
 				? quote.openedPrice
 				: quote.marketPrice
 	return getTradingFeeAtPrice(amount, tradingPrice, quote.tradingFee)

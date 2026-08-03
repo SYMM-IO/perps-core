@@ -12,7 +12,7 @@ import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
 import { limitOpenRequestBuilder, marketOpenRequestBuilder, OpenRequest } from "./models/requestModels/OpenRequest.js"
 import { limitQuoteRequestBuilder, marketQuoteRequestBuilder, QuoteRequest } from "./models/requestModels/QuoteRequest.js"
-import { decimal, getBlockTimestamp, getTradingFeeAtPrice, getTrueUpInsolvencyUpnl } from "./utils/Common.js"
+import { decimal, getBlockTimestamp, getTradingFeeAtPrice, getOpenFeeDeltaInsolvencyUpnl } from "./utils/Common.js"
 import { getDummyPairUpnlAndPriceSig, getDummySingleUpnlAndPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -384,17 +384,17 @@ export function shouldBehaveLikeInstantOpenMode(): void {
 			const affiliate = await context.accountManager.getAddress()
 			await context.controlFacet.connect(context.signers.admin).registerHook(affiliate, await affiliateHook.getAddress())
 
-			const provisionalMarketPrice = decimal(9n, 17)
+			const signedMarketPrice = decimal(9n, 17)
 			const openedPrice = decimal(11n, 17)
 			const quoteRequest = marketQuoteRequestBuilder()
 				.partyBWhiteList([await context.symmioPartyB.getAddress()])
 				.affiliate(affiliate)
 				.price(decimal(12n, 17))
-				.upnlSig(getDummySingleUpnlAndPriceSig(provisionalMarketPrice))
+				.upnlSig(getDummySingleUpnlAndPriceSig(signedMarketPrice))
 				.build()
 			await setSendLockOpenRequests(
 				quoteRequest,
-				marketOpenRequestBuilder().filledAmount(quoteRequest.quantity).openPrice(openedPrice).price(provisionalMarketPrice).build(),
+				marketOpenRequestBuilder().filledAmount(quoteRequest.quantity).openPrice(openedPrice).price(signedMarketPrice).build(),
 			)
 
 			const feeCollector = await context.viewFacet.getFeeCollector(affiliate)
@@ -423,12 +423,12 @@ export function shouldBehaveLikeInstantOpenMode(): void {
 			await regularHedger.setup()
 			await regularHedger.setBalances(decimal(4000n), decimal(4000n))
 
-			const provisionalMarketPrice = decimal(9n, 17)
+			const signedMarketPrice = decimal(9n, 17)
 			const openedPrice = decimal(1n)
 			const quoteRequest = marketQuoteRequestBuilder()
 				.partyBWhiteList([await regularHedger.getAddress()])
 				.price(decimal(1n))
-				.upnlSig(getDummySingleUpnlAndPriceSig(provisionalMarketPrice))
+				.upnlSig(getDummySingleUpnlAndPriceSig(signedMarketPrice))
 				.build()
 			await context.controlFacet.connect(context.signers.admin).setInstantOpenMode(true)
 			const quoteId = await regularUser.sendQuote(quoteRequest)
@@ -438,7 +438,7 @@ export function shouldBehaveLikeInstantOpenMode(): void {
 			const allocatedBefore = await context.viewFacet.allocatedBalanceOfPartyA(await regularUser.getAddress())
 			const reservedFee = getTradingFeeAtPrice(quoteBeforeOpen.quantity, quoteBeforeOpen.marketPrice, quoteBeforeOpen.tradingFee)
 			const executedFee = getTradingFeeAtPrice(quoteBeforeOpen.quantity, openedPrice, quoteBeforeOpen.tradingFee)
-			const { trueUpDelta, freeBalanceBeforeTrueUp, upnlPartyA } = getTrueUpInsolvencyUpnl(
+			const { feeShortfall, freeBalanceBeforeDelta, upnlPartyA } = getOpenFeeDeltaInsolvencyUpnl(
 				allocatedBefore,
 				quoteBeforeOpen.lockedValues.cva,
 				quoteBeforeOpen.lockedValues.lf,
@@ -446,9 +446,9 @@ export function shouldBehaveLikeInstantOpenMode(): void {
 				executedFee,
 			)
 
-			expect(trueUpDelta).to.be.greaterThan(0n)
-			expect(freeBalanceBeforeTrueUp + upnlPartyA).to.equal(trueUpDelta - 1n)
-			expect(freeBalanceBeforeTrueUp - trueUpDelta + upnlPartyA).to.equal(-1n)
+			expect(feeShortfall).to.be.greaterThan(0n)
+			expect(freeBalanceBeforeDelta + upnlPartyA).to.equal(feeShortfall - 1n)
+			expect(freeBalanceBeforeDelta - feeShortfall + upnlPartyA).to.equal(-1n)
 
 			await expect(
 				regularHedger.openPosition(
@@ -456,7 +456,7 @@ export function shouldBehaveLikeInstantOpenMode(): void {
 					marketOpenRequestBuilder()
 						.filledAmount(quoteBeforeOpen.quantity)
 						.openPrice(openedPrice)
-						.price(provisionalMarketPrice)
+						.price(signedMarketPrice)
 						.upnlPartyA(upnlPartyA)
 						.build(),
 				),

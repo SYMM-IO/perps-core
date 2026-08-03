@@ -62,7 +62,8 @@ library LibPartyBPositionsActions {
 		}
 
 		uint256 quoteFeeBeforeOpen = LibQuote.getOpenTradingFee(quote.id);
-		uint256 provisionalOpenFee = LibQuote.getOpenTradingFeeReserved(quote, filledAmount);
+		// Snapshot the reserved fee before openedPrice is written, after which the request-time basis is unrecoverable.
+		uint256 reservedOpenFee = LibQuote.getReservedOpenTradingFee(quote, filledAmount);
 		uint256 remainingQuoteFee = 0;
 		if (quote.orderType == OrderType.LIMIT) {
 			require(quote.quantity >= filledAmount && filledAmount > 0, "PartyBFacet: Invalid filledAmount");
@@ -78,8 +79,10 @@ library LibPartyBPositionsActions {
 		quote.openedPrice = openedPrice;
 		quote.initialOpenedPrice = openedPrice;
 		quote.statusModifyTimestamp = block.timestamp;
-		uint256 executedOpenFee = LibQuote.getOpenTradingFeeExecuted(quote, filledAmount);
-		LibAccount.trueUpOpenTradingFee(quote.partyA, provisionalOpenFee, executedOpenFee);
+		// Charge on the price PartyB actually filled at. Settling the difference here, before the caller's
+		// solvency check, is what lets an unaffordable shortfall revert the whole open.
+		uint256 executedOpenFee = LibQuote.getExecutedOpenTradingFee(quote, filledAmount);
+		LibAccount.applyOpenTradingFeeDelta(quote.partyA, reservedOpenFee, executedOpenFee);
 
 		LibQuoteFunding.updateAccumulatedPaidFunding(quoteId);
 		if (!_instantOpenMode) {

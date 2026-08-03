@@ -80,9 +80,9 @@ export function shouldBehaveLikeCancelQuote(): void {
 		})
 	})
 
-	it("Should refund the provisional market fee when canceling a pending market quote", async function () {
-		const provisionalMarketPrice = decimal(9n, 17)
-		const quoteId = await user.sendQuote(marketQuoteRequestBuilder().upnlSig(getDummySingleUpnlAndPriceSig(provisionalMarketPrice)).build())
+	it("Should refund the reserved market fee when canceling a pending market quote", async function () {
+		const signedMarketPrice = decimal(9n, 17)
+		const quoteId = await user.sendQuote(marketQuoteRequestBuilder().upnlSig(getDummySingleUpnlAndPriceSig(signedMarketPrice)).build())
 		const quote = await context.viewFacetQuote.getQuote(quoteId)
 		const allocatedBefore = (await user.getBalanceInfo()).allocatedBalances
 		const reservedFee = await getOpenTradingFeeForQuoteWithFilledAmount(context, quoteId, quote.quantity)
@@ -110,9 +110,9 @@ export function shouldBehaveLikeCancelQuote(): void {
 		})
 	})
 
-	it("Should refund the provisional market fee when a pending market quote expires", async function () {
-		const provisionalMarketPrice = decimal(9n, 17)
-		const quoteId = await user.sendQuote(marketQuoteRequestBuilder().upnlSig(getDummySingleUpnlAndPriceSig(provisionalMarketPrice)).build())
+	it("Should refund the reserved market fee when a pending market quote expires", async function () {
+		const signedMarketPrice = decimal(9n, 17)
+		const quoteId = await user.sendQuote(marketQuoteRequestBuilder().upnlSig(getDummySingleUpnlAndPriceSig(signedMarketPrice)).build())
 		const quote = await context.viewFacetQuote.getQuote(quoteId)
 		const allocatedBefore = (await user.getBalanceInfo()).allocatedBalances
 		const reservedFee = await getOpenTradingFeeForQuoteWithFilledAmount(context, quoteId, quote.quantity)

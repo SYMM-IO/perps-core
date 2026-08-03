@@ -19,7 +19,7 @@ import {
 	getOpenTradingFeeForQuoteWithFilledAmount,
 	getQuoteOpenTradingFeeAtPrice,
 	getQuoteQuantity,
-	getTrueUpInsolvencyUpnl,
+	getOpenFeeDeltaInsolvencyUpnl,
 	pausePartyB,
 } from "./utils/Common.js"
 import { migratePartyBToCross } from "./utils/CrossPartyB.js"
@@ -264,12 +264,12 @@ export function shouldBehaveLikeOpenPosition(): void {
 			})
 		})
 
-		it("Should refund excess provisional market fee when executed fee is lower", async function () {
+		it("Should refund the excess when the executed fee is below the reserved fee", async function () {
 			const requestedOpenPrice = decimal(1n)
-			const provisionalMarketPrice = decimal(1n)
+			const signedMarketPrice = decimal(1n)
 			const openedPrice = decimal(9n, 17)
 			const quoteId = await user2.sendQuote(
-				marketQuoteRequestBuilder().price(requestedOpenPrice).upnlSig(getDummySingleUpnlAndPriceSig(provisionalMarketPrice)).build(),
+				marketQuoteRequestBuilder().price(requestedOpenPrice).upnlSig(getDummySingleUpnlAndPriceSig(signedMarketPrice)).build(),
 			)
 			await hedger.lockQuote(quoteId)
 
@@ -282,7 +282,7 @@ export function shouldBehaveLikeOpenPosition(): void {
 
 			await hedger.openPosition(
 				quoteId,
-				marketOpenRequestBuilder().filledAmount(quoteBeforeOpen.quantity).openPrice(openedPrice).price(provisionalMarketPrice).build(),
+				marketOpenRequestBuilder().filledAmount(quoteBeforeOpen.quantity).openPrice(openedPrice).price(signedMarketPrice).build(),
 			)
 
 			const feeCollectorAfter = await context.viewFacet.balanceOf(feeCollector)
@@ -291,12 +291,12 @@ export function shouldBehaveLikeOpenPosition(): void {
 			expect(allocatedAfter - allocatedBefore).to.equal(expectedReservedFee - expectedExecutedFee)
 		})
 
-		it("Should debit the market fee shortfall when executed fee is higher", async function () {
+		it("Should debit the shortfall when the executed fee is above the reserved fee", async function () {
 			const requestedOpenPrice = decimal(1n)
-			const provisionalMarketPrice = decimal(9n, 17)
+			const signedMarketPrice = decimal(9n, 17)
 			const openedPrice = decimal(1n)
 			const quoteId = await user2.sendQuote(
-				marketQuoteRequestBuilder().price(requestedOpenPrice).upnlSig(getDummySingleUpnlAndPriceSig(provisionalMarketPrice)).build(),
+				marketQuoteRequestBuilder().price(requestedOpenPrice).upnlSig(getDummySingleUpnlAndPriceSig(signedMarketPrice)).build(),
 			)
 			await hedger.lockQuote(quoteId)
 
@@ -309,7 +309,7 @@ export function shouldBehaveLikeOpenPosition(): void {
 
 			await hedger.openPosition(
 				quoteId,
-				marketOpenRequestBuilder().filledAmount(quoteBeforeOpen.quantity).openPrice(openedPrice).price(provisionalMarketPrice).build(),
+				marketOpenRequestBuilder().filledAmount(quoteBeforeOpen.quantity).openPrice(openedPrice).price(signedMarketPrice).build(),
 			)
 
 			const feeCollectorAfter = await context.viewFacet.balanceOf(feeCollector)
@@ -320,10 +320,10 @@ export function shouldBehaveLikeOpenPosition(): void {
 
 		it("Should fail when the executed-fee true-up makes PartyA insolvent", async function () {
 			const requestedOpenPrice = decimal(1n)
-			const provisionalMarketPrice = decimal(9n, 17)
+			const signedMarketPrice = decimal(9n, 17)
 			const openedPrice = decimal(1n)
 			const quoteId = await user2.sendQuote(
-				marketQuoteRequestBuilder().price(requestedOpenPrice).upnlSig(getDummySingleUpnlAndPriceSig(provisionalMarketPrice)).build(),
+				marketQuoteRequestBuilder().price(requestedOpenPrice).upnlSig(getDummySingleUpnlAndPriceSig(signedMarketPrice)).build(),
 			)
 			await hedger.lockQuote(quoteId)
 
@@ -331,7 +331,7 @@ export function shouldBehaveLikeOpenPosition(): void {
 			const reservedFee = await getOpenTradingFeeForQuoteWithFilledAmount(context, quoteId, quoteBeforeOpen.quantity)
 			const executedFee = getQuoteOpenTradingFeeAtPrice(quoteBeforeOpen, quoteBeforeOpen.quantity, openedPrice)
 			const allocatedBefore = await context.viewFacet.allocatedBalanceOfPartyA(await user2.getAddress())
-			const { trueUpDelta, freeBalanceBeforeTrueUp, upnlPartyA } = getTrueUpInsolvencyUpnl(
+			const { feeShortfall, freeBalanceBeforeDelta, upnlPartyA } = getOpenFeeDeltaInsolvencyUpnl(
 				allocatedBefore,
 				quoteBeforeOpen.lockedValues.cva,
 				quoteBeforeOpen.lockedValues.lf,
@@ -339,9 +339,9 @@ export function shouldBehaveLikeOpenPosition(): void {
 				executedFee,
 			)
 
-			expect(trueUpDelta).to.be.greaterThan(0n)
-			expect(freeBalanceBeforeTrueUp + upnlPartyA).to.equal(trueUpDelta - 1n)
-			expect(freeBalanceBeforeTrueUp - trueUpDelta + upnlPartyA).to.equal(-1n)
+			expect(feeShortfall).to.be.greaterThan(0n)
+			expect(freeBalanceBeforeDelta + upnlPartyA).to.equal(feeShortfall - 1n)
+			expect(freeBalanceBeforeDelta - feeShortfall + upnlPartyA).to.equal(-1n)
 
 			await expect(
 				hedger.openPosition(
@@ -349,7 +349,7 @@ export function shouldBehaveLikeOpenPosition(): void {
 					marketOpenRequestBuilder()
 						.filledAmount(quoteBeforeOpen.quantity)
 						.openPrice(openedPrice)
-						.price(provisionalMarketPrice)
+						.price(signedMarketPrice)
 						.upnlPartyA(upnlPartyA)
 						.build(),
 				),
@@ -419,7 +419,7 @@ export function shouldBehaveLikeOpenPosition(): void {
 			expect(afterNonceBCross).to.equal(beforeNonceBCross + 1n)
 		})
 
-		it("Should charge the executed market fee when bind-mode sendQuote skips Muon and leaves the provisional market price at zero", async function () {
+		it("Should charge the executed fee when a bound PartyA signs a zero market price and skips Muon", async function () {
 			await hedger.openPosition(1)
 			await user.requestToCancelQuote(2)
 			await hedger2.acceptCancelRequest(2)

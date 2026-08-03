@@ -2258,11 +2258,11 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 	 * partyA regardless of liquidation type — it represents legitimate funds.
 	 */
 	describe("Liquidation Escrow", async function () {
-		it("NORMAL: pending market fees still use provisional reservation semantics", async function () {
+		it("NORMAL: pending market fees are reimbursed at the reserved basis", async function () {
 			const userAddress = await context.signers.user.getAddress()
-			const provisionalMarketPrice = decimal(9n, 17)
+			const signedMarketPrice = decimal(9n, 17)
 			await user.requestToCancelQuote(3)
-			const marketQuoteId = await user.sendQuote(marketQuoteRequestBuilder().upnlSig(getDummySingleUpnlAndPriceSig(provisionalMarketPrice)).build())
+			const marketQuoteId = await user.sendQuote(marketQuoteRequestBuilder().upnlSig(getDummySingleUpnlAndPriceSig(signedMarketPrice)).build())
 			const expectedFees = await getTradingFeeForQuotes(context, [2n, 5n, marketQuoteId])
 
 			const price = decimal(572n, 16) // triggers NORMAL
