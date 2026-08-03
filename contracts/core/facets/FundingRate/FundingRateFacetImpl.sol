@@ -289,27 +289,40 @@ library FundingRateFacetImpl {
 		require(FundingStorage.layout().accumulatedFundingActivated, "FundingRateFacet: New System Not Enabled");
 		LibMuonFundingRate.verifyPairUpnl(upnlSig, partyB, partyA, MuonFunction.Funding);
 
-		// Apply accumulated funding to each position
+		// Apply accumulated funding to each position. The signed UPNLs already include
+		// funding debt at the signature timestamp, so retain that exact amount for the
+		// post-charge solvency check even if execution crosses an epoch boundary.
+		int256 signedFundingFee;
 		for (uint256 i = 0; i < quoteIds.length; i++) {
 			Quote storage quote = QuoteStorage.layout().quotes[quoteIds[i]];
 			LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
 			require(quote.partyA == partyA, "FundingRateFacet: Invalid quote");
 			require(quote.partyB == partyB, "FundingRateFacet: Sender isn't partyB of quote");
 			quote.requireOpenPosition();
+			require(
+				upnlSig.timestamp >= FundingStorage.layout().fundingFees[quote.symbolId][quote.partyB].lastUpdatedTimeStamp,
+				"FundingRateFacet: Outdated funding signature"
+			);
 
 			// Delegate to library function that handles the actual fee calculation
+			signedFundingFee += LibQuoteFunding.getAccumulatedFundingFeeAt(quoteIds[i], upnlSig.timestamp);
 			LibQuoteFunding.chargeAccumulatedFundingFee(quoteIds[i]);
 		}
 
-		// Verify solvency after all funding fees are applied
-		int256 partyBAvailableBalance = LibAccount.partyBAvailableBalanceForLiquidation(upnlSig.upnlPartyB, partyB, partyA);
+		// Realization removes the signed funding debt from UPNL and transfers the
+		// execution-time fee through allocated balances.
+		int256 partyBAvailableBalance = LibAccount.partyBAvailableBalanceForLiquidation(upnlSig.upnlPartyB - signedFundingFee, partyB, partyA);
 		int256 partyAAvailableBalance = LibAccount.partyAAvailableBalanceForLiquidation(
-			upnlSig.upnlPartyA,
+			upnlSig.upnlPartyA + signedFundingFee,
 			AccountStorage.layout().allocatedBalances[partyA],
 			partyA
 		);
 
 		require(partyAAvailableBalance >= 0, "FundingRateFacet: PartyA will be insolvent");
 		require(partyBAvailableBalance >= 0, "FundingRateFacet: PartyB will be insolvent");
+
+		if (quoteIds.length > 0) {
+			LibAccount.increaseBothNonces(partyB, partyA);
+		}
 	}
 }

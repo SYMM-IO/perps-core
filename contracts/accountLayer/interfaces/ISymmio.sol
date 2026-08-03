@@ -302,7 +302,10 @@ interface ISymmio {
 
 	/// @notice Returns the last assigned quote ID
 	/// @return The last assigned quote ID
-	function getNextQuoteId() external returns (uint256);
+	function getNextQuoteId() external view returns (uint256);
+
+	/// @notice Returns a quote by ID
+	function getQuote(uint256 quoteId) external view returns (Quote memory);
 
 	/// @notice Registers an affiliate on the Symmio core
 	/// @param affiliate The affiliate address to register

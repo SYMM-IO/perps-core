@@ -147,8 +147,12 @@ library LibPartyALiquidationProcess {
 			} else if (liquidationDetail.liquidationType == LiquidationType.LATE) {
 				// LF is exhausted in LATE liquidation, so `deficit` is the amount eaten from PartyA's total CVA.
 				// returned quote CVA = quote CVA - quote's share of total CVA deficit
-				settlementState.cva +=
-					quote.lockedValues.cva - ((quote.lockedValues.cva * liquidationDetail.deficit) / accountLayout.lockedBalances[partyA].cva);
+				if (liquidationDetail.deficit == 0) {
+					settlementState.cva += quote.lockedValues.cva;
+				} else {
+					settlementState.cva +=
+						quote.lockedValues.cva - ((quote.lockedValues.cva * liquidationDetail.deficit) / accountLayout.lockedBalances[partyA].cva);
+				}
 				settlementState.actualAmount += pnlWithFunding;
 				settlementState.expectedAmount += pnlWithFunding;
 			} else if (liquidationDetail.liquidationType == LiquidationType.OVERDUE) {
