@@ -61,7 +61,7 @@ library LibPartyBPositionsActions {
 			require(quote.quantity == filledAmount, "PartyBFacet: InstantOpen requires full fill");
 		}
 
-		uint256 quoteFeeBeforeOpen = LibQuote.getOpenTradingFee(quote.id);
+		uint256 quoteFeeBeforeOpen = LibQuote.getReservedOpenTradingFee(quote, LibQuote.quoteOpenAmount(quote));
 		// Snapshot the reserved fee before openedPrice is written, after which the request-time basis is unrecoverable.
 		uint256 reservedOpenFee = LibQuote.getReservedOpenTradingFee(quote, filledAmount);
 		uint256 remainingQuoteFee = 0;
@@ -172,7 +172,7 @@ library LibPartyBPositionsActions {
 			quoteLayout.quotes[currentId] = q;
 			_splitSolverFeeState(quoteLayout, quote.id, currentId);
 			Quote storage newQuote = quoteLayout.quotes[currentId];
-			remainingQuoteFee = LibQuote.getOpenTradingFee(newQuote.id);
+			remainingQuoteFee = LibQuote.getReservedOpenTradingFee(newQuote, LibQuote.quoteOpenAmount(newQuote));
 
 			if (newStatus == QuoteStatus.CANCELED) {
 				// send trading Fee back to partyA

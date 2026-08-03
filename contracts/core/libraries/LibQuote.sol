@@ -477,15 +477,6 @@ library LibQuote {
 		}
 	}
 
-	/// @notice Gets the open trading fee for the remaining open amount (quantity - closedAmount) of a quote.
-	/// @param quoteId The ID of the quote for which to get the trading fee.
-	/// @return fee The trading fee for the remaining open amount of the quote.
-	function getOpenTradingFee(uint256 quoteId) internal view returns (uint256 fee) {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		Quote storage quote = quoteLayout.quotes[quoteId];
-		return getReservedOpenTradingFee(quote, LibQuote.quoteOpenAmount(quote));
-	}
-
 	/// @notice Gets the open trading fee reserved for `amount` of a quote that has not opened yet.
 	/// @dev Priced at the request-time basis: requestedOpenPrice for limit quotes, marketPrice for market quotes.
 	///      This is what sendQuote debits and reserves, so every refund path (cancel, expire, force cancel,
