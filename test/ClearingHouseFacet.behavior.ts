@@ -326,6 +326,23 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			).to.be.revertedWith("ClearingHouseFacet: Affiliate shutdown not scheduled")
 		})
 
+		it("Should reject affiliate position close when the symbol is frozen for adjustment", async function () {
+			await hedger.lockQuote(1)
+			await hedger.openPosition(1)
+
+			const affiliate = await context.accountManager.getAddress()
+			const quoteBefore = await context.viewFacetQuote.getQuote(1)
+
+			const shutdownAt = await scheduleAffiliateShutdown(affiliate)
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(quoteBefore.symbolId, decimal(4n), now - 1n)
+			await time.setNextBlockTimestamp(shutdownAt)
+
+			await expect(
+				context.clearingHouseFacet.connect(context.signers.liquidator).closeAffiliatePositions(affiliate, [1], [quoteBefore.openedPrice]),
+			).to.be.revertedWith("LibSymbolAdjustment: Symbol is frozen")
+		})
+
 		it("Should reject affiliate position close when partyB is in cross liquidation", async function () {
 			await hedger.lockQuote(1)
 			await hedger.openPosition(1)
@@ -841,6 +858,17 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 						.connect(context.signers.liquidator)
 						.liquidatePositionsForClearingHouse(context.signers.hedger2, [1n], [decimal(1n)]),
 				).to.be.revertedWith("ClearingHouseFacet: No active liquidation")
+			})
+
+			it("should fail when the symbol is frozen for adjustment", async () => {
+				const quote = await context.viewFacetQuote.getQuote(1)
+				const now = await getBlockTimestamp()
+				await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(quote.symbolId, decimal(4n), now - 1n)
+				await expect(
+					context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.liquidatePositionsForClearingHouse(context.signers.hedger, [1n], [decimal(1n)]),
+				).to.be.revertedWith("LibSymbolAdjustment: Symbol is frozen")
 			})
 
 			it("should update position statuses correctly", async () => {

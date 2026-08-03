@@ -7,6 +7,7 @@ pragma solidity >=0.8.18;
 import { IAccountFacet } from "../facets/Account/IAccountFacet.sol";
 import { IControlFacet } from "../facets/Control/IControlFacet.sol";
 import { ISymbolControlFacet } from "../facets/SymbolControl/ISymbolControlFacet.sol";
+import { ISymbolAdjustmentFacet } from "../facets/SymbolAdjustment/ISymbolAdjustmentFacet.sol";
 import { IPauseControlFacet } from "../facets/PauseControl/IPauseControlFacet.sol";
 import { IFundingRateFacet } from "../facets/FundingRate/IFundingRateFacet.sol";
 import { IPartyALiquidationFacet } from "../facets/PartyALiquidation/IPartyALiquidationFacet.sol";
@@ -31,6 +32,7 @@ interface ISymmio is
 	IAccountFacet,
 	IControlFacet,
 	ISymbolControlFacet,
+	ISymbolAdjustmentFacet,
 	IPauseControlFacet,
 	IFundingRateFacet,
 	IBridgeFacet,

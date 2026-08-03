@@ -5,6 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { LibMuonPartyA } from "../../libraries/muon/LibMuonPartyA.sol";
+import { LibSymbolAdjustment } from "../../libraries/LibSymbolAdjustment.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibQuote } from "../../libraries/LibQuote.sol";
 import { LibQuoteClose } from "../../libraries/LibQuoteClose.sol";
@@ -59,6 +60,7 @@ library PartyAFacetImpl {
 			"PartyAFacet: Number of pending quotes out of range"
 		);
 		require(symbolLayout.symbols[symbolId].isValid, "PartyAFacet: Symbol is not valid");
+		LibSymbolAdjustment.requireNotFrozen(symbolId);
 		require(deadline >= block.timestamp, "PartyAFacet: Low deadline");
 
 		LockedValues memory lockedValues = LockedValues(cva, lf, partyAmm, partyBmm);

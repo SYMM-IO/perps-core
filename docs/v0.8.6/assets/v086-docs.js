@@ -457,11 +457,24 @@
 		const zoomLabel = modal.querySelector("[data-diagram-zoom='reset']")
 		const minScale = 0.35
 		const maxScale = 4
+		const fitPadding = 40
 		const applyTransform = () => {
 			canvas.style.transform = `translate(${x}px, ${y}px) scale(${scale})`
 			if (zoomLabel) zoomLabel.textContent = `${Math.round(scale * 100)}%`
 		}
 		const clampScale = (value) => Math.min(maxScale, Math.max(minScale, Number(value.toFixed(3))))
+		const fitToStage = () => {
+			const stageRect = stage.getBoundingClientRect()
+			const contentWidth = canvas.offsetWidth
+			const contentHeight = canvas.offsetHeight
+			if (!contentWidth || !contentHeight) return
+			const availableWidth = Math.max(1, stageRect.width - fitPadding * 2)
+			const availableHeight = Math.max(1, stageRect.height - fitPadding * 2)
+			scale = clampScale(Math.min(1, availableWidth / contentWidth, availableHeight / contentHeight))
+			x = (stageRect.width - contentWidth * scale) / 2
+			y = (stageRect.height - contentHeight * scale) / 2
+			applyTransform()
+		}
 		const stageCenter = () => {
 			const rect = stage.getBoundingClientRect()
 			return {
@@ -483,18 +496,14 @@
 			applyTransform()
 		}
 		const zoomBy = (factor, anchor) => zoomTo(scale * factor, anchor)
-		const reset = () => {
-			scale = 1
-			x = 0
-			y = 0
-			applyTransform()
-		}
+		const reset = () => fitToStage()
 		const focusableSelector = "button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])"
 		const close = () => {
 			modal.remove()
 			document.body.classList.remove("has-diagram-modal")
 			if (activeDiagramModal === modal) activeDiagramModal = null
 			document.removeEventListener("keydown", onKeydown)
+			window.removeEventListener("resize", fitToStage)
 			if (returnFocus && document.contains(returnFocus)) returnFocus.focus()
 		}
 		const onKeydown = (event) => {
@@ -588,8 +597,9 @@
 		stage.addEventListener("pointerup", stopDragging)
 		stage.addEventListener("pointercancel", stopDragging)
 		document.addEventListener("keydown", onKeydown)
+		window.addEventListener("resize", fitToStage)
 		modal.querySelector("[data-diagram-close]").focus()
-		applyTransform()
+		fitToStage()
 	}
 
 	const enhanceMermaidSvg = (svg) => {

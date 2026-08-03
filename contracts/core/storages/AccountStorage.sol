@@ -76,6 +76,9 @@ struct ForceCloseDetail {
 	PartyBForceCloseState partyBState;
 	/// @notice Whether a 3-step force close workflow is active for this quoteId.
 	bool inProgress;
+	/// @notice Symbol price/quantity basis version when the close price was calculated.
+	/// @dev Finalization rejects the workflow if a physical restatement advanced this version.
+	uint256 basisVersion;
 }
 
 /// @notice Complete liquidation state for a PartyA being liquidated
