@@ -989,6 +989,98 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			await expect(user.liquidatePositions([1])).to.not.be.reverted
 		})
 
+		it("Should fail to set legacy liquidation prices for a frozen symbol", async function () {
+			const price = decimal(572n, 16)
+			const quoteIds = [1n]
+			const fundingDebt = await context.viewFacetQuote.getSumQuoteFundingDebts(quoteIds)
+			const upnl = (await user.getUpnl(getPriceFetcher([1n], [price]))) - fundingDebt
+			const totalUnrealizedLoss = (await user.getTotalUnrealisedLoss(getPriceFetcher([1n], [price]))) - fundingDebt
+			const allocatedBalance = (await user.getBalanceInfo()).allocatedBalances
+			const liquidationSig = await getDummyLiquidationSig("0x10", upnl, [1n], [price], totalUnrealizedLoss, allocatedBalance)
+
+			await context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePartyA(user.address, liquidationSig)
+
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(1, decimal(4n), now - 1n)
+
+			await expect(
+				context.partyALiquidationFacet.connect(context.signers.liquidator).setSymbolsPrice(user.address, liquidationSig),
+			).to.be.revertedWith("LibSymbolAdjustment: Symbol is frozen")
+		})
+
+		it("Should fail to set deferred liquidation prices for a frozen symbol", async function () {
+			const price = decimal(572n, 16) // 5.72e18 - triggers NORMAL liquidation
+			const quoteIds = [1n]
+			const fundingDebt = await context.viewFacetQuote.getSumQuoteFundingDebts(quoteIds)
+			const upnl = (await user.getUpnl(getPriceFetcher([1n], [price]))) - fundingDebt
+			const totalUnrealizedLoss = (await user.getTotalUnrealisedLoss(getPriceFetcher([1n], [price]))) - fundingDebt
+			const allocatedBalance = (await user.getBalanceInfo()).allocatedBalances
+			const liquidationSig = await getDummyLiquidationSig("0x10", upnl, [1n], [price], totalUnrealizedLoss, allocatedBalance)
+
+			await context.partyALiquidationFacet.connect(context.signers.liquidator).deferredLiquidatePartyA(user.address, liquidationSig)
+
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(1, decimal(4n), now - 1n)
+
+			await expect(
+				context.partyALiquidationFacet.connect(context.signers.liquidator).deferredSetSymbolsPrice(user.address, liquidationSig),
+			).to.be.revertedWith("LibSymbolAdjustment: Symbol is frozen")
+		})
+
+		it("Should fail to apply snapshot prices for a frozen symbol", async function () {
+			const price = decimal(572n, 16)
+			const fundingDebt = await context.viewFacetQuote.getSumQuoteFundingDebts([1n])
+			const upnl = (await user.getUpnl(getPriceFetcher([1n], [price]))) - fundingDebt
+			const totalUnrealizedLoss = (await user.getTotalUnrealisedLoss(getPriceFetcher([1n], [price]))) - fundingDebt
+			const allocatedBalance = (await user.getBalanceInfo()).allocatedBalances
+			const liquidationSig = await getDummyLiquidationSig("0x10", upnl, [1n], [price], totalUnrealizedLoss, allocatedBalance)
+
+			await context.partyALiquidationSnapshotFacet
+				.connect(context.signers.liquidator)
+				.liquidatePartyAWithSnapshot(user.address, buildLiquidationSnapshotSig(liquidationSig, []))
+
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(1, decimal(4n), now - 1n)
+
+			const states = [await getSignedLiquidationSnapshotState(context.signers.hedger.address, 1n, price)]
+			await expect(
+				context.partyALiquidationSnapshotFacet
+					.connect(context.signers.liquidator)
+					.setSymbolsPriceWithSnapshot(user.address, buildLiquidationSnapshotSig(liquidationSig, states)),
+			).to.be.revertedWith("LibSymbolAdjustment: Symbol is frozen")
+		})
+
+		it("Should allow deferred liquidation across a freeze window once cancelled (no liquidation hole)", async function () {
+			// PartyA goes insolvent while the symbol is frozen; the freeze must not block starting the
+			// liquidation window itself (only price-setting/settlement paths are gated). Once the adjustment
+			// is cancelled, a deferred liquidation whose liquidationTimestamp falls inside the freeze window
+			// must still succeed end-to-end.
+			const freezeStart = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(1, decimal(4n), freezeStart - 1n)
+			expect(await context.symbolAdjustmentFacet.isSymbolFrozen(1)).to.be.true
+
+			const price = decimal(572n, 16) // 5.72e18 - triggers NORMAL liquidation
+			const quoteIds = [1n]
+			const fundingDebt = await context.viewFacetQuote.getSumQuoteFundingDebts(quoteIds)
+			const upnl = (await user.getUpnl(getPriceFetcher([1n], [price]))) - fundingDebt
+			const totalUnrealizedLoss = (await user.getTotalUnrealisedLoss(getPriceFetcher([1n], [price]))) - fundingDebt
+			const allocatedBalance = (await user.getBalanceInfo()).allocatedBalances
+			const liquidationSig = await getDummyLiquidationSig("0x10", upnl, [1n], [price], totalUnrealizedLoss, allocatedBalance)
+			// Insolvency (and its liquidationTimestamp) is recorded inside the freeze window.
+			liquidationSig.liquidationTimestamp = freezeStart
+
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).cancelAdjustment(1)
+			expect(await context.symbolAdjustmentFacet.isSymbolFrozen(1)).to.be.false
+
+			await context.partyALiquidationFacet.connect(context.signers.liquidator).deferredLiquidatePartyA(user.address, liquidationSig)
+			await expect(context.partyALiquidationFacet.connect(context.signers.liquidator).deferredSetSymbolsPrice(user.address, liquidationSig)).to.not.be
+				.reverted
+
+			await user.liquidatePendingPositions()
+			await expect(user.liquidatePositions([1])).to.not.be.reverted
+			expect((await context.viewFacetQuote.getQuote(1)).quoteStatus).to.be.equal(QuoteStatus.LIQUIDATED)
+		})
+
 		it("Should use signed funding state when PartyB changes epoch duration after the liquidation snapshot", async function () {
 			const price = decimal(572n, 16)
 			await liquidatePartyAWithSnapshot([1n], [price], [1n], [await getSignedLiquidationSnapshotState(context.signers.hedger.address, 1n, price)])
@@ -2272,6 +2364,24 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 
 			// Quote 1 (open position) should be marked as LIQUIDATED
 			expect((await context.viewFacetQuote.getQuote(1)).quoteStatus).to.be.equal(QuoteStatus.LIQUIDATED)
+		})
+
+		it("Should fail to liquidate positions for a frozen symbol", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const hedgerAddress = await context.signers.hedger.getAddress()
+
+			await context.partyBLiquidationFacet
+				.connect(context.signers.liquidator)
+				.liquidatePartyB(hedgerAddress, userAddress, await getDummySingleUpnlSig(decimal(-336n)))
+
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(1, decimal(4n), now - 1n)
+
+			const priceSig = await getDummyPriceSig([1n], [decimal(1n)])
+			priceSig.timestamp = await context.viewFacet.partyBLiquidationTimestamp(hedgerAddress, userAddress)
+			await expect(
+				context.partyBLiquidationFacet.connect(context.signers.liquidator).liquidatePositionsPartyB(hedgerAddress, userAddress, priceSig),
+			).to.be.revertedWith("LibSymbolAdjustment: Symbol is frozen")
 		})
 
 		it("Should fail to liquidate a partyB twice", async function () {
