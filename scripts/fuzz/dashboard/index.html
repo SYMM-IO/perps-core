@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="color-scheme" content="dark" />
+		<meta name="theme-color" content="#0e1113" />
+		<meta name="description" content="Stakeholder report for SYMMIO randomized protocol simulations." />
+		<title>SYMMIO Protocol Simulation</title>
+		<link rel="stylesheet" href="/dashboard.css" />
+		<script src="/dashboard.js" defer></script>
+	</head>
+	<body>
+		<a class="skip-link" href="#dashboard-main">Skip to report</a>
+
+		<header class="control-bar">
+			<div class="control-bar__brand" aria-label="SYMMIO Protocol Simulation">
+				<p class="product-name">SYMMIO SIMULATION</p>
+				<p class="product-context">randomized quote-lifecycle test</p>
+			</div>
+
+			<div class="run-controls" aria-label="Report controls">
+				<label class="select-field" for="run-select">
+					<span>View</span>
+					<select id="run-select" aria-label="Select fuzz run">
+						<option value="">Current run</option>
+					</select>
+				</label>
+				<button id="follow-button" class="button button--quiet" type="button" aria-pressed="true">
+					<span id="follow-button-label">Pause updates</span>
+				</button>
+				<button id="export-report" class="button button--quiet" type="button" disabled>Export JSON</button>
+			</div>
+		</header>
+
+		<div class="monitor-strip">
+			<div id="connection-banner" class="connection-banner" role="status" aria-live="off">
+				<span id="connection-dot" class="connection-dot" aria-hidden="true"></span>
+				<span id="connection-label">Waiting for a report</span>
+				<span id="connection-detail">Polling the local report</span>
+			</div>
+
+			<nav class="section-nav" aria-label="Report sections">
+				<a href="#overview">Summary</a>
+				<a href="#quotes">Quotes</a>
+				<a href="#details">Details</a>
+			</nav>
+		</div>
+
+		<main id="dashboard-main">
+			<section id="waiting-state" class="empty-state" aria-labelledby="waiting-title">
+				<p class="section-label">LOCAL REPORT</p>
+				<h1 id="waiting-title">Waiting for a run report</h1>
+				<p>The page will update when <code>/api/report</code> contains fuzz telemetry.</p>
+			</section>
+
+			<div id="error-banner" class="error-banner" role="alert" hidden>
+				<div>
+					<p class="error-banner__title">Report unavailable</p>
+					<p id="error-message">The page will retry automatically.</p>
+				</div>
+				<button id="retry-button" class="button button--quiet" type="button">Retry</button>
+			</div>
+
+			<div id="dashboard" class="dashboard" hidden>
+				<section id="overview" class="run-overview anchor-target" aria-labelledby="run-title">
+					<div class="run-hero">
+						<div class="run-hero__identity">
+							<div class="run-hero__headline">
+								<span id="run-status" class="status-badge">WAITING</span>
+								<span id="run-mode" class="mode-label">—</span>
+							</div>
+							<h1 id="run-title">Protocol simulation</h1>
+							<p id="run-subtitle" class="run-subtitle">Waiting for the first simulation cycle.</p>
+							<button id="hero-replay-button" type="button" hidden disabled>Copy deterministic replay</button>
+						</div>
+
+						<dl class="run-facts" hidden>
+							<div>
+								<dt>Randomized actors</dt>
+								<dd id="actors-value">—</dd>
+							</div>
+							<div>
+								<dt>Environment</dt>
+								<dd id="environment-value">Local Hardhat</dd>
+							</div>
+							<div>
+								<dt>Duration</dt>
+								<dd id="elapsed-value">—</dd>
+							</div>
+							<div>
+								<dt>Updated</dt>
+								<dd id="freshness-value">—</dd>
+							</div>
+						</dl>
+					</div>
+
+					<article class="simulation-story" aria-labelledby="story-title">
+						<header class="simulation-story__header">
+							<div>
+								<p class="section-label">HOW ONE CYCLE WORKS</p>
+								<h2 id="story-title">One simulation cycle</h2>
+							</div>
+							<button id="story-replay" class="button button--quiet" type="button">Replay</button>
+						</header>
+						<p id="story-definition" class="sr-only">
+							One simulation cycle chooses a user and hedger for a new quote attempt, waits for the model’s follow-up work, then may run
+							a due high-risk check and revisit an available position before it is counted.
+						</p>
+						<div id="story-track" class="story-track" aria-label="Four stages in one simulation cycle">
+							<div class="story-route" aria-hidden="true"></div>
+							<div id="story-token" class="story-token" aria-hidden="true"><span>CYCLE</span></div>
+							<article class="story-step" data-story-step="0">
+								<p class="story-step__index">01</p>
+								<h3>Actors</h3>
+								<div id="story-actors" class="story-actors" aria-label="Simulated actors"></div>
+								<p id="story-actor-value" class="story-step__value">—</p>
+							</article>
+							<article class="story-step" data-story-step="1">
+								<p class="story-step__index">02</p>
+								<h3>Quote attempt</h3>
+								<p id="story-cycle-value" class="story-step__value">—</p>
+							</article>
+							<article class="story-step" data-story-step="2">
+								<p class="story-step__index">03</p>
+								<h3>Reactions</h3>
+								<p id="story-job-value" class="story-step__value">—</p>
+							</article>
+							<article class="story-step" data-story-step="3">
+								<p class="story-step__index">04</p>
+								<h3>Due checks</h3>
+								<p id="story-risk-value" class="story-step__value">—</p>
+							</article>
+						</div>
+						<div class="simulation-story__footer">
+							<p id="story-stage-copy">Choose a simulated user and hedger.</p>
+							<p id="story-run-note" class="sr-only">
+								Queue jobs are runner work, not transaction counts. The animation does not invent unreported live phases.
+							</p>
+						</div>
+					</article>
+
+					<div class="snapshot">
+						<p id="health-note" class="sr-only">Configured run targets, not exhaustive protocol coverage</p>
+						<div id="kpi-strip" class="kpi-strip"></div>
+						<p id="summary-limit-note" class="summary-limit-note">These are configured run targets, not exhaustive protocol coverage.</p>
+					</div>
+				</section>
+
+				<section id="quotes" class="report-section anchor-target" aria-labelledby="quotes-title">
+					<div class="section-heading">
+						<div>
+							<p class="section-label">QUOTE OUTCOMES</p>
+							<h2 id="quotes-title">Where 0 quotes ended up</h2>
+						</div>
+					</div>
+
+					<div id="outcome-bar" class="outcome-bar" role="img" aria-label="Quote outcome distribution"></div>
+					<div id="outcome-strip" class="outcome-strip" aria-label="Quote outcome summary"></div>
+					<p id="outcome-note" class="section-intro">
+						Open positions in a stopped continuous simulation are a final snapshot, not automatic failures.
+					</p>
+
+					<details class="quote-breakdown">
+						<summary>All 11 states &amp; modes</summary>
+						<div class="quote-grid">
+							<article class="panel panel--lifecycle">
+								<header class="panel__header">
+									<h3>All quote states</h3>
+									<p id="lifecycle-summary" class="panel-stat">0 / 11 observed</p>
+								</header>
+								<div class="inventory-columns" aria-hidden="true">
+									<span>State</span>
+									<span>Current</span>
+									<span>Observed</span>
+								</div>
+								<div id="lifecycle-bars" class="lifecycle-bars"></div>
+							</article>
+
+							<article class="panel panel--mix">
+								<header class="panel__header">
+									<h3>Quote modes &amp; partials</h3>
+								</header>
+								<div id="mix-grid" class="mix-grid"></div>
+							</article>
+						</div>
+					</details>
+				</section>
+
+				<details id="details" class="technical-disclosure anchor-target">
+					<summary>
+						<span>Details</span>
+					</summary>
+
+					<div class="details-tabs" role="tablist" aria-label="Detailed report views">
+						<button
+							id="details-tab-coverage"
+							type="button"
+							role="tab"
+							aria-label="Coverage"
+							aria-controls="coverage"
+							aria-selected="true"
+							data-details-tab="coverage"
+						>
+							Coverage
+						</button>
+						<button
+							id="details-tab-replay"
+							type="button"
+							role="tab"
+							aria-label="Replay"
+							aria-controls="replay"
+							aria-selected="false"
+							tabindex="-1"
+							data-details-tab="replay"
+						>
+							Replay
+						</button>
+						<button
+							id="details-tab-activity"
+							type="button"
+							role="tab"
+							aria-label="Activity"
+							aria-controls="activity"
+							aria-selected="false"
+							tabindex="-1"
+							data-details-tab="activity"
+						>
+							Activity
+						</button>
+						<button
+							id="details-tab-runner"
+							type="button"
+							role="tab"
+							aria-label="Performance"
+							aria-controls="performance"
+							aria-selected="false"
+							tabindex="-1"
+							data-details-tab="runner"
+						>
+							Performance
+						</button>
+					</div>
+
+					<section
+						id="coverage"
+						class="report-section details-pane"
+						role="tabpanel"
+						aria-labelledby="details-tab-coverage"
+						tabindex="0"
+						data-details-pane="coverage"
+					>
+						<div class="coverage-verdict">
+							<header class="coverage-verdict__header">
+								<div>
+									<h2 id="coverage-verdict-title">Building coverage</h2>
+								</div>
+								<span id="coverage-status" class="status-badge sr-only">ANALYZING</span>
+							</header>
+							<p id="coverage-summary" class="sr-only">Waiting for enough evidence to assess this run.</p>
+							<div id="coverage-grid" class="coverage-grid"></div>
+						</div>
+
+						<details class="evidence-disclosure">
+							<summary>Limits &amp; evidence</summary>
+							<div class="evidence-disclosure__body">
+								<div id="coverage-gaps" class="coverage-gaps" role="list" aria-label="Coverage gaps and warnings"></div>
+
+								<article id="confidence-limits" class="confidence-limits">
+									<header>
+										<p class="section-label">CONFIDENCE LIMITS</p>
+										<h3>What this run does not prove</h3>
+									</header>
+									<p id="confidence-limit-summary">
+										Reaching every configured target does not mean the full protocol or every parameter combination was tested.
+									</p>
+									<ul id="confidence-limit-list"></ul>
+								</article>
+
+								<div class="coverage-detail-grid">
+									<article class="panel panel--assurance">
+										<header class="panel__header">
+											<div>
+												<h3>Validator checks</h3>
+											</div>
+											<p id="action-type-summary" class="panel-stat">0 / 10 types checked</p>
+										</header>
+										<div
+											class="table-scroll table-scroll--flush"
+											role="region"
+											aria-label="Action outcomes and validator check table"
+											tabindex="0"
+										>
+											<table id="action-table" class="data-table">
+												<caption>
+													Action outcomes and independent state checks
+												</caption>
+											</table>
+										</div>
+										<div class="action-type-coverage">
+											<p>Checked action types</p>
+											<div id="action-type-coverage" class="action-type-chips"></div>
+										</div>
+									</article>
+
+									<article class="panel panel--corners">
+										<header class="panel__header">
+											<div>
+												<h3>High-risk checks</h3>
+											</div>
+										</header>
+										<div id="corner-matrix" class="corner-matrix"></div>
+									</article>
+								</div>
+							</div>
+						</details>
+					</section>
+
+					<section
+						id="performance"
+						class="report-section details-pane"
+						role="tabpanel"
+						aria-labelledby="details-tab-runner"
+						tabindex="0"
+						data-details-pane="runner"
+						hidden
+					>
+						<div class="section-heading">
+							<div>
+								<h2 id="performance-title">Performance</h2>
+							</div>
+							<div class="segmented-control" role="group" aria-label="Chart history window">
+								<button type="button" data-chart-window="32" aria-pressed="false">32</button>
+								<button type="button" data-chart-window="64" aria-pressed="true">64</button>
+								<button type="button" data-chart-window="all" aria-pressed="false">All retained</button>
+							</div>
+						</div>
+
+						<div class="chart-grid" aria-label="Run performance charts">
+							<article class="panel panel--wide chart-panel">
+								<header class="panel__header">
+									<div>
+										<h3>Quote stock</h3>
+										<p class="sr-only">Live and ended quotes at each retained checkpoint.</p>
+									</div>
+									<div class="legend" aria-label="Quote stock series">
+										<span><i class="legend-swatch legend-swatch--live"></i>Live</span>
+										<span><i class="legend-swatch legend-swatch--ended"></i>Ended</span>
+									</div>
+								</header>
+								<div class="chart-wrap">
+									<canvas id="quote-chart" height="260" role="img" aria-label="Live and ended quote counts over the run"></canvas>
+									<div id="quote-tooltip" class="chart-tooltip" role="tooltip" hidden></div>
+								</div>
+								<details class="chart-data">
+									<summary aria-label="Quote-stock data">Data</summary>
+									<div class="table-scroll" role="region" aria-label="Quote stock data table" tabindex="0">
+										<table id="quote-chart-table">
+											<caption>
+												Quote stock by timeline bucket
+											</caption>
+										</table>
+									</div>
+								</details>
+							</article>
+
+							<article class="panel chart-panel">
+								<header class="panel__header">
+									<div>
+										<h3>Simulation speed</h3>
+										<p id="pace-telemetry-note" class="sr-only">Cycle throughput and whole-cycle duration use separate scales.</p>
+									</div>
+									<div class="legend" aria-label="Simulation speed series">
+										<span><i class="legend-swatch legend-swatch--rate"></i>Cycles/s</span>
+										<span><i class="legend-swatch legend-swatch--p50"></i>P50</span>
+										<span><i class="legend-swatch legend-swatch--p95"></i>P95</span>
+									</div>
+								</header>
+								<div class="chart-wrap">
+									<canvas
+										id="pace-chart"
+										height="240"
+										role="img"
+										aria-label="Simulation-cycle throughput and whole-cycle duration over the run"
+									></canvas>
+									<div id="pace-tooltip" class="chart-tooltip" role="tooltip" hidden></div>
+								</div>
+								<details class="chart-data">
+									<summary aria-label="Simulation pace data">Data</summary>
+									<div class="table-scroll" role="region" aria-label="Simulation speed data table" tabindex="0">
+										<table id="pace-chart-table">
+											<caption>
+												Throughput and latency by timeline bucket
+											</caption>
+										</table>
+									</div>
+								</details>
+							</article>
+
+							<article class="panel chart-panel">
+								<header class="panel__header">
+									<div>
+										<h3>Queue pressure</h3>
+										<p id="queue-telemetry-note" class="sr-only">Queue telemetry by retained checkpoint.</p>
+									</div>
+									<div class="legend" aria-label="Queue pressure series">
+										<span><i class="legend-swatch legend-swatch--outstanding"></i>Outstanding</span>
+										<span><i class="legend-swatch legend-swatch--waiting"></i>Waiting</span>
+										<span><i class="legend-swatch legend-swatch--scheduled"></i>Scheduled</span>
+									</div>
+								</header>
+								<div class="chart-wrap">
+									<canvas id="queue-chart" height="240" role="img" aria-label="Queue pressure over the run"></canvas>
+									<div id="queue-tooltip" class="chart-tooltip" role="tooltip" hidden></div>
+								</div>
+								<details class="chart-data">
+									<summary aria-label="Queue-pressure data">Data</summary>
+									<div class="table-scroll" role="region" aria-label="Queue pressure data table" tabindex="0">
+										<table id="queue-chart-table">
+											<caption>
+												Queue pressure by timeline bucket
+											</caption>
+										</table>
+									</div>
+								</details>
+							</article>
+						</div>
+
+						<details class="report-integrity">
+							<summary>Report storage</summary>
+							<dl id="retention-list" class="retention-list"></dl>
+						</details>
+					</section>
+
+					<section
+						id="replay"
+						class="report-section details-pane"
+						role="tabpanel"
+						aria-labelledby="details-tab-replay"
+						tabindex="0"
+						data-details-pane="replay"
+						hidden
+					>
+						<article class="panel panel--replay">
+							<header class="panel__header panel__header--actions">
+								<div>
+									<h2>Replay this run</h2>
+								</div>
+								<button id="copy-replay-panel" class="button button--primary" type="button" disabled>Copy command</button>
+							</header>
+							<dl class="run-facts run-facts--technical">
+								<div>
+									<dt>Seed</dt>
+									<dd id="seed-value" class="mono">—</dd>
+								</div>
+								<div>
+									<dt>Run fingerprint</dt>
+									<dd id="trace-value" class="mono">—</dd>
+								</div>
+								<div>
+									<dt>Original mode</dt>
+									<dd id="technical-mode-value">—</dd>
+								</div>
+								<div>
+									<dt>Cycles</dt>
+									<dd id="technical-cycle-value">—</dd>
+								</div>
+							</dl>
+							<details class="replay-command-disclosure">
+								<summary>View command</summary>
+								<pre id="replay-command" tabindex="0">Replay command is not available yet.</pre>
+							</details>
+						</article>
+					</section>
+
+					<section
+						id="activity"
+						class="report-section details-pane"
+						role="tabpanel"
+						aria-labelledby="details-tab-activity"
+						tabindex="0"
+						data-details-pane="activity"
+						hidden
+					>
+						<div class="activity-layout">
+							<article class="panel panel--failures panel--compact">
+								<header class="panel__header">
+									<div>
+										<h2>Problems</h2>
+									</div>
+									<span id="failure-count" class="count-chip count-chip--danger">0</span>
+								</header>
+								<div id="failure-list" class="failure-list" hidden></div>
+							</article>
+
+							<details class="panel panel--activity activity-disclosure">
+								<summary>
+									<span class="activity-disclosure__title">Event log</span>
+									<span id="activity-count" class="count-chip">0 records</span>
+								</summary>
+								<div class="activity-disclosure__body">
+									<p id="activity-retention-note" class="activity-retention-note" hidden></p>
+									<div class="activity-toolbar">
+										<div class="filter-chips" role="group" aria-label="Filter detailed activity log">
+											<button type="button" data-activity-filter="all" aria-pressed="true">All</button>
+											<button type="button" data-activity-filter="quotes" aria-pressed="false">Quotes</button>
+											<button type="button" data-activity-filter="actors" aria-pressed="false">Actions &amp; decisions</button>
+											<button type="button" data-activity-filter="corners" aria-pressed="false">Checks</button>
+											<button type="button" data-activity-filter="errors" aria-pressed="false">Errors</button>
+										</div>
+									</div>
+									<ol id="activity-list" class="activity-list"></ol>
+									<div id="activity-footer" class="activity-footer" hidden>
+										<button id="activity-more" class="button button--quiet" type="button" hidden>Show more events</button>
+									</div>
+								</div>
+							</details>
+						</div>
+					</section>
+				</details>
+			</div>
+		</main>
+
+		<footer class="app-footer">
+			<p>Local read-only report</p>
+			<p id="footer-source">Source: /api/report</p>
+		</footer>
+
+		<div id="announcer" class="sr-only" aria-live="polite"></div>
+
+		<noscript>
+			<div class="noscript-message">JavaScript is required to read the local report endpoint.</div>
+		</noscript>
+	</body>
+</html>
