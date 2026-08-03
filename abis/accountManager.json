@@ -21,6 +21,22 @@
         "type": "error"
     },
     {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "scope",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            }
+        ],
+        "name": "AccountOutOfScope",
+        "type": "error"
+    },
+    {
         "inputs": [],
         "name": "AffiliateNotActive",
         "type": "error"
