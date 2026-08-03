@@ -9,6 +9,7 @@ import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { QuoteStorage } from "../../storages/QuoteStorage.sol";
 import { LibMuon } from "./LibMuon.sol";
 import { LibAccount } from "../LibAccount.sol";
+import { LibSymbolAdjustment } from "../LibSymbolAdjustment.sol";
 import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library LibMuonSettlement {
@@ -20,20 +21,20 @@ library LibMuonSettlement {
 		// == ) ==
 		bytes memory encodedData;
 		uint256[] memory nonces = new uint256[](settleSig.quotesSettlementsData.length);
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		for (uint256 i = 0; i < settleSig.quotesSettlementsData.length; i++) {
+			uint256 quoteId = settleSig.quotesSettlementsData[i].quoteId;
+			uint256 symbolId = quoteLayout.quotes[quoteId].symbolId;
 			// Get Party B nonce for Standard Account Mode only as it is called for settlement in non cross partyB mode
-			nonces[i] = LibAccount.getPartyBSignatureNonce(
-				QuoteStorage.layout().quotes[settleSig.quotesSettlementsData[i].quoteId].partyB,
-				partyA,
-				false
-			);
+			nonces[i] = LibAccount.getPartyBSignatureNonce(quoteLayout.quotes[quoteId].partyB, partyA, false);
 
 			// Encode the settlement data
 			encodedData = abi.encodePacked(
 				encodedData, // Append the previously encoded data
-				settleSig.quotesSettlementsData[i].quoteId,
+				quoteId,
 				settleSig.quotesSettlementsData[i].currentPrice,
-				settleSig.quotesSettlementsData[i].partyBUpnlIndex
+				settleSig.quotesSettlementsData[i].partyBUpnlIndex,
+				LibSymbolAdjustment.basisVersion(symbolId)
 			);
 		}
 		bytes32 hash = keccak256(

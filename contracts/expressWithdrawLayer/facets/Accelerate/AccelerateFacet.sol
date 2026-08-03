@@ -68,9 +68,7 @@ contract AccelerateFacet is IAccelerateFacet, IOperatorEvents, Pausable, Reentra
 
 		uint256 operatorFee = FeeStorage.layout().operatorFees[user][requestId];
 		uint256 totalFee = info.fee + operatorFee + offer.accelerationFee;
-		if (info.sponsorCoverage > totalFee) revert LibErrors.FeesExceedExpressAmount();
-		uint256 userFee = totalFee - info.sponsorCoverage;
-		if (userFee > info.expressAmount) revert LibErrors.FeesExceedExpressAmount();
+		if (totalFee > info.expressAmount) revert LibErrors.FeesExceedExpressAmount();
 
 		// ── Effects ──
 		g.accelerateNonces[user][requestId]++;
@@ -86,8 +84,8 @@ contract AccelerateFacet is IAccelerateFacet, IOperatorEvents, Pausable, Reentra
 		// Lock new pool allocations against current balances.
 		_lockPools(affiliate, newGeneralAmount, offer.affiliateAmount);
 
-		// Update info with the new funding split; `expressAmount`, `sponsorCoverage`,
-		// `cooldownEndTime`, `acceptedAt`, and `partsHash` are intentionally preserved.
+		// Update info with the new funding split; `expressAmount`, `cooldownEndTime`,
+		// `acceptedAt`, and `partsHash` are intentionally preserved.
 		info.optionType = OptionType.WINDOWED;
 		info.generalAmount = newGeneralAmount;
 		info.affiliateAmount = offer.affiliateAmount;
@@ -147,8 +145,7 @@ contract AccelerateFacet is IAccelerateFacet, IOperatorEvents, Pausable, Reentra
 		FeeStorage.Layout storage f = FeeStorage.layout();
 		uint256 operatorFee = f.operatorFees[user][requestId];
 		uint256 affiliateFee = info.fee + info.accelerationFee;
-		uint256 totalFee = affiliateFee + operatorFee;
-		uint256 userFee = totalFee - info.sponsorCoverage;
+		uint256 userFee = affiliateFee + operatorFee;
 
 		if (info.optionType == OptionType.STANDARD) {
 			if (affiliateFee > 0) f.collectedFees[info.affiliate] += affiliateFee;

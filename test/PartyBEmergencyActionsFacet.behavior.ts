@@ -91,6 +91,16 @@ export function shouldBehaveLikePartyBEmergencyActionsFacet(): void {
 				).to.be.revertedWith("PartyBFacet: Sender isn't partyB of quote")
 			})
 
+			it("fails when the symbol is frozen for adjustment", async function () {
+				const quoteId = await openWith(hedger)
+				const quote = await context.viewFacetQuote.getQuote(quoteId)
+				const now = await getBlockTimestamp()
+				await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(quote.symbolId, decimal(4n), now - 1n)
+				await expect(context.partyBEmergencyActionsFacet.connect(hedger.signer).adlClose(quoteId, decimal(10n), decimal(1n))).to.be.revertedWith(
+					"LibSymbolAdjustment: Symbol is frozen",
+				)
+			})
+
 			it("fails on zero amount", async function () {
 				const quoteId = await openWith(hedger)
 				const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)

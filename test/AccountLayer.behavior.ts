@@ -1393,7 +1393,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 			})
 
 			describe("position and quote checks", async () => {
-				it("should revert with SubAccountNotEmpty when CUSTOM subAccount has pending position", async () => {
+				it("should revert with PendingQuotesExist when CUSTOM subAccount has pending position", async () => {
 					// Create CUSTOM isolation sub-account with funds
 					const depositAmount = decimal(5000n)
 					const subAccountData = [createSubAccountData("OPEN_POS_TEST", 3, "CUSTOM")] // 3 = CUSTOM
@@ -1408,16 +1408,20 @@ export function shouldBehaveLikeAccountLayer(): void {
 					const pendingQuotes = await context.viewFacetQuote.getPartyAPendingQuotes(subAccountAddress)
 					expect(pendingQuotes.length).to.equal(1)
 
+					// The account cannot be drained first: the pending quote keeps its CVA and LF locked in
+					// allocated balance, and core forbids deallocating below that floor. deleteSubAccount
+					// therefore has to report the pending quote rather than a balance the caller cannot clear.
 					const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(subAccountAddress)
 					expect(allocatedBalance).to.be.greaterThan(0)
+					expect(await context.viewFacet.maxDeallocatableForPartyA(subAccountAddress, BigInt(1e30))).to.be.lessThan(allocatedBalance)
 
 					await expect(context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress)).to.be.revertedWithCustomError(
 						context.alCoreFacet,
-						"SubAccountNotEmpty",
+						"PendingQuotesExist",
 					)
 				})
 
-				it("should revert with SubAccountNotEmpty when CUSTOM subAccount has open position", async () => {
+				it("should revert with OpenPositionsExist when CUSTOM subAccount has open position", async () => {
 					// Create CUSTOM isolation sub-account with funds
 					const depositAmount = decimal(5000n)
 					const subAccountData = [createSubAccountData("OPEN_POS_TEST", 3, "CUSTOM")] // 3 = CUSTOM
@@ -1445,12 +1449,16 @@ export function shouldBehaveLikeAccountLayer(): void {
 					const positionCount = await context.viewFacetQuote.partyAPositionsCount(subAccountAddress)
 					expect(positionCount).to.equal(1)
 
+					// The account cannot be drained first: the open position keeps its CVA and LF locked in
+					// allocated balance, and core forbids deallocating below that floor. deleteSubAccount
+					// therefore has to report the open position rather than a balance the caller cannot clear.
 					const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(subAccountAddress)
 					expect(allocatedBalance).to.be.greaterThan(0)
+					expect(await context.viewFacet.maxDeallocatableForPartyA(subAccountAddress, BigInt(1e30))).to.be.lessThan(allocatedBalance)
 
 					await expect(context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress)).to.be.revertedWithCustomError(
 						context.alCoreFacet,
-						"SubAccountNotEmpty",
+						"OpenPositionsExist",
 					)
 				})
 			})

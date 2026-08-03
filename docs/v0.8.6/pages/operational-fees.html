@@ -45,11 +45,12 @@
 					>
 					<a class="side-link" href="../pages/solver-fees.html"><small>Fees</small><span>Solver Fees</span></a>
 					<a class="side-link is-active" href="../pages/operational-fees.html"><small>Fees</small><span>Operational Fees</span></a>
+					<a class="side-link" href="../pages/symbol-adjustment.html"><small>Symbols</small><span>Symbol Corporate-Action Adjustment</span></a>
 					<a class="side-link" href="../pages/partya-liquidation-fee-recipient.html"
 						><small>Liquidation</small><span>PartyA Liquidation Fee Recipient Cleanup</span></a
 					>
 					<a class="side-link" href="../pages/balance-change-event-cleanup.html"
-						><small>Events</small><span>BalanceChange Event Cleanup</span></a
+						><small>Events &amp; Indexing</small><span>Allocated Balance Event Ledger</span></a
 					>
 					<a class="side-link" href="../pages/lazy-accumulated-funding.html"><small>Funding</small><span>Lazy Accumulated Funding</span></a>
 					<a class="side-link" href="../pages/partyb-allocation-suspension-gates.html"
@@ -154,6 +155,20 @@
 						For that named payer, core checks <code>allowance[payer][charger]</code>, debits <code>balances[payer]</code> first, then
 						falls back to <code>allocatedBalances[payer]</code> if free balance is not enough. The charged amount is credited to the
 						charger's configured receiver.
+					</p>
+					<p>That receiver is configured with:</p>
+					<pre><code class="language-solidity">function setOperationalFeeReceiver(address charger, address receiver) external;
+</code></pre>
+					<p>
+						The caller must be either the charger itself or an address holding <code>FEE_ADMIN_ROLE</code> -- the same role that registers
+						chargers in the first place. Passing <code>address(0)</code> resets the receiver back to the charger. The receiver is resolved
+						at charge time, so a change only affects subsequent fees.
+						<code>ViewFacet.getOperationalFeeReceiver(charger)</code> returns the effective receiver.
+					</p>
+					<p>
+						Solver <strong>rate</strong> fees have a parallel but independent setting, <code>ControlFacet.setSolverFeeReceiver</code>,
+						gated by <code>PARTY_B_MANAGER_ROLE</code> instead. Keeping the two separate lets a solver route flat operational costs and
+						per-notional trading revenue to different accounts. See <a href="../pages/solver-fees.html">Solver Fees</a>.
 					</p>
 
 					<p>

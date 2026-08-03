@@ -11,9 +11,6 @@ interface IControlEvents {
 	event AffiliateWithdraw(address indexed affiliate, uint256 amount);
 	event AffiliateConfigUpdated(address indexed affiliate, uint256 feeRate, uint256 operatorFee);
 	event FeesClaimed(address indexed affiliate, uint256 amount);
-	event SponsorDeposit(address indexed affiliate, uint256 amount);
-	event SponsorWithdraw(address indexed affiliate, uint256 amount);
-	event SponsorConfigUpdated(address indexed affiliate, uint256 maxFeePerWithdraw, uint256 maxWithdrawAmount);
 	event OperatorFeesClaimed(address indexed affiliate, uint256 amount);
 	event MinValidatorSignaturesUpdated(address indexed affiliate, uint256 minValidatorSignatures);
 	event ValidatorApprovalTimeoutUpdated(address indexed affiliate, uint256 timeout);
@@ -70,14 +67,6 @@ interface IControlFacet is IControlEvents {
 	function claimFees(address affiliate, address to) external;
 
 	function claimOperatorFees(address affiliate, address to) external;
-
-	// ── Sponsor management ──
-
-	function depositSponsorBalance(address affiliate, uint256 amount) external;
-
-	function withdrawSponsorBalance(address affiliate, uint256 amount, address to) external;
-
-	function setSponsorConfig(address affiliate, uint256 maxFeePerWithdraw, uint256 maxWithdrawAmount) external;
 
 	// ── General pool ──
 

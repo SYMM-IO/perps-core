@@ -43,7 +43,39 @@ enum BalanceChangeType {
 	REIMBURSEMENT_IN,
 }
 
+enum ReimbursementChangeType {
+	CLEARING_HOUSE_IN,
+	PLATFORM_FEE_IN,
+	CLEARING_HOUSE_OUT,
+	RELEASE_TO_ALLOCATED,
+	MOVE_TO_LIQUIDATION_ESCROW,
+}
+
 const balanceChangeInterface = new ethers.Interface(["event BalanceChangePartyA(address indexed partyA, uint256 amount, uint8 _type)"])
+const reimbursementChangeInterface = new ethers.Interface([
+	"event PartyAReimbursementChange(address indexed partyA, uint256 amount, uint256 newBalance, uint8 _type)",
+])
+
+type EvmLog = { topics: readonly string[]; data: string }
+
+function parsePartyAReimbursementChangeLogs(logs: readonly EvmLog[]) {
+	return logs.flatMap(log => {
+		try {
+			const parsed = reimbursementChangeInterface.parseLog({ topics: log.topics as string[], data: log.data })
+			if (parsed?.name !== "PartyAReimbursementChange") return []
+			return [
+				{
+					partyA: parsed.args.partyA as string,
+					amount: parsed.args.amount as bigint,
+					newBalance: parsed.args.newBalance as bigint,
+					changeType: parsed.args._type as bigint,
+				},
+			]
+		} catch {
+			return []
+		}
+	})
+}
 
 export function shouldBehaveLikeClearingHouseFacet(): void {
 	let context: RunContext, user: User, user2: User, liquidator: User, hedger: Hedger, hedger2: Hedger
@@ -292,6 +324,23 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			await expect(
 				context.clearingHouseFacet.connect(context.signers.liquidator).closeAffiliatePositions(affiliate, [1], [quoteBefore.openedPrice]),
 			).to.be.revertedWith("ClearingHouseFacet: Affiliate shutdown not scheduled")
+		})
+
+		it("Should reject affiliate position close when the symbol is frozen for adjustment", async function () {
+			await hedger.lockQuote(1)
+			await hedger.openPosition(1)
+
+			const affiliate = await context.accountManager.getAddress()
+			const quoteBefore = await context.viewFacetQuote.getQuote(1)
+
+			const shutdownAt = await scheduleAffiliateShutdown(affiliate)
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(quoteBefore.symbolId, decimal(4n), now - 1n)
+			await time.setNextBlockTimestamp(shutdownAt)
+
+			await expect(
+				context.clearingHouseFacet.connect(context.signers.liquidator).closeAffiliatePositions(affiliate, [1], [quoteBefore.openedPrice]),
+			).to.be.revertedWith("LibSymbolAdjustment: Symbol is frozen")
 		})
 
 		it("Should reject affiliate position close when partyB is in cross liquidation", async function () {
@@ -809,6 +858,17 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 						.connect(context.signers.liquidator)
 						.liquidatePositionsForClearingHouse(context.signers.hedger2, [1n], [decimal(1n)]),
 				).to.be.revertedWith("ClearingHouseFacet: No active liquidation")
+			})
+
+			it("should fail when the symbol is frozen for adjustment", async () => {
+				const quote = await context.viewFacetQuote.getQuote(1)
+				const now = await getBlockTimestamp()
+				await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(quote.symbolId, decimal(4n), now - 1n)
+				await expect(
+					context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.liquidatePositionsForClearingHouse(context.signers.hedger, [1n], [decimal(1n)]),
+				).to.be.revertedWith("LibSymbolAdjustment: Symbol is frozen")
 			})
 
 			it("should update position statuses correctly", async () => {
@@ -1377,6 +1437,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				const userAddress = await user.getAddress()
 				const pendingBefore = await context.viewFacetQuote.getPartyAPendingQuotes(context.signers.user.address)
 				expect(pendingBefore.length).to.be.greaterThan(0)
+				const expectedReturnedFees = await getTradingFeeForQuotes(context, pendingBefore)
 
 				const validator = new LiquidatePendingCHValidator()
 				const beforeOut = await validator.before(context, {
@@ -1385,9 +1446,25 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					isCrossPartyB: false,
 				})
 
-				await context.clearingHouseFacet
+				const pendingLiquidationTx = await context.clearingHouseFacet
 					.connect(context.signers.liquidator)
 					.liquidatePendingPositionsForClearingHouse(context.signers.user.address, []) // counterparties ignored for partyA takeover
+				const pendingLiquidationReceipt = await pendingLiquidationTx.wait()
+				const partyABalanceEvents = (pendingLiquidationReceipt?.logs ?? []).flatMap(log => {
+					try {
+						const parsed = balanceChangeInterface.parseLog({ topics: log.topics as string[], data: log.data })
+						return parsed?.name === "BalanceChangePartyA" ? [parsed] : []
+					} catch {
+						return []
+					}
+				})
+				const reimbursementEvents = parsePartyAReimbursementChangeLogs(pendingLiquidationReceipt?.logs ?? []).filter(
+					event => event.partyA.toLowerCase() === userAddress.toLowerCase(),
+				)
+				expect(partyABalanceEvents).to.have.length(0)
+				expect(reimbursementEvents.every(event => event.changeType === BigInt(ReimbursementChangeType.PLATFORM_FEE_IN))).to.equal(true)
+				expect(reimbursementEvents.reduce((sum, event) => sum + event.amount, 0n)).to.equal(expectedReturnedFees)
+				expect(reimbursementEvents.at(-1)?.newBalance).to.equal(beforeOut.reimbursement + expectedReturnedFees)
 
 				await validator.after(context, {
 					subject: userAddress,
@@ -1619,7 +1696,32 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				const beforeOut = await validator.before(context, { user })
 				expect(beforeOut.reimbursement).to.be.greaterThan(0n)
 
-				await context.clearingHouseFacet.connect(context.signers.liquidator).settlePartyATakeover(context.signers.user.address, [])
+				const settleTx = await context.clearingHouseFacet.connect(context.signers.liquidator).settlePartyATakeover(context.signers.user.address, [])
+				const settleReceipt = await settleTx.wait()
+				const reimbursementBucketEvents = parsePartyAReimbursementChangeLogs(settleReceipt?.logs ?? []).filter(
+					event => event.partyA.toLowerCase() === context.signers.user.address.toLowerCase(),
+				)
+				const releaseEvents = (settleReceipt?.logs ?? []).flatMap(log => {
+					try {
+						const parsed = balanceChangeInterface.parseLog({ topics: log.topics as string[], data: log.data })
+						if (parsed?.name !== "BalanceChangePartyA" || parsed.args.partyA.toLowerCase() !== context.signers.user.address.toLowerCase()) return []
+						return [{ amount: parsed.args.amount as bigint, changeType: parsed.args._type as bigint }]
+					} catch {
+						return []
+					}
+				})
+				const reimbursementEvents = releaseEvents.filter(event => event.changeType === BigInt(BalanceChangeType.REIMBURSEMENT_IN))
+				const deferredEvents = releaseEvents.filter(event => event.changeType === BigInt(BalanceChangeType.DEFERRED_BALANCE_IN))
+				expect(reimbursementEvents.reduce((sum, event) => sum + event.amount, 0n)).to.equal(beforeOut.reimbursement)
+				expect(deferredEvents.reduce((sum, event) => sum + event.amount, 0n)).to.equal(beforeOut.deferredBalance)
+				expect(reimbursementBucketEvents).to.deep.equal([
+					{
+						partyA: context.signers.user.address,
+						amount: beforeOut.reimbursement,
+						newBalance: 0n,
+						changeType: BigInt(ReimbursementChangeType.RELEASE_TO_ALLOCATED),
+					},
+				])
 
 				await validator.after(context, { user, settledPartyBs: [], beforeOutput: beforeOut })
 			})
@@ -1647,9 +1749,21 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				expect(reimbursementToDrain).to.be.greaterThan(0n)
 
 				const REIMBURSEMENT_KEY = "0x0000000000000000000000000000000000000001"
-				await context.clearingHouseFacet
+				const reimbursementDeallocationTx = await context.clearingHouseFacet
 					.connect(context.signers.liquidator)
 					.deallocateForClearingHouse(context.signers.user.address, [context.signers.user.address], [REIMBURSEMENT_KEY], [reimbursementToDrain])
+				const reimbursementDeallocationReceipt = await reimbursementDeallocationTx.wait()
+				const reimbursementBucketEvents = parsePartyAReimbursementChangeLogs(reimbursementDeallocationReceipt?.logs ?? []).filter(
+					event => event.partyA.toLowerCase() === context.signers.user.address.toLowerCase(),
+				)
+				expect(reimbursementBucketEvents).to.deep.equal([
+					{
+						partyA: context.signers.user.address,
+						amount: reimbursementToDrain,
+						newBalance: 0n,
+						changeType: BigInt(ReimbursementChangeType.CLEARING_HOUSE_OUT),
+					},
+				])
 				await context.clearingHouseFacet
 					.connect(context.signers.liquidator)
 					.distributeForClearingHouse(context.signers.user.address, [context.signers.admin.address], [ZeroAddress], [reimbursementToDrain])
@@ -1842,14 +1956,31 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			it("should auto-takeover partyA when processing pending quotes", async () => {
 				const detailsBefore = await context.viewFacet.getPartyATakeoverDetails(context.signers.user.address)
 				expect(detailsBefore.inProgress).to.equal(false)
+				const reimbursementBefore = await context.viewFacet.partyAReimbursement(context.signers.user.address)
+				const expectedReturnedFees = await getTradingFeeForQuotes(context, [2n, 5n])
 
-				await expect(
-					context.clearingHouseFacet
-						.connect(context.signers.liquidator)
-						.liquidatePendingPositionsForClearingHouse(context.signers.hedger.address, [context.signers.user.address]),
-				)
+				const pendingLiquidationTx = await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePendingPositionsForClearingHouse(context.signers.hedger.address, [context.signers.user.address])
+				await expect(pendingLiquidationTx)
 					.to.emit(context.clearingHouseFacet, "AutoTakeoverPartyALiquidation")
 					.withArgs(context.signers.user.address, "0x10")
+				const pendingLiquidationReceipt = await pendingLiquidationTx.wait()
+				const partyABalanceEvents = (pendingLiquidationReceipt?.logs ?? []).flatMap(log => {
+					try {
+						const parsed = balanceChangeInterface.parseLog({ topics: log.topics as string[], data: log.data })
+						return parsed?.name === "BalanceChangePartyA" ? [parsed] : []
+					} catch {
+						return []
+					}
+				})
+				const reimbursementEvents = parsePartyAReimbursementChangeLogs(pendingLiquidationReceipt?.logs ?? []).filter(
+					event => event.partyA.toLowerCase() === context.signers.user.address.toLowerCase(),
+				)
+				expect(partyABalanceEvents).to.have.length(0)
+				expect(reimbursementEvents.every(event => event.changeType === BigInt(ReimbursementChangeType.PLATFORM_FEE_IN))).to.equal(true)
+				expect(reimbursementEvents.reduce((sum, event) => sum + event.amount, 0n)).to.equal(expectedReturnedFees)
+				expect(reimbursementEvents.at(-1)?.newBalance).to.equal(reimbursementBefore + expectedReturnedFees)
 
 				const detailsAfter = await context.viewFacet.getPartyATakeoverDetails(context.signers.user.address)
 				expect(detailsAfter.inProgress).to.equal(true)
@@ -1938,7 +2069,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				}
 			})
 
-			it("should route funds to partyAReimbursement when partyA is liquidated", async () => {
+			it("should route funds to partyAReimbursement without reporting an allocated-balance change", async () => {
 				const crossDetails = await context.viewFacet.getCrossLiquidationDetails(context.signers.hedger.address)
 				const distributeAmount = crossDetails.deallocatedPool > 0n ? crossDetails.deallocatedPool : 0n
 				expect(distributeAmount).to.be.greaterThan(0n)
@@ -1966,15 +2097,19 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				})
 
 				const reimbursementAfter = await context.viewFacet.partyAReimbursement(context.signers.user.address)
+				const reimbursementEvents = parsePartyAReimbursementChangeLogs(receipt?.logs ?? []).filter(
+					event => event.partyA.toLowerCase() === context.signers.user.address.toLowerCase(),
+				)
 				expect(reimbursementAfter).to.equal(reimbursementBefore + distributeAmount)
-				expect(
-					partyAEvents.some(
-						event =>
-							event.partyA.toLowerCase() === context.signers.user.address.toLowerCase() &&
-							event.amount === distributeAmount &&
-							event.changeType === BigInt(BalanceChangeType.REIMBURSEMENT_IN),
-					),
-				).to.equal(true)
+				expect(partyAEvents.filter(event => event.partyA.toLowerCase() === context.signers.user.address.toLowerCase())).to.have.length(0)
+				expect(reimbursementEvents).to.deep.equal([
+					{
+						partyA: context.signers.user.address,
+						amount: distributeAmount,
+						newBalance: reimbursementAfter,
+						changeType: BigInt(ReimbursementChangeType.CLEARING_HOUSE_IN),
+					},
+				])
 			})
 		})
 

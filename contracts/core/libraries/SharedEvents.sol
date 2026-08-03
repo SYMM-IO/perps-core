@@ -37,9 +37,27 @@ library SharedEvents {
 		CLOSE
 	}
 
+	/// @notice Reasons for exact changes to `AccountStorage.partyAReimbursement`.
+	enum ReimbursementChangeType {
+		CLEARING_HOUSE_IN,
+		PLATFORM_FEE_IN,
+		CLEARING_HOUSE_OUT,
+		RELEASE_TO_ALLOCATED,
+		MOVE_TO_LIQUIDATION_ESCROW
+	}
+
+	/// @notice Emitted only when `AccountStorage.allocatedBalances[partyA]` changes.
+	/// @dev `amount` is the absolute allocated-balance delta represented by `_type`.
 	event BalanceChangePartyA(address indexed partyA, uint256 amount, BalanceChangeType _type);
 
+	/// @notice Emitted only when a PartyB allocated-balance bucket changes.
+	/// @dev `amount` is the absolute bucket delta. The indexed `partyA` value is the exact storage key:
+	///      the PartyA address for isolated allocations or address(0) for the shared cross-mode bucket.
 	event BalanceChangePartyB(address indexed partyB, address indexed partyA, uint256 amount, BalanceChangeType _type);
+
+	/// @notice Emitted only when `AccountStorage.partyAReimbursement[partyA]` changes.
+	/// @dev `amount` is the absolute bucket delta and `newBalance` is the post-change bucket balance.
+	event PartyAReimbursementChange(address indexed partyA, uint256 amount, uint256 newBalance, ReimbursementChangeType _type);
 
 	/// @notice Emitted whenever a registered charger draws a standing operational fee from a payer.
 	/// @dev `receiver` is intentionally not indexed: off-chain accounting keys on `charger` (the canonical

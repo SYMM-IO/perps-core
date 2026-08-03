@@ -88,6 +88,8 @@ interface IViewFacet {
 
 	function getOperationalFeeReceiver(address charger) external view returns (address);
 
+	function getSolverFeeReceiver(address partyB) external view returns (address);
+
 	function getOperationalFeeAllowance(
 		address payer,
 		address charger

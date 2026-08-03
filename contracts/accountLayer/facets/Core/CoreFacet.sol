@@ -131,11 +131,11 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		// Check that the account is empty in symmio
 		ISymmio symmio = ISymmio(s.symmioCore);
 
-		// Check balance is 0
-		if (symmio.balanceOf(subAccount) > 0) revert SubAccountNotEmpty();
-
-		// Check allocated balance is 0
-		if (symmio.allocatedBalanceOfPartyA(subAccount) > 0) revert SubAccountNotEmpty();
+		// Trading state is checked before balances on purpose. Open positions and pending quotes keep their
+		// CVA and LF locked in allocated balance, and core forbids deallocating below that floor, so an account
+		// with either can never be emptied first. Checking balances ahead of them would always report
+		// SubAccountNotEmpty and point the caller at a withdrawal that cannot succeed, instead of naming the
+		// position or quote they actually have to close.
 
 		// Check no open positions
 		if (symmio.partyAPositionsCount(subAccount) > 0) revert OpenPositionsExist();
@@ -143,6 +143,12 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		// Check no pending quotes
 		uint256[] memory pendingQuotes = symmio.getPartyAPendingQuotes(subAccount);
 		if (pendingQuotes.length > 0) revert PendingQuotesExist();
+
+		// Check balance is 0
+		if (symmio.balanceOf(subAccount) > 0) revert SubAccountNotEmpty();
+
+		// Check allocated balance is 0
+		if (symmio.allocatedBalanceOfPartyA(subAccount) > 0) revert SubAccountNotEmpty();
 
 		// Store values before deletion for event and hook
 		address owner = s.owner;
@@ -536,10 +542,9 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		// Sync bind state with parent account
 		ISymmio symmio = ISymmio(parent.symmioCore);
 		ISymmio.BindState memory parentBindState = symmio.getBindState(parentAccount);
-		address parentPartyB =
-			parentBindState.status == ISymmio.BindStatus.BOUND || parentBindState.status == ISymmio.BindStatus.PENDING_UNBIND
-				? parentBindState.partyB
-				: address(0);
+		address parentPartyB = parentBindState.status == ISymmio.BindStatus.BOUND || parentBindState.status == ISymmio.BindStatus.PENDING_UNBIND
+			? parentBindState.partyB
+			: address(0);
 		ISymmio.BindState memory vaBindState = symmio.getBindState(reusedAccount);
 
 		if (vaBindState.partyB != parentPartyB) {
@@ -664,8 +669,9 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 			virtualAccount = _getOrCreateVirtualAccount(account, hex"", VirtualAccountIsolationType.MARKET, p.symbolId);
 
 		if (accountData.isolationType == SubAccountIsolationType.MARKET_DIRECTION) {
-			VirtualAccountIsolationType vType =
-				p.positionType == ISymmio.PositionType.LONG ? VirtualAccountIsolationType.MARKET_LONG : VirtualAccountIsolationType.MARKET_SHORT;
+			VirtualAccountIsolationType vType = p.positionType == ISymmio.PositionType.LONG
+				? VirtualAccountIsolationType.MARKET_LONG
+				: VirtualAccountIsolationType.MARKET_SHORT;
 
 			virtualAccount = _getOrCreateVirtualAccount(account, hex"", vType, p.symbolId);
 		}

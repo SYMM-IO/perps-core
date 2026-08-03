@@ -5,6 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { LibMuonPartyB } from "../../libraries/muon/LibMuonPartyB.sol";
+import { LibSymbolAdjustment } from "../../libraries/LibSymbolAdjustment.sol";
 import { LibQuoteClose } from "../../libraries/LibQuoteClose.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
@@ -29,6 +30,7 @@ library PartyBEmergencyActionsFacetImpl {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		Symbol memory symbol = SymbolStorage.layout().symbols[quote.symbolId];
+		LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
 		bool affiliateShutdownScheduled = quote.affiliate != address(0) && GlobalAppStorage.layout().affiliateShutdownTime[quote.affiliate] != 0;
 		require(
 			GlobalAppStorage.layout().emergencyMode ||
@@ -65,6 +67,7 @@ library PartyBEmergencyActionsFacetImpl {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 
 		Quote storage quote = quoteLayout.quotes[quoteId];
+		LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
 		address signer = LibSigner.getSigner();
 
 		require(quote.partyB == signer, "PartyBFacet: Sender isn't partyB of quote");

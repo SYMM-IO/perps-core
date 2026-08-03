@@ -9,10 +9,3 @@ struct AffiliateConfig {
 	uint256 feeRate;
 	uint256 operatorFee;
 }
-
-/// @notice Guardrails controlling how much a sponsor subsidizes per withdrawal.
-struct SponsorConfig {
-	uint256 maxFeePerWithdraw;
-	uint256 maxWithdrawAmount;
-}
-

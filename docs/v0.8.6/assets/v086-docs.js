@@ -457,11 +457,24 @@
 		const zoomLabel = modal.querySelector("[data-diagram-zoom='reset']")
 		const minScale = 0.35
 		const maxScale = 4
+		const fitPadding = 40
 		const applyTransform = () => {
 			canvas.style.transform = `translate(${x}px, ${y}px) scale(${scale})`
 			if (zoomLabel) zoomLabel.textContent = `${Math.round(scale * 100)}%`
 		}
 		const clampScale = (value) => Math.min(maxScale, Math.max(minScale, Number(value.toFixed(3))))
+		const fitToStage = () => {
+			const stageRect = stage.getBoundingClientRect()
+			const contentWidth = canvas.offsetWidth
+			const contentHeight = canvas.offsetHeight
+			if (!contentWidth || !contentHeight) return
+			const availableWidth = Math.max(1, stageRect.width - fitPadding * 2)
+			const availableHeight = Math.max(1, stageRect.height - fitPadding * 2)
+			scale = clampScale(Math.min(1, availableWidth / contentWidth, availableHeight / contentHeight))
+			x = (stageRect.width - contentWidth * scale) / 2
+			y = (stageRect.height - contentHeight * scale) / 2
+			applyTransform()
+		}
 		const stageCenter = () => {
 			const rect = stage.getBoundingClientRect()
 			return {
@@ -483,18 +496,14 @@
 			applyTransform()
 		}
 		const zoomBy = (factor, anchor) => zoomTo(scale * factor, anchor)
-		const reset = () => {
-			scale = 1
-			x = 0
-			y = 0
-			applyTransform()
-		}
+		const reset = () => fitToStage()
 		const focusableSelector = "button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])"
 		const close = () => {
 			modal.remove()
 			document.body.classList.remove("has-diagram-modal")
 			if (activeDiagramModal === modal) activeDiagramModal = null
 			document.removeEventListener("keydown", onKeydown)
+			window.removeEventListener("resize", fitToStage)
 			if (returnFocus && document.contains(returnFocus)) returnFocus.focus()
 		}
 		const onKeydown = (event) => {
@@ -588,8 +597,9 @@
 		stage.addEventListener("pointerup", stopDragging)
 		stage.addEventListener("pointercancel", stopDragging)
 		document.addEventListener("keydown", onKeydown)
+		window.addEventListener("resize", fitToStage)
 		modal.querySelector("[data-diagram-close]").focus()
-		applyTransform()
+		fitToStage()
 	}
 
 	const enhanceMermaidSvg = (svg) => {
@@ -822,12 +832,10 @@
 					</div>
 				</div>
 				<div class="tool-input-group">
-					<strong>Fees & sponsorship</strong>
+					<strong>Fees</strong>
 					<div class="tool-grid tool-grid-compact">
 						<label>Affiliate fee bps<input type="number" min="0" max="10000" step="1" value="80" data-fee-bps></label>
 						<label>Operator fee<input type="number" min="0" step="0.01" value="1" data-operator-fee></label>
-						<label>Sponsor balance<input type="number" min="0" step="0.01" value="0" data-sponsor-balance></label>
-						<label>Sponsor max fee<input type="number" min="0" step="0.01" value="0" data-sponsor-max-fee></label>
 					</div>
 				</div>
 			</div>
@@ -877,8 +885,6 @@
 			const creditBlocked = mount.querySelector("[data-credit-blocked]").value
 			const feeBps = readNumber(mount, "[data-fee-bps]")
 			const operatorFee = readNumber(mount, "[data-operator-fee]")
-			const sponsorBalance = readNumber(mount, "[data-sponsor-balance]")
-			const sponsorMaxFee = readNumber(mount, "[data-sponsor-max-fee]")
 
 			const protocolBpsLimit = protocolMaxBps > 0 ? eligibleBase * protocolMaxBps / 10000 : Infinity
 			const affiliateBpsLimit = affiliateMaxBps > 0 ? eligibleBase * affiliateMaxBps / 10000 : Infinity
@@ -891,9 +897,7 @@
 
 			const feeAmount = requestAmount * feeBps / 10000
 			const totalFee = feeAmount + operatorFee
-			const sponsorLimit = sponsorMaxFee > 0 ? sponsorMaxFee : totalFee
-			const sponsorCoverage = Math.min(sponsorBalance, sponsorLimit, totalFee)
-			const userFee = Math.max(0, totalFee - sponsorCoverage)
+			const userFee = totalFee
 			const netUserAmount = Math.max(0, requestAmount - userFee)
 			const poolDraw = fastAllocation.affiliateAmount + fastAllocation.generalAmount
 			const validatorsReady = validatorCount > 0
@@ -943,7 +947,7 @@
 				</div>
 				<div class="option-card-grid">${options.map(optionCard).join("")}</div>
 				<p>Effective credit cap is <strong>${describeLimit(effectiveDebtLimit)}</strong>; current debt is <strong>${formatAmount(currentDebt)}</strong>; usable credit for this request is <strong>${formatAmount(creditCapacity)}</strong>.</p>
-				<p>Fee is <strong>${formatAmount(feeAmount)}</strong> plus operator fee <strong>${formatAmount(operatorFee)}</strong>; sponsor covers <strong>${formatAmount(sponsorCoverage)}</strong>; user pays <strong>${formatAmount(userFee)}</strong>.</p>
+				<p>Fee is <strong>${formatAmount(feeAmount)}</strong> plus operator fee <strong>${formatAmount(operatorFee)}</strong>; user pays <strong>${formatAmount(userFee)}</strong>.</p>
 				${warnings.length ? `<ul class="tool-warnings">${warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>` : '<p class="tool-ok">Current config supports a fast offer and a standard fallback.</p>'}
 			`
 		}
