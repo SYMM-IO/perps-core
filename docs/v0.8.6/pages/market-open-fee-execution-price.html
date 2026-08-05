@@ -100,7 +100,7 @@
 				<article class="doc-article" id="full-document">
 					<p>
 						A market quote carries two prices. <code>marketPrice</code> is the spot price PartyA signed when the quote was requested, and
-						<code>openedPrice</code> is the price PartyB filled at. Through v0.8.5 the open trading fee was computed from
+						<code>openedPrice</code> is the price PartyB filled at. Until this change the open trading fee was computed from
 						<code>marketPrice</code>. Close fees already used the executed <code>closedPrice</code>, so open fees were the only trading
 						fee in the protocol still priced off a request-time input.
 					</p>
@@ -172,12 +172,6 @@
 						difference is applied before the caller verifies solvency, so a shortfall PartyA cannot afford reverts the entire open
 						rather than leaving the account short.
 					</p>
-					<aside class="callout callout-note">
-						<strong>The excess is returned to allocated balance, not to free balance.</strong>
-						Crediting free balance would move funds out of the allocation without setting <code>deallocateTimestamp</code>, which would
-						let a refund bypass the withdrawal cooldown.
-					</aside>
-
 					<h2 id="unchanged">What Did Not Change</h2>
 					<p>
 						Every path that hands an open fee back operates on a quote that never opened, so all of them keep using the reserved basis
