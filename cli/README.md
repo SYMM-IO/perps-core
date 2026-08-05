@@ -162,7 +162,8 @@ This is the command that catches silent breakage. InstantLayer template ids are 
 by hedgers, so a template at the wrong id changes behaviour with nothing reporting an
 error. It is how the HyperEVM/Arbitrum mismatch was found: ids 0–2 matched, id 3 did not.
 
-Parameters without an on-chain getter are not compared — see
+`config diff` compares only getter-readable parameters. To compare everything, re-export
+and diff the JSON — see
 [mirroring an existing deployment](../docs/deployment.md#mirroring-an-existing-deployment).
 
 #### `config export`
@@ -174,9 +175,9 @@ symmio config export --network hyperevm --symmio 0x... --instant-layer 0x... --t
 Reads a live deployment into `tasks/config/protocol-<to>.json`. `--to` is the chain the
 config is *for*; `--network` is the chain being read *from*.
 
-Recovering the eight getter-less parameters needs an RPC that serves historical logs.
-Anything not recovered keeps the built-in default and is listed under
-`_provenance.UNVERIFIED_still_defaults`.
+Parameters with no view function are read straight from the `MAStorage` diamond storage
+slot, so any RPC works at the latest block — no archive node needed. The exporter validates
+its slot offsets against a getter-readable value first and aborts if they disagree.
 
 ---
 
@@ -266,5 +267,3 @@ args and returns an exit code, then register it in the `COMMANDS` map in `symmio
 - `symmio symbols` — add and sync trading symbols (`deploy:system` seeds none)
 - `symmio roles` — inspect and hand over roles across every contract
 - `symmio upgrade` — wrap the `scripts/upgrade/` tooling
-- Recovering the eight protocol parameters that have no on-chain getter, which needs an
-  archive RPC to read their `Set*` events
