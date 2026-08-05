@@ -44,3 +44,4 @@ AGENTS.md
 /docs/superpowers/
 .DS_Store
 .diffstory
+.fuzz-dashboard/
