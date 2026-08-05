@@ -19,16 +19,26 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 	using EnumerableSet for EnumerableSet.AddressSet;
 	using EnumerableSet for EnumerableSet.UintSet;
 
-	/// @notice Called by Symmio core when a position is opened (no-op in AccountLayer)
+	/// @notice Called by Symmio core when a position is opened
+	/// @dev Tracks the pending child quote created when a quote is partially filled
 	function onOpenPosition(
-		uint256 /* quoteId */,
+		uint256 quoteId,
 		uint256 /* filledAmount */,
 		uint256 /* openedPrice */,
-		address /* partyA */,
+		address partyA,
 		address /* partyB */
 	) external onlySymmio whenNotPaused {
-		// No-op: Account layer doesn't need to track position opens
-		// This function exists to prevent hook reverts when positions are opened
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
+		VirtualAccountData storage vData = ahLayout.virtualAccounts[partyA];
+		if (!vData.isExists) return;
+
+		address core = LibAccountLayerUtils.getRelatedCore(vData.parentAccount);
+		ISymmio symmio = ISymmio(core);
+		uint256 childQuoteId = symmio.getNextQuoteId();
+		ISymmio.Quote memory childQuote = symmio.getQuote(childQuoteId);
+		if (childQuote.parentId == quoteId && childQuote.partyA == partyA && childQuote.quoteStatus == ISymmio.QuoteStatus.PENDING) {
+			vData.quoteIds.add(childQuoteId);
+		}
 	}
 
 	/// @notice Called by Symmio core when a position is closed; removes quoteId from the virtual account

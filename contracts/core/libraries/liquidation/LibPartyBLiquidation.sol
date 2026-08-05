@@ -35,10 +35,14 @@ library LibPartyBLiquidation {
 
 		uint256 liquidatorShare;
 		uint256 remainingLf;
+		uint256 partyBAllocatedBalance = accountLayout.partyBAllocatedBalances[partyB][partyA];
 
 		// Determine liquidator share and remaining locked funds
 		if (uint256(-availableBalance) < accountLayout.partyBLockedBalances[partyB][partyA].lf) {
 			remainingLf = accountLayout.partyBLockedBalances[partyB][partyA].lf - uint256(-availableBalance);
+			// Locked LF can exceed what is actually allocated; without this cap the transfer below underflows
+			// and PartyB liquidation cannot be started at all.
+			if (remainingLf > partyBAllocatedBalance) remainingLf = partyBAllocatedBalance;
 			liquidatorShare = (remainingLf * maLayout.liquidatorShare) / 1e18;
 
 			maLayout.partyBPositionLiquidatorsShare[partyB][partyA] =
@@ -74,7 +78,7 @@ library LibPartyBLiquidation {
 		}
 
 		// Update allocated balances for Party A
-		uint256 value = accountLayout.partyBAllocatedBalances[partyB][partyA] - remainingLf;
+		uint256 value = partyBAllocatedBalance - remainingLf;
 		LibAccount.increasePartyAAllocatedBalance(partyA, value, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 
 		// Clear pending quotes and reset balances for Party B
