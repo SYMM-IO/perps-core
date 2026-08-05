@@ -80,10 +80,15 @@
 		"prettier:contracts": "prettier --write \"contracts/**/*.sol\"",
 		"prettier:contracts:check": "prettier --check \"contracts/**/*.sol\"",
 		"prettier:ts": "prettier --write \"**/*.ts\"",
-		"prettier:ts:check": "prettier --check \"**/*.ts\""
+		"prettier:ts:check": "prettier --check \"**/*.ts\"",
+		"cli": "node cli/symmio.js",
+		"doctor": "node cli/symmio.js doctor"
 	},
 	"dependencies": {
 		"bignumber.js": "^9.3.1",
 		"prettier-plugin-solidity": "^2.2.0"
+	},
+	"bin": {
+		"symmio": "./cli/symmio.js"
 	}
 }
