@@ -199,10 +199,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			["uint256", "uint8", "uint256", "address", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "bytes"],
 			[nonce, optionType, availableAt, affiliate, affiliateAmount, creditAmount, fee, operatorFee, muf, maf, deadline, signature],
 		)
-		const validatorData = ethers.AbiCoder.defaultAbiCoder().encode(
-			["bytes[]", "uint256[]", "uint256"],
-			[validatorSignatures ?? [], validatorTimestamps ?? [], 0],
-		)
+		const validatorData = ethers.AbiCoder.defaultAbiCoder().encode(["bytes[]", "uint256[]"], [validatorSignatures ?? [], validatorTimestamps ?? []])
 		return ethers.AbiCoder.defaultAbiCoder().encode(["bytes", "bytes", "bytes"], [offerData, validatorData, creditDataRaw ?? "0x"])
 	}
 
@@ -1547,7 +1544,6 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 					{ name: "nonce", type: "uint256" },
 					{ name: "amount", type: "uint256" },
 					{ name: "timestamp", type: "uint256" },
-					{ name: "symmioNonce", type: "uint256" },
 					{ name: "symmio", type: "address" },
 				],
 			}
@@ -1556,7 +1552,6 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 				nonce: 0n,
 				amount: withdrawAmount,
 				timestamp: now,
-				symmioNonce: 0n,
 				symmio: context.diamond,
 			})
 
@@ -3442,11 +3437,10 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 						{ name: "nonce", type: "uint256" },
 						{ name: "amount", type: "uint256" },
 						{ name: "timestamp", type: "uint256" },
-						{ name: "symmioNonce", type: "uint256" },
 						{ name: "symmio", type: "address" },
 					],
 				}
-				return validator1.signTypedData(domain, types, { user: u, nonce, amount, timestamp: ts, symmioNonce: 0n, symmio: context.diamond })
+				return validator1.signTypedData(domain, types, { user: u, nonce, amount, timestamp: ts, symmio: context.diamond })
 			}
 
 			// User 1: SAME_TX (8,000 tokens)
@@ -3605,7 +3599,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		async function signValidatorApproval(
 			expressProvider: any,
 			validator: any,
-			params: { user: string; nonce: bigint; amount: bigint; timestamp: number; symmioNonce: bigint; symmio: string },
+			params: { user: string; nonce: bigint; amount: bigint; timestamp: number; symmio: string },
 		) {
 			const domain = { name: "ExpressProvider", version: "1", chainId: 31337, verifyingContract: await expressProvider.getAddress() }
 			const types = {
@@ -3614,7 +3608,6 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 					{ name: "nonce", type: "uint256" },
 					{ name: "amount", type: "uint256" },
 					{ name: "timestamp", type: "uint256" },
-					{ name: "symmioNonce", type: "uint256" },
 					{ name: "symmio", type: "address" },
 				],
 			}
@@ -3667,7 +3660,6 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 				nonce: 0n,
 				amount: withdrawAmount,
 				timestamp: now,
-				symmioNonce: 0n,
 				symmio: context.diamond,
 			})
 
@@ -3784,7 +3776,6 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 				nonce: 0n,
 				amount: withdrawAmount,
 				timestamp: now,
-				symmioNonce: 0n,
 				symmio: context.diamond,
 			})
 
@@ -3856,7 +3847,6 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 				nonce: 0n,
 				amount: withdrawAmount,
 				timestamp: now,
-				symmioNonce: 0n,
 				symmio: context.diamond,
 			})
 
@@ -3925,7 +3915,6 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 				nonce: 0n,
 				amount: withdrawAmount,
 				timestamp: now,
-				symmioNonce: 0n,
 				symmio: context.diamond,
 			})
 
@@ -4373,7 +4362,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 
 			await expressProvider.connect(deployer).setPaused(true)
 
-			await expect(expressProvider.connect(user).accelerateWithdraw(user.address, requestId, parts, "0x", "0x")).to.be.revertedWithCustomError(
+			await expect(expressProvider.connect(user).accelerateWithdraw(user.address, requestId, parts, "0x", "0x", "0x")).to.be.revertedWithCustomError(
 				expressProvider,
 				"Paused",
 			)

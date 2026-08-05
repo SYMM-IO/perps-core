@@ -18,11 +18,11 @@ import { LibAccessControl } from "../../libraries/LibAccessControl.sol";
 import { LibCreditLine } from "../../libraries/LibCreditLine.sol";
 import { LibErrors } from "../../libraries/LibErrors.sol";
 import { LibParts } from "../../libraries/LibParts.sol";
+import { LibValidators } from "../../libraries/LibValidators.sol";
 
 import { GlobalStorage } from "../../storages/GlobalStorage.sol";
 import { PoolStorage } from "../../storages/PoolStorage.sol";
 import { FeeStorage } from "../../storages/FeeStorage.sol";
-import { ValidatorStorage } from "../../storages/ValidatorStorage.sol";
 
 import { Pausable } from "../../utils/Pausable.sol";
 import { ReentrancyGuard } from "../../utils/ReentrancyGuard.sol";
@@ -34,7 +34,6 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 	function onWithdrawRequest(WithdrawRequest memory withdrawRequest, address callbackCollateral) external nonReentrant whenNotPaused {
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
 		FeeStorage.Layout storage f = FeeStorage.layout();
-		ValidatorStorage.Layout storage v = ValidatorStorage.layout();
 		if (msg.sender != g.symmio) revert LibErrors.OnlySymmio();
 		if (withdrawRequest.provider != address(this)) revert LibErrors.InvalidProvider();
 		if (callbackCollateral != address(g.collateral)) revert LibErrors.InvalidCollateral();
@@ -52,7 +51,7 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 
 		ComputedAmounts memory amounts = LibParts.computeAmounts(withdrawRequest.parts, offer.affiliateAmount, offer.creditAmount);
 
-		uint256 minSigs = _getMinValidatorSignatures(v, offer.affiliate);
+		uint256 minSigs = LibValidators.getMinValidatorSignatures(offer.affiliate);
 		if (optType == OptionType.SAME_TX && minSigs == 0) {
 			revert LibErrors.ValidatorsRequiredForSameTx();
 		}
@@ -64,7 +63,7 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 		uint256 baseFees = offer.fee + offer.operatorFee;
 
 		if (optType != OptionType.STANDARD && minSigs > 0) {
-			_validateValidators(offer.affiliate, withdrawRequest.user, offer.nonce, withdrawRequest.totalAmount, validatorData);
+			LibValidators.validateWithdrawApprovals(offer.affiliate, withdrawRequest.user, offer.nonce, withdrawRequest.totalAmount, validatorData);
 		}
 
 		if (optType != OptionType.STANDARD) {
@@ -278,58 +277,6 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 
 		p.lockedGeneralBalance += amounts.generalAmount;
 		p.lockedAffiliateBalances[offer.affiliate] += offer.affiliateAmount;
-	}
-
-	// ═══════════════════════════════════════════════════════════════════
-	//                     INTERNAL: VALIDATORS
-	// ═══════════════════════════════════════════════════════════════════
-
-	function _validateValidators(address affiliate, address user, uint256 nonce, uint256 amount, bytes memory validatorData) internal view {
-		GlobalStorage.Layout storage g = GlobalStorage.layout();
-		ValidatorStorage.Layout storage v = ValidatorStorage.layout();
-		(bytes[] memory signatures, uint256[] memory timestamps, uint256 symmioNonce) = abi.decode(validatorData, (bytes[], uint256[], uint256));
-
-		if (signatures.length != timestamps.length) revert LibErrors.ArrayLengthMismatch();
-
-		uint256 minSigs = _getMinValidatorSignatures(v, affiliate);
-		if (signatures.length < minSigs) revert LibErrors.InsufficientValidatorSignatures();
-		if (ISymmio(g.symmio).nonceOfPartyA(user) != symmioNonce) revert LibErrors.InvalidNonce();
-
-		uint256 timeout = _getValidatorApprovalTimeout(v, affiliate);
-		address lastSigner = address(0);
-		for (uint256 i = 0; i < signatures.length; i++) {
-			if (timestamps[i] > block.timestamp || block.timestamp - timestamps[i] > timeout) {
-				revert LibErrors.ValidatorApprovalExpired();
-			}
-
-			bytes32 structHash = keccak256(
-				abi.encode(LibAccessControl.VALIDATOR_APPROVAL_TYPEHASH, user, nonce, amount, timestamps[i], symmioNonce, g.symmio)
-			);
-			address signer = ECDSA.recover(LibAccessControl.hashTypedDataV4(structHash), signatures[i]);
-
-			if (!_isValidator(v, affiliate, signer)) revert LibErrors.InvalidValidator();
-			if (signer <= lastSigner) revert LibErrors.DuplicateValidator();
-			lastSigner = signer;
-		}
-	}
-
-	/// @dev Returns the minValidatorSignatures for the affiliate, falling back to address(0) default.
-	function _getMinValidatorSignatures(ValidatorStorage.Layout storage v, address affiliate) internal view returns (uint256) {
-		uint256 val = v.minValidatorSignatures[affiliate];
-		if (val > 0) return val;
-		return v.minValidatorSignatures[address(0)];
-	}
-
-	/// @dev Returns the validatorApprovalTimeout for the affiliate, falling back to address(0) default.
-	function _getValidatorApprovalTimeout(ValidatorStorage.Layout storage v, address affiliate) internal view returns (uint256) {
-		uint256 val = v.validatorApprovalTimeout[affiliate];
-		if (val > 0) return val;
-		return v.validatorApprovalTimeout[address(0)];
-	}
-
-	/// @dev Returns true if signer is a validator for the affiliate or the default (address(0)).
-	function _isValidator(ValidatorStorage.Layout storage v, address affiliate, address signer) internal view returns (bool) {
-		return v.validators[affiliate][signer] || v.validators[address(0)][signer];
 	}
 
 	// ═══════════════════════════════════════════════════════════════════

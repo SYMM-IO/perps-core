@@ -24,11 +24,15 @@ interface IAccelerateFacet is IAccelerateEvents {
 	///         Permissionless — any caller with a valid bot-signed offer may invoke.
 	/// @dev Reverts atomically on cap breach, leaving the STANDARD state intact so the bot
 	///      or the frontend can retry later with the same signature once capacity frees up.
+	///      When the affiliate's effective minValidatorSignatures > 0, `validatorData` must
+	///      carry a quorum of `ValidatorAccelerateApproval` signatures over the frozen request
+	///      (user, requestId, partsHash), each within the validator approval timeout.
 	function accelerateWithdraw(
 		address user,
 		uint256 requestId,
 		WithdrawReceiverPart[] calldata parts,
 		bytes calldata accelerateOfferData,
+		bytes calldata validatorData,
 		bytes calldata creditDataRaw
 	) external;
 }
