@@ -92,39 +92,36 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	bytes32 public constant FLEX_FILL_AUTH_TYPEHASH = keccak256("FlexFillAuth(bytes32 opHash,uint256 fieldIndex,bytes value)");
 
 	/// @notice EIP-712 type hash for SignedOperation struct (includes nested type definitions)
-	bytes32 internal constant SIGNED_OPERATION_TYPEHASH =
-		keccak256(
-			abi.encodePacked(
-				"SignedOperation(",
-				"address signer,",
-				"address target,",
-				"bytes callData,",
-				"Account signerAccount,",
-				"FlexField[] flexFields,",
-				"uint256 maxUses,",
-				"ReplayAttackHeader replayAttackHeader",
-				")",
-				"Account(address addr,bool isPartyB)",
-				"FlexField(uint256 offset,uint256 length,address authorizedFlexFiller)",
-				"ReplayAttackHeader(uint256 nonce,uint256 deadline,bytes32 salt)"
-			)
-		);
+	bytes32 internal constant SIGNED_OPERATION_TYPEHASH = keccak256(
+		abi.encodePacked(
+			"SignedOperation(",
+			"address signer,",
+			"address target,",
+			"bytes callData,",
+			"Account signerAccount,",
+			"FlexField[] flexFields,",
+			"uint256 maxUses,",
+			"ReplayAttackHeader replayAttackHeader",
+			")",
+			"Account(address addr,bool isPartyB)",
+			"FlexField(uint256 offset,uint256 length,address authorizedFlexFiller)",
+			"ReplayAttackHeader(uint256 nonce,uint256 deadline,bytes32 salt)"
+		)
+	);
 
 	/// @notice EIP-712 type hash for DelegationInfo struct
-	bytes32 public constant DELEGATION_INFO_TYPEHASH =
-		keccak256(
-			"DelegationInfo(Account account,address delegatedSigner,bytes4[] selectors,uint256 expiryTimestamp)"
-			"Account(address addr,bool isPartyB)"
-		);
+	bytes32 public constant DELEGATION_INFO_TYPEHASH = keccak256(
+		"DelegationInfo(Account account,address delegatedSigner,bytes4[] selectors,uint256 expiryTimestamp)"
+		"Account(address addr,bool isPartyB)"
+	);
 
 	/// @notice EIP-712 type hash for SignedDelegation struct
-	bytes32 public constant SIGNED_DELEGATION_TYPEHASH =
-		keccak256(
-			"SignedDelegation(DelegationInfo delegationInfo,ReplayAttackHeader replayAttackHeader)"
-			"Account(address addr,bool isPartyB)"
-			"DelegationInfo(Account account,address delegatedSigner,bytes4[] selectors,uint256 expiryTimestamp)"
-			"ReplayAttackHeader(uint256 nonce,uint256 deadline,bytes32 salt)"
-		);
+	bytes32 public constant SIGNED_DELEGATION_TYPEHASH = keccak256(
+		"SignedDelegation(DelegationInfo delegationInfo,ReplayAttackHeader replayAttackHeader)"
+		"Account(address addr,bool isPartyB)"
+		"DelegationInfo(Account account,address delegatedSigner,bytes4[] selectors,uint256 expiryTimestamp)"
+		"ReplayAttackHeader(uint256 nonce,uint256 deadline,bytes32 salt)"
+	);
 
 	/* ══════════════════════════ STATE VARIABLES ══════════════════════════ */
 
@@ -542,7 +539,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		// Update delegation mappings
 		mapping(bytes4 => uint256) storage slot = delegations[delegator][delegate];
 
-		for (uint256 i = 0; i < selectors.length; ) {
+		for (uint256 i = 0; i < selectors.length;) {
 			bytes4 selector = selectors[i];
 			slot[selector] = expiry;
 			delete pendingRevocationEta[delegator][delegate][selector];

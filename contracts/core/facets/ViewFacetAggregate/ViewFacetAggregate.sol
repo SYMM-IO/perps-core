@@ -195,7 +195,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		if (start + size > totalLength) size = totalLength - start;
 
 		uint256[] memory result = new uint256[](size);
-		for (uint256 i = 0; i < size; ) {
+		for (uint256 i = 0; i < size;) {
 			result[i] = activeSymbols[start + i];
 			unchecked {
 				++i;
@@ -235,7 +235,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		if (start + size > totalLength) size = totalLength - start;
 
 		uint256[] memory result = new uint256[](size);
-		for (uint256 i = 0; i < size; ) {
+		for (uint256 i = 0; i < size;) {
 			result[i] = activeSymbols[start + i];
 			unchecked {
 				++i;
@@ -257,7 +257,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		if (start + size > totalLength) size = totalLength - start;
 
 		uint256[] memory result = new uint256[](size);
-		for (uint256 i = 0; i < size; ) {
+		for (uint256 i = 0; i < size;) {
 			result[i] = activeSymbols[start + i];
 			unchecked {
 				++i;
@@ -286,7 +286,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		results = new AggregatedPositionBySymbol[](size * 2);
 		uint256 count;
 
-		for (uint256 i = start; i < start + size; ) {
+		for (uint256 i = start; i < start + size;) {
 			uint256 symbolId = activeSymbols[i];
 
 			PartiesAggregatedPositions storage longPos = aggregatedLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.LONG];
@@ -339,7 +339,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		results = new AggregatedPositionBySymbol[](size * 2);
 		uint256 count;
 
-		for (uint256 i = start; i < start + size; ) {
+		for (uint256 i = start; i < start + size;) {
 			uint256 symbolId = activeSymbols[i];
 
 			PartiesAggregatedPositions storage longPos = aggregatedLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][
@@ -396,7 +396,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		results = new AggregatedPositionBySymbol[](size * 2);
 		uint256 count;
 
-		for (uint256 i = start; i < start + size; ) {
+		for (uint256 i = start; i < start + size;) {
 			uint256 symbolId = activeSymbols[i];
 
 			PartiesAggregatedPositions storage longPos = aggregatedLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][
@@ -453,7 +453,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		results = new AggregatedFundingDebtBySymbol[](size * 2);
 		uint256 count;
 
-		for (uint256 i = start; i < start + size; ) {
+		for (uint256 i = start; i < start + size;) {
 			uint256 symbolId = activeSymbols[i];
 
 			if (aggregatedLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][PositionType.LONG].aggregatedAmount > 0) {
@@ -502,7 +502,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		results = new AggregatedFundingDebtBySymbol[](size * 2);
 		uint256 count;
 
-		for (uint256 i = start; i < start + size; ) {
+		for (uint256 i = start; i < start + size;) {
 			uint256 symbolId = activeSymbols[i];
 
 			if (aggregatedLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.LONG].aggregatedAmount > 0) {
@@ -550,7 +550,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		results = new AggregatedFundingDebtBySymbol[](size * 2);
 		uint256 count;
 
-		for (uint256 i = start; i < start + size; ) {
+		for (uint256 i = start; i < start + size;) {
 			uint256 symbolId = activeSymbols[i];
 
 			if (aggregatedLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.LONG].aggregatedAmount > 0) {
@@ -599,7 +599,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		results = new UpnlData[](size * 2);
 		uint256 count;
 
-		for (uint256 i = start; i < start + size; ) {
+		for (uint256 i = start; i < start + size;) {
 			uint256 symbolId = activeSymbols[i];
 
 			// LONG position data
@@ -658,7 +658,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		results = new UpnlData[](size * 2);
 		uint256 count;
 
-		for (uint256 i = start; i < start + size; ) {
+		for (uint256 i = start; i < start + size;) {
 			uint256 symbolId = activeSymbols[i];
 
 			// LONG position data
@@ -716,7 +716,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		results = new UpnlData[](size * 2);
 		uint256 count;
 
-		for (uint256 i = start; i < start + size; ) {
+		for (uint256 i = start; i < start + size;) {
 			uint256 symbolId = activeSymbols[i];
 
 			// LONG position data

@@ -228,7 +228,7 @@ library ClearingHouseFacetImpl {
 				uint256[] memory cancelledIds = new uint256[](pendingQuotes.length);
 				uint256 cancelledCount = 0;
 
-				for (uint256 i = 0; i < pendingQuotes.length; ) {
+				for (uint256 i = 0; i < pendingQuotes.length;) {
 					Quote storage quote = quoteLayout.quotes[pendingQuotes[i]];
 					if (quote.partyB == partyB) {
 						cancelledIds[cancelledCount++] = pendingQuotes[i];

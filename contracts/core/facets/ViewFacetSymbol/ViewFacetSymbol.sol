@@ -64,7 +64,7 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 
 		Symbol[] memory symbols = new Symbol[](size);
 		uint256 end = start + size;
-		for (uint256 i = start; i < end; ) {
+		for (uint256 i = start; i < end;) {
 			symbols[i - start] = symbolLayout.symbols[i + 1];
 			unchecked {
 				++i;
@@ -84,7 +84,7 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 		}
 		SymbolWithType[] memory symbols = new SymbolWithType[](size);
 		uint256 end = start + size;
-		for (uint256 i = start; i < end; ) {
+		for (uint256 i = start; i < end;) {
 			Symbol memory symbol = symbolLayout.symbols[i + 1];
 			symbols[i - start] = _toSymbolWithType(symbol, symbolLayout.symbolTypes[symbol.symbolId]);
 			unchecked {
@@ -121,7 +121,7 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 		}
 		Symbol[] memory symbols = new Symbol[](size);
 		uint256 end = start + size;
-		for (uint256 i = start; i < end; ) {
+		for (uint256 i = start; i < end;) {
 			Symbol memory symbol = symbolLayout.symbols[i + 1];
 			if (LibConnections.isSymbolAllowedForPartyA(partyA, symbol.symbolId) && symbol.isValid) {
 				symbols[i - start] = symbol;
@@ -145,7 +145,7 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 		}
 		SymbolWithType[] memory symbols = new SymbolWithType[](size);
 		uint256 end = start + size;
-		for (uint256 i = start; i < end; ) {
+		for (uint256 i = start; i < end;) {
 			Symbol memory symbol = symbolLayout.symbols[i + 1];
 			if (LibConnections.isSymbolAllowedForPartyA(partyA, symbol.symbolId) && symbol.isValid) {
 				symbols[i - start] = _toSymbolWithType(symbol, symbolLayout.symbolTypes[symbol.symbolId]);
@@ -224,7 +224,7 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 		address[] memory connectedPartyBs = accountLayout.connectedPartyBs[partyA];
 		PartyBSymbolCount[] memory result = new PartyBSymbolCount[](connectedPartyBs.length);
 
-		for (uint256 i = 0; i < connectedPartyBs.length; ) {
+		for (uint256 i = 0; i < connectedPartyBs.length;) {
 			address partyB = connectedPartyBs[i];
 			result[i] = PartyBSymbolCount({ partyB: partyB, symbolCount: aggregatedLayout.partyAActiveSymbolsPerPartyB[partyA][partyB].length });
 			unchecked {
