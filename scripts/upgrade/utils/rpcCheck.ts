@@ -1,11 +1,81 @@
-import { ethers } from "../../../test/helpers/hardhat-connection.js"
+import connection, { ethers, hre } from "../../../test/helpers/hardhat-connection.js"
 import { log } from "./log.js"
+import { baseNetworkName } from "./sharedConfig.js"
+
+async function rpcUrlFromValue(value: unknown): Promise<string | undefined> {
+	if (typeof value === "string" && value.length > 0) return value
+	if (typeof value !== "object" || value === null) return undefined
+
+	const resolved = value as {
+		getUrl?: () => Promise<string>
+		get?: () => Promise<string>
+	}
+
+	try {
+		const url = await resolved.getUrl?.()
+		if (typeof url === "string" && url.length > 0) return url
+	} catch {
+		// Best-effort display only; connection verification below owns failures.
+	}
+
+	try {
+		const url = await resolved.get?.()
+		if (typeof url === "string" && url.length > 0) return url
+	} catch {
+		// Best-effort display only; connection verification below owns failures.
+	}
+
+	return undefined
+}
+
+function maskRpcUrl(rawUrl: string): string {
+	try {
+		const url = new URL(rawUrl)
+		if (url.username) url.username = "***"
+		if (url.password) url.password = "***"
+		if (url.search) url.search = "?***"
+		return url.toString()
+	} catch {
+		return rawUrl
+	}
+}
+
+async function resolveConfiguredRpcUrl(): Promise<string> {
+	const networkName = connection.networkName
+	const networkConfig = (hre.config.networks as Record<string, unknown>)[networkName] as Record<string, unknown> | undefined
+	const forkingConfig = networkConfig?.forking as Record<string, unknown> | undefined
+	const configUrl = (await rpcUrlFromValue(networkConfig?.url)) ?? (await rpcUrlFromValue(forkingConfig?.url))
+	if (configUrl) return configUrl
+
+	if (networkName === "docker") {
+		return process.env.HARDHAT_DOCKER_URL ?? "http://localhost:8545"
+	}
+
+	const suffix = baseNetworkName(networkName)
+	const envName = suffix ? `RPC_${suffix.toUpperCase()}` : undefined
+	if (envName) {
+		const envUrl = await rpcUrlFromValue(process.env[envName])
+		if (envUrl) return envUrl
+	}
+
+	const provider = ethers.provider as unknown as {
+		_getConnection?: () => { url?: unknown }
+		connection?: { url?: unknown }
+	}
+	const providerUrl = (await rpcUrlFromValue(provider._getConnection?.()?.url)) ?? (await rpcUrlFromValue(provider.connection?.url))
+	if (providerUrl) return providerUrl
+
+	return "(provider URL unavailable)"
+}
 
 /**
  * Verifies the RPC connection is healthy before running any script.
  * Checks connectivity, chain ID, and latest block freshness.
  */
 export async function verifyRpc(expectedChainId?: number): Promise<void> {
+	log.kv("Network", connection.networkName)
+	log.kv("RPC URL", maskRpcUrl(await resolveConfiguredRpcUrl()))
+
 	let network
 	try {
 		network = await ethers.provider.getNetwork()

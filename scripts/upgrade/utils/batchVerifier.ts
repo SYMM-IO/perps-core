@@ -15,7 +15,13 @@ import path from "path"
 import { FacetNames } from "../../../tasks/deploy/constants.js"
 import { getSelectors } from "../../../tasks/utils/diamondCut.js"
 import { ethers } from "../../../test/helpers/hardhat-connection.js"
-import { buildTemplateTransactions, buildWiringTransactions } from "./peripheralHelpers.js"
+import { MUON_FUNCTION_NAMES, validateMuonVerifierConfig } from "./muonVerifierConfig.js"
+import {
+	buildSymbolManagerWiringTransactions,
+	buildTemplateTransactions,
+	buildWiringTransactions,
+	filterUnregisteredPartyBs,
+} from "./peripheralHelpers.js"
 import {
 	buildUpgradeTransactions,
 	FacetLibraryDependencies,
@@ -63,6 +69,9 @@ export type VerifyContextInputs = {
 	// Optional cross-check toggle: verify each facet's selectors in
 	// deployed-facets-{network}.json match the locally compiled facet ABI.
 	verifyFacetSelectorsAgainstArtifacts?: boolean
+	// Optional optimization: checks that do not need generator-equivalent PartyB
+	// registration filtering can avoid on-chain reads.
+	skipPartyBStateFilter?: boolean
 }
 
 export type LoadedContext = {
@@ -79,10 +88,15 @@ export type LoadedContext = {
 	setupInstantLayerTemplates: boolean
 	newParams: NewV085Parameters
 	partyBsToRegister: string[]
+	registerOnSymmioCore: boolean
+	registerOnInstantLayer: boolean
+	partyBsForDiamond: string[]
+	partyBsForInstantLayer: string[]
 	templates: unknown[]
 	// Deploy outputs
 	accountLayerAddress?: string
 	instantLayerAddress?: string
+	symbolManagerAddress?: string
 	signatureVerifierAddress?: string
 	deployedFacets: Record<string, { address: string; selectors: string[] }>
 	selectorSignatures: Record<string, string>
@@ -146,11 +160,13 @@ type UpgradeConfig = {
 	setupInstantLayerTemplates?: boolean
 	accountLayerDiamondAddress?: string
 	instantLayerAddress?: string
+	symbolManagerAddress?: string
 	newV085Parameters?: NewV085Parameters
 }
 
 type PartyBListConfig = {
 	partyBs?: Record<string, string[]>
+	registerOnSymmioCore?: boolean
 	registerOnInstantLayer?: boolean
 }
 
@@ -161,6 +177,7 @@ type TemplatesConfig = {
 type DeployedPeripherals = {
 	accountLayer?: { diamond?: string }
 	instantLayer?: { address?: string }
+	symbolManager?: { address?: string }
 	signatureVerifier?: string
 }
 
@@ -169,11 +186,11 @@ type DeployedFacets = {
 	selectorSignatures: Record<string, string>
 }
 
-export function loadVerifyContext(inputs: VerifyContextInputs): LoadedContext {
+export async function loadVerifyContext(inputs: VerifyContextInputs): Promise<LoadedContext> {
 	const { networkName, outputDir, configDir, paths = {} } = inputs
 
-	const upgradeFile = paths.upgradeConfig ?? path.join(configDir, "upgrade.json")
-	const partyBListFile = paths.partyBListConfig ?? path.join(configDir, "partyBList.json")
+	const upgradeFile = paths.upgradeConfig ?? resolveNetworkConfigFile(configDir, "upgrade", networkName)
+	const partyBListFile = paths.partyBListConfig ?? resolveNetworkConfigFile(configDir, "partyBList", networkName)
 	const templatesFile = paths.instantLayerTemplatesConfig ?? path.join(configDir, "instantLayerTemplates.json")
 	const deployedFacetsFile = paths.deployedFacets ?? path.join(outputDir, `deployed-facets-${networkName}.json`)
 	const deployedPeripheralsFile = paths.deployedPeripherals ?? path.join(outputDir, `deployed-peripherals-${networkName}.json`)
@@ -200,14 +217,34 @@ export function loadVerifyContext(inputs: VerifyContextInputs): LoadedContext {
 
 	const accountLayerAddress = upgradeConfig.accountLayerDiamondAddress ?? deployedPeripherals.accountLayer?.diamond
 	const instantLayerAddress = upgradeConfig.instantLayerAddress ?? deployedPeripherals.instantLayer?.address
+	const symbolManagerAddress = upgradeConfig.symbolManagerAddress ?? deployedPeripherals.symbolManager?.address
 	const signatureVerifierAddress = upgradeConfig.newV085Parameters?.signatureVerifierAddress ?? deployedPeripherals.signatureVerifier
 
-	const partyBsToRegister: string[] = partyBListConfig.registerOnInstantLayer
-		? Object.values(partyBListConfig.partyBs ?? {})
-				.flat()
-				.filter(a => ethers.isAddress(a))
-				.map(a => ethers.getAddress(a))
-		: []
+	// Load full partyB list; per-target gates (registerOnSymmioCore,
+	// registerOnInstantLayer) default to true when the list file exists.
+	const partyBsToRegister: string[] = Object.values(partyBListConfig.partyBs ?? {})
+		.flat()
+		.filter(a => ethers.isAddress(a))
+		.map(a => ethers.getAddress(a))
+	const registerOnSymmioCore: boolean = partyBListConfig.registerOnSymmioCore !== false
+	const registerOnInstantLayer: boolean = partyBListConfig.registerOnInstantLayer !== false
+
+	// Mirror the generator's pre-filter: compute which PartyBs actually need
+	// registration against current on-chain state. Verifier and generator must
+	// agree; if one filters and the other doesn't, byte-compare drifts.
+	let partyBsForDiamond: string[] = []
+	let partyBsForInstantLayer: string[] = []
+	if (partyBsToRegister.length > 0 && !inputs.skipPartyBStateFilter) {
+		const filtered = await filterUnregisteredPartyBs(
+			ethers.provider,
+			ethers.getAddress(diamondAddress),
+			instantLayerAddress && ethers.isAddress(instantLayerAddress) ? ethers.getAddress(instantLayerAddress) : undefined,
+			partyBsToRegister,
+			{ registerOnSymmioCore, registerOnInstantLayer },
+		)
+		partyBsForDiamond = filtered.partyBsForDiamond
+		partyBsForInstantLayer = filtered.partyBsForInstantLayer
+	}
 
 	// Resolve file paths (network-qualified defaults, override via paths)
 	const files = {
@@ -237,15 +274,26 @@ export function loadVerifyContext(inputs: VerifyContextInputs): LoadedContext {
 		setupInstantLayerTemplates: upgradeConfig.setupInstantLayerTemplates !== false,
 		newParams: upgradeConfig.newV085Parameters ?? {},
 		partyBsToRegister,
+		registerOnSymmioCore,
+		registerOnInstantLayer,
+		partyBsForDiamond,
+		partyBsForInstantLayer,
 		templates: templatesConfig.templates ?? [],
 		accountLayerAddress: accountLayerAddress && ethers.isAddress(accountLayerAddress) ? ethers.getAddress(accountLayerAddress) : undefined,
 		instantLayerAddress: instantLayerAddress && ethers.isAddress(instantLayerAddress) ? ethers.getAddress(instantLayerAddress) : undefined,
+		symbolManagerAddress: symbolManagerAddress && ethers.isAddress(symbolManagerAddress) ? ethers.getAddress(symbolManagerAddress) : undefined,
 		signatureVerifierAddress:
 			signatureVerifierAddress && ethers.isAddress(signatureVerifierAddress) ? ethers.getAddress(signatureVerifierAddress) : undefined,
 		deployedFacets: deployedFacetsJson.facets,
 		selectorSignatures: deployedFacetsJson.selectorSignatures ?? {},
 		files,
 	}
+}
+
+function resolveNetworkConfigFile(configDir: string, baseName: string, networkName: string): string {
+	const networkSpecific = path.join(configDir, `${baseName}-${networkName}.json`)
+	if (fs.existsSync(networkSpecific)) return networkSpecific
+	return path.join(configDir, `${baseName}.json`)
 }
 
 function collectChunked(dir: string, prefix: string): string[] {
@@ -316,7 +364,8 @@ function buildExpectedSafeTxs(ctx: LoadedContext): { pauseSafeTxs: SafeTransacti
 			ctx.accountLayerAddress,
 			ctx.instantLayerAddress,
 			ctx.protocolAdmin,
-			ctx.partyBsToRegister,
+			ctx.partyBsForDiamond,
+			ctx.partyBsForInstantLayer,
 		)
 		for (const tx of wiring) {
 			safeTxs.push(toHumanReadableSafeTxFromIface(tx.iface, tx.to, tx.methodName, tx.args))
@@ -326,6 +375,18 @@ function buildExpectedSafeTxs(ctx: LoadedContext): { pauseSafeTxs: SafeTransacti
 			for (const tx of templates) {
 				safeTxs.push(toHumanReadableSafeTxFromIface(tx.iface, tx.to, tx.methodName, tx.args))
 			}
+		}
+		if (ctx.safeAddress) {
+			const acceptOwnershipIface = new ethers.Interface(["function acceptOwnership()"])
+			safeTxs.push(toHumanReadableSafeTxFromIface(acceptOwnershipIface, ctx.accountLayerAddress, "acceptOwnership", []))
+		}
+	}
+
+	// SymbolManager wiring is independent of AccountLayer/InstantLayer.
+	if (ctx.symbolManagerAddress) {
+		const symbolManagerWiring = buildSymbolManagerWiringTransactions(ctx.diamondAddress, ctx.symbolManagerAddress)
+		for (const tx of symbolManagerWiring) {
+			safeTxs.push(toHumanReadableSafeTxFromIface(tx.iface, tx.to, tx.methodName, tx.args))
 		}
 	}
 
@@ -369,6 +430,83 @@ export function verifySafeBatch(ctx: LoadedContext): FileCheck {
 	const expected = buildExpectedSafeTxs(ctx).safeTxs
 	compareTxLists("safe-batch", expected, batch.transactions, check.issues)
 	checkSafeHeader(batch, ctx.safeAddress, check.issues)
+	check.ok = check.issues.length === 0
+	return check
+}
+
+const MUON_VERIFIER_IFACE = new ethers.Interface([
+	"function addPublicKey(tuple(uint256 x, uint8 parity) pubKey)",
+	"function addGatewaySigner(address signer)",
+	"function setPublicKeyPermissions(tuple(uint256 x, uint8 parity) pubKey, uint8[] functions, bool allowed)",
+	"function setGatewaySignerPermissions(address signer, uint8[] functions, bool allowed)",
+])
+
+function hasExactCall(batch: SafeBatchFile, to: string, methodName: string, args: unknown[]): boolean {
+	const data = MUON_VERIFIER_IFACE.encodeFunctionData(methodName, args)
+	return batch.transactions.some(tx => eqAddr(tx.to, to) && eqBytes(tx.data, data))
+}
+
+export function verifyMuonVerifierSafeBatch(ctx: LoadedContext): FileCheck {
+	const check: FileCheck = { file: ctx.files.safeBatch, label: "muon-verifier-safe-batch", ok: true, issues: [] }
+	const params = ctx.newParams
+	const publicKeys = params.muonPublicKeys ?? []
+	const gatewaySigners = params.muonGatewaySigners ?? []
+	const permissionNames = params.muonFunctionPermissions ?? []
+
+	const configProblems = validateMuonVerifierConfig(params)
+	for (const problem of configProblems) {
+		check.issues.push(`upgrade config: ${problem}`)
+	}
+
+	if (publicKeys.length === 0 && gatewaySigners.length === 0) {
+		;(check as FileCheck & { summary?: string }).summary = "no Muon keys/gateways configured"
+		check.ok = check.issues.length === 0
+		return check
+	}
+
+	const verifierAddress = params.signatureVerifierAddress ?? ctx.signatureVerifierAddress
+	if (!verifierAddress || !ethers.isAddress(verifierAddress)) {
+		check.issues.push("signatureVerifierAddress is required when Muon public keys or gateway signers are configured")
+		check.ok = false
+		return check
+	}
+	const verifier = ethers.getAddress(verifierAddress)
+
+	if (!fs.existsSync(ctx.files.safeBatch)) {
+		check.issues.push(`missing generated safe batch: ${ctx.files.safeBatch}`)
+		check.ok = false
+		return check
+	}
+
+	const batch = readJson<SafeBatchFile>(ctx.files.safeBatch)
+	const permissionIndices = permissionNames.map(name => MUON_FUNCTION_NAMES.indexOf(name))
+	const canCheckPermissions = permissionIndices.length > 0 && permissionIndices.every(index => index >= 0)
+
+	for (const key of publicKeys) {
+		const pubKeyTuple = { x: key.x, parity: key.parity }
+		if (!hasExactCall(batch, verifier, "addPublicKey", [pubKeyTuple])) {
+			check.issues.push(`missing addPublicKey(x=${key.x.slice(0, 10)}..., parity=${key.parity}) on ${verifier}`)
+		}
+		if (canCheckPermissions && !hasExactCall(batch, verifier, "setPublicKeyPermissions", [pubKeyTuple, permissionIndices, true])) {
+			check.issues.push(
+				`missing setPublicKeyPermissions(x=${key.x.slice(0, 10)}..., parity=${key.parity}, [${permissionNames.join(", ")}], true) on ${verifier}`,
+			)
+		}
+	}
+
+	for (const signer of gatewaySigners) {
+		const gateway = ethers.isAddress(signer) ? ethers.getAddress(signer) : signer
+		if (!ethers.isAddress(gateway)) continue
+		if (!hasExactCall(batch, verifier, "addGatewaySigner", [gateway])) {
+			check.issues.push(`missing addGatewaySigner(${gateway}) on ${verifier}`)
+		}
+		if (canCheckPermissions && !hasExactCall(batch, verifier, "setGatewaySignerPermissions", [gateway, permissionIndices, true])) {
+			check.issues.push(`missing setGatewaySignerPermissions(${gateway}, [${permissionNames.join(", ")}], true) on ${verifier}`)
+		}
+	}
+
+	;(check as FileCheck & { summary?: string }).summary =
+		`${publicKeys.length} public key(s), ${gatewaySigners.length} gateway signer(s), ${permissionNames.length} function permission(s)`
 	check.ok = check.issues.length === 0
 	return check
 }

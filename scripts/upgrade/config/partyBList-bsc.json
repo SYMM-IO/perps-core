@@ -1,0 +1,23 @@
+{
+	"generatedAt": "2026-05-31T08:06:00.058Z",
+	"source": {
+		"chain": "bsc",
+		"subgraphEndpoints": ["https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/bnb_analytics/stage/gn"],
+		"solverCount": 8
+	},
+	"partyBs": {
+		"PerpsHub": [
+			"0xd5a075c88a4188d666fa1e4051913be6782982da",
+			"0xdf077f5f52bc41a9072f9d0e5fb281770bcd1142",
+			"0xdfed11fe4af63b059edbbdf53e9c633b331ed432"
+		],
+		"Rasa": [
+			"0x62ad8de6740314677f06723a7a07797ae5082dbb",
+			"0x62b0db9e73e17bc090d80c2c0a2414b9a42037f3",
+			"0x9fa01a45e245015fa685f21763e60c60832ed2d6"
+		],
+		"Zenith": ["0x6d1d09586a274517c5a089364a93c02b6b261990", "0xd5e4b5928d99e7afbea497a301ca5fa2e752b101"]
+	},
+	"registerOnInstantLayer": true,
+	"registerOnSymmioCore": true
+}

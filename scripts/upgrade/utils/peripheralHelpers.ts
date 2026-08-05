@@ -8,7 +8,9 @@ import path from "path"
 
 import { FacetCutAction, getSelectors } from "../../../tasks/utils/diamondCut.js"
 import { ethers } from "../../../test/helpers/hardhat-connection.js"
+import { loadDeploymentState, saveDeploymentState, resolveDeploymentStateMetadata, type DeploymentStateContext } from "./deploymentState.js"
 import { log } from "./log.js"
+import { accountLayerCutTxOverrides, deployTxOverrides, writeTxOverrides } from "./txOverrides.js"
 
 // ============================================================================
 // Constants
@@ -52,6 +54,11 @@ export type AccountLayerInstantLayerReport = {
 }
 
 type DeployedState = {
+	metadata?: {
+		networkName?: string
+		chainId?: number
+		diamondAddress?: string
+	}
 	accountLayer?: {
 		diamondCutFacet?: string
 		diamond?: string
@@ -78,15 +85,46 @@ function ensureDir(dir: string): void {
 	}
 }
 
-function loadState(filePath: string): DeployedState {
-	if (!filePath || !fs.existsSync(filePath)) return {}
-	return JSON.parse(fs.readFileSync(filePath, "utf-8")) as DeployedState
-}
-
-function saveState(filePath: string, state: DeployedState): void {
+function saveState(filePath: string, state: DeployedState, metadata?: DeploymentStateContext): void {
 	if (!filePath) return
 	ensureDir(path.dirname(filePath))
-	fs.writeFileSync(filePath, JSON.stringify(state, null, 2))
+	saveDeploymentState(filePath, state, metadata)
+}
+
+function parseNonNegativeIntEnv(name: string, fallback: number): number {
+	const value = process.env[name]
+	if (value === undefined || value.trim() === "") return fallback
+	const parsed = Number(value)
+	return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback
+}
+
+function sleep(ms: number): Promise<void> {
+	return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error)
+}
+
+async function withPartyBPrefilterRetry<T>(label: string, read: () => Promise<T>): Promise<T> {
+	const maxRetries = parseNonNegativeIntEnv("PARTYB_PREFILTER_MAX_RETRIES", 4)
+	const baseDelayMs = parseNonNegativeIntEnv("PARTYB_PREFILTER_RETRY_DELAY_MS", 1_000)
+	let attempt = 0
+	let delay = baseDelayMs
+
+	while (true) {
+		try {
+			return await read()
+		} catch (error) {
+			attempt += 1
+			if (attempt > maxRetries) {
+				throw new Error(`${label} failed after ${maxRetries} retries: ${errorMessage(error)}`)
+			}
+			log.warn(`${label} failed (${errorMessage(error)}); retry ${attempt}/${maxRetries} in ${delay}ms`)
+			await sleep(delay)
+			delay = Math.min(delay * 2, 10_000)
+		}
+	}
 }
 
 // ============================================================================
@@ -98,8 +136,10 @@ export async function deployAccountLayerDiamond(
 	symmioFeeReceiver: string,
 	stateFile?: string,
 	adminSigner?: any,
+	stateContext?: DeploymentStateContext,
 ): Promise<AccountLayerDeployResult> {
-	const state = loadState(stateFile ?? "")
+	const metadata = stateFile ? await resolveDeploymentStateMetadata(stateContext) : undefined
+	const state = loadDeploymentState<DeployedState>(stateFile ?? "", metadata)
 	if (!state.accountLayer) state.accountLayer = {}
 	const al = state.accountLayer
 
@@ -112,10 +152,10 @@ export async function deployAccountLayerDiamond(
 		log.deployed("DiamondCutFacet", diamondCutFacetAddress, true)
 	} else {
 		const factory = await ethers.getContractFactory("DiamondCutFacet")
-		const contract = await factory.deploy()
+		const contract = await factory.deploy(deployTxOverrides())
 		diamondCutFacetAddress = await contract.getAddress()
 		al.diamondCutFacet = diamondCutFacetAddress
-		if (stateFile) saveState(stateFile, state)
+		if (stateFile) saveState(stateFile, state, metadata)
 		await contract.waitForDeployment()
 		log.deployed("DiamondCutFacet", diamondCutFacetAddress)
 	}
@@ -132,10 +172,10 @@ export async function deployAccountLayerDiamond(
 	} else {
 		const factory = await ethers.getContractFactory("Diamond")
 		const deployOwner = adminSigner ? protocolAdmin : await deployer.getAddress()
-		const contract = await factory.deploy(deployOwner, diamondCutFacetAddress)
+		const contract = await factory.deploy(deployOwner, diamondCutFacetAddress, deployTxOverrides())
 		diamondAddress = await contract.getAddress()
 		al.diamond = diamondAddress
-		if (stateFile) saveState(stateFile, state)
+		if (stateFile) saveState(stateFile, state, metadata)
 		await contract.waitForDeployment()
 		log.deployed("Diamond", diamondAddress)
 	}
@@ -147,10 +187,10 @@ export async function deployAccountLayerDiamond(
 		log.deployed("Init", initAddress, true)
 	} else {
 		const factory = await ethers.getContractFactory("contracts/accountLayer/Init.sol:Init")
-		const contract = await factory.deploy()
+		const contract = await factory.deploy(deployTxOverrides())
 		initAddress = await contract.getAddress()
 		al.init = initAddress
-		if (stateFile) saveState(stateFile, state)
+		if (stateFile) saveState(stateFile, state, metadata)
 		await contract.waitForDeployment()
 		log.deployed("Init", initAddress)
 	}
@@ -163,10 +203,10 @@ export async function deployAccountLayerDiamond(
 		log.deployed("LibQuoteParams", libraryAddresses["LibQuoteParams"], true)
 	} else {
 		const factory = await ethers.getContractFactory("contracts/accountLayer/libraries/LibQuoteParams.sol:LibQuoteParams")
-		const contract = await factory.deploy()
+		const contract = await factory.deploy(deployTxOverrides())
 		libraryAddresses["LibQuoteParams"] = await contract.getAddress()
 		al.libraries["LibQuoteParams"] = libraryAddresses["LibQuoteParams"]
-		if (stateFile) saveState(stateFile, state)
+		if (stateFile) saveState(stateFile, state, metadata)
 		await contract.waitForDeployment()
 		log.deployed("LibQuoteParams", libraryAddresses["LibQuoteParams"])
 	}
@@ -197,14 +237,14 @@ export async function deployAccountLayerDiamond(
 			} else {
 				factory = await ethers.getContractFactory(contractPath)
 			}
-			const facet = await factory.deploy()
+			const facet = await factory.deploy(deployTxOverrides())
 			// Save address immediately after tx is submitted (before mining) so a crash
 			// during waitForDeployment doesn't lose the deployed address and cause a
 			// nonce-too-low error on retry.
 			facetAddress = await facet.getAddress()
 			facetAddresses[facetName] = facetAddress
 			al.facets[facetName] = facetAddress
-			if (stateFile) saveState(stateFile, state)
+			if (stateFile) saveState(stateFile, state, metadata)
 			await facet.waitForDeployment()
 			log.progress(i + 1, AccountLayerFacetNames.length, `${log.name(facetName)}  ${log.addr(facetAddress)}`)
 		}
@@ -251,7 +291,7 @@ export async function deployAccountLayerDiamond(
 				const isFirst = i === 0
 				const initTarget = isFirst ? initAddress : ethers.ZeroAddress
 				const initData = isFirst ? initCalldata : "0x"
-				const tx = await diamondCutContract.diamondCut(chunk, initTarget, initData)
+				const tx = await diamondCutContract.diamondCut(chunk, initTarget, initData, accountLayerCutTxOverrides())
 				const receipt = await tx.wait()
 				if (!receipt?.status) {
 					throw new Error(`AccountLayer diamond cut failed in chunk ${chunkNum}/${totalChunks}`)
@@ -261,7 +301,7 @@ export async function deployAccountLayerDiamond(
 		}
 
 		al.diamondCutComplete = true
-		if (stateFile) saveState(stateFile, state)
+		if (stateFile) saveState(stateFile, state, metadata)
 	}
 
 	log.ok(`AccountLayer Diamond: ${log.addr(diamondAddress)}`)
@@ -279,8 +319,14 @@ export async function deployAccountLayerDiamond(
 // Deploy InstantLayer
 // ============================================================================
 
-export async function deployInstantLayer(symmioAddress: string, protocolAdmin: string, stateFile?: string): Promise<InstantLayerDeployResult> {
-	const state = loadState(stateFile ?? "")
+export async function deployInstantLayer(
+	symmioAddress: string,
+	protocolAdmin: string,
+	stateFile?: string,
+	stateContext?: DeploymentStateContext,
+): Promise<InstantLayerDeployResult> {
+	const metadata = stateFile ? await resolveDeploymentStateMetadata({ diamondAddress: symmioAddress, ...stateContext }) : undefined
+	const state = loadDeploymentState<DeployedState>(stateFile ?? "", metadata)
 
 	if (state.instantLayer?.address) {
 		log.deployed("InstantLayer", state.instantLayer.address, true)
@@ -288,12 +334,12 @@ export async function deployInstantLayer(symmioAddress: string, protocolAdmin: s
 	}
 
 	const factory = await ethers.getContractFactory("InstantLayer")
-	const contract = await factory.deploy(symmioAddress, protocolAdmin)
+	const contract = await factory.deploy(symmioAddress, protocolAdmin, deployTxOverrides())
 	const address = await contract.getAddress()
 
 	if (!state.instantLayer) state.instantLayer = {}
 	state.instantLayer.address = address
-	if (stateFile) saveState(stateFile, state)
+	if (stateFile) saveState(stateFile, state, metadata)
 
 	await contract.waitForDeployment()
 	log.deployed("InstantLayer", address)
@@ -319,22 +365,22 @@ export async function wireAccountLayerInstantLayer(
 	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", diamondAddress, adminSigner)
 
 	// Grant INTEGRATION_ADMIN_ROLE to admin (needed for registerHook)
-	await (await controlFacet.grantRole(adminAddress, roleHash("INTEGRATION_ADMIN_ROLE"))).wait()
+	await (await controlFacet.grantRole(adminAddress, roleHash("INTEGRATION_ADMIN_ROLE"), writeTxOverrides())).wait()
 
 	// Grant roles to AccountLayer on Diamond
-	await (await controlFacet.grantRole(accountLayerDiamondAddress, roleHash("SIGNER_ADMIN_ROLE"))).wait()
+	await (await controlFacet.grantRole(accountLayerDiamondAddress, roleHash("SIGNER_ADMIN_ROLE"), writeTxOverrides())).wait()
 	log.ok("grantRole(AccountLayer, SIGNER_ADMIN_ROLE)")
-	await (await controlFacet.grantRole(accountLayerDiamondAddress, roleHash("AFFILIATE_MANAGER_ROLE"))).wait()
+	await (await controlFacet.grantRole(accountLayerDiamondAddress, roleHash("AFFILIATE_MANAGER_ROLE"), writeTxOverrides())).wait()
 	log.ok("grantRole(AccountLayer, AFFILIATE_MANAGER_ROLE)")
-	await (await controlFacet.grantRole(accountLayerDiamondAddress, roleHash("BALANCE_SETTLER_ROLE"))).wait()
+	await (await controlFacet.grantRole(accountLayerDiamondAddress, roleHash("BALANCE_SETTLER_ROLE"), writeTxOverrides())).wait()
 	log.ok("grantRole(AccountLayer, BALANCE_SETTLER_ROLE)")
 
 	// Grant InstantLayer role on Diamond
-	await (await controlFacet.grantRole(instantLayerAddress, roleHash("INSTANT_LAYER_ROLE"))).wait()
+	await (await controlFacet.grantRole(instantLayerAddress, roleHash("INSTANT_LAYER_ROLE"), writeTxOverrides())).wait()
 	log.ok("grantRole(InstantLayer, INSTANT_LAYER_ROLE)")
 
 	// Register AccountLayer as system hook on Diamond
-	await (await controlFacet.registerHook(ethers.ZeroAddress, accountLayerDiamondAddress)).wait()
+	await (await controlFacet.registerHook(ethers.ZeroAddress, accountLayerDiamondAddress, writeTxOverrides())).wait()
 	log.ok("registerHook(address(0), AccountLayer)")
 
 	// AccountLayer Diamond ControlFacet
@@ -345,24 +391,24 @@ export async function wireAccountLayerInstantLayer(
 	)
 
 	// Grant InstantLayer SIGNER_SETTER_ROLE on AccountLayer
-	await (await alControlFacet.grantRole(instantLayerAddress, roleHash("SIGNER_SETTER_ROLE"))).wait()
+	await (await alControlFacet.grantRole(instantLayerAddress, roleHash("SIGNER_SETTER_ROLE"), writeTxOverrides())).wait()
 	log.ok("grantRole(InstantLayer, SIGNER_SETTER_ROLE) on AccountLayer")
 
 	// Whitelist Symmio Core on AccountLayer
-	await (await alControlFacet.setWhitelistedSymmioCore(diamondAddress, true)).wait()
+	await (await alControlFacet.setWhitelistedSymmioCore(diamondAddress, true, writeTxOverrides())).wait()
 	log.ok("setWhitelistedSymmioCore(Diamond, true)")
 
 	// InstantLayer configuration
 	const instantLayer = await ethers.getContractAt("InstantLayer", instantLayerAddress, adminSigner)
 
 	// Set AccountLayer on InstantLayer
-	await (await instantLayer.setAccountLayer(accountLayerDiamondAddress)).wait()
+	await (await instantLayer.setAccountLayer(accountLayerDiamondAddress, writeTxOverrides())).wait()
 	log.ok("setAccountLayer(AccountLayer)")
 
 	// Whitelist Diamond and AccountLayer on InstantLayer
-	await (await instantLayer.setTargetWhitelist(diamondAddress, true)).wait()
+	await (await instantLayer.setTargetWhitelist(diamondAddress, true, writeTxOverrides())).wait()
 	log.ok("setTargetWhitelist(Diamond, true)")
-	await (await instantLayer.setTargetWhitelist(accountLayerDiamondAddress, true)).wait()
+	await (await instantLayer.setTargetWhitelist(accountLayerDiamondAddress, true, writeTxOverrides())).wait()
 	log.ok("setTargetWhitelist(AccountLayer, true)")
 }
 
@@ -396,7 +442,7 @@ export async function setupInstantLayerTemplates(instantLayerAddress: string, ad
 	const instantLayer = await ethers.getContractAt("InstantLayer", instantLayerAddress, adminSigner)
 
 	for (const template of templates) {
-		await (await instantLayer.addTemplate(template.name, template.operations)).wait()
+		await (await instantLayer.addTemplate(template.name, template.operations, writeTxOverrides())).wait()
 		log.ok(`${template.name} (${template.operations.length} ops)`)
 	}
 }
@@ -415,12 +461,56 @@ export type WiringTransaction = {
 	args: any[]
 }
 
+/**
+ * Filter a PartyB list against current on-chain registration state.
+ *
+ * Returns the subset that still needs to be registered on Diamond (via
+ * ViewFacet.isPartyB) and on InstantLayer (via registeredPartyBs). Also
+ * returns the per-address state for logging.
+ *
+ * InstantLayer's registerPartyBs reverts with EmptyArray() if called with an
+ * empty list, so callers should skip the IL tx if the filtered list is empty.
+ */
+export async function filterUnregisteredPartyBs(
+	provider: ethers.Provider,
+	diamondAddress: string,
+	instantLayerAddress: string | undefined,
+	partyBs: string[],
+	opts: { registerOnSymmioCore: boolean; registerOnInstantLayer: boolean },
+): Promise<{
+	partyBsForDiamond: string[]
+	partyBsForInstantLayer: string[]
+	states: { address: string; onDiamond: boolean | null; onInstantLayer: boolean | null }[]
+}> {
+	const viewFacetIface = new ethers.Interface(["function isPartyB(address user) view returns (bool)"])
+	const instantLayerIface = new ethers.Interface(["function registeredPartyBs(address) view returns (bool)"])
+
+	const diamond = opts.registerOnSymmioCore ? new ethers.Contract(diamondAddress, viewFacetIface, provider) : null
+	const il = opts.registerOnInstantLayer && instantLayerAddress ? new ethers.Contract(instantLayerAddress, instantLayerIface, provider) : null
+
+	const states: { address: string; onDiamond: boolean | null; onInstantLayer: boolean | null }[] = []
+	const partyBsForDiamond: string[] = []
+	const partyBsForInstantLayer: string[] = []
+
+	for (const raw of partyBs) {
+		const addr = ethers.getAddress(raw)
+		const onDiamond: boolean | null = diamond ? await withPartyBPrefilterRetry(`isPartyB(${addr})`, () => diamond.isPartyB(addr)) : null
+		const onInstantLayer: boolean | null = il ? await withPartyBPrefilterRetry(`registeredPartyBs(${addr})`, () => il.registeredPartyBs(addr)) : null
+		states.push({ address: addr, onDiamond, onInstantLayer })
+		if (diamond && onDiamond === false) partyBsForDiamond.push(addr)
+		if (il && onInstantLayer === false) partyBsForInstantLayer.push(addr)
+	}
+
+	return { partyBsForDiamond, partyBsForInstantLayer, states }
+}
+
 export function buildWiringTransactions(
 	diamondAddress: string,
 	accountLayerDiamondAddress: string,
 	instantLayerAddress: string,
 	protocolAdmin: string,
-	partyBsToRegister?: string[],
+	partyBsForDiamond: string[] = [],
+	partyBsForInstantLayer: string[] = [],
 ): WiringTransaction[] {
 	const roleHash = (name: string) => ethers.id(name)
 	const txs: WiringTransaction[] = []
@@ -429,6 +519,7 @@ export function buildWiringTransactions(
 	const controlFacetIface = new ethers.Interface([
 		"function grantRole(address account, bytes32 role)",
 		"function registerHook(address affiliate, address hook)",
+		"function registerPartyB(address partyB)",
 	])
 
 	const alControlFacetIface = new ethers.Interface([
@@ -522,14 +613,34 @@ export function buildWiringTransactions(
 		`setTargetWhitelist(AccountLayer, true) on InstantLayer`,
 	)
 
-	// Register PartyBs on InstantLayer
-	if (partyBsToRegister && partyBsToRegister.length > 0) {
+	// Register PartyBs on Diamond — only those not already registered. The caller
+	// is expected to pre-filter via filterUnregisteredPartyBs so the batch doesn't
+	// revert on re-run (registerPartyB reverts if already registered).
+	if (partyBsForDiamond.length > 0) {
+		// Grant PARTY_B_MANAGER_ROLE to the Safe so it can call registerPartyB, then
+		// one call per PartyB (ControlFacet has no batch variant).
+		push(
+			diamondAddress,
+			controlFacetIface,
+			"grantRole",
+			[protocolAdmin, roleHash("PARTY_B_MANAGER_ROLE")],
+			`grantRole(protocolAdmin, PARTY_B_MANAGER_ROLE)`,
+		)
+		for (const partyB of partyBsForDiamond) {
+			push(diamondAddress, controlFacetIface, "registerPartyB", [partyB], `registerPartyB(${partyB}) on Diamond`)
+		}
+	}
+
+	// Register PartyBs on InstantLayer — single batched call. InstantLayer reverts
+	// with EmptyArray() on empty input and PartyBAlreadyRegistered on dupes, so this
+	// only fires when the filtered list is non-empty.
+	if (partyBsForInstantLayer.length > 0) {
 		push(
 			instantLayerAddress,
 			instantLayerIface,
 			"registerPartyBs",
-			[partyBsToRegister],
-			`registerPartyBs([${partyBsToRegister.length} partyBs]) on InstantLayer`,
+			[partyBsForInstantLayer],
+			`registerPartyBs([${partyBsForInstantLayer.length} partyBs]) on InstantLayer`,
 		)
 	}
 
@@ -544,8 +655,14 @@ export type SymbolManagerDeployResult = {
 	address: string
 }
 
-export async function deploySymbolManager(diamondAddress: string, protocolAdmin: string, stateFile?: string): Promise<SymbolManagerDeployResult> {
-	const state = loadState(stateFile ?? "")
+export async function deploySymbolManager(
+	diamondAddress: string,
+	protocolAdmin: string,
+	stateFile?: string,
+	stateContext?: DeploymentStateContext,
+): Promise<SymbolManagerDeployResult> {
+	const metadata = stateFile ? await resolveDeploymentStateMetadata({ diamondAddress, ...stateContext }) : undefined
+	const state = loadDeploymentState<DeployedState>(stateFile ?? "", metadata)
 
 	if (state.symbolManager?.address) {
 		log.deployed("SymmioSymbolManager", state.symbolManager.address, true)
@@ -553,12 +670,12 @@ export async function deploySymbolManager(diamondAddress: string, protocolAdmin:
 	}
 
 	const factory = await ethers.getContractFactory("SymmioSymbolManager")
-	const contract = await factory.deploy(diamondAddress, protocolAdmin)
+	const contract = await factory.deploy(diamondAddress, protocolAdmin, deployTxOverrides())
 	const address = await contract.getAddress()
 
 	if (!state.symbolManager) state.symbolManager = {}
 	state.symbolManager.address = address
-	if (stateFile) saveState(stateFile, state)
+	if (stateFile) saveState(stateFile, state, metadata)
 
 	await contract.waitForDeployment()
 	log.deployed("SymmioSymbolManager", address)
@@ -573,9 +690,9 @@ export async function wireSymbolManager(diamondAddress: string, symbolManagerAdd
 	const roleHash = (name: string) => ethers.id(name)
 	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", diamondAddress, adminSigner)
 
-	await (await controlFacet.grantRole(symbolManagerAddress, roleHash("SYMBOL_MANAGER_ROLE"))).wait()
+	await (await controlFacet.grantRole(symbolManagerAddress, roleHash("SYMBOL_MANAGER_ROLE"), writeTxOverrides())).wait()
 	log.ok("grantRole(SymbolManager, SYMBOL_MANAGER_ROLE)")
-	await (await controlFacet.grantRole(symbolManagerAddress, roleHash("FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE"))).wait()
+	await (await controlFacet.grantRole(symbolManagerAddress, roleHash("FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE"), writeTxOverrides())).wait()
 	log.ok("grantRole(SymbolManager, FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE)")
 }
 

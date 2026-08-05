@@ -1,5 +1,7 @@
 {
-	"spotCheckCount": 20,
-	"outputDir": "./scripts/upgrade/output",
-	"outputFile": "./scripts/upgrade/output/migration-input.json"
+	"subgraphEndpoints": [],
+	"subgraphPageSize": 500,
+	"subgraphProgressFile": "",
+	"deployedFacetsFile": "",
+	"spotCheckCount": 20
 }

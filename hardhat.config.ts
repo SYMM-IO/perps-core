@@ -13,18 +13,26 @@ dotenvConfig({ path: resolve(process.cwd(), dotenvConfigPath) })
 const DUMMY_PRIVATE_KEY = "0xec81e00837948239d5927bcb2b785675552bc92f1d2607ee91c540ddb56d6796"
 
 // Use process.env directly to avoid hardhat-keystore password prompts.
-// Fall back to configVariable() only when USE_KEYSTORE=true is explicitly set.
+// When USE_KEYSTORE=true, RPC values come from keystore so stale .env values
+// cannot shadow the operator-selected endpoint.
 const useKeystore = process.env.USE_KEYSTORE === "true"
 const keystoreDeployerKey = process.env.KEYSTORE_DEPLOYER_KEY || "NEW_DEPLOYER"
 const protocolAdminKey =
 	process.env.NEW_DEPLOYER || process.env.TEAM_DEPLOYER || (useKeystore ? configVariable(keystoreDeployerKey) : DUMMY_PRIVATE_KEY)
+const migratorKey = process.env.TEAM_MIGRATOR || (useKeystore ? configVariable("TEAM_MIGRATOR") : undefined)
+const upgradeOperatorKey = process.env.TEAM_UPGRADE_OPERATOR || (useKeystore ? configVariable("TEAM_UPGRADE_OPERATOR") : undefined)
+const proposerKey = process.env.TEAM_PROPOSER || (useKeystore ? configVariable("TEAM_PROPOSER") : undefined)
 const etherscanApiKey = process.env.ETHERSCAN_APIKEY || (useKeystore ? configVariable("ETHERSCAN_APIKEY") : "")
+const rpcUrl = (network: string, defaultUrl: string) => {
+	const envName = `RPC_${network.toUpperCase()}`
+	return useKeystore ? configVariable(envName) : process.env[envName] || defaultUrl
+}
 
 const createNetworkConfig = (network: string, defaultUrl: string) =>
 	({
 		type: "http",
-		url: process.env[`RPC_${network.toUpperCase()}`] || (useKeystore ? configVariable(`RPC_${network.toUpperCase()}`) : defaultUrl) || defaultUrl,
-		accounts: [protocolAdminKey].filter(Boolean),
+		url: rpcUrl(network, defaultUrl),
+		accounts: [protocolAdminKey, migratorKey, upgradeOperatorKey, proposerKey].filter(Boolean),
 	}) as {
 		type: "http"
 		url: string
@@ -104,6 +112,46 @@ const customChains = [
 			browserURL: "https://seitrace.com",
 		},
 	},
+	{
+		network: "bsc",
+		chainId: 56,
+		urls: {
+			apiURL: "https://api.bscscan.com/api",
+			browserURL: "https://bscscan.com",
+		},
+	},
+	{
+		network: "coti",
+		chainId: 2632500,
+		urls: {
+			apiURL: "https://mainnet.cotiscan.io/api",
+			browserURL: "https://mainnet.cotiscan.io",
+		},
+	},
+	{
+		network: "sonic",
+		chainId: 146,
+		urls: {
+			apiURL: "https://api.sonicscan.org/api",
+			browserURL: "https://sonicscan.org",
+		},
+	},
+	{
+		network: "plasma",
+		chainId: 9745,
+		urls: {
+			apiURL: "https://api.routescan.io/v2/network/mainnet/evm/9745/etherscan",
+			browserURL: "https://plasmascan.to",
+		},
+	},
+	{
+		network: "bera",
+		chainId: 80094,
+		urls: {
+			apiURL: "https://api.berascan.com/api",
+			browserURL: "https://berascan.com",
+		},
+	},
 ]
 
 export default defineConfig({
@@ -126,8 +174,73 @@ export default defineConfig({
 				cancun: { blockNumber: 0 },
 			},
 		},
+		8453: {
+			name: "Base",
+			// Override default chainType (op) to generic. Hardhat 3's config validator
+			// only accepts L1 hardfork names in hardforkHistory; the runtime then needs
+			// the chainType to match. For our upgrade scripts (view calls + diamondCut)
+			// L1 EVM semantics are sufficient.
+			chainType: "generic",
+			hardforkHistory: {
+				merge: { blockNumber: 0 },
+				shanghai: { blockNumber: 0 },
+				cancun: { blockNumber: 0 },
+			},
+		},
+		56: {
+			name: "BNB Smart Chain",
+			hardforkHistory: {
+				merge: { blockNumber: 0 },
+				shanghai: { blockNumber: 0 },
+				cancun: { blockNumber: 0 },
+			},
+		},
+		146: {
+			name: "Sonic",
+			chainType: "generic",
+			hardforkHistory: {
+				merge: { blockNumber: 0 },
+				shanghai: { blockNumber: 0 },
+				cancun: { blockNumber: 0 },
+			},
+		},
+		9745: {
+			name: "Plasma Mainnet Beta",
+			chainType: "generic",
+			hardforkHistory: {
+				merge: { blockNumber: 0 },
+				shanghai: { blockNumber: 0 },
+				cancun: { blockNumber: 0 },
+			},
+		},
+		80094: {
+			name: "Berachain",
+			chainType: "generic",
+			hardforkHistory: {
+				merge: { blockNumber: 0 },
+				shanghai: { blockNumber: 0 },
+				cancun: { blockNumber: 0 },
+			},
+		},
+		2632500: {
+			name: "COTI",
+			chainType: "generic",
+			hardforkHistory: {
+				merge: { blockNumber: 0 },
+				shanghai: { blockNumber: 0 },
+				cancun: { blockNumber: 0 },
+			},
+			blockExplorers: {
+				blockscout: {
+					name: "COTI Scan",
+					url: "https://mainnet.cotiscan.io",
+					apiUrl: "https://mainnet.cotiscan.io/api",
+				},
+			},
+		},
 		999: {
 			name: "HyperEVM",
+			chainType: "generic",
 			hardforkHistory: {
 				merge: { blockNumber: 0 },
 				shanghai: { blockNumber: 0 },
@@ -196,8 +309,11 @@ export default defineConfig({
 			type: "http",
 			url: process.env.HARDHAT_DOCKER_URL || "http://localhost:8545",
 		},
-		bsc: createNetworkConfig("bsc", "https://binance.llamarpc.com"),
+		bsc: createNetworkConfig("bsc", "https://bsc-rpc.publicnode.com"),
 		base: createNetworkConfig("base", "https://mainnet.base.org"),
+		sonic: createNetworkConfig("sonic", "https://rpc.soniclabs.com"),
+		plasma: createNetworkConfig("plasma", "https://rpc.plasma.to"),
+		bera: createNetworkConfig("bera", "https://rpc.berachain.com"),
 		polygon: createNetworkConfig("polygon", "https://polygon-rpc.com"),
 		iota: createNetworkConfig("iota", "https://json-rpc.evm.iotaledger.net"),
 		blast: createNetworkConfig("blast", "https://rpc.blast.io"),
@@ -218,6 +334,7 @@ export default defineConfig({
 				blockNumber: Number(process.env.FORK_BLOCK_NUMBER || 0) || undefined,
 			},
 		},
+		coti: createNetworkConfig("coti", "https://mainnet.coti.io/rpc"),
 		"fork-arbitrum": {
 			type: "edr-simulated",
 			chainId: 42161,
@@ -225,7 +342,7 @@ export default defineConfig({
 			allowUnlimitedContractSize: true,
 			hardfork: "cancun",
 			forking: {
-				url: process.env.RPC_ARBITRUM || (useKeystore ? configVariable("RPC_ARBITRUM") : "https://arbitrum.drpc.org") || "https://arbitrum.drpc.org",
+				url: rpcUrl("arbitrum", "https://arbitrum.drpc.org"),
 				blockNumber: Number(process.env.FORK_BLOCK_NUMBER || 0) || undefined,
 			},
 		},
@@ -236,7 +353,18 @@ export default defineConfig({
 			allowUnlimitedContractSize: true,
 			hardfork: "cancun",
 			forking: {
-				url: process.env.RPC_BASE || (useKeystore ? configVariable("RPC_BASE") : "https://base.drpc.org") || "https://base.drpc.org",
+				url: rpcUrl("base", "https://base.drpc.org"),
+				blockNumber: Number(process.env.FORK_BLOCK_NUMBER || 0) || undefined,
+			},
+		},
+		"fork-bsc": {
+			type: "edr-simulated",
+			chainId: 56,
+			blockGasLimit: 30_000_000,
+			allowUnlimitedContractSize: true,
+			hardfork: "cancun",
+			forking: {
+				url: rpcUrl("bsc", "https://bsc-rpc.publicnode.com"),
 				blockNumber: Number(process.env.FORK_BLOCK_NUMBER || 0) || undefined,
 			},
 		},
@@ -247,7 +375,7 @@ export default defineConfig({
 			allowUnlimitedContractSize: true,
 			hardfork: "cancun",
 			forking: {
-				url: process.env.RPC_MANTLE || (useKeystore ? configVariable("RPC_MANTLE") : "https://mantle.drpc.org") || "https://mantle.drpc.org",
+				url: rpcUrl("mantle", "https://mantle.drpc.org"),
 				blockNumber: Number(process.env.FORK_BLOCK_NUMBER || 0) || undefined,
 			},
 		},

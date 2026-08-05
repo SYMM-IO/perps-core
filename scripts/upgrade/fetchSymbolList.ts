@@ -1,21 +1,26 @@
 /**
- * Fetch symbols from the subgraph and prepare the input file for setSymbolTypes.ts.
+ * Fetch symbols from the subgraph and write the input file for setSymbolType.ts.
  *
- * Run before setSymbolTypes.ts — run during the pause window to capture any
- * symbols added during the timelock delay.
+ * In the EOA/operator upgrade path, run after pause and use the generated file
+ * when setSymbolType.ts backfills symbolType.
  *
  * Run:
- *   npx hardhat run scripts/upgrade/prepareSymbolTypes.ts --network <network>
+ *   npx hardhat run scripts/upgrade/fetchSymbolList.ts --network <network>
+ *
+ *   # Dry run (fetch and print without writing output)
+ *   DRY_RUN=true npx hardhat run scripts/upgrade/fetchSymbolList.ts --network <network>
  *
  * Config: scripts/upgrade/config/upgrade.json
  *   subgraphEndpoint, newV085Parameters.symbolType
  *
- * Output: scripts/upgrade/output/symbol-types-input.json
+ * Output: scripts/upgrade/output/{count}-symbol-types-input-{network}.json
  */
 import fs from "fs"
 import path from "path"
 
+import connection from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
+import { verifyRpc } from "./utils/rpcCheck.js"
 import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 import { fetchSymbols } from "./utils/subgraphHelpers.js"
 
@@ -30,18 +35,23 @@ export type SymbolTypesInput = {
 }
 
 async function main() {
-	const shared = loadUpgradeConfigShared()
+	const networkName = connection.networkName
+	const shared = loadUpgradeConfigShared(networkName)
 
 	const SUBGRAPH_ENDPOINT = process.env.SUBGRAPH_ENDPOINT ?? shared.subgraphEndpoint ?? DEFAULT_SUBGRAPH_ENDPOINT
 	const SYMBOL_TYPE = process.env.SYMBOL_TYPE !== undefined ? Number(process.env.SYMBOL_TYPE) : shared.newV085Parameters?.symbolType
-	const outputFile = process.env.SYMBOL_TYPES_INPUT_FILE ?? path.join(OUTPUT_DIR, "symbol-types-input.json")
+	const DRY_RUN = process.env.DRY_RUN === "true"
 
 	if (SYMBOL_TYPE === undefined) {
 		throw new Error("symbolType is required — set newV085Parameters.symbolType in upgrade.json or SYMBOL_TYPE env var")
 	}
 
+	await verifyRpc()
+
+	log.info(`Network:     ${networkName}`)
 	log.info(`Subgraph:    ${SUBGRAPH_ENDPOINT}`)
 	log.info(`Symbol type: ${SYMBOL_TYPE}`)
+	log.info(`Dry run:     ${DRY_RUN}`)
 	log.info("")
 
 	log.info("Fetching symbols from subgraph...")
@@ -59,6 +69,13 @@ async function main() {
 		subgraphEndpoint: SUBGRAPH_ENDPOINT,
 		symbolType: SYMBOL_TYPE,
 		symbols: symbols.map(s => ({ symbolId: s.symbolId, name: s.name })),
+	}
+
+	const outputFile = process.env.SYMBOL_TYPES_INPUT_FILE ?? path.join(OUTPUT_DIR, `${symbols.length}-symbol-types-input-${networkName}.json`)
+
+	if (DRY_RUN) {
+		log.warn(`DRY RUN — no output written. Planned output: ${outputFile}`)
+		return
 	}
 
 	if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
