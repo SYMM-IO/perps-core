@@ -7,6 +7,7 @@ import path from "path"
 import { getDataDir, setDataScope } from "../utils/fs.js"
 import {
 	ACCOUNTLAYER_DEPLOYMENT_FILE,
+	FacetNames,
 	DEPLOYMENT_LOG_FILE,
 	INSTANTLAYER_DEPLOYMENT_FILE,
 	LIQUIDATOR_DEPLOYMENT_FILE,
@@ -291,7 +292,9 @@ interface VerificationResult {
 	hint?: string
 }
 
-const EXPECTED_CORE_FACETS = 31
+// FacetNames covers the facets cut in by deploy:diamond; DiamondCutFacet is deployed
+// with the Diamond itself and is not in that list, hence the +1.
+const EXPECTED_CORE_FACETS = FacetNames.length + 1
 const EXPECTED_ACCOUNTLAYER_FACETS = 8
 
 function roleHash(ethers: any, role: string): string {
@@ -1406,6 +1409,7 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 			const connection = await getConnection(hre)
 			const { ethers } = connection
 			const chainId = (await ethers.provider.getNetwork()).chainId
+			setDataScope(chainId)
 			const network = connection.networkName || "unknown"
 
 			// Convert empty strings to undefined for cleaner handling
@@ -1435,14 +1439,17 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 
 			// Load from deployment report if requested
 			if (args.fromReport) {
-				const reportPath = "./tasks/data/deployment-report.json"
+				const scopedReport = `${getDataDir()}/deployment-report.json`
+				// Deployment records became chainId-scoped; fall back to the legacy path for
+				// reports written before that change.
+				const reportPath = fs.existsSync(scopedReport) ? scopedReport : "./tasks/data/deployment-report.json"
 
 				if (fs.existsSync(reportPath)) {
 					const report = JSON.parse(fs.readFileSync(reportPath, "utf8"))
 					addresses = loadAddressesFromReport(report, addresses)
 					console.log(`Loaded addresses from deployment-report.json`)
 				} else {
-					console.error("Error: deployment-report.json not found")
+					console.error(`Error: deployment-report.json not found (looked in ${getDataDir()} and ./tasks/data)`)
 				}
 			}
 

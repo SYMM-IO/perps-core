@@ -3,7 +3,7 @@ import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
 import { ControlFacet } from "../../src/types/index.js"
-import { setDataScope, writeData } from "../utils/fs.js"
+import { getDataDir, setDataScope, writeData } from "../utils/fs.js"
 import { deployAccountLayerDiamond } from "./accountLayerDiamond.js"
 import {
 	loadCheckpoint,
@@ -66,6 +66,40 @@ interface SystemDeploymentReport {
 	}
 	timestamp: string
 }
+
+/**
+ * Roles the deployer must hold on the core Diamond to complete setup.
+ *
+ * Accessibility.onlyRole checks the role EXACTLY (LibAccessibility.hasRole), so holding
+ * DEFAULT_ADMIN_ROLE grants none of these — that only satisfies onlyRoleAdmin. Granted
+ * right after setAdmin and revoked again by revokeDeployerPrivileges.
+ *
+ * Derived from the onlyRole modifiers on the ControlFacet functions setup calls:
+ *   PROTOCOL_CONFIG_ROLE   balanceLimitPerUser, maxWithdrawParts, liquidatorShare,
+ *                          pendingQuotesValidLength, maxPartyAConnectionLimit
+ *   COOLDOWN_ADMIN_ROLE    deallocate/settlement/forceClose/forceCancel cooldowns,
+ *                          deallocateDebounceTime, liquidationTimeout
+ *   FEE_ADMIN_ROLE         setInvalidBridgedAmountsPool, setDefaultFeeCollector
+ *   INTEGRATION_ADMIN_ROLE registerHook
+ *   PARTY_B_MANAGER_ROLE   registerPartyB, setADLEnabled
+ *   MUON_SETTER_ROLE       setMuonIds, setMuonConfig
+ */
+export const DEPLOYER_SETUP_ROLES = [
+	"PROTOCOL_CONFIG_ROLE",
+	"COOLDOWN_ADMIN_ROLE",
+	"FEE_ADMIN_ROLE",
+	"INTEGRATION_ADMIN_ROLE",
+	"PARTY_B_MANAGER_ROLE",
+	"MUON_SETTER_ROLE",
+]
+
+/**
+ * Same problem on the AccountLayer: AccountLayerAccessibility.onlyRole is also an exact
+ * check, and the AccountLayer's roles are granted to config.admin.
+ *   SETTER_ROLE    setWhitelistedSymmioCore, setSymmioFeeReceiver
+ *   APPROVER_ROLE  approveAffiliate
+ */
+export const ACCOUNTLAYER_DEPLOYER_SETUP_ROLES = ["SETTER_ROLE", "APPROVER_ROLE"]
 
 interface DeployedContracts {
 	collateral?: string
@@ -733,16 +767,48 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 				title: "Transferring Diamond ownership to admin",
 				order: 10,
 				run: async () => {
-					const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", deployedContracts.diamond!)
-					await checkpointedStep(checkpoint, "setup.transferOwnership", "Transferring ownership to admin", async () => {
-						await send(controlFacet.connect(deployer).transferOwnership(config.admin), "transferOwnership")
-					})
-					if (config.admin.toLowerCase() === deployer.address.toLowerCase()) {
-						await checkpointedStep(checkpoint, "setup.acceptOwnership", "Accepting ownership transfer (admin = deployer)", async () => {
-							await send(controlFacet.connect(deployer).acceptOwnership(), "acceptOwnership")
+					// Both diamonds must be handed over. Only the core Diamond used to be
+					// transferred, leaving the deploy wallet as permanent owner of the
+					// AccountLayer — and owner is what authorises diamondCut, so a hot wallet
+					// kept the ability to upgrade the AccountLayer arbitrarily. Revoking roles
+					// (step 11) does not cover Ownable ownership.
+					const owned: Array<{ label: string; contract: any }> = [
+						{
+							label: "Diamond",
+							contract: await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", deployedContracts.diamond!),
+						},
+					]
+					if (deployedContracts.accountLayerDiamond) {
+						owned.push({
+							label: "AccountLayerDiamond",
+							contract: await ethers.getContractAt(
+								"contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet",
+								deployedContracts.accountLayerDiamond,
+							),
 						})
-					} else {
-						console.log(`  ⏭ Admin must call acceptOwnership() to finalize: ${config.admin}`)
+					}
+
+					const adminIsDeployer = config.admin.toLowerCase() === deployer.address.toLowerCase()
+
+					for (const { label, contract } of owned) {
+						await checkpointedStep(checkpoint, `setup.transferOwnership.${label}`, `Transferring ${label} ownership to admin`, async () => {
+							await send(contract.connect(deployer).transferOwnership(config.admin), `transferOwnership(${label})`)
+						})
+
+						// Ownership is two-step; only the incoming owner can accept it.
+						if (adminIsDeployer) {
+							await checkpointedStep(checkpoint, `setup.acceptOwnership.${label}`, `Accepting ${label} ownership (admin = deployer)`, async () => {
+								await send(contract.connect(deployer).acceptOwnership(), `acceptOwnership(${label})`)
+							})
+						}
+					}
+
+					if (!adminIsDeployer) {
+						console.log(`  ⏭ ${config.admin} must call acceptOwnership() on:`)
+						for (const { label } of owned) {
+							const addr = label === "Diamond" ? deployedContracts.diamond : deployedContracts.accountLayerDiamond
+							console.log(`      ${label}: ${addr}`)
+						}
 					}
 					console.log()
 				},
@@ -842,6 +908,18 @@ async function setupSystem(
 		await send(controlFacet.connect(deployer).setAdmin(config.admin), "setAdmin")
 	})
 
+	// The deployer needs these roles to run the rest of setup. Accessibility.onlyRole is an
+	// EXACT check — unlike onlyRoleAdmin, DEFAULT_ADMIN_ROLE does not imply any of them — and
+	// the batch below grants roles to config.admin, not to the deployer. So whenever
+	// ADMIN_PUBLIC_KEY differs from the deployer (i.e. any production deployment) setup used
+	// to revert at registerHook and again at every parameter setter. Only MUON_SETTER_ROLE
+	// had been patched around.
+	//
+	// Every role granted here is revoked again by revokeDeployerPrivileges (step 11).
+	await checkpointedBatch(checkpoint, "setup.deployerSetupRoles", DEPLOYER_SETUP_ROLES, "Granting setup roles to deployer on Diamond", async role => {
+		await send(controlFacet.connect(deployer).grantRole(deployerAddress, roleHash(role)), `grantRole(deployer ${role})`)
+	})
+
 	// Grant roles to admin on Diamond (batch)
 	const diamondRoles = [
 		"SYMBOL_MANAGER_ROLE",
@@ -902,11 +980,22 @@ async function setupSystem(
 		await send(alControlFacet.connect(deployer).grantRole(config.admin, roleHash("UNPAUSER_ROLE")), "grantRole")
 	})
 
+	// The deployer needs these to finish AccountLayer setup, for the same reason as on the
+	// core Diamond: onlyRole is an exact check and the roles above went to config.admin.
+	// Revoked again by revokeDeployerPrivileges (step 11).
+	await checkpointedBatch(
+		checkpoint,
+		"setup.alDeployerSetupRoles",
+		ACCOUNTLAYER_DEPLOYER_SETUP_ROLES,
+		"Granting setup roles to deployer on AccountLayerDiamond",
+		async role => {
+			await send(alControlFacet.connect(deployer).grantRole(deployerAddress, roleHash(role)), `grantRole(deployer AL ${role})`)
+		},
+	)
+
 	// The AccountLayer is initialised with the deployer as symmioFeeReceiver, because the
 	// deployer must hold admin during setup. That left SYMMIO_FEE_RECEIVER silently ignored
 	// and protocol fees accruing to the deploy wallet. Correct it here.
-	// onlyRole() checks the exact role — DEFAULT_ADMIN_ROLE does not imply SETTER_ROLE — so
-	// the deployer needs SETTER_ROLE temporarily, and gives it straight back up.
 	if (config.symmioFeeReceiver && config.symmioFeeReceiver.toLowerCase() !== deployerAddress.toLowerCase()) {
 		const alViewFacet = await ethers.getContractAt(
 			"contracts/accountLayer/facets/View/ViewFacet.sol:ViewFacet",
@@ -916,9 +1005,7 @@ async function setupSystem(
 
 		if (currentReceiver !== config.symmioFeeReceiver.toLowerCase()) {
 			await checkpointedStep(checkpoint, "setup.alFeeReceiver", `Setting AccountLayer symmioFeeReceiver to ${config.symmioFeeReceiver}`, async () => {
-				await send(alControlFacet.connect(deployer).grantRole(deployerAddress, roleHash("SETTER_ROLE")), "grantRole(deployer SETTER_ROLE)")
 				await send(alControlFacet.connect(deployer).setSymmioFeeReceiver(config.symmioFeeReceiver), "setSymmioFeeReceiver")
-				await send(alControlFacet.connect(deployer).revokeRole(deployerAddress, roleHash("SETTER_ROLE")), "revokeRole(deployer SETTER_ROLE)")
 			})
 
 			const updated = (await alViewFacet.symmioFeeReceiver()).toLowerCase()
@@ -1021,15 +1108,10 @@ async function setupSystem(
 		}
 	}
 
-	// Muon runtime configuration on Diamond
+	// Muon runtime configuration on Diamond.
+	// MUON_SETTER_ROLE is granted up front with the rest of DEPLOYER_SETUP_ROLES, so the
+	// one-off conditional grant that used to live here is no longer needed.
 	const shouldConfigureMuonIds = !!config.muonAppId
-	if (config.muonUpnlValidTime || config.muonPriceValidTime || shouldConfigureMuonIds) {
-		if (config.admin.toLowerCase() !== deployerAddress.toLowerCase()) {
-			await checkpointedStep(checkpoint, "setup.muonSetterOnDeployer", "Granting MUON_SETTER_ROLE to deployer for setup", async () => {
-				await send(controlFacet.connect(deployer).grantRole(deployerAddress, roleHash("MUON_SETTER_ROLE")), "grantRole")
-			})
-		}
-	}
 
 	if (shouldConfigureMuonIds) {
 		await checkpointedStep(checkpoint, "setup.setMuonIds", "Setting Muon app ID on Diamond", async () => {
@@ -1254,15 +1336,17 @@ async function setupSystem(
 		)
 
 		if (config.symbolManagerOperator) {
-			const operatorAddress = ethers.getAddress(config.symbolManagerOperator.toLowerCase())
-			const symbolManager = await ethers.getContractAt("SymmioSymbolManager", deployedContracts.symbolManager!)
-
-			await checkpointedStep(checkpoint, "setup.smGrantAdderRole", "Granting SYMBOL_ADDER_ROLE on SymbolManager to operator", async () => {
-				await send(symbolManager.connect(deployer).grantRole(roleHash("SYMBOL_ADDER_ROLE"), operatorAddress), "grantRole")
-			})
-
-			await checkpointedStep(checkpoint, "setup.smGrantRemoverRole", "Granting SYMBOL_REMOVER_ROLE on SymbolManager to operator", async () => {
-				await send(symbolManager.connect(deployer).grantRole(roleHash("SYMBOL_REMOVER_ROLE"), operatorAddress), "grantRole")
+			// Delegate to the shared helper rather than duplicating the grants inline. It
+			// checks first whether the deployer actually holds DEFAULT_ADMIN_ROLE on the
+			// SymbolManager — the constructor grants it to `admin` only, so on any deploy
+			// where ADMIN_PUBLIC_KEY differs from the deployer these grants revert. The
+			// helper prints the exact command for the admin to run instead of failing the
+			// whole deployment at its last step.
+			await checkpointedStep(checkpoint, "setup.smOperatorRoles", "Granting operator roles on SymbolManager", async () => {
+				await grantSymbolManagerOperatorRoles(hre, {
+					symbolManagerAddress: deployedContracts.symbolManager!,
+					operator: config.symbolManagerOperator,
+				})
 			})
 		}
 	}
@@ -1425,7 +1509,7 @@ async function revokeDeployerPrivileges(
 
 	// Narrower roles first — DEFAULT_ADMIN_ROLE is what authorises these revocations,
 	// so it has to be the last thing the deployer gives up.
-	for (const role of ["MUON_SETTER_ROLE", "DEFAULT_ADMIN_ROLE"]) {
+	for (const role of [...DEPLOYER_SETUP_ROLES, "DEFAULT_ADMIN_ROLE"]) {
 		const hash = roleHash(role)
 		if (!(await viewFacet.hasRole(deployerAddress, hash))) {
 			console.log(`    ⏭ Deployer does not hold ${role} on the Diamond`)
@@ -1446,25 +1530,23 @@ async function revokeDeployerPrivileges(
 			deployedContracts.accountLayerDiamond,
 		)
 		const alView = await ethers.getContractAt("contracts/accountLayer/facets/View/ViewFacet.sol:ViewFacet", deployedContracts.accountLayerDiamond)
-		const hash = roleHash("DEFAULT_ADMIN_ROLE")
-
-		if (!(await alView.hasRole(config.admin, hash))) {
+		if (!(await alView.hasRole(config.admin, roleHash("DEFAULT_ADMIN_ROLE")))) {
 			throw new Error(`Refusing to revoke deployer admin on the AccountLayer: ${config.admin} does not hold DEFAULT_ADMIN_ROLE there.`)
 		}
-		if (await alView.hasRole(deployerAddress, hash)) {
-			await checkpointedStep(
-				checkpoint,
-				"revoke.accountLayer.DEFAULT_ADMIN_ROLE",
-				"Revoking DEFAULT_ADMIN_ROLE from deployer on AccountLayer",
-				async () => {
-					await send(alControl.connect(deployer).revokeRole(deployerAddress, hash), "revokeRole(AccountLayer DEFAULT_ADMIN_ROLE)")
-				},
-			)
-			if (await alView.hasRole(deployerAddress, hash)) {
-				throw new Error("DEFAULT_ADMIN_ROLE is still held by the deployer on the AccountLayer after revocation")
+
+		// Setup roles first, DEFAULT_ADMIN_ROLE last — it authorises the revocations.
+		for (const role of [...ACCOUNTLAYER_DEPLOYER_SETUP_ROLES, "DEFAULT_ADMIN_ROLE"]) {
+			const hash = roleHash(role)
+			if (!(await alView.hasRole(deployerAddress, hash))) {
+				console.log(`    ⏭ Deployer does not hold ${role} on the AccountLayer`)
+				continue
 			}
-		} else {
-			console.log("    ⏭ Deployer does not hold DEFAULT_ADMIN_ROLE on the AccountLayer")
+			await checkpointedStep(checkpoint, `revoke.accountLayer.${role}`, `Revoking ${role} from deployer on AccountLayer`, async () => {
+				await send(alControl.connect(deployer).revokeRole(deployerAddress, hash), `revokeRole(AccountLayer ${role})`)
+			})
+			if (await alView.hasRole(deployerAddress, hash)) {
+				throw new Error(`${role} is still held by the deployer on the AccountLayer after revocation`)
+			}
 		}
 	}
 
@@ -1606,7 +1688,7 @@ function saveReport(report: SystemDeploymentReport, deployedContracts: DeployedC
 		writeData(filename, fullReport)
 
 		console.log()
-		console.log(`Full report saved to: data/${filename}`)
+		console.log(`Full report saved to: ${getDataDir()}/${filename}`)
 	} catch (err: any) {
 		console.error(`Failed to save report: ${err.message}`)
 	}
