@@ -174,8 +174,21 @@ export async function checkpointedBatch<T extends string>(
 // Checkpoint File Management
 // ============================================================================
 
+/**
+ * Simulated (fork-*) networks report their upstream chainId, so fork-arbitrum and a real
+ * Arbitrum deployment would otherwise share checkpoint-42161.json. A rehearsal that crashed
+ * part-way would then leave a checkpoint that a subsequent REAL deploy resumes from,
+ * skipping steps it never actually performed. Keep them apart.
+ */
+let simulatedScope = false
+
+export function setCheckpointSimulated(simulated: boolean): void {
+	simulatedScope = simulated
+}
+
 function getCheckpointPath(chainId: number): string {
-	return path.join(CHECKPOINT_DIR, `checkpoint-${chainId}.json`)
+	const suffix = simulatedScope ? "-fork" : ""
+	return path.join(CHECKPOINT_DIR, `checkpoint-${chainId}${suffix}.json`)
 }
 
 export function loadCheckpoint(chainId: number): DeploymentCheckpoint | null {

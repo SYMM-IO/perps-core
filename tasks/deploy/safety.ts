@@ -58,7 +58,12 @@ export function isKnownMainnet(chainId: number | bigint): boolean {
 
 /**
  * Collect every unsafe-for-mainnet setting. Returns [] on non-mainnet chains, so local
- * and fork runs keep the permissive defaults that make testing convenient.
+ * runs keep the permissive defaults that make testing convenient.
+ *
+ * Note this is evaluated on chainId alone. A forked network reports its upstream chainId
+ * (fork-arbitrum is chainId 42161), so violations are still collected there — which is the
+ * point of a rehearsal. Whether they BLOCK is decided by assertMainnetSafe, which treats a
+ * simulated network as a warning rather than a stop.
  */
 export function collectMainnetSafetyViolations(chainId: number | bigint, deployerAddress: string, config: MainnetSafetyConfig): SafetyViolation[] {
 	if (!isKnownMainnet(chainId)) return []
@@ -105,29 +110,51 @@ export function collectMainnetSafetyViolations(chainId: number | bigint, deploye
 }
 
 /**
- * Abort the deployment if any unsafe setting is active on a mainnet.
+ * Abort the deployment if any unsafe setting is active on a real mainnet.
  *
  * `allowUnsafe` exists so a deliberate, informed run (a controlled staging deploy on a
  * real chain, say) is still possible — but it must be passed explicitly on the command
  * line, and it still prints every violation.
+ *
+ * `isSimulated` marks an in-process EVM (hardhat's edr-simulated type, which is what the
+ * fork-* networks are). A fork reports its upstream chainId — fork-arbitrum is 42161 — and
+ * uses hardhat's built-in test accounts, so every check here would fire and block the one
+ * rehearsal that is supposed to catch problems before mainnet. A simulated network cannot
+ * touch a real chain whatever chainId it claims, so violations are reported loudly and the
+ * run continues. That way the rehearsal still tells you exactly what mainnet would reject.
  */
 export function assertMainnetSafe(
 	chainId: number | bigint,
 	deployerAddress: string,
 	config: MainnetSafetyConfig,
 	allowUnsafe: boolean = false,
+	isSimulated: boolean = false,
 ): void {
 	const violations = collectMainnetSafetyViolations(chainId, deployerAddress, config)
 	if (violations.length === 0) return
 
 	const banner = "=".repeat(80)
-	const lines = [
-		banner,
-		`UNSAFE MAINNET DEPLOYMENT BLOCKED — chainId ${Number(chainId)}`,
-		banner,
-		"",
-		...violations.flatMap((v, i) => [`${i + 1}. ${v.message}`, `   FIX: ${v.remedy}`, ""]),
-	]
+	const body = violations.flatMap((v, i) => [`${i + 1}. ${v.message}`, `   FIX: ${v.remedy}`, ""])
+
+	if (isSimulated) {
+		console.warn(
+			[
+				"",
+				banner,
+				`SIMULATED NETWORK — these would BLOCK a real deployment to chainId ${Number(chainId)}`,
+				banner,
+				"",
+				...body,
+				"Not blocking: this network is an in-process EVM and cannot reach a real chain.",
+				"Fix everything above before running the same configuration for real.",
+				banner,
+				"",
+			].join("\n"),
+		)
+		return
+	}
+
+	const lines = [banner, `UNSAFE MAINNET DEPLOYMENT BLOCKED — chainId ${Number(chainId)}`, banner, "", ...body]
 
 	if (allowUnsafe) {
 		lines.splice(1, 1, `UNSAFE MAINNET DEPLOYMENT — PROCEEDING ANYWAY (--allow-unsafe-mainnet) — chainId ${Number(chainId)}`)

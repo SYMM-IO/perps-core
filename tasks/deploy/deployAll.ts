@@ -17,6 +17,7 @@ import {
 	checkpointedBatch,
 	isCompleted,
 	markCompleted,
+	setCheckpointSimulated,
 } from "./checkpoint.js"
 import { deployDiamond } from "./diamond.js"
 import { getConnection } from "./helpers.js"
@@ -277,9 +278,12 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			if (setupIlTemplatesFlag !== undefined) config.setupInstantLayerTemplates = setupIlTemplatesFlag === "true"
 			const network = connection.networkName || "unknown"
 			const chainId = (await ethers.provider.getNetwork()).chainId
-			// Scope deployment records to this chain so a localhost run cannot pollute the
-			// Arbitrum records that verify:all later reads.
-			setDataScope(chainId)
+			// An edr-simulated network (the fork-* entries) reports its upstream chainId, so
+			// fork-arbitrum looks like chainId 42161. Scope its records and checkpoint
+			// separately, or a rehearsal overwrites the real Arbitrum ones.
+			const isSimulatedNetwork = (connection as any).networkConfig?.type === "edr-simulated"
+			setDataScope(chainId, { simulated: isSimulatedNetwork })
+			setCheckpointSimulated(isSimulatedNetwork)
 
 			// Check for existing checkpoint (using chainId as primary identifier)
 			let checkpoint: DeploymentCheckpoint | null = null
@@ -350,6 +354,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 					registerDummyAffiliate: config.registerDummyAffiliate,
 				},
 				allowUnsafeMainnet,
+				isSimulatedNetwork,
 			)
 
 			const deploymentResults: DeploymentResult[] = []
