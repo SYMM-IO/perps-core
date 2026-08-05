@@ -166,7 +166,7 @@ contract SymmioSymbolManager is AccessControlEnumerable, Pausable {
 			dailyOperations.symbolAddition
 		);
 
-		for (uint256 i = 0; i < symbolsLength; ) {
+		for (uint256 i = 0; i < symbolsLength;) {
 			ISymmio.Symbol memory symbol = symbols[i];
 			bytes32 symbolHash = computeSymbolHash(symbol);
 			if (addedSymbolHashes[symbolHash]) revert DuplicateSymbol(symbol.name);
@@ -197,7 +197,7 @@ contract SymmioSymbolManager is AccessControlEnumerable, Pausable {
 			dailyOperations.symbolAddition
 		);
 
-		for (uint256 i = 0; i < symbolsLength; ) {
+		for (uint256 i = 0; i < symbolsLength;) {
 			ISymmio.SymbolWithType memory symbol = symbolsWithType[i];
 			bytes32 symbolHash = computeSymbolWithTypeHash(symbol);
 			if (addedSymbolHashes[symbolHash]) revert DuplicateSymbol(symbol.name);

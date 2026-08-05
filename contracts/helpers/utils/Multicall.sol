@@ -67,7 +67,7 @@ contract Multicall3 {
 		uint256 length = calls.length;
 		returnData = new bytes[](length);
 		Call calldata call;
-		for (uint256 i = 0; i < length; ) {
+		for (uint256 i = 0; i < length;) {
 			bool success;
 			call = calls[i];
 			(success, returnData[i]) = call.target.call(call.callData);
@@ -87,7 +87,7 @@ contract Multicall3 {
 		uint256 length = calls.length;
 		returnData = new Result[](length);
 		Call calldata call;
-		for (uint256 i = 0; i < length; ) {
+		for (uint256 i = 0; i < length;) {
 			Result memory result = returnData[i];
 			call = calls[i];
 			(result.success, result.returnData) = call.target.call(call.callData);
@@ -130,7 +130,7 @@ contract Multicall3 {
 		uint256 length = calls.length;
 		returnData = new Result[](length);
 		Call3 calldata calli;
-		for (uint256 i = 0; i < length; ) {
+		for (uint256 i = 0; i < length;) {
 			Result memory result = returnData[i];
 			calli = calls[i];
 			(result.success, result.returnData) = calli.target.call(calli.callData);
@@ -164,7 +164,7 @@ contract Multicall3 {
 		uint256 length = calls.length;
 		returnData = new Result[](length);
 		Call3Value calldata calli;
-		for (uint256 i = 0; i < length; ) {
+		for (uint256 i = 0; i < length;) {
 			Result memory result = returnData[i];
 			calli = calls[i];
 			uint256 val = calli.value;

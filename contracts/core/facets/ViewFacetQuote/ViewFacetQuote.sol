@@ -40,11 +40,12 @@ contract ViewFacetQuote is IViewFacetQuote {
 		SymbolAdjustmentStorage.Layout storage adjustmentLayout = SymbolAdjustmentStorage.layout();
 		SymbolAdjustment storage adjustment = adjustmentLayout.adjustments[quote.symbolId];
 		bool restatedInCurrentWindow = adjustment.restating && adjustmentLayout.quoteRestatedEpoch[quoteId] == adjustment.restatementEpoch;
-		uint256 factor = restatedInCurrentWindow
-			? 1e18
-			: adjustment.restating
-				? adjustment.restatementFactor
-				: LibSymbolAdjustment.activeCumulativeFactor(quote.symbolId);
+		uint256 factor =
+			restatedInCurrentWindow
+				? 1e18
+				: adjustment.restating
+					? adjustment.restatementFactor
+					: LibSymbolAdjustment.activeCumulativeFactor(quote.symbolId);
 
 		result.quote = LibQuoteAdjustment.toVenueUnits(quote, factor);
 		result.factorApplied = factor;
@@ -91,7 +92,7 @@ contract ViewFacetQuote is IViewFacetQuote {
 		}
 		uint256[] memory quoteIds = new uint256[](size);
 		uint256 end = start + size;
-		for (uint256 i = start; i < end; ) {
+		for (uint256 i = start; i < end;) {
 			quoteIds[i - start] = quoteLayout.quoteIdsOf[partyA][i];
 			unchecked {
 				++i;
@@ -112,7 +113,7 @@ contract ViewFacetQuote is IViewFacetQuote {
 		}
 		Quote[] memory quotes = new Quote[](size);
 		uint256 end = start + size;
-		for (uint256 i = start; i < end; ) {
+		for (uint256 i = start; i < end;) {
 			quotes[i - start] = quoteLayout.quotes[quoteLayout.quoteIdsOf[partyA][i]];
 			unchecked {
 				++i;
@@ -148,7 +149,7 @@ contract ViewFacetQuote is IViewFacetQuote {
 
 		Quote[] memory quotes = new Quote[](size);
 		uint256 end = start + size;
-		for (uint256 i = start; i < end; ) {
+		for (uint256 i = start; i < end;) {
 			quotes[i - start] = quoteLayout.quotes[partyAOpenPositions[i]];
 			unchecked {
 				++i;
@@ -179,7 +180,7 @@ contract ViewFacetQuote is IViewFacetQuote {
 
 		Quote[] memory quotes = new Quote[](size);
 		uint256 end = start + size;
-		for (uint256 i = start; i < end; ) {
+		for (uint256 i = start; i < end;) {
 			quotes[i - start] = quoteLayout.quotes[partyBOpenPositions[i]];
 			unchecked {
 				++i;
@@ -208,7 +209,7 @@ contract ViewFacetQuote is IViewFacetQuote {
 		Quote[] memory quotes = new Quote[](size);
 		uint j = 0;
 		uint256 end = start + size;
-		for (uint256 i = start; i < end; ) {
+		for (uint256 i = start; i < end;) {
 			Quote memory quote = quoteLayout.quotes[i];
 			if (quote.partyB == partyB) {
 				quotes[j] = quote;
@@ -231,7 +232,7 @@ contract ViewFacetQuote is IViewFacetQuote {
 		Quote[] memory quotes = new Quote[](size);
 		uint j = 0;
 		uint256 end = start + size;
-		for (uint256 i = start; i < end; ) {
+		for (uint256 i = start; i < end;) {
 			Quote memory quote = quoteLayout.quotes[i];
 			if (
 				quote.partyB == partyB &&
@@ -259,7 +260,7 @@ contract ViewFacetQuote is IViewFacetQuote {
 		Quote[] memory quotes = new Quote[](size);
 		uint j = 0;
 		uint256 end = start + size;
-		for (uint256 i = start; i < end; ) {
+		for (uint256 i = start; i < end;) {
 			Quote memory quote = quoteLayout.quotes[i];
 			if (
 				quote.partyB == partyB &&

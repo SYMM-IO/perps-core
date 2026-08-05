@@ -208,7 +208,7 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 		);
 
 		uint256 staleCount;
-		for (uint256 i = 0; i < len; ) {
+		for (uint256 i = 0; i < len;) {
 			if (nonces[i] < fundingNonce[symbolIds[i]]) staleCount++;
 			unchecked {
 				i++;
@@ -220,7 +220,7 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 			return;
 		}
 		if (staleCount == 0) {
-			for (uint256 i = 0; i < len; ) {
+			for (uint256 i = 0; i < len;) {
 				fundingNonce[symbolIds[i]] = nonces[i];
 				unchecked {
 					i++;
@@ -240,7 +240,7 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 		uint256 skippedIndex;
 		uint256 acceptedIndex;
 
-		for (uint256 i = 0; i < len; ) {
+		for (uint256 i = 0; i < len;) {
 			uint256 symbolId;
 			uint256 nonce;
 			int256 longFee;

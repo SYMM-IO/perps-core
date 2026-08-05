@@ -194,7 +194,7 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 	function whitelistSymbols(address partyB, uint256[] calldata symbolIds) external {
 		symbolListingAuthorizationCheck(LibSigner.getSigner(), partyB);
 		PartyBControlStorage.Layout storage partyBControlLayout = PartyBControlStorage.layout();
-		for (uint256 i; i < symbolIds.length; ) {
+		for (uint256 i; i < symbolIds.length;) {
 			uint256 id = symbolIds[i];
 			require(!partyBControlLayout.partyBBlacklistedSymbols[partyB][id], "SymbolControlFacet: Blacklist conflict");
 			partyBControlLayout.partyBWhitelistedSymbols[partyB][symbolIds[i]] = true;
@@ -220,7 +220,7 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 	function removeSymbolsFromWhitelist(address partyB, uint256[] calldata symbolIds) external {
 		symbolListingAuthorizationCheck(LibSigner.getSigner(), partyB);
 		PartyBControlStorage.Layout storage partyBControlLayout = PartyBControlStorage.layout();
-		for (uint256 i; i < symbolIds.length; ) {
+		for (uint256 i; i < symbolIds.length;) {
 			partyBControlLayout.partyBWhitelistedSymbols[partyB][symbolIds[i]] = false;
 			unchecked {
 				++i;
@@ -235,7 +235,7 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 	function blacklistSymbols(address partyB, uint256[] calldata symbolIds) external {
 		symbolListingAuthorizationCheck(LibSigner.getSigner(), partyB);
 		PartyBControlStorage.Layout storage partyBControlLayout = PartyBControlStorage.layout();
-		for (uint256 i; i < symbolIds.length; ) {
+		for (uint256 i; i < symbolIds.length;) {
 			uint256 id = symbolIds[i];
 			require(!partyBControlLayout.partyBWhitelistedSymbols[partyB][id], "SymbolControlFacet: Whitelist conflict");
 			partyBControlLayout.partyBBlacklistedSymbols[partyB][symbolIds[i]] = true;
@@ -252,7 +252,7 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 	function removeSymbolsFromBlacklist(address partyB, uint256[] calldata symbolIds) external {
 		symbolListingAuthorizationCheck(LibSigner.getSigner(), partyB);
 		PartyBControlStorage.Layout storage partyBControlLayout = PartyBControlStorage.layout();
-		for (uint256 i; i < symbolIds.length; ) {
+		for (uint256 i; i < symbolIds.length;) {
 			partyBControlLayout.partyBBlacklistedSymbols[partyB][symbolIds[i]] = false;
 			unchecked {
 				++i;

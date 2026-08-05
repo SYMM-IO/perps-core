@@ -298,9 +298,10 @@ library LibAccount {
 	) internal view returns (int256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address allocationKey = partyBAllocationKey(partyB, partyA);
-		int256 a = int256(accountLayout.partyBAllocatedBalances[partyB][allocationKey]) -
-			int256(accountLayout.partyBLockedBalances[partyB][allocationKey].cva + accountLayout.partyBLockedBalances[partyB][allocationKey].lf) -
-			int256(applyLiquidationSettlementReserve ? partyBLiquidationSettlementReserve(accountLayout, partyB) : 0);
+		int256 a =
+			int256(accountLayout.partyBAllocatedBalances[partyB][allocationKey]) -
+				int256(accountLayout.partyBLockedBalances[partyB][allocationKey].cva + accountLayout.partyBLockedBalances[partyB][allocationKey].lf) -
+				int256(applyLiquidationSettlementReserve ? partyBLiquidationSettlementReserve(accountLayout, partyB) : 0);
 		return a + upnl;
 	}
 
