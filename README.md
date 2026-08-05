@@ -67,6 +67,35 @@ This project uses [Hardhat](https://hardhat.org/). You can compile the code with
 npx hardhat compile
 ```
 
+## Deployment
+
+Deployments are driven by the `symmio` operator CLI:
+
+```bash
+node cli/symmio.js --help
+```
+
+The usual path:
+
+```bash
+symmio doctor --network arbitrum                        # is everything configured?
+npx hardhat deploy:system --network fork-arbitrum       # rehearse against real chain state
+symmio deploy --network arbitrum                        # the real thing
+symmio status --network arbitrum                        # confirm the result
+```
+
+`symmio doctor` is worth running first every time — it catches the configuration mistakes
+that are expensive to discover later, such as an unset collateral address or a mock
+signature verifier left enabled. It exits non-zero when something is blocking, so it can
+gate CI.
+
+- **[docs/deployment.md](docs/deployment.md)** — the full deployment runbook: configuration,
+  fork rehearsal, resuming a failed run, slow chains, and the manual steps the deployer
+  cannot perform
+- **[cli/README.md](cli/README.md)** — CLI command reference
+- **[SCRIPTS_AUDIT.md](SCRIPTS_AUDIT.md)** — the audit behind the deploy-path safeguards,
+  and what remains open
+
 ### Running Tests
 
 Run the test suite with:
