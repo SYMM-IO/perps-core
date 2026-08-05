@@ -1,4 +1,3 @@
-import { BigNumber as BN } from "bignumber.js"
 import { expect } from "chai"
 
 import type { QuoteStructOutput } from "../../../src/types/interfaces/ISymmio.js"
@@ -15,6 +14,7 @@ import { QuoteStatus } from "../Enums.js"
 import { Hedger } from "../Hedger.js"
 import { RunContext } from "../RunContext.js"
 import { BalanceInfo, User } from "../User.js"
+import { getAllOpenPositions } from "./OpenPositionPagination.js"
 import { TransactionValidator } from "./TransactionValidator.js"
 
 export type OpenPositionValidatorBeforeArg = {
@@ -53,73 +53,148 @@ export type OpenPositionValidatorAfterArg = {
 export class OpenPositionValidator implements TransactionValidator {
 	async before(context: RunContext, arg: OpenPositionValidatorBeforeArg): Promise<OpenPositionValidatorBeforeOutput> {
 		logger.debug("Before OpenPositionValidator...")
-		const userAddress = await arg.user.getAddress()
-		const hedgerAddress = await arg.hedger.getAddress()
-		const quote = await context.viewFacetQuote.getQuote(arg.quoteId)
-		const partyAOpenPositions = await context.viewFacetQuote.getPartyAOpenPositions(userAddress, 0, 1000)
-		const partyBOpenPositions = await context.viewFacetQuote.getPartyBOpenPositions(hedgerAddress, userAddress, 0, 1000)
+		const [userAddress, hedgerAddress] = await Promise.all([arg.user.getAddress(), arg.hedger.getAddress()])
+		const quotePromise = context.viewFacetQuote.getQuote(arg.quoteId)
+		const feeCollectorBalancePromise = quotePromise.then(async quote => {
+			const feeCollector = await context.viewFacet.getFeeCollector(quote.affiliate)
+			return context.viewFacet.balanceOf(feeCollector)
+		})
+		const [
+			balanceInfoPartyA,
+			balanceInfoPartyB,
+			quote,
+			feeCollectorBalance,
+			partyAPositionsCount,
+			partyBPositionsCount,
+			partyAPendingQuotes,
+			partyBPendingQuotes,
+			partyAOpenPositions,
+			partyBOpenPositions,
+			connectedPartyBs,
+			partyANonce,
+			partyBNonce,
+		] = await Promise.all([
+			arg.user.getBalanceInfo(),
+			arg.hedger.getBalanceInfo(userAddress),
+			quotePromise,
+			feeCollectorBalancePromise,
+			context.viewFacetQuote.partyAPositionsCount(userAddress),
+			context.viewFacetQuote.partyBPositionsCount(hedgerAddress, userAddress),
+			context.viewFacetQuote.getPartyAPendingQuotes(userAddress),
+			context.viewFacetQuote.getPartyBPendingQuotes(hedgerAddress, userAddress),
+			getAllOpenPositions((start, size) => context.viewFacetQuote.getPartyAOpenPositions(userAddress, start, size)),
+			getAllOpenPositions((start, size) => context.viewFacetQuote.getPartyBOpenPositions(hedgerAddress, userAddress, start, size)),
+			context.viewFacetSymbol.getConnectedPartyBs(userAddress),
+			context.viewFacet.nonceOfPartyA(userAddress),
+			context.viewFacet.nonceOfPartyB(hedgerAddress, userAddress),
+		])
 		return {
-			balanceInfoPartyA: await arg.user.getBalanceInfo(),
-			balanceInfoPartyB: await arg.hedger.getBalanceInfo(userAddress),
-			quote: quote,
-			feeCollectorBalance: await context.viewFacet.balanceOf(await context.viewFacet.getFeeCollector(quote.affiliate)),
-			partyAPositionsCount: await context.viewFacetQuote.partyAPositionsCount(userAddress),
-			partyBPositionsCount: await context.viewFacetQuote.partyBPositionsCount(hedgerAddress, userAddress),
-			partyAPendingQuotes: [...(await context.viewFacetQuote.getPartyAPendingQuotes(userAddress))],
-			partyBPendingQuotes: [...(await context.viewFacetQuote.getPartyBPendingQuotes(hedgerAddress, userAddress))],
+			balanceInfoPartyA,
+			balanceInfoPartyB,
+			quote,
+			feeCollectorBalance,
+			partyAPositionsCount,
+			partyBPositionsCount,
+			partyAPendingQuotes: [...partyAPendingQuotes],
+			partyBPendingQuotes: [...partyBPendingQuotes],
 			partyAOpenPositionCount: BigInt(partyAOpenPositions.length),
 			partyBOpenPositionCount: BigInt(partyBOpenPositions.length),
-			isConnected: (await context.viewFacetSymbol.getConnectedPartyBs(userAddress)).map(a => a.toLowerCase()).includes(hedgerAddress.toLowerCase()),
-			partyANonce: await context.viewFacet.nonceOfPartyA(userAddress),
-			partyBNonce: await context.viewFacet.nonceOfPartyB(hedgerAddress, userAddress),
+			isConnected: connectedPartyBs.map(a => a.toLowerCase()).includes(hedgerAddress.toLowerCase()),
+			partyANonce,
+			partyBNonce,
 		}
 	}
 
 	async after(context: RunContext, arg: OpenPositionValidatorAfterArg) {
 		logger.debug("After OpenPositionValidator...")
-		const userAddress = await arg.user.getAddress()
-		const hedgerAddress = await arg.hedger.getAddress()
+		const [userAddress, hedgerAddress, newQuote] = await Promise.all([
+			arg.user.getAddress(),
+			arg.hedger.getAddress(),
+			context.viewFacetQuote.getQuote(arg.quoteId),
+		])
+		const oldQuote = arg.beforeOutput.quote
 
 		// Check Quote
-		const newQuote = await context.viewFacetQuote.getQuote(arg.quoteId)
-		const oldQuote = arg.beforeOutput.quote
 		expect(newQuote.quoteStatus).to.be.equal(QuoteStatus.OPENED)
 		expect(newQuote.openedPrice).to.be.equal(arg.openedPrice)
 		expect(newQuote.quantity).to.be.equal(arg.fillAmount)
 
-		const newCollectorBalance = await context.viewFacet.balanceOf(await context.viewFacet.getFeeCollector(newQuote.affiliate))
-		expect(newCollectorBalance).to.be.equal(
-			arg.beforeOutput.feeCollectorBalance + (await getTradingFeeForQuoteWithFilledAmount(context, newQuote.id!, arg.fillAmount)),
-		)
-
 		const oldLockedValuesPartyA = await getTotalPartyALockedValuesForQuotes([oldQuote])
 		const newLockedValuesPartyA = await getTotalPartyALockedValuesForQuotes([newQuote])
-
 		const oldLockedValuesPartyB = await getTotalPartyBLockedValuesForQuotes([oldQuote])
 
-		const fillAmountCoef = new BN(arg.fillAmount.toString()).div(new BN(oldQuote.quantity.toString()))
-		const priceCoef = new BN(arg.openedPrice.toString()).div(new BN(oldQuote.requestedOpenPrice.toString()))
-		const partially = !fillAmountCoef.eq(1)
-
-		if (partially && arg.newQuoteId != null) {
-			const newlyCreatedQuote = await context.viewFacetQuote.getQuote(arg.newQuoteId!)
-			expect(newlyCreatedQuote.quoteStatus).to.be.equal(arg.newQuoteTargetStatus!)
-			const lv = await getTotalPartyALockedValuesForQuotes([newlyCreatedQuote])
-			expect(newlyCreatedQuote.quantity).to.be.equal(oldQuote.quantity - arg.fillAmount)
-			expect(lv).to.be.equal(new BN(oldLockedValuesPartyA.toString()).times(new BN(1).minus(fillAmountCoef)).toString())
+		const filledLockedValues = {
+			cva: (oldQuote.lockedValues.cva * arg.fillAmount) / oldQuote.quantity,
+			lf: (oldQuote.lockedValues.lf * arg.fillAmount) / oldQuote.quantity,
+			partyAmm: (oldQuote.lockedValues.partyAmm * arg.fillAmount) / oldQuote.quantity,
+			partyBmm: (oldQuote.lockedValues.partyBmm * arg.fillAmount) / oldQuote.quantity,
+		}
+		const partialLockedValues = filledLockedValues.cva + filledLockedValues.lf + filledLockedValues.partyAmm
+		const partialWithPriceLockedValuesPartyA =
+			(filledLockedValues.cva * arg.openedPrice) / oldQuote.requestedOpenPrice +
+			(filledLockedValues.lf * arg.openedPrice) / oldQuote.requestedOpenPrice +
+			(filledLockedValues.partyAmm * arg.openedPrice) / oldQuote.requestedOpenPrice
+		const partialWithPriceLockedValuesPartyB =
+			(filledLockedValues.cva * arg.openedPrice) / oldQuote.requestedOpenPrice +
+			(filledLockedValues.lf * arg.openedPrice) / oldQuote.requestedOpenPrice +
+			(filledLockedValues.partyBmm * arg.openedPrice) / oldQuote.requestedOpenPrice
+		const partially = arg.fillAmount !== oldQuote.quantity
+		if (partially && (arg.newQuoteId === undefined || arg.newQuoteTargetStatus === undefined)) {
+			throw new Error("Partial opens must identify the remaining quote and its status")
 		}
 
-		const partialLockedValues = BigInt(new BN(oldLockedValuesPartyA.toString()).times(fillAmountCoef).toFixed(0, BN.ROUND_DOWN).toString())
-		const partialWithPriceLockedValuesPartyA = BigInt(
-			new BN(oldLockedValuesPartyA.toString()).times(fillAmountCoef).times(priceCoef).toFixed(0, BN.ROUND_DOWN).toString(),
-		)
-		const partialWithPriceLockedValuesPartyB = BigInt(
-			new BN(oldLockedValuesPartyB.toString()).times(fillAmountCoef).times(priceCoef).toFixed(0, BN.ROUND_DOWN).toString(),
-		)
+		const newCollectorBalancePromise = (async () => {
+			const feeCollector = await context.viewFacet.getFeeCollector(newQuote.affiliate)
+			return context.viewFacet.balanceOf(feeCollector)
+		})()
+		const [
+			newCollectorBalance,
+			filledTradingFee,
+			newlyCreatedQuote,
+			canceledRemainderTradingFee,
+			newBalanceInfoPartyA,
+			newBalanceInfoPartyB,
+			newPositionsCountA,
+			newPositionsCountB,
+			newPartyAPendingQuotes,
+			newPartyBPendingQuotes,
+			newPartyAOpenPositions,
+			newPartyBOpenPositions,
+			connectedPartyBs,
+			newPartyANonce,
+			newPartyBNonce,
+		] = await Promise.all([
+			newCollectorBalancePromise,
+			getTradingFeeForQuoteWithFilledAmount(context, newQuote.id!, arg.fillAmount),
+			partially ? context.viewFacetQuote.getQuote(arg.newQuoteId!) : Promise.resolve(undefined),
+			arg.newQuoteTargetStatus === QuoteStatus.CANCELED ? getTradingFeeForQuotes(context, [arg.newQuoteId!]) : Promise.resolve(0n),
+			arg.user.getBalanceInfo(),
+			arg.hedger.getBalanceInfo(userAddress),
+			context.viewFacetQuote.partyAPositionsCount(userAddress),
+			context.viewFacetQuote.partyBPositionsCount(hedgerAddress, userAddress),
+			context.viewFacetQuote.getPartyAPendingQuotes(userAddress),
+			context.viewFacetQuote.getPartyBPendingQuotes(hedgerAddress, userAddress),
+			getAllOpenPositions((start, size) => context.viewFacetQuote.getPartyAOpenPositions(userAddress, start, size)),
+			getAllOpenPositions((start, size) => context.viewFacetQuote.getPartyBOpenPositions(hedgerAddress, userAddress, start, size)),
+			context.viewFacetSymbol.getConnectedPartyBs(userAddress),
+			context.viewFacet.nonceOfPartyA(userAddress),
+			context.viewFacet.nonceOfPartyB(hedgerAddress, userAddress),
+		])
+
+		expect(newCollectorBalance).to.be.equal(arg.beforeOutput.feeCollectorBalance + filledTradingFee)
+
+		if (partially) {
+			if (newlyCreatedQuote === undefined) throw new Error("Partial open remainder quote was not loaded")
+			expect(newlyCreatedQuote.quoteStatus).to.be.equal(arg.newQuoteTargetStatus)
+			expect(newlyCreatedQuote.quantity).to.be.equal(oldQuote.quantity - arg.fillAmount)
+			expect(newlyCreatedQuote.lockedValues.cva).to.equal(oldQuote.lockedValues.cva - filledLockedValues.cva)
+			expect(newlyCreatedQuote.lockedValues.lf).to.equal(oldQuote.lockedValues.lf - filledLockedValues.lf)
+			expect(newlyCreatedQuote.lockedValues.partyAmm).to.equal(oldQuote.lockedValues.partyAmm - filledLockedValues.partyAmm)
+			expect(newlyCreatedQuote.lockedValues.partyBmm).to.equal(oldQuote.lockedValues.partyBmm - filledLockedValues.partyBmm)
+		}
 		expectToBeApproximately(newLockedValuesPartyA, partialWithPriceLockedValuesPartyA)
 
 		// Check Balances partyA
-		const newBalanceInfoPartyA = await arg.user.getBalanceInfo()
 		const oldBalanceInfoPartyA = arg.beforeOutput.balanceInfoPartyA
 		const reservedOpenFee = await getOpenTradingFeeForQuoteWithFilledAmount(context, oldQuote.id!, arg.fillAmount)
 		const executedOpenFee = await getTradingFeeForQuoteWithFilledAmount(context, newQuote.id!, arg.fillAmount)
@@ -136,14 +211,13 @@ export class OpenPositionValidator implements TransactionValidator {
 		if (executedOpenFee > reservedOpenFee) expectedAllocatedBalance -= openFeeDelta
 		else expectedAllocatedBalance += openFeeDelta
 		if (arg.newQuoteTargetStatus == QuoteStatus.CANCELED) {
-			expectedAllocatedBalance += await getTradingFeeForQuotes(context, [arg.newQuoteId!])
+			expectedAllocatedBalance += canceledRemainderTradingFee
 			expect(newBalanceInfoPartyA.allocatedBalances).to.be.equal(expectedAllocatedBalance.toString())
 		} else {
 			expect(newBalanceInfoPartyA.allocatedBalances).to.be.equal(expectedAllocatedBalance.toString())
 		}
 
 		// Check Balances partyB
-		const newBalanceInfoPartyB = await arg.hedger.getBalanceInfo(userAddress)
 		const oldBalanceInfoPartyB = arg.beforeOutput.balanceInfoPartyB
 
 		if (arg.newQuoteTargetStatus == QuoteStatus.CANCELED) {
@@ -159,35 +233,26 @@ export class OpenPositionValidator implements TransactionValidator {
 		// ---- Enhanced State Checks ----
 
 		// Verify positions count increased by 1
-		const newPositionsCountA = await context.viewFacetQuote.partyAPositionsCount(userAddress)
 		expect(newPositionsCountA).to.equal(arg.beforeOutput.partyAPositionsCount + 1n)
 
-		const newPositionsCountB = await context.viewFacetQuote.partyBPositionsCount(hedgerAddress, userAddress)
 		expect(newPositionsCountB).to.equal(arg.beforeOutput.partyBPositionsCount + 1n)
 
 		// Verify quote removed from pending arrays and added to open positions
-		const newPartyAPendingQuotes = await context.viewFacetQuote.getPartyAPendingQuotes(userAddress)
 		expect(newPartyAPendingQuotes.map(q => q.toString())).to.not.include(arg.quoteId.toString())
 
-		const newPartyBPendingQuotes = await context.viewFacetQuote.getPartyBPendingQuotes(hedgerAddress, userAddress)
 		expect(newPartyBPendingQuotes.map(q => q.toString())).to.not.include(arg.quoteId.toString())
 
 		// Verify open positions arrays grew
-		const newPartyAOpenPositions = await context.viewFacetQuote.getPartyAOpenPositions(userAddress, 0, 1000)
 		expect(BigInt(newPartyAOpenPositions.length)).to.equal(arg.beforeOutput.partyAOpenPositionCount + 1n)
 		expect(newPartyAOpenPositions.map(q => q.id.toString())).to.include(arg.quoteId.toString())
 
-		const newPartyBOpenPositions = await context.viewFacetQuote.getPartyBOpenPositions(hedgerAddress, userAddress, 0, 1000)
 		expect(BigInt(newPartyBOpenPositions.length)).to.equal(arg.beforeOutput.partyBOpenPositionCount + 1n)
 
 		// Verify connection established
-		const connectedPartyBs = await context.viewFacetSymbol.getConnectedPartyBs(userAddress)
 		expect(connectedPartyBs.map(a => a.toLowerCase())).to.include(hedgerAddress.toLowerCase())
 
 		// Verify nonces incremented (openPosition increments both partyA and partyB nonces)
-		const newPartyANonce = await context.viewFacet.nonceOfPartyA(userAddress)
 		expect(newPartyANonce).to.equal(arg.beforeOutput.partyANonce + 1n)
-		const newPartyBNonce = await context.viewFacet.nonceOfPartyB(hedgerAddress, userAddress)
 		expect(newPartyBNonce).to.equal(arg.beforeOutput.partyBNonce + 1n)
 	}
 }

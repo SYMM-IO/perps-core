@@ -2,7 +2,7 @@
 
 This document explains how PartyB integrators can sign operations for the InstantLayer system.
 
-For a high-level architectural overview, see the [InstantLayer Overview](./InstantLayer-Overview.md).
+For a high-level architectural overview, see the [InstantLayer Overview](./instant-layer-overview.md).
 
 ## Overview
 
@@ -54,6 +54,31 @@ const domain = {
   chainId: <network_chain_id>,
   verifyingContract: <instant_layer_address>
 };
+```
+
+### HyperEVM v0.8.5 Deployment
+
+For the current HyperEVM v0.8.5 deployment, use the Instant Layer address as the EIP-712 `verifyingContract` and the Symmio address as the `target` for Symmio core calls:
+
+| Contract | Address |
+|----------|---------|
+| Symmio | `0x57331038c21982116EE9b0906E4a5c5cB52dcE2e` |
+| Collateral | `0xb88339CB7199b77E23DB6E890353E22632Ba630f` |
+| Account Layer | `0x46493c376758Da47823D7E3Ae5d417eA6546eEB3` |
+| Instant Layer | `0x72DBF07457b2712b160F67A85D338F860c1CA620` |
+| Muon Signature Verifier | `0xcFEedF3C16f59d19eEE5F18C708cf8e84A9340b0` |
+| Create2 Factory | `0x93a457232a3376E1F94f368A85D0b8BC469ead00` |
+| Symbol Manager | `0xe877d634D5Fe44172B983cBd5900E30169a7A6Ce` |
+| Main MultiSig | `0x5146C35725d9b8F11A84ebD4a3abe9845698Ada9` |
+| Signature Verifier | `0xaD97EdE10D84BD797a3240864Ca7898cf666A784` |
+| Instant Withdraw | `0xb1b12E91E456D02184E4B934Bd8dD0c443962015` |
+| Liquidator | `0x97EDFA4Be38Bfd934E08D4D1222c2Cf976b2969a` |
+
+```typescript
+const HYPEREVM_CHAIN_ID = 999n;
+const INSTANT_LAYER_ADDRESS = "0x72DBF07457b2712b160F67A85D338F860c1CA620";
+const SYMMIO_ADDRESS = "0x57331038c21982116EE9b0906E4a5c5cB52dcE2e";
+const ACCOUNT_LAYER_ADDRESS = "0x46493c376758Da47823D7E3Ae5d417eA6546eEB3";
 ```
 
 ### Types
@@ -205,7 +230,7 @@ const { operation, signature } = await signPartyBOperation(
 );
 
 // Submit to InstantLayer (can be done by anyone)
-await instantLayer.executeBatch([operation], [signature], [{ values: [] }], [[]]);
+await instantLayer.executeBatch([operation], [signature], [[]], [[]]);
 ```
 
 ### Example: Sign an openPosition Operation
@@ -242,40 +267,104 @@ const openOp = await signPartyBOperation(hedgerSigner, openPositionCallData, 2n,
 await instantLayer.executeBatch(
   [lockOp.operation, openOp.operation],
   [lockOp.signature, openOp.signature],
-  [{ values: [] }, { values: [] }],
+  [[], []],
   [[], []]
 );
 ```
 
-### Funding Updates With Engine Nonce And Deadline
+### Template Execution
 
-Funding-rate updates are the only PartyB calls that must include the solver engine nonce and deadline. For these calls, do not encode Symmio core `setFundingFee(...)` directly.
+Use `executeBatch` when every operation can be encoded independently. Use `executeTemplate` when a later operation needs a value returned by an earlier operation, such as a `quoteId` returned by a user quote operation and then consumed by PartyB `lockQuote` and `openPosition`.
 
-Encode `setFundingFee` from the `SymmioPartyB` ABI instead. It keeps the same array-style funding parameters and adds one solver engine funding nonce per symbol:
+The signature still covers the original `SignedOperation.callData`. For templated PartyB calls, encode placeholder 32-byte values in the positions that the template will replace. InstantLayer verifies the operation signature first, then applies flex fills, then injects template results into the calldata.
 
-```typescript
-const partyBInterface = new ethers.Interface([
-  "function setFundingFee(uint256[] symbolIds,int256[] longFees,int256[] shortFees,int256[] marketPrices,uint256[] fundingNonces,uint256 deadline)"
-]);
-
-const fundingCallData = partyBInterface.encodeFunctionData("setFundingFee", [
-  symbolIds,
-  longFees,
-  shortFees,
-  marketPrices,
-  fundingNonces,
-  deadline
-]);
+```solidity
+function executeTemplate(
+    uint256 templateId,
+    SignedOperation[] calldata signedOps,
+    bytes[] calldata signatures,
+    bytes[][] calldata fills,
+    bytes[][] calldata flexFillerSignatures
+) external returns (bytes[] memory results);
 ```
 
-Use `fundingCallData` as the PartyB operation calldata, the same place you would put `lockQuote` or `openPosition` calldata. The funding nonce is not a new top-level field and should not be placed in `replayAttackHeader.nonce`. `deadline` is a Unix timestamp. If `block.timestamp` is greater than `deadline`, `SymmioPartyB` skips the funding update without reverting the whole batch and emits `FundingFeeUpdateSkipped(symbolIds, nonces, ..., reason = 1)`.
+The array rules are the same as `executeBatch`:
 
-`SymmioPartyB._call` also checks the funding nonce per symbol. If a supplied nonce is lower than the last accepted nonce for its symbol, it skips only that symbol without reverting the whole batch and emits `FundingFeeUpdateSkipped(symbolIds, nonces, ..., reason = 0)`. If the deadline has not passed and the nonce is equal to or greater than a symbol's last accepted nonce, it forwards that symbol's funding update to Symmio and stores the nonce for that symbol. The current stored nonce can be read with `fundingNonce(symbolId)`.
+- `signedOps.length == signatures.length == fills.length == flexFillerSignatures.length`
+- `signedOps.length` must also match the number of operations in the selected template
+- pass `[]` for `fills[i]` and `flexFillerSignatures[i]` when the operation has no flex fields
+- pass `"0x"` for a PartyB signature only when PartyB is the transaction sender for its own operation
 
-Equal nonces are intentionally accepted. The solver engine can use the same funding nonce to replace or retry the latest funding update; only strictly older nonces are treated as stale.
+Template injection uses three arrays per operation:
 
-This funding nonce is the solver engine ordering nonce for each symbol. It is separate from `replayAttackHeader.nonce`.
+| Field | Meaning |
+|-------|---------|
+| `insertionPoints` | ABI argument offsets after the 4-byte function selector where a 32-byte result should be inserted |
+| `sourceIndices` | Previous operation indexes whose return data should be read |
+| `sourceOffsets` | 32-byte slot offsets inside the source return data |
 
+For example, if op 1 returns a `quoteId` as its first return value, an operation with `insertionPoints: [0]`, `sourceIndices: [1]`, and `sourceOffsets: [0]` replaces its first ABI argument with that `quoteId`.
+
+#### HyperEVM v0.8.5 Templates
+
+The current HyperEVM v0.8.5 Instant Layer has the standard template set registered in this order:
+
+| Template ID | Name | Operations | PartyB relevance |
+|-------------|------|------------|------------------|
+| `0` | `InstantOpen` | 4 | User quote flow followed by PartyB `lockQuote` and `openPosition`; the quote ID returned by the quote operation is injected into both PartyB calls. `instantOpenMode` is enabled for this template. |
+| `1` | `InstantClose` | 2 | User close request followed by PartyB close fill. No result injection is configured. |
+| `2` | `InstantCloseWithAllocation` | 3 | Close flow with an additional allocation/deallocation step. No result injection is configured. |
+
+Admins can add, disable, or update template modes, so production clients should read the current state before relying on hardcoded IDs:
+
+```typescript
+const nextTemplateId = await instantLayer.getNextTemplateId();
+const instantOpen = await instantLayer.getTemplate(0);
+const instantOpenMode = await instantLayer.templateInstantOpenMode(0);
+```
+
+#### Example: Execute The HyperEVM InstantOpen Template
+
+For `InstantOpen`, the PartyB operations should be signed with placeholder `quoteId` values. The template injects the quote ID returned by the quote operation before executing `lockQuote` and `openPosition`.
+
+```typescript
+const templateId = 0n; // InstantOpen on the HyperEVM v0.8.5 deployment
+
+const lockQuoteCallData = symmioInterface.encodeFunctionData("lockQuote", [
+  0n,       // quoteId placeholder; replaced by the template
+  upnlSig,
+]);
+
+const openPositionCallData = symmioInterface.encodeFunctionData("openPosition", [
+  0n,       // quoteId placeholder; replaced by the template
+  filledAmount,
+  openedPrice,
+  upnlSig,
+]);
+
+const lockOp = await signPartyBOperation(hedgerSigner, lockQuoteCallData, 1n, 300);
+const openOp = await signPartyBOperation(hedgerSigner, openPositionCallData, 2n, 300);
+
+await instantLayer.executeTemplate(
+  templateId,
+  [userMarginOrQuoteOp, userQuoteOp, lockOp.operation, openOp.operation],
+  [userMarginOrQuoteSig, userQuoteSig, lockOp.signature, openOp.signature],
+  [[], [], [], []],
+  [[], [], [], []]
+);
+```
+
+If PartyB is submitting the transaction itself and its registered PartyB contract has `OPERATOR_ROLE`, the PartyB entries can use empty signatures:
+
+```typescript
+await instantLayer.connect(partyB).executeTemplate(
+  0n,
+  [userMarginOrQuoteOp, userQuoteOp, lockOp.operation, openOp.operation],
+  [userMarginOrQuoteSig, userQuoteSig, "0x", "0x"],
+  [[], [], [], []],
+  [[], [], [], []]
+);
+```
 ## Self-Execution Mode (No Signature Required)
 
 When PartyB is the transaction sender (`msg.sender`), signature verification is automatically skipped for operations where `signer == msg.sender`. This allows PartyB to execute operations directly without signing them.
@@ -312,7 +401,7 @@ function createSelfOperation(callData: string): SignedOperation {
 
 // Execute directly as PartyB - empty signature
 const operation = createSelfOperation(lockQuoteCallData);
-await instantLayer.executeBatch([operation], ["0x"], [{ values: [] }], [[]]);
+await instantLayer.executeBatch([operation], ["0x"], [[]], [[]]);
 ```
 
 ### Example: Mixed Batch (User Signed + PartyB Self-Execution)
@@ -347,8 +436,8 @@ const partyBOperation = {
 await instantLayer.executeBatch(
   [userOperation, partyBOperation],
   [userSignature, "0x"],               // User signature + empty for PartyB
-  [{ values: [] }, { values: [] }],    // No flex fills
-  [[], []]                             // No modifier signatures
+  [[], []],                            // No flex fills
+  [[], []]                             // No flex filler signatures
 );
 ```
 
@@ -450,7 +539,7 @@ const operation = {
 };
 const signature = await signer.signTypedData(domain, types, operation);
 await instantLayer.connect(operator).executeBatch(
-  [operation], [signature], [{ values: [] }], [[]]
+  [operation], [signature], [[]], [[]]
 );
 
 // Option 2: Self-execution (when PartyB calls directly)
@@ -464,7 +553,7 @@ const operation = {
   replayAttackHeader: { nonce: 0n, deadline: 0n, salt: generateSalt() }
 };
 await instantLayer.connect(partyB).executeBatch(
-  [operation], ["0x"], [{ values: [] }], [[]]
+  [operation], ["0x"], [[]], [[]]
 ); // Empty signature
 ```
 
@@ -472,4 +561,4 @@ await instantLayer.connect(partyB).executeBatch(
 
 ## Related Documentation
 
-- [InstantLayer Overview](./InstantLayer-Overview.md) - High-level architecture and concepts
+- [InstantLayer Overview](./instant-layer-overview.md) - High-level architecture and concepts

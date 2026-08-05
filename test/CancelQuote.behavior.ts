@@ -146,6 +146,22 @@ export function shouldBehaveLikeCancelQuote(): void {
 		})
 
 		describe("Should cancel successfully", async function () {
+			it("Should expire a locked quote after its deadline", async function () {
+				const validator = new CancelQuoteValidator()
+				const beforeOut = await validator.before(context, {
+					user,
+					quoteId: 1n,
+				})
+				await time.increase(1000)
+				await user.requestToCancelQuote(1)
+				await validator.after(context, {
+					user,
+					quoteId: 1n,
+					beforeOutput: beforeOut,
+					targetStatus: QuoteStatus.EXPIRED,
+				})
+			})
+
 			it("Accept cancel request", async function () {
 				const cqValidator = new CancelQuoteValidator()
 				const cqBeforeOut = await cqValidator.before(context, {

@@ -4,7 +4,7 @@ import type { QuoteStructOutput, SymbolStructOutput } from "../../src/types/inte
 import { network } from "../helpers/hardhat-connection.js"
 import { time } from "../helpers/network-helpers.js"
 import { OrderType, QuoteStatus } from "../models/Enums.js"
-import { RunContext } from "../models/RunContext.js"
+import type { RunContext } from "../models/RunContext.js"
 import { safeDiv } from "./SafeMath.js"
 
 const defaultSerializer = new JsonSerializer()

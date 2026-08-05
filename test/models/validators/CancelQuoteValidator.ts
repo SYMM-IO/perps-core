@@ -28,6 +28,16 @@ export type CancelQuoteValidatorAfterArg = {
 	beforeOutput: CancelQuoteValidatorBeforeOutput
 }
 
+export function expectedQuoteIdsAfterSwapPop(quoteIds: readonly bigint[], quoteId: bigint): bigint[] {
+	const index = quoteIds.findIndex(currentQuoteId => currentQuoteId === quoteId)
+	if (index === -1) throw new Error(`Quote ${quoteId} was not present in the snapshotted pending array`)
+
+	const expected = [...quoteIds]
+	expected[index] = expected[expected.length - 1]
+	expected.pop()
+	return expected
+}
+
 export class CancelQuoteValidator implements TransactionValidator {
 	async before(context: RunContext, arg: CancelQuoteValidatorBeforeArg): Promise<CancelQuoteValidatorBeforeOutput> {
 		logger.debug("Before CancelQuoteValidator...")
@@ -51,7 +61,7 @@ export class CancelQuoteValidator implements TransactionValidator {
 		const newBalanceInfoPartyA = await arg.user.getBalanceInfo()
 		const oldBalanceInfoPartyA = arg.beforeOutput.balanceInfoPartyA
 
-		if (oldQuote.quoteStatus == BigInt(QuoteStatus.LOCKED)) {
+		if (oldQuote.quoteStatus == BigInt(QuoteStatus.LOCKED) && arg.targetStatus !== QuoteStatus.EXPIRED) {
 			expect(newQuote.quoteStatus).to.be.equal(QuoteStatus.CANCEL_PENDING)
 			expect(newBalanceInfoPartyA.totalPendingLockedPartyA).to.be.equal(oldBalanceInfoPartyA.totalPendingLockedPartyA.toString())
 			expect(newBalanceInfoPartyA.totalLockedPartyA).to.be.equal(oldBalanceInfoPartyA.totalLockedPartyA.toString())
@@ -59,10 +69,13 @@ export class CancelQuoteValidator implements TransactionValidator {
 
 			// Pending quotes array should not change (CANCEL_PENDING is still "pending")
 			const newPendingQuotes = await context.viewFacetQuote.getPartyAPendingQuotes(userAddress)
-			expect(newPendingQuotes.length).to.equal(arg.beforeOutput.pendingQuotes.length)
+			expect([...newPendingQuotes]).to.deep.equal(arg.beforeOutput.pendingQuotes)
 			return
 		}
-		if (arg.targetStatus != null) expect(newQuote.quoteStatus).to.be.equal(arg.targetStatus)
+		if (arg.targetStatus == null) {
+			throw new Error("CancelQuoteValidator requires the expected CANCELED or EXPIRED target for a pending quote")
+		}
+		expect(newQuote.quoteStatus).to.be.equal(arg.targetStatus)
 
 		const lockedValues = await getTotalPartyALockedValuesForQuotes([oldQuote])
 
@@ -73,10 +86,9 @@ export class CancelQuoteValidator implements TransactionValidator {
 		const tradingFee = await getTradingFeeForQuotes(context, [arg.quoteId])
 		expectToBeApproximately(BigInt(newBalanceInfoPartyA.allocatedBalances), BigInt(oldBalanceInfoPartyA.allocatedBalances) + BigInt(tradingFee))
 
-		// Verify pending quotes array shrunk (quote removed)
+		// Verify the exact swap-pop performed by LibUtils.removeFromArray.
 		const newPendingQuotes = await context.viewFacetQuote.getPartyAPendingQuotes(userAddress)
-		expect(newPendingQuotes.length).to.equal(arg.beforeOutput.pendingQuotes.length - 1)
-		expect(newPendingQuotes.map(q => q.toString())).to.not.include(arg.quoteId.toString())
+		expect([...newPendingQuotes]).to.deep.equal(expectedQuoteIdsAfterSwapPop(arg.beforeOutput.pendingQuotes, arg.quoteId))
 
 		// Verify position count unchanged (cancel doesn't affect open positions)
 		const newPositionsCount = await context.viewFacetQuote.partyAPositionsCount(userAddress)

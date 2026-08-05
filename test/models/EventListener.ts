@@ -1,174 +1,124 @@
 import { Subject } from "rxjs"
 
-import type {
-	AcceptCancelCloseRequestEvent,
-	AcceptCancelRequestEvent,
-	AllocatePartyAEvent,
-	DeallocatePartyAEvent,
-	DepositEvent,
-	ExpireQuoteCloseEvent,
-	ExpireQuoteOpenEvent,
-	FillCloseRequestEvent,
-	FullyLiquidatedPartyBEvent,
-	LiquidatePartyAEvent,
-	LiquidatePartyBEvent,
-	LiquidatePositionsPartyAEvent,
-	LiquidatePositionsPartyBEvent,
-	LockQuoteEvent,
-	OpenPositionEvent,
-	RequestToCancelCloseRequestEvent,
-	RequestToCancelQuoteEvent,
-	RequestToClosePositionEvent,
-	SendQuoteEvent,
-	UnlockQuoteEvent,
-	WithdrawEvent,
-} from "../../src/types/interfaces/ISymmio.js"
-import { logger } from "../utils/LoggerUtils.js"
-import { Event, QuoteStatus } from "./Enums.js"
+import { MultiError } from "../utils/MultiError.js"
+import { QuoteStatus } from "./Enums.js"
+import type { QuoteRoute, QuoteStateEnvelope } from "./QuoteStateRouting.js"
 import { RunContext } from "./RunContext.js"
 
+type EventContract = {
+	on(event: string, listener: (...args: any[]) => void): Promise<unknown>
+	off(event: string, listener: (...args: any[]) => void): Promise<unknown>
+}
+
+type Registration = {
+	contract: EventContract
+	event: string
+	listener: (...args: any[]) => void
+}
+
+const SEND_QUOTE_EVENT =
+	"SendQuote(address,uint256,address[],uint256,uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256)"
+const OPEN_POSITION_EVENT = "OpenPosition(uint256,address,address,uint256,uint256)"
+const FILL_CLOSE_REQUEST_EVENT = "FillCloseRequest(uint256,address,address,uint256,uint256,uint8,uint256)"
+
+function eventValue(args: any[]): any {
+	const payload = args.at(-1)
+	if (!payload?.args) throw new Error("Fuzz event listener received an event without decoded arguments")
+	return payload.args
+}
+
 export class EventListener {
-	queues: Map<QuoteStatus, Subject<bigint>> = new Map([
-		[QuoteStatus.PENDING, new Subject<bigint>()],
-		[QuoteStatus.LOCKED, new Subject<bigint>()],
-		[QuoteStatus.CANCEL_PENDING, new Subject<bigint>()],
-		[QuoteStatus.CANCELED, new Subject<bigint>()],
-		[QuoteStatus.OPENED, new Subject<bigint>()],
-		[QuoteStatus.CLOSE_PENDING, new Subject<bigint>()],
-		[QuoteStatus.CANCEL_CLOSE_PENDING, new Subject<bigint>()],
-		[QuoteStatus.CLOSED, new Subject<bigint>()],
-		[QuoteStatus.LIQUIDATED, new Subject<bigint>()],
-		[QuoteStatus.EXPIRED, new Subject<bigint>()],
-	])
+	readonly queues: Map<QuoteStatus, Subject<QuoteStateEnvelope>> = new Map(
+		Object.values(QuoteStatus)
+			.filter((status): status is QuoteStatus => typeof status === "number")
+			.map(status => [status, new Subject<QuoteStateEnvelope>()]),
+	)
 
-	eventTrackQueues: Map<Event, Subject<any>> = new Map<Event, Subject<any>>([
-		[Event.SEND_QUOTE, new Subject<SendQuoteEvent.OutputObject>()],
-		[Event.REQUEST_TO_CANCEL_QUOTE, new Subject<RequestToCancelQuoteEvent.OutputObject>()],
-		[Event.REQUEST_TO_CLOSE_POSITION, new Subject<RequestToClosePositionEvent.OutputObject>()],
-		[Event.REQUEST_TO_CANCEL_CLOSE_REQUEST, new Subject<RequestToCancelCloseRequestEvent.OutputObject>()],
-		[Event.LOCK_QUOTE, new Subject<LockQuoteEvent.OutputObject>()],
-		[Event.UNLOCK_QUOTE, new Subject<UnlockQuoteEvent.OutputObject>()],
-		[Event.ACCEPT_CANCEL_REQUEST, new Subject<AcceptCancelRequestEvent.OutputObject>()],
-		[Event.OPEN_POSITION, new Subject<OpenPositionEvent.OutputObject>()],
-		[Event.ACCEPT_CANCEL_CLOSE_REQUEST, new Subject<AcceptCancelCloseRequestEvent.OutputObject>()],
-		[Event.FILL_CLOSE_REQUEST, new Subject<FillCloseRequestEvent.OutputObject>()],
-		[Event.DEPOSIT, new Subject<DepositEvent.OutputObject>()],
-		[Event.WITHDRAW, new Subject<WithdrawEvent.OutputObject>()],
-		[Event.ALLOCATE_PARTYA, new Subject<AllocatePartyAEvent.OutputObject>()],
-		[Event.DEALLOCATE_PARTYA, new Subject<DeallocatePartyAEvent.OutputObject>()],
-		[Event.LIQUIDATE_PARTYA, new Subject<LiquidatePartyAEvent.OutputObject>()],
-		[Event.LIQUIDATE_POSITIONS_PARTYA, new Subject<LiquidatePositionsPartyAEvent.OutputObject>()],
-		[Event.LIQUIDATE_PARTYB, new Subject<LiquidatePartyBEvent.OutputObject>()],
-		[Event.LIQUIDATE_POSITIONS_PARTYB, new Subject<LiquidatePositionsPartyBEvent.OutputObject>()],
-		[Event.FULLY_LIQUIDATED_PARTYB, new Subject<FullyLiquidatedPartyBEvent.OutputObject>()],
-		[Event.EXPIRE_QUOTE_OPEN, new Subject<ExpireQuoteOpenEvent.OutputObject>()],
-		[Event.EXPIRE_QUOTE_CLOSE, new Subject<ExpireQuoteCloseEvent.OutputObject>()],
-	])
+	private readonly registrations: Registration[] = []
+	private started = false
 
-	constructor(public context: RunContext) {
-		;(context.partyAFacet.runner as any).pollingInterval = 500 // was .provider !
-		;(context.partyBPositionActionsFacet.runner as any).pollingInterval = 500 // was .provider !
-		;(context.partyBQuoteActionsFacet.runner as any).pollingInterval = 500 // was .provider !
+	constructor(public readonly context: RunContext) {
+		const pollingInterval = Number(process.env.FUZZ_EVENT_POLL_MS ?? 50)
+		if (!Number.isFinite(pollingInterval) || pollingInterval <= 0) {
+			throw new Error(`FUZZ_EVENT_POLL_MS must be a positive number, received ${process.env.FUZZ_EVENT_POLL_MS}`)
+		}
 
-		context.accountFacet.on(context.accountFacet.filters.Deposit, async (...args) => {
-			let value: DepositEvent.OutputObject = (args[args.length - 1]! as any).args //FIXME: Will probably not work
-			this.eventTrackQueues.get(Event.DEPOSIT)!.next(value)
+		for (const facet of [context.partyAFacet, context.partyBQuoteActionsFacet, context.partyBPositionActionsFacet]) {
+			;(facet.runner as any).pollingInterval = pollingInterval
+		}
+	}
+
+	async start(): Promise<void> {
+		if (this.started) return
+		this.started = true
+
+		await this.listen(this.context.partyAFacet as any, SEND_QUOTE_EVENT, (...args) => {
+			this.emitQuoteStatus(QuoteStatus.PENDING, eventValue(args).quoteId)
+		})
+		await this.listen(this.context.partyAFacet as any, "RequestToCancelQuote", (...args) => {
+			const value = eventValue(args)
+			this.emitQuoteStatus(Number(value.quoteStatus) as QuoteStatus, value.quoteId)
+		})
+		await this.listen(this.context.partyAFacet as any, "RequestToClosePosition", (...args) => {
+			this.emitQuoteStatus(QuoteStatus.CLOSE_PENDING, eventValue(args).quoteId)
+		})
+		await this.listen(this.context.partyAFacet as any, "RequestToCancelCloseRequest", (...args) => {
+			this.emitQuoteStatus(QuoteStatus.CANCEL_CLOSE_PENDING, eventValue(args).quoteId)
 		})
 
-		context.accountFacet.on(context.accountFacet.filters.Withdraw, async (...args) => {
-			let value: WithdrawEvent.OutputObject = (args[args.length - 1]! as any).args //FIXME: Will probably not work
-			this.eventTrackQueues.get(Event.WITHDRAW)!.next(value)
+		await this.listen(this.context.partyBQuoteActionsFacet as any, "LockQuote", (...args) => {
+			this.emitQuoteStatus(QuoteStatus.LOCKED, eventValue(args).quoteId)
+		})
+		await this.listen(this.context.partyBQuoteActionsFacet as any, "UnlockQuote", (...args) => {
+			const value = eventValue(args)
+			this.emitQuoteStatus(Number(value.quoteStatus) as QuoteStatus, value.quoteId)
+		})
+		await this.listen(this.context.partyBQuoteActionsFacet as any, "AcceptCancelRequest", (...args) => {
+			const value = eventValue(args)
+			this.emitQuoteStatus(Number(value.quoteStatus) as QuoteStatus, value.quoteId)
 		})
 
-		context.accountFacet.on(context.accountFacet.filters.AllocatePartyA, async (...args) => {
-			let value: AllocatePartyAEvent.OutputObject = (args[args.length - 1]! as any).args //FIXME: Will probably not work
-			this.eventTrackQueues.get(Event.ALLOCATE_PARTYA)!.next(value)
+		await this.listen(this.context.partyBPositionActionsFacet as any, OPEN_POSITION_EVENT, (...args) => {
+			this.emitQuoteStatus(QuoteStatus.OPENED, eventValue(args).quoteId)
 		})
+		await this.listen(this.context.partyBPositionActionsFacet as any, "AcceptCancelCloseRequest", (...args) => {
+			const value = eventValue(args)
+			this.emitQuoteStatus(Number(value.quoteStatus) as QuoteStatus, value.quoteId)
+		})
+		await this.listen(this.context.partyBPositionActionsFacet as any, FILL_CLOSE_REQUEST_EVENT, (...args) => {
+			const value = eventValue(args)
+			this.emitQuoteStatus(Number(value.quoteStatus) as QuoteStatus, value.quoteId)
+		})
+	}
 
-		context.accountFacet.on(context.accountFacet.filters.DeallocatePartyA, async (...args) => {
-			let value: DeallocatePartyAEvent.OutputObject = (args[args.length - 1]! as any).args //FIXME: Will probably not work
-			this.eventTrackQueues.get(Event.DEALLOCATE_PARTYA)!.next(value)
-		})
+	getQueue(status: QuoteStatus): Subject<QuoteStateEnvelope> {
+		const queue = this.queues.get(status)
+		if (!queue) throw new Error(`No fuzz event queue configured for quote status ${status}`)
+		return queue
+	}
 
-		context.partyBFacet.on(context.partyBFacet.filters.SendQuote, async (...args) => {
-			let value: SendQuoteEvent.OutputObject = (args[args.length - 1]! as any).args //FIXME: Will probably not work
-			this.eventTrackQueues.get(Event.SEND_QUOTE)!.next(value)
-			this.queues.get(QuoteStatus.PENDING)!.next(value.quoteId)
-		})
-		context.partyAFacet.on(context.partyAFacet.filters.RequestToCancelQuote, async (...args) => {
-			let value: RequestToCancelQuoteEvent.OutputObject = (args[args.length - 1]! as any).args //FIXME: Will probably not work
-			this.eventTrackQueues.get(Event.REQUEST_TO_CANCEL_QUOTE)!.next(value)
-			this.queues.get(QuoteStatus.CANCEL_PENDING)!.next(value.quoteId)
-		})
-		context.partyAFacet.on(context.partyAFacet.filters.RequestToClosePosition, async (...args) => {
-			let value: RequestToClosePositionEvent.OutputObject = (args[args.length - 1]! as any).args //FIXME: Will probably not work
-			this.eventTrackQueues.get(Event.REQUEST_TO_CLOSE_POSITION)!.next(value)
-			this.queues.get(QuoteStatus.CLOSE_PENDING)!.next(value.quoteId)
-		})
-		context.partyAFacet.on(context.partyAFacet.filters.RequestToCancelCloseRequest, async (...args) => {
-			let value: RequestToCancelCloseRequestEvent.OutputObject = (args[args.length - 1]! as any).args //FIXME: Will probably not work
-			this.eventTrackQueues.get(Event.REQUEST_TO_CANCEL_CLOSE_REQUEST)!.next(value)
-			this.queues.get(QuoteStatus.CANCEL_CLOSE_PENDING)!.next(value.quoteId)
-		})
-		context.partyBFacet.on(context.partyBFacet.filters.LockQuote, async (...args) => {
-			let value: LockQuoteEvent.OutputObject = (args[args.length - 1]! as any).args //FIXME: Will probably not work
-			logger.detailedEventDebug("LockQuote event received")
-			logger.detailedEventDebug(value)
-			this.eventTrackQueues.get(Event.LOCK_QUOTE)!.next(value)
-			this.queues.get(QuoteStatus.LOCKED)!.next(value.quoteId)
-		})
-		context.partyBFacet.on(context.partyBFacet.filters.UnlockQuote, async (...args) => {
-			let value: UnlockQuoteEvent.OutputObject = (args[args.length - 1]! as any).args //FIXME: Will probably not work
-			logger.detailedEventDebug("UnLockQuote event received")
-			logger.detailedEventDebug(value)
-			this.eventTrackQueues.get(Event.UNLOCK_QUOTE)!.next(value)
-			this.queues.get(QuoteStatus.PENDING)!.next(value.quoteId)
-		})
-		context.partyBFacet.on(context.partyBFacet.filters.AcceptCancelRequest, async (...args) => {
-			let value: AcceptCancelRequestEvent.OutputObject = (args[args.length - 1]! as any).args //FIXME: Will probably not work
-			logger.detailedEventDebug("AcceptCancelRequest event received")
-			logger.detailedEventDebug(value)
-			this.eventTrackQueues.get(Event.ACCEPT_CANCEL_REQUEST)!.next(value)
-			this.queues.get(QuoteStatus.CANCELED)!.next(value.quoteId)
-		})
-		context.partyBFacet.on(context.partyBFacet.filters.OpenPosition, async (...args) => {
-			let value: OpenPositionEvent.OutputObject = (args[args.length - 1]! as any).args //FIXME: Will probably not work
-			logger.detailedEventDebug("OpenPosition event received")
-			logger.detailedEventDebug(value)
-			this.eventTrackQueues.get(Event.OPEN_POSITION)!.next(value)
-			this.queues.get(QuoteStatus.OPENED)!.next(value.quoteId)
-		})
-		context.partyBFacet.on(context.partyBFacet.filters.AcceptCancelCloseRequest, async (...args) => {
-			let value: AcceptCancelCloseRequestEvent.OutputObject = (args[args.length - 1]! as any).args //FIXME: Will probably not work
-			logger.detailedEventDebug("AcceptCancelCloseRequest event received")
-			logger.detailedEventDebug(value)
-			this.eventTrackQueues.get(Event.ACCEPT_CANCEL_CLOSE_REQUEST)!.next(value)
-			this.queues.get(QuoteStatus.OPENED)!.next(value.quoteId)
-		})
-		context.partyBFacet.on(context.partyBFacet.filters.FillCloseRequest, async (...args) => {
-			let value: FillCloseRequestEvent.OutputObject = (args[args.length - 1]! as any).args //FIXME: Will probably not work
-			logger.detailedEventDebug("FillCloseRequest event received")
-			logger.detailedEventDebug(value)
-			this.eventTrackQueues.get(Event.FILL_CLOSE_REQUEST)!.next(value)
-			let id = value.quoteId
-			if (value.quoteStatus == BigInt(QuoteStatus.CLOSED)) this.queues.get(QuoteStatus.CLOSED)!.next(id)
-			else this.queues.get(QuoteStatus.OPENED)!.next(id)
-		})
+	async stop(): Promise<void> {
+		const results = this.started
+			? await Promise.allSettled(this.registrations.splice(0).map(({ contract, event, listener }) => contract.off(event, listener)))
+			: []
+		this.started = false
+		for (const queue of this.queues.values()) queue.complete()
 
-		try {
-			//Contract dev logging
-			// context.partyBFacet.on("LogString", async (...args) => {
-			//     logger.contractLogs("Contract:: " + args[0])
-			// })
-			// context.partyBFacet.on("LogAddress", async (...args) => {
-			//     logger.contractLogs("Contract:: " + args[0])
-			// })
-			// context.partyBFacet.on("LogUint", async (...args) => {
-			//     logger.contractLogs("Contract:: " + args[0])
-			// })
-			// context.partyBFacet.on("LogInt", async (...args) => {
-			//     logger.contractLogs("Contract:: " + args[0])
-			// })
-		} catch (ex) {}
+		const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected")
+		if (failures.length > 0) {
+			throw new MultiError(
+				failures.map(failure => failure.reason),
+				"Failed to remove one or more fuzz event listeners",
+			)
+		}
+	}
+
+	private async listen(contract: EventContract, event: string, listener: (...args: any[]) => void): Promise<void> {
+		await contract.on(event, listener)
+		this.registrations.push({ contract, event, listener })
+	}
+
+	emitQuoteStatus(status: QuoteStatus, quoteId: bigint, route?: QuoteRoute): void {
+		this.getQueue(status).next({ quoteId, ...(route === undefined ? {} : { route }) })
 	}
 }
