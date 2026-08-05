@@ -2,18 +2,22 @@ import { ethers as eth } from "ethers"
 import * as fs from "fs"
 
 import { MigrationFacet } from "../../src/types/index.js"
+import { migrationTxOverrides } from "./utils/txOverrides.js"
 
 // =============================================================================
 // Configuration
 // =============================================================================
 
+// Library-level defaults. `progressFile` is intentionally null so callers must
+// supply a network-scoped path (e.g. scripts/upgrade/output/migration-progress-base.json).
+// runMigration.ts already does this; importers using migrate() directly should follow suit.
 const DEFAULT_CONFIG: Required<MigrationConfig> = {
 	chunkSize: 50,
 	maxRetries: 3,
 	retryDelayMs: 2000,
 	retryBackoffMultiplier: 2,
 	confirmations: 1,
-	progressFile: "./migration-progress.json",
+	progressFile: null,
 	skipPreCheck: false,
 	dryRun: false,
 }
@@ -86,13 +90,40 @@ export interface MigrationReport {
 	status: "success" | "failed"
 }
 
+type MigrationQuoteView = {
+	quoteStatus: bigint
+	partyA: string
+	quantity: bigint
+	closedAmount: bigint
+}
+
+const FEE_RESERVATION_STATUSES = new Set([0, 1, 2])
+const ACTIVE_POSITION_STATUSES = new Set([4, 5, 6])
+
+function quoteOpenAmount(quote: MigrationQuoteView): bigint {
+	return BigInt(quote.quantity) - BigInt(quote.closedAmount)
+}
+
+function isZeroAddress(address: string): boolean {
+	return eth.getAddress(address) === eth.ZeroAddress
+}
+
+function migrationSkipReason(quote: MigrationQuoteView): string | undefined {
+	if (isZeroAddress(quote.partyA)) return "non-existent quote"
+	const status = Number(quote.quoteStatus)
+	if (FEE_RESERVATION_STATUSES.has(status)) return undefined
+	if (!ACTIVE_POSITION_STATUSES.has(status)) return `status=${status}`
+	if (quoteOpenAmount(quote) <= 0n) return `status=${status} with zero open amount`
+	return undefined
+}
+
 // =============================================================================
 // Main Migration Function
 // =============================================================================
 
 export async function migrate(
 	migrationFacet: MigrationFacet,
-	viewFacetQuote: { getQuote(quoteId: bigint): Promise<{ quoteStatus: bigint; partyA: string }> },
+	viewFacetQuote: { getQuote(quoteId: bigint): Promise<MigrationQuoteView> },
 	input: MigrationInput,
 	config: MigrationConfig = {},
 ): Promise<MigrationReport> {
@@ -156,30 +187,40 @@ export async function migrate(
 				if (!cfg.skipPreCheck) {
 					// Filter out already-migrated and non-migratable quotes to avoid no-op transactions.
 					// Non-migratable statuses (CANCELED=3, CLOSED=7, LIQUIDATED=8, EXPIRED=9, LIQUIDATED_PENDING=10)
-					// are correctly skipped by the contract — no need to send them.
-					const MIGRATABLE = new Set([0, 1, 2, 4, 5, 6])
+					// and active-position quotes with zero open amount are correctly skipped by the contract — no need to send them.
 					const pending: bigint[] = []
 					let alreadyMigrated = 0
 					let nonMigratable = 0
+					let zeroOpenActive = 0
 					for (const quoteId of input.quoteIds) {
 						const migrated: boolean = await migrationFacet.isQuoteMigrated(quoteId)
 						if (migrated) {
 							alreadyMigrated++
 						} else {
 							const quote = await viewFacetQuote.getQuote(quoteId)
-							if (MIGRATABLE.has(Number(quote.quoteStatus))) {
+							const skipReason = migrationSkipReason(quote)
+							if (!skipReason) {
 								pending.push(quoteId)
 							} else {
 								nonMigratable++
+								if (skipReason.includes("zero open amount")) zeroOpenActive++
 							}
 						}
 					}
 					log("info", `  ${alreadyMigrated} already migrated, ${nonMigratable} non-migratable, ${pending.length} remaining`)
+					if (zeroOpenActive > 0) log("info", `  ${zeroOpenActive} active-status quote(s) skipped because openAmount=0`)
+					if (alreadyMigrated > quotesMigrated) {
+						quotesMigrated = alreadyMigrated
+						progress.quotesProcessed = alreadyMigrated
+					}
 					quotesToMigrate = pending
 				}
 
 				const quoteChunks = chunkArray(quotesToMigrate, cfg.chunkSize)
-				const startChunk = progress.lastProcessedQuoteChunk + 1
+				const startChunk = cfg.skipPreCheck ? progress.lastProcessedQuoteChunk + 1 : 0
+				if (!cfg.skipPreCheck && isResuming && quoteChunks.length > 0) {
+					log("info", `  Resume pre-check removed already-migrated quotes; continuing from the first pending chunk`)
+				}
 
 				for (let i = startChunk; i < quoteChunks.length; i++) {
 					const chunk = quoteChunks[i]
@@ -192,7 +233,7 @@ export async function migrate(
 								log("info", `  [DRY RUN] Would migrate ${chunk.length} quotes`)
 								return null
 							}
-							return migrationFacet.migrateQuotes(chunk)
+							return migrationFacet.migrateQuotes(chunk, migrationTxOverrides())
 						},
 						cfg,
 					)
@@ -256,7 +297,10 @@ export async function migrate(
 				const partyAChunks = chunkArray(partyAsToMigrate, cfg.chunkSize)
 
 				// Resume from last successful partyA chunk if resuming the same partyB
-				const startPartyAChunk = i === startPartyB ? progress.lastProcessedPartyAChunk + 1 : 0
+				const startPartyAChunk = cfg.skipPreCheck && i === startPartyB ? progress.lastProcessedPartyAChunk + 1 : 0
+				if (!cfg.skipPreCheck && i === startPartyB && progress.lastProcessedPartyAChunk >= 0 && partyAChunks.length > 0) {
+					log("info", `  Resume pre-check removed already-migrated PartyAs; continuing from the first pending chunk`)
+				}
 
 				for (let j = startPartyAChunk; j < partyAChunks.length; j++) {
 					const partyAChunk = partyAChunks[j]
@@ -270,7 +314,7 @@ export async function migrate(
 								log("info", `  [DRY RUN] Would migrate ${partyAChunk.length} partyA balances`)
 								return null
 							}
-							return migrationFacet.migrateCrossLockedValues(partyB, partyAChunk)
+							return migrationFacet.migrateCrossLockedValues(partyB, partyAChunk, migrationTxOverrides())
 						},
 						cfg,
 					)
@@ -381,6 +425,19 @@ async function executeOperation(
 			}
 		} catch (error) {
 			const errorMsg = formatError(error)
+			const txHash = transactionHashFromError(error)
+			const deterministicRevert = isMinedTransactionRevert(error)
+
+			if (deterministicRevert) {
+				log("error", `  ✗ ${name} - ${errorMsg}`)
+				return {
+					operation: name,
+					success: false,
+					txHash,
+					error: errorMsg,
+					duration: Date.now() - startTime,
+				}
+			}
 
 			if (attempt < config.maxRetries) {
 				const delay = config.retryDelayMs * Math.pow(config.retryBackoffMultiplier, attempt - 1)
@@ -392,6 +449,7 @@ async function executeOperation(
 				return {
 					operation: name,
 					success: false,
+					txHash,
 					error: errorMsg,
 					duration: Date.now() - startTime,
 				}
@@ -505,6 +563,17 @@ function formatError(error: unknown): string {
 	}
 
 	return String(error)
+}
+
+function isMinedTransactionRevert(error: unknown): boolean {
+	const ethersError = error as { receipt?: { status?: number | string } } | undefined
+	const status = ethersError?.receipt?.status
+	return status === 0 || status === "0x0"
+}
+
+function transactionHashFromError(error: unknown): string | undefined {
+	const ethersError = error as { receipt?: { hash?: string; transactionHash?: string }; transaction?: { hash?: string } } | undefined
+	return ethersError?.receipt?.hash ?? ethersError?.receipt?.transactionHash ?? ethersError?.transaction?.hash
 }
 
 function formatDuration(ms: number): string {

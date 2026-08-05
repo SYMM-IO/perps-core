@@ -10,8 +10,11 @@
  *   # Custom sample count (default 3):
  *   SAMPLES=5 USE_KEYSTORE=true npx hardhat run scripts/upgrade/measureTxLatency.ts --network <network>
  */
+import type { TransactionResponse } from "ethers"
+
 import { ethers } from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
+import { writeTxOverrides } from "./utils/txOverrides.js"
 
 async function main() {
 	const SAMPLES = Number(process.env.SAMPLES ?? 3)
@@ -23,12 +26,14 @@ async function main() {
 	log.info(`Samples: ${SAMPLES}`)
 	log.info("")
 
-	const submitTimes: number[] = []
-	const confirmTimes: number[] = []
+	// --- Sequential ---
+	log.info("=== Sequential ===")
+	const seqSubmitTimes: number[] = []
+	const seqConfirmTimes: number[] = []
 
 	for (let i = 0; i < SAMPLES; i++) {
 		const t0 = performance.now()
-		const tx = await signer.sendTransaction({ to, value: 1n })
+		const tx = await signer.sendTransaction({ to, value: 0n, ...writeTxOverrides() })
 		const tSent = performance.now()
 		const receipt = await tx.wait()
 		const tMined = performance.now()
@@ -36,27 +41,55 @@ async function main() {
 		const submitMs = Math.round(tSent - t0)
 		const confirmMs = Math.round(tMined - tSent)
 		const totalMs = Math.round(tMined - t0)
-		submitTimes.push(submitMs)
-		confirmTimes.push(confirmMs)
+		seqSubmitTimes.push(submitMs)
+		seqConfirmTimes.push(confirmMs)
 		log.ok(`  sample ${i + 1}: submit ${submitMs}ms, confirm ${confirmMs}ms, total ${totalMs}ms (block ${receipt!.blockNumber})`)
 	}
 
-	const avgSubmit = submitTimes.reduce((a, b) => a + b, 0) / submitTimes.length
-	const avgConfirm = confirmTimes.reduce((a, b) => a + b, 0) / confirmTimes.length
-	const avgTotal = avgSubmit + avgConfirm
+	const seqAvgSubmit = seqSubmitTimes.reduce((a, b) => a + b, 0) / seqSubmitTimes.length
+	const seqAvgConfirm = seqConfirmTimes.reduce((a, b) => a + b, 0) / seqConfirmTimes.length
+	const seqAvgTotal = seqAvgSubmit + seqAvgConfirm
 
 	log.info("")
-	log.info("--- Results ---")
-	log.info(`  avg submit:  ${Math.round(avgSubmit)}ms`)
-	log.info(`  avg confirm: ${Math.round(avgConfirm)}ms`)
-	log.info(`  avg total:   ${Math.round(avgTotal)}ms`)
+	log.info("--- Sequential Results ---")
+	log.info(`  avg submit:  ${Math.round(seqAvgSubmit)}ms`)
+	log.info(`  avg confirm: ${Math.round(seqAvgConfirm)}ms`)
+	log.info(`  avg total:   ${Math.round(seqAvgTotal)}ms`)
 	log.info("")
-	log.info("--- Estimates (sequential) ---")
-	log.info(`  50 chunks:  ${fmt(avgTotal * 50)}`)
-	log.info(`  100 chunks: ${fmt(avgTotal * 100)}`)
+	log.info("--- Sequential Estimates ---")
+	log.info(`  50 chunks:  ${fmt(seqAvgTotal * 50)}`)
+	log.info(`  100 chunks: ${fmt(seqAvgTotal * 100)}`)
+
+	// --- Parallel ---
 	log.info("")
-	log.info("--- Estimates (parallel, all chunks at once) ---")
-	log.info(`  Any count:  ~${fmt(avgConfirm)} (single confirmation window)`)
+	log.info("=== Parallel ===")
+	const baseNonce = await signer.getNonce()
+	const txOverrides = writeTxOverrides()
+	const parT0 = performance.now()
+	const txPromises = Array.from({ length: SAMPLES }, (_, i) => signer.sendTransaction({ to, value: 0n, nonce: baseNonce + i, ...txOverrides }))
+	const txs = await Promise.all(txPromises)
+	const parTSent = performance.now()
+	const receipts = await Promise.all(txs.map((tx: TransactionResponse) => tx.wait()))
+	const parTMined = performance.now()
+
+	const parSubmitMs = Math.round(parTSent - parT0)
+	const parConfirmMs = Math.round(parTMined - parTSent)
+	const parTotalMs = Math.round(parTMined - parT0)
+
+	for (let i = 0; i < receipts.length; i++) {
+		log.ok(`  sample ${i + 1}: block ${receipts[i]!.blockNumber}`)
+	}
+
+	log.info("")
+	log.info("--- Parallel Results ---")
+	log.info(`  submit all ${SAMPLES}:  ${parSubmitMs}ms`)
+	log.info(`  confirm all ${SAMPLES}: ${parConfirmMs}ms`)
+	log.info(`  total:       ${parTotalMs}ms`)
+	log.info(`  per-tx avg:  ${Math.round(parTotalMs / SAMPLES)}ms`)
+	log.info("")
+	log.info("--- Parallel Estimates ---")
+	log.info(`  50 chunks:  ${fmt((parTotalMs / SAMPLES) * 50)}`)
+	log.info(`  100 chunks: ${fmt((parTotalMs / SAMPLES) * 100)}`)
 }
 
 function fmt(ms: number): string {

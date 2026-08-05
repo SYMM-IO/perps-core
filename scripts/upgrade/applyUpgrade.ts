@@ -14,6 +14,7 @@
 import fs from "fs"
 
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
+import { resolveConfiguredSigner } from "./utils/hardwareSigner.js"
 import { log } from "./utils/log.js"
 import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 import { buildDiamondCut, applyDiamondCut, loadDeployedFacets } from "./utils/upgradeHelpers.js"
@@ -26,8 +27,9 @@ async function main() {
 	if (!DIAMOND_ADDRESS) throw new Error("DIAMOND_ADDRESS required (env or config)")
 
 	const networkName = connection.networkName
+	const chainId = Number((await ethers.provider.getNetwork()).chainId)
 	const FACETS_FILE = process.env.FACETS_FILE ?? `${OUTPUT_DIR}/deployed-facets-${networkName}.json`
-	const facetData = loadDeployedFacets(FACETS_FILE)
+	const facetData = loadDeployedFacets(FACETS_FILE, { networkName, chainId, diamondAddress: DIAMOND_ADDRESS })
 
 	log.header("Apply Diamond Cut")
 	log.kv("Diamond", log.addr(DIAMOND_ADDRESS))
@@ -60,21 +62,16 @@ async function main() {
 	log.ok(`Details written to ${detailsFile}`)
 	log.stepDone(t)
 
-	// Resolve protocolAdmin signer
+	// Resolve protocolAdmin signer. Supports Hardhat-managed keys, external wallet
+	// RPCs, and Ledger path scanning.
 	let signer
 	const protocolAdminAddress = shared.protocolAdmin
 	if (protocolAdminAddress) {
-		const signers = await ethers.getSigners()
-		for (const s of signers) {
-			if ((await s.getAddress()).toLowerCase() === protocolAdminAddress.toLowerCase()) {
-				signer = s
-				break
-			}
-		}
-		if (!signer)
-			throw new Error(
-				`No signer found for protocolAdmin ${protocolAdminAddress}. Add NEW_DEPLOYER (or legacy TEAM_DEPLOYER) to the Hardhat keystore.`,
-			)
+		signer = await resolveConfiguredSigner({
+			role: "protocolAdmin",
+			expectedAddress: protocolAdminAddress,
+			envPrefix: "PROTOCOL_ADMIN",
+		})
 	}
 
 	// Apply in a single transaction

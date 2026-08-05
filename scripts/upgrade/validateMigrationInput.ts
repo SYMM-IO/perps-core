@@ -1,9 +1,9 @@
 import fs from "fs"
 
-import { ethers } from "../../test/helpers/hardhat-connection.js"
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
-import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
+import { baseNetworkName, loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 
 /**
  * Validate migration input against on-chain state.
@@ -66,7 +66,12 @@ async function rawGetQuote(
 
 // ── Config ───────────────────────────────────────────────────────────
 
-const DEFAULT_INPUT_FILE = "./scripts/upgrade/output/migration-input.json"
+// Default to the network-suffixed file written by prepareMigrationInput.ts.
+// Falls back to the unsuffixed name if no network suffix is resolvable.
+const NETWORK_SUFFIX = baseNetworkName(connection.networkName)
+const DEFAULT_INPUT_FILE = NETWORK_SUFFIX
+	? `./scripts/upgrade/output/migration-input-${NETWORK_SUFFIX}.json`
+	: "./scripts/upgrade/output/migration-input.json"
 
 function toBigInt(value: unknown): bigint {
 	if (typeof value === "bigint") return value
@@ -81,7 +86,7 @@ async function main() {
 	const scriptTimer = log.timer()
 	await verifyRpc()
 
-	const shared = loadUpgradeConfigShared()
+	const shared = loadUpgradeConfigShared(NETWORK_SUFFIX)
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? shared.diamondAddress
 	const INPUT_FILE = process.env.MIGRATION_INPUT_FILE ?? DEFAULT_INPUT_FILE
 	const SPOT_CHECK_COUNT = Number(process.env.SPOT_CHECK_COUNT ?? shared.spotCheckCount ?? 20)

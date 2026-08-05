@@ -1,10 +1,10 @@
 import fs from "fs"
 import path from "path"
 
-import { ethers } from "../../test/helpers/hardhat-connection.js"
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
-import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
+import { baseNetworkName, loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 import { fetchPartyBBalances } from "./utils/subgraphHelpers.js"
 
 /**
@@ -65,8 +65,12 @@ type BalanceSnapshot = {
 }
 
 const DEFAULT_OUTPUT_DIR = "./scripts/upgrade/output"
-const DEFAULT_INPUT_FILE = `${DEFAULT_OUTPUT_DIR}/migration-input.json`
-const DEFAULT_OUTPUT_FILE = `${DEFAULT_OUTPUT_DIR}/balance-snapshot.json`
+// Default filenames are network-suffixed so multi-chain rehearsals don't overwrite each other.
+const NETWORK_SUFFIX = baseNetworkName(connection.networkName)
+const defaultSuffixed = (baseName: string): string =>
+	NETWORK_SUFFIX ? `${DEFAULT_OUTPUT_DIR}/${baseName}-${NETWORK_SUFFIX}.json` : `${DEFAULT_OUTPUT_DIR}/${baseName}.json`
+const DEFAULT_INPUT_FILE = defaultSuffixed("migration-input")
+const DEFAULT_OUTPUT_FILE = defaultSuffixed("balance-snapshot")
 
 function ensureParentDir(filePath: string): void {
 	const dir = path.dirname(filePath)
@@ -121,7 +125,7 @@ async function runWithConcurrency<T, R>(items: T[], concurrency: number, worker:
 async function main() {
 	const scriptTimer = log.timer()
 	await verifyRpc()
-	const shared = loadUpgradeConfigShared()
+	const shared = loadUpgradeConfigShared(NETWORK_SUFFIX)
 
 	const inputFile = process.env.MIGRATION_INPUT_FILE ?? DEFAULT_INPUT_FILE
 	const outputFile = process.env.SNAPSHOT_OUTPUT_FILE ?? DEFAULT_OUTPUT_FILE
