@@ -197,10 +197,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 			["uint256", "uint8", "uint256", "address", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "bytes"],
 			[nonce, optionType, availableAt, affiliate, affiliateAmount, creditAmount, fee, operatorFee, muf, maf, deadline, signature],
 		)
-		const validatorData = ethers.AbiCoder.defaultAbiCoder().encode(
-			["bytes[]", "uint256[]", "uint256"],
-			[validatorSignatures ?? [], validatorTimestamps ?? [], 0],
-		)
+		const validatorData = ethers.AbiCoder.defaultAbiCoder().encode(["bytes[]", "uint256[]"], [validatorSignatures ?? [], validatorTimestamps ?? []])
 		return ethers.AbiCoder.defaultAbiCoder().encode(["bytes", "bytes", "bytes"], [offerData, validatorData, creditDataRaw ?? "0x"])
 	}
 

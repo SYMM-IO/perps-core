@@ -34,6 +34,7 @@ library LibErrors {
 	error InsufficientValidatorSignatures();
 	error InvalidValidator();
 	error DuplicateValidator();
+	error StaleValidatorApproval();
 	error InvalidStatusForSuspend();
 	error ArrayLengthMismatch();
 	error InvalidOptionType();

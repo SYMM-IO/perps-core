@@ -210,7 +210,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			["uint256", "uint8", "uint256", "address", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "bytes"],
 			[nonce, optionType, 0n, affiliate, affiliateAmount, creditAmount, fee, operatorFee, maxUserFee, maxAccelerationFee, deadline, signature],
 		)
-		const validatorData = ethers.AbiCoder.defaultAbiCoder().encode(["bytes[]", "uint256[]", "uint256"], [[], [], 0])
+		const validatorData = ethers.AbiCoder.defaultAbiCoder().encode(["bytes[]", "uint256[]"], [[], []])
 		return ethers.AbiCoder.defaultAbiCoder().encode(["bytes", "bytes", "bytes"], [offerData, validatorData, creditDataRaw ?? "0x"])
 	}
 
@@ -454,7 +454,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 				partsHash,
 			})
 
-			const tx = await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw)
+			const tx = await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw)
 			const receipt = await tx.wait()
 
 			// Events
@@ -523,7 +523,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 				partsHash,
 			})
 
-			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw)
+			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw)
 
 			// Pools untouched
 			expect(await expressProvider.generalBalance()).to.equal(generalBefore)
@@ -554,7 +554,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 				partsHash,
 			})
 
-			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw)
+			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw)
 
 			// No credit touched
 			expect(await expressProvider.creditLineActiveDebt(affiliate)).to.equal(0n)
@@ -582,7 +582,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 				partsHash,
 			})
 
-			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw)
+			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw)
 
 			const info = await expressProvider.getWithdrawInfo(user.address, requestId)
 			expect(info.status).to.equal(STATUS_PROCESSED)
@@ -618,7 +618,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			})
 
 			const before = await collateral.balanceOf(receiver.address)
-			await expressProvider.connect(user).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw)
+			await expressProvider.connect(user).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw)
 			expect(await collateral.balanceOf(receiver.address)).to.equal(before + withdrawAmount - DEFAULT_ACCELERATION_FEE)
 		})
 	})
@@ -650,7 +650,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			})
 
 			await expect(
-				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw),
+				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw),
 			).to.be.revertedWithCustomError(expressProvider, "DebtExceedsAbsoluteCap")
 
 			// State unchanged
@@ -684,7 +684,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 				partsHash,
 			})
 			await expect(
-				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw),
+				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw),
 			).to.be.revertedWithCustomError(expressProvider, "DebtExceedsPercentCap")
 		})
 
@@ -709,14 +709,14 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			})
 
 			await expect(
-				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw),
+				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw),
 			).to.be.revertedWithCustomError(expressProvider, "DebtExceedsAbsoluteCap")
 
 			// Frontend raises affiliate cap
 			await expressProvider.setCreditLineAffiliateConfig(affiliate, 500n * 10n ** 18n, 0n)
 
 			// Same signature now succeeds (nonce was not bumped)
-			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw)
+			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw)
 
 			const info = await expressProvider.getWithdrawInfo(user.address, requestId)
 			expect(info.status).to.equal(STATUS_PROCESSED)
@@ -751,7 +751,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			await ethers.provider.send("evm_mine", [])
 
 			await expect(
-				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw),
+				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw),
 			).to.be.revertedWithCustomError(expressProvider, "AccelerateCooldownElapsed")
 		})
 
@@ -777,7 +777,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			await ethers.provider.send("evm_mine", [])
 
 			await expect(
-				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw),
+				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw),
 			).to.be.revertedWithCustomError(expressProvider, "AccelerateOfferExpired")
 		})
 
@@ -802,7 +802,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			await ethers.provider.send("evm_setNextBlockTimestamp", [Number(info.cooldownEndTime)])
 
 			await expect(
-				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw),
+				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw),
 			).to.be.revertedWithCustomError(expressProvider, "AccelerateCooldownElapsed")
 		})
 
@@ -825,7 +825,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			})
 
 			await ethers.provider.send("evm_setNextBlockTimestamp", [Number(info.cooldownEndTime) - 1])
-			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw)
+			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw)
 
 			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).status).to.equal(STATUS_PROCESSED)
 		})
@@ -851,7 +851,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			const creditDataRaw = buildCreditData(10_000n * 10n ** 18n, nextTs)
 
 			await ethers.provider.send("evm_setNextBlockTimestamp", [nextTs])
-			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw)
+			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw)
 
 			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).status).to.equal(STATUS_PROCESSED)
 		})
@@ -879,7 +879,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 
 			// After finalize the status is FINALIZED, so the first precondition fires.
 			await expect(
-				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw),
+				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw),
 			).to.be.revertedWithCustomError(expressProvider, "AccelerateOnlyFromStandardAccepted")
 		})
 	})
@@ -908,7 +908,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			})
 
 			await expect(
-				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw),
+				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw),
 			).to.be.revertedWithCustomError(expressProvider, "InvalidAccelerateSigner")
 		})
 
@@ -928,11 +928,11 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 				partsHash,
 			})
 
-			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw)
+			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw)
 
 			// Replay — status is no longer ACCEPTED, so preconditions fail first
 			await expect(
-				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw),
+				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw),
 			).to.be.revertedWithCustomError(expressProvider, "AccelerateOnlyFromStandardAccepted")
 		})
 
@@ -966,7 +966,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			})
 
 			await expect(
-				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, badParts, offerData, creditDataRaw),
+				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, badParts, offerData, "0x", creditDataRaw),
 			).to.be.revertedWithCustomError(expressProvider, "PartsMismatch")
 		})
 
@@ -988,7 +988,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			})
 
 			await expect(
-				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw),
+				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw),
 			).to.be.revertedWithCustomError(expressProvider, "InvalidAccelerateNonce")
 		})
 	})
@@ -1019,7 +1019,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			})
 
 			await expect(
-				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw),
+				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw),
 			).to.be.revertedWithCustomError(expressProvider, "AccelerateOnlyFromStandardAccepted")
 		})
 
@@ -1041,7 +1041,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			})
 
 			await expect(
-				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw),
+				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw),
 			).to.be.revertedWithCustomError(expressProvider, "AccelerateOnlyFromStandardAccepted")
 		})
 
@@ -1060,7 +1060,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 				creditAmount: 100n * 10n ** 18n,
 				partsHash,
 			})
-			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, first.offerData, first.creditDataRaw)
+			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, first.offerData, "0x", first.creditDataRaw)
 
 			const second = await buildAccelerateCall(fixture, {
 				user: user.address,
@@ -1072,7 +1072,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 				partsHash,
 			})
 			await expect(
-				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, second.offerData, second.creditDataRaw),
+				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, second.offerData, "0x", second.creditDataRaw),
 			).to.be.revertedWithCustomError(expressProvider, "AccelerateOnlyFromStandardAccepted")
 		})
 
@@ -1093,7 +1093,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 				partsHash,
 			})
 			await expect(
-				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw),
+				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw),
 			).to.be.revertedWithCustomError(expressProvider, "AccelerateOnlyFromStandardAccepted")
 		})
 
@@ -1115,7 +1115,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 				partsHash,
 			})
 			await expect(
-				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw),
+				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw),
 			).to.be.revertedWithCustomError(expressProvider, "AccelerateOnlyFromStandardAccepted")
 		})
 
@@ -1137,7 +1137,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			})
 
 			await expect(
-				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw),
+				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw),
 			).to.be.revertedWithCustomError(expressProvider, "FundingSplitExceedsExpress")
 		})
 
@@ -1161,7 +1161,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 				partsHash,
 			})
 
-			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw)
+			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw)
 
 			const info = await expressProvider.getWithdrawInfo(user.address, requestId)
 			expect(info.status).to.equal(STATUS_PROCESSED)
@@ -1201,7 +1201,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			})
 
 			await expect(
-				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw),
+				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw),
 			).to.be.revertedWithCustomError(expressProvider, "InsufficientGeneralBalance")
 
 			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).status).to.equal(STATUS_ACCEPTED)
@@ -1231,7 +1231,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			})
 
 			await expect(
-				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw),
+				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw),
 			).to.be.revertedWithCustomError(expressProvider, "InsufficientAffiliateBalance")
 		})
 	})
@@ -1259,7 +1259,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 				partsHash,
 			})
 
-			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw)
+			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw)
 
 			const generalAfterAccel = await expressProvider.generalBalance()
 
@@ -1304,7 +1304,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 				partsHash,
 			})
 
-			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw)
+			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw)
 
 			const infoAfter = await expressProvider.getWithdrawInfo(user.address, requestId)
 			expect(infoAfter.fee).to.equal(infoBefore.fee)
@@ -1337,7 +1337,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			})
 
 			await expect(
-				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw),
+				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw),
 			).to.be.revertedWithCustomError(expressProvider, "AccelerationFeeExceedsMaximum")
 		})
 
@@ -1361,7 +1361,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 				partsHash,
 			})
 
-			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw)
+			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw)
 
 			const infoAfter = await expressProvider.getWithdrawInfo(user.address, requestId)
 			expect(infoAfter.status).to.equal(STATUS_PROCESSED)
@@ -1430,7 +1430,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			const offerData = encodeAccelerateOfferData(0n, 0n, 0n, tamperedFee, deadline, signature)
 
 			await expect(
-				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x"),
+				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", "0x"),
 			).to.be.revertedWithCustomError(expressProvider, "InvalidAccelerateSigner")
 		})
 
@@ -1496,10 +1496,277 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 				partsHash,
 			})
 
-			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, creditDataRaw)
+			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw)
 
 			expect(await expressProvider.nonces(user.address)).to.equal(mainNonceBefore)
 			expect(await expressProvider.accelerateNonce(user.address, requestId)).to.equal(1n)
+		})
+	})
+
+	// ═══════════════════════════════════════════════════════════════════
+	//                        VALIDATOR GATING
+	// ═══════════════════════════════════════════════════════════════════
+
+	describe("Validator Gating", function () {
+		async function signValidatorAccelerateApproval(
+			expressProvider: any,
+			validator: any,
+			params: { user: string; requestId: bigint; partsHash: string; timestamp: number; symmio: string },
+		) {
+			const domain = { name: "ExpressProvider", version: "1", chainId: 31337, verifyingContract: await expressProvider.getAddress() }
+			const types = {
+				ValidatorAccelerateApproval: [
+					{ name: "user", type: "address" },
+					{ name: "requestId", type: "uint256" },
+					{ name: "partsHash", type: "bytes32" },
+					{ name: "timestamp", type: "uint256" },
+					{ name: "symmio", type: "address" },
+				],
+			}
+			return validator.signTypedData(domain, types, params)
+		}
+
+		function encodeValidatorData(signatures: string[], timestamps: number[]): string {
+			return ethers.AbiCoder.defaultAbiCoder().encode(["bytes[]", "uint256[]"], [signatures, timestamps])
+		}
+
+		it("accelerates with a valid validator quorum when minValidatorSignatures > 0", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, context, user, affiliate, randomCaller } = fixture
+
+			const validator1 = (await ethers.getSigners())[6]
+			await expressProvider.setValidator(affiliate, validator1.address, true)
+			await expressProvider.setMinValidatorSignatures(affiliate, 1)
+
+			const { parts, requestId, partsHash } = await acceptStandard(fixture)
+
+			const { offerData, creditDataRaw } = await buildAccelerateCall(fixture, {
+				user: user.address,
+				requestId,
+				parts,
+				nonce: 0n,
+				affiliateAmount: 0n,
+				creditAmount: 100n * 10n ** 18n,
+				partsHash,
+			})
+
+			const now = (await ethers.provider.getBlock("latest"))!.timestamp
+			const valSig = await signValidatorAccelerateApproval(expressProvider, validator1, {
+				user: user.address,
+				requestId,
+				partsHash,
+				timestamp: now,
+				symmio: context.diamond,
+			})
+
+			await expressProvider
+				.connect(randomCaller)
+				.accelerateWithdraw(user.address, requestId, parts, offerData, encodeValidatorData([valSig], [now]), creditDataRaw)
+
+			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).status).to.equal(STATUS_PROCESSED)
+		})
+
+		it("rejects acceleration without validator signatures when minValidatorSignatures > 0", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, user, affiliate, randomCaller } = fixture
+
+			const validator1 = (await ethers.getSigners())[6]
+			await expressProvider.setValidator(affiliate, validator1.address, true)
+			await expressProvider.setMinValidatorSignatures(affiliate, 1)
+
+			const { parts, requestId, partsHash } = await acceptStandard(fixture)
+
+			const { offerData, creditDataRaw } = await buildAccelerateCall(fixture, {
+				user: user.address,
+				requestId,
+				parts,
+				nonce: 0n,
+				affiliateAmount: 0n,
+				creditAmount: 100n * 10n ** 18n,
+				partsHash,
+			})
+
+			await expect(
+				expressProvider
+					.connect(randomCaller)
+					.accelerateWithdraw(user.address, requestId, parts, offerData, encodeValidatorData([], []), creditDataRaw),
+			).to.be.revertedWithCustomError(expressProvider, "InsufficientValidatorSignatures")
+		})
+
+		it("rejects approvals signed before a later balance credit (StaleValidatorApproval)", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, context, user, affiliate, randomCaller } = fixture
+
+			const validator1 = (await ethers.getSigners())[6]
+			await expressProvider.setValidator(affiliate, validator1.address, true)
+			await expressProvider.setMinValidatorSignatures(affiliate, 1)
+
+			const { parts, requestId, partsHash } = await acceptStandard(fixture)
+
+			const { offerData, creditDataRaw } = await buildAccelerateCall(fixture, {
+				user: user.address,
+				requestId,
+				parts,
+				nonce: 0n,
+				affiliateAmount: 0n,
+				creditAmount: 100n * 10n ** 18n,
+				partsHash,
+			})
+
+			// Validator attests to the current state ...
+			const now = (await ethers.provider.getBlock("latest"))!.timestamp
+			const valSig = await signValidatorAccelerateApproval(expressProvider, validator1, {
+				user: user.address,
+				requestId,
+				partsHash,
+				timestamp: now,
+				symmio: context.diamond,
+			})
+
+			// ... then PnL lands in the withdrawable balance before the permissionless accelerate tx.
+			// The advance must not go out against a state no validator ever saw.
+			await context.accountFacet.connect(user).allocate(1n)
+			await context.accountFacet.connect(user).zeroUpnlDeallocate(1n)
+
+			await expect(
+				expressProvider
+					.connect(randomCaller)
+					.accelerateWithdraw(user.address, requestId, parts, offerData, encodeValidatorData([valSig], [now]), creditDataRaw),
+			).to.be.revertedWithCustomError(expressProvider, "StaleValidatorApproval")
+		})
+
+		it("rejects expired validator approvals on acceleration", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, context, user, affiliate, randomCaller } = fixture
+
+			const validator1 = (await ethers.getSigners())[6]
+			await expressProvider.setValidator(affiliate, validator1.address, true)
+			await expressProvider.setMinValidatorSignatures(affiliate, 1)
+
+			const { parts, requestId, partsHash } = await acceptStandard(fixture)
+
+			const { offerData, creditDataRaw } = await buildAccelerateCall(fixture, {
+				user: user.address,
+				requestId,
+				parts,
+				nonce: 0n,
+				affiliateAmount: 0n,
+				creditAmount: 100n * 10n ** 18n,
+				partsHash,
+			})
+
+			// Default validatorApprovalTimeout = 30s — sign 60s in the past
+			const now = (await ethers.provider.getBlock("latest"))!.timestamp
+			const expiredTs = now - 60
+			const valSig = await signValidatorAccelerateApproval(expressProvider, validator1, {
+				user: user.address,
+				requestId,
+				partsHash,
+				timestamp: expiredTs,
+				symmio: context.diamond,
+			})
+
+			await expect(
+				expressProvider
+					.connect(randomCaller)
+					.accelerateWithdraw(user.address, requestId, parts, offerData, encodeValidatorData([valSig], [expiredTs]), creditDataRaw),
+			).to.be.revertedWithCustomError(expressProvider, "ValidatorApprovalExpired")
+		})
+
+		it("rejects approvals signed by a non-validator", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, context, user, affiliate, randomCaller } = fixture
+
+			const signers = await ethers.getSigners()
+			const validator1 = signers[6]
+			const intruder = signers[7]
+			await expressProvider.setValidator(affiliate, validator1.address, true)
+			await expressProvider.setMinValidatorSignatures(affiliate, 1)
+
+			const { parts, requestId, partsHash } = await acceptStandard(fixture)
+
+			const { offerData, creditDataRaw } = await buildAccelerateCall(fixture, {
+				user: user.address,
+				requestId,
+				parts,
+				nonce: 0n,
+				affiliateAmount: 0n,
+				creditAmount: 100n * 10n ** 18n,
+				partsHash,
+			})
+
+			const now = (await ethers.provider.getBlock("latest"))!.timestamp
+			const valSig = await signValidatorAccelerateApproval(expressProvider, intruder, {
+				user: user.address,
+				requestId,
+				partsHash,
+				timestamp: now,
+				symmio: context.diamond,
+			})
+
+			await expect(
+				expressProvider
+					.connect(randomCaller)
+					.accelerateWithdraw(user.address, requestId, parts, offerData, encodeValidatorData([valSig], [now]), creditDataRaw),
+			).to.be.revertedWithCustomError(expressProvider, "InvalidValidator")
+		})
+
+		it("rejects approvals bound to a different requestId", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, context, user, affiliate, randomCaller } = fixture
+
+			const validator1 = (await ethers.getSigners())[6]
+			await expressProvider.setValidator(affiliate, validator1.address, true)
+			await expressProvider.setMinValidatorSignatures(affiliate, 1)
+
+			const { parts, requestId, partsHash } = await acceptStandard(fixture)
+
+			const { offerData, creditDataRaw } = await buildAccelerateCall(fixture, {
+				user: user.address,
+				requestId,
+				parts,
+				nonce: 0n,
+				affiliateAmount: 0n,
+				creditAmount: 100n * 10n ** 18n,
+				partsHash,
+			})
+
+			// Signed over requestId + 1 — recovers to a different signer on-chain
+			const now = (await ethers.provider.getBlock("latest"))!.timestamp
+			const valSig = await signValidatorAccelerateApproval(expressProvider, validator1, {
+				user: user.address,
+				requestId: requestId + 1n,
+				partsHash,
+				timestamp: now,
+				symmio: context.diamond,
+			})
+
+			await expect(
+				expressProvider
+					.connect(randomCaller)
+					.accelerateWithdraw(user.address, requestId, parts, offerData, encodeValidatorData([valSig], [now]), creditDataRaw),
+			).to.be.revertedWithCustomError(expressProvider, "InvalidValidator")
+		})
+
+		it("does not require validator signatures when minValidatorSignatures = 0", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, user, randomCaller } = fixture
+
+			const { parts, requestId, partsHash } = await acceptStandard(fixture)
+
+			const { offerData, creditDataRaw } = await buildAccelerateCall(fixture, {
+				user: user.address,
+				requestId,
+				parts,
+				nonce: 0n,
+				affiliateAmount: 0n,
+				creditAmount: 100n * 10n ** 18n,
+				partsHash,
+			})
+
+			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw)
+
+			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).status).to.equal(STATUS_PROCESSED)
 		})
 	})
 }

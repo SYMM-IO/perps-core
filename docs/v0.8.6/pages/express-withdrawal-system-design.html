@@ -577,6 +577,7 @@
     participant Caller as Caller&lt;br/&gt;(bot / frontend / user)
     participant SYMMIO
     participant Express as ExpressProvider
+    participant Validators
 
     User-&gt;&gt;Bot: Request withdrawal options
     Bot-&gt;&gt;Bot: Check cap -- cap is full
@@ -592,8 +593,11 @@
         Bot-&gt;&gt;Express: creditLineTotalDebt(affiliate)
         alt Cap now has room
             Bot-&gt;&gt;Bot: Sign AccelerateOffer (affiliateAmount, creditAmount, accelerationFee)
-            Caller-&gt;&gt;Express: accelerateWithdraw(user, reqId, parts, offer, creditData)
+            Bot-&gt;&gt;Validators: Request ValidatorAccelerateApproval (if minSigs &gt; 0)
+            Validators--&gt;&gt;Bot: Signatures + timestamps (must postdate last balance credit)
+            Caller-&gt;&gt;Express: accelerateWithdraw(user, reqId, parts, offer, validatorData, creditData)
             Express-&gt;&gt;Express: Verify SIGNER_ROLE signature
+            Express-&gt;&gt;Express: Verify validator quorum + freshness (if minSigs &gt; 0)
             Express-&gt;&gt;Express: reserveDebt (cap check -- atomic revert if still full)
             Express-&gt;&gt;Express: Check accelerationFee &lt;= maxAccelerationFee
             Express-&gt;&gt;Express: Lock pool funds, store accelerationFee, optionType -&gt; WINDOWED
@@ -631,6 +635,11 @@
 						<li><code>accelerateNonces[user][requestId] == offer.nonce</code></li>
 						<li><code>keccak256(abi.encode(parts)) == info.partsHash</code></li>
 						<li>Offer signature recovers to a <code>SIGNER_ROLE</code> holder</li>
+						<li>
+							If <code>minValidatorSignatures(affiliate) &gt; 0</code>: a quorum of <code>ValidatorAccelerateApproval</code> signatures
+							over <code>(user, requestId, partsHash)</code>, each within <code>validatorApprovalTimeout</code> and each signed strictly
+							after <code>withdrawCooldownOf(user)</code> (see 7.6)
+						</li>
 						<li><code>offer.affiliateAmount + offer.creditAmount &lt;= info.expressAmount</code></li>
 						<li><code>offer.accelerationFee &lt;= info.maxAccelerationFee</code></li>
 						<li><code>info.fee + operatorFee + offer.accelerationFee &lt;= info.expressAmount</code></li>
@@ -1124,8 +1133,7 @@ verifyingContract: &lt;ExpressProvider proxy address&gt;
     address user,        // the withdrawing user
     uint256 nonce,       // must match the bot option nonce (ties to specific withdrawal)
     uint256 amount,      // SYMMIO request totalAmount (full request, not the express portion)
-    uint256 timestamp,   // when the validator signed (freshness check)
-    uint256 symmioNonce, // user's current nonce on SYMMIO (invalidates if user acts on SYMMIO)
+    uint256 timestamp,   // when the validator signed (freshness + must postdate the last balance credit)
     address symmio       // SYMMIO core address (cross-deployment replay protection)
 )
 </code></pre>
@@ -1133,6 +1141,24 @@ verifyingContract: &lt;ExpressProvider proxy address&gt;
 						Uses the same EIP-712 domain as the bot option (same contract, chain). The signature is additionally bound to the SYMMIO core
 						address so a validator approval signed for one deployment cannot be replayed against an Express Provider that integrates with
 						a different SYMMIO core.
+					</p>
+					<p>
+						<strong>Freshness binding (last balance credit):</strong> every approval must be signed <em>strictly after</em> the user's most
+						recent protocol-internal credit into their withdrawable balance, read from core as
+						<code>withdrawCooldownOf(user)</code> (core's <code>deallocateTimestamp</code>). Core stamps this timestamp on every
+						<code>deallocate</code> variant and on <code>internalTransferToBalance</code> -- the path realized PnL takes from a virtual
+						account into its parent sub-account's withdrawable balance. If new funds land after the validators signed, the approvals are
+						rejected with <code>StaleValidatorApproval</code> and must be re-issued against the post-credit state. External
+						<code>deposit()</code> does not stamp the timestamp and therefore does not invalidate approvals (deposits are not
+						protocol-generated PnL).
+					</p>
+					<p>
+						The timestamp is the right anchor because it tracks the withdrawable balance itself rather than trading activity. Under the
+						AccountLayer the withdrawing address is a sub-account: it holds funds but never trades, so no position, settlement, or
+						liquidation touches its own PartyA nonce -- all of that happens on its virtual accounts. What <em>does</em> move when realized
+						PnL becomes withdrawable is <code>deallocateTimestamp</code>, stamped on the receiving sub-account by
+						<code>internalTransferToBalance</code>. Binding to it invalidates an approval exactly when new funds enter the balance the
+						withdrawal draws from, and leaves it valid when unrelated trading occurs.
 					</p>
 					<p>
 						<strong>On-chain validation (in <code>onWithdrawRequest</code>):</strong>
@@ -1143,10 +1169,6 @@ verifyingContract: &lt;ExpressProvider proxy address&gt;
 							<code>minValidatorSignatures(address(0))</code> if affiliate-specific not set)
 						</li>
 						<li>
-							Verify <code>symmioNonce == ISymmio(symmio).nonceOfPartyA(user)</code> -- if the user acted on SYMMIO since validators
-							signed, the nonce won't match and the withdrawal is rejected
-						</li>
-						<li>
 							For each signature:
 							<ul>
 								<li>Reject future timestamps (<code>timestamp &gt; block.timestamp</code>)</li>
@@ -1154,7 +1176,11 @@ verifyingContract: &lt;ExpressProvider proxy address&gt;
 									Verify <code>block.timestamp - timestamp &lt;= validatorApprovalTimeout(affiliate)</code> (falls back to
 									<code>validatorApprovalTimeout(address(0))</code> if affiliate-specific not set, default 30s)
 								</li>
-								<li>Recover signer from EIP-712 digest (includes <code>symmioNonce</code>)</li>
+								<li>
+									Verify <code>timestamp &gt; ISymmio(symmio).withdrawCooldownOf(user)</code> -- the approval must postdate the last
+									credit into the user's withdrawable balance, else revert <code>StaleValidatorApproval</code>
+								</li>
+								<li>Recover signer from EIP-712 digest</li>
 								<li>
 									Verify signer is a valid validator for the affiliate via <code>isValidator(affiliate, signer)</code> -- checks
 									affiliate-specific registration first, then falls back to <code>address(0)</code> default
@@ -1165,6 +1191,34 @@ verifyingContract: &lt;ExpressProvider proxy address&gt;
 						<li>If any check fails -&gt; revert (withdrawal auto-rejected)</li>
 					</ol>
 					<p>When <code>minValidatorSignatures(affiliate) == 0</code> (and no default set), the validator check is skipped entirely.</p>
+					<p>
+						<strong>Accelerate approvals:</strong> when <code>minValidatorSignatures(affiliate) &gt; 0</code>, the same validator quorum is
+						also required on <code>accelerateWithdraw</code> (STANDARD -&gt; WINDOWED promotion), since the STANDARD accept path skips
+						validators. Validators sign a dedicated type over the frozen request:
+					</p>
+					<pre><code>ValidatorAccelerateApproval(
+    address user,        // the withdrawing user
+    uint256 requestId,   // the STANDARD request being accelerated
+    bytes32 partsHash,   // pinned parts of the frozen request
+    uint256 timestamp,   // when the validator signed (freshness + must postdate the last balance credit)
+    address symmio       // SYMMIO core address (cross-deployment replay protection)
+)
+</code></pre>
+					<p>
+						The <strong>same last-balance-credit freshness rule applies</strong>: each <code>timestamp</code> must satisfy
+						<code>timestamp &gt; ISymmio(symmio).withdrawCooldownOf(user)</code>, else <code>StaleValidatorApproval</code>. It is load-bearing
+						here. STANDARD acceptance skips validators entirely, so the accelerate approval is the first and only attestation the withdrawal
+						ever receives, and it gates the exact moment credit is advanced and pools are drained. Because
+						<code>accelerateWithdraw</code> is permissionless, without it a user could front-run their own acceleration with a deallocate and
+						have funds advanced against a state no validator inspected -- the <code>validatorApprovalTimeout</code> window alone does not
+						close that gap.
+					</p>
+					<p>
+						The approval binds <code>(user, requestId, partsHash)</code> rather than an amount because the frozen request already fixes the
+						payout: <code>requestWithdraw</code> debited the user&#39;s balance and pinned <code>partsHash</code> at creation, so later PnL
+						cannot enlarge this withdrawal. It is also deliberately not bound to <code>accelerateNonce</code>, preserving the
+						retry-on-cap-full behavior of the bot&#39;s <code>AccelerateOffer</code>.
+					</p>
 					<h3 id="7-7-provider-data-encoding">7.7 Provider Data Encoding</h3>
 					<p>
 						The signed offer, validator attestations, and credit data are packed into <code>providerData</code> which the user passes to
@@ -1189,8 +1243,7 @@ offerData = abi.encode(
 
 validatorData = abi.encode(
     bytes[]   signatures,   // validator EIP-712 signatures (ordered by ascending signer address)
-    uint256[] timestamps,   // corresponding signing timestamps
-    uint256   symmioNonce   // user's SYMMIO nonce at validation time (read via nonceOfPartyA)
+    uint256[] timestamps    // corresponding signing timestamps
 )
 
 creditDataRaw = abi.encode(CreditData) // empty bytes if creditAmount == 0
@@ -1574,7 +1627,8 @@ function claimOperatorFees(address affiliate, address to) external onlyRole(FEE_
 							Collect validator attestations: query N validator services registered for this affiliate (or the
 							<code>address(0)</code> default) with <code>(user, nonce, totalAmount)</code>. Each validator signs
 							<code>ValidatorApproval</code> using the full withdrawal <code>totalAmount</code> (not just the express portion) with
-							current timestamp.
+							current timestamp. The signing timestamp must be strictly later than core's <code>withdrawCooldownOf(user)</code> (the
+							user's last balance credit) or the approval will be rejected on-chain as stale.
 						</li>
 						<li>Read <code>affiliateConfigs(affiliate)</code> to get <code>feeRate</code> and <code>operatorFee</code></li>
 						<li>Compute <code>fee = expressAmount * feeRate / 10000</code></li>

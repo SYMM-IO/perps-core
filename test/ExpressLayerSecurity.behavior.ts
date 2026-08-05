@@ -180,7 +180,6 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 		maxUserFee?: bigint,
 		validatorSignatures?: string[],
 		validatorTimestamps?: number[],
-		symmioNonce?: bigint,
 		creditDataRaw?: string,
 		maxAccelerationFee?: bigint,
 	): string {
@@ -190,10 +189,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			["uint256", "uint8", "uint256", "address", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "bytes"],
 			[nonce, optionType, availableAt, affiliate, affiliateAmount, creditAmount, fee, operatorFee, muf, maf, deadline, signature],
 		)
-		const validatorData = ethers.AbiCoder.defaultAbiCoder().encode(
-			["bytes[]", "uint256[]", "uint256"],
-			[validatorSignatures ?? [], validatorTimestamps ?? [], symmioNonce ?? 0n],
-		)
+		const validatorData = ethers.AbiCoder.defaultAbiCoder().encode(["bytes[]", "uint256[]"], [validatorSignatures ?? [], validatorTimestamps ?? []])
 		return ethers.AbiCoder.defaultAbiCoder().encode(["bytes", "bytes", "bytes"], [offerData, validatorData, creditDataRaw ?? "0x"])
 	}
 
@@ -220,7 +216,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 	async function signValidatorApproval(
 		expressProvider: any,
 		validator: any,
-		params: { user: string; nonce: bigint; amount: bigint; timestamp: number; symmioNonce: bigint; symmio: string },
+		params: { user: string; nonce: bigint; amount: bigint; timestamp: number; symmio: string },
 	) {
 		const domain = {
 			name: "ExpressProvider",
@@ -234,7 +230,6 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				{ name: "nonce", type: "uint256" },
 				{ name: "amount", type: "uint256" },
 				{ name: "timestamp", type: "uint256" },
-				{ name: "symmioNonce", type: "uint256" },
 				{ name: "symmio", type: "address" },
 			],
 		}
@@ -252,7 +247,6 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			operatorFee?: bigint
 			validatorSignatures?: string[]
 			validatorTimestamps?: number[]
-			symmioNonce?: bigint
 		},
 	) {
 		const { botSigner, user, receiver, expressProvider, context, affiliate } = fixture
@@ -305,7 +299,6 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			undefined,
 			opts?.validatorSignatures,
 			opts?.validatorTimestamps,
-			opts?.symmioNonce,
 		)
 
 		return { parts, providerData, withdrawAmount, partsHash, deadline }
@@ -371,7 +364,6 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				nonce,
 				amount: withdrawAmount,
 				timestamp: validatorTimestamp,
-				symmioNonce: 0n,
 				symmio: context.diamond,
 			})
 			const valSig2 = await signValidatorApproval(expressProvider, v2, {
@@ -379,7 +371,6 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				nonce,
 				amount: withdrawAmount,
 				timestamp: validatorTimestamp,
-				symmioNonce: 0n,
 				symmio: context.diamond,
 			})
 
@@ -453,7 +444,6 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				nonce,
 				amount: withdrawAmount,
 				timestamp: now,
-				symmioNonce: 0n,
 				symmio: context.diamond,
 			})
 
@@ -518,7 +508,6 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				nonce,
 				amount: withdrawAmount,
 				timestamp: expiredTimestamp,
-				symmioNonce: 0n,
 				symmio: context.diamond,
 			})
 
@@ -595,7 +584,6 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				nonce,
 				amount: withdrawAmount,
 				timestamp: futureTimestamp,
-				symmioNonce: 0n,
 				symmio: context.diamond,
 			})
 
@@ -668,7 +656,6 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				nonce,
 				amount: withdrawAmount,
 				timestamp: now,
-				symmioNonce: 0n,
 				symmio: context.diamond,
 			})
 
@@ -734,7 +721,6 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				nonce,
 				amount: withdrawAmount,
 				timestamp: now,
-				symmioNonce: 0n,
 				symmio: context.diamond,
 			})
 			const sigB = await signValidatorApproval(expressProvider, vB, {
@@ -742,7 +728,6 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				nonce,
 				amount: withdrawAmount,
 				timestamp: now,
-				symmioNonce: 0n,
 				symmio: context.diamond,
 			})
 
@@ -817,7 +802,6 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				nonce,
 				amount: withdrawAmount,
 				timestamp: now,
-				symmioNonce: 0n,
 				symmio: context.diamond,
 			})
 			const valSig2 = await signValidatorApproval(expressProvider, validator1, {
@@ -825,7 +809,6 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				nonce,
 				amount: withdrawAmount,
 				timestamp: now,
-				symmioNonce: 0n,
 				symmio: context.diamond,
 			})
 
@@ -901,7 +884,6 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				nonce,
 				amount: wrongAmount,
 				timestamp: now,
-				symmioNonce: 0n,
 				symmio: context.diamond,
 			})
 
@@ -964,7 +946,6 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				nonce: wrongNonce,
 				amount: withdrawAmount,
 				timestamp: now,
-				symmioNonce: 0n,
 				symmio: context.diamond,
 			})
 
@@ -1140,7 +1121,6 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				nonce,
 				amount: withdrawAmount,
 				timestamp: now,
-				symmioNonce: 0n,
 				symmio: context.diamond,
 			})
 
@@ -1229,7 +1209,6 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 					nonce,
 					amount: withdrawAmount,
 					timestamp: now,
-					symmioNonce: 0n,
 					symmio: context.diamond,
 				})
 				valSigs.push(sig)
@@ -1294,7 +1273,6 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				nonce,
 				amount: withdrawAmount,
 				timestamp: now,
-				symmioNonce: 0n,
 				symmio: context.diamond,
 			})
 
@@ -1361,7 +1339,6 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				nonce,
 				amount: withdrawAmount,
 				timestamp: now,
-				symmioNonce: 0n,
 				symmio: context.diamond,
 			})
 
@@ -1431,7 +1408,6 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				nonce,
 				amount: withdrawAmount,
 				timestamp: now,
-				symmioNonce: 0n,
 				symmio: context.diamond,
 			})
 			const valSig2 = await signValidatorApproval(expressProvider, v2, {
@@ -1439,7 +1415,6 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				nonce,
 				amount: withdrawAmount,
 				timestamp: now,
-				symmioNonce: 0n,
 				symmio: context.diamond,
 			})
 
@@ -1523,7 +1498,6 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				nonce,
 				amount: withdrawAmount,
 				timestamp: validatorTimestamp,
-				symmioNonce: 0n,
 				symmio: context.diamond,
 			})
 
@@ -1550,7 +1524,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			expect(info.status).to.equal(1n) // ACCEPTED
 		})
 
-		it("should reject when symmioNonce changed (user acted on SYMMIO after validator signed)", async function () {
+		it("should reject approvals signed before the user's last balance credit (StaleValidatorApproval)", async function () {
 			const fixture = await deployFixture()
 			const { expressProvider, context, user } = fixture
 
@@ -1592,57 +1566,46 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				deadline,
 			})
 
-			// Validator signs with symmioNonce = 0
+			// Validator attests at `now` — before the user's PnL lands in the withdrawable balance
 			const valSig = await signValidatorApproval(expressProvider, validator1, {
 				user: user.address,
 				nonce,
 				amount: withdrawAmount,
 				timestamp: now,
-				symmioNonce: 0n,
 				symmio: context.diamond,
 			})
 
-			// The validator signed with symmioNonce=0 which matches the user's actual nonce.
-			// To trigger a mismatch, encode providerData with a WRONG symmioNonce (999).
-			// The real Symmio nonce (partyANonces) starts at 0 and only increments on settlement/liquidation.
-			const providerData = encodeProviderData(
-				nonce,
-				1,
-				0,
-				fixture.affiliate,
-				0n,
-				0n,
-				0n,
-				0n,
-				deadline,
-				signature,
-				undefined,
-				[valSig],
-				[now],
-				999n, // providerData claims symmioNonce=999 but actual nonce is 0 → mismatch
-			)
-
-			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)).to.be.revertedWithCustomError(
-				expressProvider,
-				"InvalidNonce",
-			)
-		})
-
-		it("should accept when symmioNonce matches current SYMMIO state", async function () {
-			const fixture = await deployFixture()
-			const { expressProvider, context, user } = fixture
-
-			const signers = await ethers.getSigners()
-			const validator1 = signers[6]
-			await expressProvider.setValidator(fixture.affiliate, validator1.address, true)
-			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 1)
-
-			// Trigger nonce changes on real Symmio via allocate+deallocate
+			// New funds enter the withdrawable balance AFTER the validator signed:
+			// deallocate stamps core's deallocateTimestamp (= withdrawCooldownOf(user)) forward.
 			await context.controlFacet.connect(context.signers.admin).grantRole(user.address, ethers.keccak256(ethers.toUtf8Bytes("BALANCE_SETTLER_ROLE")))
 			await context.accountFacet.connect(user).allocate(1n)
 			await context.accountFacet.connect(user).zeroUpnlDeallocate(1n)
-			// Read the current nonce
-			const currentNonce = await context.viewFacet.nonceOfPartyA(user.address)
+
+			const providerData = encodeProviderData(nonce, 1, 0, fixture.affiliate, 0n, 0n, 0n, 0n, deadline, signature, undefined, [valSig], [now])
+
+			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)).to.be.revertedWithCustomError(
+				expressProvider,
+				"StaleValidatorApproval",
+			)
+		})
+
+		it("should accept approvals signed after the user's last balance credit", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, context, user } = fixture
+
+			const signers = await ethers.getSigners()
+			const validator1 = signers[6]
+			await expressProvider.setValidator(fixture.affiliate, validator1.address, true)
+			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 1)
+
+			// Funds enter the withdrawable balance first (stamps deallocateTimestamp) ...
+			await context.controlFacet.connect(context.signers.admin).grantRole(user.address, ethers.keccak256(ethers.toUtf8Bytes("BALANCE_SETTLER_ROLE")))
+			await context.accountFacet.connect(user).allocate(1n)
+			await context.accountFacet.connect(user).zeroUpnlDeallocate(1n)
+
+			// ... then time passes and the validator attests the post-credit state
+			await ethers.provider.send("evm_increaseTime", [5])
+			await ethers.provider.send("evm_mine", [])
 
 			const withdrawAmount = 500n * 10n ** 18n
 			const expressAddr = await expressProvider.getAddress()
@@ -1677,32 +1640,15 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				deadline,
 			})
 
-			// Validator signs with matching symmioNonce
 			const valSig = await signValidatorApproval(expressProvider, validator1, {
 				user: user.address,
 				nonce,
 				amount: withdrawAmount,
 				timestamp: now,
-				symmioNonce: currentNonce,
 				symmio: context.diamond,
 			})
 
-			const providerData = encodeProviderData(
-				nonce,
-				1,
-				0,
-				fixture.affiliate,
-				0n,
-				0n,
-				0n,
-				0n,
-				deadline,
-				signature,
-				undefined,
-				[valSig],
-				[now],
-				currentNonce,
-			)
+			const providerData = encodeProviderData(nonce, 1, 0, fixture.affiliate, 0n, 0n, 0n, 0n, deadline, signature, undefined, [valSig], [now])
 
 			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
 
@@ -2427,7 +2373,6 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				undefined,
 				undefined,
 				undefined,
-				undefined,
 				creditDataRaw,
 			)
 
@@ -2481,7 +2426,6 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				0n,
 				deadline,
 				signature,
-				undefined,
 				undefined,
 				undefined,
 				undefined,
@@ -2548,7 +2492,6 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				0n,
 				deadline,
 				signature,
-				undefined,
 				undefined,
 				undefined,
 				undefined,
@@ -2628,7 +2571,6 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 				0n,
 				deadline,
 				signature,
-				undefined,
 				undefined,
 				undefined,
 				undefined,

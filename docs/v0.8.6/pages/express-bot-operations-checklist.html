@@ -1108,11 +1108,11 @@ What-if: same withdrawal as WINDOWED instead of STANDARD?
 					<pre><code>providerData = abi.encode(offerData, validatorData, creditDataRaw)
   where:
     offerData = abi.encode(WithdrawOffer struct — includes creditAmount field)
-    validatorData = abi.encode(bytes[] signatures, uint256[] timestamps, uint256 symmioNonce)
+    validatorData = abi.encode(bytes[] signatures, uint256[] timestamps)
     creditDataRaw = abi.encode(CreditData) if creditAmount &gt; 0, else empty bytes
 </code></pre>
 					<p>
-						If no validators needed, <code>validatorData = abi.encode(new bytes[](0), new uint256[](0), uint256(0))</code>. If no credit
+						If no validators needed, <code>validatorData = abi.encode(new bytes[](0), new uint256[](0))</code>. If no credit
 						used, <code>creditDataRaw</code> is empty bytes (<code>""</code>).
 					</p>
 					<h3 id="4-5-nonce-management">4.5 Nonce Management</h3>
@@ -1472,7 +1472,7 @@ Step 4 -- Bot sees: cooldownEndTime reached
 						</li>
 						<li>[ ] Validator sigs must be address-sorted ascending (dedup check)</li>
 						<li>[ ] Each validator timestamp must be within <code>validatorApprovalTimeout(affiliate)</code> of current time</li>
-						<li>[ ] Verify <code>symmioNonce</code> matches user's current SYMMIO nonce</li>
+						<li>[ ] Each validator timestamp must be strictly greater than <code>withdrawCooldownOf(user)</code> (the user's last balance credit)</li>
 						<li>[ ] Schedule <code>finalizeWithdrawRequest</code> at <code>cooldownEndTime</code></li>
 						<li>[ ] No <code>processWithdraw</code> needed (funds already sent)</li>
 						<li>[ ] Cannot be cancelled once accepted (funds already transferred)</li>
@@ -1531,14 +1531,15 @@ Step 1 — Bot sees: user requests an express withdrawal for 1,000 USDC
 
 Step 2 — Bot sees: validator attestations gathered
   Bot reads on-chain:
-    - ISymmio(symmio).nonceOfPartyA(user)                    = 42 (SYMMIO-side nonce)
+        - ISymmio(symmio).withdrawCooldownOf(user)              = T_credit (user's last balance credit)
     - block.timestamp                                       = T_now
   Bot requests ValidatorApproval signatures from 2 independent validators registered for aff (or address(0) default):
-    Each validator signs: ValidatorApproval(user, nonce=3, amount=totalAmount, timestamp=T_now, symmioNonce=42, symmio=&lt;SYMMIO core address&gt;)
+    Each validator signs: ValidatorApproval(user, nonce=3, amount=totalAmount, timestamp=T_now, symmio=&lt;SYMMIO core address&gt;)
     The `symmio` field binds each signature to a specific deployment, preventing replay across deployments.
   Bot checks:
     - Received 2 signatures?                                                       YES
     - Each signature timestamp within validatorApprovalTimeout(aff) (30s) of current time? YES
+        - Each timestamp &gt; withdrawCooldownOf(user) (no credit landed since signing)?    YES
     - Validator addresses sorted ascending (contract enforces DuplicateValidator)?   YES
     - Each signer is a registered validator (isValidator(aff, signer))?              YES
   Decision: All attestations valid. Sign the EIP-712 option with nonce=3, optionType=0,
@@ -1565,7 +1566,7 @@ Step 3 — Bot sees: user submits withdrawal (SYMMIO calls onWithdrawRequest —
      - Each signer is a registered validator (isValidator(aff, signer))?   YES
      - Each timestamp within 30s?   YES
      - Addresses sorted ascending?   YES
-     - nonceOfPartyA(user) == symmioNonce?   42 == 42?   YES (reverts InvalidNonce otherwise)
+          - Each timestamp &gt; withdrawCooldownOf(user)?   T_now &gt; T_credit?   YES (reverts StaleValidatorApproval otherwise)
   d. Lock general + affiliate pools (_lockFunds, SAME_TX path):
      - lockedGeneralBalance:          0 + 500 = 500
      - lockedAffiliateBalances[aff]:  0 + 300 = 300
@@ -2475,7 +2476,7 @@ Step 2 — Bot pre-computes: how will 15 USDC fee cascade across parts?
     V2--&gt;&gt;Bot: ValidatorApproval sig + timestamp
 
     Note over Bot: Sort sigs by signer address (ascending)
-    Note over Bot: Verify symmioNonce matches current
+        Note over Bot: Verify each timestamp postdates withdrawCooldownOf(user)
 
     Bot-&gt;&gt;U: Return option with validatorData
     U-&gt;&gt;S: initiateWithdraw(providerData)
@@ -2483,7 +2484,7 @@ Step 2 — Bot pre-computes: how will 15 USDC fee cascade across parts?
 
     Note over EP: Decode validatorData
     Note over EP: Check sig count &gt;= minValidatorSignatures(affiliate)
-    Note over EP: Check symmioNonce matches nonceOfPartyA(user)
+        Note over EP: Read withdrawCooldownOf(user) as the freshness floor
     Note over EP: For each sig: check freshness, isValidator, no duplicates
 </code></pre>
 					<h3 id="9-2-when-validators-are-required">9.2 When Validators Are Required</h3>
@@ -2516,7 +2517,7 @@ Step 2 — Bot pre-computes: how will 15 USDC fee cascade across parts?
 						The on-chain <code>VALIDATOR_APPROVAL_TYPEHASH</code> (defined in <code>LibAccessControl.sol</code>) is the keccak256 of the
 						exact string:
 					</p>
-					<pre><code>ValidatorApproval(address user,uint256 nonce,uint256 amount,uint256 timestamp,uint256 symmioNonce,address symmio)
+					<pre><code>ValidatorApproval(address user,uint256 nonce,uint256 amount,uint256 timestamp,address symmio)
 </code></pre>
 					<ul>
 						<li><code>user</code> -- withdrawing user</li>
@@ -2525,8 +2526,7 @@ Step 2 — Bot pre-computes: how will 15 USDC fee cascade across parts?
 							<code>amount</code> -- <code>withdrawRequest.totalAmount</code> (the <strong>full</strong> SYMMIO withdrawal request
 							total, NOT the express portion -- a suspend rolls back the entire request, so validators must sign the total amount)
 						</li>
-						<li><code>timestamp</code> -- when the validator signed (must be &lt;= <code>block.timestamp</code>)</li>
-						<li><code>symmioNonce</code> -- user's current nonce on SYMMIO (<code>nonceOfPartyA(user)</code>)</li>
+						<li><code>timestamp</code> -- when the validator signed; must be &lt;= <code>block.timestamp</code>, within <code>validatorApprovalTimeout(affiliate)</code>, and strictly greater than <code>withdrawCooldownOf(user)</code> (the user's last balance credit)</li>
 						<li>
 							<code>symmio</code> -- the SYMMIO core address bound into the signature; together with the EIP-712 domain separator (which
 							binds <code>address(this)</code> ExpressProvider) this prevents replay across deployments
@@ -2539,7 +2539,7 @@ Step 2 — Bot pre-computes: how will 15 USDC fee cascade across parts?
 							[ ] <code>signatures.length &gt;= minValidatorSignatures(affiliate)</code> (else
 							<code>InsufficientValidatorSignatures</code>; falls back to <code>minValidatorSignatures(address(0))</code> default)
 						</li>
-						<li>[ ] <code>symmioNonce == ISymmio(symmio).nonceOfPartyA(user)</code> (else <code>InvalidNonce</code>)</li>
+						<li>[ ] Read <code>ISymmio(symmio).withdrawCooldownOf(user)</code> once as the freshness floor for every signature</li>
 						<li>
 							[ ] For each signature:
 							<ul>
@@ -2550,6 +2550,10 @@ Step 2 — Bot pre-computes: how will 15 USDC fee cascade across parts?
 								<li>
 									[ ] <code>block.timestamp - timestamps[i] &lt;= validatorApprovalTimeout(affiliate)</code> (not stale, else
 									<code>ValidatorApprovalExpired</code>; falls back to <code>validatorApprovalTimeout(address(0))</code> default)
+								</li>
+								<li>
+									[ ] <code>timestamps[i] &gt; ISymmio(symmio).withdrawCooldownOf(user)</code> -- the approval must postdate the user's last
+									balance credit (else <code>StaleValidatorApproval</code>)
 								</li>
 								<li>
 									[ ] Recovered signer passes <code>isValidator(affiliate, signer)</code> — checks affiliate-specific registration
@@ -2613,8 +2617,8 @@ Step 2 — Bot pre-computes: how will 15 USDC fee cascade across parts?
 									<td>All validated, extras must also be valid</td>
 								</tr>
 								<tr>
-									<td>symmioNonce changed after signing</td>
-									<td>REJECTED (<code>InvalidNonce</code>)</td>
+									<td>Balance credit lands after signing</td>
+									<td>REJECTED (<code>StaleValidatorApproval</code>)</td>
 								</tr>
 								<tr>
 									<td>Affiliate has no per-affiliate validator config</td>
@@ -2648,7 +2652,7 @@ Setup:
     V3 at 0xCCC...3
   User: 0xAlice
     nonces[Alice]          = 5  (ExpressProvider nonce)
-    nonceOfPartyA(Alice)     = 12 (SYMMIO nonce)
+    withdrawCooldownOf(Alice) = 80 (timestamp of Alice's last balance credit)
     totalAmount = 1,000e6 (1,000 USDC -- the full SYMMIO request total; validators sign this, NOT the express portion)
 
 Step 1 — Bot sees: Alice requests SAME_TX withdrawal of 1,000 USDC
@@ -2656,26 +2660,26 @@ Step 1 — Bot sees: Alice requests SAME_TX withdrawal of 1,000 USDC
     minValidatorSignatures(affiliate)  = 2
     validatorApprovalTimeout(affiliate) = 30s
     nonces[Alice]           = 5
-    nonceOfPartyA(Alice)      = 12
+    withdrawCooldownOf(Alice) = 80
   Bot checks:
     SAME_TX requires minValidatorSignatures(affiliate) &gt; 0? YES (2 &gt; 0) — validators enabled
     Need &gt;= 2 valid signatures from distinct registered validators
   Decision: Request attestations from V1, V2 (and optionally V3 as backup)
 
 Step 2 — Bot sees: validator responses arrive
-  V1 responds at T=100: signs ValidatorApproval(Alice, 5, 1000e6, 100, 12, symmio) -&gt; sig_V1
-  V2 responds at T=102: signs ValidatorApproval(Alice, 5, 1000e6, 102, 12, symmio) -&gt; sig_V2
+  V1 responds at T=100: signs ValidatorApproval(Alice, 5, 1000e6, 100, symmio) -&gt; sig_V1
+  V2 responds at T=102: signs ValidatorApproval(Alice, 5, 1000e6, 102, symmio) -&gt; sig_V2
   Bot checks each response:
     V1 timestamp 100: is it in the past? YES (current time ~102)
     V2 timestamp 102: is it in the past? YES
     Both used nonce=5 matching nonces[Alice]? YES
-    Both used symmioNonce=12 matching nonceOfPartyA(Alice)? YES
+    Both timestamps &gt; withdrawCooldownOf(Alice) (80)? YES — 100 and 102 both postdate the last credit
     Both used amount=1000e6 matching withdrawRequest.totalAmount (full request)? YES
     Both used symmio = ExpressProvider's configured SYMMIO address? YES
     Count: 2 valid sigs &gt;= minValidatorSignatures(affiliate) (2)? YES
   Decision: Sort by signer address for encoding
     0xAAA...1 &lt; 0xBBB...2 -&gt; order: [sig_V1, sig_V2], timestamps: [100, 102]
-    Encode: validatorData = abi.encode([sig_V1, sig_V2], [100, 102], 12)
+    Encode: validatorData = abi.encode([sig_V1, sig_V2], [100, 102])
 
 Step 3 — Bot checks: will sigs still be valid when user submits?
   Bot estimates user will submit at ~T=115 (13s from now)
@@ -2688,15 +2692,15 @@ Step 3 — Bot checks: will sigs still be valid when user submits?
     -&gt; Reverts: ValidatorApprovalExpired
     -&gt; Bot should warn user: &quot;submit within 28s or sigs expire&quot;
 
-Step 4 — Bot considers: what if Alice acted on SYMMIO between T=102 and submission?
+Step 4 — Bot considers: what if new funds reach Alice's withdrawable balance before submission?
   Bot reads on-chain (just before returning option to Alice):
-    nonceOfPartyA(Alice) = 12 (unchanged) -&gt; safe to proceed
-  What if Alice makes a SYMMIO action (e.g., another withdrawal) after receiving the option?
-    SYMMIO nonce becomes 13
-    On submission: contract checks nonceOfPartyA(Alice) == symmioNonce (12)
-    12 != 13 -&gt; Reverts: InvalidNonce
-    -&gt; Bot must re-gather ALL attestations with symmioNonce = 13
-    -&gt; Previous validator sigs are permanently invalidated (wrong symmioNonce baked in)
+    withdrawCooldownOf(Alice) = 80 (unchanged) -&gt; safe to proceed
+  What if Alice deallocates realized PnL from a virtual account after receiving the option?
+    internalTransferToBalance stamps deallocateTimestamp[Alice] = 110
+    On submission: contract requires each timestamp &gt; withdrawCooldownOf(Alice) (110)
+    100 &lt;= 110 and 102 &lt;= 110 -&gt; Reverts: StaleValidatorApproval
+    -&gt; Bot must re-gather ALL attestations so validators can vet the newly added funds
+    -&gt; Previous validator sigs are permanently invalidated (they predate the credit)
 
   What if V2 is disabled via setValidator(affiliate, V2, false) between T=102 and submission?
     On submission: contract recovers signer from sig_V2, checks isValidator(affiliate, V2)
@@ -3185,7 +3189,13 @@ Step 4c -- Post-payout rollback (suspend after PROCESSED, rare):
 									<code>accelerationFee</code>.
 								</li>
 								<li>
-									Submit <code>accelerateWithdraw(user, requestId, parts, offerData, creditDataRaw)</code> from the bot account (or
+									If <code>minValidatorSignatures(affiliate) &gt; 0</code>, collect a fresh quorum of
+									<code>ValidatorAccelerateApproval</code> signatures over <code>(user, requestId, partsHash)</code> and encode them as
+									<code>validatorData</code>. Each must postdate <code>withdrawCooldownOf(user)</code>, so re-collect them if the user
+									deallocates between attempts.
+								</li>
+								<li>
+									Submit <code>accelerateWithdraw(user, requestId, parts, offerData, validatorData, creditDataRaw)</code> from the bot account (or
 									the affiliate's relay).
 								</li>
 							</ul>
@@ -3202,7 +3212,8 @@ Step 4c -- Post-payout rollback (suspend after PROCESSED, rare):
 								</li>
 								<li>
 									Fetch a fresh <code>AccelerateOffer</code> from the bot's API and have its own backend submit
-									<code>accelerateWithdraw</code>. The contract is permissionless; the bot signature alone is sufficient.
+									<code>accelerateWithdraw</code>. The contract is permissionless, so any sender works -- but when the affiliate requires validators, the submission must
+									carry a fresh <code>validatorData</code> quorum alongside the bot signature.
 								</li>
 							</ul>
 						</li>
