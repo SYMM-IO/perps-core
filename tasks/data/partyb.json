@@ -1,0 +1,15 @@
+[
+  {
+    "name": "SymmioPartyBProxy",
+    "address": "0x4c5859f0F772848b2D91F1D83E2Fe57935348029",
+    "constructorArguments": [
+      "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"
+    ]
+  },
+  {
+    "name": "SymmioPartyBImplementation",
+    "address": "0x809d550fca64d94Bd9F66E60752A544199cfAC3D",
+    "constructorArguments": []
+  }
+]
