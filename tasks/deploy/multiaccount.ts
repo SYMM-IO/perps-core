@@ -3,7 +3,7 @@ import { ArgumentType } from "hardhat/types/arguments"
 
 import { readData, writeData } from "../utils/fs.js"
 import { DEPLOYMENT_LOG_FILE } from "./constants.js"
-import { checksumAddress, deployProxyWithFallback, getConnection, getUpgradeAddresses } from "./helpers.js"
+import { checksumAddress, deployProxyWithFallback, getConnection, getUpgradeAddresses, requireArg } from "./helpers.js"
 import { logger } from "./logger.js"
 
 export const multiaccountTask = task("deploy:multiAccount", "Deploys the MultiAccount")
@@ -20,8 +20,8 @@ export const multiaccountTask = task("deploy:multiAccount", "Deploys the MultiAc
 			const { ethers, upgrades } = await getConnection(hre)
 			logger.section("MultiAccount Deployment")
 
-			const admin = checksumAddress(rawAdmin)
-			const symmioAddress = checksumAddress(rawSymmio)
+			const admin = checksumAddress(requireArg(rawAdmin, "admin"))
+			const symmioAddress = checksumAddress(requireArg(rawSymmio, "symmio-address"))
 
 			const [deployer] = await ethers.getSigners()
 

@@ -197,7 +197,18 @@ export function loadCheckpoint(chainId: number): DeploymentCheckpoint | null {
 
 		return checkpoint
 	} catch (err) {
+		// Returning null makes the caller start a fresh checkpoint, which then overwrites
+		// this file on the next save — destroying the only record of what was already
+		// deployed. Preserve the original before that can happen.
 		logger.error(`Failed to load checkpoint: ${err}`)
+		try {
+			const backupPath = `${checkpointPath}.corrupt-${Date.now()}`
+			fs.copyFileSync(checkpointPath, backupPath)
+			logger.error(`Preserved the unreadable checkpoint at: ${backupPath}`)
+			logger.error(`It may still contain deployed contract addresses — inspect it before re-running.`)
+		} catch (backupErr) {
+			logger.error(`Could not back up the unreadable checkpoint: ${backupErr}`)
+		}
 		return null
 	}
 }

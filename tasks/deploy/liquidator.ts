@@ -4,7 +4,7 @@ import { ArgumentType } from "hardhat/types/arguments"
 import { writeData } from "../utils/fs.js"
 import { DeploymentCheckpoint, createDeployedContract, saveCheckpoint } from "./checkpoint.js"
 import { LIQUIDATOR_DEPLOYMENT_FILE } from "./constants.js"
-import { checksumAddress, deployProxyWithFallback, getConnection, getUpgradeAddresses } from "./helpers.js"
+import { checksumAddress, deployProxyWithFallback, getConnection, getUpgradeAddresses, requireArg } from "./helpers.js"
 import { logger } from "./logger.js"
 
 type DeploySymmioLiquidatorArgs = {
@@ -84,6 +84,7 @@ export const liquidatorTask = task("deploy:symmioLiquidator", "Deploys the Symmi
 	.addOption({ name: "admin", description: "The admin address", type: ArgumentType.STRING_WITHOUT_DEFAULT, defaultValue: undefined })
 	.addOption({ name: "logData", description: "Write the deployed addresses to a data file", type: ArgumentType.BOOLEAN, defaultValue: true })
 	.setAction(async () => ({
-		default: async ({ symmioAddress, admin, logData }, hre) => deploySymmioLiquidator(hre, { symmioAddress, admin, logData }),
+		default: async ({ symmioAddress, admin, logData }, hre) =>
+			deploySymmioLiquidator(hre, { symmioAddress: requireArg(symmioAddress, "symmio-address"), admin: requireArg(admin, "admin"), logData }),
 	}))
 	.build()

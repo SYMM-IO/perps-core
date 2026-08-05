@@ -1,8 +1,9 @@
+import type { ContractTransactionResponse } from "ethers"
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
 import { ControlFacet } from "../../src/types/index.js"
-import { writeData } from "../utils/fs.js"
+import { setDataScope, writeData } from "../utils/fs.js"
 import { deployAccountLayerDiamond } from "./accountLayerDiamond.js"
 import {
 	loadCheckpoint,
@@ -22,9 +23,12 @@ import { getConnection } from "./helpers.js"
 import { setHyperEVMBigBlocks } from "./hyperevm.js"
 import { deployInstantLayer } from "./instantLayer.js"
 import { deploySymmioPartyB } from "./partyB.js"
+import { ProtocolConfig, loadProtocolConfig } from "./protocolConfig.js"
+import { assertMainnetSafe } from "./safety.js"
 import { deploySignatureVerifier } from "./signatureVerifier.js"
 import { deployStablecoin } from "./stablecoin.js"
 import { deploySymbolManager, grantSymbolManagerDiamondRoles, grantSymbolManagerOperatorRoles } from "./symbolManager.js"
+import { send } from "./tx.js"
 
 interface DeploymentResult {
 	contract: string
@@ -197,6 +201,13 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 		type: ArgumentType.STRING_WITHOUT_DEFAULT,
 		defaultValue: undefined,
 	})
+	.addOption({
+		name: "allowUnsafeMainnet",
+		description:
+			"Proceed on a mainnet chain even when unsafe settings (mock verifier, fake collateral, dummy affiliate, public deployer key) are active",
+		type: ArgumentType.BOOLEAN,
+		defaultValue: false,
+	})
 	.setAction(async () => ({
 		default: async (
 			{
@@ -211,6 +222,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 				deployMockVerifier,
 				registerDummyAffiliate: registerDummyAffiliateFlag,
 				setupInstantLayerTemplates: setupIlTemplatesFlag,
+				allowUnsafeMainnet,
 			},
 			hre,
 		) => {
@@ -231,6 +243,9 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			if (setupIlTemplatesFlag !== undefined) config.setupInstantLayerTemplates = setupIlTemplatesFlag === "true"
 			const network = connection.networkName || "unknown"
 			const chainId = (await ethers.provider.getNetwork()).chainId
+			// Scope deployment records to this chain so a localhost run cannot pollute the
+			// Arbitrum records that verify:all later reads.
+			setDataScope(chainId)
 
 			// Check for existing checkpoint (using chainId as primary identifier)
 			let checkpoint: DeploymentCheckpoint | null = null
@@ -240,6 +255,15 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 					displayCheckpointStatus(checkpoint)
 					console.log("Resuming deployment from checkpoint...")
 					console.log("Use --fresh=true flag to start a new deployment.\n")
+				}
+			} else {
+				// --fresh used to silently overwrite the existing checkpoint on the next
+				// save, destroying the record of contracts already deployed on this chain.
+				// Archive it into checkpoints/completed/ instead.
+				if (loadCheckpoint(Number(chainId))) {
+					console.log("--fresh: archiving the existing checkpoint before starting over...")
+					clearCheckpoint(Number(chainId), network)
+					console.log()
 				}
 			}
 
@@ -275,6 +299,24 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			console.log(`Muon Gateway Signers: ${config.muonGatewaySigners.length > 0 ? config.muonGatewaySigners.join(",") : "(not set)"}`)
 			console.log("=".repeat(80))
 			console.log()
+
+			// Protocol parameters and InstantLayer templates come from
+			// tasks/config/protocol-<chainId>.json, falling back to built-in defaults.
+			// Loaded up front so a malformed config fails before anything is deployed.
+			const protocolConfig = loadProtocolConfig(chainId)
+
+			// Refuse to deploy a testing-shaped configuration onto a real chain.
+			// Runs before any on-chain action so nothing is spent or half-created.
+			assertMainnetSafe(
+				chainId,
+				deployerAddress,
+				{
+					deployMockVerifier: config.deployMockVerifier,
+					collateralAddress: config.collateralAddress,
+					registerDummyAffiliate: config.registerDummyAffiliate,
+				},
+				allowUnsafeMainnet,
+			)
 
 			const deploymentResults: DeploymentResult[] = []
 			const deployedContracts: DeployedContracts = {}
@@ -347,7 +389,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 						console.log(`Diamond deployed at: ${deployedContracts.diamond}`)
 						deploymentResults.push({
 							contract: "Diamond",
-							address: deployedContracts.diamond,
+							address: deployedContracts.diamond!,
 							status: wasAlreadyComplete ? "skipped" : "success",
 							timestamp: new Date().toISOString(),
 						})
@@ -398,13 +440,13 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 								await mock.waitForDeployment()
 								await mock.deploymentTransaction()!.wait()
 								deployedContracts.signatureVerifier = await mock.getAddress()
-								checkpoint.contracts.signatureVerifier = createDeployedContract(deployedContracts.signatureVerifier)
+								checkpoint.contracts.signatureVerifier = createDeployedContract(deployedContracts.signatureVerifier!)
 								saveCheckpoint(checkpoint)
 							}
 							console.log(`MockMuonSignatureVerifier deployed at: ${deployedContracts.signatureVerifier}`)
 							deploymentResults.push({
 								contract: "MockMuonSignatureVerifier",
-								address: deployedContracts.signatureVerifier,
+								address: deployedContracts.signatureVerifier!,
 								status: wasAlreadyDeployed ? "skipped" : "success",
 								timestamp: new Date().toISOString(),
 							})
@@ -432,7 +474,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 							console.log(`MuonSignatureVerifier deployed at: ${deployedContracts.signatureVerifier}`)
 							deploymentResults.push({
 								contract: "MuonSignatureVerifier",
-								address: deployedContracts.signatureVerifier,
+								address: deployedContracts.signatureVerifier!,
 								status: wasAlreadyDeployed ? "skipped" : "success",
 								timestamp: new Date().toISOString(),
 							})
@@ -505,7 +547,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 						console.log(`InstantLayer deployed at: ${deployedContracts.instantLayer}`)
 						deploymentResults.push({
 							contract: "InstantLayer",
-							address: deployedContracts.instantLayer,
+							address: deployedContracts.instantLayer!,
 							status: wasAlreadyDeployed ? "skipped" : "success",
 							timestamp: new Date().toISOString(),
 						})
@@ -542,7 +584,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 							console.log(`SymmioPartyB deployed at: ${deployedContracts.symmioPartyB}`)
 							deploymentResults.push({
 								contract: "SymmioPartyB",
-								address: deployedContracts.symmioPartyB,
+								address: deployedContracts.symmioPartyB!,
 								status: wasAlreadyDeployed ? "skipped" : "success",
 								timestamp: new Date().toISOString(),
 							})
@@ -580,7 +622,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 							console.log(`SymmioSymbolManager deployed at: ${deployedContracts.symbolManager}`)
 							deploymentResults.push({
 								contract: "SymmioSymbolManager",
-								address: deployedContracts.symbolManager,
+								address: deployedContracts.symbolManager!,
 								status: wasAlreadyDeployed ? "skipped" : "success",
 								timestamp: new Date().toISOString(),
 							})
@@ -618,7 +660,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 				order: 7,
 				run: async () => {
 					if (!checkpoint.setupComplete?.systemRoles) {
-						await setupSystem(hre, deployedContracts, config, checkpoint)
+						await setupSystem(hre, deployedContracts, config, checkpoint, protocolConfig)
 						checkpoint.setupComplete = checkpoint.setupComplete || {}
 						checkpoint.setupComplete.systemRoles = true
 						saveCheckpoint(checkpoint)
@@ -636,7 +678,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 					order: 8,
 					run: async () => {
 						if (!checkpoint.setupComplete?.instantLayerTemplates) {
-							await setupInstantLayerTemplates(hre, deployedContracts, checkpoint)
+							await setupInstantLayerTemplates(hre, deployedContracts, checkpoint, protocolConfig)
 							checkpoint.setupComplete = checkpoint.setupComplete || {}
 							checkpoint.setupComplete.instantLayerTemplates = true
 							saveCheckpoint(checkpoint)
@@ -693,16 +735,25 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 				run: async () => {
 					const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", deployedContracts.diamond!)
 					await checkpointedStep(checkpoint, "setup.transferOwnership", "Transferring ownership to admin", async () => {
-						await controlFacet.connect(deployer).transferOwnership(config.admin)
+						await send(controlFacet.connect(deployer).transferOwnership(config.admin), "transferOwnership")
 					})
 					if (config.admin.toLowerCase() === deployer.address.toLowerCase()) {
 						await checkpointedStep(checkpoint, "setup.acceptOwnership", "Accepting ownership transfer (admin = deployer)", async () => {
-							await controlFacet.connect(deployer).acceptOwnership()
+							await send(controlFacet.connect(deployer).acceptOwnership(), "acceptOwnership")
 						})
 					} else {
 						console.log(`  ⏭ Admin must call acceptOwnership() to finalize: ${config.admin}`)
 					}
 					console.log()
+				},
+			})
+
+			await runDeploymentStep(checkpoint, {
+				id: "revokeDeployerPrivileges",
+				title: "Revoking deployer privileges",
+				order: 11,
+				run: async () => {
+					await revokeDeployerPrivileges(hre, deployedContracts, config, checkpoint, deployerAddress)
 				},
 			})
 
@@ -725,6 +776,25 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			clearCheckpoint(Number(chainId), network)
 			console.log("Checkpoint cleared - deployment complete!")
 
+			// --verify used to be declared and destructured but never acted on, so an
+			// operator passing it shipped an entirely unverified deployment while the
+			// summary still looked green. Run the real verification task.
+			if (verify) {
+				console.log()
+				console.log("Running block-explorer verification (--verify)...")
+				try {
+					await hre.tasks.getTask("verify:all").run({ skip: 0, retryFailed: false })
+				} catch (err) {
+					console.error()
+					console.error("=".repeat(80))
+					console.error("DEPLOYMENT SUCCEEDED, BUT BLOCK-EXPLORER VERIFICATION FAILED")
+					console.error("=".repeat(80))
+					console.error(err instanceof Error ? err.message : String(err))
+					console.error(`Retry with: npx hardhat verify:all --retry-failed --network ${network}`)
+					throw err
+				}
+			}
+
 			return {
 				deployments: deployedContracts,
 				report,
@@ -736,8 +806,9 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 async function setupSystem(
 	hre: any,
 	deployedContracts: DeployedContracts,
-	config: ReturnType<typeof getEnvConfig>,
+	config: Awaited<ReturnType<typeof getEnvConfig>>,
 	checkpoint: DeploymentCheckpoint,
+	protocolConfig: ProtocolConfig,
 ) {
 	const { ethers } = await getConnection(hre)
 	const [deployer] = await ethers.getSigners()
@@ -764,11 +835,11 @@ async function setupSystem(
 
 	// Diamond admin setup
 	await checkpointedStep(checkpoint, "setup.setDeployerAdmin", "Granting DEFAULT_ADMIN_ROLE to deployer on Diamond", async () => {
-		await controlFacet.connect(deployer).setAdmin(deployerAddress)
+		await send(controlFacet.connect(deployer).setAdmin(deployerAddress), "setAdmin")
 	})
 
 	await checkpointedStep(checkpoint, "setup.setAdmin", "Setting admin on Diamond", async () => {
-		await controlFacet.connect(deployer).setAdmin(config.admin)
+		await send(controlFacet.connect(deployer).setAdmin(config.admin), "setAdmin")
 	})
 
 	// Grant roles to admin on Diamond (batch)
@@ -799,51 +870,77 @@ async function setupSystem(
 		"FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE",
 	]
 	await checkpointedBatch(checkpoint, "setup.diamondRoles", diamondRoles, "Granting roles to admin on Diamond", async role => {
-		await controlFacet.connect(deployer).grantRole(config.admin, roleHash(role))
+		await send(controlFacet.connect(deployer).grantRole(config.admin, roleHash(role)), "grantRole")
 	})
 
 	// AccountLayerDiamond roles on Diamond
 	await checkpointedStep(checkpoint, "setup.alRolesOnDiamond", "Granting roles to AccountLayerDiamond on Diamond", async () => {
-		await controlFacet.connect(deployer).grantRole(deployedContracts.accountLayerDiamond!, roleHash("SIGNER_ADMIN_ROLE"))
-		await controlFacet.connect(deployer).grantRole(deployedContracts.accountLayerDiamond!, roleHash("AFFILIATE_MANAGER_ROLE"))
-		await controlFacet.connect(deployer).grantRole(deployedContracts.accountLayerDiamond!, roleHash("BALANCE_SETTLER_ROLE"))
+		await send(controlFacet.connect(deployer).grantRole(deployedContracts.accountLayerDiamond!, roleHash("SIGNER_ADMIN_ROLE")), "grantRole")
+		await send(controlFacet.connect(deployer).grantRole(deployedContracts.accountLayerDiamond!, roleHash("AFFILIATE_MANAGER_ROLE")), "grantRole")
+		await send(controlFacet.connect(deployer).grantRole(deployedContracts.accountLayerDiamond!, roleHash("BALANCE_SETTLER_ROLE")), "grantRole")
 	})
 
 	// Register AccountLayer as system hook on Diamond
 	await checkpointedStep(checkpoint, "setup.registerHook", "Registering AccountLayer as system hook on Diamond", async () => {
-		await controlFacet.connect(deployer).registerHook(ethers.ZeroAddress, deployedContracts.accountLayerDiamond!)
+		await send(controlFacet.connect(deployer).registerHook(ethers.ZeroAddress, deployedContracts.accountLayerDiamond!), "registerHook")
 	})
 
 	// InstantLayer role on Diamond
 	await checkpointedStep(checkpoint, "setup.ilRoleOnDiamond", "Granting INSTANT_LAYER_ROLE to InstantLayer on Diamond", async () => {
-		await controlFacet.connect(deployer).grantRole(deployedContracts.instantLayer!, roleHash("INSTANT_LAYER_ROLE"))
+		await send(controlFacet.connect(deployer).grantRole(deployedContracts.instantLayer!, roleHash("INSTANT_LAYER_ROLE")), "grantRole")
 	})
 
 	// AccountLayerDiamond admin roles
 	await checkpointedStep(checkpoint, "setup.alDefaultAdmin", "Granting DEFAULT_ADMIN_ROLE on AccountLayerDiamond to admin", async () => {
-		await alControlFacet.connect(deployer).grantRole(config.admin, roleHash("DEFAULT_ADMIN_ROLE"))
+		await send(alControlFacet.connect(deployer).grantRole(config.admin, roleHash("DEFAULT_ADMIN_ROLE")), "grantRole")
 	})
 
 	await checkpointedStep(checkpoint, "setup.alAdminRoles", "Setting up AccountLayerDiamond admin roles", async () => {
-		await alControlFacet.connect(deployer).grantRole(config.admin, roleHash("SETTER_ROLE"))
-		await alControlFacet.connect(deployer).grantRole(config.admin, roleHash("APPROVER_ROLE"))
-		await alControlFacet.connect(deployer).grantRole(config.admin, roleHash("PAUSER_ROLE"))
-		await alControlFacet.connect(deployer).grantRole(config.admin, roleHash("UNPAUSER_ROLE"))
+		await send(alControlFacet.connect(deployer).grantRole(config.admin, roleHash("SETTER_ROLE")), "grantRole")
+		await send(alControlFacet.connect(deployer).grantRole(config.admin, roleHash("APPROVER_ROLE")), "grantRole")
+		await send(alControlFacet.connect(deployer).grantRole(config.admin, roleHash("PAUSER_ROLE")), "grantRole")
+		await send(alControlFacet.connect(deployer).grantRole(config.admin, roleHash("UNPAUSER_ROLE")), "grantRole")
 	})
+
+	// The AccountLayer is initialised with the deployer as symmioFeeReceiver, because the
+	// deployer must hold admin during setup. That left SYMMIO_FEE_RECEIVER silently ignored
+	// and protocol fees accruing to the deploy wallet. Correct it here.
+	// onlyRole() checks the exact role — DEFAULT_ADMIN_ROLE does not imply SETTER_ROLE — so
+	// the deployer needs SETTER_ROLE temporarily, and gives it straight back up.
+	if (config.symmioFeeReceiver && config.symmioFeeReceiver.toLowerCase() !== deployerAddress.toLowerCase()) {
+		const alViewFacet = await ethers.getContractAt(
+			"contracts/accountLayer/facets/View/ViewFacet.sol:ViewFacet",
+			deployedContracts.accountLayerDiamond!,
+		)
+		const currentReceiver = (await alViewFacet.symmioFeeReceiver()).toLowerCase()
+
+		if (currentReceiver !== config.symmioFeeReceiver.toLowerCase()) {
+			await checkpointedStep(checkpoint, "setup.alFeeReceiver", `Setting AccountLayer symmioFeeReceiver to ${config.symmioFeeReceiver}`, async () => {
+				await send(alControlFacet.connect(deployer).grantRole(deployerAddress, roleHash("SETTER_ROLE")), "grantRole(deployer SETTER_ROLE)")
+				await send(alControlFacet.connect(deployer).setSymmioFeeReceiver(config.symmioFeeReceiver), "setSymmioFeeReceiver")
+				await send(alControlFacet.connect(deployer).revokeRole(deployerAddress, roleHash("SETTER_ROLE")), "revokeRole(deployer SETTER_ROLE)")
+			})
+
+			const updated = (await alViewFacet.symmioFeeReceiver()).toLowerCase()
+			if (updated !== config.symmioFeeReceiver.toLowerCase()) {
+				throw new Error(`AccountLayer symmioFeeReceiver is ${updated}, expected ${config.symmioFeeReceiver.toLowerCase()}`)
+			}
+		}
+	}
 
 	// InstantLayer SIGNER_SETTER_ROLE on AccountLayerDiamond (allows InstantLayer to call setSigner)
 	await checkpointedStep(checkpoint, "setup.ilRoleOnAL", "Granting SIGNER_SETTER_ROLE on AccountLayerDiamond", async () => {
-		await alControlFacet.connect(deployer).grantRole(deployedContracts.instantLayer!, roleHash("SIGNER_SETTER_ROLE"))
+		await send(alControlFacet.connect(deployer).grantRole(deployedContracts.instantLayer!, roleHash("SIGNER_SETTER_ROLE")), "grantRole")
 	})
 
 	// Whitelist Symmio Core
 	await checkpointedStep(checkpoint, "setup.alWhitelistSymmio", "Whitelisting Symmio Core on AccountLayerDiamond", async () => {
-		await alControlFacet.connect(deployer).setWhitelistedSymmioCore(deployedContracts.diamond!, true)
+		await send(alControlFacet.connect(deployer).setWhitelistedSymmioCore(deployedContracts.diamond!, true), "setWhitelistedSymmioCore")
 	})
 
 	// InstantLayer AccountLayer
 	await checkpointedStep(checkpoint, "setup.ilSetAccountLayer", "Setting AccountLayer on InstantLayer", async () => {
-		await instantLayer.connect(deployer).setAccountLayer(deployedContracts.accountLayerDiamond!)
+		await send(instantLayer.connect(deployer).setAccountLayer(deployedContracts.accountLayerDiamond!), "setAccountLayer")
 	})
 
 	// MuonSignatureVerifier setup
@@ -853,7 +950,7 @@ async function setupSystem(
 			console.log("  Using MockMuonSignatureVerifier (no role grants needed)")
 
 			await checkpointedStep(checkpoint, "setup.setSignatureVerifier", "Setting MockMuonSignatureVerifier on Diamond", async () => {
-				await controlFacet.connect(deployer).setSignatureVerifierAddress(deployedContracts.signatureVerifier!)
+				await send(controlFacet.connect(deployer).setSignatureVerifierAddress(deployedContracts.signatureVerifier!), "setSignatureVerifierAddress")
 			})
 		} else {
 			const signatureVerifierDefaultAdminRole = await signatureVerifier.DEFAULT_ADMIN_ROLE()
@@ -863,18 +960,18 @@ async function setupSystem(
 
 			if (deployerIsVerifierAdmin) {
 				await checkpointedStep(checkpoint, "setup.msvDefaultAdmin", "Granting DEFAULT_ADMIN_ROLE on MuonSignatureVerifier to admin", async () => {
-					await signatureVerifier.connect(deployer).grantRole(signatureVerifierDefaultAdminRole, config.admin)
+					await send(signatureVerifier.connect(deployer).grantRole(signatureVerifierDefaultAdminRole, config.admin), "grantRole")
 				})
 
 				await checkpointedStep(checkpoint, "setup.msvSetterRole", "Granting SETTER_ROLE on MuonSignatureVerifier to admin", async () => {
-					await signatureVerifier.connect(deployer).grantRole(signatureVerifierSetterRole, config.admin)
+					await send(signatureVerifier.connect(deployer).grantRole(signatureVerifierSetterRole, config.admin), "grantRole")
 				})
 			} else {
 				console.log("  ⚠ Skipping verifier role grants: deployer is not DEFAULT_ADMIN_ROLE on MuonSignatureVerifier")
 			}
 
 			await checkpointedStep(checkpoint, "setup.setSignatureVerifier", "Setting MuonSignatureVerifier on Diamond", async () => {
-				await controlFacet.connect(deployer).setSignatureVerifierAddress(deployedContracts.signatureVerifier!)
+				await send(controlFacet.connect(deployer).setSignatureVerifierAddress(deployedContracts.signatureVerifier!), "setSignatureVerifierAddress")
 			})
 
 			const shouldSeedPublicKey = !!config.muonPublicKeyX || !!config.muonPublicKeyParity
@@ -894,10 +991,13 @@ async function setupSystem(
 							console.log("  ⏭ Muon public key already present on MuonSignatureVerifier")
 							return
 						}
-						await signatureVerifier.connect(deployer).addPublicKey({
-							x: config.muonPublicKeyX,
-							parity,
-						})
+						await send(
+							signatureVerifier.connect(deployer).addPublicKey({
+								x: config.muonPublicKeyX,
+								parity,
+							}),
+							"addPublicKey",
+						)
 					})
 				} else {
 					console.log("  ⚠ Skipping addPublicKey: both MUON_PUBLIC_KEY_X and MUON_PUBLIC_KEY_PARITY are required")
@@ -914,7 +1014,7 @@ async function setupSystem(
 					async signer => {
 						const existingSigners = (await signatureVerifier.getAllGatewaySigners()).map((s: string) => s.toLowerCase())
 						if (existingSigners.includes(signer.toLowerCase())) return
-						await signatureVerifier.connect(deployer).addGatewaySigner(signer)
+						await send(signatureVerifier.connect(deployer).addGatewaySigner(signer), "addGatewaySigner")
 					},
 				)
 			}
@@ -926,19 +1026,19 @@ async function setupSystem(
 	if (config.muonUpnlValidTime || config.muonPriceValidTime || shouldConfigureMuonIds) {
 		if (config.admin.toLowerCase() !== deployerAddress.toLowerCase()) {
 			await checkpointedStep(checkpoint, "setup.muonSetterOnDeployer", "Granting MUON_SETTER_ROLE to deployer for setup", async () => {
-				await controlFacet.connect(deployer).grantRole(deployerAddress, roleHash("MUON_SETTER_ROLE"))
+				await send(controlFacet.connect(deployer).grantRole(deployerAddress, roleHash("MUON_SETTER_ROLE")), "grantRole")
 			})
 		}
 	}
 
 	if (shouldConfigureMuonIds) {
 		await checkpointedStep(checkpoint, "setup.setMuonIds", "Setting Muon app ID on Diamond", async () => {
-			await controlFacet.connect(deployer).setMuonIds(config.muonAppId)
+			await send(controlFacet.connect(deployer).setMuonIds(config.muonAppId), "setMuonIds")
 		})
 	}
 
 	await checkpointedStep(checkpoint, "setup.setMuonConfig", "Setting Muon validity config on Diamond", async () => {
-		await controlFacet.connect(deployer).setMuonConfig(config.muonUpnlValidTime, config.muonPriceValidTime)
+		await send(controlFacet.connect(deployer).setMuonConfig(config.muonUpnlValidTime, config.muonPriceValidTime), "setMuonConfig")
 	})
 
 	// Muon verification via view/read calls
@@ -992,51 +1092,68 @@ async function setupSystem(
 
 	// Diamond system parameters
 	console.log("  Configuring Diamond system parameters...")
-	const parameterSetters: Array<{ key: string; name: string; action: () => Promise<void> }> = [
+	const params = protocolConfig.parameters
+	const parameterSetters: Array<{ key: string; name: string; action: () => Promise<ContractTransactionResponse> }> = [
 		{ key: "setup.setCollateral", name: "setCollateral", action: () => controlFacet.connect(deployer).setCollateral(deployedContracts.collateral!) },
 		{
 			key: "setup.setBalanceLimitPerUser",
 			name: "setBalanceLimitPerUser",
-			action: () => controlFacet.connect(deployer).setBalanceLimitPerUser(ethers.parseEther("10000")),
+			action: () => controlFacet.connect(deployer).setBalanceLimitPerUser(BigInt(params.balanceLimitPerUser)),
 		},
 		{
 			key: "setup.setMaxWithdrawParts",
 			name: "setMaxWithdrawParts",
-			action: () => controlFacet.connect(deployer).setMaxWithdrawParts(10),
+			action: () => controlFacet.connect(deployer).setMaxWithdrawParts(params.maxWithdrawParts),
 		},
-		{ key: "setup.setDeallocateCooldown", name: "setDeallocateCooldown", action: () => controlFacet.connect(deployer).setDeallocateCooldown(120) },
-		{ key: "setup.setSettlementCooldown", name: "setSettlementCooldown", action: () => controlFacet.connect(deployer).setSettlementCooldown(300) },
+		{
+			key: "setup.setDeallocateCooldown",
+			name: "setDeallocateCooldown",
+			action: () => controlFacet.connect(deployer).setDeallocateCooldown(params.deallocateCooldown),
+		},
+		{
+			key: "setup.setSettlementCooldown",
+			name: "setSettlementCooldown",
+			action: () => controlFacet.connect(deployer).setSettlementCooldown(params.settlementCooldown),
+		},
 		{
 			key: "setup.setDeallocateDebounceTime",
 			name: "setDeallocateDebounceTime",
-			action: () => controlFacet.connect(deployer).setDeallocateDebounceTime(120),
+			action: () => controlFacet.connect(deployer).setDeallocateDebounceTime(params.deallocateDebounceTime),
 		},
 		{
 			key: "setup.setLiquidatorShare",
 			name: "setLiquidatorShare",
-			action: () => controlFacet.connect(deployer).setLiquidatorShare(ethers.parseEther("0.1")),
+			action: () => controlFacet.connect(deployer).setLiquidatorShare(BigInt(params.liquidatorShare)),
 		},
-		{ key: "setup.setLiquidationTimeout", name: "setLiquidationTimeout", action: () => controlFacet.connect(deployer).setLiquidationTimeout(100) },
+		{
+			key: "setup.setLiquidationTimeout",
+			name: "setLiquidationTimeout",
+			action: () => controlFacet.connect(deployer).setLiquidationTimeout(params.liquidationTimeout),
+		},
 		{
 			key: "setup.setForceCloseCooldowns",
 			name: "setForceCloseCooldowns",
-			action: () => controlFacet.connect(deployer).setForceCloseCooldowns(300, 120),
+			action: () => controlFacet.connect(deployer).setForceCloseCooldowns(params.forceCloseCooldowns[0], params.forceCloseCooldowns[1]),
 		},
-		{ key: "setup.setForceCancelCooldown", name: "setForceCancelCooldown", action: () => controlFacet.connect(deployer).setForceCancelCooldown(300) },
+		{
+			key: "setup.setForceCancelCooldown",
+			name: "setForceCancelCooldown",
+			action: () => controlFacet.connect(deployer).setForceCancelCooldown(params.forceCancelCooldown),
+		},
 		{
 			key: "setup.setForceCancelCloseCooldown",
 			name: "setForceCancelCloseCooldown",
-			action: () => controlFacet.connect(deployer).setForceCancelCloseCooldown(300),
+			action: () => controlFacet.connect(deployer).setForceCancelCloseCooldown(params.forceCancelCloseCooldown),
 		},
 		{
 			key: "setup.setPendingQuotesValidLength",
 			name: "setPendingQuotesValidLength",
-			action: () => controlFacet.connect(deployer).setPendingQuotesValidLength(10),
+			action: () => controlFacet.connect(deployer).setPendingQuotesValidLength(params.pendingQuotesValidLength),
 		},
 		{
 			key: "setup.setMaxPartyAConnectionLimit",
 			name: "setMaxPartyAConnectionLimit",
-			action: () => controlFacet.connect(deployer).setMaxPartyAConnectionLimit(5),
+			action: () => controlFacet.connect(deployer).setMaxPartyAConnectionLimit(params.maxPartyAConnectionLimit),
 		},
 		{
 			key: "setup.setInvalidBridgedAmountsPool",
@@ -1050,36 +1167,37 @@ async function setupSystem(
 		},
 	]
 	for (const { key, name, action } of parameterSetters) {
-		const executed = await checkpointedStep(checkpoint, key, name, action, { indent: "    ", skipLog: true })
-		if (executed) console.log(`    ✓ ${name}`)
+		// send() awaits the receipt, so the checkpoint only records the step once the
+		// parameter is actually set on-chain — and it logs the hash and gas itself.
+		await checkpointedStep(checkpoint, key, name, () => send(action(), name).then(() => undefined), { indent: "    ", skipLog: true })
 	}
 
 	// InstantLayer roles and whitelist
 	await checkpointedStep(checkpoint, "setup.ilDefaultAdmin", "Granting DEFAULT_ADMIN_ROLE on InstantLayer to admin", async () => {
-		await instantLayer.connect(deployer).grantRole(instantLayerDefaultAdminRole, config.admin)
+		await send(instantLayer.connect(deployer).grantRole(instantLayerDefaultAdminRole, config.admin), "grantRole")
 	})
 
 	await checkpointedStep(checkpoint, "setup.ilGrantSetterRole", "Granting SETTER_ROLE on InstantLayer to admin", async () => {
-		await instantLayer.connect(deployer).grantRole(roleHash("SETTER_ROLE"), config.admin)
+		await send(instantLayer.connect(deployer).grantRole(roleHash("SETTER_ROLE"), config.admin), "grantRole")
 	})
 
 	await checkpointedStep(checkpoint, "setup.ilWhitelistDiamond", "Whitelisting Symmio (Diamond) on InstantLayer", async () => {
-		await instantLayer.connect(deployer).setTargetWhitelist(deployedContracts.diamond!, true)
+		await send(instantLayer.connect(deployer).setTargetWhitelist(deployedContracts.diamond!, true), "setTargetWhitelist")
 	})
 
 	await checkpointedStep(checkpoint, "setup.ilWhitelistAL", "Whitelisting AccountLayerDiamond on InstantLayer", async () => {
-		await instantLayer.connect(deployer).setTargetWhitelist(deployedContracts.accountLayerDiamond!, true)
+		await send(instantLayer.connect(deployer).setTargetWhitelist(deployedContracts.accountLayerDiamond!, true), "setTargetWhitelist")
 	})
 
 	// PartyB setup (if deployed)
 	if (deployedContracts.symmioPartyB) {
 		await checkpointedStep(checkpoint, "setup.registerPartyB", "Registering SymmioPartyB in Diamond", async () => {
-			await controlFacet.connect(deployer).registerPartyB(deployedContracts.symmioPartyB!)
+			await send(controlFacet.connect(deployer).registerPartyB(deployedContracts.symmioPartyB!), "registerPartyB")
 		})
 
 		if (config.setAdlEnabled) {
 			await checkpointedStep(checkpoint, "setup.setAdlEnabled", "Enabling ADL for SymmioPartyB on Diamond", async () => {
-				await controlFacet.connect(deployer).setADLEnabled(deployedContracts.symmioPartyB!, true)
+				await send(controlFacet.connect(deployer).setADLEnabled(deployedContracts.symmioPartyB!, true), "setADLEnabled")
 			})
 		}
 
@@ -1087,40 +1205,40 @@ async function setupSystem(
 		const partyBDefaultAdminRole = await symmioPartyB.DEFAULT_ADMIN_ROLE()
 
 		await checkpointedStep(checkpoint, "setup.pbDefaultAdmin", "Granting DEFAULT_ADMIN_ROLE to admin on SymmioPartyB", async () => {
-			await symmioPartyB.connect(deployer).grantRole(partyBDefaultAdminRole, config.admin)
+			await send(symmioPartyB.connect(deployer).grantRole(partyBDefaultAdminRole, config.admin), "grantRole")
 		})
 
 		await checkpointedStep(checkpoint, "setup.pbTrustedRole", "Granting TRUSTED_ROLE to InstantLayer on SymmioPartyB", async () => {
-			await symmioPartyB.connect(deployer).grantRole(roleHash("TRUSTED_ROLE"), deployedContracts.instantLayer!)
+			await send(symmioPartyB.connect(deployer).grantRole(roleHash("TRUSTED_ROLE"), deployedContracts.instantLayer!), "grantRole")
 		})
 
 		await checkpointedStep(checkpoint, "setup.pbManagerRole", "Granting MANAGER_ROLE to admin on SymmioPartyB", async () => {
-			await symmioPartyB.connect(deployer).grantRole(roleHash("MANAGER_ROLE"), config.admin)
+			await send(symmioPartyB.connect(deployer).grantRole(roleHash("MANAGER_ROLE"), config.admin), "grantRole")
 		})
 
 		await checkpointedStep(checkpoint, "setup.pbSetterRole", "Granting SETTER_ROLE to admin on SymmioPartyB", async () => {
-			await symmioPartyB.connect(deployer).grantRole(roleHash("SETTER_ROLE"), config.admin)
+			await send(symmioPartyB.connect(deployer).grantRole(roleHash("SETTER_ROLE"), config.admin), "grantRole")
 		})
 
 		await checkpointedStep(checkpoint, "setup.pbMulticastWhitelist", "Setting multicastWhitelist for InstantLayer on SymmioPartyB", async () => {
-			await symmioPartyB.connect(deployer).setMulticastWhitelist(deployedContracts.instantLayer!, true)
+			await send(symmioPartyB.connect(deployer).setMulticastWhitelist(deployedContracts.instantLayer!, true), "setMulticastWhitelist")
 		})
 
 		if (config.partyBSigner) {
 			await checkpointedStep(checkpoint, "setup.pbSetSigner", "Setting signer on SymmioPartyB", async () => {
-				await symmioPartyB.connect(deployer).setSigner(config.partyBSigner)
+				await send(symmioPartyB.connect(deployer).setSigner(config.partyBSigner), "setSigner")
 			})
 		}
 
 		await checkpointedStep(checkpoint, "setup.ilRegisterPartyB", "Registering SymmioPartyB on InstantLayer (also grants OPERATOR_ROLE)", async () => {
-			await instantLayer.connect(deployer).registerPartyBs([deployedContracts.symmioPartyB!])
+			await send(instantLayer.connect(deployer).registerPartyBs([deployedContracts.symmioPartyB!]), "registerPartyBs")
 		})
 	}
 
 	// SymbolManager setup (if deployed)
 	if (deployedContracts.symbolManager) {
 		await checkpointedStep(checkpoint, "setup.smGrantSymbolManagerRole", "Granting SYMBOL_MANAGER_ROLE to SymbolManager on Diamond", async () => {
-			await controlFacet.connect(deployer).grantRole(deployedContracts.symbolManager!, roleHash("SYMBOL_MANAGER_ROLE"))
+			await send(controlFacet.connect(deployer).grantRole(deployedContracts.symbolManager!, roleHash("SYMBOL_MANAGER_ROLE")), "grantRole")
 		})
 
 		await checkpointedStep(
@@ -1128,7 +1246,10 @@ async function setupSystem(
 			"setup.smGrantForceCloseGapRatioRole",
 			"Granting FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE to SymbolManager on Diamond",
 			async () => {
-				await controlFacet.connect(deployer).grantRole(deployedContracts.symbolManager!, roleHash("FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE"))
+				await send(
+					controlFacet.connect(deployer).grantRole(deployedContracts.symbolManager!, roleHash("FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE")),
+					"grantRole",
+				)
 			},
 		)
 
@@ -1137,11 +1258,11 @@ async function setupSystem(
 			const symbolManager = await ethers.getContractAt("SymmioSymbolManager", deployedContracts.symbolManager!)
 
 			await checkpointedStep(checkpoint, "setup.smGrantAdderRole", "Granting SYMBOL_ADDER_ROLE on SymbolManager to operator", async () => {
-				await symbolManager.connect(deployer).grantRole(roleHash("SYMBOL_ADDER_ROLE"), operatorAddress)
+				await send(symbolManager.connect(deployer).grantRole(roleHash("SYMBOL_ADDER_ROLE"), operatorAddress), "grantRole")
 			})
 
 			await checkpointedStep(checkpoint, "setup.smGrantRemoverRole", "Granting SYMBOL_REMOVER_ROLE on SymbolManager to operator", async () => {
-				await symbolManager.connect(deployer).grantRole(roleHash("SYMBOL_REMOVER_ROLE"), operatorAddress)
+				await send(symbolManager.connect(deployer).grantRole(roleHash("SYMBOL_REMOVER_ROLE"), operatorAddress), "grantRole")
 			})
 		}
 	}
@@ -1152,7 +1273,7 @@ async function setupSystem(
 async function registerDummyAffiliate(
 	hre: any,
 	deployedContracts: DeployedContracts,
-	config: ReturnType<typeof getEnvConfig>,
+	config: Awaited<ReturnType<typeof getEnvConfig>>,
 	checkpoint: DeploymentCheckpoint,
 ): Promise<string | null> {
 	const { ethers } = await getConnection(hre)
@@ -1180,15 +1301,15 @@ async function registerDummyAffiliate(
 	await checkpointedStep(checkpoint, "affiliate.register", "Registering dummy affiliate", async () => {
 		// Get predicted account manager address (view call, no tx) - only if not resuming
 		accountManagerAddress = await alAffiliateFacet.connect(deployer).requestToRegisterAffiliate.staticCall(affiliateData)
-		await alAffiliateFacet.connect(deployer).requestToRegisterAffiliate(affiliateData)
+		await send(alAffiliateFacet.connect(deployer).requestToRegisterAffiliate(affiliateData), "requestToRegisterAffiliate")
 		// Save the predicted address so we can use it on resume
-		checkpoint.contracts.accountManager = createDeployedContract(accountManagerAddress)
+		checkpoint.contracts.accountManager = createDeployedContract(accountManagerAddress!)
 		saveCheckpoint(checkpoint)
 	})
 
 	// Approve affiliate
 	await checkpointedStep(checkpoint, "affiliate.approve", "Approving affiliate", async () => {
-		await alAffiliateFacet.connect(deployer).approveAffiliate(accountManagerAddress!)
+		await send(alAffiliateFacet.connect(deployer).approveAffiliate(accountManagerAddress!), "approveAffiliate")
 	})
 
 	console.log(`  Dummy affiliate registered! AccountManager: ${accountManagerAddress}`)
@@ -1199,74 +1320,200 @@ async function registerDummyAffiliate(
 /**
  * Sets up InstantLayer templates for standard and custom-VA open/close flows.
  */
-async function setupInstantLayerTemplates(hre: any, deployedContracts: DeployedContracts, checkpoint: DeploymentCheckpoint): Promise<void> {
+async function setupInstantLayerTemplates(
+	hre: any,
+	deployedContracts: DeployedContracts,
+	checkpoint: DeploymentCheckpoint,
+	protocolConfig: ProtocolConfig,
+): Promise<void> {
 	const { ethers } = await getConnection(hre)
 	const [deployer] = await ethers.getSigners()
-
 	const instantLayer = await ethers.getContractAt("InstantLayer", deployedContracts.instantLayer!)
 
-	// InstantOpen Template (4 ops)
-	await checkpointedStep(checkpoint, "templates.instantOpen", "Adding InstantOpen template", async () => {
-		const instantOpenOps = [
-			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 0: addMarginToNextVA
-			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 1: sendQuote
-			{ sourceIndices: [1], insertionPoints: [0], sourceOffsets: [0] }, // op 2: lockQuote - quoteId from op 1
-			{ sourceIndices: [1], insertionPoints: [0], sourceOffsets: [0] }, // op 3: openPosition - quoteId from op 1
-		]
-		await instantLayer.connect(deployer).addTemplate("InstantOpen", instantOpenOps)
-	})
+	const templates = protocolConfig.instantLayerTemplates
+	console.log(`  Setting up ${templates.length} InstantLayer template(s)...`)
 
-	// Enable instantOpenMode for InstantOpen (template id=0) — skips wasteful pending balance round-trips
-	await checkpointedStep(checkpoint, "templates.instantOpenMode", "Enabling instantOpenMode on InstantOpen template", async () => {
-		await instantLayer.connect(deployer).setTemplateInstantOpenMode(0, true)
-	})
+	// Template ids are assigned in creation order and hedgers address templates BY ID, so
+	// the array order in the config is part of the contract with off-chain services.
+	for (const [templateId, template] of templates.entries()) {
+		await checkpointedStep(checkpoint, `templates.add.${templateId}`, `Adding template ${templateId}: ${template.name}`, async () => {
+			await send(instantLayer.connect(deployer).addTemplate(template.name, template.operations), `addTemplate(${template.name})`)
+		})
 
-	// InstantClose Template (2 ops)
-	await checkpointedStep(checkpoint, "templates.instantClose", "Adding InstantClose template", async () => {
-		const instantCloseOps = [
-			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 0: requestToClosePosition
-			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 1: fillCloseRequest
-		]
-		await instantLayer.connect(deployer).addTemplate("InstantClose", instantCloseOps)
-	})
+		if (template.instantOpenMode) {
+			await checkpointedStep(
+				checkpoint,
+				`templates.instantOpenMode.${templateId}`,
+				`Enabling instantOpenMode on template ${templateId}`,
+				async () => {
+					await send(instantLayer.connect(deployer).setTemplateInstantOpenMode(templateId, true), "setTemplateInstantOpenMode")
+				},
+			)
+		}
+	}
 
-	// InstantCloseWithAllocation Template (3 ops)
-	await checkpointedStep(checkpoint, "templates.instantCloseWithAllocation", "Adding InstantCloseWithAllocation template", async () => {
-		const instantCloseWithAllocationOps = [
-			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 0
-			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 1
-			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 2
-		]
-		await instantLayer.connect(deployer).addTemplate("InstantCloseWithAllocation", instantCloseWithAllocationOps)
-	})
+	// Assert the on-chain result matches the config — a template at the wrong id silently
+	// breaks every hedger that references it.
+	const onChain = await instantLayer.getTemplates(0, templates.length + 10)
+	if (onChain.length !== templates.length) {
+		throw new Error(`InstantLayer has ${onChain.length} templates, expected ${templates.length}`)
+	}
+	for (const [templateId, template] of templates.entries()) {
+		if (onChain[templateId].name !== template.name) {
+			throw new Error(`Template id ${templateId} is "${onChain[templateId].name}" on-chain, expected "${template.name}"`)
+		}
+		if (onChain[templateId].operations.length !== template.operations.length) {
+			throw new Error(
+				`Template ${template.name} (id ${templateId}) has ${onChain[templateId].operations.length} operations on-chain, expected ${template.operations.length}`,
+			)
+		}
+	}
 
-	// InstantOpenWithCustomVA Template (5 ops)
-	await checkpointedStep(checkpoint, "templates.instantOpenWithCustomVA", "Adding InstantOpenWithCustomVA template", async () => {
-		const instantOpenWithCustomVAOps = [
-			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 0: create custom VA
-			{ sourceIndices: [0], insertionPoints: [0], sourceOffsets: [0] }, // op 1: addMargin - VA from op 0
-			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 2: sendQuote - returns quoteId
-			{ sourceIndices: [2], insertionPoints: [0], sourceOffsets: [0] }, // op 3: lockQuote - quoteId from op 2
-			{ sourceIndices: [2], insertionPoints: [0], sourceOffsets: [0] }, // op 4: openPosition - quoteId from op 2
-		]
-		await instantLayer.connect(deployer).addTemplate("InstantOpenWithCustomVA", instantOpenWithCustomVAOps)
-	})
-
-	// InstantCloseWithParentAllocation Template (4 ops)
-	await checkpointedStep(checkpoint, "templates.instantCloseWithParentAllocation", "Adding InstantCloseWithParentAllocation template", async () => {
-		const instantCloseWithParentAllocationOps = [
-			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 0: request close
-			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 1: fill close
-			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 2: balanceOf(parent)
-			{ sourceIndices: [2], insertionPoints: [0], sourceOffsets: [0] }, // op 3: allocate - amount from op 2
-		]
-		await instantLayer.connect(deployer).addTemplate("InstantCloseWithParentAllocation", instantCloseWithParentAllocationOps)
-	})
-
-	console.log("  InstantLayer templates setup complete!")
+	console.log(`  InstantLayer templates setup complete — ${templates.length} verified on-chain.`)
 }
 
-function generateReport(deployments: DeploymentResult[], config: ReturnType<typeof getEnvConfig>): SystemDeploymentReport {
+/** Minimal OpenZeppelin AccessControl surface, used for the peripheral contracts. */
+const ACCESS_CONTROL_ABI = [
+	"function hasRole(bytes32 role, address account) view returns (bool)",
+	"function renounceRole(bytes32 role, address callerConfirmation)",
+]
+
+/**
+ * Hand every administrative privilege to config.admin and strip the deployer's.
+ *
+ * ControlFacet.setAdmin is purely additive — it sets hasRole[user][DEFAULT_ADMIN_ROLE]
+ * and revokes nothing — and LibAccessibility.isRoleAdmin treats ANY DEFAULT_ADMIN_ROLE
+ * holder as admin of every role. Without this step the deploy hot wallet keeps full
+ * control of the protocol indefinitely: it could grant itself LIQUIDATOR_ROLE, change the
+ * collateral, or add its own Muon public key and forge attestations. The same applies to
+ * the OpenZeppelin peripherals, where the deployer is the initial admin.
+ *
+ * Safety rule enforced throughout: never revoke a deployer role without first confirming
+ * on-chain that config.admin holds the equivalent role. Getting that backwards would
+ * leave the contract with no administrator at all.
+ */
+async function revokeDeployerPrivileges(
+	hre: any,
+	deployedContracts: DeployedContracts,
+	config: Awaited<ReturnType<typeof getEnvConfig>>,
+	checkpoint: DeploymentCheckpoint,
+	deployerAddress: string,
+): Promise<void> {
+	const { ethers } = await getConnection(hre)
+	const [deployer] = await ethers.getSigners()
+	const roleHash = (role: string) => ethers.keccak256(ethers.toUtf8Bytes(role))
+
+	if (config.admin.toLowerCase() === deployerAddress.toLowerCase()) {
+		console.log("  ⏭ ADMIN_PUBLIC_KEY is the deployer — no handover to perform.")
+		console.log("     ⚠ The deploy wallet remains protocol admin. For a production system, set")
+		console.log("       ADMIN_PUBLIC_KEY to your multisig and re-run so privileges are handed over.")
+		return
+	}
+
+	console.log(`  Handing administrative control to ${config.admin} and revoking the deployer's.`)
+
+	// ---- Core Diamond (custom role storage) --------------------------------------
+	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", deployedContracts.diamond!)
+	const viewFacet = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", deployedContracts.diamond!)
+
+	if (!(await viewFacet.hasRole(config.admin, roleHash("DEFAULT_ADMIN_ROLE")))) {
+		throw new Error(
+			`Refusing to revoke the deployer's DEFAULT_ADMIN_ROLE: ${config.admin} does not hold it on the Diamond. ` +
+				`Revoking now would leave the protocol with no administrator.`,
+		)
+	}
+
+	// Narrower roles first — DEFAULT_ADMIN_ROLE is what authorises these revocations,
+	// so it has to be the last thing the deployer gives up.
+	for (const role of ["MUON_SETTER_ROLE", "DEFAULT_ADMIN_ROLE"]) {
+		const hash = roleHash(role)
+		if (!(await viewFacet.hasRole(deployerAddress, hash))) {
+			console.log(`    ⏭ Deployer does not hold ${role} on the Diamond`)
+			continue
+		}
+		await checkpointedStep(checkpoint, `revoke.core.${role}`, `Revoking ${role} from deployer on Diamond`, async () => {
+			await send(controlFacet.connect(deployer).revokeRole(deployerAddress, hash), `revokeRole(${role})`)
+		})
+		if (await viewFacet.hasRole(deployerAddress, hash)) {
+			throw new Error(`${role} is still held by the deployer on the Diamond after revocation`)
+		}
+	}
+
+	// ---- AccountLayer Diamond (same custom role storage) --------------------------
+	if (deployedContracts.accountLayerDiamond) {
+		const alControl = await ethers.getContractAt(
+			"contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet",
+			deployedContracts.accountLayerDiamond,
+		)
+		const alView = await ethers.getContractAt("contracts/accountLayer/facets/View/ViewFacet.sol:ViewFacet", deployedContracts.accountLayerDiamond)
+		const hash = roleHash("DEFAULT_ADMIN_ROLE")
+
+		if (!(await alView.hasRole(config.admin, hash))) {
+			throw new Error(`Refusing to revoke deployer admin on the AccountLayer: ${config.admin} does not hold DEFAULT_ADMIN_ROLE there.`)
+		}
+		if (await alView.hasRole(deployerAddress, hash)) {
+			await checkpointedStep(
+				checkpoint,
+				"revoke.accountLayer.DEFAULT_ADMIN_ROLE",
+				"Revoking DEFAULT_ADMIN_ROLE from deployer on AccountLayer",
+				async () => {
+					await send(alControl.connect(deployer).revokeRole(deployerAddress, hash), "revokeRole(AccountLayer DEFAULT_ADMIN_ROLE)")
+				},
+			)
+			if (await alView.hasRole(deployerAddress, hash)) {
+				throw new Error("DEFAULT_ADMIN_ROLE is still held by the deployer on the AccountLayer after revocation")
+			}
+		} else {
+			console.log("    ⏭ Deployer does not hold DEFAULT_ADMIN_ROLE on the AccountLayer")
+		}
+	}
+
+	// ---- OpenZeppelin AccessControl peripherals -----------------------------------
+	// The mock verifier has no roles at all, so it is skipped.
+	const ozTargets: Array<{ label: string; address?: string }> = [
+		{ label: "MuonSignatureVerifier", address: config.deployMockVerifier ? undefined : deployedContracts.signatureVerifier },
+		{ label: "InstantLayer", address: deployedContracts.instantLayer },
+		{ label: "SymmioPartyB", address: deployedContracts.symmioPartyB },
+	]
+
+	for (const target of ozTargets) {
+		if (!target.address) continue
+		const contract = new ethers.Contract(target.address, ACCESS_CONTROL_ABI, deployer)
+
+		for (const role of ["DEFAULT_ADMIN_ROLE", "SETTER_ROLE"]) {
+			// OZ's DEFAULT_ADMIN_ROLE is bytes32(0); the named roles are keccak hashes.
+			const hash = role === "DEFAULT_ADMIN_ROLE" ? ethers.ZeroHash : roleHash(role)
+
+			let deployerHas: boolean
+			let adminHas: boolean
+			try {
+				deployerHas = await contract.hasRole(hash, deployerAddress)
+				adminHas = await contract.hasRole(hash, config.admin)
+			} catch {
+				// Contract does not implement this role — nothing to do.
+				continue
+			}
+
+			if (!deployerHas) continue
+			if (!adminHas) {
+				throw new Error(
+					`Refusing to renounce ${role} on ${target.label}: ${config.admin} does not hold it, which would leave the contract unmanaged.`,
+				)
+			}
+
+			await checkpointedStep(checkpoint, `revoke.${target.label}.${role}`, `Renouncing ${role} on ${target.label}`, async () => {
+				await send(contract.renounceRole(hash, deployerAddress), `renounceRole(${target.label}.${role})`)
+			})
+			if (await contract.hasRole(hash, deployerAddress)) {
+				throw new Error(`${role} is still held by the deployer on ${target.label} after renouncing`)
+			}
+		}
+	}
+
+	console.log(`  ✓ Deployer privileges revoked; ${config.admin} is now the sole administrator.`)
+}
+
+function generateReport(deployments: DeploymentResult[], config: Awaited<ReturnType<typeof getEnvConfig>>): SystemDeploymentReport {
 	const successfulDeployments = deployments.filter(d => d.status === "success").length
 	const failedDeployments = deployments.filter(d => d.status === "failed").length
 	const skippedDeployments = deployments.filter(d => d.status === "skipped").length

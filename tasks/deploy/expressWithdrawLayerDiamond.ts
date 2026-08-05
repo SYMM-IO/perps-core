@@ -40,7 +40,7 @@ export async function deployExpressProvider(hre: HardhatRuntimeEnvironment, conn
 		cuts.push({
 			facetAddress: await facet.getAddress(),
 			action: FacetCutAction.Add,
-			functionSelectors: getSelectors(ethers, facet).selectors,
+			functionSelectors: getSelectors(ethers, facet as any).selectors,
 		})
 		factories.push(factory)
 	}

@@ -28,7 +28,18 @@ yarn.lock
 addresses.json
 /abi.json
 .vscode
-tasks/data
+# tasks/data holds the deployment records (deployed.json, accountlayer.json,
+# deployment-report.json, archived checkpoints). Ignoring the whole directory meant the
+# only off-chain record of a mainnet deployment lived on one machine — and verify:all,
+# which reads these files, could never run from a fresh clone. Deployed addresses are
+# public on-chain, so they are tracked. Only the in-progress checkpoint is transient.
+tasks/data/*/checkpoints/checkpoint-*.json
+tasks/data/checkpoints/checkpoint-*.json
+tasks/data/*/verify-failed.json
+tasks/data/verify-failed.json
+# Local/simulated chains — not worth tracking.
+tasks/data/31337/
+tasks/data/1337/
 output.log
 serverLog.log
 detailedDebug.log
