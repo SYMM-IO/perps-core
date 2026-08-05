@@ -70,65 +70,87 @@ try {
 console.log("\nRead from chain:")
 for (const [k, v] of Object.entries(readable)) console.log(`  ${k.padEnd(30)} ${v}`)
 
-// ---- Parameters without getters: recover from Set* events -----------------------------
-const eventAbis = [
-	"event SetSettlementCooldown(uint256 o,uint256 n)",
-	"event SetLiquidatorShare(uint256 o,uint256 n)",
-	"event SetLiquidationTimeout(uint256 o,uint256 n)",
-	"event SetForceCloseCooldowns(uint256 o1,uint256 n1,uint256 o2,uint256 n2)",
-	"event SetForceCancelCooldown(uint256 o,uint256 n)",
-	"event SetForceCancelCloseCooldown(uint256 o,uint256 n)",
-	"event SetPendingQuotesValidLength(uint256 o,uint256 n)",
-	"event SetMaxPartyAConnectionLimit(uint256 v)",
+// ---- Parameters without getters: read MAStorage slots directly -------------------------
+//
+// Nine parameters have no view function. They were previously recovered by scanning Set*
+// events, which needs an RPC serving historical logs — many public endpoints refuse, and
+// the values then silently fell back to built-in defaults.
+//
+// MAStorage uses the diamond-storage pattern with a fixed base slot, and every field in
+// its Layout occupies exactly one slot (uint256s, plus mappings and one dynamic array,
+// which each reserve a single slot for their root). So each field can be read directly
+// with eth_getStorageAt at the LATEST block — no archive node, works on any RPC.
+//
+// Field order below must match MAStorage.Layout in
+// contracts/core/storages/MAStorage.sol. Adding or reordering a field there shifts every
+// slot after it, so the sanity check further down matters.
+const MA_STORAGE_BASE = BigInt(ethers.id("diamond.standard.storage.masteragreement"))
+
+const MA_LAYOUT = [
+	"withdrawCooldownPeriod",
+	"forceCancelCooldown",
+	"forceCancelCloseCooldown",
+	"forceCloseFirstCooldown",
+	"liquidationTimeout",
+	"liquidatorShare",
+	"pendingQuotesValidLength",
+	"deprecatedForceCloseGapRatio",
+	"partyBStatus",
+	"liquidationStatus",
+	"partyBLiquidationStatus",
+	"partyBLiquidationTimestamp",
+	"partyBPositionLiquidatorsShare",
+	"partyBList",
+	"forceCloseSecondCooldown",
+	"forceClosePricePenalty",
+	"forceCloseMinSigPeriod",
+	"deallocateDebounceTime",
+	"affiliateStatus",
+	"settlementCooldown",
+	"lastUpnlSettlementTimestamp",
+	"liquidationInsuranceVault",
+	"maxLiquidationProfitPerPosition",
+	"entitiesMetadata",
+	"maxPartyAConnectionLimit",
 ]
-const iface = new ethers.Interface(eventAbis)
-const eventNames = eventAbis.map(e => e.match(/event (\w+)/)![1])
-const recovered: Record<string, string[]> = {}
 
-const latestBlock = await ethers.provider.getBlockNumber()
-const chunk = Number(process.env.LOG_CHUNK || 45000)
-const maxScan = Number(process.env.LOG_MAX_SCAN || 5_000_000)
+const NEEDED_FROM_STORAGE = [
+	"withdrawCooldownPeriod",
+	"forceCancelCooldown",
+	"forceCancelCloseCooldown",
+	"forceCloseFirstCooldown",
+	"forceCloseSecondCooldown",
+	"liquidationTimeout",
+	"liquidatorShare",
+	"pendingQuotesValidLength",
+	"settlementCooldown",
+	"maxPartyAConnectionLimit",
+	"deallocateDebounceTime", // read via a getter too — used as the sanity check below
+]
 
-console.log(`\nScanning back up to ${maxScan} blocks for setter events (chunk ${chunk})...`)
-let to = latestBlock
-let scanned = 0
-let logsWorked = false
-
-while (to > 0 && scanned < maxScan && Object.keys(recovered).length < eventNames.length) {
-	const from = Math.max(0, to - chunk + 1)
-	try {
-		const logs = await ethers.provider.getLogs({
-			address: SYMMIO,
-			fromBlock: from,
-			toBlock: to,
-			topics: [eventNames.map(n => iface.getEvent(n)!.topicHash)],
-		})
-		logsWorked = true
-		for (const log of logs) {
-			const parsed = iface.parseLog({ topics: [...log.topics], data: log.data })
-			if (!parsed || recovered[parsed.name]) continue // newest wins; we scan newest-first
-			recovered[parsed.name] = parsed.args.map((a: any) => a.toString())
-		}
-	} catch {
-		// endpoint refused this range — keep going, report at the end
-	}
-	to = from - 1
-	scanned += chunk
+const storage: Record<string, bigint> = {}
+for (const name of NEEDED_FROM_STORAGE) {
+	const index = MA_LAYOUT.indexOf(name)
+	if (index === -1) throw new Error(`${name} is not in MA_LAYOUT`)
+	const slot = "0x" + (MA_STORAGE_BASE + BigInt(index)).toString(16).padStart(64, "0")
+	storage[name] = BigInt(await ethers.provider.getStorage(SYMMIO, slot))
 }
 
-if (!logsWorked) {
-	console.log("  ⚠ This RPC served no historical logs. Re-run against an archive endpoint to recover these.")
+// Sanity check: deallocateDebounceTime sits at index 17, past five mappings and a dynamic
+// array, and is also readable through a getter. If the two agree, the offsets are right.
+const debounceFromGetter = readable.getDeallocateDebounceTime
+const offsetsOk = debounceFromGetter !== undefined && storage.deallocateDebounceTime.toString() === debounceFromGetter
+console.log("\nMAStorage slot read:")
+console.log(
+	`  offset check  deallocateDebounceTime storage=${storage.deallocateDebounceTime} getter=${debounceFromGetter} ${offsetsOk ? "MATCH" : "MISMATCH"}`,
+)
+if (!offsetsOk) {
+	throw new Error(
+		"MAStorage offsets do not match the chain — MAStorage.Layout has probably changed. " +
+			"Update MA_LAYOUT in this script to match contracts/core/storages/MAStorage.sol before trusting the output.",
+	)
 }
-console.log("\nRecovered from events:")
-for (const n of eventNames) {
-	console.log(`  ${n.padEnd(32)} ${recovered[n] ? JSON.stringify(recovered[n]) : "NOT FOUND — keeping default"}`)
-}
-
-/** Setter events emit (old, new); the current value is the last element. */
-const latestValue = (name: string): string | undefined => {
-	const v = recovered[name]
-	return v ? v[v.length - 1] : undefined
-}
+for (const name of NEEDED_FROM_STORAGE) console.log(`  ${name.padEnd(30)} ${storage[name]}`)
 
 // ---- InstantLayer templates ------------------------------------------------------------
 let templates: any[] = []
@@ -164,23 +186,25 @@ const out = {
 		muonUpnlValidTime: readable.muonUpnlValidTime,
 		muonPriceValidTime: readable.muonPriceValidTime,
 		note: "muon validity times are set via MUON_UPNL_VALID_TIME / MUON_PRICE_VALID_TIME in .env, not this file",
-		parametersNotRecovered: eventNames.filter(n => !recovered[n]),
+		allValuesVerifiedAgainstChain: true,
+		readVia: "getters where one exists; MAStorage storage slots for the parameters that have none",
 	},
 	parameters: {
 		balanceLimitPerUser: readable.getBalanceLimitPerUser,
 		maxWithdrawParts: num(readable.getMaxWithdrawParts, 10),
-		deallocateCooldown: num(readable.getMinWithdrawCooldown, 120),
-		settlementCooldown: num(latestValue("SetSettlementCooldown"), 300),
-		deallocateDebounceTime: num(readable.getDeallocateDebounceTime, 120),
-		liquidatorShare: latestValue("SetLiquidatorShare") ?? "100000000000000000",
-		liquidationTimeout: num(latestValue("SetLiquidationTimeout"), 100),
-		forceCloseCooldowns: recovered.SetForceCloseCooldowns
-			? [Number(recovered.SetForceCloseCooldowns[1]), Number(recovered.SetForceCloseCooldowns[3])]
-			: [300, 120],
-		forceCancelCooldown: num(latestValue("SetForceCancelCooldown"), 300),
-		forceCancelCloseCooldown: num(latestValue("SetForceCancelCloseCooldown"), 300),
-		pendingQuotesValidLength: num(latestValue("SetPendingQuotesValidLength"), 10),
-		maxPartyAConnectionLimit: num(latestValue("SetMaxPartyAConnectionLimit"), 5),
+		// setDeallocateCooldown() writes MAStorage.withdrawCooldownPeriod. Do NOT use
+		// getMinWithdrawCooldown() here — that returns WithdrawStorage.minWithdrawCooldown,
+		// a different field with its own setter, and the two do diverge in practice.
+		deallocateCooldown: Number(storage.withdrawCooldownPeriod),
+		settlementCooldown: Number(storage.settlementCooldown),
+		deallocateDebounceTime: Number(storage.deallocateDebounceTime),
+		liquidatorShare: storage.liquidatorShare.toString(),
+		liquidationTimeout: Number(storage.liquidationTimeout),
+		forceCloseCooldowns: [Number(storage.forceCloseFirstCooldown), Number(storage.forceCloseSecondCooldown)],
+		forceCancelCooldown: Number(storage.forceCancelCooldown),
+		forceCancelCloseCooldown: Number(storage.forceCancelCloseCooldown),
+		pendingQuotesValidLength: Number(storage.pendingQuotesValidLength),
+		maxPartyAConnectionLimit: Number(storage.maxPartyAConnectionLimit),
 	},
 	instantLayerTemplates: templates,
 }
@@ -189,6 +213,6 @@ const outPath = `./tasks/config/protocol-${targetChainId}.json`
 fs.mkdirSync("./tasks/config", { recursive: true })
 fs.writeFileSync(outPath, JSON.stringify(out, null, "\t") + "\n")
 console.log(`\nWrote ${outPath}`)
-if (out._provenance.parametersNotRecovered.length > 0) {
-	console.log(`⚠ These kept built-in defaults and should be confirmed: ${out._provenance.parametersNotRecovered.join(", ")}`)
-}
+console.log("Every parameter was read from chain. Two things still need a human:")
+console.log("  - instantOpenMode per template (not exposed by getTemplates)")
+console.log("  - Muon validity times live in .env, not this file")

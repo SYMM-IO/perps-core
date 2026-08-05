@@ -274,12 +274,16 @@ That writes `tasks/config/protocol-42161.json`. Then confirm it matches:
 symmio config diff --network hyperevm --symmio 0x<diamond> --instant-layer 0x<il> --against 42161
 ```
 
-**Eight parameters have no on-chain getter** — `settlementCooldown`, `liquidatorShare`,
-`liquidationTimeout`, `forceCloseCooldowns`, `forceCancelCooldown`,
-`forceCancelCloseCooldown`, `pendingQuotesValidLength`, `maxPartyAConnectionLimit`. They are
-recoverable from their `Set*` events, which needs an RPC serving historical logs; many
-public endpoints refuse. Anything not recovered stays at the built-in default and is listed
-under `_provenance.UNVERIFIED_still_defaults` in the config file. Confirm those by hand.
+Parameters that have no view function are read directly from the `MAStorage` diamond
+storage slot, so this works against any RPC at the latest block — no archive node. The
+exporter cross-checks its slot offsets against a value it can also read through a getter,
+and refuses to write anything if they disagree (which is what would happen if
+`MAStorage.Layout` changed without the script being updated).
+
+One trap worth knowing: `setDeallocateCooldown()` writes `MAStorage.withdrawCooldownPeriod`,
+but `getMinWithdrawCooldown()` returns `WithdrawStorage.minWithdrawCooldown` — a different
+field with its own setter. They diverge in practice (on HyperEVM: 259200 and 0). Read
+`deallocateCooldown` from storage, not from that getter.
 
 `instantOpenMode` is also not exposed by `getTemplates` and must be set manually in the JSON.
 

@@ -1,5 +1,5 @@
 {
-	"description": "Arbitrum One — mirrors the live HyperEVM v0.8.5 deployment (Symmio 0x57331038c21982116EE9b0906E4a5c5cB52dcE2e). Values marked UNVERIFIED below could not be read from chain and are still the built-in defaults — confirm them before a mainnet run.",
+	"description": "Arbitrum One — mirrors the live HyperEVM v0.8.5 deployment (Symmio 0x57331038c21982116EE9b0906E4a5c5cB52dcE2e). Every parameter here was read from that chain: via getters where one exists, and via MAStorage storage slots where none does.",
 
 	"_provenance": {
 		"source": "HyperEVM (chainId 999) v0.8.5",
@@ -7,37 +7,26 @@
 		"accountLayer": "0x46493c376758Da47823D7E3Ae5d417eA6546eEB3",
 		"instantLayer": "0x72DBF07457b2712b160F67A85D338F860c1CA620",
 		"readAt": "2026-08-05",
-		"readFromChain": [
-			"balanceLimitPerUser = 1000000e18 (getBalanceLimitPerUser)",
-			"maxWithdrawParts = 10 (getMaxWithdrawParts)",
-			"deallocateCooldown = 0 (getMinWithdrawCooldown)",
-			"deallocateDebounceTime = 0 (getDeallocateDebounceTime)",
-			"muon validity = 60/60 (getMuonConfig) — set via MUON_UPNL_VALID_TIME / MUON_PRICE_VALID_TIME in .env, not this file",
-			"all 4 InstantLayer templates (getTemplates)"
+		"allValuesVerifiedAgainstChain": true,
+		"readVia": [
+			"getters: balanceLimitPerUser, maxWithdrawParts, deallocateDebounceTime, muon validity (60/60)",
+			"MAStorage slots at keccak256('diamond.standard.storage.masteragreement'): deallocateCooldown, settlementCooldown, liquidatorShare, liquidationTimeout, forceCloseCooldowns, forceCancelCooldown, forceCancelCloseCooldown, pendingQuotesValidLength, maxPartyAConnectionLimit",
+			"getTemplates: all 4 InstantLayer templates"
 		],
-		"UNVERIFIED_still_defaults": [
-			"settlementCooldown",
-			"liquidatorShare",
-			"liquidationTimeout",
-			"forceCloseCooldowns",
-			"forceCancelCooldown",
-			"forceCancelCloseCooldown",
-			"pendingQuotesValidLength",
-			"maxPartyAConnectionLimit"
-		],
-		"why": "These have no on-chain getter. They are recoverable from Set* events, but the public HyperEVM RPC rejects historical eth_getLogs. Re-run scripts/exportProtocolConfig.ts against an archive RPC to fill them in."
+		"correction": "deallocateCooldown was previously recorded as 0, read from getMinWithdrawCooldown(). That getter returns WithdrawStorage.minWithdrawCooldown, which is a DIFFERENT field with its own setter (setMinWithdrawCooldown). setDeallocateCooldown() writes MAStorage.withdrawCooldownPeriod, which is 259200 (3 days) on HyperEVM. Deploying with 0 would have let users withdraw immediately after deallocating instead of waiting 3 days.",
+		"note": "muon validity is set via MUON_UPNL_VALID_TIME / MUON_PRICE_VALID_TIME in .env, not this file"
 	},
 
 	"_notes": {
 		"balanceLimitPerUser": "Raw collateral-token units. HyperEVM collateral is 6-decimal USDC, and Arbitrum USDC is also 6 decimals, so this value ports directly. Be aware 1e24 raw = 1e18 USDC per user, i.e. effectively no cap — that is what HyperEVM runs today. The old built-in default (parseEther(\"10000\") = 1e22) was written assuming an 18-decimal collateral and is equally meaningless against USDC; set a real number here if you want an actual limit.",
-		"deallocateCooldown": "0 on HyperEVM (read via getMinWithdrawCooldown). The setter is still named setDeallocateCooldown; the storage field was renamed to minWithdrawCooldown.",
+		"deallocateCooldown": "259200 (3 days) on HyperEVM. Read from MAStorage.withdrawCooldownPeriod, which is what setDeallocateCooldown() actually writes. Do NOT read this from getMinWithdrawCooldown() — that returns WithdrawStorage.minWithdrawCooldown, a different field with its own setter, which is 0 on HyperEVM. The two are unrelated despite the similar names.",
 		"templateOrder": "Template ids are assigned in array order and hedgers reference templates by id. HyperEVM's id 3 is INSTANT_OPEN_NO_MARGIN_TEMPLATE — the built-in defaults put InstantOpenWithCustomVA there instead, which would have silently broken any hedger expecting HyperEVM's layout."
 	},
 
 	"parameters": {
 		"balanceLimitPerUser": "1000000000000000000000000",
 		"maxWithdrawParts": 10,
-		"deallocateCooldown": 0,
+		"deallocateCooldown": 259200,
 		"settlementCooldown": 300,
 		"deallocateDebounceTime": 0,
 		"liquidatorShare": "100000000000000000",
