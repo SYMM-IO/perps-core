@@ -24,6 +24,7 @@ export const CHAINS = {
 	iota: { chainId: 8822, name: "IOTA", rpc: "https://json-rpc.evm.iotaledger.net", explorer: "https://explorer.evm.iota.org" },
 	sei: { chainId: 1329, name: "Sei", rpc: "https://evm-rpc.sei-apis.com", explorer: "https://seitrace.com" },
 	coti: { chainId: 2632500, name: "COTI", rpc: "https://mainnet.coti.io/rpc", explorer: "https://mainnet.cotiscan.io" },
+	localhost: { chainId: 31337, name: "Local node", rpc: "http://127.0.0.1:8545", explorer: null },
 }
 
 /** Well-known collateral tokens, used to sanity-check COLLATERAL_ADDRESS. */
@@ -137,6 +138,23 @@ export function readDeploymentRecords(chainId) {
 		}
 	}
 	return out
+}
+
+/**
+ * The deployment report carries an unambiguous `addresses` map. The per-contract record
+ * files cannot be used for this: both deployed.json and accountlayer.json contain an entry
+ * literally named "Diamond", so looking up by name picks whichever was read first.
+ */
+export function readDeploymentReport(chainId) {
+	for (const candidate of [path.join(deploymentRecordDir(chainId), "deployment-report.json"), path.join("tasks", "data", "deployment-report.json")]) {
+		if (!fs.existsSync(candidate)) continue
+		try {
+			return JSON.parse(fs.readFileSync(candidate, "utf8"))
+		} catch {
+			return null
+		}
+	}
+	return null
 }
 
 export function readCheckpoint(chainId) {

@@ -7,7 +7,17 @@
 
 import { Contract } from "ethers"
 
-import { explorerAddressUrl, isMainnet, loadEnv, makeProvider, readCheckpoint, readDeploymentRecords, resolveDeployer, resolveNetwork } from "../lib/context.js"
+import {
+	explorerAddressUrl,
+	isMainnet,
+	loadEnv,
+	makeProvider,
+	readCheckpoint,
+	readDeploymentRecords,
+	readDeploymentReport,
+	resolveDeployer,
+	resolveNetwork,
+} from "../lib/context.js"
 import { blank, c, fail, info, kv, log, ok, skip, table, title, warn } from "../lib/ui.js"
 
 const LOUPE_ABI = ["function facets() view returns (tuple(address facetAddress, bytes4[] functionSelectors)[])"]
@@ -62,7 +72,9 @@ export async function status(args) {
 	}
 
 	// ── on-chain ────────────────────────────────────────────────────────────────
-	const diamond = args.diamond || findRecorded(records, ["Diamond", "SymmioDiamond"])
+	// Prefer the report's explicit address map — record files name both diamonds "Diamond".
+	const report = readDeploymentReport(chain.chainId)
+	const diamond = args.diamond || report?.addresses?.diamond || findRecorded(records, ["Diamond", "SymmioDiamond"])
 	if (!diamond) {
 		blank()
 		info("pass --diamond <address> to probe the deployment on-chain")
@@ -194,8 +206,44 @@ export async function status(args) {
 		skip("deployer address unknown (keystore) — cannot check for leftover privileges")
 	}
 
+	// Ownable ownership is separate from the role system, and `owner` is what authorises
+	// diamondCut. A deployment where the deployer still owns a diamond is not finished.
+	const OWNABLE_ABI = ["function owner() view returns (address)", "function pendingOwner() view returns (address)"]
+	const accountLayer = args["account-layer"] || report?.addresses?.accountLayerDiamond
+	for (const [label, addr] of [
+		["Diamond", diamond],
+		["AccountLayer", accountLayer],
+	]) {
+		if (!addr) continue
+		try {
+			const ownable = new Contract(addr, OWNABLE_ABI, provider)
+			const owner = await ownable.owner()
+			let pending = null
+			try {
+				pending = await ownable.pendingOwner()
+			} catch {
+				/* not all diamonds expose it */
+			}
+
+			if (deployer.address && owner.toLowerCase() === deployer.address.toLowerCase()) {
+				problems++
+				fail(`${label} is still owned by the DEPLOYER`, `${owner} — owner authorises diamondCut`)
+			} else if (admin && owner.toLowerCase() === admin.toLowerCase()) {
+				ok(`${label} owned by admin`, owner)
+			} else {
+				warn(`${label} owner is ${owner}`, "neither the deployer nor ADMIN_PUBLIC_KEY")
+			}
+
+			if (pending && pending !== "0x0000000000000000000000000000000000000000") {
+				warn(`${label} ownership transfer pending`, `${pending} must call acceptOwnership()`)
+			}
+		} catch {
+			warn(`could not read ${label} ownership`)
+		}
+	}
+
 	// templates
-	const instantLayer = args["instant-layer"] || findRecorded(records, ["InstantLayer"])
+	const instantLayer = args["instant-layer"] || report?.addresses?.instantLayer || findRecorded(records, ["InstantLayer"])
 	if (instantLayer) {
 		title("InstantLayer templates")
 		try {

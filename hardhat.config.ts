@@ -309,6 +309,14 @@ export default defineConfig({
 			type: "http",
 			url: process.env.HARDHAT_DOCKER_URL || "http://localhost:8545",
 		},
+		// A persistent local node (`npx hardhat node`). Unlike the in-process `default`
+		// network, state survives the task, so a deployment can be inspected afterwards.
+		localhost: {
+			type: "http",
+			chainId: 31337,
+			url: process.env.RPC_LOCALHOST || "http://127.0.0.1:8545",
+			accounts: [protocolAdminKey, migratorKey, upgradeOperatorKey, proposerKey].filter(Boolean) as string[],
+		},
 		bsc: createNetworkConfig("bsc", "https://bsc-rpc.publicnode.com"),
 		base: createNetworkConfig("base", "https://mainnet.base.org"),
 		sonic: createNetworkConfig("sonic", "https://rpc.soniclabs.com"),
