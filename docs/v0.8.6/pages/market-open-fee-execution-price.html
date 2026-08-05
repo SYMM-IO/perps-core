@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Market Open Fee on Execution Price - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+	</head>
+	<body class="doc-page">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="doc-topbar">
+			<a class="brand" href="../index.html"
+				><span class="brand-mark">8.6</span><span><strong>Symmio Docs</strong><small>v0.8.6 reference</small></span></a
+			>
+			<nav class="top-actions" aria-label="Page actions">
+				<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+			</nav>
+		</header>
+
+		<div class="reader-shell">
+			<aside class="doc-sidebar" aria-label="Documentation navigation">
+				<a class="button primary back-home" href="../index.html">Back to index</a>
+				<div class="side-card">
+					<p class="side-label">Docs</p>
+					<a class="side-link" href="../pages/express-withdrawal-system-design.html"
+						><small>Express Withdrawal</small><span>Express Withdrawal System Design</span></a
+					>
+					<a class="side-link" href="../pages/account-layer-ownership-delegation.html"
+						><small>AccountLayer</small><span>AccountLayer Delegated Creation &amp; Ownership Transfer</span></a
+					>
+					<a class="side-link" href="../pages/liquidation-funding-snapshot-fix.html"
+						><small>Liquidation</small><span>PartyA Liquidation Snapshot Flow</span></a
+					>
+					<a class="side-link" href="../pages/single-step-partya-liquidation.html"
+						><small>Liquidation</small><span>Single-Step PartyA Liquidation</span></a
+					>
+					<a class="side-link" href="../pages/affiliate-shutdown-flow.html"
+						><small>Clearing House</small><span>Affiliate Shutdown Flow</span></a
+					>
+					<a class="side-link" href="../pages/muon-upnl-validity-overrides.html"
+						><small>Muon</small><span>Muon UPNL Validity Overrides</span></a
+					>
+					<a class="side-link" href="../pages/solver-fees.html"><small>Fees</small><span>Solver Fees</span></a>
+					<a class="side-link" href="../pages/operational-fees.html"><small>Fees</small><span>Operational Fees</span></a>
+					<a class="side-link" href="../pages/symbol-adjustment.html"><small>Symbols</small><span>Symbol Corporate-Action Adjustment</span></a>
+					<a class="side-link" href="../pages/partya-liquidation-fee-recipient.html"
+						><small>Liquidation</small><span>PartyA Liquidation Fee Recipient Cleanup</span></a
+					>
+					<a class="side-link" href="../pages/balance-change-event-cleanup.html"
+						><small>Events &amp; Indexing</small><span>Allocated Balance Event Ledger</span></a
+					>
+					<a class="side-link" href="../pages/lazy-accumulated-funding.html"
+						><small>Funding</small><span>Lazy Accumulated Funding</span></a
+					>
+					<a class="side-link" href="../pages/partyb-allocation-suspension-gates.html"
+						><small>PartyB</small><span>Allocation Suspension Gates</span></a
+					>
+					<a class="side-link" href="../pages/cross-partyb-liquidation-reserve.html"
+						><small>Liquidation</small><span>Cross-PartyB Liquidation Reserve Enforcement</span></a
+					>
+					<a class="side-link" href="../pages/strict-deallocation.html"
+						><small>Accounts</small><span>Strict Deallocation</span></a
+					>
+					<a class="side-link" href="../pages/express-bot-operations-checklist.html"
+						><small>Express Withdrawal</small><span>Express Provider Bot Operations Checklist</span></a
+					>
+					<a class="side-link is-active" href="../pages/market-open-fee-execution-price.html"
+						><small>Fees</small><span>Market Open Fee on Execution Price</span></a
+					>
+				</div>
+			</aside>
+			<aside class="toc-panel side-toc" aria-label="Page navigation">
+				<div class="toc-card">
+					<p class="toc-title">On this page</p>
+					<a class="toc-link level-2" href="#the-gap">The Unpoliced Price</a>
+					<a class="toc-link level-2" href="#two-bases">Reserved and Executed</a>
+					<a class="toc-link level-2" href="#lifecycle">Fee Lifecycle</a>
+					<a class="toc-link level-2" href="#unchanged">What Did Not Change</a>
+					<a class="toc-link level-2" href="#integration">Integration Notes</a>
+				</div>
+			</aside>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">v0.8.6</a><span>/</span><strong>Fees</strong></nav>
+					<div class="reader-title-row">
+						<div>
+							<h1>Market Open Fee on Execution Price</h1>
+							<p class="hero-copy">
+								Market open trading fees were charged on the market price PartyA signed at request time. They are now charged on the
+								price PartyB actually opened at, which no party can set unilaterally.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<p>
+						A market quote carries two prices. <code>marketPrice</code> is the spot price PartyA signed when the quote was requested, and
+						<code>openedPrice</code> is the price PartyB filled at. Until this change the open trading fee was computed from
+						<code>marketPrice</code>. Close fees already used the executed <code>closedPrice</code>, so open fees were the only trading
+						fee in the protocol still priced off a request-time input.
+					</p>
+
+					<h2 id="the-gap">The Unpoliced Price</h2>
+					<p>
+						<code>marketPrice</code> reaches storage from PartyA's signed uPnL payload. On the normal path a Muon signature covers that
+						payload, so the value is attested. When PartyA is bound to a PartyB, <code>sendQuote</code> skips Muon verification
+						entirely &mdash; that is the point of binding &mdash; and the signed price is accepted as supplied.
+					</p>
+					<p>
+						A bound PartyA could therefore submit a market quote with <code>marketPrice</code> set to zero. The quote was otherwise
+						valid: <code>requestedOpenPrice</code>, quantity, and locked values were all normal, and every price guard on the open path
+						compares <code>openedPrice</code> against <code>requestedOpenPrice</code>, never against <code>marketPrice</code>. Only the
+						fee read the signed value.
+					</p>
+					<pre><code>openFee = quantity * marketPrice * tradingFee / 1e36
+        = quantity * 0            * tradingFee / 1e36
+        = 0</code></pre>
+					<p>
+						The position opened normally and the fee collector received nothing. Nothing on the open path detected this, because nothing
+						on the open path had a reason to look at <code>marketPrice</code>.
+					</p>
+					<aside class="callout callout-note">
+						<strong>The solver had no incentive to check.</strong>
+						PartyB chooses whether to fill, but the open fee is revenue for the fee collector, not for PartyB. A solver that filled a
+						zero-fee quote lost nothing and gained a trade, so leaving the check to solver diligence left it undone.
+					</aside>
+					<p>
+						Charging on <code>openedPrice</code> removes the input from PartyA's control. That price is supplied by PartyB at fill time
+						and is already bounded by <code>requestedOpenPrice</code> in the direction that matters &mdash; at or below it for a long, at
+						or above it for a short &mdash; so neither side can drive the fee to zero without also giving up the trade.
+					</p>
+
+					<h2 id="two-bases">Reserved and Executed</h2>
+					<p>The fee is now expressed as two bases over the same formula, differing only in which price they read.</p>
+					<ol>
+						<li>
+							<strong>Reserved</strong> uses <code>requestedOpenPrice</code> for limit quotes and <code>marketPrice</code> for market
+							quotes. This is what <code>sendQuote</code> debits from allocated balance and mirrors into
+							<code>partyAReservedOpenFees</code>.
+						</li>
+						<li>
+							<strong>Executed</strong> uses <code>requestedOpenPrice</code> for limit quotes and <code>openedPrice</code> for market
+							quotes. This is what the fee collector receives.
+						</li>
+					</ol>
+					<p>
+						Limit quotes read the same price on both sides, so their two bases are always equal and no adjustment ever occurs. The
+						split is only observable for market orders.
+					</p>
+
+					<h2 id="lifecycle">Fee Lifecycle</h2>
+					<p>
+						An unopened quote has no execution price, so the reserved basis is the only one that exists for a pending or locked quote.
+						The reservation stays on that basis for its whole life, and the difference is settled once, at open.
+					</p>
+					<ol>
+						<li><code>sendQuote</code> debits the reserved fee from allocated balance and records it as a reservation.</li>
+						<li>
+							<code>openPosition</code> writes <code>openedPrice</code>, then moves only the difference between reserved and executed on
+							allocated balance. A shortfall is debited as <code>PLATFORM_FEE_OUT</code>; an excess is credited back as
+							<code>PLATFORM_FEE_IN</code>.
+						</li>
+						<li>The reservation is released against the reserved amount, and the fee collector is credited the executed amount.</li>
+					</ol>
+					<p>
+						PartyA has then paid exactly the executed fee, and the reservation ledger has unwound exactly what it recorded. The
+						difference is applied before the caller verifies solvency, so a shortfall PartyA cannot afford reverts the entire open
+						rather than leaving the account short.
+					</p>
+					<h2 id="unchanged">What Did Not Change</h2>
+					<p>
+						Every path that hands an open fee back operates on a quote that never opened, so all of them keep using the reserved basis
+						and return exactly what <code>sendQuote</code> took:
+					</p>
+					<ol>
+						<li>Cancelling or expiring a pending quote, and force-cancelling a locked one.</li>
+						<li>PartyB unlocking a quote it had locked.</li>
+						<li>The unfilled remainder of a partially filled limit quote that is cancelled.</li>
+						<li>PartyA and PartyB liquidation of pending quotes, including clearing-house takeover and escrow accumulation.</li>
+						<li>Reservations rebuilt by <code>migrateQuotes</code>.</li>
+					</ol>
+					<p>
+						Limit orders are unaffected end to end. Partial fills are unaffected, because a market quote must be filled in full and so
+						never takes the partial-fill path.
+					</p>
+
+					<h2 id="integration">Integration Notes</h2>
+					<ol>
+						<li>
+							<code>TradingFeeCharged</code> with <code>TradingFeeType.OPEN</code> now carries the executed fee. Indexers that recomputed
+							the fee from <code>marketPrice</code> will disagree with the event for market orders and should read the event value.
+						</li>
+						<li>
+							<code>onFeeCharged</code> receives the same executed amount on both the affiliate and the system hook, so affiliate
+							revenue accounting matches what the collector received.
+						</li>
+						<li>
+							Opening a market position can now emit a <code>BalanceChangePartyA</code> event for PartyA. Consumers that assumed
+							<code>openPosition</code> never moved allocated balance for PartyA need to account for the adjustment.
+						</li>
+						<li>
+							A market open can revert on the fee where it previously could not, when the executed price is high enough that PartyA
+							cannot cover the shortfall. Solvers should size fills against the executed price rather than the signed one.
+						</li>
+					</ol>
+					<aside class="callout callout-note">
+						<strong>The reservation is still sized from the signed price.</strong>
+						A bound PartyA that signs a low market price reserves less than the trade will cost, so the shortfall is collected at open
+						instead. The fee is charged either way, but the open can fail late if the account cannot cover it by then.
+					</aside>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Protocol, operations, and integration notes.</span>
+		</footer>
+	</body>
+</html>

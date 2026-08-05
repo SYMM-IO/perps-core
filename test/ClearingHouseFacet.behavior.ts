@@ -9,7 +9,7 @@ import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
 import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
-import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
+import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import {
 	LiquidateCrossPartyBValidator,
 	TakeoverPartyALiquidationValidator,
@@ -23,7 +23,7 @@ import {
 } from "./models/validators/ClearingHouseValidators.js"
 import { decimal, getBlockTimestamp, getPriceFetcher, getTradingFeeForQuotes } from "./utils/Common.js"
 import { migratePartyBToCross } from "./utils/CrossPartyB.js"
-import { getDummyLiquidationSig } from "./utils/SignatureUtils.js"
+import { getDummyLiquidationSig, getDummySingleUpnlAndPriceSig } from "./utils/SignatureUtils.js"
 
 enum BalanceChangeType {
 	ALLOCATE,
@@ -1120,6 +1120,29 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 
 			// Allocate more for partyB to isolated buckets
 			await context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(decimal(500n), user.address)
+		})
+
+		it("should keep the reserved-fee basis for pending market quotes during takeover", async () => {
+			const marketQuoteId = BigInt(
+				await user.sendQuote(
+					marketQuoteRequestBuilder()
+						.upnlSig(getDummySingleUpnlAndPriceSig(decimal(9n, 17)))
+						.build(),
+				),
+			)
+			const pendingQuoteIds = await context.viewFacetQuote.getPartyAPendingQuotes(context.signers.user.address)
+			expect(pendingQuoteIds).to.include(marketQuoteId)
+			const expectedReservedFees = await getTradingFeeForQuotes(context, pendingQuoteIds)
+
+			await user.liquidateAndSetSymbolPrices([1n], [decimal(25n)], [1n])
+			await context.clearingHouseFacet.connect(context.signers.liquidator).takeoverPartyALiquidation(context.signers.user.address)
+
+			const reimbursementBefore = await context.viewFacet.partyAReimbursement(context.signers.user.address)
+			await context.clearingHouseFacet.connect(context.signers.liquidator).liquidatePendingPositionsForClearingHouse(context.signers.user.address, [])
+
+			const reimbursementAfter = await context.viewFacet.partyAReimbursement(context.signers.user.address)
+			expect(reimbursementAfter - reimbursementBefore).to.equal(expectedReservedFees)
+			expect((await context.viewFacetQuote.getQuote(marketQuoteId)).quoteStatus).to.equal(QuoteStatus.LIQUIDATED_PENDING)
 		})
 
 		describe("takeoverPartyALiquidation", () => {
@@ -2435,6 +2458,26 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 	 * the liquidation escrow. The clearing house can then distribute these funds
 	 * to partyA, partyB, or split between them.
 	 */
+	it("should escrow pending market fees at the reserved basis", async function () {
+		await hedger.lockQuote(1)
+		await hedger.openPosition(1)
+		await hedger.lockQuote(2)
+		await hedger.lockQuote(5)
+
+		const signedMarketPrice = decimal(9n, 17)
+		await user.requestToCancelQuote(3)
+		const marketQuoteId = await user.sendQuote(marketQuoteRequestBuilder().upnlSig(getDummySingleUpnlAndPriceSig(signedMarketPrice)).build())
+		const expectedFeesWithMarket = await getTradingFeeForQuotes(context, [2n, 4n, 5n, marketQuoteId])
+
+		await user.liquidateAndSetSymbolPrices([1n], [decimal(22n)], [1n])
+		await user.liquidatePendingPositions()
+		await user.liquidatePositions([1])
+		await user.settleLiquidation()
+
+		const userAddress = await context.signers.user.getAddress()
+		expect(await context.viewFacet.getLiquidationEscrow(userAddress)).to.be.equal(expectedFeesWithMarket)
+	})
+
 	describe("Distribute From Liquidation Escrow", async function () {
 		let escrowAmount: bigint
 		let expectedFees: bigint

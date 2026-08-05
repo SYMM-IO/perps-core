@@ -7,11 +7,12 @@ import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
 import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
-import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
+import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { AcceptCancelRequestValidator } from "./models/validators/AcceptCancelRequestValidator.js"
 import { CancelQuoteValidator } from "./models/validators/CancelQuoteValidator.js"
 import { OpenPositionValidator } from "./models/validators/OpenPositionValidator.js"
-import { decimal, getQuoteQuantity, pausePartyA, pausePartyB } from "./utils/Common.js"
+import { decimal, getOpenTradingFeeForQuoteWithFilledAmount, getQuoteQuantity, pausePartyA, pausePartyB } from "./utils/Common.js"
+import { getDummySingleUpnlAndPriceSig } from "./utils/SignatureUtils.js"
 
 export function shouldBehaveLikeCancelQuote(): void {
 	let context: RunContext, user: User, hedger: Hedger, hedger2: Hedger
@@ -79,6 +80,20 @@ export function shouldBehaveLikeCancelQuote(): void {
 		})
 	})
 
+	it("Should refund the reserved market fee when canceling a pending market quote", async function () {
+		const signedMarketPrice = decimal(9n, 17)
+		const quoteId = await user.sendQuote(marketQuoteRequestBuilder().upnlSig(getDummySingleUpnlAndPriceSig(signedMarketPrice)).build())
+		const quote = await context.viewFacetQuote.getQuote(quoteId)
+		const allocatedBefore = (await user.getBalanceInfo()).allocatedBalances
+		const reservedFee = await getOpenTradingFeeForQuoteWithFilledAmount(context, quoteId, quote.quantity)
+
+		await user.requestToCancelQuote(quoteId)
+
+		const allocatedAfter = (await user.getBalanceInfo()).allocatedBalances
+		expect(allocatedAfter - allocatedBefore).to.equal(reservedFee)
+		expect((await context.viewFacetQuote.getQuote(quoteId)).quoteStatus).to.equal(QuoteStatus.CANCELED)
+	})
+
 	it("Should cancel a expired pending quote", async function () {
 		const validator = new CancelQuoteValidator()
 		const beforeOut = await validator.before(context, {
@@ -93,6 +108,21 @@ export function shouldBehaveLikeCancelQuote(): void {
 			beforeOutput: beforeOut,
 			targetStatus: QuoteStatus.EXPIRED,
 		})
+	})
+
+	it("Should refund the reserved market fee when a pending market quote expires", async function () {
+		const signedMarketPrice = decimal(9n, 17)
+		const quoteId = await user.sendQuote(marketQuoteRequestBuilder().upnlSig(getDummySingleUpnlAndPriceSig(signedMarketPrice)).build())
+		const quote = await context.viewFacetQuote.getQuote(quoteId)
+		const allocatedBefore = (await user.getBalanceInfo()).allocatedBalances
+		const reservedFee = await getOpenTradingFeeForQuoteWithFilledAmount(context, quoteId, quote.quantity)
+
+		await time.increase(1000)
+		await user.requestToCancelQuote(quoteId)
+
+		const allocatedAfter = (await user.getBalanceInfo()).allocatedBalances
+		expect(allocatedAfter - allocatedBefore).to.equal(reservedFee)
+		expect((await context.viewFacetQuote.getQuote(quoteId)).quoteStatus).to.equal(QuoteStatus.EXPIRED)
 	})
 
 	describe("Should cancel a locked quote", async function () {
