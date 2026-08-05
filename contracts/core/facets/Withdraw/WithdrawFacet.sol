@@ -36,7 +36,7 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 		WithdrawReceiverPart[] memory parts,
 		bool speedUp,
 		bytes memory data
-	) external notSuspended(LibSigner.getSigner()) nonReentrant returns (uint256 requestId, uint256 cooldownEndTime) {
+	) external notSuspended(LibSigner.getSigner()) whenNotAccountingPaused nonReentrant returns (uint256 requestId, uint256 cooldownEndTime) {
 		(requestId, cooldownEndTime) = WithdrawFacetImpl.initiateWithdraw(parts, speedUp, data);
 		emit WithdrawInitiated(requestId, LibSigner.getSigner(), parts, speedUp, data, cooldownEndTime);
 	}
@@ -70,7 +70,11 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	/// @param user The owner of the withdrawal request.
 	/// @param requestId ID of the withdrawal request.
 	/// @param amount Amount of collateral to advance.
-	function advanceWithdraw(address user, uint256 requestId, uint256 amount) external notSuspended(user) whenNotWithdrawAdvancePaused {
+	function advanceWithdraw(
+		address user,
+		uint256 requestId,
+		uint256 amount
+	) external notSuspended(user) whenNotAccountingPaused whenNotWithdrawAdvancePaused {
 		WithdrawFacetImpl.advanceWithdraw(user, requestId, amount);
 		emit WithdrawAdvanced(requestId, user, amount);
 	}
@@ -85,7 +89,7 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	///      - `PENDING` (classic-only) OR
 	///      - `PROVIDER_ACCEPTED` or `CANCEL_REQUESTED` (provider flow)
 	/// @param requestId ID of the withdrawal request.
-	function finalizeWithdrawRequest(address user, uint256 requestId) external notSuspended(user) nonReentrant {
+	function finalizeWithdrawRequest(address user, uint256 requestId) external notSuspended(user) whenNotAccountingPaused nonReentrant {
 		WithdrawFacetImpl.finalizeWithdrawRequest(user, requestId);
 		emit WithdrawFinalized(requestId, LibSigner.getSigner());
 	}

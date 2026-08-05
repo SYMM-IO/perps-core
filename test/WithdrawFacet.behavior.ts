@@ -469,6 +469,109 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		})
 	})
 
+	describe("Pause Coverage", function () {
+		async function setupAcceptedExpressWithdraw() {
+			const MockExpressProvider = await ethers.getContractFactory("contracts/core/test/MockExpressProvider.sol:ExpressProvider")
+			const provider = await MockExpressProvider.deploy(context.diamond)
+			await provider.waitForDeployment()
+			const providerAddress = await provider.getAddress()
+
+			await context.controlFacet.connect(context.signers.admin).registerExpressProvider(providerAddress)
+			await context.collateral.transfer(providerAddress, ethers.parseUnits("1000", 18))
+
+			await userDeposit("100")
+			const parts = [await buildPart("50", { expressProvider: providerAddress })]
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")
+			await provider.acceptWithdrawRequest(user.address, 1)
+
+			return { provider, providerAddress }
+		}
+
+		it("Should block withdrawal value paths while accounting is paused", async function () {
+			const { provider, providerAddress } = await setupAcceptedExpressWithdraw()
+			const secondWithdrawParts = await buildParts(["10"])
+			const userBalanceBefore = await context.viewFacet.balanceOf(user.address)
+			const providerBalanceBefore = await context.collateral.balanceOf(providerAddress)
+
+			await time.increase(1000)
+			await context.pauseControlFacet.connect(context.signers.admin).pauseAccounting()
+
+			await expect(context.withdrawFacet.connect(context.signers.user).initiateWithdraw(secondWithdrawParts, false, "0x")).to.be.revertedWith(
+				"Pausable: Accounting paused",
+			)
+			await expect(provider.advanceWithdraw(user.address, 1, ethers.parseUnits("10", 18))).to.be.revertedWith("Pausable: Accounting paused")
+			await expect(provider.finalizeWithdrawRequest(user.address, 1)).to.be.revertedWith("Pausable: Accounting paused")
+
+			const withdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
+			expect(withdrawRequest.status).to.equal(WithdrawStatus.PROVIDER_ACCEPTED)
+			expect(withdrawRequest.advancedAmount).to.equal(0n)
+			expect(await context.viewFacet.balanceOf(user.address)).to.equal(userBalanceBefore)
+			expect(await context.collateral.balanceOf(providerAddress)).to.equal(providerBalanceBefore)
+			expect(await context.viewFacet.getLastWithdrawRequestId(user.address)).to.equal(1n)
+		})
+
+		it("Should block withdrawal value paths while globally paused", async function () {
+			const { provider, providerAddress } = await setupAcceptedExpressWithdraw()
+			const secondWithdrawParts = await buildParts(["10"])
+			const userBalanceBefore = await context.viewFacet.balanceOf(user.address)
+			const providerBalanceBefore = await context.collateral.balanceOf(providerAddress)
+
+			await time.increase(1000)
+			await context.pauseControlFacet.connect(context.signers.admin).pauseGlobal()
+
+			await expect(context.withdrawFacet.connect(context.signers.user).initiateWithdraw(secondWithdrawParts, false, "0x")).to.be.revertedWith(
+				"Pausable: Global paused",
+			)
+			await expect(provider.advanceWithdraw(user.address, 1, ethers.parseUnits("10", 18))).to.be.revertedWith("Pausable: Global paused")
+			await expect(provider.finalizeWithdrawRequest(user.address, 1)).to.be.revertedWith("Pausable: Global paused")
+
+			const withdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
+			expect(withdrawRequest.status).to.equal(WithdrawStatus.PROVIDER_ACCEPTED)
+			expect(withdrawRequest.advancedAmount).to.equal(0n)
+			expect(await context.viewFacet.balanceOf(user.address)).to.equal(userBalanceBefore)
+			expect(await context.collateral.balanceOf(providerAddress)).to.equal(providerBalanceBefore)
+			expect(await context.viewFacet.getLastWithdrawRequestId(user.address)).to.equal(1n)
+		})
+
+		it("Should keep classic cancellation available as an accounting-pause unwind path", async function () {
+			await userDeposit("100")
+			const parts = [await buildPart("25")]
+			const balanceBefore = await context.viewFacet.balanceOf(user.address)
+
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")
+			expect(await context.viewFacet.balanceOf(user.address)).to.equal(balanceBefore - ethers.parseUnits("25", 18))
+
+			await context.pauseControlFacet.connect(context.signers.admin).pauseAccounting()
+			await expect(context.withdrawFacet.connect(context.signers.user).requestCancelWithdraw(1)).not.to.be.reverted
+
+			const withdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
+			expect(withdrawRequest.status).to.equal(WithdrawStatus.CANCELLED)
+			expect(await context.viewFacet.balanceOf(user.address)).to.equal(balanceBefore)
+		})
+
+		it("Should keep provider rejection available as an accounting-pause unwind path", async function () {
+			const MockExpressProvider = await ethers.getContractFactory("contracts/core/test/MockExpressProvider.sol:ExpressProvider")
+			const provider = await MockExpressProvider.deploy(context.diamond)
+			await provider.waitForDeployment()
+			const providerAddress = await provider.getAddress()
+			await context.controlFacet.connect(context.signers.admin).registerExpressProvider(providerAddress)
+			await context.collateral.transfer(providerAddress, ethers.parseUnits("1000", 18))
+
+			await userDeposit("100")
+			const balanceBefore = await context.viewFacet.balanceOf(user.address)
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw([await buildPart("25", { expressProvider: providerAddress })], false, "0x")
+
+			await context.pauseControlFacet.connect(context.signers.admin).pauseAccounting()
+			await expect(provider.rejectWithdrawRequest(user.address, 1)).not.to.be.reverted
+
+			const withdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
+			expect(withdrawRequest.status).to.equal(WithdrawStatus.PROVIDER_REJECTED)
+			expect(await context.viewFacet.balanceOf(user.address)).to.equal(balanceBefore)
+		})
+	})
+
 	describe("getWithdrawableTime", function () {
 		it("Should return block.timestamp when user never deallocated", async function () {
 			await userDeposit("100")
