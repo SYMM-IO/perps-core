@@ -315,6 +315,14 @@ function wantsLedger(envPrefix?: string, expectedAddress?: string, role?: string
 	return false
 }
 
+/**
+ * The Ledger packages are intentionally NOT project dependencies — they pull in
+ * native HID bindings that only matter to operators who actually sign from a
+ * Ledger. They are required lazily here so everyone else can install and run the
+ * upgrade scripts without them. Install on demand:
+ *
+ *   npm i --no-save @ledgerhq/hw-transport-node-hid @ledgerhq/hw-app-eth
+ */
 async function loadLedgerModules(): Promise<LedgerModules> {
 	try {
 		// Avoid the USB event binding from the main transport; plain HID is enough for scripted signing.
@@ -331,8 +339,9 @@ async function loadLedgerModules(): Promise<LedgerModules> {
 		}
 	} catch (error) {
 		throw new Error(
-			`Ledger support requires @ledgerhq/hw-transport-node-hid and @ledgerhq/hw-app-eth. ` +
-				`Install them or use an external wallet RPC. Original error: ${(error as Error).message}`,
+			`Ledger support needs optional packages that are not installed by default. Either run\n` +
+				`  npm i --no-save @ledgerhq/hw-transport-node-hid @ledgerhq/hw-app-eth\n` +
+				`or use an external wallet RPC via HARDWARE_WALLET_RPC_URL. Original error: ${(error as Error).message}`,
 		)
 	}
 }
