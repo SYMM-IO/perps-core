@@ -11,8 +11,12 @@ const BASE_PATH = "./tasks/data"
 let dataScope: string | null = null
 
 /** Scope all subsequent readData/writeData calls to a chain. Call once per task run. */
-export function setDataScope(chainId: number | bigint): void {
-	dataScope = String(Number(chainId))
+export function setDataScope(chainId: number | bigint, options: { simulated?: boolean } = {}): void {
+	// A forked network reports its upstream chainId — fork-arbitrum is 42161 — so without
+	// this suffix a rehearsal writes its throwaway addresses into the same directory a real
+	// Arbitrum deployment uses, and `verify:all --network arbitrum` would then submit fork
+	// addresses to Arbiscan. Keep simulated runs in their own scope.
+	dataScope = options.simulated ? `${Number(chainId)}-fork` : String(Number(chainId))
 }
 
 export function getDataDir(): string {
