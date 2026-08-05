@@ -8,7 +8,7 @@ import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
 import type { BalanceInfo } from "./models/User.js"
-import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
+import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { decimal, getBlockTimestamp, getPriceFetcher, getTotalLockedValuesForQuoteIds, getTradingFeeForQuotes, unDecimal } from "./utils/Common.js"
 import {
 	getDummyLiquidationSig,
@@ -2258,6 +2258,23 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 	 * partyA regardless of liquidation type — it represents legitimate funds.
 	 */
 	describe("Liquidation Escrow", async function () {
+		it("NORMAL: pending market fees are reimbursed at the reserved basis", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const signedMarketPrice = decimal(9n, 17)
+			await user.requestToCancelQuote(3)
+			const marketQuoteId = await user.sendQuote(marketQuoteRequestBuilder().upnlSig(getDummySingleUpnlAndPriceSig(signedMarketPrice)).build())
+			const expectedFees = await getTradingFeeForQuotes(context, [2n, 5n, marketQuoteId])
+
+			const price = decimal(572n, 16) // triggers NORMAL
+			await user.liquidateAndSetSymbolPrices([1n], [price], [1n])
+
+			await user.liquidatePendingPositions()
+			await user.liquidatePositions([1])
+
+			const reimbursement = await context.viewFacet.partyAReimbursement(userAddress)
+			expect(reimbursement).to.be.equal(expectedFees)
+		})
+
 		it("NORMAL: pending fees return to partyA, escrow stays zero", async function () {
 			const userAddress = await context.signers.user.getAddress()
 			// Compute expected pending fees before liquidation (quotes 2, 3, 5 are pending)

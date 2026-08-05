@@ -234,7 +234,7 @@ library ClearingHouseFacetImpl {
 						cancelledIds[cancelledCount++] = pendingQuotes[i];
 						accountLayout.pendingLockedBalances[partyA].subQuote(quote);
 						if (MAStorage.layout().liquidationStatus[partyA]) {
-							uint256 fee = LibQuote.getOpenTradingFee(quote.id);
+							uint256 fee = LibQuote.getReservedOpenTradingFee(quote, LibQuote.quoteOpenAmount(quote));
 							LibAccount.releaseReservedOpenTradingFee(partyA, fee);
 							LibAccount.increasePartyAReimbursement(partyA, fee, SharedEvents.ReimbursementChangeType.PLATFORM_FEE_IN);
 						} else {
@@ -273,7 +273,7 @@ library ClearingHouseFacetImpl {
 					_clearPartyBPendingQuotes(quote.partyB, partyA);
 					LibConnections.removeConnectionIfNoPositions(partyA, quote.partyB);
 				}
-				uint256 fee = LibQuote.getOpenTradingFee(quote.id);
+				uint256 fee = LibQuote.getReservedOpenTradingFee(quote, LibQuote.quoteOpenAmount(quote));
 				LibAccount.releaseReservedOpenTradingFee(partyA, fee);
 				LibAccount.increasePartyAReimbursement(partyA, fee, SharedEvents.ReimbursementChangeType.PLATFORM_FEE_IN);
 				quote.quoteStatus = QuoteStatus.LIQUIDATED_PENDING;

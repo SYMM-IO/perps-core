@@ -48,7 +48,8 @@ library MigrationFacetImpl {
 				quote.quoteStatus == QuoteStatus.PENDING || quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING
 			) {
 				// Backfill reserved open fees for pending/locked quotes
-				LibAccount.reserveOpenTradingFee(quote.partyA, LibQuote.getOpenTradingFee(quoteId));
+				uint256 reservedFee = LibQuote.getReservedOpenTradingFee(quote, LibQuote.quoteOpenAmount(quote));
+				LibAccount.reserveOpenTradingFee(quote.partyA, reservedFee);
 				migrationLayout.quoteMigrated[quoteId] = true;
 				quotesMigrated++;
 				continue;

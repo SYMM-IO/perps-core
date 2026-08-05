@@ -9,8 +9,8 @@ import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
 import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
 import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
-import { decimal, getBlockTimestamp, pausePartyB } from "./utils/Common.js"
-import { getDummyPairUpnlAndPricesSig } from "./utils/SignatureUtils.js"
+import { decimal, getBlockTimestamp, getOpenTradingFeeForQuoteWithFilledAmount, getQuoteOpenTradingFeeAtPrice, pausePartyB } from "./utils/Common.js"
+import { getDummyPairUpnlAndPricesSig, getDummySingleUpnlAndPriceSig } from "./utils/SignatureUtils.js"
 
 export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 	let context: RunContext, user: User, user2: User, hedger: Hedger, hedger2: Hedger
@@ -230,6 +230,37 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 			const partyBNonceAfter = await context.viewFacet.nonceOfPartyB(context.signers.hedger.address, context.signers.user.address)
 			expect(partyANonceAfter).to.equal(partyANonceBefore + 1n)
 			expect(partyBNonceAfter).to.equal(partyBNonceBefore + 1n)
+		})
+
+		it("Should true up executed market fees during batch open", async function () {
+			const requestedOpenPrice = decimal(1n)
+			const signedMarketPrice = decimal(9n, 17)
+			const openedPrice = decimal(1n)
+			const quoteId = await user.sendQuote(
+				marketQuoteRequestBuilder()
+					.partyBWhiteList([await hedger.getAddress()])
+					.price(requestedOpenPrice)
+					.upnlSig(getDummySingleUpnlAndPriceSig(signedMarketPrice))
+					.build(),
+			)
+			await hedger.lockQuote(quoteId)
+
+			const quoteBeforeOpen = await context.viewFacetQuote.getQuote(quoteId)
+			const reservedFee = await getOpenTradingFeeForQuoteWithFilledAmount(context, quoteId, quoteBeforeOpen.quantity)
+			const executedFee = getQuoteOpenTradingFeeAtPrice(quoteBeforeOpen, quoteBeforeOpen.quantity, openedPrice)
+			const feeCollector = await context.viewFacet.getFeeCollector(quoteBeforeOpen.affiliate)
+			const feeCollectorBefore = await context.viewFacet.balanceOf(feeCollector)
+			const allocatedBefore = (await user.getBalanceInfo()).allocatedBalances
+			const upnlSig = await getDummyPairUpnlAndPricesSig([signedMarketPrice], [1n])
+
+			await context.partyBBatchActionsFacet
+				.connect(context.signers.hedger)
+				.openPositions([quoteId], [quoteBeforeOpen.quantity], [openedPrice], upnlSig)
+
+			const feeCollectorAfter = await context.viewFacet.balanceOf(feeCollector)
+			const allocatedAfter = (await user.getBalanceInfo()).allocatedBalances
+			expect(feeCollectorAfter - feeCollectorBefore).to.equal(executedFee)
+			expect(allocatedBefore - allocatedAfter).to.equal(executedFee - reservedFee)
 		})
 	})
 
