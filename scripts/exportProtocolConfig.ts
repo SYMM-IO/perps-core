@@ -12,11 +12,13 @@ import { ethers } from "../test/helpers/hardhat-connection.js"
 // TARGET_CHAIN_ID is the chain the config is FOR (the file name); the --network flag is the
 // chain being read FROM.
 //
-// Several parameters have no on-chain getter (liquidatorShare, liquidationTimeout, the
-// force-close/force-cancel cooldowns, pendingQuotesValidLength, settlementCooldown,
-// maxPartyAConnectionLimit). They are recovered from their Set* events instead, which needs
-// an RPC that serves historical logs — many public endpoints do not. Anything that cannot be
-// read is reported and left for you to fill in rather than silently defaulted.
+// Several parameters have no on-chain getter (deallocateCooldown, liquidatorShare,
+// liquidationTimeout, the force-close/force-cancel cooldowns, pendingQuotesValidLength,
+// settlementCooldown, maxPartyAConnectionLimit). Those are read directly from MAStorage's
+// diamond-storage slots at the latest block, so any RPC works — see the block further down.
+//
+// Every value written here comes from the chain. Two things still need a human: the
+// per-template instantOpenMode flag, and the Muon validity times (which live in .env).
 
 const SYMMIO = process.env.SYMMIO
 const INSTANT_LAYER = process.env.INSTANT_LAYER
