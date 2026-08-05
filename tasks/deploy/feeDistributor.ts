@@ -1,7 +1,7 @@
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
-import { checksumAddress, deployProxyWithFallback, getConnection, getUpgradeAddresses } from "./helpers.js"
+import { checksumAddress, deployProxyWithFallback, getConnection, getUpgradeAddresses, requireArg } from "./helpers.js"
 import { logger } from "./logger.js"
 
 export const feeDistributorTask = task("deploy:feeDistributor", "Deploys the SymmioFeeDistributor")
@@ -24,9 +24,9 @@ export const feeDistributorTask = task("deploy:feeDistributor", "Deploys the Sym
 			const { ethers, upgrades } = await getConnection(hre)
 			logger.section("SymmioFeeDistributor Deployment")
 
-			const admin = checksumAddress(rawAdmin)
-			const symmioAddress = checksumAddress(rawSymmio)
-			const symmioShareReceiver = checksumAddress(rawReceiver)
+			const admin = checksumAddress(requireArg(rawAdmin, "admin"))
+			const symmioAddress = checksumAddress(requireArg(rawSymmio, "symmio-address"))
+			const symmioShareReceiver = checksumAddress(requireArg(rawReceiver, "symmio-share-receiver"))
 
 			const [deployer] = await ethers.getSigners()
 

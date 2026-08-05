@@ -17,8 +17,18 @@ export function checksumAddress(addr: string): string {
 // Use a consistent key for caching the connection across the entire application
 const CONNECTION_KEY = "__symmio_hardhat_connection__"
 
+/**
+ * Task options declared STRING_WITHOUT_DEFAULT arrive as `undefined` when omitted, and
+ * then reach checksumAddress(), which fails with an opaque
+ * "Cannot read properties of undefined (reading 'toLowerCase')". Name the missing flag.
+ */
+export function requireArg(value: string | undefined, flag: string): string {
+	if (!value) throw new Error(`Missing required option --${flag}`)
+	return value
+}
+
 export async function getConnection(hre: any): Promise<NetworkConnection> {
-	const globalAny = globalThis as { [key: string]: Promise<any> | undefined }
+	const globalAny = globalThis as unknown as { [key: string]: Promise<any> | undefined }
 
 	// Check if connection is already cached
 	if (!globalAny[CONNECTION_KEY]) {

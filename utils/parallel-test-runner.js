@@ -403,6 +403,16 @@ async function main() {
 					running.delete(file)
 					completed++
 
+					// Pass/fail counts come from parsing "N passing" / "N failing" out of the
+					// worker's stdout. A worker that CRASHES (OOM, compile error, uncaught
+					// exception) never prints those lines, so it yielded failed: 0 and the run
+					// reported ALL TESTS PASSED while a whole suite had died. The exit code was
+					// captured but never consulted — do that here.
+					if (result.code !== 0 && result.failed === 0) {
+						result.crashed = true
+						result.failed = 1
+					}
+
 					results.passed += result.passed
 					results.failed += result.failed
 					results.pending += result.pending

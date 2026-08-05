@@ -17,6 +17,16 @@ const CORE_ROLE_FORCE_CLOSE_GAP_RATIO_ADMIN = "FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE"
 // Operator roles on the SymbolManager contract itself (from SymmioSymbolManager.sol)
 const OPERATOR_ROLES_DEFAULT: readonly string[] = ["SYMBOL_ADDER_ROLE", "SYMBOL_REMOVER_ROLE"]
 
+/**
+ * These options are declared STRING_WITHOUT_DEFAULT, so omitting one passes `undefined`
+ * straight through to checksumAddress(), which fails with an opaque
+ * "Cannot read properties of undefined (reading 'toLowerCase')". Fail with the flag name.
+ */
+function requireArg(value: string | undefined, flag: string): string {
+	if (!value) throw new Error(`Missing required option --${flag}`)
+	return value
+}
+
 type DeploySymbolManagerArgs = {
 	symmioAddress: string
 	admin?: string
@@ -107,7 +117,7 @@ export const symbolManagerTask = task("deploy:symbolManager", "Deploys the Symmi
 			}
 
 			try {
-				return await deploySymbolManager(hre, { symmioAddress, admin, logData })
+				return await deploySymbolManager(hre, { symmioAddress: requireArg(symmioAddress, "symmio-address"), admin, logData })
 			} finally {
 				if (isHyperEVM) {
 					try {
@@ -185,7 +195,11 @@ export const grantSymbolManagerDiamondRolesTask = task(
 		defaultValue: undefined,
 	})
 	.setAction(async () => ({
-		default: async ({ symmioAddress, symbolManagerAddress }, hre) => grantSymbolManagerDiamondRoles(hre, { symmioAddress, symbolManagerAddress }),
+		default: async ({ symmioAddress, symbolManagerAddress }, hre) =>
+			grantSymbolManagerDiamondRoles(hre, {
+				symmioAddress: requireArg(symmioAddress, "symmio-address"),
+				symbolManagerAddress: requireArg(symbolManagerAddress, "symbol-manager-address"),
+			}),
 	}))
 	.build()
 
@@ -217,6 +231,25 @@ export async function grantSymbolManagerOperatorRoles(
 	const sm = await ethers.getContractAt("SymmioSymbolManager", symbolManagerAddress)
 	const roleHash = (role: string) => ethers.keccak256(ethers.toUtf8Bytes(role))
 
+	// SymmioSymbolManager's constructor grants DEFAULT_ADMIN_ROLE to `admin` only — the
+	// deployer gets nothing. Whenever ADMIN_PUBLIC_KEY differs from the deployer (i.e. any
+	// real deployment, where admin is a multisig) these grants revert. Detect that up front
+	// and hand the operator an exact command instead of failing the whole deployment at the
+	// last step with a raw AccessControl revert.
+	const deployerIsAdmin = await sm.hasRole(await sm.DEFAULT_ADMIN_ROLE(), deployer.address)
+	if (!deployerIsAdmin) {
+		logger.info("")
+		logger.info(`  ⚠ Deployer ${deployer.address} does not hold DEFAULT_ADMIN_ROLE on the SymbolManager,`)
+		logger.info(`    so it cannot grant operator roles. The admin must run this themselves:`)
+		logger.info("")
+		logger.info(`      npx hardhat symbolManager:grantOperatorRoles \\`)
+		logger.info(`        --symbol-manager-address ${symbolManagerAddress} \\`)
+		logger.info(`        --operator ${operator} --network <network>`)
+		logger.info("")
+		logger.info(`    Roles still to grant: ${roles.join(", ")}`)
+		return { granted: 0, skipped: 0, deferred: roles.length }
+	}
+
 	let granted = 0
 	let skipped = 0
 	for (const role of roles) {
@@ -233,7 +266,7 @@ export async function grantSymbolManagerOperatorRoles(
 	}
 
 	logger.info(`  Operator roles: ${granted} granted, ${skipped} already had`)
-	return { granted, skipped }
+	return { granted, skipped, deferred: 0 }
 }
 
 export const grantSymbolManagerOperatorRolesTask = task(
@@ -253,6 +286,10 @@ export const grantSymbolManagerOperatorRolesTask = task(
 		defaultValue: undefined,
 	})
 	.setAction(async () => ({
-		default: async ({ symbolManagerAddress, operator }, hre) => grantSymbolManagerOperatorRoles(hre, { symbolManagerAddress, operator }),
+		default: async ({ symbolManagerAddress, operator }, hre) =>
+			grantSymbolManagerOperatorRoles(hre, {
+				symbolManagerAddress: requireArg(symbolManagerAddress, "symbol-manager-address"),
+				operator: requireArg(operator, "operator"),
+			}),
 	}))
 	.build()

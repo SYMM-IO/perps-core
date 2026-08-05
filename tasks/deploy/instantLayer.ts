@@ -4,7 +4,7 @@ import { ArgumentType } from "hardhat/types/arguments"
 import { readData, writeData } from "../utils/fs.js"
 import { DeploymentCheckpoint, createDeployedContract, saveCheckpoint } from "./checkpoint.js"
 import { INSTANTLAYER_DEPLOYMENT_FILE } from "./constants.js"
-import { getConnection } from "./helpers.js"
+import { getConnection, requireArg } from "./helpers.js"
 import { logger } from "./logger.js"
 
 // Contract configuration
@@ -73,7 +73,8 @@ export const instantLayerTask = task("deploy:InstantLayer", "Deploys the Instant
 	.addOption({ name: "admin", description: "The admin address", type: ArgumentType.STRING_WITHOUT_DEFAULT, defaultValue: undefined })
 	.addOption({ name: "logData", description: "Write the deployed addresses to a data file", type: ArgumentType.BOOLEAN, defaultValue: true })
 	.setAction(async () => ({
-		default: async ({ symmioaddress, admin, logData }, hre) => deployInstantLayer(hre, { symmioaddress, admin, logData }),
+		default: async ({ symmioaddress, admin, logData }, hre) =>
+			deployInstantLayer(hre, { symmioaddress: requireArg(symmioaddress, "symmioaddress"), admin: requireArg(admin, "admin"), logData }),
 	}))
 	.build()
 /**

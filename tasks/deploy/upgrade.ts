@@ -1,7 +1,7 @@
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
-import { checksumAddress, getConnection } from "./helpers.js"
+import { checksumAddress, getConnection, requireArg } from "./helpers.js"
 import { logger } from "./logger.js"
 
 const IMPLEMENTATION_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc"
@@ -36,7 +36,7 @@ export const upgradeProxyTask = task("upgrade:proxy", "Upgrade a UUPS or Transpa
 			const { ethers } = await getConnection(hre)
 			logger.section("Proxy Upgrade")
 
-			const proxyAddress = checksumAddress(proxy)
+			const proxyAddress = checksumAddress(requireArg(proxy, "proxy"))
 
 			// Read current implementation and admin slots
 			const currentImpl = await readSlot(ethers, proxyAddress, IMPLEMENTATION_SLOT)

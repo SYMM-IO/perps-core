@@ -4,6 +4,7 @@ import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 import path from "path"
 
+import { getDataDir, setDataScope } from "../utils/fs.js"
 import {
 	ACCOUNTLAYER_DEPLOYMENT_FILE,
 	DEPLOYMENT_LOG_FILE,
@@ -42,6 +43,7 @@ export const verifyAllTask = task("verify:all", "Verifies all deployed contracts
 			const connection = await getConnection(hre)
 			const { ethers } = connection
 			const chainId = Number((await ethers.provider.getNetwork()).chainId)
+			setDataScope(chainId)
 			const network = connection.networkName || "unknown"
 
 			console.log("")
@@ -53,7 +55,7 @@ export const verifyAllTask = task("verify:all", "Verifies all deployed contracts
 			console.log("")
 
 			let contracts: ContractToVerify[] = []
-			const failedFilePath = `./tasks/data/${VERIFY_FAILED_FILE}`
+			const failedFilePath = `${getDataDir()}/${VERIFY_FAILED_FILE}`
 
 			if (args.retryFailed) {
 				if (!fs.existsSync(failedFilePath)) {
@@ -89,7 +91,10 @@ export const verifyAllTask = task("verify:all", "Verifies all deployed contracts
 				]
 
 				for (const { file, name } of logFiles) {
-					const filePath = `./tasks/data/${file}`
+					const scopedPath = `${getDataDir()}/${file}`
+					// Fall back to the legacy unscoped location for records written before
+					// deployment data was chainId-scoped.
+					const filePath = fs.existsSync(scopedPath) ? scopedPath : `./tasks/data/${file}`
 					if (fs.existsSync(filePath)) {
 						try {
 							const data = JSON.parse(fs.readFileSync(filePath, "utf8"))
@@ -121,6 +126,17 @@ export const verifyAllTask = task("verify:all", "Verifies all deployed contracts
 				console.log(`Skipping ${skipped.length} contracts with missing/invalid addresses:`)
 				for (const s of skipped) console.log(`  - ${s.name}: ${s.address ?? "(undefined)"}`)
 				contracts = contracts.filter(c => c.address && /^0x[0-9a-fA-F]{40}$/.test(c.address))
+			}
+
+			// Missing deployment logs are only reported as "<file> not found, skipping", so a
+			// run that loaded nothing at all used to print an all-green summary and exit 0.
+			// Verifying zero contracts is never a success.
+			if (contracts.length === 0) {
+				throw new Error(
+					`No contracts to verify on ${network} (chainId ${chainId}). ` +
+						`Expected deployment logs under ${getDataDir()}. ` +
+						`so the records may exist only on the machine that ran the deployment.`,
+				)
 			}
 
 			console.log(`Found ${contracts.length} contracts to verify`)
@@ -249,6 +265,13 @@ export const verifyAllTask = task("verify:all", "Verifies all deployed contracts
 				} catch {
 					// non-fatal
 				}
+			}
+
+			// Exit non-zero on failure. This task previously always exited 0, so CI (and
+			// operators reading only the exit status) could not tell a fully-verified
+			// deployment from one where every contract failed.
+			if (failed > 0) {
+				throw new Error(`Block-explorer verification failed for ${failed} of ${contracts.length} contract(s) — see the list above.`)
 			}
 		},
 	}))
@@ -1733,6 +1756,13 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 				console.log(`${c.red}${c.bold}  \u2717 ${failed} check${failed > 1 ? "s" : ""} failed${c.reset}`)
 			}
 			console.log("")
+
+			// Exit non-zero when checks failed. Previously this reported failures via
+			// console.error and still exited 0, so a broken deployment looked healthy to
+			// any script or CI job that checked only the status code.
+			if (failed > 0) {
+				throw new Error(`Deployment health check failed: ${failed} check${failed > 1 ? "s" : ""} did not pass — see the report above.`)
+			}
 
 			return { results, passed, failed, warnings }
 		},
