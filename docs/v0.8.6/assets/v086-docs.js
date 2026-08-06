@@ -282,6 +282,16 @@
 
 	installProtocolFlowJumps()
 
+	const installReleaseSummaryCounts = () => {
+		document.querySelectorAll(".release-summary [data-count-of]").forEach((figure) => {
+			const total = document.querySelectorAll(figure.dataset.countOf).length
+			// An empty match means the section was renamed; the authored number stays rather than rendering 00.
+			if (total) figure.textContent = String(total).padStart(2, "0")
+		})
+	}
+
+	installReleaseSummaryCounts()
+
 	const detectDiagramType = (source) => {
 		const first = source.trim().split(/\n/)[0] || ""
 		if (/^sequenceDiagram/i.test(first)) return "sequence"
