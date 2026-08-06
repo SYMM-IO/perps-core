@@ -1194,6 +1194,153 @@
                 "type": "address"
             }
         ],
+        "name": "getAffiliate",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "address",
+                        "name": "affiliateAddress",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "name",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "brandColor",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "admin",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "pendingAdmin",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "enum AffiliateState",
+                        "name": "state",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "symmioShare",
+                        "type": "uint256"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "address",
+                                "name": "receiver",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "share",
+                                "type": "uint256"
+                            }
+                        ],
+                        "internalType": "struct Stakeholder[]",
+                        "name": "stakeholders",
+                        "type": "tuple[]"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "feeDistributor",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "metadata",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "address[]",
+                        "name": "legacyMultiAccounts",
+                        "type": "address[]"
+                    },
+                    {
+                        "internalType": "address[]",
+                        "name": "symmioCores",
+                        "type": "address[]"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "accountManager",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "registrant",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "registrationNonce",
+                        "type": "uint256"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "bool",
+                                "name": "exists",
+                                "type": "bool"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "timestamp",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "symmioShare",
+                                "type": "uint256"
+                            },
+                            {
+                                "components": [
+                                    {
+                                        "internalType": "address",
+                                        "name": "receiver",
+                                        "type": "address"
+                                    },
+                                    {
+                                        "internalType": "uint256",
+                                        "name": "share",
+                                        "type": "uint256"
+                                    }
+                                ],
+                                "internalType": "struct Stakeholder[]",
+                                "name": "stakeholders",
+                                "type": "tuple[]"
+                            }
+                        ],
+                        "internalType": "struct PendingFeeUpdate",
+                        "name": "pendingFeeUpdate",
+                        "type": "tuple"
+                    }
+                ],
+                "internalType": "struct AffiliateDetail",
+                "name": "",
+                "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            }
+        ],
         "name": "getAffiliateAdmin",
         "outputs": [
             {
@@ -1219,6 +1366,52 @@
                 "internalType": "address",
                 "name": "",
                 "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes4[]",
+                "name": "selectors",
+                "type": "bytes4[]"
+            }
+        ],
+        "name": "getAffiliateSelectorConfigs",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "bytes4",
+                        "name": "selector",
+                        "type": "bytes4"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "hook",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "hookAllowed",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "callAllowed",
+                        "type": "bool"
+                    }
+                ],
+                "internalType": "struct AffiliateSelectorConfig[]",
+                "name": "",
+                "type": "tuple[]"
             }
         ],
         "stateMutability": "view",

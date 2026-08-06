@@ -16,7 +16,14 @@ import {
 	LegacyAccountInfo
 } from "../../storages/AccountStorage.sol";
 import { AccountLayerStorage } from "../../storages/AccountLayerStorage.sol";
-import { AffiliateStorage, AffiliateState, Stakeholder } from "../../storages/AffiliateStorage.sol";
+import {
+	AffiliateStorage,
+	AffiliateData,
+	AffiliateDetail,
+	AffiliateSelectorConfig,
+	AffiliateState,
+	Stakeholder
+} from "../../storages/AffiliateStorage.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
 import { LibAccountLayerAccessibility } from "../../libraries/LibAccountLayerAccessibility.sol";
 import { LibDiamond } from "../../../diamond/libraries/LibDiamond.sol";
@@ -333,6 +340,61 @@ contract ViewFacet is IViewFacet {
 	}
 
 	// ==================== Affiliate View Functions ====================
+
+	/// @notice Returns everything stored about an affiliate in a single call
+	/// @dev Aggregates AffiliateData with its pending fee update, so callers don't have to stitch
+	///      together getAffiliateState/Admin/FeeDistributor/SymmioCores/Stakeholders/SymmioShare.
+	///      Per-selector data (hooks and allow-lists) lives in mappings and is returned by
+	///      getAffiliateSelectorConfigs instead. An unregistered affiliate reads back as an empty
+	///      struct with state NONE.
+	/// @param affiliate The affiliate address
+	/// @return The full affiliate detail struct
+	function getAffiliate(address affiliate) external view returns (AffiliateDetail memory) {
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
+		AffiliateData storage a = afLayout.affiliates[affiliate];
+
+		return
+			AffiliateDetail({
+				affiliateAddress: affiliate,
+				name: a.name,
+				brandColor: a.brandColor,
+				admin: a.admin,
+				pendingAdmin: a.pendingAdmin,
+				state: a.state,
+				symmioShare: a.feeDetails.symmioShare,
+				stakeholders: a.feeDetails.stakeholders,
+				feeDistributor: a.feeDetails.feeDistributor,
+				metadata: a.metadata,
+				legacyMultiAccounts: a.legacyMultiAccounts,
+				symmioCores: a.symmioCores.values(),
+				accountManager: a.accountManager,
+				registrant: a.registrant,
+				registrationNonce: a.registrationNonce,
+				pendingFeeUpdate: afLayout.pendingFeeUpdates[affiliate]
+			});
+	}
+
+	/// @notice Returns the hook and allow-list configuration of an affiliate for the given selectors
+	/// @param affiliate The affiliate address
+	/// @param selectors The function selectors to look up
+	/// @return configs One entry per requested selector, in the same order
+	function getAffiliateSelectorConfigs(
+		address affiliate,
+		bytes4[] calldata selectors
+	) external view returns (AffiliateSelectorConfig[] memory configs) {
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
+
+		configs = new AffiliateSelectorConfig[](selectors.length);
+		for (uint256 i = 0; i < selectors.length; i++) {
+			bytes4 selector = selectors[i];
+			configs[i] = AffiliateSelectorConfig({
+				selector: selector,
+				hook: afLayout.affiliates[affiliate].hooks[selector],
+				hookAllowed: afLayout.hookAllowedSelectors[affiliate][selector],
+				callAllowed: afLayout.callAllowedSelectors[affiliate][selector]
+			});
+		}
+	}
 
 	/// @notice Returns the registration state of an affiliate
 	/// @param affiliate The affiliate address
