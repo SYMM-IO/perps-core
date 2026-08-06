@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { QuoteStorage, Quote, PositionType } from "../storages/QuoteStorage.sol";
+import { Quote, PositionType } from "../storages/QuoteStorage.sol";
 import { AggregatedDataStorage, PartiesAggregatedPositions } from "../storages/AggregatedDataStorage.sol";
 import { FundingStorage, FundingFee } from "../storages/FundingStorage.sol";
 import { LibFundingRate } from "./LibFundingRate.sol";

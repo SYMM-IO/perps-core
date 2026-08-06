@@ -15,7 +15,6 @@ import { LibAccount } from "./LibAccount.sol";
 import { LibSolvency } from "./LibSolvency.sol";
 import { LibMuonForceActions } from "./muon/LibMuonForceActions.sol";
 import { LibPartyBLiquidation } from "./liquidation/LibPartyBLiquidation.sol";
-import { LibHook } from "./LibHook.sol";
 import { LibSymbolAdjustment } from "./LibSymbolAdjustment.sol";
 import { MuonFunction } from "../interfaces/IMuonSignatureVerifier.sol";
 

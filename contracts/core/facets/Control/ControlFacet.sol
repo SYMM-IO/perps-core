@@ -12,7 +12,6 @@ import { MuonStorage } from "../../storages/MuonStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { QuoteStorage } from "../../storages/QuoteStorage.sol";
-import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
 import { ExternalTransferStorage } from "../../storages/ExternalTransferStorage.sol";
 import { IControlFacet } from "./IControlFacet.sol";

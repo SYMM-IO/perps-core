@@ -22,7 +22,6 @@ import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { SingleUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
-import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
 import { LibHook } from "../../libraries/LibHook.sol";
 import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
