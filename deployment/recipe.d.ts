@@ -69,7 +69,47 @@ export interface DeploymentRecipe {
 	}
 	partyB: { mode: ComponentMode; address?: string; signer?: string; adlEnabled: boolean }
 	symbolManager: { mode: ComponentMode; address?: string; operator?: string }
-	expressProvider: { mode: ComponentMode; address?: string }
+	expressProvider: ExpressProviderRecipe
+}
+
+export type ExpressRoleName =
+	| "OPERATOR_ROLE"
+	| "LOCKER_ROLE"
+	| "SIGNER_ROLE"
+	| "SETTER_ROLE"
+	| "FEE_CLAIMER_ROLE"
+	| "UNLOCK_ROLE"
+	| "WITHDRAWER_ROLE"
+	| "PAUSER_ROLE"
+
+export interface ExpressAffiliateRecipe {
+	address: string
+	feeRate: string
+	operatorFee: string
+	/** 0 means no absolute cap. */
+	maxDebt: string
+	/** 0 means no percentage cap. */
+	maxDebtBps: number
+	minValidatorSignatures?: number
+	validatorApprovalTimeout?: number
+	validators?: string[]
+}
+
+export interface ExpressProviderRecipe {
+	mode: ComponentMode
+	address?: string
+	admin?: string
+	registerOnCore?: boolean
+	securityWindow?: number
+	tolerancePeriod?: number
+	creditLine?: {
+		/** "fromCore" resolves the core diamond's configured verifier at execution time. */
+		signatureVerifier: string
+		muonAppId: string
+		muonFreshnessWindow: number
+	}
+	roles?: Partial<Record<ExpressRoleName, string[]>>
+	affiliates?: ExpressAffiliateRecipe[]
 }
 
 export function parseSecretRef(ref: unknown, source?: string): SecretMetadata

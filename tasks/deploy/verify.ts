@@ -8,6 +8,7 @@ import { getSelectors } from "../utils/diamondCut.js"
 import { getDataDir, setDataScope, writeData } from "../utils/fs.js"
 import {
 	ACCOUNTLAYER_DEPLOYMENT_FILE,
+	EXPRESSPROVIDER_DEPLOYMENT_FILE,
 	FacetNames,
 	DEPLOYMENT_LOG_FILE,
 	INSTANTLAYER_DEPLOYMENT_FILE,
@@ -233,6 +234,8 @@ export const verifyAllTask = task("verify:all", "Verifies all deployed contracts
 				const deploysSymbolManager = report
 					? (report.config?.symbolManagerMode || (report.config?.deploySymbolManager ? "deploy" : "skip")) === "deploy"
 					: true
+				// Unlike the others this has no legacy env fallback: it only ever ships via a recipe.
+				const deploysExpressProvider = report ? report.config?.expressProviderMode === "deploy" : false
 				const logFiles: Array<{ file: string; name: string; required: boolean; include: boolean }> = [
 					{ file: DEPLOYMENT_LOG_FILE, name: "Core Diamond deployment records", required: true, include: true },
 					{ file: ACCOUNTLAYER_DEPLOYMENT_FILE, name: "AccountLayer deployment records", required: true, include: true },
@@ -254,6 +257,12 @@ export const verifyAllTask = task("verify:all", "Verifies all deployed contracts
 						name: "SymbolManager deployment records",
 						required: Boolean(report && deploysSymbolManager),
 						include: deploysSymbolManager,
+					},
+					{
+						file: EXPRESSPROVIDER_DEPLOYMENT_FILE,
+						name: "ExpressProvider deployment records",
+						required: Boolean(report && deploysExpressProvider),
+						include: deploysExpressProvider,
 					},
 					{
 						file: LIQUIDATOR_DEPLOYMENT_FILE,
@@ -401,7 +410,7 @@ export const verifyAllTask = task("verify:all", "Verifies all deployed contracts
 					console.log(`To retry only failed contracts, run:`)
 					console.log(
 						activeDeploymentRecipe
-							? `  ./utils/yarn-classic.sh cli verify --config ${activeDeploymentRecipe.identityPath} --retry-failed`
+							? `  ./symmio verify --config ${activeDeploymentRecipe.identityPath} --retry-failed`
 							: `  ./node_modules/.bin/hardhat verify:all --retry-failed --network ${network}`,
 					)
 				} catch (e) {

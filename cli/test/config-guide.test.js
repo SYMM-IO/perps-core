@@ -28,9 +28,9 @@ test("help starts from a JSON recipe and uses checkout-local commands", () => {
 	assert.match(help, /JSON recipe \(recommended\)/);
 	assert.match(help, /deployment\/examples\/arbitrum\.v1\.example\.json/);
 	assert.match(help, /deployments\/<name>\.json/);
-	assert.match(help, /\.\/utils\/yarn-classic\.sh cli recipe init --network arbitrum/);
-	assert.match(help, /cli doctor --config deployments\/arbitrum\.json/);
-	assert.match(help, /yarn-classic\.sh link/);
+	assert.match(help, /\.\/symmio recipe init --network arbitrum/);
+	assert.match(help, /\.\/symmio doctor --config deployments\/arbitrum\.json/);
+	assert.match(help, /pinned-yarn\.sh link/);
 	assert.doesNotMatch(help, /\.env/);
 });
 

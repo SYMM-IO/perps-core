@@ -72,17 +72,17 @@ npx hardhat compile
 Deployments are driven by the `symmio` operator CLI:
 
 ```bash
-./utils/yarn-classic.sh cli --help
+./symmio --help
 ```
 
 The usual path:
 
 ```bash
-./utils/yarn-classic.sh cli recipe init --network arbitrum
-./utils/yarn-classic.sh cli doctor --config deployments/arbitrum.json
-./utils/yarn-classic.sh cli deploy --config deployments/arbitrum.json --plan
-./utils/yarn-classic.sh cli deploy --config deployments/arbitrum.json
-./utils/yarn-classic.sh cli status --config deployments/arbitrum.json
+./symmio recipe init --network arbitrum
+./symmio doctor --config deployments/arbitrum.json
+./symmio deploy --config deployments/arbitrum.json --plan
+./symmio deploy --config deployments/arbitrum.json
+./symmio status --config deployments/arbitrum.json
 ```
 
 The versioned JSON recipe is the single source of public deployment intent. It can deploy

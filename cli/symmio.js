@@ -16,9 +16,9 @@ export const COMMANDS = {
 	doctor: {
 		summary: "check everything that must be true before you deploy",
 		usage: [
-			"./utils/yarn-classic.sh cli doctor --config deployments/<name>.json",
-			"./utils/yarn-classic.sh cli doctor --config deployments/<name>.json --only <component>",
-			"./utils/yarn-classic.sh cli doctor --network <network>  # compatibility mode",
+			"./symmio doctor --config deployments/<name>.json",
+			"./symmio doctor --config deployments/<name>.json --only <component>",
+			"./symmio doctor --network <network>  # compatibility mode",
 		],
 		helpLines: configurationHelpLines,
 		options: { config: STRING, network: STRING, only: STRING },
@@ -31,9 +31,9 @@ export const COMMANDS = {
 	deploy: {
 		summary: "guided deployment: preflight, plan, confirm, deploy, verify",
 		usage: [
-			"./utils/yarn-classic.sh cli deploy --config deployments/<name>.json [--plan]",
-			"./utils/yarn-classic.sh cli deploy --config deployments/<name>.json --only <component>",
-			"./utils/yarn-classic.sh cli deploy --network <network>  # compatibility mode",
+			"./symmio deploy --config deployments/<name>.json [--plan]",
+			"./symmio deploy --config deployments/<name>.json --only <component>",
+			"./symmio deploy --network <network>  # compatibility mode",
 		],
 		helpLines: configurationHelpLines,
 		options: {
@@ -59,15 +59,15 @@ export const COMMANDS = {
 	recipe: {
 		summary: "create a reviewed JSON deployment recipe",
 		usage: [
-			"./utils/yarn-classic.sh cli recipe init --network <network> [--out <path>] [--force]",
-			"./utils/yarn-classic.sh cli recipe init --network <network> --only <partyB|symbolManager> [--out <path>]",
+			"./symmio recipe init --network <network> [--out <path>] [--force]",
+			"./symmio recipe init --network <network> --only <partyB|symbolManager|expressProvider> [--out <path>]",
 		],
 		helpLines: configurationHelpLines,
 		subcommands: {
 			init: {
 				options: { network: STRING, only: STRING, out: STRING, force: BOOLEAN },
 				required: ["network"],
-				choices: { only: ["partyB", "symbolManager"] },
+				choices: { only: ["partyB", "symbolManager", "expressProvider"] },
 			},
 		},
 		load: () => import("./commands/recipe.js").then(m => m.recipe),
@@ -75,24 +75,24 @@ export const COMMANDS = {
 	status: {
 		summary: "what is deployed on a chain, and is it safe",
 		usage: [
-			"./utils/yarn-classic.sh cli status --config deployments/<name>.json",
-			"./utils/yarn-classic.sh cli status --config deployments/<name>.json --only <partyB|symbolManager>",
-			"./utils/yarn-classic.sh cli status --network <network>  # compatibility mode",
+			"./symmio status --config deployments/<name>.json",
+			"./symmio status --config deployments/<name>.json --only <partyB|symbolManager|expressProvider>",
+			"./symmio status --network <network>  # compatibility mode",
 		],
 		helpLines: configurationHelpLines,
 		options: { config: STRING, network: STRING, only: STRING, diamond: STRING, "account-layer": STRING, "instant-layer": STRING },
 		requireOneOf: [["config", "network"]],
 		exclusive: [["config", "network"]],
 		requires: [["only", "config"]],
-		choices: { only: ["partyB", "symbolManager"] },
+		choices: { only: ["partyB", "symbolManager", "expressProvider"] },
 		load: () => import("./commands/status.js").then(m => m.status),
 	},
 	config: {
 		summary: "show, diff or export protocol parameters and InstantLayer templates",
 		usage: [
-			"./utils/yarn-classic.sh cli config show --chain <chainId>",
-			"./utils/yarn-classic.sh cli config diff --network <live> --symmio <addr> --instant-layer <addr> --against <chainId>",
-			"./utils/yarn-classic.sh cli config export --network <live> --symmio <addr> --instant-layer <addr> [--to <chainId>]",
+			"./symmio config show --chain <chainId>",
+			"./symmio config diff --network <live> --symmio <addr> --instant-layer <addr> --against <chainId>",
+			"./symmio config export --network <live> --symmio <addr> --instant-layer <addr> [--to <chainId>]",
 		],
 		defaultSubcommand: "show",
 		subcommands: {
@@ -115,8 +115,8 @@ export const COMMANDS = {
 	verify: {
 		summary: "verify deployed contracts on the block explorer",
 		usage: [
-			"./utils/yarn-classic.sh cli verify --config deployments/<name>.json [--retry-failed]",
-			"./utils/yarn-classic.sh cli verify --network <network> [--retry-failed]  # compatibility mode",
+			"./symmio verify --config deployments/<name>.json [--retry-failed]",
+			"./symmio verify --network <network> [--retry-failed]  # compatibility mode",
 		],
 		helpLines: configurationHelpLines,
 		options: { config: STRING, network: STRING, "retry-failed": BOOLEAN },
@@ -251,7 +251,7 @@ function help() {
 	log(`  ${c.bold("symmio")} ${c.grey("— operator CLI for SYMMIO deployments")}`);
 	blank();
 	log(`  ${c.bold("Usage")}`);
-	log(`    ./utils/yarn-classic.sh cli <command> [options]`);
+	log(`    ./symmio <command> [options]`);
 	blank();
 	log(`  ${c.bold("Commands")}`);
 	const width = Math.max(...Object.keys(COMMANDS).map(k => k.length));
@@ -260,14 +260,14 @@ function help() {
 	}
 	blank();
 	log(`  ${c.bold("Getting started")}`);
-	log(`    ${c.grey("1.")} ./utils/yarn-classic.sh cli recipe init --network arbitrum`);
+	log(`    ${c.grey("1.")} ./symmio recipe init --network arbitrum`);
 	log(`    ${c.grey("2.")} edit deployments/arbitrum.json`);
-	log(`    ${c.grey("3.")} ./utils/yarn-classic.sh cli doctor --config deployments/arbitrum.json`);
-	log(`    ${c.grey("4.")} ./utils/yarn-classic.sh cli deploy --config deployments/arbitrum.json --plan`);
-	log(`    ${c.grey("5.")} ./utils/yarn-classic.sh cli deploy --config deployments/arbitrum.json`);
+	log(`    ${c.grey("3.")} ./symmio doctor --config deployments/arbitrum.json`);
+	log(`    ${c.grey("4.")} ./symmio deploy --config deployments/arbitrum.json --plan`);
+	log(`    ${c.grey("5.")} ./symmio deploy --config deployments/arbitrum.json`);
 	blank();
-	log(`  ${c.grey("Optional: run `./utils/yarn-classic.sh link` once if you want the global `symmio` command.")}`);
-	log(`  ${c.grey("./utils/yarn-classic.sh cli <command> --help  shows command details.")}`);
+	log(`  ${c.grey("Optional: run `./utils/pinned-yarn.sh link` once if you want the global `symmio` command.")}`);
+	log(`  ${c.grey("./symmio <command> --help  shows command details.")}`);
 	blank();
 }
 

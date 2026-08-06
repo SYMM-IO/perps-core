@@ -122,6 +122,29 @@
 		"operator": "REPLACE_WITH_SYMBOL_MANAGER_OPERATOR_ADDRESS"
 	},
 	"expressProvider": {
-		"mode": "skip"
+		"mode": "deploy",
+		"registerOnCore": true,
+		"securityWindow": 20,
+		"tolerancePeriod": 60,
+		"creditLine": {
+			"signatureVerifier": "fromCore",
+			"muonAppId": "REPLACE_WITH_EXPRESS_MUON_APP_ID",
+			"muonFreshnessWindow": 300
+		},
+		"roles": {
+			"OPERATOR_ROLE": ["REPLACE_WITH_EXPRESS_OPERATOR_ADDRESS"],
+			"LOCKER_ROLE": ["REPLACE_WITH_EXPRESS_OPERATOR_ADDRESS"],
+			"UNLOCK_ROLE": ["REPLACE_WITH_EXPRESS_OPERATOR_ADDRESS"],
+			"SIGNER_ROLE": ["REPLACE_WITH_EXPRESS_SIGNER_ADDRESS"]
+		},
+		"affiliates": [
+			{
+				"address": "REPLACE_WITH_EXPRESS_AFFILIATE_ADDRESS",
+				"feeRate": "0",
+				"operatorFee": "0",
+				"maxDebt": "REPLACE_WITH_EXPRESS_MAX_DEBT_IN_COLLATERAL_DECIMALS",
+				"maxDebtBps": 5000
+			}
+		]
 	}
 }

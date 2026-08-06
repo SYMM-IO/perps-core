@@ -21,7 +21,7 @@ export function validateVerifyRecipeReport(report, checkpoint, context, expected
 			context.recipe.partyB.mode === "deploy" ? "partyB" : context.recipe.symbolManager.mode === "deploy" ? "symbolManager" : "component";
 		throw new Error(
 			`verify --config is for full-system recipes only. ${selected} verification is performed and recorded by ` +
-				`\`./utils/yarn-classic.sh cli deploy --config ${context.path} --only ${selected}\`; rerun that identical command to retry or finalize it.`,
+				`\`./symmio deploy --config ${context.path} --only ${selected}\`; rerun that identical command to retry or finalize it.`,
 		);
 	}
 	if (!report || typeof report !== "object") throw new Error("chain-scoped deployment report is missing");

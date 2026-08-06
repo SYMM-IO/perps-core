@@ -16,6 +16,23 @@ const MUON_PERMISSIONS = [
 	"LiquidationPartyB",
 	"RemoveMargin",
 ];
+/**
+ * Exact, case-sensitive role names from LibAccessControl. An unknown or misspelled name is
+ * rejected rather than silently granting nothing.
+ */
+const EXPRESS_ROLES = [
+	"OPERATOR_ROLE",
+	"LOCKER_ROLE",
+	"SIGNER_ROLE",
+	"SETTER_ROLE",
+	"FEE_CLAIMER_ROLE",
+	"UNLOCK_ROLE",
+	"WITHDRAWER_ROLE",
+	"PAUSER_ROLE",
+];
+/** Roles Init grants to the configured admin; the deployment proves them rather than re-granting. */
+const EXPRESS_INIT_ADMIN_ROLES = ["SETTER_ROLE", "FEE_CLAIMER_ROLE", "WITHDRAWER_ROLE", "PAUSER_ROLE"];
+const BPS_DENOMINATOR = 10000;
 const UINT256_MAX = (BigInt(1) << BigInt(256)) - BigInt(1);
 const DEFAULT_CONFIRMATIONS = 1;
 const DEFAULT_TX_TIMEOUT_SECONDS = 300;
@@ -277,6 +294,114 @@ function validateCore(value, source, networkMode) {
 	if (core.mode !== "reuse" && core.fromReport !== undefined) fail(source, "core.fromReport", "must be omitted unless core.mode is reuse");
 }
 
+/**
+ * ExpressProvider carries more deployment intent than the other add-ons: credit-line Muon
+ * inputs, per-affiliate policy, validator sets, and eight role assignments. Everything the
+ * deployment will write is declared here so the plan, digest, and post-state health check all
+ * read from one reviewed source.
+ */
+function validateExpressProvider(value, source, name = "expressProvider") {
+	const component = object(value, source, name);
+	const allowed = ["mode", "address", "admin", "registerOnCore", "securityWindow", "tolerancePeriod", "creditLine", "roles", "affiliates"];
+	onlyKeys(component, allowed, source, name);
+	required(component, ["mode"], source, name);
+	enumValue(component.mode, COMPONENT_MODES, source, `${name}.mode`);
+
+	const deployOnly = ["admin", "registerOnCore", "securityWindow", "tolerancePeriod", "creditLine", "roles", "affiliates"];
+	if (component.mode === "reuse") {
+		required(component, ["address"], source, name);
+		address(component.address, source, `${name}.address`);
+		for (const field of deployOnly) {
+			if (component[field] !== undefined) fail(source, `${name}.${field}`, "must be omitted when mode is reuse");
+		}
+		return;
+	}
+	if (component.mode === "skip") {
+		if (component.address !== undefined) fail(source, `${name}.address`, "must be omitted when mode is skip");
+		for (const field of deployOnly) {
+			if (component[field] !== undefined) fail(source, `${name}.${field}`, "must be omitted when mode is skip");
+		}
+		return;
+	}
+
+	if (component.address !== undefined) fail(source, `${name}.address`, "must be omitted when mode is deploy");
+	required(component, ["registerOnCore", "creditLine", "roles", "affiliates"], source, name);
+	if (component.admin !== undefined) address(component.admin, source, `${name}.admin`);
+	boolean(component.registerOnCore, source, `${name}.registerOnCore`);
+	// Init seeds 20s/60s; ControlFacet rejects anything below 10 for either.
+	if (component.securityWindow !== undefined) integer(component.securityWindow, source, `${name}.securityWindow`, 10);
+	if (component.tolerancePeriod !== undefined) integer(component.tolerancePeriod, source, `${name}.tolerancePeriod`, 10);
+
+	const creditLine = object(component.creditLine, source, `${name}.creditLine`);
+	onlyKeys(creditLine, ["signatureVerifier", "muonAppId", "muonFreshnessWindow"], source, `${name}.creditLine`);
+	required(creditLine, ["signatureVerifier", "muonAppId", "muonFreshnessWindow"], source, `${name}.creditLine`);
+	// "fromCore" resolves to the core diamond's configured verifier at execution time, so a
+	// standalone Express run cannot drift from the core it is bound to.
+	if (creditLine.signatureVerifier !== "fromCore") {
+		address(creditLine.signatureVerifier, source, `${name}.creditLine.signatureVerifier`);
+	}
+	uintString(creditLine.muonAppId, source, `${name}.creditLine.muonAppId`, BigInt(1));
+	integer(creditLine.muonFreshnessWindow, source, `${name}.creditLine.muonFreshnessWindow`, 1);
+
+	const roles = object(component.roles, source, `${name}.roles`);
+	onlyKeys(roles, EXPRESS_ROLES, source, `${name}.roles`);
+	for (const role of EXPRESS_ROLES) {
+		if (roles[role] === undefined) continue;
+		uniqueAddresses(roles[role], source, `${name}.roles.${role}`);
+	}
+	// A provider with no operator can never process a withdrawal it accepted.
+	if (roles.OPERATOR_ROLE === undefined) fail(source, `${name}.roles.OPERATOR_ROLE`, "is required so accepted withdrawals can be processed");
+
+	if (!Array.isArray(component.affiliates) || component.affiliates.length === 0) {
+		fail(source, `${name}.affiliates`, "must be a non-empty array");
+	}
+	const seenAffiliates = new Set();
+	for (const [index, entry] of component.affiliates.entries()) {
+		const field = `${name}.affiliates[${index}]`;
+		const affiliate = object(entry, source, field);
+		const affiliateKeys = [
+			"address",
+			"feeRate",
+			"operatorFee",
+			"maxDebt",
+			"maxDebtBps",
+			"minValidatorSignatures",
+			"validatorApprovalTimeout",
+			"validators",
+		];
+		onlyKeys(affiliate, affiliateKeys, source, field);
+		required(affiliate, ["address", "feeRate", "operatorFee", "maxDebt", "maxDebtBps"], source, field);
+		address(affiliate.address, source, `${field}.address`);
+		const normalized = affiliate.address.toLowerCase();
+		if (seenAffiliates.has(normalized)) fail(source, `${field}.address`, "duplicates an earlier affiliate");
+		seenAffiliates.add(normalized);
+		// setAffiliateConfig rejects a feeRate above 100%.
+		uintString(affiliate.feeRate, source, `${field}.feeRate`, BigInt(0));
+		if (BigInt(affiliate.feeRate) > BigInt(BPS_DENOMINATOR)) fail(source, `${field}.feeRate`, `must be <= ${BPS_DENOMINATOR}`);
+		uintString(affiliate.operatorFee, source, `${field}.operatorFee`);
+		// These become the protocol-side caps (setCreditLineProtocolConfig); the affiliate may
+		// only tighten them. 0 means "no limit" on-chain, not "cannot borrow".
+		uintString(affiliate.maxDebt, source, `${field}.maxDebt`);
+		integer(affiliate.maxDebtBps, source, `${field}.maxDebtBps`);
+		if (affiliate.maxDebtBps > BPS_DENOMINATOR) fail(source, `${field}.maxDebtBps`, `must be <= ${BPS_DENOMINATOR}`);
+		if (affiliate.validators !== undefined) uniqueAddresses(affiliate.validators, source, `${field}.validators`);
+		if (affiliate.minValidatorSignatures !== undefined) {
+			integer(affiliate.minValidatorSignatures, source, `${field}.minValidatorSignatures`);
+			const available = affiliate.validators?.length ?? 0;
+			if (affiliate.minValidatorSignatures > available) {
+				fail(
+					source,
+					`${field}.minValidatorSignatures`,
+					`must be <= the ${available} configured validators, or the affiliate can never be served`,
+				);
+			}
+		}
+		if (affiliate.validatorApprovalTimeout !== undefined) {
+			integer(affiliate.validatorApprovalTimeout, source, `${field}.validatorApprovalTimeout`, 1);
+		}
+	}
+}
+
 function validateAddon(value, source, name, extraField, requireExtraForDeploy) {
 	const component = object(value, source, name);
 	const allowed = ["mode", "address", ...(extraField ? [extraField] : []), ...(name === "partyB" ? ["adlEnabled"] : [])];
@@ -414,7 +539,7 @@ export function validateDeploymentRecipe(value, source = "deployment recipe") {
 	if (recipe.core.mode === "deploy") required(governance, governanceKeys, source, "governance");
 	validateAddon(recipe.partyB, source, "partyB", "signer", true);
 	validateAddon(recipe.symbolManager, source, "symbolManager", "operator", true);
-	validateAddon(recipe.expressProvider, source, "expressProvider");
+	validateExpressProvider(recipe.expressProvider, source, "expressProvider");
 
 	return JSON.parse(JSON.stringify(recipe));
 }
@@ -612,14 +737,6 @@ export function createDeploymentPlan(recipeValue, { only } = {}) {
 		error.code = "TARGET_MODE_UNSUPPORTED";
 		throw error;
 	};
-
-	if (selectedNames.includes("expressProvider") && recipe.expressProvider.mode === "deploy") {
-		const error = new Error(
-			`LIVE_TARGET_UNSUPPORTED: ExpressProvider recipe deployment is unsupported for ${recipe.network.mode} targets because post-payout credit-loss settlement is unresolved and production role, Muon, affiliate-policy, core-registration, recovery, verification, and post-state workflows are not yet represented safely; no transaction was sent`,
-		);
-		error.code = "LIVE_TARGET_UNSUPPORTED";
-		throw error;
-	}
 
 	if (only === "core") {
 		if (recipe.core.mode !== "deploy") unsupportedMode("core", "deploy");

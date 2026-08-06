@@ -4,7 +4,7 @@ import { recipeAccountsForNetwork, recipeAccountsForSimulatedNetwork, recipeCred
 import { assertComponentDeploymentAuthority, summarizeComponentHealth } from "../../tasks/deploy/componentDeployment.js"
 import {
 	assertDependencyAddressesHaveCode,
-	assertExpressProviderSupported,
+	assertExpressProviderDeployable,
 	assertRecipeNetworkTarget,
 	componentCheckpointScope,
 	componentReportRelativePath,
@@ -94,8 +94,25 @@ describe("deployment recipe task validation", function () {
 		expect(() => componentReportRelativePath("../escape", "partyB")).to.throw("Invalid deployment checkpoint scope")
 	})
 
-	it("fails closed for ExpressProvider with a stable capability code", function () {
-		expect(() => assertExpressProviderSupported({ name: "arbitrum", chainId: 42161, mode: "live" })).to.throw("LIVE_TARGET_UNSUPPORTED")
+	it("refuses an ExpressProvider that could not be operated or supervised", function () {
+		const live = { name: "arbitrum", chainId: 42161, mode: "live" } as const
+		const complete = {
+			mode: "deploy",
+			registerOnCore: true,
+			creditLine: { signatureVerifier: "fromCore", muonAppId: "7", muonFreshnessWindow: 300 },
+			roles: { OPERATOR_ROLE: ["0x0000000000000000000000000000000000000005"] },
+			affiliates: [{ address: "0x0000000000000000000000000000000000000006" }],
+		}
+		expect(() => assertExpressProviderDeployable(complete, live)).to.not.throw()
+
+		expect(() => assertExpressProviderDeployable({ ...complete, mode: "skip" }, live)).to.throw("LIVE_TARGET_UNSUPPORTED")
+		// No operator means accepted withdrawals can never be processed.
+		expect(() => assertExpressProviderDeployable({ ...complete, roles: {} }, live)).to.throw("OPERATOR_ROLE")
+		// reserveDebt reverts with CreditLineNotConfigured until the verifier is set.
+		expect(() => assertExpressProviderDeployable({ ...complete, creditLine: {} }, live)).to.throw("signatureVerifier")
+		expect(() => assertExpressProviderDeployable({ ...complete, affiliates: [] }, live)).to.throw("at least one affiliate")
+		// An unregistered provider cannot call advanceWithdraw, so it would be inert on a live chain.
+		expect(() => assertExpressProviderDeployable({ ...complete, registerOnCore: false }, live)).to.throw("registerOnCore")
 	})
 
 	it("does not report pending Safe handover checks as healthy completion", function () {

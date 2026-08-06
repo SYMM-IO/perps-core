@@ -14,7 +14,7 @@ export interface ActiveDeploymentRecipe {
 export function assertExpectedRecipeDigest(actual: string, expected: string | undefined): void {
 	if (!expected) {
 		throw new Error(
-			"Deployment recipe digest is not pinned. Run through `./utils/yarn-classic.sh cli deploy --config <recipe.json>` so the reviewed digest is carried across the Hardhat process boundary.",
+			"Deployment recipe digest is not pinned. Run through `./symmio deploy --config <recipe.json>` so the reviewed digest is carried across the Hardhat process boundary.",
 		)
 	}
 	if (!/^[0-9a-f]{64}$/.test(expected)) throw new Error(`Invalid SYMMIO_DEPLOYMENT_RECIPE_DIGEST ${JSON.stringify(expected)}`)

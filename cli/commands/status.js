@@ -70,11 +70,12 @@ export function resolveStatusRecipeSelection(recipeContext, only, configLabel = 
 	}
 
 	if (coreMode === "reuse") {
-		const enabled = ["partyB", "symbolManager"].filter(component => recipeContext.recipe[component]?.mode === "deploy");
-		const selection = enabled.length === 1 ? `--only ${enabled[0]}` : "--only partyB or --only symbolManager";
+		const enabled = ["partyB", "symbolManager", "expressProvider"].filter(component => recipeContext.recipe[component]?.mode === "deploy");
+		const selection =
+			enabled.length === 1 ? `--only ${enabled[0]}` : `--only ${["partyB", "symbolManager", "expressProvider"].join(" or --only ")}`;
 		throw new Error(
 			`This is a component recipe because core.mode=reuse. Select its component explicitly: ` +
-				`./utils/yarn-classic.sh cli status --config ${configLabel} ${selection}`,
+				`./symmio status --config ${configLabel} ${selection}`,
 		);
 	}
 
@@ -241,7 +242,7 @@ function componentExpectedConfig(recipeContext, component) {
 }
 
 function componentRerunCommand(configLabel, component) {
-	return `./utils/yarn-classic.sh cli deploy --config ${configLabel} --only ${component}`;
+	return `./symmio deploy --config ${configLabel} --only ${component}`;
 }
 
 function showComponentStatusReport(report, reportPath, checkpointPath, networkName) {

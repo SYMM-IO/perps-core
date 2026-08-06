@@ -25,7 +25,14 @@ import {
 	assertCheckpointManifest,
 	assertCheckpointContractsHaveCode,
 } from "./checkpoint.js"
-import { assertExpressProviderSupported, assertRecipeNetworkTarget } from "./deploymentRecipe.js"
+import {
+	deployAndConfigureExpressProvider,
+	resolveExpressProviderConfig,
+	type ComponentHealthCheck,
+	type ExpressProviderResolvedConfig,
+} from "./componentDeployment.js"
+import { EXPRESSPROVIDER_DEPLOYMENT_FILE } from "./constants.js"
+import { assertExpressProviderDeployable, assertRecipeNetworkTarget, type SafeManualAction } from "./deploymentRecipe.js"
 import { checkpointDeployment, persistSubmittedTransaction, recoverCheckpointContractDeployments } from "./deploymentRecovery.js"
 import { deployDiamond, resolveCreate2FactoryAddress } from "./diamond.js"
 import { getConnection } from "./helpers.js"
@@ -178,6 +185,14 @@ interface DeployedContracts {
 	symmioPartyB?: string
 	accountManager?: string
 	symbolManager?: string
+	expressProvider?: string
+}
+
+type ExpressProviderStepResult = {
+	address: string
+	records: Array<{ name: string; address: string; constructorArguments: unknown[] }>
+	manualActions: SafeManualAction[]
+	checks: ComponentHealthCheck[]
 }
 
 export function parseBooleanSetting(value: string | undefined, name: string, defaultValue: boolean): boolean {
@@ -648,7 +663,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 				if (recipe.core.mode !== "deploy") {
 					throw new Error(`LIVE_TARGET_UNSUPPORTED: deploy:system requires core.mode=deploy; received ${recipe.core.mode}`)
 				}
-				if (recipe.expressProvider.mode === "deploy") assertExpressProviderSupported(recipe.network)
+				if (recipe.expressProvider.mode === "deploy") assertExpressProviderDeployable(recipe.expressProvider, recipe.network)
 				if (recipe.partyB.mode === "reuse" || recipe.symbolManager.mode === "reuse") {
 					throw new Error(
 						"LIVE_TARGET_UNSUPPORTED: deploy:system cannot safely reuse PartyB or SymbolManager while deploying a brand-new core, because their core binding cannot be proven before the new core address exists. Use mode=deploy/skip, or deploy the add-on separately against core.fromReport.",
@@ -861,6 +876,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 
 			const deploymentResults: DeploymentResult[] = []
 			const deployedContracts: DeployedContracts = {}
+			let expressProviderResult: ExpressProviderStepResult | undefined
 
 			// HyperEVM (chainId 999 mainnet, 998 testnet) requires big blocks for facet deployment
 			const isHyperEVM = !isSimulatedNetwork && (Number(chainId) === 999 || Number(chainId) === 998)
@@ -1281,6 +1297,52 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 					})
 				}
 
+				if (recipe?.expressProvider.mode === "deploy") {
+					await runDeploymentStep(checkpoint, {
+						id: "expressProvider",
+						title: "Deploying ExpressProvider",
+						order: ++deploymentStepOrder,
+						run: async () => {
+							try {
+								const wasAlreadyDeployed = !!checkpoint.contracts.expressProvider?.diamondCutComplete
+								const resolved = await resolveExpressProviderConfig(
+									ethers,
+									recipe.expressProvider,
+									{ core: deployedContracts.diamond!, admin: config.admin },
+									deployerAddress,
+								)
+								const result = await deployAndConfigureExpressProvider(hre, checkpoint, resolved, deployer)
+								deployedContracts.expressProvider = result.address
+								expressProviderResult = result
+								// verify:all reads this file, so write it before the health gate can throw.
+								if (logData) writeData(EXPRESSPROVIDER_DEPLOYMENT_FILE, result.records)
+								logger.info(`ExpressProvider deployed at: ${result.address}`)
+								const failed = result.checks.filter(check => check.status === "failed")
+								if (failed.length > 0) {
+									throw new Error(`ExpressProvider post-state health failed: ${failed.map(check => check.check).join(", ")}`)
+								}
+								deploymentResults.push({
+									contract: "ExpressProvider",
+									address: result.address,
+									status: wasAlreadyDeployed ? "skipped" : "success",
+									timestamp: new Date().toISOString(),
+								})
+							} catch (err: any) {
+								logger.error(`Failed to deploy ExpressProvider: ${err.message}`)
+								deploymentResults.push({
+									contract: "ExpressProvider",
+									address: "N/A",
+									status: "failed",
+									error: err.message,
+									timestamp: new Date().toISOString(),
+								})
+								throw err
+							}
+							logger.info()
+						},
+					})
+				}
+
 				await runDeploymentStep(checkpoint, {
 					id: "transferOwnership",
 					title: "Transferring Diamond ownership to admin",
@@ -1390,6 +1452,16 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 					)
 				}
 
+				// The ExpressProvider carries its own handover: core registration when the deployer
+				// lacks PROVIDER_ADMIN_ROLE, plus acceptOwnership on its diamond. Both must keep the
+				// run in pending_handover, or a provider that cannot advance would report complete.
+				for (const action of expressProviderResult?.manualActions || []) {
+					manualActions.push(`${config.admin} executes: ${action.description} (to ${action.to}, data ${action.data})`)
+				}
+				for (const check of expressProviderResult?.checks || []) {
+					if (check.status === "pending") manualActions.push(`ExpressProvider check still pending: ${check.check}`)
+				}
+
 				const handoverPending = manualActions.length > 0
 				checkpoint.step = handoverPending ? "pending_handover" : "complete"
 				saveCheckpoint(checkpoint)
@@ -1484,7 +1556,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 						logger.error(err instanceof Error ? err.message : String(err))
 						logger.error(
 							recipeRuntime
-								? `Retry with: ./utils/yarn-classic.sh cli verify --config ${recipeRuntime.identityPath} --retry-failed`
+								? `Retry with: ./symmio verify --config ${recipeRuntime.identityPath} --retry-failed`
 								: `Retry with: ./node_modules/.bin/hardhat verify:all --retry-failed --network ${network}`,
 						)
 						logger.error("Then rerun deploy:system; the checkpoint keeps verification mandatory until this gate passes.")

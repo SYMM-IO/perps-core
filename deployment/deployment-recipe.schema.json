@@ -419,13 +419,67 @@
 				}
 			]
 		},
+		"expressRole": {
+			"type": "array",
+			"minItems": 1,
+			"uniqueItems": true,
+			"items": { "$ref": "#/$defs/address" }
+		},
+		"expressAffiliate": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["address", "feeRate", "operatorFee", "maxDebt", "maxDebtBps"],
+			"properties": {
+				"address": { "$ref": "#/$defs/address" },
+				"feeRate": { "$ref": "#/$defs/uintString", "description": "Basis points, max 10000" },
+				"operatorFee": { "$ref": "#/$defs/uintString" },
+				"maxDebt": { "$ref": "#/$defs/uintString", "description": "Protocol-side absolute cap; 0 means no cap" },
+				"maxDebtBps": { "type": "integer", "minimum": 0, "maximum": 10000, "description": "Protocol-side percentage cap; 0 means no cap" },
+				"minValidatorSignatures": { "type": "integer", "minimum": 0 },
+				"validatorApprovalTimeout": { "type": "integer", "minimum": 1 },
+				"validators": { "$ref": "#/$defs/expressRole" }
+			}
+		},
 		"expressProvider": {
 			"type": "object",
 			"additionalProperties": false,
 			"required": ["mode"],
 			"properties": {
 				"mode": { "$ref": "#/$defs/componentMode" },
-				"address": { "$ref": "#/$defs/address" }
+				"address": { "$ref": "#/$defs/address" },
+				"admin": { "$ref": "#/$defs/address", "description": "Defaults to the core deployment report admin when omitted" },
+				"registerOnCore": { "type": "boolean" },
+				"securityWindow": { "type": "integer", "minimum": 10 },
+				"tolerancePeriod": { "type": "integer", "minimum": 10 },
+				"creditLine": {
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["signatureVerifier", "muonAppId", "muonFreshnessWindow"],
+					"properties": {
+						"signatureVerifier": {
+							"oneOf": [{ "const": "fromCore" }, { "$ref": "#/$defs/address" }],
+							"description": "\"fromCore\" resolves the core diamond's configured verifier at execution time"
+						},
+						"muonAppId": { "$ref": "#/$defs/uintString" },
+						"muonFreshnessWindow": { "type": "integer", "minimum": 1 }
+					}
+				},
+				"roles": {
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["OPERATOR_ROLE"],
+					"properties": {
+						"OPERATOR_ROLE": { "$ref": "#/$defs/expressRole" },
+						"LOCKER_ROLE": { "$ref": "#/$defs/expressRole" },
+						"SIGNER_ROLE": { "$ref": "#/$defs/expressRole" },
+						"SETTER_ROLE": { "$ref": "#/$defs/expressRole" },
+						"FEE_CLAIMER_ROLE": { "$ref": "#/$defs/expressRole" },
+						"UNLOCK_ROLE": { "$ref": "#/$defs/expressRole" },
+						"WITHDRAWER_ROLE": { "$ref": "#/$defs/expressRole" },
+						"PAUSER_ROLE": { "$ref": "#/$defs/expressRole" }
+					}
+				},
+				"affiliates": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/expressAffiliate" } }
 			},
 			"allOf": [
 				{
@@ -435,6 +489,10 @@
 				{
 					"if": { "type": "object", "properties": { "mode": { "enum": ["deploy", "skip"] } }, "required": ["mode"] },
 					"then": { "type": "object", "not": { "type": "object", "required": ["address"] } }
+				},
+				{
+					"if": { "type": "object", "properties": { "mode": { "const": "deploy" } }, "required": ["mode"] },
+					"then": { "type": "object", "required": ["registerOnCore", "creditLine", "roles", "affiliates"] }
 				}
 			]
 		}

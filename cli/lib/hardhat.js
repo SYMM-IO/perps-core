@@ -20,7 +20,7 @@ export function hardhat(args, opts = {}) {
 	if (!fs.existsSync(HARDHAT_BIN)) {
 		console.error(`  ${c.red("Error")} local Hardhat is not installed at ${HARDHAT_BIN}`);
 		console.error(
-			`  ${c.grey("Run `./utils/yarn-classic.sh install --frozen-lockfile` in the repository, then retry. The CLI will not download packages implicitly.")}`,
+			`  ${c.grey("Run `./utils/pinned-yarn.sh install --frozen-lockfile` in the repository, then retry. The CLI will not download packages implicitly.")}`,
 		);
 		return Promise.resolve(1);
 	}
