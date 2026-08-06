@@ -343,7 +343,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 				it("Should allow pending owner to accept ownership", async function () {
 					await context.alControlFacet.connect(context.signers.admin).transferOwnership(context.signers.user.address)
 					await expect(context.alControlFacet.connect(context.signers.user).acceptOwnership()).to.not.be.reverted
-					expect(await context.alViewFacet.owner()).to.equal(context.signers.user.address)
+					expect(await context.alViewFacet.getOwner()).to.equal(context.signers.user.address)
 					expect(await context.alViewFacet.pendingOwner()).to.equal(ZeroAddress)
 				})
 

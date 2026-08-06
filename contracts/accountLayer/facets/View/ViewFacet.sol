@@ -517,7 +517,7 @@ contract ViewFacet is IViewFacet {
 	// ==================== Ownership ====================
 
 	/// @notice Returns the current diamond owner address
-	function owner() external view returns (address) {
+	function getOwner() external view returns (address) {
 		return LibDiamond.contractOwner();
 	}
 

@@ -30,10 +30,20 @@ const CUSTOM_DEFAULT_ADMIN_ROLE = ethers.id("DEFAULT_ADMIN_ROLE")
 const ZERO_ADDRESS = ethers.ZeroAddress.toLowerCase()
 
 const DIAMOND_OWNERSHIP_ABI = [
+	"function getOwner() view returns (address)",
 	"function owner() view returns (address)",
 	"function pendingOwner() view returns (address)",
 	"function hasRole(address user, bytes32 role) view returns (bool)",
 ]
+
+/// v0.8.6 renamed the diamond owner getter from `owner()` to `getOwner()`. Upgrade scripts
+/// read the owner from diamonds on both sides of that cut — including before the diamondCut
+/// that installs the new ViewFacet — so try the new name first and fall back to the old one.
+export const DIAMOND_OWNER_ABI = ["function getOwner() view returns (address)", "function owner() view returns (address)"]
+
+export async function readDiamondOwner(contract: any): Promise<string | undefined> {
+	return (await safeReadAddress(() => contract.getOwner())) ?? (await safeReadAddress(() => contract.owner()))
+}
 
 const ACCESS_CONTROL_ENUMERABLE_ABI = [
 	"function DEFAULT_ADMIN_ROLE() view returns (bytes32)",
@@ -103,7 +113,7 @@ async function logDiamondOwnership(label: string, address: string | undefined, k
 	if (!normalized) return
 
 	const contract = new ethers.Contract(normalized, DIAMOND_OWNERSHIP_ABI, ethers.provider)
-	const owner = await safeReadAddress(() => contract.owner())
+	const owner = await readDiamondOwner(contract)
 	const pendingOwner = await safeReadAddress(() => contract.pendingOwner())
 	const roleCandidates = withDynamicKnownAccounts(knownAccounts, [
 		{ label: `${label} owner`, address: owner },
