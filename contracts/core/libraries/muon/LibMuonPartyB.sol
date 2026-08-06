@@ -8,7 +8,6 @@ import { MuonStorage, PairUpnlAndPriceSig, SingleUpnlSig } from "../../storages/
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { LibMuon } from "./LibMuon.sol";
 import { LibAccount } from "../LibAccount.sol";
-import { LibSymbolAdjustment } from "../LibSymbolAdjustment.sol";
 import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library LibMuonPartyB {
@@ -36,7 +35,6 @@ library LibMuonPartyB {
 				upnlSig.upnlPartyB,
 				upnlSig.upnlPartyA,
 				symbolId,
-				LibSymbolAdjustment.basisVersion(symbolId),
 				upnlSig.price,
 				upnlSig.timestamp,
 				LibMuon.getChainId()

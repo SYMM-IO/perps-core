@@ -7,7 +7,6 @@ pragma solidity >=0.8.18;
 import { MuonStorage, SingleUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { LibMuon } from "./LibMuon.sol";
-import { LibSymbolAdjustment } from "../LibSymbolAdjustment.sol";
 import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library LibMuonPartyA {
@@ -26,7 +25,6 @@ library LibMuonPartyA {
 				AccountStorage.layout().partyAUpnlCounters[partyA],
 				upnlSig.upnl,
 				symbolId,
-				LibSymbolAdjustment.basisVersion(symbolId),
 				upnlSig.price,
 				upnlSig.timestamp,
 				LibMuon.getChainId()

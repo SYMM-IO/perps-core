@@ -7126,6 +7126,11 @@
                         "internalType": "uint256",
                         "name": "basisVersion",
                         "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "restatementStartedAt",
+                        "type": "uint256"
                     }
                 ],
                 "internalType": "struct SymbolAdjustment",

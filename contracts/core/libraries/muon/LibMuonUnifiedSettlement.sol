@@ -6,9 +6,7 @@ pragma solidity >=0.8.18;
 
 import { MuonStorage, UnifiedSettlementSig } from "../../storages/MuonStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
-import { QuoteStorage } from "../../storages/QuoteStorage.sol";
 import { LibMuon } from "./LibMuon.sol";
-import { LibSymbolAdjustment } from "../LibSymbolAdjustment.sol";
 import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library LibMuonUnifiedSettlement {
@@ -25,13 +23,11 @@ library LibMuonUnifiedSettlement {
 		bytes memory encodedData;
 		for (uint256 i = 0; i < settleSig.quotesSettlementsData.length; i++) {
 			uint256 quoteId = settleSig.quotesSettlementsData[i].quoteId;
-			uint256 symbolId = QuoteStorage.layout().quotes[quoteId].symbolId;
 			encodedData = abi.encodePacked(
 				encodedData,
 				quoteId,
 				settleSig.quotesSettlementsData[i].currentPrice,
-				settleSig.quotesSettlementsData[i].partyAIndex,
-				LibSymbolAdjustment.basisVersion(symbolId)
+				settleSig.quotesSettlementsData[i].partyAIndex
 			);
 		}
 

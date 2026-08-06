@@ -29,6 +29,18 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 		context = await loadFixture(initializeFixture)
 	})
 
+	// finalizeRestatement requires the symbol to have stayed frozen for a full Muon UPNL validity period, so that
+	// signatures priced in the old basis have expired before quote storage is rewritten. The fixture sets a
+	// hundred-year validity to disable expiry, so shrink it just long enough to clear the guard, then restore it —
+	// this advances the chain by seconds rather than a century and leaves other signatures in the test unaffected.
+	async function finalizeRestatementAfterWindow(symbolId: number): Promise<void> {
+		const [upnlValidTime, priceValidTime] = await context.viewFacet.getMuonConfig()
+		await context.controlFacet.connect(context.signers.admin).setMuonConfig(1n, priceValidTime)
+		await time.increase(2)
+		await context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(symbolId)
+		await context.controlFacet.connect(context.signers.admin).setMuonConfig(upnlValidTime, priceValidTime)
+	}
+
 	describe("registry lifecycle", function () {
 		it("should schedule an adjustment and freeze at effective time", async function () {
 			const now = await getBlockTimestamp()
@@ -269,7 +281,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 				"SymbolAdjustmentFacet: Restatement in progress",
 			)
 
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(SYMBOL_ID)
+			await finalizeRestatementAfterWindow(SYMBOL_ID)
 			const finalized = await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)
 			expect(finalized.state).to.equal(3) // APPLIED
 			expect(finalized.restatementFactor).to.equal(0n)
@@ -324,7 +336,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 				.to.emit(context.symbolAdjustmentFacet, "RestatementStarted")
 				.withArgs(SYMBOL_ID, 1, decimal(4n))
 			expect(await context.symbolAdjustmentFacet.isSymbolFrozen(SYMBOL_ID)).to.be.true
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(SYMBOL_ID)
+			await finalizeRestatementAfterWindow(SYMBOL_ID)
 			expect(await context.symbolAdjustmentFacet.isSymbolFrozen(SYMBOL_ID)).to.be.false
 			expect(await context.symbolAdjustmentFacet.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(1n))
 			const adjustment = await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)
@@ -351,7 +363,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			expect(await context.symbolAdjustmentFacet.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(4n))
 
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(SYMBOL_ID)
+			await finalizeRestatementAfterWindow(SYMBOL_ID)
 		})
 
 		it("should refuse scheduling while restating", async function () {
@@ -435,7 +447,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			expect(venueViews[1].quote.openedPrice).to.equal(unrestatedBefore.openedPrice / 4n)
 
 			await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [unrestatedId])
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(SYMBOL_ID)
+			await finalizeRestatementAfterWindow(SYMBOL_ID)
 			const finalizedView = await context.viewFacetQuote.getQuoteInVenueUnits(unrestatedId)
 			expect(finalizedView.factorApplied).to.equal(decimal(1n))
 			expect(finalizedView.storedInVenueUnits).to.be.true
@@ -468,7 +480,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			expect(venueViews[1].quote.openedPrice).to.equal(unrestatedBefore.openedPrice / 4n)
 
 			await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [unrestatedId])
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(SYMBOL_ID)
+			await finalizeRestatementAfterWindow(SYMBOL_ID)
 			expect(await context.symbolAdjustmentFacet.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(1n))
 			expect(await context.symbolAdjustmentFacet.isSymbolFrozen(SYMBOL_ID)).to.be.false
 		})
@@ -569,7 +581,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).abortRestatement(SYMBOL_ID)).to.be.revertedWith(
 				"SymbolAdjustmentFacet: Restatement already mutated",
 			)
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(SYMBOL_ID)
+			await finalizeRestatementAfterWindow(SYMBOL_ID)
 		})
 
 		it("should scale a partially closed quote consistently", async function () {
@@ -618,7 +630,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			const quoteId = await openPositionForUser()
 			await activateFactorAndStartRestatement()
 			await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [quoteId])
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(SYMBOL_ID)
+			await finalizeRestatementAfterWindow(SYMBOL_ID)
 			// close the whole restated quantity at the restated price — underflows in aggregate
 			// bookkeeping would revert here if step 2/4 amounts were wrong
 			const after = await context.viewFacetQuote.getQuote(quoteId)
@@ -675,7 +687,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).cancelPendingQuotes([pendingId, pendingId2])
 			const beforeOpened = await context.viewFacetQuote.getQuote(openedId)
 			await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [openedId, closePendingId])
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(SYMBOL_ID)
+			await finalizeRestatementAfterWindow(SYMBOL_ID)
 
 			// 5) invariants: factor reset, quantities x4, notional preserved, trading works again
 			expect(await context.symbolAdjustmentFacet.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(1n))
@@ -720,7 +732,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).cancelPendingQuotes([pendingId, pendingId2])
 			const beforeOpened = await context.viewFacetQuote.getQuote(openedId)
 			await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [openedId, closePendingId])
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(SYMBOL_ID)
+			await finalizeRestatementAfterWindow(SYMBOL_ID)
 
 			// 5) invariants: factor reset, quantities x4, notional preserved, trading (and aggregate bookkeeping) works again
 			expect(await context.symbolAdjustmentFacet.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(1n))
@@ -783,10 +795,10 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
 			await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [quoteId])
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(SYMBOL_ID)
+			await finalizeRestatementAfterWindow(SYMBOL_ID)
 		}
 
-		async function highLowHash(quoteId: bigint, sig: Awaited<ReturnType<typeof getDummyHighLowPriceSig>>, basisVersion: bigint) {
+		async function highLowHash(quoteId: bigint, sig: Awaited<ReturnType<typeof getDummyHighLowPriceSig>>) {
 			const quote = await context.viewFacetQuote.getQuote(quoteId)
 			const network = await ethers.provider.getNetwork()
 			return ethers.solidityPackedKeccak256(
@@ -809,7 +821,6 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 					"uint256",
 					"uint256",
 					"uint256",
-					"uint256",
 				],
 				[
 					await context.viewFacet.getMuonIds(),
@@ -822,7 +833,6 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 					sig.upnlPartyB,
 					sig.upnlPartyA,
 					quote.symbolId,
-					basisVersion,
 					sig.currentPrice,
 					sig.startTime,
 					sig.endTime,
@@ -835,26 +845,11 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			)
 		}
 
-		async function pairUpnlAndPriceHash(quoteId: bigint, sig: Awaited<ReturnType<typeof getDummyPairUpnlAndPriceSig>>, basisVersion: bigint) {
+		async function pairUpnlAndPriceHash(quoteId: bigint, sig: Awaited<ReturnType<typeof getDummyPairUpnlAndPriceSig>>) {
 			const quote = await context.viewFacetQuote.getQuote(quoteId)
 			const network = await ethers.provider.getNetwork()
 			return ethers.solidityPackedKeccak256(
-				[
-					"uint256",
-					"bytes",
-					"address",
-					"address",
-					"address",
-					"uint256",
-					"uint256",
-					"int256",
-					"int256",
-					"uint256",
-					"uint256",
-					"uint256",
-					"uint256",
-					"uint256",
-				],
+				["uint256", "bytes", "address", "address", "address", "uint256", "uint256", "int256", "int256", "uint256", "uint256", "uint256", "uint256"],
 				[
 					await context.viewFacet.getMuonIds(),
 					sig.reqId,
@@ -866,7 +861,6 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 					sig.upnlPartyB,
 					sig.upnlPartyA,
 					quote.symbolId,
-					basisVersion,
 					sig.price,
 					sig.timestamp,
 					network.chainId,
@@ -874,10 +868,10 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			)
 		}
 
-		async function partyAUpnlAndPriceHash(partyA: string, sig: Awaited<ReturnType<typeof getDummySingleUpnlAndPriceSig>>, basisVersion: bigint) {
+		async function partyAUpnlAndPriceHash(partyA: string, sig: Awaited<ReturnType<typeof getDummySingleUpnlAndPriceSig>>) {
 			const network = await ethers.provider.getNetwork()
 			return ethers.solidityPackedKeccak256(
-				["uint256", "bytes", "address", "address", "uint256", "int256", "uint256", "uint256", "uint256", "uint256", "uint256"],
+				["uint256", "bytes", "address", "address", "uint256", "int256", "uint256", "uint256", "uint256", "uint256"],
 				[
 					await context.viewFacet.getMuonIds(),
 					sig.reqId,
@@ -886,7 +880,6 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 					await context.viewFacet.nonceOfPartyA(partyA),
 					sig.upnl,
 					SYMBOL_ID,
-					basisVersion,
 					sig.price,
 					sig.timestamp,
 					network.chainId,
@@ -899,14 +892,9 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			const partyBNonces = await Promise.all(sig.partyAs.map(partyA => context.viewFacet.nonceOfPartyB(sig.partyB, partyA)))
 			const encodedData = ethers.concat(
 				await Promise.all(
-					sig.quotesSettlementsData.map(async data => {
-						const quote = await context.viewFacetQuote.getQuote(data.quoteId)
-						const basisVersion = (await context.symbolAdjustmentFacet.getSymbolAdjustment(quote.symbolId)).basisVersion
-						return ethers.solidityPacked(
-							["uint256", "uint256", "uint8", "uint256"],
-							[data.quoteId, data.currentPrice, data.partyAIndex, basisVersion],
-						)
-					}),
+					sig.quotesSettlementsData.map(async data =>
+						ethers.solidityPacked(["uint256", "uint256", "uint8"], [data.quoteId, data.currentPrice, data.partyAIndex]),
+					),
 				),
 			)
 			const network = await ethers.provider.getNetwork()
@@ -955,14 +943,9 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			)
 			const encodedData = ethers.concat(
 				await Promise.all(
-					sig.quotesSettlementsData.map(async data => {
-						const quote = await context.viewFacetQuote.getQuote(data.quoteId)
-						const basisVersion = (await context.symbolAdjustmentFacet.getSymbolAdjustment(quote.symbolId)).basisVersion
-						return ethers.solidityPacked(
-							["uint256", "uint256", "uint8", "uint256"],
-							[data.quoteId, data.currentPrice, data.partyBUpnlIndex, basisVersion],
-						)
-					}),
+					sig.quotesSettlementsData.map(async data =>
+						ethers.solidityPacked(["uint256", "uint256", "uint8"], [data.quoteId, data.currentPrice, data.partyBUpnlIndex]),
+					),
 				),
 			)
 			const network = await ethers.provider.getNetwork()
@@ -984,49 +967,88 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			)
 		}
 
-		it("rejects a high/low signature made for the pre-restatement basis", async function () {
+		it("keeps the high/low signature payload independent of the symbol basis", async function () {
 			const quoteId = await createClosePendingPosition()
-			const oldSig = await createHighLowSig(quoteId)
 			const oldBasisVersion = (await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)).basisVersion
-
-			const verifierFactory = await ethers.getContractFactory("HashCheckingMuonSignatureVerifier")
-			const verifier = await verifierFactory.deploy()
-			await context.controlFacet.connect(context.signers.admin).setSignatureVerifierAddress(await verifier.getAddress())
-			await verifier.setExpectedHash(await highLowHash(quoteId, oldSig, oldBasisVersion))
 
 			await restateQuote(quoteId)
 			const newBasisVersion = (await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)).basisVersion
 			expect(newBasisVersion).to.equal(oldBasisVersion + 1n)
 
-			await expect(user.forceClosePosition(quoteId, oldSig)).to.be.revertedWith("HashCheckingMuonSignatureVerifier: unexpected hash")
+			// The hash must not depend on basisVersion: a Muon app built against the pre-0.8.6 payload keeps
+			// verifying after a restatement. Old-basis prices are kept out by the mandatory freeze window instead.
+			const sig = await createHighLowSig(quoteId)
+			const verifierFactory = await ethers.getContractFactory("HashCheckingMuonSignatureVerifier")
+			const verifier = await verifierFactory.deploy()
+			await context.controlFacet.connect(context.signers.admin).setSignatureVerifierAddress(await verifier.getAddress())
+			await verifier.setExpectedHash(await highLowHash(quoteId, sig))
 
-			const freshSig = await createHighLowSig(quoteId)
-			await verifier.setExpectedHash(await highLowHash(quoteId, freshSig, newBasisVersion))
-			await expect(user.forceClosePosition(quoteId, freshSig)).not.to.be.reverted
+			await expect(user.forceClosePosition(quoteId, sig)).not.to.be.reverted
 		})
 
-		it("rejects a PartyA uPNL and price signature made for the pre-restatement basis", async function () {
+		it("refuses to finalize a restatement before old-basis signatures can have expired", async function () {
 			const quoteId = await createClosePendingPosition()
-			const oldSig = await getDummySingleUpnlAndPriceSig(decimal(1n), 0n)
+			const [upnlValidTime, priceValidTime] = await context.viewFacet.getMuonConfig()
+			await context.controlFacet.connect(context.signers.admin).setMuonConfig(1000n, priceValidTime)
+
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [quoteId])
+
+			// Quotes are rewritten, but the symbol has not been frozen long enough for in-flight signatures to expire.
+			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(SYMBOL_ID)).to.be.revertedWith(
+				"SymbolAdjustmentFacet: Restatement window too short",
+			)
+
+			await time.increase(1001)
+			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(SYMBOL_ID)).to.emit(
+				context.symbolAdjustmentFacet,
+				"RestatementFinalized",
+			)
+			await context.controlFacet.connect(context.signers.admin).setMuonConfig(upnlValidTime, priceValidTime)
+		})
+
+		it("takes the longest per-function UPNL validity override into account for the restatement window", async function () {
+			const [upnlValidTime, priceValidTime] = await context.viewFacet.getMuonConfig()
+			await context.controlFacet.connect(context.signers.admin).setMuonConfig(10n, priceValidTime)
+			// MuonFunction.Trading overrides the global with a much longer window, so the guard must follow the override.
+			await context.controlFacet.connect(context.signers.admin).setMuonFunctionUpnlValidTime(0, 5000n)
+
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+
+			await time.increase(100)
+			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(SYMBOL_ID)).to.be.revertedWith(
+				"SymbolAdjustmentFacet: Restatement window too short",
+			)
+
+			await time.increase(5000)
+			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(SYMBOL_ID)).to.emit(
+				context.symbolAdjustmentFacet,
+				"RestatementFinalized",
+			)
+			await context.controlFacet.connect(context.signers.admin).setMuonFunctionUpnlValidTime(0, 0n)
+			await context.controlFacet.connect(context.signers.admin).setMuonConfig(upnlValidTime, priceValidTime)
+		})
+
+		it("keeps the PartyA uPNL and price signature payload independent of the symbol basis", async function () {
+			const quoteId = await createClosePendingPosition()
 			const oldBasisVersion = (await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)).basisVersion
 			const partyA = await context.signers.user.getAddress()
 
 			const verifierFactory = await ethers.getContractFactory("HashCheckingMuonSignatureVerifier")
 			const verifier = await verifierFactory.deploy()
 			await context.controlFacet.connect(context.signers.admin).setSignatureVerifierAddress(await verifier.getAddress())
-			await verifier.setExpectedHash(await partyAUpnlAndPriceHash(partyA, oldSig, oldBasisVersion))
 
 			await restateQuote(quoteId)
 			const restatedQuote = await context.viewFacetQuote.getQuote(quoteId)
 			const newBasisVersion = (await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)).basisVersion
 			expect(newBasisVersion).to.equal(oldBasisVersion + 1n)
 
-			await expect(
-				user.sendQuote(marketQuoteRequestBuilder().price(restatedQuote.openedPrice).upnlSig(Promise.resolve(oldSig)).build()),
-			).to.be.revertedWith("HashCheckingMuonSignatureVerifier: unexpected hash")
-
 			const freshSig = await getDummySingleUpnlAndPriceSig(restatedQuote.openedPrice, 0n)
-			await verifier.setExpectedHash(await partyAUpnlAndPriceHash(partyA, freshSig, newBasisVersion))
+			await verifier.setExpectedHash(await partyAUpnlAndPriceHash(partyA, freshSig))
 			const freshQuoteId = await user.sendQuote(
 				marketQuoteRequestBuilder().price(restatedQuote.openedPrice).upnlSig(Promise.resolve(freshSig)).build(),
 			)
@@ -1041,7 +1063,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			const verifierFactory = await ethers.getContractFactory("HashCheckingMuonSignatureVerifier")
 			const verifier = await verifierFactory.deploy()
 			await context.controlFacet.connect(context.signers.admin).setSignatureVerifierAddress(await verifier.getAddress())
-			await verifier.setExpectedHash(await highLowHash(quoteId, sig, basisVersion))
+			await verifier.setExpectedHash(await highLowHash(quoteId, sig))
 
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
@@ -1085,11 +1107,8 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			expect(finalizedDetail.basisVersion).to.equal(0n)
 		})
 
-		it("rejects a pair uPNL and price signature made for the pre-restatement basis", async function () {
+		it("keeps the pair uPNL and price signature payload independent of the symbol basis", async function () {
 			const quoteId = await createClosePendingPosition()
-			const oldQuote = await context.viewFacetQuote.getQuote(quoteId)
-			const oldPairSig = await getDummyPairUpnlAndPriceSig(oldQuote.openedPrice, 0n, 0n)
-			const oldBasisVersion = (await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)).basisVersion
 
 			await restateQuote(quoteId)
 			await context.forceCloseStepsFacet.initializeForceClose(quoteId, await createHighLowSig(quoteId))
@@ -1097,43 +1116,24 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			const verifierFactory = await ethers.getContractFactory("HashCheckingMuonSignatureVerifier")
 			const verifier = await verifierFactory.deploy()
 			await context.controlFacet.connect(context.signers.admin).setSignatureVerifierAddress(await verifier.getAddress())
-			await verifier.setExpectedHash(await pairUpnlAndPriceHash(quoteId, oldPairSig, oldBasisVersion))
-
-			await expect(context.forceCloseStepsFacet.finalizeForceClose(quoteId, oldPairSig)).to.be.revertedWith(
-				"HashCheckingMuonSignatureVerifier: unexpected hash",
-			)
 
 			const freshPairSig = await getDummyPairUpnlAndPriceSig((await context.viewFacetQuote.getQuote(quoteId)).openedPrice, 0n, 0n)
-			await verifier.setExpectedHash(await pairUpnlAndPriceHash(quoteId, freshPairSig, oldBasisVersion + 1n))
+			await verifier.setExpectedHash(await pairUpnlAndPriceHash(quoteId, freshPairSig))
 			await expect(context.forceCloseStepsFacet.finalizeForceClose(quoteId, freshPairSig)).not.to.be.reverted
 		})
 
-		it("rejects a pre-restatement unified settlement signature from an in-progress force close", async function () {
+		it("keeps the unified settlement payload independent of the symbol basis", async function () {
 			const quoteId = await createClosePendingPosition()
-			const oldQuote = await context.viewFacetQuote.getQuote(quoteId)
 			await context.forceCloseStepsFacet.initializeForceClose(quoteId, await createHighLowSig(quoteId))
-			const oldSettlementSig = await getDummyUnifiedSettlementSig(
-				oldQuote.partyB,
-				0n,
-				[0n],
-				[oldQuote.partyA],
-				[0n],
-				[{ quoteId, currentPrice: oldQuote.openedPrice * 2n, partyAIndex: 0 }],
-			)
 
 			const verifierFactory = await ethers.getContractFactory("HashCheckingMuonSignatureVerifier")
 			const verifier = await verifierFactory.deploy()
 			await context.controlFacet.connect(context.signers.admin).setSignatureVerifierAddress(await verifier.getAddress())
-			await verifier.setExpectedHash(await unifiedSettlementHash(oldSettlementSig))
 
 			await restateQuote(quoteId)
-			await expect(
-				context.forceCloseStepsFacet.connect(context.signers.user).settleUpnlForForceClose(quoteId, oldSettlementSig, [oldQuote.openedPrice]),
-			).to.be.revertedWith("HashCheckingMuonSignatureVerifier: unexpected hash")
 
 			const freshHighLowSig = await createHighLowSig(quoteId)
-			const currentBasisVersion = (await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)).basisVersion
-			await verifier.setExpectedHash(await highLowHash(quoteId, freshHighLowSig, currentBasisVersion))
+			await verifier.setExpectedHash(await highLowHash(quoteId, freshHighLowSig))
 			await context.forceCloseStepsFacet.initializeForceClose(quoteId, freshHighLowSig)
 
 			const restatedQuote = await context.viewFacetQuote.getQuote(quoteId)
@@ -1151,20 +1151,14 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 				.not.to.be.reverted
 		})
 
-		it("rejects a pre-restatement legacy settlement signature", async function () {
+		it("keeps the legacy settlement payload independent of the symbol basis", async function () {
 			const quoteId = await createClosePendingPosition()
-			const oldQuote = await context.viewFacetQuote.getQuote(quoteId)
-			const oldSettlementSig = await getDummySettlementSig(0n, [0n], [{ quoteId, currentPrice: oldQuote.openedPrice * 2n, partyBUpnlIndex: 0 }])
 
 			const verifierFactory = await ethers.getContractFactory("HashCheckingMuonSignatureVerifier")
 			const verifier = await verifierFactory.deploy()
 			await context.controlFacet.connect(context.signers.admin).setSignatureVerifierAddress(await verifier.getAddress())
-			await verifier.setExpectedHash(await settlementHash(oldSettlementSig, oldQuote.partyA))
 
 			await restateQuote(quoteId)
-			await expect(hedger.settleUpnl(oldQuote.partyA, [oldQuote.openedPrice], oldSettlementSig)).to.be.revertedWith(
-				"HashCheckingMuonSignatureVerifier: unexpected hash",
-			)
 
 			const restatedQuote = await context.viewFacetQuote.getQuote(quoteId)
 			const freshSettlementSig = await getDummySettlementSig(
