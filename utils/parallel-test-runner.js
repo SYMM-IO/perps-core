@@ -158,9 +158,13 @@ const parallelTestDir = path.join(process.cwd(), "test/parallel");
 const parallelTestFiles = readdirSync(parallelTestDir)
 	.filter(f => f.endsWith(".test.ts"))
 	.map(f => path.join(parallelTestDir, f));
+// Only *.test.ts wrappers run here. test/sequential/Main.ts is the entrypoint for
+// `npx hardhat test mocha` (see paths.tests in hardhat.config.ts) and re-registers
+// every behavior the parallel wrappers already cover, so including it would run the
+// whole static suite a second time.
 const sequentialTestDir = path.join(process.cwd(), "test/sequential");
 const sequentialTestFiles = readdirSync(sequentialTestDir)
-	.filter(f => f === "Main.ts" || f.endsWith(".test.ts"))
+	.filter(f => f.endsWith(".test.ts"))
 	.map(f => path.join(sequentialTestDir, f));
 const totalTestFiles = parallelTestFiles.length + sequentialTestFiles.length;
 
@@ -470,8 +474,8 @@ async function compile() {
 async function main() {
 	printBanner();
 
-	console.log(style("gray", `  → Parallel test files: ${style("white", parallelTestFiles.length)}`));
-	console.log(style("gray", `  → Sequential test files: ${style("white", sequentialTestFiles.length)}`));
+	console.log(style("gray", `  → Test files: ${style("white", parallelTestFiles.length)}`));
+	if (sequentialTestFiles.length > 0) console.log(style("gray", `  → Sequential test files: ${style("white", sequentialTestFiles.length)}`));
 	console.log(style("gray", `  → Workers: ${style("white", jobs)}`));
 	console.log();
 
