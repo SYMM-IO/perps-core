@@ -23,6 +23,7 @@ import {
 	getDummyPairUpnlAndPriceSig,
 	getDummyPriceSig,
 	getDummySingleUpnlSig,
+	getDummySingleUpnlWithPendingBalanceSig,
 } from "./utils/SignatureUtils.js"
 
 // SubAccountCreationData struct type for AccountLayer
@@ -3917,6 +3918,59 @@ export function shouldBehaveLikeAccountLayer(): void {
 				it("should revert when caller is not the account owner", async () => {
 					await expect(
 						context.alMarginFacet.connect(context.signers.user2).removeMargin(virtualAccount, decimal(100n), await getDummySingleUpnlSig()),
+					).to.be.revertedWithCustomError(context.alMarginFacet, "NotOwner")
+				})
+			})
+
+			describe("safeRemoveMargin", async () => {
+				beforeEach(async () => {
+					await context.alMarginFacet.connect(context.signers.user).addMargin(virtualAccount, BALANCES.TRANSFER_AMOUNT)
+				})
+
+				it("should transfer balance from virtual account to subaccount via core safeDeallocate", async () => {
+					const subAccountBalanceBefore = await context.viewFacet.balanceOf(customSubAccount)
+					expect(await context.viewFacet.allocatedBalanceOfPartyA(virtualAccount)).to.equal(BALANCES.TRANSFER_AMOUNT)
+
+					await expect(
+						context.alMarginFacet
+							.connect(context.signers.user)
+							.safeRemoveMargin(virtualAccount, BALANCES.TRANSFER_AMOUNT, await getDummySingleUpnlWithPendingBalanceSig()),
+					)
+						.to.emit(context.alMarginFacet, "RemoveMargin")
+						.withArgs(virtualAccount, customSubAccount, BALANCES.TRANSFER_AMOUNT)
+
+					expect(await context.viewFacet.allocatedBalanceOfPartyA(virtualAccount)).to.equal(0n)
+					expect(await context.viewFacet.balanceOf(customSubAccount)).to.equal(subAccountBalanceBefore + BALANCES.TRANSFER_AMOUNT)
+				})
+
+				it("should enforce the scaled locked balance floor from core", async () => {
+					const scaledLockedBalance = BALANCES.TRANSFER_AMOUNT / 2n
+					const removable = BALANCES.TRANSFER_AMOUNT - scaledLockedBalance
+
+					await expect(
+						context.alMarginFacet
+							.connect(context.signers.user)
+							.safeRemoveMargin(virtualAccount, removable + 1n, await getDummySingleUpnlWithPendingBalanceSig(0n, 0n, scaledLockedBalance)),
+					).to.be.revertedWith("AccountFacet: Locked balance must remain allocated")
+
+					await context.alMarginFacet
+						.connect(context.signers.user)
+						.safeRemoveMargin(virtualAccount, removable, await getDummySingleUpnlWithPendingBalanceSig(0n, 0n, scaledLockedBalance))
+
+					expect(await context.viewFacet.allocatedBalanceOfPartyA(virtualAccount)).to.equal(scaledLockedBalance)
+				})
+
+				it("should revert when transferring zero amount", async () => {
+					await expect(
+						context.alMarginFacet.connect(context.signers.user).safeRemoveMargin(virtualAccount, 0n, await getDummySingleUpnlWithPendingBalanceSig()),
+					).to.be.revertedWithCustomError(context.alMarginFacet, "ZeroAmount")
+				})
+
+				it("should revert when caller is not the account owner", async () => {
+					await expect(
+						context.alMarginFacet
+							.connect(context.signers.user2)
+							.safeRemoveMargin(virtualAccount, decimal(100n), await getDummySingleUpnlWithPendingBalanceSig()),
 					).to.be.revertedWithCustomError(context.alMarginFacet, "NotOwner")
 				})
 			})

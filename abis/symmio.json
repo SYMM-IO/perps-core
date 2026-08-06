@@ -5629,6 +5629,83 @@
             },
             {
                 "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "components": [
+                    {
+                        "internalType": "bytes",
+                        "name": "reqId",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "timestamp",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "upnl",
+                        "type": "int256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "pendingBalance",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "scaledLockedBalance",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "gatewaySignature",
+                        "type": "bytes"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "signature",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "owner",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "nonce",
+                                "type": "address"
+                            }
+                        ],
+                        "internalType": "struct IMuonSignatureVerifier.SchnorrSign",
+                        "name": "sigs",
+                        "type": "tuple"
+                    }
+                ],
+                "internalType": "struct SingleUpnlWithPendingBalanceSig",
+                "name": "upnlSig",
+                "type": "tuple"
+            }
+        ],
+        "name": "safeDeallocateForPartyB",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            },
+            {
+                "internalType": "address",
                 "name": "origin",
                 "type": "address"
             },
@@ -9914,6 +9991,79 @@
                 "internalType": "uint256",
                 "name": "pendingBalance",
                 "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "scaledLockedBalance",
+                "type": "uint256"
+            }
+        ],
+        "name": "maxRemovableMarginForPartyA",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "internalType": "int256",
+                "name": "upnl",
+                "type": "int256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "pendingBalance",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "scaledLockedBalance",
+                "type": "uint256"
+            }
+        ],
+        "name": "maxRemovableMarginForPartyB",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "internalType": "int256",
+                "name": "upnl",
+                "type": "int256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "pendingBalance",
+                "type": "uint256"
             }
         ],
         "name": "maxSafeDeallocatableForPartyA",
@@ -10210,6 +10360,49 @@
     {
         "inputs": [],
         "name": "unbindCooldown",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            }
+        ],
+        "name": "upnlCounterOfPartyA",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            }
+        ],
+        "name": "upnlCounterOfPartyB",
         "outputs": [
             {
                 "internalType": "uint256",
@@ -17855,6 +18048,11 @@
                     {
                         "internalType": "uint256",
                         "name": "pendingBalance",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "scaledLockedBalance",
                         "type": "uint256"
                     },
                     {

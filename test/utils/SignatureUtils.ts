@@ -26,12 +26,17 @@ export async function getDummySingleUpnlSig(upnl: bigint = 0n): Promise<SingleUp
 	}
 }
 
-export async function getDummySingleUpnlWithPendingBalanceSig(upnl: bigint = 0n, pendingBalance: bigint = 0n): Promise<any> {
+export async function getDummySingleUpnlWithPendingBalanceSig(
+	upnl: bigint = 0n,
+	pendingBalance: bigint = 0n,
+	scaledLockedBalance: bigint = 0n,
+): Promise<any> {
 	return {
 		reqId: "0x",
 		timestamp: await getBlockTimestamp(700n),
 		upnl: upnl,
 		pendingBalance: pendingBalance,
+		scaledLockedBalance: scaledLockedBalance,
 		gatewaySignature: ethers.ZeroAddress,
 		sigs: {
 			signature: "0",

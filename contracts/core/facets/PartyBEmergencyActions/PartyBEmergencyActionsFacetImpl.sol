@@ -53,7 +53,7 @@ library PartyBEmergencyActionsFacetImpl {
 			"PartyBFacet: PartyB should be solvent"
 		);
 
-		LibAccount.increaseBothNonces(quote.partyB, quote.partyA);
+		LibAccount.increaseBothUpnlCounters(quote.partyB, quote.partyA);
 		LibQuoteClose.closeQuote(quote.id, filledAmount, upnlSig.price);
 	}
 
@@ -128,7 +128,7 @@ library PartyBEmergencyActionsFacetImpl {
 		);
 
 		//Update nonce
-		LibAccount.increaseBothNonces(quote.partyB, quote.partyA);
+		LibAccount.increaseBothUpnlCounters(quote.partyB, quote.partyA);
 
 		LibQuoteClose.closeQuote(quote.id, amount, price);
 		emit LibPartiesEvents.FillCloseRequest(quote.id, quote.partyA, quote.partyB, amount, price, quote.quoteStatus, adlCloseId);

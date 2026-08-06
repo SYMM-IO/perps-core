@@ -46,6 +46,21 @@ interface IViewFacet {
 
 	function maxDeallocatableForPartyB(address partyB, address partyA, int256 upnl) external view returns (uint256);
 
+	function maxRemovableMarginForPartyA(
+		address partyA,
+		int256 upnl,
+		uint256 pendingBalance,
+		uint256 scaledLockedBalance
+	) external view returns (uint256);
+
+	function maxRemovableMarginForPartyB(
+		address partyB,
+		address partyA,
+		int256 upnl,
+		uint256 pendingBalance,
+		uint256 scaledLockedBalance
+	) external view returns (uint256);
+
 	function isCrossPartyB(address partyB) external view returns (bool);
 
 	function isLegacyDeallocateDeprecated() external view returns (bool);
@@ -61,6 +76,10 @@ interface IViewFacet {
 	function nonceOfPartyA(address partyA) external view returns (uint256);
 
 	function nonceOfPartyB(address partyB, address partyA) external view returns (uint256);
+
+	function upnlCounterOfPartyA(address partyA) external view returns (uint256);
+
+	function upnlCounterOfPartyB(address partyB, address partyA) external view returns (uint256);
 
 	function isSuspended(address user) external view returns (bool);
 

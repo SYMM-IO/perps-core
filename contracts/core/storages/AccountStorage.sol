@@ -160,17 +160,19 @@ library AccountStorage {
 		/// @dev Records when a user last deallocated funds. Used with MAStorage.withdrawCooldownPeriod
 		///      to enforce a cooldown before withdrawals are allowed.
 		mapping(address => uint256) deallocateTimestamp;
-		/// @notice Replay protection counter for PartyA signatures
-		/// @dev Incremented with each action that changes the UPNL of partyA.
-		///      Muon signatures include this nonce to prevent replay attacks.
-		mapping(address => uint256) partyANonces;
-		/// @notice Replay protection counter for PartyB signatures per PartyA
-		/// @dev PartyB has separate nonces for each PartyA they trade with. Both
-		///      per-PartyA nonces AND the address(0) global nonce are always incremented
-		///      on every upnl changing operation. This nonce will be ignored for cross partyBs
-		///      when doing all operations except deallocation. The reason for that is to allow
-		///      parallel operations to solver.
-		mapping(address => mapping(address => uint256)) partyBNonces;
+		/// @notice Version counter of PartyA's upnl inputs, embedded in Muon signatures
+		/// @dev Incremented by every action that changes the inputs to PartyA's upnl (position fills,
+		///      funding charges, settlement, liquidation) so outstanding signatures no longer verify.
+		///      It is NOT consumed per signature use — a signature stays valid for its full validity
+		///      window until upnl-relevant state changes. Exposed externally as nonceOfPartyA.
+		mapping(address => uint256) partyAUpnlCounters;
+		/// @notice Version counter of PartyB's upnl inputs per PartyA, embedded in Muon signatures
+		/// @dev PartyB has separate counters for each PartyA they trade with. Both the per-PartyA
+		///      counter AND the address(0) cross counter are always incremented on every
+		///      upnl-changing operation. The per-PartyA counter is ignored for cross partyBs
+		///      in all operations except deallocation, to allow parallel solver operations.
+		///      Not consumed per signature use. Exposed externally as nonceOfPartyB.
+		mapping(address => mapping(address => uint256)) partyBUpnlCounters;
 		/// @notice Accounts frozen by admin due to suspicious activity
 		/// @dev Suspended users cannot open/close positions or have positions opened against them.
 		///      Checked via notSuspended modifier. Used when investigating potential exploits

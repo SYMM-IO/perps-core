@@ -5,7 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import { MuonStorage, SingleUpnlSig } from "../../storages/MuonStorage.sol";
+import { MuonStorage, SingleUpnlSig, SingleUpnlWithPendingBalanceSig } from "../../storages/MuonStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { IMuonSignatureVerifier, MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
@@ -63,7 +63,7 @@ library LibMuon {
 	}
 
 	/// @notice Verifies Party B UPNL signature with configurable cross partyB nonce usage.
-	function verifyPartyBUpnl(SingleUpnlSig memory upnlSig, address partyB, address partyA, bool useCrossNonce, MuonFunction func) internal view {
+	function verifyPartyBUpnl(SingleUpnlSig memory upnlSig, address partyB, address partyA, bool useCrossCounter, MuonFunction func) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		// == SignatureCheck( ==
 		verifyUpnlTimestamp(upnlSig.timestamp, func);
@@ -75,8 +75,38 @@ library LibMuon {
 				address(this),
 				partyB,
 				partyA,
-				LibAccount.getPartyBSignatureNonce(partyB, partyA, useCrossNonce),
+				LibAccount.getPartyBSignatureUpnlCounter(partyB, partyA, useCrossCounter),
 				upnlSig.upnl,
+				upnlSig.timestamp,
+				getChainId()
+			)
+		);
+		verifyTSSAndGateway(hash, upnlSig.sigs, upnlSig.gatewaySignature, func);
+	}
+
+	/// @notice Verifies Party B UPNL signature that also carries pendingBalance and scaledLockedBalance.
+	function verifyPartyBUpnlWithPendingBalance(
+		SingleUpnlWithPendingBalanceSig memory upnlSig,
+		address partyB,
+		address partyA,
+		bool useCrossCounter,
+		MuonFunction func
+	) internal view {
+		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
+		// == SignatureCheck( ==
+		verifyUpnlTimestamp(upnlSig.timestamp, func);
+		// == ) ==
+		bytes32 hash = keccak256(
+			abi.encodePacked(
+				muonLayout.muonAppId,
+				upnlSig.reqId,
+				address(this),
+				partyB,
+				partyA,
+				LibAccount.getPartyBSignatureUpnlCounter(partyB, partyA, useCrossCounter),
+				upnlSig.upnl,
+				upnlSig.pendingBalance,
+				upnlSig.scaledLockedBalance,
 				upnlSig.timestamp,
 				getChainId()
 			)

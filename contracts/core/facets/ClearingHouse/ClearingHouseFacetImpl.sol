@@ -228,7 +228,7 @@ library ClearingHouseFacetImpl {
 				uint256[] memory cancelledIds = new uint256[](pendingQuotes.length);
 				uint256 cancelledCount = 0;
 
-				for (uint256 i = 0; i < pendingQuotes.length;) {
+				for (uint256 i = 0; i < pendingQuotes.length; ) {
 					Quote storage quote = quoteLayout.quotes[pendingQuotes[i]];
 					if (quote.partyB == partyB) {
 						cancelledIds[cancelledCount++] = pendingQuotes[i];
@@ -359,9 +359,9 @@ library ClearingHouseFacetImpl {
 			LibHook.callClosePositionHooks(quote.id, liquidatedAmounts[i], liquidationPrice, partyA, partyB, quote.affiliate);
 
 			if (liqType == LiquidationType.CROSS_PARTY_B) {
-				LibAccount.increaseBothNonces(partyB, partyA);
+				LibAccount.increaseBothUpnlCounters(partyB, partyA);
 			} else {
-				LibAccount.increasePartyBNonce(partyB, partyA);
+				LibAccount.increasePartyBUpnlCounter(partyB, partyA);
 			}
 
 			// Emit TradeVolumeRecorded for both liquidation types
@@ -436,7 +436,7 @@ library ClearingHouseFacetImpl {
 			quote.requestedClosePrice = prices[i];
 			quote.quantityToClose = openAmount;
 
-			LibAccount.increaseBothNonces(partyB, partyA);
+			LibAccount.increaseBothUpnlCounters(partyB, partyA);
 			LibQuoteClose.closeQuote(quoteIds[i], openAmount, prices[i]);
 			closedAmounts[i] = openAmount;
 		}
@@ -500,7 +500,7 @@ library ClearingHouseFacetImpl {
 		accountLayout.lockedBalances[partyA].makeZero();
 
 		// Increment nonce
-		LibAccount.increasePartyANonce(partyA);
+		LibAccount.increasePartyAUpnlCounter(partyA);
 
 		// Clear liquidation status
 		maLayout.liquidationStatus[partyA] = false;

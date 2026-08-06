@@ -10,7 +10,7 @@ import { IPartyBAccountFacet } from "./IPartyBAccountFacet.sol";
 import { PartyBAccountFacetImpl } from "./PartyBAccountFacetImpl.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
-import { SingleUpnlSig } from "../../storages/MuonStorage.sol";
+import { SingleUpnlSig, SingleUpnlWithPendingBalanceSig } from "../../storages/MuonStorage.sol";
 
 contract PartyBAccountFacet is Accessibility, Pausable, IPartyBAccountFacet {
 	/// @notice Allows Party B to allocate a specified amount of collateral for a specified partyA.
@@ -45,6 +45,28 @@ contract PartyBAccountFacet is Accessibility, Pausable, IPartyBAccountFacet {
 	{
 		address signer = LibSigner.getSigner();
 		PartyBAccountFacetImpl.deallocateForPartyB(amount, partyA, upnlSig);
+		emit DeallocateForPartyB(signer, partyA, amount, AccountStorage.layout().partyBAllocatedBalances[signer][partyA]);
+	}
+
+	/// @notice Allows Party B to deallocate collateral while reserving balance for off-chain pending operations
+	/// and enforcing the scaled retention floor (when strict deallocation is enabled for the partyB).
+	/// @param amount The precise amount of collateral to be deallocated, specified in 18 decimals.
+	/// @param partyA The address of Party A
+	/// @param upnlSig The Muon signature for SingleUpnlWithPendingBalanceSig.
+	function safeDeallocateForPartyB(
+		uint256 amount,
+		address partyA,
+		SingleUpnlWithPendingBalanceSig memory upnlSig
+	)
+		external
+		whenNotPartyBActionsPaused
+		notLiquidatedPartyB(LibSigner.getSigner(), partyA)
+		notSuspended(LibSigner.getSigner())
+		notLiquidatedPartyA(partyA)
+		onlyPartyB
+	{
+		address signer = LibSigner.getSigner();
+		PartyBAccountFacetImpl.safeDeallocateForPartyB(amount, partyA, upnlSig);
 		emit DeallocateForPartyB(signer, partyA, amount, AccountStorage.layout().partyBAllocatedBalances[signer][partyA]);
 	}
 

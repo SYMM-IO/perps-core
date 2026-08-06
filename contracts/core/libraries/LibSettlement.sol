@@ -45,7 +45,7 @@ library LibSettlement {
 			privilegedMode || quoteLayout.partyBOpenPositions[signer][partyA].length > 0,
 			"LibSettlement: Sender should have a position with partyA"
 		);
-		LibAccount.increasePartyANonce(partyA);
+		LibAccount.increasePartyAUpnlCounter(partyA);
 
 		int256[] memory settleAmounts = new int256[](settleSig.upnlPartyBs.length);
 		address[] memory partyBs = new address[](settleSig.upnlPartyBs.length);
@@ -87,7 +87,7 @@ library LibSettlement {
 				);
 				MAStorage.layout().lastUpnlSettlementTimestamp[signer][partyB][partyA] = block.timestamp;
 			}
-			LibAccount.increasePartyBNonce(partyB, partyA);
+			LibAccount.increasePartyBUpnlCounter(partyB, partyA);
 
 			int256 settlementAmount = settleAmounts[i];
 
@@ -242,7 +242,7 @@ library LibSettlement {
 			}
 
 			// Update nonces
-			LibAccount.increaseBothNonces(partyB, partyA);
+			LibAccount.increaseBothUpnlCounters(partyB, partyA);
 
 			if (!isCrossPartyB) {
 				if (settlementAmount >= 0) {

@@ -5,12 +5,14 @@
 pragma solidity >=0.8.18;
 
 import { IPartyBAccountEvents } from "./IPartyBAccountEvents.sol";
-import { SingleUpnlSig } from "../../storages/MuonStorage.sol";
+import { SingleUpnlSig, SingleUpnlWithPendingBalanceSig } from "../../storages/MuonStorage.sol";
 
 interface IPartyBAccountFacet is IPartyBAccountEvents {
 	function allocateForPartyB(uint256 amount, address partyA) external;
 
 	function deallocateForPartyB(uint256 amount, address partyA, SingleUpnlSig memory upnlSig) external;
+
+	function safeDeallocateForPartyB(uint256 amount, address partyA, SingleUpnlWithPendingBalanceSig memory upnlSig) external;
 
 	function transferAllocation(uint256 amount, address origin, address recipient, SingleUpnlSig memory upnlSig) external;
 
