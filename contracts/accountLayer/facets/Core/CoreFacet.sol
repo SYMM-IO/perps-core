@@ -5,7 +5,6 @@
 pragma solidity >=0.8.18;
 
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { ICoreFacet } from "./ICoreFacet.sol";
 import { AccountLayerAccessibility } from "../../utils/AccountLayerAccessibility.sol";
 import { AccountLayerPausable } from "../../utils/AccountLayerPausable.sol";
@@ -23,11 +22,8 @@ import { AffiliateStorage, AffiliateState, HookContext } from "../../storages/Af
 import { LibQuoteParams, QuoteParams } from "../../libraries/LibQuoteParams.sol";
 import { LibAccountLayerAccessibility } from "../../libraries/LibAccountLayerAccessibility.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
-import { LibAccountLayerSafeCall } from "../../libraries/LibAccountLayerSafeCall.sol";
-import { LibAccountLayerSafeERC20 } from "../../libraries/LibAccountLayerSafeERC20.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
 import { IAccountLayerHook } from "../../interfaces/IAccountLayerHook.sol";
-import { IVirtualProvider } from "../../../core/interfaces/IVirtualProvider.sol";
 import { IMultiAccount } from "../../interfaces/IMultiAccount.sol";
 
 /// @notice Core facet for sub-account and virtual account management, deposits, and call execution
@@ -253,83 +249,6 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		// Deposit directly from the signer into Symmio
 		address signer = LibAccountLayerUtils.getSigner();
 		_executeWithSymmioSigner(core, signer, abi.encodeWithSelector(depositSelector, account, amount));
-	}
-
-	/// @notice Deposits collateral with express rate split between Symmio and a virtual provider
-	/// @param account The sub-account or virtual account to deposit for
-	/// @param amount The total amount of collateral to deposit
-	function depositForAccountWithExpressRate(address account, uint256 amount) external whenNotPaused nonReentrant onlyAccountOwner(account) {
-		(uint256 expressRate, address virtualProvider) = _getExpressDepositConfig(account);
-		_depositWithExpressSplit(account, amount, ISymmio.depositFor.selector, expressRate, virtualProvider);
-	}
-
-	/// @notice Deposits and allocates collateral with express rate split between Symmio and a virtual provider
-	/// @param account The sub-account or virtual account to deposit and allocate for
-	/// @param amount The total amount of collateral to deposit and allocate
-	function depositAndAllocateForAccountWithExpressRate(
-		address account,
-		uint256 amount
-	) external whenNotPaused nonReentrant onlyAccountOwner(account) {
-		(uint256 expressRate, address virtualProvider) = _getExpressDepositConfig(account);
-		_depositWithExpressSplit(account, amount, ISymmio.depositAndAllocateFor.selector, expressRate, virtualProvider);
-	}
-
-	function _getExpressDepositConfig(address account) private view returns (uint256 expressRate, address virtualProvider) {
-		address affiliate = LibAccountLayerUtils.getAffiliateForAccount(account);
-		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
-
-		expressRate = afLayout.affiliates[affiliate].expressRate;
-		virtualProvider = afLayout.affiliates[affiliate].virtualProvider;
-
-		if (expressRate > 1e18) revert InvalidExpressRate();
-		if (expressRate > 0 && virtualProvider == address(0)) revert VirtualProviderRequired();
-	}
-
-	function _depositWithExpressSplit(address account, uint256 amount, bytes4 depositSelector, uint256 expressRate, address virtualProvider) private {
-		if (amount == 0) revert ZeroAmount();
-		_revertIfDeletedVirtualAccount(account);
-
-		address core = LibAccountLayerUtils.getRelatedCore(account);
-		address collateral = ISymmio(core).getCollateral();
-		uint256 collateralDecimals = IERC20Metadata(collateral).decimals();
-
-		bool usesAllocation = depositSelector == ISymmio.depositAndAllocateFor.selector;
-
-		// Get balances before deposit to calculate increase
-		uint256 balanceBefore = ISymmio(core).balanceOf(account);
-		uint256 allocatedBefore = usesAllocation ? ISymmio(core).allocatedBalanceOfPartyA(account) : 0;
-
-		// Pull funds into AccountLayer to support splitting between Symmio and VirtualProvider
-		address signer = LibAccountLayerUtils.getSigner();
-		LibAccountLayerSafeERC20.safeTransferFrom(collateral, signer, address(this), amount);
-
-		// Calculate split: virtualAmount = amount * expressRate / 1e18
-		uint256 virtualAmount = (amount * expressRate) / 1e18;
-		uint256 realAmount = amount - virtualAmount;
-
-		// Deposit (and optionally allocate) real portion to Symmio Diamond
-		if (realAmount > 0) {
-			LibAccountLayerSafeERC20.safeIncreaseAllowance(collateral, core, realAmount);
-			_executeWithSymmioSigner(core, address(this), abi.encodeWithSelector(depositSelector, account, realAmount));
-		}
-
-		// Transfer virtual portion to Virtual Provider and invoke callback
-		if (virtualAmount > 0) {
-			LibAccountLayerSafeERC20.safeTransfer(collateral, virtualProvider, virtualAmount);
-			// Use safe call to prevent virtualProvider from impersonating user via getSigner()
-			LibAccountLayerSafeCall.safeExternalCall(
-				virtualProvider,
-				abi.encodeWithSelector(IVirtualProvider.onExpressDeposit.selector, account, virtualAmount, core)
-			);
-		}
-
-		// Enforce invariant: input_amount == balanceOf(account) increase (including allocation if used)
-		uint256 balanceAfter = ISymmio(core).balanceOf(account);
-		uint256 allocatedAfter = usesAllocation ? ISymmio(core).allocatedBalanceOfPartyA(account) : 0;
-		uint256 balanceIncrease = balanceAfter - balanceBefore;
-		uint256 allocatedIncrease = usesAllocation ? allocatedAfter - allocatedBefore : 0;
-		uint256 expectedIncrease = (amount * 1e18) / (10 ** collateralDecimals);
-		if (balanceIncrease + allocatedIncrease != expectedIncrease) revert BalanceInvariantViolation();
 	}
 
 	function _revertIfDeletedVirtualAccount(address account) private view {

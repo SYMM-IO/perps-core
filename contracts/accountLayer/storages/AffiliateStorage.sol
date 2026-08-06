@@ -41,7 +41,9 @@ struct AffiliateData {
 	mapping(bytes4 => address) hooks;
 	address accountManager;
 	address registrant;
+	/// @dev Unused. Left over from the removed express deposit feature; kept to preserve storage layout.
 	uint256 expressRate;
+	/// @dev Unused. Left over from the removed express deposit feature; kept to preserve storage layout.
 	address virtualProvider;
 	uint256 registrationNonce;
 }

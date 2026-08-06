@@ -37,10 +37,4 @@ interface IVirtualProvider {
 	/// @notice Called when a virtual external transfer is cancelled
 	/// @param id The ID of the cancelled external transfer
 	function onCancelExternalTransfer(uint256 id) external;
-
-	/// @notice Called when an express deposit is made through this virtual provider
-	/// @param user The user receiving the deposit
-	/// @param amount The deposit amount
-	/// @param symmioCore The Symmio core diamond address
-	function onExpressDeposit(address user, uint256 amount, address symmioCore) external;
 }

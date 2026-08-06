@@ -45,10 +45,6 @@ interface IAffiliateFacetEvents {
 	event HookRemoved(address indexed affiliate, bytes4 indexed selector);
 	/// @notice Emitted when an operator is authorized or deauthorized for an affiliate
 	event OperatorSet(address indexed affiliate, bytes4 indexed selector, address indexed operator, bool status);
-	/// @notice Emitted when the express deposit rate is set for an affiliate
-	event ExpressRateSet(address indexed affiliate, uint256 expressRate);
-	/// @notice Emitted when the virtual provider is set for an affiliate
-	event VirtualProviderSet(address indexed affiliate, address virtualProvider);
 }
 
 /// @notice Interface for affiliate registration, admin management, fee distribution, hooks, and operators
@@ -149,18 +145,6 @@ interface IAffiliateFacet is IAffiliateFacetEvents, IAccountLayerErrors {
 	/// @param operator The operator address
 	/// @param status Whether the operator should be authorized
 	function setOperator(address affiliate, bytes4 selector, address operator, bool status) external;
-
-	// ==================== Express Deposit Configuration ====================
-
-	/// @notice Sets the express deposit rate for an affiliate
-	/// @param affiliate The affiliate address
-	/// @param expressRate The rate as a fraction of 1e18
-	function setExpressRate(address affiliate, uint256 expressRate) external;
-
-	/// @notice Sets the virtual provider contract for express deposits
-	/// @param affiliate The affiliate address
-	/// @param virtualProvider The virtual provider contract address
-	function setVirtualProvider(address affiliate, address virtualProvider) external;
 
 	// ==================== Delegated Calls ====================
 
