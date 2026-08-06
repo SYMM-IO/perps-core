@@ -21,56 +21,7 @@
 		</header>
 
 		<div class="reader-shell">
-			<aside class="doc-sidebar" aria-label="Documentation navigation">
-				<a class="button primary back-home" href="../index.html">Back to index</a>
-				<div class="side-card">
-					<p class="side-label">Docs</p>
-					<a class="side-link" href="../pages/express-withdrawal-system-design.html"
-						><small>Express Withdrawal</small><span>Express Withdrawal System Design</span></a
-					>
-					<a class="side-link" href="../pages/account-layer-ownership-delegation.html"
-						><small>AccountLayer</small><span>AccountLayer Delegated Creation &amp; Ownership Transfer</span></a
-					>
-					<a class="side-link" href="../pages/liquidation-funding-snapshot-fix.html"
-						><small>Liquidation</small><span>PartyA Liquidation Snapshot Flow</span></a
-					>
-					<a class="side-link" href="../pages/single-step-partya-liquidation.html"
-						><small>Liquidation</small><span>Single-Step PartyA Liquidation</span></a
-					>
-					<a class="side-link" href="../pages/affiliate-shutdown-flow.html"
-						><small>Clearing House</small><span>Affiliate Shutdown Flow</span></a
-					>
-					<a class="side-link" href="../pages/muon-upnl-validity-overrides.html"
-						><small>Muon</small><span>Muon UPNL Validity Overrides</span></a
-					>
-					<a class="side-link" href="../pages/solver-fees.html"><small>Fees</small><span>Solver Fees</span></a>
-					<a class="side-link is-active" href="../pages/operational-fees.html"><small>Fees</small><span>Operational Fees</span></a>
-					<a class="side-link" href="../pages/symbol-adjustment.html"><small>Symbols</small><span>Symbol Corporate-Action Adjustment</span></a>
-					<a class="side-link" href="../pages/partya-liquidation-fee-recipient.html"
-						><small>Liquidation</small><span>PartyA Liquidation Fee Recipient Cleanup</span></a
-					>
-					<a class="side-link" href="../pages/balance-change-event-cleanup.html"
-						><small>Events &amp; Indexing</small><span>Allocated Balance Event Ledger</span></a
-					>
-					<a class="side-link" href="../pages/lazy-accumulated-funding.html"><small>Funding</small><span>Lazy Accumulated Funding</span></a>
-					<a class="side-link" href="../pages/partyb-allocation-suspension-gates.html"
-						><small>PartyB</small><span>Allocation Suspension Gates</span></a
-					>
-					<a class="side-link" href="../pages/cross-partyb-liquidation-reserve.html"
-						><small>Liquidation</small><span>Cross-PartyB Liquidation Reserve Enforcement</span></a
-					>
-					<a class="side-link" href="../pages/delegation-account-scope.html"><small>AccountLayer</small><span>Delegation Account Scope</span></a>
-					<a class="side-link" href="../pages/strict-deallocation.html"
-						><small>Accounts</small><span>Strict Deallocation</span></a
-					>
-					<a class="side-link" href="../pages/express-bot-operations-checklist.html"
-						><small>Express Withdrawal</small><span>Express Provider Bot Operations Checklist</span></a
-					>
-					<a class="side-link" href="../pages/market-open-fee-execution-price.html"
-						><small>Fees</small><span>Market Open Fee on Execution Price</span></a
-					>
-				</div>
-			</aside>
+			<aside class="doc-sidebar" aria-label="Documentation navigation" data-doc-nav></aside>
 			<aside class="toc-panel side-toc" aria-label="Page navigation">
 				<div class="toc-card">
 					<p class="toc-title">On this page</p>
@@ -92,9 +43,7 @@
 					<div class="reader-title-row">
 						<div>
 							<h1>Operational Fees</h1>
-							<p class="hero-copy">
-								A fee primitive for per-operation work that should not be embedded in quote pricing.
-							</p>
+							<p class="hero-copy">A fee primitive for per-operation work that should not be embedded in quote pricing.</p>
 						</div>
 					</div>
 				</header>
@@ -144,8 +93,8 @@
 							disable an explicitly registered service charger via <code>unregisterOperationalFeeCharger</code>.
 						</li>
 						<li>
-							<strong>Guards</strong>: the charge path has no external-call surface, and the payer must not be suspended or under
-							active PartyA liquidation.
+							<strong>Guards</strong>: the charge path has no external-call surface, and the payer must not be suspended or under active
+							PartyA liquidation.
 						</li>
 					</ol>
 
@@ -166,8 +115,8 @@
 					<p>
 						The caller must be either the charger itself or an address holding <code>FEE_ADMIN_ROLE</code> -- the same role that registers
 						chargers in the first place. Passing <code>address(0)</code> resets the receiver back to the charger. The receiver is resolved
-						at charge time, so a change only affects subsequent fees.
-						<code>ViewFacet.getOperationalFeeReceiver(charger)</code> returns the effective receiver.
+						at charge time, so a change only affects subsequent fees. <code>ViewFacet.getOperationalFeeReceiver(charger)</code> returns
+						the effective receiver.
 					</p>
 					<p>
 						Solver <strong>rate</strong> fees have a parallel but independent setting, <code>ControlFacet.setSolverFeeReceiver</code>,
@@ -188,18 +137,14 @@
 						but the integration wants the fee to come from the parent SubAccount.
 					</p>
 					<ol>
-						<li>
-							The user grants <code>allowance[SA][relayer] = N</code>.
-						</li>
+						<li>The user grants <code>allowance[SA][relayer] = N</code>.</li>
 						<li>A registered relayer receives a "remove margin from <code>VA-BTC-Long</code>" signed op.</li>
 						<li>
 							The relayer determines <code>VA-BTC-Long</code>'s parent SubAccount before charging and calls
 							<code>chargeOperationalFee(SA, fee)</code>. The fee is drawn from <code>SA</code>'s <strong>free</strong> balance; no
 							<code>VA-BTC-Long</code> margin is touched.
 						</li>
-						<li>
-							The relayer submits <code>InstantLayer.executeBatch</code> for the signed operation.
-						</li>
+						<li>The relayer submits <code>InstantLayer.executeBatch</code> for the signed operation.</li>
 					</ol>
 
 					<h2 id="solvency">Solvency</h2>
@@ -289,7 +234,6 @@
 						When a relayer pays gas for a user's signed operation, it can collect the operational fee in that same transaction. The
 						transaction charges the selected payer, then executes the signed operation. If execution reverts, the charge reverts with it.
 					</p>
-
 				</article>
 			</main>
 		</div>

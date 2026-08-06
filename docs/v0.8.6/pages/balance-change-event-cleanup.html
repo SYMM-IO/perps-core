@@ -21,54 +21,7 @@
 		</header>
 
 		<div class="reader-shell">
-			<aside class="doc-sidebar" aria-label="Documentation navigation">
-				<a class="button primary back-home" href="../index.html">Back to index</a>
-				<div class="side-card">
-					<p class="side-label">Docs</p>
-					<a class="side-link" href="../pages/express-withdrawal-system-design.html"
-						><small>Express Withdrawal</small><span>Express Withdrawal System Design</span></a
-					>
-					<a class="side-link" href="../pages/account-layer-ownership-delegation.html"
-						><small>AccountLayer</small><span>AccountLayer Delegated Creation &amp; Ownership Transfer</span></a
-					>
-					<a class="side-link" href="../pages/liquidation-funding-snapshot-fix.html"
-						><small>Liquidation</small><span>PartyA Liquidation Snapshot Flow</span></a
-					>
-					<a class="side-link" href="../pages/single-step-partya-liquidation.html"
-						><small>Liquidation</small><span>Single-Step PartyA Liquidation</span></a
-					>
-					<a class="side-link" href="../pages/affiliate-shutdown-flow.html"
-						><small>Clearing House</small><span>Affiliate Shutdown Flow</span></a
-					>
-					<a class="side-link" href="../pages/muon-upnl-validity-overrides.html"
-						><small>Muon</small><span>Muon UPNL Validity Overrides</span></a
-					>
-					<a class="side-link" href="../pages/solver-fees.html"><small>Fees</small><span>Solver Fees</span></a>
-					<a class="side-link" href="../pages/operational-fees.html"><small>Fees</small><span>Operational Fees</span></a>
-					<a class="side-link" href="../pages/symbol-adjustment.html"><small>Symbols</small><span>Symbol Corporate-Action Adjustment</span></a>
-					<a class="side-link" href="../pages/partya-liquidation-fee-recipient.html"
-						><small>Liquidation</small><span>PartyA Liquidation Fee Recipient Cleanup</span></a
-					>
-					<a class="side-link is-active" href="../pages/balance-change-event-cleanup.html"
-						><small>Events &amp; Indexing</small><span>Allocated Balance Event Ledger</span></a
-					>
-					<a class="side-link" href="../pages/lazy-accumulated-funding.html"><small>Funding</small><span>Lazy Accumulated Funding</span></a>
-					<a class="side-link" href="../pages/partyb-allocation-suspension-gates.html"
-						><small>PartyB</small><span>Allocation Suspension Gates</span></a
-					>
-					<a class="side-link" href="../pages/cross-partyb-liquidation-reserve.html"
-						><small>Liquidation</small><span>Cross-PartyB Liquidation Reserve Enforcement</span></a
-					>
-					<a class="side-link" href="../pages/delegation-account-scope.html"><small>AccountLayer</small><span>Delegation Account Scope</span></a>
-					<a class="side-link" href="../pages/strict-deallocation.html"><small>Accounts</small><span>Strict Deallocation</span></a>
-					<a class="side-link" href="../pages/express-bot-operations-checklist.html"
-						><small>Express Withdrawal</small><span>Express Provider Bot Operations Checklist</span></a
-					>
-					<a class="side-link" href="../pages/market-open-fee-execution-price.html"
-						><small>Fees</small><span>Market Open Fee on Execution Price</span></a
-					>
-				</div>
-			</aside>
+			<aside class="doc-sidebar" aria-label="Documentation navigation" data-doc-nav></aside>
 			<aside class="toc-panel side-toc" aria-label="Page navigation">
 				<div class="toc-card">
 					<p class="toc-title">On this page</p>
@@ -79,6 +32,7 @@
 					<a class="toc-link level-2" href="#reimbursement-ledger">Reimbursement Ledger</a>
 					<a class="toc-link level-2" href="#liquidation-and-cva">Liquidation &amp; CVA</a>
 					<a class="toc-link level-2" href="#v086-liquidation-accounting">v0.8.6 Liquidation Accounting</a>
+					<a class="toc-link level-2" href="#event-field-corrections">Event Field Corrections</a>
 					<a class="toc-link level-2" href="#indexer-changelog">Indexer Changelog</a>
 				</div>
 			</aside>
@@ -519,8 +473,8 @@ event SettlePartyALiquidation(
 								<tr>
 									<td>Total LF received by the liquidation starter</td>
 									<td>
-										Use <code>BalanceChangePartyA(recipient, amount, LF_IN)</code> in the final settlement receipt. This is the whole
-										capped liquidation fee; LF exists only for <code>NORMAL</code> liquidation, so <code>LATE</code>,
+										Use <code>BalanceChangePartyA(recipient, amount, LF_IN)</code> in the final settlement receipt. This is the
+										whole capped liquidation fee; LF exists only for <code>NORMAL</code> liquidation, so <code>LATE</code>,
 										<code>OVERDUE</code>, and takeover-cleared liquidations emit none.
 									</td>
 									<td>The event address and amount are the exact recipient allocation credit.</td>
@@ -528,8 +482,8 @@ event SettlePartyALiquidation(
 								<tr>
 									<td>LF funded from the liquidated PartyA's allocation</td>
 									<td>
-										Use <code>BalanceChangePartyA(partyA, amount, LF_OUT)</code> in that same final receipt. This is only the part of
-										the fee the live allocation could cover, not PartyA's total economic LF payment.
+										Use <code>BalanceChangePartyA(partyA, amount, LF_OUT)</code> in that same final receipt. This is only the part
+										of the fee the live allocation could cover, not PartyA's total economic LF payment.
 									</td>
 									<td>
 										The event amount is the exact debit from the liquidated user's allocated balance. Treat an absent
@@ -590,11 +544,11 @@ partyALfCost(partyA)              = lockedValues.lf on the liquidated position</
 						<strong><code>LF_OUT</code> is not what the liquidation cost PartyA.</strong> The fee is sized against <em>locked</em> LF, but
 						debited from <em>allocated</em> balance, and those two can hold different amounts by the time finalization runs. Liquidation
 						start moves <code>allocated - (lockedCva + lockedLf) + upnl</code> into deferred balance; when <code>upnl</code> is positive
-						that sweep carries off part of the LF backing, leaving less allocated than the fee. Finalization then debits only what remains,
-						because emitting the full fee against a smaller bucket would break exact replay. So <code>LF_OUT</code> is the slice of the cost
-						that was still in allocated at that moment -- the rest already left PartyA, in the deferred sweep. Read the difference as
-						<code>LF_IN - LF_OUT</code>; it is fully observable from the same receipt, and <code>LF_IN &gt; LF_OUT</code> is the signal that
-						the clamp fired.
+						that sweep carries off part of the LF backing, leaving less allocated than the fee. Finalization then debits only what
+						remains, because emitting the full fee against a smaller bucket would break exact replay. So <code>LF_OUT</code> is the slice
+						of the cost that was still in allocated at that moment -- the rest already left PartyA, in the deferred sweep. Read the
+						difference as <code>LF_IN - LF_OUT</code>; it is fully observable from the same receipt, and <code>LF_IN &gt; LF_OUT</code> is
+						the signal that the clamp fired.
 					</aside>
 					<aside class="callout callout-note">
 						<strong>Worked example.</strong> A PartyA holding 496 allocated, CVA 22, locked LF 3, unrealized profit 23.5, insolvent at the
@@ -606,14 +560,14 @@ gap     0.75   left PartyA earlier, in the 494.5 deferred sweep
 
 PartyA's actual LF cost = lockedLf = 3.00 = 2.25 to the starter + 0.75 absorbed
 Final balances: PartyA 497.5, PartyB 358.5, starter 2.25 -- total tracked value falls by 0.75.</code></pre>
-						None of the three numbers is interchangeable: 1.50 is the allocated debit, 2.25 is what the starter earned, 3.00 is what PartyA
-						paid. Total protocol value never rises across the receipt.
+						None of the three numbers is interchangeable: 1.50 is the allocated debit, 2.25 is what the starter earned, 3.00 is what
+						PartyA paid. Total protocol value never rises across the receipt.
 					</aside>
 					<aside class="callout callout-warning">
 						<strong>Per-account replay stays exact; cross-account conservation does not.</strong> When the clamp fires, the starter is
-						credited the full fee while PartyA is debited less, so allocated balance in that receipt is not conserved across accounts. Each
-						individual account still reconstructs exactly from its own events, which is the guarantee this page makes. An indexer that also
-						runs a global “credits equal debits” check must exempt the finalization receipt, or reconcile it using
+						credited the full fee while PartyA is debited less, so allocated balance in that receipt is not conserved across accounts.
+						Each individual account still reconstructs exactly from its own events, which is the guarantee this page makes. An indexer
+						that also runs a global “credits equal debits” check must exempt the finalization receipt, or reconcile it using
 						<code>lfFromRestOfLiquidation</code> above — the value left PartyA earlier in the liquidation, as
 						<code>DEFERRED_BALANCE_OUT</code> at start and as PartyB settlement deltas, and both of those are already in the ledger.
 					</aside>
@@ -670,6 +624,48 @@ Final balances: PartyA 497.5, PartyB 358.5, starter 2.25 -- total tracked value 
 						liquidation fee, preserve amounts already emitted but do not synthesize the cleared remainder. Later Clearing House
 						distributions follow their own realized-PnL, reimbursement, and escrow events; they are not direct <code>CVA_IN</code> or
 						<code>LF_IN</code> payments.
+					</aside>
+
+					<h2 id="event-field-corrections">Event Field Corrections</h2>
+					<p>
+						Two events carried a wrong or path-dependent value in a single field. Both are corrected in v0.8.6 without any signature
+						change, so an indexer that decodes them will keep decoding them &mdash; and will silently start reading a different value.
+					</p>
+					<h3><code>SettleUpnl</code> reported the caller instead of PartyA</h3>
+					<pre><code class="language-solidity">event SettleUpnl(
+    QuoteSettlementData[] settlementData,
+    uint256[] updatedPrices,
+    address partyA,
+    uint256 newPartyAAllocatedBalance,
+    uint256[] newPartyBsAllocatedBalances
+);</code></pre>
+					<p>
+						<code>ForceActionsFacet.settleAndForceClose</code> passed <code>msg.sender</code> into the parameter declared as
+						<code>partyA</code>. On that path the field held the keeper or liquidator who submitted the force close, not the PartyA being
+						settled. <code>SettlementFacet</code> always passed the real PartyA, so one event signature meant two different things
+						depending on which facet emitted it. v0.8.6 passes the quote's PartyA on both paths.
+					</p>
+					<p>
+						Any index keyed on that field from the force-close path has been attributing settlements to submitters. History can be
+						corrected by re-deriving the PartyA from the quote IDs in <code>settlementData</code>.
+					</p>
+					<h3><code>LiquidatePartyB</code> reported a post-payout balance on the force-close path</h3>
+					<pre><code class="language-solidity">event LiquidatePartyB(address liquidator, address partyB, address partyA, uint256 partyBAllocatedBalance, int256 upnl);</code></pre>
+					<p>
+						<code>PartyBLiquidationFacet.liquidatePartyB</code> emits before it starts the liquidation, so its
+						<code>partyBAllocatedBalance</code> is the value immediately <em>before</em> liquidation touches it. The force-close paths
+						read the same field after liquidation had already run, and starting a PartyB liquidation debits that bucket twice &mdash; once
+						for the realized settlement transfer and once for the remaining liquidation fee. The field therefore reported a smaller,
+						post-payout number on those paths.
+					</p>
+					<p>
+						v0.8.6 captures the balance before liquidation on the force-close paths as well, so both entry points now report the
+						pre-liquidation balance.
+					</p>
+					<aside class="callout callout-important">
+						<strong>Neither correction changes an event signature.</strong> There is no new topic and no ABI change to adopt, which is
+						exactly why these are easy to miss: the same decoder keeps working and starts returning different values at the block of the
+						upgrade.
 					</aside>
 
 					<h2 id="indexer-changelog">Indexer Changelog</h2>
@@ -742,7 +738,8 @@ Final balances: PartyA 497.5, PartyB 358.5, starter 2.25 -- total tracked value 
 									<td>
 										Report received LF from <code>LF_IN</code>, the allocated debit from <code>LF_OUT</code>, and the remainder as
 										<code>LF_IN - LF_OUT</code>. For what the liquidation cost PartyA, use the position's locked LF, which the
-										balance-change ledger does not carry. Exempt the finalization receipt from any cross-account conservation check.
+										balance-change ledger does not carry. Exempt the finalization receipt from any cross-account conservation
+										check.
 									</td>
 								</tr>
 								<tr>
@@ -751,6 +748,28 @@ Final balances: PartyA 497.5, PartyB 358.5, starter 2.25 -- total tracked value 
 									<td>
 										Use <code>OperationalFeeCharged</code> for fee reporting and <code>OPERATIONAL_FEE_OUT</code> for allocated
 										accounting.
+									</td>
+								</tr>
+								<tr>
+									<td>
+										<code>SettleUpnl</code> carried <code>msg.sender</code> in its <code>partyA</code> field on the force-close
+										path.
+									</td>
+									<td>Both emitting facets pass the settled PartyA.</td>
+									<td>
+										Stop treating that field as the submitter. Re-derive historical PartyAs from the quote IDs in
+										<code>settlementData</code> if you need to correct the backfill.
+									</td>
+								</tr>
+								<tr>
+									<td>
+										<code>LiquidatePartyB</code> reported the post-payout allocated balance on force-close paths and the
+										pre-liquidation balance on the direct path.
+									</td>
+									<td>Every path reports the balance immediately before liquidation debits the bucket.</td>
+									<td>
+										Read <code>partyBAllocatedBalance</code> as pre-liquidation everywhere. Pre-upgrade force-close records
+										under-report it by the settlement transfer plus the remaining liquidation fee.
 									</td>
 								</tr>
 								<tr>
