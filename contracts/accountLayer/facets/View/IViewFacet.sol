@@ -138,10 +138,6 @@ interface IViewFacet {
 	/// @param affiliate The affiliate address
 	function getAffiliateSymmioShare(address affiliate) external view returns (uint256);
 
-	/// @notice Returns the express deposit rate for an affiliate (fraction of 1e18)
-	/// @param affiliate The affiliate address
-	function getAffiliateExpressRate(address affiliate) external view returns (uint256);
-
 	/// @notice Checks whether a Symmio core address is whitelisted
 	/// @param core The Symmio core address
 	function isWhitelistedSymmioCore(address core) external view returns (bool);

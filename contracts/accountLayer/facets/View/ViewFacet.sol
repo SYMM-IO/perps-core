@@ -384,13 +384,6 @@ contract ViewFacet is IViewFacet {
 		return AffiliateStorage.layout().affiliates[affiliate].feeDetails.symmioShare;
 	}
 
-	/// @notice Returns the express deposit rate for an affiliate (fraction of 1e18)
-	/// @param affiliate The affiliate address
-	/// @return The express deposit rate
-	function getAffiliateExpressRate(address affiliate) external view returns (uint256) {
-		return AffiliateStorage.layout().affiliates[affiliate].expressRate;
-	}
-
 	/// @notice Checks whether a Symmio core address is whitelisted
 	/// @param core The Symmio core address
 	/// @return Whether the core is whitelisted

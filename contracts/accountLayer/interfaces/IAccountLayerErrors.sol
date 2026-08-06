@@ -54,9 +54,6 @@ interface IAccountLayerErrors {
 	error UnauthorizedHookCaller();
 	error HookFailed(bytes reason);
 	error HookActionFailed(bytes reason);
-	error VirtualProviderRequired();
-	error InvalidExpressRate();
-	error BalanceInvariantViolation();
 	error ReentrancyGuardReentrantCall();
 	error EnforcedPause();
 	error ExpectedPause();

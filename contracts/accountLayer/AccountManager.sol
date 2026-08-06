@@ -64,20 +64,6 @@ contract AccountManager is IAccountManager, IAccountLayerErrors {
 		ICoreFacet(accountLayer).depositAndAllocateForAccount(account, amount);
 	}
 
-	/// @notice Deposits collateral for a sub-account using the express deposit rate
-	/// @param account The sub-account address
-	/// @param amount The amount to deposit
-	function depositForAccountWithExpressRate(address account, uint256 amount) external withSigner {
-		ICoreFacet(accountLayer).depositForAccountWithExpressRate(account, amount);
-	}
-
-	/// @notice Deposits and allocates collateral for a sub-account using the express deposit rate
-	/// @param account The sub-account address
-	/// @param amount The amount to deposit and allocate
-	function depositAndAllocateForAccountWithExpressRate(address account, uint256 amount) external withSigner {
-		ICoreFacet(accountLayer).depositAndAllocateForAccountWithExpressRate(account, amount);
-	}
-
 	/// @notice Withdraws collateral from a sub-account to the caller
 	/// @param account The sub-account address
 	/// @param amount The amount to withdraw
