@@ -13,6 +13,7 @@ import { FundingStorage, FundingFee } from "../../storages/FundingStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
 import { LibSymbolAdjustment } from "../../libraries/LibSymbolAdjustment.sol";
+import { LibMuon } from "../../libraries/muon/LibMuon.sol";
 import { LibQuote } from "../../libraries/LibQuote.sol";
 import { LibQuoteFunding } from "../../libraries/LibQuoteFunding.sol";
 import { LibQuoteClose } from "../../libraries/LibQuoteClose.sol";
@@ -84,6 +85,10 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		}
 		require(factor != 0, "SymbolAdjustmentFacet: Cumulative factor underflow");
 		require(factor != 1e18, "SymbolAdjustmentFacet: No adjustment factor");
+		// Record when the symbol became continuously frozen, so finalizeRestatement can require that every
+		// signature minted against the old basis has expired. On the direct route the symbol has already been
+		// frozen since effectiveTimestamp, so credit that earlier instant rather than restarting the clock.
+		adjustment.restatementStartedAt = LibSymbolAdjustment.isFrozen(symbolId) ? adjustment.effectiveTimestamp : block.timestamp;
 		adjustment.restating = true;
 		adjustment.restatementMutated = false;
 		adjustment.restatementFactor = factor;
@@ -98,6 +103,7 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		require(!adjustment.restatementMutated, "SymbolAdjustmentFacet: Restatement already mutated");
 		adjustment.restating = false;
 		adjustment.restatementFactor = 0;
+		adjustment.restatementStartedAt = 0;
 		emit RestatementAborted(symbolId, adjustment.restatementEpoch);
 	}
 
@@ -193,12 +199,20 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 	function finalizeRestatement(uint256 symbolId) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
 		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
 		require(adjustment.restating, "SymbolAdjustmentFacet: No restatement in progress");
+		// Finalization is the instant stored quotes change meaning. Muon signatures do not carry the basis version,
+		// so the symbol must have stayed frozen for at least one full UPNL validity period: any signature priced in
+		// the old basis is then guaranteed expired and cannot be executed against rewritten quotes.
+		require(
+			block.timestamp >= adjustment.restatementStartedAt + LibMuon.maxUpnlValidTime(),
+			"SymbolAdjustmentFacet: Restatement window too short"
+		);
 		if (adjustment.state == AdjustmentState.PRICE_ADJUSTED || adjustment.state == AdjustmentState.SCHEDULED) {
 			adjustment.state = AdjustmentState.APPLIED;
 		}
 		adjustment.cumulativeFactor = 1e18;
 		adjustment.restating = false;
 		adjustment.restatementFactor = 0;
+		adjustment.restatementStartedAt = 0;
 		adjustment.basisVersion += 1;
 		emit RestatementFinalized(symbolId, adjustment.restatementEpoch);
 	}
