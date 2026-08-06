@@ -10,7 +10,7 @@
  * on the Symmio core Diamond.
  *
  * Usage:
- *   npx hardhat run scripts/upgrade/generateGrantSymmioCoreRolesSafeBatch.ts --network base
+ *   ./node_modules/.bin/hardhat run scripts/upgrade/generateGrantSymmioCoreRolesSafeBatch.ts --network base
  *
  * Optional env overrides:
  *   DIAMOND_ADDRESS, SAFE_ADDRESS, CHAIN_ID

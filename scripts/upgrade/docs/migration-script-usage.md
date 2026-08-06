@@ -44,7 +44,7 @@ Key features:
 Fetches data from the subgraph, validates the boundary against on-chain `getNextQuoteId()` (which returns the last assigned ID, not next available), and writes a JSON file. Quote pagination uses `globalCounter` and filters open/migratable statuses locally to avoid slow subgraph `quoteStatus_in` queries. The open-quote fetch checkpoints each completed page, so rerunning the script resumes from the last saved globalCounter cursor if the subgraph fails mid-run. **Can run before or after the diamondCut** — no v0.8.5-specific ABIs are used.
 
 ```bash
-USE_KEYSTORE=true npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network mantle
+USE_KEYSTORE=true ./node_modules/.bin/hardhat run scripts/upgrade/prepareMigrationInput.ts --network mantle
 ```
 
 Output: `scripts/upgrade/output/migration-input.json`
@@ -73,14 +73,14 @@ Fetches symbols from the configured subgraph and writes the input consumed by `s
 
 ```bash
 USE_KEYSTORE=true RPC_BASE=https://base.drpc.org \
-  npx hardhat run scripts/upgrade/fetchSymbolList.ts --network base
+  ./node_modules/.bin/hardhat run scripts/upgrade/fetchSymbolList.ts --network base
 ```
 
 Dry run mode fetches and prints the symbols, prints the planned output path, and does not write the symbol input file:
 
 ```bash
 DRY_RUN=true USE_KEYSTORE=true RPC_BASE=https://base.drpc.org \
-  npx hardhat run scripts/upgrade/fetchSymbolList.ts --network base
+  ./node_modules/.bin/hardhat run scripts/upgrade/fetchSymbolList.ts --network base
 ```
 
 | Env var                   | Default                                                 | Description                                       |
@@ -99,7 +99,7 @@ Two complementary scripts validate the migration input against on-chain state. B
 Samples N random quotes and partyB balances to verify they exist on-chain. Good for catching systemic issues (wrong subgraph, stale data).
 
 ```bash
-USE_KEYSTORE=true npx hardhat run scripts/upgrade/validateMigrationInput.ts --network mantle
+USE_KEYSTORE=true ./node_modules/.bin/hardhat run scripts/upgrade/validateMigrationInput.ts --network mantle
 ```
 
 What it checks:
@@ -119,7 +119,7 @@ What it checks:
 Targets edge cases that random sampling is unlikely to hit. Especially important on fork tests where the subgraph indexes the live chain beyond the fork block.
 
 ```bash
-USE_KEYSTORE=true npx hardhat run scripts/upgrade/validateMigrationEdgeCases.ts --network mantle
+USE_KEYSTORE=true ./node_modules/.bin/hardhat run scripts/upgrade/validateMigrationEdgeCases.ts --network mantle
 ```
 
 What it checks:
@@ -157,7 +157,7 @@ Built-in verification (step 4/4) checks:
 
 ```bash
 USE_KEYSTORE=true DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
-  npx hardhat run scripts/upgrade/runMigration.ts --network localhost
+  ./node_modules/.bin/hardhat run scripts/upgrade/runMigration.ts --network localhost
 ```
 
 Output: `scripts/upgrade/output/migration-report.json`
@@ -246,12 +246,12 @@ The script automatically saves progress after each successful operation. If it f
 ```bash
 # First run - fails at chunk 5
 USE_KEYSTORE=true DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
-  npx hardhat run scripts/upgrade/runMigration.ts --network localhost
+  ./node_modules/.bin/hardhat run scripts/upgrade/runMigration.ts --network localhost
 # Output: error at chunk 5
 
 # Second run - automatically resumes from chunk 5
 USE_KEYSTORE=true DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
-  npx hardhat run scripts/upgrade/runMigration.ts --network localhost
+  ./node_modules/.bin/hardhat run scripts/upgrade/runMigration.ts --network localhost
 # Output: Resuming migration from quotes phase
 ```
 
@@ -263,14 +263,14 @@ Test the migration without executing transactions:
 
 ```bash
 USE_KEYSTORE=true DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
-  DRY_RUN=true npx hardhat run scripts/upgrade/runMigration.ts --network localhost
+  DRY_RUN=true ./node_modules/.bin/hardhat run scripts/upgrade/runMigration.ts --network localhost
 ```
 
 Live BSC dry run with signer role preflight:
 
 ```bash
 DRY_RUN=true USE_KEYSTORE=true RPC_BSC=https://bsc-rpc.publicnode.com \
-  npx hardhat run scripts/upgrade/runMigration.ts --network bsc
+  ./node_modules/.bin/hardhat run scripts/upgrade/runMigration.ts --network bsc
 ```
 
 Symbol helper dry runs:
@@ -278,15 +278,15 @@ Symbol helper dry runs:
 ```bash
 # Fetch and print symbols without writing the symbol input file.
 DRY_RUN=true USE_KEYSTORE=true RPC_BASE=https://base.drpc.org \
-  npx hardhat run scripts/upgrade/fetchSymbolList.ts --network base
+  ./node_modules/.bin/hardhat run scripts/upgrade/fetchSymbolList.ts --network base
 
 # Preview setSymbolType transactions without submitting.
 DRY_RUN=true USE_KEYSTORE=true RPC_BASE=https://base.drpc.org \
-  npx hardhat run scripts/upgrade/setSymbolType.ts --network base
+  ./node_modules/.bin/hardhat run scripts/upgrade/setSymbolType.ts --network base
 
 # Preview PartyB symbol-type whitelisting without submitting.
 DRY_RUN=true USE_KEYSTORE=true RPC_BASE=https://base.drpc.org \
-  npx hardhat run scripts/upgrade/whitelistSymbolTypes.ts --network base
+  ./node_modules/.bin/hardhat run scripts/upgrade/whitelistSymbolTypes.ts --network base
 ```
 
 These Hardhat scripts print `Network` and `RPC URL` before the chain/block check. URL username, password, and query strings are masked in the log output.

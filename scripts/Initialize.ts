@@ -1,6 +1,6 @@
 import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
 import { keccak256, toUtf8Bytes } from "ethers"
-import { tasks } from "hardhat"
+import hre, { tasks } from "hardhat"
 
 import { SymbolControlFacet } from "../src/types/index.js"
 // Import to initialize the hardhat connection
@@ -10,16 +10,29 @@ import { symbolsMock } from "../test/models/SymbolManager.js"
 import { decimal } from "../test/utils/Common.js"
 import { runTx } from "../test/utils/TxUtils.js"
 import { Addresses, loadAddresses, saveAddresses } from "./utils/file.js"
+import { assertLocalExecution } from "./utils/localNetworkGuard.js"
 
 export async function initialize(): Promise<RunContext> {
 	const runTask = (taskName: string, params: Record<string, unknown> = {}) => tasks.getTask(taskName).run(params)
+	const connection = await hre.network.getOrCreate()
+	const { ethers } = connection
+	const chainId = (await ethers.provider.getNetwork()).chainId
+	const runtime = assertLocalExecution(connection as any, chainId, "scripts/Initialize.ts")
+	console.log(`Local initializer runtime: ${runtime}, chainId ${chainId}`)
+	const [deployer] = await ethers.getSigners()
+	if (!deployer) throw new Error("Local initialization requires a configured Hardhat signer")
+	const admin = process.env.ADMIN_PUBLIC_KEY || deployer.address
 	let collateral = await runTask("deploy:stablecoin")
 	let diamond = await runTask("deploy:diamond", {
 		logData: false,
 		genABI: false,
 		reportGas: true,
 	})
-	let multicall = process.env.DEPLOY_MULTICALL == "true" ? await runTask("deploy:multicall") : undefined
+	const deployMulticall = process.env.DEPLOY_MULTICALL
+	if (deployMulticall !== undefined && deployMulticall !== "true" && deployMulticall !== "false") {
+		throw new Error("DEPLOY_MULTICALL must be exactly true or false")
+	}
+	let multicall = deployMulticall === "true" ? await runTask("deploy:multicall") : undefined
 
 	// These tasks return ethers v6 Contract objects, which have no `.address` property —
 	// reading it yielded `undefined` and silently poisoned everything downstream.
@@ -27,7 +40,7 @@ export async function initialize(): Promise<RunContext> {
 	const collateralAddress = await collateral.getAddress()
 	const multicallAddress = multicall ? await multicall.getAddress() : undefined
 
-	await runTask("deploy:multiAccount", { symmioAddress: diamondAddress, admin: process.env.ADMIN_PUBLIC_KEY })
+	await runTask("deploy:multiAccount", { symmioAddress: diamondAddress, admin })
 
 	// createRunContext's third parameter is `onlyInitialize: boolean` — passing an
 	// address here coerced to `true` and skipped most of the context setup.

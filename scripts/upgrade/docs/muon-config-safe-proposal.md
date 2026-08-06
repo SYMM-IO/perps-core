@@ -29,7 +29,7 @@ Example BSC config:
 	"muonPriceValidTime": 60,
 	"safeProposal": {
 		"enabled": true,
-		"submit": true,
+		"submit": false,
 		"senderAddress": "0x8A82bCDB72FFA4181a81C13d434AaCB59E7f327F"
 	}
 }
@@ -42,7 +42,7 @@ Fields:
 - `muonUpnlValidTime`: UPNL signature validity in seconds.
 - `muonPriceValidTime`: price signature validity in seconds.
 - `safeProposal.enabled`: enables Safe Transaction Service nonce lookup, simulation, and proposal JSON.
-- `safeProposal.submit`: submits the proposal to Safe Transaction Service when the proposer key is available.
+- `safeProposal.submit`: legacy informational field. Checked-in configs keep it `false`; only the explicit per-run submission interlocks below authorize a POST.
 - `safeProposal.senderAddress`: Safe owner or delegate that signs the proposal hash.
 - `safeProposal.safeNonce`: optional manual nonce. Prefer leaving it unset or `null`; the script reads queued Safe proposals first, then falls back to on-chain nonce.
 
@@ -57,7 +57,7 @@ The repo loads proposer keys from `TEAM_PROPOSER`.
 Keystore:
 
 ```bash
-npx hardhat keystore set TEAM_PROPOSER
+./node_modules/.bin/hardhat keystore set TEAM_PROPOSER
 ```
 
 Paste the private key for the configured `safeProposal.senderAddress`.
@@ -81,7 +81,7 @@ The address derived from `TEAM_PROPOSER` must match `safeProposal.senderAddress`
 This creates the Safe Transaction Builder batch file only. It does not call Safe Transaction Service and does not need the proposer key.
 
 ```bash
-PROPOSE_TO_SAFE_SERVICE=0 npx hardhat run scripts/upgrade/generateMuonConfigSafeBatch.ts --network bsc
+PROPOSE_TO_SAFE_SERVICE=0 ./node_modules/.bin/hardhat run scripts/upgrade/generateMuonConfigSafeBatch.ts --network bsc
 ```
 
 Output:
@@ -98,7 +98,7 @@ Import that file manually in the Safe UI if you do not want script-based proposa
 PROPOSE_TO_SAFE_SERVICE=0 \
 MUON_UPNL_VALID_TIME=300 \
 MUON_PRICE_VALID_TIME=300 \
-npx hardhat run scripts/upgrade/generateMuonConfigSafeBatch.ts --network bsc
+./node_modules/.bin/hardhat run scripts/upgrade/generateMuonConfigSafeBatch.ts --network bsc
 ```
 
 This writes a batch for `setMuonConfig(300, 300)`.
@@ -120,7 +120,7 @@ Set the chain config temporarily:
 Then run:
 
 ```bash
-USE_KEYSTORE=true npx hardhat run scripts/upgrade/generateMuonConfigSafeBatch.ts --network bsc
+USE_KEYSTORE=true ./node_modules/.bin/hardhat run scripts/upgrade/generateMuonConfigSafeBatch.ts --network bsc
 ```
 
 Output:
@@ -132,12 +132,12 @@ scripts/upgrade/output/muon/bsc/safe-proposal.json
 
 ## Submit A Safe Proposal
 
-Set:
+Keep Safe-service preview enabled in the config:
 
 ```json
-"safeProposal": {
-	"enabled": true,
-	"submit": true,
+	"safeProposal": {
+		"enabled": true,
+		"submit": false,
 	"senderAddress": "0x8A82bCDB72FFA4181a81C13d434AaCB59E7f327F"
 }
 ```
@@ -145,13 +145,21 @@ Set:
 Run with keystore:
 
 ```bash
-USE_KEYSTORE=true npx hardhat run scripts/upgrade/generateMuonConfigSafeBatch.ts --network bsc
+SUBMIT_SAFE_PROPOSAL=true \
+CONFIRM_CHAIN_ID=56 \
+CONFIRM_SAFE_ADDRESS=0xa85A4A81274a0db6ee873e3068fF76e8a3e27Ac2 \
+USE_KEYSTORE=true \
+./node_modules/.bin/hardhat run scripts/upgrade/generateMuonConfigSafeBatch.ts --network bsc
 ```
 
 Or with `.env`:
 
 ```bash
-TEAM_PROPOSER=0x... npx hardhat run scripts/upgrade/generateMuonConfigSafeBatch.ts --network bsc
+SUBMIT_SAFE_PROPOSAL=true \
+CONFIRM_CHAIN_ID=56 \
+CONFIRM_SAFE_ADDRESS=0xa85A4A81274a0db6ee873e3068fF76e8a3e27Ac2 \
+TEAM_PROPOSER=0x... \
+./node_modules/.bin/hardhat run scripts/upgrade/generateMuonConfigSafeBatch.ts --network bsc
 ```
 
 This submits the proposal to Safe Transaction Service. It does not execute the Safe transaction on-chain.
@@ -172,7 +180,8 @@ Notes:
 
 - `PROPOSE_TO_SAFE_SERVICE=0` disables Safe service entirely and only writes `safe-batch.json`.
 - If `PROPOSE_TO_SAFE_SERVICE` is unset, the script uses `safeProposal.enabled` from the merged config.
-- `safeProposal.submit` controls whether a Safe-service proposal is submitted.
+- A proposal POST occurs only when `SUBMIT_SAFE_PROPOSAL=true`, `CONFIRM_CHAIN_ID` matches the connected RPC, and `CONFIRM_SAFE_ADDRESS` exactly matches the resolved Safe.
+- Checked-in `safeProposal.submit` values never authorize submission.
 - `SAFE_NONCE` overrides automatic nonce selection. Use it only when you intentionally want a specific nonce.
 
 ## Expected Checks
@@ -200,8 +209,8 @@ setMuonConfig(<upnlValidTime>, <priceValidTime>)
 The configured proposal sender is not loaded by Hardhat. Add the matching private key:
 
 ```bash
-npx hardhat keystore set TEAM_PROPOSER
-USE_KEYSTORE=true npx hardhat run scripts/upgrade/generateMuonConfigSafeBatch.ts --network bsc
+./node_modules/.bin/hardhat keystore set TEAM_PROPOSER
+USE_KEYSTORE=true ./node_modules/.bin/hardhat run scripts/upgrade/generateMuonConfigSafeBatch.ts --network bsc
 ```
 
 `Sender is not a Safe owner or registered delegate`

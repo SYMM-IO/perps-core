@@ -1,6 +1,7 @@
 import fs from "fs"
 import path from "path"
 
+import { atomicWriteFile } from "../../tasks/utils/fs.js"
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { loadDeployedFacetsForNetwork } from "./utils/deployedFacets.js"
 import { log } from "./utils/log.js"
@@ -25,17 +26,16 @@ import { deleteOpenQuotesProgress, fetchOpenQuotes } from "./utils/subgraphHelpe
  *   - validateMigrationInput.ts    on-chain spot-check of quotes/balances
  *
  * Usage:
- *   npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network mantle
+ *   ./node_modules/.bin/hardhat run scripts/upgrade/prepareMigrationInput.ts --network mantle
  *
  * Config:
  *   cp scripts/upgrade/config/samples/prepareMigration.sample.json scripts/upgrade/config/prepareMigration.json
+ *   A chain-specific subgraphEndpoint/subgraphEndpoints value is required.
  *
  * Output:
  *   scripts/upgrade/output/migration-input-{network}.json
  *   (network suffix derived from --network flag, with "fork-" stripped; or NETWORK_ALIAS env var)
  */
-
-const DEFAULT_SUBGRAPH_ENDPOINT = "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/arbitrum_analytics/stage/gn"
 
 type PrepareConfig = {
 	diamondAddress?: string
@@ -97,10 +97,10 @@ function ensureParentDir(filePath: string): void {
 function writeJson(filePath: string, value: unknown): void {
 	if (!filePath) return
 	ensureParentDir(filePath)
-	fs.writeFileSync(filePath, JSON.stringify(value, null, 2))
+	atomicWriteFile(filePath, `${JSON.stringify(value, null, 2)}\n`)
 }
 
-function tryWriteReport(filePath: string, report: PrepareReport): void {
+function tryWriteFailureReport(filePath: string, report: PrepareReport): void {
 	try {
 		writeJson(filePath, report)
 	} catch (error) {
@@ -129,6 +129,28 @@ function parseStringList(value: unknown): string[] | undefined {
 	const items = Array.isArray(value) ? value : String(value).split(",")
 	const parsed = items.map(item => String(item).trim()).filter(Boolean)
 	return parsed.length > 0 ? parsed : undefined
+}
+
+function requireSubgraphEndpoints(endpoints: string[] | undefined, networkName: string | undefined): string[] {
+	if (!endpoints || endpoints.length === 0) {
+		throw new Error(
+			`No subgraph endpoint configured for network ${networkName ?? "unknown"}. ` +
+				"Set SUBGRAPH_ENDPOINTS/SUBGRAPH_ENDPOINT or configure the chain-specific prepareMigration/upgrade file.",
+		)
+	}
+
+	for (const endpoint of endpoints) {
+		let url: URL
+		try {
+			url = new URL(endpoint)
+		} catch {
+			throw new Error(`Invalid subgraph endpoint URL: ${endpoint}`)
+		}
+		if (url.protocol !== "https:" && url.protocol !== "http:") {
+			throw new Error(`Subgraph endpoint must use http or https: ${endpoint}`)
+		}
+	}
+	return endpoints
 }
 
 const FEE_RESERVATION_STATUSES = new Set([0, 1, 2])
@@ -223,12 +245,15 @@ async function main() {
 	}
 	const shared = loadUpgradeConfigShared(networkSuffix)
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress ?? shared.diamondAddress
-	const SUBGRAPH_ENDPOINTS = parseStringList(process.env.SUBGRAPH_ENDPOINTS) ??
-		parseStringList(process.env.SUBGRAPH_ENDPOINT) ??
-		parseStringList(config.subgraphEndpoints) ??
-		parseStringList(config.subgraphEndpoint) ??
-		parseStringList(shared.subgraphEndpoints) ??
-		parseStringList(shared.subgraphEndpoint) ?? [DEFAULT_SUBGRAPH_ENDPOINT]
+	const SUBGRAPH_ENDPOINTS = requireSubgraphEndpoints(
+		parseStringList(process.env.SUBGRAPH_ENDPOINTS) ??
+			parseStringList(process.env.SUBGRAPH_ENDPOINT) ??
+			parseStringList(config.subgraphEndpoints) ??
+			parseStringList(config.subgraphEndpoint) ??
+			parseStringList(shared.subgraphEndpoints) ??
+			parseStringList(shared.subgraphEndpoint),
+		networkSuffix,
+	)
 	const SUBGRAPH_PAGE_SIZE = parseOptionalPositiveInt(process.env.SUBGRAPH_PAGE_SIZE ?? config.subgraphPageSize)
 	const outputDir = process.env.PREPARE_OUTPUT_DIR ?? config.outputDir ?? "./scripts/upgrade/output"
 	const outputFile = process.env.PREPARE_OUTPUT_FILE ?? config.outputFile ?? `${outputDir}/${withSuffix("migration-input")}`
@@ -244,7 +269,7 @@ async function main() {
 		startedAt: new Date(startedAtMs).toISOString(),
 		steps: [],
 	}
-	tryWriteReport(reportFile, report)
+	writeJson(reportFile, report)
 	let currentStep: string | null = null
 
 	const { finish: finishStep } = createStepReporter(report.steps)
@@ -265,7 +290,7 @@ async function main() {
 		report.subgraphProgressFile = openQuotesProgressFile
 		report.steps.push({ name: "validate_inputs", status: "ok", details: { diamondAddress: DIAMOND_ADDRESS } })
 		currentStep = null
-		tryWriteReport(reportFile, report)
+		writeJson(reportFile, report)
 
 		log.header("Prepare Migration Input")
 		log.kv("Diamond", log.addr(DIAMOND_ADDRESS))
@@ -310,7 +335,7 @@ async function main() {
 			},
 		})
 		currentStep = null
-		tryWriteReport(reportFile, report)
+		writeJson(reportFile, report)
 		finishStep(t)
 
 		// Step 2: Validate against on-chain -- boundary check
@@ -343,7 +368,7 @@ async function main() {
 			},
 		})
 		currentStep = null
-		tryWriteReport(reportFile, report)
+		writeJson(reportFile, report)
 		finishStep(t)
 
 		// Step 3: Build migration input
@@ -372,7 +397,9 @@ async function main() {
 			)
 		}
 		const subgraphQuotesForMigration = quotesResult.quotes.filter(shouldIncludeQuoteForMigration)
-		const candidateQuoteIds = subgraphQuotesForMigration.map(q => q.quoteId).sort((a, b) => Number(BigInt(a) - BigInt(b)))
+		const candidateQuoteIds = subgraphQuotesForMigration
+			.map(q => q.quoteId)
+			.sort((a, b) => (BigInt(a) < BigInt(b) ? -1 : BigInt(a) > BigInt(b) ? 1 : 0))
 
 		// The subgraph is used to discover candidate quote IDs, but the paused
 		// diamond is the source of truth for partyA/partyB pairs and aggregate
@@ -395,7 +422,7 @@ async function main() {
 		if (quotesForMigration.length !== onChainCandidateQuotes.length) {
 			log.warn(`Filtered ${onChainCandidateQuotes.length - quotesForMigration.length} selected quote(s) after on-chain status/open-amount check`)
 		}
-		const quoteIds = quotesForMigration.map(q => q.quoteId).sort((a, b) => Number(BigInt(a) - BigInt(b)))
+		const quoteIds = quotesForMigration.map(q => q.quoteId).sort((a, b) => (BigInt(a) < BigInt(b) ? -1 : BigInt(a) > BigInt(b) ? 1 : 0))
 
 		// PartyB tasks derived from active quotes (not from all historical balance entries).
 		// Only partyB-partyA pairs with active quotes have non-zero locked values to migrate.
@@ -471,10 +498,13 @@ async function main() {
 			},
 		})
 		currentStep = null
-		tryWriteReport(reportFile, report)
+		writeJson(reportFile, report)
 		finishStep(t)
 
 		report.status = "success"
+		report.finishedAt = new Date().toISOString()
+		report.durationMs = Date.now() - startedAtMs
+		writeJson(reportFile, report)
 
 		log.success("Migration input preparation completed", [
 			["Output", outputFile],
@@ -496,13 +526,11 @@ async function main() {
 		}
 		report.status = "failed"
 		report.error = formatError(error)
-		tryWriteReport(reportFile, report)
-		log.failure("Migration input preparation failed", `Step: ${currentStep ?? "unknown"}\n  ${formatError(error)}`)
-		throw error
-	} finally {
 		report.finishedAt = new Date().toISOString()
 		report.durationMs = Date.now() - startedAtMs
-		tryWriteReport(reportFile, report)
+		tryWriteFailureReport(reportFile, report)
+		log.failure("Migration input preparation failed", `Step: ${currentStep ?? "unknown"}\n  ${formatError(error)}`)
+		throw error
 	}
 }
 

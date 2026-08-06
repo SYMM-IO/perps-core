@@ -566,7 +566,7 @@ export async function verifyDiamondCutCalldata(ctx: LoadedContext, opts: { verif
 			check.issues.push(`chunk[${chunkIdx}]: failed to decode — ${msg}`)
 			continue
 		}
-		const [cuts, initAddr, initCalldata] = decoded as [Array<[string, number, string[]]>, string, string]
+		const [cuts, initAddr, initCalldata] = decoded as unknown as [Array<[string, number, string[]]>, string, string]
 
 		if (!eqAddr(initAddr, ethers.ZeroAddress)) {
 			check.issues.push(`chunk[${chunkIdx}]: _init must be zero address, got ${initAddr}`)
@@ -751,7 +751,7 @@ export function verifyTimelockBatches(ctx: LoadedContext, kind: "schedule" | "ex
 		}
 
 		if (kind === "schedule") {
-			const [target, value, data, predecessorArg, saltArg, delayArg] = decoded as [string, bigint, string, string, string, bigint]
+			const [target, value, data, predecessorArg, saltArg, delayArg] = decoded as unknown as [string, bigint, string, string, string, bigint]
 			if (!eqAddr(target, ctx.diamondAddress)) {
 				check.issues.push(`${files[i]}: schedule.target ${target} != diamondAddress ${ctx.diamondAddress}`)
 			}
@@ -772,7 +772,7 @@ export function verifyTimelockBatches(ctx: LoadedContext, kind: "schedule" | "ex
 			// Advance predecessor chain
 			predecessor = timelockOperationId(target, value, data, predecessorArg, saltArg)
 		} else {
-			const [target, value, data, predecessorArg, saltArg] = decoded as [string, bigint, string, string, string]
+			const [target, value, data, predecessorArg, saltArg] = decoded as unknown as [string, bigint, string, string, string]
 			if (!eqAddr(target, ctx.diamondAddress)) {
 				check.issues.push(`${files[i]}: execute.target ${target} != diamondAddress ${ctx.diamondAddress}`)
 			}

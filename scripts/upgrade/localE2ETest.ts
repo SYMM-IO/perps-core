@@ -19,11 +19,13 @@
  *   post-upgrade verification        selectors, hook, roles, quote states
  *
  * Usage:
- *   npx hardhat run scripts/upgrade/localE2ETest.ts
+ *   ./node_modules/.bin/hardhat run scripts/upgrade/localE2ETest.ts
+ *
+ * Refuses to run against non-simulated, non-loopback RPC endpoints.
  */
 import { FacetNames } from "../../tasks/deploy/constants.js"
 import { initializeFixture } from "../../test/Initialize.fixture.js"
-import { ethers } from "../../test/helpers/hardhat-connection.js"
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { QuoteStatus } from "../../test/models/Enums.js"
 import { Hedger } from "../../test/models/Hedger.js"
 import { User } from "../../test/models/User.js"
@@ -71,13 +73,34 @@ function section(title: string) {
 	console.log("─".repeat(60))
 }
 
+function isLoopbackHostname(hostname: string): boolean {
+	const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "")
+	return normalized === "localhost" || normalized === "::1" || normalized === "0.0.0.0" || /^127(?:\.\d{1,3}){3}$/.test(normalized)
+}
+
+async function requireLocalOrSimulatedRuntime(): Promise<string> {
+	if (connection.networkConfig.type === "edr-simulated") return `simulated (${connection.networkName})`
+
+	const rpcUrl = await connection.networkConfig.url.getUrl()
+	const hostname = new URL(rpcUrl).hostname
+	if (!isLoopbackHostname(hostname)) {
+		throw new Error(
+			`Refusing to run destructive local E2E flow against non-local RPC host ${hostname} on network ${connection.networkName}. ` +
+				"Use an EDR simulated network or a loopback RPC endpoint.",
+		)
+	}
+	return `local RPC (${connection.networkName}, ${hostname})`
+}
+
 // =============================================================================
 // Main
 // =============================================================================
 
 async function main() {
+	const runtime = await requireLocalOrSimulatedRuntime()
 	console.log("=".repeat(60))
 	console.log(" Symmio v0.8.5 Local E2E Test")
+	console.log(` Runtime: ${runtime}`)
 	console.log("=".repeat(60))
 
 	// =========================================================================

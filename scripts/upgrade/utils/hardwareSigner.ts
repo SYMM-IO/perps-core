@@ -15,6 +15,7 @@ import {
 	type TransactionResponse,
 	type TypedDataDomain,
 	type TypedDataField,
+	type InterfaceAbi,
 } from "ethers"
 import fs from "node:fs"
 import { createRequire } from "node:module"
@@ -120,6 +121,19 @@ const ROLE_NAME_BY_HASH = new Map<string, string>([
 	[ethers.ZeroHash.toLowerCase(), "DEFAULT_ADMIN_ROLE (0x00)"],
 	...KNOWN_ROLE_NAMES.map(name => [ethers.id(name).toLowerCase(), name] as const),
 ])
+
+function redactRpcUrl(rawUrl: string): string {
+	try {
+		const url = new URL(rawUrl)
+		if (url.username) url.username = "***"
+		if (url.password) url.password = "***"
+		if (url.search) url.search = "?***"
+		if (url.pathname && url.pathname !== "/") url.pathname = "/***"
+		return url.toString()
+	} catch {
+		return "<redacted RPC URL>"
+	}
+}
 
 type CalldataDecoder = {
 	iface: Interface
@@ -450,7 +464,7 @@ function loadCalldataDecoders(): CalldataDecoder[] {
 			const artifact = JSON.parse(fs.readFileSync(file, "utf-8")) as { abi?: unknown[] }
 			if (!Array.isArray(artifact.abi) || !artifact.abi.some(item => (item as { type?: string }).type === "function")) continue
 			calldataDecoders.push({
-				iface: new ethers.Interface(artifact.abi),
+				iface: new ethers.Interface(artifact.abi as InterfaceAbi),
 				source: path.relative(process.cwd(), file),
 			})
 		} catch {
@@ -763,7 +777,7 @@ export async function printHardwareWalletDiscovery(options: HardwareDiscoveryOpt
 	if (rpcUrl) {
 		const provider = new ethers.JsonRpcProvider(rpcUrl)
 		const accounts = ((await provider.send("eth_accounts", [])) as string[]).map(a => ethers.getAddress(a))
-		log.info(`External wallet RPC: ${rpcUrl}`)
+		log.info(`External wallet RPC: ${redactRpcUrl(rpcUrl)}`)
 		if (accounts.length === 0) log.warn("  No accounts exposed by external wallet RPC")
 		for (const account of accounts) {
 			const mark = expectedAddress && matchesAddress(account, expectedAddress) ? "MATCH" : "account"

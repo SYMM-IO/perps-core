@@ -10,10 +10,11 @@
  * configured. It only broadcasts the setter transaction when EXECUTE=true.
  *
  * Run:
- *   npx hardhat run scripts/upgrade/updateLiquidationInsuranceVaultParams.ts --network <network>
+ *   ./node_modules/.bin/hardhat run scripts/upgrade/updateLiquidationInsuranceVaultParams.ts --network <network>
  *
  * Direct execution, only for a signer that has FEE_ADMIN_ROLE:
- *   EXECUTE=true USE_KEYSTORE=true npx hardhat run scripts/upgrade/updateLiquidationInsuranceVaultParams.ts --network <network>
+ *   EXECUTE=true CONFIRM_CHAIN_ID=<chainId> USE_KEYSTORE=true \
+ *     ./node_modules/.bin/hardhat run scripts/upgrade/updateLiquidationInsuranceVaultParams.ts --network <network>
  *
  * Env overrides:
  *   DIAMOND_ADDRESS=0x...
@@ -22,7 +23,9 @@
  *   SAFE_ADDRESS=0x...
  *   FEE_ADMIN_ADDRESS=0x...
  *   PROPOSE_TO_SAFE_SERVICE=1|0
- *   SUBMIT_SAFE_PROPOSAL=1|0
+ *   SUBMIT_SAFE_PROPOSAL=true
+ *   CONFIRM_CHAIN_ID=<connected chain id>
+ *   CONFIRM_SAFE_ADDRESS=<exact Safe address>
  *   SAFE_SERVICE_URL
  *   SAFE_SERVICE_API_KEY
  *   SAFE_SENDER_ADDRESS
@@ -36,6 +39,7 @@ import fs from "fs"
 import path from "path"
 
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
+import { exactBooleanEnv, requireExecutionConfirmation, requireSafeProposalConfirmation } from "./utils/executionGuard.js"
 import { resolveConfiguredSigner } from "./utils/hardwareSigner.js"
 import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
@@ -439,6 +443,7 @@ async function prepareSafeServiceProposal(args: {
 	targetVault: string
 	targetMaxProfit: bigint
 	proposalConfig: ProposalConfig
+	submitSafeProposal: boolean
 }): Promise<SafeProposalResult | undefined> {
 	if (!args.safeAddress) {
 		return {
@@ -451,12 +456,7 @@ async function prepareSafeServiceProposal(args: {
 
 	const proposeToSafeService =
 		process.env.PROPOSE_TO_SAFE_SERVICE !== undefined ? parseBool(process.env.PROPOSE_TO_SAFE_SERVICE) : args.proposalConfig.enabled !== false
-	const submitSafeProposal =
-		process.env.SUBMIT_SAFE_PROPOSAL !== undefined
-			? parseBool(process.env.SUBMIT_SAFE_PROPOSAL)
-			: process.env.SAFE_PROPOSAL_SUBMIT !== undefined
-				? parseBool(process.env.SAFE_PROPOSAL_SUBMIT)
-				: args.proposalConfig.submit === true
+	const submitSafeProposal = args.submitSafeProposal
 
 	if (!proposeToSafeService) {
 		return {
@@ -482,7 +482,13 @@ async function prepareSafeServiceProposal(args: {
 	const apiKeyEnvVar = args.proposalConfig.apiKeyEnvVar ?? "SAFE_SERVICE_API_KEY"
 	const apiKey = process.env.SAFE_SERVICE_API_KEY ?? process.env[apiKeyEnvVar] ?? args.proposalConfig.apiKey
 	const safeContract = new ethers.Contract(args.safeAddress, safeIface, ethers.provider)
-	const nonceResolution = await resolveSafeNonce(safeContract, safeServiceUrl, args.safeAddress, apiKey, args.proposalConfig.safeNonce)
+	const nonceResolution = await resolveSafeNonce(
+		safeContract as unknown as { nonce(): Promise<bigint> },
+		safeServiceUrl,
+		args.safeAddress,
+		apiKey,
+		args.proposalConfig.safeNonce,
+	)
 	const safeNonce = nonceResolution.nonce
 	const origin =
 		process.env.SAFE_ORIGIN ??
@@ -607,7 +613,9 @@ async function prepareSafeServiceProposal(args: {
 	} else if (submitSafeProposal) {
 		log.warn("Safe proposal submission skipped because preflight, simulation, or owner/delegate eligibility did not pass.")
 	} else {
-		log.warn("Safe proposal submission skipped. Set SUBMIT_SAFE_PROPOSAL=1 from an environment that can sign as the Safe proposer.")
+		log.warn(
+			`Safe proposal submission skipped. To submit, set SUBMIT_SAFE_PROPOSAL=true CONFIRM_CHAIN_ID=${args.chainId} CONFIRM_SAFE_ADDRESS=${args.safeAddress}.`,
+		)
 	}
 
 	ensureDir(OUTPUT_DIR)
@@ -754,11 +762,18 @@ async function main() {
 		"FEE_ADMIN_ADDRESS",
 		process.env.FEE_ADMIN_ADDRESS ?? process.env.PROTOCOL_ADMIN ?? config.protocolAdmin,
 	)
-	const execute = parseBool(process.env.EXECUTE)
-	const force = parseBool(process.env.FORCE)
-
 	await verifyRpc()
-	const chainId = String(Number((await ethers.provider.getNetwork()).chainId))
+	const connectedChainId = (await ethers.provider.getNetwork()).chainId
+	const chainId = String(Number(connectedChainId))
+	const execute = requireExecutionConfirmation(connectedChainId)
+	const force = exactBooleanEnv("FORCE")
+	const submitWithoutSafe = !safeAddress && (exactBooleanEnv("SUBMIT_SAFE_PROPOSAL") || exactBooleanEnv("SAFE_PROPOSAL_SUBMIT"))
+	if (submitWithoutSafe) throw new Error("SUBMIT_SAFE_PROPOSAL=true requires SAFE_ADDRESS")
+	const submitSafeProposal = safeAddress ? requireSafeProposalConfirmation(connectedChainId, safeAddress) : false
+	if (execute && submitSafeProposal) throw new Error("Choose one mutation path per run: EXECUTE=true or SUBMIT_SAFE_PROPOSAL=true")
+	if (proposalConfig.submit === true && !submitSafeProposal) {
+		log.warn("Config safeProposal.submit=true is informational only; this run will not submit without the explicit Safe submission interlocks.")
+	}
 
 	const current = await readCurrentParams(diamondAddress)
 	const matching = paramsMatch(current, targetVault, targetMaxProfit)
@@ -832,9 +847,11 @@ async function main() {
 
 		const diamond = await ethers.getContractAt(DIAMOND_ABI, diamondAddress, signer)
 		log.info(`Submitting from ${signerAddress}...`)
+		await diamond.setLiquidationInsuranceVaultParams.staticCall(targetVault, targetMaxProfit, writeTxOverrides())
 		const tx = await diamond.setLiquidationInsuranceVaultParams(targetVault, targetMaxProfit, writeTxOverrides())
-		log.info(`Tx submitted: ${tx.hash}`)
+		log.info(`Tx submitted: ${tx.hash} (nonce: ${tx.nonce})`)
 		const receipt = await tx.wait()
+		if (!receipt?.status) throw new Error(`setLiquidationInsuranceVaultParams transaction failed: ${tx.hash}`)
 		txHash = receipt.hash
 		log.ok(`Tx confirmed: ${receipt.hash} (gas: ${receipt.gasUsed})`)
 
@@ -859,6 +876,7 @@ async function main() {
 					targetVault,
 					targetMaxProfit,
 					proposalConfig,
+					submitSafeProposal,
 				})
 			: undefined
 

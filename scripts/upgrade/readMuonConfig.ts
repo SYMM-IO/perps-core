@@ -5,10 +5,10 @@
  * (newV085Parameters.muonPublicKeys / muonGatewaySigners).
  *
  * Usage:
- *   DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/readMuonConfig.ts --network <network>
+ *   DIAMOND_ADDRESS=0x... ./node_modules/.bin/hardhat run scripts/upgrade/readMuonConfig.ts --network <network>
  *
  *   # Or with config file
- *   npx hardhat run scripts/upgrade/readMuonConfig.ts --network <network>
+ *   ./node_modules/.bin/hardhat run scripts/upgrade/readMuonConfig.ts --network <network>
  */
 import fs from "fs"
 

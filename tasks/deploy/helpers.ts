@@ -1,9 +1,17 @@
 import { ethers as ethersLib } from "ethers"
 
+import { setDataScope } from "../utils/fs.js"
+import type { DeploymentCheckpoint } from "./checkpoint.js"
+import { checkpointDeployment, recoverCheckpointDeployment } from "./deploymentRecovery.js"
+import { logger } from "./logger.js"
+import { assertStandaloneDeploymentTaskAllowed as assertStandaloneDeploymentNetworkAllowed } from "./safety.js"
+import { confirmDeployment } from "./tx.js"
+
 type NetworkConnection = {
 	ethers: any
 	upgrades?: any
 	networkName?: string
+	networkConfig?: { type?: string }
 }
 
 /**
@@ -32,33 +40,84 @@ export async function getConnection(hre: any): Promise<NetworkConnection> {
 
 	// Check if connection is already cached
 	if (!globalAny[CONNECTION_KEY]) {
-		// Check if hre already has an ethers instance (e.g., from hardhat-connection.ts)
-		if (hre.ethers) {
-			// Use the existing ethers instance
-			globalAny[CONNECTION_KEY] = Promise.resolve({ ethers: hre.ethers, upgrades: hre.upgrades })
+		// Prefer the real Hardhat 3 connection even when a compatibility helper has also
+		// attached hre.ethers. It carries networkName/networkConfig, which record scoping
+		// needs to distinguish an EDR fork from a live RPC with the same chain id.
+		if (hre.network?.getOrCreate) {
+			globalAny[CONNECTION_KEY] = hre.network.getOrCreate()
+		} else if (hre.ethers) {
+			globalAny[CONNECTION_KEY] = Promise.resolve({
+				ethers: hre.ethers,
+				upgrades: hre.upgrades,
+				networkName: hre.networkName,
+				networkConfig: hre.networkConfig,
+			})
 		} else {
-			// Create a new connection and cache it
-			globalAny[CONNECTION_KEY] = hre.network.connect()
+			throw new Error("Hardhat runtime has neither network.getOrCreate() nor an ethers connection")
 		}
 	}
-	return globalAny[CONNECTION_KEY]
+	const connection = await globalAny[CONNECTION_KEY]
+	if (!connection?.ethers?.provider) throw new Error("Hardhat network connection has no ethers provider")
+	const chainId = (await connection.ethers.provider.getNetwork()).chainId
+	const isSimulatedNetwork = connection.networkConfig?.type === "edr-simulated"
+	// Every standalone deploy task reaches this helper before reading or writing its
+	// verification records. Scope records here so direct tasks and deploy:system cannot
+	// silently share legacy tasks/data/*.json across chains (or across live/fork runs).
+	setDataScope(chainId, { simulated: isSimulatedNetwork })
+	return connection
+}
+
+/** Guard a public low-level deployment task before it can broadcast to a live RPC. */
+export async function assertStandaloneDeploymentTaskAllowed(hre: any, taskName: string, liveWorkflow?: string): Promise<void> {
+	const connection = await getConnection(hre)
+	const chainId = (await connection.ethers.provider.getNetwork()).chainId
+	const isSimulated = connection.networkConfig?.type === "edr-simulated"
+	assertStandaloneDeploymentNetworkAllowed(taskName, chainId, isSimulated, liveWorkflow)
 }
 
 export async function deployProxyWithFallback(
 	hre: any,
 	factory: any,
 	args: unknown[],
-	options?: { initializer?: string; kind?: string },
+	options?: {
+		initializer?: string
+		kind?: string
+		label?: string
+		checkpoint?: DeploymentCheckpoint
+		implementationComponent?: string
+		proxyComponent?: string
+	},
 ): Promise<any> {
 	const { ethers, upgrades } = await getConnection(hre)
+	const label = options?.label || "proxy"
+	const {
+		label: _label,
+		checkpoint,
+		implementationComponent = `deployments.${label}.implementation`,
+		proxyComponent = `deployments.${label}.proxy`,
+		...upgradeOptions
+	} = options || {}
 
-	if (upgrades?.deployProxy) {
-		return upgrades.deployProxy(factory, args, options)
+	const recoveredProxy = await recoverCheckpointDeployment(checkpoint, ethers.provider, proxyComponent)
+	if (recoveredProxy) {
+		logger.info(`  ↻ Recovered ${label} proxy at ${recoveredProxy} from its confirmed creation transaction`)
+		return factory.attach(recoveredProxy)
 	}
 
-	const implementation = await factory.deploy()
-	await implementation.waitForDeployment()
-	const implAddress = await implementation.getAddress()
+	if (upgrades?.deployProxy) {
+		const proxy = await upgrades.deployProxy(factory, args, upgradeOptions)
+		await confirmDeployment(proxy, `${label} proxy`, checkpointDeployment(checkpoint, proxyComponent))
+		return proxy
+	}
+
+	const recoveredImplementation = await recoverCheckpointDeployment(checkpoint, ethers.provider, implementationComponent)
+	if (recoveredImplementation) {
+		logger.info(`  ↻ Recovered ${label} implementation at ${recoveredImplementation} from its confirmed creation transaction`)
+	}
+	const implementation = recoveredImplementation ? factory.attach(recoveredImplementation) : await factory.deploy()
+	const implAddress = recoveredImplementation
+		? recoveredImplementation
+		: await confirmDeployment(implementation, `${label} implementation`, checkpointDeployment(checkpoint, implementationComponent))
 
 	// Wait for implementation to be visible to RPC node (L2 race condition)
 	for (let attempt = 0; attempt < 10; attempt++) {
@@ -75,7 +134,7 @@ export async function deployProxyWithFallback(
 	const initData = factory.interface.encodeFunctionData(initializer, args)
 
 	const proxy = await proxyFactory.deploy(implAddress, initData)
-	await proxy.waitForDeployment()
+	await confirmDeployment(proxy, `${label} proxy`, checkpointDeployment(checkpoint, proxyComponent, [implAddress, initData]))
 
 	return factory.attach(await proxy.getAddress())
 }

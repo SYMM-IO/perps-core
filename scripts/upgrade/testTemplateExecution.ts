@@ -15,10 +15,12 @@
  *   - AccountLayer + InstantLayer deployed and wired
  *
  * Usage (local):
- *   npx hardhat run scripts/upgrade/testTemplateExecution.ts --network docker
+ *   ./node_modules/.bin/hardhat run scripts/upgrade/testTemplateExecution.ts --network docker
  *
  * Usage (fork, after forkUpgrade.ts):
- *   FORK=true npx hardhat run scripts/upgrade/testTemplateExecution.ts --network fork-arbitrum
+ *   FORK=true ./node_modules/.bin/hardhat run scripts/upgrade/testTemplateExecution.ts --network fork-arbitrum
+ *
+ * Refuses to run against non-simulated, non-loopback RPC endpoints.
  *
  * Auto-loads from upgrade-{network}.json + output files (deployed-accountlayer-instantlayer.json
  * or deployed-peripherals.json). Env vars and testTemplateExecution.json override.
@@ -77,6 +79,25 @@ function loadConfig(): Config {
 	}
 
 	return config
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+	const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "")
+	return normalized === "localhost" || normalized === "::1" || normalized === "0.0.0.0" || /^127(?:\.\d{1,3}){3}$/.test(normalized)
+}
+
+async function requireLocalOrSimulatedRuntime(): Promise<string> {
+	if (connection.networkConfig.type === "edr-simulated") return `simulated (${connection.networkName})`
+
+	const rpcUrl = await connection.networkConfig.url.getUrl()
+	const hostname = new URL(rpcUrl).hostname
+	if (!isLoopbackHostname(hostname)) {
+		throw new Error(
+			`Refusing to run destructive test flow against non-local RPC host ${hostname} on network ${connection.networkName}. ` +
+				"Use an EDR simulated network or a loopback RPC endpoint.",
+		)
+	}
+	return `local RPC (${connection.networkName}, ${hostname})`
 }
 
 // ============================================================================
@@ -184,6 +205,7 @@ async function setERC20Balance(token: string, account: string, amount: bigint): 
 // ============================================================================
 
 async function main() {
+	const runtime = await requireLocalOrSimulatedRuntime()
 	const config = loadConfig()
 
 	const DIAMOND = process.env.DIAMOND_ADDRESS ?? config.diamondAddress
@@ -197,6 +219,7 @@ async function main() {
 	if (!AL_ADDRESS) throw new Error("ACCOUNT_LAYER_ADDRESS required")
 	if (!IL_ADDRESS) throw new Error("INSTANT_LAYER_ADDRESS required")
 
+	console.log(`Runtime:       ${runtime}`)
 	console.log(`Mode:          ${isFork ? "FORK" : "LOCAL"}`)
 	console.log(`Diamond:       ${DIAMOND}`)
 	console.log(`AccountLayer:  ${AL_ADDRESS}`)
@@ -266,10 +289,10 @@ async function main() {
 		admin,
 	)
 	const bindingFacet = await ethers.getContractAt("contracts/core/facets/Binding/BindingFacet.sol:BindingFacet", DIAMOND, admin)
-	const accountFacet = await ethers.getContractAt("contracts/core/facets/Account/AccountFacet.sol:AccountFacet", DIAMOND, admin)
+	const accountFacet: any = await ethers.getContractAt("contracts/core/facets/Account/AccountFacet.sol:AccountFacet", DIAMOND, admin)
 	const viewFacetQuote = await ethers.getContractAt("contracts/core/facets/ViewFacetQuote/ViewFacetQuote.sol:ViewFacetQuote", DIAMOND, admin)
 	const alAffiliateFacet = await ethers.getContractAt("contracts/accountLayer/facets/Affiliate/AffiliateFacet.sol:AffiliateFacet", AL_ADDRESS, admin)
-	const instantLayer = await ethers.getContractAt("InstantLayer", IL_ADDRESS, admin)
+	const instantLayer: any = await ethers.getContractAt("InstantLayer", IL_ADDRESS, admin)
 
 	// =========================================================================
 	// Step 1: Setup SymmioPartyB
@@ -405,11 +428,19 @@ async function main() {
 	console.log("\n=== Step 5: Fund accounts + whitelist symbol ===")
 
 	// Resolve collateral address
-	let collateralAddress = COLLATERAL
-	if (!collateralAddress) {
+	let resolvedCollateralAddress: unknown = COLLATERAL
+	if (!resolvedCollateralAddress) {
 		const viewFacet = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", DIAMOND, admin)
-		collateralAddress = await viewFacet.getCollateral()
+		resolvedCollateralAddress = await viewFacet.getCollateral()
 	}
+	if (
+		typeof resolvedCollateralAddress !== "string" ||
+		!ethers.isAddress(resolvedCollateralAddress) ||
+		resolvedCollateralAddress === ethers.ZeroAddress
+	) {
+		throw new Error(`Invalid collateral address: ${String(resolvedCollateralAddress)}`)
+	}
+	const collateralAddress = ethers.getAddress(resolvedCollateralAddress)
 	console.log(`  Collateral: ${collateralAddress}`)
 
 	// Read collateral decimals for correct amounts
@@ -457,7 +488,7 @@ async function main() {
 		console.log("  PartyB: deposited and allocated 50000")
 	} else {
 		// Local mode: use FakeStablecoin.mint()
-		const collateral = await ethers.getContractAt("FakeStablecoin", collateralAddress, partyASigner)
+		const collateral: any = await ethers.getContractAt("FakeStablecoin", collateralAddress, partyASigner)
 
 		// Fund PartyA
 		await (await collateral.mint(partyAAddress, decimal(100000n))).wait()

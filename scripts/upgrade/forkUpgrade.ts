@@ -2,7 +2,9 @@ import { spawnSync } from "child_process"
 import fs from "fs"
 import path from "path"
 
+import { atomicWriteFile } from "../../tasks/utils/fs.js"
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
+import { assertSimulatedOrLoopback } from "../utils/localNetworkGuard.js"
 import { getImpersonatedAdmin, impersonateAndFund } from "./utils/forkHelpers.js"
 import { log } from "./utils/log.js"
 import { logUpgradeOwnershipSummary } from "./utils/ownership.js"
@@ -14,17 +16,15 @@ import { createStepReporter } from "./utils/stepReporter.js"
 import { fetchOpenQuotes, fetchPartyBBalances } from "./utils/subgraphHelpers.js"
 import { deployFacets, buildDiamondCut, applyDiamondCut, setV085Parameters, type NewV085Parameters } from "./utils/upgradeHelpers.js"
 
-const DEFAULT_SUBGRAPH_ENDPOINT = "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/arbitrum_analytics/stage/gn"
-
 /**
- * Fork Upgrade Script (upgrade by default; optional migration)
+ * Fork-only upgrade rehearsal (upgrade by default; optional migration).
  *
  * Impersonates the on-chain diamond owner and runs the v0.8.4 -> v0.8.5
  * upgrade on a forked network. Set FORK_RUN_MIGRATION=true to also prepare
  * migration input after pause and run migration after the diamondCut.
  *
  * Usage:
- *   DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/forkUpgrade.ts --network localhost
+ *   DIAMOND_ADDRESS=0x... ./node_modules/.bin/hardhat run scripts/upgrade/forkUpgrade.ts --network localhost
  *
  * Config:
  *   cp scripts/upgrade/config/samples/upgrade.sample.json scripts/upgrade/config/upgrade.json
@@ -105,15 +105,11 @@ function ensureParentDir(filePath: string): void {
 function writeJson(filePath: string, value: unknown): void {
 	if (!filePath) return
 	ensureParentDir(filePath)
-	fs.writeFileSync(filePath, JSON.stringify(value, null, 2))
+	atomicWriteFile(filePath, `${JSON.stringify(value, null, 2)}\n`)
 }
 
 function tryWriteReport(filePath: string, report: ForkUpgradeReport): void {
-	try {
-		writeJson(filePath, report)
-	} catch (error) {
-		log.error(`Failed to write report: ${formatError(error)}`)
-	}
+	writeJson(filePath, report)
 }
 
 function runHardhatScript(scriptPath: string, networkName: string, envOverrides: Record<string, string | number | boolean | undefined>): void {
@@ -123,7 +119,9 @@ function runHardhatScript(scriptPath: string, networkName: string, envOverrides:
 		env[key] = String(value)
 	}
 
-	const result = spawnSync("npx", ["hardhat", "run", scriptPath, "--network", networkName], {
+	const hardhatBin = path.resolve("node_modules/.bin/hardhat")
+	if (!fs.existsSync(hardhatBin)) throw new Error(`Missing ${hardhatBin}; run ./utils/yarn-classic.sh install --frozen-lockfile first`)
+	const result = spawnSync(hardhatBin, ["run", scriptPath, "--network", networkName], {
 		stdio: "inherit",
 		env,
 	})
@@ -150,6 +148,9 @@ function printStepTimings(steps: StepResult[], totalMs: number): void {
 async function main() {
 	const scriptTimer = log.timer()
 	await verifyRpc()
+	const chainId = Number((await ethers.provider.getNetwork()).chainId)
+	const runtime = assertSimulatedOrLoopback(connection as any, "scripts/upgrade/forkUpgrade.ts")
+	log.info(`Fork rehearsal runtime: ${runtime}, chainId ${chainId}`)
 	const startedAtMs = Date.now()
 	const config = loadConfig(connection.networkName)
 
@@ -159,10 +160,13 @@ async function main() {
 	const MIGRATION_RUNNER_ADDRESS =
 		process.env.FORK_MIGRATION_RUNNER_ADDRESS ?? process.env.MIGRATION_RUNNER_ADDRESS ?? config.migrationRunner ?? PROTOCOL_ADMIN_ADDRESS
 	const DIAMOND_CUT_CHUNK_SIZE = Number(process.env.DIAMOND_CUT_CHUNK_SIZE ?? config.diamondCutChunkSize ?? 6)
-	const SUBGRAPH_ENDPOINT = process.env.SUBGRAPH_ENDPOINT || config.subgraphEndpoint || DEFAULT_SUBGRAPH_ENDPOINT
+	const SUBGRAPH_ENDPOINT = process.env.SUBGRAPH_ENDPOINT || config.subgraphEndpoint
 	const RUN_MIGRATION = parseBool(process.env.FORK_RUN_MIGRATION, config.runMigration ?? false)
 	const VALIDATE_MIGRATION_INPUT = parseBool(process.env.FORK_VALIDATE_MIGRATION_INPUT, config.validateMigrationInput ?? RUN_MIGRATION)
 	const VALIDATE_MIGRATION_EDGE_CASES = parseBool(process.env.FORK_VALIDATE_MIGRATION_EDGE_CASES, config.validateMigrationEdgeCases ?? RUN_MIGRATION)
+	if (!SUBGRAPH_ENDPOINT) {
+		throw new Error("Fork rehearsal requires an explicit chain-scoped SUBGRAPH_ENDPOINT or upgrade config subgraphEndpoint")
+	}
 	const newParams = config.newV085Parameters ?? {}
 
 	const outputDir = "./scripts/upgrade/output"
@@ -176,7 +180,6 @@ async function main() {
 		process.env.MIGRATE_PROGRESS_FILE ?? config.migrationProgressFile ?? `${outputDir}/${withSuffix("migration-progress")}`
 	const migrationReportFile = process.env.MIGRATE_REPORT_FILE ?? config.migrationReportFile ?? `${outputDir}/${withSuffix("migration-report")}`
 	const migrationGapScanRange = process.env.GAP_SCAN_RANGE ?? config.migrationGapScanRange
-	const chainId = Number((await ethers.provider.getNetwork()).chainId)
 	const deploymentStateContext = { networkName: networkSuffix, chainId, diamondAddress: DIAMOND_ADDRESS }
 
 	const report: ForkUpgradeReport = {
@@ -510,7 +513,7 @@ async function main() {
 				const defaultAdminRole = await verifierAccess.DEFAULT_ADMIN_ROLE()
 				const verifierAdmin = await verifierAccess.getRoleMember(defaultAdminRole, 0)
 				const verifierAdminSigner = await impersonateAndFund(verifierAdmin)
-				await (await verifierAccess.connect(verifierAdminSigner).grantRole(setterRole, protocolAdminAddress)).wait()
+				await (await (verifierAccess.connect(verifierAdminSigner) as any).grantRole(setterRole, protocolAdminAddress)).wait()
 				log.ok(`Fork patch: SETTER_ROLE granted to ${log.addr(protocolAdminAddress)} on verifier (via ${log.addr(verifierAdmin)})`)
 			}
 		}
@@ -689,6 +692,8 @@ async function main() {
 				NETWORK_ALIAS: networkSuffix,
 				DIAMOND_ADDRESS,
 				FORK: "true",
+				EXECUTE: "true",
+				CONFIRM_CHAIN_ID: chainId,
 				FORK_MIGRATION_RUNNER_ADDRESS: migrationRunnerAddress,
 				MIGRATION_INPUT_FILE: migrationInputFile,
 				MIGRATE_PROGRESS_FILE: migrationProgressFile,

@@ -5,7 +5,7 @@
 	"muonPriceValidTime": 60,
 	"safeProposal": {
 		"enabled": true,
-		"submit": true,
+		"submit": false,
 		"safeNonce": null
 	}
 }

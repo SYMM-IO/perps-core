@@ -1,0 +1,127 @@
+{
+	"$schema": "../deployment-recipe.schema.json",
+	"apiVersion": "deployment.symm.io/v1",
+	"kind": "DeploymentRecipe",
+	"name": "arbitrum-v0.8.6",
+	"network": {
+		"name": "arbitrum",
+		"chainId": 42161,
+		"mode": "live"
+	},
+	"secrets": {
+		"deployer": "hardhat-keystore://NEW_DEPLOYER",
+		"rpc": "hardhat-keystore://RPC_ARBITRUM",
+		"explorer": "hardhat-keystore://ETHERSCAN_APIKEY"
+	},
+	"execution": {
+		"logLevel": "verbose",
+		"verify": true,
+		"confirmations": 1,
+		"txTimeoutSeconds": 300,
+		"slowNoticeSeconds": 30
+	},
+	"governance": {
+		"admin": "REPLACE_WITH_ADMIN_ADDRESS",
+		"feeReceiver": "REPLACE_WITH_FEE_RECEIVER_ADDRESS",
+		"liquidationInsuranceVault": "REPLACE_WITH_LIQUIDATION_INSURANCE_VAULT_ADDRESS",
+		"maxLiquidationProfitPerPosition": "100000000000000000000",
+		"softLiquidationPenaltyCollector": "REPLACE_WITH_SOFT_LIQUIDATION_PENALTY_COLLECTOR_ADDRESS"
+	},
+	"core": {
+		"mode": "deploy",
+		"create2": {
+			"vanityPrefix": "573310"
+		},
+		"collateral": {
+			"mode": "reuse",
+			"address": "REPLACE_WITH_COLLATERAL_ADDRESS"
+		},
+		"muon": {
+			"mode": "deploy",
+			"appId": "REPLACE_WITH_MUON_APP_ID",
+			"upnlValidTime": "60",
+			"priceValidTime": "60",
+			"publicKey": {
+				"x": "REPLACE_WITH_MUON_PUBLIC_KEY_X",
+				"parity": 0
+			},
+			"gatewaySigners": ["REPLACE_WITH_MUON_GATEWAY_SIGNER_ADDRESS"],
+			"permissions": [
+				"Trading",
+				"AccountManagement",
+				"Settlement",
+				"ForceClose",
+				"Funding",
+				"LiquidationPartyA",
+				"LiquidationPartyB",
+				"RemoveMargin"
+			]
+		},
+		"protocol": {
+			"description": "Arbitrum One - mirrors the reviewed HyperEVM v0.8.5 deployment parameters and template ordering.",
+			"parameters": {
+				"balanceLimitPerUser": "1000000000000000000000000",
+				"maxWithdrawParts": 10,
+				"deallocateCooldown": 259200,
+				"settlementCooldown": 300,
+				"deallocateDebounceTime": 0,
+				"liquidatorShare": "100000000000000000",
+				"liquidationTimeout": 100,
+				"forceCloseCooldowns": [300, 120],
+				"forceCancelCooldown": 300,
+				"forceCancelCloseCooldown": 300,
+				"pendingQuotesValidLength": 10,
+				"maxPartyAConnectionLimit": 5
+			},
+			"instantLayerTemplates": [
+				{
+					"name": "InstantOpen",
+					"instantOpenMode": true,
+					"operations": [
+						{ "insertionPoints": [], "sourceIndices": [], "sourceOffsets": [] },
+						{ "insertionPoints": [], "sourceIndices": [], "sourceOffsets": [] },
+						{ "insertionPoints": [0], "sourceIndices": [1], "sourceOffsets": [0] },
+						{ "insertionPoints": [0], "sourceIndices": [1], "sourceOffsets": [0] }
+					]
+				},
+				{
+					"name": "InstantClose",
+					"operations": [
+						{ "insertionPoints": [], "sourceIndices": [], "sourceOffsets": [] },
+						{ "insertionPoints": [], "sourceIndices": [], "sourceOffsets": [] }
+					]
+				},
+				{
+					"name": "InstantCloseWithAllocation",
+					"operations": [
+						{ "insertionPoints": [], "sourceIndices": [], "sourceOffsets": [] },
+						{ "insertionPoints": [], "sourceIndices": [], "sourceOffsets": [] },
+						{ "insertionPoints": [], "sourceIndices": [], "sourceOffsets": [] }
+					]
+				},
+				{
+					"name": "INSTANT_OPEN_NO_MARGIN_TEMPLATE",
+					"operations": [
+						{ "insertionPoints": [], "sourceIndices": [], "sourceOffsets": [] },
+						{ "insertionPoints": [0], "sourceIndices": [0], "sourceOffsets": [0] },
+						{ "insertionPoints": [0], "sourceIndices": [0], "sourceOffsets": [0] }
+					]
+				}
+			]
+		},
+		"setupInstantLayerTemplates": true,
+		"registerDummyAffiliate": false
+	},
+	"partyB": {
+		"mode": "deploy",
+		"signer": "REPLACE_WITH_PARTY_B_SIGNER_ADDRESS",
+		"adlEnabled": false
+	},
+	"symbolManager": {
+		"mode": "deploy",
+		"operator": "REPLACE_WITH_SYMBOL_MANAGER_OPERATOR_ADDRESS"
+	},
+	"expressProvider": {
+		"mode": "skip"
+	}
+}

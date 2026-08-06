@@ -1,114 +1,132 @@
 import { FacetCutAction, getSelectors } from "../tasks/utils/diamondCut.js"
-import { ethers } from "../test/helpers/hardhat-connection.js"
+import { ethers, hre } from "../test/helpers/hardhat-connection.js"
+import { requireExecutionConfirmation } from "./upgrade/utils/executionGuard.js"
+import { DIAMOND_OWNER_ABI, readDiamondOwner } from "./upgrade/utils/ownership.js"
 
-// Env:
-//  DIAMOND    - target diamond address (required)
-//  FACET      - facet contract path/name for ethers.getContractFactory (required)
-//              e.g., contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet
-//  FACET_ADDR - deployed facet address to wire into the diamond (required)
-//  CUT_MODE   - "both" | "add" | "replace" (default: both)
-//  ADD_NAMES  - optional comma-separated function names to limit Add selectors
-//
-// Usage examples:
-//  DIAMOND=0x... FACET=contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet FACET_ADDR=0x... \
-//    npx hardhat run scripts/diamond-upgrade-facet.ts --network base
-//  CUT_MODE=replace DIAMOND=0x... FACET=... FACET_ADDR=0x... \
-//    npx hardhat run scripts/diamond-upgrade-facet.ts --network base
-//  CUT_MODE=add ADD_NAMES=getLastWithdrawRequestId,getWithdrawRequestsBatch,getPendingWithdrawRequests \
-//    DIAMOND=0x... FACET=... FACET_ADDR=0x... \
-//    npx hardhat run scripts/diamond-upgrade-facet.ts --network base
+// Plan-only by default. Required env:
+//   DIAMOND, FACET, FACET_ADDR, CUT_MODE=(add|replace|both)
+// Set EXECUTE=true CONFIRM_CHAIN_ID=<connected chain id> only after reviewing the exact selector plan.
 
-const diamondAddress = process.env.DIAMOND || ""
-const facetName = process.env.FACET || ""
-const newFacetAddress = process.env.FACET_ADDR || ""
-
-async function main() {
-	if (!diamondAddress) {
-		throw new Error("Set DIAMOND env var to the core diamond address")
-	}
-
-	if (!facetName) {
-		throw new Error("Set FACET env var to the facet contract name/path (e.g., contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet)")
-	}
-
-	if (!newFacetAddress) {
-		throw new Error("Set FACET_ADDR env var to the deployed facet implementation address")
-	}
-
-	const mode = (process.env.CUT_MODE || "both").toLowerCase() // "both" | "add" | "replace"
-	const addNames = (process.env.ADD_NAMES || "")
-		.split(",")
-		.map(s => s.trim())
-		.filter(Boolean)
-
-	const [signer] = await ethers.getSigners()
-	const diamondCut = await ethers.getContractAt("IDiamondCut", diamondAddress, signer)
-	const loupe = await ethers.getContractAt("IDiamondLoupe", diamondAddress, signer)
-	const FacetFactory = await ethers.getContractFactory(facetName)
-
-	const selectorsAll = getSelectors(ethers, FacetFactory).selectors
-	const selectorsReplace = selectorsAll.slice() // start with all; we'll remove ones not present
-
-	// Read current selectors on diamond to avoid replacing non-existent ones
-	const currentFacets = await loupe.facets()
-	const currentSelectors = new Set<string>()
-	for (const f of currentFacets) {
-		for (const sel of f.functionSelectors) {
-			currentSelectors.add(sel)
-		}
-	}
-
-	// Split into replace (already present) and add (missing)
-	const replaceSelectors = selectorsReplace.filter(s => currentSelectors.has(s))
-	const addSelectors: string[] = []
-	for (const sel of selectorsAll) {
-		if (!currentSelectors.has(sel)) {
-			addSelectors.push(sel)
-		}
-	}
-
-	// Optionally restrict adds to specified function names
-	if (addNames.length > 0) {
-		const selected = getSelectors(ethers, FacetFactory).get(addNames)
-		for (let i = addSelectors.length - 1; i >= 0; i--) {
-			if (!selected.includes(addSelectors[i])) {
-				addSelectors.splice(i, 1)
-			}
-		}
-	}
-
-	// Replace the selectors that already exist on the diamond, and add any that are missing
-	const cut = []
-	if ((mode === "both" || mode === "replace") && replaceSelectors.length > 0) {
-		cut.push({
-			facetAddress: newFacetAddress,
-			action: FacetCutAction.Replace,
-			functionSelectors: replaceSelectors,
-		})
-	}
-	if ((mode === "both" || mode === "add") && addSelectors.length > 0) {
-		cut.push({
-			facetAddress: newFacetAddress,
-			action: FacetCutAction.Add,
-			functionSelectors: addSelectors,
-		})
-	}
-
-	console.log("Diamond:", diamondAddress)
-	console.log("Facet:", facetName)
-	console.log("New facet address:", newFacetAddress)
-	console.log("Mode:", mode)
-	console.log("Replace selectors:", replaceSelectors)
-	console.log("Add selectors:", addSelectors)
-	console.log("Diamond cut payload:", JSON.stringify(cut, null, 2))
-
-	const tx = await diamondCut.diamondCut(cut, ethers.ZeroAddress, "0x")
-	console.log("diamondCut tx:", tx.hash)
-	await tx.wait()
-	console.log("✅ diamondCut executed")
+function requiredAddress(name: string): string {
+	const value = process.env[name]
+	if (!value || !ethers.isAddress(value) || value === ethers.ZeroAddress) throw new Error(`${name} must be an explicit non-zero address`)
+	return ethers.getAddress(value)
 }
 
-main().catch(err => {
-	console.error(err)
-	process.exit(1)
+async function requireCode(name: string, address: string): Promise<string> {
+	const code = await ethers.provider.getCode(address)
+	if (code === "0x") throw new Error(`${name} has no contract code at ${address}`)
+	return code
+}
+
+async function main(): Promise<void> {
+	const diamondAddress = requiredAddress("DIAMOND")
+	const newFacetAddress = requiredAddress("FACET_ADDR")
+	if (diamondAddress === newFacetAddress) throw new Error("FACET_ADDR must not equal DIAMOND")
+	const facetName = process.env.FACET
+	if (!facetName || facetName.trim() === "") throw new Error("FACET must be an explicit contract name or fully-qualified path")
+	const mode = process.env.CUT_MODE?.toLowerCase()
+	if (mode !== "add" && mode !== "replace" && mode !== "both") throw new Error("CUT_MODE must be explicitly set to add, replace, or both")
+	const chain = await ethers.provider.getNetwork()
+	const execute = requireExecutionConfirmation(chain.chainId)
+	const diamondCode = await requireCode("DIAMOND", diamondAddress)
+	const facetCode = await requireCode("FACET_ADDR", newFacetAddress)
+	const artifact = await hre.artifacts.readArtifact(facetName)
+	if (!artifact.deployedBytecode || artifact.deployedBytecode === "0x") throw new Error(`FACET artifact ${facetName} has no deployed bytecode`)
+	if (artifact.deployedBytecode.includes("__$")) {
+		throw new Error(
+			`FACET ${facetName} requires linked libraries; use the standard deployFacets/applyUpgrade pipeline with explicit library addresses`,
+		)
+	}
+	if (artifact.deployedBytecode.toLowerCase() !== facetCode.toLowerCase()) {
+		throw new Error(`FACET_ADDR bytecode does not exactly match the current ${facetName} artifact`)
+	}
+
+	const ownership = await ethers.getContractAt(DIAMOND_OWNER_ABI, diamondAddress)
+	const owner = await readDiamondOwner(ownership)
+	if (!owner) throw new Error(`Could not read diamond owner at ${diamondAddress}`)
+	const [signer] = execute ? await ethers.getSigners() : []
+	if (execute && !signer) throw new Error("No signer is configured for this network")
+	const signerAddress = signer ? ethers.getAddress(await signer.getAddress()) : undefined
+	if (execute && signerAddress !== owner)
+		throw new Error(`Signer ${signerAddress} is not diamond owner ${owner}; no transaction can be executed safely`)
+
+	const diamondCut = signer
+		? await ethers.getContractAt("IDiamondCut", diamondAddress, signer)
+		: new ethers.Contract(diamondAddress, (await hre.artifacts.readArtifact("IDiamondCut")).abi, ethers.provider)
+	const loupe = new ethers.Contract(diamondAddress, (await hre.artifacts.readArtifact("IDiamondLoupe")).abi, ethers.provider)
+	const facetFactory = await ethers.getContractFactory(facetName)
+	const selectorsAll = getSelectors(ethers, facetFactory).selectors
+	if (selectorsAll.length === 0) throw new Error(`FACET ${facetName} exposes no selectors`)
+	if (selectorsAll.includes("0x1f931c1c")) {
+		throw new Error("This one-facet helper refuses to replace diamondCut(bytes); use the standard verified upgrade pipeline")
+	}
+
+	const addNames = (process.env.ADD_NAMES ?? "")
+		.split(",")
+		.map(name => name.trim())
+		.filter(Boolean)
+	const allowedAdds = addNames.length > 0 ? new Set(getSelectors(ethers, facetFactory).get(addNames)) : null
+
+	const selectorOwners = new Map<string, string>()
+	for (const currentFacet of await loupe.facets()) {
+		for (const selector of currentFacet.functionSelectors) selectorOwners.set(selector, ethers.getAddress(currentFacet.facetAddress))
+	}
+	const replaceSelectors =
+		mode === "replace" || mode === "both"
+			? selectorsAll.filter(selector => {
+					const current = selectorOwners.get(selector)
+					return current !== undefined && current !== newFacetAddress
+				})
+			: []
+	const addSelectors =
+		mode === "add" || mode === "both"
+			? selectorsAll.filter(selector => !selectorOwners.has(selector) && (!allowedAdds || allowedAdds.has(selector)))
+			: []
+
+	const cut: Array<{ facetAddress: string; action: number; functionSelectors: string[] }> = []
+	if (replaceSelectors.length > 0) cut.push({ facetAddress: newFacetAddress, action: FacetCutAction.Replace, functionSelectors: replaceSelectors })
+	if (addSelectors.length > 0) cut.push({ facetAddress: newFacetAddress, action: FacetCutAction.Add, functionSelectors: addSelectors })
+
+	console.log("Diamond facet-upgrade plan")
+	console.log(`  Chain:                ${chain.chainId}`)
+	console.log(`  Diamond:              ${diamondAddress} (${(diamondCode.length - 2) / 2} byte runtime)`)
+	console.log(`  Diamond owner:        ${owner}`)
+	console.log(`  Execution signer:     ${signerAddress ?? "(not loaded in plan mode)"}`)
+	console.log(`  Facet artifact:       ${facetName}`)
+	console.log(`  Facet address:        ${newFacetAddress} (${(facetCode.length - 2) / 2} byte runtime)`)
+	console.log(`  Mode:                 ${mode}`)
+	console.log(`  Replace selectors:    ${replaceSelectors.length}`)
+	for (const selector of replaceSelectors) console.log(`    ${selector} (currently ${selectorOwners.get(selector)})`)
+	console.log(`  Add selectors:        ${addSelectors.length}`)
+	for (const selector of addSelectors) console.log(`    ${selector}`)
+
+	if (cut.length === 0) {
+		console.log("No selector changes are required; on-chain mapping already satisfies this plan.")
+		return
+	}
+
+	const estimatedGas = await diamondCut.diamondCut.estimateGas(cut, ethers.ZeroAddress, "0x", { from: owner })
+	console.log(`  Estimated gas:        ${estimatedGas}`)
+	if (!execute) {
+		console.log(`\nPLAN ONLY: no transaction sent. Set EXECUTE=true CONFIRM_CHAIN_ID=${chain.chainId} after reviewing every selector above.`)
+		return
+	}
+
+	await diamondCut.diamondCut.staticCall(cut, ethers.ZeroAddress, "0x")
+	const tx = await diamondCut.diamondCut(cut, ethers.ZeroAddress, "0x")
+	console.log(`diamondCut transaction: ${tx.hash} (nonce ${tx.nonce})`)
+	const receipt = await tx.wait()
+	if (!receipt?.status) throw new Error(`diamondCut transaction ${tx.hash} failed`)
+	for (const selector of [...replaceSelectors, ...addSelectors]) {
+		const installedAt = ethers.getAddress(await loupe.facetAddress(selector))
+		if (installedAt !== newFacetAddress)
+			throw new Error(`Post-state mismatch: selector ${selector} maps to ${installedAt}, expected ${newFacetAddress}`)
+	}
+	console.log(`Verified ${replaceSelectors.length + addSelectors.length} selector mapping(s) in block ${receipt.blockNumber}; gas ${receipt.gasUsed}`)
+}
+
+main().catch(error => {
+	console.error(error)
+	process.exitCode = 1
 })

@@ -1,9 +1,10 @@
 # Deploying SYMMIO
 
-End-to-end runbook for deploying the protocol to a new chain, using the `symmio` CLI.
+Operator runbook for a fresh protocol deployment through the `symmio` CLI.
 
-Everything here has been executed: on a local node, and on a fork of Arbitrum One with a
-production-shaped configuration. Where something has *not* been verified, it says so.
+This runbook describes the hardened deployment path. It is not evidence that this exact
+checkout has been deployed on a fork, a live chain, or a block explorer. Your fork report,
+live receipts, health check, and explorer verification are the evidence for your run.
 
 - [Before you start](#before-you-start)
 - [1. Configure](#1-configure)
@@ -11,9 +12,10 @@ production-shaped configuration. Where something has *not* been verified, it say
 - [3. Rehearse on a fork](#3-rehearse-on-a-fork)
 - [4. Deploy](#4-deploy)
 - [5. Verify](#5-verify)
-- [6. Manual steps](#6-manual-steps)
-- [Resuming a failed deployment](#resuming-a-failed-deployment)
+- [6. Complete the handover](#6-complete-the-handover)
+- [Resuming or restarting](#resuming-or-restarting)
 - [Slow or congested chains](#slow-or-congested-chains)
+- [Operational scripts](#operational-scripts)
 - [Mirroring an existing deployment](#mirroring-an-existing-deployment)
 - [Reference](#reference)
 
@@ -21,322 +23,541 @@ production-shaped configuration. Where something has *not* been verified, it say
 
 ## Before you start
 
-Four things decide whether a deployment is safe. Get them right and the rest is mechanical.
+Use the checked-in toolchain. `.node-version` pins Node `22.15.0`, `package.json` pins Yarn
+Classic `1.22.22`, and `yarn.lock` is the dependency lock:
 
-| | Why it matters |
-|---|---|
-| **Deployer key** | `PRIVATE_KEY` is **not read by anything**. The deployer comes from `NEW_DEPLOYER`, `TEAM_DEPLOYER`, or the hardhat keystore. With none set, the config falls back to a dummy key committed to this repository. |
-| **`ADMIN_PUBLIC_KEY`** | Receives every role and both diamonds' ownership. The deployer's privileges are revoked at the end, so anything you get wrong here needs the admin to fix. Use a multisig. |
-| **`COLLATERAL_ADDRESS`** | Empty means the deploy creates a `FakeStablecoin` anyone can mint, and wires it in permanently. `setCollateral` is not cleanly re-runnable — getting this wrong means redeploying. |
-| **`DEPLOY_MOCK_VERIFIER`** | `true` installs a verifier that accepts **every** signature. Every price, uPnL and liquidation attestation becomes forgeable. |
+```bash
+node --version                                      # v22.15.0
+./utils/yarn-classic.sh --version                   # 1.22.22
+./utils/yarn-classic.sh install --frozen-lockfile
+./utils/yarn-classic.sh run check:operations
+```
 
-`deploy:system` refuses to run on a known mainnet if any of these is unsafe. That guard is a
-backstop, not a substitute for checking.
+The wrapper rejects any package-manager version other than the checked-in Yarn Classic pin
+and ignores parent/user `yarn-path` settings. Do not regenerate the lockfile immediately
+before a deployment.
 
-Prerequisites: Node 22+, a funded deployer, an RPC endpoint you control, and an Etherscan V2
-API key if you want contract verification.
+All commands in this runbook use the checkout-local CLI, so they work without installing a
+global `symmio` command. If you want the shorter command, link it once and verify the shell
+can find it:
+
+```bash
+./utils/yarn-classic.sh link
+command -v symmio
+```
+
+If `command -v` prints nothing, keep using `./utils/yarn-classic.sh cli`; it is the canonical
+and version-bound invocation for this checkout.
+
+Six inputs determine whether the deployment is safe. All public intent belongs in one
+versioned deployment recipe:
+
+| Input             | Requirement                                                                                                                                                |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Target**        | The recipe names the Hardhat network, expected chain id, and `live`, `fork`, or `local` mode. The command line cannot override it.                         |
+| **Secrets**       | The recipe contains only `hardhat-keystore://NAME` or `env://NAME` references. It must never contain a private key, RPC URL, or explorer key.              |
+| **Governance**    | The admin must be an explicit production multisig, distinct from the deployer on a known mainnet. Fee and liquidation recipients are explicit JSON fields. |
+| **Collateral**    | `core.collateral` explicitly says `deploy` or `reuse`; a live deployment must reuse the reviewed token contract.                                           |
+| **Muon verifier** | `core.muon` explicitly says `deploy`, `reuse`, or `mock`. The mock accepts every signature and is blocked on known mainnets.                               |
+| **Components**    | `core`, `partyB`, `symbolManager`, and `expressProvider` each say `deploy`, `reuse`, or `skip`. Omitted or ambient component choices are not accepted.     |
+
+The full recipe deploys the Core Diamond, AccountLayer, Muon verifier, InstantLayer, and
+the enabled add-ons in dependency order. A component-only run uses the same recipe and
+durable evidence, but never silently deploys its dependencies.
+
+Prerequisites: a funded deployer, a private RPC endpoint, the production admin and operator
+addresses, reviewed protocol parameters, real Muon inputs, and an Etherscan V2 key if the
+run requires explorer verification.
 
 ---
 
 ## 1. Configure
 
-Copy the example and fill it in:
+Create the deployment recipe in the standard project location:
 
 ```bash
-cp .env.example .env
+./utils/yarn-classic.sh cli recipe init --network arbitrum
 ```
 
-The variables that matter for a mainnet deploy:
+This creates `deployments/arbitrum.json`, refuses to overwrite an existing recipe, and
+prints the exact next commands. The checked-in reference is
+`deployment/examples/arbitrum.v1.example.json`; its JSON Schema is
+`deployment/deployment-recipe.schema.json`.
 
-```
-NEW_DEPLOYER="0x..."                 # the key that signs. NOT "PRIVATE_KEY".
-RPC_ARBITRUM="https://..."           # your own endpoint; public RPCs drop transactions
-ETHERSCAN_APIKEY="..."               # single V2 multichain key
+The recipe is the only source of public deployment intent. It contains governance and
+operator addresses, collateral and verifier choices, all protocol parameters, the ordered
+InstantLayer templates, transaction settings, and the mode of every component. There is no
+second protocol JSON to keep in sync.
 
-ADMIN_PUBLIC_KEY="0x..."             # your multisig — receives all roles and ownership
-SYMMIO_FEE_RECEIVER="0x..."
-COLLATERAL_ADDRESS="0xaf88d065e77c8cC2239327C5EDb3A432268e5831"   # Arbitrum native USDC
+Each component has one explicit mode in the schema:
 
-DEPLOY_MOCK_VERIFIER="false"
-REGISTER_DUMMY_AFFILIATE="false"
+- `deploy` creates and fully configures it;
+- `reuse` declares an existing dependency or target;
+- `skip` performs no mutation and removes it from the run's health claim.
 
-MUON_APP_ID="..."
-MUON_PUBLIC_KEY_X="0x..."
-MUON_PUBLIC_KEY_PARITY="0"
-MUON_GATEWAY_SIGNERS="0x...,0x..."
-MUON_UPNL_VALID_TIME="60"
-MUON_PRICE_VALID_TIME="60"
-```
+A fresh full run currently requires `core.mode: "deploy"`; PartyB and SymbolManager may be
+`deploy` or `skip`. Reusing an existing Core is supported for `--only partyB` and
+`--only symbolManager` through `core.fromReport`. Unsupported reuse combinations fail in
+the read-only plan rather than being guessed by the executor.
 
-Prefer the encrypted keystore over a key in a file:
+A normal full run executes every non-`skip` supported component. A partial run such as
+`--only partyB` mutates only PartyB; its reused Core and InstantLayer dependencies are read
+and proven, never auto-deployed.
+
+To create the smaller JSON for one add-on instead of trimming the full recipe by hand:
 
 ```bash
-npx hardhat keystore set NEW_DEPLOYER
+./utils/yarn-classic.sh cli recipe init --network arbitrum --only partyB
+./utils/yarn-classic.sh cli recipe init --network arbitrum --only symbolManager
 ```
 
-Then set `USE_KEYSTORE=true`. Note this also makes `RPC_<NETWORK>` and `ETHERSCAN_APIKEY`
-come from the keystore.
+These create `deployments/arbitrum-partyB.json` and
+`deployments/arbitrum-symbolManager.json`. Each contains only the shared execution/secrets,
+the admin, the selected add-on, and a reused Core report reference. Edit the placeholders,
+then use the exact `doctor`, `--plan`, and deploy commands printed by `recipe init`.
 
-### Protocol parameters and InstantLayer templates
+### Secrets
 
-Cooldowns, limits, liquidator share and the InstantLayer templates come from
-`tasks/config/protocol-<chainId>.json`. Without that file, built-in defaults are used.
-
-Template **order is significant** — ids are assigned in array order and hedgers address
-templates by id. See [Mirroring an existing deployment](#mirroring-an-existing-deployment).
+Keep secret values out of JSON. Put them in the encrypted Hardhat keystore once:
 
 ```bash
-symmio config show --chain 42161
+./node_modules/.bin/hardhat keystore set NEW_DEPLOYER
+./node_modules/.bin/hardhat keystore set RPC_ARBITRUM
+./node_modules/.bin/hardhat keystore set ETHERSCAN_APIKEY
 ```
+
+The recipe refers to those names:
+
+```json
+{
+	"secrets": {
+		"deployer": "hardhat-keystore://NEW_DEPLOYER",
+		"rpc": "hardhat-keystore://RPC_ARBITRUM",
+		"explorer": "hardhat-keystore://ETHERSCAN_APIKEY"
+	}
+}
+```
+
+`env://NAME` is supported for CI secret stores, but `.env` is not the deployment
+configuration interface. In recipe mode the CLI and Hardhat do not load `.env`.
+
+The eight Muon permission names are exact and case-sensitive. Empty entries, duplicates,
+unknown names, or a partial production profile are rejected. When reusing a verifier,
+preflight checks its registered keys, gateway signers, permissions, and repair authority.
+
+The liquidation values are economically active. Excess normal-liquidation profit is
+credited to the configured insurance vault, while non-zero soft-liquidation penalties need
+a collector. Known-mainnet recipes require both non-zero recipients and a positive reviewed
+per-position cap.
 
 ---
 
 ## 2. Preflight
 
+Run the read-only doctor against the intended live network:
+
 ```bash
-symmio doctor --network arbitrum
+./utils/yarn-classic.sh cli doctor --config deployments/arbitrum.json
 ```
 
-Checks the deployer identity (including whether it is one of the publicly-known keys), RPC
-reachability and chainId agreement, deployer balance, the collateral token's identity and
-decimals, the mock-verifier and dummy-affiliate switches, Muon configuration, the protocol
-config file, and whether a checkpoint exists that would make `deploy:system` resume rather
-than start fresh.
+It exits non-zero on blocking problems and checks the signer source, direct RPC chain id,
+balance, admin and operator addresses, collateral contract, production switches, Muon
+registration and permissions, explorer key, inline protocol config, dependency reports, and
+existing checkpoint state. Every remediation names the JSON field to edit.
 
-Exits non-zero if anything is blocking, so it can gate CI.
+When a secret uses `hardhat-keystore://`, the dependency-free doctor cannot unlock it and
+marks its key/address/API probes as deferred warnings rather than green checks. The Hardhat
+task unlocks the declared entries and repeats the signer, chain, authority, and explorer
+gates before creating a checkpoint or sending a transaction. Use `env://` only when CI
+needs non-interactive secret injection.
+
+Resolve every failure before deploying. Treat warnings about a public RPC, unknown
+collateral, unverified parameter provenance, or missing explorer credentials as an explicit
+operator decision, not background noise.
 
 ---
 
 ## 3. Rehearse on a fork
 
-**Do not skip this.** It costs nothing and it is the only step that exercises the real code
-path against real chain state.
+Rehearse the same reviewed configuration through the guided CLI:
 
 ```bash
-npx hardhat deploy:system --network fork-arbitrum --fresh true
+./utils/yarn-classic.sh cli recipe init --network fork-arbitrum
+./utils/yarn-classic.sh cli deploy --config deployments/fork-arbitrum.json --fresh
 ```
 
-`fork-arbitrum` is an in-process EVM that lazily fetches real Arbitrum state over RPC. Your
-deploy sees the real USDC contract, real balances and real code; writes stay local and
-disappear when the process exits. Deployer accounts are Hardhat's pre-funded test accounts,
-so gas is free.
+`fork-arbitrum` is an in-process EVM backed by the configured Arbitrum RPC. It reads real
+chain code and token state, but all writes stay local and disappear when the process exits.
+Hardhat supplies pre-funded simulation accounts. The upstream chain id remains `42161`, so
+the recipe still uses chain id `42161` and evaluates the mainnet safety profile. Compare the
+fork recipe with the live recipe and require every public value other than network mode and
+verification policy to match. Unsafe production settings are printed loudly; the simulated
+network cannot spend live funds.
 
-Pin the block for reproducibility and speed: `FORK_BLOCK_NUMBER=<block>`.
+Pin the fork block in the recipe when reproducibility matters. Fork records are isolated in
+`tasks/data/42161-fork/` and never overwrite live deployment evidence.
 
-The fork reports chainId 42161, so the mainnet safety guard evaluates your real
-configuration and prints anything that **would block a real deployment** — without stopping
-the rehearsal. Expect exactly one violation, the deployer key; anything else is a genuine
-problem in your configuration.
-
-Fork runs are isolated from real ones: records go to `tasks/data/42161-fork/` and the
-checkpoint to `checkpoint-42161-fork.json`, so a rehearsal can never pollute or be resumed
-by a real deployment.
-
-**A rehearsal does not cover:** block-explorer verification, and Arbitrum's real gas
-pricing (the fork uses simulated gas, not L1 calldata posting costs).
+A fork rehearsal does not prove block-explorer verification, live RPC reliability, real gas
+pricing, multisig execution, or final ownership acceptance. Verify those separately.
 
 ---
 
 ## 4. Deploy
 
-```bash
-symmio deploy --network arbitrum
-```
-
-This runs preflight, prints a plan, asks you to type the network name to confirm, deploys,
-then verifies and health-checks. To drive the underlying task directly:
+Use the guided command:
 
 ```bash
-npx hardhat deploy:system --network arbitrum --verify true
+./utils/yarn-classic.sh cli deploy --config deployments/arbitrum.json
 ```
 
-What gets deployed, in order: collateral (or existing), signature verifier, Diamond + 31
-facets (in chunks), AccountLayer diamond, InstantLayer, SymmioPartyB, SymbolManager, then
-system wiring, then ownership transfer, then **revocation of the deployer's privileges**.
+It runs doctor, prints the resolved plan, requires risk-proportional confirmation, invokes
+the checked-in Hardhat task, and reads the resulting deployment report. On a mainnet,
+non-interactive use requires both `--yes` and `--confirm-network arbitrum`.
 
-Every transaction is awaited to a receipt and logged with its hash and gas. Progress is
-checkpointed after each step.
+For persistent targets, exit code `0` means lifecycle `complete`; exit code `2` means the
+contracts were deployed and verified but the exact reported admin/Safe handover actions are
+still pending. An ephemeral fork rehearsal may exit `0` with `pending_handover`, and prints
+that lifecycle explicitly because its simulated state disappears with the process.
+
+Render the complete read-only plan without broadcasting:
+
+```bash
+./utils/yarn-classic.sh cli deploy --config deployments/arbitrum.json --plan
+```
+
+For controlled automation, keep the same public CLI boundary so the exact recipe and its
+digest are passed to Hardhat together:
+
+```bash
+./utils/yarn-classic.sh cli deploy --config deployments/arbitrum.json \
+  --yes --confirm-network arbitrum
+```
+
+`SYMMIO_DEPLOYMENT_RECIPE` and `SYMMIO_DEPLOYMENT_RECIPE_DIGEST` are internal CLI-to-task
+handoff values, not operator configuration. The task rejects a missing or changed digest,
+so do not invoke `deploy:system` by manually assembling those variables.
+
+The core deployment includes:
+
+- collateral selection, Muon verifier, and configuration;
+- the Core Diamond plus **32 facets total**: `DiamondCutFacet` and the 31 entries in
+  `FacetNames`;
+- the AccountLayer diamond and its facets;
+- InstantLayer, optional SymmioPartyB, and optional SymbolManager;
+- protocol parameters, templates, wiring, role handoff, ownership initiation, and deployer
+  privilege revocation.
+
+The recipe exposes ExpressProvider as a target, but deployment fails closed on every target
+until post-payout credit-loss settlement is resolved and its production roles, Muon and
+per-affiliate policy, Core registration, write-ahead recovery, explorer records, ownership
+handover, and complete health proof are encoded. Credit-line accounting already lives in the
+Express diamond and Core advance support exists, so there is no missing external
+CreditLineManager. The unresolved loss path currently reduces affiliate liability without
+transferring or reclassifying the corresponding collateral; token/liability conservation is
+not proven. Keep `expressProvider.mode` set to `skip` for this release.
+
+Transactions log their hash and nonce at submission, emit waiting notices for slow mining,
+record replacements and receipts, and include gas/cost evidence in the checkpoint/report.
+`execution.logLevel: "verbose"` is the recommended operator mode and the default example.
+
+### Deploy one component
+
+Generate a minimal add-on recipe, edit its placeholders, and narrow the mutation scope
+explicitly:
+
+```bash
+./utils/yarn-classic.sh cli recipe init --network arbitrum --only partyB
+./utils/yarn-classic.sh cli doctor --config deployments/arbitrum-partyB.json --only partyB
+./utils/yarn-classic.sh cli deploy --config deployments/arbitrum-partyB.json --only partyB --plan
+./utils/yarn-classic.sh cli deploy --config deployments/arbitrum-partyB.json --only partyB
+
+./utils/yarn-classic.sh cli recipe init --network arbitrum --only symbolManager
+./utils/yarn-classic.sh cli doctor --config deployments/arbitrum-symbolManager.json --only symbolManager
+./utils/yarn-classic.sh cli deploy --config deployments/arbitrum-symbolManager.json --only symbolManager --plan
+./utils/yarn-classic.sh cli deploy --config deployments/arbitrum-symbolManager.json --only symbolManager
+```
+
+For an add-on recipe, set `core.mode` to `reuse` and point `core.fromReport` at the completed
+or pending-handover Core deployment report. Relative `core.fromReport` paths are resolved
+from the recipe file's directory, not from the shell's current directory. The exact Core
+report bytes are included in the deployment-intent digest and rechecked before task
+execution, so changing the dependency report after review fails closed. `--only` never
+deploys Core implicitly. The runner proves the report's chain, deployed code, and required
+dependency addresses before the first transaction. Component reports are scoped
+independently and cannot claim that the whole protocol was deployed.
+
+Rerun the identical component command to resume and recheck it after any reported Safe
+actions are confirmed. Adding `--fresh` creates a new deployment ID; the previous component
+report is archived under `tasks/data/<chainId>[-fork]/components/<recipe-name>/history/`
+before the current report is replaced. A persistent component run also exits `2` while its
+report remains `pending_handover`.
+
+Read-only component status uses the same recipe and mutation scope:
+
+```bash
+./utils/yarn-classic.sh cli status --config deployments/arbitrum-partyB.json --only partyB
+./utils/yarn-classic.sh cli status --config deployments/arbitrum-symbolManager.json --only symbolManager
+```
+
+### Live deployment entry points
+
+Recipe-guided `deploy` / `deploy:system` is the live RPC entry point for the full core
+deployment. Recipe-guided `deploy --only partyB|symbolManager` owns a separate durable
+component checkpoint and report.
+The low-level component tasks (`deploy:diamond`, `deploy:accountLayer`, verifier, collateral,
+InstantLayer, PartyB, SymbolManager, MultiAccount, fee distributor, and multicall tasks) are
+local/fork building blocks and reject direct live execution. They do not own a durable
+standalone transaction journal, so allowing a blind retry after a receipt timeout could
+orphan or duplicate a contract.
+
+`deploy:create2factory` is also local/fork only. For live deployment, supply an already
+reviewed factory in `core.create2.factoryAddress`, or omit it to use ordinary CREATE. An
+explicit factory address with no code is a blocking configuration error; the deployment does
+not silently switch address strategies.
+
+The dedicated liquidator workflow is the explicit live exception:
+
+```bash
+EXECUTE=true CONFIRM_CHAIN_ID=<chain-id> \
+  ./node_modules/.bin/hardhat run scripts/deployLiquidator.ts --network <network>
+```
+
+It performs its own plan, chain confirmation, wiring checks, and supports manual recovery via
+`LIQUIDATOR_ADDRESS`. The Express deployment helper remains local/fork only. It is not a
+durable production workflow and does not resolve/prove post-payout credit-loss conservation
+or configure/prove the complete role, Muon, affiliate-policy, Core-registration, ownership,
+and explorer state required by a live provider.
 
 ---
 
 ## 5. Verify
 
-```bash
-npx hardhat verify:all --network arbitrum
-```
+The guided live deployment requests block-explorer verification inside `deploy:system`, then
+runs the canonical health check before publishing a successful lifecycle. A failure leaves
+the checkpoint and report in a failed/incomplete state.
 
-Failures are written to `verify-failed.json`; retry only those:
-
-```bash
-npx hardhat verify:all --retry-failed --network arbitrum
-```
-
-Then check the deployment's health:
+Retry recorded explorer failures with:
 
 ```bash
-npx hardhat check:deployment --network arbitrum --from-report true --admin 0x<multisig>
+./utils/yarn-classic.sh cli verify --config deployments/arbitrum.json --retry-failed
 ```
 
-Both exit non-zero on failure, so CI can gate on them. And the on-chain view:
+This command is full-system-only. It binds the chain-scoped report, deployment ID, recipe
+digest, component modes, and failed-record retry artifact before contacting the explorer.
+Standalone PartyB and SymbolManager verification is performed inside their
+`deploy --only` workflow; rerun that identical deployment command to retry or finalize it.
+
+Then rerun the same deployment command so the checkpoint completes its required gate:
 
 ```bash
-symmio status --network arbitrum
+./utils/yarn-classic.sh cli deploy --config deployments/arbitrum.json
 ```
+
+Inspect the on-chain result through the chain-scoped report:
+
+```bash
+./utils/yarn-classic.sh cli status --config deployments/arbitrum.json
+```
+
+For a direct health invocation:
+
+```bash
+./node_modules/.bin/hardhat check:deployment --network arbitrum --from-report true
+```
+
+Verification is sticky across resumes. Once any run requests verification, a later
+`--no-verify` or `--verify false` cannot downgrade that checkpoint; explorer verification
+must pass before it can complete.
 
 ---
 
-## 6. Manual steps
+## 6. Complete the handover
 
-Three things the deployer **cannot** do. The deployment is not finished until they are done.
+The authoritative to-do list is `manualActions` in the chain-scoped full or component
+report. The CLI prints that list after deployment. Use
+`./utils/yarn-classic.sh cli status --config <recipe>` for a full run or add
+`--only partyB|symbolManager` for a component recipe. Do not substitute a generic checklist
+for the report produced by your run.
 
-### a. Accept ownership — from the admin
+Common actions are:
 
-Ownership is two-step. The deployer calls `transferOwnership` on **both** diamonds; the
-admin must call `acceptOwnership()` on each:
+1. The configured admin calls `acceptOwnership()` on the Core Diamond.
+2. The configured admin calls `acceptOwnership()` on the AccountLayer diamond.
+3. If the SymbolManager admin differs from the deployer, the admin grants the exact pending
+   operator roles shown in the report. The deployment prints the concrete
+   `symbolManager:grantOperatorRoles` command.
 
-- the core Diamond
-- the AccountLayer diamond
+After every reported action is complete, rerun the same deployment command. It rechecks the
+live state, runs strict health gates, changes the lifecycle to `complete`, and archives the
+checkpoint under `tasks/data/checkpoints/completed/`.
 
-Until then, ownership has not moved — and `owner` is what authorises `diamondCut`.
-
-### b. Grant SymbolManager operator roles — from the admin
-
-`SymmioSymbolManager`'s constructor grants `DEFAULT_ADMIN_ROLE` to the admin only, so the
-deployer cannot grant operator roles. The deploy prints the exact command:
-
-```bash
-npx hardhat symbolManager:grantOperatorRoles --symbol-manager-address 0x<sm> --operator 0x<op> --network arbitrum
-```
-
-### c. Add trading symbols
-
-`deploy:system` deploys the machinery but seeds no symbols.
-
-Confirm the end state:
-
-```bash
-symmio status --network arbitrum
-```
-
-You want `deployer holds no admin role`, and both diamonds owned by the admin.
+Symbol creation is a separate post-deployment operating step; `deploy:system` does not seed
+trading symbols.
 
 ---
 
-## Resuming a failed deployment
+## Resuming or restarting
 
-Deployments are checkpointed per chain. Re-run the same command — completed steps are
-skipped and it continues where it stopped:
+Re-run the same command without `--fresh` to resume:
 
 ```bash
-npx hardhat deploy:system --network arbitrum
+./utils/yarn-classic.sh cli deploy --config deployments/arbitrum.json
 ```
 
-A step is only recorded as complete once its transaction has been **mined**, so a dropped
-or reverted transaction is retried rather than skipped.
+The checkpoint is bound to the deployment id, chain/network scope, configuration, protocol
+config, deployment sources, and CREATE2 intent. A mismatched resume fails rather than
+silently mixing two deployments. Recorded contract addresses must contain code on the
+connected chain.
 
-To start over, `--fresh true` archives the existing checkpoint into
-`tasks/data/checkpoints/completed/` rather than discarding it.
+Diamond recovery verifies the exact selector-to-facet ownership map, not only whether a
+selector exists. It separates missing additions from replacements and can bootstrap the
+Loupe facet before inspecting a partially completed cut.
 
-If the diamond cut failed part-way, the resume compares the installed selector set against
-the expected one and re-cuts only the missing facets, skipping `init()` because it already
-ran.
+Use `--fresh` only when abandoning the in-progress attempt. It preserves that checkpoint in
+`tasks/data/checkpoints/abandoned/`; it never labels an abandoned run as completed. `--fresh`
+is refused while any submitted transaction still has an unknown outcome. Resume normally and
+reconcile those hashes first.
+
+Do not hand-edit a checkpoint. Check the last submitted transaction in the explorer before
+resuming after a timeout or process interruption.
+
+Confirmed setup setters are not silently replayed on resume. The final health gate rereads
+their live values and fails on drift; use its exact governance/remediation hint, then rerun,
+rather than clearing a checkpoint bit or letting the deployer overwrite changed policy.
+
+If a prior process stopped without a receipt, resume first reconciles that exact hash. It
+will not repeat the checkpoint step while the transaction is pending or unknown. For a
+same-intent speed-up/replacement, bind the hashes explicitly:
+
+```bash
+DEPLOY_TX_REPLACEMENTS=0x<original>=0x<replacement> \
+  ./utils/yarn-classic.sh cli deploy --config deployments/arbitrum.json
+```
+
+The replacement must use the same sender, nonce, target, value, and calldata; a cancellation
+is recognized as not having executed the original step. If the RPC no longer knows the
+original hash and both latest/pending nonces prove its nonce reusable, the operator may
+acknowledge that exact dropped hash with `CONFIRM_DROPPED_TX_HASHES=0x...`. Never use that
+escape hatch while the transaction is visible on any RPC or explorer.
+
+Contract creations carry an additional binding to the component path, sender/nonce or CREATE2
+salt, init-code hash, expected address, successful receipt, and runtime bytecode. Once a timed-
+out creation is proven landed, resume restores that exact address into the checkpoint instead
+of broadcasting another deployment.
 
 ---
 
 ## Slow or congested chains
 
-Each setup transaction is awaited to a receipt, so total time scales with block time.
-Arbitrum's sub-second blocks make this negligible; slower chains need tuning.
+| Recipe field                  |   Default | Effect                                                                      |
+| ----------------------------- | --------: | --------------------------------------------------------------------------- |
+| `execution.txTimeoutSeconds`  |     `300` | Seconds before one transaction fails the run.                               |
+| `execution.slowNoticeSeconds` |      `30` | Seconds before the first "still waiting" notice.                            |
+| `execution.confirmations`     |       `1` | Required confirmations per transaction. Raise where reorg risk warrants it. |
+| `execution.logLevel`          | `verbose` | `minimal` or `verbose` live; local/fork tests may use `silent`.             |
 
-| Variable | Default | What it does |
-|---|---|---|
-| `DEPLOY_TX_TIMEOUT` | `300` | Seconds to wait for one transaction before failing. Prevents hanging forever on a dropped tx or a stalled RPC. |
-| `DEPLOY_SLOW_TX_NOTICE` | `30` | Seconds before printing a "still waiting" line with the tx hash, so you can tell mining from hung. |
-| `DEPLOY_CONFIRMATIONS` | `1` | Confirmations per transaction. Raise where reorgs are a real risk. |
+A timeout is not permission to start another fresh deployment. Check the transaction hash,
+then resume from the checkpoint.
 
-A timeout is not data loss — the deployment is checkpointed, so re-running resumes from the
-same step. Check the explorer first in case the transaction did land.
+---
+
+## Operational scripts
+
+Scripts capable of changing on-chain state are plan-only by default where their header or
+output documents `EXECUTE=true`. Review the complete plan, target chain, addresses,
+selectors, calldata, and generated Safe batch before setting it. Standalone mutation scripts
+require the literal pair `EXECUTE=true CONFIRM_CHAIN_ID=<connected chain id>`; target-specific
+scripts may require an expected current address as an additional stale-plan check.
+
+`EXECUTE=true` is deliberately literal and case-sensitive. Do not add it to a shell profile
+or shared shell configuration. `deploy:system` has its own CLI confirmation and checkpoint workflow;
+it does not use `EXECUTE=true`.
+
+The generic `upgrade:proxy` task is plan-only on live RPCs and may execute only on local or
+simulated fork networks. A generic task cannot prove that an arbitrary implementation has a
+reviewed storage layout compatible with the live proxy, so code presence and
+`proxiableUUID()` alone are not accepted as production safety. Use a reviewed,
+target-specific upgrade script for a live proxy. In simulation, execution still requires
+`--execute true --dryrun false` plus `CONFIRM_CHAIN_ID=<connected chain id>`; a confirmed
+implementation can be reused with `--implementation 0x...` after an interrupted rehearsal.
+
+Safe Transaction Service submission is a separate external mutation. A checked-in config
+cannot authorize it: each run must set `SUBMIT_SAFE_PROPOSAL=true`, the matching
+`CONFIRM_CHAIN_ID`, and the exact `CONFIRM_SAFE_ADDRESS`. Batch generation and simulation
+remain non-submitting by default.
 
 ---
 
 ## Mirroring an existing deployment
 
-To make a new chain match an existing one, read the live configuration into a config file:
+Export a live deployment into a target chain's config file:
 
 ```bash
-SYMMIO=0x<diamond> INSTANT_LAYER=0x<instantLayer> TARGET_CHAIN_ID=42161 \
-  npx hardhat run scripts/exportProtocolConfig.ts --network hyperevm
+./utils/yarn-classic.sh cli config export --network hyperevm \
+  --symmio 0x<diamond> \
+  --instant-layer 0x<instantLayer> \
+  --to <targetChainId>
 ```
 
-That writes `tasks/config/protocol-42161.json`. Then confirm it matches:
+Review `tasks/config/protocol-<targetChainId>.json`, including the ordered templates and
+provenance, then copy its validated `parameters` and `instantLayerTemplates` into
+`core.protocol` in the target recipe. The export file is an inspection/migration artifact;
+the recipe remains the deployment input. Compare the source deployment against the exported
+snapshot before copying it:
 
 ```bash
-symmio config diff --network hyperevm --symmio 0x<diamond> --instant-layer 0x<il> --against 42161
+./utils/yarn-classic.sh cli config diff --network hyperevm \
+  --symmio 0x<diamond> \
+  --instant-layer 0x<instantLayer> \
+  --against <targetChainId>
 ```
 
-Parameters that have no view function are read directly from the `MAStorage` diamond
-storage slot, so this works against any RPC at the latest block — no archive node. The
-exporter cross-checks its slot offsets against a value it can also read through a getter,
-and refuses to write anything if they disagree (which is what would happen if
-`MAStorage.Layout` changed without the script being updated).
+The exporter uses exact on-chain reads and direct storage only for parameters without a view
+function. It cross-checks storage layout before writing and does not overwrite an existing
+config silently.
 
-One trap worth knowing: `setDeallocateCooldown()` writes `MAStorage.withdrawCooldownPeriod`,
-but `getMinWithdrawCooldown()` returns `WithdrawStorage.minWithdrawCooldown` — a different
-field with its own setter. They diverge in practice (on HyperEVM: 259200 and 0). Read
-`deallocateCooldown` from storage, not from that getter.
-
-`instantOpenMode` is also not exposed by `getTemplates` and must be set manually in the JSON.
+One important distinction: `setDeallocateCooldown()` writes
+`MAStorage.withdrawCooldownPeriod`, while `getMinWithdrawCooldown()` returns
+`WithdrawStorage.minWithdrawCooldown`. The exporter reads the former from storage.
 
 ---
 
 ## Reference
 
-### Environment variables
+### Recipe fields
 
-Read by the deploy path. Anything not listed is not read.
+| Field                                                 | Requirement                                                                                 |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `apiVersion`, `kind`, `name`                          | Exact versioned recipe identity; unknown fields and versions fail closed.                   |
+| `network.name`, `network.chainId`, `network.mode`     | Must match the connected Hardhat network and live/fork/local scope.                         |
+| `secrets.deployer`, `secrets.rpc`, `secrets.explorer` | Named keystore or CI-secret references; resolved values are never reported or hashed.       |
+| `governance.*`                                        | Admin, fee receiver, liquidation recipients, and positive per-position cap.                 |
+| `core.collateral`                                     | Explicit deploy/reuse choice and reused address.                                            |
+| `core.muon`                                           | Explicit mock/deploy/reuse choice, app id, key, gateways, permissions, and validity times.  |
+| `core.protocol`                                       | The complete validated protocol parameters and ordered InstantLayer templates.              |
+| `core`, `partyB`, `symbolManager`, `expressProvider`  | Each component has an explicit deploy/reuse/skip mode and its component-specific settings.  |
+| `execution.*`                                         | Verification policy, logging, confirmations, timeout, slow notice, and optional fork block. |
 
-| Variable | Default | Notes |
-|---|---|---|
-| `NEW_DEPLOYER` / `TEAM_DEPLOYER` | — | The deployer key. **`PRIVATE_KEY` is not read.** |
-| `USE_KEYSTORE` | `false` | Take keys, RPCs and the explorer key from the hardhat keystore |
-| `RPC_<NETWORK>` | public endpoint | e.g. `RPC_ARBITRUM` |
-| `ETHERSCAN_APIKEY` | — | Etherscan V2 multichain key |
-| `ADMIN_PUBLIC_KEY` | deployer | Receives all roles and ownership |
-| `SYMMIO_FEE_RECEIVER` | admin | |
-| `COLLATERAL_ADDRESS` | — | Empty deploys a `FakeStablecoin` |
-| `DEPLOY_MOCK_VERIFIER` | `false` | `true` accepts every signature |
-| `REGISTER_DUMMY_AFFILIATE` | `false` | Registers a real on-chain test affiliate |
-| `DEPLOY_PARTYB` | `true` | |
-| `SET_ADL_ENABLED` | `false` | |
-| `PARTYB_SIGNER` | — | ERC-1271 signer for SymmioPartyB |
-| `DEPLOY_SYMBOL_MANAGER` | `true` | |
-| `SYMBOL_MANAGER_OPERATOR` | — | Granted adder/remover roles |
-| `SETUP_INSTANT_LAYER_TEMPLATES` | `true` | |
-| `MUON_SIGNATURE_VERIFIER_ADDRESS` | — | Reuse an existing verifier |
-| `MUON_APP_ID`, `MUON_PUBLIC_KEY_X`, `MUON_PUBLIC_KEY_PARITY`, `MUON_GATEWAY_SIGNERS` | — | Muon configuration |
-| `MUON_UPNL_VALID_TIME` / `MUON_PRICE_VALID_TIME` | `300` | Seconds |
-| `CREATE2_FACTORY_ADDRESS`, `DIAMOND_VANITY_PREFIX` | — / `573310` | Vanity Diamond address |
-| `DEPLOY_TX_TIMEOUT`, `DEPLOY_SLOW_TX_NOTICE`, `DEPLOY_CONFIRMATIONS` | `300` / `30` / `1` | See [slow chains](#slow-or-congested-chains) |
-| `DEPLOY_LOG_LEVEL` | `verbose` | `silent` \| `minimal` \| `verbose` |
-| `FORK_BLOCK_NUMBER` | latest | Pin the block for `fork-*` networks |
+The only deployment-related environment variables accepted in recipe mode are the internal
+recipe handoff (`SYMMIO_DEPLOYMENT_RECIPE`) and narrowly scoped recovery acknowledgements
+such as `DEPLOY_TX_REPLACEMENTS` or `CONFIRM_DROPPED_TX_HASHES`. Operators should invoke the
+guided CLI instead of setting the internal handoff themselves.
 
-### Where things are written
+### Evidence paths
 
-| Path | What |
-|---|---|
-| `tasks/data/<chainId>/` | Deployment records and the report, per chain |
-| `tasks/data/<chainId>-fork/` | Same, for simulated (`fork-*`) runs |
-| `tasks/data/checkpoints/checkpoint-<chainId>.json` | In-progress checkpoint |
-| `tasks/data/checkpoints/completed/` | Archived checkpoints |
-| `tasks/config/protocol-<chainId>.json` | Protocol parameters and templates |
-
-### Networks
-
-`arbitrum`, `base`, `bsc`, `mantle`, `hyperevm`, `sonic`, `plasma`, `bera`, `polygon`,
-`mode`, `blast`, `iota`, `sei`, `coti`, plus `localhost` (a persistent `npx hardhat node`),
-`default` (in-process, ephemeral) and the `fork-*` variants.
+| Path                                                    | Content                                                |
+| ------------------------------------------------------- | ------------------------------------------------------ |
+| `tasks/data/<chainId>/`                                 | Live deployment records and `deployment-report.json`.  |
+| `tasks/data/<chainId>-fork/`                            | Isolated records for a simulated `fork-*` run.         |
+| `tasks/data/checkpoints/checkpoint-<chainId>.json`      | In-progress live checkpoint.                           |
+| `tasks/data/checkpoints/checkpoint-<chainId>-fork.json` | In-progress fork checkpoint.                           |
+| `tasks/data/checkpoints/completed/`                     | Successfully completed and handed-over checkpoints.    |
+| `tasks/data/checkpoints/abandoned/`                     | Attempts intentionally replaced with `--fresh`.        |
+| `tasks/data/<scope>/components/<recipe>/`               | Component-only reports and durable execution evidence. |
+| `deployments/<name>.json`                               | Operator-owned, versioned deployment recipe.           |
+| `deployment/deployment-recipe.schema.json`              | Machine-readable recipe contract.                      |
 
 ### See also
 
-- [cli/README.md](../cli/README.md) — CLI reference
-- [SCRIPTS_AUDIT.md](../SCRIPTS_AUDIT.md) — the audit behind these safeguards, and what remains open
+- [CLI reference](../cli/README.md)
+- [Scripts audit](../SCRIPTS_AUDIT.md)

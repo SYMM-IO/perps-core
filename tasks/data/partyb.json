@@ -1,15 +1,12 @@
 [
-  {
-    "name": "SymmioPartyBProxy",
-    "address": "0x4c5859f0F772848b2D91F1D83E2Fe57935348029",
-    "constructorArguments": [
-      "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
-      "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"
-    ]
-  },
-  {
-    "name": "SymmioPartyBImplementation",
-    "address": "0x809d550fca64d94Bd9F66E60752A544199cfAC3D",
-    "constructorArguments": []
-  }
+	{
+		"name": "SymmioPartyBProxy",
+		"address": "0x5Eaf264F845CE1570e7B89d64Fa9D8B0dbb3729b",
+		"constructorArguments": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "0xa6E50ac5a343FcD215Ec899827Ac24CA1Abd2d0C"]
+	},
+	{
+		"name": "SymmioPartyBImplementation",
+		"address": "0xf9C530ba2b7f4cCd969C1b63458e93145E5d3cBa",
+		"constructorArguments": []
+	}
 ]

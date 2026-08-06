@@ -3,9 +3,10 @@ import path from "path"
 
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import type { MigrationConfig, MigrationInput, MigrationReport } from "./migrate.js"
-import { migrate } from "./migrate.js"
+import { migrate, validateMigrationProgressFile } from "./migrate.js"
 import type { DeployedFacetsSummary } from "./utils/deployedFacets.js"
 import { loadDeployedFacetsForNetwork, verifyMigrationSurfaceOnDiamond } from "./utils/deployedFacets.js"
+import { exactBooleanEnv, requireExecutionConfirmation } from "./utils/executionGuard.js"
 import { getImpersonatedAdmin, impersonateAndFund } from "./utils/forkHelpers.js"
 import { resolveConfiguredSigner } from "./utils/hardwareSigner.js"
 import { log } from "./utils/log.js"
@@ -75,8 +76,12 @@ type MigrationOnDemandReport = {
  * - Upgrade (diamondCut) is already applied
  * - Caller has MIGRATION_ROLE granted
  *
- * Run:
- *   DIAMOND_ADDRESS=0x... npx hardhat run ./scripts/upgrade/runMigration.ts --network <network>
+ * Plan (default):
+ *   DIAMOND_ADDRESS=0x... ./node_modules/.bin/hardhat run ./scripts/upgrade/runMigration.ts --network <network>
+ *
+ * Execute only after reviewing the plan:
+ *   EXECUTE=true CONFIRM_CHAIN_ID=<chainId> DIAMOND_ADDRESS=0x... \
+ *     ./node_modules/.bin/hardhat run ./scripts/upgrade/runMigration.ts --network <network>
  *
  * Defaults to scripts/upgrade/output/migration-input-{network}.json (network suffix
  * derived from --network with "fork-" stripped, or from NETWORK_ALIAS env var).
@@ -138,24 +143,52 @@ function formatError(error: unknown): string {
 	return String(error)
 }
 
-function ensureParentDir(filePath: string): void {
-	const dir = path.dirname(filePath)
-	if (dir && dir !== "." && !fs.existsSync(dir)) {
-		fs.mkdirSync(dir, { recursive: true })
+function writeReportAtomic(filePath: string, report: MigrationOnDemandReport): void {
+	if (!filePath || filePath.trim().length === 0) throw new Error("Migration report path must be non-empty")
+	const absolutePath = path.resolve(filePath)
+	const directory = path.dirname(absolutePath)
+	const temporaryPath = path.join(
+		directory,
+		`.${path.basename(absolutePath)}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`,
+	)
+	let descriptor: number | undefined
+	try {
+		fs.mkdirSync(directory, { recursive: true })
+		descriptor = fs.openSync(temporaryPath, "wx", 0o600)
+		fs.writeFileSync(descriptor, `${JSON.stringify(report, null, 2)}\n`, "utf-8")
+		fs.fsyncSync(descriptor)
+		fs.closeSync(descriptor)
+		descriptor = undefined
+		fs.renameSync(temporaryPath, absolutePath)
+
+		const directoryDescriptor = fs.openSync(directory, "r")
+		try {
+			fs.fsyncSync(directoryDescriptor)
+		} finally {
+			fs.closeSync(directoryDescriptor)
+		}
+	} catch (error) {
+		if (descriptor !== undefined) {
+			try {
+				fs.closeSync(descriptor)
+			} catch {
+				// Preserve the original persistence error.
+			}
+		}
+		try {
+			if (fs.existsSync(temporaryPath)) fs.unlinkSync(temporaryPath)
+		} catch {
+			// Preserve the original persistence error.
+		}
+		throw new Error(`Failed to atomically write migration report file ${filePath}: ${formatError(error)}`)
 	}
 }
 
-function writeJson(filePath: string, value: unknown): void {
-	if (!filePath) return
-	ensureParentDir(filePath)
-	fs.writeFileSync(filePath, JSON.stringify(value, null, 2))
-}
-
-function tryWriteReport(filePath: string, report: MigrationOnDemandReport): void {
+function tryWriteFailureReport(filePath: string, report: MigrationOnDemandReport): void {
 	try {
-		writeJson(filePath, report)
+		writeReportAtomic(filePath, report)
 	} catch (error) {
-		log.error(`Failed to write migration report file: ${filePath}. ${formatError(error)}`)
+		log.error(`Failed to preserve migration failure report: ${filePath}. ${formatError(error)}`)
 	}
 }
 
@@ -446,7 +479,8 @@ const outputDir = process.env.MIGRATION_OUTPUT_DIR ?? configFile.outputDir ?? DE
 const MIGRATION_INPUT_FILE = process.env.MIGRATION_INPUT_FILE ?? configFile.migrationInputFile ?? `${outputDir}/${withSuffix("migration-input")}`
 const DEPLOYED_FACETS_FILE =
 	process.env.FACETS_FILE || process.env.DEPLOYED_FACETS_FILE || configFile.deployedFacetsFile || `${outputDir}/${withSuffix("deployed-facets")}`
-const DRY_RUN = parseBool(process.env.DRY_RUN, configFile.dryRun ?? false)
+const EXECUTE_REQUESTED = exactBooleanEnv("EXECUTE")
+const DRY_RUN = !EXECUTE_REQUESTED
 
 const DEFAULT_PROGRESS_FILE = `${outputDir}/${withSuffix("migration-progress")}`
 let migrateProgressFile = process.env.MIGRATE_PROGRESS_FILE ?? configFile.progressFile ?? DEFAULT_PROGRESS_FILE
@@ -464,6 +498,23 @@ if (path.resolve(migrateReportFile) === path.resolve(MIGRATION_CONFIG_FILE)) {
 if (path.resolve(migrateReportFile) === path.resolve(migrateProgressFile)) {
 	console.warn("migrateReportFile matches progress file; falling back to default report file.")
 	migrateReportFile = DEFAULT_REPORT_FILE
+}
+
+const migrationArtifactPaths = [
+	["migration config", MIGRATION_CONFIG_FILE],
+	["migration input", MIGRATION_INPUT_FILE],
+	["deployed facets", DEPLOYED_FACETS_FILE],
+	["migration progress", migrateProgressFile],
+	["migration report", migrateReportFile],
+] as const
+for (let i = 0; i < migrationArtifactPaths.length; i++) {
+	for (let j = i + 1; j < migrationArtifactPaths.length; j++) {
+		const [leftLabel, leftPath] = migrationArtifactPaths[i]
+		const [rightLabel, rightPath] = migrationArtifactPaths[j]
+		if (samePath(leftPath, rightPath)) {
+			throw new Error(`Unsafe migration artifact path collision: ${leftLabel} and ${rightLabel} both resolve to ${path.resolve(leftPath)}`)
+		}
+	}
 }
 
 const MIGRATION_CONFIG: MigrationConfig = {
@@ -489,9 +540,34 @@ async function checkMigrationRole(diamondAddress: string, account: string): Prom
 	return hasRole
 }
 
+async function resolveMigrationExecutionDomain(forkMode: boolean, progressFile: string | null | undefined): Promise<string> {
+	if (!progressFile) return "persistence-disabled"
+	if (!forkMode) return "live-chain"
+
+	const explicitDomain = process.env.MIGRATION_RESUME_DOMAIN?.trim()
+	if (explicitDomain) return `explicit:${explicitDomain}`
+
+	try {
+		const metadata = (await ethers.provider.send("hardhat_metadata", [])) as { instanceId?: unknown }
+		if (typeof metadata?.instanceId === "string" && metadata.instanceId.length > 0) {
+			return `hardhat:${metadata.instanceId}`
+		}
+	} catch {
+		// Fall through to the explicit-domain requirement for non-Hardhat fork providers.
+	}
+
+	throw new Error(
+		"Persisted fork migration progress requires a fork-instance identity. " +
+			"Use a Hardhat provider with hardhat_metadata or set a fresh MIGRATION_RESUME_DOMAIN for this persistent fork session.",
+	)
+}
+
 async function main() {
 	const scriptTimer = log.timer()
 	await verifyRpc()
+	const connectedChainId = (await ethers.provider.getNetwork()).chainId
+	const execute = requireExecutionConfirmation(connectedChainId)
+	if (execute !== EXECUTE_REQUESTED) throw new Error("Execution mode changed while the migration process was starting")
 	const startedAtMs = Date.now()
 	const report: MigrationOnDemandReport = {
 		status: "running",
@@ -504,10 +580,15 @@ async function main() {
 		config: {
 			chunkSize: MIGRATION_CONFIG.chunkSize,
 			dryRun: MIGRATION_CONFIG.dryRun,
+			allowUnpausedMigrationEmergency: parseBool(process.env.ALLOW_UNPAUSED_MIGRATION_EMERGENCY, false),
 		},
 		steps: [],
 	}
-	tryWriteReport(migrateReportFile, report)
+	writeReportAtomic(migrateReportFile, report)
+	const finalizeReport = (): void => {
+		report.finishedAt = new Date().toISOString()
+		report.durationMs = Date.now() - startedAtMs
+	}
 	let currentStep: string | null = null
 
 	const { finish: finishStep } = createStepReporter(report.steps)
@@ -541,13 +622,15 @@ async function main() {
 			},
 		})
 		currentStep = null
-		tryWriteReport(migrateReportFile, report)
+		writeReportAtomic(migrateReportFile, report)
 
 		log.header("Symmio v0.8.5 Migration")
 
 		// Resolve signer — fork: impersonate diamond owner, production: find migrator signer (must have MIGRATION_ROLE)
 		currentStep = "resolve_signer"
 		const isFork = parseBool(process.env.FORK, configFile.fork ?? false)
+		const progressForkMode = isFork || connection.networkName.toLowerCase().startsWith("fork-")
+		const migrationExecutionDomain = await resolveMigrationExecutionDomain(progressForkMode, MIGRATION_CONFIG.progressFile)
 		const skipMigrationRoleCheck = parseBool(process.env.SKIP_MIGRATION_ROLE_CHECK, false)
 		let admin
 		let adminAddress: string
@@ -608,12 +691,13 @@ async function main() {
 			details: { adminAddress, migrationRole: migrationRoleOk ?? "skipped" },
 		})
 		currentStep = null
-		tryWriteReport(migrateReportFile, report)
+		writeReportAtomic(migrateReportFile, report)
 
 		if (!MIGRATION_CONFIG.dryRun && !skipMigrationRoleCheck && migrationRoleOk === false) {
 			report.status = "blocked"
 			report.error = `${ethers.getAddress(adminAddress)} is missing MIGRATION_ROLE on ${ethers.getAddress(DIAMOND_ADDRESS)}`
-			tryWriteReport(migrateReportFile, report)
+			finalizeReport()
+			writeReportAtomic(migrateReportFile, report)
 
 			log.failure(
 				"Migration blocked",
@@ -649,32 +733,6 @@ async function main() {
 			["Aggregate keys", expectedAggregates?.size ?? 0],
 		])
 
-		// Catches: operator re-running runMigration.ts against a different input file
-		// than the prior (interrupted) run's progress reflects. The existing progress
-		// counts would resume mid-way through a different quoteIds list, silently
-		// skipping quotes. Detect this by comparing saved progress totals against the
-		// current input totals. A completed phase="complete" is explicitly surfaced too.
-		if (!MIGRATION_CONFIG.dryRun && fs.existsSync(migrateProgressFile)) {
-			try {
-				const priorProgress = JSON.parse(fs.readFileSync(migrateProgressFile, "utf-8"))
-				if (priorProgress && typeof priorProgress === "object") {
-					if (priorProgress.phase === "complete") {
-						log.warn(`Progress file at ${migrateProgressFile} marks migration as complete. Re-running will be a no-op unless you delete it.`)
-					}
-					const priorQuotes = Number(priorProgress.quotesProcessed ?? 0)
-					if (priorQuotes > input.quoteIds.length) {
-						throw new Error(
-							`Progress file reports ${priorQuotes} quotes processed but current input has only ${input.quoteIds.length}. ` +
-								`Either the input file changed or the progress file is stale. Delete ${migrateProgressFile} to restart.`,
-						)
-					}
-				}
-			} catch (error) {
-				// Re-throw our own validation error, swallow JSON parse errors (partial/corrupt file).
-				if (error instanceof Error && error.message.includes("Progress file reports")) throw error
-			}
-		}
-
 		report.input = {
 			quoteIdsTotal: input.quoteIds.length,
 			partyBTasksTotal: input.partyBTasks.length,
@@ -690,7 +748,7 @@ async function main() {
 			},
 		})
 		currentStep = null
-		tryWriteReport(migrateReportFile, report)
+		writeReportAtomic(migrateReportFile, report)
 		finishStep(t)
 
 		// Verify deployed facets artifact and live post-cut surface
@@ -702,6 +760,28 @@ async function main() {
 			{ required: true, validateMigrationSurface: true },
 		)
 		await verifyMigrationSurfaceOnDiamond(DIAMOND_ADDRESS, deployedFacets.state!)
+		const migrationImplementation = deployedFacets.summary.migrationFacet
+		if (!migrationImplementation) throw new Error(`Deployed facets file ${DEPLOYED_FACETS_FILE} is missing MigrationFacet`)
+		const migrationCode = await ethers.provider.getCode(migrationImplementation)
+		if (migrationCode === "0x") throw new Error(`MigrationFacet ${migrationImplementation} has no deployed bytecode`)
+		const progressContext = {
+			chainId: connectedChainId,
+			diamondAddress: DIAMOND_ADDRESS,
+			networkName: connection.networkName,
+			forkMode: progressForkMode,
+			executionDomain: migrationExecutionDomain,
+			migrationImplementation,
+			migrationCodeHash: ethers.keccak256(migrationCode),
+		}
+		// Fail before any migration transaction if resume state is corrupt, stale, or
+		// belongs to another execution domain, implementation, input, chunking plan, or PartyB task set.
+		validateMigrationProgressFile(
+			MIGRATION_CONFIG.progressFile,
+			input,
+			MIGRATION_CONFIG.chunkSize!,
+			MIGRATION_CONFIG.skipPreCheck ?? false,
+			progressContext,
+		)
 		report.deployedFacets = deployedFacets.summary
 		log.ok(
 			`Migration surface matches ${DEPLOYED_FACETS_FILE} (${deployedFacets.summary.facetCount} facets, ${deployedFacets.summary.selectorCount} selectors)`,
@@ -712,7 +792,7 @@ async function main() {
 			details: deployedFacets.summary as unknown as Record<string, unknown>,
 		})
 		currentStep = null
-		tryWriteReport(migrateReportFile, report)
+		writeReportAtomic(migrateReportFile, report)
 		finishStep(t)
 
 		// Connect facets
@@ -733,7 +813,7 @@ async function main() {
 		log.ok("MigrationFacet, ViewFacet, ViewFacetQuote, ViewFacetAggregate connected")
 		report.steps.push({ name: "connect_facets", status: "ok" })
 		currentStep = null
-		tryWriteReport(migrateReportFile, report)
+		writeReportAtomic(migrateReportFile, report)
 		finishStep(t)
 
 		// Run migration
@@ -741,11 +821,39 @@ async function main() {
 		if (input.quoteIds.length === 0 && input.partyBTasks.length === 0) {
 			log.info("No migration tasks to run — skipping")
 			report.steps.push({ name: "migrate", status: "ok", details: { skipped: true } })
-			tryWriteReport(migrateReportFile, report)
+			writeReportAtomic(migrateReportFile, report)
 		} else {
 			currentStep = "migrate"
+			const pauseState = await viewFacet.pauseState()
+			const globallyPaused = Boolean(pauseState.globalPaused ?? pauseState[0])
+			if (!globallyPaused) {
+				const emergencyOverride = parseBool(process.env.ALLOW_UNPAUSED_MIGRATION_EMERGENCY, false)
+				if (!emergencyOverride) {
+					throw new Error(
+						"Migration blocked: the core diamond is not globally paused. Pause it and re-run. " +
+							"Only a documented incident response may set ALLOW_UNPAUSED_MIGRATION_EMERGENCY=true.",
+					)
+				}
+				log.warn("EMERGENCY OVERRIDE ACTIVE: proceeding with migration while the core diamond is NOT globally paused")
+				report.steps.push({
+					name: "global_pause_preflight",
+					status: "ok",
+					details: { globalPaused: false, emergencyOverride: true },
+				})
+			} else {
+				log.ok("Global pause confirmed immediately before migration transactions")
+				report.steps.push({
+					name: "global_pause_preflight",
+					status: "ok",
+					details: { globalPaused: true, emergencyOverride: false },
+				})
+			}
+			writeReportAtomic(migrateReportFile, report)
 			log.info(`Migrating ${log.commaNumber(input.quoteIds.length)} quotes across ${input.partyBTasks.length} partyBs...`)
-			const migrationReport = await migrate(migrationFacet as any, viewFacetQuote, input, MIGRATION_CONFIG)
+			const migrationReport = await migrate(migrationFacet as any, viewFacetQuote as any, input, {
+				...MIGRATION_CONFIG,
+				progressContext,
+			})
 			report.migrationReport = migrationReport
 			report.steps.push({
 				name: "migrate",
@@ -758,7 +866,7 @@ async function main() {
 				},
 			})
 			currentStep = null
-			tryWriteReport(migrateReportFile, report)
+			writeReportAtomic(migrateReportFile, report)
 		}
 		finishStep(t)
 
@@ -773,7 +881,7 @@ async function main() {
 				aggregateChecks: 0,
 			}
 			report.steps.push({ name: "verify_migration", status: "ok", details: { skipped: true, reason: "dryRun" } })
-			tryWriteReport(migrateReportFile, report)
+			writeReportAtomic(migrateReportFile, report)
 		} else if (input.quoteIds.length > 0 || input.partyBTasks.length > 0) {
 			currentStep = "verify_migration"
 			log.info(
@@ -793,7 +901,7 @@ async function main() {
 				details: report.verification,
 			})
 			currentStep = null
-			tryWriteReport(migrateReportFile, report)
+			writeReportAtomic(migrateReportFile, report)
 		} else {
 			log.info("No data to verify — skipping")
 			report.verification = {
@@ -806,6 +914,8 @@ async function main() {
 		finishStep(t)
 
 		report.status = "success"
+		finalizeReport()
+		writeReportAtomic(migrateReportFile, report)
 
 		const summary: Array<[string, string]> = [["Diamond", DIAMOND_ADDRESS]]
 		if (report.roleChecks?.migrationRole) {
@@ -816,7 +926,10 @@ async function main() {
 
 		log.success(MIGRATION_CONFIG.dryRun ? "Migration dry run completed successfully" : "Migration completed successfully", summary)
 		if (MIGRATION_CONFIG.dryRun) {
-			log.nextSteps(["Review the dry-run report in " + migrateReportFile, "Run again without DRY_RUN=true when ready to execute"])
+			log.nextSteps([
+				"Review the dry-run report in " + migrateReportFile,
+				`Run again with EXECUTE=true CONFIRM_CHAIN_ID=${connectedChainId} when ready to execute`,
+			])
 		} else {
 			log.nextSteps(["Verify the migration report in " + migrateReportFile, "Unpause the system when ready"])
 		}
@@ -831,13 +944,10 @@ async function main() {
 		}
 		report.status = "failed"
 		report.error = formatError(error)
-		tryWriteReport(migrateReportFile, report)
+		finalizeReport()
+		tryWriteFailureReport(migrateReportFile, report)
 		log.failure("Migration failed", formatError(error))
 		throw error
-	} finally {
-		report.finishedAt = new Date().toISOString()
-		report.durationMs = Date.now() - startedAtMs
-		tryWriteReport(migrateReportFile, report)
 	}
 }
 

@@ -1,9 +1,10 @@
 /**
  * EOA Upgrade Script — deploy facets, apply diamond cut, set parameters.
  *
- * Runs the full v0.8.4 -> v0.8.5 upgrade from the connected EOA signer by default.
+ * Plans the v0.8.4 -> v0.8.5 upgrade by default. Execution requires
+ * EXECUTE=true plus a chain-id confirmation.
  * Use UPGRADE_STAGES to run a subset, e.g.:
- *   UPGRADE_STAGES=deploy,pause,cut,wiring npx hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
+ *   UPGRADE_STAGES=deploy,pause,cut,wiring ./node_modules/.bin/hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
  *
  * Migration is a separate step — run prepareMigrationInput.ts then
  * runMigration.ts after this completes.
@@ -27,10 +28,11 @@
  *   operator-revoke Revoke temporary non-admin operator roles (upgradeOperator signer)
  *   operator-admin-revoke Revoke temporary DEFAULT_ADMIN_ROLE grants (protocolAdmin signer)
  *
- * Usage:
- *   npx hardhat run scripts/upgrade/eoaUpgrade.ts --network localhost
- *   npx hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
- *   UPGRADE_STAGES=deploy,pause,cut,wiring npx hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
+ * Plan:
+ *   UPGRADE_STAGES=deploy,pause,cut,wiring ./node_modules/.bin/hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
+ * Execute:
+ *   EXECUTE=true CONFIRM_CHAIN_ID=2632500 UPGRADE_STAGES=deploy,pause,cut,wiring \
+ *     ./node_modules/.bin/hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
  *
  * Config: scripts/upgrade/config/upgrade.json
  */
@@ -45,6 +47,7 @@ import {
 	type DeploymentStateContext,
 	type DeploymentStateMetadata,
 } from "./utils/deploymentState.js"
+import { requireExecutionConfirmation } from "./utils/executionGuard.js"
 import { resolveConfiguredSigner } from "./utils/hardwareSigner.js"
 import { log } from "./utils/log.js"
 import { DIAMOND_OWNER_ABI, logUpgradeOwnershipSummary, readDiamondOwner } from "./utils/ownership.js"
@@ -363,6 +366,19 @@ function savePeripheralsState(stateFile: string, state: PeripheralsState, metada
 	saveDeploymentState(stateFile, state, metadata)
 }
 
+async function requireDeployedCode(label: string, address: string): Promise<void> {
+	if (!ethers.isAddress(address) || address === ethers.ZeroAddress) throw new Error(`${label} has an invalid address: ${address}`)
+	if ((await ethers.provider.getCode(address)) === "0x") {
+		throw new Error(`${label} has no deployed code at ${address}; reconcile the deployment transaction before resuming`)
+	}
+}
+
+function writeJsonAtomic(filePath: string, value: unknown): void {
+	const temporaryPath = `${filePath}.${process.pid}.tmp`
+	fs.writeFileSync(temporaryPath, JSON.stringify(value, null, "\t") + "\n")
+	fs.renameSync(temporaryPath, filePath)
+}
+
 function readPeripheralsAddresses(stateFile: string, stateContext?: DeploymentStateContext): PeripheralsAddresses {
 	const state = loadPeripheralsState(stateFile, stateContext)
 	return {
@@ -374,11 +390,11 @@ function readPeripheralsAddresses(stateFile: string, stateContext?: DeploymentSt
 	}
 }
 
-function requirePeripheralAddresses(
+async function requirePeripheralAddresses(
 	stateFile: string,
 	required: Array<keyof PeripheralsAddresses>,
 	stateContext?: DeploymentStateContext,
-): PeripheralsAddresses {
+): Promise<PeripheralsAddresses> {
 	const addresses = readPeripheralsAddresses(stateFile, stateContext)
 	const missing = required.filter(key => !addresses[key])
 	if (missing.length > 0) {
@@ -386,6 +402,7 @@ function requirePeripheralAddresses(
 			`Missing deployed peripheral address(es): ${missing.join(", ")}. Run UPGRADE_STAGES=peripherals first, or set ${stateFile} from a prior deployment.`,
 		)
 	}
+	await Promise.all(required.map(key => requireDeployedCode(key, addresses[key]!)))
 	return addresses
 }
 
@@ -532,7 +549,7 @@ function writeSignatureVerifierToUpgradeConfig(signatureVerifierAddress: string)
 	}
 
 	upgradeConfig.newV085Parameters.signatureVerifierAddress = ethers.getAddress(signatureVerifierAddress)
-	fs.writeFileSync(CONFIG_FILE, JSON.stringify(upgradeConfig, null, "\t") + "\n")
+	writeJsonAtomic(CONFIG_FILE, upgradeConfig)
 	log.kv("Written signatureVerifierAddress to", CONFIG_FILE)
 }
 
@@ -564,11 +581,17 @@ async function initiateAccountLayerOwnershipTransfer(accountLayerAddress: string
 
 	const signerAddress = ethers.getAddress(await signer.getAddress())
 	if (normalizedOwner.toLowerCase() !== signerAddress.toLowerCase()) {
-		log.warn(`AccountLayer owner is ${normalizedOwner}, not deployer ${signerAddress}; ` + `skipping ownership transfer to ${normalizedNewOwner}.`)
-		return
+		throw new Error(
+			`Cannot transfer AccountLayer ownership: current owner is ${normalizedOwner}, signer is ${signerAddress}, and pending owner is ${normalizedPendingOwner}`,
+		)
 	}
 
-	await (await accountLayer.transferOwnership(normalizedNewOwner, writeTxOverrides())).wait()
+	const receipt = await (await accountLayer.transferOwnership(normalizedNewOwner, writeTxOverrides())).wait()
+	if (!receipt?.status) throw new Error("AccountLayer transferOwnership transaction failed")
+	const verifiedPendingOwner = ethers.getAddress(await accountLayer.pendingOwner())
+	if (verifiedPendingOwner !== normalizedNewOwner) {
+		throw new Error(`AccountLayer ownership post-state mismatch: pending owner is ${verifiedPendingOwner}, expected ${normalizedNewOwner}`)
+	}
 	log.ok(`AccountLayer ownership transfer initiated to ${log.addr(normalizedNewOwner)}`)
 }
 
@@ -579,6 +602,7 @@ async function deploySignatureVerifier(
 	stateContext?: DeploymentStateContext,
 ): Promise<string> {
 	if (configuredAddress && ethers.isAddress(configuredAddress)) {
+		await requireDeployedCode("Configured MuonSignatureVerifier", configuredAddress)
 		log.deployed("MuonSignatureVerifier", configuredAddress, true)
 		return configuredAddress
 	}
@@ -586,6 +610,7 @@ async function deploySignatureVerifier(
 	const metadata = await resolveDeploymentStateMetadata(stateContext)
 	const state = loadPeripheralsState(stateFile, stateContext)
 	if (state.signatureVerifier) {
+		await requireDeployedCode("MuonSignatureVerifier", state.signatureVerifier)
 		log.deployed("MuonSignatureVerifier", state.signatureVerifier, true)
 		return state.signatureVerifier
 	}
@@ -593,9 +618,10 @@ async function deploySignatureVerifier(
 	const factory = await ethers.getContractFactory("MuonSignatureVerifier")
 	const contract = await factory.deploy(protocolAdmin, deployTxOverrides())
 	const address = await contract.getAddress()
+	await contract.waitForDeployment()
+	await requireDeployedCode("MuonSignatureVerifier", address)
 	state.signatureVerifier = address
 	savePeripheralsState(stateFile, state, metadata)
-	await contract.waitForDeployment()
 	log.deployed("MuonSignatureVerifier", address)
 	return address
 }
@@ -604,6 +630,7 @@ async function deploySymmioPartyBImplementation(stateFile: string, stateContext?
 	const metadata = await resolveDeploymentStateMetadata(stateContext)
 	const state = loadPeripheralsState(stateFile, stateContext)
 	if (state.symmioPartyBImplementation) {
+		await requireDeployedCode("SymmioPartyB", state.symmioPartyBImplementation)
 		log.deployed("SymmioPartyB", state.symmioPartyBImplementation, true)
 		return state.symmioPartyBImplementation
 	}
@@ -611,9 +638,10 @@ async function deploySymmioPartyBImplementation(stateFile: string, stateContext?
 	const factory = await ethers.getContractFactory("SymmioPartyB")
 	const contract = await factory.deploy(deployTxOverrides())
 	const address = await contract.getAddress()
+	await contract.waitForDeployment()
+	await requireDeployedCode("SymmioPartyB", address)
 	state.symmioPartyBImplementation = address
 	savePeripheralsState(stateFile, state, metadata)
-	await contract.waitForDeployment()
 	log.deployed("SymmioPartyB", address)
 	return address
 }
@@ -1410,6 +1438,14 @@ async function main() {
 	log.kv("Diamond", log.addr(DIAMOND_ADDRESS))
 	log.kv("Stages", stageNames(stages))
 	log.kv("Diamond cut chunk size", String(DIAMOND_CUT_CHUNK_SIZE))
+	const execute = requireExecutionConfirmation(chainId)
+	log.kv("Mode", execute ? "EXECUTE" : "PLAN ONLY")
+	log.kv("Facet state", facetsOutFile)
+	log.kv("Peripheral state", peripheralsStateFile)
+	if (!execute) {
+		log.warn(`Plan only: preflight passed and no transactions were sent. Rerun with EXECUTE=true CONFIRM_CHAIN_ID=${chainId}.`)
+		return
+	}
 
 	const signer = await resolveUpgradeSigner(config, stages)
 	const signerAddress = await signer.getAddress()
@@ -1538,7 +1574,7 @@ async function main() {
 		const t = log.step("Wire peripherals")
 		peripherals = {
 			...peripherals,
-			...requirePeripheralAddresses(peripheralsStateFile, ["accountLayer", "instantLayer", "symbolManager"], deploymentStateContext),
+			...(await requirePeripheralAddresses(peripheralsStateFile, ["accountLayer", "instantLayer", "symbolManager"], deploymentStateContext)),
 		}
 		await wireAccountLayerInstantLayer(DIAMOND_ADDRESS, peripherals.accountLayer!, peripherals.instantLayer!, signer)
 		if (config.setupInstantLayerTemplates !== false) {

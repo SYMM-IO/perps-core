@@ -24,7 +24,7 @@
  *   }
  *
  * Usage:
- *   npx hardhat run scripts/upgrade/generateRevokeSymmioCoreRolesSafeBatch.ts --network mantle
+ *   ./node_modules/.bin/hardhat run scripts/upgrade/generateRevokeSymmioCoreRolesSafeBatch.ts --network mantle
  *
  * Optional env overrides:
  *   DIAMOND_ADDRESS, SAFE_ADDRESS, CHAIN_ID,

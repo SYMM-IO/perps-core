@@ -17,7 +17,7 @@ import { fetchPartyBBalances } from "./utils/subgraphHelpers.js"
  * concurrency).
  *
  * Usage:
- *   npx hardhat run scripts/upgrade/snapshotBalances.ts --network <network>
+ *   ./node_modules/.bin/hardhat run scripts/upgrade/snapshotBalances.ts --network <network>
  *
  * Env vars (all optional):
  *   MIGRATION_INPUT_FILE   Defaults to scripts/upgrade/output/migration-input.json

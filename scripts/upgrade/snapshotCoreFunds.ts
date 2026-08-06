@@ -12,7 +12,7 @@ import { baseNetworkName, loadUpgradeConfigShared } from "./utils/sharedConfig.j
  * balances are read from the chain.
  *
  * Usage:
- *   npx hardhat run scripts/upgrade/snapshotCoreFunds.ts --network coti
+ *   ./node_modules/.bin/hardhat run scripts/upgrade/snapshotCoreFunds.ts --network coti
  *
  * Env vars:
  *   DIAMOND_ADDRESS              Override upgrade-<network>.json diamondAddress

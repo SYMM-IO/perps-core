@@ -8,18 +8,18 @@
  * are ever signed by the Safe.
  *
  * Usage:
- *   npx hardhat run scripts/upgrade/verifyBatchCalldata.ts --network arbitrum
+ *   ./node_modules/.bin/hardhat run scripts/upgrade/verifyBatchCalldata.ts --network arbitrum
  *
  *   # Subset via env (comma-separated labels)
  *   ONLY=pause-safe-batch,safe-batch,diamondcut-calldata \
- *     npx hardhat run scripts/upgrade/verifyBatchCalldata.ts --network arbitrum
+ *     ./node_modules/.bin/hardhat run scripts/upgrade/verifyBatchCalldata.ts --network arbitrum
  *
  *   # Skip expensive artifact cross-check
- *   VERIFY_ARTIFACTS=false npx hardhat run scripts/upgrade/verifyBatchCalldata.ts --network arbitrum
+ *   VERIFY_ARTIFACTS=false ./node_modules/.bin/hardhat run scripts/upgrade/verifyBatchCalldata.ts --network arbitrum
  *
  *   # Custom config file locations
  *   VERIFY_BATCH_CONFIG_FILE=./my-verify.json \
- *     npx hardhat run scripts/upgrade/verifyBatchCalldata.ts --network arbitrum
+ *     ./node_modules/.bin/hardhat run scripts/upgrade/verifyBatchCalldata.ts --network arbitrum
  *
  * Config (optional): scripts/upgrade/config/verifyBatch.json
  *   {

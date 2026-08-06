@@ -2,7 +2,7 @@
  * Print ownership/admin holders for the core diamond and upgrade peripherals.
  *
  * Usage:
- *   npx hardhat run scripts/upgrade/checkOwners.ts --network coti
+ *   ./node_modules/.bin/hardhat run scripts/upgrade/checkOwners.ts --network coti
  *
  * Env overrides:
  *   DIAMOND_ADDRESS

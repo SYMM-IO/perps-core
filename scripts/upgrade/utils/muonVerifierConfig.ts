@@ -1,6 +1,15 @@
-import { ethers } from "../../../test/helpers/hardhat-connection.js"
+import { ethers } from "ethers"
 
-export const MUON_FUNCTION_NAMES = ["Trading", "AccountManagement", "Settlement", "ForceClose", "Funding", "LiquidationPartyA", "LiquidationPartyB"]
+export const MUON_FUNCTION_NAMES = [
+	"Trading",
+	"AccountManagement",
+	"Settlement",
+	"ForceClose",
+	"Funding",
+	"LiquidationPartyA",
+	"LiquidationPartyB",
+	"RemoveMargin",
+]
 
 export const DEFAULT_MUON_FUNCTION_PERMISSIONS = [...MUON_FUNCTION_NAMES]
 

@@ -9,7 +9,7 @@
  * artifacts. Handles Solidity library linking and immutable variable masking.
  *
  * Usage:
- *   RPC_URL=https://rpc.mantle.xyz npx ts-node scripts/upgrade/verifyPeripheralBytecode.ts
+ *   RPC_URL=https://rpc.mantle.xyz node --import tsx scripts/upgrade/verifyPeripheralBytecode.ts
  *
  * Env overrides:
  *   RPC_URL          -- RPC endpoint (required, http(s) or ws(s))
@@ -26,7 +26,7 @@ const OUTPUT_DIR = "./scripts/upgrade/output"
 const rpcUrl = process.env.RPC_URL
 if (!rpcUrl) {
 	console.error("RPC_URL env var is required")
-	console.error("Usage: RPC_URL=https://rpc.mantle.xyz npx ts-node scripts/upgrade/verifyPeripheralBytecode.ts")
+	console.error("Usage: RPC_URL=https://rpc.mantle.xyz node --import tsx scripts/upgrade/verifyPeripheralBytecode.ts")
 	process.exit(1)
 }
 
@@ -50,6 +50,19 @@ function createProvider(url: string) {
 	if (protocol === "ws:" || protocol === "wss:") return new ethers.WebSocketProvider(url)
 	if (protocol === "http:" || protocol === "https:") return new ethers.JsonRpcProvider(url)
 	throw new Error(`Unsupported RPC_URL protocol "${protocol}". Use http(s):// or ws(s)://.`)
+}
+
+function redactUrl(rawUrl: string): string {
+	try {
+		const url = new URL(rawUrl)
+		url.username = url.username ? "***" : ""
+		url.password = url.password ? "***" : ""
+		url.search = url.search ? "?***" : ""
+		if (url.pathname && url.pathname !== "/") url.pathname = "/***"
+		return url.toString()
+	} catch {
+		return "<redacted RPC URL>"
+	}
 }
 
 const provider = createProvider(rpcUrl)
@@ -99,8 +112,19 @@ interface DeployedPeripherals {
 	symmioPartyBImplementation: string
 }
 
+interface UpgradeConfig {
+	diamondAddress?: string
+	newV085Parameters?: { signatureVerifierAddress?: string }
+}
+
 // --- Load deployed addresses and build contract map ---
 const deployed: DeployedPeripherals = JSON.parse(fs.readFileSync(peripheralsFile, "utf8"))
+if (!fs.existsSync(upgradeConfigFile)) throw new Error(`Missing upgrade config at ${upgradeConfigFile}; constructor bindings cannot be verified`)
+const upgradeConfig = JSON.parse(fs.readFileSync(upgradeConfigFile, "utf8")) as UpgradeConfig
+if (!upgradeConfig.diamondAddress || !ethers.isAddress(upgradeConfig.diamondAddress) || upgradeConfig.diamondAddress === ethers.ZeroAddress) {
+	throw new Error(`${upgradeConfigFile} must contain a non-zero diamondAddress`)
+}
+const configuredDiamondAddress = ethers.getAddress(upgradeConfig.diamondAddress)
 
 const CONTRACTS: Record<string, ContractInfo> = {}
 
@@ -132,14 +156,11 @@ CONTRACTS[deployed.instantLayer.address] = {
 }
 
 // MuonSignatureVerifier (address from upgrade.json)
-if (fs.existsSync(upgradeConfigFile)) {
-	const upgradeConfig = JSON.parse(fs.readFileSync(upgradeConfigFile, "utf8"))
-	const sigVerifierAddr = upgradeConfig?.newV085Parameters?.signatureVerifierAddress
-	if (sigVerifierAddr) {
-		CONTRACTS[sigVerifierAddr] = {
-			name: "MuonSignatureVerifier",
-			path: "helpers/verification/SymmioSignatureVerifier.sol/MuonSignatureVerifier.json",
-		}
+const sigVerifierAddr = upgradeConfig.newV085Parameters?.signatureVerifierAddress
+if (sigVerifierAddr) {
+	CONTRACTS[sigVerifierAddr] = {
+		name: "MuonSignatureVerifier",
+		path: "helpers/verification/SymmioSignatureVerifier.sol/MuonSignatureVerifier.json",
 	}
 }
 
@@ -259,13 +280,29 @@ function linkAndCompare(compiledHex: string, deployedHex: string, placeholders: 
 async function main() {
 	console.log("=".repeat(100))
 	console.log("PERIPHERAL BYTECODE VERIFICATION: Deployed vs Compiled (local) — with library linking")
-	console.log(`RPC:         ${rpcUrl}`)
+	console.log(`RPC:         ${redactUrl(rpcUrl!)}`)
 	console.log(`Peripherals: ${peripheralsFile}`)
 	console.log("=".repeat(100))
 	console.log()
 
 	const artifactsDir = path.join("artifacts", "contracts")
 	const addresses = Object.keys(CONTRACTS)
+	if (addresses.length === 0) throw new Error(`${peripheralsFile} contains no peripheral contracts to verify`)
+
+	const instantLayer = new ethers.Contract(deployed.instantLayer.address, ["function symmio() view returns (address)"], provider)
+	const instantLayerCore = ethers.getAddress(await instantLayer.symmio())
+	if (instantLayerCore !== configuredDiamondAddress) {
+		throw new Error(`InstantLayer ${deployed.instantLayer.address} targets ${instantLayerCore}, expected core ${configuredDiamondAddress}`)
+	}
+	console.log(`InstantLayer core binding: ${instantLayerCore} (MATCH)`)
+	if (smAddr) {
+		const symbolManager = new ethers.Contract(smAddr, ["function symmioAddress() view returns (address)"], provider)
+		const symbolManagerCore = ethers.getAddress(await symbolManager.symmioAddress())
+		if (symbolManagerCore !== configuredDiamondAddress) {
+			throw new Error(`SymbolManager ${smAddr} targets ${symbolManagerCore}, expected core ${configuredDiamondAddress}`)
+		}
+		console.log(`SymbolManager core binding: ${symbolManagerCore} (MATCH)`)
+	}
 
 	console.log(`Fetching deployed bytecodes for ${addresses.length} peripheral addresses...`)
 	const deployedCodes: Record<string, string> = {}
@@ -414,6 +451,7 @@ async function main() {
 	} else {
 		if (mismatch > 0) console.log(`⚠️  ${mismatch} contract(s) have bytecode mismatches that need investigation.`)
 		if (errors > 0) console.log(`⚠️  ${errors} contract(s) had errors (missing artifacts/code).`)
+		throw new Error(`Peripheral bytecode verification failed: ${mismatch} mismatch(es), ${errors} error(s)`)
 	}
 }
 

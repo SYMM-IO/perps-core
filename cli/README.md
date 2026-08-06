@@ -1,269 +1,204 @@
-# `symmio` CLI
+# SYMMIO operator CLI
 
-Operator CLI for deploying, configuring and inspecting SYMMIO deployments.
-
-```bash
-node cli/symmio.js --help
-```
-
-To get a bare `symmio` command:
+The CLI deploys and inspects SYMMIO from one reviewed JSON recipe. Use the checkout-local
+command; it works in Fish, Zsh, Bash, and CI without installing a global binary.
 
 ```bash
-npm link
+./utils/yarn-classic.sh cli --help
 ```
 
-For the step-by-step deployment procedure, see [docs/deployment.md](../docs/deployment.md).
-This document is the command reference.
+If you want the shorter `symmio` command, run `./utils/yarn-classic.sh link` once. Linking is optional.
 
----
+## Start here
 
-## Why it exists
+```bash
+./utils/yarn-classic.sh cli recipe init --network arbitrum
+# edit deployments/arbitrum.json and replace every REPLACE_WITH_* value
+./utils/yarn-classic.sh cli doctor --config deployments/arbitrum.json
+./utils/yarn-classic.sh cli deploy --config deployments/arbitrum.json --plan
+./utils/yarn-classic.sh cli deploy --config deployments/arbitrum.json
+./utils/yarn-classic.sh cli status --config deployments/arbitrum.json
+```
 
-The [audit](../SCRIPTS_AUDIT.md) behind this CLI found that the expensive failures in this
-repo's deploy path were **operator** failures, not code failures:
+Configuration and generated state have distinct locations:
 
-- `PRIVATE_KEY` — documented, set by operators, read by nothing; the deployer silently fell
-  back to a key committed to this repository
-- a mock signature verifier, enabled by default in the shipped `.env.example`
-- an empty `COLLATERAL_ADDRESS` silently deploying a mintable fake token as collateral
-- deployment "success" reported while transactions were still unmined
-- an InstantLayer template landing at a different id than the chain it was meant to mirror
+| Purpose                 | Location                                                                                      |
+| ----------------------- | --------------------------------------------------------------------------------------------- |
+| Reviewed starting point | `deployment/examples/arbitrum.v1.example.json`                                                |
+| Your deployment intent  | `deployments/<name>.json`                                                                     |
+| Full deployment report  | `tasks/data/<chainId>/deployment-report.json`                                                 |
+| Fork report             | `tasks/data/<chainId>-fork/deployment-report.json`                                            |
+| Component report        | `tasks/data/<chainId>[-fork]/components/<recipe-name>/<component>-report.json`                |
+| Component history       | `tasks/data/<chainId>[-fork]/components/<recipe-name>/history/`                               |
+| Resume checkpoint       | `tasks/data/checkpoints/checkpoint-<chainId>[-fork].json`                                     |
+| Component checkpoint    | `tasks/data/checkpoints/checkpoint-<chainId>[-fork]-component-<recipe-name>-<component>.json` |
 
-Every check in this CLI corresponds to one of those. The goal is to make those failures
-loud and cheap, before gas is spent.
+The recipe contains public deployment configuration. Sensitive signer, RPC, and explorer
+credentials are references; the recommended provider is the encrypted Hardhat keystore.
+Secret values are never copied into the recipe, plan, checkpoint, digest, or report.
 
----
+## One recipe, full or partial deployment
+
+The top-level components are `core`, `partyB`, `symbolManager`, and `expressProvider`.
+Each has an explicit `mode`:
+
+- `deploy` creates and completely wires that component.
+- `reuse` proves and uses the configured existing deployment.
+- `skip` excludes the component.
+
+Without `--only`, every component enabled by the recipe is executed in dependency order:
+
+```bash
+./utils/yarn-classic.sh cli deploy --config deployments/arbitrum.json
+```
+
+Generate and deploy one component with a smaller recipe:
+
+```bash
+./utils/yarn-classic.sh cli recipe init --network arbitrum --only partyB
+./utils/yarn-classic.sh cli doctor --config deployments/arbitrum-partyB.json --only partyB
+./utils/yarn-classic.sh cli deploy --config deployments/arbitrum-partyB.json --only partyB --plan
+./utils/yarn-classic.sh cli deploy --config deployments/arbitrum-partyB.json --only partyB
+
+./utils/yarn-classic.sh cli recipe init --network arbitrum --only symbolManager
+./utils/yarn-classic.sh cli doctor --config deployments/arbitrum-symbolManager.json --only symbolManager
+./utils/yarn-classic.sh cli deploy --config deployments/arbitrum-symbolManager.json --only symbolManager --plan
+./utils/yarn-classic.sh cli deploy --config deployments/arbitrum-symbolManager.json --only symbolManager
+```
+
+For a reused Core, `core.fromReport` may be absolute or relative to the recipe file's
+directory. Its exact file contents are included in the recipe digest and rechecked at task
+startup. Rerun the identical command after any printed Safe actions confirm; it resumes
+without redeploying and proves the final state. `--fresh` starts a new deployment ID and
+archives the prior component report in the component `history/` directory.
+
+Core is a system bundle. To deploy only the Core bundle, set `partyB`, `symbolManager`, and
+`expressProvider` to `mode: "skip"`, then run without `--only`.
+
+`--only` never silently rewrites recipe modes. Required dependencies must be declared as
+`reuse` or `deploy`; a skipped dependency is a blocking plan error. ExpressProvider
+deployment is currently blocked on every target until post-payout credit-loss settlement is
+resolved and its production roles, Muon and affiliate policy, Core registration, durable
+recovery, verification, and post-state proof are encoded. Doctor and the planner fail closed
+instead of advertising an apparently runnable deployment.
 
 ## Commands
 
-| Command | Purpose |
-|---|---|
-| [`doctor`](#doctor) | Everything that must be true before you deploy |
-| [`deploy`](#deploy) | Guided deployment: preflight → plan → confirm → deploy → verify |
-| [`status`](#status) | What is deployed on a chain, and whether it is safe |
-| [`config`](#config) | Show, diff, or export protocol parameters and templates |
-| [`verify`](#verify) | Verify deployed contracts on the block explorer |
+### `recipe init`
 
-All commands take `--network <name>`. Run `symmio <command> --help` for usage.
+```bash
+./utils/yarn-classic.sh cli recipe init --network arbitrum
+./utils/yarn-classic.sh cli recipe init --network arbitrum --only partyB
+./utils/yarn-classic.sh cli recipe init --network arbitrum --only symbolManager
+./utils/yarn-classic.sh cli recipe init --network fork-arbitrum --out deployments/rehearsal.json
+```
 
-Exit codes: `0` success (warnings still exit 0), `1` blocking problems found. Suitable for
-CI gating.
-
----
+Creates `deployments/<network>.json` from a checked-in, reviewed profile. Existing output is
+never overwritten unless `--force` is explicit. A network without a reviewed profile is
+rejected; the command does not fabricate protocol, Muon, or governance values. `--only`
+creates a minimal add-on recipe with `core.mode: "reuse"` and a portable relative
+`core.fromReport` path.
 
 ### `doctor`
 
 ```bash
-symmio doctor --network arbitrum
+./utils/yarn-classic.sh cli doctor --config deployments/arbitrum.json
 ```
 
-Read-only. Checks:
+Read-only. It validates the recipe and component dependency plan before opening an RPC
+connection, then checks:
 
-- **Environment** — `.env` present; flags `PRIVATE_KEY` / `PRIVATE_KEYS_STR` if set, since
-  nothing reads them
-- **Deployer** — how it resolves (`NEW_DEPLOYER` → `TEAM_DEPLOYER` → keystore → dummy
-  fallback), and whether it is a publicly-known key
-- **RPC** — reachable, and its chainId matches the network you named
-- **Balance** — non-zero, and enough for ~45 contracts on a mainnet
-- **Configuration** — admin set and distinct from the deployer; collateral exists on-chain
-  with the expected symbol and decimals; mock verifier and dummy affiliate off; Muon
-  configured; explorer key present
-- **Protocol config** — `tasks/config/protocol-<chainId>.json` parses and is complete;
-  lists the templates it would create and any unverified defaults
-- **Deployment state** — whether a checkpoint exists that would make `deploy:system`
-  **resume** rather than start fresh
-- **Self-consistency** — the CLI's copy of the mainnet chain list still matches
-  `tasks/deploy/safety.ts`
+- network name, chain ID, live/fork mode, RPC reachability, and direct `eth_chainId`;
+- signer resolution, unsafe known keys, deployer balance, and admin separation;
+- collateral code and token metadata;
+- mock-verifier and dummy-affiliate safety policy;
+- complete Muon registrations and all eight function authorizations;
+- PartyB and SymbolManager configuration when enabled;
+- liquidation accounting receivers and cap;
+- explorer verification readiness;
+- protocol values and InstantLayer templates bound to the recipe;
+- checkpoint disposition and internal CLI/task mirror drift.
 
-On a non-mainnet chain the permissive settings are reported as informational, not failures.
-
----
+A configuration failure names the exact JSON field and the exact recipe file to edit.
+Keystore references are deliberately reported as deferred warnings: the dependency-free
+doctor cannot unlock them, while the Hardhat task must resolve and recheck them before any
+checkpoint or transaction.
 
 ### `deploy`
 
 ```bash
-symmio deploy --network arbitrum
+./utils/yarn-classic.sh cli deploy --config deployments/arbitrum.json --plan
+./utils/yarn-classic.sh cli deploy --config deployments/arbitrum.json
 ```
 
-| Flag | Effect |
-|---|---|
-| `--yes` | Skip the confirmation prompt |
-| `--fresh` | Ignore the existing checkpoint (it is archived, not deleted) |
-| `--no-verify` | Skip block-explorer verification |
-| `--force` | Proceed even if preflight failed |
+The plan prints the recipe digest and a table containing each target, mode, and dependency.
+`--plan` stops after doctor and the read-only plan; no transaction is sent.
 
-Four steps:
+| Flag                 | Effect                                                                             |
+| -------------------- | ---------------------------------------------------------------------------------- |
+| `--only <component>` | Execute one component and its declared reused dependencies                         |
+| `--yes`              | Skip the interactive prompt; live networks also require `--confirm-network <name>` |
+| `--fresh`            | Archive the current checkpoint and begin a fresh run                               |
+| `--no-verify`        | Further disable recipe verification on local/fork only; refused live               |
+| `--force`            | Continue after preflight failure on local/fork only; refused live                  |
+| `--plan`             | Read-only doctor and dependency plan                                               |
 
-1. **Preflight** — runs `doctor`; aborts on failure unless `--force`
-2. **Plan** — prints network, deployer, admin, fee receiver, collateral, verifier kind and
-   which protocol config will be used
-3. **Confirm** — on a mainnet you must type the network name, not just `y`. Non-interactive
-   shells refuse rather than assuming yes
-4. **Deploy**, then `verify:all` and `check:deployment`
+The recipe's `execution.verify` value is authoritative. A live recipe must require explorer
+verification. Deployments are transaction-journaled, resumable, and accepted only after
+the task writes its report and passes its post-deployment health gates.
 
-Finishes by printing the manual steps the deployer cannot perform (accept ownership on both
-diamonds, grant SymbolManager operator roles, add symbols).
-
-If the deploy fails it says so and reminds you it is checkpointed — re-running resumes.
-
----
+On a persistent chain, exit `0` means lifecycle `complete`; exit `2` means deployment and
+verification succeeded but the printed admin/Safe handover is still pending. Fork runs are
+ephemeral and print their lifecycle without using exit `2`.
 
 ### `status`
 
 ```bash
-symmio status --network arbitrum
-symmio status --network hyperevm --diamond 0x... --instant-layer 0x...
+./utils/yarn-classic.sh cli status --config deployments/arbitrum.json
+./utils/yarn-classic.sh cli status --config deployments/arbitrum-partyB.json --only partyB
+./utils/yarn-classic.sh cli status --config deployments/arbitrum-symbolManager.json --only symbolManager
 ```
 
-Addresses are taken from the local deployment report when present; pass `--diamond`,
-`--account-layer` or `--instant-layer` to override or to inspect a chain you did not deploy
-from this machine.
-
-Probes the chain rather than trusting local records:
-
-- **Facets** — how many are installed and how many selectors; flags an incomplete cut
-- **Collateral** — symbol and decimals; flags a `FakeStablecoin`
-- **Signature verifier** — flags a mock verifier (it exposes no `SETTER_ROLE`)
-- **Role hygiene** — whether the admin holds `DEFAULT_ADMIN_ROLE`, and **whether the
-  deployer still does**
-- **Ownership** — `owner` and `pendingOwner` of both diamonds. `owner` authorises
-  `diamondCut`, so a deployer-owned diamond is an unfinished deployment
-- **Templates** — id, name, operation count, active flag
-
-A deployment where the deployer still holds roles or owns a diamond is not finished.
-
----
-
-### `config`
-
-#### `config show`
-
-```bash
-symmio config show --chain 42161
-symmio config show --network arbitrum
-```
-
-Prints the parameters and templates that would be applied, and warns about any parameter
-still sitting at an unverified default.
-
-#### `config diff`
-
-```bash
-symmio config diff --network hyperevm \
-  --symmio 0x57331038c21982116EE9b0906E4a5c5cB52dcE2e \
-  --instant-layer 0x72DBF07457b2712b160F67A85D338F860c1CA620 \
-  --against 42161
-```
-
-Reads a **live** deployment and compares it against the config another chain would deploy
-with. Exits non-zero on any difference.
-
-This is the command that catches silent breakage. InstantLayer template ids are referenced
-by hedgers, so a template at the wrong id changes behaviour with nothing reporting an
-error. It is how the HyperEVM/Arbitrum mismatch was found: ids 0–2 matched, id 3 did not.
-
-`config diff` compares only getter-readable parameters. To compare everything, re-export
-and diff the JSON — see
-[mirroring an existing deployment](../docs/deployment.md#mirroring-an-existing-deployment).
-
-#### `config export`
-
-```bash
-symmio config export --network hyperevm --symmio 0x... --instant-layer 0x... --to 42161
-```
-
-Reads a live deployment into `tasks/config/protocol-<to>.json`. `--to` is the chain the
-config is *for*; `--network` is the chain being read *from*.
-
-Parameters with no view function are read straight from the `MAStorage` diamond storage
-slot, so any RPC works at the latest block — no archive node needed. The exporter validates
-its slot offsets against a getter-readable value first and aborts if they disagree.
-
----
+Reads the exact chain-scoped full or component report and checkpoint, then delegates to the
+matching canonical read-only on-chain checker. Critical unreadable probes fail; they are
+never reported as a healthy deployment. A component recipe must include its matching
+`--only` flag so it cannot inspect an unrelated full-system report.
 
 ### `verify`
 
 ```bash
-symmio verify --network arbitrum
-symmio verify --network arbitrum --retry-failed
+./utils/yarn-classic.sh cli verify --config deployments/arbitrum.json
+./utils/yarn-classic.sh cli verify --config deployments/arbitrum.json --retry-failed
 ```
 
-Wraps `hardhat verify:all`. Failures are recorded so `--retry-failed` retries only those.
+Runs the checked-in `verify:all` task against the network named by the recipe. Verification
+is unavailable for ephemeral fork networks. Recipe mode is full-system-only and binds the
+deployment report, deployment ID, recipe digest, component modes, and retry artifact.
+Component explorer verification is owned by `deploy --only`; rerun that command to retry it.
 
----
+### `config`
 
-## Recipes
-
-**Before a mainnet deploy**
+The protocol inspection commands remain available for comparing or exporting an existing
+deployment:
 
 ```bash
-symmio doctor --network arbitrum && symmio config show --chain 42161
+./utils/yarn-classic.sh cli config show --chain 42161
+./utils/yarn-classic.sh cli config diff --network hyperevm --symmio 0x... --instant-layer 0x... --against 42161
+./utils/yarn-classic.sh cli config export --network hyperevm --symmio 0x... --instant-layer 0x... --to 42161
 ```
 
-**Rehearse against real chain state, free**
+## Compatibility mode
 
-```bash
-npx hardhat deploy:system --network fork-arbitrum --fresh true
-```
+`doctor`, `deploy`, `status`, and `verify` still accept `--network <name>` for existing
+automation. `--config` and `--network` are mutually exclusive, and the CLI labels network
+mode as compatibility-only. New deployments should use a recipe so intent, component
+selection, safety policy, and the resulting report are bound to one digest.
 
-**Check a deployment you did not perform**
+## Implementation boundary
 
-```bash
-symmio status --network hyperevm --diamond 0x... --instant-layer 0x...
-```
-
-**Confirm two chains agree**
-
-```bash
-symmio config diff --network hyperevm --symmio 0x... --instant-layer 0x... --against 42161
-```
-
-**Gate CI on deployment health**
-
-```bash
-symmio doctor --network arbitrum
-```
-
----
-
-## Design notes
-
-**No dependencies, no build step.** Plain ESM JavaScript using only `ethers`, which the repo
-already installs. A tool that deploys money should never be runnable from a stale build, and
-the operator should always be able to read the exact source that just ran. This also keeps
-the supply chain small, in line with the repo dropping unused SDKs.
-
-**Shells out to hardhat.** `deploy` and `verify` print and run real `npx hardhat …` commands
-rather than importing hardhat programmatically, so anything the CLI does can be reproduced
-by hand.
-
-**One duplicated constant, policed.** The CLI cannot import `tasks/deploy/safety.ts`
-(TypeScript, no build step), so the mainnet chain list is duplicated in
-`lib/safety-mirror.js`. `checkMirrorDrift()` parses the TypeScript source at runtime and
-`doctor` reports any divergence — the duplication cannot rot silently.
-
-**Confirmation proportional to risk.** Mainnet deploys require typing the network name.
-Non-interactive shells refuse rather than defaulting to yes.
-
-### Layout
-
-```
-cli/
-  symmio.js              entry point, arg parsing, help
-  lib/ui.js              colours, symbols, tables, prompts
-  lib/context.js         .env, chain registry, provider, deployer resolution, records
-  lib/hardhat.js         runs hardhat tasks as child processes
-  lib/safety-mirror.js   mainnet chain list + drift detection
-  commands/{doctor,deploy,status,config}.js
-```
-
-To add a command: create `commands/<name>.js` exporting an async function that takes parsed
-args and returns an exit code, then register it in the `COMMANDS` map in `symmio.js`.
-
----
-
-## Not yet built
-
-- `symmio symbols` — add and sync trading symbols (`deploy:system` seeds none)
-- `symmio roles` — inspect and hand over roles across every contract
-- `symmio upgrade` — wrap the `scripts/upgrade/` tooling
+The CLI is plain ESM JavaScript and runs the checked-in local Hardhat binary. It does not
+download tools, import a stale build, or duplicate recipe schema validation. The shared
+recipe module owns parsing, normalization, validation, dependency planning, and conversion
+to the deployment task's compatibility projection. The CLI pins the normalized recipe
+digest across the Hardhat process boundary; a reused Core report's exact bytes are also
+bound, preventing configuration or dependency-report changes between plan and execution.

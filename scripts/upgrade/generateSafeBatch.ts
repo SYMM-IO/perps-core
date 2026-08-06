@@ -8,11 +8,11 @@
  *   3. upgrade-details.json       -- selector changes + transaction breakdown
  *
  * Usage:
- *   npx hardhat run scripts/upgrade/generateSafeBatch.ts --network arbitrum
+ *   ./node_modules/.bin/hardhat run scripts/upgrade/generateSafeBatch.ts --network arbitrum
  *
  *   # Custom facets file
  *   FACETS_FILE=./path/to/deployed-facets.json \
- *     npx hardhat run scripts/upgrade/generateSafeBatch.ts --network arbitrum
+ *     ./node_modules/.bin/hardhat run scripts/upgrade/generateSafeBatch.ts --network arbitrum
  *
  * Config: scripts/upgrade/config/upgrade.json
  */

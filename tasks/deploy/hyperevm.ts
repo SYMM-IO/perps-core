@@ -58,6 +58,16 @@ const PHANTOM_AGENT_TYPES = {
 	],
 }
 
+function apiTimeoutMs(): number {
+	const raw = process.env.HYPEREVM_API_TIMEOUT_MS || "30000"
+	if (!/^\d+$/.test(raw)) throw new Error(`HYPEREVM_API_TIMEOUT_MS must be a whole number; received ${JSON.stringify(raw)}.`)
+	const value = Number(raw)
+	if (!Number.isSafeInteger(value) || value < 1_000 || value > 120_000) {
+		throw new Error(`HYPEREVM_API_TIMEOUT_MS must be between 1000 and 120000; received ${JSON.stringify(raw)}.`)
+	}
+	return value
+}
+
 /**
  * Construct the connectionId for the EIP-712 phantom agent signature.
  *
@@ -147,11 +157,20 @@ export async function setHyperEVMBigBlocks(hre: any, enable: boolean): Promise<v
 	console.log(`${enable ? "Enabling" : "Disabling"} big blocks on HyperEVM (chain ${chainId})...`)
 	console.log(`Signer: ${signer.address}`)
 
-	const response = await fetch(apiUrl, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(payload),
-	})
+	let response: Response
+	const timeoutMs = apiTimeoutMs()
+	try {
+		response = await fetch(apiUrl, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(payload),
+			signal: AbortSignal.timeout(timeoutMs),
+		})
+	} catch (error) {
+		throw new Error(
+			`Hyperliquid big-block API request failed after at most ${timeoutMs}ms: ${error instanceof Error ? error.message : String(error)}`,
+		)
+	}
 
 	const contentType = response.headers.get("content-type") || ""
 	if (!contentType.includes("application/json")) {

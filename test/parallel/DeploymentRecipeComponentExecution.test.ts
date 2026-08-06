@@ -1,0 +1,308 @@
+import { expect } from "chai"
+import fs from "node:fs"
+import path from "node:path"
+
+import {
+	assertComponentStatusCheckpointBinding,
+	assertComponentStatusReportBinding,
+	inspectComponentStatus,
+} from "../../tasks/deploy/checkComponent.js"
+import { getCheckpointPath, setCheckpointSimulated } from "../../tasks/deploy/checkpoint.js"
+import { executeComponentDeployment } from "../../tasks/deploy/componentDeployment.js"
+import { componentCheckpointScope, type CoreDependencyReport } from "../../tasks/deploy/deploymentRecipe.js"
+import { initializeFixture } from "../Initialize.fixture.js"
+import { ethers, hre } from "../helpers/hardhat-connection.js"
+import { loadFixture } from "../helpers/network-helpers.js"
+
+describe("deployment recipe standalone component execution", function () {
+	const recipeName = "component-engine-test"
+	const reportDir = path.resolve(`tasks/data/31337-fork/components/${recipeName}`)
+	const checkpointFiles = ["partyB", "symbolManager"].map(component => {
+		setCheckpointSimulated(true)
+		return path.resolve(getCheckpointPath(31337, componentCheckpointScope(recipeName, component as "partyB" | "symbolManager")))
+	})
+
+	afterEach(function () {
+		setCheckpointSimulated(false)
+		for (const file of checkpointFiles) fs.rmSync(file, { force: true })
+		fs.rmSync(reportDir, { recursive: true, force: true })
+	})
+
+	it("deploys, wires, verifies post-state, and durably reports PartyB and SymbolManager independently", async function () {
+		// The fixture is a local ordinary-CREATE deployment; an operator's ambient live
+		// CREATE2 selection must not turn this isolated test into a wrong-network lookup.
+		delete process.env.CREATE2_FACTORY_ADDRESS
+		delete process.env.DIAMOND_VANITY_PREFIX
+		const context = await loadFixture(initializeFixture)
+		const [admin] = await ethers.getSigners()
+		const networkName = (await hre.network.getOrCreate()).networkName || "default"
+		const coreReport: CoreDependencyReport = {
+			deploymentId: "fixture-core",
+			deployerAddress: admin.address,
+			network: networkName,
+			chainId: 31337,
+			lifecycle: "complete",
+			checks: { health: "passed", verification: "skipped", verificationPolicy: "not_applicable" },
+			config: { admin: admin.address },
+			addresses: {
+				diamond: context.diamond,
+				instantLayer: await context.instantLayer.getAddress(),
+			},
+		}
+		const target = { name: networkName, chainId: 31337, mode: "local" as const }
+
+		const partyBInput = {
+			recipeName,
+			recipePath: "/tmp/component-engine-test.json",
+			recipeDigest: "partyB-digest",
+			target,
+			component: "partyB",
+			componentConfig: { mode: "deploy", signer: admin.address, adlEnabled: true, admin: admin.address },
+			coreReport,
+			coreReportPath: "/tmp/core-report.json",
+			fresh: false,
+			verify: false,
+		} as const
+		const partyB = await executeComponentDeployment(hre, partyBInput)
+		expect(partyB.report.lifecycle).to.equal("complete")
+		expect(partyB.report.health.status).to.equal("passed")
+		expect(partyB.report.verification.records).to.have.length(2)
+		expect(await context.viewFacet.isPartyB(partyB.report.address)).to.equal(true)
+		expect(await context.instantLayer.registeredPartyBs(partyB.report.address)).to.equal(true)
+		const resumedPartyB = await executeComponentDeployment(hre, partyBInput)
+		expect(resumedPartyB.report.address).to.equal(partyB.report.address)
+		const freshPartyB = await executeComponentDeployment(hre, { ...partyBInput, fresh: true })
+		expect(freshPartyB.report.deploymentId).to.not.equal(partyB.report.deploymentId)
+		expect(freshPartyB.report.address).to.not.equal(partyB.report.address)
+		const archivedPartyB = JSON.parse(fs.readFileSync(path.join(reportDir, "history", `partyB-${partyB.report.deploymentId}-report.json`), "utf8"))
+		expect(archivedPartyB.deploymentId).to.equal(partyB.report.deploymentId)
+		expect(archivedPartyB.address).to.equal(partyB.report.address)
+
+		const symbolManager = await executeComponentDeployment(hre, {
+			recipeName,
+			recipePath: "/tmp/component-engine-test.json",
+			recipeDigest: "symbol-manager-digest",
+			target,
+			component: "symbolManager",
+			componentConfig: { mode: "deploy", operator: admin.address, admin: admin.address },
+			coreReport,
+			coreReportPath: "/tmp/core-report.json",
+			fresh: false,
+			verify: false,
+		})
+		expect(symbolManager.report.lifecycle).to.equal("complete")
+		expect(symbolManager.report.health.status).to.equal("passed")
+		expect(symbolManager.report.verification.records).to.have.length(1)
+		const manager = await ethers.getContractAt("SymmioSymbolManager", symbolManager.report.address!)
+		expect(await manager.symmioAddress()).to.equal(context.diamond)
+	})
+
+	it("re-probes PartyB and SymbolManager code, wiring, roles, signer, ADL, and operator without writes", async function () {
+		delete process.env.CREATE2_FACTORY_ADDRESS
+		delete process.env.DIAMOND_VANITY_PREFIX
+		const context = await loadFixture(initializeFixture)
+		const [admin, changedSigner] = await ethers.getSigners()
+		const networkName = (await hre.network.getOrCreate()).networkName || "default"
+		const coreReport: CoreDependencyReport = {
+			deploymentId: "fixture-core-status",
+			deployerAddress: admin.address,
+			network: networkName,
+			chainId: 31337,
+			lifecycle: "complete",
+			checks: { health: "passed", verification: "skipped", verificationPolicy: "not_applicable" },
+			config: { admin: admin.address },
+			addresses: {
+				diamond: context.diamond,
+				instantLayer: await context.instantLayer.getAddress(),
+			},
+		}
+		const target = { name: networkName, chainId: 31337, mode: "local" as const }
+		const recipePath = "/tmp/component-engine-status-test.json"
+		const coreReportPath = "/tmp/component-engine-status-core.json"
+		const partyB = await executeComponentDeployment(hre, {
+			recipeName,
+			recipePath,
+			recipeDigest: "partyB-status-digest",
+			target,
+			component: "partyB",
+			componentConfig: { mode: "deploy", signer: admin.address, adlEnabled: true, admin: admin.address },
+			coreReport,
+			coreReportPath,
+			fresh: false,
+			verify: false,
+		})
+		const boundPartyB = assertComponentStatusReportBinding(partyB.report, {
+			component: "partyB",
+			recipeName,
+			recipePath,
+			recipeDigest: "partyB-status-digest",
+			network: networkName,
+			chainId: 31337,
+			live: false,
+			config: { admin: admin.address, signer: admin.address, adlEnabled: true },
+			coreReport,
+			coreReportPath,
+		})
+		const partyBScope = componentCheckpointScope(recipeName, "partyB")
+		setCheckpointSimulated(true)
+		const partyBCheckpoint = JSON.parse(fs.readFileSync(path.resolve(getCheckpointPath(31337, partyBScope)), "utf8"))
+		expect(
+			assertComponentStatusCheckpointBinding(partyBCheckpoint, boundPartyB, {
+				component: "partyB",
+				scope: partyBScope,
+				network: networkName,
+				chainId: 31337,
+			}).deploymentId,
+		).to.equal(partyB.report.deploymentId)
+
+		const healthyPartyB = await inspectComponentStatus(ethers, "partyB", partyB.report, coreReport)
+		expect(healthyPartyB.checks.every(check => check.status === "passed")).to.equal(true)
+		expect(healthyPartyB.manualActions).to.deep.equal([])
+		const partyBContract = await ethers.getContractAt("SymmioPartyB", partyB.report.address!)
+		await partyBContract.setSigner(changedSigner.address)
+		const wrongSigner = await inspectComponentStatus(ethers, "partyB", partyB.report, coreReport)
+		expect(wrongSigner.checks.find(check => check.check === "signer")?.status).to.equal("failed")
+		await partyBContract.setSigner(admin.address)
+		await context.controlFacet.setADLEnabled(partyB.report.address!, false)
+		const wrongAdl = await inspectComponentStatus(ethers, "partyB", partyB.report, coreReport)
+		expect(wrongAdl.checks.find(check => check.check === "core ADL setting")?.status).to.equal("pending")
+		expect(wrongAdl.manualActions.map(action => action.description)).to.deep.equal([`Set ADL=true for PartyB ${partyB.report.address}`])
+		await context.controlFacet.setADLEnabled(partyB.report.address!, true)
+
+		const symbolManager = await executeComponentDeployment(hre, {
+			recipeName,
+			recipePath,
+			recipeDigest: "symbol-status-digest",
+			target,
+			component: "symbolManager",
+			componentConfig: { mode: "deploy", operator: admin.address, admin: admin.address },
+			coreReport,
+			coreReportPath,
+			fresh: false,
+			verify: false,
+		})
+		const healthyManager = await inspectComponentStatus(ethers, "symbolManager", symbolManager.report, coreReport)
+		expect(healthyManager.checks.every(check => check.status === "passed")).to.equal(true)
+		expect(healthyManager.manualActions).to.deep.equal([])
+		const manager = await ethers.getContractAt("SymmioSymbolManager", symbolManager.report.address!)
+		await manager.revokeRole(await manager.SYMBOL_ADDER_ROLE(), admin.address)
+		const missingOperator = await inspectComponentStatus(ethers, "symbolManager", symbolManager.report, coreReport)
+		expect(missingOperator.checks.find(check => check.check.startsWith("operator role"))?.status).to.equal("failed")
+	})
+
+	it("deploys a PartyB for a separate production admin and resumes without regaining local privileges", async function () {
+		delete process.env.CREATE2_FACTORY_ADDRESS
+		delete process.env.DIAMOND_VANITY_PREFIX
+		const context = await loadFixture(initializeFixture)
+		const [deployer, finalAdmin, partyBSigner] = await ethers.getSigners()
+		const networkName = (await hre.network.getOrCreate()).networkName || "default"
+		const partyBManagerRole = ethers.keccak256(ethers.toUtf8Bytes("PARTY_B_MANAGER_ROLE"))
+		const instantSetterRole = await context.instantLayer.SETTER_ROLE()
+
+		// Shape the dependency like production: the deployment signer can configure the
+		// newly-created component, while only the governance admin can wire it into the
+		// already-deployed core and InstantLayer.
+		await context.controlFacet.connect(deployer).grantRole(finalAdmin.address, partyBManagerRole)
+		await context.controlFacet.connect(deployer).revokeRole(deployer.address, partyBManagerRole)
+		await context.instantLayer.connect(deployer).grantRole(instantSetterRole, finalAdmin.address)
+		await context.instantLayer.connect(deployer).revokeRole(instantSetterRole, deployer.address)
+		expect(await context.viewFacet.hasRole(deployer.address, partyBManagerRole)).to.equal(false)
+		expect(await context.viewFacet.hasRole(finalAdmin.address, partyBManagerRole)).to.equal(true)
+		expect(await context.instantLayer.hasRole(instantSetterRole, deployer.address)).to.equal(false)
+		expect(await context.instantLayer.hasRole(instantSetterRole, finalAdmin.address)).to.equal(true)
+
+		const coreReport: CoreDependencyReport = {
+			deploymentId: "fixture-core-governance-admin",
+			deployerAddress: deployer.address,
+			network: networkName,
+			chainId: 31337,
+			lifecycle: "complete",
+			checks: { health: "passed", verification: "skipped", verificationPolicy: "not_applicable" },
+			config: { admin: finalAdmin.address },
+			addresses: {
+				diamond: context.diamond,
+				instantLayer: await context.instantLayer.getAddress(),
+			},
+		}
+		const input = {
+			recipeName,
+			recipePath: "/tmp/component-engine-handover-test.json",
+			recipeDigest: "partyB-handover-digest",
+			target: { name: networkName, chainId: 31337, mode: "local" as const },
+			component: "partyB",
+			componentConfig: { mode: "deploy", signer: partyBSigner.address, adlEnabled: true, admin: finalAdmin.address },
+			coreReport,
+			coreReportPath: "/tmp/core-governance-report.json",
+			fresh: false,
+			verify: false,
+		} as const
+
+		const first = await executeComponentDeployment(hre, input)
+		expect(first.report.lifecycle).to.equal("pending_handover")
+		expect(first.report.health.status).to.equal("pending")
+		expect(first.report.config).to.deep.equal({
+			admin: finalAdmin.address,
+			signer: partyBSigner.address,
+			adlEnabled: true,
+		})
+		expect(first.report.manualActions).to.deep.equal([
+			{
+				to: context.diamond,
+				value: "0",
+				data: context.controlFacet.interface.encodeFunctionData("registerPartyB", [first.report.address]),
+				description: `Register PartyB ${first.report.address} on core`,
+			},
+			{
+				to: context.diamond,
+				value: "0",
+				data: context.controlFacet.interface.encodeFunctionData("setADLEnabled", [first.report.address, true]),
+				description: `Set ADL=true for PartyB ${first.report.address}`,
+			},
+			{
+				to: await context.instantLayer.getAddress(),
+				value: "0",
+				data: context.instantLayer.interface.encodeFunctionData("registerPartyBs", [[first.report.address]]),
+				description: `Register PartyB ${first.report.address} on InstantLayer`,
+			},
+		])
+
+		const partyB = await ethers.getContractAt("SymmioPartyB", first.report.address!)
+		const localRoles = [
+			await partyB.DEFAULT_ADMIN_ROLE(),
+			ethers.keccak256(ethers.toUtf8Bytes("TRUSTED_ROLE")),
+			ethers.keccak256(ethers.toUtf8Bytes("MANAGER_ROLE")),
+			ethers.keccak256(ethers.toUtf8Bytes("SETTER_ROLE")),
+			ethers.keccak256(ethers.toUtf8Bytes("PAUSER_ROLE")),
+			ethers.keccak256(ethers.toUtf8Bytes("UNPAUSER_ROLE")),
+		]
+		for (const role of localRoles) {
+			expect(await partyB.hasRole(role, finalAdmin.address)).to.equal(true)
+			expect(await partyB.hasRole(role, deployer.address)).to.equal(false)
+		}
+		expect(await partyB.signer()).to.equal(partyBSigner.address)
+		expect(await partyB.multicastWhitelist(await context.instantLayer.getAddress())).to.equal(true)
+		expect(await context.viewFacet.isPartyB(first.report.address)).to.equal(false)
+		expect(await context.instantLayer.registeredPartyBs(first.report.address)).to.equal(false)
+
+		const firstTransactionCount = first.report.transactions.length
+		const resumed = await executeComponentDeployment(hre, input)
+		expect(resumed.report.address).to.equal(first.report.address)
+		expect(resumed.report.lifecycle).to.equal("pending_handover")
+		expect(resumed.report.manualActions).to.deep.equal(first.report.manualActions)
+		expect(resumed.report.transactions).to.have.length(firstTransactionCount)
+		for (const role of localRoles) expect(await partyB.hasRole(role, deployer.address)).to.equal(false)
+
+		// Execute the exact three governance actions and prove the same recipe/checkpoint
+		// converges to complete without redeploying or regaining deployer privileges.
+		await context.controlFacet.connect(finalAdmin).registerPartyB(first.report.address!)
+		await context.controlFacet.connect(finalAdmin).setADLEnabled(first.report.address!, true)
+		await context.instantLayer.connect(finalAdmin).registerPartyBs([first.report.address!])
+		const completed = await executeComponentDeployment(hre, input)
+		expect(completed.report.address).to.equal(first.report.address)
+		expect(completed.report.lifecycle).to.equal("complete")
+		expect(completed.report.health.status).to.equal("passed")
+		expect(completed.report.manualActions).to.deep.equal([])
+		expect(completed.report.transactions).to.have.length(firstTransactionCount)
+		for (const role of localRoles) expect(await partyB.hasRole(role, deployer.address)).to.equal(false)
+	})
+})

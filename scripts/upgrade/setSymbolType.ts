@@ -5,11 +5,11 @@
  * then calls setSymbolTypes() on the target diamond. Requires SYMBOL_MANAGER_ROLE
  * (granted to migrationRunner by the Safe batch).
  *
- * Run:
- *   npx hardhat run scripts/upgrade/setSymbolType.ts --network <network>
+ * Plan (default):
+ *   ./node_modules/.bin/hardhat run scripts/upgrade/setSymbolType.ts --network <network>
  *
- *   # Dry run (log without submitting)
- *   DRY_RUN=true npx hardhat run scripts/upgrade/setSymbolType.ts --network <network>
+ * Execute only after reviewing the plan:
+ *   EXECUTE=true CONFIRM_CHAIN_ID=<chainId> ./node_modules/.bin/hardhat run scripts/upgrade/setSymbolType.ts --network <network>
  *
  * Config: scripts/upgrade/config/upgrade.json (diamondAddress)
  * Input:  scripts/upgrade/output/{count}-symbol-types-input-{network}.json (from fetchSymbolList.ts)
@@ -20,6 +20,7 @@ import path from "path"
 
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import type { SymbolTypesInput } from "./fetchSymbolList.js"
+import { exactBooleanEnv, requireExecutionConfirmation } from "./utils/executionGuard.js"
 import { resolveConfiguredSigner } from "./utils/hardwareSigner.js"
 import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
@@ -103,8 +104,7 @@ async function main() {
 
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? shared.diamondAddress
 	const CHUNK_SIZE = Number(process.env.CHUNK_SIZE ?? 100)
-	const DRY_RUN = process.env.DRY_RUN === "true"
-	const SKIP_SYMBOL_MANAGER_ROLE_CHECK = process.env.SKIP_SYMBOL_MANAGER_ROLE_CHECK === "true"
+	const SKIP_SYMBOL_MANAGER_ROLE_CHECK = exactBooleanEnv("SKIP_SYMBOL_MANAGER_ROLE_CHECK")
 	const inputFile = process.env.SYMBOL_TYPES_INPUT_FILE ?? resolveSymbolTypesInputFile(networkName)
 
 	if (!DIAMOND_ADDRESS || !ethers.isAddress(DIAMOND_ADDRESS)) {
@@ -113,11 +113,15 @@ async function main() {
 	if (!fs.existsSync(inputFile)) {
 		throw new Error(`Input file not found: ${inputFile}\nRun fetchSymbolList.ts first.`)
 	}
+	if (!Number.isSafeInteger(CHUNK_SIZE) || CHUNK_SIZE <= 0) throw new Error(`CHUNK_SIZE must be a positive safe integer; received ${CHUNK_SIZE}`)
 
 	const input: SymbolTypesInput = JSON.parse(fs.readFileSync(inputFile, "utf-8"))
 	const { symbols, symbolType } = input
 
 	await verifyRpc()
+	const chainId = (await ethers.provider.getNetwork()).chainId
+	const EXECUTE = requireExecutionConfirmation(chainId)
+	const DRY_RUN = !EXECUTE
 
 	const migratorAddress = process.env.MIGRATION_RUNNER ?? shared.migrationRunner
 	let signer: Awaited<ReturnType<typeof resolveConfiguredSigner>> | undefined
@@ -174,6 +178,7 @@ async function main() {
 		DIAMOND_ADDRESS,
 		signer,
 	)
+	const symbolView = await ethers.getContractAt("contracts/core/facets/ViewFacetSymbol/ViewFacetSymbol.sol:ViewFacetSymbol", DIAMOND_ADDRESS)
 
 	const chunks: { index: number; symbolIds: bigint[]; symbolTypes: bigint[] }[] = []
 	for (let i = 0; i < symbols.length; i += CHUNK_SIZE) {
@@ -188,8 +193,19 @@ async function main() {
 	log.info(`Sending ${chunks.length} chunk transactions sequentially...`)
 	for (const chunk of chunks) {
 		log.info(`Submitting chunk ${chunk.index} (${chunk.symbolIds.length} symbols)...`)
+		await diamond.setSymbolTypes.staticCall(chunk.symbolIds, chunk.symbolTypes, setSymbolTypesTxOverrides())
 		const tx = await diamond.setSymbolTypes(chunk.symbolIds, chunk.symbolTypes, setSymbolTypesTxOverrides())
+		log.info(`  submitted: ${tx.hash} (nonce: ${tx.nonce})`)
 		const receipt = await tx.wait()
+		if (!receipt?.status) throw new Error(`Chunk ${chunk.index} transaction failed: ${tx.hash}`)
+		const verifiedSymbols = await Promise.all(chunk.symbolIds.map(symbolId => symbolView.getSymbolWithType(symbolId)))
+		for (let index = 0; index < verifiedSymbols.length; index++) {
+			if (BigInt(verifiedSymbols[index].symbolType) !== chunk.symbolTypes[index]) {
+				throw new Error(
+					`Chunk ${chunk.index} post-state mismatch for symbol ${chunk.symbolIds[index]}: expected type ${chunk.symbolTypes[index]}, got ${verifiedSymbols[index].symbolType}`,
+				)
+			}
+		}
 		log.ok(`  chunk ${chunk.index}: tx ${receipt.hash} (gas: ${receipt.gasUsed})`)
 	}
 	const totalSet = symbols.length

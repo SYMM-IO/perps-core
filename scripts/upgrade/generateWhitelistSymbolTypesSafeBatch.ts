@@ -6,7 +6,7 @@
  * from upgrade-<network>.json, then emits Safe Transaction Builder JSON.
  *
  * Usage:
- *   CHAIN_ID=8453 npx hardhat run --no-compile scripts/upgrade/generateWhitelistSymbolTypesSafeBatch.ts --network base
+ *   CHAIN_ID=8453 ./node_modules/.bin/hardhat run --no-compile scripts/upgrade/generateWhitelistSymbolTypesSafeBatch.ts --network base
  *
  * Optional env overrides:
  *   DIAMOND_ADDRESS, SAFE_ADDRESS, CHAIN_ID, SYMBOL_TYPE, WHITELIST_CONFIG_FILE

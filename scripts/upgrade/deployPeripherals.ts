@@ -5,12 +5,14 @@
  * These contracts are independent of the core diamond and can be deployed
  * before the upgrade. Resume-safe via state file.
  *
- * Usage:
- *   npx hardhat run scripts/upgrade/deployPeripherals.ts --network arbitrum
+ * Plan (default):
+ *   ./node_modules/.bin/hardhat run scripts/upgrade/deployPeripherals.ts --network arbitrum
+ * Execute:
+ *   EXECUTE=true CONFIRM_CHAIN_ID=42161 ./node_modules/.bin/hardhat run scripts/upgrade/deployPeripherals.ts --network arbitrum
  *
  *   # Custom config
  *   DEPLOY_PERIPHERALS_CONFIG=./path/to/config.json \
- *     npx hardhat run scripts/upgrade/deployPeripherals.ts --network arbitrum
+ *     ./node_modules/.bin/hardhat run scripts/upgrade/deployPeripherals.ts --network arbitrum
  *
  * Config: Reads from upgrade.json by default. Optional deployPeripherals.json overrides any field.
  *   Required fields (from either source): diamondAddress, protocolAdmin, symmioFeeReceiver
@@ -28,11 +30,13 @@ import {
 	type DeploymentStateContext,
 	type DeploymentStateMetadata,
 } from "./utils/deploymentState.js"
+import { requireExecutionConfirmation } from "./utils/executionGuard.js"
 import { log } from "./utils/log.js"
-import { logUpgradeOwnershipSummary } from "./utils/ownership.js"
+import { DIAMOND_OWNER_ABI, logUpgradeOwnershipSummary, readDiamondOwner } from "./utils/ownership.js"
 import { deployAccountLayerDiamond, deployInstantLayer, deploySymbolManager } from "./utils/peripheralHelpers.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
 import { loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig.js"
+import { deployTxOverrides, writeTxOverrides } from "./utils/txOverrides.js"
 
 type Config = {
 	diamondAddress?: string
@@ -75,6 +79,57 @@ function saveState(state: DeployedState, metadata?: DeploymentStateMetadata): vo
 	saveDeploymentState(STATE_FILE, state, metadata)
 }
 
+async function requireDeployedCode(label: string, address: string): Promise<void> {
+	if (!ethers.isAddress(address) || address === ethers.ZeroAddress) {
+		throw new Error(`${label} has an invalid address: ${address}`)
+	}
+	if ((await ethers.provider.getCode(address)) === "0x") {
+		throw new Error(`${label} has no deployed code at ${address}; reconcile the deployment transaction before resuming`)
+	}
+}
+
+function writeJsonAtomic(filePath: string, value: unknown): void {
+	const temporaryPath = `${filePath}.${process.pid}.tmp`
+	fs.writeFileSync(temporaryPath, JSON.stringify(value, null, "\t") + "\n")
+	fs.renameSync(temporaryPath, filePath)
+}
+
+async function initiateAccountLayerOwnershipTransfer(accountLayerAddress: string, newOwner: string): Promise<void> {
+	const [signer] = await ethers.getSigners()
+	const accountLayer = new ethers.Contract(
+		accountLayerAddress,
+		[...DIAMOND_OWNER_ABI, "function pendingOwner() view returns (address)", "function transferOwnership(address owner)"],
+		signer,
+	)
+	const [owner, pendingOwner, signerAddress] = await Promise.all([readDiamondOwner(accountLayer), accountLayer.pendingOwner(), signer.getAddress()])
+	if (!owner) throw new Error(`Could not read AccountLayer owner at ${accountLayerAddress}`)
+	const expectedOwner = ethers.getAddress(newOwner)
+	const currentOwner = ethers.getAddress(owner)
+	const currentPendingOwner = ethers.getAddress(pendingOwner)
+
+	if (currentOwner === expectedOwner) {
+		log.ok(`AccountLayer owner already ${log.addr(expectedOwner)}`)
+		return
+	}
+	if (currentPendingOwner === expectedOwner) {
+		log.ok(`AccountLayer ownership transfer already pending to ${log.addr(expectedOwner)}`)
+		return
+	}
+	if (currentOwner !== ethers.getAddress(signerAddress)) {
+		throw new Error(
+			`Cannot transfer AccountLayer ownership: current owner is ${currentOwner}, signer is ${signerAddress}, and pending owner is ${currentPendingOwner}`,
+		)
+	}
+
+	const receipt = await (await accountLayer.transferOwnership(expectedOwner, writeTxOverrides())).wait()
+	if (!receipt?.status) throw new Error("AccountLayer transferOwnership transaction failed")
+	const verifiedPendingOwner = ethers.getAddress(await accountLayer.pendingOwner())
+	if (verifiedPendingOwner !== expectedOwner) {
+		throw new Error(`AccountLayer ownership post-state mismatch: pending owner is ${verifiedPendingOwner}, expected ${expectedOwner}`)
+	}
+	log.ok(`AccountLayer ownership transfer initiated to ${log.addr(expectedOwner)}; the new owner must call acceptOwnership()`)
+}
+
 async function main() {
 	const networkName = connection.networkName
 	STATE_FILE = path.join(OUTPUT_DIR, `deployed-peripherals-${networkName}.json`)
@@ -93,12 +148,21 @@ async function main() {
 		throw new Error("symmioFeeReceiver is required and must be a valid address")
 	}
 	await verifyRpc()
-	const deploymentStateContext: DeploymentStateContext = { networkName, diamondAddress }
-	const deploymentMetadata = await resolveDeploymentStateMetadata(deploymentStateContext)
+	const chainId = (await ethers.provider.getNetwork()).chainId
+	const execute = requireExecutionConfirmation(chainId)
 	log.header("Deploy v0.8.5 Peripherals")
+	log.kv("Network", `${networkName} (${chainId})`)
 	log.kv("Diamond (core)", log.addr(diamondAddress))
 	log.kv("Protocol admin", log.addr(protocolAdmin))
 	log.kv("Fee receiver", log.addr(symmioFeeReceiver))
+	log.kv("State file", STATE_FILE)
+	log.kv("Mode", execute ? "EXECUTE" : "PLAN ONLY")
+	if (!execute) {
+		log.warn(`Plan only: no contracts were deployed. Rerun with EXECUTE=true CONFIRM_CHAIN_ID=${chainId}.`)
+		return
+	}
+	const deploymentStateContext: DeploymentStateContext = { networkName, diamondAddress }
+	const deploymentMetadata = await resolveDeploymentStateMetadata(deploymentStateContext)
 
 	if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
 
@@ -111,14 +175,16 @@ async function main() {
 
 	if (state0.signatureVerifier) {
 		signatureVerifierAddr = state0.signatureVerifier
+		await requireDeployedCode("MuonSignatureVerifier", signatureVerifierAddr)
 		log.deployed("MuonSignatureVerifier", signatureVerifierAddr, true)
 	} else {
 		const factory = await ethers.getContractFactory("MuonSignatureVerifier")
-		const contract = await factory.deploy(protocolAdmin)
+		const contract = await factory.deploy(protocolAdmin, deployTxOverrides())
 		signatureVerifierAddr = await contract.getAddress()
+		await contract.waitForDeployment()
+		await requireDeployedCode("MuonSignatureVerifier", signatureVerifierAddr)
 		state0.signatureVerifier = signatureVerifierAddr
 		saveState(state0, deploymentMetadata)
-		await contract.waitForDeployment()
 		log.deployed("MuonSignatureVerifier", signatureVerifierAddr)
 	}
 
@@ -128,7 +194,7 @@ async function main() {
 		const upgradeConfig = JSON.parse(fs.readFileSync(upgradeConfigPath, "utf-8"))
 		if (!upgradeConfig.newV085Parameters) upgradeConfig.newV085Parameters = {}
 		upgradeConfig.newV085Parameters.signatureVerifierAddress = signatureVerifierAddr
-		fs.writeFileSync(upgradeConfigPath, JSON.stringify(upgradeConfig, null, "\t") + "\n")
+		writeJsonAtomic(upgradeConfigPath, upgradeConfig)
 		log.kv("Written signatureVerifierAddress to", upgradeConfigPath)
 	}
 	log.stepDone(t)
@@ -139,15 +205,9 @@ async function main() {
 
 	// Transfer AccountLayer ownership to Safe (two-step: Safe must call acceptOwnership)
 	const AL_NEW_OWNER = process.env.SAFE_ADDRESS ?? config.safeAddress
-	if (AL_NEW_OWNER && ethers.isAddress(AL_NEW_OWNER)) {
-		const alControlFacet = await ethers.getContractAt("contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet", alResult.diamondAddress)
-		try {
-			await (await alControlFacet.transferOwnership(AL_NEW_OWNER)).wait()
-			log.ok(`transferOwnership(${AL_NEW_OWNER}) on AccountLayer — new owner must call acceptOwnership()`)
-		} catch (e: any) {
-			// May fail if already transferred or caller is not the owner (e.g. re-run after ownership was already transferred)
-			log.ok(`transferOwnership skipped (already transferred or caller is not owner)`)
-		}
+	if (AL_NEW_OWNER) {
+		if (!ethers.isAddress(AL_NEW_OWNER)) throw new Error(`SAFE_ADDRESS is invalid: ${AL_NEW_OWNER}`)
+		await initiateAccountLayerOwnershipTransfer(alResult.diamondAddress, AL_NEW_OWNER)
 	}
 	log.stepDone(t)
 
@@ -163,14 +223,16 @@ async function main() {
 
 	if (state.symmioPartyBImplementation) {
 		symmioPartyBImpl = state.symmioPartyBImplementation
+		await requireDeployedCode("SymmioPartyB", symmioPartyBImpl)
 		log.deployed("SymmioPartyB", symmioPartyBImpl, true)
 	} else {
 		const factory = await ethers.getContractFactory("SymmioPartyB")
-		const contract = await factory.deploy()
+		const contract = await factory.deploy(deployTxOverrides())
 		symmioPartyBImpl = await contract.getAddress()
+		await contract.waitForDeployment()
+		await requireDeployedCode("SymmioPartyB", symmioPartyBImpl)
 		state.symmioPartyBImplementation = symmioPartyBImpl
 		saveState(state, deploymentMetadata)
-		await contract.waitForDeployment()
 		log.deployed("SymmioPartyB", symmioPartyBImpl)
 	}
 	log.stepDone(t)
