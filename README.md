@@ -72,22 +72,30 @@ npx hardhat compile
 Deployments are driven by the `symmio` operator CLI:
 
 ```bash
-node cli/symmio.js --help
+./utils/yarn-classic.sh cli --help
 ```
 
 The usual path:
 
 ```bash
-symmio doctor --network arbitrum                        # is everything configured?
-npx hardhat deploy:system --network fork-arbitrum       # rehearse against real chain state
-symmio deploy --network arbitrum                        # the real thing
-symmio status --network arbitrum                        # confirm the result
+./utils/yarn-classic.sh cli recipe init --network arbitrum
+./utils/yarn-classic.sh cli doctor --config deployments/arbitrum.json
+./utils/yarn-classic.sh cli deploy --config deployments/arbitrum.json --plan
+./utils/yarn-classic.sh cli deploy --config deployments/arbitrum.json
+./utils/yarn-classic.sh cli status --config deployments/arbitrum.json
 ```
 
-`symmio doctor` is worth running first every time — it catches the configuration mistakes
-that are expensive to discover later, such as an unset collateral address or a mock
-signature verifier left enabled. It exits non-zero when something is blocking, so it can
-gate CI.
+The versioned JSON recipe is the single source of public deployment intent. It can deploy
+the full system or create a smaller add-on recipe with
+`recipe init --only partyB|symbolManager`.
+Private keys, RPC URLs, and explorer credentials stay outside JSON behind named Hardhat
+keystore references. `doctor` exits non-zero on blocking configuration or chain-state
+problems, so it can gate CI; encrypted entries that have not been unlocked are labeled as
+deferred warnings and are rechecked by Hardhat before any write. ExpressProvider is
+represented explicitly but currently fails closed before any transaction because post-payout
+credit-loss settlement is unresolved and the recipe does not yet encode its production
+roles, Muon/affiliate policy, Core registration, durable recovery, verification, and
+complete post-state proof.
 
 - **[docs/deployment.md](docs/deployment.md)** — the full deployment runbook: configuration,
   fork rehearsal, resuming a failed run, slow chains, and the manual steps the deployer
@@ -164,7 +172,7 @@ The parallel runner displays live progress and aggregated results with colorful 
 
 #### Environment Configuration
 
-- **`.env` file**: Automatically sourced if present in the project root
+- **`.env` file**: Legacy scripts may source it. Recipe-driven deployment deliberately does not.
 - **`PARALLEL_JOBS`**: Number of parallel test workers (default: 8)
 - **`FUZZ_SEED`**: Optional seed for replaying a model-based fuzz run
 - **`FUZZ_RUN_MODE`**: Continuous soak execution or bounded CI/replay execution
@@ -181,13 +189,14 @@ The parallel runner displays live progress and aggregated results with colorful 
 
 ### Log Levels
 
-The deployment scripts support different log levels controlled via the `DEPLOY_LOG_LEVEL` environment variable:
+Recipe-driven deployments set `execution.logLevel`; tests and legacy direct tasks can still
+set `DEPLOY_LOG_LEVEL`:
 
-| Level     | Description                                                  |
-| --------- | ------------------------------------------------------------ |
-| `silent`  | No deployment output (default for tests)                     |
-| `minimal` | Summary output only                                          |
-| `verbose` | Full deployment details with formatted output and separators |
+| Level     | Description                                                              |
+| --------- | ------------------------------------------------------------------------ |
+| `silent`  | Suppress routine component logs; transactions/errors remain (tests only) |
+| `minimal` | Summary output only                                                      |
+| `verbose` | Full deployment details with formatted output and separators             |
 
 Examples:
 

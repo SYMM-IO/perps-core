@@ -34,9 +34,10 @@ function maskRpcUrl(rawUrl: string): string {
 		if (url.username) url.username = "***"
 		if (url.password) url.password = "***"
 		if (url.search) url.search = "?***"
+		if (url.pathname && url.pathname !== "/") url.pathname = "/***"
 		return url.toString()
 	} catch {
-		return rawUrl
+		return "<redacted RPC URL>"
 	}
 }
 

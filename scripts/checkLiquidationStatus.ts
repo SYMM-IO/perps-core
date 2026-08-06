@@ -1,7 +1,26 @@
+/**
+ * Inspect a v0.8.4 PartyA liquidation without requiring a signer.
+ *
+ * DIAMOND_ADDRESS=0x... PARTY_A_ADDRESS=0x... EXPECTED_CHAIN_ID=8453 \
+ *   ./node_modules/.bin/hardhat run scripts/checkLiquidationStatus.ts --network base
+ */
 import { ethers } from "../test/helpers/hardhat-connection.js"
 
-const DIAMOND = ""
-const PARTY_A = ""
+function requiredAddress(name: string): string {
+	const value = process.env[name]
+	if (!value || !ethers.isAddress(value) || value === ethers.ZeroAddress) {
+		throw new Error(`${name} is required and must be a non-zero address`)
+	}
+	return ethers.getAddress(value)
+}
+
+const DIAMOND = requiredAddress("DIAMOND_ADDRESS")
+const PARTY_A = requiredAddress("PARTY_A_ADDRESS")
+const expectedChainIdRaw = process.env.EXPECTED_CHAIN_ID
+const expectedChainId = expectedChainIdRaw === undefined ? undefined : Number(expectedChainIdRaw)
+if (expectedChainId !== undefined && (!Number.isSafeInteger(expectedChainId) || expectedChainId < 1)) {
+	throw new Error(`EXPECTED_CHAIN_ID must be a positive safe integer; received ${expectedChainIdRaw}`)
+}
 
 // ABI matching the deployed v0.8.4 contract (single ViewFacet, Quote without closeFee/data fields)
 const VIEW_ABI = [
@@ -31,8 +50,12 @@ const VIEW_ABI = [
 	"function liquidationTimeout() view returns (uint256)",
 ]
 
-const [signer] = await ethers.getSigners()
-const diamond = new ethers.Contract(DIAMOND, VIEW_ABI, signer)
+const network = await ethers.provider.getNetwork()
+if (expectedChainId !== undefined && network.chainId !== BigInt(expectedChainId)) {
+	throw new Error(`Chain ID mismatch: connected to ${network.chainId}, expected ${expectedChainId}`)
+}
+if ((await ethers.provider.getCode(DIAMOND)) === "0x") throw new Error(`No Diamond code at ${DIAMOND}`)
+const diamond = new ethers.Contract(DIAMOND, VIEW_ABI, ethers.provider)
 
 const fmt = (val: bigint) => ethers.formatEther(val)
 const fmtSigned = (val: bigint) => {
@@ -65,7 +88,7 @@ const v085Selector = ethers.id("getConnectedPartyBs(address)").slice(0, 10)
 const calldata = v085Selector + ethers.AbiCoder.defaultAbiCoder().encode(["address"], [PARTY_A]).slice(2)
 let detectedVersion = "0.8.4"
 try {
-	await signer.call({ to: DIAMOND, data: calldata })
+	await ethers.provider.call({ to: DIAMOND, data: calldata })
 	detectedVersion = ">=0.8.5"
 } catch {
 	// expected for v0.8.4
@@ -100,14 +123,14 @@ console.log(`Liquidation Status: ${stats[0] ? "IN LIQUIDATION" : "NOT IN LIQUIDA
 const liqEventAbi = [
 	"event LiquidatePartyA(address liquidator, address partyA, uint256 allocatedBalance, int256 upnl, int256 totalUnrealizedLoss, bytes liquidationId)",
 ]
-const liqEventContract = new ethers.Contract(DIAMOND, liqEventAbi, signer)
+const liqEventContract = new ethers.Contract(DIAMOND, liqEventAbi, ethers.provider)
 const liqId = liquidationDetail.liquidationId
 
 if (liqId !== "0x" && liquidationDetail.liquidationTimestamp > 0n) {
 	// None of the event params are indexed, so we must fetch all events in a range.
 	// To keep the range small, binary-search for the block closest to liquidationTimestamp,
 	// then scan a narrow window around it (±500 blocks ≈ ~17 min on Base @ 2s/block).
-	const provider = signer.provider!
+	const provider = ethers.provider
 	const liqUnix = Number(liquidationDetail.liquidationTimestamp)
 	const currentBlock = await provider.getBlockNumber()
 

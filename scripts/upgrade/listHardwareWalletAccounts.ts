@@ -6,10 +6,10 @@
  * against the configured protocolAdmin by default.
  *
  * External wallet RPC pathless mode:
- *   HARDWARE_WALLET_RPC_URL=http://127.0.0.1:<port> npx hardhat run scripts/upgrade/listHardwareWalletAccounts.ts --network coti
+ *   HARDWARE_WALLET_RPC_URL=http://127.0.0.1:<port> ./node_modules/.bin/hardhat run scripts/upgrade/listHardwareWalletAccounts.ts --network coti
  *
  * Direct Ledger scan:
- *   HW_WALLET=ledger LEDGER_SCAN=true npx hardhat run scripts/upgrade/listHardwareWalletAccounts.ts --network coti
+ *   HW_WALLET=ledger LEDGER_SCAN=true ./node_modules/.bin/hardhat run scripts/upgrade/listHardwareWalletAccounts.ts --network coti
  *
  * Env overrides:
  *   EXPECTED_ADDRESS      Address to match (defaults to protocolAdmin, upgradeOperator, or migrationRunner by HARDWARE_ROLE)

@@ -44,8 +44,8 @@ BEFORE PAUSE (no downtime)
 
 VERIFY DEPLOYED BYTECODE (local vs on-chain)
 ═════════════════════════════════════════════
-  NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyCoreBytecode.ts
-  NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyPeripheralBytecode.ts
+  NETWORK=<network> RPC_URL=<rpc> node --import tsx scripts/upgrade/verifyCoreBytecode.ts
+  NETWORK=<network> RPC_URL=<rpc> node --import tsx scripts/upgrade/verifyPeripheralBytecode.ts
 
   Compares on-chain bytecode against locally compiled artifacts.
   Handles library linking (core facets) and immutable variables (peripherals).
@@ -53,7 +53,7 @@ VERIFY DEPLOYED BYTECODE (local vs on-chain)
 
 VERIFY GENERATED CALLDATA (local repo vs on-disk JSON)
 ═══════════════════════════════════════════════════════
-  npx hardhat run scripts/upgrade/verifyBatchCalldata.ts --network <network>
+  ./node_modules/.bin/hardhat run scripts/upgrade/verifyBatchCalldata.ts --network <network>
 
   Reconstructs each batch from current upgrade.json + deployed-*.json and
   byte-compares against pause-safe-batch / safe-batch / diamondcut-calldata
@@ -62,7 +62,7 @@ VERIFY GENERATED CALLDATA (local repo vs on-disk JSON)
 
 VERIFY DEPLOYED CONTRACTS (block explorer source + ABI)
 ═════════════════════════════════════════════════════════
-  USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyBlockExplorer.ts --network <network>
+  USE_KEYSTORE=true ./node_modules/.bin/hardhat run scripts/upgrade/verifyBlockExplorer.ts --network <network>
 
   Publishes/verifies source + ABI for all libraries, facets, and peripherals
   (AL, IL, PartyB impl, SymbolManager) on the block explorer. This is separate
@@ -175,12 +175,12 @@ BEFORE PAUSE (no downtime)
 
 VERIFY DEPLOYED BYTECODE (local vs on-chain)
 ═════════════════════════════════════════════
-  NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyCoreBytecode.ts
-  NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyPeripheralBytecode.ts
+  NETWORK=<network> RPC_URL=<rpc> node --import tsx scripts/upgrade/verifyCoreBytecode.ts
+  NETWORK=<network> RPC_URL=<rpc> node --import tsx scripts/upgrade/verifyPeripheralBytecode.ts
 
 VERIFY GENERATED CALLDATA (local repo vs on-disk JSON)
 ═══════════════════════════════════════════════════════
-  npx hardhat run scripts/upgrade/verifyBatchCalldata.ts --network <network>
+  ./node_modules/.bin/hardhat run scripts/upgrade/verifyBatchCalldata.ts --network <network>
 
   Also checks timelock-{schedule,execute}-safe-batch-*.json: inner calldata
   matches diamondcut-calldata chunks, predecessor chain and salt derivation
@@ -188,7 +188,7 @@ VERIFY GENERATED CALLDATA (local repo vs on-disk JSON)
 
 VERIFY DEPLOYED CONTRACTS (block explorer)
 ═══════════════════════════════════════════
-  USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyBlockExplorer.ts --network <network>
+  USE_KEYSTORE=true ./node_modules/.bin/hardhat run scripts/upgrade/verifyBlockExplorer.ts --network <network>
 
 
 SCHEDULE DIAMONDCUT (T=0, system still live)
@@ -341,14 +341,14 @@ To inspect the accounts exposed by a wallet bridge:
 
 ```bash
 HARDWARE_WALLET_RPC_URL=http://127.0.0.1:<port> \
-  npx hardhat run scripts/upgrade/listHardwareWalletAccounts.ts --network coti
+  ./node_modules/.bin/hardhat run scripts/upgrade/listHardwareWalletAccounts.ts --network coti
 ```
 
 To scan a Ledger directly when the derivation path is unknown:
 
 ```bash
 HW_WALLET=ledger LEDGER_SCAN=true \
-  npx hardhat run scripts/upgrade/listHardwareWalletAccounts.ts --network coti
+  ./node_modules/.bin/hardhat run scripts/upgrade/listHardwareWalletAccounts.ts --network coti
 ```
 
 Once a path is known, pin it in a shared non-secret Ledger config so every Ledger-aware script can reuse it without scanning:
@@ -389,106 +389,110 @@ Use this only when the connected signer is allowed to perform all privileged act
 **EOA operator path commands:**
 
 ```bash
+# Every mutation script is plan-only unless both interlocks are present.
+export EXECUTE=true
+export CONFIRM_CHAIN_ID=2632500
+
 # 1. Deploy with any funded deployer. No protocolAdmin signer required.
 USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
 UPGRADE_STAGES=deploy \
-npx hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
+./node_modules/.bin/hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
 
 # 2. Accept AccountLayer ownership with protocolAdmin.
 USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
 HARDWARE_WALLET_RPC_URL=http://127.0.0.1:<port> \
-npx hardhat run scripts/upgrade/acceptAccountLayerOwnership.ts --network coti
+./node_modules/.bin/hardhat run scripts/upgrade/acceptAccountLayerOwnership.ts --network coti
 
 # 3. Validate deployed bytecode and verify deployed contracts before pause.
 NETWORK=coti RPC_URL=https://mainnet.coti.io/rpc \
-npx ts-node scripts/upgrade/verifyCoreBytecode.ts
+node --import tsx scripts/upgrade/verifyCoreBytecode.ts
 
 NETWORK=coti RPC_URL=https://mainnet.coti.io/rpc \
-npx ts-node scripts/upgrade/verifyPeripheralBytecode.ts
+node --import tsx scripts/upgrade/verifyPeripheralBytecode.ts
 
 USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
-npx hardhat run scripts/upgrade/verifyBlockExplorer.ts --network coti
+./node_modules/.bin/hardhat run scripts/upgrade/verifyBlockExplorer.ts --network coti
 
 # 4. Grant temporary operator roles with protocolAdmin.
 USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
 HARDWARE_WALLET_RPC_URL=http://127.0.0.1:<port> \
 UPGRADE_STAGES=operator-grant \
-npx hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
+./node_modules/.bin/hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
 
 # 5. Pause with upgradeOperator.
 USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
 UPGRADE_SIGNER_ROLE=upgradeOperator UPGRADE_STAGES=pause \
-npx hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
+./node_modules/.bin/hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
 
 # 6. Prepare migration + symbol inputs after pause.
 USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
-npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network coti
+./node_modules/.bin/hardhat run scripts/upgrade/prepareMigrationInput.ts --network coti
 
 USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
-npx hardhat run scripts/upgrade/validateMigrationInput.ts --network coti
+./node_modules/.bin/hardhat run scripts/upgrade/validateMigrationInput.ts --network coti
 
 USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
-npx hardhat run scripts/upgrade/validateMigrationEdgeCases.ts --network coti
+./node_modules/.bin/hardhat run scripts/upgrade/validateMigrationEdgeCases.ts --network coti
 
 USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
-npx hardhat run scripts/upgrade/fetchSymbolList.ts --network coti
+./node_modules/.bin/hardhat run scripts/upgrade/fetchSymbolList.ts --network coti
 
 # 7. Apply owner-only diamondCut with protocolAdmin.
 USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
 HARDWARE_WALLET_RPC_URL=http://127.0.0.1:<port> \
 UPGRADE_STAGES=cut \
-npx hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
+./node_modules/.bin/hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
 
 # 8. Finish role-based setup with upgradeOperator.
 USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
 UPGRADE_SIGNER_ROLE=upgradeOperator UPGRADE_STAGES=params,wiring,partyb,migration \
-npx hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
+./node_modules/.bin/hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
 
 # 9. Run migration and symbol updates with migrationRunner.
 USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
-npx hardhat run scripts/upgrade/runMigration.ts --network coti
+./node_modules/.bin/hardhat run scripts/upgrade/runMigration.ts --network coti
 
 USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
 SET_SYMBOL_TYPES_GAS_LIMIT=5000000 CHUNK_SIZE=100 \
-npx hardhat run scripts/upgrade/setSymbolType.ts --network coti
+./node_modules/.bin/hardhat run scripts/upgrade/setSymbolType.ts --network coti
 
 USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
 WHITELIST_SIGNER_ROLE=upgradeOperator TX_GAS_LIMIT=1500000 \
-npx hardhat run scripts/upgrade/whitelistSymbolTypes.ts --network coti
+./node_modules/.bin/hardhat run scripts/upgrade/whitelistSymbolTypes.ts --network coti
 
 # 10. Unpause immediately with upgradeOperator.
 USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
 UPGRADE_SIGNER_ROLE=upgradeOperator UPGRADE_STAGES=unpause \
-npx hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
+./node_modules/.bin/hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
 
 # 11. Optional: enable cross mode before revoking MIGRATION_ROLE.
 USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
 UPGRADE_SIGNER_ROLE=migrationRunner UPGRADE_STAGES=cross-mode \
-npx hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
+./node_modules/.bin/hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
 
 USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
 UPGRADE_SIGNER_ROLE=migrationRunner UPGRADE_STAGES=cross-partyb \
-npx hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
+./node_modules/.bin/hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
 
 # 12. Revoke migrationRunner roles with upgradeOperator.
 USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
 UPGRADE_SIGNER_ROLE=upgradeOperator UPGRADE_STAGES=migration-revoke \
-npx hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
+./node_modules/.bin/hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
 
 USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
 UPGRADE_SIGNER_ROLE=upgradeOperator UPGRADE_STAGES=symbol-revoke \
-npx hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
+./node_modules/.bin/hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
 
 # 13. Revoke temporary non-admin operator roles with upgradeOperator.
 USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
 UPGRADE_SIGNER_ROLE=upgradeOperator UPGRADE_STAGES=operator-revoke \
-npx hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
+./node_modules/.bin/hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
 
 # 14. Revoke temporary DEFAULT_ADMIN_ROLE grants with protocolAdmin.
 USE_KEYSTORE=true RPC_COTI=https://mainnet.coti.io/rpc \
 HARDWARE_WALLET_RPC_URL=http://127.0.0.1:<port> \
 UPGRADE_STAGES=operator-admin-revoke \
-npx hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
+./node_modules/.bin/hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
 ```
 
 ## Prerequisites
@@ -498,24 +502,24 @@ npx hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
 - Hardhat keystore with the keys needed for the selected flow and optional RPC override (`RPC_<NETWORK>`):
 
     ```bash
-    npx hardhat keystore set NEW_DEPLOYER           # protocolAdmin / diamond owner key (override name via KEYSTORE_DEPLOYER_KEY)
-    npx hardhat keystore set TEAM_UPGRADE_OPERATOR  # temporary upgradeOperator key
-    npx hardhat keystore set TEAM_MIGRATOR          # migrationRunner key (MIGRATION_ROLE)
-    npx hardhat keystore set TEAM_PROPOSER          # Safe proposer / delegate key
-    npx hardhat keystore set RPC_ARBITRUM           # optional RPC override (per network)
+    ./node_modules/.bin/hardhat keystore set NEW_DEPLOYER           # protocolAdmin / diamond owner key (override name via KEYSTORE_DEPLOYER_KEY)
+    ./node_modules/.bin/hardhat keystore set TEAM_UPGRADE_OPERATOR  # temporary upgradeOperator key
+    ./node_modules/.bin/hardhat keystore set TEAM_MIGRATOR          # migrationRunner key (MIGRATION_ROLE)
+    ./node_modules/.bin/hardhat keystore set TEAM_PROPOSER          # Safe proposer / delegate key
+    ./node_modules/.bin/hardhat keystore set RPC_ARBITRUM           # optional RPC override (per network)
     ```
 
     `NEW_DEPLOYER` falls back to the legacy `TEAM_DEPLOYER` name if that is what your keystore already holds.
 
     Scripts auto-select the correct signer by matching the address from `upgrade.json` (`protocolAdmin` / `upgradeOperator` / `migrationRunner`) against available signers. For hardware-wallet `protocolAdmin` flows, use `HARDWARE_WALLET_RPC_URL` or direct Ledger scanning instead of storing the owner key in the keystore.
 
-    **Important:** keystore values are only read when `USE_KEYSTORE=true` is set. Without it, `hardhat.config.ts` falls back to public RPCs (e.g. `arbitrum.llamarpc.com`) and the `DUMMY_PRIVATE_KEY`. Prefix every hardhat command that needs the real keys / RPCs:
+    **Important:** keystore values are only read when `USE_KEYSTORE=true` is set. Without it, `hardhat.config.ts` may use a public RPC, but live HTTP networks configure no signer unless `NEW_DEPLOYER` or `TEAM_DEPLOYER` is explicitly present. The committed dummy key is local-only. Prefix every command that needs keystore RPCs or signers:
 
     ```bash
-    USE_KEYSTORE=true npx hardhat run scripts/upgrade/<script>.ts --network <network>
+    USE_KEYSTORE=true ./node_modules/.bin/hardhat run scripts/upgrade/<script>.ts --network <network>
     ```
 
-    Or export it once per shell: `export USE_KEYSTORE=true`. Alternatively, pass the RPC inline for one-offs: `RPC_ARBITRUM=https://... npx hardhat run ...`.
+    Or export it once per shell: `export USE_KEYSTORE=true`. Alternatively, pass the RPC inline for one-offs: `RPC_ARBITRUM=https://... ./node_modules/.bin/hardhat run ...`.
 
 - Config files (replace `<network>` with your target network, e.g. `arbitrum`):
     ```bash
@@ -530,7 +534,7 @@ npx hardhat run scripts/upgrade/eoaUpgrade.ts --network coti
     ```
     Build `partyBList-<network>.json` from the subgraph instead of maintaining it manually:
     ```bash
-    SOLVER_CHAINS=<network> npx ts-node scripts/upgrade/fetchSolverList.ts
+    SOLVER_CHAINS=<network> node --import tsx scripts/upgrade/fetchSolverList.ts
     ```
     Config files use network-postfixed names (e.g. `upgrade-arbitrum.json`, `partyBList-arbitrum.json`). Scripts resolve config files by trying `{name}-{network}.json` first, falling back to `{name}.json`. Env var overrides (e.g. `UPGRADE_CONFIG_FILE`) take top priority.
 
@@ -569,10 +573,10 @@ Before running the upgrade in production, test the full flow on localhost:
 3. Run verification scripts
 
 ```bash
-npx hardhat run scripts/upgrade/eoaUpgrade.ts --network docker
-npx hardhat run scripts/upgrade/verifyDiamondSelectors.ts --network docker
-npx hardhat run scripts/upgrade/verifyPeripheralWiring.ts --network docker
-npx hardhat run scripts/upgrade/testTemplateExecution.ts --network docker
+EXECUTE=true CONFIRM_CHAIN_ID=31337 ./node_modules/.bin/hardhat run scripts/upgrade/eoaUpgrade.ts --network docker
+./node_modules/.bin/hardhat run scripts/upgrade/verifyDiamondSelectors.ts --network docker
+./node_modules/.bin/hardhat run scripts/upgrade/verifyPeripheralWiring.ts --network docker
+./node_modules/.bin/hardhat run scripts/upgrade/testTemplateExecution.ts --network docker
 ```
 
 ### Fork rehearsal
@@ -581,16 +585,16 @@ Test against real on-chain state before production:
 
 ```bash
 # 1. Run upgrade on fork
-npx hardhat run scripts/upgrade/forkUpgrade.ts --network fork-arbitrum
+./node_modules/.bin/hardhat run scripts/upgrade/forkUpgrade.ts --network fork-arbitrum
 
 # 2. Verify (all auto-load from upgrade.json + output files)
-npx hardhat run scripts/upgrade/verifyDiamondSelectors.ts --network fork-arbitrum
-npx hardhat run scripts/upgrade/verifyPeripheralWiring.ts --network fork-arbitrum
-FORK=true npx hardhat run scripts/upgrade/testTemplateExecution.ts --network fork-arbitrum
+./node_modules/.bin/hardhat run scripts/upgrade/verifyDiamondSelectors.ts --network fork-arbitrum
+./node_modules/.bin/hardhat run scripts/upgrade/verifyPeripheralWiring.ts --network fork-arbitrum
+FORK=true ./node_modules/.bin/hardhat run scripts/upgrade/testTemplateExecution.ts --network fork-arbitrum
 
 # 3. Run migration
-npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network fork-arbitrum
-npx hardhat run scripts/upgrade/runMigration.ts --network fork-arbitrum
+./node_modules/.bin/hardhat run scripts/upgrade/prepareMigrationInput.ts --network fork-arbitrum
+EXECUTE=true CONFIRM_CHAIN_ID=42161 ./node_modules/.bin/hardhat run scripts/upgrade/runMigration.ts --network fork-arbitrum
 ```
 
 ### Verification scripts
@@ -618,10 +622,10 @@ npx hardhat run scripts/upgrade/runMigration.ts --network fork-arbitrum
 For EOA-owned diamonds, `eoaUpgrade.ts` runs the full upgrade in one command: deploys facets, pauses the system, applies the diamond cut, sets v0.8.5 parameters, deploys AccountLayer + InstantLayer + SymmioSymbolManager, wires integrations, and grants the migration role.
 
 ```bash
-USE_KEYSTORE=true npx hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
+USE_KEYSTORE=true EXECUTE=true CONFIRM_CHAIN_ID=42161 ./node_modules/.bin/hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
 
 # Override diamond address
-DIAMOND_ADDRESS=0x... USE_KEYSTORE=true npx hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
+DIAMOND_ADDRESS=0x... USE_KEYSTORE=true EXECUTE=true CONFIRM_CHAIN_ID=42161 ./node_modules/.bin/hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
 ```
 
 What it does (in order):
@@ -657,7 +661,7 @@ The steps below can be used individually (e.g. for Safe path, or if you need mor
 **Run before anything else** to capture the TSS public key and gateway signer from the live v0.8.4 diamond:
 
 ```bash
-USE_KEYSTORE=true DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/readMuonConfig.ts --network <network>
+USE_KEYSTORE=true DIAMOND_ADDRESS=0x... ./node_modules/.bin/hardhat run scripts/upgrade/readMuonConfig.ts --network <network>
 ```
 
 Reads `getMuonIds()` (public key, gateway, appId) and `getMuonConfig()` (validity times). The `muonAppId`, `upnlValidTime`, and `priceValidTime` persist in diamond storage across the upgrade -- they are output for reference only. The public key and gateway are what must be seeded onto the new external verifier.
@@ -687,7 +691,7 @@ If upgrading a chain that already runs v0.8.5 (or where the verifier was deploye
 Deploys all v0.8.5 libraries and facets. Supports resume -- if `deployed-facets-{network}.json` already exists, previously deployed contracts are skipped. Logs RPC connection info (chain ID, block number) before starting.
 
 ```bash
-USE_KEYSTORE=true npx hardhat run scripts/upgrade/deployFacets.ts --network arbitrum
+USE_KEYSTORE=true EXECUTE=true CONFIRM_CHAIN_ID=42161 ./node_modules/.bin/hardhat run scripts/upgrade/deployFacets.ts --network arbitrum
 ```
 
 Output: `scripts/upgrade/output/deployed-facets-arbitrum.json` (network name is appended automatically)
@@ -699,13 +703,13 @@ Output: `scripts/upgrade/output/deployed-facets-arbitrum.json` (network name is 
 Reads `deployed-facets-{network}.json`, diffs selectors against the live diamond, and executes a single `diamondCut` transaction from the connected signer (via Hardhat keystore).
 
 ```bash
-USE_KEYSTORE=true npx hardhat run scripts/upgrade/applyUpgrade.ts --network arbitrum
+USE_KEYSTORE=true ./node_modules/.bin/hardhat run scripts/upgrade/applyUpgrade.ts --network arbitrum
 
 # Override diamond address
-DIAMOND_ADDRESS=0x... USE_KEYSTORE=true npx hardhat run scripts/upgrade/applyUpgrade.ts --network arbitrum
+DIAMOND_ADDRESS=0x... USE_KEYSTORE=true ./node_modules/.bin/hardhat run scripts/upgrade/applyUpgrade.ts --network arbitrum
 
 # Custom facets file (overrides network-based resolution)
-FACETS_FILE=./path/to/deployed-facets-arbitrum.json USE_KEYSTORE=true npx hardhat run scripts/upgrade/applyUpgrade.ts --network arbitrum
+FACETS_FILE=./path/to/deployed-facets-arbitrum.json USE_KEYSTORE=true ./node_modules/.bin/hardhat run scripts/upgrade/applyUpgrade.ts --network arbitrum
 ```
 
 Output:
@@ -721,7 +725,7 @@ Generates Safe Transaction Builder JSON for the full upgrade (roles, pause, para
 **Prerequisites:** Run `deployFacets.ts`, `deployPeripherals.ts`, and `fetchSolverList.ts` first. The script auto-loads `deployed-facets-{network}.json` and `deployed-peripherals-{network}.json` from the output directory -- no manual address copy needed. If `muonPublicKeys` or `muonGatewaySigners` are configured, `muonFunctionPermissions` must also be configured so the post-diamondCut batch includes `setPublicKeyPermissions` and `setGatewaySignerPermissions`. PartyB registration reads from `config/partyBList-{network}.json`: entries are registered on core Diamond when `registerOnSymmioCore` is true (default) and on InstantLayer when `registerOnInstantLayer` is true (default). `fetchSolverList.ts` writes both flags as true for every generated chain file; `generateSafeBatch.ts` then pre-filters both lists against live on-chain registration state, so already-registered solvers are skipped and batches are safe to regenerate and re-run. Config and env vars override auto-loaded values if set.
 
 ```bash
-USE_KEYSTORE=true npx hardhat run scripts/upgrade/generateSafeBatch.ts --network arbitrum
+USE_KEYSTORE=true ./node_modules/.bin/hardhat run scripts/upgrade/generateSafeBatch.ts --network arbitrum
 ```
 
 After writing `safe-batch-{network}.json`, `generateSafeBatch.ts` immediately runs the `muon-verifier-safe-batch` check against the generated file. If configured Muon public keys or gateway signers are missing registration or permission transactions, generation exits non-zero before the artifact is handed to operators.
@@ -755,7 +759,7 @@ Output:
 Requires `timelockAddress` in `upgrade.json` (or `TIMELOCK_ADDRESS` env var).
 
 ```bash
-USE_KEYSTORE=true npx hardhat run scripts/upgrade/generateTimelockBatch.ts --network arbitrum
+USE_KEYSTORE=true ./node_modules/.bin/hardhat run scripts/upgrade/generateTimelockBatch.ts --network arbitrum
 ```
 
 Output:
@@ -770,7 +774,7 @@ Uses a deterministic salt derived from chain ID + diamond address + version stri
 Before signing any batch in the Safe UI, confirm every generated JSON matches what the current repo + config would produce. The verifier decodes each transaction and byte-compares against the expected calldata reconstructed from `upgrade-{network}.json`, `partyBList-{network}.json`, `instantLayerTemplates.json`, `deployed-facets-{network}.json`, and `deployed-peripherals-{network}.json`.
 
 ```bash
-npx hardhat run scripts/upgrade/verifyBatchCalldata.ts --network arbitrum
+./node_modules/.bin/hardhat run scripts/upgrade/verifyBatchCalldata.ts --network arbitrum
 ```
 
 What it checks, per file:
@@ -818,7 +822,7 @@ To sweep only the Muon verifier key/gateway registration and permission calls ac
 NETWORKS=arbitrum,base,bsc \
 ONLY=muon-verifier-safe-batch \
 VERIFY_ARTIFACTS=false \
-npx hardhat run scripts/upgrade/verifyBatchCalldata.ts --network default
+./node_modules/.bin/hardhat run scripts/upgrade/verifyBatchCalldata.ts --network default
 ```
 
 The script exits non-zero if any check fails and prints per-file issue lists (expected vs actual selector, `to`, or calldata) to make diagnosis straightforward.
@@ -828,13 +832,13 @@ The script exits non-zero if any check fails and prints per-file issue lists (ex
 Fetches subgraph data and builds the migration input file. In the EOA/operator path used for COTI, run this after `pauseGlobal()` so the migration and symbol inputs are based on paused state. This uses only version-agnostic on-chain calls (`getNextQuoteId`, which returns the last assigned ID), so it can still run before the diamondCut. Hardhat upgrade scripts that run the shared RPC check print the resolved `Network` and `RPC URL` before the chain/block check.
 
 ```bash
-USE_KEYSTORE=true npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network arbitrum
-USE_KEYSTORE=true npx hardhat run scripts/upgrade/validateMigrationInput.ts --network arbitrum
-USE_KEYSTORE=true npx hardhat run scripts/upgrade/validateMigrationEdgeCases.ts --network arbitrum
-USE_KEYSTORE=true npx hardhat run scripts/upgrade/fetchSymbolList.ts --network arbitrum
+USE_KEYSTORE=true ./node_modules/.bin/hardhat run scripts/upgrade/prepareMigrationInput.ts --network arbitrum
+USE_KEYSTORE=true ./node_modules/.bin/hardhat run scripts/upgrade/validateMigrationInput.ts --network arbitrum
+USE_KEYSTORE=true ./node_modules/.bin/hardhat run scripts/upgrade/validateMigrationEdgeCases.ts --network arbitrum
+USE_KEYSTORE=true ./node_modules/.bin/hardhat run scripts/upgrade/fetchSymbolList.ts --network arbitrum
 
 # Dry run: fetch and print symbols without writing the symbol input file.
-DRY_RUN=true USE_KEYSTORE=true npx hardhat run scripts/upgrade/fetchSymbolList.ts --network arbitrum
+DRY_RUN=true USE_KEYSTORE=true ./node_modules/.bin/hardhat run scripts/upgrade/fetchSymbolList.ts --network arbitrum
 ```
 
 What it does:
@@ -858,13 +862,13 @@ Two complementary scripts validate the input. Both use raw `eth_call` and work o
 **`validateMigrationInput.ts`** -- random spot-checks quotes and balances for broad coverage:
 
 ```bash
-USE_KEYSTORE=true npx hardhat run scripts/upgrade/validateMigrationInput.ts --network arbitrum
+USE_KEYSTORE=true ./node_modules/.bin/hardhat run scripts/upgrade/validateMigrationInput.ts --network arbitrum
 ```
 
 **`validateMigrationEdgeCases.ts`** -- deterministic checks for corner cases (boundary quote at `lastId`, fork drift, gap scan, partyB completeness). Especially important on fork tests:
 
 ```bash
-USE_KEYSTORE=true npx hardhat run scripts/upgrade/validateMigrationEdgeCases.ts --network arbitrum
+USE_KEYSTORE=true ./node_modules/.bin/hardhat run scripts/upgrade/validateMigrationEdgeCases.ts --network arbitrum
 ```
 
 ## Step 4: Run Migration + Symbol Updates
@@ -872,11 +876,11 @@ USE_KEYSTORE=true npx hardhat run scripts/upgrade/validateMigrationEdgeCases.ts 
 Execute migration using the validated paused-state input file. Then use the paused-state symbol input to backfill `symbolType` and whitelist that symbol type for PartyBs. The executor must have `MIGRATION_ROLE`; `runMigration.ts` checks this role for the resolved `migrationRunner` before executing. In dry-run mode, a missing role is reported as a warning and the dry run continues. `setSymbolType.ts` similarly checks `SYMBOL_MANAGER_ROLE`, and `whitelistSymbolTypes.ts` checks `PARTY_B_MANAGER_ROLE`; both include the result in their dry-run summaries. Symbol updates use the configured `migrationRunner` signer and require `SYMBOL_MANAGER_ROLE` / `PARTY_B_MANAGER_ROLE`.
 
 ```bash
-USE_KEYSTORE=true DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
-  npx hardhat run scripts/upgrade/runMigration.ts --network arbitrum
+USE_KEYSTORE=true EXECUTE=true CONFIRM_CHAIN_ID=42161 DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
+  ./node_modules/.bin/hardhat run scripts/upgrade/runMigration.ts --network arbitrum
 
-USE_KEYSTORE=true SET_SYMBOL_TYPES_GAS_LIMIT=5000000 npx hardhat run scripts/upgrade/setSymbolType.ts --network arbitrum
-USE_KEYSTORE=true WHITELIST_SIGNER_ROLE=upgradeOperator npx hardhat run scripts/upgrade/whitelistSymbolTypes.ts --network arbitrum
+USE_KEYSTORE=true EXECUTE=true CONFIRM_CHAIN_ID=42161 SET_SYMBOL_TYPES_GAS_LIMIT=5000000 ./node_modules/.bin/hardhat run scripts/upgrade/setSymbolType.ts --network arbitrum
+USE_KEYSTORE=true EXECUTE=true CONFIRM_CHAIN_ID=42161 WHITELIST_SIGNER_ROLE=upgradeOperator ./node_modules/.bin/hardhat run scripts/upgrade/whitelistSymbolTypes.ts --network arbitrum
 ```
 
 What it does:
@@ -895,10 +899,10 @@ If the script fails (RPC error, gas issue), re-run the same command. It reads `m
 
 ```bash
 USE_KEYSTORE=true DRY_RUN=true DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
-  npx hardhat run scripts/upgrade/runMigration.ts --network arbitrum
+  ./node_modules/.bin/hardhat run scripts/upgrade/runMigration.ts --network arbitrum
 
-USE_KEYSTORE=true DRY_RUN=true npx hardhat run scripts/upgrade/setSymbolType.ts --network arbitrum
-USE_KEYSTORE=true DRY_RUN=true WHITELIST_SIGNER_ROLE=upgradeOperator npx hardhat run scripts/upgrade/whitelistSymbolTypes.ts --network arbitrum
+USE_KEYSTORE=true DRY_RUN=true ./node_modules/.bin/hardhat run scripts/upgrade/setSymbolType.ts --network arbitrum
+USE_KEYSTORE=true DRY_RUN=true WHITELIST_SIGNER_ROLE=upgradeOperator ./node_modules/.bin/hardhat run scripts/upgrade/whitelistSymbolTypes.ts --network arbitrum
 ```
 
 `fetchSymbolList.ts` dry run does not write the symbol input file. `setSymbolType.ts` and `whitelistSymbolTypes.ts` dry runs do not submit transactions; both still write dry-run reports with their role preflight results.
@@ -908,27 +912,30 @@ USE_KEYSTORE=true DRY_RUN=true WHITELIST_SIGNER_ROLE=upgradeOperator npx hardhat
 After `migration-report.json` shows `"status": "success"` and symbol whitelisting is complete, unpause first with `upgradeOperator`. Cross-mode setup is optional; if used, it must happen before `MIGRATION_ROLE` is revoked.
 
 ```bash
+export EXECUTE=true
+export CONFIRM_CHAIN_ID=42161
+
 USE_KEYSTORE=true UPGRADE_SIGNER_ROLE=upgradeOperator UPGRADE_STAGES=unpause \
-  npx hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
+  ./node_modules/.bin/hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
 
 # Optional cross-mode setup.
 USE_KEYSTORE=true UPGRADE_SIGNER_ROLE=migrationRunner UPGRADE_STAGES=cross-mode \
-  npx hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
+  ./node_modules/.bin/hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
 
 USE_KEYSTORE=true UPGRADE_SIGNER_ROLE=migrationRunner UPGRADE_STAGES=cross-partyb \
-  npx hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
+  ./node_modules/.bin/hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
 
 USE_KEYSTORE=true UPGRADE_SIGNER_ROLE=upgradeOperator UPGRADE_STAGES=migration-revoke \
-  npx hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
+  ./node_modules/.bin/hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
 
 USE_KEYSTORE=true UPGRADE_SIGNER_ROLE=upgradeOperator UPGRADE_STAGES=symbol-revoke \
-  npx hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
+  ./node_modules/.bin/hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
 
 USE_KEYSTORE=true UPGRADE_SIGNER_ROLE=upgradeOperator UPGRADE_STAGES=operator-revoke \
-  npx hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
+  ./node_modules/.bin/hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
 
 USE_KEYSTORE=true UPGRADE_STAGES=operator-admin-revoke \
-  npx hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
+  ./node_modules/.bin/hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
 ```
 
 PartyB addresses are read from `postMigration.json` config (`partyBs` array), or from `POST_MIGRATION_PARTYBS` / `CROSS_PARTYBS` / `PARTYBS`.
@@ -961,35 +968,35 @@ Compares the on-chain deployed bytecode against locally compiled Hardhat artifac
 
 ```bash
 # Core facets: reads deployed-facets-{network}.json
-NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyCoreBytecode.ts
+NETWORK=<network> RPC_URL=<rpc> node --import tsx scripts/upgrade/verifyCoreBytecode.ts
 
 # Peripherals: reads deployed-peripherals-{network}.json
-NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyPeripheralBytecode.ts
+NETWORK=<network> RPC_URL=<rpc> node --import tsx scripts/upgrade/verifyPeripheralBytecode.ts
 ```
 
 Common live-network examples:
 
 ```bash
 # BSC
-NETWORK=bsc RPC_URL=https://bsc-rpc.publicnode.com npx ts-node scripts/upgrade/verifyCoreBytecode.ts
-NETWORK=bsc RPC_URL=https://bsc-rpc.publicnode.com npx ts-node scripts/upgrade/verifyPeripheralBytecode.ts
+NETWORK=bsc RPC_URL=https://bsc-rpc.publicnode.com node --import tsx scripts/upgrade/verifyCoreBytecode.ts
+NETWORK=bsc RPC_URL=https://bsc-rpc.publicnode.com node --import tsx scripts/upgrade/verifyPeripheralBytecode.ts
 
 # Arbitrum
-NETWORK=arbitrum RPC_URL=https://arb1.arbitrum.io/rpc npx ts-node scripts/upgrade/verifyCoreBytecode.ts
-NETWORK=arbitrum RPC_URL=https://arb1.arbitrum.io/rpc npx ts-node scripts/upgrade/verifyPeripheralBytecode.ts
+NETWORK=arbitrum RPC_URL=https://arb1.arbitrum.io/rpc node --import tsx scripts/upgrade/verifyCoreBytecode.ts
+NETWORK=arbitrum RPC_URL=https://arb1.arbitrum.io/rpc node --import tsx scripts/upgrade/verifyPeripheralBytecode.ts
 
 # COTI
-NETWORK=coti RPC_URL=https://mainnet.coti.io/rpc npx ts-node scripts/upgrade/verifyCoreBytecode.ts
-NETWORK=coti RPC_URL=https://mainnet.coti.io/rpc npx ts-node scripts/upgrade/verifyPeripheralBytecode.ts
+NETWORK=coti RPC_URL=https://mainnet.coti.io/rpc node --import tsx scripts/upgrade/verifyCoreBytecode.ts
+NETWORK=coti RPC_URL=https://mainnet.coti.io/rpc node --import tsx scripts/upgrade/verifyPeripheralBytecode.ts
 ```
 
-These scripts run standalone via `ts-node` (not `npx hardhat run`), so they use the `NETWORK` env var to resolve the correct output file (e.g. `NETWORK=arbitrum` -> `deployed-facets-arbitrum.json`). Both also read from `scripts/upgrade/output/`. `verifyPeripheralBytecode.ts` also picks up the `MuonSignatureVerifier` address from `upgrade-{network}.json` (`newV085Parameters.signatureVerifierAddress`). For legacy operator commands, the old `NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyPeripherals.ts` alias still delegates to `verifyPeripheralBytecode.ts`; prefer the explicit `verifyPeripheralBytecode.ts` command in new runbooks.
+These scripts run standalone through Node's checked-in `tsx` loader (not `./node_modules/.bin/hardhat run`), so they use the `NETWORK` env var to resolve the correct output file (e.g. `NETWORK=arbitrum` -> `deployed-facets-arbitrum.json`). Both also read from `scripts/upgrade/output/`. `verifyPeripheralBytecode.ts` also picks up the `MuonSignatureVerifier` address from `upgrade-{network}.json` (`newV085Parameters.signatureVerifierAddress`). For legacy operator commands, the old `NETWORK=<network> RPC_URL=<rpc> node --import tsx scripts/upgrade/verifyPeripherals.ts` alias still delegates to `verifyPeripheralBytecode.ts`; prefer the explicit `verifyPeripheralBytecode.ts` command in new runbooks.
 
 Override env vars (takes precedence over `NETWORK`-based resolution):
 
 ```bash
-FACETS_FILE=./output/deployed-facets-arbitrum.json RPC_URL=https://arb1.arbitrum.io/rpc npx ts-node scripts/upgrade/verifyCoreBytecode.ts
-PERIPHERALS_FILE=./output/deployed-peripherals-arbitrum.json RPC_URL=https://arb1.arbitrum.io/rpc npx ts-node scripts/upgrade/verifyPeripheralBytecode.ts
+FACETS_FILE=./output/deployed-facets-arbitrum.json RPC_URL=https://arb1.arbitrum.io/rpc node --import tsx scripts/upgrade/verifyCoreBytecode.ts
+PERIPHERALS_FILE=./output/deployed-peripherals-arbitrum.json RPC_URL=https://arb1.arbitrum.io/rpc node --import tsx scripts/upgrade/verifyPeripheralBytecode.ts
 ```
 
 **When to run:** after `deployFacets.ts` / `deployPeripherals.ts` and before applying the diamondCut, to confirm the standalone pre-deployed bytecodes match the local compiled source.
@@ -999,14 +1006,14 @@ PERIPHERALS_FILE=./output/deployed-peripherals-arbitrum.json RPC_URL=https://arb
 - **Library linking** -- facets that use external libraries (e.g. `LibQuoteFunding`, `LibSettlement`) have placeholder slots in compiled bytecode. The scripts extract actual library addresses from on-chain bytecode and substitute them before comparing.
 - **Immutable variables** -- contracts like `InstantLayer` and `SymmioPartyB` embed constructor-set values (EIP-712 domain, symmio address, etc.) in deployed bytecode. The scripts mask these regions using `immutableReferences` from the artifact before comparing, and report the on-chain values.
 
-**Prerequisites:** Run `npx hardhat compile` first. Artifacts must be present in `artifacts/contracts/`.
+**Prerequisites:** Run `./node_modules/.bin/hardhat compile` first. Artifacts must be present in `artifacts/contracts/`.
 
 ### Block explorer source + ABI verification
 
 After correctness verifications (bytecode + calldata), publish/verify source and ABI on the block explorer:
 
 ```bash
-USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyBlockExplorer.ts --network <network>
+USE_KEYSTORE=true ./node_modules/.bin/hardhat run scripts/upgrade/verifyBlockExplorer.ts --network <network>
 ```
 
 Publishes/verifies all libraries, core facets, AccountLayer contracts (DiamondCutFacet, Diamond, Init, libraries, facets), InstantLayer, SymmioSymbolManager, and SymmioPartyB implementation. Library dependencies and contract path disambiguation are handled automatically. Addresses are read dynamically from `scripts/upgrade/output/deployed-facets-{network}.json` and `deployed-peripherals-{network}.json` (resolved from `--network`), constructor args from `config/upgrade-{network}.json`. Resume with `SKIP=N` if a contract fails.
@@ -1019,26 +1026,26 @@ After the diamondCut + wiring batch:
 
 ```bash
 # Verify all v0.8.5 facet selectors are registered
-RPC_<NETWORK>=<rpc> npx hardhat run scripts/upgrade/verifyDiamondSelectors.ts --network <network>
+RPC_<NETWORK>=<rpc> ./node_modules/.bin/hardhat run scripts/upgrade/verifyDiamondSelectors.ts --network <network>
 
 # Verify AccountLayer + InstantLayer wiring (roles, hooks, templates)
-RPC_<NETWORK>=<rpc> npx hardhat run scripts/upgrade/verifyPeripheralWiring.ts --network <network>
+RPC_<NETWORK>=<rpc> ./node_modules/.bin/hardhat run scripts/upgrade/verifyPeripheralWiring.ts --network <network>
 ```
 
 Common live-network examples:
 
 ```bash
 # BSC
-RPC_BSC=https://bsc-rpc.publicnode.com npx hardhat run scripts/upgrade/verifyDiamondSelectors.ts --network bsc
-RPC_BSC=https://bsc-rpc.publicnode.com npx hardhat run scripts/upgrade/verifyPeripheralWiring.ts --network bsc
+RPC_BSC=https://bsc-rpc.publicnode.com ./node_modules/.bin/hardhat run scripts/upgrade/verifyDiamondSelectors.ts --network bsc
+RPC_BSC=https://bsc-rpc.publicnode.com ./node_modules/.bin/hardhat run scripts/upgrade/verifyPeripheralWiring.ts --network bsc
 
 # Arbitrum
-RPC_ARBITRUM=https://arb1.arbitrum.io/rpc npx hardhat run scripts/upgrade/verifyDiamondSelectors.ts --network arbitrum
-RPC_ARBITRUM=https://arb1.arbitrum.io/rpc npx hardhat run scripts/upgrade/verifyPeripheralWiring.ts --network arbitrum
+RPC_ARBITRUM=https://arb1.arbitrum.io/rpc ./node_modules/.bin/hardhat run scripts/upgrade/verifyDiamondSelectors.ts --network arbitrum
+RPC_ARBITRUM=https://arb1.arbitrum.io/rpc ./node_modules/.bin/hardhat run scripts/upgrade/verifyPeripheralWiring.ts --network arbitrum
 
 # COTI
-RPC_COTI=https://mainnet.coti.io/rpc npx hardhat run scripts/upgrade/verifyDiamondSelectors.ts --network coti
-RPC_COTI=https://mainnet.coti.io/rpc npx hardhat run scripts/upgrade/verifyPeripheralWiring.ts --network coti
+RPC_COTI=https://mainnet.coti.io/rpc ./node_modules/.bin/hardhat run scripts/upgrade/verifyDiamondSelectors.ts --network coti
+RPC_COTI=https://mainnet.coti.io/rpc ./node_modules/.bin/hardhat run scripts/upgrade/verifyPeripheralWiring.ts --network coti
 ```
 
 Also review `upgrade-details.json` for the full selector diff (added, replaced, removed).
@@ -1100,12 +1107,12 @@ Note: `protocolAdmin` here is the admin for the **newly deployed** MuonSignature
 
 ### Migration config (`migrate-{network}.json`)
 
-| Field                | Type    | What to put here                                         |
-| -------------------- | ------- | -------------------------------------------------------- |
-| `migrationInputFile` | string  | Path to `migration-input.json` (output of previous step) |
-| `chunkSize`          | number  | Quotes per `migrateQuotes` transaction (default 50)      |
-| `dryRun`             | boolean | `true` to simulate without sending transactions          |
-| `fork`               | boolean | `true` if running on a fork network                      |
+| Field                | Type    | What to put here                                                                       |
+| -------------------- | ------- | -------------------------------------------------------------------------------------- |
+| `migrationInputFile` | string  | Path to `migration-input.json` (output of previous step)                               |
+| `chunkSize`          | number  | Quotes per `migrateQuotes` transaction (default 50)                                    |
+| `dryRun`             | boolean | Legacy plan hint. Only `EXECUTE=true` plus `CONFIRM_CHAIN_ID` authorizes transactions. |
+| `fork`               | boolean | `true` if running on a fork network                                                    |
 
 ### Post-migration config (`postMigration-{network}.json`)
 
@@ -1117,10 +1124,12 @@ Note: `protocolAdmin` here is the admin for the **newly deployed** MuonSignature
 
 | Env var                                                                            | Overrides                                                                                                                                                                                                                                                             |
 | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `USE_KEYSTORE`                                                                     | Set to `true` to use Hardhat keystore keys and RPC overrides (required for all `npx hardhat run` commands on live networks)                                                                                                                                           |
+| `USE_KEYSTORE`                                                                     | Set to `true` to use Hardhat keystore keys and RPC overrides (required for all `./node_modules/.bin/hardhat run` commands on live networks)                                                                                                                           |
 | `RPC_<NETWORK>`                                                                    | One-off or keystore-backed RPC override for Hardhat scripts (for example `RPC_BASE`, `RPC_BSC`, `RPC_ARBITRUM`, `RPC_COTI`)                                                                                                                                           |
-| `RPC_URL`                                                                          | RPC endpoint for standalone `ts-node` verification scripts (`verifyCoreBytecode.ts`, `verifyPeripheralBytecode.ts`)                                                                                                                                                   |
-| `DRY_RUN`                                                                          | Preview supported migration/symbol scripts without writing or submitting where applicable (`runMigration.ts`, `fetchSymbolList.ts`, `setSymbolType.ts`, `whitelistSymbolTypes.ts`)                                                                                    |
+| `RPC_URL`                                                                          | RPC endpoint for standalone `node --import tsx` verification scripts (`verifyCoreBytecode.ts`, `verifyPeripheralBytecode.ts`)                                                                                                                                         |
+| `EXECUTE`                                                                          | Must be exactly `true` to authorize mutation scripts. Omitted/false is plan-only.                                                                                                                                                                                     |
+| `CONFIRM_CHAIN_ID`                                                                 | Must exactly match the connected `eth_chainId` whenever `EXECUTE=true`.                                                                                                                                                                                               |
+| `DRY_RUN`                                                                          | Legacy explicit plan flag. `DRY_RUN=false` never authorizes execution.                                                                                                                                                                                                |
 | `SKIP_MIGRATION_ROLE_CHECK`                                                        | Skip the resolved signer `MIGRATION_ROLE` preflight in `runMigration.ts`                                                                                                                                                                                              |
 | `SKIP_SYMBOL_MANAGER_ROLE_CHECK`                                                   | Skip the `SYMBOL_MANAGER_ROLE` preflight in `setSymbolType.ts`                                                                                                                                                                                                        |
 | `SKIP_PARTY_B_MANAGER_ROLE_CHECK`                                                  | Skip the `PARTY_B_MANAGER_ROLE` preflight in `whitelistSymbolTypes.ts`                                                                                                                                                                                                |
@@ -1133,7 +1142,7 @@ Note: `protocolAdmin` here is the admin for the **newly deployed** MuonSignature
 | `FACETS_FILE`                                                                      | Path to `deployed-facets-{network}.json` (overrides network-based resolution)                                                                                                                                                                                         |
 | `PERIPHERALS_FILE`                                                                 | Path to `deployed-peripherals-{network}.json` (overrides network-based resolution)                                                                                                                                                                                    |
 | `SYMBOL_MANAGER_ADDRESS`                                                           | Override SymmioSymbolManager address for Safe batch wiring                                                                                                                                                                                                            |
-| `NETWORK`                                                                          | Network name for `ts-node` scripts (e.g. `arbitrum`) -- resolves output file names. Not needed for `npx hardhat run` scripts (uses `--network` flag automatically)                                                                                                    |
+| `NETWORK`                                                                          | Network name for standalone `node --import tsx` scripts (e.g. `arbitrum`) -- resolves output file names. Not needed for `./node_modules/.bin/hardhat run` scripts (uses `--network` automatically)                                                                    |
 | `UPGRADE_CONFIG_FILE`                                                              | Config file path (default: `scripts/upgrade/config/upgrade-{network}.json`, falls back to `upgrade.json`)                                                                                                                                                             |
 | `SUBGRAPH_ENDPOINTS`                                                               | Comma-separated ordered fallback list of subgraph endpoints. Each retry cycle tries all endpoints before sleeping.                                                                                                                                                    |
 | `SUBGRAPH_PAGE_SIZE`                                                               | Page size for subgraph pagination in migration/symbol fetchers. Use a smaller value if the endpoint returns 504.                                                                                                                                                      |
@@ -1198,14 +1207,17 @@ Existing v0.8.4 parameters (cooldowns, limits, fee shares, etc.) are preserved i
 To update `liquidationInsuranceVault` / `maxLiquidationProfitPerPosition` on a diamond that is already upgraded, use the standalone one-off script. It reads the same `upgrade-{network}.json` target values, writes a calldata report and Safe batch by default, and for multisig chains it also prepares a Safe Transaction Service proposal when `safeAddress` is configured. Direct on-chain broadcast only happens when `EXECUTE=true` is set:
 
 ```bash
-npx hardhat run scripts/upgrade/updateLiquidationInsuranceVaultParams.ts --network <network>
+./node_modules/.bin/hardhat run scripts/upgrade/updateLiquidationInsuranceVaultParams.ts --network <network>
 
-EXECUTE=true USE_KEYSTORE=true npx hardhat run scripts/upgrade/updateLiquidationInsuranceVaultParams.ts --network <network>
+EXECUTE=true CONFIRM_CHAIN_ID=<chainId> USE_KEYSTORE=true \
+  ./node_modules/.bin/hardhat run scripts/upgrade/updateLiquidationInsuranceVaultParams.ts --network <network>
 
-SUBMIT_SAFE_PROPOSAL=1 USE_KEYSTORE=true npx hardhat run scripts/upgrade/updateLiquidationInsuranceVaultParams.ts --network <network>
+SUBMIT_SAFE_PROPOSAL=true CONFIRM_CHAIN_ID=<chainId> CONFIRM_SAFE_ADDRESS=0x... USE_KEYSTORE=true \
+  ./node_modules/.bin/hardhat run scripts/upgrade/updateLiquidationInsuranceVaultParams.ts --network <network>
 
-SUBMIT_SAFE_PROPOSAL=1 SAFE_SENDER_ADDRESS=0x... SAFE_PROPOSER_WALLET=ledger \
-  npx hardhat run scripts/upgrade/updateLiquidationInsuranceVaultParams.ts --network <network>
+SUBMIT_SAFE_PROPOSAL=true CONFIRM_CHAIN_ID=<chainId> CONFIRM_SAFE_ADDRESS=0x... \
+  SAFE_SENDER_ADDRESS=0x... SAFE_PROPOSER_WALLET=ledger \
+  ./node_modules/.bin/hardhat run scripts/upgrade/updateLiquidationInsuranceVaultParams.ts --network <network>
 ```
 
 ## Troubleshooting

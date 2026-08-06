@@ -5,8 +5,8 @@
  * subgraph endpoint. Narrow the run with SOLVER_CHAINS, CHAIN, or NETWORK.
  *
  * Run:
- *   npx ts-node scripts/upgrade/fetchSolverList.ts
- *   SOLVER_CHAINS=base,bsc npx ts-node scripts/upgrade/fetchSolverList.ts
+ *   node --import tsx scripts/upgrade/fetchSolverList.ts
+ *   SOLVER_CHAINS=base,bsc node --import tsx scripts/upgrade/fetchSolverList.ts
  *
  * Output:
  *   scripts/upgrade/output/solver-list-<chain>.json

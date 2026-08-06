@@ -38,7 +38,9 @@ export function saveDeploymentState<T extends object>(filePath: string, state: T
 	const dir = path.dirname(filePath)
 	if (dir && dir !== "." && !fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
 	const nextState = metadata ? ({ ...state, metadata: normalizeDeploymentStateMetadata(metadata) } as T) : state
-	fs.writeFileSync(filePath, JSON.stringify(nextState, null, 2))
+	const temporaryPath = `${filePath}.${process.pid}.tmp`
+	fs.writeFileSync(temporaryPath, JSON.stringify(nextState, null, 2))
+	fs.renameSync(temporaryPath, filePath)
 }
 
 export function validateDeploymentStateMetadata(filePath: string, state: Record<string, any>, expected?: DeploymentStateMetadata): void {

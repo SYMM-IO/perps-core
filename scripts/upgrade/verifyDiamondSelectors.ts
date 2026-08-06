@@ -11,7 +11,7 @@
  * upgrade flow.
  *
  * Canonical command:
- *   npx hardhat run scripts/upgrade/verifyDiamondSelectors.ts --network <network>
+ *   ./node_modules/.bin/hardhat run scripts/upgrade/verifyDiamondSelectors.ts --network <network>
  *
  * Env overrides:
  *   DIAMOND_ADDRESS   -- override config diamondAddress

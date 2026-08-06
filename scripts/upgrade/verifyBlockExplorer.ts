@@ -14,19 +14,20 @@
  * from on-chain bytecode (same technique as verifyCoreBytecode.ts).
  *
  * Uses the programmatic verifyContract() API from @nomicfoundation/hardhat-verify
- * (equivalent in purpose to running `npx hardhat verify` for every contract).
+ * (equivalent in purpose to running `./node_modules/.bin/hardhat verify` for every contract).
  * Requires the postinstall patch (scripts/patch-hardhat-verify.js) to fix the
  * HHE100 Map key lookup bug in Hardhat 3's getCompilerInput().
  *
  * Usage:
- *   npx hardhat run scripts/upgrade/verifyBlockExplorer.ts --network <network>
- *   SKIP=5 npx hardhat run scripts/upgrade/verifyBlockExplorer.ts --network <network>
+ *   ./node_modules/.bin/hardhat run scripts/upgrade/verifyBlockExplorer.ts --network <network>
+ *   SKIP=5 ./node_modules/.bin/hardhat run scripts/upgrade/verifyBlockExplorer.ts --network <network>
  */
 import { verifyContract } from "@nomicfoundation/hardhat-verify/verify"
 import fs from "fs"
 import path from "path"
 
 // Import to initialize the hardhat connection (needed for auto-detect)
+import { verificationProviderForChain } from "../../tasks/deploy/explorer.js"
 import connection, { ethers, hre } from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
 import { resolveConfigFile } from "./utils/sharedConfig.js"
@@ -403,7 +404,7 @@ const RETRY_DELAY_MS = 8000
 
 const VERIFICATION_PROVIDERS = new Set<VerificationProviderName>(["etherscan", "blockscout", "sourcify"])
 
-function resolveVerificationProvider(networkName: string): VerificationProviderName | undefined {
+function resolveVerificationProvider(chainId: number): VerificationProviderName {
 	const explicitProvider = process.env.VERIFY_PROVIDER ?? process.env.VERIFICATION_PROVIDER
 	if (explicitProvider) {
 		if (!VERIFICATION_PROVIDERS.has(explicitProvider as VerificationProviderName)) {
@@ -412,8 +413,7 @@ function resolveVerificationProvider(networkName: string): VerificationProviderN
 		return explicitProvider as VerificationProviderName
 	}
 
-	if (networkName === "coti") return "blockscout"
-	return undefined
+	return verificationProviderForChain(chainId)
 }
 
 async function runVerify(c: ContractToVerify, provider?: VerificationProviderName): Promise<"verified" | "already" | "failed"> {
@@ -429,7 +429,6 @@ async function runVerify(c: ContractToVerify, provider?: VerificationProviderNam
 					provider,
 				},
 				hre as any,
-				() => {}, // suppress internal console.log
 			)
 			return "verified"
 		} catch (err: any) {
@@ -461,8 +460,9 @@ async function main() {
 
 	const networkName = connection.networkName
 	if (!networkName) throw new Error("Could not determine network name. Make sure to pass --network <name>.")
-	const verificationProvider = resolveVerificationProvider(networkName)
-	if (verificationProvider) log.info(`Verification provider: ${verificationProvider}`)
+	const chainId = Number((await ethers.provider.getNetwork()).chainId)
+	const verificationProvider = resolveVerificationProvider(chainId)
+	log.info(`Verification provider: ${verificationProvider} (chainId ${chainId})`)
 	CONFIG_FILE = resolveConfigFile("upgrade", networkName, process.env.UPGRADE_CONFIG_FILE)
 
 	const FACETS_FILE = path.join(OUTPUT_DIR, `deployed-facets-${networkName}.json`)
@@ -502,7 +502,10 @@ async function main() {
 		peripheralsData = loadJSON<DeployedPeripherals>(PERIPHERALS_FILE)
 		log.ok(`Loaded peripherals from ${PERIPHERALS_FILE}`)
 	} else {
-		log.warn(`${PERIPHERALS_FILE} not found — skipping peripheral verification`)
+		if (process.env.ALLOW_CORE_ONLY_VERIFY !== "true") {
+			throw new Error(`${PERIPHERALS_FILE} not found. Set ALLOW_CORE_ONLY_VERIFY=true only for an intentional core-only deployment.`)
+		}
+		log.warn(`${PERIPHERALS_FILE} not found — ALLOW_CORE_ONLY_VERIFY=true, so only core contracts will be verified`)
 	}
 
 	// Load config
@@ -516,9 +519,15 @@ async function main() {
 	// Build contract list
 	let contracts = buildContractList(facetsData, libraries, peripheralsData, config)
 	log.info(`Total contracts to verify: ${contracts.length}`)
+	if (contracts.length === 0) throw new Error("Deployment manifests produced an empty block-explorer verification set")
 
 	// Skip support
-	const skip = parseInt(process.env.SKIP ?? "0", 10)
+	const skipRaw = process.env.SKIP ?? "0"
+	if (!/^\d+$/.test(skipRaw)) throw new Error(`SKIP must be a non-negative integer, received ${skipRaw}`)
+	const skip = Number(skipRaw)
+	if (!Number.isSafeInteger(skip) || skip >= contracts.length) {
+		if (skip !== 0) throw new Error(`SKIP=${skip} is outside the verification set of ${contracts.length} contract(s)`)
+	}
 	if (skip > 0) {
 		log.info(`Skipping first ${skip} contracts`)
 		contracts = contracts.slice(skip)
@@ -529,6 +538,7 @@ async function main() {
 	let verified = 0
 	let alreadyVerified = 0
 	let failed = 0
+	let firstFailedIndex: number | undefined
 
 	for (let i = 0; i < contracts.length; i++) {
 		const c = contracts[i]
@@ -549,6 +559,7 @@ async function main() {
 				break
 			case "failed":
 				failed++
+				if (firstFailedIndex === undefined) firstFailedIndex = i
 				break
 		}
 	}
@@ -563,7 +574,10 @@ async function main() {
 
 	if (failed > 0) {
 		log.failure("Verification completed with failures", `${failed} contract(s) failed`)
-		log.info(`To resume: SKIP=${skip + verified + alreadyVerified} npx hardhat run scripts/upgrade/verifyBlockExplorer.ts --network <network>`)
+		log.info(
+			`To retry safely from the first failure: SKIP=${skip + firstFailedIndex!} ./node_modules/.bin/hardhat run scripts/upgrade/verifyBlockExplorer.ts --network <network>`,
+		)
+		throw new Error(`Block-explorer verification failed for ${failed} contract(s)`)
 	} else {
 		log.success("All contracts verified", entries)
 	}

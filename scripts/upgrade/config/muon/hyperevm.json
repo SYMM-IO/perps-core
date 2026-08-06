@@ -6,7 +6,7 @@
 	"grantMuonSetterRole": true,
 	"safeProposal": {
 		"enabled": true,
-		"submit": true,
+		"submit": false,
 		"safeNonce": null
 	}
 }

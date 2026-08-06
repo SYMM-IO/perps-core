@@ -5,7 +5,7 @@
 	"muonPriceValidTime": 60,
 	"safeProposal": {
 		"enabled": true,
-		"submit": true,
+		"submit": false,
 		"senderAddress": "0x8A82bCDB72FFA4181a81C13d434AaCB59E7f327F"
 	}
 }

@@ -20,7 +20,7 @@ import { baseNetworkName, loadUpgradeConfigShared } from "./utils/sharedConfig.j
  * Can run before or after the diamondCut.
  *
  * Usage:
- *   npx hardhat run scripts/upgrade/validateMigrationEdgeCases.ts --network <network>
+ *   ./node_modules/.bin/hardhat run scripts/upgrade/validateMigrationEdgeCases.ts --network <network>
  *
  * Env overrides:
  *   DIAMOND_ADDRESS, MIGRATION_INPUT_FILE, GAP_SCAN_RANGE (default: 50)

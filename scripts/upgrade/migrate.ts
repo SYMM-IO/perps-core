@@ -1,5 +1,6 @@
 import { ethers as eth } from "ethers"
 import * as fs from "fs"
+import path from "node:path"
 
 import { MigrationFacet } from "../../src/types/index.js"
 import { migrationTxOverrides } from "./utils/txOverrides.js"
@@ -18,6 +19,7 @@ const DEFAULT_CONFIG: Required<MigrationConfig> = {
 	retryBackoffMultiplier: 2,
 	confirmations: 1,
 	progressFile: null,
+	progressContext: null,
 	skipPreCheck: false,
 	dryRun: false,
 }
@@ -39,6 +41,8 @@ export interface MigrationConfig {
 	confirmations?: number
 	/** File path for saving progress (enables resume) */
 	progressFile?: string | null
+	/** Chain and diamond identity used to bind persisted resume progress */
+	progressContext?: MigrationProgressContext | null
 	/** Skip pre-flight on-chain checks for already-migrated items (faster, may send no-op transactions) */
 	skipPreCheck?: boolean
 	/** Dry run mode - log operations without executing */
@@ -57,7 +61,40 @@ export interface MigrationInput {
 	partyBTasks: PartyBMigrationTask[]
 }
 
+export interface MigrationProgressContext {
+	chainId: bigint | number | string
+	diamondAddress: string
+	networkName: string
+	forkMode: boolean
+	executionDomain: string
+	migrationImplementation: string
+	migrationCodeHash: string
+}
+
+export interface MigrationProgressIdentity {
+	chainId: string
+	diamondAddress: string
+	networkName: string
+	forkMode: boolean
+	executionDomain: string
+	migrationImplementation: string
+	migrationCodeHash: string
+	migrationInputHash: string
+	chunkSize: number
+	skipPreCheck: boolean
+	partyBTasksHash: string
+}
+
+export interface ActivePartyBTaskIdentity {
+	index: number
+	partyB: string
+	taskHash: string
+}
+
 export interface MigrationProgress {
+	schemaVersion: 1
+	/** Null only for in-memory runs where progress persistence is disabled. */
+	identity: MigrationProgressIdentity | null
 	startedAt: string
 	phase: "quotes" | "balances" | "complete"
 	quotesProcessed: number
@@ -66,6 +103,7 @@ export interface MigrationProgress {
 	lastProcessedQuoteChunk: number
 	lastProcessedPartyB: number
 	lastProcessedPartyAChunk: number
+	activePartyBTask: ActivePartyBTaskIdentity | null
 }
 
 export interface OperationResult {
@@ -128,14 +166,27 @@ export async function migrate(
 	config: MigrationConfig = {},
 ): Promise<MigrationReport> {
 	const cfg = { ...DEFAULT_CONFIG, ...config }
+	if (!Number.isSafeInteger(cfg.chunkSize) || cfg.chunkSize <= 0) {
+		throw new Error(`Invalid migration chunkSize: ${cfg.chunkSize}`)
+	}
+	const progressFile = normalizeProgressFile(cfg.progressFile)
+	if (progressFile && !cfg.progressContext) {
+		throw new Error("Connected chain, diamond, execution-domain, and MigrationFacet identities are required when progressFile is enabled")
+	}
+	if (progressFile && cfg.dryRun) {
+		throw new Error("Persisted migration progress is not allowed in dry-run mode")
+	}
+	if (progressFile && (!Number.isSafeInteger(cfg.confirmations) || cfg.confirmations < 1)) {
+		throw new Error("Persisted migration progress requires at least one transaction confirmation")
+	}
+	const expectedProgressIdentity = progressFile ? buildMigrationProgressIdentity(input, cfg.chunkSize, cfg.skipPreCheck, cfg.progressContext!) : null
 	const startTime = Date.now()
 	const startedAt = new Date().toISOString()
 
 	const operations: OperationResult[] = []
-	let partyAsTotal = 0
 
 	// Load progress if resuming
-	let progress = loadProgress(cfg.progressFile)
+	let progress = loadProgress(progressFile, expectedProgressIdentity, input)
 	let quotesMigrated = progress?.quotesProcessed ?? 0
 	let partyBsMigrated = progress?.partyBsProcessed ?? 0
 	let partyAsMigrated = progress?.partyAsProcessed ?? 0
@@ -143,6 +194,8 @@ export async function migrate(
 	const isResuming = !!progress
 	if (!progress) {
 		progress = {
+			schemaVersion: 1,
+			identity: expectedProgressIdentity,
 			startedAt,
 			phase: "quotes",
 			quotesProcessed: 0,
@@ -151,10 +204,31 @@ export async function migrate(
 			lastProcessedQuoteChunk: -1,
 			lastProcessedPartyB: -1,
 			lastProcessedPartyAChunk: -1,
+			activePartyBTask: null,
 		}
 	}
+	const persistProgress = (): void => saveProgress(progressFile, progress, expectedProgressIdentity, input)
+	if (isResuming && !cfg.skipPreCheck) {
+		// Pre-check mode is intentionally item-based, not cursor-based. Rewind the
+		// local cursor so every quote and PartyB pair is revalidated on-chain; this
+		// also recovers safely if a reorg or restored snapshot removed prior txs.
+		progress.phase = "quotes"
+		progress.quotesProcessed = 0
+		progress.partyBsProcessed = 0
+		progress.partyAsProcessed = 0
+		progress.lastProcessedQuoteChunk = -1
+		progress.lastProcessedPartyB = -1
+		progress.lastProcessedPartyAChunk = -1
+		progress.activePartyBTask = null
+		quotesMigrated = 0
+		partyBsMigrated = 0
+		partyAsMigrated = 0
+		persistProgress()
+	} else if (!isResuming) {
+		persistProgress()
+	}
 
-	const totalPartyAs = input.partyBTasks.reduce((sum, t) => sum + t.partyAs.length, 0)
+	const totalPartyAs = input.partyBTasks.reduce((sum, task) => sum + deduplicateAddresses(task.partyAs).length, 0)
 	const totalQuoteChunks = Math.ceil(input.quoteIds.length / cfg.chunkSize)
 
 	logHeader("SYMMIO V0.8.5 Migration")
@@ -244,14 +318,14 @@ export async function migrate(
 						quotesMigrated += chunk.length
 						progress.quotesProcessed += chunk.length
 						progress.lastProcessedQuoteChunk = i
-						saveProgress(cfg.progressFile, progress)
+						persistProgress()
 					} else {
 						throw new Error(`Migration failed at ${operation}: ${result.error}`)
 					}
 				}
 
 				progress.phase = "balances"
-				saveProgress(cfg.progressFile, progress)
+				persistProgress()
 			}
 
 			// =====================================================================
@@ -266,9 +340,10 @@ export async function migrate(
 				const task = input.partyBTasks[i]
 				const partyB = task.partyB
 				const partyAs = deduplicateAddresses(task.partyAs)
+				progress.activePartyBTask = buildActivePartyBTaskIdentity(task, i)
+				persistProgress()
 
 				log("info", `\nProcessing PartyB ${i + 1}/${input.partyBTasks.length}: ${formatAddress(partyB)}`)
-				partyAsTotal += partyAs.length
 
 				let partyAsToMigrate = partyAs
 				if (!cfg.skipPreCheck) {
@@ -285,7 +360,8 @@ export async function migrate(
 						progress.partyBsProcessed = partyBsMigrated
 						progress.lastProcessedPartyB = i
 						progress.lastProcessedPartyAChunk = -1
-						saveProgress(cfg.progressFile, progress)
+						progress.activePartyBTask = null
+						persistProgress()
 						continue
 					}
 					partyAsToMigrate = pending
@@ -325,7 +401,7 @@ export async function migrate(
 						partyAsMigrated += partyAChunk.length
 						progress.partyAsProcessed = partyAsMigrated
 						progress.lastProcessedPartyAChunk = j
-						saveProgress(cfg.progressFile, progress)
+						persistProgress()
 					} else {
 						throw new Error(`Migration failed at ${operation}: ${result.error}`)
 					}
@@ -335,11 +411,13 @@ export async function migrate(
 				progress.partyBsProcessed = partyBsMigrated
 				progress.lastProcessedPartyB = i
 				progress.lastProcessedPartyAChunk = -1
-				saveProgress(cfg.progressFile, progress)
+				progress.activePartyBTask = null
+				persistProgress()
 			}
 
 			progress.phase = "complete"
-			saveProgress(cfg.progressFile, progress)
+			progress.activePartyBTask = null
+			persistProgress()
 		}
 	} catch (error) {
 		migrationError = error instanceof Error ? error : new Error(String(error))
@@ -362,7 +440,7 @@ export async function migrate(
 		quotesMigrated,
 		partyBsTotal: input.partyBTasks.length,
 		partyBsMigrated,
-		partyAsTotal,
+		partyAsTotal: totalPartyAs,
 		partyAsMigrated,
 		operations,
 		status,
@@ -375,8 +453,8 @@ export async function migrate(
 	}
 
 	// Clean up progress file on success
-	if (cfg.progressFile) {
-		deleteProgress(cfg.progressFile)
+	if (progressFile) {
+		deleteProgress(progressFile)
 	}
 
 	return report
@@ -470,38 +548,381 @@ async function executeOperation(
 // Progress Management
 // =============================================================================
 
-function loadProgress(filePath: string | null | undefined): MigrationProgress | null {
-	if (!filePath) return null
-
-	try {
-		if (fs.existsSync(filePath)) {
-			const data = fs.readFileSync(filePath, "utf-8")
-			return JSON.parse(data) as MigrationProgress
-		}
-	} catch (error) {
-		log("warn", `Could not load progress file: ${formatError(error)}`)
-	}
-
-	return null
+type CanonicalPartyBTask = {
+	partyB: string
+	partyAs: string[]
 }
 
-function saveProgress(filePath: string | null | undefined, progress: MigrationProgress): void {
-	if (!filePath) return
+function normalizeProgressFile(filePath: string | null | undefined): string | null {
+	if (filePath === null || filePath === undefined) return null
+	if (typeof filePath !== "string" || filePath.trim().length === 0) {
+		throw new Error("progressFile must be a non-empty path when progress persistence is enabled")
+	}
+	return filePath
+}
 
+function canonicalHash(value: unknown): string {
+	return eth.keccak256(eth.toUtf8Bytes(JSON.stringify(value)))
+}
+
+function canonicalPartyBTask(task: PartyBMigrationTask): CanonicalPartyBTask {
+	return {
+		partyB: eth.getAddress(task.partyB).toLowerCase(),
+		partyAs: deduplicateAddresses(task.partyAs).map(partyA => eth.getAddress(partyA).toLowerCase()),
+	}
+}
+
+function buildActivePartyBTaskIdentity(task: PartyBMigrationTask, index: number): ActivePartyBTaskIdentity {
+	const canonicalTask = canonicalPartyBTask(task)
+	return {
+		index,
+		partyB: eth.getAddress(task.partyB),
+		taskHash: canonicalHash({ index, ...canonicalTask }),
+	}
+}
+
+export function buildMigrationProgressIdentity(
+	input: MigrationInput,
+	chunkSize: number,
+	skipPreCheck: boolean,
+	context: MigrationProgressContext,
+): MigrationProgressIdentity {
+	if (context.forkMode && skipPreCheck) {
+		throw new Error("Persisted fork migration requires skipPreCheck=false so every resumed item is revalidated after snapshot rollbacks")
+	}
+	if (!Number.isSafeInteger(chunkSize) || chunkSize <= 0) {
+		throw new Error(`Invalid migration chunkSize: ${chunkSize}`)
+	}
+	if (typeof context.chainId === "number" && !Number.isSafeInteger(context.chainId)) {
+		throw new Error(`Invalid migration progress chainId: ${String(context.chainId)}`)
+	}
+	let chainId: bigint
 	try {
-		fs.writeFileSync(filePath, JSON.stringify(progress, null, 2))
+		chainId = BigInt(context.chainId)
+	} catch {
+		throw new Error(`Invalid migration progress chainId: ${String(context.chainId)}`)
+	}
+	if (chainId <= 0n) {
+		throw new Error(`Invalid migration progress chainId: ${chainId.toString()}`)
+	}
+
+	const diamondAddress = eth.getAddress(context.diamondAddress)
+	if (diamondAddress === eth.ZeroAddress) {
+		throw new Error("Invalid migration progress diamondAddress: zero address")
+	}
+	if (typeof context.networkName !== "string" || context.networkName.trim().length === 0) {
+		throw new Error("Invalid migration progress networkName: expected a non-empty string")
+	}
+	if (typeof context.forkMode !== "boolean") {
+		throw new Error("Invalid migration progress forkMode: expected a boolean")
+	}
+	if (typeof context.executionDomain !== "string" || context.executionDomain.trim().length === 0) {
+		throw new Error("Invalid migration progress executionDomain: expected a non-empty string")
+	}
+	const migrationImplementation = eth.getAddress(context.migrationImplementation)
+	if (migrationImplementation === eth.ZeroAddress) {
+		throw new Error("Invalid migration progress migrationImplementation: zero address")
+	}
+	if (!eth.isHexString(context.migrationCodeHash, 32)) {
+		throw new Error("Invalid migration progress migrationCodeHash: expected a bytes32 hash")
+	}
+
+	const canonicalTasks = input.partyBTasks.map(canonicalPartyBTask)
+	const partyBTaskIdentities = canonicalTasks.map((task, index) => canonicalHash({ index, ...task }))
+	const canonicalInput = {
+		quoteIds: input.quoteIds.map(quoteId => BigInt(quoteId).toString()),
+		partyBTasks: canonicalTasks,
+	}
+
+	return {
+		chainId: chainId.toString(),
+		diamondAddress,
+		networkName: context.networkName.trim().toLowerCase(),
+		forkMode: context.forkMode,
+		executionDomain: context.executionDomain.trim(),
+		migrationImplementation,
+		migrationCodeHash: context.migrationCodeHash.toLowerCase(),
+		migrationInputHash: canonicalHash(canonicalInput),
+		chunkSize,
+		skipPreCheck,
+		partyBTasksHash: canonicalHash(partyBTaskIdentities),
+	}
+}
+
+function progressError(filePath: string, message: string): Error {
+	return new Error(`Migration progress file ${filePath} is invalid: ${message}. Refusing to resume; remove the stale file to restart.`)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return value !== null && typeof value === "object" && !Array.isArray(value)
+}
+
+function hasErrorCode(error: unknown, code: string): boolean {
+	return isRecord(error) && error.code === code
+}
+
+function requireInteger(value: unknown, field: string, filePath: string, minimum: number): number {
+	if (typeof value !== "number" || !Number.isSafeInteger(value) || value < minimum) {
+		throw progressError(filePath, `${field} must be a safe integer >= ${minimum}`)
+	}
+	return value
+}
+
+function requireHash(value: unknown, field: string, filePath: string): string {
+	if (typeof value !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(value)) {
+		throw progressError(filePath, `${field} must be a bytes32 hash`)
+	}
+	return value
+}
+
+function requireBoolean(value: unknown, field: string, filePath: string): boolean {
+	if (typeof value !== "boolean") throw progressError(filePath, `${field} must be a boolean`)
+	return value
+}
+
+function validateProgress(value: unknown, filePath: string, expectedIdentity: MigrationProgressIdentity, input: MigrationInput): MigrationProgress {
+	if (!isRecord(value)) throw progressError(filePath, "root value must be a JSON object")
+	if (value.schemaVersion !== 1) {
+		throw progressError(filePath, `unsupported or missing schemaVersion ${String(value.schemaVersion)}`)
+	}
+	if (!isRecord(value.identity)) throw progressError(filePath, "identity must be a JSON object")
+
+	const identity: MigrationProgressIdentity = {
+		chainId: typeof value.identity.chainId === "string" ? value.identity.chainId : "",
+		diamondAddress: typeof value.identity.diamondAddress === "string" ? value.identity.diamondAddress : "",
+		networkName: typeof value.identity.networkName === "string" ? value.identity.networkName : "",
+		forkMode: requireBoolean(value.identity.forkMode, "identity.forkMode", filePath),
+		executionDomain: typeof value.identity.executionDomain === "string" ? value.identity.executionDomain : "",
+		migrationImplementation: typeof value.identity.migrationImplementation === "string" ? value.identity.migrationImplementation : "",
+		migrationCodeHash: requireHash(value.identity.migrationCodeHash, "identity.migrationCodeHash", filePath),
+		migrationInputHash: requireHash(value.identity.migrationInputHash, "identity.migrationInputHash", filePath),
+		chunkSize: requireInteger(value.identity.chunkSize, "identity.chunkSize", filePath, 1),
+		skipPreCheck: requireBoolean(value.identity.skipPreCheck, "identity.skipPreCheck", filePath),
+		partyBTasksHash: requireHash(value.identity.partyBTasksHash, "identity.partyBTasksHash", filePath),
+	}
+
+	for (const field of [
+		"chainId",
+		"diamondAddress",
+		"networkName",
+		"forkMode",
+		"executionDomain",
+		"migrationImplementation",
+		"migrationCodeHash",
+		"chunkSize",
+		"skipPreCheck",
+		"partyBTasksHash",
+		"migrationInputHash",
+	] as const) {
+		if (identity[field] !== expectedIdentity[field]) {
+			throw progressError(filePath, `identity.${field} mismatch (saved=${String(identity[field])}, expected=${String(expectedIdentity[field])})`)
+		}
+	}
+
+	if (typeof value.startedAt !== "string" || value.startedAt.length === 0 || Number.isNaN(Date.parse(value.startedAt))) {
+		throw progressError(filePath, "startedAt must be a valid timestamp")
+	}
+	if (value.phase !== "quotes" && value.phase !== "balances" && value.phase !== "complete") {
+		throw progressError(filePath, `invalid phase ${String(value.phase)}`)
+	}
+
+	const progress: MigrationProgress = {
+		schemaVersion: 1,
+		identity,
+		startedAt: value.startedAt,
+		phase: value.phase,
+		quotesProcessed: requireInteger(value.quotesProcessed, "quotesProcessed", filePath, 0),
+		partyBsProcessed: requireInteger(value.partyBsProcessed, "partyBsProcessed", filePath, 0),
+		partyAsProcessed: requireInteger(value.partyAsProcessed, "partyAsProcessed", filePath, 0),
+		lastProcessedQuoteChunk: requireInteger(value.lastProcessedQuoteChunk, "lastProcessedQuoteChunk", filePath, -1),
+		lastProcessedPartyB: requireInteger(value.lastProcessedPartyB, "lastProcessedPartyB", filePath, -1),
+		lastProcessedPartyAChunk: requireInteger(value.lastProcessedPartyAChunk, "lastProcessedPartyAChunk", filePath, -1),
+		activePartyBTask: null,
+	}
+
+	const totalQuoteChunks = Math.ceil(input.quoteIds.length / expectedIdentity.chunkSize)
+	const totalPartyAs = input.partyBTasks.reduce((sum, task) => sum + deduplicateAddresses(task.partyAs).length, 0)
+	if (progress.quotesProcessed > input.quoteIds.length) {
+		throw progressError(filePath, `quotesProcessed ${progress.quotesProcessed} exceeds input total ${input.quoteIds.length}`)
+	}
+	if (progress.partyBsProcessed > input.partyBTasks.length) {
+		throw progressError(filePath, `partyBsProcessed ${progress.partyBsProcessed} exceeds input total ${input.partyBTasks.length}`)
+	}
+	if (progress.partyAsProcessed > totalPartyAs) {
+		throw progressError(filePath, `partyAsProcessed ${progress.partyAsProcessed} exceeds canonical input total ${totalPartyAs}`)
+	}
+	if (progress.lastProcessedQuoteChunk >= totalQuoteChunks && progress.lastProcessedQuoteChunk !== -1) {
+		throw progressError(filePath, `lastProcessedQuoteChunk ${progress.lastProcessedQuoteChunk} exceeds the input chunk range`)
+	}
+	if (progress.lastProcessedPartyB >= input.partyBTasks.length && progress.lastProcessedPartyB !== -1) {
+		throw progressError(filePath, `lastProcessedPartyB ${progress.lastProcessedPartyB} exceeds the input task range`)
+	}
+	if (progress.partyBsProcessed !== progress.lastProcessedPartyB + 1) {
+		throw progressError(filePath, "partyBsProcessed must equal lastProcessedPartyB + 1")
+	}
+	if (progress.phase === "quotes") {
+		if (
+			progress.partyBsProcessed !== 0 ||
+			progress.partyAsProcessed !== 0 ||
+			progress.lastProcessedPartyB !== -1 ||
+			progress.lastProcessedPartyAChunk !== -1
+		) {
+			throw progressError(filePath, "quote-phase progress cannot contain processed PartyB state")
+		}
+	}
+	if (progress.phase === "complete" && progress.partyBsProcessed !== input.partyBTasks.length) {
+		throw progressError(filePath, "complete progress must include every PartyB task")
+	}
+
+	if (value.activePartyBTask !== null) {
+		if (!isRecord(value.activePartyBTask)) throw progressError(filePath, "activePartyBTask must be null or a JSON object")
+		const activeIndex = requireInteger(value.activePartyBTask.index, "activePartyBTask.index", filePath, 0)
+		const activePartyB = typeof value.activePartyBTask.partyB === "string" ? value.activePartyBTask.partyB : ""
+		const activeTaskHash = requireHash(value.activePartyBTask.taskHash, "activePartyBTask.taskHash", filePath)
+		if (progress.phase !== "balances") throw progressError(filePath, "activePartyBTask is only valid during the balances phase")
+		if (activeIndex !== progress.lastProcessedPartyB + 1 || activeIndex >= input.partyBTasks.length) {
+			throw progressError(filePath, "activePartyBTask index does not match the next PartyB task")
+		}
+		const expectedActive = buildActivePartyBTaskIdentity(input.partyBTasks[activeIndex], activeIndex)
+		if (activePartyB !== expectedActive.partyB || activeTaskHash !== expectedActive.taskHash) {
+			throw progressError(filePath, `activePartyBTask identity mismatch at index ${activeIndex}`)
+		}
+		progress.activePartyBTask = {
+			index: activeIndex,
+			partyB: activePartyB,
+			taskHash: activeTaskHash,
+		}
+	}
+
+	if (progress.lastProcessedPartyAChunk >= 0) {
+		if (!progress.activePartyBTask) {
+			throw progressError(filePath, "partial PartyA chunk progress is missing activePartyBTask identity")
+		}
+		const task = input.partyBTasks[progress.activePartyBTask.index]
+		const partyAChunkCount = Math.ceil(deduplicateAddresses(task.partyAs).length / expectedIdentity.chunkSize)
+		if (progress.lastProcessedPartyAChunk >= partyAChunkCount) {
+			throw progressError(filePath, `lastProcessedPartyAChunk ${progress.lastProcessedPartyAChunk} exceeds the active task chunk range`)
+		}
+	}
+
+	if (expectedIdentity.skipPreCheck) {
+		if (progress.phase === "quotes") {
+			const coveredQuotes = Math.min((progress.lastProcessedQuoteChunk + 1) * expectedIdentity.chunkSize, input.quoteIds.length)
+			if (progress.quotesProcessed !== coveredQuotes) {
+				throw progressError(filePath, "quotesProcessed does not match lastProcessedQuoteChunk for skipPreCheck resume")
+			}
+		} else {
+			const completedQuoteChunk = totalQuoteChunks - 1
+			if (progress.quotesProcessed !== input.quoteIds.length || progress.lastProcessedQuoteChunk !== completedQuoteChunk) {
+				throw progressError(filePath, "balance-phase progress does not prove every quote chunk completed")
+			}
+		}
+
+		let expectedPartyAsProcessed = input.partyBTasks
+			.slice(0, progress.partyBsProcessed)
+			.reduce((sum, task) => sum + deduplicateAddresses(task.partyAs).length, 0)
+		if (progress.activePartyBTask) {
+			const activePartyAs = deduplicateAddresses(input.partyBTasks[progress.activePartyBTask.index].partyAs).length
+			const coveredActivePartyAs = Math.min((progress.lastProcessedPartyAChunk + 1) * expectedIdentity.chunkSize, activePartyAs)
+			expectedPartyAsProcessed += coveredActivePartyAs
+		}
+		if (progress.partyAsProcessed !== expectedPartyAsProcessed) {
+			throw progressError(filePath, "partyAsProcessed does not match completed PartyB task chunks for skipPreCheck resume")
+		}
+	}
+
+	return progress
+}
+
+function loadProgress(filePath: string | null, expectedIdentity: MigrationProgressIdentity | null, input: MigrationInput): MigrationProgress | null {
+	if (!filePath) return null
+	if (!expectedIdentity) throw new Error("Internal error: persisted migration progress is missing its expected identity")
+
+	let data: string
+	try {
+		data = fs.readFileSync(filePath, "utf-8")
 	} catch (error) {
-		log("warn", `Could not save progress file: ${formatError(error)}`)
+		if (hasErrorCode(error, "ENOENT")) return null
+		throw progressError(filePath, `could not be read (${formatError(error)})`)
+	}
+
+	let parsed: unknown
+	try {
+		parsed = JSON.parse(data)
+	} catch (error) {
+		throw progressError(filePath, `contains invalid JSON (${formatError(error)})`)
+	}
+	return validateProgress(parsed, filePath, expectedIdentity, input)
+}
+
+export function validateMigrationProgressFile(
+	filePath: string | null | undefined,
+	input: MigrationInput,
+	chunkSize: number,
+	skipPreCheck: boolean,
+	context: MigrationProgressContext,
+): MigrationProgress | null {
+	const normalizedFile = normalizeProgressFile(filePath)
+	if (!normalizedFile) return null
+	const expectedIdentity = buildMigrationProgressIdentity(input, chunkSize, skipPreCheck, context)
+	return loadProgress(normalizedFile, expectedIdentity, input)
+}
+
+function saveProgress(
+	filePath: string | null,
+	progress: MigrationProgress,
+	expectedIdentity: MigrationProgressIdentity | null,
+	input: MigrationInput,
+): void {
+	if (!filePath) return
+	if (!expectedIdentity) throw new Error("Internal error: persisted migration progress is missing its expected identity")
+	validateProgress(progress, filePath, expectedIdentity, input)
+
+	const absolutePath = path.resolve(filePath)
+	const directory = path.dirname(absolutePath)
+	const temporaryPath = path.join(
+		directory,
+		`.${path.basename(absolutePath)}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`,
+	)
+	let descriptor: number | undefined
+	try {
+		fs.mkdirSync(directory, { recursive: true })
+		descriptor = fs.openSync(temporaryPath, "wx", 0o600)
+		fs.writeFileSync(descriptor, `${JSON.stringify(progress, null, 2)}\n`, "utf-8")
+		fs.fsyncSync(descriptor)
+		fs.closeSync(descriptor)
+		descriptor = undefined
+		fs.renameSync(temporaryPath, absolutePath)
+
+		const directoryDescriptor = fs.openSync(directory, "r")
+		try {
+			fs.fsyncSync(directoryDescriptor)
+		} finally {
+			fs.closeSync(directoryDescriptor)
+		}
+	} catch (error) {
+		if (descriptor !== undefined) {
+			try {
+				fs.closeSync(descriptor)
+			} catch {
+				// Preserve the original persistence error.
+			}
+		}
+		try {
+			if (fs.existsSync(temporaryPath)) fs.unlinkSync(temporaryPath)
+		} catch {
+			// Preserve the original persistence error.
+		}
+		throw new Error(`Failed to atomically save migration progress file ${filePath}: ${formatError(error)}`)
 	}
 }
 
 function deleteProgress(filePath: string): void {
 	try {
-		if (fs.existsSync(filePath)) {
-			fs.unlinkSync(filePath)
-		}
+		fs.unlinkSync(filePath)
 	} catch (error) {
-		log("warn", `Could not delete progress file: ${formatError(error)}`)
+		if (hasErrorCode(error, "ENOENT")) return
+		throw new Error(`Failed to delete completed migration progress file ${filePath}: ${formatError(error)}`)
 	}
 }
 

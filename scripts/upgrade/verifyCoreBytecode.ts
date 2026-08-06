@@ -9,7 +9,7 @@
  * library linking (placeholder substitution).
  *
  * Usage:
- *   RPC_URL=https://rpc.mantle.xyz npx ts-node scripts/upgrade/verifyCoreBytecode.ts
+ *   RPC_URL=https://rpc.mantle.xyz node --import tsx scripts/upgrade/verifyCoreBytecode.ts
  *
  * Env overrides:
  *   RPC_URL      -- RPC endpoint (required, http(s) or ws(s))
@@ -26,7 +26,7 @@ const OUTPUT_DIR = "./scripts/upgrade/output"
 const rpcUrl = process.env.RPC_URL
 if (!rpcUrl) {
 	console.error("RPC_URL env var is required")
-	console.error("Usage: RPC_URL=https://rpc.mantle.xyz npx ts-node scripts/upgrade/verifyCoreBytecode.ts")
+	console.error("Usage: RPC_URL=https://rpc.mantle.xyz node --import tsx scripts/upgrade/verifyCoreBytecode.ts")
 	process.exit(1)
 }
 
@@ -43,6 +43,19 @@ function createProvider(url: string) {
 	if (protocol === "ws:" || protocol === "wss:") return new ethers.WebSocketProvider(url)
 	if (protocol === "http:" || protocol === "https:") return new ethers.JsonRpcProvider(url)
 	throw new Error(`Unsupported RPC_URL protocol "${protocol}". Use http(s):// or ws(s)://.`)
+}
+
+function redactUrl(rawUrl: string): string {
+	try {
+		const url = new URL(rawUrl)
+		url.username = url.username ? "***" : ""
+		url.password = url.password ? "***" : ""
+		url.search = url.search ? "?***" : ""
+		if (url.pathname && url.pathname !== "/") url.pathname = "/***"
+		return url.toString()
+	} catch {
+		return "<redacted RPC URL>"
+	}
 }
 
 const provider = createProvider(rpcUrl)
@@ -181,13 +194,14 @@ function linkAndCompare(compiledHex: string, deployedHex: string, placeholders: 
 async function main() {
 	console.log("=".repeat(100))
 	console.log("BYTECODE VERIFICATION: Deployed vs Compiled (local) — with library linking")
-	console.log(`RPC:    ${rpcUrl}`)
+	console.log(`RPC:    ${redactUrl(rpcUrl!)}`)
 	console.log(`Facets: ${facetsFile}`)
 	console.log("=".repeat(100))
 	console.log()
 
 	const artifactsDir = path.join("artifacts", "contracts")
 	const addresses = Object.keys(FACETS)
+	if (addresses.length === 0) throw new Error(`${facetsFile} contains no facets to verify`)
 
 	console.log(`Fetching deployed bytecodes for ${addresses.length} facet addresses...`)
 	const deployedCodes: Record<string, string> = {}
@@ -308,6 +322,7 @@ async function main() {
 	} else {
 		if (mismatch > 0) console.log(`⚠️  ${mismatch} facet(s) have bytecode mismatches that need investigation.`)
 		if (errors > 0) console.log(`⚠️  ${errors} facet(s) had errors (missing artifacts/code).`)
+		throw new Error(`Core bytecode verification failed: ${mismatch} mismatch(es), ${errors} error(s)`)
 	}
 }
 

@@ -5,11 +5,11 @@
  * then calls whitelistSymbolType() for each PartyB. Requires PARTY_B_MANAGER_ROLE
  * or the PartyB itself.
  *
- * Run:
- *   npx hardhat run scripts/upgrade/whitelistSymbolTypes.ts --network <network>
+ * Plan (default):
+ *   ./node_modules/.bin/hardhat run scripts/upgrade/whitelistSymbolTypes.ts --network <network>
  *
- *   # Dry run (log without submitting)
- *   DRY_RUN=true npx hardhat run scripts/upgrade/whitelistSymbolTypes.ts --network <network>
+ * Execute only after reviewing the plan:
+ *   EXECUTE=true CONFIRM_CHAIN_ID=<chainId> ./node_modules/.bin/hardhat run scripts/upgrade/whitelistSymbolTypes.ts --network <network>
  *
  * Config:
  *   scripts/upgrade/config/upgrade.json                    -- diamondAddress, symbolType
@@ -19,6 +19,7 @@ import fs from "fs"
 import path from "path"
 
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
+import { exactBooleanEnv, requireExecutionConfirmation } from "./utils/executionGuard.js"
 import { resolveConfiguredSigner } from "./utils/hardwareSigner.js"
 import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
@@ -90,12 +91,13 @@ async function main() {
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? shared.diamondAddress
 	const SYMBOL_TYPE = Number(process.env.SYMBOL_TYPE ?? shared.newV085Parameters?.symbolType ?? 1)
 	const WHITELIST_SIGNER_ROLE = (process.env.WHITELIST_SIGNER_ROLE ?? "upgradeOperator").trim()
-	const DRY_RUN = process.env.DRY_RUN === "true"
-	const SKIP_PARTY_B_MANAGER_ROLE_CHECK = process.env.SKIP_PARTY_B_MANAGER_ROLE_CHECK === "true"
+	const SKIP_PARTY_B_MANAGER_ROLE_CHECK = exactBooleanEnv("SKIP_PARTY_B_MANAGER_ROLE_CHECK")
 
 	if (!DIAMOND_ADDRESS || !ethers.isAddress(DIAMOND_ADDRESS)) {
 		throw new Error("DIAMOND_ADDRESS is required (env var or upgrade.json)")
 	}
+	if (!Number.isSafeInteger(SYMBOL_TYPE) || SYMBOL_TYPE < 0)
+		throw new Error(`SYMBOL_TYPE must be a non-negative safe integer; received ${SYMBOL_TYPE}`)
 	if (!fs.existsSync(CONFIG_FILE)) {
 		throw new Error(`Config file not found: ${CONFIG_FILE}\nCreate it with a "partyBs" array.`)
 	}
@@ -114,6 +116,9 @@ async function main() {
 	}
 
 	await verifyRpc()
+	const chainId = (await ethers.provider.getNetwork()).chainId
+	const EXECUTE = requireExecutionConfirmation(chainId)
+	const DRY_RUN = !EXECUTE
 
 	const signerConfig = resolveWhitelistSigner(shared, WHITELIST_SIGNER_ROLE)
 	let signer: Awaited<ReturnType<typeof resolveConfiguredSigner>> | undefined
@@ -169,12 +174,22 @@ async function main() {
 	if (!signer) throw new Error("Signer was not resolved for live whitelist execution")
 
 	const diamond = await ethers.getContractAt(["function whitelistSymbolType(address partyB, uint256 symbolType)"], DIAMOND_ADDRESS, signer)
+	const symbolView = await ethers.getContractAt(
+		["function isWhitelistedSymbolType(address partyB, uint256 symbolType) view returns (bool)"],
+		DIAMOND_ADDRESS,
+	)
 
 	let success = 0
 	for (const partyB of partyBs) {
 		log.info(`Whitelisting symbolType=${SYMBOL_TYPE} for ${partyB}...`)
+		await diamond.whitelistSymbolType.staticCall(partyB, BigInt(SYMBOL_TYPE), writeTxOverrides())
 		const tx = await diamond.whitelistSymbolType(partyB, BigInt(SYMBOL_TYPE), writeTxOverrides())
+		log.info(`  submitted: ${tx.hash} (nonce: ${tx.nonce})`)
 		const receipt = await tx.wait()
+		if (!receipt?.status) throw new Error(`whitelistSymbolType transaction failed: ${tx.hash}`)
+		if (!(await symbolView.isWhitelistedSymbolType(partyB, BigInt(SYMBOL_TYPE)))) {
+			throw new Error(`Whitelist post-state mismatch for PartyB ${partyB}, symbolType ${SYMBOL_TYPE}`)
+		}
 		log.ok(`  tx: ${receipt.hash} (gas: ${receipt.gasUsed})`)
 		success++
 	}

@@ -2,11 +2,13 @@
  * Diamond upgrade utilities — deploy facets, build diamondCut, apply it.
  * Extracted from upgradeTest.ts for use by forkUpgrade.ts.
  */
+import type { Interface } from "ethers"
 import fs from "fs"
 
+import { deploymentOnlyArtifact } from "../../../tasks/deploy/artifacts.js"
 import { FacetNames } from "../../../tasks/deploy/constants.js"
 import { FacetCutAction, getSelectors } from "../../../tasks/utils/diamondCut.js"
-import { ethers } from "../../../test/helpers/hardhat-connection.js"
+import { ethers, hre } from "../../../test/helpers/hardhat-connection.js"
 import {
 	loadDeploymentState,
 	saveDeploymentState,
@@ -69,8 +71,31 @@ export const LibraryLinkReferences: Record<string, string> = {
 	LibPartyALiquidationLegacySetup: "project/contracts/core/libraries/liquidation/LibPartyALiquidationLegacySetup.sol:LibPartyALiquidationLegacySetup",
 }
 
+async function requireDeployedCode(label: string, address: string): Promise<void> {
+	if (!ethers.isAddress(address) || address === ethers.ZeroAddress) throw new Error(`${label} has an invalid address: ${address}`)
+	if ((await ethers.provider.getCode(address)) === "0x") {
+		throw new Error(`${label} has no deployed code at ${address}; reconcile the deployment transaction before resuming`)
+	}
+}
+
+async function getUpgradeFacetFactory(facetName: string, libraries: Record<string, string>): Promise<any> {
+	const shortName = facetName.includes(":") ? facetName.split(":").pop()! : facetName
+	const requiredLibraries = FacetLibraryDependencies[shortName]
+	if (!requiredLibraries || requiredLibraries.length === 0) return ethers.getContractFactory(facetName)
+
+	const linked: Record<string, string> = {}
+	for (const libraryName of requiredLibraries) {
+		const address = libraries[libraryName]
+		if (!address) throw new Error(`${shortName} requires ${libraryName}, but no deployed address is available`)
+		await requireDeployedCode(libraryName, address)
+		linked[LibraryLinkReferences[libraryName]] = address
+	}
+	return ethers.getContractFactory(facetName, { libraries: linked })
+}
+
 export async function deployLibraries(existing: Record<string, string> = {}): Promise<Record<string, string>> {
 	const libraries: Record<string, string> = { ...existing }
+	for (const [name, address] of Object.entries(libraries)) await requireDeployedCode(name, address)
 
 	if (!libraries.LibQuoteFunding) {
 		const LibQuoteFundingFactory = await ethers.getContractFactory("LibQuoteFunding")
@@ -91,7 +116,8 @@ export async function deployLibraries(existing: Record<string, string> = {}): Pr
 	}
 
 	if (!libraries.LibForceActions) {
-		const LibForceActionsFactory = await ethers.getContractFactory("LibForceActions", {
+		const artifact = await hre.artifacts.readArtifact("LibForceActions")
+		const LibForceActionsFactory = await ethers.getContractFactoryFromArtifact(deploymentOnlyArtifact(artifact), {
 			libraries: {
 				[LibraryLinkReferences.LibQuoteClose]: libraries.LibQuoteClose,
 			},
@@ -178,6 +204,7 @@ export async function deployFacets(
 		libraries.LibPartyALiquidationLegacySetup
 	) {
 		for (const [name, addr] of Object.entries(libraries)) {
+			await requireDeployedCode(name, addr)
 			log.deployed(name, addr, true)
 		}
 	} else {
@@ -193,30 +220,26 @@ export async function deployFacets(
 	for (let i = 0; i < FacetNames.length; i++) {
 		const facetName = FacetNames[i]
 		const shortName = facetName.includes(":") ? facetName.split(":").pop()! : facetName
+		const facetFactory = await getUpgradeFacetFactory(facetName, libraries)
+		const expectedSelectors = getSelectors(ethers, facetFactory).selectors
 
 		if (facets[shortName]) {
+			await requireDeployedCode(shortName, facets[shortName].address)
+			const cachedSelectors = [...facets[shortName].selectors].map(selector => selector.toLowerCase()).sort()
+			const artifactSelectors = [...expectedSelectors].map(selector => selector.toLowerCase()).sort()
+			if (cachedSelectors.length !== artifactSelectors.length || cachedSelectors.some((selector, index) => selector !== artifactSelectors[index])) {
+				throw new Error(`${shortName} cached selector set does not match the current artifact; use a state file generated from this checkout`)
+			}
 			log.skipped(shortName, facets[shortName].address)
 			deployedCount++
 			continue
 		}
 
-		const requiredLibraries = FacetLibraryDependencies[shortName]
-		let facetFactory
-
-		if (requiredLibraries && requiredLibraries.length > 0) {
-			const linked: Record<string, string> = {}
-			for (const lib of requiredLibraries) {
-				linked[LibraryLinkReferences[lib]] = libraries[lib]
-			}
-			facetFactory = await ethers.getContractFactory(facetName, { libraries: linked })
-		} else {
-			facetFactory = await ethers.getContractFactory(facetName)
-		}
-
 		const facet = await facetFactory.deploy(deployTxOverrides())
 		await facet.waitForDeployment()
 		const address = await facet.getAddress()
-		const selectors = getSelectors(ethers, facetFactory).selectors
+		await requireDeployedCode(shortName, address)
+		const selectors = expectedSelectors
 
 		facets[shortName] = { address, selectors }
 		for (const fragment of facetFactory.interface.fragments) {
@@ -241,20 +264,28 @@ export async function buildDiamondCut(
 	newFacets: Record<string, FacetInfo>,
 	knownSelectorSignatures: Record<string, string>,
 ): Promise<{ diamondCut: any[]; selectorChanges: SelectorChange[] }> {
+	await requireDeployedCode("Diamond", diamondAddress)
 	const diamondLoupeFacet = await ethers.getContractAt("DiamondLoupeFacet", diamondAddress)
 	const facets = await diamondLoupeFacet.facets()
 
 	const currentSelectors: Map<string, string> = new Map()
 	for (const facet of facets) {
 		for (const selector of facet.functionSelectors) {
-			currentSelectors.set(selector, facet.facetAddress)
+			currentSelectors.set(selector.toLowerCase(), ethers.getAddress(facet.facetAddress))
 		}
 	}
 
 	const newSelectors: Map<string, string> = new Map()
-	for (const facet of Object.values(newFacets)) {
+	const selectorFacetNames = new Map<string, string>()
+	for (const [facetName, facet] of Object.entries(newFacets)) {
+		await requireDeployedCode(facetName, facet.address)
+		const normalizedAddress = ethers.getAddress(facet.address)
 		for (const selector of facet.selectors) {
-			newSelectors.set(selector, facet.address)
+			const normalizedSelector = selector.toLowerCase()
+			const priorFacet = selectorFacetNames.get(normalizedSelector)
+			if (priorFacet) throw new Error(`Selector collision ${normalizedSelector}: present in both ${priorFacet} and ${facetName}`)
+			selectorFacetNames.set(normalizedSelector, facetName)
+			newSelectors.set(normalizedSelector, normalizedAddress)
 		}
 	}
 
@@ -269,6 +300,10 @@ export async function buildDiamondCut(
 	for (const [selector, currentFacetAddress] of currentSelectors) {
 		if (newSelectors.has(selector)) {
 			const toFacetAddress = newSelectors.get(selector)!
+			if (currentFacetAddress === toFacetAddress) {
+				newSelectors.delete(selector)
+				continue
+			}
 			actions[selector] = {
 				action: FacetCutAction.Replace,
 				facetAddress: toFacetAddress,
@@ -347,6 +382,10 @@ export async function applyDiamondCut(diamondAddress: string, diamondCut: any[],
 		log.info("No diamond cut required — already up to date")
 		return
 	}
+	if (!Number.isSafeInteger(chunkSize) || chunkSize < 1) {
+		throw new Error(`Diamond cut chunk size must be a positive safe integer; received ${chunkSize}`)
+	}
+	await requireDeployedCode("Diamond", diamondAddress)
 
 	const diamondCutFacet = signer
 		? await ethers.getContractAt("DiamondCutFacet", diamondAddress, signer)
@@ -363,6 +402,16 @@ export async function applyDiamondCut(diamondAddress: string, diamondCut: any[],
 		const receipt = await tx.wait()
 		if (!receipt?.status) {
 			throw new Error(`Diamond cut failed in chunk ${i + 1}/${chunks.length}: ${tx.hash}`)
+		}
+		const loupe = await ethers.getContractAt("DiamondLoupeFacet", diamondAddress)
+		for (const cut of chunk) {
+			const expectedAddress = cut.action === FacetCutAction.Remove ? ethers.ZeroAddress : ethers.getAddress(cut.facetAddress)
+			for (const selector of cut.functionSelectors) {
+				const actualAddress = ethers.getAddress(await loupe.facetAddress(selector))
+				if (actualAddress !== expectedAddress) {
+					throw new Error(`Diamond cut post-state mismatch for ${selector}: mapped to ${actualAddress}, expected ${expectedAddress}`)
+				}
+			}
 		}
 		log.ok(`Chunk ${i + 1}/${chunks.length} applied — ${selectorCount} selectors (tx: ${log.addr(tx.hash)})`)
 	}
@@ -387,7 +436,31 @@ export type NewV085Parameters = {
 	muonFunctionPermissions?: string[]
 }
 
+export function validateLiquidationAccountingParams(params: NewV085Parameters): void {
+	const hasVault = params.liquidationInsuranceVault !== undefined && params.liquidationInsuranceVault !== ""
+	const hasMaxProfit = params.maxLiquidationProfitPerPosition !== undefined && params.maxLiquidationProfitPerPosition !== ""
+	if (hasVault !== hasMaxProfit) {
+		throw new Error("liquidationInsuranceVault and maxLiquidationProfitPerPosition must be configured together")
+	}
+	if (hasVault) {
+		if (!ethers.isAddress(params.liquidationInsuranceVault) || ethers.getAddress(params.liquidationInsuranceVault) === ethers.ZeroAddress) {
+			throw new Error(`liquidationInsuranceVault must be a non-zero address: ${params.liquidationInsuranceVault}`)
+		}
+		const value = params.maxLiquidationProfitPerPosition as string
+		if (!/^[1-9]\d*$/.test(value) || BigInt(value) > (BigInt(1) << BigInt(256)) - BigInt(1)) {
+			throw new Error(`maxLiquidationProfitPerPosition must be a positive uint256: ${value}`)
+		}
+	}
+	if (
+		params.softLiquidationPenaltyCollector &&
+		(!ethers.isAddress(params.softLiquidationPenaltyCollector) || ethers.getAddress(params.softLiquidationPenaltyCollector) === ethers.ZeroAddress)
+	) {
+		throw new Error(`softLiquidationPenaltyCollector must be a non-zero address: ${params.softLiquidationPenaltyCollector}`)
+	}
+}
+
 export async function setV085Parameters(diamondAddress: string, params: NewV085Parameters, signerOverride?: any): Promise<void> {
+	validateLiquidationAccountingParams(params)
 	requireMuonVerifierConfig(params)
 
 	const signer = signerOverride ?? (await ethers.provider.getSigner())
@@ -610,7 +683,7 @@ function argToString(value: any): string {
 	return String(value)
 }
 
-export function toHumanReadableSafeTxFromIface(iface: ethers.Interface, to: string, methodName: string, args: any[]): SafeTransaction {
+export function toHumanReadableSafeTxFromIface(iface: Interface, to: string, methodName: string, args: any[]): SafeTransaction {
 	const fragment = iface.getFunction(methodName)
 	if (!fragment) throw new Error(`Unknown method: ${methodName}`)
 
@@ -670,6 +743,7 @@ export function buildUpgradeTransactions(
 	chunkSize: number,
 	newParams: NewV085Parameters,
 ): UpgradeTransactionResult {
+	validateLiquidationAccountingParams(newParams)
 	requireMuonVerifierConfig(newParams)
 
 	const pauseSafeTxs: SafeTransaction[] = []
@@ -869,9 +943,6 @@ export function buildUpgradeTransactions(
 	}
 
 	if (newParams.liquidationInsuranceVault && newParams.maxLiquidationProfitPerPosition) {
-		if (!ethers.isAddress(newParams.liquidationInsuranceVault)) {
-			throw new Error(`Invalid liquidationInsuranceVault address: ${newParams.liquidationInsuranceVault}`)
-		}
 		const desc = `setLiquidationInsuranceVaultParams(${newParams.liquidationInsuranceVault}, ${newParams.maxLiquidationProfitPerPosition})`
 		addTx(
 			safeTxs,

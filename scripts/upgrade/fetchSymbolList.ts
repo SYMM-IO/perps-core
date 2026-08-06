@@ -5,13 +5,13 @@
  * when setSymbolType.ts backfills symbolType.
  *
  * Run:
- *   npx hardhat run scripts/upgrade/fetchSymbolList.ts --network <network>
+ *   ./node_modules/.bin/hardhat run scripts/upgrade/fetchSymbolList.ts --network <network>
  *
  *   # Dry run (fetch and print without writing output)
- *   DRY_RUN=true npx hardhat run scripts/upgrade/fetchSymbolList.ts --network <network>
+ *   DRY_RUN=true ./node_modules/.bin/hardhat run scripts/upgrade/fetchSymbolList.ts --network <network>
  *
  * Config: scripts/upgrade/config/upgrade.json
- *   subgraphEndpoint, newV085Parameters.symbolType
+ *   A chain-specific subgraphEndpoint and newV085Parameters.symbolType
  *
  * Output: scripts/upgrade/output/{count}-symbol-types-input-{network}.json
  */
@@ -21,10 +21,9 @@ import path from "path"
 import connection from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
-import { loadUpgradeConfigShared } from "./utils/sharedConfig.js"
+import { baseNetworkName, loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 import { fetchSymbols } from "./utils/subgraphHelpers.js"
 
-const DEFAULT_SUBGRAPH_ENDPOINT = "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/arbitrum_analytics/stage/gn"
 const OUTPUT_DIR = "./scripts/upgrade/output"
 
 export type SymbolTypesInput = {
@@ -34,11 +33,32 @@ export type SymbolTypesInput = {
 	symbols: { symbolId: string; name: string }[]
 }
 
+function requireSubgraphEndpoint(endpoint: string | undefined, networkName: string | undefined): string {
+	if (!endpoint) {
+		throw new Error(
+			`No subgraph endpoint configured for network ${networkName ?? "unknown"}. ` +
+				"Set SUBGRAPH_ENDPOINT or configure subgraphEndpoint in the chain-specific upgrade file.",
+		)
+	}
+
+	let url: URL
+	try {
+		url = new URL(endpoint)
+	} catch {
+		throw new Error(`Invalid subgraph endpoint URL: ${endpoint}`)
+	}
+	if (url.protocol !== "https:" && url.protocol !== "http:") {
+		throw new Error(`Subgraph endpoint must use http or https: ${endpoint}`)
+	}
+	return endpoint
+}
+
 async function main() {
 	const networkName = connection.networkName
-	const shared = loadUpgradeConfigShared(networkName)
+	const networkSuffix = baseNetworkName(networkName)
+	const shared = loadUpgradeConfigShared(networkSuffix)
 
-	const SUBGRAPH_ENDPOINT = process.env.SUBGRAPH_ENDPOINT ?? shared.subgraphEndpoint ?? DEFAULT_SUBGRAPH_ENDPOINT
+	const SUBGRAPH_ENDPOINT = requireSubgraphEndpoint(process.env.SUBGRAPH_ENDPOINT ?? shared.subgraphEndpoint, networkSuffix)
 	const SYMBOL_TYPE = process.env.SYMBOL_TYPE !== undefined ? Number(process.env.SYMBOL_TYPE) : shared.newV085Parameters?.symbolType
 	const DRY_RUN = process.env.DRY_RUN === "true"
 

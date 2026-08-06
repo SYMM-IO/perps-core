@@ -2,12 +2,12 @@
  * Repairs the missing Polygon Muon AccountManagement permissions that prevent
  * deallocate and related account-management calls from passing verification.
  *
- * Dry run (recommended first):
- *   DRY_RUN=true npx hardhat run --no-compile scripts/fixPolygonMuonAccountManagementPermissions.ts --network polygon
+ * Plan (default, never broadcasts):
+ *   ./node_modules/.bin/hardhat run --no-compile scripts/fixPolygonMuonAccountManagementPermissions.ts --network polygon
  *
  * Submit the missing permission transactions:
- *   USE_KEYSTORE=true KEYSTORE_DEPLOYER_KEY=NEW_DEPLOYER \
- *     npx hardhat run --no-compile scripts/fixPolygonMuonAccountManagementPermissions.ts --network polygon
+ *   EXECUTE=true CONFIRM_CHAIN_ID=137 USE_KEYSTORE=true KEYSTORE_DEPLOYER_KEY=NEW_DEPLOYER \
+ *     ./node_modules/.bin/hardhat run --no-compile scripts/fixPolygonMuonAccountManagementPermissions.ts --network polygon
  *
  * The configured signer must currently hold SETTER_ROLE on the verifier.
  *
@@ -16,7 +16,8 @@
  *   SIGNER_ADDRESS=0x...      Address to check during a dry run
  *   CONFIRMATIONS=1           Confirmations to wait for each transaction
  *   ALLOW_NON_POLYGON=true    Allow execution against a fork or test network
- *   DRY_RUN=true              Inspect and print calldata without sending
+ *   EXECUTE=true              Broadcast; omitted/false is always plan-only
+ *   CONFIRM_CHAIN_ID=137      Must exactly match eth_chainId when executing
  */
 import { getAddress } from "ethers"
 import hre from "hardhat"
@@ -47,8 +48,10 @@ const VERIFIER_ABI = [
 
 function envFlag(name: string, defaultValue = false): boolean {
 	const raw = process.env[name]
-	if (raw === undefined) return defaultValue
-	return raw === "1" || raw.toLowerCase() === "true" || raw.toLowerCase() === "yes"
+	if (raw === undefined || raw === "") return defaultValue
+	if (raw === "true") return true
+	if (raw === "false") return false
+	throw new Error(`${name} must be exactly true or false; received ${JSON.stringify(raw)}`)
 }
 
 function positiveIntegerEnv(name: string, defaultValue: number): number {
@@ -67,13 +70,14 @@ function optionalAddressEnv(name: string): string | undefined {
 }
 
 async function main() {
-	const dryRun = envFlag("DRY_RUN")
+	const execute = envFlag("EXECUTE")
+	const planOnly = !execute
 	const allowNonPolygon = envFlag("ALLOW_NON_POLYGON")
 	const confirmations = positiveIntegerEnv("CONFIRMATIONS", 1)
 	const rpcUrl = process.env.RPC_POLYGON ?? DEFAULT_RPC_POLYGON
 	const dryRunSignerAddress = optionalAddressEnv("SIGNER_ADDRESS")
 
-	const connection = await hre.network.connect({ override: { url: rpcUrl } })
+	const connection = await hre.network.create({ override: { url: rpcUrl } })
 	const { ethers } = connection as any
 	const network = await ethers.provider.getNetwork()
 	const chainId = Number(network.chainId)
@@ -81,11 +85,16 @@ async function main() {
 	if (chainId !== POLYGON_CHAIN_ID && !allowNonPolygon) {
 		throw new Error(`This repair is intended for Polygon mainnet (chainId ${POLYGON_CHAIN_ID}); connected to chainId ${chainId}`)
 	}
+	if (execute) {
+		if (!/^\d+$/.test(process.env.CONFIRM_CHAIN_ID || "") || Number(process.env.CONFIRM_CHAIN_ID) !== chainId) {
+			throw new Error(`EXECUTE=true requires CONFIRM_CHAIN_ID=${chainId}; connected chainId is ${chainId}`)
+		}
+	}
 
 	const verifierCode = await ethers.provider.getCode(VERIFIER_ADDRESS)
 	if (verifierCode === "0x") throw new Error(`No contract found at verifier ${VERIFIER_ADDRESS}`)
 
-	const [liveSigner] = dryRun ? [] : await ethers.getSigners()
+	const [liveSigner] = planOnly ? [] : await ethers.getSigners()
 	const signerAddress = liveSigner?.address ?? dryRunSignerAddress
 	const verifier = new ethers.Contract(VERIFIER_ADDRESS, VERIFIER_ABI, liveSigner ?? ethers.provider)
 
@@ -117,14 +126,14 @@ async function main() {
 	console.log("Polygon Muon AccountManagement permission repair")
 	console.log(`  Network:             ${connection.networkName} (${chainId})`)
 	console.log(`  Verifier:            ${VERIFIER_ADDRESS}`)
-	console.log(`  Signer:              ${signerAddress ?? "(not supplied for dry run)"}`)
+	console.log(`  Signer:              ${signerAddress ?? "(not supplied for plan)"}`)
 	console.log(`  SETTER_ROLE members: ${setterMembers.length > 0 ? setterMembers.join(", ") : "(none)"}`)
 	console.log(`  Signer has role:     ${signerAddress ? (signerHasSetterRole ? "yes" : "no") : "(not checked)"}`)
 	console.log(`  TSS key registered:  ${publicKeyRegistered ? "yes" : "no"}`)
 	console.log(`  Gateway registered:  ${gatewayRegistered ? "yes" : "no"}`)
 	console.log(`  TSS permission:      ${publicKeyAuthorized ? "already granted" : "missing"}`)
 	console.log(`  Gateway permission:  ${gatewayAuthorized ? "already granted" : "missing"}`)
-	console.log(`  Dry run:             ${dryRun ? "yes" : "no"}`)
+	console.log(`  Mode:                ${planOnly ? "PLAN ONLY" : "EXECUTE"}`)
 
 	if (publicKeyAuthorized && gatewayAuthorized) {
 		console.log("\nBoth AccountManagement permissions are already configured; no transaction is needed.")
@@ -143,8 +152,8 @@ async function main() {
 		console.log(`  call: setGatewaySignerPermissions(${MUON_GATEWAY_SIGNER}, [1], true)`)
 	}
 
-	if (dryRun) {
-		console.log("\nDry run complete. Re-run without DRY_RUN=true using a SETTER_ROLE signer to submit.")
+	if (planOnly) {
+		console.log(`\nPlan complete. Re-run with EXECUTE=true CONFIRM_CHAIN_ID=${chainId} using a SETTER_ROLE signer to submit.`)
 		return
 	}
 
@@ -156,17 +165,19 @@ async function main() {
 	if (!publicKeyAuthorized) {
 		await verifier.setPublicKeyPermissions.staticCall(MUON_PUBLIC_KEY, [ACCOUNT_MANAGEMENT], true)
 		const tx = await verifier.setPublicKeyPermissions(MUON_PUBLIC_KEY, [ACCOUNT_MANAGEMENT], true)
-		console.log(`\nTSS permission transaction: ${tx.hash}`)
+		console.log(`\nTSS permission submitted: ${tx.hash} (nonce ${tx.nonce})`)
 		const receipt = await tx.wait(confirmations)
 		if (receipt?.status !== 1) throw new Error(`TSS permission transaction failed: ${tx.hash}`)
+		console.log(`TSS permission confirmed in block ${receipt.blockNumber}; gas used ${receipt.gasUsed}`)
 	}
 
 	if (!gatewayAuthorized) {
 		await verifier.setGatewaySignerPermissions.staticCall(MUON_GATEWAY_SIGNER, [ACCOUNT_MANAGEMENT], true)
 		const tx = await verifier.setGatewaySignerPermissions(MUON_GATEWAY_SIGNER, [ACCOUNT_MANAGEMENT], true)
-		console.log(`Gateway permission transaction: ${tx.hash}`)
+		console.log(`Gateway permission submitted: ${tx.hash} (nonce ${tx.nonce})`)
 		const receipt = await tx.wait(confirmations)
 		if (receipt?.status !== 1) throw new Error(`Gateway permission transaction failed: ${tx.hash}`)
+		console.log(`Gateway permission confirmed in block ${receipt.blockNumber}; gas used ${receipt.gasUsed}`)
 	}
 
 	const publicKeyAuthorizedAfter = await verifier.isPublicKeyAuthorized(MUON_PUBLIC_KEY, ACCOUNT_MANAGEMENT)

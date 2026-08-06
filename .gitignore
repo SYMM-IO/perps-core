@@ -23,7 +23,8 @@ typechain-types
 /scripts/output
 /scripts/upgrade/output
 
-yarn.lock
+# Dependency resolution is deployment-critical; Yarn Classic's lockfile is tracked.
+!yarn.lock
 .idea
 addresses.json
 /abi.json
@@ -40,7 +41,13 @@ tasks/data/verify-failed.json
 # Local/simulated chains — not worth tracking.
 tasks/data/31337/
 tasks/data/1337/
+tasks/data/*-fork/
+tasks/data/checkpoints/completed/checkpoint-31337-*.json
+tasks/data/checkpoints/abandoned/checkpoint-31337-*.json
+tasks/data/checkpoints/completed/checkpoint-1337-*.json
+tasks/data/checkpoints/abandoned/checkpoint-1337-*.json
 output.log
+hardhatNode.log
 serverLog.log
 detailedDebug.log
 pnpm-lock.yaml

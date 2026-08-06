@@ -4,8 +4,12 @@
  * Use after a deploy-only EOA upgrade run where a hot deployer paid gas and
  * initiated AccountLayer ownership transfer to the hardware-wallet owner.
  *
- * Run:
- *   HARDWARE_WALLET_RPC_URL=http://127.0.0.1:<port> npx hardhat run scripts/upgrade/acceptAccountLayerOwnership.ts --network coti
+ * Plan (default):
+ *   ./node_modules/.bin/hardhat run scripts/upgrade/acceptAccountLayerOwnership.ts --network coti
+ *
+ * Execute:
+ *   EXECUTE=true CONFIRM_CHAIN_ID=2632500 HARDWARE_WALLET_RPC_URL=http://127.0.0.1:<port> \
+ *     ./node_modules/.bin/hardhat run scripts/upgrade/acceptAccountLayerOwnership.ts --network coti
  *
  * Env overrides:
  *   ACCOUNT_LAYER_ADDRESS
@@ -16,9 +20,11 @@ import path from "path"
 
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { loadDeploymentState } from "./utils/deploymentState.js"
+import { requireExecutionConfirmation } from "./utils/executionGuard.js"
 import { resolveConfiguredSigner } from "./utils/hardwareSigner.js"
 import { log } from "./utils/log.js"
 import { DIAMOND_OWNER_ABI, readDiamondOwner } from "./utils/ownership.js"
+import { verifyRpc } from "./utils/rpcCheck.js"
 import { baseNetworkName, loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 import { writeTxOverrides } from "./utils/txOverrides.js"
 
@@ -33,7 +39,9 @@ async function main() {
 	const networkSuffix = baseNetworkName(networkName)
 	const shared = loadUpgradeConfigShared(networkSuffix)
 	const diamondAddress = process.env.DIAMOND_ADDRESS ?? shared.diamondAddress
+	await verifyRpc()
 	const chainId = Number((await ethers.provider.getNetwork()).chainId)
+	const execute = requireExecutionConfirmation(chainId)
 	const peripheralsFile = process.env.PERIPHERALS_FILE ?? path.join(OUTPUT_DIR, `deployed-peripherals-${networkName}.json`)
 
 	let state: PeripheralsState = {}
@@ -51,17 +59,22 @@ async function main() {
 	}
 
 	const protocolAdmin = shared.protocolAdmin
-	const signer = await resolveConfiguredSigner({
-		role: "protocolAdmin",
-		expectedAddress: protocolAdmin,
-		envPrefix: "PROTOCOL_ADMIN",
-	})
-	const signerAddress = ethers.getAddress(await signer.getAddress())
+	if (!protocolAdmin || !ethers.isAddress(protocolAdmin) || protocolAdmin === ethers.ZeroAddress) {
+		throw new Error("A non-zero protocolAdmin is required in the network upgrade config")
+	}
+	const signer = execute
+		? await resolveConfiguredSigner({
+				role: "protocolAdmin",
+				expectedAddress: protocolAdmin,
+				envPrefix: "PROTOCOL_ADMIN",
+			})
+		: undefined
+	const signerAddress = signer ? ethers.getAddress(await signer.getAddress()) : ethers.getAddress(protocolAdmin)
 
 	const accountLayer = new ethers.Contract(
 		accountLayerAddress,
 		[...DIAMOND_OWNER_ABI, "function pendingOwner() view returns (address)", "function acceptOwnership()"],
-		signer,
+		signer ?? ethers.provider,
 	)
 
 	const owner = await readDiamondOwner(accountLayer)
@@ -73,6 +86,7 @@ async function main() {
 	log.kv("Signer", log.addr(signerAddress))
 	log.kv("Owner", log.addr(owner))
 	log.kv("Pending owner", log.addr(pendingOwner))
+	log.kv("Mode", execute ? "EXECUTE" : "PLAN ONLY")
 
 	if (owner.toLowerCase() === signerAddress.toLowerCase()) {
 		log.ok("Signer is already AccountLayer owner")
@@ -81,8 +95,18 @@ async function main() {
 	if (pendingOwner.toLowerCase() !== signerAddress.toLowerCase()) {
 		throw new Error(`Signer ${signerAddress} is not pending owner. Current pending owner is ${pendingOwner}.`)
 	}
+	if (!execute) {
+		log.warn(`Plan only: ${log.addr(signerAddress)} would call acceptOwnership(). Rerun with EXECUTE=true CONFIRM_CHAIN_ID=${chainId}.`)
+		return
+	}
 
-	await (await accountLayer.acceptOwnership(writeTxOverrides())).wait()
+	await accountLayer.acceptOwnership.staticCall(writeTxOverrides())
+	const tx = await accountLayer.acceptOwnership(writeTxOverrides())
+	log.info(`Submitted acceptOwnership: ${tx.hash} (nonce: ${tx.nonce})`)
+	const receipt = await tx.wait()
+	if (!receipt?.status) throw new Error(`acceptOwnership transaction failed: ${tx.hash}`)
+	const verifiedOwner = await readDiamondOwner(accountLayer)
+	if (verifiedOwner !== signerAddress) throw new Error(`Ownership post-check failed: owner is ${verifiedOwner}, expected ${signerAddress}`)
 	log.ok(`AccountLayer ownership accepted by ${log.addr(signerAddress)}`)
 }
 

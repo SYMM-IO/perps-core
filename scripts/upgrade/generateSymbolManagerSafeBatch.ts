@@ -6,7 +6,7 @@
  *
  * Usage:
  *   SYMBOL_MANAGER_ADDRESS=0x... \
- *     npx hardhat run scripts/upgrade/generateSymbolManagerSafeBatch.ts --network mantle
+ *     ./node_modules/.bin/hardhat run scripts/upgrade/generateSymbolManagerSafeBatch.ts --network mantle
  *
  * Optional env overrides (otherwise taken from scripts/upgrade/config/upgrade-<network>.json):
  *   DIAMOND_ADDRESS, SAFE_ADDRESS, CHAIN_ID

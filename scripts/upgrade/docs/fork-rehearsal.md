@@ -43,10 +43,10 @@ Set `FORK_BLOCK_NUMBER` to pin to a specific block (recommended for reproducibil
 
 ```bash
 # Terminal 1
-npx hardhat node --network fork-arbitrum
+./node_modules/.bin/hardhat node --network fork-arbitrum
 
 # Or pin to a specific block
-FORK_BLOCK_NUMBER=250000000 npx hardhat node --network fork-arbitrum
+FORK_BLOCK_NUMBER=250000000 ./node_modules/.bin/hardhat node --network fork-arbitrum
 ```
 
 ### Step 1: Upgrade
@@ -55,7 +55,7 @@ Deploys v0.8.5 facets, applies diamondCut, sets parameters, deploys AccountLayer
 
 ```bash
 # Terminal 2
-npx hardhat run scripts/upgrade/forkUpgrade.ts --network localhost
+./node_modules/.bin/hardhat run scripts/upgrade/forkUpgrade.ts --network localhost
 ```
 
 Output: `scripts/upgrade/output/forkUpgrade-report.json`, `deployed-facets.json`, `deployed-accountlayer-instantlayer.json`, `deployed-symbolmanager.json`
@@ -64,7 +64,7 @@ To run the fork upgrade and migration in one rehearsal, enable the migration pha
 
 ```bash
 NETWORK_ALIAS=base FORK_RUN_MIGRATION=true GAP_SCAN_RANGE=10 \
-  npx hardhat run scripts/upgrade/forkUpgrade.ts --network localhost
+  ./node_modules/.bin/hardhat run scripts/upgrade/forkUpgrade.ts --network localhost
 ```
 
 In this mode, `forkUpgrade.ts` prepares and validates the migration input immediately after `pauseGlobal()`, then continues with the diamondCut, wiring, `MIGRATION_ROLE`, and `runMigration.ts`.
@@ -75,13 +75,13 @@ Run after forkUpgrade to confirm the upgrade is correct before migration. All sc
 
 ```bash
 # Verify all v0.8.5 facet selectors are registered
-npx hardhat run scripts/upgrade/verifyDiamondSelectors.ts --network localhost
+./node_modules/.bin/hardhat run scripts/upgrade/verifyDiamondSelectors.ts --network localhost
 
 # Verify AccountLayer + InstantLayer wiring (roles, hooks, templates)
-npx hardhat run scripts/upgrade/verifyPeripheralWiring.ts --network localhost
+./node_modules/.bin/hardhat run scripts/upgrade/verifyPeripheralWiring.ts --network localhost
 
 # End-to-end: affiliate, sub-account, PartyB upgrade, EIP-712 delegation, template execution
-FORK=true npx hardhat run scripts/upgrade/testTemplateExecution.ts --network localhost
+FORK=true ./node_modules/.bin/hardhat run scripts/upgrade/testTemplateExecution.ts --network localhost
 ```
 
 | Script                      | What it checks                                                                                                                               |
@@ -95,10 +95,10 @@ FORK=true npx hardhat run scripts/upgrade/testTemplateExecution.ts --network loc
 Fetches open quotes from the subgraph after the system is paused, reads the selected quotes from on-chain `getQuote()`, derives PartyB tasks from that paused state, and writes a validated JSON file.
 
 ```bash
-DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network localhost
+DIAMOND_ADDRESS=0x... ./node_modules/.bin/hardhat run scripts/upgrade/prepareMigrationInput.ts --network localhost
 
 # With custom subgraph endpoint
-DIAMOND_ADDRESS=0x... SUBGRAPH_ENDPOINT=https://... npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network localhost
+DIAMOND_ADDRESS=0x... SUBGRAPH_ENDPOINT=https://... ./node_modules/.bin/hardhat run scripts/upgrade/prepareMigrationInput.ts --network localhost
 ```
 
 Output: `scripts/upgrade/output/migration-input.json`
@@ -111,7 +111,7 @@ Runs migration using the validated input file, then verifies results on-chain.
 
 ```bash
 DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
-  npx hardhat run scripts/upgrade/runMigration.ts --network localhost
+  ./node_modules/.bin/hardhat run scripts/upgrade/runMigration.ts --network localhost
 ```
 
 Output: `scripts/upgrade/output/migration-report.json`

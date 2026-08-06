@@ -13,11 +13,11 @@
  *   6. InstantLayer templates exist (if any)
  *
  * Usage:
- *   npx hardhat run scripts/upgrade/verifyPeripheralWiring.ts --network arbitrum
+ *   ./node_modules/.bin/hardhat run scripts/upgrade/verifyPeripheralWiring.ts --network arbitrum
  *
  *   # Custom config
  *   VERIFY_PERIPHERALS_CONFIG=./path/to/config.json \
- *     npx hardhat run scripts/upgrade/verifyPeripheralWiring.ts --network arbitrum
+ *     ./node_modules/.bin/hardhat run scripts/upgrade/verifyPeripheralWiring.ts --network arbitrum
  *
  * Config: scripts/upgrade/config/verifyPeripherals.json
  */
@@ -215,6 +215,12 @@ async function runWiringVerification() {
 	console.log("\n=== InstantLayer ===")
 
 	const il = await ethers.getContractAt("InstantLayer", instantLayerAddress)
+	const ilSymmio = await il.symmio()
+	results.push({
+		name: "IL immutable core binding",
+		pass: ilSymmio.toLowerCase() === diamondAddress.toLowerCase(),
+		detail: `symmio() = ${ilSymmio}`,
+	})
 
 	const ilAccountLayer = await il.accountLayer()
 	results.push({
@@ -316,6 +322,13 @@ async function runWiringVerification() {
 	if (symbolManagerAddress && ethers.isAddress(symbolManagerAddress)) {
 		console.log("\n=== SymbolManager Wiring ===")
 		console.log(`SymbolManager:       ${symbolManagerAddress}`)
+		const symbolManager = await ethers.getContractAt("SymmioSymbolManager", symbolManagerAddress)
+		const symbolManagerCore = await symbolManager.symmioAddress()
+		results.push({
+			name: "SM immutable core binding",
+			pass: symbolManagerCore.toLowerCase() === diamondAddress.toLowerCase(),
+			detail: `symmioAddress() = ${symbolManagerCore}`,
+		})
 
 		const smHasSymbolManager = await coreView.hasRole(symbolManagerAddress, ROLES.SYMBOL_MANAGER_ROLE)
 		results.push({

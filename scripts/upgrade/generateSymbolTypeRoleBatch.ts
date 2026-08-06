@@ -8,11 +8,11 @@
  *
  * Flow:
  *   1. Execute grant batch via Safe
- *   2. Run: npx hardhat run scripts/upgrade/setSymbolType.ts --network <network>
+ *   2. Run: ./node_modules/.bin/hardhat run scripts/upgrade/setSymbolType.ts --network <network>
  *   3. Execute revoke batch via Safe
  *
  * Usage:
- *   npx hardhat run scripts/upgrade/generateSymbolTypeRoleBatch.ts --network <network>
+ *   ./node_modules/.bin/hardhat run scripts/upgrade/generateSymbolTypeRoleBatch.ts --network <network>
  *
  * Config: scripts/upgrade/config/upgrade.json
  */
@@ -98,7 +98,7 @@ async function main() {
 
 	console.log("\nExecution order:")
 	console.log(`  1. Import grant-symbol-role-safe-batch-${networkName}.json into Safe → execute`)
-	console.log("  2. Run: npx hardhat run scripts/upgrade/setSymbolType.ts --network <network>")
+	console.log("  2. Run: ./node_modules/.bin/hardhat run scripts/upgrade/setSymbolType.ts --network <network>")
 	console.log(`  3. Import revoke-symbol-role-safe-batch-${networkName}.json into Safe → execute`)
 }
 

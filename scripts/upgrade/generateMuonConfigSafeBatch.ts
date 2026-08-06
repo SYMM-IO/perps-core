@@ -11,13 +11,16 @@
  *   - diamondAddress and safeAddress fall back to upgrade-<network>.json via loadUpgradeConfigShared()
  *
  * Usage:
- *   npx hardhat run scripts/upgrade/generateMuonConfigSafeBatch.ts --network arbitrum
+ *   ./node_modules/.bin/hardhat run scripts/upgrade/generateMuonConfigSafeBatch.ts --network arbitrum
  *
  * Optional env overrides:
  *   DIAMOND_ADDRESS, SAFE_ADDRESS,
  *   MUON_UPNL_VALID_TIME, MUON_PRICE_VALID_TIME,
  *   SAFE_NONCE,
  *   PROPOSE_TO_SAFE_SERVICE=1|0,
+ *   SUBMIT_SAFE_PROPOSAL=true,
+ *   CONFIRM_CHAIN_ID=<connected chain id>,
+ *   CONFIRM_SAFE_ADDRESS=<exact Safe address>,
  *   SAFE_SERVICE_URL,
  *   SAFE_SERVICE_API_KEY,
  *   SAFE_SENDER_ADDRESS,
@@ -32,6 +35,7 @@ import fs from "fs"
 import path from "path"
 
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
+import { requireSafeProposalConfirmation } from "./utils/executionGuard.js"
 import { baseNetworkName, loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 import { toHumanReadableSafeTxFromIface, type SafeBatch } from "./utils/upgradeHelpers.js"
 
@@ -299,7 +303,7 @@ async function getSafeDelegates(safeServiceUrl: string, safe: string, apiKey: st
 }
 
 async function resolveSafeNonce(
-	safeContract: ethers.Contract,
+	safeContract: { nonce(): Promise<bigint> },
 	safeServiceUrl: string,
 	safe: string,
 	apiKey: string | undefined,
@@ -486,7 +490,10 @@ async function main() {
 	const proposalConfig = config.safeProposal ?? config.proposal ?? {}
 	const proposeToSafeService =
 		process.env.PROPOSE_TO_SAFE_SERVICE !== undefined ? process.env.PROPOSE_TO_SAFE_SERVICE === "1" : proposalConfig.enabled === true
-	const submitSafeProposal = proposalConfig.submit === true
+	const submitSafeProposal = requireSafeProposalConfirmation(BigInt(chainId), safe)
+	if (proposalConfig.submit === true && !submitSafeProposal) {
+		console.log("Config safeProposal.submit=true is informational only; this run will not submit without the explicit Safe submission interlocks.")
+	}
 
 	if (!proposeToSafeService) {
 		console.log("\nSafe service proposal is disabled. Import the batch into Safe Transaction Builder when ready.")
@@ -509,7 +516,13 @@ async function main() {
 	const apiKey = process.env.SAFE_SERVICE_API_KEY ?? process.env[apiKeyEnvVar] ?? proposalConfig.apiKey
 
 	const safeContract = new ethers.Contract(safe, safeIface, ethers.provider)
-	const nonceResolution = await resolveSafeNonce(safeContract, safeServiceUrl, safe, apiKey, proposalConfig.safeNonce)
+	const nonceResolution = await resolveSafeNonce(
+		safeContract as unknown as { nonce(): Promise<bigint> },
+		safeServiceUrl,
+		safe,
+		apiKey,
+		proposalConfig.safeNonce,
+	)
 	const safeNonce = nonceResolution.nonce
 	console.log(`Safe on-chain nonce:       ${nonceResolution.onChainNonce}`)
 	console.log(
@@ -611,7 +624,7 @@ async function main() {
 				throw new Error(
 					`Safe proposal sender ${senderAddress} is not available for signing. ` +
 						`Load the matching private key as TEAM_PROPOSER in .env, or run ` +
-						`npx hardhat keystore set TEAM_PROPOSER and rerun with USE_KEYSTORE=true. ` +
+						`./node_modules/.bin/hardhat keystore set TEAM_PROPOSER and rerun with USE_KEYSTORE=true. ` +
 						`Original error: ${error?.message ?? error}`,
 				)
 			}
@@ -682,7 +695,9 @@ async function main() {
 	}
 
 	if (!submitSafeProposal) {
-		console.log("\nSafe proposal submission is skipped. Set safeProposal.submit=true from an environment that can sign as the Safe proposer.")
+		console.log(
+			`\nSafe proposal submission is skipped. To submit, set SUBMIT_SAFE_PROPOSAL=true CONFIRM_CHAIN_ID=${chainId} CONFIRM_SAFE_ADDRESS=${safe}.`,
+		)
 		return
 	}
 	if (!submissionEligibility?.ok) {

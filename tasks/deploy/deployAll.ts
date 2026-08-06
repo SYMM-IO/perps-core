@@ -2,6 +2,7 @@ import type { ContractTransactionResponse } from "ethers"
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
+import { createDeploymentPlan, type ComponentMode, type DeploymentRecipe } from "../../deployment/recipe.js"
 import { ControlFacet } from "../../src/types/index.js"
 import { getDataDir, setDataScope, writeData } from "../utils/fs.js"
 import { deployAccountLayerDiamond } from "./accountLayerDiamond.js"
@@ -15,21 +16,52 @@ import {
 	createDeployedContract,
 	checkpointedStep,
 	checkpointedBatch,
+	ensureBooleanState,
+	resolveAffiliateRegistrationResumeAction,
 	isCompleted,
 	markCompleted,
 	setCheckpointSimulated,
+	createDeploymentManifest,
+	assertCheckpointManifest,
+	assertCheckpointContractsHaveCode,
 } from "./checkpoint.js"
-import { deployDiamond } from "./diamond.js"
+import { assertExpressProviderSupported, assertRecipeNetworkTarget } from "./deploymentRecipe.js"
+import { checkpointDeployment, persistSubmittedTransaction, recoverCheckpointContractDeployments } from "./deploymentRecovery.js"
+import { deployDiamond, resolveCreate2FactoryAddress } from "./diamond.js"
 import { getConnection } from "./helpers.js"
 import { setHyperEVMBigBlocks } from "./hyperevm.js"
 import { deployInstantLayer } from "./instantLayer.js"
+import { logger } from "./logger.js"
+import {
+	assertConfiguredMuonPermissionsAuthorized,
+	assertGeneralDeploymentMuonPermissions,
+	inspectConfiguredMuonPermissions,
+	parseMuonFunctionPermissions,
+} from "./muonPermissions.js"
 import { deploySymmioPartyB } from "./partyB.js"
-import { ProtocolConfig, loadProtocolConfig } from "./protocolConfig.js"
-import { assertMainnetSafe } from "./safety.js"
+import {
+	ProtocolConfig,
+	hasChainProtocolConfig,
+	loadProtocolConfig,
+	resolveTemplateAddResumeAction,
+	templateConfigMismatches,
+	validateProtocolConfig,
+} from "./protocolConfig.js"
+import { activeDeploymentRecipe } from "./recipeRuntime.js"
+import { assertMainnetSafe, isKnownMainnet } from "./safety.js"
 import { deploySignatureVerifier } from "./signatureVerifier.js"
 import { deployStablecoin } from "./stablecoin.js"
 import { deploySymbolManager, grantSymbolManagerDiamondRoles, grantSymbolManagerOperatorRoles } from "./symbolManager.js"
-import { send } from "./tx.js"
+import {
+	bindDeploymentTransactionWriteAhead,
+	clearDeploymentTransactionWriteAhead,
+	DeploymentTransactionRecord,
+	confirmDeploymentWithReceipt,
+	getDeploymentTransactionJournal,
+	reconcileDeploymentTransactions,
+	resetDeploymentTransactionJournal,
+	send,
+} from "./tx.js"
 
 interface DeploymentResult {
 	contract: string
@@ -40,10 +72,33 @@ interface DeploymentResult {
 }
 
 interface SystemDeploymentReport {
+	deploymentId: string
+	deployerAddress: string
+	network: string
+	chainId: number
+	manifestFingerprint: string
+	recipe?: {
+		name: string
+		path: string
+		digest: string
+		components: { core: ComponentMode; partyB: ComponentMode; symbolManager: ComponentMode; expressProvider: ComponentMode }
+	}
+	lifecycle: "validating" | "pending_handover" | "complete" | "failed"
+	checks: {
+		health: "pending" | "passed" | "failed"
+		verification: "pending" | "passed" | "failed" | "skipped"
+		verificationPolicy: "required" | "explicitly_skipped" | "not_applicable"
+		healthError?: string
+		verificationError?: string
+	}
+	transactions: DeploymentTransactionRecord[]
 	deployments: DeploymentResult[]
 	config: {
 		admin: string
 		symmioFeeReceiver: string
+		liquidationInsuranceVault: string
+		maxLiquidationProfitPerPosition: string
+		softLiquidationPenaltyCollector: string
 		collateralAddress: string
 		deployPartyB: boolean
 		setAdlEnabled: boolean
@@ -52,20 +107,31 @@ interface SystemDeploymentReport {
 		registerDummyAffiliate: boolean
 		setupInstantLayerTemplates: boolean
 		signatureVerifierAddress: string
+		deployMockVerifier: boolean
 		muonAppId: string
 		muonUpnlValidTime: string
 		muonPriceValidTime: string
 		muonPublicKeyX: string
 		muonPublicKeyParity: string
 		muonGatewaySigners: string[]
+		muonFunctionPermissions: string[]
+		partyBMode?: ComponentMode
+		symbolManagerMode?: ComponentMode
+		expressProviderMode?: ComponentMode
 	}
 	summary: {
-		totalContracts: number
-		successfulDeployments: number
-		failedDeployments: number
-		skippedDeployments: number
+		totalDeploymentGroups: number
+		successfulDeploymentGroups: number
+		failedDeploymentGroups: number
+		skippedOrReusedDeploymentGroups: number
 	}
+	ownershipHandover?: {
+		status: "pending_handover" | "complete"
+		targets: Array<{ label: string; address: string; owner: string; pendingOwner: string }>
+	}
+	manualActions?: string[]
 	timestamp: string
+	updatedAt: string
 }
 
 /**
@@ -80,7 +146,8 @@ interface SystemDeploymentReport {
  *                          pendingQuotesValidLength, maxPartyAConnectionLimit
  *   COOLDOWN_ADMIN_ROLE    deallocate/settlement/forceClose/forceCancel cooldowns,
  *                          deallocateDebounceTime, liquidationTimeout
- *   FEE_ADMIN_ROLE         setInvalidBridgedAmountsPool, setDefaultFeeCollector
+ *   FEE_ADMIN_ROLE         setInvalidBridgedAmountsPool, setDefaultFeeCollector,
+ *                          liquidation insurance and soft-liquidation receivers
  *   INTEGRATION_ADMIN_ROLE registerHook
  *   PARTY_B_MANAGER_ROLE   registerPartyB, setADLEnabled
  *   MUON_SETTER_ROLE       setMuonIds, setMuonConfig
@@ -100,7 +167,7 @@ export const DEPLOYER_SETUP_ROLES = [
  *   SETTER_ROLE    setWhitelistedSymmioCore, setSymmioFeeReceiver
  *   APPROVER_ROLE  approveAffiliate
  */
-export const ACCOUNTLAYER_DEPLOYER_SETUP_ROLES = ["SETTER_ROLE", "APPROVER_ROLE"]
+export const ACCOUNTLAYER_DEPLOYER_SETUP_ROLES = ["SETTER_ROLE", "APPROVER_ROLE", "PAUSER_ROLE", "UNPAUSER_ROLE"]
 
 interface DeployedContracts {
 	collateral?: string
@@ -113,44 +180,83 @@ interface DeployedContracts {
 	symbolManager?: string
 }
 
-async function getEnvConfig(hre: any) {
-	const { ethers } = await getConnection(hre)
-	const [deployer] = await ethers.getSigners()
+export function parseBooleanSetting(value: string | undefined, name: string, defaultValue: boolean): boolean {
+	if (value === undefined) return defaultValue
+	if (value === "true") return true
+	if (value === "false") return false
+	throw new Error(`${name} must be exactly "true" or "false"; received ${JSON.stringify(value)}`)
+}
 
-	// Admin defaults to deployer wallet if not set
-	const admin = process.env.ADMIN_PUBLIC_KEY || deployer.address
-	const symmioFeeReceiver = process.env.SYMMIO_FEE_RECEIVER || admin
-	const collateralAddress = process.env.COLLATERAL_ADDRESS || ""
-	// Default to true unless explicitly set to "false"
-	const deployPartyB = process.env.DEPLOY_PARTYB !== "false"
+export function assertDeploymentRecordPolicy(chainId: number | bigint, isSimulated: boolean, logData: boolean): void {
+	if (!isSimulated && Number(chainId) !== 31337 && !logData) {
+		throw new Error(
+			"--log-data false is refused on live deployments: explorer verification and disaster recovery require durable chain-scoped records.",
+		)
+	}
+}
+
+function requireAddress(ethers: any, value: string, name: string): string {
+	if (!value || !ethers.isAddress(value)) throw new Error(`${name} must be a valid non-zero address; received ${JSON.stringify(value)}`)
+	const normalized = ethers.getAddress(value)
+	if (normalized === ethers.ZeroAddress) throw new Error(`${name} must not be the zero address`)
+	return normalized
+}
+
+function requireDecimalUint(value: string, name: string, minimum: bigint = BigInt(0)): string {
+	if (!/^\d+$/.test(value)) throw new Error(`${name} must be an unsigned base-10 integer; received ${JSON.stringify(value)}`)
+	const parsed = BigInt(value)
+	if (parsed < minimum) throw new Error(`${name} must be >= ${minimum}; received ${value}`)
+	const uint256Max = (BigInt(1) << BigInt(256)) - BigInt(1)
+	if (parsed > uint256Max) throw new Error(`${name} must fit in uint256; received ${value}`)
+	return parsed.toString()
+}
+
+export function deploymentConfigFromSource(source: Record<string, string | undefined>, deployerAddress: string, recipe?: DeploymentRecipe) {
+	// Local deployments may default to the deployer. Real mainnets reject that default in
+	// assertMainnetSafe: production administration must be an explicitly configured multisig.
+	const adminWasExplicit = recipe ? true : Boolean(source.ADMIN_PUBLIC_KEY)
+	const admin = source.ADMIN_PUBLIC_KEY || deployerAddress
+	const symmioFeeReceiver = source.SYMMIO_FEE_RECEIVER || admin
+	const liquidationInsuranceVault = source.LIQUIDATION_INSURANCE_VAULT || ""
+	const maxLiquidationProfitPerPosition = source.MAX_LIQUIDATION_PROFIT_PER_POSITION || ""
+	const softLiquidationPenaltyCollector = source.SOFT_LIQUIDATION_PENALTY_COLLECTOR || ""
+	const collateralAddress = source.COLLATERAL_ADDRESS || ""
+	const deployPartyB = parseBooleanSetting(source.DEPLOY_PARTYB, "DEPLOY_PARTYB", true)
 	// Enable ADL for the deployed SymmioPartyB (only applied when DEPLOY_PARTYB is true). Default: false.
-	const setAdlEnabled = process.env.SET_ADL_ENABLED === "true"
-	const deploySymbolManagerFlag = process.env.DEPLOY_SYMBOL_MANAGER !== "false"
-	const registerDummyAffiliate = process.env.REGISTER_DUMMY_AFFILIATE !== "false"
+	const setAdlEnabled = parseBooleanSetting(source.SET_ADL_ENABLED, "SET_ADL_ENABLED", false)
+	const deploySymbolManagerFlag = parseBooleanSetting(source.DEPLOY_SYMBOL_MANAGER, "DEPLOY_SYMBOL_MANAGER", true)
+	const registerDummyAffiliate = parseBooleanSetting(source.REGISTER_DUMMY_AFFILIATE, "REGISTER_DUMMY_AFFILIATE", false)
 	// Optional signer address for SymmioPartyB (ERC-1271 signature verification)
-	const partyBSigner = process.env.PARTYB_SIGNER || ""
+	const partyBSigner = source.PARTYB_SIGNER || ""
 	// Optional operator address that will receive SYMBOL_ADDER_ROLE + SYMBOL_REMOVER_ROLE on the SymbolManager
-	const symbolManagerOperator = process.env.SYMBOL_MANAGER_OPERATOR || ""
+	const symbolManagerOperator = source.SYMBOL_MANAGER_OPERATOR || ""
 	// Setup InstantLayer templates (default: true, set to "false" to skip)
-	const setupInstantLayerTemplates = process.env.SETUP_INSTANT_LAYER_TEMPLATES !== "false"
+	const setupInstantLayerTemplates = parseBooleanSetting(source.SETUP_INSTANT_LAYER_TEMPLATES, "SETUP_INSTANT_LAYER_TEMPLATES", true)
 	// Optional: use existing MuonSignatureVerifier address instead of deploying
-	const signatureVerifierAddress = process.env.MUON_SIGNATURE_VERIFIER_ADDRESS || ""
+	const signatureVerifierAddress = source.MUON_SIGNATURE_VERIFIER_ADDRESS || ""
 	// Deploy MockMuonSignatureVerifier (accepts all signatures) instead of MuonSignatureVerifier
-	const deployMockVerifier = process.env.DEPLOY_MOCK_VERIFIER === "true"
+	const deployMockVerifier = parseBooleanSetting(source.DEPLOY_MOCK_VERIFIER, "DEPLOY_MOCK_VERIFIER", false)
 	// Muon runtime config (defaults: 300s validity for both)
-	const muonAppId = process.env.MUON_APP_ID || ""
-	const muonUpnlValidTime = process.env.MUON_UPNL_VALID_TIME || "300"
-	const muonPriceValidTime = process.env.MUON_PRICE_VALID_TIME || "300"
-	const muonPublicKeyX = process.env.MUON_PUBLIC_KEY_X || ""
-	const muonPublicKeyParity = process.env.MUON_PUBLIC_KEY_PARITY ?? ""
-	const muonGatewaySigners = (process.env.MUON_GATEWAY_SIGNERS || "")
+	const muonAppId = source.MUON_APP_ID || ""
+	const muonUpnlValidTime = source.MUON_UPNL_VALID_TIME || "300"
+	const muonPriceValidTime = source.MUON_PRICE_VALID_TIME || "300"
+	const muonPublicKeyX = source.MUON_PUBLIC_KEY_X || ""
+	const muonPublicKeyParity = source.MUON_PUBLIC_KEY_PARITY ?? ""
+	const muonGatewaySigners = (source.MUON_GATEWAY_SIGNERS || "")
 		.split(",")
 		.map(s => s.trim())
 		.filter(Boolean)
+	const muonFunctionPermissions = source.MUON_FUNCTION_PERMISSIONS
+		? parseMuonFunctionPermissions(source.MUON_FUNCTION_PERMISSIONS).map(({ name }) => name)
+		: []
 
 	return {
 		admin,
+		adminWasExplicit,
 		symmioFeeReceiver,
+		liquidationInsuranceVault,
+		maxLiquidationProfitPerPosition,
+		softLiquidationPenaltyCollector,
 		collateralAddress,
 		deployPartyB,
 		setAdlEnabled,
@@ -167,6 +273,248 @@ async function getEnvConfig(hre: any) {
 		muonPublicKeyX,
 		muonPublicKeyParity,
 		muonGatewaySigners,
+		muonFunctionPermissions,
+		partyBMode: recipe?.partyB.mode,
+		symbolManagerMode: recipe?.symbolManager.mode,
+		expressProviderMode: recipe?.expressProvider.mode,
+	}
+}
+
+export function resolveDeploymentProtocolConfig(chainId: number | bigint, recipe?: DeploymentRecipe): ProtocolConfig {
+	if (recipe) {
+		if (!recipe.core.protocol) throw new Error("Recipe core.protocol is required for deploy:system")
+		validateProtocolConfig(recipe.core.protocol, `inline protocol config from recipe ${recipe.name}`)
+		return recipe.core.protocol
+	}
+	return loadProtocolConfig(chainId)
+}
+
+async function getEnvConfig(hre: any, recipe?: DeploymentRecipe) {
+	const { ethers } = await getConnection(hre)
+	const [deployer] = await ethers.getSigners()
+	if (!deployer) {
+		throw new Error("No deployment signer is configured. Set NEW_DEPLOYER/TEAM_DEPLOYER or enable the named Hardhat keystore deployer account.")
+	}
+	const source: Record<string, string | undefined> = recipe ? activeDeploymentRecipe!.env : process.env
+	return deploymentConfigFromSource(source, deployer.address, recipe)
+}
+
+/**
+ * Validate and normalize every external deployment input before the first transaction.
+ * Contract-code checks are reads, so a bad token/verifier address fails without spending
+ * gas or creating a checkpoint that looks resumable.
+ */
+export async function validateDeploymentConfig(
+	ethers: any,
+	chainId: number | bigint,
+	config: Awaited<ReturnType<typeof getEnvConfig>>,
+	protocolConfig: ProtocolConfig,
+	options: { isSimulated?: boolean } = {},
+): Promise<void> {
+	validateProtocolConfig(protocolConfig, `protocol config for chainId ${Number(chainId)}`)
+	await resolveCreate2FactoryAddress(ethers, process.env.CREATE2_FACTORY_ADDRESS || "")
+
+	config.admin = requireAddress(ethers, config.admin, "ADMIN_PUBLIC_KEY")
+	config.symmioFeeReceiver = requireAddress(ethers, config.symmioFeeReceiver, "SYMMIO_FEE_RECEIVER")
+	// These settings are economically active: a zero insurance vault credits excess
+	// liquidation funds to the zero-address ledger, and a zero soft-penalty collector
+	// makes non-zero soft liquidations revert. Known-mainnet deployments and their fork
+	// rehearsals must therefore supply reviewed values explicitly. Local/test networks use
+	// the admin and the cross-chain reviewed 100e18 cap as convenient fixture defaults.
+	if (isKnownMainnet(chainId)) {
+		if (!config.liquidationInsuranceVault) throw new Error("LIQUIDATION_INSURANCE_VAULT is required for known-mainnet deployments and rehearsals")
+		if (!config.maxLiquidationProfitPerPosition) {
+			throw new Error("MAX_LIQUIDATION_PROFIT_PER_POSITION is required for known-mainnet deployments and rehearsals")
+		}
+		if (!config.softLiquidationPenaltyCollector) {
+			throw new Error("SOFT_LIQUIDATION_PENALTY_COLLECTOR is required for known-mainnet deployments and rehearsals")
+		}
+	} else {
+		config.liquidationInsuranceVault ||= config.admin
+		config.maxLiquidationProfitPerPosition ||= "100000000000000000000"
+		config.softLiquidationPenaltyCollector ||= config.admin
+	}
+	config.liquidationInsuranceVault = requireAddress(ethers, config.liquidationInsuranceVault, "LIQUIDATION_INSURANCE_VAULT")
+	config.maxLiquidationProfitPerPosition = requireDecimalUint(
+		config.maxLiquidationProfitPerPosition,
+		"MAX_LIQUIDATION_PROFIT_PER_POSITION",
+		BigInt(1),
+	)
+	config.softLiquidationPenaltyCollector = requireAddress(ethers, config.softLiquidationPenaltyCollector, "SOFT_LIQUIDATION_PENALTY_COLLECTOR")
+	if (config.collateralAddress) config.collateralAddress = requireAddress(ethers, config.collateralAddress, "COLLATERAL_ADDRESS")
+	if (config.signatureVerifierAddress) {
+		config.signatureVerifierAddress = requireAddress(ethers, config.signatureVerifierAddress, "MUON_SIGNATURE_VERIFIER_ADDRESS")
+	}
+	if (config.partyBSigner) config.partyBSigner = requireAddress(ethers, config.partyBSigner, "PARTYB_SIGNER")
+	if (config.deployPartyB && !config.partyBSigner) {
+		throw new Error("PARTYB_SIGNER is required when DEPLOY_PARTYB=true; refusing to deploy a PartyB that cannot validate operational signatures")
+	}
+	if (!config.deployPartyB && config.partyBSigner) {
+		throw new Error("PARTYB_SIGNER is set while DEPLOY_PARTYB=false; remove it or enable PartyB explicitly")
+	}
+	if (config.symbolManagerOperator) {
+		config.symbolManagerOperator = requireAddress(ethers, config.symbolManagerOperator, "SYMBOL_MANAGER_OPERATOR")
+	}
+	if (config.deploySymbolManager && !config.symbolManagerOperator) {
+		throw new Error("SYMBOL_MANAGER_OPERATOR is required when DEPLOY_SYMBOL_MANAGER=true; refusing to deploy an inoperable SymbolManager")
+	}
+	if (!config.deploySymbolManager && config.symbolManagerOperator) {
+		throw new Error("SYMBOL_MANAGER_OPERATOR is set while DEPLOY_SYMBOL_MANAGER=false; remove it or enable the SymbolManager explicitly")
+	}
+
+	if (config.signatureVerifierAddress && config.deployMockVerifier) {
+		throw new Error("MUON_SIGNATURE_VERIFIER_ADDRESS and DEPLOY_MOCK_VERIFIER=true are mutually exclusive")
+	}
+
+	config.muonUpnlValidTime = requireDecimalUint(config.muonUpnlValidTime, "MUON_UPNL_VALID_TIME", BigInt(1))
+	config.muonPriceValidTime = requireDecimalUint(config.muonPriceValidTime, "MUON_PRICE_VALID_TIME", BigInt(1))
+	if (config.muonAppId) config.muonAppId = requireDecimalUint(config.muonAppId, "MUON_APP_ID", BigInt(1))
+
+	const hasPublicKeyX = config.muonPublicKeyX !== ""
+	const hasPublicKeyParity = config.muonPublicKeyParity !== ""
+	if (hasPublicKeyX !== hasPublicKeyParity) {
+		throw new Error("MUON_PUBLIC_KEY_X and MUON_PUBLIC_KEY_PARITY must either both be set or both be omitted")
+	}
+	if (hasPublicKeyX) {
+		if (!/^(?:0x[0-9a-fA-F]+|\d+)$/.test(config.muonPublicKeyX)) {
+			throw new Error(`MUON_PUBLIC_KEY_X must be an unsigned integer; received ${JSON.stringify(config.muonPublicKeyX)}`)
+		}
+		const publicKeyX = BigInt(config.muonPublicKeyX)
+		const maxUint256 = (BigInt(1) << BigInt(256)) - BigInt(1)
+		if (publicKeyX <= BigInt(0) || publicKeyX > maxUint256) throw new Error("MUON_PUBLIC_KEY_X must be in the uint256 range 1..2^256-1")
+		config.muonPublicKeyX = publicKeyX.toString()
+		if (config.muonPublicKeyParity !== "0" && config.muonPublicKeyParity !== "1") {
+			throw new Error(`MUON_PUBLIC_KEY_PARITY must be exactly "0" or "1"; received ${JSON.stringify(config.muonPublicKeyParity)}`)
+		}
+	}
+
+	const gatewaySigners = config.muonGatewaySigners.map((signer, index) => requireAddress(ethers, signer, `MUON_GATEWAY_SIGNERS[${index}]`))
+	if (new Set(gatewaySigners.map(signer => signer.toLowerCase())).size !== gatewaySigners.length) {
+		throw new Error("MUON_GATEWAY_SIGNERS must not contain duplicate addresses")
+	}
+	config.muonGatewaySigners = gatewaySigners
+
+	if (config.collateralAddress) {
+		const code = await ethers.provider.getCode(config.collateralAddress)
+		if (code === "0x") throw new Error(`COLLATERAL_ADDRESS has no contract code on chainId ${Number(chainId)}: ${config.collateralAddress}`)
+		try {
+			const collateral = await ethers.getContractAt(
+				[
+					"function decimals() view returns (uint8)",
+					"function totalSupply() view returns (uint256)",
+					"function balanceOf(address) view returns (uint256)",
+				],
+				config.collateralAddress,
+			)
+			const [decimals] = await Promise.all([collateral.decimals(), collateral.totalSupply(), collateral.balanceOf(config.admin)])
+			const normalizedDecimals = Number(decimals)
+			if (!Number.isSafeInteger(normalizedDecimals) || normalizedDecimals < 0 || normalizedDecimals > 18) {
+				throw new Error(`invalid decimals value ${String(decimals)}`)
+			}
+		} catch (err) {
+			throw new Error(
+				`COLLATERAL_ADDRESS ${config.collateralAddress} failed required ERC-20 probes (decimals, totalSupply, balanceOf): ` +
+					`${err instanceof Error ? err.message : String(err)}`,
+			)
+		}
+	}
+	if (config.signatureVerifierAddress) {
+		const code = await ethers.provider.getCode(config.signatureVerifierAddress)
+		if (code === "0x") {
+			throw new Error(`MUON_SIGNATURE_VERIFIER_ADDRESS has no contract code on chainId ${Number(chainId)}: ${config.signatureVerifierAddress}`)
+		}
+	}
+
+	// A real verifier is unusable unless every normal protocol operation has both a
+	// registered TSS key and gateway signer authorized for its MuonFunction category.
+	// Apply this on every network so a rehearsal exercises the exact production profile.
+	if (!config.deployMockVerifier) {
+		if (!config.muonAppId) throw new Error("MUON_APP_ID is required when DEPLOY_MOCK_VERIFIER=false")
+		assertGeneralDeploymentMuonPermissions(config.muonFunctionPermissions, "MUON_FUNCTION_PERMISSIONS")
+
+		if (!config.signatureVerifierAddress) {
+			if (!hasPublicKeyX) {
+				throw new Error("MUON_PUBLIC_KEY_X and MUON_PUBLIC_KEY_PARITY are required when deploying a new MuonSignatureVerifier")
+			}
+			if (config.muonGatewaySigners.length === 0) {
+				throw new Error("At least one MUON_GATEWAY_SIGNERS address is required when deploying a new MuonSignatureVerifier")
+			}
+		} else {
+			try {
+				const verifier = await ethers.getContractAt("MuonSignatureVerifier", config.signatureVerifierAddress)
+				const [existingKeysRaw, existingGatewaySignersRaw, defaultAdminRole, setterRole, signers] = await Promise.all([
+					verifier.getAllPublicKeys(),
+					verifier.getAllGatewaySigners(),
+					verifier.DEFAULT_ADMIN_ROLE(),
+					verifier.SETTER_ROLE(),
+					ethers.getSigners(),
+				])
+				const existingKeys = existingKeysRaw.map((key: { x: bigint; parity: bigint | number }) => ({
+					x: key.x.toString(),
+					parity: Number(key.parity),
+				}))
+				const existingGatewaySigners = existingGatewaySignersRaw.map((signer: string) => ethers.getAddress(signer))
+				const targetKeys = hasPublicKeyX ? [{ x: config.muonPublicKeyX, parity: Number(config.muonPublicKeyParity) }] : existingKeys
+				const targetGatewaySigners = config.muonGatewaySigners.length > 0 ? config.muonGatewaySigners : existingGatewaySigners
+
+				if (targetKeys.length === 0) throw new Error("Existing MuonSignatureVerifier has no public keys configured")
+				if (targetGatewaySigners.length === 0) throw new Error("Existing MuonSignatureVerifier has no gateway signers configured")
+
+				const deployer = signers[0]
+				if (!deployer) throw new Error("No deployment signer is configured for existing MuonSignatureVerifier preflight")
+				const [deployerIsAdmin, deployerIsSetter, adminIsAdmin, adminIsSetter] = await Promise.all([
+					verifier.hasRole(defaultAdminRole, deployer.address),
+					verifier.hasRole(setterRole, deployer.address),
+					verifier.hasRole(defaultAdminRole, config.admin),
+					verifier.hasRole(setterRole, config.admin),
+				])
+				if (!adminIsAdmin && !deployerIsAdmin) {
+					throw new Error(`ADMIN_PUBLIC_KEY lacks DEFAULT_ADMIN_ROLE on existing MuonSignatureVerifier ${config.signatureVerifierAddress}`)
+				}
+				if (!adminIsSetter && !deployerIsAdmin) {
+					throw new Error(`ADMIN_PUBLIC_KEY lacks SETTER_ROLE on existing MuonSignatureVerifier ${config.signatureVerifierAddress}`)
+				}
+
+				const registeredKeyIds = new Set(existingKeys.map((key: { x: string; parity: number }) => `${key.x}:${key.parity}`))
+				const registeredGatewaySigners = new Set(existingGatewaySigners.map((signer: string) => signer.toLowerCase()))
+				const missingRegistration = [
+					...targetKeys
+						.filter((key: { x: string; parity: number }) => !registeredKeyIds.has(`${key.x}:${key.parity}`))
+						.map((key: { x: string; parity: number }) => `public key x=${key.x}, parity=${key.parity}`),
+					...targetGatewaySigners
+						.filter((signer: string) => !registeredGatewaySigners.has(signer.toLowerCase()))
+						.map((signer: string) => `gateway signer ${signer}`),
+				]
+				const inspection = await inspectConfiguredMuonPermissions(verifier, {
+					publicKeys: targetKeys,
+					gatewaySigners: targetGatewaySigners,
+					permissionNames: config.muonFunctionPermissions,
+				})
+				if ((missingRegistration.length > 0 || !inspection.fullyAuthorized) && !deployerIsSetter) {
+					const permissionProblems = [
+						...inspection.publicKeys
+							.filter(result => !result.fullyAuthorized)
+							.map(
+								result =>
+									`public key x=${String(result.publicKey.x)}, parity=${result.publicKey.parity} missing ${result.missingPermissions.join(", ")}`,
+							),
+						...inspection.gatewaySigners
+							.filter(result => !result.fullyAuthorized)
+							.map(result => `gateway signer ${result.signer} missing ${result.missingPermissions.join(", ")}`),
+					]
+					throw new Error(
+						`Existing MuonSignatureVerifier requires repair, but deployer ${deployer.address} lacks SETTER_ROLE:\n  - ${[
+							...missingRegistration.map(item => `${item} is not registered`),
+							...permissionProblems,
+						].join("\n  - ")}`,
+					)
+				}
+			} catch (err) {
+				throw new Error(
+					`Unable to validate existing Muon verifier ${config.signatureVerifierAddress}: ${err instanceof Error ? err.message : String(err)}`,
+				)
+			}
+		}
 	}
 }
 
@@ -180,12 +528,27 @@ type DeploymentStep = {
 async function runDeploymentStep(checkpoint: DeploymentCheckpoint, step: DeploymentStep): Promise<void> {
 	checkpoint.step = step.id
 	saveCheckpoint(checkpoint)
-	console.log(`Step ${step.order}: ${step.title}...`)
-	await step.run()
+	logger.info(`Step ${step.order}: ${step.title}...`)
+	try {
+		await step.run()
+	} finally {
+		// Preserve transaction evidence even when a step fails. getDeploymentTransactionJournal
+		// contains this process's complete run, so merge by immutable submission outcome.
+		const combined = [...(checkpoint.transactions || []), ...getDeploymentTransactionJournal()]
+		checkpoint.transactions = [
+			...new Map(combined.map(record => [`${record.hash}:${record.replacementHash || ""}:${record.status}`, record])).values(),
+		]
+		saveCheckpoint(checkpoint)
+	}
 }
 
 export const deployAllTask = task("deploy:system", "Deploys all system contracts and sets up the complete environment")
-	.addOption({ name: "verify", description: "Verify contracts after deployment", type: ArgumentType.BOOLEAN, defaultValue: false })
+	.addOption({
+		name: "verify",
+		description: "Verify contracts after deployment (defaults true on non-local live networks)",
+		type: ArgumentType.BOOLEAN,
+		defaultValue: true,
+	})
 	.addOption({ name: "logData", description: "Write deployment addresses to data files", type: ArgumentType.BOOLEAN, defaultValue: true })
 	.addOption({ name: "fresh", description: "Ignore checkpoint and start fresh deployment", type: ArgumentType.BOOLEAN, defaultValue: false })
 	.addOption({
@@ -238,8 +601,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 	})
 	.addOption({
 		name: "allowUnsafeMainnet",
-		description:
-			"Proceed on a mainnet chain even when unsafe settings (mock verifier, fake collateral, dummy affiliate, public deployer key) are active",
+		description: "Proceed despite mainnet safety violations; also requires UNSAFE_MAINNET_CONFIRM_CHAIN_ID to equal the connected chain id",
 		type: ArgumentType.BOOLEAN,
 		defaultValue: false,
 	})
@@ -261,90 +623,107 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			},
 			hre,
 		) => {
+			const recipeRuntime = activeDeploymentRecipe
+			const recipe = recipeRuntime?.recipe
+			if (recipe) {
+				// The shared planner is the single executable-mode contract used by doctor,
+				// the CLI preview, standalone components, and this direct task entry point.
+				createDeploymentPlan(recipe)
+				const legacyOverrides = [
+					["--deploy-fake-stablecoin", deployFakeStablecoin],
+					["--deploy-partyb", deployPartyb],
+					["--set-adl-enabled", setAdlEnabledFlag],
+					["--deploy-symbol-manager", deploySymbolManagerFlag],
+					["--symbol-manager-operator", symbolManagerOperatorFlag],
+					["--deploy-mock-verifier", deployMockVerifier],
+					["--register-dummy-affiliate", registerDummyAffiliateFlag],
+					["--setup-instant-layer-templates", setupIlTemplatesFlag],
+				].filter(([, value]) => value !== undefined)
+				if (legacyOverrides.length > 0 || allowUnsafeMainnet) {
+					throw new Error(
+						`Recipe mode refuses public command-line overrides (${legacyOverrides.map(([name]) => name).join(", ") || "--allow-unsafe-mainnet"}). ` +
+							`Edit and review ${recipeRuntime.path}; the JSON recipe is the sole deployment intent.`,
+					)
+				}
+				if (recipe.core.mode !== "deploy") {
+					throw new Error(`LIVE_TARGET_UNSUPPORTED: deploy:system requires core.mode=deploy; received ${recipe.core.mode}`)
+				}
+				if (recipe.expressProvider.mode === "deploy") assertExpressProviderSupported(recipe.network)
+				if (recipe.partyB.mode === "reuse" || recipe.symbolManager.mode === "reuse") {
+					throw new Error(
+						"LIVE_TARGET_UNSUPPORTED: deploy:system cannot safely reuse PartyB or SymbolManager while deploying a brand-new core, because their core binding cannot be proven before the new core address exists. Use mode=deploy/skip, or deploy the add-on separately against core.fromReport.",
+					)
+				}
+				verify = recipe.execution.verify
+				logData = true
+			}
 			const connection = await getConnection(hre)
 			const { ethers } = connection
 			const [deployer] = await ethers.getSigners()
+			if (!deployer) {
+				throw new Error("No deployment signer is configured. Set NEW_DEPLOYER/TEAM_DEPLOYER or enable the named Hardhat keystore deployer account.")
+			}
 			const deployerAddress = deployer.address
-			const config = await getEnvConfig(hre)
+			const config = await getEnvConfig(hre, recipe)
 
 			// CLI flags override env vars when explicitly provided
-			if (deployFakeStablecoin !== undefined && deployFakeStablecoin === "true") config.collateralAddress = ""
-			if (deployPartyb !== undefined) config.deployPartyB = deployPartyb === "true"
-			if (setAdlEnabledFlag !== undefined) config.setAdlEnabled = setAdlEnabledFlag === "true"
-			if (deploySymbolManagerFlag !== undefined) config.deploySymbolManager = deploySymbolManagerFlag === "true"
+			if (deployFakeStablecoin !== undefined && parseBooleanSetting(deployFakeStablecoin, "--deploy-fake-stablecoin", false)) {
+				config.collateralAddress = ""
+			}
+			if (deployPartyb !== undefined) config.deployPartyB = parseBooleanSetting(deployPartyb, "--deploy-partyb", config.deployPartyB)
+			if (setAdlEnabledFlag !== undefined) {
+				config.setAdlEnabled = parseBooleanSetting(setAdlEnabledFlag, "--set-adl-enabled", config.setAdlEnabled)
+			}
+			if (deploySymbolManagerFlag !== undefined) {
+				config.deploySymbolManager = parseBooleanSetting(deploySymbolManagerFlag, "--deploy-symbol-manager", config.deploySymbolManager)
+			}
 			if (symbolManagerOperatorFlag !== undefined) config.symbolManagerOperator = symbolManagerOperatorFlag
-			if (deployMockVerifier !== undefined) config.deployMockVerifier = deployMockVerifier === "true"
-			if (registerDummyAffiliateFlag !== undefined) config.registerDummyAffiliate = registerDummyAffiliateFlag === "true"
-			if (setupIlTemplatesFlag !== undefined) config.setupInstantLayerTemplates = setupIlTemplatesFlag === "true"
+			if (deployMockVerifier !== undefined) {
+				config.deployMockVerifier = parseBooleanSetting(deployMockVerifier, "--deploy-mock-verifier", config.deployMockVerifier)
+			}
+			if (registerDummyAffiliateFlag !== undefined) {
+				config.registerDummyAffiliate = parseBooleanSetting(registerDummyAffiliateFlag, "--register-dummy-affiliate", config.registerDummyAffiliate)
+			}
+			if (setupIlTemplatesFlag !== undefined) {
+				config.setupInstantLayerTemplates = parseBooleanSetting(
+					setupIlTemplatesFlag,
+					"--setup-instant-layer-templates",
+					config.setupInstantLayerTemplates,
+				)
+			}
 			const network = connection.networkName || "unknown"
 			const chainId = (await ethers.provider.getNetwork()).chainId
 			// An edr-simulated network (the fork-* entries) reports its upstream chainId, so
 			// fork-arbitrum looks like chainId 42161. Scope its records and checkpoint
 			// separately, or a rehearsal overwrites the real Arbitrum ones.
 			const isSimulatedNetwork = (connection as any).networkConfig?.type === "edr-simulated"
+			if (recipe) {
+				assertRecipeNetworkTarget(recipe.network, {
+					network,
+					chainId: Number(chainId),
+					simulated: isSimulatedNetwork,
+				})
+			}
+			const verificationApplicable = !isSimulatedNetwork && Number(chainId) !== 31337
+			if (verificationApplicable && !verify) {
+				throw new Error("--verify=false is refused on non-local deployments; explorer verification is a required deployment gate")
+			}
 			setDataScope(chainId, { simulated: isSimulatedNetwork })
 			setCheckpointSimulated(isSimulatedNetwork)
+			assertDeploymentRecordPolicy(chainId, isSimulatedNetwork, logData)
 
-			// Check for existing checkpoint (using chainId as primary identifier)
-			let checkpoint: DeploymentCheckpoint | null = null
-			if (!fresh) {
-				checkpoint = loadCheckpoint(Number(chainId))
-				if (checkpoint) {
-					displayCheckpointStatus(checkpoint)
-					console.log("Resuming deployment from checkpoint...")
-					console.log("Use --fresh=true flag to start a new deployment.\n")
-				}
-			} else {
-				// --fresh used to silently overwrite the existing checkpoint on the next
-				// save, destroying the record of contracts already deployed on this chain.
-				// Archive it into checkpoints/completed/ instead.
-				if (loadCheckpoint(Number(chainId))) {
-					console.log("--fresh: archiving the existing checkpoint before starting over...")
-					clearCheckpoint(Number(chainId), network)
-					console.log()
-				}
+			// A production chain must have an explicit, reviewed config. Built-in defaults are
+			// retained only for local development: silently applying them to a live chain is not
+			// a safe deployment mode. Fork rehearsals enforce the same requirement.
+			if (!recipe && isKnownMainnet(chainId) && !hasChainProtocolConfig(chainId)) {
+				throw new Error(
+					`Missing required protocol config tasks/config/protocol-${Number(chainId)}.json for mainnet chainId ${Number(chainId)}. ` +
+						"Create and review the chain-specific parameters and InstantLayer templates before deploying or rehearsing.",
+				)
 			}
 
-			// Create new checkpoint if none exists
-			if (!checkpoint) {
-				checkpoint = createCheckpoint(network, Number(chainId))
-			}
-
-			console.log("=".repeat(80))
-			console.log("SYSTEM DEPLOYMENT STARTED")
-			console.log("=".repeat(80))
-			console.log(`Network: ${network}`)
-			console.log(`Chain ID: ${chainId}`)
-			console.log(`Deployer: ${deployer.address}`)
-			console.log(`Admin: ${config.admin}`)
-			console.log(`Symmio Fee Receiver: ${config.symmioFeeReceiver}`)
-			console.log(`Collateral Address: ${config.collateralAddress || "(will deploy FakeStablecoin)"}`)
-			console.log(`Deploy PartyB: ${config.deployPartyB}`)
-			console.log(`Set ADL Enabled: ${config.setAdlEnabled}`)
-			console.log(`PartyB Signer: ${config.partyBSigner || "(not set)"}`)
-			console.log(`Deploy SymbolManager: ${config.deploySymbolManager}`)
-			console.log(`SymbolManager Operator: ${config.symbolManagerOperator || "(not set)"}`)
-			console.log(`Register Dummy Affiliate: ${config.registerDummyAffiliate}`)
-			console.log(`Setup InstantLayer Templates: ${config.setupInstantLayerTemplates}`)
-			console.log(
-				`Signature Verifier Address: ${config.signatureVerifierAddress || (config.deployMockVerifier ? "(will deploy MockMuonSignatureVerifier)" : "(will deploy MuonSignatureVerifier)")}`,
-			)
-			console.log(`Muon App ID: ${config.muonAppId || "(not set)"}`)
-			console.log(`Muon UPNL Valid Time: ${config.muonUpnlValidTime}${process.env.MUON_UPNL_VALID_TIME ? "" : " (default)"}`)
-			console.log(`Muon Price Valid Time: ${config.muonPriceValidTime}${process.env.MUON_PRICE_VALID_TIME ? "" : " (default)"}`)
-			console.log(`Muon Public Key X: ${config.muonPublicKeyX || "(not set)"}`)
-			console.log(`Muon Public Key Parity: ${config.muonPublicKeyParity || "(not set)"}`)
-			console.log(`Muon Gateway Signers: ${config.muonGatewaySigners.length > 0 ? config.muonGatewaySigners.join(",") : "(not set)"}`)
-			console.log("=".repeat(80))
-			console.log()
-
-			// Protocol parameters and InstantLayer templates come from
-			// tasks/config/protocol-<chainId>.json, falling back to built-in defaults.
-			// Loaded up front so a malformed config fails before anything is deployed.
-			const protocolConfig = loadProtocolConfig(chainId)
-
-			// Refuse to deploy a testing-shaped configuration onto a real chain.
-			// Runs before any on-chain action so nothing is spent or half-created.
+			// Load and validate all configuration before checkpoint mutation or the first tx.
+			const protocolConfig = resolveDeploymentProtocolConfig(chainId, recipe)
 			assertMainnetSafe(
 				chainId,
 				deployerAddress,
@@ -352,523 +731,824 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 					deployMockVerifier: config.deployMockVerifier,
 					collateralAddress: config.collateralAddress,
 					registerDummyAffiliate: config.registerDummyAffiliate,
+					adminAddress: config.admin,
+					adminWasExplicit: config.adminWasExplicit,
 				},
 				allowUnsafeMainnet,
 				isSimulatedNetwork,
 			)
+			await validateDeploymentConfig(ethers, chainId, config, protocolConfig, { isSimulated: isSimulatedNetwork })
+			const manifestIntent = {
+				recipe: recipeRuntime
+					? {
+							name: recipeRuntime.recipe.name,
+							path: recipeRuntime.identityPath,
+							digest: recipeRuntime.digest,
+							components: {
+								core: recipeRuntime.recipe.core.mode,
+								partyB: recipeRuntime.recipe.partyB.mode,
+								symbolManager: recipeRuntime.recipe.symbolManager.mode,
+								expressProvider: recipeRuntime.recipe.expressProvider.mode,
+							},
+						}
+					: undefined,
+				network,
+				chainId: Number(chainId),
+				simulated: isSimulatedNetwork,
+				deployer: deployerAddress,
+				create2: {
+					factoryAddress: process.env.CREATE2_FACTORY_ADDRESS || "",
+					vanityPrefix: process.env.DIAMOND_VANITY_PREFIX || "573310",
+				},
+				config,
+				protocolConfig,
+			}
+
+			// Check for existing checkpoint (using chainId as primary identifier)
+			let checkpoint: DeploymentCheckpoint | null = null
+			if (!fresh) {
+				checkpoint = loadCheckpoint(Number(chainId))
+				if (checkpoint) {
+					displayCheckpointStatus(checkpoint)
+					logger.info("Resuming deployment from checkpoint...")
+					logger.info("Use --fresh=true flag to start a new deployment.\n")
+				}
+			} else {
+				// --fresh used to silently overwrite the existing checkpoint on the next
+				// save, destroying the record of contracts already deployed on this chain.
+				// Archive it under checkpoints/abandoned/ instead.
+				if (loadCheckpoint(Number(chainId))) {
+					logger.info("--fresh: archiving the existing checkpoint before starting over...")
+					clearCheckpoint(Number(chainId), network, "abandoned")
+					logger.info()
+				}
+			}
+
+			const isResume = checkpoint !== null
+			// Create new checkpoint if none exists
+			if (!checkpoint) {
+				checkpoint = createCheckpoint(network, Number(chainId))
+			}
+
+			const currentManifest = createDeploymentManifest(manifestIntent, {
+				deploymentId: checkpoint.deploymentId || checkpoint.manifest?.deploymentId,
+			})
+			if (isResume) {
+				assertCheckpointManifest(checkpoint, currentManifest)
+			}
+			checkpoint.deploymentId = currentManifest.deploymentId
+			checkpoint.deployerAddress = deployerAddress
+			checkpoint.manifest = currentManifest
+			// Explorer publication is meaningless for an ephemeral fork/local node, and is
+			// mandatory by default everywhere else. Once requested on a live deployment it
+			// remains sticky across resumes until it passes.
+			checkpoint.verificationRequired = verificationApplicable && Boolean(checkpoint.verificationRequired || verify)
+			if (checkpoint.verificationRequired && !checkpoint.verificationStatus) checkpoint.verificationStatus = "pending"
+			const verificationRequired = checkpoint.verificationRequired
+			const verificationPolicy: SystemDeploymentReport["checks"]["verificationPolicy"] = verificationRequired
+				? "required"
+				: verificationApplicable
+					? "explicitly_skipped"
+					: "not_applicable"
+			if (isResume) {
+				let reconciled = 0
+				try {
+					reconciled = await reconcileDeploymentTransactions(checkpoint.transactions || [], ethers.provider, checkpoint.deployerAddress)
+				} finally {
+					// Persist any records resolved before a later unresolved hash blocked the resume.
+					saveCheckpoint(checkpoint)
+				}
+				if (reconciled > 0) logger.info(`Reconciled ${reconciled} previously unresolved deployment transaction(s).`)
+			}
+			await recoverCheckpointContractDeployments(checkpoint, ethers.provider, "contracts")
+			await assertCheckpointContractsHaveCode(checkpoint, address => ethers.provider.getCode(address))
+			resetDeploymentTransactionJournal()
+			saveCheckpoint(checkpoint)
+
+			logger.info("=".repeat(80))
+			logger.info("SYSTEM DEPLOYMENT STARTED")
+			logger.info("=".repeat(80))
+			logger.info(`Network: ${network}`)
+			logger.info(`Chain ID: ${chainId}`)
+			logger.info(`Deployer: ${deployer.address}`)
+			logger.info(`Admin: ${config.admin}`)
+			logger.info(`Symmio Fee Receiver: ${config.symmioFeeReceiver}`)
+			logger.info(`Liquidation Insurance Vault: ${config.liquidationInsuranceVault}`)
+			logger.info(`Max Liquidation Profit Per Position: ${config.maxLiquidationProfitPerPosition}`)
+			logger.info(`Soft Liquidation Penalty Collector: ${config.softLiquidationPenaltyCollector}`)
+			logger.info(`Collateral Address: ${config.collateralAddress || "(will deploy FakeStablecoin)"}`)
+			logger.info(`Deploy PartyB: ${config.deployPartyB}`)
+			logger.info(`Set ADL Enabled: ${config.setAdlEnabled}`)
+			logger.info(`PartyB Signer: ${config.partyBSigner || "(not set)"}`)
+			logger.info(`Deploy SymbolManager: ${config.deploySymbolManager}`)
+			logger.info(`SymbolManager Operator: ${config.symbolManagerOperator || "(not set)"}`)
+			logger.info(`Register Dummy Affiliate: ${config.registerDummyAffiliate}`)
+			logger.info(`Setup InstantLayer Templates: ${config.setupInstantLayerTemplates}`)
+			logger.info(
+				`Signature Verifier Address: ${config.signatureVerifierAddress || (config.deployMockVerifier ? "(will deploy MockMuonSignatureVerifier)" : "(will deploy MuonSignatureVerifier)")}`,
+			)
+			logger.info(`Muon App ID: ${config.muonAppId || "(not set)"}`)
+			logger.info(`Muon UPNL Valid Time: ${config.muonUpnlValidTime}${process.env.MUON_UPNL_VALID_TIME ? "" : " (default)"}`)
+			logger.info(`Muon Price Valid Time: ${config.muonPriceValidTime}${process.env.MUON_PRICE_VALID_TIME ? "" : " (default)"}`)
+			logger.info(`Muon Public Key X: ${config.muonPublicKeyX || "(not set)"}`)
+			logger.info(`Muon Public Key Parity: ${config.muonPublicKeyParity || "(not set)"}`)
+			logger.info(`Muon Gateway Signers: ${config.muonGatewaySigners.length > 0 ? config.muonGatewaySigners.join(",") : "(not set)"}`)
+			logger.info(
+				`Muon Function Permissions: ${config.muonFunctionPermissions.length > 0 ? config.muonFunctionPermissions.join(",") : config.deployMockVerifier ? "(not applicable to mock verifier)" : "(not set)"}`,
+			)
+			logger.info("=".repeat(80))
+			logger.info()
 
 			const deploymentResults: DeploymentResult[] = []
 			const deployedContracts: DeployedContracts = {}
 
 			// HyperEVM (chainId 999 mainnet, 998 testnet) requires big blocks for facet deployment
-			const isHyperEVM = Number(chainId) === 999 || Number(chainId) === 998
-			if (isHyperEVM) {
-				console.log("HyperEVM detected — enabling big blocks for contract deployment...")
-				await setHyperEVMBigBlocks(hre, true)
-				console.log()
-			}
-
-			await runDeploymentStep(checkpoint, {
-				id: "collateral",
-				title: "Setting up Collateral",
-				order: 1,
-				run: async () => {
-					if (config.collateralAddress) {
-						console.log(`Using existing collateral at: ${config.collateralAddress}`)
-						deployedContracts.collateral = config.collateralAddress
-						// Save to checkpoint for reference
-						if (!checkpoint.contracts.collateral) {
-							checkpoint.contracts.collateral = createDeployedContract(config.collateralAddress)
-							saveCheckpoint(checkpoint)
-						}
-						deploymentResults.push({
-							contract: "Collateral (existing)",
-							address: config.collateralAddress,
-							status: "skipped",
-							timestamp: new Date().toISOString(),
-						})
-					} else {
-						try {
-							const wasAlreadyDeployed = !!checkpoint.contracts.collateral
-							console.log(wasAlreadyDeployed ? "Resuming FakeStablecoin..." : "Deploying FakeStablecoin...")
-							const stablecoin = await deployStablecoin(hre, { logData, checkpoint })
-							deployedContracts.collateral = await stablecoin.getAddress()
-							console.log(`FakeStablecoin deployed at: ${deployedContracts.collateral}`)
-							deploymentResults.push({
-								contract: "FakeStablecoin",
-								address: deployedContracts.collateral!,
-								status: wasAlreadyDeployed ? "skipped" : "success",
-								timestamp: new Date().toISOString(),
-							})
-						} catch (err: any) {
-							console.error(`Failed to deploy FakeStablecoin: ${err.message}`)
-							deploymentResults.push({
-								contract: "FakeStablecoin",
-								address: "N/A",
-								status: "failed",
-								error: err.message,
-								timestamp: new Date().toISOString(),
-							})
-							throw err
-						}
-					}
-					console.log()
-				},
-			})
-
-			await runDeploymentStep(checkpoint, {
-				id: "diamond",
-				title: "Deploying Diamond",
-				order: 2,
-				run: async () => {
-					try {
-						const wasAlreadyComplete = !!checkpoint.contracts.diamond?.diamondCutComplete
-						const diamond = await deployDiamond(hre, { logData, genABI: false, reportGas: false, checkpoint })
-						deployedContracts.diamond = await diamond.getAddress()
-						console.log(`Diamond deployed at: ${deployedContracts.diamond}`)
-						deploymentResults.push({
-							contract: "Diamond",
-							address: deployedContracts.diamond!,
-							status: wasAlreadyComplete ? "skipped" : "success",
-							timestamp: new Date().toISOString(),
-						})
-					} catch (err: any) {
-						console.error(`Failed to deploy Diamond: ${err.message}`)
-						deploymentResults.push({
-							contract: "Diamond",
-							address: "N/A",
-							status: "failed",
-							error: err.message,
-							timestamp: new Date().toISOString(),
-						})
-						throw err
-					}
-					console.log()
-				},
-			})
-
-			await runDeploymentStep(checkpoint, {
-				id: "signatureVerifier",
-				title: config.deployMockVerifier ? "Setting up MockMuonSignatureVerifier" : "Setting up MuonSignatureVerifier",
-				order: 3,
-				run: async () => {
-					if (config.signatureVerifierAddress) {
-						console.log(`Using existing MuonSignatureVerifier at: ${config.signatureVerifierAddress}`)
-						deployedContracts.signatureVerifier = config.signatureVerifierAddress
-						if (!checkpoint.contracts.signatureVerifier) {
-							checkpoint.contracts.signatureVerifier = createDeployedContract(config.signatureVerifierAddress)
-							saveCheckpoint(checkpoint)
-						}
-						deploymentResults.push({
-							contract: "MuonSignatureVerifier (existing)",
-							address: config.signatureVerifierAddress,
-							status: "skipped",
-							timestamp: new Date().toISOString(),
-						})
-					} else if (config.deployMockVerifier) {
-						try {
-							const wasAlreadyDeployed = !!checkpoint.contracts.signatureVerifier
-							if (wasAlreadyDeployed) {
-								const address = checkpoint.contracts.signatureVerifier!.address
-								console.log(`Resuming MockMuonSignatureVerifier at ${address}...`)
-								deployedContracts.signatureVerifier = address
-							} else {
-								console.log("Deploying MockMuonSignatureVerifier...")
-								const factory = await ethers.getContractFactory("MockMuonSignatureVerifier")
-								const mock = await factory.connect(deployer).deploy()
-								await mock.waitForDeployment()
-								await mock.deploymentTransaction()!.wait()
-								deployedContracts.signatureVerifier = await mock.getAddress()
-								checkpoint.contracts.signatureVerifier = createDeployedContract(deployedContracts.signatureVerifier!)
-								saveCheckpoint(checkpoint)
-							}
-							console.log(`MockMuonSignatureVerifier deployed at: ${deployedContracts.signatureVerifier}`)
-							deploymentResults.push({
-								contract: "MockMuonSignatureVerifier",
-								address: deployedContracts.signatureVerifier!,
-								status: wasAlreadyDeployed ? "skipped" : "success",
-								timestamp: new Date().toISOString(),
-							})
-						} catch (err: any) {
-							console.error(`Failed to deploy MockMuonSignatureVerifier: ${err.message}`)
-							deploymentResults.push({
-								contract: "MockMuonSignatureVerifier",
-								address: "N/A",
-								status: "failed",
-								error: err.message,
-								timestamp: new Date().toISOString(),
-							})
-							throw err
-						}
-					} else {
-						try {
-							const wasAlreadyDeployed = !!checkpoint.contracts.signatureVerifier
-							console.log(wasAlreadyDeployed ? "Resuming MuonSignatureVerifier..." : "Deploying MuonSignatureVerifier...")
-							const signatureVerifier = await deploySignatureVerifier(hre, {
-								admin: deployerAddress,
-								logData,
-								checkpoint,
-							})
-							deployedContracts.signatureVerifier = await signatureVerifier.getAddress()
-							console.log(`MuonSignatureVerifier deployed at: ${deployedContracts.signatureVerifier}`)
-							deploymentResults.push({
-								contract: "MuonSignatureVerifier",
-								address: deployedContracts.signatureVerifier!,
-								status: wasAlreadyDeployed ? "skipped" : "success",
-								timestamp: new Date().toISOString(),
-							})
-						} catch (err: any) {
-							console.error(`Failed to deploy MuonSignatureVerifier: ${err.message}`)
-							deploymentResults.push({
-								contract: "MuonSignatureVerifier",
-								address: "N/A",
-								status: "failed",
-								error: err.message,
-								timestamp: new Date().toISOString(),
-							})
-							throw err
-						}
-					}
-					console.log()
-				},
-			})
-
-			await runDeploymentStep(checkpoint, {
-				id: "accountLayerDiamond",
-				title: "Deploying AccountLayer Diamond",
-				order: 4,
-				run: async () => {
-					try {
-						const wasAlreadyComplete = !!checkpoint.contracts.accountLayerDiamond?.diamondCutComplete
-						const accountLayerResult = await deployAccountLayerDiamond(hre, {
-							admin: deployer,
-							symmioFeeReceiver: deployer,
-							logData,
-							checkpoint,
-						})
-						deployedContracts.accountLayerDiamond = accountLayerResult.diamond
-						console.log(`AccountLayerDiamond deployed at: ${deployedContracts.accountLayerDiamond}`)
-						deploymentResults.push({
-							contract: "AccountLayerDiamond",
-							address: deployedContracts.accountLayerDiamond,
-							status: wasAlreadyComplete ? "skipped" : "success",
-							timestamp: new Date().toISOString(),
-						})
-					} catch (err: any) {
-						console.error(`Failed to deploy AccountLayerDiamond: ${err.message}`)
-						deploymentResults.push({
-							contract: "AccountLayerDiamond",
-							address: "N/A",
-							status: "failed",
-							error: err.message,
-							timestamp: new Date().toISOString(),
-						})
-						throw err
-					}
-					console.log()
-				},
-			})
-
-			await runDeploymentStep(checkpoint, {
-				id: "instantLayer",
-				title: "Deploying InstantLayer",
-				order: 5,
-				run: async () => {
-					try {
-						const wasAlreadyDeployed = !!checkpoint.contracts.instantLayer
-						const instantLayer = await deployInstantLayer(hre, {
-							symmioaddress: deployedContracts.diamond!,
-							admin: deployerAddress,
-							logData,
-							checkpoint,
-						})
-						deployedContracts.instantLayer = await instantLayer.getAddress()
-						console.log(`InstantLayer deployed at: ${deployedContracts.instantLayer}`)
-						deploymentResults.push({
-							contract: "InstantLayer",
-							address: deployedContracts.instantLayer!,
-							status: wasAlreadyDeployed ? "skipped" : "success",
-							timestamp: new Date().toISOString(),
-						})
-					} catch (err: any) {
-						console.error(`Failed to deploy InstantLayer: ${err.message}`)
-						deploymentResults.push({
-							contract: "InstantLayer",
-							address: "N/A",
-							status: "failed",
-							error: err.message,
-							timestamp: new Date().toISOString(),
-						})
-						throw err
-					}
-					console.log()
-				},
-			})
-
-			if (config.deployPartyB) {
-				await runDeploymentStep(checkpoint, {
-					id: "symmioPartyB",
-					title: "Deploying SymmioPartyB",
-					order: 6,
-					run: async () => {
-						try {
-							const wasAlreadyDeployed = !!checkpoint.contracts.symmioPartyB
-							const symmioPartyB = await deploySymmioPartyB(hre, {
-								symmioAddress: deployedContracts.diamond!,
-								admin: deployerAddress,
-								logData,
-								checkpoint,
-							})
-							deployedContracts.symmioPartyB = await symmioPartyB.getAddress()
-							console.log(`SymmioPartyB deployed at: ${deployedContracts.symmioPartyB}`)
-							deploymentResults.push({
-								contract: "SymmioPartyB",
-								address: deployedContracts.symmioPartyB!,
-								status: wasAlreadyDeployed ? "skipped" : "success",
-								timestamp: new Date().toISOString(),
-							})
-						} catch (err: any) {
-							console.error(`Failed to deploy SymmioPartyB: ${err.message}`)
-							deploymentResults.push({
-								contract: "SymmioPartyB",
-								address: "N/A",
-								status: "failed",
-								error: err.message,
-								timestamp: new Date().toISOString(),
-							})
-							throw err
-						}
-						console.log()
-					},
-				})
-			}
-
-			if (config.deploySymbolManager) {
-				await runDeploymentStep(checkpoint, {
-					id: "symbolManager",
-					title: "Deploying SymmioSymbolManager",
-					order: 7,
-					run: async () => {
-						try {
-							const wasAlreadyDeployed = !!checkpoint.contracts.symbolManager
-							const symbolManager = await deploySymbolManager(hre, {
-								symmioAddress: deployedContracts.diamond!,
-								admin: config.admin,
-								logData,
-								checkpoint,
-							})
-							deployedContracts.symbolManager = await symbolManager.getAddress()
-							console.log(`SymmioSymbolManager deployed at: ${deployedContracts.symbolManager}`)
-							deploymentResults.push({
-								contract: "SymmioSymbolManager",
-								address: deployedContracts.symbolManager!,
-								status: wasAlreadyDeployed ? "skipped" : "success",
-								timestamp: new Date().toISOString(),
-							})
-						} catch (err: any) {
-							console.error(`Failed to deploy SymmioSymbolManager: ${err.message}`)
-							deploymentResults.push({
-								contract: "SymmioSymbolManager",
-								address: "N/A",
-								status: "failed",
-								error: err.message,
-								timestamp: new Date().toISOString(),
-							})
-							throw err
-						}
-						console.log()
-					},
-				})
-			}
-
-			// All contracts are deployed — switch back to fast blocks for setup/config calls
-			if (isHyperEVM) {
-				console.log("Contract deployment complete — disabling big blocks for setup phase...")
-				try {
-					await setHyperEVMBigBlocks(hre, false)
-				} catch (err: any) {
-					console.warn(`  ⚠ Failed to disable big blocks: ${err.message}`)
-					console.warn("  ⚠ Run 'npx hardhat hyperevm:disable-big-blocks --network hyperevm' manually after deployment.")
+			const isHyperEVM = !isSimulatedNetwork && (Number(chainId) === 999 || Number(chainId) === 998)
+			let bigBlocksEnabled = false
+			let deploymentError: unknown
+			let deploymentStepOrder = 0
+			bindDeploymentTransactionWriteAhead(record => persistSubmittedTransaction(checkpoint, record))
+			try {
+				if (isHyperEVM) {
+					logger.info("HyperEVM detected — enabling big blocks for contract deployment...")
+					// Mark cleanup required before the API call so even a partial/ambiguous
+					// enable failure triggers a best-effort disable in finally.
+					bigBlocksEnabled = true
+					await setHyperEVMBigBlocks(hre, true)
+					logger.info()
 				}
-				console.log()
-			}
 
-			await runDeploymentStep(checkpoint, {
-				id: "systemSetup",
-				title: "Setting up system roles and connections",
-				order: 7,
-				run: async () => {
-					if (!checkpoint.setupComplete?.systemRoles) {
-						await setupSystem(hre, deployedContracts, config, checkpoint, protocolConfig)
-						checkpoint.setupComplete = checkpoint.setupComplete || {}
-						checkpoint.setupComplete.systemRoles = true
-						saveCheckpoint(checkpoint)
-					} else {
-						console.log("  ⏭ System roles already configured")
-					}
-					console.log()
-				},
-			})
-
-			if (config.setupInstantLayerTemplates) {
 				await runDeploymentStep(checkpoint, {
-					id: "instantLayerTemplates",
-					title: "Setting up InstantLayer templates",
-					order: 8,
+					id: "collateral",
+					title: "Setting up Collateral",
+					order: ++deploymentStepOrder,
 					run: async () => {
-						if (!checkpoint.setupComplete?.instantLayerTemplates) {
-							await setupInstantLayerTemplates(hre, deployedContracts, checkpoint, protocolConfig)
-							checkpoint.setupComplete = checkpoint.setupComplete || {}
-							checkpoint.setupComplete.instantLayerTemplates = true
-							saveCheckpoint(checkpoint)
-						} else {
-							console.log("  ⏭ InstantLayer templates already configured")
-						}
-						console.log()
-					},
-				})
-			}
-
-			if (config.registerDummyAffiliate) {
-				await runDeploymentStep(checkpoint, {
-					id: "dummyAffiliate",
-					title: "Registering dummy affiliate",
-					order: 9,
-					run: async () => {
-						if (!checkpoint.setupComplete?.dummyAffiliate) {
-							const accountManagerAddress = await registerDummyAffiliate(hre, deployedContracts, config, checkpoint)
-							if (accountManagerAddress) {
-								deployedContracts.accountManager = accountManagerAddress
-								checkpoint.contracts.accountManager = createDeployedContract(accountManagerAddress)
-								checkpoint.setupComplete = checkpoint.setupComplete || {}
-								checkpoint.setupComplete.dummyAffiliate = true
+						if (config.collateralAddress) {
+							logger.info(`Using existing collateral at: ${config.collateralAddress}`)
+							deployedContracts.collateral = config.collateralAddress
+							// Save to checkpoint for reference
+							if (!checkpoint.contracts.collateral) {
+								checkpoint.contracts.collateral = createDeployedContract(config.collateralAddress)
 								saveCheckpoint(checkpoint)
-								deploymentResults.push({
-									contract: "AccountManager (Dummy Affiliate)",
-									address: accountManagerAddress,
-									status: "success",
-									timestamp: new Date().toISOString(),
-								})
 							}
+							deploymentResults.push({
+								contract: "Collateral (existing)",
+								address: config.collateralAddress,
+								status: "skipped",
+								timestamp: new Date().toISOString(),
+							})
 						} else {
-							console.log("  ⏭ Dummy affiliate already registered")
-							if (checkpoint.contracts.accountManager) {
-								deployedContracts.accountManager = checkpoint.contracts.accountManager.address
+							try {
+								const wasAlreadyDeployed = !!checkpoint.contracts.collateral
+								logger.info(wasAlreadyDeployed ? "Resuming FakeStablecoin..." : "Deploying FakeStablecoin...")
+								const stablecoin = await deployStablecoin(hre, { logData, checkpoint })
+								deployedContracts.collateral = await stablecoin.getAddress()
+								logger.info(`FakeStablecoin deployed at: ${deployedContracts.collateral}`)
 								deploymentResults.push({
-									contract: "AccountManager (Dummy Affiliate)",
-									address: checkpoint.contracts.accountManager.address,
-									status: "skipped",
+									contract: "FakeStablecoin",
+									address: deployedContracts.collateral!,
+									status: wasAlreadyDeployed ? "skipped" : "success",
 									timestamp: new Date().toISOString(),
 								})
+							} catch (err: any) {
+								logger.error(`Failed to deploy FakeStablecoin: ${err.message}`)
+								deploymentResults.push({
+									contract: "FakeStablecoin",
+									address: "N/A",
+									status: "failed",
+									error: err.message,
+									timestamp: new Date().toISOString(),
+								})
+								throw err
 							}
 						}
-						console.log()
+						logger.info()
 					},
 				})
-			}
 
-			await runDeploymentStep(checkpoint, {
-				id: "transferOwnership",
-				title: "Transferring Diamond ownership to admin",
-				order: 10,
-				run: async () => {
-					// Both diamonds must be handed over. Only the core Diamond used to be
-					// transferred, leaving the deploy wallet as permanent owner of the
-					// AccountLayer — and owner is what authorises diamondCut, so a hot wallet
-					// kept the ability to upgrade the AccountLayer arbitrarily. Revoking roles
-					// (step 11) does not cover Ownable ownership.
-					const owned: Array<{ label: string; contract: any }> = [
-						{
-							label: "Diamond",
-							contract: await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", deployedContracts.diamond!),
+				await runDeploymentStep(checkpoint, {
+					id: "diamond",
+					title: "Deploying Diamond",
+					order: ++deploymentStepOrder,
+					run: async () => {
+						try {
+							const wasAlreadyComplete = !!checkpoint.contracts.diamond?.diamondCutComplete
+							const diamond = await deployDiamond(hre, { logData, genABI: false, reportGas: false, checkpoint })
+							deployedContracts.diamond = await diamond.getAddress()
+							logger.info(`Diamond deployed at: ${deployedContracts.diamond}`)
+							deploymentResults.push({
+								contract: "Diamond",
+								address: deployedContracts.diamond!,
+								status: wasAlreadyComplete ? "skipped" : "success",
+								timestamp: new Date().toISOString(),
+							})
+						} catch (err: any) {
+							logger.error(`Failed to deploy Diamond: ${err.message}`)
+							deploymentResults.push({
+								contract: "Diamond",
+								address: "N/A",
+								status: "failed",
+								error: err.message,
+								timestamp: new Date().toISOString(),
+							})
+							throw err
+						}
+						logger.info()
+					},
+				})
+
+				await runDeploymentStep(checkpoint, {
+					id: "signatureVerifier",
+					title: config.deployMockVerifier ? "Setting up MockMuonSignatureVerifier" : "Setting up MuonSignatureVerifier",
+					order: ++deploymentStepOrder,
+					run: async () => {
+						if (config.signatureVerifierAddress) {
+							logger.info(`Using existing MuonSignatureVerifier at: ${config.signatureVerifierAddress}`)
+							deployedContracts.signatureVerifier = config.signatureVerifierAddress
+							if (!checkpoint.contracts.signatureVerifier) {
+								checkpoint.contracts.signatureVerifier = createDeployedContract(config.signatureVerifierAddress)
+								saveCheckpoint(checkpoint)
+							}
+							deploymentResults.push({
+								contract: "MuonSignatureVerifier (existing)",
+								address: config.signatureVerifierAddress,
+								status: "skipped",
+								timestamp: new Date().toISOString(),
+							})
+						} else if (config.deployMockVerifier) {
+							try {
+								const wasAlreadyDeployed = !!checkpoint.contracts.signatureVerifier
+								if (wasAlreadyDeployed) {
+									const address = checkpoint.contracts.signatureVerifier!.address
+									logger.info(`Resuming MockMuonSignatureVerifier at ${address}...`)
+									deployedContracts.signatureVerifier = address
+								} else {
+									logger.info("Deploying MockMuonSignatureVerifier...")
+									const factory = await ethers.getContractFactory("MockMuonSignatureVerifier")
+									const mock = await factory.connect(deployer).deploy()
+									const deployment = await confirmDeploymentWithReceipt(
+										mock,
+										"MockMuonSignatureVerifier",
+										checkpointDeployment(checkpoint, "contracts.signatureVerifier"),
+									)
+									deployedContracts.signatureVerifier = deployment.address
+									checkpoint.contracts.signatureVerifier = createDeployedContract(deployedContracts.signatureVerifier!)
+									saveCheckpoint(checkpoint)
+								}
+								logger.info(`MockMuonSignatureVerifier deployed at: ${deployedContracts.signatureVerifier}`)
+								deploymentResults.push({
+									contract: "MockMuonSignatureVerifier",
+									address: deployedContracts.signatureVerifier!,
+									status: wasAlreadyDeployed ? "skipped" : "success",
+									timestamp: new Date().toISOString(),
+								})
+							} catch (err: any) {
+								logger.error(`Failed to deploy MockMuonSignatureVerifier: ${err.message}`)
+								deploymentResults.push({
+									contract: "MockMuonSignatureVerifier",
+									address: "N/A",
+									status: "failed",
+									error: err.message,
+									timestamp: new Date().toISOString(),
+								})
+								throw err
+							}
+						} else {
+							try {
+								const wasAlreadyDeployed = !!checkpoint.contracts.signatureVerifier
+								logger.info(wasAlreadyDeployed ? "Resuming MuonSignatureVerifier..." : "Deploying MuonSignatureVerifier...")
+								const signatureVerifier = await deploySignatureVerifier(hre, {
+									admin: deployerAddress,
+									logData,
+									checkpoint,
+								})
+								deployedContracts.signatureVerifier = await signatureVerifier.getAddress()
+								logger.info(`MuonSignatureVerifier deployed at: ${deployedContracts.signatureVerifier}`)
+								deploymentResults.push({
+									contract: "MuonSignatureVerifier",
+									address: deployedContracts.signatureVerifier!,
+									status: wasAlreadyDeployed ? "skipped" : "success",
+									timestamp: new Date().toISOString(),
+								})
+							} catch (err: any) {
+								logger.error(`Failed to deploy MuonSignatureVerifier: ${err.message}`)
+								deploymentResults.push({
+									contract: "MuonSignatureVerifier",
+									address: "N/A",
+									status: "failed",
+									error: err.message,
+									timestamp: new Date().toISOString(),
+								})
+								throw err
+							}
+						}
+						logger.info()
+					},
+				})
+
+				await runDeploymentStep(checkpoint, {
+					id: "accountLayerDiamond",
+					title: "Deploying AccountLayer Diamond",
+					order: ++deploymentStepOrder,
+					run: async () => {
+						try {
+							const wasAlreadyComplete = !!checkpoint.contracts.accountLayerDiamond?.diamondCutComplete
+							const accountLayerResult = await deployAccountLayerDiamond(hre, {
+								admin: deployer,
+								symmioFeeReceiver: deployer,
+								logData,
+								checkpoint,
+							})
+							deployedContracts.accountLayerDiamond = accountLayerResult.diamond
+							logger.info(`AccountLayerDiamond deployed at: ${deployedContracts.accountLayerDiamond}`)
+							deploymentResults.push({
+								contract: "AccountLayerDiamond",
+								address: deployedContracts.accountLayerDiamond,
+								status: wasAlreadyComplete ? "skipped" : "success",
+								timestamp: new Date().toISOString(),
+							})
+						} catch (err: any) {
+							logger.error(`Failed to deploy AccountLayerDiamond: ${err.message}`)
+							deploymentResults.push({
+								contract: "AccountLayerDiamond",
+								address: "N/A",
+								status: "failed",
+								error: err.message,
+								timestamp: new Date().toISOString(),
+							})
+							throw err
+						}
+						logger.info()
+					},
+				})
+
+				await runDeploymentStep(checkpoint, {
+					id: "instantLayer",
+					title: "Deploying InstantLayer",
+					order: ++deploymentStepOrder,
+					run: async () => {
+						try {
+							const wasAlreadyDeployed = !!checkpoint.contracts.instantLayer
+							const instantLayer = await deployInstantLayer(hre, {
+								symmioaddress: deployedContracts.diamond!,
+								admin: deployerAddress,
+								logData,
+								checkpoint,
+							})
+							deployedContracts.instantLayer = await instantLayer.getAddress()
+							logger.info(`InstantLayer deployed at: ${deployedContracts.instantLayer}`)
+							deploymentResults.push({
+								contract: "InstantLayer",
+								address: deployedContracts.instantLayer!,
+								status: wasAlreadyDeployed ? "skipped" : "success",
+								timestamp: new Date().toISOString(),
+							})
+						} catch (err: any) {
+							logger.error(`Failed to deploy InstantLayer: ${err.message}`)
+							deploymentResults.push({
+								contract: "InstantLayer",
+								address: "N/A",
+								status: "failed",
+								error: err.message,
+								timestamp: new Date().toISOString(),
+							})
+							throw err
+						}
+						logger.info()
+					},
+				})
+
+				if (config.deployPartyB) {
+					await runDeploymentStep(checkpoint, {
+						id: "symmioPartyB",
+						title: "Deploying SymmioPartyB",
+						order: ++deploymentStepOrder,
+						run: async () => {
+							try {
+								const wasAlreadyDeployed = !!checkpoint.contracts.symmioPartyB
+								const symmioPartyB = await deploySymmioPartyB(hre, {
+									symmioAddress: deployedContracts.diamond!,
+									admin: deployerAddress,
+									logData,
+									checkpoint,
+								})
+								deployedContracts.symmioPartyB = await symmioPartyB.getAddress()
+								logger.info(`SymmioPartyB deployed at: ${deployedContracts.symmioPartyB}`)
+								deploymentResults.push({
+									contract: "SymmioPartyB",
+									address: deployedContracts.symmioPartyB!,
+									status: wasAlreadyDeployed ? "skipped" : "success",
+									timestamp: new Date().toISOString(),
+								})
+							} catch (err: any) {
+								logger.error(`Failed to deploy SymmioPartyB: ${err.message}`)
+								deploymentResults.push({
+									contract: "SymmioPartyB",
+									address: "N/A",
+									status: "failed",
+									error: err.message,
+									timestamp: new Date().toISOString(),
+								})
+								throw err
+							}
+							logger.info()
 						},
-					]
-					if (deployedContracts.accountLayerDiamond) {
-						owned.push({
-							label: "AccountLayerDiamond",
-							contract: await ethers.getContractAt(
-								"contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet",
-								deployedContracts.accountLayerDiamond,
-							),
-						})
-					}
+					})
+				}
 
-					const adminIsDeployer = config.admin.toLowerCase() === deployer.address.toLowerCase()
+				if (config.deploySymbolManager) {
+					await runDeploymentStep(checkpoint, {
+						id: "symbolManager",
+						title: "Deploying SymmioSymbolManager",
+						order: ++deploymentStepOrder,
+						run: async () => {
+							try {
+								const wasAlreadyDeployed = !!checkpoint.contracts.symbolManager
+								const symbolManager = await deploySymbolManager(hre, {
+									symmioAddress: deployedContracts.diamond!,
+									admin: config.admin,
+									logData,
+									checkpoint,
+								})
+								deployedContracts.symbolManager = await symbolManager.getAddress()
+								logger.info(`SymmioSymbolManager deployed at: ${deployedContracts.symbolManager}`)
+								deploymentResults.push({
+									contract: "SymmioSymbolManager",
+									address: deployedContracts.symbolManager!,
+									status: wasAlreadyDeployed ? "skipped" : "success",
+									timestamp: new Date().toISOString(),
+								})
+							} catch (err: any) {
+								logger.error(`Failed to deploy SymmioSymbolManager: ${err.message}`)
+								deploymentResults.push({
+									contract: "SymmioSymbolManager",
+									address: "N/A",
+									status: "failed",
+									error: err.message,
+									timestamp: new Date().toISOString(),
+								})
+								throw err
+							}
+							logger.info()
+						},
+					})
+				}
 
-					for (const { label, contract } of owned) {
-						await checkpointedStep(checkpoint, `setup.transferOwnership.${label}`, `Transferring ${label} ownership to admin`, async () => {
-							await send(contract.connect(deployer).transferOwnership(config.admin), `transferOwnership(${label})`)
-						})
+				// All contracts are deployed — switch back to fast blocks for setup/config calls
+				if (bigBlocksEnabled) {
+					logger.info("Contract deployment complete — disabling big blocks for setup phase...")
+					await setHyperEVMBigBlocks(hre, false)
+					bigBlocksEnabled = false
+					logger.info()
+				}
 
-						// Ownership is two-step; only the incoming owner can accept it.
-						if (adminIsDeployer) {
-							await checkpointedStep(checkpoint, `setup.acceptOwnership.${label}`, `Accepting ${label} ownership (admin = deployer)`, async () => {
-								await send(contract.connect(deployer).acceptOwnership(), `acceptOwnership(${label})`)
+				await runDeploymentStep(checkpoint, {
+					id: "systemSetup",
+					title: "Setting up system roles and connections",
+					order: ++deploymentStepOrder,
+					run: async () => {
+						if (!checkpoint.setupComplete?.systemRoles) {
+							await setupSystem(hre, deployedContracts, config, checkpoint, protocolConfig)
+							const pendingAdminActions = checkpoint.progress?.["pending.smOperatorRoles"]
+							if (!Array.isArray(pendingAdminActions) || pendingAdminActions.length === 0) {
+								checkpoint.setupComplete = checkpoint.setupComplete || {}
+								checkpoint.setupComplete.systemRoles = true
+								saveCheckpoint(checkpoint)
+							} else {
+								logger.warn(`System setup awaits ${pendingAdminActions.length} SymbolManager operator role grant(s) from the admin`)
+							}
+						} else {
+							logger.info("  ⏭ System roles already configured")
+						}
+						logger.info()
+					},
+				})
+
+				if (config.setupInstantLayerTemplates) {
+					await runDeploymentStep(checkpoint, {
+						id: "instantLayerTemplates",
+						title: "Setting up InstantLayer templates",
+						order: ++deploymentStepOrder,
+						run: async () => {
+							if (!checkpoint.setupComplete?.instantLayerTemplates) {
+								await setupInstantLayerTemplates(hre, deployedContracts, checkpoint, protocolConfig)
+								checkpoint.setupComplete = checkpoint.setupComplete || {}
+								checkpoint.setupComplete.instantLayerTemplates = true
+								saveCheckpoint(checkpoint)
+							} else {
+								logger.info("  ⏭ InstantLayer templates already configured")
+							}
+							logger.info()
+						},
+					})
+				}
+
+				if (config.registerDummyAffiliate) {
+					await runDeploymentStep(checkpoint, {
+						id: "dummyAffiliate",
+						title: "Registering dummy affiliate",
+						order: ++deploymentStepOrder,
+						run: async () => {
+							if (!checkpoint.setupComplete?.dummyAffiliate) {
+								const accountManagerAddress = await registerDummyAffiliate(hre, deployedContracts, config, checkpoint)
+								if (accountManagerAddress) {
+									deployedContracts.accountManager = accountManagerAddress
+									checkpoint.contracts.accountManager = createDeployedContract(accountManagerAddress)
+									checkpoint.setupComplete = checkpoint.setupComplete || {}
+									checkpoint.setupComplete.dummyAffiliate = true
+									saveCheckpoint(checkpoint)
+									deploymentResults.push({
+										contract: "AccountManager (Dummy Affiliate)",
+										address: accountManagerAddress,
+										status: "success",
+										timestamp: new Date().toISOString(),
+									})
+								}
+							} else {
+								logger.info("  ⏭ Dummy affiliate already registered")
+								if (checkpoint.contracts.accountManager) {
+									deployedContracts.accountManager = checkpoint.contracts.accountManager.address
+									deploymentResults.push({
+										contract: "AccountManager (Dummy Affiliate)",
+										address: checkpoint.contracts.accountManager.address,
+										status: "skipped",
+										timestamp: new Date().toISOString(),
+									})
+								}
+							}
+							logger.info()
+						},
+					})
+				}
+
+				await runDeploymentStep(checkpoint, {
+					id: "transferOwnership",
+					title: "Transferring Diamond ownership to admin",
+					order: ++deploymentStepOrder,
+					run: async () => {
+						// Both diamonds must be handed over. Only the core Diamond used to be
+						// transferred, leaving the deploy wallet as permanent owner of the
+						// AccountLayer — and owner is what authorises diamondCut, so a hot wallet
+						// kept the ability to upgrade the AccountLayer arbitrarily. Revoking roles
+						// (step 11) does not cover Ownable ownership.
+						const owned: Array<{ label: string; address: string; control: any; view: any }> = [
+							{
+								label: "Diamond",
+								address: deployedContracts.diamond!,
+								control: await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", deployedContracts.diamond!),
+								view: await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", deployedContracts.diamond!),
+							},
+						]
+						if (deployedContracts.accountLayerDiamond) {
+							owned.push({
+								label: "AccountLayerDiamond",
+								address: deployedContracts.accountLayerDiamond,
+								control: await ethers.getContractAt(
+									"contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet",
+									deployedContracts.accountLayerDiamond,
+								),
+								view: await ethers.getContractAt("contracts/accountLayer/facets/View/ViewFacet.sol:ViewFacet", deployedContracts.accountLayerDiamond),
 							})
 						}
-					}
 
-					if (!adminIsDeployer) {
-						console.log(`  ⏭ ${config.admin} must call acceptOwnership() on:`)
-						for (const { label } of owned) {
-							const addr = label === "Diamond" ? deployedContracts.diamond : deployedContracts.accountLayerDiamond
-							console.log(`      ${label}: ${addr}`)
+						for (const { label, address, control, view } of owned) {
+							const owner = await view.getOwner()
+							const pendingOwner = await view.pendingOwner()
+							if (owner.toLowerCase() === config.admin.toLowerCase()) {
+								logger.info(`  ✓ ${label} ownership already accepted by admin`)
+								if (!isCompleted(checkpoint, `setup.transferOwnership.${label}`)) markCompleted(checkpoint, `setup.transferOwnership.${label}`)
+								continue
+							}
+							if (owner.toLowerCase() !== deployerAddress.toLowerCase()) {
+								throw new Error(`${label} owner is ${owner}; expected deployer ${deployerAddress} or admin ${config.admin}`)
+							}
+							if (pendingOwner !== ethers.ZeroAddress && pendingOwner.toLowerCase() !== config.admin.toLowerCase()) {
+								throw new Error(`${label} has unexpected pending owner ${pendingOwner}; expected ${config.admin}`)
+							}
+							if (pendingOwner === ethers.ZeroAddress) {
+								logger.info(`  Transferring ${label} ownership to admin...`)
+								await send(control.connect(deployer).transferOwnership(config.admin), `transferOwnership(${label})`)
+								const updatedPendingOwner = await view.pendingOwner()
+								if (updatedPendingOwner.toLowerCase() !== config.admin.toLowerCase()) {
+									throw new Error(`${label} pending owner is ${updatedPendingOwner} after transfer; expected ${config.admin}`)
+								}
+							} else {
+								logger.info(`  ⏭ ${label} ownership transfer is already pending for ${config.admin}`)
+							}
+							if (!isCompleted(checkpoint, `setup.transferOwnership.${label}`)) markCompleted(checkpoint, `setup.transferOwnership.${label}`)
+							logger.info(`      Admin must call acceptOwnership() on ${label}: ${address}`)
 						}
+						logger.info()
+					},
+				})
+
+				await runDeploymentStep(checkpoint, {
+					id: "revokeDeployerPrivileges",
+					title: "Revoking deployer privileges",
+					order: ++deploymentStepOrder,
+					run: async () => {
+						await revokeDeployerPrivileges(hre, deployedContracts, config, checkpoint, deployerAddress)
+					},
+				})
+
+				const ownershipTargets = [
+					{
+						label: "Diamond",
+						address: deployedContracts.diamond!,
+						viewName: "contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet",
+					},
+					{
+						label: "AccountLayerDiamond",
+						address: deployedContracts.accountLayerDiamond!,
+						viewName: "contracts/accountLayer/facets/View/ViewFacet.sol:ViewFacet",
+					},
+				]
+				const ownershipStates: Array<{ label: string; address: string; owner: string; pendingOwner: string }> = []
+				const pendingOwnership: Array<{ label: string; address: string; owner: string; pendingOwner: string }> = []
+				for (const target of ownershipTargets) {
+					const view = await ethers.getContractAt(target.viewName, target.address)
+					const owner = await view.getOwner()
+					const pendingOwner = await view.pendingOwner()
+					ownershipStates.push({ label: target.label, address: target.address, owner, pendingOwner })
+					if (owner.toLowerCase() === config.admin.toLowerCase()) continue
+					if (owner.toLowerCase() !== deployerAddress.toLowerCase() || pendingOwner.toLowerCase() !== config.admin.toLowerCase()) {
+						throw new Error(
+							`${target.label} ownership is unsafe: owner=${owner}, pendingOwner=${pendingOwner}, expected owner=${config.admin} ` +
+								`or owner=${deployerAddress} with pendingOwner=${config.admin}`,
+						)
 					}
-					console.log()
-				},
-			})
+					pendingOwnership.push({ ...target, owner, pendingOwner })
+				}
 
-			await runDeploymentStep(checkpoint, {
-				id: "revokeDeployerPrivileges",
-				title: "Revoking deployer privileges",
-				order: 11,
-				run: async () => {
-					await revokeDeployerPrivileges(hre, deployedContracts, config, checkpoint, deployerAddress)
-				},
-			})
+				const pendingSymbolManagerRoles = Array.isArray(checkpoint.progress?.["pending.smOperatorRoles"])
+					? (checkpoint.progress!["pending.smOperatorRoles"] as string[])
+					: []
+				const manualActions = pendingOwnership.map(target => `${config.admin} calls acceptOwnership() on ${target.label} ${target.address}`)
+				if (pendingSymbolManagerRoles.length > 0 && deployedContracts.symbolManager && config.symbolManagerOperator) {
+					manualActions.push(
+						`${config.admin} grants ${pendingSymbolManagerRoles.join(", ")} on SymbolManager ${deployedContracts.symbolManager} to ${config.symbolManagerOperator}`,
+					)
+				}
 
-			// Mark deployment as complete
-			checkpoint.step = "complete"
-			saveCheckpoint(checkpoint)
+				const handoverPending = manualActions.length > 0
+				checkpoint.step = handoverPending ? "pending_handover" : "complete"
+				saveCheckpoint(checkpoint)
 
-			// Generate and display report
-			console.log()
-			console.log("=".repeat(80))
-			console.log("DEPLOYMENT REPORT")
-			console.log("=".repeat(80))
-			console.log()
+				// Generate and display report
+				logger.info()
+				logger.info("=".repeat(80))
+				logger.info("DEPLOYMENT REPORT")
+				logger.info("=".repeat(80))
+				logger.info()
 
-			const report = generateReport(deploymentResults, config)
-			displayReport(report, deployedContracts, config)
-			saveReport(report, deployedContracts)
+				const report = generateReport(deploymentResults, config, {
+					checkpoint,
+					deployerAddress,
+					network,
+					chainId: Number(chainId),
+					verificationRequired,
+					verificationPolicy,
+					recipe: recipeRuntime
+						? {
+								name: recipeRuntime.recipe.name,
+								path: recipeRuntime.identityPath,
+								digest: recipeRuntime.digest,
+								components: {
+									core: recipeRuntime.recipe.core.mode,
+									partyB: recipeRuntime.recipe.partyB.mode,
+									symbolManager: recipeRuntime.recipe.symbolManager.mode,
+									expressProvider: recipeRuntime.recipe.expressProvider.mode,
+								},
+							}
+						: undefined,
+				})
+				report.ownershipHandover = {
+					status: pendingOwnership.length > 0 ? "pending_handover" : "complete",
+					targets: ownershipStates,
+				}
+				report.manualActions = manualActions
+				// Persist a validating report before either gate runs. Any interruption now leaves
+				// an explicitly incomplete artifact rather than a durable false-green summary.
+				saveReport(report, deployedContracts)
 
-			// Clear checkpoint on successful completion
-			clearCheckpoint(Number(chainId), network)
-			console.log("Checkpoint cleared - deployment complete!")
-
-			// --verify used to be declared and destructured but never acted on, so an
-			// operator passing it shipped an entirely unverified deployment while the
-			// summary still looked green. Run the real verification task.
-			if (verify) {
-				console.log()
-				console.log("Running block-explorer verification (--verify)...")
+				// Run the health task in this same process against the report we just wrote. During
+				// automated deployment, owner=deployer/pending=admin is the one allowed warning;
+				// a later resume after both accepts uses strict ownership and archives the checkpoint.
+				logger.info()
+				logger.info("Running scoped deployment health check...")
 				try {
-					await hre.tasks.getTask("verify:all").run({ skip: 0, retryFailed: false })
+					await hre.tasks.getTask("check:deployment").run({
+						fromReport: true,
+						allowPendingOwnership: pendingOwnership.length > 0,
+						allowPendingAdminActions: pendingSymbolManagerRoles.length > 0,
+					})
+					report.checks.health = "passed"
+					report.updatedAt = new Date().toISOString()
+					saveReport(report, deployedContracts)
 				} catch (err) {
-					console.error()
-					console.error("=".repeat(80))
-					console.error("DEPLOYMENT SUCCEEDED, BUT BLOCK-EXPLORER VERIFICATION FAILED")
-					console.error("=".repeat(80))
-					console.error(err instanceof Error ? err.message : String(err))
-					console.error(`Retry with: npx hardhat verify:all --retry-failed --network ${network}`)
+					report.lifecycle = "failed"
+					report.checks.health = "failed"
+					report.checks.healthError = err instanceof Error ? err.message : String(err)
+					report.updatedAt = new Date().toISOString()
+					report.transactions = checkpoint.transactions || []
+					saveReport(report, deployedContracts)
 					throw err
 				}
-			}
 
-			return {
-				deployments: deployedContracts,
-				report,
+				// --verify used to be declared and destructured but never acted on, so an
+				// operator passing it shipped an entirely unverified deployment while the
+				// summary still looked green. Run the real verification task.
+				if (verificationRequired && checkpoint.verificationStatus !== "passed") {
+					logger.info()
+					logger.info("Running required block-explorer verification...")
+					try {
+						await hre.tasks.getTask("verify:all").run({ skip: 0, retryFailed: false })
+						checkpoint.verificationStatus = "passed"
+						saveCheckpoint(checkpoint)
+						report.checks.verification = "passed"
+						report.updatedAt = new Date().toISOString()
+						saveReport(report, deployedContracts)
+					} catch (err) {
+						checkpoint.verificationStatus = "failed"
+						saveCheckpoint(checkpoint)
+						report.lifecycle = "failed"
+						report.checks.verification = "failed"
+						report.checks.verificationError = err instanceof Error ? err.message : String(err)
+						report.updatedAt = new Date().toISOString()
+						report.transactions = checkpoint.transactions || []
+						saveReport(report, deployedContracts)
+						logger.error()
+						logger.error("=".repeat(80))
+						logger.error("DEPLOYMENT SUCCEEDED, BUT BLOCK-EXPLORER VERIFICATION FAILED")
+						logger.error("=".repeat(80))
+						logger.error(err instanceof Error ? err.message : String(err))
+						logger.error(
+							recipeRuntime
+								? `Retry with: ./utils/yarn-classic.sh cli verify --config ${recipeRuntime.identityPath} --retry-failed`
+								: `Retry with: ./node_modules/.bin/hardhat verify:all --retry-failed --network ${network}`,
+						)
+						logger.error("Then rerun deploy:system; the checkpoint keeps verification mandatory until this gate passes.")
+						throw err
+					}
+				} else if (verificationRequired) {
+					report.checks.verification = "passed"
+					logger.info("Block-explorer verification already passed for this checkpoint.")
+				}
+
+				report.lifecycle = handoverPending ? "pending_handover" : "complete"
+				report.updatedAt = new Date().toISOString()
+				report.transactions = checkpoint.transactions || []
+				displayReport(report, deployedContracts, config)
+				saveReport(report, deployedContracts)
+
+				if (handoverPending) {
+					logger.info()
+					logger.info("=".repeat(80))
+					logger.info("AUTOMATED DEPLOYMENT COMPLETE — ADMIN ACTIONS REQUIRED")
+					logger.info("=".repeat(80))
+					for (const target of pendingOwnership) {
+						logger.info(`${target.label}: ${target.address}`)
+						logger.info(`  owner:        ${target.owner}`)
+						logger.info(`  pendingOwner: ${target.pendingOwner}`)
+						logger.info(`  action:       ${config.admin} calls acceptOwnership()`)
+					}
+					if (pendingSymbolManagerRoles.length > 0 && deployedContracts.symbolManager) {
+						logger.info(`SymbolManager: ${deployedContracts.symbolManager}`)
+						logger.info(`  operator: ${config.symbolManagerOperator}`)
+						logger.info(`  roles:    ${pendingSymbolManagerRoles.join(", ")}`)
+						logger.info("  action:   admin runs symbolManager:grantOperatorRoles, then reruns deploy:system")
+					}
+					logger.info(
+						"Checkpoint retained at step pending_handover. Complete every action above, then rerun deploy:system; it will run strict health checks and archive it.",
+					)
+				} else {
+					clearCheckpoint(Number(chainId), network)
+					logger.info("Checkpoint archived - deployment and ownership handover complete!")
+				}
+
+				return {
+					deployments: deployedContracts,
+					report,
+					handoverPending,
+				}
+			} catch (error) {
+				deploymentError = error
+				throw error
+			} finally {
+				clearDeploymentTransactionWriteAhead()
+				if (bigBlocksEnabled) {
+					try {
+						logger.info("Cleaning up HyperEVM big-block mode after an interrupted deployment...")
+						await setHyperEVMBigBlocks(hre, false)
+						bigBlocksEnabled = false
+					} catch (cleanupError) {
+						logger.error(
+							`Failed to disable HyperEVM big blocks during cleanup: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`,
+						)
+						logger.error("Run './node_modules/.bin/hardhat hyperevm:disable-big-blocks --network hyperevm' manually.")
+						if (!deploymentError) throw cleanupError
+					}
+				}
 			}
 		},
 	}))
@@ -1039,12 +1719,13 @@ async function setupSystem(
 	if (signatureVerifier) {
 		if (isMockVerifier) {
 			// MockMuonSignatureVerifier has no AccessControl roles - just set the address on Diamond
-			console.log("  Using MockMuonSignatureVerifier (no role grants needed)")
+			logger.info("  Using MockMuonSignatureVerifier (no role grants needed)")
 
 			await checkpointedStep(checkpoint, "setup.setSignatureVerifier", "Setting MockMuonSignatureVerifier on Diamond", async () => {
 				await send(controlFacet.connect(deployer).setSignatureVerifierAddress(deployedContracts.signatureVerifier!), "setSignatureVerifierAddress")
 			})
 		} else {
+			const muonPermissions = assertGeneralDeploymentMuonPermissions(config.muonFunctionPermissions, "MUON_FUNCTION_PERMISSIONS")
 			const signatureVerifierDefaultAdminRole = await signatureVerifier.DEFAULT_ADMIN_ROLE()
 			const signatureVerifierSetterRole = await signatureVerifier.SETTER_ROLE()
 			const deployerIsVerifierAdmin = await signatureVerifier.hasRole(signatureVerifierDefaultAdminRole, deployerAddress)
@@ -1059,7 +1740,7 @@ async function setupSystem(
 					await send(signatureVerifier.connect(deployer).grantRole(signatureVerifierSetterRole, config.admin), "grantRole")
 				})
 			} else {
-				console.log("  ⚠ Skipping verifier role grants: deployer is not DEFAULT_ADMIN_ROLE on MuonSignatureVerifier")
+				logger.warn("Skipping verifier role grants: deployer is not DEFAULT_ADMIN_ROLE on MuonSignatureVerifier")
 			}
 
 			await checkpointedStep(checkpoint, "setup.setSignatureVerifier", "Setting MuonSignatureVerifier on Diamond", async () => {
@@ -1068,36 +1749,28 @@ async function setupSystem(
 
 			const shouldSeedPublicKey = !!config.muonPublicKeyX || !!config.muonPublicKeyParity
 			if (shouldSeedPublicKey) {
-				requireMuonSetterOnVerifier(deployerIsVerifierSetter)
-				if (config.muonPublicKeyX && config.muonPublicKeyParity) {
-					const parity = Number(config.muonPublicKeyParity)
-					if (parity !== 0 && parity !== 1) {
-						throw new Error(`Invalid MUON_PUBLIC_KEY_PARITY: ${config.muonPublicKeyParity}. Expected 0 or 1`)
+				const parity = Number(config.muonPublicKeyParity)
+				const existingKeys = await signatureVerifier.getAllPublicKeys()
+				const exists = existingKeys.some(
+					(key: { x: bigint; parity: bigint | number }) => key.x.toString() === config.muonPublicKeyX && Number(key.parity) === parity,
+				)
+				if (!exists) requireMuonSetterOnVerifier(deployerIsVerifierSetter)
+				await checkpointedStep(checkpoint, "setup.msvPublicKey", "Adding Muon public key on MuonSignatureVerifier", async () => {
+					if (exists) {
+						logger.info("  ⏭ Muon public key already present on MuonSignatureVerifier")
+						return
 					}
-					await checkpointedStep(checkpoint, "setup.msvPublicKey", "Adding Muon public key on MuonSignatureVerifier", async () => {
-						const existingKeys = await signatureVerifier.getAllPublicKeys()
-						const exists = existingKeys.some(
-							(key: { x: bigint; parity: bigint | number }) => key.x.toString() === config.muonPublicKeyX && Number(key.parity) === parity,
-						)
-						if (exists) {
-							console.log("  ⏭ Muon public key already present on MuonSignatureVerifier")
-							return
-						}
-						await send(
-							signatureVerifier.connect(deployer).addPublicKey({
-								x: config.muonPublicKeyX,
-								parity,
-							}),
-							"addPublicKey",
-						)
-					})
-				} else {
-					console.log("  ⚠ Skipping addPublicKey: both MUON_PUBLIC_KEY_X and MUON_PUBLIC_KEY_PARITY are required")
-				}
+					await send(
+						signatureVerifier.connect(deployer).addPublicKey({
+							x: config.muonPublicKeyX,
+							parity,
+						}),
+						"addPublicKey",
+					)
+				})
 			}
 
 			if (config.muonGatewaySigners.length > 0) {
-				requireMuonSetterOnVerifier(deployerIsVerifierSetter)
 				await checkpointedBatch(
 					checkpoint,
 					"setup.msvGatewaySigners",
@@ -1106,10 +1779,57 @@ async function setupSystem(
 					async signer => {
 						const existingSigners = (await signatureVerifier.getAllGatewaySigners()).map((s: string) => s.toLowerCase())
 						if (existingSigners.includes(signer.toLowerCase())) return
+						requireMuonSetterOnVerifier(deployerIsVerifierSetter)
 						await send(signatureVerifier.connect(deployer).addGatewaySigner(signer), "addGatewaySigner")
 					},
 				)
 			}
+
+			// Permission writes are deliberately driven by fresh reads rather than a sticky
+			// checkpoint bit. If a transaction was mined just before a crash, the next run sees
+			// it and sends nothing; if permissions were later removed, a resume repairs them.
+			const registeredKeys = (await signatureVerifier.getAllPublicKeys()).map((key: { x: bigint; parity: bigint | number }) => ({
+				x: key.x.toString(),
+				parity: Number(key.parity),
+			}))
+			const registeredGatewaySigners = (await signatureVerifier.getAllGatewaySigners()).map((signer: string) => ethers.getAddress(signer))
+			const targetKeys = config.muonPublicKeyX ? [{ x: config.muonPublicKeyX, parity: Number(config.muonPublicKeyParity) }] : registeredKeys
+			const targetGatewaySigners = config.muonGatewaySigners.length > 0 ? config.muonGatewaySigners : registeredGatewaySigners
+			if (targetKeys.length === 0 || targetGatewaySigners.length === 0) {
+				throw new Error("MuonSignatureVerifier must have at least one registered public key and gateway signer")
+			}
+
+			const inspection = await inspectConfiguredMuonPermissions(signatureVerifier, {
+				publicKeys: targetKeys,
+				gatewaySigners: targetGatewaySigners,
+				permissionNames: config.muonFunctionPermissions,
+			})
+			for (const keyResult of inspection.publicKeys.filter(result => !result.fullyAuthorized)) {
+				requireMuonSetterOnVerifier(deployerIsVerifierSetter)
+				const missingIndices = keyResult.permissions.filter(permission => !permission.authorized).map(permission => permission.index)
+				await send(
+					signatureVerifier.connect(deployer).setPublicKeyPermissions(keyResult.publicKey, missingIndices, true),
+					`setPublicKeyPermissions(${missingIndices.join(",")})`,
+				)
+			}
+			for (const signerResult of inspection.gatewaySigners.filter(result => !result.fullyAuthorized)) {
+				requireMuonSetterOnVerifier(deployerIsVerifierSetter)
+				const missingIndices = signerResult.permissions.filter(permission => !permission.authorized).map(permission => permission.index)
+				await send(
+					signatureVerifier.connect(deployer).setGatewaySignerPermissions(signerResult.signer, missingIndices, true),
+					`setGatewaySignerPermissions(${signerResult.signer},${missingIndices.join(",")})`,
+				)
+			}
+
+			const verifiedPermissions = await inspectConfiguredMuonPermissions(signatureVerifier, {
+				publicKeys: targetKeys,
+				gatewaySigners: targetGatewaySigners,
+				permissionNames: muonPermissions.map(({ name }) => name),
+			})
+			assertConfiguredMuonPermissionsAuthorized(verifiedPermissions)
+			logger.info(
+				`  ✓ Muon permissions verified for ${targetKeys.length} public key(s), ${targetGatewaySigners.length} gateway signer(s), and ${muonPermissions.length} function categories.`,
+			)
 		}
 	}
 
@@ -1178,7 +1898,7 @@ async function setupSystem(
 	}
 
 	// Diamond system parameters
-	console.log("  Configuring Diamond system parameters...")
+	logger.info("  Configuring Diamond system parameters...")
 	const params = protocolConfig.parameters
 	const parameterSetters: Array<{ key: string; name: string; action: () => Promise<ContractTransactionResponse> }> = [
 		{ key: "setup.setCollateral", name: "setCollateral", action: () => controlFacet.connect(deployer).setCollateral(deployedContracts.collateral!) },
@@ -1252,6 +1972,19 @@ async function setupSystem(
 			name: "setDefaultFeeCollector",
 			action: () => controlFacet.connect(deployer).setDefaultFeeCollector(config.symmioFeeReceiver),
 		},
+		{
+			key: "setup.setLiquidationInsuranceVaultParams",
+			name: "setLiquidationInsuranceVaultParams",
+			action: () =>
+				controlFacet
+					.connect(deployer)
+					.setLiquidationInsuranceVaultParams(config.liquidationInsuranceVault, BigInt(config.maxLiquidationProfitPerPosition)),
+		},
+		{
+			key: "setup.setSoftLiquidationPenaltyCollector",
+			name: "setSoftLiquidationPenaltyCollector",
+			action: () => controlFacet.connect(deployer).setSoftLiquidationPenaltyCollector(config.softLiquidationPenaltyCollector),
+		},
 	]
 	for (const { key, name, action } of parameterSetters) {
 		// send() awaits the receipt, so the checkpoint only records the step once the
@@ -1268,6 +2001,14 @@ async function setupSystem(
 		await send(instantLayer.connect(deployer).grantRole(roleHash("SETTER_ROLE"), config.admin), "grantRole")
 	})
 
+	await checkpointedStep(checkpoint, "setup.ilGrantOperatorRole", "Granting OPERATOR_ROLE on InstantLayer to admin", async () => {
+		await send(instantLayer.connect(deployer).grantRole(roleHash("OPERATOR_ROLE"), config.admin), "grantRole")
+	})
+
+	await checkpointedStep(checkpoint, "setup.ilGrantRevokerRole", "Granting REVOKER_ROLE on InstantLayer to admin", async () => {
+		await send(instantLayer.connect(deployer).grantRole(roleHash("REVOKER_ROLE"), config.admin), "grantRole")
+	})
+
 	await checkpointedStep(checkpoint, "setup.ilWhitelistDiamond", "Whitelisting Symmio (Diamond) on InstantLayer", async () => {
 		await send(instantLayer.connect(deployer).setTargetWhitelist(deployedContracts.diamond!, true), "setTargetWhitelist")
 	})
@@ -1278,9 +2019,19 @@ async function setupSystem(
 
 	// PartyB setup (if deployed)
 	if (deployedContracts.symmioPartyB) {
-		await checkpointedStep(checkpoint, "setup.registerPartyB", "Registering SymmioPartyB in Diamond", async () => {
-			await send(controlFacet.connect(deployer).registerPartyB(deployedContracts.symmioPartyB!), "registerPartyB")
-		})
+		const coreRegistrationKey = "setup.registerPartyB"
+		const coreRegistration = await ensureBooleanState(
+			"SymmioPartyB core registration",
+			() => viewFacet.isPartyB(deployedContracts.symmioPartyB!),
+			async () => {
+				await controlFacet.connect(deployer).registerPartyB.staticCall(deployedContracts.symmioPartyB!)
+				await send(controlFacet.connect(deployer).registerPartyB(deployedContracts.symmioPartyB!), "registerPartyB")
+			},
+		)
+		if (!isCompleted(checkpoint, coreRegistrationKey)) {
+			if (coreRegistration === "present") logger.warn("Recovered SymmioPartyB core registration from exact on-chain state.")
+			markCompleted(checkpoint, coreRegistrationKey)
+		}
 
 		if (config.setAdlEnabled) {
 			await checkpointedStep(checkpoint, "setup.setAdlEnabled", "Enabling ADL for SymmioPartyB on Diamond", async () => {
@@ -1299,6 +2050,10 @@ async function setupSystem(
 			await send(symmioPartyB.connect(deployer).grantRole(roleHash("TRUSTED_ROLE"), deployedContracts.instantLayer!), "grantRole")
 		})
 
+		await checkpointedStep(checkpoint, "setup.pbAdminTrustedRole", "Granting TRUSTED_ROLE to admin on SymmioPartyB", async () => {
+			await send(symmioPartyB.connect(deployer).grantRole(roleHash("TRUSTED_ROLE"), config.admin), "grantRole")
+		})
+
 		await checkpointedStep(checkpoint, "setup.pbManagerRole", "Granting MANAGER_ROLE to admin on SymmioPartyB", async () => {
 			await send(symmioPartyB.connect(deployer).grantRole(roleHash("MANAGER_ROLE"), config.admin), "grantRole")
 		})
@@ -1307,19 +2062,43 @@ async function setupSystem(
 			await send(symmioPartyB.connect(deployer).grantRole(roleHash("SETTER_ROLE"), config.admin), "grantRole")
 		})
 
+		await checkpointedStep(checkpoint, "setup.pbPauserRole", "Granting PAUSER_ROLE to admin on SymmioPartyB", async () => {
+			await send(symmioPartyB.connect(deployer).grantRole(roleHash("PAUSER_ROLE"), config.admin), "grantRole")
+		})
+
+		await checkpointedStep(checkpoint, "setup.pbUnpauserRole", "Granting UNPAUSER_ROLE to admin on SymmioPartyB", async () => {
+			await send(symmioPartyB.connect(deployer).grantRole(roleHash("UNPAUSER_ROLE"), config.admin), "grantRole")
+		})
+
 		await checkpointedStep(checkpoint, "setup.pbMulticastWhitelist", "Setting multicastWhitelist for InstantLayer on SymmioPartyB", async () => {
 			await send(symmioPartyB.connect(deployer).setMulticastWhitelist(deployedContracts.instantLayer!, true), "setMulticastWhitelist")
 		})
 
 		if (config.partyBSigner) {
+			// SymmioPartyB initializes the deployer with MANAGER/TRUSTED but not SETTER.
+			// setSigner would otherwise revert whenever PARTYB_SIGNER is configured. This
+			// temporary role is included in the final deployer-revocation inventory.
+			await checkpointedStep(checkpoint, "setup.pbDeployerSetterRole", "Granting temporary SETTER_ROLE to deployer on SymmioPartyB", async () => {
+				await send(symmioPartyB.connect(deployer).grantRole(roleHash("SETTER_ROLE"), deployerAddress), "grantRole")
+			})
 			await checkpointedStep(checkpoint, "setup.pbSetSigner", "Setting signer on SymmioPartyB", async () => {
 				await send(symmioPartyB.connect(deployer).setSigner(config.partyBSigner), "setSigner")
 			})
 		}
 
-		await checkpointedStep(checkpoint, "setup.ilRegisterPartyB", "Registering SymmioPartyB on InstantLayer (also grants OPERATOR_ROLE)", async () => {
-			await send(instantLayer.connect(deployer).registerPartyBs([deployedContracts.symmioPartyB!]), "registerPartyBs")
-		})
+		const instantLayerRegistrationKey = "setup.ilRegisterPartyB"
+		const instantLayerRegistration = await ensureBooleanState(
+			"SymmioPartyB InstantLayer registration",
+			() => instantLayer.registeredPartyBs(deployedContracts.symmioPartyB!),
+			async () => {
+				await instantLayer.connect(deployer).registerPartyBs.staticCall([deployedContracts.symmioPartyB!])
+				await send(instantLayer.connect(deployer).registerPartyBs([deployedContracts.symmioPartyB!]), "registerPartyBs")
+			},
+		)
+		if (!isCompleted(checkpoint, instantLayerRegistrationKey)) {
+			if (instantLayerRegistration === "present") logger.warn("Recovered SymmioPartyB InstantLayer registration from exact on-chain state.")
+			markCompleted(checkpoint, instantLayerRegistrationKey)
+		}
 	}
 
 	// SymbolManager setup (if deployed)
@@ -1347,16 +2126,27 @@ async function setupSystem(
 			// where ADMIN_PUBLIC_KEY differs from the deployer these grants revert. The
 			// helper prints the exact command for the admin to run instead of failing the
 			// whole deployment at its last step.
-			await checkpointedStep(checkpoint, "setup.smOperatorRoles", "Granting operator roles on SymbolManager", async () => {
-				await grantSymbolManagerOperatorRoles(hre, {
+			if (isCompleted(checkpoint, "setup.smOperatorRoles")) {
+				logger.info("  ⏭ SymbolManager operator roles already verified")
+			} else {
+				logger.info("  Granting or checking operator roles on SymbolManager...")
+				const result = await grantSymbolManagerOperatorRoles(hre, {
 					symbolManagerAddress: deployedContracts.symbolManager!,
 					operator: config.symbolManagerOperator,
 				})
-			})
+				checkpoint.progress = checkpoint.progress || {}
+				if (result.deferred > 0) {
+					checkpoint.progress["pending.smOperatorRoles"] = result.missingRoles
+					saveCheckpoint(checkpoint)
+				} else {
+					delete checkpoint.progress["pending.smOperatorRoles"]
+					markCompleted(checkpoint, "setup.smOperatorRoles")
+				}
+			}
 		}
 	}
 
-	console.log("  System setup complete!")
+	logger.info("  System setup complete!")
 }
 
 async function registerDummyAffiliate(
@@ -1372,6 +2162,7 @@ async function registerDummyAffiliate(
 		"contracts/accountLayer/facets/Affiliate/AffiliateFacet.sol:AffiliateFacet",
 		deployedContracts.accountLayerDiamond!,
 	)
+	const alViewFacet = await ethers.getContractAt("contracts/accountLayer/facets/View/ViewFacet.sol:ViewFacet", deployedContracts.accountLayerDiamond!)
 
 	const affiliateData = {
 		name: "Test Affiliate",
@@ -1384,26 +2175,116 @@ async function registerDummyAffiliate(
 		symmioCores: [deployedContracts.diamond!],
 	}
 
-	// Register affiliate (only get predicted address if not already registered)
-	let accountManagerAddress: string | undefined = checkpoint.contracts.accountManager?.address
+	const assertExpectedAffiliate = async (accountManagerAddress: string): Promise<void> => {
+		const [actualAdmin, actualCores, actualStakeholders, actualSymmioShare] = await Promise.all([
+			alViewFacet.getAffiliateAdmin(accountManagerAddress),
+			alViewFacet.getAffiliateSymmioCores(accountManagerAddress),
+			alViewFacet.getAffiliateStakeholders(accountManagerAddress),
+			alViewFacet.getAffiliateSymmioShare(accountManagerAddress),
+		])
+		const mismatches: string[] = []
+		if (ethers.getAddress(actualAdmin) !== ethers.getAddress(affiliateData.admin)) {
+			mismatches.push(`admin is ${actualAdmin}, expected ${affiliateData.admin}`)
+		}
+		if (
+			actualCores.length !== affiliateData.symmioCores.length ||
+			actualCores.some((core: string, index: number) => ethers.getAddress(core) !== ethers.getAddress(affiliateData.symmioCores[index]))
+		) {
+			mismatches.push(`Symmio cores are [${actualCores.join(", ")}], expected [${affiliateData.symmioCores.join(", ")}]`)
+		}
+		if (
+			actualStakeholders.length !== affiliateData.stakeholders.length ||
+			actualStakeholders.some(
+				(stakeholder: any, index: number) =>
+					ethers.getAddress(stakeholder.receiver) !== ethers.getAddress(affiliateData.stakeholders[index].receiver) ||
+					BigInt(stakeholder.share) !== affiliateData.stakeholders[index].share,
+			)
+		) {
+			mismatches.push("stakeholder receivers or shares differ from the reviewed dummy-affiliate configuration")
+		}
+		if (BigInt(actualSymmioShare) !== affiliateData.symmioShare) {
+			mismatches.push(`Symmio share is ${actualSymmioShare}, expected ${affiliateData.symmioShare}`)
+		}
+		if (mismatches.length > 0) {
+			throw new Error(`Refusing to resume an unexpected dummy affiliate at ${accountManagerAddress}:\n- ${mismatches.join("\n- ")}`)
+		}
+	}
 
-	await checkpointedStep(checkpoint, "affiliate.register", "Registering dummy affiliate", async () => {
-		// Get predicted account manager address (view call, no tx) - only if not resuming
-		accountManagerAddress = await alAffiliateFacet.connect(deployer).requestToRegisterAffiliate.staticCall(affiliateData)
-		await send(alAffiliateFacet.connect(deployer).requestToRegisterAffiliate(affiliateData), "requestToRegisterAffiliate")
-		// Save the predicted address so we can use it on resume
-		checkpoint.contracts.accountManager = createDeployedContract(accountManagerAddress!)
+	// Persist the deterministic address before the first broadcast. AccountManager
+	// bytecode is deployed only during approval, so it deliberately lives outside
+	// checkpoint.contracts until the affiliate reaches ACTIVE.
+	let accountManagerAddress = checkpoint.pending?.dummyAffiliateAddress ?? checkpoint.contracts.accountManager?.address
+	if (!accountManagerAddress) {
+		accountManagerAddress = ethers.getAddress(await alAffiliateFacet.connect(deployer).requestToRegisterAffiliate.staticCall(affiliateData))
+		checkpoint.pending = checkpoint.pending || {}
+		checkpoint.pending.dummyAffiliateAddress = accountManagerAddress
 		saveCheckpoint(checkpoint)
-	})
+	} else {
+		accountManagerAddress = ethers.getAddress(accountManagerAddress)
+		checkpoint.pending = checkpoint.pending || {}
+		checkpoint.pending.dummyAffiliateAddress = accountManagerAddress
+		// Older checkpoints stored the PENDING address as if it already contained
+		// deployed code. Move it into the write-ahead field before continuing.
+		if (!checkpoint.setupComplete?.dummyAffiliate) delete checkpoint.contracts.accountManager
+		saveCheckpoint(checkpoint)
+	}
+	if (!accountManagerAddress) throw new Error("Failed to resolve the deterministic dummy-affiliate address")
+	const resolvedAccountManagerAddress = accountManagerAddress
 
-	// Approve affiliate
-	await checkpointedStep(checkpoint, "affiliate.approve", "Approving affiliate", async () => {
-		await send(alAffiliateFacet.connect(deployer).approveAffiliate(accountManagerAddress!), "approveAffiliate")
-	})
+	let affiliateState = BigInt(await alViewFacet.getAffiliateState(resolvedAccountManagerAddress))
+	let action = resolveAffiliateRegistrationResumeAction(
+		affiliateState,
+		isCompleted(checkpoint, "affiliate.register"),
+		isCompleted(checkpoint, "affiliate.approve"),
+	)
 
-	console.log(`  Dummy affiliate registered! AccountManager: ${accountManagerAddress}`)
+	if (action === "request") {
+		const currentPrediction = ethers.getAddress(await alAffiliateFacet.connect(deployer).requestToRegisterAffiliate.staticCall(affiliateData))
+		if (currentPrediction !== resolvedAccountManagerAddress) {
+			throw new Error(
+				`Dummy-affiliate address drifted before registration: checkpoint has ${resolvedAccountManagerAddress}, current prediction is ${currentPrediction}`,
+			)
+		}
+		logger.info("  Registering dummy affiliate...")
+		await send(alAffiliateFacet.connect(deployer).requestToRegisterAffiliate(affiliateData), "requestToRegisterAffiliate")
+		affiliateState = BigInt(await alViewFacet.getAffiliateState(resolvedAccountManagerAddress))
+		if (affiliateState !== 1n) throw new Error(`Dummy-affiliate registration confirmed, but state is ${affiliateState}; expected PENDING`)
+		await assertExpectedAffiliate(resolvedAccountManagerAddress)
+		markCompleted(checkpoint, "affiliate.register")
+		action = "approve"
+	} else {
+		await assertExpectedAffiliate(resolvedAccountManagerAddress)
+		if (!isCompleted(checkpoint, "affiliate.register")) {
+			logger.warn("Recovered dummy-affiliate registration from exact on-chain state after an interrupted submission.")
+			markCompleted(checkpoint, "affiliate.register")
+		}
+	}
 
-	return accountManagerAddress!
+	if (action === "approve") {
+		logger.info("  Approving dummy affiliate...")
+		await alAffiliateFacet.connect(deployer).approveAffiliate.staticCall(resolvedAccountManagerAddress)
+		await send(alAffiliateFacet.connect(deployer).approveAffiliate(resolvedAccountManagerAddress), "approveAffiliate")
+		affiliateState = BigInt(await alViewFacet.getAffiliateState(resolvedAccountManagerAddress))
+		if (affiliateState !== 2n) throw new Error(`Dummy-affiliate approval confirmed, but state is ${affiliateState}; expected ACTIVE`)
+		await assertExpectedAffiliate(resolvedAccountManagerAddress)
+		markCompleted(checkpoint, "affiliate.approve")
+	} else if (!isCompleted(checkpoint, "affiliate.approve")) {
+		logger.warn("Recovered dummy-affiliate approval from exact on-chain state after an interrupted submission.")
+		markCompleted(checkpoint, "affiliate.approve")
+	}
+
+	const accountManagerCode = await ethers.provider.getCode(resolvedAccountManagerAddress)
+	if (!accountManagerCode || accountManagerCode === "0x") {
+		throw new Error(`Dummy affiliate is ACTIVE, but AccountManager ${resolvedAccountManagerAddress} has no runtime bytecode`)
+	}
+	checkpoint.contracts.accountManager = createDeployedContract(resolvedAccountManagerAddress)
+	delete checkpoint.pending?.dummyAffiliateAddress
+	if (checkpoint.pending && Object.keys(checkpoint.pending).length === 0) delete checkpoint.pending
+	saveCheckpoint(checkpoint)
+
+	logger.info(`  Dummy affiliate registered! AccountManager: ${resolvedAccountManagerAddress}`)
+
+	return resolvedAccountManagerAddress
 }
 
 /**
@@ -1420,22 +2301,43 @@ async function setupInstantLayerTemplates(
 	const instantLayer = await ethers.getContractAt("InstantLayer", deployedContracts.instantLayer!)
 
 	const templates = protocolConfig.instantLayerTemplates
-	console.log(`  Setting up ${templates.length} InstantLayer template(s)...`)
+	logger.info(`  Setting up ${templates.length} InstantLayer template(s)...`)
 
 	// Template ids are assigned in creation order and hedgers address templates BY ID, so
 	// the array order in the config is part of the contract with off-chain services.
 	for (const [templateId, template] of templates.entries()) {
-		await checkpointedStep(checkpoint, `templates.add.${templateId}`, `Adding template ${templateId}: ${template.name}`, async () => {
-			await send(instantLayer.connect(deployer).addTemplate(template.name, template.operations), `addTemplate(${template.name})`)
-		})
+		const progressKey = `templates.add.${templateId}`
+		const nextTemplateId = BigInt(await instantLayer.nextTemplateId())
+		const existing = nextTemplateId > BigInt(templateId) ? await instantLayer.getTemplate(templateId) : undefined
+		const resumeAction = resolveTemplateAddResumeAction(templateId, nextTemplateId, existing, template, isCompleted(checkpoint, progressKey))
 
-		if (template.instantOpenMode) {
+		if (resumeAction === "present") {
+			if (!isCompleted(checkpoint, progressKey)) {
+				logger.warn(`Recovered template ${templateId}: ${template.name} from exact on-chain state after an interrupted submission.`)
+				markCompleted(checkpoint, progressKey)
+			}
+		} else {
+			await checkpointedStep(checkpoint, progressKey, `Adding template ${templateId}: ${template.name}`, async () => {
+				await instantLayer.connect(deployer).addTemplate.staticCall(template.name, template.operations)
+				await send(instantLayer.connect(deployer).addTemplate(template.name, template.operations), `addTemplate(${template.name})`)
+				const countAfter = BigInt(await instantLayer.nextTemplateId())
+				if (countAfter !== BigInt(templateId + 1)) {
+					throw new Error(`addTemplate(${template.name}) confirmed but nextTemplateId is ${countAfter}, expected ${templateId + 1}`)
+				}
+				const added = await instantLayer.getTemplate(templateId)
+				const mismatches = templateConfigMismatches(templateId, added, template)
+				if (mismatches.length > 0) throw new Error(`Added InstantLayer template failed post-check:\n- ${mismatches.join("\n- ")}`)
+			})
+		}
+
+		const expectedInstantOpenMode = Boolean(template.instantOpenMode)
+		if ((await instantLayer.templateInstantOpenMode(templateId)) !== expectedInstantOpenMode) {
 			await checkpointedStep(
 				checkpoint,
 				`templates.instantOpenMode.${templateId}`,
-				`Enabling instantOpenMode on template ${templateId}`,
+				`Setting instantOpenMode=${expectedInstantOpenMode} on template ${templateId}`,
 				async () => {
-					await send(instantLayer.connect(deployer).setTemplateInstantOpenMode(templateId, true), "setTemplateInstantOpenMode")
+					await send(instantLayer.connect(deployer).setTemplateInstantOpenMode(templateId, expectedInstantOpenMode), "setTemplateInstantOpenMode")
 				},
 			)
 		}
@@ -1448,17 +2350,12 @@ async function setupInstantLayerTemplates(
 		throw new Error(`InstantLayer has ${onChain.length} templates, expected ${templates.length}`)
 	}
 	for (const [templateId, template] of templates.entries()) {
-		if (onChain[templateId].name !== template.name) {
-			throw new Error(`Template id ${templateId} is "${onChain[templateId].name}" on-chain, expected "${template.name}"`)
-		}
-		if (onChain[templateId].operations.length !== template.operations.length) {
-			throw new Error(
-				`Template ${template.name} (id ${templateId}) has ${onChain[templateId].operations.length} operations on-chain, expected ${template.operations.length}`,
-			)
-		}
+		const instantOpenMode = await instantLayer.templateInstantOpenMode(templateId)
+		const mismatches = templateConfigMismatches(templateId, onChain[templateId], template, instantOpenMode)
+		if (mismatches.length > 0) throw new Error(`InstantLayer template verification failed:\n- ${mismatches.join("\n- ")}`)
 	}
 
-	console.log(`  InstantLayer templates setup complete — ${templates.length} verified on-chain.`)
+	logger.info(`  InstantLayer templates setup complete — ${templates.length} verified on-chain.`)
 }
 
 /** Minimal OpenZeppelin AccessControl surface, used for the peripheral contracts. */
@@ -1493,13 +2390,12 @@ async function revokeDeployerPrivileges(
 	const roleHash = (role: string) => ethers.keccak256(ethers.toUtf8Bytes(role))
 
 	if (config.admin.toLowerCase() === deployerAddress.toLowerCase()) {
-		console.log("  ⏭ ADMIN_PUBLIC_KEY is the deployer — no handover to perform.")
-		console.log("     ⚠ The deploy wallet remains protocol admin. For a production system, set")
-		console.log("       ADMIN_PUBLIC_KEY to your multisig and re-run so privileges are handed over.")
+		logger.info("  ⏭ ADMIN_PUBLIC_KEY is the deployer — no handover to perform.")
+		logger.warn("The deploy wallet remains protocol admin. For production, set ADMIN_PUBLIC_KEY to the multisig and rerun the handover.")
 		return
 	}
 
-	console.log(`  Handing administrative control to ${config.admin} and revoking the deployer's.`)
+	logger.info(`  Handing administrative control to ${config.admin} and revoking the deployer's.`)
 
 	// ---- Core Diamond (custom role storage) --------------------------------------
 	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", deployedContracts.diamond!)
@@ -1517,7 +2413,7 @@ async function revokeDeployerPrivileges(
 	for (const role of [...DEPLOYER_SETUP_ROLES, "DEFAULT_ADMIN_ROLE"]) {
 		const hash = roleHash(role)
 		if (!(await viewFacet.hasRole(deployerAddress, hash))) {
-			console.log(`    ⏭ Deployer does not hold ${role} on the Diamond`)
+			logger.info(`    ⏭ Deployer does not hold ${role} on the Diamond`)
 			continue
 		}
 		await checkpointedStep(checkpoint, `revoke.core.${role}`, `Revoking ${role} from deployer on Diamond`, async () => {
@@ -1543,7 +2439,7 @@ async function revokeDeployerPrivileges(
 		for (const role of [...ACCOUNTLAYER_DEPLOYER_SETUP_ROLES, "DEFAULT_ADMIN_ROLE"]) {
 			const hash = roleHash(role)
 			if (!(await alView.hasRole(deployerAddress, hash))) {
-				console.log(`    ⏭ Deployer does not hold ${role} on the AccountLayer`)
+				logger.info(`    ⏭ Deployer does not hold ${role} on the AccountLayer`)
 				continue
 			}
 			await checkpointedStep(checkpoint, `revoke.accountLayer.${role}`, `Revoking ${role} from deployer on AccountLayer`, async () => {
@@ -1557,17 +2453,29 @@ async function revokeDeployerPrivileges(
 
 	// ---- OpenZeppelin AccessControl peripherals -----------------------------------
 	// The mock verifier has no roles at all, so it is skipped.
-	const ozTargets: Array<{ label: string; address?: string }> = [
-		{ label: "MuonSignatureVerifier", address: config.deployMockVerifier ? undefined : deployedContracts.signatureVerifier },
-		{ label: "InstantLayer", address: deployedContracts.instantLayer },
-		{ label: "SymmioPartyB", address: deployedContracts.symmioPartyB },
+	const ozTargets: Array<{ label: string; address?: string; roles: string[] }> = [
+		{
+			label: "MuonSignatureVerifier",
+			address: config.deployMockVerifier ? undefined : deployedContracts.signatureVerifier,
+			roles: ["DEFAULT_ADMIN_ROLE", "SETTER_ROLE"],
+		},
+		{
+			label: "InstantLayer",
+			address: deployedContracts.instantLayer,
+			roles: ["DEFAULT_ADMIN_ROLE", "SETTER_ROLE", "OPERATOR_ROLE"],
+		},
+		{
+			label: "SymmioPartyB",
+			address: deployedContracts.symmioPartyB,
+			roles: ["DEFAULT_ADMIN_ROLE", "TRUSTED_ROLE", "MANAGER_ROLE", "SETTER_ROLE"],
+		},
 	]
 
 	for (const target of ozTargets) {
 		if (!target.address) continue
 		const contract = new ethers.Contract(target.address, ACCESS_CONTROL_ABI, deployer)
 
-		for (const role of ["DEFAULT_ADMIN_ROLE", "SETTER_ROLE"]) {
+		for (const role of target.roles) {
 			// OZ's DEFAULT_ADMIN_ROLE is bytes32(0); the named roles are keccak hashes.
 			const hash = role === "DEFAULT_ADMIN_ROLE" ? ethers.ZeroHash : roleHash(role)
 
@@ -1597,19 +2505,51 @@ async function revokeDeployerPrivileges(
 		}
 	}
 
-	console.log(`  ✓ Deployer privileges revoked; ${config.admin} is now the sole administrator.`)
+	logger.info(`  ✓ Deployer privileges revoked; ${config.admin} is now the sole administrator.`)
 }
 
-function generateReport(deployments: DeploymentResult[], config: Awaited<ReturnType<typeof getEnvConfig>>): SystemDeploymentReport {
-	const successfulDeployments = deployments.filter(d => d.status === "success").length
-	const failedDeployments = deployments.filter(d => d.status === "failed").length
-	const skippedDeployments = deployments.filter(d => d.status === "skipped").length
+function generateReport(
+	deployments: DeploymentResult[],
+	config: Awaited<ReturnType<typeof getEnvConfig>>,
+	context: {
+		checkpoint: DeploymentCheckpoint
+		deployerAddress: string
+		network: string
+		chainId: number
+		verificationRequired: boolean
+		verificationPolicy: SystemDeploymentReport["checks"]["verificationPolicy"]
+		recipe?: NonNullable<SystemDeploymentReport["recipe"]>
+	},
+): SystemDeploymentReport {
+	const successfulDeploymentGroups = deployments.filter(d => d.status === "success").length
+	const failedDeploymentGroups = deployments.filter(d => d.status === "failed").length
+	const skippedOrReusedDeploymentGroups = deployments.filter(d => d.status === "skipped").length
+	if (!context.checkpoint.deploymentId || !context.checkpoint.manifest) {
+		throw new Error("Cannot generate deployment report without a deployment id and validated manifest")
+	}
+	const now = new Date().toISOString()
 
 	return {
+		deploymentId: context.checkpoint.deploymentId,
+		deployerAddress: context.deployerAddress,
+		network: context.network,
+		chainId: context.chainId,
+		manifestFingerprint: context.checkpoint.manifest.fingerprint,
+		recipe: context.recipe,
+		lifecycle: "validating",
+		checks: {
+			health: "pending",
+			verification: context.verificationRequired ? (context.checkpoint.verificationStatus === "passed" ? "passed" : "pending") : "skipped",
+			verificationPolicy: context.verificationPolicy,
+		},
+		transactions: context.checkpoint.transactions || [],
 		deployments,
 		config: {
 			admin: config.admin,
 			symmioFeeReceiver: config.symmioFeeReceiver,
+			liquidationInsuranceVault: config.liquidationInsuranceVault,
+			maxLiquidationProfitPerPosition: config.maxLiquidationProfitPerPosition,
+			softLiquidationPenaltyCollector: config.softLiquidationPenaltyCollector,
 			collateralAddress: config.collateralAddress,
 			deployPartyB: config.deployPartyB,
 			setAdlEnabled: config.setAdlEnabled,
@@ -1618,83 +2558,97 @@ function generateReport(deployments: DeploymentResult[], config: Awaited<ReturnT
 			registerDummyAffiliate: config.registerDummyAffiliate,
 			setupInstantLayerTemplates: config.setupInstantLayerTemplates,
 			signatureVerifierAddress: config.signatureVerifierAddress,
+			deployMockVerifier: config.deployMockVerifier,
 			muonAppId: config.muonAppId,
 			muonUpnlValidTime: config.muonUpnlValidTime,
 			muonPriceValidTime: config.muonPriceValidTime,
 			muonPublicKeyX: config.muonPublicKeyX,
 			muonPublicKeyParity: config.muonPublicKeyParity,
 			muonGatewaySigners: config.muonGatewaySigners,
+			muonFunctionPermissions: config.muonFunctionPermissions,
+			partyBMode: config.partyBMode,
+			symbolManagerMode: config.symbolManagerMode,
+			expressProviderMode: config.expressProviderMode,
 		},
 		summary: {
-			totalContracts: deployments.length,
-			successfulDeployments,
-			failedDeployments,
-			skippedDeployments,
+			totalDeploymentGroups: deployments.length,
+			successfulDeploymentGroups,
+			failedDeploymentGroups,
+			skippedOrReusedDeploymentGroups,
 		},
-		timestamp: new Date().toISOString(),
+		timestamp: now,
+		updatedAt: now,
 	}
 }
 
 function displayReport(report: SystemDeploymentReport, deployedContracts: DeployedContracts, config?: { deployMockVerifier?: boolean }): void {
-	console.log("DEPLOYMENT SUMMARY")
-	console.log("-".repeat(80))
-	console.log(`Total Contracts: ${report.summary.totalContracts}`)
-	console.log(`Successful: ${report.summary.successfulDeployments}`)
-	console.log(`Skipped (from checkpoint): ${report.summary.skippedDeployments}`)
-	console.log(`Failed: ${report.summary.failedDeployments}`)
-	console.log()
+	logger.info("DEPLOYMENT SUMMARY")
+	logger.info("-".repeat(80))
+	logger.info(`Deployment ID: ${report.deploymentId}`)
+	logger.info(`Lifecycle: ${report.lifecycle}`)
+	logger.info(`Health Check: ${report.checks.health}`)
+	logger.info(`Explorer Verification: ${report.checks.verification} (${report.checks.verificationPolicy})`)
+	logger.info(`Confirmed/Recorded Transactions: ${report.transactions.length}`)
+	logger.info(`Deployment Groups: ${report.summary.totalDeploymentGroups}`)
+	logger.info(`Successful Groups: ${report.summary.successfulDeploymentGroups}`)
+	logger.info(`Skipped/Reused Groups: ${report.summary.skippedOrReusedDeploymentGroups}`)
+	logger.info(`Failed Groups: ${report.summary.failedDeploymentGroups}`)
+	logger.info()
 
-	console.log("DEPLOYED ADDRESSES")
-	console.log("-".repeat(80))
-	if (deployedContracts.collateral) console.log(`Collateral:           ${deployedContracts.collateral}`)
-	if (deployedContracts.diamond) console.log(`Diamond:              ${deployedContracts.diamond}`)
+	logger.info("DEPLOYED ADDRESSES")
+	logger.info("-".repeat(80))
+	if (deployedContracts.collateral) logger.info(`Collateral:           ${deployedContracts.collateral}`)
+	if (deployedContracts.diamond) logger.info(`Diamond:              ${deployedContracts.diamond}`)
 	if (deployedContracts.signatureVerifier)
-		console.log(`${config?.deployMockVerifier ? "MockMuonSigVerifier" : "MuonSignatureVerifier"}: ${deployedContracts.signatureVerifier}`)
-	if (deployedContracts.accountLayerDiamond) console.log(`AccountLayerDiamond:  ${deployedContracts.accountLayerDiamond}`)
-	if (deployedContracts.instantLayer) console.log(`InstantLayer:         ${deployedContracts.instantLayer}`)
-	if (deployedContracts.symmioPartyB) console.log(`SymmioPartyB:         ${deployedContracts.symmioPartyB}`)
-	if (deployedContracts.symbolManager) console.log(`SymbolManager:        ${deployedContracts.symbolManager}`)
-	if (deployedContracts.accountManager) console.log(`AccountManager:       ${deployedContracts.accountManager}`)
-	console.log()
+		logger.info(`${config?.deployMockVerifier ? "MockMuonSigVerifier" : "MuonSignatureVerifier"}: ${deployedContracts.signatureVerifier}`)
+	if (deployedContracts.accountLayerDiamond) logger.info(`AccountLayerDiamond:  ${deployedContracts.accountLayerDiamond}`)
+	if (deployedContracts.instantLayer) logger.info(`InstantLayer:         ${deployedContracts.instantLayer}`)
+	if (deployedContracts.symmioPartyB) logger.info(`SymmioPartyB:         ${deployedContracts.symmioPartyB}`)
+	if (deployedContracts.symbolManager) logger.info(`SymbolManager:        ${deployedContracts.symbolManager}`)
+	if (deployedContracts.accountManager) logger.info(`AccountManager:       ${deployedContracts.accountManager}`)
+	logger.info()
 
-	console.log("CONFIGURATION")
-	console.log("-".repeat(80))
-	console.log(`Admin:                       ${report.config.admin}`)
-	console.log(`Symmio Fee Receiver:         ${report.config.symmioFeeReceiver}`)
-	console.log(`Deploy PartyB:               ${report.config.deployPartyB}`)
-	console.log(`Set ADL Enabled:             ${report.config.setAdlEnabled}`)
-	console.log(`Deploy SymbolManager:        ${report.config.deploySymbolManager}`)
-	console.log(`SymbolManager Operator:      ${report.config.symbolManagerOperator || "(not set)"}`)
-	console.log(`Register Dummy Affiliate:    ${report.config.registerDummyAffiliate}`)
-	console.log(`Setup InstantLayer Templates: ${report.config.setupInstantLayerTemplates}`)
-	console.log(`Muon App ID:                 ${report.config.muonAppId || "(not set)"}`)
-	console.log(`Muon UPNL Valid Time:        ${report.config.muonUpnlValidTime || "(not set)"}`)
-	console.log(`Muon Price Valid Time:       ${report.config.muonPriceValidTime || "(not set)"}`)
-	console.log(`Muon Public Key X:           ${report.config.muonPublicKeyX || "(not set)"}`)
-	console.log(`Muon Public Key Parity:      ${report.config.muonPublicKeyParity || "(not set)"}`)
-	console.log(
+	logger.info("CONFIGURATION")
+	logger.info("-".repeat(80))
+	logger.info(`Admin:                       ${report.config.admin}`)
+	logger.info(`Symmio Fee Receiver:         ${report.config.symmioFeeReceiver}`)
+	logger.info(`Liquidation Insurance Vault: ${report.config.liquidationInsuranceVault}`)
+	logger.info(`Max Liquidation Profit:      ${report.config.maxLiquidationProfitPerPosition}`)
+	logger.info(`Soft Penalty Collector:      ${report.config.softLiquidationPenaltyCollector}`)
+	logger.info(`Deploy PartyB:               ${report.config.deployPartyB}`)
+	logger.info(`Set ADL Enabled:             ${report.config.setAdlEnabled}`)
+	logger.info(`Deploy SymbolManager:        ${report.config.deploySymbolManager}`)
+	logger.info(`SymbolManager Operator:      ${report.config.symbolManagerOperator || "(not set)"}`)
+	logger.info(`Register Dummy Affiliate:    ${report.config.registerDummyAffiliate}`)
+	logger.info(`Setup InstantLayer Templates: ${report.config.setupInstantLayerTemplates}`)
+	logger.info(`Muon Verifier Mode:           ${report.config.deployMockVerifier ? "mock (local/test only)" : "real"}`)
+	logger.info(`Muon App ID:                 ${report.config.muonAppId || "(not set)"}`)
+	logger.info(`Muon UPNL Valid Time:        ${report.config.muonUpnlValidTime || "(not set)"}`)
+	logger.info(`Muon Price Valid Time:       ${report.config.muonPriceValidTime || "(not set)"}`)
+	logger.info(`Muon Public Key X:           ${report.config.muonPublicKeyX || "(not set)"}`)
+	logger.info(`Muon Public Key Parity:      ${report.config.muonPublicKeyParity || "(not set)"}`)
+	logger.info(
 		`Muon Gateway Signers:        ${report.config.muonGatewaySigners.length > 0 ? report.config.muonGatewaySigners.join(",") : "(not set)"}`,
 	)
-	console.log()
+	logger.info(
+		`Muon Function Permissions:   ${report.config.muonFunctionPermissions.length > 0 ? report.config.muonFunctionPermissions.join(",") : report.config.deployMockVerifier ? "(not applicable)" : "(not set)"}`,
+	)
+	logger.info()
 
-	console.log("=".repeat(80))
-	console.log(`Report generated at: ${report.timestamp}`)
-	console.log("=".repeat(80))
+	logger.info("=".repeat(80))
+	logger.info(`Report generated at: ${report.timestamp}`)
+	logger.info("=".repeat(80))
 }
 
 function saveReport(report: SystemDeploymentReport, deployedContracts: DeployedContracts): void {
-	try {
-		const filename = "deployment-report.json"
-		const fullReport = {
-			...report,
-			addresses: deployedContracts,
-		}
-
-		writeData(filename, fullReport)
-
-		console.log()
-		console.log(`Full report saved to: ${getDataDir()}/${filename}`)
-	} catch (err: any) {
-		console.error(`Failed to save report: ${err.message}`)
+	const filename = "deployment-report.json"
+	const fullReport = {
+		...report,
+		addresses: deployedContracts,
 	}
+
+	writeData(filename, fullReport)
+
+	logger.info()
+	logger.info(`Full report saved to: ${getDataDir()}/${filename}`)
 }

@@ -41,6 +41,8 @@ export interface MainnetSafetyConfig {
 	deployMockVerifier: boolean
 	collateralAddress: string
 	registerDummyAffiliate: boolean
+	adminAddress: string
+	adminWasExplicit: boolean
 }
 
 export interface SafetyViolation {
@@ -57,6 +59,27 @@ export function isKnownMainnet(chainId: number | bigint): boolean {
 }
 
 /**
+ * Low-level `deploy:*` component tasks have no durable standalone journal. They are
+ * useful building blocks on Hardhat/local networks, but invoking one directly against
+ * a live RPC can orphan a deployment when the receipt wait times out. Live deployments
+ * must enter through a workflow that owns recovery and chain confirmation.
+ */
+export function assertStandaloneDeploymentTaskAllowed(
+	taskName: string,
+	chainId: number | bigint,
+	isSimulated: boolean,
+	liveWorkflow = "Use `symmio deploy --network <network>` (or `deploy:system`) for a checkpointed live deployment.",
+): void {
+	const normalizedChainId = Number(chainId)
+	if (isSimulated || normalizedChainId === 31337) return
+	throw new Error(
+		`${taskName} is a low-level component deployment task and is refused on live RPC chainId ${normalizedChainId}. ` +
+			"It has no durable standalone transaction journal, so retrying after an uncertain receipt could deploy a duplicate contract. " +
+			liveWorkflow,
+	)
+}
+
+/**
  * Collect every unsafe-for-mainnet setting. Returns [] on non-mainnet chains, so local
  * runs keep the permissive defaults that make testing convenient.
  *
@@ -69,6 +92,22 @@ export function collectMainnetSafetyViolations(chainId: number | bigint, deploye
 	if (!isKnownMainnet(chainId)) return []
 
 	const violations: SafetyViolation[] = []
+
+	if (!config.adminWasExplicit) {
+		violations.push({
+			id: "missing-admin",
+			message: "ADMIN_PUBLIC_KEY is not explicitly configured, so protocol administration would default to the deployer hot wallet.",
+			remedy: "Set ADMIN_PUBLIC_KEY to the production multisig address.",
+		})
+	}
+
+	if (config.adminAddress.toLowerCase() === deployerAddress.toLowerCase()) {
+		violations.push({
+			id: "admin-is-deployer",
+			message: `ADMIN_PUBLIC_KEY resolves to the deployer ${deployerAddress}, so the deploy hot wallet would retain protocol control.`,
+			remedy: "Set ADMIN_PUBLIC_KEY to a distinct production multisig address.",
+		})
+	}
 
 	const unsafeDeployer = UNSAFE_DEPLOYERS.get(deployerAddress.toLowerCase())
 	if (unsafeDeployer) {
@@ -157,6 +196,14 @@ export function assertMainnetSafe(
 	const lines = [banner, `UNSAFE MAINNET DEPLOYMENT BLOCKED — chainId ${Number(chainId)}`, banner, "", ...body]
 
 	if (allowUnsafe) {
+		const confirmation = process.env.UNSAFE_MAINNET_CONFIRM_CHAIN_ID
+		if (confirmation !== String(Number(chainId))) {
+			throw new Error(
+				`${lines.join("\n")}\n` +
+					`Unsafe override refused: set UNSAFE_MAINNET_CONFIRM_CHAIN_ID=${Number(chainId)} in addition to --allow-unsafe-mainnet=true.\n` +
+					"This second, chain-bound confirmation prevents a copied flag from bypassing production safety by accident.",
+			)
+		}
 		lines.splice(1, 1, `UNSAFE MAINNET DEPLOYMENT — PROCEEDING ANYWAY (--allow-unsafe-mainnet) — chainId ${Number(chainId)}`)
 		console.warn(lines.join("\n"))
 		console.warn("Continuing because --allow-unsafe-mainnet was passed. This deployment will NOT be safe to use in production.\n")
@@ -165,4 +212,30 @@ export function assertMainnetSafe(
 
 	lines.push("Re-run with --allow-unsafe-mainnet=true only if every item above is intentional.", banner)
 	throw new Error(`\n${lines.join("\n")}`)
+}
+
+/**
+ * Apply the signer/final-admin subset of the mainnet guard to a deployment that
+ * reuses an already-proven Core. The sentinel collateral value deliberately marks
+ * that full-system checks are not part of this component-only workflow.
+ */
+export function assertMainnetDeploymentIdentitySafe(
+	chainId: number | bigint,
+	deployerAddress: string,
+	adminAddress: string,
+	isSimulated: boolean = false,
+): void {
+	assertMainnetSafe(
+		chainId,
+		deployerAddress,
+		{
+			deployMockVerifier: false,
+			collateralAddress: "reused-core",
+			registerDummyAffiliate: false,
+			adminAddress,
+			adminWasExplicit: true,
+		},
+		false,
+		isSimulated,
+	)
 }

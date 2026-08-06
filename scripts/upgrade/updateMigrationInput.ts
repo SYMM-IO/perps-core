@@ -4,17 +4,20 @@
  * amount. Writes a backup before updating the input file.
  *
  * Usage:
- *   QUOTE_IDS=99015 npx hardhat run scripts/upgrade/updateMigrationInput.ts --network coti
+ *   QUOTE_IDS=99015 ./node_modules/.bin/hardhat run scripts/upgrade/updateMigrationInput.ts --network coti
+ *   QUOTE_IDS=99015 EXECUTE=true CONFIRM_CHAIN_ID=<chainId> \
+ *     ./node_modules/.bin/hardhat run scripts/upgrade/updateMigrationInput.ts --network coti
  *
  * Optional:
  *   MIGRATION_INPUT_FILE=scripts/upgrade/output/migration-input-coti.json
- *   DRY_RUN=true
  *   FORCE=true              Remove even if the on-chain safety check does not pass
  */
 import fs from "fs"
 import path from "path"
 
+import { atomicWriteFile } from "../../tasks/utils/fs.js"
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
+import { exactBooleanEnv, requireExecutionConfirmation } from "./utils/executionGuard.js"
 import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
 import { baseNetworkName, loadUpgradeConfigShared } from "./utils/sharedConfig.js"
@@ -56,10 +59,6 @@ type QuoteCheck = {
 	quantity?: string
 	closedAmount?: string
 	openAmount?: string
-}
-
-function parseBool(value: string | undefined): boolean {
-	return value !== undefined && ["1", "true", "yes", "y"].includes(value.trim().toLowerCase())
 }
 
 function parseQuoteIds(): string[] {
@@ -140,8 +139,9 @@ async function main() {
 	const shared = loadUpgradeConfigShared(NETWORK_SUFFIX)
 	const diamondAddress = process.env.DIAMOND_ADDRESS ?? shared.diamondAddress
 	const inputFile = process.env.MIGRATION_INPUT_FILE ?? defaultInputFile()
-	const dryRun = parseBool(process.env.DRY_RUN)
-	const force = parseBool(process.env.FORCE)
+	const connectedChainId = (await ethers.provider.getNetwork()).chainId
+	const execute = requireExecutionConfirmation(connectedChainId)
+	const force = exactBooleanEnv("FORCE")
 	const quoteIds = parseQuoteIds()
 
 	if (!diamondAddress || !ethers.isAddress(diamondAddress)) {
@@ -158,7 +158,8 @@ async function main() {
 	log.kv("Diamond", diamondAddress)
 	log.kv("Input", inputFile)
 	log.kv("Quote IDs", quoteIds.join(", "))
-	log.kv("Dry run", String(dryRun))
+	log.kv("Mode", execute ? "EXECUTE" : "PLAN ONLY")
+	log.kv("Chain ID", connectedChainId.toString())
 	log.kv("Force", String(force))
 
 	const checks: QuoteCheck[] = []
@@ -193,18 +194,19 @@ async function main() {
 	const before = input.quoteIds.length
 	input.quoteIds = input.quoteIds.filter(id => !removable.has(BigInt(id).toString()))
 	const after = input.quoteIds.length
-	const removedQuoteIds = [...removable].sort((a, b) => Number(BigInt(a) - BigInt(b)))
+	const removedQuoteIds = [...removable].sort((a, b) => (BigInt(a) < BigInt(b) ? -1 : BigInt(a) > BigInt(b) ? 1 : 0))
 	input.updatedAt = new Date().toISOString()
 	input.removedQuoteIds = [...new Set([...(input.removedQuoteIds ?? []), ...removedQuoteIds])]
 
-	if (dryRun) {
-		log.warn(`DRY RUN: would remove ${before - after} quote id(s): ${removedQuoteIds.join(", ")}`)
+	if (!execute) {
+		log.warn(`PLAN ONLY: would remove ${before - after} quote id(s): ${removedQuoteIds.join(", ")}`)
+		log.warn(`Re-run with EXECUTE=true CONFIRM_CHAIN_ID=${connectedChainId} after reviewing the quote checks.`)
 		return
 	}
 
 	const backup = backupPath(inputFile)
 	fs.copyFileSync(inputFile, backup)
-	fs.writeFileSync(inputFile, JSON.stringify(input, null, 2))
+	atomicWriteFile(inputFile, `${JSON.stringify(input, null, 2)}\n`)
 
 	log.ok(`Removed ${before - after} quote id(s): ${removedQuoteIds.join(", ")}`)
 	log.ok(`Backup: ${backup}`)

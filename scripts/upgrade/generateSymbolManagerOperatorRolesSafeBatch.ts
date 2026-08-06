@@ -20,7 +20,7 @@
  *   }
  *
  * Usage:
- *   npx hardhat run scripts/upgrade/generateSymbolManagerOperatorRolesSafeBatch.ts --network mantle
+ *   ./node_modules/.bin/hardhat run scripts/upgrade/generateSymbolManagerOperatorRolesSafeBatch.ts --network mantle
  *
  * Optional env overrides:
  *   SYMBOL_MANAGER_ADDRESS, SAFE_ADDRESS, CHAIN_ID,

@@ -6,7 +6,7 @@
  * The Safe (protocolAdmin) must have SETTER_ROLE on InstantLayer.
  *
  * Usage:
- *   npx hardhat run scripts/upgrade/generateTemplateBatch.ts --network <network>
+ *   ./node_modules/.bin/hardhat run scripts/upgrade/generateTemplateBatch.ts --network <network>
  *
  * Config:
  *   scripts/upgrade/config/upgrade.json                 -- diamondAddress, safeAddress, instantLayerAddress

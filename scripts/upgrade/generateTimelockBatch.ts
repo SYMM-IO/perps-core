@@ -7,7 +7,7 @@
  *   2. timelock-execute-safe-batch.json   -- execute() call, submit after delay
  *
  * Usage:
- *   npx hardhat run scripts/upgrade/generateTimelockBatch.ts --network mantle
+ *   ./node_modules/.bin/hardhat run scripts/upgrade/generateTimelockBatch.ts --network mantle
  *
  * Config: scripts/upgrade/config/upgrade.json (timelockAddress field)
  * Env overrides: TIMELOCK_ADDRESS, DIAMOND_ADDRESS, SAFE_ADDRESS

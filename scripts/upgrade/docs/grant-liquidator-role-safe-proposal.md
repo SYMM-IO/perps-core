@@ -18,7 +18,7 @@ For Base, the configured liquidator is `0x885277c30b25632fd966684581578211513866
 ## Generate Local Batch Only
 
 ```bash
-PROPOSE_TO_SAFE_SERVICE=0 npx hardhat run scripts/upgrade/generateGrantLiquidatorRoleSafeProposal.ts --network base
+PROPOSE_TO_SAFE_SERVICE=0 ./node_modules/.bin/hardhat run scripts/upgrade/generateGrantLiquidatorRoleSafeProposal.ts --network base
 ```
 
 Import the generated `safe-batch.json` into the Safe Transaction Builder if you want a UI-only path.
@@ -28,7 +28,7 @@ Import the generated `safe-batch.json` into the Safe Transaction Builder if you 
 This reads the queued Safe nonce, checks direct execution from the Safe, calls Safe Transaction Service estimation, and writes `safe-proposal.json` without submitting.
 
 ```bash
-SUBMIT_SAFE_PROPOSAL=0 npx hardhat run scripts/upgrade/generateGrantLiquidatorRoleSafeProposal.ts --network base
+SUBMIT_SAFE_PROPOSAL=false ./node_modules/.bin/hardhat run scripts/upgrade/generateGrantLiquidatorRoleSafeProposal.ts --network base
 ```
 
 ## Submit A Safe Proposal
@@ -38,17 +38,26 @@ The proposal sender must match `safeProposal.senderAddress` in the config or `SA
 Keystore:
 
 ```bash
-npx hardhat keystore set TEAM_PROPOSER
-USE_KEYSTORE=true npx hardhat run scripts/upgrade/generateGrantLiquidatorRoleSafeProposal.ts --network base
+./node_modules/.bin/hardhat keystore set TEAM_PROPOSER
+SUBMIT_SAFE_PROPOSAL=true \
+CONFIRM_CHAIN_ID=8453 \
+CONFIRM_SAFE_ADDRESS=0x5146C35725d9b8F11A84ebD4a3abe9845698Ada9 \
+USE_KEYSTORE=true \
+./node_modules/.bin/hardhat run scripts/upgrade/generateGrantLiquidatorRoleSafeProposal.ts --network base
 ```
 
 `.env` alternative:
 
 ```bash
-TEAM_PROPOSER=0x... npx hardhat run scripts/upgrade/generateGrantLiquidatorRoleSafeProposal.ts --network base
+SUBMIT_SAFE_PROPOSAL=true \
+CONFIRM_CHAIN_ID=8453 \
+CONFIRM_SAFE_ADDRESS=0x5146C35725d9b8F11A84ebD4a3abe9845698Ada9 \
+TEAM_PROPOSER=0x... \
+./node_modules/.bin/hardhat run scripts/upgrade/generateGrantLiquidatorRoleSafeProposal.ts --network base
 ```
 
 This submits the proposal to Safe Transaction Service. It does not execute the Safe transaction on-chain.
+The checked-in `safeProposal.submit` field remains `false` and cannot authorize submission by itself.
 
 ## Useful Overrides
 
