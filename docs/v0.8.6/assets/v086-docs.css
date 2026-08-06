@@ -3276,7 +3276,7 @@ body.doc-page.rail-right-collapsed .section-toggle {
 .index-page .minor-improvement-list {
 	grid-template-columns: repeat(3, minmax(0, 1fr));
 	gap: 12px;
-	align-items: start;
+	align-items: stretch;
 }
 
 .index-page .minor-improvement-item {
