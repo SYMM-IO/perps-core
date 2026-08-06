@@ -8,7 +8,6 @@ import { Accessibility } from "../../utils/Accessibility.sol";
 import { Pausable } from "../../utils/Pausable.sol";
 import { IAccountFacet } from "./IAccountFacet.sol";
 import { AccountFacetImpl } from "./AccountFacetImpl.sol";
-import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { OperationalFeeStorage, AllowanceState } from "../../storages/OperationalFeeStorage.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";

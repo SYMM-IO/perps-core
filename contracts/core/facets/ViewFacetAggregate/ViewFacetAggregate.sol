@@ -5,7 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { PositionType } from "../../storages/QuoteStorage.sol";
-import { AggregatedDataStorage, PartiesAggregatedPositions, PartiesAggregatedFunding } from "../../storages/AggregatedDataStorage.sol";
+import { AggregatedDataStorage, PartiesAggregatedPositions } from "../../storages/AggregatedDataStorage.sol";
 import { IViewFacetAggregate } from "./IViewFacetAggregate.sol";
 import { LibAggregateFunding } from "../../libraries/LibAggregateFunding.sol";
 

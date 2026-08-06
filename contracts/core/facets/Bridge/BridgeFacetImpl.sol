@@ -10,7 +10,6 @@ import { BridgeStorage, BridgeTransaction, BridgeTransactionStatus } from "../..
 import { MAStorage } from "../../storages/MAStorage.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { WithdrawStorage } from "../../storages/WithdrawStorage.sol";
-import { LibSigner } from "../../libraries/LibSigner.sol";
 import { LibSafeERC20 } from "../../libraries/LibSafeERC20.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
 

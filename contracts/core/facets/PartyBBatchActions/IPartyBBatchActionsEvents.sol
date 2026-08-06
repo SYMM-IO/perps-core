@@ -7,6 +7,5 @@ pragma solidity >=0.8.18;
 import { IPartiesEvents } from "../../interfaces/IPartiesEvents.sol";
 import { IPartyBPositionActionsEvents } from "../PartyBPositionActions/IPartyBPositionActionsEvents.sol";
 import { IPartyAEvents } from "../PartyA/IPartyAEvents.sol";
-import { QuoteStatus, OrderType } from "../../storages/QuoteStorage.sol";
 
 interface IPartyBBatchActionsEvents is IPartiesEvents, IPartyBPositionActionsEvents, IPartyAEvents {}

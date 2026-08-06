@@ -7,7 +7,6 @@ pragma solidity >=0.8.18;
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { MuonStorage, SingleUpnlSig, SingleUpnlWithPendingBalanceSig } from "../../storages/MuonStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
-import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { IMuonSignatureVerifier, MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 import { LibAccount } from "../LibAccount.sol";
 

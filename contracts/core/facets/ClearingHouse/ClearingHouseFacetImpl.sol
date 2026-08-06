@@ -5,7 +5,6 @@
 pragma solidity >=0.8.18;
 
 import { AccountStorage } from "../../storages/AccountStorage.sol";
-import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
 import { ClearingHouseStorage, CrossLiquidationDetail, PartyATakeoverDetail } from "../../storages/ClearingHouseStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
@@ -20,7 +19,6 @@ import { LibQuoteFunding } from "../../libraries/LibQuoteFunding.sol";
 import { LibConnections } from "../../libraries/LibConnections.sol";
 import { LibSymbolAdjustment } from "../../libraries/LibSymbolAdjustment.sol";
 import { LibPartyBState } from "../../libraries/extensions/LibPartyBState.sol";
-import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibHook } from "../../libraries/LibHook.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
@@ -228,7 +226,7 @@ library ClearingHouseFacetImpl {
 				uint256[] memory cancelledIds = new uint256[](pendingQuotes.length);
 				uint256 cancelledCount = 0;
 
-				for (uint256 i = 0; i < pendingQuotes.length; ) {
+				for (uint256 i = 0; i < pendingQuotes.length;) {
 					Quote storage quote = quoteLayout.quotes[pendingQuotes[i]];
 					if (quote.partyB == partyB) {
 						cancelledIds[cancelledCount++] = pendingQuotes[i];
