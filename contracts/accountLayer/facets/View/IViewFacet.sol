@@ -191,7 +191,7 @@ interface IViewFacet {
 	// ==================== Ownership ====================
 
 	/// @notice Returns the current diamond owner address
-	function owner() external view returns (address);
+	function getOwner() external view returns (address);
 
 	/// @notice Returns the pending owner address (for two-step ownership transfer)
 	function pendingOwner() external view returns (address);

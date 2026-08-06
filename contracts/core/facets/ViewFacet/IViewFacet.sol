@@ -17,7 +17,7 @@ import { Fee } from "../../storages/QuoteStorage.sol";
 interface IViewFacet {
 	function pendingOwner() external view returns (address);
 
-	function owner() external view returns (address);
+	function getOwner() external view returns (address);
 
 	// Account
 	function balanceOf(address user) external view returns (uint256);

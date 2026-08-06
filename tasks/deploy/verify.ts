@@ -473,7 +473,7 @@ async function checkDiamondOwner(
 	let view: any
 	try {
 		view = await ethers.getContractAt(viewFacetContractName, diamondAddress)
-		const owner = await view.owner()
+		const owner = await view.getOwner()
 
 		if (adminAddress) {
 			if (owner.toLowerCase() === adminAddress.toLowerCase()) {

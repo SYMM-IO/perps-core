@@ -18,6 +18,7 @@ import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { loadDeploymentState } from "./utils/deploymentState.js"
 import { resolveConfiguredSigner } from "./utils/hardwareSigner.js"
 import { log } from "./utils/log.js"
+import { DIAMOND_OWNER_ABI, readDiamondOwner } from "./utils/ownership.js"
 import { baseNetworkName, loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 import { writeTxOverrides } from "./utils/txOverrides.js"
 
@@ -59,11 +60,12 @@ async function main() {
 
 	const accountLayer = new ethers.Contract(
 		accountLayerAddress,
-		["function owner() view returns (address)", "function pendingOwner() view returns (address)", "function acceptOwnership()"],
+		[...DIAMOND_OWNER_ABI, "function pendingOwner() view returns (address)", "function acceptOwnership()"],
 		signer,
 	)
 
-	const owner = ethers.getAddress(await accountLayer.owner())
+	const owner = await readDiamondOwner(accountLayer)
+	if (!owner) throw new Error(`Could not read AccountLayer owner at ${accountLayerAddress}`)
 	const pendingOwner = ethers.getAddress(await accountLayer.pendingOwner())
 
 	log.header("Accept AccountLayer Ownership")

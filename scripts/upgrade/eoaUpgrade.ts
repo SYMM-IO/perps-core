@@ -47,7 +47,7 @@ import {
 } from "./utils/deploymentState.js"
 import { resolveConfiguredSigner } from "./utils/hardwareSigner.js"
 import { log } from "./utils/log.js"
-import { logUpgradeOwnershipSummary } from "./utils/ownership.js"
+import { DIAMOND_OWNER_ABI, logUpgradeOwnershipSummary, readDiamondOwner } from "./utils/ownership.js"
 import {
 	deployAccountLayerDiamond,
 	deployInstantLayer,
@@ -541,10 +541,14 @@ async function initiateAccountLayerOwnershipTransfer(accountLayerAddress: string
 
 	const accountLayer = new ethers.Contract(
 		accountLayerAddress,
-		["function owner() view returns (address)", "function pendingOwner() view returns (address)", "function transferOwnership(address owner)"],
+		[...DIAMOND_OWNER_ABI, "function pendingOwner() view returns (address)", "function transferOwnership(address owner)"],
 		signer,
 	)
-	const [owner, pendingOwner] = await Promise.all([accountLayer.owner(), accountLayer.pendingOwner()])
+	const [owner, pendingOwner] = await Promise.all([readDiamondOwner(accountLayer), accountLayer.pendingOwner()])
+	if (!owner) {
+		log.warn(`Could not read AccountLayer owner at ${log.addr(accountLayerAddress)} — skipping ownership transfer`)
+		return
+	}
 	const normalizedNewOwner = ethers.getAddress(newOwner)
 	const normalizedOwner = ethers.getAddress(owner)
 	const normalizedPendingOwner = ethers.getAddress(pendingOwner)
@@ -615,7 +619,7 @@ async function deploySymmioPartyBImplementation(stateFile: string, stateContext?
 }
 
 const CORE_ACCESS_ABI = [
-	"function owner() view returns (address)",
+	...DIAMOND_OWNER_ABI,
 	"function hasRole(address user, bytes32 role) view returns (bool)",
 	"function isRoleAdmin(address user, bytes32 role) view returns (bool)",
 	"function setAdmin(address user)",
@@ -1228,8 +1232,8 @@ async function pauseSystem(diamondAddress: string, signer: any): Promise<void> {
 	const controlFacet = new ethers.Contract(diamondAddress, CORE_ACCESS_ABI, signer)
 	const defaultAdminRole = ethers.id("DEFAULT_ADMIN_ROLE")
 	if (!(await controlFacet.hasRole(signerAddress, defaultAdminRole))) {
-		const owner = ethers.getAddress(await controlFacet.owner())
-		if (owner.toLowerCase() === ethers.getAddress(signerAddress).toLowerCase()) {
+		const owner = await readDiamondOwner(controlFacet)
+		if (owner && owner.toLowerCase() === ethers.getAddress(signerAddress).toLowerCase()) {
 			await grantCoreDefaultAdminIfMissing(controlFacet, diamondAddress, signerAddress)
 		}
 	}
@@ -1255,8 +1259,8 @@ async function unpauseSystem(diamondAddress: string, signer: any): Promise<void>
 	const controlFacet = new ethers.Contract(diamondAddress, CORE_ACCESS_ABI, signer)
 	const defaultAdminRole = ethers.id("DEFAULT_ADMIN_ROLE")
 	if (!(await controlFacet.hasRole(signerAddress, defaultAdminRole))) {
-		const owner = ethers.getAddress(await controlFacet.owner())
-		if (owner.toLowerCase() === ethers.getAddress(signerAddress).toLowerCase()) {
+		const owner = await readDiamondOwner(controlFacet)
+		if (owner && owner.toLowerCase() === ethers.getAddress(signerAddress).toLowerCase()) {
 			await grantCoreDefaultAdminIfMissing(controlFacet, diamondAddress, signerAddress)
 		}
 	}
