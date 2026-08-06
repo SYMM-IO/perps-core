@@ -20,56 +20,7 @@
 			</nav>
 		</header>
 		<div class="reader-shell">
-			<aside class="doc-sidebar" aria-label="Documentation navigation">
-				<a class="button primary back-home" href="../index.html">Back to index</a>
-				<div class="side-card">
-					<p class="side-label">Docs</p>
-					<a class="side-link" href="../pages/express-withdrawal-system-design.html"
-						><small>Express Withdrawal</small><span>Express Withdrawal System Design</span></a
-					>
-					<a class="side-link" href="../pages/account-layer-ownership-delegation.html"
-						><small>AccountLayer</small><span>AccountLayer Delegated Creation &amp; Ownership Transfer</span></a
-					>
-					<a class="side-link" href="../pages/liquidation-funding-snapshot-fix.html"
-						><small>Liquidation</small><span>PartyA Liquidation Snapshot Flow</span></a
-					>
-					<a class="side-link" href="../pages/single-step-partya-liquidation.html"
-						><small>Liquidation</small><span>Single-Step PartyA Liquidation</span></a
-					>
-					<a class="side-link" href="../pages/affiliate-shutdown-flow.html"
-						><small>Clearing House</small><span>Affiliate Shutdown Flow</span></a
-					>
-					<a class="side-link" href="../pages/muon-upnl-validity-overrides.html"
-						><small>Muon</small><span>Muon UPNL Validity Overrides</span></a
-					>
-					<a class="side-link" href="../pages/solver-fees.html"><small>Fees</small><span>Solver Fees</span></a>
-					<a class="side-link" href="../pages/operational-fees.html"><small>Fees</small><span>Operational Fees</span></a>
-					<a class="side-link" href="../pages/symbol-adjustment.html"><small>Symbols</small><span>Symbol Corporate-Action Adjustment</span></a>
-					<a class="side-link" href="../pages/partya-liquidation-fee-recipient.html"
-						><small>Liquidation</small><span>PartyA Liquidation Fee Recipient Cleanup</span></a
-					>
-					<a class="side-link" href="../pages/balance-change-event-cleanup.html"
-						><small>Events &amp; Indexing</small><span>Allocated Balance Event Ledger</span></a
-					>
-					<a class="side-link" href="../pages/lazy-accumulated-funding.html"><small>Funding</small><span>Lazy Accumulated Funding</span></a>
-					<a class="side-link" href="../pages/partyb-allocation-suspension-gates.html"
-						><small>PartyB</small><span>Allocation Suspension Gates</span></a
-					>
-					<a class="side-link" href="../pages/cross-partyb-liquidation-reserve.html"
-						><small>Liquidation</small><span>Cross-PartyB Liquidation Reserve Enforcement</span></a
-					>
-					<a class="side-link" href="../pages/delegation-account-scope.html"><small>AccountLayer</small><span>Delegation Account Scope</span></a>
-					<a class="side-link" href="../pages/strict-deallocation.html"
-						><small>Accounts</small><span>Strict Deallocation</span></a
-					>
-					<a class="side-link is-active" href="../pages/express-bot-operations-checklist.html"
-						><small>Express Withdrawal</small><span>Express Provider Bot Operations Checklist</span></a
-					>
-					<a class="side-link" href="../pages/market-open-fee-execution-price.html"
-						><small>Fees</small><span>Market Open Fee on Execution Price</span></a
-					>
-				</div>
-			</aside>
+			<aside class="doc-sidebar" aria-label="Documentation navigation" data-doc-nav></aside>
 			<aside class="toc-panel side-toc" aria-label="Page navigation">
 				<div class="toc-card">
 					<p class="toc-title">On this page</p>
@@ -1112,8 +1063,8 @@ What-if: same withdrawal as WINDOWED instead of STANDARD?
     creditDataRaw = abi.encode(CreditData) if creditAmount &gt; 0, else empty bytes
 </code></pre>
 					<p>
-						If no validators needed, <code>validatorData = abi.encode(new bytes[](0), new uint256[](0))</code>. If no credit
-						used, <code>creditDataRaw</code> is empty bytes (<code>""</code>).
+						If no validators needed, <code>validatorData = abi.encode(new bytes[](0), new uint256[](0))</code>. If no credit used,
+						<code>creditDataRaw</code> is empty bytes (<code>""</code>).
 					</p>
 					<h3 id="4-5-nonce-management">4.5 Nonce Management</h3>
 					<ul>
@@ -1472,7 +1423,10 @@ Step 4 -- Bot sees: cooldownEndTime reached
 						</li>
 						<li>[ ] Validator sigs must be address-sorted ascending (dedup check)</li>
 						<li>[ ] Each validator timestamp must be within <code>validatorApprovalTimeout(affiliate)</code> of current time</li>
-						<li>[ ] Each validator timestamp must be strictly greater than <code>withdrawCooldownOf(user)</code> (the user's last balance credit)</li>
+						<li>
+							[ ] Each validator timestamp must be strictly greater than <code>withdrawCooldownOf(user)</code> (the user's last balance
+							credit)
+						</li>
 						<li>[ ] Schedule <code>finalizeWithdrawRequest</code> at <code>cooldownEndTime</code></li>
 						<li>[ ] No <code>processWithdraw</code> needed (funds already sent)</li>
 						<li>[ ] Cannot be cancelled once accepted (funds already transferred)</li>
@@ -2526,7 +2480,11 @@ Step 2 — Bot pre-computes: how will 15 USDC fee cascade across parts?
 							<code>amount</code> -- <code>withdrawRequest.totalAmount</code> (the <strong>full</strong> SYMMIO withdrawal request
 							total, NOT the express portion -- a suspend rolls back the entire request, so validators must sign the total amount)
 						</li>
-						<li><code>timestamp</code> -- when the validator signed; must be &lt;= <code>block.timestamp</code>, within <code>validatorApprovalTimeout(affiliate)</code>, and strictly greater than <code>withdrawCooldownOf(user)</code> (the user's last balance credit)</li>
+						<li>
+							<code>timestamp</code> -- when the validator signed; must be &lt;= <code>block.timestamp</code>, within
+							<code>validatorApprovalTimeout(affiliate)</code>, and strictly greater than <code>withdrawCooldownOf(user)</code> (the
+							user's last balance credit)
+						</li>
 						<li>
 							<code>symmio</code> -- the SYMMIO core address bound into the signature; together with the EIP-712 domain separator (which
 							binds <code>address(this)</code> ExpressProvider) this prevents replay across deployments
@@ -2552,8 +2510,8 @@ Step 2 — Bot pre-computes: how will 15 USDC fee cascade across parts?
 									<code>ValidatorApprovalExpired</code>; falls back to <code>validatorApprovalTimeout(address(0))</code> default)
 								</li>
 								<li>
-									[ ] <code>timestamps[i] &gt; ISymmio(symmio).withdrawCooldownOf(user)</code> -- the approval must postdate the user's last
-									balance credit (else <code>StaleValidatorApproval</code>)
+									[ ] <code>timestamps[i] &gt; ISymmio(symmio).withdrawCooldownOf(user)</code> -- the approval must postdate the
+									user's last balance credit (else <code>StaleValidatorApproval</code>)
 								</li>
 								<li>
 									[ ] Recovered signer passes <code>isValidator(affiliate, signer)</code> — checks affiliate-specific registration
@@ -3190,13 +3148,13 @@ Step 4c -- Post-payout rollback (suspend after PROCESSED, rare):
 								</li>
 								<li>
 									If <code>minValidatorSignatures(affiliate) &gt; 0</code>, collect a fresh quorum of
-									<code>ValidatorAccelerateApproval</code> signatures over <code>(user, requestId, partsHash)</code> and encode them as
-									<code>validatorData</code>. Each must postdate <code>withdrawCooldownOf(user)</code>, so re-collect them if the user
-									deallocates between attempts.
+									<code>ValidatorAccelerateApproval</code> signatures over <code>(user, requestId, partsHash)</code> and encode them
+									as <code>validatorData</code>. Each must postdate <code>withdrawCooldownOf(user)</code>, so re-collect them if the
+									user deallocates between attempts.
 								</li>
 								<li>
-									Submit <code>accelerateWithdraw(user, requestId, parts, offerData, validatorData, creditDataRaw)</code> from the bot account (or
-									the affiliate's relay).
+									Submit <code>accelerateWithdraw(user, requestId, parts, offerData, validatorData, creditDataRaw)</code> from the
+									bot account (or the affiliate's relay).
 								</li>
 							</ul>
 						</li>
@@ -3212,8 +3170,9 @@ Step 4c -- Post-payout rollback (suspend after PROCESSED, rare):
 								</li>
 								<li>
 									Fetch a fresh <code>AccelerateOffer</code> from the bot's API and have its own backend submit
-									<code>accelerateWithdraw</code>. The contract is permissionless, so any sender works -- but when the affiliate requires validators, the submission must
-									carry a fresh <code>validatorData</code> quorum alongside the bot signature.
+									<code>accelerateWithdraw</code>. The contract is permissionless, so any sender works -- but when the affiliate
+									requires validators, the submission must carry a fresh <code>validatorData</code> quorum alongside the bot
+									signature.
 								</li>
 							</ul>
 						</li>
