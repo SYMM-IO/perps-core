@@ -112,12 +112,24 @@ library LibAccount {
 
 	/// @notice Returns the maximum Party A amount permitted by solvency, pending-balance, and raw CVA + LF deallocation checks.
 	function partyAMaxDeallocatable(int256 upnl, address partyA, uint256 pendingBalance) internal view returns (uint256) {
+		return partyAMaxRemovableMargin(upnl, partyA, pendingBalance, 0);
+	}
+
+	/// @notice Returns the maximum Party A amount permitted by solvency, pending-balance, and retention checks,
+	/// where the retention floor is the stricter of the stored CVA + LF requirement and the Muon-attested scaledLockedBalance.
+	function partyAMaxRemovableMargin(
+		int256 upnl,
+		address partyA,
+		uint256 pendingBalance,
+		uint256 scaledLockedBalance
+	) internal view returns (uint256) {
 		int256 availableBalance = partyAAvailableForQuote(upnl, partyA);
 		if (availableBalance <= 0 || uint256(availableBalance) <= pendingBalance) return 0;
 
 		uint256 availableAfterPending = uint256(availableBalance) - pendingBalance;
 		uint256 allocatedBalance = AccountStorage.layout().allocatedBalances[partyA];
 		uint256 requirement = partyADeallocateCvaLfRequirement(partyA);
+		if (scaledLockedBalance > requirement) requirement = scaledLockedBalance;
 		uint256 allocationAboveRequirement = allocatedBalance > requirement ? allocatedBalance - requirement : 0;
 
 		return availableAfterPending < allocationAboveRequirement ? availableAfterPending : allocationAboveRequirement;
@@ -148,20 +160,34 @@ library LibAccount {
 
 	/// @notice Returns the maximum Party B amount permitted by the current margin mode, solvency, and strict-deallocation policy.
 	function partyBMaxDeallocatable(int256 upnl, address partyB, address partyA) internal view returns (uint256) {
+		return partyBMaxRemovableMargin(upnl, partyB, partyA, 0, 0);
+	}
+
+	/// @notice Returns the maximum Party B amount permitted by margin mode, solvency, pending-balance, and retention checks,
+	/// where the strict retention floor is the stricter of the stored CVA + LF requirement and the Muon-attested scaledLockedBalance.
+	function partyBMaxRemovableMargin(
+		int256 upnl,
+		address partyB,
+		address partyA,
+		uint256 pendingBalance,
+		uint256 scaledLockedBalance
+	) internal view returns (uint256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		bool isCrossMode = maLayout.crossModeEnabledForPartyB[partyB];
 		address allocationKey = isCrossMode ? address(0) : partyA;
 		int256 availableBalance = partyBAvailableForQuote(upnl, partyB, allocationKey);
-		if (availableBalance < 0) return 0;
+		if (availableBalance < 0 || uint256(availableBalance) < pendingBalance) return 0;
 
 		uint256 allocatedBalance = accountLayout.partyBAllocatedBalances[partyB][partyA];
 		if (isCrossMode && partyA != address(0)) return allocatedBalance;
 
-		uint256 maxDeallocatable = uint256(availableBalance) < allocatedBalance ? uint256(availableBalance) : allocatedBalance;
+		uint256 availableAfterPending = uint256(availableBalance) - pendingBalance;
+		uint256 maxDeallocatable = availableAfterPending < allocatedBalance ? availableAfterPending : allocatedBalance;
 		if (!maLayout.strictDeallocationEnabledForPartyB[partyB]) return maxDeallocatable;
 
 		uint256 requirement = partyBDeallocateCvaLfRequirement(partyB, allocationKey);
+		if (scaledLockedBalance > requirement) requirement = scaledLockedBalance;
 		uint256 allocationAboveRequirement = allocatedBalance > requirement ? allocatedBalance - requirement : 0;
 		return maxDeallocatable < allocationAboveRequirement ? maxDeallocatable : allocationAboveRequirement;
 	}
@@ -381,40 +407,40 @@ library LibAccount {
 		accountLayout.partyBPendingLockedBalances[quote.partyB][address(0)].subQuote(quote);
 	}
 
-	/// @notice Increments Party B nonce for a specific Party A. Always increments both per-partyA and cross nonce.
+	/// @notice Increments Party B's upnl counter for a specific Party A. Always increments both the per-partyA and cross counters.
 	/// @param partyB PartyB address
 	/// @param partyA PartyA address
-	function increasePartyBNonce(address partyB, address partyA) internal {
+	function increasePartyBUpnlCounter(address partyB, address partyA) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		accountLayout.partyBNonces[partyB][partyA]++;
-		accountLayout.partyBNonces[partyB][address(0)]++;
+		accountLayout.partyBUpnlCounters[partyB][partyA]++;
+		accountLayout.partyBUpnlCounters[partyB][address(0)]++;
 	}
 
-	/// @notice Increments Party A nonce.
+	/// @notice Increments Party A's upnl counter, invalidating outstanding Muon signatures.
 	/// @param partyA PartyA address
-	function increasePartyANonce(address partyA) internal {
-		AccountStorage.layout().partyANonces[partyA] += 1;
+	function increasePartyAUpnlCounter(address partyA) internal {
+		AccountStorage.layout().partyAUpnlCounters[partyA] += 1;
 	}
 
-	/// @notice Increments both Party A and Party B nonces in a single call.
+	/// @notice Increments both Party A's and Party B's upnl counters in a single call.
 	/// @param partyB PartyB address
 	/// @param partyA PartyA address
-	function increaseBothNonces(address partyB, address partyA) internal {
-		AccountStorage.layout().partyANonces[partyA] += 1;
-		increasePartyBNonce(partyB, partyA);
+	function increaseBothUpnlCounters(address partyB, address partyA) internal {
+		AccountStorage.layout().partyAUpnlCounters[partyA] += 1;
+		increasePartyBUpnlCounter(partyB, partyA);
 	}
 
-	/// @notice returns Party B nonce for standard account mode or cross partyB mode.
+	/// @notice Returns the Party B upnl counter to embed in a Muon signature, for standard account mode or cross partyB mode.
 	/// @param partyB The Party B address.
 	/// @param partyA The Party A address.
-	/// @param useCrossNonce Flag to return the actual cross nonce when in cross partyB mode.
-	/// @return nonce The Party B nonce in non-cross partyB mode or either zero/actual cross nonce when in cross partyB mode.
-	function getPartyBSignatureNonce(address partyB, address partyA, bool useCrossNonce) internal view returns (uint256) {
+	/// @param useCrossCounter Flag to return the actual cross counter when in cross partyB mode.
+	/// @return counter The Party B upnl counter in non-cross partyB mode, or either zero/the actual cross counter when in cross partyB mode.
+	function getPartyBSignatureUpnlCounter(address partyB, address partyA, bool useCrossCounter) internal view returns (uint256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		if (MAStorage.layout().crossModeEnabledForPartyB[partyB]) {
-			return useCrossNonce ? accountLayout.partyBNonces[partyB][address(0)] : 0;
+			return useCrossCounter ? accountLayout.partyBUpnlCounters[partyB][address(0)] : 0;
 		}
-		return accountLayout.partyBNonces[partyB][partyA];
+		return accountLayout.partyBUpnlCounters[partyB][partyA];
 	}
 
 	/// @notice Resolves the fee collector address for an affiliate.

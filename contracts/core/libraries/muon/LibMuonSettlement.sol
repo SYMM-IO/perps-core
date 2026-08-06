@@ -26,7 +26,7 @@ library LibMuonSettlement {
 			uint256 quoteId = settleSig.quotesSettlementsData[i].quoteId;
 			uint256 symbolId = quoteLayout.quotes[quoteId].symbolId;
 			// Get Party B nonce for Standard Account Mode only as it is called for settlement in non cross partyB mode
-			nonces[i] = LibAccount.getPartyBSignatureNonce(quoteLayout.quotes[quoteId].partyB, partyA, false);
+			nonces[i] = LibAccount.getPartyBSignatureUpnlCounter(quoteLayout.quotes[quoteId].partyB, partyA, false);
 
 			// Encode the settlement data
 			encodedData = abi.encodePacked(
@@ -44,7 +44,7 @@ library LibMuonSettlement {
 				address(this),
 				"verifySettlement",
 				nonces,
-				AccountStorage.layout().partyANonces[partyA],
+				AccountStorage.layout().partyAUpnlCounters[partyA],
 				encodedData,
 				settleSig.upnlPartyBs,
 				settleSig.upnlPartyA,

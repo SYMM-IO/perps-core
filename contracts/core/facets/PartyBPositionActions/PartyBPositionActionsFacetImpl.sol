@@ -76,7 +76,7 @@ library PartyBPositionActionsFacetImpl {
 			);
 		}
 
-		LibAccount.increaseBothNonces(quote.partyB, quote.partyA);
+		LibAccount.increaseBothUpnlCounters(quote.partyB, quote.partyA);
 	}
 
 	/// @notice Verifies solvency and fills a close request for a single quote
@@ -149,7 +149,7 @@ library PartyBPositionActionsFacetImpl {
 			);
 		}
 
-		LibAccount.increaseBothNonces(quote.partyB, quote.partyA);
+		LibAccount.increaseBothUpnlCounters(quote.partyB, quote.partyA);
 		LibPartyBPositionsActions.fillCloseRequest(quoteId, filledAmount, closedPrice);
 	}
 }

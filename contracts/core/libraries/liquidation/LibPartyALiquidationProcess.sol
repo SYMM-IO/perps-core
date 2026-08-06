@@ -126,7 +126,7 @@ library LibPartyALiquidationProcess {
 			quote.quoteStatus = QuoteStatus.LIQUIDATED;
 			quote.statusModifyTimestamp = block.timestamp;
 
-			LibAccount.increasePartyBNonce(quote.partyB, partyA);
+			LibAccount.increasePartyBUpnlCounter(quote.partyB, partyA);
 			(uint256 liquidationPrice, int256 accumulatedFundingFee) = _getLiquidationPriceAndFundingFee(accountLayout, partyA, quote);
 
 			(bool hasMadeProfit, uint256 amount) = LibQuote.getValueOfQuoteForPartyA(liquidationPrice, LibQuote.quoteOpenAmount(quote), quote);
@@ -437,7 +437,7 @@ library LibPartyALiquidationProcess {
 		delete accountLayout.liquidationDetails[partyA].liquidationType;
 		maLayout.liquidationStatus[partyA] = false;
 		maLayout.partyALiquidatorLastActionTimestamp[partyA] = 0;
-		LibAccount.increasePartyANonce(partyA);
+		LibAccount.increasePartyAUpnlCounter(partyA);
 		LibHook.callLiquidationSettledHooks(partyA);
 	}
 

@@ -145,7 +145,7 @@ library FundingRateFacetImpl {
 		}
 
 		// Increment nonces for replay protection
-		LibAccount.increaseBothNonces(signer, partyA);
+		LibAccount.increaseBothUpnlCounters(signer, partyA);
 	}
 
 	/// @notice Updates the epoch duration for accumulated funding calculation
@@ -322,7 +322,7 @@ library FundingRateFacetImpl {
 		require(partyBAvailableBalance >= 0, "FundingRateFacet: PartyB will be insolvent");
 
 		if (quoteIds.length > 0) {
-			LibAccount.increaseBothNonces(partyB, partyA);
+			LibAccount.increaseBothUpnlCounters(partyB, partyA);
 		}
 	}
 }

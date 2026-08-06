@@ -1097,6 +1097,84 @@ export function shouldBehaveLikeAccountFacet(): void {
 			).to.not.be.reverted
 		})
 
+		it("Should enforce the scaled locked balance floor in safeDeallocateForPartyB when strict is enabled", async () => {
+			const hedgerAddress = await hedger.getAddress()
+			const userAddress = await user.getAddress()
+			await hedger.openPosition(quoteId)
+			await context.controlFacet.connect(context.signers.admin).setPartyBStrictDeallocation(hedgerAddress, true)
+
+			const balanceInfo = await hedger.getBalanceInfo(userAddress)
+			const storedRequirement = balanceInfo.lockedCva + balanceInfo.lockedLf + balanceInfo.pendingLockedCva + balanceInfo.pendingLockedLf
+			const deallocateToProtection = balanceInfo.allocatedBalances - storedRequirement
+			// Simulate notional growth: the live-marked requirement sits between the stored floor and the allocation
+			const scaledLockedBalance = storedRequirement + deallocateToProtection / 2n
+			const deallocateToScaledFloor = balanceInfo.allocatedBalances - scaledLockedBalance
+			expect(
+				await context.viewFacet.maxRemovableMarginForPartyB(hedgerAddress, userAddress, UPNL_VALUES.POSITIVE_LARGE, 0n, scaledLockedBalance),
+			).to.equal(deallocateToScaledFloor)
+
+			await expect(
+				context.partyBAccountFacet
+					.connect(context.signers.hedger)
+					.safeDeallocateForPartyB(
+						deallocateToScaledFloor + 1n,
+						userAddress,
+						await getDummySingleUpnlWithPendingBalanceSig(UPNL_VALUES.POSITIVE_LARGE, 0n, scaledLockedBalance),
+					),
+			).to.be.revertedWith("AccountFacet: Locked balance must remain allocated")
+
+			await context.partyBAccountFacet
+				.connect(context.signers.hedger)
+				.safeDeallocateForPartyB(
+					deallocateToScaledFloor,
+					userAddress,
+					await getDummySingleUpnlWithPendingBalanceSig(UPNL_VALUES.POSITIVE_LARGE, 0n, scaledLockedBalance),
+				)
+
+			expect(await context.viewFacet.allocatedBalanceOfPartyB(hedgerAddress, userAddress)).to.equal(scaledLockedBalance)
+		})
+
+		it("Should ignore the scaled locked balance floor in safeDeallocateForPartyB when strict is disabled", async () => {
+			const hedgerAddress = await hedger.getAddress()
+			const userAddress = await user.getAddress()
+			await hedger.openPosition(quoteId)
+
+			expect(await context.viewFacet.isPartyBStrictDeallocationEnabled(hedgerAddress)).to.equal(false)
+			const allocated = await context.viewFacet.allocatedBalanceOfPartyB(hedgerAddress, userAddress)
+			// A scaledLockedBalance that would block everything if strict were enabled
+			const scaledLockedBalance = allocated
+
+			await context.partyBAccountFacet
+				.connect(context.signers.hedger)
+				.safeDeallocateForPartyB(
+					allocated,
+					userAddress,
+					await getDummySingleUpnlWithPendingBalanceSig(UPNL_VALUES.POSITIVE_LARGE, 0n, scaledLockedBalance),
+				)
+
+			expect(await context.viewFacet.allocatedBalanceOfPartyB(hedgerAddress, userAddress)).to.equal(0n)
+		})
+
+		it("Should reserve pendingBalance in safeDeallocateForPartyB", async () => {
+			const hedgerAddress = await hedger.getAddress()
+			const userAddress = await user.getAddress()
+			const pendingBalance = decimal(30n)
+
+			const removable = await context.viewFacet.maxRemovableMarginForPartyB(hedgerAddress, userAddress, UPNL_VALUES.ZERO, pendingBalance, 0n)
+			const unrestricted = await context.viewFacet.maxDeallocatableForPartyB(hedgerAddress, userAddress, UPNL_VALUES.ZERO)
+			expect(unrestricted - removable).to.equal(pendingBalance)
+
+			await expect(
+				context.partyBAccountFacet
+					.connect(context.signers.hedger)
+					.safeDeallocateForPartyB(removable + 1n, userAddress, await getDummySingleUpnlWithPendingBalanceSig(UPNL_VALUES.ZERO, pendingBalance)),
+			).to.be.revertedWith("AccountFacet: Insufficient balance considering pending allocations")
+
+			await context.partyBAccountFacet
+				.connect(context.signers.hedger)
+				.safeDeallocateForPartyB(removable, userAddress, await getDummySingleUpnlWithPendingBalanceSig(UPNL_VALUES.ZERO, pendingBalance))
+		})
+
 		it("Should keep aggregate PartyB CVA and LF allocated in cross mode when per-solver protection is enabled", async () => {
 			const hedgerAddress = await hedger.getAddress()
 			await hedger.openPosition(quoteId)
@@ -1381,13 +1459,71 @@ export function shouldBehaveLikeAccountFacet(): void {
 				context.accountFacet
 					.connect(context.signers.user)
 					.safeDeallocate(deallocateToProtection + 1n, await getDummySingleUpnlWithPendingBalanceSig(UPNL_VALUES.POSITIVE_LARGE)),
-			).to.be.revertedWith("AccountFacet: CVA and LF must remain allocated")
+			).to.be.revertedWith("AccountFacet: Locked balance must remain allocated")
 
 			await context.accountFacet
 				.connect(context.signers.user)
 				.safeDeallocate(deallocateToProtection, await getDummySingleUpnlWithPendingBalanceSig(UPNL_VALUES.POSITIVE_LARGE))
 
 			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(protectedBalance)
+		})
+
+		it("Should enforce the scaled locked balance floor in safeDeallocate", async function () {
+			const userAddress = await user.getAddress()
+			await openDefaultPosition()
+
+			const balanceInfo = await user.getBalanceInfo()
+			const storedRequirement = balanceInfo.lockedCva + balanceInfo.lockedLf + balanceInfo.pendingLockedCva + balanceInfo.pendingLockedLf
+			const deallocateToProtection = balanceInfo.allocatedBalances - storedRequirement
+			// Simulate notional growth: the live-marked requirement sits between the stored floor and the allocation
+			const scaledLockedBalance = storedRequirement + deallocateToProtection / 2n
+			const deallocateToScaledFloor = balanceInfo.allocatedBalances - scaledLockedBalance
+			expect(await context.viewFacet.maxRemovableMarginForPartyA(userAddress, UPNL_VALUES.POSITIVE_LARGE, 0n, scaledLockedBalance)).to.equal(
+				deallocateToScaledFloor,
+			)
+
+			await expect(
+				context.accountFacet
+					.connect(context.signers.user)
+					.safeDeallocate(
+						deallocateToScaledFloor + 1n,
+						await getDummySingleUpnlWithPendingBalanceSig(UPNL_VALUES.POSITIVE_LARGE, 0n, scaledLockedBalance),
+					),
+			).to.be.revertedWith("AccountFacet: Locked balance must remain allocated")
+
+			await context.accountFacet
+				.connect(context.signers.user)
+				.safeDeallocate(deallocateToScaledFloor, await getDummySingleUpnlWithPendingBalanceSig(UPNL_VALUES.POSITIVE_LARGE, 0n, scaledLockedBalance))
+
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(scaledLockedBalance)
+		})
+
+		it("Should fall back to the stored CVA and LF floor when scaledLockedBalance is lower", async function () {
+			const userAddress = await user.getAddress()
+			await openDefaultPosition()
+
+			const balanceInfo = await user.getBalanceInfo()
+			const storedRequirement = balanceInfo.lockedCva + balanceInfo.lockedLf + balanceInfo.pendingLockedCva + balanceInfo.pendingLockedLf
+			const scaledLockedBalance = storedRequirement / 2n
+			const deallocateToProtection = balanceInfo.allocatedBalances - storedRequirement
+			expect(await context.viewFacet.maxRemovableMarginForPartyA(userAddress, UPNL_VALUES.POSITIVE_LARGE, 0n, scaledLockedBalance)).to.equal(
+				deallocateToProtection,
+			)
+
+			await expect(
+				context.accountFacet
+					.connect(context.signers.user)
+					.safeDeallocate(
+						deallocateToProtection + 1n,
+						await getDummySingleUpnlWithPendingBalanceSig(UPNL_VALUES.POSITIVE_LARGE, 0n, scaledLockedBalance),
+					),
+			).to.be.revertedWith("AccountFacet: Locked balance must remain allocated")
+
+			await context.accountFacet
+				.connect(context.signers.user)
+				.safeDeallocate(deallocateToProtection, await getDummySingleUpnlWithPendingBalanceSig(UPNL_VALUES.POSITIVE_LARGE, 0n, scaledLockedBalance))
+
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(storedRequirement)
 		})
 
 		it("Should safeDeallocate with pending balance when enough available", async function () {

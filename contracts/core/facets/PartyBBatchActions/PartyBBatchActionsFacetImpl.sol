@@ -83,7 +83,7 @@ library PartyBBatchActionsFacetImpl {
 			LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuote.partyB, firstQuote.partyA, quoteIds, MuonFunction.Trading);
 		}
 
-		LibAccount.increaseBothNonces(firstQuote.partyB, firstQuote.partyA);
+		LibAccount.increaseBothUpnlCounters(firstQuote.partyB, firstQuote.partyA);
 
 		for (uint256 i = 0; i < quoteIds.length; i++) {
 			uint256 quoteId = quoteIds[i];
@@ -180,7 +180,7 @@ library PartyBBatchActionsFacetImpl {
 		require(!maLayout.liquidationStatus[firstQuotePartyA], "PartyBFacet: PartyA isn't solvent");
 		firstQuotePartyB.requireNotLiquidating(firstQuotePartyA);
 
-		LibAccount.increaseBothNonces(firstQuotePartyB, firstQuotePartyA);
+		LibAccount.increaseBothUpnlCounters(firstQuotePartyB, firstQuotePartyA);
 
 		quoteStatuses = new QuoteStatus[](quoteIds.length);
 		closeIds = new uint256[](quoteIds.length);

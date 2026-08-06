@@ -20,7 +20,7 @@ import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 library LibMuonLiquidation {
 	/// @notice Verifies Party B UPNL signature for liquidation (uses per-partyA nonce in normal mode, zero in cross mode).
 	function verifyPartyBUpnl(SingleUpnlSig memory upnlSig, address partyB, address partyA, MuonFunction func) internal view {
-		LibMuon.verifyPartyBUpnl(upnlSig, partyB, partyA, func); // Uses useCrossNonce=false: per-partyA nonce in normal mode, zero in cross mode.
+		LibMuon.verifyPartyBUpnl(upnlSig, partyB, partyA, func); // Uses useCrossCounter=false: per-partyA nonce in normal mode, zero in cross mode.
 	}
 
 	/// @notice Verifies a liquidation signature containing symbol prices and UPNL for Party A.
@@ -35,7 +35,7 @@ library LibMuonLiquidation {
 				address(this),
 				"verifyLiquidationSig",
 				partyA,
-				AccountStorage.layout().partyANonces[partyA],
+				AccountStorage.layout().partyAUpnlCounters[partyA],
 				liquidationSig.upnl,
 				liquidationSig.totalUnrealizedLoss,
 				liquidationSig.symbolIds,
@@ -58,7 +58,7 @@ library LibMuonLiquidation {
 				address(this),
 				"verifyLiquidationSnapshotSig",
 				partyA,
-				AccountStorage.layout().partyANonces[partyA],
+				AccountStorage.layout().partyAUpnlCounters[partyA],
 				liquidationSig.upnl,
 				liquidationSig.totalUnrealizedLoss,
 				_hashPartyBSymbolStates(liquidationSig.states),
@@ -88,7 +88,7 @@ library LibMuonLiquidation {
 				address(this),
 				"verifyDeferredLiquidationSig",
 				partyA,
-				AccountStorage.layout().partyANonces[partyA],
+				AccountStorage.layout().partyAUpnlCounters[partyA],
 				liquidationSig.upnl,
 				liquidationSig.totalUnrealizedLoss,
 				liquidationSig.symbolIds,

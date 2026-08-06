@@ -36,9 +36,9 @@ library LibMuonUnifiedSettlement {
 		}
 
 		// Get partyA nonces
-		uint256[] memory partyANonces = new uint256[](settleSig.partyAs.length);
+		uint256[] memory partyAUpnlCounters = new uint256[](settleSig.partyAs.length);
 		for (uint256 i = 0; i < settleSig.partyAs.length; i++) {
-			partyANonces[i] = accountLayout.partyANonces[settleSig.partyAs[i]];
+			partyAUpnlCounters[i] = accountLayout.partyAUpnlCounters[settleSig.partyAs[i]];
 		}
 
 		bytes32 hash;
@@ -53,7 +53,7 @@ library LibMuonUnifiedSettlement {
 					isCrossPartyB,
 					settleSig.partyB,
 					uint256(0), // nonce is not used in cross mode
-					partyANonces,
+					partyAUpnlCounters,
 					encodedData,
 					settleSig.upnlPartyB, // aggregated UPNL
 					settleSig.partyAs,
@@ -64,9 +64,9 @@ library LibMuonUnifiedSettlement {
 			);
 		} else {
 			// Normal mode: use per-partyA nonces for partyB and per-partyA UPNLs
-			uint256[] memory partyBNonces = new uint256[](settleSig.partyAs.length);
+			uint256[] memory partyBUpnlCounters = new uint256[](settleSig.partyAs.length);
 			for (uint256 i = 0; i < settleSig.partyAs.length; i++) {
-				partyBNonces[i] = accountLayout.partyBNonces[settleSig.partyB][settleSig.partyAs[i]];
+				partyBUpnlCounters[i] = accountLayout.partyBUpnlCounters[settleSig.partyB][settleSig.partyAs[i]];
 			}
 
 			hash = keccak256(
@@ -77,8 +77,8 @@ library LibMuonUnifiedSettlement {
 					"verifyUnifiedSettlement",
 					isCrossPartyB,
 					settleSig.partyB,
-					partyBNonces, // per-partyA nonces
-					partyANonces,
+					partyBUpnlCounters, // per-partyA nonces
+					partyAUpnlCounters,
 					encodedData,
 					settleSig.upnlPartyBPerPartyA, // per-partyA UPNLs
 					settleSig.partyAs,

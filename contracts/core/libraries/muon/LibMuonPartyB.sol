@@ -31,8 +31,8 @@ library LibMuonPartyB {
 				address(this),
 				partyB,
 				partyA,
-				LibAccount.getPartyBSignatureNonce(partyB, partyA, false),
-				AccountStorage.layout().partyANonces[partyA],
+				LibAccount.getPartyBSignatureUpnlCounter(partyB, partyA, false),
+				AccountStorage.layout().partyAUpnlCounters[partyA],
 				upnlSig.upnlPartyB,
 				upnlSig.upnlPartyA,
 				symbolId,
@@ -47,6 +47,6 @@ library LibMuonPartyB {
 
 	/// @notice Verifies Party B UPNL signature, delegating to LibMuon (uses per-partyA nonce in normal mode, zero in cross mode).
 	function verifyPartyBUpnl(SingleUpnlSig memory upnlSig, address partyB, address partyA, MuonFunction func) internal view {
-		LibMuon.verifyPartyBUpnl(upnlSig, partyB, partyA, func); // Uses useCrossNonce=false: nonce is zero in cross partyB mode, per-partyA nonce otherwise.
+		LibMuon.verifyPartyBUpnl(upnlSig, partyB, partyA, func); // Uses useCrossCounter=false: nonce is zero in cross partyB mode, per-partyA nonce otherwise.
 	}
 }
