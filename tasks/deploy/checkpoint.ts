@@ -34,6 +34,14 @@ export interface AccountLayerCheckpoint {
 	diamondCutComplete?: boolean
 }
 
+export interface ExpressProviderCheckpoint {
+	diamondCutFacet?: DeployedContract
+	diamond?: DeployedContract
+	init?: DeployedContract
+	facets?: Record<string, DeployedContract>
+	diamondCutComplete?: boolean
+}
+
 export interface DeploymentCheckpoint {
 	deploymentId?: string
 	/** Optional caller-owned namespace. Component deployments must never share the system checkpoint. */
@@ -55,6 +63,7 @@ export interface DeploymentCheckpoint {
 		symmioLiquidator?: DeployedContract & { implementation?: string; admin?: string }
 		accountManager?: DeployedContract
 		symbolManager?: DeployedContract
+		expressProvider?: ExpressProviderCheckpoint
 	}
 	setupComplete?: {
 		systemRoles?: boolean

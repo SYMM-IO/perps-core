@@ -1,24 +1,23 @@
 #!/usr/bin/env bash
+#
+# Deprecated alias, kept so in-flight scripts, runbooks and shell history keep working.
+#
+#   ./symmio <command>                  for the operator CLI (was: yarn-classic.sh cli ...)
+#   ./utils/pinned-yarn.sh <args>       for package-manager operations
+#
+# The old name described the implementation (it runs Yarn Classic) rather than the guarantee
+# (the pinned, verified toolchain), and read like an optional shim rather than the safety
+# gate it is.
 
 set -euo pipefail
 
-EXPECTED_YARN_VERSION="1.22.22"
-YARN_BIN="$(command -v yarn || true)"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
-if [[ -z "$YARN_BIN" ]]; then
-	echo "Yarn $EXPECTED_YARN_VERSION is required but no yarn executable was found." >&2
-	echo "Enable Corepack or install the package manager pinned in package.json." >&2
-	exit 1
+if [[ "${1:-}" == "cli" ]]; then
+	shift
+	echo "yarn-classic.sh is deprecated; use ./symmio $* instead." >&2
+	exec "$SCRIPT_DIR/../symmio" "$@"
 fi
 
-# Ignore user/parent yarn-path settings. They can otherwise redirect this v1-lockfile
-# project into Yarn Berry before the repository's own configuration is even read.
-ACTUAL_YARN_VERSION="$(YARN_IGNORE_PATH=1 "$YARN_BIN" --version)"
-if [[ "$ACTUAL_YARN_VERSION" != "$EXPECTED_YARN_VERSION" ]]; then
-	echo "This checkout requires Yarn $EXPECTED_YARN_VERSION; resolved $ACTUAL_YARN_VERSION at $YARN_BIN." >&2
-	echo "Enable the packageManager pin with Corepack, then rerun this wrapper." >&2
-	exit 1
-fi
-
-export YARN_IGNORE_PATH=1
-exec "$YARN_BIN" "$@"
+echo "yarn-classic.sh is deprecated; use ./utils/pinned-yarn.sh instead." >&2
+exec "$SCRIPT_DIR/pinned-yarn.sh" "$@"

@@ -310,7 +310,7 @@ function showComponentHandoff(report, reportPath, recipePath) {
 	if (report.lifecycle === "pending_handover") {
 		blank();
 		info("after the Safe actions confirm, rerun the identical command; it resumes without redeploying and proves the final state");
-		log(`  ${c.cyan(`./utils/yarn-classic.sh cli deploy --config ${recipePath} --only ${report.component}`)}`);
+		log(`  ${c.cyan(`./symmio deploy --config ${recipePath} --only ${report.component}`)}`);
 	}
 }
 
@@ -590,9 +590,7 @@ export async function deploy(args) {
 		info("deploy:system reports no manual actions remaining");
 	}
 	blank();
-	const statusCommand = recipeContext
-		? `./utils/yarn-classic.sh cli status --config ${args.config}`
-		: `./utils/yarn-classic.sh cli status --network ${networkName}`;
+	const statusCommand = recipeContext ? `./symmio status --config ${args.config}` : `./symmio status --network ${networkName}`;
 	log(`  Then confirm the result: ${c.cyan(statusCommand)}`);
 	const resultCode = deploymentLifecycleExitCode(report, { simulated: chain.simulated });
 	if (resultCode !== 0) {

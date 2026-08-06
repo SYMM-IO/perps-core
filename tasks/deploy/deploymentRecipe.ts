@@ -67,7 +67,28 @@ export async function assertDependencyAddressesHaveCode(report: CoreDependencyRe
 	}
 }
 
-export function assertExpressProviderSupported(target: RecipeNetworkTarget): never {
-	const detail = `ExpressProvider recipe deployment is not enabled for ${target.mode} targets because post-payout credit-loss settlement is unresolved and production role, Muon, affiliate-policy, core-registration, recovery, verification, and post-state workflows are not yet represented safely; no transaction was sent`
-	throw new Error(`LIVE_TARGET_UNSUPPORTED: ${detail}`)
+/**
+ * ExpressProvider advances real collateral out of core against a credit line. Refuse to build
+ * one that cannot be operated or supervised: no operator can process an accepted withdrawal,
+ * and an unregistered provider's advanceWithdraw call reverts at core.
+ */
+export function assertExpressProviderDeployable(config: Record<string, any>, target: RecipeNetworkTarget): void {
+	if (config.mode !== "deploy") {
+		throw new Error(`LIVE_TARGET_UNSUPPORTED: expressProvider.mode must be deploy; received ${config.mode}`)
+	}
+	if (!config.creditLine?.signatureVerifier) {
+		throw new Error("expressProvider.creditLine.signatureVerifier is required; reserveDebt reverts with CreditLineNotConfigured until it is set")
+	}
+	const operators: unknown = config.roles?.OPERATOR_ROLE
+	if (!Array.isArray(operators) || operators.length === 0) {
+		throw new Error("expressProvider.roles.OPERATOR_ROLE must name at least one operator, or accepted withdrawals can never be processed")
+	}
+	if (!Array.isArray(config.affiliates) || config.affiliates.length === 0) {
+		throw new Error("expressProvider.affiliates must configure at least one affiliate")
+	}
+	if (target.mode === "live" && config.registerOnCore !== true) {
+		throw new Error(
+			"expressProvider.registerOnCore must be true on a live target; an unregistered provider cannot call advanceWithdraw and the deployment would be inert",
+		)
+	}
 }

@@ -168,7 +168,7 @@ export function assertDoctorSelectionSupported(only) {
 }
 
 export function isPartialAddonPreflight(recipeContext, only) {
-	return Boolean(recipeContext && (only === "partyB" || only === "symbolManager"));
+	return Boolean(recipeContext && (only === "partyB" || only === "symbolManager" || only === "expressProvider"));
 }
 
 export function doctorCheckpointScope(recipeContext, only) {
@@ -335,7 +335,7 @@ export async function doctor(args, runtime = {}) {
 		}
 	} else {
 		r.warn("--network compatibility mode", "create a reviewed JSON recipe for repeatable deployments");
-		r.info("recommended command", `./utils/yarn-classic.sh cli recipe init --network ${networkName}`);
+		r.info("recommended command", `./symmio recipe init --network ${networkName}`);
 	}
 
 	// PRIVATE_KEY is the single most dangerous piece of documentation drift in this repo:
@@ -561,6 +561,45 @@ export async function doctor(args, runtime = {}) {
 		if (isNonZeroAddress(env.SYMBOL_MANAGER_OPERATOR)) r.ok("SymbolManager operator configured", env.SYMBOL_MANAGER_OPERATOR);
 	} else {
 		r.info("SymbolManager deployment disabled");
+	}
+
+	const expressProvider = recipeContext?.recipe?.expressProvider;
+	if (expressProvider?.mode === "deploy") {
+		const operators = expressProvider.roles?.OPERATOR_ROLE || [];
+		r.ok(`ExpressProvider operators configured (${operators.length})`, operators.join(", "));
+		if (expressProvider.creditLine?.signatureVerifier === "fromCore") {
+			r.info("ExpressProvider credit line reuses the core Muon verifier", "resolved from the core diamond at execution time");
+		} else {
+			r.ok("ExpressProvider credit line verifier configured", expressProvider.creditLine?.signatureVerifier);
+		}
+		if (expressProvider.registerOnCore !== true) {
+			r.warn(
+				"ExpressProvider will not be registered on core",
+				"expressProvider.registerOnCore is false; the provider cannot call advanceWithdraw and stays inert until registered",
+			);
+		}
+		// 0 means "no cap" on-chain. An uncapped credit line lets a compromised or buggy bot
+		// advance the entire eligible base out of core, so it must be a deliberate choice.
+		for (const affiliate of expressProvider.affiliates || []) {
+			const uncapped = [];
+			if (affiliate.maxDebt === "0") uncapped.push("maxDebt");
+			if (affiliate.maxDebtBps === 0) uncapped.push("maxDebtBps");
+			if (uncapped.length === 2) {
+				r.warn(
+					`ExpressProvider affiliate ${affiliate.address} has an uncapped credit line`,
+					"both maxDebt and maxDebtBps are 0, which on-chain means no limit; set at least one cap unless this is deliberate",
+				);
+			} else if (uncapped.length === 1) {
+				r.info(`ExpressProvider affiliate ${affiliate.address} ${uncapped[0]} is 0 (no cap on that axis)`, "the other cap still applies");
+			} else {
+				r.ok(
+					`ExpressProvider affiliate ${affiliate.address} credit caps configured`,
+					`maxDebt=${affiliate.maxDebt}, maxDebtBps=${affiliate.maxDebtBps}`,
+				);
+			}
+		}
+	} else if (expressProvider) {
+		r.info(`ExpressProvider deployment ${expressProvider.mode === "skip" ? "disabled" : expressProvider.mode}`);
 	}
 
 	// Muon is a Core deployment concern. Component-only runs trust the validated,

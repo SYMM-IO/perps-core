@@ -33,7 +33,10 @@ export function buildInitialRecipe(networkName, sourceRecipe, { sourcePath = REC
 	recipe.network = { ...recipe.network, name: networkName, mode: profile.mode };
 	recipe.execution = { ...recipe.execution, verify: profile.verify };
 	if (only) {
-		if (only !== "partyB" && only !== "symbolManager") throw new Error(`standalone recipe target must be partyB or symbolManager, got ${only}`);
+		const standaloneTargets = ["partyB", "symbolManager", "expressProvider"];
+		if (!standaloneTargets.includes(only)) {
+			throw new Error(`standalone recipe target must be one of ${standaloneTargets.join(", ")}, got ${only}`);
+		}
 		const targetOutput = outputPath || path.resolve(PROJECT_ROOT, "deployments", `${networkName}-${only}.json`);
 		const reportScope = `${recipe.network.chainId}${profile.mode === "fork" ? "-fork" : ""}`;
 		const reportPath = path.resolve(PROJECT_ROOT, "tasks", "data", reportScope, "deployment-report.json");
@@ -42,7 +45,7 @@ export function buildInitialRecipe(networkName, sourceRecipe, { sourcePath = REC
 		recipe.core = { mode: "reuse", fromReport: relativeReference(targetOutput, reportPath) };
 		recipe.partyB = only === "partyB" ? recipe.partyB : { mode: "skip", adlEnabled: false };
 		recipe.symbolManager = only === "symbolManager" ? recipe.symbolManager : { mode: "skip" };
-		recipe.expressProvider = { mode: "skip" };
+		recipe.expressProvider = only === "expressProvider" ? recipe.expressProvider : { mode: "skip" };
 	}
 	if (outputPath) rewriteRelativeSchema(recipe, sourcePath, outputPath);
 	return recipe;
@@ -102,9 +105,9 @@ export async function recipe(args) {
 	log(`  ${c.cyan("./node_modules/.bin/hardhat keystore set ETHERSCAN_APIKEY")}`);
 	blank();
 	const onlyFlag = args.only ? ` --only ${args.only}` : "";
-	log(`  ${c.cyan(`./utils/yarn-classic.sh cli doctor --config ${recipePath}${onlyFlag}`)}`);
-	log(`  ${c.cyan(`./utils/yarn-classic.sh cli deploy --config ${recipePath}${onlyFlag} --plan`)}`);
-	log(`  ${c.cyan(`./utils/yarn-classic.sh cli deploy --config ${recipePath}${onlyFlag}`)}`);
+	log(`  ${c.cyan(`./symmio doctor --config ${recipePath}${onlyFlag}`)}`);
+	log(`  ${c.cyan(`./symmio deploy --config ${recipePath}${onlyFlag} --plan`)}`);
+	log(`  ${c.cyan(`./symmio deploy --config ${recipePath}${onlyFlag}`)}`);
 	blank();
 	return 0;
 }

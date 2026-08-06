@@ -24,6 +24,12 @@ import {
 } from "./deploymentRecipe.js"
 import { persistSubmittedTransaction, recoverCheckpointContractDeployments } from "./deploymentRecovery.js"
 import { verificationProviderForChain } from "./explorer.js"
+import {
+	createExpressVerificationRecords,
+	deployExpressProviderDiamond,
+	EXPRESS_CONTROL_FACET,
+	EXPRESS_FACETS,
+} from "./expressWithdrawLayerDiamond.js"
 import { getConnection } from "./helpers.js"
 import { createSymmioPartyBVerificationRecords, deploySymmioPartyB, SymmioPartyBVerificationRecord } from "./partyB.js"
 import { assertMainnetDeploymentIdentitySafe } from "./safety.js"
@@ -75,7 +81,14 @@ export interface ComponentDeploymentReport {
 	chainId: number
 	mode: "deploy"
 	lifecycle: ComponentLifecycle
-	config: { admin: string; signer?: string; adlEnabled?: boolean; operator?: string }
+	config: {
+		admin: string
+		signer?: string
+		adlEnabled?: boolean
+		operator?: string
+		/** The exact resolved intent, so a later status run re-proves the same state deploy gated on. */
+		expressProvider?: Omit<ExpressProviderResolvedConfig, "address">
+	}
 	coreDependency: { reportPath: string; deploymentId: string; diamond: string; instantLayer: string }
 	address?: string
 	implementation?: string
@@ -289,6 +302,178 @@ export async function inspectSymbolManagerPostState(
 	return { checks, manualActions }
 }
 
+export interface ExpressAffiliateConfig {
+	address: string
+	feeRate: string
+	operatorFee: string
+	maxDebt: string
+	maxDebtBps: number
+	minValidatorSignatures?: number
+	validatorApprovalTimeout?: number
+	validators?: string[]
+}
+
+export interface ExpressProviderResolvedConfig {
+	address: string
+	admin: string
+	deployer: string
+	core: string
+	collateral: string
+	signatureVerifier: string
+	muonAppId: string
+	muonFreshnessWindow: number
+	securityWindow?: number
+	tolerancePeriod?: number
+	roles: Record<string, string[]>
+	affiliates: ExpressAffiliateConfig[]
+	registerOnCore: boolean
+}
+
+/** Roles Init grants to whoever it is initialized with — here, the deployer. */
+const EXPRESS_INIT_ADMIN_ROLES = ["SETTER_ROLE", "FEE_CLAIMER_ROLE", "WITHDRAWER_ROLE", "PAUSER_ROLE"]
+
+/**
+ * Canonical read-only ExpressProvider post-state probe shared by deploy and status.
+ *
+ * This provider can pull real collateral out of core, so the health gate proves the whole
+ * operating surface: core/collateral binding, credit-line Muon inputs, per-affiliate policy,
+ * validator sets, every configured role holder, and that the deployer kept no privilege.
+ */
+export async function inspectExpressProviderPostState(ethers: any, input: ExpressProviderResolvedConfig): Promise<ComponentPostStateInspection> {
+	const address = ethers.getAddress(input.address)
+	const admin = ethers.getAddress(input.admin)
+	const deployer = ethers.getAddress(input.deployer)
+	const core = ethers.getAddress(input.core)
+	const view = await ethers.getContractAt(EXPRESS_FACETS.ViewFacet, address)
+	const control = await ethers.getContractAt(EXPRESS_CONTROL_FACET, address)
+	const coreView = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", core)
+	const coreControl = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", core)
+	const roleHash = (name: string) => ethers.keccak256(ethers.toUtf8Bytes(name))
+
+	const [runtimeCode, boundSymmio, boundCollateral, verifier, appId, freshness, securityWindow, tolerancePeriod, owner, pendingOwner, registered] =
+		await Promise.all([
+			ethers.provider.getCode(address),
+			view.symmio(),
+			view.collateral(),
+			view.creditLineSignatureVerifier(),
+			view.creditLineMuonAppId(),
+			view.creditLineMuonFreshnessWindow(),
+			view.securityWindow(),
+			view.tolerancePeriod(),
+			control.owner(),
+			control.pendingOwner(),
+			coreView.isExpressProviderRegistered(address),
+		])
+
+	const checks: ComponentHealthCheck[] = []
+	const check = (name: string, pass: boolean, expected?: string, actual?: string, pending = false) =>
+		checks.push({ check: name, status: pass ? "passed" : pending ? "pending" : "failed", expected, actual })
+
+	check("runtime bytecode", runtimeCode !== "0x", "deployed bytecode", runtimeCode === "0x" ? "0x" : undefined)
+	check("core binding", ethers.getAddress(boundSymmio) === core, core, boundSymmio)
+	check("collateral binding", ethers.getAddress(boundCollateral) === ethers.getAddress(input.collateral), input.collateral, boundCollateral)
+	check(
+		"credit line signature verifier",
+		ethers.getAddress(verifier) === ethers.getAddress(input.signatureVerifier),
+		input.signatureVerifier,
+		verifier,
+	)
+	check("credit line muon app id", appId.toString() === input.muonAppId, input.muonAppId, appId.toString())
+	check("credit line muon freshness window", Number(freshness) === input.muonFreshnessWindow, String(input.muonFreshnessWindow), freshness.toString())
+	if (input.securityWindow !== undefined) {
+		check("security window", Number(securityWindow) === input.securityWindow, String(input.securityWindow), securityWindow.toString())
+	}
+	if (input.tolerancePeriod !== undefined) {
+		check("tolerance period", Number(tolerancePeriod) === input.tolerancePeriod, String(input.tolerancePeriod), tolerancePeriod.toString())
+	}
+
+	for (const [role, holders] of Object.entries(input.roles)) {
+		const hash = roleHash(role)
+		const states = await Promise.all(holders.map((holder: string) => view.hasRole(hash, ethers.getAddress(holder))))
+		for (const [index, holder] of holders.entries()) {
+			check(`${role} for ${ethers.getAddress(holder)}`, states[index], "true", String(states[index]))
+		}
+	}
+
+	// Init grants these to the deployer. The final admin must hold them, and the deployer
+	// must not, or a compromised deployer key still controls the provider's money paths.
+	const adminRoleStates = await Promise.all(EXPRESS_INIT_ADMIN_ROLES.map(role => view.hasRole(roleHash(role), admin)))
+	for (const [index, role] of EXPRESS_INIT_ADMIN_ROLES.entries()) {
+		check(`final admin ${role}`, adminRoleStates[index], "true", String(adminRoleStates[index]))
+	}
+	if (admin !== deployer) {
+		const deployerRoleStates = await Promise.all(EXPRESS_INIT_ADMIN_ROLES.map(role => view.hasRole(roleHash(role), deployer)))
+		for (const [index, role] of EXPRESS_INIT_ADMIN_ROLES.entries()) {
+			check(`deployer ${role} revoked`, !deployerRoleStates[index], "false", String(deployerRoleStates[index]))
+		}
+	}
+
+	for (const affiliate of input.affiliates) {
+		const target = ethers.getAddress(affiliate.address)
+		const [config, protocolMaxDebt, protocolMaxDebtBps, minSignatures, approvalTimeout] = await Promise.all([
+			view.affiliateConfigs(target),
+			view.creditLineProtocolMaxDebt(target),
+			view.creditLineProtocolMaxDebtBps(target),
+			view.minValidatorSignatures(target),
+			view.validatorApprovalTimeout(target),
+		])
+		check(`affiliate ${target} feeRate`, config[0].toString() === affiliate.feeRate, affiliate.feeRate, config[0].toString())
+		check(`affiliate ${target} operatorFee`, config[1].toString() === affiliate.operatorFee, affiliate.operatorFee, config[1].toString())
+		check(`affiliate ${target} protocol maxDebt`, protocolMaxDebt.toString() === affiliate.maxDebt, affiliate.maxDebt, protocolMaxDebt.toString())
+		check(
+			`affiliate ${target} protocol maxDebtBps`,
+			Number(protocolMaxDebtBps) === affiliate.maxDebtBps,
+			String(affiliate.maxDebtBps),
+			protocolMaxDebtBps.toString(),
+		)
+		if (affiliate.minValidatorSignatures !== undefined) {
+			check(
+				`affiliate ${target} minValidatorSignatures`,
+				Number(minSignatures) === affiliate.minValidatorSignatures,
+				String(affiliate.minValidatorSignatures),
+				minSignatures.toString(),
+			)
+		}
+		if (affiliate.validatorApprovalTimeout !== undefined) {
+			check(
+				`affiliate ${target} validatorApprovalTimeout`,
+				Number(approvalTimeout) === affiliate.validatorApprovalTimeout,
+				String(affiliate.validatorApprovalTimeout),
+				approvalTimeout.toString(),
+			)
+		}
+		for (const validator of affiliate.validators || []) {
+			const enabled = await view.isValidator(target, ethers.getAddress(validator))
+			check(`affiliate ${target} validator ${ethers.getAddress(validator)}`, enabled, "true", String(enabled))
+		}
+	}
+
+	const manualActions: SafeManualAction[] = []
+	if (input.registerOnCore && !registered) {
+		manualActions.push(
+			safeAction(core, coreControl.interface.encodeFunctionData("registerExpressProvider", [address]), `Register ExpressProvider ${address} on core`),
+		)
+	}
+	// Two-step ownership: the deployer initiates, the admin accepts. Until then the deployer
+	// still owns the diamond, so this is reported as pending rather than healthy.
+	const ownershipComplete = ethers.getAddress(owner) === admin
+	if (!ownershipComplete && ethers.getAddress(pendingOwner) === admin) {
+		manualActions.push(
+			safeAction(address, control.interface.encodeFunctionData("acceptOwnership", []), `Accept ExpressProvider ownership at ${address}`),
+		)
+	}
+
+	if (input.registerOnCore) check("core express provider registration", registered, "true", String(registered), !registered)
+	check(
+		"ownership handover",
+		ownershipComplete,
+		admin,
+		ownershipComplete ? admin : `owner=${ethers.getAddress(owner)}, pending=${ethers.getAddress(pendingOwner)}`,
+		ethers.getAddress(pendingOwner) === admin,
+	)
+	return { checks, manualActions }
+}
+
 async function verifyRecords(hre: any, chainId: number, records: VerificationRecord[]): Promise<void> {
 	const provider = verificationProviderForChain(chainId)
 	for (const record of records) {
@@ -327,6 +512,7 @@ export async function assertComponentDeploymentAuthority(
 	component: DeploymentComponentName,
 	coreReport: CoreDependencyReport,
 	deployerAddress: string,
+	componentConfig: Record<string, any> = {},
 ): Promise<void> {
 	const core = coreReport.addresses.diamond
 	const admin = await requireAddress(ethers, coreReport.config.admin, "core deployment report admin")
@@ -359,6 +545,20 @@ export async function assertComponentDeploymentAuthority(
 			if (!deployerCanAdmin && !adminCanAdmin) {
 				throw new Error(`AUTHORITY_MISSING: neither deployer ${deployer} nor dependency-report admin ${admin} can administer core ${role}`)
 			}
+		}
+		return
+	}
+
+	if (component === "expressProvider" && componentConfig.registerOnCore === true) {
+		// Without core registration the provider cannot call advanceWithdraw, so a run that can
+		// neither register it nor hand a usable Safe action to someone who can is inert.
+		const providerAdminRole = roleHash("PROVIDER_ADMIN_ROLE")
+		const [deployerCanRegister, adminCanRegister] = await Promise.all([
+			view.hasRole(deployer, providerAdminRole),
+			view.hasRole(admin, providerAdminRole),
+		])
+		if (!deployerCanRegister && !adminCanRegister) {
+			throw new Error(`AUTHORITY_MISSING: neither deployer ${deployer} nor dependency-report admin ${admin} holds core PROVIDER_ADMIN_ROLE`)
 		}
 	}
 }
@@ -560,9 +760,246 @@ async function executeSymbolManager(
 	return { address, records, manualActions, checks: inspection.checks }
 }
 
+/**
+ * Resolve every ExpressProvider input against the live core before any transaction.
+ *
+ * `signatureVerifier: "fromCore"` reads the core diamond's configured verifier so a standalone
+ * Express run cannot drift from the core it is bound to, and the collateral always comes from
+ * core because Init reverts on a mismatch.
+ */
+export async function resolveExpressProviderConfig(
+	ethers: any,
+	componentConfig: Record<string, any>,
+	target: { core: string; admin: string },
+	deployerAddress: string,
+): Promise<Omit<ExpressProviderResolvedConfig, "address">> {
+	const core = ethers.getAddress(target.core)
+	const admin = await requireAddress(ethers, componentConfig.admin || target.admin, "expressProvider.admin")
+	const coreView = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", core)
+	const collateral = ethers.getAddress(await coreView.getCollateral())
+	const declared = componentConfig.creditLine?.signatureVerifier
+	const signatureVerifier =
+		declared === "fromCore"
+			? ethers.getAddress(await coreView.getSignatureVerifier())
+			: await requireAddress(ethers, declared, "expressProvider.creditLine.signatureVerifier")
+	if ((await ethers.provider.getCode(signatureVerifier)) === "0x") {
+		throw new Error(`expressProvider.creditLine.signatureVerifier has no contract code at ${signatureVerifier}`)
+	}
+
+	const roles: Record<string, string[]> = {}
+	for (const [role, holders] of Object.entries(componentConfig.roles || {})) {
+		roles[role] = await Promise.all((holders as string[]).map(holder => requireAddress(ethers, holder, `expressProvider.roles.${role}`)))
+	}
+	const affiliates: ExpressAffiliateConfig[] = []
+	for (const [index, entry] of (componentConfig.affiliates || []).entries()) {
+		affiliates.push({
+			...entry,
+			address: await requireAddress(ethers, entry.address, `expressProvider.affiliates[${index}].address`),
+			validators: entry.validators
+				? await Promise.all(
+						(entry.validators as string[]).map((validator, position) =>
+							requireAddress(ethers, validator, `expressProvider.affiliates[${index}].validators[${position}]`),
+						),
+					)
+				: undefined,
+		})
+	}
+
+	return {
+		admin,
+		deployer: ethers.getAddress(deployerAddress),
+		core,
+		collateral,
+		signatureVerifier,
+		muonAppId: componentConfig.creditLine.muonAppId,
+		muonFreshnessWindow: componentConfig.creditLine.muonFreshnessWindow,
+		securityWindow: componentConfig.securityWindow,
+		tolerancePeriod: componentConfig.tolerancePeriod,
+		roles,
+		affiliates,
+		registerOnCore: componentConfig.registerOnCore === true,
+	}
+}
+
+/**
+ * Deploy, configure, register, and hand over an ExpressProvider against an already-deployed
+ * core. Shared by the standalone component workflow and the full `deploy:system` run, so both
+ * produce the same on-chain state and the same health/handover evidence.
+ */
+export async function deployAndConfigureExpressProvider(
+	hre: any,
+	checkpoint: DeploymentCheckpoint,
+	resolved: Omit<ExpressProviderResolvedConfig, "address">,
+	deployer: any,
+): Promise<{ address: string; records: VerificationRecord[]; manualActions: SafeManualAction[]; checks: ComponentHealthCheck[] }> {
+	const { ethers } = await getConnection(hre)
+
+	// The deployer is the Init admin and diamond owner solely so this run can configure the
+	// provider. Both privileges are stripped before the run reports success.
+	const deployment = await deployExpressProviderDiamond(hre, {
+		owner: resolved.deployer,
+		initAdmin: resolved.deployer,
+		symmio: resolved.core,
+		collateral: resolved.collateral,
+		checkpoint,
+	})
+	const address = deployment.diamond
+	const records = createExpressVerificationRecords(
+		deployment,
+		checkpoint.contracts.expressProvider?.diamond?.constructorArgs || [resolved.deployer, deployment.diamondCutFacet],
+	)
+
+	const control = await ethers.getContractAt(EXPRESS_CONTROL_FACET, address)
+	const view = await ethers.getContractAt(EXPRESS_FACETS.ViewFacet, address)
+	const roleHash = (name: string) => ethers.keccak256(ethers.toUtf8Bytes(name))
+	const connected = control.connect(deployer)
+
+	// Every setter is state-checked first so a resumed run repeats nothing it already proved.
+	const [currentVerifier, currentAppId, currentFreshness] = await Promise.all([
+		view.creditLineSignatureVerifier(),
+		view.creditLineMuonAppId(),
+		view.creditLineMuonFreshnessWindow(),
+	])
+	if (
+		ethers.getAddress(currentVerifier) !== resolved.signatureVerifier ||
+		currentAppId.toString() !== resolved.muonAppId ||
+		Number(currentFreshness) !== resolved.muonFreshnessWindow
+	) {
+		await send(
+			connected.setCreditLineMuonConfig(resolved.signatureVerifier, resolved.muonAppId, resolved.muonFreshnessWindow),
+			"set ExpressProvider credit line Muon config",
+		)
+	}
+	if (resolved.securityWindow !== undefined && Number(await view.securityWindow()) !== resolved.securityWindow) {
+		await send(connected.setSecurityWindow(resolved.securityWindow), "set ExpressProvider security window")
+	}
+	if (resolved.tolerancePeriod !== undefined && Number(await view.tolerancePeriod()) !== resolved.tolerancePeriod) {
+		await send(connected.setTolerancePeriod(resolved.tolerancePeriod), "set ExpressProvider tolerance period")
+	}
+
+	for (const affiliate of resolved.affiliates) {
+		const [config, maxDebt, maxDebtBps] = await Promise.all([
+			view.affiliateConfigs(affiliate.address),
+			view.creditLineProtocolMaxDebt(affiliate.address),
+			view.creditLineProtocolMaxDebtBps(affiliate.address),
+		])
+		if (config[0].toString() !== affiliate.feeRate || config[1].toString() !== affiliate.operatorFee) {
+			await send(
+				connected.setAffiliateConfig(affiliate.address, affiliate.feeRate, affiliate.operatorFee),
+				`set ExpressProvider affiliate config for ${affiliate.address}`,
+			)
+		}
+		if (maxDebt.toString() !== affiliate.maxDebt || Number(maxDebtBps) !== affiliate.maxDebtBps) {
+			await send(
+				connected.setCreditLineProtocolConfig(affiliate.address, affiliate.maxDebt, affiliate.maxDebtBps),
+				`set ExpressProvider protocol credit caps for ${affiliate.address}`,
+			)
+		}
+		for (const validator of affiliate.validators || []) {
+			if (await view.isValidator(affiliate.address, validator)) continue
+			await send(connected.setValidator(affiliate.address, validator, true), `enable ExpressProvider validator ${validator}`)
+		}
+		if (
+			affiliate.validatorApprovalTimeout !== undefined &&
+			Number(await view.validatorApprovalTimeout(affiliate.address)) !== affiliate.validatorApprovalTimeout
+		) {
+			await send(
+				connected.setValidatorApprovalTimeout(affiliate.address, affiliate.validatorApprovalTimeout),
+				`set ExpressProvider validator approval timeout for ${affiliate.address}`,
+			)
+		}
+		// Set the signature threshold last: raising it before the validators exist would leave a
+		// window where the affiliate cannot be served.
+		if (
+			affiliate.minValidatorSignatures !== undefined &&
+			Number(await view.minValidatorSignatures(affiliate.address)) !== affiliate.minValidatorSignatures
+		) {
+			await send(
+				connected.setMinValidatorSignatures(affiliate.address, affiliate.minValidatorSignatures),
+				`set ExpressProvider minimum validator signatures for ${affiliate.address}`,
+			)
+		}
+	}
+
+	for (const [role, holders] of Object.entries(resolved.roles)) {
+		const hash = roleHash(role)
+		for (const holder of holders) {
+			if (await view.hasRole(hash, holder)) continue
+			await send(connected.grantRole(hash, holder), `grant ExpressProvider ${role} to ${holder}`)
+		}
+	}
+	for (const role of EXPRESS_INIT_ADMIN_ROLES) {
+		const hash = roleHash(role)
+		if (await view.hasRole(hash, resolved.admin)) continue
+		await send(connected.grantRole(hash, resolved.admin), `grant ExpressProvider ${role} to final admin`)
+	}
+
+	const coreView = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", resolved.core)
+	const coreControl = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", resolved.core)
+	const manualActions: SafeManualAction[] = []
+	if (resolved.registerOnCore && !(await coreView.isExpressProviderRegistered(address))) {
+		if (await coreView.hasRole(deployer.address, roleHash("PROVIDER_ADMIN_ROLE"))) {
+			await send(coreControl.connect(deployer).registerExpressProvider(address), "register ExpressProvider on core")
+		} else {
+			manualActions.push(
+				safeAction(
+					resolved.core,
+					coreControl.interface.encodeFunctionData("registerExpressProvider", [address]),
+					`Register ExpressProvider ${address} on core`,
+				),
+			)
+		}
+	}
+
+	// Strip the deployer only after the final admin provably holds each role, then hand over
+	// ownership. Ordering matters: revokeRole is owner-gated, so it must precede the transfer.
+	if (resolved.admin !== resolved.deployer) {
+		for (const role of EXPRESS_INIT_ADMIN_ROLES) {
+			const hash = roleHash(role)
+			if (!(await view.hasRole(hash, resolved.admin))) {
+				throw new Error(`Refusing to revoke deployer ExpressProvider ${role}: final admin ${resolved.admin} does not hold it`)
+			}
+			if (await view.hasRole(hash, resolved.deployer)) {
+				await send(connected.revokeRole(hash, resolved.deployer), `revoke deployer ExpressProvider ${role}`)
+			}
+		}
+		const [owner, pendingOwner] = await Promise.all([control.owner(), control.pendingOwner()])
+		if (ethers.getAddress(owner) !== resolved.admin && ethers.getAddress(pendingOwner) !== resolved.admin) {
+			await send(connected.transferOwnership(resolved.admin), "initiate ExpressProvider ownership handover")
+		}
+		// Ownership is two-step: only the admin can complete it. Record that as deferred work in
+		// the same order the inspector reports it, so the cross-check stays exact.
+		if (ethers.getAddress(await control.owner()) !== resolved.admin) {
+			manualActions.push(
+				safeAction(address, control.interface.encodeFunctionData("acceptOwnership", []), `Accept ExpressProvider ownership at ${address}`),
+			)
+		}
+	}
+
+	const inspection = await inspectExpressProviderPostState(ethers, { ...resolved, address })
+	assertManualActionsEqual(manualActions, inspection.manualActions, "expressProvider")
+	return { address, records, manualActions, checks: inspection.checks }
+}
+
+async function executeExpressProvider(
+	hre: any,
+	checkpoint: DeploymentCheckpoint,
+	input: ComponentExecutionInput,
+	deployer: any,
+): Promise<{ address: string; records: VerificationRecord[]; manualActions: SafeManualAction[]; checks: ComponentHealthCheck[] }> {
+	const { ethers } = await getConnection(hre)
+	const resolved = await resolveExpressProviderConfig(
+		ethers,
+		input.componentConfig,
+		{ core: input.coreReport.addresses.diamond, admin: input.coreReport.config.admin },
+		deployer.address,
+	)
+	return deployAndConfigureExpressProvider(hre, checkpoint, resolved, deployer)
+}
+
 /** Execute one safely resumable product component against a previously proven core. */
 export async function executeComponentDeployment(hre: any, input: ComponentExecutionInput) {
-	if (input.component !== "partyB" && input.component !== "symbolManager") {
+	if (input.component !== "partyB" && input.component !== "symbolManager" && input.component !== "expressProvider") {
 		throw new Error(`LIVE_TARGET_UNSUPPORTED: component ${input.component} has no complete safe deployment workflow`)
 	}
 	if (input.componentConfig.mode !== "deploy") {
@@ -587,18 +1024,26 @@ export async function executeComponentDeployment(hre: any, input: ComponentExecu
 	if (input.component === "partyB" && typeof input.componentConfig.adlEnabled !== "boolean") {
 		throw new Error(`partyB.adlEnabled must be a boolean; received ${JSON.stringify(input.componentConfig.adlEnabled)}`)
 	}
-	await assertComponentDeploymentAuthority(ethers, input.component, input.coreReport, deployer.address)
-	const publicConfig =
-		input.component === "partyB"
-			? {
-					admin: ethers.getAddress(input.componentConfig.admin || input.coreReport.config.admin),
-					signer: ethers.getAddress(input.componentConfig.signer),
-					adlEnabled: input.componentConfig.adlEnabled as boolean,
-				}
-			: {
-					admin: ethers.getAddress(input.componentConfig.admin || input.coreReport.config.admin),
-					operator: ethers.getAddress(input.componentConfig.operator),
-				}
+	await assertComponentDeploymentAuthority(ethers, input.component, input.coreReport, deployer.address, input.componentConfig)
+	const componentAdmin = ethers.getAddress(input.componentConfig.admin || input.coreReport.config.admin)
+	let publicConfig: ComponentDeploymentReport["config"]
+	if (input.component === "partyB") {
+		publicConfig = {
+			admin: componentAdmin,
+			signer: ethers.getAddress(input.componentConfig.signer),
+			adlEnabled: input.componentConfig.adlEnabled as boolean,
+		}
+	} else if (input.component === "symbolManager") {
+		publicConfig = { admin: componentAdmin, operator: ethers.getAddress(input.componentConfig.operator) }
+	} else {
+		const resolved = await resolveExpressProviderConfig(
+			ethers,
+			input.componentConfig,
+			{ core: input.coreReport.addresses.diamond, admin: input.coreReport.config.admin },
+			deployer.address,
+		)
+		publicConfig = { admin: componentAdmin, expressProvider: resolved }
+	}
 
 	const live = input.target.mode === "live"
 	if (live && !input.verify) throw new Error("Explorer verification is mandatory for live component deployments; --verify=false is refused")
@@ -675,7 +1120,9 @@ export async function executeComponentDeployment(hre: any, input: ComponentExecu
 		const result =
 			input.component === "partyB"
 				? await executePartyB(hre, checkpoint, input, deployer)
-				: await executeSymbolManager(hre, checkpoint, input, deployer)
+				: input.component === "symbolManager"
+					? await executeSymbolManager(hre, checkpoint, input, deployer)
+					: await executeExpressProvider(hre, checkpoint, input, deployer)
 		report.address = result.address
 		report.implementation = (result as { implementation?: string }).implementation
 		report.constructorArguments = result.records[result.records.length - 1]?.constructorArguments

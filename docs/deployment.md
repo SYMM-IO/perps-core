@@ -2,6 +2,10 @@
 
 Operator runbook for a fresh protocol deployment through the `symmio` CLI.
 
+New to this tooling? Read [deployment-guide.html](./deployment-guide.html) first — it explains
+how the recipe, digest, checkpoint and report fit together, and collects the gotchas that
+cost the most time. This page is the precise reference you keep open during a run.
+
 This runbook describes the hardened deployment path. It is not evidence that this exact
 checkout has been deployed on a fork, a live chain, or a block explorer. Your fork report,
 live receipts, health check, and explorer verification are the evidence for your run.
@@ -27,27 +31,28 @@ Use the checked-in toolchain. `.node-version` pins Node `22.15.0`, `package.json
 Classic `1.22.22`, and `yarn.lock` is the dependency lock:
 
 ```bash
-node --version                                      # v22.15.0
-./utils/yarn-classic.sh --version                   # 1.22.22
-./utils/yarn-classic.sh install --frozen-lockfile
-./utils/yarn-classic.sh run check:operations
+node --version                                    # v22.15.0
+./utils/pinned-yarn.sh --version                  # 1.22.22
+./utils/pinned-yarn.sh install --frozen-lockfile
+./utils/pinned-yarn.sh run check:operations
 ```
 
-The wrapper rejects any package-manager version other than the checked-in Yarn Classic pin
-and ignores parent/user `yarn-path` settings. Do not regenerate the lockfile immediately
-before a deployment.
+`utils/pinned-yarn.sh` rejects any package-manager version other than the checked-in Yarn
+Classic pin and ignores parent/user `yarn-path` settings, which would otherwise redirect this
+v1-lockfile project into Yarn Berry. A `preinstall` hook enforces the same pin even when
+someone bypasses the wrapper and runs `npm install` directly. Do not regenerate the lockfile
+immediately before a deployment.
 
-All commands in this runbook use the checkout-local CLI, so they work without installing a
-global `symmio` command. If you want the shorter command, link it once and verify the shell
-can find it:
+Every operator command in this runbook is `./symmio <command>` — the checkout-local CLI, which
+needs no install step and no global binary. If you prefer the bare `symmio`, link it once:
 
 ```bash
-./utils/yarn-classic.sh link
+./utils/pinned-yarn.sh link
 command -v symmio
 ```
 
-If `command -v` prints nothing, keep using `./utils/yarn-classic.sh cli`; it is the canonical
-and version-bound invocation for this checkout.
+If `command -v` prints nothing, keep using `./symmio`; it is the canonical and version-bound
+invocation for this checkout.
 
 Six inputs determine whether the deployment is safe. All public intent belongs in one
 versioned deployment recipe:
@@ -76,7 +81,7 @@ run requires explorer verification.
 Create the deployment recipe in the standard project location:
 
 ```bash
-./utils/yarn-classic.sh cli recipe init --network arbitrum
+./symmio recipe init --network arbitrum
 ```
 
 This creates `deployments/arbitrum.json`, refuses to overwrite an existing recipe, and
@@ -107,8 +112,8 @@ and proven, never auto-deployed.
 To create the smaller JSON for one add-on instead of trimming the full recipe by hand:
 
 ```bash
-./utils/yarn-classic.sh cli recipe init --network arbitrum --only partyB
-./utils/yarn-classic.sh cli recipe init --network arbitrum --only symbolManager
+./symmio recipe init --network arbitrum --only partyB
+./symmio recipe init --network arbitrum --only symbolManager
 ```
 
 These create `deployments/arbitrum-partyB.json` and
@@ -157,7 +162,7 @@ per-position cap.
 Run the read-only doctor against the intended live network:
 
 ```bash
-./utils/yarn-classic.sh cli doctor --config deployments/arbitrum.json
+./symmio doctor --config deployments/arbitrum.json
 ```
 
 It exits non-zero on blocking problems and checks the signer source, direct RPC chain id,
@@ -182,8 +187,8 @@ operator decision, not background noise.
 Rehearse the same reviewed configuration through the guided CLI:
 
 ```bash
-./utils/yarn-classic.sh cli recipe init --network fork-arbitrum
-./utils/yarn-classic.sh cli deploy --config deployments/fork-arbitrum.json --fresh
+./symmio recipe init --network fork-arbitrum
+./symmio deploy --config deployments/fork-arbitrum.json --fresh
 ```
 
 `fork-arbitrum` is an in-process EVM backed by the configured Arbitrum RPC. It reads real
@@ -207,7 +212,7 @@ pricing, multisig execution, or final ownership acceptance. Verify those separat
 Use the guided command:
 
 ```bash
-./utils/yarn-classic.sh cli deploy --config deployments/arbitrum.json
+./symmio deploy --config deployments/arbitrum.json
 ```
 
 It runs doctor, prints the resolved plan, requires risk-proportional confirmation, invokes
@@ -222,14 +227,14 @@ that lifecycle explicitly because its simulated state disappears with the proces
 Render the complete read-only plan without broadcasting:
 
 ```bash
-./utils/yarn-classic.sh cli deploy --config deployments/arbitrum.json --plan
+./symmio deploy --config deployments/arbitrum.json --plan
 ```
 
 For controlled automation, keep the same public CLI boundary so the exact recipe and its
 digest are passed to Hardhat together:
 
 ```bash
-./utils/yarn-classic.sh cli deploy --config deployments/arbitrum.json \
+./symmio deploy --config deployments/arbitrum.json \
   --yes --confirm-network arbitrum
 ```
 
@@ -247,14 +252,20 @@ The core deployment includes:
 - protocol parameters, templates, wiring, role handoff, ownership initiation, and deployer
   privilege revocation.
 
-The recipe exposes ExpressProvider as a target, but deployment fails closed on every target
-until post-payout credit-loss settlement is resolved and its production roles, Muon and
-per-affiliate policy, Core registration, write-ahead recovery, explorer records, ownership
-handover, and complete health proof are encoded. Credit-line accounting already lives in the
-Express diamond and Core advance support exists, so there is no missing external
-CreditLineManager. The unresolved loss path currently reduces affiliate liability without
-transferring or reclassifying the corresponding collateral; token/liability conservation is
-not proven. Keep `expressProvider.mode` set to `skip` for this release.
+When `expressProvider.mode` is `deploy`, the run also deploys the ExpressProvider diamond and
+its six facets, sets the credit-line Muon config, applies per-affiliate fee and protocol credit
+caps and validator sets, grants the declared roles, registers the provider on Core, and starts
+the two-step ownership handover. It resumes and verifies on the same checkpoint machinery as
+the rest of the run.
+
+Two things about a credit line are worth stating plainly, because they move real collateral:
+
+- `maxDebt: "0"` and `maxDebtBps: 0` mean **no limit** on that axis, not "cannot borrow".
+  `doctor` warns when both are zero for an affiliate.
+- On a post-payout rollback, `coverLoss` reduces the affiliate's pool balance and books any
+  shortfall as `badDebt`. Core is not repaid on-chain — it has no `repayWithdrawAdvance`.
+  Recovery is a governance action (`repayCreditBadDebt`, `rescueTokens`). Deploy an
+  ExpressProvider only if that settlement model is what you intend.
 
 Transactions log their hash and nonce at submission, emit waiting notices for slow mining,
 record replacements and receipts, and include gas/cost evidence in the checkpoint/report.
@@ -266,15 +277,20 @@ Generate a minimal add-on recipe, edit its placeholders, and narrow the mutation
 explicitly:
 
 ```bash
-./utils/yarn-classic.sh cli recipe init --network arbitrum --only partyB
-./utils/yarn-classic.sh cli doctor --config deployments/arbitrum-partyB.json --only partyB
-./utils/yarn-classic.sh cli deploy --config deployments/arbitrum-partyB.json --only partyB --plan
-./utils/yarn-classic.sh cli deploy --config deployments/arbitrum-partyB.json --only partyB
+./symmio recipe init --network arbitrum --only partyB
+./symmio doctor --config deployments/arbitrum-partyB.json --only partyB
+./symmio deploy --config deployments/arbitrum-partyB.json --only partyB --plan
+./symmio deploy --config deployments/arbitrum-partyB.json --only partyB
 
-./utils/yarn-classic.sh cli recipe init --network arbitrum --only symbolManager
-./utils/yarn-classic.sh cli doctor --config deployments/arbitrum-symbolManager.json --only symbolManager
-./utils/yarn-classic.sh cli deploy --config deployments/arbitrum-symbolManager.json --only symbolManager --plan
-./utils/yarn-classic.sh cli deploy --config deployments/arbitrum-symbolManager.json --only symbolManager
+./symmio recipe init --network arbitrum --only symbolManager
+./symmio doctor --config deployments/arbitrum-symbolManager.json --only symbolManager
+./symmio deploy --config deployments/arbitrum-symbolManager.json --only symbolManager --plan
+./symmio deploy --config deployments/arbitrum-symbolManager.json --only symbolManager
+
+./symmio recipe init --network arbitrum --only expressProvider
+./symmio doctor --config deployments/arbitrum-expressProvider.json --only expressProvider
+./symmio deploy --config deployments/arbitrum-expressProvider.json --only expressProvider --plan
+./symmio deploy --config deployments/arbitrum-expressProvider.json --only expressProvider
 ```
 
 For an add-on recipe, set `core.mode` to `reuse` and point `core.fromReport` at the completed
@@ -295,8 +311,8 @@ report remains `pending_handover`.
 Read-only component status uses the same recipe and mutation scope:
 
 ```bash
-./utils/yarn-classic.sh cli status --config deployments/arbitrum-partyB.json --only partyB
-./utils/yarn-classic.sh cli status --config deployments/arbitrum-symbolManager.json --only symbolManager
+./symmio status --config deployments/arbitrum-partyB.json --only partyB
+./symmio status --config deployments/arbitrum-symbolManager.json --only symbolManager
 ```
 
 ### Live deployment entry points
@@ -323,10 +339,12 @@ EXECUTE=true CONFIRM_CHAIN_ID=<chain-id> \
 ```
 
 It performs its own plan, chain confirmation, wiring checks, and supports manual recovery via
-`LIQUIDATOR_ADDRESS`. The Express deployment helper remains local/fork only. It is not a
-durable production workflow and does not resolve/prove post-payout credit-loss conservation
-or configure/prove the complete role, Muon, affiliate-policy, Core-registration, ownership,
-and explorer state required by a live provider.
+`LIQUIDATOR_ADDRESS`.
+
+The bare `deployExpressProvider` helper in `tasks/deploy/expressWithdrawLayerDiamond.ts`
+remains local/fork only. It installs the cut and hands over ownership, but owns no durable
+checkpoint and performs no role, Muon, affiliate-policy, Core-registration, or explorer work.
+A live provider goes through the recipe workflow, which does all of that and proves it.
 
 ---
 
@@ -339,7 +357,7 @@ the checkpoint and report in a failed/incomplete state.
 Retry recorded explorer failures with:
 
 ```bash
-./utils/yarn-classic.sh cli verify --config deployments/arbitrum.json --retry-failed
+./symmio verify --config deployments/arbitrum.json --retry-failed
 ```
 
 This command is full-system-only. It binds the chain-scoped report, deployment ID, recipe
@@ -350,13 +368,13 @@ Standalone PartyB and SymbolManager verification is performed inside their
 Then rerun the same deployment command so the checkpoint completes its required gate:
 
 ```bash
-./utils/yarn-classic.sh cli deploy --config deployments/arbitrum.json
+./symmio deploy --config deployments/arbitrum.json
 ```
 
 Inspect the on-chain result through the chain-scoped report:
 
 ```bash
-./utils/yarn-classic.sh cli status --config deployments/arbitrum.json
+./symmio status --config deployments/arbitrum.json
 ```
 
 For a direct health invocation:
@@ -375,7 +393,7 @@ must pass before it can complete.
 
 The authoritative to-do list is `manualActions` in the chain-scoped full or component
 report. The CLI prints that list after deployment. Use
-`./utils/yarn-classic.sh cli status --config <recipe>` for a full run or add
+`./symmio status --config <recipe>` for a full run or add
 `--only partyB|symbolManager` for a component recipe. Do not substitute a generic checklist
 for the report produced by your run.
 
@@ -401,7 +419,7 @@ trading symbols.
 Re-run the same command without `--fresh` to resume:
 
 ```bash
-./utils/yarn-classic.sh cli deploy --config deployments/arbitrum.json
+./symmio deploy --config deployments/arbitrum.json
 ```
 
 The checkpoint is bound to the deployment id, chain/network scope, configuration, protocol
@@ -431,7 +449,7 @@ same-intent speed-up/replacement, bind the hashes explicitly:
 
 ```bash
 DEPLOY_TX_REPLACEMENTS=0x<original>=0x<replacement> \
-  ./utils/yarn-classic.sh cli deploy --config deployments/arbitrum.json
+  ./symmio deploy --config deployments/arbitrum.json
 ```
 
 The replacement must use the same sender, nonce, target, value, and calldata; a cancellation
@@ -493,7 +511,7 @@ remain non-submitting by default.
 Export a live deployment into a target chain's config file:
 
 ```bash
-./utils/yarn-classic.sh cli config export --network hyperevm \
+./symmio config export --network hyperevm \
   --symmio 0x<diamond> \
   --instant-layer 0x<instantLayer> \
   --to <targetChainId>
@@ -506,7 +524,7 @@ the recipe remains the deployment input. Compare the source deployment against t
 snapshot before copying it:
 
 ```bash
-./utils/yarn-classic.sh cli config diff --network hyperevm \
+./symmio config diff --network hyperevm \
   --symmio 0x<diamond> \
   --instant-layer 0x<instantLayer> \
   --against <targetChainId>

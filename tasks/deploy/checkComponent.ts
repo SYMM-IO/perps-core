@@ -8,6 +8,7 @@ import { getDataDir } from "../utils/fs.js"
 import { getCheckpointPath, setCheckpointSimulated, type DeploymentCheckpoint } from "./checkpoint.js"
 import {
 	inspectPartyBPostState,
+	inspectExpressProviderPostState,
 	inspectSymbolManagerPostState,
 	summarizeComponentHealth,
 	type ComponentDeploymentReport,
@@ -24,7 +25,7 @@ import {
 import { getConnection } from "./helpers.js"
 import { requireActiveDeploymentRecipe } from "./recipeRuntime.js"
 
-type SupportedComponent = "partyB" | "symbolManager"
+type SupportedComponent = "partyB" | "symbolManager" | "expressProvider"
 
 export interface ComponentStatusBinding {
 	component: SupportedComponent
@@ -246,22 +247,28 @@ export async function inspectComponentStatus(
 	report: ComponentDeploymentReport,
 	coreReport: CoreDependencyReport,
 ): Promise<ComponentPostStateInspection> {
-	return component === "partyB"
-		? inspectPartyBPostState(ethers, {
-				address: report.address!,
-				implementation: report.implementation!,
-				admin: report.config.admin,
-				signer: report.config.signer!,
-				adlEnabled: report.config.adlEnabled!,
-				core: coreReport.addresses.diamond,
-				instantLayer: coreReport.addresses.instantLayer,
-			})
-		: inspectSymbolManagerPostState(ethers, {
-				address: report.address!,
-				admin: report.config.admin,
-				operator: report.config.operator!,
-				core: coreReport.addresses.diamond,
-			})
+	if (component === "partyB") {
+		return inspectPartyBPostState(ethers, {
+			address: report.address!,
+			implementation: report.implementation!,
+			admin: report.config.admin,
+			signer: report.config.signer!,
+			adlEnabled: report.config.adlEnabled!,
+			core: coreReport.addresses.diamond,
+			instantLayer: coreReport.addresses.instantLayer,
+		})
+	}
+	if (component === "symbolManager") {
+		return inspectSymbolManagerPostState(ethers, {
+			address: report.address!,
+			admin: report.config.admin,
+			operator: report.config.operator!,
+			core: coreReport.addresses.diamond,
+		})
+	}
+	const expressConfig = report.config.expressProvider
+	if (!expressConfig) throw new Error("ExpressProvider report is missing its resolved config; cannot re-prove the deployed state")
+	return inspectExpressProviderPostState(ethers, { ...expressConfig, address: report.address! })
 }
 
 function readJsonExact(filePath: string, label: string): unknown {
@@ -299,8 +306,8 @@ function displayInspection(
 }
 
 async function checkComponent(hre: any, recipePath: string, rawComponent: string): Promise<void> {
-	if (rawComponent !== "partyB" && rawComponent !== "symbolManager") {
-		throw new Error(`check:component supports only partyB or symbolManager; received ${JSON.stringify(rawComponent)}`)
+	if (rawComponent !== "partyB" && rawComponent !== "symbolManager" && rawComponent !== "expressProvider") {
+		throw new Error(`check:component supports only partyB, symbolManager, or expressProvider; received ${JSON.stringify(rawComponent)}`)
 	}
 	const component: SupportedComponent = rawComponent
 	const active = requireActiveDeploymentRecipe(recipePath)
@@ -369,7 +376,7 @@ async function checkComponent(hre: any, recipePath: string, rawComponent: string
 		throw new Error(
 			`Component status is incomplete: lifecycle=${report.lifecycle}, health=${currentHealth}` +
 				`${incomplete.length ? `, checks=${incomplete.join(", ")}` : ""}. ` +
-				`After Safe actions confirm, rerun ./utils/yarn-classic.sh cli deploy --config ${active.identityPath} --only ${component}.`,
+				`After Safe actions confirm, rerun ./symmio deploy --config ${active.identityPath} --only ${component}.`,
 		)
 	}
 	console.log("")

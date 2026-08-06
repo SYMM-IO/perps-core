@@ -4,20 +4,26 @@ The CLI deploys and inspects SYMMIO from one reviewed JSON recipe. Use the check
 command; it works in Fish, Zsh, Bash, and CI without installing a global binary.
 
 ```bash
-./utils/yarn-classic.sh cli --help
+./symmio --help
 ```
 
-If you want the shorter `symmio` command, run `./utils/yarn-classic.sh link` once. Linking is optional.
+`./symmio` is the checkout-local entrypoint. It checks that Node matches `.node-version` and
+that dependencies are installed, then runs `cli/symmio.js` directly — there is no build step,
+so what executes is the source you can read. Linking is optional; `./utils/pinned-yarn.sh link`
+puts the same CLI on your `PATH` as bare `symmio`.
+
+Package-manager work (install, link, run) goes through `./utils/pinned-yarn.sh`, which enforces
+the Yarn Classic pin. `./utils/yarn-classic.sh` still works as a deprecated alias for both.
 
 ## Start here
 
 ```bash
-./utils/yarn-classic.sh cli recipe init --network arbitrum
+./symmio recipe init --network arbitrum
 # edit deployments/arbitrum.json and replace every REPLACE_WITH_* value
-./utils/yarn-classic.sh cli doctor --config deployments/arbitrum.json
-./utils/yarn-classic.sh cli deploy --config deployments/arbitrum.json --plan
-./utils/yarn-classic.sh cli deploy --config deployments/arbitrum.json
-./utils/yarn-classic.sh cli status --config deployments/arbitrum.json
+./symmio doctor --config deployments/arbitrum.json
+./symmio deploy --config deployments/arbitrum.json --plan
+./symmio deploy --config deployments/arbitrum.json
+./symmio status --config deployments/arbitrum.json
 ```
 
 Configuration and generated state have distinct locations:
@@ -49,21 +55,21 @@ Each has an explicit `mode`:
 Without `--only`, every component enabled by the recipe is executed in dependency order:
 
 ```bash
-./utils/yarn-classic.sh cli deploy --config deployments/arbitrum.json
+./symmio deploy --config deployments/arbitrum.json
 ```
 
 Generate and deploy one component with a smaller recipe:
 
 ```bash
-./utils/yarn-classic.sh cli recipe init --network arbitrum --only partyB
-./utils/yarn-classic.sh cli doctor --config deployments/arbitrum-partyB.json --only partyB
-./utils/yarn-classic.sh cli deploy --config deployments/arbitrum-partyB.json --only partyB --plan
-./utils/yarn-classic.sh cli deploy --config deployments/arbitrum-partyB.json --only partyB
+./symmio recipe init --network arbitrum --only partyB
+./symmio doctor --config deployments/arbitrum-partyB.json --only partyB
+./symmio deploy --config deployments/arbitrum-partyB.json --only partyB --plan
+./symmio deploy --config deployments/arbitrum-partyB.json --only partyB
 
-./utils/yarn-classic.sh cli recipe init --network arbitrum --only symbolManager
-./utils/yarn-classic.sh cli doctor --config deployments/arbitrum-symbolManager.json --only symbolManager
-./utils/yarn-classic.sh cli deploy --config deployments/arbitrum-symbolManager.json --only symbolManager --plan
-./utils/yarn-classic.sh cli deploy --config deployments/arbitrum-symbolManager.json --only symbolManager
+./symmio recipe init --network arbitrum --only symbolManager
+./symmio doctor --config deployments/arbitrum-symbolManager.json --only symbolManager
+./symmio deploy --config deployments/arbitrum-symbolManager.json --only symbolManager --plan
+./symmio deploy --config deployments/arbitrum-symbolManager.json --only symbolManager
 ```
 
 For a reused Core, `core.fromReport` may be absolute or relative to the recipe file's
@@ -76,21 +82,23 @@ Core is a system bundle. To deploy only the Core bundle, set `partyB`, `symbolMa
 `expressProvider` to `mode: "skip"`, then run without `--only`.
 
 `--only` never silently rewrites recipe modes. Required dependencies must be declared as
-`reuse` or `deploy`; a skipped dependency is a blocking plan error. ExpressProvider
-deployment is currently blocked on every target until post-payout credit-loss settlement is
-resolved and its production roles, Muon and affiliate policy, Core registration, durable
-recovery, verification, and post-state proof are encoded. Doctor and the planner fail closed
-instead of advertising an apparently runnable deployment.
+`reuse` or `deploy`; a skipped dependency is a blocking plan error.
+
+An `expressProvider` set to `deploy` must declare `registerOnCore`, a `creditLine` block, at
+least one `OPERATOR_ROLE` holder, and at least one affiliate. The planner fails closed on any
+of these rather than building a provider that cannot be operated. Because its credit line
+advances real collateral out of Core, `doctor` warns when an affiliate has both `maxDebt` and
+`maxDebtBps` set to `0`, which on-chain means no limit.
 
 ## Commands
 
 ### `recipe init`
 
 ```bash
-./utils/yarn-classic.sh cli recipe init --network arbitrum
-./utils/yarn-classic.sh cli recipe init --network arbitrum --only partyB
-./utils/yarn-classic.sh cli recipe init --network arbitrum --only symbolManager
-./utils/yarn-classic.sh cli recipe init --network fork-arbitrum --out deployments/rehearsal.json
+./symmio recipe init --network arbitrum
+./symmio recipe init --network arbitrum --only partyB
+./symmio recipe init --network arbitrum --only symbolManager
+./symmio recipe init --network fork-arbitrum --out deployments/rehearsal.json
 ```
 
 Creates `deployments/<network>.json` from a checked-in, reviewed profile. Existing output is
@@ -102,7 +110,7 @@ creates a minimal add-on recipe with `core.mode: "reuse"` and a portable relativ
 ### `doctor`
 
 ```bash
-./utils/yarn-classic.sh cli doctor --config deployments/arbitrum.json
+./symmio doctor --config deployments/arbitrum.json
 ```
 
 Read-only. It validates the recipe and component dependency plan before opening an RPC
@@ -127,8 +135,8 @@ checkpoint or transaction.
 ### `deploy`
 
 ```bash
-./utils/yarn-classic.sh cli deploy --config deployments/arbitrum.json --plan
-./utils/yarn-classic.sh cli deploy --config deployments/arbitrum.json
+./symmio deploy --config deployments/arbitrum.json --plan
+./symmio deploy --config deployments/arbitrum.json
 ```
 
 The plan prints the recipe digest and a table containing each target, mode, and dependency.
@@ -154,9 +162,9 @@ ephemeral and print their lifecycle without using exit `2`.
 ### `status`
 
 ```bash
-./utils/yarn-classic.sh cli status --config deployments/arbitrum.json
-./utils/yarn-classic.sh cli status --config deployments/arbitrum-partyB.json --only partyB
-./utils/yarn-classic.sh cli status --config deployments/arbitrum-symbolManager.json --only symbolManager
+./symmio status --config deployments/arbitrum.json
+./symmio status --config deployments/arbitrum-partyB.json --only partyB
+./symmio status --config deployments/arbitrum-symbolManager.json --only symbolManager
 ```
 
 Reads the exact chain-scoped full or component report and checkpoint, then delegates to the
@@ -167,8 +175,8 @@ never reported as a healthy deployment. A component recipe must include its matc
 ### `verify`
 
 ```bash
-./utils/yarn-classic.sh cli verify --config deployments/arbitrum.json
-./utils/yarn-classic.sh cli verify --config deployments/arbitrum.json --retry-failed
+./symmio verify --config deployments/arbitrum.json
+./symmio verify --config deployments/arbitrum.json --retry-failed
 ```
 
 Runs the checked-in `verify:all` task against the network named by the recipe. Verification
@@ -182,9 +190,9 @@ The protocol inspection commands remain available for comparing or exporting an 
 deployment:
 
 ```bash
-./utils/yarn-classic.sh cli config show --chain 42161
-./utils/yarn-classic.sh cli config diff --network hyperevm --symmio 0x... --instant-layer 0x... --against 42161
-./utils/yarn-classic.sh cli config export --network hyperevm --symmio 0x... --instant-layer 0x... --to 42161
+./symmio config show --chain 42161
+./symmio config diff --network hyperevm --symmio 0x... --instant-layer 0x... --against 42161
+./symmio config export --network hyperevm --symmio 0x... --instant-layer 0x... --to 42161
 ```
 
 ## Compatibility mode

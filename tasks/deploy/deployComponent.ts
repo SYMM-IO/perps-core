@@ -3,7 +3,7 @@ import { ArgumentType } from "hardhat/types/arguments"
 
 import { createDeploymentPlan, DEPLOYMENT_COMPONENTS } from "../../deployment/recipe.js"
 import { executeComponentDeployment } from "./componentDeployment.js"
-import { assertExpressProviderSupported, DeploymentComponentName, loadCoreDependencyReport } from "./deploymentRecipe.js"
+import { assertExpressProviderDeployable, DeploymentComponentName, loadCoreDependencyReport } from "./deploymentRecipe.js"
 import { logger } from "./logger.js"
 import { requireActiveDeploymentRecipe } from "./recipeRuntime.js"
 
@@ -77,7 +77,7 @@ export const deployComponentTask = task(
 			if (component === "core") {
 				throw new Error("Core is a system bundle. Run deploy:system with this recipe instead of deploy:component --component core.")
 			}
-			if (component === "expressProvider") assertExpressProviderSupported(active.recipe.network)
+			if (component === "expressProvider") assertExpressProviderDeployable(active.recipe.expressProvider, active.recipe.network)
 			if (active.recipe.core.mode !== "reuse" || !active.recipe.core.fromReport) {
 				throw new Error(
 					`DEPENDENCY_UNAVAILABLE: standalone ${component} deployment requires core.mode=reuse and core.fromReport; received core.mode=${active.recipe.core.mode}`,
@@ -103,7 +103,11 @@ export const deployComponentTask = task(
 				recipeDigest: active.digest,
 				target: active.recipe.network,
 				component,
-				componentConfig: { ...active.recipe[component], admin: active.recipe.governance.admin },
+				// Only expressProvider carries its own admin override; the others always use governance.admin.
+				componentConfig: {
+					...active.recipe[component],
+					admin: (active.recipe[component] as { admin?: string }).admin || active.recipe.governance.admin,
+				},
 				coreReport,
 				coreReportPath: coreReportBinding.identityPath,
 				fresh,

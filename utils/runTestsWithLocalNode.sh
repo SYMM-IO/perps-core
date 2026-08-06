@@ -68,7 +68,7 @@ wait_for_node() {
 
 cd "${PROJECT_ROOT}"
 
-[[ -x "${HARDHAT_BIN}" ]] || fail "Local Hardhat binary is missing. Run './utils/yarn-classic.sh install --frozen-lockfile' first."
+[[ -x "${HARDHAT_BIN}" ]] || fail "Local Hardhat binary is missing. Run './utils/pinned-yarn.sh install --frozen-lockfile' first."
 command -v curl >/dev/null 2>&1 || fail "curl is required for the JSON-RPC readiness check."
 [[ "${RPC_READY_TIMEOUT_SECONDS}" =~ ^[1-9][0-9]*$ ]] || fail "LOCAL_NODE_READY_TIMEOUT_SECONDS must be a positive whole number."
 

@@ -49,12 +49,11 @@ test("doctor can preflight the same partial component selection as deploy", () =
 test("status component selection requires a JSON recipe and supports only deployed add-ons", () => {
 	assert.equal(parseArgs(["status", "--config", "deployments/a.json", "--only", "partyB"]).only, "partyB");
 	assert.equal(parseArgs(["status", "--config", "deployments/a.json", "--only", "symbolManager"]).only, "symbolManager");
+	assert.equal(parseArgs(["status", "--config", "deployments/a.json", "--only", "expressProvider"]).only, "expressProvider");
 	assert.throws(() => parseArgs(["status", "--network", "arbitrum", "--only", "partyB"]), /--only requires --config/);
-	assert.throws(() => parseArgs(["status", "--config", "deployments/a.json", "--only", "core"]), /--only must be one of: partyB, symbolManager/);
-	assert.throws(
-		() => parseArgs(["status", "--config", "deployments/a.json", "--only", "expressProvider"]),
-		/--only must be one of: partyB, symbolManager/,
-	);
+	// Core is a system bundle, so it is never a standalone status target.
+	assert.throws(() => parseArgs(["status", "--config", "deployments/a.json", "--only", "core"]), /--only must be one of/);
+	assert.throws(() => parseArgs(["status", "--config", "deployments/a.json", "--only", "nope"]), /--only must be one of/);
 });
 
 test("recipe init has an explicit subcommand and output controls", () => {
@@ -69,7 +68,12 @@ test("recipe init has an explicit subcommand and output controls", () => {
 		network: "arbitrum",
 		only: "partyB",
 	});
-	assert.throws(() => parseArgs(["recipe", "init", "--network", "arbitrum", "--only", "expressProvider"]), /must be one of/);
+	assert.deepEqual(parseArgs(["recipe", "init", "--network", "arbitrum", "--only", "expressProvider"]), {
+		_: ["recipe", "init"],
+		network: "arbitrum",
+		only: "expressProvider",
+	});
+	assert.throws(() => parseArgs(["recipe", "init", "--network", "arbitrum", "--only", "core"]), /must be one of/);
 	assert.throws(() => parseArgs(["recipe"]), /recipe requires a subcommand \(init\)/);
 });
 
@@ -117,7 +121,7 @@ test("doctor help tells a first-time operator where every configuration class li
 	assert.match(rendered, /deployment\/examples\/arbitrum\.v1\.example\.json/);
 	assert.match(rendered, /deployments\/<name>\.json/);
 	assert.match(rendered, /tasks\/data\/<chainId>\/deployment-report\.json/);
-	assert.match(rendered, /cli doctor --config deployments\/arbitrum\.json/);
+	assert.match(rendered, /\.\/symmio doctor --config deployments\/arbitrum\.json/);
 	assert.doesNotMatch(rendered, /\.env/);
 });
 
@@ -131,8 +135,8 @@ test("root help does not assume the global binary is linked", async () => {
 		console.log = original;
 	}
 	const rendered = output.join("\n");
-	assert.match(rendered, /\.\/utils\/yarn-classic\.sh cli recipe init/);
-	assert.match(rendered, /yarn-classic\.sh link/);
+	assert.match(rendered, /\.\/symmio recipe init/);
+	assert.match(rendered, /pinned-yarn\.sh link/);
 });
 
 test("every command help example is checkout-local unless the optional link is used", async () => {

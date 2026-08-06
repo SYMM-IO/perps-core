@@ -120,7 +120,7 @@ function runHardhatScript(scriptPath: string, networkName: string, envOverrides:
 	}
 
 	const hardhatBin = path.resolve("node_modules/.bin/hardhat")
-	if (!fs.existsSync(hardhatBin)) throw new Error(`Missing ${hardhatBin}; run ./utils/yarn-classic.sh install --frozen-lockfile first`)
+	if (!fs.existsSync(hardhatBin)) throw new Error(`Missing ${hardhatBin}; run ./utils/pinned-yarn.sh install --frozen-lockfile first`)
 	const result = spawnSync(hardhatBin, ["run", scriptPath, "--network", networkName], {
 		stdio: "inherit",
 		env,

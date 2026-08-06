@@ -74,14 +74,14 @@ export function configurationHelpLines() {
 		`  resume checkpoint  ${displayPath(locations.checkpoint)}  (managed automatically)`,
 		"",
 		"Create and use it from this checkout",
-		"  ./utils/yarn-classic.sh cli recipe init --network arbitrum",
-		"  ./utils/yarn-classic.sh cli doctor --config deployments/arbitrum.json",
-		"  ./utils/yarn-classic.sh cli deploy --config deployments/arbitrum.json --plan",
-		"  ./utils/yarn-classic.sh cli recipe init --network arbitrum --only partyB",
-		"  ./utils/yarn-classic.sh cli doctor --config deployments/arbitrum-partyB.json --only partyB",
+		"  ./symmio recipe init --network arbitrum",
+		"  ./symmio doctor --config deployments/arbitrum.json",
+		"  ./symmio deploy --config deployments/arbitrum.json --plan",
+		"  ./symmio recipe init --network arbitrum --only partyB",
+		"  ./symmio doctor --config deployments/arbitrum-partyB.json --only partyB",
 		"",
 		"Optional global command",
-		"  ./utils/yarn-classic.sh link  # after this, `symmio ...` is available in your shell",
+		"  ./utils/pinned-yarn.sh link  # after this, `symmio ...` is available in your shell",
 	];
 }
 
@@ -114,16 +114,16 @@ export function doctorNextStepLines({ networkName, recipePath, blockingFields = 
 		return [
 			"Next steps",
 			"  --network is compatibility-only. Put deployment intent in one reviewed JSON recipe:",
-			`  ./utils/yarn-classic.sh cli recipe init --network ${networkName}`,
-			`  ./utils/yarn-classic.sh cli doctor --config ${target}`,
+			`  ./symmio recipe init --network ${networkName}`,
+			`  ./symmio doctor --config ${target}`,
 		];
 	}
 	const fields = blockingFields.length ? ` (${blockingFields.join(", ")})` : "";
 	return [
 		"Next steps",
 		`  1. Edit ${target}${fields}`,
-		`  2. Rerun: ./utils/yarn-classic.sh cli doctor --config ${target}${onlyFlag}`,
-		`  3. Preview: ./utils/yarn-classic.sh cli deploy --config ${target}${onlyFlag} --plan`,
+		`  2. Rerun: ./symmio doctor --config ${target}${onlyFlag}`,
+		`  3. Preview: ./symmio deploy --config ${target}${onlyFlag} --plan`,
 	];
 }
 

@@ -9,10 +9,10 @@ Scope: 162 TypeScript, JavaScript, and shell surfaces under `scripts/`, `tasks/`
 The canonical core deployment path is locally ready for a production-shaped fork rehearsal:
 
 ```bash
-./utils/yarn-classic.sh cli recipe init --network arbitrum
-./utils/yarn-classic.sh cli doctor --config deployments/arbitrum.json
-./utils/yarn-classic.sh cli deploy --config deployments/arbitrum.json --plan
-./utils/yarn-classic.sh cli deploy --config deployments/arbitrum.json
+./symmio recipe init --network arbitrum
+./symmio doctor --config deployments/arbitrum.json
+./symmio deploy --config deployments/arbitrum.json --plan
+./symmio deploy --config deployments/arbitrum.json
 ```
 
 The JSON recipe is the single public deployment input. Recipe-guided `deploy:system` is the
@@ -110,7 +110,7 @@ This verdict is based on source review, static gates, automated tests, and a com
 ### Toolchain and tests
 
 - `.node-version` pins Node `22.15.0`.
-- `utils/yarn-classic.sh` enforces Yarn Classic `1.22.22`; `yarn.lock` fixes the dependency graph. The frozen graph currently installs Hardhat `3.12.0`.
+- `utils/pinned-yarn.sh` and the `preinstall` hook (`scripts/check-package-manager.js`) enforce Yarn Classic `1.22.22`; `yarn.lock` fixes the dependency graph. The frozen graph currently installs Hardhat `3.12.0`. `utils/yarn-classic.sh` remains as a deprecated alias.
 - `check:operations` runs Solidity lint, operations TypeScript checking, CLI tests, compilation, and focused deployment/recovery tests.
 - The parallel runner invokes the local Hardhat binary, honors worker exit codes, and isolates tests from deployment variables loaded from `.env` or the parent shell.
 
@@ -150,8 +150,8 @@ Before broadcasting to Arbitrum:
 1. Use a clean shell and the checked-in Node/Yarn toolchain.
 2. Create and review `deployments/arbitrum.json`, including admin, collateral, Muon, PartyB,
    SymbolManager, protocol parameters/templates, and the three liquidation-accounting values.
-3. Run `./utils/yarn-classic.sh cli doctor --config deployments/arbitrum.json` and resolve every failure.
-4. Render and independently review `./utils/yarn-classic.sh cli deploy --config deployments/arbitrum.json --plan`.
+3. Run `./symmio doctor --config deployments/arbitrum.json` and resolve every failure.
+4. Render and independently review `./symmio deploy --config deployments/arbitrum.json --plan`.
 5. Complete the matching fork recipe against the intended private RPC and pinned block when reproducibility matters.
 6. Review the fork report, transaction evidence, health summary, and manual actions.
 7. Run the live recipe only after the fork result is accepted. Mainnet non-interactive mode requires `--yes --confirm-network arbitrum` and cannot skip verification.

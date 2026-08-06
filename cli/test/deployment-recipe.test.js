@@ -332,45 +332,86 @@ test("core dependency report loader gives the parser an absolute source path", (
 	);
 });
 
-test("ExpressProvider deploy fails closed on every recipe target with a stable code", () => {
-	const local = localRecipe();
-	local.expressProvider = { mode: "deploy" };
-	assert.throws(
-		() => createDeploymentPlan(local),
-		error => error.code === "LIVE_TARGET_UNSUPPORTED" && /local targets/.test(error.message),
-	);
+function expressProviderDeploy(overrides = {}) {
+	return {
+		mode: "deploy",
+		registerOnCore: true,
+		creditLine: { signatureVerifier: "fromCore", muonAppId: "7", muonFreshnessWindow: 300 },
+		roles: { OPERATOR_ROLE: [B] },
+		affiliates: [{ address: C, feeRate: "0", operatorFee: "0", maxDebt: "1000", maxDebtBps: 5000 }],
+		...overrides,
+	};
+}
 
+test("ExpressProvider deploy plans once its operating configuration is complete", () => {
 	const recipe = localRecipe();
-	recipe.network = { name: "arbitrum", chainId: 42161, mode: "live" };
-	recipe.secrets = {
-		deployer: "hardhat-keystore://NEW_DEPLOYER",
-		rpc: "hardhat-keystore://RPC_ARBITRUM",
-		explorer: "hardhat-keystore://ETHERSCAN_APIKEY",
-	};
-	recipe.execution.verify = true;
-	recipe.core.collateral = { mode: "reuse", address: D };
-	recipe.core.muon = {
-		mode: "reuse",
-		address: C,
-		appId: "1",
-		upnlValidTime: "60",
-		priceValidTime: "60",
-		permissions: [
-			"Trading",
-			"AccountManagement",
-			"Settlement",
-			"ForceClose",
-			"Funding",
-			"LiquidationPartyA",
-			"LiquidationPartyB",
-			"RemoveMargin",
+	recipe.expressProvider = expressProviderDeploy();
+	const plan = createDeploymentPlan(recipe);
+	assert.equal(plan.components.find(component => component.name === "expressProvider")?.mode, "deploy");
+});
+
+test("ExpressProvider deploy requires the config that makes it operable", () => {
+	for (const [field, value] of [
+		["registerOnCore", undefined],
+		["creditLine", undefined],
+		["roles", undefined],
+		["affiliates", undefined],
+	]) {
+		const recipe = localRecipe();
+		const component = expressProviderDeploy();
+		delete component[field];
+		if (value !== undefined) component[field] = value;
+		recipe.expressProvider = component;
+		assert.throws(() => createDeploymentPlan(recipe), new RegExp(`expressProvider\\.${field} is required`), `${field} must be required`);
+	}
+
+	// A provider with no operator can accept withdrawals it can never process.
+	const noOperator = localRecipe();
+	noOperator.expressProvider = expressProviderDeploy({ roles: { PAUSER_ROLE: [B] } });
+	assert.throws(() => createDeploymentPlan(noOperator), /roles\.OPERATOR_ROLE is required/);
+
+	// An empty affiliate set means no pool backs any advance.
+	const noAffiliates = localRecipe();
+	noAffiliates.expressProvider = expressProviderDeploy({ affiliates: [] });
+	assert.throws(() => createDeploymentPlan(noAffiliates), /affiliates must be a non-empty array/);
+});
+
+test("ExpressProvider rejects unknown roles, duplicate affiliates and unreachable validator thresholds", () => {
+	const unknownRole = localRecipe();
+	unknownRole.expressProvider = expressProviderDeploy({ roles: { OPERATOR_ROLE: [B], ADMIN_ROLE: [C] } });
+	assert.throws(() => createDeploymentPlan(unknownRole), /roles\.ADMIN_ROLE is not a supported field/);
+
+	const duplicate = localRecipe();
+	duplicate.expressProvider = expressProviderDeploy({
+		affiliates: [
+			{ address: C, feeRate: "0", operatorFee: "0", maxDebt: "1", maxDebtBps: 1 },
+			{ address: C, feeRate: "0", operatorFee: "0", maxDebt: "1", maxDebtBps: 1 },
 		],
-	};
-	recipe.expressProvider = { mode: "deploy" };
-	assert.throws(
-		() => createDeploymentPlan(recipe),
-		error => error.code === "LIVE_TARGET_UNSUPPORTED" && /live targets/.test(error.message),
-	);
+	});
+	assert.throws(() => createDeploymentPlan(duplicate), /duplicates an earlier affiliate/);
+
+	// Requiring more signatures than there are validators bricks the affiliate.
+	const threshold = localRecipe();
+	threshold.expressProvider = expressProviderDeploy({
+		affiliates: [{ address: C, feeRate: "0", operatorFee: "0", maxDebt: "1", maxDebtBps: 1, validators: [B], minValidatorSignatures: 2 }],
+	});
+	assert.throws(() => createDeploymentPlan(threshold), /minValidatorSignatures/);
+
+	const feeRate = localRecipe();
+	feeRate.expressProvider = expressProviderDeploy({
+		affiliates: [{ address: C, feeRate: "10001", operatorFee: "0", maxDebt: "1", maxDebtBps: 1 }],
+	});
+	assert.throws(() => createDeploymentPlan(feeRate), /feeRate must be <= 10000/);
+});
+
+test("ExpressProvider reuse and skip reject deploy-only configuration", () => {
+	const reuse = localRecipe();
+	reuse.expressProvider = { mode: "reuse", address: C, registerOnCore: true };
+	assert.throws(() => createDeploymentPlan(reuse), /registerOnCore must be omitted when mode is reuse/);
+
+	const skip = localRecipe();
+	skip.expressProvider = { mode: "skip", roles: { OPERATOR_ROLE: [B] } };
+	assert.throws(() => createDeploymentPlan(skip), /roles must be omitted when mode is skip/);
 });
 
 test("environment projection contains public values and unresolved secret metadata only", () => {
