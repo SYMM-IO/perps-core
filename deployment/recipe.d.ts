@@ -4,6 +4,8 @@ export const DEPLOYMENT_COMPONENTS: readonly ["core", "partyB", "symbolManager",
 export type ComponentMode = "deploy" | "reuse" | "skip"
 export type SecretRef = `hardhat-keystore://${string}` | `env://${string}`
 export type SecretMetadata = { provider: "hardhat-keystore" | "env"; key: string }
+export type VanityGroup = "diamonds" | "facets" | "libraries" | "peripherals"
+export type VanityPattern = { prefix?: string; suffix?: string }
 
 export interface DeploymentRecipe {
 	$schema?: string
@@ -27,10 +29,15 @@ export interface DeploymentRecipe {
 		maxLiquidationProfitPerPosition?: string
 		softLiquidationPenaltyCollector?: string
 	}
+	create2?: {
+		factoryAddress?: string
+		groups?: Partial<Record<VanityGroup, VanityPattern>>
+		overrides?: Record<string, VanityPattern>
+		miningBudget?: number
+	}
 	core: {
 		mode: ComponentMode
 		fromReport?: string
-		create2?: { factoryAddress?: string; vanityPrefix: string }
 		collateral?: { mode: "deploy" | "reuse"; address?: string }
 		muon?: {
 			mode: "mock" | "deploy" | "reuse"

@@ -1,3 +1,4 @@
+import { DEPLOYABLE_CONTRACTS, VANITY_GROUPS } from "./deployableContracts.js";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -33,6 +34,7 @@ const EXPRESS_ROLES = [
 /** Roles Init grants to the configured admin; the deployment proves them rather than re-granting. */
 const EXPRESS_INIT_ADMIN_ROLES = ["SETTER_ROLE", "FEE_CLAIMER_ROLE", "WITHDRAWER_ROLE", "PAUSER_ROLE"];
 const BPS_DENOMINATOR = 10000;
+const VANITY_HEX = /^[0-9a-fA-F]{1,8}$/;
 const UINT256_MAX = (BigInt(1) << BigInt(256)) - BigInt(1);
 const DEFAULT_CONFIRMATIONS = 1;
 const DEFAULT_TX_TIMEOUT_SECONDS = 300;
@@ -246,25 +248,62 @@ function validateMuon(value, source, field, networkMode) {
 	}
 }
 
+function validateVanityPattern(value, source, field) {
+	const pattern = object(value, source, field);
+	onlyKeys(pattern, ["prefix", "suffix"], source, field);
+	for (const key of ["prefix", "suffix"]) {
+		if (pattern[key] === undefined) continue;
+		if (typeof pattern[key] !== "string" || !VANITY_HEX.test(pattern[key])) {
+			fail(source, `${field}.${key}`, "must contain 1-8 hexadecimal characters without 0x");
+		}
+	}
+	return pattern.prefix !== undefined || pattern.suffix !== undefined;
+}
+
+/**
+ * Vanity address intent for every component. Declaring a pattern without a factory would
+ * silently fall back to ordinary CREATE and produce an address nobody reviewed, so it fails.
+ */
+function validateCreate2(value, source) {
+	const create2 = object(value, source, "create2");
+	onlyKeys(create2, ["factoryAddress", "groups", "overrides", "miningBudget"], source, "create2");
+	if (create2.factoryAddress !== undefined) address(create2.factoryAddress, source, "create2.factoryAddress");
+	if (create2.miningBudget !== undefined) integer(create2.miningBudget, source, "create2.miningBudget", 1);
+
+	let declared = false;
+	if (create2.groups !== undefined) {
+		const groups = object(create2.groups, source, "create2.groups");
+		onlyKeys(groups, VANITY_GROUPS, source, "create2.groups");
+		for (const name of Object.keys(groups)) {
+			declared = validateVanityPattern(groups[name], source, `create2.groups.${name}`) || declared;
+		}
+	}
+	if (create2.overrides !== undefined) {
+		const overrides = object(create2.overrides, source, "create2.overrides");
+		for (const key of Object.keys(overrides)) {
+			if (!Object.hasOwn(DEPLOYABLE_CONTRACTS, key)) {
+				fail(source, `create2.overrides.${key}`, 'is not a known deployable contract; use a qualified key such as "core/PartyAFacet"');
+			}
+			declared = validateVanityPattern(overrides[key], source, `create2.overrides.${key}`) || declared;
+		}
+	}
+	if (declared && create2.factoryAddress === undefined) {
+		fail(source, "create2.factoryAddress", "is required when any group or override declares a vanity pattern");
+	}
+}
+
 function validateCore(value, source, networkMode) {
 	const core = object(value, source, "core");
-	const keys = ["mode", "fromReport", "create2", "collateral", "muon", "protocol", "setupInstantLayerTemplates", "registerDummyAffiliate"];
+	if (core.create2 !== undefined) {
+		fail(source, "core.create2", 'has moved to the top-level "create2" block; see deployment/examples/arbitrum.v1.example.json');
+	}
+	const keys = ["mode", "fromReport", "collateral", "muon", "protocol", "setupInstantLayerTemplates", "registerDummyAffiliate"];
 	onlyKeys(core, keys, source, "core");
 	required(core, ["mode"], source, "core");
 	enumValue(core.mode, COMPONENT_MODES, source, "core.mode");
 	if (core.setupInstantLayerTemplates !== undefined) boolean(core.setupInstantLayerTemplates, source, "core.setupInstantLayerTemplates");
 	if (core.registerDummyAffiliate !== undefined) boolean(core.registerDummyAffiliate, source, "core.registerDummyAffiliate");
 	if (networkMode === "live" && core.registerDummyAffiliate === true) fail(source, "core.registerDummyAffiliate", "must be false for live targets");
-
-	if (core.create2 !== undefined) {
-		const create2 = object(core.create2, source, "core.create2");
-		onlyKeys(create2, ["factoryAddress", "vanityPrefix"], source, "core.create2");
-		required(create2, ["vanityPrefix"], source, "core.create2");
-		if (create2.factoryAddress !== undefined) address(create2.factoryAddress, source, "core.create2.factoryAddress");
-		if (typeof create2.vanityPrefix !== "string" || !/^(?:[0-9a-fA-F]{2}){1,4}$/.test(create2.vanityPrefix)) {
-			fail(source, "core.create2.vanityPrefix", "must contain 2, 4, 6, or 8 hexadecimal characters without 0x");
-		}
-	}
 
 	if (core.collateral !== undefined) {
 		const collateral = object(core.collateral, source, "core.collateral");
@@ -285,7 +324,7 @@ function validateCore(value, source, networkMode) {
 	if (core.muon !== undefined) validateMuon(core.muon, source, "core.muon", networkMode);
 	if (core.protocol !== undefined) validateProtocol(core.protocol, source, "core.protocol");
 	if (core.mode === "deploy") {
-		required(core, ["create2", "collateral", "muon", "protocol", "setupInstantLayerTemplates", "registerDummyAffiliate"], source, "core");
+		required(core, ["collateral", "muon", "protocol", "setupInstantLayerTemplates", "registerDummyAffiliate"], source, "core");
 	}
 	if (core.mode === "reuse") {
 		required(core, ["fromReport"], source, "core");
@@ -454,6 +493,7 @@ export function validateDeploymentRecipe(value, source = "deployment recipe") {
 		"secrets",
 		"execution",
 		"governance",
+		"create2",
 		"core",
 		"partyB",
 		"symbolManager",
@@ -462,7 +502,7 @@ export function validateDeploymentRecipe(value, source = "deployment recipe") {
 	onlyKeys(recipe, rootKeys, source, "recipe");
 	required(
 		recipe,
-		rootKeys.filter(key => key !== "$schema"),
+		rootKeys.filter(key => key !== "$schema" && key !== "create2"),
 		source,
 		"recipe",
 	);
@@ -479,6 +519,8 @@ export function validateDeploymentRecipe(value, source = "deployment recipe") {
 	string(network.name, source, "network.name");
 	integer(network.chainId, source, "network.chainId", 1);
 	enumValue(network.mode, ["live", "fork", "local"], source, "network.mode");
+
+	if (recipe.create2 !== undefined) validateCreate2(recipe.create2, source);
 
 	const secrets = object(recipe.secrets, source, "secrets");
 	onlyKeys(secrets, ["deployer", "rpc", "explorer"], source, "secrets");
@@ -804,8 +846,6 @@ export function recipeEnvironment(recipeValue) {
 		DEPLOY_TX_TIMEOUT: String(recipe.execution.txTimeoutSeconds ?? DEFAULT_TX_TIMEOUT_SECONDS),
 		DEPLOY_SLOW_TX_NOTICE: String(recipe.execution.slowNoticeSeconds ?? DEFAULT_SLOW_NOTICE_SECONDS),
 		FORK_BLOCK_NUMBER: recipe.execution.forkBlockNumber === undefined ? "" : String(recipe.execution.forkBlockNumber),
-		CREATE2_FACTORY_ADDRESS: deployCore ? (core.create2?.factoryAddress ?? "") : "",
-		DIAMOND_VANITY_PREFIX: deployCore ? (core.create2?.vanityPrefix ?? "") : "",
 	};
 	const secrets = Object.fromEntries(Object.entries(recipe.secrets).map(([name, ref]) => [name, parseSecretRef(ref, `secrets.${name}`)]));
 	return { env, secrets };

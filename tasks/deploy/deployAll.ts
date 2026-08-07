@@ -69,6 +69,8 @@ import {
 	resetDeploymentTransactionJournal,
 	send,
 } from "./tx.js"
+import { createVanityContext } from "./vanityDeploy.js"
+import { assertWithinBudget, buildVanityPlan, calibrateHashRate, formatVanityPlan } from "./vanityPlan.js"
 
 interface DeploymentResult {
 	contract: string
@@ -327,7 +329,6 @@ export async function validateDeploymentConfig(
 	options: { isSimulated?: boolean } = {},
 ): Promise<void> {
 	validateProtocolConfig(protocolConfig, `protocol config for chainId ${Number(chainId)}`)
-	await resolveCreate2FactoryAddress(ethers, process.env.CREATE2_FACTORY_ADDRESS || "")
 
 	config.admin = requireAddress(ethers, config.admin, "ADMIN_PUBLIC_KEY")
 	config.symmioFeeReceiver = requireAddress(ethers, config.symmioFeeReceiver, "SYMMIO_FEE_RECEIVER")
@@ -771,13 +772,21 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 				chainId: Number(chainId),
 				simulated: isSimulatedNetwork,
 				deployer: deployerAddress,
-				create2: {
-					factoryAddress: process.env.CREATE2_FACTORY_ADDRESS || "",
-					vanityPrefix: process.env.DIAMOND_VANITY_PREFIX || "573310",
-				},
+				create2: recipe?.create2 ?? null,
 				config,
 				protocolConfig,
 			}
+
+			// Resolve vanity intent before any deployment: an unaffordable plan, or a factory
+			// with no code on this chain, must stop the run while nothing has been broadcast.
+			const vanityPlan = buildVanityPlan(recipe?.create2)
+			if (vanityPlan) {
+				await resolveCreate2FactoryAddress(ethers, vanityPlan.factoryAddress)
+				const hashRate = calibrateHashRate()
+				assertWithinBudget(vanityPlan, hashRate)
+				logger.info(formatVanityPlan(vanityPlan, hashRate))
+			}
+			const vanity = createVanityContext(ethers, vanityPlan)
 
 			// Check for existing checkpoint (using chainId as primary identifier)
 			let checkpoint: DeploymentCheckpoint | null = null
@@ -949,7 +958,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 					run: async () => {
 						try {
 							const wasAlreadyComplete = !!checkpoint.contracts.diamond?.diamondCutComplete
-							const diamond = await deployDiamond(hre, { logData, genABI: false, reportGas: false, checkpoint })
+							const diamond = await deployDiamond(hre, { logData, genABI: false, reportGas: false, checkpoint, vanity })
 							deployedContracts.diamond = await diamond.getAddress()
 							logger.info(`Diamond deployed at: ${deployedContracts.diamond}`)
 							deploymentResults.push({
@@ -1074,6 +1083,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 								symmioFeeReceiver: deployer,
 								logData,
 								checkpoint,
+								vanity,
 							})
 							deployedContracts.accountLayerDiamond = accountLayerResult.diamond
 							logger.info(`AccountLayerDiamond deployed at: ${deployedContracts.accountLayerDiamond}`)
@@ -1311,7 +1321,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 									{ core: deployedContracts.diamond!, admin: config.admin },
 									deployerAddress,
 								)
-								const result = await deployAndConfigureExpressProvider(hre, checkpoint, resolved, deployer)
+								const result = await deployAndConfigureExpressProvider(hre, checkpoint, resolved, deployer, vanity)
 								deployedContracts.expressProvider = result.address
 								expressProviderResult = result
 								// verify:all reads this file, so write it before the health gate can throw.

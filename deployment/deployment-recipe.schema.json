@@ -14,6 +14,7 @@
 		"secrets": { "$ref": "#/$defs/secrets" },
 		"execution": { "$ref": "#/$defs/execution" },
 		"governance": { "$ref": "#/$defs/governance" },
+		"create2": { "$ref": "#/$defs/create2" },
 		"core": { "$ref": "#/$defs/core" },
 		"partyB": { "$ref": "#/$defs/partyB" },
 		"symbolManager": { "$ref": "#/$defs/symbolManager" },
@@ -139,13 +140,31 @@
 				"softLiquidationPenaltyCollector": { "$ref": "#/$defs/address" }
 			}
 		},
+		"vanityPattern": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"prefix": { "type": "string", "pattern": "^[0-9a-fA-F]{1,8}$" },
+				"suffix": { "type": "string", "pattern": "^[0-9a-fA-F]{1,8}$" }
+			}
+		},
 		"create2": {
 			"type": "object",
 			"additionalProperties": false,
-			"required": ["vanityPrefix"],
 			"properties": {
 				"factoryAddress": { "$ref": "#/$defs/address" },
-				"vanityPrefix": { "type": "string", "pattern": "^(?:[0-9a-fA-F]{2}){1,4}$" }
+				"groups": {
+					"type": "object",
+					"additionalProperties": false,
+					"properties": {
+						"diamonds": { "$ref": "#/$defs/vanityPattern" },
+						"facets": { "$ref": "#/$defs/vanityPattern" },
+						"libraries": { "$ref": "#/$defs/vanityPattern" },
+						"peripherals": { "$ref": "#/$defs/vanityPattern" }
+					}
+				},
+				"overrides": { "type": "object", "additionalProperties": { "$ref": "#/$defs/vanityPattern" } },
+				"miningBudget": { "type": "integer", "minimum": 1 }
 			}
 		},
 		"collateral": {
@@ -327,7 +346,6 @@
 			"properties": {
 				"mode": { "$ref": "#/$defs/componentMode" },
 				"fromReport": { "type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$" },
-				"create2": { "$ref": "#/$defs/create2" },
 				"collateral": { "$ref": "#/$defs/collateral" },
 				"muon": { "$ref": "#/$defs/muon" },
 				"protocol": { "$ref": "#/$defs/protocol" },
@@ -339,7 +357,7 @@
 					"if": { "type": "object", "properties": { "mode": { "const": "deploy" } }, "required": ["mode"] },
 					"then": {
 						"type": "object",
-						"required": ["create2", "collateral", "muon", "protocol", "setupInstantLayerTemplates", "registerDummyAffiliate"],
+						"required": ["collateral", "muon", "protocol", "setupInstantLayerTemplates", "registerDummyAffiliate"],
 						"not": { "type": "object", "required": ["fromReport"] }
 					}
 				},

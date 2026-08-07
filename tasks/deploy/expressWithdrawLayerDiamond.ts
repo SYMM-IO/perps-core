@@ -3,11 +3,12 @@ import type { NetworkConnection } from "hardhat/types/network"
 
 import { FacetCutAction, getSelectors } from "../utils/diamondCut.js"
 import { createDeployedContract, DeploymentCheckpoint, ExpressProviderCheckpoint, saveCheckpoint } from "./checkpoint.js"
-import { checkpointDeployment, recoverCheckpointContractDeployments } from "./deploymentRecovery.js"
+import { recoverCheckpointContractDeployments } from "./deploymentRecovery.js"
 import { getConnection } from "./helpers.js"
 import { logger } from "./logger.js"
 import { assertStandaloneDeploymentTaskAllowed } from "./safety.js"
-import { confirmDeploymentWithReceipt, send } from "./tx.js"
+import { send } from "./tx.js"
+import { type VanityContext, create2Record, deployContract } from "./vanityDeploy.js"
 
 /** Fully qualified so an ambiguous facet name never resolves to the core/accountLayer twin. */
 export const EXPRESS_FACETS: Record<string, string> = {
@@ -41,19 +42,20 @@ export interface DeployExpressDiamondArgs {
 	symmio: string
 	collateral: string
 	checkpoint?: DeploymentCheckpoint
+	vanity?: VanityContext | null
 }
 
 /**
  * Deploy the ExpressProvider diamond with checkpointed, resumable steps.
  *
- * Every creation is journaled through confirmDeploymentWithReceipt, so an interrupted run
+ * Every creation is journaled through deployContract, so an interrupted run
  * recovers the exact address instead of broadcasting a second deployment. The cut is rebuilt
  * from the live selector map rather than a "did it finish" flag, so a partially applied cut is
  * repaired rather than mistaken for a complete one.
  */
 export async function deployExpressProviderDiamond(
 	hre: HardhatRuntimeEnvironment,
-	{ owner, initAdmin, symmio, collateral, checkpoint }: DeployExpressDiamondArgs,
+	{ owner, initAdmin, symmio, collateral, checkpoint, vanity = null }: DeployExpressDiamondArgs,
 ): Promise<ExpressDiamondDeployment> {
 	const { ethers } = await getConnection(hre)
 	const roleRecipient = initAdmin || owner
@@ -80,14 +82,15 @@ export async function deployExpressProviderDiamond(
 		diamondCutFacetAddress = epCheckpoint.diamondCutFacet.address
 		logger.info(`  ⏭ DiamondCutFacet already deployed at ${diamondCutFacetAddress}`)
 	} else {
-		const factory = await ethers.getContractFactory("DiamondCutFacet")
-		const deployment = await confirmDeploymentWithReceipt(
-			await factory.deploy(),
-			"Express DiamondCutFacet",
-			checkpointDeployment(checkpoint, "contracts.expressProvider.diamondCutFacet"),
-		)
-		diamondCutFacetAddress = deployment.address
-		epCheckpoint.diamondCutFacet = createDeployedContract(diamondCutFacetAddress)
+		const result = await deployContract(vanity, {
+			key: "expressProvider/DiamondCutFacet",
+			component: "contracts.expressProvider.diamondCutFacet",
+			label: "Express DiamondCutFacet",
+			factory: await ethers.getContractFactory("DiamondCutFacet"),
+			checkpoint,
+		})
+		diamondCutFacetAddress = result.address
+		epCheckpoint.diamondCutFacet = createDeployedContract(diamondCutFacetAddress, undefined, create2Record(result))
 		persist()
 		logger.deployed("DiamondCutFacet", diamondCutFacetAddress)
 	}
@@ -97,14 +100,16 @@ export async function deployExpressProviderDiamond(
 		diamondAddress = epCheckpoint.diamond.address
 		logger.info(`  ⏭ ExpressProvider Diamond already deployed at ${diamondAddress}`)
 	} else {
-		const factory = await ethers.getContractFactory("Diamond")
-		const deployment = await confirmDeploymentWithReceipt(
-			await factory.deploy(owner, diamondCutFacetAddress),
-			"Express Diamond",
-			checkpointDeployment(checkpoint, "contracts.expressProvider.diamond", [owner, diamondCutFacetAddress]),
-		)
-		diamondAddress = deployment.address
-		epCheckpoint.diamond = createDeployedContract(diamondAddress, [owner, diamondCutFacetAddress])
+		const result = await deployContract(vanity, {
+			key: "expressProvider/Diamond",
+			component: "contracts.expressProvider.diamond",
+			label: "Express Diamond",
+			factory: await ethers.getContractFactory("Diamond"),
+			constructorArgs: [owner, diamondCutFacetAddress],
+			checkpoint,
+		})
+		diamondAddress = result.address
+		epCheckpoint.diamond = createDeployedContract(diamondAddress, [owner, diamondCutFacetAddress], create2Record(result))
 		persist()
 		logger.deployed("ExpressProvider Diamond", diamondAddress)
 	}
@@ -114,14 +119,15 @@ export async function deployExpressProviderDiamond(
 		initAddress = epCheckpoint.init.address
 		logger.info(`  ⏭ Init already deployed at ${initAddress}`)
 	} else {
-		const factory = await ethers.getContractFactory(EXPRESS_INIT)
-		const deployment = await confirmDeploymentWithReceipt(
-			await factory.deploy(),
-			"Express Init",
-			checkpointDeployment(checkpoint, "contracts.expressProvider.init"),
-		)
-		initAddress = deployment.address
-		epCheckpoint.init = createDeployedContract(initAddress)
+		const result = await deployContract(vanity, {
+			key: "expressProvider/Init",
+			component: "contracts.expressProvider.init",
+			label: "Express Init",
+			factory: await ethers.getContractFactory(EXPRESS_INIT),
+			checkpoint,
+		})
+		initAddress = result.address
+		epCheckpoint.init = createDeployedContract(initAddress, undefined, create2Record(result))
 		persist()
 		logger.deployed("Init", initAddress)
 	}
@@ -139,14 +145,15 @@ export async function deployExpressProviderDiamond(
 			facetAddress = epCheckpoint.facets[name].address
 			logger.info(`  ⏭ [${index + 1}/${facetNames.length}] ${name} already deployed at ${facetAddress}`)
 		} else {
-			const factory = await ethers.getContractFactory(qualified)
-			const deployment = await confirmDeploymentWithReceipt(
-				await factory.deploy(),
-				`Express ${name}`,
-				checkpointDeployment(checkpoint, `contracts.expressProvider.facets.${name}`),
-			)
-			facetAddress = deployment.address
-			epCheckpoint.facets[name] = createDeployedContract(facetAddress)
+			const result = await deployContract(vanity, {
+				key: `expressProvider/${name}`,
+				component: `contracts.expressProvider.facets.${name}`,
+				label: `Express ${name}`,
+				factory: await ethers.getContractFactory(qualified),
+				checkpoint,
+			})
+			facetAddress = result.address
+			epCheckpoint.facets[name] = createDeployedContract(facetAddress, undefined, create2Record(result))
 			persist()
 			logger.deployed(`[${index + 1}/${facetNames.length}] ${name}`, facetAddress)
 		}

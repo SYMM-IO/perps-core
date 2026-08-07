@@ -32,8 +32,8 @@ export async function deployCreate2Factory(hre: any, { logData = true }: { logDa
 		logger.debug("Deployed address written to JSON file")
 	}
 
-	console.log(`\nSet this in your .env for future deployments:`)
-	console.log(`CREATE2_FACTORY_ADDRESS="${address}"`)
+	console.log(`\nAdd this to your deployment recipe:`)
+	console.log(`  "create2": { "factoryAddress": "${address}", "groups": { "facets": { "suffix": "86" } } }`)
 
 	return contract
 }
@@ -45,7 +45,7 @@ export const create2FactoryTask = task("deploy:create2factory", "Deploys the Cre
 			await assertStandaloneDeploymentTaskAllowed(
 				hre,
 				"deploy:create2factory",
-				"For live deployment, use an already reviewed CREATE2 factory address or omit CREATE2_FACTORY_ADDRESS to use ordinary CREATE.",
+				"For live deployment, set an already reviewed CREATE2 factory address in the recipe's create2.factoryAddress, or omit the create2 block to use ordinary CREATE.",
 			)
 			return deployCreate2Factory(hre, { logData })
 		},
