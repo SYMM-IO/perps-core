@@ -749,10 +749,11 @@
 						<div class="dep-gotcha" data-level="blocks">
 							<kbd>Blocks run</kbd>
 							<div>
-								<p><code>CREATE2_FACTORY_ADDRESS</code> left set in <code>.env</code> breaks local and fork runs.</p>
+								<p>A <code>create2.factoryAddress</code> carried over from a live recipe breaks local and fork runs.</p>
 								<p>
 									The address has no code on a simulated chain, and the deployment refuses to silently switch address strategies.
-									Scope that variable to live networks only.
+									Keep the <code>create2</code> block out of local and fork recipes, or point it at a factory deployed on that
+									chain.
 								</p>
 							</div>
 						</div>
@@ -769,10 +770,14 @@
 						<div class="dep-gotcha" data-level="confuses">
 							<kbd>Confuses</kbd>
 							<div>
-								<p><code>core.create2.vanityPrefix</code> alone does nothing on a live chain.</p>
+								<p>Vanity addresses are configured in the top-level <code>create2</code> block, never in the environment.</p>
 								<p>
-									Without a reviewed <code>factoryAddress</code> the deployment uses ordinary CREATE, so you will not get the vanity
-									address you expected.
+									Set <code>create2.groups</code> (<code>diamonds</code>, <code>facets</code>, <code>libraries</code>,
+									<code>peripherals</code>) and optionally <code>create2.overrides</code> keyed as <code>core/PartyAFacet</code>.
+									Declaring any pattern without a reviewed <code>create2.factoryAddress</code> is a validation error rather than a
+									silent fall back to ordinary CREATE. The run prints a mining cost table and refuses to start if the total exceeds
+									<code>create2.miningBudget</code>. Etherscan verification of a CREATE2-deployed facet should be confirmed on a
+									testnet before a mainnet run, since its address no longer derives from the deployer nonce.
 								</p>
 							</div>
 						</div>

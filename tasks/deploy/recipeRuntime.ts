@@ -51,8 +51,6 @@ const PUBLIC_DEPLOYMENT_ENV = [
 	"DEPLOY_TX_TIMEOUT",
 	"DEPLOY_SLOW_TX_NOTICE",
 	"FORK_BLOCK_NUMBER",
-	"CREATE2_FACTORY_ADDRESS",
-	"DIAMOND_VANITY_PREFIX",
 ] as const
 
 function loadActiveRecipe(): ActiveDeploymentRecipe | null {

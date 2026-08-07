@@ -13,6 +13,9 @@ export interface DeployedContract {
 	address: string
 	constructorArgs?: any[]
 	timestamp: string
+	/** Present only for CREATE2 deployments, so the address can be re-derived from init code. */
+	salt?: string
+	create2Factory?: string
 }
 
 export interface DiamondCheckpoint {
@@ -469,11 +472,17 @@ export function clearCheckpoint(chainId: number, network: string, outcome: "comp
 	}
 }
 
-export function createDeployedContract(address: string, constructorArgs?: any[]): DeployedContract {
+export function createDeployedContract(
+	address: string,
+	constructorArgs?: any[],
+	create2?: { salt: string; factoryAddress: string },
+): DeployedContract {
 	return {
 		address,
 		constructorArgs,
 		timestamp: new Date().toISOString(),
+		salt: create2?.salt,
+		create2Factory: create2?.factoryAddress,
 	}
 }
 

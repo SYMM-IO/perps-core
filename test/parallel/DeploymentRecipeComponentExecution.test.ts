@@ -29,10 +29,6 @@ describe("deployment recipe standalone component execution", function () {
 	})
 
 	it("deploys, wires, verifies post-state, and durably reports PartyB and SymbolManager independently", async function () {
-		// The fixture is a local ordinary-CREATE deployment; an operator's ambient live
-		// CREATE2 selection must not turn this isolated test into a wrong-network lookup.
-		delete process.env.CREATE2_FACTORY_ADDRESS
-		delete process.env.DIAMOND_VANITY_PREFIX
 		const context = await loadFixture(initializeFixture)
 		const [admin] = await ethers.getSigners()
 		const networkName = (await hre.network.getOrCreate()).networkName || "default"
@@ -98,8 +94,6 @@ describe("deployment recipe standalone component execution", function () {
 	})
 
 	it("deploys, configures, registers, and hands over an ExpressProvider, then resumes without redeploying", async function () {
-		delete process.env.CREATE2_FACTORY_ADDRESS
-		delete process.env.DIAMOND_VANITY_PREFIX
 		const context = await loadFixture(initializeFixture)
 		const [admin, operator, signer, affiliate] = await ethers.getSigners()
 		const networkName = (await hre.network.getOrCreate()).networkName || "default"
@@ -185,8 +179,6 @@ describe("deployment recipe standalone component execution", function () {
 	})
 
 	it("keeps an ExpressProvider run pending until its admin accepts ownership and core registers it", async function () {
-		delete process.env.CREATE2_FACTORY_ADDRESS
-		delete process.env.DIAMOND_VANITY_PREFIX
 		const context = await loadFixture(initializeFixture)
 		const [deployer, futureAdmin, operator] = await ethers.getSigners()
 		const networkName = (await hre.network.getOrCreate()).networkName || "default"
@@ -237,8 +229,6 @@ describe("deployment recipe standalone component execution", function () {
 	})
 
 	it("patches a deployed ExpressProvider: updates settings, grants new holders, revokes removed ones", async function () {
-		delete process.env.CREATE2_FACTORY_ADDRESS
-		delete process.env.DIAMOND_VANITY_PREFIX
 		const context = await loadFixture(initializeFixture)
 		const [admin, operator, signer, affiliate, newOperator] = await ethers.getSigners()
 		const networkName = (await hre.network.getOrCreate()).networkName || "default"
@@ -317,8 +307,6 @@ describe("deployment recipe standalone component execution", function () {
 	})
 
 	it("an express patch without direct authority queues Safe actions and completes after the admin runs them", async function () {
-		delete process.env.CREATE2_FACTORY_ADDRESS
-		delete process.env.DIAMOND_VANITY_PREFIX
 		const context = await loadFixture(initializeFixture)
 		const [deployer, operator, signer, affiliate, newOperator, futureOwner] = await ethers.getSigners()
 		const networkName = (await hre.network.getOrCreate()).networkName || "default"
@@ -387,8 +375,6 @@ describe("deployment recipe standalone component execution", function () {
 	})
 
 	it("re-probes PartyB and SymbolManager code, wiring, roles, signer, ADL, and operator without writes", async function () {
-		delete process.env.CREATE2_FACTORY_ADDRESS
-		delete process.env.DIAMOND_VANITY_PREFIX
 		const context = await loadFixture(initializeFixture)
 		const [admin, changedSigner] = await ethers.getSigners()
 		const networkName = (await hre.network.getOrCreate()).networkName || "default"
@@ -480,8 +466,6 @@ describe("deployment recipe standalone component execution", function () {
 	})
 
 	it("deploys a PartyB for a separate production admin and resumes without regaining local privileges", async function () {
-		delete process.env.CREATE2_FACTORY_ADDRESS
-		delete process.env.DIAMOND_VANITY_PREFIX
 		const context = await loadFixture(initializeFixture)
 		const [deployer, finalAdmin, partyBSigner] = await ethers.getSigners()
 		const networkName = (await hre.network.getOrCreate()).networkName || "default"

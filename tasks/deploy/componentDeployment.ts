@@ -23,6 +23,7 @@ import {
 	SafeManualAction,
 } from "./deploymentRecipe.js"
 import { persistSubmittedTransaction, recoverCheckpointContractDeployments } from "./deploymentRecovery.js"
+import { resolveCreate2FactoryAddress } from "./diamond.js"
 import { verificationProviderForChain } from "./explorer.js"
 import {
 	createExpressVerificationRecords,
@@ -33,6 +34,7 @@ import {
 import { getConnection } from "./helpers.js"
 import { logger } from "./logger.js"
 import { createSymmioPartyBVerificationRecords, deploySymmioPartyB, SymmioPartyBVerificationRecord } from "./partyB.js"
+import { activeDeploymentRecipe } from "./recipeRuntime.js"
 import { assertMainnetDeploymentIdentitySafe } from "./safety.js"
 import { deploySymbolManager } from "./symbolManager.js"
 import {
@@ -44,6 +46,8 @@ import {
 	resetDeploymentTransactionJournal,
 	send,
 } from "./tx.js"
+import { type VanityContext, createVanityContext } from "./vanityDeploy.js"
+import { buildVanityPlan } from "./vanityPlan.js"
 
 type VerificationRecord = { name: string; address: string; constructorArguments: unknown[] }
 type ComponentLifecycle = "validating" | "pending_handover" | "complete" | "failed"
@@ -836,6 +840,7 @@ export async function deployAndConfigureExpressProvider(
 	checkpoint: DeploymentCheckpoint,
 	resolved: Omit<ExpressProviderResolvedConfig, "address">,
 	deployer: any,
+	vanity: VanityContext | null = null,
 ): Promise<{ address: string; records: VerificationRecord[]; manualActions: SafeManualAction[]; checks: ComponentHealthCheck[] }> {
 	const { ethers } = await getConnection(hre)
 
@@ -847,6 +852,7 @@ export async function deployAndConfigureExpressProvider(
 		symmio: resolved.core,
 		collateral: resolved.collateral,
 		checkpoint,
+		vanity,
 	})
 	const address = deployment.diamond
 	const records = createExpressVerificationRecords(
@@ -999,7 +1005,11 @@ async function executeExpressProvider(
 		{ core: input.coreReport.addresses.diamond, admin: input.coreReport.config.admin },
 		deployer.address,
 	)
-	return deployAndConfigureExpressProvider(hre, checkpoint, resolved, deployer)
+	// A standalone `--only expressProvider` run has no outer deployment to inherit from, so it
+	// builds its vanity context from the same recipe block the full run uses.
+	const vanityPlan = buildVanityPlan(activeDeploymentRecipe?.recipe.create2)
+	if (vanityPlan) await resolveCreate2FactoryAddress(ethers, vanityPlan.factoryAddress)
+	return deployAndConfigureExpressProvider(hre, checkpoint, resolved, deployer, createVanityContext(ethers, vanityPlan))
 }
 
 // ═══════════════════════ ExpressProvider patch (reuse-as-reconcile) ═══════════════════════

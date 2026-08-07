@@ -62,7 +62,6 @@ function localRecipe() {
 		},
 		core: {
 			mode: "deploy",
-			create2: { vanityPrefix: "573310" },
 			collateral: { mode: "deploy" },
 			muon: { mode: "mock", upnlValidTime: "300", priceValidTime: "300" },
 			protocol: protocol(),
@@ -122,13 +121,53 @@ test("recipe validation is strict at every layer and enforces conditional addres
 	assert.throws(() => validateDeploymentRecipe(unsafeName), /must be a safe 1-128 character slug/);
 
 	const invalidVanity = localRecipe();
-	invalidVanity.core.create2.vanityPrefix = "abc";
-	assert.throws(() => validateDeploymentRecipe(invalidVanity), /2, 4, 6, or 8 hexadecimal characters/);
+	invalidVanity.create2 = { groups: { facets: { suffix: "abc-" } } };
+	assert.throws(() => validateDeploymentRecipe(invalidVanity), /1-8 hexadecimal characters/);
 
 	const minimalCoreReuse = localRecipe();
 	minimalCoreReuse.core = { mode: "reuse", fromReport: "../tasks/data/42161/deployment-report.json" };
 	minimalCoreReuse.governance = { admin: A };
 	assert.equal(validateDeploymentRecipe(minimalCoreReuse).core.mode, "reuse");
+});
+
+test("create2 vanity configuration lives in a top-level block with qualified overrides", () => {
+	const factory = "0x4e59b44847b379578588920cA78FbF26c0B4956C";
+
+	const configured = localRecipe();
+	configured.create2 = {
+		factoryAddress: factory,
+		groups: { diamonds: { prefix: "573310" }, facets: { suffix: "86" } },
+		overrides: { "core/PartyAFacet": { suffix: "8686" } },
+		miningBudget: 1000000,
+	};
+	assert.doesNotThrow(() => validateDeploymentRecipe(configured));
+
+	const legacy = localRecipe();
+	legacy.core.create2 = { vanityPrefix: "573310" };
+	assert.throws(() => validateDeploymentRecipe(legacy), /core\.create2 has moved to the top-level "create2" block/);
+
+	const unqualified = localRecipe();
+	unqualified.create2 = { factoryAddress: factory, overrides: { ControlFacet: { suffix: "86" } } };
+	assert.throws(() => validateDeploymentRecipe(unqualified), /is not a known deployable contract/);
+
+	const unknownContract = localRecipe();
+	unknownContract.create2 = { factoryAddress: factory, overrides: { "core/NotAFacet": { suffix: "86" } } };
+	assert.throws(() => validateDeploymentRecipe(unknownContract), /is not a known deployable contract/);
+
+	const unknownGroup = localRecipe();
+	unknownGroup.create2 = { factoryAddress: factory, groups: { widgets: { suffix: "86" } } };
+	assert.throws(() => validateDeploymentRecipe(unknownGroup), /create2\.groups\.widgets is not a supported field/);
+
+	const withoutFactory = localRecipe();
+	withoutFactory.create2 = { groups: { facets: { suffix: "86" } } };
+	assert.throws(() => validateDeploymentRecipe(withoutFactory), /create2\.factoryAddress is required/);
+
+	const declaredNothing = localRecipe();
+	declaredNothing.create2 = { groups: { facets: {} } };
+	assert.doesNotThrow(() => validateDeploymentRecipe(declaredNothing));
+
+	const absent = localRecipe();
+	assert.doesNotThrow(() => validateDeploymentRecipe(absent));
 });
 
 test("execution policy uses task-compatible ranges and fork-only block pinning", () => {
@@ -456,8 +495,8 @@ test("environment projection contains public values and unresolved secret metada
 	assert.equal(projected.env.ADMIN_PUBLIC_KEY, A);
 	assert.equal(projected.env.DEPLOY_CONFIRMATIONS, "2");
 	assert.equal(projected.env.DEPLOY_TX_TIMEOUT, "90");
-	assert.equal(projected.env.DIAMOND_VANITY_PREFIX, "573310");
-	assert.equal(projected.env.CREATE2_FACTORY_ADDRESS, "");
+	assert.equal(Object.hasOwn(projected.env, "DIAMOND_VANITY_PREFIX"), false);
+	assert.equal(Object.hasOwn(projected.env, "CREATE2_FACTORY_ADDRESS"), false);
 	assert.deepEqual(projected.secrets.deployer, { provider: "env", key: "ULTRA_SECRET" });
 	assert.deepEqual(projected.secrets.rpc, { provider: "hardhat-keystore", key: "RPC_LOCAL" });
 	assert.equal(Object.hasOwn(projected.env, "NEW_DEPLOYER"), false);
