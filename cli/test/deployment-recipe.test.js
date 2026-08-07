@@ -404,14 +404,42 @@ test("ExpressProvider rejects unknown roles, duplicate affiliates and unreachabl
 	assert.throws(() => createDeploymentPlan(feeRate), /feeRate must be <= 10000/);
 });
 
-test("ExpressProvider reuse and skip reject deploy-only configuration", () => {
-	const reuse = localRecipe();
-	reuse.expressProvider = { mode: "reuse", address: C, registerOnCore: true };
-	assert.throws(() => createDeploymentPlan(reuse), /registerOnCore must be omitted when mode is reuse/);
-
+test("ExpressProvider skip still rejects configuration, and reuse stays out of full runs", () => {
 	const skip = localRecipe();
 	skip.expressProvider = { mode: "skip", roles: { OPERATOR_ROLE: [B] } };
 	assert.throws(() => createDeploymentPlan(skip), /roles must be omitted when mode is skip/);
+
+	// reuse + sections is a patch, but a patch is --only-scoped: a full run must not
+	// silently reconcile a provider while deploying everything else.
+	const full = localRecipe();
+	full.expressProvider = { mode: "reuse", address: C, roles: { OPERATOR_ROLE: [B] } };
+	assert.throws(() => createDeploymentPlan(full), /deploy or skip/);
+});
+
+function patchRecipe(expressProvider) {
+	const recipe = localRecipe();
+	recipe.name = "local-express-patch";
+	recipe.core = { mode: "reuse", fromReport: "./core-report.json" };
+	recipe.partyB = { mode: "skip", adlEnabled: false };
+	recipe.symbolManager = { mode: "skip" };
+	recipe.expressProvider = expressProvider;
+	return recipe;
+}
+
+test("an ExpressProvider patch plans with --only and validates its declared sections", () => {
+	const plan = createDeploymentPlan(patchRecipe({ mode: "reuse", address: C, roles: { OPERATOR_ROLE: [B] } }), { only: "expressProvider" });
+	assert.equal(plan.components.find(component => component.name === "expressProvider")?.mode, "reuse");
+
+	// Declared sections are validated exactly as strictly as a deploy would validate them.
+	assert.throws(
+		() => createDeploymentPlan(patchRecipe({ mode: "reuse", address: C, roles: { PAUSER_ROLE: [B] } }), { only: "expressProvider" }),
+		/OPERATOR_ROLE/,
+	);
+	assert.throws(
+		() => createDeploymentPlan(patchRecipe({ mode: "reuse", address: C, securityWindow: 5 }), { only: "expressProvider" }),
+		/securityWindow/,
+	);
+	assert.throws(() => createDeploymentPlan(patchRecipe({ mode: "reuse", roles: { OPERATOR_ROLE: [B] } }), { only: "expressProvider" }), /address/);
 });
 
 test("environment projection contains public values and unresolved secret metadata only", () => {

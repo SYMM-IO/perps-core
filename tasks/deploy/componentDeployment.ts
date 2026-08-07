@@ -31,6 +31,7 @@ import {
 	EXPRESS_FACETS,
 } from "./expressWithdrawLayerDiamond.js"
 import { getConnection } from "./helpers.js"
+import { logger } from "./logger.js"
 import { createSymmioPartyBVerificationRecords, deploySymmioPartyB, SymmioPartyBVerificationRecord } from "./partyB.js"
 import { assertMainnetDeploymentIdentitySafe } from "./safety.js"
 import { deploySymbolManager } from "./symbolManager.js"
@@ -79,15 +80,19 @@ export interface ComponentDeploymentReport {
 	component: DeploymentComponentName
 	network: string
 	chainId: number
-	mode: "deploy"
+	mode: "deploy" | "patch"
 	lifecycle: ComponentLifecycle
 	config: {
 		admin: string
 		signer?: string
 		adlEnabled?: boolean
 		operator?: string
-		/** The exact resolved intent, so a later status run re-proves the same state deploy gated on. */
-		expressProvider?: Omit<ExpressProviderResolvedConfig, "address">
+		/**
+		 * The exact applied intent, so a later status run re-proves the same state this run
+		 * gated on. A deploy stores the full resolved config; a patch stores the baseline
+		 * merged with every section it declared — the next patch computes removals from it.
+		 */
+		expressProvider?: ExpressStoredConfig
 	}
 	coreDependency: { reportPath: string; deploymentId: string; diamond: string; instantLayer: string }
 	address?: string
@@ -549,7 +554,7 @@ export async function assertComponentDeploymentAuthority(
 		return
 	}
 
-	if (component === "expressProvider" && componentConfig.registerOnCore === true) {
+	if (component === "expressProvider" && componentConfig.registerOnCore !== undefined) {
 		// Without core registration the provider cannot call advanceWithdraw, so a run that can
 		// neither register it nor hand a usable Safe action to someone who can is inert.
 		const providerAdminRole = roleHash("PROVIDER_ADMIN_ROLE")
@@ -997,12 +1002,407 @@ async function executeExpressProvider(
 	return deployAndConfigureExpressProvider(hre, checkpoint, resolved, deployer)
 }
 
+// ═══════════════════════ ExpressProvider patch (reuse-as-reconcile) ═══════════════════════
+//
+// A patch recipe sets expressProvider.mode to "reuse" with the deployed address and declares
+// the sections it wants enforced. Declared sections are authoritative desired state — holders
+// missing on chain are granted, holders present in the last applied config but absent from the
+// recipe are revoked. Omitted sections are left untouched. Every mutation the signer lacks
+// authority for becomes a Safe-ready manual action, exactly like the deploy handover.
+
+/** What a report stores as applied intent: full for a deploy, per-declared-section for a patch. */
+export type ExpressStoredConfig = Partial<Omit<ExpressProviderResolvedConfig, "address" | "admin" | "deployer" | "core">> & {
+	admin: string
+	deployer: string
+	core: string
+}
+
+export type ExpressPatchConfig = ExpressStoredConfig & { address: string }
+
+/** Resolve a patch's inputs. Only declared sections are resolved; the rest stay undefined. */
+export async function resolveExpressPatchConfig(
+	ethers: any,
+	componentConfig: Record<string, any>,
+	target: { core: string; admin: string },
+	deployerAddress: string,
+): Promise<ExpressPatchConfig> {
+	const core = ethers.getAddress(target.core)
+	const admin = await requireAddress(ethers, componentConfig.admin || target.admin, "expressProvider.admin")
+	const address = await requireAddress(ethers, componentConfig.address, "expressProvider.address")
+	const resolved: ExpressPatchConfig = { address, admin, deployer: ethers.getAddress(deployerAddress), core }
+
+	if (componentConfig.creditLine !== undefined) {
+		const declared = componentConfig.creditLine.signatureVerifier
+		const signatureVerifier =
+			declared === "fromCore"
+				? ethers.getAddress(
+						await (await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", core)).getSignatureVerifier(),
+					)
+				: await requireAddress(ethers, declared, "expressProvider.creditLine.signatureVerifier")
+		if ((await ethers.provider.getCode(signatureVerifier)) === "0x") {
+			throw new Error(`expressProvider.creditLine.signatureVerifier has no contract code at ${signatureVerifier}`)
+		}
+		resolved.signatureVerifier = signatureVerifier
+		resolved.muonAppId = componentConfig.creditLine.muonAppId
+		resolved.muonFreshnessWindow = componentConfig.creditLine.muonFreshnessWindow
+	}
+	if (componentConfig.securityWindow !== undefined) resolved.securityWindow = componentConfig.securityWindow
+	if (componentConfig.tolerancePeriod !== undefined) resolved.tolerancePeriod = componentConfig.tolerancePeriod
+	if (componentConfig.registerOnCore !== undefined) resolved.registerOnCore = componentConfig.registerOnCore === true
+	if (componentConfig.roles !== undefined) {
+		const roles: Record<string, string[]> = {}
+		for (const [role, holders] of Object.entries(componentConfig.roles)) {
+			roles[role] = await Promise.all((holders as string[]).map(holder => requireAddress(ethers, holder, `expressProvider.roles.${role}`)))
+		}
+		resolved.roles = roles
+	}
+	if (componentConfig.affiliates !== undefined) {
+		const affiliates: ExpressAffiliateConfig[] = []
+		for (const [index, entry] of componentConfig.affiliates.entries()) {
+			affiliates.push({
+				...entry,
+				address: await requireAddress(ethers, entry.address, `expressProvider.affiliates[${index}].address`),
+				validators: entry.validators
+					? await Promise.all(
+							(entry.validators as string[]).map((validator: string, position: number) =>
+								requireAddress(ethers, validator, `expressProvider.affiliates[${index}].validators[${position}]`),
+							),
+						)
+					: undefined,
+			})
+		}
+		resolved.affiliates = affiliates
+	}
+	return resolved
+}
+
+interface ExpressPatchItem {
+	/** Stable identity for before/after comparison. */
+	id: string
+	description: string
+	to: string
+	data: string
+	/** Direct-execution route when the signer is authorized. */
+	method: string
+	args: unknown[]
+	authority: "setter" | "owner" | "providerAdmin"
+}
+
+export interface ExpressPatchDrift {
+	items: ExpressPatchItem[]
+	/** Affiliates present in the baseline but dropped from the recipe — never auto-cleared. */
+	removedAffiliates: string[]
+}
+
+/**
+ * Read-only diff between the live provider and the patch's declared sections. Run once to
+ * decide what to send, and run again afterwards: anything still listed must be covered by a
+ * queued Safe action, or the patch failed. Removals come from the baseline (the last applied
+ * config in the component report) because on-chain role holders cannot be enumerated.
+ */
+export async function computeExpressPatchDrift(
+	ethers: any,
+	desired: ExpressPatchConfig,
+	baseline: ExpressStoredConfig | null,
+): Promise<ExpressPatchDrift> {
+	const address = ethers.getAddress(desired.address)
+	const view = await ethers.getContractAt(EXPRESS_FACETS.ViewFacet, address)
+	const control = await ethers.getContractAt(EXPRESS_CONTROL_FACET, address)
+	const roleHash = (name: string) => ethers.keccak256(ethers.toUtf8Bytes(name))
+	const items: ExpressPatchItem[] = []
+	const setter = (id: string, description: string, method: string, args: unknown[]) =>
+		items.push({ id, description, to: address, data: control.interface.encodeFunctionData(method, args), method, args, authority: "setter" })
+
+	if (desired.signatureVerifier !== undefined) {
+		const [verifier, appId, freshness] = await Promise.all([
+			view.creditLineSignatureVerifier(),
+			view.creditLineMuonAppId(),
+			view.creditLineMuonFreshnessWindow(),
+		])
+		if (
+			ethers.getAddress(verifier) !== desired.signatureVerifier ||
+			appId.toString() !== desired.muonAppId ||
+			Number(freshness) !== desired.muonFreshnessWindow
+		) {
+			setter("creditLine", `Set credit line Muon config on ExpressProvider ${address}`, "setCreditLineMuonConfig", [
+				desired.signatureVerifier,
+				desired.muonAppId,
+				desired.muonFreshnessWindow,
+			])
+		}
+	}
+	if (desired.securityWindow !== undefined && Number(await view.securityWindow()) !== desired.securityWindow) {
+		setter("securityWindow", `Set security window to ${desired.securityWindow}s`, "setSecurityWindow", [desired.securityWindow])
+	}
+	if (desired.tolerancePeriod !== undefined && Number(await view.tolerancePeriod()) !== desired.tolerancePeriod) {
+		setter("tolerancePeriod", `Set tolerance period to ${desired.tolerancePeriod}s`, "setTolerancePeriod", [desired.tolerancePeriod])
+	}
+
+	if (desired.roles !== undefined) {
+		const wanted = new Set<string>()
+		for (const [role, holders] of Object.entries(desired.roles)) {
+			for (const holder of holders) {
+				wanted.add(`${role}:${holder.toLowerCase()}`)
+				if (!(await view.hasRole(roleHash(role), holder))) {
+					items.push({
+						id: `grant:${role}:${holder.toLowerCase()}`,
+						description: `Grant ExpressProvider ${role} to ${holder}`,
+						to: address,
+						data: control.interface.encodeFunctionData("grantRole", [roleHash(role), holder]),
+						method: "grantRole",
+						args: [roleHash(role), holder],
+						authority: "owner",
+					})
+				}
+			}
+		}
+		for (const [role, holders] of Object.entries(baseline?.roles ?? {})) {
+			for (const holder of holders) {
+				if (wanted.has(`${role}:${holder.toLowerCase()}`)) continue
+				if (!(await view.hasRole(roleHash(role), holder))) continue
+				items.push({
+					id: `revoke:${role}:${holder.toLowerCase()}`,
+					description: `Revoke ExpressProvider ${role} from ${holder} (removed from the recipe)`,
+					to: address,
+					data: control.interface.encodeFunctionData("revokeRole", [roleHash(role), holder]),
+					method: "revokeRole",
+					args: [roleHash(role), holder],
+					authority: "owner",
+				})
+			}
+		}
+	}
+
+	const removedAffiliates: string[] = []
+	if (desired.affiliates !== undefined) {
+		const baselineByAddress = new Map((baseline?.affiliates ?? []).map(entry => [entry.address.toLowerCase(), entry]))
+		for (const affiliate of desired.affiliates) {
+			const target = ethers.getAddress(affiliate.address)
+			const [config, maxDebt, maxDebtBps, approvalTimeout, minSignatures] = await Promise.all([
+				view.affiliateConfigs(target),
+				view.creditLineProtocolMaxDebt(target),
+				view.creditLineProtocolMaxDebtBps(target),
+				view.validatorApprovalTimeout(target),
+				view.minValidatorSignatures(target),
+			])
+			if (config[0].toString() !== affiliate.feeRate || config[1].toString() !== affiliate.operatorFee) {
+				setter(`affiliateConfig:${target.toLowerCase()}`, `Set fee config for affiliate ${target}`, "setAffiliateConfig", [
+					target,
+					affiliate.feeRate,
+					affiliate.operatorFee,
+				])
+			}
+			if (maxDebt.toString() !== affiliate.maxDebt || Number(maxDebtBps) !== affiliate.maxDebtBps) {
+				setter(`credit caps:${target.toLowerCase()}`, `Set protocol credit caps for affiliate ${target}`, "setCreditLineProtocolConfig", [
+					target,
+					affiliate.maxDebt,
+					affiliate.maxDebtBps,
+				])
+			}
+			const wantedValidators = new Set((affiliate.validators ?? []).map(validator => validator.toLowerCase()))
+			for (const validator of affiliate.validators ?? []) {
+				if (!(await view.isValidator(target, validator))) {
+					setter(`validator+:${target.toLowerCase()}:${validator.toLowerCase()}`, `Enable validator ${validator} for ${target}`, "setValidator", [
+						target,
+						validator,
+						true,
+					])
+				}
+			}
+			const baselineEntry = baselineByAddress.get(target.toLowerCase())
+			if (affiliate.validators !== undefined) {
+				for (const validator of baselineEntry?.validators ?? []) {
+					if (wantedValidators.has(validator.toLowerCase())) continue
+					if (!(await view.isValidator(target, validator))) continue
+					setter(
+						`validator-:${target.toLowerCase()}:${validator.toLowerCase()}`,
+						`Disable validator ${validator} for ${target} (removed from the recipe)`,
+						"setValidator",
+						[target, validator, false],
+					)
+				}
+			}
+			if (affiliate.validatorApprovalTimeout !== undefined && Number(approvalTimeout) !== affiliate.validatorApprovalTimeout) {
+				setter(`validatorTimeout:${target.toLowerCase()}`, `Set validator approval timeout for ${target}`, "setValidatorApprovalTimeout", [
+					target,
+					affiliate.validatorApprovalTimeout,
+				])
+			}
+			// Threshold last, so it is never raised above the validators that exist at that moment.
+			if (affiliate.minValidatorSignatures !== undefined && Number(minSignatures) !== affiliate.minValidatorSignatures) {
+				setter(`minSignatures:${target.toLowerCase()}`, `Set minimum validator signatures for ${target}`, "setMinValidatorSignatures", [
+					target,
+					affiliate.minValidatorSignatures,
+				])
+			}
+		}
+		for (const entry of baseline?.affiliates ?? []) {
+			if (!desired.affiliates.some(affiliate => affiliate.address.toLowerCase() === entry.address.toLowerCase())) {
+				removedAffiliates.push(entry.address)
+			}
+		}
+	}
+
+	if (desired.registerOnCore !== undefined) {
+		const coreView = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", desired.core)
+		const coreControl = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", desired.core)
+		const registered: boolean = await coreView.isExpressProviderRegistered(address)
+		if (registered !== desired.registerOnCore) {
+			const method = desired.registerOnCore ? "registerExpressProvider" : "unregisterExpressProvider"
+			items.push({
+				id: `registration:${desired.registerOnCore}`,
+				description: `${desired.registerOnCore ? "Register" : "Unregister"} ExpressProvider ${address} on core`,
+				to: desired.core,
+				data: coreControl.interface.encodeFunctionData(method, [address]),
+				method,
+				args: [address],
+				authority: "providerAdmin",
+			})
+		}
+	}
+
+	return { items, removedAffiliates }
+}
+
+/** Reconcile a deployed ExpressProvider to the patch recipe. Never deploys anything. */
+async function patchExpressProvider(
+	hre: any,
+	checkpoint: DeploymentCheckpoint,
+	input: ComponentExecutionInput,
+	deployer: any,
+	priorReport: any,
+): Promise<{
+	address: string
+	records: VerificationRecord[]
+	manualActions: SafeManualAction[]
+	checks: ComponentHealthCheck[]
+	appliedConfig: ExpressStoredConfig
+}> {
+	const { ethers } = await getConnection(hre)
+	const resolved = await resolveExpressPatchConfig(
+		ethers,
+		input.componentConfig,
+		{ core: input.coreReport.addresses.diamond, admin: input.coreReport.config.admin },
+		deployer.address,
+	)
+	const address = resolved.address
+	if ((await ethers.provider.getCode(address)) === "0x") {
+		throw new Error(`expressProvider.address has no contract code on this chain: ${address}`)
+	}
+	const view = await ethers.getContractAt(EXPRESS_FACETS.ViewFacet, address)
+	const control = await ethers.getContractAt(EXPRESS_CONTROL_FACET, address)
+	const boundCore = ethers.getAddress(await view.symmio())
+	if (boundCore !== resolved.core) {
+		throw new Error(`DEPENDENCY_UNAVAILABLE: provider ${address} is bound to core ${boundCore}, not the recipe's core ${resolved.core}`)
+	}
+
+	// The baseline is the last applied config this recipe recorded for this exact provider,
+	// captured by the caller before this run's report write could replace it. Without one,
+	// the patch can add and update but has no evidence from which to remove.
+	const baseline: ExpressStoredConfig | null =
+		priorReport &&
+		typeof priorReport.address === "string" &&
+		ethers.getAddress(priorReport.address) === address &&
+		priorReport.config?.expressProvider
+			? (priorReport.config.expressProvider as ExpressStoredConfig)
+			: null
+	if (!baseline && (resolved.roles !== undefined || resolved.affiliates !== undefined)) {
+		logger.warn("No prior applied config found for this provider under this recipe; this patch can add and update but not compute removals.")
+	}
+
+	const drift = await computeExpressPatchDrift(ethers, resolved, baseline)
+	for (const affiliate of drift.removedAffiliates) {
+		logger.warn(
+			`Affiliate ${affiliate} was removed from the recipe but its on-chain config is left as-is: ` +
+				`clearing its caps would mean "no limit". Pause or reconfigure it explicitly if you intend to retire it.`,
+		)
+	}
+
+	// Prove every drift item has a real executor before sending anything: the signer directly,
+	// or the admin via the Safe actions this run will print.
+	const roleHash = (name: string) => ethers.keccak256(ethers.toUtf8Bytes(name))
+	const coreView = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", resolved.core)
+	const owner = ethers.getAddress(await control.owner())
+	const ownerIsDeployer = owner === resolved.deployer
+	const [deployerIsSetter, adminIsSetter] = await Promise.all([
+		view.hasRole(roleHash("SETTER_ROLE"), resolved.deployer),
+		view.hasRole(roleHash("SETTER_ROLE"), resolved.admin),
+	])
+	const needs = new Set(drift.items.map(item => item.authority))
+	if (needs.has("owner") && !ownerIsDeployer && owner !== resolved.admin) {
+		throw new Error(`AUTHORITY_MISSING: ExpressProvider owner is ${owner}; neither the deployer nor the recipe admin can execute role changes`)
+	}
+	if (needs.has("setter") && !deployerIsSetter && !adminIsSetter) {
+		throw new Error(`AUTHORITY_MISSING: neither deployer ${resolved.deployer} nor admin ${resolved.admin} holds ExpressProvider SETTER_ROLE`)
+	}
+	if (needs.has("providerAdmin")) {
+		const providerAdminRole = roleHash("PROVIDER_ADMIN_ROLE")
+		const [deployerCan, adminCan] = await Promise.all([
+			coreView.hasRole(resolved.deployer, providerAdminRole),
+			coreView.hasRole(resolved.admin, providerAdminRole),
+		])
+		if (!deployerCan && !adminCan) {
+			throw new Error(`AUTHORITY_MISSING: neither deployer ${resolved.deployer} nor admin ${resolved.admin} holds core PROVIDER_ADMIN_ROLE`)
+		}
+	}
+
+	const canExecute: Record<ExpressPatchItem["authority"], boolean> = {
+		setter: deployerIsSetter,
+		owner: ownerIsDeployer,
+		providerAdmin: await coreView.hasRole(resolved.deployer, roleHash("PROVIDER_ADMIN_ROLE")),
+	}
+	const coreControl = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", resolved.core)
+	const manualActions: SafeManualAction[] = []
+	for (const item of drift.items) {
+		if (canExecute[item.authority]) {
+			const contract = item.to === resolved.core ? coreControl : control
+			await send((contract.connect(deployer) as any)[item.method](...item.args), item.description)
+		} else {
+			manualActions.push(safeAction(item.to, item.data, item.description))
+		}
+	}
+
+	// Recompute from the chain: everything still drifting must be covered by a queued action.
+	const remaining = await computeExpressPatchDrift(ethers, resolved, baseline)
+	const queued = new Set(manualActions.map(action => `${action.to.toLowerCase()}:${action.data.toLowerCase()}`))
+	const remainingIds = new Set(remaining.items.map(item => item.id))
+	const checks: ComponentHealthCheck[] = []
+	const check = (name: string, pass: boolean, pending = false) =>
+		checks.push({ check: name, status: pass ? "passed" : pending ? "pending" : "failed" })
+	check("runtime bytecode", true)
+	checks.push({ check: "bound to the recipe's core", status: "passed", expected: resolved.core, actual: boundCore })
+	if (drift.items.length === 0) check("provider already matches the recipe — nothing to change", true)
+	for (const item of drift.items) {
+		if (!remainingIds.has(item.id)) check(item.description, true)
+		else if (queued.has(`${item.to.toLowerCase()}:${item.data.toLowerCase()}`)) check(item.description, false, true)
+		else check(item.description, false)
+	}
+
+	// The next patch's baseline: previous applied state overlaid with every declared section.
+	const appliedConfig: ExpressStoredConfig = { ...(baseline ?? {}), admin: resolved.admin, deployer: resolved.deployer, core: resolved.core }
+	for (const key of [
+		"signatureVerifier",
+		"muonAppId",
+		"muonFreshnessWindow",
+		"securityWindow",
+		"tolerancePeriod",
+		"registerOnCore",
+		"roles",
+		"affiliates",
+	] as const) {
+		if (resolved[key] !== undefined) (appliedConfig as any)[key] = resolved[key]
+	}
+
+	return { address, records: [], manualActions, checks, appliedConfig }
+}
+
 /** Execute one safely resumable product component against a previously proven core. */
 export async function executeComponentDeployment(hre: any, input: ComponentExecutionInput) {
 	if (input.component !== "partyB" && input.component !== "symbolManager" && input.component !== "expressProvider") {
 		throw new Error(`LIVE_TARGET_UNSUPPORTED: component ${input.component} has no complete safe deployment workflow`)
 	}
-	if (input.componentConfig.mode !== "deploy") {
+	const isPatch = input.component === "expressProvider" && input.componentConfig.mode === "reuse"
+	if (input.componentConfig.mode !== "deploy" && !isPatch) {
 		throw new Error(`LIVE_TARGET_UNSUPPORTED: deploy:component requires ${input.component}.mode=deploy; received ${input.componentConfig.mode}`)
 	}
 
@@ -1035,6 +1435,14 @@ export async function executeComponentDeployment(hre: any, input: ComponentExecu
 		}
 	} else if (input.component === "symbolManager") {
 		publicConfig = { admin: componentAdmin, operator: ethers.getAddress(input.componentConfig.operator) }
+	} else if (isPatch) {
+		const resolved = await resolveExpressPatchConfig(
+			ethers,
+			input.componentConfig,
+			{ core: input.coreReport.addresses.diamond, admin: input.coreReport.config.admin },
+			deployer.address,
+		)
+		publicConfig = { admin: componentAdmin, expressProvider: resolved }
 	} else {
 		const resolved = await resolveExpressProviderConfig(
 			ethers,
@@ -1046,33 +1454,50 @@ export async function executeComponentDeployment(hre: any, input: ComponentExecu
 	}
 
 	const live = input.target.mode === "live"
-	if (live && !input.verify) throw new Error("Explorer verification is mandatory for live component deployments; --verify=false is refused")
+	if (live && !input.verify && !isPatch) {
+		throw new Error("Explorer verification is mandatory for live component deployments; --verify=false is refused")
+	}
 	setDataScope(chainId, { simulated })
 	setCheckpointSimulated(simulated)
 	const scope = componentCheckpointScope(input.recipeName, input.component)
+	// Capture the last applied config BEFORE this run writes anything: a patch computes its
+	// removals against it, and the initial report write below would otherwise destroy it.
+	const priorComponentReport = isPatch ? readDataIfExists(componentReportRelativePath(input.recipeName, input.component)) : null
 	const existingCheckpoint = loadCheckpoint(chainId, scope)
 	if (input.fresh && existingCheckpoint) {
 		clearCheckpoint(chainId, network, existingCheckpoint.step === "complete" ? "completed" : "abandoned", scope)
 	}
 	let checkpoint = input.fresh ? null : existingCheckpoint
-	const isResume = checkpoint !== null
+	let isResume = checkpoint !== null
 	checkpoint ||= createCheckpoint(network, chainId, scope)
-	const manifest = createDeploymentManifest(
-		{
-			recipe: { name: input.recipeName, path: input.recipePath, digest: input.recipeDigest },
-			component: input.component,
-			componentConfig: input.componentConfig,
-			coreDependency: {
-				deploymentId: input.coreReport.deploymentId,
-				diamond: input.coreReport.addresses.diamond,
-				instantLayer: input.coreReport.addresses.instantLayer,
-			},
-			deployer: deployer.address,
-			network: input.target,
+	const manifestIntent = {
+		recipe: { name: input.recipeName, path: input.recipePath, digest: input.recipeDigest },
+		component: input.component,
+		componentConfig: input.componentConfig,
+		coreDependency: {
+			deploymentId: input.coreReport.deploymentId,
+			diamond: input.coreReport.addresses.diamond,
+			instantLayer: input.coreReport.addresses.instantLayer,
 		},
-		{ deploymentId: checkpoint.deploymentId || checkpoint.manifest?.deploymentId },
-	)
-	if (isResume) assertCheckpointManifest(checkpoint, manifest)
+		deployer: deployer.address,
+		network: input.target,
+	}
+	let manifest = createDeploymentManifest(manifestIntent, { deploymentId: checkpoint.deploymentId || checkpoint.manifest?.deploymentId })
+	if (isResume) {
+		try {
+			assertCheckpointManifest(checkpoint, manifest)
+		} catch (error) {
+			// A COMPLETED attempt is durable history, not a lock: new intent — a patch after a
+			// deploy, or a second patch with different settings — starts its own attempt and
+			// archives the finished checkpoint, exactly as --fresh would. An unfinished attempt
+			// still binds; finish or explicitly abandon it first.
+			if (checkpoint.step !== "complete") throw error
+			clearCheckpoint(chainId, network, "completed", scope)
+			checkpoint = createCheckpoint(network, chainId, scope)
+			isResume = false
+			manifest = createDeploymentManifest(manifestIntent, {})
+		}
+	}
 	archivePriorComponentReport(input.recipeName, input.component, manifest.deploymentId)
 	checkpoint.deploymentId = manifest.deploymentId
 	checkpoint.deployerAddress = deployer.address
@@ -1096,7 +1521,7 @@ export async function executeComponentDeployment(hre: any, input: ComponentExecu
 		component: input.component,
 		network,
 		chainId,
-		mode: "deploy",
+		mode: isPatch ? "patch" : "deploy",
 		lifecycle: "validating",
 		config: publicConfig,
 		coreDependency: {
@@ -1105,7 +1530,12 @@ export async function executeComponentDeployment(hre: any, input: ComponentExecu
 			diamond: input.coreReport.addresses.diamond,
 			instantLayer: input.coreReport.addresses.instantLayer,
 		},
-		verification: { policy: live ? "required" : "not_applicable", status: live ? "pending" : "skipped", records: [] },
+		// A patch creates no contracts, so there is nothing for an explorer to verify.
+		verification: {
+			policy: live && !isPatch ? "required" : "not_applicable",
+			status: live && !isPatch ? "pending" : "skipped",
+			records: [],
+		},
 		health: { status: "pending", checks: [] },
 		manualActions: [],
 		transactions: checkpoint.transactions || [],
@@ -1122,17 +1552,22 @@ export async function executeComponentDeployment(hre: any, input: ComponentExecu
 				? await executePartyB(hre, checkpoint, input, deployer)
 				: input.component === "symbolManager"
 					? await executeSymbolManager(hre, checkpoint, input, deployer)
-					: await executeExpressProvider(hre, checkpoint, input, deployer)
+					: isPatch
+						? await patchExpressProvider(hre, checkpoint, input, deployer, priorComponentReport)
+						: await executeExpressProvider(hre, checkpoint, input, deployer)
 		report.address = result.address
 		report.implementation = (result as { implementation?: string }).implementation
 		report.constructorArguments = result.records[result.records.length - 1]?.constructorArguments
+		// A patch stores baseline-plus-declared-sections so the NEXT patch can compute removals.
+		const appliedConfig = (result as { appliedConfig?: ExpressStoredConfig }).appliedConfig
+		if (appliedConfig) report.config.expressProvider = appliedConfig
 		report.manualActions = result.manualActions
 		report.health.checks = result.checks
 		report.health.status = summarizeComponentHealth(result.checks)
 		const failedChecks = result.checks.filter(check => check.status === "failed")
 		if (failedChecks.length > 0) throw new Error(`Component post-state health failed: ${failedChecks.map(check => check.check).join(", ")}`)
 		report.verification.records = result.records
-		if (live) {
+		if (live && !isPatch) {
 			await verifyRecords(hre, chainId, result.records)
 			checkpoint.verificationStatus = "passed"
 			report.verification.status = "passed"

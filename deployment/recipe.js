@@ -308,14 +308,6 @@ function validateExpressProvider(value, source, name = "expressProvider") {
 	enumValue(component.mode, COMPONENT_MODES, source, `${name}.mode`);
 
 	const deployOnly = ["admin", "registerOnCore", "securityWindow", "tolerancePeriod", "creditLine", "roles", "affiliates"];
-	if (component.mode === "reuse") {
-		required(component, ["address"], source, name);
-		address(component.address, source, `${name}.address`);
-		for (const field of deployOnly) {
-			if (component[field] !== undefined) fail(source, `${name}.${field}`, "must be omitted when mode is reuse");
-		}
-		return;
-	}
 	if (component.mode === "skip") {
 		if (component.address !== undefined) fail(source, `${name}.address`, "must be omitted when mode is skip");
 		for (const field of deployOnly) {
@@ -324,34 +316,48 @@ function validateExpressProvider(value, source, name = "expressProvider") {
 		return;
 	}
 
-	if (component.address !== undefined) fail(source, `${name}.address`, "must be omitted when mode is deploy");
-	required(component, ["registerOnCore", "creditLine", "roles", "affiliates"], source, name);
+	// reuse + declared sections is a patch: reconcile the deployed provider at `address` to
+	// match them. An omitted section is left untouched, so partial intent stays partial.
+	const patch = component.mode === "reuse";
+	if (patch) {
+		required(component, ["address"], source, name);
+		address(component.address, source, `${name}.address`);
+	} else {
+		if (component.address !== undefined) fail(source, `${name}.address`, "must be omitted when mode is deploy");
+		required(component, ["registerOnCore", "creditLine", "roles", "affiliates"], source, name);
+	}
 	if (component.admin !== undefined) address(component.admin, source, `${name}.admin`);
-	boolean(component.registerOnCore, source, `${name}.registerOnCore`);
+	if (component.registerOnCore !== undefined) boolean(component.registerOnCore, source, `${name}.registerOnCore`);
 	// Init seeds 20s/60s; ControlFacet rejects anything below 10 for either.
 	if (component.securityWindow !== undefined) integer(component.securityWindow, source, `${name}.securityWindow`, 10);
 	if (component.tolerancePeriod !== undefined) integer(component.tolerancePeriod, source, `${name}.tolerancePeriod`, 10);
 
-	const creditLine = object(component.creditLine, source, `${name}.creditLine`);
-	onlyKeys(creditLine, ["signatureVerifier", "muonAppId", "muonFreshnessWindow"], source, `${name}.creditLine`);
-	required(creditLine, ["signatureVerifier", "muonAppId", "muonFreshnessWindow"], source, `${name}.creditLine`);
-	// "fromCore" resolves to the core diamond's configured verifier at execution time, so a
-	// standalone Express run cannot drift from the core it is bound to.
-	if (creditLine.signatureVerifier !== "fromCore") {
-		address(creditLine.signatureVerifier, source, `${name}.creditLine.signatureVerifier`);
+	if (component.creditLine !== undefined) {
+		const creditLine = object(component.creditLine, source, `${name}.creditLine`);
+		onlyKeys(creditLine, ["signatureVerifier", "muonAppId", "muonFreshnessWindow"], source, `${name}.creditLine`);
+		required(creditLine, ["signatureVerifier", "muonAppId", "muonFreshnessWindow"], source, `${name}.creditLine`);
+		// "fromCore" resolves to the core diamond's configured verifier at execution time, so a
+		// standalone Express run cannot drift from the core it is bound to.
+		if (creditLine.signatureVerifier !== "fromCore") {
+			address(creditLine.signatureVerifier, source, `${name}.creditLine.signatureVerifier`);
+		}
+		uintString(creditLine.muonAppId, source, `${name}.creditLine.muonAppId`, BigInt(1));
+		integer(creditLine.muonFreshnessWindow, source, `${name}.creditLine.muonFreshnessWindow`, 1);
 	}
-	uintString(creditLine.muonAppId, source, `${name}.creditLine.muonAppId`, BigInt(1));
-	integer(creditLine.muonFreshnessWindow, source, `${name}.creditLine.muonFreshnessWindow`, 1);
 
-	const roles = object(component.roles, source, `${name}.roles`);
-	onlyKeys(roles, EXPRESS_ROLES, source, `${name}.roles`);
-	for (const role of EXPRESS_ROLES) {
-		if (roles[role] === undefined) continue;
-		uniqueAddresses(roles[role], source, `${name}.roles.${role}`);
+	if (component.roles !== undefined) {
+		const roles = object(component.roles, source, `${name}.roles`);
+		onlyKeys(roles, EXPRESS_ROLES, source, `${name}.roles`);
+		for (const role of EXPRESS_ROLES) {
+			if (roles[role] === undefined) continue;
+			uniqueAddresses(roles[role], source, `${name}.roles.${role}`);
+		}
+		// A declared roles section is the complete desired set, so a provider with no operator
+		// could never process a withdrawal it accepted.
+		if (roles.OPERATOR_ROLE === undefined) fail(source, `${name}.roles.OPERATOR_ROLE`, "is required so accepted withdrawals can be processed");
 	}
-	// A provider with no operator can never process a withdrawal it accepted.
-	if (roles.OPERATOR_ROLE === undefined) fail(source, `${name}.roles.OPERATOR_ROLE`, "is required so accepted withdrawals can be processed");
 
+	if (component.affiliates === undefined) return;
 	if (!Array.isArray(component.affiliates) || component.affiliates.length === 0) {
 		fail(source, `${name}.affiliates`, "must be a non-empty array");
 	}
@@ -741,7 +747,12 @@ export function createDeploymentPlan(recipeValue, { only } = {}) {
 	if (only === "core") {
 		if (recipe.core.mode !== "deploy") unsupportedMode("core", "deploy");
 	} else if (only) {
-		if (recipe[only].mode !== "deploy") unsupportedMode(only, "deploy");
+		// ExpressProvider additionally supports reuse-as-patch: reconcile the deployed
+		// provider at expressProvider.address to the declared sections.
+		const patchable = only === "expressProvider" && recipe.expressProvider.mode === "reuse";
+		if (recipe[only].mode !== "deploy" && !patchable) {
+			unsupportedMode(only, only === "expressProvider" ? "deploy or reuse (patch)" : "deploy");
+		}
 		if (recipe.core.mode !== "reuse" || !recipe.core.fromReport) {
 			const error = new Error(`Cannot deploy only ${only}: core.mode must be reuse and core.fromReport must prove the target core deployment`);
 			error.code = "CORE_DEPENDENCY_UNPROVEN";

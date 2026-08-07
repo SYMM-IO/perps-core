@@ -308,6 +308,38 @@ report is archived under `tasks/data/<chainId>[-fork]/components/<recipe-name>/h
 before the current report is replaced. A persistent component run also exits `2` while its
 report remains `pending_handover`.
 
+### Change a live ExpressProvider (patch)
+
+The same settings file also changes a provider that is already deployed. Set
+`expressProvider.mode` to `"reuse"`, name its `address`, and declare only the sections you
+want enforced — for example a new operator set:
+
+```json
+{
+	"expressProvider": {
+		"mode": "reuse",
+		"address": "0x<deployed provider>",
+		"roles": {
+			"OPERATOR_ROLE": ["0x<new bot>"],
+			"SIGNER_ROLE": ["0x<signer>"]
+		}
+	}
+}
+```
+
+```bash
+./symmio deploy --config deployments/arbitrum-expressProvider.json --only expressProvider
+```
+
+A declared section is the complete desired state for that section: holders missing on chain
+are granted, and holders recorded in the last applied component report but dropped from the
+file are revoked. Omitted sections are untouched. Anything the signer cannot execute — role
+changes are owner-gated, setters need `SETTER_ROLE`, registration needs core
+`PROVIDER_ADMIN_ROLE` — is emitted as Safe-ready calldata and the run exits `2`; rerun the
+identical command after the admin executes it. Nothing is deployed and nothing needs explorer
+verification. Affiliates removed from the file are deliberately not auto-cleared, because
+zeroing their caps would mean "no limit"; the run warns instead.
+
 Read-only component status uses the same recipe and mutation scope:
 
 ```bash

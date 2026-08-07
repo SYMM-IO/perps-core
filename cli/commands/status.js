@@ -70,7 +70,13 @@ export function resolveStatusRecipeSelection(recipeContext, only, configLabel = 
 	}
 
 	if (coreMode === "reuse") {
-		const enabled = ["partyB", "symbolManager", "expressProvider"].filter(component => recipeContext.recipe[component]?.mode === "deploy");
+		const enabled = ["partyB", "symbolManager", "expressProvider"].filter(
+			component =>
+				recipeContext.recipe[component]?.mode === "deploy" ||
+				(component === "expressProvider" &&
+					recipeContext.recipe.expressProvider?.mode === "reuse" &&
+					recipeContext.recipe.expressProvider?.address),
+		);
 		const selection =
 			enabled.length === 1 ? `--only ${enabled[0]}` : `--only ${["partyB", "symbolManager", "expressProvider"].join(" or --only ")}`;
 		throw new Error(
@@ -141,8 +147,15 @@ export function validateComponentStatusCheckpoint(checkpoint, report, expected) 
 	if (!checkpoint.manifest || checkpoint.manifest.deploymentId !== report.deploymentId) {
 		throw new Error("component checkpoint manifest is missing or belongs to another deployment attempt");
 	}
-	const checkpointContract = expected.component === "partyB" ? checkpoint.contracts?.symmioPartyB : checkpoint.contracts?.symbolManager;
-	if (!sameAddress(checkpointContract?.address, report.address)) {
+	const checkpointContract =
+		expected.component === "partyB"
+			? checkpoint.contracts?.symmioPartyB
+			: expected.component === "symbolManager"
+				? checkpoint.contracts?.symbolManager
+				: checkpoint.contracts?.expressProvider?.diamond;
+	// A patch reconciles an existing provider; it creates no contract, so there is no
+	// checkpointed creation to bind the address against.
+	if (report.mode !== "patch" && !sameAddress(checkpointContract?.address, report.address)) {
 		throw new Error(`component checkpoint address is ${JSON.stringify(checkpointContract?.address)}, but the report records ${report.address}`);
 	}
 	if (expected.component === "partyB" && !sameAddress(checkpointContract?.implementation, report.implementation)) {

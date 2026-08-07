@@ -42,6 +42,15 @@ Per-affiliate `maxDebt` and `maxDebtBps` become the protocol-side caps. `0` on e
 means **no limit** on that axis; `doctor` warns when both are `0`, since an uncapped credit
 line can advance the whole eligible base out of Core.
 
+An `expressProvider` set to `reuse` **with declared sections** is a **patch**: run with
+`--only expressProvider`, it reconciles the deployed provider at `address` to match the
+declared sections — missing role holders and validators are granted/enabled, and ones present
+in the last applied report but dropped from the recipe are revoked/disabled. Omitted sections
+are left untouched. Mutations the signer lacks authority for become Safe-ready manual
+actions, exactly like the deploy handover; rerun the identical command after they confirm.
+Removed affiliates are never auto-cleared (zeroing caps would mean "no limit") — the run
+warns and leaves them for an explicit decision.
+
 Secrets never belong in the JSON. Use `hardhat-keystore://KEY` (recommended) or `env://KEY` references. The schema is [deployment-recipe.schema.json](./deployment-recipe.schema.json), and the reviewed starter is [examples/arbitrum.v1.example.json](./examples/arbitrum.v1.example.json). The starter intentionally contains invalid `REPLACE_*` values so it cannot pass `doctor` before review.
 
 ```bash
