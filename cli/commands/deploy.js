@@ -157,7 +157,10 @@ export function validateComponentReport(report, expected) {
 	if (typeof report.deploymentId !== "string" || report.deploymentId.trim() === "") {
 		throw new Error("component report is missing deploymentId");
 	}
-	if (report.mode !== "deploy") throw new Error(`component report mode must be deploy, got ${JSON.stringify(report.mode)}`);
+	const validModes = expected.component === "expressProvider" ? ["deploy", "patch"] : ["deploy"];
+	if (!validModes.includes(report.mode)) {
+		throw new Error(`component report mode must be one of ${validModes.join(", ")}, got ${JSON.stringify(report.mode)}`);
+	}
 	if (report.lifecycle !== "pending_handover" && report.lifecycle !== "complete") {
 		throw new Error(`component report is not in a successful lifecycle: ${JSON.stringify(report.lifecycle)}`);
 	}

@@ -236,6 +236,156 @@ describe("deployment recipe standalone component execution", function () {
 		expect(await control.pendingOwner()).to.equal(futureAdmin.address)
 	})
 
+	it("patches a deployed ExpressProvider: updates settings, grants new holders, revokes removed ones", async function () {
+		delete process.env.CREATE2_FACTORY_ADDRESS
+		delete process.env.DIAMOND_VANITY_PREFIX
+		const context = await loadFixture(initializeFixture)
+		const [admin, operator, signer, affiliate, newOperator] = await ethers.getSigners()
+		const networkName = (await hre.network.getOrCreate()).networkName || "default"
+		const coreReport: CoreDependencyReport = {
+			deploymentId: "fixture-core-express-patch",
+			deployerAddress: admin.address,
+			network: networkName,
+			chainId: 31337,
+			lifecycle: "complete",
+			checks: { health: "passed", verification: "skipped", verificationPolicy: "not_applicable" },
+			config: { admin: admin.address },
+			addresses: { diamond: context.diamond, instantLayer: await context.instantLayer.getAddress() },
+		}
+		const target = { name: networkName, chainId: 31337, mode: "local" as const }
+		const shared = { recipeName, recipePath: "/tmp/component-engine-test.json", target, coreReport, coreReportPath: "/tmp/core-report.json" }
+
+		const deployed = await executeComponentDeployment(hre, {
+			...shared,
+			recipeDigest: "express-before-patch",
+			component: "expressProvider",
+			componentConfig: {
+				mode: "deploy",
+				admin: admin.address,
+				registerOnCore: true,
+				securityWindow: 30,
+				creditLine: { signatureVerifier: "fromCore", muonAppId: "42", muonFreshnessWindow: 300 },
+				roles: { OPERATOR_ROLE: [operator.address], LOCKER_ROLE: [operator.address], SIGNER_ROLE: [signer.address] },
+				affiliates: [{ address: affiliate.address, feeRate: "25", operatorFee: "10", maxDebt: "1000000", maxDebtBps: 4000 }],
+			},
+			fresh: false,
+			verify: false,
+		})
+		expect(deployed.report.lifecycle).to.equal("complete")
+		const address = deployed.report.address!
+
+		// The patch: rotate the operator, drop LOCKER entirely, raise the security window.
+		// Affiliates are NOT declared, so that whole section must stay untouched.
+		const patchInput = {
+			...shared,
+			recipeDigest: "express-patch-1",
+			component: "expressProvider",
+			componentConfig: {
+				mode: "reuse",
+				address,
+				admin: admin.address,
+				securityWindow: 45,
+				roles: { OPERATOR_ROLE: [newOperator.address], SIGNER_ROLE: [signer.address] },
+			},
+			fresh: false,
+			verify: false,
+		} as const
+		const patched = await executeComponentDeployment(hre, patchInput)
+		expect(patched.report.mode).to.equal("patch")
+		expect(patched.report.lifecycle).to.equal("complete")
+		expect(patched.report.verification.policy).to.equal("not_applicable")
+
+		const view = await ethers.getContractAt("contracts/expressWithdrawLayer/facets/View/ViewFacet.sol:ViewFacet", address)
+		const roleHash = (name: string) => ethers.keccak256(ethers.toUtf8Bytes(name))
+		expect(await view.hasRole(roleHash("OPERATOR_ROLE"), newOperator.address), "new operator granted").to.equal(true)
+		expect(await view.hasRole(roleHash("OPERATOR_ROLE"), operator.address), "old operator revoked").to.equal(false)
+		expect(await view.hasRole(roleHash("LOCKER_ROLE"), operator.address), "dropped role revoked").to.equal(false)
+		expect(await view.hasRole(roleHash("SIGNER_ROLE"), signer.address), "kept holder untouched").to.equal(true)
+		expect(await view.securityWindow()).to.equal(45n)
+		// Untouched sections survive on chain and in the stored baseline.
+		expect(await view.creditLineProtocolMaxDebt(affiliate.address)).to.equal(1000000n)
+		const applied = patched.report.config.expressProvider!
+		expect(applied.roles).to.deep.equal({ OPERATOR_ROLE: [newOperator.address], SIGNER_ROLE: [signer.address] })
+		expect(applied.affiliates?.[0]?.address).to.equal(affiliate.address)
+		expect(applied.muonAppId).to.equal("42")
+
+		// Same patch again: nothing to change, still complete, still no new deployment.
+		const again = await executeComponentDeployment(hre, patchInput)
+		expect(again.report.lifecycle).to.equal("complete")
+		expect(again.report.address).to.equal(address)
+		expect(again.report.health.checks.some(check => /already matches/.test(check.check))).to.equal(true)
+	})
+
+	it("an express patch without direct authority queues Safe actions and completes after the admin runs them", async function () {
+		delete process.env.CREATE2_FACTORY_ADDRESS
+		delete process.env.DIAMOND_VANITY_PREFIX
+		const context = await loadFixture(initializeFixture)
+		const [deployer, operator, signer, affiliate, newOperator, futureOwner] = await ethers.getSigners()
+		const networkName = (await hre.network.getOrCreate()).networkName || "default"
+		const coreReport: CoreDependencyReport = {
+			deploymentId: "fixture-core-express-patch-authority",
+			deployerAddress: deployer.address,
+			network: networkName,
+			chainId: 31337,
+			lifecycle: "complete",
+			checks: { health: "passed", verification: "skipped", verificationPolicy: "not_applicable" },
+			config: { admin: deployer.address },
+			addresses: { diamond: context.diamond, instantLayer: await context.instantLayer.getAddress() },
+		}
+		const target = { name: networkName, chainId: 31337, mode: "local" as const }
+		const shared = { recipeName, recipePath: "/tmp/component-engine-test.json", target, coreReport, coreReportPath: "/tmp/core-report.json" }
+
+		const deployed = await executeComponentDeployment(hre, {
+			...shared,
+			recipeDigest: "express-authority-deploy",
+			component: "expressProvider",
+			componentConfig: {
+				mode: "deploy",
+				admin: deployer.address,
+				registerOnCore: true,
+				creditLine: { signatureVerifier: "fromCore", muonAppId: "7", muonFreshnessWindow: 120 },
+				roles: { OPERATOR_ROLE: [operator.address], SIGNER_ROLE: [signer.address] },
+				affiliates: [{ address: affiliate.address, feeRate: "0", operatorFee: "0", maxDebt: "5", maxDebtBps: 100 }],
+			},
+			fresh: false,
+			verify: false,
+		})
+		const address = deployed.report.address!
+
+		// Hand the diamond to another owner, exactly as a real handover would.
+		const control = await ethers.getContractAt("contracts/expressWithdrawLayer/facets/Control/ControlFacet.sol:ControlFacet", address)
+		await (await control.connect(deployer).transferOwnership(futureOwner.address)).wait()
+		await (await control.connect(futureOwner).acceptOwnership()).wait()
+
+		// Role changes are owner-gated, so the patch must queue a Safe action, not send.
+		const patchInput = {
+			...shared,
+			recipeDigest: "express-authority-patch",
+			component: "expressProvider",
+			componentConfig: {
+				mode: "reuse",
+				address,
+				admin: futureOwner.address,
+				roles: { OPERATOR_ROLE: [operator.address, newOperator.address], SIGNER_ROLE: [signer.address] },
+			},
+			fresh: false,
+			verify: false,
+		} as const
+		const pending = await executeComponentDeployment(hre, patchInput)
+		expect(pending.report.lifecycle).to.equal("pending_handover")
+		expect(pending.report.manualActions).to.have.length(1)
+		const view = await ethers.getContractAt("contracts/expressWithdrawLayer/facets/View/ViewFacet.sol:ViewFacet", address)
+		const roleHash = (name: string) => ethers.keccak256(ethers.toUtf8Bytes(name))
+		expect(await view.hasRole(roleHash("OPERATOR_ROLE"), newOperator.address)).to.equal(false)
+
+		// The admin executes the exact calldata the report printed, then the same command finishes.
+		const action = pending.report.manualActions[0]
+		await (await futureOwner.sendTransaction({ to: action.to, data: action.data })).wait()
+		const finished = await executeComponentDeployment(hre, patchInput)
+		expect(finished.report.lifecycle).to.equal("complete")
+		expect(await view.hasRole(roleHash("OPERATOR_ROLE"), newOperator.address)).to.equal(true)
+	})
+
 	it("re-probes PartyB and SymbolManager code, wiring, roles, signer, ADL, and operator without writes", async function () {
 		delete process.env.CREATE2_FACTORY_ADDRESS
 		delete process.env.DIAMOND_VANITY_PREFIX

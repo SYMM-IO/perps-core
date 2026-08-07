@@ -72,6 +72,23 @@ export async function assertDependencyAddressesHaveCode(report: CoreDependencyRe
  * one that cannot be operated or supervised: no operator can process an accepted withdrawal,
  * and an unregistered provider's advanceWithdraw call reverts at core.
  */
+/**
+ * A patch run reconciles a deployed provider to the recipe's declared sections. Refuse one
+ * that declares nothing: an empty patch is always a mistake, not a no-op the operator wanted.
+ */
+export function assertExpressProviderPatchable(config: Record<string, any>): void {
+	if (config.mode !== "reuse") {
+		throw new Error(`LIVE_TARGET_UNSUPPORTED: an ExpressProvider patch requires mode=reuse; received ${config.mode}`)
+	}
+	if (typeof config.address !== "string" || config.address.length === 0) {
+		throw new Error("expressProvider.address is required to patch: it names the deployed provider to reconcile")
+	}
+	const sections = ["registerOnCore", "securityWindow", "tolerancePeriod", "creditLine", "roles", "affiliates"]
+	if (!sections.some(section => config[section] !== undefined)) {
+		throw new Error(`expressProvider patch declares no changes; declare at least one of: ${sections.join(", ")}`)
+	}
+}
+
 export function assertExpressProviderDeployable(config: Record<string, any>, target: RecipeNetworkTarget): void {
 	if (config.mode !== "deploy") {
 		throw new Error(`LIVE_TARGET_UNSUPPORTED: expressProvider.mode must be deploy; received ${config.mode}`)

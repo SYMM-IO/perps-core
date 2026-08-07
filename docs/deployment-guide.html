@@ -260,6 +260,7 @@
 			<aside class="toc-panel side-toc" aria-label="Page navigation">
 				<div class="toc-card">
 					<p class="toc-title">On this page</p>
+					<a class="toc-link level-2" href="#interactive">Start without memorising</a>
 					<a class="toc-link level-2" href="#model">How the pieces fit</a>
 					<a class="toc-link level-2" href="#commands">The six commands</a>
 					<a class="toc-link level-2" href="#setup">One-time setup</a>
@@ -292,6 +293,26 @@
 				</header>
 
 				<article class="doc-article" id="full-document">
+					<h2 id="interactive">Start without memorising anything</h2>
+					<p>
+						Run the CLI with no arguments. It reads the recipes, reports and checkpoints already in your checkout, tells you where the
+						deployment stands, and offers the next useful step. Enter takes the recommendation; <code>q</code> quits.
+					</p>
+
+					<pre><code class="language-bash">./symmio</code></pre>
+
+					<p>
+						It dispatches to the same commands documented below rather than reimplementing them, so every preflight gate, confirmation
+						prompt and exit code is identical — and it prints the equivalent command before running it, so you pick up the vocabulary as
+						you go. The rest of this page explains what those commands do and why, which is worth reading once before a live run.
+					</p>
+
+					<aside class="callout callout-note">
+						<strong>It never deploys on its own.</strong> Interactive mode only offers choices; a live deployment still asks for the same
+						risk-proportional confirmation. Without a terminal — CI, a pipe — it prints the getting-started commands instead of prompting,
+						so nothing can be silently selected on your behalf.
+					</aside>
+
 					<h2 id="model">How the pieces fit</h2>
 					<p>
 						Four artifacts carry a deployment. Understanding what each one owns explains almost every behaviour you will meet, including

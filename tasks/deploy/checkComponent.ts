@@ -8,6 +8,7 @@ import { getDataDir } from "../utils/fs.js"
 import { getCheckpointPath, setCheckpointSimulated, type DeploymentCheckpoint } from "./checkpoint.js"
 import {
 	inspectPartyBPostState,
+	computeExpressPatchDrift,
 	inspectExpressProviderPostState,
 	inspectSymbolManagerPostState,
 	summarizeComponentHealth,
@@ -92,7 +93,10 @@ export function assertComponentStatusReportBinding(reportValue: unknown, expecte
 	if (report.chainId !== expected.chainId) {
 		throw new Error(`component report chainId is ${JSON.stringify(report.chainId)}, expected ${expected.chainId}`)
 	}
-	if (report.mode !== "deploy") throw new Error(`component report mode must be deploy, got ${JSON.stringify(report.mode)}`)
+	const validModes = expected.component === "expressProvider" ? ["deploy", "patch"] : ["deploy"]
+	if (!validModes.includes(report.mode)) {
+		throw new Error(`component report mode must be one of ${validModes.join(", ")}, got ${JSON.stringify(report.mode)}`)
+	}
 	if (report.lifecycle !== "pending_handover" && report.lifecycle !== "complete") {
 		throw new Error(`component report lifecycle is not statusable: ${JSON.stringify(report.lifecycle)}`)
 	}
@@ -268,7 +272,31 @@ export async function inspectComponentStatus(
 	}
 	const expressConfig = report.config.expressProvider
 	if (!expressConfig) throw new Error("ExpressProvider report is missing its resolved config; cannot re-prove the deployed state")
-	return inspectExpressProviderPostState(ethers, { ...expressConfig, address: report.address! })
+
+	// A patch report may carry only the sections its recipe declared, so status re-runs the
+	// same read-only drift the patch gated on: zero remaining drift means the applied intent
+	// still holds; anything left must match a recorded Safe action, i.e. pending, not failed.
+	if (report.mode === "patch") {
+		const desired = { ...expressConfig, address: report.address! }
+		const drift = await computeExpressPatchDrift(ethers, desired, expressConfig)
+		const queued = new Set((report.manualActions || []).map(action => `${action.to.toLowerCase()}:${action.data.toLowerCase()}`))
+		const checks: ComponentPostStateInspection["checks"] = [
+			{ check: "applied settings still hold", status: drift.items.length === 0 ? "passed" : "pending" },
+		]
+		const manualActions: ComponentPostStateInspection["manualActions"] = []
+		for (const item of drift.items) {
+			const covered = queued.has(`${item.to.toLowerCase()}:${item.data.toLowerCase()}`)
+			checks.push({ check: item.description, status: covered ? "pending" : "failed" })
+			if (covered) manualActions.push({ to: item.to, value: "0", data: item.data, description: item.description })
+		}
+		return { checks, manualActions }
+	}
+
+	const full = expressConfig as Omit<import("./componentDeployment.js").ExpressProviderResolvedConfig, "address">
+	for (const key of ["signatureVerifier", "muonAppId", "muonFreshnessWindow", "roles", "affiliates"] as const) {
+		if (full[key] === undefined) throw new Error(`ExpressProvider deploy report config is missing ${key}; cannot re-prove the deployed state`)
+	}
+	return inspectExpressProviderPostState(ethers, { ...full, address: report.address! })
 }
 
 function readJsonExact(filePath: string, label: string): unknown {
