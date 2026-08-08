@@ -67,6 +67,14 @@ export function effectiveVerification({ recipe, noVerify = false, mainnet = fals
 	return !simulated && !noVerify;
 }
 
+/** Build the exact production artifacts deployment tasks consume, without unlocking credentials or loading dotenv. */
+export function deploymentBuildInvocation(recipeContext) {
+	return {
+		args: ["--build-profile", "production", "build"],
+		env: recipeContext ? recipeHardhatEnvironment(recipeContext, { SYMMIO_RECIPE_READ_ONLY: "true" }) : {},
+	};
+}
+
 export function deploymentTaskInvocation({ recipeContext, only, networkName, fresh = false, verify = false, logLevel = "verbose" }) {
 	if (recipeContext) {
 		const env = recipeHardhatEnvironment(recipeContext, { DEPLOY_LOG_LEVEL: logLevel });
@@ -461,6 +469,17 @@ export async function deploy(args) {
 			return 1;
 		}
 		warn("preflight failed but --force was passed — continuing");
+	}
+
+	info("building the production contract artifacts used by deployment");
+	const buildInvocation = deploymentBuildInvocation(recipeContext);
+	const buildCode = await hardhat(buildInvocation.args, { env: buildInvocation.env });
+	if (buildCode !== 0) {
+		blank();
+		log(`  ${c.red(c.bold("Deployment build failed."))}`);
+		log(`  ${c.grey("No transaction was sent. Fix the compiler/source error, then re-run the same command.")}`);
+		blank();
+		return buildCode;
 	}
 	if (args.plan) {
 		info("read-only plan complete", "no transaction was sent");

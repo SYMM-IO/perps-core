@@ -60,3 +60,4 @@ AGENTS.md
 .DS_Store
 .diffstory
 .fuzz-dashboard/
+.ledger-handover-cache.json

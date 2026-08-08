@@ -52,7 +52,8 @@ describe("ensure create2 factory", function () {
 	})
 
 	it("binds an existing factory in reuse mode without deploying", async function () {
-		const factory = await (await ethers.getContractFactory("Create2Factory")).deploy()
+		const [deployer] = await ethers.getSigners()
+		const factory = await (await ethers.getContractFactory("Create2Factory")).deploy(deployer.address, deployer.address)
 		await factory.waitForDeployment()
 		const address = await factory.getAddress()
 
@@ -61,6 +62,25 @@ describe("ensure create2 factory", function () {
 
 		expect(result.deployed).to.equal(false)
 		expect(result.address).to.equal(address)
+	})
+
+	it("refuses reuse before deployment when the signer lacks DEPLOYER_ROLE", async function () {
+		const [deployer, authorized] = await ethers.getSigners()
+		const factory = await (await ethers.getContractFactory("Create2Factory")).deploy(deployer.address, authorized.address)
+		await factory.waitForDeployment()
+		const address = await factory.getAddress()
+		const plan = buildVanityPlan({ factory: { mode: "reuse", address }, ...PATTERN })!
+
+		let failure: Error | undefined
+		try {
+			await ensureCreate2Factory(hre, plan, { isLive: false, allowNewFactory: false, logData: false })
+		} catch (error) {
+			failure = error as Error
+		}
+
+		expect(failure, "expected the role preflight to stop the run").to.not.equal(undefined)
+		expect(failure!.message).to.contain("does not grant DEPLOYER_ROLE to deployment signer")
+		expect(failure!.message).to.contain(deployer.address)
 	})
 
 	it("refuses a reuse address with no code", async function () {
@@ -84,7 +104,8 @@ describe("create2 factory drift guard", function () {
 	let savedReport: string | null = null
 
 	async function recordExistingFactory(): Promise<string> {
-		const existing = await (await ethers.getContractFactory("Create2Factory")).deploy()
+		const [deployer] = await ethers.getSigners()
+		const existing = await (await ethers.getContractFactory("Create2Factory")).deploy(deployer.address, deployer.address)
 		await existing.waitForDeployment()
 		const recorded = await existing.getAddress()
 		writeData("deployment-report.json", { addresses: { create2Factory: recorded } })

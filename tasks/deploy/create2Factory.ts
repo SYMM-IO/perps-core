@@ -22,7 +22,8 @@ export async function deployCreate2Factory(hre: any, { logData = true }: { logDa
 	logger.debug("Deploying Create2Factory with account:", deployer.address)
 
 	const factory = await ethers.getContractFactory("Create2Factory")
-	const contract = await factory.connect(deployer).deploy()
+	const constructorArguments = [deployer.address, deployer.address]
+	const contract = await factory.connect(deployer).deploy(...constructorArguments)
 	const address = await confirmDeployment(contract, "Create2Factory")
 	logger.deployed("Create2Factory", address)
 
@@ -31,7 +32,7 @@ export async function deployCreate2Factory(hre: any, { logData = true }: { logDa
 			{
 				name: "Create2Factory",
 				address,
-				constructorArguments: [],
+				constructorArguments,
 			},
 		])
 		logger.debug("Deployed address written to JSON file")
@@ -41,6 +42,31 @@ export async function deployCreate2Factory(hre: any, { logData = true }: { logDa
 	console.log(`  "create2": { "factory": { "mode": "reuse", "address": "${address}" }, "groups": { "facets": { "suffix": "86" } } }`)
 
 	return contract
+}
+
+/** A reused role-gated factory is useful only when the transaction signer may deploy through it. */
+async function assertCreate2FactoryDeployer(ethers: any, address: string): Promise<void> {
+	const [deployer] = await ethers.getSigners()
+	if (!deployer) throw new Error(`Create2Factory ${address} cannot be reused because no deployment signer is configured`)
+
+	const factory = await ethers.getContractAt("Create2Factory", address)
+	let deployerRole: string
+	let authorized: boolean
+	try {
+		deployerRole = await factory.DEPLOYER_ROLE()
+		authorized = await factory.hasRole(deployerRole, deployer.address)
+	} catch (error) {
+		throw new Error(
+			`Create2Factory ${address} does not expose the required role-gated factory interface: ` +
+				(error instanceof Error ? error.message : String(error)),
+		)
+	}
+	if (!authorized) {
+		throw new Error(
+			`Create2Factory ${address} does not grant DEPLOYER_ROLE to deployment signer ${deployer.address}. ` +
+				"Have a factory admin grant that role, then re-run the same deployment command.",
+		)
+	}
 }
 
 /** The paste-back block an operator needs so the next run does not mine against a new factory. */
@@ -97,6 +123,7 @@ export async function ensureCreate2Factory(
 
 	if (plan.factoryIntent.mode === "reuse") {
 		const address = await resolveCreate2FactoryAddress(ethers, plan.factoryIntent.address)
+		await assertCreate2FactoryDeployer(ethers, address)
 		plan.bindFactory(address)
 		return { address, deployed: false }
 	}
@@ -111,6 +138,7 @@ export async function ensureCreate2Factory(
 			throw new Error(`Checkpoint records a Create2Factory at ${address} but it has no code on this network`)
 		}
 		logger.info(`  ⏭ Create2Factory already deployed at ${address}`)
+		await assertCreate2FactoryDeployer(ethers, address)
 		plan.bindFactory(address)
 		return { address, deployed: false }
 	}
@@ -118,16 +146,22 @@ export async function ensureCreate2Factory(
 	await assertNoRecordedFactory(ethers, { isLive, allowNewFactory })
 
 	logger.section("Create2Factory Deployment")
+	const [deployer] = await ethers.getSigners()
+	const constructorArguments = [deployer.address, deployer.address]
 	const factory = await ethers.getContractFactory("Create2Factory")
-	const contract = await factory.deploy()
-	const { address } = await confirmDeploymentWithReceipt(contract, "Create2Factory", checkpointDeployment(checkpoint, CREATE2_FACTORY_COMPONENT, []))
+	const contract = await factory.deploy(...constructorArguments)
+	const { address } = await confirmDeploymentWithReceipt(
+		contract,
+		"Create2Factory",
+		checkpointDeployment(checkpoint, CREATE2_FACTORY_COMPONENT, constructorArguments),
+	)
 
 	if (checkpoint) {
-		checkpoint.contracts.create2Factory = createDeployedContract(address, [])
+		checkpoint.contracts.create2Factory = createDeployedContract(address, constructorArguments)
 		saveCheckpoint(checkpoint)
 	}
 	logger.deployed("Create2Factory", address)
-	if (logData) writeData(CREATE2FACTORY_DEPLOYMENT_FILE, [{ name: "Create2Factory", address, constructorArguments: [] }])
+	if (logData) writeData(CREATE2FACTORY_DEPLOYMENT_FILE, [{ name: "Create2Factory", address, constructorArguments }])
 
 	plan.bindFactory(address)
 	return { address, deployed: true }

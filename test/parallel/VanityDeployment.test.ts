@@ -14,8 +14,9 @@ describe("vanity address deployment", function () {
 		// The journal is process-wide and deliberately refuses two creation records for one
 		// component. Each case here deploys the same components again, so it starts clean.
 		resetDeploymentTransactionJournal()
+		const [deployer] = await ethers.getSigners()
 		const factory = await ethers.getContractFactory("Create2Factory")
-		const create2Factory = await factory.deploy()
+		const create2Factory = await factory.deploy(deployer.address, deployer.address)
 		await create2Factory.waitForDeployment()
 		factoryAddress = await create2Factory.getAddress()
 	})

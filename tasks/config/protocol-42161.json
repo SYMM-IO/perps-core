@@ -20,7 +20,7 @@
 	"_notes": {
 		"balanceLimitPerUser": "Raw collateral-token units. HyperEVM collateral is 6-decimal USDC, and Arbitrum USDC is also 6 decimals, so this value ports directly. Be aware 1e24 raw = 1e18 USDC per user, i.e. effectively no cap — that is what HyperEVM runs today. The old built-in default (parseEther(\"10000\") = 1e22) was written assuming an 18-decimal collateral and is equally meaningless against USDC; set a real number here if you want an actual limit.",
 		"deallocateCooldown": "259200 (3 days) on HyperEVM. Read from MAStorage.withdrawCooldownPeriod, which is what setDeallocateCooldown() actually writes. Do NOT read this from getMinWithdrawCooldown() — that returns WithdrawStorage.minWithdrawCooldown, a different field with its own setter, which is 0 on HyperEVM. The two are unrelated despite the similar names.",
-		"templateOrder": "Template ids are assigned in array order and hedgers reference templates by id. HyperEVM's id 3 is INSTANT_OPEN_NO_MARGIN_TEMPLATE — the built-in defaults put InstantOpenWithCustomVA there instead, which would have silently broken any hedger expecting HyperEVM's layout."
+		"templateOrder": "Template ids are assigned in array order and hedgers reference templates by id. Arbitrum's reviewed id 3 is InstantOpenNoMargin — the built-in defaults put InstantOpenWithCustomVA there instead, which would silently break hedgers expecting this layout."
 	},
 
 	"parameters": {
@@ -65,7 +65,7 @@
 			]
 		},
 		{
-			"name": "INSTANT_OPEN_NO_MARGIN_TEMPLATE",
+			"name": "InstantOpenNoMargin",
 			"operations": [
 				{ "insertionPoints": [], "sourceIndices": [], "sourceOffsets": [] },
 				{ "insertionPoints": [0], "sourceIndices": [0], "sourceOffsets": [0] },
