@@ -1,6 +1,13 @@
 import { expect } from "chai"
 
-import { DEFAULT_MINING_BUDGET, MiningLedger, assertWithinBudget, buildVanityPlan, formatVanityPlan } from "../../tasks/deploy/vanityPlan.js"
+import {
+	DEFAULT_MINING_BUDGET,
+	MiningLedger,
+	assertWithinBudget,
+	buildVanityPlan,
+	formatVanityPlan,
+	resolveFactoryIntent,
+} from "../../tasks/deploy/vanityPlan.js"
 
 const FACTORY = "0x4e59b44847b379578588920cA78FbF26c0B4956C"
 
@@ -65,6 +72,57 @@ describe("vanity plan", function () {
 		const table = formatVanityPlan(plan, 100_000)
 		expect(table).to.contain("core/Diamond")
 		expect(table).to.contain("16,777,216")
+	})
+})
+
+describe("create2 factory intent", function () {
+	it("normalizes the legacy factoryAddress spelling to reuse", function () {
+		expect(resolveFactoryIntent({ factoryAddress: FACTORY })).to.deep.equal({ mode: "reuse", address: FACTORY })
+	})
+
+	it("normalizes an explicit reuse block", function () {
+		expect(resolveFactoryIntent({ factory: { mode: "reuse", address: FACTORY } })).to.deep.equal({ mode: "reuse", address: FACTORY })
+	})
+
+	it("normalizes an explicit deploy block", function () {
+		expect(resolveFactoryIntent({ factory: { mode: "deploy" } })).to.deep.equal({ mode: "deploy" })
+	})
+
+	it("returns null when no factory is declared at all", function () {
+		expect(resolveFactoryIntent({ groups: { facets: { suffix: "86" } } })).to.equal(null)
+		expect(resolveFactoryIntent(undefined)).to.equal(null)
+	})
+
+	it("builds a plan in deploy mode with no address", function () {
+		const plan = buildVanityPlan({ factory: { mode: "deploy" }, groups: { facets: { suffix: "86" } } })!
+		expect(plan.factoryIntent).to.deep.equal({ mode: "deploy" })
+	})
+
+	it("refuses to read the factory address before it is bound", function () {
+		const plan = buildVanityPlan({ factory: { mode: "deploy" }, groups: { facets: { suffix: "86" } } })!
+		expect(() => plan.factoryAddress).to.throw(/before ensureCreate2Factory bound it/)
+	})
+
+	it("reads the address after binding", function () {
+		const plan = buildVanityPlan({ factory: { mode: "deploy" }, groups: { facets: { suffix: "86" } } })!
+		plan.bindFactory(FACTORY)
+		expect(plan.factoryAddress).to.equal(FACTORY)
+	})
+
+	it("binds a reuse address at construction", function () {
+		const plan = buildVanityPlan({ factory: { mode: "reuse", address: FACTORY }, groups: { facets: { suffix: "86" } } })!
+		expect(plan.factoryAddress).to.equal(FACTORY)
+	})
+
+	it("accepts rebinding the same address and refuses a different one", function () {
+		const plan = buildVanityPlan({ factory: { mode: "deploy" }, groups: { facets: { suffix: "86" } } })!
+		plan.bindFactory(FACTORY)
+		expect(() => plan.bindFactory(FACTORY.toLowerCase())).to.not.throw()
+		expect(() => plan.bindFactory("0x1111111111111111111111111111111111111111")).to.throw(/Refusing to rebind/)
+	})
+
+	it("still refuses a declared pattern with no factory of either spelling", function () {
+		expect(() => buildVanityPlan({ groups: { facets: { suffix: "86" } } })).to.throw(/no factory/)
 	})
 })
 

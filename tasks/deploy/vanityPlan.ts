@@ -8,11 +8,30 @@ export const DEFAULT_MINING_BUDGET = 50_000_000
 /** A single search may overrun its mean; ten times expected is a 0.005% false trip. */
 const CAP_MULTIPLE = 10
 
+export type Create2FactoryIntent = { mode: "deploy" } | { mode: "reuse"; address: string }
+
 export interface Create2Recipe {
+	factory?: { mode: string; address?: string }
 	factoryAddress?: string
 	groups?: Record<string, VanityPattern>
 	overrides?: Record<string, VanityPattern>
 	miningBudget?: number
+}
+
+/**
+ * The two spellings of factory intent normalize to one shape. Recipe validation already
+ * rejects both keys at once and a reuse block with no address, so anything malformed
+ * reaching here returns null and is reported by buildVanityPlan.
+ */
+export function resolveFactoryIntent(create2?: Create2Recipe): Create2FactoryIntent | null {
+	if (!create2) return null
+	if (create2.factory) {
+		if (create2.factory.mode === "deploy") return { mode: "deploy" }
+		if (create2.factory.mode === "reuse" && create2.factory.address) return { mode: "reuse", address: create2.factory.address }
+		return null
+	}
+	if (create2.factoryAddress) return { mode: "reuse", address: create2.factoryAddress }
+	return null
 }
 
 export interface VanityPlanEntry {
@@ -25,12 +44,32 @@ export interface VanityPlanEntry {
 const isDeclared = (pattern: VanityPattern | undefined): pattern is VanityPattern => patternLength(pattern ?? {}) > 0
 
 export class VanityPlan {
+	private boundFactory: string
+
 	constructor(
-		readonly factoryAddress: string,
+		readonly factoryIntent: Create2FactoryIntent,
 		readonly budget: number,
 		private readonly groups: Record<string, VanityPattern>,
 		private readonly overrides: Record<string, VanityPattern>,
-	) {}
+	) {
+		this.boundFactory = factoryIntent.mode === "reuse" ? factoryIntent.address : ""
+	}
+
+	/**
+	 * A deploy-mode factory has no address until the run creates it. Reading it early would
+	 * bind getContractAt to an empty string, so name the mistake instead.
+	 */
+	get factoryAddress(): string {
+		if (!this.boundFactory) throw new Error("The CREATE2 factory address was read before ensureCreate2Factory bound it")
+		return this.boundFactory
+	}
+
+	bindFactory(address: string): void {
+		if (this.boundFactory && this.boundFactory.toLowerCase() !== address.toLowerCase()) {
+			throw new Error(`Refusing to rebind the CREATE2 factory from ${this.boundFactory} to ${address}`)
+		}
+		this.boundFactory = address
+	}
 
 	patternFor(key: string): VanityPattern | undefined {
 		const override = this.overrides[key]
@@ -62,14 +101,17 @@ export class VanityPlan {
 
 export function buildVanityPlan(create2?: Create2Recipe): VanityPlan | null {
 	if (!create2) return null
+	const intent = resolveFactoryIntent(create2)
+	// A plan that declares no pattern needs no factory, so the intent check comes after
+	// entries(). The placeholder is deploy mode, which never yields a bound empty address.
 	const plan = new VanityPlan(
-		create2.factoryAddress ?? "",
+		intent ?? { mode: "deploy" },
 		create2.miningBudget ?? DEFAULT_MINING_BUDGET,
 		create2.groups ?? {},
 		create2.overrides ?? {},
 	)
 	if (plan.entries().length === 0) return null
-	if (!plan.factoryAddress) throw new Error("create2 declares a vanity pattern but no factoryAddress; the recipe should have rejected this")
+	if (!intent) throw new Error("create2 declares a vanity pattern but no factory; the recipe should have rejected this")
 	return plan
 }
 
