@@ -5,12 +5,10 @@
 #   ./symmio doctor --config deployments/arbitrum.json
 #   ./symmio deploy --config deployments/arbitrum.json
 #
-# This is the same CLI that `yarn link` exposes globally as `symmio`; running it from the
+# This is the same CLI that `npm link` exposes globally as `symmio`; running it from the
 # checkout needs no install step. It guards the two things that make the CLI trustworthy —
 # a compatible Node and a real dependency tree — then hands straight to the checked-in
 # source. There is no build step, so what runs is what you can read in cli/.
-#
-# Package-manager operations (install, link, run) belong to utils/pinned-yarn.sh.
 
 set -euo pipefail
 
@@ -49,7 +47,7 @@ fi
 
 if [[ ! -d "$REPO_ROOT/node_modules" ]]; then
 	die "Dependencies are not installed." \
-		"Run: ./utils/pinned-yarn.sh install --immutable"
+		"Run: npm ci"
 fi
 
 if [[ ! -f "$CLI_ENTRY" ]]; then

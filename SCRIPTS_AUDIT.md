@@ -110,7 +110,7 @@ This verdict is based on source review, static gates, automated tests, and a com
 ### Toolchain and tests
 
 - `.node-version` pins Node `22.15.0`.
-- `utils/pinned-yarn.sh` and the install hooks (`scripts/check-package-manager.js`, wired to both `preinstall` and `postinstall`) enforce Yarn `4.13.0`; `yarn.lock` fixes the dependency graph. The frozen graph currently installs Hardhat `3.12.0`. `utils/yarn-classic.sh` remains as a deprecated alias.
+- The `preinstall` hook (`scripts/check-package-manager.js`) rejects Yarn and pnpm; `package-lock.json` fixes the dependency graph, and `npm ci` installs it exactly. The frozen graph currently installs Hardhat `3.12.0`.
 - `check:operations` runs Solidity lint, operations TypeScript checking, CLI tests, compilation, and focused deployment/recovery tests.
 - The parallel runner invokes the local Hardhat binary, honors worker exit codes, and isolates tests from deployment variables loaded from `.env` or the parent shell.
 
@@ -147,7 +147,7 @@ The rehearsal used controlled non-secret fixture addresses and local-only defaul
 
 Before broadcasting to Arbitrum:
 
-1. Use a clean shell and the checked-in Node/Yarn toolchain.
+1. Use a clean shell and the checked-in Node/npm toolchain.
 2. Create and review `deployments/arbitrum.json`, including admin, collateral, Muon, PartyB,
    SymbolManager, protocol parameters/templates, and the three liquidation-accounting values.
 3. Run `./symmio doctor --config deployments/arbitrum.json` and resolve every failure.

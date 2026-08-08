@@ -120,7 +120,7 @@ function runHardhatScript(scriptPath: string, networkName: string, envOverrides:
 	}
 
 	const hardhatBin = path.resolve("node_modules/.bin/hardhat")
-	if (!fs.existsSync(hardhatBin)) throw new Error(`Missing ${hardhatBin}; run ./utils/pinned-yarn.sh install --immutable first`)
+	if (!fs.existsSync(hardhatBin)) throw new Error(`Missing ${hardhatBin}; run npm ci first`)
 	const result = spawnSync(hardhatBin, ["run", scriptPath, "--network", networkName], {
 		stdio: "inherit",
 		env,

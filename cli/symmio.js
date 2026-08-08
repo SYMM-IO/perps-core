@@ -276,7 +276,7 @@ function help() {
 	log(`    ${c.grey("4.")} ./symmio deploy --config deployments/arbitrum.json --plan`);
 	log(`    ${c.grey("5.")} ./symmio deploy --config deployments/arbitrum.json`);
 	blank();
-	log(`  ${c.grey("Optional: run `./utils/pinned-yarn.sh link` once if you want the global `symmio` command.")}`);
+	log(`  ${c.grey("Optional: run `npm link` once if you want the global `symmio` command.")}`);
 	log(`  ${c.grey("./symmio <command> --help  shows command details.")}`);
 	blank();
 }

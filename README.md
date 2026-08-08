@@ -61,11 +61,15 @@ There are also some additional second-layer contracts required by hedgers and fr
 
 ## Getting Started
 
-This project uses [Hardhat](https://hardhat.org/). You can compile the code with:
+This project uses [Hardhat](https://hardhat.org/) and npm. Install dependencies, then compile:
 
 ```bash
+npm install
 npx hardhat compile
 ```
+
+Use `npm ci` instead of `npm install` for a deployment checkout — it installs exactly the
+locked tree and never updates `package-lock.json`.
 
 ## Deployment
 

@@ -1,5 +1,4 @@
 /node_modules
-/package-lock.json
 .env
 coverage
 coverage.json
@@ -23,8 +22,8 @@ typechain-types
 /scripts/output
 /scripts/upgrade/output
 
-# Dependency resolution is deployment-critical; the Yarn lockfile is tracked.
-!yarn.lock
+# Dependency resolution is deployment-critical; the lockfile is tracked.
+!package-lock.json
 .idea
 addresses.json
 /abi.json
@@ -53,7 +52,6 @@ detailedDebug.log
 pnpm-lock.yaml
 .openzeppelin
 
-.yarn/
 .venv
 
 CLAUDE.md
