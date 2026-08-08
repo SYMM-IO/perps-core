@@ -1,5 +1,6 @@
 import { expect } from "chai"
 
+import { ensureCreate2Factory } from "../../tasks/deploy/create2Factory.js"
 import { deployDiamond } from "../../tasks/deploy/diamond.js"
 import { resetDeploymentTransactionJournal } from "../../tasks/deploy/tx.js"
 import { createVanityContext } from "../../tasks/deploy/vanityDeploy.js"
@@ -66,5 +67,45 @@ describe("vanity address deployment", function () {
 		const diamond = await deployDiamond(hre, { logData: false, reportGas: false, vanity: null })
 		const loupe = await ethers.getContractAt("IDiamondLoupe", await diamond.getAddress())
 		expect((await loupe.facets()).length).to.be.greaterThan(0)
+	})
+})
+
+describe("vanity address deployment with a run-deployed factory", function () {
+	beforeEach(function () {
+		resetDeploymentTransactionJournal()
+	})
+
+	it("deploys its own factory and mines every facet against it", async function () {
+		const plan = buildVanityPlan({ factory: { mode: "deploy" }, groups: { facets: { suffix: "86" } } })!
+		const factory = await ensureCreate2Factory(hre, plan, { isLive: false, allowNewFactory: false, logData: false })
+		expect(factory.deployed).to.equal(true)
+
+		const vanity = createVanityContext(ethers, plan)
+		const diamond = await deployDiamond(hre, { logData: false, reportGas: false, vanity })
+
+		// Mining used the factory the run created, not some pre-existing one.
+		expect(plan.factoryAddress).to.equal(factory.address)
+
+		const loupe = await ethers.getContractAt("IDiamondLoupe", await diamond.getAddress())
+		const facets = await loupe.facets()
+		expect(facets.length).to.be.greaterThan(0)
+		for (const facet of facets) {
+			// Only CREATE2 through the bound factory can land an address on this suffix.
+			expect(facet.facetAddress.toLowerCase().endsWith("86"), `${facet.facetAddress} does not end in 86`).to.be.true
+		}
+	})
+
+	it("refuses to mine before the factory is bound", async function () {
+		const plan = buildVanityPlan({ factory: { mode: "deploy" }, groups: { facets: { suffix: "86" } } })!
+		const vanity = createVanityContext(ethers, plan)
+
+		let failure: Error | undefined
+		try {
+			await deployDiamond(hre, { logData: false, reportGas: false, vanity })
+		} catch (error) {
+			failure = error as Error
+		}
+		expect(failure, "expected mining to stop without a bound factory").to.not.equal(undefined)
+		expect(failure!.message).to.match(/before ensureCreate2Factory bound it/)
 	})
 })
