@@ -7,11 +7,11 @@
  * Add EXECUTE=true CONFIRM_CHAIN_ID=<connected chain id> to deploy and wire roles. If deployment succeeds but later
  * wiring fails, resume with LIQUIDATOR_ADDRESS=<deployed proxy>.
  */
+import { requireExecutionConfirmation } from "../tasks/deploy/executionGuard.js"
 import { setHyperEVMBigBlocks } from "../tasks/deploy/hyperevm.js"
 import { deploySymmioLiquidator } from "../tasks/deploy/liquidator.js"
 import { send } from "../tasks/deploy/tx.js"
 import connection, { hre, ethers } from "../test/helpers/hardhat-connection.js"
-import { requireExecutionConfirmation } from "./upgrade/utils/executionGuard.js"
 import { loadAddresses } from "./utils/file.js"
 
 const HYPEREVM_CHAIN_IDS = new Set<bigint>([998n, 999n])

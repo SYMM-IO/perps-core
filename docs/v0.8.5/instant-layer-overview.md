@@ -1,4 +1,4 @@
-# Better Instant actions through *Instant Layer*
+# Better Instant actions through _Instant Layer_
 
 To better understand the role of the **Instant Layer** within the **Symmio ecosystem**, it is useful to first review the **lifecycle of a Quote in Symmio**.
 
@@ -36,8 +36,8 @@ The Instant Layer uses an `Account` struct to represent both PartyA and PartyB a
 
 ```solidity
 struct Account {
-    address addr;     // Trading account address (PartyA) or PartyB contract address
-    bool isPartyB;    // true for PartyB, false for PartyA accounts
+	address addr; // Trading account address (PartyA) or PartyB contract address
+	bool isPartyB; // true for PartyB, false for PartyA accounts
 }
 ```
 
@@ -50,9 +50,9 @@ Every operation includes a `ReplayAttackHeader` to prevent replay attacks:
 
 ```solidity
 struct ReplayAttackHeader {
-    uint256 nonce;      // 0 for salt-only, >0 for sequential execution
-    uint256 deadline;   // Unix timestamp for expiration
-    bytes32 salt;       // Unique salt for operation uniqueness
+	uint256 nonce; // 0 for salt-only, >0 for sequential execution
+	uint256 deadline; // Unix timestamp for expiration
+	bytes32 salt; // Unique salt for operation uniqueness
 }
 ```
 
@@ -78,13 +78,13 @@ The primary structure for batched operations:
 
 ```solidity
 struct SignedOperation {
-    address signer;                     // Address that created the signature
-    address target;                     // Contract to call (must be whitelisted)
-    bytes callData;                     // Encoded function call to execute
-    Account signerAccount;              // Account context
-    FlexField[] flexFields;             // Modifiable regions in calldata (empty for standard ops)
-    uint256 maxUses;                    // Max execution count (1=single-use, 0=unlimited)
-    ReplayAttackHeader replayAttackHeader;
+	address signer; // Address that created the signature
+	address target; // Contract to call (must be whitelisted)
+	bytes callData; // Encoded function call to execute
+	Account signerAccount; // Account context
+	FlexField[] flexFields; // Modifiable regions in calldata (empty for standard ops)
+	uint256 maxUses; // Max execution count (1=single-use, 0=unlimited)
+	ReplayAttackHeader replayAttackHeader;
 }
 ```
 
@@ -97,8 +97,8 @@ When the transaction sender (`msg.sender`) is the same as the operation's `signe
 **How It Works:**
 
 1. The contract first verifies authorization:
-   - For **PartyB**: Checks that the signer is a registered PartyB
-   - For **PartyA**: Checks that the signer is the account owner or has a valid delegation
+    - For **PartyB**: Checks that the signer is a registered PartyB
+    - For **PartyA**: Checks that the signer is the account owner or has a valid delegation
 
 2. If `signer == msg.sender`, the signature check is bypassed because `msg.sender` already proves identity at the EVM level.
 
@@ -115,38 +115,39 @@ When the transaction sender (`msg.sender`) is the same as the operation's `signe
 ```javascript
 // PartyB executing their own operation - no signature needed
 const partyBOperation = {
-    signer: partyBAddress,  // Same as msg.sender
-    target: symmioCoreAddress,
-    callData: encodedLockQuote,
-    signerAccount: { addr: partyBAddress, isPartyB: true },
-    flexFields: [],
-    maxUses: 1,
-    replayAttackHeader: { nonce: 0n, deadline: 0n, salt: generateSalt() }
+	signer: partyBAddress, // Same as msg.sender
+	target: symmioCoreAddress,
+	callData: encodedLockQuote,
+	signerAccount: { addr: partyBAddress, isPartyB: true },
+	flexFields: [],
+	maxUses: 1,
+	replayAttackHeader: { nonce: 0n, deadline: 0n, salt: generateSalt() },
 };
 
 // User operation still needs a signature
 const userOperation = {
-    signer: userAddress,
-    target: symmioCoreAddress,
-    callData: encodedSendQuote,
-    signerAccount: { addr: userAccountAddress, isPartyB: false },
-    flexFields: [],
-    maxUses: 1,
-    replayAttackHeader: { nonce: 0n, deadline: 0n, salt: generateSalt() }
+	signer: userAddress,
+	target: symmioCoreAddress,
+	callData: encodedSendQuote,
+	signerAccount: { addr: userAccountAddress, isPartyB: false },
+	flexFields: [],
+	maxUses: 1,
+	replayAttackHeader: { nonce: 0n, deadline: 0n, salt: generateSalt() },
 };
 
 // PartyB (as msg.sender) calls executeBatch
 await instantLayer.executeBatch(
-    [userOperation, partyBOperation],
-    [userSignature, "0x"],       // Empty signature for PartyB's own operation
-    [{ values: [] }, { values: [] }],  // No flex fills
-    [[], []]                     // No flex filler signatures
+	[userOperation, partyBOperation],
+	[userSignature, "0x"], // Empty signature for PartyB's own operation
+	[{ values: [] }, { values: [] }], // No flex fills
+	[[], []], // No flex filler signatures
 );
 ```
 
 **Security Note:**
 
 Authorization is still fully enforced before the signature skip:
+
 - PartyB must be registered with InstantLayer
 - PartyA signers must be account owners or have valid delegations
 - Replay attack protection (salts, nonces, hashes) still applies
@@ -171,53 +172,53 @@ Authorization is still fully enforced before the signature skip:
 
 ```jsx
 const domain = {
-    name: "SymmioInstantLayer",
-    version: "1",
-    chainId: chainId,
-    verifyingContract: instantLayerAddress
+	name: "SymmioInstantLayer",
+	version: "1",
+	chainId: chainId,
+	verifyingContract: instantLayerAddress,
 };
 
 const types = {
-    SignedOperation: [
-        { name: "signer", type: "address" },
-        { name: "target", type: "address" },
-        { name: "callData", type: "bytes" },
-        { name: "signerAccount", type: "Account" },
-        { name: "flexFields", type: "FlexField[]" },
-        { name: "maxUses", type: "uint256" },
-        { name: "replayAttackHeader", type: "ReplayAttackHeader" }
-    ],
-    Account: [
-        { name: "addr", type: "address" },
-        { name: "isPartyB", type: "bool" }
-    ],
-    FlexField: [
-        { name: "offset", type: "uint256" },
-        { name: "length", type: "uint256" },
-        { name: "authorizedFlexFiller", type: "address" }
-    ],
-    ReplayAttackHeader: [
-        { name: "nonce", type: "uint256" },
-        { name: "deadline", type: "uint256" },
-        { name: "salt", type: "bytes32" }
-    ]
+	SignedOperation: [
+		{ name: "signer", type: "address" },
+		{ name: "target", type: "address" },
+		{ name: "callData", type: "bytes" },
+		{ name: "signerAccount", type: "Account" },
+		{ name: "flexFields", type: "FlexField[]" },
+		{ name: "maxUses", type: "uint256" },
+		{ name: "replayAttackHeader", type: "ReplayAttackHeader" },
+	],
+	Account: [
+		{ name: "addr", type: "address" },
+		{ name: "isPartyB", type: "bool" },
+	],
+	FlexField: [
+		{ name: "offset", type: "uint256" },
+		{ name: "length", type: "uint256" },
+		{ name: "authorizedFlexFiller", type: "address" },
+	],
+	ReplayAttackHeader: [
+		{ name: "nonce", type: "uint256" },
+		{ name: "deadline", type: "uint256" },
+		{ name: "salt", type: "bytes32" },
+	],
 };
 
 const userOperation = {
-    signer: userAddress,
-    target: symmioCoreAddress,      // or a whitelisted external target
-    callData: encodedSendQuote,     // e.g., symmio.sendQuote(...) encoded
-    signerAccount: {
-        addr: userAccountAddress,   // sub-account / virtual-account / legacy account
-        isPartyB: false
-    },
-    flexFields: [],                 // empty for standard operations
-    maxUses: 1,                     // single-use
-    replayAttackHeader: {
-        nonce: 0,  // or current nonce + 1 for sequential
-        deadline: Math.floor(Date.now() / 1000) + 3600,  // 1 hour expiry
-        salt: ethers.utils.randomBytes(32)
-    }
+	signer: userAddress,
+	target: symmioCoreAddress, // or a whitelisted external target
+	callData: encodedSendQuote, // e.g., symmio.sendQuote(...) encoded
+	signerAccount: {
+		addr: userAccountAddress, // sub-account / virtual-account / legacy account
+		isPartyB: false,
+	},
+	flexFields: [], // empty for standard operations
+	maxUses: 1, // single-use
+	replayAttackHeader: {
+		nonce: 0, // or current nonce + 1 for sequential
+		deadline: Math.floor(Date.now() / 1000) + 3600, // 1 hour expiry
+		salt: ethers.utils.randomBytes(32),
+	},
 };
 
 const signature = await signer._signTypedData(domain, types, userOperation);
@@ -231,19 +232,21 @@ Executes multiple operations from different signers in a single transaction.
 
 ```solidity
 function executeBatch(
-    SignedOperation[] calldata signedOps,
-    bytes[] calldata signatures,
-    FlexFill[] calldata fills,
-    bytes[][] calldata flexFillerSignatures
+	SignedOperation[] calldata signedOps,
+	bytes[] calldata signatures,
+	FlexFill[] calldata fills,
+	bytes[][] calldata flexFillerSignatures
 ) external nonReentrant onlyRole(OPERATOR_ROLE);
 ```
 
 **Parameters:**
+
 - `signedOps` / `signatures` -- operations and their EIP-712 signatures (as before)
 - `fills` -- one `FlexFill` per operation. For standard operations (no flex fields), pass `{ values: [] }`
 - `flexFillerSignatures` -- one `bytes[]` per operation, with one signature per flex field. Pass `[]` for standard operations or `"0x"` for fields where the flex filler is `msg.sender`
 
 **Signature Requirements:**
+
 - Each operation requires a corresponding entry in the `signatures` array
 - If `signedOps[i].signer == msg.sender`, then `signatures[i]` can be empty (`"0x"`)
 - Otherwise, a valid EIP-712 signature is required
@@ -254,11 +257,11 @@ Executes a predefined template with dynamic parameter replacement.
 
 ```solidity
 function executeTemplate(
-    uint256 templateId,
-    SignedOperation[] calldata signedOps,
-    bytes[] calldata signatures,
-    FlexFill[] calldata fills,
-    bytes[][] calldata flexFillerSignatures
+	uint256 templateId,
+	SignedOperation[] calldata signedOps,
+	bytes[] calldata signatures,
+	FlexFill[] calldata fills,
+	bytes[][] calldata flexFillerSignatures
 ) external nonReentrant onlyRole(OPERATOR_ROLE);
 ```
 
@@ -268,14 +271,14 @@ The `fills` and `flexFillerSignatures` parameters work the same as in `executeBa
 
 ```solidity
 struct Template {
-    string name;
-    Operation[] operations;
-    bool active;
+	string name;
+	Operation[] operations;
+	bool active;
 }
 
 struct Operation {
-    uint256[] insertionPoints;
-    uint256[] sourceIndices;
+	uint256[] insertionPoints;
+	uint256[] sourceIndices;
 }
 ```
 
@@ -292,10 +295,10 @@ Templates support automatic value replacement using placeholders:
 
 ```solidity
 struct DelegationInfo {
-    Account account;
-    address delegatedSigner;
-    bytes4[] selectors;
-    uint256 expiryTimestamp;
+	Account account;
+	address delegatedSigner;
+	bytes4[] selectors;
+	uint256 expiryTimestamp;
 }
 ```
 
@@ -311,8 +314,8 @@ function grantDelegation(DelegationInfo calldata info);
 
 ```solidity
 struct SignedDelegation {
-    DelegationInfo delegationInfo;
-    ReplayAttackHeader replayAttackHeader;
+	DelegationInfo delegationInfo;
+	ReplayAttackHeader replayAttackHeader;
 }
 
 function grantBatchDelegationBySig(SignedDelegation calldata signedDelegation, bytes calldata signature);
@@ -348,6 +351,7 @@ This is the same behavior implemented in `_hashBytes4Array` inside the contract,
 ### 3. Self-Execution Security
 
 When `signer == msg.sender`, signature verification is skipped, but all other security checks remain:
+
 - Authorization validation (PartyB registration or account ownership/delegation)
 - Replay attack protection via hash tracking
 - Nonce enforcement for sequential operations
@@ -381,13 +385,13 @@ At execution time, the operator provides `FlexFill` values for each flex field. 
 
 ```solidity
 struct FlexField {
-    uint256 offset;              // Byte offset after 4-byte selector
-    uint256 length;              // Bytes to replace (typically 32)
-    address authorizedFlexFiller;  // Who can provide the fill value
+	uint256 offset; // Byte offset after 4-byte selector
+	uint256 length; // Bytes to replace (typically 32)
+	address authorizedFlexFiller; // Who can provide the fill value
 }
 
 struct FlexFill {
-    bytes[] values;  // One entry per FlexField, each must match field.length
+	bytes[] values; // One entry per FlexField, each must match field.length
 }
 ```
 
@@ -402,9 +406,9 @@ Each flex field has its own `authorizedFlexFiller`. Different fields can have di
 ```solidity
 // What the flex filler signs (EIP-712)
 struct FlexFillAuth {
-    bytes32 opHash;       // Hash of the SignedOperation
-    uint256 fieldIndex;   // Which flex field this fill is for
-    bytes value;          // The actual fill value
+	bytes32 opHash; // Hash of the SignedOperation
+	uint256 fieldIndex; // Which flex field this fill is for
+	bytes value; // The actual fill value
 }
 ```
 
@@ -425,6 +429,7 @@ Once signed, an operation is valid until its `maxUses` count is reached or the `
 Instead of delegating the entire `requestToClosePosition` selector to a TPSL bot, the user can sign a specific close operation with the amount as a flex field:
 
 The `requestToClosePosition` signature is:
+
 ```solidity
 function requestToClosePosition(
     uint256 quoteId,            // offset 0
@@ -440,26 +445,28 @@ All parameters are static, so the ABI encoding is straightforward -- each is a 3
 ```javascript
 // User signs: "close quote 42, but let the TPSL bot choose the amount"
 const closeCallData = symmio.interface.encodeFunctionData(
-    "requestToClosePosition",
-    [42, triggerPrice, 0, 1, deadline]  // quantityToClose=0 is a placeholder
+	"requestToClosePosition",
+	[42, triggerPrice, 0, 1, deadline], // quantityToClose=0 is a placeholder
 );
 
 const operation = {
-    signer: userAddress,
-    target: symmioCoreAddress,
-    callData: closeCallData,
-    signerAccount: { addr: userAccount, isPartyB: false },
-    flexFields: [{
-        offset: 64,              // quantityToClose is the 3rd param = 2 * 32
-        length: 32,
-        authorizedFlexFiller: tpslBotAddress
-    }],
-    maxUses: 0,                  // unlimited until deadline
-    replayAttackHeader: {
-        nonce: 0n,
-        deadline: BigInt(Math.floor(Date.now() / 1000) + 86400), // 24h
-        salt: generateSalt()
-    }
+	signer: userAddress,
+	target: symmioCoreAddress,
+	callData: closeCallData,
+	signerAccount: { addr: userAccount, isPartyB: false },
+	flexFields: [
+		{
+			offset: 64, // quantityToClose is the 3rd param = 2 * 32
+			length: 32,
+			authorizedFlexFiller: tpslBotAddress,
+		},
+	],
+	maxUses: 0, // unlimited until deadline
+	replayAttackHeader: {
+		nonce: 0n,
+		deadline: BigInt(Math.floor(Date.now() / 1000) + 86400), // 24h
+		salt: generateSalt(),
+	},
 };
 
 const userSig = await userSigner.signTypedData(domain, types, operation);
@@ -469,33 +476,31 @@ When the TP/SL threshold is hit, the bot provides the fill value and its flex fi
 
 ```javascript
 // Bot determines the close amount
-const closeAmount = ethers.AbiCoder.defaultAbiCoder().encode(
-    ["uint256"], [quantityToClose]
-);
+const closeAmount = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [quantityToClose]);
 
 // Bot signs the fill authorization
 const opHash = await instantLayer.getOperationHash(operation);
 
-const fillAuthSig = await botSigner.signTypedData(domain, {
-    FlexFillAuth: [
-        { name: "opHash", type: "bytes32" },
-        { name: "fieldIndex", type: "uint256" },
-        { name: "value", type: "bytes" },
-    ]
-}, { opHash, fieldIndex: 0, value: closeAmount });
+const fillAuthSig = await botSigner.signTypedData(
+	domain,
+	{
+		FlexFillAuth: [
+			{ name: "opHash", type: "bytes32" },
+			{ name: "fieldIndex", type: "uint256" },
+			{ name: "value", type: "bytes" },
+		],
+	},
+	{ opHash, fieldIndex: 0, value: closeAmount },
+);
 
 // Operator submits
-await instantLayer.executeBatch(
-    [operation],
-    [userSig],
-    [{ values: [closeAmount] }],
-    [[fillAuthSig]]
-);
+await instantLayer.executeBatch([operation], [userSig], [{ values: [closeAmount] }], [[fillAuthSig]]);
 ```
 
 ### Example: Solver Updating Muon Signature in sendQuote
 
 The `sendQuoteWithAffiliate` signature is:
+
 ```solidity
 function sendQuoteWithAffiliate(
     address[] memory partyBsWhiteList,      // offset 0   (dynamic -- offset pointer)
@@ -522,9 +527,20 @@ For flex fields on dynamic parameters, the integrator must calculate the exact b
 ```javascript
 // Encode the full sendQuote calldata with a placeholder Muon sig
 const callData = partyAFacet.interface.encodeFunctionData("sendQuoteWithAffiliate", [
-    partyBsWhiteList, symbolId, positionType, orderType,
-    price, quantity, cva, lf, partyAmm, partyBmm,
-    maxFundingRate, deadline, affiliate, placeholderUpnlSig
+	partyBsWhiteList,
+	symbolId,
+	positionType,
+	orderType,
+	price,
+	quantity,
+	cva,
+	lf,
+	partyAmm,
+	partyBmm,
+	maxFundingRate,
+	deadline,
+	affiliate,
+	placeholderUpnlSig,
 ]);
 
 // Calculate where the upnlSig data actually starts in the encoded calldata.
@@ -532,25 +548,27 @@ const callData = partyAFacet.interface.encodeFunctionData("sendQuoteWithAffiliat
 // Read it from the encoded calldata:
 const upnlSigOffsetPointer = 416;
 const upnlSigDataStart = Number(
-    ethers.AbiCoder.defaultAbiCoder().decode(
-        ["uint256"],
-        "0x" + callData.slice(2 + 8 + upnlSigOffsetPointer * 2, 2 + 8 + (upnlSigOffsetPointer + 32) * 2)
-    )[0]
+	ethers.AbiCoder.defaultAbiCoder().decode(
+		["uint256"],
+		"0x" + callData.slice(2 + 8 + upnlSigOffsetPointer * 2, 2 + 8 + (upnlSigOffsetPointer + 32) * 2),
+	)[0],
 );
 const upnlSigDataLength = callData.length / 2 - 4 - upnlSigDataStart; // rest of calldata
 
 const operation = {
-    signer: userAddress,
-    target: symmioCoreAddress,
-    callData: callData,
-    signerAccount: { addr: userAccount, isPartyB: false },
-    flexFields: [{
-        offset: upnlSigDataStart,
-        length: upnlSigDataLength,
-        authorizedFlexFiller: solverAddress
-    }],
-    maxUses: 1,
-    replayAttackHeader: { nonce: 0n, deadline: 0n, salt: generateSalt() }
+	signer: userAddress,
+	target: symmioCoreAddress,
+	callData: callData,
+	signerAccount: { addr: userAccount, isPartyB: false },
+	flexFields: [
+		{
+			offset: upnlSigDataStart,
+			length: upnlSigDataLength,
+			authorizedFlexFiller: solverAddress,
+		},
+	],
+	maxUses: 1,
+	replayAttackHeader: { nonce: 0n, deadline: 0n, salt: generateSalt() },
 };
 ```
 
@@ -563,5 +581,6 @@ The solver encodes a fresh Muon signature with the **same byte length** and prov
 ## Related Documentation
 
 For practical integration examples, see:
-- [InstantLayer PartyB Integration Guide](./InstantLayer-PartyB-Integration.md) -- Detailed code examples for PartyB integrators
+
+- [InstantLayer PartyB Integration Guide](./instant-layer-partyb-integration.md) -- Detailed code examples for PartyB integrators
 - [InstantLayer Service Integration Guide](./instant-layer-service-integration.md) -- TPSL, Trigger Market, and Session Key integration

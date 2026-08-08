@@ -2,7 +2,6 @@ import fs from "fs"
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
-import { loadUpgradeConfigShared } from "../../scripts/upgrade/utils/sharedConfig.js"
 import { atomicWriteFile, upsertDeploymentRecords } from "../utils/fs.js"
 import { DeploymentCheckpoint, createDeployedContract, saveCheckpoint } from "./checkpoint.js"
 import { DEPLOYMENT_LOG_FILE } from "./constants.js"
@@ -10,8 +9,9 @@ import { checkpointDeployment, recoverCheckpointContractDeployments } from "./de
 import { assertStandaloneDeploymentTaskAllowed, getConnection } from "./helpers.js"
 import { logger } from "./logger.js"
 import { confirmDeployment } from "./tx.js"
+import { loadUpgradeConfigShared } from "./upgradeConfig.js"
 
-const DEFAULT_UPGRADE_CONFIG_FILE = "./scripts/upgrade/config/upgrade.json"
+const DEFAULT_UPGRADE_CONFIG_FILE = "./tasks/config/upgrade.json"
 
 type DeploySignatureVerifierArgs = {
 	admin?: string
