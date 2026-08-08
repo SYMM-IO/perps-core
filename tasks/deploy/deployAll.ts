@@ -32,9 +32,10 @@ import {
 	type ExpressProviderResolvedConfig,
 } from "./componentDeployment.js"
 import { EXPRESSPROVIDER_DEPLOYMENT_FILE } from "./constants.js"
+import { ensureCreate2Factory, formatFactoryPinHint } from "./create2Factory.js"
 import { assertExpressProviderDeployable, assertRecipeNetworkTarget, type SafeManualAction } from "./deploymentRecipe.js"
 import { checkpointDeployment, persistSubmittedTransaction, recoverCheckpointContractDeployments } from "./deploymentRecovery.js"
-import { deployDiamond, resolveCreate2FactoryAddress } from "./diamond.js"
+import { deployDiamond } from "./diamond.js"
 import { getConnection } from "./helpers.js"
 import { setHyperEVMBigBlocks } from "./hyperevm.js"
 import { deployInstantLayer } from "./instantLayer.js"
@@ -179,6 +180,7 @@ export const DEPLOYER_SETUP_ROLES = [
 export const ACCOUNTLAYER_DEPLOYER_SETUP_ROLES = ["SETTER_ROLE", "APPROVER_ROLE", "PAUSER_ROLE", "UNPAUSER_ROLE"]
 
 interface DeployedContracts {
+	create2Factory?: string
 	collateral?: string
 	diamond?: string
 	signatureVerifier?: string
@@ -621,6 +623,12 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 		type: ArgumentType.BOOLEAN,
 		defaultValue: false,
 	})
+	.addOption({
+		name: "allowNewCreate2Factory",
+		description: "Permit deploying a CREATE2 factory even though a previous deployment report for this chain already names one",
+		type: ArgumentType.BOOLEAN,
+		defaultValue: false,
+	})
 	.setAction(async () => ({
 		default: async (
 			{
@@ -636,6 +644,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 				registerDummyAffiliate: registerDummyAffiliateFlag,
 				setupInstantLayerTemplates: setupIlTemplatesFlag,
 				allowUnsafeMainnet,
+				allowNewCreate2Factory,
 			},
 			hre,
 		) => {
@@ -777,17 +786,6 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 				protocolConfig,
 			}
 
-			// Resolve vanity intent before any deployment: an unaffordable plan, or a factory
-			// with no code on this chain, must stop the run while nothing has been broadcast.
-			const vanityPlan = buildVanityPlan(recipe?.create2)
-			if (vanityPlan) {
-				await resolveCreate2FactoryAddress(ethers, vanityPlan.factoryAddress)
-				const hashRate = calibrateHashRate()
-				assertWithinBudget(vanityPlan, hashRate)
-				logger.info(formatVanityPlan(vanityPlan, hashRate))
-			}
-			const vanity = createVanityContext(ethers, vanityPlan)
-
 			// Check for existing checkpoint (using chainId as primary identifier)
 			let checkpoint: DeploymentCheckpoint | null = null
 			if (!fresh) {
@@ -813,6 +811,26 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			if (!checkpoint) {
 				checkpoint = createCheckpoint(network, Number(chainId))
 			}
+
+			// Resolve vanity intent before any component deploys. assertWithinBudget reads pattern
+			// lengths only, never the address, so an unaffordable plan still stops the run while
+			// nothing has been broadcast. ensureCreate2Factory is the only step here that can send
+			// a transaction, and it runs with the checkpoint so its creation is journalled.
+			const vanityPlan = buildVanityPlan(recipe?.create2)
+			let create2FactoryDeployed = false
+			if (vanityPlan) {
+				const hashRate = calibrateHashRate()
+				assertWithinBudget(vanityPlan, hashRate)
+				logger.info(formatVanityPlan(vanityPlan, hashRate))
+				const factory = await ensureCreate2Factory(hre, vanityPlan, {
+					checkpoint,
+					isLive: recipe?.network.mode === "live",
+					allowNewFactory: allowNewCreate2Factory,
+					logData,
+				})
+				create2FactoryDeployed = factory.deployed
+			}
+			const vanity = createVanityContext(ethers, vanityPlan)
 
 			const currentManifest = createDeploymentManifest(manifestIntent, {
 				deploymentId: checkpoint.deploymentId || checkpoint.manifest?.deploymentId,
@@ -884,7 +902,8 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			logger.info()
 
 			const deploymentResults: DeploymentResult[] = []
-			const deployedContracts: DeployedContracts = {}
+			// The factory is bound above, before any component deploys, so it is safe to read here.
+			const deployedContracts: DeployedContracts = vanityPlan ? { create2Factory: vanityPlan.factoryAddress } : {}
 			let expressProviderResult: ExpressProviderStepResult | undefined
 
 			// HyperEVM (chainId 999 mainnet, 998 testnet) requires big blocks for facet deployment
@@ -1581,6 +1600,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 				report.updatedAt = new Date().toISOString()
 				report.transactions = checkpoint.transactions || []
 				displayReport(report, deployedContracts, config)
+				if (create2FactoryDeployed) logger.info(formatFactoryPinHint(deployedContracts.create2Factory!))
 				saveReport(report, deployedContracts)
 
 				if (handoverPending) {
@@ -2679,6 +2699,7 @@ function displayReport(report: SystemDeploymentReport, deployedContracts: Deploy
 
 	logger.info("DEPLOYED ADDRESSES")
 	logger.info("-".repeat(80))
+	if (deployedContracts.create2Factory) logger.info(`Create2Factory:       ${deployedContracts.create2Factory}`)
 	if (deployedContracts.collateral) logger.info(`Collateral:           ${deployedContracts.collateral}`)
 	if (deployedContracts.diamond) logger.info(`Diamond:              ${deployedContracts.diamond}`)
 	if (deployedContracts.signatureVerifier)
