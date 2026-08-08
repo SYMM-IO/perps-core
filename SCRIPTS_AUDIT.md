@@ -110,7 +110,7 @@ This verdict is based on source review, static gates, automated tests, and a com
 ### Toolchain and tests
 
 - `.node-version` pins Node `22.15.0`.
-- `utils/pinned-yarn.sh` and the `preinstall` hook (`scripts/check-package-manager.js`) enforce Yarn Classic `1.22.22`; `yarn.lock` fixes the dependency graph. The frozen graph currently installs Hardhat `3.12.0`. `utils/yarn-classic.sh` remains as a deprecated alias.
+- `utils/pinned-yarn.sh` and the install hooks (`scripts/check-package-manager.js`, wired to both `preinstall` and `postinstall`) enforce Yarn `4.13.0`; `yarn.lock` fixes the dependency graph. The frozen graph currently installs Hardhat `3.12.0`. `utils/yarn-classic.sh` remains as a deprecated alias.
 - `check:operations` runs Solidity lint, operations TypeScript checking, CLI tests, compilation, and focused deployment/recovery tests.
 - The parallel runner invokes the local Hardhat binary, honors worker exit codes, and isolates tests from deployment variables loaded from `.env` or the parent shell.
 

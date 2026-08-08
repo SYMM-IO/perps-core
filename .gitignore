@@ -23,7 +23,7 @@ typechain-types
 /scripts/output
 /scripts/upgrade/output
 
-# Dependency resolution is deployment-critical; Yarn Classic's lockfile is tracked.
+# Dependency resolution is deployment-critical; the Yarn lockfile is tracked.
 !yarn.lock
 .idea
 addresses.json

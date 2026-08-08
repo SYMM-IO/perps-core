@@ -5,9 +5,9 @@
 #   ./symmio <command>                  for the operator CLI (was: yarn-classic.sh cli ...)
 #   ./utils/pinned-yarn.sh <args>       for package-manager operations
 #
-# The old name described the implementation (it runs Yarn Classic) rather than the guarantee
-# (the pinned, verified toolchain), and read like an optional shim rather than the safety
-# gate it is.
+# The old name described the implementation (it once ran Yarn Classic) rather than the
+# guarantee (the pinned, verified toolchain), and read like an optional shim rather than the
+# safety gate it is. The checkout now pins Yarn 4; the name is kept only for compatibility.
 
 set -euo pipefail
 

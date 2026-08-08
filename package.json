@@ -44,8 +44,8 @@
 		"prettier": "3.8.0",
 		"random-ext": "^2.8.0",
 		"rxjs": "^7.8.1",
-		"solhint": "6.2.3",
 		"shx": "^0.3.4",
+		"solhint": "6.2.3",
 		"ts-node": "^10.9.2",
 		"tsx": "^4.21.0",
 		"typechain": "^8.3.2",
@@ -64,13 +64,13 @@
 		"solidity",
 		"typescript"
 	],
-	"packageManager": "yarn@1.22.22",
+	"packageManager": "yarn@4.13.0",
 	"publishConfig": {
 		"access": "public"
 	},
 	"scripts": {
 		"preinstall": "node scripts/check-package-manager.js",
-		"postinstall": "node scripts/patch-hardhat-verify.js",
+		"postinstall": "node scripts/check-package-manager.js && node scripts/patch-hardhat-verify.js",
 		"prepare": "husky",
 		"clean": "shx rm -rf ./artifacts ./cache ./coverage ./src/types ./coverage.json && yarn typechain",
 		"compile": "hardhat compile",
@@ -98,7 +98,5 @@
 		"bignumber.js": "^9.3.1",
 		"prettier-plugin-solidity": "^2.2.0"
 	},
-	"bin": {
-		"symmio": "./cli/symmio.js"
-	}
+	"bin": "./cli/symmio.js"
 }

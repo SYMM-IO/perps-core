@@ -49,7 +49,7 @@ fi
 
 if [[ ! -d "$REPO_ROOT/node_modules" ]]; then
 	die "Dependencies are not installed." \
-		"Run: ./utils/pinned-yarn.sh install --frozen-lockfile"
+		"Run: ./utils/pinned-yarn.sh install --immutable"
 fi
 
 if [[ ! -f "$CLI_ENTRY" ]]; then
