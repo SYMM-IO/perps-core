@@ -23,7 +23,10 @@ describe("ensure create2 factory", function () {
 	})
 
 	after(function () {
-		fs.rmSync(path.resolve(`tasks/data/checkpoints/checkpoint-${TEST_CHAIN_ID}.json`), { force: true })
+		// The checkpoint path carries the data-scope suffix, so clear both spellings.
+		for (const name of [`checkpoint-${TEST_CHAIN_ID}.json`, `checkpoint-${TEST_CHAIN_ID}-fork.json`]) {
+			fs.rmSync(path.resolve(`tasks/data/checkpoints/${name}`), { force: true })
+		}
 	})
 
 	it("deploys a factory when the recipe asks for one", async function () {
