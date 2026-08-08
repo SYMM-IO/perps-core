@@ -438,7 +438,7 @@
 
 					<aside class="callout callout-note">
 						<strong>Two entrypoints, two jobs.</strong> <code>./symmio</code> is the operator CLI. <code>./utils/pinned-yarn.sh</code> is
-						for package-manager work (<code>install</code>, <code>link</code>, <code>run</code>) and enforces the Yarn Classic pin. The
+						for package-manager work (<code>install</code>, <code>link</code>, <code>run</code>) and enforces the Yarn version pin. The
 						older <code>./utils/yarn-classic.sh</code> still works and forwards to whichever is right.
 					</aside>
 
@@ -446,8 +446,8 @@
 					<p>Use the checked-in toolchain. Do not regenerate the lockfile immediately before a deployment.</p>
 
 					<pre><code class="language-bash">node --version                                    # v22.15.0
-./utils/pinned-yarn.sh --version                  # 1.22.22
-./utils/pinned-yarn.sh install --frozen-lockfile</code></pre>
+./utils/pinned-yarn.sh --version                  # 4.13.0
+./utils/pinned-yarn.sh install --immutable</code></pre>
 
 					<p>Then store the three secrets once. They are encrypted at rest and prompted for when a deployment needs them:</p>
 
@@ -843,7 +843,7 @@
 					</div>
 
 					<h2 id="quick">The whole thing, in order</h2>
-					<pre><code class="language-bash">./utils/pinned-yarn.sh install --frozen-lockfile
+					<pre><code class="language-bash">./utils/pinned-yarn.sh install --immutable
 
 ./symmio recipe init --network arbitrum
 # edit deployments/arbitrum.json — replace every REPLACE_WITH_* value

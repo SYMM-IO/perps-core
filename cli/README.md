@@ -13,7 +13,7 @@ so what executes is the source you can read. Linking is optional; `./utils/pinne
 puts the same CLI on your `PATH` as bare `symmio`.
 
 Package-manager work (install, link, run) goes through `./utils/pinned-yarn.sh`, which enforces
-the Yarn Classic pin. `./utils/yarn-classic.sh` still works as a deprecated alias for both.
+the Yarn version pin. `./utils/yarn-classic.sh` still works as a deprecated alias for both.
 
 ## Start here
 

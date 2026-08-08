@@ -1,18 +1,27 @@
 #!/usr/bin/env node
-// preinstall guard: refuse to build a dependency tree with the wrong package manager.
+// Install guard: refuse to build a dependency tree with the wrong package manager.
 //
 // utils/pinned-yarn.sh only protects the invocations that go through it. A plain
 // `npm install` or a Corepack-redirected `yarn` bypasses it entirely — and that is the exact
-// failure it exists to prevent, because this project resolves from a Yarn Classic v1
-// yarn.lock. A tree installed by Berry or npm is not the tree that was reviewed, and this
-// repo's tooling signs mainnet transactions.
+// failure it exists to prevent, because this project resolves from a committed yarn.lock.
+// A tree installed by a different package manager is not the tree that was reviewed, and
+// this repo's tooling signs mainnet transactions.
 //
-// Node builtins only: preinstall runs before node_modules exists.
+// Wired into BOTH preinstall and postinstall, because the two managers reach it differently:
+//
+//   npm/pnpm  run preinstall, so they fail here before any tree is written. This is the
+//             case that matters most, and it still fails early.
+//   yarn 4    does not run a root-workspace preinstall at all. It does run postinstall, so
+//             a wrong Yarn release is caught there — after the tree exists, which is later
+//             than ideal but still loud. Corepack plus the packageManager field is what
+//             makes that case unlikely in the first place; this is the backstop.
+//
+// Node builtins only: at preinstall there is no node_modules yet.
 
-const EXPECTED = "1.22.22";
+const EXPECTED = "4.13.0";
 const OVERRIDE = "SYMMIO_ALLOW_ANY_PACKAGE_MANAGER";
 
-/** yarn 1 reports e.g. "yarn/1.22.22 npm/? node/v22.15.0 darwin arm64"; npm reports "npm/10.8.2 ...". */
+/** yarn reports e.g. "yarn/4.13.0 npm/? node/v22.15.0 darwin arm64"; npm reports "npm/10.8.2 ...". */
 function detect(userAgent) {
 	if (typeof userAgent !== "string" || userAgent.trim() === "") return null;
 	const match = /^([a-z]+)\/(\S+)/i.exec(userAgent.trim());
@@ -22,7 +31,7 @@ function detect(userAgent) {
 
 function fail(lines) {
 	console.error("");
-	console.error("  This checkout requires Yarn Classic " + EXPECTED + ".");
+	console.error("  This checkout requires Yarn " + EXPECTED + ".");
 	console.error("");
 	for (const line of lines) console.error("  " + line);
 	console.error("");
@@ -30,7 +39,7 @@ function fail(lines) {
 	console.error("    corepack enable && corepack prepare yarn@" + EXPECTED + " --activate");
 	console.error("");
 	console.error("  Then install through the guarded wrapper:");
-	console.error("    ./utils/pinned-yarn.sh install --frozen-lockfile");
+	console.error("    ./utils/pinned-yarn.sh install --immutable");
 	console.error("");
 	console.error("  To bypass deliberately (not for a deployment checkout):");
 	console.error("    " + OVERRIDE + "=1 <your command>");
@@ -50,14 +59,14 @@ const agent = detect(process.env.npm_config_user_agent);
 if (agent === null) process.exit(0);
 
 if (agent.name !== "yarn") {
-	fail([`Detected ${agent.name} ${agent.version}, which does not honour this project's Yarn v1 lockfile.`]);
+	fail([`Detected ${agent.name} ${agent.version}, which does not honour this project's yarn.lock.`]);
 }
 
 if (agent.version !== EXPECTED) {
 	fail([
 		`Detected yarn ${agent.version}.`,
 		agent.version.startsWith("1.")
-			? "That is a different Yarn Classic patch than the pinned one."
-			: "Yarn Berry resolves this v1 lockfile differently and would produce a different tree.",
+			? "Yarn Classic cannot read this checkout's lockfile format and would rewrite it."
+			: "That is a different Yarn release than the pinned one and may resolve a different tree.",
 	]);
 }

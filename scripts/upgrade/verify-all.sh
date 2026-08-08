@@ -11,7 +11,7 @@ if [[ ! "${NETWORK}" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
 fi
 HARDHAT_BIN="./node_modules/.bin/hardhat"
 if [[ ! -x "${HARDHAT_BIN}" ]]; then
-	echo "Missing ${HARDHAT_BIN}; run ./utils/pinned-yarn.sh install --frozen-lockfile first" >&2
+	echo "Missing ${HARDHAT_BIN}; run ./utils/pinned-yarn.sh install --immutable first" >&2
 	exit 2
 fi
 

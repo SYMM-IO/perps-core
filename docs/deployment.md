@@ -28,20 +28,25 @@ live receipts, health check, and explorer verification are the evidence for your
 ## Before you start
 
 Use the checked-in toolchain. `.node-version` pins Node `22.15.0`, `package.json` pins Yarn
-Classic `1.22.22`, and `yarn.lock` is the dependency lock:
+`4.13.0`, and `yarn.lock` is the dependency lock:
 
 ```bash
 node --version                                    # v22.15.0
-./utils/pinned-yarn.sh --version                  # 1.22.22
-./utils/pinned-yarn.sh install --frozen-lockfile
+./utils/pinned-yarn.sh --version                  # 4.13.0
+./utils/pinned-yarn.sh install --immutable
 ./utils/pinned-yarn.sh run check:operations
 ```
 
-`utils/pinned-yarn.sh` rejects any package-manager version other than the checked-in Yarn
-Classic pin and ignores parent/user `yarn-path` settings, which would otherwise redirect this
-v1-lockfile project into Yarn Berry. A `preinstall` hook enforces the same pin even when
-someone bypasses the wrapper and runs `npm install` directly. Do not regenerate the lockfile
-immediately before a deployment.
+`utils/pinned-yarn.sh` rejects any package-manager version other than the checked-in pin.
+`scripts/check-package-manager.js` enforces the same pin even when someone bypasses the
+wrapper: it runs from `preinstall`, which blocks `npm install` before any tree is written, and
+from `postinstall`, which is where a wrong Yarn release is caught, because Yarn 4 does not run
+a root-workspace `preinstall` at all. Do not regenerate the lockfile immediately before a
+deployment.
+
+If Yarn aborts an install with `symmio@workspace:. couldn't be built successfully`, the
+explanation is in the `build.log` path it prints, or rerun with `--inline-builds` to see it
+directly. Yarn 4 does not surface build-script output inline by default.
 
 Every operator command in this runbook is `./symmio <command>` — the checkout-local CLI, which
 needs no install step and no global binary. If you prefer the bare `symmio`, link it once:
