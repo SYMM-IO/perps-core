@@ -32,6 +32,9 @@
 		"groups": {
 			"diamonds": {
 				"prefix": "573310"
+			},
+			"facets": {
+				"suffix": "860"
 			}
 		}
 	},
@@ -46,6 +49,12 @@
 			"appId": "67095677696457568621176602095256212877581942797155816526660337292193161013107",
 			"upnlValidTime": "60",
 			"priceValidTime": "60",
+			"upnlValidTimeByFunction": {
+				"AccountManagement": "30",
+				"LiquidationPartyA": "120",
+				"LiquidationPartyB": "120",
+				"RemoveMargin": "30"
+			},
 			"publicKey": {
 				"x": "28816647750548585451357630311330111079635661660584752231799347508659086631222",
 				"parity": 0
