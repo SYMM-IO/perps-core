@@ -1417,10 +1417,14 @@ body.doc-page.rail-right-collapsed .toc-panel {
 	overflow: visible;
 }
 
+/* The section list is hidden here, so the grid rows collapse; flex keeps the
+   header pinned top and the toggle bottom, matching the expanded rail. */
 body.doc-page.rail-right-collapsed .toc-card {
-	grid-template-rows: auto;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: space-between;
 	padding: 12px 0;
-	place-items: center;
 }
 
 body.doc-page.rail-right-collapsed .arc-rail-header {

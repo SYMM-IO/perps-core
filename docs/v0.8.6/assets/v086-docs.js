@@ -23,13 +23,13 @@
 			'<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>',
 		check: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg>',
 		copy: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>',
-		eyeOff: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m2 2 20 20"/><path d="M10.6 10.6a2 2 0 0 0 2.8 2.8"/><path d="M16.7 16.7A10.8 10.8 0 0 1 12 18C7 18 3.7 14.9 2 12c.8-1.4 2.1-2.8 3.6-3.9"/><path d="M9.9 5.2A10.6 10.6 0 0 1 12 5c5 0 8.3 3.1 10 7a12.7 12.7 0 0 1-2.1 3.1"/></svg>',
 		expand: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6"/><path d="m21 3-7 7"/><path d="M9 21H3v-6"/><path d="m3 21 7-7"/></svg>',
 		fileDown:
 			'<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 12v6"/><path d="m9 15 3 3 3-3"/></svg>',
 		home: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>',
-		list: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>',
 		moon: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5 7 7 0 1 0 20.5 14.5"/></svg>',
+		sidebar:
+			'<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/></svg>',
 		sun: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.9 4.9 1.4 1.4"/><path d="m17.7 17.7 1.4 1.4"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.3 17.7-1.4 1.4"/><path d="m19.1 4.9-1.4 1.4"/></svg>',
 		wrap: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h14a4 4 0 0 1 0 8H7"/><path d="m10 12-3 3 3 3"/></svg>',
 	};
@@ -134,7 +134,7 @@
 
 		const sync = (collapsed, persist = true) => {
 			body.classList.toggle("rail-right-collapsed", collapsed);
-			setIconLabel(button, collapsed ? icons.list : icons.eyeOff, collapsed ? "Sections" : "Hide");
+			setIconLabel(button, icons.sidebar, collapsed ? "Sections" : "Hide");
 			button.setAttribute("aria-expanded", String(!collapsed));
 			button.setAttribute("aria-label", collapsed ? "Show sections sidebar" : "Hide sections sidebar");
 			if (persist) railStorage.set("v086-docs-sections-collapsed", String(collapsed));
