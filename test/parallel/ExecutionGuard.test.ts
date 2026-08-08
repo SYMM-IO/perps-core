@@ -1,6 +1,6 @@
 import { expect } from "chai"
 
-import { exactBooleanEnv, requireExecutionConfirmation, requireSafeProposalConfirmation } from "../../scripts/upgrade/utils/executionGuard.js"
+import { exactBooleanEnv, requireExecutionConfirmation, requireSafeProposalConfirmation } from "../../tasks/deploy/executionGuard.js"
 
 const GUARDED_ENV = ["EXECUTE", "DRY_RUN", "CONFIRM_CHAIN_ID", "SUBMIT_SAFE_PROPOSAL", "SAFE_PROPOSAL_SUBMIT", "CONFIRM_SAFE_ADDRESS"] as const
 

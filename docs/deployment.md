@@ -612,4 +612,3 @@ guided CLI instead of setting the internal handoff themselves.
 ### See also
 
 - [CLI reference](../cli/README.md)
-- [Scripts audit](../SCRIPTS_AUDIT.md)

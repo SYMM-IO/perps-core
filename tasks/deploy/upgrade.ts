@@ -1,7 +1,7 @@
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
-import { requireChainConfirmation } from "../../scripts/upgrade/utils/executionGuard.js"
+import { requireChainConfirmation } from "./executionGuard.js"
 import { assertStandaloneDeploymentTaskAllowed, checksumAddress, getConnection, requireArg } from "./helpers.js"
 import { logger } from "./logger.js"
 import { confirmDeployment, send } from "./tx.js"

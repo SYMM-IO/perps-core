@@ -1,5 +1,5 @@
 /**
- * Shared fail-closed execution interlock for standalone upgrade scripts.
+ * Fail-closed execution interlock for mutating deployment tasks.
  *
  * A mutation is authorized only by the exact pair:
  *   EXECUTE=true CONFIRM_CHAIN_ID=<connected eth_chainId>

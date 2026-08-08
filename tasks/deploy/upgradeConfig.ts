@@ -1,11 +1,19 @@
 import fs from "fs"
 
-import type { MuonPublicKey } from "./muonVerifierConfig.js"
-
 /**
- * Shared fields from upgrade.json that other config files can fall back to,
- * avoiding duplication of diamondAddress, subgraphEndpoint, etc.
+ * Optional operator-supplied config consumed by the standalone deployment tasks.
+ *
+ * The file is not required: every loader below degrades to an empty object when it is
+ * absent, so a recipe-driven deployment never depends on it. It exists for the
+ * env-var driven tasks that predate recipes and still accept a hand-written config.
  */
+
+/** JSON-loaded, so `x` is a decimal string rather than a bigint. */
+type MuonPublicKey = {
+	x: string
+	parity: number
+}
+
 export type UpgradeConfigShared = {
 	diamondAddress?: string
 	protocolAdmin?: string
@@ -30,13 +38,13 @@ export type UpgradeConfigShared = {
 	}
 }
 
-const CONFIG_DIR = "./scripts/upgrade/config"
+const CONFIG_DIR = "./tasks/config"
 
 let cachedConfig: UpgradeConfigShared | null = null
 
 /**
  * Map the hardhat network name to the suffix used for network-postfixed config
- * files (upgrade-<suffix>.json, partyBList-<suffix>.json, etc.).
+ * files (upgrade-<suffix>.json).
  *
  * Resolution order:
  *   1. NETWORK_ALIAS env var, if set — use this when running against a forked

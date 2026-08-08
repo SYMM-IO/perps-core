@@ -20,7 +20,6 @@ coverage.json
 typechain
 typechain-types
 /scripts/output
-/scripts/upgrade/output
 
 # Dependency resolution is deployment-critical; the lockfile is tracked.
 !package-lock.json
