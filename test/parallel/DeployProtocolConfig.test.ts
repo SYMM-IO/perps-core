@@ -86,7 +86,7 @@ describe("deployment protocol config validation", function () {
 			"InstantOpen",
 			"InstantClose",
 			"InstantCloseWithAllocation",
-			"INSTANT_OPEN_NO_MARGIN_TEMPLATE",
+			"InstantOpenNoMargin",
 		])
 		expect(config.instantLayerTemplates[3].operations[1]).to.deep.equal({ insertionPoints: [0], sourceIndices: [0], sourceOffsets: [0] })
 	})

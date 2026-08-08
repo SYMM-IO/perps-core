@@ -1,0 +1,212 @@
+[
+	{
+		"name": "DiamondCut",
+		"address": "0x56094c2097AA1eBADb351613e4c5Ee00471fF860",
+		"constructorArguments": []
+	},
+	{
+		"name": "Diamond",
+		"address": "0x573310dB6d160B26026B8706EBe9831c7dEF1D09",
+		"constructorArguments": ["0xf12239317e985f6772F86407608B166EfA3E2f05", "0x56094c2097AA1eBADb351613e4c5Ee00471fF860"]
+	},
+	{
+		"name": "Init",
+		"address": "0x603F5dB5585778AB9ec26Da7743DA33aFa1E0453",
+		"constructorArguments": []
+	},
+	{
+		"name": "LibQuoteClose",
+		"address": "0x9E8a7b849F4DBbb7Bf6556168776638D81d3fE00",
+		"constructorArguments": []
+	},
+	{
+		"name": "LibQuoteFunding",
+		"address": "0x023941C1ed3aa59587DaC2d4019830c4915239aa",
+		"constructorArguments": []
+	},
+	{
+		"name": "LibForceActions",
+		"address": "0x4339F007daD2C3160a5F1873b6C34a02093D8ae6",
+		"constructorArguments": []
+	},
+	{
+		"name": "LibSettlement",
+		"address": "0x9B4B03027c0FF19C25eF176Ef360C80471163B21",
+		"constructorArguments": []
+	},
+	{
+		"name": "LibPartyALiquidationProcess",
+		"address": "0x831A02D71fa03E6A6D54c76D3e7b36115f41d67a",
+		"constructorArguments": []
+	},
+	{
+		"name": "LibPartyALiquidationSnapshotSetup",
+		"address": "0xb69e8d68DcC604CD084b2a04115D96B33F485103",
+		"constructorArguments": []
+	},
+	{
+		"name": "LibPartyALiquidationLegacySetup",
+		"address": "0x5aDfb7a307DED826CB31da81BaEcF53c2157F760",
+		"constructorArguments": []
+	},
+	{
+		"name": "AccountFacet",
+		"address": "0x4dA04c1f1626AC13810AD901ce4bfd26d1a5e860",
+		"constructorArguments": []
+	},
+	{
+		"name": "PartyBAccountFacet",
+		"address": "0x810FE5e29DF5dFDEdf482C36Ec496946BA2B9860",
+		"constructorArguments": []
+	},
+	{
+		"name": "ExternalTransferFacet",
+		"address": "0x22e16595731A70b3414E58b6049fE124EB79E860",
+		"constructorArguments": []
+	},
+	{
+		"name": "BindingFacet",
+		"address": "0x3c7197C9724853877291b17f465A4A7B3fE7a860",
+		"constructorArguments": []
+	},
+	{
+		"name": "PledgeFacet",
+		"address": "0xB8114BE290F31400ECb320C5C0dE2A507D759860",
+		"constructorArguments": []
+	},
+	{
+		"name": "MigrationFacet",
+		"address": "0xc4a0196Ac0406E68Bc6E094ff3e2a913964eE860",
+		"constructorArguments": []
+	},
+	{
+		"name": "contracts/core/facets/Control/ControlFacet.sol:ControlFacet",
+		"address": "0xf44F571c36ffA0f4F328BF1718ea7EDF4EaB1860",
+		"constructorArguments": []
+	},
+	{
+		"name": "SymbolControlFacet",
+		"address": "0xfeb5Bf9682a4D43d2015565b9F8156CEE2375860",
+		"constructorArguments": []
+	},
+	{
+		"name": "SymbolAdjustmentFacet",
+		"address": "0xf6a617eDfDa13476B93Da89172DBaee97f54E860",
+		"constructorArguments": []
+	},
+	{
+		"name": "PauseControlFacet",
+		"address": "0xa35B5F97347C1410De46CCCe29C9718D4528f860",
+		"constructorArguments": []
+	},
+	{
+		"name": "DiamondLoupeFacet",
+		"address": "0x73a8a7124A3A21e5967dBDBc04E48cFd29506860",
+		"constructorArguments": []
+	},
+	{
+		"name": "PartyALiquidationFacet",
+		"address": "0x73d87133521E2600051D5B0d5b0c68094ca53860",
+		"constructorArguments": []
+	},
+	{
+		"name": "PartyALiquidationSnapshotFacet",
+		"address": "0x3f056B9c1D567d6d82b9d64039AE5385556d6860",
+		"constructorArguments": []
+	},
+	{
+		"name": "PartyBLiquidationFacet",
+		"address": "0xa31d995f2b5DA6a961E05aD5a0CfD5824C3d9860",
+		"constructorArguments": []
+	},
+	{
+		"name": "PartyAFacet",
+		"address": "0xe51Ab28019Ed98B89c2f0E34E24400A91cb0a860",
+		"constructorArguments": []
+	},
+	{
+		"name": "BridgeFacet",
+		"address": "0xF2434ca60c2c4dBB98D15c5E99d28f1602246860",
+		"constructorArguments": []
+	},
+	{
+		"name": "contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet",
+		"address": "0x1817740a0f3870bEC2e1F754FCEf825674175860",
+		"constructorArguments": []
+	},
+	{
+		"name": "ViewFacetSymbol",
+		"address": "0xa8D8b5c8F9fB929615FAB4e9a81ffee3b8176860",
+		"constructorArguments": []
+	},
+	{
+		"name": "ViewFacetQuote",
+		"address": "0xD4Ce2ff5d3B5D1192190eA3440b344BbBceb8860",
+		"constructorArguments": []
+	},
+	{
+		"name": "ViewFacetAggregate",
+		"address": "0xD2a3A151aFF1f4EFB34b1AB0109bd164B0f0d860",
+		"constructorArguments": []
+	},
+	{
+		"name": "FundingRateFacet",
+		"address": "0x54c94995764dD6c3535CA775E609337296A6f860",
+		"constructorArguments": []
+	},
+	{
+		"name": "ForceActionsFacet",
+		"address": "0xbBF5dF4DBCe2Ec55F4A0755dD19753Ad05503860",
+		"constructorArguments": []
+	},
+	{
+		"name": "ForceCloseStepsFacet",
+		"address": "0x9a2C2563D39dEfFdF93E2318564c98612cBEB860",
+		"constructorArguments": []
+	},
+	{
+		"name": "SettlementFacet",
+		"address": "0x25240d7b386fb2c92469D7631785aC52213E2860",
+		"constructorArguments": []
+	},
+	{
+		"name": "PartyBPositionActionsFacet",
+		"address": "0x89EFbC6390c37289d3C9ba376A86f82eb500f860",
+		"constructorArguments": []
+	},
+	{
+		"name": "PartyBSolverFeeActionsFacet",
+		"address": "0x0154CF73dE403a3F41B4020722124B6b15680860",
+		"constructorArguments": []
+	},
+	{
+		"name": "PartyBQuoteActionsFacet",
+		"address": "0x24cC2Fa445D3fd479e5CFaA9BAe1577f0c6fE860",
+		"constructorArguments": []
+	},
+	{
+		"name": "ClearingHouseFacet",
+		"address": "0x87261753e46fb74a11110dB5fE78A4D8576b3860",
+		"constructorArguments": []
+	},
+	{
+		"name": "PartyBBatchActionsFacet",
+		"address": "0x4004771C88F16DFF7012583d1382224c76eE7860",
+		"constructorArguments": []
+	},
+	{
+		"name": "PartyBEmergencyActionsFacet",
+		"address": "0xF679ff3C913fdC2180a1EfAEca8E2B251D6D9860",
+		"constructorArguments": []
+	},
+	{
+		"name": "WithdrawFacet",
+		"address": "0x95f1AE1E81482CA6268359401b350a27e10C2860",
+		"constructorArguments": []
+	},
+	{
+		"name": "MuonSignatureVerifier",
+		"address": "0xe8D2220Fd6D56C3f2fBDB3c7FF14FEAFA7573695",
+		"constructorArguments": ["0xf12239317e985f6772F86407608B166EfA3E2f05"]
+	}
+]

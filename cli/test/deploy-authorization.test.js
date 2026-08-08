@@ -1,5 +1,6 @@
 import {
 	componentReportPath,
+	deploymentBuildInvocation,
 	deploymentPlanRows,
 	deploymentTaskInvocation,
 	deploymentLifecycleExitCode,
@@ -68,6 +69,15 @@ test("recipe verification is authoritative and can only be further disabled off 
 
 test("recipe deployments pass an absolute recipe path and disable dotenv loading", () => {
 	const recipeContext = { path: "/repo/deployments/arbitrum.json", digest: "recipe-digest" };
+	assert.deepEqual(deploymentBuildInvocation(recipeContext), {
+		args: ["--build-profile", "production", "build"],
+		env: {
+			SYMMIO_DEPLOYMENT_RECIPE: "/repo/deployments/arbitrum.json",
+			SYMMIO_DEPLOYMENT_RECIPE_DIGEST: "recipe-digest",
+			DOTENV_CONFIG_PATH: "/dev/null",
+			SYMMIO_RECIPE_READ_ONLY: "true",
+		},
+	});
 	assert.deepEqual(
 		deploymentTaskInvocation({
 			recipeContext,
