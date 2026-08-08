@@ -14,7 +14,8 @@ import { decimal, getBlockTimestamp, unDecimal } from "./utils/Common.js"
 import { migratePartyBToCross } from "./utils/CrossPartyB.js"
 import { getDummySingleUpnlSig, getDummyUnifiedSettlementSig } from "./utils/SignatureUtils.js"
 
-const REALIZED_PNL_IN = 4n
+// SharedEvents.BalanceChangeType.SETTLEMENT_PNL_IN
+const SETTLEMENT_PNL_IN = 18n
 
 export function shouldBehaveLikeSettlementUnified(): void {
 	let context: RunContext, user: User, user2: User, hedger: Hedger, hedger2: Hedger
@@ -370,7 +371,7 @@ export function shouldBehaveLikeSettlementUnified(): void {
 
 			await expect(context.settlementFacet.connect(context.signers.hedger).settleUpnlUnified(sig, [updatedPrice]))
 				.to.emit(symmio, "BalanceChangePartyB")
-				.withArgs(partyB, ZeroAddress, expectedLoss, REALIZED_PNL_IN)
+				.withArgs(partyB, ZeroAddress, expectedLoss, SETTLEMENT_PNL_IN)
 
 			const partyABalanceAfter = await user.getBalanceInfo()
 			const partyBBalanceAfter = await hedger.getBalanceInfoCrossPartyB()
