@@ -151,7 +151,27 @@
 		"create2": {
 			"type": "object",
 			"additionalProperties": false,
+			"not": { "required": ["factory", "factoryAddress"] },
 			"properties": {
+				"factory": {
+					"oneOf": [
+						{
+							"type": "object",
+							"additionalProperties": false,
+							"required": ["mode"],
+							"properties": { "mode": { "const": "deploy" } }
+						},
+						{
+							"type": "object",
+							"additionalProperties": false,
+							"required": ["mode", "address"],
+							"properties": {
+								"mode": { "const": "reuse" },
+								"address": { "$ref": "#/$defs/address" }
+							}
+						}
+					]
+				},
 				"factoryAddress": { "$ref": "#/$defs/address" },
 				"groups": {
 					"type": "object",

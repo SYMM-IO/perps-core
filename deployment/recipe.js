@@ -263,11 +263,27 @@ function validateVanityPattern(value, source, field) {
 /**
  * Vanity address intent for every component. Declaring a pattern without a factory would
  * silently fall back to ordinary CREATE and produce an address nobody reviewed, so it fails.
+ * The factory itself is either reused at a known address or deployed by the run.
  */
 function validateCreate2(value, source) {
 	const create2 = object(value, source, "create2");
-	onlyKeys(create2, ["factoryAddress", "groups", "overrides", "miningBudget"], source, "create2");
+	onlyKeys(create2, ["factory", "factoryAddress", "groups", "overrides", "miningBudget"], source, "create2");
+	if (create2.factory !== undefined && create2.factoryAddress !== undefined) {
+		fail(source, "create2.factory", "and create2.factoryAddress are two spellings of the same intent; keep one");
+	}
 	if (create2.factoryAddress !== undefined) address(create2.factoryAddress, source, "create2.factoryAddress");
+	if (create2.factory !== undefined) {
+		const factory = object(create2.factory, source, "create2.factory");
+		onlyKeys(factory, ["mode", "address"], source, "create2.factory");
+		required(factory, ["mode"], source, "create2.factory");
+		enumValue(factory.mode, ["deploy", "reuse"], source, "create2.factory.mode");
+		if (factory.mode === "reuse") {
+			required(factory, ["address"], source, "create2.factory");
+			address(factory.address, source, "create2.factory.address");
+		} else if (factory.address !== undefined) {
+			fail(source, "create2.factory.address", "must be omitted when create2.factory.mode is deploy");
+		}
+	}
 	if (create2.miningBudget !== undefined) integer(create2.miningBudget, source, "create2.miningBudget", 1);
 
 	let declared = false;
@@ -287,8 +303,13 @@ function validateCreate2(value, source) {
 			declared = validateVanityPattern(overrides[key], source, `create2.overrides.${key}`) || declared;
 		}
 	}
-	if (declared && create2.factoryAddress === undefined) {
-		fail(source, "create2.factoryAddress", "is required when any group or override declares a vanity pattern");
+	if (declared && create2.factory === undefined && create2.factoryAddress === undefined) {
+		fail(
+			source,
+			"create2.factory",
+			'is required when any group or override declares a vanity pattern; use { "mode": "deploy" } to have the run create one, ' +
+				'or { "mode": "reuse", "address": "0x…" }',
+		);
 	}
 }
 
