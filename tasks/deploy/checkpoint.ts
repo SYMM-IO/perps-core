@@ -57,6 +57,7 @@ export interface DeploymentCheckpoint {
 	updatedAt: string
 	step: string
 	contracts: {
+		create2Factory?: DeployedContract
 		collateral?: DeployedContract
 		diamond?: DiamondCheckpoint
 		accountLayerDiamond?: AccountLayerCheckpoint
