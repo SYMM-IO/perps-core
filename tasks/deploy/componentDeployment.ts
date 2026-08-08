@@ -12,6 +12,7 @@ import {
 	saveCheckpoint,
 	setCheckpointSimulated,
 } from "./checkpoint.js"
+import { ensureCreate2Factory } from "./create2Factory.js"
 import {
 	assertDependencyAddressesHaveCode,
 	assertRecipeNetworkTarget,
@@ -23,7 +24,6 @@ import {
 	SafeManualAction,
 } from "./deploymentRecipe.js"
 import { persistSubmittedTransaction, recoverCheckpointContractDeployments } from "./deploymentRecovery.js"
-import { ensureCreate2Factory } from "./create2Factory.js"
 import { verificationProviderForChain } from "./explorer.js"
 import {
 	createExpressVerificationRecords,
@@ -328,9 +328,10 @@ export interface ExpressProviderResolvedConfig {
 	deployer: string
 	core: string
 	collateral: string
-	signatureVerifier: string
-	muonAppId: string
-	muonFreshnessWindow: number
+	/** Absent together when the recipe defers the creditLine section; nothing is written on-chain. */
+	signatureVerifier?: string
+	muonAppId?: string
+	muonFreshnessWindow?: number
 	securityWindow?: number
 	tolerancePeriod?: number
 	roles: Record<string, string[]>
@@ -381,14 +382,23 @@ export async function inspectExpressProviderPostState(ethers: any, input: Expres
 	check("runtime bytecode", runtimeCode !== "0x", "deployed bytecode", runtimeCode === "0x" ? "0x" : undefined)
 	check("core binding", ethers.getAddress(boundSymmio) === core, core, boundSymmio)
 	check("collateral binding", ethers.getAddress(boundCollateral) === ethers.getAddress(input.collateral), input.collateral, boundCollateral)
-	check(
-		"credit line signature verifier",
-		ethers.getAddress(verifier) === ethers.getAddress(input.signatureVerifier),
-		input.signatureVerifier,
-		verifier,
-	)
-	check("credit line muon app id", appId.toString() === input.muonAppId, input.muonAppId, appId.toString())
-	check("credit line muon freshness window", Number(freshness) === input.muonFreshnessWindow, String(input.muonFreshnessWindow), freshness.toString())
+	// A deferred creditLine section has nothing to prove: no verifier was written, and reserveDebt
+	// stays closed until a later patch supplies one.
+	if (input.signatureVerifier !== undefined) {
+		check(
+			"credit line signature verifier",
+			ethers.getAddress(verifier) === ethers.getAddress(input.signatureVerifier),
+			input.signatureVerifier,
+			verifier,
+		)
+		check("credit line muon app id", appId.toString() === input.muonAppId, input.muonAppId, appId.toString())
+		check(
+			"credit line muon freshness window",
+			Number(freshness) === input.muonFreshnessWindow,
+			String(input.muonFreshnessWindow),
+			freshness.toString(),
+		)
+	}
 	if (input.securityWindow !== undefined) {
 		check("security window", Number(securityWindow) === input.securityWindow, String(input.securityWindow), securityWindow.toString())
 	}
@@ -786,13 +796,18 @@ export async function resolveExpressProviderConfig(
 	const admin = await requireAddress(ethers, componentConfig.admin || target.admin, "expressProvider.admin")
 	const coreView = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", core)
 	const collateral = ethers.getAddress(await coreView.getCollateral())
+	// An omitted creditLine section is a deferral, not a default: leave the verifier unset so
+	// reserveDebt keeps reverting with CreditLineNotConfigured until a patch configures it.
 	const declared = componentConfig.creditLine?.signatureVerifier
-	const signatureVerifier =
-		declared === "fromCore"
-			? ethers.getAddress(await coreView.getSignatureVerifier())
-			: await requireAddress(ethers, declared, "expressProvider.creditLine.signatureVerifier")
-	if ((await ethers.provider.getCode(signatureVerifier)) === "0x") {
-		throw new Error(`expressProvider.creditLine.signatureVerifier has no contract code at ${signatureVerifier}`)
+	let signatureVerifier: string | undefined
+	if (declared !== undefined) {
+		signatureVerifier =
+			declared === "fromCore"
+				? ethers.getAddress(await coreView.getSignatureVerifier())
+				: await requireAddress(ethers, declared, "expressProvider.creditLine.signatureVerifier")
+		if ((await ethers.provider.getCode(signatureVerifier)) === "0x") {
+			throw new Error(`expressProvider.creditLine.signatureVerifier has no contract code at ${signatureVerifier}`)
+		}
 	}
 
 	const roles: Record<string, string[]> = {}
@@ -820,8 +835,8 @@ export async function resolveExpressProviderConfig(
 		core,
 		collateral,
 		signatureVerifier,
-		muonAppId: componentConfig.creditLine.muonAppId,
-		muonFreshnessWindow: componentConfig.creditLine.muonFreshnessWindow,
+		muonAppId: componentConfig.creditLine?.muonAppId,
+		muonFreshnessWindow: componentConfig.creditLine?.muonFreshnessWindow,
 		securityWindow: componentConfig.securityWindow,
 		tolerancePeriod: componentConfig.tolerancePeriod,
 		roles,
@@ -872,9 +887,10 @@ export async function deployAndConfigureExpressProvider(
 		view.creditLineMuonFreshnessWindow(),
 	])
 	if (
-		ethers.getAddress(currentVerifier) !== resolved.signatureVerifier ||
-		currentAppId.toString() !== resolved.muonAppId ||
-		Number(currentFreshness) !== resolved.muonFreshnessWindow
+		resolved.signatureVerifier !== undefined &&
+		(ethers.getAddress(currentVerifier) !== resolved.signatureVerifier ||
+			currentAppId.toString() !== resolved.muonAppId ||
+			Number(currentFreshness) !== resolved.muonFreshnessWindow)
 	) {
 		await send(
 			connected.setCreditLineMuonConfig(resolved.signatureVerifier, resolved.muonAppId, resolved.muonFreshnessWindow),
@@ -886,6 +902,22 @@ export async function deployAndConfigureExpressProvider(
 	}
 	if (resolved.tolerancePeriod !== undefined && Number(await view.tolerancePeriod()) !== resolved.tolerancePeriod) {
 		await send(connected.setTolerancePeriod(resolved.tolerancePeriod), "set ExpressProvider tolerance period")
+	}
+
+	// Recipe validation lets a provider ship with any section deferred, but only while no signer
+	// can make it accept anything. Name what is still missing rather than letting an inert
+	// provider read as a finished one.
+	const deferred = [
+		resolved.signatureVerifier === undefined ? "creditLine (reserveDebt stays closed)" : undefined,
+		resolved.affiliates.length === 0 ? "affiliates (an unconfigured affiliate is uncapped, not blocked)" : undefined,
+		(resolved.roles.OPERATOR_ROLE?.length ?? 0) === 0 ? "roles.OPERATOR_ROLE (nothing can process an accepted withdrawal)" : undefined,
+		resolved.registerOnCore ? undefined : "registerOnCore (core will not route withdrawals here)",
+	].filter(Boolean)
+	if (deferred.length > 0) {
+		logger.warn(
+			`ExpressProvider deployed with deferred setup: ${deferred.join(", ")}. Patch these in with expressProvider.mode=reuse ` +
+				"before granting SIGNER_ROLE — a signer is what lets the provider accept credit offers.",
+		)
 	}
 
 	for (const affiliate of resolved.affiliates) {

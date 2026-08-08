@@ -30,12 +30,22 @@ Use `status --config <recipe> --only partyB|symbolManager` for a read-only, comp
 
 Valid component names are `core`, `partyB`, `symbolManager`, and `expressProvider`.
 
-An `expressProvider` set to `deploy` must declare everything needed to operate and supervise
-it: `registerOnCore`, a `creditLine` block (`signatureVerifier` — an address or the literal
-`"fromCore"` to resolve the core diamond's verifier — plus `muonAppId` and
-`muonFreshnessWindow`), a `roles` map containing at least one `OPERATOR_ROLE` holder, and at
-least one entry in `affiliates`. Planning fails closed on any of these, because a provider with
-no operator can accept withdrawals it can never process, and an unregistered one cannot call
+An `expressProvider` set to `deploy` may declare as much or as little of its setup as is ready.
+Every section — `registerOnCore`, `creditLine` (`signatureVerifier`, an address or the literal
+`"fromCore"` to resolve the core diamond's verifier, plus `muonAppId` and
+`muonFreshnessWindow`), `roles`, and `affiliates` — is optional, and an omitted one is simply
+not configured: the diamond is cut and handed over, nothing else is written, and a later
+`reuse` patch fills in the rest. A section that _is_ declared must still be usable, so an empty
+`affiliates` array or an empty `OPERATOR_ROLE` list is rejected rather than treated as a
+deferral. The run warns on the way out with the list of sections it left unconfigured.
+
+What makes a provider live is a `SIGNER_ROLE` holder: `SymmioHookFacet` accepts a credit offer
+from nobody else, so until one exists the diamond cannot accept, advance, or owe anything.
+Declaring a signer is therefore the moment the whole operating surface becomes mandatory —
+`registerOnCore: true`, `creditLine`, at least one `OPERATOR_ROLE` holder, and at least one
+entry in `affiliates`. Planning fails closed on each, because every one of them fails _open_
+if left out: an affiliate with no config is uncapped rather than blocked, a provider with no
+operator can accept withdrawals it can never process, and an unregistered one cannot call
 `advanceWithdraw` at all.
 
 Per-affiliate `maxDebt` and `maxDebtBps` become the protocol-side caps. `0` on either axis

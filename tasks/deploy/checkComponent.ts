@@ -293,7 +293,9 @@ export async function inspectComponentStatus(
 	}
 
 	const full = expressConfig as Omit<import("./componentDeployment.js").ExpressProviderResolvedConfig, "address">
-	for (const key of ["signatureVerifier", "muonAppId", "muonFreshnessWindow", "roles", "affiliates"] as const) {
+	// The credit-line trio is absent whenever the recipe deferred that section, so it is not
+	// required here; roles and affiliates are always recorded, even if empty.
+	for (const key of ["roles", "affiliates"] as const) {
 		if (full[key] === undefined) throw new Error(`ExpressProvider deploy report config is missing ${key}; cannot re-prove the deployed state`)
 	}
 	return inspectExpressProviderPostState(ethers, { ...full, address: report.address! })
