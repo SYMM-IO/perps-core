@@ -23,7 +23,7 @@ import {
 	SafeManualAction,
 } from "./deploymentRecipe.js"
 import { persistSubmittedTransaction, recoverCheckpointContractDeployments } from "./deploymentRecovery.js"
-import { resolveCreate2FactoryAddress } from "./diamond.js"
+import { ensureCreate2Factory } from "./create2Factory.js"
 import { verificationProviderForChain } from "./explorer.js"
 import {
 	createExpressVerificationRecords,
@@ -1008,7 +1008,16 @@ async function executeExpressProvider(
 	// A standalone `--only expressProvider` run has no outer deployment to inherit from, so it
 	// builds its vanity context from the same recipe block the full run uses.
 	const vanityPlan = buildVanityPlan(activeDeploymentRecipe?.recipe.create2)
-	if (vanityPlan) await resolveCreate2FactoryAddress(ethers, vanityPlan.factoryAddress)
+	if (vanityPlan) {
+		// A component run always adds to an existing deployment, which by definition already has
+		// a factory to reuse — so there is no --allow-new-create2-factory escape hatch here.
+		await ensureCreate2Factory(hre, vanityPlan, {
+			checkpoint,
+			isLive: activeDeploymentRecipe?.recipe.network.mode === "live",
+			allowNewFactory: false,
+			logData: false,
+		})
+	}
 	return deployAndConfigureExpressProvider(hre, checkpoint, resolved, deployer, createVanityContext(ethers, vanityPlan))
 }
 
