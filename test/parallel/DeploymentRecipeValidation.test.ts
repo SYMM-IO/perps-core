@@ -106,13 +106,30 @@ describe("deployment recipe task validation", function () {
 		expect(() => assertExpressProviderDeployable(complete, live)).to.not.throw()
 
 		expect(() => assertExpressProviderDeployable({ ...complete, mode: "skip" }, live)).to.throw("LIVE_TARGET_UNSUPPORTED")
-		// No operator means accepted withdrawals can never be processed.
-		expect(() => assertExpressProviderDeployable({ ...complete, roles: {} }, live)).to.throw("OPERATOR_ROLE")
-		// reserveDebt reverts with CreditLineNotConfigured until the verifier is set.
+		// A declared section must still be usable; only an omitted one reads as "not configured yet".
+		expect(() => assertExpressProviderDeployable({ ...complete, roles: { OPERATOR_ROLE: [] } }, live)).to.throw("OPERATOR_ROLE")
 		expect(() => assertExpressProviderDeployable({ ...complete, creditLine: {} }, live)).to.throw("signatureVerifier")
 		expect(() => assertExpressProviderDeployable({ ...complete, affiliates: [] }, live)).to.throw("at least one affiliate")
+
+		// Any section may be deferred to a later patch while the provider has no signer: without one
+		// SymmioHookFacet accepts nothing, so the diamond cannot advance or owe anything.
+		const inert = { mode: "deploy" }
+		expect(() => assertExpressProviderDeployable(inert, live)).to.not.throw()
+		for (const section of ["registerOnCore", "creditLine", "roles", "affiliates"] as const) {
+			const { [section]: _deferred, ...partial } = complete
+			expect(() => assertExpressProviderDeployable(partial, live), `deferring ${section}`).to.not.throw()
+		}
+
+		// Declaring a signer is the moment the whole operating surface becomes mandatory: each of
+		// these fails open rather than closed if it is left out.
+		const signer = { SIGNER_ROLE: ["0x0000000000000000000000000000000000000007"] }
+		const withSigner = { ...complete, roles: { ...complete.roles, ...signer } }
+		expect(() => assertExpressProviderDeployable(withSigner, live)).to.not.throw()
+		expect(() => assertExpressProviderDeployable({ ...withSigner, affiliates: undefined }, live)).to.throw("uncapped credit line")
+		expect(() => assertExpressProviderDeployable({ ...withSigner, creditLine: undefined }, live)).to.throw("CreditLineNotConfigured")
+		expect(() => assertExpressProviderDeployable({ ...withSigner, roles: signer }, live)).to.throw("OPERATOR_ROLE")
 		// An unregistered provider cannot call advanceWithdraw, so it would be inert on a live chain.
-		expect(() => assertExpressProviderDeployable({ ...complete, registerOnCore: false }, live)).to.throw("registerOnCore")
+		expect(() => assertExpressProviderDeployable({ ...withSigner, registerOnCore: false }, live)).to.throw("registerOnCore")
 	})
 
 	it("does not report pending Safe handover checks as healthy completion", function () {

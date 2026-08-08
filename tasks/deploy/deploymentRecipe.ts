@@ -68,11 +68,6 @@ export async function assertDependencyAddressesHaveCode(report: CoreDependencyRe
 }
 
 /**
- * ExpressProvider advances real collateral out of core against a credit line. Refuse to build
- * one that cannot be operated or supervised: no operator can process an accepted withdrawal,
- * and an unregistered provider's advanceWithdraw call reverts at core.
- */
-/**
  * A patch run reconciles a deployed provider to the recipe's declared sections. Refuse one
  * that declares nothing: an empty patch is always a mistake, not a no-op the operator wanted.
  */
@@ -89,19 +84,46 @@ export function assertExpressProviderPatchable(config: Record<string, any>): voi
 	}
 }
 
+/**
+ * ExpressProvider advances real collateral out of core against a credit line, but a freshly cut
+ * diamond can do none of that on its own. Each setup section may therefore be deferred to a later
+ * reuse patch; an omitted section is simply not configured. The one thing that makes the provider
+ * live is a SIGNER_ROLE holder, because SymmioHookFacet accepts a credit offer from nobody else.
+ * Declaring a signer is what makes the rest of the operating surface mandatory: without it the
+ * provider cannot be operated (no operator can process what it accepts), supervised (an affiliate
+ * with no config is uncapped rather than blocked), or funded (advanceWithdraw reverts at core
+ * unless the provider is registered there).
+ */
 export function assertExpressProviderDeployable(config: Record<string, any>, target: RecipeNetworkTarget): void {
 	if (config.mode !== "deploy") {
 		throw new Error(`LIVE_TARGET_UNSUPPORTED: expressProvider.mode must be deploy; received ${config.mode}`)
 	}
-	if (!config.creditLine?.signatureVerifier) {
-		throw new Error("expressProvider.creditLine.signatureVerifier is required; reserveDebt reverts with CreditLineNotConfigured until it is set")
-	}
+	// A declared section must still be usable; only an omitted one means "not configured yet".
 	const operators: unknown = config.roles?.OPERATOR_ROLE
-	if (!Array.isArray(operators) || operators.length === 0) {
+	const affiliates: unknown = config.affiliates
+	if (affiliates !== undefined && (!Array.isArray(affiliates) || affiliates.length === 0)) {
+		throw new Error("expressProvider.affiliates must configure at least one affiliate when declared; omit it entirely to defer affiliate policy")
+	}
+	if (operators !== undefined && (!Array.isArray(operators) || operators.length === 0)) {
 		throw new Error("expressProvider.roles.OPERATOR_ROLE must name at least one operator, or accepted withdrawals can never be processed")
 	}
-	if (!Array.isArray(config.affiliates) || config.affiliates.length === 0) {
-		throw new Error("expressProvider.affiliates must configure at least one affiliate")
+	if (config.creditLine !== undefined && !config.creditLine.signatureVerifier) {
+		throw new Error("expressProvider.creditLine.signatureVerifier is required; reserveDebt reverts with CreditLineNotConfigured until it is set")
+	}
+
+	const live = (config.roles?.SIGNER_ROLE?.length ?? 0) > 0
+	if (!live) return
+
+	if (operators === undefined) {
+		throw new Error("expressProvider.roles.OPERATOR_ROLE must name at least one operator, or accepted withdrawals can never be processed")
+	}
+	if (config.creditLine?.signatureVerifier === undefined) {
+		throw new Error("expressProvider.creditLine.signatureVerifier is required; reserveDebt reverts with CreditLineNotConfigured until it is set")
+	}
+	if (affiliates === undefined) {
+		throw new Error(
+			"expressProvider.affiliates is required once roles.SIGNER_ROLE names a signer: an affiliate with no config has an uncapped credit line",
+		)
 	}
 	if (target.mode === "live" && config.registerOnCore !== true) {
 		throw new Error(

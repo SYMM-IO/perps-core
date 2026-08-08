@@ -178,6 +178,52 @@ describe("deployment recipe standalone component execution", function () {
 		expect(resumed.report.health.status).to.equal("passed")
 	})
 
+	it("deploys an ExpressProvider with every setup section deferred, writing none of them on-chain", async function () {
+		const context = await loadFixture(initializeFixture)
+		const [admin] = await ethers.getSigners()
+		const networkName = (await hre.network.getOrCreate()).networkName || "default"
+		const express = await executeComponentDeployment(hre, {
+			recipeName,
+			recipePath: "/tmp/component-engine-test.json",
+			recipeDigest: "express-deferred-digest",
+			target: { name: networkName, chainId: 31337, mode: "local" as const },
+			component: "expressProvider",
+			// No creditLine, roles, affiliates, or registerOnCore: the diamond is cut and handed over,
+			// and nothing else is configured until a later reuse patch supplies it.
+			componentConfig: { mode: "deploy", admin: admin.address },
+			coreReport: {
+				deploymentId: "fixture-core-express-deferred",
+				deployerAddress: admin.address,
+				network: networkName,
+				chainId: 31337,
+				lifecycle: "complete",
+				checks: { health: "passed", verification: "skipped", verificationPolicy: "not_applicable" },
+				config: { admin: admin.address },
+				addresses: { diamond: context.diamond, instantLayer: await context.instantLayer.getAddress() },
+			} as CoreDependencyReport,
+			coreReportPath: "/tmp/core-report.json",
+			fresh: false,
+			verify: false,
+		})
+
+		expect(express.report.health.status).to.equal("passed")
+		expect(express.report.lifecycle).to.equal("complete")
+
+		const view = await ethers.getContractAt("contracts/expressWithdrawLayer/facets/View/ViewFacet.sol:ViewFacet", express.report.address!)
+		const control = await ethers.getContractAt("contracts/expressWithdrawLayer/facets/Control/ControlFacet.sol:ControlFacet", express.report.address!)
+
+		// An unset verifier is what keeps reserveDebt reverting with CreditLineNotConfigured.
+		expect(await view.creditLineSignatureVerifier()).to.equal(ethers.ZeroAddress)
+		expect(await view.creditLineMuonAppId()).to.equal(0n)
+		// Nothing routes to it and no key can sign an offer, so the provider is inert but owned.
+		expect(await context.viewFacet.isExpressProviderRegistered(express.report.address)).to.equal(false)
+		expect(await view.hasRole(ethers.keccak256(ethers.toUtf8Bytes("SIGNER_ROLE")), admin.address)).to.equal(false)
+		expect(await control.owner()).to.equal(admin.address)
+		// Init's own defaults survive an omitted securityWindow/tolerancePeriod.
+		expect(await view.securityWindow()).to.equal(20n)
+		expect(await view.tolerancePeriod()).to.equal(60n)
+	})
+
 	it("keeps an ExpressProvider run pending until its admin accepts ownership and core registers it", async function () {
 		const context = await loadFixture(initializeFixture)
 		const [deployer, futureAdmin, operator] = await ethers.getSigners()

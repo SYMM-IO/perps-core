@@ -505,7 +505,6 @@
 				"roles": {
 					"type": "object",
 					"additionalProperties": false,
-					"required": ["OPERATOR_ROLE"],
 					"properties": {
 						"OPERATOR_ROLE": { "$ref": "#/$defs/expressRole" },
 						"LOCKER_ROLE": { "$ref": "#/$defs/expressRole" },
@@ -525,12 +524,36 @@
 					"then": { "type": "object", "required": ["address"] }
 				},
 				{
+					"$comment": "On a patch a declared roles section is the complete desired set, so omitting the operators would revoke them.",
+					"if": { "type": "object", "properties": { "mode": { "const": "reuse" } }, "required": ["mode", "roles"] },
+					"then": { "type": "object", "properties": { "roles": { "type": "object", "required": ["OPERATOR_ROLE"] } } }
+				},
+				{
 					"if": { "type": "object", "properties": { "mode": { "enum": ["deploy", "skip"] } }, "required": ["mode"] },
 					"then": { "type": "object", "not": { "type": "object", "required": ["address"] } }
 				},
 				{
-					"if": { "type": "object", "properties": { "mode": { "const": "deploy" } }, "required": ["mode"] },
-					"then": { "type": "object", "required": ["registerOnCore", "creditLine", "roles", "affiliates"] }
+					"$comment": "Every setup section may be deferred on a deploy, but a SIGNER_ROLE holder makes the provider live and the whole operating surface must ship with it.",
+					"if": {
+						"type": "object",
+						"properties": {
+							"mode": { "const": "deploy" },
+							"roles": {
+								"type": "object",
+								"properties": { "SIGNER_ROLE": { "type": "array", "minItems": 1 } },
+								"required": ["SIGNER_ROLE"]
+							}
+						},
+						"required": ["mode", "roles"]
+					},
+					"then": {
+						"type": "object",
+						"required": ["registerOnCore", "creditLine", "roles", "affiliates"],
+						"properties": {
+							"registerOnCore": { "const": true },
+							"roles": { "type": "object", "required": ["OPERATOR_ROLE"] }
+						}
+					}
 				}
 			]
 		}

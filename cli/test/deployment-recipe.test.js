@@ -413,30 +413,47 @@ test("ExpressProvider deploy plans once its operating configuration is complete"
 	assert.equal(plan.components.find(component => component.name === "expressProvider")?.mode, "deploy");
 });
 
-test("ExpressProvider deploy requires the config that makes it operable", () => {
-	for (const [field, value] of [
-		["registerOnCore", undefined],
-		["creditLine", undefined],
-		["roles", undefined],
-		["affiliates", undefined],
-	]) {
+test("ExpressProvider deploy defers any setup section it is not ready to declare", () => {
+	// An omitted section is not configured rather than defaulted, and a later reuse patch fills
+	// it in. Nothing can reach the provider in the meantime, so partial intent stays partial.
+	for (const field of ["registerOnCore", "creditLine", "roles", "affiliates"]) {
 		const recipe = localRecipe();
 		const component = expressProviderDeploy();
 		delete component[field];
-		if (value !== undefined) component[field] = value;
 		recipe.expressProvider = component;
-		assert.throws(() => createDeploymentPlan(recipe), new RegExp(`expressProvider\\.${field} is required`), `${field} must be required`);
+		assert.doesNotThrow(() => createDeploymentPlan(recipe), `${field} must be deferrable`);
+	}
+
+	// A declared section must still be usable, so an empty one is a mistake, not a deferral.
+	const noAffiliates = localRecipe();
+	noAffiliates.expressProvider = expressProviderDeploy({ affiliates: [] });
+	assert.throws(() => createDeploymentPlan(noAffiliates), /affiliates must be a non-empty array/);
+});
+
+test("ExpressProvider deploy requires the config that makes it operable once it names a signer", () => {
+	// SymmioHookFacet accepts a credit offer from nobody but a SIGNER_ROLE holder, so declaring a
+	// signer is the moment the whole operating surface becomes mandatory.
+	const signer = { SIGNER_ROLE: [B] };
+	const live = localRecipe();
+	live.expressProvider = expressProviderDeploy({ roles: { OPERATOR_ROLE: [B], ...signer } });
+	assert.equal(createDeploymentPlan(live).components.find(component => component.name === "expressProvider")?.mode, "deploy");
+
+	for (const [field, message] of [
+		["creditLine", /creditLine is required once/],
+		["affiliates", /affiliates is required once/],
+		["registerOnCore", /registerOnCore must be true once/],
+	]) {
+		const recipe = localRecipe();
+		const component = expressProviderDeploy({ roles: { OPERATOR_ROLE: [B], ...signer } });
+		delete component[field];
+		recipe.expressProvider = component;
+		assert.throws(() => createDeploymentPlan(recipe), message, `${field} must be required`);
 	}
 
 	// A provider with no operator can accept withdrawals it can never process.
 	const noOperator = localRecipe();
-	noOperator.expressProvider = expressProviderDeploy({ roles: { PAUSER_ROLE: [B] } });
+	noOperator.expressProvider = expressProviderDeploy({ roles: { PAUSER_ROLE: [B], ...signer } });
 	assert.throws(() => createDeploymentPlan(noOperator), /roles\.OPERATOR_ROLE is required/);
-
-	// An empty affiliate set means no pool backs any advance.
-	const noAffiliates = localRecipe();
-	noAffiliates.expressProvider = expressProviderDeploy({ affiliates: [] });
-	assert.throws(() => createDeploymentPlan(noAffiliates), /affiliates must be a non-empty array/);
 });
 
 test("ExpressProvider rejects unknown roles, duplicate affiliates and unreachable validator thresholds", () => {

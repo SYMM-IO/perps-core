@@ -384,7 +384,6 @@ function validateExpressProvider(value, source, name = "expressProvider") {
 		address(component.address, source, `${name}.address`);
 	} else {
 		if (component.address !== undefined) fail(source, `${name}.address`, "must be omitted when mode is deploy");
-		required(component, ["registerOnCore", "creditLine", "roles", "affiliates"], source, name);
 	}
 	if (component.admin !== undefined) address(component.admin, source, `${name}.admin`);
 	if (component.registerOnCore !== undefined) boolean(component.registerOnCore, source, `${name}.registerOnCore`);
@@ -412,9 +411,41 @@ function validateExpressProvider(value, source, name = "expressProvider") {
 			if (roles[role] === undefined) continue;
 			uniqueAddresses(roles[role], source, `${name}.roles.${role}`);
 		}
-		// A declared roles section is the complete desired set, so a provider with no operator
-		// could never process a withdrawal it accepted.
-		if (roles.OPERATOR_ROLE === undefined) fail(source, `${name}.roles.OPERATOR_ROLE`, "is required so accepted withdrawals can be processed");
+		// On a patch a declared roles section is the complete desired set, so omitting the operators
+		// revokes them and the provider could never process a withdrawal it accepted. On a deploy
+		// nothing is revoked, so operators are only owed once a signer can make it accept anything.
+		if (roles.OPERATOR_ROLE === undefined && (patch || (roles.SIGNER_ROLE?.length ?? 0) > 0)) {
+			fail(source, `${name}.roles.OPERATOR_ROLE`, "is required so accepted withdrawals can be processed");
+		}
+	}
+
+	// Every setup section may be deferred on a deploy: an omitted section is simply not configured,
+	// and a later reuse patch fills it in. What makes a provider live is a SIGNER_ROLE holder --
+	// SymmioHookFacet accepts a credit offer from nobody else -- so until one exists the diamond
+	// cannot accept, advance, or owe anything. Declaring a signer is the moment the rest becomes
+	// mandatory, and each of these fails open rather than closed if left out.
+	if (!patch && (component.roles?.SIGNER_ROLE?.length ?? 0) > 0) {
+		if (component.affiliates === undefined) {
+			fail(
+				source,
+				`${name}.affiliates`,
+				"is required once roles.SIGNER_ROLE names a signer: an affiliate with no config has an uncapped credit line",
+			);
+		}
+		if (component.creditLine === undefined) {
+			fail(
+				source,
+				`${name}.creditLine`,
+				"is required once roles.SIGNER_ROLE names a signer: reserveDebt reverts with CreditLineNotConfigured until the verifier is set",
+			);
+		}
+		if (component.registerOnCore !== true) {
+			fail(
+				source,
+				`${name}.registerOnCore`,
+				"must be true once roles.SIGNER_ROLE names a signer: core does not route withdrawals to an unregistered provider",
+			);
+		}
 	}
 
 	if (component.affiliates === undefined) return;
