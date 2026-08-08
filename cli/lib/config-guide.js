@@ -18,6 +18,7 @@ export const RECIPE_FIELD_BY_RUNTIME_KEY = Object.freeze({
 	MAX_LIQUIDATION_PROFIT_PER_POSITION: "governance.maxLiquidationProfitPerPosition",
 	MUON_APP_ID: "core.muon.appId",
 	MUON_FUNCTION_PERMISSIONS: "core.muon.permissions",
+	MUON_FUNCTION_UPNL_VALID_TIMES: "core.muon.upnlValidTimeByFunction",
 	MUON_GATEWAY_SIGNERS: "core.muon.gatewaySigners",
 	MUON_PRICE_VALID_TIME: "core.muon.priceValidTime",
 	MUON_PUBLIC_KEY_PARITY: "core.muon.publicKey.parity",

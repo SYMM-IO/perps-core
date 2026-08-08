@@ -6,6 +6,15 @@ export type SecretRef = `hardhat-keystore://${string}` | `env://${string}`
 export type SecretMetadata = { provider: "hardhat-keystore" | "env"; key: string }
 export type VanityGroup = "diamonds" | "facets" | "libraries" | "peripherals"
 export type VanityPattern = { prefix?: string; suffix?: string }
+export type MuonFunctionName =
+	| "Trading"
+	| "AccountManagement"
+	| "Settlement"
+	| "ForceClose"
+	| "Funding"
+	| "LiquidationPartyA"
+	| "LiquidationPartyB"
+	| "RemoveMargin"
 
 export interface DeploymentRecipe {
 	$schema?: string
@@ -46,6 +55,8 @@ export interface DeploymentRecipe {
 			appId?: string
 			upnlValidTime: string
 			priceValidTime: string
+			/** Per-MuonFunction UPNL validity overrides in seconds; omit a function to use the global value. */
+			upnlValidTimeByFunction?: Partial<Record<MuonFunctionName, string>>
 			publicKey?: { x: string; parity: 0 | 1 }
 			gatewaySigners?: string[]
 			permissions?: string[]

@@ -202,14 +202,40 @@ function validateProtocol(value, source, field) {
 	}
 }
 
+/**
+ * Per-function UPNL validity overrides, keyed by MuonFunction name.
+ *
+ * Zero is the on-chain unset value, so a recipe expresses "no override" by omitting the
+ * function rather than by writing 0.
+ */
+function validateMuonUpnlValidTimeByFunction(value, source, field) {
+	if (value === undefined) return;
+	const overrides = object(value, source, field);
+	onlyKeys(overrides, MUON_PERMISSIONS, source, field);
+	for (const [name, seconds] of Object.entries(overrides)) {
+		uintString(seconds, source, `${field}.${name}`, BigInt(1));
+	}
+}
+
 function validateMuon(value, source, field, networkMode) {
 	const muon = object(value, source, field);
-	const keys = ["mode", "address", "appId", "upnlValidTime", "priceValidTime", "publicKey", "gatewaySigners", "permissions"];
+	const keys = [
+		"mode",
+		"address",
+		"appId",
+		"upnlValidTime",
+		"priceValidTime",
+		"upnlValidTimeByFunction",
+		"publicKey",
+		"gatewaySigners",
+		"permissions",
+	];
 	onlyKeys(muon, keys, source, field);
 	required(muon, ["mode", "upnlValidTime", "priceValidTime"], source, field);
 	enumValue(muon.mode, ["mock", "deploy", "reuse"], source, `${field}.mode`);
 	uintString(muon.upnlValidTime, source, `${field}.upnlValidTime`, BigInt(1));
 	uintString(muon.priceValidTime, source, `${field}.priceValidTime`, BigInt(1));
+	validateMuonUpnlValidTimeByFunction(muon.upnlValidTimeByFunction, source, `${field}.upnlValidTimeByFunction`);
 
 	if (muon.mode === "mock") {
 		if (networkMode === "live") fail(source, `${field}.mode`, "mock is forbidden for live targets");
@@ -866,6 +892,14 @@ export function createDeploymentPlan(recipeValue, { only } = {}) {
 	};
 }
 
+/** Project per-function overrides as `Name=seconds,...` in canonical MuonFunction order. */
+function muonFunctionUpnlValidTimes(overrides) {
+	if (!overrides) return "";
+	return MUON_PERMISSIONS.filter(name => overrides[name] !== undefined)
+		.map(name => `${name}=${overrides[name]}`)
+		.join(",");
+}
+
 export function recipeEnvironment(recipeValue) {
 	const recipe = validateDeploymentRecipe(recipeValue);
 	const { core } = recipe;
@@ -889,6 +923,7 @@ export function recipeEnvironment(recipeValue) {
 		MUON_APP_ID: deployCore ? (core.muon?.appId ?? "") : "",
 		MUON_UPNL_VALID_TIME: deployCore ? (core.muon?.upnlValidTime ?? "") : "",
 		MUON_PRICE_VALID_TIME: deployCore ? (core.muon?.priceValidTime ?? "") : "",
+		MUON_FUNCTION_UPNL_VALID_TIMES: deployCore ? muonFunctionUpnlValidTimes(core.muon?.upnlValidTimeByFunction) : "",
 		MUON_PUBLIC_KEY_X: deployCore ? (core.muon?.publicKey?.x ?? "") : "",
 		MUON_PUBLIC_KEY_PARITY: deployCore && core.muon?.publicKey !== undefined ? String(core.muon.publicKey.parity) : "",
 		MUON_GATEWAY_SIGNERS: deployCore ? (core.muon?.gatewaySigners?.join(",") ?? "") : "",

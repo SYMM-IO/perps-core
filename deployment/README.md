@@ -30,6 +30,20 @@ Use `status --config <recipe> --only partyB|symbolManager` for a read-only, comp
 
 Valid component names are `core`, `partyB`, `symbolManager`, and `expressProvider`.
 
+`core.muon.upnlValidTime` is the global window every UPNL signature is checked against.
+`core.muon.upnlValidTimeByFunction` narrows or widens that window for individual operations,
+keyed by MuonFunction name:
+
+```json
+"upnlValidTimeByFunction": { "Trading": "30", "LiquidationPartyA": "600" }
+```
+
+Each declared entry becomes a `setMuonFunctionUpnlValidTime` call after the global
+`setMuonConfig`, and is read back before the run reports success. A function you leave out
+uses the global value — on-chain, `0` is the "no override" sentinel, so the recipe rejects `0`
+rather than letting it silently mean "clear". Clearing an existing override is a deliberate
+governance action, not a recipe edit.
+
 An `expressProvider` set to `deploy` may declare as much or as little of its setup as is ready.
 Every section — `registerOnCore`, `creditLine` (`signatureVerifier`, an address or the literal
 `"fromCore"` to resolve the core diamond's verifier, plus `muonAppId` and

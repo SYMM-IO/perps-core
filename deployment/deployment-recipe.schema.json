@@ -224,6 +224,22 @@
 				]
 			}
 		},
+		"muonUpnlValidTimeByFunction": {
+			"description": "Per-MuonFunction UPNL validity in seconds. Omit a function to fall back to the global upnlValidTime; zero is the on-chain unset value and is rejected here.",
+			"type": "object",
+			"additionalProperties": false,
+			"minProperties": 1,
+			"properties": {
+				"Trading": { "$ref": "#/$defs/positiveUintString" },
+				"AccountManagement": { "$ref": "#/$defs/positiveUintString" },
+				"Settlement": { "$ref": "#/$defs/positiveUintString" },
+				"ForceClose": { "$ref": "#/$defs/positiveUintString" },
+				"Funding": { "$ref": "#/$defs/positiveUintString" },
+				"LiquidationPartyA": { "$ref": "#/$defs/positiveUintString" },
+				"LiquidationPartyB": { "$ref": "#/$defs/positiveUintString" },
+				"RemoveMargin": { "$ref": "#/$defs/positiveUintString" }
+			}
+		},
 		"muonPublicKey": {
 			"type": "object",
 			"additionalProperties": false,
@@ -242,7 +258,8 @@
 					"properties": {
 						"mode": { "const": "mock" },
 						"upnlValidTime": { "$ref": "#/$defs/positiveUintString" },
-						"priceValidTime": { "$ref": "#/$defs/positiveUintString" }
+						"priceValidTime": { "$ref": "#/$defs/positiveUintString" },
+						"upnlValidTimeByFunction": { "$ref": "#/$defs/muonUpnlValidTimeByFunction" }
 					}
 				},
 				{
@@ -254,6 +271,7 @@
 						"appId": { "$ref": "#/$defs/positiveUintString" },
 						"upnlValidTime": { "$ref": "#/$defs/positiveUintString" },
 						"priceValidTime": { "$ref": "#/$defs/positiveUintString" },
+						"upnlValidTimeByFunction": { "$ref": "#/$defs/muonUpnlValidTimeByFunction" },
 						"publicKey": { "$ref": "#/$defs/muonPublicKey" },
 						"gatewaySigners": {
 							"type": "array",
@@ -274,6 +292,7 @@
 						"appId": { "$ref": "#/$defs/positiveUintString" },
 						"upnlValidTime": { "$ref": "#/$defs/positiveUintString" },
 						"priceValidTime": { "$ref": "#/$defs/positiveUintString" },
+						"upnlValidTimeByFunction": { "$ref": "#/$defs/muonUpnlValidTimeByFunction" },
 						"publicKey": { "$ref": "#/$defs/muonPublicKey" },
 						"gatewaySigners": {
 							"type": "array",

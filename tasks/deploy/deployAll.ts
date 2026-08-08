@@ -45,6 +45,7 @@ import {
 	assertGeneralDeploymentMuonPermissions,
 	inspectConfiguredMuonPermissions,
 	parseMuonFunctionPermissions,
+	parseMuonFunctionUpnlValidTimes,
 } from "./muonPermissions.js"
 import { deploySymmioPartyB } from "./partyB.js"
 import {
@@ -121,6 +122,7 @@ interface SystemDeploymentReport {
 		muonAppId: string
 		muonUpnlValidTime: string
 		muonPriceValidTime: string
+		muonFunctionUpnlValidTimes: Array<{ name: string; index: number; upnlValidTime: string }>
 		muonPublicKeyX: string
 		muonPublicKeyParity: string
 		muonGatewaySigners: string[]
@@ -268,6 +270,10 @@ export function deploymentConfigFromSource(source: Record<string, string | undef
 	const muonFunctionPermissions = source.MUON_FUNCTION_PERMISSIONS
 		? parseMuonFunctionPermissions(source.MUON_FUNCTION_PERMISSIONS).map(({ name }) => name)
 		: []
+	// Per-function UPNL validity overrides; an absent function keeps the global window.
+	const muonFunctionUpnlValidTimes = parseMuonFunctionUpnlValidTimes(source.MUON_FUNCTION_UPNL_VALID_TIMES ?? "").map(
+		({ name, index, upnlValidTime }) => ({ name: name as string, index: index as number, upnlValidTime }),
+	)
 
 	return {
 		admin,
@@ -289,6 +295,7 @@ export function deploymentConfigFromSource(source: Record<string, string | undef
 		muonAppId,
 		muonUpnlValidTime,
 		muonPriceValidTime,
+		muonFunctionUpnlValidTimes,
 		muonPublicKeyX,
 		muonPublicKeyParity,
 		muonGatewaySigners,
@@ -386,6 +393,11 @@ export async function validateDeploymentConfig(
 
 	config.muonUpnlValidTime = requireDecimalUint(config.muonUpnlValidTime, "MUON_UPNL_VALID_TIME", BigInt(1))
 	config.muonPriceValidTime = requireDecimalUint(config.muonPriceValidTime, "MUON_PRICE_VALID_TIME", BigInt(1))
+	for (const override of config.muonFunctionUpnlValidTimes) {
+		// Zero is the on-chain "unset" sentinel; the parser already rejects it, but the deploy
+		// path re-checks so a hand-set env var cannot silently clear an override.
+		override.upnlValidTime = requireDecimalUint(override.upnlValidTime, `MUON_FUNCTION_UPNL_VALID_TIMES.${override.name}`, BigInt(1))
+	}
 	if (config.muonAppId) config.muonAppId = requireDecimalUint(config.muonAppId, "MUON_APP_ID", BigInt(1))
 
 	const hasPublicKeyX = config.muonPublicKeyX !== ""
@@ -892,6 +904,10 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			logger.info(`Muon App ID: ${config.muonAppId || "(not set)"}`)
 			logger.info(`Muon UPNL Valid Time: ${config.muonUpnlValidTime}${process.env.MUON_UPNL_VALID_TIME ? "" : " (default)"}`)
 			logger.info(`Muon Price Valid Time: ${config.muonPriceValidTime}${process.env.MUON_PRICE_VALID_TIME ? "" : " (default)"}`)
+			if (config.muonFunctionUpnlValidTimes.length > 0) {
+				const overrides = config.muonFunctionUpnlValidTimes.map(({ name, upnlValidTime }) => `${name}=${upnlValidTime}`).join(", ")
+				logger.info(`Muon UPNL Valid Time Overrides: ${overrides}`)
+			}
 			logger.info(`Muon Public Key X: ${config.muonPublicKeyX || "(not set)"}`)
 			logger.info(`Muon Public Key Parity: ${config.muonPublicKeyParity || "(not set)"}`)
 			logger.info(`Muon Gateway Signers: ${config.muonGatewaySigners.length > 0 ? config.muonGatewaySigners.join(",") : "(not set)"}`)
@@ -1950,6 +1966,34 @@ async function setupSystem(
 		await send(controlFacet.connect(deployer).setMuonConfig(config.muonUpnlValidTime, config.muonPriceValidTime), "setMuonConfig")
 	})
 
+	// Per-function overrides are written after the global config so a partial run always leaves
+	// the diamond on the global window rather than on a stale override.
+	for (const { name, index, upnlValidTime } of config.muonFunctionUpnlValidTimes) {
+		await checkpointedStep(
+			checkpoint,
+			`setup.setMuonFunctionUpnlValidTime.${name}`,
+			`Setting Muon UPNL validity override for ${name} (${upnlValidTime}s)`,
+			async () => {
+				await send(controlFacet.connect(deployer).setMuonFunctionUpnlValidTime(index, upnlValidTime), `setMuonFunctionUpnlValidTime(${name})`)
+			},
+		)
+	}
+
+	// Overrides are core Diamond state, not verifier state, so they are read back whether or not
+	// this run deployed a verifier.
+	if (config.muonFunctionUpnlValidTimes.length > 0) {
+		await checkpointedStep(checkpoint, "setup.verifyMuonFunctionUpnlValidTimes", "Verifying Muon UPNL validity overrides", async () => {
+			for (const { name, index, upnlValidTime } of config.muonFunctionUpnlValidTimes) {
+				const [actual, isOverridden] = await viewFacet.getMuonFunctionUpnlValidTime(index)
+				if (!isOverridden || actual.toString() !== upnlValidTime) {
+					throw new Error(
+						`Muon UPNL validity override mismatch for ${name}: expected ${upnlValidTime} (overridden), got ${actual.toString()} (overridden=${isOverridden})`,
+					)
+				}
+			}
+		})
+	}
+
 	// Muon verification via view/read calls
 	if (signatureVerifier && deployedContracts.signatureVerifier) {
 		await checkpointedStep(checkpoint, "setup.verifyMuonViews", "Verifying Muon configuration via view calls", async () => {
@@ -2664,6 +2708,7 @@ function generateReport(
 			muonAppId: config.muonAppId,
 			muonUpnlValidTime: config.muonUpnlValidTime,
 			muonPriceValidTime: config.muonPriceValidTime,
+			muonFunctionUpnlValidTimes: config.muonFunctionUpnlValidTimes,
 			muonPublicKeyX: config.muonPublicKeyX,
 			muonPublicKeyParity: config.muonPublicKeyParity,
 			muonGatewaySigners: config.muonGatewaySigners,
@@ -2728,6 +2773,11 @@ function displayReport(report: SystemDeploymentReport, deployedContracts: Deploy
 	logger.info(`Muon App ID:                 ${report.config.muonAppId || "(not set)"}`)
 	logger.info(`Muon UPNL Valid Time:        ${report.config.muonUpnlValidTime || "(not set)"}`)
 	logger.info(`Muon Price Valid Time:       ${report.config.muonPriceValidTime || "(not set)"}`)
+	logger.info(
+		`Muon UPNL Overrides:         ${
+			(report.config.muonFunctionUpnlValidTimes ?? []).map(({ name, upnlValidTime }) => `${name}=${upnlValidTime}`).join(", ") || "(none)"
+		}`,
+	)
 	logger.info(`Muon Public Key X:           ${report.config.muonPublicKeyX || "(not set)"}`)
 	logger.info(`Muon Public Key Parity:      ${report.config.muonPublicKeyParity || "(not set)"}`)
 	logger.info(

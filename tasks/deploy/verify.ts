@@ -891,6 +891,7 @@ async function verifyCoreSystemParameters(
 		muonAppId?: string
 		muonUpnlValidTime?: string
 		muonPriceValidTime?: string
+		muonFunctionUpnlValidTimes?: Array<{ name: string; index: number; upnlValidTime: string }>
 	},
 ) {
 	const cat = "Core: Params"
@@ -1079,6 +1080,30 @@ async function verifyCoreSystemParameters(
 		}
 	} catch (e: any) {
 		pushAndLog(results, { category: cat, check: "Muon config", status: "fail", message: e.message?.slice(0, 120) })
+	}
+
+	// Per-function UPNL validity overrides. Only the functions the recipe declares are checked;
+	// an undeclared function legitimately falls back to the global window.
+	for (const override of expected.muonFunctionUpnlValidTimes ?? []) {
+		try {
+			const [actual, isOverridden] = await view.getMuonFunctionUpnlValidTime(override.index)
+			const matches = isOverridden && actual.toString() === BigInt(override.upnlValidTime).toString()
+			pushAndLog(results, {
+				category: cat,
+				check: `Muon UPNL validity override (${override.name})`,
+				status: matches ? "pass" : "fail",
+				expected: `${override.upnlValidTime} (overridden)`,
+				actual: isOverridden ? `${actual}` : `${actual} (falling back to global)`,
+				hint: `Call ControlFacet.setMuonFunctionUpnlValidTime(${override.index}, ${override.upnlValidTime}) on Diamond`,
+			})
+		} catch (e: any) {
+			pushAndLog(results, {
+				category: cat,
+				check: `Muon UPNL validity override (${override.name})`,
+				status: "fail",
+				message: e.message?.slice(0, 120),
+			})
+		}
 	}
 
 	try {
@@ -2466,6 +2491,7 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 					muonAppId: reportConfig?.muonAppId,
 					muonUpnlValidTime: reportConfig?.muonUpnlValidTime,
 					muonPriceValidTime: reportConfig?.muonPriceValidTime,
+					muonFunctionUpnlValidTimes: reportConfig?.muonFunctionUpnlValidTimes,
 				})
 
 				// Roles

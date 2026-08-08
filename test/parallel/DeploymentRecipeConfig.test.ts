@@ -75,4 +75,35 @@ describe("deploy:system recipe mapping", function () {
 		deploymentRecipe.core.protocol!.parameters.maxWithdrawParts = 0
 		expect(() => resolveDeploymentProtocolConfig(42161, deploymentRecipe)).to.throw("inline protocol config")
 	})
+
+	it("maps per-function UPNL validity overrides into canonical enum order", function () {
+		const config = deploymentConfigFromSource(
+			{
+				ADMIN_PUBLIC_KEY: "0x1000000000000000000000000000000000000001",
+				MUON_UPNL_VALID_TIME: "300",
+				MUON_PRICE_VALID_TIME: "300",
+				MUON_FUNCTION_UPNL_VALID_TIMES: "LiquidationPartyA=600,Trading=30",
+			},
+			"0x7000000000000000000000000000000000000007",
+			recipe(),
+		)
+		expect(config.muonFunctionUpnlValidTimes).to.deep.equal([
+			{ name: "Trading", index: 0, upnlValidTime: "30" },
+			{ name: "LiquidationPartyA", index: 5, upnlValidTime: "600" },
+		])
+	})
+
+	it("leaves per-function UPNL validity empty when the recipe declares no overrides", function () {
+		const config = deploymentConfigFromSource(
+			{
+				ADMIN_PUBLIC_KEY: "0x1000000000000000000000000000000000000001",
+				MUON_UPNL_VALID_TIME: "300",
+				MUON_PRICE_VALID_TIME: "300",
+				MUON_FUNCTION_UPNL_VALID_TIMES: "",
+			},
+			"0x7000000000000000000000000000000000000007",
+			recipe(),
+		)
+		expect(config.muonFunctionUpnlValidTimes).to.deep.equal([])
+	})
 })

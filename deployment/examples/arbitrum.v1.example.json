@@ -46,6 +46,10 @@
 			"appId": "REPLACE_WITH_MUON_APP_ID",
 			"upnlValidTime": "60",
 			"priceValidTime": "60",
+			"upnlValidTimeByFunction": {
+				"LiquidationPartyA": "120",
+				"LiquidationPartyB": "120"
+			},
 			"publicKey": {
 				"x": "REPLACE_WITH_MUON_PUBLIC_KEY_X",
 				"parity": 0
