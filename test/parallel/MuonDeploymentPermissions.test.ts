@@ -1,15 +1,17 @@
 import { expect } from "chai"
 
-import { MUON_FUNCTION_NAMES as UPGRADE_MUON_FUNCTION_NAMES } from "../../scripts/upgrade/utils/muonVerifierConfig.js"
 import {
 	MUON_FUNCTION_INDICES,
 	MUON_FUNCTION_NAMES,
 	MUON_FUNCTIONS,
 	assertConfiguredMuonPermissionsAuthorized,
 	assertGeneralDeploymentMuonPermissions,
+	formatMuonFunctionUpnlValidTimes,
 	inspectConfiguredMuonPermissions,
 	parseMuonFunctionPermissions,
+	parseMuonFunctionUpnlValidTimes,
 	resolveMuonFunctionPermissions,
+	resolveMuonFunctionUpnlValidTimes,
 	type MuonAuthorizationReader,
 	type MuonFunctionIndex,
 	type MuonPublicKey,
@@ -62,7 +64,6 @@ describe("Muon deployment permissions", function () {
 		])
 		expect(MUON_FUNCTION_INDICES).to.deep.equal([0, 1, 2, 3, 4, 5, 6, 7])
 		expect(MUON_FUNCTIONS.map(({ name, index }) => [name, index])).to.deep.equal(MUON_FUNCTION_NAMES.map((name, index) => [name, index]))
-		expect(UPGRADE_MUON_FUNCTION_NAMES).to.deep.equal(MUON_FUNCTION_NAMES)
 	})
 
 	it("strictly parses a comma-separated permission list", function () {
@@ -77,6 +78,33 @@ describe("Muon deployment permissions", function () {
 		expect(() => parseMuonFunctionPermissions("Trading,Trading")).to.throw("Duplicate MuonFunction")
 		expect(() => parseMuonFunctionPermissions("Trading,RemoveFunds")).to.throw("Unknown MuonFunction")
 		expect(() => resolveMuonFunctionPermissions(["Trading", " Funding"])).to.throw("surrounding whitespace")
+	})
+
+	it("parses per-function UPNL validity overrides into canonical enum order", function () {
+		const parsed = parseMuonFunctionUpnlValidTimes("RemoveMargin=90, Trading=30,Settlement=120")
+		expect(parsed.map(({ name }) => name)).to.deep.equal(["Trading", "Settlement", "RemoveMargin"])
+		expect(parsed.map(({ index }) => index)).to.deep.equal([0, 2, 7])
+		expect(parsed.map(({ upnlValidTime }) => upnlValidTime)).to.deep.equal(["30", "120", "90"])
+		expect(formatMuonFunctionUpnlValidTimes(parsed)).to.equal("Trading=30,Settlement=120,RemoveMargin=90")
+	})
+
+	it("treats an absent override map as no overrides rather than an error", function () {
+		expect(parseMuonFunctionUpnlValidTimes("")).to.deep.equal([])
+		expect(parseMuonFunctionUpnlValidTimes("   ")).to.deep.equal([])
+		expect(resolveMuonFunctionUpnlValidTimes({})).to.deep.equal([])
+	})
+
+	it("rejects malformed, unknown, duplicate, and zero UPNL validity overrides", function () {
+		expect(() => parseMuonFunctionUpnlValidTimes("Trading")).to.throw("must use the form MuonFunction=seconds")
+		expect(() => parseMuonFunctionUpnlValidTimes("Trading=")).to.throw("must use the form MuonFunction=seconds")
+		expect(() => parseMuonFunctionUpnlValidTimes("=30")).to.throw("must use the form MuonFunction=seconds")
+		expect(() => parseMuonFunctionUpnlValidTimes("Trading=30,,Funding=60")).to.throw("empty entry at position 2")
+		expect(() => parseMuonFunctionUpnlValidTimes("Trading=30,Trading=60")).to.throw("Duplicate MuonFunction")
+		expect(() => parseMuonFunctionUpnlValidTimes("RemoveFunds=30")).to.throw("Unknown MuonFunction")
+		expect(() => parseMuonFunctionUpnlValidTimes("Trading=abc")).to.throw("canonical unsigned base-10 integer")
+		expect(() => parseMuonFunctionUpnlValidTimes("Trading=030")).to.throw("canonical unsigned base-10 integer")
+		// Zero is the on-chain unset sentinel; omitting the entry is the only way to say "no override".
+		expect(() => parseMuonFunctionUpnlValidTimes("Trading=0")).to.throw("omit the entry")
 	})
 
 	it("requires all eight permissions for a general production deployment and returns canonical order", function () {

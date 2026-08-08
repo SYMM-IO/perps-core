@@ -1,6 +1,5 @@
 import { expect } from "chai"
 
-import { validateLiquidationAccountingParams } from "../../scripts/upgrade/utils/upgradeHelpers.js"
 import { deploymentOnlyArtifact } from "../../tasks/deploy/artifacts.js"
 import { assertDeploymentRecordPolicy, parseBooleanSetting, validateDeploymentConfig } from "../../tasks/deploy/deployAll.js"
 import { MUON_FUNCTION_NAMES } from "../../tasks/deploy/muonPermissions.js"
@@ -51,6 +50,7 @@ function deploymentConfig(): any {
 		muonPublicKeyParity: "",
 		muonGatewaySigners: [],
 		muonFunctionPermissions: [],
+		muonFunctionUpnlValidTimes: [],
 	}
 }
 
@@ -106,6 +106,14 @@ describe("deploy:system input parsing", function () {
 		await expectRejection(
 			validateDeploymentConfig(fakeEthers, 31337, invalidParity, structuredClone(DEFAULT_PROTOCOL_CONFIG)),
 			'MUON_PUBLIC_KEY_PARITY must be exactly "0" or "1"',
+		)
+
+		// Zero is the on-chain "unset" sentinel, so it must never reach setMuonFunctionUpnlValidTime.
+		const zeroOverride = deploymentConfig()
+		zeroOverride.muonFunctionUpnlValidTimes = [{ name: "Trading", index: 0, upnlValidTime: "0" }]
+		await expectRejection(
+			validateDeploymentConfig(fakeEthers, 31337, zeroOverride, structuredClone(DEFAULT_PROTOCOL_CONFIG)),
+			"MUON_FUNCTION_UPNL_VALID_TIMES.Trading must be >= 1",
 		)
 	})
 
@@ -280,32 +288,6 @@ describe("deploy:system mainnet safety", function () {
 		expect(() => assertStandaloneDeploymentTaskAllowed("deploy:diamond", 42161, true)).not.to.throw()
 		expect(() => assertStandaloneDeploymentTaskAllowed("deploy:diamond", 42161, false)).to.throw("refused on live RPC chainId 42161")
 		expect(() => assertStandaloneDeploymentTaskAllowed("deploy:diamond", 11155111, false)).to.throw("no durable standalone transaction journal")
-	})
-})
-
-describe("upgrade liquidation accounting inputs", function () {
-	it("requires an atomic non-zero vault/cap pair and a non-zero soft collector", function () {
-		expect(() => validateLiquidationAccountingParams({ liquidationInsuranceVault: `0x${"6".repeat(40)}` })).to.throw("configured together")
-		expect(() =>
-			validateLiquidationAccountingParams({
-				liquidationInsuranceVault: ZERO_ADDRESS,
-				maxLiquidationProfitPerPosition: "1",
-			}),
-		).to.throw("non-zero address")
-		expect(() =>
-			validateLiquidationAccountingParams({
-				liquidationInsuranceVault: `0x${"6".repeat(40)}`,
-				maxLiquidationProfitPerPosition: "0",
-			}),
-		).to.throw("positive uint256")
-		expect(() => validateLiquidationAccountingParams({ softLiquidationPenaltyCollector: ZERO_ADDRESS })).to.throw("non-zero address")
-		expect(() =>
-			validateLiquidationAccountingParams({
-				liquidationInsuranceVault: `0x${"6".repeat(40)}`,
-				maxLiquidationProfitPerPosition: "100000000000000000000",
-				softLiquidationPenaltyCollector: `0x${"7".repeat(40)}`,
-			}),
-		).not.to.throw()
 	})
 })
 
