@@ -160,7 +160,31 @@ test("create2 vanity configuration lives in a top-level block with qualified ove
 
 	const withoutFactory = localRecipe();
 	withoutFactory.create2 = { groups: { facets: { suffix: "86" } } };
-	assert.throws(() => validateDeploymentRecipe(withoutFactory), /create2\.factoryAddress is required/);
+	assert.throws(() => validateDeploymentRecipe(withoutFactory), /create2\.factory is required/);
+
+	const deployFactory = localRecipe();
+	deployFactory.create2 = { factory: { mode: "deploy" }, groups: { diamonds: { prefix: "573310" } } };
+	assert.doesNotThrow(() => validateDeploymentRecipe(deployFactory));
+
+	const reuseFactory = localRecipe();
+	reuseFactory.create2 = { factory: { mode: "reuse", address: factory }, groups: { facets: { suffix: "86" } } };
+	assert.doesNotThrow(() => validateDeploymentRecipe(reuseFactory));
+
+	const bothSpellings = localRecipe();
+	bothSpellings.create2 = { factory: { mode: "deploy" }, factoryAddress: factory, groups: { facets: { suffix: "86" } } };
+	assert.throws(() => validateDeploymentRecipe(bothSpellings), /two spellings of the same intent/);
+
+	const reuseWithoutAddress = localRecipe();
+	reuseWithoutAddress.create2 = { factory: { mode: "reuse" }, groups: { facets: { suffix: "86" } } };
+	assert.throws(() => validateDeploymentRecipe(reuseWithoutAddress), /create2\.factory\.address is required/);
+
+	const deployWithAddress = localRecipe();
+	deployWithAddress.create2 = { factory: { mode: "deploy", address: factory }, groups: { facets: { suffix: "86" } } };
+	assert.throws(() => validateDeploymentRecipe(deployWithAddress), /must be omitted when create2\.factory\.mode is deploy/);
+
+	const badMode = localRecipe();
+	badMode.create2 = { factory: { mode: "patch" }, groups: { facets: { suffix: "86" } } };
+	assert.throws(() => validateDeploymentRecipe(badMode), /create2\.factory\.mode/);
 
 	const declaredNothing = localRecipe();
 	declaredNothing.create2 = { groups: { facets: {} } };

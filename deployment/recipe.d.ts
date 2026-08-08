@@ -30,6 +30,7 @@ export interface DeploymentRecipe {
 		softLiquidationPenaltyCollector?: string
 	}
 	create2?: {
+		factory?: { mode: "deploy" } | { mode: "reuse"; address: string }
 		factoryAddress?: string
 		groups?: Partial<Record<VanityGroup, VanityPattern>>
 		overrides?: Record<string, VanityPattern>
