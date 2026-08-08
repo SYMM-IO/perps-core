@@ -188,13 +188,16 @@ event BalanceChangePartyB(
 									<td>4</td>
 									<td><code>REALIZED_PNL_IN</code></td>
 									<td>Inbound</td>
-									<td>Realized settlement, close, liquidation, or Clearing House value enters allocation.</td>
+									<td>Realized close, liquidation, or Clearing House value enters allocation. UPNL settlement uses ordinal 18.</td>
 								</tr>
 								<tr>
 									<td>5</td>
 									<td><code>REALIZED_PNL_OUT</code></td>
 									<td>Outbound</td>
-									<td>Realized settlement, close, liquidation, penalty, or Clearing House value leaves allocation.</td>
+									<td>
+										Realized close, liquidation, penalty, or Clearing House value leaves allocation. UPNL settlement uses ordinal
+										19.
+									</td>
 								</tr>
 								<tr>
 									<td>6</td>
@@ -271,6 +274,18 @@ event BalanceChangePartyB(
 									<td>Outbound</td>
 									<td>A close solver fee leaves PartyA allocation for PartyB free balance.</td>
 								</tr>
+								<tr>
+									<td>18</td>
+									<td><code>SETTLEMENT_PNL_IN</code></td>
+									<td>Inbound</td>
+									<td>UPNL settlement value enters PartyA allocation or the exact PartyB bucket.</td>
+								</tr>
+								<tr>
+									<td>19</td>
+									<td><code>SETTLEMENT_PNL_OUT</code></td>
+									<td>Outbound</td>
+									<td>UPNL settlement value leaves PartyA allocation or the exact PartyB bucket.</td>
+								</tr>
 							</tbody>
 						</table>
 					</div>
@@ -317,8 +332,8 @@ event BalanceChangePartyB(
 					<p>
 						All PartyAs share one cross-mode PartyB bucket. The contract credits that bucket for every PartyA loss before applying any
 						PartyA gain, so an offsetting batch cannot fail from a temporary underflow caused only by input order. For example, from a
-						starting bucket of 100, Alice paying the solver 30 and the solver paying Bob 50 emits <code>REALIZED_PNL_IN 30</code>, then
-						<code>REALIZED_PNL_OUT 50</code>, both against <code>(solver, address(0))</code>; the final bucket is 80. Apply both logs by
+						starting bucket of 100, Alice paying the solver 30 and the solver paying Bob 50 emits <code>SETTLEMENT_PNL_IN 30</code>, then
+						<code>SETTLEMENT_PNL_OUT 50</code>, both against <code>(solver, address(0))</code>; the final bucket is 80. Apply both logs by
 						<code>logIndex</code>. Use <code>SettleUpnlUnified</code> for the affected PartyAs and final balance checkpoints, not to
 						replace the zero-address ledger key.
 					</p>
@@ -679,6 +694,17 @@ Final balances: PartyA 497.5, PartyB 358.5, starter 2.25 -- total tracked value 
 								</tr>
 							</thead>
 							<tbody>
+								<tr>
+									<td>UPNL settlement reused <code>REALIZED_PNL_IN</code> / <code>REALIZED_PNL_OUT</code>.</td>
+									<td>
+										It emits <code>SETTLEMENT_PNL_IN</code> (18) and <code>SETTLEMENT_PNL_OUT</code> (19). Close, liquidation, and
+										Clearing House keep the realized-PnL ordinals.
+									</td>
+									<td>
+										Register the two appended ordinals with the same direction handling as realized PnL. Existing ordinals are
+										unchanged, so no historical data moves.
+									</td>
+								</tr>
 								<tr>
 									<td>Some allocation writes and events were separate operations.</td>
 									<td>Four <code>LibAccount</code> methods own PartyA/PartyB increases and decreases plus non-zero emission.</td>
