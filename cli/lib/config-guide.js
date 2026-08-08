@@ -81,7 +81,7 @@ export function configurationHelpLines() {
 		"  ./symmio doctor --config deployments/arbitrum-partyB.json --only partyB",
 		"",
 		"Optional global command",
-		"  ./utils/pinned-yarn.sh link  # after this, `symmio ...` is available in your shell",
+		"  npm link  # after this, `symmio ...` is available in your shell",
 	];
 }
 

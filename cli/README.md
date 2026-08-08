@@ -9,11 +9,11 @@ command; it works in Fish, Zsh, Bash, and CI without installing a global binary.
 
 `./symmio` is the checkout-local entrypoint. It checks that Node matches `.node-version` and
 that dependencies are installed, then runs `cli/symmio.js` directly — there is no build step,
-so what executes is the source you can read. Linking is optional; `./utils/pinned-yarn.sh link`
+so what executes is the source you can read. Linking is optional; `npm link`
 puts the same CLI on your `PATH` as bare `symmio`.
 
-Package-manager work (install, link, run) goes through `./utils/pinned-yarn.sh`, which enforces
-the Yarn version pin. `./utils/yarn-classic.sh` still works as a deprecated alias for both.
+Install dependencies with `npm ci`. A `preinstall` hook rejects Yarn and pnpm, which ignore
+`package-lock.json`.
 
 ## Start here
 

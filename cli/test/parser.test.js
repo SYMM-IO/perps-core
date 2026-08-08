@@ -136,7 +136,7 @@ test("root help does not assume the global binary is linked", async () => {
 	}
 	const rendered = output.join("\n");
 	assert.match(rendered, /\.\/symmio recipe init/);
-	assert.match(rendered, /pinned-yarn\.sh link/);
+	assert.match(rendered, /npm link/);
 });
 
 test("every command help example is checkout-local unless the optional link is used", async () => {
