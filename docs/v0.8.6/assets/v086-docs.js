@@ -81,11 +81,8 @@
 		});
 	};
 	const savedTheme = themeStorage.get();
-	if (savedTheme === "dark" || savedTheme === "light") {
-		root.dataset.theme = savedTheme;
-	} else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
-		root.dataset.theme = "dark";
-	}
+	// Dark is the canonical Symmio surface; light is opt-in via the toggle.
+	root.dataset.theme = savedTheme === "light" ? "light" : "dark";
 	syncThemeButtons();
 	installButtonIcons();
 	installPdfExport();
@@ -180,7 +177,6 @@
 		const railActions = document.createElement("div");
 		railActions.className = "arc-rail-actions";
 		if (actions) railActions.append(actions);
-		if (sectionToggle) railActions.append(sectionToggle);
 		railTop.append(railActions);
 
 		const pageLink = document.createElement("a");
@@ -202,6 +198,13 @@
 			if (child.matches(".toc-title, .toc-link, .toc-empty")) sectionList.append(child);
 		});
 		sectionCard.append(sectionList);
+
+		if (sectionToggle) {
+			const railFooter = document.createElement("div");
+			railFooter.className = "arc-rail-footer";
+			railFooter.append(sectionToggle);
+			sectionCard.append(railFooter);
+		}
 	};
 
 	const normalize = value => value.toLowerCase().replace(/\s+/g, " ").trim();
@@ -726,40 +729,42 @@
 			const mermaidTheme =
 				root.dataset.theme === "dark"
 					? {
-							background: "#0b0f0e",
-							mainBkg: "#241816",
-							primaryColor: "#241816",
-							primaryBorderColor: "#ff8f83",
-							primaryTextColor: "#f1f7f4",
-							secondaryColor: "#241816",
-							secondaryBorderColor: "#ff8f83",
-							secondaryTextColor: "#f1f7f4",
-							tertiaryColor: "#292512",
-							tertiaryBorderColor: "#e7c965",
-							tertiaryTextColor: "#f1f7f4",
-							lineColor: "#aaa29d",
-							textColor: "#f1f7f4",
-							nodeTextColor: "#f1f7f4",
-							clusterBkg: "#121110",
-							clusterBorder: "#5d4742",
-							edgeLabelBackground: "#15110f",
-							actorBkg: "#241816",
-							actorBorder: "#ff8f83",
-							actorTextColor: "#f1f7f4",
-							actorLineColor: "#aaa29d",
-							noteBkgColor: "#292512",
-							noteTextColor: "#f1f7f4",
-							noteBorderColor: "#e7c965",
-							labelBoxBkgColor: "#292512",
-							labelBoxBorderColor: "#e7c965",
-							labelTextColor: "#f1f7f4",
-							loopTextColor: "#f1f7f4",
+							fontFamily: "Manrope, ui-sans-serif, system-ui, sans-serif",
+							background: "#0a0505",
+							mainBkg: "#1c100e",
+							primaryColor: "#1c100e",
+							primaryBorderColor: "#ff7c70",
+							primaryTextColor: "#f2eded",
+							secondaryColor: "#141010",
+							secondaryBorderColor: "#807b7b",
+							secondaryTextColor: "#f2eded",
+							tertiaryColor: "#131010",
+							tertiaryBorderColor: "#807b7b",
+							tertiaryTextColor: "#f2eded",
+							lineColor: "#8f8a8a",
+							textColor: "#f2eded",
+							nodeTextColor: "#f2eded",
+							clusterBkg: "#121010",
+							clusterBorder: "#4a4646",
+							edgeLabelBackground: "#141010",
+							actorBkg: "#1c100e",
+							actorBorder: "#ff7c70",
+							actorTextColor: "#f2eded",
+							actorLineColor: "#8f8a8a",
+							noteBkgColor: "#141010",
+							noteTextColor: "#f2eded",
+							noteBorderColor: "#4a4646",
+							labelBoxBkgColor: "#141010",
+							labelBoxBorderColor: "#4a4646",
+							labelTextColor: "#f2eded",
+							loopTextColor: "#f2eded",
 						}
 					: {
+							fontFamily: "Manrope, ui-sans-serif, system-ui, sans-serif",
 							background: "#ffffff",
 							mainBkg: "#fff1ef",
 							primaryColor: "#fff1ef",
-							primaryBorderColor: "#ff6f61",
+							primaryBorderColor: "#e0483a",
 							primaryTextColor: "#0a0a0a",
 							secondaryColor: "#fff1ef",
 							secondaryBorderColor: "#ff6f61",
@@ -1322,6 +1327,45 @@
 		}
 	});
 
+	// Inline identifiers read like miniature code blocks: call name, args, punctuation.
+	// A single pass so member access (a.b), indexing (a[b]) and operators get the
+	// same treatment as calls -- not just the fn(args) shape.
+	const escapeCode = value => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+	const codeToken = /([A-Za-z_$][\w$]*)|(\d+(?:\.\d+)?)|([(),.[\]=<>;:]+)|([\s\S])/g;
+
+	const tokenizeInlineCode = text => {
+		let depth = 0;
+		let html = "";
+		let match;
+		codeToken.lastIndex = 0;
+		while ((match = codeToken.exec(text))) {
+			const [raw, identifier, number, punctuation] = match;
+			if (identifier) {
+				// Only a following "(" proves this is a call; inside brackets it is an argument.
+				const cls = text[codeToken.lastIndex] === "(" ? "tok-fn" : depth > 0 ? "tok-arg" : "";
+				html += cls ? '<span class="' + cls + '">' + escapeCode(raw) + "</span>" : escapeCode(raw);
+			} else if (number) {
+				html += '<span class="tok-num">' + escapeCode(raw) + "</span>";
+			} else if (punctuation) {
+				for (const char of raw) {
+					if (char === "(" || char === "[") depth += 1;
+					else if (char === ")" || char === "]") depth = Math.max(0, depth - 1);
+				}
+				html += '<span class="tok-punct">' + escapeCode(raw) + "</span>";
+			} else {
+				html += escapeCode(raw);
+			}
+		}
+		return html;
+	};
+
+	document.querySelectorAll(".doc-article :not(pre) > code, .function-card > code, .reader-hero :not(pre) > code").forEach(node => {
+		if (node.querySelector("span")) return;
+		const text = node.textContent || "";
+		if (!/[(),.[\]=<>]/.test(text)) return;
+		node.innerHTML = tokenizeInlineCode(text);
+	});
+
 	document.querySelectorAll(".doc-article pre").forEach(pre => {
 		if (pre.closest(".mermaid-frame")) return;
 		if (pre.closest(".code-frame")) return;
@@ -1331,6 +1375,11 @@
 		if (code && code.classList.contains("language-solidity")) frame.classList.add("code-frame-solidity");
 		const toolbar = document.createElement("div");
 		toolbar.className = "code-toolbar";
+		const langMatch = code && /language-([a-z0-9+#-]+)/i.exec(code.className || "");
+		const langLabel = document.createElement("span");
+		langLabel.className = "code-lang";
+		langLabel.textContent = langMatch ? langMatch[1] : "text";
+		toolbar.append(langLabel);
 		const actions = document.createElement("div");
 		actions.className = "code-actions";
 		const wrap = document.createElement("button");
