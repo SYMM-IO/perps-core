@@ -89,6 +89,29 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 		emit RemoveMargin(virtualAccount, parent, amount);
 	}
 
+	/// @notice Deallocates via core safeDeallocate and transfers margin from a virtual account back to its parent sub-account
+	/// @dev Same routing as removeMargin, but forwards to core safeDeallocate, which reserves the Muon-attested
+	/// pendingBalance and enforces the scaled retention floor (max of stored CVA + LF and scaledLockedBalance)
+	/// @param virtualAccount The virtual account to remove margin from
+	/// @param amount The amount to deallocate and transfer
+	/// @param upnlSig The Muon signature carrying the account's upnl, pendingBalance, and scaledLockedBalance
+	function safeRemoveMargin(
+		address virtualAccount,
+		uint256 amount,
+		ISymmio.SingleUpnlWithPendingBalanceSig memory upnlSig
+	) external whenNotPaused nonReentrant onlyAccountOwner(virtualAccount) {
+		if (amount == 0) revert ZeroAmount();
+
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
+		if (!ahLayout.virtualAccounts[virtualAccount].isExists) revert NotVirtualAccount();
+		address parent = ahLayout.virtualAccounts[virtualAccount].parentAccount;
+
+		LibAccountLayerUtils.executeWithSigner(virtualAccount, abi.encodeWithSelector(ISymmio.safeDeallocate.selector, amount, upnlSig));
+		LibAccountLayerUtils.executeWithSigner(virtualAccount, abi.encodeWithSelector(ISymmio.internalTransferToBalance.selector, parent, amount));
+
+		emit RemoveMargin(virtualAccount, parent, amount);
+	}
+
 	/// @notice Recovers funds from a lost virtual account address back to its parent sub-account
 	/// @dev Used when a VA address has funds but was never formally created or was orphaned
 	/// @param subAccount The parent sub-account to recover funds to

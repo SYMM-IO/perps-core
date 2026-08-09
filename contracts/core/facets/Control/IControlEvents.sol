@@ -31,6 +31,7 @@ interface IControlEvents {
 	event OperationalFeeChargerUnregistered(address indexed charger);
 	event OperationalFeeReductionDelaySet(uint256 oldDelay, uint256 newDelay);
 	event SetOperationalFeeReceiver(address indexed charger, address indexed receiver);
+	event SetSolverFeeReceiver(address indexed partyB, address indexed receiver);
 	event SetAffiliateFeeForUser(
 		address affiliate,
 		address user,
@@ -122,6 +123,7 @@ interface IControlEvents {
 	event RemoveRelayerForExternalTransferTarget(address target);
 	event RegisterHook(address affiliate, address hook);
 	event SetADLEnabled(address partyB, bool enabled);
+	event SetPartyBStrictDeallocation(address indexed partyB, bool enabled);
 	event SetEntityMetadata(address entity, EntityMetadata metadata);
 	event SetMaxPartyAConnectionLimit(uint256 maxLimit);
 	event SetMaxWithdrawParts(uint256 maxWithdrawParts);

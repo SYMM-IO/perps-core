@@ -314,31 +314,6 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		emit OperatorSet(affiliate, selector, operator, status);
 	}
 
-	// ==================== Express Deposit Configuration ====================
-
-	/// @notice Sets the express deposit rate for an affiliate (fraction sent to virtual provider)
-	/// @param affiliate The affiliate address
-	/// @param expressRate The rate as a fraction of 1e18 (e.g., 0.1e18 = 10%)
-	function setExpressRate(
-		address affiliate,
-		uint256 expressRate
-	) external whenNotPaused onlyAffiliateAdmin(affiliate) onlyIfAffiliateIsActive(affiliate) {
-		if (expressRate > SHARE_PRECISION) revert InvalidShare();
-		AffiliateStorage.layout().affiliates[affiliate].expressRate = expressRate;
-		emit ExpressRateSet(affiliate, expressRate);
-	}
-
-	/// @notice Sets the virtual provider contract for an affiliate's express deposits
-	/// @param affiliate The affiliate address
-	/// @param virtualProvider The virtual provider contract address
-	function setVirtualProvider(
-		address affiliate,
-		address virtualProvider
-	) external whenNotPaused onlyAffiliateAdmin(affiliate) onlyIfAffiliateIsActive(affiliate) {
-		AffiliateStorage.layout().affiliates[affiliate].virtualProvider = virtualProvider;
-		emit VirtualProviderSet(affiliate, virtualProvider);
-	}
-
 	// ==================== Delegated Calls ====================
 
 	/// @notice Executes a whitelisted call on a Symmio core as the affiliate (setSigner(affiliate))

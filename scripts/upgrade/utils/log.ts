@@ -7,7 +7,7 @@
 
 // ─── ANSI Colors ─────────────────────────────────────────────────────────────
 
-const C = {
+const ANSI = {
 	reset: "\x1b[0m",
 	bold: "\x1b[1m",
 	dim: "\x1b[2m",
@@ -19,6 +19,25 @@ const C = {
 	magenta: "\x1b[35m",
 	white: "\x1b[37m",
 } as const
+
+const colorsEnabled = process.env.NO_COLOR === undefined && process.env.TERM !== "dumb" && Boolean(process.stdout.isTTY)
+const C = Object.fromEntries(Object.entries(ANSI).map(([name, value]) => [name, colorsEnabled ? value : ""])) as typeof ANSI
+
+export type ScriptLogLevel = "silent" | "minimal" | "verbose"
+const validLevels = new Set<ScriptLogLevel>(["silent", "minimal", "verbose"])
+const configuredLevel = process.env.SCRIPT_LOG_LEVEL || process.env.DEPLOY_LOG_LEVEL || "verbose"
+if (!validLevels.has(configuredLevel as ScriptLogLevel)) {
+	throw new Error(`SCRIPT_LOG_LEVEL must be silent, minimal, or verbose; received ${JSON.stringify(configuredLevel)}.`)
+}
+let currentLevel = configuredLevel as ScriptLogLevel
+
+function output(...args: unknown[]): void {
+	if (currentLevel !== "silent") console.log(...args)
+}
+
+function verboseOutput(...args: unknown[]): void {
+	if (currentLevel === "verbose") console.log(...args)
+}
 
 const SYM = {
 	check: "\u2713",
@@ -64,6 +83,12 @@ export type Timer = {
 	ms(): number
 	/** Formatted elapsed string (e.g. "2.3s") */
 	fmt(): string
+	/** Wall-clock start time in epoch ms */
+	startMs(): number
+	/** ISO-8601 UTC timestamp of when this timer started */
+	startedAt(): string
+	/** ISO-8601 UTC timestamp of "right now" (useful as a finishedAt) */
+	nowIso(): string
 }
 
 function createTimer(): Timer {
@@ -71,6 +96,9 @@ function createTimer(): Timer {
 	return {
 		ms: () => Date.now() - start,
 		fmt: () => formatMs(Date.now() - start),
+		startMs: () => start,
+		startedAt: () => new Date(start).toISOString(),
+		nowIso: () => new Date().toISOString(),
 	}
 }
 
@@ -88,10 +116,10 @@ export const log = {
 	header(title: string): void {
 		const width = 64
 		const border = C.blue + ruleChar(SYM.doubleLine, width) + C.reset
-		console.log("")
-		console.log(border)
-		console.log(`${C.bold}${C.blue}  ${title}${C.reset}`)
-		console.log(border)
+		output("")
+		output(border)
+		output(`${C.bold}${C.blue}  ${title}${C.reset}`)
+		output(border)
 	},
 
 	/** Set total step count for step() numbering */
@@ -101,43 +129,48 @@ export const log = {
 	},
 
 	/**
-	 * Step separator with number and title.
-	 * Returns a Timer to track step duration.
+	 * Step separator with number, title, and ISO start timestamp.
+	 * Returns a Timer whose startedAt() / nowIso() / ms() feed the per-step
+	 * timestamps in report JSON.
 	 *
-	 *   ── Step 3/11 ─ Pause system ──────────────────────────
+	 *   ── Step 3/11 ─ Pause system ────────────  @ 2026-04-22T14:03:11Z ─
 	 */
 	step(title: string): Timer {
 		_currentStep++
+		const t = createTimer()
 		const label = _totalSteps > 0 ? `Step ${_currentStep}/${_totalSteps}` : `Step ${_currentStep}`
+		const startedAt = t.startedAt()
 		const prefix = `${C.dim}${SYM.line}${SYM.line}${C.reset} ${C.bold}${label}${C.reset} ${C.dim}${SYM.line}${C.reset} ${C.bold}${title}${C.reset} `
-		const usedLen = label.length + title.length + 6 // approximate visible chars
-		const tailLen = Math.max(0, 60 - usedLen)
+		const suffix = `${C.dim} @ ${startedAt}${C.reset}`
+		// Rule tail is shorter because we're appending the ISO timestamp.
+		const usedLen = label.length + title.length + startedAt.length + 9
+		const tailLen = Math.max(0, 70 - usedLen)
 		const tail = C.dim + ruleChar(SYM.line, tailLen) + C.reset
-		console.log("")
-		console.log(prefix + tail)
-		return createTimer()
+		output("")
+		output(prefix + tail + suffix)
+		return t
 	},
 
-	/** Print step elapsed time (call after step work is done) */
+	/** Print step elapsed time + finish ISO timestamp (call after step work is done). */
 	stepDone(timer: Timer): void {
-		console.log(`${C.dim}  (${timer.fmt()})${C.reset}`)
+		output(`${C.dim}  (${timer.fmt()}) finished at ${timer.nowIso()}${C.reset}`)
 	},
 
 	// ── Messages ─────────────────────────────────────────────────────────
 
 	/** Informational message (indented) */
 	info(msg: string): void {
-		console.log(`  ${msg}`)
+		output(`  ${msg}`)
 	},
 
 	/** Success message with green checkmark */
 	ok(msg: string): void {
-		console.log(`  ${C.green}${SYM.check}${C.reset} ${msg}`)
+		output(`  ${C.green}${SYM.check}${C.reset} ${msg}`)
 	},
 
 	/** Warning message */
 	warn(msg: string): void {
-		console.log(`  ${C.yellow}${SYM.warn} ${msg}${C.reset}`)
+		console.warn(`  ${C.yellow}${SYM.warn} ${msg}${C.reset}`)
 	},
 
 	/** Error message */
@@ -147,12 +180,12 @@ export const log = {
 
 	/** Detail line (further indented, dimmed bullet) */
 	detail(msg: string): void {
-		console.log(`    ${C.dim}${SYM.bullet}${C.reset} ${msg}`)
+		verboseOutput(`    ${C.dim}${SYM.bullet}${C.reset} ${msg}`)
 	},
 
 	/** Blank line */
 	blank(): void {
-		console.log("")
+		output("")
 	},
 
 	// ── Key-value display ────────────────────────────────────────────────
@@ -161,7 +194,7 @@ export const log = {
 	kv(key: string, value: string, indent = 2): void {
 		const spaces = " ".repeat(indent)
 		const paddedKey = pad(key + ":", 24)
-		console.log(`${spaces}${C.dim}${paddedKey}${C.reset}${value}`)
+		output(`${spaces}${C.dim}${paddedKey}${C.reset}${value}`)
 	},
 
 	// ── Contract deployment ──────────────────────────────────────────────
@@ -174,7 +207,7 @@ export const log = {
 	deployed(name: string, address: string, cached = false): void {
 		const paddedName = pad(name, 32)
 		const suffix = cached ? `  ${C.dim}(cached)${C.reset}` : ""
-		console.log(`  ${C.green}${SYM.check}${C.reset} ${C.bold}${paddedName}${C.reset}${C.cyan}${address}${C.reset}${suffix}`)
+		output(`  ${C.green}${SYM.check}${C.reset} ${C.bold}${paddedName}${C.reset}${C.cyan}${address}${C.reset}${suffix}`)
 	},
 
 	/**
@@ -183,7 +216,7 @@ export const log = {
 	 */
 	skipped(name: string, address: string): void {
 		const paddedName = pad(name, 32)
-		console.log(`  ${C.dim}${SYM.arrow} ${paddedName}${C.cyan}${address}${C.reset}  ${C.dim}(already deployed)${C.reset}`)
+		verboseOutput(`  ${C.dim}${SYM.arrow} ${paddedName}${C.cyan}${address}${C.reset}  ${C.dim}(already deployed)${C.reset}`)
 	},
 
 	/**
@@ -192,7 +225,7 @@ export const log = {
 	 */
 	progress(current: number, total: number, msg: string): void {
 		const label = `${C.dim}[${current}/${total}]${C.reset}`
-		console.log(`  ${label} ${msg}`)
+		verboseOutput(`  ${label} ${msg}`)
 	},
 
 	// ── Tables ───────────────────────────────────────────────────────────
@@ -203,7 +236,7 @@ export const log = {
 		for (const [key, value] of entries) {
 			const paddedKey = pad(key, maxKeyLen + 2)
 			const formatted = typeof value === "number" ? commaNumber(value) : value
-			console.log(`    ${C.dim}${paddedKey}${C.reset}${formatted}`)
+			output(`    ${C.dim}${paddedKey}${C.reset}${formatted}`)
 		}
 	},
 
@@ -213,39 +246,39 @@ export const log = {
 	success(title: string, entries: Array<[string, string]>): void {
 		const width = 64
 		const border = C.green + ruleChar(SYM.doubleLine, width) + C.reset
-		console.log("")
-		console.log(border)
-		console.log(`${C.bold}${C.green}  ${SYM.check} ${title}${C.reset}`)
-		console.log(border)
+		output("")
+		output(border)
+		output(`${C.bold}${C.green}  ${SYM.check} ${title}${C.reset}`)
+		output(border)
 		if (entries.length > 0) {
 			const maxKeyLen = Math.max(...entries.map(([k]) => k.length))
 			for (const [key, value] of entries) {
 				const paddedKey = pad(key + ":", maxKeyLen + 2)
-				console.log(`  ${C.dim}${paddedKey}${C.reset}${value}`)
+				output(`  ${C.dim}${paddedKey}${C.reset}${value}`)
 			}
 		}
-		console.log("")
+		output("")
 	},
 
 	/** Failure summary */
 	failure(title: string, errorMsg: string): void {
 		const width = 64
 		const border = C.red + ruleChar(SYM.doubleLine, width) + C.reset
-		console.log("")
-		console.log(border)
-		console.log(`${C.bold}${C.red}  ${SYM.cross} ${title}${C.reset}`)
-		console.log(border)
-		console.log(`  ${C.red}${errorMsg}${C.reset}`)
-		console.log("")
+		console.error("")
+		console.error(border)
+		console.error(`${C.bold}${C.red}  ${SYM.cross} ${title}${C.reset}`)
+		console.error(border)
+		console.error(`  ${C.red}${errorMsg}${C.reset}`)
+		console.error("")
 	},
 
 	/** "Next steps" block */
 	nextSteps(steps: string[]): void {
-		console.log(`  ${C.bold}Next steps:${C.reset}`)
+		output(`  ${C.bold}Next steps:${C.reset}`)
 		steps.forEach((s, i) => {
-			console.log(`    ${i + 1}. ${s}`)
+			output(`    ${i + 1}. ${s}`)
 		})
-		console.log("")
+		output("")
 	},
 
 	// ── Utilities ────────────────────────────────────────────────────────
@@ -276,5 +309,11 @@ export const log = {
 	resetSteps(): void {
 		_totalSteps = 0
 		_currentStep = 0
+	},
+
+	/** Override verbosity for embedded/test callers. */
+	setLevel(level: ScriptLogLevel): void {
+		if (!validLevels.has(level)) throw new Error(`Invalid script log level: ${level}`)
+		currentLevel = level
 	},
 }

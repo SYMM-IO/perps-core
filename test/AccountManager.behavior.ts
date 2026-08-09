@@ -14,8 +14,6 @@ const symmioInterface = new ethers.Interface([
 const coreInterface = new ethers.Interface([
 	"function depositForAccount(address account,uint256 amount)",
 	"function depositAndAllocateForAccount(address account,uint256 amount)",
-	"function depositForAccountWithExpressRate(address account,uint256 amount)",
-	"function depositAndAllocateForAccountWithExpressRate(address account,uint256 amount)",
 ])
 
 async function accountManagerFixture() {
@@ -233,111 +231,6 @@ export function shouldBehaveLikeAccountManager(): void {
 					context.alCoreFacet,
 					"ZeroAmount",
 				)
-
-				expect(await context.alViewFacet.connect(context.signers.deployer).getSigner()).to.equal(context.signers.deployer.address)
-			})
-		})
-
-		describe("depositForAccountWithExpressRate", function () {
-			it("forwards express deposit call via AccountLayer", async function () {
-				const context = await loadFixture(accountManagerFixture)
-				const accountPrediction = await context.accountManager.connect(context.signers.user).addAccount.staticCall("Express deposit account")
-				await context.accountManager.connect(context.signers.user).addAccount("Express deposit account")
-				const account = accountPrediction[0]
-				const amount = ethers.parseUnits("25", 18)
-
-				await context.token.mint(context.signers.user.address, amount)
-				await context.token.connect(context.signers.user).approve(context.accountLayerDiamond, amount)
-
-				const userBalanceBefore = await context.token.balanceOf(context.signers.user.address)
-				const hubBalanceBefore = await context.token.balanceOf(context.accountLayerDiamond)
-				const managerBalanceBefore = await context.token.balanceOf(await context.accountManager.getAddress())
-				const coreBalanceBefore = await context.token.balanceOf(context.diamond)
-				const balanceBefore = await context.viewFacet.balanceOf(account)
-
-				await expect(context.accountManager.connect(context.signers.user).depositForAccountWithExpressRate(account, amount)).to.not.be.reverted
-
-				const userBalanceAfter = await context.token.balanceOf(context.signers.user.address)
-				const hubBalanceAfter = await context.token.balanceOf(context.accountLayerDiamond)
-				const managerBalanceAfter = await context.token.balanceOf(await context.accountManager.getAddress())
-				const coreBalanceAfter = await context.token.balanceOf(context.diamond)
-				const balanceAfter = await context.viewFacet.balanceOf(account)
-
-				expect(userBalanceBefore - userBalanceAfter).to.equal(amount)
-				expect(hubBalanceAfter - hubBalanceBefore).to.equal(0n)
-				expect(managerBalanceAfter - managerBalanceBefore).to.equal(0n)
-				expect(coreBalanceAfter - coreBalanceBefore).to.equal(amount)
-				expect(balanceAfter - balanceBefore).to.equal(amount)
-
-				expect(await context.alViewFacet.connect(context.signers.deployer).getSigner()).to.equal(context.signers.deployer.address)
-			})
-
-			it("resets signer when AccountLayer call reverts", async function () {
-				const context = await loadFixture(accountManagerFixture)
-				const accountPrediction = await context.accountManager.connect(context.signers.user).addAccount.staticCall("Express deposit account")
-				await context.accountManager.connect(context.signers.user).addAccount("Express deposit account")
-				const account = accountPrediction[0]
-
-				await expect(context.accountManager.connect(context.signers.user).depositForAccountWithExpressRate(account, 0)).to.be.revertedWithCustomError(
-					context.alCoreFacet,
-					"ZeroAmount",
-				)
-
-				expect(await context.alViewFacet.connect(context.signers.deployer).getSigner()).to.equal(context.signers.deployer.address)
-			})
-		})
-
-		describe("depositAndAllocateForAccountWithExpressRate", function () {
-			it("forwards express deposit+allocate call via AccountLayer", async function () {
-				const context = await loadFixture(accountManagerFixture)
-				const accountPrediction = await context.accountManager
-					.connect(context.signers.user)
-					.addAccount.staticCall("Express deposit and allocate account")
-				await context.accountManager.connect(context.signers.user).addAccount("Express deposit and allocate account")
-				const account = accountPrediction[0]
-				const amount = ethers.parseUnits("40", 18)
-
-				await context.token.mint(context.signers.user.address, amount)
-				await context.token.connect(context.signers.user).approve(context.accountLayerDiamond, amount)
-
-				const userBalanceBefore = await context.token.balanceOf(context.signers.user.address)
-				const hubBalanceBefore = await context.token.balanceOf(context.accountLayerDiamond)
-				const managerBalanceBefore = await context.token.balanceOf(await context.accountManager.getAddress())
-				const coreBalanceBefore = await context.token.balanceOf(context.diamond)
-				const balanceBefore = await context.viewFacet.balanceOf(account)
-				const allocatedBefore = await context.viewFacet.allocatedBalanceOfPartyA(account)
-
-				await expect(context.accountManager.connect(context.signers.user).depositAndAllocateForAccountWithExpressRate(account, amount)).to.not.be
-					.reverted
-
-				const userBalanceAfter = await context.token.balanceOf(context.signers.user.address)
-				const hubBalanceAfter = await context.token.balanceOf(context.accountLayerDiamond)
-				const managerBalanceAfter = await context.token.balanceOf(await context.accountManager.getAddress())
-				const coreBalanceAfter = await context.token.balanceOf(context.diamond)
-				const balanceAfter = await context.viewFacet.balanceOf(account)
-				const allocatedAfter = await context.viewFacet.allocatedBalanceOfPartyA(account)
-
-				expect(userBalanceBefore - userBalanceAfter).to.equal(amount)
-				expect(hubBalanceAfter - hubBalanceBefore).to.equal(0n)
-				expect(managerBalanceAfter - managerBalanceBefore).to.equal(0n)
-				expect(coreBalanceAfter - coreBalanceBefore).to.equal(amount)
-				expect(balanceAfter - balanceBefore).to.equal(0n)
-				expect(allocatedAfter - allocatedBefore).to.equal(amount)
-
-				expect(await context.alViewFacet.connect(context.signers.deployer).getSigner()).to.equal(context.signers.deployer.address)
-			})
-
-			it("resets signer when AccountLayer call reverts", async function () {
-				const context = await loadFixture(accountManagerFixture)
-				const accountPrediction = await context.accountManager
-					.connect(context.signers.user)
-					.addAccount.staticCall("Express deposit and allocate account")
-				await context.accountManager.connect(context.signers.user).addAccount("Express deposit and allocate account")
-				const account = accountPrediction[0]
-
-				await expect(
-					context.accountManager.connect(context.signers.user).depositAndAllocateForAccountWithExpressRate(account, 0),
-				).to.be.revertedWithCustomError(context.alCoreFacet, "ZeroAmount")
 
 				expect(await context.alViewFacet.connect(context.signers.deployer).getSigner()).to.equal(context.signers.deployer.address)
 			})

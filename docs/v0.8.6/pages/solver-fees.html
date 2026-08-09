@@ -21,49 +21,7 @@
 		</header>
 
 		<div class="reader-shell">
-			<aside class="doc-sidebar" aria-label="Documentation navigation">
-				<a class="button primary back-home" href="../index.html">Back to index</a>
-				<div class="side-card">
-					<p class="side-label">Docs</p>
-					<a class="side-link" href="../pages/overview.html"><small>Overview</small><span>Symmio Core v0.8.6 Overview</span></a>
-					<a class="side-link" href="../pages/express-withdrawal-system-design.html"
-						><small>Express Withdrawal</small><span>Express Withdrawal System Design</span></a
-					>
-					<a class="side-link" href="../pages/account-layer-ownership-delegation.html"
-						><small>AccountLayer</small><span>AccountLayer Delegated Creation &amp; Ownership Transfer</span></a
-					>
-					<a class="side-link" href="../pages/liquidation-funding-snapshot-fix.html"
-						><small>Liquidation</small><span>PartyA Liquidation Snapshot Flow</span></a
-					>
-					<a class="side-link" href="../pages/single-step-partya-liquidation.html"
-						><small>Liquidation</small><span>Single-Step PartyA Liquidation</span></a
-					>
-					<a class="side-link" href="../pages/affiliate-shutdown-flow.html"
-						><small>Clearing House</small><span>Affiliate Shutdown Flow</span></a
-					>
-					<a class="side-link" href="../pages/muon-upnl-validity-overrides.html"
-						><small>Muon</small><span>Muon UPNL Validity Overrides</span></a
-					>
-					<a class="side-link is-active" href="../pages/solver-fees.html"><small>Fees</small><span>Solver Fees</span></a>
-					<a class="side-link" href="../pages/operational-fees.html"><small>Fees</small><span>Operational Fees</span></a>
-					<a class="side-link" href="../pages/partya-liquidation-fee-recipient.html"
-						><small>Liquidation</small><span>PartyA Liquidation Fee Recipient Cleanup</span></a
-					>
-					<a class="side-link" href="../pages/balance-change-event-cleanup.html"
-						><small>Events</small><span>BalanceChange Event Cleanup</span></a
-					>
-					<a class="side-link" href="../pages/lazy-accumulated-funding.html"><small>Funding</small><span>Lazy Accumulated Funding</span></a>
-					<a class="side-link" href="../pages/partyb-allocation-suspension-gates.html"
-						><small>PartyB</small><span>Allocation Suspension Gates</span></a
-					>
-					<a class="side-link" href="../pages/cross-partyb-liquidation-reserve.html"
-						><small>Liquidation</small><span>Cross-PartyB Liquidation Reserve Enforcement</span></a
-					>
-					<a class="side-link" href="../pages/express-bot-operations-checklist.html"
-						><small>Express Withdrawal</small><span>Express Provider Bot Operations Checklist</span></a
-					>
-				</div>
-			</aside>
+			<aside class="doc-sidebar" aria-label="Documentation navigation" data-doc-nav></aside>
 			<aside class="toc-panel side-toc" aria-label="Page navigation">
 				<div class="toc-card">
 					<p class="toc-title">On this page</p>
@@ -72,6 +30,7 @@
 					<a class="toc-link level-2" href="#fee-model">Fee Model</a>
 					<a class="toc-link level-2" href="#api-surface">API Surface</a>
 					<a class="toc-link level-2" href="#notional-and-rate-caps">Notional and Rate Caps</a>
+					<a class="toc-link level-2" href="#fee-receiver">Fee Receiver</a>
 					<a class="toc-link level-2" href="#accounting">Accounting</a>
 					<a class="toc-link level-2" href="#integration-flow">Integration Flow</a>
 					<a class="toc-link level-2" href="#edge-cases">Edge Cases</a>
@@ -86,7 +45,8 @@
 							<h1>Solver Fees</h1>
 							<p class="hero-copy">
 								v0.8.6 adds explicit solver rate fees, charged from PartyA allocated balance instead of being hidden inside a worse
-								execution price. Operational fees (flat per-op charges shared with registered relayers) are a separate primitive -- see
+								execution price. Operational fees (flat per-op charges shared with registered relayers) are a separate primitive --
+								see
 								<a href="../pages/operational-fees.html">Operational Fees</a>.
 							</p>
 						</div>
@@ -101,8 +61,9 @@
 						against the relevant open or close cap.
 					</p>
 					<p>
-						The charged amount is deducted from <code>allocatedBalances[partyA]</code> and credited to <code>balances[partyB]</code>. This
-						keeps open and close prices cleaner while making solver revenue observable on-chain.
+						The charged amount is deducted from <code>allocatedBalances[partyA]</code> and credited to the PartyB's solver fee receiver,
+						which defaults to <code>balances[partyB]</code> itself. This keeps open and close prices cleaner while making solver revenue
+						observable on-chain.
 					</p>
 					<p>
 						Flat operational fees (charged by solvers or registered relayers per operation, not per notional) are a separate primitive
@@ -131,7 +92,8 @@ closeFeeCharged + newCloseSolverFee &lt;= closeNotional * closeRateCap / 1e18
 
 					<h2 id="api-surface">API Surface</h2>
 					<p>
-						Solver fee rate caps are stored directly for the open and close sides. Operational fees are separate from the quote state -- see
+						Solver fee rate caps are stored directly for the open and close sides. Operational fees are separate from the quote state --
+						see
 						<a href="../pages/operational-fees.html">Operational Fees</a>.
 					</p>
 					<pre><code class="language-solidity">struct SolverFeeCaps {
@@ -186,8 +148,10 @@ struct SolverFeeState {
 					</p>
 					<p>
 						Open and close solver fees are not exposed as standalone charge selectors; they are charged inside the matching execution
-						transaction so the fee and the solvency check stay atomic. Receiver configuration for operational fees is handled by
-						<code>ControlFacet.setOperationalFeeReceiver</code> -- see <a href="../pages/operational-fees.html">Operational Fees</a>.
+						transaction so the fee and the solvency check stay atomic. Where the fee lands is configured separately via
+						<code>ControlFacet.setSolverFeeReceiver</code> -- see <a href="#fee-receiver">Fee Receiver</a>. The equivalent knob for
+						operational fees is <code>ControlFacet.setOperationalFeeReceiver</code>, described in
+						<a href="../pages/operational-fees.html">Operational Fees</a>.
 					</p>
 					<p>
 						For execution paths with solver fees, PartyB uses the fee-aware <code>PartyBSolverFeeActionsFacet</code> methods. These carry
@@ -256,20 +220,47 @@ function fillCloseRequestToLiquidation(
 						notional is already smaller, so a rate cap scales with notional automatically.
 					</p>
 
+					<h2 id="fee-receiver">Fee Receiver</h2>
+					<p>
+						By default solver fees are credited to the solver PartyB itself. A PartyB can route them elsewhere -- a treasury or a
+						revenue-splitting account -- without changing anything about how quotes are priced or charged:
+					</p>
+					<pre><code class="language-solidity">function setSolverFeeReceiver(address partyB, address receiver) external;
+</code></pre>
+					<p>
+						The caller must be either the PartyB itself or an address holding <code>PARTY_B_MANAGER_ROLE</code>, the same authorization
+						shape used for symbol listings. Passing <code>address(0)</code> resets the receiver back to the PartyB. The target must be a
+						registered PartyB. <code>ViewFacet.getSolverFeeReceiver(partyB)</code> returns the effective receiver.
+					</p>
+					<p>
+						The receiver is resolved at charge time, so changing it only affects subsequent fees -- fees already collected stay where they
+						landed. The receiver may not be the quote's PartyA: routing a fee back to the payer would move allocated balance into free
+						balance without setting <code>deallocateTimestamp</code>, sidestepping the withdraw cooldown. That charge reverts with
+						<code>"SolverFee: Receiver is partyA"</code>.
+					</p>
+					<p>
+						This mirrors the operational fee receiver, but the two are independent settings, so a solver can send per-notional trading
+						revenue and flat operational costs to different accounts. The operational fee equivalent is gated by
+						<code>FEE_ADMIN_ROLE</code> rather than <code>PARTY_B_MANAGER_ROLE</code>, since registered chargers are not always PartyBs.
+					</p>
+
 					<h2 id="accounting">Accounting</h2>
-					<p>Open and close solver fees are credited to the solver PartyB:</p>
-					<pre><code class="language-solidity">allocatedBalances[partyA] -= solverFee;
-balances[partyB] += solverFee;
+					<p>Open and close solver fees are credited to the PartyB's solver fee receiver:</p>
+					<pre><code class="language-solidity">address receiver = solverFeeReceivers[partyB] == address(0) ? partyB : solverFeeReceivers[partyB];
+
+allocatedBalances[partyA] -= solverFee;
+balances[receiver] += solverFee;
 </code></pre>
 					<p>
 						PartyB allocated balances are not touched. Fees are paid directly to free balances, making them separable from trading margin
 						allocation.
 					</p>
-					<p>Relevant events:</p>
+					<p>Relevant events. <code>receiver</code> is the account actually credited:</p>
 					<pre><code class="language-solidity">event OpenSolverFeeCharged(
     uint256 indexed quoteId,
     address indexed partyA,
     address indexed partyB,
+    address receiver,
     uint256 symbolId,
     uint256 amount
 );
@@ -278,8 +269,14 @@ event CloseSolverFeeCharged(
     uint256 indexed quoteId,
     address indexed partyA,
     address indexed partyB,
+    address receiver,
     uint256 symbolId,
     uint256 amount
+);
+
+event SetSolverFeeReceiver(
+    address indexed partyB,
+    address indexed receiver
 );
 
 event BalanceChangePartyA(

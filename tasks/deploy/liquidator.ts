@@ -4,7 +4,15 @@ import { ArgumentType } from "hardhat/types/arguments"
 import { writeData } from "../utils/fs.js"
 import { DeploymentCheckpoint, createDeployedContract, saveCheckpoint } from "./checkpoint.js"
 import { LIQUIDATOR_DEPLOYMENT_FILE } from "./constants.js"
-import { checksumAddress, deployProxyWithFallback, getConnection, getUpgradeAddresses } from "./helpers.js"
+import { recoverCheckpointContractDeployments } from "./deploymentRecovery.js"
+import {
+	assertStandaloneDeploymentTaskAllowed,
+	checksumAddress,
+	deployProxyWithFallback,
+	getConnection,
+	getUpgradeAddresses,
+	requireArg,
+} from "./helpers.js"
 import { logger } from "./logger.js"
 
 type DeploySymmioLiquidatorArgs = {
@@ -19,6 +27,7 @@ export async function deploySymmioLiquidator(
 	{ symmioAddress: rawSymmio, admin: rawAdmin, logData = true, checkpoint }: DeploySymmioLiquidatorArgs,
 ) {
 	const { ethers, upgrades } = await getConnection(hre)
+	await recoverCheckpointContractDeployments(checkpoint, ethers.provider, "contracts.symmioLiquidator")
 
 	const admin = checksumAddress(rawAdmin)
 	const symmioAddress = checksumAddress(rawSymmio)
@@ -34,8 +43,13 @@ export async function deploySymmioLiquidator(
 	}
 
 	const Factory = await ethers.getContractFactory("SymmioLiquidator")
-	const symmioLiquidator = await deployProxyWithFallback(hre, Factory, [admin, symmioAddress], { initializer: "initialize" })
-	await symmioLiquidator.waitForDeployment()
+	const symmioLiquidator = await deployProxyWithFallback(hre, Factory, [admin, symmioAddress], {
+		initializer: "initialize",
+		label: "SymmioLiquidator",
+		checkpoint,
+		implementationComponent: "deployments.symmioLiquidator.implementation",
+		proxyComponent: "contracts.symmioLiquidator",
+	})
 
 	const addresses = {
 		proxy: await symmioLiquidator.getAddress(),
@@ -84,6 +98,17 @@ export const liquidatorTask = task("deploy:symmioLiquidator", "Deploys the Symmi
 	.addOption({ name: "admin", description: "The admin address", type: ArgumentType.STRING_WITHOUT_DEFAULT, defaultValue: undefined })
 	.addOption({ name: "logData", description: "Write the deployed addresses to a data file", type: ArgumentType.BOOLEAN, defaultValue: true })
 	.setAction(async () => ({
-		default: async ({ symmioAddress, admin, logData }, hre) => deploySymmioLiquidator(hre, { symmioAddress, admin, logData }),
+		default: async ({ symmioAddress, admin, logData }, hre) => {
+			await assertStandaloneDeploymentTaskAllowed(
+				hre,
+				"deploy:symmioLiquidator",
+				"Use `scripts/deployLiquidator.ts` with EXECUTE=true and the exact CONFIRM_CHAIN_ID for a guarded live deployment.",
+			)
+			return deploySymmioLiquidator(hre, {
+				symmioAddress: requireArg(symmioAddress, "symmio-address"),
+				admin: requireArg(admin, "admin"),
+				logData,
+			})
+		},
 	}))
 	.build()

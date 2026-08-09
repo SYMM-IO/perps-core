@@ -39,7 +39,7 @@ contract ViewFacet is IViewFacet {
 
 	/// @notice Returns the owner of the diamond.
 	/// @return The address of the owner.
-	function owner() external view virtual returns (address) {
+	function getOwner() external view virtual returns (address) {
 		return LibDiamond.diamondStorage().contractOwner;
 	}
 
@@ -64,7 +64,7 @@ contract ViewFacet is IViewFacet {
 	/// @return pendingLockedPartyBmm The pending locked Party B maintenance margin.
 	/// @return partyAPositionsCount The number of positions held by Party A.
 	/// @return partyAPendingQuotesCount The number of pending quotes submitted by Party A.
-	/// @return partyANonces The nonces of Party A.
+	/// @return partyAUpnlCounters The upnl counter of Party A.
 	/// @return quoteIdsCount The total quote IDs associated with Party A.
 	function partyAStats(
 		address partyA
@@ -89,7 +89,7 @@ contract ViewFacet is IViewFacet {
 			accountLayout.pendingLockedBalances[partyA].partyBmm,
 			quoteLayout.partyAPositionsCount[partyA],
 			quoteLayout.partyAPendingQuotes[partyA].length,
-			accountLayout.partyANonces[partyA],
+			accountLayout.partyAUpnlCounters[partyA],
 			quoteLayout.quoteIdsOf[partyA].length
 		);
 	}
@@ -195,10 +195,61 @@ contract ViewFacet is IViewFacet {
 		return AccountStorage.layout().partyBAllocatedBalances[partyB][partyA];
 	}
 
+	/// @notice Returns the maximum amount Party A can deallocate for the supplied uPnL.
+	/// @dev Excludes operational gates such as pause state, cooldowns, and signature validity.
+	function maxDeallocatableForPartyA(address partyA, int256 upnl) external view returns (uint256) {
+		return LibAccount.partyAMaxDeallocatable(upnl, partyA, 0);
+	}
+
+	/// @notice Returns the maximum amount Party A can safe-deallocate for the supplied uPnL and off-chain pending balance.
+	/// @dev pendingBalance is the value carried by SingleUpnlWithPendingBalanceSig, not pending locked quote collateral.
+	///      Excludes operational gates such as pause state, cooldowns, and signature validity.
+	function maxSafeDeallocatableForPartyA(address partyA, int256 upnl, uint256 pendingBalance) external view returns (uint256) {
+		return LibAccount.partyAMaxDeallocatable(upnl, partyA, pendingBalance);
+	}
+
+	/// @notice Returns the maximum amount Party B can deallocate from the requested allocation bucket for the supplied uPnL.
+	/// @dev Use partyA = address(0) for the active cross-mode bucket. Legacy per-PartyA buckets retain their drain semantics.
+	///      Excludes operational gates such as pause state and signature validity.
+	function maxDeallocatableForPartyB(address partyB, address partyA, int256 upnl) external view returns (uint256) {
+		return LibAccount.partyBMaxDeallocatable(upnl, partyB, partyA);
+	}
+
+	/// @notice Returns the maximum amount Party A can remove via safeDeallocate for the supplied Muon-attested values.
+	/// @dev pendingBalance and scaledLockedBalance are the values carried by SingleUpnlWithPendingBalanceSig.
+	///      Excludes operational gates such as pause state, cooldowns, and signature validity.
+	function maxRemovableMarginForPartyA(
+		address partyA,
+		int256 upnl,
+		uint256 pendingBalance,
+		uint256 scaledLockedBalance
+	) external view returns (uint256) {
+		return LibAccount.partyAMaxRemovableMargin(upnl, partyA, pendingBalance, scaledLockedBalance);
+	}
+
+	/// @notice Returns the maximum amount Party B can remove via safeDeallocateForPartyB for the supplied Muon-attested values.
+	/// @dev Use partyA = address(0) for the active cross-mode bucket. The scaled retention floor applies only when
+	///      strict deallocation is enabled for the partyB. Excludes operational gates such as pause state and signature validity.
+	function maxRemovableMarginForPartyB(
+		address partyB,
+		address partyA,
+		int256 upnl,
+		uint256 pendingBalance,
+		uint256 scaledLockedBalance
+	) external view returns (uint256) {
+		return LibAccount.partyBMaxRemovableMargin(upnl, partyB, partyA, pendingBalance, scaledLockedBalance);
+	}
+
 	/// @notice Returns the effective account that receives a charger's operational fees.
 	/// @dev If no custom receiver is set, the charger itself receives operational fees.
 	function getOperationalFeeReceiver(address charger) external view returns (address) {
 		return LibAccount.getOperationalFeeReceiver(charger);
+	}
+
+	/// @notice Returns the effective account that receives a Party B's solver fees.
+	/// @dev If no custom receiver is set, the Party B itself receives solver fees.
+	function getSolverFeeReceiver(address partyB) external view returns (address) {
+		return LibAccount.getSolverFeeReceiver(partyB);
 	}
 
 	function getOperationalFeeAllowance(
@@ -288,19 +339,42 @@ contract ViewFacet is IViewFacet {
 		return cooldownEnd > block.timestamp ? cooldownEnd : block.timestamp;
 	}
 
-	/// @notice Returns the nonce of Party A.
+	/// @notice Returns the upnl counter of Party A (the "nonce" embedded in Muon signatures).
+	/// @dev Alias kept for ABI compatibility; prefer upnlCounterOfPartyA. This is a version counter
+	///      of upnl inputs, not a per-use nonce.
 	/// @param partyA The address of Party A.
-	/// @return The nonce of Party A.
+	/// @return The upnl counter of Party A.
 	function nonceOfPartyA(address partyA) external view returns (uint256) {
-		return AccountStorage.layout().partyANonces[partyA];
+		return AccountStorage.layout().partyAUpnlCounters[partyA];
 	}
 
-	/// @notice Returns the nonce of Party B for a specific Party A.
+	/// @notice Returns the upnl counter of Party B for a specific Party A (the "nonce" embedded in Muon signatures).
+	/// @dev Alias kept for ABI compatibility; prefer upnlCounterOfPartyB. This is a version counter
+	///      of upnl inputs, not a per-use nonce.
 	/// @param partyB The address of Party B.
 	/// @param partyA The address of Party A.
-	/// @return The nonce of Party B for Party A in normal mode or cross partyB mode.
+	/// @return The upnl counter of Party B for Party A in normal mode or cross partyB mode.
 	function nonceOfPartyB(address partyB, address partyA) external view returns (uint256) {
-		return AccountStorage.layout().partyBNonces[partyB][partyA];
+		return AccountStorage.layout().partyBUpnlCounters[partyB][partyA];
+	}
+
+	/// @notice Returns the upnl counter of Party A embedded in Muon signatures.
+	/// @dev Canonical name for nonceOfPartyA: a version counter of upnl inputs, bumped by every
+	///      operation that changes PartyA's upnl and NOT consumed per signature use.
+	/// @param partyA The address of Party A.
+	/// @return The upnl counter of Party A.
+	function upnlCounterOfPartyA(address partyA) external view returns (uint256) {
+		return AccountStorage.layout().partyAUpnlCounters[partyA];
+	}
+
+	/// @notice Returns the upnl counter of Party B for a specific Party A embedded in Muon signatures.
+	/// @dev Canonical name for nonceOfPartyB: a version counter of upnl inputs, bumped by every
+	///      operation that changes the pair's upnl and NOT consumed per signature use.
+	/// @param partyB The address of Party B.
+	/// @param partyA The address of Party A.
+	/// @return The upnl counter of Party B for Party A in normal mode or cross partyB mode.
+	function upnlCounterOfPartyB(address partyB, address partyA) external view returns (uint256) {
+		return AccountStorage.layout().partyBUpnlCounters[partyB][partyA];
 	}
 
 	/// @notice Checks whether a user is suspended.
@@ -737,6 +811,12 @@ contract ViewFacet is IViewFacet {
 	/// @return Whether ADL is enabled for the party B.
 	function isADLEnabled(address partyB) external view returns (bool) {
 		return MAStorage.layout().adlEnabled[partyB];
+	}
+
+	/// @notice Returns whether a Party B must keep locked and pending CVA + LF allocated when deallocating.
+	/// @param partyB The Party B to query.
+	function isPartyBStrictDeallocationEnabled(address partyB) external view returns (bool) {
+		return MAStorage.layout().strictDeallocationEnabledForPartyB[partyB];
 	}
 
 	/// @notice Returns the effective signer address, falling back to msg.sender if no signer is set.

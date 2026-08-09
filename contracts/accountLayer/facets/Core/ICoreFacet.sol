@@ -96,16 +96,6 @@ interface ICoreFacet is ICoreFacetEvents, IAccountLayerErrors {
 	/// @param amount The amount of collateral to deposit and allocate
 	function depositAndAllocateForAccount(address account, uint256 amount) external;
 
-	/// @notice Deposits collateral with express rate split between Symmio and a virtual provider
-	/// @param account The account to deposit for
-	/// @param amount The total amount of collateral to deposit
-	function depositForAccountWithExpressRate(address account, uint256 amount) external;
-
-	/// @notice Deposits and allocates collateral with express rate split
-	/// @param account The account to deposit and allocate for
-	/// @param amount The total amount of collateral
-	function depositAndAllocateForAccountWithExpressRate(address account, uint256 amount) external;
-
 	// ==================== Call Execution ====================
 
 	/// @notice Executes an array of Symmio core calls on behalf of an account

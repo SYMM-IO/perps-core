@@ -42,12 +42,12 @@ export function shouldBehaveLikeDiamond(): void {
 		this.context = await loadFixture(initializeFixture)
 	})
 
-	it("should have 31 facets", async function () {
+	it("should have 32 facets", async function () {
 		const context: RunContext = this.context
 		for (const address of await context.diamondLoupeFacet.facetAddresses()) {
 			addresses.push(address)
 		}
-		assert.equal(addresses.length, 31)
+		assert.equal(addresses.length, 32)
 	})
 
 	it("keeps new AccountStorage snapshot fields after existing layout fields", async function () {
@@ -82,6 +82,15 @@ export function shouldBehaveLikeDiamond(): void {
 			.slice(0, 10)
 
 		expect(await context.diamondLoupeFacet.facetAddress(legacySendQuoteSelector)).to.equal(ethers.ZeroAddress)
+	})
+
+	it("exposes only the count-free startRestatement selector", async function () {
+		const context: RunContext = this.context
+		const legacySelector = ethers.id("startRestatement(uint256,uint256,uint256)").slice(0, 10)
+		const currentSelector = ethers.id("startRestatement(uint256)").slice(0, 10)
+
+		expect(await context.diamondLoupeFacet.facetAddress(legacySelector)).to.equal(ethers.ZeroAddress)
+		expect(await context.diamondLoupeFacet.facetAddress(currentSelector)).to.not.equal(ethers.ZeroAddress)
 	})
 
 	it("facets should have the right function selectors -- call to facetFunctionSelectors function", async function () {

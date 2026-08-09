@@ -8,7 +8,7 @@ import { PartyBBatchActionsFacetImpl } from "./PartyBBatchActionsFacetImpl.sol";
 import { Accessibility } from "../../utils/Accessibility.sol";
 import { Pausable } from "../../utils/Pausable.sol";
 import { IPartyBBatchActionsFacet } from "./IPartyBBatchActionsFacet.sol";
-import { QuoteStorage, Quote, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
+import { QuoteStorage, Quote, QuoteStatus } from "../../storages/QuoteStorage.sol";
 import { PairUpnlAndPricesSig } from "../../storages/MuonStorage.sol";
 contract PartyBBatchActionsFacet is Accessibility, Pausable, IPartyBBatchActionsFacet {
 	/// @notice Opens positions for the specified quotes in batch. The opened position's size can't be excessively small or large.

@@ -6,7 +6,7 @@
  * The Safe (protocolAdmin) must have SETTER_ROLE on InstantLayer.
  *
  * Usage:
- *   npx hardhat run scripts/upgrade/generateTemplateBatch.ts --network <network>
+ *   ./node_modules/.bin/hardhat run scripts/upgrade/generateTemplateBatch.ts --network <network>
  *
  * Config:
  *   scripts/upgrade/config/upgrade.json                 -- diamondAddress, safeAddress, instantLayerAddress
@@ -19,6 +19,7 @@ import fs from "fs"
 import path from "path"
 
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
+import { loadDeploymentState } from "./utils/deploymentState.js"
 import { loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig.js"
 import { toHumanReadableSafeTxFromIface, type SafeBatch } from "./utils/upgradeHelpers.js"
 
@@ -53,10 +54,16 @@ const instantLayerIface = new ethers.Interface(INSTANT_LAYER_ABI)
 
 async function main() {
 	const shared = loadUpgradeConfigShared(connection.networkName)
+	const CHAIN_ID = String(Number((await ethers.provider.getNetwork()).chainId))
+	const deploymentStateContext = {
+		networkName: connection.networkName,
+		chainId: Number(CHAIN_ID),
+		diamondAddress: process.env.DIAMOND_ADDRESS ?? shared.diamondAddress,
+	}
 
 	let peripherals: DeployedPeripherals = {}
 	if (fs.existsSync(PERIPHERALS_FILE)) {
-		peripherals = JSON.parse(fs.readFileSync(PERIPHERALS_FILE, "utf-8"))
+		peripherals = loadDeploymentState<DeployedPeripherals>(PERIPHERALS_FILE, deploymentStateContext)
 	}
 
 	const SAFE_ADDRESS = process.env.SAFE_ADDRESS ?? shared.safeAddress
@@ -77,8 +84,6 @@ async function main() {
 	if (!templatesConfig.templates || templatesConfig.templates.length === 0) {
 		throw new Error("No templates defined in config file")
 	}
-
-	const CHAIN_ID = String(Number((await ethers.provider.getNetwork()).chainId))
 
 	console.log(`InstantLayer: ${IL_ADDRESS}`)
 	console.log(`Safe:         ${SAFE_ADDRESS}`)

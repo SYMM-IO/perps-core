@@ -21,27 +21,7 @@
 		</header>
 
 		<div class="reader-shell">
-		<aside class="doc-sidebar" aria-label="Documentation navigation">
-			<a class="button primary back-home" href="../index.html">Back to index</a>
-			<div class="side-card">
-				<p class="side-label">Docs</p>
-				<a class="side-link" href="../pages/overview.html"><small>Overview</small><span>Symmio Core v0.8.6 Overview</span></a>
-				<a class="side-link" href="../pages/express-withdrawal-system-design.html"><small>Express Withdrawal</small><span>Express Withdrawal System Design</span></a>
-				<a class="side-link" href="../pages/account-layer-ownership-delegation.html"><small>AccountLayer</small><span>AccountLayer Delegated Creation &amp; Ownership Transfer</span></a>
-				<a class="side-link" href="../pages/liquidation-funding-snapshot-fix.html"><small>Liquidation</small><span>PartyA Liquidation Snapshot Flow</span></a>
-				<a class="side-link" href="../pages/single-step-partya-liquidation.html"><small>Liquidation</small><span>Single-Step PartyA Liquidation</span></a>
-				<a class="side-link" href="../pages/affiliate-shutdown-flow.html"><small>Clearing House</small><span>Affiliate Shutdown Flow</span></a>
-				<a class="side-link" href="../pages/muon-upnl-validity-overrides.html"><small>Muon</small><span>Muon UPNL Validity Overrides</span></a>
-				<a class="side-link" href="../pages/solver-fees.html"><small>Fees</small><span>Solver Fees</span></a>
-				<a class="side-link" href="../pages/operational-fees.html"><small>Fees</small><span>Operational Fees</span></a>
-				<a class="side-link is-active" href="../pages/partya-liquidation-fee-recipient.html"><small>Liquidation</small><span>PartyA Liquidation Fee Recipient Cleanup</span></a>
-				<a class="side-link" href="../pages/balance-change-event-cleanup.html"><small>Events</small><span>BalanceChange Event Cleanup</span></a>
-				<a class="side-link" href="../pages/lazy-accumulated-funding.html"><small>Funding</small><span>Lazy Accumulated Funding</span></a>
-				<a class="side-link" href="../pages/partyb-allocation-suspension-gates.html"><small>PartyB</small><span>Allocation Suspension Gates</span></a>
-				<a class="side-link" href="../pages/cross-partyb-liquidation-reserve.html"><small>Liquidation</small><span>Cross-PartyB Liquidation Reserve Enforcement</span></a>
-				<a class="side-link" href="../pages/express-bot-operations-checklist.html"><small>Express Withdrawal</small><span>Express Provider Bot Operations Checklist</span></a>
-			</div>
-		</aside>
+			<aside class="doc-sidebar" aria-label="Documentation navigation" data-doc-nav></aside>
 			<aside class="toc-panel side-toc" aria-label="Page navigation">
 				<div class="toc-card">
 					<p class="toc-title">On this page</p>
@@ -66,9 +46,7 @@
 
 				<article class="doc-article" id="full-document">
 					<h2 id="summary">Summary</h2>
-					<p>
-						PartyA LF now has one receiver: <code>liquidators[partyA][0]</code>, the address that started the PartyA liquidation.
-					</p>
+					<p>PartyA LF now has one receiver: <code>liquidators[partyA][0]</code>, the address that started the PartyA liquidation.</p>
 					<p>
 						Before v0.8.6, PartyA LF was split between two receivers: the caller that started liquidation and the first caller that set
 						liquidation prices. In practice, a single liquidator now performs all liquidation steps almost every time. Competition is at
@@ -81,13 +59,12 @@
 
 					<h2 id="what-changed">What Changed</h2>
 					<p>
-						Before v0.8.6: PartyA LF was split 50/50 between <code>liquidators[partyA][0]</code> and
-						<code>liquidators[partyA][1]</code>.
+						Before v0.8.6: PartyA LF was split 50/50 between <code>liquidators[partyA][0]</code> and <code>liquidators[partyA][1]</code>.
 					</p>
 					<p>
-						<code>liquidators[partyA][0]</code> was the caller of <code>liquidatePartyA</code> or
-						<code>deferredLiquidatePartyA</code>. <code>liquidators[partyA][1]</code> was the first caller of
-						<code>setSymbolsPrice</code> or <code>deferredSetSymbolsPrice</code>; later price-setting calls did not add more LF receivers.
+						<code>liquidators[partyA][0]</code> was the caller of <code>liquidatePartyA</code> or <code>deferredLiquidatePartyA</code>.
+						<code>liquidators[partyA][1]</code> was the first caller of <code>setSymbolsPrice</code> or
+						<code>deferredSetSymbolsPrice</code>; later price-setting calls did not add more LF receivers.
 					</p>
 					<p>
 						After v0.8.6: one PartyA LF receiver. The final capped LF goes to <code>liquidators[partyA][0]</code> because that is the
@@ -101,23 +78,24 @@
 
 					<h2 id="final-settlement-accounting">Final Settlement Accounting</h2>
 					<p>
-						The LF is handled during PartyA liquidation finalization, after deferred balance and reimbursement accounting have been
-						resolved.
+						The LF is handled during PartyA liquidation finalization. The liquidated PartyA's <code>LF_OUT</code> amount is capped at the
+						portion funded by its previous allocated balance; the rest of that previous allocation is reported as realized-PnL outflow.
+						The starter receives the full capped LF as a direct allocated credit.
 					</p>
 					<pre><code class="language-solidity">// Pay capped LF to the liquidation starter.
 uint256 lf = accountLayout.liquidationDetails[partyA].liquidationFee;
+uint256 lfFromAllocated = lf &lt; previousAllocatedBalance ? lf : previousAllocatedBalance;
+LibAccount.decreasePartyAAllocatedBalance(partyA, lfFromAllocated, SharedEvents.BalanceChangeType.LF_OUT);
 if (lf &gt; 0) {
-    emit SharedEvents.BalanceChangePartyA(partyA, lf, SharedEvents.BalanceChangeType.LF_OUT);
-    address liquidationStarter = accountLayout.liquidators[partyA][0];
-    accountLayout.allocatedBalances[liquidationStarter] += lf;
-    emit SharedEvents.BalanceChangePartyA(liquidationStarter, lf, SharedEvents.BalanceChangeType.LF_IN);
+	address liquidationStarter = accountLayout.liquidators[partyA][0];
+	LibAccount.increasePartyAAllocatedBalance(liquidationStarter, lf, SharedEvents.BalanceChangeType.LF_IN);
 }
 </code></pre>
 					<p>The resulting balance movement is:</p>
 					<ul>
-						<li><code>BalanceChangePartyA(partyA, lf, LF_OUT)</code> for the liquidated PartyA.</li>
-						<li><code>allocatedBalances[liquidationStarter] += lf</code>.</li>
-						<li><code>BalanceChangePartyA(liquidationStarter, lf, LF_IN)</code> for the starter.</li>
+						<li>The PartyA decrease method records the allocated-funded portion with reason <code>LF_OUT</code>.</li>
+						<li>The starter increase method credits the full capped LF with reason <code>LF_IN</code>.</li>
+						<li>Each method emits the corresponding existing <code>BalanceChangePartyA</code> event from the same mutation boundary.</li>
 					</ul>
 					<p>If the capped LF is zero, no LF balance-change events are emitted.</p>
 				</article>

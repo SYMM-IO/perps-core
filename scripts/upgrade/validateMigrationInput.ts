@@ -3,7 +3,7 @@ import fs from "fs"
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
-import { loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig.js"
+import { baseNetworkName, loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 
 /**
  * Validate migration input against on-chain state.
@@ -17,7 +17,7 @@ import { loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig
  * Can run before or after the diamondCut.
  *
  * Usage:
- *   npx hardhat run scripts/upgrade/validateMigrationInput.ts --network mantle
+ *   ./node_modules/.bin/hardhat run scripts/upgrade/validateMigrationInput.ts --network mantle
  *
  * Env overrides: DIAMOND_ADDRESS, MIGRATION_INPUT_FILE, SPOT_CHECK_COUNT
  */
@@ -66,14 +66,12 @@ async function rawGetQuote(
 
 // ── Config ───────────────────────────────────────────────────────────
 
-const DEFAULT_INPUT_FILE = "./scripts/upgrade/output/migration-input.json"
-
-function loadMigrationInputFileFromConfig(networkName: string): string | undefined {
-	const configFile = resolveConfigFile("migrate", networkName, process.env.MIGRATION_CONFIG_FILE)
-	if (!fs.existsSync(configFile)) return undefined
-	const data = JSON.parse(fs.readFileSync(configFile, "utf-8")) as { migrationInputFile?: string }
-	return data.migrationInputFile
-}
+// Default to the network-suffixed file written by prepareMigrationInput.ts.
+// Falls back to the unsuffixed name if no network suffix is resolvable.
+const NETWORK_SUFFIX = baseNetworkName(connection.networkName)
+const DEFAULT_INPUT_FILE = NETWORK_SUFFIX
+	? `./scripts/upgrade/output/migration-input-${NETWORK_SUFFIX}.json`
+	: "./scripts/upgrade/output/migration-input.json"
 
 function toBigInt(value: unknown): bigint {
 	if (typeof value === "bigint") return value
@@ -88,10 +86,9 @@ async function main() {
 	const scriptTimer = log.timer()
 	await verifyRpc()
 
-	const networkName = connection.networkName
-	const shared = loadUpgradeConfigShared(networkName)
+	const shared = loadUpgradeConfigShared(NETWORK_SUFFIX)
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? shared.diamondAddress
-	const INPUT_FILE = process.env.MIGRATION_INPUT_FILE ?? loadMigrationInputFileFromConfig(networkName) ?? DEFAULT_INPUT_FILE
+	const INPUT_FILE = process.env.MIGRATION_INPUT_FILE ?? DEFAULT_INPUT_FILE
 	const SPOT_CHECK_COUNT = Number(process.env.SPOT_CHECK_COUNT ?? shared.spotCheckCount ?? 20)
 
 	if (!DIAMOND_ADDRESS || !ethers.isAddress(DIAMOND_ADDRESS) || DIAMOND_ADDRESS === ethers.ZeroAddress) {

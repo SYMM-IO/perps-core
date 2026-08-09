@@ -8,11 +8,11 @@
  *   3. upgrade-details.json       -- selector changes + transaction breakdown
  *
  * Usage:
- *   npx hardhat run scripts/upgrade/generateSafeBatch.ts --network arbitrum
+ *   ./node_modules/.bin/hardhat run scripts/upgrade/generateSafeBatch.ts --network arbitrum
  *
  *   # Custom facets file
  *   FACETS_FILE=./path/to/deployed-facets.json \
- *     npx hardhat run scripts/upgrade/generateSafeBatch.ts --network arbitrum
+ *     ./node_modules/.bin/hardhat run scripts/upgrade/generateSafeBatch.ts --network arbitrum
  *
  * Config: scripts/upgrade/config/upgrade.json
  */
@@ -20,7 +20,14 @@ import fs from "fs"
 import path from "path"
 
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
-import { buildTemplateTransactions, buildSymbolManagerWiringTransactions, buildWiringTransactions } from "./utils/peripheralHelpers.js"
+import { verifyMuonVerifierSafeBatch, type LoadedContext } from "./utils/batchVerifier.js"
+import { loadDeploymentState } from "./utils/deploymentState.js"
+import {
+	buildTemplateTransactions,
+	buildSymbolManagerWiringTransactions,
+	buildWiringTransactions,
+	filterUnregisteredPartyBs,
+} from "./utils/peripheralHelpers.js"
 import { resolveConfigFile } from "./utils/sharedConfig.js"
 import {
 	buildDiamondCut,
@@ -34,7 +41,6 @@ import {
 type Config = {
 	diamondAddress?: string
 	protocolAdmin?: string
-	adminAddress?: string
 	safeAddress?: string
 	migrationRunner?: string
 	diamondCutChunkSize?: number
@@ -50,11 +56,10 @@ type DeployedPeripherals = {
 	accountLayer?: { diamond?: string }
 	instantLayer?: { address?: string }
 	symbolManager?: { address?: string }
+	signatureVerifier?: string
 }
 
 const OUTPUT_DIR = "./scripts/upgrade/output"
-
-const ACCOUNT_LAYER_OWNERSHIP_ABI = ["function owner() view returns (address)", "function pendingOwner() view returns (address)"]
 
 function loadConfig(networkName: string): Config {
 	const configFile = resolveConfigFile("upgrade", networkName, process.env.UPGRADE_CONFIG_FILE)
@@ -62,21 +67,18 @@ function loadConfig(networkName: string): Config {
 	return JSON.parse(fs.readFileSync(configFile, "utf-8")) as Config
 }
 
-async function shouldAcceptAccountLayerOwnership(accountLayerAddress: string, safeAddress: string): Promise<boolean> {
-	const viewFacet = new ethers.Contract(accountLayerAddress, ACCOUNT_LAYER_OWNERSHIP_ABI, ethers.provider)
-	const owner = ethers.getAddress(await viewFacet.owner())
-	const pendingOwner = ethers.getAddress(await viewFacet.pendingOwner())
-	const safe = ethers.getAddress(safeAddress)
-
-	if (owner === safe) {
-		console.log(`  AccountLayer owner is already Safe ${safe}; skipping acceptOwnership`)
-		return false
+function assertMuonVerifierSafeBatch(check: ReturnType<typeof verifyMuonVerifierSafeBatch>): void {
+	const summary = (check as typeof check & { summary?: string }).summary
+	if (check.ok) {
+		console.log(`\nGenerated Safe batch verification: ${check.label}${summary ? ` (${summary})` : ""}`)
+		return
 	}
-	if (pendingOwner === safe) return true
 
-	throw new Error(
-		`AccountLayer ownership is not pending for Safe ${safe}. owner=${owner}, pendingOwner=${pendingOwner}. Run deployPeripherals.ts and verify transferOwnership first.`,
-	)
+	console.error(`\nGenerated Safe batch verification failed: ${check.label}`)
+	for (const issue of check.issues) {
+		console.error(`  - ${issue}`)
+	}
+	throw new Error(`Generated ${path.basename(check.file)} failed Muon verifier permission verification`)
 }
 
 async function main() {
@@ -85,7 +87,7 @@ async function main() {
 
 	const CHAIN_ID = process.env.CHAIN_ID ?? String(Number((await ethers.provider.getNetwork()).chainId))
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress
-	const PROTOCOL_ADMIN = process.env.PROTOCOL_ADMIN ?? process.env.ADMIN_ADDRESS ?? config.protocolAdmin ?? config.adminAddress
+	const PROTOCOL_ADMIN = process.env.PROTOCOL_ADMIN ?? process.env.ADMIN_ADDRESS ?? config.protocolAdmin
 	const MIGRATION_RUNNER = process.env.MIGRATION_RUNNER ?? config.migrationRunner ?? PROTOCOL_ADMIN
 	const safeRaw = process.env.SAFE_ADDRESS ?? config.safeAddress
 	const SAFE_ADDRESS = safeRaw ? ethers.getAddress(safeRaw) : undefined
@@ -114,7 +116,8 @@ async function main() {
 
 	// Load deployed facets
 	const FACETS_FILE = process.env.FACETS_FILE ?? path.join(OUTPUT_DIR, `deployed-facets-${networkName}.json`)
-	const facetData = loadDeployedFacets(FACETS_FILE)
+	const deploymentStateContext = { networkName, chainId: Number(CHAIN_ID), diamondAddress: DIAMOND_ADDRESS }
+	const facetData = loadDeployedFacets(FACETS_FILE, deploymentStateContext)
 	console.log()
 
 	// Build diamond cut
@@ -142,7 +145,7 @@ async function main() {
 	const PERIPHERALS_FILE = process.env.PERIPHERALS_FILE ?? path.join(OUTPUT_DIR, `deployed-peripherals-${networkName}.json`)
 	let peripherals: DeployedPeripherals = {}
 	if (fs.existsSync(PERIPHERALS_FILE)) {
-		peripherals = JSON.parse(fs.readFileSync(PERIPHERALS_FILE, "utf-8"))
+		peripherals = loadDeploymentState<DeployedPeripherals>(PERIPHERALS_FILE, deploymentStateContext)
 		console.log(`Loaded peripherals from ${PERIPHERALS_FILE}`)
 	}
 
@@ -151,27 +154,68 @@ async function main() {
 	const IL_ADDRESS = process.env.INSTANT_LAYER_ADDRESS ?? (config.instantLayerAddress || peripherals.instantLayer?.address)
 	const SM_ADDRESS = process.env.SYMBOL_MANAGER_ADDRESS ?? (config.symbolManagerAddress || peripherals.symbolManager?.address)
 
-	// Load PartyB list for InstantLayer registration from partyBList.json
+	// Load PartyB list for Diamond + InstantLayer registration from partyBList.json.
+	// Each target has its own gate: registerOnSymmioCore, registerOnInstantLayer.
+	// Both default to true when the list file exists.
 	const PARTYB_LIST_FILE = resolveConfigFile("partyBList", networkName, process.env.PARTYB_LIST_FILE)
-	let partyBsToRegister: string[] = []
+	let partyBsFromConfig: string[] = []
+	let registerOnSymmioCore = true
+	let registerOnInstantLayer = true
+	// Declared here (not inside the wiring block below) because the verifier context
+	// at the end of main() reads them; a block-scoped declaration would be out of scope.
+	let partyBsForDiamond: string[] = []
+	let partyBsForInstantLayer: string[] = []
 	if (fs.existsSync(PARTYB_LIST_FILE)) {
 		const listConfig = JSON.parse(fs.readFileSync(PARTYB_LIST_FILE, "utf-8")) as {
 			partyBs?: Record<string, string[]>
+			registerOnSymmioCore?: boolean
 			registerOnInstantLayer?: boolean
 		}
-		if (listConfig.registerOnInstantLayer) {
-			partyBsToRegister = Object.values(listConfig.partyBs ?? {})
-				.flat()
-				.filter(a => ethers.isAddress(a))
-		}
+		partyBsFromConfig = Object.values(listConfig.partyBs ?? {})
+			.flat()
+			.filter(a => ethers.isAddress(a))
+		registerOnSymmioCore = listConfig.registerOnSymmioCore !== false
+		registerOnInstantLayer = listConfig.registerOnInstantLayer !== false
 	}
 
 	if (AL_ADDRESS && IL_ADDRESS && ethers.isAddress(AL_ADDRESS) && ethers.isAddress(IL_ADDRESS)) {
 		console.log("\nBuilding peripheral wiring transactions...")
 		console.log(`  AccountLayerDiamond: ${AL_ADDRESS}`)
 		console.log(`  InstantLayer:        ${IL_ADDRESS}`)
-		if (partyBsToRegister.length > 0) console.log(`  PartyBs to register: ${partyBsToRegister.length} (from ${PARTYB_LIST_FILE})`)
-		const wiringTxs = buildWiringTransactions(DIAMOND_ADDRESS, AL_ADDRESS, IL_ADDRESS, PROTOCOL_ADMIN, partyBsToRegister)
+
+		// Pre-filter PartyBs against current on-chain state. Emitting a registration
+		// tx for an already-registered PartyB would revert the whole Safe batch on
+		// execution. Do this query before emitting the wiring txs so re-runs are safe.
+		if (partyBsFromConfig.length > 0) {
+			console.log(`  PartyBs in config:    ${partyBsFromConfig.length} (from ${PARTYB_LIST_FILE})`)
+			console.log(`  Register on Core:     ${registerOnSymmioCore}`)
+			console.log(`  Register on IL:       ${registerOnInstantLayer}`)
+			const filtered = await filterUnregisteredPartyBs(ethers.provider, DIAMOND_ADDRESS, IL_ADDRESS, partyBsFromConfig, {
+				registerOnSymmioCore,
+				registerOnInstantLayer,
+			})
+			partyBsForDiamond = filtered.partyBsForDiamond
+			partyBsForInstantLayer = filtered.partyBsForInstantLayer
+
+			if (registerOnSymmioCore) {
+				console.log("  Diamond registration state:")
+				for (const s of filtered.states) {
+					const mark = s.onDiamond === null ? "? skipped" : s.onDiamond ? "⏭ already registered" : "＋ will register"
+					console.log(`    ${mark.padEnd(22)} ${s.address}`)
+				}
+			}
+			if (registerOnInstantLayer) {
+				console.log("  InstantLayer registration state:")
+				for (const s of filtered.states) {
+					const mark = s.onInstantLayer === null ? "? skipped" : s.onInstantLayer ? "⏭ already registered" : "＋ will register"
+					console.log(`    ${mark.padEnd(22)} ${s.address}`)
+				}
+			}
+			if (registerOnSymmioCore) console.log(`  → registering on Diamond:      ${partyBsForDiamond.length}`)
+			if (registerOnInstantLayer) console.log(`  → registering on InstantLayer: ${partyBsForInstantLayer.length}`)
+		}
+
+		const wiringTxs = buildWiringTransactions(DIAMOND_ADDRESS, AL_ADDRESS, IL_ADDRESS, PROTOCOL_ADMIN, partyBsForDiamond, partyBsForInstantLayer)
 
 		for (const tx of wiringTxs) {
 			result.safeTxs.push(toHumanReadableSafeTxFromIface(tx.iface, tx.to, tx.methodName, tx.args))
@@ -189,7 +233,7 @@ async function main() {
 			console.log(`  Added ${templateTxs.length} template transactions`)
 		}
 		// Accept AccountLayer ownership (two-step: deployPeripherals called transferOwnership, Safe must acceptOwnership)
-		if (SAFE_ADDRESS && (await shouldAcceptAccountLayerOwnership(AL_ADDRESS, SAFE_ADDRESS))) {
+		if (SAFE_ADDRESS) {
 			const acceptOwnershipIface = new ethers.Interface(["function acceptOwnership()"])
 			result.safeTxs.push(toHumanReadableSafeTxFromIface(acceptOwnershipIface, AL_ADDRESS, "acceptOwnership", []))
 			result.breakdown.push(`${result.breakdown.length + 1}. [ownership] acceptOwnership() on AccountLayer`)
@@ -254,6 +298,46 @@ async function main() {
 	}
 	fs.writeFileSync(batchFile, JSON.stringify(batch, null, 2))
 	console.log(`Safe batch:               ${batchFile}`)
+
+	const verifierContext: LoadedContext = {
+		networkName,
+		outputDir: OUTPUT_DIR,
+		diamondAddress: ethers.getAddress(DIAMOND_ADDRESS),
+		protocolAdmin: ethers.getAddress(PROTOCOL_ADMIN),
+		safeAddress: SAFE_ADDRESS,
+		migrationRunner: ethers.getAddress(MIGRATION_RUNNER),
+		diamondCutChunkSize: DIAMOND_CUT_CHUNK_SIZE,
+		setupInstantLayerTemplates: config.setupInstantLayerTemplates !== false,
+		newParams,
+		partyBsToRegister: partyBsFromConfig.map(address => ethers.getAddress(address)),
+		registerOnSymmioCore,
+		registerOnInstantLayer,
+		partyBsForDiamond,
+		partyBsForInstantLayer,
+		templates: [],
+		accountLayerAddress: AL_ADDRESS && ethers.isAddress(AL_ADDRESS) ? ethers.getAddress(AL_ADDRESS) : undefined,
+		instantLayerAddress: IL_ADDRESS && ethers.isAddress(IL_ADDRESS) ? ethers.getAddress(IL_ADDRESS) : undefined,
+		symbolManagerAddress: SM_ADDRESS && ethers.isAddress(SM_ADDRESS) ? ethers.getAddress(SM_ADDRESS) : undefined,
+		signatureVerifierAddress:
+			newParams.signatureVerifierAddress && ethers.isAddress(newParams.signatureVerifierAddress)
+				? ethers.getAddress(newParams.signatureVerifierAddress)
+				: peripherals.signatureVerifier,
+		deployedFacets: facetData.facets,
+		selectorSignatures: facetData.selectorSignatures,
+		files: {
+			pauseSafeBatch: pauseFile,
+			safeBatch: batchFile,
+			diamondCutCalldata: path.join(OUTPUT_DIR, `diamondcut-calldata-${networkName}.json`),
+			timelockSchedule: [],
+			timelockExecute: [],
+			postMigrationSafeBatch: path.join(OUTPUT_DIR, `post-migration-safe-batch-${networkName}.json`),
+			postMigrationTransactions: path.join(OUTPUT_DIR, `post-migration-transactions-${networkName}.json`),
+			grantSymbolRoleSafeBatch: path.join(OUTPUT_DIR, `grant-symbol-role-safe-batch-${networkName}.json`),
+			revokeSymbolRoleSafeBatch: path.join(OUTPUT_DIR, `revoke-symbol-role-safe-batch-${networkName}.json`),
+			addTemplatesSafeBatch: path.join(OUTPUT_DIR, `add-templates-safe-batch-${networkName}.json`),
+		},
+	}
+	assertMuonVerifierSafeBatch(verifyMuonVerifierSafeBatch(verifierContext))
 
 	// 2. Diamond cut calldata (separate)
 	const diamondCutFile = path.join(OUTPUT_DIR, `diamondcut-calldata-${networkName}.json`)

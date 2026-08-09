@@ -12,18 +12,18 @@ cp scripts/upgrade/config/samples/upgrade.sample.json scripts/upgrade/config/upg
 
 ### Config fields
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `diamondAddress` | Yes | The Symmio core diamond proxy address being upgraded |
-| `protocolAdmin` | Yes | The address that **receives operational roles** (PAUSER, UNPAUSER, PROTOCOL_CONFIG, COOLDOWN_ADMIN, FEE_ADMIN, INTEGRATION_ADMIN) and **owns peripheral contracts** (AccountLayer, InstantLayer, SymmioSymbolManager). Typically the main multisig. |
-| `safeAddress` | Yes (Safe path) | The Safe multisig wallet that **signs and sends** transactions. Used as `createdFromSafeAddress` in Safe batch metadata. |
-| `timelockAddress` | Yes (timelock path) | The TimelockController contract that gates diamondCut execution. Only used by `generateTimelockBatch.ts`. |
-| `migrationRunner` | Yes | The address that receives `MIGRATION_ROLE` and executes migration transactions. Can be an EOA or the multisig. Falls back to `protocolAdmin` if omitted. |
-| `diamondCutChunkSize` | No | Max facet cuts per diamondCut call (default: 1000) |
-| `subgraphEndpoint` | No | Goldsky/TheGraph endpoint for fetching open quotes and PartyB balances |
-| `spotCheckCount` | No | Number of random on-chain spot-checks during migration input validation |
-| `symmioFeeReceiver` | No | Fee receiver address for AccountLayer init |
-| `newV085Parameters` | No | New parameter values to set during upgrade (see sample) |
+| Field                 | Required            | Description                                                                                                                                                                                                                                         |
+| --------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `diamondAddress`      | Yes                 | The Symmio core diamond proxy address being upgraded                                                                                                                                                                                                |
+| `protocolAdmin`       | Yes                 | The address that **receives operational roles** (PAUSER, UNPAUSER, PROTOCOL_CONFIG, COOLDOWN_ADMIN, FEE_ADMIN, INTEGRATION_ADMIN) and **owns peripheral contracts** (AccountLayer, InstantLayer, SymmioSymbolManager). Typically the main multisig. |
+| `safeAddress`         | Yes (Safe path)     | The Safe multisig wallet that **signs and sends** transactions. Used as `createdFromSafeAddress` in Safe batch metadata.                                                                                                                            |
+| `timelockAddress`     | Yes (timelock path) | The TimelockController contract that gates diamondCut execution. Only used by `generateTimelockBatch.ts`.                                                                                                                                           |
+| `migrationRunner`     | Yes                 | The address that receives `MIGRATION_ROLE` and executes migration transactions. Can be an EOA or the multisig. Falls back to `protocolAdmin` if omitted.                                                                                            |
+| `diamondCutChunkSize` | No                  | Max facet cuts per diamondCut call (default: 1000)                                                                                                                                                                                                  |
+| `subgraphEndpoint`    | No                  | Goldsky/TheGraph endpoint for fetching open quotes and PartyB balances                                                                                                                                                                              |
+| `spotCheckCount`      | No                  | Number of random on-chain spot-checks during migration input validation                                                                                                                                                                             |
+| `symmioFeeReceiver`   | No                  | Fee receiver address for AccountLayer init                                                                                                                                                                                                          |
+| `newV085Parameters`   | No                  | New parameter values to set during upgrade (see sample)                                                                                                                                                                                             |
 
 ### Key distinction: `protocolAdmin` vs `safeAddress` vs `timelockAddress`
 
@@ -41,13 +41,13 @@ These three addresses serve different roles in the upgrade flow:
 
 Every config field can be overridden via environment variables:
 
-| Env var | Overrides |
-|---------|-----------|
-| `PROTOCOL_ADMIN` | `protocolAdmin` (also accepts deprecated `ADMIN_ADDRESS`) |
-| `DIAMOND_ADDRESS` | `diamondAddress` |
-| `SAFE_ADDRESS` | `safeAddress` |
-| `TIMELOCK_ADDRESS` | `timelockAddress` |
-| `MIGRATION_RUNNER` | `migrationRunner` |
+| Env var               | Overrides                                                                                                 |
+| --------------------- | --------------------------------------------------------------------------------------------------------- |
+| `PROTOCOL_ADMIN`      | `protocolAdmin` (also accepts deprecated `ADMIN_ADDRESS`)                                                 |
+| `DIAMOND_ADDRESS`     | `diamondAddress`                                                                                          |
+| `SAFE_ADDRESS`        | `safeAddress`                                                                                             |
+| `TIMELOCK_ADDRESS`    | `timelockAddress`                                                                                         |
+| `MIGRATION_RUNNER`    | `migrationRunner`                                                                                         |
 | `UPGRADE_CONFIG_FILE` | Config file path (default: `scripts/upgrade/config/upgrade-{network}.json`, falls back to `upgrade.json`) |
 
 ## Upgrade Paths
@@ -88,6 +88,7 @@ Reads the Muon TSS public key and gateway signer from the v0.8.4 diamond's `Muon
 The script reads `getMuonIds()` (public key + gateway + appId) and `getMuonConfig()` (validity times) from the live diamond. The `muonAppId`, `upnlValidTime`, and `priceValidTime` persist in diamond storage across the upgrade and do not need re-setting -- they are output for reference only.
 
 Output:
+
 - Console: config snippet to add to `upgrade-{network}.json` -> `newV085Parameters`
 - `output/muon-config.json` -- full Muon config with all values
 
@@ -99,12 +100,13 @@ Add the output to `upgrade-{network}.json`:
     "signatureVerifierAddress": "0x...",
     "muonPublicKeys": [{ "x": "123...", "parity": 1 }],
     "muonGatewaySigners": ["0x..."],
+    "muonFunctionPermissions": ["Trading", "AccountManagement", "Settlement", "ForceClose", "Funding", "LiquidationPartyA", "LiquidationPartyB"],
     ...
   }
 }
 ```
 
-When `signatureVerifierAddress`, `muonPublicKeys`, and `muonGatewaySigners` are all set, the upgrade scripts automatically include `addPublicKey()` and `addGatewaySigner()` calls on the `MuonSignatureVerifier` in the Safe batch (or execute them directly in the EOA path). The Safe must have `SETTER_ROLE` on the verifier contract.
+When `signatureVerifierAddress`, `muonPublicKeys`, `muonGatewaySigners`, and `muonFunctionPermissions` are set, the upgrade scripts automatically include `addPublicKey()`, `addGatewaySigner()`, `setPublicKeyPermissions()`, and `setGatewaySignerPermissions()` calls on the `MuonSignatureVerifier` in the Safe batch (or execute them directly in the EOA path). The Safe must have `SETTER_ROLE` on the verifier contract.
 
 ### 1. Deploy facets
 
@@ -128,48 +130,92 @@ Output: `output/deployed-peripherals-{network}.json`
 
 Run immediately after steps 1 and 2, before signing anything on-chain.
 
-**Block explorer verification** -- verifies source for all libraries, facets, peripherals (AccountLayer, InstantLayer, SymmioPartyB impl, SymmioSymbolManager), and MuonSignatureVerifier. Reads addresses from `output/deployed-facets-{network}.json`, `output/deployed-peripherals-{network}.json` (resolved from `--network`), and `config/upgrade-{network}.json`. Auto-detects library addresses from on-chain bytecode when not in the deploy output. Resume with `SKIP=N` if a contract fails:
+There are three distinct verification gates:
+
+| Gate                        | Scripts                                                  | Purpose                                                            |
+| --------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------ |
+| Bytecode parity             | `verifyCoreBytecode.ts`, `verifyPeripheralBytecode.ts`   | Compare deployed online bytecode against local repo artifacts      |
+| Block explorer source + ABI | `verifyBlockExplorer.ts`                                 | Publish/verify source and ABI metadata for the deployed code       |
+| Final wiring/state          | `verifyDiamondSelectors.ts`, `verifyPeripheralWiring.ts` | Confirm diamond selectors, roles, hooks, whitelists, and templates |
+
+**Local-vs-on-chain bytecode verification** -- compares deployed bytecode against locally compiled artifacts. `verifyCoreBytecode.ts` is library-linking aware for core facets; `verifyPeripheralBytecode.ts` also masks immutable variables for the peripherals. These run standalone via `ts-node` (not `npx hardhat run`), so pass `NETWORK` to resolve the correct output file:
 
 ```bash
-USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyContracts.ts --network <network>
+NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyCoreBytecode.ts
+NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyPeripheralBytecode.ts
+```
+
+For legacy operator commands, the old `NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyPeripherals.ts` alias still delegates to `verifyPeripheralBytecode.ts`; prefer the explicit `verifyPeripheralBytecode.ts` command in new runbooks.
+
+**Block explorer source + ABI verification** -- publishes/verifies source and ABI metadata for all libraries, facets, peripherals (AccountLayer, InstantLayer, SymmioPartyB impl, SymmioSymbolManager), and MuonSignatureVerifier. Reads addresses from `output/deployed-facets-{network}.json`, `output/deployed-peripherals-{network}.json` (resolved from `--network`), and `config/upgrade-{network}.json`. Auto-detects library addresses from on-chain bytecode when not in the deploy output. Resume with `SKIP=N` if a contract fails:
+
+```bash
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyBlockExplorer.ts --network <network>
 # Resume from contract 10:
-SKIP=10 USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyContracts.ts --network <network>
+SKIP=10 USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyBlockExplorer.ts --network <network>
 ```
 
-**Local-vs-on-chain bytecode verification** -- compares deployed bytecode against locally compiled artifacts. `verifyDeploy.ts` is library-linking aware for core facets; `verifyPeripheralsDeploy.ts` also masks immutable variables for the peripherals. These run standalone via `ts-node` (not `npx hardhat run`), so pass `NETWORK` to resolve the correct output file:
+Common live-network examples:
 
 ```bash
-NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyDeploy.ts
-NETWORK=<network> RPC_URL=<rpc> npx ts-node scripts/upgrade/verifyPeripheralsDeploy.ts
+# BSC
+NETWORK=bsc RPC_URL=https://bsc-rpc.publicnode.com npx ts-node scripts/upgrade/verifyCoreBytecode.ts
+NETWORK=bsc RPC_URL=https://bsc-rpc.publicnode.com npx ts-node scripts/upgrade/verifyPeripheralBytecode.ts
+
+# Arbitrum
+NETWORK=arbitrum RPC_URL=https://arb1.arbitrum.io/rpc npx ts-node scripts/upgrade/verifyCoreBytecode.ts
+NETWORK=arbitrum RPC_URL=https://arb1.arbitrum.io/rpc npx ts-node scripts/upgrade/verifyPeripheralBytecode.ts
+
+# COTI
+NETWORK=coti RPC_URL=https://mainnet.coti.io/rpc npx ts-node scripts/upgrade/verifyCoreBytecode.ts
+NETWORK=coti RPC_URL=https://mainnet.coti.io/rpc npx ts-node scripts/upgrade/verifyPeripheralBytecode.ts
 ```
 
-`verifyPeripheralsDeploy.ts` also picks up the `MuonSignatureVerifier` address from `upgrade-{network}.json` (`newV085Parameters.signatureVerifierAddress`).
+`verifyPeripheralBytecode.ts` also picks up the `MuonSignatureVerifier` address from `upgrade-{network}.json` (`newV085Parameters.signatureVerifierAddress`).
 
 ### 4. Generate Safe batch
+
+Fetch the chain's current Solver entities from the subgraph first. This writes `scripts/upgrade/config/partyBList-{network}.json`, which `generateSafeBatch.ts` uses for PartyB registration and `whitelistSymbolTypes.ts` later uses for symbol-type whitelisting.
+
+```bash
+SOLVER_CHAINS=<network> npx ts-node scripts/upgrade/fetchSolverList.ts
+```
+
+The generated PartyB list sets `registerOnInstantLayer` and `registerOnSymmioCore` to `true` for every chain. `generateSafeBatch.ts` checks live on-chain state and skips solvers that are already registered on Core or InstantLayer.
 
 ```bash
 USE_KEYSTORE=true npx hardhat run scripts/upgrade/generateSafeBatch.ts --network <network>
 ```
 
 Builds the upgrade transaction set by diffing the live diamond against deployed facets. Automatically loads peripheral addresses from step 2 output.
+After writing `safe-batch-{network}.json`, the script immediately verifies the generated Muon verifier section. If configured Muon public keys or gateway signers are missing `addPublicKey`, `addGatewaySigner`, `setPublicKeyPermissions`, or `setGatewaySignerPermissions` calls, generation exits non-zero and the Safe artifact must not be signed.
 
 Output:
+
 - `output/safe-batch.json` -- Safe Transaction Builder JSON (roles, pause, config, wiring)
 - `output/diamondcut-calldata.json` -- Raw diamondCut calldata (separate from Safe batch)
 - `output/upgrade-details.json` -- Full breakdown of all transactions and selector changes
 
 The Safe batch includes:
+
 1. Grant PAUSER_ROLE and UNPAUSER_ROLE to `protocolAdmin`
 2. `pauseGlobal()`
 3. Grant PROTOCOL_CONFIG_ROLE, COOLDOWN_ADMIN_ROLE, FEE_ADMIN_ROLE to `protocolAdmin`
 4. Set v0.8.5 parameters (including `setSignatureVerifierAddress`)
-5. Seed MuonSignatureVerifier with TSS public keys and gateway signers (if configured in `newV085Parameters`)
+5. Seed MuonSignatureVerifier with TSS public keys, gateway signers, and per-function permissions (if configured in `newV085Parameters`)
 6. Grant MIGRATION_ROLE and SYMBOL_MANAGER_ROLE to `migrationRunner`
 7. Peripheral wiring (roles + hooks between Diamond, AccountLayer, InstantLayer)
 8. SymbolManager wiring (SYMBOL_MANAGER_ROLE + FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE on Diamond)
-9. `registerPartyBs()` on InstantLayer (reads PartyB list from `config/partyBList-{network}.json`)
+9. `registerPartyB()` on Core Diamond + `registerPartyBs()` on InstantLayer (reads generated Solver list from `config/partyBList-{network}.json`)
 
 The diamondCut is **not** in the Safe batch -- it's separate so it can be routed through the timelock.
+
+Standalone verification can be run immediately after generation or later before signing:
+
+```bash
+NETWORKS=<network> ONLY=muon-verifier-safe-batch VERIFY_ARTIFACTS=false \
+  npx hardhat run scripts/upgrade/verifyBatchCalldata.ts --network default
+```
 
 ### 5. Generate timelock batches (Path A only)
 
@@ -180,6 +226,7 @@ USE_KEYSTORE=true npx hardhat run scripts/upgrade/generateTimelockBatch.ts --net
 Wraps the diamondCut calldata from step 4 into two Safe batches:
 
 Output:
+
 - `output/timelock-schedule-safe-batch.json` -- Calls `TimelockController.schedule()` on the timelock
 - `output/timelock-execute-safe-batch.json` -- Calls `TimelockController.execute()` on the timelock
 
@@ -191,15 +238,19 @@ Both target the **timelock contract**, not the diamond directly. The Safe signs 
 USE_KEYSTORE=true npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network <network>
 ```
 
-Critical-path script: kept short and reliable so it can run during the pause window. Four steps:
+Critical-path script: kept short and reliable so it can run during the pause window. The open-quote fetch checkpoints each completed subgraph page and resumes from the saved globalCounter cursor on rerun. Three steps:
+
 1. Fetch open quotes from subgraph
-2. Fetch PartyB balances from subgraph
-3. Validate boundary against on-chain `getNextQuoteId()` (returns last assigned ID, not next available)
-4. Build the migration input file
+2. Validate boundary against on-chain `getNextQuoteId()` (returns last assigned ID, not next available)
+3. Build the migration input file
 
 Output:
+
 - `output/migration-input.json` -- Quote IDs, PartyB tasks, expected aggregates
 - `output/prepareMigrationInput-report.json` -- Step-by-step report
+- `output/prepareMigrationInput-openQuotes-progress.json` -- Temporary resume checkpoint, removed after successful output
+
+Use `SUBGRAPH_RESUME=false` to ignore an existing checkpoint, or `SUBGRAPH_PROGRESS_FILE=...` to override the checkpoint path.
 
 ### 7. Validate migration input (optional)
 
@@ -228,12 +279,12 @@ GAP_SCAN_RANGE=200 USE_KEYSTORE=true npx hardhat run scripts/upgrade/validateMig
 ### 7b. Prepare symbol types input (off the critical path)
 
 ```bash
-USE_KEYSTORE=true npx hardhat run scripts/upgrade/prepareSymbolTypes.ts --network <network>
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/fetchSymbolList.ts --network <network>
 ```
 
-Fetches all symbol IDs and names from the subgraph and writes the input file for `setSymbolTypes.ts`. The `symbolType` value (applied to all symbols) is read from `newV085Parameters.symbolType` in `upgrade-{network}.json`.
+Fetches all symbol IDs and names from the subgraph and writes the input file for `setSymbolType.ts`. The `symbolType` value (applied to all symbols) is read from `newV085Parameters.symbolType` in `upgrade-{network}.json`.
 
-**Run this OUTSIDE the pause window** -- it only hits the subgraph and writes a local file. `setSymbolTypes.ts` consumes its output and does not re-fetch.
+**Run this OUTSIDE the pause window** -- it only hits the subgraph and writes a local file. `setSymbolType.ts` consumes its output and does not re-fetch.
 
 Output: `output/symbol-types-input.json`
 
@@ -258,6 +309,7 @@ USE_KEYSTORE=true npx hardhat run scripts/upgrade/runMigration.ts --network <net
 Executes `migrateQuotes()` and `migrateCrossLockedValues()` on the paused diamond. Requires `MIGRATION_ROLE`. Resume-safe via progress file. Any failure halts execution immediately -- no silent skipping.
 
 After migration, the script runs built-in verification:
+
 - Checks `isQuoteMigrated()` for every quoteId. Quotes with non-migratable on-chain status (CANCELED, CLOSED, LIQUIDATED, EXPIRED) are skipped -- the contract correctly ignores them and the verifier matches this behavior.
 - Checks `isCrossLockedValuesMigrated()` for every partyB-partyA pair
 - Verifies cross locked values sum matches per-partyA values
@@ -268,10 +320,10 @@ Output: `output/migration-report.json`
 ### 8b. Set symbol types
 
 ```bash
-USE_KEYSTORE=true npx hardhat run scripts/upgrade/setSymbolTypes.ts --network <network>
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/setSymbolType.ts --network <network>
 ```
 
-Reads `output/symbol-types-input.json` (produced by `prepareSymbolTypes.ts`) and calls `setSymbolTypes()` on the diamond to backfill the `symbolType` for all symbols. Requires `SYMBOL_MANAGER_ROLE` (granted to `migrationRunner` in the Safe batch).
+Reads `output/symbol-types-input.json` (produced by `fetchSymbolList.ts`) and calls `setSymbolTypes()` on the diamond to backfill the `symbolType` for all symbols. Requires `SYMBOL_MANAGER_ROLE` (granted to `migrationRunner` in the Safe batch).
 
 Can run in parallel with or immediately after `runMigration.ts` -- both require only their respective roles and are independent of each other.
 
@@ -290,7 +342,7 @@ Calls `whitelistSymbolType(partyB, symbolType)` for each PartyB in the config, a
 
 The `symbolType` value is read from `newV085Parameters.symbolType` in `upgrade-{network}.json`. PartyB addresses are read from `scripts/upgrade/config/partyBList-{network}.json`.
 
-Can run after `setSymbolTypes.ts` has assigned types to all symbols.
+Can run after `setSymbolType.ts` has assigned types to all symbols.
 
 Output: `output/whitelist-symbol-types-report.json`
 
@@ -303,6 +355,7 @@ USE_KEYSTORE=true npx hardhat run scripts/upgrade/generatePostMigrationBatch.ts 
 Generates the final transaction set to unpause the system and optionally enable cross-PartyB mode. No on-chain dependency -- can be generated at any time.
 
 The batch always begins with role revocation before unpausing:
+
 1. `revokeRole(MIGRATION_ROLE, migrationRunner)`
 2. `revokeRole(SYMBOL_MANAGER_ROLE, migrationRunner)`
 3. `unpauseGlobal()`
@@ -313,6 +366,7 @@ The batch always begins with role revocation before unpausing:
 Config: `scripts/upgrade/config/postMigration-{network}.json` (optional, for PartyB list)
 
 Output:
+
 - `output/post-migration-transactions.json` -- Raw calldata
 - `output/post-migration-safe-batch.json` -- Safe Transaction Builder JSON
 
@@ -321,12 +375,28 @@ Output:
 Run **after** the wiring batch (`safe-batch.json`) has been executed by the multisig, before unpausing.
 
 ```bash
-USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyDiamond.ts --network <network>
-USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyPeripherals.ts --network <network>
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyDiamondSelectors.ts --network <network>
+USE_KEYSTORE=true npx hardhat run scripts/upgrade/verifyPeripheralWiring.ts --network <network>
 ```
 
-- `verifyDiamond.ts` -- confirms all v0.8.5 facet selectors are registered on the diamond.
-- `verifyPeripherals.ts` -- confirms AccountLayer + InstantLayer roles, hooks, whitelist, and templates are wired correctly.
+For one-off live RPC overrides, use Hardhat's `RPC_<NETWORK>` env var:
+
+```bash
+# BSC
+RPC_BSC=https://bsc-rpc.publicnode.com npx hardhat run scripts/upgrade/verifyDiamondSelectors.ts --network bsc
+RPC_BSC=https://bsc-rpc.publicnode.com npx hardhat run scripts/upgrade/verifyPeripheralWiring.ts --network bsc
+
+# Arbitrum
+RPC_ARBITRUM=https://arb1.arbitrum.io/rpc npx hardhat run scripts/upgrade/verifyDiamondSelectors.ts --network arbitrum
+RPC_ARBITRUM=https://arb1.arbitrum.io/rpc npx hardhat run scripts/upgrade/verifyPeripheralWiring.ts --network arbitrum
+
+# COTI
+RPC_COTI=https://mainnet.coti.io/rpc npx hardhat run scripts/upgrade/verifyDiamondSelectors.ts --network coti
+RPC_COTI=https://mainnet.coti.io/rpc npx hardhat run scripts/upgrade/verifyPeripheralWiring.ts --network coti
+```
+
+- `verifyDiamondSelectors.ts` -- confirms all v0.8.5 facet selectors are registered on the diamond.
+- `verifyPeripheralWiring.ts` -- confirms AccountLayer + InstantLayer roles, hooks, whitelist, and templates are wired correctly.
 
 This is distinct from step 3 (deployment verification): step 3 checks the bytecode of the new contracts, this step checks that the upgrade transactions were applied correctly on-chain.
 
@@ -341,13 +411,15 @@ Phase 1: Prepare (can be done in advance, no downtime)
   deployFacets.ts
   deployPeripherals.ts
   -> Verify deployments:
-       verifyContracts.ts             (block explorer source verification)
-       verifyDeploy.ts                (core facets bytecode + library linking)
-       verifyPeripheralsDeploy.ts     (peripherals bytecode + immutables)
-  generateSafeBatch.ts
+       verifyCoreBytecode.ts                (core facets bytecode + library linking)
+       verifyPeripheralBytecode.ts     (peripherals bytecode + immutables)
+       verifyBlockExplorer.ts             (block explorer source + ABI verification)
+  fetchSolverList.ts             (writes partyBList-{network}.json from Solver entities)
+  generateSafeBatch.ts           (writes Safe batches + runs Muon verifier Safe-batch check)
+  verifyBatchCalldata.ts         (standalone generated-calldata check before signing)
   generateTimelockBatch.ts
   generatePostMigrationBatch.ts
-  prepareSymbolTypes.ts              (off critical path — fetch symbols from subgraph)
+  fetchSymbolList.ts              (off critical path — fetch symbols from subgraph)
   snapshotBalances.ts                (optional pre-pause snapshot, off critical path)
 
 Phase 2: Schedule (multisig signs)
@@ -368,13 +440,13 @@ Phase 4: Execute upgrade (multisig signs, downtime starts)
   Import safe-batch.json into Safe TX Builder
   -> Grants roles, sets parameters, wires peripherals
   -> Verify upgrade & wiring:
-       verifyDiamond.ts               (all v0.8.5 selectors registered)
-       verifyPeripherals.ts           (AL/IL roles, hooks, whitelist, templates)
+       verifyDiamondSelectors.ts               (all v0.8.5 selectors registered)
+       verifyPeripheralWiring.ts           (AL/IL roles, hooks, whitelist, templates)
 
 Phase 5: Migrate (EOA with MIGRATION_ROLE / SYMBOL_MANAGER_ROLE / PARTY_B_MANAGER_ROLE)
   runMigration.ts
   -> Migrates quotes and PartyB locked values on the paused system
-  setSymbolTypes.ts
+  setSymbolType.ts
   -> Backfills symbolType for all symbols (reads symbol-types-input.json)
   whitelistSymbolTypes.ts
   -> Whitelists symbol type per PartyB (reads partyBList-{network}.json)
@@ -391,40 +463,42 @@ Same as above but skip `generateTimelockBatch.ts` and include the diamondCut dir
 
 ## Verification Cheat Sheet
 
-| Script | When | Purpose |
-|--------|------|---------|
-| `verifyContracts.ts` | After deploy facets + peripherals | Block-explorer source verification of libraries, facets, and peripherals |
-| `verifyDeploy.ts` | After deploy facets | Compare local-compiled bytecode vs deployed core facets (library-link aware) |
-| `verifyPeripheralsDeploy.ts` | After deploy peripherals | Same, for AccountLayer / InstantLayer / SymmioPartyB impl / SymmioSymbolManager / MuonSignatureVerifier (handles immutables) |
-| `validateMigrationInput.ts` | After `prepareMigrationInput.ts` | Random spot-check of quotes and partyB balances against on-chain |
-| `validateMigrationEdgeCases.ts` | After `prepareMigrationInput.ts` | Deterministic boundary, fork drift, gap scan, and partyB completeness checks |
-| `verifyDiamond.ts` | After `safe-batch.json` is executed | All v0.8.5 facet selectors registered on the diamond |
-| `verifyPeripherals.ts` | After `safe-batch.json` is executed | AccountLayer + InstantLayer roles, hooks, whitelist, templates wired correctly |
+| Script                          | When                                | Purpose                                                                                                                      |
+| ------------------------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `verifyCoreBytecode.ts`         | After deploy facets                 | Compare local-compiled bytecode vs deployed core facets (library-link aware)                                                 |
+| `verifyPeripheralBytecode.ts`   | After deploy peripherals            | Same, for AccountLayer / InstantLayer / SymmioPartyB impl / SymmioSymbolManager / MuonSignatureVerifier (handles immutables) |
+| `verifyBlockExplorer.ts`        | After bytecode parity checks        | Block-explorer source + ABI publication/verification of libraries, facets, and peripherals                                   |
+| `validateMigrationInput.ts`     | After `prepareMigrationInput.ts`    | Random spot-check of quotes and partyB balances against on-chain                                                             |
+| `validateMigrationEdgeCases.ts` | After `prepareMigrationInput.ts`    | Deterministic boundary, fork drift, gap scan, and partyB completeness checks                                                 |
+| `verifyBatchCalldata.ts`        | After `generateSafeBatch.ts`        | Standalone check that generated Safe batches match current config, including Muon verifier key/gateway permission calls      |
+| `verifyDiamondSelectors.ts`     | After `safe-batch.json` is executed | All v0.8.5 facet selectors registered on the diamond                                                                         |
+| `verifyPeripheralWiring.ts`     | After `safe-batch.json` is executed | AccountLayer + InstantLayer roles, hooks, whitelist, templates wired correctly                                               |
 
 ## Output Files Reference
 
-| File | Producer | Consumer |
-|------|----------|----------|
-| `muon-config.json` | readMuonConfig.ts | Human review (paste into upgrade-{network}.json) |
-| `deployed-facets-{network}.json` | deployFacets.ts | generateSafeBatch.ts |
-| `deployed-peripherals-{network}.json` | deployPeripherals.ts | generateSafeBatch.ts |
-| `safe-batch.json` | generateSafeBatch.ts | Safe TX Builder |
-| `diamondcut-calldata.json` | generateSafeBatch.ts | generateTimelockBatch.ts |
-| `upgrade-details.json` | generateSafeBatch.ts | Human review |
-| `timelock-schedule-safe-batch.json` | generateTimelockBatch.ts | Safe TX Builder |
-| `timelock-execute-safe-batch.json` | generateTimelockBatch.ts | Safe TX Builder |
-| `migration-input.json` | prepareMigrationInput.ts | runMigration.ts |
-| `prepareMigrationInput-report.json` | prepareMigrationInput.ts | Human review |
-| `symbol-types-input.json` | prepareSymbolTypes.ts | setSymbolTypes.ts |
-| `balance-snapshot.json` | snapshotBalances.ts | Human review (sanity-check totals) |
-| `migration-report.json` | runMigration.ts | Human review |
-| `set-symbol-types-report.json` | setSymbolTypes.ts | Human review |
-| `post-migration-transactions.json` | generatePostMigrationBatch.ts | EOA execution |
-| `post-migration-safe-batch.json` | generatePostMigrationBatch.ts | Safe TX Builder |
-| `whitelist-symbol-types-report.json` | whitelistSymbolTypes.ts | Human review |
-| `grant-symbol-role-safe-batch.json` | generateSymbolTypeRoleBatch.ts | Safe TX Builder |
-| `revoke-symbol-role-safe-batch.json` | generateSymbolTypeRoleBatch.ts | Safe TX Builder |
-| `add-templates-safe-batch.json` | generateTemplateBatch.ts | Safe TX Builder |
+| File                                  | Producer                       | Consumer                                         |
+| ------------------------------------- | ------------------------------ | ------------------------------------------------ |
+| `muon-config.json`                    | readMuonConfig.ts              | Human review (paste into upgrade-{network}.json) |
+| `partyBList-{network}.json`           | fetchSolverList.ts             | generateSafeBatch.ts / whitelistSymbolTypes.ts   |
+| `deployed-facets-{network}.json`      | deployFacets.ts                | generateSafeBatch.ts                             |
+| `deployed-peripherals-{network}.json` | deployPeripherals.ts           | generateSafeBatch.ts                             |
+| `safe-batch.json`                     | generateSafeBatch.ts           | Safe TX Builder                                  |
+| `diamondcut-calldata.json`            | generateSafeBatch.ts           | generateTimelockBatch.ts                         |
+| `upgrade-details.json`                | generateSafeBatch.ts           | Human review                                     |
+| `timelock-schedule-safe-batch.json`   | generateTimelockBatch.ts       | Safe TX Builder                                  |
+| `timelock-execute-safe-batch.json`    | generateTimelockBatch.ts       | Safe TX Builder                                  |
+| `migration-input.json`                | prepareMigrationInput.ts       | runMigration.ts                                  |
+| `prepareMigrationInput-report.json`   | prepareMigrationInput.ts       | Human review                                     |
+| `symbol-types-input.json`             | fetchSymbolList.ts             | setSymbolType.ts                                 |
+| `balance-snapshot.json`               | snapshotBalances.ts            | Human review (sanity-check totals)               |
+| `migration-report.json`               | runMigration.ts                | Human review                                     |
+| `set-symbol-types-report.json`        | setSymbolType.ts               | Human review                                     |
+| `post-migration-transactions.json`    | generatePostMigrationBatch.ts  | EOA execution                                    |
+| `post-migration-safe-batch.json`      | generatePostMigrationBatch.ts  | Safe TX Builder                                  |
+| `whitelist-symbol-types-report.json`  | whitelistSymbolTypes.ts        | Human review                                     |
+| `grant-symbol-role-safe-batch.json`   | generateSymbolTypeRoleBatch.ts | Safe TX Builder                                  |
+| `revoke-symbol-role-safe-batch.json`  | generateSymbolTypeRoleBatch.ts | Safe TX Builder                                  |
+| `add-templates-safe-batch.json`       | generateTemplateBatch.ts       | Safe TX Builder                                  |
 
 ---
 
@@ -438,15 +512,17 @@ Standalone scripts for tasks that were missed during the initial upgrade window 
 USE_KEYSTORE=true npx hardhat run scripts/upgrade/generateSymbolTypeRoleBatch.ts --network <network>
 ```
 
-Generates two Safe batches to grant and revoke `SYMBOL_MANAGER_ROLE` for the migration runner, for use when `setSymbolTypes.ts` needs to run after the system is unpaused.
+Generates two Safe batches to grant and revoke `SYMBOL_MANAGER_ROLE` for the migration runner, for use when `setSymbolType.ts` needs to run after the system is unpaused.
 
 Output:
+
 - `output/grant-symbol-role-safe-batch.json` -- Grant `SYMBOL_MANAGER_ROLE` to `migrationRunner`
 - `output/revoke-symbol-role-safe-batch.json` -- Revoke `SYMBOL_MANAGER_ROLE` from `migrationRunner`
 
 Flow:
+
 1. Execute grant batch via Safe
-2. Run `setSymbolTypes.ts`
+2. Run `setSymbolType.ts`
 3. Execute revoke batch via Safe
 
 ### Generate template batch
@@ -473,26 +549,27 @@ Runs the full upgrade and migration pipeline against the in-process Hardhat netw
 
 **What it exercises:**
 
-| Step | Helper function |
-|------|----------------|
-| Deploy 28 core facets + libraries | `deployFacets()` |
-| Diff live diamond vs new facets | `buildDiamondCut()` |
-| Apply diamond cut (381 Replace actions, 5 chunks) | `applyDiamondCut()` |
-| Deploy fresh AccountLayer Diamond | `deployAccountLayerDiamond()` |
-| Deploy fresh InstantLayer | `deployInstantLayer()` |
-| Wire peripherals to diamond | `wireAccountLayerInstantLayer()` |
-| Deploy SymmioSymbolManager + wire to diamond | `deploySymbolManager()` + `wireSymbolManager()` |
-| Register InstantOpen / InstantClose / InstantCloseWithAllocation templates | `setupInstantLayerTemplates()` |
-| Build migration input from on-chain state (no subgraph) | inline loop over `getNextQuoteId()` |
-| Migrate quotes + PartyB balances | `migrate()` |
-| Verify selectors, system hook, AL roles, IL templates | inline checks |
-| Revoke roles, unpause, post-upgrade smoke test | inline |
+| Step                                                                       | Helper function                                 |
+| -------------------------------------------------------------------------- | ----------------------------------------------- |
+| Deploy 28 core facets + libraries                                          | `deployFacets()`                                |
+| Diff live diamond vs new facets                                            | `buildDiamondCut()`                             |
+| Apply diamond cut (381 Replace actions, 5 chunks)                          | `applyDiamondCut()`                             |
+| Deploy fresh AccountLayer Diamond                                          | `deployAccountLayerDiamond()`                   |
+| Deploy fresh InstantLayer                                                  | `deployInstantLayer()`                          |
+| Wire peripherals to diamond                                                | `wireAccountLayerInstantLayer()`                |
+| Deploy SymmioSymbolManager + wire to diamond                               | `deploySymbolManager()` + `wireSymbolManager()` |
+| Register InstantOpen / InstantClose / InstantCloseWithAllocation templates | `setupInstantLayerTemplates()`                  |
+| Build migration input from on-chain state (no subgraph)                    | inline loop over `getNextQuoteId()`             |
+| Migrate quotes + PartyB balances                                           | `migrate()`                                     |
+| Verify selectors, system hook, AL roles, IL templates                      | inline checks                                   |
+| Revoke roles, unpause, post-upgrade smoke test                             | inline                                          |
 
 **What it does NOT cover:**
 
 - `prepareMigrationInput.ts` (subgraph path) -- tested manually against a live network
 - `generateSafeBatch.ts` / `generateTimelockBatch.ts` -- require a live RPC to diff the diamond
-- Block-explorer source verification (`verifyContracts.ts`, `verifyDeploy.ts`, `verifyPeripheralsDeploy.ts`)
+- Block-explorer source + ABI verification (`verifyBlockExplorer.ts`)
+- Standalone bytecode parity verification (`verifyCoreBytecode.ts`, `verifyPeripheralBytecode.ts`)
 - Timelock schedule/execute flow
 
 **Self-upgrade note:** Because Hardhat's `deployDiamond` already deploys a full v0.8.5 system, the diamond cut produces all-Replace actions (same selectors, fresh contract addresses). This still exercises the full cut mechanism and all migration logic.

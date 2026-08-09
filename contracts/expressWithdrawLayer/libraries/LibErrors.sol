@@ -13,7 +13,6 @@ library LibErrors {
 	error FeeRateExceeds100Percent();
 	error NoFeesToClaim();
 	error NoOperatorFeesToClaim();
-	error InsufficientSponsorBalance();
 	error InsufficientUnlockedGeneralBalance();
 	error InsufficientUnlockedAffiliateBalance();
 	error FeesExceedExpressAmount();
@@ -35,6 +34,7 @@ library LibErrors {
 	error InsufficientValidatorSignatures();
 	error InvalidValidator();
 	error DuplicateValidator();
+	error StaleValidatorApproval();
 	error InvalidStatusForSuspend();
 	error ArrayLengthMismatch();
 	error InvalidOptionType();

@@ -22,7 +22,7 @@ library LibMuonPartyA {
 				upnlSig.reqId,
 				address(this),
 				partyA,
-				AccountStorage.layout().partyANonces[partyA],
+				AccountStorage.layout().partyAUpnlCounters[partyA],
 				upnlSig.upnl,
 				symbolId,
 				upnlSig.price,

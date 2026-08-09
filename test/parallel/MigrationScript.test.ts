@@ -1,25 +1,68 @@
 import { expect } from "chai"
+import { ethers } from "ethers"
 import fs from "fs"
 import os from "os"
 import path from "path"
 
-import { migrate, type MigrationProgress } from "../../scripts/upgrade/migrate.js"
+import {
+	buildMigrationProgressIdentity,
+	migrate,
+	type ActivePartyBTaskIdentity,
+	type MigrationInput,
+	type MigrationProgress,
+	type MigrationProgressContext,
+} from "../../scripts/upgrade/migrate.js"
 
 const txResponse = (hash: string) => ({
 	hash,
 	wait: async () => ({ status: 1 }),
 })
 
-function makeProgressFile(progress: MigrationProgress): { dir: string; file: string } {
+const progressContext: MigrationProgressContext = {
+	chainId: 31_337n,
+	diamondAddress: "0x1111111111111111111111111111111111111111",
+	networkName: "hardhat",
+	forkMode: false,
+	executionDomain: "migration-script-test",
+	migrationImplementation: "0x7777777777777777777777777777777777777777",
+	migrationCodeHash: `0x${"a".repeat(64)}`,
+}
+
+function activeTaskIdentity(input: MigrationInput, index: number): ActivePartyBTaskIdentity {
+	const task = input.partyBTasks[index]
+	const partyB = ethers.getAddress(task.partyB)
+	const seen = new Set<string>()
+	const partyAs = task.partyAs
+		.map(address => ethers.getAddress(address).toLowerCase())
+		.filter(address => {
+			if (seen.has(address)) return false
+			seen.add(address)
+			return true
+		})
+	const canonicalTask = { index, partyB: partyB.toLowerCase(), partyAs }
+	return {
+		index,
+		partyB,
+		taskHash: ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify(canonicalTask))),
+	}
+}
+
+function makeProgressFile(input: MigrationInput, progress: Omit<MigrationProgress, "schemaVersion" | "identity">): { dir: string; file: string } {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "symmio-migration-"))
 	const file = path.join(dir, "progress.json")
-	fs.writeFileSync(file, JSON.stringify(progress, null, 2))
+	const persistedProgress: MigrationProgress = {
+		schemaVersion: 1,
+		identity: buildMigrationProgressIdentity(input, 2, false, progressContext),
+		...progress,
+	}
+	fs.writeFileSync(file, JSON.stringify(persistedProgress, null, 2))
 	return { dir, file }
 }
 
 describe("Migration script", function () {
 	it("resumes quote migration without skipping filtered pending quotes", async function () {
-		const { dir, file } = makeProgressFile({
+		const input: MigrationInput = { quoteIds: [1n, 2n, 3n, 4n], partyBTasks: [] }
+		const { dir, file } = makeProgressFile(input, {
 			startedAt: new Date(0).toISOString(),
 			phase: "quotes",
 			quotesProcessed: 2,
@@ -28,6 +71,7 @@ describe("Migration script", function () {
 			lastProcessedQuoteChunk: 0,
 			lastProcessedPartyB: -1,
 			lastProcessedPartyAChunk: -1,
+			activePartyBTask: null,
 		})
 
 		const migratedQuotes = new Set(["1", "2"])
@@ -52,12 +96,13 @@ describe("Migration script", function () {
 		}
 
 		try {
-			await migrate(
-				migrationFacet as any,
-				viewFacetQuote,
-				{ quoteIds: [1n, 2n, 3n, 4n], partyBTasks: [] },
-				{ chunkSize: 2, progressFile: file, confirmations: 0, maxRetries: 1 },
-			)
+			await migrate(migrationFacet as any, viewFacetQuote, input, {
+				chunkSize: 2,
+				progressFile: file,
+				progressContext,
+				confirmations: 1,
+				maxRetries: 1,
+			})
 
 			expect(migrateQuoteCalls).to.deep.equal([[3n, 4n]])
 		} finally {
@@ -66,7 +111,15 @@ describe("Migration script", function () {
 	})
 
 	it("resumes partyB balance migration without skipping filtered pending partyAs", async function () {
-		const { dir, file } = makeProgressFile({
+		const partyB = "0x00000000000000000000000000000000000000b0"
+		const partyAs = [
+			"0x00000000000000000000000000000000000000a1",
+			"0x00000000000000000000000000000000000000a2",
+			"0x00000000000000000000000000000000000000a3",
+			"0x00000000000000000000000000000000000000a4",
+		]
+		const input: MigrationInput = { quoteIds: [], partyBTasks: [{ partyB, partyAs }] }
+		const { dir, file } = makeProgressFile(input, {
 			startedAt: new Date(0).toISOString(),
 			phase: "balances",
 			quotesProcessed: 0,
@@ -75,15 +128,8 @@ describe("Migration script", function () {
 			lastProcessedQuoteChunk: -1,
 			lastProcessedPartyB: -1,
 			lastProcessedPartyAChunk: 0,
+			activePartyBTask: activeTaskIdentity(input, 0),
 		})
-
-		const partyB = "0x00000000000000000000000000000000000000b0"
-		const partyAs = [
-			"0x00000000000000000000000000000000000000a1",
-			"0x00000000000000000000000000000000000000a2",
-			"0x00000000000000000000000000000000000000a3",
-			"0x00000000000000000000000000000000000000a4",
-		]
 		const migratedPairs = new Set([partyAs[0].toLowerCase(), partyAs[1].toLowerCase()])
 		const balanceCalls: string[][] = []
 		const migrationFacet = {
@@ -106,12 +152,13 @@ describe("Migration script", function () {
 		}
 
 		try {
-			await migrate(
-				migrationFacet as any,
-				viewFacetQuote,
-				{ quoteIds: [], partyBTasks: [{ partyB, partyAs }] },
-				{ chunkSize: 2, progressFile: file, confirmations: 0, maxRetries: 1 },
-			)
+			await migrate(migrationFacet as any, viewFacetQuote, input, {
+				chunkSize: 2,
+				progressFile: file,
+				progressContext,
+				confirmations: 1,
+				maxRetries: 1,
+			})
 
 			expect(balanceCalls).to.deep.equal([[partyAs[2], partyAs[3]]])
 		} finally {

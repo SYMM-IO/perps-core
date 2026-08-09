@@ -6,7 +6,6 @@ pragma solidity >=0.8.18;
 
 import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
 import { AffiliateStorage } from "../storages/AffiliateStorage.sol";
-import { SharedEvents } from "./SharedEvents.sol";
 import { ISymmioHook } from "../interfaces/ISymmioHook.sol";
 
 /// @title LibHook

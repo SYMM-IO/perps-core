@@ -1,0 +1,88 @@
+// SPDX-License-Identifier: SYMM-Core-Business-Source-License-1.1
+// This contract is licensed under the SYMM Core Business Source License 1.1
+// Copyright (c) 2023 Symmetry Labs AG
+// For more information, see https://docs.symm.io/legal-disclaimer/license
+pragma solidity >=0.8.18;
+
+/// @notice Lifecycle state of a symbol's corporate-action adjustment
+enum AdjustmentState {
+	NONE,
+	SCHEDULED, // registered; freezes the symbol once effectiveTimestamp passes
+	PRICE_ADJUSTED, // ops confirmed the oracle price factor is live; symbol unfrozen, factor active
+	APPLIED, // symbol manager finalized restatement and reset the active factor
+	CANCELLED
+}
+
+/// @notice A symbol's corporate-action adjustment state. Only the latest adjustment is stored;
+///         full history is reconstructed from events (AdjustmentScheduled / AdjustmentCancelled /
+///         PriceAdjustmentConfirmed / RestatementStarted / RestatementAborted / QuoteAdjusted /
+///         PendingQuoteCancelledByAdjustment / RestatementFinalized), matching how accumulated-funding
+///         history lives in events rather than storage.
+struct SymbolAdjustment {
+	/// @notice Latest scheduled adjustment's 1e18-scaled units multiplier: 4:1 split -> 4e18, 1:10 reverse split -> 0.1e18.
+	/// @dev Used to calculate the prospective cumulative factor for either direct restatement or activation after Muon's adjusted price is confirmed.
+	uint256 factor;
+	/// @notice Venue timestamp at which the latest scheduled adjustment takes effect.
+	/// @dev Used to freeze trading automatically once due and to prevent price-factor confirmation before the venue has applied the adjustment.
+	uint256 effectiveTimestamp;
+	/// @notice Lifecycle state of the latest adjustment (NONE when the symbol never had one).
+	/// @dev Gates scheduling, cancellation, price confirmation, and finalization, and helps determine whether the symbol must be frozen.
+	AdjustmentState state;
+	/// @notice Total adjustments ever scheduled for the symbol.
+	/// @dev Supplies a stable zero-based event index (`scheduledCount - 1`) so off-chain consumers can distinguish successive adjustments.
+	uint256 scheduledCount;
+	/// @notice 1e18-scaled product of confirmed factors not yet absorbed by physical quote restatement; 0 means unset and is read as 1e18.
+	/// @dev Used by Muon-facing views and normal trading calculations. Direct restatement deliberately leaves it unchanged and uses
+	///      `restatementFactor` instead; finalization resets it to 1e18 after all selected factors are folded into quote storage.
+	uint256 cumulativeFactor;
+	/// @notice Monotonically increasing identifier of the latest restatement window.
+	/// @dev Stamped into `quoteRestatedEpoch` so the same quote cannot be rewritten twice in one window while still allowing a later window
+	///      to rewrite it.
+	uint256 restatementEpoch;
+	/// @notice Whether a restatement maintenance window is currently open.
+	/// @dev Freezes the symbol and gates quote rewrites, abort, and finalization to an explicitly opened window.
+	bool restating;
+	/// @notice Whether any quote rewrite or pending-quote removal occurred in the current restatement window.
+	/// @dev Used only by `abortRestatement`: once true, abort is forbidden because reopening trading would expose partially restated inventory.
+	///      This is a mutation-safety flag, not a completeness check; finalization remains a SYMBOL_MANAGER_ROLE decision.
+	bool restatementMutated;
+	/// @notice 1e18-scaled factor selected for the current restatement window; 0 when no window is open.
+	/// @dev Lets operations restate directly from SCHEDULED without activating `cumulativeFactor` for Muon or normal trading. Quote rewrites and
+	///      normalized mixed-book views use this value until abort or finalization clears it.
+	uint256 restatementFactor;
+	/// @notice Monotonically increasing identifier of the symbol's physical price/quantity basis.
+	/// @dev Advances only after a restatement finalizes. Deferred multi-transaction workflows bind to this value so values from the
+	///      previous basis cannot be executed after quote storage has been rewritten. Muon payloads deliberately do NOT carry it:
+	///      signatures stay backward compatible, and the equivalent guarantee comes from the minimum restatement window enforced
+	///      in finalizeRestatement (see `restatementStartedAt`).
+	uint256 basisVersion;
+	/// @notice Timestamp from which the symbol has been continuously frozen for the current restatement window.
+	/// @dev Set when the window opens. On the direct route the symbol was already frozen at `effectiveTimestamp`, so that earlier
+	///      point is used. finalizeRestatement refuses to advance `basisVersion` until at least one full Muon UPNL validity period
+	///      has elapsed since this instant, which guarantees every signature minted against the old basis has expired before quote
+	///      storage changes meaning. This is what replaces binding `basisVersion` into the signature payload.
+	uint256 restatementStartedAt;
+}
+
+/// @title SymbolAdjustmentStorage
+/// @notice Corporate-action adjustment registry, cumulative price factor, and restatement bookkeeping
+/// @dev Uses diamond storage pattern with a unique slot to avoid collisions.
+library SymbolAdjustmentStorage {
+	bytes32 internal constant SYMBOL_ADJUSTMENT_STORAGE_SLOT = keccak256("diamond.standard.storage.symboladjustment");
+
+	struct Layout {
+		/// @notice Stores the latest adjustment lifecycle and restatement state for each symbol.
+		/// @dev This is the authoritative registry read by freeze checks, factor-aware pricing, and Symbol Adjustment actions and views.
+		mapping(uint256 => SymbolAdjustment) adjustments;
+		/// @notice Stores the last restatement epoch in which each quote was physically rewritten; 0 means never restated.
+		/// @dev Compared with the quote's symbol epoch before mutation to reject duplicate rewrites within the same restatement window.
+		mapping(uint256 => uint256) quoteRestatedEpoch;
+	}
+
+	function layout() internal pure returns (Layout storage l) {
+		bytes32 slot = SYMBOL_ADJUSTMENT_STORAGE_SLOT;
+		assembly {
+			l.slot := slot
+		}
+	}
+}

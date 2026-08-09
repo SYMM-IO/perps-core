@@ -8,10 +8,8 @@ import { Accessibility } from "../../utils/Accessibility.sol";
 import { Pausable } from "../../utils/Pausable.sol";
 import { IAccountFacet } from "./IAccountFacet.sol";
 import { AccountFacetImpl } from "./AccountFacetImpl.sol";
-import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { OperationalFeeStorage, AllowanceState } from "../../storages/OperationalFeeStorage.sol";
-import { SharedEvents } from "../../libraries/SharedEvents.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibOperationalFee } from "../../libraries/LibOperationalFee.sol";
@@ -69,7 +67,6 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		_virtualDepositFor(user, amount);
 		AccountFacetImpl.allocate(user, amount);
 		emit AllocatePartyA(user, amount, AccountStorage.layout().allocatedBalances[user]);
-		emit SharedEvents.BalanceChangePartyA(user, amount, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
 	/// @notice Allows either PartyA or PartyB to withdraw a specified amount of collateral, provided that the withdrawal cooldown period has elapsed.
@@ -122,7 +119,6 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		address signer = LibSigner.getSigner();
 		AccountFacetImpl.allocate(signer, amount);
 		emit AllocatePartyA(signer, amount, AccountStorage.layout().allocatedBalances[signer]);
-		emit SharedEvents.BalanceChangePartyA(signer, amount, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
 	/// @notice Allows Party A to deposit a specified amount of collateral and immediately allocate it.
@@ -138,7 +134,6 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		emit Deposit(signer, signer, amount);
 		emit Deposit(signer, signer, amount, false);
 		emit AllocatePartyA(signer, amountWith18Decimals, AccountStorage.layout().allocatedBalances[signer]);
-		emit SharedEvents.BalanceChangePartyA(signer, amountWith18Decimals, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
 	/// @notice Deposits collateral on behalf of another user and immediately allocates it for trading.
@@ -152,7 +147,6 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		emit Deposit(signer, user, amount);
 		emit Deposit(signer, user, amount, false);
 		emit AllocatePartyA(user, amountWith18Decimals, AccountStorage.layout().allocatedBalances[user]);
-		emit SharedEvents.BalanceChangePartyA(user, amountWith18Decimals, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
 	/// @notice Allows Party A to deallocate a specified amount of collateral.
@@ -163,7 +157,6 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 
 		AccountFacetImpl.deallocate(amount, upnlSig);
 		emit DeallocatePartyA(signer, amount, AccountStorage.layout().allocatedBalances[signer]);
-		emit SharedEvents.BalanceChangePartyA(signer, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
 	}
 
 	/// @notice Allows Party A to deallocate a specified amount of collateral with pending balance check.
@@ -178,7 +171,6 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 
 		AccountFacetImpl.safeDeallocate(amount, upnlSig);
 		emit DeallocatePartyA(signer, amount, AccountStorage.layout().allocatedBalances[signer]);
-		emit SharedEvents.BalanceChangePartyA(signer, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
 	}
 
 	/// @notice Deallocates collateral without requiring a Muon UPNL signature, only when the user has no open or pending positions.
@@ -188,7 +180,6 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 
 		AccountFacetImpl.zeroUpnlDeallocate(amount, signer);
 		emit DeallocatePartyA(signer, amount, AccountStorage.layout().allocatedBalances[signer]);
-		emit SharedEvents.BalanceChangePartyA(signer, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
 	}
 
 	/// @notice Transfers the sender's deposited balance to the user allocated balance.
@@ -206,7 +197,6 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		emit InternalTransfer(signer, user, AccountStorage.layout().allocatedBalances[user], amount);
 		emit Withdraw(signer, user, LibAccount.toCollateralDecimals(amount));
 		emit AllocatePartyA(user, amount, AccountStorage.layout().allocatedBalances[user]);
-		emit SharedEvents.BalanceChangePartyA(user, amount, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
 	/// @notice Transfers the sender's deposited balance to the user's balance (not allocated balance).

@@ -6,14 +6,14 @@ This document details every event change between Symmio Core v0.8.4 and v0.8.5. 
 
 ## Quick Reference
 
-| Category | Count |
-|---|---|
-| Removed backward-compatible overloads | 21 |
-| Fully removed events | 1 |
-| Changed event signatures | 2 |
-| New events on existing facets/libraries | 41 |
-| New facets with events | 5 facets, 35 events |
-| New AccountLayer diamond events | 6 facets, 30 events |
+| Category                                | Count               |
+| --------------------------------------- | ------------------- |
+| Removed backward-compatible overloads   | 21                  |
+| Fully removed events                    | 1                   |
+| Changed event signatures                | 2                   |
+| New events on existing facets/libraries | 41                  |
+| New facets with events                  | 5 facets, 35 events |
+| New AccountLayer diamond events         | 6 facets, 30 events |
 
 ---
 
@@ -25,63 +25,63 @@ v0.8.4 shipped duplicate event overloads marked "For backward compatibility, wil
 
 **PartyA Liquidation** (was `ILiquidationEvents`, now `IPartyALiquidationEvents`)
 
-| Removed Overload | Use Instead |
-|---|---|
-| `LiquidatePartyA(address liquidator, address partyA, uint256 allocatedBalance, int256 upnl, int256 totalUnrealizedLoss)` | `LiquidatePartyA(address liquidator, address partyA, uint256 allocatedBalance, int256 upnl, int256 totalUnrealizedLoss, bytes liquidationId)` |
-| `LiquidatePositionsPartyA(address liquidator, address partyA, uint256[] quoteIds)` | `LiquidatePositionsPartyA(address liquidator, address partyA, uint256[] quoteIds, uint256[] liquidatedAmounts, uint256[] closeIds, bytes liquidationId)` |
-| `LiquidatePendingPositionsPartyA(address liquidator, address partyA)` | `LiquidatePendingPositionsPartyA(address liquidator, address partyA, uint256[] quoteIds, uint256[] liquidatedAmounts, bytes liquidationId)` |
-| `SettlePartyALiquidation(address partyA, address[] partyBs, int256[] amounts)` | `SettlePartyALiquidation(address partyA, address[] partyBs, int256[] amounts, bytes liquidationId)` |
-| `LiquidationDisputed(address partyA)` | `LiquidationDisputed(address partyA, bytes liquidationId)` |
-| `ResolveLiquidationDispute(address partyA, address[] partyBs, int256[] amounts, bool disputed)` | `ResolveLiquidationDispute(address partyA, address[] partyBs, int256[] amounts, bool disputed, bytes liquidationId)` |
-| `FullyLiquidatedPartyA(address partyA)` | `FullyLiquidatedPartyA(address partyA, bytes liquidationId)` |
-| `SetSymbolsPrices(address liquidator, address partyA, uint256[] symbolIds, uint256[] prices)` | `SetSymbolsPrices(address liquidator, address partyA, uint256[] symbolIds, uint256[] prices, bytes liquidationId)` |
+| Removed Overload                                                                                                         | Use Instead                                                                                                                                              |
+| ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LiquidatePartyA(address liquidator, address partyA, uint256 allocatedBalance, int256 upnl, int256 totalUnrealizedLoss)` | `LiquidatePartyA(address liquidator, address partyA, uint256 allocatedBalance, int256 upnl, int256 totalUnrealizedLoss, bytes liquidationId)`            |
+| `LiquidatePositionsPartyA(address liquidator, address partyA, uint256[] quoteIds)`                                       | `LiquidatePositionsPartyA(address liquidator, address partyA, uint256[] quoteIds, uint256[] liquidatedAmounts, uint256[] closeIds, bytes liquidationId)` |
+| `LiquidatePendingPositionsPartyA(address liquidator, address partyA)`                                                    | `LiquidatePendingPositionsPartyA(address liquidator, address partyA, uint256[] quoteIds, uint256[] liquidatedAmounts, bytes liquidationId)`              |
+| `SettlePartyALiquidation(address partyA, address[] partyBs, int256[] amounts)`                                           | `SettlePartyALiquidation(address partyA, address[] partyBs, int256[] amounts, bytes liquidationId)`                                                      |
+| `LiquidationDisputed(address partyA)`                                                                                    | `LiquidationDisputed(address partyA, bytes liquidationId)`                                                                                               |
+| `ResolveLiquidationDispute(address partyA, address[] partyBs, int256[] amounts, bool disputed)`                          | `ResolveLiquidationDispute(address partyA, address[] partyBs, int256[] amounts, bool disputed, bytes liquidationId)`                                     |
+| `FullyLiquidatedPartyA(address partyA)`                                                                                  | `FullyLiquidatedPartyA(address partyA, bytes liquidationId)`                                                                                             |
+| `SetSymbolsPrices(address liquidator, address partyA, uint256[] symbolIds, uint256[] prices)`                            | `SetSymbolsPrices(address liquidator, address partyA, uint256[] symbolIds, uint256[] prices, bytes liquidationId)`                                       |
 
 **PartyB Liquidation** (was in `ILiquidationEvents`, now `IPartyBLiquidationEvents`)
 
-| Removed Overload | Use Instead |
-|---|---|
+| Removed Overload                                                                                   | Use Instead                                                                                                                                         |
+| -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `LiquidatePositionsPartyB(address liquidator, address partyB, address partyA, uint256[] quoteIds)` | `LiquidatePositionsPartyB(address liquidator, address partyB, address partyA, uint256[] quoteIds, uint256[] liquidatedAmounts, uint256[] closeIds)` |
 
 **Migration note:** All liquidation events now always include `liquidationId`. Use this field to correlate multi-step liquidation flows. The topic hash changes when parameters change, so your ABI must be updated for decoding.
 
 ### 1.2 Account Events
 
-| Removed Overload | Use Instead |
-|---|---|
-| `AllocatePartyA(address user, uint256 amount)` | `AllocatePartyA(address user, uint256 amount, uint256 newAllocatedBalance)` |
-| `DeallocatePartyA(address user, uint256 amount)` | `DeallocatePartyA(address user, uint256 amount, uint256 newAllocatedBalance)` |
-| `AllocateForPartyB(address partyB, address partyA, uint256 amount)` | `AllocateForPartyB(address partyB, address partyA, uint256 amount, uint256 newAllocatedBalance)` |
-| `DeallocateForPartyB(address partyB, address partyA, uint256 amount)` | `DeallocateForPartyB(address partyB, address partyA, uint256 amount, uint256 newAllocatedBalance)` |
+| Removed Overload                                                        | Use Instead                                                                                                                                      |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `AllocatePartyA(address user, uint256 amount)`                          | `AllocatePartyA(address user, uint256 amount, uint256 newAllocatedBalance)`                                                                      |
+| `DeallocatePartyA(address user, uint256 amount)`                        | `DeallocatePartyA(address user, uint256 amount, uint256 newAllocatedBalance)`                                                                    |
+| `AllocateForPartyB(address partyB, address partyA, uint256 amount)`     | `AllocateForPartyB(address partyB, address partyA, uint256 amount, uint256 newAllocatedBalance)`                                                 |
+| `DeallocateForPartyB(address partyB, address partyA, uint256 amount)`   | `DeallocateForPartyB(address partyB, address partyA, uint256 amount, uint256 newAllocatedBalance)`                                               |
 | `TransferAllocation(uint256 amount, address origin, address recipient)` | `TransferAllocation(uint256 amount, address origin, uint256 originNewAllocatedBalance, address recipient, uint256 recipientNewAllocatedBalance)` |
 
 **Note:** `AllocateForPartyB`, `DeallocateForPartyB`, `TransferAllocation`, `DepositToReserveVault`, and `WithdrawFromReserveVault` have moved from `IAccountEvents` to the new `IPartyBAccountEvents` interface. The event signatures and topic hashes are identical -- only the source file changed.
 
 ### 1.3 Trading Events
 
-| Removed Overload | Use Instead |
-|---|---|
-| `ExpireQuote(QuoteStatus quoteStatus, uint256 quoteId)` | `ExpireQuoteOpen(QuoteStatus, uint256 quoteId)` for pending quotes, `ExpireQuoteClose(QuoteStatus, uint256 quoteId, uint256 closeId)` for close requests |
+| Removed Overload                                                                                                                        | Use Instead                                                                                                                                              |
+| --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ExpireQuote(QuoteStatus quoteStatus, uint256 quoteId)`                                                                                 | `ExpireQuoteOpen(QuoteStatus, uint256 quoteId)` for pending quotes, `ExpireQuoteClose(QuoteStatus, uint256 quoteId, uint256 closeId)` for close requests |
 | `FillCloseRequest(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 closedPrice, QuoteStatus quoteStatus)` | `FillCloseRequest(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 closedPrice, QuoteStatus quoteStatus, uint256 closeId)` |
 
 ### 1.4 PartyA Request Events
 
-| Removed Overload | Use Instead |
-|---|---|
-| `RequestToClosePosition(address partyA, address partyB, uint256 quoteId, uint256 closePrice, uint256 quantityToClose, OrderType orderType, uint256 deadline, QuoteStatus quoteStatus)` | `RequestToClosePosition(..., uint256 closeId)` -- same params with `closeId` appended |
-| `RequestToCancelCloseRequest(address partyA, address partyB, uint256 quoteId, QuoteStatus quoteStatus)` | `RequestToCancelCloseRequest(address partyA, address partyB, uint256 quoteId, QuoteStatus quoteStatus, uint256 closeId)` |
+| Removed Overload                                                                                                                                                                       | Use Instead                                                                                                              |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `RequestToClosePosition(address partyA, address partyB, uint256 quoteId, uint256 closePrice, uint256 quantityToClose, OrderType orderType, uint256 deadline, QuoteStatus quoteStatus)` | `RequestToClosePosition(..., uint256 closeId)` -- same params with `closeId` appended                                    |
+| `RequestToCancelCloseRequest(address partyA, address partyB, uint256 quoteId, QuoteStatus quoteStatus)`                                                                                | `RequestToCancelCloseRequest(address partyA, address partyB, uint256 quoteId, QuoteStatus quoteStatus, uint256 closeId)` |
 
 ### 1.5 Force Action Events
 
-| Removed Overload | Use Instead |
-|---|---|
-| `ForceCancelCloseRequest(uint256 quoteId, QuoteStatus quoteStatus)` | `ForceCancelCloseRequest(uint256 quoteId, QuoteStatus quoteStatus, uint256 closeId)` |
+| Removed Overload                                                                                                                          | Use Instead                                                                                                                                                |
+| ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ForceCancelCloseRequest(uint256 quoteId, QuoteStatus quoteStatus)`                                                                       | `ForceCancelCloseRequest(uint256 quoteId, QuoteStatus quoteStatus, uint256 closeId)`                                                                       |
 | `ForceClosePosition(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 closedPrice, QuoteStatus quoteStatus)` | `ForceClosePosition(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 closedPrice, QuoteStatus quoteStatus, uint256 closeId)` |
 
 ### 1.6 PartyB Position Action Events
 
-| Removed Overload | Use Instead |
-|---|---|
-| `AcceptCancelCloseRequest(uint256 quoteId, QuoteStatus quoteStatus)` | `AcceptCancelCloseRequest(uint256 quoteId, QuoteStatus quoteStatus, uint256 closeId)` |
+| Removed Overload                                                                                                                              | Use Instead                                                                                                                                                    |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AcceptCancelCloseRequest(uint256 quoteId, QuoteStatus quoteStatus)`                                                                          | `AcceptCancelCloseRequest(uint256 quoteId, QuoteStatus quoteStatus, uint256 closeId)`                                                                          |
 | `EmergencyClosePosition(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 closedPrice, QuoteStatus quoteStatus)` | `EmergencyClosePosition(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 closedPrice, QuoteStatus quoteStatus, uint256 closeId)` |
 
 **Note:** `EmergencyClosePosition` has moved from `IPartyBPositionActionsEvents` to the new `IPartyBEmergencyActionsEvents` interface. The full-parameter event signature is identical.
@@ -90,8 +90,8 @@ v0.8.4 shipped duplicate event overloads marked "For backward compatibility, wil
 
 ## 2. Fully Removed Events
 
-| Event | Reason |
-|---|---|
+| Event                                                                                 | Reason                                                                                                       |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | `SetSymbolMaxSlippage(uint256 symbolId, uint256 oldMaxSlippage, uint256 maxSlippage)` | Max slippage configuration removed. Force close gap management now uses `SetForceCloseGapRatio` exclusively. |
 
 **Migration:** If you were indexing `SetSymbolMaxSlippage` for gap/slippage tracking, listen to `SetForceCloseGapRatio(uint256 symbolId, uint256 oldForceCloseGapRatio, uint256 newForceCloseGapRatio)` instead.
@@ -118,11 +118,11 @@ event SetMuonIds(uint256 muonAppId);
 
 ```solidity
 // v0.8.4
-event RegisterAffiliate(address affilate);   // typo
+event RegisterAffiliate(address affilate); // typo
 event DeregisterAffiliate(address affilate); // typo
 
 // v0.8.5
-event RegisterAffiliate(address affiliate);   // fixed
+event RegisterAffiliate(address affiliate); // fixed
 event DeregisterAffiliate(address affiliate); // fixed
 ```
 
@@ -161,7 +161,16 @@ event SendQuote(address partyA, uint256 quoteId, address[] partyBsWhiteList, add
 event OpenPosition(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 openedPrice, LockedValues lockedValues);
 
 // New FillCloseRequest overload with locked values
-event FillCloseRequest(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 closedPrice, QuoteStatus quoteStatus, uint256 closeId, LockedValues lockedValues);
+event FillCloseRequest(
+	uint256 quoteId,
+	address partyA,
+	address partyB,
+	uint256 filledAmount,
+	uint256 closedPrice,
+	QuoteStatus quoteStatus,
+	uint256 closeId,
+	LockedValues lockedValues
+);
 ```
 
 **Note:** The old `SendQuote` (with all individual params) and old `OpenPosition` (without `LockedValues`) are still emitted for backward compatibility alongside the new versions. Both events fire on each operation. The new `SendQuote` encodes params into `paramsData` bytes -- decode with `abi.decode(paramsData, (uint256, uint8, uint8, uint256, uint256, uint256, uint256, uint256, uint256, uint256, uint256, uint256))` for `(symbolId, positionType, orderType, price, marketPrice, quantity, cva, lf, partyAmm, partyBmm, tradingFee, deadline)`.
@@ -169,11 +178,17 @@ event FillCloseRequest(uint256 quoteId, address partyA, address partyB, uint256 
 ### 4.3 Liquidation Events
 
 **PartyA** (`IPartyALiquidationEvents`):
+
 ```solidity
 // New overload with average closed prices for position liquidation
 event LiquidatePositionsPartyA(
-    address liquidator, address partyA, uint256[] quoteIds,
-    uint256[] liquidatedAmounts, uint256[] closeIds, uint256[] averageClosedPrices, bytes liquidationId
+	address liquidator,
+	address partyA,
+	uint256[] quoteIds,
+	uint256[] liquidatedAmounts,
+	uint256[] closeIds,
+	uint256[] averageClosedPrices,
+	bytes liquidationId
 );
 
 // Emitted when LATE/OVERDUE settlement moves pending fees to escrow (see liquidation-escrow.md)
@@ -181,11 +196,17 @@ event LiquidationEscrowCreated(address indexed partyA, bytes liquidationId, uint
 ```
 
 **PartyB** (`IPartyBLiquidationEvents`):
+
 ```solidity
 // New overload with average closed prices
 event LiquidatePositionsPartyB(
-    address liquidator, address partyB, address partyA, uint256[] quoteIds,
-    uint256[] liquidatedAmounts, uint256[] closeIds, uint256[] averageClosedPrices
+	address liquidator,
+	address partyB,
+	address partyA,
+	uint256[] quoteIds,
+	uint256[] liquidatedAmounts,
+	uint256[] closeIds,
+	uint256[] averageClosedPrices
 );
 ```
 
@@ -210,20 +231,27 @@ event ActivateCrossPartyB(address user);
 ```solidity
 // Two-step force close initialization
 event ForceCloseInitialized(
-    address indexed initiator, address indexed partyB, uint256 quoteId,
-    bytes highLowPriceSigId, uint256 closePrice, uint256 timestamp
+	address indexed initiator,
+	address indexed partyB,
+	uint256 quoteId,
+	bytes highLowPriceSigId,
+	uint256 closePrice,
+	uint256 timestamp
 );
 
 // Emitted when cross-partyB force close completes with insolvent partyB
 event ForceClosePartyBInsolvent(
-    uint256 quoteId, address partyA, address partyB,
-    uint256 closedPrice, uint256 currentPrice, int256 upnlPartyB, int256 partyBAvailableAfterClose
+	uint256 quoteId,
+	address partyA,
+	address partyB,
+	uint256 closedPrice,
+	uint256 currentPrice,
+	int256 upnlPartyB,
+	int256 partyBAvailableAfterClose
 );
 
 // Force fetch allocated balances from partyB
-event ForceFetchAllocated(
-    address partyB, address[] partyAs, uint256[] FetchedAmount, uint256[] newPartyBsAllocatedBalances
-);
+event ForceFetchAllocated(address partyB, address[] partyAs, uint256[] FetchedAmount, uint256[] newPartyBsAllocatedBalances);
 ```
 
 ### 4.6 Funding Rate Events (`IFundingRateEvents`)
@@ -242,8 +270,13 @@ event ChargeAccumulatedFundingFee(address partyA, address partyB, uint256[] quot
 ```solidity
 // Unified settlement -- settles across multiple partyAs for a single partyB
 event SettleUpnlUnified(
-    bytes settlementId, UnifiedQuoteSettlementData[] settlementData, uint256[] updatedPrices,
-    address partyB, address[] partyAs, uint256[] newPartyAsAllocatedBalances, uint256 newPartyBAllocatedBalance
+	bytes settlementId,
+	UnifiedQuoteSettlementData[] settlementData,
+	uint256[] updatedPrices,
+	address partyB,
+	address[] partyAs,
+	uint256[] newPartyAsAllocatedBalances,
+	uint256 newPartyBAllocatedBalance
 );
 ```
 
@@ -251,18 +284,27 @@ event SettleUpnlUnified(
 
 ```solidity
 // New enums added:
-enum TradeVolumeType { OPEN, CLOSE, LIQUIDATE }
-enum TradingFeeType { OPEN, CLOSE }
+enum TradeVolumeType {
+	OPEN,
+	CLOSE,
+	LIQUIDATE
+}
+enum TradingFeeType {
+	OPEN,
+	CLOSE
+}
 
 // New events:
 event TradeVolumeRecorded(
-    uint256 quoteId, uint256 amount, address partyA, address partyB,
-    uint256 symbolId, address affiliate, TradeVolumeType _type
+	uint256 quoteId,
+	uint256 amount,
+	address partyA,
+	address partyB,
+	uint256 symbolId,
+	address affiliate,
+	TradeVolumeType _type
 );
-event TradingFeeCharged(
-    uint256 quoteId, uint256 amount, address partyA, address partyB,
-    uint256 symbolId, address affiliate, TradingFeeType _type
-);
+event TradingFeeCharged(uint256 quoteId, uint256 amount, address partyA, address partyB, uint256 symbolId, address affiliate, TradingFeeType _type);
 ```
 
 ### 4.9 Library Events (`LibPartiesEvents`)
@@ -282,7 +324,15 @@ event RoleAdminAdded(bytes32 role, address admin);
 event RoleAdminRemoved(bytes32 role, address admin);
 
 // Fee system
-event SetAffiliateFeeForUser(address affiliate, address user, uint256 symbolId, uint256 oldOpenFee, uint256 newOpenFee, uint256 oldCloseFee, uint256 newCloseFee);
+event SetAffiliateFeeForUser(
+	address affiliate,
+	address user,
+	uint256 symbolId,
+	uint256 oldOpenFee,
+	uint256 newOpenFee,
+	uint256 oldCloseFee,
+	uint256 newCloseFee
+);
 event SetAffiliateFee(address affiliate, uint256 symbolId, uint256 oldOpenFee, uint256 newOpenFee, uint256 oldCloseFee, uint256 newCloseFee);
 event SetMinAffiliateFee(uint256 oldMinAffiliateFee, uint256 newMinAffiliateFee);
 
@@ -393,7 +443,13 @@ event TakeoverPartyALiquidation(address indexed partyA, bytes liquidationId, uin
 event DeallocateForClearingHouse(address indexed subject, address[] parties, address[] allocationKeys, uint256[] amounts);
 event DistributeForClearingHouse(address indexed subject, address[] receivers, address[] allocationKeys, uint256[] amounts);
 event LiquidatePendingPositionsForClearingHouse(address indexed subject, address[] counterparties, uint256[] liquidatedAmounts);
-event LiquidatePositionsForClearingHouse(address indexed subject, uint256[] quoteIds, uint256[] liquidatedAmounts, uint256[] closeIds, uint256[] prices);
+event LiquidatePositionsForClearingHouse(
+	address indexed subject,
+	uint256[] quoteIds,
+	uint256[] liquidatedAmounts,
+	uint256[] closeIds,
+	uint256[] prices
+);
 
 // Auto-takeover
 event AutoTakeoverPartyALiquidation(address indexed partyA, bytes liquidationId);
@@ -454,7 +510,14 @@ event CancelVirtualExternalTransfer(uint256 id);
 Multi-step withdrawal system replacing the single-step `Withdraw` event from `IAccountEvents`.
 
 ```solidity
-event WithdrawInitiated(uint256 indexed requestId, address indexed user, WithdrawReceiverPart[] parts, bool speedUp, bytes providerData, uint256 cooldownEndTime);
+event WithdrawInitiated(
+	uint256 indexed requestId,
+	address indexed user,
+	WithdrawReceiverPart[] parts,
+	bool speedUp,
+	bytes providerData,
+	uint256 cooldownEndTime
+);
 event WithdrawAccepted(uint256 indexed requestId, address indexed user);
 event WithdrawFinalized(uint256 indexed requestId, address indexed user);
 event WithdrawCancelRequested(uint256 indexed requestId, address indexed user);
@@ -466,6 +529,23 @@ event WithdrawSpeedUpAccepted(uint256 requestId, address user, uint256 newCooldo
 ```
 
 **Migration:** The old single-step `Withdraw(address, address, uint256)` is still emitted (from `WithdrawFacetImpl`) for backward compatibility. However, the full withdrawal lifecycle now flows through `WithdrawInitiated` -> `WithdrawAccepted` -> `WithdrawFinalized`. Indexers tracking withdrawal status should listen to all lifecycle events.
+
+### 5.6 SymbolAdjustmentFacet Events (new facet)
+
+Handles corporate-action-style symbol adjustments (e.g. a CRWD-style 4:1 split): a registry lifecycle for scheduling a factor, choosing confirmation or direct restatement after the effective-time freeze, gating quote-specific trading, funding, liquidation-price, and settlement paths, and rescaling eligible open quotes while force-expiring pending quotes.
+
+| New Event                           | Parameters                                                                                                                                                                     | Notes                                                                                               |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| `AdjustmentScheduled`               | `(uint256 indexed symbolId, uint256 adjustmentIndex, uint256 factor, uint256 effectiveTimestamp)`                                                                              | Corporate action registered; symbol freezes at effectiveTimestamp                                   |
+| `AdjustmentCancelled`               | `(uint256 indexed symbolId, uint256 adjustmentIndex)`                                                                                                                          | Scheduled adjustment cancelled; symbol unfreezes if it was frozen                                   |
+| `PriceAdjustmentConfirmed`          | `(uint256 indexed symbolId, uint256 adjustmentIndex, uint256 newCumulativeFactor)`                                                                                             | Oracle factor live; symbol unfrozen                                                                 |
+| `RestatementStarted`                | `(uint256 indexed symbolId, uint256 epoch, uint256 restatementFactor)`                                                                                                         | Frozen window opened with the factor selected for quote rewrites                                    |
+| `RestatementAborted`                | `(uint256 indexed symbolId, uint256 epoch)`                                                                                                                                    | Mutation-free window closed; confirmed path unfreezes, direct path returns to the transition freeze |
+| `QuoteAdjusted`                     | `(uint256 indexed quoteId, uint256 indexed symbolId, uint256 epoch, uint256 factor, uint256 oldQuantity, uint256 newQuantity, uint256 oldOpenedPrice, uint256 newOpenedPrice)` | Position restated to new units                                                                      |
+| `PendingQuoteCancelledByAdjustment` | `(uint256 indexed quoteId, uint256 indexed symbolId)`                                                                                                                          | Pending quote force-expired during freeze                                                           |
+| `RestatementFinalized`              | `(uint256 indexed symbolId, uint256 epoch)`                                                                                                                                    | Factor reset to 1e18; symbol unfrozen                                                               |
+
+**Migration:** Indexers and the Muon app must track all eight events. During the transition, `getCumulativeFactor` returns only the active trading factor while `getProspectiveCumulativeFactor` includes the SCHEDULED step. After effective time, operations may confirm that prospective factor and reopen trading, or call `startRestatement` directly while frozen. Direct mode records the prospective value in `restatementFactor` without activating it in `cumulativeFactor`; `RestatementStarted` reports the factor selected for that epoch. `AdjustmentCancelled` and `RestatementAborted` are distinct signals, but aborting direct mode returns to the effective SCHEDULED freeze rather than reopening trading. `QuoteAdjusted` and `PendingQuoteCancelledByAdjustment` describe processed work. Core does not accept off-chain inventory counts or prove completeness before `RestatementFinalized`; the symbol manager and indexer must reconcile the full open and pending inventory before finalization. The facet upgrade must remove the legacy `startRestatement(uint256,uint256,uint256)` selector and add `startRestatement(uint256)`; the one-facet updater now removes selectors absent from the replacement facet ABI.
 
 ---
 
@@ -549,16 +629,16 @@ event VirtualAccountDeleted(address indexed account, address indexed parent);
 
 ### 7.1 File Reorganization
 
-| v0.8.4 Location | v0.8.5 Location | Notes |
-|---|---|---|
-| `contracts/facets/` | `contracts/core/facets/` | All core facets moved under `core/` |
-| `contracts/interfaces/` | `contracts/core/interfaces/` | Core interfaces moved under `core/` |
-| `contracts/libraries/` | `contracts/core/libraries/` | Core libraries moved under `core/` |
-| `contracts/storages/` | `contracts/core/storages/` | Storage contracts moved under `core/` |
-| `contracts/facets/liquidation/ILiquidationEvents.sol` | Split into `PartyALiquidation/IPartyALiquidationEvents.sol` + `PartyBLiquidation/IPartyBLiquidationEvents.sol` | Liquidation events split by party |
-| `IAccountEvents.sol` (contained PartyB events) | `IAccountEvents.sol` + `IPartyBAccountEvents.sol` | PartyB account events extracted |
-| `IPartyBPositionActionsEvents.sol` (contained emergency close) | `IPartyBPositionActionsEvents.sol` + `IPartyBEmergencyActionsEvents.sol` | Emergency close extracted |
-| N/A | `contracts/accountLayer/` | Entirely new AccountLayer diamond |
+| v0.8.4 Location                                                | v0.8.5 Location                                                                                                | Notes                                 |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| `contracts/facets/`                                            | `contracts/core/facets/`                                                                                       | All core facets moved under `core/`   |
+| `contracts/interfaces/`                                        | `contracts/core/interfaces/`                                                                                   | Core interfaces moved under `core/`   |
+| `contracts/libraries/`                                         | `contracts/core/libraries/`                                                                                    | Core libraries moved under `core/`    |
+| `contracts/storages/`                                          | `contracts/core/storages/`                                                                                     | Storage contracts moved under `core/` |
+| `contracts/facets/liquidation/ILiquidationEvents.sol`          | Split into `PartyALiquidation/IPartyALiquidationEvents.sol` + `PartyBLiquidation/IPartyBLiquidationEvents.sol` | Liquidation events split by party     |
+| `IAccountEvents.sol` (contained PartyB events)                 | `IAccountEvents.sol` + `IPartyBAccountEvents.sol`                                                              | PartyB account events extracted       |
+| `IPartyBPositionActionsEvents.sol` (contained emergency close) | `IPartyBPositionActionsEvents.sol` + `IPartyBEmergencyActionsEvents.sol`                                       | Emergency close extracted             |
+| N/A                                                            | `contracts/accountLayer/`                                                                                      | Entirely new AccountLayer diamond     |
 
 ### 7.2 New Enums in SharedEvents
 

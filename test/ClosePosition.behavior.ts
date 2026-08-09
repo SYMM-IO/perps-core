@@ -136,6 +136,12 @@ export function shouldBehaveLikeClosePosition(): void {
 
 		const partyAAllocatedBefore = (await user.getBalanceInfo()).allocatedBalances
 		const partyBAllocatedBefore = (await hedger.getBalanceInfo(await user.getAddress())).allocatedBalances
+		const validator = new FillCloseRequestValidator()
+		const beforeOut = await validator.before(context, {
+			user,
+			hedger,
+			quoteId,
+		})
 
 		expect(partyAAllocatedBefore).to.be.gte(fundingFee)
 
@@ -145,6 +151,14 @@ export function shouldBehaveLikeClosePosition(): void {
 
 		const partyAAllocatedAfter = (await user.getBalanceInfo()).allocatedBalances
 		const partyBAllocatedAfter = (await hedger.getBalanceInfo(await user.getAddress())).allocatedBalances
+		await validator.after(context, {
+			user,
+			hedger,
+			quoteId,
+			closePrice: closedPrice,
+			fillAmount: filledAmount,
+			beforeOutput: beforeOut,
+		})
 
 		const pnl = ((closedPrice - quote.openedPrice) * filledAmount) / WAD
 		const netToPartyA = pnl - fundingFee
@@ -754,6 +768,31 @@ export function shouldBehaveLikeClosePosition(): void {
 					quoteId: BigInt(1),
 					beforeOutput: beforeOut,
 				})
+			})
+
+			it("Should reset the remaining request when partyB partially fills during cancellation", async function () {
+				const quote = await context.viewFacetQuote.getQuote(1)
+				const filledAmount = quote.quantityToClose / 2n
+				const validator = new FillCloseRequestValidator()
+				const beforeOut = await validator.before(context, {
+					user: user,
+					hedger: hedger,
+					quoteId: 1n,
+				})
+
+				await hedger.fillCloseRequest(1, limitFillCloseRequestBuilder().filledAmount(filledAmount).closedPrice(quote.requestedClosePrice).build())
+				await validator.after(context, {
+					user: user,
+					hedger: hedger,
+					quoteId: 1n,
+					closePrice: quote.requestedClosePrice,
+					fillAmount: filledAmount,
+					beforeOutput: beforeOut,
+				})
+
+				const updatedQuote = await context.viewFacetQuote.getQuote(1)
+				expect(updatedQuote.quoteStatus).to.equal(QuoteStatus.OPENED)
+				expect(updatedQuote.quantityToClose).to.equal(0n)
 			})
 
 			it("Should force cancel close request", async function () {

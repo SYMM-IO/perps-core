@@ -5,7 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { SubAccountDetail, VirtualAccountDetail, VirtualAccountIsolationType, LegacyAccountInfo } from "../../storages/AccountStorage.sol";
-import { AffiliateState, Stakeholder } from "../../storages/AffiliateStorage.sol";
+import { AffiliateDetail, AffiliateSelectorConfig, AffiliateState, Stakeholder } from "../../storages/AffiliateStorage.sol";
 
 /// @notice Read-only interface for accounts, affiliates, roles, and system state
 interface IViewFacet {
@@ -95,6 +95,9 @@ interface IViewFacet {
 	/// @notice Returns the current effective signer
 	function getSigner() external view returns (address);
 
+	/// @notice Returns the account family the current signer session is confined to, or address(0) when unconfined
+	function getSignerScope() external view returns (address);
+
 	/// @notice Returns the Symmio core address associated with an account
 	/// @param account The account address
 	function getRelatedCore(address account) external view returns (address);
@@ -110,6 +113,15 @@ interface IViewFacet {
 	function accountManagerImplementation() external view returns (bytes memory);
 
 	// ==================== Affiliate View Functions ====================
+
+	/// @notice Returns everything stored about an affiliate in a single call, including any pending fee update
+	/// @param affiliate The affiliate address
+	function getAffiliate(address affiliate) external view returns (AffiliateDetail memory);
+
+	/// @notice Returns the hook and allow-list configuration of an affiliate for the given selectors
+	/// @param affiliate The affiliate address
+	/// @param selectors The function selectors to look up
+	function getAffiliateSelectorConfigs(address affiliate, bytes4[] calldata selectors) external view returns (AffiliateSelectorConfig[] memory);
 
 	/// @notice Returns the registration state of an affiliate
 	/// @param affiliate The affiliate address
@@ -134,10 +146,6 @@ interface IViewFacet {
 	/// @notice Returns the Symmio share of fees for an affiliate
 	/// @param affiliate The affiliate address
 	function getAffiliateSymmioShare(address affiliate) external view returns (uint256);
-
-	/// @notice Returns the express deposit rate for an affiliate (fraction of 1e18)
-	/// @param affiliate The affiliate address
-	function getAffiliateExpressRate(address affiliate) external view returns (uint256);
 
 	/// @notice Checks whether a Symmio core address is whitelisted
 	/// @param core The Symmio core address
@@ -192,7 +200,7 @@ interface IViewFacet {
 	// ==================== Ownership ====================
 
 	/// @notice Returns the current diamond owner address
-	function owner() external view returns (address);
+	function getOwner() external view returns (address);
 
 	/// @notice Returns the pending owner address (for two-step ownership transfer)
 	function pendingOwner() external view returns (address);

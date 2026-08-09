@@ -14,6 +14,10 @@ import { decimal, getBlockTimestamp } from "./utils/Common.js"
 import { migratePartyBToCross } from "./utils/CrossPartyB.js"
 import { getDummySingleUpnlSig, getDummyUnifiedSettlementSig } from "./utils/SignatureUtils.js"
 
+const partyALiquidationSettlementInterface = new ethers.Interface([
+	"event SettlePartyALiquidation(address partyA, address[] partyBs, address[] allocationKeys, int256[] amounts, uint256[] cvaAmounts, bytes liquidationId)",
+])
+
 /**
  * Tests for cross-mode PartyB settlement reserve.
  *
@@ -190,7 +194,32 @@ export function shouldBehaveLikeCrossPartyBSettlementReserve(): void {
 			await context.settlementFacet.connect(context.signers.liquidator).settlePartyBUpnlForLiquidation(userAddr, sig, [decimal(5n, 17)])
 
 			// Settle hedger (cross) -- completes the liquidation
-			await context.partyALiquidationFacet.connect(context.signers.liquidator).settlePartyALiquidation(userAddr, [hedgerAddr])
+			const crossSettleTx = await context.partyALiquidationFacet.connect(context.signers.liquidator).settlePartyALiquidation(userAddr, [hedgerAddr])
+			const crossSettleReceipt = await crossSettleTx.wait()
+			const extendedSettlementEvents = (crossSettleReceipt?.logs ?? []).flatMap(log => {
+				try {
+					const parsed = partyALiquidationSettlementInterface.parseLog({ topics: log.topics as string[], data: log.data })
+					if (parsed?.name !== "SettlePartyALiquidation") return []
+					return [
+						{
+							partyA: parsed.args.partyA as string,
+							partyBs: [...parsed.args.partyBs] as string[],
+							allocationKeys: [...parsed.args.allocationKeys] as string[],
+							cvaAmounts: [...parsed.args.cvaAmounts] as bigint[],
+						},
+					]
+				} catch {
+					return []
+				}
+			})
+			expect(extendedSettlementEvents).to.deep.equal([
+				{
+					partyA: userAddr,
+					partyBs: [hedgerAddr],
+					allocationKeys: [ZeroAddress],
+					cvaAmounts: [0n],
+				},
+			])
 
 			// Reserve should be cleared
 			const reserve = await context.viewFacet.getPartyBLiquidationSettlementReserve(hedgerAddr)

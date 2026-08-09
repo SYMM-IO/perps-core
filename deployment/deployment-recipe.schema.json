@@ -1,0 +1,500 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://symm.io/schemas/deployment-recipe-v1.json",
+	"title": "SYMMIO Deployment Recipe v1",
+	"type": "object",
+	"additionalProperties": false,
+	"required": ["apiVersion", "kind", "name", "network", "secrets", "execution", "governance", "core", "partyB", "symbolManager", "expressProvider"],
+	"properties": {
+		"$schema": { "type": "string", "minLength": 1 },
+		"apiVersion": { "const": "deployment.symm.io/v1" },
+		"kind": { "const": "DeploymentRecipe" },
+		"name": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+		"network": { "$ref": "#/$defs/network" },
+		"secrets": { "$ref": "#/$defs/secrets" },
+		"execution": { "$ref": "#/$defs/execution" },
+		"governance": { "$ref": "#/$defs/governance" },
+		"core": { "$ref": "#/$defs/core" },
+		"partyB": { "$ref": "#/$defs/partyB" },
+		"symbolManager": { "$ref": "#/$defs/symbolManager" },
+		"expressProvider": { "$ref": "#/$defs/expressProvider" }
+	},
+	"allOf": [
+		{
+			"if": {
+				"type": "object",
+				"properties": { "core": { "type": "object", "properties": { "mode": { "const": "deploy" } }, "required": ["mode"] } },
+				"required": ["core"]
+			},
+			"then": {
+				"type": "object",
+				"properties": {
+					"governance": {
+						"type": "object",
+						"required": ["feeReceiver", "liquidationInsuranceVault", "maxLiquidationProfitPerPosition", "softLiquidationPenaltyCollector"]
+					}
+				}
+			}
+		},
+		{
+			"if": {
+				"type": "object",
+				"properties": { "network": { "type": "object", "properties": { "mode": { "const": "live" } }, "required": ["mode"] } },
+				"required": ["network"]
+			},
+			"then": {
+				"type": "object",
+				"properties": {
+					"secrets": { "type": "object", "required": ["deployer", "rpc", "explorer"] },
+					"execution": {
+						"type": "object",
+						"properties": { "verify": { "const": true }, "logLevel": { "enum": ["minimal", "verbose"] } }
+					},
+					"core": {
+						"type": "object",
+						"properties": {
+							"collateral": { "type": "object", "properties": { "mode": { "const": "reuse" } } },
+							"muon": { "type": "object", "properties": { "mode": { "not": { "const": "mock" } } } },
+							"registerDummyAffiliate": { "const": false }
+						}
+					}
+				}
+			}
+		},
+		{
+			"if": {
+				"type": "object",
+				"properties": {
+					"network": { "type": "object", "properties": { "mode": { "not": { "const": "fork" } } }, "required": ["mode"] }
+				},
+				"required": ["network"]
+			},
+			"then": {
+				"type": "object",
+				"properties": { "execution": { "type": "object", "not": { "type": "object", "required": ["forkBlockNumber"] } } }
+			}
+		}
+	],
+	"$defs": {
+		"address": {
+			"type": "string",
+			"pattern": "^0x(?!0{40}$)[0-9a-fA-F]{40}$"
+		},
+		"uintString": {
+			"type": "string",
+			"pattern": "^(0|[1-9][0-9]*)$"
+		},
+		"positiveUintString": {
+			"type": "string",
+			"pattern": "^[1-9][0-9]*$"
+		},
+		"secretRef": {
+			"type": "string",
+			"pattern": "^(hardhat-keystore|env)://[A-Za-z_][A-Za-z0-9_]*$"
+		},
+		"componentMode": {
+			"enum": ["deploy", "reuse", "skip"]
+		},
+		"network": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["name", "chainId", "mode"],
+			"properties": {
+				"name": { "type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$" },
+				"chainId": { "type": "integer", "minimum": 1 },
+				"mode": { "enum": ["live", "fork", "local"] }
+			}
+		},
+		"secrets": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"deployer": { "$ref": "#/$defs/secretRef" },
+				"rpc": { "$ref": "#/$defs/secretRef" },
+				"explorer": { "$ref": "#/$defs/secretRef" }
+			}
+		},
+		"execution": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["logLevel", "verify"],
+			"properties": {
+				"logLevel": { "enum": ["silent", "minimal", "verbose"] },
+				"verify": { "type": "boolean" },
+				"confirmations": { "type": "integer", "minimum": 1, "maximum": 64 },
+				"txTimeoutSeconds": { "type": "integer", "minimum": 30, "maximum": 86400 },
+				"slowNoticeSeconds": { "type": "integer", "minimum": 5, "maximum": 86400 },
+				"forkBlockNumber": { "type": "integer", "minimum": 1 }
+			}
+		},
+		"governance": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["admin"],
+			"properties": {
+				"admin": { "$ref": "#/$defs/address" },
+				"feeReceiver": { "$ref": "#/$defs/address" },
+				"liquidationInsuranceVault": { "$ref": "#/$defs/address" },
+				"maxLiquidationProfitPerPosition": { "$ref": "#/$defs/positiveUintString" },
+				"softLiquidationPenaltyCollector": { "$ref": "#/$defs/address" }
+			}
+		},
+		"create2": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["vanityPrefix"],
+			"properties": {
+				"factoryAddress": { "$ref": "#/$defs/address" },
+				"vanityPrefix": { "type": "string", "pattern": "^(?:[0-9a-fA-F]{2}){1,4}$" }
+			}
+		},
+		"collateral": {
+			"oneOf": [
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["mode"],
+					"properties": { "mode": { "const": "deploy" } }
+				},
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["mode", "address"],
+					"properties": {
+						"mode": { "const": "reuse" },
+						"address": { "$ref": "#/$defs/address" }
+					}
+				}
+			]
+		},
+		"muonPermissions": {
+			"type": "array",
+			"minItems": 8,
+			"maxItems": 8,
+			"uniqueItems": true,
+			"items": {
+				"enum": [
+					"Trading",
+					"AccountManagement",
+					"Settlement",
+					"ForceClose",
+					"Funding",
+					"LiquidationPartyA",
+					"LiquidationPartyB",
+					"RemoveMargin"
+				]
+			}
+		},
+		"muonPublicKey": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["x", "parity"],
+			"properties": {
+				"x": { "$ref": "#/$defs/positiveUintString" },
+				"parity": { "enum": [0, 1] }
+			}
+		},
+		"muon": {
+			"oneOf": [
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["mode", "upnlValidTime", "priceValidTime"],
+					"properties": {
+						"mode": { "const": "mock" },
+						"upnlValidTime": { "$ref": "#/$defs/positiveUintString" },
+						"priceValidTime": { "$ref": "#/$defs/positiveUintString" }
+					}
+				},
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["mode", "appId", "upnlValidTime", "priceValidTime", "publicKey", "gatewaySigners", "permissions"],
+					"properties": {
+						"mode": { "const": "deploy" },
+						"appId": { "$ref": "#/$defs/positiveUintString" },
+						"upnlValidTime": { "$ref": "#/$defs/positiveUintString" },
+						"priceValidTime": { "$ref": "#/$defs/positiveUintString" },
+						"publicKey": { "$ref": "#/$defs/muonPublicKey" },
+						"gatewaySigners": {
+							"type": "array",
+							"minItems": 1,
+							"uniqueItems": true,
+							"items": { "$ref": "#/$defs/address" }
+						},
+						"permissions": { "$ref": "#/$defs/muonPermissions" }
+					}
+				},
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["mode", "address", "appId", "upnlValidTime", "priceValidTime", "permissions"],
+					"properties": {
+						"mode": { "const": "reuse" },
+						"address": { "$ref": "#/$defs/address" },
+						"appId": { "$ref": "#/$defs/positiveUintString" },
+						"upnlValidTime": { "$ref": "#/$defs/positiveUintString" },
+						"priceValidTime": { "$ref": "#/$defs/positiveUintString" },
+						"publicKey": { "$ref": "#/$defs/muonPublicKey" },
+						"gatewaySigners": {
+							"type": "array",
+							"minItems": 1,
+							"uniqueItems": true,
+							"items": { "$ref": "#/$defs/address" }
+						},
+						"permissions": { "$ref": "#/$defs/muonPermissions" }
+					}
+				}
+			]
+		},
+		"protocolOperation": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["insertionPoints", "sourceIndices", "sourceOffsets"],
+			"properties": {
+				"insertionPoints": { "type": "array", "items": { "type": "integer", "minimum": 0 } },
+				"sourceIndices": { "type": "array", "items": { "type": "integer", "minimum": 0 } },
+				"sourceOffsets": { "type": "array", "items": { "type": "integer", "minimum": 0 } }
+			}
+		},
+		"protocolTemplate": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["name", "operations"],
+			"properties": {
+				"name": { "type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$" },
+				"instantOpenMode": { "type": "boolean" },
+				"operations": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/protocolOperation" } }
+			}
+		},
+		"protocol": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["parameters", "instantLayerTemplates"],
+			"properties": {
+				"description": { "type": "string" },
+				"parameters": {
+					"type": "object",
+					"additionalProperties": false,
+					"required": [
+						"balanceLimitPerUser",
+						"maxWithdrawParts",
+						"deallocateCooldown",
+						"settlementCooldown",
+						"deallocateDebounceTime",
+						"liquidatorShare",
+						"liquidationTimeout",
+						"forceCloseCooldowns",
+						"forceCancelCooldown",
+						"forceCancelCloseCooldown",
+						"pendingQuotesValidLength",
+						"maxPartyAConnectionLimit"
+					],
+					"properties": {
+						"balanceLimitPerUser": { "$ref": "#/$defs/positiveUintString" },
+						"maxWithdrawParts": { "type": "integer", "minimum": 1 },
+						"deallocateCooldown": { "type": "integer", "minimum": 1 },
+						"settlementCooldown": { "type": "integer", "minimum": 1 },
+						"deallocateDebounceTime": { "type": "integer", "minimum": 0 },
+						"liquidatorShare": { "$ref": "#/$defs/positiveUintString" },
+						"liquidationTimeout": { "type": "integer", "minimum": 1 },
+						"forceCloseCooldowns": {
+							"type": "array",
+							"minItems": 2,
+							"maxItems": 2,
+							"prefixItems": [
+								{ "type": "integer", "minimum": 1 },
+								{ "type": "integer", "minimum": 1 }
+							]
+						},
+						"forceCancelCooldown": { "type": "integer", "minimum": 1 },
+						"forceCancelCloseCooldown": { "type": "integer", "minimum": 1 },
+						"pendingQuotesValidLength": { "type": "integer", "minimum": 1 },
+						"maxPartyAConnectionLimit": { "type": "integer", "minimum": 1 }
+					}
+				},
+				"instantLayerTemplates": {
+					"type": "array",
+					"minItems": 1,
+					"items": { "$ref": "#/$defs/protocolTemplate" }
+				}
+			}
+		},
+		"core": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["mode"],
+			"properties": {
+				"mode": { "$ref": "#/$defs/componentMode" },
+				"fromReport": { "type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$" },
+				"create2": { "$ref": "#/$defs/create2" },
+				"collateral": { "$ref": "#/$defs/collateral" },
+				"muon": { "$ref": "#/$defs/muon" },
+				"protocol": { "$ref": "#/$defs/protocol" },
+				"setupInstantLayerTemplates": { "type": "boolean" },
+				"registerDummyAffiliate": { "type": "boolean" }
+			},
+			"allOf": [
+				{
+					"if": { "type": "object", "properties": { "mode": { "const": "deploy" } }, "required": ["mode"] },
+					"then": {
+						"type": "object",
+						"required": ["create2", "collateral", "muon", "protocol", "setupInstantLayerTemplates", "registerDummyAffiliate"],
+						"not": { "type": "object", "required": ["fromReport"] }
+					}
+				},
+				{
+					"if": { "type": "object", "properties": { "mode": { "const": "reuse" } }, "required": ["mode"] },
+					"then": { "type": "object", "required": ["fromReport"] }
+				},
+				{
+					"if": { "type": "object", "properties": { "mode": { "const": "skip" } }, "required": ["mode"] },
+					"then": { "type": "object", "not": { "type": "object", "required": ["fromReport"] } }
+				}
+			]
+		},
+		"partyB": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["mode", "adlEnabled"],
+			"properties": {
+				"mode": { "$ref": "#/$defs/componentMode" },
+				"address": { "$ref": "#/$defs/address" },
+				"signer": { "$ref": "#/$defs/address" },
+				"adlEnabled": { "type": "boolean" }
+			},
+			"allOf": [
+				{
+					"if": { "type": "object", "properties": { "mode": { "const": "deploy" } }, "required": ["mode"] },
+					"then": { "type": "object", "required": ["signer"], "not": { "type": "object", "required": ["address"] } }
+				},
+				{
+					"if": { "type": "object", "properties": { "mode": { "const": "reuse" } }, "required": ["mode"] },
+					"then": { "type": "object", "required": ["address"], "not": { "type": "object", "required": ["signer"] } }
+				},
+				{
+					"if": { "type": "object", "properties": { "mode": { "const": "skip" } }, "required": ["mode"] },
+					"then": {
+						"type": "object",
+						"properties": { "adlEnabled": { "const": false } },
+						"not": {
+							"anyOf": [
+								{ "type": "object", "required": ["address"] },
+								{ "type": "object", "required": ["signer"] }
+							]
+						}
+					}
+				}
+			]
+		},
+		"symbolManager": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["mode"],
+			"properties": {
+				"mode": { "$ref": "#/$defs/componentMode" },
+				"address": { "$ref": "#/$defs/address" },
+				"operator": { "$ref": "#/$defs/address" }
+			},
+			"allOf": [
+				{
+					"if": { "type": "object", "properties": { "mode": { "const": "deploy" } }, "required": ["mode"] },
+					"then": { "type": "object", "required": ["operator"], "not": { "type": "object", "required": ["address"] } }
+				},
+				{
+					"if": { "type": "object", "properties": { "mode": { "const": "reuse" } }, "required": ["mode"] },
+					"then": { "type": "object", "required": ["address"], "not": { "type": "object", "required": ["operator"] } }
+				},
+				{
+					"if": { "type": "object", "properties": { "mode": { "const": "skip" } }, "required": ["mode"] },
+					"then": {
+						"type": "object",
+						"not": {
+							"anyOf": [
+								{ "type": "object", "required": ["address"] },
+								{ "type": "object", "required": ["operator"] }
+							]
+						}
+					}
+				}
+			]
+		},
+		"expressRole": {
+			"type": "array",
+			"minItems": 1,
+			"uniqueItems": true,
+			"items": { "$ref": "#/$defs/address" }
+		},
+		"expressAffiliate": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["address", "feeRate", "operatorFee", "maxDebt", "maxDebtBps"],
+			"properties": {
+				"address": { "$ref": "#/$defs/address" },
+				"feeRate": { "$ref": "#/$defs/uintString", "description": "Basis points, max 10000" },
+				"operatorFee": { "$ref": "#/$defs/uintString" },
+				"maxDebt": { "$ref": "#/$defs/uintString", "description": "Protocol-side absolute cap; 0 means no cap" },
+				"maxDebtBps": { "type": "integer", "minimum": 0, "maximum": 10000, "description": "Protocol-side percentage cap; 0 means no cap" },
+				"minValidatorSignatures": { "type": "integer", "minimum": 0 },
+				"validatorApprovalTimeout": { "type": "integer", "minimum": 1 },
+				"validators": { "$ref": "#/$defs/expressRole" }
+			}
+		},
+		"expressProvider": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["mode"],
+			"properties": {
+				"mode": { "$ref": "#/$defs/componentMode" },
+				"address": { "$ref": "#/$defs/address" },
+				"admin": { "$ref": "#/$defs/address", "description": "Defaults to the core deployment report admin when omitted" },
+				"registerOnCore": { "type": "boolean" },
+				"securityWindow": { "type": "integer", "minimum": 10 },
+				"tolerancePeriod": { "type": "integer", "minimum": 10 },
+				"creditLine": {
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["signatureVerifier", "muonAppId", "muonFreshnessWindow"],
+					"properties": {
+						"signatureVerifier": {
+							"oneOf": [{ "const": "fromCore" }, { "$ref": "#/$defs/address" }],
+							"description": "\"fromCore\" resolves the core diamond's configured verifier at execution time"
+						},
+						"muonAppId": { "$ref": "#/$defs/uintString" },
+						"muonFreshnessWindow": { "type": "integer", "minimum": 1 }
+					}
+				},
+				"roles": {
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["OPERATOR_ROLE"],
+					"properties": {
+						"OPERATOR_ROLE": { "$ref": "#/$defs/expressRole" },
+						"LOCKER_ROLE": { "$ref": "#/$defs/expressRole" },
+						"SIGNER_ROLE": { "$ref": "#/$defs/expressRole" },
+						"SETTER_ROLE": { "$ref": "#/$defs/expressRole" },
+						"FEE_CLAIMER_ROLE": { "$ref": "#/$defs/expressRole" },
+						"UNLOCK_ROLE": { "$ref": "#/$defs/expressRole" },
+						"WITHDRAWER_ROLE": { "$ref": "#/$defs/expressRole" },
+						"PAUSER_ROLE": { "$ref": "#/$defs/expressRole" }
+					}
+				},
+				"affiliates": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/expressAffiliate" } }
+			},
+			"allOf": [
+				{
+					"if": { "type": "object", "properties": { "mode": { "const": "reuse" } }, "required": ["mode"] },
+					"then": { "type": "object", "required": ["address"] }
+				},
+				{
+					"if": { "type": "object", "properties": { "mode": { "enum": ["deploy", "skip"] } }, "required": ["mode"] },
+					"then": { "type": "object", "not": { "type": "object", "required": ["address"] } }
+				},
+				{
+					"if": { "type": "object", "properties": { "mode": { "const": "deploy" } }, "required": ["mode"] },
+					"then": { "type": "object", "required": ["registerOnCore", "creditLine", "roles", "affiliates"] }
+				}
+			]
+		}
+	}
+}

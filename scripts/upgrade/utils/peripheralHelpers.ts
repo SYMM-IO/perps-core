@@ -3,13 +3,16 @@
  *
  * These contracts are new in v0.8.5 and must be deployed fresh during the upgrade.
  */
-import type { Interface } from "ethers"
+import type { Interface, Provider } from "ethers"
 import fs from "fs"
 import path from "path"
 
+import { deploymentOnlyArtifact } from "../../../tasks/deploy/artifacts.js"
 import { FacetCutAction, getSelectors } from "../../../tasks/utils/diamondCut.js"
-import { ethers } from "../../../test/helpers/hardhat-connection.js"
+import { ethers, hre } from "../../../test/helpers/hardhat-connection.js"
+import { loadDeploymentState, saveDeploymentState, resolveDeploymentStateMetadata, type DeploymentStateContext } from "./deploymentState.js"
 import { log } from "./log.js"
+import { accountLayerCutTxOverrides, deployTxOverrides, writeTxOverrides } from "./txOverrides.js"
 
 // ============================================================================
 // Constants
@@ -53,6 +56,11 @@ export type AccountLayerInstantLayerReport = {
 }
 
 type DeployedState = {
+	metadata?: {
+		networkName?: string
+		chainId?: number
+		diamondAddress?: string
+	}
 	accountLayer?: {
 		diamondCutFacet?: string
 		diamond?: string
@@ -79,15 +87,53 @@ function ensureDir(dir: string): void {
 	}
 }
 
-function loadState(filePath: string): DeployedState {
-	if (!filePath || !fs.existsSync(filePath)) return {}
-	return JSON.parse(fs.readFileSync(filePath, "utf-8")) as DeployedState
-}
-
-function saveState(filePath: string, state: DeployedState): void {
+function saveState(filePath: string, state: DeployedState, metadata?: DeploymentStateContext): void {
 	if (!filePath) return
 	ensureDir(path.dirname(filePath))
-	fs.writeFileSync(filePath, JSON.stringify(state, null, 2))
+	saveDeploymentState(filePath, state, metadata)
+}
+
+function parseNonNegativeIntEnv(name: string, fallback: number): number {
+	const value = process.env[name]
+	if (value === undefined || value.trim() === "") return fallback
+	const parsed = Number(value)
+	return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback
+}
+
+function sleep(ms: number): Promise<void> {
+	return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error)
+}
+
+async function requireDeployedCode(label: string, address: string): Promise<void> {
+	if (!ethers.isAddress(address) || address === ethers.ZeroAddress) throw new Error(`${label} has an invalid cached address: ${address}`)
+	if ((await ethers.provider.getCode(address)) === "0x") {
+		throw new Error(`${label} has no code at cached/deployed address ${address}; reconcile the deployment transaction before resuming`)
+	}
+}
+
+async function withPartyBPrefilterRetry<T>(label: string, read: () => Promise<T>): Promise<T> {
+	const maxRetries = parseNonNegativeIntEnv("PARTYB_PREFILTER_MAX_RETRIES", 4)
+	const baseDelayMs = parseNonNegativeIntEnv("PARTYB_PREFILTER_RETRY_DELAY_MS", 1_000)
+	let attempt = 0
+	let delay = baseDelayMs
+
+	while (true) {
+		try {
+			return await read()
+		} catch (error) {
+			attempt += 1
+			if (attempt > maxRetries) {
+				throw new Error(`${label} failed after ${maxRetries} retries: ${errorMessage(error)}`)
+			}
+			log.warn(`${label} failed (${errorMessage(error)}); retry ${attempt}/${maxRetries} in ${delay}ms`)
+			await sleep(delay)
+			delay = Math.min(delay * 2, 10_000)
+		}
+	}
 }
 
 // ============================================================================
@@ -99,8 +145,10 @@ export async function deployAccountLayerDiamond(
 	symmioFeeReceiver: string,
 	stateFile?: string,
 	adminSigner?: any,
+	stateContext?: DeploymentStateContext,
 ): Promise<AccountLayerDeployResult> {
-	const state = loadState(stateFile ?? "")
+	const metadata = stateFile ? await resolveDeploymentStateMetadata(stateContext) : undefined
+	const state = loadDeploymentState<DeployedState>(stateFile ?? "", metadata)
 	if (!state.accountLayer) state.accountLayer = {}
 	const al = state.accountLayer
 
@@ -110,14 +158,16 @@ export async function deployAccountLayerDiamond(
 	let diamondCutFacetAddress: string
 	if (al.diamondCutFacet) {
 		diamondCutFacetAddress = al.diamondCutFacet
+		await requireDeployedCode("AccountLayer DiamondCutFacet", diamondCutFacetAddress)
 		log.deployed("DiamondCutFacet", diamondCutFacetAddress, true)
 	} else {
 		const factory = await ethers.getContractFactory("DiamondCutFacet")
-		const contract = await factory.deploy()
+		const contract = await factory.deploy(deployTxOverrides())
 		diamondCutFacetAddress = await contract.getAddress()
-		al.diamondCutFacet = diamondCutFacetAddress
-		if (stateFile) saveState(stateFile, state)
 		await contract.waitForDeployment()
+		await requireDeployedCode("AccountLayer DiamondCutFacet", diamondCutFacetAddress)
+		al.diamondCutFacet = diamondCutFacetAddress
+		if (stateFile) saveState(stateFile, state, metadata)
 		log.deployed("DiamondCutFacet", diamondCutFacetAddress)
 	}
 
@@ -129,15 +179,17 @@ export async function deployAccountLayerDiamond(
 	let diamondAddress: string
 	if (al.diamond) {
 		diamondAddress = al.diamond
+		await requireDeployedCode("AccountLayer Diamond", diamondAddress)
 		log.deployed("Diamond", diamondAddress, true)
 	} else {
 		const factory = await ethers.getContractFactory("Diamond")
 		const deployOwner = adminSigner ? protocolAdmin : await deployer.getAddress()
-		const contract = await factory.deploy(deployOwner, diamondCutFacetAddress)
+		const contract = await factory.deploy(deployOwner, diamondCutFacetAddress, deployTxOverrides())
 		diamondAddress = await contract.getAddress()
-		al.diamond = diamondAddress
-		if (stateFile) saveState(stateFile, state)
 		await contract.waitForDeployment()
+		await requireDeployedCode("AccountLayer Diamond", diamondAddress)
+		al.diamond = diamondAddress
+		if (stateFile) saveState(stateFile, state, metadata)
 		log.deployed("Diamond", diamondAddress)
 	}
 
@@ -145,14 +197,16 @@ export async function deployAccountLayerDiamond(
 	let initAddress: string
 	if (al.init) {
 		initAddress = al.init
+		await requireDeployedCode("AccountLayer Init", initAddress)
 		log.deployed("Init", initAddress, true)
 	} else {
 		const factory = await ethers.getContractFactory("contracts/accountLayer/Init.sol:Init")
-		const contract = await factory.deploy()
+		const contract = await factory.deploy(deployTxOverrides())
 		initAddress = await contract.getAddress()
-		al.init = initAddress
-		if (stateFile) saveState(stateFile, state)
 		await contract.waitForDeployment()
+		await requireDeployedCode("AccountLayer Init", initAddress)
+		al.init = initAddress
+		if (stateFile) saveState(stateFile, state, metadata)
 		log.deployed("Init", initAddress)
 	}
 
@@ -161,15 +215,19 @@ export async function deployAccountLayerDiamond(
 	const libraryAddresses: Record<string, string> = { ...al.libraries }
 
 	if (libraryAddresses["LibQuoteParams"]) {
+		await requireDeployedCode("AccountLayer LibQuoteParams", libraryAddresses["LibQuoteParams"])
 		log.deployed("LibQuoteParams", libraryAddresses["LibQuoteParams"], true)
 	} else {
-		const factory = await ethers.getContractFactory("contracts/accountLayer/libraries/LibQuoteParams.sol:LibQuoteParams")
-		const contract = await factory.deploy()
-		libraryAddresses["LibQuoteParams"] = await contract.getAddress()
-		al.libraries["LibQuoteParams"] = libraryAddresses["LibQuoteParams"]
-		if (stateFile) saveState(stateFile, state)
+		const artifact = await hre.artifacts.readArtifact("contracts/accountLayer/libraries/LibQuoteParams.sol:LibQuoteParams")
+		const factory = await ethers.getContractFactoryFromArtifact(deploymentOnlyArtifact(artifact))
+		const contract = await factory.deploy(deployTxOverrides())
+		const libraryAddress = await contract.getAddress()
 		await contract.waitForDeployment()
-		log.deployed("LibQuoteParams", libraryAddresses["LibQuoteParams"])
+		await requireDeployedCode("AccountLayer LibQuoteParams", libraryAddress)
+		libraryAddresses["LibQuoteParams"] = libraryAddress
+		al.libraries["LibQuoteParams"] = libraryAddress
+		if (stateFile) saveState(stateFile, state, metadata)
+		log.deployed("LibQuoteParams", libraryAddress)
 	}
 
 	// 5. Deploy 7 facets
@@ -185,6 +243,7 @@ export async function deployAccountLayerDiamond(
 		let facetAddress: string
 		if (facetAddresses[facetName]) {
 			facetAddress = facetAddresses[facetName]
+			await requireDeployedCode(`AccountLayer ${facetName}`, facetAddress)
 			log.skipped(facetName, facetAddress)
 		} else {
 			const requiredLibraries = AccountLayerFacetLibraryDependencies[facetName]
@@ -198,15 +257,13 @@ export async function deployAccountLayerDiamond(
 			} else {
 				factory = await ethers.getContractFactory(contractPath)
 			}
-			const facet = await factory.deploy()
-			// Save address immediately after tx is submitted (before mining) so a crash
-			// during waitForDeployment doesn't lose the deployed address and cause a
-			// nonce-too-low error on retry.
+			const facet = await factory.deploy(deployTxOverrides())
 			facetAddress = await facet.getAddress()
+			await facet.waitForDeployment()
+			await requireDeployedCode(`AccountLayer ${facetName}`, facetAddress)
 			facetAddresses[facetName] = facetAddress
 			al.facets[facetName] = facetAddress
-			if (stateFile) saveState(stateFile, state)
-			await facet.waitForDeployment()
+			if (stateFile) saveState(stateFile, state, metadata)
 			log.progress(i + 1, AccountLayerFacetNames.length, `${log.name(facetName)}  ${log.addr(facetAddress)}`)
 		}
 
@@ -219,51 +276,116 @@ export async function deployAccountLayerDiamond(
 		})
 	}
 
-	// 6. Apply diamond cut with Init
-	if (al.diamondCutComplete) {
-		log.ok("Diamond cut already complete (cached)")
-	} else {
-		// Verify on-chain: try calling admin() from AccountLayer ControlFacet
-		let alreadyDone = false
-		try {
-			const controlFacet = await ethers.getContractAt(AccountLayerFacetPathMap["ControlFacet"], diamondAddress)
-			await controlFacet.admin()
-			alreadyDone = true
-			log.ok("Diamond cut already complete (verified on-chain)")
-		} catch {
-			// Not done yet
+	// 6. Reconcile and apply the diamond cut with Init. Install the loupe first
+	// so every later resume can derive missing selectors from live state, even
+	// when a prior run stopped between cut chunks.
+	const diamondCutContract = await ethers.getContractAt("IDiamondCut", diamondAddress, adminSigner)
+	const loupe = await ethers.getContractAt("IDiamondLoupe", diamondAddress)
+	try {
+		await loupe.facets()
+	} catch {
+		if (al.diamondCutComplete) {
+			throw new Error("Cached diamondCutComplete=true, but the AccountLayer loupe is not callable")
 		}
+		const loupeCut = cut.find(entry => entry.facetAddress === facetAddresses["DiamondLoupeFacet"])
+		if (!loupeCut) throw new Error("DiamondLoupeFacet cut entry is missing")
+		const receipt = await (await diamondCutContract.diamondCut([loupeCut], ethers.ZeroAddress, "0x", accountLayerCutTxOverrides())).wait()
+		if (!receipt?.status) throw new Error("AccountLayer loupe bootstrap cut failed")
+		log.ok("DiamondLoupeFacet bootstrap cut applied and confirmed")
+	}
 
-		if (!alreadyDone) {
-			const diamondCutContract = await ethers.getContractAt("IDiamondCut", diamondAddress, adminSigner)
-			const init = await ethers.getContractAt("contracts/accountLayer/Init.sol:Init", initAddress)
+	const selectorOwners = new Map<string, string>()
+	for (const liveFacet of await loupe.facets()) {
+		for (const selector of liveFacet.functionSelectors) selectorOwners.set(selector.toLowerCase(), ethers.getAddress(liveFacet.facetAddress))
+	}
+	let installedExpectedSelectors = 0
+	const remainingCut = cut.flatMap(entry => {
+		const expectedFacet = ethers.getAddress(entry.facetAddress)
+		const missing = entry.functionSelectors.filter(selector => {
+			const currentFacet = selectorOwners.get(selector.toLowerCase())
+			if (!currentFacet) return true
+			if (currentFacet !== expectedFacet) {
+				throw new Error(
+					`AccountLayer selector ${selector} maps to ${currentFacet}, expected ${expectedFacet}; refusing to overwrite unexpected state`,
+				)
+			}
+			installedExpectedSelectors++
+			return false
+		})
+		return missing.length > 0 ? [{ ...entry, functionSelectors: missing }] : []
+	})
 
-			// Get AccountManager bytecode for Init
-			const accountManagerFactory = await ethers.getContractFactory("contracts/accountLayer/AccountManager.sol:AccountManager")
-			const accountManagerBytecode = accountManagerFactory.bytecode
+	// AccountStorage.Layout.initAccountManagerCodeHash is at slot +10. Unlike a
+	// facet getter, this remains readable during a partial cut where ViewFacet is
+	// not installed yet. A non-zero hash proves Init has already executed and
+	// prevents accidentally running its non-idempotent delegatecall twice.
+	const accountStorageSlot = BigInt(ethers.keccak256(ethers.toUtf8Bytes("diamond.standard.storage.accountlayer.account")))
+	const initCodeHashSlot = ethers.toBeHex(accountStorageSlot + 10n, 32)
+	let initialized = BigInt(await ethers.provider.getStorage(diamondAddress, initCodeHashSlot)) !== 0n
+	const init = await ethers.getContractAt("contracts/accountLayer/Init.sol:Init", initAddress)
+	const accountManagerFactory = await ethers.getContractFactory("contracts/accountLayer/AccountManager.sol:AccountManager")
+	const initCalldata = init.interface.encodeFunctionData("init", [protocolAdmin, symmioFeeReceiver, accountManagerFactory.bytecode])
 
-			const initCalldata = init.interface.encodeFunctionData("init", [protocolAdmin, symmioFeeReceiver, accountManagerBytecode])
+	if (al.diamondCutComplete && remainingCut.length > 0) {
+		throw new Error(
+			`Cached diamondCutComplete=true, but ${remainingCut.reduce((sum, entry) => sum + entry.functionSelectors.length, 0)} selectors are missing`,
+		)
+	}
 
-			const chunkSize = 3
-			const totalChunks = Math.ceil(cut.length / chunkSize)
-			for (let i = 0; i < cut.length; i += chunkSize) {
-				const chunk = cut.slice(i, i + chunkSize)
-				const chunkNum = Math.floor(i / chunkSize) + 1
-				const isFirst = i === 0
-				const initTarget = isFirst ? initAddress : ethers.ZeroAddress
-				const initData = isFirst ? initCalldata : "0x"
-				const tx = await diamondCutContract.diamondCut(chunk, initTarget, initData)
-				const receipt = await tx.wait()
-				if (!receipt?.status) {
-					throw new Error(`AccountLayer diamond cut failed in chunk ${chunkNum}/${totalChunks}`)
-				}
-				log.ok(`Diamond cut chunk ${chunkNum}/${totalChunks} applied`)
+	if (remainingCut.length > 0) {
+		const chunkSize = 3
+		const totalChunks = Math.ceil(remainingCut.length / chunkSize)
+		for (let index = 0; index < remainingCut.length; index += chunkSize) {
+			const chunk = remainingCut.slice(index, index + chunkSize)
+			const chunkNum = Math.floor(index / chunkSize) + 1
+			const shouldInitialize = !initialized && index === 0
+			const tx = await diamondCutContract.diamondCut(
+				chunk,
+				shouldInitialize ? initAddress : ethers.ZeroAddress,
+				shouldInitialize ? initCalldata : "0x",
+				accountLayerCutTxOverrides(),
+			)
+			const receipt = await tx.wait()
+			if (!receipt?.status) throw new Error(`AccountLayer diamond cut failed in chunk ${chunkNum}/${totalChunks}`)
+			log.ok(`Diamond cut chunk ${chunkNum}/${totalChunks} applied and confirmed`)
+			if (shouldInitialize) initialized = true
+		}
+	} else if (!initialized) {
+		const receipt = await (await diamondCutContract.diamondCut([], initAddress, initCalldata, accountLayerCutTxOverrides())).wait()
+		if (!receipt?.status) throw new Error("AccountLayer Init-only diamond cut failed")
+		initialized = true
+		log.ok("AccountLayer Init-only diamond cut applied and confirmed")
+	} else {
+		log.ok(`Diamond cut already complete (${installedExpectedSelectors} selectors verified on-chain)`)
+	}
+
+	for (const entry of cut) {
+		for (const selector of entry.functionSelectors) {
+			const installedAt = ethers.getAddress(await loupe.facetAddress(selector))
+			if (installedAt !== ethers.getAddress(entry.facetAddress)) {
+				throw new Error(`AccountLayer post-cut mismatch: selector ${selector} maps to ${installedAt}, expected ${entry.facetAddress}`)
 			}
 		}
-
-		al.diamondCutComplete = true
-		if (stateFile) saveState(stateFile, state)
 	}
+
+	if (!initialized) throw new Error("AccountLayer Init did not execute")
+	const viewFacet = await ethers.getContractAt(AccountLayerFacetPathMap["ViewFacet"], diamondAddress)
+	for (const roleName of ["DEFAULT_ADMIN_ROLE", "SETTER_ROLE", "PAUSER_ROLE", "UNPAUSER_ROLE", "APPROVER_ROLE"]) {
+		if (!(await viewFacet.hasRole(protocolAdmin, ethers.id(roleName)))) {
+			throw new Error(`AccountLayer Init post-state mismatch: ${protocolAdmin} lacks ${roleName}`)
+		}
+	}
+	const configuredFeeReceiver = ethers.getAddress(await viewFacet.symmioFeeReceiver())
+	if (configuredFeeReceiver !== ethers.getAddress(symmioFeeReceiver)) {
+		throw new Error(`AccountLayer Init post-state mismatch: fee receiver is ${configuredFeeReceiver}, expected ${symmioFeeReceiver}`)
+	}
+	const configuredAccountManagerBytecode: string = await viewFacet.accountManagerImplementation()
+	if (ethers.keccak256(configuredAccountManagerBytecode) !== ethers.keccak256(accountManagerFactory.bytecode)) {
+		throw new Error("AccountLayer Init post-state mismatch: AccountManager implementation bytecode differs")
+	}
+
+	al.diamondCutComplete = true
+	if (stateFile) saveState(stateFile, state, metadata)
 
 	log.ok(`AccountLayer Diamond: ${log.addr(diamondAddress)}`)
 
@@ -280,23 +402,31 @@ export async function deployAccountLayerDiamond(
 // Deploy InstantLayer
 // ============================================================================
 
-export async function deployInstantLayer(symmioAddress: string, protocolAdmin: string, stateFile?: string): Promise<InstantLayerDeployResult> {
-	const state = loadState(stateFile ?? "")
+export async function deployInstantLayer(
+	symmioAddress: string,
+	protocolAdmin: string,
+	stateFile?: string,
+	stateContext?: DeploymentStateContext,
+): Promise<InstantLayerDeployResult> {
+	const metadata = stateFile ? await resolveDeploymentStateMetadata({ diamondAddress: symmioAddress, ...stateContext }) : undefined
+	const state = loadDeploymentState<DeployedState>(stateFile ?? "", metadata)
 
 	if (state.instantLayer?.address) {
+		await requireDeployedCode("InstantLayer", state.instantLayer.address)
 		log.deployed("InstantLayer", state.instantLayer.address, true)
 		return { address: state.instantLayer.address }
 	}
 
 	const factory = await ethers.getContractFactory("InstantLayer")
-	const contract = await factory.deploy(symmioAddress, protocolAdmin)
+	const contract = await factory.deploy(symmioAddress, protocolAdmin, deployTxOverrides())
 	const address = await contract.getAddress()
+	await contract.waitForDeployment()
+	await requireDeployedCode("InstantLayer", address)
 
 	if (!state.instantLayer) state.instantLayer = {}
 	state.instantLayer.address = address
-	if (stateFile) saveState(stateFile, state)
+	if (stateFile) saveState(stateFile, state, metadata)
 
-	await contract.waitForDeployment()
 	log.deployed("InstantLayer", address)
 	return { address }
 }
@@ -320,22 +450,22 @@ export async function wireAccountLayerInstantLayer(
 	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", diamondAddress, adminSigner)
 
 	// Grant INTEGRATION_ADMIN_ROLE to admin (needed for registerHook)
-	await (await controlFacet.grantRole(adminAddress, roleHash("INTEGRATION_ADMIN_ROLE"))).wait()
+	await (await controlFacet.grantRole(adminAddress, roleHash("INTEGRATION_ADMIN_ROLE"), writeTxOverrides())).wait()
 
 	// Grant roles to AccountLayer on Diamond
-	await (await controlFacet.grantRole(accountLayerDiamondAddress, roleHash("SIGNER_ADMIN_ROLE"))).wait()
+	await (await controlFacet.grantRole(accountLayerDiamondAddress, roleHash("SIGNER_ADMIN_ROLE"), writeTxOverrides())).wait()
 	log.ok("grantRole(AccountLayer, SIGNER_ADMIN_ROLE)")
-	await (await controlFacet.grantRole(accountLayerDiamondAddress, roleHash("AFFILIATE_MANAGER_ROLE"))).wait()
+	await (await controlFacet.grantRole(accountLayerDiamondAddress, roleHash("AFFILIATE_MANAGER_ROLE"), writeTxOverrides())).wait()
 	log.ok("grantRole(AccountLayer, AFFILIATE_MANAGER_ROLE)")
-	await (await controlFacet.grantRole(accountLayerDiamondAddress, roleHash("BALANCE_SETTLER_ROLE"))).wait()
+	await (await controlFacet.grantRole(accountLayerDiamondAddress, roleHash("BALANCE_SETTLER_ROLE"), writeTxOverrides())).wait()
 	log.ok("grantRole(AccountLayer, BALANCE_SETTLER_ROLE)")
 
 	// Grant InstantLayer role on Diamond
-	await (await controlFacet.grantRole(instantLayerAddress, roleHash("INSTANT_LAYER_ROLE"))).wait()
+	await (await controlFacet.grantRole(instantLayerAddress, roleHash("INSTANT_LAYER_ROLE"), writeTxOverrides())).wait()
 	log.ok("grantRole(InstantLayer, INSTANT_LAYER_ROLE)")
 
 	// Register AccountLayer as system hook on Diamond
-	await (await controlFacet.registerHook(ethers.ZeroAddress, accountLayerDiamondAddress)).wait()
+	await (await controlFacet.registerHook(ethers.ZeroAddress, accountLayerDiamondAddress, writeTxOverrides())).wait()
 	log.ok("registerHook(address(0), AccountLayer)")
 
 	// AccountLayer Diamond ControlFacet
@@ -346,24 +476,24 @@ export async function wireAccountLayerInstantLayer(
 	)
 
 	// Grant InstantLayer SIGNER_SETTER_ROLE on AccountLayer
-	await (await alControlFacet.grantRole(instantLayerAddress, roleHash("SIGNER_SETTER_ROLE"))).wait()
+	await (await alControlFacet.grantRole(instantLayerAddress, roleHash("SIGNER_SETTER_ROLE"), writeTxOverrides())).wait()
 	log.ok("grantRole(InstantLayer, SIGNER_SETTER_ROLE) on AccountLayer")
 
 	// Whitelist Symmio Core on AccountLayer
-	await (await alControlFacet.setWhitelistedSymmioCore(diamondAddress, true)).wait()
+	await (await alControlFacet.setWhitelistedSymmioCore(diamondAddress, true, writeTxOverrides())).wait()
 	log.ok("setWhitelistedSymmioCore(Diamond, true)")
 
 	// InstantLayer configuration
 	const instantLayer = await ethers.getContractAt("InstantLayer", instantLayerAddress, adminSigner)
 
 	// Set AccountLayer on InstantLayer
-	await (await instantLayer.setAccountLayer(accountLayerDiamondAddress)).wait()
+	await (await instantLayer.setAccountLayer(accountLayerDiamondAddress, writeTxOverrides())).wait()
 	log.ok("setAccountLayer(AccountLayer)")
 
 	// Whitelist Diamond and AccountLayer on InstantLayer
-	await (await instantLayer.setTargetWhitelist(diamondAddress, true)).wait()
+	await (await instantLayer.setTargetWhitelist(diamondAddress, true, writeTxOverrides())).wait()
 	log.ok("setTargetWhitelist(Diamond, true)")
-	await (await instantLayer.setTargetWhitelist(accountLayerDiamondAddress, true)).wait()
+	await (await instantLayer.setTargetWhitelist(accountLayerDiamondAddress, true, writeTxOverrides())).wait()
 	log.ok("setTargetWhitelist(AccountLayer, true)")
 }
 
@@ -383,11 +513,70 @@ function loadTemplates(configFile?: string): TemplateConfig[] {
 	if (!fs.existsSync(file)) {
 		throw new Error(`InstantLayer templates config not found: ${file}`)
 	}
-	const config = JSON.parse(fs.readFileSync(file, "utf-8")) as { templates: TemplateConfig[] }
-	if (!config.templates || config.templates.length === 0) {
+	let config: { templates?: TemplateConfig[] }
+	try {
+		config = JSON.parse(fs.readFileSync(file, "utf-8")) as { templates?: TemplateConfig[] }
+	} catch (error) {
+		throw new Error(`Invalid InstantLayer templates config ${file}: ${errorMessage(error)}`)
+	}
+	if (!Array.isArray(config.templates) || config.templates.length === 0) {
 		throw new Error(`No templates defined in ${file}`)
 	}
+	const names = new Set<string>()
+	for (const [templateIndex, template] of config.templates.entries()) {
+		if (!template || typeof template.name !== "string" || template.name.trim() === "" || template.name !== template.name.trim()) {
+			throw new Error(`Template ${templateIndex} in ${file} must have a non-empty trimmed name`)
+		}
+		if (names.has(template.name)) throw new Error(`Duplicate template name "${template.name}" in ${file}`)
+		names.add(template.name)
+		if (!Array.isArray(template.operations) || template.operations.length === 0) {
+			throw new Error(`Template "${template.name}" in ${file} must contain at least one operation`)
+		}
+		for (const [operationIndex, operation] of template.operations.entries()) {
+			for (const field of ["insertionPoints", "sourceIndices", "sourceOffsets"] as const) {
+				if (!Array.isArray(operation?.[field])) throw new Error(`Template "${template.name}" operation ${operationIndex}.${field} must be an array`)
+				for (const value of operation[field]) {
+					if (!Number.isSafeInteger(value) || value < 0) {
+						throw new Error(`Template "${template.name}" operation ${operationIndex}.${field} contains invalid value ${value}`)
+					}
+				}
+			}
+			if (
+				operation.insertionPoints.length !== operation.sourceIndices.length ||
+				operation.insertionPoints.length !== operation.sourceOffsets.length
+			) {
+				throw new Error(`Template "${template.name}" operation ${operationIndex} has mismatched injection-array lengths`)
+			}
+			for (const sourceIndex of operation.sourceIndices) {
+				if (sourceIndex >= operationIndex) {
+					throw new Error(`Template "${template.name}" operation ${operationIndex} references non-preceding source operation ${sourceIndex}`)
+				}
+			}
+		}
+	}
 	return config.templates
+}
+
+function compareUintArray(actual: readonly bigint[], expected: readonly number[], field: string): void {
+	if (actual.length !== expected.length) throw new Error(`${field} length is ${actual.length}; expected ${expected.length}`)
+	for (let index = 0; index < expected.length; index++) {
+		if (actual[index] !== BigInt(expected[index])) throw new Error(`${field}[${index}] is ${actual[index]}; expected ${expected[index]}`)
+	}
+}
+
+function assertTemplateMatches(templateId: number, actual: any, expected: TemplateConfig): void {
+	const prefix = `InstantLayer template ${templateId}`
+	if (actual.name !== expected.name) throw new Error(`${prefix} is named "${actual.name}"; expected "${expected.name}"`)
+	if (actual.active !== true) throw new Error(`${prefix} (${expected.name}) is inactive; expected active`)
+	if (actual.operations.length !== expected.operations.length) {
+		throw new Error(`${prefix} (${expected.name}) has ${actual.operations.length} operations; expected ${expected.operations.length}`)
+	}
+	for (const [operationIndex, expectedOperation] of expected.operations.entries()) {
+		const actualOperation = actual.operations[operationIndex]
+		compareUintArray(actualOperation.insertionPoints, expectedOperation.insertionPoints, `${prefix}.operations[${operationIndex}].insertionPoints`)
+		compareUintArray(actualOperation.sourceIndices, expectedOperation.sourceIndices, `${prefix}.operations[${operationIndex}].sourceIndices`)
+		compareUintArray(actualOperation.sourceOffsets, expectedOperation.sourceOffsets, `${prefix}.operations[${operationIndex}].sourceOffsets`)
+	}
 }
 
 export async function setupInstantLayerTemplates(instantLayerAddress: string, adminSigner: any, configFile?: string): Promise<void> {
@@ -395,11 +584,34 @@ export async function setupInstantLayerTemplates(instantLayerAddress: string, ad
 
 	const templates = loadTemplates(configFile)
 	const instantLayer = await ethers.getContractAt("InstantLayer", instantLayerAddress, adminSigner)
-
-	for (const template of templates) {
-		await (await instantLayer.addTemplate(template.name, template.operations)).wait()
-		log.ok(`${template.name} (${template.operations.length} ops)`)
+	const existingCountRaw = await instantLayer.nextTemplateId()
+	if (existingCountRaw > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error(`InstantLayer nextTemplateId is too large: ${existingCountRaw}`)
+	const existingCount = Number(existingCountRaw)
+	if (existingCount > templates.length) {
+		throw new Error(
+			`InstantLayer already has ${existingCount} templates, but config defines only ${templates.length}; refusing to append or reorder IDs`,
+		)
 	}
+
+	for (let templateId = 0; templateId < existingCount; templateId++) {
+		const existing = await instantLayer.getTemplate(templateId)
+		assertTemplateMatches(templateId, existing, templates[templateId])
+		log.info(`Template ${templateId} ${templates[templateId].name} already matches on-chain (${templates[templateId].operations.length} ops)`)
+	}
+
+	for (let templateId = existingCount; templateId < templates.length; templateId++) {
+		const template = templates[templateId]
+		const tx = await instantLayer.addTemplate(template.name, template.operations, writeTxOverrides())
+		const receipt = await tx.wait()
+		if (!receipt?.status) throw new Error(`addTemplate(${template.name}) failed for expected template id ${templateId}`)
+		const added = await instantLayer.getTemplate(templateId)
+		assertTemplateMatches(templateId, added, template)
+		log.ok(`${template.name} (${template.operations.length} ops) added and verified at id ${templateId}`)
+	}
+
+	const finalCount = await instantLayer.nextTemplateId()
+	if (finalCount !== BigInt(templates.length)) throw new Error(`InstantLayer has ${finalCount} templates after setup; expected ${templates.length}`)
+	log.ok(`Exact template order and operation data verified for ${templates.length} template(s)`)
 }
 
 // ============================================================================
@@ -416,12 +628,56 @@ export type WiringTransaction = {
 	args: any[]
 }
 
+/**
+ * Filter a PartyB list against current on-chain registration state.
+ *
+ * Returns the subset that still needs to be registered on Diamond (via
+ * ViewFacet.isPartyB) and on InstantLayer (via registeredPartyBs). Also
+ * returns the per-address state for logging.
+ *
+ * InstantLayer's registerPartyBs reverts with EmptyArray() if called with an
+ * empty list, so callers should skip the IL tx if the filtered list is empty.
+ */
+export async function filterUnregisteredPartyBs(
+	provider: Provider,
+	diamondAddress: string,
+	instantLayerAddress: string | undefined,
+	partyBs: string[],
+	opts: { registerOnSymmioCore: boolean; registerOnInstantLayer: boolean },
+): Promise<{
+	partyBsForDiamond: string[]
+	partyBsForInstantLayer: string[]
+	states: { address: string; onDiamond: boolean | null; onInstantLayer: boolean | null }[]
+}> {
+	const viewFacetIface = new ethers.Interface(["function isPartyB(address user) view returns (bool)"])
+	const instantLayerIface = new ethers.Interface(["function registeredPartyBs(address) view returns (bool)"])
+
+	const diamond = opts.registerOnSymmioCore ? new ethers.Contract(diamondAddress, viewFacetIface, provider) : null
+	const il = opts.registerOnInstantLayer && instantLayerAddress ? new ethers.Contract(instantLayerAddress, instantLayerIface, provider) : null
+
+	const states: { address: string; onDiamond: boolean | null; onInstantLayer: boolean | null }[] = []
+	const partyBsForDiamond: string[] = []
+	const partyBsForInstantLayer: string[] = []
+
+	for (const raw of partyBs) {
+		const addr = ethers.getAddress(raw)
+		const onDiamond: boolean | null = diamond ? await withPartyBPrefilterRetry(`isPartyB(${addr})`, () => diamond.isPartyB(addr)) : null
+		const onInstantLayer: boolean | null = il ? await withPartyBPrefilterRetry(`registeredPartyBs(${addr})`, () => il.registeredPartyBs(addr)) : null
+		states.push({ address: addr, onDiamond, onInstantLayer })
+		if (diamond && onDiamond === false) partyBsForDiamond.push(addr)
+		if (il && onInstantLayer === false) partyBsForInstantLayer.push(addr)
+	}
+
+	return { partyBsForDiamond, partyBsForInstantLayer, states }
+}
+
 export function buildWiringTransactions(
 	diamondAddress: string,
 	accountLayerDiamondAddress: string,
 	instantLayerAddress: string,
 	protocolAdmin: string,
-	partyBsToRegister?: string[],
+	partyBsForDiamond: string[] = [],
+	partyBsForInstantLayer: string[] = [],
 ): WiringTransaction[] {
 	const roleHash = (name: string) => ethers.id(name)
 	const txs: WiringTransaction[] = []
@@ -430,6 +686,7 @@ export function buildWiringTransactions(
 	const controlFacetIface = new ethers.Interface([
 		"function grantRole(address account, bytes32 role)",
 		"function registerHook(address affiliate, address hook)",
+		"function registerPartyB(address partyB)",
 	])
 
 	const alControlFacetIface = new ethers.Interface([
@@ -523,14 +780,34 @@ export function buildWiringTransactions(
 		`setTargetWhitelist(AccountLayer, true) on InstantLayer`,
 	)
 
-	// Register PartyBs on InstantLayer
-	if (partyBsToRegister && partyBsToRegister.length > 0) {
+	// Register PartyBs on Diamond — only those not already registered. The caller
+	// is expected to pre-filter via filterUnregisteredPartyBs so the batch doesn't
+	// revert on re-run (registerPartyB reverts if already registered).
+	if (partyBsForDiamond.length > 0) {
+		// Grant PARTY_B_MANAGER_ROLE to the Safe so it can call registerPartyB, then
+		// one call per PartyB (ControlFacet has no batch variant).
+		push(
+			diamondAddress,
+			controlFacetIface,
+			"grantRole",
+			[protocolAdmin, roleHash("PARTY_B_MANAGER_ROLE")],
+			`grantRole(protocolAdmin, PARTY_B_MANAGER_ROLE)`,
+		)
+		for (const partyB of partyBsForDiamond) {
+			push(diamondAddress, controlFacetIface, "registerPartyB", [partyB], `registerPartyB(${partyB}) on Diamond`)
+		}
+	}
+
+	// Register PartyBs on InstantLayer — single batched call. InstantLayer reverts
+	// with EmptyArray() on empty input and PartyBAlreadyRegistered on dupes, so this
+	// only fires when the filtered list is non-empty.
+	if (partyBsForInstantLayer.length > 0) {
 		push(
 			instantLayerAddress,
 			instantLayerIface,
 			"registerPartyBs",
-			[partyBsToRegister],
-			`registerPartyBs([${partyBsToRegister.length} partyBs]) on InstantLayer`,
+			[partyBsForInstantLayer],
+			`registerPartyBs([${partyBsForInstantLayer.length} partyBs]) on InstantLayer`,
 		)
 	}
 
@@ -545,23 +822,37 @@ export type SymbolManagerDeployResult = {
 	address: string
 }
 
-export async function deploySymbolManager(diamondAddress: string, protocolAdmin: string, stateFile?: string): Promise<SymbolManagerDeployResult> {
-	const state = loadState(stateFile ?? "")
+export async function deploySymbolManager(
+	diamondAddress: string,
+	protocolAdmin: string,
+	stateFile?: string,
+	stateContext?: DeploymentStateContext,
+): Promise<SymbolManagerDeployResult> {
+	const metadata = stateFile ? await resolveDeploymentStateMetadata({ diamondAddress, ...stateContext }) : undefined
+	const state = loadDeploymentState<DeployedState>(stateFile ?? "", metadata)
 
 	if (state.symbolManager?.address) {
+		await requireDeployedCode("SymmioSymbolManager", state.symbolManager.address)
+		const existing = await ethers.getContractAt("SymmioSymbolManager", state.symbolManager.address)
+		const boundDiamond = ethers.getAddress(await existing.symmioAddress())
+		const expectedDiamond = ethers.getAddress(diamondAddress)
+		if (boundDiamond !== expectedDiamond) {
+			throw new Error(`Stored SymmioSymbolManager ${state.symbolManager.address} targets ${boundDiamond}, expected ${expectedDiamond}`)
+		}
 		log.deployed("SymmioSymbolManager", state.symbolManager.address, true)
 		return { address: state.symbolManager.address }
 	}
 
 	const factory = await ethers.getContractFactory("SymmioSymbolManager")
-	const contract = await factory.deploy(diamondAddress, protocolAdmin)
+	const contract = await factory.deploy(diamondAddress, protocolAdmin, deployTxOverrides())
 	const address = await contract.getAddress()
+	await contract.waitForDeployment()
+	await requireDeployedCode("SymmioSymbolManager", address)
 
 	if (!state.symbolManager) state.symbolManager = {}
 	state.symbolManager.address = address
-	if (stateFile) saveState(stateFile, state)
+	if (stateFile) saveState(stateFile, state, metadata)
 
-	await contract.waitForDeployment()
 	log.deployed("SymmioSymbolManager", address)
 	return { address }
 }
@@ -574,9 +865,9 @@ export async function wireSymbolManager(diamondAddress: string, symbolManagerAdd
 	const roleHash = (name: string) => ethers.id(name)
 	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", diamondAddress, adminSigner)
 
-	await (await controlFacet.grantRole(symbolManagerAddress, roleHash("SYMBOL_MANAGER_ROLE"))).wait()
+	await (await controlFacet.grantRole(symbolManagerAddress, roleHash("SYMBOL_MANAGER_ROLE"), writeTxOverrides())).wait()
 	log.ok("grantRole(SymbolManager, SYMBOL_MANAGER_ROLE)")
-	await (await controlFacet.grantRole(symbolManagerAddress, roleHash("FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE"))).wait()
+	await (await controlFacet.grantRole(symbolManagerAddress, roleHash("FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE"), writeTxOverrides())).wait()
 	log.ok("grantRole(SymbolManager, FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE)")
 }
 

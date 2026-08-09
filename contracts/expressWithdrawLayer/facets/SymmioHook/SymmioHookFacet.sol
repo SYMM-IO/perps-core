@@ -6,7 +6,6 @@ pragma solidity >=0.8.18;
 
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
-import { SponsorConfig } from "../../types/ConfigTypes.sol";
 import { CreditData } from "../../types/CreditTypes.sol";
 import { WithdrawOffer, ComputedAmounts } from "../../types/OptionTypes.sol";
 import { WithdrawReceiverPart, WithdrawRequest } from "../../../core/storages/WithdrawStorage.sol";
@@ -19,11 +18,11 @@ import { LibAccessControl } from "../../libraries/LibAccessControl.sol";
 import { LibCreditLine } from "../../libraries/LibCreditLine.sol";
 import { LibErrors } from "../../libraries/LibErrors.sol";
 import { LibParts } from "../../libraries/LibParts.sol";
+import { LibValidators } from "../../libraries/LibValidators.sol";
 
 import { GlobalStorage } from "../../storages/GlobalStorage.sol";
 import { PoolStorage } from "../../storages/PoolStorage.sol";
 import { FeeStorage } from "../../storages/FeeStorage.sol";
-import { ValidatorStorage } from "../../storages/ValidatorStorage.sol";
 
 import { Pausable } from "../../utils/Pausable.sol";
 import { ReentrancyGuard } from "../../utils/ReentrancyGuard.sol";
@@ -35,7 +34,6 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 	function onWithdrawRequest(WithdrawRequest memory withdrawRequest, address callbackCollateral) external nonReentrant whenNotPaused {
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
 		FeeStorage.Layout storage f = FeeStorage.layout();
-		ValidatorStorage.Layout storage v = ValidatorStorage.layout();
 		if (msg.sender != g.symmio) revert LibErrors.OnlySymmio();
 		if (withdrawRequest.provider != address(this)) revert LibErrors.InvalidProvider();
 		if (callbackCollateral != address(g.collateral)) revert LibErrors.InvalidCollateral();
@@ -53,7 +51,7 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 
 		ComputedAmounts memory amounts = LibParts.computeAmounts(withdrawRequest.parts, offer.affiliateAmount, offer.creditAmount);
 
-		uint256 minSigs = _getMinValidatorSignatures(v, offer.affiliate);
+		uint256 minSigs = LibValidators.getMinValidatorSignatures(offer.affiliate);
 		if (optType == OptionType.SAME_TX && minSigs == 0) {
 			revert LibErrors.ValidatorsRequiredForSameTx();
 		}
@@ -65,7 +63,7 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 		uint256 baseFees = offer.fee + offer.operatorFee;
 
 		if (optType != OptionType.STANDARD && minSigs > 0) {
-			_validateValidators(offer.affiliate, withdrawRequest.user, offer.nonce, withdrawRequest.totalAmount, validatorData);
+			LibValidators.validateWithdrawApprovals(offer.affiliate, withdrawRequest.user, offer.nonce, withdrawRequest.totalAmount, validatorData);
 		}
 
 		if (optType != OptionType.STANDARD) {
@@ -96,16 +94,11 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 		info.partsHash = keccak256(abi.encode(withdrawRequest.parts));
 		info.fee = offer.fee;
 		info.finalizedAt = 0;
-		info.sponsorCoverage = 0;
 		info.maxAccelerationFee = offer.maxAccelerationFee;
 		f.operatorFees[withdrawRequest.user][withdrawRequest.id] = offer.operatorFee;
 
-		_lockFee(withdrawRequest.user, withdrawRequest.id, info);
-
-		uint256 totalFee = baseFees;
-		uint256 actualUserFee = totalFee - info.sponsorCoverage;
-		if (actualUserFee > offer.maxUserFee) revert LibErrors.UserFeeExceedsMaximum();
-		if (optType == OptionType.STANDARD && offer.maxAccelerationFee > feeBasis - actualUserFee) {
+		if (baseFees > offer.maxUserFee) revert LibErrors.UserFeeExceedsMaximum();
+		if (optType == OptionType.STANDARD && offer.maxAccelerationFee > feeBasis - baseFees) {
 			revert LibErrors.FeesExceedExpressAmount();
 		}
 
@@ -286,83 +279,6 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 		p.lockedAffiliateBalances[offer.affiliate] += offer.affiliateAmount;
 	}
 
-	function _lockFee(address user, uint256 requestId, WithdrawInfo storage info) internal {
-		FeeStorage.Layout storage f = FeeStorage.layout();
-
-		uint256 totalFee = info.fee + f.operatorFees[user][requestId];
-		if (totalFee == 0) return;
-
-		uint256 sponsorBal = f.sponsorBalances[info.affiliate];
-		if (sponsorBal == 0) return;
-
-		SponsorConfig storage config = f.sponsorConfigs[info.affiliate];
-		uint256 feeBearingAmount = info.expressAmount;
-		if (config.maxWithdrawAmount > 0 && feeBearingAmount > config.maxWithdrawAmount) return;
-
-		uint256 maxCoverage = totalFee;
-		if (config.maxFeePerWithdraw > 0 && maxCoverage > config.maxFeePerWithdraw) {
-			maxCoverage = config.maxFeePerWithdraw;
-		}
-
-		uint256 sponsorCoverage = sponsorBal < maxCoverage ? sponsorBal : maxCoverage;
-		if (sponsorCoverage > 0) {
-			f.sponsorBalances[info.affiliate] -= sponsorCoverage;
-			info.sponsorCoverage = sponsorCoverage;
-		}
-	}
-
-	// ═══════════════════════════════════════════════════════════════════
-	//                     INTERNAL: VALIDATORS
-	// ═══════════════════════════════════════════════════════════════════
-
-	function _validateValidators(address affiliate, address user, uint256 nonce, uint256 amount, bytes memory validatorData) internal view {
-		GlobalStorage.Layout storage g = GlobalStorage.layout();
-		ValidatorStorage.Layout storage v = ValidatorStorage.layout();
-		(bytes[] memory signatures, uint256[] memory timestamps, uint256 symmioNonce) = abi.decode(validatorData, (bytes[], uint256[], uint256));
-
-		if (signatures.length != timestamps.length) revert LibErrors.ArrayLengthMismatch();
-
-		uint256 minSigs = _getMinValidatorSignatures(v, affiliate);
-		if (signatures.length < minSigs) revert LibErrors.InsufficientValidatorSignatures();
-		if (ISymmio(g.symmio).nonceOfPartyA(user) != symmioNonce) revert LibErrors.InvalidNonce();
-
-		uint256 timeout = _getValidatorApprovalTimeout(v, affiliate);
-		address lastSigner = address(0);
-		for (uint256 i = 0; i < signatures.length; i++) {
-			if (timestamps[i] > block.timestamp || block.timestamp - timestamps[i] > timeout) {
-				revert LibErrors.ValidatorApprovalExpired();
-			}
-
-			bytes32 structHash = keccak256(
-				abi.encode(LibAccessControl.VALIDATOR_APPROVAL_TYPEHASH, user, nonce, amount, timestamps[i], symmioNonce, g.symmio)
-			);
-			address signer = ECDSA.recover(LibAccessControl.hashTypedDataV4(structHash), signatures[i]);
-
-			if (!_isValidator(v, affiliate, signer)) revert LibErrors.InvalidValidator();
-			if (signer <= lastSigner) revert LibErrors.DuplicateValidator();
-			lastSigner = signer;
-		}
-	}
-
-	/// @dev Returns the minValidatorSignatures for the affiliate, falling back to address(0) default.
-	function _getMinValidatorSignatures(ValidatorStorage.Layout storage v, address affiliate) internal view returns (uint256) {
-		uint256 val = v.minValidatorSignatures[affiliate];
-		if (val > 0) return val;
-		return v.minValidatorSignatures[address(0)];
-	}
-
-	/// @dev Returns the validatorApprovalTimeout for the affiliate, falling back to address(0) default.
-	function _getValidatorApprovalTimeout(ValidatorStorage.Layout storage v, address affiliate) internal view returns (uint256) {
-		uint256 val = v.validatorApprovalTimeout[affiliate];
-		if (val > 0) return val;
-		return v.validatorApprovalTimeout[address(0)];
-	}
-
-	/// @dev Returns true if signer is a validator for the affiliate or the default (address(0)).
-	function _isValidator(ValidatorStorage.Layout storage v, address affiliate, address signer) internal view returns (bool) {
-		return v.validators[affiliate][signer] || v.validators[address(0)][signer];
-	}
-
 	// ═══════════════════════════════════════════════════════════════════
 	//                  INTERNAL: COLLECT, TRANSFER, RELEASE
 	// ═══════════════════════════════════════════════════════════════════
@@ -372,8 +288,7 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 
 		uint256 operatorFee = f.operatorFees[user][requestId];
 		uint256 affiliateFee = info.fee + info.accelerationFee;
-		uint256 totalFee = affiliateFee + operatorFee;
-		uint256 userFee = totalFee - info.sponsorCoverage;
+		uint256 userFee = affiliateFee + operatorFee;
 
 		// STANDARD's onWithdrawComplete fires before processing, so fees go straight to
 		// claimable. Non-STANDARD sits in PROCESSED until finalize and is post-payout rollback
@@ -404,12 +319,6 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 	}
 
 	function _releaseWithdraw(address user, uint256 requestId, WithdrawInfo storage info) internal {
-		if (info.sponsorCoverage > 0) {
-			FeeStorage.Layout storage f = FeeStorage.layout();
-			f.sponsorBalances[info.affiliate] += info.sponsorCoverage;
-			info.sponsorCoverage = 0;
-		}
-
 		if (info.optionType == OptionType.WINDOWED || info.optionType == OptionType.SAME_TX) {
 			PoolStorage.Layout storage p = PoolStorage.layout();
 			p.lockedGeneralBalance -= info.generalAmount;
@@ -425,44 +334,20 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
 		if (info.optionType == OptionType.STANDARD) revert LibErrors.InvalidPostPayoutRollback();
 
-		_restoreSponsor(user, requestId, info);
+		_promotePendingFees(user, requestId, info.affiliate);
 		_recordGeneralLoss(user, requestId, info);
 		LibCreditLine.coverLoss(g.collateral, g.symmio, user, requestId, info);
 	}
 
-	/// @dev Drains pending fees up to sponsorCoverage back to the sponsor, then promotes the
-	///      leftover (user-paid portion) to the affiliate's claimable buckets.
-	function _restoreSponsor(address user, uint256 requestId, WithdrawInfo storage info) internal {
+	/// @dev Promotes escrowed fees to the affiliate's claimable buckets after a post-payout suspension.
+	function _promotePendingFees(address user, uint256 requestId, address affiliate) internal {
 		FeeStorage.Layout storage f = FeeStorage.layout();
-		address affiliate = info.affiliate;
-		uint256 coverage = info.sponsorCoverage;
-		info.sponsorCoverage = 0;
-
 		uint256 pf = f.pendingFees[user][requestId];
 		uint256 pof = f.pendingOperatorFees[user][requestId];
-		uint256 accelerationFee = info.accelerationFee;
-		if (accelerationFee > pf) accelerationFee = pf;
-		uint256 baseFee = pf - accelerationFee;
-
-		uint256 remaining = coverage;
-		uint256 takeAff = remaining < baseFee ? remaining : baseFee;
-		baseFee -= takeAff;
-		remaining -= takeAff;
-
-		uint256 takeOp = remaining < pof ? remaining : pof;
-		pof -= takeOp;
-		remaining -= takeOp;
-
-		uint256 collectedAffiliateFee = baseFee + accelerationFee;
-		if (collectedAffiliateFee > 0) f.collectedFees[affiliate] += collectedAffiliateFee;
+		if (pf > 0) f.collectedFees[affiliate] += pf;
 		if (pof > 0) f.collectedOperatorFees[affiliate] += pof;
 		delete f.pendingFees[user][requestId];
 		delete f.pendingOperatorFees[user][requestId];
-
-		uint256 restored = coverage - remaining;
-		if (restored > 0) f.sponsorBalances[affiliate] += restored;
-
-		emit SponsorCoverageRestored(user, requestId, affiliate, restored, remaining);
 	}
 
 	function _recordGeneralLoss(address user, uint256 requestId, WithdrawInfo storage info) internal {

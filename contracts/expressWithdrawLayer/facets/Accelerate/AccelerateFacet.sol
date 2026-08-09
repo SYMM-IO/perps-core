@@ -18,6 +18,7 @@ import { LibAccessControl } from "../../libraries/LibAccessControl.sol";
 import { LibCreditLine } from "../../libraries/LibCreditLine.sol";
 import { LibErrors } from "../../libraries/LibErrors.sol";
 import { LibParts } from "../../libraries/LibParts.sol";
+import { LibValidators } from "../../libraries/LibValidators.sol";
 
 import { GlobalStorage } from "../../storages/GlobalStorage.sol";
 import { PoolStorage } from "../../storages/PoolStorage.sol";
@@ -40,6 +41,7 @@ contract AccelerateFacet is IAccelerateFacet, IOperatorEvents, Pausable, Reentra
 		uint256 requestId,
 		WithdrawReceiverPart[] calldata parts,
 		bytes calldata accelerateOfferData,
+		bytes calldata validatorData,
 		bytes calldata creditDataRaw
 	) external nonReentrant whenNotPaused {
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
@@ -59,6 +61,14 @@ contract AccelerateFacet is IAccelerateFacet, IOperatorEvents, Pausable, Reentra
 
 		_verifyOfferSignature(user, requestId, offer, info.partsHash);
 
+		// Affiliates with a validator quorum policy get it enforced on accelerate too — the STANDARD
+		// accept path skips validators, so this is the first and only vetting this withdrawal gets,
+		// and it guards the advance itself. Same last-balance-credit freshness rule as the accept path.
+		address affiliate = info.affiliate;
+		if (LibValidators.getMinValidatorSignatures(affiliate) > 0) {
+			LibValidators.validateAccelerateApprovals(affiliate, user, requestId, info.partsHash, validatorData);
+		}
+
 		// ── Recompute funding split over the preserved expressAmount ──
 		if (offer.affiliateAmount + offer.creditAmount > info.expressAmount) {
 			revert LibErrors.FundingSplitExceedsExpress();
@@ -68,14 +78,10 @@ contract AccelerateFacet is IAccelerateFacet, IOperatorEvents, Pausable, Reentra
 
 		uint256 operatorFee = FeeStorage.layout().operatorFees[user][requestId];
 		uint256 totalFee = info.fee + operatorFee + offer.accelerationFee;
-		if (info.sponsorCoverage > totalFee) revert LibErrors.FeesExceedExpressAmount();
-		uint256 userFee = totalFee - info.sponsorCoverage;
-		if (userFee > info.expressAmount) revert LibErrors.FeesExceedExpressAmount();
+		if (totalFee > info.expressAmount) revert LibErrors.FeesExceedExpressAmount();
 
 		// ── Effects ──
 		g.accelerateNonces[user][requestId]++;
-
-		address affiliate = info.affiliate;
 
 		// Reserve credit — atomic retry gate. If the affiliate cap is still full this
 		// reverts the entire tx (including the nonce bump), leaving STANDARD intact.
@@ -86,8 +92,8 @@ contract AccelerateFacet is IAccelerateFacet, IOperatorEvents, Pausable, Reentra
 		// Lock new pool allocations against current balances.
 		_lockPools(affiliate, newGeneralAmount, offer.affiliateAmount);
 
-		// Update info with the new funding split; `expressAmount`, `sponsorCoverage`,
-		// `cooldownEndTime`, `acceptedAt`, and `partsHash` are intentionally preserved.
+		// Update info with the new funding split; `expressAmount`, `cooldownEndTime`,
+		// `acceptedAt`, and `partsHash` are intentionally preserved.
 		info.optionType = OptionType.WINDOWED;
 		info.generalAmount = newGeneralAmount;
 		info.affiliateAmount = offer.affiliateAmount;
@@ -147,8 +153,7 @@ contract AccelerateFacet is IAccelerateFacet, IOperatorEvents, Pausable, Reentra
 		FeeStorage.Layout storage f = FeeStorage.layout();
 		uint256 operatorFee = f.operatorFees[user][requestId];
 		uint256 affiliateFee = info.fee + info.accelerationFee;
-		uint256 totalFee = affiliateFee + operatorFee;
-		uint256 userFee = totalFee - info.sponsorCoverage;
+		uint256 userFee = affiliateFee + operatorFee;
 
 		if (info.optionType == OptionType.STANDARD) {
 			if (affiliateFee > 0) f.collectedFees[info.affiliate] += affiliateFee;

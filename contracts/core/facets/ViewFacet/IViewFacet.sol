@@ -17,7 +17,7 @@ import { Fee } from "../../storages/QuoteStorage.sol";
 interface IViewFacet {
 	function pendingOwner() external view returns (address);
 
-	function owner() external view returns (address);
+	function getOwner() external view returns (address);
 
 	// Account
 	function balanceOf(address user) external view returns (uint256);
@@ -40,6 +40,27 @@ interface IViewFacet {
 
 	function allocatedBalanceOfPartyA(address partyA) external view returns (uint256);
 
+	function maxDeallocatableForPartyA(address partyA, int256 upnl) external view returns (uint256);
+
+	function maxSafeDeallocatableForPartyA(address partyA, int256 upnl, uint256 pendingBalance) external view returns (uint256);
+
+	function maxDeallocatableForPartyB(address partyB, address partyA, int256 upnl) external view returns (uint256);
+
+	function maxRemovableMarginForPartyA(
+		address partyA,
+		int256 upnl,
+		uint256 pendingBalance,
+		uint256 scaledLockedBalance
+	) external view returns (uint256);
+
+	function maxRemovableMarginForPartyB(
+		address partyB,
+		address partyA,
+		int256 upnl,
+		uint256 pendingBalance,
+		uint256 scaledLockedBalance
+	) external view returns (uint256);
+
 	function isCrossPartyB(address partyB) external view returns (bool);
 
 	function isLegacyDeallocateDeprecated() external view returns (bool);
@@ -55,6 +76,10 @@ interface IViewFacet {
 	function nonceOfPartyA(address partyA) external view returns (uint256);
 
 	function nonceOfPartyB(address partyB, address partyA) external view returns (uint256);
+
+	function upnlCounterOfPartyA(address partyA) external view returns (uint256);
+
+	function upnlCounterOfPartyB(address partyB, address partyA) external view returns (uint256);
 
 	function isSuspended(address user) external view returns (bool);
 
@@ -81,6 +106,8 @@ interface IViewFacet {
 	function getDefaultFeeCollector() external view returns (address);
 
 	function getOperationalFeeReceiver(address charger) external view returns (address);
+
+	function getSolverFeeReceiver(address partyB) external view returns (address);
 
 	function getOperationalFeeAllowance(
 		address payer,
@@ -191,6 +218,8 @@ interface IViewFacet {
 	function getAffiliateFee(address affiliate, uint256 symbolId) external view returns (Fee memory);
 
 	function isADLEnabled(address partyB) external view returns (bool);
+
+	function isPartyBStrictDeallocationEnabled(address partyB) external view returns (bool);
 
 	function getSigner() external view returns (address);
 

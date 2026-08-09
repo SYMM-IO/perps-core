@@ -4,11 +4,11 @@ Rehearse the full v0.8.4 -> v0.8.5 upgrade + migration on a fork of a live netwo
 
 ## Overview
 
-The fork rehearsal mirrors the production flow with three separate steps:
+The fork rehearsal mirrors the production flow with three separate steps, or one integrated fork run when `FORK_RUN_MIGRATION=true`:
 
 1. **Upgrade** (`forkUpgrade.ts`) -- impersonate admin, pause, deploy facets, diamondCut, set params, deploy AccountLayer + InstantLayer + SymmioSymbolManager, wire integrations
-2. **Prepare migration input** (`prepareMigrationInput.ts`) -- fetch from subgraph, validate against on-chain
-3. **Migrate** (`runMigration.ts`) -- run migration + verify using the validated input
+2. **Prepare migration input** (`prepareMigrationInput.ts`) -- after pause, fetch candidates from subgraph, derive PartyB tasks from on-chain quotes, validate against on-chain
+3. **Migrate** (`runMigration.ts`) -- after diamondCut and `MIGRATION_ROLE`, run migration + verify using the validated input
 
 In production, step 1 is done by the admin (EOA via `applyUpgrade.ts`) or multisig (via `generateSafeBatch.ts`), followed by a delay for the subgraph to sync, then steps 2 and 3.
 
@@ -43,10 +43,10 @@ Set `FORK_BLOCK_NUMBER` to pin to a specific block (recommended for reproducibil
 
 ```bash
 # Terminal 1
-npx hardhat node --network fork-arbitrum
+./node_modules/.bin/hardhat node --network fork-arbitrum
 
 # Or pin to a specific block
-FORK_BLOCK_NUMBER=250000000 npx hardhat node --network fork-arbitrum
+FORK_BLOCK_NUMBER=250000000 ./node_modules/.bin/hardhat node --network fork-arbitrum
 ```
 
 ### Step 1: Upgrade
@@ -55,10 +55,19 @@ Deploys v0.8.5 facets, applies diamondCut, sets parameters, deploys AccountLayer
 
 ```bash
 # Terminal 2
-npx hardhat run scripts/upgrade/forkUpgrade.ts --network localhost
+./node_modules/.bin/hardhat run scripts/upgrade/forkUpgrade.ts --network localhost
 ```
 
 Output: `scripts/upgrade/output/forkUpgrade-report.json`, `deployed-facets.json`, `deployed-accountlayer-instantlayer.json`, `deployed-symbolmanager.json`
+
+To run the fork upgrade and migration in one rehearsal, enable the migration phase:
+
+```bash
+NETWORK_ALIAS=base FORK_RUN_MIGRATION=true GAP_SCAN_RANGE=10 \
+  ./node_modules/.bin/hardhat run scripts/upgrade/forkUpgrade.ts --network localhost
+```
+
+In this mode, `forkUpgrade.ts` prepares and validates the migration input immediately after `pauseGlobal()`, then continues with the diamondCut, wiring, `MIGRATION_ROLE`, and `runMigration.ts`.
 
 ### Step 1.5: Verify upgrade
 
@@ -66,30 +75,30 @@ Run after forkUpgrade to confirm the upgrade is correct before migration. All sc
 
 ```bash
 # Verify all v0.8.5 facet selectors are registered
-npx hardhat run scripts/upgrade/verifyDiamond.ts --network localhost
+./node_modules/.bin/hardhat run scripts/upgrade/verifyDiamondSelectors.ts --network localhost
 
 # Verify AccountLayer + InstantLayer wiring (roles, hooks, templates)
-npx hardhat run scripts/upgrade/verifyPeripherals.ts --network localhost
+./node_modules/.bin/hardhat run scripts/upgrade/verifyPeripheralWiring.ts --network localhost
 
 # End-to-end: affiliate, sub-account, PartyB upgrade, EIP-712 delegation, template execution
-FORK=true npx hardhat run scripts/upgrade/testTemplateExecution.ts --network localhost
+FORK=true ./node_modules/.bin/hardhat run scripts/upgrade/testTemplateExecution.ts --network localhost
 ```
 
-| Script                     | What it checks                                                                                                                               |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `verifyDiamond.ts`         | All v0.8.5 facet selectors registered on diamond                                                                                             |
-| `verifyPeripherals.ts`     | AccountLayer + InstantLayer roles, hooks, whitelist, templates                                                                               |
-| `testTemplateExecution.ts` | Full trade flow via InstantLayer template (sendQuote -> lockQuote -> openPosition) with EIP-712 signatures, delegation, and result injection |
+| Script                      | What it checks                                                                                                                               |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `verifyDiamondSelectors.ts` | All v0.8.5 facet selectors registered on diamond                                                                                             |
+| `verifyPeripheralWiring.ts` | AccountLayer + InstantLayer roles, hooks, whitelist, templates                                                                               |
+| `testTemplateExecution.ts`  | Full trade flow via InstantLayer template (sendQuote -> lockQuote -> openPosition) with EIP-712 signatures, delegation, and result injection |
 
 ### Step 2: Prepare migration input
 
-Fetches open quotes and partyB balances from the subgraph, validates them against on-chain state (boundary check, spot-checks, balance verification), and writes a validated JSON file.
+Fetches open quotes from the subgraph after the system is paused, reads the selected quotes from on-chain `getQuote()`, derives PartyB tasks from that paused state, and writes a validated JSON file.
 
 ```bash
-DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network localhost
+DIAMOND_ADDRESS=0x... ./node_modules/.bin/hardhat run scripts/upgrade/prepareMigrationInput.ts --network localhost
 
 # With custom subgraph endpoint
-DIAMOND_ADDRESS=0x... SUBGRAPH_ENDPOINT=https://... npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network localhost
+DIAMOND_ADDRESS=0x... SUBGRAPH_ENDPOINT=https://... ./node_modules/.bin/hardhat run scripts/upgrade/prepareMigrationInput.ts --network localhost
 ```
 
 Output: `scripts/upgrade/output/migration-input.json`
@@ -102,7 +111,7 @@ Runs migration using the validated input file, then verifies results on-chain.
 
 ```bash
 DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
-  npx hardhat run scripts/upgrade/runMigration.ts --network localhost
+  ./node_modules/.bin/hardhat run scripts/upgrade/runMigration.ts --network localhost
 ```
 
 Output: `scripts/upgrade/output/migration-report.json`
@@ -121,7 +130,7 @@ Migration input is fetched from the Goldsky stage subgraph, not scanned on-chain
 
 **Queries used:**
 
-- `quotes(where: { quoteStatus_in: [0, 1, 2, 4, 5, 6] })` -- candidate quotes. `prepareMigrationInput.ts` filters them to the quotes `MigrationFacetImpl` actually marks: PENDING, LOCKED, CANCEL_PENDING, and active positions with `quantity > closedAmount`.
+- `quotes(where: { quoteStatus_in: [0, 1, 2, 4, 5, 6] })` -- quotes needing migration (PENDING, LOCKED, CANCEL_PENDING, OPENED, CLOSE_PENDING, CANCEL_CLOSE_PENDING)
 - `latestAccountBalances(where: { accountType: "PARTY_B", counterParty_not: null })` -- partyB-per-partyA balance entries
 
 **Validation against on-chain (`validateMigrationInput.ts`):**
@@ -132,9 +141,9 @@ Migration input is fetched from the Goldsky stage subgraph, not scanned on-chain
 
 **Edge case validation (`validateMigrationEdgeCases.ts`):** Particularly important on forks where the subgraph indexes the live chain beyond the fork block:
 
-- Boundary quote: verifies the quote at `lastId` is included if it requires migration
+- Boundary quote: verifies the quote at `lastId` is included if it has a migratable status
 - Fork drift: ensures no quoteIds exceed on-chain `lastId` (the subgraph may have quotes created after the fork block)
-- Gap scan: scans first and last N quotes on-chain, flags contract-migratable quotes missing from input
+- Gap scan: scans first and last N quotes on-chain, flags active quotes missing from input
 - PartyB completeness: checks for empty `partyAs` arrays and duplicate entries
 
 Default subgraph endpoint: `https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/arbitrum_analytics/stage/gn`
@@ -155,36 +164,41 @@ Config files support network-postfixed names (e.g. `upgrade-arbitrum.json`). Scr
 
 ### Upgrade config (`upgrade.json`)
 
-| Field                        | Type    | Default | Description                                                |
-| ---------------------------- | ------- | ------- | ---------------------------------------------------------- |
-| `diamondAddress`             | string  | --      | Diamond proxy address on the target network                |
-| `protocolAdmin`              | string  | `""`    | Address that receives role grants                          |
-| `safeAddress`                | string  | `""`    | Gnosis Safe address (optional, for Safe path)              |
-| `migrationRunner`            | string  | `""`    | Address granted MIGRATION_ROLE (defaults to protocolAdmin) |
-| `diamondCutChunkSize`        | number  | `1000`  | Max facet cuts per transaction                             |
-| `symmioFeeReceiver`          | string  | `""`    | Fee receiver for AccountLayer Init (defaults to admin)     |
-| `setupInstantLayerTemplates` | boolean | `true`  | Setup OpenPosition/ClosePosition templates on InstantLayer |
-| `newV085Parameters`          | object  | --      | New v0.8.5 parameters to initialize (see below)            |
+| Field                        | Type    | Default | Description                                                                     |
+| ---------------------------- | ------- | ------- | ------------------------------------------------------------------------------- |
+| `diamondAddress`             | string  | --      | Diamond proxy address on the target network                                     |
+| `protocolAdmin`              | string  | `""`    | Default admin / role admin used for fork role grants and post-cut wiring        |
+| `upgradeOperator`            | string  | `""`    | Optional temporary scoped executor for EOA operational rehearsals               |
+| `safeAddress`                | string  | `""`    | Gnosis Safe address (optional, for Safe path)                                   |
+| `migrationRunner`            | string  | `""`    | Address granted `MIGRATION_ROLE` and impersonated by `runMigration.ts` on forks |
+| `diamondCutChunkSize`        | number  | `1000`  | Max facet cuts per transaction                                                  |
+| `symmioFeeReceiver`          | string  | `""`    | Fee receiver for AccountLayer Init (defaults to `protocolAdmin`)                |
+| `setupInstantLayerTemplates` | boolean | `true`  | Setup OpenPosition/ClosePosition templates on InstantLayer                      |
+| `newV085Parameters`          | object  | --      | New v0.8.5 parameters to initialize (see below)                                 |
 
 ### Upgrade env var overrides
 
-| Env var                  | Overrides                                                                                                 |
-| ------------------------ | --------------------------------------------------------------------------------------------------------- |
-| `DIAMOND_ADDRESS`        | `diamondAddress`                                                                                          |
-| `ADMIN_ADDRESS`          | legacy alias for `protocolAdmin`                                                                          |
-| `DIAMOND_CUT_CHUNK_SIZE` | `diamondCutChunkSize`                                                                                     |
-| `SUBGRAPH_ENDPOINT`      | `subgraphEndpoint`                                                                                        |
-| `UPGRADE_CONFIG_FILE`    | Config file path (default: `scripts/upgrade/config/upgrade-{network}.json`, falls back to `upgrade.json`) |
+| Env var                                                       | Overrides                                                                                                 |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `DIAMOND_ADDRESS`                                             | `diamondAddress`                                                                                          |
+| `FORK_OWNER_ADDRESS` / `FORK_ADMIN_ADDRESS` / `ADMIN_ADDRESS` | Explicit diamond owner override; otherwise `forkUpgrade.ts` reads the owner from LibDiamond storage       |
+| `PROTOCOL_ADMIN`                                              | Override `protocolAdmin` for role/default-admin wiring                                                    |
+| `FORK_MIGRATION_RUNNER_ADDRESS` / `MIGRATION_RUNNER_ADDRESS`  | Override the fork migration signer granted `MIGRATION_ROLE`                                               |
+| `DIAMOND_CUT_CHUNK_SIZE`                                      | `diamondCutChunkSize`                                                                                     |
+| `SUBGRAPH_ENDPOINT`                                           | `subgraphEndpoint`                                                                                        |
+| `UPGRADE_CONFIG_FILE`                                         | Config file path (default: `scripts/upgrade/config/upgrade-{network}.json`, falls back to `upgrade.json`) |
 
 ### Prepare migration config (`prepareMigration.json`)
 
-| Field              | Type   | Default                                       | Description                             |
-| ------------------ | ------ | --------------------------------------------- | --------------------------------------- |
-| `diamondAddress`   | string | --                                            | Diamond proxy address                   |
-| `subgraphEndpoint` | string | Goldsky stage                                 | Subgraph GraphQL endpoint               |
-| `spotCheckCount`   | number | `20`                                          | Number of quotes/balances to spot-check |
-| `outputDir`        | string | `scripts/upgrade/output`                      | Output directory                        |
-| `outputFile`       | string | `scripts/upgrade/output/migration-input.json` | Output file path                        |
+| Field               | Type     | Default                                       | Description                                                  |
+| ------------------- | -------- | --------------------------------------------- | ------------------------------------------------------------ |
+| `diamondAddress`    | string   | --                                            | Diamond proxy address                                        |
+| `subgraphEndpoint`  | string   | Goldsky stage                                 | Subgraph GraphQL endpoint                                    |
+| `subgraphEndpoints` | string[] | `[]`                                          | Ordered fallback list of subgraph endpoints                  |
+| `subgraphPageSize`  | number   | `1000`                                        | Subgraph pagination size; lower if gateway requests time out |
+| `spotCheckCount`    | number   | `20`                                          | Number of quotes/balances to spot-check                      |
+| `outputDir`         | string   | `scripts/upgrade/output`                      | Output directory                                             |
+| `outputFile`        | string   | `scripts/upgrade/output/migration-input.json` | Output file path                                             |
 
 ### Prepare migration env var overrides
 
@@ -192,6 +206,9 @@ Config files support network-postfixed names (e.g. `upgrade-arbitrum.json`). Scr
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `DIAMOND_ADDRESS`               | `diamondAddress`                                                                                                            |
 | `SUBGRAPH_ENDPOINT`             | `subgraphEndpoint`                                                                                                          |
+| `SUBGRAPH_ENDPOINTS`            | Comma-separated ordered fallback list of subgraph endpoints. Each retry cycle tries all endpoints before sleeping.          |
+| `SUBGRAPH_PAGE_SIZE`            | Subgraph pagination size. Use `500` or `250` if the endpoint returns 504.                                                   |
+| `SUBGRAPH_MAX_RETRIES`          | Number of retries per subgraph request before reducing page size or failing.                                                |
 | `SPOT_CHECK_COUNT`              | `spotCheckCount`                                                                                                            |
 | `PREPARE_OUTPUT_FILE`           | `outputFile`                                                                                                                |
 | `PREPARE_MIGRATION_CONFIG_FILE` | Config file path (default: `scripts/upgrade/config/prepareMigration-{network}.json`, falls back to `prepareMigration.json`) |
@@ -252,8 +269,8 @@ If `FORK_BLOCK_NUMBER` is not set, the fork uses the latest block. This can caus
 **Gas limits**
 The fork node uses `blockGasLimit: 30_000_000`. If diamond cut transactions fail with out-of-gas, reduce `diamondCutChunkSize`.
 
-**"execution reverted" on diamondCut**
-The impersonated account may not be the actual owner. Check `ViewFacet.owner()` on the target network. If it returns a multisig (e.g., Gnosis Safe), use `ADMIN_ADDRESS` to override with the actual EOA that controls the multisig, or impersonate the multisig address directly.
+**"LibDiamond: Must be contract owner"**
+The impersonated owner is not the actual diamond owner. By default `forkUpgrade.ts` reads the owner from LibDiamond storage and uses it only for owner-only calls (`setAdmin`, `diamondCut`). `protocolAdmin` remains the DEFAULT_ADMIN_ROLE / role-wiring actor. If you need to override the owner, set `FORK_OWNER_ADDRESS`, `FORK_ADMIN_ADDRESS`, or `ADMIN_ADDRESS` to the exact owner address to impersonate.
 
 **Migration fails with "maxPartyAConnectionLimit" error**
 Set `maxPartyAConnectionLimit` in `newV085Parameters` (defaults to 0 after upgrade, which blocks `addConnection()`).

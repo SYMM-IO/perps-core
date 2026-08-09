@@ -7,7 +7,7 @@ import type { MockAccountLayerHook } from "../src/types/index.js"
 import { initializeFixture } from "./Initialize.fixture.js"
 import { ethers } from "./helpers/hardhat-connection.js"
 import { loadFixture, time } from "./helpers/network-helpers.js"
-import { PositionType } from "./models/Enums.js"
+import { PositionType, QuoteStatus } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
@@ -23,6 +23,7 @@ import {
 	getDummyPairUpnlAndPriceSig,
 	getDummyPriceSig,
 	getDummySingleUpnlSig,
+	getDummySingleUpnlWithPendingBalanceSig,
 } from "./utils/SignatureUtils.js"
 
 // SubAccountCreationData struct type for AccountLayer
@@ -342,7 +343,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 				it("Should allow pending owner to accept ownership", async function () {
 					await context.alControlFacet.connect(context.signers.admin).transferOwnership(context.signers.user.address)
 					await expect(context.alControlFacet.connect(context.signers.user).acceptOwnership()).to.not.be.reverted
-					expect(await context.alViewFacet.owner()).to.equal(context.signers.user.address)
+					expect(await context.alViewFacet.getOwner()).to.equal(context.signers.user.address)
 					expect(await context.alViewFacet.pendingOwner()).to.equal(ZeroAddress)
 				})
 
@@ -628,284 +629,6 @@ export function shouldBehaveLikeAccountLayer(): void {
 				await expect(
 					context.alCoreFacet.connect(context.signers.user).transferSubAccountOwnership(subAccountAddress, context.signers.user.address),
 				).to.be.revertedWithCustomError(context.alCoreFacet, "InvalidState")
-			})
-		})
-
-		describe("express deposit", function () {
-			let subAccountAddress: string
-			let virtualProviderAddress: string
-			const expressRate = decimal(3n, 16) // 3%
-			const depositAmount = decimal(1000n)
-
-			const registerVirtualProvider = async () => {
-				const MockVirtualProvider = await ethers.getContractFactory("contracts/core/test/MockVirtualProvider.sol:VirtualProvider")
-				const virtualProvider = await MockVirtualProvider.deploy(context.diamond)
-				virtualProviderAddress = await virtualProvider.getAddress()
-				await context.controlFacet.connect(context.signers.admin).registerVirtualProvider(virtualProviderAddress)
-				return virtualProvider
-			}
-
-			const setExpressConfig = async (rate: bigint, provider: string) => {
-				await context.alAffiliateFacet.connect(context.signers.admin).setExpressRate(await context.accountManager.getAddress(), rate)
-				await context.alAffiliateFacet.connect(context.signers.admin).setVirtualProvider(await context.accountManager.getAddress(), provider)
-			}
-
-			const approveExpressDeposit = async (amount: bigint) => {
-				await context.collateral.connect(context.signers.user).approve(context.accountLayerDiamond, amount)
-				await context.collateral.connect(context.signers.user).approve(context.diamond, amount)
-			}
-
-			beforeEach(async function () {
-				subAccountAddress = await createSubAccount(context.signers.user, [createSubAccountData("EXPRESS_ACCOUNT", 3, "EXPRESS")])
-			})
-
-			it("splits deposit between real and virtual amounts", async function () {
-				const provider = await registerVirtualProvider()
-				await setExpressConfig(expressRate, virtualProviderAddress)
-				await approveExpressDeposit(depositAmount)
-
-				const virtualAmount = (depositAmount * expressRate) / decimal(1n)
-				const realAmount = depositAmount - virtualAmount
-
-				const userAddress = context.signers.user.address
-				const userBalanceBefore = await context.collateral.balanceOf(userAddress)
-				const accountLayerBalanceBefore = await context.collateral.balanceOf(context.accountLayerDiamond)
-				const balanceBefore = await context.viewFacet.balanceOf(subAccountAddress)
-				const coreBalanceBefore = await context.collateral.balanceOf(context.diamond)
-
-				await context.alCoreFacet.connect(context.signers.user).depositForAccountWithExpressRate(subAccountAddress, depositAmount)
-
-				const userBalanceAfter = await context.collateral.balanceOf(userAddress)
-				const accountLayerBalanceAfter = await context.collateral.balanceOf(context.accountLayerDiamond)
-				const balanceAfter = await context.viewFacet.balanceOf(subAccountAddress)
-				const coreBalanceAfter = await context.collateral.balanceOf(context.diamond)
-				const providerBalance = await context.collateral.balanceOf(virtualProviderAddress)
-
-				expect(userBalanceBefore - userBalanceAfter).to.equal(depositAmount)
-				expect(accountLayerBalanceAfter - accountLayerBalanceBefore).to.equal(0n)
-				expect(balanceAfter - balanceBefore).to.equal(depositAmount)
-				expect(coreBalanceAfter - coreBalanceBefore).to.equal(realAmount)
-				expect(providerBalance).to.equal(virtualAmount)
-			})
-
-			it("reverts when virtual provider is not registered on Symmio", async function () {
-				const MockVirtualProvider = await ethers.getContractFactory("contracts/core/test/MockVirtualProvider.sol:VirtualProvider")
-				const virtualProvider = await MockVirtualProvider.deploy(context.diamond)
-				virtualProviderAddress = await virtualProvider.getAddress()
-
-				await setExpressConfig(expressRate, virtualProviderAddress)
-				await approveExpressDeposit(depositAmount)
-
-				await expect(
-					context.alCoreFacet.connect(context.signers.user).depositForAccountWithExpressRate(subAccountAddress, depositAmount),
-				).to.be.revertedWith("AccountFacet : msg.sender not registered as virtual provider")
-			})
-
-			it("reverts when express rate is set without virtual provider", async function () {
-				await context.alAffiliateFacet.connect(context.signers.admin).setExpressRate(await context.accountManager.getAddress(), expressRate)
-				await approveExpressDeposit(depositAmount)
-
-				await expect(
-					context.alCoreFacet.connect(context.signers.user).depositForAccountWithExpressRate(subAccountAddress, depositAmount),
-				).to.be.revertedWithCustomError(context.alCoreFacet, "VirtualProviderRequired")
-			})
-
-			it("reverts when amount is zero", async function () {
-				await registerVirtualProvider()
-				await setExpressConfig(expressRate, virtualProviderAddress)
-
-				await expect(
-					context.alCoreFacet.connect(context.signers.user).depositForAccountWithExpressRate(subAccountAddress, 0n),
-				).to.be.revertedWithCustomError(context.alCoreFacet, "ZeroAmount")
-			})
-
-			it("reverts when express rate exceeds 100% (at setter level)", async function () {
-				await registerVirtualProvider()
-				const invalidExpressRate = decimal(1n) + 1n // 100% + 1 wei
-
-				// Express rate validation happens at the setter level (setExpressRate)
-				await expect(
-					context.alAffiliateFacet.connect(context.signers.admin).setExpressRate(await context.accountManager.getAddress(), invalidExpressRate),
-				).to.be.revertedWithCustomError(context.alAffiliateFacet, "InvalidShare")
-			})
-
-			it("handles zero express rate without virtual transfer", async function () {
-				await context.alAffiliateFacet.connect(context.signers.admin).setExpressRate(await context.accountManager.getAddress(), 0)
-				await approveExpressDeposit(depositAmount)
-
-				const userAddress = context.signers.user.address
-				const userBalanceBefore = await context.collateral.balanceOf(userAddress)
-				const accountLayerBalanceBefore = await context.collateral.balanceOf(context.accountLayerDiamond)
-				const balanceBefore = await context.viewFacet.balanceOf(subAccountAddress)
-				const coreBalanceBefore = await context.collateral.balanceOf(context.diamond)
-
-				await context.alCoreFacet.connect(context.signers.user).depositForAccountWithExpressRate(subAccountAddress, depositAmount)
-
-				const userBalanceAfter = await context.collateral.balanceOf(userAddress)
-				const accountLayerBalanceAfter = await context.collateral.balanceOf(context.accountLayerDiamond)
-				const balanceAfter = await context.viewFacet.balanceOf(subAccountAddress)
-				const coreBalanceAfter = await context.collateral.balanceOf(context.diamond)
-				expect(balanceAfter - balanceBefore).to.equal(depositAmount)
-				expect(userBalanceBefore - userBalanceAfter).to.equal(depositAmount)
-				expect(accountLayerBalanceAfter - accountLayerBalanceBefore).to.equal(0n)
-				expect(coreBalanceAfter - coreBalanceBefore).to.equal(depositAmount)
-			})
-
-			it("handles full express rate by crediting only virtual balance", async function () {
-				await registerVirtualProvider()
-				await setExpressConfig(decimal(1n), virtualProviderAddress)
-				await approveExpressDeposit(depositAmount)
-
-				const userAddress = context.signers.user.address
-				const userBalanceBefore = await context.collateral.balanceOf(userAddress)
-				const accountLayerBalanceBefore = await context.collateral.balanceOf(context.accountLayerDiamond)
-				const balanceBefore = await context.viewFacet.balanceOf(subAccountAddress)
-				const coreBalanceBefore = await context.collateral.balanceOf(context.diamond)
-
-				await context.alCoreFacet.connect(context.signers.user).depositForAccountWithExpressRate(subAccountAddress, depositAmount)
-
-				const userBalanceAfter = await context.collateral.balanceOf(userAddress)
-				const accountLayerBalanceAfter = await context.collateral.balanceOf(context.accountLayerDiamond)
-				const balanceAfter = await context.viewFacet.balanceOf(subAccountAddress)
-				const coreBalanceAfter = await context.collateral.balanceOf(context.diamond)
-				const providerBalance = await context.collateral.balanceOf(virtualProviderAddress)
-
-				expect(userBalanceBefore - userBalanceAfter).to.equal(depositAmount)
-				expect(accountLayerBalanceAfter - accountLayerBalanceBefore).to.equal(0n)
-				expect(balanceAfter - balanceBefore).to.equal(depositAmount)
-				expect(coreBalanceAfter - coreBalanceBefore).to.equal(0n)
-				expect(providerBalance).to.equal(depositAmount)
-			})
-
-			it("allocates the real portion when using depositAndAllocate", async function () {
-				await registerVirtualProvider()
-				await setExpressConfig(expressRate, virtualProviderAddress)
-				await approveExpressDeposit(depositAmount)
-
-				const virtualAmount = (depositAmount * expressRate) / decimal(1n)
-				const realAmount = depositAmount - virtualAmount
-
-				const userAddress = context.signers.user.address
-				const userBalanceBefore = await context.collateral.balanceOf(userAddress)
-				const accountLayerBalanceBefore = await context.collateral.balanceOf(context.accountLayerDiamond)
-				const balanceBefore = await context.viewFacet.balanceOf(subAccountAddress)
-				const allocatedBefore = await context.viewFacet.allocatedBalanceOfPartyA(subAccountAddress)
-				const coreBalanceBefore = await context.collateral.balanceOf(context.diamond)
-
-				await context.alCoreFacet.connect(context.signers.user).depositAndAllocateForAccountWithExpressRate(subAccountAddress, depositAmount)
-
-				const userBalanceAfter = await context.collateral.balanceOf(userAddress)
-				const accountLayerBalanceAfter = await context.collateral.balanceOf(context.accountLayerDiamond)
-				const balanceAfter = await context.viewFacet.balanceOf(subAccountAddress)
-				const allocatedAfter = await context.viewFacet.allocatedBalanceOfPartyA(subAccountAddress)
-				const coreBalanceAfter = await context.collateral.balanceOf(context.diamond)
-
-				expect(userBalanceBefore - userBalanceAfter).to.equal(depositAmount)
-				expect(accountLayerBalanceAfter - accountLayerBalanceBefore).to.equal(0n)
-				expect(balanceAfter - balanceBefore).to.equal(virtualAmount)
-				expect(allocatedAfter - allocatedBefore).to.equal(realAmount)
-				expect(coreBalanceAfter - coreBalanceBefore).to.equal(realAmount)
-			})
-
-			it("requires the account owner", async function () {
-				await registerVirtualProvider()
-				await setExpressConfig(expressRate, virtualProviderAddress)
-				await approveExpressDeposit(depositAmount)
-
-				await expect(
-					context.alCoreFacet.connect(context.signers.others[0]).depositForAccountWithExpressRate(subAccountAddress, depositAmount),
-				).to.be.revertedWithCustomError(context.alCoreFacet, "NotOwner")
-			})
-
-			describe("onExpressDeposit callback failures", function () {
-				let configurableMockProvider: any
-				let configurableMockProviderAddress: string
-
-				const registerConfigurableMockProvider = async () => {
-					const ConfigurableMockVirtualProvider = await ethers.getContractFactory(
-						"contracts/core/test/MockVirtualProvider.sol:ConfigurableMockVirtualProvider",
-					)
-					configurableMockProvider = await ConfigurableMockVirtualProvider.deploy()
-					configurableMockProviderAddress = await configurableMockProvider.getAddress()
-					await context.controlFacet.connect(context.signers.admin).registerVirtualProvider(configurableMockProviderAddress)
-					return configurableMockProvider
-				}
-
-				it("reverts when onExpressDeposit callback reverts", async function () {
-					await registerConfigurableMockProvider()
-					await configurableMockProvider.setFailureMode(1) // REVERT mode
-					await setExpressConfig(expressRate, configurableMockProviderAddress)
-					await approveExpressDeposit(depositAmount)
-
-					await expect(
-						context.alCoreFacet.connect(context.signers.user).depositForAccountWithExpressRate(subAccountAddress, depositAmount),
-					).to.be.revertedWith("ConfigurableMockVirtualProvider: intentional revert")
-				})
-
-				it("reverts when onExpressDeposit credits wrong amount (less)", async function () {
-					await registerConfigurableMockProvider()
-					await configurableMockProvider.setFailureMode(2) // WRONG_AMOUNT mode
-					await configurableMockProvider.setAmountDelta(-1n) // Credit 1 less
-					await setExpressConfig(expressRate, configurableMockProviderAddress)
-					await approveExpressDeposit(depositAmount)
-
-					await expect(
-						context.alCoreFacet.connect(context.signers.user).depositForAccountWithExpressRate(subAccountAddress, depositAmount),
-					).to.be.revertedWithCustomError(context.alCoreFacet, "BalanceInvariantViolation")
-				})
-
-				it("reverts when onExpressDeposit credits wrong amount (more)", async function () {
-					await registerConfigurableMockProvider()
-					await configurableMockProvider.setFailureMode(2) // WRONG_AMOUNT mode
-					await configurableMockProvider.setAmountDelta(1n) // Credit 1 more
-					await setExpressConfig(expressRate, configurableMockProviderAddress)
-					await approveExpressDeposit(depositAmount)
-
-					await expect(
-						context.alCoreFacet.connect(context.signers.user).depositForAccountWithExpressRate(subAccountAddress, depositAmount),
-					).to.be.revertedWithCustomError(context.alCoreFacet, "BalanceInvariantViolation")
-				})
-
-				it("reverts when onExpressDeposit credits wrong user", async function () {
-					await registerConfigurableMockProvider()
-					await configurableMockProvider.setFailureMode(3) // WRONG_USER mode
-					await configurableMockProvider.setWrongUser(context.signers.others[0].address)
-					await setExpressConfig(expressRate, configurableMockProviderAddress)
-					await approveExpressDeposit(depositAmount)
-
-					await expect(
-						context.alCoreFacet.connect(context.signers.user).depositForAccountWithExpressRate(subAccountAddress, depositAmount),
-					).to.be.revertedWithCustomError(context.alCoreFacet, "BalanceInvariantViolation")
-				})
-
-				it("prevents malicious provider from impersonating user via callback (SafeCall protection)", async function () {
-					// Deploy malicious provider that attempts to exploit the callback
-					const MaliciousMockVirtualProvider = await ethers.getContractFactory(
-						"contracts/core/test/MockVirtualProvider.sol:MaliciousMockVirtualProvider",
-					)
-					const maliciousProvider = await MaliciousMockVirtualProvider.deploy(context.accountLayerDiamond)
-					const maliciousProviderAddress = await maliciousProvider.getAddress()
-
-					// Register the malicious provider
-					await context.controlFacet.connect(context.signers.admin).registerVirtualProvider(maliciousProviderAddress)
-					await setExpressConfig(expressRate, maliciousProviderAddress)
-					await approveExpressDeposit(depositAmount)
-
-					// Execute the deposit - the malicious provider will attempt to impersonate the user
-					await context.alCoreFacet.connect(context.signers.user).depositForAccountWithExpressRate(subAccountAddress, depositAmount)
-
-					// Verify the attack was attempted
-					expect(await maliciousProvider.attackAttempted()).to.be.true
-
-					// Verify the attack failed (signer was cleared, so callback couldn't impersonate user)
-					expect(await maliciousProvider.attackSucceeded()).to.be.false
-
-					// Verify that getSigner() returned the malicious provider's address (msg.sender)
-					// instead of the original user, proving the signer was properly cleared
-					const capturedSigner = await maliciousProvider.capturedSigner()
-					expect(capturedSigner).to.equal(maliciousProviderAddress)
-					expect(capturedSigner).to.not.equal(context.signers.user.address)
-				})
 			})
 		})
 
@@ -1408,25 +1131,12 @@ export function shouldBehaveLikeAccountLayer(): void {
 					const pendingQuotes = await context.viewFacetQuote.getPartyAPendingQuotes(subAccountAddress)
 					expect(pendingQuotes.length).to.equal(1)
 
+					// The account cannot be drained first: the pending quote keeps its CVA and LF locked in
+					// allocated balance, and core forbids deallocating below that floor. deleteSubAccount
+					// therefore has to report the pending quote rather than a balance the caller cannot clear.
 					const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(subAccountAddress)
 					expect(allocatedBalance).to.be.greaterThan(0)
-
-					await context.alCoreFacet
-						.connect(context.signers.user)
-						._call(subAccountAddress, [
-							context.accountFacet.interface.encodeFunctionData("deallocate", [allocatedBalance, await getDummySingleUpnlSig(BigInt(1e30))]),
-						])
-					await time.increase((await context.viewFacet.getDeallocateDebounceTime()) + 1n)
-
-					await context.alCoreFacet
-						.connect(context.signers.user)
-						._call(subAccountAddress, [context.accountFacet.interface.encodeFunctionData("withdraw", [allocatedBalance])])
-
-					const allocatedBalanceAfter = await context.viewFacet.allocatedBalanceOfPartyA(subAccountAddress)
-					expect(allocatedBalanceAfter).to.equal(0)
-
-					const balance = await context.viewFacet.balanceOf(subAccountAddress)
-					expect(balance).to.equal(0)
+					expect(await context.viewFacet.maxDeallocatableForPartyA(subAccountAddress, BigInt(1e30))).to.be.lessThan(allocatedBalance)
 
 					await expect(context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress)).to.be.revertedWithCustomError(
 						context.alCoreFacet,
@@ -1462,25 +1172,12 @@ export function shouldBehaveLikeAccountLayer(): void {
 					const positionCount = await context.viewFacetQuote.partyAPositionsCount(subAccountAddress)
 					expect(positionCount).to.equal(1)
 
+					// The account cannot be drained first: the open position keeps its CVA and LF locked in
+					// allocated balance, and core forbids deallocating below that floor. deleteSubAccount
+					// therefore has to report the open position rather than a balance the caller cannot clear.
 					const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(subAccountAddress)
 					expect(allocatedBalance).to.be.greaterThan(0)
-
-					await context.alCoreFacet
-						.connect(context.signers.user)
-						._call(subAccountAddress, [
-							context.accountFacet.interface.encodeFunctionData("deallocate", [allocatedBalance, await getDummySingleUpnlSig(BigInt(1e30))]),
-						])
-					await time.increase((await context.viewFacet.getDeallocateDebounceTime()) + 1n)
-
-					await context.alCoreFacet
-						.connect(context.signers.user)
-						._call(subAccountAddress, [context.accountFacet.interface.encodeFunctionData("withdraw", [allocatedBalance])])
-
-					const allocatedBalanceAfter = await context.viewFacet.allocatedBalanceOfPartyA(subAccountAddress)
-					expect(allocatedBalanceAfter).to.equal(0)
-
-					const balance = await context.viewFacet.balanceOf(subAccountAddress)
-					expect(balance).to.equal(0)
+					expect(await context.viewFacet.maxDeallocatableForPartyA(subAccountAddress, BigInt(1e30))).to.be.lessThan(allocatedBalance)
 
 					await expect(context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress)).to.be.revertedWithCustomError(
 						context.alCoreFacet,
@@ -2424,25 +2121,6 @@ export function shouldBehaveLikeAccountLayer(): void {
 
 				await expect(
 					context.alCoreFacet.connect(context.signers.user).depositAndAllocateForAccount(virtualAccountAddress, BALANCES.SMALL_AMOUNT),
-				).to.be.revertedWithCustomError(context.alCoreFacet, "AccountDoesNotExist")
-			})
-
-			it("should reject express deposit paths for deleted virtual accounts", async () => {
-				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
-				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
-				await cancelVirtualAccountQuote(virtualAccountAddress)
-
-				const deletedData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
-				expect(deletedData.isExists).to.be.false
-
-				await context.collateral.connect(context.signers.user).approve(context.accountLayerDiamond, BALANCES.DEPOSIT_AMOUNT)
-
-				await expect(
-					context.alCoreFacet.connect(context.signers.user).depositForAccountWithExpressRate(virtualAccountAddress, BALANCES.SMALL_AMOUNT),
-				).to.be.revertedWithCustomError(context.alCoreFacet, "AccountDoesNotExist")
-
-				await expect(
-					context.alCoreFacet.connect(context.signers.user).depositAndAllocateForAccountWithExpressRate(virtualAccountAddress, BALANCES.SMALL_AMOUNT),
 				).to.be.revertedWithCustomError(context.alCoreFacet, "AccountDoesNotExist")
 			})
 		})
@@ -4244,6 +3922,59 @@ export function shouldBehaveLikeAccountLayer(): void {
 				})
 			})
 
+			describe("safeRemoveMargin", async () => {
+				beforeEach(async () => {
+					await context.alMarginFacet.connect(context.signers.user).addMargin(virtualAccount, BALANCES.TRANSFER_AMOUNT)
+				})
+
+				it("should transfer balance from virtual account to subaccount via core safeDeallocate", async () => {
+					const subAccountBalanceBefore = await context.viewFacet.balanceOf(customSubAccount)
+					expect(await context.viewFacet.allocatedBalanceOfPartyA(virtualAccount)).to.equal(BALANCES.TRANSFER_AMOUNT)
+
+					await expect(
+						context.alMarginFacet
+							.connect(context.signers.user)
+							.safeRemoveMargin(virtualAccount, BALANCES.TRANSFER_AMOUNT, await getDummySingleUpnlWithPendingBalanceSig()),
+					)
+						.to.emit(context.alMarginFacet, "RemoveMargin")
+						.withArgs(virtualAccount, customSubAccount, BALANCES.TRANSFER_AMOUNT)
+
+					expect(await context.viewFacet.allocatedBalanceOfPartyA(virtualAccount)).to.equal(0n)
+					expect(await context.viewFacet.balanceOf(customSubAccount)).to.equal(subAccountBalanceBefore + BALANCES.TRANSFER_AMOUNT)
+				})
+
+				it("should enforce the scaled locked balance floor from core", async () => {
+					const scaledLockedBalance = BALANCES.TRANSFER_AMOUNT / 2n
+					const removable = BALANCES.TRANSFER_AMOUNT - scaledLockedBalance
+
+					await expect(
+						context.alMarginFacet
+							.connect(context.signers.user)
+							.safeRemoveMargin(virtualAccount, removable + 1n, await getDummySingleUpnlWithPendingBalanceSig(0n, 0n, scaledLockedBalance)),
+					).to.be.revertedWith("AccountFacet: Locked balance must remain allocated")
+
+					await context.alMarginFacet
+						.connect(context.signers.user)
+						.safeRemoveMargin(virtualAccount, removable, await getDummySingleUpnlWithPendingBalanceSig(0n, 0n, scaledLockedBalance))
+
+					expect(await context.viewFacet.allocatedBalanceOfPartyA(virtualAccount)).to.equal(scaledLockedBalance)
+				})
+
+				it("should revert when transferring zero amount", async () => {
+					await expect(
+						context.alMarginFacet.connect(context.signers.user).safeRemoveMargin(virtualAccount, 0n, await getDummySingleUpnlWithPendingBalanceSig()),
+					).to.be.revertedWithCustomError(context.alMarginFacet, "ZeroAmount")
+				})
+
+				it("should revert when caller is not the account owner", async () => {
+					await expect(
+						context.alMarginFacet
+							.connect(context.signers.user2)
+							.safeRemoveMargin(virtualAccount, decimal(100n), await getDummySingleUpnlWithPendingBalanceSig()),
+					).to.be.revertedWithCustomError(context.alMarginFacet, "NotOwner")
+				})
+			})
+
 			describe("Round-trip transfer", async () => {
 				it("should correctly handle transfers in both directions", async () => {
 					const initialSubAccountBalance = await context.viewFacet.balanceOf(customSubAccount)
@@ -4560,6 +4291,145 @@ export function shouldBehaveLikeAccountLayer(): void {
 					const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(legacyAccounts[0])
 					expect(allocatedBalance).to.equal(allocateAmount)
 				})
+			})
+		})
+
+		describe("Partial open tracking", async () => {
+			let positionSubAccountAddress: string
+
+			beforeEach(async () => {
+				positionSubAccountAddress = await createSubAccountAndDeposit(
+					context.signers.user,
+					[createSubAccountData("EXAMPLE_NAME", 0)],
+					BALANCES.DEPOSIT_AMOUNT,
+				)
+			})
+
+			it("tracks the remainder quote and cleans up both quote lifecycles", async () => {
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress))[0]
+				const [parentQuoteId] = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				const parentBeforeOpen = await context.viewFacetQuote.getQuote(parentQuoteId)
+				const filledAmount = parentBeforeOpen.quantity / 2n
+
+				await hedger.lockQuote(parentQuoteId)
+				const openRequest = limitOpenRequestBuilder().filledAmount(filledAmount).build()
+				await context.partyBPositionActionsFacet
+					.connect(context.signers.hedger)
+					.openPosition(
+						parentQuoteId,
+						openRequest.filledAmount,
+						openRequest.openPrice,
+						await getDummyPairUpnlAndPriceSig(BigInt(openRequest.price), BigInt(openRequest.upnlPartyA), BigInt(openRequest.upnlPartyB)),
+					)
+
+				const childQuoteId = await context.viewFacetQuote.getNextQuoteId()
+				const childQuote = await context.viewFacetQuote.getQuote(childQuoteId)
+				expect(childQuote.parentId).to.equal(parentQuoteId)
+				expect(childQuote.quoteStatus).to.equal(QuoteStatus.PENDING)
+
+				const trackedAfterOpen = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				expect(trackedAfterOpen).to.have.members([parentQuoteId, childQuoteId])
+
+				const cancelChildCallData = context.partyAFacet.interface.encodeFunctionData("requestToCancelQuote", [childQuoteId])
+				await context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [cancelChildCallData])
+				expect(await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)).to.deep.equal([parentQuoteId])
+
+				const closeRequest = limitCloseRequestBuilder().quantityToClose(filledAmount).build()
+				const requestToCloseCallData = context.partyAFacet.interface.encodeFunctionData("requestToClosePosition", [
+					parentQuoteId,
+					closeRequest.closePrice,
+					closeRequest.quantityToClose,
+					closeRequest.orderType,
+					await closeRequest.deadline,
+				])
+				await context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [requestToCloseCallData])
+
+				const fillCloseRequest = limitFillCloseRequestBuilder().filledAmount(filledAmount).build()
+				await context.partyBPositionActionsFacet
+					.connect(context.signers.hedger)
+					.fillCloseRequest(
+						parentQuoteId,
+						fillCloseRequest.filledAmount,
+						fillCloseRequest.closedPrice,
+						await getDummyPairUpnlAndPriceSig(
+							BigInt(fillCloseRequest.price),
+							BigInt(fillCloseRequest.upnlPartyA),
+							BigInt(fillCloseRequest.upnlPartyB),
+						),
+					)
+
+				expect((await context.alViewFacet.getVirtualAccount(virtualAccountAddress)).isExists).to.be.false
+			})
+
+			it("tracks every pending child created by repeated partial opens", async () => {
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress))[0]
+				const [parentQuoteId] = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				const parentQuote = await context.viewFacetQuote.getQuote(parentQuoteId)
+
+				await hedger.lockQuote(parentQuoteId)
+				const firstOpen = limitOpenRequestBuilder()
+					.filledAmount(parentQuote.quantity / 2n)
+					.build()
+				await context.partyBPositionActionsFacet
+					.connect(context.signers.hedger)
+					.openPosition(
+						parentQuoteId,
+						firstOpen.filledAmount,
+						firstOpen.openPrice,
+						await getDummyPairUpnlAndPriceSig(BigInt(firstOpen.price), BigInt(firstOpen.upnlPartyA), BigInt(firstOpen.upnlPartyB)),
+					)
+
+				const firstChildId = await context.viewFacetQuote.getNextQuoteId()
+				const firstChild = await context.viewFacetQuote.getQuote(firstChildId)
+				await hedger.lockQuote(firstChildId)
+				const secondOpen = limitOpenRequestBuilder()
+					.filledAmount(firstChild.quantity / 2n)
+					.build()
+				await context.partyBPositionActionsFacet
+					.connect(context.signers.hedger)
+					.openPosition(
+						firstChildId,
+						secondOpen.filledAmount,
+						secondOpen.openPrice,
+						await getDummyPairUpnlAndPriceSig(BigInt(secondOpen.price), BigInt(secondOpen.upnlPartyA), BigInt(secondOpen.upnlPartyB)),
+					)
+
+				const secondChildId = await context.viewFacetQuote.getNextQuoteId()
+				const secondChild = await context.viewFacetQuote.getQuote(secondChildId)
+				expect(secondChild.parentId).to.equal(firstChildId)
+				expect(secondChild.quoteStatus).to.equal(QuoteStatus.PENDING)
+				expect(await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)).to.have.members([
+					parentQuoteId,
+					firstChildId,
+					secondChildId,
+				])
+			})
+
+			it("does not track the canceled remainder of a cancel-pending partial open", async () => {
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress))[0]
+				const [parentQuoteId] = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				const parentQuote = await context.viewFacetQuote.getQuote(parentQuoteId)
+
+				await hedger.lockQuote(parentQuoteId)
+				const cancelCallData = context.partyAFacet.interface.encodeFunctionData("requestToCancelQuote", [parentQuoteId])
+				await context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [cancelCallData])
+				expect((await context.viewFacetQuote.getQuote(parentQuoteId)).quoteStatus).to.equal(QuoteStatus.CANCEL_PENDING)
+
+				const openRequest = limitOpenRequestBuilder()
+					.filledAmount(parentQuote.quantity / 2n)
+					.build()
+				await context.partyBPositionActionsFacet
+					.connect(context.signers.hedger)
+					.openPosition(
+						parentQuoteId,
+						openRequest.filledAmount,
+						openRequest.openPrice,
+						await getDummyPairUpnlAndPriceSig(BigInt(openRequest.price), BigInt(openRequest.upnlPartyA), BigInt(openRequest.upnlPartyB)),
+					)
+
+				const canceledChildId = await context.viewFacetQuote.getNextQuoteId()
+				expect((await context.viewFacetQuote.getQuote(canceledChildId)).quoteStatus).to.equal(QuoteStatus.CANCELED)
+				expect(await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)).to.deep.equal([parentQuoteId])
 			})
 		})
 

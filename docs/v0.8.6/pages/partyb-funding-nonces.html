@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>PartyB Funding Update Nonces - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+	</head>
+	<body class="doc-page">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="doc-topbar">
+			<a class="brand" href="../index.html"
+				><span class="brand-mark">8.6</span><span><strong>Symmio Docs</strong><small>v0.8.6 reference</small></span></a
+			>
+			<nav class="top-actions" aria-label="Page actions">
+				<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+			</nav>
+		</header>
+
+		<div class="reader-shell">
+			<aside class="doc-sidebar" aria-label="Documentation navigation" data-doc-nav></aside>
+			<aside class="toc-panel side-toc" aria-label="Page navigation">
+				<div class="toc-card">
+					<p class="toc-title">On this page</p>
+					<a class="toc-link level-2" href="#summary">Summary</a>
+					<a class="toc-link level-2" href="#interface">Interface</a>
+					<a class="toc-link level-2" href="#acceptance">Accepted, Skipped, Forwarded</a>
+					<a class="toc-link level-2" href="#event">Reporting</a>
+					<a class="toc-link level-2" href="#batching">Batched Calls</a>
+					<a class="toc-link level-2" href="#storage">Storage</a>
+					<a class="toc-link level-2" href="#integration">Integration Requirements</a>
+				</div>
+			</aside>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">v0.8.6</a><span>/</span><strong>PartyB</strong></nav>
+					<div class="reader-title-row">
+						<div>
+							<h1>PartyB Funding Update Nonces</h1>
+							<p class="hero-copy">
+								Stale or expired funding updates from a solver engine are now skipped per symbol and reported, instead of overwriting
+								newer rates or failing the batch they travelled in.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="summary">Summary</h2>
+					<p>
+						Funding rates are pushed on-chain by an off-chain solver engine. Retries, reorderings, and delayed inclusion mean a stale
+						update can land after a newer one and overwrite it, and an update that is no longer wanted still executes when it finally
+						confirms.
+					</p>
+					<p>
+						v0.8.6 adds a <code>setFundingFee</code> overload on <code>SymmioPartyB</code> that carries a per-symbol nonce and a deadline.
+						Updates that are stale or expired are <em>skipped and reported</em> rather than reverted, so one out-of-date symbol cannot
+						fail the batch it travelled in.
+					</p>
+					<aside class="callout callout-note">
+						<strong>This is additive.</strong> The existing core <code>setFundingFee</code> is unchanged and still reachable. A solver
+						that does not adopt nonces keeps working exactly as before.
+					</aside>
+
+					<h2 id="interface">Interface</h2>
+					<pre><code class="language-solidity">function setFundingFee(
+    uint256[] calldata symbolIds,
+    int256[] calldata longFees,
+    int256[] calldata shortFees,
+    int256[] calldata marketPrices,
+    uint256[] calldata nonces,
+    uint256 deadline
+) external whenNotPaused;</code></pre>
+					<p>
+						<code>nonces[i]</code> belongs to <code>symbolIds[i]</code>. Callers must hold <code>MANAGER_ROLE</code> or
+						<code>TRUSTED_ROLE</code> on the PartyB contract, or hold <code>INSTANT_LAYER_ROLE</code> on the Symmio core.
+					</p>
+
+					<h2 id="acceptance">What is accepted, skipped, and forwarded</h2>
+					<p>
+						The deadline is checked first. If it has passed, the whole call reports a skip and returns without touching state or
+						validating array lengths &mdash; an expired update is discarded before anything else is considered.
+					</p>
+					<p>Otherwise each symbol is compared against its last accepted nonce, and the call takes one of three paths.</p>
+					<div class="table-wrap">
+						<table>
+							<caption>
+								Three outcomes: every symbol stale means nothing is forwarded, no symbol stale means everything is forwarded, and a
+								mixed batch is partitioned so the fresh symbols still land.
+							</caption>
+							<thead>
+								<tr>
+									<th scope="col">Case</th>
+									<th scope="col">Forwarded to core</th>
+									<th scope="col">Emitted</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>deadline passed</td>
+									<td>nothing</td>
+									<td><code>FundingFeeUpdateSkipped</code>, reason <code>1</code></td>
+								</tr>
+								<tr>
+									<td>every symbol stale</td>
+									<td>nothing</td>
+									<td><code>FundingFeeUpdateSkipped</code>, reason <code>0</code></td>
+								</tr>
+								<tr>
+									<td>no symbol stale</td>
+									<td>all symbols</td>
+									<td>nothing</td>
+								</tr>
+								<tr>
+									<td>mixed</td>
+									<td>the fresh symbols only</td>
+									<td><code>FundingFeeUpdateSkipped</code> for the stale subset, reason <code>0</code></td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						A symbol is stale when its supplied nonce is strictly lower than the stored one. An <strong>equal</strong> nonce is accepted,
+						which is deliberate: it lets the engine replace or retry the latest update for a symbol without inventing a new nonce and
+						without breaking the surrounding template.
+					</p>
+					<p>
+						Accepted symbols write their nonce before the forward, so the gate is closed against a replay of the same batch even if it is
+						submitted twice.
+					</p>
+
+					<h2 id="event">Reporting</h2>
+					<pre><code class="language-solidity">event FundingFeeUpdateSkipped(uint256[] symbolIds, uint256[] nonces, uint256 deadline, uint8 reason);</code></pre>
+					<p>
+						<code>reason</code> is <code>0</code> for a stale nonce and <code>1</code> for an expired deadline. In the mixed case the
+						arrays carry only the skipped symbols, not the whole submission.
+					</p>
+					<aside class="callout callout-important">
+						<strong>A skip is a normal outcome, not a failure.</strong> The transaction succeeds. Monitoring that treats a successful
+						<code>setFundingFee</code> as proof the rates landed will be wrong for skipped symbols &mdash; check for this event, and
+						reconcile against the funding state rather than against transaction status.
+					</aside>
+
+					<h2 id="batching">Batched calls are routed back through the gate</h2>
+					<p>
+						<code>SymmioPartyB._call</code> forwards each entry to the Symmio core. An entry targeting this contract's own
+						<code>setFundingFee</code> selector would therefore have bypassed the nonce gate entirely. <code>_call</code> now detects that
+						selector and <code>delegatecall</code>s it back into this contract instead, so a funding update carries the same guarantees
+						whether it is submitted directly or inside a batch.
+					</p>
+
+					<h2 id="storage">Storage</h2>
+					<p>Two slots are appended after the existing v0.8.4-compatible layout, so no existing field moves.</p>
+					<pre><code class="language-solidity">uint256 private deprecatedFundingNonce;      // slot N+4: superseded global nonce, unused
+mapping(uint256 =&gt; uint256) public fundingNonce; // slot N+5: symbolId =&gt; last accepted nonce</code></pre>
+					<p>
+						<code>fundingNonce</code> is public, so the engine can read the current floor per symbol and resynchronise after a restart
+						rather than guessing.
+					</p>
+
+					<h2 id="integration">Integration requirements</h2>
+					<ul>
+						<li>
+							Supply a per-symbol nonce that never decreases for that symbol. A shared counter across symbols works but wastes headroom.
+						</li>
+						<li>Set a deadline that reflects how long the update stays meaningful, not how long inclusion might take.</li>
+						<li>Read <code>fundingNonce(symbolId)</code> on startup to recover the floor after an engine restart.</li>
+						<li>
+							Treat <code>FundingFeeUpdateSkipped</code> as expected traffic; alert on a symbol that is skipped repeatedly, which means
+							the engine's nonce has fallen behind.
+						</li>
+						<li>
+							Reuse the same nonce when resubmitting the latest update for a symbol; a higher nonce is only needed for a genuinely newer
+							rate.
+						</li>
+					</ul>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Protocol, operations, and integration notes.</span>
+		</footer>
+	</body>
+</html>
