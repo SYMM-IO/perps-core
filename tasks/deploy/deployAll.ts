@@ -32,9 +32,10 @@ import {
 	type ExpressProviderResolvedConfig,
 } from "./componentDeployment.js"
 import { EXPRESSPROVIDER_DEPLOYMENT_FILE } from "./constants.js"
+import { ensureCreate2Factory, formatFactoryPinHint } from "./create2Factory.js"
 import { assertExpressProviderDeployable, assertRecipeNetworkTarget, type SafeManualAction } from "./deploymentRecipe.js"
 import { checkpointDeployment, persistSubmittedTransaction, recoverCheckpointContractDeployments } from "./deploymentRecovery.js"
-import { deployDiamond, resolveCreate2FactoryAddress } from "./diamond.js"
+import { deployDiamond } from "./diamond.js"
 import { getConnection } from "./helpers.js"
 import { setHyperEVMBigBlocks } from "./hyperevm.js"
 import { deployInstantLayer } from "./instantLayer.js"
@@ -44,6 +45,7 @@ import {
 	assertGeneralDeploymentMuonPermissions,
 	inspectConfiguredMuonPermissions,
 	parseMuonFunctionPermissions,
+	parseMuonFunctionUpnlValidTimes,
 } from "./muonPermissions.js"
 import { deploySymmioPartyB } from "./partyB.js"
 import {
@@ -69,6 +71,8 @@ import {
 	resetDeploymentTransactionJournal,
 	send,
 } from "./tx.js"
+import { createVanityContext } from "./vanityDeploy.js"
+import { assertWithinBudget, buildVanityPlan, calibrateHashRate, formatVanityPlan } from "./vanityPlan.js"
 
 interface DeploymentResult {
 	contract: string
@@ -118,6 +122,7 @@ interface SystemDeploymentReport {
 		muonAppId: string
 		muonUpnlValidTime: string
 		muonPriceValidTime: string
+		muonFunctionUpnlValidTimes: Array<{ name: string; index: number; upnlValidTime: string }>
 		muonPublicKeyX: string
 		muonPublicKeyParity: string
 		muonGatewaySigners: string[]
@@ -177,6 +182,7 @@ export const DEPLOYER_SETUP_ROLES = [
 export const ACCOUNTLAYER_DEPLOYER_SETUP_ROLES = ["SETTER_ROLE", "APPROVER_ROLE", "PAUSER_ROLE", "UNPAUSER_ROLE"]
 
 interface DeployedContracts {
+	create2Factory?: string
 	collateral?: string
 	diamond?: string
 	signatureVerifier?: string
@@ -264,6 +270,10 @@ export function deploymentConfigFromSource(source: Record<string, string | undef
 	const muonFunctionPermissions = source.MUON_FUNCTION_PERMISSIONS
 		? parseMuonFunctionPermissions(source.MUON_FUNCTION_PERMISSIONS).map(({ name }) => name)
 		: []
+	// Per-function UPNL validity overrides; an absent function keeps the global window.
+	const muonFunctionUpnlValidTimes = parseMuonFunctionUpnlValidTimes(source.MUON_FUNCTION_UPNL_VALID_TIMES ?? "").map(
+		({ name, index, upnlValidTime }) => ({ name: name as string, index: index as number, upnlValidTime }),
+	)
 
 	return {
 		admin,
@@ -285,6 +295,7 @@ export function deploymentConfigFromSource(source: Record<string, string | undef
 		muonAppId,
 		muonUpnlValidTime,
 		muonPriceValidTime,
+		muonFunctionUpnlValidTimes,
 		muonPublicKeyX,
 		muonPublicKeyParity,
 		muonGatewaySigners,
@@ -327,7 +338,6 @@ export async function validateDeploymentConfig(
 	options: { isSimulated?: boolean } = {},
 ): Promise<void> {
 	validateProtocolConfig(protocolConfig, `protocol config for chainId ${Number(chainId)}`)
-	await resolveCreate2FactoryAddress(ethers, process.env.CREATE2_FACTORY_ADDRESS || "")
 
 	config.admin = requireAddress(ethers, config.admin, "ADMIN_PUBLIC_KEY")
 	config.symmioFeeReceiver = requireAddress(ethers, config.symmioFeeReceiver, "SYMMIO_FEE_RECEIVER")
@@ -383,6 +393,11 @@ export async function validateDeploymentConfig(
 
 	config.muonUpnlValidTime = requireDecimalUint(config.muonUpnlValidTime, "MUON_UPNL_VALID_TIME", BigInt(1))
 	config.muonPriceValidTime = requireDecimalUint(config.muonPriceValidTime, "MUON_PRICE_VALID_TIME", BigInt(1))
+	for (const override of config.muonFunctionUpnlValidTimes) {
+		// Zero is the on-chain "unset" sentinel; the parser already rejects it, but the deploy
+		// path re-checks so a hand-set env var cannot silently clear an override.
+		override.upnlValidTime = requireDecimalUint(override.upnlValidTime, `MUON_FUNCTION_UPNL_VALID_TIMES.${override.name}`, BigInt(1))
+	}
 	if (config.muonAppId) config.muonAppId = requireDecimalUint(config.muonAppId, "MUON_APP_ID", BigInt(1))
 
 	const hasPublicKeyX = config.muonPublicKeyX !== ""
@@ -620,6 +635,12 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 		type: ArgumentType.BOOLEAN,
 		defaultValue: false,
 	})
+	.addOption({
+		name: "allowNewCreate2Factory",
+		description: "Permit deploying a CREATE2 factory even though a previous deployment report for this chain already names one",
+		type: ArgumentType.BOOLEAN,
+		defaultValue: false,
+	})
 	.setAction(async () => ({
 		default: async (
 			{
@@ -635,6 +656,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 				registerDummyAffiliate: registerDummyAffiliateFlag,
 				setupInstantLayerTemplates: setupIlTemplatesFlag,
 				allowUnsafeMainnet,
+				allowNewCreate2Factory,
 			},
 			hre,
 		) => {
@@ -771,10 +793,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 				chainId: Number(chainId),
 				simulated: isSimulatedNetwork,
 				deployer: deployerAddress,
-				create2: {
-					factoryAddress: process.env.CREATE2_FACTORY_ADDRESS || "",
-					vanityPrefix: process.env.DIAMOND_VANITY_PREFIX || "573310",
-				},
+				create2: recipe?.create2 ?? null,
 				config,
 				protocolConfig,
 			}
@@ -804,6 +823,26 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			if (!checkpoint) {
 				checkpoint = createCheckpoint(network, Number(chainId))
 			}
+
+			// Resolve vanity intent before any component deploys. assertWithinBudget reads pattern
+			// lengths only, never the address, so an unaffordable plan still stops the run while
+			// nothing has been broadcast. ensureCreate2Factory is the only step here that can send
+			// a transaction, and it runs with the checkpoint so its creation is journalled.
+			const vanityPlan = buildVanityPlan(recipe?.create2)
+			let create2FactoryDeployed = false
+			if (vanityPlan) {
+				const hashRate = calibrateHashRate()
+				assertWithinBudget(vanityPlan, hashRate)
+				logger.info(formatVanityPlan(vanityPlan, hashRate))
+				const factory = await ensureCreate2Factory(hre, vanityPlan, {
+					checkpoint,
+					isLive: recipe?.network.mode === "live",
+					allowNewFactory: allowNewCreate2Factory,
+					logData,
+				})
+				create2FactoryDeployed = factory.deployed
+			}
+			const vanity = createVanityContext(ethers, vanityPlan)
 
 			const currentManifest = createDeploymentManifest(manifestIntent, {
 				deploymentId: checkpoint.deploymentId || checkpoint.manifest?.deploymentId,
@@ -865,6 +904,10 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			logger.info(`Muon App ID: ${config.muonAppId || "(not set)"}`)
 			logger.info(`Muon UPNL Valid Time: ${config.muonUpnlValidTime}${process.env.MUON_UPNL_VALID_TIME ? "" : " (default)"}`)
 			logger.info(`Muon Price Valid Time: ${config.muonPriceValidTime}${process.env.MUON_PRICE_VALID_TIME ? "" : " (default)"}`)
+			if (config.muonFunctionUpnlValidTimes.length > 0) {
+				const overrides = config.muonFunctionUpnlValidTimes.map(({ name, upnlValidTime }) => `${name}=${upnlValidTime}`).join(", ")
+				logger.info(`Muon UPNL Valid Time Overrides: ${overrides}`)
+			}
 			logger.info(`Muon Public Key X: ${config.muonPublicKeyX || "(not set)"}`)
 			logger.info(`Muon Public Key Parity: ${config.muonPublicKeyParity || "(not set)"}`)
 			logger.info(`Muon Gateway Signers: ${config.muonGatewaySigners.length > 0 ? config.muonGatewaySigners.join(",") : "(not set)"}`)
@@ -875,7 +918,8 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			logger.info()
 
 			const deploymentResults: DeploymentResult[] = []
-			const deployedContracts: DeployedContracts = {}
+			// The factory is bound above, before any component deploys, so it is safe to read here.
+			const deployedContracts: DeployedContracts = vanityPlan ? { create2Factory: vanityPlan.factoryAddress } : {}
 			let expressProviderResult: ExpressProviderStepResult | undefined
 
 			// HyperEVM (chainId 999 mainnet, 998 testnet) requires big blocks for facet deployment
@@ -949,7 +993,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 					run: async () => {
 						try {
 							const wasAlreadyComplete = !!checkpoint.contracts.diamond?.diamondCutComplete
-							const diamond = await deployDiamond(hre, { logData, genABI: false, reportGas: false, checkpoint })
+							const diamond = await deployDiamond(hre, { logData, genABI: false, reportGas: false, checkpoint, vanity })
 							deployedContracts.diamond = await diamond.getAddress()
 							logger.info(`Diamond deployed at: ${deployedContracts.diamond}`)
 							deploymentResults.push({
@@ -1074,6 +1118,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 								symmioFeeReceiver: deployer,
 								logData,
 								checkpoint,
+								vanity,
 							})
 							deployedContracts.accountLayerDiamond = accountLayerResult.diamond
 							logger.info(`AccountLayerDiamond deployed at: ${deployedContracts.accountLayerDiamond}`)
@@ -1311,7 +1356,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 									{ core: deployedContracts.diamond!, admin: config.admin },
 									deployerAddress,
 								)
-								const result = await deployAndConfigureExpressProvider(hre, checkpoint, resolved, deployer)
+								const result = await deployAndConfigureExpressProvider(hre, checkpoint, resolved, deployer, vanity)
 								deployedContracts.expressProvider = result.address
 								expressProviderResult = result
 								// verify:all reads this file, so write it before the health gate can throw.
@@ -1571,6 +1616,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 				report.updatedAt = new Date().toISOString()
 				report.transactions = checkpoint.transactions || []
 				displayReport(report, deployedContracts, config)
+				if (create2FactoryDeployed) logger.info(formatFactoryPinHint(deployedContracts.create2Factory!))
 				saveReport(report, deployedContracts)
 
 				if (handoverPending) {
@@ -1919,6 +1965,34 @@ async function setupSystem(
 	await checkpointedStep(checkpoint, "setup.setMuonConfig", "Setting Muon validity config on Diamond", async () => {
 		await send(controlFacet.connect(deployer).setMuonConfig(config.muonUpnlValidTime, config.muonPriceValidTime), "setMuonConfig")
 	})
+
+	// Per-function overrides are written after the global config so a partial run always leaves
+	// the diamond on the global window rather than on a stale override.
+	for (const { name, index, upnlValidTime } of config.muonFunctionUpnlValidTimes) {
+		await checkpointedStep(
+			checkpoint,
+			`setup.setMuonFunctionUpnlValidTime.${name}`,
+			`Setting Muon UPNL validity override for ${name} (${upnlValidTime}s)`,
+			async () => {
+				await send(controlFacet.connect(deployer).setMuonFunctionUpnlValidTime(index, upnlValidTime), `setMuonFunctionUpnlValidTime(${name})`)
+			},
+		)
+	}
+
+	// Overrides are core Diamond state, not verifier state, so they are read back whether or not
+	// this run deployed a verifier.
+	if (config.muonFunctionUpnlValidTimes.length > 0) {
+		await checkpointedStep(checkpoint, "setup.verifyMuonFunctionUpnlValidTimes", "Verifying Muon UPNL validity overrides", async () => {
+			for (const { name, index, upnlValidTime } of config.muonFunctionUpnlValidTimes) {
+				const [actual, isOverridden] = await viewFacet.getMuonFunctionUpnlValidTime(index)
+				if (!isOverridden || actual.toString() !== upnlValidTime) {
+					throw new Error(
+						`Muon UPNL validity override mismatch for ${name}: expected ${upnlValidTime} (overridden), got ${actual.toString()} (overridden=${isOverridden})`,
+					)
+				}
+			}
+		})
+	}
 
 	// Muon verification via view/read calls
 	if (signatureVerifier && deployedContracts.signatureVerifier) {
@@ -2634,6 +2708,7 @@ function generateReport(
 			muonAppId: config.muonAppId,
 			muonUpnlValidTime: config.muonUpnlValidTime,
 			muonPriceValidTime: config.muonPriceValidTime,
+			muonFunctionUpnlValidTimes: config.muonFunctionUpnlValidTimes,
 			muonPublicKeyX: config.muonPublicKeyX,
 			muonPublicKeyParity: config.muonPublicKeyParity,
 			muonGatewaySigners: config.muonGatewaySigners,
@@ -2669,6 +2744,7 @@ function displayReport(report: SystemDeploymentReport, deployedContracts: Deploy
 
 	logger.info("DEPLOYED ADDRESSES")
 	logger.info("-".repeat(80))
+	if (deployedContracts.create2Factory) logger.info(`Create2Factory:       ${deployedContracts.create2Factory}`)
 	if (deployedContracts.collateral) logger.info(`Collateral:           ${deployedContracts.collateral}`)
 	if (deployedContracts.diamond) logger.info(`Diamond:              ${deployedContracts.diamond}`)
 	if (deployedContracts.signatureVerifier)
@@ -2697,6 +2773,11 @@ function displayReport(report: SystemDeploymentReport, deployedContracts: Deploy
 	logger.info(`Muon App ID:                 ${report.config.muonAppId || "(not set)"}`)
 	logger.info(`Muon UPNL Valid Time:        ${report.config.muonUpnlValidTime || "(not set)"}`)
 	logger.info(`Muon Price Valid Time:       ${report.config.muonPriceValidTime || "(not set)"}`)
+	logger.info(
+		`Muon UPNL Overrides:         ${
+			(report.config.muonFunctionUpnlValidTimes ?? []).map(({ name, upnlValidTime }) => `${name}=${upnlValidTime}`).join(", ") || "(none)"
+		}`,
+	)
 	logger.info(`Muon Public Key X:           ${report.config.muonPublicKeyX || "(not set)"}`)
 	logger.info(`Muon Public Key Parity:      ${report.config.muonPublicKeyParity || "(not set)"}`)
 	logger.info(

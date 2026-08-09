@@ -13,6 +13,12 @@ const BOOLEAN = "boolean";
 const STRING = "string";
 
 export const COMMANDS = {
+	guide: {
+		summary: "interactive: work out where you are and what to do next",
+		usage: ["./symmio", "./symmio guide"],
+		options: {},
+		load: () => import("./commands/guide.js").then(m => m.guide),
+	},
 	doctor: {
 		summary: "check everything that must be true before you deploy",
 		usage: [
@@ -251,6 +257,7 @@ function help() {
 	log(`  ${c.bold("symmio")} ${c.grey("— operator CLI for SYMMIO deployments")}`);
 	blank();
 	log(`  ${c.bold("Usage")}`);
+	log(`    ./symmio                    ${c.grey("interactive — figures out your next step")}`);
 	log(`    ./symmio <command> [options]`);
 	blank();
 	log(`  ${c.bold("Commands")}`);
@@ -260,13 +267,16 @@ function help() {
 	}
 	blank();
 	log(`  ${c.bold("Getting started")}`);
+	log(`    ${c.grey("Run")} ${c.cyan("./symmio")} ${c.grey("with no arguments and it will walk you through it.")}`);
+	blank();
+	log(`  ${c.bold("Or step by step")}`);
 	log(`    ${c.grey("1.")} ./symmio recipe init --network arbitrum`);
 	log(`    ${c.grey("2.")} edit deployments/arbitrum.json`);
 	log(`    ${c.grey("3.")} ./symmio doctor --config deployments/arbitrum.json`);
 	log(`    ${c.grey("4.")} ./symmio deploy --config deployments/arbitrum.json --plan`);
 	log(`    ${c.grey("5.")} ./symmio deploy --config deployments/arbitrum.json`);
 	blank();
-	log(`  ${c.grey("Optional: run `./utils/pinned-yarn.sh link` once if you want the global `symmio` command.")}`);
+	log(`  ${c.grey("Optional: run `npm link` once if you want the global `symmio` command.")}`);
 	log(`  ${c.grey("./symmio <command> --help  shows command details.")}`);
 	blank();
 }
@@ -286,6 +296,14 @@ function commandHelp(name, cmd) {
 export async function runCli(argv = process.argv.slice(2)) {
 	const args = parseArgs(argv);
 	const name = args._[0];
+
+	// A bare `./symmio` on a terminal starts the interactive guide: an operator should be able
+	// to run the tool and be led forward, not have to remember a command first. Without a TTY
+	// (CI, pipes, `symmio | less`) it stays the printed help it has always been.
+	if (!name && args.help !== true && process.stdin.isTTY) {
+		const run = await COMMANDS.guide.load();
+		return (await run(args)) ?? 0;
+	}
 
 	if (!name || name === "help" || args.help === true) {
 		if (name && name !== "help") {

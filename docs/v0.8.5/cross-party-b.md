@@ -17,21 +17,20 @@ Because of this risk, cross mode is restricted to trusted solvers. Symmio's off-
 Activating cross mode for a PartyB is a multi-step process:
 
 1. **Migration (performed by the Symmio team upon upgrade).** Immediately after the contract upgrade, the Symmio team runs two migration functions while the system is paused:
+    - `migrateQuotes(quoteIds[])` on the `MigrationFacet` — backfills v0.8.5 derived state for all active positions: aggregated positions, funding baselines, the `partyBPositionsCount[partyB][address(0)]` total positions counter, and connection tracking.
 
-   - `migrateQuotes(quoteIds[])` on the `MigrationFacet` — backfills v0.8.5 derived state for all active positions: aggregated positions, funding baselines, the `partyBPositionsCount[partyB][address(0)]` total positions counter, and connection tracking.
-
-   - `migrateCrossLockedValues(partyB, partyAs[])` on the `MigrationFacet` — aggregates all per-PartyA locked balances and pending locked balances into the cross bucket (`address(0)`):
-     ```
-     partyBLockedBalances[partyB][address(0)]        += partyBLockedBalances[partyB][partyA]
-     partyBPendingLockedBalances[partyB][address(0)] += partyBPendingLockedBalances[partyB][partyA]
-     ```
-     Allocated balances are **not** aggregated -- the cross bucket `[address(0)]` for allocated balances is an independent pool that the solver funds explicitly after enabling cross mode. This function is idempotent per partyB+partyA pair -- already-migrated pairs are skipped.
+    - `migrateCrossLockedValues(partyB, partyAs[])` on the `MigrationFacet` — aggregates all per-PartyA locked balances and pending locked balances into the cross bucket (`address(0)`):
+        ```
+        partyBLockedBalances[partyB][address(0)]        += partyBLockedBalances[partyB][partyA]
+        partyBPendingLockedBalances[partyB][address(0)] += partyBPendingLockedBalances[partyB][partyA]
+        ```
+        Allocated balances are **not** aggregated -- the cross bucket `[address(0)]` for allocated balances is an independent pool that the solver funds explicitly after enabling cross mode. This function is idempotent per partyB+partyA pair -- already-migrated pairs are skipped.
 
 2. **Global feature flag.** After migration is complete, an admin with `MIGRATION_ROLE` calls `setCrossPartyBModeActivated(true)` on the `ControlFacet`. This enables the feature protocol-wide.
 
 3. **Activation (one of two paths):**
-   - **Admin path**: An admin with `MIGRATION_ROLE` calls `setCrossPartyB(partyB, true)` on the `ControlFacet`. Requires the global flag to be on and the PartyB to be registered. Does not check migration status on-chain.
-   - **Self-activation path**: The PartyB itself calls `activateCrossPartyB()` on the `PartyBAccountFacet`. Requires the global flag to be on and cross mode to not already be active.
+    - **Admin path**: An admin with `MIGRATION_ROLE` calls `setCrossPartyB(partyB, true)` on the `ControlFacet`. Requires the global flag to be on and the PartyB to be registered. Does not check migration status on-chain.
+    - **Self-activation path**: The PartyB itself calls `activateCrossPartyB()` on the `PartyBAccountFacet`. Requires the global flag to be on and cross mode to not already be active.
 
 After activation, `address(0)` becomes the PartyB's allocation key. The solver only needs to allocate to `address(0)` — no need to allocate per PartyA. The helper `LibAccount.partyBAllocationKey(partyB, partyA)` returns `address(0)` when cross mode is active, and `partyA` otherwise. All balance functions (available balance, locked balance calculations) use this key transparently.
 
@@ -102,14 +101,15 @@ When cross mode is enabled, the nonce included in PartyB signatures for opening 
 
 ```solidity
 function getPartyBSignatureNonce(address partyB, address partyA, bool useCrossNonce) internal view returns (uint256) {
-    if (MAStorage.layout().crossModeEnabledForPartyB[partyB]) {
-        return useCrossNonce ? accountLayout.partyBNonces[partyB][address(0)] : 0;
-    }
-    return accountLayout.partyBNonces[partyB][partyA];
+	if (MAStorage.layout().crossModeEnabledForPartyB[partyB]) {
+		return useCrossNonce ? accountLayout.partyBNonces[partyB][address(0)] : 0;
+	}
+	return accountLayout.partyBNonces[partyB][partyA];
 }
 ```
 
 The `useCrossNonce` flag controls which behavior is used:
+
 - **`false`** (default): Returns `0` in cross mode. Used for `PairUpnlAndPriceSig` (open/close/forceClose/funding rate signatures) where PartyB needs to operate in parallel with different PartyAs.
 - **`true`**: Returns the actual cross nonce (`partyBNonces[partyB][address(0)]`). Used for `SingleUpnlSig` in deallocate operations, where nonce protection is still needed because deallocate affects the shared pool.
 
@@ -119,8 +119,8 @@ Even though signatures ignore the nonce, the on-chain nonce still increments on 
 
 ```solidity
 function increasePartyBNonce(address partyB, address partyA) internal {
-    accountLayout.partyBNonces[partyB][partyA]++;
-    accountLayout.partyBNonces[partyB][address(0)]++;
+	accountLayout.partyBNonces[partyB][partyA]++;
+	accountLayout.partyBNonces[partyB][address(0)]++;
 }
 ```
 
@@ -129,6 +129,7 @@ This keeps the cross nonce as a monotonically increasing counter that reflects t
 ### Unified Settlement Nonce
 
 The unified settlement signature (`verifyUnifiedSettlement`) handles nonces differently depending on mode:
+
 - **Cross mode**: Uses `uint256(0)` as the nonce in the hash — matching the zero-nonce convention.
 - **Normal mode**: Uses per-PartyA nonces for PartyB (`partyBNonces[partyB][partyAs[i]]` for each PartyA in the settlement).
 
@@ -145,6 +146,7 @@ The legacy `settleUpnl` function settles one PartyA at a time: it takes a single
 `settleUpnlUnified` (in `LibSettlement`) inverts the settlement axis: it settles one **PartyB** across one or more **PartyAs** in a single transaction.
 
 **Signature structure (`UnifiedSettlementSig`):**
+
 ```
 partyB           — the PartyB being settled
 partyAs[]        — array of PartyA addresses involved
@@ -162,13 +164,13 @@ quotesSettlementsData[] — per-quote data with partyAIndex mapping each quote t
 
 **Key differences from legacy `settleUpnl`:**
 
-| Aspect | Legacy `settleUpnl` | Unified `settleUpnlUnified` |
-|--------|---------------------|----------------------------|
-| Axis | One PartyA, multiple PartyBs | One PartyB, multiple PartyAs |
+| Aspect             | Legacy `settleUpnl`                   | Unified `settleUpnlUnified`               |
+| ------------------ | ------------------------------------- | ----------------------------------------- |
+| Axis               | One PartyA, multiple PartyBs          | One PartyB, multiple PartyAs              |
 | PartyB balance key | `partyBAllocationKey(partyB, partyA)` | `address(0)` (cross) or `partyA` (normal) |
-| Solvency check | Per-PartyA for PartyB | Aggregated (cross) or per-PartyA (normal) |
-| Nonce in signature | Per-PartyA PartyB nonce | Zero (cross) or per-PartyA (normal) |
-| Cross mode support | Partially (uses allocation key) | Native |
+| Solvency check     | Per-PartyA for PartyB                 | Aggregated (cross) or per-PartyA (normal) |
+| Nonce in signature | Per-PartyA PartyB nonce               | Zero (cross) or per-PartyA (normal)       |
+| Cross mode support | Partially (uses allocation key)       | Native                                    |
 
 The legacy `settleUpnl` is kept for backward compatibility with integrations that have not migrated.
 
@@ -203,6 +205,7 @@ The original `forceClosePosition` on `ForceActionsFacet` performs everything in 
 The `ForceCloseStepsFacet` breaks force close into steps that can be executed in separate transactions.
 
 Additionally, the legacy `forceClosePosition` **explicitly rejects** cross-mode PartyBs:
+
 ```solidity
 require(!MAStorage.layout().crossModeEnabledForPartyB[partyB], "ForceActionsFacet: Cross partyB mode enabled");
 ```
@@ -212,6 +215,7 @@ require(!MAStorage.layout().crossModeEnabledForPartyB[partyB], "ForceActionsFace
 **Step 1 — `initializeForceClose(quoteId, HighLowPriceSig)`**
 
 Validates force-close conditions (quote in `CLOSE_PENDING`, cooldowns met, order type is LIMIT, close price reached). Computes the close price with penalty. Checks that PartyA remains solvent after the close. Stores a `ForceCloseDetail` snapshot:
+
 - `closePrice` — the computed force-close price (does not change after init)
 - `upnlPartyB` — PartyB's uPnL from the signature
 - `currentPrice` — the current market price from the signature
@@ -228,6 +232,7 @@ Calls `settleUpnlUnified` with `privilegedMode = true`, which bypasses the "call
 - **PartyB (cross) lacks funds**: Settle the **same PartyB's** positions with **any PartyA**. Since everything goes to the `address(0)` pool, settling with any PartyA funds the same shared bucket.
 
 After settlement, the stored `upnlPartyB` snapshot is adjusted by the settlement delta (only when `sig.partyB == forceCloseQuote.partyB`) so that the finalize step uses consistent numbers:
+
 - **Cross mode**: `upnlPartyB += sum(settleAmountsPerPartyA)` — all settlement amounts affect the single pool.
 - **Normal mode**: `upnlPartyB += settleAmountsPerPartyA[forceClosePartyAIndex]` — only the settlement with the force-close quote's PartyA is relevant.
 
@@ -241,7 +246,7 @@ First refreshes the uPnL/currentPrice snapshot with a fresh Muon signature (ensu
 
 - **Cross PartyB**: Uses `closeQuoteCrossIgnoringUpnl`. First tries to close using the uPnL-based solvency check. If PartyB is insolvent with uPnL, retries with `upnlPartyB = 0` (ignoring uPnL). If the close is possible ignoring uPnL (i.e., the allocated balance minus locked balances covers the cost), the position closes and is marked `CLOSED_INSOLVENT`. If even ignoring uPnL is insufficient, the transaction reverts with `"Insufficient balance"`. **PartyB is never liquidated during cross-mode force close** — the position either closes or the transaction reverts.
 
-  When the close succeeds but PartyB is marked insolvent, the facet emits both `ForceClosePosition` and `ForceClosePartyBInsolvent`. The second event signals to off-chain monitoring that the ClearingHouse should investigate.
+    When the close succeeds but PartyB is marked insolvent, the facet emits both `ForceClosePosition` and `ForceClosePartyBInsolvent`. The second event signals to off-chain monitoring that the ClearingHouse should investigate.
 
 ### Convenience Function
 
@@ -262,10 +267,11 @@ With cross mode enabled, PartyB liquidation becomes impractical on-chain because
 To address this, liquidation of cross-enabled PartyBs is handled by the **ClearingHouse**, a privileged off-chain Symmio entity. The ClearingHouse computes liquidation outcomes off-chain and executes balance updates on-chain through the `ClearingHouseFacet`. All functions require the `CLEARING_HOUSE_ROLE`. The ClearingHouse is fully trusted — `liquidateCrossPartyB` takes the UPNL and liquidation parameters directly from the ClearingHouse without requiring a Muon oracle signature.
 
 The ClearingHouse handles two distinct liquidation flows:
+
 1. **Cross PartyB liquidation** — when a cross-mode PartyB becomes insolvent
 2. **PartyA takeover** — when a PartyA liquidation gets stuck or corrupted
 
-Both flows, their mechanics, and how they interact with each other are documented in detail in [ClearingHouse.md](./ClearingHouse.md).
+Both flows, their mechanics, and how they interact with each other are documented in detail in [Clearing House](./clearing-house.md).
 
 ### Why Cross PartyB Liquidation Is Different
 

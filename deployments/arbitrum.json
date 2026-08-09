@@ -1,0 +1,197 @@
+{
+	"$schema": "../deployment/deployment-recipe.schema.json",
+	"apiVersion": "deployment.symm.io/v1",
+	"kind": "DeploymentRecipe",
+	"name": "arbitrum-deployment",
+	"network": {
+		"name": "arbitrum",
+		"chainId": 42161,
+		"mode": "live"
+	},
+	"secrets": {
+		"deployer": "hardhat-keystore://NEW_DEPLOYER",
+		"rpc": "hardhat-keystore://RPC_ARBITRUM",
+		"explorer": "hardhat-keystore://ETHERSCAN_APIKEY"
+	},
+	"execution": {
+		"logLevel": "verbose",
+		"verify": true,
+		"confirmations": 1,
+		"txTimeoutSeconds": 300,
+		"slowNoticeSeconds": 30
+	},
+	"governance": {
+		"admin": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94",
+		"feeReceiver": "0xc9B7E07E2Fce4FbFbf59D7d06b41Dc5e2Bd495e1",
+		"liquidationInsuranceVault": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94",
+		"maxLiquidationProfitPerPosition": "100000000000000000000",
+		"softLiquidationPenaltyCollector": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94"
+	},
+	"create2": {
+		"factory": { "mode": "deploy" },
+		"groups": {
+			"diamonds": {
+				"prefix": "573310"
+			},
+			"facets": {
+				"suffix": "860"
+			}
+		}
+	},
+	"core": {
+		"mode": "deploy",
+		"collateral": {
+			"mode": "reuse",
+			"address": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
+		},
+		"muon": {
+			"mode": "deploy",
+			"appId": "67095677696457568621176602095256212877581942797155816526660337292193161013107",
+			"upnlValidTime": "60",
+			"priceValidTime": "60",
+			"upnlValidTimeByFunction": {
+				"AccountManagement": "30",
+				"LiquidationPartyA": "120",
+				"LiquidationPartyB": "120",
+				"RemoveMargin": "30"
+			},
+			"publicKey": {
+				"x": "28816647750548585451357630311330111079635661660584752231799347508659086631222",
+				"parity": 0
+			},
+			"gatewaySigners": ["0xF621f85f20BBe733699306D336230184621dBe60"],
+			"permissions": [
+				"Trading",
+				"AccountManagement",
+				"Settlement",
+				"ForceClose",
+				"Funding",
+				"LiquidationPartyA",
+				"LiquidationPartyB",
+				"RemoveMargin"
+			]
+		},
+		"protocol": {
+			"description": "Arbitrum One Staging Vibe",
+			"parameters": {
+				"balanceLimitPerUser": "1000000000000000000000000",
+				"maxWithdrawParts": 10,
+				"deallocateCooldown": 259200,
+				"settlementCooldown": 300,
+				"deallocateDebounceTime": 0,
+				"liquidatorShare": "100000000000000000",
+				"liquidationTimeout": 100,
+				"forceCloseCooldowns": [300, 120],
+				"forceCancelCooldown": 300,
+				"forceCancelCloseCooldown": 300,
+				"pendingQuotesValidLength": 10,
+				"maxPartyAConnectionLimit": 5
+			},
+			"instantLayerTemplates": [
+				{
+					"name": "InstantOpen",
+					"instantOpenMode": true,
+					"operations": [
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [0],
+							"sourceIndices": [1],
+							"sourceOffsets": [0]
+						},
+						{
+							"insertionPoints": [0],
+							"sourceIndices": [1],
+							"sourceOffsets": [0]
+						}
+					]
+				},
+				{
+					"name": "InstantClose",
+					"operations": [
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						}
+					]
+				},
+				{
+					"name": "InstantCloseWithAllocation",
+					"operations": [
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						}
+					]
+				},
+				{
+					"name": "InstantOpenNoMargin",
+					"operations": [
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [0],
+							"sourceIndices": [0],
+							"sourceOffsets": [0]
+						},
+						{
+							"insertionPoints": [0],
+							"sourceIndices": [0],
+							"sourceOffsets": [0]
+						}
+					]
+				}
+			]
+		},
+		"setupInstantLayerTemplates": true,
+		"registerDummyAffiliate": false
+	},
+	"partyB": {
+		"mode": "deploy",
+		"signer": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94",
+		"adlEnabled": true
+	},
+	"symbolManager": {
+		"mode": "deploy",
+		"operator": "0xE09563c28Bb12C7E7d7C4ae02d9a94d8f0Bc732A"
+	},
+	"expressProvider": {
+		"mode": "deploy",
+		"registerOnCore": true,
+		"securityWindow": 20,
+		"tolerancePeriod": 60,
+		"creditLine": {
+			"signatureVerifier": "fromCore",
+			"muonAppId": "67095677696457568621176602095256212877581942797155816526660337292193161013107",
+			"muonFreshnessWindow": 120
+		}
+	}
+}

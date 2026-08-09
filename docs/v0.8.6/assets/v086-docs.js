@@ -23,13 +23,13 @@
 			'<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>',
 		check: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg>',
 		copy: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>',
-		eyeOff: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m2 2 20 20"/><path d="M10.6 10.6a2 2 0 0 0 2.8 2.8"/><path d="M16.7 16.7A10.8 10.8 0 0 1 12 18C7 18 3.7 14.9 2 12c.8-1.4 2.1-2.8 3.6-3.9"/><path d="M9.9 5.2A10.6 10.6 0 0 1 12 5c5 0 8.3 3.1 10 7a12.7 12.7 0 0 1-2.1 3.1"/></svg>',
 		expand: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6"/><path d="m21 3-7 7"/><path d="M9 21H3v-6"/><path d="m3 21 7-7"/></svg>',
 		fileDown:
 			'<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 12v6"/><path d="m9 15 3 3 3-3"/></svg>',
 		home: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>',
-		list: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>',
 		moon: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5 7 7 0 1 0 20.5 14.5"/></svg>',
+		sidebar:
+			'<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/></svg>',
 		sun: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.9 4.9 1.4 1.4"/><path d="m17.7 17.7 1.4 1.4"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.3 17.7-1.4 1.4"/><path d="m19.1 4.9-1.4 1.4"/></svg>',
 		wrap: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h14a4 4 0 0 1 0 8H7"/><path d="m10 12-3 3 3 3"/></svg>',
 	};
@@ -81,11 +81,8 @@
 		});
 	};
 	const savedTheme = themeStorage.get();
-	if (savedTheme === "dark" || savedTheme === "light") {
-		root.dataset.theme = savedTheme;
-	} else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
-		root.dataset.theme = "dark";
-	}
+	// Dark is the canonical Symmio surface; light is opt-in via the toggle.
+	root.dataset.theme = savedTheme === "light" ? "light" : "dark";
 	syncThemeButtons();
 	installButtonIcons();
 	installPdfExport();
@@ -137,7 +134,7 @@
 
 		const sync = (collapsed, persist = true) => {
 			body.classList.toggle("rail-right-collapsed", collapsed);
-			setIconLabel(button, collapsed ? icons.list : icons.eyeOff, collapsed ? "Sections" : "Hide");
+			setIconLabel(button, icons.sidebar, collapsed ? "Sections" : "Hide");
 			button.setAttribute("aria-expanded", String(!collapsed));
 			button.setAttribute("aria-label", collapsed ? "Show sections sidebar" : "Hide sections sidebar");
 			if (persist) railStorage.set("v086-docs-sections-collapsed", String(collapsed));
@@ -180,7 +177,6 @@
 		const railActions = document.createElement("div");
 		railActions.className = "arc-rail-actions";
 		if (actions) railActions.append(actions);
-		if (sectionToggle) railActions.append(sectionToggle);
 		railTop.append(railActions);
 
 		const pageLink = document.createElement("a");
@@ -202,6 +198,13 @@
 			if (child.matches(".toc-title, .toc-link, .toc-empty")) sectionList.append(child);
 		});
 		sectionCard.append(sectionList);
+
+		if (sectionToggle) {
+			const railFooter = document.createElement("div");
+			railFooter.className = "arc-rail-footer";
+			railFooter.append(sectionToggle);
+			sectionCard.append(railFooter);
+		}
 	};
 
 	const normalize = value => value.toLowerCase().replace(/\s+/g, " ").trim();
@@ -726,40 +729,42 @@
 			const mermaidTheme =
 				root.dataset.theme === "dark"
 					? {
-							background: "#0b0f0e",
-							mainBkg: "#241816",
-							primaryColor: "#241816",
-							primaryBorderColor: "#ff8f83",
-							primaryTextColor: "#f1f7f4",
-							secondaryColor: "#241816",
-							secondaryBorderColor: "#ff8f83",
-							secondaryTextColor: "#f1f7f4",
-							tertiaryColor: "#292512",
-							tertiaryBorderColor: "#e7c965",
-							tertiaryTextColor: "#f1f7f4",
-							lineColor: "#aaa29d",
-							textColor: "#f1f7f4",
-							nodeTextColor: "#f1f7f4",
-							clusterBkg: "#121110",
-							clusterBorder: "#5d4742",
-							edgeLabelBackground: "#15110f",
-							actorBkg: "#241816",
-							actorBorder: "#ff8f83",
-							actorTextColor: "#f1f7f4",
-							actorLineColor: "#aaa29d",
-							noteBkgColor: "#292512",
-							noteTextColor: "#f1f7f4",
-							noteBorderColor: "#e7c965",
-							labelBoxBkgColor: "#292512",
-							labelBoxBorderColor: "#e7c965",
-							labelTextColor: "#f1f7f4",
-							loopTextColor: "#f1f7f4",
+							fontFamily: "Manrope, ui-sans-serif, system-ui, sans-serif",
+							background: "#0a0505",
+							mainBkg: "#1c100e",
+							primaryColor: "#1c100e",
+							primaryBorderColor: "#ff7c70",
+							primaryTextColor: "#f2eded",
+							secondaryColor: "#141010",
+							secondaryBorderColor: "#807b7b",
+							secondaryTextColor: "#f2eded",
+							tertiaryColor: "#131010",
+							tertiaryBorderColor: "#807b7b",
+							tertiaryTextColor: "#f2eded",
+							lineColor: "#8f8a8a",
+							textColor: "#f2eded",
+							nodeTextColor: "#f2eded",
+							clusterBkg: "#121010",
+							clusterBorder: "#4a4646",
+							edgeLabelBackground: "#141010",
+							actorBkg: "#1c100e",
+							actorBorder: "#ff7c70",
+							actorTextColor: "#f2eded",
+							actorLineColor: "#8f8a8a",
+							noteBkgColor: "#141010",
+							noteTextColor: "#f2eded",
+							noteBorderColor: "#4a4646",
+							labelBoxBkgColor: "#141010",
+							labelBoxBorderColor: "#4a4646",
+							labelTextColor: "#f2eded",
+							loopTextColor: "#f2eded",
 						}
 					: {
+							fontFamily: "Manrope, ui-sans-serif, system-ui, sans-serif",
 							background: "#ffffff",
 							mainBkg: "#fff1ef",
 							primaryColor: "#fff1ef",
-							primaryBorderColor: "#ff6f61",
+							primaryBorderColor: "#e0483a",
 							primaryTextColor: "#0a0a0a",
 							secondaryColor: "#fff1ef",
 							secondaryBorderColor: "#ff6f61",
@@ -1322,6 +1327,45 @@
 		}
 	});
 
+	// Inline identifiers read like miniature code blocks: call name, args, punctuation.
+	// A single pass so member access (a.b), indexing (a[b]) and operators get the
+	// same treatment as calls -- not just the fn(args) shape.
+	const escapeCode = value => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+	const codeToken = /([A-Za-z_$][\w$]*)|(\d+(?:\.\d+)?)|([(),.[\]=<>;:]+)|([\s\S])/g;
+
+	const tokenizeInlineCode = text => {
+		let depth = 0;
+		let html = "";
+		let match;
+		codeToken.lastIndex = 0;
+		while ((match = codeToken.exec(text))) {
+			const [raw, identifier, number, punctuation] = match;
+			if (identifier) {
+				// Only a following "(" proves this is a call; inside brackets it is an argument.
+				const cls = text[codeToken.lastIndex] === "(" ? "tok-fn" : depth > 0 ? "tok-arg" : "";
+				html += cls ? '<span class="' + cls + '">' + escapeCode(raw) + "</span>" : escapeCode(raw);
+			} else if (number) {
+				html += '<span class="tok-num">' + escapeCode(raw) + "</span>";
+			} else if (punctuation) {
+				for (const char of raw) {
+					if (char === "(" || char === "[") depth += 1;
+					else if (char === ")" || char === "]") depth = Math.max(0, depth - 1);
+				}
+				html += '<span class="tok-punct">' + escapeCode(raw) + "</span>";
+			} else {
+				html += escapeCode(raw);
+			}
+		}
+		return html;
+	};
+
+	document.querySelectorAll(".doc-article :not(pre) > code, .function-card > code, .reader-hero :not(pre) > code").forEach(node => {
+		if (node.querySelector("span")) return;
+		const text = node.textContent || "";
+		if (!/[(),.[\]=<>]/.test(text)) return;
+		node.innerHTML = tokenizeInlineCode(text);
+	});
+
 	document.querySelectorAll(".doc-article pre").forEach(pre => {
 		if (pre.closest(".mermaid-frame")) return;
 		if (pre.closest(".code-frame")) return;
@@ -1331,6 +1375,11 @@
 		if (code && code.classList.contains("language-solidity")) frame.classList.add("code-frame-solidity");
 		const toolbar = document.createElement("div");
 		toolbar.className = "code-toolbar";
+		const langMatch = code && /language-([a-z0-9+#-]+)/i.exec(code.className || "");
+		const langLabel = document.createElement("span");
+		langLabel.className = "code-lang";
+		langLabel.textContent = langMatch ? langMatch[1] : "text";
+		toolbar.append(langLabel);
 		const actions = document.createElement("div");
 		actions.className = "code-actions";
 		const wrap = document.createElement("button");

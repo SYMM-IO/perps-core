@@ -30,17 +30,50 @@ Use `status --config <recipe> --only partyB|symbolManager` for a read-only, comp
 
 Valid component names are `core`, `partyB`, `symbolManager`, and `expressProvider`.
 
-An `expressProvider` set to `deploy` must declare everything needed to operate and supervise
-it: `registerOnCore`, a `creditLine` block (`signatureVerifier` — an address or the literal
-`"fromCore"` to resolve the core diamond's verifier — plus `muonAppId` and
-`muonFreshnessWindow`), a `roles` map containing at least one `OPERATOR_ROLE` holder, and at
-least one entry in `affiliates`. Planning fails closed on any of these, because a provider with
-no operator can accept withdrawals it can never process, and an unregistered one cannot call
+`core.muon.upnlValidTime` is the global window every UPNL signature is checked against.
+`core.muon.upnlValidTimeByFunction` narrows or widens that window for individual operations,
+keyed by MuonFunction name:
+
+```json
+"upnlValidTimeByFunction": { "Trading": "30", "LiquidationPartyA": "600" }
+```
+
+Each declared entry becomes a `setMuonFunctionUpnlValidTime` call after the global
+`setMuonConfig`, and is read back before the run reports success. A function you leave out
+uses the global value — on-chain, `0` is the "no override" sentinel, so the recipe rejects `0`
+rather than letting it silently mean "clear". Clearing an existing override is a deliberate
+governance action, not a recipe edit.
+
+An `expressProvider` set to `deploy` may declare as much or as little of its setup as is ready.
+Every section — `registerOnCore`, `creditLine` (`signatureVerifier`, an address or the literal
+`"fromCore"` to resolve the core diamond's verifier, plus `muonAppId` and
+`muonFreshnessWindow`), `roles`, and `affiliates` — is optional, and an omitted one is simply
+not configured: the diamond is cut and handed over, nothing else is written, and a later
+`reuse` patch fills in the rest. A section that _is_ declared must still be usable, so an empty
+`affiliates` array or an empty `OPERATOR_ROLE` list is rejected rather than treated as a
+deferral. The run warns on the way out with the list of sections it left unconfigured.
+
+What makes a provider live is a `SIGNER_ROLE` holder: `SymmioHookFacet` accepts a credit offer
+from nobody else, so until one exists the diamond cannot accept, advance, or owe anything.
+Declaring a signer is therefore the moment the whole operating surface becomes mandatory —
+`registerOnCore: true`, `creditLine`, at least one `OPERATOR_ROLE` holder, and at least one
+entry in `affiliates`. Planning fails closed on each, because every one of them fails _open_
+if left out: an affiliate with no config is uncapped rather than blocked, a provider with no
+operator can accept withdrawals it can never process, and an unregistered one cannot call
 `advanceWithdraw` at all.
 
 Per-affiliate `maxDebt` and `maxDebtBps` become the protocol-side caps. `0` on either axis
 means **no limit** on that axis; `doctor` warns when both are `0`, since an uncapped credit
 line can advance the whole eligible base out of Core.
+
+An `expressProvider` set to `reuse` **with declared sections** is a **patch**: run with
+`--only expressProvider`, it reconciles the deployed provider at `address` to match the
+declared sections — missing role holders and validators are granted/enabled, and ones present
+in the last applied report but dropped from the recipe are revoked/disabled. Omitted sections
+are left untouched. Mutations the signer lacks authority for become Safe-ready manual
+actions, exactly like the deploy handover; rerun the identical command after they confirm.
+Removed affiliates are never auto-cleared (zeroing caps would mean "no limit") — the run
+warns and leaves them for an explicit decision.
 
 Secrets never belong in the JSON. Use `hardhat-keystore://KEY` (recommended) or `env://KEY` references. The schema is [deployment-recipe.schema.json](./deployment-recipe.schema.json), and the reviewed starter is [examples/arbitrum.v1.example.json](./examples/arbitrum.v1.example.json). The starter intentionally contains invalid `REPLACE_*` values so it cannot pass `doctor` before review.
 

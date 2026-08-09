@@ -113,6 +113,79 @@ export function parseMuonFunctionPermissions(rawValue: string, label = "MUON_FUN
 	return resolveMuonFunctionPermissions(names, label)
 }
 
+export type MuonFunctionUpnlValidTime = MuonFunctionDefinition & {
+	upnlValidTime: string
+}
+
+const UINT256_MAX = (BigInt(1) << BigInt(256)) - BigInt(1)
+
+/**
+ * Resolve per-function UPNL validity overrides into canonical Solidity enum order.
+ *
+ * On-chain, zero is the unset value: setMuonFunctionUpnlValidTime(func, 0) deletes the
+ * override and falls back to the global window. A recipe therefore expresses "no override"
+ * by omitting the function, and a zero value is rejected as ambiguous.
+ */
+export function resolveMuonFunctionUpnlValidTimes(
+	entries: Readonly<Record<string, string>>,
+	label = "Muon per-function UPNL validity",
+): MuonFunctionUpnlValidTime[] {
+	if (!entries || typeof entries !== "object" || Array.isArray(entries)) {
+		throw new Error(`${label} must be an object keyed by MuonFunction name`)
+	}
+
+	const resolved = new Map<MuonFunctionName, MuonFunctionUpnlValidTime>()
+
+	for (const [rawName, rawValue] of Object.entries(entries)) {
+		const definition = MUON_FUNCTION_BY_NAME.get(rawName)
+		if (!definition) {
+			throw new Error(`Unknown MuonFunction in ${label}: ${rawName}. Valid values: ${MUON_FUNCTION_NAMES.join(", ")}`)
+		}
+		if (resolved.has(definition.name)) throw new Error(`Duplicate MuonFunction in ${label}: ${definition.name}`)
+
+		if (typeof rawValue !== "string" || !/^(0|[1-9]\d*)$/.test(rawValue)) {
+			throw new Error(`${label}.${definition.name} must be a canonical unsigned base-10 integer string; received ${JSON.stringify(rawValue)}`)
+		}
+		const seconds = BigInt(rawValue)
+		if (seconds === BigInt(0)) {
+			throw new Error(`${label}.${definition.name} must be >= 1; omit the entry to fall back to the global UPNL validity`)
+		}
+		if (seconds > UINT256_MAX) throw new Error(`${label}.${definition.name} must fit in uint256`)
+
+		resolved.set(definition.name, { ...definition, upnlValidTime: seconds.toString() })
+	}
+
+	// Canonical enum order keeps the write sequence and the report deterministic.
+	return MUON_FUNCTIONS.filter(({ name }) => resolved.has(name)).map(({ name }) => resolved.get(name)!)
+}
+
+/** Parse a `Name=seconds,Name=seconds` environment/CLI value into validated overrides. */
+export function parseMuonFunctionUpnlValidTimes(rawValue: string, label = "MUON_FUNCTION_UPNL_VALID_TIMES"): MuonFunctionUpnlValidTime[] {
+	if (typeof rawValue !== "string" || rawValue.trim() === "") return []
+
+	const entries: Record<string, string> = {}
+	for (const [index, rawEntry] of rawValue.split(",").entries()) {
+		const entry = rawEntry.trim()
+		if (entry === "") throw new Error(`${label} contains an empty entry at position ${index + 1}`)
+
+		const separator = entry.indexOf("=")
+		if (separator <= 0 || separator === entry.length - 1) {
+			throw new Error(`${label} entry at position ${index + 1} must use the form MuonFunction=seconds; received ${JSON.stringify(entry)}`)
+		}
+
+		const name = entry.slice(0, separator).trim()
+		if (Object.prototype.hasOwnProperty.call(entries, name)) throw new Error(`Duplicate MuonFunction in ${label}: ${name}`)
+		entries[name] = entry.slice(separator + 1).trim()
+	}
+
+	return resolveMuonFunctionUpnlValidTimes(entries, label)
+}
+
+/** Project validated overrides back into the `Name=seconds,...` transport form. */
+export function formatMuonFunctionUpnlValidTimes(overrides: readonly MuonFunctionUpnlValidTime[]): string {
+	return overrides.map(({ name, upnlValidTime }) => `${name}=${upnlValidTime}`).join(",")
+}
+
 /**
  * General production deployments exercise every Muon category. This validation
  * deliberately rejects partial permission profiles before any transaction is sent

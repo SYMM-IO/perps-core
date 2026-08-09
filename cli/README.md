@@ -9,13 +9,28 @@ command; it works in Fish, Zsh, Bash, and CI without installing a global binary.
 
 `./symmio` is the checkout-local entrypoint. It checks that Node matches `.node-version` and
 that dependencies are installed, then runs `cli/symmio.js` directly — there is no build step,
-so what executes is the source you can read. Linking is optional; `./utils/pinned-yarn.sh link`
+so what executes is the source you can read. Linking is optional; `npm link`
 puts the same CLI on your `PATH` as bare `symmio`.
 
-Package-manager work (install, link, run) goes through `./utils/pinned-yarn.sh`, which enforces
-the Yarn Classic pin. `./utils/yarn-classic.sh` still works as a deprecated alias for both.
+Install dependencies with `npm ci`. A `preinstall` hook rejects Yarn and pnpm, which ignore
+`package-lock.json`.
 
 ## Start here
+
+Run it with no arguments. It reads the recipes, reports and checkpoints already in the
+checkout, tells you where the deployment stands, and offers the next useful step:
+
+```bash
+./symmio
+```
+
+Pressing enter takes the recommended action, `q` quits. Nothing is sent without the same
+confirmation the direct command would ask for — the wizard dispatches to those commands rather
+than reimplementing them, and prints the equivalent command before each one so the flow is
+learnable. Without a TTY it prints the getting-started commands instead of prompting, so CI is
+unaffected.
+
+The same steps typed directly:
 
 ```bash
 ./symmio recipe init --network arbitrum
@@ -89,6 +104,12 @@ least one `OPERATOR_ROLE` holder, and at least one affiliate. The planner fails 
 of these rather than building a provider that cannot be operated. Because its credit line
 advances real collateral out of Core, `doctor` warns when an affiliate has both `maxDebt` and
 `maxDebtBps` set to `0`, which on-chain means no limit.
+
+An `expressProvider` set to `reuse` with an `address` **and declared sections** is a patch:
+`deploy --only expressProvider` reconciles the live provider to those sections — granting
+what is missing, revoking what the last applied report shows was dropped, and emitting
+Safe-ready calldata for anything the signer cannot execute. Omitted sections are untouched;
+nothing is deployed. See `docs/deployment.md` → "Change a live ExpressProvider".
 
 ## Commands
 

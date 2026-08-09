@@ -14,6 +14,7 @@
 		"secrets": { "$ref": "#/$defs/secrets" },
 		"execution": { "$ref": "#/$defs/execution" },
 		"governance": { "$ref": "#/$defs/governance" },
+		"create2": { "$ref": "#/$defs/create2" },
 		"core": { "$ref": "#/$defs/core" },
 		"partyB": { "$ref": "#/$defs/partyB" },
 		"symbolManager": { "$ref": "#/$defs/symbolManager" },
@@ -139,13 +140,51 @@
 				"softLiquidationPenaltyCollector": { "$ref": "#/$defs/address" }
 			}
 		},
+		"vanityPattern": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"prefix": { "type": "string", "pattern": "^[0-9a-fA-F]{1,8}$" },
+				"suffix": { "type": "string", "pattern": "^[0-9a-fA-F]{1,8}$" }
+			}
+		},
 		"create2": {
 			"type": "object",
 			"additionalProperties": false,
-			"required": ["vanityPrefix"],
+			"not": { "required": ["factory", "factoryAddress"] },
 			"properties": {
+				"factory": {
+					"oneOf": [
+						{
+							"type": "object",
+							"additionalProperties": false,
+							"required": ["mode"],
+							"properties": { "mode": { "const": "deploy" } }
+						},
+						{
+							"type": "object",
+							"additionalProperties": false,
+							"required": ["mode", "address"],
+							"properties": {
+								"mode": { "const": "reuse" },
+								"address": { "$ref": "#/$defs/address" }
+							}
+						}
+					]
+				},
 				"factoryAddress": { "$ref": "#/$defs/address" },
-				"vanityPrefix": { "type": "string", "pattern": "^(?:[0-9a-fA-F]{2}){1,4}$" }
+				"groups": {
+					"type": "object",
+					"additionalProperties": false,
+					"properties": {
+						"diamonds": { "$ref": "#/$defs/vanityPattern" },
+						"facets": { "$ref": "#/$defs/vanityPattern" },
+						"libraries": { "$ref": "#/$defs/vanityPattern" },
+						"peripherals": { "$ref": "#/$defs/vanityPattern" }
+					}
+				},
+				"overrides": { "type": "object", "additionalProperties": { "$ref": "#/$defs/vanityPattern" } },
+				"miningBudget": { "type": "integer", "minimum": 1 }
 			}
 		},
 		"collateral": {
@@ -185,6 +224,22 @@
 				]
 			}
 		},
+		"muonUpnlValidTimeByFunction": {
+			"description": "Per-MuonFunction UPNL validity in seconds. Omit a function to fall back to the global upnlValidTime; zero is the on-chain unset value and is rejected here.",
+			"type": "object",
+			"additionalProperties": false,
+			"minProperties": 1,
+			"properties": {
+				"Trading": { "$ref": "#/$defs/positiveUintString" },
+				"AccountManagement": { "$ref": "#/$defs/positiveUintString" },
+				"Settlement": { "$ref": "#/$defs/positiveUintString" },
+				"ForceClose": { "$ref": "#/$defs/positiveUintString" },
+				"Funding": { "$ref": "#/$defs/positiveUintString" },
+				"LiquidationPartyA": { "$ref": "#/$defs/positiveUintString" },
+				"LiquidationPartyB": { "$ref": "#/$defs/positiveUintString" },
+				"RemoveMargin": { "$ref": "#/$defs/positiveUintString" }
+			}
+		},
 		"muonPublicKey": {
 			"type": "object",
 			"additionalProperties": false,
@@ -203,7 +258,8 @@
 					"properties": {
 						"mode": { "const": "mock" },
 						"upnlValidTime": { "$ref": "#/$defs/positiveUintString" },
-						"priceValidTime": { "$ref": "#/$defs/positiveUintString" }
+						"priceValidTime": { "$ref": "#/$defs/positiveUintString" },
+						"upnlValidTimeByFunction": { "$ref": "#/$defs/muonUpnlValidTimeByFunction" }
 					}
 				},
 				{
@@ -215,6 +271,7 @@
 						"appId": { "$ref": "#/$defs/positiveUintString" },
 						"upnlValidTime": { "$ref": "#/$defs/positiveUintString" },
 						"priceValidTime": { "$ref": "#/$defs/positiveUintString" },
+						"upnlValidTimeByFunction": { "$ref": "#/$defs/muonUpnlValidTimeByFunction" },
 						"publicKey": { "$ref": "#/$defs/muonPublicKey" },
 						"gatewaySigners": {
 							"type": "array",
@@ -235,6 +292,7 @@
 						"appId": { "$ref": "#/$defs/positiveUintString" },
 						"upnlValidTime": { "$ref": "#/$defs/positiveUintString" },
 						"priceValidTime": { "$ref": "#/$defs/positiveUintString" },
+						"upnlValidTimeByFunction": { "$ref": "#/$defs/muonUpnlValidTimeByFunction" },
 						"publicKey": { "$ref": "#/$defs/muonPublicKey" },
 						"gatewaySigners": {
 							"type": "array",
@@ -327,7 +385,6 @@
 			"properties": {
 				"mode": { "$ref": "#/$defs/componentMode" },
 				"fromReport": { "type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$" },
-				"create2": { "$ref": "#/$defs/create2" },
 				"collateral": { "$ref": "#/$defs/collateral" },
 				"muon": { "$ref": "#/$defs/muon" },
 				"protocol": { "$ref": "#/$defs/protocol" },
@@ -339,7 +396,7 @@
 					"if": { "type": "object", "properties": { "mode": { "const": "deploy" } }, "required": ["mode"] },
 					"then": {
 						"type": "object",
-						"required": ["create2", "collateral", "muon", "protocol", "setupInstantLayerTemplates", "registerDummyAffiliate"],
+						"required": ["collateral", "muon", "protocol", "setupInstantLayerTemplates", "registerDummyAffiliate"],
 						"not": { "type": "object", "required": ["fromReport"] }
 					}
 				},
@@ -467,7 +524,6 @@
 				"roles": {
 					"type": "object",
 					"additionalProperties": false,
-					"required": ["OPERATOR_ROLE"],
 					"properties": {
 						"OPERATOR_ROLE": { "$ref": "#/$defs/expressRole" },
 						"LOCKER_ROLE": { "$ref": "#/$defs/expressRole" },
@@ -487,12 +543,36 @@
 					"then": { "type": "object", "required": ["address"] }
 				},
 				{
+					"$comment": "On a patch a declared roles section is the complete desired set, so omitting the operators would revoke them.",
+					"if": { "type": "object", "properties": { "mode": { "const": "reuse" } }, "required": ["mode", "roles"] },
+					"then": { "type": "object", "properties": { "roles": { "type": "object", "required": ["OPERATOR_ROLE"] } } }
+				},
+				{
 					"if": { "type": "object", "properties": { "mode": { "enum": ["deploy", "skip"] } }, "required": ["mode"] },
 					"then": { "type": "object", "not": { "type": "object", "required": ["address"] } }
 				},
 				{
-					"if": { "type": "object", "properties": { "mode": { "const": "deploy" } }, "required": ["mode"] },
-					"then": { "type": "object", "required": ["registerOnCore", "creditLine", "roles", "affiliates"] }
+					"$comment": "Every setup section may be deferred on a deploy, but a SIGNER_ROLE holder makes the provider live and the whole operating surface must ship with it.",
+					"if": {
+						"type": "object",
+						"properties": {
+							"mode": { "const": "deploy" },
+							"roles": {
+								"type": "object",
+								"properties": { "SIGNER_ROLE": { "type": "array", "minItems": 1 } },
+								"required": ["SIGNER_ROLE"]
+							}
+						},
+						"required": ["mode", "roles"]
+					},
+					"then": {
+						"type": "object",
+						"required": ["registerOnCore", "creditLine", "roles", "affiliates"],
+						"properties": {
+							"registerOnCore": { "const": true },
+							"roles": { "type": "object", "required": ["OPERATOR_ROLE"] }
+						}
+					}
 				}
 			]
 		}

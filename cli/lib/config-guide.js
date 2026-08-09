@@ -6,18 +6,19 @@ export const RECIPE_EXAMPLE = projectPath("deployment", "examples", "arbitrum.v1
 export const RECIPE_FIELD_BY_RUNTIME_KEY = Object.freeze({
 	ADMIN_PUBLIC_KEY: "governance.admin",
 	COLLATERAL_ADDRESS: "core.collateral.address",
-	CREATE2_FACTORY_ADDRESS: "core.create2.factoryAddress",
+	CREATE2_FACTORY_ADDRESS: "create2.factoryAddress",
 	DEPLOY_LOG_LEVEL: "execution.logLevel",
 	DEPLOY_MOCK_VERIFIER: "core.muon.mode",
 	DEPLOY_PARTYB: "partyB.mode",
 	DEPLOY_SYMBOL_MANAGER: "symbolManager.mode",
-	DIAMOND_VANITY_PREFIX: "core.create2.vanityPrefix",
+	DIAMOND_VANITY_PREFIX: "create2.groups.diamonds.prefix",
 	ETHERSCAN_APIKEY: "secrets.explorer",
 	FORK_BLOCK_NUMBER: "execution.forkBlockNumber",
 	LIQUIDATION_INSURANCE_VAULT: "governance.liquidationInsuranceVault",
 	MAX_LIQUIDATION_PROFIT_PER_POSITION: "governance.maxLiquidationProfitPerPosition",
 	MUON_APP_ID: "core.muon.appId",
 	MUON_FUNCTION_PERMISSIONS: "core.muon.permissions",
+	MUON_FUNCTION_UPNL_VALID_TIMES: "core.muon.upnlValidTimeByFunction",
 	MUON_GATEWAY_SIGNERS: "core.muon.gatewaySigners",
 	MUON_PRICE_VALID_TIME: "core.muon.priceValidTime",
 	MUON_PUBLIC_KEY_PARITY: "core.muon.publicKey.parity",
@@ -81,7 +82,7 @@ export function configurationHelpLines() {
 		"  ./symmio doctor --config deployments/arbitrum-partyB.json --only partyB",
 		"",
 		"Optional global command",
-		"  ./utils/pinned-yarn.sh link  # after this, `symmio ...` is available in your shell",
+		"  npm link  # after this, `symmio ...` is available in your shell",
 	];
 }
 

@@ -30,11 +30,11 @@
 		"@types/chai": "^5.2.3",
 		"@types/fs-extra": "^11.0.4",
 		"@types/mocha": "^10.0.7",
-		"@types/node": "^20.14.12",
+		"@types/node": "^22.19.0",
 		"builder-pattern": "^2.2.0",
 		"chai": "^5.1.2",
-		"cross-env": "^7.0.3",
-		"dotenv": "^16.4.5",
+		"cross-env": "^10.1.0",
+		"dotenv": "^17.4.2",
 		"ethers": "^6.13.1",
 		"fs-extra": "^11.2.0",
 		"hardhat": "^3.1.0",
@@ -44,8 +44,8 @@
 		"prettier": "3.8.0",
 		"random-ext": "^2.8.0",
 		"rxjs": "^7.8.1",
+		"shx": "^0.4.0",
 		"solhint": "6.2.3",
-		"shx": "^0.3.4",
 		"ts-node": "^10.9.2",
 		"tsx": "^4.21.0",
 		"typechain": "^8.3.2",
@@ -64,7 +64,6 @@
 		"solidity",
 		"typescript"
 	],
-	"packageManager": "yarn@1.22.22",
 	"publishConfig": {
 		"access": "public"
 	},
@@ -74,10 +73,10 @@
 		"prepare": "husky",
 		"abi:diamond": "node scripts/exportDiamondAbi.mjs",
 		"test:diamond-abi": "node --test test/scripts/diamondAbi.test.mjs",
-		"clean": "shx rm -rf ./artifacts ./cache ./coverage ./src/types ./coverage.json && yarn typechain",
+		"clean": "shx rm -rf ./artifacts ./cache ./coverage ./src/types ./coverage.json && npm run typechain",
 		"compile": "hardhat compile",
 		"coverage": "hardhat test mocha --coverage",
-		"lint": "yarn run lint:sol && yarn run lint:ts",
+		"lint": "npm run lint:sol && npm run lint:ts",
 		"lint:sol": "solhint --config ./.solhint.json --disc --noPoster --quiet \"contracts/**/*.sol\"",
 		"lint:ts": "tsc --noEmit --project tsconfig.operations.json",
 		"test": "./utils/runTestsInParallel.sh",
@@ -85,8 +84,8 @@
 		"test:fuzz:dashboard": "node --import tsx scripts/fuzz/dashboard.ts",
 		"test:fuzz:ci": "cross-env TEST_MODE=fuzz FUZZ_RUN_MODE=bounded hardhat test mocha --bail -- test/sequential/Main.ts",
 		"test:cli": "node --test cli/test/*.test.js",
-		"test:deploy": "hardhat compile && hardhat test mocha --no-compile -- test/parallel/ContractCreationResume.test.ts test/parallel/CopySymbolsPlan.test.ts test/parallel/DeployInfrastructure.test.ts test/parallel/DeploymentRecipeCheckpoint.test.ts test/parallel/DeploymentRecipeComponentExecution.test.ts test/parallel/DeploymentRecipeConfig.test.ts test/parallel/DeploymentRecipeValidation.test.ts test/parallel/DeploymentResumeState.test.ts test/parallel/DeploymentTransactionReconciliation.test.ts test/parallel/DeploymentVerificationBinding.test.ts test/parallel/DeployProtocolConfig.test.ts test/parallel/DeploySystemConfig.test.ts test/parallel/ExecutionGuard.test.ts test/parallel/ExpressProviderDeployment.test.ts test/parallel/MigrationProgressResume.test.ts test/parallel/MuonDeploymentPermissions.test.ts test/parallel/UpgradePeripheralResume.test.ts test/parallel/DeploymentRecordResume.test.ts test/parallel/PartyBDeploymentRecords.test.ts",
-		"check:operations": "yarn run lint && yarn run test:cli && yarn run test:deploy",
+		"test:deploy": "hardhat compile && hardhat test mocha --no-compile -- test/parallel/ContractCreationResume.test.ts test/parallel/CopySymbolsPlan.test.ts test/parallel/DeployInfrastructure.test.ts test/parallel/DeploymentRecipeCheckpoint.test.ts test/parallel/DeploymentRecipeComponentExecution.test.ts test/parallel/DeploymentRecipeConfig.test.ts test/parallel/DeploymentRecipeValidation.test.ts test/parallel/DeploymentResumeState.test.ts test/parallel/DeploymentTransactionReconciliation.test.ts test/parallel/DeploymentVerificationBinding.test.ts test/parallel/DeployProtocolConfig.test.ts test/parallel/DeploySystemConfig.test.ts test/parallel/ExecutionGuard.test.ts test/parallel/ExpressProviderDeployment.test.ts test/parallel/MuonDeploymentPermissions.test.ts test/parallel/DeploymentRecordResume.test.ts test/parallel/PartyBDeploymentRecords.test.ts test/parallel/VanityRegistry.test.ts test/parallel/VanityPlan.test.ts test/parallel/VanityDeployment.test.ts",
+		"check:operations": "npm run lint && npm run test:cli && npm run test:deploy",
 		"typechain": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat typechain",
 		"solhint": "./node_modules/.bin/solhint -f table contracts/**/*.sol",
 		"prettier:contracts": "prettier --write \"contracts/**/*.sol\"",
@@ -100,7 +99,5 @@
 		"bignumber.js": "^9.3.1",
 		"prettier-plugin-solidity": "^2.2.0"
 	},
-	"bin": {
-		"symmio": "./cli/symmio.js"
-	}
+	"bin": "./cli/symmio.js"
 }

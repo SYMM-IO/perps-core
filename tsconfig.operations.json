@@ -10,7 +10,6 @@
 		// pulls the entire legacy test type graph into the deployment/tooling gate.
 		"scripts/fuzz.ts",
 		"scripts/fuzz/**",
-		"scripts/Initialize.ts",
-		"scripts/upgrade/localE2ETest.ts"
+		"scripts/Initialize.ts"
 	]
 }

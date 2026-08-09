@@ -1,6 +1,6 @@
 import { expect } from "chai"
 
-import { mineCreate2Salt } from "../tasks/utils/create2Mining.js"
+import { MiningBudgetExceeded, expectedAttempts, mineCreate2Salt } from "../tasks/utils/create2Mining.js"
 import { ethers } from "./helpers/hardhat-connection.js"
 import { loadFixture } from "./helpers/network-helpers.js"
 
@@ -51,7 +51,7 @@ export function shouldBehaveLikeCreate2Factory(): void {
 
 			// Mine a short prefix (2 hex chars) for fast test
 			const prefix = "00"
-			const result = mineCreate2Salt(factoryAddress, initCodeHex, prefix)
+			const result = mineCreate2Salt(factoryAddress, initCodeHex, { prefix })
 			expect(result.address.toLowerCase().startsWith("0x" + prefix)).to.be.true
 			expect(result.attempts).to.be.greaterThan(0)
 
@@ -66,6 +66,68 @@ export function shouldBehaveLikeCreate2Factory(): void {
 			const diamond = await ethers.getContractAt("IDiamondCut", result.address)
 			// An empty diamond cut should succeed (no-op)
 			await expect(diamond.connect(deployer).diamondCut([], ethers.ZeroAddress, "0x")).to.not.be.reverted
+		})
+
+		it("mines a suffix-only pattern and deploys to the mined address", async function () {
+			const { create2Factory, deployer } = await loadFixture(deployCreate2FactoryFixture)
+			const factoryAddress = await create2Factory.getAddress()
+
+			const DiamondCutFactory = await ethers.getContractFactory("DiamondCutFacet")
+			const initCodeHex = ethers.hexlify(DiamondCutFactory.bytecode)
+
+			const result = mineCreate2Salt(factoryAddress, initCodeHex, { suffix: "ab" })
+			expect(result.address.toLowerCase().endsWith("ab")).to.be.true
+			expect(result.address).to.equal(ethers.getCreate2Address(factoryAddress, result.salt, ethers.keccak256(initCodeHex)))
+
+			await create2Factory.connect(deployer).deploy(result.salt, initCodeHex)
+			expect(await ethers.provider.getCode(result.address)).to.not.equal("0x")
+		})
+
+		it("mines a combined prefix and suffix pattern", async function () {
+			const { create2Factory } = await loadFixture(deployCreate2FactoryFixture)
+			const factoryAddress = await create2Factory.getAddress()
+			const DiamondCutFactory = await ethers.getContractFactory("DiamondCutFacet")
+			const initCodeHex = ethers.hexlify(DiamondCutFactory.bytecode)
+
+			const result = mineCreate2Salt(factoryAddress, initCodeHex, { prefix: "a", suffix: "b" })
+			const body = result.address.toLowerCase().slice(2)
+			expect(body.startsWith("a")).to.be.true
+			expect(body.endsWith("b")).to.be.true
+		})
+
+		it("returns the same salt for the same factory and init code", async function () {
+			const { create2Factory } = await loadFixture(deployCreate2FactoryFixture)
+			const factoryAddress = await create2Factory.getAddress()
+			const DiamondCutFactory = await ethers.getContractFactory("DiamondCutFacet")
+			const initCodeHex = ethers.hexlify(DiamondCutFactory.bytecode)
+
+			const first = mineCreate2Salt(factoryAddress, initCodeHex, { suffix: "cd" })
+			const second = mineCreate2Salt(factoryAddress, initCodeHex, { suffix: "cd" })
+			expect(second.salt).to.equal(first.salt)
+			expect(second.address).to.equal(first.address)
+		})
+
+		it("throws MiningBudgetExceeded instead of searching forever", async function () {
+			const { create2Factory } = await loadFixture(deployCreate2FactoryFixture)
+			const factoryAddress = await create2Factory.getAddress()
+			const DiamondCutFactory = await ethers.getContractFactory("DiamondCutFacet")
+			const initCodeHex = ethers.hexlify(DiamondCutFactory.bytecode)
+
+			expect(() => mineCreate2Salt(factoryAddress, initCodeHex, { prefix: "abcdef" }, { maxAttempts: 50 })).to.throw(MiningBudgetExceeded)
+		})
+
+		it("computes expected attempts as 16 to the power of constrained hex characters", function () {
+			expect(expectedAttempts({ suffix: "86" })).to.equal(256)
+			expect(expectedAttempts({ prefix: "573310" })).to.equal(16_777_216)
+			expect(expectedAttempts({ prefix: "57", suffix: "86" })).to.equal(65_536)
+			expect(expectedAttempts({})).to.equal(1)
+		})
+
+		it("rejects an empty pattern", async function () {
+			const { create2Factory } = await loadFixture(deployCreate2FactoryFixture)
+			const factoryAddress = await create2Factory.getAddress()
+			const DiamondCutFactory = await ethers.getContractFactory("DiamondCutFacet")
+			expect(() => mineCreate2Salt(factoryAddress, ethers.hexlify(DiamondCutFactory.bytecode), {})).to.throw(/requires a prefix or a suffix/)
 		})
 
 		it("should revert when deploying with the same salt and bytecode twice", async function () {
