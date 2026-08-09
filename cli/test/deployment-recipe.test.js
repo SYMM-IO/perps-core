@@ -62,7 +62,6 @@ function localRecipe() {
 		},
 		core: {
 			mode: "deploy",
-			create2: { vanityPrefix: "573310" },
 			collateral: { mode: "deploy" },
 			muon: { mode: "mock", upnlValidTime: "300", priceValidTime: "300" },
 			protocol: protocol(),
@@ -122,13 +121,77 @@ test("recipe validation is strict at every layer and enforces conditional addres
 	assert.throws(() => validateDeploymentRecipe(unsafeName), /must be a safe 1-128 character slug/);
 
 	const invalidVanity = localRecipe();
-	invalidVanity.core.create2.vanityPrefix = "abc";
-	assert.throws(() => validateDeploymentRecipe(invalidVanity), /2, 4, 6, or 8 hexadecimal characters/);
+	invalidVanity.create2 = { groups: { facets: { suffix: "abc-" } } };
+	assert.throws(() => validateDeploymentRecipe(invalidVanity), /1-8 hexadecimal characters/);
 
 	const minimalCoreReuse = localRecipe();
 	minimalCoreReuse.core = { mode: "reuse", fromReport: "../tasks/data/42161/deployment-report.json" };
 	minimalCoreReuse.governance = { admin: A };
 	assert.equal(validateDeploymentRecipe(minimalCoreReuse).core.mode, "reuse");
+});
+
+test("create2 vanity configuration lives in a top-level block with qualified overrides", () => {
+	const factory = "0x4e59b44847b379578588920cA78FbF26c0B4956C";
+
+	const configured = localRecipe();
+	configured.create2 = {
+		factoryAddress: factory,
+		groups: { diamonds: { prefix: "573310" }, facets: { suffix: "86" } },
+		overrides: { "core/PartyAFacet": { suffix: "8686" } },
+		miningBudget: 1000000,
+	};
+	assert.doesNotThrow(() => validateDeploymentRecipe(configured));
+
+	const legacy = localRecipe();
+	legacy.core.create2 = { vanityPrefix: "573310" };
+	assert.throws(() => validateDeploymentRecipe(legacy), /core\.create2 has moved to the top-level "create2" block/);
+
+	const unqualified = localRecipe();
+	unqualified.create2 = { factoryAddress: factory, overrides: { ControlFacet: { suffix: "86" } } };
+	assert.throws(() => validateDeploymentRecipe(unqualified), /is not a known deployable contract/);
+
+	const unknownContract = localRecipe();
+	unknownContract.create2 = { factoryAddress: factory, overrides: { "core/NotAFacet": { suffix: "86" } } };
+	assert.throws(() => validateDeploymentRecipe(unknownContract), /is not a known deployable contract/);
+
+	const unknownGroup = localRecipe();
+	unknownGroup.create2 = { factoryAddress: factory, groups: { widgets: { suffix: "86" } } };
+	assert.throws(() => validateDeploymentRecipe(unknownGroup), /create2\.groups\.widgets is not a supported field/);
+
+	const withoutFactory = localRecipe();
+	withoutFactory.create2 = { groups: { facets: { suffix: "86" } } };
+	assert.throws(() => validateDeploymentRecipe(withoutFactory), /create2\.factory is required/);
+
+	const deployFactory = localRecipe();
+	deployFactory.create2 = { factory: { mode: "deploy" }, groups: { diamonds: { prefix: "573310" } } };
+	assert.doesNotThrow(() => validateDeploymentRecipe(deployFactory));
+
+	const reuseFactory = localRecipe();
+	reuseFactory.create2 = { factory: { mode: "reuse", address: factory }, groups: { facets: { suffix: "86" } } };
+	assert.doesNotThrow(() => validateDeploymentRecipe(reuseFactory));
+
+	const bothSpellings = localRecipe();
+	bothSpellings.create2 = { factory: { mode: "deploy" }, factoryAddress: factory, groups: { facets: { suffix: "86" } } };
+	assert.throws(() => validateDeploymentRecipe(bothSpellings), /two spellings of the same intent/);
+
+	const reuseWithoutAddress = localRecipe();
+	reuseWithoutAddress.create2 = { factory: { mode: "reuse" }, groups: { facets: { suffix: "86" } } };
+	assert.throws(() => validateDeploymentRecipe(reuseWithoutAddress), /create2\.factory\.address is required/);
+
+	const deployWithAddress = localRecipe();
+	deployWithAddress.create2 = { factory: { mode: "deploy", address: factory }, groups: { facets: { suffix: "86" } } };
+	assert.throws(() => validateDeploymentRecipe(deployWithAddress), /must be omitted when create2\.factory\.mode is deploy/);
+
+	const badMode = localRecipe();
+	badMode.create2 = { factory: { mode: "patch" }, groups: { facets: { suffix: "86" } } };
+	assert.throws(() => validateDeploymentRecipe(badMode), /create2\.factory\.mode/);
+
+	const declaredNothing = localRecipe();
+	declaredNothing.create2 = { groups: { facets: {} } };
+	assert.doesNotThrow(() => validateDeploymentRecipe(declaredNothing));
+
+	const absent = localRecipe();
+	assert.doesNotThrow(() => validateDeploymentRecipe(absent));
 });
 
 test("execution policy uses task-compatible ranges and fork-only block pinning", () => {
@@ -350,30 +413,47 @@ test("ExpressProvider deploy plans once its operating configuration is complete"
 	assert.equal(plan.components.find(component => component.name === "expressProvider")?.mode, "deploy");
 });
 
-test("ExpressProvider deploy requires the config that makes it operable", () => {
-	for (const [field, value] of [
-		["registerOnCore", undefined],
-		["creditLine", undefined],
-		["roles", undefined],
-		["affiliates", undefined],
-	]) {
+test("ExpressProvider deploy defers any setup section it is not ready to declare", () => {
+	// An omitted section is not configured rather than defaulted, and a later reuse patch fills
+	// it in. Nothing can reach the provider in the meantime, so partial intent stays partial.
+	for (const field of ["registerOnCore", "creditLine", "roles", "affiliates"]) {
 		const recipe = localRecipe();
 		const component = expressProviderDeploy();
 		delete component[field];
-		if (value !== undefined) component[field] = value;
 		recipe.expressProvider = component;
-		assert.throws(() => createDeploymentPlan(recipe), new RegExp(`expressProvider\\.${field} is required`), `${field} must be required`);
+		assert.doesNotThrow(() => createDeploymentPlan(recipe), `${field} must be deferrable`);
+	}
+
+	// A declared section must still be usable, so an empty one is a mistake, not a deferral.
+	const noAffiliates = localRecipe();
+	noAffiliates.expressProvider = expressProviderDeploy({ affiliates: [] });
+	assert.throws(() => createDeploymentPlan(noAffiliates), /affiliates must be a non-empty array/);
+});
+
+test("ExpressProvider deploy requires the config that makes it operable once it names a signer", () => {
+	// SymmioHookFacet accepts a credit offer from nobody but a SIGNER_ROLE holder, so declaring a
+	// signer is the moment the whole operating surface becomes mandatory.
+	const signer = { SIGNER_ROLE: [B] };
+	const live = localRecipe();
+	live.expressProvider = expressProviderDeploy({ roles: { OPERATOR_ROLE: [B], ...signer } });
+	assert.equal(createDeploymentPlan(live).components.find(component => component.name === "expressProvider")?.mode, "deploy");
+
+	for (const [field, message] of [
+		["creditLine", /creditLine is required once/],
+		["affiliates", /affiliates is required once/],
+		["registerOnCore", /registerOnCore must be true once/],
+	]) {
+		const recipe = localRecipe();
+		const component = expressProviderDeploy({ roles: { OPERATOR_ROLE: [B], ...signer } });
+		delete component[field];
+		recipe.expressProvider = component;
+		assert.throws(() => createDeploymentPlan(recipe), message, `${field} must be required`);
 	}
 
 	// A provider with no operator can accept withdrawals it can never process.
 	const noOperator = localRecipe();
-	noOperator.expressProvider = expressProviderDeploy({ roles: { PAUSER_ROLE: [B] } });
+	noOperator.expressProvider = expressProviderDeploy({ roles: { PAUSER_ROLE: [B], ...signer } });
 	assert.throws(() => createDeploymentPlan(noOperator), /roles\.OPERATOR_ROLE is required/);
-
-	// An empty affiliate set means no pool backs any advance.
-	const noAffiliates = localRecipe();
-	noAffiliates.expressProvider = expressProviderDeploy({ affiliates: [] });
-	assert.throws(() => createDeploymentPlan(noAffiliates), /affiliates must be a non-empty array/);
 });
 
 test("ExpressProvider rejects unknown roles, duplicate affiliates and unreachable validator thresholds", () => {
@@ -404,14 +484,42 @@ test("ExpressProvider rejects unknown roles, duplicate affiliates and unreachabl
 	assert.throws(() => createDeploymentPlan(feeRate), /feeRate must be <= 10000/);
 });
 
-test("ExpressProvider reuse and skip reject deploy-only configuration", () => {
-	const reuse = localRecipe();
-	reuse.expressProvider = { mode: "reuse", address: C, registerOnCore: true };
-	assert.throws(() => createDeploymentPlan(reuse), /registerOnCore must be omitted when mode is reuse/);
-
+test("ExpressProvider skip still rejects configuration, and reuse stays out of full runs", () => {
 	const skip = localRecipe();
 	skip.expressProvider = { mode: "skip", roles: { OPERATOR_ROLE: [B] } };
 	assert.throws(() => createDeploymentPlan(skip), /roles must be omitted when mode is skip/);
+
+	// reuse + sections is a patch, but a patch is --only-scoped: a full run must not
+	// silently reconcile a provider while deploying everything else.
+	const full = localRecipe();
+	full.expressProvider = { mode: "reuse", address: C, roles: { OPERATOR_ROLE: [B] } };
+	assert.throws(() => createDeploymentPlan(full), /deploy or skip/);
+});
+
+function patchRecipe(expressProvider) {
+	const recipe = localRecipe();
+	recipe.name = "local-express-patch";
+	recipe.core = { mode: "reuse", fromReport: "./core-report.json" };
+	recipe.partyB = { mode: "skip", adlEnabled: false };
+	recipe.symbolManager = { mode: "skip" };
+	recipe.expressProvider = expressProvider;
+	return recipe;
+}
+
+test("an ExpressProvider patch plans with --only and validates its declared sections", () => {
+	const plan = createDeploymentPlan(patchRecipe({ mode: "reuse", address: C, roles: { OPERATOR_ROLE: [B] } }), { only: "expressProvider" });
+	assert.equal(plan.components.find(component => component.name === "expressProvider")?.mode, "reuse");
+
+	// Declared sections are validated exactly as strictly as a deploy would validate them.
+	assert.throws(
+		() => createDeploymentPlan(patchRecipe({ mode: "reuse", address: C, roles: { PAUSER_ROLE: [B] } }), { only: "expressProvider" }),
+		/OPERATOR_ROLE/,
+	);
+	assert.throws(
+		() => createDeploymentPlan(patchRecipe({ mode: "reuse", address: C, securityWindow: 5 }), { only: "expressProvider" }),
+		/securityWindow/,
+	);
+	assert.throws(() => createDeploymentPlan(patchRecipe({ mode: "reuse", roles: { OPERATOR_ROLE: [B] } }), { only: "expressProvider" }), /address/);
 });
 
 test("environment projection contains public values and unresolved secret metadata only", () => {
@@ -428,8 +536,8 @@ test("environment projection contains public values and unresolved secret metada
 	assert.equal(projected.env.ADMIN_PUBLIC_KEY, A);
 	assert.equal(projected.env.DEPLOY_CONFIRMATIONS, "2");
 	assert.equal(projected.env.DEPLOY_TX_TIMEOUT, "90");
-	assert.equal(projected.env.DIAMOND_VANITY_PREFIX, "573310");
-	assert.equal(projected.env.CREATE2_FACTORY_ADDRESS, "");
+	assert.equal(Object.hasOwn(projected.env, "DIAMOND_VANITY_PREFIX"), false);
+	assert.equal(Object.hasOwn(projected.env, "CREATE2_FACTORY_ADDRESS"), false);
 	assert.deepEqual(projected.secrets.deployer, { provider: "env", key: "ULTRA_SECRET" });
 	assert.deepEqual(projected.secrets.rpc, { provider: "hardhat-keystore", key: "RPC_LOCAL" });
 	assert.equal(Object.hasOwn(projected.env, "NEW_DEPLOYER"), false);

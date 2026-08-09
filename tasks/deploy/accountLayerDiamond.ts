@@ -12,6 +12,7 @@ import { checkpointDeployment, recoverCheckpointContractDeployments } from "./de
 import { assertStandaloneDeploymentTaskAllowed, getConnection } from "./helpers.js"
 import { logger } from "./logger.js"
 import { confirmDeploymentWithReceipt, send } from "./tx.js"
+import { type VanityContext, create2Record, deployContract } from "./vanityDeploy.js"
 
 const AccountLayerFacetNames = ["CoreFacet", "MarginFacet", "SymmioHookFacet", "ControlFacet", "ViewFacet", "AffiliateFacet", "DiamondLoupeFacet"]
 
@@ -25,9 +26,13 @@ type DeployAccountLayerDiamondArgs = {
 	symmioFeeReceiver: HardhatEthersSigner
 	logData?: boolean
 	checkpoint?: DeploymentCheckpoint
+	vanity?: VanityContext | null
 }
 
-export async function deployAccountLayerDiamond(hre: any, { admin, symmioFeeReceiver, logData = false, checkpoint }: DeployAccountLayerDiamondArgs) {
+export async function deployAccountLayerDiamond(
+	hre: any,
+	{ admin, symmioFeeReceiver, logData = false, checkpoint, vanity = null }: DeployAccountLayerDiamondArgs,
+) {
 	const { ethers } = await getConnection(hre)
 	await recoverCheckpointContractDeployments(checkpoint, ethers.provider, "contracts.accountLayerDiamond")
 	let totalGasUsed = BigInt(0)
@@ -54,20 +59,20 @@ export async function deployAccountLayerDiamond(hre: any, { admin, symmioFeeRece
 		logger.info(`  ⏭ DiamondCutFacet already deployed at ${diamondCutFacetAddress}`)
 	} else {
 		const DiamondCutFacetFactory = await ethers.getContractFactory("DiamondCutFacet")
-		const diamondCutFacet = await DiamondCutFacetFactory.deploy()
-		const deployment = await confirmDeploymentWithReceipt(
-			diamondCutFacet,
-			"AccountLayer DiamondCutFacet",
-			checkpointDeployment(checkpoint, "contracts.accountLayerDiamond.diamondCutFacet"),
-		)
-		receipt = deployment.receipt
-		totalGasUsed += receipt.gasUsed
-		diamondCutFacetAddress = deployment.address
+		const result = await deployContract(vanity, {
+			key: "accountLayer/DiamondCutFacet",
+			component: "contracts.accountLayerDiamond.diamondCutFacet",
+			label: "AccountLayer DiamondCutFacet",
+			factory: DiamondCutFacetFactory,
+			checkpoint,
+		})
+		totalGasUsed += result.gasUsed
+		diamondCutFacetAddress = result.address
 		logger.deployed("DiamondCutFacet", diamondCutFacetAddress)
 
 		// Save checkpoint
 		if (checkpoint) {
-			alCheckpoint.diamondCutFacet = createDeployedContract(diamondCutFacetAddress)
+			alCheckpoint.diamondCutFacet = createDeployedContract(diamondCutFacetAddress, undefined, create2Record(result))
 			checkpoint.contracts.accountLayerDiamond = alCheckpoint
 			saveCheckpoint(checkpoint)
 		}
@@ -80,20 +85,21 @@ export async function deployAccountLayerDiamond(hre: any, { admin, symmioFeeRece
 		logger.info(`  ⏭ AccountLayerDiamond already deployed at ${diamondAddress}`)
 	} else {
 		const DiamondFactory = await ethers.getContractFactory("Diamond")
-		const diamond = await DiamondFactory.deploy(admin.address, diamondCutFacetAddress)
-		const deployment = await confirmDeploymentWithReceipt(
-			diamond,
-			"AccountLayer Diamond",
-			checkpointDeployment(checkpoint, "contracts.accountLayerDiamond.diamond", [admin.address, diamondCutFacetAddress]),
-		)
-		receipt = deployment.receipt
-		totalGasUsed += receipt.gasUsed
-		diamondAddress = deployment.address
+		const result = await deployContract(vanity, {
+			key: "accountLayer/Diamond",
+			component: "contracts.accountLayerDiamond.diamond",
+			label: "AccountLayer Diamond",
+			factory: DiamondFactory,
+			constructorArgs: [admin.address, diamondCutFacetAddress],
+			checkpoint,
+		})
+		totalGasUsed += result.gasUsed
+		diamondAddress = result.address
 		logger.deployed("AccountLayerDiamond", diamondAddress)
 
 		// Save checkpoint
 		if (checkpoint) {
-			alCheckpoint.diamond = createDeployedContract(diamondAddress, [admin.address, diamondCutFacetAddress])
+			alCheckpoint.diamond = createDeployedContract(diamondAddress, [admin.address, diamondCutFacetAddress], create2Record(result))
 			checkpoint.contracts.accountLayerDiamond = alCheckpoint
 			saveCheckpoint(checkpoint)
 		}
@@ -106,20 +112,20 @@ export async function deployAccountLayerDiamond(hre: any, { admin, symmioFeeRece
 		logger.info(`  ⏭ Init already deployed at ${initAddress}`)
 	} else {
 		const InitFactory = await ethers.getContractFactory("contracts/accountLayer/Init.sol:Init")
-		const init = await InitFactory.deploy()
-		const deployment = await confirmDeploymentWithReceipt(
-			init,
-			"AccountLayer Init",
-			checkpointDeployment(checkpoint, "contracts.accountLayerDiamond.init"),
-		)
-		receipt = deployment.receipt
-		totalGasUsed += receipt.gasUsed
-		initAddress = deployment.address
+		const result = await deployContract(vanity, {
+			key: "accountLayer/Init",
+			component: "contracts.accountLayerDiamond.init",
+			label: "AccountLayer Init",
+			factory: InitFactory,
+			checkpoint,
+		})
+		totalGasUsed += result.gasUsed
+		initAddress = result.address
 		logger.deployed("Init", initAddress)
 
 		// Save checkpoint
 		if (checkpoint) {
-			alCheckpoint.init = createDeployedContract(initAddress)
+			alCheckpoint.init = createDeployedContract(initAddress, undefined, create2Record(result))
 			checkpoint.contracts.accountLayerDiamond = alCheckpoint
 			saveCheckpoint(checkpoint)
 		}
@@ -137,20 +143,20 @@ export async function deployAccountLayerDiamond(hre: any, { admin, symmioFeeRece
 	} else {
 		const artifact = await hre.artifacts.readArtifact("contracts/accountLayer/libraries/LibQuoteParams.sol:LibQuoteParams")
 		const LibQuoteParamsFactory = await ethers.getContractFactoryFromArtifact(deploymentOnlyArtifact(artifact))
-		const libQuoteParams = await LibQuoteParamsFactory.deploy()
-		const deployment = await confirmDeploymentWithReceipt(
-			libQuoteParams,
-			"AccountLayer LibQuoteParams",
-			checkpointDeployment(checkpoint, "contracts.accountLayerDiamond.libraries.LibQuoteParams"),
-		)
-		receipt = deployment.receipt
-		totalGasUsed += receipt.gasUsed
-		libraryAddresses["LibQuoteParams"] = deployment.address
+		const result = await deployContract(vanity, {
+			key: "accountLayer/LibQuoteParams",
+			component: "contracts.accountLayerDiamond.libraries.LibQuoteParams",
+			label: "AccountLayer LibQuoteParams",
+			factory: LibQuoteParamsFactory,
+			checkpoint,
+		})
+		totalGasUsed += result.gasUsed
+		libraryAddresses["LibQuoteParams"] = result.address
 		logger.deployed("LibQuoteParams", libraryAddresses["LibQuoteParams"])
 
 		// Save checkpoint
 		if (checkpoint) {
-			alCheckpoint.libraries!["LibQuoteParams"] = createDeployedContract(libraryAddresses["LibQuoteParams"])
+			alCheckpoint.libraries!["LibQuoteParams"] = createDeployedContract(libraryAddresses["LibQuoteParams"], undefined, create2Record(result))
 			checkpoint.contracts.accountLayerDiamond = alCheckpoint
 			saveCheckpoint(checkpoint)
 		}
@@ -214,20 +220,20 @@ export async function deployAccountLayerDiamond(hre: any, { admin, symmioFeeRece
 				FacetFactory = await ethers.getContractFactory(contractName)
 			}
 
-			const facet = await FacetFactory.deploy()
-			const deployment = await confirmDeploymentWithReceipt(
-				facet,
-				`AccountLayer ${facetName}`,
-				checkpointDeployment(checkpoint, `contracts.accountLayerDiamond.facets.${facetName}`),
-			)
-			receipt = deployment.receipt
-			totalGasUsed += receipt.gasUsed
-			facetAddress = deployment.address
+			const result = await deployContract(vanity, {
+				key: `accountLayer/${facetName}`,
+				component: `contracts.accountLayerDiamond.facets.${facetName}`,
+				label: `AccountLayer ${facetName}`,
+				factory: FacetFactory,
+				checkpoint,
+			})
+			totalGasUsed += result.gasUsed
+			facetAddress = result.address
 			logger.deployed(`[${i + 1}/${AccountLayerFacetNames.length}] ${facetName}`, facetAddress)
 
 			// Save checkpoint
 			if (checkpoint) {
-				alCheckpoint.facets![facetName] = createDeployedContract(facetAddress)
+				alCheckpoint.facets![facetName] = createDeployedContract(facetAddress, undefined, create2Record(result))
 				checkpoint.contracts.accountLayerDiamond = alCheckpoint
 				saveCheckpoint(checkpoint)
 			}

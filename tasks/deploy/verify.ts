@@ -8,6 +8,7 @@ import { getSelectors } from "../utils/diamondCut.js"
 import { getDataDir, setDataScope, writeData } from "../utils/fs.js"
 import {
 	ACCOUNTLAYER_DEPLOYMENT_FILE,
+	CREATE2FACTORY_DEPLOYMENT_FILE,
 	EXPRESSPROVIDER_DEPLOYMENT_FILE,
 	FacetNames,
 	DEPLOYMENT_LOG_FILE,
@@ -240,6 +241,14 @@ export const verifyAllTask = task("verify:all", "Verifies all deployed contracts
 					{ file: DEPLOYMENT_LOG_FILE, name: "Core Diamond deployment records", required: true, include: true },
 					{ file: ACCOUNTLAYER_DEPLOYMENT_FILE, name: "AccountLayer deployment records", required: true, include: true },
 					{ file: INSTANTLAYER_DEPLOYMENT_FILE, name: "InstantLayer deployment records", required: true, include: true },
+					{
+						// A run that reused a factory names it in the report but writes no record;
+						// whoever deployed it verified it, so this is never required.
+						file: CREATE2FACTORY_DEPLOYMENT_FILE,
+						name: "Create2Factory deployment records",
+						required: false,
+						include: Boolean(report?.addresses?.create2Factory),
+					},
 					{
 						file: STABLECOIN_DEPLOYMENT_FILE,
 						name: "Stablecoin deployment records",
@@ -882,6 +891,7 @@ async function verifyCoreSystemParameters(
 		muonAppId?: string
 		muonUpnlValidTime?: string
 		muonPriceValidTime?: string
+		muonFunctionUpnlValidTimes?: Array<{ name: string; index: number; upnlValidTime: string }>
 	},
 ) {
 	const cat = "Core: Params"
@@ -1070,6 +1080,30 @@ async function verifyCoreSystemParameters(
 		}
 	} catch (e: any) {
 		pushAndLog(results, { category: cat, check: "Muon config", status: "fail", message: e.message?.slice(0, 120) })
+	}
+
+	// Per-function UPNL validity overrides. Only the functions the recipe declares are checked;
+	// an undeclared function legitimately falls back to the global window.
+	for (const override of expected.muonFunctionUpnlValidTimes ?? []) {
+		try {
+			const [actual, isOverridden] = await view.getMuonFunctionUpnlValidTime(override.index)
+			const matches = isOverridden && actual.toString() === BigInt(override.upnlValidTime).toString()
+			pushAndLog(results, {
+				category: cat,
+				check: `Muon UPNL validity override (${override.name})`,
+				status: matches ? "pass" : "fail",
+				expected: `${override.upnlValidTime} (overridden)`,
+				actual: isOverridden ? `${actual}` : `${actual} (falling back to global)`,
+				hint: `Call ControlFacet.setMuonFunctionUpnlValidTime(${override.index}, ${override.upnlValidTime}) on Diamond`,
+			})
+		} catch (e: any) {
+			pushAndLog(results, {
+				category: cat,
+				check: `Muon UPNL validity override (${override.name})`,
+				status: "fail",
+				message: e.message?.slice(0, 120),
+			})
+		}
 	}
 
 	try {
@@ -2457,6 +2491,7 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 					muonAppId: reportConfig?.muonAppId,
 					muonUpnlValidTime: reportConfig?.muonUpnlValidTime,
 					muonPriceValidTime: reportConfig?.muonPriceValidTime,
+					muonFunctionUpnlValidTimes: reportConfig?.muonFunctionUpnlValidTimes,
 				})
 
 				// Roles

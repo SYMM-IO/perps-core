@@ -12,7 +12,8 @@ import { deployTasks } from "./tasks/deploy/index.js"
 
 if (!activeDeploymentRecipe) {
 	const dotenvConfigPath = process.env.DOTENV_CONFIG_PATH || "./.env"
-	dotenvConfig({ path: resolve(process.cwd(), dotenvConfigPath) })
+	// quiet: dotenv v17 logs a summary banner on every load; Hardhat runs are noisy enough.
+	dotenvConfig({ path: resolve(process.cwd(), dotenvConfigPath), quiet: true })
 }
 
 const DUMMY_PRIVATE_KEY = "0xec81e00837948239d5927bcb2b785675552bc92f1d2607ee91c540ddb56d6796"

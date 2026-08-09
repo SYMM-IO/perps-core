@@ -71,7 +71,9 @@ interface ISymmio is
 		REIMBURSEMENT_IN,
 		OPERATIONAL_FEE_OUT,
 		OPEN_SOLVER_FEE_OUT,
-		CLOSE_SOLVER_FEE_OUT
+		CLOSE_SOLVER_FEE_OUT,
+		SETTLEMENT_PNL_IN,
+		SETTLEMENT_PNL_OUT
 	}
 
 	/// @notice Reasons for exact changes to PartyA's liquidation reimbursement bucket.

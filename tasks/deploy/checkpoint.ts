@@ -13,6 +13,9 @@ export interface DeployedContract {
 	address: string
 	constructorArgs?: any[]
 	timestamp: string
+	/** Present only for CREATE2 deployments, so the address can be re-derived from init code. */
+	salt?: string
+	create2Factory?: string
 }
 
 export interface DiamondCheckpoint {
@@ -54,6 +57,7 @@ export interface DeploymentCheckpoint {
 	updatedAt: string
 	step: string
 	contracts: {
+		create2Factory?: DeployedContract
 		collateral?: DeployedContract
 		diamond?: DiamondCheckpoint
 		accountLayerDiamond?: AccountLayerCheckpoint
@@ -367,7 +371,7 @@ export function createDeploymentManifest(intent: unknown, options: { deploymentI
 	const deploymentId = options.deploymentId || randomUUID()
 	const intentHash = sha256(stableSerialize(intent))
 	const sourceHash = hashSourceTree(
-		options.sourcePaths || ["contracts", "tasks/deploy", "tasks/utils/diamondCut.ts", "hardhat.config.ts", "package.json", "yarn.lock"],
+		options.sourcePaths || ["contracts", "tasks/deploy", "tasks/utils/diamondCut.ts", "hardhat.config.ts", "package.json", "package-lock.json"],
 	)
 	return {
 		version: 1,
@@ -469,11 +473,17 @@ export function clearCheckpoint(chainId: number, network: string, outcome: "comp
 	}
 }
 
-export function createDeployedContract(address: string, constructorArgs?: any[]): DeployedContract {
+export function createDeployedContract(
+	address: string,
+	constructorArgs?: any[],
+	create2?: { salt: string; factoryAddress: string },
+): DeployedContract {
 	return {
 		address,
 		constructorArgs,
 		timestamp: new Date().toISOString(),
+		salt: create2?.salt,
+		create2Factory: create2?.factoryAddress,
 	}
 }
 

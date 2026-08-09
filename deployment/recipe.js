@@ -1,3 +1,4 @@
+import { DEPLOYABLE_CONTRACTS, VANITY_GROUPS } from "./deployableContracts.js";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -33,6 +34,7 @@ const EXPRESS_ROLES = [
 /** Roles Init grants to the configured admin; the deployment proves them rather than re-granting. */
 const EXPRESS_INIT_ADMIN_ROLES = ["SETTER_ROLE", "FEE_CLAIMER_ROLE", "WITHDRAWER_ROLE", "PAUSER_ROLE"];
 const BPS_DENOMINATOR = 10000;
+const VANITY_HEX = /^[0-9a-fA-F]{1,8}$/;
 const UINT256_MAX = (BigInt(1) << BigInt(256)) - BigInt(1);
 const DEFAULT_CONFIRMATIONS = 1;
 const DEFAULT_TX_TIMEOUT_SECONDS = 300;
@@ -200,14 +202,40 @@ function validateProtocol(value, source, field) {
 	}
 }
 
+/**
+ * Per-function UPNL validity overrides, keyed by MuonFunction name.
+ *
+ * Zero is the on-chain unset value, so a recipe expresses "no override" by omitting the
+ * function rather than by writing 0.
+ */
+function validateMuonUpnlValidTimeByFunction(value, source, field) {
+	if (value === undefined) return;
+	const overrides = object(value, source, field);
+	onlyKeys(overrides, MUON_PERMISSIONS, source, field);
+	for (const [name, seconds] of Object.entries(overrides)) {
+		uintString(seconds, source, `${field}.${name}`, BigInt(1));
+	}
+}
+
 function validateMuon(value, source, field, networkMode) {
 	const muon = object(value, source, field);
-	const keys = ["mode", "address", "appId", "upnlValidTime", "priceValidTime", "publicKey", "gatewaySigners", "permissions"];
+	const keys = [
+		"mode",
+		"address",
+		"appId",
+		"upnlValidTime",
+		"priceValidTime",
+		"upnlValidTimeByFunction",
+		"publicKey",
+		"gatewaySigners",
+		"permissions",
+	];
 	onlyKeys(muon, keys, source, field);
 	required(muon, ["mode", "upnlValidTime", "priceValidTime"], source, field);
 	enumValue(muon.mode, ["mock", "deploy", "reuse"], source, `${field}.mode`);
 	uintString(muon.upnlValidTime, source, `${field}.upnlValidTime`, BigInt(1));
 	uintString(muon.priceValidTime, source, `${field}.priceValidTime`, BigInt(1));
+	validateMuonUpnlValidTimeByFunction(muon.upnlValidTimeByFunction, source, `${field}.upnlValidTimeByFunction`);
 
 	if (muon.mode === "mock") {
 		if (networkMode === "live") fail(source, `${field}.mode`, "mock is forbidden for live targets");
@@ -246,25 +274,83 @@ function validateMuon(value, source, field, networkMode) {
 	}
 }
 
+function validateVanityPattern(value, source, field) {
+	const pattern = object(value, source, field);
+	onlyKeys(pattern, ["prefix", "suffix"], source, field);
+	for (const key of ["prefix", "suffix"]) {
+		if (pattern[key] === undefined) continue;
+		if (typeof pattern[key] !== "string" || !VANITY_HEX.test(pattern[key])) {
+			fail(source, `${field}.${key}`, "must contain 1-8 hexadecimal characters without 0x");
+		}
+	}
+	return pattern.prefix !== undefined || pattern.suffix !== undefined;
+}
+
+/**
+ * Vanity address intent for every component. Declaring a pattern without a factory would
+ * silently fall back to ordinary CREATE and produce an address nobody reviewed, so it fails.
+ * The factory itself is either reused at a known address or deployed by the run.
+ */
+function validateCreate2(value, source) {
+	const create2 = object(value, source, "create2");
+	onlyKeys(create2, ["factory", "factoryAddress", "groups", "overrides", "miningBudget"], source, "create2");
+	if (create2.factory !== undefined && create2.factoryAddress !== undefined) {
+		fail(source, "create2.factory", "and create2.factoryAddress are two spellings of the same intent; keep one");
+	}
+	if (create2.factoryAddress !== undefined) address(create2.factoryAddress, source, "create2.factoryAddress");
+	if (create2.factory !== undefined) {
+		const factory = object(create2.factory, source, "create2.factory");
+		onlyKeys(factory, ["mode", "address"], source, "create2.factory");
+		required(factory, ["mode"], source, "create2.factory");
+		enumValue(factory.mode, ["deploy", "reuse"], source, "create2.factory.mode");
+		if (factory.mode === "reuse") {
+			required(factory, ["address"], source, "create2.factory");
+			address(factory.address, source, "create2.factory.address");
+		} else if (factory.address !== undefined) {
+			fail(source, "create2.factory.address", "must be omitted when create2.factory.mode is deploy");
+		}
+	}
+	if (create2.miningBudget !== undefined) integer(create2.miningBudget, source, "create2.miningBudget", 1);
+
+	let declared = false;
+	if (create2.groups !== undefined) {
+		const groups = object(create2.groups, source, "create2.groups");
+		onlyKeys(groups, VANITY_GROUPS, source, "create2.groups");
+		for (const name of Object.keys(groups)) {
+			declared = validateVanityPattern(groups[name], source, `create2.groups.${name}`) || declared;
+		}
+	}
+	if (create2.overrides !== undefined) {
+		const overrides = object(create2.overrides, source, "create2.overrides");
+		for (const key of Object.keys(overrides)) {
+			if (!Object.hasOwn(DEPLOYABLE_CONTRACTS, key)) {
+				fail(source, `create2.overrides.${key}`, 'is not a known deployable contract; use a qualified key such as "core/PartyAFacet"');
+			}
+			declared = validateVanityPattern(overrides[key], source, `create2.overrides.${key}`) || declared;
+		}
+	}
+	if (declared && create2.factory === undefined && create2.factoryAddress === undefined) {
+		fail(
+			source,
+			"create2.factory",
+			'is required when any group or override declares a vanity pattern; use { "mode": "deploy" } to have the run create one, ' +
+				'or { "mode": "reuse", "address": "0x…" }',
+		);
+	}
+}
+
 function validateCore(value, source, networkMode) {
 	const core = object(value, source, "core");
-	const keys = ["mode", "fromReport", "create2", "collateral", "muon", "protocol", "setupInstantLayerTemplates", "registerDummyAffiliate"];
+	if (core.create2 !== undefined) {
+		fail(source, "core.create2", 'has moved to the top-level "create2" block; see deployment/examples/arbitrum.v1.example.json');
+	}
+	const keys = ["mode", "fromReport", "collateral", "muon", "protocol", "setupInstantLayerTemplates", "registerDummyAffiliate"];
 	onlyKeys(core, keys, source, "core");
 	required(core, ["mode"], source, "core");
 	enumValue(core.mode, COMPONENT_MODES, source, "core.mode");
 	if (core.setupInstantLayerTemplates !== undefined) boolean(core.setupInstantLayerTemplates, source, "core.setupInstantLayerTemplates");
 	if (core.registerDummyAffiliate !== undefined) boolean(core.registerDummyAffiliate, source, "core.registerDummyAffiliate");
 	if (networkMode === "live" && core.registerDummyAffiliate === true) fail(source, "core.registerDummyAffiliate", "must be false for live targets");
-
-	if (core.create2 !== undefined) {
-		const create2 = object(core.create2, source, "core.create2");
-		onlyKeys(create2, ["factoryAddress", "vanityPrefix"], source, "core.create2");
-		required(create2, ["vanityPrefix"], source, "core.create2");
-		if (create2.factoryAddress !== undefined) address(create2.factoryAddress, source, "core.create2.factoryAddress");
-		if (typeof create2.vanityPrefix !== "string" || !/^(?:[0-9a-fA-F]{2}){1,4}$/.test(create2.vanityPrefix)) {
-			fail(source, "core.create2.vanityPrefix", "must contain 2, 4, 6, or 8 hexadecimal characters without 0x");
-		}
-	}
 
 	if (core.collateral !== undefined) {
 		const collateral = object(core.collateral, source, "core.collateral");
@@ -285,7 +371,7 @@ function validateCore(value, source, networkMode) {
 	if (core.muon !== undefined) validateMuon(core.muon, source, "core.muon", networkMode);
 	if (core.protocol !== undefined) validateProtocol(core.protocol, source, "core.protocol");
 	if (core.mode === "deploy") {
-		required(core, ["create2", "collateral", "muon", "protocol", "setupInstantLayerTemplates", "registerDummyAffiliate"], source, "core");
+		required(core, ["collateral", "muon", "protocol", "setupInstantLayerTemplates", "registerDummyAffiliate"], source, "core");
 	}
 	if (core.mode === "reuse") {
 		required(core, ["fromReport"], source, "core");
@@ -308,14 +394,6 @@ function validateExpressProvider(value, source, name = "expressProvider") {
 	enumValue(component.mode, COMPONENT_MODES, source, `${name}.mode`);
 
 	const deployOnly = ["admin", "registerOnCore", "securityWindow", "tolerancePeriod", "creditLine", "roles", "affiliates"];
-	if (component.mode === "reuse") {
-		required(component, ["address"], source, name);
-		address(component.address, source, `${name}.address`);
-		for (const field of deployOnly) {
-			if (component[field] !== undefined) fail(source, `${name}.${field}`, "must be omitted when mode is reuse");
-		}
-		return;
-	}
 	if (component.mode === "skip") {
 		if (component.address !== undefined) fail(source, `${name}.address`, "must be omitted when mode is skip");
 		for (const field of deployOnly) {
@@ -324,34 +402,79 @@ function validateExpressProvider(value, source, name = "expressProvider") {
 		return;
 	}
 
-	if (component.address !== undefined) fail(source, `${name}.address`, "must be omitted when mode is deploy");
-	required(component, ["registerOnCore", "creditLine", "roles", "affiliates"], source, name);
+	// reuse + declared sections is a patch: reconcile the deployed provider at `address` to
+	// match them. An omitted section is left untouched, so partial intent stays partial.
+	const patch = component.mode === "reuse";
+	if (patch) {
+		required(component, ["address"], source, name);
+		address(component.address, source, `${name}.address`);
+	} else {
+		if (component.address !== undefined) fail(source, `${name}.address`, "must be omitted when mode is deploy");
+	}
 	if (component.admin !== undefined) address(component.admin, source, `${name}.admin`);
-	boolean(component.registerOnCore, source, `${name}.registerOnCore`);
+	if (component.registerOnCore !== undefined) boolean(component.registerOnCore, source, `${name}.registerOnCore`);
 	// Init seeds 20s/60s; ControlFacet rejects anything below 10 for either.
 	if (component.securityWindow !== undefined) integer(component.securityWindow, source, `${name}.securityWindow`, 10);
 	if (component.tolerancePeriod !== undefined) integer(component.tolerancePeriod, source, `${name}.tolerancePeriod`, 10);
 
-	const creditLine = object(component.creditLine, source, `${name}.creditLine`);
-	onlyKeys(creditLine, ["signatureVerifier", "muonAppId", "muonFreshnessWindow"], source, `${name}.creditLine`);
-	required(creditLine, ["signatureVerifier", "muonAppId", "muonFreshnessWindow"], source, `${name}.creditLine`);
-	// "fromCore" resolves to the core diamond's configured verifier at execution time, so a
-	// standalone Express run cannot drift from the core it is bound to.
-	if (creditLine.signatureVerifier !== "fromCore") {
-		address(creditLine.signatureVerifier, source, `${name}.creditLine.signatureVerifier`);
+	if (component.creditLine !== undefined) {
+		const creditLine = object(component.creditLine, source, `${name}.creditLine`);
+		onlyKeys(creditLine, ["signatureVerifier", "muonAppId", "muonFreshnessWindow"], source, `${name}.creditLine`);
+		required(creditLine, ["signatureVerifier", "muonAppId", "muonFreshnessWindow"], source, `${name}.creditLine`);
+		// "fromCore" resolves to the core diamond's configured verifier at execution time, so a
+		// standalone Express run cannot drift from the core it is bound to.
+		if (creditLine.signatureVerifier !== "fromCore") {
+			address(creditLine.signatureVerifier, source, `${name}.creditLine.signatureVerifier`);
+		}
+		uintString(creditLine.muonAppId, source, `${name}.creditLine.muonAppId`, BigInt(1));
+		integer(creditLine.muonFreshnessWindow, source, `${name}.creditLine.muonFreshnessWindow`, 1);
 	}
-	uintString(creditLine.muonAppId, source, `${name}.creditLine.muonAppId`, BigInt(1));
-	integer(creditLine.muonFreshnessWindow, source, `${name}.creditLine.muonFreshnessWindow`, 1);
 
-	const roles = object(component.roles, source, `${name}.roles`);
-	onlyKeys(roles, EXPRESS_ROLES, source, `${name}.roles`);
-	for (const role of EXPRESS_ROLES) {
-		if (roles[role] === undefined) continue;
-		uniqueAddresses(roles[role], source, `${name}.roles.${role}`);
+	if (component.roles !== undefined) {
+		const roles = object(component.roles, source, `${name}.roles`);
+		onlyKeys(roles, EXPRESS_ROLES, source, `${name}.roles`);
+		for (const role of EXPRESS_ROLES) {
+			if (roles[role] === undefined) continue;
+			uniqueAddresses(roles[role], source, `${name}.roles.${role}`);
+		}
+		// On a patch a declared roles section is the complete desired set, so omitting the operators
+		// revokes them and the provider could never process a withdrawal it accepted. On a deploy
+		// nothing is revoked, so operators are only owed once a signer can make it accept anything.
+		if (roles.OPERATOR_ROLE === undefined && (patch || (roles.SIGNER_ROLE?.length ?? 0) > 0)) {
+			fail(source, `${name}.roles.OPERATOR_ROLE`, "is required so accepted withdrawals can be processed");
+		}
 	}
-	// A provider with no operator can never process a withdrawal it accepted.
-	if (roles.OPERATOR_ROLE === undefined) fail(source, `${name}.roles.OPERATOR_ROLE`, "is required so accepted withdrawals can be processed");
 
+	// Every setup section may be deferred on a deploy: an omitted section is simply not configured,
+	// and a later reuse patch fills it in. What makes a provider live is a SIGNER_ROLE holder --
+	// SymmioHookFacet accepts a credit offer from nobody else -- so until one exists the diamond
+	// cannot accept, advance, or owe anything. Declaring a signer is the moment the rest becomes
+	// mandatory, and each of these fails open rather than closed if left out.
+	if (!patch && (component.roles?.SIGNER_ROLE?.length ?? 0) > 0) {
+		if (component.affiliates === undefined) {
+			fail(
+				source,
+				`${name}.affiliates`,
+				"is required once roles.SIGNER_ROLE names a signer: an affiliate with no config has an uncapped credit line",
+			);
+		}
+		if (component.creditLine === undefined) {
+			fail(
+				source,
+				`${name}.creditLine`,
+				"is required once roles.SIGNER_ROLE names a signer: reserveDebt reverts with CreditLineNotConfigured until the verifier is set",
+			);
+		}
+		if (component.registerOnCore !== true) {
+			fail(
+				source,
+				`${name}.registerOnCore`,
+				"must be true once roles.SIGNER_ROLE names a signer: core does not route withdrawals to an unregistered provider",
+			);
+		}
+	}
+
+	if (component.affiliates === undefined) return;
 	if (!Array.isArray(component.affiliates) || component.affiliates.length === 0) {
 		fail(source, `${name}.affiliates`, "must be a non-empty array");
 	}
@@ -448,6 +571,7 @@ export function validateDeploymentRecipe(value, source = "deployment recipe") {
 		"secrets",
 		"execution",
 		"governance",
+		"create2",
 		"core",
 		"partyB",
 		"symbolManager",
@@ -456,7 +580,7 @@ export function validateDeploymentRecipe(value, source = "deployment recipe") {
 	onlyKeys(recipe, rootKeys, source, "recipe");
 	required(
 		recipe,
-		rootKeys.filter(key => key !== "$schema"),
+		rootKeys.filter(key => key !== "$schema" && key !== "create2"),
 		source,
 		"recipe",
 	);
@@ -473,6 +597,8 @@ export function validateDeploymentRecipe(value, source = "deployment recipe") {
 	string(network.name, source, "network.name");
 	integer(network.chainId, source, "network.chainId", 1);
 	enumValue(network.mode, ["live", "fork", "local"], source, "network.mode");
+
+	if (recipe.create2 !== undefined) validateCreate2(recipe.create2, source);
 
 	const secrets = object(recipe.secrets, source, "secrets");
 	onlyKeys(secrets, ["deployer", "rpc", "explorer"], source, "secrets");
@@ -741,7 +867,12 @@ export function createDeploymentPlan(recipeValue, { only } = {}) {
 	if (only === "core") {
 		if (recipe.core.mode !== "deploy") unsupportedMode("core", "deploy");
 	} else if (only) {
-		if (recipe[only].mode !== "deploy") unsupportedMode(only, "deploy");
+		// ExpressProvider additionally supports reuse-as-patch: reconcile the deployed
+		// provider at expressProvider.address to the declared sections.
+		const patchable = only === "expressProvider" && recipe.expressProvider.mode === "reuse";
+		if (recipe[only].mode !== "deploy" && !patchable) {
+			unsupportedMode(only, only === "expressProvider" ? "deploy or reuse (patch)" : "deploy");
+		}
 		if (recipe.core.mode !== "reuse" || !recipe.core.fromReport) {
 			const error = new Error(`Cannot deploy only ${only}: core.mode must be reuse and core.fromReport must prove the target core deployment`);
 			error.code = "CORE_DEPENDENCY_UNPROVEN";
@@ -759,6 +890,14 @@ export function createDeploymentPlan(recipeValue, { only } = {}) {
 		only: only ?? null,
 		components: selectedNames.map(name => ({ name, mode: recipe[name].mode, dependsOn: name === "core" ? [] : ["core"] })),
 	};
+}
+
+/** Project per-function overrides as `Name=seconds,...` in canonical MuonFunction order. */
+function muonFunctionUpnlValidTimes(overrides) {
+	if (!overrides) return "";
+	return MUON_PERMISSIONS.filter(name => overrides[name] !== undefined)
+		.map(name => `${name}=${overrides[name]}`)
+		.join(",");
 }
 
 export function recipeEnvironment(recipeValue) {
@@ -784,6 +923,7 @@ export function recipeEnvironment(recipeValue) {
 		MUON_APP_ID: deployCore ? (core.muon?.appId ?? "") : "",
 		MUON_UPNL_VALID_TIME: deployCore ? (core.muon?.upnlValidTime ?? "") : "",
 		MUON_PRICE_VALID_TIME: deployCore ? (core.muon?.priceValidTime ?? "") : "",
+		MUON_FUNCTION_UPNL_VALID_TIMES: deployCore ? muonFunctionUpnlValidTimes(core.muon?.upnlValidTimeByFunction) : "",
 		MUON_PUBLIC_KEY_X: deployCore ? (core.muon?.publicKey?.x ?? "") : "",
 		MUON_PUBLIC_KEY_PARITY: deployCore && core.muon?.publicKey !== undefined ? String(core.muon.publicKey.parity) : "",
 		MUON_GATEWAY_SIGNERS: deployCore ? (core.muon?.gatewaySigners?.join(",") ?? "") : "",
@@ -793,8 +933,6 @@ export function recipeEnvironment(recipeValue) {
 		DEPLOY_TX_TIMEOUT: String(recipe.execution.txTimeoutSeconds ?? DEFAULT_TX_TIMEOUT_SECONDS),
 		DEPLOY_SLOW_TX_NOTICE: String(recipe.execution.slowNoticeSeconds ?? DEFAULT_SLOW_NOTICE_SECONDS),
 		FORK_BLOCK_NUMBER: recipe.execution.forkBlockNumber === undefined ? "" : String(recipe.execution.forkBlockNumber),
-		CREATE2_FACTORY_ADDRESS: deployCore ? (core.create2?.factoryAddress ?? "") : "",
-		DIAMOND_VANITY_PREFIX: deployCore ? (core.create2?.vanityPrefix ?? "") : "",
 	};
 	const secrets = Object.fromEntries(Object.entries(recipe.secrets).map(([name, ref]) => [name, parseSecretRef(ref, `secrets.${name}`)]));
 	return { env, secrets };

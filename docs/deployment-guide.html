@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="light">
+<html lang="en" data-theme="dark">
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -32,7 +32,6 @@
 				border: 1px solid var(--line);
 				border-radius: var(--radius);
 				background: var(--bg-raised);
-				box-shadow: var(--island-shadow);
 			}
 			.dep-cmd code {
 				font-family: var(--mono);
@@ -260,6 +259,7 @@
 			<aside class="toc-panel side-toc" aria-label="Page navigation">
 				<div class="toc-card">
 					<p class="toc-title">On this page</p>
+					<a class="toc-link level-2" href="#interactive">Start without memorising</a>
 					<a class="toc-link level-2" href="#model">How the pieces fit</a>
 					<a class="toc-link level-2" href="#commands">The six commands</a>
 					<a class="toc-link level-2" href="#setup">One-time setup</a>
@@ -292,6 +292,26 @@
 				</header>
 
 				<article class="doc-article" id="full-document">
+					<h2 id="interactive">Start without memorising anything</h2>
+					<p>
+						Run the CLI with no arguments. It reads the recipes, reports and checkpoints already in your checkout, tells you where the
+						deployment stands, and offers the next useful step. Enter takes the recommendation; <code>q</code> quits.
+					</p>
+
+					<pre><code class="language-bash">./symmio</code></pre>
+
+					<p>
+						It dispatches to the same commands documented below rather than reimplementing them, so every preflight gate, confirmation
+						prompt and exit code is identical — and it prints the equivalent command before running it, so you pick up the vocabulary as
+						you go. The rest of this page explains what those commands do and why, which is worth reading once before a live run.
+					</p>
+
+					<aside class="callout callout-note">
+						<strong>It never deploys on its own.</strong> Interactive mode only offers choices; a live deployment still asks for the same
+						risk-proportional confirmation. Without a terminal — CI, a pipe — it prints the getting-started commands instead of prompting,
+						so nothing can be silently selected on your behalf.
+					</aside>
+
 					<h2 id="model">How the pieces fit</h2>
 					<p>
 						Four artifacts carry a deployment. Understanding what each one owns explains almost every behaviour you will meet, including
@@ -417,17 +437,16 @@
 					</div>
 
 					<aside class="callout callout-note">
-						<strong>Two entrypoints, two jobs.</strong> <code>./symmio</code> is the operator CLI. <code>./utils/pinned-yarn.sh</code> is
-						for package-manager work (<code>install</code>, <code>link</code>, <code>run</code>) and enforces the Yarn Classic pin. The
-						older <code>./utils/yarn-classic.sh</code> still works and forwards to whichever is right.
+						<strong>Two entrypoints, two jobs.</strong> <code>./symmio</code> is the operator CLI. <code>npm</code> is for package-manager
+						work (<code>ci</code>, <code>link</code>, <code>run</code>). A <code>preinstall</code> hook rejects Yarn and pnpm, which
+						ignore <code>package-lock.json</code>.
 					</aside>
 
 					<h2 id="setup">One-time setup</h2>
 					<p>Use the checked-in toolchain. Do not regenerate the lockfile immediately before a deployment.</p>
 
 					<pre><code class="language-bash">node --version                                    # v22.15.0
-./utils/pinned-yarn.sh --version                  # 1.22.22
-./utils/pinned-yarn.sh install --frozen-lockfile</code></pre>
+npm ci</code></pre>
 
 					<p>Then store the three secrets once. They are encrypted at rest and prompted for when a deployment needs them:</p>
 
@@ -728,10 +747,11 @@
 						<div class="dep-gotcha" data-level="blocks">
 							<kbd>Blocks run</kbd>
 							<div>
-								<p><code>CREATE2_FACTORY_ADDRESS</code> left set in <code>.env</code> breaks local and fork runs.</p>
+								<p>A <code>create2.factoryAddress</code> carried over from a live recipe breaks local and fork runs.</p>
 								<p>
 									The address has no code on a simulated chain, and the deployment refuses to silently switch address strategies.
-									Scope that variable to live networks only.
+									Keep the <code>create2</code> block out of local and fork recipes, or point it at a factory deployed on that
+									chain.
 								</p>
 							</div>
 						</div>
@@ -748,10 +768,14 @@
 						<div class="dep-gotcha" data-level="confuses">
 							<kbd>Confuses</kbd>
 							<div>
-								<p><code>core.create2.vanityPrefix</code> alone does nothing on a live chain.</p>
+								<p>Vanity addresses are configured in the top-level <code>create2</code> block, never in the environment.</p>
 								<p>
-									Without a reviewed <code>factoryAddress</code> the deployment uses ordinary CREATE, so you will not get the vanity
-									address you expected.
+									Set <code>create2.groups</code> (<code>diamonds</code>, <code>facets</code>, <code>libraries</code>,
+									<code>peripherals</code>) and optionally <code>create2.overrides</code> keyed as <code>core/PartyAFacet</code>.
+									Declaring any pattern without a reviewed <code>create2.factoryAddress</code> is a validation error rather than a
+									silent fall back to ordinary CREATE. The run prints a mining cost table and refuses to start if the total exceeds
+									<code>create2.miningBudget</code>. Etherscan verification of a CREATE2-deployed facet should be confirmed on a
+									testnet before a mainnet run, since its address no longer derives from the deployer nonce.
 								</p>
 							</div>
 						</div>
@@ -818,7 +842,7 @@
 					</div>
 
 					<h2 id="quick">The whole thing, in order</h2>
-					<pre><code class="language-bash">./utils/pinned-yarn.sh install --frozen-lockfile
+					<pre><code class="language-bash">npm ci
 
 ./symmio recipe init --network arbitrum
 # edit deployments/arbitrum.json — replace every REPLACE_WITH_* value

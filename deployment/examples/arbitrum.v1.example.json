@@ -27,11 +27,16 @@
 		"maxLiquidationProfitPerPosition": "100000000000000000000",
 		"softLiquidationPenaltyCollector": "REPLACE_WITH_SOFT_LIQUIDATION_PENALTY_COLLECTOR_ADDRESS"
 	},
+	"create2": {
+		"factoryAddress": "REPLACE_WITH_REVIEWED_CREATE2_FACTORY_ADDRESS",
+		"groups": {
+			"diamonds": { "prefix": "573310" },
+			"facets": { "suffix": "86" }
+		},
+		"miningBudget": 50000000
+	},
 	"core": {
 		"mode": "deploy",
-		"create2": {
-			"vanityPrefix": "573310"
-		},
 		"collateral": {
 			"mode": "reuse",
 			"address": "REPLACE_WITH_COLLATERAL_ADDRESS"
@@ -41,6 +46,10 @@
 			"appId": "REPLACE_WITH_MUON_APP_ID",
 			"upnlValidTime": "60",
 			"priceValidTime": "60",
+			"upnlValidTimeByFunction": {
+				"LiquidationPartyA": "120",
+				"LiquidationPartyB": "120"
+			},
 			"publicKey": {
 				"x": "REPLACE_WITH_MUON_PUBLIC_KEY_X",
 				"parity": 0

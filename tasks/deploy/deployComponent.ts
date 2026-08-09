@@ -3,7 +3,12 @@ import { ArgumentType } from "hardhat/types/arguments"
 
 import { createDeploymentPlan, DEPLOYMENT_COMPONENTS } from "../../deployment/recipe.js"
 import { executeComponentDeployment } from "./componentDeployment.js"
-import { assertExpressProviderDeployable, DeploymentComponentName, loadCoreDependencyReport } from "./deploymentRecipe.js"
+import {
+	assertExpressProviderDeployable,
+	assertExpressProviderPatchable,
+	DeploymentComponentName,
+	loadCoreDependencyReport,
+} from "./deploymentRecipe.js"
 import { logger } from "./logger.js"
 import { requireActiveDeploymentRecipe } from "./recipeRuntime.js"
 
@@ -77,7 +82,10 @@ export const deployComponentTask = task(
 			if (component === "core") {
 				throw new Error("Core is a system bundle. Run deploy:system with this recipe instead of deploy:component --component core.")
 			}
-			if (component === "expressProvider") assertExpressProviderDeployable(active.recipe.expressProvider, active.recipe.network)
+			if (component === "expressProvider") {
+				if (active.recipe.expressProvider.mode === "reuse") assertExpressProviderPatchable(active.recipe.expressProvider)
+				else assertExpressProviderDeployable(active.recipe.expressProvider, active.recipe.network)
+			}
 			if (active.recipe.core.mode !== "reuse" || !active.recipe.core.fromReport) {
 				throw new Error(
 					`DEPENDENCY_UNAVAILABLE: standalone ${component} deployment requires core.mode=reuse and core.fromReport; received core.mode=${active.recipe.core.mode}`,

@@ -100,22 +100,22 @@ library LibSettlement {
 					partyB,
 					allocKey,
 					uint256(settlementAmount),
-					SharedEvents.BalanceChangeType.REALIZED_PNL_OUT
+					SharedEvents.BalanceChangeType.SETTLEMENT_PNL_OUT
 				);
 			} else {
 				LibAccount.increasePartyBAllocatedBalance(
 					partyB,
 					allocKey,
 					uint256(-settlementAmount),
-					SharedEvents.BalanceChangeType.REALIZED_PNL_IN
+					SharedEvents.BalanceChangeType.SETTLEMENT_PNL_IN
 				);
 			}
 			newPartyBsAllocatedBalances[i] = accountLayout.partyBAllocatedBalances[partyB][allocKey];
 		}
 		if (totalSettlementAmount >= 0) {
-			LibAccount.increasePartyAAllocatedBalance(partyA, uint256(totalSettlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+			LibAccount.increasePartyAAllocatedBalance(partyA, uint256(totalSettlementAmount), SharedEvents.BalanceChangeType.SETTLEMENT_PNL_IN);
 		} else {
-			LibAccount.decreasePartyAAllocatedBalance(partyA, uint256(-totalSettlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
+			LibAccount.decreasePartyAAllocatedBalance(partyA, uint256(-totalSettlementAmount), SharedEvents.BalanceChangeType.SETTLEMENT_PNL_OUT);
 		}
 	}
 
@@ -250,23 +250,23 @@ library LibSettlement {
 						partyB,
 						partyA,
 						uint256(settlementAmount),
-						SharedEvents.BalanceChangeType.REALIZED_PNL_OUT
+						SharedEvents.BalanceChangeType.SETTLEMENT_PNL_OUT
 					);
 				} else {
 					LibAccount.increasePartyBAllocatedBalance(
 						partyB,
 						partyA,
 						uint256(-settlementAmount),
-						SharedEvents.BalanceChangeType.REALIZED_PNL_IN
+						SharedEvents.BalanceChangeType.SETTLEMENT_PNL_IN
 					);
 				}
 			}
 
 			// Update partyA balance
 			if (settlementAmount >= 0) {
-				LibAccount.increasePartyAAllocatedBalance(partyA, uint256(settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+				LibAccount.increasePartyAAllocatedBalance(partyA, uint256(settlementAmount), SharedEvents.BalanceChangeType.SETTLEMENT_PNL_IN);
 			} else {
-				LibAccount.decreasePartyAAllocatedBalance(partyA, uint256(-settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
+				LibAccount.decreasePartyAAllocatedBalance(partyA, uint256(-settlementAmount), SharedEvents.BalanceChangeType.SETTLEMENT_PNL_OUT);
 			}
 
 			newPartyAsAllocatedBalances[i] = accountLayout.allocatedBalances[partyA];
@@ -281,7 +281,7 @@ library LibSettlement {
 						partyB,
 						address(0),
 						uint256(-settleAmountsPerPartyA[i]),
-						SharedEvents.BalanceChangeType.REALIZED_PNL_IN
+						SharedEvents.BalanceChangeType.SETTLEMENT_PNL_IN
 					);
 				}
 			}
@@ -291,7 +291,7 @@ library LibSettlement {
 						partyB,
 						address(0),
 						uint256(settleAmountsPerPartyA[i]),
-						SharedEvents.BalanceChangeType.REALIZED_PNL_OUT
+						SharedEvents.BalanceChangeType.SETTLEMENT_PNL_OUT
 					);
 				}
 			}

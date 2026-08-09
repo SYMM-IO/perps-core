@@ -2,16 +2,16 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
-import { mineCreate2Salt } from "../utils/create2Mining.js"
 import { FacetCutAction, getSelectors } from "../utils/diamondCut.js"
 import { writeData } from "../utils/fs.js"
 import { deploymentOnlyArtifact } from "./artifacts.js"
 import { DeploymentCheckpoint, DiamondCheckpoint, createDeployedContract, saveCheckpoint } from "./checkpoint.js"
 import { DEPLOYMENT_LOG_FILE, FacetNames } from "./constants.js"
-import { checkpointDeployment, persistSubmittedTransaction, recoverCheckpointContractDeployments } from "./deploymentRecovery.js"
+import { recoverCheckpointContractDeployments } from "./deploymentRecovery.js"
 import { assertStandaloneDeploymentTaskAllowed, getConnection } from "./helpers.js"
 import { logger } from "./logger.js"
-import { DEFAULT_CONFIRMATIONS, confirmDeploymentWithReceipt, getDeploymentTransactionJournal, recoverConfirmedDeployment, send } from "./tx.js"
+import { send } from "./tx.js"
+import { type VanityContext, create2Record, deployContract } from "./vanityDeploy.js"
 
 // Define which facets need which external libraries (based on compiled artifacts)
 const FacetLibraryDependencies: Record<string, string[]> = {
@@ -47,6 +47,7 @@ type DeployDiamondArgs = {
 	logData?: boolean
 	reportGas?: boolean
 	checkpoint?: DeploymentCheckpoint
+	vanity?: VanityContext | null
 }
 
 /** An explicitly requested deterministic factory is a safety requirement, not a hint. */
@@ -57,29 +58,27 @@ export async function resolveCreate2FactoryAddress(ethers: any, configuredAddres
 		address = ethers.getAddress(configuredAddress)
 	} catch (error) {
 		throw new Error(
-			`CREATE2_FACTORY_ADDRESS is invalid: ${JSON.stringify(configuredAddress)} (${error instanceof Error ? error.message : String(error)})`,
+			`create2.factoryAddress is invalid: ${JSON.stringify(configuredAddress)} (${error instanceof Error ? error.message : String(error)})`,
 		)
 	}
 	const factoryCode = await ethers.provider.getCode(address)
 	if (!factoryCode || factoryCode === "0x") {
 		throw new Error(
-			`CREATE2_FACTORY_ADDRESS ${address} was explicitly configured but has no code on this network; refusing to change the Diamond address strategy to ordinary CREATE.`,
+			`create2.factoryAddress ${address} was explicitly configured but has no code on this network; refusing to change the address strategy to ordinary CREATE.`,
 		)
 	}
 	return address
 }
 
-export async function deployDiamond(hre: any, { logData = true, genABI = false, reportGas = true, checkpoint }: DeployDiamondArgs = {}) {
+export async function deployDiamond(
+	hre: any,
+	{ logData = true, genABI = false, reportGas = true, checkpoint, vanity = null }: DeployDiamondArgs = {},
+) {
 	const { ethers } = await getConnection(hre)
 	await recoverCheckpointContractDeployments(checkpoint, ethers.provider, "contracts.diamond")
 	const signers: HardhatEthersSigner[] = await ethers.getSigners()
 	const owner: HardhatEthersSigner = signers[0]
 	let totalGasUsed = BigInt(0)
-	const confirmAndCount = async (contract: any, label: string, component: string, constructorArgs: unknown[] = []): Promise<string> => {
-		const { address, receipt } = await confirmDeploymentWithReceipt(contract, label, checkpointDeployment(checkpoint, component, constructorArgs))
-		totalGasUsed += receipt.gasUsed
-		return address
-	}
 
 	logger.section("Diamond Deployment")
 
@@ -102,107 +101,50 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 		logger.info(`  ⏭ DiamondCutFacet already deployed at ${diamondCutFacetAddress}`)
 	} else {
 		const DiamondCutFacetFactory = await ethers.getContractFactory("DiamondCutFacet")
-		const diamondCutFacet = await DiamondCutFacetFactory.deploy()
-		diamondCutFacetAddress = await confirmAndCount(diamondCutFacet, "DiamondCutFacet", "contracts.diamond.diamondCutFacet")
+		const result = await deployContract(vanity, {
+			key: "core/DiamondCutFacet",
+			component: "contracts.diamond.diamondCutFacet",
+			label: "DiamondCutFacet",
+			factory: DiamondCutFacetFactory,
+			checkpoint,
+		})
+		totalGasUsed += result.gasUsed
+		diamondCutFacetAddress = result.address
 		logger.deployed("DiamondCutFacet", diamondCutFacetAddress)
 
 		// Save checkpoint
 		if (checkpoint) {
-			diamondCheckpoint.diamondCutFacet = createDeployedContract(diamondCutFacetAddress)
+			diamondCheckpoint.diamondCutFacet = createDeployedContract(diamondCutFacetAddress, undefined, create2Record(result))
 			checkpoint.contracts.diamond = diamondCheckpoint
 			saveCheckpoint(checkpoint)
 		}
 	}
 
-	// Deploy via CREATE2 when explicitly configured; ordinary CREATE is only an intentional no-factory mode.
-	const envCreate2FactoryAddress = process.env.CREATE2_FACTORY_ADDRESS || ""
-	const vanityPrefix = process.env.DIAMOND_VANITY_PREFIX || "573310"
-	const create2FactoryAddress = await resolveCreate2FactoryAddress(ethers, envCreate2FactoryAddress)
-	if (!create2FactoryAddress) logger.info("  CREATE2_FACTORY_ADDRESS is not configured; using ordinary CREATE for Diamond")
 	let diamondAddress: string
 	let diamond: any
+	const diamondArgs = [owner.address, diamondCutFacetAddress]
 	if (diamondCheckpoint.diamond) {
 		diamondAddress = diamondCheckpoint.diamond.address
 		diamond = await ethers.getContractAt("Diamond", diamondAddress)
 		logger.info(`  ⏭ Diamond already deployed at ${diamondAddress}`)
-	} else if (create2FactoryAddress) {
-		const DiamondFactory = await ethers.getContractFactory("Diamond")
-		const constructorArgs = [owner.address, diamondCutFacetAddress]
-		const initCode = ethers.concat([DiamondFactory.bytecode, DiamondFactory.interface.encodeDeploy(constructorArgs)])
-
-		const create2Factory = await ethers.getContractAt("Create2Factory", create2FactoryAddress)
-		const initCodeHex = ethers.hexlify(initCode)
-		let startNonce = 0n
-
-		// Bound the retry loop so a misconfigured factory or prefix fails fast.
-		const MAX_SALT_COLLISIONS = 20
-		let saltCollisions = 0
-
-		while (true) {
-			logger.info(`  Mining CREATE2 salt for 0x${vanityPrefix} prefix...`)
-			const { salt, address: predictedAddress, attempts, elapsedMs } = mineCreate2Salt(create2FactoryAddress, initCodeHex, vanityPrefix, startNonce)
-			logger.info(`  Found salt after ${attempts.toLocaleString()} attempts (${(elapsedMs / 1000).toFixed(1)}s)`)
-			logger.info(`  Predicted address: ${predictedAddress}`)
-
-			// Cheap pre-check: skip an occupied address without spending a transaction.
-			if ((await ethers.provider.getCode(predictedAddress)) !== "0x") {
-				logger.info(`  ${predictedAddress} already has code, trying next match...`)
-				startNonce = BigInt(salt) + 1n
-				saltCollisions++
-				if (saltCollisions > MAX_SALT_COLLISIONS) {
-					throw new Error(`Aborting CREATE2 mining after ${MAX_SALT_COLLISIONS} occupied addresses — check the factory address and vanity prefix.`)
-				}
-				continue
-			}
-
-			try {
-				const deployment = {
-					kind: "create2" as const,
-					component: "contracts.diamond.diamond",
-					expectedAddress: predictedAddress,
-					factoryAddress: create2FactoryAddress,
-					salt,
-					initCodeHash: ethers.keccak256(initCodeHex),
-					factoryCallDataHash: ethers.keccak256(create2Factory.interface.encodeFunctionData("deploy", [salt, initCode])),
-					constructorArgs,
-				}
-				const receipt = await send(create2Factory.deploy(salt, initCode), "deploy Diamond via CREATE2", DEFAULT_CONFIRMATIONS, {
-					deployment,
-					onSubmitted: checkpoint ? record => persistSubmittedTransaction(checkpoint, record) : undefined,
-				})
-				totalGasUsed += receipt.gasUsed
-				await recoverConfirmedDeployment(getDeploymentTransactionJournal(), deployment.component, ethers.provider)
-
-				diamondAddress = predictedAddress
-				diamond = await ethers.getContractAt("Diamond", diamondAddress)
-				logger.deployed("Diamond (CREATE2)", diamondAddress)
-				break
-			} catch (err: any) {
-				// The address was empty immediately before broadcast. If code appeared while
-				// receipt waiting failed, it may be this exact transaction; retrying another
-				// salt would orphan it. The transaction journal must reconcile it first.
-				throw new Error(
-					`CREATE2 Diamond broadcast for ${predictedAddress} did not confirm; refusing to mine or deploy another salt until resume reconciliation proves its outcome. ` +
-						(err instanceof Error ? err.message : String(err)),
-				)
-			}
-		}
-
-		// Save checkpoint
-		if (checkpoint) {
-			diamondCheckpoint.diamond = createDeployedContract(diamondAddress, constructorArgs)
-			checkpoint.contracts.diamond = diamondCheckpoint
-			saveCheckpoint(checkpoint)
-		}
 	} else {
 		const DiamondFactory = await ethers.getContractFactory("Diamond")
-		diamond = await DiamondFactory.deploy(owner.address, diamondCutFacetAddress)
-		diamondAddress = await confirmAndCount(diamond, "Diamond", "contracts.diamond.diamond", [owner.address, diamondCutFacetAddress])
+		const result = await deployContract(vanity, {
+			key: "core/Diamond",
+			component: "contracts.diamond.diamond",
+			label: "Diamond",
+			factory: DiamondFactory,
+			constructorArgs: diamondArgs,
+			checkpoint,
+		})
+		totalGasUsed += result.gasUsed
+		diamondAddress = result.address
+		diamond = await ethers.getContractAt("Diamond", diamondAddress)
 		logger.deployed("Diamond", diamondAddress)
 
 		// Save checkpoint
 		if (checkpoint) {
-			diamondCheckpoint.diamond = createDeployedContract(diamondAddress, [owner.address, diamondCutFacetAddress])
+			diamondCheckpoint.diamond = createDeployedContract(diamondAddress, diamondArgs, create2Record(result))
 			checkpoint.contracts.diamond = diamondCheckpoint
 			saveCheckpoint(checkpoint)
 		}
@@ -215,13 +157,20 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 		logger.info(`  ⏭ Init already deployed at ${initAddress}`)
 	} else {
 		const InitFactory = await ethers.getContractFactory("contracts/core/Init.sol:Init")
-		const init = await InitFactory.deploy()
-		initAddress = await confirmAndCount(init, "Init", "contracts.diamond.init")
+		const result = await deployContract(vanity, {
+			key: "core/Init",
+			component: "contracts.diamond.init",
+			label: "Init",
+			factory: InitFactory,
+			checkpoint,
+		})
+		totalGasUsed += result.gasUsed
+		initAddress = result.address
 		logger.deployed("Init", initAddress)
 
 		// Save checkpoint
 		if (checkpoint) {
-			diamondCheckpoint.init = createDeployedContract(initAddress)
+			diamondCheckpoint.init = createDeployedContract(initAddress, undefined, create2Record(result))
 			checkpoint.contracts.diamond = diamondCheckpoint
 			saveCheckpoint(checkpoint)
 		}
@@ -233,154 +182,67 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 		diamondCheckpoint.libraries = {}
 	}
 
-	// Deploy LibQuoteFunding first (no dependencies)
-	if (libraryAddresses["LibQuoteFunding"]) {
-		logger.info(`  ⏭ LibQuoteFunding already deployed at ${libraryAddresses["LibQuoteFunding"]}`)
-	} else {
-		const LibQuoteFundingFactory = await ethers.getContractFactory("LibQuoteFunding")
-		const libQuoteFunding = await LibQuoteFundingFactory.deploy()
-		libraryAddresses["LibQuoteFunding"] = await confirmAndCount(libQuoteFunding, "LibQuoteFunding", "contracts.diamond.libraries.LibQuoteFunding")
-		logger.deployed("LibQuoteFunding", libraryAddresses["LibQuoteFunding"])
+	// Libraries differ only in name and how their factory is built, so the deploy, gas
+	// accounting, and checkpoint write are shared rather than repeated seven times.
+	const deployLibrary = async (name: string, buildFactory: () => Promise<any>): Promise<void> => {
+		if (libraryAddresses[name]) {
+			logger.info(`  ⏭ ${name} already deployed at ${libraryAddresses[name]}`)
+			return
+		}
+		const result = await deployContract(vanity, {
+			key: `core/${name}`,
+			component: `contracts.diamond.libraries.${name}`,
+			label: name,
+			factory: await buildFactory(),
+			checkpoint,
+		})
+		totalGasUsed += result.gasUsed
+		libraryAddresses[name] = result.address
+		logger.deployed(name, result.address)
 
-		// Save checkpoint
 		if (checkpoint) {
-			diamondCheckpoint.libraries!["LibQuoteFunding"] = createDeployedContract(libraryAddresses["LibQuoteFunding"])
+			diamondCheckpoint.libraries![name] = createDeployedContract(result.address, undefined, create2Record(result))
 			checkpoint.contracts.diamond = diamondCheckpoint
 			saveCheckpoint(checkpoint)
 		}
 	}
 
-	// Deploy LibQuoteClose (depends on LibQuoteFunding)
-	if (libraryAddresses["LibQuoteClose"]) {
-		logger.info(`  ⏭ LibQuoteClose already deployed at ${libraryAddresses["LibQuoteClose"]}`)
-	} else {
-		const LibQuoteCloseFactory = await ethers.getContractFactory("LibQuoteClose", {
+	// LibQuoteFunding has no dependencies; each later library links against those above it.
+	await deployLibrary("LibQuoteFunding", () => ethers.getContractFactory("LibQuoteFunding"))
+
+	await deployLibrary("LibQuoteClose", () =>
+		ethers.getContractFactory("LibQuoteClose", {
 			libraries: {
 				[LibraryLinkReferences.LibQuoteFunding]: libraryAddresses["LibQuoteFunding"],
 			},
-		})
-		const libQuoteClose = await LibQuoteCloseFactory.deploy()
-		libraryAddresses["LibQuoteClose"] = await confirmAndCount(libQuoteClose, "LibQuoteClose", "contracts.diamond.libraries.LibQuoteClose")
-		logger.deployed("LibQuoteClose", libraryAddresses["LibQuoteClose"])
+		}),
+	)
 
-		// Save checkpoint
-		if (checkpoint) {
-			diamondCheckpoint.libraries!["LibQuoteClose"] = createDeployedContract(libraryAddresses["LibQuoteClose"])
-			checkpoint.contracts.diamond = diamondCheckpoint
-			saveCheckpoint(checkpoint)
-		}
-	}
-
-	// Deploy LibForceActions (depends on LibQuoteClose)
-	if (libraryAddresses["LibForceActions"]) {
-		logger.info(`  ⏭ LibForceActions already deployed at ${libraryAddresses["LibForceActions"]}`)
-	} else {
+	await deployLibrary("LibForceActions", async () => {
 		// Ethers cannot parse the named enum/struct types emitted in this public
 		// library's 0.8.18 ABI. The factory is deployment-only, so avoid inventing a
 		// callable interface while keeping compiler bytecode/link references intact.
 		const artifact = await hre.artifacts.readArtifact("LibForceActions")
-		const LibForceActionsFactory = await ethers.getContractFactoryFromArtifact(deploymentOnlyArtifact(artifact), {
+		return ethers.getContractFactoryFromArtifact(deploymentOnlyArtifact(artifact), {
 			libraries: {
 				[LibraryLinkReferences.LibQuoteClose]: libraryAddresses["LibQuoteClose"],
 			},
 		})
-		const libForceActions = await LibForceActionsFactory.deploy()
-		libraryAddresses["LibForceActions"] = await confirmAndCount(libForceActions, "LibForceActions", "contracts.diamond.libraries.LibForceActions")
-		logger.deployed("LibForceActions", libraryAddresses["LibForceActions"])
+	})
 
-		// Save checkpoint
-		if (checkpoint) {
-			diamondCheckpoint.libraries!["LibForceActions"] = createDeployedContract(libraryAddresses["LibForceActions"])
-			checkpoint.contracts.diamond = diamondCheckpoint
-			saveCheckpoint(checkpoint)
-		}
-	}
+	await deployLibrary("LibSettlement", () => ethers.getContractFactory("LibSettlement"))
 
-	// Deploy LibSettlement (no dependencies)
-	if (libraryAddresses["LibSettlement"]) {
-		logger.info(`  ⏭ LibSettlement already deployed at ${libraryAddresses["LibSettlement"]}`)
-	} else {
-		const LibSettlementFactory = await ethers.getContractFactory("LibSettlement")
-		const libSettlement = await LibSettlementFactory.deploy()
-		libraryAddresses["LibSettlement"] = await confirmAndCount(libSettlement, "LibSettlement", "contracts.diamond.libraries.LibSettlement")
-		logger.deployed("LibSettlement", libraryAddresses["LibSettlement"])
-
-		// Save checkpoint
-		if (checkpoint) {
-			diamondCheckpoint.libraries!["LibSettlement"] = createDeployedContract(libraryAddresses["LibSettlement"])
-			checkpoint.contracts.diamond = diamondCheckpoint
-			saveCheckpoint(checkpoint)
-		}
-	}
-
-	// Deploy LibPartyALiquidationProcess (depends on LibQuoteFunding)
-	if (libraryAddresses["LibPartyALiquidationProcess"]) {
-		logger.info(`  ⏭ LibPartyALiquidationProcess already deployed at ${libraryAddresses["LibPartyALiquidationProcess"]}`)
-	} else {
-		const LibPartyALiquidationProcessFactory = await ethers.getContractFactory("LibPartyALiquidationProcess", {
+	await deployLibrary("LibPartyALiquidationProcess", () =>
+		ethers.getContractFactory("LibPartyALiquidationProcess", {
 			libraries: {
 				[LibraryLinkReferences.LibQuoteFunding]: libraryAddresses["LibQuoteFunding"],
 			},
-		})
-		const libPartyALiquidationProcess = await LibPartyALiquidationProcessFactory.deploy()
-		libraryAddresses["LibPartyALiquidationProcess"] = await confirmAndCount(
-			libPartyALiquidationProcess,
-			"LibPartyALiquidationProcess",
-			"contracts.diamond.libraries.LibPartyALiquidationProcess",
-		)
-		logger.deployed("LibPartyALiquidationProcess", libraryAddresses["LibPartyALiquidationProcess"])
+		}),
+	)
 
-		// Save checkpoint
-		if (checkpoint) {
-			diamondCheckpoint.libraries!["LibPartyALiquidationProcess"] = createDeployedContract(libraryAddresses["LibPartyALiquidationProcess"])
-			checkpoint.contracts.diamond = diamondCheckpoint
-			saveCheckpoint(checkpoint)
-		}
-	}
+	await deployLibrary("LibPartyALiquidationSnapshotSetup", () => ethers.getContractFactory("LibPartyALiquidationSnapshotSetup"))
 
-	// Deploy PartyA liquidation snapshot setup implementation library
-	if (libraryAddresses["LibPartyALiquidationSnapshotSetup"]) {
-		logger.info(`  ⏭ LibPartyALiquidationSnapshotSetup already deployed at ${libraryAddresses["LibPartyALiquidationSnapshotSetup"]}`)
-	} else {
-		const LibPartyALiquidationSnapshotSetupFactory = await ethers.getContractFactory("LibPartyALiquidationSnapshotSetup")
-		const libPartyALiquidationSnapshotSetup = await LibPartyALiquidationSnapshotSetupFactory.deploy()
-		libraryAddresses["LibPartyALiquidationSnapshotSetup"] = await confirmAndCount(
-			libPartyALiquidationSnapshotSetup,
-			"LibPartyALiquidationSnapshotSetup",
-			"contracts.diamond.libraries.LibPartyALiquidationSnapshotSetup",
-		)
-		logger.deployed("LibPartyALiquidationSnapshotSetup", libraryAddresses["LibPartyALiquidationSnapshotSetup"])
-
-		// Save checkpoint
-		if (checkpoint) {
-			diamondCheckpoint.libraries!["LibPartyALiquidationSnapshotSetup"] = createDeployedContract(
-				libraryAddresses["LibPartyALiquidationSnapshotSetup"],
-			)
-			checkpoint.contracts.diamond = diamondCheckpoint
-			saveCheckpoint(checkpoint)
-		}
-	}
-
-	// Deploy legacy PartyA liquidation setup implementation library
-	if (libraryAddresses["LibPartyALiquidationLegacySetup"]) {
-		logger.info(`  ⏭ LibPartyALiquidationLegacySetup already deployed at ${libraryAddresses["LibPartyALiquidationLegacySetup"]}`)
-	} else {
-		const LibPartyALiquidationLegacySetupFactory = await ethers.getContractFactory("LibPartyALiquidationLegacySetup")
-		const libPartyALiquidationLegacySetup = await LibPartyALiquidationLegacySetupFactory.deploy()
-		libraryAddresses["LibPartyALiquidationLegacySetup"] = await confirmAndCount(
-			libPartyALiquidationLegacySetup,
-			"LibPartyALiquidationLegacySetup",
-			"contracts.diamond.libraries.LibPartyALiquidationLegacySetup",
-		)
-		logger.deployed("LibPartyALiquidationLegacySetup", libraryAddresses["LibPartyALiquidationLegacySetup"])
-
-		// Save checkpoint
-		if (checkpoint) {
-			diamondCheckpoint.libraries!["LibPartyALiquidationLegacySetup"] = createDeployedContract(libraryAddresses["LibPartyALiquidationLegacySetup"])
-			checkpoint.contracts.diamond = diamondCheckpoint
-			saveCheckpoint(checkpoint)
-		}
-	}
+	await deployLibrary("LibPartyALiquidationLegacySetup", () => ethers.getContractFactory("LibPartyALiquidationLegacySetup"))
 
 	// Deploy Facets
 	const cut: Array<{
@@ -424,13 +286,20 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 				FacetFactory = await ethers.getContractFactory(facetName)
 			}
 
-			const facet = await FacetFactory.deploy()
-			facetAddress = await confirmAndCount(facet, shortName, `contracts.diamond.facets.${shortName}`)
+			const result = await deployContract(vanity, {
+				key: `core/${shortName}`,
+				component: `contracts.diamond.facets.${shortName}`,
+				label: shortName,
+				factory: FacetFactory,
+				checkpoint,
+			})
+			totalGasUsed += result.gasUsed
+			facetAddress = result.address
 			logger.deployed(`[${i + 1}/${FacetNames.length}] ${shortName}`, facetAddress)
 
 			// Save checkpoint
 			if (checkpoint) {
-				diamondCheckpoint.facets![shortName] = createDeployedContract(facetAddress)
+				diamondCheckpoint.facets![shortName] = createDeployedContract(facetAddress, undefined, create2Record(result))
 				checkpoint.contracts.diamond = diamondCheckpoint
 				saveCheckpoint(checkpoint)
 			}

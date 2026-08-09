@@ -27,27 +27,29 @@ live receipts, health check, and explorer verification are the evidence for your
 
 ## Before you start
 
-Use the checked-in toolchain. `.node-version` pins Node `22.15.0`, `package.json` pins Yarn
-Classic `1.22.22`, and `yarn.lock` is the dependency lock:
+Use the checked-in toolchain. `.node-version` pins Node `22.15.0` and `package-lock.json` is
+the dependency lock:
 
 ```bash
 node --version                                    # v22.15.0
-./utils/pinned-yarn.sh --version                  # 1.22.22
-./utils/pinned-yarn.sh install --frozen-lockfile
-./utils/pinned-yarn.sh run check:operations
+npm ci
+npm run check:operations
 ```
 
-`utils/pinned-yarn.sh` rejects any package-manager version other than the checked-in Yarn
-Classic pin and ignores parent/user `yarn-path` settings, which would otherwise redirect this
-v1-lockfile project into Yarn Berry. A `preinstall` hook enforces the same pin even when
-someone bypasses the wrapper and runs `npm install` directly. Do not regenerate the lockfile
-immediately before a deployment.
+`npm ci` installs exactly the locked tree and fails if `package-lock.json` and `package.json`
+disagree — that is the install to use for a deployment checkout. `npm install` is fine for
+day-to-day work but may update the lockfile. Do not regenerate the lockfile immediately
+before a deployment.
+
+A `preinstall` hook (`scripts/check-package-manager.js`) rejects Yarn and pnpm, which ignore
+`package-lock.json` and would resolve a dependency tree nobody reviewed. No npm version is
+pinned.
 
 Every operator command in this runbook is `./symmio <command>` — the checkout-local CLI, which
 needs no install step and no global binary. If you prefer the bare `symmio`, link it once:
 
 ```bash
-./utils/pinned-yarn.sh link
+npm link
 command -v symmio
 ```
 
@@ -307,6 +309,38 @@ actions are confirmed. Adding `--fresh` creates a new deployment ID; the previou
 report is archived under `tasks/data/<chainId>[-fork]/components/<recipe-name>/history/`
 before the current report is replaced. A persistent component run also exits `2` while its
 report remains `pending_handover`.
+
+### Change a live ExpressProvider (patch)
+
+The same settings file also changes a provider that is already deployed. Set
+`expressProvider.mode` to `"reuse"`, name its `address`, and declare only the sections you
+want enforced — for example a new operator set:
+
+```json
+{
+	"expressProvider": {
+		"mode": "reuse",
+		"address": "0x<deployed provider>",
+		"roles": {
+			"OPERATOR_ROLE": ["0x<new bot>"],
+			"SIGNER_ROLE": ["0x<signer>"]
+		}
+	}
+}
+```
+
+```bash
+./symmio deploy --config deployments/arbitrum-expressProvider.json --only expressProvider
+```
+
+A declared section is the complete desired state for that section: holders missing on chain
+are granted, and holders recorded in the last applied component report but dropped from the
+file are revoked. Omitted sections are untouched. Anything the signer cannot execute — role
+changes are owner-gated, setters need `SETTER_ROLE`, registration needs core
+`PROVIDER_ADMIN_ROLE` — is emitted as Safe-ready calldata and the run exits `2`; rerun the
+identical command after the admin executes it. Nothing is deployed and nothing needs explorer
+verification. Affiliates removed from the file are deliberately not auto-cleared, because
+zeroing their caps would mean "no limit"; the run warns instead.
 
 Read-only component status uses the same recipe and mutation scope:
 
@@ -578,4 +612,3 @@ guided CLI instead of setting the internal handoff themselves.
 ### See also
 
 - [CLI reference](../cli/README.md)
-- [Scripts audit](../SCRIPTS_AUDIT.md)
