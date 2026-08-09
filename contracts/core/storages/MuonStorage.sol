@@ -15,12 +15,14 @@ struct SingleUpnlSig {
 	IMuonSignatureVerifier.SchnorrSign sigs;
 }
 
-/// @notice Muon signature attesting to a party's UPNL plus their pending withdrawal balance
+/// @notice Muon signature attesting to a party's UPNL, their pending withdrawal balance,
+/// and their locked balance re-marked to live notional (scaledLockedBalance)
 struct SingleUpnlWithPendingBalanceSig {
 	bytes reqId;
 	uint256 timestamp;
 	int256 upnl;
 	uint256 pendingBalance;
+	uint256 scaledLockedBalance;
 	bytes gatewaySignature;
 	IMuonSignatureVerifier.SchnorrSign sigs;
 }

@@ -112,7 +112,7 @@ export function shouldBehaveLikeControlFacet(): void {
 		it("Should allow pending owner to accept ownership", async function () {
 			await context.controlFacet.connect(owner).transferOwnership(await user2.getAddress())
 			await expect(context.controlFacet.connect(user2).acceptOwnership()).to.not.reverted
-			expect(await context.viewFacet.owner()).to.equal(await user2.getAddress())
+			expect(await context.viewFacet.getOwner()).to.equal(await user2.getAddress())
 			expect(await context.viewFacet.pendingOwner()).to.equal(ZeroAddress)
 		})
 
@@ -946,6 +946,30 @@ export function shouldBehaveLikeControlFacet(): void {
 		it("should set penalty collector correctly", async () => {
 			await expect(context.controlFacet.setSoftLiquidationPenaltyCollector(context.signers.admin)).to.not.reverted
 			expect(await context.viewFacet.getSoftLiquidationPenaltyCollector()).to.equal(context.signers.admin.address)
+		})
+	})
+
+	describe("setPartyBStrictDeallocation", () => {
+		it("should be disabled by default and allow Party B manager to enable it per solver", async () => {
+			expect(await context.viewFacet.isPartyBStrictDeallocationEnabled(hedger.address)).to.equal(false)
+
+			await expect(context.controlFacet.connect(owner).setPartyBStrictDeallocation(hedger.address, true))
+				.to.emit(context.controlFacet, "SetPartyBStrictDeallocation")
+				.withArgs(hedger.address, true)
+
+			expect(await context.viewFacet.isPartyBStrictDeallocationEnabled(hedger.address)).to.equal(true)
+		})
+
+		it("should reject callers without Party B manager role", async () => {
+			await expect(context.controlFacet.connect(user2).setPartyBStrictDeallocation(hedger.address, true)).to.be.revertedWith(
+				"Accessibility: Must have role",
+			)
+		})
+
+		it("should reject a non-PartyB address", async () => {
+			await expect(context.controlFacet.connect(owner).setPartyBStrictDeallocation(user2.address, true)).to.be.revertedWith(
+				"ControlFacet: Address is not PartyB",
+			)
 		})
 	})
 

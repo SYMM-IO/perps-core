@@ -95,13 +95,32 @@ contract ControlFacet is IControlFacet, AccountLayerAccessibility, AccountLayerP
 	}
 
 	/// @notice Sets the global signer used to authorize protocol-level operations
+	/// @dev Always opens an unconfined session. Callers acting for a delegate must use
+	///      setSignerScoped instead, so that clearing through this path can never leave a
+	///      stale scope behind for the next caller.
 	/// @param _signer The new signer address (address(0) to clear)
 	function setSigner(address _signer) external onlyRole(LibAccountLayerAccessibility.SIGNER_SETTER_ROLE) {
+		_setSigner(_signer, address(0));
+	}
+
+	/// @notice Sets the global signer and confines the session to a single account family
+	/// @dev Ownership checks alone cannot separate an owner's sub-accounts from one another, so a
+	///      caller executing on behalf of a delegate supplies the account family that delegation was
+	///      granted over. onlyAccountOwner then rejects any call that strays outside it.
+	/// @param _signer The new signer address (address(0) to clear)
+	/// @param _scope Canonical sub-account to confine the session to (address(0) for an unconfined session)
+	function setSignerScoped(address _signer, address _scope) external onlyRole(LibAccountLayerAccessibility.SIGNER_SETTER_ROLE) {
+		_setSigner(_signer, _scope);
+	}
+
+	function _setSigner(address _signer, address _scope) private {
 		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		address oldSigner = ahLayout.globalSigner;
 		ahLayout.globalSigner = _signer;
+		ahLayout.scopedAccount = _scope;
 
 		emit SignerUpdated(oldSigner, _signer);
+		emit SignerScopeUpdated(_signer, _scope);
 	}
 
 	// ==================== Affiliate Configuration ====================

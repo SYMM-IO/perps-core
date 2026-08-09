@@ -48,10 +48,9 @@ library LibOperationalFee {
 		allocatedUsed = amount - freeUsed;
 		if (allocatedUsed > 0) {
 			require(a.allocatedBalances[payer] >= allocatedUsed, "OperationalFee: Insufficient balance");
-			a.allocatedBalances[payer] -= allocatedUsed;
+			LibAccount.decreasePartyAAllocatedBalance(payer, allocatedUsed, SharedEvents.BalanceChangeType.OPERATIONAL_FEE_OUT);
 		}
 		a.balances[feeReceiver] += amount;
-		emit SharedEvents.BalanceChangePartyA(payer, amount, SharedEvents.BalanceChangeType.OPERATIONAL_FEE_OUT);
 	}
 
 	/// @notice Charges a standing operational fee from `payer` to `charger`'s receiver.

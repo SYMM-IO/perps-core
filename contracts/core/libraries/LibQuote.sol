@@ -8,10 +8,15 @@ import { QuoteStorage, Quote, LockedValues, PositionType, OrderType, QuoteStatus
 import { AggregatedDataStorage, PartiesAggregatedPositions } from "../storages/AggregatedDataStorage.sol";
 import { LockedValuesOps } from "./LibLockedValues.sol";
 import { LibAggregateFunding } from "./LibAggregateFunding.sol";
+import { LibSymbolAdjustment } from "./LibSymbolAdjustment.sol";
 import { LibUtils } from "./LibUtils.sol";
 
 library LibQuote {
 	using LockedValuesOps for LockedValues;
+
+	/// @dev Trading fees are `amount * price * feeRate`, where all three carry 18 decimals. Dividing by
+	///      1e36 cancels the price and fee-rate scales and leaves the fee in collateral's 18-decimal form.
+	uint256 private constant TRADING_FEE_SCALE = 1e36;
 
 	/// @notice Calculates the remaining open amount of a quote.
 	/// @param quote The quote for which to calculate the remaining open amount.
@@ -24,6 +29,7 @@ library LibQuote {
 	/// @param quote The quote to remove from the pending quotes.
 	function removeFromPartyAPendingQuotes(Quote storage quote) internal {
 		LibUtils.removeFromArray(QuoteStorage.layout().partyAPendingQuotes[quote.partyA], quote.id);
+		LibSymbolAdjustment.recordRestatementMutation(quote.symbolId);
 	}
 
 	/// @notice Removes a quote from the pending quotes of Party B.
@@ -471,16 +477,23 @@ library LibQuote {
 		}
 	}
 
-	/// @notice Gets the open trading fee for the remaining open amount (quantity - closedAmount) of a quote.
-	/// @param quoteId The ID of the quote for which to get the trading fee.
-	/// @return fee The trading fee for the remaining open amount of the quote.
-	function getOpenTradingFee(uint256 quoteId) internal view returns (uint256 fee) {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		Quote storage quote = quoteLayout.quotes[quoteId];
-		if (quote.orderType == OrderType.LIMIT) {
-			fee = (LibQuote.quoteOpenAmount(quote) * quote.requestedOpenPrice * quote.tradingFee) / 1e36;
-		} else {
-			fee = (LibQuote.quoteOpenAmount(quote) * quote.marketPrice * quote.tradingFee) / 1e36;
-		}
+	/// @notice Gets the open trading fee reserved for `amount` of a quote that has not opened yet.
+	/// @dev Priced at the request-time basis: requestedOpenPrice for limit quotes, marketPrice for market quotes.
+	///      This is what sendQuote debits and reserves, so every refund path (cancel, expire, force cancel,
+	///      liquidation, clearing-house takeover) must keep using it to give back exactly what was taken.
+	function getReservedOpenTradingFee(Quote storage quote, uint256 amount) internal view returns (uint256 fee) {
+		return _openTradingFeeAt(amount, quote.orderType == OrderType.LIMIT ? quote.requestedOpenPrice : quote.marketPrice, quote.tradingFee);
+	}
+
+	/// @notice Gets the open trading fee actually owed for `amount` of a quote that has just opened.
+	/// @dev Priced at the execution basis: openedPrice for market quotes. Limit quotes stay on
+	///      requestedOpenPrice, which is the price they were validated against, so their reserved and
+	///      executed fees are identical and no adjustment is ever needed.
+	function getExecutedOpenTradingFee(Quote storage quote, uint256 amount) internal view returns (uint256 fee) {
+		return _openTradingFeeAt(amount, quote.orderType == OrderType.LIMIT ? quote.requestedOpenPrice : quote.openedPrice, quote.tradingFee);
+	}
+
+	function _openTradingFeeAt(uint256 amount, uint256 tradingPrice, uint256 feeRate) private pure returns (uint256 fee) {
+		return (amount * tradingPrice * feeRate) / TRADING_FEE_SCALE;
 	}
 }

@@ -5,10 +5,22 @@
 import type { Interface } from "ethers"
 import fs from "fs"
 
+import { deploymentOnlyArtifact } from "../../../tasks/deploy/artifacts.js"
 import { FacetNames } from "../../../tasks/deploy/constants.js"
 import { FacetCutAction, getSelectors } from "../../../tasks/utils/diamondCut.js"
-import { ethers } from "../../../test/helpers/hardhat-connection.js"
+import { ethers, hre } from "../../../test/helpers/hardhat-connection.js"
+import {
+	loadDeploymentState,
+	saveDeploymentState,
+	resolveDeploymentStateMetadata,
+	validateDeploymentStateMetadata,
+	type DeploymentStateContext,
+} from "./deploymentState.js"
 import { log } from "./log.js"
+import { MUON_FUNCTION_NAMES, requireMuonVerifierConfig, type MuonPublicKey } from "./muonVerifierConfig.js"
+import { deployTxOverrides, diamondCutTxOverrides, writeTxOverrides } from "./txOverrides.js"
+
+export { MUON_FUNCTION_NAMES, type MuonPublicKey } from "./muonVerifierConfig.js"
 
 export type FacetInfo = {
 	address: string
@@ -45,6 +57,7 @@ export const FacetLibraryDependencies: Record<string, string[]> = {
 	PartyALiquidationSnapshotFacet: ["LibPartyALiquidationSnapshotSetup", "LibPartyALiquidationProcess"],
 	ClearingHouseFacet: ["LibQuoteClose", "LibQuoteFunding"],
 	SettlementFacet: ["LibSettlement"],
+	SymbolAdjustmentFacet: ["LibQuoteFunding", "LibQuoteClose"],
 }
 
 export const LibraryLinkReferences: Record<string, string> = {
@@ -58,12 +71,35 @@ export const LibraryLinkReferences: Record<string, string> = {
 	LibPartyALiquidationLegacySetup: "project/contracts/core/libraries/liquidation/LibPartyALiquidationLegacySetup.sol:LibPartyALiquidationLegacySetup",
 }
 
+async function requireDeployedCode(label: string, address: string): Promise<void> {
+	if (!ethers.isAddress(address) || address === ethers.ZeroAddress) throw new Error(`${label} has an invalid address: ${address}`)
+	if ((await ethers.provider.getCode(address)) === "0x") {
+		throw new Error(`${label} has no deployed code at ${address}; reconcile the deployment transaction before resuming`)
+	}
+}
+
+async function getUpgradeFacetFactory(facetName: string, libraries: Record<string, string>): Promise<any> {
+	const shortName = facetName.includes(":") ? facetName.split(":").pop()! : facetName
+	const requiredLibraries = FacetLibraryDependencies[shortName]
+	if (!requiredLibraries || requiredLibraries.length === 0) return ethers.getContractFactory(facetName)
+
+	const linked: Record<string, string> = {}
+	for (const libraryName of requiredLibraries) {
+		const address = libraries[libraryName]
+		if (!address) throw new Error(`${shortName} requires ${libraryName}, but no deployed address is available`)
+		await requireDeployedCode(libraryName, address)
+		linked[LibraryLinkReferences[libraryName]] = address
+	}
+	return ethers.getContractFactory(facetName, { libraries: linked })
+}
+
 export async function deployLibraries(existing: Record<string, string> = {}): Promise<Record<string, string>> {
 	const libraries: Record<string, string> = { ...existing }
+	for (const [name, address] of Object.entries(libraries)) await requireDeployedCode(name, address)
 
 	if (!libraries.LibQuoteFunding) {
 		const LibQuoteFundingFactory = await ethers.getContractFactory("LibQuoteFunding")
-		const libQuoteFunding = await LibQuoteFundingFactory.deploy()
+		const libQuoteFunding = await LibQuoteFundingFactory.deploy(deployTxOverrides())
 		await libQuoteFunding.waitForDeployment()
 		libraries.LibQuoteFunding = await libQuoteFunding.getAddress()
 	}
@@ -74,25 +110,26 @@ export async function deployLibraries(existing: Record<string, string> = {}): Pr
 				[LibraryLinkReferences.LibQuoteFunding]: libraries.LibQuoteFunding,
 			},
 		})
-		const libQuoteClose = await LibQuoteCloseFactory.deploy()
+		const libQuoteClose = await LibQuoteCloseFactory.deploy(deployTxOverrides())
 		await libQuoteClose.waitForDeployment()
 		libraries.LibQuoteClose = await libQuoteClose.getAddress()
 	}
 
 	if (!libraries.LibForceActions) {
-		const LibForceActionsFactory = await ethers.getContractFactory("LibForceActions", {
+		const artifact = await hre.artifacts.readArtifact("LibForceActions")
+		const LibForceActionsFactory = await ethers.getContractFactoryFromArtifact(deploymentOnlyArtifact(artifact), {
 			libraries: {
 				[LibraryLinkReferences.LibQuoteClose]: libraries.LibQuoteClose,
 			},
 		})
-		const libForceActions = await LibForceActionsFactory.deploy()
+		const libForceActions = await LibForceActionsFactory.deploy(deployTxOverrides())
 		await libForceActions.waitForDeployment()
 		libraries.LibForceActions = await libForceActions.getAddress()
 	}
 
 	if (!libraries.LibSettlement) {
 		const LibSettlementFactory = await ethers.getContractFactory("LibSettlement")
-		const libSettlement = await LibSettlementFactory.deploy()
+		const libSettlement = await LibSettlementFactory.deploy(deployTxOverrides())
 		await libSettlement.waitForDeployment()
 		libraries.LibSettlement = await libSettlement.getAddress()
 	}
@@ -103,21 +140,21 @@ export async function deployLibraries(existing: Record<string, string> = {}): Pr
 				[LibraryLinkReferences.LibQuoteFunding]: libraries.LibQuoteFunding,
 			},
 		})
-		const libPartyALiquidationProcess = await LibPartyALiquidationProcessFactory.deploy()
+		const libPartyALiquidationProcess = await LibPartyALiquidationProcessFactory.deploy(deployTxOverrides())
 		await libPartyALiquidationProcess.waitForDeployment()
 		libraries.LibPartyALiquidationProcess = await libPartyALiquidationProcess.getAddress()
 	}
 
 	if (!libraries.LibPartyALiquidationSnapshotSetup) {
 		const LibPartyALiquidationSnapshotSetupFactory = await ethers.getContractFactory("LibPartyALiquidationSnapshotSetup")
-		const libPartyALiquidationSnapshotSetup = await LibPartyALiquidationSnapshotSetupFactory.deploy()
+		const libPartyALiquidationSnapshotSetup = await LibPartyALiquidationSnapshotSetupFactory.deploy(deployTxOverrides())
 		await libPartyALiquidationSnapshotSetup.waitForDeployment()
 		libraries.LibPartyALiquidationSnapshotSetup = await libPartyALiquidationSnapshotSetup.getAddress()
 	}
 
 	if (!libraries.LibPartyALiquidationLegacySetup) {
 		const LibPartyALiquidationLegacySetupFactory = await ethers.getContractFactory("LibPartyALiquidationLegacySetup")
-		const libPartyALiquidationLegacySetup = await LibPartyALiquidationLegacySetupFactory.deploy()
+		const libPartyALiquidationLegacySetup = await LibPartyALiquidationLegacySetupFactory.deploy(deployTxOverrides())
 		await libPartyALiquidationLegacySetup.waitForDeployment()
 		libraries.LibPartyALiquidationLegacySetup = await libPartyALiquidationLegacySetup.getAddress()
 	}
@@ -125,18 +162,22 @@ export async function deployLibraries(existing: Record<string, string> = {}): Pr
 	return libraries
 }
 
-export async function deployFacets(outputFile?: string): Promise<{ facets: Record<string, FacetInfo>; selectorSignatures: Record<string, string> }> {
+export async function deployFacets(
+	outputFile?: string,
+	stateContext?: DeploymentStateContext,
+): Promise<{ facets: Record<string, FacetInfo>; selectorSignatures: Record<string, string> }> {
+	const metadata = outputFile ? await resolveDeploymentStateMetadata(stateContext) : undefined
 	// Load previously deployed facets/libraries to resume after failures
 	let partial: { libraries?: Record<string, string>; facets?: Record<string, FacetInfo>; selectorSignatures?: Record<string, string> } = {}
 	if (outputFile && fs.existsSync(outputFile)) {
 		try {
-			partial = JSON.parse(fs.readFileSync(outputFile, "utf-8"))
+			partial = loadDeploymentState(outputFile, metadata)
 			const deployed = Object.keys(partial.facets ?? {})
 			if (deployed.length > 0) {
 				log.info(`Resuming: ${deployed.length}/${FacetNames.length} facets already deployed`)
 			}
-		} catch {
-			partial = {}
+		} catch (error) {
+			throw new Error(`Failed to load deployed facets state from ${outputFile}: ${(error as Error).message}`)
 		}
 	}
 
@@ -148,7 +189,7 @@ export async function deployFacets(outputFile?: string): Promise<{ facets: Recor
 		if (!outputFile) return
 		const dir = outputFile.substring(0, outputFile.lastIndexOf("/"))
 		if (dir && !fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
-		fs.writeFileSync(outputFile, JSON.stringify({ libraries, facets, selectorSignatures }, null, 2))
+		saveDeploymentState(outputFile, { libraries, facets, selectorSignatures }, metadata)
 	}
 
 	// Deploy or reuse libraries
@@ -163,6 +204,7 @@ export async function deployFacets(outputFile?: string): Promise<{ facets: Recor
 		libraries.LibPartyALiquidationLegacySetup
 	) {
 		for (const [name, addr] of Object.entries(libraries)) {
+			await requireDeployedCode(name, addr)
 			log.deployed(name, addr, true)
 		}
 	} else {
@@ -178,30 +220,26 @@ export async function deployFacets(outputFile?: string): Promise<{ facets: Recor
 	for (let i = 0; i < FacetNames.length; i++) {
 		const facetName = FacetNames[i]
 		const shortName = facetName.includes(":") ? facetName.split(":").pop()! : facetName
+		const facetFactory = await getUpgradeFacetFactory(facetName, libraries)
+		const expectedSelectors = getSelectors(ethers, facetFactory).selectors
 
 		if (facets[shortName]) {
+			await requireDeployedCode(shortName, facets[shortName].address)
+			const cachedSelectors = [...facets[shortName].selectors].map(selector => selector.toLowerCase()).sort()
+			const artifactSelectors = [...expectedSelectors].map(selector => selector.toLowerCase()).sort()
+			if (cachedSelectors.length !== artifactSelectors.length || cachedSelectors.some((selector, index) => selector !== artifactSelectors[index])) {
+				throw new Error(`${shortName} cached selector set does not match the current artifact; use a state file generated from this checkout`)
+			}
 			log.skipped(shortName, facets[shortName].address)
 			deployedCount++
 			continue
 		}
 
-		const requiredLibraries = FacetLibraryDependencies[shortName]
-		let facetFactory
-
-		if (requiredLibraries && requiredLibraries.length > 0) {
-			const linked: Record<string, string> = {}
-			for (const lib of requiredLibraries) {
-				linked[LibraryLinkReferences[lib]] = libraries[lib]
-			}
-			facetFactory = await ethers.getContractFactory(facetName, { libraries: linked })
-		} else {
-			facetFactory = await ethers.getContractFactory(facetName)
-		}
-
-		const facet = await facetFactory.deploy()
+		const facet = await facetFactory.deploy(deployTxOverrides())
 		await facet.waitForDeployment()
 		const address = await facet.getAddress()
-		const selectors = getSelectors(ethers, facetFactory).selectors
+		await requireDeployedCode(shortName, address)
+		const selectors = expectedSelectors
 
 		facets[shortName] = { address, selectors }
 		for (const fragment of facetFactory.interface.fragments) {
@@ -226,20 +264,28 @@ export async function buildDiamondCut(
 	newFacets: Record<string, FacetInfo>,
 	knownSelectorSignatures: Record<string, string>,
 ): Promise<{ diamondCut: any[]; selectorChanges: SelectorChange[] }> {
+	await requireDeployedCode("Diamond", diamondAddress)
 	const diamondLoupeFacet = await ethers.getContractAt("DiamondLoupeFacet", diamondAddress)
 	const facets = await diamondLoupeFacet.facets()
 
 	const currentSelectors: Map<string, string> = new Map()
 	for (const facet of facets) {
 		for (const selector of facet.functionSelectors) {
-			currentSelectors.set(selector, facet.facetAddress)
+			currentSelectors.set(selector.toLowerCase(), ethers.getAddress(facet.facetAddress))
 		}
 	}
 
 	const newSelectors: Map<string, string> = new Map()
-	for (const facet of Object.values(newFacets)) {
+	const selectorFacetNames = new Map<string, string>()
+	for (const [facetName, facet] of Object.entries(newFacets)) {
+		await requireDeployedCode(facetName, facet.address)
+		const normalizedAddress = ethers.getAddress(facet.address)
 		for (const selector of facet.selectors) {
-			newSelectors.set(selector, facet.address)
+			const normalizedSelector = selector.toLowerCase()
+			const priorFacet = selectorFacetNames.get(normalizedSelector)
+			if (priorFacet) throw new Error(`Selector collision ${normalizedSelector}: present in both ${priorFacet} and ${facetName}`)
+			selectorFacetNames.set(normalizedSelector, facetName)
+			newSelectors.set(normalizedSelector, normalizedAddress)
 		}
 	}
 
@@ -254,6 +300,10 @@ export async function buildDiamondCut(
 	for (const [selector, currentFacetAddress] of currentSelectors) {
 		if (newSelectors.has(selector)) {
 			const toFacetAddress = newSelectors.get(selector)!
+			if (currentFacetAddress === toFacetAddress) {
+				newSelectors.delete(selector)
+				continue
+			}
 			actions[selector] = {
 				action: FacetCutAction.Replace,
 				facetAddress: toFacetAddress,
@@ -332,6 +382,10 @@ export async function applyDiamondCut(diamondAddress: string, diamondCut: any[],
 		log.info("No diamond cut required — already up to date")
 		return
 	}
+	if (!Number.isSafeInteger(chunkSize) || chunkSize < 1) {
+		throw new Error(`Diamond cut chunk size must be a positive safe integer; received ${chunkSize}`)
+	}
+	await requireDeployedCode("Diamond", diamondAddress)
 
 	const diamondCutFacet = signer
 		? await ethers.getContractAt("DiamondCutFacet", diamondAddress, signer)
@@ -344,10 +398,20 @@ export async function applyDiamondCut(diamondAddress: string, diamondCut: any[],
 	for (let i = 0; i < chunks.length; i++) {
 		const chunk = chunks[i]
 		const selectorCount = chunk.reduce((sum: number, cut: any) => sum + cut.functionSelectors.length, 0)
-		const tx = await diamondCutFacet.diamondCut(chunk, ethers.ZeroAddress, "0x")
+		const tx = await diamondCutFacet.diamondCut(chunk, ethers.ZeroAddress, "0x", diamondCutTxOverrides())
 		const receipt = await tx.wait()
 		if (!receipt?.status) {
 			throw new Error(`Diamond cut failed in chunk ${i + 1}/${chunks.length}: ${tx.hash}`)
+		}
+		const loupe = await ethers.getContractAt("DiamondLoupeFacet", diamondAddress)
+		for (const cut of chunk) {
+			const expectedAddress = cut.action === FacetCutAction.Remove ? ethers.ZeroAddress : ethers.getAddress(cut.facetAddress)
+			for (const selector of cut.functionSelectors) {
+				const actualAddress = ethers.getAddress(await loupe.facetAddress(selector))
+				if (actualAddress !== expectedAddress) {
+					throw new Error(`Diamond cut post-state mismatch for ${selector}: mapped to ${actualAddress}, expected ${expectedAddress}`)
+				}
+			}
 		}
 		log.ok(`Chunk ${i + 1}/${chunks.length} applied — ${selectorCount} selectors (tx: ${log.addr(tx.hash)})`)
 	}
@@ -356,13 +420,6 @@ export async function applyDiamondCut(diamondAddress: string, diamondCut: any[],
 // =============================================================================
 // EOA parameter setter
 // =============================================================================
-
-export const MUON_FUNCTION_NAMES = ["Trading", "AccountManagement", "Settlement", "ForceClose", "Funding", "LiquidationPartyA", "LiquidationPartyB"]
-
-export type MuonPublicKey = {
-	x: string
-	parity: number
-}
 
 export type NewV085Parameters = {
 	maxPartyAConnectionLimit?: number
@@ -379,27 +436,53 @@ export type NewV085Parameters = {
 	muonFunctionPermissions?: string[]
 }
 
+export function validateLiquidationAccountingParams(params: NewV085Parameters): void {
+	const hasVault = params.liquidationInsuranceVault !== undefined && params.liquidationInsuranceVault !== ""
+	const hasMaxProfit = params.maxLiquidationProfitPerPosition !== undefined && params.maxLiquidationProfitPerPosition !== ""
+	if (hasVault !== hasMaxProfit) {
+		throw new Error("liquidationInsuranceVault and maxLiquidationProfitPerPosition must be configured together")
+	}
+	if (hasVault) {
+		if (!ethers.isAddress(params.liquidationInsuranceVault) || ethers.getAddress(params.liquidationInsuranceVault) === ethers.ZeroAddress) {
+			throw new Error(`liquidationInsuranceVault must be a non-zero address: ${params.liquidationInsuranceVault}`)
+		}
+		const value = params.maxLiquidationProfitPerPosition as string
+		if (!/^[1-9]\d*$/.test(value) || BigInt(value) > (BigInt(1) << BigInt(256)) - BigInt(1)) {
+			throw new Error(`maxLiquidationProfitPerPosition must be a positive uint256: ${value}`)
+		}
+	}
+	if (
+		params.softLiquidationPenaltyCollector &&
+		(!ethers.isAddress(params.softLiquidationPenaltyCollector) || ethers.getAddress(params.softLiquidationPenaltyCollector) === ethers.ZeroAddress)
+	) {
+		throw new Error(`softLiquidationPenaltyCollector must be a non-zero address: ${params.softLiquidationPenaltyCollector}`)
+	}
+}
+
 export async function setV085Parameters(diamondAddress: string, params: NewV085Parameters, signerOverride?: any): Promise<void> {
+	validateLiquidationAccountingParams(params)
+	requireMuonVerifierConfig(params)
+
 	const signer = signerOverride ?? (await ethers.provider.getSigner())
 	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", diamondAddress, signer)
 
 	const signerAddress = await signer.getAddress()
-	await (await controlFacet.grantRole(signerAddress, ethers.id("PROTOCOL_CONFIG_ROLE"))).wait()
-	await (await controlFacet.grantRole(signerAddress, ethers.id("COOLDOWN_ADMIN_ROLE"))).wait()
+	await (await controlFacet.grantRole(signerAddress, ethers.id("PROTOCOL_CONFIG_ROLE"), writeTxOverrides())).wait()
+	await (await controlFacet.grantRole(signerAddress, ethers.id("COOLDOWN_ADMIN_ROLE"), writeTxOverrides())).wait()
 
 	const needsFeeAdminRole =
 		(params.liquidationInsuranceVault && params.maxLiquidationProfitPerPosition) || params.softLiquidationPenaltyCollector || params.minAffiliateFee
 	if (needsFeeAdminRole) {
-		await (await controlFacet.grantRole(signerAddress, ethers.id("FEE_ADMIN_ROLE"))).wait()
+		await (await controlFacet.grantRole(signerAddress, ethers.id("FEE_ADMIN_ROLE"), writeTxOverrides())).wait()
 	}
 
 	if (params.maxPartyAConnectionLimit && params.maxPartyAConnectionLimit > 0) {
-		await (await controlFacet.setMaxPartyAConnectionLimit(params.maxPartyAConnectionLimit)).wait()
+		await (await controlFacet.setMaxPartyAConnectionLimit(params.maxPartyAConnectionLimit, writeTxOverrides())).wait()
 		log.ok(`maxPartyAConnectionLimit = ${params.maxPartyAConnectionLimit}`)
 	}
 
 	if (params.signatureVerifierAddress && ethers.isAddress(params.signatureVerifierAddress)) {
-		await (await controlFacet.setSignatureVerifierAddress(params.signatureVerifierAddress)).wait()
+		await (await controlFacet.setSignatureVerifierAddress(params.signatureVerifierAddress, writeTxOverrides())).wait()
 		log.ok(`signatureVerifierAddress = ${log.addr(params.signatureVerifierAddress)}`)
 
 		// Seed MuonSignatureVerifier with public keys and gateway signers
@@ -413,7 +496,7 @@ export async function setV085Parameters(diamondAddress: string, params: NewV085P
 					log.ok(`Public key (x=${key.x.slice(0, 10)}..., parity=${key.parity}) already present`)
 					continue
 				}
-				await (await verifier.addPublicKey({ x: key.x, parity: key.parity })).wait()
+				await (await verifier.addPublicKey({ x: key.x, parity: key.parity }, writeTxOverrides())).wait()
 				log.ok(`addPublicKey(x=${key.x.slice(0, 10)}..., parity=${key.parity})`)
 			}
 		}
@@ -425,7 +508,7 @@ export async function setV085Parameters(diamondAddress: string, params: NewV085P
 					log.ok(`Gateway signer ${log.addr(gw)} already present`)
 					continue
 				}
-				await (await verifier.addGatewaySigner(gw)).wait()
+				await (await verifier.addGatewaySigner(gw, writeTxOverrides())).wait()
 				log.ok(`addGatewaySigner(${log.addr(gw)})`)
 			}
 		}
@@ -439,14 +522,14 @@ export async function setV085Parameters(diamondAddress: string, params: NewV085P
 
 			if (params.muonPublicKeys && params.muonPublicKeys.length > 0) {
 				for (const key of params.muonPublicKeys) {
-					await (await verifier.setPublicKeyPermissions({ x: key.x, parity: key.parity }, functionIndices, true)).wait()
+					await (await verifier.setPublicKeyPermissions({ x: key.x, parity: key.parity }, functionIndices, true, writeTxOverrides())).wait()
 					log.ok(`setPublicKeyPermissions(x=${key.x.slice(0, 10)}..., parity=${key.parity}, [${params.muonFunctionPermissions.join(", ")}], true)`)
 				}
 			}
 
 			if (params.muonGatewaySigners && params.muonGatewaySigners.length > 0) {
 				for (const gw of params.muonGatewaySigners) {
-					await (await verifier.setGatewaySignerPermissions(gw, functionIndices, true)).wait()
+					await (await verifier.setGatewaySignerPermissions(gw, functionIndices, true, writeTxOverrides())).wait()
 					log.ok(`setGatewaySignerPermissions(${log.addr(gw)}, [${params.muonFunctionPermissions.join(", ")}], true)`)
 				}
 			}
@@ -454,33 +537,39 @@ export async function setV085Parameters(diamondAddress: string, params: NewV085P
 	}
 
 	if (params.liquidationInsuranceVault && params.maxLiquidationProfitPerPosition) {
-		await (await controlFacet.setLiquidationInsuranceVaultParams(params.liquidationInsuranceVault, params.maxLiquidationProfitPerPosition)).wait()
+		await (
+			await controlFacet.setLiquidationInsuranceVaultParams(
+				params.liquidationInsuranceVault,
+				params.maxLiquidationProfitPerPosition,
+				writeTxOverrides(),
+			)
+		).wait()
 		log.ok(`liquidationInsuranceVault = ${log.addr(params.liquidationInsuranceVault)}`)
 		log.ok(`maxLiquidationProfitPerPosition = ${params.maxLiquidationProfitPerPosition}`)
 	}
 
 	if (params.softLiquidationPenaltyCollector && ethers.isAddress(params.softLiquidationPenaltyCollector)) {
-		await (await controlFacet.setSoftLiquidationPenaltyCollector(params.softLiquidationPenaltyCollector)).wait()
+		await (await controlFacet.setSoftLiquidationPenaltyCollector(params.softLiquidationPenaltyCollector, writeTxOverrides())).wait()
 		log.ok(`softLiquidationPenaltyCollector = ${log.addr(params.softLiquidationPenaltyCollector)}`)
 	}
 
 	if (params.minAffiliateFee) {
-		await (await controlFacet.setMinAffiliateFee(params.minAffiliateFee)).wait()
+		await (await controlFacet.setMinAffiliateFee(params.minAffiliateFee, writeTxOverrides())).wait()
 		log.ok(`minAffiliateFee = ${params.minAffiliateFee}`)
 	}
 
 	if (params.unbindCooldown !== undefined && params.unbindCooldown > 0) {
-		await (await controlFacet.setUnbindCooldown(params.unbindCooldown)).wait()
+		await (await controlFacet.setUnbindCooldown(params.unbindCooldown, writeTxOverrides())).wait()
 		log.ok(`unbindCooldown = ${params.unbindCooldown}`)
 	}
 
 	if (params.minWithdrawCooldown !== undefined && params.minWithdrawCooldown > 0) {
-		await (await controlFacet.setMinWithdrawCooldown(params.minWithdrawCooldown)).wait()
+		await (await controlFacet.setMinWithdrawCooldown(params.minWithdrawCooldown, writeTxOverrides())).wait()
 		log.ok(`minWithdrawCooldown = ${params.minWithdrawCooldown}`)
 	}
 
 	if (params.maxWithdrawParts !== undefined && params.maxWithdrawParts > 0) {
-		await (await controlFacet.setMaxWithdrawParts(params.maxWithdrawParts)).wait()
+		await (await controlFacet.setMaxWithdrawParts(params.maxWithdrawParts, writeTxOverrides())).wait()
 		log.ok(`maxWithdrawParts = ${params.maxWithdrawParts}`)
 	}
 }
@@ -654,6 +743,9 @@ export function buildUpgradeTransactions(
 	chunkSize: number,
 	newParams: NewV085Parameters,
 ): UpgradeTransactionResult {
+	validateLiquidationAccountingParams(newParams)
+	requireMuonVerifierConfig(newParams)
+
 	const pauseSafeTxs: SafeTransaction[] = []
 	const pauseBreakdown: string[] = []
 	const pauseTxIdx = { value: 1 }
@@ -851,9 +943,6 @@ export function buildUpgradeTransactions(
 	}
 
 	if (newParams.liquidationInsuranceVault && newParams.maxLiquidationProfitPerPosition) {
-		if (!ethers.isAddress(newParams.liquidationInsuranceVault)) {
-			throw new Error(`Invalid liquidationInsuranceVault address: ${newParams.liquidationInsuranceVault}`)
-		}
 		const desc = `setLiquidationInsuranceVaultParams(${newParams.liquidationInsuranceVault}, ${newParams.maxLiquidationProfitPerPosition})`
 		addTx(
 			safeTxs,
@@ -932,7 +1021,7 @@ export function buildUpgradeTransactions(
 		)
 	}
 
-	// Phase 3: Migration + symbol management roles
+	// Phase 3: Migration + symbol management + PartyB listing roles
 	addTx(
 		safeTxs,
 		calldataTxs,
@@ -955,6 +1044,17 @@ export function buildUpgradeTransactions(
 		`grantRole(SYMBOL_MANAGER_ROLE) -> ${migrationRunner}`,
 	)
 
+	addTx(
+		safeTxs,
+		calldataTxs,
+		breakdown,
+		txIdx,
+		diamondAddress,
+		"grantRole",
+		[migrationRunner, ethers.id("PARTY_B_MANAGER_ROLE")],
+		`grantRole(PARTY_B_MANAGER_ROLE) -> ${migrationRunner}`,
+	)
+
 	return { pauseSafeTxs, pauseBreakdown, safeTxs, calldataTxs, diamondCutCalldataChunks, diamondCutInsertionIndex, breakdown, selectorChanges }
 }
 
@@ -962,11 +1062,18 @@ export function buildUpgradeTransactions(
 // Facet loading
 // =============================================================================
 
-export function loadDeployedFacets(filePath: string): DeployedFacets {
+export function loadDeployedFacets(filePath: string, stateContext?: DeploymentStateContext): DeployedFacets {
 	if (!fs.existsSync(filePath)) {
 		throw new Error(`Deployed facets file not found: ${filePath}\nRun deployFacets.ts first, or set FACETS_FILE to a valid path.`)
 	}
 	const data = JSON.parse(fs.readFileSync(filePath, "utf-8")) as DeployedFacets
+	if (stateContext) {
+		validateDeploymentStateMetadata(filePath, data as unknown as Record<string, any>, {
+			networkName: stateContext.networkName,
+			chainId: stateContext.chainId,
+			diamondAddress: stateContext.diamondAddress,
+		})
+	}
 	log.ok(`Loaded ${Object.keys(data.facets).length} facets from ${filePath}`)
 	return data
 }

@@ -41,7 +41,9 @@ struct AffiliateData {
 	mapping(bytes4 => address) hooks;
 	address accountManager;
 	address registrant;
+	/// @dev Unused. Left over from the removed express deposit feature; kept to preserve storage layout.
 	uint256 expressRate;
+	/// @dev Unused. Left over from the removed express deposit feature; kept to preserve storage layout.
 	address virtualProvider;
 	uint256 registrationNonce;
 }
@@ -64,6 +66,38 @@ struct PendingFeeUpdate {
 	uint256 timestamp;
 	uint256 symmioShare;
 	Stakeholder[] stakeholders;
+}
+
+/// @notice View-layer representation of an affiliate with its address and flattened fee details
+/// @dev Mirrors AffiliateData, minus the fields that cannot be returned from storage:
+///      `hooks` is a mapping, so per-selector data is exposed via AffiliateSelectorConfig instead.
+struct AffiliateDetail {
+	address affiliateAddress;
+	string name;
+	string brandColor;
+	address admin;
+	address pendingAdmin;
+	AffiliateState state;
+	uint256 symmioShare;
+	Stakeholder[] stakeholders;
+	address feeDistributor;
+	bytes metadata;
+	address[] legacyMultiAccounts;
+	address[] symmioCores;
+	address accountManager;
+	address registrant;
+	uint256 registrationNonce;
+	PendingFeeUpdate pendingFeeUpdate;
+}
+
+/// @notice Per-selector configuration of an affiliate
+/// @dev The underlying storage is mapping-based and therefore not enumerable; callers pass
+///      the selectors they care about and get the hook and both allow-lists back in one call.
+struct AffiliateSelectorConfig {
+	bytes4 selector;
+	address hook;
+	bool hookAllowed;
+	bool callAllowed;
 }
 
 /// @notice Contextual information available to hooks during execution

@@ -103,8 +103,7 @@ contract OperatorFacet is IOperatorFacet, Pausable, ReentrancyGuard {
 		FeeStorage.Layout storage f = FeeStorage.layout();
 		uint256 operatorFee = f.operatorFees[user][requestId];
 		uint256 affiliateFee = info.fee + info.accelerationFee;
-		uint256 totalFee = affiliateFee + operatorFee;
-		uint256 userFee = totalFee - info.sponsorCoverage;
+		uint256 userFee = affiliateFee + operatorFee;
 
 		if (info.optionType == OptionType.STANDARD) {
 			if (affiliateFee > 0) f.collectedFees[info.affiliate] += affiliateFee;

@@ -44,10 +44,15 @@ abstract contract AccountLayerAccessibility is IAccountLayerErrors {
 		_;
 	}
 
-	/// @notice Restricts access to the account owner (verified via getSigner)
+	/// @notice Restricts access to the account owner (verified via getSigner), within the session's account scope
+	/// @dev Ownership alone is too coarse for delegated sessions: an owner owns every one of their
+	///      sub-accounts, so an owner-level signer satisfies this check for all of them. When a caller
+	///      acts for a delegate it also sets a scope, and the second check confines the call to the
+	///      account family that delegation was granted over. Unscoped sessions are unaffected.
 	modifier onlyAccountOwner(address account) {
 		address signer = LibAccountLayerUtils.getSigner();
 		if (!_isOwnerOf(account, signer)) revert NotOwner();
+		LibAccountLayerUtils.requireAccountInScope(account);
 		_;
 	}
 

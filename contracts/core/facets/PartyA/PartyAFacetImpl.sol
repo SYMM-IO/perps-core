@@ -5,6 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { LibMuonPartyA } from "../../libraries/muon/LibMuonPartyA.sol";
+import { LibSymbolAdjustment } from "../../libraries/LibSymbolAdjustment.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibQuote } from "../../libraries/LibQuote.sol";
 import { LibQuoteClose } from "../../libraries/LibQuoteClose.sol";
@@ -21,7 +22,6 @@ import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { SingleUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
-import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
 import { LibHook } from "../../libraries/LibHook.sol";
 import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
@@ -59,6 +59,7 @@ library PartyAFacetImpl {
 			"PartyAFacet: Number of pending quotes out of range"
 		);
 		require(symbolLayout.symbols[symbolId].isValid, "PartyAFacet: Symbol is not valid");
+		LibSymbolAdjustment.requireNotFrozen(symbolId);
 		require(deadline >= block.timestamp, "PartyAFacet: Low deadline");
 
 		LockedValues memory lockedValues = LockedValues(cva, lf, partyAmm, partyBmm);
@@ -161,13 +162,12 @@ library PartyAFacetImpl {
 		quoteLayout.solverFeeStates[currentId].openRateCap = solverFeeCaps.openRateCap;
 		quoteLayout.solverFeeStates[currentId].closeRateCap = solverFeeCaps.closeRateCap;
 
-		uint256 feeAmount = LibQuote.getOpenTradingFee(currentId);
+		uint256 feeAmount = LibQuote.getReservedOpenTradingFee(quoteLayout.quotes[currentId], quantity);
 		require(accountLayout.allocatedBalances[signer] >= feeAmount, "PartyAFacet: Insufficient allocated balance for fee");
-		accountLayout.allocatedBalances[signer] -= feeAmount;
+		LibAccount.decreasePartyAAllocatedBalance(signer, feeAmount, SharedEvents.BalanceChangeType.PLATFORM_FEE_OUT);
 		if (!_instantOpenMode) {
 			LibAccount.reserveOpenTradingFee(signer, feeAmount);
 		}
-		emit SharedEvents.BalanceChangePartyA(signer, feeAmount, SharedEvents.BalanceChangeType.PLATFORM_FEE_OUT);
 	}
 
 	/// @notice Cancels a pending quote immediately or requests cancellation for a locked quote

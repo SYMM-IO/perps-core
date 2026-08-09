@@ -5,8 +5,10 @@ import { ArgumentType } from "hardhat/types/arguments"
 import { writeData } from "../utils/fs.js"
 import { DeploymentCheckpoint, createDeployedContract, saveCheckpoint } from "./checkpoint.js"
 import { STABLECOIN_DEPLOYMENT_FILE } from "./constants.js"
-import { getConnection } from "./helpers.js"
+import { checkpointDeployment, recoverCheckpointContractDeployments } from "./deploymentRecovery.js"
+import { assertStandaloneDeploymentTaskAllowed, getConnection } from "./helpers.js"
 import { logger } from "./logger.js"
+import { confirmDeployment } from "./tx.js"
 
 type DeployStablecoinArgs = {
 	logData?: boolean
@@ -15,11 +17,13 @@ type DeployStablecoinArgs = {
 
 export async function deployStablecoin(hre: any, { logData = true, checkpoint }: DeployStablecoinArgs = {}) {
 	const { ethers } = await getConnection(hre)
+	await recoverCheckpointContractDeployments(checkpoint, ethers.provider, "contracts.collateral")
 
 	// Check if already deployed from checkpoint
 	if (checkpoint?.contracts.collateral) {
 		const address = checkpoint.contracts.collateral.address
 		logger.info(`  ⏭ FakeStablecoin already deployed at ${address}`)
+		if (logData) writeStablecoinRecord(address)
 		const stablecoin = await ethers.getContractAt("FakeStablecoin", address)
 		return stablecoin
 	}
@@ -29,10 +33,7 @@ export async function deployStablecoin(hre: any, { logData = true, checkpoint }:
 
 	const StablecoinFactory = await ethers.getContractFactory("FakeStablecoin")
 	const stablecoin = await StablecoinFactory.connect(owner).deploy()
-	await stablecoin.waitForDeployment()
-
-	await stablecoin.deploymentTransaction()!.wait()
-	const address = await stablecoin.getAddress()
+	const address = await confirmDeployment(stablecoin, "FakeStablecoin", checkpointDeployment(checkpoint, "contracts.collateral"))
 	logger.deployed("FakeStablecoin", address)
 
 	// Save checkpoint
@@ -42,21 +43,22 @@ export async function deployStablecoin(hre: any, { logData = true, checkpoint }:
 	}
 
 	if (logData) {
-		writeData(STABLECOIN_DEPLOYMENT_FILE, [
-			{
-				name: "FakeStablecoin",
-				address,
-				constructorArguments: [],
-			},
-		])
+		writeStablecoinRecord(address)
 	}
 
 	return stablecoin
 }
 
+function writeStablecoinRecord(address: string): void {
+	writeData(STABLECOIN_DEPLOYMENT_FILE, [{ name: "FakeStablecoin", address, constructorArguments: [] }])
+}
+
 export const stablecoinTask = task("deploy:stablecoin", "Deploys the FakeStablecoin")
 	.addOption({ name: "logData", description: "Write the deployed addresses to a data file", type: ArgumentType.BOOLEAN, defaultValue: true })
 	.setAction(async () => ({
-		default: async ({ logData }, hre) => deployStablecoin(hre, { logData }),
+		default: async ({ logData }, hre) => {
+			await assertStandaloneDeploymentTaskAllowed(hre, "deploy:stablecoin")
+			return deployStablecoin(hre, { logData })
+		},
 	}))
 	.build()

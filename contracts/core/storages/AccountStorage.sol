@@ -76,6 +76,9 @@ struct ForceCloseDetail {
 	PartyBForceCloseState partyBState;
 	/// @notice Whether a 3-step force close workflow is active for this quoteId.
 	bool inProgress;
+	/// @notice Symbol price/quantity basis version when the close price was calculated.
+	/// @dev Finalization rejects the workflow if a physical restatement advanced this version.
+	uint256 basisVersion;
 }
 
 /// @notice Complete liquidation state for a PartyA being liquidated
@@ -157,17 +160,19 @@ library AccountStorage {
 		/// @dev Records when a user last deallocated funds. Used with MAStorage.withdrawCooldownPeriod
 		///      to enforce a cooldown before withdrawals are allowed.
 		mapping(address => uint256) deallocateTimestamp;
-		/// @notice Replay protection counter for PartyA signatures
-		/// @dev Incremented with each action that changes the UPNL of partyA.
-		///      Muon signatures include this nonce to prevent replay attacks.
-		mapping(address => uint256) partyANonces;
-		/// @notice Replay protection counter for PartyB signatures per PartyA
-		/// @dev PartyB has separate nonces for each PartyA they trade with. Both
-		///      per-PartyA nonces AND the address(0) global nonce are always incremented
-		///      on every upnl changing operation. This nonce will be ignored for cross partyBs
-		///      when doing all operations except deallocation. The reason for that is to allow
-		///      parallel operations to solver.
-		mapping(address => mapping(address => uint256)) partyBNonces;
+		/// @notice Version counter of PartyA's upnl inputs, embedded in Muon signatures
+		/// @dev Incremented by every action that changes the inputs to PartyA's upnl (position fills,
+		///      funding charges, settlement, liquidation) so outstanding signatures no longer verify.
+		///      It is NOT consumed per signature use — a signature stays valid for its full validity
+		///      window until upnl-relevant state changes. Exposed externally as nonceOfPartyA.
+		mapping(address => uint256) partyAUpnlCounters;
+		/// @notice Version counter of PartyB's upnl inputs per PartyA, embedded in Muon signatures
+		/// @dev PartyB has separate counters for each PartyA they trade with. Both the per-PartyA
+		///      counter AND the address(0) cross counter are always incremented on every
+		///      upnl-changing operation. The per-PartyA counter is ignored for cross partyBs
+		///      in all operations except deallocation, to allow parallel solver operations.
+		///      Not consumed per signature use. Exposed externally as nonceOfPartyB.
+		mapping(address => mapping(address => uint256)) partyBUpnlCounters;
 		/// @notice Accounts frozen by admin due to suspicious activity
 		/// @dev Suspended users cannot open/close positions or have positions opened against them.
 		///      Checked via notSuspended modifier. Used when investigating potential exploits
@@ -186,9 +191,9 @@ library AccountStorage {
 		///      that supplies the liquidation prices. The liquidation fee is split 50/50 when both
 		///      are recorded; otherwise the starter receives the full fee. Cleared after settlement.
 		mapping(address => address[]) liquidators;
-		/// @notice Reimbursement owed to PartyA, used by clearing house takeover flow
-		/// @dev In CH takeover: stores pending fees added by liquidatePendingPositionsForClearingHouse.
-		///      CH can pull via deallocateForClearingHouse(REIMBURSEMENT_KEY). Released at settlePartyATakeover.
+		/// @notice Pending credits owed to a liquidating PartyA but not yet restored to allocated balance
+		/// @dev Accumulates released open-fee reserves and Clearing House-routed credits. NORMAL liquidation or takeover settlement can restore it;
+		///      LATE/OVERDUE settlement moves it to liquidation escrow, and takeover can pull it through REIMBURSEMENT_KEY.
 		mapping(address => uint256) partyAReimbursement;
 		/// @notice UPNL settlement state between PartyA-PartyB pairs during liquidation
 		/// @dev Used during PartyA liquidation to track UPNL reconciliation with each PartyB.
@@ -241,6 +246,11 @@ library AccountStorage {
 		/// @notice Per-settlement contribution included in partyBLiquidationSettlementReserve.
 		/// @dev Keyed by PartyA then PartyB so reserve cleanup is independent from the PartyB's current mode.
 		mapping(address => mapping(address => uint256)) partyBLiquidationSettlementReserveContributions;
+		/// @notice Net funding fee included in each pending PartyA liquidation settlement.
+		/// @dev Positive means PartyA owes PartyB. Kept separately so settlement balance-change events
+		///      can classify funding and realized PnL without changing the public settlement-state tuple.
+		///      Pre-upgrade pending settlements retain the legacy realized-PnL-only classification because this value is zero.
+		mapping(address => mapping(address => int256)) partyALiquidationSettlementFundingFees;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

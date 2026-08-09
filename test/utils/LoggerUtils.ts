@@ -1,5 +1,7 @@
 import winston, { format, transports } from "winston"
 
+import { withIsolatedRandomSequence } from "./RandomUtils.js"
+
 const customLevels = {
 	levels: {
 		error: 0,
@@ -19,96 +21,70 @@ const customLevels = {
 		detailedDebug: "cyan",
 		detailedEventDebug: "cyan",
 	},
+} as const
+
+type LogLevel = keyof typeof customLevels.levels
+
+function configuredLogLevel(): LogLevel {
+	const setting = process.env.TEST_MODE === "fuzz" ? "FUZZ_LEGACY_LOG_LEVEL" : "LOG_LEVEL"
+	const configured = process.env[setting]
+	let level = configured ?? "info"
+	if (process.env.TEST_MODE === "static") level = "error"
+	if (process.env.TEST_MODE === "fuzz") level = configured ?? "error"
+
+	if (!(level in customLevels.levels)) {
+		throw new Error(`${setting} must be one of ${Object.keys(customLevels.levels).join(", ")}, received ${level}`)
+	}
+	return level as LogLevel
 }
 
-let logLevel = process.env.LOG_LEVEL
-if (logLevel == null) logLevel = "info"
-if (process.env.TEST_MODE == "static") logLevel = "error"
-let conf
+const logLevel = configuredLogLevel()
+const useConsoleColor = Boolean(process.stdout.isTTY) && process.env.NO_COLOR === undefined
+const consoleFormat = format.combine(
+	...(useConsoleColor ? [format.colorize()] : []),
+	format.timestamp(),
+	format.printf(({ level, message, timestamp }) => `${timestamp} ${level}: ${message}`),
+)
 
-const detailedDebugTransport = new transports.File({
-	filename: "detailedDebug.log",
-	level: "detailedDebug",
-	format: format.combine(format.colorize(), format.timestamp(), format.prettyPrint()),
-})
+const loggerTransports: any[] = [
+	new transports.Console({
+		level: logLevel,
+		format: consoleFormat,
+	}),
+]
 
-switch (logLevel) {
-	case "detailedEventDebug":
-		conf = {
-			level: "detailedEventDebug",
-			format: format.combine(format.colorize(), format.timestamp(), format.prettyPrint()),
-		}
-		break
-	case "detailedDebug":
-		conf = {
-			level: "detailedDebug",
-			format: format.combine(format.colorize(), format.timestamp(), format.prettyPrint()),
-		}
-		break
-	case "debug":
-		conf = {
-			level: "debug",
+const detailedLogFile = process.env.DETAILED_LOG_FILE
+if (detailedLogFile || logLevel === "detailedDebug" || logLevel === "detailedEventDebug") {
+	loggerTransports.push(
+		new transports.File({
+			filename: detailedLogFile || "detailedDebug.log",
+			level: logLevel,
 			format: format.combine(
-				format.colorize(),
 				format.timestamp(),
-				format.printf(({ level, message, timestamp }) => {
-					return `${timestamp} ${level}: ${message}`
-				}),
+				format.printf(({ level, message, timestamp }) => `${timestamp} ${level}: ${message}`),
 			),
-		}
-		break
-	case "contractLogs":
-		conf = {
-			level: "contractLogs",
-			format: format.combine(
-				format.colorize(),
-				format.timestamp(),
-				format.printf(({ level, message, timestamp }) => {
-					return `${timestamp} ${level}: ${message}`
-				}),
-			),
-		}
-		break
-	case "info":
-		conf = {
-			level: "info",
-			format: format.combine(
-				format.colorize(),
-				format.timestamp(),
-				format.printf(({ level, message, timestamp }) => {
-					return `${timestamp} ${level}: ${message}`
-				}),
-			),
-		}
-		break
-	case "error":
-		conf = {
-			level: "error",
-			format: format.combine(
-				format.colorize(),
-				format.timestamp(),
-				format.printf(({ level, message, timestamp }) => {
-					return `${timestamp} ${level}: ${message}`
-				}),
-			),
-		}
-		break
-	case "warning":
-		conf = {
-			level: "warning",
-			format: format.combine(
-				format.colorize(),
-				format.timestamp(),
-				format.printf(({ level, message, timestamp }) => {
-					return `${timestamp} ${level}: ${message}`
-				}),
-			),
-		}
-		break
+		}),
+	)
 }
 
 export const logger: any = winston.createLogger({
 	levels: customLevels.levels,
-	transports: [new winston.transports.Console(conf), detailedDebugTransport],
+	transports: loggerTransports,
 })
+
+export interface DetailedDebugLogger {
+	isLevelEnabled(level: "detailedDebug"): boolean
+	detailedDebug(message: unknown): unknown
+}
+
+export type DetailedDebugMessageFactory = () => unknown | Promise<unknown>
+
+export async function logDetailedDebug(
+	createMessage: DetailedDebugMessageFactory,
+	target: DetailedDebugLogger = logger as DetailedDebugLogger,
+): Promise<void> {
+	if (!target.isLevelEnabled("detailedDebug")) return
+	target.detailedDebug(await withIsolatedRandomSequence(createMessage))
+}
+
 winston.addColors(customLevels.colors)

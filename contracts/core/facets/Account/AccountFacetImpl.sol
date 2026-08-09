@@ -15,6 +15,7 @@ import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { SingleUpnlSig, SingleUpnlWithPendingBalanceSig } from "../../storages/MuonStorage.sol";
 import { LibSafeERC20 } from "../../libraries/LibSafeERC20.sol";
+import { SharedEvents } from "../../libraries/SharedEvents.sol";
 import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library AccountFacetImpl {
@@ -72,9 +73,9 @@ library AccountFacetImpl {
 	function deallocateSuspendedUser(address user, uint256 amount) internal returns (uint256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		require(accountLayout.allocatedBalances[user] >= amount, "AccountFacet: Insufficient allocated Balance");
-		accountLayout.allocatedBalances[user] -= amount;
+		uint256 newAllocatedBalance = LibAccount.decreasePartyAAllocatedBalance(user, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
 		accountLayout.balances[user] += amount;
-		return accountLayout.allocatedBalances[user];
+		return newAllocatedBalance;
 	}
 
 	/// @notice Moves funds from the user's available balance to their allocated (tradeable) balance.
@@ -86,7 +87,7 @@ library AccountFacetImpl {
 		);
 		require(accountLayout.balances[user] >= amount, "AccountFacet: Insufficient balance");
 		accountLayout.balances[user] -= amount;
-		accountLayout.allocatedBalances[user] += amount;
+		LibAccount.increasePartyAAllocatedBalance(user, amount, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
 	/// @notice Deallocates funds from the signer's allocated balance after verifying solvency via a Muon UPNL signature.
@@ -103,11 +104,18 @@ library AccountFacetImpl {
 		int256 availableBalance = LibAccount.partyAAvailableForQuote(upnlSig.upnl, signer);
 		require(availableBalance >= 0, "AccountFacet: Available balance is lower than zero");
 		require(uint256(availableBalance) >= amount, "AccountFacet: partyA will be liquidatable");
+		require(
+			accountLayout.allocatedBalances[signer] - amount >= LibAccount.partyADeallocateCvaLfRequirement(signer),
+			"AccountFacet: CVA and LF must remain allocated"
+		);
 
 		_executeDeallocate(signer, amount);
 	}
 
 	/// @notice Deallocates funds while also reserving enough balance for off-chain pending operations.
+	/// @dev The retention floor is the stricter of the stored CVA + LF requirement and the Muon-attested
+	/// scaledLockedBalance (locked values re-marked to live notional), so collateral retained behind open
+	/// positions tracks current exposure rather than open-time notional.
 	function safeDeallocate(uint256 amount, SingleUpnlWithPendingBalanceSig memory upnlSig) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
@@ -116,10 +124,13 @@ library AccountFacetImpl {
 			"AccountFacet: Too many deallocate in a short window"
 		);
 		require(accountLayout.allocatedBalances[signer] >= amount, "AccountFacet: Insufficient allocated Balance");
-		LibMuonAccount.verifyPartyAUpnlWithPendingBalance(upnlSig, signer, MuonFunction.AccountManagement);
+		LibMuonAccount.verifyPartyAUpnlWithPendingBalance(upnlSig, signer, MuonFunction.RemoveMargin);
 		int256 availableBalance = LibAccount.partyAAvailableForQuote(upnlSig.upnl, signer);
 		require(availableBalance >= 0, "AccountFacet: Available balance is lower than zero");
 		require(uint256(availableBalance) >= upnlSig.pendingBalance + amount, "AccountFacet: Insufficient balance considering pending allocations");
+		uint256 retention = LibAccount.partyADeallocateCvaLfRequirement(signer);
+		if (upnlSig.scaledLockedBalance > retention) retention = upnlSig.scaledLockedBalance;
+		require(accountLayout.allocatedBalances[signer] - amount >= retention, "AccountFacet: Locked balance must remain allocated");
 
 		_executeDeallocate(signer, amount);
 	}
@@ -150,7 +161,7 @@ library AccountFacetImpl {
 		);
 		require(accountLayout.balances[signer] >= amount, "AccountFacet: Insufficient balance");
 		accountLayout.balances[signer] -= amount;
-		accountLayout.allocatedBalances[user] += amount;
+		LibAccount.increasePartyAAllocatedBalance(user, amount, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
 	/// @notice Transfers funds from the signer's available balance to the recipient's available balance (not allocated).
@@ -167,7 +178,7 @@ library AccountFacetImpl {
 	/// @notice Executes the deallocation by moving funds from allocated to available balance and recording the timestamp.
 	function _executeDeallocate(address signer, uint256 amount) private {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		accountLayout.allocatedBalances[signer] -= amount;
+		LibAccount.decreasePartyAAllocatedBalance(signer, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
 		accountLayout.balances[signer] += amount;
 		accountLayout.deallocateTimestamp[signer] = block.timestamp;
 	}

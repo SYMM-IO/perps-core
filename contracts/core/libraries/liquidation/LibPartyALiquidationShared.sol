@@ -24,11 +24,12 @@ library LibPartyALiquidationShared {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
+		require(accountLayout.allocatedBalances[partyA] >= liquidationAllocatedBalance, "LiquidationFacet: Invalid allocated balance");
+
 		int256 availableBalance = LibAccount.partyAAvailableBalanceForLiquidation(upnl, accountLayout.allocatedBalances[partyA], partyA);
 		if (availableBalance > 0) {
-			accountLayout.allocatedBalances[partyA] -= uint256(availableBalance);
+			LibAccount.decreasePartyAAllocatedBalance(partyA, uint256(availableBalance), SharedEvents.BalanceChangeType.DEFERRED_BALANCE_OUT);
 			accountLayout.partyADeferredBalance[partyA] += uint256(availableBalance);
-			emit SharedEvents.BalanceChangePartyA(partyA, uint256(availableBalance), SharedEvents.BalanceChangeType.DEFERRED_BALANCE_OUT);
 		}
 
 		require(!ClearingHouseStorage.layout().partyATakeoverDetails[partyA].inProgress, "LiquidationFacet: Takeover in progress");

@@ -2,8 +2,9 @@
  * Sets every valid Sei Symmio symbol trading fee to 0.5 bps through SymmioSymbolManager.
  *
  * Usage:
- *   DRY_RUN=true npx hardhat run scripts/setSeiSymbolTradingFees.ts --network sei
- *   npx hardhat run scripts/setSeiSymbolTradingFees.ts --network sei
+ *   ./node_modules/.bin/hardhat run scripts/setSeiSymbolTradingFees.ts --network sei
+ *   EXECUTE=true CONFIRM_CHAIN_ID=1329 RPC_SEI=https://... SYMMIO_ADDRESS=0x... SYMBOL_MANAGER_ADDRESS=0x... \
+ *     ./node_modules/.bin/hardhat run scripts/setSeiSymbolTradingFees.ts --network sei
  *
  * Env overrides:
  *   RPC_SEI=https://...                  Sei RPC URL
@@ -18,15 +19,18 @@
  *   BETWEEN_BATCH_DELAY_MS=1000          Delay after each verified batch
  *   SIGNER_ADDRESS=0x...                 Optional dry-run role check address
  *   ALLOW_NON_SEI=true                   Allow fork/testing networks
- *   DRY_RUN=true                         Print actions without sending transactions
+ *   EXECUTE=true                         Submit transactions (default is plan-only; live targets must be explicit)
+ *   CONFIRM_CHAIN_ID=1329                Must exactly match eth_chainId when executing
+ *   DRY_RUN=true                         Legacy explicit plan-only flag; cannot be combined with EXECUTE=true
  */
 import { getAddress, id, parseUnits, ZeroAddress } from "ethers"
 import hre from "hardhat"
 
+import { exactBooleanEnv, requireExecutionConfirmation } from "./upgrade/utils/executionGuard.js"
+
 const DEFAULT_SYMMIO_ADDRESS = "0xC6a7cc26fd84aE573b705423b7d1831139793025"
 const DEFAULT_SYMBOL_MANAGER_ADDRESS = "0xbC6823bF53fCa3ED2B22b2ba9eaD339946031334"
 const DEFAULT_RPC_SEI = "https://evm-rpc.sei-apis.com"
-const DUMMY_PRIVATE_KEY = "0xec81e00837948239d5927bcb2b785675552bc92f1d2607ee91c540ddb56d6796"
 const DEFAULT_TRADING_FEE_BPS = "0.5"
 const DEFAULT_BATCH_SIZE = 25
 const DEFAULT_SYMBOL_READ_CHUNK = 100
@@ -165,7 +169,7 @@ function normalizeSymbol(symbol: any): LiveSymbol {
 }
 
 async function readSymbolsRange(symmio: any, start: number, size: number, retryConfig: RetryConfig): Promise<LiveSymbol[]> {
-	const batch = await withRetry(`getSymbols(${start}, ${size})`, retryConfig, () => symmio.getSymbols(start, size))
+	const batch = await withRetry<any[]>(`getSymbols(${start}, ${size})`, retryConfig, () => symmio.getSymbols(start, size))
 	return batch.map((symbol: any) => normalizeSymbol(symbol))
 }
 
@@ -226,7 +230,13 @@ async function verifySymbols(symmio: any, symbolIds: bigint[], targetTradingFee:
 }
 
 async function main() {
-	const dryRun = envFlag("DRY_RUN")
+	const executeRequested = exactBooleanEnv("EXECUTE")
+	if (executeRequested) {
+		for (const name of ["RPC_SEI", "SYMMIO_ADDRESS", "SYMBOL_MANAGER_ADDRESS"]) {
+			if (!process.env[name]) throw new Error(`EXECUTE=true requires explicit ${name}; embedded Sei targets are plan-only`)
+		}
+	}
+	const dryRun = !executeRequested
 	const allowNonSei = envFlag("ALLOW_NON_SEI")
 	const symmioAddress = normalizeAddress(process.env.SYMMIO_ADDRESS ?? DEFAULT_SYMMIO_ADDRESS, "SYMMIO_ADDRESS")
 	const symbolManagerAddress = normalizeAddress(process.env.SYMBOL_MANAGER_ADDRESS ?? DEFAULT_SYMBOL_MANAGER_ADDRESS, "SYMBOL_MANAGER_ADDRESS")
@@ -242,12 +252,12 @@ async function main() {
 	const betweenBatchDelayMs = readNonNegativeInteger("BETWEEN_BATCH_DELAY_MS", DEFAULT_BETWEEN_BATCH_DELAY_MS)
 	const dryRunSignerAddress = process.env.SIGNER_ADDRESS ? normalizeAddress(process.env.SIGNER_ADDRESS, "SIGNER_ADDRESS") : undefined
 
-	const connection = await hre.network.connect({
-		override: dryRun ? { accounts: [DUMMY_PRIVATE_KEY], url: rpcUrl } : { url: rpcUrl },
-	})
+	const connection = await hre.network.create({ override: { url: rpcUrl } })
 	const { ethers } = connection as any
-	const network = await withRetry("getNetwork", retryConfig, () => ethers.provider.getNetwork())
+	const network = await withRetry<any>("getNetwork", retryConfig, () => ethers.provider.getNetwork())
 	const chainId = Number(network.chainId)
+	const execute = requireExecutionConfirmation(chainId)
+	if (execute !== executeRequested) throw new Error("Execution mode changed while the fee-update process was starting")
 
 	if (chainId !== SEI_CHAIN_ID && !allowNonSei) {
 		throw new Error(`This script is intended for Sei mainnet (chainId ${SEI_CHAIN_ID}). Current chainId: ${chainId}`)
@@ -286,10 +296,10 @@ async function main() {
 		: false
 	const paused = await withRetry("symbolManager.paused()", retryConfig, () => symbolManager.paused())
 
-	const dailyLimits = await withRetry("getDailyLimits()", retryConfig, () => symbolManager.getDailyLimits())
-	const dailyOperations = await withRetry("getDailyOperations()", retryConfig, () => symbolManager.getDailyOperations())
+	const dailyLimits = await withRetry<any>("getDailyLimits()", retryConfig, () => symbolManager.getDailyLimits())
+	const dailyOperations = await withRetry<any>("getDailyOperations()", retryConfig, () => symbolManager.getDailyOperations())
 	const lastResetTimestamp = BigInt(await withRetry("lastResetTimestamp()", retryConfig, () => symbolManager.lastResetTimestamp()))
-	const latestBlock = await withRetry("getBlock(latest)", retryConfig, () => ethers.provider.getBlock("latest"))
+	const latestBlock = await withRetry<any>("getBlock(latest)", retryConfig, () => ethers.provider.getBlock("latest"))
 	const latestTimestamp = BigInt(latestBlock.timestamp)
 	const effectiveUsedToday = latestTimestamp >= lastResetTimestamp + ONE_DAY_SECONDS ? 0n : BigInt(dailyOperations.tradingFee)
 	const dailyLimit = BigInt(dailyLimits.tradingFee)
@@ -307,7 +317,7 @@ async function main() {
 	console.log(`  Batch size:       ${batchSize} symbols per tx`)
 	console.log(`  RPC retries:      ${retryConfig.retries} (initial ${retryConfig.delayMs}ms)`)
 	console.log(`  Daily remaining:  ${remainingDailyCapacity.toString()} of ${dailyLimit.toString()}`)
-	console.log(`  Dry run:          ${dryRun ? "yes" : "no"}`)
+	console.log(`  Mode:             ${dryRun ? "PLAN ONLY" : "EXECUTE"}`)
 
 	if (!dryRun && !canManageTradingFees) {
 		throw new Error(`Signer ${signerAddress} does not have SYMBOL_TRADING_FEE_MANAGER_ROLE on ${symbolManagerAddress}`)
@@ -346,7 +356,7 @@ async function main() {
 	}
 
 	if (dryRun) {
-		console.log("\nDry run complete. Re-run without DRY_RUN=true to submit transactions.")
+		console.log(`\nPlan complete. Re-run with explicit targets, EXECUTE=true, and CONFIRM_CHAIN_ID=${chainId} to submit transactions.`)
 		return
 	}
 
@@ -377,7 +387,8 @@ async function main() {
 		)
 		const tx = await symbolManager.setSymbolTradingFeeBatch(symbolIds, tradingFees)
 		console.log(`    tx: ${tx.hash}`)
-		await withRetry(`wait(${tx.hash})`, retryConfig, () => tx.wait(confirmations))
+		const receipt = await withRetry<any>(`wait(${tx.hash})`, retryConfig, () => tx.wait(confirmations))
+		if (!receipt?.status) throw new Error(`Transaction ${tx.hash} failed`)
 		await verifySymbols(symmio, symbolIds, targetTradingFee, readChunkSize, retryConfig)
 		console.log("    confirmed and verified")
 

@@ -8,12 +8,13 @@ pragma solidity >=0.8.18;
 /// @notice Categories of operations requiring Muon signature verification
 enum MuonFunction {
 	Trading, // SendQuote, LockQuote, OpenPosition, FillCloseRequest, FillCloseRequestToLiquidation, EmergencyClosePosition, OpenPositions, ClosePositions
-	AccountManagement, // Deallocate, SafeDeallocate, DeallocateForPartyB, TransferAllocation
+	AccountManagement, // Deallocate, DeallocateForPartyB, TransferAllocation
 	Settlement, // SettleUpnl, SettleUpnlUnified
 	ForceClose, // ForceClose, InitializeForceClose, SettleUpnlForForceClose, SettleUpnlForForceCloseLegacy, FinalizeForceClose
 	Funding, // ChargeFundingRate, ChargeAccumulatedFundingFee
 	LiquidationPartyA, // LiquidatePartyA, SetSymbolsPrice, DeferredLiquidatePartyA, DeferredSetSymbolsPrice
-	LiquidationPartyB // LiquidatePartyB, LiquidatePositionsPartyB
+	LiquidationPartyB, // LiquidatePartyB, LiquidatePositionsPartyB
+	RemoveMargin // SafeDeallocate, SafeDeallocateForPartyB — margin removal with scaledLockedBalance; configure a tight validity window
 }
 
 /// @notice Interface for the Muon oracle signature verification contract

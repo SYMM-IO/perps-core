@@ -9,7 +9,7 @@ import { LibSolvency } from "../../libraries/LibSolvency.sol";
 import { LibSolverFee } from "../../libraries/LibSolverFee.sol";
 import { LibPartyBPositionsActions } from "../../libraries/LibPartyBPositionsActions.sol";
 import { LibPartyBState } from "../../libraries/extensions/LibPartyBState.sol";
-import { QuoteStorage, Quote, PositionType, OrderType, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
+import { QuoteStorage, Quote, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
 import { LibConnections } from "../../libraries/LibConnections.sol";
@@ -83,7 +83,7 @@ library PartyBBatchActionsFacetImpl {
 			LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuote.partyB, firstQuote.partyA, quoteIds, MuonFunction.Trading);
 		}
 
-		LibAccount.increaseBothNonces(firstQuote.partyB, firstQuote.partyA);
+		LibAccount.increaseBothUpnlCounters(firstQuote.partyB, firstQuote.partyA);
 
 		for (uint256 i = 0; i < quoteIds.length; i++) {
 			uint256 quoteId = quoteIds[i];
@@ -180,7 +180,7 @@ library PartyBBatchActionsFacetImpl {
 		require(!maLayout.liquidationStatus[firstQuotePartyA], "PartyBFacet: PartyA isn't solvent");
 		firstQuotePartyB.requireNotLiquidating(firstQuotePartyA);
 
-		LibAccount.increaseBothNonces(firstQuotePartyB, firstQuotePartyA);
+		LibAccount.increaseBothUpnlCounters(firstQuotePartyB, firstQuotePartyA);
 
 		quoteStatuses = new QuoteStatus[](quoteIds.length);
 		closeIds = new uint256[](quoteIds.length);

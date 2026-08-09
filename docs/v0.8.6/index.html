@@ -11,29 +11,30 @@
 	<body class="index-page">
 		<a class="skip-link" href="#docs">Skip to docs</a>
 
-		<header class="doc-topbar">
-			<a class="brand" href="index.html"
-				><span class="brand-mark">8.6</span><span><strong>Symmio Docs</strong><small>v0.8.6 reference</small></span></a
-			>
-			<nav class="top-actions" aria-label="Page actions">
-				<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
-			</nav>
-		</header>
-
 		<header class="site-hero">
-			<nav class="crumbs" aria-label="Breadcrumb"><a href="../">docs</a><span>/</span><strong>v0.8.6</strong></nav>
-			<div class="hero-layout hero-layout-single">
-				<div>
-					<p class="eyebrow">Technical Review Docs</p>
-					<h1>Symmio Core v0.8.6 Changelog</h1>
-					<p class="hero-copy">
-						v0.8.6 is mostly about removing operational weak spots: withdrawals were safe but slow, AccountLayer ownership flows were too
-						rigid for delegated operations, and PartyA liquidation settlement could depend on funding state that changed later. The
-						release adds Express Withdrawal, delegated ownership controls, shutdown and freshness controls, and snapshot-backed
-						liquidation settlement.
-					</p>
-					<div class="hero-actions">
-						<a class="button primary" href="#docs">View changelog</a>
+			<div class="doc-topbar index-toolbar">
+				<a class="brand" href="index.html"
+					><span class="brand-mark">8.6</span><span><strong>Docs</strong><small>v0.8.6</small></span></a
+				>
+				<nav class="top-actions" aria-label="Page actions">
+					<a class="button ghost" href="../deployment-guide.html">Deployment guide</a>
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+			<div class="index-hero-content">
+				<div class="hero-layout hero-layout-single">
+					<div class="hero-intro">
+						<p class="eyebrow">Core release</p>
+						<h1>Symmio Core <span>v0.8.6</span></h1>
+						<p class="hero-copy">
+							A technical guide to the release: faster withdrawals, delegated AccountLayer ownership, safer liquidation settlement,
+							reconstructible allocated-balance events, and tighter operational controls.
+						</p>
+					</div>
+					<div class="release-summary" role="list" aria-label="Release contents">
+						<div role="listitem"><strong data-count-of=".doc-list-item">11</strong><span>Main changes</span></div>
+						<div role="listitem"><strong data-count-of=".minor-improvement-item">11</strong><span>Other changes</span></div>
+						<div role="listitem"><strong>15</strong><span>Technical notes</span></div>
 					</div>
 				</div>
 			</div>
@@ -42,7 +43,7 @@
 			<section id="docs" class="doc-browser" aria-labelledby="docs-title">
 				<div class="section-heading">
 					<p class="eyebrow">Changelog</p>
-					<h2 id="docs-title">New features</h2>
+					<h2 id="docs-title">Main changes</h2>
 				</div>
 				<div class="doc-list">
 					<a class="doc-list-item" href="pages/express-withdrawal-system-design.html">
@@ -55,7 +56,6 @@
 								then reconciles when the normal withdrawal finalizes.</span
 							>
 						</span>
-						<span class="doc-list-action">Open change</span>
 					</a>
 					<a class="doc-list-item" href="pages/account-layer-ownership-delegation.html">
 						<span class="doc-list-index">02</span>
@@ -67,7 +67,6 @@
 								creation for a target owner and direct owner-initiated SubAccount transfer.</span
 							>
 						</span>
-						<span class="doc-list-action">Open change</span>
 					</a>
 					<a class="doc-list-item" href="pages/liquidation-funding-snapshot-fix.html">
 						<span class="doc-list-index">03</span>
@@ -79,7 +78,6 @@
 								stores the signed PartyB-symbol funding state before positions are closed.</span
 							>
 						</span>
-						<span class="doc-list-action">Open change</span>
 					</a>
 					<a class="doc-list-item" href="pages/single-step-partya-liquidation.html">
 						<span class="doc-list-index">04</span>
@@ -91,7 +89,6 @@
 								small snapshot liquidations in one all-or-revert transaction.</span
 							>
 						</span>
-						<span class="doc-list-action">Open change</span>
 					</a>
 					<a class="doc-list-item" href="pages/affiliate-shutdown-flow.html">
 						<span class="doc-list-index">05</span>
@@ -103,7 +100,6 @@
 								adds scheduled close-only shutdown, a solver window, and a Clearing House backstop.</span
 							>
 						</span>
-						<span class="doc-list-action">Open change</span>
 					</a>
 					<a class="doc-list-item" href="pages/muon-upnl-validity-overrides.html">
 						<span class="doc-list-index">06</span>
@@ -115,58 +111,75 @@
 								per-function overrides that fall back to the global value when unset.</span
 							>
 						</span>
-						<span class="doc-list-action">Open change</span>
 					</a>
 					<a class="doc-list-item" href="pages/solver-fees.html">
 						<span class="doc-list-index">07</span>
 						<span class="doc-list-main">
 							<span class="category">Fees</span>
-								<strong>Solver Fees</strong>
-								<span
-									>v0.8.6 adds explicit solver rate fees, charged from PartyA allocated balance and bounded by user-approved notional-rate
-									caps plus execution-time solvency checks.</span
-								>
+							<strong>Solver Fees</strong>
+							<span
+								>v0.8.6 adds explicit solver rate fees, charged from PartyA allocated balance and bounded by user-approved
+								notional-rate caps plus execution-time solvency checks.</span
+							>
 						</span>
-						<span class="doc-list-action">Open change</span>
 					</a>
 					<a class="doc-list-item" href="pages/operational-fees.html">
 						<span class="doc-list-index">08</span>
 						<span class="doc-list-main">
 							<span class="category">Fees</span>
-								<strong>Operational Fees</strong>
-								<span
-									>A unified per-op fee primitive shared by solvers and registered relayers, backed by a standing per-(payer, charger)
-									allowance with timelocked reductions and a priority multiplier.</span
-								>
+							<strong>Operational Fees</strong>
+							<span
+								>A unified per-op fee primitive shared by solvers and registered relayers, backed by a standing per-(payer, charger)
+								allowance with timelocked reductions and a priority multiplier.</span
+							>
 						</span>
-						<span class="doc-list-action">Open change</span>
+					</a>
+					<a class="doc-list-item" href="pages/balance-change-event-cleanup.html">
+						<span class="doc-list-index">09</span>
+						<span class="doc-list-main">
+							<span class="category">Events &amp; Indexing</span>
+							<strong>Allocated Balance Event Ledger</strong>
+							<span
+								>Every PartyA and PartyB allocated-balance mutation now emits an exact storage-backed delta. Dedicated reimbursement
+								and liquidation settlement events preserve lifecycle context without corrupting the allocated ledger.</span
+							>
+						</span>
+					</a>
+					<a class="doc-list-item" href="pages/symbol-adjustment.html">
+						<span class="doc-list-index">10</span>
+						<span class="doc-list-main">
+							<span class="category">Symbols</span>
+							<strong>Symbol Corporate-Action Adjustment</strong>
+							<span
+								>Venue stock splits and rebases change the price unit while on-chain positions keep the old one. v0.8.6 adds an
+								adjustment registry that freezes the symbol through the transition and a value-neutral restatement that rebases open
+								positions.</span
+							>
+						</span>
+					</a>
+					<a class="doc-list-item" href="pages/strict-deallocation.html">
+						<span class="doc-list-index">11</span>
+						<span class="doc-list-main">
+							<span class="category">Accounts</span>
+							<strong>Strict Deallocation</strong>
+							<span
+								>PartyA and opted-in PartyBs preserve raw liquidation collateral during deallocation, with public views for the
+								maximum safe amount. The safe paths additionally retain a Muon-attested floor re-marked to live notional, closing
+								profit-financed collateral stripping.</span
+							>
+						</span>
 					</a>
 				</div>
-				<div class="minor-improvements" aria-labelledby="minor-improvements-title">
+				<div class="minor-improvements" aria-labelledby="other-changes-title">
 					<div class="section-heading">
 						<p class="eyebrow">Changelog</p>
-						<h2 id="minor-improvements-title">Minor improvements</h2>
+						<h2 id="other-changes-title">Other changes</h2>
 					</div>
 					<div class="minor-improvement-list">
 						<a class="minor-improvement-item" href="pages/partya-liquidation-fee-recipient.html">
 							<span class="category">Liquidation</span>
 							<strong>PartyA Liquidation Fee Recipient Cleanup</strong>
 							<span>Records the liquidation starter as the unambiguous recipient for capped PartyA liquidation fees.</span>
-						</a>
-						<a class="minor-improvement-item" href="pages/balance-change-event-cleanup.html">
-							<span class="category">Events</span>
-							<strong>BalanceChange Event Cleanup</strong>
-							<span
-								>Emits the matching <code>BalanceChange</code> type for reimbursement, fee, deferred-balance, and LF movements.</span
-							>
-						</a>
-						<a class="minor-improvement-item" href="pages/lazy-accumulated-funding.html">
-							<span class="category">Funding</span>
-							<strong>Lazy Accumulated Funding</strong>
-							<span
-								>Quote flows no longer roll the symbol/PartyB funding state; funding settles lazily from persisted state, which now
-								changes -- and emits its final state -- only on solver configuration.</span
-							>
 						</a>
 						<a class="minor-improvement-item" href="pages/partyb-allocation-suspension-gates.html">
 							<span class="category">PartyB</span>
@@ -176,7 +189,74 @@
 						<a class="minor-improvement-item" href="pages/cross-partyb-liquidation-reserve.html">
 							<span class="category">Liquidation</span>
 							<strong>Cross-PartyB Liquidation Reserve Enforcement</strong>
-							<span>Pending cross-PartyB liquidation settlement reserves now reduce shared quote, solvency, and liquidation availability.</span>
+							<span
+								>Pending cross-PartyB liquidation settlement reserves now reduce shared quote, solvency, and liquidation
+								availability.</span
+							>
+						</a>
+						<a class="minor-improvement-item" href="pages/delegation-account-scope.html">
+							<span class="category">AccountLayer</span>
+							<strong>Delegation Account Scope</strong>
+							<span
+								>A delegation was enforced against the account owner, so it reached every SubAccount that owner held; it is now
+								confined to the account family it was granted over.</span
+							>
+						</a>
+						<a class="minor-improvement-item" href="pages/instant-layer-authorization-scope.html">
+							<span class="category">InstantLayer</span>
+							<strong>InstantLayer Authorization Scope</strong>
+							<span
+								>The helper contracts accepted a global &ldquo;inside an InstantLayer batch&rdquo; flag in place of an authorization
+								check. v0.8.6 checks the direct caller instead.</span
+							>
+						</a>
+						<a class="minor-improvement-item" href="pages/market-open-fee-execution-price.html">
+							<span class="category">Fees</span>
+							<strong>Market Open Fee on Execution Price</strong>
+							<span
+								>Market open fees are charged on the price the position opened at, not the market price PartyA signed. A bound PartyA
+								could previously sign a zero market price and open the position for no fee.</span
+							>
+						</a>
+						<a class="minor-improvement-item" href="pages/partyb-funding-nonces.html">
+							<span class="category">PartyB</span>
+							<strong>Funding Update Nonces</strong>
+							<span
+								>Stale or expired funding updates from a solver engine are skipped per symbol and reported, instead of overwriting
+								newer rates or failing the batch they travelled in.</span
+							>
+						</a>
+						<a class="minor-improvement-item" href="pages/diamond-owner-getter.html">
+							<span class="category">Views</span>
+							<strong>Diamond Owner Getter</strong>
+							<span
+								>The <code>owner()</code> getter on the core and AccountLayer ViewFacets is renamed to <code>getOwner()</code> on both
+								diamonds.</span
+							>
+						</a>
+						<a class="minor-improvement-item" href="pages/express-deposit-removal.html">
+							<span class="category">AccountLayer</span>
+							<strong>Express Deposit Removal</strong>
+							<span
+								>The v0.8.5 express deposit split is removed from the AccountLayer. Its two affiliate storage slots are kept as dead
+								fields so the struct layout does not move.</span
+							>
+						</a>
+						<a class="minor-improvement-item" href="pages/accountlayer-behavior-changes.html">
+							<span class="category">AccountLayer</span>
+							<strong>AccountLayer Behavior Changes</strong>
+							<span
+								>A new aggregate affiliate read API, a reordered sub-account emptiness check that changes which error callers see, and
+								an open-position hook that now tracks partial-fill child quotes.</span
+							>
+						</a>
+						<a class="minor-improvement-item" href="pages/lazy-accumulated-funding.html">
+							<span class="category">Funding</span>
+							<strong>Lazy Accumulated Funding</strong>
+							<span
+								>Quote flows no longer roll the symbol/PartyB funding state; funding settles lazily from persisted state, which now
+								changes -- and emits its final state -- only on solver configuration.</span
+							>
 						</a>
 					</div>
 				</div>

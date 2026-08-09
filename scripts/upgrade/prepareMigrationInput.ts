@@ -1,19 +1,23 @@
 import fs from "fs"
 import path from "path"
 
+import { atomicWriteFile } from "../../tasks/utils/fs.js"
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
+import { loadDeployedFacetsForNetwork } from "./utils/deployedFacets.js"
 import { log } from "./utils/log.js"
-import { quoteRequiresMigration } from "./utils/migrationQuoteRules.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
-import { loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig.js"
-import { fetchOpenQuotes } from "./utils/subgraphHelpers.js"
+import { baseNetworkName, loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig.js"
+import { createStepReporter } from "./utils/stepReporter.js"
+import { deleteOpenQuotesProgress, fetchOpenQuotes } from "./utils/subgraphHelpers.js"
 
 /**
  * Prepare migration input from subgraph data.
  *
  * Fetches open quotes and partyB balances from the subgraph, validates the
- * boundary against on-chain getNextQuoteId(), and writes a JSON file for
- * runMigration.ts. Can run before or after the diamondCut.
+ * boundary against on-chain getNextQuoteId(), derives PartyB tasks from
+ * paused on-chain quote fields, and writes a JSON file for runMigration.ts.
+ * Operational runbooks should run this after pause; it can run before or
+ * after the diamondCut.
  *
  * Critical-path script: kept short and reliable so it can run during the
  * pause window. Optional checks (on-chain balance snapshot, on-chain spot
@@ -22,28 +26,35 @@ import { fetchOpenQuotes } from "./utils/subgraphHelpers.js"
  *   - validateMigrationInput.ts    on-chain spot-check of quotes/balances
  *
  * Usage:
- *   npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network mantle
+ *   ./node_modules/.bin/hardhat run scripts/upgrade/prepareMigrationInput.ts --network mantle
  *
  * Config:
  *   cp scripts/upgrade/config/samples/prepareMigration.sample.json scripts/upgrade/config/prepareMigration.json
+ *   A chain-specific subgraphEndpoint/subgraphEndpoints value is required.
  *
  * Output:
- *   scripts/upgrade/output/migration-input.json
+ *   scripts/upgrade/output/migration-input-{network}.json
+ *   (network suffix derived from --network flag, with "fork-" stripped; or NETWORK_ALIAS env var)
  */
-
-const DEFAULT_SUBGRAPH_ENDPOINT = "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/arbitrum_analytics/stage/gn"
 
 type PrepareConfig = {
 	diamondAddress?: string
 	subgraphEndpoint?: string
+	subgraphEndpoints?: string[]
+	subgraphPageSize?: number
+	subgraphProgressFile?: string
 	spotCheckCount?: number
 	outputFile?: string
 	outputDir?: string
+	deployedFacetsFile?: string
 }
 
 type StepResult = {
 	name: string
 	status: "ok" | "error"
+	startedAt?: string
+	finishedAt?: string
+	durationMs?: number
 	details?: Record<string, unknown>
 }
 
@@ -53,24 +64,21 @@ type PrepareReport = {
 	finishedAt?: string
 	durationMs?: number
 	diamondAddress?: string
+	deployedFacetsFile?: string
 	subgraphEndpoint?: string
+	subgraphEndpoints?: string[]
+	subgraphProgressFile?: string
 	steps: StepResult[]
 	error?: string
 }
 
-function loadConfig(configFile: string): PrepareConfig {
-	if (!fs.existsSync(configFile)) return {}
-	const raw = fs.readFileSync(configFile, "utf-8")
+function loadConfig(networkName?: string): PrepareConfig {
+	const CONFIG_FILE = resolveConfigFile("prepareMigration", networkName, process.env.PREPARE_MIGRATION_CONFIG_FILE)
+	if (!fs.existsSync(CONFIG_FILE)) return {}
+	const raw = fs.readFileSync(CONFIG_FILE, "utf-8")
 	const data = JSON.parse(raw)
 	if (!data || typeof data !== "object") throw new Error("Config must be a JSON object.")
 	return data as PrepareConfig
-}
-
-function resolveSubgraphEndpoint(networkName: string, config: PrepareConfig, shared: ReturnType<typeof loadUpgradeConfigShared>): string {
-	const endpoint = process.env.SUBGRAPH_ENDPOINT || config.subgraphEndpoint || shared.subgraphEndpoint
-	if (endpoint) return endpoint
-	if (networkName === "arbitrum" || networkName === "fork-arbitrum") return DEFAULT_SUBGRAPH_ENDPOINT
-	throw new Error(`SUBGRAPH_ENDPOINT is required for ${networkName}. Set it in env or upgrade-${networkName}.json.`)
 }
 
 function formatError(error: unknown): string {
@@ -89,10 +97,10 @@ function ensureParentDir(filePath: string): void {
 function writeJson(filePath: string, value: unknown): void {
 	if (!filePath) return
 	ensureParentDir(filePath)
-	fs.writeFileSync(filePath, JSON.stringify(value, null, 2))
+	atomicWriteFile(filePath, `${JSON.stringify(value, null, 2)}\n`)
 }
 
-function tryWriteReport(filePath: string, report: PrepareReport): void {
+function tryWriteFailureReport(filePath: string, report: PrepareReport): void {
 	try {
 		writeJson(filePath, report)
 	} catch (error) {
@@ -107,28 +115,164 @@ function toBigInt(value: unknown): bigint {
 	return BigInt((value as any).toString())
 }
 
+function parseOptionalPositiveInt(value: unknown): number | undefined {
+	if (value === undefined || value === null || value === "") return undefined
+	const parsed = Number(value)
+	if (!Number.isInteger(parsed) || parsed <= 0) {
+		throw new Error(`Expected positive integer, got: ${value}`)
+	}
+	return parsed
+}
+
+function parseStringList(value: unknown): string[] | undefined {
+	if (value === undefined || value === null || value === "") return undefined
+	const items = Array.isArray(value) ? value : String(value).split(",")
+	const parsed = items.map(item => String(item).trim()).filter(Boolean)
+	return parsed.length > 0 ? parsed : undefined
+}
+
+function requireSubgraphEndpoints(endpoints: string[] | undefined, networkName: string | undefined): string[] {
+	if (!endpoints || endpoints.length === 0) {
+		throw new Error(
+			`No subgraph endpoint configured for network ${networkName ?? "unknown"}. ` +
+				"Set SUBGRAPH_ENDPOINTS/SUBGRAPH_ENDPOINT or configure the chain-specific prepareMigration/upgrade file.",
+		)
+	}
+
+	for (const endpoint of endpoints) {
+		let url: URL
+		try {
+			url = new URL(endpoint)
+		} catch {
+			throw new Error(`Invalid subgraph endpoint URL: ${endpoint}`)
+		}
+		if (url.protocol !== "https:" && url.protocol !== "http:") {
+			throw new Error(`Subgraph endpoint must use http or https: ${endpoint}`)
+		}
+	}
+	return endpoints
+}
+
+const FEE_RESERVATION_STATUSES = new Set([0, 1, 2])
+const ACTIVE_POSITION_STATUSES = new Set([4, 5, 6])
+const GET_QUOTE_SELECTOR = ethers.id("getQuote(uint256)").slice(0, 10)
+
+type MigrationQuoteFields = {
+	quoteId: string
+	partyA: string
+	partyB: string
+	symbolId: string
+	positionType: number
+	quantity: string
+	closedAmount: string
+	quoteStatus: number
+}
+
+function quoteOpenAmount(quote: { quantity: string; closedAmount: string }): bigint {
+	return BigInt(quote.quantity) - BigInt(quote.closedAmount)
+}
+
+function shouldIncludeQuoteForMigration(quote: { quoteStatus: number; quantity: string; closedAmount: string }): boolean {
+	if (FEE_RESERVATION_STATUSES.has(quote.quoteStatus)) return true
+	if (!ACTIVE_POSITION_STATUSES.has(quote.quoteStatus)) return false
+	return quoteOpenAmount(quote) > 0n
+}
+
+function decodeQuoteFields(quoteId: string, data: string): MigrationQuoteFields {
+	const tupleStart = 66
+	const word = (index: number): string => data.slice(tupleStart + index * 64, tupleStart + (index + 1) * 64)
+	const wordBig = (index: number): bigint => BigInt("0x" + word(index))
+
+	return {
+		quoteId,
+		symbolId: wordBig(2).toString(),
+		positionType: Number(wordBig(3)),
+		quantity: wordBig(9).toString(),
+		closedAmount: wordBig(10).toString(),
+		partyA: ethers.getAddress("0x" + word(20).slice(24)),
+		partyB: ethers.getAddress("0x" + word(21).slice(24)),
+		quoteStatus: Number(wordBig(22)),
+	}
+}
+
+async function rawGetQuote(diamondAddress: string, quoteId: string): Promise<MigrationQuoteFields> {
+	const calldata =
+		GET_QUOTE_SELECTOR +
+		ethers.AbiCoder.defaultAbiCoder()
+			.encode(["uint256"], [BigInt(quoteId)])
+			.slice(2)
+	const result = await ethers.provider.call({ to: diamondAddress, data: calldata })
+	if (!result || result === "0x") throw new Error(`getQuote(${quoteId}) returned empty data`)
+	return decodeQuoteFields(quoteId, result)
+}
+
+async function loadOnChainQuoteFields(diamondAddress: string, quoteIds: string[]): Promise<MigrationQuoteFields[]> {
+	const quotes: MigrationQuoteFields[] = []
+	for (let i = 0; i < quoteIds.length; i++) {
+		quotes.push(await rawGetQuote(diamondAddress, quoteIds[i]))
+		if ((i + 1) % 50 === 0 || i + 1 === quoteIds.length) {
+			log.detail(`on-chain quote fields: ${i + 1}/${quoteIds.length}`)
+		}
+	}
+	return quotes
+}
+
+function countSubgraphPairMismatches(subgraphQuotes: MigrationQuoteFields[], onChainQuotes: MigrationQuoteFields[]): number {
+	const subgraphById = new Map(subgraphQuotes.map(q => [q.quoteId, q]))
+	let mismatches = 0
+	for (const onChain of onChainQuotes) {
+		const subgraph = subgraphById.get(onChain.quoteId)
+		if (!subgraph) continue
+		const subgraphPartyA = ethers.isAddress(subgraph.partyA) ? ethers.getAddress(subgraph.partyA) : subgraph.partyA
+		const subgraphPartyB =
+			subgraph.partyB && ethers.isAddress(subgraph.partyB) ? ethers.getAddress(subgraph.partyB) : (subgraph.partyB ?? ethers.ZeroAddress)
+		if (subgraphPartyA !== onChain.partyA || subgraphPartyB !== onChain.partyB) mismatches++
+	}
+	return mismatches
+}
+
 async function main() {
 	const scriptTimer = log.timer()
 	await verifyRpc()
 	const startedAtMs = Date.now()
-	const networkName = connection.networkName
-	const configFile = resolveConfigFile("prepareMigration", networkName, process.env.PREPARE_MIGRATION_CONFIG_FILE)
-	const config = loadConfig(configFile)
+	// Base chain name (fork-base -> base) so artifacts don't collide across networks.
+	const networkSuffix = baseNetworkName(connection.networkName)
+	const withSuffix = (baseName: string): string => (networkSuffix ? `${baseName}-${networkSuffix}.json` : `${baseName}.json`)
 
-	const shared = loadUpgradeConfigShared(networkName)
+	const config = loadConfig(networkSuffix)
+	if (config.deployedFacetsFile !== undefined && config.deployedFacetsFile !== "" && typeof config.deployedFacetsFile !== "string") {
+		throw new Error("deployedFacetsFile must be a string path.")
+	}
+	const shared = loadUpgradeConfigShared(networkSuffix)
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress ?? shared.diamondAddress
-	const SUBGRAPH_ENDPOINT = resolveSubgraphEndpoint(networkName, config, shared)
+	const SUBGRAPH_ENDPOINTS = requireSubgraphEndpoints(
+		parseStringList(process.env.SUBGRAPH_ENDPOINTS) ??
+			parseStringList(process.env.SUBGRAPH_ENDPOINT) ??
+			parseStringList(config.subgraphEndpoints) ??
+			parseStringList(config.subgraphEndpoint) ??
+			parseStringList(shared.subgraphEndpoints) ??
+			parseStringList(shared.subgraphEndpoint),
+		networkSuffix,
+	)
+	const SUBGRAPH_PAGE_SIZE = parseOptionalPositiveInt(process.env.SUBGRAPH_PAGE_SIZE ?? config.subgraphPageSize)
 	const outputDir = process.env.PREPARE_OUTPUT_DIR ?? config.outputDir ?? "./scripts/upgrade/output"
-	const outputFile = process.env.PREPARE_OUTPUT_FILE ?? config.outputFile ?? `${outputDir}/migration-input.json`
-	const reportFile = `${outputDir}/prepareMigrationInput-report.json`
+	const outputFile = process.env.PREPARE_OUTPUT_FILE ?? config.outputFile ?? `${outputDir}/${withSuffix("migration-input")}`
+	const deployedFacetsFile =
+		process.env.FACETS_FILE || process.env.DEPLOYED_FACETS_FILE || config.deployedFacetsFile || `${outputDir}/${withSuffix("deployed-facets")}`
+	const reportFile = `${outputDir}/${withSuffix("prepareMigrationInput-report")}`
+	const resumeSubgraphFetch = process.env.SUBGRAPH_RESUME !== "false"
+	const openQuotesProgressFile =
+		process.env.SUBGRAPH_PROGRESS_FILE ?? config.subgraphProgressFile ?? `${outputDir}/${withSuffix("prepareMigrationInput-openQuotes-progress")}`
 
 	const report: PrepareReport = {
 		status: "running",
 		startedAt: new Date(startedAtMs).toISOString(),
 		steps: [],
 	}
-	tryWriteReport(reportFile, report)
+	writeJson(reportFile, report)
 	let currentStep: string | null = null
+
+	const { finish: finishStep } = createStepReporter(report.steps)
 
 	try {
 		// Validate inputs
@@ -140,21 +284,38 @@ async function main() {
 			throw new Error(`Invalid DIAMOND_ADDRESS: ${DIAMOND_ADDRESS}`)
 		}
 		report.diamondAddress = DIAMOND_ADDRESS
-		report.subgraphEndpoint = SUBGRAPH_ENDPOINT
+		report.deployedFacetsFile = deployedFacetsFile
+		report.subgraphEndpoint = SUBGRAPH_ENDPOINTS[0]
+		report.subgraphEndpoints = SUBGRAPH_ENDPOINTS
+		report.subgraphProgressFile = openQuotesProgressFile
 		report.steps.push({ name: "validate_inputs", status: "ok", details: { diamondAddress: DIAMOND_ADDRESS } })
 		currentStep = null
-		tryWriteReport(reportFile, report)
+		writeJson(reportFile, report)
 
 		log.header("Prepare Migration Input")
 		log.kv("Diamond", log.addr(DIAMOND_ADDRESS))
-		log.kv("Subgraph", SUBGRAPH_ENDPOINT)
+		if (SUBGRAPH_ENDPOINTS.length === 1) {
+			log.kv("Subgraph", SUBGRAPH_ENDPOINTS[0])
+		} else {
+			log.kv("Subgraphs", `${SUBGRAPH_ENDPOINTS.length} endpoints`)
+			SUBGRAPH_ENDPOINTS.forEach((endpoint, i) => log.detail(`${i + 1}. ${endpoint}`))
+		}
+		if (SUBGRAPH_PAGE_SIZE) log.kv("Subgraph page size", String(SUBGRAPH_PAGE_SIZE))
+		log.kv("Subgraph resume", resumeSubgraphFetch ? "enabled" : "disabled")
+		if (resumeSubgraphFetch) log.kv("Progress file", openQuotesProgressFile)
+		log.kv("Deployed facets", deployedFacetsFile)
 
 		log.setSteps(3)
 
 		// Step 1: Fetch open quotes from subgraph
 		let t = log.step("Fetch open quotes from subgraph")
 		currentStep = "fetch_open_quotes"
-		const quotesResult = await fetchOpenQuotes(SUBGRAPH_ENDPOINT)
+		const quotesResult = await fetchOpenQuotes(SUBGRAPH_ENDPOINTS, {
+			pageSize: SUBGRAPH_PAGE_SIZE,
+			progressFile: openQuotesProgressFile,
+			resume: resumeSubgraphFetch,
+			keepProgressOnComplete: true,
+		})
 		log.stats([
 			["Open quotes", quotesResult.quotes.length],
 			["Unique partyAs", quotesResult.partyAs.length],
@@ -167,11 +328,15 @@ async function main() {
 				quotesCount: quotesResult.quotes.length,
 				partyAsCount: quotesResult.partyAs.length,
 				partyBsCount: quotesResult.partyBs.length,
+				pageSize: SUBGRAPH_PAGE_SIZE ?? "default",
+				endpointsCount: SUBGRAPH_ENDPOINTS.length,
+				progressFile: openQuotesProgressFile,
+				resume: resumeSubgraphFetch,
 			},
 		})
 		currentStep = null
-		tryWriteReport(reportFile, report)
-		log.stepDone(t)
+		writeJson(reportFile, report)
+		finishStep(t)
 
 		// Step 2: Validate against on-chain -- boundary check
 		t = log.step("Validate boundary against on-chain")
@@ -203,21 +368,61 @@ async function main() {
 			},
 		})
 		currentStep = null
-		tryWriteReport(reportFile, report)
-		log.stepDone(t)
+		writeJson(reportFile, report)
+		finishStep(t)
 
 		// Step 3: Build migration input
 		t = log.step("Build migration input")
 		currentStep = "build_input"
-
-		const quotesForMigration = quotesResult.quotes.filter(q => quoteRequiresMigration(q))
-		const skippedByContract = quotesResult.quotes.length - quotesForMigration.length
-		if (skippedByContract > 0) {
-			log.info(`Filtered ${skippedByContract} quotes that MigrationFacetImpl would skip`)
+		const deployedFacets = await loadDeployedFacetsForNetwork(
+			deployedFacetsFile,
+			{ networkName: networkSuffix, diamondAddress: DIAMOND_ADDRESS },
+			{ required: false, validateMigrationSurface: true },
+		)
+		if (deployedFacets.summary.exists) {
+			log.ok(`Deployed facets artifact found (${deployedFacets.summary.facetCount} facets, ${deployedFacets.summary.selectorCount} selectors)`)
+		} else {
+			log.warn(`Deployed facets artifact not found yet: ${deployedFacetsFile}`)
 		}
 
 		// Quote IDs
-		const quoteIds = quotesForMigration.map(q => q.quoteId).sort((a, b) => Number(BigInt(a) - BigInt(b)))
+		const zeroOpenActiveQuotes = quotesResult.quotes.filter(q => ACTIVE_POSITION_STATUSES.has(q.quoteStatus) && quoteOpenAmount(q) <= 0n)
+		if (zeroOpenActiveQuotes.length > 0) {
+			log.warn(
+				`Skipping ${zeroOpenActiveQuotes.length} active-status quote(s) with zero open amount: ` +
+					`${zeroOpenActiveQuotes
+						.slice(0, 10)
+						.map(q => q.quoteId)
+						.join(", ")}${zeroOpenActiveQuotes.length > 10 ? "..." : ""}`,
+			)
+		}
+		const subgraphQuotesForMigration = quotesResult.quotes.filter(shouldIncludeQuoteForMigration)
+		const candidateQuoteIds = subgraphQuotesForMigration
+			.map(q => q.quoteId)
+			.sort((a, b) => (BigInt(a) < BigInt(b) ? -1 : BigInt(a) > BigInt(b) ? 1 : 0))
+
+		// The subgraph is used to discover candidate quote IDs, but the paused
+		// diamond is the source of truth for partyA/partyB pairs and aggregate
+		// fields. This prevents stale subgraph fields from producing incomplete
+		// partyBTasks during fork rehearsals or live pause windows.
+		log.info(`Reading ${candidateQuoteIds.length} selected quote(s) from on-chain getQuote()...`)
+		const onChainCandidateQuotes = await loadOnChainQuoteFields(DIAMOND_ADDRESS, candidateQuoteIds)
+		const subgraphPairMismatches = countSubgraphPairMismatches(
+			subgraphQuotesForMigration.map(q => ({
+				...q,
+				partyB: q.partyB ?? ethers.ZeroAddress,
+			})),
+			onChainCandidateQuotes,
+		)
+		if (subgraphPairMismatches > 0) {
+			log.warn(`${subgraphPairMismatches} selected quote(s) had subgraph partyA/partyB drift; using on-chain fields`)
+		}
+
+		const quotesForMigration = onChainCandidateQuotes.filter(shouldIncludeQuoteForMigration)
+		if (quotesForMigration.length !== onChainCandidateQuotes.length) {
+			log.warn(`Filtered ${onChainCandidateQuotes.length - quotesForMigration.length} selected quote(s) after on-chain status/open-amount check`)
+		}
+		const quoteIds = quotesForMigration.map(q => q.quoteId).sort((a, b) => (BigInt(a) < BigInt(b) ? -1 : BigInt(a) > BigInt(b) ? 1 : 0))
 
 		// PartyB tasks derived from active quotes (not from all historical balance entries).
 		// Only partyB-partyA pairs with active quotes have non-zero locked values to migrate.
@@ -243,8 +448,7 @@ async function main() {
 		const expectedAggregates: Record<string, { long: string; short: string }> = {}
 		for (const q of quotesForMigration) {
 			if (q.quoteStatus !== 4 && q.quoteStatus !== 5 && q.quoteStatus !== 6) continue
-			const openAmount = BigInt(q.quantity) - BigInt(q.closedAmount)
-			if (openAmount <= 0n) continue
+			const openAmount = quoteOpenAmount(q)
 			const key = `${q.partyB}-${q.partyA}-${q.symbolId}`
 			if (!expectedAggregates[key]) {
 				expectedAggregates[key] = { long: "0", short: "0" }
@@ -259,10 +463,16 @@ async function main() {
 		const output = {
 			generatedAt: new Date().toISOString(),
 			diamondAddress: DIAMOND_ADDRESS,
-			subgraphEndpoint: SUBGRAPH_ENDPOINT,
+			deployedFacetsFile,
+			deployedFacets: deployedFacets.summary,
+			subgraphEndpoint: SUBGRAPH_ENDPOINTS[0],
+			subgraphEndpoints: SUBGRAPH_ENDPOINTS,
 			validation: {
 				onChainLastQuoteId: onChainLastQuoteId.toString(),
 				maxSubgraphQuoteId: maxSubgraphQuoteId.toString(),
+			},
+			skippedQuoteIds: {
+				zeroOpenActive: zeroOpenActiveQuotes.map(q => q.quoteId),
 			},
 			quoteIds,
 			partyBTasks,
@@ -270,10 +480,10 @@ async function main() {
 		}
 
 		writeJson(outputFile, output)
+		deleteOpenQuotesProgress(openQuotesProgressFile)
 		log.ok(`Written to ${outputFile}`)
 		log.stats([
 			["Quote IDs", quoteIds.length],
-			["Contract-skipped quotes", skippedByContract],
 			["PartyB tasks", partyBTasks.length],
 			["Aggregate keys", Object.keys(expectedAggregates).length],
 		])
@@ -285,14 +495,16 @@ async function main() {
 				quoteIds: quoteIds.length,
 				partyBTasks: partyBTasks.length,
 				aggregateKeys: Object.keys(expectedAggregates).length,
-				skippedByContract,
 			},
 		})
 		currentStep = null
-		tryWriteReport(reportFile, report)
-		log.stepDone(t)
+		writeJson(reportFile, report)
+		finishStep(t)
 
 		report.status = "success"
+		report.finishedAt = new Date().toISOString()
+		report.durationMs = Date.now() - startedAtMs
+		writeJson(reportFile, report)
 
 		log.success("Migration input preparation completed", [
 			["Output", outputFile],
@@ -314,13 +526,11 @@ async function main() {
 		}
 		report.status = "failed"
 		report.error = formatError(error)
-		tryWriteReport(reportFile, report)
-		log.failure("Migration input preparation failed", `Step: ${currentStep ?? "unknown"}\n  ${formatError(error)}`)
-		throw error
-	} finally {
 		report.finishedAt = new Date().toISOString()
 		report.durationMs = Date.now() - startedAtMs
-		tryWriteReport(reportFile, report)
+		tryWriteFailureReport(reportFile, report)
+		log.failure("Migration input preparation failed", `Step: ${currentStep ?? "unknown"}\n  ${formatError(error)}`)
+		throw error
 	}
 }
 

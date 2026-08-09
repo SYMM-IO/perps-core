@@ -17,6 +17,7 @@ import { LibAccount } from "./LibAccount.sol";
 import { LibSolvency } from "./LibSolvency.sol";
 import { LockedValuesOps } from "./LibLockedValues.sol";
 import { LibHook } from "./LibHook.sol";
+import { LibSymbolAdjustment } from "./LibSymbolAdjustment.sol";
 import { ISymmioHook } from "../interfaces/ISymmioHook.sol";
 
 library LibPartyBPositionsActions {
@@ -25,6 +26,7 @@ library LibPartyBPositionsActions {
 	/// @notice Validates and fills a close request by checking state, expiry, price, and amount constraints.
 	function fillCloseRequest(uint256 quoteId, uint256 filledAmount, uint256 closedPrice) internal {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
 		require(
 			quote.quoteStatus == QuoteStatus.CLOSE_PENDING || quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING,
 			"PartyBFacet: Invalid state"
@@ -50,6 +52,7 @@ library LibPartyBPositionsActions {
 
 		Quote storage quote = quoteLayout.quotes[quoteId];
 		require(SymbolStorage.layout().symbols[quote.symbolId].isValid, "PartyBFacet: Symbol is not valid");
+		LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
 		require(quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING, "PartyBFacet: Invalid state");
 		require(block.timestamp <= quote.deadline, "PartyBFacet: Quote is expired");
 
@@ -58,16 +61,14 @@ library LibPartyBPositionsActions {
 			require(quote.quantity == filledAmount, "PartyBFacet: InstantOpen requires full fill");
 		}
 
-		uint256 quoteFeeBeforeOpen = LibQuote.getOpenTradingFee(quote.id);
+		uint256 quoteFeeBeforeOpen = LibQuote.getReservedOpenTradingFee(quote, LibQuote.quoteOpenAmount(quote));
+		// Snapshot the reserved fee before openedPrice is written, after which the request-time basis is unrecoverable.
+		uint256 reservedOpenFee = LibQuote.getReservedOpenTradingFee(quote, filledAmount);
 		uint256 remainingQuoteFee = 0;
-
-		address feeCollector = LibAccount.getFeeCollector(quote.affiliate);
 		if (quote.orderType == OrderType.LIMIT) {
 			require(quote.quantity >= filledAmount && filledAmount > 0, "PartyBFacet: Invalid filledAmount");
-			accountLayout.balances[feeCollector] += (filledAmount * quote.requestedOpenPrice * quote.tradingFee) / 1e36;
 		} else {
 			require(quote.quantity == filledAmount, "PartyBFacet: Invalid filledAmount");
-			accountLayout.balances[feeCollector] += (filledAmount * quote.marketPrice * quote.tradingFee) / 1e36;
 		}
 		if (quote.positionType == PositionType.LONG) {
 			require(openedPrice <= quote.requestedOpenPrice, "PartyBFacet: Opened price isn't valid");
@@ -78,6 +79,10 @@ library LibPartyBPositionsActions {
 		quote.openedPrice = openedPrice;
 		quote.initialOpenedPrice = openedPrice;
 		quote.statusModifyTimestamp = block.timestamp;
+		// Charge on the price PartyB actually filled at. Settling the difference here, before the caller's
+		// solvency check, is what lets an unaffordable shortfall revert the whole open.
+		uint256 executedOpenFee = LibQuote.getExecutedOpenTradingFee(quote, filledAmount);
+		LibAccount.applyOpenTradingFeeDelta(quote.partyA, reservedOpenFee, executedOpenFee);
 
 		LibQuoteFunding.updateAccumulatedPaidFunding(quoteId);
 		if (!_instantOpenMode) {
@@ -167,7 +172,7 @@ library LibPartyBPositionsActions {
 			quoteLayout.quotes[currentId] = q;
 			_splitSolverFeeState(quoteLayout, quote.id, currentId);
 			Quote storage newQuote = quoteLayout.quotes[currentId];
-			remainingQuoteFee = LibQuote.getOpenTradingFee(newQuote.id);
+			remainingQuoteFee = LibQuote.getReservedOpenTradingFee(newQuote, LibQuote.quoteOpenAmount(newQuote));
 
 			if (newStatus == QuoteStatus.CANCELED) {
 				// send trading Fee back to partyA
@@ -196,13 +201,11 @@ library LibPartyBPositionsActions {
 			"PartyBFacet: Leverage is high"
 		);
 
+		accountLayout.balances[LibAccount.getFeeCollector(quote.affiliate)] += executedOpenFee;
 		quoteLayout.partyBPositionsCount[quote.partyB][address(0)] += 1;
 		quote.quoteStatus = QuoteStatus.OPENED;
 		LibQuote.addToOpenPositions(quoteId);
 
-		uint256 openFee = quote.orderType == OrderType.LIMIT
-			? (filledAmount * quote.requestedOpenPrice * quote.tradingFee) / 1e36
-			: (filledAmount * quote.marketPrice * quote.tradingFee) / 1e36;
 		if (!_instantOpenMode) {
 			LibAccount.realizeOpenTradingFee(quote.partyA, quoteFeeBeforeOpen - remainingQuoteFee);
 		}
@@ -219,7 +222,7 @@ library LibPartyBPositionsActions {
 				affiliateHook,
 				abi.encodeCall(
 					ISymmioHook.onFeeCharged,
-					(quoteId, openFee, quote.partyA, quote.partyB, quote.symbolId, quote.affiliate, ISymmioHook.TradingFeeType.OPEN)
+					(quoteId, executedOpenFee, quote.partyA, quote.partyB, quote.symbolId, quote.affiliate, ISymmioHook.TradingFeeType.OPEN)
 				),
 				quoteId
 			);
@@ -232,7 +235,7 @@ library LibPartyBPositionsActions {
 				systemHook,
 				abi.encodeCall(
 					ISymmioHook.onFeeCharged,
-					(quoteId, openFee, quote.partyA, quote.partyB, quote.symbolId, quote.affiliate, ISymmioHook.TradingFeeType.OPEN)
+					(quoteId, executedOpenFee, quote.partyA, quote.partyB, quote.symbolId, quote.affiliate, ISymmioHook.TradingFeeType.OPEN)
 				),
 				quoteId
 			);
@@ -249,7 +252,7 @@ library LibPartyBPositionsActions {
 		);
 		emit SharedEvents.TradingFeeCharged(
 			quote.id,
-			openFee,
+			executedOpenFee,
 			quote.partyA,
 			quote.partyB,
 			quote.symbolId,

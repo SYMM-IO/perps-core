@@ -22,7 +22,7 @@ library LibMuonAccount {
 				upnlSig.reqId,
 				address(this),
 				partyA,
-				AccountStorage.layout().partyANonces[partyA],
+				AccountStorage.layout().partyAUpnlCounters[partyA],
 				upnlSig.upnl,
 				upnlSig.timestamp,
 				LibMuon.getChainId()
@@ -43,9 +43,10 @@ library LibMuonAccount {
 				upnlSig.reqId,
 				address(this),
 				partyA,
-				AccountStorage.layout().partyANonces[partyA],
+				AccountStorage.layout().partyAUpnlCounters[partyA],
 				upnlSig.upnl,
 				upnlSig.pendingBalance,
+				upnlSig.scaledLockedBalance,
 				upnlSig.timestamp,
 				LibMuon.getChainId()
 			)

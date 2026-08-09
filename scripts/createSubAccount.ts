@@ -1,85 +1,135 @@
 import { ethers } from "../test/helpers/hardhat-connection.js"
-import { loadAddresses } from "./utils/file.js"
 
-// Configuration - set via environment variables or update these defaults
-const ACCOUNT_NAME = process.env.ACCOUNT_NAME || "MySubAccount"
-const ISOLATION_TYPE = Number(process.env.ISOLATION_TYPE || 3) // 0=POSITION, 1=MARKET, 2=MARKET_DIRECTION, 3=CUSTOM
-const SINGLE_VA_MODE = process.env.SINGLE_VA_MODE === "true"
+// Plan a sub-account by default; set EXECUTE=true to broadcast only after review.
+// Required: ACCOUNT_LAYER_ADDRESS, AFFILIATE_ADDRESS, SYMMIO_ADDRESS,
+// ACCOUNT_NAME, ISOLATION_TYPE, EXPECTED_CHAIN_ID.
 
-async function main() {
-	const deployedAddresses = loadAddresses()
-
-	// These can be set via env vars or will fall back to addresses.json (if extended)
-	const accountLayerAddress = "0xb5230Cb273299826E991808D34Ef8E1D25349F8D"
-	const affiliateAddress = "0xF6aF1Bcb4303FD7d59b637ce01aee0bc1Bcd19c6"
-	const symmioCoreAddress = "0xa805FE5baA301D4e72C789694F3967452c77D6fD"
-
-	if (!accountLayerAddress) {
-		throw new Error("ACCOUNT_LAYER_ADDRESS environment variable required")
-	}
-	if (!affiliateAddress) {
-		throw new Error("AFFILIATE_ADDRESS environment variable required")
-	}
-	if (!symmioCoreAddress) {
-		throw new Error("SYMMIO_ADDRESS environment variable or symmioAddress in addresses.json required")
-	}
-
-	const [signer] = await ethers.getSigners()
-	console.log("Using signer:", signer.address)
-
-	const accountLayer = await ethers.getContractAt("contracts/accountLayer/facets/Core/ICoreFacet.sol:ICoreFacet", accountLayerAddress, signer)
-
-	const subAccountData = {
-		name: ACCOUNT_NAME,
-		metadata: "0x",
-		symmioCore: symmioCoreAddress,
-		isolationType: ISOLATION_TYPE,
-		singleVAMode: SINGLE_VA_MODE,
-	}
-
-	console.log("Creating sub-account with config:")
-	console.log("  Name:", ACCOUNT_NAME)
-	console.log("  Affiliate:", affiliateAddress)
-	console.log("  SymmioCore:", symmioCoreAddress)
-	console.log("  IsolationType:", ISOLATION_TYPE)
-	console.log("  SingleVAMode:", SINGLE_VA_MODE)
-
-	try {
-		const tx = await accountLayer.createSubAccounts(affiliateAddress, [subAccountData])
-		console.log("Transaction hash:", tx.hash)
-
-		const receipt = await tx.wait()
-		console.log("Transaction confirmed in block:", receipt!.blockNumber)
-
-		// Parse the SubAccountCreated event
-		const event = receipt!.logs.find((log: any) => {
-			try {
-				const parsed = accountLayer.interface.parseLog(log)
-				return parsed?.name === "SubAccountCreated"
-			} catch {
-				return false
-			}
-		})
-
-		if (event) {
-			const parsed = accountLayer.interface.parseLog(event)
-			console.log("\nSub-account created successfully!")
-			console.log("  Address:", parsed!.args[0])
-			console.log("  Owner:", parsed!.args[1])
-			console.log("  Affiliate:", parsed!.args[2])
-			console.log("  Name:", parsed!.args[3])
-		}
-	} catch (err: any) {
-		console.error("Transaction failed!")
-		if (err.reason) {
-			console.error("Reason:", err.reason)
-		} else if (err.errorName) {
-			console.error("Custom error:", err.errorName, err.errorArgs)
-		} else {
-			console.error(err)
-		}
-		process.exit(1)
-	}
+function requiredAddress(name: string): string {
+	const value = process.env[name]
+	if (!value) throw new Error(`${name} is required`)
+	if (!ethers.isAddress(value) || value === ethers.ZeroAddress) throw new Error(`${name} must be a non-zero address`)
+	return ethers.getAddress(value)
 }
 
-main()
+function requiredChainId(): bigint {
+	const value = process.env.EXPECTED_CHAIN_ID
+	if (!value || !/^\d+$/.test(value) || BigInt(value) <= 0n) throw new Error("EXPECTED_CHAIN_ID must be an explicit positive integer")
+	return BigInt(value)
+}
+
+function parseBoolean(name: string, fallback: boolean): boolean {
+	const value = process.env[name]
+	if (value === undefined || value === "") return fallback
+	if (value === "true") return true
+	if (value === "false") return false
+	throw new Error(`${name} must be exactly true or false`)
+}
+
+async function requireCode(name: string, address: string): Promise<void> {
+	if ((await ethers.provider.getCode(address)) === "0x") throw new Error(`${name} has no contract code at ${address}`)
+}
+
+async function main(): Promise<void> {
+	const accountLayerAddress = requiredAddress("ACCOUNT_LAYER_ADDRESS")
+	const affiliateAddress = requiredAddress("AFFILIATE_ADDRESS")
+	const symmioCoreAddress = requiredAddress("SYMMIO_ADDRESS")
+	const expectedChainId = requiredChainId()
+	const accountName = process.env.ACCOUNT_NAME
+	if (!accountName || accountName.trim() === "" || accountName !== accountName.trim()) {
+		throw new Error("ACCOUNT_NAME must be an explicit, non-empty trimmed string")
+	}
+	const isolationType = Number(process.env.ISOLATION_TYPE)
+	if (!Number.isInteger(isolationType) || isolationType < 0 || isolationType > 3) {
+		throw new Error("ISOLATION_TYPE is required and must be one of 0, 1, 2, or 3")
+	}
+	const singleVAMode = parseBoolean("SINGLE_VA_MODE", false)
+	const execute = parseBoolean("EXECUTE", false)
+	if (singleVAMode && isolationType !== 1 && isolationType !== 2) {
+		throw new Error("SINGLE_VA_MODE=true is only valid for ISOLATION_TYPE=1 (MARKET) or 2 (MARKET_DIRECTION)")
+	}
+	const metadata = process.env.ACCOUNT_METADATA ?? "0x"
+	if (!ethers.isHexString(metadata)) throw new Error("ACCOUNT_METADATA must be a 0x-prefixed hex string")
+
+	const network = await ethers.provider.getNetwork()
+	if (network.chainId !== expectedChainId) throw new Error(`Chain mismatch: connected to ${network.chainId}, expected ${expectedChainId}`)
+	await requireCode("AccountLayer", accountLayerAddress)
+	await requireCode("SYMMIO", symmioCoreAddress)
+
+	const [signer] = await ethers.getSigners()
+	if (!signer) throw new Error("No signer is configured for this network")
+	const signerAddress = ethers.getAddress(await signer.getAddress())
+	const accountLayer = await ethers.getContractAt("contracts/accountLayer/facets/Core/ICoreFacet.sol:ICoreFacet", accountLayerAddress, signer)
+	const view = await ethers.getContractAt("contracts/accountLayer/facets/View/IViewFacet.sol:IViewFacet", accountLayerAddress)
+
+	const affiliateState = await view.getAffiliateState(affiliateAddress)
+	if (affiliateState !== 2n) throw new Error(`Affiliate ${affiliateAddress} is not ACTIVE (state=${affiliateState})`)
+	if (!(await view.isWhitelistedSymmioCore(symmioCoreAddress))) throw new Error(`SYMMIO ${symmioCoreAddress} is not whitelisted on AccountLayer`)
+	const affiliateCores: string[] = await view.getAffiliateSymmioCores(affiliateAddress)
+	if (!affiliateCores.some(address => ethers.getAddress(address) === symmioCoreAddress)) {
+		throw new Error(`SYMMIO ${symmioCoreAddress} is not registered for affiliate ${affiliateAddress}`)
+	}
+
+	const subAccountData = {
+		name: accountName,
+		metadata,
+		symmioCore: symmioCoreAddress,
+		isolationType,
+		singleVAMode,
+	}
+	const predicted: string[] = await accountLayer.createSubAccounts.staticCall(affiliateAddress, [subAccountData])
+	if (predicted.length !== 1 || !ethers.isAddress(predicted[0])) throw new Error("createSubAccounts simulation did not return one valid address")
+
+	console.log("Sub-account creation plan")
+	console.log(`  Chain:         ${network.chainId}`)
+	console.log(`  Signer/owner:  ${signerAddress}`)
+	console.log(`  AccountLayer:  ${accountLayerAddress}`)
+	console.log(`  Affiliate:     ${affiliateAddress}`)
+	console.log(`  SymmioCore:    ${symmioCoreAddress}`)
+	console.log(`  Name:          ${accountName}`)
+	console.log(`  IsolationType: ${isolationType}`)
+	console.log(`  SingleVAMode:  ${singleVAMode}`)
+	console.log(`  Predicted:     ${predicted[0]}`)
+
+	if (!execute) {
+		console.log("\nPLAN ONLY: no transaction sent. Set EXECUTE=true after reviewing the plan.")
+		return
+	}
+
+	const tx = await accountLayer.createSubAccounts(affiliateAddress, [subAccountData])
+	console.log(`Transaction: ${tx.hash} (nonce ${tx.nonce})`)
+	const receipt = await tx.wait()
+	if (!receipt?.status) throw new Error(`createSubAccounts transaction ${tx.hash} failed`)
+	const createdEvents = receipt.logs.flatMap((logEntry: any) => {
+		try {
+			const parsed = accountLayer.interface.parseLog(logEntry)
+			return parsed?.name === "SubAccountCreated" ? [parsed] : []
+		} catch {
+			return []
+		}
+	})
+	if (createdEvents.length !== 1) throw new Error(`Expected one SubAccountCreated event, received ${createdEvents.length}`)
+	const createdAddress = ethers.getAddress(createdEvents[0].args.account)
+	if (createdAddress !== ethers.getAddress(predicted[0])) {
+		console.warn(`Predicted address changed before mining: simulated ${predicted[0]}, emitted ${createdAddress}`)
+	}
+
+	const created = await view.getSubAccount(createdAddress)
+	if (
+		!created.isExists ||
+		ethers.getAddress(created.owner) !== signerAddress ||
+		ethers.getAddress(created.affiliate) !== affiliateAddress ||
+		ethers.getAddress(created.symmioCore) !== symmioCoreAddress ||
+		created.name !== accountName ||
+		created.isolationType !== BigInt(isolationType) ||
+		created.singleVAMode !== singleVAMode ||
+		created.metadata.toLowerCase() !== metadata.toLowerCase()
+	) {
+		throw new Error(`Post-state verification failed for sub-account ${createdAddress}`)
+	}
+	console.log(`Created and verified ${createdAddress} in block ${receipt.blockNumber}; gas ${receipt.gasUsed}`)
+}
+
+main().catch(error => {
+	console.error(error)
+	process.exitCode = 1
+})

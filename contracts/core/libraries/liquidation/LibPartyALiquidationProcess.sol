@@ -4,6 +4,8 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
+import { SignedMath } from "@openzeppelin/contracts/utils/math/SignedMath.sol";
 import { LibAccount } from "../LibAccount.sol";
 import { LibConnections } from "../LibConnections.sol";
 import { LibHook } from "../LibHook.sol";
@@ -65,10 +67,9 @@ library LibPartyALiquidationProcess {
 			}
 
 			// Refund PartyA's reserved open fee into reimbursement, then mark the quote as liquidated.
-			uint256 fee = LibQuote.getOpenTradingFee(quote.id);
+			uint256 fee = LibQuote.getReservedOpenTradingFee(quote, LibQuote.quoteOpenAmount(quote));
 			LibAccount.releaseReservedOpenTradingFee(partyA, fee);
-			accountLayout.partyAReimbursement[partyA] += fee;
-			emit SharedEvents.BalanceChangePartyA(partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
+			LibAccount.increasePartyAReimbursement(partyA, fee, SharedEvents.ReimbursementChangeType.PLATFORM_FEE_IN);
 			quote.quoteStatus = QuoteStatus.LIQUIDATED_PENDING;
 			quote.statusModifyTimestamp = block.timestamp;
 			liquidatedAmounts[actualIndex] = quote.quantity;
@@ -125,13 +126,14 @@ library LibPartyALiquidationProcess {
 			quote.quoteStatus = QuoteStatus.LIQUIDATED;
 			quote.statusModifyTimestamp = block.timestamp;
 
-			LibAccount.increasePartyBNonce(quote.partyB, partyA);
+			LibAccount.increasePartyBUpnlCounter(quote.partyB, partyA);
 			(uint256 liquidationPrice, int256 accumulatedFundingFee) = _getLiquidationPriceAndFundingFee(accountLayout, partyA, quote);
 
 			(bool hasMadeProfit, uint256 amount) = LibQuote.getValueOfQuoteForPartyA(liquidationPrice, LibQuote.quoteOpenAmount(quote), quote);
 
 			LiquidationSettlementState storage settlementState = accountLayout.settlementStates[partyA][quote.partyB];
 			int256 pnlWithFunding = (hasMadeProfit ? int256(amount) : -int256(amount)) - accumulatedFundingFee;
+			accountLayout.partyALiquidationSettlementFundingFees[partyA][quote.partyB] += accumulatedFundingFee;
 
 			// Open or update the pending settlement bucket for this PartyB.
 			if (!settlementState.pending) {
@@ -145,8 +147,12 @@ library LibPartyALiquidationProcess {
 			} else if (liquidationDetail.liquidationType == LiquidationType.LATE) {
 				// LF is exhausted in LATE liquidation, so `deficit` is the amount eaten from PartyA's total CVA.
 				// returned quote CVA = quote CVA - quote's share of total CVA deficit
-				settlementState.cva +=
-					quote.lockedValues.cva - ((quote.lockedValues.cva * liquidationDetail.deficit) / accountLayout.lockedBalances[partyA].cva);
+				if (liquidationDetail.deficit == 0) {
+					settlementState.cva += quote.lockedValues.cva;
+				} else {
+					settlementState.cva +=
+						quote.lockedValues.cva - ((quote.lockedValues.cva * liquidationDetail.deficit) / accountLayout.lockedBalances[partyA].cva);
+				}
 				settlementState.actualAmount += pnlWithFunding;
 				settlementState.expectedAmount += pnlWithFunding;
 			} else if (liquidationDetail.liquidationType == LiquidationType.OVERDUE) {
@@ -252,7 +258,16 @@ library LibPartyALiquidationProcess {
 	function settlePartyALiquidation(
 		address partyA,
 		address[] memory partyBs
-	) public returns (int256[] memory settleAmounts, bytes memory liquidationId, bool fullySettled) {
+	)
+		public
+		returns (
+			int256[] memory settleAmounts,
+			address[] memory allocationKeys,
+			uint256[] memory cvaAmounts,
+			bytes memory liquidationId,
+			bool fullySettled
+		)
+	{
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
@@ -267,6 +282,8 @@ library LibPartyALiquidationProcess {
 		liquidationId = accountLayout.liquidationDetails[partyA].liquidationId;
 
 		settleAmounts = new int256[](partyBs.length);
+		allocationKeys = new address[](partyBs.length);
+		cvaAmounts = new uint256[](partyBs.length);
 		for (uint256 i = 0; i < partyBs.length; i++) {
 			address partyB = partyBs[i];
 
@@ -279,32 +296,22 @@ library LibPartyALiquidationProcess {
 
 			// Positive means PartyB owes PartyA; negative means PartyA owes PartyB.
 			int256 partyAReceivableFromPartyB = settlementState.actualAmount;
+			int256 fundingFee = accountLayout.partyALiquidationSettlementFundingFees[partyA][partyB];
 			uint256 cva = settlementState.cva;
+			cvaAmounts[i] = cva;
 
 			// Use correct allocation key based on cross mode
 			address allocKey = LibAccount.partyBAllocationKey(partyB, partyA);
-			uint256 partyBAllocatedBalance = accountLayout.partyBAllocatedBalances[partyB][allocKey];
+			allocationKeys[i] = allocKey;
+			uint256 partyBAllocatedBalance = LibAccount.increasePartyBAllocatedBalance(partyB, allocKey, cva, SharedEvents.BalanceChangeType.CVA_IN);
 
-			partyBAllocatedBalance += cva;
-			emit SharedEvents.BalanceChangePartyB(partyB, partyA, cva, SharedEvents.BalanceChangeType.CVA_IN);
-			if (cva > 0) {
-				emit SharedEvents.BalanceChangePartyA(partyA, cva, SharedEvents.BalanceChangeType.CVA_OUT);
-			}
-
-			// Apply PartyB realized PnL, or for isolated PartyB pay out whatever allocation remains.
+			// Determine the settled amount first; the allocation bucket is mutated below so the
+			// funding and realized-PnL components can each carry their own balance-change type.
 			if (partyAReceivableFromPartyB < 0) {
-				partyBAllocatedBalance += uint256(-partyAReceivableFromPartyB);
-				emit SharedEvents.BalanceChangePartyB(
-					partyB,
-					partyA,
-					uint256(-partyAReceivableFromPartyB),
-					SharedEvents.BalanceChangeType.REALIZED_PNL_IN
-				);
 				settleAmounts[i] = partyAReceivableFromPartyB;
 			} else {
 				if (partyBAllocatedBalance >= uint256(partyAReceivableFromPartyB)) {
 					// PartyB can fully pay PartyA
-					partyBAllocatedBalance -= uint256(partyAReceivableFromPartyB);
 					settleAmounts[i] = partyAReceivableFromPartyB;
 				} else {
 					// PartyB cannot fully pay PartyA
@@ -313,20 +320,62 @@ library LibPartyALiquidationProcess {
 					// The clearing house takeover flow handles cases where settlement is not possible.
 					require(!maLayout.crossModeEnabledForPartyB[partyB], "LiquidationFacet: Settle cross partyB uPNL first");
 					settleAmounts[i] = int256(partyBAllocatedBalance);
-					partyBAllocatedBalance = 0;
 				}
-				emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(settleAmounts[i]), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
 			}
-			accountLayout.partyBAllocatedBalances[partyB][allocKey] = partyBAllocatedBalance;
+			fundingFee = _scaleFundingFeeForSettlement(fundingFee, settlementState.expectedAmount, settleAmounts[i]);
+			_applyPartyBSettlementBalanceChanges(partyB, allocKey, settleAmounts[i], fundingFee);
 
 			LibAccount.syncPartyBLiquidationSettlementReserve(accountLayout, partyA, partyB, 0);
 			delete accountLayout.settlementStates[partyA][partyB];
+			delete accountLayout.partyALiquidationSettlementFundingFees[partyA][partyB];
 		}
 
 		// Once every PartyB bucket is settled, release PartyA-side balances and close the liquidation.
 		if (accountLayout.liquidationDetails[partyA].involvedPartyBCounts == 0) {
 			_finalizePartyALiquidation(accountLayout, maLayout, partyA, liquidationId);
 			fullySettled = true;
+		}
+	}
+
+	/// @dev Scales funding when a haircut, dispute override, or isolated payout cap reduces the final settlement.
+	///      If an override changes direction or settles nothing, its funding component cannot be inferred and is classified as zero.
+	function _scaleFundingFeeForSettlement(int256 fundingFee, int256 expectedAmount, int256 settledAmount) private pure returns (int256) {
+		if (fundingFee == 0 || expectedAmount == settledAmount) return fundingFee;
+		if (expectedAmount == 0 || settledAmount == 0 || (expectedAmount > 0) != (settledAmount > 0)) return 0;
+
+		uint256 expectedAbs = SignedMath.abs(expectedAmount);
+		uint256 settledAbs = SignedMath.abs(settledAmount);
+		if (settledAbs >= expectedAbs) return fundingFee;
+
+		uint256 scaledFundingAbs = Math.mulDiv(SignedMath.abs(fundingFee), settledAbs, expectedAbs);
+		return fundingFee > 0 ? int256(scaledFundingAbs) : -int256(scaledFundingAbs);
+	}
+
+	/// @dev Applies the final net PartyB settlement to its allocation bucket, split into funding and
+	///      realized-PnL classifications so each carries its own balance-change type.
+	///      `partyAReceivableFromPartyB` is positive when PartyB pays PartyA, while `fundingFee`
+	///      is positive when PartyA pays PartyB. Their residual is the realized price PnL.
+	/// @dev Credits are applied before debits so a mixed-direction split never drives the bucket
+	///      temporarily negative; the net movement equals -partyAReceivableFromPartyB either way.
+	function _applyPartyBSettlementBalanceChanges(
+		address partyB,
+		address allocationKey,
+		int256 partyAReceivableFromPartyB,
+		int256 fundingFee
+	) private {
+		int256 realizedPnl = partyAReceivableFromPartyB + fundingFee;
+
+		if (fundingFee > 0) {
+			LibAccount.increasePartyBAllocatedBalance(partyB, allocationKey, uint256(fundingFee), SharedEvents.BalanceChangeType.FUNDING_FEE_IN);
+		}
+		if (realizedPnl < 0) {
+			LibAccount.increasePartyBAllocatedBalance(partyB, allocationKey, uint256(-realizedPnl), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+		}
+		if (fundingFee < 0) {
+			LibAccount.decreasePartyBAllocatedBalance(partyB, allocationKey, uint256(-fundingFee), SharedEvents.BalanceChangeType.FUNDING_FEE_OUT);
+		}
+		if (realizedPnl > 0) {
+			LibAccount.decreasePartyBAllocatedBalance(partyB, allocationKey, uint256(realizedPnl), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
 		}
 	}
 
@@ -338,6 +387,7 @@ library LibPartyALiquidationProcess {
 	) private {
 		uint256 deferredBalance = accountLayout.partyADeferredBalance[partyA];
 		uint256 reimbursement = accountLayout.partyAReimbursement[partyA];
+		uint256 previousAllocatedBalance = accountLayout.allocatedBalances[partyA];
 
 		// Route deferred excess and reimbursed pending fees based on liquidation severity.
 		LiquidationType liqType = accountLayout.liquidationDetails[partyA].liquidationType;
@@ -346,29 +396,39 @@ library LibPartyALiquidationProcess {
 			// mainly released open-fee reserves from cancelled pending quotes and CH-routed credits.
 			// In NORMAL liquidation PartyBs are made whole, so it returns to PartyA.
 			// In LATE/OVERDUE, PartyBs may have CVA haircuts, so keep it in escrow for CH distribution.
-			accountLayout.allocatedBalances[partyA] = deferredBalance;
 			if (reimbursement > 0) {
 				accountLayout.liquidationEscrow[partyA] += reimbursement;
 				emit LiquidationEscrowCreated(partyA, liquidationId, reimbursement);
+				LibAccount.decreasePartyAReimbursement(partyA, reimbursement, SharedEvents.ReimbursementChangeType.MOVE_TO_LIQUIDATION_ESCROW);
 			}
-		} else {
-			// NORMAL: everything goes back to partyA
-			accountLayout.allocatedBalances[partyA] = deferredBalance + reimbursement;
+		}
+
+		// Finalization replaces the liquidated account's old allocation with the balances that
+		// survive liquidation. Emit a complete debit/credit breakdown whose net exactly matches
+		// that replacement; earlier reimbursement and locked-balance movements are not allocations.
+		uint256 lf = accountLayout.liquidationDetails[partyA].liquidationFee;
+		uint256 lfFromAllocated = lf < previousAllocatedBalance ? lf : previousAllocatedBalance;
+		if (lfFromAllocated > 0) {
+			LibAccount.decreasePartyAAllocatedBalance(partyA, lfFromAllocated, SharedEvents.BalanceChangeType.LF_OUT);
+		}
+		uint256 realizedDebit = previousAllocatedBalance - lfFromAllocated;
+		if (realizedDebit > 0) {
+			LibAccount.decreasePartyAAllocatedBalance(partyA, realizedDebit, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
 		}
 		if (deferredBalance > 0) {
-			emit SharedEvents.BalanceChangePartyA(partyA, deferredBalance, SharedEvents.BalanceChangeType.DEFERRED_BALANCE_IN);
+			LibAccount.increasePartyAAllocatedBalance(partyA, deferredBalance, SharedEvents.BalanceChangeType.DEFERRED_BALANCE_IN);
+		}
+		if (liqType == LiquidationType.NORMAL && reimbursement > 0) {
+			LibAccount.decreasePartyAReimbursement(partyA, reimbursement, SharedEvents.ReimbursementChangeType.RELEASE_TO_ALLOCATED);
+			LibAccount.increasePartyAAllocatedBalance(partyA, reimbursement, SharedEvents.BalanceChangeType.REIMBURSEMENT_IN);
 		}
 		accountLayout.partyADeferredBalance[partyA] = 0;
-		accountLayout.partyAReimbursement[partyA] = 0;
 		accountLayout.lockedBalances[partyA].makeZero();
 
 		// Pay capped LF to the liquidation starter.
-		uint256 lf = accountLayout.liquidationDetails[partyA].liquidationFee;
 		if (lf > 0) {
-			emit SharedEvents.BalanceChangePartyA(partyA, lf, SharedEvents.BalanceChangeType.LF_OUT);
 			address liquidationStarter = accountLayout.liquidators[partyA][0];
-			accountLayout.allocatedBalances[liquidationStarter] += lf;
-			emit SharedEvents.BalanceChangePartyA(liquidationStarter, lf, SharedEvents.BalanceChangeType.LF_IN);
+			LibAccount.increasePartyAAllocatedBalance(liquidationStarter, lf, SharedEvents.BalanceChangeType.LF_IN);
 		}
 
 		// Clear liquidation bookkeeping and bump nonce to invalidate old Muon payloads.
@@ -377,7 +437,7 @@ library LibPartyALiquidationProcess {
 		delete accountLayout.liquidationDetails[partyA].liquidationType;
 		maLayout.liquidationStatus[partyA] = false;
 		maLayout.partyALiquidatorLastActionTimestamp[partyA] = 0;
-		LibAccount.increasePartyANonce(partyA);
+		LibAccount.increasePartyAUpnlCounter(partyA);
 		LibHook.callLiquidationSettledHooks(partyA);
 	}
 

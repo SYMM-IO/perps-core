@@ -1076,60 +1076,6 @@ export function shouldBehaveLikeAccountLayerAffiliate() {
 			})
 		})
 
-		describe("Express configuration", function () {
-			let affiliate: string
-
-			beforeEach(async function () {
-				affiliate = (await activateAffiliate()).affiliate
-			})
-
-			it("lets affiliate admin set express rate", async function () {
-				const rate = ethers.parseEther("0.25")
-				await expect(context.alAffiliateFacet.connect(context.signers.user).setExpressRate(affiliate, rate))
-					.to.emit(context.alAffiliateFacet, "ExpressRateSet")
-					.withArgs(affiliate, rate)
-			})
-
-			it("rejects express rates above 100%", async function () {
-				const rate = ethers.parseEther("1.1")
-				await expect(context.alAffiliateFacet.connect(context.signers.user).setExpressRate(affiliate, rate)).to.be.revertedWithCustomError(
-					context.alAffiliateFacet,
-					"InvalidShare",
-				)
-			})
-
-			it("lets affiliate admin set virtual provider", async function () {
-				const provider = context.signers.others[0].address
-				await expect(context.alAffiliateFacet.connect(context.signers.user).setVirtualProvider(affiliate, provider))
-					.to.emit(context.alAffiliateFacet, "VirtualProviderSet")
-					.withArgs(affiliate, provider)
-			})
-
-			it("requires affiliate admin and active state", async function () {
-				const rate = ethers.parseEther("0.1")
-				const provider = context.signers.others[0].address
-
-				await expect(context.alAffiliateFacet.connect(context.signers.user2).setExpressRate(affiliate, rate)).to.be.revertedWithCustomError(
-					context.alAffiliateFacet,
-					"NotAffiliateAdmin",
-				)
-				await expect(context.alAffiliateFacet.connect(context.signers.user2).setVirtualProvider(affiliate, provider)).to.be.revertedWithCustomError(
-					context.alAffiliateFacet,
-					"NotAffiliateAdmin",
-				)
-
-				await context.alAffiliateFacet.connect(context.signers.user).pauseAffiliate(affiliate)
-				await expect(context.alAffiliateFacet.connect(context.signers.user).setExpressRate(affiliate, rate)).to.be.revertedWithCustomError(
-					context.alAffiliateFacet,
-					"AffiliateNotActive",
-				)
-				await expect(context.alAffiliateFacet.connect(context.signers.user).setVirtualProvider(affiliate, provider)).to.be.revertedWithCustomError(
-					context.alAffiliateFacet,
-					"AffiliateNotActive",
-				)
-			})
-		})
-
 		describe("Configuration", function () {
 			beforeEach(async function () {
 				// give admin the setter role
@@ -1256,6 +1202,334 @@ export function shouldBehaveLikeAccountLayerAffiliate() {
 						context.alControlFacet.connect(context.signers.admin).addSymmioCoreToAffiliate(affiliate, context.diamond),
 					).to.be.revertedWithCustomError(context.alControlFacet, "AlreadyRegistered")
 				})
+			})
+		})
+
+		describe("getAffiliate", function () {
+			it("returns everything stored about an active affiliate", async function () {
+				const { affiliate, registration } = await activateAffiliate({ brandColor: "#abcdef", metadata: "0xdeadbeef" })
+
+				const detail = await context.alViewFacet.getAffiliate(affiliate)
+
+				expect(detail.affiliateAddress).to.equal(affiliate)
+				expect(detail.name).to.equal(registration.name)
+				expect(detail.brandColor).to.equal("#abcdef")
+				expect(detail.admin).to.equal(registration.admin)
+				expect(detail.pendingAdmin).to.equal(ethers.ZeroAddress)
+				expect(detail.state).to.equal(AffiliateState.ACTIVE)
+				expect(detail.metadata).to.equal("0xdeadbeef")
+				expect(detail.registrant).to.equal(context.signers.user.address)
+				expect(detail.registrationNonce).to.equal(1n)
+
+				// the aggregate must agree with the single-field getters it replaces
+				expect(detail.symmioShare).to.equal(await context.alViewFacet.getAffiliateSymmioShare(affiliate))
+				expect(detail.feeDistributor).to.equal(await context.alViewFacet.getAffiliateFeeDistributor(affiliate))
+				expect(detail.symmioCores).to.deep.equal(await context.alViewFacet.getAffiliateSymmioCores(affiliate))
+				expect(detail.legacyMultiAccounts).to.deep.equal([])
+				expect(detail.accountManager).to.equal(affiliate)
+
+				expect(detail.stakeholders.length).to.equal(registration.stakeholders.length)
+				for (let i = 0; i < registration.stakeholders.length; i++) {
+					expect(detail.stakeholders[i].receiver).to.equal(registration.stakeholders[i].receiver)
+					expect(detail.stakeholders[i].share).to.equal(registration.stakeholders[i].share)
+				}
+
+				// nothing requested yet
+				expect(detail.pendingFeeUpdate.exists).to.equal(false)
+			})
+
+			it("exposes the pending fee update before it is approved", async function () {
+				const { affiliate } = await activateAffiliate()
+				const newStakeholders = [{ receiver: context.signers.feeCollector.address, share: ethers.parseEther("0.8") }]
+
+				await context.alAffiliateFacet.connect(context.signers.user).requestFeeUpdate(affiliate, newStakeholders, ethers.parseEther("0.2"))
+
+				const { pendingFeeUpdate } = await context.alViewFacet.getAffiliate(affiliate)
+				expect(pendingFeeUpdate.exists).to.equal(true)
+				expect(pendingFeeUpdate.symmioShare).to.equal(ethers.parseEther("0.2"))
+				expect(pendingFeeUpdate.timestamp).to.be.greaterThan(0n)
+				expect(pendingFeeUpdate.stakeholders.length).to.equal(1)
+				expect(pendingFeeUpdate.stakeholders[0].receiver).to.equal(context.signers.feeCollector.address)
+				expect(pendingFeeUpdate.stakeholders[0].share).to.equal(ethers.parseEther("0.8"))
+			})
+
+			it("reports a pending affiliate and its proposed admin", async function () {
+				const { affiliate } = await requestAffiliate()
+				expect((await context.alViewFacet.getAffiliate(affiliate)).state).to.equal(AffiliateState.PENDING)
+
+				await approveAffiliate(affiliate)
+				await context.alAffiliateFacet.connect(context.signers.user).proposeAdminTransfer(affiliate, context.signers.user2.address)
+
+				const detail = await context.alViewFacet.getAffiliate(affiliate)
+				expect(detail.admin).to.equal(context.signers.user.address)
+				expect(detail.pendingAdmin).to.equal(context.signers.user2.address)
+			})
+
+			it("returns an empty struct for an unregistered address", async function () {
+				const detail = await context.alViewFacet.getAffiliate(context.signers.others[0].address)
+
+				expect(detail.state).to.equal(AffiliateState.NONE)
+				expect(detail.admin).to.equal(ethers.ZeroAddress)
+				expect(detail.name).to.equal("")
+				expect(detail.symmioCores).to.deep.equal([])
+				expect(detail.stakeholders.length).to.equal(0)
+				expect(detail.pendingFeeUpdate.exists).to.equal(false)
+			})
+
+			it("returns the legacy MultiAccounts and every registered core", async function () {
+				// a second whitelisted core so the cores set holds more than one entry
+				await context.alControlFacet.connect(context.signers.admin).grantRole(context.signers.admin.address, roleHash("SETTER_ROLE"))
+				const mockCore = await (await ethers.getContractFactory("MockSymmioCore")).deploy()
+				await mockCore.setCollateral(await context.collateral.getAddress())
+				const mockCoreAddress = await mockCore.getAddress()
+				await context.alControlFacet.connect(context.signers.admin).setWhitelistedSymmioCore(mockCoreAddress, true)
+
+				const legacy = [context.signers.others[0].address, context.signers.others[1].address]
+				const { affiliate } = await activateAffiliate({ legacyMultiAccounts: legacy, symmioCores: [context.diamond, mockCoreAddress] })
+
+				const detail = await context.alViewFacet.getAffiliate(affiliate)
+				expect(detail.legacyMultiAccounts).to.deep.equal(legacy)
+				expect(detail.symmioCores.length).to.equal(2)
+				expect(detail.symmioCores).to.include(context.diamond)
+				expect(detail.symmioCores).to.include(mockCoreAddress)
+			})
+
+			it("clears every field once a pending registration is rejected", async function () {
+				// two cores, so a botched EnumerableSet wipe would leave stale entries behind
+				await context.alControlFacet.connect(context.signers.admin).grantRole(context.signers.admin.address, roleHash("SETTER_ROLE"))
+				const mockCore = await (await ethers.getContractFactory("MockSymmioCore")).deploy()
+				await mockCore.setCollateral(await context.collateral.getAddress())
+				const mockCoreAddress = await mockCore.getAddress()
+				await context.alControlFacet.connect(context.signers.admin).setWhitelistedSymmioCore(mockCoreAddress, true)
+
+				const { affiliate } = await requestAffiliate({ symmioCores: [context.diamond, mockCoreAddress], metadata: "0xbeef" })
+				expect((await context.alViewFacet.getAffiliate(affiliate)).symmioCores.length).to.equal(2)
+
+				await context.alAffiliateFacet.connect(context.signers.admin).rejectRegistration(affiliate)
+
+				const detail = await context.alViewFacet.getAffiliate(affiliate)
+				expect(detail.state).to.equal(AffiliateState.NONE)
+				expect(detail.name).to.equal("")
+				expect(detail.brandColor).to.equal("")
+				expect(detail.admin).to.equal(ethers.ZeroAddress)
+				expect(detail.metadata).to.equal("0x")
+				expect(detail.registrant).to.equal(ethers.ZeroAddress)
+				expect(detail.registrationNonce).to.equal(0n)
+				expect(detail.symmioShare).to.equal(0n)
+				expect(detail.stakeholders.length).to.equal(0)
+				expect(detail.symmioCores).to.deep.equal([])
+				expect(detail.legacyMultiAccounts).to.deep.equal([])
+			})
+
+			it("clears every field once the admin cancels their own registration", async function () {
+				const { affiliate } = await requestAffiliate()
+				await context.alAffiliateFacet.connect(context.signers.user).cancelRegistration(affiliate)
+
+				const detail = await context.alViewFacet.getAffiliate(affiliate)
+				expect(detail.state).to.equal(AffiliateState.NONE)
+				expect(detail.name).to.equal("")
+				expect(detail.admin).to.equal(ethers.ZeroAddress)
+				expect(detail.stakeholders.length).to.equal(0)
+				expect(detail.symmioCores).to.deep.equal([])
+			})
+
+			it("tracks the affiliate through pause and unpause", async function () {
+				const { affiliate } = await activateAffiliate()
+				await context.alControlFacet.connect(context.signers.admin).grantRole(context.signers.hedger.address, roleHash("UNPAUSER_ROLE"))
+
+				await context.alAffiliateFacet.connect(context.signers.user).pauseAffiliate(affiliate)
+				expect((await context.alViewFacet.getAffiliate(affiliate)).state).to.equal(AffiliateState.PAUSED)
+
+				await context.alAffiliateFacet.connect(context.signers.hedger).unpauseAffiliate(affiliate)
+				expect((await context.alViewFacet.getAffiliate(affiliate)).state).to.equal(AffiliateState.ACTIVE)
+			})
+
+			it("moves the admin and clears pendingAdmin once a transfer is accepted", async function () {
+				const { affiliate } = await activateAffiliate()
+				await context.alAffiliateFacet.connect(context.signers.user).proposeAdminTransfer(affiliate, context.signers.user2.address)
+				await context.alAffiliateFacet.connect(context.signers.user2).acceptAdminTransfer(affiliate)
+
+				const detail = await context.alViewFacet.getAffiliate(affiliate)
+				expect(detail.admin).to.equal(context.signers.user2.address)
+				expect(detail.pendingAdmin).to.equal(ethers.ZeroAddress)
+			})
+
+			it("clears pendingAdmin when the proposal is cancelled", async function () {
+				const { affiliate } = await activateAffiliate()
+				await context.alAffiliateFacet.connect(context.signers.user).proposeAdminTransfer(affiliate, context.signers.user2.address)
+				await context.alAffiliateFacet.connect(context.signers.user).cancelAdminTransfer(affiliate)
+
+				const detail = await context.alViewFacet.getAffiliate(affiliate)
+				expect(detail.admin).to.equal(context.signers.user.address)
+				expect(detail.pendingAdmin).to.equal(ethers.ZeroAddress)
+			})
+
+			it("reflects renamed affiliate details", async function () {
+				const { affiliate } = await activateAffiliate()
+				await context.alAffiliateFacet.connect(context.signers.user).updateAffiliateDetails(affiliate, "Renamed", "#000fff")
+
+				const detail = await context.alViewFacet.getAffiliate(affiliate)
+				expect(detail.name).to.equal("Renamed")
+				expect(detail.brandColor).to.equal("#000fff")
+			})
+
+			it("applies the fee update and drops the pending one once approved", async function () {
+				const { affiliate } = await activateAffiliate()
+				const newStakeholders = [{ receiver: context.signers.feeCollector2.address, share: ethers.parseEther("0.55") }]
+
+				await context.alAffiliateFacet.connect(context.signers.user).requestFeeUpdate(affiliate, newStakeholders, ethers.parseEther("0.45"))
+				await context.alAffiliateFacet.connect(context.signers.admin).approveFeeUpdate(affiliate)
+
+				const detail = await context.alViewFacet.getAffiliate(affiliate)
+				// the live config is now the requested one...
+				expect(detail.symmioShare).to.equal(ethers.parseEther("0.45"))
+				expect(detail.stakeholders.length).to.equal(1)
+				expect(detail.stakeholders[0].receiver).to.equal(context.signers.feeCollector2.address)
+				expect(detail.stakeholders[0].share).to.equal(ethers.parseEther("0.55"))
+				// ...and the pending slot is empty again
+				expect(detail.pendingFeeUpdate.exists).to.equal(false)
+				expect(detail.pendingFeeUpdate.symmioShare).to.equal(0n)
+				expect(detail.pendingFeeUpdate.stakeholders.length).to.equal(0)
+			})
+
+			it("drops the pending fee update when it is cancelled", async function () {
+				const { affiliate } = await activateAffiliate()
+				const newStakeholders = [{ receiver: context.signers.feeCollector.address, share: ethers.parseEther("0.8") }]
+
+				await context.alAffiliateFacet.connect(context.signers.user).requestFeeUpdate(affiliate, newStakeholders, ethers.parseEther("0.2"))
+				await context.alAffiliateFacet.connect(context.signers.user).cancelFeeUpdate(affiliate)
+
+				const { pendingFeeUpdate, symmioShare } = await context.alViewFacet.getAffiliate(affiliate)
+				expect(pendingFeeUpdate.exists).to.equal(false)
+				expect(pendingFeeUpdate.stakeholders.length).to.equal(0)
+				// the live config is untouched
+				expect(symmioShare).to.equal(ethers.parseEther("0.3"))
+			})
+
+			it("gives each registration of the same registrant its own nonce", async function () {
+				const first = await activateAffiliate({ name: "FirstBrand" })
+				const second = await requestAffiliate({ name: "SecondBrand" })
+
+				expect(first.affiliate).to.not.equal(second.affiliate)
+				expect((await context.alViewFacet.getAffiliate(first.affiliate)).registrationNonce).to.equal(1n)
+				expect((await context.alViewFacet.getAffiliate(second.affiliate)).registrationNonce).to.equal(2n)
+			})
+
+			it("picks up a core added after approval", async function () {
+				await context.alControlFacet.connect(context.signers.admin).grantRole(context.signers.admin.address, roleHash("SETTER_ROLE"))
+				const mockCore = await (await ethers.getContractFactory("MockSymmioCore")).deploy()
+				await mockCore.setCollateral(await context.collateral.getAddress())
+				const mockCoreAddress = await mockCore.getAddress()
+				await context.alControlFacet.connect(context.signers.admin).setWhitelistedSymmioCore(mockCoreAddress, true)
+
+				const { affiliate } = await activateAffiliate()
+				expect((await context.alViewFacet.getAffiliate(affiliate)).symmioCores).to.deep.equal([context.diamond])
+
+				await context.alControlFacet.connect(context.signers.admin).addSymmioCoreToAffiliate(affiliate, mockCoreAddress)
+
+				const { symmioCores } = await context.alViewFacet.getAffiliate(affiliate)
+				expect(symmioCores.length).to.equal(2)
+				expect(symmioCores).to.include(mockCoreAddress)
+			})
+		})
+
+		describe("getAffiliateSelectorConfigs", function () {
+			it("returns the hook and both allow-lists for each requested selector", async function () {
+				const { affiliate } = await activateAffiliate()
+				const setterRole = roleHash("SETTER_ROLE")
+				await context.alControlFacet.connect(context.signers.admin).grantRole(context.signers.admin.address, setterRole)
+
+				const hooked = "0x11111111"
+				const callable = "0x22222222"
+				const untouched = "0x33333333"
+
+				const mockHook = await (await ethers.getContractFactory("MockHook")).deploy()
+				await context.alAffiliateFacet.connect(context.signers.user).setHook(affiliate, hooked, await mockHook.getAddress())
+				await context.alControlFacet.connect(context.signers.admin).setHookAllowedSelectors(affiliate, [hooked], true)
+				await context.alControlFacet.connect(context.signers.admin).setCallAllowedSelectors(affiliate, [callable], true)
+
+				const configs = await context.alViewFacet.getAffiliateSelectorConfigs(affiliate, [hooked, callable, untouched])
+				expect(configs.length).to.equal(3)
+
+				// order is preserved
+				expect(configs[0].selector).to.equal(hooked)
+				expect(configs[0].hook).to.equal(await mockHook.getAddress())
+				expect(configs[0].hookAllowed).to.equal(true)
+				expect(configs[0].callAllowed).to.equal(false)
+
+				expect(configs[1].selector).to.equal(callable)
+				expect(configs[1].hook).to.equal(ethers.ZeroAddress)
+				expect(configs[1].hookAllowed).to.equal(false)
+				expect(configs[1].callAllowed).to.equal(true)
+
+				expect(configs[2].selector).to.equal(untouched)
+				expect(configs[2].hook).to.equal(ethers.ZeroAddress)
+				expect(configs[2].hookAllowed).to.equal(false)
+				expect(configs[2].callAllowed).to.equal(false)
+			})
+
+			it("returns an empty array when no selectors are requested", async function () {
+				const { affiliate } = await activateAffiliate()
+				expect(await context.alViewFacet.getAffiliateSelectorConfigs(affiliate, [])).to.deep.equal([])
+			})
+
+			it("reflects a removed hook and a revoked allow-list entry", async function () {
+				const { affiliate } = await activateAffiliate()
+				await context.alControlFacet.connect(context.signers.admin).grantRole(context.signers.admin.address, roleHash("SETTER_ROLE"))
+
+				const selector = "0x44444444"
+				const mockHook = await (await ethers.getContractFactory("MockHook")).deploy()
+				await context.alAffiliateFacet.connect(context.signers.user).setHook(affiliate, selector, await mockHook.getAddress())
+				await context.alControlFacet.connect(context.signers.admin).setHookAllowedSelectors(affiliate, [selector], true)
+				await context.alControlFacet.connect(context.signers.admin).setCallAllowedSelectors(affiliate, [selector], true)
+
+				const [before] = await context.alViewFacet.getAffiliateSelectorConfigs(affiliate, [selector])
+				expect(before.hook).to.equal(await mockHook.getAddress())
+				expect(before.hookAllowed).to.equal(true)
+				expect(before.callAllowed).to.equal(true)
+
+				await context.alAffiliateFacet.connect(context.signers.user).removeHook(affiliate, selector)
+				await context.alControlFacet.connect(context.signers.admin).setHookAllowedSelectors(affiliate, [selector], false)
+				await context.alControlFacet.connect(context.signers.admin).setCallAllowedSelectors(affiliate, [selector], false)
+
+				const [after] = await context.alViewFacet.getAffiliateSelectorConfigs(affiliate, [selector])
+				expect(after.hook).to.equal(ethers.ZeroAddress)
+				expect(after.hookAllowed).to.equal(false)
+				expect(after.callAllowed).to.equal(false)
+			})
+
+			it("keeps configs scoped to the affiliate that was asked about", async function () {
+				const { affiliate: first } = await activateAffiliate({ name: "FirstBrand" })
+				const { affiliate: second } = await activateAffiliate({ name: "SecondBrand" })
+
+				const selector = "0x55555555"
+				const mockHook = await (await ethers.getContractFactory("MockHook")).deploy()
+				await context.alAffiliateFacet.connect(context.signers.user).setHook(first, selector, await mockHook.getAddress())
+
+				expect((await context.alViewFacet.getAffiliateSelectorConfigs(first, [selector]))[0].hook).to.equal(await mockHook.getAddress())
+				expect((await context.alViewFacet.getAffiliateSelectorConfigs(second, [selector]))[0].hook).to.equal(ethers.ZeroAddress)
+			})
+
+			it("answers per position, so repeated selectors repeat their config", async function () {
+				const { affiliate } = await activateAffiliate()
+				const selector = "0x66666666"
+				const mockHook = await (await ethers.getContractFactory("MockHook")).deploy()
+				await context.alAffiliateFacet.connect(context.signers.user).setHook(affiliate, selector, await mockHook.getAddress())
+
+				const configs = await context.alViewFacet.getAffiliateSelectorConfigs(affiliate, [selector, "0x77777777", selector])
+				expect(configs.length).to.equal(3)
+				expect(configs[0].hook).to.equal(await mockHook.getAddress())
+				expect(configs[1].hook).to.equal(ethers.ZeroAddress)
+				expect(configs[2].hook).to.equal(await mockHook.getAddress())
+			})
+
+			it("returns zeroed configs for an unregistered affiliate", async function () {
+				const configs = await context.alViewFacet.getAffiliateSelectorConfigs(context.signers.others[0].address, ["0x12345678"])
+				expect(configs.length).to.equal(1)
+				expect(configs[0].selector).to.equal("0x12345678")
+				expect(configs[0].hook).to.equal(ethers.ZeroAddress)
+				expect(configs[0].hookAllowed).to.equal(false)
+				expect(configs[0].callAllowed).to.equal(false)
 			})
 		})
 	})

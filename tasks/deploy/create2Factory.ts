@@ -2,8 +2,9 @@ import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
 import { writeData } from "../utils/fs.js"
-import { getConnection } from "./helpers.js"
+import { assertStandaloneDeploymentTaskAllowed, getConnection } from "./helpers.js"
 import { logger } from "./logger.js"
+import { confirmDeployment } from "./tx.js"
 
 const CREATE2FACTORY_DEPLOYMENT_FILE = "create2factory.json"
 
@@ -17,10 +18,7 @@ export async function deployCreate2Factory(hre: any, { logData = true }: { logDa
 
 	const factory = await ethers.getContractFactory("Create2Factory")
 	const contract = await factory.connect(deployer).deploy()
-	await contract.waitForDeployment()
-	await contract.deploymentTransaction()!.wait()
-
-	const address = await contract.getAddress()
+	const address = await confirmDeployment(contract, "Create2Factory")
 	logger.deployed("Create2Factory", address)
 
 	if (logData) {
@@ -43,6 +41,13 @@ export async function deployCreate2Factory(hre: any, { logData = true }: { logDa
 export const create2FactoryTask = task("deploy:create2factory", "Deploys the Create2Factory for deterministic address deployments")
 	.addOption({ name: "logData", description: "Write the deployed addresses to a data file", type: ArgumentType.BOOLEAN, defaultValue: true })
 	.setAction(async () => ({
-		default: async ({ logData }, hre) => deployCreate2Factory(hre, { logData }),
+		default: async ({ logData }, hre) => {
+			await assertStandaloneDeploymentTaskAllowed(
+				hre,
+				"deploy:create2factory",
+				"For live deployment, use an already reviewed CREATE2 factory address or omit CREATE2_FACTORY_ADDRESS to use ordinary CREATE.",
+			)
+			return deployCreate2Factory(hre, { logData })
+		},
 	}))
 	.build()

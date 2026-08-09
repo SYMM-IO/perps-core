@@ -1,23 +1,40 @@
 import { ethers } from "../../test/helpers/hardhat-connection.js"
 
-const IL_ADDRESS = "0xbf40BECa9Fb74FB67dF4a5C9C99eBAD35e616fFd"
-const SAFE_ADDRESS = "0x0C83Ff10E8255Df41e71006eE6523A23024AAFC4"
+// Required: INSTANT_LAYER_ADDRESS, ACCOUNT_ADDRESS, EXPECTED_CHAIN_ID.
 
-async function main() {
-	const il = await ethers.getContractAt("InstantLayer", IL_ADDRESS)
-	const SETTER_ROLE = await il.SETTER_ROLE()
-	const DEFAULT_ADMIN_ROLE = await il.DEFAULT_ADMIN_ROLE()
-	const hasSetterRole = await il.hasRole(SETTER_ROLE, SAFE_ADDRESS)
-	const hasAdminRole = await il.hasRole(DEFAULT_ADMIN_ROLE, SAFE_ADDRESS)
-
-	console.log(`InstantLayer:               ${IL_ADDRESS}`)
-	console.log(`Safe:                       ${SAFE_ADDRESS}`)
-	console.log(`SETTER_ROLE hash:           ${SETTER_ROLE}`)
-	console.log(`Safe has SETTER_ROLE:       ${hasSetterRole}`)
-	console.log(`Safe has DEFAULT_ADMIN_ROLE: ${hasAdminRole}`)
+function requiredAddress(name: string): string {
+	const value = process.env[name]
+	if (!value || !ethers.isAddress(value) || value === ethers.ZeroAddress) throw new Error(`${name} must be an explicit non-zero address`)
+	return ethers.getAddress(value)
 }
 
-main().catch(e => {
-	console.error(e)
+async function main(): Promise<void> {
+	const instantLayerAddress = requiredAddress("INSTANT_LAYER_ADDRESS")
+	const accountAddress = requiredAddress("ACCOUNT_ADDRESS")
+	const expectedChainIdRaw = process.env.EXPECTED_CHAIN_ID
+	if (!expectedChainIdRaw || !/^\d+$/.test(expectedChainIdRaw) || BigInt(expectedChainIdRaw) <= 0n) {
+		throw new Error("EXPECTED_CHAIN_ID must be an explicit positive integer")
+	}
+	const network = await ethers.provider.getNetwork()
+	if (network.chainId !== BigInt(expectedChainIdRaw))
+		throw new Error(`Chain mismatch: connected to ${network.chainId}, expected ${expectedChainIdRaw}`)
+	if ((await ethers.provider.getCode(instantLayerAddress)) === "0x") throw new Error(`No InstantLayer code at ${instantLayerAddress}`)
+
+	const instantLayer = await ethers.getContractAt("InstantLayer", instantLayerAddress)
+	const setterRole = await instantLayer.SETTER_ROLE()
+	const defaultAdminRole = await instantLayer.DEFAULT_ADMIN_ROLE()
+	const hasSetterRole = await instantLayer.hasRole(setterRole, accountAddress)
+	const hasAdminRole = await instantLayer.hasRole(defaultAdminRole, accountAddress)
+	console.log(`InstantLayer:                  ${instantLayerAddress}`)
+	console.log(`Chain:                         ${network.chainId}`)
+	console.log(`Account:                       ${accountAddress}`)
+	console.log(`SETTER_ROLE hash:              ${setterRole}`)
+	console.log(`Account has SETTER_ROLE:       ${hasSetterRole}`)
+	console.log(`Account has DEFAULT_ADMIN_ROLE:${hasAdminRole}`)
+	if (!hasSetterRole) throw new Error(`${accountAddress} is missing SETTER_ROLE on ${instantLayerAddress}`)
+}
+
+main().catch(error => {
+	console.error(error)
 	process.exitCode = 1
 })

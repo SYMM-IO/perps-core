@@ -4,7 +4,7 @@ import path from "path"
 import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
-import { loadUpgradeConfigShared, resolveConfigFile } from "./utils/sharedConfig.js"
+import { baseNetworkName, loadUpgradeConfigShared } from "./utils/sharedConfig.js"
 import { fetchPartyBBalances } from "./utils/subgraphHelpers.js"
 
 /**
@@ -17,7 +17,7 @@ import { fetchPartyBBalances } from "./utils/subgraphHelpers.js"
  * concurrency).
  *
  * Usage:
- *   npx hardhat run scripts/upgrade/snapshotBalances.ts --network <network>
+ *   ./node_modules/.bin/hardhat run scripts/upgrade/snapshotBalances.ts --network <network>
  *
  * Env vars (all optional):
  *   MIGRATION_INPUT_FILE   Defaults to scripts/upgrade/output/migration-input.json
@@ -65,15 +65,12 @@ type BalanceSnapshot = {
 }
 
 const DEFAULT_OUTPUT_DIR = "./scripts/upgrade/output"
-const DEFAULT_INPUT_FILE = `${DEFAULT_OUTPUT_DIR}/migration-input.json`
-const DEFAULT_OUTPUT_FILE = `${DEFAULT_OUTPUT_DIR}/balance-snapshot.json`
-
-function loadMigrationInputFileFromConfig(networkName: string): string | undefined {
-	const configFile = resolveConfigFile("migrate", networkName, process.env.MIGRATION_CONFIG_FILE)
-	if (!fs.existsSync(configFile)) return undefined
-	const data = JSON.parse(fs.readFileSync(configFile, "utf-8")) as { migrationInputFile?: string }
-	return data.migrationInputFile
-}
+// Default filenames are network-suffixed so multi-chain rehearsals don't overwrite each other.
+const NETWORK_SUFFIX = baseNetworkName(connection.networkName)
+const defaultSuffixed = (baseName: string): string =>
+	NETWORK_SUFFIX ? `${DEFAULT_OUTPUT_DIR}/${baseName}-${NETWORK_SUFFIX}.json` : `${DEFAULT_OUTPUT_DIR}/${baseName}.json`
+const DEFAULT_INPUT_FILE = defaultSuffixed("migration-input")
+const DEFAULT_OUTPUT_FILE = defaultSuffixed("balance-snapshot")
 
 function ensureParentDir(filePath: string): void {
 	const dir = path.dirname(filePath)
@@ -128,10 +125,9 @@ async function runWithConcurrency<T, R>(items: T[], concurrency: number, worker:
 async function main() {
 	const scriptTimer = log.timer()
 	await verifyRpc()
-	const networkName = connection.networkName
-	const shared = loadUpgradeConfigShared(networkName)
+	const shared = loadUpgradeConfigShared(NETWORK_SUFFIX)
 
-	const inputFile = process.env.MIGRATION_INPUT_FILE ?? loadMigrationInputFileFromConfig(networkName) ?? DEFAULT_INPUT_FILE
+	const inputFile = process.env.MIGRATION_INPUT_FILE ?? DEFAULT_INPUT_FILE
 	const outputFile = process.env.SNAPSHOT_OUTPUT_FILE ?? DEFAULT_OUTPUT_FILE
 	const concurrency = Math.max(1, Number(process.env.SNAPSHOT_CONCURRENCY ?? 8))
 	const maxRetries = Math.max(0, Number(process.env.SNAPSHOT_MAX_RETRIES ?? 5))

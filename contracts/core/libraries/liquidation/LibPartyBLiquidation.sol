@@ -35,10 +35,14 @@ library LibPartyBLiquidation {
 
 		uint256 liquidatorShare;
 		uint256 remainingLf;
+		uint256 partyBAllocatedBalance = accountLayout.partyBAllocatedBalances[partyB][partyA];
 
 		// Determine liquidator share and remaining locked funds
 		if (uint256(-availableBalance) < accountLayout.partyBLockedBalances[partyB][partyA].lf) {
 			remainingLf = accountLayout.partyBLockedBalances[partyB][partyA].lf - uint256(-availableBalance);
+			// Locked LF can exceed what is actually allocated; without this cap the transfer below underflows
+			// and PartyB liquidation cannot be started at all.
+			if (remainingLf > partyBAllocatedBalance) remainingLf = partyBAllocatedBalance;
 			liquidatorShare = (remainingLf * maLayout.liquidatorShare) / 1e18;
 
 			maLayout.partyBPositionLiquidatorsShare[partyB][partyA] =
@@ -74,21 +78,14 @@ library LibPartyBLiquidation {
 		}
 
 		// Update allocated balances for Party A
-		uint256 value = accountLayout.partyBAllocatedBalances[partyB][partyA] - remainingLf;
-		accountLayout.allocatedBalances[partyA] += value;
-		emit SharedEvents.BalanceChangePartyA(partyA, value, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+		uint256 value = partyBAllocatedBalance - remainingLf;
+		LibAccount.increasePartyAAllocatedBalance(partyA, value, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 
 		// Clear pending quotes and reset balances for Party B
 		delete quoteLayout.partyBPendingQuotes[partyB][partyA];
 		LibConnections.removeConnectionIfNoPositions(partyA, partyB);
-		emit SharedEvents.BalanceChangePartyB(
-			partyB,
-			partyA,
-			accountLayout.partyBAllocatedBalances[partyB][partyA],
-			SharedEvents.BalanceChangeType.REALIZED_PNL_OUT
-		);
-
-		accountLayout.partyBAllocatedBalances[partyB][partyA] = 0;
+		LibAccount.decreasePartyBAllocatedBalance(partyB, partyA, value, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
+		LibAccount.decreasePartyBAllocatedBalance(partyB, partyA, remainingLf, SharedEvents.BalanceChangeType.LF_OUT);
 
 		// Subtract from cross bucket before zeroing per-partyA balances
 		LockedValues memory lv = accountLayout.partyBLockedBalances[partyB][partyA];
@@ -100,7 +97,7 @@ library LibPartyBLiquidation {
 		accountLayout.partyBLockedBalances[partyB][partyA].makeZero();
 		accountLayout.partyBPendingLockedBalances[partyB][partyA].makeZero();
 
-		LibAccount.increasePartyANonce(partyA);
+		LibAccount.increasePartyAUpnlCounter(partyA);
 
 		// Fire cancel hooks after all state changes so core state is consistent when hooks run
 		for (uint256 i = 0; i < liquidatedCount; i++) {
@@ -110,8 +107,7 @@ library LibPartyBLiquidation {
 
 		// Transfer liquidator share to the liquidator
 		if (liquidatorShare > 0) {
-			accountLayout.allocatedBalances[LibSigner.getSigner()] += liquidatorShare;
-			emit SharedEvents.BalanceChangePartyA(LibSigner.getSigner(), liquidatorShare, SharedEvents.BalanceChangeType.LF_IN);
+			LibAccount.increasePartyAAllocatedBalance(LibSigner.getSigner(), liquidatorShare, SharedEvents.BalanceChangeType.LF_IN);
 		}
 	}
 }

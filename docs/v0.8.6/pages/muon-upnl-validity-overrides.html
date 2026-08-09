@@ -20,27 +20,7 @@
 			</nav>
 		</header>
 		<div class="reader-shell">
-		<aside class="doc-sidebar" aria-label="Documentation navigation">
-			<a class="button primary back-home" href="../index.html">Back to index</a>
-			<div class="side-card">
-				<p class="side-label">Docs</p>
-				<a class="side-link" href="../pages/overview.html"><small>Overview</small><span>Symmio Core v0.8.6 Overview</span></a>
-				<a class="side-link" href="../pages/express-withdrawal-system-design.html"><small>Express Withdrawal</small><span>Express Withdrawal System Design</span></a>
-				<a class="side-link" href="../pages/account-layer-ownership-delegation.html"><small>AccountLayer</small><span>AccountLayer Delegated Creation &amp; Ownership Transfer</span></a>
-				<a class="side-link" href="../pages/liquidation-funding-snapshot-fix.html"><small>Liquidation</small><span>PartyA Liquidation Snapshot Flow</span></a>
-				<a class="side-link" href="../pages/single-step-partya-liquidation.html"><small>Liquidation</small><span>Single-Step PartyA Liquidation</span></a>
-				<a class="side-link" href="../pages/affiliate-shutdown-flow.html"><small>Clearing House</small><span>Affiliate Shutdown Flow</span></a>
-				<a class="side-link is-active" href="../pages/muon-upnl-validity-overrides.html"><small>Muon</small><span>Muon UPNL Validity Overrides</span></a>
-				<a class="side-link" href="../pages/solver-fees.html"><small>Fees</small><span>Solver Fees</span></a>
-				<a class="side-link" href="../pages/operational-fees.html"><small>Fees</small><span>Operational Fees</span></a>
-				<a class="side-link" href="../pages/partya-liquidation-fee-recipient.html"><small>Liquidation</small><span>PartyA Liquidation Fee Recipient Cleanup</span></a>
-				<a class="side-link" href="../pages/balance-change-event-cleanup.html"><small>Events</small><span>BalanceChange Event Cleanup</span></a>
-				<a class="side-link" href="../pages/lazy-accumulated-funding.html"><small>Funding</small><span>Lazy Accumulated Funding</span></a>
-				<a class="side-link" href="../pages/partyb-allocation-suspension-gates.html"><small>PartyB</small><span>Allocation Suspension Gates</span></a>
-				<a class="side-link" href="../pages/cross-partyb-liquidation-reserve.html"><small>Liquidation</small><span>Cross-PartyB Liquidation Reserve Enforcement</span></a>
-				<a class="side-link" href="../pages/express-bot-operations-checklist.html"><small>Express Withdrawal</small><span>Express Provider Bot Operations Checklist</span></a>
-			</div>
-		</aside>
+			<aside class="doc-sidebar" aria-label="Documentation navigation" data-doc-nav></aside>
 			<aside class="toc-panel side-toc" aria-label="Page navigation">
 				<div class="toc-card">
 					<p class="toc-title">On this page</p>
@@ -90,7 +70,10 @@
 					<p>The fix is intentionally small: each <code>MuonFunction</code> can optionally override the global UPNL validity window.</p>
 					<pre><code class="language-solidity">setMuonFunctionUpnlValidTime(func, upnlValidTime)
 </code></pre>
-					<p>A nonzero value sets the category-specific window. Passing <code>0</code> clears that category and makes it inherit the global <code>upnlValidTime</code> again.</p>
+					<p>
+						A nonzero value sets the category-specific window. Passing <code>0</code> clears that category and makes it inherit the global
+						<code>upnlValidTime</code> again.
+					</p>
 					<p>
 						There is no separate <code>clear</code> method and no separate <code>hasOverride</code> storage flag. In the per-function
 						mapping, <code>0</code> is the unset value.
@@ -169,7 +152,8 @@
     ForceClose,
     Funding,
     LiquidationPartyA,
-    LiquidationPartyB
+    LiquidationPartyB,
+    RemoveMargin
 }
 </code></pre>
 					<p>The intended method grouping is:</p>
@@ -193,8 +177,16 @@
 								<tr>
 									<td><code>AccountManagement</code></td>
 									<td>
-										<code>deallocate</code>, <code>safeDeallocate</code>, <code>deallocateForPartyB</code>, transfer-allocation
-										flows that verify account UPNL
+										<code>deallocate</code>, <code>deallocateForPartyB</code>, transfer-allocation flows that verify account UPNL
+									</td>
+								</tr>
+								<tr>
+									<td><code>RemoveMargin</code></td>
+									<td>
+										<code>safeDeallocate</code>, <code>safeDeallocateForPartyB</code> — the paths carrying the Muon-attested
+										<code>scaledLockedBalance</code>. Configure a deliberately tight window here: margin removal is the one flow
+										where a stale signature is worth money. See
+										<a href="../pages/strict-deallocation.html">Strict Deallocation</a>.
 									</td>
 								</tr>
 								<tr>
@@ -238,7 +230,10 @@
 					</p>
 					<hr />
 					<h2 id="effective-validity-resolution">Effective Validity Resolution</h2>
-					<p>Adding the configuration alone was not enough; every UPNL freshness check needed to resolve the correct window for its operation category.</p>
+					<p>
+						Adding the configuration alone was not enough; every UPNL freshness check needed to resolve the correct window for its
+						operation category.
+					</p>
 					<p>v0.8.6 routes those checks through:</p>
 					<pre><code class="language-solidity">LibMuon.verifyUpnlTimestamp(timestamp, func)
 </code></pre>
@@ -246,8 +241,8 @@
 					<pre><code class="language-solidity">LibMuon.getUpnlValidTime(func)
 </code></pre>
 					<p>
-						<code>LibMuon.getUpnlValidTime(func)</code> first checks <code>upnlValidTimeByFunction[func]</code>. If the mapping value is zero, it falls back to the global
-						<code>MuonStorage.upnlValidTime</code>.
+						<code>LibMuon.getUpnlValidTime(func)</code> first checks <code>upnlValidTimeByFunction[func]</code>. If the mapping value is
+						zero, it falls back to the global <code>MuonStorage.upnlValidTime</code>.
 					</p>
 					<p>The change was applied across the Muon helper libraries that validate UPNL-bearing signatures:</p>
 					<pre><code class="language-text">LibMuonAccount

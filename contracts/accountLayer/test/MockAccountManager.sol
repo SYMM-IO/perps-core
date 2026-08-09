@@ -25,10 +25,6 @@ contract MockAccountLayerForAccountManager {
 
 	bytes4 private constant DEPOSIT_FOR_ACCOUNT_SELECTOR = bytes4(keccak256("depositForAccount(address,uint256)"));
 	bytes4 private constant DEPOSIT_AND_ALLOCATE_FOR_ACCOUNT_SELECTOR = bytes4(keccak256("depositAndAllocateForAccount(address,uint256)"));
-	bytes4 private constant DEPOSIT_FOR_ACCOUNT_WITH_EXPRESS_RATE_SELECTOR = bytes4(keccak256("depositForAccountWithExpressRate(address,uint256)"));
-	bytes4 private constant DEPOSIT_AND_ALLOCATE_FOR_ACCOUNT_WITH_EXPRESS_RATE_SELECTOR = bytes4(
-		keccak256("depositAndAllocateForAccountWithExpressRate(address,uint256)")
-	);
 
 	mapping(address => address) public relatedCores;
 	mapping(address => address[]) public affiliateCores;
@@ -133,18 +129,6 @@ contract MockAccountLayerForAccountManager {
 	function depositAndAllocateForAccount(address account, uint256 amount) external {
 		bytes[] memory callDatas = new bytes[](1);
 		callDatas[0] = abi.encodeWithSelector(DEPOSIT_AND_ALLOCATE_FOR_ACCOUNT_SELECTOR, account, amount);
-		_call(account, callDatas);
-	}
-
-	function depositForAccountWithExpressRate(address account, uint256 amount) external {
-		bytes[] memory callDatas = new bytes[](1);
-		callDatas[0] = abi.encodeWithSelector(DEPOSIT_FOR_ACCOUNT_WITH_EXPRESS_RATE_SELECTOR, account, amount);
-		_call(account, callDatas);
-	}
-
-	function depositAndAllocateForAccountWithExpressRate(address account, uint256 amount) external {
-		bytes[] memory callDatas = new bytes[](1);
-		callDatas[0] = abi.encodeWithSelector(DEPOSIT_AND_ALLOCATE_FOR_ACCOUNT_WITH_EXPRESS_RATE_SELECTOR, account, amount);
 		_call(account, callDatas);
 	}
 

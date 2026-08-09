@@ -13,6 +13,7 @@ import type {
 	ClearingHouseFacet,
 	PartyBEmergencyActionsFacet,
 	SymbolControlFacet,
+	SymbolAdjustmentFacet,
 	PauseControlFacet,
 	DiamondCutFacet,
 	DiamondLoupeFacet,
@@ -74,6 +75,7 @@ export class RunContext {
 	partyBLiquidationFacet!: PartyBLiquidationFacet
 	controlFacet!: ControlFacet
 	symbolControlFacet!: SymbolControlFacet
+	symbolAdjustmentFacet!: SymbolAdjustmentFacet
 	pauseControlFacet!: PauseControlFacet
 	fundingRateFacet!: FundingRateFacet
 	settlementFacet!: SettlementFacet
@@ -160,6 +162,7 @@ export async function createRunContext(diamond: string, collateral: string, only
 	context.partyBLiquidationFacet = await ethers.getContractAt("PartyBLiquidationFacet", diamond)
 	context.controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", diamond)
 	context.symbolControlFacet = await ethers.getContractAt("SymbolControlFacet", diamond)
+	context.symbolAdjustmentFacet = await ethers.getContractAt("SymbolAdjustmentFacet", diamond)
 	context.pauseControlFacet = await ethers.getContractAt("PauseControlFacet", diamond)
 	context.fundingRateFacet = await ethers.getContractAt("FundingRateFacet", diamond)
 	context.settlementFacet = await ethers.getContractAt("SettlementFacet", diamond)
