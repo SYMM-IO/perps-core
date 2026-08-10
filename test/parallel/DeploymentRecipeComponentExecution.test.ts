@@ -3,6 +3,7 @@ import fs from "node:fs"
 import path from "node:path"
 
 import {
+	assertReadOnlySignerConfiguration,
 	assertComponentStatusCheckpointBinding,
 	assertComponentStatusReportBinding,
 	inspectComponentStatus,
@@ -26,6 +27,12 @@ describe("deployment recipe standalone component execution", function () {
 		setCheckpointSimulated(false)
 		for (const file of checkpointFiles) fs.rmSync(file, { force: true })
 		fs.rmSync(reportDir, { recursive: true, force: true })
+	})
+
+	it("allows inherent unlocked accounts only for read-only localhost component checks", function () {
+		expect(() => assertReadOnlySignerConfiguration("local", 20)).not.to.throw()
+		expect(() => assertReadOnlySignerConfiguration("fork", 1)).to.throw("expected zero configured signers")
+		expect(() => assertReadOnlySignerConfiguration("live", 1)).to.throw("expected zero configured signers")
 	})
 
 	it("deploys, wires, verifies post-state, and durably reports PartyB and SymbolManager independently", async function () {
@@ -330,6 +337,28 @@ describe("deployment recipe standalone component execution", function () {
 		expect(patched.report.mode).to.equal("patch")
 		expect(patched.report.lifecycle).to.equal("complete")
 		expect(patched.report.verification.policy).to.equal("not_applicable")
+		const boundPatch = assertComponentStatusReportBinding(patched.report, {
+			component: "expressProvider",
+			recipeName,
+			recipePath: shared.recipePath,
+			recipeDigest: patchInput.recipeDigest,
+			network: networkName,
+			chainId: 31337,
+			live: false,
+			config: { admin: admin.address },
+			coreReport,
+			coreReportPath: shared.coreReportPath,
+		})
+		const patchScope = componentCheckpointScope(recipeName, "expressProvider")
+		const patchCheckpoint = JSON.parse(fs.readFileSync(path.resolve(getCheckpointPath(31337, patchScope)), "utf8"))
+		expect(
+			assertComponentStatusCheckpointBinding(patchCheckpoint, boundPatch, {
+				component: "expressProvider",
+				scope: patchScope,
+				network: networkName,
+				chainId: 31337,
+			}).deploymentId,
+		).to.equal(patched.report.deploymentId)
 
 		const view = await ethers.getContractAt("contracts/expressWithdrawLayer/facets/View/ViewFacet.sol:ViewFacet", address)
 		const roleHash = (name: string) => ethers.keccak256(ethers.toUtf8Bytes(name))
@@ -352,7 +381,7 @@ describe("deployment recipe standalone component execution", function () {
 		expect(again.report.health.checks.some(check => /already matches/.test(check.check))).to.equal(true)
 	})
 
-	it("an express patch without direct authority queues Safe actions and completes after the admin runs them", async function () {
+	it("Safe action-only patching broadcasts nothing, queues exact calldata, and completes after execution", async function () {
 		const context = await loadFixture(initializeFixture)
 		const [deployer, operator, signer, affiliate, newOperator, futureOwner] = await ethers.getSigners()
 		const networkName = (await hre.network.getOrCreate()).networkName || "default"
@@ -405,19 +434,32 @@ describe("deployment recipe standalone component execution", function () {
 			fresh: false,
 			verify: false,
 		} as const
-		const pending = await executeComponentDeployment(hre, patchInput)
-		expect(pending.report.lifecycle).to.equal("pending_handover")
-		expect(pending.report.manualActions).to.have.length(1)
-		const view = await ethers.getContractAt("contracts/expressWithdrawLayer/facets/View/ViewFacet.sol:ViewFacet", address)
-		const roleHash = (name: string) => ethers.keccak256(ethers.toUtf8Bytes(name))
-		expect(await view.hasRole(roleHash("OPERATOR_ROLE"), newOperator.address)).to.equal(false)
+		const previousSafeOnly = process.env.SYMMIO_SAFE_ACTIONS_ONLY
+		const previousSafeAddress = process.env.SYMMIO_SAFE_ADDRESS
+		process.env.SYMMIO_SAFE_ACTIONS_ONLY = "true"
+		process.env.SYMMIO_SAFE_ADDRESS = futureOwner.address
+		try {
+			const pending = await executeComponentDeployment(hre, patchInput)
+			expect(pending.report.lifecycle).to.equal("pending_handover")
+			expect(pending.report.manualActions).to.have.length(1)
+			expect(pending.report.transactions).to.have.length(0)
+			const view = await ethers.getContractAt("contracts/expressWithdrawLayer/facets/View/ViewFacet.sol:ViewFacet", address)
+			const roleHash = (name: string) => ethers.keccak256(ethers.toUtf8Bytes(name))
+			expect(await view.hasRole(roleHash("OPERATOR_ROLE"), newOperator.address)).to.equal(false)
 
-		// The admin executes the exact calldata the report printed, then the same command finishes.
-		const action = pending.report.manualActions[0]
-		await (await futureOwner.sendTransaction({ to: action.to, data: action.data })).wait()
-		const finished = await executeComponentDeployment(hre, patchInput)
-		expect(finished.report.lifecycle).to.equal("complete")
-		expect(await view.hasRole(roleHash("OPERATOR_ROLE"), newOperator.address)).to.equal(true)
+			// The Safe owner executes the exact calldata the report printed, then the same intent converges.
+			const action = pending.report.manualActions[0]
+			await (await futureOwner.sendTransaction({ to: action.to, data: action.data })).wait()
+			const finished = await executeComponentDeployment(hre, patchInput)
+			expect(finished.report.lifecycle).to.equal("complete")
+			expect(finished.report.transactions).to.have.length(0)
+			expect(await view.hasRole(roleHash("OPERATOR_ROLE"), newOperator.address)).to.equal(true)
+		} finally {
+			if (previousSafeOnly === undefined) delete process.env.SYMMIO_SAFE_ACTIONS_ONLY
+			else process.env.SYMMIO_SAFE_ACTIONS_ONLY = previousSafeOnly
+			if (previousSafeAddress === undefined) delete process.env.SYMMIO_SAFE_ADDRESS
+			else process.env.SYMMIO_SAFE_ADDRESS = previousSafeAddress
+		}
 	})
 
 	it("re-probes PartyB and SymbolManager code, wiring, roles, signer, ADL, and operator without writes", async function () {

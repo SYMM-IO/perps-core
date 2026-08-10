@@ -53,10 +53,11 @@ async function main(): Promise<void> {
 
 	const isHyperEVM = HYPEREVM_CHAIN_IDS.has(chainId)
 	const isSimulatedNetwork = (connection as any).networkConfig?.type === "edr-simulated"
+	const isPersistentLocalhost = chainId === 31337n && (connection as any).networkName === "localhost"
 	const manageBigBlocks = isHyperEVM && !isSimulatedNetwork
 	console.log("SymmioLiquidator deployment plan")
 	console.log(`  Chain:       ${chainId}`)
-	console.log(`  Runtime:     ${isSimulatedNetwork ? "simulated fork" : "live RPC"}`)
+	console.log(`  Runtime:     ${isPersistentLocalhost ? "persistent local node" : isSimulatedNetwork ? "simulated fork" : "live RPC"}`)
 	console.log(`  Symmio:      ${symmioAddress}`)
 	console.log(`  Admin:       ${admin}`)
 	console.log(`  Liquidator:  ${resumeAddress ?? "deploy new proxy"}`)
@@ -67,7 +68,14 @@ async function main(): Promise<void> {
 		return
 	}
 
-	const [signer] = await ethers.getSigners()
+	const configuredSigners = await ethers.getSigners()
+	let signer = configuredSigners[0]
+	if (isPersistentLocalhost) {
+		const unlocked: string[] = (await ethers.provider.send("eth_accounts", [])).map((value: string) => ethers.getAddress(value))
+		if (!unlocked.includes(admin)) throw new Error(`Local liquidator admin ${admin} is not an unlocked account on the persistent Hardhat node`)
+		signer = await ethers.getSigner(admin)
+		console.log(`Using unlocked local governance admin ${admin} for liquidator and Core role wiring.`)
+	}
 	if (!signer) throw new Error("No deployment signer configured")
 	const signerAddress = ethers.getAddress(await signer.getAddress())
 	if (!resumeAddress && operators.length > 0 && signerAddress !== admin) {

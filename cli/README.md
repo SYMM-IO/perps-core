@@ -1,233 +1,165 @@
-# SYMMIO operator CLI
+# SYMMIO Operator
 
-The CLI deploys and inspects SYMMIO from one reviewed JSON recipe. Use the checkout-local
-command; it works in Fish, Zsh, Bash, and CI without installing a global binary.
-
-```bash
-./symmio --help
-```
-
-`./symmio` is the checkout-local entrypoint. It checks that Node matches `.node-version` and
-that dependencies are installed, then runs `cli/symmio.js` directly — there is no build step,
-so what executes is the source you can read. Linking is optional; `npm link`
-puts the same CLI on your `PATH` as bare `symmio`.
-
-Install dependencies with `npm ci`. A `preinstall` hook rejects Yarn and pnpm, which ignore
-`package-lock.json`.
-
-## Start here
-
-Run it with no arguments. It reads the recipes, reports and checkpoints already in the
-checkout, tells you where the deployment stands, and offers the next useful step:
+Run the checkout-local operator application in an interactive terminal:
 
 ```bash
 ./symmio
 ```
 
-Pressing enter takes the recommended action, `q` quits. Nothing is sent without the same
-confirmation the direct command would ask for — the wizard dispatches to those commands rather
-than reimplementing them, and prints the equivalent command before each one so the flow is
-learnable. Without a TTY it prints the getting-started commands instead of prompting, so CI is
-unaffected.
+`./symmio --help` only explains how to launch the application. Every other argument and
+non-TTY execution is refused. The CLI executes the checked-in ESM source directly; there is
+no generated CLI bundle.
 
-The same steps typed directly:
+## Home menu
 
-```bash
-./symmio recipe init --network arbitrum
-# edit deployments/arbitrum.json and replace every REPLACE_WITH_* value
-./symmio doctor --config deployments/arbitrum.json
-./symmio deploy --config deployments/arbitrum.json --plan
-./symmio deploy --config deployments/arbitrum.json
-./symmio status --config deployments/arbitrum.json
+The home menu always contains these actions in this order:
+
+1. Deploy a contract
+2. Patch configurations for deployed contracts
+3. Run the checklist on a new deployment
+4. Other maintenance scripts
+5. Continue active task
+6. Cancel active task
+7. Exit
+
+Continue and cancel remain visible but disabled when no durable task is active. A completed
+deployment report under `tasks/data/` is history, not active task state.
+
+The deploy flow uses guided typed fields. It starts from reviewed network defaults, asks
+only for required addresses, numeric values, component scope, and overrides, validates each
+answer immediately, writes the JSON recipe atomically, and presents the complete grouped
+intent for confirmation. Recipes remain portable review artifacts; operators do not need to
+edit them by hand.
+
+For the recommended first rehearsal, run a persistent local node in one terminal with
+`npx hardhat node`, then launch `./symmio` in another and select **Persistent local Hardhat
+node**. The form discovers unlocked accounts, assigns clearly separated deployer/admin/bot
+roles, deploys fake collateral and a mock Muon verifier, and stores no signer secret. A full
+local run also completes the ownership, Core registration, and SymbolManager handover with
+the unlocked local admin before rerunning strict health. That convenience is hard-disabled
+for forks and live networks.
+
+The form selects the deployment signer once. Hardhat keystore is first and recommended;
+the official keystore prompt temporarily takes over the terminal and receives a secure,
+non-echoed byte stream directly. The progress UI resumes after the keystore unlocks.
+RPC/explorer credential storage is a separate Yes-defaulted question, so choosing a
+private-key wallet or Ledger does not force operators to handle infrastructure credentials
+differently. Secret values never enter a recipe, task input, event, or log. Environment
+references are accepted only for local and fork operation.
+
+Live deployment includes preflight, compilation, a matching fresh fork rehearsal,
+rehearsal review, typed live-network confirmation, execution, explorer verification,
+canonical health checks, and handover proof. A Safe or governance action places the task in
+`waiting_external`; continue the same task after it confirms.
+
+## Transaction signers
+
+Every mutating task declares a transaction-signing role. The task asks once per role—not
+once per transaction—then binds the public selection into its input hash:
+
+| Choice                             | Durable state                         | Execution                                                                  |
+| ---------------------------------- | ------------------------------------- | -------------------------------------------------------------------------- |
+| Hardhat keystore wallet with key X | mode and key name                     | official encrypted Hardhat keystore signer                                 |
+| Private-key wallet                 | mode and derived address              | key is masked, memory-only, and requested again after process restart      |
+| Safe multisig — export JSON        | Safe address and batch digest         | writes Safe Transaction Builder JSON with ABI-decoded method names         |
+| Safe multisig — create proposal    | Safe address, owner identity, tx hash | owner signs and proposes through the official Safe SDK/Transaction Service |
+| Ledger account with address Z      | address and derivation family         | Hardhat Ledger signer; the device confirms each broadcast                  |
+| Unlocked local-node account        | local-node mode                       | available only for the persistent localhost rehearsal                      |
+
+Raw contract creation cannot be represented as a normal Safe call. Deployment roles
+therefore allow keystore, transient private-key, Ledger, or local-node signers. A live
+deployment separately asks how its governance handover should be delivered: Safe Builder
+JSON, a direct Safe proposal, or manually recorded actions. ExpressProvider patches can be
+entirely Safe-backed: the patch process computes exact calldata without broadcasting an EOA
+transaction, writes/proposes the batch, then waits for execution and re-proves the chain
+state on continuation.
+
+Safe Builder artifacts are written under `tasks/data/<chainId>/safe/`; fork-only exports
+are isolated under `tasks/data/<chainId>-fork/safe/`. Each batch is atomically written and
+bound to chain ID, Safe address, target, value, calldata, descriptions, and task run. Direct
+Safe service submission is refused for local and fork networks. API keys and Safe-owner
+credentials remain transient and are redacted from raw logs.
+
+During execution one live progress panel shows phase, completed steps, current action,
+working/waiting status, latest redacted activity, confirmed/pending/failed transactions,
+elapsed time, and warnings. A heartbeat keeps elapsed time and status moving even while a
+compiler, RPC, or receipt wait is quiet. Press `d` to show or hide transaction hashes, gas,
+receipts, explorer evidence, and recent redacted raw output.
+The first Ctrl+C requests a pause at the next safe boundary. A second Ctrl+C exits
+immediately after atomically preserving resumable state.
+
+## Durable state and evidence
+
+Transient runner state is local and ignored by Git:
+
+| Path                                            | Purpose                                                   |
+| ----------------------------------------------- | --------------------------------------------------------- |
+| `.symmio/tasks/active.json`                     | The single active mutating task                           |
+| `.symmio/tasks/runner.lock`                     | Cross-terminal process lock                               |
+| `.symmio/tasks/runs/<task>-<run>/events.ndjson` | Structured event journal                                  |
+| `.symmio/tasks/runs/<task>-<run>/raw.log`       | Redacted stdout/stderr                                    |
+| `.symmio/tasks/history/`                        | Indefinite completed, cancelled, and failed local history |
+
+Canonical sanitized deployment reports, receipts, component evidence, checklists, and
+checkpoint archives remain under `tasks/data/`.
+
+The active record binds task version, source hash, typed input hash, recipe and dependency
+digest, chain, observed signer, and stable plan. Resume refuses changed intent or source.
+Ordinary failures pause a mutating task. Cancellation never sends compensating
+transactions: it stops new work, reconciles every submitted hash, records confirmed
+irreversible effects and recovery guidance, then archives the task. Unknown outcomes keep
+the task in `cancel_pending`.
+
+## Task definition standard
+
+The UI and tests call only the seam exported by `cli/task-runner.js`:
+
+```text
+catalog()
+start(id)
+resumeActive()
+cancelActive()
+getActive()
 ```
 
-Configuration and generated state have distinct locations:
+Every entry in `cli/tasks/registry.js` declares:
 
-| Purpose                 | Location                                                                                      |
-| ----------------------- | --------------------------------------------------------------------------------------------- |
-| Reviewed starting point | `deployment/examples/arbitrum.v1.example.json`                                                |
-| Your deployment intent  | `deployments/<name>.json`                                                                     |
-| Full deployment report  | `tasks/data/<chainId>/deployment-report.json`                                                 |
-| Fork report             | `tasks/data/<chainId>-fork/deployment-report.json`                                            |
-| Component report        | `tasks/data/<chainId>[-fork]/components/<recipe-name>/<component>-report.json`                |
-| Component history       | `tasks/data/<chainId>[-fork]/components/<recipe-name>/history/`                               |
-| Resume checkpoint       | `tasks/data/checkpoints/checkpoint-<chainId>[-fork].json`                                     |
-| Component checkpoint    | `tasks/data/checkpoints/checkpoint-<chainId>[-fork]-component-<recipe-name>-<component>.json` |
+- a stable ID and integer version;
+- menu category, title, description, and risk level;
+- supported networks and typed input declarations;
+- a plan with stable phase, step, and batch-item IDs;
+- resume and cancellation policies;
+- output artifacts and one handler;
+- reconciliation plus shared transaction-journal support for every mutating task.
 
-The recipe contains public deployment configuration. Sensitive signer, RPC, and explorer
-credentials are references; the recommended provider is the encrypted Hardhat keystore.
-Secret values are never copied into the recipe, plan, checkpoint, digest, or report.
+The registry wrapper adds the standard signer input to transaction tasks. A task that
+creates contracts uses the EOA-capable policy; a call-only task may opt into Safe file and
+Safe service delivery. Handlers receive populated transaction requests through their
+adapter, and EOA/Ledger broadcasts still go through the shared write-ahead transaction
+helper. A Safe outcome is an exported/proposed intent—not a confirmed transaction—and must
+remain `waiting_external` until the chain proves execution.
 
-## One recipe, full or partial deployment
+Registration is explicit. To add a one-time maintenance operation:
 
-The top-level components are `core`, `partyB`, `symbolManager`, and `expressProvider`.
-Each has an explicit `mode`:
+1. Define one task in `cli/tasks/registry.js` (or import its definition there).
+2. Add that definition to `TASK_DEFINITIONS`.
+3. Test its input validation, stable plan, evidence, resume, cancellation, and network/risk
+   boundary.
 
-- `deploy` creates and completely wires that component.
-- `reuse` proves and uses the configured existing deployment.
-- `skip` excludes the component.
+No menu code changes are needed. A small task has one phase and one step. A large workflow
+uses stable item IDs and sends every write through `tasks/deploy/tx.ts`, which records the
+transaction before waiting for its receipt.
 
-Without `--only`, every component enabled by the recipe is executed in dependency order:
+Low-level Hardhat tasks are internal adapters. They may be used by registered task handlers,
+but are not supported operator entrypoints and must not be documented as public commands.
 
-```bash
-./symmio deploy --config deployments/arbitrum.json
-```
+## Catalog boundary
 
-Generate and deploy one component with a smaller recipe:
+The initial catalog contains full/Core/PartyB/SymbolManager/ExpressProvider/Liquidator
+deployment, local/fork-only FeeDistributor/MultiAccount/Multicall deployment,
+ExpressProvider reconciliation, the full deployment checklist, and the reviewed
+maintenance operations. CREATE2 factory, fake stablecoin, individual diamonds,
+InstantLayer, AccountLayer, and verifier primitives remain hidden dependencies.
 
-```bash
-./symmio recipe init --network arbitrum --only partyB
-./symmio doctor --config deployments/arbitrum-partyB.json --only partyB
-./symmio deploy --config deployments/arbitrum-partyB.json --only partyB --plan
-./symmio deploy --config deployments/arbitrum-partyB.json --only partyB
-
-./symmio recipe init --network arbitrum --only symbolManager
-./symmio doctor --config deployments/arbitrum-symbolManager.json --only symbolManager
-./symmio deploy --config deployments/arbitrum-symbolManager.json --only symbolManager --plan
-./symmio deploy --config deployments/arbitrum-symbolManager.json --only symbolManager
-```
-
-For a reused Core, `core.fromReport` may be absolute or relative to the recipe file's
-directory. Its exact file contents are included in the recipe digest and rechecked at task
-startup. Rerun the identical command after any printed Safe actions confirm; it resumes
-without redeploying and proves the final state. `--fresh` starts a new deployment ID and
-archives the prior component report in the component `history/` directory.
-
-Core is a system bundle. To deploy only the Core bundle, set `partyB`, `symbolManager`, and
-`expressProvider` to `mode: "skip"`, then run without `--only`.
-
-`--only` never silently rewrites recipe modes. Required dependencies must be declared as
-`reuse` or `deploy`; a skipped dependency is a blocking plan error.
-
-An `expressProvider` set to `deploy` must declare `registerOnCore`, a `creditLine` block, at
-least one `OPERATOR_ROLE` holder, and at least one affiliate. The planner fails closed on any
-of these rather than building a provider that cannot be operated. Because its credit line
-advances real collateral out of Core, `doctor` warns when an affiliate has both `maxDebt` and
-`maxDebtBps` set to `0`, which on-chain means no limit.
-
-An `expressProvider` set to `reuse` with an `address` **and declared sections** is a patch:
-`deploy --only expressProvider` reconciles the live provider to those sections — granting
-what is missing, revoking what the last applied report shows was dropped, and emitting
-Safe-ready calldata for anything the signer cannot execute. Omitted sections are untouched;
-nothing is deployed. See `docs/deployment.md` → "Change a live ExpressProvider".
-
-## Commands
-
-### `recipe init`
-
-```bash
-./symmio recipe init --network arbitrum
-./symmio recipe init --network arbitrum --only partyB
-./symmio recipe init --network arbitrum --only symbolManager
-./symmio recipe init --network fork-arbitrum --out deployments/rehearsal.json
-```
-
-Creates `deployments/<network>.json` from a checked-in, reviewed profile. Existing output is
-never overwritten unless `--force` is explicit. A network without a reviewed profile is
-rejected; the command does not fabricate protocol, Muon, or governance values. `--only`
-creates a minimal add-on recipe with `core.mode: "reuse"` and a portable relative
-`core.fromReport` path.
-
-### `doctor`
-
-```bash
-./symmio doctor --config deployments/arbitrum.json
-```
-
-Read-only. It validates the recipe and component dependency plan before opening an RPC
-connection, then checks:
-
-- network name, chain ID, live/fork mode, RPC reachability, and direct `eth_chainId`;
-- signer resolution, unsafe known keys, deployer balance, and admin separation;
-- collateral code and token metadata;
-- mock-verifier and dummy-affiliate safety policy;
-- complete Muon registrations and all eight function authorizations;
-- PartyB and SymbolManager configuration when enabled;
-- liquidation accounting receivers and cap;
-- explorer verification readiness;
-- protocol values and InstantLayer templates bound to the recipe;
-- checkpoint disposition and internal CLI/task mirror drift.
-
-A configuration failure names the exact JSON field and the exact recipe file to edit.
-Keystore references are deliberately reported as deferred warnings: the dependency-free
-doctor cannot unlock them, while the Hardhat task must resolve and recheck them before any
-checkpoint or transaction.
-
-### `deploy`
-
-```bash
-./symmio deploy --config deployments/arbitrum.json --plan
-./symmio deploy --config deployments/arbitrum.json
-```
-
-The plan prints the recipe digest and a table containing each target, mode, and dependency.
-`--plan` stops after doctor and the read-only plan; no transaction is sent.
-
-| Flag                 | Effect                                                                             |
-| -------------------- | ---------------------------------------------------------------------------------- |
-| `--only <component>` | Execute one component and its declared reused dependencies                         |
-| `--yes`              | Skip the interactive prompt; live networks also require `--confirm-network <name>` |
-| `--fresh`            | Archive the current checkpoint and begin a fresh run                               |
-| `--no-verify`        | Further disable recipe verification on local/fork only; refused live               |
-| `--force`            | Continue after preflight failure on local/fork only; refused live                  |
-| `--plan`             | Read-only doctor and dependency plan                                               |
-
-The recipe's `execution.verify` value is authoritative. A live recipe must require explorer
-verification. Deployments are transaction-journaled, resumable, and accepted only after
-the task writes its report and passes its post-deployment health gates.
-
-On a persistent chain, exit `0` means lifecycle `complete`; exit `2` means deployment and
-verification succeeded but the printed admin/Safe handover is still pending. Fork runs are
-ephemeral and print their lifecycle without using exit `2`.
-
-### `status`
-
-```bash
-./symmio status --config deployments/arbitrum.json
-./symmio status --config deployments/arbitrum-partyB.json --only partyB
-./symmio status --config deployments/arbitrum-symbolManager.json --only symbolManager
-```
-
-Reads the exact chain-scoped full or component report and checkpoint, then delegates to the
-matching canonical read-only on-chain checker. Critical unreadable probes fail; they are
-never reported as a healthy deployment. A component recipe must include its matching
-`--only` flag so it cannot inspect an unrelated full-system report.
-
-### `verify`
-
-```bash
-./symmio verify --config deployments/arbitrum.json
-./symmio verify --config deployments/arbitrum.json --retry-failed
-```
-
-Runs the checked-in `verify:all` task against the network named by the recipe. Verification
-is unavailable for ephemeral fork networks. Recipe mode is full-system-only and binds the
-deployment report, deployment ID, recipe digest, component modes, and retry artifact.
-Component explorer verification is owned by `deploy --only`; rerun that command to retry it.
-
-### `config`
-
-The protocol inspection commands remain available for comparing or exporting an existing
-deployment:
-
-```bash
-./symmio config show --chain 42161
-./symmio config diff --network hyperevm --symmio 0x... --instant-layer 0x... --against 42161
-./symmio config export --network hyperevm --symmio 0x... --instant-layer 0x... --to 42161
-```
-
-## Compatibility mode
-
-`doctor`, `deploy`, `status`, and `verify` still accept `--network <name>` for existing
-automation. `--config` and `--network` are mutually exclusive, and the CLI labels network
-mode as compatibility-only. New deployments should use a recipe so intent, component
-selection, safety policy, and the resulting report are bound to one digest.
-
-## Implementation boundary
-
-The CLI is plain ESM JavaScript and runs the checked-in local Hardhat binary. It does not
-download tools, import a stale build, or duplicate recipe schema validation. The shared
-recipe module owns parsing, normalization, validation, dependency planning, and conversion
-to the deployment task's compatibility projection. The CLI pins the normalized recipe
-digest across the Hardhat process boundary; a reused Core report's exact bytes are also
-bound, preventing configuration or dependency-report changes between plan and execution.
+Fuzzing, test runners, package hooks, build helpers, local initialization, and shell wrappers
+are development tooling, not maintenance menu entries.

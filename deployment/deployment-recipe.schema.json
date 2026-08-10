@@ -46,7 +46,15 @@
 			"then": {
 				"type": "object",
 				"properties": {
-					"secrets": { "type": "object", "required": ["deployer", "rpc", "explorer"] },
+					"secrets": {
+						"type": "object",
+						"required": ["rpc", "explorer"],
+						"properties": {
+							"deployer": { "type": "string", "pattern": "^hardhat-keystore://[A-Za-z_][A-Za-z0-9_]*$" },
+							"rpc": { "type": "string", "pattern": "^hardhat-keystore://[A-Za-z_][A-Za-z0-9_]*$" },
+							"explorer": { "type": "string", "pattern": "^hardhat-keystore://[A-Za-z_][A-Za-z0-9_]*$" }
+						}
+					},
 					"execution": {
 						"type": "object",
 						"properties": { "verify": { "const": true }, "logLevel": { "enum": ["minimal", "verbose"] } }

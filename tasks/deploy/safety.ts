@@ -68,7 +68,7 @@ export function assertStandaloneDeploymentTaskAllowed(
 	taskName: string,
 	chainId: number | bigint,
 	isSimulated: boolean,
-	liveWorkflow = "Use `symmio deploy --network <network>` (or `deploy:system`) for a checkpointed live deployment.",
+	liveWorkflow = "Use `./symmio` and a registered deployment task for a checkpointed live deployment.",
 ): void {
 	const normalizedChainId = Number(chainId)
 	if (isSimulated || normalizedChainId === 31337) return
