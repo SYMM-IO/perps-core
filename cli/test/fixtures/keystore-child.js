@@ -11,7 +11,10 @@ process.stdin.on("data", chunk => {
 				process.exit(1);
 			}
 			process.stdout.write("\nkeystore unlocked\n");
-			process.exit(0);
+			setTimeout(() => process.stdout.write("Reading live templates\n"), 50);
+			setTimeout(() => process.stdout.write("Plan complete. Review it, then rerun with EXECUTE=true CONFIRM_CHAIN_ID=42161.\n"), 100);
+			setTimeout(() => {}, 900);
+			return;
 		}
 		value += String.fromCharCode(byte);
 		process.stdout.write("*");

@@ -154,6 +154,39 @@ test("ordinary errors pause a mutating task and continuation skips completed ste
 	assert.deepEqual(complete.completedSteps, ["first", "second"]);
 });
 
+test("a failed subprocess promotes its useful stderr error into resumable task state", async () => {
+	const run = async ctx => {
+		await ctx.runProcess(process.execPath, [
+			"-e",
+			'process.stderr.write("HardhatError: HHE713: Missing param \\\"gas\\\" from a tx being signed locally.\\n"); process.exit(1)',
+		]);
+	};
+	const { runner } = runnerFor(mutating({ run, handler: run }));
+	const paused = await runner.start("maintenance.test");
+	assert.equal(paused.status, "paused");
+	assert.match(paused.lastError, /HHE713: Missing param "gas" from a tx being signed locally/);
+});
+
+test("an interrupt records why its subprocess stopped instead of reporting a generic exit code", async () => {
+	const run = async ctx => {
+		await ctx.step("run", "Run", async () => {
+			const interrupt = setTimeout(() => process.kill(process.pid, "SIGINT"), 50);
+			try {
+				await ctx.runProcess(process.execPath, ["-e", "setInterval(() => {}, 1000)"]);
+			} finally {
+				clearTimeout(interrupt);
+			}
+		});
+	};
+	const events = [];
+	const { runner } = runnerFor(mutating({ run, handler: run }));
+	const paused = await runner.start("maintenance.test", { onEvent: event => events.push(event) });
+	assert.equal(paused.status, "paused");
+	assert.equal(paused.lastError, "Interrupt received; stopping the current operation and preserving resumable task state");
+	assert.equal(events.filter(event => event.type === "task.pause_requested").length, 1);
+	assert.equal(events.at(-1)?.type, "task.paused");
+});
+
 test("private-key signer state persists only its address and rehydrates after restart", async () => {
 	const privateKey = `0x${"71".repeat(32)}`;
 	const ui = { password: async () => privateKey, note: () => {} };

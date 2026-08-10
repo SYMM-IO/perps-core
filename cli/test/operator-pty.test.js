@@ -60,6 +60,7 @@ test("PTY guided confirmation, detail toggle, resize, and first Ctrl+C pause coo
 	assert.match(plain, /Yes/);
 	assert.match(plain, /0xaaaaaaaa/);
 	assert.match(plain, /gas 42000/);
+	assert.match(plain, /Interrupt received; stopping the current operation and preserving resumable task state/);
 	assert.match(plain, /Synthetic PTY task is paused/);
 	assert.match(plain, /Operator session closed/);
 });
@@ -141,6 +142,12 @@ test("Hardhat keystore password prompt securely takes over the terminal and retu
 	assert.match(plain, /Keystore PTY task completed/);
 	assert.doesNotMatch(plain, /test-password/);
 	assert.doesNotMatch(plain, /Activity\s+\*+/);
+	const progressSnapshot = fs.readFileSync(path.join(stateRoot, "keystore-progress.snapshot"), "utf8");
+	const progressScreen = renderTerminalScreen(progressSnapshot, { columns: 100, rows: 32 });
+	assert.match(progressScreen, /Current\s+Unlock keystore and run task/);
+	assert.match(progressScreen, /Activity\s+Plan prepared; waiting for subprocess to finish/);
+	assert.doesNotMatch(progressScreen, /Current\s+Unlock Hardhat keystore/);
+	assert.doesNotMatch(progressScreen, /rerun with EXECUTE=true/);
 	const evidence = fs
 		.readdirSync(stateRoot, { recursive: true, withFileTypes: true })
 		.filter(entry => entry.isFile())
