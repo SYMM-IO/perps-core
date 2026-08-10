@@ -246,6 +246,7 @@ async function runWithProgress(action, { ui, runner, input, output, controllerRe
 	const rawLines = [];
 	let passwordPromptActive = false;
 	let passwordSubmitted = false;
+	let titleBeforePassword = "";
 	let stopPasswordInput = null;
 	let latestState = null;
 	let rendered = "";
@@ -282,6 +283,10 @@ async function runWithProgress(action, { ui, runner, input, output, controllerRe
 			if (event.type === "process.started") markActivity("Subprocess started; output is being captured", true);
 			if (event.type === "process.completed")
 				markActivity(event.code === 0 ? "Subprocess completed" : `Subprocess exited with code ${event.code}`, false);
+			if (event.type === "task.pause_requested") {
+				current.title = "Pausing safely";
+				markActivity(event.message || "Pause requested; preserving resumable task state", false);
+			}
 			if (event.type === "tx.submitted") markActivity(`Broadcast ${event.transaction?.label || "transaction"}; waiting for receipt`, false);
 			if (event.type === "tx.confirmed") markActivity(`Confirmed ${event.transaction?.label || "transaction"}`, false);
 			if (event.type === "tx.failed") markActivity(`Transaction failed: ${event.transaction?.label || "transaction"}`, false);
@@ -309,13 +314,17 @@ async function runWithProgress(action, { ui, runner, input, output, controllerRe
 			if (rawLines.length > 50) rawLines.shift();
 			const progress = safeLine.match(/\[(\d+)\/(\d+)\]\s*(.+)/);
 			if (progress) current.title = progress[3];
-			markActivity(safeLine, activity.processRunning);
+			const activityLine = /^Plan complete\.\s+Review it,\s+then rerun with EXECUTE=true\b/u.test(safeLine)
+				? "Plan prepared; waiting for subprocess to finish"
+				: safeLine;
+			markActivity(activityLine, activity.processRunning);
 			render();
 		},
 		onPrompt(prompt, state, channel) {
 			latestState = state;
 			passwordPromptActive = true;
 			passwordSubmitted = false;
+			titleBeforePassword = current.title;
 			current.title = "Unlock Hardhat keystore";
 			markActivity("Waiting for keystore password", false);
 			controllerRef.current.stop();
@@ -327,6 +336,7 @@ async function runWithProgress(action, { ui, runner, input, output, controllerRe
 				}
 				channel.write(chunk);
 				if ([...chunk].some(byte => byte === 10 || byte === 13)) {
+					channel.end?.();
 					passwordSubmitted = true;
 					stopPasswordInput?.();
 					output.write("\n");
@@ -351,6 +361,8 @@ async function runWithProgress(action, { ui, runner, input, output, controllerRe
 			passwordPromptActive = false;
 			stopPasswordInput?.();
 			if (!passwordSubmitted) output.write("\n");
+			current.title = titleBeforePassword || current.title;
+			titleBeforePassword = "";
 			markActivity("Keystore unlocked; task continuing", true);
 			controllerRef.current.start();
 			render();

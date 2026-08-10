@@ -20,6 +20,15 @@ const UNCERTAIN_TX_STATUSES = new Set(["submitted", "unresolved", "timed_out"]);
 const HARDHAT_KEYSTORE_PROMPT = /\[hardhat-keystore\]\s*(?:Enter the password|Please confirm your password):\s*$/u;
 const TERMINAL_CONTROL = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))/gu;
 
+function usefulProcessError(lines) {
+	const cleaned = lines.map(line => String(line).trim()).filter(Boolean);
+	return (
+		cleaned.find(line => /^(?:HardhatError|ProviderError|Error|TypeError|RangeError|ReferenceError|SyntaxError):/u.test(line)) ||
+		cleaned.find(line => !/^at\s/u.test(line)) ||
+		cleaned.at(-1)
+	);
+}
+
 export class TaskPauseError extends Error {
 	constructor(message = "Task paused at a safe boundary") {
 		super(message);
@@ -343,27 +352,9 @@ export function createTaskRunner(options = {}) {
 	async function runState(definition, state, runtime = {}) {
 		const release = acquireLock(state.runId);
 		let pauseRequested = false;
+		let pauseReason = null;
 		let interruptCount = 0;
 		const activeChildren = new Set();
-		const interrupt = () => {
-			interruptCount++;
-			pauseRequested = true;
-			if (interruptCount === 1) {
-				for (const child of activeChildren) {
-					try {
-						child.kill("SIGINT");
-					} catch {}
-				}
-			}
-			if (interruptCount >= 2) {
-				state.status = "paused";
-				state.lastError = "Forced exit while pausing; reconcile submitted transactions before continuing";
-				if (definition.risk === "read-only") archive(state, "failed");
-				else saveActive(state);
-				process.exit(130);
-			}
-		};
-		process.on("SIGINT", interrupt);
 
 		const emit = (type, detail = {}) => {
 			const event = appendEvent(state, { type, ...detail });
@@ -388,12 +379,38 @@ export function createTaskRunner(options = {}) {
 			runtime.onEvent?.(event, state);
 			return event;
 		};
+		const requestPause = message => {
+			if (pauseRequested) return;
+			pauseRequested = true;
+			pauseReason = message;
+			emit("task.pause_requested", { message });
+		};
+		const interrupt = () => {
+			interruptCount++;
+			if (interruptCount === 1) {
+				requestPause("Interrupt received; stopping the current operation and preserving resumable task state");
+				for (const child of activeChildren) {
+					try {
+						child.kill("SIGINT");
+					} catch {}
+				}
+			}
+			if (interruptCount >= 2) {
+				state.status = "paused";
+				state.lastError = "Forced exit while pausing; reconcile submitted transactions before continuing";
+				if (definition.risk === "read-only") archive(state, "failed");
+				else saveActive(state);
+				process.exit(130);
+			}
+		};
+		process.on("SIGINT", interrupt);
 
 		const captureLine = (line, stream = "stdout") => {
 			const safe = redact(line);
 			fs.mkdirSync(path.dirname(state.logPath), { recursive: true });
 			fs.appendFileSync(state.logPath, `${safe}\n`, { mode: 0o600 });
 			runtime.onLine?.(safe, stream, state);
+			return safe;
 		};
 
 		const context = {
@@ -404,7 +421,7 @@ export function createTaskRunner(options = {}) {
 			captureLine,
 			isPauseRequested: () => pauseRequested,
 			requestPause: () => {
-				pauseRequested = true;
+				requestPause("Pause requested; preserving resumable task state");
 			},
 			fatal: message => {
 				throw new TaskFatalError(message);
@@ -471,6 +488,11 @@ export function createTaskRunner(options = {}) {
 						stdio: ["pipe", "pipe", "pipe", "pipe"],
 					});
 					activeChildren.add(child);
+					const recentStderr = [];
+					const rememberStderr = line => {
+						recentStderr.push(line);
+						if (recentStderr.length > 50) recentStderr.shift();
+					};
 					let passwordPromptActive = false;
 					const resolvePasswordPrompt = () => {
 						if (!passwordPromptActive) return;
@@ -488,19 +510,28 @@ export function createTaskRunner(options = {}) {
 							const lines = buffer.split(/\r?\n/);
 							buffer = lines.pop() || "";
 							for (const line of lines) {
-								if (line && !(wasPasswordPromptActive && /^\*+$/u.test(line.replace(TERMINAL_CONTROL, "")))) captureLine(line, name);
+								if (line && !(wasPasswordPromptActive && /^\*+$/u.test(line.replace(TERMINAL_CONTROL, "")))) {
+									const safe = captureLine(line, name);
+									if (name === "stderr") rememberStderr(safe);
+								}
 							}
 							const plainBuffer = buffer.replace(TERMINAL_CONTROL, "");
 							if (HARDHAT_KEYSTORE_PROMPT.test(plainBuffer)) {
 								const prompt = redact(plainBuffer.trim());
 								buffer = "";
 								passwordPromptActive = true;
-								runtime.onPrompt?.(prompt, state, { write: value => child.stdin.write(value) });
+								runtime.onPrompt?.(prompt, state, {
+									write: value => child.stdin.write(value),
+									end: () => child.stdin.end(),
+								});
 								captureLine(prompt, name);
 							}
 						});
 						stream.on("end", () => {
-							if (buffer) captureLine(buffer, name);
+							if (buffer) {
+								const safe = captureLine(buffer, name);
+								if (name === "stderr") rememberStderr(safe);
+							}
 						});
 					};
 					consume(child.stdout, "stdout");
@@ -527,7 +558,10 @@ export function createTaskRunner(options = {}) {
 						activeChildren.delete(child);
 						emit("process.completed", { code: code ?? 1 });
 						if (code === 0) resolve(0);
-						else reject(new Error(`${command} exited with code ${code ?? 1}`));
+						else {
+							const detail = usefulProcessError(recentStderr);
+							reject(new Error(`${command} exited with code ${code ?? 1}${detail ? `: ${detail}` : ""}`));
+						}
 					});
 				});
 			},
@@ -556,7 +590,7 @@ export function createTaskRunner(options = {}) {
 			}
 			if (error instanceof TaskPauseError || pauseRequested) {
 				state.status = "paused";
-				state.lastError = error.message || "Paused";
+				state.lastError = pauseReason || error.message || "Paused";
 				emit("task.paused", { message: state.lastError });
 				if (definition.risk === "read-only") return archive(state, "failed");
 				saveActive(state);
@@ -694,7 +728,10 @@ export function createTaskRunner(options = {}) {
 								const prompt = redact(plainBuffer.trim());
 								buffer = "";
 								passwordPromptActive = true;
-								runtime.onPrompt?.(prompt, state, { write: value => child.stdin.write(value) });
+								runtime.onPrompt?.(prompt, state, {
+									write: value => child.stdin.write(value),
+									end: () => child.stdin.end(),
+								});
 								cancellationLine(prompt, name);
 							}
 						});

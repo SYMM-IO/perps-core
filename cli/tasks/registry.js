@@ -183,10 +183,11 @@ async function dispatchPendingSafeActions(ctx, input) {
 	return result;
 }
 
-function inputText(ui, message, { address = false, placeholder } = {}) {
+function inputText(ui, message, { address = false, placeholder, initialValue } = {}) {
 	return ui.text({
 		message,
 		placeholder: placeholder || (address ? "0x…" : undefined),
+		initialValue,
 		validate: value => {
 			if (!value?.trim()) return "A value is required";
 			if (address && (!isAddress(value) || /^0x0{40}$/i.test(value))) return "Enter a non-zero EVM address";
@@ -830,7 +831,175 @@ async function prepareHyperEvmSigner({ ui }, action) {
 	return confirmed ? { network: "hyperevm", chainId: 999 } : null;
 }
 
+function instantLayerDeploymentRecord(chainId) {
+	const file = path.join(PROJECT_ROOT, "tasks", "data", String(chainId), "instantlayer.json");
+	if (!fs.existsSync(file)) return null;
+	try {
+		const entries = JSON.parse(fs.readFileSync(file, "utf8"));
+		const entry = Array.isArray(entries) ? entries.find(value => value?.name === "InstantLayer") : null;
+		if (!entry || !isAddress(entry.address) || /^0x0{40}$/i.test(entry.address)) return null;
+		return entry;
+	} catch {
+		return null;
+	}
+}
+
+function instantLayerSetterAuthority(chainId) {
+	try {
+		const admin = readDeploymentReport(chainId)?.config?.admin;
+		return isAddress(admin || "") && !/^0x0{40}$/i.test(admin) ? admin : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+async function prepareSettlementTemplateRepair({ ui }) {
+	const base = await prepareNetwork({ ui }, ["arbitrum", "fork-arbitrum", "localhost"]);
+	if (!base) return null;
+	const record = instantLayerDeploymentRecord(base.chainId);
+	const instantLayer = await inputText(ui, "InstantLayer address", {
+		address: true,
+		initialValue: record?.address,
+	});
+	if (instantLayer === null) return null;
+	const deactivateLegacy = await ui.confirm({
+		message: "Deactivate the four broken offset-448 templates after corrected copies are available?",
+		initialValue: true,
+	});
+	if (deactivateLegacy === null) return null;
+	return {
+		...base,
+		instantLayer,
+		symmio: record?.constructorArguments?.[0],
+		deactivateLegacy,
+	};
+}
+
+function validateSettlementRepairPlan(plan, input) {
+	if (plan?.apiVersion !== "operations.symm.io/instant-layer-settlement-template-repair-v1") {
+		throw new Error("Settlement-template script returned an unsupported plan artifact");
+	}
+	if (Number(plan.chainId) !== input.chainId) throw new Error(`Repair plan chain ${plan.chainId} does not match ${input.chainId}`);
+	if (String(plan.instantLayer).toLowerCase() !== input.instantLayer.toLowerCase()) {
+		throw new Error(`Repair plan target ${plan.instantLayer} does not match ${input.instantLayer}`);
+	}
+	if (plan.correctedOffset !== "480" || plan.legacyOffset !== "448")
+		throw new Error("Repair plan does not encode the reviewed 448 -> 480 correction");
+	if (!Array.isArray(plan.actions)) throw new Error("Repair plan actions are missing");
+	return plan;
+}
+
+async function writeSettlementRepairPlan(ctx, input, label) {
+	const file = path.join(path.dirname(ctx.state.eventPath), `${label}.json`);
+	await ctx.runProcess(
+		"./node_modules/.bin/hardhat",
+		["run", "--no-compile", "scripts/recreateInstantLayerSettlementTemplates.ts", "--network", input.network],
+		{
+			env: {
+				INSTANT_LAYER_ADDRESS: input.instantLayer,
+				...(input.symmio ? { SYMMIO_ADDRESS: input.symmio } : {}),
+				DEACTIVATE_LEGACY_TEMPLATES: String(input.deactivateLegacy),
+				REPAIR_PLAN_OUTPUT: file,
+				EXECUTE: "false",
+				CONFIRM_CHAIN_ID: "",
+			},
+		},
+	);
+	return { file, plan: validateSettlementRepairPlan(JSON.parse(fs.readFileSync(file, "utf8")), input) };
+}
+
+const SETTLEMENT_TEMPLATE_REPAIR_TASK = common({
+	id: "maintenance.recreate-settlement-templates",
+	version: 1,
+	category: "maintenance",
+	risk: "transaction",
+	title: "Recreate settleUpnl InstantLayer templates",
+	description: "Add corrected offset-480 copies of all four settleUpnl templates, then retire the broken offset-448 originals.",
+	supportedNetworks: ["localhost", "fork-arbitrum", "arbitrum"],
+	inputs: ["network", "InstantLayer address", "legacy-template deactivation", "signer"],
+	artifacts: ["reviewed action plan", "transaction journal", "Safe batch when selected", "post-state verification"],
+	prepare: prepareSettlementTemplateRepair,
+	signerPolicy: input => {
+		const configuredAdmin = instantLayerSetterAuthority(input.chainId);
+		return {
+			role: "InstantLayer SETTER_ROLE authority",
+			allowedModes: input.network === "arbitrum" ? [...EOA_SIGNER_MODES, ...SAFE_SIGNER_MODES] : EOA_SIGNER_MODES,
+			initialMode: input.network === "arbitrum" ? SIGNER_MODES.SAFE_FILE : EOA_SIGNER_MODES[0],
+			...(isAddress(configuredAdmin || "") ? { safeAddress: configuredAdmin } : {}),
+		};
+	},
+	plan: () => [
+		{ id: "inspect", phase: "prepare", title: "Inspect live settlement templates and build exact actions" },
+		{ id: "authorize", phase: "authorization", title: "Review and authorize the 448 to 480 repair" },
+		{ id: "apply", phase: "execution", title: "Add corrected templates before deactivating broken originals" },
+		{ id: "verify", phase: "verification", title: "Prove all corrected templates active and legacy templates inactive" },
+	],
+	run: async (ctx, input) => {
+		await ctx.step("inspect", "Inspect live settlement templates", async () => {
+			const result = await writeSettlementRepairPlan(ctx, input, "settlement-template-plan");
+			ctx.state.settlementTemplatePlan = { path: result.file, actionCount: result.plan.actions.length, repaired: result.plan.repaired };
+			ctx.ui.note(
+				result.plan.actions.length === 0
+					? "No actions are required; the corrected settlement templates are already active."
+					: result.plan.actions.map((action, index) => `${index + 1}. ${action.description}`).join("\n"),
+				"Reviewed settlement-template actions",
+			);
+		});
+		await ctx.step("authorize", "Authorize settlement-template repair", async () => {
+			if (ctx.state.settlementTemplatePlan?.actionCount === 0) return;
+			if (input.network === "arbitrum") {
+				const typed = await ctx.ui.text({
+					message: `Type chain ID ${input.chainId} to authorize the live InstantLayer repair`,
+					validate: value => (value === String(input.chainId) ? undefined : `Type exactly ${input.chainId}`),
+				});
+				if (typed === null) ctx.requestPause();
+			} else {
+				const confirmed = await ctx.ui.confirm({
+					message: "Apply the reviewed template repair on this local/fork network?",
+					initialValue: true,
+				});
+				if (!confirmed) ctx.requestPause();
+			}
+			ctx.checkpoint();
+		});
+		await ctx.step("apply", "Apply settlement-template repair", async () => {
+			if (SAFE_SIGNER_MODES.includes(input.signer.mode)) {
+				const current = await writeSettlementRepairPlan(ctx, input, "settlement-template-before-safe");
+				if (current.plan.actions.length === 0) return;
+				await dispatchSafeActions(ctx, input.signer, current.plan.actions, {
+					chainId: input.chainId,
+					network: input.network,
+					name: "Correct InstantLayer settleUpnl templates",
+					description: "Add offset-480 replacement templates first, then deactivate the offset-448 originals.",
+				});
+				ctx.wait("Execute the exported/proposed Safe batch, then continue this task to verify the live template registry.");
+			}
+			await ctx.runProcess(
+				"./node_modules/.bin/hardhat",
+				["run", "--no-compile", "scripts/recreateInstantLayerSettlementTemplates.ts", "--network", input.network],
+				{
+					env: {
+						INSTANT_LAYER_ADDRESS: input.instantLayer,
+						...(input.symmio ? { SYMMIO_ADDRESS: input.symmio } : {}),
+						DEACTIVATE_LEGACY_TEMPLATES: String(input.deactivateLegacy),
+						EXECUTE: "true",
+						CONFIRM_CHAIN_ID: String(input.chainId),
+					},
+				},
+			);
+		});
+		await ctx.step("verify", "Verify settlement-template repair", async () => {
+			const result = await writeSettlementRepairPlan(ctx, input, "settlement-template-verification");
+			if (!result.plan.repaired || result.plan.actions.length !== 0) {
+				throw new Error(`Settlement-template verification still requires ${result.plan.actions.length} action(s)`);
+			}
+		});
+	},
+	reconcile: mutationReconcile,
+});
+
 const MAINTENANCE_TASKS = [
+	SETTLEMENT_TEMPLATE_REPAIR_TASK,
 	oneStepMaintenance({
 		id: "maintenance.rpc-health",
 		version: 1,

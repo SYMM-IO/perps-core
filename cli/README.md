@@ -153,6 +153,32 @@ transaction before waiting for its receipt.
 Low-level Hardhat tasks are internal adapters. They may be used by registered task handlers,
 but are not supported operator entrypoints and must not be documented as public commands.
 
+### Repair settleUpnl InstantLayer templates
+
+From `./symmio`, select **Other maintenance scripts** and then
+**Recreate settleUpnl InstantLayer templates**. The operation reads all four settlement
+template variants, creates offset-480 replacements while preserving their complete operation
+wiring and instant-open mode, and only then deactivates the broken offset-448 originals. It
+is idempotent and verifies the registry again after execution. Live Arbitrum defaults to a
+Safe Builder file; EOA, Ledger, and direct Safe proposal modes remain available according to
+the task's signer policy.
+
+The registered CLI task uses the following guarded script internally. Its default is a
+read-only plan; broadcasting requires both execution variables:
+
+```bash
+INSTANT_LAYER_ADDRESS=0x... \
+  npx hardhat run --no-compile scripts/recreateInstantLayerSettlementTemplates.ts --network arbitrum
+
+INSTANT_LAYER_ADDRESS=0x... EXECUTE=true CONFIRM_CHAIN_ID=42161 \
+  npx hardhat run --no-compile scripts/recreateInstantLayerSettlementTemplates.ts --network arbitrum
+```
+
+Set `REPAIR_PLAN_OUTPUT=/path/to/plan.json` in plan mode to write the exact ordered,
+Safe-compatible calldata without broadcasting. For live operation, prefer the registered
+CLI flow because it adds durable authorization, signer selection, Safe delivery, resume, and
+post-state evidence around this script.
+
 ## Catalog boundary
 
 The initial catalog contains full/Core/PartyB/SymbolManager/ExpressProvider/Liquidator
