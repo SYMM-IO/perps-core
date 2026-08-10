@@ -22,6 +22,12 @@ export enum OrderType {
 	MARKET,
 }
 
+export enum BindStatus {
+	NOT_BOUND,
+	BOUND,
+	PENDING_UNBIND,
+}
+
 export enum Event {
 	SEND_QUOTE = "SendQuote",
 	REQUEST_TO_CANCEL_QUOTE = "RequestToCancelQuote",

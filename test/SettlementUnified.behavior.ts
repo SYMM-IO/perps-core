@@ -5,7 +5,7 @@ import type { UnifiedQuoteSettlementDataStruct } from "../src/types/facets/Settl
 import { ISymmio__factory } from "../src/types/factories/core/interfaces/ISymmio__factory.js"
 import { initializeFixture } from "./Initialize.fixture.js"
 import { loadFixture } from "./helpers/network-helpers.js"
-import { PositionType } from "./models/Enums.js"
+import { BindStatus, PositionType } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
@@ -339,6 +339,360 @@ export function shouldBehaveLikeSettlementUnified(): void {
 			expect(partyABalanceAfter.allocatedBalances - partyABalanceBefore.allocatedBalances).to.eq(expectedProfitForPartyA)
 			expect(partyB2BalanceBefore.allocatedBalances - partyB2BalanceAfter.allocatedBalances).to.eq(expectedProfitForPartyA)
 			expect((await context.viewFacetQuote.getQuote(shortHedger2)).openedPrice).to.eq(updatedPrice)
+		})
+	})
+
+	describe("Bound Mode (oracle-less)", function () {
+		async function bindUser2ToHedger() {
+			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(await hedger.getAddress(), true)
+			await context.bindingFacet.connect(context.signers.user2).bindToPartyB(await hedger.getAddress())
+		}
+
+		it("Should enforce Muon verification when partyA is not bound", async function () {
+			const sig = await getDummyUnifiedSettlementSig(
+				await hedger.getAddress(),
+				0n,
+				[0n],
+				[await user.getAddress()],
+				[0n],
+				[{ quoteId: longHedger1, currentPrice: decimal(5n, 17), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct],
+			)
+			sig.timestamp = 0n
+			await context.controlFacet.connect(context.signers.admin).setMuonConfig(0, 0)
+
+			await expect(hedger.settleUpnlUnified([decimal(6n, 17)], sig)).to.be.revertedWith("LibMuon: Expired signature")
+		})
+
+		it("Should skip Muon verification when caller is bound to all partyAs", async function () {
+			await bindUser2ToHedger()
+
+			const partyA = await user2.getAddress()
+			const partyB = await hedger.getAddress()
+			const quoteBefore = await context.viewFacetQuote.getQuote(longHedger1User2)
+			const updatedPrice = decimal(6n, 17)
+			const beforeNonceA = await context.viewFacet.nonceOfPartyA(partyA)
+			const beforeNonceB = await context.viewFacet.nonceOfPartyB(partyB, partyA)
+
+			const sig = await getDummyUnifiedSettlementSig(
+				partyB,
+				0n,
+				[0n],
+				[partyA],
+				[0n],
+				[{ quoteId: longHedger1User2, currentPrice: decimal(5n, 17), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct],
+			)
+			sig.timestamp = 0n
+			await context.controlFacet.connect(context.signers.admin).setMuonConfig(0, 0)
+
+			const partyABalanceBefore = await user2.getBalanceInfo()
+			await hedger.settleUpnlUnified([updatedPrice], sig)
+			const partyABalanceAfter = await user2.getBalanceInfo()
+
+			const expectedLoss = unDecimal((quoteBefore.openedPrice - updatedPrice) * quoteBefore.quantity)
+			expect(partyABalanceBefore.allocatedBalances - partyABalanceAfter.allocatedBalances).to.be.eq(expectedLoss)
+			expect((await context.viewFacetQuote.getQuote(longHedger1User2)).openedPrice).to.be.eq(updatedPrice)
+			expect(await context.viewFacet.nonceOfPartyA(partyA)).to.be.eq(beforeNonceA + 1n)
+			expect(await context.viewFacet.nonceOfPartyB(partyB, partyA)).to.be.eq(beforeNonceB + 1n)
+		})
+
+		it("Should skip solvency checks when caller is bound to all partyAs", async function () {
+			await bindUser2ToHedger()
+
+			const partyA = await user2.getAddress()
+			const partyB = await hedger.getAddress()
+			const updatedPrice = decimal(6n, 17)
+
+			// Insolvent-looking upnl values on both sides: unverified and ignored in bound mode
+			const sig = await getDummyUnifiedSettlementSig(
+				partyB,
+				0n,
+				[-decimal(100000n)],
+				[partyA],
+				[-decimal(100000n)],
+				[{ quoteId: longHedger1User2, currentPrice: decimal(5n, 17), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct],
+			)
+
+			await hedger.settleUpnlUnified([updatedPrice], sig)
+			expect((await context.viewFacetQuote.getQuote(longHedger1User2)).openedPrice).to.be.eq(updatedPrice)
+		})
+
+		it("Should still enforce solvency checks when partyA is not bound", async function () {
+			const sig = await getDummyUnifiedSettlementSig(
+				await hedger.getAddress(),
+				0n,
+				[0n],
+				[await user.getAddress()],
+				[-decimal(100000n)],
+				[{ quoteId: longHedger1, currentPrice: decimal(5n, 17), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct],
+			)
+
+			await expect(hedger.settleUpnlUnified([decimal(6n, 17)], sig)).to.be.revertedWith("LibSettlement: PartyA is insolvent")
+		})
+
+		it("Should still verify when any partyA in the signature is not bound", async function () {
+			await bindUser2ToHedger()
+
+			const sig = await getDummyUnifiedSettlementSig(
+				await hedger.getAddress(),
+				0n,
+				[0n, 0n],
+				[await user2.getAddress(), await user.getAddress()],
+				[0n, 0n],
+				[
+					{ quoteId: longHedger1User2, currentPrice: decimal(5n, 17), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct,
+					{ quoteId: shortHedger1, currentPrice: 0n, partyAIndex: 1n } as UnifiedQuoteSettlementDataStruct,
+				],
+			)
+			sig.timestamp = 0n
+			await context.controlFacet.connect(context.signers.admin).setMuonConfig(0, 0)
+
+			await expect(hedger.settleUpnlUnified([decimal(6n, 17), decimal(5n, 17)], sig)).to.be.revertedWith("LibMuon: Expired signature")
+		})
+
+		it("Should still verify when the caller is not the settled partyB", async function () {
+			await bindUser2ToHedger()
+
+			const sig = await getDummyUnifiedSettlementSig(
+				await hedger.getAddress(),
+				0n,
+				[0n],
+				[await user2.getAddress()],
+				[0n],
+				[{ quoteId: longHedger1User2, currentPrice: decimal(5n, 17), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct],
+			)
+			sig.timestamp = 0n
+			await context.controlFacet.connect(context.signers.admin).setMuonConfig(0, 0)
+
+			await expect(hedger2.settleUpnlUnified([decimal(6n, 17)], sig)).to.be.revertedWith("LibMuon: Expired signature")
+		})
+
+		describe("Unbind cooldown", function () {
+			// The bound flows compare bindState.partyB and ignore the status enum, so the oracle-less
+			// privilege deliberately survives PENDING_UNBIND and ends only when the unbind completes.
+			it("Should keep skipping verification while partyA sits in the unbind cooldown", async function () {
+				await bindUser2ToHedger()
+				await context.bindingFacet.connect(context.signers.user2).requestToUnbindFromPartyB()
+
+				const bindState = await context.viewFacet.getBindState(await user2.getAddress())
+				expect(bindState.status).to.be.eq(BigInt(BindStatus.PENDING_UNBIND))
+				expect(bindState.partyB).to.be.eq(await hedger.getAddress())
+
+				const updatedPrice = decimal(6n, 17)
+				const sig = await getDummyUnifiedSettlementSig(
+					await hedger.getAddress(),
+					0n,
+					[0n],
+					[await user2.getAddress()],
+					[0n],
+					[{ quoteId: longHedger1User2, currentPrice: decimal(5n, 17), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct],
+				)
+				sig.timestamp = 0n
+				await context.controlFacet.connect(context.signers.admin).setMuonConfig(0, 0)
+
+				await hedger.settleUpnlUnified([updatedPrice], sig)
+				expect((await context.viewFacetQuote.getQuote(longHedger1User2)).openedPrice).to.be.eq(updatedPrice)
+			})
+
+			it("Should require verification again once the unbind completes", async function () {
+				await bindUser2ToHedger()
+				await context.bindingFacet.connect(context.signers.user2).requestToUnbindFromPartyB()
+				// The bound partyB may complete the unbind without waiting out the cooldown.
+				await context.bindingFacet.connect(context.signers.hedger).completeUnbindRequest(await user2.getAddress())
+
+				const bindState = await context.viewFacet.getBindState(await user2.getAddress())
+				expect(bindState.status).to.be.eq(BigInt(BindStatus.NOT_BOUND))
+				expect(bindState.partyB).to.be.eq(ZeroAddress)
+
+				const sig = await getDummyUnifiedSettlementSig(
+					await hedger.getAddress(),
+					0n,
+					[0n],
+					[await user2.getAddress()],
+					[0n],
+					[{ quoteId: longHedger1User2, currentPrice: decimal(5n, 17), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct],
+				)
+				sig.timestamp = 0n
+				await context.controlFacet.connect(context.signers.admin).setMuonConfig(0, 0)
+
+				await expect(hedger.settleUpnlUnified([decimal(6n, 17)], sig)).to.be.revertedWith("LibMuon: Expired signature")
+			})
+		})
+
+		describe("Equity neutrality", function () {
+			// A hostile bound solver can settle at any price it likes. These tests pin the reason that
+			// is not a hole: settlement moves allocated balance and unrealized PnL by equal and
+			// opposite amounts, and the offsetting unrealized side is priced back in on deallocation.
+			//
+			// Market price is fixed at the quote's original opened price, so honest uPNL starts at zero
+			// on both sides and the post-settlement uPNL is exactly the settlement delta.
+			it("Should leave both parties' equity unchanged after a hostile settlement", async function () {
+				await bindUser2ToHedger()
+
+				const partyA = await user2.getAddress()
+				const partyB = await hedger.getAddress()
+				const quoteBefore = await context.viewFacetQuote.getQuote(longHedger1User2)
+				const marketPrice = quoteBefore.openedPrice
+				const openAmount = quoteBefore.quantity - quoteBefore.closedAmount
+				const updatedPrice = decimal(6n, 17)
+
+				// PartyA is LONG, so its unrealized PnL is (market - openedPrice) * openAmount.
+				const unrealizedA = (openedPrice: bigint) => unDecimal((marketPrice - openedPrice) * openAmount)
+
+				const allocatedABefore = (await user2.getBalanceInfo()).allocatedBalances
+				const allocatedBBefore = (await hedger.getBalanceInfo(partyA)).allocatedBalances
+				const equityABefore = allocatedABefore + unrealizedA(quoteBefore.openedPrice)
+				const equityBBefore = allocatedBBefore - unrealizedA(quoteBefore.openedPrice)
+
+				const sig = await getDummyUnifiedSettlementSig(
+					partyB,
+					0n,
+					[0n],
+					[partyA],
+					[0n],
+					[{ quoteId: longHedger1User2, currentPrice: decimal(5n, 17), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct],
+				)
+				sig.timestamp = 0n
+				await context.controlFacet.connect(context.signers.admin).setMuonConfig(0, 0)
+
+				await hedger.settleUpnlUnified([updatedPrice], sig)
+
+				const allocatedAAfter = (await user2.getBalanceInfo()).allocatedBalances
+				const allocatedBAfter = (await hedger.getBalanceInfo(partyA)).allocatedBalances
+				const equityAAfter = allocatedAAfter + unrealizedA(updatedPrice)
+				const equityBAfter = allocatedBAfter - unrealizedA(updatedPrice)
+
+				// The solver really did move allocated balance in its own favour...
+				const gain = unDecimal((quoteBefore.openedPrice - updatedPrice) * openAmount)
+				expect(gain).to.be.gt(0n)
+				expect(allocatedBAfter - allocatedBBefore).to.be.eq(gain)
+				expect(allocatedABefore - allocatedAAfter).to.be.eq(gain)
+
+				// ...and gained nothing, because unrealized PnL moved by exactly the same amount.
+				expect(equityAAfter).to.be.eq(equityABefore)
+				expect(equityBAfter).to.be.eq(equityBBefore)
+			})
+
+			// Settling at a price of the solver's choosing lets it draw down its own margin buffer
+			// once: partyBAvailableForQuote takes max(-upnl, mm) rather than cva + lf + mm, so a
+			// realized loss substitutes for the modelled one instead of stacking with it. The draw
+			// is capped at mm and does not compound across further settlements, and the solver stays
+			// able to pay partyA in full. This test pins that ceiling so a future change to the
+			// availability formula cannot widen it unnoticed.
+			it("Should cap the solver's own margin drawdown at the maintenance margin", async function () {
+				await bindUser2ToHedger()
+
+				const partyA = await user2.getAddress()
+				const partyB = await hedger.getAddress()
+				const quoteBefore = await context.viewFacetQuote.getQuote(longHedger1User2)
+				const marketPrice = quoteBefore.openedPrice
+				const openAmount = quoteBefore.quantity - quoteBefore.closedAmount
+				const updatedPrice = decimal(6n, 17)
+
+				// Drain every unit the solver could legitimately withdraw, so anything it extracts
+				// after this point is created by the settlement and nothing else.
+				const balanceBefore = await hedger.getBalanceInfo(partyA)
+				const freeCollateral = balanceBefore.allocatedBalances - balanceBefore.totalLockedPartyB
+				await context.partyBAccountFacet.connect(context.signers.hedger).deallocateForPartyB(freeCollateral, partyA, await getDummySingleUpnlSig(0n))
+
+				const drained = await hedger.getBalanceInfo(partyA)
+				expect(drained.allocatedBalances).to.be.eq(drained.totalLockedPartyB)
+
+				const sig = await getDummyUnifiedSettlementSig(
+					partyB,
+					0n,
+					[0n],
+					[partyA],
+					[0n],
+					[{ quoteId: longHedger1User2, currentPrice: decimal(5n, 17), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct],
+				)
+				sig.timestamp = 0n
+				await context.controlFacet.connect(context.signers.admin).setMuonConfig(0, 0)
+
+				await hedger.settleUpnlUnified([updatedPrice], sig)
+
+				// An honest oracle would now sign a uPNL worse by exactly the settled amount, because
+				// the position is marked at 0.6 while the market this test fixes is still at 1.0.
+				const gain = unDecimal((quoteBefore.openedPrice - updatedPrice) * openAmount)
+				const honestUpnl = -unDecimal((marketPrice - updatedPrice) * openAmount)
+				expect(honestUpnl).to.be.eq(-gain)
+
+				// The solver had nothing withdrawable before the settlement and can now draw down
+				// min(gain, mm) of its own buffer, even under that honest uPNL.
+				const extractable = gain < drained.lockedMmPartyB ? gain : drained.lockedMmPartyB
+				expect(extractable).to.be.gt(0n)
+				const walletBefore = await hedger.getBalance()
+				await context.partyBAccountFacet
+					.connect(context.signers.hedger)
+					.deallocateForPartyB(extractable, partyA, await getDummySingleUpnlSig(honestUpnl))
+				expect((await hedger.getBalance()) - walletBefore).to.be.eq(extractable)
+
+				// One wei more is refused, which pins min(gain, mm) as the exact ceiling.
+				await expect(
+					context.partyBAccountFacet.connect(context.signers.hedger).deallocateForPartyB(1n, partyA, await getDummySingleUpnlSig(honestUpnl)),
+				).to.be.revertedWith("AccountFacet: Will be liquidatable")
+
+				// The solver lands exactly on the liquidation boundary rather than over it: it has
+				// spent its buffer, not its counterparty's claim.
+				const after = await hedger.getBalanceInfo(partyA)
+				const availableForLiquidation = after.allocatedBalances - (after.lockedCva + after.lockedLf) + honestUpnl
+				expect(availableForLiquidation).to.be.eq(0n)
+			})
+		})
+
+		describe("Cross partyB mode", function () {
+			beforeEach(async function () {
+				await migratePartyBToCross(context, hedger, [longHedger1, shortHedger1, shortClosePending, longHedger1User2])
+			})
+
+			it("Should skip Muon and solvency checks for a bound cross-mode solver", async function () {
+				await bindUser2ToHedger()
+
+				const partyA = await user2.getAddress()
+				const partyB = await hedger.getAddress()
+				const quoteBefore = await context.viewFacetQuote.getQuote(longHedger1User2)
+				const updatedPrice = decimal(6n, 17)
+				const beforeNonceA = await context.viewFacet.nonceOfPartyA(partyA)
+				const crossBefore = await hedger.getBalanceInfoCrossPartyB()
+
+				// Expired signature and an insolvent cross-bucket uPNL: both are ignored on the bound path.
+				const sig = await getDummyUnifiedSettlementSig(
+					partyB,
+					-decimal(100000n),
+					[],
+					[partyA],
+					[-decimal(100000n)],
+					[{ quoteId: longHedger1User2, currentPrice: decimal(5n, 17), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct],
+				)
+				sig.timestamp = 0n
+				await context.controlFacet.connect(context.signers.admin).setMuonConfig(0, 0)
+
+				await hedger.settleUpnlUnified([updatedPrice], sig)
+
+				const expectedGain = unDecimal((quoteBefore.openedPrice - updatedPrice) * quoteBefore.quantity)
+				const crossAfter = await hedger.getBalanceInfoCrossPartyB()
+				// Cross mode credits the shared address(0) bucket, not the per-partyA one.
+				expect(crossAfter.allocatedBalances - crossBefore.allocatedBalances).to.be.eq(expectedGain)
+				expect((await context.viewFacetQuote.getQuote(longHedger1User2)).openedPrice).to.be.eq(updatedPrice)
+				expect(await context.viewFacet.nonceOfPartyA(partyA)).to.be.eq(beforeNonceA + 1n)
+			})
+
+			it("Should still verify a cross-mode solver settling an unbound partyA", async function () {
+				await bindUser2ToHedger()
+
+				// user is not bound; only user2 is.
+				const sig = await getDummyUnifiedSettlementSig(
+					await hedger.getAddress(),
+					0n,
+					[],
+					[await user.getAddress()],
+					[0n],
+					[{ quoteId: shortHedger1, currentPrice: 0n, partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct],
+				)
+				sig.timestamp = 0n
+				await context.controlFacet.connect(context.signers.admin).setMuonConfig(0, 0)
+
+				await expect(hedger.settleUpnlUnified([decimal(5n, 17)], sig)).to.be.revertedWith("LibMuon: Expired signature")
+			})
 		})
 	})
 

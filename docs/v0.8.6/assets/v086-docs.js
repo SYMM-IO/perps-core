@@ -233,6 +233,7 @@
 		{ href: "express-bot-operations-checklist.html", category: "Express Withdrawal", title: "Express Provider Bot Operations Checklist" },
 		{ href: "market-open-fee-execution-price.html", category: "Fees", title: "Market Open Fee on Execution Price" },
 		{ href: "partyb-funding-nonces.html", category: "PartyB", title: "Funding Update Nonces" },
+		{ href: "bound-mode-unified-settlement.html", category: "Settlement", title: "Bound-Mode Unified Settlement" },
 		{ href: "instant-layer-authorization-scope.html", category: "InstantLayer", title: "InstantLayer Authorization Scope" },
 		{ href: "diamond-owner-getter.html", category: "Views", title: "Diamond Owner Getter" },
 		{ href: "express-deposit-removal.html", category: "AccountLayer", title: "Express Deposit Removal" },
