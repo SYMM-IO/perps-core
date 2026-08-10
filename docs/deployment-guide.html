@@ -3,233 +3,13 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<title>Deploying SYMMIO — Operator Guide</title>
+		<title>SYMMIO Operator Guide</title>
 		<link rel="icon" type="image/svg+xml" href="v0.8.6/assets/symmio-mark.svg" />
 		<link rel="stylesheet" href="v0.8.6/assets/v086-docs.css" />
 		<script src="v0.8.6/assets/v086-docs.js" defer></script>
-		<style>
-			/* Page-scoped additions. Everything inherits the house tokens; nothing overrides them.
-			   Namespaced .dep-* so the shared cascade in v086-docs.css stays untouched. */
-			.dep-lede {
-				font-size: 1.05rem;
-				line-height: 1.7;
-				color: var(--ink-soft);
-				max-width: 62ch;
-			}
-
-			/* Command rail — a reference, not a sequence, so it is deliberately unnumbered. */
-			.dep-rail {
-				display: grid;
-				grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-				gap: 10px;
-				margin: 26px 0 30px;
-			}
-			.dep-cmd {
-				display: flex;
-				flex-direction: column;
-				gap: 6px;
-				padding: 14px 16px;
-				border: 1px solid var(--line);
-				border-radius: var(--radius);
-				background: var(--bg-raised);
-			}
-			.dep-cmd code {
-				font-family: var(--mono);
-				font-size: 0.86rem;
-				font-weight: 600;
-				color: var(--accent-strong);
-				background: none;
-				padding: 0;
-			}
-			.dep-cmd span {
-				font-size: 0.83rem;
-				line-height: 1.5;
-				color: var(--muted);
-			}
-			.dep-cmd b {
-				font-size: 0.68rem;
-				font-weight: 600;
-				letter-spacing: 0.08em;
-				text-transform: uppercase;
-				color: var(--faint);
-			}
-			.dep-cmd[data-writes="yes"] {
-				border-left: 3px solid var(--accent);
-			}
-			.dep-cmd[data-writes="no"] {
-				border-left: 3px solid var(--green);
-			}
-
-			/* Step spine — numbered because deployment genuinely is ordered. */
-			.dep-steps {
-				list-style: none;
-				margin: 24px 0 0;
-				padding: 0;
-				display: flex;
-				flex-direction: column;
-				gap: 28px;
-			}
-			.dep-steps > li {
-				position: relative;
-				padding-left: 46px;
-			}
-			.dep-steps > li::before {
-				content: attr(data-step);
-				position: absolute;
-				left: 0;
-				top: 0;
-				width: 30px;
-				height: 30px;
-				display: grid;
-				place-items: center;
-				border-radius: 50%;
-				background: var(--accent);
-				color: #fff;
-				font-family: var(--mono);
-				font-size: 0.8rem;
-				font-weight: 600;
-				font-variant-numeric: tabular-nums;
-			}
-			.dep-steps > li::after {
-				content: "";
-				position: absolute;
-				left: 15px;
-				top: 36px;
-				bottom: -28px;
-				width: 1px;
-				background: var(--line);
-			}
-			.dep-steps > li:last-child::after {
-				display: none;
-			}
-			.dep-steps h3 {
-				margin: 2px 0 8px;
-				font-size: 1.05rem;
-			}
-
-			/* Gotchas: things that silently cost hours. Severity is encoded in form, not just words. */
-			.dep-gotchas {
-				display: grid;
-				gap: 12px;
-				margin: 22px 0;
-			}
-			.dep-gotcha {
-				display: grid;
-				grid-template-columns: auto 1fr;
-				gap: 14px;
-				align-items: start;
-				padding: 15px 17px;
-				border: 1px solid var(--line);
-				border-radius: var(--radius);
-				background: var(--bg-raised);
-			}
-			.dep-gotcha kbd {
-				font-family: var(--mono);
-				font-size: 0.64rem;
-				font-weight: 700;
-				letter-spacing: 0.07em;
-				text-transform: uppercase;
-				padding: 4px 8px;
-				border-radius: 999px;
-				border: 0;
-				white-space: nowrap;
-				background: var(--surface-soft);
-				color: var(--muted);
-			}
-			.dep-gotcha[data-level="money"] kbd {
-				background: color-mix(in srgb, var(--rose) 15%, transparent);
-				color: var(--rose);
-			}
-			.dep-gotcha[data-level="blocks"] kbd {
-				background: color-mix(in srgb, var(--amber) 18%, transparent);
-				color: var(--amber);
-			}
-			.dep-gotcha[data-level="confuses"] kbd {
-				background: color-mix(in srgb, var(--blue) 15%, transparent);
-				color: var(--blue);
-			}
-			.dep-gotcha p {
-				margin: 0;
-				font-size: 0.9rem;
-				line-height: 1.6;
-			}
-			.dep-gotcha p + p {
-				margin-top: 6px;
-				color: var(--muted);
-			}
-
-			/* Exit codes: the single most misread signal in the whole workflow. */
-			.dep-exits {
-				display: grid;
-				grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-				gap: 12px;
-				margin: 20px 0;
-			}
-			.dep-exit {
-				padding: 16px;
-				border-radius: var(--radius);
-				border: 1px solid var(--line);
-				background: var(--bg-raised);
-			}
-			.dep-exit strong {
-				display: block;
-				font-family: var(--mono);
-				font-size: 1.5rem;
-				font-variant-numeric: tabular-nums;
-				line-height: 1;
-				margin-bottom: 8px;
-			}
-			.dep-exit[data-code="0"] strong {
-				color: var(--green);
-			}
-			.dep-exit[data-code="2"] strong {
-				color: var(--amber);
-			}
-			.dep-exit[data-code="n"] strong {
-				color: var(--rose);
-			}
-			.dep-exit span {
-				font-size: 0.86rem;
-				line-height: 1.55;
-				color: var(--muted);
-			}
-			/* Direct child only: an inline <em> inside the description must stay inline. */
-			.dep-exit > em {
-				display: block;
-				margin-top: 8px;
-				font-style: normal;
-				font-size: 0.8rem;
-				color: var(--faint);
-			}
-
-			.dep-field-note {
-				font-family: var(--mono);
-				font-size: 0.78rem;
-				color: var(--accent-strong);
-			}
-
-			@media (max-width: 640px) {
-				.dep-steps > li {
-					padding-left: 38px;
-				}
-				.dep-steps > li::before {
-					width: 26px;
-					height: 26px;
-					font-size: 0.72rem;
-				}
-				.dep-steps > li::after {
-					left: 13px;
-				}
-				.dep-gotcha {
-					grid-template-columns: 1fr;
-					gap: 8px;
-				}
-			}
-		</style>
 	</head>
 	<body class="doc-page">
 		<a class="skip-link" href="#full-document">Skip to document</a>
-
 		<header class="doc-topbar">
 			<a class="brand" href="v0.8.6/index.html"
 				><span class="brand-mark">8.6</span><span><strong>Symmio Docs</strong><small>Operator guide</small></span></a
@@ -244,623 +24,164 @@
 				<a class="button primary back-home" href="v0.8.6/index.html">Back to index</a>
 				<div class="side-card">
 					<p class="side-label">Related</p>
-					<a class="side-link" href="deployment.md"><small>Runbook</small><span>deployment.md — text runbook</span></a>
-					<a class="side-link" href="../cli/README.md"><small>Reference</small><span>CLI command reference</span></a>
-					<a class="side-link" href="../deployment/README.md"><small>Schema</small><span>Recipe format</span></a>
-					<a class="side-link" href="v0.8.6/pages/express-withdrawal-system-design.html"
-						><small>Express Withdrawal</small><span>Express Withdrawal System Design</span></a
-					>
-					<a class="side-link" href="v0.8.6/pages/express-bot-operations-checklist.html"
-						><small>Express Withdrawal</small><span>Express Provider Bot Operations</span></a
-					>
+					<a class="side-link" href="deployment.md"><small>Runbook</small><span>Deployment safety contract</span></a>
+					<a class="side-link" href="../cli/README.md"><small>Reference</small><span>Task and registration standard</span></a>
+					<a class="side-link" href="../deployment/README.md"><small>Recipes</small><span>Portable intent format</span></a>
 				</div>
 			</aside>
 
 			<aside class="toc-panel side-toc" aria-label="Page navigation">
 				<div class="toc-card">
 					<p class="toc-title">On this page</p>
-					<a class="toc-link level-2" href="#interactive">Start without memorising</a>
-					<a class="toc-link level-2" href="#model">How the pieces fit</a>
-					<a class="toc-link level-2" href="#commands">The six commands</a>
-					<a class="toc-link level-2" href="#setup">One-time setup</a>
-					<a class="toc-link level-2" href="#recipe">Filling the recipe</a>
-					<a class="toc-link level-2" href="#run">Running a deployment</a>
-					<a class="toc-link level-2" href="#exits">Reading the exit code</a>
-					<a class="toc-link level-2" href="#handover">Completing the handover</a>
-					<a class="toc-link level-2" href="#broken">When something breaks</a>
-					<a class="toc-link level-2" href="#component">Deploying one component</a>
-					<a class="toc-link level-2" href="#gotchas">Gotchas that cost hours</a>
-					<a class="toc-link level-2" href="#paths">Where everything lives</a>
+					<a class="toc-link level-2" href="#start">Start</a>
+					<a class="toc-link level-2" href="#forms">Guided configuration</a>
+					<a class="toc-link level-2" href="#task">One durable task</a>
+					<a class="toc-link level-2" href="#progress">Progress and recovery</a>
+					<a class="toc-link level-2" href="#handover">Handover</a>
+					<a class="toc-link level-2" href="#evidence">Evidence</a>
 				</div>
 			</aside>
 
 			<main class="reader-main">
 				<header class="reader-hero">
 					<nav class="crumbs" aria-label="Breadcrumb">
-						<a href="v0.8.6/index.html">Docs</a><span>/</span><strong>Deployment guide</strong>
+						<a href="v0.8.6/index.html">Docs</a><span>/</span><strong>Operator guide</strong>
 					</nav>
 					<div class="reader-title-row">
 						<div>
-							<h1>Deploying SYMMIO</h1>
-							<p class="hero-copy dep-lede">
-								How to work with the <code>symmio</code> operator CLI: one reviewed JSON file describes the whole deployment, one
-								command executes it, and every step is resumable. This guide is the practical companion to
-								<a href="deployment.md">deployment.md</a> — read it once before your first deployment, then keep it open during.
+							<h1>Operate SYMMIO from one menu</h1>
+							<p class="hero-copy">
+								Deploy, patch, audit, resume, and safely abandon work without memorising commands or editing deployment JSON by hand.
 							</p>
 						</div>
 					</div>
 				</header>
 
 				<article class="doc-article" id="full-document">
-					<h2 id="interactive">Start without memorising anything</h2>
+					<h2 id="start">Start</h2>
+					<p>Install the locked dependency tree once, then launch the checkout-local application in a real terminal.</p>
+					<pre><code class="language-bash">npm ci
+./symmio</code></pre>
 					<p>
-						Run the CLI with no arguments. It reads the recipes, reports and checkpoints already in your checkout, tells you where the
-						deployment stands, and offers the next useful step. Enter takes the recommendation; <code>q</code> quits.
-					</p>
-
-					<pre><code class="language-bash">./symmio</code></pre>
-
-					<p>
-						It dispatches to the same commands documented below rather than reimplementing them, so every preflight gate, confirmation
-						prompt and exit code is identical — and it prints the equivalent command before running it, so you pick up the vocabulary as
-						you go. The rest of this page explains what those commands do and why, which is worth reading once before a live run.
-					</p>
-
-					<aside class="callout callout-note">
-						<strong>It never deploys on its own.</strong> Interactive mode only offers choices; a live deployment still asks for the same
-						risk-proportional confirmation. Without a terminal — CI, a pipe — it prints the getting-started commands instead of prompting,
-						so nothing can be silently selected on your behalf.
-					</aside>
-
-					<h2 id="model">How the pieces fit</h2>
-					<p>
-						Four artifacts carry a deployment. Understanding what each one owns explains almost every behaviour you will meet, including
-						the ones that look surprising at first.
-					</p>
-
-					<div class="table-wrap">
-						<table class="enum-table">
-							<thead>
-								<tr>
-									<th>Artifact</th>
-									<th>Owns</th>
-									<th>You edit it?</th>
-								</tr>
-							</thead>
-							<tbody>
-								<tr>
-									<td><strong>Recipe</strong><br /><code>deployments/&lt;name&gt;.json</code></td>
-									<td>
-										All public intent: network, governance addresses, collateral, Muon, protocol parameters, and a mode for every
-										component.
-									</td>
-									<td>Yes — this is the only file you author.</td>
-								</tr>
-								<tr>
-									<td><strong>Digest</strong></td>
-									<td>
-										A hash of the normalized recipe, pinned across the CLI → Hardhat boundary so the plan you reviewed is the plan
-										that runs.
-									</td>
-									<td>No — computed.</td>
-								</tr>
-								<tr>
-									<td><strong>Checkpoint</strong><br /><code>tasks/data/checkpoints/</code></td>
-									<td>
-										In-progress state: every contract address, every submitted transaction hash and nonce. This is what makes a
-										resume safe.
-									</td>
-									<td>Never hand-edit.</td>
-								</tr>
-								<tr>
-									<td><strong>Report</strong><br /><code>tasks/data/&lt;chainId&gt;/</code></td>
-									<td>
-										The outcome: addresses, verification status, health checks, and the authoritative
-										<code>manualActions</code> list.
-									</td>
-									<td>No — it is your evidence.</td>
-								</tr>
-							</tbody>
-						</table>
-					</div>
-
-					<aside class="callout callout-important">
-						<strong>Secrets never enter the recipe.</strong> The JSON holds only references like
-						<code>hardhat-keystore://NEW_DEPLOYER</code>. Private keys, RPC URLs and explorer keys live in the encrypted Hardhat keystore,
-						and resolved values are never copied into the plan, digest, checkpoint or report. In recipe mode neither the CLI nor Hardhat
-						reads <code>.env</code> at all.
-					</aside>
-
-					<h3 id="what-gets-deployed">What a full run deploys</h3>
-					<p>
-						<code>core</code> is a bundle, not a single contract. Setting it to <code>deploy</code> produces the Muon verifier, the Core
-						Diamond and its 32 facets, the AccountLayer diamond, and InstantLayer — then wires protocol parameters and templates. The
-						three add-ons are independent.
-					</p>
-
-					<pre><code class="language-mermaid">flowchart TD
-    R[Recipe JSON] --&gt; D{doctor}
-    D --&gt;|blocking failure| R
-    D --&gt;|ready| P[deploy --plan]
-    P --&gt; X[deploy]
-    X --&gt; C[Core bundle&lt;br/&gt;Diamond + 32 facets&lt;br/&gt;AccountLayer + InstantLayer]
-    C --&gt; B[PartyB]
-    C --&gt; S[SymbolManager]
-    C --&gt; E[ExpressProvider]
-    B --&gt; V[Explorer verification]
-    S --&gt; V
-    E --&gt; V
-    V --&gt; H[pending_handover&lt;br/&gt;exit 2]
-    H --&gt;|admin executes manualActions| X
-    X --&gt; K[complete&lt;br/&gt;exit 0]</code></pre>
-
-					<h2 id="commands">The six commands</h2>
-					<p>
-						Everything runs through <code>./symmio</code>, the checkout-local entrypoint. It needs no install step and no global binary.
-						Commands with a green edge only read; commands with a coral edge can send transactions.
-					</p>
-
-					<div class="dep-rail">
-						<div class="dep-cmd" data-writes="no">
-							<b>Read only</b>
-							<code>recipe init</code>
-							<span>Creates a recipe from the reviewed example. Refuses to overwrite unless <code>--force</code>.</span>
-						</div>
-						<div class="dep-cmd" data-writes="no">
-							<b>Read only</b>
-							<code>doctor</code>
-							<span>Preflight. Names the exact JSON field for anything wrong. Costs nothing — run it often.</span>
-						</div>
-						<div class="dep-cmd" data-writes="yes">
-							<b>Sends transactions</b>
-							<code>deploy</code>
-							<span
-								>Runs doctor, prints the plan, asks for confirmation, deploys, verifies. <code>--plan</code> stops before any
-								transaction.</span
-							>
-						</div>
-						<div class="dep-cmd" data-writes="no">
-							<b>Read only</b>
-							<code>status</code>
-							<span>Re-proves the live on-chain state against the report. Never reports an unreadable probe as healthy.</span>
-						</div>
-						<div class="dep-cmd" data-writes="no">
-							<b>Explorer only</b>
-							<code>verify</code>
-							<span>Retries explorer verification. <code>--retry-failed</code> replays only the records that failed.</span>
-						</div>
-						<div class="dep-cmd" data-writes="no">
-							<b>Read only</b>
-							<code>config</code>
-							<span>Show, diff or export protocol parameters from an existing deployment — useful when mirroring a chain.</span>
-						</div>
-					</div>
-
-					<aside class="callout callout-note">
-						<strong>Two entrypoints, two jobs.</strong> <code>./symmio</code> is the operator CLI. <code>npm</code> is for package-manager
-						work (<code>ci</code>, <code>link</code>, <code>run</code>). A <code>preinstall</code> hook rejects Yarn and pnpm, which
-						ignore <code>package-lock.json</code>.
-					</aside>
-
-					<h2 id="setup">One-time setup</h2>
-					<p>Use the checked-in toolchain. Do not regenerate the lockfile immediately before a deployment.</p>
-
-					<pre><code class="language-bash">node --version                                    # v22.15.0
-npm ci</code></pre>
-
-					<p>Then store the three secrets once. They are encrypted at rest and prompted for when a deployment needs them:</p>
-
-					<pre><code class="language-bash">./node_modules/.bin/hardhat keystore set NEW_DEPLOYER
-./node_modules/.bin/hardhat keystore set RPC_ARBITRUM
-./node_modules/.bin/hardhat keystore set ETHERSCAN_APIKEY</code></pre>
-
-					<p>
-						The explorer key is an Etherscan <strong>V2</strong> key — one key covers Arbiscan and the other supported explorers. A
-						<code>preinstall</code> hook enforces the package-manager pin even if someone bypasses the wrapper and runs
-						<code>npm install</code>, because a dependency tree resolved by the wrong tool is not the tree that was reviewed.
-					</p>
-
-					<h2 id="recipe">Filling the recipe</h2>
-
-					<pre><code class="language-bash">./symmio recipe init --network arbitrum</code></pre>
-
-					<p>
-						This writes <code>deployments/arbitrum.json</code> with every operator decision left as a
-						<code>REPLACE_WITH_*</code> placeholder, so the file cannot pass <code>doctor</code> before it has been reviewed. Fifteen
-						values need a decision.
-					</p>
-
-					<div class="table-wrap">
-						<table class="enum-table">
-							<thead>
-								<tr>
-									<th>Field</th>
-									<th>What it is</th>
-								</tr>
-							</thead>
-							<tbody>
-								<tr>
-									<td><code>governance.admin</code></td>
-									<td>Production multisig. Must differ from the deployer on a known mainnet — this is enforced, not advisory.</td>
-								</tr>
-								<tr>
-									<td><code>governance.feeReceiver</code></td>
-									<td>Protocol fee recipient.</td>
-								</tr>
-								<tr>
-									<td><code>governance.liquidationInsuranceVault</code></td>
-									<td>Economically active: excess normal-liquidation profit is credited here.</td>
-								</tr>
-								<tr>
-									<td><code>governance.softLiquidationPenaltyCollector</code></td>
-									<td>Economically active: non-zero soft liquidations revert without a collector.</td>
-								</tr>
-								<tr>
-									<td><code>core.collateral.address</code></td>
-									<td>The reviewed token. On Arbitrum, USDC is <code>0xaf88d065e77c8cC2239327C5EDb3A432268e5831</code>.</td>
-								</tr>
-								<tr>
-									<td><code>core.muon.appId</code></td>
-									<td>Muon application id.</td>
-								</tr>
-								<tr>
-									<td><code>core.muon.publicKey.x</code></td>
-									<td>
-										TSS public key X. <span class="dep-field-note">Base-10 decimal, not hex</span> — a <code>0x…</code> value is
-										rejected. Check <code>parity</code> too; it is preset to <code>0</code>.
-									</td>
-								</tr>
-								<tr>
-									<td><code>core.muon.gatewaySigners</code></td>
-									<td>One or more gateway signer addresses. Duplicates are rejected.</td>
-								</tr>
-								<tr>
-									<td><code>partyB.signer</code></td>
-									<td>PartyB operational signer for ERC-1271 verification.</td>
-								</tr>
-								<tr>
-									<td><code>symbolManager.operator</code></td>
-									<td>Receives <code>SYMBOL_ADDER_ROLE</code> and <code>SYMBOL_REMOVER_ROLE</code>.</td>
-								</tr>
-								<tr>
-									<td><code>expressProvider.creditLine.muonAppId</code></td>
-									<td>
-										Muon app id for eligible-base attestation. The verifier defaults to <code>"fromCore"</code>, resolved at
-										execution time.
-									</td>
-								</tr>
-								<tr>
-									<td><code>expressProvider.roles</code></td>
-									<td>
-										The bot address appears three times — <code>OPERATOR_ROLE</code>, <code>LOCKER_ROLE</code>,
-										<code>UNLOCK_ROLE</code> — plus a separate <code>SIGNER_ROLE</code>. At least one operator is mandatory.
-									</td>
-								</tr>
-								<tr>
-									<td><code>expressProvider.affiliates[].address</code></td>
-									<td>The affiliate whose pool backs credit advances.</td>
-								</tr>
-								<tr>
-									<td><code>expressProvider.affiliates[].maxDebt</code></td>
-									<td>
-										Protocol-side cap in collateral decimals. <span class="dep-field-note">0 means no limit</span>, not "cannot
-										borrow".
-									</td>
-								</tr>
-							</tbody>
-						</table>
-					</div>
-
-					<aside class="callout callout-risk">
-						<strong>The credit line moves real collateral out of Core.</strong> <code>maxDebt</code> and <code>maxDebtBps</code> are the
-						only protocol-side ceilings on how much. Setting both to <code>0</code> means unlimited; <code>doctor</code> warns when it
-						sees that. On a post-payout rollback the loss is booked to the affiliate ledger as bad debt and Core is not repaid on-chain —
-						recovery is a governance action. Deploy an ExpressProvider only if that settlement model is what you intend, or set
-						<code>expressProvider.mode</code> to <code>"skip"</code> and the other five components still deploy.
-					</aside>
-
-					<p>
-						Two pre-filled values deserve a deliberate look rather than a nod:
-						<code>governance.maxLiquidationProfitPerPosition</code> (<code>100e18</code>) and the whole <code>core.protocol</code> block,
-						which carries the protocol parameters and the four ordered InstantLayer templates.
-					</p>
-
-					<h2 id="run">Running a deployment</h2>
-
-					<ol class="dep-steps">
-						<li data-step="1">
-							<h3>Preflight</h3>
-							<p>Read-only, exits non-zero on anything blocking, and every remediation names the exact JSON field to edit.</p>
-							<pre><code class="language-bash">./symmio doctor --config deployments/arbitrum.json</code></pre>
-							<p>
-								Keystore references are reported as deferred warnings — the dependency-free doctor cannot unlock them, so the Hardhat
-								task rechecks the signer, chain, authority and explorer gates before it creates a checkpoint or sends anything.
-							</p>
-						</li>
-						<li data-step="2">
-							<h3>Rehearse on a fork</h3>
-							<p>
-								<code>fork-arbitrum</code> is an in-process EVM backed by the real Arbitrum RPC. It reads live chain and token state,
-								but every write stays local and disappears when the process exits. The upstream chain id is still 42161, so the
-								mainnet safety profile is evaluated exactly as it would be live.
-							</p>
-							<pre><code class="language-bash">./symmio recipe init --network fork-arbitrum
-./symmio deploy --config deployments/fork-arbitrum.json --fresh</code></pre>
-							<p>
-								Compare the fork recipe against the live one and require every public value except network mode and verification
-								policy to match. A fork rehearsal does not prove explorer verification, live RPC reliability, real gas pricing, or
-								multisig execution.
-							</p>
-						</li>
-						<li data-step="3">
-							<h3>Render the plan</h3>
-							<p>
-								Stops after doctor and the dependency plan. Nothing is broadcast. Read the digest and the component table before
-								continuing.
-							</p>
-							<pre><code class="language-bash">./symmio deploy --config deployments/arbitrum.json --plan</code></pre>
-						</li>
-						<li data-step="4">
-							<h3>Deploy</h3>
-							<p>
-								Risk-proportional confirmation is required interactively. For controlled automation, both flags are mandatory on a
-								mainnet.
-							</p>
-							<pre><code class="language-bash">./symmio deploy --config deployments/arbitrum.json
-
-# non-interactive
-./symmio deploy --config deployments/arbitrum.json --yes --confirm-network arbitrum</code></pre>
-							<p>
-								Explorer verification runs <em>inside</em> the deployment as a gate, not as a follow-up step. It is also sticky: once
-								any run requests it, a later <code>--no-verify</code> cannot downgrade that checkpoint.
-							</p>
-						</li>
-					</ol>
-
-					<h2 id="exits">Reading the exit code</h2>
-					<p>This is the signal operators misread most often, so it is worth memorising.</p>
-
-					<div class="dep-exits">
-						<div class="dep-exit" data-code="0">
-							<strong>0</strong>
-							<span>Lifecycle <code>complete</code>. Deployed, verified, handed over, health gates passed.</span>
-							<em>Done.</em>
-						</div>
-						<div class="dep-exit" data-code="2">
-							<strong>2</strong>
-							<span>Contracts are deployed <em>and verified</em>, but reported admin/Safe actions are still outstanding.</span>
-							<em>Not a failure. Execute the actions, then rerun.</em>
-						</div>
-						<div class="dep-exit" data-code="n">
-							<strong>≠0,2</strong>
-							<span>Preflight refused, or the run failed. Nothing is assumed about on-chain state.</span>
-							<em>Read the error; it names the field or the hash.</em>
-						</div>
-					</div>
-
-					<p>
-						An ephemeral fork rehearsal may exit <code>0</code> while still printing <code>pending_handover</code>, because its simulated
-						state disappears with the process.
-					</p>
-
-					<h2 id="handover">Completing the handover</h2>
-					<p>
-						The authoritative list is <code>manualActions</code> in the report — the CLI prints it, with ready-to-paste <code>to</code>,
-						<code>value</code> and <code>data</code> for each. Do not substitute a generic checklist for what your run produced. Typical
-						actions:
+						The operator interface is intentionally menu-only. Arguments and non-TTY execution are refused. Low-level Hardhat tasks remain
+						internal adapters owned by registered tasks.
 					</p>
 					<ol>
-						<li>The admin calls <code>acceptOwnership()</code> on the Core Diamond.</li>
-						<li>The admin calls <code>acceptOwnership()</code> on the AccountLayer diamond.</li>
-						<li>The admin calls <code>acceptOwnership()</code> on the ExpressProvider diamond, when one was deployed.</li>
-						<li>The admin calls <code>registerExpressProvider(&lt;address&gt;)</code> on Core.</li>
-						<li>If the SymbolManager admin differs from the deployer, the admin grants the exact pending operator roles shown.</li>
+						<li>Deploy a contract</li>
+						<li>Patch configurations for deployed contracts</li>
+						<li>Run the checklist on a new deployment</li>
+						<li>Other maintenance scripts</li>
+						<li>Continue active task</li>
+						<li>Cancel active task</li>
+						<li>Exit</li>
 					</ol>
 
+					<h2 id="forms">Guided configuration</h2>
+					<p>
+						Choose a target and network. The form loads reviewed defaults, asks only required decisions and overrides, validates each
+						typed value immediately, then shows public intent grouped by network, governance, Core, Muon, protocol, components, and
+						execution.
+					</p>
 					<aside class="callout callout-important">
-						<strong>ExpressProvider always leaves actions pending, by design.</strong> The deployer is never granted
-						<code>PROVIDER_ADMIN_ROLE</code> on Core, so registration is deferred to the admin multisig — which does hold it. Until
-						<code>registerExpressProvider</code> lands, the provider cannot call <code>advanceWithdraw</code> and is inert.
+						<strong>Secrets never enter the form state.</strong> Choose one task-bound signer: Hardhat keystore, a masked memory-only
+						private key, Ledger, Safe JSON/direct proposal when the operation is call-only, or an unlocked localhost account. The official
+						keystore flow is recommended first; passwords, private keys, RPC URLs, API keys, and explorer keys are not copied into task
+						state or logs.
 					</aside>
-
 					<p>
-						After every reported action confirms, rerun the identical deploy command. It rechecks live state, runs the strict health
-						gates, and flips the lifecycle to <code>complete</code>.
+						After final approval the application writes a portable recipe atomically. Operators review that artifact; they do not need to
+						manually maintain its JSON. Local and fork workflows may deliberately use environment references, but live workflows may not.
 					</p>
-
-					<pre><code class="language-bash">./symmio status --config deployments/arbitrum.json</code></pre>
-
-					<h2 id="broken">When something breaks</h2>
-					<p>
-						Rerun the same command <strong>without</strong> <code>--fresh</code>. That is the whole recovery story for the common case.
-						The checkpoint is bound to the deployment id, chain scope, configuration and CREATE2 intent, so a mismatched resume fails
-						rather than silently mixing two deployments. Contract creations are additionally bound to sender/nonce or CREATE2 salt,
-						init-code hash and runtime bytecode — a timed-out creation that actually landed is recovered into the checkpoint instead of
-						being deployed twice.
-					</p>
-
 					<aside class="callout callout-risk">
-						<strong>A timeout is not permission to start fresh.</strong> Check the transaction hash on the explorer, then resume.
-						<code>--fresh</code> is refused outright while any submitted transaction still has an unknown outcome, and when it does run it
-						archives the prior attempt under <code>checkpoints/abandoned/</code> — it never labels an abandoned run as completed.
+						<strong>Express credit limits:</strong> <code>maxDebt: "0"</code> and <code>maxDebtBps: 0</code> mean unlimited on those axes.
+						The review calls this out before an ExpressProvider deployment or patch can continue.
 					</aside>
 
-					<p>If you replaced a stuck transaction with a same-intent speed-up, bind the hashes explicitly:</p>
-
-					<pre><code class="language-bash">DEPLOY_TX_REPLACEMENTS=0x&lt;original&gt;=0x&lt;replacement&gt; \
-  ./symmio deploy --config deployments/arbitrum.json</code></pre>
-
+					<h2 id="task">One durable task</h2>
+					<p>A live deployment is one connected workflow. It automatically performs:</p>
+					<ol>
+						<li>recipe, RPC, signer, authority, and dependency preflight;</li>
+						<li>production compilation;</li>
+						<li>a matching fork rehearsal and receipt review;</li>
+						<li>typed live-network confirmation;</li>
+						<li>write-ahead transaction journaling and receipt reconciliation;</li>
+						<li>explorer verification and current health checks; and</li>
+						<li>ownership, role, deployer-privilege, and handover proof.</li>
+					</ol>
 					<p>
-						The replacement must use the same sender, nonce, target, value and calldata. If the RPC no longer knows the original hash and
-						both latest and pending nonces prove the nonce reusable, you may acknowledge that exact dropped hash with
-						<code>CONFIRM_DROPPED_TX_HASHES=0x…</code>. Never reach for that while the transaction is still visible on any RPC or
-						explorer.
+						A completed report is historical evidence, never an active task. The active record is bound to task version, source and input
+						hashes, recipe digest, chain, signer set, and stable plan; changed intent cannot be resumed accidentally.
 					</p>
 
-					<p>For explorer failures specifically, retry only what failed, then rerun the deployment so the checkpoint can close its gate:</p>
-
-					<pre><code class="language-bash">./symmio verify --config deployments/arbitrum.json --retry-failed
-./symmio deploy --config deployments/arbitrum.json</code></pre>
-
-					<h2 id="component">Deploying one component</h2>
+					<h2 id="progress">Progress and recovery</h2>
 					<p>
-						Add-ons can be deployed on their own against an already-proven Core. Generate a minimal recipe, fill its placeholders, and
-						narrow the mutation scope explicitly. <code>--only</code> never silently rewrites recipe modes, and it never deploys Core
-						implicitly.
+						The live view shows phase, completed and total steps, current action, confirmed/pending/failed transaction counts, elapsed
+						time, and warnings. Press <code>d</code> for hashes, receipts, gas, explorer links, and recent redacted logs.
+					</p>
+					<p>
+						The first Ctrl+C requests a cooperative pause at the next safe boundary. A second Ctrl+C exits immediately after preserving
+						resumable state. Choose <strong>Continue active task</strong> to reconcile recorded broadcasts before doing new work.
+					</p>
+					<p>
+						<strong>Cancel active task</strong> means safe abandonment, never rollback. Confirmed on-chain effects remain recorded.
+						Unknown broadcast outcomes hold the task in <code>cancel_pending</code> until reconciliation can prove them.
 					</p>
 
-					<pre><code class="language-bash">./symmio recipe init --network arbitrum --only expressProvider
-./symmio doctor --config deployments/arbitrum-expressProvider.json --only expressProvider
-./symmio deploy --config deployments/arbitrum-expressProvider.json --only expressProvider --plan
-./symmio deploy --config deployments/arbitrum-expressProvider.json --only expressProvider</code></pre>
-
+					<h2 id="handover">Handover and external actions</h2>
 					<p>
-						Valid targets are <code>partyB</code>, <code>symbolManager</code> and <code>expressProvider</code>. The generated recipe sets
-						<code>core.mode</code> to <code>reuse</code> and points <code>core.fromReport</code> at the chain-scoped Core report; those
-						exact bytes are folded into the digest and rechecked at task startup, so changing the dependency report after review fails
-						closed. Component runs own a separate checkpoint and report, and cannot claim the whole protocol was deployed.
+						When a Safe or governance account must act, the task records exact target, value, calldata, and reason. It can write Safe
+						Transaction Builder JSON with decoded method names or create a proposal through the official Safe SDK using a keystore,
+						private-key, or Ledger owner, then enters
+						<code>waiting_external</code>. After those actions confirm, launch <code>./symmio</code> and choose
+						<strong>Continue active task</strong>. The task rereads chain state, skips completed deployment steps, and closes only after
+						the strict health gate passes.
 					</p>
 
-					<aside class="callout callout-note">
-						<strong>Core is a bundle.</strong> <code>--only core</code> does not exist. To deploy just the Core bundle, set
-						<code>partyB</code>, <code>symbolManager</code> and <code>expressProvider</code> to <code>"skip"</code> and run without
-						<code>--only</code>.
-					</aside>
-
-					<h2 id="gotchas">Gotchas that cost hours</h2>
-
-					<div class="dep-gotchas">
-						<div class="dep-gotcha" data-level="money">
-							<kbd>Money</kbd>
-							<div>
-								<p><code>maxDebt: "0"</code> and <code>maxDebtBps: 0</code> mean <strong>unlimited</strong>, not zero.</p>
-								<p>Read as "no cap on that axis". An uncapped credit line can advance the entire eligible base out of Core.</p>
-							</div>
-						</div>
-						<div class="dep-gotcha" data-level="blocks">
-							<kbd>Blocks run</kbd>
-							<div>
-								<p><code>core.muon.publicKey.x</code> must be a base-10 decimal string.</p>
-								<p>A hex <code>0x…</code> value is rejected with a schema error that is easy to misread as a bad key.</p>
-							</div>
-						</div>
-						<div class="dep-gotcha" data-level="blocks">
-							<kbd>Blocks run</kbd>
-							<div>
-								<p>A <code>create2.factoryAddress</code> carried over from a live recipe breaks local and fork runs.</p>
-								<p>
-									The address has no code on a simulated chain, and the deployment refuses to silently switch address strategies.
-									Keep the <code>create2</code> block out of local and fork recipes, or point it at a factory deployed on that
-									chain.
-								</p>
-							</div>
-						</div>
-						<div class="dep-gotcha" data-level="confuses">
-							<kbd>Confuses</kbd>
-							<div>
-								<p>Exit code <code>2</code> is a success, not a failure.</p>
-								<p>
-									It means deployed and verified, handover outstanding. Automation that treats any non-zero exit as a failure will
-									page you for a healthy run.
-								</p>
-							</div>
-						</div>
-						<div class="dep-gotcha" data-level="confuses">
-							<kbd>Confuses</kbd>
-							<div>
-								<p>Vanity addresses are configured in the top-level <code>create2</code> block, never in the environment.</p>
-								<p>
-									Set <code>create2.groups</code> (<code>diamonds</code>, <code>facets</code>, <code>libraries</code>,
-									<code>peripherals</code>) and optionally <code>create2.overrides</code> keyed as <code>core/PartyAFacet</code>.
-									Declaring any pattern without a reviewed <code>create2.factoryAddress</code> is a validation error rather than a
-									silent fall back to ordinary CREATE. The run prints a mining cost table and refuses to start if the total exceeds
-									<code>create2.miningBudget</code>. Etherscan verification of a CREATE2-deployed facet should be confirmed on a
-									testnet before a mainnet run, since its address no longer derives from the deployer nonce.
-								</p>
-							</div>
-						</div>
-						<div class="dep-gotcha" data-level="confuses">
-							<kbd>Confuses</kbd>
-							<div>
-								<p><code>.env</code> is not the deployment interface.</p>
-								<p>
-									In recipe mode neither the CLI nor Hardhat reads it. If a value is not in the recipe or the keystore, it is not in
-									the deployment.
-								</p>
-							</div>
-						</div>
-						<div class="dep-gotcha" data-level="confuses">
-							<kbd>Confuses</kbd>
-							<div>
-								<p>Symbols are not seeded by <code>deploy</code>.</p>
-								<p>Creating trading symbols is a separate post-deployment operating step.</p>
-							</div>
-						</div>
-					</div>
-
-					<h2 id="paths">Where everything lives</h2>
-
+					<h2 id="evidence">Evidence</h2>
 					<div class="table-wrap">
 						<table class="enum-table">
 							<thead>
 								<tr>
 									<th>Path</th>
-									<th>Contents</th>
+									<th>Purpose</th>
 								</tr>
 							</thead>
 							<tbody>
 								<tr>
 									<td><code>deployments/&lt;name&gt;.json</code></td>
-									<td>Your versioned deployment recipe. Commit it — it is reviewed intent.</td>
+									<td>Portable, reviewed public intent</td>
 								</tr>
 								<tr>
-									<td><code>tasks/data/&lt;chainId&gt;/deployment-report.json</code></td>
-									<td>Full-run report: addresses, verification, health, <code>manualActions</code>.</td>
+									<td><code>.symmio/tasks/active.json</code></td>
+									<td>Single transient active task</td>
 								</tr>
 								<tr>
-									<td><code>tasks/data/&lt;chainId&gt;-fork/</code></td>
-									<td>Isolated fork records. A rehearsal never overwrites live evidence.</td>
+									<td><code>.symmio/tasks/runs/</code></td>
+									<td>NDJSON event journal and redacted raw log</td>
 								</tr>
 								<tr>
-									<td><code>tasks/data/&lt;chainId&gt;/components/&lt;recipe&gt;/</code></td>
-									<td>Component-only reports, with prior attempts under <code>history/</code>.</td>
+									<td><code>.symmio/tasks/history/</code></td>
+									<td>Indefinite local terminal history</td>
 								</tr>
 								<tr>
-									<td><code>tasks/data/checkpoints/</code></td>
-									<td>In-progress state. <code>completed/</code> and <code>abandoned/</code> hold finished attempts.</td>
-								</tr>
-								<tr>
-									<td><code>deployment/deployment-recipe.schema.json</code></td>
-									<td>Machine-readable recipe contract. Editors that honour <code>$schema</code> will autocomplete against it.</td>
-								</tr>
-								<tr>
-									<td><code>deployment/examples/arbitrum.v1.example.json</code></td>
-									<td>The reviewed starter every <code>recipe init</code> is generated from.</td>
+									<td><code>tasks/data/&lt;chainId&gt;/</code></td>
+									<td>Canonical sanitized reports, receipts, and checklists</td>
 								</tr>
 							</tbody>
 						</table>
 					</div>
-
-					<h2 id="quick">The whole thing, in order</h2>
-					<pre><code class="language-bash">npm ci
-
-./symmio recipe init --network arbitrum
-# edit deployments/arbitrum.json — replace every REPLACE_WITH_* value
-
-./symmio doctor  --config deployments/arbitrum.json
-./symmio deploy  --config deployments/arbitrum.json --plan
-./symmio deploy  --config deployments/arbitrum.json      # exit 2 = handover pending
-
-# admin executes the printed manualActions, then:
-./symmio deploy  --config deployments/arbitrum.json      # exit 0 = complete
-./symmio status  --config deployments/arbitrum.json</code></pre>
+					<p>
+						For persistent local-node rehearsal, patch semantics, checklist coverage, and maintenance policies, use the
+						<a href="deployment.md">complete deployment runbook</a>. For adding a one-time script, use the
+						<a href="../cli/README.md">task-definition and registry standard</a>.
+					</p>
 				</article>
 			</main>
 		</div>
 
 		<footer class="site-footer">
-			<span>Symmio operator documentation.</span>
-			<span>Companion to <code>docs/deployment.md</code> and the CLI reference.</span>
+			<span>SYMMIO operator documentation.</span>
+			<span>Menu-only, durable, and evidence-first.</span>
 		</footer>
 	</body>
 </html>

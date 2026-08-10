@@ -154,7 +154,7 @@ test("partial doctor binds reused Core admin to recipe governance", () => {
 	);
 });
 
-test("localhost recipes intentionally inherit Hardhat's local-only dummy signer fallback", () => {
+test("localhost recipes use Hardhat's unlocked local signer flow", () => {
 	const localhost = { key: "localhost", chainId: 31337 };
 	assert.equal(allowsLocalDummyDeployer(localhost, { network: { mode: "local" } }), true);
 	assert.equal(allowsLocalDummyDeployer(localhost, { network: { mode: "live" } }), false);

@@ -215,7 +215,7 @@ test("execution policy uses task-compatible ranges and fork-only block pinning",
 	assert.equal(recipeEnvironment(recipe).env.FORK_BLOCK_NUMBER, "123");
 });
 
-test("secret references are metadata only and live recipes require the appropriate references", () => {
+test("secret references are metadata only and live recipes require infrastructure, not task signer, references", () => {
 	assert.deepEqual(parseSecretRef("hardhat-keystore://NEW_DEPLOYER"), {
 		provider: "hardhat-keystore",
 		key: "NEW_DEPLOYER",
@@ -245,11 +245,14 @@ test("secret references are metadata only and live recipes require the appropria
 			"RemoveMargin",
 		],
 	};
-	assert.throws(() => validateDeploymentRecipe(live), /secrets\.deployer is required/);
-	live.secrets = { deployer: "hardhat-keystore://NEW_DEPLOYER", rpc: "hardhat-keystore://RPC_ARBITRUM" };
+	assert.throws(() => validateDeploymentRecipe(live), /secrets\.rpc is required/);
+	live.secrets = { rpc: "hardhat-keystore://RPC_ARBITRUM" };
 	assert.throws(() => validateDeploymentRecipe(live), /secrets\.explorer is required/);
 	live.secrets.explorer = "hardhat-keystore://ETHERSCAN_APIKEY";
 	assert.equal(validateDeploymentRecipe(live).network.mode, "live");
+	live.secrets.rpc = "env://RPC_ARBITRUM";
+	assert.throws(() => validateDeploymentRecipe(live), /secrets\.rpc must use hardhat-keystore:\/\//);
+	live.secrets.rpc = "hardhat-keystore://RPC_ARBITRUM";
 	live.execution.logLevel = "silent";
 	assert.throws(() => validateDeploymentRecipe(live), /execution\.logLevel must be minimal or verbose for live targets/);
 	live.execution.logLevel = "verbose";

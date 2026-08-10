@@ -290,7 +290,7 @@ export async function deployExpressProvider(hre: HardhatRuntimeEnvironment, conn
 		"deployExpressProvider",
 		chainId,
 		isSimulated,
-		"This ad-hoc helper has no durable checkpoint, role configuration, or explorer verification; use the recipe workflow (deploy --only expressProvider) for a live provider.",
+		"This ad-hoc helper has no durable checkpoint, role configuration, or explorer verification; use ./symmio → Deploy a contract → ExpressProvider for a live provider.",
 	)
 	const [deployer] = await ethers.getSigners()
 	if (!deployer) throw new Error("ExpressProvider deployment requires a configured signer")

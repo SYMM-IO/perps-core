@@ -18,6 +18,7 @@
 		"@nomicfoundation/hardhat-ignition": "^3.1.7",
 		"@nomicfoundation/hardhat-ignition-ethers": "^3.1.6",
 		"@nomicfoundation/hardhat-keystore": "^3.0.12",
+		"@nomicfoundation/hardhat-ledger": "3.0.10",
 		"@nomicfoundation/hardhat-mocha": "^3.0.21",
 		"@nomicfoundation/hardhat-network-helpers": "^3.0.10",
 		"@nomicfoundation/hardhat-toolbox-mocha-ethers": "^3.0.2",
@@ -82,7 +83,7 @@
 		"test:fuzz:dashboard": "node --import tsx scripts/fuzz/dashboard.ts",
 		"test:fuzz:ci": "cross-env TEST_MODE=fuzz FUZZ_RUN_MODE=bounded hardhat test mocha --bail -- test/sequential/Main.ts",
 		"test:cli": "node --test cli/test/*.test.js",
-		"test:deploy": "hardhat compile && hardhat test mocha --no-compile -- test/parallel/ContractCreationResume.test.ts test/parallel/CopySymbolsPlan.test.ts test/parallel/DeployInfrastructure.test.ts test/parallel/DeploymentRecipeCheckpoint.test.ts test/parallel/DeploymentRecipeComponentExecution.test.ts test/parallel/DeploymentRecipeConfig.test.ts test/parallel/DeploymentRecipeValidation.test.ts test/parallel/DeploymentResumeState.test.ts test/parallel/DeploymentTransactionReconciliation.test.ts test/parallel/DeploymentVerificationBinding.test.ts test/parallel/DeployProtocolConfig.test.ts test/parallel/DeploySystemConfig.test.ts test/parallel/ExecutionGuard.test.ts test/parallel/ExpressProviderDeployment.test.ts test/parallel/MuonDeploymentPermissions.test.ts test/parallel/DeploymentRecordResume.test.ts test/parallel/PartyBDeploymentRecords.test.ts test/parallel/VanityRegistry.test.ts test/parallel/VanityPlan.test.ts test/parallel/VanityDeployment.test.ts",
+		"test:deploy": "hardhat compile && hardhat test mocha --no-compile -- test/parallel/ContractCreationResume.test.ts test/parallel/CopySymbolsPlan.test.ts test/parallel/DeployInfrastructure.test.ts test/parallel/DeploymentRecipeCheckpoint.test.ts test/parallel/DeploymentRecipeComponentExecution.test.ts test/parallel/DeploymentRecipeConfig.test.ts test/parallel/DeploymentRecipeValidation.test.ts test/parallel/DeploymentResumeState.test.ts test/parallel/DeploymentTransactionReconciliation.test.ts test/parallel/DeploymentVerificationBinding.test.ts test/parallel/DeployProtocolConfig.test.ts test/parallel/DeploySystemConfig.test.ts test/parallel/ExecutionGuard.test.ts test/parallel/ExpressProviderDeployment.test.ts test/parallel/MuonDeploymentPermissions.test.ts test/parallel/DeploymentRecordResume.test.ts test/parallel/PartyBDeploymentRecords.test.ts test/parallel/SafeProposal.test.ts test/parallel/VanityRegistry.test.ts test/parallel/VanityPlan.test.ts test/parallel/VanityDeployment.test.ts",
 		"check:operations": "npm run lint && npm run test:cli && npm run test:deploy",
 		"typechain": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat typechain",
 		"solhint": "./node_modules/.bin/solhint -f table contracts/**/*.sol",
@@ -90,10 +91,13 @@
 		"prettier:contracts:check": "prettier --check \"contracts/**/*.sol\"",
 		"prettier:ts": "prettier --write \"**/*.ts\"",
 		"prettier:ts:check": "prettier --check \"**/*.ts\"",
-		"cli": "node cli/symmio.js",
-		"doctor": "node cli/symmio.js doctor"
+		"cli": "node cli/symmio.js"
 	},
 	"dependencies": {
+		"@clack/prompts": "1.7.0",
+		"@safe-global/api-kit": "5.0.2",
+		"@safe-global/protocol-kit": "8.0.5",
+		"@safe-global/types-kit": "4.0.1",
 		"bignumber.js": "^9.3.1",
 		"prettier-plugin-solidity": "^2.2.0"
 	},

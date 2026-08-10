@@ -1,6 +1,7 @@
 // Deployment recipe bootstrap must run before task modules read process.env.
 // sort-imports-ignore
 import hardhatEthersPlugin from "@nomicfoundation/hardhat-ethers"
+import hardhatLedgerPlugin from "@nomicfoundation/hardhat-ledger"
 import hardhatToolboxMochaEthers from "@nomicfoundation/hardhat-toolbox-mocha-ethers"
 import hardhatVerify from "@nomicfoundation/hardhat-verify"
 import { config as dotenvConfig } from "dotenv"
@@ -63,11 +64,17 @@ export function recipeAccountsForSimulatedNetwork(readOnly: boolean): [] | undef
 	return readOnly ? [] : undefined
 }
 
+export function recipeAccountsForPersistentLocal(readOnly: boolean): [] | "remote" {
+	return readOnly ? [] : "remote"
+}
+
 // Recipe mode resolves only its declared secret references. Legacy invocations preserve
 // the existing env/keystore behavior when SYMMIO_DEPLOYMENT_RECIPE is absent.
 const useKeystore = activeDeploymentRecipe ? false : parseBooleanEnv("USE_KEYSTORE")
 const recipeReadOnly = activeDeploymentRecipe ? parseBooleanEnv("SYMMIO_RECIPE_READ_ONLY") : false
 const recipeCredentials = recipeCredentialPolicy(recipeReadOnly)
+const operatorSignerMode = process.env.SYMMIO_SIGNER_MODE
+const safeOnlySigner = operatorSignerMode === "safe-file" || operatorSignerMode === "safe-service"
 const keystoreDeployerKey = process.env.KEYSTORE_DEPLOYER_KEY || "NEW_DEPLOYER"
 const keystoreAccounts = new Set(
 	(process.env.KEYSTORE_ACCOUNTS || keystoreDeployerKey)
@@ -76,11 +83,21 @@ const keystoreAccounts = new Set(
 		.filter(Boolean),
 )
 const optionalKeystoreAccount = (name: string) => (useKeystore && keystoreAccounts.has(name) ? configVariable(name) : undefined)
-const configuredProtocolAdminKey = activeDeploymentRecipe
-	? recipeCredentials.deployer
-		? resolveRecipeSecret("deployer")
-		: undefined
-	: process.env.NEW_DEPLOYER || process.env.TEAM_DEPLOYER || (useKeystore ? configVariable(keystoreDeployerKey) : undefined)
+const configuredProtocolAdminKey =
+	recipeReadOnly || safeOnlySigner || operatorSignerMode === "ledger" || operatorSignerMode === "local-node"
+		? undefined
+		: operatorSignerMode === "private-key"
+			? process.env.SYMMIO_EPHEMERAL_PRIVATE_KEY
+			: operatorSignerMode === "hardhat-keystore"
+				? configVariable(keystoreDeployerKey)
+				: activeDeploymentRecipe
+					? recipeCredentials.deployer
+						? resolveRecipeSecret("deployer")
+						: undefined
+					: process.env.NEW_DEPLOYER || process.env.TEAM_DEPLOYER || (useKeystore ? configVariable(keystoreDeployerKey) : undefined)
+if (operatorSignerMode === "private-key" && !configuredProtocolAdminKey) {
+	throw new Error("The selected private-key signer was not hydrated into the operator process")
+}
 const protocolAdminKey = configuredProtocolAdminKey || DUMMY_PRIVATE_KEY
 const migratorKey = activeDeploymentRecipe ? undefined : process.env.TEAM_MIGRATOR || optionalKeystoreAccount("TEAM_MIGRATOR")
 const upgradeOperatorKey = activeDeploymentRecipe ? undefined : process.env.TEAM_UPGRADE_OPERATOR || optionalKeystoreAccount("TEAM_UPGRADE_OPERATOR")
@@ -102,11 +119,34 @@ const rpcUrl = (network: string, defaultUrl: string, configuredNetwork = network
 }
 
 const accountsForNetwork = (network: string) => {
+	if (safeOnlySigner || operatorSignerMode === "ledger") return []
+	if (operatorSignerMode === "local-node") return "remote"
 	if (activeDeploymentRecipe) {
 		return recipeAccountsForNetwork(network, activeDeploymentRecipe.recipe.network.name, configuredProtocolAdminKey, recipeReadOnly)
 	}
 	return configuredProtocolAdminKey ? [configuredProtocolAdminKey, migratorKey, upgradeOperatorKey, proposerKey].filter(Boolean) : []
 }
+
+const simulatedAccounts = () => {
+	if (recipeReadOnly || safeOnlySigner || operatorSignerMode === "ledger") return []
+	if (configuredProtocolAdminKey && operatorSignerMode && operatorSignerMode !== "local-node") {
+		return [{ privateKey: configuredProtocolAdminKey, balance: 10n ** 24n }]
+	}
+	return undefined
+}
+
+const ledgerAddress = operatorSignerMode === "ledger" ? process.env.SYMMIO_LEDGER_ADDRESS : undefined
+if (operatorSignerMode === "ledger" && (!ledgerAddress || !/^0x[0-9a-fA-F]{40}$/.test(ledgerAddress))) {
+	throw new Error("The selected Ledger signer requires SYMMIO_LEDGER_ADDRESS")
+}
+const ledgerConfig = ledgerAddress
+	? {
+			ledgerAccounts: [ledgerAddress],
+			...(process.env.SYMMIO_LEDGER_DERIVATION === "legacy"
+				? { ledgerOptions: { derivationFunction: (index: number) => `m/44'/60'/0'/${index}` } }
+				: {}),
+		}
+	: { ledgerAccounts: [] as string[] }
 
 const createNetworkConfig = (network: string, chainId: number, defaultUrl: string) =>
 	({
@@ -118,6 +158,7 @@ const createNetworkConfig = (network: string, chainId: number, defaultUrl: strin
 		// Signer index 0 is the deployer throughout the task suite. Never let a role key
 		// slide into that position when NEW_DEPLOYER/TEAM_DEPLOYER is missing.
 		accounts: accountsForNetwork(network),
+		...ledgerConfig,
 	}) as {
 		type: "http"
 		chainId: number
@@ -126,7 +167,7 @@ const createNetworkConfig = (network: string, chainId: number, defaultUrl: strin
 	}
 
 export default defineConfig({
-	plugins: [hardhatToolboxMochaEthers, hardhatEthersPlugin, hardhatVerify],
+	plugins: [hardhatToolboxMochaEthers, hardhatEthersPlugin, hardhatLedgerPlugin, hardhatVerify],
 	tasks: deployTasks,
 	chainDescriptors: {
 		42161: {
@@ -328,7 +369,8 @@ export default defineConfig({
 	networks: {
 		default: {
 			type: "edr-simulated",
-			accounts: recipeAccountsForSimulatedNetwork(recipeReadOnly),
+			accounts: simulatedAccounts() ?? recipeAccountsForSimulatedNetwork(recipeReadOnly),
+			...ledgerConfig,
 			blockGasLimit: 30_000_000,
 			allowUnlimitedContractSize: true,
 			hardfork: "shanghai",
@@ -337,6 +379,7 @@ export default defineConfig({
 			type: "http",
 			url: activeDeploymentRecipe ? rpcUrl("docker", "http://localhost:8545") : process.env.HARDHAT_DOCKER_URL || "http://localhost:8545",
 			accounts: accountsForNetwork("docker") as string[],
+			...ledgerConfig,
 		},
 		// A persistent local node (`./node_modules/.bin/hardhat node`). Unlike the in-process `default`
 		// network, state survives the task, so a deployment can be inspected afterwards.
@@ -344,9 +387,18 @@ export default defineConfig({
 			type: "http",
 			chainId: 31337,
 			url: activeDeploymentRecipe ? rpcUrl("localhost", "http://127.0.0.1:8545") : process.env.RPC_LOCALHOST || "http://127.0.0.1:8545",
-			accounts: (activeDeploymentRecipe
-				? recipeAccountsForNetwork("localhost", activeDeploymentRecipe.recipe.network.name, protocolAdminKey, recipeReadOnly)
-				: [protocolAdminKey, migratorKey, upgradeOperatorKey, proposerKey].filter(Boolean)) as string[],
+			// A local recipe deliberately uses the unlocked accounts exposed by `hardhat node`.
+			// This keeps public development keys out of recipe/task state and makes the persistent-node
+			// rehearsal work immediately after starting the node. Every non-local recipe stays on the
+			// explicit private-key path and therefore fails closed when its secret is unavailable.
+			accounts: (operatorSignerMode
+				? accountsForNetwork("localhost")
+				: activeDeploymentRecipe?.recipe.network.mode === "local"
+					? recipeAccountsForPersistentLocal(recipeReadOnly)
+					: activeDeploymentRecipe
+						? recipeAccountsForNetwork("localhost", activeDeploymentRecipe.recipe.network.name, protocolAdminKey, recipeReadOnly)
+						: [protocolAdminKey, migratorKey, upgradeOperatorKey, proposerKey].filter(Boolean)) as "remote" | string[],
+			...ledgerConfig,
 		},
 		bsc: createNetworkConfig("bsc", 56, "https://bsc-rpc.publicnode.com"),
 		base: createNetworkConfig("base", 8453, "https://mainnet.base.org"),
@@ -363,7 +415,8 @@ export default defineConfig({
 		arbitrum: createNetworkConfig("arbitrum", 42161, "https://arbitrum.llamarpc.com"),
 		"fork-hyperevm": {
 			type: "edr-simulated",
-			accounts: recipeAccountsForSimulatedNetwork(recipeReadOnly),
+			accounts: simulatedAccounts() ?? recipeAccountsForSimulatedNetwork(recipeReadOnly),
+			...ledgerConfig,
 			chainId: 999,
 			blockGasLimit: 30_000_000,
 			allowUnlimitedContractSize: true,
@@ -378,7 +431,8 @@ export default defineConfig({
 		coti: createNetworkConfig("coti", 2632500, "https://mainnet.coti.io/rpc"),
 		"fork-arbitrum": {
 			type: "edr-simulated",
-			accounts: recipeAccountsForSimulatedNetwork(recipeReadOnly),
+			accounts: simulatedAccounts() ?? recipeAccountsForSimulatedNetwork(recipeReadOnly),
+			...ledgerConfig,
 			chainId: 42161,
 			blockGasLimit: 30_000_000,
 			allowUnlimitedContractSize: true,
@@ -390,7 +444,8 @@ export default defineConfig({
 		},
 		"fork-base": {
 			type: "edr-simulated",
-			accounts: recipeAccountsForSimulatedNetwork(recipeReadOnly),
+			accounts: simulatedAccounts() ?? recipeAccountsForSimulatedNetwork(recipeReadOnly),
+			...ledgerConfig,
 			chainId: 8453,
 			blockGasLimit: 30_000_000,
 			allowUnlimitedContractSize: true,
@@ -402,7 +457,8 @@ export default defineConfig({
 		},
 		"fork-bsc": {
 			type: "edr-simulated",
-			accounts: recipeAccountsForSimulatedNetwork(recipeReadOnly),
+			accounts: simulatedAccounts() ?? recipeAccountsForSimulatedNetwork(recipeReadOnly),
+			...ledgerConfig,
 			chainId: 56,
 			blockGasLimit: 30_000_000,
 			allowUnlimitedContractSize: true,
@@ -414,7 +470,8 @@ export default defineConfig({
 		},
 		"fork-mantle": {
 			type: "edr-simulated",
-			accounts: recipeAccountsForSimulatedNetwork(recipeReadOnly),
+			accounts: simulatedAccounts() ?? recipeAccountsForSimulatedNetwork(recipeReadOnly),
+			...ledgerConfig,
 			chainId: 5000,
 			blockGasLimit: 30_000_000,
 			allowUnlimitedContractSize: true,

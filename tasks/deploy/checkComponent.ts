@@ -79,6 +79,12 @@ function validateManualActions(value: unknown): asserts value is ComponentDeploy
 	}
 }
 
+export function assertReadOnlySignerConfiguration(mode: "local" | "fork" | "live", configuredSignerCount: number): void {
+	if (mode !== "local" && configuredSignerCount !== 0) {
+		throw new Error(`READ_ONLY_CONFIGURATION_ERROR: check:component expected zero configured signers, found ${configuredSignerCount}`)
+	}
+}
+
 /** Independently bind the on-disk report to the active recipe and pinned Core report. */
 export function assertComponentStatusReportBinding(reportValue: unknown, expected: ComponentStatusBinding): ComponentDeploymentReport {
 	if (!isRecord(reportValue)) throw new Error("component report must be an object")
@@ -116,8 +122,10 @@ export function assertComponentStatusReportBinding(reportValue: unknown, expecte
 		if (!sameAddress(report.config.signer, expected.config.signer)) throw new Error("component report signer does not match recipe partyB.signer")
 		if (report.config.adlEnabled !== expected.config.adlEnabled)
 			throw new Error("component report ADL setting does not match recipe partyB.adlEnabled")
-	} else if (!sameAddress(report.config.operator, expected.config.operator)) {
+	} else if (expected.component === "symbolManager" && !sameAddress(report.config.operator, expected.config.operator)) {
 		throw new Error("component report operator does not match recipe symbolManager.operator")
+	} else if (expected.component === "expressProvider" && !isRecord(report.config.expressProvider)) {
+		throw new Error("ExpressProvider component report is missing its resolved configuration")
 	}
 
 	if (!isRecord(report.coreDependency)) throw new Error("component report is missing its reused-Core binding")
@@ -149,16 +157,27 @@ export function assertComponentStatusReportBinding(reportValue: unknown, expecte
 			return address(record.address, `component verification record ${index} address`)
 		}),
 	)
-	if (!verified.has(address(report.address, "component report address"))) throw new Error("verification records do not cover the component address")
-	if (expected.component === "partyB" && !verified.has(address(report.implementation, "PartyB implementation"))) {
-		throw new Error("verification records do not cover the PartyB implementation")
-	}
-	if (expected.live) {
+	if (report.mode === "patch") {
+		if (report.verification.records.length !== 0) throw new Error("ExpressProvider patch verification records must be empty")
+		if (report.verification.policy !== "not_applicable" || report.verification.status !== "skipped") {
+			throw new Error("ExpressProvider patch verification must be not_applicable/skipped")
+		}
+	} else if (expected.live) {
+		if (!verified.has(address(report.address, "component report address"))) throw new Error("verification records do not cover the component address")
+		if (expected.component === "partyB" && !verified.has(address(report.implementation, "PartyB implementation"))) {
+			throw new Error("verification records do not cover the PartyB implementation")
+		}
 		if (report.verification.policy !== "required" || report.verification.status !== "passed") {
 			throw new Error(`live component verification is incomplete: ${report.verification.policy}/${report.verification.status}`)
 		}
-	} else if (report.verification.policy !== "not_applicable" || report.verification.status !== "skipped") {
-		throw new Error(`non-live component verification must be not_applicable/skipped`)
+	} else {
+		if (!verified.has(address(report.address, "component report address"))) throw new Error("verification records do not cover the component address")
+		if (expected.component === "partyB" && !verified.has(address(report.implementation, "PartyB implementation"))) {
+			throw new Error("verification records do not cover the PartyB implementation")
+		}
+		if (report.verification.policy !== "not_applicable" || report.verification.status !== "skipped") {
+			throw new Error(`non-live component verification must be not_applicable/skipped`)
+		}
 	}
 
 	if (!isRecord(report.health) || !Array.isArray(report.health.checks) || report.health.checks.length === 0) {
@@ -215,8 +234,16 @@ export function assertComponentStatusCheckpointBinding(
 		const deployed = checkpoint.contracts?.symmioPartyB
 		if (!sameAddress(deployed?.address, report.address)) throw new Error("PartyB checkpoint address does not match the report")
 		if (!sameAddress(deployed?.implementation, report.implementation)) throw new Error("PartyB checkpoint implementation does not match the report")
-	} else if (!sameAddress(checkpoint.contracts?.symbolManager?.address, report.address)) {
+	} else if (expected.component === "symbolManager" && !sameAddress(checkpoint.contracts?.symbolManager?.address, report.address)) {
 		throw new Error("SymbolManager checkpoint address does not match the report")
+	} else if (
+		expected.component === "expressProvider" &&
+		report.mode === "deploy" &&
+		!sameAddress(checkpoint.contracts?.expressProvider?.diamond?.address, report.address)
+	) {
+		throw new Error("ExpressProvider checkpoint address does not match the report")
+	} else if (expected.component === "expressProvider" && report.mode === "patch" && checkpoint.contracts?.expressProvider !== undefined) {
+		throw new Error("ExpressProvider patch checkpoint unexpectedly contains a deployment")
 	}
 	if (checkpoint.step !== report.lifecycle) {
 		throw new Error(
@@ -349,9 +376,7 @@ async function checkComponent(hre: any, recipePath: string, rawComponent: string
 	const connection = await getConnection(hre)
 	const { ethers } = connection
 	const configuredSigners = await ethers.getSigners()
-	if (configuredSigners.length !== 0) {
-		throw new Error(`READ_ONLY_CONFIGURATION_ERROR: check:component expected zero configured signers, found ${configuredSigners.length}`)
-	}
+	assertReadOnlySignerConfiguration(active.recipe.network.mode, configuredSigners.length)
 	const network = connection.networkName || "unknown"
 	const chainId = Number((await ethers.provider.getNetwork()).chainId)
 	const simulated = connection.networkConfig?.type === "edr-simulated"
@@ -406,7 +431,7 @@ async function checkComponent(hre: any, recipePath: string, rawComponent: string
 		throw new Error(
 			`Component status is incomplete: lifecycle=${report.lifecycle}, health=${currentHealth}` +
 				`${incomplete.length ? `, checks=${incomplete.join(", ")}` : ""}. ` +
-				`After Safe actions confirm, rerun ./symmio deploy --config ${active.identityPath} --only ${component}.`,
+				`After Safe actions confirm, launch ./symmio and continue the active ${component} task bound to ${active.identityPath}.`,
 		)
 	}
 	console.log("")

@@ -12,7 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-test("recipe init derives live and fork intent from the reviewed Arbitrum profile", () => {
+test("recipe init derives live, fork, and persistent-local intent from reviewed defaults", () => {
 	const source = {
 		$schema: "../recipe.schema.json",
 		name: "example",
@@ -28,6 +28,12 @@ test("recipe init derives live and fork intent from the reviewed Arbitrum profil
 	assert.equal(fork.name, "fork-arbitrum-deployment");
 	assert.deepEqual(fork.network, { name: "fork-arbitrum", chainId: 42161, mode: "fork" });
 	assert.equal(fork.execution.verify, false);
+
+	const local = buildInitialRecipe("localhost", source);
+	assert.equal(local.name, "localhost-deployment");
+	assert.deepEqual(local.network, { name: "localhost", chainId: 31337, mode: "local" });
+	assert.equal(local.execution.verify, false);
+	assert.deepEqual(local.secrets, {});
 	assert.throws(() => buildInitialRecipe("base", source), /refusing to fabricate/);
 });
 
@@ -200,6 +206,6 @@ test("recipe verification is bound to one full-system deployment attempt", () =>
 				{ ...context, recipe: { ...context.recipe, core: { mode: "reuse" }, partyB: { mode: "deploy" } } },
 				42161,
 			),
-		/for full-system recipes only.*--only partyB/,
+		/Full-system verification cannot consume a component recipe.*partyB verification.*operator task/,
 	);
 });

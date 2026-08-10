@@ -73,38 +73,24 @@ locked tree and never updates `package-lock.json`.
 
 ## Deployment
 
-Deployments are driven by the `symmio` operator CLI:
+Deployments are driven by the interactive `symmio` operator application:
 
 ```bash
-./symmio --help
+./symmio
 ```
 
-The usual path:
-
-```bash
-./symmio recipe init --network arbitrum
-./symmio doctor --config deployments/arbitrum.json
-./symmio deploy --config deployments/arbitrum.json --plan
-./symmio deploy --config deployments/arbitrum.json
-./symmio status --config deployments/arbitrum.json
-```
-
-The versioned JSON recipe is the single source of public deployment intent. It can deploy
-the full system or create a smaller add-on recipe with
-`recipe init --only partyB|symbolManager`.
-Private keys, RPC URLs, and explorer credentials stay outside JSON behind named Hardhat
-keystore references. `doctor` exits non-zero on blocking configuration or chain-state
-problems, so it can gate CI; encrypted entries that have not been unlocked are labeled as
-deferred warnings and are rechecked by Hardhat before any write. ExpressProvider is
-represented explicitly but currently fails closed before any transaction because post-payout
-credit-loss settlement is unresolved and the recipe does not yet encode its production
-roles, Muon/affiliate policy, Core registration, durable recovery, verification, and
-complete post-state proof.
+The menu guides full and standalone deployments, ExpressProvider patching, deployment
+checklists, and reviewed maintenance. Recipes remain the portable source of public intent.
+Each mutating task separately binds a named Hardhat keystore wallet, a memory-only private
+key wallet, a Safe JSON/direct proposal, a Ledger address, or a localhost account as its
+compatible signer role; secrets never enter task state or logs. Every live deployment automatically runs preflight, a matching fork
+rehearsal, typed chain confirmation, transaction reconciliation, verification, health, and
+handover. Low-level Hardhat tasks are internal adapters rather than operator entrypoints.
 
 - **[docs/deployment.md](docs/deployment.md)** — the full deployment runbook: configuration,
   fork rehearsal, resuming a failed run, slow chains, and the manual steps the deployer
   cannot perform
-- **[cli/README.md](cli/README.md)** — CLI command reference
+- **[cli/README.md](cli/README.md)** — operator UI and task-definition standard
 - **[SCRIPTS_AUDIT.md](SCRIPTS_AUDIT.md)** — the audit behind the deploy-path safeguards,
   and what remains open
 

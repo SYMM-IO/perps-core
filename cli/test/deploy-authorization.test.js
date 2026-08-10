@@ -267,6 +267,39 @@ test("component handoff evidence is bound to the recipe, target, lifecycle, and 
 		}),
 		completeSymbolManager,
 	);
+	const completeExpressPatch = {
+		...completeSymbolManager,
+		component: "expressProvider",
+		mode: "patch",
+		config: { admin: "0x4000000000000000000000000000000000000004" },
+		verification: { policy: "not_applicable", status: "skipped", records: [] },
+		health: { status: "passed", checks: [{ check: "provider already matches the recipe", status: "passed" }] },
+	};
+	assert.equal(
+		validateComponentReport(completeExpressPatch, {
+			...expected,
+			component: "expressProvider",
+			live: true,
+			config: { admin: "0x4000000000000000000000000000000000000004" },
+		}),
+		completeExpressPatch,
+	);
+	assert.throws(
+		() =>
+			validateComponentReport(
+				{
+					...completeExpressPatch,
+					verification: { ...completeExpressPatch.verification, records: completeSymbolManager.verification.records },
+				},
+				{
+					...expected,
+					component: "expressProvider",
+					live: true,
+					config: { admin: "0x4000000000000000000000000000000000000004" },
+				},
+			),
+		/patch verification records must be empty/,
+	);
 	assert.match(
 		componentReportPath(42161, { simulated: true, recipeName: "add-partyb", component: "partyB" }),
 		/tasks\/data\/42161-fork\/components\/add-partyb\/partyB-report\.json$/,

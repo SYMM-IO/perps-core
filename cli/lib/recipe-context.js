@@ -85,8 +85,17 @@ export function assertDeploymentReportRecipeBinding(report, context) {
 export function resolveRecipeEnvironment(projection, processEnv = process.env) {
 	const env = { ...(projection?.env ?? {}) };
 	const missingSecrets = [];
+	const operatorSignerMode = processEnv.SYMMIO_SIGNER_MODE;
 	for (const [purpose, reference] of Object.entries(projection?.secrets ?? {})) {
 		if (!reference) continue;
+		if (purpose === "deployer" && operatorSignerMode) {
+			if (operatorSignerMode === "private-key") {
+				const privateKey = processEnv.SYMMIO_EPHEMERAL_PRIVATE_KEY;
+				if (!privateKey) missingSecrets.push({ purpose, key: "SYMMIO_EPHEMERAL_PRIVATE_KEY", field: "task.signer" });
+				else env.NEW_DEPLOYER = privateKey;
+			}
+			continue;
+		}
 		if (reference.provider === "hardhat-keystore") continue;
 		if (reference.provider !== "env") continue;
 		const value = processEnv[reference.key];

@@ -26,7 +26,7 @@ import {
 	assertGeneralDeploymentMuonPermissions,
 	inspectConfiguredMuonPermissions,
 } from "./muonPermissions.js"
-import { ProtocolConfig, loadProtocolConfig, templateConfigMismatches } from "./protocolConfig.js"
+import { ProtocolConfig, loadProtocolConfig, templateConfigMismatches, validateProtocolConfig } from "./protocolConfig.js"
 import { activeDeploymentRecipe } from "./recipeRuntime.js"
 
 // ============================================================================
@@ -119,6 +119,23 @@ export function assertVerificationRunBinding(
 		throw new Error(`Deployment health must pass before explorer verification; got ${JSON.stringify(report.checks?.health)}`)
 	}
 	return { deploymentId: report.deploymentId, recipeDigest: report.recipe?.digest }
+}
+
+/**
+ * A recipe-bound health audit must verify the intent that was actually deployed.
+ * Chain defaults remain useful for legacy/manual health checks, but they are not
+ * authoritative once a reviewed recipe is active (including on localhost).
+ */
+export function resolveVerificationProtocolConfig(
+	chainId: number | bigint,
+	active: typeof activeDeploymentRecipe = activeDeploymentRecipe,
+): ProtocolConfig {
+	if (!active) return loadProtocolConfig(chainId)
+	if (active.recipe.core.mode !== "deploy" || !active.recipe.core.protocol) {
+		throw new Error("Recipe-bound full-system verification requires core.mode=deploy and core.protocol")
+	}
+	validateProtocolConfig(active.recipe.core.protocol, `inline protocol config from recipe ${active.recipe.name}`)
+	return active.recipe.core.protocol
 }
 
 function readFailedVerificationRecords(filePath: string, ethers: any, binding: { deploymentId?: string; recipeDigest?: string }): ContractToVerify[] {
@@ -419,7 +436,7 @@ export const verifyAllTask = task("verify:all", "Verifies all deployed contracts
 					console.log(`To retry only failed contracts, run:`)
 					console.log(
 						activeDeploymentRecipe
-							? `  ./symmio verify --config ${activeDeploymentRecipe.identityPath} --retry-failed`
+							? `  ./symmio → Other maintenance scripts → Explorer verification retry (${activeDeploymentRecipe.identityPath})`
 							: `  ./node_modules/.bin/hardhat verify:all --retry-failed --network ${network}`,
 					)
 				} catch (e) {
@@ -2048,19 +2065,19 @@ function loadAddressesFromCheckpoint(checkpoint: any, existing: any) {
 	}
 }
 
-function loadAddressesFromReport(report: any, existing: any) {
+export function loadAddressesFromReport(report: any, existing: any) {
 	return {
-		diamond: existing.diamond || report.addresses?.diamond,
-		accountLayer: existing.accountLayer || report.addresses?.accountLayerDiamond,
-		instantLayer: existing.instantLayer || report.addresses?.instantLayer,
-		partyB: existing.partyB || report.addresses?.symmioPartyB,
-		symbolManager: existing.symbolManager || report.addresses?.symbolManager,
-		liquidator: existing.liquidator || report.addresses?.symmioLiquidator,
-		collateral: existing.collateral || report.addresses?.collateral,
-		signatureVerifier: existing.signatureVerifier || report.addresses?.signatureVerifier,
-		admin: existing.admin || report.config?.admin,
-		symmioFeeReceiver: existing.symmioFeeReceiver || report.config?.symmioFeeReceiver,
-		symbolManagerOperator: existing.symbolManagerOperator || report.config?.symbolManagerOperator,
+		diamond: existing.diamond || report.addresses?.diamond || undefined,
+		accountLayer: existing.accountLayer || report.addresses?.accountLayerDiamond || undefined,
+		instantLayer: existing.instantLayer || report.addresses?.instantLayer || undefined,
+		partyB: existing.partyB || report.addresses?.symmioPartyB || undefined,
+		symbolManager: existing.symbolManager || report.addresses?.symbolManager || undefined,
+		liquidator: existing.liquidator || report.addresses?.symmioLiquidator || undefined,
+		collateral: existing.collateral || report.addresses?.collateral || undefined,
+		signatureVerifier: existing.signatureVerifier || report.addresses?.signatureVerifier || undefined,
+		admin: existing.admin || report.config?.admin || undefined,
+		symmioFeeReceiver: existing.symmioFeeReceiver || report.config?.symmioFeeReceiver || undefined,
+		symbolManagerOperator: existing.symbolManagerOperator || report.config?.symbolManagerOperator || undefined,
 	}
 }
 
@@ -2161,7 +2178,7 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 			const isSimulatedNetwork = (connection as any).networkConfig?.type === "edr-simulated"
 			setDataScope(chainId, { simulated: isSimulatedNetwork })
 			const network = connection.networkName || "unknown"
-			const protocolConfig = loadProtocolConfig(chainId)
+			const protocolConfig = resolveVerificationProtocolConfig(chainId)
 			const [deployer] = await ethers.getSigners()
 			let deployerAddress: string | undefined = deployer?.address
 
