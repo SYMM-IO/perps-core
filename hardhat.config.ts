@@ -336,11 +336,21 @@ export default defineConfig({
 			},
 		},
 	},
+	// evmVersion "cancun" is load-bearing, not incidental. LibExecutionContext and
+	// LibAccountLayerSigner emit EIP-1153 tload/tstore, and solc rejects those below cancun
+	// with a hard error and no bytecode (verified on 0.8.34, 2026-07) rather than silently
+	// producing something that reverts on chain.
+	// Every chain we target supports Cancun except COTI (chain 2632500), which is pre-Shanghai
+	// and rejects PUSH0 too -- so it is broken by these settings independently of the transient
+	// execution context, and would need its own build at evmVersion "paris" together with
+	// persistent-only variants of those two libraries. Full checklist in the PRE-CANCUN PORT
+	// block at the top of contracts/core/libraries/LibExecutionContext.sol.
 	solidity: {
 		profiles: {
 			default: {
-				version: "0.8.18",
+				version: "0.8.34",
 				settings: {
+					evmVersion: "cancun",
 					metadata: {
 						bytecodeHash: "none",
 					},
@@ -352,8 +362,9 @@ export default defineConfig({
 				},
 			},
 			production: {
-				version: "0.8.18",
+				version: "0.8.34",
 				settings: {
+					evmVersion: "cancun",
 					metadata: {
 						bytecodeHash: "none",
 					},
@@ -373,7 +384,7 @@ export default defineConfig({
 			...ledgerConfig,
 			blockGasLimit: 30_000_000,
 			allowUnlimitedContractSize: true,
-			hardfork: "shanghai",
+			hardfork: "cancun",
 		},
 		docker: {
 			type: "http",
@@ -419,7 +430,7 @@ export default defineConfig({
 			...ledgerConfig,
 			chainId: 999,
 			blockGasLimit: 30_000_000,
-			allowUnlimitedContractSize: true,
+			allowUnlimitedContractSize: false,
 			hardfork: "cancun",
 			forking: {
 				url: activeDeploymentRecipe
@@ -435,7 +446,7 @@ export default defineConfig({
 			...ledgerConfig,
 			chainId: 42161,
 			blockGasLimit: 30_000_000,
-			allowUnlimitedContractSize: true,
+			allowUnlimitedContractSize: false,
 			hardfork: "cancun",
 			forking: {
 				url: rpcUrl("arbitrum", "https://arbitrum.drpc.org", "fork-arbitrum"),
@@ -448,7 +459,7 @@ export default defineConfig({
 			...ledgerConfig,
 			chainId: 8453,
 			blockGasLimit: 30_000_000,
-			allowUnlimitedContractSize: true,
+			allowUnlimitedContractSize: false,
 			hardfork: "cancun",
 			forking: {
 				url: rpcUrl("base", "https://base.drpc.org", "fork-base"),
@@ -474,7 +485,7 @@ export default defineConfig({
 			...ledgerConfig,
 			chainId: 5000,
 			blockGasLimit: 30_000_000,
-			allowUnlimitedContractSize: true,
+			allowUnlimitedContractSize: false,
 			hardfork: "cancun",
 			forking: {
 				url: rpcUrl("mantle", "https://mantle.drpc.org", "fork-mantle"),
@@ -495,6 +506,10 @@ export default defineConfig({
 	},
 	typechain: {
 		outDir: resolve(process.cwd(), "src/types"),
+		// Solidity 0.8.34 can emit identical inherited event entries more than once.
+		// TypeChain preserves those entries, so skip checking generated declarations
+		// while continuing to type-check all handwritten operational code.
+		tsNocheck: true,
 	},
 	// gasReporter: {
 	// 	currency: "USD",

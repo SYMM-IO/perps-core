@@ -60,4 +60,5 @@ interface IAccountLayerErrors {
 	error ExternalCallFailed();
 	error LegacyAccountNotOwned();
 	error LegacyContractNotRegistered();
+	error MarginKeyMismatch();
 }

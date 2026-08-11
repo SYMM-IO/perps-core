@@ -22,7 +22,7 @@ import { IDiamondCut } from "../../diamond/facets/DiamondCut/IDiamondCut.sol";
 import { IDiamondLoupe } from "../../diamond/facets/DiamondLoup/IDiamondLoupe.sol";
 import { IPartyBQuoteActionsFacet } from "../facets/PartyBQuoteActions/IPartyBQuoteActionsFacet.sol";
 import { IPartyBPositionActionsFacet } from "../facets/PartyBPositionActions/IPartyBPositionActionsFacet.sol";
-import { IPartyBSolverFeeActionsFacet } from "../facets/PartyBSolverFeeActions/IPartyBSolverFeeActionsFacet.sol";
+import { IPartyBExecutionFacet } from "../facets/PartyBExecution/IPartyBExecutionFacet.sol";
 import { IForceActionsFacet } from "../facets/ForceActions/IForceActionsFacet.sol";
 import { ISettlementFacet } from "../facets/Settlement/ISettlementFacet.sol";
 import { IPartyBBatchActionsFacet } from "../facets/PartyBBatchActions/IPartyBBatchActionsFacet.sol";
@@ -40,7 +40,7 @@ interface ISymmio is
 	IForceActionsFacet,
 	IPartyBQuoteActionsFacet,
 	IPartyBPositionActionsFacet,
-	IPartyBSolverFeeActionsFacet,
+	IPartyBExecutionFacet,
 	IPartyBBatchActionsFacet,
 	IPartyAFacet,
 	IPartyALiquidationFacet,

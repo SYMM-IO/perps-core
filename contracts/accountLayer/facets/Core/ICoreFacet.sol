@@ -104,6 +104,21 @@ interface ICoreFacet is ICoreFacetEvents, IAccountLayerErrors {
 	/// @return Array of return data from each call
 	function _call(address account, bytes[] calldata callDatas) external returns (bytes[] memory);
 
+	/// @notice Pre-funds the next virtual account and executes Symmio core calls in one transaction
+	/// @param account The sub-account to fund and execute calls for
+	/// @param isolationType The isolation type matching the sub-account's strategy
+	/// @param symbolId The symbol ID for the target virtual account
+	/// @param marginAmount The amount to transfer to the next VA
+	/// @param callDatas Array of encoded function calls
+	/// @return Array of return data from each call
+	function _callWithMargin(
+		address account,
+		VirtualAccountIsolationType isolationType,
+		uint256 symbolId,
+		uint256 marginAmount,
+		bytes[] calldata callDatas
+	) external returns (bytes[] memory);
+
 	// ==================== Hook Callback ====================
 
 	/// @notice Executes a whitelisted Symmio call during an active hook context

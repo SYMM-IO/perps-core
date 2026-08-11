@@ -462,6 +462,7 @@ async function compile() {
 	console.log(style("cyan", "  ⟳ Compiling contracts..."));
 	try {
 		execFileSync(hardhatBin, ["compile", "--quiet"], { stdio: "pipe", env: isolatedTestEnvironment() });
+		execFileSync(process.execPath, ["utils/check-contract-sizes.mjs"], { stdio: "inherit", env: isolatedTestEnvironment() });
 		console.log(style("brightGreen", "  ✓ Compilation complete!"));
 	} catch (e) {
 		console.error(style("brightRed", "  ✗ Compilation failed!"));

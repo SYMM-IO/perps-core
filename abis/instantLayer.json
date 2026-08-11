@@ -737,6 +737,19 @@
         "type": "event"
     },
     {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
+                "internalType": "bool",
+                "name": "enabled",
+                "type": "bool"
+            }
+        ],
+        "name": "TransientContextEnabledUpdated",
+        "type": "event"
+    },
+    {
         "inputs": [],
         "name": "ACCOUNT_TYPEHASH",
         "outputs": [
@@ -2299,6 +2312,19 @@
     {
         "inputs": [
             {
+                "internalType": "bool",
+                "name": "enabled",
+                "type": "bool"
+            }
+        ],
+        "name": "setTransientContextEnabled",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
                 "internalType": "bytes4",
                 "name": "interfaceId",
                 "type": "bytes4"
@@ -2365,6 +2391,19 @@
             {
                 "internalType": "bool",
                 "name": "active",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "transientContextEnabled",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
                 "type": "bool"
             }
         ],

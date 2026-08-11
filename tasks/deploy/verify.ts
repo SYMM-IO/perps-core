@@ -2432,7 +2432,7 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 				// Check solver-fee facet selectors are installed and the legacy no-affiliate sendQuote is removed (v0.8.6)
 				try {
 					const loupe = await ethers.getContractAt("IDiamondLoupe", addresses.diamond)
-					const solverFeeInterface = (await ethers.getContractAt("IPartyBSolverFeeActionsFacet", ethers.ZeroAddress)).interface
+					const solverFeeInterface = (await ethers.getContractAt("IPartyBExecutionFacet", ethers.ZeroAddress)).interface
 					const missing: string[] = []
 					for (const fragment of solverFeeInterface.fragments) {
 						if (fragment.type !== "function") continue
@@ -2449,7 +2449,7 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 							check: "Solver-fee facet selectors",
 							status: "fail",
 							message: `Missing fee-aware selectors: ${missing.join(", ")}`,
-							hint: "Run deploy:diamond to add PartyBSolverFeeActionsFacet via diamondCut",
+							hint: "Run deploy:diamond to add PartyBExecutionFacet via diamondCut",
 						})
 					}
 
