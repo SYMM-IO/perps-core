@@ -24,6 +24,9 @@ fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 42, 120, 0, 0))
 output = bytearray()
 view_start = 0
 state = "home"
+reported_state = None
+reported_at = time.time()
+diagnosed_state = None
 deadline = time.time() + 900
 exit_code = None
 
@@ -35,6 +38,15 @@ def send(data):
 
 
 while time.time() < deadline:
+    if state != reported_state:
+        sys.stderr.write(f"local CLI E2E: waiting for {state}\n")
+        sys.stderr.flush()
+        reported_state = state
+        reported_at = time.time()
+    elif diagnosed_state != state and time.time() - reported_at > 30:
+        sys.stderr.buffer.write(b"local CLI E2E long-running state screen tail:\n" + bytes(output[-4000:]) + b"\n")
+        sys.stderr.flush()
+        diagnosed_state = state
     ready, _, _ = select.select([fd], [], [], 0.2)
     if ready:
         try:
@@ -55,7 +67,11 @@ while time.time() < deadline:
     elif state == "network" and b"Where do you want to deploy?" in view:
         send(b"\r")
         state = "existing-or-overrides"
-    elif state == "existing-or-overrides" and b"A reviewed recipe already exists" in view:
+    elif state == "existing-or-overrides" and b"Deployment transaction signer" in view:
+        # Persistent-local defaults highlight the unlocked local-node account.
+        send(b"\r")
+        state = "overrides"
+    elif state in ("existing-or-overrides", "overrides") and b"A reviewed recipe already exists" in view:
         # For a deliberate rerun, start again from reviewed defaults (third row).
         send(b"\x1b[B\x1b[B\r")
         state = "overrides"
@@ -71,7 +87,9 @@ while time.time() < deadline:
         exit_code = 4
         break
     elif state == "return-home" and b"What do you want to do?" in view:
-        send(b"\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B\r")
+        # Cancelling the home prompt exits cleanly and avoids terminal-dependent
+        # arrow repeat/coalescing when disabled menu rows are present.
+        send(b"\x03")
         state = "exit"
     elif state == "exit" and b"Operator session closed" in view:
         break

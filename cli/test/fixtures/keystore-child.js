@@ -1,5 +1,6 @@
 import process from "node:process";
 
+const label = process.argv[2] || "keystore";
 let value = "";
 process.stdin.on("data", chunk => {
 	for (const byte of chunk) {
@@ -10,7 +11,7 @@ process.stdin.on("data", chunk => {
 				process.stderr.write("\nInvalid password\n");
 				process.exit(1);
 			}
-			process.stdout.write("\nkeystore unlocked\n");
+			process.stdout.write(`\n${label} keystore unlocked\n`);
 			setTimeout(() => process.stdout.write("Reading live templates\n"), 50);
 			setTimeout(() => process.stdout.write("Plan complete. Review it, then rerun with EXECUTE=true CONFIRM_CHAIN_ID=42161.\n"), 100);
 			setTimeout(() => {}, 900);

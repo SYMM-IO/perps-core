@@ -59,8 +59,8 @@ while True:
         state = "password"
     elif state == "password" and b"Enter the password:" in view:
         os.write(fd, b"test-password\r")
-        state = "plan"
-    elif state == "plan" and (b"Plan complete." in view or b"Plan prepared; waiting" in view):
+        state = "subprocesses"
+    elif state == "subprocesses" and b"second keystore unlocked" in view:
         snapshot_at = time.time() + 0.6
         state = "snapshot"
     elif state == "completion" and b"Keystore PTY task completed" in view:

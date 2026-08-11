@@ -5,6 +5,7 @@ import fs from "node:fs"
 import { fileURLToPath } from "node:url"
 
 import { loadDeploymentRecipe } from "../deployment/recipe.js"
+import { ledgerAddressFromOutput, ledgerArguments, ledgerCandidatePaths, receiptHash } from "./utils/ledgerHandover.js"
 import { resolveHttpRpcUrl } from "./utils/resolveHttpRpcUrl.js"
 
 const CHAIN_ID = 42161n
@@ -279,10 +280,6 @@ async function buildActions(provider: Provider, context: DeploymentContext): Pro
 	return actions
 }
 
-function ledgerArguments(derivationPath: string): string[] {
-	return ["--ledger", "--mnemonic-derivation-path", derivationPath]
-}
-
 function runCast(castBin: string, args: string[], environment: NodeJS.ProcessEnv): string {
 	const result = spawnSync(castBin, args, {
 		encoding: "utf8",
@@ -300,9 +297,7 @@ function ledgerAddress(castBin: string, environment: NodeJS.ProcessEnv, derivati
 	const walletEnvironment = { ...environment }
 	delete walletEnvironment.ETH_FROM
 	const output = runCast(castBin, ["wallet", "address", ...ledgerArguments(derivationPath)], walletEnvironment)
-	const matches = output.match(/0x[0-9a-fA-F]{40}/gu)
-	if (!matches?.length) fail(`cast did not return a Ledger address for ${derivationPath}`)
-	return address(matches[matches.length - 1], "Ledger address")
+	return ledgerAddressFromOutput(output, derivationPath)
 }
 
 function ledgerScanCount(): number {
@@ -311,15 +306,6 @@ function ledgerScanCount(): number {
 	const count = Number(raw)
 	if (!Number.isSafeInteger(count) || count < 1 || count > 1_000) fail("LEDGER_SCAN_COUNT must be between 1 and 1000")
 	return count
-}
-
-function ledgerCandidatePaths(count: number): string[] {
-	const candidates: string[] = []
-	// Ledger Live creates Ethereum accounts by advancing the hardened account component.
-	for (let index = 0; index < count; index++) candidates.push(`m/44'/60'/${index}'/0/0`)
-	// Also cover wallets that advance the final BIP-44 address-index component.
-	for (let index = 0; index < count; index++) candidates.push(`m/44'/60'/0'/0/${index}`)
-	return [...new Set(candidates)]
 }
 
 function readCachedLedgerPath(expectedAddress: string): string | null {
@@ -383,19 +369,6 @@ function discoverLedgerPath(castBin: string, environment: NodeJS.ProcessEnv, exp
 		`expected Ledger address ${expectedAddress} was not found across ${candidates.length} paths; ` +
 			`increase LEDGER_SCAN_COUNT above ${scanCount} if this is a later account`,
 	)
-}
-
-function receiptHash(output: string): string {
-	try {
-		const receipt = JSON.parse(output) as { transactionHash?: unknown; status?: unknown }
-		if (receipt.status === "0x0" || receipt.status === 0) fail("transaction receipt has failed status 0")
-		if (typeof receipt.transactionHash === "string" && /^0x[0-9a-fA-F]{64}$/u.test(receipt.transactionHash)) return receipt.transactionHash
-	} catch (error) {
-		if (error instanceof Error && error.message === "transaction receipt has failed status 0") throw error
-	}
-	const match = output.match(/0x[0-9a-fA-F]{64}/u)
-	if (!match) fail("cast returned success without a transaction hash")
-	return match[0]
 }
 
 async function waitForCompletion(action: HandoverAction): Promise<void> {

@@ -71,6 +71,10 @@ function createLiveTaskView({ title, input, output }) {
 			clear();
 			base.error(text, options);
 		},
+		warning(text) {
+			clear();
+			clack.log.warn(text, { input, output });
+		},
 		success(text, options) {
 			clear();
 			base.success(text, options);
@@ -246,6 +250,8 @@ async function runWithProgress(action, { ui, runner, input, output, controllerRe
 	const rawLines = [];
 	let passwordPromptActive = false;
 	let passwordSubmitted = false;
+	let cachedKeystoreInput = null;
+	let pendingKeystoreInput = [];
 	let titleBeforePassword = "";
 	let stopPasswordInput = null;
 	let latestState = null;
@@ -326,16 +332,31 @@ async function runWithProgress(action, { ui, runner, input, output, controllerRe
 			passwordSubmitted = false;
 			titleBeforePassword = current.title;
 			current.title = "Unlock Hardhat keystore";
-			markActivity("Waiting for keystore password", false);
 			controllerRef.current.stop();
+			if (cachedKeystoreInput) {
+				passwordSubmitted = true;
+				markActivity("Reusing in-memory keystore unlock for this task", true);
+				channel.write(cachedKeystoreInput);
+				channel.end?.();
+				return;
+			}
+			pendingKeystoreInput = [];
+			markActivity("Waiting for keystore password", false);
 			const forward = chunk => {
-				if ([...chunk].includes(3)) {
+				const bytes = Buffer.from(chunk);
+				if (bytes.includes(3)) {
 					stopPasswordInput?.();
 					process.kill(process.pid, "SIGINT");
 					return;
 				}
 				channel.write(chunk);
-				if ([...chunk].some(byte => byte === 10 || byte === 13)) {
+				const terminator = bytes.findIndex(byte => byte === 10 || byte === 13);
+				const accepted = terminator >= 0 ? bytes.subarray(0, terminator + 1) : bytes;
+				if (accepted.length > 0) pendingKeystoreInput.push(Buffer.from(accepted));
+				if (terminator >= 0) {
+					cachedKeystoreInput = Buffer.concat(pendingKeystoreInput);
+					for (const part of pendingKeystoreInput) part.fill(0);
+					pendingKeystoreInput = [];
 					channel.end?.();
 					passwordSubmitted = true;
 					stopPasswordInput?.();
@@ -380,8 +401,31 @@ async function runWithProgress(action, { ui, runner, input, output, controllerRe
 		}
 		if (result.status === "completed") view.success(`${result.title} completed`, { showLog: false });
 		else if (result.status === "cancelled") view.success(`${result.title} cancelled safely; confirmed effects were preserved`, { showLog: true });
-		else if (result.status === "failed") view.error(`${result.title} failed and cannot be resumed`, { showLog: true });
-		else view.success(`${result.title} is ${result.status}; resumable evidence was preserved`, { showLog: true });
+		else if (result.status === "failed") {
+			view.error(
+				[result.title + " failed and cannot be resumed", result.lastError && `Reason: ${result.lastError}`].filter(Boolean).join("\n"),
+				{ showLog: true },
+			);
+		} else if (result.status === "paused") {
+			view.warning(
+				[
+					`${result.title} paused after an error; resumable evidence was preserved`,
+					result.lastError && `Reason: ${result.lastError}`,
+					"Next: choose Continue active task to retry from the next safe step, or Cancel active task to preserve confirmed effects and close it.",
+				]
+					.filter(Boolean)
+					.join("\n"),
+			);
+		} else {
+			view.warning(
+				[
+					`${result.title} is ${result.status}; resumable evidence was preserved`,
+					(result.waitingFor || result.lastError) && `Reason: ${result.waitingFor || result.lastError}`,
+				]
+					.filter(Boolean)
+					.join("\n"),
+			);
+		}
 		if (result.logPath || result.eventPath || result.archivedPath) {
 			clack.note(
 				[
@@ -403,6 +447,10 @@ async function runWithProgress(action, { ui, runner, input, output, controllerRe
 	} finally {
 		clearInterval(heartbeat);
 		stopPasswordInput?.();
+		for (const part of pendingKeystoreInput) part.fill(0);
+		pendingKeystoreInput = [];
+		cachedKeystoreInput?.fill(0);
+		cachedKeystoreInput = null;
 		controllerRef.current?.stop();
 		controllerRef.current = null;
 	}

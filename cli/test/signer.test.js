@@ -7,6 +7,8 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+const { LedgerHandler } = await import("../../node_modules/@nomicfoundation/hardhat-ledger/dist/src/internal/handler.js");
+
 const PRIVATE_KEY = `0x${"42".repeat(32)}`;
 const SAFE = "0x1111111111111111111111111111111111111111";
 const TARGET = "0x2222222222222222222222222222222222222222";
@@ -64,6 +66,18 @@ test("private keys remain transient, are masked, and never serialize into task i
 	assert.equal(redactSignerSecrets(`secret=${PRIVATE_KEY}`), "secret=<redacted-signer-secret>");
 });
 
+test("local-node signer can bind the exact unlocked authority", async () => {
+	const notes = [];
+	const selection = await selectSigner(
+		{ note: (message, title) => notes.push({ message, title }) },
+		{ allowedModes: [SIGNER_MODES.LOCAL_NODE], network: "localhost", chainId: 31337, expectedAddress: TARGET },
+	);
+	assert.deepEqual(selection, { mode: SIGNER_MODES.LOCAL_NODE, address: TARGET });
+	assert.deepEqual(signerEnvironment(selection), { SYMMIO_SIGNER_MODE: SIGNER_MODES.LOCAL_NODE, SYMMIO_EXPECTED_SIGNER: TARGET });
+	assert.match(notes[0].message, new RegExp(TARGET, "i"));
+	validateSignerSelection(selection);
+});
+
 test("keystore and Ledger selections persist only public identifiers", async () => {
 	const calls = [];
 	const keystore = await selectSigner(
@@ -92,6 +106,111 @@ test("keystore and Ledger selections persist only public identifiers", async () 
 	);
 	assert.deepEqual(ledger, { mode: SIGNER_MODES.LEDGER, address: TARGET, derivation: "ledger-live" });
 	assert.deepEqual(validateSignerSelection(ledger, { allowSafe: false }), ledger);
+});
+
+test("the configured Ledger interface signs a complete EIP-1559 request through a mocked device transport", async () => {
+	const calls = { messages: [], requests: [], paths: [], transactions: [] };
+	class MockLedgerEth {
+		constructor(transport) {
+			this.transport = transport;
+		}
+
+		async getAddress(derivationPath) {
+			calls.paths.push(derivationPath);
+			return { address: TARGET };
+		}
+
+		async signTransaction(derivationPath, transaction) {
+			calls.paths.push(derivationPath);
+			calls.transactions.push(transaction);
+			return { r: "1".padStart(64, "0"), s: "2".padStart(64, "0"), v: "00" };
+		}
+	}
+	const provider = {
+		request: async request => {
+			calls.requests.push(request);
+			if (request.method === "eth_getTransactionCount") return "0x0";
+			if (request.method === "eth_chainId") return "0x7a69";
+			throw new Error(`Unexpected provider request ${request.method}`);
+		},
+	};
+	const handler = new LedgerHandler(
+		provider,
+		{ accounts: [TARGET], derivationFunction: index => `m/44'/60'/0'/${index}` },
+		async (_plugin, message) => calls.messages.push(message),
+		{
+			ethConstructor: MockLedgerEth,
+			transportNodeHid: { create: async () => ({ close: async () => {} }) },
+			cachePath: path.join(os.tmpdir(), `symmio-ledger-mock-${process.pid}-${Date.now()}.json`),
+		},
+	);
+	const result = await handler.handle({
+		jsonrpc: "2.0",
+		id: 1,
+		method: "eth_sendTransaction",
+		params: [
+			{
+				from: TARGET,
+				to: SAFE,
+				gas: "0x5208",
+				maxFeePerGas: "0x3b9aca00",
+				maxPriorityFeePerGas: "0x3b9aca00",
+				value: "0x0",
+				data: "0x",
+			},
+		],
+	});
+	assert.equal(result.method, "eth_sendRawTransaction");
+	assert.match(result.params[0], /^0x02/);
+	assert.deepEqual(calls.paths, ["m/44'/60'/0'/0", "m/44'/60'/0'/0"]);
+	assert.deepEqual(
+		calls.requests.map(request => request.method),
+		["eth_getTransactionCount", "eth_chainId"],
+	);
+	assert.ok(calls.transactions[0].length > 0);
+	assert.ok(calls.messages.includes("Confirmation success"));
+});
+
+test("the mocked Ledger interface rejects incomplete transaction requests before device confirmation", async () => {
+	let confirmations = 0;
+	class MockLedgerEth {
+		constructor(transport) {
+			this.transport = transport;
+		}
+
+		async getAddress() {
+			return { address: TARGET };
+		}
+
+		async signTransaction() {
+			confirmations++;
+			return { r: "1".padStart(64, "0"), s: "2".padStart(64, "0"), v: "00" };
+		}
+	}
+	const handler = new LedgerHandler({ request: async () => "0x0" }, { accounts: [TARGET], derivationFunction: undefined }, async () => {}, {
+		ethConstructor: MockLedgerEth,
+		transportNodeHid: { create: async () => ({ close: async () => {} }) },
+		cachePath: path.join(os.tmpdir(), `symmio-ledger-incomplete-${process.pid}-${Date.now()}.json`),
+	});
+	await assert.rejects(
+		handler.handle({
+			jsonrpc: "2.0",
+			id: 1,
+			method: "eth_sendTransaction",
+			params: [{ from: TARGET, to: SAFE, maxFeePerGas: "0x1", maxPriorityFeePerGas: "0x1", data: "0x" }],
+		}),
+		/Missing param "gas" from a tx being signed locally/,
+	);
+	await assert.rejects(
+		handler.handle({
+			jsonrpc: "2.0",
+			id: 2,
+			method: "eth_sendTransaction",
+			params: [{ from: TARGET, to: SAFE, gas: "0x5208", data: "0x" }],
+		}),
+		/gasPrice, maxFeePerGas, and maxPriorityFeePerGas were missing/,
+	);
+	assert.equal(confirmations, 0);
 });
 
 test("Safe file dispatch writes fork-scoped canonical artifacts without spawning a proposal", async () => {

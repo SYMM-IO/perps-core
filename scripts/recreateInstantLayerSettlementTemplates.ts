@@ -1,6 +1,6 @@
 /**
- * Recreate the four settleUpnl InstantLayer templates with the correct quote-id
- * injection offset. The default mode is read-only planning.
+ * Recreate the four settleUpnl InstantLayer templates by copying the deployed
+ * source templates exactly. The default mode is read-only planning.
  *
  * Plan:
  *   INSTANT_LAYER_ADDRESS=0x... \
@@ -17,18 +17,18 @@ import path from "node:path"
 
 import { exactBooleanEnv, requireExecutionConfirmation } from "../tasks/deploy/executionGuard.js"
 import {
-	CORRECT_SETTLEMENT_QUOTE_ID_OFFSET,
-	LEGACY_SETTLEMENT_QUOTE_ID_OFFSET,
-	assertSettlementTemplateRepairComplete,
+	SETTLEMENT_CURRENT_PRICE_OFFSET,
+	SETTLEMENT_QUOTE_ID_OFFSET,
+	assertSettlementTemplateRecreationComplete,
 	buildSettlementTransactionOverrides,
-	buildSettlementTemplateRepairPlan,
+	buildSettlementTemplateRecreationPlan,
 	readInstantLayerTemplates,
-	type SettlementTemplateRepairAction,
+	type SettlementTemplateRecreationAction,
 } from "../tasks/deploy/instantLayerSettlementTemplates.js"
 import { send } from "../tasks/deploy/tx.js"
 import { ethers } from "../test/helpers/hardhat-connection.js"
 
-const PLAN_API_VERSION = "operations.symm.io/instant-layer-settlement-template-repair-v1"
+const PLAN_API_VERSION = "operations.symm.io/instant-layer-settlement-template-recreation-v2"
 
 function requiredAddress(name: string): string {
 	const value = process.env[name]
@@ -62,7 +62,7 @@ function atomicWriteJson(file: string, value: unknown): void {
 	}
 }
 
-function actionCalldata(instantLayer: any, action: SettlementTemplateRepairAction): string {
+function actionCalldata(instantLayer: any, action: SettlementTemplateRecreationAction): string {
 	if (action.kind === "addTemplate") {
 		return instantLayer.interface.encodeFunctionData("addTemplate", [action.name, action.operations])
 	}
@@ -75,8 +75,19 @@ function actionCalldata(instantLayer: any, action: SettlementTemplateRepairActio
 async function authorityForMode(execute: boolean): Promise<{ address?: string; signer?: any }> {
 	const safeAddress = optionalAddress("SYMMIO_SAFE_ADDRESS")
 	if (safeAddress) return { address: safeAddress }
+	const expectedAddress = optionalAddress("SYMMIO_EXPECTED_SIGNER")
 	const signers = await ethers.getSigners()
-	const signer = signers[0]
+	let signer: (typeof signers)[number] | undefined = signers[0]
+	if (expectedAddress) {
+		signer = undefined
+		for (const candidate of signers) {
+			if (ethers.getAddress(await candidate.getAddress()) === expectedAddress) {
+				signer = candidate
+				break
+			}
+		}
+		if (!signer) throw new Error(`Expected signer ${expectedAddress} is not available from the selected signer mode`)
+	}
 	if (!signer) {
 		if (execute || process.env.SYMMIO_SIGNER_MODE) throw new Error("The selected signer mode did not provide an executable signer")
 		return {}
@@ -95,14 +106,14 @@ async function assertSetterRole(instantLayer: any, authority: string | undefined
 	}
 }
 
-async function executeAction(instantLayer: any, action: SettlementTemplateRepairAction): Promise<void> {
+async function executeAction(instantLayer: any, action: SettlementTemplateRecreationAction): Promise<void> {
 	let estimatedGas: bigint
 	if (action.kind === "addTemplate") estimatedGas = await instantLayer.addTemplate.estimateGas(action.name, action.operations)
 	else if (action.kind === "setTemplateInstantOpenMode") {
 		estimatedGas = await instantLayer.setTemplateInstantOpenMode.estimateGas(action.templateId, action.mode)
 	} else estimatedGas = await instantLayer.setTemplateActive.estimateGas(action.templateId, action.active)
 	const overrides = buildSettlementTransactionOverrides(estimatedGas, await ethers.provider.getFeeData())
-	console.log(`    Ledger fields ready — estimated gas ${estimatedGas}, limit ${overrides.gasLimit}`)
+	console.log(`    Transaction fields ready — estimated gas ${estimatedGas}, limit ${overrides.gasLimit}`)
 
 	if (action.kind === "addTemplate") {
 		await instantLayer.addTemplate.staticCall(action.name, action.operations)
@@ -123,7 +134,7 @@ async function main(): Promise<void> {
 	const expectedSymmio = optionalAddress("SYMMIO_ADDRESS")
 	const chainId = (await ethers.provider.getNetwork()).chainId
 	const execute = requireExecutionConfirmation(chainId)
-	const deactivateLegacy = exactBooleanEnv("DEACTIVATE_LEGACY_TEMPLATES", true)
+	const deactivateOriginals = exactBooleanEnv("DEACTIVATE_ORIGINAL_TEMPLATES", true)
 	if ((await ethers.provider.getCode(instantLayerAddress)) === "0x") throw new Error(`No contract code at ${instantLayerAddress}`)
 
 	const authority = await authorityForMode(execute)
@@ -135,7 +146,7 @@ async function main(): Promise<void> {
 	}
 
 	const templates = await readInstantLayerTemplates(readOnlyInstantLayer)
-	const plan = buildSettlementTemplateRepairPlan(templates, { deactivateLegacy })
+	const plan = buildSettlementTemplateRecreationPlan(templates, { deactivateOriginals })
 	const nextTemplateId = BigInt(await readOnlyInstantLayer.getNextTemplateId())
 	const actions = plan.actions.map(action => ({
 		to: instantLayerAddress,
@@ -151,28 +162,28 @@ async function main(): Promise<void> {
 		symmio: configuredSymmio,
 		authority: authority.address,
 		nextTemplateId: nextTemplateId.toString(),
-		legacyOffset: LEGACY_SETTLEMENT_QUOTE_ID_OFFSET.toString(),
-		correctedOffset: CORRECT_SETTLEMENT_QUOTE_ID_OFFSET.toString(),
-		deactivateLegacy,
-		repaired: plan.repaired,
+		quoteIdOffset: SETTLEMENT_QUOTE_ID_OFFSET.toString(),
+		currentPriceOffset: SETTLEMENT_CURRENT_PRICE_OFFSET.toString(),
+		deactivateOriginals,
+		recreated: plan.recreated,
 		templates: plan.templates,
 		actions,
 	}
 
-	console.log("InstantLayer settlement-template repair")
+	console.log("InstantLayer settlement-template recreation")
 	console.log(`  Chain:          ${chainId}`)
 	console.log(`  InstantLayer:   ${instantLayerAddress}`)
 	console.log(`  Core:           ${configuredSymmio}`)
 	console.log(`  Authority:      ${authority.address ?? "not supplied (read-only plan)"}`)
 	console.log(`  Next template:  ${nextTemplateId}`)
-	console.log(`  Offset repair:  ${LEGACY_SETTLEMENT_QUOTE_ID_OFFSET} -> ${CORRECT_SETTLEMENT_QUOTE_ID_OFFSET}`)
+	console.log(`  Quote-ID slot:  ${SETTLEMENT_QUOTE_ID_OFFSET} (currentPrice is ${SETTLEMENT_CURRENT_PRICE_OFFSET}; it is never overwritten)`)
 	console.log(`  Mode:           ${execute ? "EXECUTE" : "PLAN ONLY"}`)
 	for (const template of plan.templates) {
 		console.log(
-			`  ${template.name}: legacy [${template.legacyIds.join(", ")}] active [${template.activeLegacyIds.join(", ")}] corrected [${template.correctedIds.join(", ")}] active [${template.activeCorrectedIds.join(", ")}] instant-open ${template.instantOpenMode}`,
+			`  ${template.name}: source ${template.sourceId} (${template.sourceActive ? "active" : "inactive"}), replacements [${template.replacementIds.join(", ")}] active [${template.activeReplacementIds.join(", ")}], unsafe-480 [${template.unsafeCurrentPriceOffsetIds.join(", ")}] instant-open ${template.instantOpenMode}`,
 		)
 	}
-	if (actions.length === 0) console.log("  Actions:        none; repair is already complete")
+	if (actions.length === 0) console.log("  Actions:        none; recreation is already complete")
 	else actions.forEach((action, index) => console.log(`  Action ${index + 1}:      ${action.description}`))
 
 	if (process.env.REPAIR_PLAN_OUTPUT) {
@@ -190,12 +201,14 @@ async function main(): Promise<void> {
 	for (const action of plan.actions) await executeAction(instantLayer, action)
 
 	const finalTemplates = await readInstantLayerTemplates(readOnlyInstantLayer)
-	if (deactivateLegacy) assertSettlementTemplateRepairComplete(finalTemplates)
+	if (deactivateOriginals) assertSettlementTemplateRecreationComplete(finalTemplates)
 	else {
-		const remaining = buildSettlementTemplateRepairPlan(finalTemplates, { deactivateLegacy: false })
-		if (!remaining.repaired) throw new Error(`Corrected templates are incomplete; ${remaining.actions.length} action(s) remain`)
+		const remaining = buildSettlementTemplateRecreationPlan(finalTemplates, { deactivateOriginals: false })
+		if (!remaining.recreated) throw new Error(`Exact settlement-template replacements are incomplete; ${remaining.actions.length} action(s) remain`)
 	}
-	console.log("\nSettlement templates verified: every corrected template is active and the requested legacy policy is satisfied.")
+	console.log(
+		"\nSettlement templates verified: every exact offset-448 replacement is active and the requested original-template policy is satisfied.",
+	)
 }
 
 main().catch(error => {

@@ -2,7 +2,7 @@ import { activeDescription, homeOptions, taskSummary } from "../app.js";
 import { readDeploymentReport } from "../lib/context.js";
 import { HELP_TEXT, runCli } from "../symmio.js";
 import { catalog } from "../task-runner.js";
-import { checklistExplorerVerification } from "../tasks/registry.js";
+import { TASK_DEFINITIONS, checklistExplorerVerification } from "../tasks/registry.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -94,6 +94,17 @@ test("the deployment checklist requires explorer success live and an explicit no
 		true,
 	);
 	assert.equal(checklistExplorerVerification(context("local"), { checks: { verificationPolicy: "required", verification: "passed" } }), false);
+});
+
+test("full deployment plans give every contract batch entry a unique stable id", async () => {
+	const definition = TASK_DEFINITIONS.find(item => item.id === "deploy.full");
+	for (const mode of ["local", "fork", "live"]) {
+		const plan = await definition.plan({}, { mode });
+		const items = plan.flatMap(step => step.items || []);
+		assert.ok(items.length > 0);
+		assert.equal(new Set(items).size, items.length);
+		for (const item of items) assert.match(item, /^[a-z0-9][a-z0-9.-]*$/);
+	}
 });
 
 test("progress summary is compact at 80 columns and details expose hashes, receipts and gas", () => {

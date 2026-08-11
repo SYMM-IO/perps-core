@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+"""Drive a deterministic subprocess failure through the real operator terminal."""
+
 import errno
 import fcntl
 import os
@@ -14,18 +17,21 @@ root, node, app = sys.argv[1:4]
 pid, fd = pty.fork()
 if pid == 0:
     os.chdir(root)
-    os.environ["NO_COLOR"] = "1"
-    os.environ["TERM"] = "xterm-256color"
-    os.execv(node, [node, app])
+    environment = os.environ.copy()
+    environment["NO_COLOR"] = "1"
+    environment["TERM"] = "xterm-256color"
+    environment["SYMMIO_PTY_FAIL"] = "true"
+    os.execve(node, [node, app], environment)
 
-fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 32, 100, 0, 0))
+fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 36, 120, 0, 0))
 captured = bytearray()
 state = "home"
 deadline = time.time() + 12
+
 while True:
     if time.time() > deadline:
         os.kill(pid, signal.SIGKILL)
-        raise SystemExit("timed out during progress PTY test")
+        raise SystemExit("timed out during failure-reporting PTY test: " + state)
     ready, _, _ = select.select([fd], [], [], 0.2)
     if not ready:
         continue
@@ -47,21 +53,15 @@ while True:
         state = "keystore"
     elif state == "keystore" and b"Use Hardhat keystore?" in view:
         os.write(fd, b"\r")
-        state = "progress"
-    elif state == "progress" and b"press d to show" in view:
-        os.write(fd, b"d")
-        state = "details"
-    elif state == "details" and b"gas 42000" in view:
-        os.write(fd, b"\x03")
-        state = "pausing"
-    elif state == "pausing" and b"paused after an error" in view:
-        state = "wait-home"
-    elif state == "wait-home" and view.count(b"What do you want to do?") >= 3:
+        state = "failure"
+    elif state == "failure" and b"simulated operator failure" in view:
+        state = "reported"
+    elif state == "reported" and view.count(b"What do you want to do?") >= 3:
         os.write(fd, b"\x03")
         state = "closed"
 
 _, status = os.waitpid(pid, 0)
 sys.stdout.buffer.write(captured)
 if state != "closed":
-    raise SystemExit("did not complete the PTY progress interaction: " + state)
+    raise SystemExit("did not complete failure-reporting interaction: " + state)
 raise SystemExit(os.waitstatus_to_exitcode(status))

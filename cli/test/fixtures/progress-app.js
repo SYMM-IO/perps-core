@@ -8,6 +8,12 @@ const wait = milliseconds => new Promise(resolve => setTimeout(resolve, millisec
 const holdMilliseconds = Number(process.env.SYMMIO_PTY_HOLD_MS || 700);
 const run = async ctx => {
 	await ctx.step("broadcast", "Broadcast transaction", async () => {
+		if (process.env.SYMMIO_PTY_FAIL === "true") {
+			await ctx.runProcess(process.execPath, [
+				"-e",
+				'process.stderr.write("HardhatError: HHE999: simulated operator failure\\n"); process.exit(1)',
+			]);
+		}
 		const transaction = {
 			hash: `0x${"a".repeat(64)}`,
 			label: "synthetic write",
@@ -31,8 +37,8 @@ const task = {
 	description: "Proves detail toggling and cooperative Ctrl+C pause.",
 	supportedNetworks: ["local"],
 	inputs: [],
-	resumePolicy: { strategy: "stable-step-id" },
-	cancellationPolicy: { rollback: false },
+	resumePolicy: { strategy: "stable-step-id", sourceDrift: "refuse", inputDrift: "refuse" },
+	cancellationPolicy: { rollback: false, reconcileSubmittedTransactions: true, unresolvedOutcome: "cancel_pending" },
 	artifacts: ["event journal", "transaction journal"],
 	transactionJournal: true,
 	prepare: async ({ ui }) => {
