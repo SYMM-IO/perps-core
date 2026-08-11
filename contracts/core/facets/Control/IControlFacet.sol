@@ -4,11 +4,13 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
+import { IExecutionContextFacet } from "../ExecutionContext/IExecutionContextFacet.sol";
 import { IControlEvents } from "./IControlEvents.sol";
 import { EntityMetadata } from "../../storages/MAStorage.sol";
 import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
-interface IControlFacet is IControlEvents {
+/// @notice Compatibility control ABI spanning the core diamond's control-compatible facets.
+interface IControlFacet is IControlEvents, IExecutionContextFacet {
 	function transferOwnership(address owner) external;
 
 	function cancelOwnershipTransfer() external;

@@ -1046,6 +1046,21 @@
         "type": "function"
     },
     {
+        "inputs": [],
+        "name": "ExternalCallContextNotSuspended",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "ExternalCallContextWasModified",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "ExternalCallSignerWasModified",
+        "type": "error"
+    },
+    {
         "inputs": [
             {
                 "internalType": "address",
@@ -1113,6 +1128,31 @@
             }
         ],
         "name": "AcceptCancelRequest",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "enum SharedEvents.BalanceChangeType",
+                "name": "_type",
+                "type": "uint8"
+            }
+        ],
+        "name": "BalanceChangePartyA",
         "type": "event"
     },
     {
@@ -1808,6 +1848,104 @@
             }
         ],
         "name": "SendQuoteSolverFeeCaps",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "enum SharedEvents.TradeVolumeType",
+                "name": "_type",
+                "type": "uint8"
+            }
+        ],
+        "name": "TradeVolumeRecorded",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "enum SharedEvents.TradingFeeType",
+                "name": "_type",
+                "type": "uint8"
+            }
+        ],
+        "name": "TradingFeeCharged",
         "type": "event"
     },
     {
@@ -5355,6 +5493,409 @@
         "type": "function"
     },
     {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "filledAmount",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "closedPrice",
+                "type": "uint256"
+            },
+            {
+                "components": [
+                    {
+                        "internalType": "bytes",
+                        "name": "reqId",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "timestamp",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "upnlPartyA",
+                        "type": "int256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "upnlPartyB",
+                        "type": "int256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "price",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "gatewaySignature",
+                        "type": "bytes"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "signature",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "owner",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "nonce",
+                                "type": "address"
+                            }
+                        ],
+                        "internalType": "struct IMuonSignatureVerifier.SchnorrSign",
+                        "name": "sigs",
+                        "type": "tuple"
+                    }
+                ],
+                "internalType": "struct PairUpnlAndPriceSig",
+                "name": "upnlSig",
+                "type": "tuple"
+            },
+            {
+                "internalType": "uint256",
+                "name": "solverFee",
+                "type": "uint256"
+            }
+        ],
+        "name": "fillCloseRequest",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "maxQuantity",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "closedPrice",
+                "type": "uint256"
+            },
+            {
+                "components": [
+                    {
+                        "internalType": "bytes",
+                        "name": "reqId",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "timestamp",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "upnlPartyA",
+                        "type": "int256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "upnlPartyB",
+                        "type": "int256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "price",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "gatewaySignature",
+                        "type": "bytes"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "signature",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "owner",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "nonce",
+                                "type": "address"
+                            }
+                        ],
+                        "internalType": "struct IMuonSignatureVerifier.SchnorrSign",
+                        "name": "sigs",
+                        "type": "tuple"
+                    }
+                ],
+                "internalType": "struct PairUpnlAndPriceSig",
+                "name": "upnlSig",
+                "type": "tuple"
+            },
+            {
+                "internalType": "uint256",
+                "name": "solverFee",
+                "type": "uint256"
+            }
+        ],
+        "name": "fillCloseRequestToLiquidation",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "filledAmount",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "filledAmount",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "openedPrice",
+                "type": "uint256"
+            },
+            {
+                "components": [
+                    {
+                        "internalType": "bytes",
+                        "name": "reqId",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "timestamp",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "upnl",
+                        "type": "int256"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "gatewaySignature",
+                        "type": "bytes"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "signature",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "owner",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "nonce",
+                                "type": "address"
+                            }
+                        ],
+                        "internalType": "struct IMuonSignatureVerifier.SchnorrSign",
+                        "name": "sigs",
+                        "type": "tuple"
+                    }
+                ],
+                "internalType": "struct SingleUpnlSig",
+                "name": "lockSig",
+                "type": "tuple"
+            },
+            {
+                "components": [
+                    {
+                        "internalType": "bytes",
+                        "name": "reqId",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "timestamp",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "upnlPartyA",
+                        "type": "int256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "upnlPartyB",
+                        "type": "int256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "price",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "gatewaySignature",
+                        "type": "bytes"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "signature",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "owner",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "nonce",
+                                "type": "address"
+                            }
+                        ],
+                        "internalType": "struct IMuonSignatureVerifier.SchnorrSign",
+                        "name": "sigs",
+                        "type": "tuple"
+                    }
+                ],
+                "internalType": "struct PairUpnlAndPriceSig",
+                "name": "upnlSig",
+                "type": "tuple"
+            },
+            {
+                "internalType": "uint256",
+                "name": "solverFee",
+                "type": "uint256"
+            }
+        ],
+        "name": "lockAndOpenPosition",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "filledAmount",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "openedPrice",
+                "type": "uint256"
+            },
+            {
+                "components": [
+                    {
+                        "internalType": "bytes",
+                        "name": "reqId",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "timestamp",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "upnlPartyA",
+                        "type": "int256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "upnlPartyB",
+                        "type": "int256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "price",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "gatewaySignature",
+                        "type": "bytes"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "signature",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "owner",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "nonce",
+                                "type": "address"
+                            }
+                        ],
+                        "internalType": "struct IMuonSignatureVerifier.SchnorrSign",
+                        "name": "sigs",
+                        "type": "tuple"
+                    }
+                ],
+                "internalType": "struct PairUpnlAndPriceSig",
+                "name": "upnlSig",
+                "type": "tuple"
+            },
+            {
+                "internalType": "uint256",
+                "name": "solverFee",
+                "type": "uint256"
+            }
+        ],
+        "name": "openPosition",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
         "anonymous": false,
         "inputs": [
             {
@@ -5781,6 +6322,37 @@
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "enum SharedEvents.BalanceChangeType",
+                "name": "_type",
+                "type": "uint8"
+            }
+        ],
+        "name": "BalanceChangePartyB",
+        "type": "event"
     },
     {
         "inputs": [
@@ -12718,6 +13290,31 @@
         "type": "function"
     },
     {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "price",
+                "type": "uint256"
+            }
+        ],
+        "name": "ADLClose",
+        "type": "event"
+    },
+    {
         "inputs": [
             {
                 "internalType": "uint256[]",
@@ -16892,6 +17489,105 @@
         "type": "function"
     },
     {
+        "inputs": [
+            {
+                "internalType": "bool",
+                "name": "instantOpenMode",
+                "type": "bool"
+            }
+        ],
+        "name": "beginInstantLayerExecution",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "endInstantLayerExecution",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "restoreExecutionContextAfterExternalCall",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "signer",
+                "type": "address"
+            }
+        ],
+        "name": "setTransientSigner",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "suspendExecutionContextForExternalCall",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "suspended",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "ExternalCallContextAlreadySuspended",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "TransientContextAlreadyActive",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "TransientContextNotActive",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "TransientSignerNotCleared",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "bool",
+                "name": "callFromInstantLayer",
+                "type": "bool"
+            }
+        ],
+        "name": "setCallFromInstantLayer",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "bool",
+                "name": "instantOpenMode",
+                "type": "bool"
+            }
+        ],
+        "name": "setInstantOpenMode",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
         "anonymous": false,
         "inputs": [
             {
@@ -17137,273 +17833,6 @@
             }
         ],
         "name": "liquidatePositionsPartyB",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "uint256",
-                "name": "quoteId",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "filledAmount",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "closedPrice",
-                "type": "uint256"
-            },
-            {
-                "components": [
-                    {
-                        "internalType": "bytes",
-                        "name": "reqId",
-                        "type": "bytes"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "timestamp",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "int256",
-                        "name": "upnlPartyA",
-                        "type": "int256"
-                    },
-                    {
-                        "internalType": "int256",
-                        "name": "upnlPartyB",
-                        "type": "int256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "price",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "bytes",
-                        "name": "gatewaySignature",
-                        "type": "bytes"
-                    },
-                    {
-                        "components": [
-                            {
-                                "internalType": "uint256",
-                                "name": "signature",
-                                "type": "uint256"
-                            },
-                            {
-                                "internalType": "address",
-                                "name": "owner",
-                                "type": "address"
-                            },
-                            {
-                                "internalType": "address",
-                                "name": "nonce",
-                                "type": "address"
-                            }
-                        ],
-                        "internalType": "struct IMuonSignatureVerifier.SchnorrSign",
-                        "name": "sigs",
-                        "type": "tuple"
-                    }
-                ],
-                "internalType": "struct PairUpnlAndPriceSig",
-                "name": "upnlSig",
-                "type": "tuple"
-            },
-            {
-                "internalType": "uint256",
-                "name": "solverFee",
-                "type": "uint256"
-            }
-        ],
-        "name": "fillCloseRequest",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "uint256",
-                "name": "quoteId",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "maxQuantity",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "closedPrice",
-                "type": "uint256"
-            },
-            {
-                "components": [
-                    {
-                        "internalType": "bytes",
-                        "name": "reqId",
-                        "type": "bytes"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "timestamp",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "int256",
-                        "name": "upnlPartyA",
-                        "type": "int256"
-                    },
-                    {
-                        "internalType": "int256",
-                        "name": "upnlPartyB",
-                        "type": "int256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "price",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "bytes",
-                        "name": "gatewaySignature",
-                        "type": "bytes"
-                    },
-                    {
-                        "components": [
-                            {
-                                "internalType": "uint256",
-                                "name": "signature",
-                                "type": "uint256"
-                            },
-                            {
-                                "internalType": "address",
-                                "name": "owner",
-                                "type": "address"
-                            },
-                            {
-                                "internalType": "address",
-                                "name": "nonce",
-                                "type": "address"
-                            }
-                        ],
-                        "internalType": "struct IMuonSignatureVerifier.SchnorrSign",
-                        "name": "sigs",
-                        "type": "tuple"
-                    }
-                ],
-                "internalType": "struct PairUpnlAndPriceSig",
-                "name": "upnlSig",
-                "type": "tuple"
-            },
-            {
-                "internalType": "uint256",
-                "name": "solverFee",
-                "type": "uint256"
-            }
-        ],
-        "name": "fillCloseRequestToLiquidation",
-        "outputs": [
-            {
-                "internalType": "uint256",
-                "name": "filledAmount",
-                "type": "uint256"
-            }
-        ],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "uint256",
-                "name": "quoteId",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "filledAmount",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "openedPrice",
-                "type": "uint256"
-            },
-            {
-                "components": [
-                    {
-                        "internalType": "bytes",
-                        "name": "reqId",
-                        "type": "bytes"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "timestamp",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "int256",
-                        "name": "upnlPartyA",
-                        "type": "int256"
-                    },
-                    {
-                        "internalType": "int256",
-                        "name": "upnlPartyB",
-                        "type": "int256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "price",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "bytes",
-                        "name": "gatewaySignature",
-                        "type": "bytes"
-                    },
-                    {
-                        "components": [
-                            {
-                                "internalType": "uint256",
-                                "name": "signature",
-                                "type": "uint256"
-                            },
-                            {
-                                "internalType": "address",
-                                "name": "owner",
-                                "type": "address"
-                            },
-                            {
-                                "internalType": "address",
-                                "name": "nonce",
-                                "type": "address"
-                            }
-                        ],
-                        "internalType": "struct IMuonSignatureVerifier.SchnorrSign",
-                        "name": "sigs",
-                        "type": "tuple"
-                    }
-                ],
-                "internalType": "struct PairUpnlAndPriceSig",
-                "name": "upnlSig",
-                "type": "tuple"
-            },
-            {
-                "internalType": "uint256",
-                "name": "solverFee",
-                "type": "uint256"
-            }
-        ],
-        "name": "openPosition",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -18184,6 +18613,37 @@
         "type": "function"
     },
     {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "payer",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "charger",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "receiver",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "OperationalFeeCharged",
+        "type": "event"
+    },
+    {
         "inputs": [
             {
                 "internalType": "address",
@@ -18788,6 +19248,37 @@
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "newBalance",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "enum SharedEvents.ReimbursementChangeType",
+                "name": "_type",
+                "type": "uint8"
+            }
+        ],
+        "name": "PartyAReimbursementChange",
+        "type": "event"
     },
     {
         "anonymous": false,
@@ -20230,19 +20721,6 @@
     {
         "inputs": [
             {
-                "internalType": "bool",
-                "name": "callFromInstantLayer",
-                "type": "bool"
-            }
-        ],
-        "name": "setCallFromInstantLayer",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
                 "internalType": "address",
                 "name": "collateral",
                 "type": "address"
@@ -20425,19 +20903,6 @@
             }
         ],
         "name": "setForceClosePricePenalty",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "bool",
-                "name": "instantOpenMode",
-                "type": "bool"
-            }
-        ],
-        "name": "setInstantOpenMode",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -20921,6 +21386,57 @@
         "type": "function"
     },
     {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "pendingOwner",
+                "type": "address"
+            }
+        ],
+        "name": "OwnershipTransferCanceled",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "currentOwner",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "pendingOwner",
+                "type": "address"
+            }
+        ],
+        "name": "OwnershipTransferStarted",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "previousOwner",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "newOwner",
+                "type": "address"
+            }
+        ],
+        "name": "OwnershipTransferred",
+        "type": "event"
+    },
+    {
         "inputs": [
             {
                 "internalType": "uint256",
@@ -20932,31 +21448,6 @@
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "quoteId",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "price",
-                "type": "uint256"
-            }
-        ],
-        "name": "ADLClose",
-        "type": "event"
     },
     {
         "inputs": [
@@ -21593,222 +22084,6 @@
         ],
         "stateMutability": "view",
         "type": "function"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "partyA",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "enum SharedEvents.BalanceChangeType",
-                "name": "_type",
-                "type": "uint8"
-            }
-        ],
-        "name": "BalanceChangePartyA",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "partyA",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "enum SharedEvents.BalanceChangeType",
-                "name": "_type",
-                "type": "uint8"
-            }
-        ],
-        "name": "BalanceChangePartyB",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "payer",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "charger",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "receiver",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            }
-        ],
-        "name": "OperationalFeeCharged",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "partyA",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "newBalance",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "enum SharedEvents.ReimbursementChangeType",
-                "name": "_type",
-                "type": "uint8"
-            }
-        ],
-        "name": "PartyAReimbursementChange",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "quoteId",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "partyA",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "symbolId",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "enum SharedEvents.TradeVolumeType",
-                "name": "_type",
-                "type": "uint8"
-            }
-        ],
-        "name": "TradeVolumeRecorded",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "quoteId",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "partyA",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "symbolId",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "enum SharedEvents.TradingFeeType",
-                "name": "_type",
-                "type": "uint8"
-            }
-        ],
-        "name": "TradingFeeCharged",
-        "type": "event"
     },
     {
         "inputs": [

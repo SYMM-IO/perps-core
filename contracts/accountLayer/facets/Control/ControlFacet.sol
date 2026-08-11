@@ -13,6 +13,7 @@ import { AffiliateStorage, AffiliateState } from "../../storages/AffiliateStorag
 import { LibAccountLayerAccessibility } from "../../libraries/LibAccountLayerAccessibility.sol";
 import { LibDiamond } from "../../../diamond/libraries/LibDiamond.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
+import { LibAccountLayerSigner } from "../../libraries/LibAccountLayerSigner.sol";
 
 /// @notice Administrative facet for role management, pause control, and system configuration
 contract ControlFacet is IControlFacet, AccountLayerAccessibility, AccountLayerPausable {
@@ -94,32 +95,62 @@ contract ControlFacet is IControlFacet, AccountLayerAccessibility, AccountLayerP
 		emit AccountManagerImplementationUpdated(oldImplementation, implementation);
 	}
 
-	/// @notice Sets the global signer used to authorize protocol-level operations
-	/// @dev Always opens an unconfined session. Callers acting for a delegate must use
-	///      setSignerScoped instead, so that clearing through this path can never leave a
-	///      stale scope behind for the next caller.
+	/// @notice Sets the global signer used to authorize protocol-level operations.
+	/// @dev Deployed routers keep this selector and its calldata, but internally it installs and
+	///      clears the same transient signer scope that setTransientSigner uses. Both the legacy
+	///      set/clear pair and the explicit call are therefore behaviourally identical.
+	///      This matters beyond InstantLayer: AffiliateFacet grants SIGNER_SETTER_ROLE to every
+	///      AccountManager it deploys, so the set of legacy callers grows at runtime and cannot be
+	///      enumerated. Routing unconditionally keeps them all on one mechanism.
+	///      Always opens an unconfined session; callers acting for a delegate must use
+	///      setSignerScoped instead, so clearing through this path can never leave a stale scope
+	///      behind for the next caller.
 	/// @param _signer The new signer address (address(0) to clear)
 	function setSigner(address _signer) external onlyRole(LibAccountLayerAccessibility.SIGNER_SETTER_ROLE) {
-		_setSigner(_signer, address(0));
+		_installTransientSigner(_signer, address(0));
 	}
 
 	/// @notice Sets the global signer and confines the session to a single account family
 	/// @dev Ownership checks alone cannot separate an owner's sub-accounts from one another, so a
 	///      caller executing on behalf of a delegate supplies the account family that delegation was
 	///      granted over. onlyAccountOwner then rejects any call that strays outside it.
+	///      Routed to the same transient mechanism as setSigner.
 	/// @param _signer The new signer address (address(0) to clear)
 	/// @param _scope Canonical sub-account to confine the session to (address(0) for an unconfined session)
 	function setSignerScoped(address _signer, address _scope) external onlyRole(LibAccountLayerAccessibility.SIGNER_SETTER_ROLE) {
-		_setSigner(_signer, _scope);
+		_installTransientSigner(_signer, _scope);
 	}
 
-	function _setSigner(address _signer, address _scope) private {
-		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
-		address oldSigner = ahLayout.globalSigner;
-		ahLayout.globalSigner = _signer;
-		ahLayout.scopedAccount = _scope;
+	// ==================== Transaction Signer Runtime ====================
 
-		emit SignerUpdated(oldSigner, _signer);
+	/// @notice Installs the effective signer for the current transaction, or clears it with zero.
+	/// @dev Always opens an unconfined session; clearing through this path also clears any scope.
+	function setTransientSigner(address signerOrZero) external onlyRole(LibAccountLayerAccessibility.SIGNER_SETTER_ROLE) {
+		_installTransientSigner(signerOrZero, address(0));
+	}
+
+	/// @notice Installs the effective signer for the current transaction, confined to one account family.
+	/// @dev Transient counterpart of setSignerScoped: a router executing on behalf of a delegate
+	///      supplies the account family the delegation was granted over, and onlyAccountOwner
+	///      rejects anything outside it for the rest of the transient session.
+	/// @param signerOrZero The new signer address, or address(0) to end the signer scope
+	/// @param scope Canonical sub-account to confine the session to (address(0) for an unconfined session)
+	function setTransientSignerScoped(address signerOrZero, address scope) external onlyRole(LibAccountLayerAccessibility.SIGNER_SETTER_ROLE) {
+		_installTransientSigner(signerOrZero, scope);
+	}
+
+	/// @dev Single install path for all four signer selectors, so scope and signer can never
+	///      diverge across them.
+	function _installTransientSigner(address _signer, address _scope) private {
+		require(AccountStorage.layout().globalSigner == address(0), "ControlFacet: Persistent signer is set");
+		address previousSigner = LibAccountLayerSigner.configuredSigner();
+		// Fail closed rather than silently taking over a live scope. A nested legacy caller --
+		// an AccountManager reached from inside an InstantLayer batch, say -- must not overwrite
+		// the outer router's signer and then clear it on the way out. This mirrors the guard the
+		// persistent branch used to carry, and the one core's setSigner still has.
+		if (_signer != address(0)) require(previousSigner == address(0), "ControlFacet: Transient signer is set");
+		LibAccountLayerSigner.setTransientSignerScoped(_signer, _scope);
+		emit SignerUpdated(previousSigner, _signer);
 		emit SignerScopeUpdated(_signer, _scope);
 	}
 

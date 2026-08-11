@@ -1702,7 +1702,9 @@ async function setupSystem(
 	const [deployer] = await ethers.getSigners()
 	const deployerAddress = deployer.address
 
-	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", deployedContracts.diamond!)
+	// IControlFacet is the compatibility ABI spanning ControlFacet and the
+	// size-isolated transient selectors in ExecutionContextFacet at the same diamond address.
+	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/IControlFacet.sol:IControlFacet", deployedContracts.diamond!)
 	const viewFacet = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", deployedContracts.diamond!)
 	const alControlFacet = await ethers.getContractAt(
 		"contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet",
@@ -1841,6 +1843,10 @@ async function setupSystem(
 	await checkpointedStep(checkpoint, "setup.ilRoleOnAL", "Granting SIGNER_SETTER_ROLE on AccountLayerDiamond", async () => {
 		await send(alControlFacet.connect(deployer).grantRole(deployedContracts.instantLayer!, roleHash("SIGNER_SETTER_ROLE")), "grantRole")
 	})
+
+	// No transient-context configuration step: the legacy setCallFromInstantLayer /
+	// setInstantOpenMode / setSigner selectors route into EIP-1153 state unconditionally,
+	// so deployed and newly deployed callers already share one mechanism.
 
 	// Whitelist Symmio Core
 	await checkpointedStep(checkpoint, "setup.alWhitelistSymmio", "Whitelisting Symmio Core on AccountLayerDiamond", async () => {

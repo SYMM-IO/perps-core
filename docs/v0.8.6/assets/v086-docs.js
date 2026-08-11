@@ -222,6 +222,7 @@
 		{ href: "muon-upnl-validity-overrides.html", category: "Muon", title: "Muon UPNL Validity Overrides" },
 		{ href: "solver-fees.html", category: "Fees", title: "Solver Fees" },
 		{ href: "operational-fees.html", category: "Fees", title: "Operational Fees" },
+		{ href: "instant-open-gas-optimization.html", category: "Performance", title: "InstantOpen Gas Optimization" },
 		{ href: "symbol-adjustment.html", category: "Symbols", title: "Symbol Corporate-Action Adjustment" },
 		{ href: "partya-liquidation-fee-recipient.html", category: "Liquidation", title: "PartyA Liquidation Fee Recipient Cleanup" },
 		{ href: "balance-change-event-cleanup.html", category: "Events & Indexing", title: "Allocated Balance Event Ledger" },

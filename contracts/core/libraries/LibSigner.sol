@@ -4,11 +4,11 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
+import { LibExecutionContext } from "./LibExecutionContext.sol";
 
 library LibSigner {
 	/// @notice Returns the current signer address, falling back to msg.sender if no signer is set.
 	function getSigner() internal view returns (address) {
-		return GlobalAppStorage.layout().signer == address(0) ? msg.sender : GlobalAppStorage.layout().signer;
+		return LibExecutionContext.signer();
 	}
 }
