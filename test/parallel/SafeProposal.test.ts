@@ -75,14 +75,20 @@ describe("Safe proposal adapter", function () {
 	})
 
 	it("refuses a proposal signer that is not an owner of the selected Safe", async function () {
-		await expect(
-			proposeSafeBatch(intent(), {
+		let failure: Error | undefined
+		try {
+			await proposeSafeBatch(intent(), {
 				protocolKit: { init: async () => ({ isOwner: async () => false }) },
 				apiKit: class {} as any,
 				provider: { request: async () => null },
 				ownerAddress,
 				apiKey: "api-key",
-			}),
-		).to.be.rejectedWith("is not an owner")
+			})
+		} catch (error) {
+			failure = error as Error
+		}
+
+		expect(failure, "expected the non-owner preflight to stop the proposal").to.not.equal(undefined)
+		expect(failure!.message).to.equal(`${ownerAddress} is not an owner of Safe ${safeAddress}`)
 	})
 })
