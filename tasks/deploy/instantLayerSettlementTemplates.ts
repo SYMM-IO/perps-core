@@ -1,7 +1,7 @@
 import type { BaseContract } from "ethers"
 
-export const LEGACY_SETTLEMENT_QUOTE_ID_OFFSET = 448n
-export const CORRECT_SETTLEMENT_QUOTE_ID_OFFSET = 480n
+export const SETTLEMENT_QUOTE_ID_OFFSET = 448n
+export const SETTLEMENT_CURRENT_PRICE_OFFSET = 480n
 
 export const SETTLEMENT_TEMPLATE_NAMES = Object.freeze([
 	"InstantOpenAndSettleUpnl",
@@ -24,7 +24,7 @@ export interface InstantLayerTemplateSnapshot {
 	operations: InstantLayerTemplateOperation[]
 }
 
-export type SettlementTemplateRepairAction =
+export type SettlementTemplateRecreationAction =
 	| {
 			kind: "addTemplate"
 			templateId: bigint
@@ -47,17 +47,19 @@ export type SettlementTemplateRepairAction =
 			description: string
 	  }
 
-export interface SettlementTemplateRepairPlan {
-	actions: SettlementTemplateRepairAction[]
+export interface SettlementTemplateRecreationPlan {
+	actions: SettlementTemplateRecreationAction[]
 	templates: Array<{
 		name: string
-		legacyIds: bigint[]
-		activeLegacyIds: bigint[]
-		correctedIds: bigint[]
-		activeCorrectedIds: bigint[]
+		sourceId: bigint
+		sourceActive: boolean
+		replacementIds: bigint[]
+		activeReplacementIds: bigint[]
+		unsafeCurrentPriceOffsetIds: bigint[]
+		activeUnsafeCurrentPriceOffsetIds: bigint[]
 		instantOpenMode: boolean
 	}>
-	repaired: boolean
+	recreated: boolean
 }
 
 export interface SettlementTransactionFeeData {
@@ -103,7 +105,7 @@ function cloneOperations(operations: InstantLayerTemplateOperation[]): InstantLa
 	}))
 }
 
-function offsetKind(template: InstantLayerTemplateSnapshot): "legacy" | "corrected" | "unknown" {
+function settlementInjectionOffset(template: InstantLayerTemplateSnapshot): bigint | undefined {
 	const operation = template.operations.at(-1)
 	if (
 		!operation ||
@@ -112,21 +114,9 @@ function offsetKind(template: InstantLayerTemplateSnapshot): "legacy" | "correct
 		operation.sourceOffsets.length !== 1 ||
 		operation.sourceOffsets[0] !== 0n
 	) {
-		return "unknown"
+		return undefined
 	}
-	if (operation.insertionPoints[0] === LEGACY_SETTLEMENT_QUOTE_ID_OFFSET) return "legacy"
-	if (operation.insertionPoints[0] === CORRECT_SETTLEMENT_QUOTE_ID_OFFSET) return "corrected"
-	return "unknown"
-}
-
-function correctedOperations(template: InstantLayerTemplateSnapshot): InstantLayerTemplateOperation[] {
-	const operations = cloneOperations(template.operations)
-	const settlement = operations.at(-1)
-	if (!settlement || offsetKind(template) === "unknown") {
-		throw new Error(`Template ${template.id} (${template.name}) does not have a recognized settleUpnl result-injection operation`)
-	}
-	settlement.insertionPoints[0] = CORRECT_SETTLEMENT_QUOTE_ID_OFFSET
-	return operations
+	return operation.insertionPoints[0]
 }
 
 function operationsKey(operations: InstantLayerTemplateOperation[]): string {
@@ -137,6 +127,13 @@ function operationsKey(operations: InstantLayerTemplateOperation[]): string {
 			sourceOffsets: operation.sourceOffsets.map(String),
 		})),
 	)
+}
+
+function isCurrentPriceOffsetCopy(template: InstantLayerTemplateSnapshot, source: InstantLayerTemplateSnapshot): boolean {
+	if (settlementInjectionOffset(template) !== SETTLEMENT_CURRENT_PRICE_OFFSET) return false
+	const operations = cloneOperations(template.operations)
+	operations.at(-1)!.insertionPoints[0] = SETTLEMENT_QUOTE_ID_OFFSET
+	return operationsKey(operations) === operationsKey(source.operations)
 }
 
 export function normalizeInstantLayerTemplate(id: bigint | number, value: any): InstantLayerTemplateSnapshot {
@@ -160,56 +157,62 @@ export async function readInstantLayerTemplates(instantLayer: BaseContract): Pro
 	return templates
 }
 
-export function buildSettlementTemplateRepairPlan(
+export function buildSettlementTemplateRecreationPlan(
 	templates: InstantLayerTemplateSnapshot[],
-	{ deactivateLegacy = true }: { deactivateLegacy?: boolean } = {},
-): SettlementTemplateRepairPlan {
-	const preparations: SettlementTemplateRepairAction[] = []
-	const deactivations: SettlementTemplateRepairAction[] = []
-	const summaries: SettlementTemplateRepairPlan["templates"] = []
+	{ deactivateOriginals = true }: { deactivateOriginals?: boolean } = {},
+): SettlementTemplateRecreationPlan {
+	const preparations: SettlementTemplateRecreationAction[] = []
+	const deactivations: SettlementTemplateRecreationAction[] = []
+	const summaries: SettlementTemplateRecreationPlan["templates"] = []
 	let nextTemplateId = templates.reduce((next, template) => (template.id >= next ? template.id + 1n : next), 0n)
 
 	for (const name of SETTLEMENT_TEMPLATE_NAMES) {
 		const matching = templates.filter(template => template.name === name)
-		if (matching.length === 0) throw new Error(`Required settlement template ${JSON.stringify(name)} is missing`)
-
-		const unknown = matching.filter(template => offsetKind(template) === "unknown")
-		if (unknown.length > 0) {
+		const source = matching
+			.filter(template => settlementInjectionOffset(template) === SETTLEMENT_QUOTE_ID_OFFSET)
+			.sort((a, b) => Number(a.id - b.id))[0]
+		if (!source) {
 			throw new Error(
-				`${name} has unrecognized operation wiring in template id(s) ${unknown.map(template => template.id).join(", ")}; refusing to infer a repair`,
+				`Required source template ${JSON.stringify(name)} with settleUpnl quote ID at byte offset ${SETTLEMENT_QUOTE_ID_OFFSET} is missing`,
+			)
+		}
+		const sourceId = source.id
+
+		const sourceKey = operationsKey(source.operations)
+		const sameName = matching.filter(template => template.id !== sourceId)
+		const replacements = sameName.filter(template => operationsKey(template.operations) === sourceKey)
+		const unsafeCurrentPriceOffset = sameName.filter(template => isCurrentPriceOffsetCopy(template, source))
+		const activeUnknown = sameName.filter(
+			template => template.active && !replacements.includes(template) && !unsafeCurrentPriceOffset.includes(template),
+		)
+		if (activeUnknown.length > 0) {
+			throw new Error(
+				`${name} has active unrecognized template id(s) ${activeUnknown.map(template => template.id).join(", ")}; refusing to infer which wiring is safe`,
 			)
 		}
 
-		const canonicalKeys = new Set(matching.map(template => operationsKey(correctedOperations(template))))
-		if (canonicalKeys.size !== 1) {
-			throw new Error(`${name} has ${canonicalKeys.size} distinct operation layouts after offset correction; refusing to choose one`)
-		}
+		const activeReplacements = replacements.filter(template => template.active).sort((a, b) => Number(a.id - b.id))
+		let selectedReplacement = activeReplacements.find(template => template.instantOpenMode === source.instantOpenMode)
+		if (!selectedReplacement) selectedReplacement = activeReplacements[0]
 
-		const legacy = matching.filter(template => offsetKind(template) === "legacy")
-		const corrected = matching.filter(template => offsetKind(template) === "corrected")
-		const activeLegacy = legacy.filter(template => template.active)
-		const activeCorrected = corrected.filter(template => template.active)
-		const canonicalSource = [...legacy, ...corrected].sort((a, b) => Number(a.id - b.id))[0]
-		const expectedInstantOpenMode = canonicalSource.instantOpenMode
-
-		if (activeCorrected.length === 0) {
-			const inactiveCorrected = corrected.filter(template => !template.active).sort((a, b) => Number(a.id - b.id))[0]
-			if (inactiveCorrected) {
-				if (inactiveCorrected.instantOpenMode !== expectedInstantOpenMode) {
+		if (!selectedReplacement) {
+			selectedReplacement = replacements.filter(template => !template.active).sort((a, b) => Number(a.id - b.id))[0]
+			if (selectedReplacement) {
+				if (selectedReplacement.instantOpenMode !== source.instantOpenMode) {
 					preparations.push({
 						kind: "setTemplateInstantOpenMode",
-						templateId: inactiveCorrected.id,
-						mode: expectedInstantOpenMode,
+						templateId: selectedReplacement.id,
+						mode: source.instantOpenMode,
 						name,
-						description: `Restore instant-open mode ${expectedInstantOpenMode} on corrected ${name} template ${inactiveCorrected.id}`,
+						description: `Restore instant-open mode ${source.instantOpenMode} on ${name} replacement ${selectedReplacement.id}`,
 					})
 				}
 				preparations.push({
 					kind: "setTemplateActive",
-					templateId: inactiveCorrected.id,
+					templateId: selectedReplacement.id,
 					active: true,
 					name,
-					description: `Reactivate corrected ${name} template ${inactiveCorrected.id}`,
+					description: `Reactivate exact ${name} replacement ${selectedReplacement.id}`,
 				})
 			} else {
 				const replacementId = nextTemplateId++
@@ -217,65 +220,76 @@ export function buildSettlementTemplateRepairPlan(
 					kind: "addTemplate",
 					templateId: replacementId,
 					name,
-					operations: correctedOperations(canonicalSource),
-					description: `Add corrected ${name} template ${replacementId} with settleUpnl quote-id offset 480`,
+					operations: cloneOperations(source.operations),
+					description: `Recreate ${name} as template ${replacementId} with exact source wiring and quote-ID offset ${SETTLEMENT_QUOTE_ID_OFFSET}`,
 				})
-				if (expectedInstantOpenMode) {
+				if (source.instantOpenMode) {
 					preparations.push({
 						kind: "setTemplateInstantOpenMode",
 						templateId: replacementId,
 						mode: true,
 						name,
-						description: `Restore instant-open mode true on corrected ${name} template ${replacementId}`,
+						description: `Restore instant-open mode true on ${name} replacement ${replacementId}`,
 					})
 				}
 			}
-		} else {
-			for (const template of activeCorrected.filter(template => template.instantOpenMode !== expectedInstantOpenMode)) {
-				preparations.push({
-					kind: "setTemplateInstantOpenMode",
-					templateId: template.id,
-					mode: expectedInstantOpenMode,
-					name,
-					description: `Restore instant-open mode ${expectedInstantOpenMode} on corrected ${name} template ${template.id}`,
-				})
-			}
+		} else if (selectedReplacement.instantOpenMode !== source.instantOpenMode) {
+			preparations.push({
+				kind: "setTemplateInstantOpenMode",
+				templateId: selectedReplacement.id,
+				mode: source.instantOpenMode,
+				name,
+				description: `Restore instant-open mode ${source.instantOpenMode} on ${name} replacement ${selectedReplacement.id}`,
+			})
 		}
 
-		if (deactivateLegacy) {
-			for (const template of activeLegacy.sort((a, b) => Number(a.id - b.id))) {
+		if (deactivateOriginals) {
+			if (source.active) {
+				deactivations.push({
+					kind: "setTemplateActive",
+					templateId: source.id,
+					active: false,
+					name,
+					description: `Deactivate original ${name} template ${source.id} after its exact replacement is available`,
+				})
+			}
+			for (const template of unsafeCurrentPriceOffset.filter(template => template.active).sort((a, b) => Number(a.id - b.id))) {
 				deactivations.push({
 					kind: "setTemplateActive",
 					templateId: template.id,
 					active: false,
 					name,
-					description: `Deactivate broken ${name} template ${template.id} with settleUpnl offset 448`,
+					description: `Deactivate unsafe ${name} template ${template.id} that injects quote ID into currentPrice offset ${SETTLEMENT_CURRENT_PRICE_OFFSET}`,
 				})
 			}
 		}
 
 		summaries.push({
 			name,
-			legacyIds: legacy.map(template => template.id),
-			activeLegacyIds: activeLegacy.map(template => template.id),
-			correctedIds: corrected.map(template => template.id),
-			activeCorrectedIds: activeCorrected.map(template => template.id),
-			instantOpenMode: expectedInstantOpenMode,
+			sourceId,
+			sourceActive: source.active,
+			replacementIds: replacements.map(template => template.id),
+			activeReplacementIds: activeReplacements.map(template => template.id),
+			unsafeCurrentPriceOffsetIds: unsafeCurrentPriceOffset.map(template => template.id),
+			activeUnsafeCurrentPriceOffsetIds: unsafeCurrentPriceOffset.filter(template => template.active).map(template => template.id),
+			instantOpenMode: source.instantOpenMode,
 		})
 	}
 
 	const actions = [...preparations, ...deactivations]
-	return { actions, templates: summaries, repaired: actions.length === 0 }
+	return { actions, templates: summaries, recreated: actions.length === 0 }
 }
 
-export function assertSettlementTemplateRepairComplete(templates: InstantLayerTemplateSnapshot[]): void {
-	const plan = buildSettlementTemplateRepairPlan(templates)
-	if (!plan.repaired) {
-		throw new Error(`Settlement template repair is incomplete; ${plan.actions.length} action(s) are still required`)
+export function assertSettlementTemplateRecreationComplete(templates: InstantLayerTemplateSnapshot[]): void {
+	const plan = buildSettlementTemplateRecreationPlan(templates)
+	if (!plan.recreated) {
+		throw new Error(`Settlement template recreation is incomplete; ${plan.actions.length} action(s) are still required`)
 	}
 	for (const template of plan.templates) {
-		if (template.activeCorrectedIds.length === 0) throw new Error(`${template.name} has no active corrected template`)
-		if (template.activeLegacyIds.length > 0)
-			throw new Error(`${template.name} still has active legacy template ids ${template.activeLegacyIds.join(", ")}`)
+		if (template.activeReplacementIds.length === 0) throw new Error(`${template.name} has no active exact replacement`)
+		if (template.sourceActive) throw new Error(`${template.name} original template ${template.sourceId} is still active`)
+		if (template.activeUnsafeCurrentPriceOffsetIds.length > 0) {
+			throw new Error(`${template.name} has unsafe active template ids ${template.activeUnsafeCurrentPriceOffsetIds.join(", ")}`)
+		}
 	}
 }

@@ -17,6 +17,7 @@ const ACTIVE_STATUSES = new Set(["prepared", "running", "paused", "waiting_exter
 const RISK_LEVELS = new Set(["read-only", "local-write", "transaction"]);
 const CATEGORIES = new Set(["deploy", "patch", "checklist", "maintenance"]);
 const UNCERTAIN_TX_STATUSES = new Set(["submitted", "unresolved", "timed_out"]);
+const STABLE_ID = /^[a-z0-9][a-z0-9.-]*$/;
 const HARDHAT_KEYSTORE_PROMPT = /\[hardhat-keystore\]\s*(?:Enter the password|Please confirm your password):\s*$/u;
 const TERMINAL_CONTROL = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))/gu;
 
@@ -185,11 +186,25 @@ function validateDefinition(definition) {
 	if (!definition.cancellationPolicy || typeof definition.cancellationPolicy !== "object")
 		throw new Error(`Task ${definition.id} requires cancellationPolicy`);
 	if (!Array.isArray(definition.artifacts)) throw new Error(`Task ${definition.id} requires artifact declarations`);
-	if (definition.risk !== "read-only" && typeof definition.reconcile !== "function") {
-		throw new Error(`Mutating task ${definition.id} requires reconcile()`);
-	}
-	if (definition.risk !== "read-only" && definition.transactionJournal !== true) {
-		throw new Error(`Mutating task ${definition.id} requires shared transaction-journal support`);
+	if (definition.risk !== "read-only") {
+		if (typeof definition.reconcile !== "function") throw new Error(`Mutating task ${definition.id} requires reconcile()`);
+		if (definition.transactionJournal !== true) {
+			throw new Error(`Mutating task ${definition.id} requires shared transaction-journal support`);
+		}
+		if (
+			definition.resumePolicy.strategy !== "stable-step-id" ||
+			definition.resumePolicy.sourceDrift !== "refuse" ||
+			definition.resumePolicy.inputDrift !== "refuse"
+		) {
+			throw new Error(`Mutating task ${definition.id} requires stable-step-id resume with source and input drift refusal`);
+		}
+		if (
+			definition.cancellationPolicy.rollback !== false ||
+			definition.cancellationPolicy.reconcileSubmittedTransactions !== true ||
+			definition.cancellationPolicy.unresolvedOutcome !== "cancel_pending"
+		) {
+			throw new Error(`Mutating task ${definition.id} requires reconciliation-first safe cancellation`);
+		}
 	}
 	return definition;
 }
@@ -198,15 +213,18 @@ function validatePlan(taskId, plan) {
 	if (!Array.isArray(plan) || plan.length === 0) throw new Error(`Task ${taskId} produced an empty plan`);
 	const ids = new Set();
 	for (const step of plan) {
-		if (!step || typeof step !== "object" || !/^[a-z0-9][a-z0-9.-]*$/.test(step.id || "")) {
+		if (!step || typeof step !== "object" || !STABLE_ID.test(step.id || "")) {
 			throw new Error(`Task ${taskId} produced a step without a stable id`);
 		}
 		if (ids.has(step.id)) throw new Error(`Task ${taskId} repeated plan step ${step.id}`);
 		ids.add(step.id);
-		if (typeof step.phase !== "string" || !step.phase) throw new Error(`Task ${taskId} step ${step.id} requires a stable phase id`);
-		if (typeof step.title !== "string" || !step.title) throw new Error(`Task ${taskId} step ${step.id} requires a title`);
-		if (step.items !== undefined && (!Array.isArray(step.items) || new Set(step.items).size !== step.items.length)) {
-			throw new Error(`Task ${taskId} step ${step.id} requires unique batch item ids`);
+		if (!STABLE_ID.test(step.phase || "")) throw new Error(`Task ${taskId} step ${step.id} requires a stable phase id`);
+		if (typeof step.title !== "string" || !step.title.trim()) throw new Error(`Task ${taskId} step ${step.id} requires a title`);
+		if (
+			step.items !== undefined &&
+			(!Array.isArray(step.items) || step.items.some(item => !STABLE_ID.test(item)) || new Set(step.items).size !== step.items.length)
+		) {
+			throw new Error(`Task ${taskId} step ${step.id} requires unique stable batch item ids`);
 		}
 	}
 	return plan;
@@ -405,11 +423,21 @@ export function createTaskRunner(options = {}) {
 		};
 		process.on("SIGINT", interrupt);
 
+		let notifyingLineObserver = false;
 		const captureLine = (line, stream = "stdout") => {
 			const safe = redact(line);
+			// A line observer may itself use console.log (for example a CLI adapter or
+			// test harness). runCallable temporarily routes console methods back here,
+			// so never recursively notify or persist observer-generated output.
+			if (notifyingLineObserver) return safe;
 			fs.mkdirSync(path.dirname(state.logPath), { recursive: true });
 			fs.appendFileSync(state.logPath, `${safe}\n`, { mode: 0o600 });
-			runtime.onLine?.(safe, stream, state);
+			notifyingLineObserver = true;
+			try {
+				runtime.onLine?.(safe, stream, state);
+			} finally {
+				notifyingLineObserver = false;
+			}
 			return safe;
 		};
 
@@ -440,7 +468,19 @@ export function createTaskRunner(options = {}) {
 				throw new TaskWaitingError(message);
 			},
 			async step(id, title, action, { phase } = {}) {
-				const resolvedPhase = phase || state.plan.find(step => step.id === id)?.phase;
+				const declaredStep = state.plan.find(step => step.id === id);
+				if (!declaredStep) throw new Error(`Task ${definition.id} attempted undeclared step ${JSON.stringify(id)}`);
+				if (title !== declaredStep.title) {
+					throw new Error(
+						`Task ${definition.id} step ${id} title ${JSON.stringify(title)} does not match its declared title ${JSON.stringify(declaredStep.title)}`,
+					);
+				}
+				if (phase !== undefined && phase !== declaredStep.phase) {
+					throw new Error(
+						`Task ${definition.id} step ${id} phase ${JSON.stringify(phase)} does not match its declared phase ${JSON.stringify(declaredStep.phase)}`,
+					);
+				}
+				const resolvedPhase = declaredStep.phase;
 				if (state.completedSteps.includes(id)) {
 					emit("step.skipped", { stepId: id, title, phase: resolvedPhase });
 					return undefined;
@@ -488,10 +528,10 @@ export function createTaskRunner(options = {}) {
 						stdio: ["pipe", "pipe", "pipe", "pipe"],
 					});
 					activeChildren.add(child);
-					const recentStderr = [];
-					const rememberStderr = line => {
-						recentStderr.push(line);
-						if (recentStderr.length > 50) recentStderr.shift();
+					const recentOutput = { stdout: [], stderr: [] };
+					const rememberOutput = (line, stream) => {
+						recentOutput[stream].push(line);
+						if (recentOutput[stream].length > 50) recentOutput[stream].shift();
 					};
 					let passwordPromptActive = false;
 					const resolvePasswordPrompt = () => {
@@ -512,7 +552,7 @@ export function createTaskRunner(options = {}) {
 							for (const line of lines) {
 								if (line && !(wasPasswordPromptActive && /^\*+$/u.test(line.replace(TERMINAL_CONTROL, "")))) {
 									const safe = captureLine(line, name);
-									if (name === "stderr") rememberStderr(safe);
+									rememberOutput(safe, name);
 								}
 							}
 							const plainBuffer = buffer.replace(TERMINAL_CONTROL, "");
@@ -530,7 +570,7 @@ export function createTaskRunner(options = {}) {
 						stream.on("end", () => {
 							if (buffer) {
 								const safe = captureLine(buffer, name);
-								if (name === "stderr") rememberStderr(safe);
+								rememberOutput(safe, name);
 							}
 						});
 					};
@@ -559,7 +599,7 @@ export function createTaskRunner(options = {}) {
 						emit("process.completed", { code: code ?? 1 });
 						if (code === 0) resolve(0);
 						else {
-							const detail = usefulProcessError(recentStderr);
+							const detail = usefulProcessError(recentOutput.stderr) || usefulProcessError(recentOutput.stdout);
 							reject(new Error(`${command} exited with code ${code ?? 1}${detail ? `: ${detail}` : ""}`));
 						}
 					});

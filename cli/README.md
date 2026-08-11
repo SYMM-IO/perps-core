@@ -41,7 +41,9 @@ for forks and live networks.
 
 The form selects the deployment signer once. Hardhat keystore is first and recommended;
 the official keystore prompt temporarily takes over the terminal and receives a secure,
-non-echoed byte stream directly. The progress UI resumes after the keystore unlocks.
+non-echoed byte stream directly. One unlock is reused in memory for later Hardhat
+subprocesses in that task run, then zeroed when the run returns to the menu. The progress UI
+resumes after the keystore unlocks.
 RPC/explorer credential storage is a separate Yes-defaulted question, so choosing a
 private-key wallet or Ledger does not force operators to handle infrastructure credentials
 differently. Secret values never enter a recipe, task input, event, or log. Environment
@@ -64,7 +66,7 @@ once per transaction—then binds the public selection into its input hash:
 | Safe multisig — export JSON        | Safe address and batch digest         | writes Safe Transaction Builder JSON with ABI-decoded method names         |
 | Safe multisig — create proposal    | Safe address, owner identity, tx hash | owner signs and proposes through the official Safe SDK/Transaction Service |
 | Ledger account with address Z      | address and derivation family         | Hardhat Ledger signer; the device confirms each broadcast                  |
-| Unlocked local-node account        | local-node mode                       | available only for the persistent localhost rehearsal                      |
+| Unlocked local-node account        | mode and bound authority when known   | exact unlocked authority on the persistent localhost rehearsal             |
 
 Raw contract creation cannot be represented as a normal Safe call. Deployment roles
 therefore allow keystore, transient private-key, Ledger, or local-node signers. A live
@@ -112,6 +114,10 @@ the task in `cancel_pending`.
 
 ## Task definition standard
 
+The complete authoring contract and required test matrix live in
+[`cli/TASK_AUTHORING.md`](TASK_AUTHORING.md). New or materially changed operator tasks must
+satisfy that standard before they are presented as ready.
+
 The UI and tests call only the seam exported by `cli/task-runner.js`:
 
 ```text
@@ -143,8 +149,8 @@ Registration is explicit. To add a one-time maintenance operation:
 
 1. Define one task in `cli/tasks/registry.js` (or import its definition there).
 2. Add that definition to `TASK_DEFINITIONS`.
-3. Test its input validation, stable plan, evidence, resume, cancellation, and network/risk
-   boundary.
+3. Apply the test matrix in `cli/TASK_AUTHORING.md`, including the relevant real signer,
+   subprocess, resume, UI, and post-state boundaries.
 
 No menu code changes are needed. A small task has one phase and one step. A large workflow
 uses stable item IDs and sends every write through `tasks/deploy/tx.ts`, which records the
@@ -157,9 +163,10 @@ but are not supported operator entrypoints and must not be documented as public 
 
 From `./symmio`, select **Other maintenance scripts** and then
 **Recreate settleUpnl InstantLayer templates**. The operation reads all four settlement
-template variants, creates offset-480 replacements while preserving their complete operation
-wiring and instant-open mode, and only then deactivates the broken offset-448 originals. It
-is idempotent and verifies the registry again after execution. Live Arbitrum defaults to a
+template variants from their original IDs, verifies that `quoteId` is injected at byte offset
+448 (and that byte offset 480 remains `currentPrice`), creates byte-for-byte replacements while
+preserving instant-open mode, and only then deactivates the originals. It is idempotent and
+verifies the registry again after execution. Live Arbitrum defaults to a
 Safe Builder file; EOA, Ledger, and direct Safe proposal modes remain available according to
 the task's signer policy.
 

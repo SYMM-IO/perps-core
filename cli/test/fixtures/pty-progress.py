@@ -54,7 +54,7 @@ while True:
     elif state == "details" and b"gas 42000" in view:
         os.write(fd, b"\x03")
         state = "pausing"
-    elif state == "pausing" and b"is paused" in view:
+    elif state == "pausing" and b"paused after an error" in view:
         state = "wait-home"
     elif state == "wait-home" and view.count(b"What do you want to do?") >= 3:
         os.write(fd, b"\x03")

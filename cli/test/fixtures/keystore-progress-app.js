@@ -6,7 +6,8 @@ import path from "node:path";
 
 const run = async ctx => {
 	await ctx.step("unlock", "Unlock keystore and run task", async () => {
-		await ctx.runProcess(process.execPath, [path.resolve("cli/test/fixtures/keystore-child.js")]);
+		await ctx.runProcess(process.execPath, [path.resolve("cli/test/fixtures/keystore-child.js"), "first"]);
+		await ctx.runProcess(process.execPath, [path.resolve("cli/test/fixtures/keystore-child.js"), "second"]);
 	});
 };
 const task = {

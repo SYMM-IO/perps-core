@@ -100,7 +100,16 @@ async function selectOwner(ui, { initialMode } = {}) {
 
 export async function selectSigner(
 	ui,
-	{ role = "Transaction signer", allowedModes = EOA_SIGNER_MODES, initialMode, network, chainId, safeAddress, nested = false } = {},
+	{
+		role = "Transaction signer",
+		allowedModes = EOA_SIGNER_MODES,
+		initialMode,
+		network,
+		chainId,
+		safeAddress,
+		expectedAddress,
+		nested = false,
+	} = {},
 ) {
 	const allowed = [...new Set(allowedModes)].filter(mode => Object.values(SIGNER_MODES).includes(mode));
 	if (network !== "localhost") {
@@ -151,7 +160,7 @@ export async function selectSigner(
 		if (!(await ui.confirm({ message: "Ledger is connected and the Ethereum app is open?", initialValue: true }))) return null;
 		selection = { mode, address: getAddress(address), derivation };
 	} else if (mode === SIGNER_MODES.LOCAL_NODE) {
-		selection = { mode };
+		selection = { mode, ...(nonZeroAddress(expectedAddress) ? { address: getAddress(expectedAddress) } : {}) };
 	} else {
 		const resolvedSafe = safeAddress
 			? getAddress(safeAddress)
@@ -238,7 +247,9 @@ export function signerEnvironment(selection) {
 			SYMMIO_EXPECTED_SIGNER: selection.address,
 		};
 	}
-	if (selection.mode === SIGNER_MODES.LOCAL_NODE) return base;
+	if (selection.mode === SIGNER_MODES.LOCAL_NODE) {
+		return { ...base, ...(selection.address ? { SYMMIO_EXPECTED_SIGNER: selection.address } : {}) };
+	}
 	return { ...base, SYMMIO_SAFE_ACTIONS_ONLY: "true", SYMMIO_SAFE_ADDRESS: selection.safeAddress };
 }
 
@@ -359,6 +370,9 @@ export function validateSignerSelection(selection, { allowSafe = true } = {}) {
 	if (selection.mode === SIGNER_MODES.KEYSTORE && !keyName(selection.key)) throw new Error("Keystore signer requires a valid key name");
 	if ([SIGNER_MODES.PRIVATE_KEY, SIGNER_MODES.LEDGER].includes(selection.mode) && !nonZeroAddress(selection.address)) {
 		throw new Error(`${modeLabel(selection.mode)} requires a non-zero address`);
+	}
+	if (selection.mode === SIGNER_MODES.LOCAL_NODE && selection.address !== undefined && !nonZeroAddress(selection.address)) {
+		throw new Error("Unlocked local-node account requires a valid non-zero address when one is bound");
 	}
 	if (SAFE_SIGNER_MODES.includes(selection.mode) && !nonZeroAddress(selection.safeAddress))
 		throw new Error("Safe signer requires a non-zero Safe address");

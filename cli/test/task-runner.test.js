@@ -40,6 +40,8 @@ function mutating(overrides = {}) {
 	const task = definition({
 		risk: "transaction",
 		transactionJournal: true,
+		resumePolicy: { strategy: "stable-step-id", sourceDrift: "refuse", inputDrift: "refuse" },
+		cancellationPolicy: { rollback: false, reconcileSubmittedTransactions: true, unresolvedOutcome: "cancel_pending" },
 		reconcile: ({ state }) => ({
 			unresolved: state.transactions.filter(tx => ["unresolved", "timed_out"].includes(tx.status)).map(tx => tx.hash),
 		}),
@@ -56,16 +58,24 @@ function runnerFor(task, root = temporaryRoot()) {
 test("task definitions fail closed when the standard is incomplete", () => {
 	const root = temporaryRoot();
 	assert.throws(() => createTaskRunner({ root, definitions: [{ id: "broken" }] }), /positive integer version/);
-	const noJournal = definition({ risk: "transaction", reconcile: async () => ({ unresolved: [] }) });
+	const noJournal = mutating({ transactionJournal: false });
 	assert.throws(() => createTaskRunner({ root, definitions: [noJournal] }), /transaction-journal support/);
+	const restartOnly = mutating({ resumePolicy: { strategy: "restart" } });
+	assert.throws(() => createTaskRunner({ root, definitions: [restartOnly] }), /stable-step-id resume/);
+	const unsafeCancel = mutating({ cancellationPolicy: { rollback: false } });
+	assert.throws(() => createTaskRunner({ root, definitions: [unsafeCancel] }), /reconciliation-first safe cancellation/);
 });
 
 test("catalog exposes the complete declarative task contract without handlers", () => {
 	const { runner } = runnerFor(mutating());
 	const [entry] = runner.catalog("maintenance");
 	assert.deepEqual(entry.inputs, []);
-	assert.deepEqual(entry.resumePolicy, { strategy: "restart" });
-	assert.deepEqual(entry.cancellationPolicy, { rollback: false });
+	assert.deepEqual(entry.resumePolicy, { strategy: "stable-step-id", sourceDrift: "refuse", inputDrift: "refuse" });
+	assert.deepEqual(entry.cancellationPolicy, {
+		rollback: false,
+		reconcileSubmittedTransactions: true,
+		unresolvedOutcome: "cancel_pending",
+	});
 	assert.deepEqual(entry.artifacts, ["event journal"]);
 	assert.equal(entry.transactionJournal, true);
 	assert.equal(entry.run, undefined);
@@ -79,6 +89,26 @@ test("one-step read-only task archives locally and never occupies the active slo
 	assert.deepEqual(result.completedSteps, ["run"]);
 });
 
+test("callable output cannot recurse when its line observer also logs", async () => {
+	const run = async ctx =>
+		ctx.step("run", "Run", () =>
+			ctx.runCallable("callable", async () => {
+				console.log("callable output");
+				return 0;
+			}),
+		);
+	const { runner } = runnerFor(definition({ run, handler: run }));
+	const observed = [];
+	const result = await runner.start("maintenance.test", {
+		onLine: line => {
+			observed.push(line);
+			console.log("observer output must not be captured again");
+		},
+	});
+	assert.equal(result.status, "completed");
+	assert.deepEqual(observed, ["callable output"]);
+});
+
 test("step events inherit their stable phase from the declared plan", async () => {
 	const events = [];
 	const { runner } = runnerFor(definition());
@@ -87,6 +117,29 @@ test("step events inherit their stable phase from the declared plan", async () =
 	const completed = events.find(event => event.type === "step.completed");
 	assert.equal(started?.phase, "test");
 	assert.equal(completed?.phase, "test");
+});
+
+test("plans and handlers fail closed on unstable or undeclared lifecycle identifiers", async () => {
+	const unstablePlan = definition({ plan: async () => [{ id: "run", phase: "Human readable phase", title: "Run" }] });
+	await assert.rejects(runnerFor(unstablePlan).runner.start("maintenance.test"), /stable phase id/);
+
+	const undeclaredRun = async ctx => ctx.step("surprise", "Surprise", async () => {});
+	const undeclared = definition({ run: undeclaredRun, handler: undeclaredRun });
+	const undeclaredResult = await runnerFor(undeclared).runner.start("maintenance.test");
+	assert.equal(undeclaredResult.status, "failed");
+	assert.match(undeclaredResult.lastError, /attempted undeclared step/);
+
+	const renamedRun = async ctx => ctx.step("run", "A different operator label", async () => {});
+	const renamed = definition({ run: renamedRun, handler: renamedRun });
+	const renamedResult = await runnerFor(renamed).runner.start("maintenance.test");
+	assert.equal(renamedResult.status, "failed");
+	assert.match(renamedResult.lastError, /does not match its declared title/);
+
+	const movedRun = async ctx => ctx.step("run", "Run", async () => {}, { phase: "different" });
+	const moved = definition({ run: movedRun, handler: movedRun });
+	const movedResult = await runnerFor(moved).runner.start("maintenance.test");
+	assert.equal(movedResult.status, "failed");
+	assert.match(movedResult.lastError, /does not match its declared phase/);
 });
 
 test("synthetic 200-transaction task keeps stable steps and write-ahead outcomes", async () => {
@@ -165,6 +218,18 @@ test("a failed subprocess promotes its useful stderr error into resumable task s
 	const paused = await runner.start("maintenance.test");
 	assert.equal(paused.status, "paused");
 	assert.match(paused.lastError, /HHE713: Missing param "gas" from a tx being signed locally/);
+});
+
+test("a failed subprocess promotes a useful stdout error when stderr is empty", async () => {
+	const run = async ctx => {
+		await ctx.runProcess(process.execPath, [
+			"-e",
+			'process.stdout.write("ProviderError: execution reverted during simulation\\n"); process.exit(1)',
+		]);
+	};
+	const { runner } = runnerFor(mutating({ run, handler: run }));
+	const paused = await runner.start("maintenance.test");
+	assert.match(paused.lastError, /ProviderError: execution reverted during simulation/);
 });
 
 test("an interrupt records why its subprocess stopped instead of reporting a generic exit code", async () => {
@@ -268,7 +333,11 @@ test("waiting_external remains active until continuation can prove the external 
 		ctx.step("safe", "Safe confirmation", async () => {
 			if (!ready) ctx.wait("Confirm the Safe proposal");
 		});
-	const task = mutating({ run, handler: run });
+	const task = mutating({
+		run,
+		handler: run,
+		plan: async () => [{ id: "safe", phase: "governance", title: "Safe confirmation" }],
+	});
 	const { runner } = runnerFor(task);
 	const waiting = await runner.start("maintenance.test");
 	assert.equal(waiting.status, "waiting_external");

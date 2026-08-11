@@ -61,8 +61,28 @@ test("PTY guided confirmation, detail toggle, resize, and first Ctrl+C pause coo
 	assert.match(plain, /0xaaaaaaaa/);
 	assert.match(plain, /gas 42000/);
 	assert.match(plain, /Interrupt received; stopping the current operation and preserving resumable task state/);
-	assert.match(plain, /Synthetic PTY task is paused/);
+	assert.match(plain, /Synthetic PTY task paused after an error/);
 	assert.match(plain, /Operator session closed/);
+});
+
+test("a paused task reports its concrete failure without a success marker or detail toggle", { timeout: 15_000 }, async () => {
+	const child = spawn(
+		"python3",
+		[path.resolve("cli/test/fixtures/pty-failure.py"), process.cwd(), process.execPath, path.resolve("cli/test/fixtures/progress-app.js")],
+		{ cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"], env: process.env },
+	);
+	let output = "";
+	child.stdout.on("data", chunk => (output += chunk.toString()));
+	child.stderr.on("data", chunk => (output += chunk.toString()));
+	const code = await new Promise((resolve, reject) => {
+		child.on("error", reject);
+		child.on("close", resolve);
+	});
+	const plain = output.replace(ANSI, "").replace(/\r/g, "");
+	assert.equal(code, 0, plain);
+	assert.match(plain, /Synthetic PTY task paused after an error/);
+	assert.match(plain, /HHE999: simulated operator failure/);
+	assert.doesNotMatch(plain, /Synthetic PTY task is paused/);
 });
 
 test("PTY progress keeps one live execution frame with heartbeat and activity", { timeout: 15_000 }, async () => {
@@ -116,7 +136,7 @@ test("live progress reflows immediately when the terminal grows from 80 to 120 c
 	assert.match(screen, /one hundred and twenty columns/);
 });
 
-test("Hardhat keystore password prompt securely takes over the terminal and returns to progress", { timeout: 15_000 }, async () => {
+test("one Hardhat keystore password unlocks every subprocess in the same task run", { timeout: 15_000 }, async () => {
 	const stateRoot = fs.mkdtempSync(path.join(os.tmpdir(), "symmio-keystore-pty-test-"));
 	const child = spawn(
 		"python3",
@@ -139,6 +159,7 @@ test("Hardhat keystore password prompt securely takes over the terminal and retu
 	assert.equal(code, 0, plain);
 	assert.match(plain, /Enter the password:/);
 	assert.match(plain, /goes directly to Hardhat and is never stored/);
+	assert.equal((plain.match(/Your password goes directly to Hardhat/g) || []).length, 1, plain);
 	assert.match(plain, /Keystore PTY task completed/);
 	assert.doesNotMatch(plain, /test-password/);
 	assert.doesNotMatch(plain, /Activity\s+\*+/);

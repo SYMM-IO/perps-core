@@ -83,6 +83,7 @@ function common(definition) {
 				network: input.network,
 				chainId: input.chainId,
 				safeAddress: policy.safeAddress,
+				expectedAddress: policy.expectedAddress,
 			});
 			if (!signer) return null;
 			prepared = { ...input, signer };
@@ -242,6 +243,14 @@ async function prepareExistingRecipe({ root, ui }, { only, fullOnly = false } = 
 function deploymentPlan(input, scope) {
 	const live = input.mode === "live";
 	const contracts = scope === "full" || scope === "core" ? Object.keys(DEPLOYABLE_CONTRACTS).sort() : [];
+	const batchItems = stage =>
+		contracts.map((key, index) => {
+			const slug = key
+				.replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+				.replace(/[^A-Za-z0-9]+/g, "-")
+				.toLowerCase();
+			return `${stage}.contract-${String(index + 1).padStart(3, "0")}.${slug}`;
+		});
 	return [
 		{ id: "preflight", phase: "prepare", title: "Validate recipe, RPC, signer, permissions and deployment plan" },
 		{ id: "compile", phase: "prepare", title: "Compile the exact production source" },
@@ -251,13 +260,13 @@ function deploymentPlan(input, scope) {
 						id: "fork-rehearsal",
 						phase: "rehearsal",
 						title: "Execute the matching fork rehearsal",
-						items: contracts.map(key => `fork:${key}`),
+						items: batchItems("fork"),
 					},
 					{ id: "rehearsal-review", phase: "rehearsal", title: "Review rehearsal receipts and health" },
 					{ id: "network-confirmation", phase: "authorization", title: "Type the exact live network name" },
 				]
 			: []),
-		{ id: "execute", phase: "execution", title: "Execute and reconcile deployment", items: contracts.map(key => `live:${key}`) },
+		{ id: "execute", phase: "execution", title: "Execute and reconcile deployment", items: batchItems("live") },
 		...(input.mode === "local"
 			? [{ id: "local-handover", phase: "handover", title: "Complete handover with the unlocked local governance account" }]
 			: []),
@@ -280,7 +289,7 @@ async function executeDeployment(ctx, input) {
 	const args = { config: input.config, only: input.only, _: [] };
 	await ctx.step(
 		"preflight",
-		"Validate recipe and build plan",
+		"Validate recipe, RPC, signer, permissions and deployment plan",
 		async () => {
 			requireZero(
 				await ctx.runCallable("deployment preflight and plan", () =>
@@ -293,11 +302,11 @@ async function executeDeployment(ctx, input) {
 	);
 	// deploy --plan includes compilation. The separate stable marker keeps the operator plan
 	// explicit without compiling a second time.
-	await ctx.step("compile", "Production compilation passed", async () => {}, { phase: "prepare" });
+	await ctx.step("compile", "Compile the exact production source", async () => {}, { phase: "prepare" });
 	if (input.mode === "live") {
 		await ctx.step(
 			"fork-rehearsal",
-			"Matching fork rehearsal",
+			"Execute the matching fork rehearsal",
 			async () => {
 				const firstAttempt = ctx.state.rehearsalInitialized !== true;
 				if (firstAttempt) {
@@ -319,7 +328,7 @@ async function executeDeployment(ctx, input) {
 		);
 		await ctx.step(
 			"rehearsal-review",
-			"Rehearsal review",
+			"Review rehearsal receipts and health",
 			async () => {
 				const proceed = await ctx.ui.confirm({ message: "Fork rehearsal passed. Continue toward live authorization?", initialValue: false });
 				if (!proceed) ctx.requestPause();
@@ -329,7 +338,7 @@ async function executeDeployment(ctx, input) {
 		);
 		await ctx.step(
 			"network-confirmation",
-			"Live network confirmation",
+			"Type the exact live network name",
 			async () => {
 				const typed = await ctx.ui.text({
 					message: `Type ${input.network} to authorize live transactions`,
@@ -343,7 +352,7 @@ async function executeDeployment(ctx, input) {
 	}
 	await ctx.step(
 		"execute",
-		"Deploy and reconcile",
+		"Execute and reconcile deployment",
 		async () => {
 			const firstAttempt = ctx.state.executionInitialized !== true;
 			if (firstAttempt) {
@@ -382,7 +391,7 @@ async function executeDeployment(ctx, input) {
 	if (input.mode === "local") {
 		await ctx.step(
 			"local-handover",
-			"Complete local governance handover",
+			"Complete handover with the unlocked local governance account",
 			async () => {
 				if (!ctx.state.localHandoverRequired) return;
 				const recipe = loadRecipeContext(input.config, { plan: false });
@@ -398,16 +407,16 @@ async function executeDeployment(ctx, input) {
 			{ phase: "handover" },
 		);
 	}
-	await ctx.step("verification", "Verification evidence", async () => {}, { phase: "assurance" });
+	await ctx.step("verification", "Verify bytecode and explorer records", async () => {}, { phase: "assurance" });
 	await ctx.step(
 		"health",
-		"Canonical health audit",
+		"Run canonical deployment health audit",
 		async () => {
 			requireZero(await ctx.runCallable("deployment health", () => status(args)), "Deployment health audit");
 		},
 		{ phase: "assurance" },
 	);
-	await ctx.step("handover", "Handover evidence", async () => {}, { phase: "handover" });
+	await ctx.step("handover", "Prove ownership, roles and deployer privilege removal", async () => {}, { phase: "handover" });
 	return { recipe: input.config, recipeDigest: input.recipeDigest, network: input.network };
 }
 
@@ -606,16 +615,16 @@ DEPLOY_TASKS.push(
 				ADMIN_PUBLIC_KEY: input.admin,
 				OPERATORS: input.operators,
 			};
-			await ctx.step("compile", "Compile production source", () =>
+			await ctx.step("compile", "Compile the exact production source", () =>
 				ctx.runProcess("./node_modules/.bin/hardhat", ["--build-profile", "production", "build"]),
 			);
-			await ctx.step("plan", "Plan liquidator", () =>
+			await ctx.step("plan", "Validate and review liquidator plan", () =>
 				ctx.runProcess("./node_modules/.bin/hardhat", ["run", "--no-compile", "scripts/deployLiquidator.ts", "--network", input.network], {
 					env,
 				}),
 			);
 			if (input.network === "hyperevm") {
-				await ctx.step("fork-rehearsal", "Matching HyperEVM fork rehearsal", () =>
+				await ctx.step("fork-rehearsal", "Deploy and wire the liquidator on a matching HyperEVM fork", () =>
 					ctx.runProcess(
 						"./node_modules/.bin/hardhat",
 						["run", "--no-compile", "scripts/deployLiquidator.ts", "--network", "fork-hyperevm"],
@@ -624,7 +633,7 @@ DEPLOY_TASKS.push(
 						},
 					),
 				);
-				await ctx.step("rehearsal-review", "Review liquidator rehearsal", async () => {
+				await ctx.step("rehearsal-review", "Review fork receipts and role checks", async () => {
 					if (
 						!(await ctx.ui.confirm({
 							message: "Fork deployment and role checks passed. Continue toward live execution?",
@@ -635,7 +644,7 @@ DEPLOY_TASKS.push(
 					}
 					ctx.checkpoint();
 				});
-				await ctx.step("network-confirmation", "Confirm live HyperEVM", async () => {
+				await ctx.step("network-confirmation", "Type the live HyperEVM chain ID", async () => {
 					const typed = await ctx.ui.text({
 						message: `Type chain ID ${input.chainId} to authorize live execution`,
 						validate: value => (value === String(input.chainId) ? undefined : `Type exactly ${input.chainId}`),
@@ -644,7 +653,7 @@ DEPLOY_TASKS.push(
 					ctx.checkpoint();
 				});
 			}
-			await ctx.step("execute", "Deploy liquidator", async () => {
+			await ctx.step("execute", "Deploy, wire roles and restore big blocks", async () => {
 				if (input.network !== "hyperevm") {
 					const proceed = await ctx.ui.confirm({ message: "Run the local/fork liquidator deployment now?", initialValue: true });
 					if (!proceed) ctx.requestPause();
@@ -695,6 +704,7 @@ const PATCH_TASK = common({
 		allowedModes: input.mode === "live" ? [...EOA_SIGNER_MODES, ...SAFE_SIGNER_MODES] : EOA_SIGNER_MODES,
 		initialMode: input.mode === "live" ? SIGNER_MODES.SAFE_FILE : EOA_SIGNER_MODES[0],
 		safeAddress: loadRecipeContext(input.config, { only: "expressProvider", plan: false }).recipe.governance.admin,
+		expectedAddress: loadRecipeContext(input.config, { only: "expressProvider", plan: false }).recipe.governance.admin,
 	}),
 	plan: (_context, input) => deploymentPlan(input, "expressProvider"),
 	run: executeDeployment,
@@ -862,29 +872,30 @@ async function prepareSettlementTemplateRepair({ ui }) {
 		initialValue: record?.address,
 	});
 	if (instantLayer === null) return null;
-	const deactivateLegacy = await ui.confirm({
-		message: "Deactivate the four broken offset-448 templates after corrected copies are available?",
+	const deactivateOriginals = await ui.confirm({
+		message: "Deactivate the four original templates after exact offset-448 replacements are available?",
 		initialValue: true,
 	});
-	if (deactivateLegacy === null) return null;
+	if (deactivateOriginals === null) return null;
 	return {
 		...base,
 		instantLayer,
 		symmio: record?.constructorArguments?.[0],
-		deactivateLegacy,
+		deactivateOriginals,
 	};
 }
 
 function validateSettlementRepairPlan(plan, input) {
-	if (plan?.apiVersion !== "operations.symm.io/instant-layer-settlement-template-repair-v1") {
+	if (plan?.apiVersion !== "operations.symm.io/instant-layer-settlement-template-recreation-v2") {
 		throw new Error("Settlement-template script returned an unsupported plan artifact");
 	}
 	if (Number(plan.chainId) !== input.chainId) throw new Error(`Repair plan chain ${plan.chainId} does not match ${input.chainId}`);
 	if (String(plan.instantLayer).toLowerCase() !== input.instantLayer.toLowerCase()) {
 		throw new Error(`Repair plan target ${plan.instantLayer} does not match ${input.instantLayer}`);
 	}
-	if (plan.correctedOffset !== "480" || plan.legacyOffset !== "448")
-		throw new Error("Repair plan does not encode the reviewed 448 -> 480 correction");
+	if (plan.quoteIdOffset !== "448" || plan.currentPriceOffset !== "480") {
+		throw new Error("Recreation plan must preserve quoteId at 448 and leave currentPrice at 480 untouched");
+	}
 	if (!Array.isArray(plan.actions)) throw new Error("Repair plan actions are missing");
 	return plan;
 }
@@ -898,7 +909,7 @@ async function writeSettlementRepairPlan(ctx, input, label) {
 			env: {
 				INSTANT_LAYER_ADDRESS: input.instantLayer,
 				...(input.symmio ? { SYMMIO_ADDRESS: input.symmio } : {}),
-				DEACTIVATE_LEGACY_TEMPLATES: String(input.deactivateLegacy),
+				DEACTIVATE_ORIGINAL_TEMPLATES: String(input.deactivateOriginals),
 				REPAIR_PLAN_OUTPUT: file,
 				EXECUTE: "false",
 				CONFIRM_CHAIN_ID: "",
@@ -910,13 +921,13 @@ async function writeSettlementRepairPlan(ctx, input, label) {
 
 const SETTLEMENT_TEMPLATE_REPAIR_TASK = common({
 	id: "maintenance.recreate-settlement-templates",
-	version: 1,
+	version: 3,
 	category: "maintenance",
 	risk: "transaction",
 	title: "Recreate settleUpnl InstantLayer templates",
-	description: "Add corrected offset-480 copies of all four settleUpnl templates, then retire the broken offset-448 originals.",
+	description: "Recreate exact offset-448 copies of all four settleUpnl templates, then retire the original template IDs.",
 	supportedNetworks: ["localhost", "fork-arbitrum", "arbitrum"],
-	inputs: ["network", "InstantLayer address", "legacy-template deactivation", "signer"],
+	inputs: ["network", "InstantLayer address", "original-template deactivation", "signer"],
 	artifacts: ["reviewed action plan", "transaction journal", "Safe batch when selected", "post-state verification"],
 	prepare: prepareSettlementTemplateRepair,
 	signerPolicy: input => {
@@ -925,27 +936,27 @@ const SETTLEMENT_TEMPLATE_REPAIR_TASK = common({
 			role: "InstantLayer SETTER_ROLE authority",
 			allowedModes: input.network === "arbitrum" ? [...EOA_SIGNER_MODES, ...SAFE_SIGNER_MODES] : EOA_SIGNER_MODES,
 			initialMode: input.network === "arbitrum" ? SIGNER_MODES.SAFE_FILE : EOA_SIGNER_MODES[0],
-			...(isAddress(configuredAdmin || "") ? { safeAddress: configuredAdmin } : {}),
+			...(isAddress(configuredAdmin || "") ? { safeAddress: configuredAdmin, expectedAddress: configuredAdmin } : {}),
 		};
 	},
 	plan: () => [
 		{ id: "inspect", phase: "prepare", title: "Inspect live settlement templates and build exact actions" },
-		{ id: "authorize", phase: "authorization", title: "Review and authorize the 448 to 480 repair" },
-		{ id: "apply", phase: "execution", title: "Add corrected templates before deactivating broken originals" },
-		{ id: "verify", phase: "verification", title: "Prove all corrected templates active and legacy templates inactive" },
+		{ id: "authorize", phase: "authorization", title: "Review and authorize exact offset-448 recreation" },
+		{ id: "apply", phase: "execution", title: "Add exact replacements before deactivating originals" },
+		{ id: "verify", phase: "verification", title: "Prove exact replacements active and originals inactive" },
 	],
 	run: async (ctx, input) => {
-		await ctx.step("inspect", "Inspect live settlement templates", async () => {
+		await ctx.step("inspect", "Inspect live settlement templates and build exact actions", async () => {
 			const result = await writeSettlementRepairPlan(ctx, input, "settlement-template-plan");
-			ctx.state.settlementTemplatePlan = { path: result.file, actionCount: result.plan.actions.length, repaired: result.plan.repaired };
+			ctx.state.settlementTemplatePlan = { path: result.file, actionCount: result.plan.actions.length, recreated: result.plan.recreated };
 			ctx.ui.note(
 				result.plan.actions.length === 0
-					? "No actions are required; the corrected settlement templates are already active."
+					? "No actions are required; exact settlement-template replacements are already active."
 					: result.plan.actions.map((action, index) => `${index + 1}. ${action.description}`).join("\n"),
 				"Reviewed settlement-template actions",
 			);
 		});
-		await ctx.step("authorize", "Authorize settlement-template repair", async () => {
+		await ctx.step("authorize", "Review and authorize exact offset-448 recreation", async () => {
 			if (ctx.state.settlementTemplatePlan?.actionCount === 0) return;
 			if (input.network === "arbitrum") {
 				const typed = await ctx.ui.text({
@@ -962,15 +973,22 @@ const SETTLEMENT_TEMPLATE_REPAIR_TASK = common({
 			}
 			ctx.checkpoint();
 		});
-		await ctx.step("apply", "Apply settlement-template repair", async () => {
+		await ctx.step("apply", "Add exact replacements before deactivating originals", async () => {
+			if (ctx.state.settlementTemplatePlan?.actionCount === 0) {
+				ctx.ui.note(
+					"Post-state already matches the reviewed recreation policy; no transaction subprocess was started.",
+					"No writes required",
+				);
+				return;
+			}
 			if (SAFE_SIGNER_MODES.includes(input.signer.mode)) {
 				const current = await writeSettlementRepairPlan(ctx, input, "settlement-template-before-safe");
 				if (current.plan.actions.length === 0) return;
 				await dispatchSafeActions(ctx, input.signer, current.plan.actions, {
 					chainId: input.chainId,
 					network: input.network,
-					name: "Correct InstantLayer settleUpnl templates",
-					description: "Add offset-480 replacement templates first, then deactivate the offset-448 originals.",
+					name: "Recreate InstantLayer settleUpnl templates",
+					description: "Add exact offset-448 replacements first, then deactivate the four original template IDs.",
 				});
 				ctx.wait("Execute the exported/proposed Safe batch, then continue this task to verify the live template registry.");
 			}
@@ -981,16 +999,16 @@ const SETTLEMENT_TEMPLATE_REPAIR_TASK = common({
 					env: {
 						INSTANT_LAYER_ADDRESS: input.instantLayer,
 						...(input.symmio ? { SYMMIO_ADDRESS: input.symmio } : {}),
-						DEACTIVATE_LEGACY_TEMPLATES: String(input.deactivateLegacy),
+						DEACTIVATE_ORIGINAL_TEMPLATES: String(input.deactivateOriginals),
 						EXECUTE: "true",
 						CONFIRM_CHAIN_ID: String(input.chainId),
 					},
 				},
 			);
 		});
-		await ctx.step("verify", "Verify settlement-template repair", async () => {
+		await ctx.step("verify", "Prove exact replacements active and originals inactive", async () => {
 			const result = await writeSettlementRepairPlan(ctx, input, "settlement-template-verification");
-			if (!result.plan.repaired || result.plan.actions.length !== 0) {
+			if (!result.plan.recreated || result.plan.actions.length !== 0) {
 				throw new Error(`Settlement-template verification still requires ${result.plan.actions.length} action(s)`);
 			}
 		});
