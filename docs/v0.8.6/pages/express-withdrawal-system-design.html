@@ -3,8 +3,18 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<title>Express Withdrawal System - Design Document - Symmio Core v0.8.6</title>
+		<meta
+			name="description"
+			content="SYMMIO&#x27;s 12-hour cooldown protects withdrawals but slows exits. ExpressProvider fronts pool and credit-backed funds, then reconciles when the normal withdrawal finalizes."
+		/>
+		<title>Express Withdrawal System Design - Symmio Core v0.8.6</title>
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
 		<link rel="stylesheet" href="../assets/v086-docs.css" />
 		<link rel="stylesheet" href="../../assets/docs-portal.css" />
 		<script src="../assets/v086-docs.js" defer></script>
@@ -103,7 +113,7 @@
 				<header class="reader-hero">
 					<div class="reader-title-row">
 						<div>
-							<h1>Express Withdrawal System - Design Document</h1>
+							<h1>Express Withdrawal System Design</h1>
 							<p class="hero-copy">
 								Express Withdrawal lets users receive funds before the normal cooldown by combining provider liquidity with
 								affiliate-backed credit, then reconciling when SYMMIO finalizes the withdrawal.

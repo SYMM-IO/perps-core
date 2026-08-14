@@ -1,4 +1,36 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap");
+/* Typefaces ship with the docs. A remote @import made the intended typography
+   conditional on network access, which a site meant to be opened straight from
+   disk cannot rely on; it also blocked first paint on a third-party round trip.
+   Variable latin subsets, ~104KB for all three. */
+@font-face {
+	font-family: "Manrope";
+	font-style: normal;
+	font-weight: 200 800;
+	font-display: swap;
+	src:
+		local("Manrope"),
+		url("../../assets/fonts/manrope-latin.woff2") format("woff2");
+}
+
+@font-face {
+	font-family: "Inter";
+	font-style: normal;
+	font-weight: 400 800;
+	font-display: swap;
+	src:
+		local("Inter"),
+		url("../../assets/fonts/inter-latin.woff2") format("woff2");
+}
+
+@font-face {
+	font-family: "JetBrains Mono";
+	font-style: normal;
+	font-weight: 400 700;
+	font-display: swap;
+	src:
+		local("JetBrains Mono"),
+		url("../../assets/fonts/jetbrains-mono-latin.woff2") format("woff2");
+}
 
 /* ==========================================================================
    Symmio Explorer — v0.8.6 documentation
@@ -17,12 +49,14 @@
 	--ink: hsl(0 20% 95%);
 	--ink-soft: hsl(0 8% 78%);
 	--muted: hsl(0 3% 58%);
-	--faint: hsl(0 3% 44%);
+	--faint: hsl(0 3% 53%);
 	--line: hsl(0 3% 50% / 0.26);
 	--line-strong: hsl(0 3% 62% / 0.44);
 	--accent: hsl(5 100% 72%);
 	--accent-strong: hsl(5 100% 78%);
 	--accent-dim: hsl(5 100% 72% / 0.12);
+	--link: hsl(5 100% 72%);
+	--on-accent: hsl(0 33% 4%);
 	--blue: hsl(199 89% 68%);
 	--amber: hsl(43 96% 62%);
 	--rose: hsl(0 82% 68%);
@@ -41,7 +75,7 @@
 	--code-symbol: hsl(43 92% 66%);
 	--code-string: hsl(158 60% 58%);
 	--code-number: hsl(258 90% 78%);
-	--code-comment: hsl(0 3% 46%);
+	--code-comment: hsl(0 3% 54%);
 
 	--diagram-bg: hsl(0 24% 4%);
 	--diagram-card: hsl(0 16% 5.5%);
@@ -74,12 +108,14 @@
 	--ink: hsl(0 33% 6%);
 	--ink-soft: hsl(0 8% 22%);
 	--muted: hsl(0 3% 42%);
-	--faint: hsl(0 3% 52%);
+	--faint: hsl(0 3% 44%);
 	--line: hsl(0 8% 20% / 0.14);
 	--line-strong: hsl(0 8% 20% / 0.28);
-	--accent: hsl(5 72% 52%);
-	--accent-strong: hsl(5 78% 44%);
+	--accent: hsl(5 74% 45%);
+	--accent-strong: hsl(5 80% 37%);
 	--accent-dim: hsl(5 100% 70% / 0.1);
+	--link: hsl(5 74% 45%);
+	--on-accent: hsl(0 0% 100%);
 	--blue: hsl(199 84% 38%);
 	--amber: hsl(38 92% 34%);
 	--rose: hsl(348 78% 44%);
@@ -98,7 +134,7 @@
 	--code-symbol: hsl(36 88% 32%);
 	--code-string: hsl(158 58% 28%);
 	--code-number: hsl(258 52% 44%);
-	--code-comment: hsl(0 3% 48%);
+	--code-comment: hsl(0 3% 42%);
 
 	--diagram-bg: hsl(20 14% 98%);
 	--diagram-card: hsl(0 0% 100%);
@@ -135,7 +171,7 @@ body {
 }
 
 a {
-	color: var(--accent);
+	color: var(--link);
 	text-decoration: none;
 	text-underline-offset: 0.18em;
 }
@@ -190,7 +226,7 @@ button {
 	padding: 9px 12px;
 	border-radius: var(--radius);
 	background: var(--accent);
-	color: hsl(0 33% 4%);
+	color: var(--on-accent);
 	font-weight: 700;
 	transform: translateY(-160%);
 	transition: transform 160ms ease;
@@ -235,12 +271,12 @@ button {
 .button.primary {
 	border-color: transparent;
 	background: var(--accent);
-	color: hsl(0 33% 4%);
+	color: var(--on-accent);
 }
 
 .button.primary:hover {
 	background: var(--accent-strong);
-	color: hsl(0 33% 4%);
+	color: var(--on-accent);
 }
 
 .button.ghost {
@@ -697,6 +733,18 @@ code {
 	color: var(--ink);
 	text-decoration: none;
 	transition: background 130ms ease;
+}
+
+/* These cards carry the same chapter numbers their pages announce, so the
+   catalog and the "Chapter NN of NN" kicker can be reconciled by eye. */
+.minor-improvement-item .doc-list-index {
+	position: absolute;
+	top: 16px;
+	right: 16px;
+}
+
+.minor-improvement-item .category {
+	padding-right: 34px;
 }
 
 .minor-improvement-item:hover {
@@ -1248,6 +1296,69 @@ code {
 	border-left: 2px solid var(--line-strong);
 	background: transparent;
 	color: var(--muted);
+}
+
+/* The heading names itself from this span, so the anchor button's label stays out
+   of the heading's accessible name. */
+.heading-text {
+	display: contents;
+}
+
+/* A truncated fallback says so, and offers the full source instead of ending
+   silently mid-diagram. */
+.diagram-overflow {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 14px;
+	margin-top: 14px;
+	padding-top: 12px;
+	border-top: 1px dashed var(--line-strong);
+	color: var(--muted);
+	font-family: var(--mono);
+	font-size: 11px;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	cursor: auto;
+	user-select: text;
+	-webkit-user-select: text;
+}
+
+.diagram-overflow button {
+	padding: 4px 10px;
+	border: 1px solid var(--line-strong);
+	border-radius: var(--radius-sm);
+	background: var(--surface-soft);
+	color: var(--ink-soft);
+	font: inherit;
+	letter-spacing: inherit;
+	text-transform: inherit;
+	cursor: pointer;
+}
+
+.diagram-overflow button:hover {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+
+.diagram-source {
+	width: 100%;
+	max-height: 420px;
+	margin: 12px 0 0;
+	padding: 14px 16px;
+	overflow: auto;
+	border: 1px solid var(--line);
+	border-radius: var(--radius-sm);
+	background: var(--code-bg);
+	color: var(--code-ink);
+	font-family: var(--mono);
+	font-size: 12px;
+	line-height: 1.6;
+	text-align: left;
+	white-space: pre;
+	cursor: auto;
+	user-select: text;
+	-webkit-user-select: text;
 }
 
 .heading-anchor {
