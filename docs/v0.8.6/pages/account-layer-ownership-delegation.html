@@ -6,49 +6,52 @@
 		<title>AccountLayer Delegated Creation &amp; Ownership Transfer - Symmio Core v0.8.6</title>
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
 		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
 		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
 	</head>
-	<body class="doc-page">
+	<body class="doc-page" data-version="0.8.6">
 		<a class="skip-link" href="#full-document">Skip to document</a>
 
-		<header class="doc-topbar">
-			<a class="brand" href="../index.html"
-				><span class="brand-mark">8.6</span><span><strong>v0.8.6 Changelog</strong></span></a
-			>
-			<nav class="top-actions" aria-label="Page actions">
-				<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
-			</nav>
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
 		</header>
 		<div class="reader-shell">
-			<aside class="doc-sidebar" aria-label="Documentation navigation" data-doc-nav></aside>
-			<aside class="toc-panel side-toc" aria-label="Page navigation">
-				<div class="toc-card">
-					<p class="toc-title">On this page</p>
-					<a class="toc-link level-2" href="#summary">Summary</a>
-					<a class="toc-link level-2" href="#changed-interfaces">Changed Interfaces</a>
-					<a class="toc-link level-3" href="#corefacet-createsubaccountsfor">`CoreFacet.createSubAccountsFor`</a>
-					<a class="toc-link level-3" href="#corefacet-transfersubaccountownership">`CoreFacet.transferSubAccountOwnership`</a>
-					<a class="toc-link level-3" href="#iaccountlayerhook-onsubaccountownershiptransfer"
-						>`IAccountLayerHook.onSubAccountOwnershipTransfer`</a
-					>
-					<a class="toc-link level-2" href="#storage-impact">Storage Impact</a>
-					<a class="toc-link level-2" href="#ownership-resolution">Ownership Resolution</a>
-					<a class="toc-link level-2" href="#hook-ordering-revert-semantics">Hook Ordering &amp; Revert Semantics</a>
-					<a class="toc-link level-2" href="#security-considerations">Security Considerations</a>
-					<a class="toc-link level-3" href="#role-granted-account-creation">Role-granted account creation</a>
-					<a class="toc-link level-3" href="#direct-ownership-transfer">Direct ownership transfer</a>
-					<a class="toc-link level-3" href="#existing-instantlayer-delegations">Existing InstantLayer delegations</a>
-					<a class="toc-link level-3" href="#affiliate-hook-liveness">Affiliate hook liveness</a>
-					<a class="toc-link level-3" href="#no-symmio-core-balance-movement">No Symmio core balance movement</a>
-					<a class="toc-link level-2" href="#events">Events</a>
-					<a class="toc-link level-3" href="#subaccountownershiptransferred">`SubAccountOwnershipTransferred`</a>
-					<a class="toc-link level-2" href="#review-checklist">Review Checklist</a>
-					<a class="toc-link level-2" href="#test-coverage">Test Coverage</a>
-				</div>
-			</aside>
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#summary">Summary</a>
+				<a class="toc-link level-2" href="#changed-interfaces">Changed Interfaces</a>
+				<a class="toc-link level-3" href="#corefacet-createsubaccountsfor">`CoreFacet.createSubAccountsFor`</a>
+				<a class="toc-link level-3" href="#corefacet-transfersubaccountownership">`CoreFacet.transferSubAccountOwnership`</a>
+				<a class="toc-link level-3" href="#iaccountlayerhook-onsubaccountownershiptransfer"
+					>`IAccountLayerHook.onSubAccountOwnershipTransfer`</a
+				>
+				<a class="toc-link level-2" href="#storage-impact">Storage Impact</a>
+				<a class="toc-link level-2" href="#ownership-resolution">Ownership Resolution</a>
+				<a class="toc-link level-2" href="#hook-ordering-revert-semantics">Hook Ordering &amp; Revert Semantics</a>
+				<a class="toc-link level-2" href="#security-considerations">Security Considerations</a>
+				<a class="toc-link level-3" href="#role-granted-account-creation">Role-granted account creation</a>
+				<a class="toc-link level-3" href="#direct-ownership-transfer">Direct ownership transfer</a>
+				<a class="toc-link level-3" href="#existing-instantlayer-delegations">Existing InstantLayer delegations</a>
+				<a class="toc-link level-3" href="#affiliate-hook-liveness">Affiliate hook liveness</a>
+				<a class="toc-link level-3" href="#no-symmio-core-balance-movement">No Symmio core balance movement</a>
+				<a class="toc-link level-2" href="#events">Events</a>
+				<a class="toc-link level-3" href="#subaccountownershiptransferred">`SubAccountOwnershipTransferred`</a>
+				<a class="toc-link level-2" href="#review-checklist">Review Checklist</a>
+				<a class="toc-link level-2" href="#test-coverage">Test Coverage</a>
+			</div>
 			<main class="reader-main">
 				<header class="reader-hero">
-					<nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">v0.8.6</a><span>/</span><strong>AccountLayer</strong></nav>
 					<div class="reader-title-row">
 						<div>
 							<h1>AccountLayer Delegated Creation &amp; Ownership Transfer</h1>
@@ -337,7 +340,6 @@ mapping(address =&gt; EnumerableSet.AddressSet) userToSubAccounts;
 
 		<footer class="site-footer">
 			<span>Symmio Core v0.8.6 documentation.</span>
-			<span>Protocol, operations, and integration notes.</span>
 		</footer>
 	</body>
 </html>

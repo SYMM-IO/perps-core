@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>New Withdraw System - Symmio Core v0.8.5</title>
+		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
+		<link rel="stylesheet" href="../../v0.8.6/assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../../v0.8.6/assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.5">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.5</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#doc-withdraw-system-overview">Overview</a>
+				<a class="toc-link level-3" href="#doc-withdraw-system-legacy-system-limitations">Legacy System Limitations</a>
+				<a class="toc-link level-2" href="#doc-withdraw-system-architecture">Architecture</a>
+				<a class="toc-link level-3" href="#doc-withdraw-system-provider-types">Provider Types</a>
+				<a class="toc-link level-3" href="#doc-withdraw-system-withdrawal-types">Withdrawal Types</a>
+				<a class="toc-link level-2" href="#doc-withdraw-system-cooldown-mechanics">Cooldown Mechanics</a>
+				<a class="toc-link level-2" href="#doc-withdraw-system-withdrawal-flows">Withdrawal Flows</a>
+				<a class="toc-link level-3" href="#doc-withdraw-system-normal-classic-withdraw">Normal (Classic) Withdraw</a>
+				<a class="toc-link level-3" href="#doc-withdraw-system-pure-virtual-withdraw">Pure Virtual Withdraw</a>
+				<a class="toc-link level-3" href="#doc-withdraw-system-pure-express-withdraw">Pure Express Withdraw</a>
+				<a class="toc-link level-3" href="#doc-withdraw-system-virtual-express-withdraw">Virtual Express Withdraw</a>
+				<a class="toc-link level-2" href="#doc-withdraw-system-summary-table">Summary Table</a>
+				<a class="toc-link level-2" href="#doc-withdraw-system-administrative-features">Administrative Features</a>
+				<a class="toc-link level-3" href="#doc-withdraw-system-force-cancel">Force Cancel</a>
+				<a class="toc-link level-3" href="#doc-withdraw-system-pure-virtual-cancel-blackout">Pure Virtual Cancel Blackout</a>
+				<a class="toc-link level-3" href="#doc-withdraw-system-withdrawal-suspension">Withdrawal Suspension</a>
+				<a class="toc-link level-3" href="#doc-withdraw-system-withdrawal-speed-up">Withdrawal Speed-Up</a>
+				<a class="toc-link level-2" href="#doc-withdraw-system-technical-reference">Technical Reference</a>
+				<a class="toc-link level-3" href="#doc-withdraw-system-enums">Enums</a>
+				<a class="toc-link level-3" href="#doc-withdraw-system-structs">Structs</a>
+				<a class="toc-link level-3" href="#doc-withdraw-system-read-functions">Read Functions</a>
+				<a class="toc-link level-3" href="#doc-withdraw-system-user-functions">User Functions</a>
+				<a class="toc-link level-3" href="#doc-withdraw-system-admin-functions">Admin Functions</a>
+				<a class="toc-link level-2" href="#doc-withdraw-system-provider-callbacks">Provider Callbacks</a>
+				<a class="toc-link level-3" href="#doc-withdraw-system-ivirtualprovider">IVirtualProvider</a>
+				<a class="toc-link level-3" href="#doc-withdraw-system-iexpressprovider">IExpressProvider</a>
+			</div>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>New Withdraw System</h1>
+						</div>
+					</div>
+				</header>
+				<article class="doc-article" id="full-document">
+					<h2 id="doc-withdraw-system-overview">Overview</h2>
+					<p>
+						The new withdrawal system allows users to withdraw funds through a flexible multi-provider architecture. Users can withdraw
+						funds across multiple chains with different timing options--from deallocation-based cooldowns to instant express withdrawals.
+						The withdrawal cooldown is tied to the user's last deallocation time, not the withdrawal initiation--if funds have been idle
+						for the full cooldown period (typically 12 hours), withdrawals can be finalized immediately.
+					</p>
+					<h3 id="doc-withdraw-system-legacy-system-limitations">Legacy System Limitations</h3>
+					<ol>
+						<li>
+							<strong>Fragmented Withdrawal Paths:</strong> Withdrawals were split between the Bridge facet (instant withdrawals with no
+							cooldown) and the standard withdrawal function (12-hour cooldown)
+						</li>
+						<li>
+							<strong>Cooldown Reset Behavior:</strong> Each deallocation reset the 12-hour cooldown timer, creating friction for
+							PartyBs and automated trading systems
+						</li>
+						<li><strong>Single Queue Limitation:</strong> Only one withdrawal could be queued at a time</li>
+						<li>
+							<strong>Incompatibility with New Features:</strong> Virtual funds and cross-chain withdrawals required a fundamental
+							redesign
+						</li>
+					</ol>
+					<h2 id="doc-withdraw-system-architecture">Architecture</h2>
+					<p>
+						A withdrawal request consists of one or more <strong>receiver parts</strong>, allowing users to split a single withdrawal
+						across different chains and providers within one atomic request.
+					</p>
+					<h3 id="doc-withdraw-system-provider-types">Provider Types</h3>
+					<table>
+						<thead>
+							<tr>
+								<th>Provider</th>
+								<th>Purpose</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><strong>Express Provider</strong></td>
+								<td>
+									Bypasses the 12-hour cooldown by paying the user immediately. Fronts funds and reclaims them after cooldown
+									expires. Typically charges a fee.
+								</td>
+							</tr>
+							<tr>
+								<td><strong>Virtual Provider</strong></td>
+								<td>
+									Enables cross-chain withdrawals within the Virtual Fund System. Delivers funds on the user's chosen destination
+									chain.
+								</td>
+							</tr>
+						</tbody>
+					</table>
+					<blockquote>
+						<p>Providers must be registered within Symmio. A provider cannot serve both roles simultaneously.</p>
+					</blockquote>
+					<h3 id="doc-withdraw-system-withdrawal-types">Withdrawal Types</h3>
+					<table>
+						<thead>
+							<tr>
+								<th>Type</th>
+								<th>Express</th>
+								<th>Virtual</th>
+								<th>Description</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><strong>Normal (Classic)</strong></td>
+								<td>✗</td>
+								<td>✗</td>
+								<td>Standard 12-hour cooldown, same-chain delivery</td>
+							</tr>
+							<tr>
+								<td><strong>Pure Express</strong></td>
+								<td>✓</td>
+								<td>✗</td>
+								<td>Instant same-chain withdrawal</td>
+							</tr>
+							<tr>
+								<td><strong>Pure Virtual</strong></td>
+								<td>✗</td>
+								<td>✓</td>
+								<td>Standard cooldown, cross-chain delivery</td>
+							</tr>
+							<tr>
+								<td><strong>Virtual Express</strong></td>
+								<td>✓</td>
+								<td>✓</td>
+								<td>Instant cross-chain withdrawal</td>
+							</tr>
+						</tbody>
+					</table>
+					<h2 id="doc-withdraw-system-cooldown-mechanics">Cooldown Mechanics</h2>
+					<p>
+						The withdrawal cooldown is calculated from the user's
+						<strong>last deallocation time</strong> (<code>deallocateTimestamp</code>), not from the withdrawal initiation. When
+						<code>initiateWithdraw</code> is called, the system computes:
+					</p>
+					<pre><code>cooldownEndTime = max(deallocateTimestamp + withdrawCooldownPeriod, block.timestamp)
+</code></pre>
+					<p>This means:</p>
+					<ul>
+						<li>If the user deallocated recently, they wait the remaining cooldown from that deallocation</li>
+						<li>
+							If the cooldown period has already elapsed since the last deallocation, the withdrawal can be finalized immediately after
+							initiation
+						</li>
+						<li>The cooldown period is stored in <code>MAStorage.withdrawCooldownPeriod</code> (typically 12 hours)</li>
+					</ul>
+					<p>
+						The <code>cooldownEndTime</code> is stored in the <code>WithdrawRequest</code> struct and returned by
+						<code>initiateWithdraw</code>. Subsequent deallocations do <strong>not</strong> affect the cooldown of already-initiated
+						withdrawals.
+					</p>
+					<p>
+						The <code>getWithdrawableTime(address user)</code> view function returns the earliest time a withdrawal initiated now could be
+						finalized.
+					</p>
+					<h2 id="doc-withdraw-system-withdrawal-flows">Withdrawal Flows</h2>
+					<h3 id="doc-withdraw-system-normal-classic-withdraw">Normal (Classic) Withdraw</h3>
+					<p>The simplest withdrawal type with no providers involved.</p>
+					<pre><code class="language-mermaid">sequenceDiagram
+    participant User
+    participant Symmio
+
+    User-&gt;&gt;Symmio: initiateWithdraw()
+    Note over Symmio: Status: PENDING
+    Note over Symmio: Wait for cooldown&lt;br/&gt;(from last deallocation)
+    User-&gt;&gt;Symmio: finalizeWithdrawRequest()
+    Symmio-&gt;&gt;User: Transfer funds
+    Note over Symmio: Status: COMPLETED
+</code></pre>
+					<p><strong>Cancellation:</strong> User may cancel at any time before finalization without external approval.</p>
+					<h3 id="doc-withdraw-system-pure-virtual-withdraw">Pure Virtual Withdraw</h3>
+					<p>Only a virtual provider is specified for cross-chain delivery.</p>
+					<pre><code class="language-mermaid">sequenceDiagram
+    participant User
+    participant Symmio
+    participant Virtual as Virtual Provider
+
+    User-&gt;&gt;Symmio: initiateWithdraw()
+    Note over Symmio: Status: PENDING
+    Symmio-&gt;&gt;Virtual: onWithdrawRequest()
+    Virtual-&gt;&gt;Symmio: acceptWithdrawRequest()
+    Note over Symmio: Status: PROVIDER_ACCEPTED
+    Note over Symmio: Wait for cooldown&lt;br/&gt;(from last deallocation)
+    User-&gt;&gt;Symmio: finalizeWithdrawRequest()
+    Symmio-&gt;&gt;Virtual: onWithdrawComplete()
+    Virtual-&gt;&gt;User: Transfer funds (cross-chain)
+    Symmio-&gt;&gt;User: Transfer funds (non-provider parts)
+    Note over Symmio: Status: COMPLETED
+</code></pre>
+					<p>
+						<strong>Cancellation:</strong> - Before provider accepts (<code>PENDING</code>): Cancels immediately - After acceptance,
+						outside blackout: Cancels immediately - After acceptance, inside blackout: Transitions to <code>CANCEL_REQUESTED</code>,
+						awaits provider approval
+					</p>
+					<h3 id="doc-withdraw-system-pure-express-withdraw">Pure Express Withdraw</h3>
+					<p>Only an express provider is specified for instant same-chain withdrawal.</p>
+					<pre><code class="language-mermaid">sequenceDiagram
+    participant User
+    participant Symmio
+    participant Express as Express Provider
+
+    User-&gt;&gt;Symmio: initiateWithdraw()
+    Note over Symmio: Status: PENDING
+    Symmio-&gt;&gt;Express: onWithdrawRequest()
+    Express-&gt;&gt;Symmio: acceptWithdrawRequest()
+    Note over Symmio: Status: PROVIDER_ACCEPTED
+    Express-&gt;&gt;User: Instant payment
+    Note over Symmio: Wait for cooldown&lt;br/&gt;(from last deallocation)
+    User-&gt;&gt;Symmio: finalizeWithdrawRequest()
+    Symmio-&gt;&gt;Express: onWithdrawComplete()
+    Symmio-&gt;&gt;Express: Reimburse funds
+    Symmio-&gt;&gt;User: Transfer funds (non-provider parts)
+    Note over Symmio: Status: COMPLETED
+</code></pre>
+					<h3 id="doc-withdraw-system-virtual-express-withdraw">Virtual Express Withdraw</h3>
+					<p>Both provider types for instant cross-chain withdrawal.</p>
+					<pre><code class="language-mermaid">sequenceDiagram
+    participant User
+    participant Symmio
+    participant Express as Express Provider
+    participant Virtual as Virtual Provider
+
+    User-&gt;&gt;Symmio: initiateWithdraw()
+    Note over Symmio: Status: PENDING
+    Symmio-&gt;&gt;Express: onWithdrawRequest()
+    Note over Express,Virtual: Off-chain coordination
+    Express-&gt;&gt;Symmio: acceptWithdrawRequest()
+    Note over Symmio: Status: PROVIDER_ACCEPTED
+    Express-&gt;&gt;User: Instant payment (cross-chain)
+    Note over Symmio: Wait for cooldown&lt;br/&gt;(from last deallocation)
+    User-&gt;&gt;Symmio: finalizeWithdrawRequest()
+    Symmio-&gt;&gt;Express: onWithdrawComplete()
+    Virtual-&gt;&gt;Express: Reimburse funds
+    Symmio-&gt;&gt;User: Transfer funds (non-provider parts)
+    Note over Symmio: Status: COMPLETED
+</code></pre>
+					<blockquote>
+						<p>Virtual providers coordinate with express providers off-chain for acceptance and payment logistics.</p>
+					</blockquote>
+					<h2 id="doc-withdraw-system-summary-table">Summary Table</h2>
+					<table>
+						<thead>
+							<tr>
+								<th>Type</th>
+								<th>Acceptance Required</th>
+								<th>Instant Payment</th>
+								<th>Finalization Payout</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td>Normal</td>
+								<td>No</td>
+								<td>—</td>
+								<td>Symmio → User</td>
+							</tr>
+							<tr>
+								<td>Pure Virtual</td>
+								<td>Virtual provider</td>
+								<td>—</td>
+								<td>Virtual → User, Symmio → User</td>
+							</tr>
+							<tr>
+								<td>Pure Express</td>
+								<td>Express provider</td>
+								<td>Express → User</td>
+								<td>Symmio → Express, Symmio → User</td>
+							</tr>
+							<tr>
+								<td>Virtual Express</td>
+								<td>Express provider</td>
+								<td>Express → User</td>
+								<td>Virtual → Express, Symmio → User</td>
+							</tr>
+						</tbody>
+					</table>
+					<h2 id="doc-withdraw-system-administrative-features">Administrative Features</h2>
+					<h3 id="doc-withdraw-system-force-cancel">Force Cancel</h3>
+					<p>
+						Administrators with <code>WITHDRAW_FORCE_CANCEL_ROLE</code> can force-cancel any withdrawal request
+						<strong>before</strong> the cooldown expires.
+					</p>
+					<ul>
+						<li>Works on all withdrawal types (classic, virtual, express)</li>
+						<li>Valid for <code>PENDING</code>, <code>PROVIDER_ACCEPTED</code>, or <code>CANCEL_REQUESTED</code> status</li>
+						<li>Returns locked balance to user's available balance</li>
+						<li>Notifies providers via <code>onForceWithdrawCancel</code> callback</li>
+					</ul>
+					<h3 id="doc-withdraw-system-pure-virtual-cancel-blackout">Pure Virtual Cancel Blackout</h3>
+					<p>
+						The <code>pureVirtualCancelBlackout</code> parameter creates a window before cooldown expiry during which users cannot cancel
+						pure virtual withdrawals. This gives virtual providers certainty that accepted requests won't be cancelled at the last moment.
+					</p>
+					<h3 id="doc-withdraw-system-withdrawal-suspension">Withdrawal Suspension</h3>
+					<p>
+						A global flag can suspend users, preventing them from calling balance-changing functions. Suspended users' withdrawal requests
+						can be cancelled, returning locked balance to their available balance.
+					</p>
+					<h3 id="doc-withdraw-system-withdrawal-speed-up">Withdrawal Speed-Up</h3>
+					<p>Designated users can reduce their cooldown period:</p>
+					<ol>
+						<li>Admin adds user to speed-up whitelist</li>
+						<li>User initiates withdrawal with <code>speedUp</code> flag enabled</li>
+						<li>Admin accepts speed-up via <code>acceptSpeedUpRequest</code> with new cooldown duration</li>
+					</ol>
+					<p>A system-wide <code>minWithdrawCooldown</code> enforces the minimum allowed cooldown.</p>
+					<h2 id="doc-withdraw-system-technical-reference">Technical Reference</h2>
+					<h3 id="doc-withdraw-system-enums">Enums</h3>
+					<pre><code class="language-solidity">enum WithdrawStatus {
+    PENDING,            // 0: Created, awaiting provider acceptance
+    PROVIDER_ACCEPTED,  // 1: Provider approved the request
+    PROVIDER_REJECTED,  // 2: Provider declined; request refunded
+    COMPLETED,          // 3: Finalized successfully
+    CANCEL_REQUESTED,   // 4: User requested cancellation, awaiting provider
+    CANCELLED,          // 5: Request fully cancelled and refunded
+    SUSPENDED           // 6: Suspended due to user-level restriction
+}
+</code></pre>
+					<h3 id="doc-withdraw-system-structs">Structs</h3>
+					<pre><code class="language-solidity">struct WithdrawReceiverPart {
+    uint256 id;              // Part ID (set by caller)
+    uint256 amount;          // Amount of collateral to withdraw
+    int256 chainId;          // Destination chain ID
+    bytes receiver;          // Destination address (20 bytes for EVM)
+    address virtualProvider; // Zero for classic/pure-express
+    address expressProvider; // Zero for classic/pure-virtual
+}
+
+struct WithdrawRequest {
+    uint256 id;
+    address user;
+    WithdrawReceiverPart[] parts;
+    uint256 timestamp;
+    uint256 cooldownEndTime;
+    WithdrawStatus status;
+    bool speedUp;
+    bool isCooldownModified;
+    address provider;
+    bool isPureVirtual;
+    bytes providerData;
+    uint256 totalAmount;
+    uint256 totalVirtualAmount;
+}
+</code></pre>
+					<h3 id="doc-withdraw-system-read-functions">Read Functions</h3>
+					<pre><code class="language-solidity">function getWithdrawRequests(address user, uint256 requestId) external view returns (WithdrawRequest memory);
+function getLastWithdrawRequestId(address user) external view returns (uint256);
+function getWithdrawRequestsBatch(address user, uint256 start, uint256 size) external view returns (WithdrawRequest[] memory);
+function getPendingWithdrawRequests(address user, uint256 start, uint256 size) external view returns (WithdrawRequest[] memory);
+function getWithdrawableTime(address user) external view returns (uint256);
+function isExpressProviderRegistered(address provider) external view returns (bool);
+function isVirtualProviderRegistered(address provider) external view returns (bool);
+function isSpeedUpEligible(address user) external view returns (bool);
+function getModifiedCooldownEndTime(address user, uint256 requestId) external view returns (uint256);
+</code></pre>
+					<h4 id="doc-withdraw-system-listing-withdraw-requests">Listing Withdraw Requests</h4>
+					<p>To retrieve a user's unfinished withdrawal requests from a frontend:</p>
+					<ol>
+						<li>
+							<p>
+								<strong>Filtered:</strong> Use <code>getPendingWithdrawRequests(user, start, size)</code> to scan a range of request
+								IDs and return only those with non-terminal status (<code>PENDING</code>, <code>PROVIDER_ACCEPTED</code>,
+								<code>CANCEL_REQUESTED</code>, <code>SUSPENDED</code>). Requests that are <code>COMPLETED</code>,
+								<code>CANCELLED</code>, or <code>PROVIDER_REJECTED</code> are excluded.
+							</p>
+						</li>
+						<li>
+							<p>
+								<strong>Unfiltered:</strong> Use <code>getWithdrawRequestsBatch(user, start, size)</code> to get all requests in a
+								range regardless of status, and filter client-side.
+							</p>
+						</li>
+					</ol>
+					<p>
+						Both approaches are paginated. Call <code>getLastWithdrawRequestId(user)</code> first to get the ID range, then page through
+						with <code>start</code>/<code>size</code>. Request IDs are sequential starting from 1.
+					</p>
+					<h3 id="doc-withdraw-system-user-functions">User Functions</h3>
+					<pre><code class="language-solidity">// Initiate a withdrawal request
+// Returns the request ID and the cooldown end timestamp
+function initiateWithdraw(
+    WithdrawReceiverPart[] calldata parts,
+    bool speedUp,
+    bytes calldata providerData
+) external returns (uint256 requestId, uint256 cooldownEndTime);
+
+// Finalize after cooldown expires
+function finalizeWithdrawRequest(address user, uint256 requestId) external;
+
+// Request cancellation
+// - Classic/pure-virtual (outside blackout): cancels immediately
+// - Express or pure-virtual (inside blackout): transitions to CANCEL_REQUESTED
+function requestCancelWithdraw(uint256 requestId) external;
+</code></pre>
+					<h3 id="doc-withdraw-system-admin-functions">Admin Functions</h3>
+					<pre><code class="language-solidity">// Force-cancel before cooldown expires (requires WITHDRAW_FORCE_CANCEL_ROLE)
+function forceCancelWithdraw(address user, uint256 requestId) external;
+
+// Set blackout period for pure virtual cancellations (requires COOLDOWN_ADMIN_ROLE)
+function setPureVirtualCancelBlackout(uint256 blackout) external;
+</code></pre>
+					<h2 id="doc-withdraw-system-provider-callbacks">Provider Callbacks</h2>
+					<p>Providers must implement these callbacks:</p>
+					<h3 id="doc-withdraw-system-ivirtualprovider">IVirtualProvider</h3>
+					<pre><code class="language-solidity">function onWithdrawRequest(WithdrawRequest calldata request) external;
+function onWithdrawComplete(WithdrawRequest calldata request) external;
+function onWithdrawCancelRequest(WithdrawRequest calldata request) external;
+function onForceWithdrawCancel(WithdrawRequest calldata request) external;
+</code></pre>
+					<h3 id="doc-withdraw-system-iexpressprovider">IExpressProvider</h3>
+					<pre><code class="language-solidity">function onWithdrawRequest(WithdrawRequest calldata request) external;
+function onWithdrawComplete(WithdrawRequest calldata request) external;
+function onWithdrawCancelRequest(WithdrawRequest calldata request) external;
+function onForceWithdrawCancel(WithdrawRequest calldata request) external;
+</code></pre>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer"><span>Symmio Core v0.8.5 documentation.</span></footer>
+	</body>
+</html>

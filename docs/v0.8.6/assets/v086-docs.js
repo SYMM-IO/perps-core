@@ -18,74 +18,31 @@
 	};
 	const themeButtons = Array.from(document.querySelectorAll("[data-theme-toggle]"));
 	const icons = {
-		arrowLeft: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>',
-		bookOpen:
-			'<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>',
 		check: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg>',
 		copy: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>',
 		expand: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6"/><path d="m21 3-7 7"/><path d="M9 21H3v-6"/><path d="m3 21 7-7"/></svg>',
-		fileDown:
-			'<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 12v6"/><path d="m9 15 3 3 3-3"/></svg>',
-		home: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>',
 		moon: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5 7 7 0 1 0 20.5 14.5"/></svg>',
-		sidebar:
-			'<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/></svg>',
 		sun: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.9 4.9 1.4 1.4"/><path d="m17.7 17.7 1.4 1.4"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.3 17.7-1.4 1.4"/><path d="m19.1 4.9-1.4 1.4"/></svg>',
 		wrap: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h14a4 4 0 0 1 0 8H7"/><path d="m10 12-3 3 3 3"/></svg>',
 	};
 	const setIconLabel = (element, icon, label) => {
 		element.innerHTML = `${icon}<span>${label}</span>`;
 	};
-	const installButtonIcons = () => {
-		document.querySelectorAll(".doc-page .top-actions").forEach(actions => {
-			if (!actions.querySelector('a[href="../index.html"]')) {
-				const home = document.createElement("a");
-				home.className = "button ghost";
-				home.href = "../index.html";
-				home.setAttribute("aria-label", "Go home");
-				setIconLabel(home, icons.home, "Home");
-				actions.prepend(home);
-			}
-		});
-		document.querySelectorAll(".top-actions a.button, .hero-actions a.button, .back-home").forEach(button => {
-			const label = (button.textContent || "").replace(/\s+/g, " ").trim();
-			if (!label || button.dataset.iconified) return;
-			if (label === "Home") setIconLabel(button, icons.home, label);
-			else if (label === "Back to index") setIconLabel(button, icons.arrowLeft, label);
-			else if (/^View/i.test(label)) setIconLabel(button, icons.bookOpen, label);
-			button.dataset.iconified = "true";
-		});
-	};
-	const installPdfExport = () => {
-		document.querySelectorAll(".doc-topbar .top-actions").forEach(actions => {
-			if (actions.querySelector("[data-pdf-export]")) return;
-			const button = document.createElement("button");
-			button.type = "button";
-			button.className = "button ghost pdf-export";
-			button.dataset.pdfExport = "true";
-			button.setAttribute("aria-label", "Export this page to PDF");
-			button.setAttribute("title", "Export this page to PDF");
-			setIconLabel(button, icons.fileDown, "PDF");
-			button.addEventListener("click", () => window.print());
 
-			const themeButton = actions.querySelector("[data-theme-toggle]");
-			if (themeButton) actions.insertBefore(button, themeButton);
-			else actions.append(button);
-		});
-	};
 	const syncThemeButtons = () => {
 		const isDark = root.dataset.theme === "dark";
 		themeButtons.forEach(button => {
 			setIconLabel(button, isDark ? icons.sun : icons.moon, isDark ? "Light" : "Dark");
-			button.setAttribute("aria-pressed", String(isDark));
+			const actionLabel = isDark ? "Switch to light theme" : "Switch to dark theme";
+			button.setAttribute("aria-label", actionLabel);
+			button.setAttribute("title", actionLabel);
+			button.removeAttribute("aria-pressed");
 		});
 	};
 	const savedTheme = themeStorage.get();
 	// Dark is the canonical Symmio surface; light is opt-in via the toggle.
 	root.dataset.theme = savedTheme === "light" ? "light" : "dark";
 	syncThemeButtons();
-	installButtonIcons();
-	installPdfExport();
 
 	themeButtons.forEach(button => {
 		button.addEventListener("click", () => {
@@ -97,250 +54,8 @@
 		});
 	});
 
-	const railStorage = {
-		get(key) {
-			try {
-				return window.localStorage ? localStorage.getItem(key) : null;
-			} catch (_error) {
-				return null;
-			}
-		},
-		set(key, value) {
-			try {
-				if (window.localStorage) localStorage.setItem(key, value);
-			} catch (_error) {
-				// Storage can be unavailable for local previews; the rail controls still work for this page load.
-			}
-		},
-	};
-
-	const installRailControls = () => {
-		const body = document.body;
-		if (!body || !body.classList.contains("doc-page")) return;
-
-		const sectionPanel = document.querySelector(".toc-panel.side-toc");
-		const sectionCard = document.querySelector(".side-toc .toc-card");
-		if (!sectionPanel || !sectionCard || sectionCard.querySelector("[data-sections-toggle]")) return;
-		if (!sectionPanel.id) sectionPanel.id = "docs-sections-rail";
-
-		const title = sectionCard.querySelector(".toc-title");
-		if (title) title.textContent = "Sections";
-
-		const button = document.createElement("button");
-		button.type = "button";
-		button.className = "section-toggle";
-		button.dataset.sectionsToggle = "true";
-		button.setAttribute("aria-controls", sectionPanel.id);
-
-		const sync = (collapsed, persist = true) => {
-			body.classList.toggle("rail-right-collapsed", collapsed);
-			setIconLabel(button, icons.sidebar, collapsed ? "Sections" : "Hide");
-			button.setAttribute("aria-expanded", String(!collapsed));
-			button.setAttribute("aria-label", collapsed ? "Show sections sidebar" : "Hide sections sidebar");
-			if (persist) railStorage.set("v086-docs-sections-collapsed", String(collapsed));
-		};
-
-		sync(railStorage.get("v086-docs-sections-collapsed") === "true", false);
-		button.addEventListener("click", () => sync(!body.classList.contains("rail-right-collapsed")));
-		sectionCard.prepend(button);
-	};
-
-	installRailControls();
-
-	const installArcReaderChrome = () => {
-		const body = document.body;
-		if (!body || !body.classList.contains("doc-page")) return;
-
-		const topbar = document.querySelector(".doc-topbar");
-		const sectionCard = document.querySelector(".side-toc .toc-card");
-		const pageHeading = document.querySelector(".reader-hero h1");
-		if (!topbar || !sectionCard || !pageHeading || sectionCard.querySelector(".arc-rail-header")) return;
-
-		const brand = topbar.querySelector(".brand");
-		const actions = topbar.querySelector(".top-actions");
-		const sectionToggle = sectionCard.querySelector("[data-sections-toggle]");
-		const category = document.querySelector(".reader-hero .crumbs strong");
-
-		if (!pageHeading.id) pageHeading.id = "document-title";
-
-		const railHeader = document.createElement("div");
-		railHeader.className = "arc-rail-header";
-
-		const railTop = document.createElement("div");
-		railTop.className = "arc-rail-top";
-
-		if (brand) {
-			brand.classList.add("arc-rail-brand");
-			railTop.append(brand);
-		}
-
-		const railActions = document.createElement("div");
-		railActions.className = "arc-rail-actions";
-		if (actions) railActions.append(actions);
-		railTop.append(railActions);
-
-		const pageLink = document.createElement("a");
-		const pageTitle = (pageHeading.textContent || document.title).trim();
-		const compactPageTitle = pageTitle.replace(/\s*[-–—]\s*Design Document\s*$/i, "").trim();
-		pageLink.className = "arc-rail-page";
-		pageLink.href = `#${pageHeading.id}`;
-		pageLink.setAttribute("aria-label", `Current page: ${pageTitle}`);
-		pageLink.innerHTML = `<span>${escapeHtml(category ? category.textContent || "Document" : "Document")}</span><strong>${escapeHtml(
-			compactPageTitle || pageTitle,
-		)}</strong>`;
-
-		railHeader.append(railTop, pageLink);
-		sectionCard.prepend(railHeader);
-
-		const sectionList = document.createElement("div");
-		sectionList.className = "arc-section-list";
-		Array.from(sectionCard.children).forEach(child => {
-			if (child.matches(".toc-title, .toc-link, .toc-empty")) sectionList.append(child);
-		});
-		sectionCard.append(sectionList);
-
-		if (sectionToggle) {
-			const railFooter = document.createElement("div");
-			railFooter.className = "arc-rail-footer";
-			railFooter.append(sectionToggle);
-			sectionCard.append(railFooter);
-		}
-	};
-
-	const normalize = value => value.toLowerCase().replace(/\s+/g, " ").trim();
 	const escapeHtml = value =>
 		value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-
-	// Single source of truth for the reader sidebar. Every page renders it from here instead of
-	// carrying its own copy, so adding or renaming a doc is one edit rather than one per page.
-	const DOC_NAV = [
-		{ href: "express-withdrawal-system-design.html", category: "Express Withdrawal", title: "Express Withdrawal System Design" },
-		{ href: "account-layer-ownership-delegation.html", category: "AccountLayer", title: "AccountLayer Delegated Creation & Ownership Transfer" },
-		{ href: "liquidation-funding-snapshot-fix.html", category: "Liquidation", title: "PartyA Liquidation Snapshot Flow" },
-		{ href: "single-step-partya-liquidation.html", category: "Liquidation", title: "Single-Step PartyA Liquidation" },
-		{ href: "affiliate-shutdown-flow.html", category: "Clearing House", title: "Affiliate Shutdown Flow" },
-		{ href: "muon-upnl-validity-overrides.html", category: "Muon", title: "Muon UPNL Validity Overrides" },
-		{ href: "solver-fees.html", category: "Fees", title: "Solver Fees" },
-		{ href: "operational-fees.html", category: "Fees", title: "Operational Fees" },
-		{ href: "instant-open-gas-optimization.html", category: "Performance", title: "InstantOpen Gas Optimization" },
-		{ href: "symbol-adjustment.html", category: "Symbols", title: "Symbol Corporate-Action Adjustment" },
-		{ href: "partya-liquidation-fee-recipient.html", category: "Liquidation", title: "PartyA Liquidation Fee Recipient Cleanup" },
-		{ href: "balance-change-event-cleanup.html", category: "Events & Indexing", title: "Allocated Balance Event Ledger" },
-		{ href: "lazy-accumulated-funding.html", category: "Funding", title: "Lazy Accumulated Funding" },
-		{ href: "partyb-allocation-suspension-gates.html", category: "PartyB", title: "Allocation Suspension Gates" },
-		{ href: "cross-partyb-liquidation-reserve.html", category: "Liquidation", title: "Cross-PartyB Liquidation Reserve Enforcement" },
-		{ href: "delegation-account-scope.html", category: "AccountLayer", title: "Delegation Account Scope" },
-		{ href: "strict-deallocation.html", category: "Accounts", title: "Strict Deallocation" },
-		{ href: "express-bot-operations-checklist.html", category: "Express Withdrawal", title: "Express Provider Bot Operations Checklist" },
-		{ href: "market-open-fee-execution-price.html", category: "Fees", title: "Market Open Fee on Execution Price" },
-		{ href: "partyb-funding-nonces.html", category: "PartyB", title: "Funding Update Nonces" },
-		{ href: "bound-mode-unified-settlement.html", category: "Settlement", title: "Bound-Mode Unified Settlement" },
-		{ href: "instant-layer-authorization-scope.html", category: "InstantLayer", title: "InstantLayer Authorization Scope" },
-		{ href: "diamond-owner-getter.html", category: "Views", title: "Diamond Owner Getter" },
-		{ href: "express-deposit-removal.html", category: "AccountLayer", title: "Express Deposit Removal" },
-		{ href: "accountlayer-behavior-changes.html", category: "AccountLayer", title: "AccountLayer Behavior Changes" },
-	];
-
-	const installDocNav = () => {
-		const host = document.querySelector("[data-doc-nav]");
-		if (!host) return;
-		const current = decodeURIComponent(location.pathname.split("/").pop() || "").toLowerCase();
-		const links = DOC_NAV.map(item => {
-			const active = item.href.toLowerCase() === current ? " is-active" : "";
-			return (
-				`<a class="side-link${active}" href="../pages/${item.href}"` +
-				`><small>${escapeHtml(item.category)}</small><span>${escapeHtml(item.title)}</span></a>`
-			);
-		}).join("");
-		host.innerHTML =
-			'<a class="button primary back-home" href="../index.html">Back to index</a>' +
-			`<div class="side-card"><p class="side-label">Docs</p>${links}</div>`;
-	};
-
-	installDocNav();
-
-	installArcReaderChrome();
-
-	const installFilter = (input, items, emptyLabel) => {
-		if (!input || !items.length) return;
-		const empty = document.createElement("div");
-		empty.className = "no-results is-hidden";
-		empty.textContent = emptyLabel;
-		const parent = items[0].parentElement;
-		if (parent) parent.append(empty);
-		input.addEventListener("input", () => {
-			const query = normalize(input.value);
-			let shown = 0;
-			items.forEach(item => {
-				const match = !query || normalize(item.textContent || "").includes(query);
-				item.classList.toggle("is-hidden", !match);
-				if (match) shown += 1;
-			});
-			empty.classList.toggle("is-hidden", shown !== 0);
-		});
-	};
-
-	installFilter(
-		document.querySelector("[data-filter-docs]"),
-		Array.from(document.querySelectorAll(".doc-grid [data-filter-item]")),
-		"No matching documentation pages.",
-	);
-
-	document.querySelectorAll("[data-filter-nav]").forEach(input => {
-		const sidebar = input.closest(".doc-sidebar");
-		installFilter(input, Array.from(sidebar ? sidebar.querySelectorAll(".side-link") : []), "No matching docs.");
-	});
-
-	const flowHeadingPattern = /\bwithdrawal flows?\b/i;
-	const cleanSectionLabel = text =>
-		text
-			.replace(/\s+/g, " ")
-			.replace(/^\d+(?:\.\d+)*\.?\s*/, "")
-			.replace(/\s*\([^)]*\)\s*$/, match => (match.length > 18 ? "" : match))
-			.trim();
-
-	const installProtocolFlowJumps = () => {
-		const sections = Array.from(document.querySelectorAll(".doc-article h2[id]")).filter(
-			heading => flowHeadingPattern.test(heading.id) || flowHeadingPattern.test(heading.textContent || ""),
-		);
-		sections.forEach(heading => {
-			if (heading.nextElementSibling && heading.nextElementSibling.classList.contains("flow-jump-nav")) return;
-
-			const h3s = [];
-			let cursor = heading.nextElementSibling;
-			while (cursor && cursor.tagName !== "H2") {
-				if (cursor.tagName === "H3" && cursor.id) h3s.push(cursor);
-				cursor = cursor.nextElementSibling;
-			}
-			if (h3s.length < 2) return;
-
-			const nav = document.createElement("nav");
-			nav.className = "flow-jump-nav";
-			nav.setAttribute("aria-label", "Withdrawal flow quick links");
-			const label = document.createElement("span");
-			label.textContent = "Flow sections";
-			nav.append(label);
-			h3s.forEach(sectionHeading => {
-				const link = document.createElement("a");
-				link.href = `#${sectionHeading.id}`;
-				link.textContent = cleanSectionLabel(sectionHeading.textContent || sectionHeading.id);
-				nav.append(link);
-			});
-			heading.after(nav);
-		});
-	};
-
-	installProtocolFlowJumps();
-
-	const installReleaseSummaryCounts = () => {
-		document.querySelectorAll(".release-summary [data-count-of]").forEach(figure => {
-			const total = document.querySelectorAll(figure.dataset.countOf).length;
-			// An empty match means the section was renamed; the authored number stays rather than rendering 00.
-			if (total) figure.textContent = String(total).padStart(2, "0");
-		});
-	};
-
-	installReleaseSummaryCounts();
 
 	const detectDiagramType = source => {
 		const first = source.trim().split(/\n/)[0] || "";
@@ -481,7 +196,7 @@
 				<span class="diagram-modal-help">Scroll to zoom, drag to pan</span>
 				<div class="diagram-modal-actions">
 					<button type="button" data-diagram-zoom="out" aria-label="Zoom out">-</button>
-					<button type="button" data-diagram-zoom="reset" aria-label="Reset zoom">100%</button>
+					<button type="button" data-diagram-zoom="reset" aria-label="Fit diagram to readable width">Fit 100%</button>
 					<button type="button" data-diagram-zoom="in" aria-label="Zoom in">+</button>
 					<button type="button" data-diagram-close aria-label="Close diagram">Close</button>
 				</div>
@@ -493,7 +208,10 @@
 
 		const stage = modal.querySelector(".diagram-modal-stage");
 		const canvas = modal.querySelector(".diagram-modal-canvas");
-		canvas.append(source.cloneNode(true));
+		const modalSource = source.cloneNode(true);
+		const modalSvg = modalSource.matches?.("svg") ? modalSource : modalSource.querySelector?.("svg");
+		if (modalSvg) namespaceSvgIds(modalSvg, `diagram-modal-${Date.now()}`);
+		canvas.append(modalSource);
 		document.body.append(modal);
 		document.body.classList.add("has-diagram-modal");
 		activeDiagramModal = modal;
@@ -519,7 +237,7 @@
 		const fitPadding = 40;
 		const applyTransform = () => {
 			canvas.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
-			if (zoomLabel) zoomLabel.textContent = `${Math.round(scale * 100)}%`;
+			if (zoomLabel) zoomLabel.textContent = `Fit ${Math.round(scale * 100)}%`;
 		};
 		const clampScale = value => Math.min(maxScale, Math.max(minScale, Number(value.toFixed(3))));
 		const fitToStage = () => {
@@ -529,9 +247,11 @@
 			if (!contentWidth || !contentHeight) return;
 			const availableWidth = Math.max(1, stageRect.width - fitPadding * 2);
 			const availableHeight = Math.max(1, stageRect.height - fitPadding * 2);
-			scale = clampScale(Math.min(1, availableWidth / contentWidth, availableHeight / contentHeight));
+			// Fit to readable width. Tall flowcharts may extend below the viewport and
+			// can be panned; fitting their full height made labels illegible.
+			scale = clampScale(Math.min(1, availableWidth / contentWidth));
 			x = (stageRect.width - contentWidth * scale) / 2;
-			y = (stageRect.height - contentHeight * scale) / 2;
+			y = contentHeight * scale <= availableHeight ? (stageRect.height - contentHeight * scale) / 2 : fitPadding;
 			applyTransform();
 		};
 		const stageCenter = () => {
@@ -581,18 +301,6 @@
 					event.preventDefault();
 					first.focus();
 				}
-			}
-			if ((event.metaKey || event.ctrlKey) && (event.key === "+" || event.key === "=")) {
-				event.preventDefault();
-				zoomBy(1.18);
-			}
-			if ((event.metaKey || event.ctrlKey) && event.key === "-") {
-				event.preventDefault();
-				zoomBy(1 / 1.18);
-			}
-			if ((event.metaKey || event.ctrlKey) && event.key === "0") {
-				event.preventDefault();
-				reset();
 			}
 		};
 
@@ -663,8 +371,53 @@
 		fitToStage();
 	};
 
-	const enhanceMermaidSvg = svg => {
+	const namespaceSvgIds = (svg, namespace) => {
+		const idMap = new Map();
+		svg.querySelectorAll("[id]").forEach((node, index) => {
+			if (node === svg) return;
+			const previous = node.id;
+			const next = `${namespace}-${index}-${previous}`;
+			idMap.set(previous, next);
+			node.id = next;
+		});
+		if (!idMap.size) return;
+		const referenceAttributes = [
+			"aria-describedby",
+			"aria-labelledby",
+			"clip-path",
+			"fill",
+			"filter",
+			"href",
+			"marker-end",
+			"marker-mid",
+			"marker-start",
+			"mask",
+			"stroke",
+			"xlink:href",
+		];
+		svg.querySelectorAll("*").forEach(node => {
+			referenceAttributes.forEach(attribute => {
+				const value = node.getAttribute(attribute);
+				if (!value) return;
+				let nextValue = value;
+				idMap.forEach((next, previous) => {
+					nextValue = nextValue.replaceAll(`url(#${previous})`, `url(#${next})`);
+					if (nextValue === `#${previous}`) nextValue = `#${next}`;
+					if (attribute.startsWith("aria-")) {
+						nextValue = nextValue
+							.split(/\s+/)
+							.map(token => (token === previous ? next : token))
+							.join(" ");
+					}
+				});
+				if (nextValue !== value) node.setAttribute(attribute, nextValue);
+			});
+		});
+	};
+
+	const enhanceMermaidSvg = (svg, namespace) => {
 		if (!svg) return;
+		namespaceSvgIds(svg, namespace);
 		const softenRect = (rect, radius) => {
 			const rx = rect.getAttribute("rx");
 			const ry = rect.getAttribute("ry");
@@ -816,7 +569,7 @@
 				const svg = node.querySelector("svg");
 				if (svg) {
 					const renderedSvg = svg.cloneNode(true);
-					enhanceMermaidSvg(renderedSvg);
+					enhanceMermaidSvg(renderedSvg, `diagram-${index}`);
 					canvas.className = "mermaid";
 					canvas.replaceChildren(renderedSvg);
 					frame.classList.add("is-rendered");
@@ -1212,112 +965,6 @@
 		return assignmentLike >= Math.max(1, Math.ceil(codeLines.length * 0.6));
 	};
 
-	const extractFunctionRefs = source => {
-		const refs = [];
-		const lines = source.split("\n");
-		let pendingComments = [];
-		let current = null;
-		const flush = () => {
-			if (!current) return;
-			const signature = current.parts
-				.join(" ")
-				.replace(/\s+/g, " ")
-				.replace(/\s*;\s*$/, "")
-				.trim();
-			if (!signature) {
-				current = null;
-				return;
-			}
-			const name = (signature.match(/\bfunction\s+([A-Za-z_][\w]*)/) || signature.match(/^([A-Za-z][\w.]*)\s*\(/) || [])[1];
-			if (!name) {
-				current = null;
-				return;
-			}
-			const access = (signature.match(/\b(external|public|internal|private)\b/) || [])[1] || "";
-			const modifiers = Array.from(signature.matchAll(/\b(view|pure|payable|onlyRole\([^)]+\))\b/g)).map(match => match[1]);
-			const returns = (signature.match(/\breturns\s*\(([^)]*)\)/) || [])[1] || "";
-			const comment = current.comment.join(" ").replace(/\s+/g, " ").trim();
-			const role =
-				(signature.match(/onlyRole\(([^)]+)\)/) || [])[1] ||
-				(/\bROLE\b|Setter only|Anyone|Diamond owner only|owner-only/i.test(comment) ? comment : "");
-			refs.push({
-				name,
-				signature,
-				access,
-				modifiers: modifiers.filter(item => !item.startsWith("onlyRole")),
-				returns,
-				role,
-				description: role === comment ? "" : comment,
-			});
-			current = null;
-		};
-
-		lines.forEach(line => {
-			const trimmed = line.trim();
-			if (!trimmed) return;
-			if (trimmed.startsWith("//")) {
-				pendingComments.push(trimmed.replace(/^\/\/\s*/, ""));
-				return;
-			}
-			if (/^(mapping|struct|enum|event|error|contract|interface|library|pragma|import)\b/.test(trimmed)) {
-				pendingComments = [];
-				return;
-			}
-
-			const commentSplit = trimmed.split(/\s+\/\/\s*/);
-			const codePart = commentSplit.shift().trim();
-			const inlineComment = commentSplit.join(" // ").trim();
-			const startsSignature = /\bfunction\s+[A-Za-z_][\w]*\s*\(/.test(codePart) || /^[A-Za-z][\w.]*\s*\([^)]*\)/.test(codePart);
-			if (!current && !startsSignature) {
-				pendingComments = [];
-				return;
-			}
-			if (!current) {
-				current = { parts: [], comment: pendingComments.slice() };
-				pendingComments = [];
-			}
-			if (inlineComment) current.comment.push(inlineComment);
-			current.parts.push(codePart);
-			if (
-				/[;{]\s*$/.test(codePart) ||
-				(!/\bfunction\b/.test(codePart) && /^[A-Za-z][\w.]*\s*\([^)]*\)\s*(?:returns\s*\([^)]*\))?$/.test(codePart))
-			)
-				flush();
-		});
-		flush();
-		return refs;
-	};
-
-	const installFunctionReference = (frame, source) => {
-		const functions = extractFunctionRefs(source);
-		if (functions.length < 2) return;
-		const details = document.createElement("details");
-		details.className = "function-reference";
-		details.innerHTML = `
-			<summary><span>Function reference</span><small>${functions.length} signature${functions.length === 1 ? "" : "s"}</small></summary>
-			<div class="function-grid">
-				${functions
-					.map(
-						item => `
-							<article class="function-card">
-								<strong>${escapeHtml(item.name)}</strong>
-								<code>${escapeHtml(item.signature)}</code>
-								${item.description ? `<p>${escapeHtml(item.description)}</p>` : ""}
-								<div class="function-meta">
-									${item.access ? `<span>${escapeHtml(item.access)}</span>` : ""}
-									${item.modifiers.map(modifier => `<span>${escapeHtml(modifier)}</span>`).join("")}
-									${item.role ? `<span>${escapeHtml(item.role)}</span>` : ""}
-									${item.returns ? `<span>returns ${escapeHtml(item.returns)}</span>` : ""}
-								</div>
-							</article>
-						`,
-					)
-					.join("")}
-			</div>
-		`;
-		frame.after(details);
-	};
-
 	document.querySelectorAll(".doc-article pre > code").forEach(code => {
 		if (code.classList.contains("language-mermaid")) return;
 		const hasLanguage = Array.from(code.classList).some(item => item.startsWith("language-"));
@@ -1361,7 +1008,7 @@
 		return html;
 	};
 
-	document.querySelectorAll(".doc-article :not(pre) > code, .function-card > code, .reader-hero :not(pre) > code").forEach(node => {
+	document.querySelectorAll(".doc-article :not(pre) > code, .reader-hero :not(pre) > code").forEach(node => {
 		if (node.querySelector("span")) return;
 		const text = node.textContent || "";
 		if (!/[(),.[\]=<>]/.test(text)) return;
@@ -1419,9 +1066,6 @@
 		toolbar.append(actions);
 		pre.before(frame);
 		frame.append(toolbar, pre);
-		if (code && code.classList.contains("language-solidity") && !pre.closest("[data-disable-function-reference]")) {
-			installFunctionReference(frame, code.textContent || "");
-		}
 	});
 
 	const installHeadingLinks = () => {
@@ -1452,120 +1096,4 @@
 	};
 
 	installHeadingLinks();
-
-	const tocLinks = Array.from(document.querySelectorAll(".toc-link"));
-	if (tocLinks.length) {
-		const tocScroller =
-			document.querySelector(".side-toc .arc-section-list") ||
-			document.querySelector(".side-toc .toc-card") ||
-			document.querySelector(".toc-panel");
-		const byId = new Map();
-		tocLinks.forEach(link => {
-			let id = "";
-			try {
-				id = decodeURIComponent((link.getAttribute("href") || "").replace(/^#/, ""));
-			} catch (_error) {
-				id = "";
-			}
-			if (id) byId.set(id, link);
-			link.addEventListener("click", event => {
-				const heading = id ? document.getElementById(id) : null;
-				if (!heading) return;
-				event.preventDefault();
-				holdClickedSection(id);
-				if (id) setActiveToc(id, { scroll: false });
-				window.history.pushState(null, "", `#${encodeURIComponent(id)}`);
-				scrollToHeading(heading);
-			});
-		});
-		const headings = Array.from(document.querySelectorAll(".doc-article h2[id], .doc-article h3[id]")).filter(heading => byId.has(heading.id));
-		let activeId = "";
-		let ticking = false;
-		let lockedActiveId = "";
-		let unlockTimer = 0;
-		function setActiveToc(id, options = {}) {
-			const active = byId.get(id);
-			if (!active || activeId === id) return;
-			if (activeId && byId.has(activeId)) {
-				const previous = byId.get(activeId);
-				previous.classList.remove("is-active");
-				previous.removeAttribute("aria-current");
-			}
-			activeId = id;
-			active.classList.add("is-active");
-			active.setAttribute("aria-current", "location");
-			if (options.scroll !== false && tocScroller && tocScroller.scrollHeight > tocScroller.clientHeight) {
-				const panelRect = tocScroller.getBoundingClientRect();
-				const activeRect = active.getBoundingClientRect();
-				if (activeRect.top < panelRect.top + 12) {
-					tocScroller.scrollTop = Math.max(0, tocScroller.scrollTop + activeRect.top - panelRect.top - 18);
-				} else if (activeRect.bottom > panelRect.bottom - 12) {
-					tocScroller.scrollTop = tocScroller.scrollTop + activeRect.bottom - panelRect.bottom + 18;
-				}
-			}
-		}
-		function activeFromScroll() {
-			ticking = false;
-			if (!headings.length) return;
-			if (lockedActiveId && byId.has(lockedActiveId)) {
-				setActiveToc(lockedActiveId);
-				return;
-			}
-			const marker = getAnchorOffset() + 2;
-			let current = headings[0];
-			for (const heading of headings) {
-				if (heading.getBoundingClientRect().top <= marker) current = heading;
-				else break;
-			}
-			setActiveToc(current.id);
-		}
-		function getAnchorOffset() {
-			const header = document.querySelector(".doc-topbar");
-			const headerBottom = header ? header.getBoundingClientRect().bottom : 0;
-			return Math.max(28, Math.ceil(headerBottom + 20));
-		}
-		function scrollToHeading(heading) {
-			const targetTop = heading.getBoundingClientRect().top + window.scrollY - getAnchorOffset();
-			window.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
-		}
-		function requestActiveFromScroll() {
-			if (ticking) return;
-			ticking = true;
-			window.requestAnimationFrame(activeFromScroll);
-		}
-		function holdClickedSection(id) {
-			lockedActiveId = id;
-			window.clearTimeout(unlockTimer);
-			unlockTimer = window.setTimeout(unlockClickedSection, 1200);
-		}
-		function unlockClickedSection() {
-			if (!lockedActiveId) return;
-			window.clearTimeout(unlockTimer);
-			lockedActiveId = "";
-			requestActiveFromScroll();
-		}
-		function activeFromHash() {
-			let id = "";
-			try {
-				id = decodeURIComponent(window.location.hash.replace(/^#/, ""));
-			} catch (_error) {
-				id = "";
-			}
-			if (id && byId.has(id)) setActiveToc(id);
-			else activeFromScroll();
-		}
-		window.addEventListener("scroll", requestActiveFromScroll, { passive: true });
-		window.addEventListener("resize", requestActiveFromScroll);
-		window.addEventListener("hashchange", activeFromHash);
-		window.addEventListener("scrollend", unlockClickedSection, { passive: true });
-		window.addEventListener("wheel", unlockClickedSection, { passive: true });
-		window.addEventListener("touchstart", unlockClickedSection, { passive: true });
-		window.addEventListener("keydown", event => {
-			if (["ArrowDown", "ArrowUp", "Home", "End", "PageDown", "PageUp", " "].includes(event.key)) {
-				unlockClickedSection();
-			}
-		});
-		activeFromHash();
-		window.setTimeout(activeFromHash, 80);
-	}
 })();

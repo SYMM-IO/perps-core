@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Symbol Types - Symmio Core v0.8.5</title>
+		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
+		<link rel="stylesheet" href="../../v0.8.6/assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../../v0.8.6/assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.5">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.5</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden></div>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1><strong>Symbol Types</strong></h1>
+							<p class="hero-copy">
+								At the first day of Symmio we only had Binance pairs available but nowadays we have a lot more like the vibe lowcaps
+								markets. In order to distinguish between them on the contract level and even limit the solvers to only work on a group
+								of symbols we added symbolType to symbol (but in a backward compatible way and with adding a new mapping instead of
+								changing the original symbol structure). The following methods are added to have this functionality:
+							</p>
+						</div>
+					</div>
+				</header>
+				<article class="doc-article" id="full-document">
+					<pre><code class="language-solidity">function addSymbolWithType(
+        string memory name,
+        uint256 minAcceptableQuoteValue,hassle
+        uint256 minAcceptablePortionLF,
+        uint256 tradingFee,
+        uint256 maxLeverage,
+        uint256 fundingRateEpochDuration,
+        uint256 fundingRateWindowTime,
+        uint256 symbolType
+    ) external;
+
+function setSymbolTypes(uint256[] calldata symbolIds, uint256[] calldata symbolTypes) external;
+
+function setPartyBWhitelistedSymbolTypeStatus(
+        address partyB,
+        uint256 symbolType,
+        bool isWhiteList
+    ) external;
+
+function getSymbolWithType(uint256 symbolId) external view returns (SymbolWithType memory)
+
+function isWhitelistedSymbolType(address partyB, uint256 symbolType) external view returns (bool)
+</code></pre>
+					<p>This feature improves risk isolation and regulatory compliance for PartyBs.</p>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer"><span>Symmio Core v0.8.5 documentation.</span></footer>
+	</body>
+</html>

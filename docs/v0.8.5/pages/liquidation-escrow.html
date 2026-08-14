@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Liquidation Escrow - Symmio Core v0.8.5</title>
+		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
+		<link rel="stylesheet" href="../../v0.8.6/assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../../v0.8.6/assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.5">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.5</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#doc-liquidation-escrow-overview">Overview</a>
+				<a class="toc-link level-2" href="#doc-liquidation-escrow-how-it-works">How It Works</a>
+				<a class="toc-link level-2" href="#doc-liquidation-escrow-settlement-code">Settlement Code</a>
+				<a class="toc-link level-2" href="#doc-liquidation-escrow-clearinghouse-distribution">ClearingHouse Distribution</a>
+				<a class="toc-link level-2" href="#doc-liquidation-escrow-clearinghouse-takeover-unaffected">ClearingHouse Takeover (Unaffected)</a>
+				<a class="toc-link level-2" href="#doc-liquidation-escrow-deferred-liquidation-and-escrow">Deferred Liquidation and Escrow</a>
+				<a class="toc-link level-2" href="#doc-liquidation-escrow-storage">Storage</a>
+				<a class="toc-link level-2" href="#doc-liquidation-escrow-view-functions">View Functions</a>
+				<a class="toc-link level-2" href="#doc-liquidation-escrow-events">Events</a>
+				<a class="toc-link level-2" href="#doc-liquidation-escrow-relevant-files">Relevant Files</a>
+			</div>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Liquidation Escrow</h1>
+						</div>
+					</div>
+				</header>
+				<article class="doc-article" id="full-document">
+					<h2 id="doc-liquidation-escrow-overview">Overview</h2>
+					<p>
+						The liquidation escrow mechanism prevents a PartyA from recovering pending trading fees through the liquidation reimbursement
+						path when their liquidation is classified as <code>LATE</code> or <code>OVERDUE</code>. Without this mechanism, a PartyA whose
+						positions are liquidated at a severe deficit can still receive back the trading fees from their cancelled pending quotes --
+						effectively recovering funds that should be available to compensate PartyBs for haircut losses.
+					</p>
+					<p>
+						This is especially relevant in <a href="oracle-less-trading.html">oracle-less trading</a> mode, where a bound PartyA can
+						submit fabricated UPNL values to bypass the available balance check in <code>sendQuote</code>. By sending many quotes with
+						inflated UPNL, the PartyA drains their <code>allocatedBalances</code> into trading fees while keeping positions open. When
+						liquidated as <code>LATE</code> or <code>OVERDUE</code>, the pending quotes are cancelled and their fees are refunded. Without
+						the escrow, these refunded fees would go straight back to the PartyA at settlement -- the exact funds they drained to worsen
+						the liquidation severity.
+					</p>
+					<p>
+						The vulnerability exists without oracle-less mode too, but the impact is negligible because the Muon oracle enforces accurate
+						UPNL values, which limits how much excess fee draining is possible.
+					</p>
+					<h2 id="doc-liquidation-escrow-how-it-works">How It Works</h2>
+					<p>During PartyA liquidation, two types of funds accumulate before settlement:</p>
+					<p>
+						<strong>Pending fee reimbursement</strong> (<code>partyAReimbursement</code>) -- When
+						<code>liquidatePendingPositionsPartyA</code> cancels pending quotes (SENT, LOCKED, CANCEL_PENDING), each quote's trading fee
+						is refunded to <code>partyAReimbursement</code>. This is the attack vector -- these fees were deducted from
+						<code>allocatedBalances</code> when the quote was created, and the attacker wants them back.
+					</p>
+					<p>
+						<strong>Deferred excess balance</strong> (<code>partyADeferredBalance</code>) -- In
+						<a href="clearing-house.html">deferred liquidation</a>, where the Muon oracle proves historical insolvency, the PartyA may
+						have deposited additional funds since the insolvency point. The difference between the current
+						<code>allocatedBalances</code> and the historical <code>liquidationAllocatedBalance</code> is the excess. This excess is
+						legitimate -- it's funds the PartyA added after the fact -- and is always returned to the PartyA regardless of liquidation
+						type.
+					</p>
+					<p>At settlement (<code>settlePartyALiquidation</code>), the routing depends on the liquidation type:</p>
+					<table>
+						<thead>
+							<tr>
+								<th>Liquidation Type</th>
+								<th>Pending Fee Reimbursement</th>
+								<th>Deferred Excess</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td>NORMAL</td>
+								<td>Returned to PartyA</td>
+								<td>Returned to PartyA</td>
+							</tr>
+							<tr>
+								<td>LATE</td>
+								<td>Moved to <code>liquidationEscrow</code></td>
+								<td>Returned to PartyA</td>
+							</tr>
+							<tr>
+								<td>OVERDUE</td>
+								<td>Moved to <code>liquidationEscrow</code></td>
+								<td>Returned to PartyA</td>
+							</tr>
+						</tbody>
+					</table>
+					<p>
+						In <code>NORMAL</code> liquidation, the deficit is smaller than the locked LF, meaning PartyBs are made whole. There is no
+						fairness concern with returning fees to the PartyA.
+					</p>
+					<p>
+						In <code>LATE</code> and <code>OVERDUE</code> liquidation, the deficit exceeds the locked LF and eats into CVA. PartyBs absorb
+						losses (haircuts). Returning fees to the PartyA in this case would be unfair -- the ClearingHouse needs these funds to
+						compensate affected PartyBs.
+					</p>
+					<h2 id="doc-liquidation-escrow-settlement-code">Settlement Code</h2>
+					<p>The routing logic in <code>settlePartyALiquidation</code>:</p>
+					<pre><code class="language-solidity">uint256 deferredBalance = accountLayout.partyADeferredBalance[partyA];
+uint256 reimbursement = accountLayout.partyAReimbursement[partyA];
+
+LiquidationType liqType = accountLayout.liquidationDetails[partyA].liquidationType;
+if (liqType == LiquidationType.LATE || liqType == LiquidationType.OVERDUE) {
+    // Deferred balance always goes back to partyA
+    // Reimbursement (pending fees) goes to escrow for CH distribution
+    accountLayout.allocatedBalances[partyA] = deferredBalance;
+    if (reimbursement &gt; 0) {
+        accountLayout.liquidationEscrow[partyA] += reimbursement;
+        emit LiquidationEscrowCreated(partyA, liquidationId, reimbursement);
+    }
+} else {
+    // NORMAL: everything goes back to partyA
+    accountLayout.allocatedBalances[partyA] = deferredBalance + reimbursement;
+}
+accountLayout.partyADeferredBalance[partyA] = 0;
+accountLayout.partyAReimbursement[partyA] = 0;
+</code></pre>
+					<p>
+						The escrow uses <code>+=</code> rather than <code>=</code> because a PartyA could be liquidated multiple times before the
+						ClearingHouse distributes the escrow from the first liquidation.
+					</p>
+					<h2 id="doc-liquidation-escrow-clearinghouse-distribution">ClearingHouse Distribution</h2>
+					<p>
+						After settlement, the escrowed funds sit in <code>liquidationEscrow[partyA]</code> until the ClearingHouse distributes them
+						via <code>distributeFromLiquidationEscrow</code>. This function follows the same routing pattern as
+						<code>distributeForClearingHouse</code> -- it supports distributing to both PartyA addresses (<code>allocatedBalances</code>)
+						and PartyBs (<code>partyBAllocatedBalances</code>):
+					</p>
+					<pre><code class="language-solidity">function distributeFromLiquidationEscrow(
+    address partyA,
+    address[] memory receivers,
+    address[] memory allocationKeys,
+    uint256[] memory amounts
+) external onlyRole(CLEARING_HOUSE_ROLE)
+</code></pre>
+					<p>The ClearingHouse operator decides how to distribute the escrowed funds. Typical uses:</p>
+					<ul>
+						<li>
+							<strong>Compensate PartyBs</strong> -- Return funds to PartyBs who suffered CVA haircuts from the <code>LATE</code>/<code
+								>OVERDUE</code
+							>
+							liquidation.
+						</li>
+						<li>
+							<strong>Return to PartyA</strong> -- If investigation shows the fees were legitimate (not from an attack), the
+							ClearingHouse can return them.
+						</li>
+						<li><strong>Split</strong> -- Distribute partially to PartyBs and partially to PartyA.</li>
+					</ul>
+					<p>The function validates that the total distributed amount does not exceed the escrow balance.</p>
+					<h2 id="doc-liquidation-escrow-clearinghouse-takeover-unaffected">ClearingHouse Takeover (Unaffected)</h2>
+					<p>
+						The escrow mechanism does not affect the ClearingHouse takeover flow. When the ClearingHouse takes over a PartyA liquidation
+						(<code>takeoverPartyALiquidation</code>), it settles via <code>settlePartyATakeover</code> instead of
+						<code>settlePartyALiquidation</code>. In the takeover flow:
+					</p>
+					<ul>
+						<li>
+							Both <code>partyAReimbursement</code> and <code>partyADeferredBalance</code> are released directly to
+							<code>allocatedBalances[partyA]</code>.
+						</li>
+						<li>
+							The ClearingHouse already has full control over the PartyA's funds via <code>deallocateForClearingHouse</code> (including
+							pulling from <code>partyAReimbursement</code> via <code>REIMBURSEMENT_KEY = address(1)</code>).
+						</li>
+						<li>
+							No escrow routing is needed because the ClearingHouse can distribute funds however it sees fit through the takeover
+							lifecycle.
+						</li>
+					</ul>
+					<h2 id="doc-liquidation-escrow-deferred-liquidation-and-escrow">Deferred Liquidation and Escrow</h2>
+					<p>
+						In a deferred liquidation with excess balance, the deferred extraction always zeroes out the PartyA's available balance. This
+						means <code>determineLiquidationType</code> always classifies the result as <code>NORMAL</code> (since
+						<code>-availableBalance = 0 &lt; lockedLf</code>). Consequently, a deferred liquidation with positive excess never triggers
+						the escrow -- both the deferred balance and the pending fee reimbursement are returned to the PartyA.
+					</p>
+					<p>
+						The only way a deferred liquidation produces <code>LATE</code> or <code>OVERDUE</code> is when there is no excess (i.e., the
+						PartyA hasn't deposited additional funds since the historical insolvency). In that case, the behavior is identical to a
+						non-deferred liquidation.
+					</p>
+					<h2 id="doc-liquidation-escrow-storage">Storage</h2>
+					<p>Two new mappings in <code>AccountStorage.Layout</code>:</p>
+					<pre><code class="language-solidity">/// @notice Escrowed funds from LATE/OVERDUE liquidations awaiting CH distribution
+mapping(address =&gt; uint256) liquidationEscrow;
+
+/// @notice PartyA's excess balance from deferred liquidation.
+/// Always returned to partyA at settlement regardless of liquidation type.
+/// Not accessible by clearing house via REIMBURSEMENT_KEY.
+mapping(address =&gt; uint256) partyADeferredBalance;
+</code></pre>
+					<h2 id="doc-liquidation-escrow-view-functions">View Functions</h2>
+					<pre><code class="language-solidity">function getLiquidationEscrow(address partyA) external view returns (uint256);
+function getPartyADeferredBalance(address partyA) external view returns (uint256);
+</code></pre>
+					<h2 id="doc-liquidation-escrow-events">Events</h2>
+					<pre><code class="language-solidity">/// Emitted when pending fees are moved to escrow during LATE/OVERDUE settlement
+event LiquidationEscrowCreated(address indexed partyA, bytes liquidationId, uint256 amount);
+
+/// Emitted when the ClearingHouse distributes escrowed funds
+event DistributeFromLiquidationEscrow(
+    address indexed partyA,
+    address[] receivers,
+    address[] allocationKeys,
+    uint256[] amounts
+);
+</code></pre>
+					<h2 id="doc-liquidation-escrow-relevant-files">Relevant Files</h2>
+					<table>
+						<thead>
+							<tr>
+								<th>File</th>
+								<th>Role</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>contracts/core/storages/AccountStorage.sol</code></td>
+								<td><code>liquidationEscrow</code> and <code>partyADeferredBalance</code> mappings</td>
+							</tr>
+							<tr>
+								<td><code>contracts/core/facets/PartyALiquidation/PartyALiquidationFacetImpl.sol</code></td>
+								<td>
+									Fee accumulation in <code>liquidatePendingPositionsPartyA</code>; escrow routing in
+									<code>settlePartyALiquidation</code>
+								</td>
+							</tr>
+							<tr>
+								<td><code>contracts/core/facets/PartyALiquidation/DeferredLiquidationFacetImpl.sol</code></td>
+								<td>Deferred excess extraction to <code>partyADeferredBalance</code></td>
+							</tr>
+							<tr>
+								<td><code>contracts/core/facets/ClearingHouse/ClearingHouseFacetImpl.sol</code></td>
+								<td><code>distributeFromLiquidationEscrow</code>; <code>settlePartyATakeover</code> releases both balances</td>
+							</tr>
+							<tr>
+								<td><code>contracts/core/facets/ClearingHouse/ClearingHouseFacet.sol</code></td>
+								<td>External <code>distributeFromLiquidationEscrow</code> with role check</td>
+							</tr>
+							<tr>
+								<td><code>contracts/core/facets/ViewFacet/ViewFacet.sol</code></td>
+								<td><code>getLiquidationEscrow</code> and <code>getPartyADeferredBalance</code> getters</td>
+							</tr>
+						</tbody>
+					</table>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer"><span>Symmio Core v0.8.5 documentation.</span></footer>
+	</body>
+</html>

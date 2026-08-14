@@ -1,0 +1,555 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>AccountLayer - Symmio Core v0.8.5</title>
+		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
+		<link rel="stylesheet" href="../../v0.8.6/assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../../v0.8.6/assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.5">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.5</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#doc-account-layer-the-problem-it-solves">The Problem It Solves</a>
+				<a class="toc-link level-2" href="#doc-account-layer-account-hierarchy">Account Hierarchy</a>
+				<a class="toc-link level-3" href="#doc-account-layer-fund-flow">Fund Flow</a>
+				<a class="toc-link level-2" href="#doc-account-layer-isolation-types">Isolation Types</a>
+				<a class="toc-link level-3" href="#doc-account-layer-position-one-va-per-trade">POSITION -- One VA per Trade</a>
+				<a class="toc-link level-3" href="#doc-account-layer-market-one-va-per-market">MARKET -- One VA per Market</a>
+				<a class="toc-link level-3" href="#doc-account-layer-market_direction-one-va-per-market-direction"
+					>MARKET_DIRECTION -- One VA per Market + Direction</a
+				>
+				<a class="toc-link level-3" href="#doc-account-layer-custom-full-manual-control">CUSTOM -- Full Manual Control</a>
+				<a class="toc-link level-2" href="#doc-account-layer-the-trading-flow">The Trading Flow</a>
+				<a class="toc-link level-2" href="#doc-account-layer-affiliate-system">Affiliate System</a>
+				<a class="toc-link level-3" href="#doc-account-layer-registration">Registration</a>
+				<a class="toc-link level-3" href="#doc-account-layer-the-accountmanager">The AccountManager</a>
+				<a class="toc-link level-3" href="#doc-account-layer-fee-distribution">Fee Distribution</a>
+				<a class="toc-link level-3" href="#doc-account-layer-hooks">Hooks</a>
+				<a class="toc-link level-3" href="#doc-account-layer-delegated-actions">Delegated Actions</a>
+				<a class="toc-link level-3" href="#doc-account-layer-express-deposits">Express Deposits</a>
+				<a class="toc-link level-2" href="#doc-account-layer-security-model">Security Model</a>
+				<a class="toc-link level-3" href="#doc-account-layer-the-global-signer-pattern">The Global Signer Pattern</a>
+				<a class="toc-link level-3" href="#doc-account-layer-signer-clearing">Signer Clearing</a>
+				<a class="toc-link level-3" href="#doc-account-layer-access-control">Access Control</a>
+				<a class="toc-link level-3" href="#doc-account-layer-reentrancy-protection">Reentrancy Protection</a>
+				<a class="toc-link level-2" href="#doc-account-layer-legacy-migration">Legacy Migration</a>
+				<a class="toc-link level-2" href="#doc-account-layer-architecture-reference">Architecture Reference</a>
+				<a class="toc-link level-3" href="#doc-account-layer-facets">Facets</a>
+				<a class="toc-link level-3" href="#doc-account-layer-storage-layout">Storage Layout</a>
+				<a class="toc-link level-3" href="#doc-account-layer-deterministic-address-generation">Deterministic Address Generation</a>
+				<a class="toc-link level-3" href="#doc-account-layer-cross-contract-permissions">Cross-Contract Permissions</a>
+			</div>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>AccountLayer</h1>
+							<p class="hero-copy">
+								The <strong>Symmio AccountLayer</strong> is the unified account and affiliate management layer for the Symmio
+								protocol. It replaces the old per-frontend MultiAccount contracts with a single Diamond proxy that manages every
+								user's accounts, standardizes affiliate onboarding and fee handling, and provides flexible position isolation -- all
+								without deploying a contract per user.
+							</p>
+						</div>
+					</div>
+				</header>
+				<article class="doc-article" id="full-document">
+					<h2 id="doc-account-layer-the-problem-it-solves">The Problem It Solves</h2>
+					<p>
+						Previously, each frontend deployed its own MultiAccount contract, which Symmio registered individually. Upgrades required
+						every frontend to redeploy. Affiliate onboarding was manual. Implementations diverged. Users were locked into rigid account
+						structures.
+					</p>
+					<p>
+						AccountLayer consolidates all of that into one system: a single Diamond proxy, a standardized affiliate registry, virtual
+						accounts with deterministic addresses, and configurable isolation strategies.
+					</p>
+					<hr />
+					<h2 id="doc-account-layer-account-hierarchy">Account Hierarchy</h2>
+					<p>Accounts are organized into two layers.</p>
+					<pre><code class="language-mermaid">---
+config:
+  theme: default
+  layout: dagre
+---
+flowchart TB
+    A(["User (EOA)"]) --&gt; n1(["SubAccount (1)"]) &amp; n2(["SubAccount (2)"])
+    n2 --&gt; n3(["Virtual Account (21)"]) &amp; n4(["Virtual Account (22)"])
+    n1 --&gt; n5(["Virtual Account (11)"]) &amp; n6(["Virtual Account (12)"])
+</code></pre>
+					<p>
+						<strong>SubAccounts</strong> are the user's top-level organizational unit. Each one is bound to a specific frontend
+						(affiliate), a Symmio core instance, and an isolation type chosen at creation. A user might have one SubAccount for
+						conservative trades and another for aggressive strategies.
+					</p>
+					<p>
+						<strong>Virtual Accounts (VAs)</strong> sit below SubAccounts and provide position isolation. Each VA is an independent
+						trading address on the Symmio core with its own balance, allocated margin, and positions. A liquidation in one VA cannot touch
+						another. When a VA's last position closes, its funds are automatically swept back to the parent SubAccount and the VA address
+						is recycled for future use.
+					</p>
+					<p>
+						Both SubAccounts and VAs are <strong>virtual addresses</strong> -- deterministic CREATE2-style addresses with no deployed
+						contract behind them. The AccountLayer manages their state centrally.
+					</p>
+					<h3 id="doc-account-layer-fund-flow">Fund Flow</h3>
+					<pre><code>User  ──deposit──►  SubAccount  ──addMargin──►  Virtual Account
+                    SubAccount  ◄──auto-sweep──  Virtual Account (on last position close)
+</code></pre>
+					<ol>
+						<li>
+							<strong>User to SubAccount</strong> -- The user deposits collateral, credited to the SubAccount's balance on the Symmio
+							core.
+						</li>
+						<li>
+							<strong>SubAccount to VA</strong> -- The user <em>manually</em> transfers margin to a VA before trading. This can target
+							an existing VA (<code>addMargin</code>) or pre-fund the predicted next VA address (<code>addMarginToNextVA</code>) before
+							it exists.
+						</li>
+						<li>
+							<strong>VA to SubAccount</strong> -- Automatic when the VA's last position closes. Users can also manually pull margin
+							back via <code>removeMargin</code>, which requires a UPNL signature to prove the VA remains solvent.
+						</li>
+					</ol>
+					<hr />
+					<h2 id="doc-account-layer-isolation-types">Isolation Types</h2>
+					<p>The isolation type, chosen when creating a SubAccount, determines how VAs are created and managed during trading.</p>
+					<h3 id="doc-account-layer-position-one-va-per-trade">POSITION -- One VA per Trade</h3>
+					<p>
+						Every quote gets its own VA. Maximum isolation: each position has separate margin, and a liquidation on one cannot affect any
+						other. When the position closes, the VA is destroyed and funds return to the SubAccount.
+					</p>
+					<pre><code class="language-mermaid">graph LR
+    SA[SubAccount] --&gt; VA1[VA: BTC Long #1]
+    SA --&gt; VA2[VA: ETH Short #2]
+    SA --&gt; VA3[VA: BTC Short #3]
+</code></pre>
+					<h3 id="doc-account-layer-market-one-va-per-market">MARKET -- One VA per Market</h3>
+					<p>
+						Positions on the same market share a VA. All BTC-USD trades go to one VA, all ETH-USD trades to another. Different markets
+						remain fully isolated.
+					</p>
+					<pre><code class="language-mermaid">graph LR
+    SA[SubAccount] --&gt; VA1["VA: BTC-USD&lt;br/&gt;(all BTC trades)"]
+    SA --&gt; VA2["VA: ETH-USD&lt;br/&gt;(all ETH trades)"]
+</code></pre>
+					<p>
+						Without <strong>Single VA Mode</strong> (the default), each <code>sendQuote</code> creates a new VA even if one already exists
+						for that market. With Single VA Mode enabled, subsequent quotes for the same market route to the existing active VA. This
+						setting can be toggled when no VAs are active on the SubAccount.
+					</p>
+					<h3 id="doc-account-layer-market_direction-one-va-per-market-direction">MARKET_DIRECTION -- One VA per Market + Direction</h3>
+					<p>Like MARKET, but also separates by direction. All BTC longs share one VA; all BTC shorts share another.</p>
+					<pre><code class="language-mermaid">graph LR
+    SA[SubAccount] --&gt; VA1["VA: BTC Long"]
+    SA --&gt; VA2["VA: BTC Short"]
+    SA --&gt; VA3["VA: ETH Long"]
+</code></pre>
+					<h3 id="doc-account-layer-custom-full-manual-control">CUSTOM -- Full Manual Control</h3>
+					<p>
+						No automatic VA creation. Trades can execute directly through the SubAccount (no isolation), or through manually created VAs
+						with any configuration the user chooses. VAs that track quoteIds are still automatically cleaned up when their last position
+						closes.
+					</p>
+					<hr />
+					<h2 id="doc-account-layer-the-trading-flow">The Trading Flow</h2>
+					<p>Here is how a trade moves through the system, end to end:</p>
+					<ol>
+						<li>
+							<p>
+								<strong>Pre-fund</strong> -- The user transfers margin to the target VA address. For a new trade, this means calling
+								<code>addMarginToNextVA</code> with the predicted next VA address (which the
+								<code>ViewFacet.predictNextVirtualAccountAddress</code> helper can compute). For an existing VA,
+								<code>addMargin</code> works.
+							</p>
+						</li>
+						<li>
+							<p>
+								<strong>Send quote</strong> -- The user submits a <code>sendQuote</code> through <code>_call()</code>. The
+								AccountLayer intercepts it: - On a <strong>non-CUSTOM SubAccount</strong>: creates or reuses a VA based on the
+								isolation type, routes the quote through it, and tracks the quoteId. - On a <strong>CUSTOM SubAccount</strong>:
+								executes directly, no VA involved. - On a <strong>VA directly</strong>: enforces isolation rules (POSITION allows max
+								1 quote; MARKET/MARKET_LONG/MARKET_SHORT enforce symbolId and direction match), then executes and tracks the quoteId.
+							</p>
+						</li>
+						<li>
+							<p>
+								<strong>Position opens</strong> -- The Symmio core calls <code>onOpenPosition</code> (a no-op on the AccountLayer
+								side).
+							</p>
+						</li>
+						<li>
+							<p>
+								<strong>Position closes</strong> -- The Symmio core calls <code>onClosePosition</code>. The AccountLayer removes the
+								quoteId from the VA. If the VA has no remaining quoteIds: - All remaining margin is deallocated (via
+								<code>zeroUpnlDeallocate</code> -- zero unrealized PnL, no signature needed) - All funds are transferred back to the
+								parent SubAccount - The VA address is pushed into a recycling pool - The VA deletion hook fires (if configured)
+							</p>
+						</li>
+					</ol>
+					<p>
+						Cancellations and liquidations are also handled automatically. See
+						<a href="va-lifecycle-hooks.html">Virtual Account Lifecycle Hooks</a> for the full flow including partial closes, liquidation
+						deferral, and settlement recovery.
+					</p>
+					<p>The user never manages VA lifecycle manually (unless using CUSTOM isolation). Funding is always manual.</p>
+					<hr />
+					<h2 id="doc-account-layer-affiliate-system">Affiliate System</h2>
+					<p>
+						Affiliates are frontends and integrators that bring users to the protocol. The AccountLayer manages their full lifecycle:
+						registration, approval, fee splitting, hooks, and delegated actions.
+					</p>
+					<h3 id="doc-account-layer-registration">Registration</h3>
+					<ol>
+						<li>
+							Anyone can <strong>request</strong> registration, providing a name, brand color, admin address, fee stakeholder
+							configuration, and which Symmio core(s) to use.
+						</li>
+						<li>
+							A protocol <code>APPROVER_ROLE</code> holder <strong>reviews and approves</strong>. On approval, an AccountManager proxy
+							is deployed (deterministic CREATE2), a fee distributor address is generated, and the affiliate is registered on each
+							allowed Symmio core.
+						</li>
+						<li>The affiliate is <strong>active</strong>. Users can create SubAccounts under it.</li>
+					</ol>
+					<p>
+						State transitions: <code>NONE -&gt; PENDING -&gt; ACTIVE &lt;-&gt; PAUSED</code>. Pending registrations can be cancelled or
+						rejected, which deletes the data entirely (resetting to <code>NONE</code>).
+					</p>
+					<h3 id="doc-account-layer-the-accountmanager">The AccountManager</h3>
+					<p>
+						Each affiliate gets an AccountManager contract whose primary purpose is <strong>migration convenience</strong>. It provides a
+						nearly identical API to the old MultiAccount contracts -- create accounts, deposit, withdraw, execute trades, list accounts --
+						so frontends can swap contract addresses with minimal code changes. Under the hood, it authenticates the caller (by
+						temporarily setting <code>globalSigner</code> on the AccountLayer) and proxies the call through. There is no reason to use it
+						directly beyond backward compatibility.
+					</p>
+					<h3 id="doc-account-layer-fee-distribution">Fee Distribution</h3>
+					<p>
+						Trading fees accrue under a virtual fee distributor address on the Symmio core. When an affiliate registers, they configure
+						<strong>stakeholders</strong> -- a list of addresses and percentage shares (e.g., frontend operator 70%, referral partner 20%,
+						protocol 10%). All shares including <code>symmioShare</code> must sum to exactly <code>1e18</code>.
+					</p>
+					<p>
+						Any stakeholder receiver or <code>DISTRIBUTOR_ROLE</code> holder can trigger fee claims. The system withdraws accumulated fees
+						from the core, splits them according to configured shares, and transfers each portion to the respective recipient.
+					</p>
+					<p>Fee changes are two-step: the affiliate admin requests an update, then a protocol approver confirms it.</p>
+					<h3 id="doc-account-layer-hooks">Hooks</h3>
+					<p>Affiliates can attach hook contracts to account lifecycle events:</p>
+					<table>
+						<thead>
+							<tr>
+								<th>Event</th>
+								<th>Trigger</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td>Account creation</td>
+								<td>A new SubAccount is created</td>
+							</tr>
+							<tr>
+								<td>VA creation</td>
+								<td>A new VA is created (auto or manual)</td>
+							</tr>
+							<tr>
+								<td>VA deletion</td>
+								<td>A VA is cleaned up (last position closed)</td>
+							</tr>
+							<tr>
+								<td>SubAccount deletion</td>
+								<td>A SubAccount is removed</td>
+							</tr>
+							<tr>
+								<td>Call execution</td>
+								<td><code>_call</code> is invoked on an account (fires after all calls complete)</td>
+							</tr>
+						</tbody>
+					</table>
+					<p>
+						Hooks preserve the customization power frontends had when they owned their MultiAccount contracts -- NFT minting on signup,
+						cashback, auto-binding to a PartyB, analytics tracking. During execution, hooks can
+						<strong>call back into the Symmio core</strong> via <code>CoreFacet.executeForAccount(callData)</code>, gated by two
+						conditions: <code>hookContext.isActive</code> must be true (only during hook execution), and the function selector must be in
+						<code>hookAllowedSelectors[affiliate]</code> (controlled by <code>SETTER_ROLE</code>).
+					</p>
+					<p>
+						<strong>Audit note</strong>: Hooks are unsandboxed external calls. A malicious hook can revert and block the operation
+						(griefing) or consume excessive gas. The signer clearing mechanism (see Security below) prevents impersonation, and
+						<code>hookAllowedSelectors</code> limits callback scope, but hooks can still affect liveness.
+					</p>
+					<h3 id="doc-account-layer-delegated-actions">Delegated Actions</h3>
+					<p>
+						Affiliates can execute protocol-level operations through <code>callAsAffiliate</code>, which lets the affiliate admin (or
+						authorized operators) call whitelisted functions on the Symmio core with the affiliate's identity. Useful for administrative
+						tasks like fee configuration.
+					</p>
+					<h3 id="doc-account-layer-express-deposits">Express Deposits</h3>
+					<p>
+						Express deposits let affiliates split user deposits to maintain instant-withdrawal liquidity. A deposit is divided by the
+						affiliate's configured <strong>express rate</strong>: the real portion goes to the Symmio core as collateral, the virtual
+						portion goes to a Virtual Provider that credits the user immediately. See
+						<a href="express-deposit.html">Express Deposit</a> for details.
+					</p>
+					<hr />
+					<h2 id="doc-account-layer-security-model">Security Model</h2>
+					<h3 id="doc-account-layer-the-global-signer-pattern">The Global Signer Pattern</h3>
+					<p>
+						The AccountLayer authenticates users through a <code>globalSigner</code> variable instead of relying on
+						<code>msg.sender</code> directly. This is the most security-critical mechanism in the system:
+					</p>
+					<pre><code class="language-mermaid">sequenceDiagram
+    participant U as User (EOA)
+    participant AM as AccountManager
+    participant AL as AccountLayer
+
+    U-&gt;&gt;AM: call withSigner()
+    AM-&gt;&gt;AM: globalSigner = msg.sender
+    AM-&gt;&gt;AL: delegate call
+    AL-&gt;&gt;AL: getSigner() returns globalSigner (the user)
+    AL-&gt;&gt;AL: execute operation
+    AL--&gt;&gt;AM: return
+    AM-&gt;&gt;AM: globalSigner = address(0)
+    AM--&gt;&gt;U: return
+</code></pre>
+					<pre><code class="language-solidity">function getSigner() internal view returns (address) {
+    address signer = AccountStorage.layout().globalSigner;
+    return signer == address(0) ? msg.sender : signer;
+}
+</code></pre>
+					<h3 id="doc-account-layer-signer-clearing">Signer Clearing</h3>
+					<p>Every external call -- hooks, ERC20 transfers, virtual provider callbacks -- is wrapped to prevent callback attacks:</p>
+					<pre><code class="language-solidity">function safeExternalCall(address target, bytes memory data) internal {
+    address previousSigner = ahLayout.globalSigner;
+    ahLayout.globalSigner = address(0);     // Clear before external call
+    (bool success, bytes memory reason) = target.call(data);
+    ahLayout.globalSigner = previousSigner; // Restore after
+}
+</code></pre>
+					<p>
+						The same pattern is used in <code>LibAccountLayerSafeERC20</code> for token transfers and in <code>callHook()</code> (with the
+						additional step of setting/clearing <code>HookContext</code>).
+					</p>
+					<p>
+						Without this, a malicious hook or token contract could re-enter the AccountLayer during an external call and, since
+						<code>getSigner()</code> would still return the user's address, execute operations as the user.
+					</p>
+					<h3 id="doc-account-layer-access-control">Access Control</h3>
+					<table>
+						<thead>
+							<tr>
+								<th>Role</th>
+								<th>Controls</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>DEFAULT_ADMIN_ROLE</code></td>
+								<td>Can grant/revoke any role and assign role admins. Does <strong>not</strong> implicitly hold other roles.</td>
+							</tr>
+							<tr>
+								<td><code>APPROVER_ROLE</code></td>
+								<td>Activate affiliates, approve fee updates</td>
+							</tr>
+							<tr>
+								<td><code>SETTER_ROLE</code></td>
+								<td>Core whitelists, hook/call allowed selectors, AccountManager implementation, fee receiver</td>
+							</tr>
+							<tr>
+								<td><code>PAUSER_ROLE</code></td>
+								<td>Pause operations (affiliate admins can also pause their own affiliate)</td>
+							</tr>
+							<tr>
+								<td><code>UNPAUSER_ROLE</code></td>
+								<td>Unpause operations</td>
+							</tr>
+							<tr>
+								<td><code>SIGNER_SETTER_ROLE</code></td>
+								<td>Set <code>globalSigner</code> -- granted to each AccountManager during affiliate approval</td>
+							</tr>
+							<tr>
+								<td><code>DEPLOYER_ROLE</code></td>
+								<td>Defined but unused; AccountManager deployment is handled inside <code>approveAffiliate</code></td>
+							</tr>
+							<tr>
+								<td><code>DISTRIBUTOR_ROLE</code></td>
+								<td>Trigger fee distribution</td>
+							</tr>
+							<tr>
+								<td><code>INSTANT_LAYER_ROLE</code></td>
+								<td>Bypass ownership checks for InstantLayer batched execution</td>
+							</tr>
+						</tbody>
+					</table>
+					<p>
+						Role admins are managed via <code>setRoleAdmin(user, role, status)</code>. A <code>DEFAULT_ADMIN_ROLE</code> holder is
+						implicitly a role admin for all roles.
+					</p>
+					<h3 id="doc-account-layer-reentrancy-protection">Reentrancy Protection</h3>
+					<p>
+						A custom reentrancy guard uses a dedicated storage slot
+						(<code>keccak256("diamond.standard.storage.accountlayer.reentrancy")</code>). The <code>nonReentrant</code> modifier covers
+						primary entry points: <code>_call</code>, <code>createSubAccounts</code>, <code>deleteSubAccount</code>,
+						<code>createCustomVirtualAccount</code>, deposits, and MarginFacet functions. Administrative functions rely on access control
+						instead. <code>SymmioHookFacet.onClosePosition</code> uses <code>nonReentrant</code>; <code>onCancelQuote</code> does not.
+					</p>
+					<hr />
+					<h2 id="doc-account-layer-legacy-migration">Legacy Migration</h2>
+					<p>
+						Frontends on the old MultiAccount system can import existing accounts into the AccountLayer as SubAccounts with CUSTOM
+						isolation. Ownership is preserved (only the actual owner can import), double-import is prevented, and imported accounts gain
+						access to all AccountLayer features.
+					</p>
+					<hr />
+					<h2 id="doc-account-layer-architecture-reference">Architecture Reference</h2>
+					<h3 id="doc-account-layer-facets">Facets</h3>
+					<table>
+						<thead>
+							<tr>
+								<th>Facet</th>
+								<th>Responsibility</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><strong>CoreFacet</strong></td>
+								<td>SubAccount/VA lifecycle, deposits, trade execution routing, hook callbacks</td>
+							</tr>
+							<tr>
+								<td><strong>AffiliateFacet</strong></td>
+								<td>Affiliate registration, fee config, hooks, operators, express config</td>
+							</tr>
+							<tr>
+								<td><strong>MarginFacet</strong></td>
+								<td>Margin transfers between SubAccounts and VAs, emergency recovery</td>
+							</tr>
+							<tr>
+								<td><strong>ViewFacet</strong></td>
+								<td>Read-only queries for accounts, affiliates, addresses, predictions</td>
+							</tr>
+							<tr>
+								<td><strong>ControlFacet</strong></td>
+								<td>Role management, pause control, core whitelisting, allowed selectors</td>
+							</tr>
+							<tr>
+								<td><strong>SymmioHookFacet</strong></td>
+								<td>
+									Receives callbacks from Symmio core for automatic VA cleanup (see
+									<a href="va-lifecycle-hooks.html">VA Lifecycle Hooks</a>)
+								</td>
+							</tr>
+						</tbody>
+					</table>
+					<h3 id="doc-account-layer-storage-layout">Storage Layout</h3>
+					<table>
+						<thead>
+							<tr>
+								<th>Storage Contract</th>
+								<th>Slot Key</th>
+								<th>Contents</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>AccountStorage</code></td>
+								<td><code>keccak256("diamond.standard.storage.accountlayer.account")</code></td>
+								<td>SubAccount/VA data, nonces, globalSigner, AccountManager bytecode</td>
+							</tr>
+							<tr>
+								<td><code>AffiliateStorage</code></td>
+								<td><code>keccak256("diamond.standard.storage.accountlayer.affiliate")</code></td>
+								<td>Affiliate configs, fee details, hooks, operators, hookContext</td>
+							</tr>
+							<tr>
+								<td><code>AccountLayerStorage</code></td>
+								<td><code>keccak256("diamond.standard.storage.accountlayer")</code></td>
+								<td>RBAC (hasRole, roleAdmins), globalPaused</td>
+							</tr>
+							<tr>
+								<td>Reentrancy Guard</td>
+								<td><code>keccak256("diamond.standard.storage.accountlayer.reentrancy")</code></td>
+								<td>Reentrancy status flag</td>
+							</tr>
+						</tbody>
+					</table>
+					<h3 id="doc-account-layer-deterministic-address-generation">Deterministic Address Generation</h3>
+					<p>
+						SubAccounts, VAs, and fee distributors are virtual addresses (no deployed contracts). AccountManagers are real CREATE2
+						deployments. All follow the CREATE2 formula: <code>keccak256(0xff, deployer, salt, initCodeHash)</code>.
+					</p>
+					<pre><code class="language-solidity">// SubAccount: deployer=affiliate, salt=keccak256(user, globalNonce), initCodeHash=keccak256("ACC_V1")
+address(uint160(uint256(keccak256(abi.encodePacked(
+    bytes1(0xff), affiliate, keccak256(abi.encodePacked(user, nonce)), keccak256("ACC_V1")
+)))))
+
+// Virtual Account: deployer=parentAccount, salt=keccak256(nonce), initCodeHash=keccak256("VACC_V1")
+address(uint160(uint256(keccak256(abi.encodePacked(
+    bytes1(0xff), parentAccount, keccak256(abi.encodePacked(nonce)), keccak256("VACC_V1")
+)))))
+
+// AccountManager (real deployment): deployer=AccountLayer diamond
+bytes32 salt = keccak256(abi.encodePacked(keccak256("ACM_V1"), registrant, name));
+bytes32 initCodeHash = keccak256(abi.encodePacked(implementation, abi.encode(diamond)));
+
+// Fee Distributor: deployer=affiliate, salt=keccak256(globalNonce), initCodeHash=keccak256("VFD_V1")
+// Note: nonce comes from AccountStorage.globalNonce (shared with SubAccount generation)
+address(uint160(uint256(keccak256(abi.encodePacked(
+    bytes1(0xff), affiliate, keccak256(abi.encodePacked(nonce)), keccak256("VFD_V1")
+)))))
+</code></pre>
+					<h3 id="doc-account-layer-cross-contract-permissions">Cross-Contract Permissions</h3>
+					<table>
+						<thead>
+							<tr>
+								<th>Role on Symmio Core</th>
+								<th>Why</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>SIGNER_ADMIN_ROLE</code></td>
+								<td>Set signer context when executing operations on behalf of SubAccounts/VAs</td>
+							</tr>
+							<tr>
+								<td><code>AFFILIATE_MANAGER_ROLE</code></td>
+								<td>Register affiliates and set fee collectors on the core</td>
+							</tr>
+							<tr>
+								<td><code>BALANCE_SETTLER_ROLE</code></td>
+								<td>Transfer funds between VAs and parent SubAccounts during cleanup</td>
+							</tr>
+						</tbody>
+					</table>
+					<p>
+						The InstantLayer requires <code>INSTANT_LAYER_ROLE</code> on the AccountLayer to bypass ownership checks during batched
+						template execution.
+					</p>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer"><span>Symmio Core v0.8.5 documentation.</span></footer>
+	</body>
+</html>
