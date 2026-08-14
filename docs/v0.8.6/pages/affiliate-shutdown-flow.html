@@ -1,137 +1,213 @@
 <!doctype html>
 <html lang="en" data-theme="light">
-<head>
-	<meta charset="utf-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>Affiliate Shutdown Flow - Symmio Core v0.8.6</title>
-	<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
-	<link rel="stylesheet" href="../assets/v086-docs.css">
-	<script src="../assets/v086-docs.js" defer></script>
-</head>
-<body class="doc-page">
-	<a class="skip-link" href="#full-document">Skip to document</a>
-	
-	<header class="doc-topbar">
-		<a class="brand" href="../index.html"><span class="brand-mark">8.6</span><span><strong>Symmio Docs</strong><small>v0.8.6 reference</small></span></a>
-		<nav class="top-actions" aria-label="Page actions">
-			<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
-		</nav>
-	</header>
-	<div class="reader-shell">
-		<aside class="doc-sidebar" aria-label="Documentation navigation">
-			<a class="button primary back-home" href="../index.html">Back to index</a>
-			<div class="side-card">
-				<p class="side-label">Docs</p>
-				<a class="side-link" href="../pages/express-withdrawal-system-design.html"><small>Express Withdrawal</small><span>Express Withdrawal System Design</span></a>
-				<a class="side-link" href="../pages/account-layer-ownership-delegation.html"><small>AccountLayer</small><span>AccountLayer Delegated Creation &amp; Ownership Transfer</span></a>
-				<a class="side-link" href="../pages/liquidation-funding-snapshot-fix.html"><small>Liquidation</small><span>PartyA Liquidation Snapshot Flow</span></a>
-				<a class="side-link" href="../pages/single-step-partya-liquidation.html"><small>Liquidation</small><span>Single-Step PartyA Liquidation</span></a>
-				<a class="side-link is-active" href="../pages/affiliate-shutdown-flow.html"><small>Clearing House</small><span>Affiliate Shutdown Flow</span></a>
-				<a class="side-link" href="../pages/muon-upnl-validity-overrides.html"><small>Muon</small><span>Muon UPNL Validity Overrides</span></a>
-				<a class="side-link" href="../pages/solver-fees.html"><small>Fees</small><span>Solver Fees</span></a>
-				<a class="side-link" href="../pages/operational-fees.html"><small>Fees</small><span>Operational Fees</span></a>
-				<a class="side-link" href="../pages/symbol-adjustment.html"><small>Symbols</small><span>Symbol Corporate-Action Adjustment</span></a>
-				<a class="side-link" href="../pages/partya-liquidation-fee-recipient.html"><small>Liquidation</small><span>PartyA Liquidation Fee Recipient Cleanup</span></a>
-				<a class="side-link" href="../pages/balance-change-event-cleanup.html"><small>Events &amp; Indexing</small><span>Allocated Balance Event Ledger</span></a>
-				<a class="side-link" href="../pages/lazy-accumulated-funding.html"><small>Funding</small><span>Lazy Accumulated Funding</span></a>
-				<a class="side-link" href="../pages/partyb-allocation-suspension-gates.html"><small>PartyB</small><span>Allocation Suspension Gates</span></a>
-				<a class="side-link" href="../pages/cross-partyb-liquidation-reserve.html"><small>Liquidation</small><span>Cross-PartyB Liquidation Reserve Enforcement</span></a>
-				<a class="side-link" href="../pages/delegation-account-scope.html"><small>AccountLayer</small><span>Delegation Account Scope</span></a>
-				<a class="side-link" href="../pages/strict-deallocation.html"><small>Accounts</small><span>Strict Deallocation</span></a>
-				<a class="side-link" href="../pages/express-bot-operations-checklist.html"><small>Express Withdrawal</small><span>Express Provider Bot Operations Checklist</span></a>
-				<a class="side-link" href="../pages/market-open-fee-execution-price.html"><small>Fees</small><span>Market Open Fee on Execution Price</span></a>
-			</div>
-		</aside>
-		<aside class="toc-panel side-toc" aria-label="Page navigation">
-			<div class="toc-card">
-				<p class="toc-title">On this page</p>
-				<a class="toc-link level-2" href="#why-we-added-this">Why We Added This</a>
-<a class="toc-link level-2" href="#flow">Flow</a>
-<a class="toc-link level-2" href="#scheduled-state">Scheduled State</a>
-<a class="toc-link level-2" href="#what-close-only-means">What Close-Only Means</a>
-<a class="toc-link level-2" href="#solver-window">Solver Window</a>
-<a class="toc-link level-2" href="#clearing-house-backstop">Clearing House Backstop</a>
-<a class="toc-link level-2" href="#end-state">End State</a>
-			</div>
-		</aside>
-		<main class="reader-main">
-			<header class="reader-hero">
-				<nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">v0.8.6</a><span>/</span><strong>Clearing House</strong></nav>
-				<div class="reader-title-row">
-					<div>
-						<h1>Affiliate Shutdown Flow</h1>
-						<p class="hero-copy">Affiliate shutdown gives a frontend a clean wind-down path: new opens stop immediately, normal closes continue, and Clearing House can finish unresolved positions after the chosen date.</p>
-					</div>
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Affiliate Shutdown Flow - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+	</head>
+	<body class="doc-page">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="doc-topbar">
+			<a class="brand" href="../index.html"
+				><span class="brand-mark">8.6</span><span><strong>Symmio Docs</strong><small>v0.8.6 reference</small></span></a
+			>
+			<nav class="top-actions" aria-label="Page actions">
+				<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+			</nav>
+		</header>
+		<div class="reader-shell">
+			<aside class="doc-sidebar" aria-label="Documentation navigation">
+				<a class="button primary back-home" href="../index.html">Back to index</a>
+				<div class="side-card">
+					<p class="side-label">Docs</p>
+					<a class="side-link" href="../pages/express-withdrawal-system-design.html"
+						><small>Express Withdrawal</small><span>Express Withdrawal System Design</span></a
+					>
+					<a class="side-link" href="../pages/account-layer-ownership-delegation.html"
+						><small>AccountLayer</small><span>AccountLayer Delegated Creation &amp; Ownership Transfer</span></a
+					>
+					<a class="side-link" href="../pages/liquidation-funding-snapshot-fix.html"
+						><small>Liquidation</small><span>PartyA Liquidation Snapshot Flow</span></a
+					>
+					<a class="side-link" href="../pages/single-step-partya-liquidation.html"
+						><small>Liquidation</small><span>Single-Step PartyA Liquidation</span></a
+					>
+					<a class="side-link is-active" href="../pages/affiliate-shutdown-flow.html"
+						><small>Clearing House</small><span>Affiliate Shutdown Flow</span></a
+					>
+					<a class="side-link" href="../pages/muon-upnl-validity-overrides.html"
+						><small>Muon</small><span>Muon UPNL Validity Overrides</span></a
+					>
+					<a class="side-link" href="../pages/solver-fees.html"><small>Fees</small><span>Solver Fees</span></a>
+					<a class="side-link" href="../pages/operational-fees.html"><small>Fees</small><span>Operational Fees</span></a>
+					<a class="side-link" href="../pages/symbol-adjustment.html"
+						><small>Symbols</small><span>Symbol Corporate-Action Adjustment</span></a
+					>
+					<a class="side-link" href="../pages/partya-liquidation-fee-recipient.html"
+						><small>Liquidation</small><span>PartyA Liquidation Fee Recipient Cleanup</span></a
+					>
+					<a class="side-link" href="../pages/balance-change-event-cleanup.html"
+						><small>Events &amp; Indexing</small><span>Allocated Balance Event Ledger</span></a
+					>
+					<a class="side-link" href="../pages/lazy-accumulated-funding.html"><small>Funding</small><span>Lazy Accumulated Funding</span></a>
+					<a class="side-link" href="../pages/partyb-allocation-suspension-gates.html"
+						><small>PartyB</small><span>Allocation Suspension Gates</span></a
+					>
+					<a class="side-link" href="../pages/cross-partyb-liquidation-reserve.html"
+						><small>Liquidation</small><span>Cross-PartyB Liquidation Reserve Enforcement</span></a
+					>
+					<a class="side-link" href="../pages/delegation-account-scope.html"
+						><small>AccountLayer</small><span>Delegation Account Scope</span></a
+					>
+					<a class="side-link" href="../pages/strict-deallocation.html"><small>Accounts</small><span>Strict Deallocation</span></a>
+					<a class="side-link" href="../pages/express-bot-operations-checklist.html"
+						><small>Express Withdrawal</small><span>Express Provider Bot Operations Checklist</span></a
+					>
+					<a class="side-link" href="../pages/market-open-fee-execution-price.html"
+						><small>Fees</small><span>Market Open Fee on Execution Price</span></a
+					>
+					<a class="side-link" href="../pages/position-isolation-partial-fill.html"
+						><small>AccountLayer</small><span>Position Isolation Partial Fill Remainder</span></a
+					>
 				</div>
-			</header>
-	
-			
-	
-			<article class="doc-article" id="full-document">
-				<p>Version: v0.8.6.</p>
-<p>This flow gives frontends a cleaner way to shut down without leaving open positions unmanaged.</p>
-<p>Before this change, a frontend could be deregistered, but deregistration only stopped new affiliate relationships. It did not give the frontend a clear shutdown process for its existing positions. The protocol now supports an explicit shutdown schedule: once a frontend announces a shutdown date, new positions through that frontend stop immediately, solvers get a window to close the existing positions, and the Clearing House can close anything that remains after the selected date.</p>
-<h2 id="why-we-added-this">Why We Added This</h2>
-<p>A frontend shutdown has two competing needs:</p>
-<ul>
-<li>Users should not keep opening fresh positions through a frontend that is leaving.</li>
-<li>Existing positions should not be forced closed immediately if solvers can close them normally first.</li>
-</ul>
-<p>The shutdown flow separates those concerns. Scheduling a shutdown makes the frontend close-only right away, but it still leaves time for normal close flows and solver-driven emergency closes before the Clearing House steps in.</p>
-<p>This gives the frontend a predictable exit path, gives solvers a clear deadline, and gives the protocol a final mechanism if positions are still open when the deadline arrives.</p>
-<h2 id="flow">Flow</h2>
-<pre><code class="language-text">1. Frontend / affiliate chooses a shutdown timestamp.
+			</aside>
+			<aside class="toc-panel side-toc" aria-label="Page navigation">
+				<div class="toc-card">
+					<p class="toc-title">On this page</p>
+					<a class="toc-link level-2" href="#why-we-added-this">Why We Added This</a>
+					<a class="toc-link level-2" href="#flow">Flow</a>
+					<a class="toc-link level-2" href="#scheduled-state">Scheduled State</a>
+					<a class="toc-link level-2" href="#what-close-only-means">What Close-Only Means</a>
+					<a class="toc-link level-2" href="#solver-window">Solver Window</a>
+					<a class="toc-link level-2" href="#clearing-house-backstop">Clearing House Backstop</a>
+					<a class="toc-link level-2" href="#end-state">End State</a>
+				</div>
+			</aside>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">v0.8.6</a><span>/</span><strong>Clearing House</strong></nav>
+					<div class="reader-title-row">
+						<div>
+							<h1>Affiliate Shutdown Flow</h1>
+							<p class="hero-copy">
+								Affiliate shutdown gives a frontend a clean wind-down path: new opens stop immediately, normal closes continue, and
+								Clearing House can finish unresolved positions after the chosen date.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<p>Version: v0.8.6.</p>
+					<p>This flow gives frontends a cleaner way to shut down without leaving open positions unmanaged.</p>
+					<p>
+						Before this change, a frontend could be deregistered, but deregistration only stopped new affiliate relationships. It did not
+						give the frontend a clear shutdown process for its existing positions. The protocol now supports an explicit shutdown
+						schedule: once a frontend announces a shutdown date, new positions through that frontend stop immediately, solvers get a
+						window to close the existing positions, and the Clearing House can close anything that remains after the selected date.
+					</p>
+					<h2 id="why-we-added-this">Why We Added This</h2>
+					<p>A frontend shutdown has two competing needs:</p>
+					<ul>
+						<li>Users should not keep opening fresh positions through a frontend that is leaving.</li>
+						<li>Existing positions should not be forced closed immediately if solvers can close them normally first.</li>
+					</ul>
+					<p>
+						The shutdown flow separates those concerns. Scheduling a shutdown makes the frontend close-only right away, but it still
+						leaves time for normal close flows and solver-driven emergency closes before the Clearing House steps in.
+					</p>
+					<p>
+						This gives the frontend a predictable exit path, gives solvers a clear deadline, and gives the protocol a final mechanism if
+						positions are still open when the deadline arrives.
+					</p>
+					<h2 id="flow">Flow</h2>
+					<pre><code class="language-text">1. Frontend / affiliate chooses a shutdown timestamp.
 2. Affiliate or AFFILIATE_MANAGER_ROLE schedules that timestamp on-chain.
 3. The frontend becomes close-only immediately.
 4. Users and solvers can keep closing existing positions.
 5. PartyB can use emergencyClosePosition for quotes of that affiliate.
 6. After the shutdown timestamp, Clearing House can close any remaining affiliate positions.
 </code></pre>
-<p>The protocol does not decide the notice period. The frontend chooses the timestamp, and the contract only requires it to be nonzero.</p>
-<p>If the shutdown plan changes, the affiliate or affiliate manager can cancel the shutdown. The timestamp cannot be edited in place; changing the date means cancelling the current schedule and creating a new one.</p>
-<h2 id="scheduled-state">Scheduled State</h2>
-<p>The scheduled timestamp is stored per affiliate:</p>
-<pre><code class="language-solidity">mapping(address =&gt; uint256) affiliateShutdownTime;
+					<p>
+						The protocol does not decide the notice period. The frontend chooses the timestamp, and the contract only requires it to be
+						nonzero.
+					</p>
+					<p>
+						If the shutdown plan changes, the affiliate or affiliate manager can cancel the shutdown. The timestamp cannot be edited in
+						place; changing the date means cancelling the current schedule and creating a new one.
+					</p>
+					<h2 id="scheduled-state">Scheduled State</h2>
+					<p>The scheduled timestamp is stored per affiliate:</p>
+					<pre><code class="language-solidity">mapping(address =&gt; uint256) affiliateShutdownTime;
 </code></pre>
-<p><code>0</code> means no shutdown is scheduled. Any nonzero timestamp means the affiliate is in shutdown mode.</p>
-<p>Two views expose this state:</p>
-<pre><code class="language-solidity">function isAffiliateShutdownScheduled(address affiliate) external view returns (bool isScheduled);
+					<p><code>0</code> means no shutdown is scheduled. Any nonzero timestamp means the affiliate is in shutdown mode.</p>
+					<p>Two views expose this state:</p>
+					<pre><code class="language-solidity">function isAffiliateShutdownScheduled(address affiliate) external view returns (bool isScheduled);
 function getAffiliateShutdownTime(address affiliate) external view returns (uint256 shutdownTime);
 </code></pre>
-<h2 id="what-close-only-means">What Close-Only Means</h2>
-<p>Close-only means no new position can be opened through the affiliate once shutdown is scheduled.</p>
-<p>This blocks the full opening pipeline:</p>
-<ul>
-<li>users cannot send new quotes with the affiliate</li>
-<li>PartyB cannot lock pending quotes for that affiliate</li>
-<li>PartyB cannot open locked quotes for that affiliate</li>
-<li>batch open rejects quotes for that affiliate</li>
-</ul>
-<p>Closing remains available. The goal is not to freeze the frontend's users; it is to prevent new exposure while existing exposure is wound down.</p>
-<h2 id="solver-window">Solver Window</h2>
-<p>During the shutdown window, the existing <code>emergencyClosePosition</code> path can be used for quotes that belong to the shutting-down affiliate.</p>
-<p>This is scoped by quote affiliate. Scheduling one affiliate does not enable emergency close for unrelated affiliate quotes, and it does not activate global emergency mode.</p>
-<p>The reason for reusing <code>emergencyClosePosition</code> is that it already has the close semantics we need: PartyB closes its own quote using signed UPNL and price data, while the normal solvency and quote-status checks still apply.</p>
-<h2 id="clearing-house-backstop">Clearing House Backstop</h2>
-<p>If positions remain after the shutdown timestamp, Clearing House can call:</p>
-<pre><code class="language-solidity">function closeAffiliatePositions(
+					<h2 id="what-close-only-means">What Close-Only Means</h2>
+					<p>Close-only means no new position can be opened through the affiliate once shutdown is scheduled.</p>
+					<p>This blocks the full opening pipeline:</p>
+					<ul>
+						<li>users cannot send new quotes with the affiliate</li>
+						<li>PartyB cannot lock pending quotes for that affiliate</li>
+						<li>PartyB cannot open locked quotes for that affiliate</li>
+						<li>batch open rejects quotes for that affiliate</li>
+					</ul>
+					<p>
+						Closing remains available. The goal is not to freeze the frontend's users; it is to prevent new exposure while existing
+						exposure is wound down.
+					</p>
+					<h2 id="solver-window">Solver Window</h2>
+					<p>
+						During the shutdown window, the existing <code>emergencyClosePosition</code> path can be used for quotes that belong to the
+						shutting-down affiliate.
+					</p>
+					<p>
+						This is scoped by quote affiliate. Scheduling one affiliate does not enable emergency close for unrelated affiliate quotes,
+						and it does not activate global emergency mode.
+					</p>
+					<p>
+						The reason for reusing <code>emergencyClosePosition</code> is that it already has the close semantics we need: PartyB closes
+						its own quote using signed UPNL and price data, while the normal solvency and quote-status checks still apply.
+					</p>
+					<h2 id="clearing-house-backstop">Clearing House Backstop</h2>
+					<p>If positions remain after the shutdown timestamp, Clearing House can call:</p>
+					<pre><code class="language-solidity">function closeAffiliatePositions(
     address affiliate,
     uint256[] memory quoteIds,
     uint256[] memory prices
 ) external;
 </code></pre>
-<p>This is the final backstop in the flow. It is only available after the scheduled timestamp and only for quotes that belong to the scheduled affiliate.</p>
-<p>The close uses normal close accounting. It is not a liquidation path, so it avoids positions that are already inside PartyA or PartyB liquidation flows.</p>
-<p><code>CLEARING_HOUSE_ROLE</code> supplies the close prices for this backstop. That role is treated as the trusted shutdown settlement authority for remaining solvent affiliate positions; this path does not perform a separate Muon price verification.</p>
-<h2 id="end-state">End State</h2>
-<p>After all positions are closed, the affiliate can be treated as fully shut down from an operations point of view. If the shutdown is cancelled before that, opening through the affiliate becomes available again, assuming the affiliate is still active and the usual protocol checks pass.</p>
-			</article>
-		</main>
-	</div>
-	
-	<footer class="site-footer">
-		<span>Symmio Core v0.8.6 documentation.</span>
-		<span>Protocol, operations, and integration notes.</span>
-	</footer>
-</body>
+					<p>
+						This is the final backstop in the flow. It is only available after the scheduled timestamp and only for quotes that belong to
+						the scheduled affiliate.
+					</p>
+					<p>
+						The close uses normal close accounting. It is not a liquidation path, so it avoids positions that are already inside PartyA or
+						PartyB liquidation flows.
+					</p>
+					<p>
+						<code>CLEARING_HOUSE_ROLE</code> supplies the close prices for this backstop. That role is treated as the trusted shutdown
+						settlement authority for remaining solvent affiliate positions; this path does not perform a separate Muon price verification.
+					</p>
+					<h2 id="end-state">End State</h2>
+					<p>
+						After all positions are closed, the affiliate can be treated as fully shut down from an operations point of view. If the
+						shutdown is cancelled before that, opening through the affiliate becomes available again, assuming the affiliate is still
+						active and the usual protocol checks pass.
+					</p>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Protocol, operations, and integration notes.</span>
+		</footer>
+	</body>
 </html>

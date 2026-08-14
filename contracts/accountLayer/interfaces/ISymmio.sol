@@ -324,6 +324,10 @@ interface ISymmio {
 	/// @notice Returns a quote by ID
 	function getQuote(uint256 quoteId) external view returns (Quote memory);
 
+	/// @notice Requests to cancel a quote; cancels immediately when the quote is still PENDING
+	/// @param quoteId The quote ID to cancel
+	function requestToCancelQuote(uint256 quoteId) external;
+
 	/// @notice Registers an affiliate on the Symmio core
 	/// @param affiliate The affiliate address to register
 	function registerAffiliate(address affiliate) external;

@@ -44,7 +44,9 @@
 					>
 					<a class="side-link" href="../pages/solver-fees.html"><small>Fees</small><span>Solver Fees</span></a>
 					<a class="side-link" href="../pages/operational-fees.html"><small>Fees</small><span>Operational Fees</span></a>
-					<a class="side-link" href="../pages/symbol-adjustment.html"><small>Symbols</small><span>Symbol Corporate-Action Adjustment</span></a>
+					<a class="side-link" href="../pages/symbol-adjustment.html"
+						><small>Symbols</small><span>Symbol Corporate-Action Adjustment</span></a
+					>
 					<a class="side-link" href="../pages/partya-liquidation-fee-recipient.html"
 						><small>Liquidation</small><span>PartyA Liquidation Fee Recipient Cleanup</span></a
 					>
@@ -58,15 +60,18 @@
 					<a class="side-link" href="../pages/cross-partyb-liquidation-reserve.html"
 						><small>Liquidation</small><span>Cross-PartyB Liquidation Reserve Enforcement</span></a
 					>
-					<a class="side-link" href="../pages/delegation-account-scope.html"><small>AccountLayer</small><span>Delegation Account Scope</span></a>
-					<a class="side-link" href="../pages/strict-deallocation.html"
-						><small>Accounts</small><span>Strict Deallocation</span></a
+					<a class="side-link" href="../pages/delegation-account-scope.html"
+						><small>AccountLayer</small><span>Delegation Account Scope</span></a
 					>
+					<a class="side-link" href="../pages/strict-deallocation.html"><small>Accounts</small><span>Strict Deallocation</span></a>
 					<a class="side-link" href="../pages/express-bot-operations-checklist.html"
 						><small>Express Withdrawal</small><span>Express Provider Bot Operations Checklist</span></a
 					>
 					<a class="side-link" href="../pages/market-open-fee-execution-price.html"
 						><small>Fees</small><span>Market Open Fee on Execution Price</span></a
+					>
+					<a class="side-link" href="../pages/position-isolation-partial-fill.html"
+						><small>AccountLayer</small><span>Position Isolation Partial Fill Remainder</span></a
 					>
 				</div>
 			</aside>
@@ -1143,8 +1148,8 @@ verifyingContract: &lt;ExpressProvider proxy address&gt;
 						a different SYMMIO core.
 					</p>
 					<p>
-						<strong>Freshness binding (last balance credit):</strong> every approval must be signed <em>strictly after</em> the user's most
-						recent protocol-internal credit into their withdrawable balance, read from core as
+						<strong>Freshness binding (last balance credit):</strong> every approval must be signed <em>strictly after</em> the user's
+						most recent protocol-internal credit into their withdrawable balance, read from core as
 						<code>withdrawCooldownOf(user)</code> (core's <code>deallocateTimestamp</code>). Core stamps this timestamp on every
 						<code>deallocate</code> variant and on <code>internalTransferToBalance</code> -- the path realized PnL takes from a virtual
 						account into its parent sub-account's withdrawable balance. If new funds land after the validators signed, the approvals are
@@ -1192,8 +1197,8 @@ verifyingContract: &lt;ExpressProvider proxy address&gt;
 					</ol>
 					<p>When <code>minValidatorSignatures(affiliate) == 0</code> (and no default set), the validator check is skipped entirely.</p>
 					<p>
-						<strong>Accelerate approvals:</strong> when <code>minValidatorSignatures(affiliate) &gt; 0</code>, the same validator quorum is
-						also required on <code>accelerateWithdraw</code> (STANDARD -&gt; WINDOWED promotion), since the STANDARD accept path skips
+						<strong>Accelerate approvals:</strong> when <code>minValidatorSignatures(affiliate) &gt; 0</code>, the same validator quorum
+						is also required on <code>accelerateWithdraw</code> (STANDARD -&gt; WINDOWED promotion), since the STANDARD accept path skips
 						validators. Validators sign a dedicated type over the frozen request:
 					</p>
 					<pre><code>ValidatorAccelerateApproval(
@@ -1206,17 +1211,17 @@ verifyingContract: &lt;ExpressProvider proxy address&gt;
 </code></pre>
 					<p>
 						The <strong>same last-balance-credit freshness rule applies</strong>: each <code>timestamp</code> must satisfy
-						<code>timestamp &gt; ISymmio(symmio).withdrawCooldownOf(user)</code>, else <code>StaleValidatorApproval</code>. It is load-bearing
-						here. STANDARD acceptance skips validators entirely, so the accelerate approval is the first and only attestation the withdrawal
-						ever receives, and it gates the exact moment credit is advanced and pools are drained. Because
-						<code>accelerateWithdraw</code> is permissionless, without it a user could front-run their own acceleration with a deallocate and
-						have funds advanced against a state no validator inspected -- the <code>validatorApprovalTimeout</code> window alone does not
-						close that gap.
+						<code>timestamp &gt; ISymmio(symmio).withdrawCooldownOf(user)</code>, else <code>StaleValidatorApproval</code>. It is
+						load-bearing here. STANDARD acceptance skips validators entirely, so the accelerate approval is the first and only attestation
+						the withdrawal ever receives, and it gates the exact moment credit is advanced and pools are drained. Because
+						<code>accelerateWithdraw</code> is permissionless, without it a user could front-run their own acceleration with a deallocate
+						and have funds advanced against a state no validator inspected -- the <code>validatorApprovalTimeout</code> window alone does
+						not close that gap.
 					</p>
 					<p>
-						The approval binds <code>(user, requestId, partsHash)</code> rather than an amount because the frozen request already fixes the
-						payout: <code>requestWithdraw</code> debited the user&#39;s balance and pinned <code>partsHash</code> at creation, so later PnL
-						cannot enlarge this withdrawal. It is also deliberately not bound to <code>accelerateNonce</code>, preserving the
+						The approval binds <code>(user, requestId, partsHash)</code> rather than an amount because the frozen request already fixes
+						the payout: <code>requestWithdraw</code> debited the user&#39;s balance and pinned <code>partsHash</code> at creation, so
+						later PnL cannot enlarge this withdrawal. It is also deliberately not bound to <code>accelerateNonce</code>, preserving the
 						retry-on-cap-full behavior of the bot&#39;s <code>AccelerateOffer</code>.
 					</p>
 					<h3 id="7-7-provider-data-encoding">7.7 Provider Data Encoding</h3>

@@ -4305,7 +4305,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 				)
 			})
 
-			it("tracks the remainder quote and cleans up both quote lifecycles", async () => {
+			it("cancels the remainder quote of a partial open on a POSITION-isolated virtual account", async () => {
 				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress))[0]
 				const [parentQuoteId] = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
 				const parentBeforeOpen = await context.viewFacetQuote.getQuote(parentQuoteId)
@@ -4322,17 +4322,14 @@ export function shouldBehaveLikeAccountLayer(): void {
 						await getDummyPairUpnlAndPriceSig(BigInt(openRequest.price), BigInt(openRequest.upnlPartyA), BigInt(openRequest.upnlPartyB)),
 					)
 
+				// A POSITION VA must hold exactly one position, so the hook cancels the remainder in the same tx
 				const childQuoteId = await context.viewFacetQuote.getNextQuoteId()
 				const childQuote = await context.viewFacetQuote.getQuote(childQuoteId)
 				expect(childQuote.parentId).to.equal(parentQuoteId)
-				expect(childQuote.quoteStatus).to.equal(QuoteStatus.PENDING)
+				expect(childQuote.quoteStatus).to.equal(QuoteStatus.CANCELED)
 
-				const trackedAfterOpen = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
-				expect(trackedAfterOpen).to.have.members([parentQuoteId, childQuoteId])
-
-				const cancelChildCallData = context.partyAFacet.interface.encodeFunctionData("requestToCancelQuote", [childQuoteId])
-				await context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [cancelChildCallData])
 				expect(await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)).to.deep.equal([parentQuoteId])
+				expect(await context.viewFacetQuote.partyAPendingQuotesCount(virtualAccountAddress)).to.equal(0)
 
 				const closeRequest = limitCloseRequestBuilder().quantityToClose(filledAmount).build()
 				const requestToCloseCallData = context.partyAFacet.interface.encodeFunctionData("requestToClosePosition", [
@@ -4361,8 +4358,13 @@ export function shouldBehaveLikeAccountLayer(): void {
 				expect((await context.alViewFacet.getVirtualAccount(virtualAccountAddress)).isExists).to.be.false
 			})
 
-			it("tracks every pending child created by repeated partial opens", async () => {
-				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress))[0]
+			it("tracks every pending child created by repeated partial opens on a MARKET-isolated virtual account", async () => {
+				const marketSubAccountAddress = await createSubAccountAndDeposit(
+					context.signers.user,
+					[createSubAccountData("MARKET_NAME", 1)],
+					BALANCES.DEPOSIT_AMOUNT,
+				)
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(marketSubAccountAddress))[0]
 				const [parentQuoteId] = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
 				const parentQuote = await context.viewFacetQuote.getQuote(parentQuoteId)
 
@@ -4381,6 +4383,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 
 				const firstChildId = await context.viewFacetQuote.getNextQuoteId()
 				const firstChild = await context.viewFacetQuote.getQuote(firstChildId)
+				expect(firstChild.quoteStatus).to.equal(QuoteStatus.PENDING)
 				await hedger.lockQuote(firstChildId)
 				const secondOpen = limitOpenRequestBuilder()
 					.filledAmount(firstChild.quantity / 2n)
