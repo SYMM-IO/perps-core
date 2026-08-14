@@ -3,8 +3,18 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="v0.8.5 introduces role admins -- a delegation layer on top of SYMMIO&#x27;s existing role-based access control. Previously, the DEFAULT_ADMIN_ROLE holder was the only address that could grant and revoke roles, making it a bottleneck for every role change. Now, default admins can delegate management…"
+		/>
 		<title>Role Admin System - Symmio Core v0.8.5</title>
 		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
 		<link rel="stylesheet" href="../../v0.8.6/assets/v086-docs.css" />
 		<link rel="stylesheet" href="../../assets/docs-portal.css" />
 		<script src="../../v0.8.6/assets/v086-docs.js" defer></script>

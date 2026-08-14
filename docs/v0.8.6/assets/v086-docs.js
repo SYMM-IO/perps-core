@@ -1,5 +1,9 @@
 (() => {
 	const root = document.documentElement;
+	// Assets are resolved against this script rather than the page, so pages at any
+	// depth (and the release indexes) reach the same shared vendor bundle.
+	const scriptUrl = document.currentScript?.src || document.querySelector('script[src$="v086-docs.js"]')?.src || window.location.href;
+	const assetUrl = path => new URL(path, scriptUrl).href;
 	const themeStorage = {
 		get() {
 			try {
@@ -82,7 +86,6 @@
 			.map(line => line.trim())
 			.map(line => line.match(/^(.+?)(?:--)?->>[\+ -]*(.+?):\s*(.+)$/))
 			.filter(Boolean)
-			.slice(0, 18)
 			.map(match => ({
 				from: cleanNodeLabel(match[1]),
 				to: cleanNodeLabel(match[2]),
@@ -115,8 +118,7 @@
 					label: cleanNodeLabel(label),
 				};
 			})
-			.filter(Boolean)
-			.slice(0, 18);
+			.filter(Boolean);
 	};
 
 	const parseState = source =>
@@ -128,19 +130,47 @@
 				const [from, rest] = line.split("-->");
 				const [to, label = ""] = rest.split(":");
 				return { from: cleanNodeLabel(from), to: cleanNodeLabel(to), label: cleanNodeLabel(label) };
-			})
-			.slice(0, 18);
+			});
 
 	const parseGantt = source =>
 		source
 			.split("\n")
 			.map(line => line.trim())
 			.filter(line => line.includes(":") && !/^(title|dateFormat|axisFormat|section)\b/i.test(line))
-			.slice(0, 16)
 			.map(line => {
 				const [label, timing = ""] = line.split(":");
 				return { label: cleanNodeLabel(label), timing: cleanNodeLabel(timing) };
 			});
+
+	/* The text fallback stands in for a diagram that could not be drawn, so it may
+	   not quietly end early. Long diagrams collapse past a readable length and say
+	   exactly how many rows are hidden, with the full source one click away. */
+	const FALLBACK_VISIBLE_ROWS = 18;
+	const appendFallbackOverflow = (target, hidden, source) => {
+		if (hidden <= 0) return;
+		const notice = document.createElement("div");
+		notice.className = "diagram-overflow";
+		const count = document.createElement("span");
+		count.textContent = `${hidden} more ${hidden === 1 ? "row" : "rows"} not shown`;
+		const reveal = document.createElement("button");
+		reveal.type = "button";
+		reveal.textContent = "Show diagram source";
+		reveal.addEventListener("click", () => {
+			const existing = target.querySelector(".diagram-source");
+			if (existing) {
+				existing.remove();
+				reveal.textContent = "Show diagram source";
+				return;
+			}
+			const block = document.createElement("pre");
+			block.className = "diagram-source";
+			block.textContent = source.trim();
+			target.append(block);
+			reveal.textContent = "Hide diagram source";
+		});
+		notice.append(count, reveal);
+		target.append(notice);
+	};
 
 	const fillFallbackDiagram = (target, source) => {
 		const type = detectDiagramType(source);
@@ -149,32 +179,36 @@
 
 		if (type === "sequence") {
 			const steps = parseSequence(source);
-			steps.forEach((step, index) => {
+			steps.slice(0, FALLBACK_VISIBLE_ROWS).forEach((step, index) => {
 				const row = document.createElement("div");
 				row.className = "diagram-step";
 				row.innerHTML = `<span class="diagram-count">${String(index + 1).padStart(2, "0")}</span><span class="diagram-node">${step.from}</span><span class="diagram-arrow">to</span><span class="diagram-node">${step.to}</span><span class="diagram-message">${step.label}</span>`;
 				target.append(row);
 			});
+			appendFallbackOverflow(target, steps.length - FALLBACK_VISIBLE_ROWS, source);
 			return;
 		}
 
 		if (type === "gantt") {
-			parseGantt(source).forEach((task, index) => {
+			const tasks = parseGantt(source);
+			tasks.slice(0, FALLBACK_VISIBLE_ROWS).forEach((task, index) => {
 				const row = document.createElement("div");
 				row.className = "diagram-task";
 				row.innerHTML = `<span style="--bar:${(index % 5) + 4}"></span><strong>${task.label}</strong><small>${task.timing}</small>`;
 				target.append(row);
 			});
+			appendFallbackOverflow(target, tasks.length - FALLBACK_VISIBLE_ROWS, source);
 			return;
 		}
 
 		const edges = type === "state" ? parseState(source) : parseFlow(source);
-		edges.forEach(edge => {
+		edges.slice(0, FALLBACK_VISIBLE_ROWS).forEach(edge => {
 			const row = document.createElement("div");
 			row.className = "diagram-edge";
 			row.innerHTML = `<span class="diagram-node">${edge.from}</span><span class="diagram-arrow">${edge.label || "to"}</span><span class="diagram-node">${edge.to}</span>`;
 			target.append(row);
 		});
+		appendFallbackOverflow(target, edges.length - FALLBACK_VISIBLE_ROWS, source);
 	};
 
 	let activeDiagramModal = null;
@@ -431,6 +465,57 @@
 		svg.querySelectorAll(".cluster rect, .note, .labelBox, .edgeLabel rect").forEach(rect => softenRect(rect, "5"));
 	};
 
+	const TYPE_LABELS = { sequence: "Sequence", flow: "Flow", state: "State", gantt: "Timeline", diagram: "Diagram" };
+
+	/* A caption names what the figure shows, not which Mermaid grammar drew it.
+	   An authored `data-diagram-title` wins; otherwise the section the diagram sits
+	   in supplies the subject, and the grammar becomes a trailing qualifier. */
+	const describeDiagram = (pre, code, source) => {
+		const type = detectDiagramType(source);
+		const typeLabel = TYPE_LABELS[type] || TYPE_LABELS.diagram;
+		const authored = (code.dataset.diagramTitle || pre?.dataset.diagramTitle || "").trim();
+		if (authored) return { type, text: authored };
+
+		let node = pre;
+		while (node && node !== document.body) {
+			let sibling = node.previousElementSibling;
+			while (sibling) {
+				if (/^H[2-6]$/.test(sibling.tagName)) {
+					const heading = sibling.cloneNode(true);
+					heading.querySelectorAll(".heading-anchor").forEach(button => button.remove());
+					const title = (heading.textContent || "")
+						.replace(/#$/, "")
+						.replace(/^\d+(\.\d+)*\.?\s*/, "")
+						.trim();
+					// An unrecognised grammar adds nothing to the caption, so drop the qualifier.
+					if (title) return { type, text: type === "diagram" ? title : `${title} — ${typeLabel.toLowerCase()}` };
+				}
+				sibling = sibling.previousElementSibling;
+			}
+			node = node.parentElement;
+		}
+		return { type, text: typeLabel };
+	};
+
+	/* Mermaid ships with the docs rather than loading from a CDN, so diagrams also
+	   draw offline, from a file:// checkout, and behind a proxy. Loaded once, lazily,
+	   and only on pages that actually contain a diagram. */
+	let mermaidPromise = null;
+	const loadMermaid = () => {
+		if (window.mermaid) return Promise.resolve(window.mermaid);
+		if (mermaidPromise) return mermaidPromise;
+		mermaidPromise = new Promise((resolve, reject) => {
+			const script = document.createElement("script");
+			script.src = assetUrl("../../assets/vendor/mermaid.min.js");
+			script.addEventListener("load", () =>
+				window.mermaid ? resolve(window.mermaid) : reject(new Error("mermaid bundle loaded but exported nothing")),
+			);
+			script.addEventListener("error", () => reject(new Error("mermaid bundle could not be loaded")));
+			document.head.append(script);
+		});
+		return mermaidPromise;
+	};
+
 	const installMermaidDiagrams = async () => {
 		const blocks = Array.from(document.querySelectorAll(".doc-article pre > code.language-mermaid"));
 		if (!blocks.length) return;
@@ -441,7 +526,7 @@
 			const frame = document.createElement("figure");
 			frame.className = "mermaid-frame";
 			const caption = document.createElement("figcaption");
-			const captionText = detectDiagramType(source);
+			const captionText = describeDiagram(pre, code, source).text;
 			const captionLabel = document.createElement("span");
 			captionLabel.textContent = captionText;
 			const openButton = document.createElement("button");
@@ -473,14 +558,8 @@
 			return { frame, canvas, source };
 		});
 
-		if (window.matchMedia && window.matchMedia("(max-width: 640px)").matches) {
-			diagrams.forEach(({ frame }) => frame.classList.add("is-fallback"));
-			return;
-		}
-
 		try {
-			const module = await import("https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs");
-			const mermaid = module.default || module;
+			const mermaid = await loadMermaid();
 			const mermaidTheme =
 				root.dataset.theme === "dark"
 					? {
@@ -1068,14 +1147,40 @@
 		frame.append(toolbar, pre);
 	});
 
+	/* Every wide table needs its own scroll container or it pushes the article
+	   sideways on narrow screens. v0.8.6 pages author the wrapper; older pages do
+	   not, so add it wherever it is missing. */
+	const installTableScrollers = () => {
+		document.querySelectorAll(".doc-article table").forEach(table => {
+			if (table.parentElement?.classList.contains("table-wrap")) return;
+			const wrapper = document.createElement("div");
+			wrapper.className = "table-wrap";
+			table.before(wrapper);
+			wrapper.append(table);
+		});
+	};
+
+	installTableScrollers();
+
 	const installHeadingLinks = () => {
 		document.querySelectorAll(".doc-article h2[id], .doc-article h3[id]").forEach(heading => {
 			if (heading.querySelector(".heading-anchor")) return;
+			const title = (heading.textContent || "section").trim();
+			// The button is a child of the heading, so its label would otherwise fold
+			// into the heading's accessible name and be announced twice. Naming the
+			// heading from its own text keeps the two separate.
+			const text = document.createElement("span");
+			text.className = "heading-text";
+			text.id = `${heading.id}-text`;
+			while (heading.firstChild) text.append(heading.firstChild);
+			heading.append(text);
+			heading.setAttribute("aria-labelledby", text.id);
+
 			const anchor = document.createElement("button");
 			anchor.type = "button";
 			anchor.className = "heading-anchor";
 			anchor.textContent = "#";
-			anchor.setAttribute("aria-label", `Copy link to ${heading.textContent || "section"}`);
+			anchor.setAttribute("aria-label", `Copy link to ${title}`);
 			const defaultLabel = anchor.getAttribute("aria-label");
 			anchor.addEventListener("click", async () => {
 				const url = `${window.location.href.split("#")[0]}#${heading.id}`;

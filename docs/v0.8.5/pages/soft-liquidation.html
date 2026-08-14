@@ -3,8 +3,18 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="For example, suppose a PartyB&#x27;s locked balance is $200. If their balance falls below $200, we can still perform a hard liquidation as before."
+		/>
 		<title>Soft Liquidation - Symmio Core v0.8.5</title>
 		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
 		<link rel="stylesheet" href="../../v0.8.6/assets/v086-docs.css" />
 		<link rel="stylesheet" href="../../assets/docs-portal.css" />
 		<script src="../../v0.8.6/assets/v086-docs.js" defer></script>

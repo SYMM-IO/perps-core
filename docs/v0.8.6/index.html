@@ -3,8 +3,18 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Changelog for Symmio Core v0.8.6: express withdrawals, delegated AccountLayer ownership, liquidation snapshot settlement, allocated-balance event ledger, solver and operational fees."
+		/>
 		<title>Symmio Core v0.8.6 Documentation</title>
 		<link rel="icon" type="image/svg+xml" href="assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
 		<link rel="stylesheet" href="assets/v086-docs.css" />
 		<link rel="stylesheet" href="../assets/docs-portal.css" />
 		<script src="assets/v086-docs.js" defer></script>
@@ -47,6 +57,7 @@
 				<label class="catalog-search-wrap">
 					<span class="visually-hidden">Search v0.8.6 chapters</span>
 					<input class="catalog-search" type="search" placeholder="Search chapters" data-catalog-search autocomplete="off" />
+					<kbd class="catalog-search-hint" aria-hidden="true" data-search-hint>⌘K</kbd>
 				</label>
 				<span class="catalog-count" data-catalog-count>24 chapters</span>
 			</div>
@@ -54,8 +65,8 @@
 			<div class="doc-browser">
 				<section class="version-catalog-group" data-catalog-group aria-labelledby="docs-title">
 					<div class="section-heading">
-						<h2 id="docs-title">Main changes</h2>
 						<p class="eyebrow" data-catalog-group-count>12 chapters</p>
+						<h2 id="docs-title">Main changes</h2>
 					</div>
 					<div class="doc-list">
 						<a class="doc-list-item" href="pages/express-withdrawal-system-design.html" data-catalog-item>
@@ -197,21 +208,24 @@
 				</section>
 				<section class="version-catalog-group minor-improvements" aria-labelledby="other-changes-title" data-catalog-group>
 					<div class="section-heading">
-						<h2 id="other-changes-title">Other changes</h2>
 						<p class="eyebrow" data-catalog-group-count>12 chapters</p>
+						<h2 id="other-changes-title">Other changes</h2>
 					</div>
 					<div class="minor-improvement-list">
 						<a class="minor-improvement-item" href="pages/partya-liquidation-fee-recipient.html" data-catalog-item>
+							<span class="doc-list-index">13</span>
 							<span class="category">Liquidation</span>
 							<strong>PartyA Liquidation Fee Recipient Cleanup</strong>
 							<span>Records the liquidation starter as the unambiguous recipient for capped PartyA liquidation fees.</span>
 						</a>
 						<a class="minor-improvement-item" href="pages/partyb-allocation-suspension-gates.html" data-catalog-item>
+							<span class="doc-list-index">14</span>
 							<span class="category">PartyB</span>
-							<strong>Allocation Suspension Gates</strong>
+							<strong>PartyB Allocation Suspension Gates</strong>
 							<span>Suspended PartyBs can no longer allocate or transfer allocation between PartyA buckets.</span>
 						</a>
 						<a class="minor-improvement-item" href="pages/cross-partyb-liquidation-reserve.html" data-catalog-item>
+							<span class="doc-list-index">15</span>
 							<span class="category">Liquidation</span>
 							<strong>Cross-PartyB Liquidation Reserve Enforcement</strong>
 							<span
@@ -220,6 +234,7 @@
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/delegation-account-scope.html" data-catalog-item>
+							<span class="doc-list-index">16</span>
 							<span class="category">AccountLayer</span>
 							<strong>Delegation Account Scope</strong>
 							<span
@@ -228,6 +243,7 @@
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/instant-layer-authorization-scope.html" data-catalog-item>
+							<span class="doc-list-index">17</span>
 							<span class="category">InstantLayer</span>
 							<strong>InstantLayer Authorization Scope</strong>
 							<span
@@ -236,6 +252,7 @@
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/market-open-fee-execution-price.html" data-catalog-item>
+							<span class="doc-list-index">18</span>
 							<span class="category">Fees</span>
 							<strong>Market Open Fee on Execution Price</strong>
 							<span
@@ -244,14 +261,16 @@
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/partyb-funding-nonces.html" data-catalog-item>
+							<span class="doc-list-index">19</span>
 							<span class="category">PartyB</span>
-							<strong>Funding Update Nonces</strong>
+							<strong>PartyB Funding Update Nonces</strong>
 							<span
 								>Stale or expired funding updates from a solver engine are skipped per symbol and reported, instead of overwriting
 								newer rates or failing the batch they travelled in.</span
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/bound-mode-unified-settlement.html" data-catalog-item>
+							<span class="doc-list-index">20</span>
 							<span class="category">Settlement</span>
 							<strong>Bound-Mode Unified Settlement</strong>
 							<span
@@ -260,6 +279,7 @@
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/diamond-owner-getter.html" data-catalog-item>
+							<span class="doc-list-index">21</span>
 							<span class="category">Views</span>
 							<strong>Diamond Owner Getter</strong>
 							<span
@@ -268,6 +288,7 @@
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/express-deposit-removal.html" data-catalog-item>
+							<span class="doc-list-index">22</span>
 							<span class="category">AccountLayer</span>
 							<strong>Express Deposit Removal</strong>
 							<span
@@ -276,6 +297,7 @@
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/accountlayer-behavior-changes.html" data-catalog-item>
+							<span class="doc-list-index">23</span>
 							<span class="category">AccountLayer</span>
 							<strong>AccountLayer Behavior Changes</strong>
 							<span
@@ -284,6 +306,7 @@
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/lazy-accumulated-funding.html" data-catalog-item>
+							<span class="doc-list-index">24</span>
 							<span class="category">Funding</span>
 							<strong>Lazy Accumulated Funding</strong>
 							<span

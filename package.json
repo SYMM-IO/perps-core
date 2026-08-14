@@ -89,6 +89,7 @@
 		"test:deploy": "hardhat compile && hardhat test mocha --no-compile -- test/parallel/ContractCreationResume.test.ts test/parallel/CopySymbolsPlan.test.ts test/parallel/DeployInfrastructure.test.ts test/parallel/DeploymentRecipeCheckpoint.test.ts test/parallel/DeploymentRecipeComponentExecution.test.ts test/parallel/DeploymentRecipeConfig.test.ts test/parallel/DeploymentRecipeValidation.test.ts test/parallel/DeploymentResumeState.test.ts test/parallel/DeploymentTransactionReconciliation.test.ts test/parallel/DeploymentVerificationBinding.test.ts test/parallel/DeployProtocolConfig.test.ts test/parallel/DeploySystemConfig.test.ts test/parallel/ExecutionGuard.test.ts test/parallel/ExpressProviderDeployment.test.ts test/parallel/MuonDeploymentPermissions.test.ts test/parallel/DeploymentRecordResume.test.ts test/parallel/PartyBDeploymentRecords.test.ts test/parallel/SafeProposal.test.ts test/parallel/VanityRegistry.test.ts test/parallel/VanityPlan.test.ts test/parallel/VanityDeployment.test.ts",
 		"check:operations": "npm run lint && npm run test:cli && npm run test:scripts && npm run test:deploy",
 		"docs": "node scripts/serve-docs.mjs",
+		"docs:check": "node docs/check-docs.mjs",
 		"typechain": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat typechain",
 		"solhint": "./node_modules/.bin/solhint -f table contracts/**/*.sol",
 		"prettier:contracts": "prettier --write \"contracts/**/*.sol\"",

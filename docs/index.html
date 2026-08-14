@@ -6,6 +6,12 @@
 		<meta name="description" content="Versioned Symmio Core protocol documentation." />
 		<title>Symmio Core Documentation</title>
 		<link rel="icon" type="image/svg+xml" href="v0.8.6/assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
 		<link rel="stylesheet" href="v0.8.6/assets/v086-docs.css" />
 		<link rel="stylesheet" href="assets/docs-portal.css" />
 		<script src="v0.8.6/assets/v086-docs.js" defer></script>
@@ -20,7 +26,7 @@
 						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
 					>
 					<span class="trail-sep" aria-hidden="true">/</span>
-					<span class="trail-current" aria-current="page">v0.8.6</span>
+					<span class="trail-current" aria-current="page">Releases</span>
 				</nav>
 				<nav class="top-actions" aria-label="Page actions">
 					<label class="portal-search" for="version-search">
@@ -36,7 +42,7 @@
 							aria-label="Search releases"
 							data-version-search
 						/>
-						<kbd aria-hidden="true">⌘K</kbd>
+						<kbd aria-hidden="true" data-search-hint>⌘K</kbd>
 					</label>
 					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
 				</nav>
@@ -82,7 +88,7 @@
 					</span>
 					<span class="version-entry-action">Changelog <span aria-hidden="true">→</span></span>
 				</a>
-				<a class="version-entry" href="v0.8.5/index.html" data-version-item aria-label="Open the archived v0.8.5 changelog, 33 chapters">
+				<a class="version-entry" href="v0.8.5/index.html" data-version-item aria-label="Open the archived v0.8.5 changelog, 32 chapters">
 					<span class="version-entry-main">
 						<span class="version-number">0.8.5</span>
 						<span class="version-status">Archived</span>
@@ -91,6 +97,21 @@
 				</a>
 			</div>
 			<p class="version-empty" data-version-empty hidden>No releases match that search.</p>
+
+			<section class="portal-guides" aria-labelledby="guides-title">
+				<div class="version-index-heading">
+					<h2 id="guides-title">Guides</h2>
+				</div>
+				<div class="version-list">
+					<a class="version-entry is-guide" href="deployment-guide.html">
+						<span class="version-entry-main">
+							<span class="guide-name">Operator guide</span>
+							<span class="guide-note">Deploying and operating SYMMIO from the menu application. Applies to every release.</span>
+						</span>
+						<span class="version-entry-action">Open <span aria-hidden="true">→</span></span>
+					</a>
+				</div>
+			</section>
 		</main>
 	</body>
 </html>

@@ -6,6 +6,12 @@
 		<meta name="description" content="Symmio Core v0.8.5 documentation index." />
 		<title>Symmio Core v0.8.5 Documentation</title>
 		<link rel="icon" type="image/svg+xml" href="../v0.8.6/assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
 		<link rel="stylesheet" href="../v0.8.6/assets/v086-docs.css" />
 		<link rel="stylesheet" href="../assets/docs-portal.css" />
 		<script src="../v0.8.6/assets/v086-docs.js" defer></script>
@@ -47,13 +53,14 @@
 				<label class="catalog-search-wrap">
 					<span class="visually-hidden">Search v0.8.5 chapters</span>
 					<input class="catalog-search" type="search" placeholder="Search chapters" data-catalog-search autocomplete="off" />
+					<kbd class="catalog-search-hint" aria-hidden="true" data-search-hint>⌘K</kbd>
 				</label>
 				<span class="catalog-count" data-catalog-count>32 chapters</span>
 			</div>
 			<p class="catalog-empty" data-catalog-empty hidden>No chapters match that search.</p>
 			<section class="version-catalog-group" data-catalog-group aria-labelledby="group-account-fund-management">
 				<div class="section-heading">
-					<p class="eyebrow" data-catalog-group-count>06 chapters</p>
+					<p class="eyebrow" data-catalog-group-count>6 chapters</p>
 					<h2 id="group-account-fund-management">Account &amp; Fund Management</h2>
 				</div>
 				<div class="doc-list">
@@ -137,7 +144,7 @@
 			</section>
 			<section class="version-catalog-group" data-catalog-group aria-labelledby="group-trading-execution">
 				<div class="section-heading">
-					<p class="eyebrow" data-catalog-group-count>06 chapters</p>
+					<p class="eyebrow" data-catalog-group-count>6 chapters</p>
 					<h2 id="group-trading-execution">Trading Execution</h2>
 				</div>
 				<div class="doc-list">
@@ -217,7 +224,7 @@
 			</section>
 			<section class="version-catalog-group" data-catalog-group aria-labelledby="group-risk-liquidation">
 				<div class="section-heading">
-					<p class="eyebrow" data-catalog-group-count>07 chapters</p>
+					<p class="eyebrow" data-catalog-group-count>7 chapters</p>
 					<h2 id="group-risk-liquidation">Risk &amp; Liquidation</h2>
 				</div>
 				<div class="doc-list">
@@ -315,7 +322,7 @@
 			</section>
 			<section class="version-catalog-group" data-catalog-group aria-labelledby="group-funding-positions">
 				<div class="section-heading">
-					<p class="eyebrow" data-catalog-group-count>02 chapters</p>
+					<p class="eyebrow" data-catalog-group-count>2 chapters</p>
 					<h2 id="group-funding-positions">Funding &amp; Positions</h2>
 				</div>
 				<div class="doc-list">
@@ -348,7 +355,7 @@
 			</section>
 			<section class="version-catalog-group" data-catalog-group aria-labelledby="group-fees-symbols">
 				<div class="section-heading">
-					<p class="eyebrow" data-catalog-group-count>03 chapters</p>
+					<p class="eyebrow" data-catalog-group-count>3 chapters</p>
 					<h2 id="group-fees-symbols">Fees &amp; Symbols</h2>
 				</div>
 				<div class="doc-list">
@@ -391,7 +398,7 @@
 			</section>
 			<section class="version-catalog-group" data-catalog-group aria-labelledby="group-infrastructure">
 				<div class="section-heading">
-					<p class="eyebrow" data-catalog-group-count>06 chapters</p>
+					<p class="eyebrow" data-catalog-group-count>6 chapters</p>
 					<h2 id="group-infrastructure">Infrastructure</h2>
 				</div>
 				<div class="doc-list">
@@ -470,7 +477,7 @@
 			</section>
 			<section class="version-catalog-group" data-catalog-group aria-labelledby="group-upgrade-migration">
 				<div class="section-heading">
-					<p class="eyebrow" data-catalog-group-count>02 chapters</p>
+					<p class="eyebrow" data-catalog-group-count>2 chapters</p>
 					<h2 id="group-upgrade-migration">Upgrade &amp; Migration</h2>
 				</div>
 				<div class="doc-list">

@@ -32,7 +32,11 @@
 	/* --- Chapter manifest ----------------------------------------------------
 	   One ordered list per release. It drives the chapter rail, the
 	   "Chapter NN of NN" kicker, and the previous/next pager, so those three
-	   never disagree. Every chapter is its own `<slug>.html` reader page. */
+	   never disagree. Every chapter is its own `<slug>.html` reader page.
+
+	   Titles here must match the chapter page's own <h1> and its catalog card
+	   verbatim: one chapter, one name, on every surface. `npm run docs:check`
+	   fails the build when they drift. */
 	const MANIFESTS = {
 		"0.8.5": [
 			["account-layer", "Account & Fund Management", "AccountLayer"],
@@ -70,24 +74,24 @@
 		],
 		"0.8.6": [
 			["express-withdrawal-system-design", "Express Withdrawal", "Express Withdrawal System Design"],
-			["account-layer-ownership-delegation", "AccountLayer", "Delegated Creation & Ownership Transfer"],
+			["account-layer-ownership-delegation", "AccountLayer", "AccountLayer Delegated Creation & Ownership Transfer"],
 			["liquidation-funding-snapshot-fix", "Liquidation", "PartyA Liquidation Snapshot Flow"],
 			["single-step-partya-liquidation", "Liquidation", "Single-Step PartyA Liquidation"],
 			["affiliate-shutdown-flow", "Clearing House", "Affiliate Shutdown Flow"],
-			["muon-upnl-validity-overrides", "Muon", "UPNL Validity Overrides"],
+			["muon-upnl-validity-overrides", "Muon", "Muon UPNL Validity Overrides"],
 			["solver-fees", "Fees", "Solver Fees"],
 			["operational-fees", "Fees", "Operational Fees"],
 			["balance-change-event-cleanup", "Events & Indexing", "Allocated Balance Event Ledger"],
-			["symbol-adjustment", "Symbols", "Corporate-Action Adjustment"],
+			["symbol-adjustment", "Symbols", "Symbol Corporate-Action Adjustment"],
 			["strict-deallocation", "Accounts", "Strict Deallocation"],
 			["instant-open-gas-optimization", "Performance", "InstantOpen Gas Optimization"],
-			["partya-liquidation-fee-recipient", "Liquidation", "PartyA Liquidation Fee Recipient"],
-			["partyb-allocation-suspension-gates", "PartyB", "Allocation Suspension Gates"],
-			["cross-partyb-liquidation-reserve", "Liquidation", "Cross-PartyB Reserve Enforcement"],
+			["partya-liquidation-fee-recipient", "Liquidation", "PartyA Liquidation Fee Recipient Cleanup"],
+			["partyb-allocation-suspension-gates", "PartyB", "PartyB Allocation Suspension Gates"],
+			["cross-partyb-liquidation-reserve", "Liquidation", "Cross-PartyB Liquidation Reserve Enforcement"],
 			["delegation-account-scope", "AccountLayer", "Delegation Account Scope"],
-			["instant-layer-authorization-scope", "InstantLayer", "Authorization Scope"],
+			["instant-layer-authorization-scope", "InstantLayer", "InstantLayer Authorization Scope"],
 			["market-open-fee-execution-price", "Fees", "Market Open Fee on Execution Price"],
-			["partyb-funding-nonces", "PartyB", "Funding Update Nonces"],
+			["partyb-funding-nonces", "PartyB", "PartyB Funding Update Nonces"],
 			["bound-mode-unified-settlement", "Settlement", "Bound-Mode Unified Settlement"],
 			["diamond-owner-getter", "Views", "Diamond Owner Getter"],
 			["express-deposit-removal", "AccountLayer", "Express Deposit Removal"],
@@ -382,29 +386,23 @@
 		return trigger;
 	};
 
-	/* Chapter pages keep the rail focused on the current document. The release
-	   catalog is the final crumb in the persistent location trail. */
-	const installChapterIndexLink = () => {
+	/* A breadcrumb reads ancestor to current. The release crumb stays a link to the
+	   catalog it names, and the page the reader is actually on becomes the final,
+	   non-link crumb — previously the trail ended in a link pointing back up and
+	   never named the current page at all. */
+	const installTrailCurrent = title => {
 		const trail = document.querySelector(".docs-header .docs-trail");
-		const releaseLink = document.querySelector(".docs-trail .trail-link[href]");
-		if (!trail || !releaseLink || trail.querySelector("[data-chapter-index-link]")) return null;
-		const releaseHref = releaseLink.getAttribute("href");
-		const releaseCurrent = document.createElement("span");
-		releaseCurrent.className = "trail-current trail-version";
-		releaseCurrent.textContent = releaseLink.textContent;
-		releaseLink.replaceWith(releaseCurrent);
+		if (!trail || !title || trail.querySelector("[data-trail-current]")) return;
 		const separator = document.createElement("span");
-		separator.className = "trail-sep chapter-index-sep";
+		separator.className = "trail-sep";
 		separator.setAttribute("aria-hidden", "true");
-		const link = document.createElement("a");
-		link.className = "trail-link chapter-index-link";
-		link.dataset.chapterIndexLink = "true";
-		link.href = releaseHref;
-		link.setAttribute("aria-label", "Back to all chapters");
-		link.setAttribute("title", "Back to all chapters");
-		link.textContent = "Chapters";
-		trail.append(separator, link);
-		return link;
+		separator.textContent = "/";
+		const current = document.createElement("span");
+		current.className = "trail-current trail-chapter";
+		current.dataset.trailCurrent = "true";
+		current.setAttribute("aria-current", "page");
+		current.textContent = title;
+		trail.append(separator, current);
 	};
 
 	/* Tracks which heading the reader is inside and mirrors it in the rail. */
@@ -525,9 +523,13 @@
 		const entry = manifest.find(item => item.slug === currentSlug);
 		const companion = companions[currentSlug];
 
+		// Two panels: where you are inside this chapter, and where every other
+		// chapter is. Without the second one the only way to a sibling chapter is
+		// the pager or a round trip through the catalog.
 		const tabs = [{ key: "sections", label: "On this page" }];
+		if (manifest.length) tabs.push({ key: "chapters", label: "Chapters", search: "Search chapters" });
 
-		const { rail, list } = buildRail({
+		const { rail, list, search } = buildRail({
 			id: "docs-rail",
 			label: "Documentation navigation",
 			tabs,
@@ -547,8 +549,19 @@
 			sectionList.append(empty);
 		}
 
+		if (manifest.length) {
+			const chapterList = list("chapters");
+			renderChapterList(
+				chapterList,
+				manifest,
+				item => `${item.slug}.html`,
+				item => item.slug === currentSlug,
+			);
+			wireRailSearch(search("chapters"), chapterList);
+		}
+
 		shell.prepend(rail);
-		installChapterIndexLink();
+		installTrailCurrent(entry?.title || companion?.[1] || (document.querySelector(".reader-hero h1")?.textContent || "").trim());
 		wireRailChrome(rail, { trigger: installRailTrigger(rail.id, "Contents") });
 
 		// One kicker replaces the old breadcrumb, whose last crumb named the
@@ -584,196 +597,27 @@
 		trackSections(sectionList, Array.from(article.querySelectorAll("h2[id], h3[id], h4[id]")));
 	};
 
-	/* --- Complete reference ------------------------------------------------- */
-	const installCompleteShell = () => {
-		if (!body.classList.contains("consolidated-page")) return;
-		const shell = document.querySelector(".consolidated-shell");
-		const hero = document.querySelector(".consolidated-hero");
-		const sections = Array.from(document.querySelectorAll(".merged-document[id]"));
-		if (!shell || !sections.length) return;
-
-		shell.classList.add("has-rail");
-		if (hero && hero.parentElement !== shell) shell.prepend(hero);
-		const existing = shell.querySelector(".toc-panel, .topic-rail, .complete-section-toc");
-		if (existing) existing.remove();
-
-		const entries = sections.map((section, index) => {
-			const slug = section.id.replace(/^doc-/, "");
-			const known = manifest.find(item => item.slug === slug);
-			const heading = section.querySelector(":scope > h2");
-			const kicker = section.querySelector(":scope > .topic-kicker span:first-child");
-			return {
-				slug,
-				id: section.id,
-				number: index + 1,
-				category: known ? known.category : (kicker?.textContent || "Reference").trim(),
-				title: known ? known.title : (heading?.textContent || "Chapter").replace(/#$/, "").trim(),
-			};
-		});
-
-		const { rail, list } = buildRail({
-			id: "docs-rail",
-			label: "Documentation navigation",
-			tabs: [{ key: "sections", label: "On this page" }],
-			active: "sections",
-		});
-
-		// Keep every chapter's kicker in step with the manifest so the numbering
-		// on this page matches the numbering the chapter pages show.
-		entries.forEach(item => {
-			const section = document.getElementById(item.id);
-			let kicker = section.querySelector(":scope > .topic-kicker");
-			if (!kicker) {
-				kicker = document.createElement("p");
-				kicker.className = "topic-kicker";
-				section.prepend(kicker);
-			}
-			kicker.innerHTML = `<span>${escapeHtml(item.category)}</span><span>Chapter ${pad2(item.number)} of ${pad2(entries.length)}</span>`;
-
-			if (!section.querySelector(":scope > .chapter-pager")) {
-				const previous = entries[item.number - 2];
-				const next = entries[item.number];
-				if (!previous && !next) return;
-				const pager = document.createElement("nav");
-				pager.className = "chapter-pager";
-				pager.setAttribute("aria-label", "Adjacent chapters");
-				if (previous)
-					pager.innerHTML += `<a href="#${encodeURIComponent(previous.id)}"><small>Previous</small><span>${escapeHtml(previous.title)}</span></a>`;
-				if (next)
-					pager.innerHTML += `<a href="#${encodeURIComponent(next.id)}"><small>Next</small><span>${escapeHtml(next.title)}</span></a>`;
-				section.append(pager);
+	/* Both search fields answer to the same keys, so the shortcut a reader learns on
+	   the portal still works on the release catalog. */
+	const wireSearchShortcuts = (input, apply) => {
+		window.addEventListener("keydown", event => {
+			if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+				event.preventDefault();
+				input.focus();
+				input.select();
+			} else if (event.key === "Escape" && document.activeElement === input && input.value) {
+				input.value = "";
+				apply();
 			}
 		});
+	};
 
-		shell.prepend(rail);
-		wireRailChrome(rail, { trigger: installRailTrigger(rail.id, "Contents") });
-		installChapterIndexLink();
-
-		// The complete release is one long page. Its single outline lists every
-		// chapter, then expands the active chapter's subsections in place.
-		const sectionList = list("sections");
-		const chapterLinks = new Map();
-		entries.forEach(item => {
-			const link = document.createElement("a");
-			link.className = "toc-link level-2 has-section-index";
-			link.href = `#${encodeURIComponent(item.id)}`;
-			link.innerHTML = `<span class="toc-section-index">${pad2(item.number)}</span><span class="toc-section-label">${escapeHtml(item.title)}</span>`;
-			sectionList.append(link);
-			chapterLinks.set(item.id, link);
+	/* The hint reflects the platform's own modifier rather than always showing ⌘. */
+	const labelSearchShortcut = () => {
+		const isApple = /mac|iphone|ipad|ipod/i.test(navigator.platform || navigator.userAgent || "");
+		document.querySelectorAll("[data-search-hint]").forEach(hint => {
+			hint.textContent = isApple ? "⌘K" : "Ctrl K";
 		});
-
-		let currentSection = null;
-		let currentSublist = null;
-		let frame = 0;
-		const renderSubsections = section => {
-			currentSection = section;
-			currentSublist?.remove();
-			currentSublist = null;
-			chapterLinks.forEach((link, id) => {
-				const current = id === section.id;
-				link.classList.toggle("is-active", current);
-				if (current) link.setAttribute("aria-current", "location");
-				else link.removeAttribute("aria-current");
-			});
-
-			const headings = Array.from(section.querySelectorAll(":scope > h3[id], :scope > h4[id]"));
-			if (!headings.length) return;
-
-			const activeEntry = entries.find(item => item.id === section.id);
-			const sublist = document.createElement("div");
-			sublist.className = "toc-sublist";
-			sublist.setAttribute("role", "group");
-			sublist.setAttribute("aria-label", `${activeEntry?.title || "Chapter"} subsections`);
-			headings.forEach(heading => {
-				const link = document.createElement("a");
-				link.className = "toc-link level-3";
-				link.href = `#${encodeURIComponent(heading.id)}`;
-				link.textContent = (heading.textContent || "Section").replace(/#$/, "").trim();
-				sublist.append(link);
-			});
-			chapterLinks.get(section.id)?.after(sublist);
-			currentSublist = sublist;
-		};
-		const syncActive = () => {
-			frame = 0;
-			// A merged chapter becomes the current one as its opening block enters the
-			// reading area. Waiting until its outer section crosses the header leaves
-			// the previous chapter highlighted while the new title is already visible,
-			// which is especially obvious when the compact drawer opens.
-			const marker = headerHeight() + Math.min(160, window.innerHeight * 0.22);
-			let active = sections[0];
-			for (const section of sections) {
-				if (section.getBoundingClientRect().top <= marker) active = section;
-				else break;
-			}
-			if (!active) return;
-			if (active !== currentSection) renderSubsections(active);
-			const headings = Array.from(active.querySelectorAll(":scope > h3[id], :scope > h4[id]"));
-			let heading = headings[0] || null;
-			for (const candidate of headings) {
-				if (candidate.getBoundingClientRect().top <= marker + 24) heading = candidate;
-				else break;
-			}
-			currentSublist?.querySelectorAll(".toc-link").forEach(link => {
-				const current = Boolean(heading) && decodeURIComponent(link.hash.slice(1)) === heading.id;
-				link.classList.toggle("is-active", current);
-				if (current) link.setAttribute("aria-current", "location");
-				else link.removeAttribute("aria-current");
-			});
-		};
-		const schedule = () => {
-			if (!frame) frame = window.requestAnimationFrame(syncActive);
-		};
-		window.addEventListener("scroll", schedule, { passive: true });
-		window.addEventListener("resize", schedule);
-		window.addEventListener("hashchange", schedule);
-		syncActive();
-
-		// The legacy complete page is reshaped after parsing. Browsers may perform
-		// their initial fragment jump before that work changes the document height,
-		// leaving a deep-link URL pointed at the previous chapter. Restore the target
-		// once the final shell has settled, then synchronize the rail to it.
-		const initialFragment = window.location.hash;
-		const fragmentRoot = document.documentElement;
-		const previousScrollBehavior = fragmentRoot.style.scrollBehavior;
-		const previousScrollPriority = fragmentRoot.style.getPropertyPriority("scroll-behavior");
-		const restoreScrollBehavior = () => {
-			if (previousScrollBehavior) fragmentRoot.style.setProperty("scroll-behavior", previousScrollBehavior, previousScrollPriority);
-			else fragmentRoot.style.removeProperty("scroll-behavior");
-		};
-		// Prevent the stylesheet's smooth scrolling from starting a native fragment
-		// animation before the merged page finishes changing its own height.
-		if (initialFragment) fragmentRoot.style.setProperty("scroll-behavior", "auto", "important");
-		const restoreInitialFragment = () => {
-			// Do not revive an initial target after the reader has chosen another one.
-			if (!initialFragment || window.location.hash !== initialFragment) {
-				restoreScrollBehavior();
-				return;
-			}
-			window.requestAnimationFrame(() => {
-				let targetId = "";
-				try {
-					targetId = decodeURIComponent(initialFragment.slice(1));
-				} catch (_error) {
-					targetId = "";
-				}
-				const target = targetId ? document.getElementById(targetId) : null;
-				if (!target) {
-					restoreScrollBehavior();
-					return;
-				}
-				window.scrollTo(window.scrollX, window.scrollY);
-				target.scrollIntoView({ block: "start" });
-				window.requestAnimationFrame(() => {
-					restoreScrollBehavior();
-					syncActive();
-				});
-			});
-		};
-		if (initialFragment) {
-			if (document.readyState === "complete") restoreInitialFragment();
-			else window.addEventListener("load", restoreInitialFragment, { once: true });
-		}
 	};
 
 	/* --- Release catalogs --------------------------------------------------- */
@@ -822,14 +666,25 @@
 		});
 		if (count) count.textContent = describe(total);
 		input.addEventListener("input", apply);
+		wireSearchShortcuts(input, apply);
 	};
 
 	/* --- Version portal search --------------------------------------------- */
+	// A search field, a live count and a keyboard shortcut are worth their space
+	// only once the list is long enough to be worth filtering. Below that the
+	// controls stay in the markup but out of the way.
+	const VERSION_SEARCH_MIN_ITEMS = 6;
+
 	const installVersionSearch = () => {
 		const input = document.querySelector("[data-version-search]");
 		if (!input) return;
 		const items = Array.from(document.querySelectorAll("[data-version-item]"));
 		if (!items.length) return;
+		if (items.length < VERSION_SEARCH_MIN_ITEMS) {
+			input.closest(".portal-search")?.remove();
+			document.querySelector("[data-version-count]")?.remove();
+			return;
+		}
 		const count = document.querySelector("[data-version-count]");
 		const empty = document.querySelector("[data-version-empty]");
 		const describe = value => `${value} ${value === 1 ? "version" : "versions"}`;
@@ -848,22 +703,13 @@
 		};
 
 		input.addEventListener("input", apply);
-		window.addEventListener("keydown", event => {
-			if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-				event.preventDefault();
-				input.focus();
-				input.select();
-			} else if (event.key === "Escape" && document.activeElement === input && input.value) {
-				input.value = "";
-				apply();
-			}
-		});
+		wireSearchShortcuts(input, apply);
 	};
 
 	/* --- Back to top -------------------------------------------------------- */
 	const installBackToTop = () => {
 		let button = document.querySelector("[data-back-to-top]");
-		if (!button && (body.classList.contains("doc-page") || body.classList.contains("consolidated-page"))) {
+		if (!button && body.classList.contains("doc-page")) {
 			button = document.createElement("button");
 			button.type = "button";
 			button.className = "back-to-top";
@@ -878,23 +724,6 @@
 		window.addEventListener("scroll", sync, { passive: true });
 		button.addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
 		sync();
-	};
-
-	/* --- v0.8.5 markdown release polish ------------------------------------- */
-	const enhanceMarkdownRelease = () => {
-		if (!body.matches('.consolidated-page[data-version="0.8.5"]')) return;
-		document.querySelectorAll(".merged-document").forEach(section => {
-			section.querySelectorAll(":scope > table").forEach(table => {
-				if (table.parentElement?.classList.contains("table-wrap")) return;
-				const wrapper = document.createElement("div");
-				wrapper.className = "table-wrap";
-				table.before(wrapper);
-				wrapper.append(table);
-			});
-			section.querySelectorAll("blockquote").forEach(blockquote => {
-				blockquote.classList.add("callout", "callout-note");
-			});
-		});
 	};
 
 	/* --- Deep links --------------------------------------------------------- */
@@ -912,17 +741,14 @@
 		root.style.scrollBehavior = previousBehavior;
 	};
 
-	enhanceMarkdownRelease();
 	installReaderShell();
-	installCompleteShell();
 	installCatalog();
 	installVersionSearch();
+	labelSearchShortcut();
 	installBackToTop();
 
-	// Individual reader pages can need delayed realignment as diagrams settle.
-	// The merged release owns its post-layout fragment restore above; scheduling
-	// both would let these retries snap the reader back after later navigation.
-	if (initialHash && !body.classList.contains("consolidated-page")) {
+	// Reader pages can need delayed realignment as diagrams settle into place.
+	if (initialHash) {
 		window.addEventListener(
 			"load",
 			() => {
