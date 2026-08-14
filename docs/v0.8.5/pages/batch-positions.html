@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Batch Position Management - Symmio Core v0.8.5</title>
+		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
+		<link rel="stylesheet" href="../../v0.8.6/assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../../v0.8.6/assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.5">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.5</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#doc-batch-positions-openpositions-fillcloserequests">openPositions / fillCloseRequests</a>
+			</div>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1><strong>Batch Position Management</strong></h1>
+							<p class="hero-copy">
+								Under heavy loads, when PartyB is receiving a large number of requests, obtaining a Muon signature for each one and
+								then sending them individually to the contract can slow down solver response times.
+							</p>
+						</div>
+					</div>
+				</header>
+				<article class="doc-article" id="full-document">
+					<p>
+						To address this, we added <strong>batch methods</strong> to the contract. These methods still require new Muon signatures, but
+						they allow multiple positions to be opened or closed in a single transaction using one <strong>batch signature</strong>.
+					</p>
+					<h2 id="doc-batch-positions-openpositions-fillcloserequests">
+						<strong><code>openPositions</code> / <code>fillCloseRequests</code></strong>
+					</h2>
+					<pre><code class="language-solidity">    function openPositions(
+        uint256[] memory quoteIds,
+        uint256[] memory filledAmounts,
+        uint256[] memory openedPrices,
+        PairUpnlAndPricesSig memory upnlSig
+    ) external;
+
+    function fillCloseRequests(
+        uint256[] memory quoteIds,
+        uint256[] memory filledAmounts,
+        uint256[] memory closedPrices,
+        PairUpnlAndPricesSig memory upnlSig
+    ) external;
+</code></pre>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer"><span>Symmio Core v0.8.5 documentation.</span></footer>
+	</body>
+</html>

@@ -6,47 +6,47 @@
 		<title>SYMMIO Operator Guide</title>
 		<link rel="icon" type="image/svg+xml" href="v0.8.6/assets/symmio-mark.svg" />
 		<link rel="stylesheet" href="v0.8.6/assets/v086-docs.css" />
+		<link rel="stylesheet" href="assets/docs-portal.css" />
 		<script src="v0.8.6/assets/v086-docs.js" defer></script>
+		<script src="assets/docs-portal.js" defer></script>
 	</head>
 	<body class="doc-page">
 		<a class="skip-link" href="#full-document">Skip to document</a>
-		<header class="doc-topbar">
-			<a class="brand" href="v0.8.6/index.html"
-				><span class="brand-mark">8.6</span><span><strong>Symmio Docs</strong><small>Operator guide</small></span></a
-			>
-			<nav class="top-actions" aria-label="Page actions">
-				<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
-			</nav>
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<span class="trail-current" aria-current="page">Operator guide</span>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<a class="button ghost" href="v0.8.6/index.html">v0.8.6 docs</a>
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
 		</header>
 
 		<div class="reader-shell">
-			<aside class="doc-sidebar" aria-label="Documentation navigation">
-				<a class="button primary back-home" href="v0.8.6/index.html">Back to index</a>
-				<div class="side-card">
-					<p class="side-label">Related</p>
-					<a class="side-link" href="deployment.md"><small>Runbook</small><span>Deployment safety contract</span></a>
-					<a class="side-link" href="../cli/README.md"><small>Reference</small><span>Task and registration standard</span></a>
-					<a class="side-link" href="../deployment/README.md"><small>Recipes</small><span>Portable intent format</span></a>
-				</div>
-			</aside>
-
-			<aside class="toc-panel side-toc" aria-label="Page navigation">
-				<div class="toc-card">
-					<p class="toc-title">On this page</p>
-					<a class="toc-link level-2" href="#start">Start</a>
-					<a class="toc-link level-2" href="#forms">Guided configuration</a>
-					<a class="toc-link level-2" href="#task">One durable task</a>
-					<a class="toc-link level-2" href="#progress">Progress and recovery</a>
-					<a class="toc-link level-2" href="#handover">Handover</a>
-					<a class="toc-link level-2" href="#evidence">Evidence</a>
-				</div>
-			</aside>
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#start">Start</a>
+				<a class="toc-link level-2" href="#forms">Guided configuration</a>
+				<a class="toc-link level-2" href="#task">One durable task</a>
+				<a class="toc-link level-2" href="#progress">Progress and recovery</a>
+				<a class="toc-link level-2" href="#handover">Handover</a>
+				<a class="toc-link level-2" href="#evidence">Evidence</a>
+				<section class="rail-group rail-group-plain">
+					<h2 class="rail-group-title">Related</h2>
+					<a class="rail-link" href="deployment.md"><span class="rail-label">Deployment safety contract</span></a>
+					<a class="rail-link" href="../cli/README.md"><span class="rail-label">Task and registration standard</span></a>
+					<a class="rail-link" href="../deployment/README.md"><span class="rail-label">Portable intent format</span></a>
+				</section>
+			</div>
 
 			<main class="reader-main">
 				<header class="reader-hero">
-					<nav class="crumbs" aria-label="Breadcrumb">
-						<a href="v0.8.6/index.html">Docs</a><span>/</span><strong>Operator guide</strong>
-					</nav>
+					<p class="topic-kicker"><span>Operations</span><span>Operator guide</span></p>
 					<div class="reader-title-row">
 						<div>
 							<h1>Operate SYMMIO from one menu</h1>

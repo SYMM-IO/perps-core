@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Soft Liquidation - Symmio Core v0.8.5</title>
+		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
+		<link rel="stylesheet" href="../../v0.8.6/assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../../v0.8.6/assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.5">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.5</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#doc-soft-liquidation-what-can-we-do-instead">What can we do instead?</a>
+				<a class="toc-link level-2" href="#doc-soft-liquidation-why-are-we-doing-this">Why are we doing this?</a>
+				<a class="toc-link level-2" href="#doc-soft-liquidation-contract-implementation">Contract Implementation</a>
+				<a class="toc-link level-3" href="#doc-soft-liquidation-method-signature">Method Signature</a>
+				<a class="toc-link level-3" href="#doc-soft-liquidation-parameters">Parameters</a>
+				<a class="toc-link level-3" href="#doc-soft-liquidation-behavior">Behavior</a>
+				<a class="toc-link level-3" href="#doc-soft-liquidation-event">Event</a>
+			</div>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Soft Liquidation</h1>
+							<p class="hero-copy">
+								Currently, the system only supports hard liquidation for PartyBs. This means that if a PartyB's liquidity ever drops
+								below the amount required to cover their total position uPNL, we immediately take their entire balance and close all
+								of their positions — even if they have thousands of them. It's an extremely harsh, all-or-nothing approach.
+							</p>
+						</div>
+					</div>
+				</header>
+				<article class="doc-article" id="full-document">
+					<h2 id="doc-soft-liquidation-what-can-we-do-instead">What can we do instead?</h2>
+					<p>
+						For example, suppose a PartyB's locked balance is $200. If their balance falls below $200, we can still perform a hard
+						liquidation as before.
+					</p>
+					<p>But we can introduce earlier "warning" stages:</p>
+					<ul>
+						<li>
+							<p>At <strong>$350</strong>, we send the PartyB an on-chain notice:</p>
+							<blockquote>
+								<p>"You're running low on funds — take action."</p>
+								<ul>
+									<li>At <strong>$300</strong>, we send another on-chain notice, this time with a penalty:</li>
+								</ul>
+								<p>"You're still not addressing this — we're deducting $50."</p>
+							</blockquote>
+						</li>
+					</ul>
+					<p>
+						The tiers at which warnings and penalties trigger, as well as the penalty amounts, will be configurable off-chain. This allows
+						us to treat new PartyBs differently from well-established ones, being more lenient with well-established ones.
+					</p>
+					<p>
+						Even if the PartyB reaches the $200 hard-liquidation threshold, we may still choose to apply another soft-liquidation cycle
+						instead of immediately hard liquidating — up until a final limit such as $150.
+					</p>
+					<h2 id="doc-soft-liquidation-why-are-we-doing-this">Why are we doing this?</h2>
+					<p>
+						Hard liquidations cause major disruptions to user experience across all frontends. We know these solvers are reliable and will
+						eventually replenish their funds—they just may be delayed for trivial reasons. A softer, tiered approach stabilizes the system
+						without punishing them excessively.
+					</p>
+					<h2 id="doc-soft-liquidation-contract-implementation">Contract Implementation</h2>
+					<p>
+						We add a method in <code>ClearingHouseFacet</code> that emits an event and charges a penalty. This method is callable by
+						addresses with the <code>SOFT_LIQUIDATOR_ROLE</code>.
+					</p>
+					<h3 id="doc-soft-liquidation-method-signature">Method Signature</h3>
+					<pre><code class="language-solidity">function softPartyBLiquidation(
+    address partyB,
+    address partyA,
+    uint256 penaltyFromAllocated,
+    uint256 penaltyFromBalance
+) external
+</code></pre>
+					<h3 id="doc-soft-liquidation-parameters">Parameters</h3>
+					<table>
+						<thead>
+							<tr>
+								<th>Parameter</th>
+								<th>Type</th>
+								<th>Description</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>partyB</code></td>
+								<td><code>address</code></td>
+								<td>The PartyB being soft liquidated</td>
+							</tr>
+							<tr>
+								<td><code>partyA</code></td>
+								<td><code>address</code></td>
+								<td>The specific PartyA whose allocation to deduct from. Pass <code>address(0)</code> for cross-mode PartyBs</td>
+							</tr>
+							<tr>
+								<td><code>penaltyFromAllocated</code></td>
+								<td><code>uint256</code></td>
+								<td>Amount to deduct from the allocated balance</td>
+							</tr>
+							<tr>
+								<td><code>penaltyFromBalance</code></td>
+								<td><code>uint256</code></td>
+								<td>Amount to deduct from the unallocated balance</td>
+							</tr>
+						</tbody>
+					</table>
+					<h3 id="doc-soft-liquidation-behavior">Behavior</h3>
+					<ul>
+						<li>
+							<strong>Cross-mode PartyBs</strong> (<code>partyA = address(0)</code>): Penalties are deducted from the PartyB's
+							cross-allocated balance and/or unallocated balance
+						</li>
+						<li>
+							<strong>Non-cross-mode PartyBs</strong> (<code>partyA = specific address</code>): Penalties are deducted from the PartyB's
+							allocation for that specific PartyA and/or their unallocated balance
+						</li>
+					</ul>
+					<p>Penalty amounts are transferred to the configured <code>softLiquidationPenaltyCollector</code> address.</p>
+					<h3 id="doc-soft-liquidation-event">Event</h3>
+					<pre><code class="language-solidity">event SoftPartyBLiquidation(
+    address indexed partyB,
+    address indexed partyA,
+    uint256 penaltyFromAllocated,
+    uint256 penaltyFromBalance
+)
+</code></pre>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer"><span>Symmio Core v0.8.5 documentation.</span></footer>
+	</body>
+</html>

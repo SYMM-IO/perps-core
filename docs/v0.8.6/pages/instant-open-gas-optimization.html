@@ -6,47 +6,50 @@
 		<title>InstantOpen Gas Optimization - Symmio Core v0.8.6</title>
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
 		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
 		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
 	</head>
-	<body class="doc-page">
+	<body class="doc-page" data-version="0.8.6">
 		<a class="skip-link" href="#full-document">Skip to document</a>
 
-		<header class="doc-topbar">
-			<a class="brand" href="../index.html"
-				><span class="brand-mark">8.6</span><span><strong>v0.8.6 Changelog</strong></span></a
-			>
-			<nav class="top-actions" aria-label="Page actions">
-				<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
-			</nav>
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
 		</header>
 
 		<div class="reader-shell">
-			<aside class="doc-sidebar" aria-label="Documentation navigation" data-doc-nav></aside>
-			<aside class="toc-panel side-toc" aria-label="Page navigation">
-				<div class="toc-card">
-					<p class="toc-title">On this page</p>
-					<a class="toc-link level-2" href="#summary">Summary</a>
-					<a class="toc-link level-2" href="#operation-compression">Two Operations Instead of Four</a>
-					<a class="toc-link level-3" href="#old-flow">The Existing Four-Operation Template</a>
-					<a class="toc-link level-3" href="#lock-and-open">Combined Core Entry</a>
-					<a class="toc-link level-3" href="#call-with-margin">Combined AccountLayer Entry</a>
-					<a class="toc-link level-3" href="#two-op-template">The Compact Template</a>
-					<a class="toc-link level-2" href="#transient">Transient Execution Context</a>
-					<a class="toc-link level-3" href="#authority">The Authority Carried by a Batch</a>
-					<a class="toc-link level-3" href="#context-word">The Core Live Context Word</a>
-					<a class="toc-link level-3" href="#fallback">The Fallback Rule</a>
-					<a class="toc-link level-3" href="#signer">Why the Transient Signer Uses Two Slots</a>
-					<a class="toc-link level-2" href="#suspend-overview">Suspending Authority Around Hooks</a>
-					<a class="toc-link level-3" href="#signer-restoration">How Alice Is Restored After a Hook</a>
-					<a class="toc-link level-3" href="#snapshot">How the Snapshot Is Encoded</a>
-					<a class="toc-link level-3" href="#lifecycle">Closing the Batch Scope</a>
-					<a class="toc-link level-2" href="#compat">Compatibility and Pre-Cancun Porting</a>
-				</div>
-			</aside>
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#summary">Summary</a>
+				<a class="toc-link level-2" href="#operation-compression">Two Operations Instead of Four</a>
+				<a class="toc-link level-3" href="#old-flow">The Existing Four-Operation Template</a>
+				<a class="toc-link level-3" href="#lock-and-open">Combined Core Entry</a>
+				<a class="toc-link level-3" href="#call-with-margin">Combined AccountLayer Entry</a>
+				<a class="toc-link level-3" href="#two-op-template">The Compact Template</a>
+				<a class="toc-link level-2" href="#transient">Transient Execution Context</a>
+				<a class="toc-link level-3" href="#authority">The Authority Carried by a Batch</a>
+				<a class="toc-link level-3" href="#context-word">The Core Live Context Word</a>
+				<a class="toc-link level-3" href="#fallback">The Fallback Rule</a>
+				<a class="toc-link level-3" href="#signer">Why the Transient Signer Uses Two Slots</a>
+				<a class="toc-link level-2" href="#suspend-overview">Suspending Authority Around Hooks</a>
+				<a class="toc-link level-3" href="#signer-restoration">How Alice Is Restored After a Hook</a>
+				<a class="toc-link level-3" href="#snapshot">How the Snapshot Is Encoded</a>
+				<a class="toc-link level-3" href="#lifecycle">Closing the Batch Scope</a>
+				<a class="toc-link level-2" href="#compat">Compatibility and Pre-Cancun Porting</a>
+			</div>
 
 			<main class="reader-main">
 				<header class="reader-hero">
-					<nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">v0.8.6</a><span>/</span><strong>Performance</strong></nav>
 					<div class="reader-title-row">
 						<div>
 							<h1>InstantOpen Gas Optimization</h1>
@@ -60,7 +63,7 @@
 					</div>
 				</header>
 
-				<article class="doc-article" id="full-document" tabindex="-1" data-disable-function-reference>
+				<article class="doc-article" id="full-document" tabindex="-1">
 					<h2 id="summary">Summary</h2>
 					<p>
 						The existing atomic InstantOpen template crosses InstantLayer four times: the user funds the next virtual account and sends
@@ -551,7 +554,6 @@
 
 		<footer class="site-footer">
 			<span>Symmio Core v0.8.6 documentation.</span>
-			<span>Protocol, operations, and integration notes.</span>
 		</footer>
 	</body>
 </html>
