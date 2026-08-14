@@ -45,7 +45,9 @@
 					>
 					<a class="side-link" href="../pages/solver-fees.html"><small>Fees</small><span>Solver Fees</span></a>
 					<a class="side-link is-active" href="../pages/operational-fees.html"><small>Fees</small><span>Operational Fees</span></a>
-					<a class="side-link" href="../pages/symbol-adjustment.html"><small>Symbols</small><span>Symbol Corporate-Action Adjustment</span></a>
+					<a class="side-link" href="../pages/symbol-adjustment.html"
+						><small>Symbols</small><span>Symbol Corporate-Action Adjustment</span></a
+					>
 					<a class="side-link" href="../pages/partya-liquidation-fee-recipient.html"
 						><small>Liquidation</small><span>PartyA Liquidation Fee Recipient Cleanup</span></a
 					>
@@ -59,15 +61,18 @@
 					<a class="side-link" href="../pages/cross-partyb-liquidation-reserve.html"
 						><small>Liquidation</small><span>Cross-PartyB Liquidation Reserve Enforcement</span></a
 					>
-					<a class="side-link" href="../pages/delegation-account-scope.html"><small>AccountLayer</small><span>Delegation Account Scope</span></a>
-					<a class="side-link" href="../pages/strict-deallocation.html"
-						><small>Accounts</small><span>Strict Deallocation</span></a
+					<a class="side-link" href="../pages/delegation-account-scope.html"
+						><small>AccountLayer</small><span>Delegation Account Scope</span></a
 					>
+					<a class="side-link" href="../pages/strict-deallocation.html"><small>Accounts</small><span>Strict Deallocation</span></a>
 					<a class="side-link" href="../pages/express-bot-operations-checklist.html"
 						><small>Express Withdrawal</small><span>Express Provider Bot Operations Checklist</span></a
 					>
 					<a class="side-link" href="../pages/market-open-fee-execution-price.html"
 						><small>Fees</small><span>Market Open Fee on Execution Price</span></a
+					>
+					<a class="side-link" href="../pages/position-isolation-partial-fill.html"
+						><small>AccountLayer</small><span>Position Isolation Partial Fill Remainder</span></a
 					>
 				</div>
 			</aside>
@@ -92,9 +97,7 @@
 					<div class="reader-title-row">
 						<div>
 							<h1>Operational Fees</h1>
-							<p class="hero-copy">
-								A fee primitive for per-operation work that should not be embedded in quote pricing.
-							</p>
+							<p class="hero-copy">A fee primitive for per-operation work that should not be embedded in quote pricing.</p>
 						</div>
 					</div>
 				</header>
@@ -144,8 +147,8 @@
 							disable an explicitly registered service charger via <code>unregisterOperationalFeeCharger</code>.
 						</li>
 						<li>
-							<strong>Guards</strong>: the charge path has no external-call surface, and the payer must not be suspended or under
-							active PartyA liquidation.
+							<strong>Guards</strong>: the charge path has no external-call surface, and the payer must not be suspended or under active
+							PartyA liquidation.
 						</li>
 					</ol>
 
@@ -166,8 +169,8 @@
 					<p>
 						The caller must be either the charger itself or an address holding <code>FEE_ADMIN_ROLE</code> -- the same role that registers
 						chargers in the first place. Passing <code>address(0)</code> resets the receiver back to the charger. The receiver is resolved
-						at charge time, so a change only affects subsequent fees.
-						<code>ViewFacet.getOperationalFeeReceiver(charger)</code> returns the effective receiver.
+						at charge time, so a change only affects subsequent fees. <code>ViewFacet.getOperationalFeeReceiver(charger)</code> returns
+						the effective receiver.
 					</p>
 					<p>
 						Solver <strong>rate</strong> fees have a parallel but independent setting, <code>ControlFacet.setSolverFeeReceiver</code>,
@@ -188,18 +191,14 @@
 						but the integration wants the fee to come from the parent SubAccount.
 					</p>
 					<ol>
-						<li>
-							The user grants <code>allowance[SA][relayer] = N</code>.
-						</li>
+						<li>The user grants <code>allowance[SA][relayer] = N</code>.</li>
 						<li>A registered relayer receives a "remove margin from <code>VA-BTC-Long</code>" signed op.</li>
 						<li>
 							The relayer determines <code>VA-BTC-Long</code>'s parent SubAccount before charging and calls
 							<code>chargeOperationalFee(SA, fee)</code>. The fee is drawn from <code>SA</code>'s <strong>free</strong> balance; no
 							<code>VA-BTC-Long</code> margin is touched.
 						</li>
-						<li>
-							The relayer submits <code>InstantLayer.executeBatch</code> for the signed operation.
-						</li>
+						<li>The relayer submits <code>InstantLayer.executeBatch</code> for the signed operation.</li>
 					</ol>
 
 					<h2 id="solvency">Solvency</h2>
@@ -289,7 +288,6 @@
 						When a relayer pays gas for a user's signed operation, it can collect the operational fee in that same transaction. The
 						transaction charges the selected payer, then executes the signed operation. If execution reverts, the charge reverts with it.
 					</p>
-
 				</article>
 			</main>
 		</div>

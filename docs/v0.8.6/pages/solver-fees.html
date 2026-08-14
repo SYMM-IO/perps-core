@@ -45,7 +45,9 @@
 					>
 					<a class="side-link is-active" href="../pages/solver-fees.html"><small>Fees</small><span>Solver Fees</span></a>
 					<a class="side-link" href="../pages/operational-fees.html"><small>Fees</small><span>Operational Fees</span></a>
-					<a class="side-link" href="../pages/symbol-adjustment.html"><small>Symbols</small><span>Symbol Corporate-Action Adjustment</span></a>
+					<a class="side-link" href="../pages/symbol-adjustment.html"
+						><small>Symbols</small><span>Symbol Corporate-Action Adjustment</span></a
+					>
 					<a class="side-link" href="../pages/partya-liquidation-fee-recipient.html"
 						><small>Liquidation</small><span>PartyA Liquidation Fee Recipient Cleanup</span></a
 					>
@@ -59,15 +61,18 @@
 					<a class="side-link" href="../pages/cross-partyb-liquidation-reserve.html"
 						><small>Liquidation</small><span>Cross-PartyB Liquidation Reserve Enforcement</span></a
 					>
-					<a class="side-link" href="../pages/delegation-account-scope.html"><small>AccountLayer</small><span>Delegation Account Scope</span></a>
-					<a class="side-link" href="../pages/strict-deallocation.html"
-						><small>Accounts</small><span>Strict Deallocation</span></a
+					<a class="side-link" href="../pages/delegation-account-scope.html"
+						><small>AccountLayer</small><span>Delegation Account Scope</span></a
 					>
+					<a class="side-link" href="../pages/strict-deallocation.html"><small>Accounts</small><span>Strict Deallocation</span></a>
 					<a class="side-link" href="../pages/express-bot-operations-checklist.html"
 						><small>Express Withdrawal</small><span>Express Provider Bot Operations Checklist</span></a
 					>
 					<a class="side-link" href="../pages/market-open-fee-execution-price.html"
 						><small>Fees</small><span>Market Open Fee on Execution Price</span></a
+					>
+					<a class="side-link" href="../pages/position-isolation-partial-fill.html"
+						><small>AccountLayer</small><span>Position Isolation Partial Fill Remainder</span></a
 					>
 				</div>
 			</aside>
@@ -94,7 +99,8 @@
 							<h1>Solver Fees</h1>
 							<p class="hero-copy">
 								v0.8.6 adds explicit solver rate fees, charged from PartyA allocated balance instead of being hidden inside a worse
-								execution price. Operational fees (flat per-op charges shared with registered relayers) are a separate primitive -- see
+								execution price. Operational fees (flat per-op charges shared with registered relayers) are a separate primitive --
+								see
 								<a href="../pages/operational-fees.html">Operational Fees</a>.
 							</p>
 						</div>
@@ -140,7 +146,8 @@ closeFeeCharged + newCloseSolverFee &lt;= closeNotional * closeRateCap / 1e18
 
 					<h2 id="api-surface">API Surface</h2>
 					<p>
-						Solver fee rate caps are stored directly for the open and close sides. Operational fees are separate from the quote state -- see
+						Solver fee rate caps are stored directly for the open and close sides. Operational fees are separate from the quote state --
+						see
 						<a href="../pages/operational-fees.html">Operational Fees</a>.
 					</p>
 					<pre><code class="language-solidity">struct SolverFeeCaps {

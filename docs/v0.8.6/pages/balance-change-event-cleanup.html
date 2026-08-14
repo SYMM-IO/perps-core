@@ -45,7 +45,9 @@
 					>
 					<a class="side-link" href="../pages/solver-fees.html"><small>Fees</small><span>Solver Fees</span></a>
 					<a class="side-link" href="../pages/operational-fees.html"><small>Fees</small><span>Operational Fees</span></a>
-					<a class="side-link" href="../pages/symbol-adjustment.html"><small>Symbols</small><span>Symbol Corporate-Action Adjustment</span></a>
+					<a class="side-link" href="../pages/symbol-adjustment.html"
+						><small>Symbols</small><span>Symbol Corporate-Action Adjustment</span></a
+					>
 					<a class="side-link" href="../pages/partya-liquidation-fee-recipient.html"
 						><small>Liquidation</small><span>PartyA Liquidation Fee Recipient Cleanup</span></a
 					>
@@ -59,13 +61,18 @@
 					<a class="side-link" href="../pages/cross-partyb-liquidation-reserve.html"
 						><small>Liquidation</small><span>Cross-PartyB Liquidation Reserve Enforcement</span></a
 					>
-					<a class="side-link" href="../pages/delegation-account-scope.html"><small>AccountLayer</small><span>Delegation Account Scope</span></a>
+					<a class="side-link" href="../pages/delegation-account-scope.html"
+						><small>AccountLayer</small><span>Delegation Account Scope</span></a
+					>
 					<a class="side-link" href="../pages/strict-deallocation.html"><small>Accounts</small><span>Strict Deallocation</span></a>
 					<a class="side-link" href="../pages/express-bot-operations-checklist.html"
 						><small>Express Withdrawal</small><span>Express Provider Bot Operations Checklist</span></a
 					>
 					<a class="side-link" href="../pages/market-open-fee-execution-price.html"
 						><small>Fees</small><span>Market Open Fee on Execution Price</span></a
+					>
+					<a class="side-link" href="../pages/position-isolation-partial-fill.html"
+						><small>AccountLayer</small><span>Position Isolation Partial Fill Remainder</span></a
 					>
 				</div>
 			</aside>
@@ -519,8 +526,8 @@ event SettlePartyALiquidation(
 								<tr>
 									<td>Total LF received by the liquidation starter</td>
 									<td>
-										Use <code>BalanceChangePartyA(recipient, amount, LF_IN)</code> in the final settlement receipt. This is the whole
-										capped liquidation fee; LF exists only for <code>NORMAL</code> liquidation, so <code>LATE</code>,
+										Use <code>BalanceChangePartyA(recipient, amount, LF_IN)</code> in the final settlement receipt. This is the
+										whole capped liquidation fee; LF exists only for <code>NORMAL</code> liquidation, so <code>LATE</code>,
 										<code>OVERDUE</code>, and takeover-cleared liquidations emit none.
 									</td>
 									<td>The event address and amount are the exact recipient allocation credit.</td>
@@ -528,8 +535,8 @@ event SettlePartyALiquidation(
 								<tr>
 									<td>LF funded from the liquidated PartyA's allocation</td>
 									<td>
-										Use <code>BalanceChangePartyA(partyA, amount, LF_OUT)</code> in that same final receipt. This is only the part of
-										the fee the live allocation could cover, not PartyA's total economic LF payment.
+										Use <code>BalanceChangePartyA(partyA, amount, LF_OUT)</code> in that same final receipt. This is only the part
+										of the fee the live allocation could cover, not PartyA's total economic LF payment.
 									</td>
 									<td>
 										The event amount is the exact debit from the liquidated user's allocated balance. Treat an absent
@@ -590,11 +597,11 @@ partyALfCost(partyA)              = lockedValues.lf on the liquidated position</
 						<strong><code>LF_OUT</code> is not what the liquidation cost PartyA.</strong> The fee is sized against <em>locked</em> LF, but
 						debited from <em>allocated</em> balance, and those two can hold different amounts by the time finalization runs. Liquidation
 						start moves <code>allocated - (lockedCva + lockedLf) + upnl</code> into deferred balance; when <code>upnl</code> is positive
-						that sweep carries off part of the LF backing, leaving less allocated than the fee. Finalization then debits only what remains,
-						because emitting the full fee against a smaller bucket would break exact replay. So <code>LF_OUT</code> is the slice of the cost
-						that was still in allocated at that moment -- the rest already left PartyA, in the deferred sweep. Read the difference as
-						<code>LF_IN - LF_OUT</code>; it is fully observable from the same receipt, and <code>LF_IN &gt; LF_OUT</code> is the signal that
-						the clamp fired.
+						that sweep carries off part of the LF backing, leaving less allocated than the fee. Finalization then debits only what
+						remains, because emitting the full fee against a smaller bucket would break exact replay. So <code>LF_OUT</code> is the slice
+						of the cost that was still in allocated at that moment -- the rest already left PartyA, in the deferred sweep. Read the
+						difference as <code>LF_IN - LF_OUT</code>; it is fully observable from the same receipt, and <code>LF_IN &gt; LF_OUT</code> is
+						the signal that the clamp fired.
 					</aside>
 					<aside class="callout callout-note">
 						<strong>Worked example.</strong> A PartyA holding 496 allocated, CVA 22, locked LF 3, unrealized profit 23.5, insolvent at the
@@ -606,14 +613,14 @@ gap     0.75   left PartyA earlier, in the 494.5 deferred sweep
 
 PartyA's actual LF cost = lockedLf = 3.00 = 2.25 to the starter + 0.75 absorbed
 Final balances: PartyA 497.5, PartyB 358.5, starter 2.25 -- total tracked value falls by 0.75.</code></pre>
-						None of the three numbers is interchangeable: 1.50 is the allocated debit, 2.25 is what the starter earned, 3.00 is what PartyA
-						paid. Total protocol value never rises across the receipt.
+						None of the three numbers is interchangeable: 1.50 is the allocated debit, 2.25 is what the starter earned, 3.00 is what
+						PartyA paid. Total protocol value never rises across the receipt.
 					</aside>
 					<aside class="callout callout-warning">
 						<strong>Per-account replay stays exact; cross-account conservation does not.</strong> When the clamp fires, the starter is
-						credited the full fee while PartyA is debited less, so allocated balance in that receipt is not conserved across accounts. Each
-						individual account still reconstructs exactly from its own events, which is the guarantee this page makes. An indexer that also
-						runs a global “credits equal debits” check must exempt the finalization receipt, or reconcile it using
+						credited the full fee while PartyA is debited less, so allocated balance in that receipt is not conserved across accounts.
+						Each individual account still reconstructs exactly from its own events, which is the guarantee this page makes. An indexer
+						that also runs a global “credits equal debits” check must exempt the finalization receipt, or reconcile it using
 						<code>lfFromRestOfLiquidation</code> above — the value left PartyA earlier in the liquidation, as
 						<code>DEFERRED_BALANCE_OUT</code> at start and as PartyB settlement deltas, and both of those are already in the ledger.
 					</aside>
@@ -742,7 +749,8 @@ Final balances: PartyA 497.5, PartyB 358.5, starter 2.25 -- total tracked value 
 									<td>
 										Report received LF from <code>LF_IN</code>, the allocated debit from <code>LF_OUT</code>, and the remainder as
 										<code>LF_IN - LF_OUT</code>. For what the liquidation cost PartyA, use the position's locked LF, which the
-										balance-change ledger does not carry. Exempt the finalization receipt from any cross-account conservation check.
+										balance-change ledger does not carry. Exempt the finalization receipt from any cross-account conservation
+										check.
 									</td>
 								</tr>
 								<tr>
