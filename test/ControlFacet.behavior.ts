@@ -112,7 +112,7 @@ export function shouldBehaveLikeControlFacet(): void {
 		it("Should allow pending owner to accept ownership", async function () {
 			await context.controlFacet.connect(owner).transferOwnership(await user2.getAddress())
 			await expect(context.controlFacet.connect(user2).acceptOwnership()).to.not.reverted
-			expect(await context.viewFacet.owner()).to.equal(await user2.getAddress())
+			expect(await context.viewFacet.getOwner()).to.equal(await user2.getAddress())
 			expect(await context.viewFacet.pendingOwner()).to.equal(ZeroAddress)
 		})
 

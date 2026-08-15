@@ -1,240 +1,194 @@
 <!doctype html>
-<html lang="en" data-theme="light">
+<html lang="en" data-theme="dark">
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="description" content="Complete reference of every flow, state, edge case, and scenario the operator bot must handle." />
 		<title>Express Provider Bot Operations Checklist - Symmio Core v0.8.6</title>
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
 		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
 		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
 	</head>
-	<body class="doc-page">
+	<body class="doc-page" data-version="0.8.6">
 		<a class="skip-link" href="#full-document">Skip to document</a>
 
-		<header class="doc-topbar">
-			<a class="brand" href="../index.html"
-				><span class="brand-mark">8.6</span><span><strong>Symmio Docs</strong><small>v0.8.6 reference</small></span></a
-			>
-			<nav class="top-actions" aria-label="Page actions">
-				<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
-			</nav>
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
 		</header>
 		<div class="reader-shell">
-			<aside class="doc-sidebar" aria-label="Documentation navigation">
-				<a class="button primary back-home" href="../index.html">Back to index</a>
-				<div class="side-card">
-					<p class="side-label">Docs</p>
-					<a class="side-link" href="../pages/express-withdrawal-system-design.html"
-						><small>Express Withdrawal</small><span>Express Withdrawal System Design</span></a
-					>
-					<a class="side-link" href="../pages/account-layer-ownership-delegation.html"
-						><small>AccountLayer</small><span>AccountLayer Delegated Creation &amp; Ownership Transfer</span></a
-					>
-					<a class="side-link" href="../pages/liquidation-funding-snapshot-fix.html"
-						><small>Liquidation</small><span>PartyA Liquidation Snapshot Flow</span></a
-					>
-					<a class="side-link" href="../pages/single-step-partya-liquidation.html"
-						><small>Liquidation</small><span>Single-Step PartyA Liquidation</span></a
-					>
-					<a class="side-link" href="../pages/affiliate-shutdown-flow.html"
-						><small>Clearing House</small><span>Affiliate Shutdown Flow</span></a
-					>
-					<a class="side-link" href="../pages/muon-upnl-validity-overrides.html"
-						><small>Muon</small><span>Muon UPNL Validity Overrides</span></a
-					>
-					<a class="side-link" href="../pages/solver-fees.html"><small>Fees</small><span>Solver Fees</span></a>
-					<a class="side-link" href="../pages/operational-fees.html"><small>Fees</small><span>Operational Fees</span></a>
-					<a class="side-link" href="../pages/symbol-adjustment.html"
-						><small>Symbols</small><span>Symbol Corporate-Action Adjustment</span></a
-					>
-					<a class="side-link" href="../pages/partya-liquidation-fee-recipient.html"
-						><small>Liquidation</small><span>PartyA Liquidation Fee Recipient Cleanup</span></a
-					>
-					<a class="side-link" href="../pages/balance-change-event-cleanup.html"
-						><small>Events &amp; Indexing</small><span>Allocated Balance Event Ledger</span></a
-					>
-					<a class="side-link" href="../pages/lazy-accumulated-funding.html"><small>Funding</small><span>Lazy Accumulated Funding</span></a>
-					<a class="side-link" href="../pages/partyb-allocation-suspension-gates.html"
-						><small>PartyB</small><span>Allocation Suspension Gates</span></a
-					>
-					<a class="side-link" href="../pages/cross-partyb-liquidation-reserve.html"
-						><small>Liquidation</small><span>Cross-PartyB Liquidation Reserve Enforcement</span></a
-					>
-					<a class="side-link" href="../pages/delegation-account-scope.html"
-						><small>AccountLayer</small><span>Delegation Account Scope</span></a
-					>
-					<a class="side-link" href="../pages/strict-deallocation.html"><small>Accounts</small><span>Strict Deallocation</span></a>
-					<a class="side-link is-active" href="../pages/express-bot-operations-checklist.html"
-						><small>Express Withdrawal</small><span>Express Provider Bot Operations Checklist</span></a
-					>
-					<a class="side-link" href="../pages/market-open-fee-execution-price.html"
-						><small>Fees</small><span>Market Open Fee on Execution Price</span></a
-					>
-					<a class="side-link" href="../pages/position-isolation-partial-fill.html"
-						><small>AccountLayer</small><span>Position Isolation Partial Fill Remainder</span></a
-					>
-				</div>
-			</aside>
-			<aside class="toc-panel side-toc" aria-label="Page navigation">
-				<div class="toc-card">
-					<p class="toc-title">On this page</p>
-					<a class="toc-link level-2" href="#table-of-contents">Table of Contents</a>
-					<a class="toc-link level-2" href="#1-overview">1. Overview</a>
-					<a class="toc-link level-3" href="#option-types">Option Types</a>
-					<a class="toc-link level-2" href="#2-state-machine">2. State Machine</a>
-					<a class="toc-link level-3" href="#expressprovider-internal-status">ExpressProvider Internal Status</a>
-					<a class="toc-link level-3" href="#state-transition-diagrams">State Transition Diagrams</a>
-					<a class="toc-link level-3" href="#transition-triggers">Transition Triggers</a>
-					<a class="toc-link level-3" href="#numeric-example-state-transitions-for-a-500-usdc-windowed-withdrawal"
-						>Numeric Example: State Transitions for a 500 USDC WINDOWED Withdrawal</a
-					>
-					<a class="toc-link level-2" href="#3-timing">3. Timing</a>
-					<a class="toc-link level-3" href="#3-1-processableat-lookup-table">3.1 processableAt Lookup Table</a>
-					<a class="toc-link level-3" href="#3-2-security-window-tolerance-period">3.2 Security Window &amp; Tolerance Period</a>
-					<a class="toc-link level-3" href="#3-3-complete-timing-diagram">3.3 Complete Timing Diagram</a>
-					<a class="toc-link level-3" href="#3-4-configurable-parameters">3.4 Configurable Parameters</a>
-					<a class="toc-link level-3" href="#3-5-fixed-timing">3.5 Fixed Timing</a>
-					<a class="toc-link level-3" href="#3-6-special-timing-cases">3.6 Special Timing Cases</a>
-					<a class="toc-link level-2" href="#4-options-api">4. Options API</a>
-					<a class="toc-link level-3" href="#4-1-decision-tree">4.1 Decision Tree</a>
-					<a class="toc-link level-3" href="#4-2-on-user-withdrawal-request">4.2 On User Withdrawal Request</a>
-					<a class="toc-link level-3" href="#4-3-parts-construction">4.3 Parts Construction</a>
-					<a class="toc-link level-3" href="#4-4-providerdata-encoding">4.4 providerData Encoding</a>
-					<a class="toc-link level-3" href="#4-5-nonce-management">4.5 Nonce Management</a>
-					<a class="toc-link level-3" href="#4-6-signing-requirements">4.6 Signing Requirements</a>
-					<a class="toc-link level-2" href="#5-withdrawal-flows">5. Withdrawal Flows</a>
-					<a class="toc-link level-3" href="#5-1-same-tx-optiontype-0">5.1 SAME_TX (optionType = 0)</a>
-					<a class="toc-link level-3" href="#5-2-windowed-optiontype-1">5.2 WINDOWED (optionType = 1)</a>
-					<a class="toc-link level-3" href="#5-3-standard-optiontype-2">5.3 STANDARD (optionType = 2)</a>
-					<a class="toc-link level-3" href="#5-4-credit-backed-withdrawal">5.4 Credit-Backed Withdrawal</a>
-					<a class="toc-link level-2" href="#6-processing-finalization">6. Processing &amp; Finalization</a>
-					<a class="toc-link level-3" href="#6-1-after-acceptance">6.1 After Acceptance</a>
-					<a class="toc-link level-3" href="#6-2-processing-processwithdraw">6.2 Processing (`processWithdraw`)</a>
-					<a class="toc-link level-3" href="#6-3-finalization-finalizewithdrawrequest-on-symmio"
-						>6.3 Finalization (`finalizeWithdrawRequest` on SYMMIO)</a
-					>
-					<a class="toc-link level-3" href="#6-4-permissionless-fallback">6.4 Permissionless Fallback</a>
-					<a class="toc-link level-2" href="#7-event-monitoring">7. Event Monitoring</a>
-					<a class="toc-link level-3" href="#7-1-event-handling-flow">7.1 Event Handling Flow</a>
-					<a class="toc-link level-3" href="#7-2-events-to-monitor">7.2 Events to Monitor</a>
-					<a class="toc-link level-3" href="#7-3-idempotency-requirements">7.3 Idempotency Requirements</a>
-					<a class="toc-link level-2" href="#8-fee-system">8. Fee System</a>
-					<a class="toc-link level-3" href="#8-1-fee-calculation-flow">8.1 Fee Calculation Flow</a>
-					<a class="toc-link level-3" href="#8-2-fee-deduction-order-in-transfertoreceivers"
-						>8.2 Fee Deduction Order (in `transferToReceivers`)</a
-					>
-					<a class="toc-link level-3" href="#8-3-bot-must-read-before-signing">8.3 Bot Must Read Before Signing</a>
-					<a class="toc-link level-2" href="#9-validator-system">9. Validator System</a>
-					<a class="toc-link level-3" href="#9-1-validator-attestation-flow">9.1 Validator Attestation Flow</a>
-					<a class="toc-link level-3" href="#9-2-when-validators-are-required">9.2 When Validators Are Required</a>
-					<a class="toc-link level-3" href="#9-3-validatorapproval-eip-712-structure">9.3 ValidatorApproval EIP-712 Structure</a>
-					<a class="toc-link level-3" href="#9-4-validation-rules">9.4 Validation Rules</a>
-					<a class="toc-link level-3" href="#9-5-bot-checklist-for-validators">9.5 Bot Checklist for Validators</a>
-					<a class="toc-link level-3" href="#9-6-edge-cases">9.6 Edge Cases</a>
-					<a class="toc-link level-2" href="#10-credit-line-system">10. Credit Line System</a>
-					<a class="toc-link level-3" href="#10-1-virtualprovider-is-deprecated">10.1 VirtualProvider is Replaced by Credit Line</a>
-					<a class="toc-link level-3" href="#10-2-credit-debt-lifecycle">10.2 Credit Debt Lifecycle</a>
-					<a class="toc-link level-3" href="#10-3-bot-monitoring-for-credit-lines">10.3 Bot Monitoring for Credit Lines</a>
-					<a class="toc-link level-3" href="#10-4-how-credit-lines-work">10.4 How Credit Lines Work</a>
-					<a class="toc-link level-3" href="#10-5-bot-decision-logic-for-credit">10.5 Bot Decision Logic for Credit</a>
-					<a class="toc-link level-3" href="#10-6-cap-aware-accelerate-polling-standard-windowed"
-						>10.6 Cap-Aware Accelerate Polling (STANDARD → WINDOWED)</a
-					>
-					<a class="toc-link level-3" href="#10-7-affiliate-cap-self-service-fee">10.7 Affiliate Cap Self-Service &amp; Fee</a>
-					<a class="toc-link level-2" href="#11-multi-part-withdrawals">11. Multi-Part Withdrawals</a>
-					<a class="toc-link level-3" href="#11-1-part-classification">11.1 Part Classification</a>
-					<a class="toc-link level-3" href="#11-2-multi-part-fee-cascading">11.2 Multi-Part Fee Cascading</a>
-					<a class="toc-link level-3" href="#11-3-credit-line-in-multi-part-withdrawals">11.3 Credit Line in Multi-Part Withdrawals</a>
-					<a class="toc-link level-3" href="#11-4-partshash-integrity">11.4 partsHash Integrity</a>
-					<a class="toc-link level-2" href="#12-risk-lock-unlock">12. Risk Lock / Unlock</a>
-					<a class="toc-link level-3" href="#12-1-lock-resolution-paths">12.1 Lock Resolution Paths</a>
-					<a class="toc-link level-3" href="#12-2-role-separation-critical-design">12.2 Role Separation (Critical Design)</a>
-					<a class="toc-link level-3" href="#12-3-bot-checklist-for-risk">12.3 Bot Checklist for Risk</a>
-					<a class="toc-link level-2" href="#part-iv-safety-risk-continued">Part IV: Safety &amp; Risk (continued)</a>
-					<a class="toc-link level-2" href="#13-cancellation-suspension">13. Cancellation &amp; Suspension</a>
-					<a class="toc-link level-3" href="#13-1-cancellation-decision-tree">13.1 Cancellation Decision Tree</a>
-					<a class="toc-link level-3" href="#13-2-cancellation-matrix">13.2 Cancellation Matrix</a>
-					<a class="toc-link level-3" href="#13-3-what-gets-released-on-cancel-suspend">13.3 What Gets Released on Cancel/Suspend</a>
-					<a class="toc-link level-3" href="#13-4-bot-reactions-to-cancel-suspend">13.4 Bot Reactions to Cancel/Suspend</a>
-					<a class="toc-link level-2" href="#14-error-catalog">14. Error Catalog</a>
-					<a class="toc-link level-3" href="#14-1-error-decision-tree">14.1 Error Decision Tree</a>
-					<a class="toc-link level-3" href="#14-2-signature-auth-errors">14.2 Signature &amp; Auth Errors</a>
-					<a class="toc-link level-3" href="#14-3-liquidity-errors">14.3 Liquidity Errors</a>
-					<a class="toc-link level-3" href="#14-4-fee-errors">14.4 Fee Errors</a>
-					<a class="toc-link level-3" href="#14-5-state-errors">14.5 State Errors</a>
-					<a class="toc-link level-3" href="#14-6-validation-errors">14.6 Validation Errors</a>
-					<a class="toc-link level-3" href="#14-7-bot-scenarios-for-key-errors">14.7 Bot Scenarios for Key Errors</a>
-					<a class="toc-link level-2" href="#15-edge-cases-race-conditions">15. Edge Cases &amp; Race Conditions</a>
-					<a class="toc-link level-3" href="#15-1-liquidity-race-conditions">15.1 Liquidity Race Conditions</a>
-					<a class="toc-link level-3" href="#15-2-config-changes-mid-flight">15.2 Config Changes Mid-Flight</a>
-					<a class="toc-link level-3" href="#15-3-nonce-edge-cases">15.3 Nonce Edge Cases</a>
-					<a class="toc-link level-3" href="#15-4-timing-edge-cases">15.4 Timing Edge Cases</a>
-					<a class="toc-link level-3" href="#15-5-credit-line-edge-cases">15.5 Credit Line Edge Cases</a>
-					<a class="toc-link level-3" href="#15-6-standard-specific-edge-cases">15.6 STANDARD-Specific Edge Cases</a>
-					<a class="toc-link level-3" href="#15-7-admin-configuration-change-scenarios">15.7 Admin / Configuration Change Scenarios</a>
-					<a class="toc-link level-3" href="#15-8-locked-scenario">15.8 LOCKED Scenario</a>
-					<a class="toc-link level-3" href="#15-9-standard-processwithdraw-too-early">15.9 STANDARD processWithdraw Too Early</a>
-					<a class="toc-link level-3" href="#15-10-non-existent-withdrawal">15.10 Non-Existent Withdrawal</a>
-					<a class="toc-link level-3" href="#15-11-zero-amount-parts">15.11 Zero-Amount Parts</a>
-					<a
-						class="toc-link level-3"
-						href="#15-12-same-tx-cannot-be-cancelled-already-processed-but-can-trigger-suspend-with-post-payout-rollback"
-						>15.12 SAME_TX Cannot Be Cancelled (already PROCESSED), but CAN trigger suspend with post-payout rollback</a
-					>
-					<a class="toc-link level-3" href="#15-13-duplicate-finalization-callback">15.13 Duplicate Finalization Callback</a>
-					<a class="toc-link level-2" href="#part-v-operations">Part V: Operations</a>
-					<a class="toc-link level-2" href="#16-pool-management">16. Pool Management</a>
-					<a class="toc-link level-3" href="#16-1-pool-lifecycle-diagram">16.1 Pool Lifecycle Diagram</a>
-					<a class="toc-link level-3" href="#16-2-pool-types">16.2 Pool Types</a>
-					<a class="toc-link level-3" href="#16-3-available-liquidity-formulas">16.3 Available Liquidity Formulas</a>
-					<a class="toc-link level-3" href="#16-4-bot-pool-monitoring">16.4 Bot Pool Monitoring</a>
-					<a class="toc-link level-2" href="#17-access-control">17. Access Control</a>
-					<a class="toc-link level-3" href="#17-1-role-interaction-diagram">17.1 Role Interaction Diagram</a>
-					<a class="toc-link level-3" href="#17-2-expressprovider-roles">17.2 ExpressProvider Roles</a>
-					<a class="toc-link level-3" href="#17-3-credit-line-functions-on-the-diamond">17.3 Credit Line Functions (on the Diamond)</a>
-					<a class="toc-link level-3" href="#17-4-symmio-gated-functions-no-role-msg-sender-symmio"
-						>17.4 SYMMIO-Gated Functions (no role, `msg.sender == symmio`)</a
-					>
-					<a class="toc-link level-2" href="#18-operational-invariants">18. Operational Invariants</a>
-					<a class="toc-link level-3" href="#18-1-invariant-check-diagram">18.1 Invariant Check Diagram</a>
-					<a class="toc-link level-3" href="#18-2-accounting-invariants">18.2 Accounting Invariants</a>
-					<a class="toc-link level-3" href="#18-3-bot-reliability-requirements">18.3 Bot Reliability Requirements</a>
-					<a class="toc-link level-3" href="#18-4-graceful-degradation">18.4 Graceful Degradation</a>
-					<a class="toc-link level-2" href="#quick-reference-complete-bot-action-timeline">Quick Reference: Complete Bot Action Timeline</a>
-					<a class="toc-link level-2" href="#part-vi-reference">Part VI: Reference</a>
-					<a class="toc-link level-2" href="#19-complete-state-x-option-type-decision-matrix"
-						>19. Complete State x Option Type Decision Matrix</a
-					>
-					<a class="toc-link level-3" href="#same-tx-x-none">SAME_TX x NONE</a>
-					<a class="toc-link level-3" href="#same-tx-x-accepted">SAME_TX x ACCEPTED</a>
-					<a class="toc-link level-3" href="#same-tx-x-locked">SAME_TX x LOCKED</a>
-					<a class="toc-link level-3" href="#same-tx-x-processed">SAME_TX x PROCESSED</a>
-					<a class="toc-link level-3" href="#same-tx-x-finalized">SAME_TX x FINALIZED</a>
-					<a class="toc-link level-3" href="#same-tx-x-cancelled">SAME_TX x CANCELLED</a>
-					<a class="toc-link level-3" href="#same-tx-x-suspended">SAME_TX x SUSPENDED</a>
-					<a class="toc-link level-3" href="#windowed-x-none">WINDOWED x NONE</a>
-					<a class="toc-link level-3" href="#windowed-x-accepted">WINDOWED x ACCEPTED</a>
-					<a class="toc-link level-3" href="#windowed-x-locked">WINDOWED x LOCKED</a>
-					<a class="toc-link level-3" href="#windowed-x-processed">WINDOWED x PROCESSED</a>
-					<a class="toc-link level-3" href="#windowed-x-finalized">WINDOWED x FINALIZED</a>
-					<a class="toc-link level-3" href="#windowed-x-cancelled">WINDOWED x CANCELLED</a>
-					<a class="toc-link level-3" href="#windowed-x-suspended">WINDOWED x SUSPENDED</a>
-					<a class="toc-link level-3" href="#standard-x-none">STANDARD x NONE</a>
-					<a class="toc-link level-3" href="#standard-x-accepted">STANDARD x ACCEPTED</a>
-					<a class="toc-link level-3" href="#standard-x-locked">STANDARD x LOCKED</a>
-					<a class="toc-link level-3" href="#standard-x-processed">STANDARD x PROCESSED</a>
-					<a class="toc-link level-3" href="#standard-x-finalized">STANDARD x FINALIZED</a>
-					<a class="toc-link level-3" href="#standard-x-cancelled">STANDARD x CANCELLED</a>
-					<a class="toc-link level-3" href="#standard-x-suspended">STANDARD x SUSPENDED</a>
-					<a class="toc-link level-3" href="#summary-matrix">Summary Matrix</a>
-					<a class="toc-link level-3" href="#key-differences-by-option-type">Key Differences by Option Type</a>
-				</div>
-			</aside>
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#table-of-contents">Table of Contents</a>
+				<a class="toc-link level-2" href="#1-overview">1. Overview</a>
+				<a class="toc-link level-3" href="#option-types">Option Types</a>
+				<a class="toc-link level-2" href="#2-state-machine">2. State Machine</a>
+				<a class="toc-link level-3" href="#expressprovider-internal-status">ExpressProvider Internal Status</a>
+				<a class="toc-link level-3" href="#state-transition-diagrams">State Transition Diagrams</a>
+				<a class="toc-link level-3" href="#transition-triggers">Transition Triggers</a>
+				<a class="toc-link level-3" href="#numeric-example-state-transitions-for-a-500-usdc-windowed-withdrawal"
+					>Numeric Example: State Transitions for a 500 USDC WINDOWED Withdrawal</a
+				>
+				<a class="toc-link level-2" href="#3-timing">3. Timing</a>
+				<a class="toc-link level-3" href="#3-1-processableat-lookup-table">3.1 processableAt Lookup Table</a>
+				<a class="toc-link level-3" href="#3-2-security-window-tolerance-period">3.2 Security Window &amp; Tolerance Period</a>
+				<a class="toc-link level-3" href="#3-3-complete-timing-diagram">3.3 Complete Timing Diagram</a>
+				<a class="toc-link level-3" href="#3-4-configurable-parameters">3.4 Configurable Parameters</a>
+				<a class="toc-link level-3" href="#3-5-fixed-timing">3.5 Fixed Timing</a>
+				<a class="toc-link level-3" href="#3-6-special-timing-cases">3.6 Special Timing Cases</a>
+				<a class="toc-link level-2" href="#4-options-api">4. Options API</a>
+				<a class="toc-link level-3" href="#4-1-decision-tree">4.1 Decision Tree</a>
+				<a class="toc-link level-3" href="#4-2-on-user-withdrawal-request">4.2 On User Withdrawal Request</a>
+				<a class="toc-link level-3" href="#4-3-parts-construction">4.3 Parts Construction</a>
+				<a class="toc-link level-3" href="#4-4-providerdata-encoding">4.4 providerData Encoding</a>
+				<a class="toc-link level-3" href="#4-5-nonce-management">4.5 Nonce Management</a>
+				<a class="toc-link level-3" href="#4-6-signing-requirements">4.6 Signing Requirements</a>
+				<a class="toc-link level-2" href="#5-withdrawal-flows">5. Withdrawal Flows</a>
+				<a class="toc-link level-3" href="#5-1-same-tx-optiontype-0">5.1 SAME_TX (optionType = 0)</a>
+				<a class="toc-link level-3" href="#5-2-windowed-optiontype-1">5.2 WINDOWED (optionType = 1)</a>
+				<a class="toc-link level-3" href="#5-3-standard-optiontype-2">5.3 STANDARD (optionType = 2)</a>
+				<a class="toc-link level-3" href="#5-4-credit-backed-withdrawal">5.4 Credit-Backed Withdrawal</a>
+				<a class="toc-link level-2" href="#6-processing-finalization">6. Processing &amp; Finalization</a>
+				<a class="toc-link level-3" href="#6-1-after-acceptance">6.1 After Acceptance</a>
+				<a class="toc-link level-3" href="#6-2-processing-processwithdraw">6.2 Processing (`processWithdraw`)</a>
+				<a class="toc-link level-3" href="#6-3-finalization-finalizewithdrawrequest-on-symmio"
+					>6.3 Finalization (`finalizeWithdrawRequest` on SYMMIO)</a
+				>
+				<a class="toc-link level-3" href="#6-4-permissionless-fallback">6.4 Permissionless Fallback</a>
+				<a class="toc-link level-2" href="#7-event-monitoring">7. Event Monitoring</a>
+				<a class="toc-link level-3" href="#7-1-event-handling-flow">7.1 Event Handling Flow</a>
+				<a class="toc-link level-3" href="#7-2-events-to-monitor">7.2 Events to Monitor</a>
+				<a class="toc-link level-3" href="#7-3-idempotency-requirements">7.3 Idempotency Requirements</a>
+				<a class="toc-link level-2" href="#8-fee-system">8. Fee System</a>
+				<a class="toc-link level-3" href="#8-1-fee-calculation-flow">8.1 Fee Calculation Flow</a>
+				<a class="toc-link level-3" href="#8-2-fee-deduction-order-in-transfertoreceivers"
+					>8.2 Fee Deduction Order (in `transferToReceivers`)</a
+				>
+				<a class="toc-link level-3" href="#8-3-bot-must-read-before-signing">8.3 Bot Must Read Before Signing</a>
+				<a class="toc-link level-2" href="#9-validator-system">9. Validator System</a>
+				<a class="toc-link level-3" href="#9-1-validator-attestation-flow">9.1 Validator Attestation Flow</a>
+				<a class="toc-link level-3" href="#9-2-when-validators-are-required">9.2 When Validators Are Required</a>
+				<a class="toc-link level-3" href="#9-3-validatorapproval-eip-712-structure">9.3 ValidatorApproval EIP-712 Structure</a>
+				<a class="toc-link level-3" href="#9-4-validation-rules">9.4 Validation Rules</a>
+				<a class="toc-link level-3" href="#9-5-bot-checklist-for-validators">9.5 Bot Checklist for Validators</a>
+				<a class="toc-link level-3" href="#9-6-edge-cases">9.6 Edge Cases</a>
+				<a class="toc-link level-2" href="#10-credit-line-system">10. Credit Line System</a>
+				<a class="toc-link level-3" href="#10-1-virtualprovider-is-deprecated">10.1 VirtualProvider is Replaced by Credit Line</a>
+				<a class="toc-link level-3" href="#10-2-credit-debt-lifecycle">10.2 Credit Debt Lifecycle</a>
+				<a class="toc-link level-3" href="#10-3-bot-monitoring-for-credit-lines">10.3 Bot Monitoring for Credit Lines</a>
+				<a class="toc-link level-3" href="#10-4-how-credit-lines-work">10.4 How Credit Lines Work</a>
+				<a class="toc-link level-3" href="#10-5-bot-decision-logic-for-credit">10.5 Bot Decision Logic for Credit</a>
+				<a class="toc-link level-3" href="#10-6-cap-aware-accelerate-polling-standard-windowed"
+					>10.6 Cap-Aware Accelerate Polling (STANDARD → WINDOWED)</a
+				>
+				<a class="toc-link level-3" href="#10-7-affiliate-cap-self-service-fee">10.7 Affiliate Cap Self-Service &amp; Fee</a>
+				<a class="toc-link level-2" href="#11-multi-part-withdrawals">11. Multi-Part Withdrawals</a>
+				<a class="toc-link level-3" href="#11-1-part-classification">11.1 Part Classification</a>
+				<a class="toc-link level-3" href="#11-2-multi-part-fee-cascading">11.2 Multi-Part Fee Cascading</a>
+				<a class="toc-link level-3" href="#11-3-credit-line-in-multi-part-withdrawals">11.3 Credit Line in Multi-Part Withdrawals</a>
+				<a class="toc-link level-3" href="#11-4-partshash-integrity">11.4 partsHash Integrity</a>
+				<a class="toc-link level-2" href="#12-risk-lock-unlock">12. Risk Lock / Unlock</a>
+				<a class="toc-link level-3" href="#12-1-lock-resolution-paths">12.1 Lock Resolution Paths</a>
+				<a class="toc-link level-3" href="#12-2-role-separation-critical-design">12.2 Role Separation (Critical Design)</a>
+				<a class="toc-link level-3" href="#12-3-bot-checklist-for-risk">12.3 Bot Checklist for Risk</a>
+				<a class="toc-link level-2" href="#part-iv-safety-risk-continued">Part IV: Safety &amp; Risk (continued)</a>
+				<a class="toc-link level-2" href="#13-cancellation-suspension">13. Cancellation &amp; Suspension</a>
+				<a class="toc-link level-3" href="#13-1-cancellation-decision-tree">13.1 Cancellation Decision Tree</a>
+				<a class="toc-link level-3" href="#13-2-cancellation-matrix">13.2 Cancellation Matrix</a>
+				<a class="toc-link level-3" href="#13-3-what-gets-released-on-cancel-suspend">13.3 What Gets Released on Cancel/Suspend</a>
+				<a class="toc-link level-3" href="#13-4-bot-reactions-to-cancel-suspend">13.4 Bot Reactions to Cancel/Suspend</a>
+				<a class="toc-link level-2" href="#14-error-catalog">14. Error Catalog</a>
+				<a class="toc-link level-3" href="#14-1-error-decision-tree">14.1 Error Decision Tree</a>
+				<a class="toc-link level-3" href="#14-2-signature-auth-errors">14.2 Signature &amp; Auth Errors</a>
+				<a class="toc-link level-3" href="#14-3-liquidity-errors">14.3 Liquidity Errors</a>
+				<a class="toc-link level-3" href="#14-4-fee-errors">14.4 Fee Errors</a>
+				<a class="toc-link level-3" href="#14-5-state-errors">14.5 State Errors</a>
+				<a class="toc-link level-3" href="#14-6-validation-errors">14.6 Validation Errors</a>
+				<a class="toc-link level-3" href="#14-7-bot-scenarios-for-key-errors">14.7 Bot Scenarios for Key Errors</a>
+				<a class="toc-link level-2" href="#15-edge-cases-race-conditions">15. Edge Cases &amp; Race Conditions</a>
+				<a class="toc-link level-3" href="#15-1-liquidity-race-conditions">15.1 Liquidity Race Conditions</a>
+				<a class="toc-link level-3" href="#15-2-config-changes-mid-flight">15.2 Config Changes Mid-Flight</a>
+				<a class="toc-link level-3" href="#15-3-nonce-edge-cases">15.3 Nonce Edge Cases</a>
+				<a class="toc-link level-3" href="#15-4-timing-edge-cases">15.4 Timing Edge Cases</a>
+				<a class="toc-link level-3" href="#15-5-credit-line-edge-cases">15.5 Credit Line Edge Cases</a>
+				<a class="toc-link level-3" href="#15-6-standard-specific-edge-cases">15.6 STANDARD-Specific Edge Cases</a>
+				<a class="toc-link level-3" href="#15-7-admin-configuration-change-scenarios">15.7 Admin / Configuration Change Scenarios</a>
+				<a class="toc-link level-3" href="#15-8-locked-scenario">15.8 LOCKED Scenario</a>
+				<a class="toc-link level-3" href="#15-9-standard-processwithdraw-too-early">15.9 STANDARD processWithdraw Too Early</a>
+				<a class="toc-link level-3" href="#15-10-non-existent-withdrawal">15.10 Non-Existent Withdrawal</a>
+				<a class="toc-link level-3" href="#15-11-zero-amount-parts">15.11 Zero-Amount Parts</a>
+				<a
+					class="toc-link level-3"
+					href="#15-12-same-tx-cannot-be-cancelled-already-processed-but-can-trigger-suspend-with-post-payout-rollback"
+					>15.12 SAME_TX Cannot Be Cancelled (already PROCESSED), but CAN trigger suspend with post-payout rollback</a
+				>
+				<a class="toc-link level-3" href="#15-13-duplicate-finalization-callback">15.13 Duplicate Finalization Callback</a>
+				<a class="toc-link level-2" href="#part-v-operations">Part V: Operations</a>
+				<a class="toc-link level-2" href="#16-pool-management">16. Pool Management</a>
+				<a class="toc-link level-3" href="#16-1-pool-lifecycle-diagram">16.1 Pool Lifecycle Diagram</a>
+				<a class="toc-link level-3" href="#16-2-pool-types">16.2 Pool Types</a>
+				<a class="toc-link level-3" href="#16-3-available-liquidity-formulas">16.3 Available Liquidity Formulas</a>
+				<a class="toc-link level-3" href="#16-4-bot-pool-monitoring">16.4 Bot Pool Monitoring</a>
+				<a class="toc-link level-2" href="#17-access-control">17. Access Control</a>
+				<a class="toc-link level-3" href="#17-1-role-interaction-diagram">17.1 Role Interaction Diagram</a>
+				<a class="toc-link level-3" href="#17-2-expressprovider-roles">17.2 ExpressProvider Roles</a>
+				<a class="toc-link level-3" href="#17-3-credit-line-functions-on-the-diamond">17.3 Credit Line Functions (on the Diamond)</a>
+				<a class="toc-link level-3" href="#17-4-symmio-gated-functions-no-role-msg-sender-symmio"
+					>17.4 SYMMIO-Gated Functions (no role, `msg.sender == symmio`)</a
+				>
+				<a class="toc-link level-2" href="#18-operational-invariants">18. Operational Invariants</a>
+				<a class="toc-link level-3" href="#18-1-invariant-check-diagram">18.1 Invariant Check Diagram</a>
+				<a class="toc-link level-3" href="#18-2-accounting-invariants">18.2 Accounting Invariants</a>
+				<a class="toc-link level-3" href="#18-3-bot-reliability-requirements">18.3 Bot Reliability Requirements</a>
+				<a class="toc-link level-3" href="#18-4-graceful-degradation">18.4 Graceful Degradation</a>
+				<a class="toc-link level-2" href="#quick-reference-complete-bot-action-timeline">Quick Reference: Complete Bot Action Timeline</a>
+				<a class="toc-link level-2" href="#part-vi-reference">Part VI: Reference</a>
+				<a class="toc-link level-2" href="#19-complete-state-x-option-type-decision-matrix"
+					>19. Complete State x Option Type Decision Matrix</a
+				>
+				<a class="toc-link level-3" href="#same-tx-x-none">SAME_TX x NONE</a>
+				<a class="toc-link level-3" href="#same-tx-x-accepted">SAME_TX x ACCEPTED</a>
+				<a class="toc-link level-3" href="#same-tx-x-locked">SAME_TX x LOCKED</a>
+				<a class="toc-link level-3" href="#same-tx-x-processed">SAME_TX x PROCESSED</a>
+				<a class="toc-link level-3" href="#same-tx-x-finalized">SAME_TX x FINALIZED</a>
+				<a class="toc-link level-3" href="#same-tx-x-cancelled">SAME_TX x CANCELLED</a>
+				<a class="toc-link level-3" href="#same-tx-x-suspended">SAME_TX x SUSPENDED</a>
+				<a class="toc-link level-3" href="#windowed-x-none">WINDOWED x NONE</a>
+				<a class="toc-link level-3" href="#windowed-x-accepted">WINDOWED x ACCEPTED</a>
+				<a class="toc-link level-3" href="#windowed-x-locked">WINDOWED x LOCKED</a>
+				<a class="toc-link level-3" href="#windowed-x-processed">WINDOWED x PROCESSED</a>
+				<a class="toc-link level-3" href="#windowed-x-finalized">WINDOWED x FINALIZED</a>
+				<a class="toc-link level-3" href="#windowed-x-cancelled">WINDOWED x CANCELLED</a>
+				<a class="toc-link level-3" href="#windowed-x-suspended">WINDOWED x SUSPENDED</a>
+				<a class="toc-link level-3" href="#standard-x-none">STANDARD x NONE</a>
+				<a class="toc-link level-3" href="#standard-x-accepted">STANDARD x ACCEPTED</a>
+				<a class="toc-link level-3" href="#standard-x-locked">STANDARD x LOCKED</a>
+				<a class="toc-link level-3" href="#standard-x-processed">STANDARD x PROCESSED</a>
+				<a class="toc-link level-3" href="#standard-x-finalized">STANDARD x FINALIZED</a>
+				<a class="toc-link level-3" href="#standard-x-cancelled">STANDARD x CANCELLED</a>
+				<a class="toc-link level-3" href="#standard-x-suspended">STANDARD x SUSPENDED</a>
+				<a class="toc-link level-3" href="#summary-matrix">Summary Matrix</a>
+				<a class="toc-link level-3" href="#key-differences-by-option-type">Key Differences by Option Type</a>
+			</div>
 			<main class="reader-main">
 				<header class="reader-hero">
-					<nav class="crumbs" aria-label="Breadcrumb">
-						<a href="../index.html">v0.8.6</a><span>/</span><strong>Express Withdrawal</strong>
-					</nav>
 					<div class="reader-title-row">
 						<div>
 							<h1>Express Provider Bot Operations Checklist</h1>
@@ -6389,7 +6343,6 @@ Non-operator at T=1700043250:
 
 		<footer class="site-footer">
 			<span>Symmio Core v0.8.6 documentation.</span>
-			<span>Protocol, operations, and integration notes.</span>
 		</footer>
 	</body>
 </html>

@@ -9,7 +9,7 @@ import { LibSolvency } from "../../libraries/LibSolvency.sol";
 import { LibSolverFee } from "../../libraries/LibSolverFee.sol";
 import { LibPartyBPositionsActions } from "../../libraries/LibPartyBPositionsActions.sol";
 import { LibPartyBState } from "../../libraries/extensions/LibPartyBState.sol";
-import { QuoteStorage, Quote, PositionType, OrderType, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
+import { QuoteStorage, Quote, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
 import { LibConnections } from "../../libraries/LibConnections.sol";

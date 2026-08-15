@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+#
+# symmio — operator entrypoint for deploying, configuring and inspecting SYMMIO.
+#
+#   ./symmio doctor --config deployments/arbitrum.json
+#   ./symmio deploy --config deployments/arbitrum.json
+#
+# This is the same CLI that `npm link` exposes globally as `symmio`; running it from the
+# checkout needs no install step. It guards the two things that make the CLI trustworthy —
+# a compatible Node and a real dependency tree — then hands straight to the checked-in
+# source. There is no build step, so what runs is what you can read in cli/.
+
+set -euo pipefail
+
+REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+CLI_ENTRY="$REPO_ROOT/cli/symmio.js"
+NODE_VERSION_FILE="$REPO_ROOT/.node-version"
+
+die() {
+	echo "symmio: $1" >&2
+	shift
+	for line in "$@"; do echo "  $line" >&2; done
+	exit 1
+}
+
+if ! command -v node >/dev/null 2>&1; then
+	die "Node.js was not found on PATH." \
+		"This checkout pins Node $(cat "$NODE_VERSION_FILE" 2>/dev/null || echo "(see .node-version)")." \
+		"Install it, or enable your version manager, then rerun."
+fi
+
+# A major-version mismatch is refused: that is where the ESM, API and V8 differences that
+# silently change behaviour actually live. Minor/patch drift only warns, because blocking a
+# deployment over a patch release is worse than the risk it avoids.
+if [[ -f "$NODE_VERSION_FILE" ]]; then
+	EXPECTED_NODE="$(tr -d '[:space:]' <"$NODE_VERSION_FILE")"
+	ACTUAL_NODE="$(node --version)"
+	ACTUAL_NODE="${ACTUAL_NODE#v}"
+	if [[ "${EXPECTED_NODE%%.*}" != "${ACTUAL_NODE%%.*}" ]]; then
+		die "Node major version mismatch: this checkout pins $EXPECTED_NODE, found $ACTUAL_NODE." \
+			"Switch to Node $EXPECTED_NODE, then rerun."
+	fi
+	if [[ "$EXPECTED_NODE" != "$ACTUAL_NODE" ]]; then
+		echo "symmio: note — pinned Node is $EXPECTED_NODE, running $ACTUAL_NODE." >&2
+	fi
+fi
+
+if [[ ! -d "$REPO_ROOT/node_modules" ]]; then
+	die "Dependencies are not installed." \
+		"Run: npm ci"
+fi
+
+if [[ ! -f "$CLI_ENTRY" ]]; then
+	die "Cannot find the CLI at $CLI_ENTRY." "This does not look like a complete SYMMIO checkout."
+fi
+
+exec node "$CLI_ENTRY" "$@"

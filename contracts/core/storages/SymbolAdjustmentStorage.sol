@@ -51,9 +51,17 @@ struct SymbolAdjustment {
 	///      normalized mixed-book views use this value until abort or finalization clears it.
 	uint256 restatementFactor;
 	/// @notice Monotonically increasing identifier of the symbol's physical price/quantity basis.
-	/// @dev Advances only after a restatement finalizes. Price-bearing Muon payloads and deferred workflows bind to this value so values from the
-	///      previous basis cannot be executed after quote storage has been rewritten.
+	/// @dev Advances only after a restatement finalizes. Deferred multi-transaction workflows bind to this value so values from the
+	///      previous basis cannot be executed after quote storage has been rewritten. Muon payloads deliberately do NOT carry it:
+	///      signatures stay backward compatible, and the equivalent guarantee comes from the minimum restatement window enforced
+	///      in finalizeRestatement (see `restatementStartedAt`).
 	uint256 basisVersion;
+	/// @notice Timestamp from which the symbol has been continuously frozen for the current restatement window.
+	/// @dev Set when the window opens. On the direct route the symbol was already frozen at `effectiveTimestamp`, so that earlier
+	///      point is used. finalizeRestatement refuses to advance `basisVersion` until at least one full Muon UPNL validity period
+	///      has elapsed since this instant, which guarantees every signature minted against the old basis has expired before quote
+	///      storage changes meaning. This is what replaces binding `basisVersion` into the signature payload.
+	uint256 restatementStartedAt;
 }
 
 /// @title SymbolAdjustmentStorage

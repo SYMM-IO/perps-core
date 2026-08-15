@@ -63,6 +63,12 @@ interface ISymmio {
 	/// @notice Enable or disable instant open mode (skips pending balance tracking)
 	/// @param _instantOpenMode True to skip pending balances in send+lock+open flows
 	function setInstantOpenMode(bool _instantOpenMode) external;
+
+	/// @notice Begin transient InstantLayer execution.
+	function beginInstantLayerExecution(bool _instantOpenMode) external;
+
+	/// @notice End transient InstantLayer execution before returning.
+	function endInstantLayerExecution() external;
 }
 
 contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
@@ -171,6 +177,11 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 	/// @notice Counter for generating unique sequential template IDs
 	uint256 public nextTemplateId;
+
+	/// @notice Whether execution uses the native begin/end context selectors.
+	/// @dev Both settings use EIP-1153 transient storage in this build. Disabling the flag
+	///      selects the historical setter sequence without changing signed operations or templates.
+	bool public transientContextEnabled;
 
 	/* ═══════════════════════════════ STRUCTS ═══════════════════════════════ */
 
@@ -333,6 +344,9 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @param selector Function selector being revoked
 	event DelegationSelectorRevoked(address indexed delegator, address indexed delegate, bytes4 selector);
 
+	/// @notice Emitted when transient execution is enabled or disabled.
+	event TransientContextEnabledUpdated(bool enabled);
+
 	/* ═══════════════════════════════ ERRORS ═══════════════════════════════ */
 
 	/// @notice Signature verification failed
@@ -480,6 +494,8 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @param _admin  Address to receive DEFAULT_ADMIN_ROLE, SETTER_ROLE, and OPERATOR_ROLE
 	constructor(address _symmio, address _admin) EIP712("SymmioInstantLayer", "1") {
 		symmio = ISymmio(_symmio);
+		transientContextEnabled = true;
+		emit TransientContextEnabledUpdated(true);
 
 		// Grant initial roles to the admin (REVOKER_ROLE must be granted separately)
 		_grantRole(DEFAULT_ADMIN_ROLE, _admin);
@@ -616,6 +632,15 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		if (target == address(0)) revert InvalidCallData();
 		whitelistedTargets[target] = allowed;
 		emit TargetWhitelistUpdated(target, allowed);
+	}
+
+	/// @notice Selects the native begin/end execution-context selectors.
+	/// @dev Disabling selects the historical mode and signer setters. Both selector routes
+	///      write transient storage in this build; this is not a persistent-storage rollback.
+	///      The switch does not alter signed data or templates.
+	function setTransientContextEnabled(bool enabled) external onlyRole(SETTER_ROLE) {
+		transientContextEnabled = enabled;
+		emit TransientContextEnabledUpdated(enabled);
 	}
 
 	/* ══════════════════════ TEMPLATE MANAGEMENT ══════════════════════ */
@@ -756,11 +781,18 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		if (!template.active) revert TemplateNotActive(templateId);
 		if (signedOps.length != template.operations.length) revert TemplateOperationLengthMismatch();
 
-		// Enable instant mode for optimized execution
+		// One core authority scope wraps the entire template. The flag selects between
+		// the native begin/end interface and the historical setter-compatible interface;
+		// both routes use transient storage in this build.
 		bool useInstantOpen = templateInstantOpenMode[templateId];
-		symmio.setCallFromInstantLayer(true);
-		if (useInstantOpen) {
-			symmio.setInstantOpenMode(true);
+		bool usesNativeContextSelectors = transientContextEnabled;
+		if (usesNativeContextSelectors) {
+			symmio.beginInstantLayerExecution(useInstantOpen);
+		} else {
+			symmio.setCallFromInstantLayer(true);
+			if (useInstantOpen) {
+				symmio.setInstantOpenMode(true);
+			}
 		}
 
 		results = new bytes[](signedOps.length);
@@ -778,18 +810,23 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			finalCallData = _insertResults(finalCallData, op.insertionPoints, op.sourceIndices, op.sourceOffsets, results);
 
 			// Execute the operation and capture result
-			(success, results[i]) = _executeOperationSafe(signedOp, finalCallData);
+			(success, results[i]) = _executeOperationSafe(signedOp, finalCallData, usesNativeContextSelectors);
 
 			if (!success) {
 				revert OperationFailed(i, results[i]);
 			}
 		}
 
-		// Disable instant mode
-		if (useInstantOpen) {
-			symmio.setInstantOpenMode(false);
+		// Close the same mechanism that opened the scope, so a later call in an outer
+		// multicast cannot inherit this batch's authority.
+		if (usesNativeContextSelectors) {
+			symmio.endInstantLayerExecution();
+		} else {
+			if (useInstantOpen) {
+				symmio.setInstantOpenMode(false);
+			}
+			symmio.setCallFromInstantLayer(false);
 		}
-		symmio.setCallFromInstantLayer(false);
 	}
 
 	/// @notice Execute a batch of independent operations.
@@ -811,7 +848,14 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		if (signedOps.length != fills.length) revert ArrayLengthMismatch();
 		if (signedOps.length != flexFillerSignatures.length) revert ArrayLengthMismatch();
 
-		symmio.setCallFromInstantLayer(true);
+		// Independent batches still need one shared routing-authority scope, but never
+		// enable the atomic-open accounting mode reserved for configured templates.
+		bool usesNativeContextSelectors = transientContextEnabled;
+		if (usesNativeContextSelectors) {
+			symmio.beginInstantLayerExecution(false);
+		} else {
+			symmio.setCallFromInstantLayer(true);
+		}
 
 		results = new bytes[](signedOps.length);
 
@@ -824,14 +868,18 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			bytes memory callData = _applyFlexFills(signedOps[i], fills[i], flexFillerSignatures[i], opHash);
 
 			// Execute with (potentially modified) calldata
-			(success, results[i]) = _executeOperationSafe(signedOps[i], callData);
+			(success, results[i]) = _executeOperationSafe(signedOps[i], callData, usesNativeContextSelectors);
 
 			if (!success) {
 				revert OperationFailed(i, results[i]);
 			}
 		}
 
-		symmio.setCallFromInstantLayer(false);
+		if (usesNativeContextSelectors) {
+			symmio.endInstantLayerExecution();
+		} else {
+			symmio.setCallFromInstantLayer(false);
+		}
 	}
 
 	/* ═════════════════════════ INTERNAL HELPERS ═════════════════════════ */
@@ -917,9 +965,14 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	///
 	/// @param signedOp Signed operation containing routing information
 	/// @param callData Prepared calldata (may include injected results)
+	/// @param usesNativeContextSelectors Whether this batch began with the native begin/end selector path
 	/// @return success True if operation succeeded
 	/// @return result  Return data from the operation
-	function _executeOperationSafe(SignedOperation calldata signedOp, bytes memory callData) private returns (bool success, bytes memory result) {
+	function _executeOperationSafe(
+		SignedOperation calldata signedOp,
+		bytes memory callData,
+		bool usesNativeContextSelectors
+	) private returns (bool success, bytes memory result) {
 		bytes[] memory callDatas = new bytes[](1);
 		callDatas[0] = callData;
 
@@ -935,15 +988,25 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			// The AccountLayer signer is the owner, which by itself authorizes every account that owner
 			// holds. When a delegate is driving the operation, hand the AccountLayer the account family
 			// the delegation was granted over so it can reject anything outside it. Owners stay unscoped.
+			// AccountLayer must use the same signer lifetime as the surrounding core scope. Mixing
+			// the two selector protocols would leave ambiguous authority.
 			address scope = signedOp.signer == owner ? address(0) : _canonicalDelegator(signedOp.signerAccount.addr);
-			IAccountLayerDiamond(accountLayer).setSignerScoped(owner, scope);
+			if (usesNativeContextSelectors) {
+				IAccountLayerDiamond(accountLayer).setTransientSignerScoped(owner, scope);
+			} else {
+				IAccountLayerDiamond(accountLayer).setSignerScoped(owner, scope);
+			}
 			if (signedOp.target == address(symmio)) {
 				(success, result) = accountLayer.call(abi.encodeWithSelector(ICoreFacet._call.selector, signedOp.signerAccount.addr, callDatas));
 				decodeNestedResult = true;
 			} else {
 				(success, result) = accountLayer.call(callData);
 			}
-			IAccountLayerDiamond(accountLayer).setSigner(address(0));
+			if (usesNativeContextSelectors) {
+				IAccountLayerDiamond(accountLayer).setTransientSigner(address(0));
+			} else {
+				IAccountLayerDiamond(accountLayer).setSigner(address(0));
+			}
 		} else {
 			// Route to a whitelisted target
 			(success, result) = signedOp.target.call(callData);

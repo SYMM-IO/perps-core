@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="The Liquidation Insurance Vault is a protocol-level mechanism that caps the profit liquidators can extract from PartyA liquidations and redirects any excess to a designated vault address. Without this cap, liquidators could earn disproportionately large fees when liquidating accounts with many…"
+		/>
+		<title>Liquidation Insurance Vault - Symmio Core v0.8.5</title>
+		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../../v0.8.6/assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../../v0.8.6/assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.5">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.5</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#doc-liquidation-insurance-overview">Overview</a>
+				<a class="toc-link level-2" href="#doc-liquidation-insurance-why-it-exists">Why It Exists</a>
+				<a class="toc-link level-2" href="#doc-liquidation-insurance-configuration">Configuration</a>
+				<a class="toc-link level-2" href="#doc-liquidation-insurance-how-it-works-in-the-liquidation-flow"
+					>How It Works in the Liquidation Flow</a
+				>
+				<a class="toc-link level-3" href="#doc-liquidation-insurance-the-three-liquidation-types">The Three Liquidation Types</a>
+				<a class="toc-link level-3" href="#doc-liquidation-insurance-the-cap-mechanism">The Cap Mechanism</a>
+				<a class="toc-link level-3" href="#doc-liquidation-insurance-fee-distribution-at-settlement">Fee Distribution at Settlement</a>
+				<a class="toc-link level-2" href="#doc-liquidation-insurance-example">Example</a>
+				<a class="toc-link level-2" href="#doc-liquidation-insurance-scope">Scope</a>
+				<a class="toc-link level-2" href="#doc-liquidation-insurance-relevant-files">Relevant Files</a>
+			</div>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Liquidation Insurance Vault</h1>
+						</div>
+					</div>
+				</header>
+				<article class="doc-article" id="full-document">
+					<h2 id="doc-liquidation-insurance-overview">Overview</h2>
+					<p>
+						The Liquidation Insurance Vault is a protocol-level mechanism that caps the profit liquidators can extract from PartyA
+						liquidations and redirects any excess to a designated vault address. Without this cap, liquidators could earn
+						disproportionately large fees when liquidating accounts with many positions or unusually high locked liquidation fees (LF).
+						The excess funds collected by the vault serve as protocol revenue and can be used to cover deficits in future overdue
+						liquidations.
+					</p>
+					<h2 id="doc-liquidation-insurance-why-it-exists">Why It Exists</h2>
+					<p>
+						During PartyA liquidation, the leftover LF (locked LF minus the insolvency deficit) is paid out to the liquidators who
+						processed the liquidation. In a <code>NORMAL</code> liquidation where PartyA's losses are smaller than the locked LF, this
+						remainder can be substantial -- especially on accounts with many open positions, each contributing their own LF.
+					</p>
+					<p>Two problems arise without a cap:</p>
+					<ol>
+						<li>
+							<strong>Liquidation fee inflation</strong> -- Liquidators are incentivized to front-run insolvency with high gas bids when
+							the potential payout is large, driving up costs for all users.
+						</li>
+						<li>
+							<strong>No protocol revenue from liquidations</strong> -- All leftover LF goes directly to liquidators, even when the
+							amount far exceeds a reasonable incentive.
+						</li>
+					</ol>
+					<p>
+						The insurance vault solves both problems by bounding per-position liquidator profit to
+						<code>maxLiquidationProfitPerPosition</code>. Everything above that threshold flows to the vault.
+					</p>
+					<h2 id="doc-liquidation-insurance-configuration">Configuration</h2>
+					<p>The vault address and per-position cap are set together via <code>ControlFacet</code>:</p>
+					<pre><code class="language-solidity">function setLiquidationInsuranceVaultParams(
+    address insuranceVault,
+    uint256 maxLiquidationProfit
+) external onlyRole(LibAccessibility.FEE_ADMIN_ROLE)
+</code></pre>
+					<table>
+						<thead>
+							<tr>
+								<th>Parameter</th>
+								<th>Description</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>insuranceVault</code></td>
+								<td>Address that receives excess LF. Must be non-zero.</td>
+							</tr>
+							<tr>
+								<td><code>maxLiquidationProfit</code></td>
+								<td>Maximum LF a liquidator can earn <strong>per position</strong> (in collateral token units).</td>
+							</tr>
+						</tbody>
+					</table>
+					<p>Both values are stored in <code>MAStorage</code>:</p>
+					<pre><code class="language-solidity">/// @notice Address that receives excess liquidation fees above the profit cap
+address liquidationInsuranceVault;
+
+/// @notice Cap on profit a liquidator can make from a single position
+uint256 maxLiquidationProfitPerPosition;
+</code></pre>
+					<p>The function requires <code>FEE_ADMIN_ROLE</code> and emits:</p>
+					<pre><code class="language-solidity">event SetLiquidationInsuranceVaultParams(address insuranceVault, uint256 maxLiquidationProfit);
+</code></pre>
+					<p>Current values can be read via <code>ViewFacet</code>:</p>
+					<pre><code class="language-solidity">function getLiquidationInsuranceVaultParams() external view returns (address, uint256);
+</code></pre>
+					<h2 id="doc-liquidation-insurance-how-it-works-in-the-liquidation-flow">How It Works in the Liquidation Flow</h2>
+					<p>
+						The cap is enforced inside <code>LibLiquidation.determineLiquidationType</code>, which is called during
+						<code>setSymbolsPrice</code> -- the step where the oracle provides symbol prices and the protocol classifies the liquidation
+						severity.
+					</p>
+					<h3 id="doc-liquidation-insurance-the-three-liquidation-types">The Three Liquidation Types</h3>
+					<p>PartyA liquidation is classified based on how much of the locked balance the deficit consumes:</p>
+					<table>
+						<thead>
+							<tr>
+								<th>Type</th>
+								<th>Condition</th>
+								<th>Meaning</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>NORMAL</code></td>
+								<td>deficit &lt; LF</td>
+								<td>Enough LF remains to pay liquidators.</td>
+							</tr>
+							<tr>
+								<td><code>LATE</code></td>
+								<td>LF &lt;= deficit &lt;= LF + CVA</td>
+								<td>LF is fully consumed; deficit eats into CVA.</td>
+							</tr>
+							<tr>
+								<td><code>OVERDUE</code></td>
+								<td>deficit &gt; LF + CVA</td>
+								<td>Both LF and CVA are consumed; PartyB absorbs losses.</td>
+							</tr>
+						</tbody>
+					</table>
+					<p>
+						The insurance vault cap only applies to <code>NORMAL</code> liquidations, because that is the only type where
+						<code>remainingLf &gt; 0</code>.
+					</p>
+					<h3 id="doc-liquidation-insurance-the-cap-mechanism">The Cap Mechanism</h3>
+					<p>The relevant code in <code>LibLiquidation.determineLiquidationType</code>:</p>
+					<pre><code class="language-solidity">if (uint256(-availableBalance) &lt; accountLayout.lockedBalances[partyA].lf) {
+    uint256 remainingLf = accountLayout.lockedBalances[partyA].lf - uint256(-availableBalance);
+    uint256 maxLf = maLayout.maxLiquidationProfitPerPosition
+                  * QuoteStorage.layout().partyAPositionsCount[partyA];
+    if (remainingLf &gt; maxLf) {
+        accountLayout.balances[maLayout.liquidationInsuranceVault] += remainingLf - maxLf;
+        remainingLf = maxLf;
+    }
+    detail.liquidationType = LiquidationType.NORMAL;
+    detail.liquidationFee = remainingLf;
+}
+</code></pre>
+					<p>Step by step:</p>
+					<ol>
+						<li>
+							<strong>Compute <code>remainingLf</code></strong> -- the locked LF minus the absolute deficit
+							(<code>|availableBalance|</code>). This is the total fee pool available to liquidators.
+						</li>
+						<li>
+							<strong>Compute <code>maxLf</code></strong> -- the cap, calculated as
+							<code>maxLiquidationProfitPerPosition * partyAPositionsCount</code>. The cap scales linearly with the number of open
+							positions because each position represents work for the liquidator.
+						</li>
+						<li>
+							<strong>Compare and redirect</strong> -- if <code>remainingLf &gt; maxLf</code>, the excess (<code
+								>remainingLf - maxLf</code
+							>) is credited to the insurance vault's balance, and <code>remainingLf</code> is reduced to <code>maxLf</code>.
+						</li>
+						<li>
+							<strong>Store the capped fee</strong> -- <code>detail.liquidationFee</code> is set to the (possibly capped)
+							<code>remainingLf</code>. This is the total amount distributed to liquidators at settlement.
+						</li>
+					</ol>
+					<p>
+						The excess is credited directly to <code>accountLayout.balances[liquidationInsuranceVault]</code>, meaning the vault address
+						can withdraw these funds like any other user balance.
+					</p>
+					<h3 id="doc-liquidation-insurance-fee-distribution-at-settlement">Fee Distribution at Settlement</h3>
+					<p>
+						At the end of the liquidation process, <code>settlePartyALiquidation</code> distributes the capped fee equally between the two
+						liquidators who participated:
+					</p>
+					<pre><code class="language-solidity">uint256 lf = accountLayout.liquidationDetails[partyA].liquidationFee;
+if (lf &gt; 0) {
+    accountLayout.allocatedBalances[accountLayout.liquidators[partyA][0]] += lf / 2;
+    accountLayout.allocatedBalances[accountLayout.liquidators[partyA][1]] += lf / 2;
+}
+</code></pre>
+					<p>
+						The first liquidator is the one who called <code>liquidatePartyA</code> (or <code>setSymbolsPrice</code> for deferred
+						liquidations). The second is the one who called <code>setSymbolsPrice</code> (or again <code>setSymbolsPrice</code> in the
+						deferred flow). Each receives exactly half of the capped <code>liquidationFee</code>.
+					</p>
+					<h2 id="doc-liquidation-insurance-example">Example</h2>
+					<p>
+						Suppose: - PartyA has 100 open positions - Total locked LF = 10,000 USDC - Deficit (insolvency amount) = 2,000 USDC -
+						<code>maxLiquidationProfitPerPosition</code> = 50 USDC
+					</p>
+					<p>
+						Calculation: 1. <code>remainingLf</code> = 10,000 - 2,000 = <strong>8,000 USDC</strong> 2. <code>maxLf</code> = 50 * 100 =
+						<strong>5,000 USDC</strong> 3. Since 8,000 &gt; 5,000, excess = 8,000 - 5,000 = <strong>3,000 USDC</strong> goes to the
+						insurance vault 4. <code>detail.liquidationFee</code> = <strong>5,000 USDC</strong> (split 2,500 to each liquidator at
+						settlement)
+					</p>
+					<h2 id="doc-liquidation-insurance-scope">Scope</h2>
+					<p>
+						The insurance vault cap applies <strong>only to PartyA liquidations</strong> (specifically the <code>NORMAL</code> type).
+						PartyB liquidations use a different fee distribution mechanism based on <code>liquidatorShare</code> and
+						<code>partyBPositionLiquidatorsShare</code>, and are not subject to this cap.
+					</p>
+					<h2 id="doc-liquidation-insurance-relevant-files">Relevant Files</h2>
+					<table>
+						<thead>
+							<tr>
+								<th>File</th>
+								<th>Role</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>contracts/core/storages/MAStorage.sol</code></td>
+								<td>Stores <code>liquidationInsuranceVault</code> and <code>maxLiquidationProfitPerPosition</code></td>
+							</tr>
+							<tr>
+								<td><code>contracts/core/libraries/LibLiquidation.sol</code></td>
+								<td>Implements the cap logic in <code>determineLiquidationType</code></td>
+							</tr>
+							<tr>
+								<td><code>contracts/core/facets/Control/ControlFacet.sol</code></td>
+								<td><code>setLiquidationInsuranceVaultParams</code> setter</td>
+							</tr>
+							<tr>
+								<td><code>contracts/core/facets/Control/IControlFacet.sol</code></td>
+								<td>Interface declaration</td>
+							</tr>
+							<tr>
+								<td><code>contracts/core/facets/Control/IControlEvents.sol</code></td>
+								<td><code>SetLiquidationInsuranceVaultParams</code> event</td>
+							</tr>
+							<tr>
+								<td><code>contracts/core/facets/ViewFacet/ViewFacet.sol</code></td>
+								<td><code>getLiquidationInsuranceVaultParams</code> getter</td>
+							</tr>
+							<tr>
+								<td><code>contracts/core/facets/PartyALiquidation/PartyALiquidationFacetImpl.sol</code></td>
+								<td>
+									Calls <code>determineLiquidationType</code> from <code>setSymbolsPrice</code>; distributes fee in
+									<code>settlePartyALiquidation</code>
+								</td>
+							</tr>
+							<tr>
+								<td><code>contracts/core/facets/PartyALiquidation/DeferredLiquidationFacetImpl.sol</code></td>
+								<td>Calls <code>determineLiquidationType</code> from deferred <code>setSymbolsPrice</code></td>
+							</tr>
+							<tr>
+								<td><code>contracts/core/storages/AccountStorage.sol</code></td>
+								<td>
+									Stores <code>balances</code> (where vault excess is credited) and <code>LiquidationDetail.liquidationFee</code>
+								</td>
+							</tr>
+						</tbody>
+					</table>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer"><span>Symmio Core v0.8.5 documentation.</span></footer>
+	</body>
+</html>

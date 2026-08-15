@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="But what if users want to transfer funds out to a different contract? This is where external transfers come in."
+		/>
+		<title>External Transfer - Symmio Core v0.8.5</title>
+		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../../v0.8.6/assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../../v0.8.6/assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.5">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.5</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#doc-external-transfer-externaltransfer">externalTransfer</a>
+				<a class="toc-link level-2" href="#doc-external-transfer-virtual-external-transfer">Virtual External Transfer</a>
+			</div>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>External Transfer</h1>
+							<p class="hero-copy">
+								Previously, we had <strong>internal transfers</strong>, which allowed users to move funds between their accounts
+								within the same diamond. By providing this feature, we enabled users to bypass the withdrawal cooldown.
+							</p>
+						</div>
+					</div>
+				</header>
+				<article class="doc-article" id="full-document">
+					<p>
+						But what if users want to transfer funds out to a <strong>different contract</strong>? This is where
+						<strong>external transfers</strong> come in.
+					</p>
+					<p>
+						External transfers let users move funds to any trusted target contract with the help of a predefined relayer. The target can
+						be another Symmio diamond (e.g., a perps diamond and a future options diamond on the same chain), but it can also be any
+						external contract that Symmio has whitelisted. Symmio doesn't care what the target is -- it only requires that an admin has
+						registered an authorized relayer for that target via <code>addRelayerForExternalTransferTarget</code>. The relayer receives
+						the funds and a callback, and it's responsible for depositing or handling them at the target.
+					</p>
+					<p>
+						Because the relayer has full control over the funds once transferred, Symmio must trust both the target and its relayer.
+						Admins with the <code>INTEGRATION_ADMIN_ROLE</code> can add or remove relayer authorizations, and the protocol should have
+						roles and processes in place to confiscate funds or revoke relayer access if fraud or anomalies are detected.
+					</p>
+					<h2 id="doc-external-transfer-externaltransfer"><code>externalTransfer</code></h2>
+					<pre><code class="language-solidity">function externalTransfer(address receiver, uint256 amount, address target);
+</code></pre>
+					<p>The relayer contract callback function is:</p>
+					<pre><code class="language-solidity">function onTransfer(address collateral, address sender, address receiver, uint256 amount, address target);
+</code></pre>
+					<p>
+						The relayer can choose to revert the transaction for any reason (e.g., the target doesn't support that receiver, or a risk
+						check fails).
+					</p>
+					<h2 id="doc-external-transfer-virtual-external-transfer">Virtual External Transfer</h2>
+					<p>
+						Virtual funds exist only as balance entries in storage -- no actual collateral token was transferred to the contract. So we
+						can't send tokens from the source diamond to a relayer. Instead, we use a virtual provider as intermediary. The source diamond
+						deducts the user's virtual balance and notifies the virtual provider, which is expected to credit the receiver on the target
+						contract via <code>virtualDepositFor</code> or equivalent.
+					</p>
+					<pre><code class="language-solidity">function virtualExternalTransfer(address receiver, uint256 amount, address target, address virtualProvider);
+</code></pre>
+					<p>
+						After calling this function, the virtual provider should accept it. If the virtual provider does not accept, the user can
+						cancel the external transfer request:
+					</p>
+					<pre><code class="language-solidity">function cancelVirtualExternalTransfer(uint256 id);
+</code></pre>
+					<p>To find the status of the virtual external transfer:</p>
+					<pre><code class="language-solidity">function getVirtualExternalTransfer(uint256 id) external view returns (VirtualExternalTransferRequest memory)
+
+struct VirtualExternalTransferRequest {
+    uint256 id;
+    address sender;    // user in source contract
+    address receiver;  // recipient in target contract
+    address source;    // source Symmio contract
+    address target;    // target contract (Symmio diamond or any trusted contract)
+    uint256 amount;
+    uint256 timestamp;
+    address provider;  // virtual provider who handles the transfer
+    VirtualExternalTransferStatus status;
+}
+
+enum VirtualExternalTransferStatus {
+    PENDING,   // 0
+    COMPLETED, // 1
+    CANCELED   // 2
+}
+</code></pre>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer"><span>Symmio Core v0.8.5 documentation.</span></footer>
+	</body>
+</html>

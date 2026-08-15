@@ -1,0 +1,15 @@
+[
+	{
+		"name": "contracts/helpers/accounts/SymmioPartyB.sol:SymmioPartyB",
+		"address": "0xb83881b0C08BbA3915B386494BC3c34aea3Fe50C",
+		"constructorArguments": []
+	},
+	{
+		"name": "contracts/helpers/utils/LocalERC1967Proxy.sol:LocalERC1967Proxy",
+		"address": "0x9be79D4977D86D440F9e1Ea0d468A58104B9b932",
+		"constructorArguments": [
+			"0xb83881b0C08BbA3915B386494BC3c34aea3Fe50C",
+			"0x485cc955000000000000000000000000f12239317e985f6772f86407608b166efa3e2f05000000000000000000000000573310db6d160b26026b8706ebe9831c7def1d09"
+		]
+	}
+]

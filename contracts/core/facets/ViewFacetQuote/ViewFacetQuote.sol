@@ -4,9 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { QuoteStorage, Quote, QuoteStatus, SolverFeeState } from "../../storages/QuoteStorage.sol";
-import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { SymbolAdjustmentStorage, SymbolAdjustment } from "../../storages/SymbolAdjustmentStorage.sol";
 import { IViewFacetQuote } from "./IViewFacetQuote.sol";
 import { LibQuoteFunding } from "../../libraries/LibQuoteFunding.sol";

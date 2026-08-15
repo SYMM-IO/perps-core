@@ -17,7 +17,6 @@ import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { FundingStorage, FundingFee } from "../../storages/FundingStorage.sol";
 import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
-import { MAStorage } from "../../storages/MAStorage.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { PairUpnlSig } from "../../storages/MuonStorage.sol";
 import { PositionType } from "../../storages/QuoteStorage.sol";

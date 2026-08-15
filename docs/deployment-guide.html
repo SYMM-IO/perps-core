@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Operator runbook for deploying and running SYMMIO from the menu application: safety contract, receipts, reports, checklist, and handover evidence."
+		/>
+		<title>SYMMIO Operator Guide</title>
+		<link rel="icon" type="image/svg+xml" href="v0.8.6/assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="v0.8.6/assets/v086-docs.css" />
+		<link rel="stylesheet" href="assets/docs-portal.css" />
+		<script src="v0.8.6/assets/v086-docs.js" defer></script>
+		<script src="assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<span class="trail-current" aria-current="page">Operator guide</span>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<a class="button ghost" href="v0.8.6/index.html">v0.8.6 docs</a>
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#start">Start</a>
+				<a class="toc-link level-2" href="#forms">Guided configuration</a>
+				<a class="toc-link level-2" href="#task">One durable task</a>
+				<a class="toc-link level-2" href="#progress">Progress and recovery</a>
+				<a class="toc-link level-2" href="#handover">Handover</a>
+				<a class="toc-link level-2" href="#evidence">Evidence</a>
+				<section class="rail-group rail-group-plain">
+					<h2 class="rail-group-title">Related</h2>
+					<a class="rail-link" href="deployment.md"><span class="rail-label">Deployment safety contract</span></a>
+					<a class="rail-link" href="../cli/README.md"><span class="rail-label">Task and registration standard</span></a>
+					<a class="rail-link" href="../deployment/README.md"><span class="rail-label">Portable intent format</span></a>
+				</section>
+			</div>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<p class="topic-kicker"><span>Operations</span><span>Operator guide</span></p>
+					<div class="reader-title-row">
+						<div>
+							<h1>Operate SYMMIO from one menu</h1>
+							<p class="hero-copy">
+								Deploy, patch, audit, resume, and safely abandon work without memorising commands or editing deployment JSON by hand.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="start">Start</h2>
+					<p>Install the locked dependency tree once, then launch the checkout-local application in a real terminal.</p>
+					<pre><code class="language-bash">npm ci
+./symmio</code></pre>
+					<p>
+						The operator interface is intentionally menu-only. Arguments and non-TTY execution are refused. Low-level Hardhat tasks remain
+						internal adapters owned by registered tasks.
+					</p>
+					<ol>
+						<li>Deploy a contract</li>
+						<li>Patch configurations for deployed contracts</li>
+						<li>Run the checklist on a new deployment</li>
+						<li>Other maintenance scripts</li>
+						<li>Continue active task</li>
+						<li>Cancel active task</li>
+						<li>Exit</li>
+					</ol>
+
+					<h2 id="forms">Guided configuration</h2>
+					<p>
+						Choose a target and network. The form loads reviewed defaults, asks only required decisions and overrides, validates each
+						typed value immediately, then shows public intent grouped by network, governance, Core, Muon, protocol, components, and
+						execution.
+					</p>
+					<aside class="callout callout-important">
+						<strong>Secrets never enter the form state.</strong> Choose one task-bound signer: Hardhat keystore, a masked memory-only
+						private key, Ledger, Safe JSON/direct proposal when the operation is call-only, or an unlocked localhost account. The official
+						keystore flow is recommended first; passwords, private keys, RPC URLs, API keys, and explorer keys are not copied into task
+						state or logs.
+					</aside>
+					<p>
+						After final approval the application writes a portable recipe atomically. Operators review that artifact; they do not need to
+						manually maintain its JSON. Local and fork workflows may deliberately use environment references, but live workflows may not.
+					</p>
+					<aside class="callout callout-risk">
+						<strong>Express credit limits:</strong> <code>maxDebt: "0"</code> and <code>maxDebtBps: 0</code> mean unlimited on those axes.
+						The review calls this out before an ExpressProvider deployment or patch can continue.
+					</aside>
+
+					<h2 id="task">One durable task</h2>
+					<p>A live deployment is one connected workflow. It automatically performs:</p>
+					<ol>
+						<li>recipe, RPC, signer, authority, and dependency preflight;</li>
+						<li>production compilation;</li>
+						<li>a matching fork rehearsal and receipt review;</li>
+						<li>typed live-network confirmation;</li>
+						<li>write-ahead transaction journaling and receipt reconciliation;</li>
+						<li>explorer verification and current health checks; and</li>
+						<li>ownership, role, deployer-privilege, and handover proof.</li>
+					</ol>
+					<p>
+						A completed report is historical evidence, never an active task. The active record is bound to task version, source and input
+						hashes, recipe digest, chain, signer set, and stable plan; changed intent cannot be resumed accidentally.
+					</p>
+
+					<h2 id="progress">Progress and recovery</h2>
+					<p>
+						The live view shows phase, completed and total steps, current action, confirmed/pending/failed transaction counts, elapsed
+						time, and warnings. Press <code>d</code> for hashes, receipts, gas, explorer links, and recent redacted logs.
+					</p>
+					<p>
+						The first Ctrl+C requests a cooperative pause at the next safe boundary. A second Ctrl+C exits immediately after preserving
+						resumable state. Choose <strong>Continue active task</strong> to reconcile recorded broadcasts before doing new work.
+					</p>
+					<p>
+						<strong>Cancel active task</strong> means safe abandonment, never rollback. Confirmed on-chain effects remain recorded.
+						Unknown broadcast outcomes hold the task in <code>cancel_pending</code> until reconciliation can prove them.
+					</p>
+
+					<h2 id="handover">Handover and external actions</h2>
+					<p>
+						When a Safe or governance account must act, the task records exact target, value, calldata, and reason. It can write Safe
+						Transaction Builder JSON with decoded method names or create a proposal through the official Safe SDK using a keystore,
+						private-key, or Ledger owner, then enters
+						<code>waiting_external</code>. After those actions confirm, launch <code>./symmio</code> and choose
+						<strong>Continue active task</strong>. The task rereads chain state, skips completed deployment steps, and closes only after
+						the strict health gate passes.
+					</p>
+
+					<h2 id="evidence">Evidence</h2>
+					<div class="table-wrap">
+						<table class="enum-table">
+							<thead>
+								<tr>
+									<th>Path</th>
+									<th>Purpose</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td><code>deployments/&lt;name&gt;.json</code></td>
+									<td>Portable, reviewed public intent</td>
+								</tr>
+								<tr>
+									<td><code>.symmio/tasks/active.json</code></td>
+									<td>Single transient active task</td>
+								</tr>
+								<tr>
+									<td><code>.symmio/tasks/runs/</code></td>
+									<td>NDJSON event journal and redacted raw log</td>
+								</tr>
+								<tr>
+									<td><code>.symmio/tasks/history/</code></td>
+									<td>Indefinite local terminal history</td>
+								</tr>
+								<tr>
+									<td><code>tasks/data/&lt;chainId&gt;/</code></td>
+									<td>Canonical sanitized reports, receipts, and checklists</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						For persistent local-node rehearsal, patch semantics, checklist coverage, and maintenance policies, use the
+						<a href="deployment.md">complete deployment runbook</a>. For adding a one-time script, use the
+						<a href="../cli/README.md">task-definition and registry standard</a>.
+					</p>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>SYMMIO operator documentation.</span>
+			<span>Menu-only, durable, and evidence-first.</span>
+		</footer>
+	</body>
+</html>

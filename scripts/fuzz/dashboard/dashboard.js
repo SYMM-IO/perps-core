@@ -2630,6 +2630,12 @@
 	function showError(error) {
 		state.error = error instanceof Error ? error.message : text(error, "Unknown report error");
 		dom["error-banner"].hidden = false;
+		dom["error-banner"].classList.toggle("error-banner--empty", state.report === null);
+		if (state.report === null) {
+			dom["waiting-state"].hidden = true;
+			dom.dashboard.hidden = true;
+			dom["follow-button"].disabled = true;
+		}
 		setText(dom["error-message"], `${state.error}. The dashboard will retry automatically.`);
 		updateConnection();
 	}
@@ -2637,6 +2643,8 @@
 	function clearError() {
 		state.error = null;
 		dom["error-banner"].hidden = true;
+		dom["error-banner"].classList.remove("error-banner--empty");
+		dom["follow-button"].disabled = false;
 	}
 
 	async function loadReport({ force = false } = {}) {

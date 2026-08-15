@@ -6,8 +6,9 @@ pragma solidity >=0.8.18;
 
 import { EntityMetadata } from "../../storages/MAStorage.sol";
 import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
+import { IExecutionContextEvents } from "../ExecutionContext/IExecutionContextEvents.sol";
 
-interface IControlEvents {
+interface IControlEvents is IExecutionContextEvents {
 	event RoleGranted(bytes32 role, address user);
 	event RoleRevoked(bytes32 role, address user);
 	event RoleAdminAdded(bytes32 role, address admin);
@@ -136,7 +137,6 @@ interface IControlEvents {
 	event SetMinWithdrawCooldown(uint256 lastMinWithdrawCooldown, uint256 newMinWithdrawCooldown);
 	event SetPureVirtualCancelBlackout(uint256 oldBlackout, uint256 newBlackout);
 	event LegacyWithdrawalDeprecated();
-	event SignerSet(address signer);
 	event SetMinAffiliateFee(uint256 oldMinAffiliateFee, uint256 newMinAffiliateFee);
 	event SetSoftLiquidationPenaltyCollector(address softLiquidationPenaltyCollector);
 	event SetPartyBBindable(address partyB, bool bindable);

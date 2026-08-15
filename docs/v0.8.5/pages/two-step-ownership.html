@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="The Diamond proxy&#x27;s ownership transfer has been changed from a single-step to a two-step process. Previously, calling transferOwnership(newOwner) would immediately assign ownership to the target address. If the address was incorrect or a contract unable to interact with the diamond, ownership…"
+		/>
+		<title>Two-Step Ownership Transfer - Symmio Core v0.8.5</title>
+		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../../v0.8.6/assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../../v0.8.6/assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.5">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.5</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#doc-two-step-ownership-overview">Overview</a>
+				<a class="toc-link level-2" href="#doc-two-step-ownership-how-it-works">How It Works</a>
+				<a class="toc-link level-2" href="#doc-two-step-ownership-functions">Functions</a>
+				<a class="toc-link level-3" href="#doc-two-step-ownership-transferownershipaddress-newowner">transferOwnership(address newOwner)</a>
+				<a class="toc-link level-3" href="#doc-two-step-ownership-acceptownership">acceptOwnership()</a>
+				<a class="toc-link level-3" href="#doc-two-step-ownership-pendingowner-view">pendingOwner() (view)</a>
+				<a class="toc-link level-2" href="#doc-two-step-ownership-migration-notes">Migration Notes</a>
+			</div>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Two-Step Ownership Transfer</h1>
+						</div>
+					</div>
+				</header>
+				<article class="doc-article" id="full-document">
+					<h2 id="doc-two-step-ownership-overview">Overview</h2>
+					<p>
+						The Diamond proxy's ownership transfer has been changed from a single-step to a two-step process. Previously, calling
+						<code>transferOwnership(newOwner)</code> would immediately assign ownership to the target address. If the address was
+						incorrect or a contract unable to interact with the diamond, ownership would be irrecoverably lost.
+					</p>
+					<h2 id="doc-two-step-ownership-how-it-works">How It Works</h2>
+					<p>Ownership transfer now requires two transactions:</p>
+					<ol>
+						<li>
+							<strong>Current owner</strong> calls <code>transferOwnership(newOwner)</code> -- this sets a <em>pending</em> owner but
+							does not change the active owner.
+						</li>
+						<li>
+							<strong>New owner</strong> calls <code>acceptOwnership()</code> -- this confirms the transfer and assigns ownership to the
+							caller.
+						</li>
+					</ol>
+					<p>
+						Until <code>acceptOwnership()</code> is called, the original owner retains full control and can call
+						<code>transferOwnership</code> again to change the pending owner or effectively cancel the transfer.
+					</p>
+					<h2 id="doc-two-step-ownership-functions">Functions</h2>
+					<h3 id="doc-two-step-ownership-transferownershipaddress-newowner"><code>transferOwnership(address newOwner)</code></h3>
+					<p>
+						Sets the pending owner to <code>newOwner</code>. Only callable by the current owner. Does not transfer ownership immediately.
+					</p>
+					<h3 id="doc-two-step-ownership-acceptownership"><code>acceptOwnership()</code></h3>
+					<p>
+						Accepts the pending ownership transfer. Only callable by the address set as the pending owner. On success, the caller becomes
+						the new owner and the pending owner is cleared.
+					</p>
+					<h3 id="doc-two-step-ownership-pendingowner-view"><code>pendingOwner()</code> (view)</h3>
+					<p>Returns the address of the pending owner, or <code>address(0)</code> if no transfer is pending.</p>
+					<h2 id="doc-two-step-ownership-migration-notes">Migration Notes</h2>
+					<p>
+						No migration is required for this change. The upgrade simply replaces the ownership transfer logic in the Diamond's admin
+						facet. Existing ownership is preserved.
+					</p>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer"><span>Symmio Core v0.8.5 documentation.</span></footer>
+	</body>
+</html>

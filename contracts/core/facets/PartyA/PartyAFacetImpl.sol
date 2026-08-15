@@ -19,10 +19,10 @@ import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
 import { Fee } from "../../storages/QuoteStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
+import { LibExecutionContext } from "../../libraries/LibExecutionContext.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { SingleUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
-import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
 import { LibHook } from "../../libraries/LibHook.sol";
 import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
@@ -113,7 +113,7 @@ library PartyAFacetImpl {
 			);
 		}
 		// lock funds the in middle of way — skip in instantOpenMode (will be written directly to lockedBalances)
-		bool _instantOpenMode = GlobalAppStorage.layout().instantOpenMode;
+		bool _instantOpenMode = LibExecutionContext.isInstantOpenMode();
 		if (!_instantOpenMode) {
 			accountLayout.pendingLockedBalances[signer].add(lockedValues);
 		}

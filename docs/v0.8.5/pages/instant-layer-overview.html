@@ -1,0 +1,753 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="When a user wants to open a position, they send a quote on-chain. Then, partyB, upon seeing that quote, can lock it and open the position. The issue we encountered was that sometimes it took a few seconds for partyB to receive the contract events and be notified about the new quote."
+		/>
+		<title>Better Instant actions through Instant Layer - Symmio Core v0.8.5</title>
+		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../../v0.8.6/assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../../v0.8.6/assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.5">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.5</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#doc-instant-layer-overview-technical-implementation-details">Technical Implementation Details</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-overview-core-data-structures">Core Data Structures</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-overview-account-structure">Account Structure</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-overview-replay-attack-protection">Replay Attack Protection</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-overview-signature-structures">Signature Structures</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-overview-signedoperation">SignedOperation</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-overview-self-execution-signature-skip">Self-Execution (Signature Skip)</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-overview-target-and-whitelisting">Target and Whitelisting</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-overview-method-specifications">Method Specifications</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-overview-executebatch">executeBatch</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-overview-executetemplate">executeTemplate</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-overview-delegation-system">Delegation System</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-overview-delegationinfo-structure">DelegationInfo Structure</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-overview-creating-delegations">Creating Delegations</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-overview-security-mechanisms">Security Mechanisms</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-overview-1-replay-protection">1. Replay Protection</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-overview-2-contract-registration-and-whitelists"
+					>2. Contract Registration and Whitelists</a
+				>
+				<a class="toc-link level-3" href="#doc-instant-layer-overview-3-self-execution-security">3. Self-Execution Security</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-overview-4-delegation-revoke-system">4. Delegation Revoke System</a>
+				<a class="toc-link level-2" href="#doc-instant-layer-overview-flex-fields">Flex Fields</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-overview-how-it-works">How It Works</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-overview-data-structures">Data Structures</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-overview-flex-filler-authorization">Flex Filler Authorization</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-overview-multi-use-operations">Multi-Use Operations</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-overview-example-tpsl-service-with-flex-fields"
+					>Example: TPSL Service with Flex Fields</a
+				>
+				<a class="toc-link level-3" href="#doc-instant-layer-overview-example-solver-updating-muon-signature-in-sendquote"
+					>Example: Solver Updating Muon Signature in sendQuote</a
+				>
+				<a class="toc-link level-2" href="#doc-instant-layer-overview-related-documentation">Related Documentation</a>
+			</div>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Better Instant actions through <em>Instant Layer</em></h1>
+							<p class="hero-copy">
+								To better understand the role of the <strong>Instant Layer</strong> within the <strong>Symmio ecosystem</strong>, it
+								is useful to first review the <strong>lifecycle of a Quote in Symmio</strong>.
+							</p>
+						</div>
+					</div>
+				</header>
+				<article class="doc-article" id="full-document">
+					<p>
+						When a user wants to open a position, they send a quote on-chain. Then, <strong>partyB</strong>, upon seeing that quote, can
+						lock it and open the position. The issue we encountered was that sometimes it took a few seconds for partyB to receive the
+						contract events and be notified about the new quote.
+					</p>
+					<p>
+						The only way to address this problem was for the user to contact partyB directly off-chain and send the quote to them
+						manually, enabling partyB to submit the quote to the contract on behalf of the user. To support this in previous versions, we
+						introduced a <strong>"delegateAccess"</strong> feature, where the user could grant partyB permission to call a specific
+						function (such as <code>sendQuote</code>) on their behalf.
+					</p>
+					<p>
+						However, this approach required the user to fully trust partyB, since partyB technically had the ability to misuse access and
+						potentially steal the user's funds. In practice, this was not a major concern, as partyBs within Symmio are trusted
+						entities—but if a partyB were to be hacked, users could still be exposed to significant risk.
+					</p>
+					<p>
+						With the introduction of the <strong>Instant Layer</strong>, we allow users to grant
+						<strong>one-time, specific allowances</strong> to partyBs instead of broad, indefinite permissions. Essentially, a user can
+						sign a specific call with defined parameters and provide that signature to partyB. PartyB can then prepare their own
+						corresponding signature, and both signatures can be submitted together to the Instant Layer for batched execution.
+					</p>
+					<p>
+						Apart from signing a single <code>callData</code> and handing it over to Party B for execution, the user can also delegate
+						access to a set of selectors to another signer if needed. This action can be performed either through a transaction or by
+						signing a message (and then passing that message to someone for execution).
+					</p>
+					<p>
+						Yes, this delegation feature is somewhat similar to what we had in previous versions, but now it comes with a much cleaner
+						API, and the user can complete it using only a signature.
+					</p>
+					<p>
+						Together, these improvements enable Symmio frontends to implement something powerful: during each user session, they can
+						generate a key pair locally in the user's browser and, for example, rotate it daily. At the start of each session, the user
+						grants access to the newly created address, allowing all subsequent actions and signatures to be performed by that key pair
+						within the browser.
+					</p>
+					<p>Compared to the old approach, the user no longer needs to trust Party B for this access delegation.</p>
+					<p>
+						Apart from executing a batch of <strong>Symmio</strong> calls from their respective signatures using
+						<code>executeBatch</code> method, we have also introduced <strong>templates</strong> in the instant layer. These templates
+						come in handy when the execution of one operation depends on the output of a previous one.
+					</p>
+					<p>
+						A prime example of this in Symmio contracts is executing <code>sendQuote</code>, then <code>lockQuote</code>, and finally
+						<code>openPosition</code> — all within a single transaction. In this flow, the quote ID (a parameter required by the second
+						and third operations) is obtained from the result of the first operation or from a view call inserted after it to retrieve the
+						latest quote ID.
+					</p>
+					<p>
+						To handle this, <strong>partyB</strong> places a placeholder value (such as <code>0</code>) in the <code>lockQuote</code> and
+						<code>openPosition</code> calldata. The contract then automatically replaces these placeholders with the correct values during
+						execution.
+					</p>
+					<p>
+						Only <strong>admins</strong> can create templates, while <strong>operators</strong> — possessing both user and partyB
+						signatures — can select a template and pass the corresponding signatures for such workflows to the
+						<code>executeTemplate</code> method.
+					</p>
+					<h2 id="doc-instant-layer-overview-technical-implementation-details">Technical Implementation Details</h2>
+					<h3 id="doc-instant-layer-overview-core-data-structures">Core Data Structures</h3>
+					<h3 id="doc-instant-layer-overview-account-structure">Account Structure</h3>
+					<p>The Instant Layer uses an <code>Account</code> struct to represent both PartyA and PartyB accounts:</p>
+					<pre><code class="language-solidity">struct Account {
+    address addr; // Trading account address (PartyA) or PartyB contract address
+    bool isPartyB; // true for PartyB, false for PartyA accounts
+}
+</code></pre>
+					<ul>
+						<li>
+							For <strong>PartyA accounts</strong>: <code>isPartyB = false</code>, and <code>addr</code> is the trading account address
+							(sub-account, virtual account, or a legacy MultiAccount account). Ownership is resolved through
+							<code>AccountLayer.ownerOf(addr)</code>.
+						</li>
+						<li>
+							For <strong>PartyB accounts</strong>: <code>isPartyB = true</code>, and <code>addr</code> is the PartyB contract address.
+						</li>
+					</ul>
+					<h3 id="doc-instant-layer-overview-replay-attack-protection">Replay Attack Protection</h3>
+					<p>Every operation includes a <code>ReplayAttackHeader</code> to prevent replay attacks:</p>
+					<pre><code class="language-solidity">struct ReplayAttackHeader {
+    uint256 nonce; // 0 for salt-only, &gt;0 for sequential execution
+    uint256 deadline; // Unix timestamp for expiration
+    bytes32 salt; // Unique salt for operation uniqueness
+}
+</code></pre>
+					<p><strong>Nonce Management Strategy:</strong></p>
+					<ul>
+						<li>
+							<p>
+								<strong><code>nonce = 0</code> (Salt-only mode):</strong>
+							</p>
+							<p>
+								Operations can be executed in any order, as long as each uses a unique <code>salt</code>. No sequential tracking is
+								performed.
+							</p>
+						</li>
+						<li>
+							<p>
+								<strong><code>nonce &gt; 0</code> (Sequential mode):</strong>
+							</p>
+							<p>
+								Operations must be executed in order. The contract enforces that the provided nonce equals the account's current nonce
+								+ 1.
+							</p>
+						</li>
+					</ul>
+					<p><strong>Important:</strong></p>
+					<p>
+						Nonces are tracked <strong>per <code>signerAccount.addr</code></strong
+						>, meaning each trading account (PartyA or PartyB) maintains its own independent nonce counter. This allows different accounts
+						belonging to the same user to sign and execute operations concurrently without interference.
+					</p>
+					<h3 id="doc-instant-layer-overview-signature-structures">Signature Structures</h3>
+					<h3 id="doc-instant-layer-overview-signedoperation">SignedOperation</h3>
+					<p>The primary structure for batched operations:</p>
+					<pre><code class="language-solidity">struct SignedOperation {
+    address signer; // Address that created the signature
+    address target; // Contract to call (must be whitelisted)
+    bytes callData; // Encoded function call to execute
+    Account signerAccount; // Account context
+    FlexField[] flexFields; // Modifiable regions in calldata (empty for standard ops)
+    uint256 maxUses; // Max execution count (1=single-use, 0=unlimited)
+    ReplayAttackHeader replayAttackHeader;
+}
+</code></pre>
+					<p>
+						For standard operations, <code>flexFields</code> is empty and <code>maxUses</code> is <code>1</code>. See the
+						<a href="#doc-instant-layer-overview-flex-fields">Flex Fields</a> section for details on partial calldata modification.
+					</p>
+					<h3 id="doc-instant-layer-overview-self-execution-signature-skip">Self-Execution (Signature Skip)</h3>
+					<p>
+						When the transaction sender (<code>msg.sender</code>) is the same as the operation's <code>signer</code>,
+						<strong>signature verification is skipped</strong>. This optimization allows authorized parties to execute their own
+						operations without needing to sign them.
+					</p>
+					<p><strong>How It Works:</strong></p>
+					<ol>
+						<li>
+							<p>The contract first verifies authorization:</p>
+							<ul>
+								<li>For <strong>PartyB</strong>: Checks that the signer is a registered PartyB</li>
+								<li>For <strong>PartyA</strong>: Checks that the signer is the account owner or has a valid delegation</li>
+							</ul>
+						</li>
+						<li>
+							<p>
+								If <code>signer == msg.sender</code>, the signature check is bypassed because <code>msg.sender</code> already proves
+								identity at the EVM level.
+							</p>
+						</li>
+						<li>
+							<p>An empty signature (<code>"0x"</code> or <code>[]</code>) can be provided for self-executed operations.</p>
+						</li>
+					</ol>
+					<p><strong>Use Cases:</strong></p>
+					<ul>
+						<li>
+							<strong>PartyB Direct Execution</strong>: A PartyB operator can call <code>executeBatch</code> directly, including their
+							own operations without signatures while still providing signatures for user operations.
+						</li>
+						<li><strong>Account Owner Execution</strong>: An account owner can execute their own operations directly without signing.</li>
+						<li>
+							<strong>Delegated Signer Execution</strong>: A delegated signer with proper permissions can execute operations directly.
+						</li>
+					</ul>
+					<p><strong>Example:</strong></p>
+					<pre><code class="language-javascript">// PartyB executing their own operation - no signature needed
+const partyBOperation = {
+    signer: partyBAddress, // Same as msg.sender
+    target: symmioCoreAddress,
+    callData: encodedLockQuote,
+    signerAccount: { addr: partyBAddress, isPartyB: true },
+    flexFields: [],
+    maxUses: 1,
+    replayAttackHeader: { nonce: 0n, deadline: 0n, salt: generateSalt() },
+};
+
+// User operation still needs a signature
+const userOperation = {
+    signer: userAddress,
+    target: symmioCoreAddress,
+    callData: encodedSendQuote,
+    signerAccount: { addr: userAccountAddress, isPartyB: false },
+    flexFields: [],
+    maxUses: 1,
+    replayAttackHeader: { nonce: 0n, deadline: 0n, salt: generateSalt() },
+};
+
+// PartyB (as msg.sender) calls executeBatch
+await instantLayer.executeBatch(
+    [userOperation, partyBOperation],
+    [userSignature, "0x"], // Empty signature for PartyB's own operation
+    [{ values: [] }, { values: [] }], // No flex fills
+    [[], []], // No flex filler signatures
+);
+</code></pre>
+					<p><strong>Security Note:</strong></p>
+					<p>Authorization is still fully enforced before the signature skip:</p>
+					<ul>
+						<li>PartyB must be registered with InstantLayer</li>
+						<li>PartyA signers must be account owners or have valid delegations</li>
+						<li>Replay attack protection (salts, nonces, hashes) still applies</li>
+					</ul>
+					<h3 id="doc-instant-layer-overview-target-and-whitelisting">Target and Whitelisting</h3>
+					<ul>
+						<li>
+							If <code>target</code> is the Symmio core, the call is routed through <code>AccountLayer._call(...)</code> so the core
+							sees the correct trading account via <code>setSigner</code>.
+						</li>
+						<li>
+							If <code>target</code> is not Symmio, the Instant Layer calls <code>target</code> directly. Only whitelisted targets can
+							be called.
+						</li>
+						<li>
+							For external targets, <code>msg.sender</code> is the Instant Layer contract (the signature is what authorizes the call).
+						</li>
+						<li>Return data from external targets will be dropped.</li>
+					</ul>
+					<p><strong>What Users Should Sign:</strong></p>
+					<ol>
+						<li>The user creates a hash of their operation using EIP-712 standard</li>
+						<li>
+							The hash includes:
+							<ul>
+								<li>Their address as <code>signer</code></li>
+								<li>The exact <code>target</code> and <code>callData</code> they want to execute</li>
+								<li>Their account information</li>
+								<li>Replay protection parameters</li>
+							</ul>
+						</li>
+					</ol>
+					<p><strong>Example User Signature Creation (JavaScript):</strong></p>
+					<pre><code class="language-jsx">const domain = {
+    name: "SymmioInstantLayer",
+    version: "1",
+    chainId: chainId,
+    verifyingContract: instantLayerAddress,
+};
+
+const types = {
+    SignedOperation: [
+        { name: "signer", type: "address" },
+        { name: "target", type: "address" },
+        { name: "callData", type: "bytes" },
+        { name: "signerAccount", type: "Account" },
+        { name: "flexFields", type: "FlexField[]" },
+        { name: "maxUses", type: "uint256" },
+        { name: "replayAttackHeader", type: "ReplayAttackHeader" },
+    ],
+    Account: [
+        { name: "addr", type: "address" },
+        { name: "isPartyB", type: "bool" },
+    ],
+    FlexField: [
+        { name: "offset", type: "uint256" },
+        { name: "length", type: "uint256" },
+        { name: "authorizedFlexFiller", type: "address" },
+    ],
+    ReplayAttackHeader: [
+        { name: "nonce", type: "uint256" },
+        { name: "deadline", type: "uint256" },
+        { name: "salt", type: "bytes32" },
+    ],
+};
+
+const userOperation = {
+    signer: userAddress,
+    target: symmioCoreAddress, // or a whitelisted external target
+    callData: encodedSendQuote, // e.g., symmio.sendQuote(...) encoded
+    signerAccount: {
+        addr: userAccountAddress, // sub-account / virtual-account / legacy account
+        isPartyB: false,
+    },
+    flexFields: [], // empty for standard operations
+    maxUses: 1, // single-use
+    replayAttackHeader: {
+        nonce: 0, // or current nonce + 1 for sequential
+        deadline: Math.floor(Date.now() / 1000) + 3600, // 1 hour expiry
+        salt: ethers.utils.randomBytes(32),
+    },
+};
+
+const signature = await signer._signTypedData(domain, types, userOperation);
+</code></pre>
+					<h3 id="doc-instant-layer-overview-method-specifications">Method Specifications</h3>
+					<h3 id="doc-instant-layer-overview-executebatch">executeBatch</h3>
+					<p>Executes multiple operations from different signers in a single transaction.</p>
+					<pre><code class="language-solidity">function executeBatch(
+    SignedOperation[] calldata signedOps,
+    bytes[] calldata signatures,
+    FlexFill[] calldata fills,
+    bytes[][] calldata flexFillerSignatures
+) external nonReentrant onlyRole(OPERATOR_ROLE);
+</code></pre>
+					<p><strong>Parameters:</strong></p>
+					<ul>
+						<li><code>signedOps</code> / <code>signatures</code> -- operations and their EIP-712 signatures (as before)</li>
+						<li>
+							<code>fills</code> -- one <code>FlexFill</code> per operation. For standard operations (no flex fields), pass
+							<code>{ values: [] }</code>
+						</li>
+						<li>
+							<code>flexFillerSignatures</code> -- one <code>bytes[]</code> per operation, with one signature per flex field. Pass
+							<code>[]</code> for standard operations or <code>"0x"</code> for fields where the flex filler is <code>msg.sender</code>
+						</li>
+					</ul>
+					<p><strong>Signature Requirements:</strong></p>
+					<ul>
+						<li>Each operation requires a corresponding entry in the <code>signatures</code> array</li>
+						<li>If <code>signedOps[i].signer == msg.sender</code>, then <code>signatures[i]</code> can be empty (<code>"0x"</code>)</li>
+						<li>Otherwise, a valid EIP-712 signature is required</li>
+					</ul>
+					<h3 id="doc-instant-layer-overview-executetemplate">executeTemplate</h3>
+					<p>Executes a predefined template with dynamic parameter replacement.</p>
+					<pre><code class="language-solidity">function executeTemplate(
+    uint256 templateId,
+    SignedOperation[] calldata signedOps,
+    bytes[] calldata signatures,
+    FlexFill[] calldata fills,
+    bytes[][] calldata flexFillerSignatures
+) external nonReentrant onlyRole(OPERATOR_ROLE);
+</code></pre>
+					<p>
+						The <code>fills</code> and <code>flexFillerSignatures</code> parameters work the same as in <code>executeBatch</code>. When a
+						template step has both flex fields and result injection, flex fills are applied first, then template result injection
+						overwrites.
+					</p>
+					<p><strong>Template Structure:</strong></p>
+					<pre><code class="language-solidity">struct Template {
+    string name;
+    Operation[] operations;
+    bool active;
+}
+
+struct Operation {
+    uint256[] insertionPoints;
+    uint256[] sourceIndices;
+}
+</code></pre>
+					<p><strong>Placeholder Replacement System:</strong> Templates support automatic value replacement using placeholders:</p>
+					<ul>
+						<li>Placeholders are 32-byte zero values in the callData (only 32 byte values are now supported)</li>
+						<li>The contract replaces them with actual values from previous operation results</li>
+						<li>Common pattern: <code>sendQuote</code> returns quoteId → <code>lockQuote</code> uses that quoteId</li>
+					</ul>
+					<h3 id="doc-instant-layer-overview-delegation-system">Delegation System</h3>
+					<h3 id="doc-instant-layer-overview-delegationinfo-structure">DelegationInfo Structure</h3>
+					<pre><code class="language-solidity">struct DelegationInfo {
+    Account account;
+    address delegatedSigner;
+    bytes4[] selectors;
+    uint256 expiryTimestamp;
+}
+</code></pre>
+					<h3 id="doc-instant-layer-overview-creating-delegations">Creating Delegations</h3>
+					<p><strong>Option 1: Via Transaction</strong></p>
+					<pre><code class="language-solidity">function grantDelegation(DelegationInfo calldata info);
+</code></pre>
+					<p><strong>Option 2: Via Signature (Gasless)</strong></p>
+					<pre><code class="language-solidity">struct SignedDelegation {
+    DelegationInfo delegationInfo;
+    ReplayAttackHeader replayAttackHeader;
+}
+
+function grantBatchDelegationBySig(SignedDelegation calldata signedDelegation, bytes calldata signature);
+</code></pre>
+					<p><strong>EIP-712 Encoding Note:</strong></p>
+					<p>
+						When signing a <code>DelegationInfo</code> struct, the <code>bytes4[] selectors</code> field is encoded using a custom array
+						hashing method. Each selector is right-padded to 32 bytes, all padded values are concatenated, and the entire concatenation is
+						hashed once.
+					</p>
+					<p>Formally:</p>
+					<pre><code class="language-solidity">keccak256(abi.encodePacked(bytes32(selector1), bytes32(selector2), ...))
+</code></pre>
+					<p>
+						This is the same behavior implemented in <code>_hashBytes4Array</code> inside the contract, ensuring consistent EIP-712
+						signature verification.
+					</p>
+					<h3 id="doc-instant-layer-overview-security-mechanisms">Security Mechanisms</h3>
+					<h3 id="doc-instant-layer-overview-1-replay-protection">1. Replay Protection</h3>
+					<ul>
+						<li><strong>Salt mechanism</strong>: Each operation must have a unique salt</li>
+						<li><strong>Nonce mechanism</strong>: Optional sequential execution enforcement</li>
+						<li><strong>Deadline enforcement</strong>: Operations expire after specified timestamp</li>
+						<li><strong>Hash tracking</strong>: Used operation hashes are permanently recorded</li>
+					</ul>
+					<h3 id="doc-instant-layer-overview-2-contract-registration-and-whitelists">2. Contract Registration and Whitelists</h3>
+					<ul>
+						<li>PartyB contracts must be registered via <code>registerPartyBs(...)</code>.</li>
+						<li>
+							The <code>AccountLayer</code> address must be set via <code>setAccountLayer(...)</code> (and the Instant Layer must have
+							<code>INSTANT_LAYER_ROLE</code> on the AccountLayer to call <code>AccountLayer._call</code>).
+						</li>
+						<li>
+							<code>target</code> contracts must be whitelisted via <code>setTargetWhitelist(...)</code> (Symmio is whitelisted by
+							default).
+						</li>
+					</ul>
+					<h3 id="doc-instant-layer-overview-3-self-execution-security">3. Self-Execution Security</h3>
+					<p>When <code>signer == msg.sender</code>, signature verification is skipped, but all other security checks remain:</p>
+					<ul>
+						<li>Authorization validation (PartyB registration or account ownership/delegation)</li>
+						<li>Replay attack protection via hash tracking</li>
+						<li>Nonce enforcement for sequential operations</li>
+						<li>Deadline validation</li>
+					</ul>
+					<h3 id="doc-instant-layer-overview-4-delegation-revoke-system">4. Delegation Revoke System</h3>
+					<p>For delegations, a time-delayed revocation system is implemented:</p>
+					<ul>
+						<li>Revocations are initiated via <code>initiateRevokeDelegation()</code></li>
+						<li>They become active after <code>revocationCooldown</code> seconds</li>
+						<li>Finally, <code>finalizeRevokeDelegation()</code> permanently removes the delegation</li>
+					</ul>
+					<hr />
+					<h2 id="doc-instant-layer-overview-flex-fields">Flex Fields</h2>
+					<p>
+						Flex fields allow a user to sign an operation while designating specific byte ranges of the calldata as
+						<strong>modifiable</strong> by authorized parties. This enables use cases like:
+					</p>
+					<ul>
+						<li>
+							A <strong>TPSL service</strong> modifying the <code>amount</code> or <code>closePrice</code> parameter in a close request
+						</li>
+						<li>A <strong>solver</strong> updating the Muon signature in a <code>sendQuote</code> before execution</li>
+						<li>
+							A <strong>service</strong> choosing the exact parameters at execution time while the user constrains which function is
+							called and which parameters are fixed
+						</li>
+					</ul>
+					<h3 id="doc-instant-layer-overview-how-it-works">How It Works</h3>
+					<p>
+						The user signs a <code>SignedOperation</code> where certain calldata regions are marked as flex fields. Each flex field
+						specifies a byte offset, length, and an <code>authorizedFlexFiller</code> address -- the party allowed to fill in that region.
+						The user's EIP-712 signature covers the calldata as-is (the placeholder values in flex regions don't matter) plus the flex
+						field definitions, so the user explicitly commits to <strong>which</strong> parts are modifiable and <strong>who</strong> can
+						modify them.
+					</p>
+					<p>
+						At execution time, the operator provides <code>FlexFill</code> values for each flex field. The contract verifies flex filler
+						authorization and injects the fill values before executing the call.
+					</p>
+					<h3 id="doc-instant-layer-overview-data-structures">Data Structures</h3>
+					<pre><code class="language-solidity">struct FlexField {
+    uint256 offset; // Byte offset after 4-byte selector
+    uint256 length; // Bytes to replace (typically 32)
+    address authorizedFlexFiller; // Who can provide the fill value
+}
+
+struct FlexFill {
+    bytes[] values; // One entry per FlexField, each must match field.length
+}
+</code></pre>
+					<h3 id="doc-instant-layer-overview-flex-filler-authorization">Flex Filler Authorization</h3>
+					<p>
+						Each flex field has its own <code>authorizedFlexFiller</code>. Different fields can have different flex fillers, allowing
+						multiple parties to control different parameters of the same operation.
+					</p>
+					<p>
+						<strong>When flex filler == msg.sender:</strong> No additional signature is needed. Pass <code>"0x"</code> as the flex filler
+						signature for that field.
+					</p>
+					<p>
+						<strong>When flex filler != msg.sender:</strong> The flex filler must sign a <code>FlexFillAuth</code> message authorizing the
+						specific fill value:
+					</p>
+					<pre><code class="language-solidity">// What the flex filler signs (EIP-712)
+struct FlexFillAuth {
+    bytes32 opHash; // Hash of the SignedOperation
+    uint256 fieldIndex; // Which flex field this fill is for
+    bytes value; // The actual fill value
+}
+</code></pre>
+					<p>
+						The flex filler's signature authorizes a specific value for a specific field of a specific operation. For multi-use
+						operations, the same signature can be reused across executions (since the value and operation are the same). The
+						<code>maxUses</code> cap and <code>deadline</code> provide the usage controls.
+					</p>
+					<h3 id="doc-instant-layer-overview-multi-use-operations">Multi-Use Operations</h3>
+					<p>All operations use the <code>maxUses</code> field uniformly for replay protection:</p>
+					<ul>
+						<li><code>maxUses = 1</code> -- single-use (default for standard operations)</li>
+						<li><code>maxUses = N</code> (N &gt; 1) -- can be executed up to N times</li>
+						<li><code>maxUses = 0</code> -- unlimited executions until deadline expires</li>
+					</ul>
+					<p>
+						Once signed, an operation is valid until its <code>maxUses</code> count is reached or the <code>deadline</code> passes. There
+						is no cancellation mechanism -- if you signed it, the flex filler can use it within the agreed bounds. This ensures trust: a
+						flex filler (e.g., a solver) can rely on the authorization without risk of it being pulled out from under them.
+					</p>
+					<h3 id="doc-instant-layer-overview-example-tpsl-service-with-flex-fields">Example: TPSL Service with Flex Fields</h3>
+					<p>
+						Instead of delegating the entire <code>requestToClosePosition</code> selector to a TPSL bot, the user can sign a specific
+						close operation with the amount as a flex field:
+					</p>
+					<p>The <code>requestToClosePosition</code> signature is:</p>
+					<pre><code class="language-solidity">function requestToClosePosition(
+    uint256 quoteId,            // offset 0
+    uint256 closePrice,         // offset 32
+    uint256 quantityToClose,    // offset 64
+    OrderType orderType,        // offset 96
+    uint256 deadline            // offset 128
+)
+</code></pre>
+					<p>All parameters are static, so the ABI encoding is straightforward -- each is a 32-byte slot at a fixed offset.</p>
+					<pre><code class="language-javascript">// User signs: "close quote 42, but let the TPSL bot choose the amount"
+const closeCallData = symmio.interface.encodeFunctionData(
+    "requestToClosePosition",
+    [42, triggerPrice, 0, 1, deadline], // quantityToClose=0 is a placeholder
+);
+
+const operation = {
+    signer: userAddress,
+    target: symmioCoreAddress,
+    callData: closeCallData,
+    signerAccount: { addr: userAccount, isPartyB: false },
+    flexFields: [
+        {
+            offset: 64, // quantityToClose is the 3rd param = 2 * 32
+            length: 32,
+            authorizedFlexFiller: tpslBotAddress,
+        },
+    ],
+    maxUses: 0, // unlimited until deadline
+    replayAttackHeader: {
+        nonce: 0n,
+        deadline: BigInt(Math.floor(Date.now() / 1000) + 86400), // 24h
+        salt: generateSalt(),
+    },
+};
+
+const userSig = await userSigner.signTypedData(domain, types, operation);
+</code></pre>
+					<p>When the TP/SL threshold is hit, the bot provides the fill value and its flex filler signature:</p>
+					<pre><code class="language-javascript">// Bot determines the close amount
+const closeAmount = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [quantityToClose]);
+
+// Bot signs the fill authorization
+const opHash = await instantLayer.getOperationHash(operation);
+
+const fillAuthSig = await botSigner.signTypedData(
+    domain,
+    {
+        FlexFillAuth: [
+            { name: "opHash", type: "bytes32" },
+            { name: "fieldIndex", type: "uint256" },
+            { name: "value", type: "bytes" },
+        ],
+    },
+    { opHash, fieldIndex: 0, value: closeAmount },
+);
+
+// Operator submits
+await instantLayer.executeBatch([operation], [userSig], [{ values: [closeAmount] }], [[fillAuthSig]]);
+</code></pre>
+					<h3 id="doc-instant-layer-overview-example-solver-updating-muon-signature-in-sendquote">
+						Example: Solver Updating Muon Signature in sendQuote
+					</h3>
+					<p>The <code>sendQuoteWithAffiliate</code> signature is:</p>
+					<pre><code class="language-solidity">function sendQuoteWithAffiliate(
+    address[] memory partyBsWhiteList,      // offset 0   (dynamic -- offset pointer)
+    uint256 symbolId,                       // offset 32
+    PositionType positionType,              // offset 64
+    OrderType orderType,                    // offset 96
+    uint256 price,                          // offset 128
+    uint256 quantity,                       // offset 160
+    uint256 cva,                            // offset 192
+    uint256 lf,                             // offset 224
+    uint256 partyAmm,                       // offset 256
+    uint256 partyBmm,                       // offset 288
+    uint256 maxFundingRate,                 // offset 320
+    uint256 deadline,                       // offset 352
+    address affiliate,                      // offset 384
+    SingleUpnlAndPriceSig memory upnlSig    // offset 416 (dynamic -- offset pointer)
+)
+</code></pre>
+					<p>
+						The <code>upnlSig</code> is a dynamic struct (contains <code>bytes</code> fields), so offset 416 holds an
+						<strong>offset pointer</strong> to the struct's actual data in the ABI tail. The struct's exact byte position and length
+						depend on the preceding dynamic parameters (e.g., <code>partyBsWhiteList</code> array length).
+					</p>
+					<p>
+						For flex fields on dynamic parameters, the integrator must calculate the exact byte range of the encoded struct data in the
+						specific calldata being signed. Since both the user and solver see the full calldata, this is straightforward to compute
+						off-chain:
+					</p>
+					<pre><code class="language-javascript">// Encode the full sendQuote calldata with a placeholder Muon sig
+const callData = partyAFacet.interface.encodeFunctionData("sendQuoteWithAffiliate", [
+    partyBsWhiteList,
+    symbolId,
+    positionType,
+    orderType,
+    price,
+    quantity,
+    cva,
+    lf,
+    partyAmm,
+    partyBmm,
+    maxFundingRate,
+    deadline,
+    affiliate,
+    placeholderUpnlSig,
+]);
+
+// Calculate where the upnlSig data actually starts in the encoded calldata.
+// The offset pointer at byte 416 (after selector) contains the start position.
+// Read it from the encoded calldata:
+const upnlSigOffsetPointer = 416;
+const upnlSigDataStart = Number(
+    ethers.AbiCoder.defaultAbiCoder().decode(
+        ["uint256"],
+        "0x" + callData.slice(2 + 8 + upnlSigOffsetPointer * 2, 2 + 8 + (upnlSigOffsetPointer + 32) * 2),
+    )[0],
+);
+const upnlSigDataLength = callData.length / 2 - 4 - upnlSigDataStart; // rest of calldata
+
+const operation = {
+    signer: userAddress,
+    target: symmioCoreAddress,
+    callData: callData,
+    signerAccount: { addr: userAccount, isPartyB: false },
+    flexFields: [
+        {
+            offset: upnlSigDataStart,
+            length: upnlSigDataLength,
+            authorizedFlexFiller: solverAddress,
+        },
+    ],
+    maxUses: 1,
+    replayAttackHeader: { nonce: 0n, deadline: 0n, salt: generateSalt() },
+};
+</code></pre>
+					<p>
+						The solver encodes a fresh Muon signature with the <strong>same byte length</strong> and provides it as the fill value. All
+						other quote parameters remain exactly as the user signed them.
+					</p>
+					<blockquote>
+						<p>
+							<strong>Important:</strong> The replacement value must have the exact same byte length as the original. For
+							<code>SingleUpnlAndPriceSig</code>, this means the fresh Muon sig must produce the same ABI-encoded length (same
+							<code>reqId</code> and <code>gatewaySignature</code> byte lengths).
+						</p>
+					</blockquote>
+					<hr />
+					<h2 id="doc-instant-layer-overview-related-documentation">Related Documentation</h2>
+					<p>For practical integration examples, see:</p>
+					<ul>
+						<li>
+							<a href="instant-layer-partyb-integration.html">InstantLayer PartyB Integration Guide</a> -- Detailed code examples for
+							PartyB integrators
+						</li>
+						<li>
+							<a href="instant-layer-service-integration.html">InstantLayer Service Integration Guide</a> -- TPSL, Trigger Market, and
+							Session Key integration
+						</li>
+					</ul>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer"><span>Symmio Core v0.8.5 documentation.</span></footer>
+	</body>
+</html>

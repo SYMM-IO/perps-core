@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="v0.8.5 introduces role admins -- a delegation layer on top of SYMMIO&#x27;s existing role-based access control. Previously, the DEFAULT_ADMIN_ROLE holder was the only address that could grant and revoke roles, making it a bottleneck for every role change. Now, default admins can delegate management…"
+		/>
+		<title>Role Admin System - Symmio Core v0.8.5</title>
+		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../../v0.8.6/assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../../v0.8.6/assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.5">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.5</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#doc-role-admin-system-overview">Overview</a>
+				<a class="toc-link level-2" href="#doc-role-admin-system-how-it-worked-before">How It Worked Before</a>
+				<a class="toc-link level-2" href="#doc-role-admin-system-what-changed">What Changed</a>
+				<a class="toc-link level-2" href="#doc-role-admin-system-example">Example</a>
+				<a class="toc-link level-2" href="#doc-role-admin-system-security-notes">Security Notes</a>
+			</div>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Role Admin System</h1>
+						</div>
+					</div>
+				</header>
+				<article class="doc-article" id="full-document">
+					<h2 id="doc-role-admin-system-overview">Overview</h2>
+					<p>
+						v0.8.5 introduces <strong>role admins</strong> -- a delegation layer on top of SYMMIO's existing role-based access control.
+						Previously, the <code>DEFAULT_ADMIN_ROLE</code> holder was the only address that could grant and revoke roles, making it a
+						bottleneck for every role change. Now, default admins can delegate management of specific roles to dedicated addresses via
+						per-role admins. This allows operational teams to manage their domain (e.g., liquidator rotation, pause controls) without
+						requiring the default admin to sign every transaction.
+					</p>
+					<h2 id="doc-role-admin-system-how-it-worked-before">How It Worked Before</h2>
+					<p>
+						In v0.8.4, the Diamond owner called <code>setAdmin(address)</code> to grant <code>DEFAULT_ADMIN_ROLE</code> to a single
+						wallet. That wallet could then grant and revoke any role via <code>grantRole</code> / <code>revokeRole</code>. There was no
+						way to delegate management of a specific role to someone else -- every role change had to go through the one
+						<code>DEFAULT_ADMIN_ROLE</code> holder.
+					</p>
+					<h2 id="doc-role-admin-system-what-changed">What Changed</h2>
+					<p>A new mapping was added to <code>GlobalAppStorage</code>:</p>
+					<pre><code class="language-solidity">// contracts/core/storages/GlobalAppStorage.sol
+
+/// @notice Who can grant/revoke each role
+mapping(bytes32 =&gt; mapping(address =&gt; bool)) roleAdmins;
+</code></pre>
+					<p>
+						This maps each role to a set of addresses that can manage it. Combined with the existing <code>hasRole</code> mapping, the
+						system now supports a three-tier hierarchy:
+					</p>
+					<pre><code>Owner
+  └─ setAdmin(user)  ──&gt;  DEFAULT_ADMIN_ROLE holders
+       ├─ addRoleAdmin(role, admin)  ──&gt;  Per-role admins
+       │    └─ grantRole / revokeRole (for that specific role only)
+       └─ grantRole / revokeRole (for any role)
+</code></pre>
+					<ul>
+						<li><strong>Owner</strong> calls <code>setAdmin()</code> to grant <code>DEFAULT_ADMIN_ROLE</code>.</li>
+						<li>
+							<strong>Default admins</strong> can grant/revoke any role directly, and can appoint or remove per-role admins via
+							<code>addRoleAdmin</code> / <code>removeRoleAdmin</code>.
+						</li>
+						<li>
+							<strong>Per-role admins</strong> can grant/revoke only the role they were assigned to administer. They cannot delegate
+							further.
+						</li>
+					</ul>
+					<h2 id="doc-role-admin-system-example">Example</h2>
+					<pre><code>1. Owner calls setAdmin(multisig)
+   --&gt; multisig now holds DEFAULT_ADMIN_ROLE
+
+2. multisig calls addRoleAdmin(LIQUIDATOR_ROLE, liquidationOps)
+   --&gt; liquidationOps can now grant/revoke LIQUIDATOR_ROLE
+
+3. liquidationOps calls grantRole(bot1, LIQUIDATOR_ROLE)
+   --&gt; bot1 can now perform liquidations
+
+4. liquidationOps calls revokeRole(bot1, LIQUIDATOR_ROLE)
+   --&gt; bot1 can no longer liquidate
+
+5. multisig calls removeRoleAdmin(LIQUIDATOR_ROLE, liquidationOps)
+   --&gt; liquidationOps loses management authority
+</code></pre>
+					<h2 id="doc-role-admin-system-security-notes">Security Notes</h2>
+					<ul>
+						<li>
+							<strong>Delegation is one level deep.</strong> Per-role admins cannot appoint other role admins -- only
+							<code>DEFAULT_ADMIN_ROLE</code> holders can call <code>addRoleAdmin</code>.
+						</li>
+						<li>
+							<strong>No role enumeration on-chain.</strong> Both <code>hasRole</code> and <code>roleAdmins</code> are nested mappings,
+							so listing all holders or all admins must be done off-chain via events.
+						</li>
+						<li>
+							<strong>Proxy protection.</strong> <code>onlyRoleAdmin</code> blocks calls when <code>GlobalAppStorage.signer</code> is
+							set, preventing proxies from inheriting admin privileges.
+						</li>
+					</ul>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer"><span>Symmio Core v0.8.5 documentation.</span></footer>
+	</body>
+</html>

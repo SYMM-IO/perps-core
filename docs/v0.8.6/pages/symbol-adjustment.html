@@ -1,103 +1,61 @@
 <!doctype html>
-<html lang="en" data-theme="light">
+<html lang="en" data-theme="dark">
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Venue stock splits and rebases change the price unit while on-chain positions keep the old one. v0.8.6 adds an adjustment registry that freezes the symbol through the transition and a value-neutral restatement that rebases open positions."
+		/>
 		<title>Symbol Corporate-Action Adjustment - Symmio Core v0.8.6</title>
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
 		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
 		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
 	</head>
-	<body class="doc-page">
+	<body class="doc-page" data-version="0.8.6">
 		<a class="skip-link" href="#full-document">Skip to document</a>
 
-		<header class="doc-topbar">
-			<a class="brand" href="../index.html"
-				><span class="brand-mark">8.6</span><span><strong>Symmio Docs</strong><small>v0.8.6 reference</small></span></a
-			>
-			<nav class="top-actions" aria-label="Page actions">
-				<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
-			</nav>
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
 		</header>
 
 		<div class="reader-shell">
-			<aside class="doc-sidebar" aria-label="Documentation navigation">
-				<a class="button primary back-home" href="../index.html">Back to index</a>
-				<div class="side-card">
-					<p class="side-label">Docs</p>
-					<a class="side-link" href="../pages/express-withdrawal-system-design.html"
-						><small>Express Withdrawal</small><span>Express Withdrawal System Design</span></a
-					>
-					<a class="side-link" href="../pages/account-layer-ownership-delegation.html"
-						><small>AccountLayer</small><span>AccountLayer Delegated Creation &amp; Ownership Transfer</span></a
-					>
-					<a class="side-link" href="../pages/liquidation-funding-snapshot-fix.html"
-						><small>Liquidation</small><span>PartyA Liquidation Snapshot Flow</span></a
-					>
-					<a class="side-link" href="../pages/single-step-partya-liquidation.html"
-						><small>Liquidation</small><span>Single-Step PartyA Liquidation</span></a
-					>
-					<a class="side-link" href="../pages/affiliate-shutdown-flow.html"
-						><small>Clearing House</small><span>Affiliate Shutdown Flow</span></a
-					>
-					<a class="side-link" href="../pages/muon-upnl-validity-overrides.html"
-						><small>Muon</small><span>Muon UPNL Validity Overrides</span></a
-					>
-					<a class="side-link" href="../pages/solver-fees.html"><small>Fees</small><span>Solver Fees</span></a>
-					<a class="side-link" href="../pages/operational-fees.html"><small>Fees</small><span>Operational Fees</span></a>
-					<a class="side-link is-active" href="../pages/symbol-adjustment.html"
-						><small>Symbols</small><span>Symbol Corporate-Action Adjustment</span></a
-					>
-					<a class="side-link" href="../pages/partya-liquidation-fee-recipient.html"
-						><small>Liquidation</small><span>PartyA Liquidation Fee Recipient Cleanup</span></a
-					>
-					<a class="side-link" href="../pages/balance-change-event-cleanup.html"
-						><small>Events &amp; Indexing</small><span>Allocated Balance Event Ledger</span></a
-					>
-					<a class="side-link" href="../pages/lazy-accumulated-funding.html"><small>Funding</small><span>Lazy Accumulated Funding</span></a>
-					<a class="side-link" href="../pages/partyb-allocation-suspension-gates.html"
-						><small>PartyB</small><span>Allocation Suspension Gates</span></a
-					>
-					<a class="side-link" href="../pages/cross-partyb-liquidation-reserve.html"
-						><small>Liquidation</small><span>Cross-PartyB Liquidation Reserve Enforcement</span></a
-					>
-					<a class="side-link" href="../pages/delegation-account-scope.html"
-						><small>AccountLayer</small><span>Delegation Account Scope</span></a
-					>
-					<a class="side-link" href="../pages/strict-deallocation.html"><small>Accounts</small><span>Strict Deallocation</span></a>
-					<a class="side-link" href="../pages/express-bot-operations-checklist.html"
-						><small>Express Withdrawal</small><span>Express Provider Bot Operations Checklist</span></a
-					>
-					<a class="side-link" href="../pages/market-open-fee-execution-price.html"
-						><small>Fees</small><span>Market Open Fee on Execution Price</span></a
-					>
-					<a class="side-link" href="../pages/position-isolation-partial-fill.html"
-						><small>AccountLayer</small><span>Position Isolation Partial Fill Remainder</span></a
-					>
-				</div>
-			</aside>
-
-			<aside class="toc-panel side-toc" aria-label="Page navigation">
-				<div class="toc-card">
-					<p class="toc-title">On this page</p>
-					<a class="toc-link level-2" href="#summary">Summary</a>
-					<a class="toc-link level-2" href="#scope">Scope and Terms</a>
-					<a class="toc-link level-2" href="#responsibilities">Who Does What</a>
-					<a class="toc-link level-2" href="#lifecycle">Lifecycle</a>
-					<a class="toc-link level-2" href="#freeze">Freeze Boundary</a>
-					<a class="toc-link level-2" href="#factor">Price Basis</a>
-					<a class="toc-link level-2" href="#restatement">Optional Restatement</a>
-					<a class="toc-link level-2" href="#safety">Safety Boundaries</a>
-					<a class="toc-link level-2" href="#interface">Contract Reference</a>
-					<a class="toc-link level-2" href="#integration">Integration Requirements</a>
-					<a class="toc-link level-2" href="#runbook">Operations Runbook</a>
-					<a class="toc-link level-2" href="#example">Worked Example</a>
-				</div>
-			</aside>
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#summary">Summary</a>
+				<a class="toc-link level-2" href="#scope">Scope and Terms</a>
+				<a class="toc-link level-2" href="#responsibilities">Who Does What</a>
+				<a class="toc-link level-2" href="#lifecycle">Lifecycle</a>
+				<a class="toc-link level-2" href="#freeze">Freeze Boundary</a>
+				<a class="toc-link level-2" href="#factor">Price Basis</a>
+				<a class="toc-link level-2" href="#restatement">Optional Restatement</a>
+				<a class="toc-link level-2" href="#safety">Safety Boundaries</a>
+				<a class="toc-link level-2" href="#interface">Contract Reference</a>
+				<a class="toc-link level-2" href="#integration">Integration Requirements</a>
+				<a class="toc-link level-2" href="#runbook">Operations Runbook</a>
+				<a class="toc-link level-2" href="#example">Worked Example</a>
+			</div>
 
 			<main class="reader-main">
 				<header class="reader-hero">
-					<nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">v0.8.6</a><span>/</span><strong>Symbols</strong></nav>
 					<div class="reader-title-row">
 						<div>
 							<h1>Symbol Corporate-Action Adjustment</h1>
@@ -488,11 +446,47 @@ prospectivePrice  = rawVenuePrice * prospectiveFactor / 1e18</code></pre>
 						becomes zero, a nonzero closed amount that becomes zero, a remaining open amount that becomes zero, or a nonzero close request
 						that becomes zero. Operations must resolve such quotes before opening a restatement window.
 					</p>
+					<h3>Old-basis signatures must expire before quotes are rewritten</h3>
+					<p>
+						Restatement changes what the numbers in storage mean. A quote of <code>quantity 10</code> at
+						<code>openedPrice 400</code> becomes <code>quantity 40</code> at <code>openedPrice 100</code> across a 4:1 split. Muon
+						signatures are minted off-chain and stay valid for a validity window, which opens a race: a signature priced in the old basis,
+						minted before the window opened, could still be inside its validity window after <code>finalizeRestatement</code> has
+						rewritten the book. Executing it would apply an old-basis price against new-basis quote storage — a mispricing the signature
+						itself vouches for.
+					</p>
+					<p>
+						The freeze alone does not close this. <code>requireNotFrozen</code> blocks execution <em>while</em> the window is open; the
+						exposure is a signature that straddles the window entirely and lands after the symbol is unfrozen again, when nothing looks
+						unusual. Core therefore records <code>restatementStartedAt</code> when the window opens and refuses to finalize until at least
+						one full UPNL validity period has elapsed since that instant:
+					</p>
+					<pre><code class="language-solidity">require(
+    block.timestamp &gt;= adjustment.restatementStartedAt + LibMuon.maxUpnlValidTime(),
+    "SymbolAdjustmentFacet: Restatement window too short"
+);</code></pre>
+					<p>
+						Because the symbol stayed frozen for that whole period, every signature minted against the old basis is guaranteed expired
+						before the basis moves. <code>maxUpnlValidTime()</code> takes the maximum of the global <code>upnlValidTime</code> and every
+						per-function override, so a longer override configured through <code>setMuonFunctionUpnlValidTime</code> cannot undercut the
+						guarantee. On the direct route the symbol was already frozen from <code>effectiveTimestamp</code>, so that earlier instant is
+						credited rather than restarting the clock.
+					</p>
+					<aside class="callout callout-important">
+						<strong>This is why Muon payloads carry no basis version.</strong> The same guarantee could have been obtained by binding the
+						symbol's basis version into every price-bearing signature hash, but that would break every existing Muon signature at the
+						upgrade. Enforcing the window on-chain keeps the hash preimages byte-identical to v0.8.5 and leaves the property intact. The
+						practical consequence is a coupling operations must plan for:
+						<strong>a restatement can never be finalized faster than the configured UPNL validity window</strong>, so raising
+						<code>upnlValidTime</code> lengthens every future restatement.
+					</aside>
 					<h3>Account-level signatures remain an off-chain boundary</h3>
 					<p>
 						Core can freeze paths that receive a symbol ID or operate on a known quote. It cannot determine which symbols are represented
 						inside an account-level UPNL signature. Muon must therefore withhold fresh account-level signatures for every account exposed
-						to a frozen symbol. A still-valid signature issued before the freeze is not invalidated on-chain.
+						to a frozen symbol. A still-valid signature issued before the freeze is not invalidated on-chain — during a restatement the
+						minimum-window guard above ensures such a signature has expired by the time the basis changes, but for the plain transition
+						freeze, withholding remains an off-chain responsibility.
 					</p>
 					<aside class="callout callout-risk">
 						<strong>Finalization is a trusted operational boundary.</strong> Core verifies per-quote idempotency and prevents abort after
@@ -531,6 +525,14 @@ function getQuotesInVenueUnits(uint256[] calldata quoteIds)
 						Adjustment state is isolated per symbol. The <code>adjustments</code> mapping stores one <code>SymbolAdjustment</code> record
 						for each <code>symbolId</code>; it does not store a history of earlier scheduled steps. Indexers reconstruct that history from
 						events. The second mapping stores the last restatement window that physically rewrote each quote.
+					</p>
+					<p>
+						Two fields on <code>SymbolAdjustment</code> exist purely to keep old-basis values from executing against rewritten storage.
+						<code>basisVersion</code> increments on every <code>finalizeRestatement</code> and is bound into multi-transaction workflows
+						that could otherwise straddle a window — the 3-step force close stamps it at <code>initializeForceClose</code> and rejects
+						finalization with <code>ForceActionsFacet: Symbol basis changed</code> if it moved. <code>restatementStartedAt</code> records
+						when the symbol became continuously frozen and enforces the minimum window described under
+						<a href="#safety">Safety Boundaries</a>. Neither field appears in any Muon signature payload.
 					</p>
 					<pre><code class="language-solidity">struct Layout {
     mapping(uint256 symbolId => SymbolAdjustment) adjustments;
@@ -940,6 +942,11 @@ RestatementFinalized</code></pre>
 							venue units.
 						</li>
 						<li>Detect an unscheduled price discontinuity and alert operations before signing it.</li>
+						<li>
+							No payload change is required for this feature. Signature hash preimages are unchanged from v0.8.5; the symbol's basis
+							version is deliberately not part of any hash. Core guarantees old-basis signatures have expired by enforcing a minimum
+							frozen window before finalization.
+						</li>
 					</ul>
 					<h3>Solvers</h3>
 					<ul>
@@ -998,6 +1005,11 @@ RestatementFinalized</code></pre>
 						<li>For every open quote, verify <code>getQuoteRestatedEpoch(quoteId)</code> equals the current epoch.</li>
 						<li>Re-scan the open and pending inventory and verify no old-basis quote was omitted.</li>
 						<li>
+							Confirm at least one full UPNL validity period has elapsed since the symbol became frozen. Finalizing earlier reverts with
+							<code>SymbolAdjustmentFacet: Restatement window too short</code>. On a fast book this is the step that gates the window,
+							not the batches — budget for it rather than treating the revert as a fault.
+						</li>
+						<li>
 							Finalize, confirm the factor is <code>1e18</code>, restart funding in the raw price basis, then resume Muon signatures.
 						</li>
 					</ol>
@@ -1044,7 +1056,6 @@ new notional    = 4 * 100 = 400</code></pre>
 
 		<footer class="site-footer">
 			<span>Symmio Core v0.8.6 documentation.</span>
-			<span>Protocol, operations, and integration notes.</span>
 		</footer>
 	</body>
 </html>

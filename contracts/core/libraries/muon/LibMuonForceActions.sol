@@ -8,7 +8,6 @@ import { MuonStorage, HighLowPriceSig } from "../../storages/MuonStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { LibMuon } from "./LibMuon.sol";
 import { LibAccount } from "../LibAccount.sol";
-import { LibSymbolAdjustment } from "../LibSymbolAdjustment.sol";
 import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library LibMuonForceActions {
@@ -31,7 +30,6 @@ library LibMuonForceActions {
 				sig.upnlPartyB,
 				sig.upnlPartyA,
 				symbolId,
-				LibSymbolAdjustment.basisVersion(symbolId),
 				sig.currentPrice,
 				sig.startTime,
 				sig.endTime,

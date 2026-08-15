@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
+import { LibExecutionContext } from "./LibExecutionContext.sol";
 
 /// @title LibSafeCall
 /// @notice Library for safely calling external contracts with signer protection
@@ -15,17 +15,15 @@ library LibSafeCall {
 	/// @param target The target contract address
 	/// @param data The encoded function call data
 	function safeExternalCall(address target, bytes memory data) internal {
-		GlobalAppStorage.Layout storage globalLayout = GlobalAppStorage.layout();
 		require(target != address(0), "LibSafeCall: Zero address");
 
 		// Save and clear signer before external call to prevent target from impersonating user
-		address previousSigner = globalLayout.signer;
-		globalLayout.signer = address(0);
+		(address previousSigner, bool wasTransientScoped) = LibExecutionContext.clearSignerForExternalCall();
 
 		(bool success, bytes memory reason) = target.call(data);
 
 		// Restore signer after external call
-		globalLayout.signer = previousSigner;
+		LibExecutionContext.restoreSignerAfterExternalCall(previousSigner, wasTransientScoped);
 
 		// Revert with the original error if the call failed
 		if (!success) {

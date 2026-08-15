@@ -6,7 +6,7 @@ pragma solidity >=0.8.18;
 
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
+import { LibExecutionContext } from "./LibExecutionContext.sol";
 
 /// @title LibSafeERC20
 /// @notice Library for safely calling ERC20 functions with signer protection
@@ -19,16 +19,13 @@ library LibSafeERC20 {
 	/// @param to The recipient address
 	/// @param amount The amount to transfer
 	function safeTransfer(address token, address to, uint256 amount) internal {
-		GlobalAppStorage.Layout storage globalLayout = GlobalAppStorage.layout();
-
 		// Save and clear signer before external call
-		address previousSigner = globalLayout.signer;
-		globalLayout.signer = address(0);
+		(address previousSigner, bool wasTransientScoped) = LibExecutionContext.clearSignerForExternalCall();
 
 		IERC20(token).safeTransfer(to, amount);
 
 		// Restore signer after external call
-		globalLayout.signer = previousSigner;
+		LibExecutionContext.restoreSignerAfterExternalCall(previousSigner, wasTransientScoped);
 	}
 
 	/// @notice Safely transfers tokens from another address with signer cleared
@@ -37,15 +34,12 @@ library LibSafeERC20 {
 	/// @param to The recipient address
 	/// @param amount The amount to transfer
 	function safeTransferFrom(address token, address from, address to, uint256 amount) internal {
-		GlobalAppStorage.Layout storage globalLayout = GlobalAppStorage.layout();
-
 		// Save and clear signer before external call
-		address previousSigner = globalLayout.signer;
-		globalLayout.signer = address(0);
+		(address previousSigner, bool wasTransientScoped) = LibExecutionContext.clearSignerForExternalCall();
 
 		IERC20(token).safeTransferFrom(from, to, amount);
 
 		// Restore signer after external call
-		globalLayout.signer = previousSigner;
+		LibExecutionContext.restoreSignerAfterExternalCall(previousSigner, wasTransientScoped);
 	}
 }

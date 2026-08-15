@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="The v0.8.5 express deposit split is removed from the AccountLayer. Its two affiliate storage slots are kept as dead fields so the struct layout does not move."
+		/>
+		<title>Express Deposit Removal - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.6">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#summary">Summary</a>
+				<a class="toc-link level-2" href="#what-was-removed">What Was Removed</a>
+				<a class="toc-link level-2" href="#storage">The Storage Slots Stay</a>
+				<a class="toc-link level-2" href="#effect-on-callers">Effect on Callers</a>
+			</div>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Express Deposit Removal</h1>
+							<p class="hero-copy">
+								The v0.8.5 express deposit split is removed from the AccountLayer. Its two affiliate storage slots are kept as dead
+								fields so the struct layout does not move.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="summary">Summary</h2>
+					<p>
+						Express deposit shipped in v0.8.5. An affiliate could configure a percentage of each deposit made through its frontend to be
+						split off and routed to an external provider contract, which credited the user with matching virtual balance inside core.
+						v0.8.6 removes the entire chain.
+					</p>
+					<aside class="callout callout-important">
+						<strong>This is not the Express Withdrawal system.</strong> v0.8.6 introduces Express Withdrawal, a separate
+						credit-line-backed feature for accelerating exits. The two share a name prefix and nothing else. Removing express deposit does
+						not affect it.
+					</aside>
+
+					<h2 id="what-was-removed">What Was Removed</h2>
+					<div class="table-wrap">
+						<table>
+							<caption>
+								Two AccountLayer entry points and their AccountManager wrappers, two affiliate config setters, one view, one provider
+								callback, two events, and three errors.
+							</caption>
+							<thead>
+								<tr>
+									<th scope="col">Removed</th>
+									<th scope="col">Kind</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>
+										<code>ICoreFacet.depositForAccountWithExpressRate</code><br /><code
+											>ICoreFacet.depositAndAllocateForAccountWithExpressRate</code
+										>
+									</td>
+									<td>entry points</td>
+								</tr>
+								<tr>
+									<td>the matching <code>AccountManager</code> wrappers</td>
+									<td>entry points</td>
+								</tr>
+								<tr>
+									<td><code>IAffiliateFacet.setExpressRate</code><br /><code>IAffiliateFacet.setVirtualProvider</code></td>
+									<td>config setters</td>
+								</tr>
+								<tr>
+									<td><code>IViewFacet.getAffiliateExpressRate</code></td>
+									<td>view</td>
+								</tr>
+								<tr>
+									<td><code>IVirtualProvider.onExpressDeposit</code></td>
+									<td>provider callback</td>
+								</tr>
+								<tr>
+									<td><code>ExpressRateSet</code>, <code>VirtualProviderSet</code></td>
+									<td>events</td>
+								</tr>
+								<tr>
+									<td>
+										<code>VirtualProviderRequired</code>, <code>InvalidExpressRate</code>, <code>BalanceInvariantViolation</code>
+									</td>
+									<td>errors</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+
+					<h2 id="storage">The Storage Slots Stay</h2>
+					<p>
+						<code>AffiliateData.expressRate</code> and <code>AffiliateData.virtualProvider</code> are retained as dead fields so every
+						later field in the struct keeps its current offset. Nothing reads or writes them any more.
+					</p>
+					<p>
+						An affiliate that configured a rate before the upgrade will still see that value in raw storage, and it now means nothing.
+						Treat a non-zero <code>expressRate</code> as stale data, not as configuration.
+					</p>
+
+					<h2 id="effect-on-callers">Effect on Callers</h2>
+					<p>
+						The ordinary deposit path is unchanged. Callers of the two express entry points move to
+						<code>depositForAccount</code> and <code>depositAndAllocateForAccount</code>, which take the same
+						<code>(account, amount)</code> arguments and deposit the full amount. There is no on-chain cleanup for affiliates: the setters
+						are gone, so a configured rate simply stops being consulted.
+					</p>
+					<p>
+						Virtual provider implementations can drop <code>onExpressDeposit</code>. The other seven
+						<code>IVirtualProvider</code> callbacks &mdash; the withdraw and external-transfer lifecycle &mdash; are unaffected, so the
+						interface is narrowed rather than retired.
+					</p>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 documentation.</span>
+		</footer>
+	</body>
+</html>
