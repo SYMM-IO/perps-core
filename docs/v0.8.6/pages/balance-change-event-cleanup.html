@@ -10,7 +10,7 @@
 		<title>Allocated Balance Event Ledger &amp; Indexer Changelog - Symmio Core v0.8.6</title>
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
 		<script>
-			// Applied before first paint so a saved light preference does not flash dark.
+			// Apply the saved preference before first paint.
 			try {
 				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
 			} catch (_error) {}
@@ -574,7 +574,7 @@ partyALfCost(partyA)              = lockedValues.lf on the liquidated position</
 						start moves <code>allocated - (lockedCva + lockedLf) + upnl</code> into deferred balance; when <code>upnl</code> is positive
 						that sweep carries off part of the LF backing, leaving less allocated than the fee. Finalization then debits only what
 						remains, because emitting the full fee against a smaller bucket would break exact replay. So <code>LF_OUT</code> is the slice
-						of the cost that was still in allocated at that moment -- the rest already left PartyA, in the deferred sweep. Read the
+						of the cost that was still in allocated at that moment — the rest already left PartyA, in the deferred sweep. Read the
 						difference as <code>LF_IN - LF_OUT</code>; it is fully observable from the same receipt, and <code>LF_IN &gt; LF_OUT</code> is
 						the signal that the clamp fired.
 					</aside>

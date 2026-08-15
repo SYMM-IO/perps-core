@@ -7,7 +7,7 @@
 		<title>Express Provider Bot Operations Checklist - Symmio Core v0.8.6</title>
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
 		<script>
-			// Applied before first paint so a saved light preference does not flash dark.
+			// Apply the saved preference before first paint.
 			try {
 				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
 			} catch (_error) {}
@@ -134,11 +134,6 @@
 				<a class="toc-link level-3" href="#15-9-standard-processwithdraw-too-early">15.9 STANDARD processWithdraw Too Early</a>
 				<a class="toc-link level-3" href="#15-10-non-existent-withdrawal">15.10 Non-Existent Withdrawal</a>
 				<a class="toc-link level-3" href="#15-11-zero-amount-parts">15.11 Zero-Amount Parts</a>
-				<a
-					class="toc-link level-3"
-					href="#15-12-same-tx-cannot-be-cancelled-already-processed-but-can-trigger-suspend-with-post-payout-rollback"
-					>15.12 SAME_TX Cannot Be Cancelled (already PROCESSED), but CAN trigger suspend with post-payout rollback</a
-				>
 				<a class="toc-link level-3" href="#15-13-duplicate-finalization-callback">15.13 Duplicate Finalization Callback</a>
 				<a class="toc-link level-2" href="#part-v-operations">Part V: Operations</a>
 				<a class="toc-link level-2" href="#16-pool-management">16. Pool Management</a>
@@ -1085,20 +1080,20 @@ What-if: same withdrawal as WINDOWED instead of STANDARD?
 					<h3 id="4-6-signing-requirements">4.6 Signing Requirements</h3>
 					<p><strong>WithdrawOption EIP-712 fields (all must be exact):</strong></p>
 					<ul>
-						<li>[ ] <code>user</code> -- the withdrawing user address</li>
-						<li>[ ] <code>nonce</code> -- must match <code>nonces[user]</code> at execution time</li>
-						<li>[ ] <code>optionType</code> -- 0-2</li>
-						<li>[ ] <code>availableAt</code> -- 0 (reserved field)</li>
-						<li>[ ] <code>affiliate</code> -- affiliate address</li>
-						<li>[ ] <code>affiliateAmount</code> -- amount from affiliate pool</li>
-						<li>[ ] <code>creditAmount</code> -- amount drawn from credit line (0 unless credit-backed; must be 0 for STANDARD)</li>
-						<li>[ ] <code>fee</code> -- must equal <code>(feeBasis * feeRate) / 10000</code> on-chain</li>
-						<li>[ ] <code>operatorFee</code> -- must match <code>affiliateConfigs[affiliate].operatorFee</code> exactly</li>
-						<li>[ ] <code>maxUserFee</code> -- max affiliate plus operator fee the user authorizes</li>
-						<li>[ ] <code>maxAccelerationFee</code> -- max extra fee user authorizes if STANDARD is accelerated</li>
-						<li>[ ] <code>partsHash</code> -- <code>keccak256(abi.encode(parts))</code></li>
-						<li>[ ] <code>deadline</code> -- signature expiry timestamp (future)</li>
-						<li>[ ] <code>signature</code> -- signed by SIGNER_ROLE holder</li>
+						<li>[ ] <code>user</code> — the withdrawing user address</li>
+						<li>[ ] <code>nonce</code> — must match <code>nonces[user]</code> at execution time</li>
+						<li>[ ] <code>optionType</code> — 0-2</li>
+						<li>[ ] <code>availableAt</code> — 0 (reserved field)</li>
+						<li>[ ] <code>affiliate</code> — affiliate address</li>
+						<li>[ ] <code>affiliateAmount</code> — amount from affiliate pool</li>
+						<li>[ ] <code>creditAmount</code> — amount drawn from credit line (0 unless credit-backed; must be 0 for STANDARD)</li>
+						<li>[ ] <code>fee</code> — must equal <code>(feeBasis * feeRate) / 10000</code> on-chain</li>
+						<li>[ ] <code>operatorFee</code> — must match <code>affiliateConfigs[affiliate].operatorFee</code> exactly</li>
+						<li>[ ] <code>maxUserFee</code> — max affiliate plus operator fee the user authorizes</li>
+						<li>[ ] <code>maxAccelerationFee</code> — max extra fee user authorizes if STANDARD is accelerated</li>
+						<li>[ ] <code>partsHash</code> — <code>keccak256(abi.encode(parts))</code></li>
+						<li>[ ] <code>deadline</code> — signature expiry timestamp (future)</li>
+						<li>[ ] <code>signature</code> — signed by SIGNER_ROLE holder</li>
 					</ul>
 					<p>
 						<strong>Domain:</strong> <code>name="ExpressProvider"</code>, <code>version="1"</code>, <code>chainId</code>,
@@ -2049,7 +2044,7 @@ Final accounting:
 							bot's scheduled processing
 						</li>
 						<li>
-							[ ] Anyone can call <code>finalizeWithdrawRequest</code> on SYMMIO -- bot should still schedule it but handle the case
+							[ ] Anyone can call <code>finalizeWithdrawRequest</code> on SYMMIO — bot should still schedule it but handle the case
 							where it's already finalized
 						</li>
 						<li>[ ] State sync: always check on-chain status before attempting actions</li>
@@ -2349,8 +2344,8 @@ Step 4 — Bot sees: cooldownEndTime reached at T=43,200s (~block 43400)
 </code></pre>
 					<h3 id="8-3-bot-must-read-before-signing">8.3 Bot Must Read Before Signing</h3>
 					<ul>
-						<li>[ ] <code>affiliateConfigs(affiliate).feeRate</code> -- current fee rate</li>
-						<li>[ ] <code>affiliateConfigs(affiliate).operatorFee</code> -- current operator fee</li>
+						<li>[ ] <code>affiliateConfigs(affiliate).feeRate</code> — current fee rate</li>
+						<li>[ ] <code>affiliateConfigs(affiliate).operatorFee</code> — current operator fee</li>
 						<li>[ ] If these change between signing and execution, the tx reverts</li>
 					</ul>
 					<h4 id="numeric-example-fee-cascading-across-3-parts">Numeric Example: Fee Cascading Across 3 Parts</h4>
@@ -2482,19 +2477,19 @@ Step 2 — Bot pre-computes: how will 15 USDC fee cascade across parts?
 					<pre><code>ValidatorApproval(address user,uint256 nonce,uint256 amount,uint256 timestamp,address symmio)
 </code></pre>
 					<ul>
-						<li><code>user</code> -- withdrawing user</li>
-						<li><code>nonce</code> -- same nonce as the WithdrawOption (the user's current nonce on ExpressProvider)</li>
+						<li><code>user</code> — withdrawing user</li>
+						<li><code>nonce</code> — same nonce as the WithdrawOption (the user's current nonce on ExpressProvider)</li>
 						<li>
-							<code>amount</code> -- <code>withdrawRequest.totalAmount</code> (the <strong>full</strong> SYMMIO withdrawal request
-							total, NOT the express portion -- a suspend rolls back the entire request, so validators must sign the total amount)
+							<code>amount</code> — <code>withdrawRequest.totalAmount</code> (the <strong>full</strong> SYMMIO withdrawal request total,
+							NOT the express portion — a suspend rolls back the entire request, so validators must sign the total amount)
 						</li>
 						<li>
-							<code>timestamp</code> -- when the validator signed; must be &lt;= <code>block.timestamp</code>, within
+							<code>timestamp</code> — when the validator signed; must be &lt;= <code>block.timestamp</code>, within
 							<code>validatorApprovalTimeout(affiliate)</code>, and strictly greater than <code>withdrawCooldownOf(user)</code> (the
 							user's last balance credit)
 						</li>
 						<li>
-							<code>symmio</code> -- the SYMMIO core address bound into the signature; together with the EIP-712 domain separator (which
+							<code>symmio</code> — the SYMMIO core address bound into the signature; together with the EIP-712 domain separator (which
 							binds <code>address(this)</code> ExpressProvider) this prevents replay across deployments
 						</li>
 					</ul>
@@ -2518,7 +2513,7 @@ Step 2 — Bot pre-computes: how will 15 USDC fee cascade across parts?
 									<code>ValidatorApprovalExpired</code>; falls back to <code>validatorApprovalTimeout(address(0))</code> default)
 								</li>
 								<li>
-									[ ] <code>timestamps[i] &gt; ISymmio(symmio).withdrawCooldownOf(user)</code> -- the approval must postdate the
+									[ ] <code>timestamps[i] &gt; ISymmio(symmio).withdrawCooldownOf(user)</code> — the approval must postdate the
 									user's last balance credit (else <code>StaleValidatorApproval</code>)
 								</li>
 								<li>
@@ -2568,11 +2563,11 @@ Step 2 — Bot pre-computes: how will 15 USDC fee cascade across parts?
 								</tr>
 								<tr>
 									<td>Wrong amount in validator sig</td>
-									<td>REJECTED (<code>InvalidValidator</code> -- recovered address not a registered validator)</td>
+									<td>REJECTED (<code>InvalidValidator</code> — recovered address not a registered validator)</td>
 								</tr>
 								<tr>
 									<td>Wrong nonce in validator sig</td>
-									<td>REJECTED (<code>InvalidValidator</code> -- recovered address not a registered validator)</td>
+									<td>REJECTED (<code>InvalidValidator</code> — recovered address not a registered validator)</td>
 								</tr>
 								<tr>
 									<td>Validator disabled after signing</td>
@@ -2595,7 +2590,7 @@ Step 2 — Bot pre-computes: how will 15 USDC fee cascade across parts?
 								</tr>
 								<tr>
 									<td>Wrong <code>symmio</code> address in signed payload</td>
-									<td>REJECTED (<code>InvalidValidator</code> -- recovered address mismatches due to typehash binding)</td>
+									<td>REJECTED (<code>InvalidValidator</code> — recovered address mismatches due to typehash binding)</td>
 								</tr>
 							</tbody>
 						</table>
@@ -2696,10 +2691,10 @@ if (parts[i].virtualProvider != address(0)) revert LibErrors.VirtualProviderMust
 </code></pre>
 					<ul>
 						<li>
-							[ ] <strong>Never set <code>virtualProvider</code></strong> in any withdrawal part -- always <code>address(0)</code>
+							[ ] <strong>Never set <code>virtualProvider</code></strong> in any withdrawal part — always <code>address(0)</code>
 						</li>
 						<li>[ ] <strong>Remove all VirtualProvider monitoring</strong> from the bot (balance polling, lock tracking, etc.)</li>
-						<li>[ ] <strong>Do not deploy new VirtualProvider contracts</strong> -- existing ones are inert</li>
+						<li>[ ] <strong>Do not deploy new VirtualProvider contracts</strong> — existing ones are inert</li>
 					</ul>
 					<h3 id="10-2-credit-debt-lifecycle">10.2 Credit Debt Lifecycle</h3>
 					<p>
@@ -2741,31 +2736,31 @@ coverLoss:           affiliateBalances[affiliate] -= covered amount, badDebt += 
 							<tbody>
 								<tr>
 									<td><code>reserveDebt</code></td>
-									<td><code>onWithdrawRequest</code> (acceptance) -- validates Muon, checks caps, increments reservedDebt</td>
+									<td><code>onWithdrawRequest</code> (acceptance) — validates Muon, checks caps, increments reservedDebt</td>
 									<td>SymmioHookFacetImpl via LibCreditLine.reserveDebt</td>
 								</tr>
 								<tr>
 									<td><code>activate</code></td>
 									<td>
 										<code>processWithdraw</code> / <code>unlockAndProcess</code> / inline SAME_TX in
-										<code>onWithdrawRequest</code> -- moves reserved -&gt; active and calls <code>ISymmio.advanceWithdraw</code>
+										<code>onWithdrawRequest</code> — moves reserved -&gt; active and calls <code>ISymmio.advanceWithdraw</code>
 									</td>
 									<td>OperatorFacetImpl / SymmioHookFacetImpl via LibCreditLine.activate</td>
 								</tr>
 								<tr>
 									<td><code>settle</code></td>
-									<td><code>onWithdrawComplete</code> (finalization) -- removes from active and clears request state</td>
+									<td><code>onWithdrawComplete</code> (finalization) — removes from active and clears request state</td>
 									<td>SymmioHookFacetImpl via LibCreditLine.settle</td>
 								</tr>
 								<tr>
 									<td><code>releaseReservation</code></td>
-									<td><code>onWithdrawCancelRequest</code> (pre-payout, ACCEPTED only) -- removes from reservedDebt</td>
+									<td><code>onWithdrawCancelRequest</code> (pre-payout, ACCEPTED only) — removes from reservedDebt</td>
 									<td>SymmioHookFacetImpl via LibCreditLine.releaseReservation</td>
 								</tr>
 								<tr>
 									<td><code>coverLoss</code></td>
 									<td>
-										<code>onWithdrawSuspend</code> when status was PROCESSED (post-payout rollback) -- deducts from affiliate pool
+										<code>onWithdrawSuspend</code> when status was PROCESSED (post-payout rollback) — deducts from affiliate pool
 										to absorb the loss and then settles
 									</td>
 									<td>SymmioHookFacetImpl via LibCreditLine.coverLoss</td>
@@ -2815,23 +2810,23 @@ coverLoss:           affiliateBalances[affiliate] -= covered amount, badDebt += 
 							<code>reserved + active + badDebt</code> when estimating remaining capacity.
 						</li>
 						<li>
-							[ ] <strong>Check <code>creditLinePaused(affiliate)</code></strong> -- if <code>true</code>, all
+							[ ] <strong>Check <code>creditLinePaused(affiliate)</code></strong> — if <code>true</code>, all
 							<code>reserveDebt</code> calls and later credit activation attempts revert <code>CreditLinePaused</code>. The bot must not
 							sign or process options with <code>creditAmount &gt; 0</code> for this affiliate.
 						</li>
 						<li>
-							[ ] <strong>Check <code>creditLineBlacklisted(affiliate, user)</code></strong> -- if <code>true</code> for the requesting
+							[ ] <strong>Check <code>creditLineBlacklisted(affiliate, user)</code></strong> — if <code>true</code> for the requesting
 							user, <code>reserveDebt</code> reverts <code>UserBlacklisted</code>. The bot must reject credit for blacklisted users.
 						</li>
 						<li>
 							[ ] <strong>Monitor debt cap headroom:</strong>
 							<ul>
 								<li>
-									<code>protocolMaxDebt</code> and <code>affiliateMaxDebt</code> -- absolute caps (0 = no limit). The effective cap
+									<code>protocolMaxDebt</code> and <code>affiliateMaxDebt</code> — absolute caps (0 = no limit). The effective cap
 									is the tighter (non-zero minimum) of the two.
 								</li>
 								<li>
-									<code>protocolMaxDebtBps</code> and <code>affiliateMaxDebtBps</code> -- percentage caps as basis points of Muon
+									<code>protocolMaxDebtBps</code> and <code>affiliateMaxDebtBps</code> — percentage caps as basis points of Muon
 									<code>eligibleBase</code> (0 = no limit). Same tighter-of-two logic.
 								</li>
 								<li>
@@ -2856,16 +2851,16 @@ coverLoss:           affiliateBalances[affiliate] -= covered amount, badDebt += 
 						<li>
 							[ ] <strong>Listen for credit line events</strong> on the ExpressProvider diamond to maintain an accurate local state:
 							<ul>
-								<li><code>DebtReserved(affiliate, user, requestId, amount)</code> -- new credit accepted</li>
-								<li><code>DebtActivated(affiliate, user, requestId, amount)</code> -- credit advanced to user</li>
-								<li><code>DebtSettled(affiliate, user, requestId, amount)</code> -- credit repaid on finalization</li>
-								<li><code>DebtCancelled(affiliate, user, requestId, amount)</code> -- credit released on cancel</li>
-								<li><code>CreditLinePausedUpdated(affiliate, bool)</code> -- credit line paused/unpaused</li>
-								<li><code>CreditLineBlacklistUpdated(affiliate, user, bool)</code> -- user blacklist change</li>
+								<li><code>DebtReserved(affiliate, user, requestId, amount)</code> — new credit accepted</li>
+								<li><code>DebtActivated(affiliate, user, requestId, amount)</code> — credit advanced to user</li>
+								<li><code>DebtSettled(affiliate, user, requestId, amount)</code> — credit repaid on finalization</li>
+								<li><code>DebtCancelled(affiliate, user, requestId, amount)</code> — credit released on cancel</li>
+								<li><code>CreditLinePausedUpdated(affiliate, bool)</code> — credit line paused/unpaused</li>
+								<li><code>CreditLineBlacklistUpdated(affiliate, user, bool)</code> — user blacklist change</li>
 							</ul>
 						</li>
 						<li>
-							[ ] <strong>Alert on approaching caps</strong> -- when
+							[ ] <strong>Alert on approaching caps</strong> — when
 							<code>creditLineTotalDebt(affiliate) + creditLineBadDebt(affiliate)</code> exceeds 80% of <code>effectiveMaxDebt</code>,
 							alert the affiliate operator
 						</li>
@@ -2930,7 +2925,7 @@ coverLoss:           affiliateBalances[affiliate] -= covered amount, badDebt += 
 					<ol>
 						<li><code>LibCreditLine.activate</code> moves debt from reserved to active within <code>CreditLineStorage</code>.</li>
 						<li>
-							<code>LibCreditLine.activate</code> calls <code>SYMMIO.advanceWithdraw(user, requestId, creditAmount)</code> -- SYMMIO
+							<code>LibCreditLine.activate</code> calls <code>SYMMIO.advanceWithdraw(user, requestId, creditAmount)</code> — SYMMIO
 							transfers <code>creditAmount</code> of collateral to the ExpressProvider, which can then pay the user.
 						</li>
 					</ol>
@@ -2950,7 +2945,7 @@ coverLoss:           affiliateBalances[affiliate] -= covered amount, badDebt += 
 						<strong>Credit loss on post-payout rollback:</strong> If a withdrawal is suspended after processing (Status = PROCESSED), the
 						credit amount has already been advanced and paid to the user. <code>LibCreditLine.coverLoss</code> deducts up to the unlocked
 						affiliate balance, records any uncovered deficit as <code>badDebt</code>, and then internally settles the active debt to clear
-						the request record. Only <code>onWithdrawSuspend</code> reaches this path -- <code>forceCancelWithdraw</code> /
+						the request record. Only <code>onWithdrawSuspend</code> reaches this path — <code>forceCancelWithdraw</code> /
 						<code>onForceWithdrawCancel</code> no longer exist (commit 40d5fd99).
 					</p>
 					<h3 id="10-5-bot-decision-logic-for-credit">10.5 Bot Decision Logic for Credit</h3>
@@ -3178,7 +3173,7 @@ Step 4c -- Post-payout rollback (suspend after PROCESSED, rare):
 								</li>
 								<li>
 									Fetch a fresh <code>AccelerateOffer</code> from the bot's API and have its own backend submit
-									<code>accelerateWithdraw</code>. The contract is permissionless, so any sender works -- but when the affiliate
+									<code>accelerateWithdraw</code>. The contract is permissionless, so any sender works — but when the affiliate
 									requires validators, the submission must carry a fresh <code>validatorData</code> quorum alongside the bot
 									signature.
 								</li>
@@ -3287,8 +3282,8 @@ Step 4c -- Post-payout rollback (suspend after PROCESSED, rare):
 					<p>
 						<strong>Decreases are always free.</strong> When a frontend needs to tighten risk (e.g., an anomaly spike, a pool running low,
 						a governance decision), it should call <code>setMyCreditLineConfig</code> with lower values right away. The on-chain
-						classifier treats "neither dimension loosened" as a decrease -- no fee, no counter bump, no delay. Tightening is the
-						protocol's preferred risk response.
+						classifier treats "neither dimension loosened" as a decrease — no fee, no counter bump, no delay. Tightening is the protocol's
+						preferred risk response.
 					</p>
 					<p>
 						<strong>Increases are throttled and can cost fees.</strong> Each affiliate gets <code>maxFreePerWindow</code> free increases
@@ -3317,10 +3312,10 @@ Step 4c -- Post-payout rollback (suspend after PROCESSED, rare):
 					</p>
 					<ul>
 						<li>
-							<code>CreditLineAffiliateConfigSelfUpdated(affiliate, maxDebt, maxDebtBps, wasDecrease, feePaid)</code> -- affiliate
+							<code>CreditLineAffiliateConfigSelfUpdated(affiliate, maxDebt, maxDebtBps, wasDecrease, feePaid)</code> — affiliate
 							self-service calls
 						</li>
-						<li><code>CreditLineAffiliateConfigUpdated(affiliate, maxDebt, maxDebtBps)</code> -- emitted by both paths</li>
+						<li><code>CreditLineAffiliateConfigUpdated(affiliate, maxDebt, maxDebtBps)</code> — emitted by both paths</li>
 					</ul>
 					<p>
 						The second event is a superset; the first carries the extra classification and fee-paid context. For pure cap tracking, the
@@ -3569,7 +3564,7 @@ Step 7 -- Bot processes after security window:
     style X fill:#f66
 </code></pre>
 					<aside class="callout callout-note">
-						<strong>Note</strong> <code>onWithdrawCancelRequest</code> is <strong>not</strong> a resolution path for LOCKED -- it only
+						<strong>Note</strong> <code>onWithdrawCancelRequest</code> is <strong>not</strong> a resolution path for LOCKED — it only
 						accepts <code>ACCEPTED</code> status (per <code>SymmioHookFacetImpl</code>). <code>forceCancelWithdraw</code> /
 						<code>onForceWithdrawCancel</code> no longer exist (commit 40d5fd99); SYMMIO uses <code>onWithdrawSuspend</code> for any
 						forced rollback.
@@ -3808,7 +3803,7 @@ Step 2D — Bot sees: WithdrawFinalized(user, reqId) at T+43200
 							[ ] <code>LibCreditLine.coverLoss</code> deducts the covered amount from unlocked affiliate balance and records uncovered
 							credit loss as <code>badDebt</code>
 						</li>
-						<li>[ ] Pools were already deducted at processing time -- nothing to unlock</li>
+						<li>[ ] Pools were already deducted at processing time — nothing to unlock</li>
 
 						<li>[ ] Status set to SUSPENDED</li>
 					</ul>
@@ -4048,7 +4043,7 @@ Step 2D — Bot sees: WithdrawFinalized(user, reqId) at T+43200
 								<tr>
 									<td><code>InvalidStatusForStandard</code></td>
 									<td><code>onWithdrawComplete</code> on STANDARD when status is not ACCEPTED or LOCKED</td>
-									<td>Check status -- may already be CANCELLED or SUSPENDED</td>
+									<td>Check status — may already be CANCELLED or SUSPENDED</td>
 								</tr>
 								<tr>
 									<td><code>TooEarly</code></td>
@@ -4441,7 +4436,7 @@ Decision:
 								</tr>
 								<tr>
 									<td>Nonce read at sign time, but another withdrawal consumed it</td>
-									<td>Reverts <code>InvalidNonce</code> -- re-read and re-sign</td>
+									<td>Reverts <code>InvalidNonce</code> — re-read and re-sign</td>
 								</tr>
 								<tr>
 									<td>Concurrent options for same user</td>
@@ -5230,7 +5225,7 @@ Step 3 — Bot sees: WithdrawFinalized event for W1 (pools replenished)
 					<h3 id="17-3-credit-line-functions-on-the-diamond">17.3 Credit Line Functions (on the Diamond)</h3>
 					<p>
 						Credit line admin setters live on <code>ControlFacet</code>; all credit line <strong>view</strong> functions are on
-						<code>ViewFacet</code>. There are no separate roles -- all credit line admin functions use the diamond's
+						<code>ViewFacet</code>. There are no separate roles — all credit line admin functions use the diamond's
 						<code>SETTER_ROLE</code>.
 					</p>
 					<p><strong>Admin functions (ControlFacet, 5 setters):</strong></p>
@@ -5348,7 +5343,7 @@ Step 3 — Bot sees: WithdrawFinalized event for W1 (pools replenished)
 					<p>
 						Internal credit line operations (<code>reserveDebt</code>, <code>activate</code>, <code>settle</code>,
 						<code>releaseReservation</code>, <code>coverLoss</code>) are called internally by the diamond's facets (e.g.,
-						<code>SymmioHookFacet</code>, <code>OperatorFacet</code>) via <code>LibCreditLine</code> -- they are not externally callable.
+						<code>SymmioHookFacet</code>, <code>OperatorFacet</code>) via <code>LibCreditLine</code> — they are not externally callable.
 					</p>
 					<h3 id="17-4-symmio-gated-functions-no-role-msg-sender-symmio">
 						17.4 SYMMIO-Gated Functions (no role, <code>msg.sender == symmio</code>)
@@ -5569,7 +5564,7 @@ What-if: SYMMIO core pauses withdraw advances?
 					</p>
 					<p>
 						Each cell tells the bot exactly what to do, what to watch for, what actions are available (and to whom), what will revert, and
-						what timers should be running. Impossible combinations -- those that can never occur due to the state machine design -- are
+						what timers should be running. Impossible combinations — those that can never occur due to the state machine design — are
 						marked as such with an explanation.
 					</p>
 					<p><strong>Default contract parameters used in numeric scenarios:</strong></p>
@@ -5601,7 +5596,7 @@ What-if: SYMMIO core pauses withdraw advances?
 					<p><strong>Available actions:</strong></p>
 					<ul>
 						<li>User: calls <code>initiateWithdraw</code> on SYMMIO, which triggers <code>onWithdrawRequest</code> on ExpressProvider</li>
-						<li>No bot action needed after signing -- SAME_TX processes entirely within <code>onWithdrawRequest</code></li>
+						<li>No bot action needed after signing — SAME_TX processes entirely within <code>onWithdrawRequest</code></li>
 					</ul>
 					<p><strong>Will revert:</strong></p>
 					<ul>
@@ -5641,14 +5636,14 @@ What-if: SYMMIO core pauses withdraw advances?
 							Monitor for: <code>WithdrawFinalized</code> event (from <code>onWithdrawComplete</code>) <strong>and</strong>
 							<code>WithdrawSuspended</code> event (from <code>onWithdrawSuspend</code> rollback path)
 						</li>
-						<li>No further user-facing action needed -- the user already has their funds</li>
+						<li>No further user-facing action needed — the user already has their funds</li>
 					</ol>
 					<p><strong>Available actions:</strong></p>
 					<ul>
 						<li>OPERATOR_ROLE: call <code>finalizeWithdrawRequest</code> on SYMMIO (at <code>cooldownEndTime</code>)</li>
 						<li>SYMMIO (callback): <code>onWithdrawComplete</code> transitions to FINALIZED and replenishes pools</li>
 						<li>
-							SYMMIO (callback): <code>onWithdrawSuspend</code> triggers <code>_handleProcessedRollback</code> -- deducts up to the
+							SYMMIO (callback): <code>onWithdrawSuspend</code> triggers <code>_handleProcessedRollback</code> — deducts up to the
 							unlocked affiliate balance, records any deficit as <code>badDebt</code>, settles credit, status -&gt; SUSPENDED
 						</li>
 					</ul>
@@ -5806,7 +5801,7 @@ Anyone can call processWithdraw(user, reqId, parts)
 						<li>If confirmed threat: request SYMMIO operator to suspend via <code>onWithdrawSuspend</code></li>
 						<li>
 							Monitor for: <code>WithdrawUnlockedAndProcessed</code>, <code>WithdrawSuspended</code> (note:
-							<code>WithdrawCancelled</code> is not reachable from LOCKED -- the cancel callback only fires from ACCEPTED)
+							<code>WithdrawCancelled</code> is not reachable from LOCKED — the cancel callback only fires from ACCEPTED)
 						</li>
 						<li>
 							Fallback: if investigation takes too long and cooldownEndTime passes, OPERATOR_ROLE or anyone can call
@@ -5871,7 +5866,7 @@ processableAt = 1700043200 + 60 = 1700043260
 						<li>OPERATOR_ROLE: call <code>finalizeWithdrawRequest</code> on SYMMIO at <code>cooldownEndTime</code></li>
 						<li>SYMMIO (callback): <code>onWithdrawComplete</code> replenishes pools and transitions to FINALIZED</li>
 						<li>
-							SYMMIO (callback): <code>onWithdrawSuspend</code> triggers <code>_handleProcessedRollback</code> -- deducts up to the
+							SYMMIO (callback): <code>onWithdrawSuspend</code> triggers <code>_handleProcessedRollback</code> — deducts up to the
 							unlocked affiliate balance, records any deficit as <code>badDebt</code>, settles credit, status -&gt; SUSPENDED
 						</li>
 					</ul>
@@ -5915,7 +5910,7 @@ Result: status -&gt; FINALIZED
 					<ol>
 						<li>Archive this withdrawal</li>
 						<li>Remove all timers</li>
-						<li>Note: pool balances have been restored -- no reimbursement needed</li>
+						<li>Note: pool balances have been restored — no reimbursement needed</li>
 					</ol>
 					<p><strong>Available actions:</strong> None.</p>
 					<p><strong>Will revert:</strong> All state-changing functions revert.</p>
@@ -5945,7 +5940,7 @@ Result: status -&gt; FINALIZED
 					<h3 id="standard-x-none">STANDARD x NONE</h3>
 					<p>
 						<strong>Bot situation:</strong> No withdrawal exists yet. The bot may be about to sign a STANDARD option. STANDARD means no
-						capital fronting -- Express acts as an intermediary and forwards tokens after SYMMIO's 12-hour cooldown.
+						capital fronting — Express acts as an intermediary and forwards tokens after SYMMIO's 12-hour cooldown.
 					</p>
 					<p><strong>Bot should:</strong></p>
 					<ol>
@@ -6114,7 +6109,7 @@ Scenario B -- locked-after-cooldown path:
 					<ol>
 						<li>Archive this withdrawal</li>
 						<li>Remove all timers</li>
-						<li>No pool replenishment step -- STANDARD never fronted capital from pools</li>
+						<li>No pool replenishment step — STANDARD never fronted capital from pools</li>
 					</ol>
 					<p><strong>Available actions:</strong> None meaningful. The withdrawal lifecycle is complete.</p>
 					<p><strong>Will revert:</strong></p>
@@ -6225,13 +6220,13 @@ Non-operator at T=1700043250:
 								</tr>
 								<tr>
 									<td><strong>ACCEPTED</strong></td>
-									<td><strong>I</strong> -- skips to PROCESSED</td>
+									<td><strong>I</strong> — skips to PROCESSED</td>
 									<td>Wait securityWindow, then processWithdraw</td>
 									<td>Wait for onWithdrawComplete (12h)</td>
 								</tr>
 								<tr>
 									<td><strong>LOCKED</strong></td>
-									<td><strong>I</strong> -- never ACCEPTED</td>
+									<td><strong>I</strong> — never ACCEPTED</td>
 									<td>Await UNLOCK_ROLE or cooldown expiry</td>
 									<td>Await UNLOCK_ROLE or cooldown expiry + finalize</td>
 								</tr>
@@ -6249,13 +6244,13 @@ Non-operator at T=1700043250:
 								</tr>
 								<tr>
 									<td><strong>CANCELLED</strong></td>
-									<td><strong>I</strong> -- never ACCEPTED</td>
+									<td><strong>I</strong> — never ACCEPTED</td>
 									<td>Terminal (locks released, from ACCEPTED only)</td>
 									<td>Terminal (cancel from ACCEPTED only)</td>
 								</tr>
 								<tr>
 									<td><strong>SUSPENDED</strong></td>
-									<td>Terminal -- only via PROCESSED rollback path</td>
+									<td>Terminal — only via PROCESSED rollback path</td>
 									<td>Terminal (from ACCEPTED/LOCKED: locks released; from PROCESSED: rollback)</td>
 									<td>Terminal (from ACCEPTED/LOCKED with <code>finalizedAt == 0</code>)</td>
 								</tr>
@@ -6312,14 +6307,14 @@ Non-operator at T=1700043250:
 								</tr>
 								<tr>
 									<td><strong>Force-cancellable?</strong></td>
-									<td>N/A -- <code>onForceWithdrawCancel</code> removed (commit eabd1f3f); use suspend</td>
-									<td>N/A -- <code>onForceWithdrawCancel</code> removed; use suspend</td>
-									<td>N/A -- <code>onForceWithdrawCancel</code> removed; use suspend</td>
+									<td>N/A — <code>onForceWithdrawCancel</code> removed (commit eabd1f3f); use suspend</td>
+									<td>N/A — <code>onForceWithdrawCancel</code> removed; use suspend</td>
+									<td>N/A — <code>onForceWithdrawCancel</code> removed; use suspend</td>
 								</tr>
 								<tr>
 									<td><strong>Suspendable?</strong></td>
-									<td>Yes -- only from PROCESSED (post-payout rollback path)</td>
-									<td>Yes (ACCEPTED, LOCKED, or PROCESSED -- PROCESSED triggers rollback)</td>
+									<td>Yes — only from PROCESSED (post-payout rollback path)</td>
+									<td>Yes (ACCEPTED, LOCKED, or PROCESSED — PROCESSED triggers rollback)</td>
 									<td>Yes (ACCEPTED or LOCKED, if <code>finalizedAt == 0</code>)</td>
 								</tr>
 								<tr>

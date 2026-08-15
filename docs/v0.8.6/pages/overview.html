@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="description" content="Overview of the Symmio Core v0.8.6 release and its main protocol changes." />
+		<title>Symmio Core v0.8.6 Overview</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Apply the saved preference before first paint.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.6">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#review-order">Suggested Review Order</a>
+				<a class="toc-link level-2" href="#documentation-map">Documentation Map</a>
+			</div>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Symmio Core v0.8.6 Overview</h1>
+							<p class="hero-copy">
+								Start here to read v0.8.6 as a set of targeted fixes: faster exits without removing withdrawal cooldown protections,
+								cleaner AccountLayer and affiliate operations, and safer liquidation/freshness handling.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<p>
+						Use this page as the release-delta map. The release addresses faster withdrawals without bypassing the 12-hour safety model,
+						clearer account and affiliate lifecycle controls, safer liquidation accounting, and a reconstructible allocated-balance event
+						ledger for indexers.
+					</p>
+
+					<h2 id="review-order">Suggested Review Order</h2>
+					<h3 id="protocol-review">Protocol review</h3>
+					<ol>
+						<li><a href="liquidation-funding-snapshot-fix.html">PartyA Liquidation Snapshot Flow</a></li>
+						<li><a href="cross-partyb-liquidation-reserve.html">Cross-PartyB Liquidation Reserve Enforcement</a></li>
+						<li><a href="strict-deallocation.html">Strict Deallocation</a></li>
+						<li><a href="market-open-fee-execution-price.html">Market Open Fee on Execution Price</a></li>
+						<li><a href="single-step-partya-liquidation.html">Single-Step PartyA Liquidation</a></li>
+						<li><a href="partya-liquidation-fee-recipient.html">PartyA Liquidation Fee Recipient Cleanup</a></li>
+						<li><a href="balance-change-event-cleanup.html">Allocated Balance Event Ledger</a></li>
+						<li><a href="lazy-accumulated-funding.html">Lazy Accumulated Funding</a></li>
+						<li><a href="muon-upnl-validity-overrides.html">Muon UPNL Validity Overrides</a></li>
+						<li><a href="account-layer-ownership-delegation.html">AccountLayer Delegated Creation &amp; Ownership Transfer</a></li>
+						<li><a href="affiliate-shutdown-flow.html">Affiliate Shutdown Flow</a></li>
+						<li><a href="express-withdrawal-system-design.html">Express Withdrawal System Design</a></li>
+						<li><a href="express-bot-operations-checklist.html">Express Provider Bot Operations Checklist</a></li>
+					</ol>
+
+					<h3 id="bot-and-operations-teams">Bot and operations teams</h3>
+					<ol>
+						<li><a href="express-withdrawal-system-design.html">Express Withdrawal System Design</a></li>
+						<li><a href="express-bot-operations-checklist.html">Express Provider Bot Operations Checklist</a></li>
+						<li><a href="affiliate-shutdown-flow.html">Affiliate Shutdown Flow</a></li>
+						<li><a href="muon-upnl-validity-overrides.html">Muon UPNL Validity Overrides</a></li>
+						<li><a href="liquidation-funding-snapshot-fix.html">PartyA Liquidation Snapshot Flow</a></li>
+						<li><a href="cross-partyb-liquidation-reserve.html">Cross-PartyB Liquidation Reserve Enforcement</a></li>
+						<li><a href="strict-deallocation.html">Strict Deallocation</a></li>
+						<li><a href="single-step-partya-liquidation.html">Single-Step PartyA Liquidation</a></li>
+						<li><a href="partya-liquidation-fee-recipient.html">PartyA Liquidation Fee Recipient Cleanup</a></li>
+						<li><a href="balance-change-event-cleanup.html">Allocated Balance Event Ledger</a></li>
+						<li><a href="lazy-accumulated-funding.html">Lazy Accumulated Funding</a></li>
+						<li><a href="account-layer-ownership-delegation.html">AccountLayer Delegated Creation &amp; Ownership Transfer</a></li>
+					</ol>
+
+					<h2 id="documentation-map">Documentation Map</h2>
+					<ul>
+						<li><a href="account-layer-ownership-delegation.html">AccountLayer Delegated Creation &amp; Ownership Transfer</a></li>
+						<li><a href="express-withdrawal-system-design.html">Express Withdrawal System Design</a></li>
+						<li><a href="express-bot-operations-checklist.html">Express Provider Bot Operations Checklist</a></li>
+						<li><a href="affiliate-shutdown-flow.html">Affiliate Shutdown Flow</a></li>
+						<li><a href="muon-upnl-validity-overrides.html">Muon UPNL Validity Overrides</a></li>
+						<li><a href="liquidation-funding-snapshot-fix.html">PartyA Liquidation Snapshot Flow</a></li>
+						<li><a href="cross-partyb-liquidation-reserve.html">Cross-PartyB Liquidation Reserve Enforcement</a></li>
+						<li><a href="strict-deallocation.html">Strict Deallocation</a></li>
+						<li><a href="single-step-partya-liquidation.html">Single-Step PartyA Liquidation</a></li>
+						<li><a href="partya-liquidation-fee-recipient.html">PartyA Liquidation Fee Recipient Cleanup</a></li>
+						<li><a href="balance-change-event-cleanup.html">Allocated Balance Event Ledger</a></li>
+						<li><a href="lazy-accumulated-funding.html">Lazy Accumulated Funding</a></li>
+					</ul>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 documentation.</span>
+		</footer>
+	</body>
+</html>

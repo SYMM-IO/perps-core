@@ -5,7 +5,7 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta
 			name="description"
-			content="Backfills the new aggregated position structures and cross bucket locked values from existing v0.8.4 data. Run during a global pause after the diamond cut -- migrates quote-level data into symbol-level aggregates and sums per-PartyA locked/pending locked balances into the cross bucket. Allocated…"
+			content="Backfills the new aggregated position structures and cross bucket locked values from existing v0.8.4 data. Run during a global pause after the diamond cut — migrates quote-level data into symbol-level aggregates and sums per-PartyA locked/pending locked balances into the cross bucket. Allocated…"
 		/>
 		<title>Migration Process - Symmio Core v0.8.5</title>
 		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
@@ -102,7 +102,7 @@ partyBPendingLockedBalances[partyB][partyA1] = {...}
 partyBPendingLockedBalances[partyB][partyA2] = {...}
 </code></pre>
 					<p>
-						This creates fragmentation -- partyB cannot use excess balance from one partyA relationship to cover margin requirements for
+						This creates fragmentation — partyB cannot use excess balance from one partyA relationship to cover margin requirements for
 						another.
 					</p>
 					<p>
@@ -114,7 +114,7 @@ partyBLockedBalances[partyB][address(0)] = {...}          // Total locked across
 partyBPendingLockedBalances[partyB][address(0)] = {...}   // Total pending locked across all
 </code></pre>
 					<p>
-						Locked and pending locked balances are <strong>dual-tracked</strong> -- every write updates both
+						Locked and pending locked balances are <strong>dual-tracked</strong> — every write updates both
 						<code>[partyB][partyA]</code> and <code>[partyB][address(0)]</code>. This keeps the cross bucket always in sync.
 					</p>
 					<p>
@@ -227,7 +227,7 @@ partyBPendingLockedBalances[partyB][address(0)] = sum of all partyA pending valu
 							Sums <code>partyBPendingLockedBalances[partyB][partyA]</code> →
 							<code>partyBPendingLockedBalances[partyB][address(0)]</code>
 						</li>
-						<li>Tracks migration per partyB+partyA pair -- already-migrated pairs are skipped</li>
+						<li>Tracks migration per partyB+partyA pair — already-migrated pairs are skipped</li>
 						<li>Can be called in multiple batches if the partyAs array is too large for a single transaction</li>
 					</ul>
 					<p><strong>Access Control:</strong> Requires <code>MIGRATION_ROLE</code></p>
@@ -274,11 +274,11 @@ for (let i = 0; i &lt; allQuoteIds.length; i += BATCH_SIZE) {
 					<p><strong>Which quotes to migrate:</strong></p>
 					<ul>
 						<li>
-							Status: <code>PENDING</code>, <code>LOCKED</code>, or <code>CANCEL_PENDING</code> -- backfills reserved open fee tracking
+							Status: <code>PENDING</code>, <code>LOCKED</code>, or <code>CANCEL_PENDING</code> — backfills reserved open fee tracking
 							to prevent <code>balanceLimitPerUser</code> bypass
 						</li>
 						<li>
-							Status: <code>OPENED</code>, <code>CLOSE_PENDING</code>, or <code>CANCEL_CLOSE_PENDING</code> -- populates aggregated
+							Status: <code>OPENED</code>, <code>CLOSE_PENDING</code>, or <code>CANCEL_CLOSE_PENDING</code> — populates aggregated
 							positions and funding structures
 						</li>
 					</ul>
@@ -322,8 +322,8 @@ for (const partyB of allPartyBs) {
 						<li>PartyB has unified capital across all partyA relationships</li>
 					</ul>
 					<p>
-						This can be done immediately after upgrade or months later -- the migration ensures the cross bucket locked/pending locked
-						data is ready. The solver must also fund the cross bucket by allocating to <code>address(0)</code>.
+						This can be done immediately after upgrade or months later — the migration ensures the cross bucket locked/pending locked data
+						is ready. The solver must also fund the cross bucket by allocating to <code>address(0)</code>.
 					</p>
 					<h2 id="doc-migration-verification">Verification</h2>
 					<p>After migration, verify correctness:</p>
@@ -331,7 +331,7 @@ for (const partyB of allPartyBs) {
 					<p>
 						<strong>Note:</strong> <code>isQuoteMigrated()</code> only returns true for quotes that were actually processed by
 						<code>migrateQuotes()</code>. Quotes with non-migratable on-chain status (CANCELED, CLOSED, LIQUIDATED, EXPIRED) are correctly
-						skipped by the contract and will return false -- this is expected. Always check the on-chain status before treating a false
+						skipped by the contract and will return false — this is expected. Always check the on-chain status before treating a false
 						result as a failure.
 					</p>
 					<pre><code class="language-tsx">const MIGRATABLE_STATUSES = new Set([0, 1, 2, 4, 5, 6]); // PENDING, LOCKED, CANCEL_PENDING, OPENED, CLOSE_PENDING, CANCEL_CLOSE_PENDING

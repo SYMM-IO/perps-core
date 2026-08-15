@@ -515,7 +515,7 @@ amounts:        [crossBalance,  amountOwed]
 ) external onlyRole(CLEARING_HOUSE_ROLE)
 </code></pre>
 					<p>
-						This function is independent of the takeover and cross partyB liquidation flows -- it operates on the escrow pool that was
+						This function is independent of the takeover and cross partyB liquidation flows — it operates on the escrow pool that was
 						created during <code>settlePartyALiquidation</code>, not during a ClearingHouse lifecycle. The ClearingHouse operator calls it
 						after the normal liquidation has fully settled to compensate PartyBs for haircut losses or return funds to the PartyA if the
 						fees were legitimate.

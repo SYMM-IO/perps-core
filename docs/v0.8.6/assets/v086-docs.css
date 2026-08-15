@@ -202,7 +202,7 @@ button {
 }
 
 :focus-visible {
-	outline: 1px solid var(--accent);
+	outline: 2px solid var(--accent);
 	outline-offset: 2px;
 }
 
@@ -320,11 +320,10 @@ select {
 	font-variant-numeric: tabular-nums;
 }
 
-input[type="search"]:focus,
-input[type="number"]:focus,
-select:focus {
+input[type="search"]:focus-visible,
+input[type="number"]:focus-visible,
+select:focus-visible {
 	border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
-	outline: none;
 }
 
 input::placeholder {
@@ -1142,11 +1141,16 @@ code {
 	font-weight: 660;
 	letter-spacing: -0.04em;
 	line-height: 1.02;
+	text-wrap: balance;
 }
 
 .reader-hero .hero-copy {
+	max-width: 68ch;
 	margin-top: 18px;
-	font-size: 15.5px;
+	font-size: 16px;
+	line-height: 1.6;
+	overflow-wrap: break-word;
+	text-wrap: pretty;
 }
 
 .metric-row {
@@ -1195,7 +1199,8 @@ code {
 	padding-top: 40px;
 	border-top: 0;
 	font-size: 24px;
-	scroll-margin-top: 24px;
+	scroll-margin-top: calc(var(--header-h, 57px) + 20px);
+	text-wrap: balance;
 }
 
 .doc-article h2::before {
@@ -1243,7 +1248,8 @@ code {
 .doc-article h5,
 .doc-article h6 {
 	margin-top: 38px;
-	scroll-margin-top: 24px;
+	scroll-margin-top: calc(var(--header-h, 57px) + 20px);
+	text-wrap: balance;
 }
 
 .doc-article h3 {
@@ -1274,6 +1280,9 @@ code {
 .doc-article p,
 .doc-article li {
 	color: var(--ink-soft);
+	font-size: 16px;
+	line-height: 1.62;
+	overflow-wrap: break-word;
 	text-wrap: pretty;
 }
 
@@ -2721,5 +2730,29 @@ a code {
 	[data-theme="dark"],
 	[data-theme="light"] {
 		--line: var(--line-strong);
+	}
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	.button {
+		transition-property: border-color, background, color, transform;
+	}
+
+	.button:active {
+		transform: scale(0.96);
+	}
+}
+
+@media (max-width: 640px) {
+	input[type="search"],
+	input[type="number"],
+	select {
+		font-size: 16px;
+	}
+}
+
+@media (forced-colors: active) {
+	:focus-visible {
+		outline-color: Highlight;
 	}
 }

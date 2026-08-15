@@ -5,12 +5,12 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta
 			name="description"
-			content="Quote flows no longer roll the symbol/PartyB funding state; funding settles lazily from persisted state, which now changes -- and emits its final state -- only on solver configuration."
+			content="Quote flows no longer roll the symbol/PartyB funding state; funding settles lazily from persisted state, which now changes — and emits its final state — only on solver configuration."
 		/>
 		<title>Lazy Accumulated Funding - Symmio Core v0.8.6</title>
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
 		<script>
-			// Applied before first paint so a saved light preference does not flash dark.
+			// Apply the saved preference before first paint.
 			try {
 				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
 			} catch (_error) {}
@@ -64,8 +64,8 @@
 					<h2 id="summary">Summary</h2>
 					<p>
 						The accumulated funding system keeps mutable funding state per <code>(symbolId, partyB)</code>: a weighted-average rate over
-						completed history plus the rate currently in force. In earlier versions, every quote-driven flow -- position open, close,
-						accumulated funding charge, liquidation sync, migration initialization -- first <em>rolled</em> this shared state forward
+						completed history plus the rate currently in force. In earlier versions, every quote-driven flow — position open, close,
+						accumulated funding charge, liquidation sync, migration initialization — first <em>rolled</em> this shared state forward
 						(re-folding the weighted average and advancing <code>lastUpdatedEpoch</code>) so that a simplified two-term formula could
 						write the quote's <code>accumulatedPaidFunding</code> baseline.
 					</p>
@@ -140,7 +140,7 @@ cumulativeFee = snapshotFee
 </code></pre>
 					<p>
 						The payload mirrors the persisted <code>FundingFee</code> struct after the state transition has completed. It is emitted after
-						final storage writes in the solver configuration paths -- the only paths that mutate the symbol/PartyB funding state:
+						final storage writes in the solver configuration paths — the only paths that mutate the symbol/PartyB funding state:
 					</p>
 					<ul>
 						<li><code>setEpochDurations</code></li>

@@ -3,8 +3,8 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<meta name="description" content="Versioned Symmio Core protocol documentation." />
-		<title>Symmio Core Documentation</title>
+		<meta name="description" content="Release notes, protocol documentation, and operator guides for Symmio Core." />
+		<title>Symmio Core docs</title>
 		<link rel="icon" type="image/svg+xml" href="v0.8.6/assets/symmio-mark.svg" />
 		<script>
 			// Applied before first paint so a saved light preference does not flash dark.
@@ -29,21 +29,6 @@
 					<span class="trail-current" aria-current="page">Releases</span>
 				</nav>
 				<nav class="top-actions" aria-label="Page actions">
-					<label class="portal-search" for="version-search">
-						<svg class="control-icon" aria-hidden="true" viewBox="0 0 24 24">
-							<circle cx="11" cy="11" r="6.5"></circle>
-							<path d="m16 16 4 4"></path>
-						</svg>
-						<input
-							id="version-search"
-							type="search"
-							placeholder="Search"
-							autocomplete="off"
-							aria-label="Search releases"
-							data-version-search
-						/>
-						<kbd aria-hidden="true" data-search-hint>⌘K</kbd>
-					</label>
 					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
 				</nav>
 			</div>
@@ -53,8 +38,8 @@
 			<div class="index-hero-content version-index-hero-content">
 				<div class="hero-layout">
 					<div class="hero-intro">
-						<h1>Version changelogs</h1>
-						<p class="hero-copy">Pick a release.</p>
+						<h1>Core documentation</h1>
+						<p class="hero-copy">Read release notes, protocol changes, and operator guidance for each Symmio Core version.</p>
 					</div>
 					<span class="version-index-mark" aria-hidden="true">
 						<svg viewBox="0 0 880 633">
@@ -73,30 +58,28 @@
 		<main class="version-index-shell" id="versions">
 			<div class="version-index-heading">
 				<h2>Releases</h2>
-				<output data-version-count aria-live="polite">2 versions</output>
 			</div>
 			<div class="version-list" data-version-list>
 				<a
 					class="version-entry is-current"
 					href="v0.8.6/index.html"
 					data-version-item
-					aria-label="Open the current v0.8.6 changelog, 24 chapters"
+					aria-label="Open the current v0.8.6 release notes, 22 chapters"
 				>
 					<span class="version-entry-main">
 						<span class="version-number">0.8.6</span>
 						<span class="version-status"><i aria-hidden="true"></i>Current</span>
 					</span>
-					<span class="version-entry-action">Changelog <span aria-hidden="true">→</span></span>
+					<span class="version-entry-action">Release notes <span aria-hidden="true">→</span></span>
 				</a>
-				<a class="version-entry" href="v0.8.5/index.html" data-version-item aria-label="Open the archived v0.8.5 changelog, 32 chapters">
+				<a class="version-entry" href="v0.8.5/index.html" data-version-item aria-label="Open the archived v0.8.5 release notes, 32 chapters">
 					<span class="version-entry-main">
 						<span class="version-number">0.8.5</span>
 						<span class="version-status">Archived</span>
 					</span>
-					<span class="version-entry-action">Changelog <span aria-hidden="true">→</span></span>
+					<span class="version-entry-action">Release notes <span aria-hidden="true">→</span></span>
 				</a>
 			</div>
-			<p class="version-empty" data-version-empty hidden>No releases match that search.</p>
 
 			<section class="portal-guides" aria-labelledby="guides-title">
 				<div class="version-index-heading">
