@@ -5,7 +5,7 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta
 			name="description"
-			content="A new aggregate affiliate read API, a reordered sub-account emptiness check that changes which error callers see, and an open-position hook that now tracks partial-fill child quotes."
+			content="A new aggregate affiliate read API, a reordered sub-account emptiness check that changes which error callers see, and an open-position hook that handles partial-fill children according to account isolation."
 		/>
 		<title>AccountLayer Behavior Changes - Symmio Core v0.8.6</title>
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
@@ -53,7 +53,7 @@
 							<h1>AccountLayer Behavior Changes</h1>
 							<p class="hero-copy">
 								A new aggregate affiliate read API, a reordered sub-account emptiness check that changes which error callers see, and
-								an open-position hook that now tracks partial-fill child quotes.
+								an open-position hook that handles partial-fill children according to account isolation.
 							</p>
 						</div>
 					</div>
@@ -141,7 +141,7 @@ function getAffiliateSelectorConfigs(address affiliate, bytes4[] calldata select
 						handling that branches on <code>SubAccountNotEmpty</code> to prompt a withdrawal needs to handle the other two.
 					</p>
 
-					<h2 id="open-position-hook">The open-position hook now tracks partial-fill children</h2>
+					<h2 id="open-position-hook">The open-position hook now handles partial-fill children</h2>
 					<p>
 						<code>SymmioHookFacet.onOpenPosition</code> was a deliberate no-op &mdash; it existed only so core would not revert when
 						calling a hook that had nothing to do. It now does work for virtual accounts.
@@ -149,20 +149,25 @@ function getAffiliateSelectorConfigs(address affiliate, bytes4[] calldata select
 					<p>
 						When a quote is partially filled, core opens the filled portion and creates a <em>child</em> quote carrying the remainder.
 						That child was never registered against the virtual account, so a virtual account's <code>quoteIds</code> set silently lost
-						track of the leftover inventory. The hook now reads the newest quote, checks that it is the pending child of the quote just
-						opened and belongs to the same PartyA, and adds it to the set.
+						track of the leftover inventory. The hook now reads the newest quote and checks that it is the pending child of the quote just
+						opened and belongs to the same PartyA. MARKET and direction-isolated virtual accounts add the child to the set.
+						POSITION-isolated virtual accounts cancel it immediately so the same account cannot later open a second position.
 					</p>
 					<p>
-						This is why the AccountLayer's view of core gained two things: <code>getNextQuoteId</code> became a <code>view</code> function
-						so it can be called from a hook, and <code>getQuote</code> was added so the candidate child can be inspected before it is
-						trusted.
+						This is why the AccountLayer's view of core gained three things: <code>getNextQuoteId</code> became a
+						<code>view</code> function so it can be called from a hook, <code>getQuote</code> was added so the candidate child can be
+						inspected before it is trusted, and <code>requestToCancelQuote</code> lets the POSITION path cancel the verified child as the
+						virtual account.
 					</p>
 					<aside class="callout callout-important">
-						<strong>Virtual account quote sets contain more entries than before.</strong> Anything that reads a virtual account's
-						<code>quoteIds</code> &mdash; position accounting, UI, reconciliation &mdash; now sees partial-fill children that were
-						previously missing. The set is more complete, not differently shaped, but a consumer that assumed one quote per position will
-						now see two for a partially filled order.
+						<strong>Compatible virtual account quote sets contain more entries than before.</strong> Anything that reads a MARKET or
+						direction-isolated virtual account's <code>quoteIds</code> &mdash; position accounting, UI, reconciliation &mdash; now sees
+						partial-fill children that were previously missing. POSITION-isolated accounts instead emit an immediate child cancellation.
 					</aside>
+					<p>
+						See <a href="position-isolation-partial-fill.html">Position Isolation Partial Fill Remainder</a> for the POSITION path,
+						including its pause and instant-actions-mode behavior.
+					</p>
 					<p>
 						The hook returns early for anything that is not an existing virtual account, so sub-accounts and legacy accounts are
 						unaffected.

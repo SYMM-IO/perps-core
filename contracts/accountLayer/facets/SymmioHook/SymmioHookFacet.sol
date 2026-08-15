@@ -9,7 +9,7 @@ import { ISymmioHookFacet } from "./ISymmioHookFacet.sol";
 import { AccountLayerAccessibility } from "../../utils/AccountLayerAccessibility.sol";
 import { AccountLayerPausable } from "../../utils/AccountLayerPausable.sol";
 import { AccountLayerReentrancyGuard } from "../../utils/AccountLayerReentrancyGuard.sol";
-import { AccountStorage, VirtualAccountData } from "../../storages/AccountStorage.sol";
+import { AccountStorage, VirtualAccountData, VirtualAccountIsolationType } from "../../storages/AccountStorage.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
 import { IAccountLayerHook } from "../../interfaces/IAccountLayerHook.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
@@ -20,7 +20,9 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 	using EnumerableSet for EnumerableSet.UintSet;
 
 	/// @notice Called by Symmio core when a position is opened
-	/// @dev Tracks the pending child quote created when a quote is partially filled
+	/// @dev Tracks the pending child quote created when a quote is partially filled. On a
+	///      POSITION-isolated VA the child is cancelled instead: tracking it would let a second
+	///      position open on a VA whose isolation contract is exactly one position.
 	function onOpenPosition(
 		uint256 quoteId,
 		uint256 /* filledAmount */,
@@ -37,7 +39,15 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 		uint256 childQuoteId = symmio.getNextQuoteId();
 		ISymmio.Quote memory childQuote = symmio.getQuote(childQuoteId);
 		if (childQuote.parentId == quoteId && childQuote.partyA == partyA && childQuote.quoteStatus == ISymmio.QuoteStatus.PENDING) {
-			vData.quoteIds.add(childQuoteId);
+			if (vData.isolationType == VirtualAccountIsolationType.POSITION) {
+				// Cancel is immediate and refunds in the same tx: the child is PENDING with no
+				// partyB, and openPosition already required block.timestamp <= deadline. The
+				// nested onCancelQuote hook re-enters this facet, so onCancelQuote must never
+				// gain the nonReentrant modifier.
+				LibAccountLayerUtils.executeWithSigner(partyA, abi.encodeWithSelector(ISymmio.requestToCancelQuote.selector, childQuoteId));
+			} else {
+				vData.quoteIds.add(childQuoteId);
+			}
 		}
 	}
 
