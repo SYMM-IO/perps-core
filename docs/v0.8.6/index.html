@@ -59,7 +59,7 @@
 					<input class="catalog-search" type="search" placeholder="Search chapters" data-catalog-search autocomplete="off" />
 					<kbd class="catalog-search-hint" aria-hidden="true" data-search-hint>⌘K</kbd>
 				</label>
-				<span class="catalog-count" data-catalog-count>24 chapters</span>
+				<span class="catalog-count" data-catalog-count>25 chapters</span>
 			</div>
 			<p class="catalog-empty" data-catalog-empty hidden>No chapters match that search.</p>
 			<div class="doc-browser">
@@ -208,7 +208,7 @@
 				</section>
 				<section class="version-catalog-group minor-improvements" aria-labelledby="other-changes-title" data-catalog-group>
 					<div class="section-heading">
-						<p class="eyebrow" data-catalog-group-count>12 chapters</p>
+						<p class="eyebrow" data-catalog-group-count>13 chapters</p>
 						<h2 id="other-changes-title">Other changes</h2>
 					</div>
 					<div class="minor-improvement-list">
@@ -302,11 +302,20 @@
 							<strong>AccountLayer Behavior Changes</strong>
 							<span
 								>A new aggregate affiliate read API, a reordered sub-account emptiness check that changes which error callers see, and
-								an open-position hook that now tracks partial-fill child quotes.</span
+								an open-position hook that handles partial-fill child quotes according to account isolation.</span
+							>
+						</a>
+						<a class="minor-improvement-item" href="pages/position-isolation-partial-fill.html" data-catalog-item>
+							<span class="doc-list-index">24</span>
+							<span class="category">AccountLayer</span>
+							<strong>Position Isolation Partial Fill Remainder</strong>
+							<span
+								>A POSITION-isolated virtual account holds exactly one position, so the remainder quote of a partial fill is cancelled
+								in the same transaction and its reserves are refunded to the account.</span
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/lazy-accumulated-funding.html" data-catalog-item>
-							<span class="doc-list-index">24</span>
+							<span class="doc-list-index">25</span>
 							<span class="category">Funding</span>
 							<strong>Lazy Accumulated Funding</strong>
 							<span

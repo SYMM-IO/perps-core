@@ -96,6 +96,7 @@
 			["diamond-owner-getter", "Views", "Diamond Owner Getter"],
 			["express-deposit-removal", "AccountLayer", "Express Deposit Removal"],
 			["accountlayer-behavior-changes", "AccountLayer", "AccountLayer Behavior Changes"],
+			["position-isolation-partial-fill", "AccountLayer", "Position Isolation Partial Fill Remainder"],
 			["lazy-accumulated-funding", "Funding", "Lazy Accumulated Funding"],
 		],
 	};

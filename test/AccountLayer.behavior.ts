@@ -2,7 +2,7 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers"
 import { expect } from "chai"
 import { BytesLike, toUtf8Bytes, ZeroAddress } from "ethers"
 
-import { IAccountLayerHook__factory, ISymmioHook__factory } from "../src/types/index.js"
+import { IAccountLayerHook__factory, ISymmioHook__factory, LibHook__factory } from "../src/types/index.js"
 import type { MockAccountLayerHook } from "../src/types/index.js"
 import { initializeFixture } from "./Initialize.fixture.js"
 import { ethers } from "./helpers/hardhat-connection.js"
@@ -36,6 +36,7 @@ type SubAccountCreationDataStruct = {
 }
 
 const roleHash = (name: string) => ethers.keccak256(toUtf8Bytes(name))
+const hookErrorDecoder = LibHook__factory.connect(ZeroAddress)
 const SEND_QUOTE_WITH_AFFILIATE_SIGNATURE =
 	"sendQuoteWithAffiliate(address[],uint256,uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,address,(bytes,uint256,int256,uint256,bytes,(uint256,address,address)))"
 const SEND_QUOTE_WITH_SOLVER_FEE_CAPS_SIGNATURE =
@@ -4305,7 +4306,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 				)
 			})
 
-			it("tracks the remainder quote and cleans up both quote lifecycles", async () => {
+			it("cancels the remainder quote of a partial open on a POSITION-isolated virtual account", async () => {
 				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress))[0]
 				const [parentQuoteId] = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
 				const parentBeforeOpen = await context.viewFacetQuote.getQuote(parentQuoteId)
@@ -4322,17 +4323,14 @@ export function shouldBehaveLikeAccountLayer(): void {
 						await getDummyPairUpnlAndPriceSig(BigInt(openRequest.price), BigInt(openRequest.upnlPartyA), BigInt(openRequest.upnlPartyB)),
 					)
 
+				// A POSITION VA must hold exactly one position, so the hook cancels the remainder in the same tx
 				const childQuoteId = await context.viewFacetQuote.getNextQuoteId()
 				const childQuote = await context.viewFacetQuote.getQuote(childQuoteId)
 				expect(childQuote.parentId).to.equal(parentQuoteId)
-				expect(childQuote.quoteStatus).to.equal(QuoteStatus.PENDING)
+				expect(childQuote.quoteStatus).to.equal(QuoteStatus.CANCELED)
 
-				const trackedAfterOpen = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
-				expect(trackedAfterOpen).to.have.members([parentQuoteId, childQuoteId])
-
-				const cancelChildCallData = context.partyAFacet.interface.encodeFunctionData("requestToCancelQuote", [childQuoteId])
-				await context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [cancelChildCallData])
 				expect(await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)).to.deep.equal([parentQuoteId])
+				expect(await context.viewFacetQuote.partyAPendingQuotesCount(virtualAccountAddress)).to.equal(0)
 
 				const closeRequest = limitCloseRequestBuilder().quantityToClose(filledAmount).build()
 				const requestToCloseCallData = context.partyAFacet.interface.encodeFunctionData("requestToClosePosition", [
@@ -4361,8 +4359,13 @@ export function shouldBehaveLikeAccountLayer(): void {
 				expect((await context.alViewFacet.getVirtualAccount(virtualAccountAddress)).isExists).to.be.false
 			})
 
-			it("tracks every pending child created by repeated partial opens", async () => {
-				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress))[0]
+			it("tracks every pending child created by repeated partial opens on a MARKET-isolated virtual account", async () => {
+				const marketSubAccountAddress = await createSubAccountAndDeposit(
+					context.signers.user,
+					[createSubAccountData("MARKET_NAME", 1)],
+					BALANCES.DEPOSIT_AMOUNT,
+				)
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(marketSubAccountAddress))[0]
 				const [parentQuoteId] = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
 				const parentQuote = await context.viewFacetQuote.getQuote(parentQuoteId)
 
@@ -4381,6 +4384,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 
 				const firstChildId = await context.viewFacetQuote.getNextQuoteId()
 				const firstChild = await context.viewFacetQuote.getQuote(firstChildId)
+				expect(firstChild.quoteStatus).to.equal(QuoteStatus.PENDING)
 				await hedger.lockQuote(firstChildId)
 				const secondOpen = limitOpenRequestBuilder()
 					.filledAmount(firstChild.quantity / 2n)
@@ -4430,6 +4434,123 @@ export function shouldBehaveLikeAccountLayer(): void {
 				const canceledChildId = await context.viewFacetQuote.getNextQuoteId()
 				expect((await context.viewFacetQuote.getQuote(canceledChildId)).quoteStatus).to.equal(QuoteStatus.CANCELED)
 				expect(await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)).to.deep.equal([parentQuoteId])
+			})
+
+			it("tracks the pending child of a partial open on a MARKET_DIRECTION virtual account", async () => {
+				const directionSubAccountAddress = await createSubAccountAndDeposit(
+					context.signers.user,
+					[createSubAccountData("DIRECTION_NAME", 2)],
+					BALANCES.DEPOSIT_AMOUNT,
+				)
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(directionSubAccountAddress, quoteRequest))[0]
+				expect((await context.alViewFacet.getVirtualAccount(virtualAccountAddress)).isolationType).to.equal(2) // MARKET_LONG
+				const [parentQuoteId] = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				const parentQuote = await context.viewFacetQuote.getQuote(parentQuoteId)
+
+				await hedger.lockQuote(parentQuoteId)
+				const openRequest = limitOpenRequestBuilder()
+					.filledAmount(parentQuote.quantity / 2n)
+					.build()
+				await context.partyBPositionActionsFacet
+					.connect(context.signers.hedger)
+					.openPosition(
+						parentQuoteId,
+						openRequest.filledAmount,
+						openRequest.openPrice,
+						await getDummyPairUpnlAndPriceSig(BigInt(openRequest.price), BigInt(openRequest.upnlPartyA), BigInt(openRequest.upnlPartyB)),
+					)
+
+				// Direction-isolated VAs keep the remainder: it has the same symbol and direction as its parent
+				const childQuoteId = await context.viewFacetQuote.getNextQuoteId()
+				const childQuote = await context.viewFacetQuote.getQuote(childQuoteId)
+				expect(childQuote.parentId).to.equal(parentQuoteId)
+				expect(childQuote.positionType).to.equal(PositionType.LONG)
+				expect(childQuote.quoteStatus).to.equal(QuoteStatus.PENDING)
+				expect(await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)).to.have.members([parentQuoteId, childQuoteId])
+			})
+
+			it("reverts a POSITION-isolated partial open while partyA actions are paused, but allows a full fill", async () => {
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress))[0]
+				const [parentQuoteId] = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				const parentQuote = await context.viewFacetQuote.getQuote(parentQuoteId)
+
+				await hedger.lockQuote(parentQuoteId)
+				await context.pauseControlFacet.pausePartyAActions()
+
+				// The nested remainder cancel goes through requestToCancelQuote, which is a partyA action
+				const partialOpen = limitOpenRequestBuilder()
+					.filledAmount(parentQuote.quantity / 2n)
+					.build()
+				await expect(
+					context.partyBPositionActionsFacet
+						.connect(context.signers.hedger)
+						.openPosition(
+							parentQuoteId,
+							partialOpen.filledAmount,
+							partialOpen.openPrice,
+							await getDummyPairUpnlAndPriceSig(BigInt(partialOpen.price), BigInt(partialOpen.upnlPartyA), BigInt(partialOpen.upnlPartyB)),
+						),
+				).to.be.revertedWithCustomError(hookErrorDecoder, "HookReverted")
+				expect((await context.viewFacetQuote.getQuote(parentQuoteId)).quoteStatus).to.equal(QuoteStatus.LOCKED)
+
+				// A full fill creates no remainder, so it needs no cancel and succeeds under the same pause
+				const fullOpen = limitOpenRequestBuilder().build()
+				await context.partyBPositionActionsFacet
+					.connect(context.signers.hedger)
+					.openPosition(
+						parentQuoteId,
+						fullOpen.filledAmount,
+						fullOpen.openPrice,
+						await getDummyPairUpnlAndPriceSig(BigInt(fullOpen.price), BigInt(fullOpen.upnlPartyA), BigInt(fullOpen.upnlPartyB)),
+					)
+				expect((await context.viewFacetQuote.getQuote(parentQuoteId)).quoteStatus).to.equal(QuoteStatus.OPENED)
+			})
+
+			it("reverts a POSITION-isolated partial open while instant actions mode is active, but allows a full fill", async () => {
+				// Bind the sub-account first: bindToPartyB requires no pending quotes, and a VA created
+				// under a bound parent is born bound, which is what instant mode activation requires.
+				await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, true)
+				const bindCallData = context.bindingFacet.interface.encodeFunctionData("bindToPartyB", [context.signers.hedger.address])
+				await context.alCoreFacet.connect(context.signers.user)._call(positionSubAccountAddress, [bindCallData])
+
+				const quoteRequest = limitQuoteRequestBuilder().partyBWhiteList([context.signers.hedger.address]).build()
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+				const [parentQuoteId] = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				const parentQuote = await context.viewFacetQuote.getQuote(parentQuoteId)
+
+				const activateCallData = context.bindingFacet.interface.encodeFunctionData("activateInstantActionMode")
+				await context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [activateCallData])
+
+				await hedger.lockQuote(parentQuoteId)
+
+				// requestToCancelQuote is blocked outside the InstantLayer while instant mode is active,
+				// so the in-hook remainder cancel reverts the partial fill
+				const partialOpen = limitOpenRequestBuilder()
+					.filledAmount(parentQuote.quantity / 2n)
+					.build()
+				await expect(
+					context.partyBPositionActionsFacet
+						.connect(context.signers.hedger)
+						.openPosition(
+							parentQuoteId,
+							partialOpen.filledAmount,
+							partialOpen.openPrice,
+							await getDummyPairUpnlAndPriceSig(BigInt(partialOpen.price), BigInt(partialOpen.upnlPartyA), BigInt(partialOpen.upnlPartyB)),
+						),
+				).to.be.revertedWithCustomError(hookErrorDecoder, "HookReverted")
+				expect((await context.viewFacetQuote.getQuote(parentQuoteId)).quoteStatus).to.equal(QuoteStatus.LOCKED)
+
+				const fullOpen = limitOpenRequestBuilder().build()
+				await context.partyBPositionActionsFacet
+					.connect(context.signers.hedger)
+					.openPosition(
+						parentQuoteId,
+						fullOpen.filledAmount,
+						fullOpen.openPrice,
+						await getDummyPairUpnlAndPriceSig(BigInt(fullOpen.price), BigInt(fullOpen.upnlPartyA), BigInt(fullOpen.upnlPartyB)),
+					)
+				expect((await context.viewFacetQuote.getQuote(parentQuoteId)).quoteStatus).to.equal(QuoteStatus.OPENED)
 			})
 		})
 
