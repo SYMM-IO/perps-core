@@ -107,7 +107,7 @@
 							<span class="category">Account &amp; Fund Management</span>
 							<strong>External Transfer</strong>
 							<span
-								>Lets users move funds to any trusted target contract through an authorized relayer -- not just other Symmio diamonds,
+								>Lets users move funds to any trusted target contract through an authorized relayer — not just other Symmio diamonds,
 								but any whitelisted external contract. Symmio trusts the relayer to handle funds at the target, with admin roles to
 								revoke access or confiscate funds if fraud is detected. Also supports virtual external transfers for balance-only
 								movements where no actual token transfer is needed.</span
@@ -273,7 +273,7 @@
 							<strong>Pledge Collateral</strong>
 							<span
 								>A separate collateral pool that PartyBs deposit as a guarantee of good behavior. Independent of trading collateral,
-								pledge serves as &quot;skin in the game&quot; -- if a PartyB acts maliciously (e.g., abuses ADL), their pledge can be
+								pledge serves as &quot;skin in the game&quot; — if a PartyB acts maliciously (e.g., abuses ADL), their pledge can be
 								slashed by an admin. Supports any ERC20 token with a two-step request-approval withdrawal flow to prevent
 								rug-pulls.</span
 							>
@@ -446,7 +446,7 @@
 								>Adds delegated role management on top of the existing RBAC. Previously, only a single admin could grant and revoke
 								roles. Now the owner appoints default admins, who can delegate management of specific roles to dedicated addresses via
 								<code>addRoleAdmin</code> / <code>removeRoleAdmin</code>. Per-role admins can grant and revoke their assigned role
-								without needing owner or default admin transactions. Delegation is one level deep -- per-role admins cannot
+								without needing owner or default admin transactions. Delegation is one level deep — per-role admins cannot
 								sub-delegate.</span
 							>
 						</span> </a
@@ -488,8 +488,8 @@
 							<strong>Migration Process</strong>
 							<span
 								>Backfills the new aggregated position structures and cross bucket locked values from existing v0.8.4 data. Run during
-								a global pause after the diamond cut -- migrates quote-level data into symbol-level aggregates and sums per-PartyA
-								locked/pending locked balances into the cross bucket. Allocated balances are not aggregated -- solvers fund the cross
+								a global pause after the diamond cut — migrates quote-level data into symbol-level aggregates and sums per-PartyA
+								locked/pending locked balances into the cross bucket. Allocated balances are not aggregated — solvers fund the cross
 								bucket independently after enabling cross mode.</span
 							>
 						</span> </a

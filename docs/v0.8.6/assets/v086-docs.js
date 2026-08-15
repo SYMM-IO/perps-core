@@ -32,6 +32,14 @@
 	const setIconLabel = (element, icon, label) => {
 		element.innerHTML = `${icon}<span>${label}</span>`;
 	};
+	const swapThemeWithoutTransitions = apply => {
+		const guard = document.createElement("style");
+		guard.textContent = "*,*::before,*::after{transition:none!important}";
+		document.head.append(guard);
+		apply();
+		void root.offsetHeight;
+		window.requestAnimationFrame(() => guard.remove());
+	};
 
 	const syncThemeButtons = () => {
 		const isDark = root.dataset.theme === "dark";
@@ -51,9 +59,11 @@
 	themeButtons.forEach(button => {
 		button.addEventListener("click", () => {
 			const next = root.dataset.theme === "dark" ? "light" : "dark";
-			root.dataset.theme = next;
-			themeStorage.set(next);
-			syncThemeButtons();
+			swapThemeWithoutTransitions(() => {
+				root.dataset.theme = next;
+				themeStorage.set(next);
+				syncThemeButtons();
+			});
 			window.dispatchEvent(new CustomEvent("v086-docs:themechange", { detail: { theme: next } }));
 		});
 	});

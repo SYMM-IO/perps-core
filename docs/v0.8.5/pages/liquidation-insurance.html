@@ -74,16 +74,16 @@
 					<p>
 						During PartyA liquidation, the leftover LF (locked LF minus the insolvency deficit) is paid out to the liquidators who
 						processed the liquidation. In a <code>NORMAL</code> liquidation where PartyA's losses are smaller than the locked LF, this
-						remainder can be substantial -- especially on accounts with many open positions, each contributing their own LF.
+						remainder can be substantial — especially on accounts with many open positions, each contributing their own LF.
 					</p>
 					<p>Two problems arise without a cap:</p>
 					<ol>
 						<li>
-							<strong>Liquidation fee inflation</strong> -- Liquidators are incentivized to front-run insolvency with high gas bids when
+							<strong>Liquidation fee inflation</strong> — Liquidators are incentivized to front-run insolvency with high gas bids when
 							the potential payout is large, driving up costs for all users.
 						</li>
 						<li>
-							<strong>No protocol revenue from liquidations</strong> -- All leftover LF goes directly to liquidators, even when the
+							<strong>No protocol revenue from liquidations</strong> — All leftover LF goes directly to liquidators, even when the
 							amount far exceeds a reasonable incentive.
 						</li>
 					</ol>
@@ -132,7 +132,7 @@ uint256 maxLiquidationProfitPerPosition;
 					<h2 id="doc-liquidation-insurance-how-it-works-in-the-liquidation-flow">How It Works in the Liquidation Flow</h2>
 					<p>
 						The cap is enforced inside <code>LibLiquidation.determineLiquidationType</code>, which is called during
-						<code>setSymbolsPrice</code> -- the step where the oracle provides symbol prices and the protocol classifies the liquidation
+						<code>setSymbolsPrice</code> — the step where the oracle provides symbol prices and the protocol classifies the liquidation
 						severity.
 					</p>
 					<h3 id="doc-liquidation-insurance-the-three-liquidation-types">The Three Liquidation Types</h3>
@@ -184,21 +184,21 @@ uint256 maxLiquidationProfitPerPosition;
 					<p>Step by step:</p>
 					<ol>
 						<li>
-							<strong>Compute <code>remainingLf</code></strong> -- the locked LF minus the absolute deficit
+							<strong>Compute <code>remainingLf</code></strong> — the locked LF minus the absolute deficit
 							(<code>|availableBalance|</code>). This is the total fee pool available to liquidators.
 						</li>
 						<li>
-							<strong>Compute <code>maxLf</code></strong> -- the cap, calculated as
+							<strong>Compute <code>maxLf</code></strong> — the cap, calculated as
 							<code>maxLiquidationProfitPerPosition * partyAPositionsCount</code>. The cap scales linearly with the number of open
 							positions because each position represents work for the liquidator.
 						</li>
 						<li>
-							<strong>Compare and redirect</strong> -- if <code>remainingLf &gt; maxLf</code>, the excess (<code
+							<strong>Compare and redirect</strong> — if <code>remainingLf &gt; maxLf</code>, the excess (<code
 								>remainingLf - maxLf</code
 							>) is credited to the insurance vault's balance, and <code>remainingLf</code> is reduced to <code>maxLf</code>.
 						</li>
 						<li>
-							<strong>Store the capped fee</strong> -- <code>detail.liquidationFee</code> is set to the (possibly capped)
+							<strong>Store the capped fee</strong> — <code>detail.liquidationFee</code> is set to the (possibly capped)
 							<code>remainingLf</code>. This is the total amount distributed to liquidators at settlement.
 						</li>
 					</ol>

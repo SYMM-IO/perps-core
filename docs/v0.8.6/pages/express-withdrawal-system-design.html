@@ -5,12 +5,12 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta
 			name="description"
-			content="SYMMIO&#x27;s 12-hour cooldown protects withdrawals but slows exits. ExpressProvider fronts pool and credit-backed funds, then reconciles when the normal withdrawal finalizes."
+			content="SYMMIO&amp;#x27;s 12-hour cooldown protects withdrawals but slows exits. ExpressProvider fronts pool and credit-backed funds, then reconciles when the normal withdrawal finalizes."
 		/>
 		<title>Express Withdrawal System Design - Symmio Core v0.8.6</title>
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
 		<script>
-			// Applied before first paint so a saved light preference does not flash dark.
+			// Apply the saved preference before first paint.
 			try {
 				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
 			} catch (_error) {}
@@ -48,11 +48,11 @@
 				<a class="toc-link level-3" href="#4-3-liquidity-priority">4.3 Liquidity Priority</a>
 				<a class="toc-link level-3" href="#4-4-funding-cycle">4.4 Funding Cycle</a>
 				<a class="toc-link level-2" href="#5-the-withdrawal-flows">5. The Withdrawal Flows</a>
-				<a class="toc-link level-3" href="#5-1-standard-standard-withdrawal-12-hours">5.1 STANDARD -- Standard Withdrawal (12 hours)</a>
-				<a class="toc-link level-3" href="#5-2-windowed-windowed-withdrawal-20-seconds">5.2 WINDOWED -- Windowed Withdrawal (~20 seconds)</a>
-				<a class="toc-link level-3" href="#5-3-same-tx-same-transaction-transfer">5.3 SAME_TX -- Same-Transaction Transfer</a>
+				<a class="toc-link level-3" href="#5-1-standard-standard-withdrawal-12-hours">5.1 STANDARD — Standard Withdrawal (12 hours)</a>
+				<a class="toc-link level-3" href="#5-2-windowed-windowed-withdrawal-20-seconds">5.2 WINDOWED — Windowed Withdrawal (~20 seconds)</a>
+				<a class="toc-link level-3" href="#5-3-same-tx-same-transaction-transfer">5.3 SAME_TX — Same-Transaction Transfer</a>
 				<a class="toc-link level-3" href="#5-4-accelerate-promote-a-pending-standard-to-windowed"
-					>5.4 Accelerate -- Promote a pending STANDARD to WINDOWED</a
+					>5.4 Accelerate — Promote a pending STANDARD to WINDOWED</a
 				>
 				<a class="toc-link level-3" href="#5-5-affiliate-cap-self-service-fee-model">5.5 Affiliate Cap Self-Service &amp; Fee Model</a>
 				<a class="toc-link level-2" href="#6-safety-mechanisms">6. Safety Mechanisms</a>
@@ -122,13 +122,36 @@
 					</div>
 				</header>
 
+				<nav class="reader-map" aria-label="Express Withdrawal reading map">
+					<a href="#3-how-it-works-high-level">
+						<span>Reader path</span>
+						<strong>Start with the three speeds</strong>
+						<small>SAME_TX, WINDOWED, and STANDARD all route through ExpressProvider.</small>
+					</a>
+					<a href="#4-where-the-money-comes-from">
+						<span>Capital path</span>
+						<strong>Then follow the money</strong>
+						<small>Affiliate pool, credit line, and general pool explain who fronts funds.</small>
+					</a>
+					<a href="#6-safety-mechanisms">
+						<span>Safety path</span>
+						<strong>Then read the risk gates</strong>
+						<small>Validator checks, security windows, locks, cancellation, and suspension.</small>
+					</a>
+					<a href="#12-contract-interfaces">
+						<span>Integration path</span>
+						<strong>Finish with implementation surfaces</strong>
+						<small>EIP-712 payloads, fees, bot duties, roles, and contract interfaces.</small>
+					</a>
+				</nav>
+
 				<article class="doc-article" id="full-document">
 					<h2 id="1-the-problem">1. The Problem</h2>
 					<p>
 						SYMMIO enforces a 12-hour withdrawal cooldown on all user withdrawals. This cooldown exists for security, but it creates a
-						poor user experience -- users who want to move funds quickly are stuck waiting half a day. The Express Withdrawal System
-						solves this by introducing a provider that fronts funds to users through SAME_TX or WINDOWED payouts, then gets reimbursed
-						when SYMMIO releases the actual tokens after cooldown.
+						poor user experience — users who want to move funds quickly are stuck waiting half a day. The Express Withdrawal System solves
+						this by introducing a provider that fronts funds to users through SAME_TX or WINDOWED payouts, then gets reimbursed when
+						SYMMIO releases the actual tokens after cooldown.
 					</p>
 					<aside class="callout callout-note">
 						<strong>Operator guide</strong> The detailed bot runbook is kept separately as the
@@ -317,7 +340,7 @@
 					<h3 id="4-3-liquidity-priority">4.3 Liquidity Priority</h3>
 					<p>When constructing a SAME_TX or WINDOWED option, the bot chooses funding sources in this order:</p>
 					<ol>
-						<li><strong>Affiliate Pool</strong> (lowest system risk -- affiliate's own capital)</li>
+						<li><strong>Affiliate Pool</strong> (lowest system risk — affiliate's own capital)</li>
 						<li><strong>Credit Line</strong> (backed by Muon-attested eligible balances, not supported for STANDARD)</li>
 						<li><strong>General Pool</strong> (system-wide fallback)</li>
 					</ol>
@@ -351,7 +374,7 @@
     Express-&gt;&gt;Express: LibCreditLine.settle(affiliate, user, reqId)
 </code></pre>
 					<h2 id="5-the-withdrawal-flows">5. The Withdrawal Flows</h2>
-					<h3 id="5-1-standard-standard-withdrawal-12-hours">5.1 STANDARD -- Standard Withdrawal (12 hours)</h3>
+					<h3 id="5-1-standard-standard-withdrawal-12-hours">5.1 STANDARD — Standard Withdrawal (12 hours)</h3>
 					<p>
 						STANDARD is the simplest flow. Express does <strong>not front any capital</strong> and
 						<strong>does not support credit lines</strong> (<code>CreditNotSupportedForStandard</code> error). ExpressProvider acts as an
@@ -401,7 +424,7 @@
 							from SYMMIO if needed)
 						</li>
 					</ul>
-					<h3 id="5-2-windowed-windowed-withdrawal-20-seconds">5.2 WINDOWED -- Windowed Withdrawal (~20 seconds)</h3>
+					<h3 id="5-2-windowed-windowed-withdrawal-20-seconds">5.2 WINDOWED — Windowed Withdrawal (~20 seconds)</h3>
 					<p>
 						WINDOWED fronts capital from the ExpressProvider's pools. The user gets funds after a short security window during which the
 						bot performs a risk check.
@@ -448,11 +471,10 @@
 							<code>acceptedAt + securityWindow + tolerancePeriod</code> (default 80s)
 						</li>
 					</ul>
-					<h3 id="5-3-same-tx-same-transaction-transfer">5.3 SAME_TX -- Same-Transaction Transfer</h3>
+					<h3 id="5-3-same-tx-same-transaction-transfer">5.3 SAME_TX — Same-Transaction Transfer</h3>
 					<p>
-						SAME_TX transfers funds to the user inside <code>onWithdrawRequest</code> itself -- the user gets funds in the same
-						transaction as <code>initiateWithdraw</code>. This requires validators to be enabled (<code
-							>minValidatorSignatures(affiliate) &gt; 0</code
+						SAME_TX transfers funds to the user inside <code>onWithdrawRequest</code> itself — the user gets funds in the same transaction
+						as <code>initiateWithdraw</code>. This requires validators to be enabled (<code>minValidatorSignatures(affiliate) &gt; 0</code
 						>).
 					</p>
 					<pre><code class="language-mermaid">sequenceDiagram
@@ -486,7 +508,7 @@
 					<p><strong>Key properties:</strong></p>
 					<ul>
 						<li>
-							Validators are mandatory -- <code>ValidatorsRequiredForSameTx</code> error if
+							Validators are mandatory — <code>ValidatorsRequiredForSameTx</code> error if
 							<code>minValidatorSignatures(affiliate) == 0</code>
 						</li>
 						<li>Status goes directly NONE -&gt; PROCESSED (skips ACCEPTED)</li>
@@ -497,10 +519,10 @@
 						<li><code>nonReentrant</code> guard on <code>onWithdrawRequest</code> prevents reentrancy during transfers</li>
 						<li>User pays gas for the transfer (included in their <code>initiateWithdraw</code> tx)</li>
 					</ul>
-					<h3 id="5-4-accelerate-promote-a-pending-standard-to-windowed">5.4 Accelerate -- Promote a pending STANDARD to WINDOWED</h3>
+					<h3 id="5-4-accelerate-promote-a-pending-standard-to-windowed">5.4 Accelerate — Promote a pending STANDARD to WINDOWED</h3>
 					<p>
 						When an affiliate's credit cap is full, the bot signs STANDARD offers off-chain so the user tx always succeeds (the UI tells
-						the user they may wait up to 12 hours). The user's request is ACCEPTED as STANDARD -- no pool lock, no credit. But the request
+						the user they may wait up to 12 hours). The user's request is ACCEPTED as STANDARD — no pool lock, no credit. But the request
 						isn't dead: if capacity frees up before the 12h cooldown expires, <strong>any caller</strong> can promote that STANDARD into
 						WINDOWED-style processing and pay the user without waiting for cooldown.
 					</p>
@@ -557,8 +579,8 @@
 					<p>
 						The <code>optionType</code> field on <code>WithdrawInfo</code> is mutated from STANDARD to WINDOWED. Downstream lifecycle
 						hooks (<code>onWithdrawComplete</code>, <code>onWithdrawSuspend</code>) then route through the existing WINDOWED branches
-						unchanged -- pools get replenished at core finalization, credit debt is settled, and suspend-after-processed rollback works
-						via <code>_handleProcessedRollback</code>.
+						unchanged — pools get replenished at core finalization, credit debt is settled, and suspend-after-processed rollback works via
+						<code>_handleProcessedRollback</code>.
 					</p>
 					<p><strong>Preconditions (enforced in order):</strong></p>
 					<ol>
@@ -615,7 +637,7 @@
 					</p>
 					<p><strong>Event model</strong> (indexers should subscribe to the terminal events to track lifecycle):</p>
 					<ul>
-						<li>Initial accept: <code>WithdrawAccepted(user, requestId, optionType=2)</code> -- STANDARD</li>
+						<li>Initial accept: <code>WithdrawAccepted(user, requestId, optionType=2)</code> — STANDARD</li>
 						<li>
 							Successful acceleration:
 							<code>WithdrawAccelerated(user, requestId, affiliate, affiliateAmount, creditAmount, generalAmount)</code> followed by
@@ -628,7 +650,7 @@
 					</ul>
 					<h3 id="5-5-affiliate-cap-self-service-fee-model">5.5 Affiliate Cap Self-Service &amp; Fee Model</h3>
 					<p>
-						Caps are now an active operational lever -- raising them promotes deferred STANDARD withdrawals into WINDOWED via the
+						Caps are now an active operational lever — raising them promotes deferred STANDARD withdrawals into WINDOWED via the
 						accelerate path. To prevent churn (a frontend ping-ponging the cap up and down all day), self-service cap adjustments go
 						through a quota + fee throttle. The protocol admin still has a direct bypass via <code>setCreditLineAffiliateConfig</code> for
 						emergency support.
@@ -637,7 +659,7 @@
 					<pre><code class="language-solidity">ControlFacet.setMyCreditLineConfig(uint256 maxDebt, uint256 maxDebtBps)
 </code></pre>
 					<p>
-						<code>msg.sender</code> is treated as the affiliate identity -- no parameter, no role check. Each affiliate self-manages their
+						<code>msg.sender</code> is treated as the affiliate identity — no parameter, no role check. Each affiliate self-manages their
 						own slot; they cannot touch anyone else's.
 					</p>
 					<p><strong>Economics:</strong></p>
@@ -730,7 +752,7 @@
 						<strong>Dormant-by-default.</strong> New deployments start with <code>capChangeWindowDuration == 0</code>, which disables the
 						throttle entirely (all increases are free). The feature activates only once the admin calls
 						<code>setCapChangeQuotaConfig</code> and <code>setCapChangeFeeConfig</code>. Fee config must be set for any paid path to
-						succeed -- otherwise the charge reverts <code>CapChangeFeeNotConfigured</code>.
+						succeed — otherwise the charge reverts <code>CapChangeFeeNotConfigured</code>.
 					</p>
 					<p><strong>Admin configuration (SETTER_ROLE):</strong></p>
 					<pre><code class="language-solidity">setCapChangeFeeConfig(address feeToken, uint256 feeAmount, address feeReceiver)
@@ -738,8 +760,8 @@ setCapChangeQuotaConfig(uint256 maxFreePerWindow, uint256 windowDuration)
 </code></pre>
 					<p>
 						All five parameters are individually mutable at any time. Mid-window changes take effect on the next
-						<code>setMyCreditLineConfig</code> call. The fee token is an arbitrary ERC20 -- the protocol does not assume SYMM, USDC, or
-						any particular token. The admin picks.
+						<code>setMyCreditLineConfig</code> call. The fee token is an arbitrary ERC20 — the protocol does not assume SYMM, USDC, or any
+						particular token. The admin picks.
 					</p>
 					<p>
 						<strong>Emergency bypass:</strong> the existing
@@ -773,15 +795,15 @@ setCapChangeQuotaConfig(uint256 maxFreePerWindow, uint256 windowDuration)
 					<p><strong>Events to monitor:</strong></p>
 					<ul>
 						<li>
-							<code>CreditLineAffiliateConfigSelfUpdated(affiliate, maxDebt, maxDebtBps, wasDecrease, feePaid)</code> -- emitted on
-							every successful self-service call, with <code>feePaid == 0</code> for free changes
+							<code>CreditLineAffiliateConfigSelfUpdated(affiliate, maxDebt, maxDebtBps, wasDecrease, feePaid)</code> — emitted on every
+							successful self-service call, with <code>feePaid == 0</code> for free changes
 						</li>
 						<li>
-							<code>CreditLineAffiliateConfigUpdated(affiliate, maxDebt, maxDebtBps)</code> -- re-emitted for indexer parity; also
+							<code>CreditLineAffiliateConfigUpdated(affiliate, maxDebt, maxDebtBps)</code> — re-emitted for indexer parity; also
 							emitted by the admin bypass path, so indexers watching both get full coverage
 						</li>
-						<li><code>CapChangeFeeConfigUpdated(feeToken, feeAmount, feeReceiver)</code> -- when admin updates fee config</li>
-						<li><code>CapChangeQuotaConfigUpdated(maxFreePerWindow, windowDuration)</code> -- when admin updates quota config</li>
+						<li><code>CapChangeFeeConfigUpdated(feeToken, feeAmount, feeReceiver)</code> — when admin updates fee config</li>
+						<li><code>CapChangeQuotaConfigUpdated(maxFreePerWindow, windowDuration)</code> — when admin updates quota config</li>
 					</ul>
 					<p><strong>View getters (for frontend UX):</strong></p>
 					<pre><code class="language-solidity">capChangeFeeConfig() returns (address feeToken, uint256 feeAmount, address feeReceiver)
@@ -797,8 +819,8 @@ capChangeAffiliateState(address affiliate) returns (uint256 count, uint256 epoch
 					<h3 id="6-1-security-window">6.1 Security Window</h3>
 					<p>
 						The security window (default 20 seconds) is the delay between acceptance and processing for WINDOWED withdrawals. During this
-						window, the bot performs a risk check via an anomaly detection API. For SAME_TX, there is no post-acceptance window -- the
-						only risk gating is the validator attestations that are verified during acceptance. For STANDARD, the 12-hour SYMMIO cooldown
+						window, the bot performs a risk check via an anomaly detection API. For SAME_TX, there is no post-acceptance window — the only
+						risk gating is the validator attestations that are verified during acceptance. For STANDARD, the 12-hour SYMMIO cooldown
 						itself serves as the security window.
 					</p>
 					<section class="tool-panel" data-express-timing-tool aria-label="Express processing timeline helper"></section>
@@ -812,18 +834,18 @@ capChangeAffiliateState(address affiliate) returns (uint256 count, uint256 epoch
 </code></pre>
 					<p>
 						While locked, <code>processWithdraw</code> normally reverts. However, once the SYMMIO cooldown expires without suspension,
-						<code>processWithdraw</code> accepts LOCKED withdrawals -- the risk window is over and the withdrawal can be processed like
-						any other (including the permissionless fallback after <code>tolerancePeriod</code>). An <code>UNLOCK_ROLE</code> holder can
-						also unlock early via <code>unlockAndProcess</code> (false alarm). <code>UNLOCK_ROLE</code> and <code>LOCKER_ROLE</code> are
+						<code>processWithdraw</code> accepts LOCKED withdrawals — the risk window is over and the withdrawal can be processed like any
+						other (including the permissionless fallback after <code>tolerancePeriod</code>). An <code>UNLOCK_ROLE</code> holder can also
+						unlock early via <code>unlockAndProcess</code> (false alarm). <code>UNLOCK_ROLE</code> and <code>LOCKER_ROLE</code> are
 						intentionally separated from <code>OPERATOR_ROLE</code> so the bot cannot lock, unlock, or hold user funds hostage.
 					</p>
-					<p><strong>SAME_TX -- no post-acceptance risk check:</strong></p>
+					<p><strong>SAME_TX — no post-acceptance risk check:</strong></p>
 					<p>
 						Funds are transferred in the same transaction as acceptance. The only risk gating is pre-acceptance: validators must attest to
 						user legitimacy before the bot signs the option. Once the user submits <code>initiateWithdraw</code>, the transfer is atomic
 						and irreversible.
 					</p>
-					<p><strong>WINDOWED -- risk check between acceptance and processing:</strong></p>
+					<p><strong>WINDOWED — risk check between acceptance and processing:</strong></p>
 					<ol>
 						<li>Query anomaly detection API during the <code>securityWindow</code> (~20s)</li>
 						<li>If <strong>LOW RISK</strong>: call <code>processWithdraw</code></li>
@@ -839,16 +861,16 @@ capChangeAffiliateState(address affiliate) returns (uint256 count, uint256 epoch
 							</ul>
 						</li>
 					</ol>
-					<p><strong>STANDARD -- risk check during the 12-hour cooldown:</strong></p>
+					<p><strong>STANDARD — risk check during the 12-hour cooldown:</strong></p>
 					<ol>
 						<li>
 							<code>LOCKER_ROLE</code> holder can flag risky users any time during the 12h cooldown by calling
 							<code>lockWithdraw</code> (from ACCEPTED)
 						</li>
 						<li>
-							When SYMMIO finalizes, <code>onWithdrawComplete</code> preserves the LOCKED status -- tokens arrive but can't be forwarded
+							When SYMMIO finalizes, <code>onWithdrawComplete</code> preserves the LOCKED status — tokens arrive but can't be forwarded
 						</li>
-						<li>No post-finalization risk check needed -- the 12h cooldown itself is the security window</li>
+						<li>No post-finalization risk check needed — the 12h cooldown itself is the security window</li>
 						<li>
 							Before finalization, admin may still suspend via SYMMIO; after finalization, the locked withdrawal must be resolved via
 							<code>unlockAndProcess</code> (requires <code>UNLOCK_ROLE</code>)
@@ -929,7 +951,7 @@ PROCESSED → FINALIZED (onWithdrawComplete: pools replenished)
 </code></pre>
 					<p>
 						Note: For STANDARD, risk locking happens <strong>during</strong> the 12-hour cooldown (before SYMMIO finalizes), not after.
-						Once SYMMIO has finalized and sent the tokens, the cooldown period itself served as the security window -- no additional risk
+						Once SYMMIO has finalized and sent the tokens, the cooldown period itself served as the security window — no additional risk
 						check is needed. If a withdrawal is LOCKED when <code>onWithdrawComplete</code> fires, the status stays LOCKED (tokens arrive
 						but can't be forwarded until <code>unlockAndProcess</code>), and <code>suspend</code> is no longer valid after finalization.
 						However, once the cooldown expires, <code>processWithdraw</code> accepts LOCKED withdrawals (for STANDARD, it calls
@@ -1092,7 +1114,7 @@ verifyingContract: &lt;ExpressProvider proxy address&gt;
 							be replayed against any other request.
 						</li>
 						<li>
-							The per-<code>(user, requestId)</code> nonce is isolated from the main <code>g.nonces[user]</code> counter -- acceleration
+							The per-<code>(user, requestId)</code> nonce is isolated from the main <code>g.nonces[user]</code> counter — acceleration
 							attempts do not affect the main nonce.
 						</li>
 						<li>
@@ -1128,7 +1150,7 @@ verifyingContract: &lt;ExpressProvider proxy address&gt;
 						<strong>Freshness binding (last balance credit):</strong> every approval must be signed <em>strictly after</em> the user's
 						most recent protocol-internal credit into their withdrawable balance, read from core as
 						<code>withdrawCooldownOf(user)</code> (core's <code>deallocateTimestamp</code>). Core stamps this timestamp on every
-						<code>deallocate</code> variant and on <code>internalTransferToBalance</code> -- the path realized PnL takes from a virtual
+						<code>deallocate</code> variant and on <code>internalTransferToBalance</code> — the path realized PnL takes from a virtual
 						account into its parent sub-account's withdrawable balance. If new funds land after the validators signed, the approvals are
 						rejected with <code>StaleValidatorApproval</code> and must be re-issued against the post-credit state. External
 						<code>deposit()</code> does not stamp the timestamp and therefore does not invalidate approvals (deposits are not
@@ -1137,7 +1159,7 @@ verifyingContract: &lt;ExpressProvider proxy address&gt;
 					<p>
 						The timestamp is the right anchor because it tracks the withdrawable balance itself rather than trading activity. Under the
 						AccountLayer the withdrawing address is a sub-account: it holds funds but never trades, so no position, settlement, or
-						liquidation touches its own PartyA nonce -- all of that happens on its virtual accounts. What <em>does</em> move when realized
+						liquidation touches its own PartyA nonce — all of that happens on its virtual accounts. What <em>does</em> move when realized
 						PnL becomes withdrawable is <code>deallocateTimestamp</code>, stamped on the receiving sub-account by
 						<code>internalTransferToBalance</code>. Binding to it invalidates an approval exactly when new funds enter the balance the
 						withdrawal draws from, and leaves it valid when unrelated trading occurs.
@@ -1159,12 +1181,12 @@ verifyingContract: &lt;ExpressProvider proxy address&gt;
 									<code>validatorApprovalTimeout(address(0))</code> if affiliate-specific not set, default 30s)
 								</li>
 								<li>
-									Verify <code>timestamp &gt; ISymmio(symmio).withdrawCooldownOf(user)</code> -- the approval must postdate the last
+									Verify <code>timestamp &gt; ISymmio(symmio).withdrawCooldownOf(user)</code> — the approval must postdate the last
 									credit into the user's withdrawable balance, else revert <code>StaleValidatorApproval</code>
 								</li>
 								<li>Recover signer from EIP-712 digest</li>
 								<li>
-									Verify signer is a valid validator for the affiliate via <code>isValidator(affiliate, signer)</code> -- checks
+									Verify signer is a valid validator for the affiliate via <code>isValidator(affiliate, signer)</code> — checks
 									affiliate-specific registration first, then falls back to <code>address(0)</code> default
 								</li>
 								<li>Verify signer address is strictly greater than the previous (ascending order = no duplicates)</li>
@@ -1192,7 +1214,7 @@ verifyingContract: &lt;ExpressProvider proxy address&gt;
 						load-bearing here. STANDARD acceptance skips validators entirely, so the accelerate approval is the first and only attestation
 						the withdrawal ever receives, and it gates the exact moment credit is advanced and pools are drained. Because
 						<code>accelerateWithdraw</code> is permissionless, without it a user could front-run their own acceleration with a deallocate
-						and have funds advanced against a state no validator inspected -- the <code>validatorApprovalTimeout</code> window alone does
+						and have funds advanced against a state no validator inspected — the <code>validatorApprovalTimeout</code> window alone does
 						not close that gap.
 					</p>
 					<p>
@@ -1279,7 +1301,7 @@ if (offer.operatorFee != affiliateConfigs[offer.affiliate].operatorFee) revert O
 if (offer.fee + offer.operatorFee &gt; feeBasis) revert FeesExceedExpressAmount();
 </code></pre>
 					<p>
-						This ensures the bot cannot overcharge or undercharge -- the contract is the source of truth for fee calculation. A malicious
+						This ensures the bot cannot overcharge or undercharge — the contract is the source of truth for fee calculation. A malicious
 						or buggy bot signing incorrect fees will have its transaction reverted. The bot must use the exact <code>feeRate</code> and
 						<code>operatorFee</code> from the affiliate's on-chain config.
 					</p>
@@ -1550,7 +1572,7 @@ function claimOperatorFees(address affiliate, address to) external onlyRole(FEE_
 					</ul>
 					<h3 id="10-3-validator-registration">10.3 Validator Registration</h3>
 					<p>
-						Validators are not a role -- they are registered per-affiliate via
+						Validators are not a role — they are registered per-affiliate via
 						<code>setValidator(affiliate, validator, enabled)</code> (SETTER_ROLE). Using <code>address(0)</code> as affiliate sets a
 						default validator for all affiliates. The fallback logic checks affiliate-specific registration first, then falls back to the
 						<code>address(0)</code> default.
@@ -1560,7 +1582,7 @@ function claimOperatorFees(address affiliate, address to) external onlyRole(FEE_
 						<li>ExpressProvider is registered as an <strong>Express Provider</strong> on SYMMIO</li>
 						<li>
 							Credit line logic runs inside the ExpressProvider diamond (via <code>ControlFacet</code> setters /
-							<code>LibCreditLine</code>) -- no cross-contract trust needed for debt operations
+							<code>LibCreditLine</code>) — no cross-contract trust needed for debt operations
 						</li>
 						<li><code>LibCreditLine</code> verifies Muon oracle attestations to validate credit eligibility</li>
 						<li>Bot holds <code>OPERATOR_ROLE</code> and <code>SIGNER_ROLE</code> on ExpressProvider</li>
@@ -1669,7 +1691,7 @@ function claimOperatorFees(address affiliate, address to) external onlyRole(FEE_
 										<code>WithdrawAccelerated(user, requestId, affiliate, affiliateAmount, creditAmount, generalAmount)</code>
 									</td>
 									<td>
-										Remove from accelerate retry queue. A <code>WithdrawProcessed</code> follows in the same tx -- treat
+										Remove from accelerate retry queue. A <code>WithdrawProcessed</code> follows in the same tx — treat
 										identically to native WINDOWED processing
 									</td>
 								</tr>
@@ -1804,11 +1826,11 @@ else:
 					<p>For each accelerate candidate in the queue, check:</p>
 					<ol>
 						<li>
-							<code>getWithdrawInfo(user, requestId).status == ACCEPTED</code> and <code>optionType == STANDARD</code> -- else drop from
+							<code>getWithdrawInfo(user, requestId).status == ACCEPTED</code> and <code>optionType == STANDARD</code> — else drop from
 							queue (terminal state).
 						</li>
 						<li>
-							<code>block.timestamp &lt; cooldownEndTime - safetyMargin</code> (e.g., 10 minutes) -- else drop from queue and let core
+							<code>block.timestamp &lt; cooldownEndTime - safetyMargin</code> (e.g., 10 minutes) — else drop from queue and let core
 							finalize normally.
 						</li>
 						<li>
@@ -1830,8 +1852,8 @@ else:
 						<li><strong>(a)</strong> Notify the bot via an internal webhook and wait for the next 30-minute poll to pick it up, or</li>
 						<li>
 							<strong>(b)</strong> Fetch a fresh <code>AccelerateOffer</code> from the bot's API for a specific request and submit
-							<code>accelerateWithdraw</code> directly from the frontend's backend. This is identical to the bot path -- the signature
-							is bot-issued, only the on-chain submitter differs.
+							<code>accelerateWithdraw</code> directly from the frontend's backend. This is identical to the bot path — the signature is
+							bot-issued, only the on-chain submitter differs.
 						</li>
 					</ul>
 					<p>
@@ -2012,7 +2034,7 @@ function hasRole(bytes32 role, address account) external view returns (bool);
 					<p>
 						Credit line configuration setters live on <code>ControlFacet</code> (shown in section 12.1 admin functions). Debt lifecycle
 						functions (<code>reserveDebt</code>, <code>activate</code>, <code>settle</code>, <code>releaseReservation</code>,
-						<code>coverLoss</code>) are internal to <code>LibCreditLine</code> and called by other facets within the diamond -- they are
+						<code>coverLoss</code>) are internal to <code>LibCreditLine</code> and called by other facets within the diamond — they are
 						not externally callable. Credit line <strong>read</strong> functions live on <code>ViewFacet</code> (see Section 12.1 view
 						functions).
 					</p>
@@ -2225,13 +2247,13 @@ expressProvider.depositToAffiliate(affiliateAddress, amount)
 					<h3 id="15-3-liquidity-fragmentation">15.3 Liquidity Fragmentation</h3>
 					<p>
 						Affiliate pools are isolated. An affiliate user cannot access another affiliate's pool. The General Pool serves as the
-						cross-affiliate fallback. This is intentional -- affiliate-specific pools let affiliates guarantee service levels at their own
+						cross-affiliate fallback. This is intentional — affiliate-specific pools let affiliates guarantee service levels at their own
 						capital risk.
 					</p>
 					<h3 id="15-4-bot-failure">15.4 Bot Failure</h3>
 					<p>
 						If the bot goes down, users can call <code>processWithdraw</code> permissionlessly after <code>tolerancePeriod</code>.
-						STANDARD always works without the bot. The system degrades gracefully -- users just wait longer.
+						STANDARD always works without the bot. The system degrades gracefully — users just wait longer.
 					</p>
 				</article>
 			</main>

@@ -58,7 +58,7 @@
 							<p class="hero-copy">
 								Cross-mode PartyBs hold their collateral in a single pooled bucket. Because solvency is evaluated against aggregate
 								uPNL across all counterparties, a PartyB's raw allocated balance can be much lower than the total value it actually
-								controls -- most of the value may sit as unrealized profit in open positions. When one of those counterparties gets
+								controls — most of the value may sit as unrealized profit in open positions. When one of those counterparties gets
 								liquidated and the settlement requires the PartyB to pay, the system needs a way to convert that unrealized profit
 								into allocated balance first. This is what <code>settlePartyBUpnlForLiquidation</code> does.
 							</p>
@@ -74,21 +74,21 @@
 </code></pre>
 					<p>
 						A PartyB with 200 allocated, 130 locked, and +500 uPNL has an available balance of 570. It could legally deallocate all 200
-						and still be solvent. But <code>settlePartyALiquidation</code> draws from the raw <code>partyBAllocatedBalances</code> -- it
+						and still be solvent. But <code>settlePartyALiquidation</code> draws from the raw <code>partyBAllocatedBalances</code> — it
 						does not factor in uPNL. If the PartyB owes 50 from a liquidation settlement and its allocated balance is 0 (plus 22 from CVA
 						return = 22), that is not enough.
 					</p>
 					<p>
 						Isolated PartyBs do not have this gap. Their balance is per-PartyA and cannot be boosted by profits from other counterparties,
 						so the protocol simply caps the payment at whatever is available. Cross-mode PartyBs, on the other hand, have a shared pool
-						that <em>can</em> be funded from other positions -- so the protocol requires the liquidator to do that before settling.
+						that <em>can</em> be funded from other positions — so the protocol requires the liquidator to do that before settling.
 					</p>
 					<p>
 						In practice, this scenario is rare. Symmio's off-chain monitoring enforces stricter balance requirements on solvers than the
-						on-chain solvency threshold -- solvers are required to maintain a buffer well above the contract minimum. If a solver's
-						balance drops below the off-chain threshold, <a href="soft-liquidation.html">soft liquidation</a> penalties are applied before
-						hard insolvency is ever reached. This reduces the likelihood of a cross-mode PartyB having insufficient allocated balance
-						during a PartyA liquidation, but the on-chain guard exists as a safety net for the cases that slip through.
+						on-chain solvency threshold — solvers are required to maintain a buffer well above the contract minimum. If a solver's balance
+						drops below the off-chain threshold, <a href="soft-liquidation.html">soft liquidation</a> penalties are applied before hard
+						insolvency is ever reached. This reduces the likelihood of a cross-mode PartyB having insufficient allocated balance during a
+						PartyA liquidation, but the on-chain guard exists as a safety net for the cases that slip through.
 					</p>
 					<h2 id="doc-cross-mode-liquidation-settlement-settlepartybupnlforliquidation"><code>settlePartyBUpnlForLiquidation</code></h2>
 					<p>
@@ -196,7 +196,7 @@
 						<tr>
 							<td>Balance &lt; settleAmount</td>
 							<td>Capped at available balance (shortfall absorbed)</td>
-							<td>Reverts -- liquidator must call <code>settlePartyBUpnlForLiquidation</code> first</td>
+							<td>Reverts — liquidator must call <code>settlePartyBUpnlForLiquidation</code> first</td>
 						</tr>
 						<tr>
 							<td>Rationale</td>

@@ -10,7 +10,7 @@
 		<title>Operational Fees - Symmio Core v0.8.6</title>
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
 		<script>
-			// Applied before first paint so a saved light preference does not flash dark.
+			// Apply the saved preference before first paint.
 			try {
 				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
 			} catch (_error) {}
@@ -126,7 +126,7 @@
 					<pre><code class="language-solidity">function setOperationalFeeReceiver(address charger, address receiver) external;
 </code></pre>
 					<p>
-						The caller must be either the charger itself or an address holding <code>FEE_ADMIN_ROLE</code> -- the same role that registers
+						The caller must be either the charger itself or an address holding <code>FEE_ADMIN_ROLE</code> — the same role that registers
 						chargers in the first place. Passing <code>address(0)</code> resets the receiver back to the charger. The receiver is resolved
 						at charge time, so a change only affects subsequent fees. <code>ViewFacet.getOperationalFeeReceiver(charger)</code> returns
 						the effective receiver.
