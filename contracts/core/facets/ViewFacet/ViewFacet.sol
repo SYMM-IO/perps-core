@@ -26,6 +26,8 @@ import { BridgeStorage, BridgeTransaction } from "../../storages/BridgeStorage.s
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
+import { LibExecutionContext } from "../../libraries/LibExecutionContext.sol";
+import { LibSigner } from "../../libraries/LibSigner.sol";
 import { IViewFacet } from "./IViewFacet.sol";
 
 contract ViewFacet is IViewFacet {
@@ -39,7 +41,7 @@ contract ViewFacet is IViewFacet {
 
 	/// @notice Returns the owner of the diamond.
 	/// @return The address of the owner.
-	function owner() external view virtual returns (address) {
+	function getOwner() external view virtual returns (address) {
 		return LibDiamond.diamondStorage().contractOwner;
 	}
 
@@ -803,7 +805,7 @@ contract ViewFacet is IViewFacet {
 	/// @notice Checks if being called from instant layer.
 	/// @return Whether the call is from instant layer.
 	function isCallFromInstantLayer() external view returns (bool) {
-		return GlobalAppStorage.layout().callFromInstantLayer;
+		return LibExecutionContext.isCallFromInstantLayer();
 	}
 
 	/// @notice Retrieves the ADL enabled status of a party B.
@@ -822,7 +824,7 @@ contract ViewFacet is IViewFacet {
 	/// @notice Returns the effective signer address, falling back to msg.sender if no signer is set.
 	/// @return The signer address.
 	function getSigner() external view returns (address) {
-		return GlobalAppStorage.layout().signer == address(0) ? msg.sender : GlobalAppStorage.layout().signer;
+		return LibSigner.getSigner();
 	}
 
 	/// @notice Returns the effective fee for an affiliate, user, and symbol, using the full resolution priority:

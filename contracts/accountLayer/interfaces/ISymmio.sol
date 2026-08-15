@@ -267,6 +267,12 @@ interface ISymmio {
 	/// @param signer The signer address
 	function setSigner(address signer) external;
 
+	/// @notice Installs the effective signer for this transaction, or clears it with zero
+	/// @dev Transient counterpart of setSigner. Core rejects it while a persistent
+	///      signer is set, so one transaction never mixes the two mechanisms
+	/// @param signerOrZero The signer address, or address(0) to end the signer scope
+	function setTransientSigner(address signerOrZero) external;
+
 	/// @notice Returns the allocated balance of a partyA
 	/// @param partyA The partyA address
 	/// @return The allocated balance
@@ -311,6 +317,20 @@ interface ISymmio {
 	/// @notice Checks if the current call originates from the InstantLayer
 	/// @return Whether the call is from InstantLayer
 	function isCallFromInstantLayer() external view returns (bool);
+
+	/// @notice Temporarily strips core's InstantLayer privileges before AccountLayer calls out
+	///         to an affiliate hook
+	/// @dev Without this, a hook reached during an InstantLayer batch could call core directly
+	///      and inherit the batch's transaction-wide routing authority. Core binds the saved
+	///      context to msg.sender, so AccountLayer cannot choose or alter what it later restores
+	/// @return suspended True if a context existed and was suspended -- only then may
+	///         restoreExecutionContextAfterExternalCall be called
+	function suspendExecutionContextForExternalCall() external returns (bool suspended);
+
+	/// @notice Restores the execution context this same caller suspended
+	/// @dev Reverts if nothing is suspended for this caller, or if the hook installed its own
+	///      execution context while the original one was suspended
+	function restoreExecutionContextAfterExternalCall() external;
 
 	/// @notice Sets the fee collector address for an affiliate
 	/// @param affiliate The affiliate address

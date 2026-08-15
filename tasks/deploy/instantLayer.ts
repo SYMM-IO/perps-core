@@ -4,8 +4,10 @@ import { ArgumentType } from "hardhat/types/arguments"
 import { readData, writeData } from "../utils/fs.js"
 import { DeploymentCheckpoint, createDeployedContract, saveCheckpoint } from "./checkpoint.js"
 import { INSTANTLAYER_DEPLOYMENT_FILE } from "./constants.js"
-import { getConnection, requireArg } from "./helpers.js"
+import { checkpointDeployment, recoverCheckpointContractDeployments } from "./deploymentRecovery.js"
+import { assertStandaloneDeploymentTaskAllowed, getConnection, requireArg } from "./helpers.js"
 import { logger } from "./logger.js"
+import { confirmDeployment } from "./tx.js"
 
 // Contract configuration
 const CONTRACT_CONFIG = {
@@ -26,6 +28,7 @@ type DeployInstantLayerArgs = {
 
 export async function deployInstantLayer(hre: any, { symmioaddress, admin, logData = true, checkpoint }: DeployInstantLayerArgs) {
 	const { ethers } = await getConnection(hre)
+	await recoverCheckpointContractDeployments(checkpoint, ethers.provider, "contracts.instantLayer")
 
 	logger.section("InstantLayer Deployment")
 
@@ -35,14 +38,16 @@ export async function deployInstantLayer(hre: any, { symmioaddress, admin, logDa
 	// Check if already deployed from checkpoint
 	if (checkpoint?.contracts.instantLayer) {
 		const address = checkpoint.contracts.instantLayer.address
+		const [recordedSymmio = symmioaddress, recordedAdmin = admin] = checkpoint.contracts.instantLayer.constructorArgs || []
 		logger.info(`  ⏭ InstantLayer already deployed at ${address}`)
+		if (logData) await logDeploymentData(address, String(recordedSymmio), String(recordedAdmin))
 		const instantLayer = await ethers.getContractAt("InstantLayer", address)
 		return instantLayer
 	}
 
 	// Deploy InstantLayer
 	logger.subsection("Contract")
-	const instantLayer = await deployInstantLayerContract(symmioaddress, admin, ethers, deployer)
+	const instantLayer = await deployInstantLayerContract(symmioaddress, admin, ethers, deployer, checkpoint)
 
 	const address = await instantLayer.getAddress()
 	logger.deployed("InstantLayer", address)
@@ -73,18 +78,23 @@ export const instantLayerTask = task("deploy:InstantLayer", "Deploys the Instant
 	.addOption({ name: "admin", description: "The admin address", type: ArgumentType.STRING_WITHOUT_DEFAULT, defaultValue: undefined })
 	.addOption({ name: "logData", description: "Write the deployed addresses to a data file", type: ArgumentType.BOOLEAN, defaultValue: true })
 	.setAction(async () => ({
-		default: async ({ symmioaddress, admin, logData }, hre) =>
-			deployInstantLayer(hre, { symmioaddress: requireArg(symmioaddress, "symmioaddress"), admin: requireArg(admin, "admin"), logData }),
+		default: async ({ symmioaddress, admin, logData }, hre) => {
+			await assertStandaloneDeploymentTaskAllowed(hre, "deploy:InstantLayer")
+			return deployInstantLayer(hre, {
+				symmioaddress: requireArg(symmioaddress, "symmioaddress"),
+				admin: requireArg(admin, "admin"),
+				logData,
+			})
+		},
 	}))
 	.build()
 /**
  * Deploys the InstantLayer contract
  */
-async function deployInstantLayerContract(symmioAddress: string, admin: string, ethers: any, deployer: any) {
+async function deployInstantLayerContract(symmioAddress: string, admin: string, ethers: any, deployer: any, checkpoint?: DeploymentCheckpoint) {
 	const InstantLayerFactory = await ethers.getContractFactory("InstantLayer")
 	const instantLayer = await InstantLayerFactory.connect(deployer).deploy(symmioAddress, admin)
-	await instantLayer.waitForDeployment()
-	await instantLayer.deploymentTransaction()!.wait()
+	await confirmDeployment(instantLayer, "InstantLayer", checkpointDeployment(checkpoint, "contracts.instantLayer", [symmioAddress, admin]))
 
 	return instantLayer
 }

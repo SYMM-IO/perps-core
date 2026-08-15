@@ -7,7 +7,6 @@ pragma solidity >=0.8.18;
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { MuonStorage, SingleUpnlSig, SingleUpnlWithPendingBalanceSig } from "../../storages/MuonStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
-import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { IMuonSignatureVerifier, MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 import { LibAccount } from "../LibAccount.sol";
 
@@ -55,6 +54,19 @@ library LibMuon {
 
 	function verifyUpnlTimestamp(uint256 timestamp, MuonFunction func) internal view {
 		require(block.timestamp <= timestamp + getUpnlValidTime(func), "LibMuon: Expired signature");
+	}
+
+	/// @notice Longest UPNL signature validity currently reachable, across the global setting and every per-function override.
+	/// @dev For guarantees that must outlive any signature still in flight, whatever category minted it. Used by
+	///      SymbolAdjustmentFacet.finalizeRestatement to ensure old-basis signatures have expired before quote storage
+	///      is rewritten, which is what lets Muon payloads stay free of a basis-version field.
+	function maxUpnlValidTime() internal view returns (uint256 maxValidTime) {
+		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
+		maxValidTime = muonLayout.upnlValidTime;
+		for (uint256 i = 0; i <= uint256(type(MuonFunction).max); i++) {
+			uint256 functionValidTime = muonLayout.upnlValidTimeByFunction[MuonFunction(i)];
+			if (functionValidTime > maxValidTime) maxValidTime = functionValidTime;
+		}
 	}
 
 	/// @notice Verifies Party B UPNL signature (uses per-partyA nonce in normal mode, zero in cross mode).

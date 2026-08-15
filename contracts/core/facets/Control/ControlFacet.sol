@@ -12,10 +12,9 @@ import { MuonStorage } from "../../storages/MuonStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { QuoteStorage } from "../../storages/QuoteStorage.sol";
-import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
 import { ExternalTransferStorage } from "../../storages/ExternalTransferStorage.sol";
-import { IControlFacet } from "./IControlFacet.sol";
+import { IControlEvents } from "./IControlEvents.sol";
 import { LibDiamond } from "../../../diamond/libraries/LibDiamond.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
@@ -26,8 +25,12 @@ import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
 import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 import { Fee } from "../../storages/QuoteStorage.sol";
 import { LibOperationalFee } from "../../libraries/LibOperationalFee.sol";
+import { LibExecutionContext } from "../../libraries/LibExecutionContext.sol";
 
-contract ControlFacet is Accessibility, Ownable, IControlFacet {
+/// @dev Native transient execution administration lives in ExecutionContextFacet.
+///      This facet retains the legacy selector adapters without exceeding EIP-170, while
+///      the Diamond continues to expose the same composite IControlFacet ABI.
+contract ControlFacet is Accessibility, Ownable, IControlEvents {
 	/// @notice Initiates a two-step ownership transfer to a new address. The new owner must call acceptOwnership() to complete the transfer.
 	/// @param owner The address of the pending new owner.
 	function transferOwnership(address owner) external onlyOwner {
@@ -618,20 +621,6 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		emit RegisterHook(affiliate, hook);
 	}
 
-	/// @notice Sets the flag indicating if the current operation is being executed via the instant layer.
-	/// @dev Instant layer sets this flag to true before execution and MUST reset it back to false after its operation.
-	/// @param _callFromInstantLayer True when entering instant layer execution, false when exiting.
-	function setCallFromInstantLayer(bool _callFromInstantLayer) external onlyRole(LibAccessibility.INSTANT_LAYER_ROLE) {
-		require(!(_callFromInstantLayer && GlobalAppStorage.layout().instantLayerPaused), "ControlFacet: Instant Layer Paused");
-		GlobalAppStorage.layout().callFromInstantLayer = _callFromInstantLayer;
-	}
-
-	/// @notice Sets the flag to skip pending balance tracking in atomic open flows.
-	/// @param _instantOpenMode True when entering instant open execution, false when exiting.
-	function setInstantOpenMode(bool _instantOpenMode) external onlyRole(LibAccessibility.INSTANT_LAYER_ROLE) {
-		GlobalAppStorage.layout().instantOpenMode = _instantOpenMode;
-	}
-
 	/// @notice Enables or disables Auto-Deleveraging (ADL) for a Party B. When enabled, positions can be force-closed to reduce risk.
 	/// @param partyB The address of the Party B to configure ADL for.
 	/// @param enabled True to enable ADL for this Party B, false to disable.
@@ -735,6 +724,15 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Sets the trusted signer address whose signatures are accepted for protocol operations.
 	/// @param signer The address of the trusted signer for off-chain signature verification.
 	function setSigner(address signer) external onlyRoleAllowProxy(LibAccessibility.SIGNER_ADMIN_ROLE) {
+		if (LibExecutionContext.isTransientContextActive()) {
+			require(GlobalAppStorage.layout().signer == address(0), "ControlFacet: Persistent signer is set");
+			LibExecutionContext.setTransientSigner(signer);
+			emit SignerSet(signer);
+			return;
+		}
+		if (signer != address(0) && LibExecutionContext.isTransientSignerActive() && LibExecutionContext.transientSigner() != address(0)) {
+			revert("ControlFacet: Transient signer is set");
+		}
 		GlobalAppStorage.layout().signer = signer;
 		emit SignerSet(signer);
 	}

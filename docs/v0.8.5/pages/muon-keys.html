@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Adds delegated role management on top of the existing RBAC. Previously, only a single admin could grant and revoke roles. Now the owner appoints default admins, who can delegate management of specific roles to dedicated addresses via addRoleAdmin / removeRoleAdmin. Per-role admins can grant and…"
+		/>
+		<title>Muon Signature Verification and Key Management - Symmio Core v0.8.5</title>
+		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../../v0.8.6/assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../../v0.8.6/assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.5">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.5</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#doc-muon-keys-why-this-exists">Why This Exists</a>
+				<a class="toc-link level-2" href="#doc-muon-keys-architecture-overview">Architecture Overview</a>
+				<a class="toc-link level-2" href="#doc-muon-keys-the-imuonsignatureverifier-interface">The IMuonSignatureVerifier Interface</a>
+				<a class="toc-link level-2" href="#doc-muon-keys-the-muonsignatureverifier-contract">The MuonSignatureVerifier Contract</a>
+				<a class="toc-link level-3" href="#doc-muon-keys-verification-logic">Verification Logic</a>
+				<a class="toc-link level-3" href="#doc-muon-keys-key-management-functions">Key Management Functions</a>
+				<a class="toc-link level-2" href="#doc-muon-keys-per-category-authorization">Per-Category Authorization</a>
+				<a class="toc-link level-3" href="#doc-muon-keys-overview">Overview</a>
+				<a class="toc-link level-3" href="#doc-muon-keys-the-muonfunction-enum">The MuonFunction Enum</a>
+				<a class="toc-link level-3" href="#doc-muon-keys-permission-management">Permission Management</a>
+				<a class="toc-link level-3" href="#doc-muon-keys-call-chain">Call Chain</a>
+				<a class="toc-link level-3" href="#doc-muon-keys-setup-procedure">Setup Procedure</a>
+			</div>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Muon Signature Verification and Key Management</h1>
+							<p class="hero-copy">
+								SYMMIO relies on the Muon oracle network to provide off-chain data that is verified on-chain: unrealized PnL, asset
+								prices, liquidation parameters, and settlement values. Every state-changing operation that depends on external market
+								data passes through the Muon signature verification layer. This document covers the external
+								<code>MuonSignatureVerifier</code> contract, how it replaced the original single-key storage fields, the Schnorr-based
+								verification flow that underpins every critical protocol operation, and the per-category authorization system that
+								controls which keys can sign for which operations.
+							</p>
+						</div>
+					</div>
+				</header>
+				<article class="doc-article" id="full-document">
+					<h2 id="doc-muon-keys-why-this-exists">Why This Exists</h2>
+					<p>
+						In the original design, SYMMIO stored a single Muon public key and a single valid gateway address directly in
+						<code>MuonStorage</code> inside the diamond. This had three problems:
+					</p>
+					<ol>
+						<li>
+							<p>
+								<strong>Single point of failure.</strong> If the sole Muon TSS key was compromised, every signature check in the
+								protocol was compromised. There was no way to have redundant keys.
+							</p>
+						</li>
+						<li>
+							<p>
+								<strong>Key rotation required contract changes.</strong> Rotating the Muon public key or gateway signer meant calling
+								<code>setMuonConfig</code> on the diamond, coordinating the cutover, and accepting a window where either the old or
+								new key could be invalid.
+							</p>
+						</li>
+						<li>
+							<p>
+								<strong>No decentralized signer set.</strong> The Muon network itself uses threshold signature schemes (TSS) where the
+								signing committee can change over time. A single on-chain key cannot represent a rotating committee.
+							</p>
+						</li>
+						<li>
+							<p>
+								<strong>No function-level isolation.</strong> Every registered key could sign for every operation -- liquidations,
+								quote locking, funding rate charges, and settlements all shared the same trust set. A compromised key authorized for
+								routine operations could also sign liquidation data.
+							</p>
+						</li>
+					</ol>
+					<p>
+						The <code>MuonSignatureVerifier</code> contract solves all four by externalizing key management into a standalone contract
+						that supports multiple public keys and multiple gateway signers, with independent add/remove operations and per-category
+						authorization.
+					</p>
+					<h2 id="doc-muon-keys-architecture-overview">Architecture Overview</h2>
+					<pre><code class="language-mermaid">flowchart TD
+    CF["ControlFacet&lt;br/&gt;setSignatureVerifierAddress"]
+    LM["LibMuon&lt;br/&gt;verifyTSSAndGateway(hash, sign, gwSig, category)"]
+    GAS["GlobalAppStorage&lt;br/&gt;.signatureVerifier"]
+    MSV["MuonSignatureVerifier&lt;br/&gt;external contract&lt;br/&gt;---&lt;br/&gt;verify(hash, sign, gwSig, category)&lt;br/&gt;verify(hash, sign, gwSig)&lt;br/&gt;setPublicKeyPermissions&lt;br/&gt;setGatewaySignerPermissions"]
+    SCH["LibMuonV04ClientBase&lt;br/&gt;Schnorr verify"]
+    PERM["Permission Check&lt;br/&gt;publicKeyPermissions[keyId][category]&lt;br/&gt;gatewaySignerPermissions[signer][category]"]
+
+    CF --&gt;|sets address| GAS
+    LM --&gt;|MuonFunction category| GAS --&gt;|delegates call| MSV
+    MSV --&gt; SCH
+    MSV --&gt; PERM
+
+    subgraph Callers["Callers (each passes its MuonFunction category)"]
+        direction TB
+        LibMuonAccount
+        LibMuonPartyA
+        LibMuonPartyB
+        LibMuonLiquidation
+        LibMuonSettlement
+        LibMuonUnifiedSettlement
+        LibMuonForceActions
+        LibMuonFundingRate
+        LibMuonPartyBBatchActions
+    end
+
+    Callers --&gt; LM
+</code></pre>
+					<h2 id="doc-muon-keys-the-imuonsignatureverifier-interface">The IMuonSignatureVerifier Interface</h2>
+					<p>
+						The interface defines three categories of operations -- signature verification, key management, and per-category authorization
+						-- plus two data structures and an operation category enum:
+					</p>
+					<pre><code class="language-solidity">// contracts/core/interfaces/IMuonSignatureVerifier.sol
+
+enum MuonFunction {
+    Trading,           // SendQuote, LockQuote, OpenPosition, FillCloseRequest, etc.
+    AccountManagement, // Deallocate, SafeDeallocate, DeallocateForPartyB, TransferAllocation
+    Settlement,        // SettleUpnl, SettleUpnlUnified
+    ForceClose,        // ForceClose, InitializeForceClose, SettleUpnlForForceClose, etc.
+    Funding,           // ChargeFundingRate, ChargeAccumulatedFundingFee
+    LiquidationPartyA, // LiquidatePartyA, SetSymbolsPrice, DeferredLiquidatePartyA, DeferredSetSymbolsPrice
+    LiquidationPartyB  // LiquidatePartyB, LiquidatePositionsPartyB
+}
+
+interface IMuonSignatureVerifier {
+    struct PublicKey {
+        uint256 x;
+        uint8 parity;
+    }
+
+    struct SchnorrSign {
+        uint256 signature;
+        address owner;
+        address nonce;
+    }
+
+    // === Signature Verification ===
+    function verify(bytes32 hash, SchnorrSign memory sign, bytes calldata gatewaySignature, MuonFunction func) external view;
+    function verify(bytes32 hash, SchnorrSign memory sign, bytes calldata gatewaySignature) external view; // no authorization check
+
+    // === Public Key Management ===
+    function addPublicKey(PublicKey memory pubKey) external;
+    function removePublicKey(PublicKey memory pubKey) external;
+    function getAllPublicKeys() external view returns (PublicKey[] memory);
+
+    // === Gateway Signer Management ===
+    function addGatewaySigner(address signer) external;
+    function removeGatewaySigner(address signer) external;
+    function getAllGatewaySigners() external view returns (address[] memory);
+
+    // === Per-Function Authorization ===
+    function setPublicKeyPermissions(PublicKey memory pubKey, MuonFunction[] calldata functions, bool allowed) external;
+    function setGatewaySignerPermissions(address signer, MuonFunction[] calldata functions, bool allowed) external;
+    function isPublicKeyAuthorized(PublicKey memory pubKey, MuonFunction func) external view returns (bool);
+    function isGatewaySignerAuthorized(address signer, MuonFunction func) external view returns (bool);
+}
+</code></pre>
+					<p>
+						The <code>MuonFunction</code> enum is defined at file level (not inside the interface) so it can be imported independently.
+						Each enum value represents a category of related operations. The <code>verify</code> overload without
+						<code>MuonFunction</code> skips authorization checks -- it is used by the ViewFacet's
+						<code>verifyMuonTSSAndGateway</code> which is a read-only utility that doesn't need permission gating.
+					</p>
+					<p>
+						<strong>PublicKey</strong> represents a compressed secp256k1 public key. The <code>x</code> coordinate must be less than
+						<code>HALF_Q</code> (half the group order), a constraint imposed by the Schnorr verification's use of <code>ecrecover</code>.
+						The <code>parity</code> byte (0 or 1) indicates whether the y coordinate is even or odd.
+					</p>
+					<p>
+						<strong>SchnorrSign</strong> carries the Schnorr signature components: the <code>signature</code> scalar (called
+						<code>s</code> in the math), the <code>owner</code> field (unused in verification but part of the Muon protocol envelope), and
+						the <code>nonce</code> field which is the Ethereum address derived from the nonce point <code>k*G</code>.
+					</p>
+					<h2 id="doc-muon-keys-the-muonsignatureverifier-contract">The MuonSignatureVerifier Contract</h2>
+					<p>
+						The concrete implementation lives at <code>contracts/helpers/verification/SymmioSignatureVerifier.sol</code> and is deployed
+						as an independent contract (not part of the diamond). It uses OpenZeppelin's <code>AccessControlEnumerable</code> for
+						role-based access:
+					</p>
+					<pre><code class="language-solidity">// contracts/helpers/verification/SymmioSignatureVerifier.sol
+
+contract MuonSignatureVerifier is IMuonSignatureVerifier, AccessControlEnumerable {
+    using ECDSA for bytes32;
+
+    bytes32 public constant SETTER_ROLE = keccak256("SETTER_ROLE");
+
+    PublicKey[] public publicKeys;
+    address[] public gatewaySigners;
+
+    // Per-function authorization
+    mapping(bytes32 =&gt; mapping(MuonFunction =&gt; bool)) public publicKeyPermissions;
+    mapping(address =&gt; mapping(MuonFunction =&gt; bool)) public gatewaySignerPermissions;
+
+    constructor(address _admin) {
+        _setupRole(DEFAULT_ADMIN_ROLE, _admin);
+        _setupRole(SETTER_ROLE, _admin);
+    }
+
+    // ...
+}
+</code></pre>
+					<p>
+						The <code>publicKeyPermissions</code> mapping uses <code>keccak256(abi.encodePacked(pubKey.x, pubKey.parity))</code> as the
+						key identifier. Permission state is independent of the key lifecycle -- permissions can be set before a key is added and
+						persist after removal.
+					</p>
+					<h3 id="doc-muon-keys-verification-logic">Verification Logic</h3>
+					<p>The <code>verify</code> function performs three checks. All must pass or the call reverts:</p>
+					<pre><code class="language-solidity">function verify(bytes32 hash, SchnorrSign memory sign, bytes memory gatewaySignature, MuonFunction func) external view {
+    // 1. Verify TSS (Threshold Signature Scheme) via Schnorr
+    bool verifiedTSS = false;
+    for (uint256 i = 0; i &lt; publicKeys.length; i++) {
+        if (LibMuonV04ClientBase.muonVerify(uint256(hash), sign, publicKeys[i])) {
+            // 2. Check per-function authorization for this key
+            require(publicKeyPermissions[_publicKeyId(publicKeys[i])][func],
+                "MuonSignatureVerifier: Key not authorized for function");
+            verifiedTSS = true;
+            break;
+        }
+    }
+    require(verifiedTSS, "MuonSignatureVerifier: TSS not verified");
+
+    // 3. Verify Gateway Signature (ECDSA) + per-function authorization
+    address signer = hash.toEthSignedMessageHash().recover(gatewaySignature);
+    bool gatewayVerified = false;
+    for (uint256 i = 0; i &lt; gatewaySigners.length; i++) {
+        if (signer == gatewaySigners[i]) {
+            require(gatewaySignerPermissions[signer][func],
+                "MuonSignatureVerifier: Gateway not authorized for function");
+            gatewayVerified = true;
+            break;
+        }
+    }
+    require(gatewayVerified, "MuonSignatureVerifier: Gateway is not valid");
+}
+</code></pre>
+					<p>
+						<strong>TSS check</strong>: iterates over all registered public keys and attempts Schnorr verification against each one. If
+						any key validates the signature, the check passes. This is what enables key rotation -- the old key and new key can coexist
+						during a transition period.
+					</p>
+					<p>
+						<strong>Per-category authorization</strong>: after a matching key or gateway signer is found, the contract checks that the
+						key/signer is explicitly authorized for the <code>MuonFunction</code> category being verified. A key that validates the
+						Schnorr signature but lacks permission for the requested category will cause a revert. This means a key authorized only for
+						<code>Trading</code> cannot produce valid signatures for <code>LiquidationPartyA</code>.
+					</p>
+					<p>
+						<strong>Gateway check</strong>: recovers the ECDSA signer from a standard Ethereum signed message and checks it against the
+						registered gateway signers list. The gateway is the Muon network node that relayed the TSS-signed data to the user. This
+						second signature prevents a compromised TSS key from being exploited without also compromising a gateway node. The gateway
+						signer is also subject to per-category authorization.
+					</p>
+					<p>
+						A second <code>verify</code> overload without the <code>MuonFunction</code> parameter performs only TSS and gateway checks
+						without authorization. This is used by the ViewFacet's <code>verifyMuonTSSAndGateway</code> which is a read-only utility.
+					</p>
+					<h3 id="doc-muon-keys-key-management-functions">Key Management Functions</h3>
+					<p>All management functions require <code>SETTER_ROLE</code>:</p>
+					<pre><code class="language-solidity">function addPublicKey(PublicKey memory pubKey) external onlyRole(SETTER_ROLE) {
+    publicKeys.push(pubKey);
+    emit PublicKeyAdded(pubKey.x, pubKey.parity);
+}
+
+function removePublicKey(PublicKey memory pubKey) external onlyRole(SETTER_ROLE) {
+    for (uint256 i = 0; i &lt; publicKeys.length; i++) {
+        if (publicKeys[i].x == pubKey.x &amp;&amp; publicKeys[i].parity == pubKey.parity) {
+            publicKeys[i] = publicKeys[publicKeys.length - 1];
+            publicKeys.pop();
+            break;
+        }
+    }
+    emit PublicKeyRemoved(pubKey.x, pubKey.parity);
+}
+</code></pre>
+					<p>
+						Removal uses the swap-and-pop pattern for gas efficiency. The same pattern applies to <code>addGatewaySigner</code> /
+						<code>removeGatewaySigner</code>.
+					</p>
+					<p>
+						Key rotation procedure: 1. Call <code>addPublicKey</code> with the new TSS committee's public key. 2. Call
+						<code>setPublicKeyPermissions</code> to authorize the new key for the required functions. 3. Both old and new keys now
+						validate signatures -- no downtime. 4. Once all Muon nodes have switched to the new key, call <code>removePublicKey</code> on
+						the old key. 5. Same process applies independently for gateway signers.
+					</p>
+					<h2 id="doc-muon-keys-per-category-authorization">Per-Category Authorization</h2>
+					<h3 id="doc-muon-keys-overview">Overview</h3>
+					<p>
+						Not all signing keys need the same level of trust. A key used for routine trading operations should not automatically be able
+						to sign liquidation data. Per-category authorization enforces this separation by requiring each key to be explicitly granted
+						permission for each operation category it needs to sign for.
+					</p>
+					<p>
+						The model is <strong>opt-in</strong>: newly added keys and gateway signers start with no permissions and cannot validate any
+						signatures until explicitly authorized.
+					</p>
+					<p>
+						The ViewFacet's <code>verifyMuonTSSAndGateway</code> is exempt from authorization -- it is a read-only utility that verifies
+						signatures without gating by category.
+					</p>
+					<h3 id="doc-muon-keys-the-muonfunction-enum">The MuonFunction Enum</h3>
+					<p>Each value in the <code>MuonFunction</code> enum represents a category of related operations:</p>
+					<table>
+						<thead>
+							<tr>
+								<th>Category</th>
+								<th>Facet Functions</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>Trading</code></td>
+								<td>
+									<code>sendQuoteWithAffiliate</code>, <code>lockQuote</code>, <code>openPosition</code>,
+									<code>fillCloseRequest</code>, <code>fillCloseRequestToLiquidation</code>, <code>emergencyClosePosition</code>,
+									<code>openPositions</code>, <code>closePositions</code>
+								</td>
+							</tr>
+							<tr>
+								<td><code>AccountManagement</code></td>
+								<td>
+									<code>deallocate</code>, <code>safeDeallocate</code>, <code>deallocateForPartyB</code>,
+									<code>transferAllocation</code>
+								</td>
+							</tr>
+							<tr>
+								<td><code>Settlement</code></td>
+								<td><code>settleUpnl</code>, <code>settleUpnlUnified</code></td>
+							</tr>
+							<tr>
+								<td><code>ForceClose</code></td>
+								<td>
+									<code>forceClosePosition</code>, <code>initializeForceClose</code>, <code>settleUpnlForForceClose</code>,
+									<code>settleUPNL</code> (legacy), <code>finalizeForceClose</code>
+								</td>
+							</tr>
+							<tr>
+								<td><code>Funding</code></td>
+								<td><code>chargeFundingRate</code>, <code>chargeAccumulatedFundingFee</code></td>
+							</tr>
+							<tr>
+								<td><code>LiquidationPartyA</code></td>
+								<td>
+									<code>liquidatePartyA</code>, <code>setSymbolsPrice</code>, <code>deferredLiquidatePartyA</code>,
+									<code>deferredSetSymbolsPrice</code>
+								</td>
+							</tr>
+							<tr>
+								<td><code>LiquidationPartyB</code></td>
+								<td><code>liquidatePartyB</code>, <code>liquidatePositionsPartyB</code></td>
+							</tr>
+						</tbody>
+					</table>
+					<h3 id="doc-muon-keys-permission-management">Permission Management</h3>
+					<p>Permissions are managed via two functions, both restricted to <code>SETTER_ROLE</code>:</p>
+					<pre><code class="language-solidity">// Grant or revoke permissions for a TSS public key
+function setPublicKeyPermissions(
+    PublicKey memory pubKey,
+    MuonFunction[] calldata functions,
+    bool allowed
+) external onlyRole(SETTER_ROLE);
+
+// Grant or revoke permissions for a gateway signer
+function setGatewaySignerPermissions(
+    address signer,
+    MuonFunction[] calldata functions,
+    bool allowed
+) external onlyRole(SETTER_ROLE);
+</code></pre>
+					<p>
+						Both functions accept an array of <code>MuonFunction</code> values to set in a single transaction. Setting
+						<code>allowed = true</code> grants permission; <code>allowed = false</code> revokes it.
+					</p>
+					<p>Query functions are available for off-chain verification:</p>
+					<pre><code class="language-solidity">function isPublicKeyAuthorized(PublicKey memory pubKey, MuonFunction func) external view returns (bool);
+function isGatewaySignerAuthorized(address signer, MuonFunction func) external view returns (bool);
+</code></pre>
+					<h3 id="doc-muon-keys-call-chain">Call Chain</h3>
+					<p>
+						The <code>MuonFunction</code> category originates at each FacetImpl call site and is threaded through the entire verification
+						chain:
+					</p>
+					<pre><code>FacetImpl (e.g. PartyBQuoteActionsFacetImpl.lockQuote)
+  → LibMuonPartyB.verifyPartyBUpnl(..., MuonFunction.Trading)
+    → LibMuon.verifyTSSAndGateway(..., MuonFunction.Trading)
+      → IMuonSignatureVerifier.verify(..., MuonFunction.Trading)
+        → publicKeyPermissions[keyId][Trading] must be true
+        → gatewaySignerPermissions[signer][Trading] must be true
+</code></pre>
+					<h3 id="doc-muon-keys-setup-procedure">Setup Procedure</h3>
+					<p>When deploying or rotating keys:</p>
+					<ol>
+						<li>Add the public key: <code>addPublicKey(pubKey)</code></li>
+						<li>Add the gateway signer: <code>addGatewaySigner(signerAddress)</code></li>
+						<li>
+							Grant permissions for the required categories:
+							<code
+								>solidity MuonFunction[] memory cats = new MuonFunction[](2); cats[0] = MuonFunction.Trading; cats[1] =
+								MuonFunction.AccountManagement; verifier.setPublicKeyPermissions(pubKey, cats, true);
+								verifier.setGatewaySignerPermissions(signerAddress, cats, true);</code
+							>
+						</li>
+						<li>To grant all permissions (e.g. for a fully trusted key), pass all 7 enum values.</li>
+					</ol>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer"><span>Symmio Core v0.8.5 documentation.</span></footer>
+	</body>
+</html>

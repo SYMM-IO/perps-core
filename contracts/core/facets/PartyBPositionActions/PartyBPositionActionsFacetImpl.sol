@@ -28,7 +28,7 @@ library PartyBPositionActionsFacetImpl {
 		uint256 filledAmount,
 		uint256 openedPrice,
 		PairUpnlAndPriceSig memory upnlSig
-	) internal returns (uint256 currentId) {
+	) public returns (uint256 currentId) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 
@@ -100,7 +100,7 @@ library PartyBPositionActionsFacetImpl {
 	/// @dev IMPORTANT BACKWARD-COMPATIBILITY WARNING:
 	///      This legacy method reserves room for protocol closeFee only. It does NOT reserve room for solver fees
 	///      charged through LibSolverFee, so a solver fee charged after this call can still make PartyA liquidatable.
-	///      Use the fee-aware PartyBSolverFeeActionsFacet.fillCloseRequestToLiquidation overload when the close will include solver fees.
+	///      Use the fee-aware PartyBExecutionFacet.fillCloseRequestToLiquidation overload when the close will include solver fees.
 	function fillCloseRequestToLiquidation(
 		uint256 quoteId,
 		uint256 closedPrice,

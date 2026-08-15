@@ -6,6 +6,7 @@ pragma solidity >=0.8.18;
 
 import { QuoteStorage, Quote, LockedValues, QuoteStatus } from "../storages/QuoteStorage.sol";
 import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
+import { LibExecutionContext } from "./LibExecutionContext.sol";
 import { MAStorage } from "../storages/MAStorage.sol";
 import { LibAccount } from "./LibAccount.sol";
 import { LibConnections } from "./LibConnections.sol";
@@ -57,7 +58,7 @@ library LibPartyBQuoteActions {
 		quote.partyB = signer;
 
 		// lock funds for partyB — skip in instantOpenMode (will be written directly to lockedBalances)
-		if (!GlobalAppStorage.layout().instantOpenMode) {
+		if (!LibExecutionContext.isInstantOpenMode()) {
 			LibAccount.addToPartyBPendingLockedBalances(signer, quote.partyA, quote);
 			quoteLayout.partyBPendingQuotes[signer][quote.partyA].push(quote.id);
 		}

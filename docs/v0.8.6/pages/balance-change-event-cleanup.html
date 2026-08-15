@@ -1,98 +1,58 @@
 <!doctype html>
-<html lang="en" data-theme="light">
+<html lang="en" data-theme="dark">
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Every PartyA and PartyB allocated-balance mutation now emits an exact storage-backed delta. Dedicated reimbursement and liquidation settlement events preserve lifecycle context without corrupting the allocated ledger."
+		/>
 		<title>Allocated Balance Event Ledger &amp; Indexer Changelog - Symmio Core v0.8.6</title>
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
 		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
 		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
 	</head>
-	<body class="doc-page">
+	<body class="doc-page" data-version="0.8.6">
 		<a class="skip-link" href="#full-document">Skip to document</a>
 
-		<header class="doc-topbar">
-			<a class="brand" href="../index.html"
-				><span class="brand-mark">8.6</span><span><strong>Symmio Docs</strong><small>v0.8.6 reference</small></span></a
-			>
-			<nav class="top-actions" aria-label="Page actions">
-				<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
-			</nav>
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
 		</header>
 
 		<div class="reader-shell">
-			<aside class="doc-sidebar" aria-label="Documentation navigation">
-				<a class="button primary back-home" href="../index.html">Back to index</a>
-				<div class="side-card">
-					<p class="side-label">Docs</p>
-					<a class="side-link" href="../pages/express-withdrawal-system-design.html"
-						><small>Express Withdrawal</small><span>Express Withdrawal System Design</span></a
-					>
-					<a class="side-link" href="../pages/account-layer-ownership-delegation.html"
-						><small>AccountLayer</small><span>AccountLayer Delegated Creation &amp; Ownership Transfer</span></a
-					>
-					<a class="side-link" href="../pages/liquidation-funding-snapshot-fix.html"
-						><small>Liquidation</small><span>PartyA Liquidation Snapshot Flow</span></a
-					>
-					<a class="side-link" href="../pages/single-step-partya-liquidation.html"
-						><small>Liquidation</small><span>Single-Step PartyA Liquidation</span></a
-					>
-					<a class="side-link" href="../pages/affiliate-shutdown-flow.html"
-						><small>Clearing House</small><span>Affiliate Shutdown Flow</span></a
-					>
-					<a class="side-link" href="../pages/muon-upnl-validity-overrides.html"
-						><small>Muon</small><span>Muon UPNL Validity Overrides</span></a
-					>
-					<a class="side-link" href="../pages/solver-fees.html"><small>Fees</small><span>Solver Fees</span></a>
-					<a class="side-link" href="../pages/operational-fees.html"><small>Fees</small><span>Operational Fees</span></a>
-					<a class="side-link" href="../pages/symbol-adjustment.html"
-						><small>Symbols</small><span>Symbol Corporate-Action Adjustment</span></a
-					>
-					<a class="side-link" href="../pages/partya-liquidation-fee-recipient.html"
-						><small>Liquidation</small><span>PartyA Liquidation Fee Recipient Cleanup</span></a
-					>
-					<a class="side-link is-active" href="../pages/balance-change-event-cleanup.html"
-						><small>Events &amp; Indexing</small><span>Allocated Balance Event Ledger</span></a
-					>
-					<a class="side-link" href="../pages/lazy-accumulated-funding.html"><small>Funding</small><span>Lazy Accumulated Funding</span></a>
-					<a class="side-link" href="../pages/partyb-allocation-suspension-gates.html"
-						><small>PartyB</small><span>Allocation Suspension Gates</span></a
-					>
-					<a class="side-link" href="../pages/cross-partyb-liquidation-reserve.html"
-						><small>Liquidation</small><span>Cross-PartyB Liquidation Reserve Enforcement</span></a
-					>
-					<a class="side-link" href="../pages/delegation-account-scope.html"
-						><small>AccountLayer</small><span>Delegation Account Scope</span></a
-					>
-					<a class="side-link" href="../pages/strict-deallocation.html"><small>Accounts</small><span>Strict Deallocation</span></a>
-					<a class="side-link" href="../pages/express-bot-operations-checklist.html"
-						><small>Express Withdrawal</small><span>Express Provider Bot Operations Checklist</span></a
-					>
-					<a class="side-link" href="../pages/market-open-fee-execution-price.html"
-						><small>Fees</small><span>Market Open Fee on Execution Price</span></a
-					>
-					<a class="side-link" href="../pages/position-isolation-partial-fill.html"
-						><small>AccountLayer</small><span>Position Isolation Partial Fill Remainder</span></a
-					>
-				</div>
-			</aside>
-			<aside class="toc-panel side-toc" aria-label="Page navigation">
-				<div class="toc-card">
-					<p class="toc-title">On this page</p>
-					<a class="toc-link level-2" href="#overview">Overview</a>
-					<a class="toc-link level-2" href="#reconstruction-contract">Reconstruction Contract</a>
-					<a class="toc-link level-2" href="#balance-change-types">Balance Change Types</a>
-					<a class="toc-link level-2" href="#partyb-allocation-keys">PartyB Allocation Keys</a>
-					<a class="toc-link level-2" href="#reimbursement-ledger">Reimbursement Ledger</a>
-					<a class="toc-link level-2" href="#liquidation-and-cva">Liquidation &amp; CVA</a>
-					<a class="toc-link level-2" href="#v086-liquidation-accounting">v0.8.6 Liquidation Accounting</a>
-					<a class="toc-link level-2" href="#indexer-changelog">Indexer Changelog</a>
-				</div>
-			</aside>
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#overview">Overview</a>
+				<a class="toc-link level-2" href="#reconstruction-contract">Reconstruction Contract</a>
+				<a class="toc-link level-2" href="#balance-change-types">Balance Change Types</a>
+				<a class="toc-link level-2" href="#partyb-allocation-keys">PartyB Allocation Keys</a>
+				<a class="toc-link level-2" href="#reimbursement-ledger">Reimbursement Ledger</a>
+				<a class="toc-link level-2" href="#liquidation-and-cva">Liquidation &amp; CVA</a>
+				<a class="toc-link level-2" href="#v086-liquidation-accounting">v0.8.6 Liquidation Accounting</a>
+				<a class="toc-link level-2" href="#event-field-corrections">Event Field Corrections</a>
+				<a class="toc-link level-2" href="#indexer-changelog">Indexer Changelog</a>
+			</div>
 
 			<main class="reader-main">
 				<header class="reader-hero">
-					<nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">v0.8.6</a><span>/</span><strong>Feature</strong></nav>
 					<div class="reader-title-row">
 						<div>
 							<h1>Allocated Balance Event Ledger</h1>
@@ -241,13 +201,16 @@ event BalanceChangePartyB(
 									<td>4</td>
 									<td><code>REALIZED_PNL_IN</code></td>
 									<td>Inbound</td>
-									<td>Realized settlement, close, liquidation, or Clearing House value enters allocation.</td>
+									<td>Realized close, liquidation, or Clearing House value enters allocation. UPNL settlement uses ordinal 18.</td>
 								</tr>
 								<tr>
 									<td>5</td>
 									<td><code>REALIZED_PNL_OUT</code></td>
 									<td>Outbound</td>
-									<td>Realized settlement, close, liquidation, penalty, or Clearing House value leaves allocation.</td>
+									<td>
+										Realized close, liquidation, penalty, or Clearing House value leaves allocation. UPNL settlement uses ordinal
+										19.
+									</td>
 								</tr>
 								<tr>
 									<td>6</td>
@@ -324,6 +287,18 @@ event BalanceChangePartyB(
 									<td>Outbound</td>
 									<td>A close solver fee leaves PartyA allocation for PartyB free balance.</td>
 								</tr>
+								<tr>
+									<td>18</td>
+									<td><code>SETTLEMENT_PNL_IN</code></td>
+									<td>Inbound</td>
+									<td>UPNL settlement value enters PartyA allocation or the exact PartyB bucket.</td>
+								</tr>
+								<tr>
+									<td>19</td>
+									<td><code>SETTLEMENT_PNL_OUT</code></td>
+									<td>Outbound</td>
+									<td>UPNL settlement value leaves PartyA allocation or the exact PartyB bucket.</td>
+								</tr>
 							</tbody>
 						</table>
 					</div>
@@ -370,8 +345,8 @@ event BalanceChangePartyB(
 					<p>
 						All PartyAs share one cross-mode PartyB bucket. The contract credits that bucket for every PartyA loss before applying any
 						PartyA gain, so an offsetting batch cannot fail from a temporary underflow caused only by input order. For example, from a
-						starting bucket of 100, Alice paying the solver 30 and the solver paying Bob 50 emits <code>REALIZED_PNL_IN 30</code>, then
-						<code>REALIZED_PNL_OUT 50</code>, both against <code>(solver, address(0))</code>; the final bucket is 80. Apply both logs by
+						starting bucket of 100, Alice paying the solver 30 and the solver paying Bob 50 emits <code>SETTLEMENT_PNL_IN 30</code>, then
+						<code>SETTLEMENT_PNL_OUT 50</code>, both against <code>(solver, address(0))</code>; the final bucket is 80. Apply both logs by
 						<code>logIndex</code>. Use <code>SettleUpnlUnified</code> for the affected PartyAs and final balance checkpoints, not to
 						replace the zero-address ledger key.
 					</p>
@@ -679,6 +654,48 @@ Final balances: PartyA 497.5, PartyB 358.5, starter 2.25 -- total tracked value 
 						<code>LF_IN</code> payments.
 					</aside>
 
+					<h2 id="event-field-corrections">Event Field Corrections</h2>
+					<p>
+						Two events carried a wrong or path-dependent value in a single field. Both are corrected in v0.8.6 without any signature
+						change, so an indexer that decodes them will keep decoding them &mdash; and will silently start reading a different value.
+					</p>
+					<h3><code>SettleUpnl</code> reported the caller instead of PartyA</h3>
+					<pre><code class="language-solidity">event SettleUpnl(
+    QuoteSettlementData[] settlementData,
+    uint256[] updatedPrices,
+    address partyA,
+    uint256 newPartyAAllocatedBalance,
+    uint256[] newPartyBsAllocatedBalances
+);</code></pre>
+					<p>
+						<code>ForceActionsFacet.settleAndForceClose</code> passed <code>msg.sender</code> into the parameter declared as
+						<code>partyA</code>. On that path the field held the keeper or liquidator who submitted the force close, not the PartyA being
+						settled. <code>SettlementFacet</code> always passed the real PartyA, so one event signature meant two different things
+						depending on which facet emitted it. v0.8.6 passes the quote's PartyA on both paths.
+					</p>
+					<p>
+						Any index keyed on that field from the force-close path has been attributing settlements to submitters. History can be
+						corrected by re-deriving the PartyA from the quote IDs in <code>settlementData</code>.
+					</p>
+					<h3><code>LiquidatePartyB</code> reported a post-payout balance on the force-close path</h3>
+					<pre><code class="language-solidity">event LiquidatePartyB(address liquidator, address partyB, address partyA, uint256 partyBAllocatedBalance, int256 upnl);</code></pre>
+					<p>
+						<code>PartyBLiquidationFacet.liquidatePartyB</code> emits before it starts the liquidation, so its
+						<code>partyBAllocatedBalance</code> is the value immediately <em>before</em> liquidation touches it. The force-close paths
+						read the same field after liquidation had already run, and starting a PartyB liquidation debits that bucket twice &mdash; once
+						for the realized settlement transfer and once for the remaining liquidation fee. The field therefore reported a smaller,
+						post-payout number on those paths.
+					</p>
+					<p>
+						v0.8.6 captures the balance before liquidation on the force-close paths as well, so both entry points now report the
+						pre-liquidation balance.
+					</p>
+					<aside class="callout callout-important">
+						<strong>Neither correction changes an event signature.</strong> There is no new topic and no ABI change to adopt, which is
+						exactly why these are easy to miss: the same decoder keeps working and starts returning different values at the block of the
+						upgrade.
+					</aside>
+
 					<h2 id="indexer-changelog">Indexer Changelog</h2>
 					<div class="table-wrap">
 						<table>
@@ -690,6 +707,17 @@ Final balances: PartyA 497.5, PartyB 358.5, starter 2.25 -- total tracked value 
 								</tr>
 							</thead>
 							<tbody>
+								<tr>
+									<td>UPNL settlement reused <code>REALIZED_PNL_IN</code> / <code>REALIZED_PNL_OUT</code>.</td>
+									<td>
+										It emits <code>SETTLEMENT_PNL_IN</code> (18) and <code>SETTLEMENT_PNL_OUT</code> (19). Close, liquidation, and
+										Clearing House keep the realized-PnL ordinals.
+									</td>
+									<td>
+										Register the two appended ordinals with the same direction handling as realized PnL. Existing ordinals are
+										unchanged, so no historical data moves.
+									</td>
+								</tr>
 								<tr>
 									<td>Some allocation writes and events were separate operations.</td>
 									<td>Four <code>LibAccount</code> methods own PartyA/PartyB increases and decreases plus non-zero emission.</td>
@@ -762,6 +790,28 @@ Final balances: PartyA 497.5, PartyB 358.5, starter 2.25 -- total tracked value 
 									</td>
 								</tr>
 								<tr>
+									<td>
+										<code>SettleUpnl</code> carried <code>msg.sender</code> in its <code>partyA</code> field on the force-close
+										path.
+									</td>
+									<td>Both emitting facets pass the settled PartyA.</td>
+									<td>
+										Stop treating that field as the submitter. Re-derive historical PartyAs from the quote IDs in
+										<code>settlementData</code> if you need to correct the backfill.
+									</td>
+								</tr>
+								<tr>
+									<td>
+										<code>LiquidatePartyB</code> reported the post-payout allocated balance on force-close paths and the
+										pre-liquidation balance on the direct path.
+									</td>
+									<td>Every path reports the balance immediately before liquidation debits the bucket.</td>
+									<td>
+										Read <code>partyBAllocatedBalance</code> as pre-liquidation everywhere. Pre-upgrade force-close records
+										under-report it by the settlement transfer plus the remaining liquidation fee.
+									</td>
+								</tr>
+								<tr>
 									<td>Force-close result payloads could omit or misidentify balance context.</td>
 									<td>Legacy and atomic force-close summaries carry the corrected PartyA and PartyB balance values.</td>
 									<td>Update decoders, but continue using balance-change events as the delta source.</td>
@@ -775,7 +825,6 @@ Final balances: PartyA 497.5, PartyB 358.5, starter 2.25 -- total tracked value 
 
 		<footer class="site-footer">
 			<span>Symmio Core v0.8.6 documentation.</span>
-			<span>Protocol, operations, and integration notes.</span>
 		</footer>
 	</body>
 </html>

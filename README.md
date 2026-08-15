@@ -61,38 +61,36 @@ There are also some additional second-layer contracts required by hedgers and fr
 
 ## Getting Started
 
-This project uses [Hardhat](https://hardhat.org/). You can compile the code with:
+This project uses [Hardhat](https://hardhat.org/) and npm. Install dependencies, then compile:
 
 ```bash
+npm install
 npx hardhat compile
 ```
 
+Use `npm ci` instead of `npm install` for a deployment checkout — it installs exactly the
+locked tree and never updates `package-lock.json`.
+
 ## Deployment
 
-Deployments are driven by the `symmio` operator CLI:
+Deployments are driven by the interactive `symmio` operator application:
 
 ```bash
-node cli/symmio.js --help
+./symmio
 ```
 
-The usual path:
-
-```bash
-symmio doctor --network arbitrum                        # is everything configured?
-npx hardhat deploy:system --network fork-arbitrum       # rehearse against real chain state
-symmio deploy --network arbitrum                        # the real thing
-symmio status --network arbitrum                        # confirm the result
-```
-
-`symmio doctor` is worth running first every time — it catches the configuration mistakes
-that are expensive to discover later, such as an unset collateral address or a mock
-signature verifier left enabled. It exits non-zero when something is blocking, so it can
-gate CI.
+The menu guides full and standalone deployments, ExpressProvider patching, deployment
+checklists, and reviewed maintenance. Recipes remain the portable source of public intent.
+Each mutating task separately binds a named Hardhat keystore wallet, a memory-only private
+key wallet, a Safe JSON/direct proposal, a Ledger address, or a localhost account as its
+compatible signer role; secrets never enter task state or logs. Every live deployment automatically runs preflight, a matching fork
+rehearsal, typed chain confirmation, transaction reconciliation, verification, health, and
+handover. Low-level Hardhat tasks are internal adapters rather than operator entrypoints.
 
 - **[docs/deployment.md](docs/deployment.md)** — the full deployment runbook: configuration,
   fork rehearsal, resuming a failed run, slow chains, and the manual steps the deployer
   cannot perform
-- **[cli/README.md](cli/README.md)** — CLI command reference
+- **[cli/README.md](cli/README.md)** — operator UI and task-definition standard
 - **[SCRIPTS_AUDIT.md](SCRIPTS_AUDIT.md)** — the audit behind the deploy-path safeguards,
   and what remains open
 
@@ -164,7 +162,7 @@ The parallel runner displays live progress and aggregated results with colorful 
 
 #### Environment Configuration
 
-- **`.env` file**: Automatically sourced if present in the project root
+- **`.env` file**: Legacy scripts may source it. Recipe-driven deployment deliberately does not.
 - **`PARALLEL_JOBS`**: Number of parallel test workers (default: 8)
 - **`FUZZ_SEED`**: Optional seed for replaying a model-based fuzz run
 - **`FUZZ_RUN_MODE`**: Continuous soak execution or bounded CI/replay execution
@@ -181,13 +179,14 @@ The parallel runner displays live progress and aggregated results with colorful 
 
 ### Log Levels
 
-The deployment scripts support different log levels controlled via the `DEPLOY_LOG_LEVEL` environment variable:
+Recipe-driven deployments set `execution.logLevel`; tests and legacy direct tasks can still
+set `DEPLOY_LOG_LEVEL`:
 
-| Level     | Description                                                  |
-| --------- | ------------------------------------------------------------ |
-| `silent`  | No deployment output (default for tests)                     |
-| `minimal` | Summary output only                                          |
-| `verbose` | Full deployment details with formatted output and separators |
+| Level     | Description                                                              |
+| --------- | ------------------------------------------------------------------------ |
+| `silent`  | Suppress routine component logs; transactions/errors remain (tests only) |
+| `minimal` | Summary output only                                                      |
+| `verbose` | Full deployment details with formatted output and separators             |
 
 Examples:
 

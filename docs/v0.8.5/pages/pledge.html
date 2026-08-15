@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Any PartyB can deposit pledge collateral in any ERC20 token. Amounts are in the token&#x27;s native decimals."
+		/>
+		<title>Pledge Collateral - Symmio Core v0.8.5</title>
+		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../../v0.8.6/assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../../v0.8.6/assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.5">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.5</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#doc-pledge-depositing">Depositing</a>
+				<a class="toc-link level-2" href="#doc-pledge-withdrawing">Withdrawing</a>
+				<a class="toc-link level-2" href="#doc-pledge-slashing">Slashing</a>
+				<a class="toc-link level-2" href="#doc-pledge-relation-with-adl">Relation with ADL</a>
+			</div>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Pledge Collateral</h1>
+							<p class="hero-copy">
+								Pledge collateral is a separate collateral pool that PartyBs deposit as a guarantee of good behavior. It is
+								independent of the trading collateral used for positions and serves as a "skin in the game" mechanism -- if a PartyB
+								acts maliciously (e.g., abuses ADL by closing positions at unfair prices), their pledge can be slashed by an admin.
+							</p>
+						</div>
+					</div>
+				</header>
+				<article class="doc-article" id="full-document">
+					<h2 id="doc-pledge-depositing">Depositing</h2>
+					<p>Any PartyB can deposit pledge collateral in any ERC20 token. Amounts are in the token's native decimals.</p>
+					<pre><code class="language-solidity">pledgeFacet.depositPledge(tokenAddress, amount);
+</code></pre>
+					<h2 id="doc-pledge-withdrawing">Withdrawing</h2>
+					<p>Withdrawal follows a two-step request-approval flow to prevent rug-pulls:</p>
+					<pre><code class="language-solidity">// 1. PartyB requests withdrawal
+pledgeFacet.requestPledgeWithdraw(tokenAddress, amount, recipientAddress);
+
+// 2. Admin approves withdrawal (requires PARTY_B_MANAGER_ROLE)
+pledgeFacet.acceptPledgeWithdraw(partyBAddress, amount, tokenAddress);
+
+// Or PartyB can cancel their own request
+pledgeFacet.cancelPledgeWithdraw();
+</code></pre>
+					<h2 id="doc-pledge-slashing">Slashing</h2>
+					<p>
+						If a PartyB misbehaves, an admin with <code>PARTY_B_MANAGER_ROLE</code> can slash their pledge collateral and redirect it to
+						any recipient:
+					</p>
+					<pre><code class="language-solidity">pledgeFacet.slashPledge(partyBAddress, tokenAddress, penaltyAmount, recipientAddress);
+</code></pre>
+					<h2 id="doc-pledge-relation-with-adl">Relation with ADL</h2>
+					<p>
+						Pledge collateral is primarily used as a penalty mechanism for <a href="adl-close.html">ADL (Auto-Deleveraging)</a> usage.
+						Before enabling ADL for a PartyB, they should have deposited sufficient pledge collateral. If ADL is misused -- e.g., closing
+						positions at prices that unfairly harm PartyA -- the pledge can be slashed. This ensures PartyBs are incentivized to use ADL
+						fairly.
+					</p>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer"><span>Symmio Core v0.8.5 documentation.</span></footer>
+	</body>
+</html>

@@ -7,7 +7,7 @@ pragma solidity >=0.8.18;
 import { QuoteStorage, Quote, LockedValues, PositionType, OrderType, QuoteStatus, SolverFeeState } from "../storages/QuoteStorage.sol";
 import { AccountStorage } from "../storages/AccountStorage.sol";
 import { AffiliateStorage } from "../storages/AffiliateStorage.sol";
-import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
+import { LibExecutionContext } from "./LibExecutionContext.sol";
 import { SymbolStorage } from "../storages/SymbolStorage.sol";
 import { SharedEvents } from "./SharedEvents.sol";
 import { LibQuote } from "./LibQuote.sol";
@@ -56,7 +56,7 @@ library LibPartyBPositionsActions {
 		require(quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING, "PartyBFacet: Invalid state");
 		require(block.timestamp <= quote.deadline, "PartyBFacet: Quote is expired");
 
-		bool _instantOpenMode = GlobalAppStorage.layout().instantOpenMode;
+		bool _instantOpenMode = LibExecutionContext.isInstantOpenMode();
 		if (_instantOpenMode) {
 			require(quote.quantity == filledAmount, "PartyBFacet: InstantOpen requires full fill");
 		}
@@ -263,7 +263,7 @@ library LibPartyBPositionsActions {
 
 	/// @notice Validates a close-to-liquidation request and computes the amount that keeps PartyA at the
 	///         liquidation edge, reserving room for `solverFeeAmount` (pass 0 for the legacy fee-less path).
-	///         Shared by PartyBPositionActionsFacetImpl and PartyBSolverFeeActionsFacet so the validation
+	///         Shared by PartyBPositionActionsFacetImpl and PartyBExecutionFacet so the validation
 	///         and rounding rules cannot diverge between the two close-to-liquidation paths.
 	/// @dev Does NOT verify the Muon signature or any party's solvency; callers remain responsible for that.
 	/// @param maxQuantity Ceiling on the close amount. The result is capped to `maxQuantity` and never exceeds it,

@@ -2,8 +2,8 @@
  * Verify all facets for a diamond address.
  *
  * Usage:
- *   DIAMOND_ADDRESS=0x... npx hardhat run scripts/verify-diamond-facets.ts --network <network>
- *   npx hardhat run scripts/verify-diamond-facets.ts --network <network> -- 0x...
+ *   DIAMOND_ADDRESS=0x... ./node_modules/.bin/hardhat run scripts/verify-diamond-facets.ts --network <network>
+ *   ./node_modules/.bin/hardhat run scripts/verify-diamond-facets.ts --network <network> -- 0x...
  */
 import { verifyContract } from "@nomicfoundation/hardhat-verify/verify"
 import hre from "hardhat"
@@ -18,7 +18,7 @@ function isAlreadyVerifiedError(message: string): boolean {
 }
 
 async function main() {
-	const { ethers } = await hre.network.connect()
+	const { ethers } = await hre.network.getOrCreate()
 	const diamondAddress = getDiamondAddress()
 
 	if (!diamondAddress) throw new Error("Missing diamond address. Set DIAMOND_ADDRESS or pass a 0x... argument after --")

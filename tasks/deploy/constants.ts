@@ -6,6 +6,7 @@ export const FacetNames = [
 	"PledgeFacet",
 	"MigrationFacet",
 	"contracts/core/facets/Control/ControlFacet.sol:ControlFacet",
+	"ExecutionContextFacet",
 	"SymbolControlFacet",
 	"SymbolAdjustmentFacet",
 	"PauseControlFacet",
@@ -24,7 +25,7 @@ export const FacetNames = [
 	"ForceCloseStepsFacet",
 	"SettlementFacet",
 	"PartyBPositionActionsFacet",
-	"PartyBSolverFeeActionsFacet",
+	"PartyBExecutionFacet",
 	"PartyBQuoteActionsFacet",
 	"ClearingHouseFacet",
 	"PartyBBatchActionsFacet",
@@ -40,6 +41,8 @@ export const PARTYB_DEPLOYMENT_FILE = "partyb.json"
 export const LIQUIDATOR_DEPLOYMENT_FILE = "liquidator.json"
 export const STABLECOIN_DEPLOYMENT_FILE = "stablecoin.json"
 export const SYMBOLMANAGER_DEPLOYMENT_FILE = "symbolmanager.json"
+export const EXPRESSPROVIDER_DEPLOYMENT_FILE = "expressprovider.json"
+export const CREATE2FACTORY_DEPLOYMENT_FILE = "create2factory.json"
 
 // Failed verifications — written by verify:all, consumed by verify:all --retry-failed
 export const VERIFY_FAILED_FILE = "verify-failed.json"

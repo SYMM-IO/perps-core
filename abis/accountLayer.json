@@ -72,6 +72,11 @@
     },
     {
         "inputs": [],
+        "name": "ExternalCallSignerWasModified",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "HasActiveVirtualAccounts",
         "type": "error"
     },
@@ -145,6 +150,11 @@
     {
         "inputs": [],
         "name": "LegacyContractNotRegistered",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "MarginKeyMismatch",
         "type": "error"
     },
     {
@@ -282,6 +292,31 @@
         "inputs": [],
         "name": "ZeroAmount",
         "type": "error"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "virtualAccount",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "AddMargin",
+        "type": "event"
     },
     {
         "anonymous": false,
@@ -592,6 +627,45 @@
             }
         ],
         "name": "_call",
+        "outputs": [
+            {
+                "internalType": "bytes[]",
+                "name": "",
+                "type": "bytes[]"
+            }
+        ],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "internalType": "enum VirtualAccountIsolationType",
+                "name": "isolationType",
+                "type": "uint8"
+            },
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "marginAmount",
+                "type": "uint256"
+            },
+            {
+                "internalType": "bytes[]",
+                "name": "callDatas",
+                "type": "bytes[]"
+            }
+        ],
+        "name": "_callWithMargin",
         "outputs": [
             {
                 "internalType": "bytes[]",
@@ -1194,6 +1268,153 @@
                 "type": "address"
             }
         ],
+        "name": "getAffiliate",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "address",
+                        "name": "affiliateAddress",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "name",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "brandColor",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "admin",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "pendingAdmin",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "enum AffiliateState",
+                        "name": "state",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "symmioShare",
+                        "type": "uint256"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "address",
+                                "name": "receiver",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "share",
+                                "type": "uint256"
+                            }
+                        ],
+                        "internalType": "struct Stakeholder[]",
+                        "name": "stakeholders",
+                        "type": "tuple[]"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "feeDistributor",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "metadata",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "address[]",
+                        "name": "legacyMultiAccounts",
+                        "type": "address[]"
+                    },
+                    {
+                        "internalType": "address[]",
+                        "name": "symmioCores",
+                        "type": "address[]"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "accountManager",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "registrant",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "registrationNonce",
+                        "type": "uint256"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "bool",
+                                "name": "exists",
+                                "type": "bool"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "timestamp",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "symmioShare",
+                                "type": "uint256"
+                            },
+                            {
+                                "components": [
+                                    {
+                                        "internalType": "address",
+                                        "name": "receiver",
+                                        "type": "address"
+                                    },
+                                    {
+                                        "internalType": "uint256",
+                                        "name": "share",
+                                        "type": "uint256"
+                                    }
+                                ],
+                                "internalType": "struct Stakeholder[]",
+                                "name": "stakeholders",
+                                "type": "tuple[]"
+                            }
+                        ],
+                        "internalType": "struct PendingFeeUpdate",
+                        "name": "pendingFeeUpdate",
+                        "type": "tuple"
+                    }
+                ],
+                "internalType": "struct AffiliateDetail",
+                "name": "",
+                "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            }
+        ],
         "name": "getAffiliateAdmin",
         "outputs": [
             {
@@ -1219,6 +1440,52 @@
                 "internalType": "address",
                 "name": "",
                 "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes4[]",
+                "name": "selectors",
+                "type": "bytes4[]"
+            }
+        ],
+        "name": "getAffiliateSelectorConfigs",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "bytes4",
+                        "name": "selector",
+                        "type": "bytes4"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "hook",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "hookAllowed",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "callAllowed",
+                        "type": "bool"
+                    }
+                ],
+                "internalType": "struct AffiliateSelectorConfig[]",
+                "name": "",
+                "type": "tuple[]"
             }
         ],
         "stateMutability": "view",
@@ -1395,6 +1662,19 @@
                 "internalType": "address[]",
                 "name": "",
                 "type": "address[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "getOwner",
+        "outputs": [
+            {
+                "internalType": "address",
+                "name": "",
+                "type": "address"
             }
         ],
         "stateMutability": "view",
@@ -1966,19 +2246,6 @@
                 "internalType": "bool",
                 "name": "",
                 "type": "bool"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "owner",
-        "outputs": [
-            {
-                "internalType": "address",
-                "name": "",
-                "type": "address"
             }
         ],
         "stateMutability": "view",
@@ -2834,31 +3101,6 @@
                 "type": "uint256"
             }
         ],
-        "name": "AddMargin",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "virtualAccount",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "subAccount",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            }
-        ],
         "name": "EmergencyMarginRecovered",
         "type": "event"
     },
@@ -3564,6 +3806,37 @@
         "inputs": [
             {
                 "internalType": "address",
+                "name": "signerOrZero",
+                "type": "address"
+            }
+        ],
+        "name": "setTransientSigner",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "signerOrZero",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "scope",
+                "type": "address"
+            }
+        ],
+        "name": "setTransientSignerScoped",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
                 "name": "core",
                 "type": "address"
             },
@@ -3597,6 +3870,57 @@
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "pendingOwner",
+                "type": "address"
+            }
+        ],
+        "name": "OwnershipTransferCanceled",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "currentOwner",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "pendingOwner",
+                "type": "address"
+            }
+        ],
+        "name": "OwnershipTransferStarted",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "previousOwner",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "newOwner",
+                "type": "address"
+            }
+        ],
+        "name": "OwnershipTransferred",
+        "type": "event"
     },
     {
         "inputs": [

@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Hooks are deeply integrated into the trading lifecycle and cover open/close/cancel/liquidation/close-expiry paths."
+		/>
+		<title>Hook System - Symmio Core v0.8.5</title>
+		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../../v0.8.6/assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../../v0.8.6/assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.5">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.5</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#doc-hook-system-isymmiohook-interface">ISymmioHook Interface</a>
+				<a class="toc-link level-2" href="#doc-hook-system-hook-registration">Hook Registration</a>
+				<a class="toc-link level-3" href="#doc-hook-system-per-affiliate-hooks">Per-Affiliate Hooks</a>
+				<a class="toc-link level-3" href="#doc-hook-system-system-wide-hook-address0">System-Wide Hook (address(0))</a>
+				<a class="toc-link level-3" href="#doc-hook-system-querying-hooks">Querying Hooks</a>
+				<a class="toc-link level-2" href="#doc-hook-system-where-hooks-fire-in-the-lifecycle">Where Hooks Fire in the Lifecycle</a>
+				<a class="toc-link level-3" href="#doc-hook-system-open-position-flow">Open Position Flow</a>
+				<a class="toc-link level-3" href="#doc-hook-system-close-position-flow">Close Position Flow</a>
+				<a class="toc-link level-3" href="#doc-hook-system-cancel-expire-flow">Cancel / Expire Flow</a>
+				<a class="toc-link level-3" href="#doc-hook-system-liquidation-flows">Liquidation Flows</a>
+				<a class="toc-link level-2" href="#doc-hook-system-libhooksafecall-security-model">LibHook.safeCall — Security Model</a>
+				<a class="toc-link level-3" href="#doc-hook-system-why-the-signer-is-cleared">Why the Signer Is Cleared</a>
+				<a class="toc-link level-3" href="#doc-hook-system-revert-behavior">Revert Behavior</a>
+				<a class="toc-link level-2" href="#doc-hook-system-security-considerations">Security Considerations</a>
+				<a class="toc-link level-2" href="#doc-hook-system-account-layer-integration">Account Layer Integration</a>
+				<a class="toc-link level-2" href="#doc-hook-system-use-cases">Use Cases</a>
+				<a class="toc-link level-2" href="#doc-hook-system-related-files">Related Files</a>
+			</div>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Hook System</h1>
+							<p class="hero-copy">
+								The Hook System is SYMMIO's extensibility layer for reacting to core trading events on-chain. It allows external
+								contracts to receive callbacks when positions are opened, closed, or cancelled, when close requests are
+								expired/force-cancelled, and when trading fees are charged. Hooks are registered per-affiliate, enabling each frontend
+								or integration partner to run its own custom logic — campaign tracking, cashback distribution, loyalty programs,
+								analytics — without modifying the core protocol.
+							</p>
+						</div>
+					</div>
+				</header>
+				<article class="doc-article" id="full-document">
+					<p>Hooks are deeply integrated into the trading lifecycle and cover open/close/cancel/liquidation/close-expiry paths.</p>
+					<h2 id="doc-hook-system-isymmiohook-interface">ISymmioHook Interface</h2>
+					<p>Every hook contract must implement the <code>ISymmioHook</code> interface:</p>
+					<pre><code class="language-solidity">// contracts/core/interfaces/ISymmioHook.sol
+
+interface ISymmioHook {
+    enum TradingFeeType {
+        OPEN,
+        CLOSE
+    }
+
+    function onOpenPosition(
+        uint256 quoteId,
+        uint256 filledAmount,
+        uint256 openedPrice,
+        address partyA,
+        address partyB
+    ) external;
+
+    function onClosePosition(
+        uint256 quoteId,
+        uint256 filledAmount,
+        uint256 closedPrice,
+        address partyA,
+        address partyB
+    ) external;
+
+    function onCancelQuote(
+        uint256 quoteId,
+        address partyA,
+        address partyB
+    ) external;
+
+    function onCloseExpired(
+        uint256 quoteId,
+        address partyA,
+        address partyB
+    ) external;
+
+    function onFeeCharged(
+        uint256 quoteId,
+        uint256 amount,
+        address partyA,
+        address partyB,
+        uint256 symbolId,
+        address affiliate,
+        TradingFeeType feeType
+    ) external;
+
+}
+</code></pre>
+					<p>
+						<strong><code>onOpenPosition</code></strong> — Called when PartyB fills a quote and opens a position.
+						<code>filledAmount</code> is the quantity filled (may be partial for LIMIT orders). <code>openedPrice</code> is the execution
+						price.
+					</p>
+					<p>
+						<strong><code>onClosePosition</code></strong> — Called when a position is closed, whether through a normal close request fill
+						or through liquidation. <code>filledAmount</code> is the closed quantity and <code>closedPrice</code> is the
+						execution/liquidation price.
+					</p>
+					<p>
+						<strong><code>onCancelQuote</code></strong> — Called when a quote is cancelled or expires before being filled. This covers
+						direct cancellation by PartyA, accepted cancellation by PartyB, expiration, and cancellation during ClearingHouse liquidation.
+					</p>
+					<p>
+						<strong><code>onCloseExpired</code></strong> — Called when a close request is removed and the quote returns to
+						<code>OPENED</code> (expiration of <code>CLOSE_PENDING</code>/<code>CANCEL_CLOSE_PENDING</code>, or force-cancel of
+						<code>CANCEL_CLOSE_PENDING</code>).
+					</p>
+					<p>
+						<strong><code>onFeeCharged</code></strong> — Called alongside <code>onOpenPosition</code> and <code>onClosePosition</code> to
+						report the exact fee amount charged. The <code>TradingFeeType</code> enum distinguishes between open fees and close fees. The
+						<code>affiliate</code> address and <code>symbolId</code> are included so the hook can attribute fees to the correct campaign.
+					</p>
+					<h2 id="doc-hook-system-hook-registration">Hook Registration</h2>
+					<p>Hooks are stored in <code>AffiliateStorage</code> as a simple mapping from affiliate address to hook contract address:</p>
+					<pre><code class="language-solidity">// contracts/core/storages/AffiliateStorage.sol
+
+/// @notice Hook contracts called on protocol events per affiliate
+/// @dev Called on onOpenPosition, onClosePosition, onCancelQuote,
+///      onCloseExpired, and onFeeCharged events.
+///      address(0) key is the system-wide hook. Enables custom integrations.
+mapping(address =&gt; address) affiliateHooks;
+</code></pre>
+					<h3 id="doc-hook-system-per-affiliate-hooks">Per-Affiliate Hooks</h3>
+					<p>
+						Each affiliate can have one hook contract. When a quote is created through a specific affiliate, all lifecycle events for that
+						quote call the affiliate's hook. Registration is done through <code>ControlFacet</code> by an address holding
+						<code>INTEGRATION_ADMIN_ROLE</code>:
+					</p>
+					<pre><code class="language-solidity">// contracts/core/facets/Control/ControlFacet.sol
+
+function registerHook(
+    address affiliate,
+    address hook
+) external onlyRole(LibAccessibility.INTEGRATION_ADMIN_ROLE) {
+    AffiliateStorage.layout().affiliateHooks[affiliate] = hook;
+    emit RegisterHook(affiliate, hook);
+}
+</code></pre>
+					<h3 id="doc-hook-system-system-wide-hook-address0">System-Wide Hook (address(0))</h3>
+					<p>
+						The <code>address(0)</code> key acts as a system-wide hook. When set, this hook is called for <strong>every</strong> quote
+						regardless of its affiliate. Both hooks fire on every event: first the affiliate-specific hook, then the system hook.
+					</p>
+					<pre><code class="language-solidity">address affiliateHook = AffiliateStorage.layout().affiliateHooks[quote.affiliate];
+address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];
+</code></pre>
+					<p>
+						This dual-hook pattern means a single trading event can trigger up to 2 hook calls per callback type (e.g., opening a position
+						fires <code>onOpenPosition</code> on both the affiliate hook and the system hook, plus <code>onFeeCharged</code> on both — 4
+						external calls total).
+					</p>
+					<h3 id="doc-hook-system-querying-hooks">Querying Hooks</h3>
+					<p>The <code>ViewFacet</code> exposes a getter:</p>
+					<pre><code class="language-solidity">function getAffiliateHook(address affiliate) external view returns (address hook) {
+    return AffiliateStorage.layout().affiliateHooks[affiliate];
+}
+</code></pre>
+					<h2 id="doc-hook-system-where-hooks-fire-in-the-lifecycle">Where Hooks Fire in the Lifecycle</h2>
+					<p>The following table maps every hook call site to the contract function that triggers it:</p>
+					<table>
+						<thead>
+							<tr>
+								<th>Event</th>
+								<th>Callback(s)</th>
+								<th>Source File</th>
+								<th>Trigger</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td>Position opened</td>
+								<td><code>onOpenPosition</code> + <code>onFeeCharged(OPEN)</code></td>
+								<td><code>LibPartyBPositionsActions.openPosition</code></td>
+								<td>PartyB fills a quote</td>
+							</tr>
+							<tr>
+								<td>Position closed</td>
+								<td><code>onClosePosition</code> + <code>onFeeCharged(CLOSE)</code></td>
+								<td><code>LibQuoteClose.closeQuote</code></td>
+								<td>PartyB fills a close request</td>
+							</tr>
+							<tr>
+								<td>Quote cancelled (PartyA)</td>
+								<td><code>onCancelQuote</code></td>
+								<td><code>PartyAFacetImpl.requestToCancelQuote</code></td>
+								<td>PartyA cancels a PENDING quote</td>
+							</tr>
+							<tr>
+								<td>Quote cancelled (PartyB)</td>
+								<td><code>onCancelQuote</code></td>
+								<td><code>PartyBQuoteActionsFacetImpl.acceptCancelRequest</code></td>
+								<td>PartyB accepts a cancel request</td>
+							</tr>
+							<tr>
+								<td>Quote force-cancelled</td>
+								<td><code>onCancelQuote</code></td>
+								<td><code>ForceActionsFacetImpl.forceCancelQuote</code></td>
+								<td>PartyA force-cancels a previously LOCKED quote after cooldown</td>
+							</tr>
+							<tr>
+								<td>Quote expired</td>
+								<td><code>onCancelQuote</code></td>
+								<td><code>LibQuoteClose.expireQuote</code></td>
+								<td>Quote deadline passes</td>
+							</tr>
+							<tr>
+								<td>Pending liquidated in PartyA liquidation</td>
+								<td><code>onCancelQuote</code></td>
+								<td><code>PartyALiquidationFacetImpl.liquidatePendingPositionsPartyA</code></td>
+								<td>PartyA liquidation on pending quotes</td>
+							</tr>
+							<tr>
+								<td>Pending liquidated in PartyB liquidation</td>
+								<td><code>onCancelQuote</code></td>
+								<td><code>PartyBLiquidationFacetImpl.liquidatePartyB</code>, <code>LibForceActions.liquidatePartyB</code></td>
+								<td>PartyB liquidation path</td>
+							</tr>
+							<tr>
+								<td>PartyB liquidation</td>
+								<td><code>onClosePosition</code></td>
+								<td><code>PartyBLiquidationFacetImpl.liquidatePositionsPartyB</code></td>
+								<td>Isolated-mode PartyB liquidation</td>
+							</tr>
+							<tr>
+								<td>PartyA liquidation</td>
+								<td><code>onClosePosition</code></td>
+								<td><code>PartyALiquidationFacetImpl.liquidatePositionsPartyA</code></td>
+								<td>PartyA liquidation</td>
+							</tr>
+							<tr>
+								<td>Close request expired/force-cancelled</td>
+								<td><code>onCloseExpired</code></td>
+								<td><code>LibQuoteClose.expireQuote</code>, <code>ForceActionsFacetImpl.forceCancelCloseRequest</code></td>
+								<td>Close request is removed and quote reopens</td>
+							</tr>
+							<tr>
+								<td>ClearingHouse pending cancel</td>
+								<td><code>onCancelQuote</code></td>
+								<td><code>ClearingHouseFacetImpl._callCancelQuoteHooksAndUpdateStatus</code></td>
+								<td>Cross-PartyB or PartyA takeover liquidation (pending quotes)</td>
+							</tr>
+							<tr>
+								<td>ClearingHouse position liquidation</td>
+								<td><code>onClosePosition</code></td>
+								<td><code>ClearingHouseFacetImpl.liquidatePositionsForClearingHouse</code></td>
+								<td>Cross-PartyB or PartyA takeover liquidation (open positions)</td>
+							</tr>
+						</tbody>
+					</table>
+					<h3 id="doc-hook-system-open-position-flow">Open Position Flow</h3>
+					<p>
+						In <code>LibPartyBPositionsActions.openPosition</code>, after the position is fully created and all balances updated, four
+						hook calls fire:
+					</p>
+					<pre><code class="language-solidity">uint256 openFee = (filledAmount * quote.openedPrice * quote.tradingFee) / 1e36;
+
+// 1. Affiliate hook: onOpenPosition
+LibHook.safeCall(
+    affiliateHook,
+    abi.encodeCall(ISymmioHook.onOpenPosition,
+        (quoteId, filledAmount, openedPrice, quote.partyA, quote.partyB)),
+    quoteId
+);
+// 2. Affiliate hook: onFeeCharged (OPEN)
+LibHook.safeCall(
+    affiliateHook,
+    abi.encodeCall(ISymmioHook.onFeeCharged,
+        (quoteId, openFee, quote.partyA, quote.partyB,
+         quote.symbolId, quote.affiliate, ISymmioHook.TradingFeeType.OPEN)),
+    quoteId
+);
+// 3. System hook: onOpenPosition
+LibHook.safeCall(systemHook, ...);
+// 4. System hook: onFeeCharged (OPEN)
+LibHook.safeCall(systemHook, ...);
+</code></pre>
+					<h3 id="doc-hook-system-close-position-flow">Close Position Flow</h3>
+					<p>
+						In <code>LibQuoteClose.closeQuote</code>, after PnL settlement, fee deduction, and status update, the same four-call pattern
+						fires with <code>onClosePosition</code> and <code>onFeeCharged(CLOSE)</code>.
+					</p>
+					<h3 id="doc-hook-system-cancel-expire-flow">Cancel / Expire Flow</h3>
+					<p>
+						Cancel and expire paths use the convenience function <code>LibHook.callCancelQuoteHooks</code>, which calls
+						<code>onCancelQuote</code> on both hooks:
+					</p>
+					<pre><code class="language-solidity">function callCancelQuoteHooks(
+    uint256 quoteId,
+    address partyA,
+    address partyB,
+    address affiliate
+) internal {
+    address affiliateHook = AffiliateStorage.layout().affiliateHooks[affiliate];
+    address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];
+    safeCall(affiliateHook, abi.encodeCall(ISymmioHook.onCancelQuote, (quoteId, partyA, partyB)), quoteId);
+    safeCall(systemHook, abi.encodeCall(ISymmioHook.onCancelQuote, (quoteId, partyA, partyB)), quoteId);
+}
+</code></pre>
+					<h3 id="doc-hook-system-liquidation-flows">Liquidation Flows</h3>
+					<p>
+						During liquidations (PartyA, isolated PartyB, and ClearingHouse), hooks fire via
+						<code>LibHook.callClosePositionHooks</code> for position closures and <code>_callCancelQuoteHooksAndUpdateStatus</code> for
+						pending quote cancellations. The liquidation price is passed as <code>closedPrice</code>, so hook contracts can distinguish
+						normal closes from liquidations by comparing against the original <code>openedPrice</code> or by checking quote status.
+					</p>
+					<h2 id="doc-hook-system-libhooksafecall-security-model">LibHook.safeCall — Security Model</h2>
+					<p>
+						<code>LibHook.safeCall</code> is the single entry point for all hook invocations. Its implementation addresses the core
+						security concern:
+						<strong>a hook contract must not be able to impersonate the user whose transaction triggered the hook</strong>.
+					</p>
+					<pre><code class="language-solidity">// contracts/core/libraries/LibHook.sol
+
+function safeCall(address hook, bytes memory data, uint256 quoteId) internal {
+    if (hook == address(0)) return;
+
+    // Save and clear signer before external call
+    address previousSigner = GlobalAppStorage.layout().signer;
+    GlobalAppStorage.layout().signer = address(0);
+
+    (bool success, bytes memory reason) = hook.call(data);
+
+    // Revert on hook failures to avoid inconsistency
+    if (!success) {
+        revert HookReverted(hook, bytes4(data), quoteId, reason);
+    }
+
+    // Restore signer after hook call
+    GlobalAppStorage.layout().signer = previousSigner;
+}
+</code></pre>
+					<h3 id="doc-hook-system-why-the-signer-is-cleared">Why the Signer Is Cleared</h3>
+					<p>
+						SYMMIO uses a meta-transaction pattern where <code>GlobalAppStorage.signer</code> identifies the actual user behind a proxied
+						call. If this signer were still set when the hook executes, a malicious hook could call back into the diamond and execute
+						operations as that user (e.g., deallocate their funds). By clearing the signer to <code>address(0)</code> before the external
+						call, any re-entrant call into the diamond will fail authorization checks because <code>LibSigner.getSigner()</code> returns
+						<code>address(0)</code> — an address that holds no roles and owns no positions.
+					</p>
+					<p>The <code>MaliciousHook</code> test contract in the repository demonstrates this protection:</p>
+					<pre><code class="language-solidity">// contracts/core/test/MaliciousHook.sol
+
+// Try to call deallocate as the user (this should fail because signer is cleared)
+try ISymmioCore(symmioCore).deallocate(deallocateAmount) {
+    reentrySucceeded = true;
+} catch (bytes memory error) {
+    reentrySucceeded = false;  // Expected: always fails
+    reentryError = error;
+}
+</code></pre>
+					<h3 id="doc-hook-system-revert-behavior">Revert Behavior</h3>
+					<p>Hook failures cause the entire transaction to revert. This is an intentional design decision, documented in the code:</p>
+					<pre><code class="language-solidity">// NOTE: We intentionally revert on hook failures for now to avoid inconsistency
+if (!success) {
+    revert HookReverted(hook, bytes4(data), quoteId, reason);
+}
+</code></pre>
+					<p>
+						The <code>HookReverted</code> error includes the hook address, the function selector that failed, the quote ID, and the revert
+						reason bytes, enabling precise diagnosis.
+					</p>
+					<p>
+						This means a broken or malicious hook can block the operation it is attached to. A reverting <code>onOpenPosition</code> hook
+						prevents positions from being opened for all quotes associated with that affiliate. A reverting
+						<code>onClosePosition</code> hook prevents positions from being closed or liquidated. This is a trust tradeoff: the protocol
+						trusts that registered hooks are well-behaved, and the <code>INTEGRATION_ADMIN_ROLE</code> that registers hooks is responsible
+						for vetting them.
+					</p>
+					<h2 id="doc-hook-system-security-considerations">Security Considerations</h2>
+					<p>
+						<strong>Hook revert blocks operations.</strong> Because <code>safeCall</code> reverts the parent transaction on hook failure,
+						a faulty hook can effectively freeze trading for an affiliate's users. The <code>INTEGRATION_ADMIN_ROLE</code> holder must vet
+						hooks before registration and can remove a broken hook by calling <code>registerHook(affiliate, address(0))</code>.
+					</p>
+					<p>
+						<strong>Signer cleared before hook.</strong> The <code>GlobalAppStorage.signer</code> is set to <code>address(0)</code> before
+						the hook call and restored afterward. This prevents the hook from acting on behalf of the user. Any call back into the diamond
+						during hook execution will see no authenticated signer.
+					</p>
+					<p>
+						<strong>No gas limit on hook calls.</strong> The hook is called with all remaining gas. A hook that consumes excessive gas
+						will cause the parent transaction to run out of gas. Hook implementers should keep callbacks cheap and avoid unbounded loops.
+					</p>
+					<p>
+						<strong>Hook receives raw addresses, not signatures.</strong> Hooks receive <code>partyA</code> and <code>partyB</code> as
+						plain addresses. They do not receive Muon signatures or any cryptographic proof. The hook trusts that it is being called by
+						the SYMMIO diamond, which should be verified via <code>msg.sender</code> checks in the hook contract (e.g., an
+						<code>onlySymmio</code> modifier).
+					</p>
+					<p>
+						<strong>Dual invocation.</strong> Both the affiliate-specific hook and the system-wide hook fire for every event. If either
+						reverts, the transaction reverts. This means registering a system-wide hook introduces a global dependency: if it breaks, all
+						trading halts.
+					</p>
+					<h2 id="doc-hook-system-account-layer-integration">Account Layer Integration</h2>
+					<p>
+						The account layer implements <code>ISymmioHook</code> through <code>SymmioHookFacet</code>, which is registered as a hook on
+						the core diamond. This demonstrates a production use case where the hook maintains virtual account state:
+					</p>
+					<pre><code class="language-solidity">// contracts/accountLayer/facets/SymmioHook/SymmioHookFacet.sol
+
+function onClosePosition(
+    uint256 quoteId, uint256, uint256, address partyA, address
+) external onlySymmio nonReentrant whenNotPaused {
+    _removeQuoteFromAccount(quoteId, partyA);
+}
+
+function onCancelQuote(
+    uint256 quoteId, address partyA, address
+) external onlySymmio whenNotPaused {
+    _removeQuoteFromAccount(quoteId, partyA);
+}
+</code></pre>
+					<p>
+						When all quotes for a virtual account are closed or cancelled, the hook automatically deletes the virtual account and returns
+						remaining funds to the parent account. The <code>onOpenPosition</code>, <code>onCloseExpired</code>, and
+						<code>onFeeCharged</code> callbacks are no-ops in this implementation but are still defined to satisfy the interface and
+						prevent reverts.
+					</p>
+					<h2 id="doc-hook-system-use-cases">Use Cases</h2>
+					<p>
+						<strong>Affiliate campaign tracking.</strong> A hook can record every position opened through an affiliate, tracking volume,
+						fee revenue, and user activity on-chain. The <code>onFeeCharged</code> callback provides the exact fee amount and the
+						affiliate address, enabling transparent revenue attribution.
+					</p>
+					<p>
+						<strong>Cashback and rebates.</strong> A hook can calculate and distribute cashback to traders based on their trading volume
+						or fee spend. The <code>amount</code> parameter in <code>onFeeCharged</code> gives the exact fee charged, from which a
+						percentage can be rebated.
+					</p>
+					<p>
+						<strong>Loyalty points and NFT minting.</strong> A hook can mint ERC-20 loyalty tokens or ERC-721 NFTs when traders reach
+						volume milestones. The <code>filledAmount * openedPrice</code> notional value is available from <code>onOpenPosition</code>.
+					</p>
+					<p>
+						<strong>On-chain analytics.</strong> A hook can maintain aggregate statistics — total volume per symbol, average position
+						size, number of active traders — that other contracts or off-chain systems can query.
+					</p>
+					<p>
+						<strong>Virtual account lifecycle.</strong> As demonstrated by the account layer, a hook can manage derived state that depends
+						on the quote lifecycle, automatically cleaning up resources when positions close.
+					</p>
+					<h2 id="doc-hook-system-related-files">Related Files</h2>
+					<table>
+						<thead>
+							<tr>
+								<th>File</th>
+								<th>Role</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>contracts/core/interfaces/ISymmioHook.sol</code></td>
+								<td>Interface definition</td>
+							</tr>
+							<tr>
+								<td><code>contracts/core/libraries/LibHook.sol</code></td>
+								<td>
+									<code>safeCall</code>, <code>callCancelQuoteHooks</code>, <code>callCloseExpiredHooks</code>,
+									<code>callClosePositionHooks</code>
+								</td>
+							</tr>
+							<tr>
+								<td><code>contracts/core/storages/AffiliateStorage.sol</code></td>
+								<td><code>affiliateHooks</code> mapping</td>
+							</tr>
+							<tr>
+								<td><code>contracts/core/facets/Control/ControlFacet.sol</code></td>
+								<td><code>registerHook</code> (registration)</td>
+							</tr>
+							<tr>
+								<td><code>contracts/core/facets/ViewFacet/ViewFacet.sol</code></td>
+								<td><code>getAffiliateHook</code> (query)</td>
+							</tr>
+							<tr>
+								<td><code>contracts/core/libraries/LibPartyBPositionsActions.sol</code></td>
+								<td>Hook calls on position open</td>
+							</tr>
+							<tr>
+								<td><code>contracts/core/libraries/LibQuoteClose.sol</code></td>
+								<td>Hook calls on position close and quote expiry</td>
+							</tr>
+							<tr>
+								<td><code>contracts/core/facets/PartyA/PartyAFacetImpl.sol</code></td>
+								<td>Hook calls on quote cancellation</td>
+							</tr>
+							<tr>
+								<td><code>contracts/core/facets/PartyBQuoteActions/PartyBQuoteActionsFacetImpl.sol</code></td>
+								<td>Hook calls on accepted cancel</td>
+							</tr>
+							<tr>
+								<td><code>contracts/core/facets/PartyALiquidation/PartyALiquidationFacetImpl.sol</code></td>
+								<td>Hook calls during PartyA liquidation</td>
+							</tr>
+							<tr>
+								<td><code>contracts/core/facets/PartyBLiquidation/PartyBLiquidationFacetImpl.sol</code></td>
+								<td>Hook calls during PartyB liquidation</td>
+							</tr>
+							<tr>
+								<td><code>contracts/core/facets/ClearingHouse/ClearingHouseFacetImpl.sol</code></td>
+								<td>Hook calls during ClearingHouse liquidation</td>
+							</tr>
+							<tr>
+								<td><code>contracts/core/test/MockHook.sol</code></td>
+								<td>Test hook with configurable revert behavior</td>
+							</tr>
+							<tr>
+								<td><code>contracts/core/test/MaliciousHook.sol</code></td>
+								<td>Test hook verifying re-entry protection</td>
+							</tr>
+							<tr>
+								<td><code>contracts/accountLayer/facets/SymmioHook/SymmioHookFacet.sol</code></td>
+								<td>Production hook for virtual account lifecycle</td>
+							</tr>
+						</tbody>
+					</table>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer"><span>Symmio Core v0.8.5 documentation.</span></footer>
+	</body>
+</html>

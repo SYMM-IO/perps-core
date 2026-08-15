@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Previously, calculating UPNL required iterating through all individual quotes. With potentially thousands of quotes per party, this was computationally expensive. The new aggregated position system maintains running totals at the symbol level, dramatically reducing the data needed for UPNL…"
+		/>
+		<title>Aggregated Positions And Fundings For Better UPNL Calculation - Symmio Core v0.8.5</title>
+		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../../v0.8.6/assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../../v0.8.6/assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.5">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.5</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#doc-aggregated-positions-how-it-works">How It Works</a>
+				<a class="toc-link level-3" href="#doc-aggregated-positions-aggregated-position-storage">Aggregated Position Storage</a>
+				<a class="toc-link level-3" href="#doc-aggregated-positions-aggregated-funding-storage">Aggregated Funding Storage</a>
+				<a class="toc-link level-3" href="#doc-aggregated-positions-active-symbols-tracking">Active Symbols Tracking</a>
+				<a class="toc-link level-2" href="#doc-aggregated-positions-view-functions">View Functions</a>
+				<a class="toc-link level-3" href="#doc-aggregated-positions-position-aggregates">Position Aggregates</a>
+				<a class="toc-link level-3" href="#doc-aggregated-positions-funding-aggregates">Funding Aggregates</a>
+				<a class="toc-link level-3" href="#doc-aggregated-positions-paginated-batch-functions">Paginated Batch Functions</a>
+				<a class="toc-link level-3" href="#doc-aggregated-positions-active-symbol-queries">Active Symbol Queries</a>
+				<a class="toc-link level-3" href="#doc-aggregated-positions-upnl-data-functions-recommended">UPNL Data Functions (Recommended)</a>
+				<a class="toc-link level-2" href="#doc-aggregated-positions-upnl-calculation">UPNL Calculation</a>
+				<a class="toc-link level-2" href="#doc-aggregated-positions-usage-example">Usage Example</a>
+				<a class="toc-link level-3" href="#doc-aggregated-positions-partya-upnl-with-specific-partyb">PartyA UPNL (with specific PartyB)</a>
+			</div>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Aggregated Positions And Fundings For Better UPNL Calculation</h1>
+							<p class="hero-copy">
+								This version introduces <strong>on-chain aggregated position tracking</strong> that enables efficient UPNL (Unrealized
+								Profit and Loss) calculations with <strong>O(symbols)</strong> complexity instead of <strong>O(quotes)</strong>.
+							</p>
+						</div>
+					</div>
+				</header>
+				<article class="doc-article" id="full-document">
+					<p>
+						Previously, calculating UPNL required iterating through all individual quotes. With potentially thousands of quotes per party,
+						this was computationally expensive. The new aggregated position system maintains running totals at the symbol level,
+						dramatically reducing the data needed for UPNL calculations.
+					</p>
+					<h2 id="doc-aggregated-positions-how-it-works">How It Works</h2>
+					<h3 id="doc-aggregated-positions-aggregated-position-storage">Aggregated Position Storage</h3>
+					<p>For each (party, symbol, positionType) combination, the system tracks:</p>
+					<ul>
+						<li><strong>aggregatedAmount</strong>: Total open position size</li>
+						<li><strong>aggregatedNotional</strong>: Sum of (amount × openPrice) for all positions</li>
+					</ul>
+					<p>The <strong>average open price</strong> is derived as: <code>avgOpenPrice = aggregatedNotional / aggregatedAmount</code></p>
+					<h3 id="doc-aggregated-positions-aggregated-funding-storage">Aggregated Funding Storage</h3>
+					<p>For each (party, symbol, positionType) combination, the system tracks:</p>
+					<ul>
+						<li><strong>weightedPaidFunding</strong>: Sum of (openAmount × accumulatedPaidFunding / 1e18) across all quotes</li>
+					</ul>
+					<p>This allows computing funding debt without iterating through individual quotes.</p>
+					<h3 id="doc-aggregated-positions-active-symbols-tracking">Active Symbols Tracking</h3>
+					<p>The system maintains arrays of active symbol IDs for each party:</p>
+					<ul>
+						<li><code>partyBActiveSymbols[partyB]</code> - Global symbols where partyB has positions</li>
+						<li><code>partyBActiveSymbolsPerPartyA[partyB][partyA]</code> - Symbols for a specific partyA</li>
+						<li><code>partyAActiveSymbolsPerPartyB[partyA][partyB]</code> - Symbols for a specific partyB</li>
+					</ul>
+					<p>This enables efficient iteration through only the relevant symbols.</p>
+					<h2 id="doc-aggregated-positions-view-functions">View Functions</h2>
+					<h3 id="doc-aggregated-positions-position-aggregates">Position Aggregates</h3>
+					<table>
+						<thead>
+							<tr>
+								<th>Function</th>
+								<th>Description</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>getPartyBAggregatedPositionBySymbol</code></td>
+								<td>PartyB's global position for a symbol</td>
+							</tr>
+							<tr>
+								<td><code>getPartyBAggregatedPositionBySymbolPerPartyA</code></td>
+								<td>PartyB's position with specific partyA</td>
+							</tr>
+							<tr>
+								<td><code>getPartyAAggregatedPositionBySymbolPerPartyB</code></td>
+								<td>PartyA's position with specific partyB</td>
+							</tr>
+						</tbody>
+					</table>
+					<h3 id="doc-aggregated-positions-funding-aggregates">Funding Aggregates</h3>
+					<table>
+						<thead>
+							<tr>
+								<th>Function</th>
+								<th>Description</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>getPartyAAggregateFundingDebt</code></td>
+								<td>PartyA's funding debt for a symbol</td>
+							</tr>
+							<tr>
+								<td><code>getPartyBAggregateFundingDebt</code></td>
+								<td>PartyB's funding debt per partyA</td>
+							</tr>
+							<tr>
+								<td><code>getPartyBGlobalAggregateFundingDebt</code></td>
+								<td>PartyB's global funding debt</td>
+							</tr>
+						</tbody>
+					</table>
+					<h3 id="doc-aggregated-positions-paginated-batch-functions">Paginated Batch Functions</h3>
+					<table>
+						<thead>
+							<tr>
+								<th>Function</th>
+								<th>Description</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>getPartyBAggregatedPositionsByActiveSymbols</code></td>
+								<td>Paginated positions across active symbols</td>
+							</tr>
+							<tr>
+								<td><code>getPartyAAggregatedPositionsByActiveSymbolsPerPartyB</code></td>
+								<td>PartyA positions with partyB</td>
+							</tr>
+							<tr>
+								<td><code>getPartyBAggregatedPositionsByActiveSymbolsPerPartyA</code></td>
+								<td>PartyB positions with partyA</td>
+							</tr>
+							<tr>
+								<td><code>getPartyAAggregateFundingDebtByActiveSymbols</code></td>
+								<td>Paginated funding debt for partyA</td>
+							</tr>
+							<tr>
+								<td><code>getPartyBAggregateFundingDebtByActiveSymbols</code></td>
+								<td>Paginated funding debt for partyB</td>
+							</tr>
+							<tr>
+								<td><code>getPartyBGlobalAggregateFundingDebtByActiveSymbols</code></td>
+								<td>Global paginated funding for partyB</td>
+							</tr>
+						</tbody>
+					</table>
+					<h3 id="doc-aggregated-positions-active-symbol-queries">Active Symbol Queries</h3>
+					<table>
+						<thead>
+							<tr>
+								<th>Function</th>
+								<th>Description</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>getPartyBActiveSymbolsCount</code></td>
+								<td>Count of partyB's active symbols</td>
+							</tr>
+							<tr>
+								<td><code>getPartyBActiveSymbols</code></td>
+								<td>Paginated list of partyB's active symbol IDs</td>
+							</tr>
+							<tr>
+								<td><code>getPartyAActiveSymbolsCountPerPartyB</code></td>
+								<td>Count of partyA's symbols with partyB</td>
+							</tr>
+							<tr>
+								<td><code>getPartyAActiveSymbolsPerPartyB</code></td>
+								<td>Paginated partyA symbol IDs with partyB</td>
+							</tr>
+						</tbody>
+					</table>
+					<h3 id="doc-aggregated-positions-upnl-data-functions-recommended">UPNL Data Functions (Recommended)</h3>
+					<p>
+						These convenience functions return <strong>both position data and funding debt in a single call</strong>, eliminating the need
+						to fetch positions and funding separately:
+					</p>
+					<table>
+						<thead>
+							<tr>
+								<th>Function</th>
+								<th>Description</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>getPartyAUpnlData</code></td>
+								<td>PartyA's position + funding data per partyB</td>
+							</tr>
+							<tr>
+								<td><code>getPartyBUpnlData</code></td>
+								<td>PartyB's position + funding data per partyA</td>
+							</tr>
+							<tr>
+								<td><code>getPartyBGlobalUpnlData</code></td>
+								<td>PartyB's global position + funding data</td>
+							</tr>
+						</tbody>
+					</table>
+					<p>Each returns an array of <code>UpnlData</code>:</p>
+					<pre><code class="language-solidity">struct UpnlData {
+    uint256 symbolId;
+    PositionType positionType;
+    uint256 aggregatedAmount;
+    uint256 avgOpenPrice;
+    int256 fundingDebt;
+}
+</code></pre>
+					<h2 id="doc-aggregated-positions-upnl-calculation">UPNL Calculation</h2>
+					<p>With aggregated data, UPNL can be calculated off-chain as:</p>
+					<pre><code>UPNL = Position UPNL + Funding Debt
+
+Position UPNL (per symbol):
+  LONG:  (currentPrice - avgOpenPrice) × aggregatedAmount / 1e18
+  SHORT: (avgOpenPrice - currentPrice) × aggregatedAmount / 1e18
+
+Total UPNL = Σ(Position UPNL for each active symbol) + Σ(Funding Debt for each active symbol)
+</code></pre>
+					<h2 id="doc-aggregated-positions-usage-example">Usage Example</h2>
+					<h3 id="doc-aggregated-positions-partya-upnl-with-specific-partyb">PartyA UPNL (with specific PartyB)</h3>
+					<pre><code class="language-solidity">int256 totalUpnl = 0;
+uint256 start = 0;
+
+while (true) {
+    UpnlData[] memory data = viewFacet.getPartyAUpnlData(partyA, partyB, start, 100);
+    if (data.length == 0) break;
+
+    for (uint256 i = 0; i &lt; data.length; i++) {
+        uint256 price = getPrice(data[i].symbolId);
+        int256 positionUpnl;
+
+        if (data[i].positionType == PositionType.LONG) {
+            positionUpnl = int256((price - data[i].avgOpenPrice) * data[i].aggregatedAmount / 1e18);
+        } else {
+            positionUpnl = int256((data[i].avgOpenPrice - price) * data[i].aggregatedAmount / 1e18);
+        }
+
+        totalUpnl += positionUpnl - data[i].fundingDebt;
+    }
+    start += 100;
+}
+</code></pre>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer"><span>Symmio Core v0.8.5 documentation.</span></footer>
+	</body>
+</html>

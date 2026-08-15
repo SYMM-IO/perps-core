@@ -2,7 +2,7 @@
 pragma solidity >=0.8.18;
 
 import { IExpressProvider } from "../interfaces/IExpressProvider.sol";
-import { WithdrawRequest, WithdrawReceiverPart } from "../storages/WithdrawStorage.sol";
+import { WithdrawRequest } from "../storages/WithdrawStorage.sol";
 
 interface ISymmioCore {
 	function acceptWithdrawRequest(address user, uint256 requestId) external;

@@ -22,7 +22,7 @@ import { IDiamondCut } from "../../diamond/facets/DiamondCut/IDiamondCut.sol";
 import { IDiamondLoupe } from "../../diamond/facets/DiamondLoup/IDiamondLoupe.sol";
 import { IPartyBQuoteActionsFacet } from "../facets/PartyBQuoteActions/IPartyBQuoteActionsFacet.sol";
 import { IPartyBPositionActionsFacet } from "../facets/PartyBPositionActions/IPartyBPositionActionsFacet.sol";
-import { IPartyBSolverFeeActionsFacet } from "../facets/PartyBSolverFeeActions/IPartyBSolverFeeActionsFacet.sol";
+import { IPartyBExecutionFacet } from "../facets/PartyBExecution/IPartyBExecutionFacet.sol";
 import { IForceActionsFacet } from "../facets/ForceActions/IForceActionsFacet.sol";
 import { ISettlementFacet } from "../facets/Settlement/ISettlementFacet.sol";
 import { IPartyBBatchActionsFacet } from "../facets/PartyBBatchActions/IPartyBBatchActionsFacet.sol";
@@ -40,7 +40,7 @@ interface ISymmio is
 	IForceActionsFacet,
 	IPartyBQuoteActionsFacet,
 	IPartyBPositionActionsFacet,
-	IPartyBSolverFeeActionsFacet,
+	IPartyBExecutionFacet,
 	IPartyBBatchActionsFacet,
 	IPartyAFacet,
 	IPartyALiquidationFacet,
@@ -71,7 +71,9 @@ interface ISymmio is
 		REIMBURSEMENT_IN,
 		OPERATIONAL_FEE_OUT,
 		OPEN_SOLVER_FEE_OUT,
-		CLOSE_SOLVER_FEE_OUT
+		CLOSE_SOLVER_FEE_OUT,
+		SETTLEMENT_PNL_IN,
+		SETTLEMENT_PNL_OUT
 	}
 
 	/// @notice Reasons for exact changes to PartyA's liquidation reimbursement bucket.

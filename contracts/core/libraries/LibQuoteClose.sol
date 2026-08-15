@@ -11,7 +11,6 @@ import { LibConnections } from "./LibConnections.sol";
 import { QuoteStorage, Quote, LockedValues, QuoteStatus } from "../storages/QuoteStorage.sol";
 import { AccountStorage } from "../storages/AccountStorage.sol";
 import { AffiliateStorage } from "../storages/AffiliateStorage.sol";
-import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
 import { SymbolStorage } from "../storages/SymbolStorage.sol";
 import { FundingStorage } from "../storages/FundingStorage.sol";
 import { AffiliateStorage } from "../storages/AffiliateStorage.sol";

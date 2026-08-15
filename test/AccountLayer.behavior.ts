@@ -2,7 +2,7 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers"
 import { expect } from "chai"
 import { BytesLike, toUtf8Bytes, ZeroAddress } from "ethers"
 
-import { IAccountLayerHook__factory, ISymmioHook__factory } from "../src/types/index.js"
+import { IAccountLayerHook__factory, ISymmioHook__factory, LibHook__factory } from "../src/types/index.js"
 import type { MockAccountLayerHook } from "../src/types/index.js"
 import { initializeFixture } from "./Initialize.fixture.js"
 import { ethers } from "./helpers/hardhat-connection.js"
@@ -36,6 +36,7 @@ type SubAccountCreationDataStruct = {
 }
 
 const roleHash = (name: string) => ethers.keccak256(toUtf8Bytes(name))
+const hookErrorDecoder = LibHook__factory.connect(ZeroAddress)
 const SEND_QUOTE_WITH_AFFILIATE_SIGNATURE =
 	"sendQuoteWithAffiliate(address[],uint256,uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,address,(bytes,uint256,int256,uint256,bytes,(uint256,address,address)))"
 const SEND_QUOTE_WITH_SOLVER_FEE_CAPS_SIGNATURE =
@@ -343,7 +344,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 				it("Should allow pending owner to accept ownership", async function () {
 					await context.alControlFacet.connect(context.signers.admin).transferOwnership(context.signers.user.address)
 					await expect(context.alControlFacet.connect(context.signers.user).acceptOwnership()).to.not.be.reverted
-					expect(await context.alViewFacet.owner()).to.equal(context.signers.user.address)
+					expect(await context.alViewFacet.getOwner()).to.equal(context.signers.user.address)
 					expect(await context.alViewFacet.pendingOwner()).to.equal(ZeroAddress)
 				})
 
@@ -4490,7 +4491,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 							partialOpen.openPrice,
 							await getDummyPairUpnlAndPriceSig(BigInt(partialOpen.price), BigInt(partialOpen.upnlPartyA), BigInt(partialOpen.upnlPartyB)),
 						),
-				).to.be.revertedWithCustomError(context.partyBPositionActionsFacet, "HookReverted")
+				).to.be.revertedWithCustomError(hookErrorDecoder, "HookReverted")
 				expect((await context.viewFacetQuote.getQuote(parentQuoteId)).quoteStatus).to.equal(QuoteStatus.LOCKED)
 
 				// A full fill creates no remainder, so it needs no cancel and succeeds under the same pause
@@ -4537,7 +4538,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 							partialOpen.openPrice,
 							await getDummyPairUpnlAndPriceSig(BigInt(partialOpen.price), BigInt(partialOpen.upnlPartyA), BigInt(partialOpen.upnlPartyB)),
 						),
-				).to.be.revertedWithCustomError(context.partyBPositionActionsFacet, "HookReverted")
+				).to.be.revertedWithCustomError(hookErrorDecoder, "HookReverted")
 				expect((await context.viewFacetQuote.getQuote(parentQuoteId)).quoteStatus).to.equal(QuoteStatus.LOCKED)
 
 				const fullOpen = limitOpenRequestBuilder().build()

@@ -1,11 +1,12 @@
 import * as fsPromise from "fs/promises"
 
+import connection, { ethers } from "../../test/helpers/hardhat-connection.js"
 import { ManagedError } from "../../test/models/ManagedError"
 import { createRunContext } from "../../test/models/RunContext"
 import { User } from "../../test/models/User"
 import { UserController } from "../../test/models/UserController"
 import { decimal } from "../../test/utils/Common"
-import { ethers } from "./helpers/hardhat-connection"
+import { assertLocalExecution } from "../utils/localNetworkGuard.js"
 
 function sleep(ms: number) {
 	return new Promise(resolve => setTimeout(resolve, ms))
@@ -13,7 +14,11 @@ function sleep(ms: number) {
 
 async function main() {
 	const addresses = JSON.parse("" + (await fsPromise.readFile("addresses.json")))
-	const context = await createRunContext(addresses.v3Address, addresses.collateralAddress)
+	const network = await ethers.provider.getNetwork()
+	assertLocalExecution(connection as any, network.chainId, "scripts/fuzz/WakeUpUser.ts")
+	const symmioAddress = addresses.symmioAddress ?? addresses.v3Address
+	if (!symmioAddress || !addresses.collateralAddress) throw new Error("addresses.json must contain symmioAddress and collateralAddress")
+	const context = await createRunContext(symmioAddress, addresses.collateralAddress)
 	const signer = await ethers.getImpersonatedSigner(ethers.Wallet.createRandom().address)
 	const user = new User(context, signer)
 	await user.setup()

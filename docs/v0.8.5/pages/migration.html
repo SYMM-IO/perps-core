@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Backfills the new aggregated position structures and cross bucket locked values from existing v0.8.4 data. Run during a global pause after the diamond cut -- migrates quote-level data into symbol-level aggregates and sums per-PartyA locked/pending locked balances into the cross bucket. Allocated…"
+		/>
+		<title>Migration Process - Symmio Core v0.8.5</title>
+		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../../v0.8.6/assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../../v0.8.6/assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.5">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.5</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#doc-migration-why-migration-is-needed">Why Migration is Needed</a>
+				<a class="toc-link level-3" href="#doc-migration-feature-1-cross-mode">Feature 1: Cross Mode</a>
+				<a class="toc-link level-3" href="#doc-migration-feature-2-aggregated-positions-for-osymbols-calculations"
+					>Feature 2: Aggregated Positions for O(symbols) Calculations</a
+				>
+				<a class="toc-link level-2" href="#doc-migration-what-gets-migrated">What Gets Migrated</a>
+				<a class="toc-link level-3" href="#doc-migration-1-aggregated-positions">1. Aggregated Positions</a>
+				<a class="toc-link level-3" href="#doc-migration-2-active-symbols-arrays">2. Active Symbols Arrays</a>
+				<a class="toc-link level-3" href="#doc-migration-3-aggregate-funding">3. Aggregate Funding</a>
+				<a class="toc-link level-3" href="#doc-migration-4-quote-fields">4. Quote Fields</a>
+				<a class="toc-link level-3" href="#doc-migration-5-cross-bucket-locked-values">5. Cross Bucket Locked Values</a>
+				<a class="toc-link level-2" href="#doc-migration-migration-components">Migration Components</a>
+				<a class="toc-link level-3" href="#doc-migration-1-migrationfacet">1. MigrationFacet</a>
+				<a class="toc-link level-3" href="#doc-migration-migratequotesuint256-quoteids">migrateQuotes(uint256[] quoteIds)</a>
+				<a class="toc-link level-3" href="#doc-migration-migratecrosslockedvaluesaddress-partyb-address-partyas"
+					>migrateCrossLockedValues(address partyB, address[] partyAs)</a
+				>
+				<a class="toc-link level-3" href="#doc-migration-2-verification-functions">2. Verification Functions</a>
+				<a class="toc-link level-3" href="#doc-migration-3-cross-mode-activation">3. Cross Mode Activation</a>
+				<a class="toc-link level-2" href="#doc-migration-upgrade-process">Upgrade Process</a>
+				<a class="toc-link level-3" href="#doc-migration-step-1-deploy-new-facets">Step 1: Deploy New Facets</a>
+				<a class="toc-link level-3" href="#doc-migration-step-2-global-pause">Step 2: Global Pause</a>
+				<a class="toc-link level-3" href="#doc-migration-step-3-migrate-quotes">Step 3: Migrate Quotes</a>
+				<a class="toc-link level-3" href="#doc-migration-step-4-migrate-partyb-locked-values">Step 4: Migrate PartyB Locked Values</a>
+				<a class="toc-link level-3" href="#doc-migration-step-5-unpause-system">Step 5: Unpause System</a>
+				<a class="toc-link level-2" href="#doc-migration-enabling-cross-mode-later">Enabling Cross Mode (Later)</a>
+				<a class="toc-link level-3" href="#doc-migration-enable-global-feature-flag">Enable Global Feature Flag</a>
+				<a class="toc-link level-3" href="#doc-migration-enable-per-partyb">Enable Per PartyB</a>
+				<a class="toc-link level-2" href="#doc-migration-verification">Verification</a>
+				<a class="toc-link level-3" href="#doc-migration-1-quote-migration-status">1. Quote Migration Status</a>
+				<a class="toc-link level-3" href="#doc-migration-2-partyb-locked-values-migration">2. PartyB Locked Values Migration</a>
+				<a class="toc-link level-3" href="#doc-migration-3-cross-bucket-locked-values-correctness"
+					>3. Cross Bucket Locked Values Correctness</a
+				>
+			</div>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Migration Process</h1>
+							<p class="hero-copy">
+								When upgrading from v0.8.4 to v0.8.5, existing data must be migrated to populate new storage structures. Two major
+								features require this migration:
+							</p>
+						</div>
+					</div>
+				</header>
+				<article class="doc-article" id="full-document">
+					<ol>
+						<li><strong>Cross Mode</strong> - Unified balance management for partyBs across all partyAs</li>
+						<li><strong>Aggregated Positions</strong> - O(symbols) UPNL and funding calculations instead of O(quotes)</li>
+					</ol>
+					<h2 id="doc-migration-why-migration-is-needed">Why Migration is Needed</h2>
+					<h3 id="doc-migration-feature-1-cross-mode">Feature 1: Cross Mode</h3>
+					<p>In v0.8.4, partyB locked balances are tracked separately per partyA:</p>
+					<pre><code class="language-solidity">// v0.8.4: Separate locked balances per partyA
+partyBLockedBalances[partyB][partyA1] = {...}
+partyBLockedBalances[partyB][partyA2] = {...}
+partyBPendingLockedBalances[partyB][partyA1] = {...}
+partyBPendingLockedBalances[partyB][partyA2] = {...}
+</code></pre>
+					<p>
+						This creates fragmentation -- partyB cannot use excess balance from one partyA relationship to cover margin requirements for
+						another.
+					</p>
+					<p>
+						<strong>V0.8.5 Cross Mode</strong> introduces a cross bucket keyed by <code>address(0)</code> that aggregates locked and
+						pending locked values:
+					</p>
+					<pre><code class="language-solidity">// v0.8.5: Cross bucket aggregates locked/pending locked
+partyBLockedBalances[partyB][address(0)] = {...}          // Total locked across all partyAs
+partyBPendingLockedBalances[partyB][address(0)] = {...}   // Total pending locked across all
+</code></pre>
+					<p>
+						Locked and pending locked balances are <strong>dual-tracked</strong> -- every write updates both
+						<code>[partyB][partyA]</code> and <code>[partyB][address(0)]</code>. This keeps the cross bucket always in sync.
+					</p>
+					<p>
+						Allocated balances (<code>partyBAllocatedBalances</code>) are <strong>not</strong> aggregated. The cross bucket
+						<code>[partyB][address(0)]</code> is an independent pool that the solver explicitly funds by allocating to
+						<code>address(0)</code> after enabling cross mode. The <code>partyBAllocationKey(partyB, partyA)</code> helper routes balance
+						reads/writes to <code>address(0)</code> in cross mode or <code>partyA</code> in isolated mode.
+					</p>
+					<p>
+						When cross mode is enabled for a partyB, solvency checks use the cross bucket, allowing unified capital management across all
+						partyA relationships.
+					</p>
+					<p><strong>Migration needed</strong>: Sum existing per-partyA locked and pending locked balances into the cross bucket.</p>
+					<h3 id="doc-migration-feature-2-aggregated-positions-for-osymbols-calculations">
+						Feature 2: Aggregated Positions for O(symbols) Calculations
+					</h3>
+					<p>
+						In v0.8.4, calculating unrealized PnL (UPNL) and funding debt required iterating through every open quote. This O(n)
+						complexity becomes a bottleneck as positions grow:
+					</p>
+					<pre><code class="language-solidity">// v0.8.4: Must iterate all quotes
+for (uint256 i = 0; i &lt; quotes.length; i++) {
+    upnl += calculateQuotePnl(quotes[i], currentPrice);
+}
+</code></pre>
+					<p><strong>V0.8.5</strong> introduces aggregated position structures that enable O(symbols) calculations:</p>
+					<pre><code class="language-solidity">// v0.8.5: O(symbols) calculation
+for (uint256 i = 0; i &lt; activeSymbols.length; i++) {
+    uint256 symbolId = activeSymbols[i];
+    upnl += calculateSymbolPnl(aggregatedPositions[symbolId], currentPrice);
+}
+</code></pre>
+					<p><strong>Migration needed</strong>: Populate aggregated positions from existing open quotes.</p>
+					<h2 id="doc-migration-what-gets-migrated">What Gets Migrated</h2>
+					<h3 id="doc-migration-1-aggregated-positions">1. Aggregated Positions</h3>
+					<p>Pre-computed position totals per symbol for efficient UPNL calculations:</p>
+					<pre><code class="language-solidity">// Per partyB (global)
+partyBAggregatedPositions[partyB][symbolId][positionType].aggregatedAmount
+partyBAggregatedPositions[partyB][symbolId][positionType].aggregatedNotional
+
+// Per partyB-partyA pair
+partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][positionType]
+partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][positionType]
+</code></pre>
+					<h3 id="doc-migration-2-active-symbols-arrays">2. Active Symbols Arrays</h3>
+					<p>Lists of symbols with open positions for efficient iteration:</p>
+					<pre><code class="language-solidity">partyBActiveSymbols[partyB][]                      // Global for partyB
+partyBActiveSymbolsPerPartyA[partyB][partyA][]     // Per partyA
+partyAActiveSymbolsPerPartyB[partyA][partyB][]     // Per partyB
+</code></pre>
+					<h3 id="doc-migration-3-aggregate-funding">3. Aggregate Funding</h3>
+					<p>Pre-computed funding tracking for efficient funding debt calculations:</p>
+					<pre><code class="language-solidity">partyAAggregatedFundingPerPartyB[partyA][partyB][symbolId][positionType].weightedPaidFunding
+partyBAggregatedFunding[partyB][symbolId][positionType].weightedPaidFunding
+partyBAggregatedFundingPerPartyA[partyB][partyA][symbolId][positionType].weightedPaidFunding
+</code></pre>
+					<h3 id="doc-migration-4-quote-fields">4. Quote Fields</h3>
+					<p>New fields added to the Quote struct:</p>
+					<pre><code class="language-solidity">quote.accumulatedPaidFunding  // Initialized based on current funding rates
+quote.closeFee                // Remains 0 for existing quotes
+quote.data                    // Remains empty for existing quotes
+</code></pre>
+					<h3 id="doc-migration-5-cross-bucket-locked-values">5. Cross Bucket Locked Values</h3>
+					<p>
+						For the cross bucket to be accurate at upgrade time, existing per-partyA locked and pending locked balances must be aggregated
+						into <code>address(0)</code>:
+					</p>
+					<pre><code class="language-solidity">// Locked balances summed across all partyAs
+partyBLockedBalances[partyB][address(0)] = sum of all partyA locked values
+
+// Pending locked balances summed across all partyAs
+partyBPendingLockedBalances[partyB][address(0)] = sum of all partyA pending values
+</code></pre>
+					<h2 id="doc-migration-migration-components">Migration Components</h2>
+					<h3 id="doc-migration-1-migrationfacet">1. MigrationFacet</h3>
+					<p>The migration facet provides two main functions:</p>
+					<h3 id="doc-migration-migratequotesuint256-quoteids"><code>migrateQuotes(uint256[] quoteIds)</code></h3>
+					<p>
+						Populates aggregated position and funding structures for existing quotes and backfills reserved open fee tracking for
+						pending/locked quotes.
+					</p>
+					<p><strong>What it does for each quote:</strong></p>
+					<ul>
+						<li>Skips if already migrated (idempotent)</li>
+						<li>Skips non-existent quote IDs (detected by <code>partyA == address(0)</code>)</li>
+						<li>For <code>PENDING</code>, <code>LOCKED</code>, or <code>CANCEL_PENDING</code> quotes:</li>
+						<li>
+							Backfills <code>partyAReservedOpenFees</code> by calling <code>reserveOpenTradingFee</code> with the quote's open trading
+							fee
+						</li>
+						<li>
+							This prevents a <code>balanceLimitPerUser</code> bypass where a user could allocate up to the cap, then cancel pending
+							quotes to receive fee refunds that push the balance above the limit
+						</li>
+						<li>For <code>OPENED</code>, <code>CLOSE_PENDING</code>, or <code>CANCEL_CLOSE_PENDING</code> quotes:</li>
+						<li>Initializes <code>accumulatedPaidFunding</code> based on current funding rates</li>
+						<li>Adds to <code>partyBAggregatedPositions</code> and <code>partyAAggregatedPositions</code></li>
+						<li>Updates <code>activeSymbols</code> arrays</li>
+						<li>Adds to aggregate funding structures</li>
+					</ul>
+					<p><strong>Access Control:</strong> Requires <code>MIGRATION_ROLE</code></p>
+					<h3 id="doc-migration-migratecrosslockedvaluesaddress-partyb-address-partyas">
+						<code>migrateCrossLockedValues(address partyB, address[] partyAs)</code>
+					</h3>
+					<p>Aggregates per-partyA locked and pending locked balances into the cross bucket for a partyB.</p>
+					<p><strong>What it does:</strong></p>
+					<ul>
+						<li>Sums <code>partyBLockedBalances[partyB][partyA]</code> → <code>partyBLockedBalances[partyB][address(0)]</code></li>
+						<li>
+							Sums <code>partyBPendingLockedBalances[partyB][partyA]</code> →
+							<code>partyBPendingLockedBalances[partyB][address(0)]</code>
+						</li>
+						<li>Tracks migration per partyB+partyA pair -- already-migrated pairs are skipped</li>
+						<li>Can be called in multiple batches if the partyAs array is too large for a single transaction</li>
+					</ul>
+					<p><strong>Access Control:</strong> Requires <code>MIGRATION_ROLE</code></p>
+					<h3 id="doc-migration-2-verification-functions">2. Verification Functions</h3>
+					<pre><code class="language-solidity">// Check if a specific quote has been migrated
+function isQuoteMigrated(uint256 quoteId) external view returns (bool);
+
+// Check if a specific partyB+partyA pair has been migrated to the cross bucket
+function isCrossLockedValuesMigrated(address partyB, address partyA) external view returns (bool);
+</code></pre>
+					<h3 id="doc-migration-3-cross-mode-activation">3. Cross Mode Activation</h3>
+					<p>After migration, cross mode can be enabled for any partyB:</p>
+					<pre><code class="language-solidity">// In ControlFacet
+function setCrossPartyB(address partyB, bool enabled) external;
+</code></pre>
+					<p><strong>Requirements:</strong></p>
+					<ul>
+						<li>Global cross mode flag must be enabled (<code>setCrossPartyBModeActivated(true)</code>)</li>
+						<li>Caller must have <code>MIGRATION_ROLE</code></li>
+						<li>Address must be a registered partyB</li>
+					</ul>
+					<h2 id="doc-migration-upgrade-process">Upgrade Process</h2>
+					<h3 id="doc-migration-step-1-deploy-new-facets">Step 1: Deploy New Facets</h3>
+					<p>Perform a diamond cut to add/replace facets with v0.8.5 versions:</p>
+					<ul>
+						<li>MigrationFacet (new)</li>
+						<li>Updated facets with aggregated position logic</li>
+					</ul>
+					<h3 id="doc-migration-step-2-global-pause">Step 2: Global Pause</h3>
+					<p>Pause the entire system to prevent state changes during migration:</p>
+					<pre><code class="language-solidity">controlFacet.setGlobalPaused(true);
+</code></pre>
+					<h3 id="doc-migration-step-3-migrate-quotes">Step 3: Migrate Quotes</h3>
+					<p>Migrate all active and pending quotes in batches:</p>
+					<pre><code class="language-tsx">const BATCH_SIZE = 100;
+const allQuoteIds = await getQuoteIdsToMigrate(); // From indexer/events
+
+for (let i = 0; i &lt; allQuoteIds.length; i += BATCH_SIZE) {
+    const batch = allQuoteIds.slice(i, i + BATCH_SIZE);
+    await migrationFacet.migrateQuotes(batch);
+    console.log(`Migrated quotes ${i} to ${i + batch.length}`);
+}
+</code></pre>
+					<p><strong>Which quotes to migrate:</strong></p>
+					<ul>
+						<li>
+							Status: <code>PENDING</code>, <code>LOCKED</code>, or <code>CANCEL_PENDING</code> -- backfills reserved open fee tracking
+							to prevent <code>balanceLimitPerUser</code> bypass
+						</li>
+						<li>
+							Status: <code>OPENED</code>, <code>CLOSE_PENDING</code>, or <code>CANCEL_CLOSE_PENDING</code> -- populates aggregated
+							positions and funding structures
+						</li>
+					</ul>
+					<h3 id="doc-migration-step-4-migrate-partyb-locked-values">Step 4: Migrate PartyB Locked Values</h3>
+					<p>
+						For each partyB, migrate their per-partyA locked and pending locked balances to the cross bucket. This can be done in batches
+						if the partyAs array is too large for a single transaction:
+					</p>
+					<pre><code class="language-tsx">const BATCH_SIZE = 100;
+
+for (const partyB of allPartyBs) {
+    // Get all partyAs this partyB has relationships with
+    const partyAs = await getPartyAsForPartyB(partyB);
+
+    for (let i = 0; i &lt; partyAs.length; i += BATCH_SIZE) {
+        const batch = partyAs.slice(i, i + BATCH_SIZE);
+        await migrationFacet.migrateCrossLockedValues(partyB, batch);
+        console.log(`Migrated batch ${i / BATCH_SIZE + 1} for partyB: ${partyB}`);
+    }
+}
+</code></pre>
+					<h3 id="doc-migration-step-5-unpause-system">Step 5: Unpause System</h3>
+					<p>Resume normal operations:</p>
+					<pre><code class="language-solidity">controlFacet.setGlobalPaused(false);
+</code></pre>
+					<p>The upgrade is now complete. The system operates normally with the new aggregated position structures.</p>
+					<h2 id="doc-migration-enabling-cross-mode-later">Enabling Cross Mode (Later)</h2>
+					<p>Cross mode is a separate feature that can be enabled at any time after the upgrade.</p>
+					<h3 id="doc-migration-enable-global-feature-flag">Enable Global Feature Flag</h3>
+					<p>First, enable the cross mode feature globally:</p>
+					<pre><code class="language-solidity">controlFacet.setCrossPartyBModeActivated(true);
+</code></pre>
+					<h3 id="doc-migration-enable-per-partyb">Enable Per PartyB</h3>
+					<p>Individual partyBs can then opt-in to cross mode:</p>
+					<pre><code class="language-solidity">controlFacet.setCrossPartyB(partyB, true);
+</code></pre>
+					<p>Once enabled for a partyB:</p>
+					<ul>
+						<li>Solvency checks use the cross bucket (<code>address(0)</code>) for locked/pending locked values and allocated balance</li>
+						<li>Allocations must go to <code>address(0)</code> instead of specific partyAs</li>
+						<li>PartyB has unified capital across all partyA relationships</li>
+					</ul>
+					<p>
+						This can be done immediately after upgrade or months later -- the migration ensures the cross bucket locked/pending locked
+						data is ready. The solver must also fund the cross bucket by allocating to <code>address(0)</code>.
+					</p>
+					<h2 id="doc-migration-verification">Verification</h2>
+					<p>After migration, verify correctness:</p>
+					<h3 id="doc-migration-1-quote-migration-status">1. Quote Migration Status</h3>
+					<p>
+						<strong>Note:</strong> <code>isQuoteMigrated()</code> only returns true for quotes that were actually processed by
+						<code>migrateQuotes()</code>. Quotes with non-migratable on-chain status (CANCELED, CLOSED, LIQUIDATED, EXPIRED) are correctly
+						skipped by the contract and will return false -- this is expected. Always check the on-chain status before treating a false
+						result as a failure.
+					</p>
+					<pre><code class="language-tsx">const MIGRATABLE_STATUSES = new Set([0, 1, 2, 4, 5, 6]); // PENDING, LOCKED, CANCEL_PENDING, OPENED, CLOSE_PENDING, CANCEL_CLOSE_PENDING
+
+for (const quoteId of migratedQuoteIds) {
+    const isMigrated = await migrationFacet.isQuoteMigrated(quoteId);
+    if (!isMigrated) {
+        const quote = await viewFacetQuote.getQuote(quoteId);
+        if (!MIGRATABLE_STATUSES.has(Number(quote.quoteStatus))) continue; // correctly skipped
+        assert(false, `Quote ${quoteId} not migrated (status=${quote.quoteStatus})`);
+    }
+}
+</code></pre>
+					<h3 id="doc-migration-2-partyb-locked-values-migration">2. PartyB Locked Values Migration</h3>
+					<pre><code class="language-tsx">for (const partyB of allPartyBs) {
+    const partyAs = await getPartyAsForPartyB(partyB);
+    for (const partyA of partyAs) {
+        const isMigrated = await migrationFacet.isCrossLockedValuesMigrated(partyB, partyA);
+        assert(isMigrated, `PartyB ${partyB} + PartyA ${partyA} not migrated`);
+    }
+}
+</code></pre>
+					<h3 id="doc-migration-3-cross-bucket-locked-values-correctness">3. Cross Bucket Locked Values Correctness</h3>
+					<pre><code class="language-tsx">for (const partyB of allPartyBs) {
+    const crossBucket = await viewFacet.balanceInfoOfCrossPartyB(partyB);
+    const partyAs = await getPartyAsForPartyB(partyB);
+
+    // Sum per-partyA locked values
+    let expectedLockedCva = 0n;
+    let expectedLockedLf = 0n;
+    let expectedLockedMm = 0n;
+    for (const partyA of partyAs) {
+        const info = await viewFacet.balanceInfoOfPartyB(partyB, partyA);
+        expectedLockedCva += info.lockedCva;
+        expectedLockedLf += info.lockedLf;
+        expectedLockedMm += info.lockedMmPartyB;
+    }
+
+    // Cross bucket locked should equal the sum of per-partyA locked
+    assert(crossBucket.lockedCva === expectedLockedCva);
+    assert(crossBucket.lockedLf === expectedLockedLf);
+    assert(crossBucket.lockedMmPartyB === expectedLockedMm);
+}
+</code></pre>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer"><span>Symmio Core v0.8.5 documentation.</span></footer>
+	</body>
+</html>

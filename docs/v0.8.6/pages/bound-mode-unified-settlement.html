@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="When a bindable solver settles its own book against partyAs bound to it, settleUpnlUnified now skips Muon verification and the payload-based solvency checks, matching the other oracle-less bound flows."
+		/>
+		<title>Bound-Mode Unified Settlement - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.6">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#summary">Summary</a>
+				<a class="toc-link level-2" href="#conditions">When Verification Is Skipped</a>
+				<a class="toc-link level-2" href="#skipped-enforced">Skipped vs. Still Enforced</a>
+				<a class="toc-link level-2" href="#safety">Why This Is Safe</a>
+				<a class="toc-link level-2" href="#unchanged">Flows That Keep Full Verification</a>
+				<a class="toc-link level-2" href="#integration">Integration Notes</a>
+			</div>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Bound-Mode Unified Settlement</h1>
+							<p class="hero-copy">
+								<code>settleUpnlUnified</code> now skips Muon verification and the upnl-based solvency checks when a bindable solver
+								settles its own book against partyAs bound to it, matching every other oracle-less bound flow.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="summary">Summary</h2>
+					<p>
+						Bind mode is Symmio's oracle-less trading path: a partyA binds to a single solver, and that solver can open positions, fill
+						closes, and charge funding for the bound partyA without presenting Muon signatures. The deprecated <code>settleUpnl</code>
+						already participated in this model &mdash; when the target partyA was bound to the caller, the Muon settlement signature was
+						not verified.
+					</p>
+					<p>
+						Its replacement, <code>settleUpnlUnified</code>, did not: it required a valid Muon signature on every call, so a bound solver
+						that had migrated off the deprecated entry point was forced back onto the oracle for routine settlement. v0.8.6 closes that
+						gap. When the caller is settling its own book and every partyA in the payload is bound to it, both the Muon verification and
+						the upnl-based solvency checks are skipped.
+					</p>
+					<aside class="callout callout-note">
+						<strong>The solvency skip is deliberate, not an oversight.</strong> In the bound path the upnl values in the payload are
+						supplied by the caller and unverified, so a solvency check against them constrains nothing &mdash; the caller can always
+						supply values that pass. Skipping them makes the trust model explicit and matches the bound paths in
+						<code>PartyBBatchActions</code> and funding-rate charging, which already skip Muon and solvency checks together.
+					</aside>
+
+					<h2 id="conditions">When verification is skipped</h2>
+					<p>All three conditions must hold; failing any one of them routes the call through full Muon verification:</p>
+					<ul>
+						<li>
+							<strong>The caller is <code>sig.partyB</code></strong> &mdash; the solver is settling its own book. A third-party partyB
+							settling someone else's positions always needs a Muon signature, since it would otherwise control the upnl inputs to
+							another solver's settlement.
+						</li>
+						<li>
+							<strong>The caller is bindable</strong> &mdash; <code>isPartyBBindable</code> is still set. Revoking bindability
+							immediately revokes the oracle-less privilege protocol-wide, including here.
+						</li>
+						<li>
+							<strong>Every partyA in <code>sig.partyAs</code> is bound to the caller.</strong> The unified payload can settle several
+							partyAs at once; one unbound partyA in the batch means the whole call is verified.
+						</li>
+					</ul>
+					<p>
+						The binding comparison is the same one used by every other bound flow: <code>bindState[partyA].partyB</code> against the
+						caller. A partyA in the <code>PENDING_UNBIND</code> cooldown still counts as bound until the unbind completes, which is the
+						protocol-wide behavior &mdash; the cooldown exists precisely so obligations cannot be dodged by unbinding instantly.
+					</p>
+
+					<h2 id="skipped-enforced">What is skipped and what still runs</h2>
+					<div class="table-wrap">
+						<table>
+							<caption>
+								Only signature-dependent checks are skipped. Every guard that reads on-chain state instead of payload values runs
+								unconditionally.
+							</caption>
+							<thead>
+								<tr>
+									<th scope="col">Check</th>
+									<th scope="col">Reads</th>
+									<th scope="col">Bound path</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Muon TSS + gateway signature, timestamp freshness</td>
+									<td>payload</td>
+									<td>skipped</td>
+								</tr>
+								<tr>
+									<td>PartyB solvency (<code>upnlPartyB</code> / <code>upnlPartyBPerPartyA</code>)</td>
+									<td>payload</td>
+									<td>skipped</td>
+								</tr>
+								<tr>
+									<td>PartyA solvency (<code>upnlPartyAs</code>)</td>
+									<td>payload</td>
+									<td>skipped</td>
+								</tr>
+								<tr>
+									<td>PartyA not in liquidation, partyB not liquidating against it, not cross-liquidating</td>
+									<td>storage</td>
+									<td>enforced</td>
+								</tr>
+								<tr>
+									<td>Symbol not frozen for corporate-action adjustment</td>
+									<td>storage</td>
+									<td>enforced</td>
+								</tr>
+								<tr>
+									<td>Quote ownership (<code>quote.partyB == sig.partyB</code>, partyA index mapping), open-position status</td>
+									<td>storage</td>
+									<td>enforced</td>
+								</tr>
+								<tr>
+									<td>Updated price strictly between opened price and current price</td>
+									<td>both</td>
+									<td>enforced</td>
+								</tr>
+								<tr>
+									<td>PartyB-actions pause, <code>onlyPartyB</code>, upnl nonce bumps for both parties</td>
+									<td>storage</td>
+									<td>enforced</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+
+					<h2 id="safety">Why this is safe</h2>
+					<p>
+						Settlement realizes unrealized PnL: it rewrites a quote's <code>openedPrice</code> and transfers exactly the corresponding
+						difference between allocated balances. It is equity-neutral by construction, so whatever prices the payload claims, each
+						party's allocated balance moves by precisely the amount its unrealized PnL moves the other way. A bound solver feeding
+						fabricated prices cannot change either party's equity, and the balance mutations are underflow-guarded so no settlement can
+						push a balance negative.
+					</p>
+					<p>
+						PartyA having no say in the settled price is not an anomaly here &mdash; it is what binding means. A bound solver already
+						opens and closes that partyA's positions without an oracle, and realizing PnL on an open position is the same authority
+						applied to a position that already exists.
+					</p>
+					<p>
+						There is one second-order effect worth knowing about, pinned by a test rather than left to reasoning.
+						<code>partyBAvailableForQuote</code> takes <code>max(-upnl, mm)</code> on the negative-uPNL branch rather than stacking the
+						realized loss on top of the modelled one, which is the right call &mdash; the two represent the same risk. A consequence is
+						that a solver settling away from the market can draw down its own margin buffer once: it converts up to its maintenance margin
+						into withdrawable collateral and lands exactly on the liquidation boundary, not over it.
+					</p>
+					<p>
+						The measured bounds, from the test: the draw is capped at <code>min(settled amount, mm)</code>, one wei more is refused, it
+						does not compound across further settlements, and the solver stays able to pay its bound partyA in full. So the solver can
+						choose to run itself at minimum margin without a market move &mdash; its own buffer, its own risk &mdash; and nothing about
+						the counterparty's claim or the protocol's solvency changes.
+					</p>
+					<h2 id="unchanged">Flows that keep full verification</h2>
+					<ul>
+						<li>
+							<strong>Third-party settlement</strong> &mdash; a different partyB settling on behalf of a partyA it shares positions
+							with. Full Muon verification plus the settlement cooldown, exactly as before.
+						</li>
+						<li>
+							<strong><code>settlePartyBUpnlForLiquidation</code></strong> &mdash; called by liquidators during PartyA liquidation.
+							Always verified; the caller is never the bound solver.
+						</li>
+						<li>
+							<strong>Force-close settlement</strong> &mdash; the force-close workflow verifies its own
+							<code>MuonFunction.ForceClose</code> signature unconditionally.
+						</li>
+						<li>
+							<strong>Deprecated <code>settleUpnl</code></strong> &mdash; behavior frozen for backward compatibility: it keeps its
+							existing Muon skip for bound partyAs and still runs its (payload-based) solvency checks.
+						</li>
+					</ul>
+
+					<h2 id="integration">Integration notes</h2>
+					<ul>
+						<li>
+							Bound solvers can settle through <code>settleUpnlUnified</code> without fetching a Muon signature, provided the payload
+							covers only their own book and only bound partyAs. Populate the upnl fields with real values anyway &mdash; they are
+							ignored on-chain in this path, but honest values keep off-chain reconciliation meaningful.
+						</li>
+						<li>
+							A batch mixing bound and unbound partyAs is verified as a whole. Split payloads by binding status if you want the
+							oracle-less path for the bound subset.
+						</li>
+						<li>
+							Both parties' upnl nonces are bumped per settled partyA in the bound path too, so any in-flight Muon signatures minted
+							against the old nonces are invalidated exactly as in verified settlement.
+						</li>
+						<li>
+							For anyone linking the library directly: <code>LibSettlement.settleUpnlUnified</code> gained a fifth parameter,
+							<code>skipSolvencyChecks</code>. The facet derives it from the binding state; external integrations should pass
+							<code>false</code> unless they replicate the same gating.
+						</li>
+					</ul>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 documentation.</span>
+		</footer>
+	</body>
+</html>

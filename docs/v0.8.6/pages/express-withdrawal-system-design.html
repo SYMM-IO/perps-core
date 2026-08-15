@@ -1,163 +1,119 @@
 <!doctype html>
-<html lang="en" data-theme="light">
+<html lang="en" data-theme="dark">
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<title>Express Withdrawal System - Design Document - Symmio Core v0.8.6</title>
+		<meta
+			name="description"
+			content="SYMMIO&#x27;s 12-hour cooldown protects withdrawals but slows exits. ExpressProvider fronts pool and credit-backed funds, then reconciles when the normal withdrawal finalizes."
+		/>
+		<title>Express Withdrawal System Design - Symmio Core v0.8.6</title>
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
 		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
 		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
 	</head>
-	<body class="doc-page">
+	<body class="doc-page" data-version="0.8.6">
 		<a class="skip-link" href="#full-document">Skip to document</a>
 
-		<header class="doc-topbar">
-			<a class="brand" href="../index.html"
-				><span class="brand-mark">8.6</span><span><strong>Symmio Docs</strong><small>v0.8.6 reference</small></span></a
-			>
-			<nav class="top-actions" aria-label="Page actions">
-				<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
-			</nav>
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
 		</header>
 		<div class="reader-shell">
-			<aside class="doc-sidebar" aria-label="Documentation navigation">
-				<a class="button primary back-home" href="../index.html">Back to index</a>
-				<div class="side-card">
-					<p class="side-label">Docs</p>
-					<a class="side-link is-active" href="../pages/express-withdrawal-system-design.html"
-						><small>Express Withdrawal</small><span>Express Withdrawal System Design</span></a
-					>
-					<a class="side-link" href="../pages/account-layer-ownership-delegation.html"
-						><small>AccountLayer</small><span>AccountLayer Delegated Creation &amp; Ownership Transfer</span></a
-					>
-					<a class="side-link" href="../pages/liquidation-funding-snapshot-fix.html"
-						><small>Liquidation</small><span>PartyA Liquidation Snapshot Flow</span></a
-					>
-					<a class="side-link" href="../pages/single-step-partya-liquidation.html"
-						><small>Liquidation</small><span>Single-Step PartyA Liquidation</span></a
-					>
-					<a class="side-link" href="../pages/affiliate-shutdown-flow.html"
-						><small>Clearing House</small><span>Affiliate Shutdown Flow</span></a
-					>
-					<a class="side-link" href="../pages/muon-upnl-validity-overrides.html"
-						><small>Muon</small><span>Muon UPNL Validity Overrides</span></a
-					>
-					<a class="side-link" href="../pages/solver-fees.html"><small>Fees</small><span>Solver Fees</span></a>
-					<a class="side-link" href="../pages/operational-fees.html"><small>Fees</small><span>Operational Fees</span></a>
-					<a class="side-link" href="../pages/symbol-adjustment.html"
-						><small>Symbols</small><span>Symbol Corporate-Action Adjustment</span></a
-					>
-					<a class="side-link" href="../pages/partya-liquidation-fee-recipient.html"
-						><small>Liquidation</small><span>PartyA Liquidation Fee Recipient Cleanup</span></a
-					>
-					<a class="side-link" href="../pages/balance-change-event-cleanup.html"
-						><small>Events &amp; Indexing</small><span>Allocated Balance Event Ledger</span></a
-					>
-					<a class="side-link" href="../pages/lazy-accumulated-funding.html"><small>Funding</small><span>Lazy Accumulated Funding</span></a>
-					<a class="side-link" href="../pages/partyb-allocation-suspension-gates.html"
-						><small>PartyB</small><span>Allocation Suspension Gates</span></a
-					>
-					<a class="side-link" href="../pages/cross-partyb-liquidation-reserve.html"
-						><small>Liquidation</small><span>Cross-PartyB Liquidation Reserve Enforcement</span></a
-					>
-					<a class="side-link" href="../pages/delegation-account-scope.html"
-						><small>AccountLayer</small><span>Delegation Account Scope</span></a
-					>
-					<a class="side-link" href="../pages/strict-deallocation.html"><small>Accounts</small><span>Strict Deallocation</span></a>
-					<a class="side-link" href="../pages/express-bot-operations-checklist.html"
-						><small>Express Withdrawal</small><span>Express Provider Bot Operations Checklist</span></a
-					>
-					<a class="side-link" href="../pages/market-open-fee-execution-price.html"
-						><small>Fees</small><span>Market Open Fee on Execution Price</span></a
-					>
-					<a class="side-link" href="../pages/position-isolation-partial-fill.html"
-						><small>AccountLayer</small><span>Position Isolation Partial Fill Remainder</span></a
-					>
-				</div>
-			</aside>
-			<aside class="toc-panel side-toc" aria-label="Page navigation">
-				<div class="toc-card">
-					<p class="toc-title">On this page</p>
-					<a class="toc-link level-2" href="#1-the-problem">1. The Problem</a>
-					<a class="toc-link level-2" href="#2-the-solution">2. The Solution</a>
-					<a class="toc-link level-2" href="#3-how-it-works-high-level">3. How It Works (High Level)</a>
-					<a class="toc-link level-2" href="#4-where-the-money-comes-from">4. Where the Money Comes From</a>
-					<a class="toc-link level-3" href="#4-1-balance-pools">4.1 Balance Pools</a>
-					<a class="toc-link level-3" href="#4-2-credit-line">4.2 Credit Line</a>
-					<a class="toc-link level-3" href="#4-3-liquidity-priority">4.3 Liquidity Priority</a>
-					<a class="toc-link level-3" href="#4-4-funding-cycle">4.4 Funding Cycle</a>
-					<a class="toc-link level-2" href="#5-the-withdrawal-flows">5. The Withdrawal Flows</a>
-					<a class="toc-link level-3" href="#5-1-standard-standard-withdrawal-12-hours">5.1 STANDARD -- Standard Withdrawal (12 hours)</a>
-					<a class="toc-link level-3" href="#5-2-windowed-windowed-withdrawal-20-seconds"
-						>5.2 WINDOWED -- Windowed Withdrawal (~20 seconds)</a
-					>
-					<a class="toc-link level-3" href="#5-3-same-tx-same-transaction-transfer">5.3 SAME_TX -- Same-Transaction Transfer</a>
-					<a class="toc-link level-3" href="#5-4-accelerate-promote-a-pending-standard-to-windowed"
-						>5.4 Accelerate -- Promote a pending STANDARD to WINDOWED</a
-					>
-					<a class="toc-link level-3" href="#5-5-affiliate-cap-self-service-fee-model">5.5 Affiliate Cap Self-Service &amp; Fee Model</a>
-					<a class="toc-link level-2" href="#6-safety-mechanisms">6. Safety Mechanisms</a>
-					<a class="toc-link level-3" href="#6-1-security-window">6.1 Security Window</a>
-					<a class="toc-link level-3" href="#6-2-risk-locking">6.2 Risk Locking</a>
-					<a class="toc-link level-3" href="#6-3-cancellation">6.3 Cancellation</a>
-					<a class="toc-link level-3" href="#6-4-suspension">6.4 Suspension</a>
-					<a class="toc-link level-3" href="#6-5-state-machines">6.5 State Machines</a>
-					<a class="toc-link level-2" href="#7-the-signature-scheme-eip-712">7. The Signature Scheme (EIP-712)</a>
-					<a class="toc-link level-3" href="#7-1-domain">7.1 Domain</a>
-					<a class="toc-link level-3" href="#7-2-option-type">7.2 Option Type</a>
-					<a class="toc-link level-3" href="#7-3-nonce-management">7.3 Nonce Management</a>
-					<a class="toc-link level-3" href="#7-4-parts-hash">7.4 Parts Hash</a>
-					<a class="toc-link level-3" href="#7-5-accelerate-offer-type">7.5 Accelerate Offer Type</a>
-					<a class="toc-link level-3" href="#7-6-validator-approval-signature">7.6 Validator Approval Signature</a>
-					<a class="toc-link level-3" href="#7-7-provider-data-encoding">7.7 Provider Data Encoding</a>
-					<a class="toc-link level-2" href="#8-fee-model">8. Fee Model</a>
-					<a class="toc-link level-3" href="#8-1-affiliate-configuration">8.1 Affiliate Configuration</a>
-					<a class="toc-link level-3" href="#8-2-fee-calculation-and-signing">8.2 Fee Calculation and Signing</a>
-					<a class="toc-link level-3" href="#8-3-on-chain-validation">8.3 On-Chain Validation</a>
-					<a class="toc-link level-3" href="#8-4-standard-acceleration-fee">8.4 STANDARD Acceleration Fee</a>
-					<a class="toc-link level-3" href="#8-5-fee-deduction">8.5 Fee Deduction</a>
-					<a class="toc-link level-3" href="#8-6-fee-accumulation-and-collection">8.6 Fee Accumulation and Collection</a>
-					<a class="toc-link level-3" href="#8-7-fee-flow">8.7 Fee Flow</a>
-					<a class="toc-link level-2" href="#9-credit-line-technical-reference">9. Credit Line — Technical Reference</a>
-					<a class="toc-link level-3" href="#9-1-architecture">9.1 Architecture</a>
-					<a class="toc-link level-3" href="#9-2-muon-verification">9.2 Muon Verification</a>
-					<a class="toc-link level-3" href="#9-3-debt-lifecycle-detailed">9.3 Debt Lifecycle (detailed)</a>
-					<a class="toc-link level-2" href="#10-access-control-roles">10. Access Control &amp; Roles</a>
-					<a class="toc-link level-3" href="#10-1-expressprovider-roles">10.1 ExpressProvider Roles</a>
-					<a class="toc-link level-3" href="#10-2-credit-line-access-control">10.2 Credit Line Access Control</a>
-					<a class="toc-link level-3" href="#10-3-validator-registration">10.3 Validator Registration</a>
-					<a class="toc-link level-3" href="#10-4-trust-relationships">10.4 Trust Relationships</a>
-					<a class="toc-link level-2" href="#11-the-bot">11. The Bot</a>
-					<a class="toc-link level-3" href="#11-1-options-api">11.1 Options API</a>
-					<a class="toc-link level-3" href="#11-2-event-monitoring">11.2 Event Monitoring</a>
-					<a class="toc-link level-3" href="#11-3-scheduled-actions">11.3 Scheduled Actions</a>
-					<a class="toc-link level-3" href="#11-4-permissionless-fallback">11.4 Permissionless Fallback</a>
-					<a class="toc-link level-3" href="#11-5-event-idempotency">11.5 Event Idempotency</a>
-					<a class="toc-link level-3" href="#11-6-performance-targets">11.6 Performance Targets</a>
-					<a class="toc-link level-3" href="#11-7-state-synchronization">11.7 State Synchronization</a>
-					<a class="toc-link level-3" href="#11-8-cap-aware-accelerate-polling">11.8 Cap-Aware Accelerate Polling</a>
-					<a class="toc-link level-2" href="#12-contract-interfaces">12. Contract Interfaces</a>
-					<a class="toc-link level-3" href="#12-1-expressprovider">12.1 ExpressProvider</a>
-					<a class="toc-link level-2" href="#13-data-types-reference">13. Data Types Reference</a>
-					<a class="toc-link level-2" href="#14-deployment">14. Deployment</a>
-					<a class="toc-link level-3" href="#prerequisites">Prerequisites</a>
-					<a class="toc-link level-3" href="#deploy-via-repo-helper">Deploy via Repo Helper</a>
-					<a class="toc-link level-3" href="#post-deployment-setup">Post-deployment setup</a>
-					<a class="toc-link level-2" href="#15-known-risks">15. Known Risks</a>
-					<a class="toc-link level-3" href="#15-1-cancellation-rules">15.1 Cancellation Rules</a>
-					<a class="toc-link level-3" href="#15-2-post-payout-rollback">15.2 Post-Payout Rollback</a>
-					<a class="toc-link level-3" href="#15-3-liquidity-fragmentation">15.3 Liquidity Fragmentation</a>
-					<a class="toc-link level-3" href="#15-4-bot-failure">15.4 Bot Failure</a>
-				</div>
-			</aside>
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#1-the-problem">1. The Problem</a>
+				<a class="toc-link level-2" href="#2-the-solution">2. The Solution</a>
+				<a class="toc-link level-2" href="#3-how-it-works-high-level">3. How It Works (High Level)</a>
+				<a class="toc-link level-2" href="#4-where-the-money-comes-from">4. Where the Money Comes From</a>
+				<a class="toc-link level-3" href="#4-1-balance-pools">4.1 Balance Pools</a>
+				<a class="toc-link level-3" href="#4-2-credit-line">4.2 Credit Line</a>
+				<a class="toc-link level-3" href="#4-3-liquidity-priority">4.3 Liquidity Priority</a>
+				<a class="toc-link level-3" href="#4-4-funding-cycle">4.4 Funding Cycle</a>
+				<a class="toc-link level-2" href="#5-the-withdrawal-flows">5. The Withdrawal Flows</a>
+				<a class="toc-link level-3" href="#5-1-standard-standard-withdrawal-12-hours">5.1 STANDARD -- Standard Withdrawal (12 hours)</a>
+				<a class="toc-link level-3" href="#5-2-windowed-windowed-withdrawal-20-seconds">5.2 WINDOWED -- Windowed Withdrawal (~20 seconds)</a>
+				<a class="toc-link level-3" href="#5-3-same-tx-same-transaction-transfer">5.3 SAME_TX -- Same-Transaction Transfer</a>
+				<a class="toc-link level-3" href="#5-4-accelerate-promote-a-pending-standard-to-windowed"
+					>5.4 Accelerate -- Promote a pending STANDARD to WINDOWED</a
+				>
+				<a class="toc-link level-3" href="#5-5-affiliate-cap-self-service-fee-model">5.5 Affiliate Cap Self-Service &amp; Fee Model</a>
+				<a class="toc-link level-2" href="#6-safety-mechanisms">6. Safety Mechanisms</a>
+				<a class="toc-link level-3" href="#6-1-security-window">6.1 Security Window</a>
+				<a class="toc-link level-3" href="#6-2-risk-locking">6.2 Risk Locking</a>
+				<a class="toc-link level-3" href="#6-3-cancellation">6.3 Cancellation</a>
+				<a class="toc-link level-3" href="#6-4-suspension">6.4 Suspension</a>
+				<a class="toc-link level-3" href="#6-5-state-machines">6.5 State Machines</a>
+				<a class="toc-link level-3" href="#6-6-finalize-callback-reentrancy">6.6 Finalize Callback Reentrancy</a>
+				<a class="toc-link level-2" href="#7-the-signature-scheme-eip-712">7. The Signature Scheme (EIP-712)</a>
+				<a class="toc-link level-3" href="#7-1-domain">7.1 Domain</a>
+				<a class="toc-link level-3" href="#7-2-option-type">7.2 Option Type</a>
+				<a class="toc-link level-3" href="#7-3-nonce-management">7.3 Nonce Management</a>
+				<a class="toc-link level-3" href="#7-4-parts-hash">7.4 Parts Hash</a>
+				<a class="toc-link level-3" href="#7-5-accelerate-offer-type">7.5 Accelerate Offer Type</a>
+				<a class="toc-link level-3" href="#7-6-validator-approval-signature">7.6 Validator Approval Signature</a>
+				<a class="toc-link level-3" href="#7-7-provider-data-encoding">7.7 Provider Data Encoding</a>
+				<a class="toc-link level-2" href="#8-fee-model">8. Fee Model</a>
+				<a class="toc-link level-3" href="#8-1-affiliate-configuration">8.1 Affiliate Configuration</a>
+				<a class="toc-link level-3" href="#8-2-fee-calculation-and-signing">8.2 Fee Calculation and Signing</a>
+				<a class="toc-link level-3" href="#8-3-on-chain-validation">8.3 On-Chain Validation</a>
+				<a class="toc-link level-3" href="#8-4-standard-acceleration-fee">8.4 STANDARD Acceleration Fee</a>
+				<a class="toc-link level-3" href="#8-5-fee-deduction">8.5 Fee Deduction</a>
+				<a class="toc-link level-3" href="#8-6-fee-accumulation-and-collection">8.6 Fee Accumulation and Collection</a>
+				<a class="toc-link level-3" href="#8-7-fee-flow">8.7 Fee Flow</a>
+				<a class="toc-link level-2" href="#9-credit-line-technical-reference">9. Credit Line — Technical Reference</a>
+				<a class="toc-link level-3" href="#9-1-architecture">9.1 Architecture</a>
+				<a class="toc-link level-3" href="#9-2-muon-verification">9.2 Muon Verification</a>
+				<a class="toc-link level-3" href="#9-3-debt-lifecycle-detailed">9.3 Debt Lifecycle (detailed)</a>
+				<a class="toc-link level-2" href="#10-access-control-roles">10. Access Control &amp; Roles</a>
+				<a class="toc-link level-3" href="#10-1-expressprovider-roles">10.1 ExpressProvider Roles</a>
+				<a class="toc-link level-3" href="#10-2-credit-line-access-control">10.2 Credit Line Access Control</a>
+				<a class="toc-link level-3" href="#10-3-validator-registration">10.3 Validator Registration</a>
+				<a class="toc-link level-3" href="#10-4-trust-relationships">10.4 Trust Relationships</a>
+				<a class="toc-link level-2" href="#11-the-bot">11. The Bot</a>
+				<a class="toc-link level-3" href="#11-1-options-api">11.1 Options API</a>
+				<a class="toc-link level-3" href="#11-2-event-monitoring">11.2 Event Monitoring</a>
+				<a class="toc-link level-3" href="#11-3-scheduled-actions">11.3 Scheduled Actions</a>
+				<a class="toc-link level-3" href="#11-4-permissionless-fallback">11.4 Permissionless Fallback</a>
+				<a class="toc-link level-3" href="#11-5-event-idempotency">11.5 Event Idempotency</a>
+				<a class="toc-link level-3" href="#11-6-performance-targets">11.6 Performance Targets</a>
+				<a class="toc-link level-3" href="#11-7-state-synchronization">11.7 State Synchronization</a>
+				<a class="toc-link level-3" href="#11-8-cap-aware-accelerate-polling">11.8 Cap-Aware Accelerate Polling</a>
+				<a class="toc-link level-2" href="#12-contract-interfaces">12. Contract Interfaces</a>
+				<a class="toc-link level-3" href="#12-1-expressprovider">12.1 ExpressProvider</a>
+				<a class="toc-link level-2" href="#13-data-types-reference">13. Data Types Reference</a>
+				<a class="toc-link level-2" href="#14-deployment">14. Deployment</a>
+				<a class="toc-link level-3" href="#prerequisites">Prerequisites</a>
+				<a class="toc-link level-3" href="#deploy-via-repo-helper">Deploy via Repo Helper</a>
+				<a class="toc-link level-3" href="#post-deployment-setup">Post-deployment setup</a>
+				<a class="toc-link level-2" href="#15-known-risks">15. Known Risks</a>
+				<a class="toc-link level-3" href="#15-1-cancellation-rules">15.1 Cancellation Rules</a>
+				<a class="toc-link level-3" href="#15-2-post-payout-rollback">15.2 Post-Payout Rollback</a>
+				<a class="toc-link level-3" href="#15-3-liquidity-fragmentation">15.3 Liquidity Fragmentation</a>
+				<a class="toc-link level-3" href="#15-4-bot-failure">15.4 Bot Failure</a>
+			</div>
 			<main class="reader-main">
 				<header class="reader-hero">
-					<nav class="crumbs" aria-label="Breadcrumb">
-						<a href="../index.html">v0.8.6</a><span>/</span><strong>Express Withdrawal</strong>
-					</nav>
 					<div class="reader-title-row">
 						<div>
-							<h1>Express Withdrawal System - Design Document</h1>
+							<h1>Express Withdrawal System Design</h1>
 							<p class="hero-copy">
 								Express Withdrawal lets users receive funds before the normal cooldown by combining provider liquidity with
 								affiliate-backed credit, then reconciling when SYMMIO finalizes the withdrawal.
@@ -165,29 +121,6 @@
 						</div>
 					</div>
 				</header>
-
-				<nav class="reader-map" aria-label="Express Withdrawal reading map">
-					<a href="#3-how-it-works-high-level">
-						<span>Reader path</span>
-						<strong>Start with the three speeds</strong>
-						<small>SAME_TX, WINDOWED, and STANDARD all route through ExpressProvider.</small>
-					</a>
-					<a href="#4-where-the-money-comes-from">
-						<span>Capital path</span>
-						<strong>Then follow the money</strong>
-						<small>Affiliate pool, credit line, and general pool explain who fronts funds.</small>
-					</a>
-					<a href="#6-safety-mechanisms">
-						<span>Safety path</span>
-						<strong>Then read the risk gates</strong>
-						<small>Validator checks, security windows, locks, cancellation, and suspension.</small>
-					</a>
-					<a href="#12-contract-interfaces">
-						<span>Integration path</span>
-						<strong>Finish with implementation surfaces</strong>
-						<small>EIP-712 payloads, fees, bot duties, roles, and contract interfaces.</small>
-					</a>
-				</nav>
 
 				<article class="doc-article" id="full-document">
 					<h2 id="1-the-problem">1. The Problem</h2>
@@ -1043,6 +976,50 @@ PROCESSED → FINALIZED (onWithdrawComplete: pools replenished)
 							</tbody>
 						</table>
 					</div>
+					<h3 id="6-6-finalize-callback-reentrancy">6.6 Finalize Callback Reentrancy</h3>
+					<p>
+						Finalizing a withdrawal calls back into the provider &mdash; <code>onWithdrawComplete</code> for an express part, and the
+						<code>IVirtualProvider</code> equivalent for a pure-virtual request. That callback runs mid-finalization: the collateral has
+						already moved, but the request is not yet marked <code>COMPLETED</code>.
+					</p>
+					<p>Two entry points were reachable from inside that window, and both would have corrupted the request:</p>
+					<div class="table-wrap">
+						<table>
+							<caption>
+								Both operations are rejected while a finalize callback is executing, each with its own revert string.
+							</caption>
+							<thead>
+								<tr>
+									<th scope="col">Entry point</th>
+									<th scope="col">What re-entry would have done</th>
+									<th scope="col">Revert</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td><code>advanceWithdraw</code></td>
+									<td>advanced against a request whose funds were already being released</td>
+									<td><code>WithdrawFacet : Cannot advance during finalize callback</code></td>
+								</tr>
+								<tr>
+									<td><code>acceptWithdrawCancelRequest</code></td>
+									<td>cancelled a request that was in the middle of completing</td>
+									<td><code>WithdrawFacet : Cannot accept cancel during finalize callback</code></td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						Core sets <code>WithdrawStorage.finalizingInProgress</code> immediately before each provider callback and clears it
+						immediately after, so the flag is only ever observable from inside a callback. A provider that does not re-enter never sees
+						it.
+					</p>
+					<aside class="callout callout-note">
+						<strong>This is a core-side guard, not the provider's.</strong> It sits in the Symmio <code>WithdrawFacet</code> and protects
+						the withdraw request's own state machine. The ExpressProvider's shared <code>ReentrancyGuard</code> is separate and still
+						applies to the provider's facets.
+					</aside>
+
 					<h2 id="7-the-signature-scheme-eip-712">7. The Signature Scheme (EIP-712)</h2>
 					<p>
 						The bot signs withdrawal options using EIP-712 typed data. The ExpressProvider verifies these signatures on-chain in the
@@ -2262,7 +2239,6 @@ expressProvider.depositToAffiliate(affiliateAddress, amount)
 
 		<footer class="site-footer">
 			<span>Symmio Core v0.8.6 documentation.</span>
-			<span>Protocol, operations, and integration notes.</span>
 		</footer>
 	</body>
 </html>

@@ -1,7 +1,14 @@
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
-import { checksumAddress, deployProxyWithFallback, getConnection, getUpgradeAddresses, requireArg } from "./helpers.js"
+import {
+	assertStandaloneDeploymentTaskAllowed,
+	checksumAddress,
+	deployProxyWithFallback,
+	getConnection,
+	getUpgradeAddresses,
+	requireArg,
+} from "./helpers.js"
 import { logger } from "./logger.js"
 
 export const feeDistributorTask = task("deploy:feeDistributor", "Deploys the SymmioFeeDistributor")
@@ -21,6 +28,7 @@ export const feeDistributorTask = task("deploy:feeDistributor", "Deploys the Sym
 	})
 	.setAction(async () => ({
 		default: async ({ symmioAddress: rawSymmio, admin: rawAdmin, symmioShareReceiver: rawReceiver, symmioShare }, hre) => {
+			await assertStandaloneDeploymentTaskAllowed(hre, "deploy:feeDistributor")
 			const { ethers, upgrades } = await getConnection(hre)
 			logger.section("SymmioFeeDistributor Deployment")
 
@@ -37,8 +45,8 @@ export const feeDistributorTask = task("deploy:feeDistributor", "Deploys the Sym
 			const contract = await deployProxyWithFallback(hre, factory, [admin, symmioAddress, symmioShareReceiver, symmioShare], {
 				initializer: "initialize",
 				kind: "transparent",
+				label: "SymmioFeeDistributor",
 			})
-			await contract.waitForDeployment()
 
 			const addresses = {
 				proxy: await contract.getAddress(),

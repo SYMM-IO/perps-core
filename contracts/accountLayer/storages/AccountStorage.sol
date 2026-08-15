@@ -131,7 +131,8 @@ library AccountStorage {
 		/// @dev Maps SubAccount => nonce. Next VA address = _generateVirtualAccountAddress(parent, nonce).
 		mapping(address => uint256) subAccountVirtualNonces;
 		/// @notice Authorized signer for protocol-level operations
-		/// @dev Used for operations requiring protocol authorization.
+		/// @dev Persistent signer used by existing AccountManager integrations. InstantLayer
+		///      execution uses LibAccountLayerSigner's transient override.
 		address globalSigner;
 		/// @notice Bytecode for AccountManager deployment
 		/// @dev AccountManagers are full contracts deployed per affiliate via CREATE2.
