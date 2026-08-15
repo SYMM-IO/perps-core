@@ -8,16 +8,11 @@
 		"url": "https://github.com/SYMM-IO/symmio-core"
 	},
 	"devDependencies": {
-		"@ethersproject/abi": "^5.7.0",
-		"@ethersproject/abstract-signer": "^5.7.0",
-		"@ethersproject/bignumber": "^5.7.0",
-		"@ethersproject/bytes": "^5.7.0",
-		"@ethersproject/providers": "^5.7.2",
 		"@nomicfoundation/hardhat-ethers": "^4.0.3",
 		"@nomicfoundation/hardhat-ethers-chai-matchers": "^3.0.10",
 		"@nomicfoundation/hardhat-ignition": "^3.1.7",
 		"@nomicfoundation/hardhat-ignition-ethers": "^3.1.6",
-		"@nomicfoundation/hardhat-keystore": "^3.0.12",
+		"@nomicfoundation/hardhat-keystore": "^3.0.13",
 		"@nomicfoundation/hardhat-ledger": "3.0.10",
 		"@nomicfoundation/hardhat-mocha": "^3.0.21",
 		"@nomicfoundation/hardhat-network-helpers": "^3.0.10",
@@ -38,7 +33,7 @@
 		"dotenv": "^17.4.2",
 		"ethers": "^6.13.1",
 		"fs-extra": "^11.2.0",
-		"hardhat": "^3.1.0",
+		"hardhat": "^3.13.0",
 		"husky": "^9.1.7",
 		"js-sha3": "^0.9.3",
 		"mocha": "^11.0.0",
@@ -107,6 +102,13 @@
 		"@safe-global/types-kit": "4.0.1",
 		"bignumber.js": "^9.3.1",
 		"prettier-plugin-solidity": "^2.2.0"
+	},
+	"overrides": {
+		"axios": "1.18.0",
+		"mocha": {
+			"diff": "8.0.3",
+			"serialize-javascript": "7.0.5"
+		}
 	},
 	"bin": "./cli/symmio.js"
 }
