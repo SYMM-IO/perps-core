@@ -6,7 +6,6 @@
 :root {
 	--header-h: 57px;
 	--rail: 304px;
-	--content-measure: 72ch;
 	--control-size: 36px;
 }
 
@@ -605,14 +604,6 @@ body.doc-page .reader-main > .chapter-pager,
 body.doc-page .doc-article > :is(.code-frame, .table-wrap, .tool-panel, figure, table, pre) {
 	width: 100%;
 	max-width: none;
-}
-
-/* Reading text stays in a comfortable measure while code, diagrams and tables
-   can use the full reader canvas. This is the single content-width rule for
-   both release families and standalone guides. */
-body.doc-page .doc-article > :is(p, ul, ol, blockquote, h2, h3, h4, h5, h6),
-body.doc-page .doc-article > section > :is(p, ul, ol, blockquote, h2, h3, h4, h5, h6) {
-	max-width: var(--content-measure);
 }
 
 .chapter-pager a {
