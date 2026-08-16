@@ -7,7 +7,7 @@ import fs from "node:fs";
 const CONSTANTS_TS = projectPath("tasks", "deploy", "constants.ts");
 
 // FacetNames contains facets added by diamondCut. DiamondCutFacet is installed separately.
-export const EXPECTED_CORE_FACETS = 32;
+export const EXPECTED_CORE_FACETS = 33;
 
 export function checkFacetMirrorDrift() {
 	if (!fs.existsSync(CONSTANTS_TS)) {

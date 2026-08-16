@@ -3,184 +3,187 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="description" content="Complete reference of every flow, state, edge case, and scenario the operator bot must handle." />
 		<title>Express Provider Bot Operations Checklist - Symmio Core v0.8.6</title>
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Apply the saved preference before first paint.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
 		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
 		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
 	</head>
-	<body class="doc-page">
+	<body class="doc-page" data-version="0.8.6">
 		<a class="skip-link" href="#full-document">Skip to document</a>
 
-		<header class="doc-topbar">
-			<a class="brand" href="../index.html"
-				><span class="brand-mark">8.6</span><span><strong>v0.8.6 Changelog</strong></span></a
-			>
-			<nav class="top-actions" aria-label="Page actions">
-				<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
-			</nav>
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
 		</header>
 		<div class="reader-shell">
-			<aside class="doc-sidebar" aria-label="Documentation navigation" data-doc-nav></aside>
-			<aside class="toc-panel side-toc" aria-label="Page navigation">
-				<div class="toc-card">
-					<p class="toc-title">On this page</p>
-					<a class="toc-link level-2" href="#table-of-contents">Table of Contents</a>
-					<a class="toc-link level-2" href="#1-overview">1. Overview</a>
-					<a class="toc-link level-3" href="#option-types">Option Types</a>
-					<a class="toc-link level-2" href="#2-state-machine">2. State Machine</a>
-					<a class="toc-link level-3" href="#expressprovider-internal-status">ExpressProvider Internal Status</a>
-					<a class="toc-link level-3" href="#state-transition-diagrams">State Transition Diagrams</a>
-					<a class="toc-link level-3" href="#transition-triggers">Transition Triggers</a>
-					<a class="toc-link level-3" href="#numeric-example-state-transitions-for-a-500-usdc-windowed-withdrawal"
-						>Numeric Example: State Transitions for a 500 USDC WINDOWED Withdrawal</a
-					>
-					<a class="toc-link level-2" href="#3-timing">3. Timing</a>
-					<a class="toc-link level-3" href="#3-1-processableat-lookup-table">3.1 processableAt Lookup Table</a>
-					<a class="toc-link level-3" href="#3-2-security-window-tolerance-period">3.2 Security Window &amp; Tolerance Period</a>
-					<a class="toc-link level-3" href="#3-3-complete-timing-diagram">3.3 Complete Timing Diagram</a>
-					<a class="toc-link level-3" href="#3-4-configurable-parameters">3.4 Configurable Parameters</a>
-					<a class="toc-link level-3" href="#3-5-fixed-timing">3.5 Fixed Timing</a>
-					<a class="toc-link level-3" href="#3-6-special-timing-cases">3.6 Special Timing Cases</a>
-					<a class="toc-link level-2" href="#4-options-api">4. Options API</a>
-					<a class="toc-link level-3" href="#4-1-decision-tree">4.1 Decision Tree</a>
-					<a class="toc-link level-3" href="#4-2-on-user-withdrawal-request">4.2 On User Withdrawal Request</a>
-					<a class="toc-link level-3" href="#4-3-parts-construction">4.3 Parts Construction</a>
-					<a class="toc-link level-3" href="#4-4-providerdata-encoding">4.4 providerData Encoding</a>
-					<a class="toc-link level-3" href="#4-5-nonce-management">4.5 Nonce Management</a>
-					<a class="toc-link level-3" href="#4-6-signing-requirements">4.6 Signing Requirements</a>
-					<a class="toc-link level-2" href="#5-withdrawal-flows">5. Withdrawal Flows</a>
-					<a class="toc-link level-3" href="#5-1-same-tx-optiontype-0">5.1 SAME_TX (optionType = 0)</a>
-					<a class="toc-link level-3" href="#5-2-windowed-optiontype-1">5.2 WINDOWED (optionType = 1)</a>
-					<a class="toc-link level-3" href="#5-3-standard-optiontype-2">5.3 STANDARD (optionType = 2)</a>
-					<a class="toc-link level-3" href="#5-4-credit-backed-withdrawal">5.4 Credit-Backed Withdrawal</a>
-					<a class="toc-link level-2" href="#6-processing-finalization">6. Processing &amp; Finalization</a>
-					<a class="toc-link level-3" href="#6-1-after-acceptance">6.1 After Acceptance</a>
-					<a class="toc-link level-3" href="#6-2-processing-processwithdraw">6.2 Processing (`processWithdraw`)</a>
-					<a class="toc-link level-3" href="#6-3-finalization-finalizewithdrawrequest-on-symmio"
-						>6.3 Finalization (`finalizeWithdrawRequest` on SYMMIO)</a
-					>
-					<a class="toc-link level-3" href="#6-4-permissionless-fallback">6.4 Permissionless Fallback</a>
-					<a class="toc-link level-2" href="#7-event-monitoring">7. Event Monitoring</a>
-					<a class="toc-link level-3" href="#7-1-event-handling-flow">7.1 Event Handling Flow</a>
-					<a class="toc-link level-3" href="#7-2-events-to-monitor">7.2 Events to Monitor</a>
-					<a class="toc-link level-3" href="#7-3-idempotency-requirements">7.3 Idempotency Requirements</a>
-					<a class="toc-link level-2" href="#8-fee-system">8. Fee System</a>
-					<a class="toc-link level-3" href="#8-1-fee-calculation-flow">8.1 Fee Calculation Flow</a>
-					<a class="toc-link level-3" href="#8-2-fee-deduction-order-in-transfertoreceivers"
-						>8.2 Fee Deduction Order (in `transferToReceivers`)</a
-					>
-					<a class="toc-link level-3" href="#8-3-bot-must-read-before-signing">8.3 Bot Must Read Before Signing</a>
-					<a class="toc-link level-2" href="#9-validator-system">9. Validator System</a>
-					<a class="toc-link level-3" href="#9-1-validator-attestation-flow">9.1 Validator Attestation Flow</a>
-					<a class="toc-link level-3" href="#9-2-when-validators-are-required">9.2 When Validators Are Required</a>
-					<a class="toc-link level-3" href="#9-3-validatorapproval-eip-712-structure">9.3 ValidatorApproval EIP-712 Structure</a>
-					<a class="toc-link level-3" href="#9-4-validation-rules">9.4 Validation Rules</a>
-					<a class="toc-link level-3" href="#9-5-bot-checklist-for-validators">9.5 Bot Checklist for Validators</a>
-					<a class="toc-link level-3" href="#9-6-edge-cases">9.6 Edge Cases</a>
-					<a class="toc-link level-2" href="#10-credit-line-system">10. Credit Line System</a>
-					<a class="toc-link level-3" href="#10-1-virtualprovider-is-deprecated">10.1 VirtualProvider is Replaced by Credit Line</a>
-					<a class="toc-link level-3" href="#10-2-credit-debt-lifecycle">10.2 Credit Debt Lifecycle</a>
-					<a class="toc-link level-3" href="#10-3-bot-monitoring-for-credit-lines">10.3 Bot Monitoring for Credit Lines</a>
-					<a class="toc-link level-3" href="#10-4-how-credit-lines-work">10.4 How Credit Lines Work</a>
-					<a class="toc-link level-3" href="#10-5-bot-decision-logic-for-credit">10.5 Bot Decision Logic for Credit</a>
-					<a class="toc-link level-3" href="#10-6-cap-aware-accelerate-polling-standard-windowed"
-						>10.6 Cap-Aware Accelerate Polling (STANDARD → WINDOWED)</a
-					>
-					<a class="toc-link level-3" href="#10-7-affiliate-cap-self-service-fee">10.7 Affiliate Cap Self-Service &amp; Fee</a>
-					<a class="toc-link level-2" href="#11-multi-part-withdrawals">11. Multi-Part Withdrawals</a>
-					<a class="toc-link level-3" href="#11-1-part-classification">11.1 Part Classification</a>
-					<a class="toc-link level-3" href="#11-2-multi-part-fee-cascading">11.2 Multi-Part Fee Cascading</a>
-					<a class="toc-link level-3" href="#11-3-credit-line-in-multi-part-withdrawals">11.3 Credit Line in Multi-Part Withdrawals</a>
-					<a class="toc-link level-3" href="#11-4-partshash-integrity">11.4 partsHash Integrity</a>
-					<a class="toc-link level-2" href="#12-risk-lock-unlock">12. Risk Lock / Unlock</a>
-					<a class="toc-link level-3" href="#12-1-lock-resolution-paths">12.1 Lock Resolution Paths</a>
-					<a class="toc-link level-3" href="#12-2-role-separation-critical-design">12.2 Role Separation (Critical Design)</a>
-					<a class="toc-link level-3" href="#12-3-bot-checklist-for-risk">12.3 Bot Checklist for Risk</a>
-					<a class="toc-link level-2" href="#part-iv-safety-risk-continued">Part IV: Safety &amp; Risk (continued)</a>
-					<a class="toc-link level-2" href="#13-cancellation-suspension">13. Cancellation &amp; Suspension</a>
-					<a class="toc-link level-3" href="#13-1-cancellation-decision-tree">13.1 Cancellation Decision Tree</a>
-					<a class="toc-link level-3" href="#13-2-cancellation-matrix">13.2 Cancellation Matrix</a>
-					<a class="toc-link level-3" href="#13-3-what-gets-released-on-cancel-suspend">13.3 What Gets Released on Cancel/Suspend</a>
-					<a class="toc-link level-3" href="#13-4-bot-reactions-to-cancel-suspend">13.4 Bot Reactions to Cancel/Suspend</a>
-					<a class="toc-link level-2" href="#14-error-catalog">14. Error Catalog</a>
-					<a class="toc-link level-3" href="#14-1-error-decision-tree">14.1 Error Decision Tree</a>
-					<a class="toc-link level-3" href="#14-2-signature-auth-errors">14.2 Signature &amp; Auth Errors</a>
-					<a class="toc-link level-3" href="#14-3-liquidity-errors">14.3 Liquidity Errors</a>
-					<a class="toc-link level-3" href="#14-4-fee-errors">14.4 Fee Errors</a>
-					<a class="toc-link level-3" href="#14-5-state-errors">14.5 State Errors</a>
-					<a class="toc-link level-3" href="#14-6-validation-errors">14.6 Validation Errors</a>
-					<a class="toc-link level-3" href="#14-7-bot-scenarios-for-key-errors">14.7 Bot Scenarios for Key Errors</a>
-					<a class="toc-link level-2" href="#15-edge-cases-race-conditions">15. Edge Cases &amp; Race Conditions</a>
-					<a class="toc-link level-3" href="#15-1-liquidity-race-conditions">15.1 Liquidity Race Conditions</a>
-					<a class="toc-link level-3" href="#15-2-config-changes-mid-flight">15.2 Config Changes Mid-Flight</a>
-					<a class="toc-link level-3" href="#15-3-nonce-edge-cases">15.3 Nonce Edge Cases</a>
-					<a class="toc-link level-3" href="#15-4-timing-edge-cases">15.4 Timing Edge Cases</a>
-					<a class="toc-link level-3" href="#15-5-credit-line-edge-cases">15.5 Credit Line Edge Cases</a>
-					<a class="toc-link level-3" href="#15-6-standard-specific-edge-cases">15.6 STANDARD-Specific Edge Cases</a>
-					<a class="toc-link level-3" href="#15-7-admin-configuration-change-scenarios">15.7 Admin / Configuration Change Scenarios</a>
-					<a class="toc-link level-3" href="#15-8-locked-scenario">15.8 LOCKED Scenario</a>
-					<a class="toc-link level-3" href="#15-9-standard-processwithdraw-too-early">15.9 STANDARD processWithdraw Too Early</a>
-					<a class="toc-link level-3" href="#15-10-non-existent-withdrawal">15.10 Non-Existent Withdrawal</a>
-					<a class="toc-link level-3" href="#15-11-zero-amount-parts">15.11 Zero-Amount Parts</a>
-					<a
-						class="toc-link level-3"
-						href="#15-12-same-tx-cannot-be-cancelled-already-processed-but-can-trigger-suspend-with-post-payout-rollback"
-						>15.12 SAME_TX Cannot Be Cancelled (already PROCESSED), but CAN trigger suspend with post-payout rollback</a
-					>
-					<a class="toc-link level-3" href="#15-13-duplicate-finalization-callback">15.13 Duplicate Finalization Callback</a>
-					<a class="toc-link level-2" href="#part-v-operations">Part V: Operations</a>
-					<a class="toc-link level-2" href="#16-pool-management">16. Pool Management</a>
-					<a class="toc-link level-3" href="#16-1-pool-lifecycle-diagram">16.1 Pool Lifecycle Diagram</a>
-					<a class="toc-link level-3" href="#16-2-pool-types">16.2 Pool Types</a>
-					<a class="toc-link level-3" href="#16-3-available-liquidity-formulas">16.3 Available Liquidity Formulas</a>
-					<a class="toc-link level-3" href="#16-4-bot-pool-monitoring">16.4 Bot Pool Monitoring</a>
-					<a class="toc-link level-2" href="#17-access-control">17. Access Control</a>
-					<a class="toc-link level-3" href="#17-1-role-interaction-diagram">17.1 Role Interaction Diagram</a>
-					<a class="toc-link level-3" href="#17-2-expressprovider-roles">17.2 ExpressProvider Roles</a>
-					<a class="toc-link level-3" href="#17-3-credit-line-functions-on-the-diamond">17.3 Credit Line Functions (on the Diamond)</a>
-					<a class="toc-link level-3" href="#17-4-symmio-gated-functions-no-role-msg-sender-symmio"
-						>17.4 SYMMIO-Gated Functions (no role, `msg.sender == symmio`)</a
-					>
-					<a class="toc-link level-2" href="#18-operational-invariants">18. Operational Invariants</a>
-					<a class="toc-link level-3" href="#18-1-invariant-check-diagram">18.1 Invariant Check Diagram</a>
-					<a class="toc-link level-3" href="#18-2-accounting-invariants">18.2 Accounting Invariants</a>
-					<a class="toc-link level-3" href="#18-3-bot-reliability-requirements">18.3 Bot Reliability Requirements</a>
-					<a class="toc-link level-3" href="#18-4-graceful-degradation">18.4 Graceful Degradation</a>
-					<a class="toc-link level-2" href="#quick-reference-complete-bot-action-timeline">Quick Reference: Complete Bot Action Timeline</a>
-					<a class="toc-link level-2" href="#part-vi-reference">Part VI: Reference</a>
-					<a class="toc-link level-2" href="#19-complete-state-x-option-type-decision-matrix"
-						>19. Complete State x Option Type Decision Matrix</a
-					>
-					<a class="toc-link level-3" href="#same-tx-x-none">SAME_TX x NONE</a>
-					<a class="toc-link level-3" href="#same-tx-x-accepted">SAME_TX x ACCEPTED</a>
-					<a class="toc-link level-3" href="#same-tx-x-locked">SAME_TX x LOCKED</a>
-					<a class="toc-link level-3" href="#same-tx-x-processed">SAME_TX x PROCESSED</a>
-					<a class="toc-link level-3" href="#same-tx-x-finalized">SAME_TX x FINALIZED</a>
-					<a class="toc-link level-3" href="#same-tx-x-cancelled">SAME_TX x CANCELLED</a>
-					<a class="toc-link level-3" href="#same-tx-x-suspended">SAME_TX x SUSPENDED</a>
-					<a class="toc-link level-3" href="#windowed-x-none">WINDOWED x NONE</a>
-					<a class="toc-link level-3" href="#windowed-x-accepted">WINDOWED x ACCEPTED</a>
-					<a class="toc-link level-3" href="#windowed-x-locked">WINDOWED x LOCKED</a>
-					<a class="toc-link level-3" href="#windowed-x-processed">WINDOWED x PROCESSED</a>
-					<a class="toc-link level-3" href="#windowed-x-finalized">WINDOWED x FINALIZED</a>
-					<a class="toc-link level-3" href="#windowed-x-cancelled">WINDOWED x CANCELLED</a>
-					<a class="toc-link level-3" href="#windowed-x-suspended">WINDOWED x SUSPENDED</a>
-					<a class="toc-link level-3" href="#standard-x-none">STANDARD x NONE</a>
-					<a class="toc-link level-3" href="#standard-x-accepted">STANDARD x ACCEPTED</a>
-					<a class="toc-link level-3" href="#standard-x-locked">STANDARD x LOCKED</a>
-					<a class="toc-link level-3" href="#standard-x-processed">STANDARD x PROCESSED</a>
-					<a class="toc-link level-3" href="#standard-x-finalized">STANDARD x FINALIZED</a>
-					<a class="toc-link level-3" href="#standard-x-cancelled">STANDARD x CANCELLED</a>
-					<a class="toc-link level-3" href="#standard-x-suspended">STANDARD x SUSPENDED</a>
-					<a class="toc-link level-3" href="#summary-matrix">Summary Matrix</a>
-					<a class="toc-link level-3" href="#key-differences-by-option-type">Key Differences by Option Type</a>
-				</div>
-			</aside>
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#table-of-contents">Table of Contents</a>
+				<a class="toc-link level-2" href="#1-overview">1. Overview</a>
+				<a class="toc-link level-3" href="#option-types">Option Types</a>
+				<a class="toc-link level-2" href="#2-state-machine">2. State Machine</a>
+				<a class="toc-link level-3" href="#expressprovider-internal-status">ExpressProvider Internal Status</a>
+				<a class="toc-link level-3" href="#state-transition-diagrams">State Transition Diagrams</a>
+				<a class="toc-link level-3" href="#transition-triggers">Transition Triggers</a>
+				<a class="toc-link level-3" href="#numeric-example-state-transitions-for-a-500-usdc-windowed-withdrawal"
+					>Numeric Example: State Transitions for a 500 USDC WINDOWED Withdrawal</a
+				>
+				<a class="toc-link level-2" href="#3-timing">3. Timing</a>
+				<a class="toc-link level-3" href="#3-1-processableat-lookup-table">3.1 processableAt Lookup Table</a>
+				<a class="toc-link level-3" href="#3-2-security-window-tolerance-period">3.2 Security Window &amp; Tolerance Period</a>
+				<a class="toc-link level-3" href="#3-3-complete-timing-diagram">3.3 Complete Timing Diagram</a>
+				<a class="toc-link level-3" href="#3-4-configurable-parameters">3.4 Configurable Parameters</a>
+				<a class="toc-link level-3" href="#3-5-fixed-timing">3.5 Fixed Timing</a>
+				<a class="toc-link level-3" href="#3-6-special-timing-cases">3.6 Special Timing Cases</a>
+				<a class="toc-link level-2" href="#4-options-api">4. Options API</a>
+				<a class="toc-link level-3" href="#4-1-decision-tree">4.1 Decision Tree</a>
+				<a class="toc-link level-3" href="#4-2-on-user-withdrawal-request">4.2 On User Withdrawal Request</a>
+				<a class="toc-link level-3" href="#4-3-parts-construction">4.3 Parts Construction</a>
+				<a class="toc-link level-3" href="#4-4-providerdata-encoding">4.4 providerData Encoding</a>
+				<a class="toc-link level-3" href="#4-5-nonce-management">4.5 Nonce Management</a>
+				<a class="toc-link level-3" href="#4-6-signing-requirements">4.6 Signing Requirements</a>
+				<a class="toc-link level-2" href="#5-withdrawal-flows">5. Withdrawal Flows</a>
+				<a class="toc-link level-3" href="#5-1-same-tx-optiontype-0">5.1 SAME_TX (optionType = 0)</a>
+				<a class="toc-link level-3" href="#5-2-windowed-optiontype-1">5.2 WINDOWED (optionType = 1)</a>
+				<a class="toc-link level-3" href="#5-3-standard-optiontype-2">5.3 STANDARD (optionType = 2)</a>
+				<a class="toc-link level-3" href="#5-4-credit-backed-withdrawal">5.4 Credit-Backed Withdrawal</a>
+				<a class="toc-link level-2" href="#6-processing-finalization">6. Processing &amp; Finalization</a>
+				<a class="toc-link level-3" href="#6-1-after-acceptance">6.1 After Acceptance</a>
+				<a class="toc-link level-3" href="#6-2-processing-processwithdraw">6.2 Processing (`processWithdraw`)</a>
+				<a class="toc-link level-3" href="#6-3-finalization-finalizewithdrawrequest-on-symmio"
+					>6.3 Finalization (`finalizeWithdrawRequest` on SYMMIO)</a
+				>
+				<a class="toc-link level-3" href="#6-4-permissionless-fallback">6.4 Permissionless Fallback</a>
+				<a class="toc-link level-2" href="#7-event-monitoring">7. Event Monitoring</a>
+				<a class="toc-link level-3" href="#7-1-event-handling-flow">7.1 Event Handling Flow</a>
+				<a class="toc-link level-3" href="#7-2-events-to-monitor">7.2 Events to Monitor</a>
+				<a class="toc-link level-3" href="#7-3-idempotency-requirements">7.3 Idempotency Requirements</a>
+				<a class="toc-link level-2" href="#8-fee-system">8. Fee System</a>
+				<a class="toc-link level-3" href="#8-1-fee-calculation-flow">8.1 Fee Calculation Flow</a>
+				<a class="toc-link level-3" href="#8-2-fee-deduction-order-in-transfertoreceivers"
+					>8.2 Fee Deduction Order (in `transferToReceivers`)</a
+				>
+				<a class="toc-link level-3" href="#8-3-bot-must-read-before-signing">8.3 Bot Must Read Before Signing</a>
+				<a class="toc-link level-2" href="#9-validator-system">9. Validator System</a>
+				<a class="toc-link level-3" href="#9-1-validator-attestation-flow">9.1 Validator Attestation Flow</a>
+				<a class="toc-link level-3" href="#9-2-when-validators-are-required">9.2 When Validators Are Required</a>
+				<a class="toc-link level-3" href="#9-3-validatorapproval-eip-712-structure">9.3 ValidatorApproval EIP-712 Structure</a>
+				<a class="toc-link level-3" href="#9-4-validation-rules">9.4 Validation Rules</a>
+				<a class="toc-link level-3" href="#9-5-bot-checklist-for-validators">9.5 Bot Checklist for Validators</a>
+				<a class="toc-link level-3" href="#9-6-edge-cases">9.6 Edge Cases</a>
+				<a class="toc-link level-2" href="#10-credit-line-system">10. Credit Line System</a>
+				<a class="toc-link level-3" href="#10-1-virtualprovider-is-deprecated">10.1 VirtualProvider is Replaced by Credit Line</a>
+				<a class="toc-link level-3" href="#10-2-credit-debt-lifecycle">10.2 Credit Debt Lifecycle</a>
+				<a class="toc-link level-3" href="#10-3-bot-monitoring-for-credit-lines">10.3 Bot Monitoring for Credit Lines</a>
+				<a class="toc-link level-3" href="#10-4-how-credit-lines-work">10.4 How Credit Lines Work</a>
+				<a class="toc-link level-3" href="#10-5-bot-decision-logic-for-credit">10.5 Bot Decision Logic for Credit</a>
+				<a class="toc-link level-3" href="#10-6-cap-aware-accelerate-polling-standard-windowed"
+					>10.6 Cap-Aware Accelerate Polling (STANDARD → WINDOWED)</a
+				>
+				<a class="toc-link level-3" href="#10-7-affiliate-cap-self-service-fee">10.7 Affiliate Cap Self-Service &amp; Fee</a>
+				<a class="toc-link level-2" href="#11-multi-part-withdrawals">11. Multi-Part Withdrawals</a>
+				<a class="toc-link level-3" href="#11-1-part-classification">11.1 Part Classification</a>
+				<a class="toc-link level-3" href="#11-2-multi-part-fee-cascading">11.2 Multi-Part Fee Cascading</a>
+				<a class="toc-link level-3" href="#11-3-credit-line-in-multi-part-withdrawals">11.3 Credit Line in Multi-Part Withdrawals</a>
+				<a class="toc-link level-3" href="#11-4-partshash-integrity">11.4 partsHash Integrity</a>
+				<a class="toc-link level-2" href="#12-risk-lock-unlock">12. Risk Lock / Unlock</a>
+				<a class="toc-link level-3" href="#12-1-lock-resolution-paths">12.1 Lock Resolution Paths</a>
+				<a class="toc-link level-3" href="#12-2-role-separation-critical-design">12.2 Role Separation (Critical Design)</a>
+				<a class="toc-link level-3" href="#12-3-bot-checklist-for-risk">12.3 Bot Checklist for Risk</a>
+				<a class="toc-link level-2" href="#part-iv-safety-risk-continued">Part IV: Safety &amp; Risk (continued)</a>
+				<a class="toc-link level-2" href="#13-cancellation-suspension">13. Cancellation &amp; Suspension</a>
+				<a class="toc-link level-3" href="#13-1-cancellation-decision-tree">13.1 Cancellation Decision Tree</a>
+				<a class="toc-link level-3" href="#13-2-cancellation-matrix">13.2 Cancellation Matrix</a>
+				<a class="toc-link level-3" href="#13-3-what-gets-released-on-cancel-suspend">13.3 What Gets Released on Cancel/Suspend</a>
+				<a class="toc-link level-3" href="#13-4-bot-reactions-to-cancel-suspend">13.4 Bot Reactions to Cancel/Suspend</a>
+				<a class="toc-link level-2" href="#14-error-catalog">14. Error Catalog</a>
+				<a class="toc-link level-3" href="#14-1-error-decision-tree">14.1 Error Decision Tree</a>
+				<a class="toc-link level-3" href="#14-2-signature-auth-errors">14.2 Signature &amp; Auth Errors</a>
+				<a class="toc-link level-3" href="#14-3-liquidity-errors">14.3 Liquidity Errors</a>
+				<a class="toc-link level-3" href="#14-4-fee-errors">14.4 Fee Errors</a>
+				<a class="toc-link level-3" href="#14-5-state-errors">14.5 State Errors</a>
+				<a class="toc-link level-3" href="#14-6-validation-errors">14.6 Validation Errors</a>
+				<a class="toc-link level-3" href="#14-7-bot-scenarios-for-key-errors">14.7 Bot Scenarios for Key Errors</a>
+				<a class="toc-link level-2" href="#15-edge-cases-race-conditions">15. Edge Cases &amp; Race Conditions</a>
+				<a class="toc-link level-3" href="#15-1-liquidity-race-conditions">15.1 Liquidity Race Conditions</a>
+				<a class="toc-link level-3" href="#15-2-config-changes-mid-flight">15.2 Config Changes Mid-Flight</a>
+				<a class="toc-link level-3" href="#15-3-nonce-edge-cases">15.3 Nonce Edge Cases</a>
+				<a class="toc-link level-3" href="#15-4-timing-edge-cases">15.4 Timing Edge Cases</a>
+				<a class="toc-link level-3" href="#15-5-credit-line-edge-cases">15.5 Credit Line Edge Cases</a>
+				<a class="toc-link level-3" href="#15-6-standard-specific-edge-cases">15.6 STANDARD-Specific Edge Cases</a>
+				<a class="toc-link level-3" href="#15-7-admin-configuration-change-scenarios">15.7 Admin / Configuration Change Scenarios</a>
+				<a class="toc-link level-3" href="#15-8-locked-scenario">15.8 LOCKED Scenario</a>
+				<a class="toc-link level-3" href="#15-9-standard-processwithdraw-too-early">15.9 STANDARD processWithdraw Too Early</a>
+				<a class="toc-link level-3" href="#15-10-non-existent-withdrawal">15.10 Non-Existent Withdrawal</a>
+				<a class="toc-link level-3" href="#15-11-zero-amount-parts">15.11 Zero-Amount Parts</a>
+				<a class="toc-link level-3" href="#15-13-duplicate-finalization-callback">15.13 Duplicate Finalization Callback</a>
+				<a class="toc-link level-2" href="#part-v-operations">Part V: Operations</a>
+				<a class="toc-link level-2" href="#16-pool-management">16. Pool Management</a>
+				<a class="toc-link level-3" href="#16-1-pool-lifecycle-diagram">16.1 Pool Lifecycle Diagram</a>
+				<a class="toc-link level-3" href="#16-2-pool-types">16.2 Pool Types</a>
+				<a class="toc-link level-3" href="#16-3-available-liquidity-formulas">16.3 Available Liquidity Formulas</a>
+				<a class="toc-link level-3" href="#16-4-bot-pool-monitoring">16.4 Bot Pool Monitoring</a>
+				<a class="toc-link level-2" href="#17-access-control">17. Access Control</a>
+				<a class="toc-link level-3" href="#17-1-role-interaction-diagram">17.1 Role Interaction Diagram</a>
+				<a class="toc-link level-3" href="#17-2-expressprovider-roles">17.2 ExpressProvider Roles</a>
+				<a class="toc-link level-3" href="#17-3-credit-line-functions-on-the-diamond">17.3 Credit Line Functions (on the Diamond)</a>
+				<a class="toc-link level-3" href="#17-4-symmio-gated-functions-no-role-msg-sender-symmio"
+					>17.4 SYMMIO-Gated Functions (no role, `msg.sender == symmio`)</a
+				>
+				<a class="toc-link level-2" href="#18-operational-invariants">18. Operational Invariants</a>
+				<a class="toc-link level-3" href="#18-1-invariant-check-diagram">18.1 Invariant Check Diagram</a>
+				<a class="toc-link level-3" href="#18-2-accounting-invariants">18.2 Accounting Invariants</a>
+				<a class="toc-link level-3" href="#18-3-bot-reliability-requirements">18.3 Bot Reliability Requirements</a>
+				<a class="toc-link level-3" href="#18-4-graceful-degradation">18.4 Graceful Degradation</a>
+				<a class="toc-link level-2" href="#quick-reference-complete-bot-action-timeline">Quick Reference: Complete Bot Action Timeline</a>
+				<a class="toc-link level-2" href="#part-vi-reference">Part VI: Reference</a>
+				<a class="toc-link level-2" href="#19-complete-state-x-option-type-decision-matrix"
+					>19. Complete State x Option Type Decision Matrix</a
+				>
+				<a class="toc-link level-3" href="#same-tx-x-none">SAME_TX x NONE</a>
+				<a class="toc-link level-3" href="#same-tx-x-accepted">SAME_TX x ACCEPTED</a>
+				<a class="toc-link level-3" href="#same-tx-x-locked">SAME_TX x LOCKED</a>
+				<a class="toc-link level-3" href="#same-tx-x-processed">SAME_TX x PROCESSED</a>
+				<a class="toc-link level-3" href="#same-tx-x-finalized">SAME_TX x FINALIZED</a>
+				<a class="toc-link level-3" href="#same-tx-x-cancelled">SAME_TX x CANCELLED</a>
+				<a class="toc-link level-3" href="#same-tx-x-suspended">SAME_TX x SUSPENDED</a>
+				<a class="toc-link level-3" href="#windowed-x-none">WINDOWED x NONE</a>
+				<a class="toc-link level-3" href="#windowed-x-accepted">WINDOWED x ACCEPTED</a>
+				<a class="toc-link level-3" href="#windowed-x-locked">WINDOWED x LOCKED</a>
+				<a class="toc-link level-3" href="#windowed-x-processed">WINDOWED x PROCESSED</a>
+				<a class="toc-link level-3" href="#windowed-x-finalized">WINDOWED x FINALIZED</a>
+				<a class="toc-link level-3" href="#windowed-x-cancelled">WINDOWED x CANCELLED</a>
+				<a class="toc-link level-3" href="#windowed-x-suspended">WINDOWED x SUSPENDED</a>
+				<a class="toc-link level-3" href="#standard-x-none">STANDARD x NONE</a>
+				<a class="toc-link level-3" href="#standard-x-accepted">STANDARD x ACCEPTED</a>
+				<a class="toc-link level-3" href="#standard-x-locked">STANDARD x LOCKED</a>
+				<a class="toc-link level-3" href="#standard-x-processed">STANDARD x PROCESSED</a>
+				<a class="toc-link level-3" href="#standard-x-finalized">STANDARD x FINALIZED</a>
+				<a class="toc-link level-3" href="#standard-x-cancelled">STANDARD x CANCELLED</a>
+				<a class="toc-link level-3" href="#standard-x-suspended">STANDARD x SUSPENDED</a>
+				<a class="toc-link level-3" href="#summary-matrix">Summary Matrix</a>
+				<a class="toc-link level-3" href="#key-differences-by-option-type">Key Differences by Option Type</a>
+			</div>
 			<main class="reader-main">
 				<header class="reader-hero">
-					<nav class="crumbs" aria-label="Breadcrumb">
-						<a href="../index.html">v0.8.6</a><span>/</span><strong>Express Withdrawal</strong>
-					</nav>
 					<div class="reader-title-row">
 						<div>
 							<h1>Express Provider Bot Operations Checklist</h1>
@@ -1077,20 +1080,20 @@ What-if: same withdrawal as WINDOWED instead of STANDARD?
 					<h3 id="4-6-signing-requirements">4.6 Signing Requirements</h3>
 					<p><strong>WithdrawOption EIP-712 fields (all must be exact):</strong></p>
 					<ul>
-						<li>[ ] <code>user</code> -- the withdrawing user address</li>
-						<li>[ ] <code>nonce</code> -- must match <code>nonces[user]</code> at execution time</li>
-						<li>[ ] <code>optionType</code> -- 0-2</li>
-						<li>[ ] <code>availableAt</code> -- 0 (reserved field)</li>
-						<li>[ ] <code>affiliate</code> -- affiliate address</li>
-						<li>[ ] <code>affiliateAmount</code> -- amount from affiliate pool</li>
-						<li>[ ] <code>creditAmount</code> -- amount drawn from credit line (0 unless credit-backed; must be 0 for STANDARD)</li>
-						<li>[ ] <code>fee</code> -- must equal <code>(feeBasis * feeRate) / 10000</code> on-chain</li>
-						<li>[ ] <code>operatorFee</code> -- must match <code>affiliateConfigs[affiliate].operatorFee</code> exactly</li>
-						<li>[ ] <code>maxUserFee</code> -- max affiliate plus operator fee the user authorizes</li>
-						<li>[ ] <code>maxAccelerationFee</code> -- max extra fee user authorizes if STANDARD is accelerated</li>
-						<li>[ ] <code>partsHash</code> -- <code>keccak256(abi.encode(parts))</code></li>
-						<li>[ ] <code>deadline</code> -- signature expiry timestamp (future)</li>
-						<li>[ ] <code>signature</code> -- signed by SIGNER_ROLE holder</li>
+						<li>[ ] <code>user</code> — the withdrawing user address</li>
+						<li>[ ] <code>nonce</code> — must match <code>nonces[user]</code> at execution time</li>
+						<li>[ ] <code>optionType</code> — 0-2</li>
+						<li>[ ] <code>availableAt</code> — 0 (reserved field)</li>
+						<li>[ ] <code>affiliate</code> — affiliate address</li>
+						<li>[ ] <code>affiliateAmount</code> — amount from affiliate pool</li>
+						<li>[ ] <code>creditAmount</code> — amount drawn from credit line (0 unless credit-backed; must be 0 for STANDARD)</li>
+						<li>[ ] <code>fee</code> — must equal <code>(feeBasis * feeRate) / 10000</code> on-chain</li>
+						<li>[ ] <code>operatorFee</code> — must match <code>affiliateConfigs[affiliate].operatorFee</code> exactly</li>
+						<li>[ ] <code>maxUserFee</code> — max affiliate plus operator fee the user authorizes</li>
+						<li>[ ] <code>maxAccelerationFee</code> — max extra fee user authorizes if STANDARD is accelerated</li>
+						<li>[ ] <code>partsHash</code> — <code>keccak256(abi.encode(parts))</code></li>
+						<li>[ ] <code>deadline</code> — signature expiry timestamp (future)</li>
+						<li>[ ] <code>signature</code> — signed by SIGNER_ROLE holder</li>
 					</ul>
 					<p>
 						<strong>Domain:</strong> <code>name="ExpressProvider"</code>, <code>version="1"</code>, <code>chainId</code>,
@@ -2041,7 +2044,7 @@ Final accounting:
 							bot's scheduled processing
 						</li>
 						<li>
-							[ ] Anyone can call <code>finalizeWithdrawRequest</code> on SYMMIO -- bot should still schedule it but handle the case
+							[ ] Anyone can call <code>finalizeWithdrawRequest</code> on SYMMIO — bot should still schedule it but handle the case
 							where it's already finalized
 						</li>
 						<li>[ ] State sync: always check on-chain status before attempting actions</li>
@@ -2341,8 +2344,8 @@ Step 4 — Bot sees: cooldownEndTime reached at T=43,200s (~block 43400)
 </code></pre>
 					<h3 id="8-3-bot-must-read-before-signing">8.3 Bot Must Read Before Signing</h3>
 					<ul>
-						<li>[ ] <code>affiliateConfigs(affiliate).feeRate</code> -- current fee rate</li>
-						<li>[ ] <code>affiliateConfigs(affiliate).operatorFee</code> -- current operator fee</li>
+						<li>[ ] <code>affiliateConfigs(affiliate).feeRate</code> — current fee rate</li>
+						<li>[ ] <code>affiliateConfigs(affiliate).operatorFee</code> — current operator fee</li>
 						<li>[ ] If these change between signing and execution, the tx reverts</li>
 					</ul>
 					<h4 id="numeric-example-fee-cascading-across-3-parts">Numeric Example: Fee Cascading Across 3 Parts</h4>
@@ -2474,19 +2477,19 @@ Step 2 — Bot pre-computes: how will 15 USDC fee cascade across parts?
 					<pre><code>ValidatorApproval(address user,uint256 nonce,uint256 amount,uint256 timestamp,address symmio)
 </code></pre>
 					<ul>
-						<li><code>user</code> -- withdrawing user</li>
-						<li><code>nonce</code> -- same nonce as the WithdrawOption (the user's current nonce on ExpressProvider)</li>
+						<li><code>user</code> — withdrawing user</li>
+						<li><code>nonce</code> — same nonce as the WithdrawOption (the user's current nonce on ExpressProvider)</li>
 						<li>
-							<code>amount</code> -- <code>withdrawRequest.totalAmount</code> (the <strong>full</strong> SYMMIO withdrawal request
-							total, NOT the express portion -- a suspend rolls back the entire request, so validators must sign the total amount)
+							<code>amount</code> — <code>withdrawRequest.totalAmount</code> (the <strong>full</strong> SYMMIO withdrawal request total,
+							NOT the express portion — a suspend rolls back the entire request, so validators must sign the total amount)
 						</li>
 						<li>
-							<code>timestamp</code> -- when the validator signed; must be &lt;= <code>block.timestamp</code>, within
+							<code>timestamp</code> — when the validator signed; must be &lt;= <code>block.timestamp</code>, within
 							<code>validatorApprovalTimeout(affiliate)</code>, and strictly greater than <code>withdrawCooldownOf(user)</code> (the
 							user's last balance credit)
 						</li>
 						<li>
-							<code>symmio</code> -- the SYMMIO core address bound into the signature; together with the EIP-712 domain separator (which
+							<code>symmio</code> — the SYMMIO core address bound into the signature; together with the EIP-712 domain separator (which
 							binds <code>address(this)</code> ExpressProvider) this prevents replay across deployments
 						</li>
 					</ul>
@@ -2510,7 +2513,7 @@ Step 2 — Bot pre-computes: how will 15 USDC fee cascade across parts?
 									<code>ValidatorApprovalExpired</code>; falls back to <code>validatorApprovalTimeout(address(0))</code> default)
 								</li>
 								<li>
-									[ ] <code>timestamps[i] &gt; ISymmio(symmio).withdrawCooldownOf(user)</code> -- the approval must postdate the
+									[ ] <code>timestamps[i] &gt; ISymmio(symmio).withdrawCooldownOf(user)</code> — the approval must postdate the
 									user's last balance credit (else <code>StaleValidatorApproval</code>)
 								</li>
 								<li>
@@ -2560,11 +2563,11 @@ Step 2 — Bot pre-computes: how will 15 USDC fee cascade across parts?
 								</tr>
 								<tr>
 									<td>Wrong amount in validator sig</td>
-									<td>REJECTED (<code>InvalidValidator</code> -- recovered address not a registered validator)</td>
+									<td>REJECTED (<code>InvalidValidator</code> — recovered address not a registered validator)</td>
 								</tr>
 								<tr>
 									<td>Wrong nonce in validator sig</td>
-									<td>REJECTED (<code>InvalidValidator</code> -- recovered address not a registered validator)</td>
+									<td>REJECTED (<code>InvalidValidator</code> — recovered address not a registered validator)</td>
 								</tr>
 								<tr>
 									<td>Validator disabled after signing</td>
@@ -2587,7 +2590,7 @@ Step 2 — Bot pre-computes: how will 15 USDC fee cascade across parts?
 								</tr>
 								<tr>
 									<td>Wrong <code>symmio</code> address in signed payload</td>
-									<td>REJECTED (<code>InvalidValidator</code> -- recovered address mismatches due to typehash binding)</td>
+									<td>REJECTED (<code>InvalidValidator</code> — recovered address mismatches due to typehash binding)</td>
 								</tr>
 							</tbody>
 						</table>
@@ -2688,10 +2691,10 @@ if (parts[i].virtualProvider != address(0)) revert LibErrors.VirtualProviderMust
 </code></pre>
 					<ul>
 						<li>
-							[ ] <strong>Never set <code>virtualProvider</code></strong> in any withdrawal part -- always <code>address(0)</code>
+							[ ] <strong>Never set <code>virtualProvider</code></strong> in any withdrawal part — always <code>address(0)</code>
 						</li>
 						<li>[ ] <strong>Remove all VirtualProvider monitoring</strong> from the bot (balance polling, lock tracking, etc.)</li>
-						<li>[ ] <strong>Do not deploy new VirtualProvider contracts</strong> -- existing ones are inert</li>
+						<li>[ ] <strong>Do not deploy new VirtualProvider contracts</strong> — existing ones are inert</li>
 					</ul>
 					<h3 id="10-2-credit-debt-lifecycle">10.2 Credit Debt Lifecycle</h3>
 					<p>
@@ -2733,31 +2736,31 @@ coverLoss:           affiliateBalances[affiliate] -= covered amount, badDebt += 
 							<tbody>
 								<tr>
 									<td><code>reserveDebt</code></td>
-									<td><code>onWithdrawRequest</code> (acceptance) -- validates Muon, checks caps, increments reservedDebt</td>
+									<td><code>onWithdrawRequest</code> (acceptance) — validates Muon, checks caps, increments reservedDebt</td>
 									<td>SymmioHookFacetImpl via LibCreditLine.reserveDebt</td>
 								</tr>
 								<tr>
 									<td><code>activate</code></td>
 									<td>
 										<code>processWithdraw</code> / <code>unlockAndProcess</code> / inline SAME_TX in
-										<code>onWithdrawRequest</code> -- moves reserved -&gt; active and calls <code>ISymmio.advanceWithdraw</code>
+										<code>onWithdrawRequest</code> — moves reserved -&gt; active and calls <code>ISymmio.advanceWithdraw</code>
 									</td>
 									<td>OperatorFacetImpl / SymmioHookFacetImpl via LibCreditLine.activate</td>
 								</tr>
 								<tr>
 									<td><code>settle</code></td>
-									<td><code>onWithdrawComplete</code> (finalization) -- removes from active and clears request state</td>
+									<td><code>onWithdrawComplete</code> (finalization) — removes from active and clears request state</td>
 									<td>SymmioHookFacetImpl via LibCreditLine.settle</td>
 								</tr>
 								<tr>
 									<td><code>releaseReservation</code></td>
-									<td><code>onWithdrawCancelRequest</code> (pre-payout, ACCEPTED only) -- removes from reservedDebt</td>
+									<td><code>onWithdrawCancelRequest</code> (pre-payout, ACCEPTED only) — removes from reservedDebt</td>
 									<td>SymmioHookFacetImpl via LibCreditLine.releaseReservation</td>
 								</tr>
 								<tr>
 									<td><code>coverLoss</code></td>
 									<td>
-										<code>onWithdrawSuspend</code> when status was PROCESSED (post-payout rollback) -- deducts from affiliate pool
+										<code>onWithdrawSuspend</code> when status was PROCESSED (post-payout rollback) — deducts from affiliate pool
 										to absorb the loss and then settles
 									</td>
 									<td>SymmioHookFacetImpl via LibCreditLine.coverLoss</td>
@@ -2807,23 +2810,23 @@ coverLoss:           affiliateBalances[affiliate] -= covered amount, badDebt += 
 							<code>reserved + active + badDebt</code> when estimating remaining capacity.
 						</li>
 						<li>
-							[ ] <strong>Check <code>creditLinePaused(affiliate)</code></strong> -- if <code>true</code>, all
+							[ ] <strong>Check <code>creditLinePaused(affiliate)</code></strong> — if <code>true</code>, all
 							<code>reserveDebt</code> calls and later credit activation attempts revert <code>CreditLinePaused</code>. The bot must not
 							sign or process options with <code>creditAmount &gt; 0</code> for this affiliate.
 						</li>
 						<li>
-							[ ] <strong>Check <code>creditLineBlacklisted(affiliate, user)</code></strong> -- if <code>true</code> for the requesting
+							[ ] <strong>Check <code>creditLineBlacklisted(affiliate, user)</code></strong> — if <code>true</code> for the requesting
 							user, <code>reserveDebt</code> reverts <code>UserBlacklisted</code>. The bot must reject credit for blacklisted users.
 						</li>
 						<li>
 							[ ] <strong>Monitor debt cap headroom:</strong>
 							<ul>
 								<li>
-									<code>protocolMaxDebt</code> and <code>affiliateMaxDebt</code> -- absolute caps (0 = no limit). The effective cap
+									<code>protocolMaxDebt</code> and <code>affiliateMaxDebt</code> — absolute caps (0 = no limit). The effective cap
 									is the tighter (non-zero minimum) of the two.
 								</li>
 								<li>
-									<code>protocolMaxDebtBps</code> and <code>affiliateMaxDebtBps</code> -- percentage caps as basis points of Muon
+									<code>protocolMaxDebtBps</code> and <code>affiliateMaxDebtBps</code> — percentage caps as basis points of Muon
 									<code>eligibleBase</code> (0 = no limit). Same tighter-of-two logic.
 								</li>
 								<li>
@@ -2848,16 +2851,16 @@ coverLoss:           affiliateBalances[affiliate] -= covered amount, badDebt += 
 						<li>
 							[ ] <strong>Listen for credit line events</strong> on the ExpressProvider diamond to maintain an accurate local state:
 							<ul>
-								<li><code>DebtReserved(affiliate, user, requestId, amount)</code> -- new credit accepted</li>
-								<li><code>DebtActivated(affiliate, user, requestId, amount)</code> -- credit advanced to user</li>
-								<li><code>DebtSettled(affiliate, user, requestId, amount)</code> -- credit repaid on finalization</li>
-								<li><code>DebtCancelled(affiliate, user, requestId, amount)</code> -- credit released on cancel</li>
-								<li><code>CreditLinePausedUpdated(affiliate, bool)</code> -- credit line paused/unpaused</li>
-								<li><code>CreditLineBlacklistUpdated(affiliate, user, bool)</code> -- user blacklist change</li>
+								<li><code>DebtReserved(affiliate, user, requestId, amount)</code> — new credit accepted</li>
+								<li><code>DebtActivated(affiliate, user, requestId, amount)</code> — credit advanced to user</li>
+								<li><code>DebtSettled(affiliate, user, requestId, amount)</code> — credit repaid on finalization</li>
+								<li><code>DebtCancelled(affiliate, user, requestId, amount)</code> — credit released on cancel</li>
+								<li><code>CreditLinePausedUpdated(affiliate, bool)</code> — credit line paused/unpaused</li>
+								<li><code>CreditLineBlacklistUpdated(affiliate, user, bool)</code> — user blacklist change</li>
 							</ul>
 						</li>
 						<li>
-							[ ] <strong>Alert on approaching caps</strong> -- when
+							[ ] <strong>Alert on approaching caps</strong> — when
 							<code>creditLineTotalDebt(affiliate) + creditLineBadDebt(affiliate)</code> exceeds 80% of <code>effectiveMaxDebt</code>,
 							alert the affiliate operator
 						</li>
@@ -2922,7 +2925,7 @@ coverLoss:           affiliateBalances[affiliate] -= covered amount, badDebt += 
 					<ol>
 						<li><code>LibCreditLine.activate</code> moves debt from reserved to active within <code>CreditLineStorage</code>.</li>
 						<li>
-							<code>LibCreditLine.activate</code> calls <code>SYMMIO.advanceWithdraw(user, requestId, creditAmount)</code> -- SYMMIO
+							<code>LibCreditLine.activate</code> calls <code>SYMMIO.advanceWithdraw(user, requestId, creditAmount)</code> — SYMMIO
 							transfers <code>creditAmount</code> of collateral to the ExpressProvider, which can then pay the user.
 						</li>
 					</ol>
@@ -2942,7 +2945,7 @@ coverLoss:           affiliateBalances[affiliate] -= covered amount, badDebt += 
 						<strong>Credit loss on post-payout rollback:</strong> If a withdrawal is suspended after processing (Status = PROCESSED), the
 						credit amount has already been advanced and paid to the user. <code>LibCreditLine.coverLoss</code> deducts up to the unlocked
 						affiliate balance, records any uncovered deficit as <code>badDebt</code>, and then internally settles the active debt to clear
-						the request record. Only <code>onWithdrawSuspend</code> reaches this path -- <code>forceCancelWithdraw</code> /
+						the request record. Only <code>onWithdrawSuspend</code> reaches this path — <code>forceCancelWithdraw</code> /
 						<code>onForceWithdrawCancel</code> no longer exist (commit 40d5fd99).
 					</p>
 					<h3 id="10-5-bot-decision-logic-for-credit">10.5 Bot Decision Logic for Credit</h3>
@@ -3170,7 +3173,7 @@ Step 4c -- Post-payout rollback (suspend after PROCESSED, rare):
 								</li>
 								<li>
 									Fetch a fresh <code>AccelerateOffer</code> from the bot's API and have its own backend submit
-									<code>accelerateWithdraw</code>. The contract is permissionless, so any sender works -- but when the affiliate
+									<code>accelerateWithdraw</code>. The contract is permissionless, so any sender works — but when the affiliate
 									requires validators, the submission must carry a fresh <code>validatorData</code> quorum alongside the bot
 									signature.
 								</li>
@@ -3279,8 +3282,8 @@ Step 4c -- Post-payout rollback (suspend after PROCESSED, rare):
 					<p>
 						<strong>Decreases are always free.</strong> When a frontend needs to tighten risk (e.g., an anomaly spike, a pool running low,
 						a governance decision), it should call <code>setMyCreditLineConfig</code> with lower values right away. The on-chain
-						classifier treats "neither dimension loosened" as a decrease -- no fee, no counter bump, no delay. Tightening is the
-						protocol's preferred risk response.
+						classifier treats "neither dimension loosened" as a decrease — no fee, no counter bump, no delay. Tightening is the protocol's
+						preferred risk response.
 					</p>
 					<p>
 						<strong>Increases are throttled and can cost fees.</strong> Each affiliate gets <code>maxFreePerWindow</code> free increases
@@ -3309,10 +3312,10 @@ Step 4c -- Post-payout rollback (suspend after PROCESSED, rare):
 					</p>
 					<ul>
 						<li>
-							<code>CreditLineAffiliateConfigSelfUpdated(affiliate, maxDebt, maxDebtBps, wasDecrease, feePaid)</code> -- affiliate
+							<code>CreditLineAffiliateConfigSelfUpdated(affiliate, maxDebt, maxDebtBps, wasDecrease, feePaid)</code> — affiliate
 							self-service calls
 						</li>
-						<li><code>CreditLineAffiliateConfigUpdated(affiliate, maxDebt, maxDebtBps)</code> -- emitted by both paths</li>
+						<li><code>CreditLineAffiliateConfigUpdated(affiliate, maxDebt, maxDebtBps)</code> — emitted by both paths</li>
 					</ul>
 					<p>
 						The second event is a superset; the first carries the extra classification and fee-paid context. For pure cap tracking, the
@@ -3561,7 +3564,7 @@ Step 7 -- Bot processes after security window:
     style X fill:#f66
 </code></pre>
 					<aside class="callout callout-note">
-						<strong>Note</strong> <code>onWithdrawCancelRequest</code> is <strong>not</strong> a resolution path for LOCKED -- it only
+						<strong>Note</strong> <code>onWithdrawCancelRequest</code> is <strong>not</strong> a resolution path for LOCKED — it only
 						accepts <code>ACCEPTED</code> status (per <code>SymmioHookFacetImpl</code>). <code>forceCancelWithdraw</code> /
 						<code>onForceWithdrawCancel</code> no longer exist (commit 40d5fd99); SYMMIO uses <code>onWithdrawSuspend</code> for any
 						forced rollback.
@@ -3800,7 +3803,7 @@ Step 2D — Bot sees: WithdrawFinalized(user, reqId) at T+43200
 							[ ] <code>LibCreditLine.coverLoss</code> deducts the covered amount from unlocked affiliate balance and records uncovered
 							credit loss as <code>badDebt</code>
 						</li>
-						<li>[ ] Pools were already deducted at processing time -- nothing to unlock</li>
+						<li>[ ] Pools were already deducted at processing time — nothing to unlock</li>
 
 						<li>[ ] Status set to SUSPENDED</li>
 					</ul>
@@ -4040,7 +4043,7 @@ Step 2D — Bot sees: WithdrawFinalized(user, reqId) at T+43200
 								<tr>
 									<td><code>InvalidStatusForStandard</code></td>
 									<td><code>onWithdrawComplete</code> on STANDARD when status is not ACCEPTED or LOCKED</td>
-									<td>Check status -- may already be CANCELLED or SUSPENDED</td>
+									<td>Check status — may already be CANCELLED or SUSPENDED</td>
 								</tr>
 								<tr>
 									<td><code>TooEarly</code></td>
@@ -4433,7 +4436,7 @@ Decision:
 								</tr>
 								<tr>
 									<td>Nonce read at sign time, but another withdrawal consumed it</td>
-									<td>Reverts <code>InvalidNonce</code> -- re-read and re-sign</td>
+									<td>Reverts <code>InvalidNonce</code> — re-read and re-sign</td>
 								</tr>
 								<tr>
 									<td>Concurrent options for same user</td>
@@ -5222,7 +5225,7 @@ Step 3 — Bot sees: WithdrawFinalized event for W1 (pools replenished)
 					<h3 id="17-3-credit-line-functions-on-the-diamond">17.3 Credit Line Functions (on the Diamond)</h3>
 					<p>
 						Credit line admin setters live on <code>ControlFacet</code>; all credit line <strong>view</strong> functions are on
-						<code>ViewFacet</code>. There are no separate roles -- all credit line admin functions use the diamond's
+						<code>ViewFacet</code>. There are no separate roles — all credit line admin functions use the diamond's
 						<code>SETTER_ROLE</code>.
 					</p>
 					<p><strong>Admin functions (ControlFacet, 5 setters):</strong></p>
@@ -5340,7 +5343,7 @@ Step 3 — Bot sees: WithdrawFinalized event for W1 (pools replenished)
 					<p>
 						Internal credit line operations (<code>reserveDebt</code>, <code>activate</code>, <code>settle</code>,
 						<code>releaseReservation</code>, <code>coverLoss</code>) are called internally by the diamond's facets (e.g.,
-						<code>SymmioHookFacet</code>, <code>OperatorFacet</code>) via <code>LibCreditLine</code> -- they are not externally callable.
+						<code>SymmioHookFacet</code>, <code>OperatorFacet</code>) via <code>LibCreditLine</code> — they are not externally callable.
 					</p>
 					<h3 id="17-4-symmio-gated-functions-no-role-msg-sender-symmio">
 						17.4 SYMMIO-Gated Functions (no role, <code>msg.sender == symmio</code>)
@@ -5561,7 +5564,7 @@ What-if: SYMMIO core pauses withdraw advances?
 					</p>
 					<p>
 						Each cell tells the bot exactly what to do, what to watch for, what actions are available (and to whom), what will revert, and
-						what timers should be running. Impossible combinations -- those that can never occur due to the state machine design -- are
+						what timers should be running. Impossible combinations — those that can never occur due to the state machine design — are
 						marked as such with an explanation.
 					</p>
 					<p><strong>Default contract parameters used in numeric scenarios:</strong></p>
@@ -5593,7 +5596,7 @@ What-if: SYMMIO core pauses withdraw advances?
 					<p><strong>Available actions:</strong></p>
 					<ul>
 						<li>User: calls <code>initiateWithdraw</code> on SYMMIO, which triggers <code>onWithdrawRequest</code> on ExpressProvider</li>
-						<li>No bot action needed after signing -- SAME_TX processes entirely within <code>onWithdrawRequest</code></li>
+						<li>No bot action needed after signing — SAME_TX processes entirely within <code>onWithdrawRequest</code></li>
 					</ul>
 					<p><strong>Will revert:</strong></p>
 					<ul>
@@ -5633,14 +5636,14 @@ What-if: SYMMIO core pauses withdraw advances?
 							Monitor for: <code>WithdrawFinalized</code> event (from <code>onWithdrawComplete</code>) <strong>and</strong>
 							<code>WithdrawSuspended</code> event (from <code>onWithdrawSuspend</code> rollback path)
 						</li>
-						<li>No further user-facing action needed -- the user already has their funds</li>
+						<li>No further user-facing action needed — the user already has their funds</li>
 					</ol>
 					<p><strong>Available actions:</strong></p>
 					<ul>
 						<li>OPERATOR_ROLE: call <code>finalizeWithdrawRequest</code> on SYMMIO (at <code>cooldownEndTime</code>)</li>
 						<li>SYMMIO (callback): <code>onWithdrawComplete</code> transitions to FINALIZED and replenishes pools</li>
 						<li>
-							SYMMIO (callback): <code>onWithdrawSuspend</code> triggers <code>_handleProcessedRollback</code> -- deducts up to the
+							SYMMIO (callback): <code>onWithdrawSuspend</code> triggers <code>_handleProcessedRollback</code> — deducts up to the
 							unlocked affiliate balance, records any deficit as <code>badDebt</code>, settles credit, status -&gt; SUSPENDED
 						</li>
 					</ul>
@@ -5798,7 +5801,7 @@ Anyone can call processWithdraw(user, reqId, parts)
 						<li>If confirmed threat: request SYMMIO operator to suspend via <code>onWithdrawSuspend</code></li>
 						<li>
 							Monitor for: <code>WithdrawUnlockedAndProcessed</code>, <code>WithdrawSuspended</code> (note:
-							<code>WithdrawCancelled</code> is not reachable from LOCKED -- the cancel callback only fires from ACCEPTED)
+							<code>WithdrawCancelled</code> is not reachable from LOCKED — the cancel callback only fires from ACCEPTED)
 						</li>
 						<li>
 							Fallback: if investigation takes too long and cooldownEndTime passes, OPERATOR_ROLE or anyone can call
@@ -5863,7 +5866,7 @@ processableAt = 1700043200 + 60 = 1700043260
 						<li>OPERATOR_ROLE: call <code>finalizeWithdrawRequest</code> on SYMMIO at <code>cooldownEndTime</code></li>
 						<li>SYMMIO (callback): <code>onWithdrawComplete</code> replenishes pools and transitions to FINALIZED</li>
 						<li>
-							SYMMIO (callback): <code>onWithdrawSuspend</code> triggers <code>_handleProcessedRollback</code> -- deducts up to the
+							SYMMIO (callback): <code>onWithdrawSuspend</code> triggers <code>_handleProcessedRollback</code> — deducts up to the
 							unlocked affiliate balance, records any deficit as <code>badDebt</code>, settles credit, status -&gt; SUSPENDED
 						</li>
 					</ul>
@@ -5907,7 +5910,7 @@ Result: status -&gt; FINALIZED
 					<ol>
 						<li>Archive this withdrawal</li>
 						<li>Remove all timers</li>
-						<li>Note: pool balances have been restored -- no reimbursement needed</li>
+						<li>Note: pool balances have been restored — no reimbursement needed</li>
 					</ol>
 					<p><strong>Available actions:</strong> None.</p>
 					<p><strong>Will revert:</strong> All state-changing functions revert.</p>
@@ -5937,7 +5940,7 @@ Result: status -&gt; FINALIZED
 					<h3 id="standard-x-none">STANDARD x NONE</h3>
 					<p>
 						<strong>Bot situation:</strong> No withdrawal exists yet. The bot may be about to sign a STANDARD option. STANDARD means no
-						capital fronting -- Express acts as an intermediary and forwards tokens after SYMMIO's 12-hour cooldown.
+						capital fronting — Express acts as an intermediary and forwards tokens after SYMMIO's 12-hour cooldown.
 					</p>
 					<p><strong>Bot should:</strong></p>
 					<ol>
@@ -6106,7 +6109,7 @@ Scenario B -- locked-after-cooldown path:
 					<ol>
 						<li>Archive this withdrawal</li>
 						<li>Remove all timers</li>
-						<li>No pool replenishment step -- STANDARD never fronted capital from pools</li>
+						<li>No pool replenishment step — STANDARD never fronted capital from pools</li>
 					</ol>
 					<p><strong>Available actions:</strong> None meaningful. The withdrawal lifecycle is complete.</p>
 					<p><strong>Will revert:</strong></p>
@@ -6217,13 +6220,13 @@ Non-operator at T=1700043250:
 								</tr>
 								<tr>
 									<td><strong>ACCEPTED</strong></td>
-									<td><strong>I</strong> -- skips to PROCESSED</td>
+									<td><strong>I</strong> — skips to PROCESSED</td>
 									<td>Wait securityWindow, then processWithdraw</td>
 									<td>Wait for onWithdrawComplete (12h)</td>
 								</tr>
 								<tr>
 									<td><strong>LOCKED</strong></td>
-									<td><strong>I</strong> -- never ACCEPTED</td>
+									<td><strong>I</strong> — never ACCEPTED</td>
 									<td>Await UNLOCK_ROLE or cooldown expiry</td>
 									<td>Await UNLOCK_ROLE or cooldown expiry + finalize</td>
 								</tr>
@@ -6241,13 +6244,13 @@ Non-operator at T=1700043250:
 								</tr>
 								<tr>
 									<td><strong>CANCELLED</strong></td>
-									<td><strong>I</strong> -- never ACCEPTED</td>
+									<td><strong>I</strong> — never ACCEPTED</td>
 									<td>Terminal (locks released, from ACCEPTED only)</td>
 									<td>Terminal (cancel from ACCEPTED only)</td>
 								</tr>
 								<tr>
 									<td><strong>SUSPENDED</strong></td>
-									<td>Terminal -- only via PROCESSED rollback path</td>
+									<td>Terminal — only via PROCESSED rollback path</td>
 									<td>Terminal (from ACCEPTED/LOCKED: locks released; from PROCESSED: rollback)</td>
 									<td>Terminal (from ACCEPTED/LOCKED with <code>finalizedAt == 0</code>)</td>
 								</tr>
@@ -6304,14 +6307,14 @@ Non-operator at T=1700043250:
 								</tr>
 								<tr>
 									<td><strong>Force-cancellable?</strong></td>
-									<td>N/A -- <code>onForceWithdrawCancel</code> removed (commit eabd1f3f); use suspend</td>
-									<td>N/A -- <code>onForceWithdrawCancel</code> removed; use suspend</td>
-									<td>N/A -- <code>onForceWithdrawCancel</code> removed; use suspend</td>
+									<td>N/A — <code>onForceWithdrawCancel</code> removed (commit eabd1f3f); use suspend</td>
+									<td>N/A — <code>onForceWithdrawCancel</code> removed; use suspend</td>
+									<td>N/A — <code>onForceWithdrawCancel</code> removed; use suspend</td>
 								</tr>
 								<tr>
 									<td><strong>Suspendable?</strong></td>
-									<td>Yes -- only from PROCESSED (post-payout rollback path)</td>
-									<td>Yes (ACCEPTED, LOCKED, or PROCESSED -- PROCESSED triggers rollback)</td>
+									<td>Yes — only from PROCESSED (post-payout rollback path)</td>
+									<td>Yes (ACCEPTED, LOCKED, or PROCESSED — PROCESSED triggers rollback)</td>
 									<td>Yes (ACCEPTED or LOCKED, if <code>finalizedAt == 0</code>)</td>
 								</tr>
 								<tr>
@@ -6335,7 +6338,6 @@ Non-operator at T=1700043250:
 
 		<footer class="site-footer">
 			<span>Symmio Core v0.8.6 documentation.</span>
-			<span>Protocol, operations, and integration notes.</span>
 		</footer>
 	</body>
 </html>

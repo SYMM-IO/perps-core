@@ -3,6 +3,7 @@ import { ContractTransactionReceipt } from "ethers"
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
+import { AccountLayerFacetNames, ensureLibraries, getFacetSpec, getLinkedContractFactory } from "../../utils/deploymentManifest.js"
 import { FacetCutAction, getSelectors } from "../utils/diamondCut.js"
 import { writeData } from "../utils/fs.js"
 import { deploymentOnlyArtifact } from "./artifacts.js"
@@ -13,13 +14,6 @@ import { assertStandaloneDeploymentTaskAllowed, getConnection } from "./helpers.
 import { logger } from "./logger.js"
 import { confirmDeploymentWithReceipt, send } from "./tx.js"
 import { type VanityContext, create2Record, deployContract } from "./vanityDeploy.js"
-
-const AccountLayerFacetNames = ["CoreFacet", "MarginFacet", "SymmioHookFacet", "ControlFacet", "ViewFacet", "AffiliateFacet", "DiamondLoupeFacet"]
-
-// Library dependencies for AccountLayer facets
-const AccountLayerFacetLibraryDependencies: Record<string, string[]> = {
-	CoreFacet: ["LibQuoteParams"],
-}
 
 type DeployAccountLayerDiamondArgs = {
 	admin: HardhatEthersSigner
@@ -131,36 +125,39 @@ export async function deployAccountLayerDiamond(
 		}
 	}
 
-	// Deploy external libraries
+	// Deploy external libraries through the same graph used by upgrades.
 	logger.subsection("Libraries")
 	if (!alCheckpoint.libraries) {
 		alCheckpoint.libraries = {}
 	}
-
-	// Deploy LibQuoteParams
-	if (libraryAddresses["LibQuoteParams"]) {
-		logger.info(`  ⏭ LibQuoteParams already deployed at ${libraryAddresses["LibQuoteParams"]}`)
-	} else {
-		const artifact = await hre.artifacts.readArtifact("contracts/accountLayer/libraries/LibQuoteParams.sol:LibQuoteParams")
-		const LibQuoteParamsFactory = await ethers.getContractFactoryFromArtifact(deploymentOnlyArtifact(artifact))
-		const result = await deployContract(vanity, {
-			key: "accountLayer/LibQuoteParams",
-			component: "contracts.accountLayerDiamond.libraries.LibQuoteParams",
-			label: "AccountLayer LibQuoteParams",
-			factory: LibQuoteParamsFactory,
-			checkpoint,
-		})
-		totalGasUsed += result.gasUsed
-		libraryAddresses["LibQuoteParams"] = result.address
-		logger.deployed("LibQuoteParams", libraryAddresses["LibQuoteParams"])
-
-		// Save checkpoint
-		if (checkpoint) {
-			alCheckpoint.libraries!["LibQuoteParams"] = createDeployedContract(libraryAddresses["LibQuoteParams"], undefined, create2Record(result))
-			checkpoint.contracts.accountLayerDiamond = alCheckpoint
-			saveCheckpoint(checkpoint)
-		}
-	}
+	const ensuredLibraries = await ensureLibraries({
+		ethers,
+		scope: "accountLayer",
+		existing: libraryAddresses,
+		onReused: (name, address) => logger.info(`  ⏭ ${name} already deployed at ${address}`),
+		getFactory: async spec => {
+			const artifact = await hre.artifacts.readArtifact(spec.artifact)
+			return ethers.getContractFactoryFromArtifact(deploymentOnlyArtifact(artifact))
+		},
+		deploy: async (name, factory) => {
+			const result = await deployContract(vanity, {
+				key: `accountLayer/${name}`,
+				component: `contracts.accountLayerDiamond.libraries.${name}`,
+				label: `AccountLayer ${name}`,
+				factory,
+				checkpoint,
+			})
+			totalGasUsed += result.gasUsed
+			logger.deployed(name, result.address)
+			if (checkpoint) {
+				alCheckpoint.libraries![name] = createDeployedContract(result.address, undefined, create2Record(result))
+				checkpoint.contracts.accountLayerDiamond = alCheckpoint
+				saveCheckpoint(checkpoint)
+			}
+			return { address: result.address }
+		},
+	})
+	Object.assign(libraryAddresses, ensuredLibraries)
 
 	// Get AccountManager bytecode
 	const AccountManagerFactory = await ethers.getContractFactory("contracts/accountLayer/AccountManager.sol:AccountManager")
@@ -193,32 +190,7 @@ export async function deployAccountLayerDiamond(
 			facetAddress = alCheckpoint.facets[facetName].address
 			logger.info(`  ⏭ [${i + 1}/${AccountLayerFacetNames.length}] ${facetName} already deployed at ${facetAddress}`)
 		} else {
-			const requiredLibraries = AccountLayerFacetLibraryDependencies[facetName]
-			let FacetFactory
-
-			if (requiredLibraries && requiredLibraries.length > 0) {
-				const libraries: Record<string, string> = {}
-				for (const lib of requiredLibraries) {
-					libraries[`project/contracts/accountLayer/libraries/${lib}.sol:${lib}`] = libraryAddresses[lib]
-				}
-				FacetFactory = await ethers.getContractFactory(
-					`contracts/accountLayer/facets/${facetName.replace("Facet", "")}/${facetName}.sol:${facetName}`,
-					{ libraries },
-				)
-			} else {
-				// Map facet names to their paths
-				const facetPathMap: Record<string, string> = {
-					CoreFacet: "contracts/accountLayer/facets/Core/CoreFacet.sol:CoreFacet",
-					MarginFacet: "contracts/accountLayer/facets/Margin/MarginFacet.sol:MarginFacet",
-					SymmioHookFacet: "contracts/accountLayer/facets/SymmioHook/SymmioHookFacet.sol:SymmioHookFacet",
-					ControlFacet: "contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet",
-					ViewFacet: "contracts/accountLayer/facets/View/ViewFacet.sol:ViewFacet",
-					AffiliateFacet: "contracts/accountLayer/facets/Affiliate/AffiliateFacet.sol:AffiliateFacet",
-					DiamondLoupeFacet: "DiamondLoupeFacet",
-				}
-				const contractName = facetPathMap[facetName]
-				FacetFactory = await ethers.getContractFactory(contractName)
-			}
+			const FacetFactory = await getLinkedContractFactory(ethers, "accountLayer", getFacetSpec("accountLayer", facetName), libraryAddresses)
 
 			const result = await deployContract(vanity, {
 				key: `accountLayer/${facetName}`,
@@ -239,18 +211,8 @@ export async function deployAccountLayerDiamond(
 			}
 		}
 
-		// Get facet contract for selectors
-		const facetContractMap: Record<string, string> = {
-			CoreFacet: "contracts/accountLayer/facets/Core/CoreFacet.sol:CoreFacet",
-			MarginFacet: "contracts/accountLayer/facets/Margin/MarginFacet.sol:MarginFacet",
-			SymmioHookFacet: "contracts/accountLayer/facets/SymmioHook/SymmioHookFacet.sol:SymmioHookFacet",
-			ControlFacet: "contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet",
-			ViewFacet: "contracts/accountLayer/facets/View/ViewFacet.sol:ViewFacet",
-			AffiliateFacet: "contracts/accountLayer/facets/Affiliate/AffiliateFacet.sol:AffiliateFacet",
-			DiamondLoupeFacet: "DiamondLoupeFacet",
-		}
-		const contractName = facetContractMap[facetName]
-		const facet = await ethers.getContractAt(contractName, facetAddress)
+		// Get facet contract for selectors without rebuilding link options.
+		const facet = await ethers.getContractAt(getFacetSpec("accountLayer", facetName).artifact, facetAddress)
 		cut.push({
 			facetAddress,
 			action: FacetCutAction.Add,

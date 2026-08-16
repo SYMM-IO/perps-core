@@ -31,7 +31,7 @@ import { projectPath } from "../lib/paths.js";
 import { assertRecipeNetworkCompatibility, loadCoreDependencyReport, loadRecipeContext } from "../lib/recipe-context.js";
 import { checkMirrorDrift } from "../lib/safety-mirror.js";
 import { blank, c, fail, info, kv, log, ok, skip, title, warn } from "../lib/ui.js";
-import { Contract, isAddress } from "ethers";
+import { Contract, Wallet, getAddress, isAddress } from "ethers";
 import fs from "node:fs";
 
 const ERC20 = ["function decimals() view returns (uint8)", "function symbol() view returns (string)"];
@@ -160,8 +160,7 @@ export function checkpointDisposition(checkpoint, { fresh = false, target = "dep
 	};
 }
 
-const CORE_ONLY_GUIDANCE =
-	'--only core is unavailable because Core is a system bundle; set partyB.mode, symbolManager.mode, and expressProvider.mode to "skip", then run without --only';
+const CORE_ONLY_GUIDANCE = "Core is a system bundle; choose Core bundle in the operator menu instead of a primitive component target";
 
 export function assertDoctorSelectionSupported(only) {
 	if (only === "core") throw new Error(CORE_ONLY_GUIDANCE);
@@ -334,8 +333,8 @@ export async function doctor(args, runtime = {}) {
 			}
 		}
 	} else {
-		r.warn("--network compatibility mode", "create a reviewed JSON recipe for repeatable deployments");
-		r.info("recommended command", `./symmio recipe init --network ${networkName}`);
+		r.warn("internal network-only mode", "operator runs must start from the guided menu and a digest-bound recipe");
+		r.info("operator path", `./symmio → Deploy a contract → choose a target on ${networkName}`);
 	}
 
 	// PRIVATE_KEY is the single most dangerous piece of documentation drift in this repo:
@@ -367,12 +366,61 @@ export async function doctor(args, runtime = {}) {
 	// ── deployer ────────────────────────────────────────────────────────────────
 	title("Deployer");
 	const deployerSecret = recipeContext?.secrets.deployer;
-	const deployer = chain.simulated
-		? { source: "Hardhat simulated account", address: null, simulated: true }
-		: deployerSecret?.provider === "hardhat-keystore"
-			? { source: "keystore", address: null, isDummy: false, keystore: true }
-			: resolveDeployer(env, { allowLocalDummy: allowsLocalDummyDeployer(chain, recipeContext?.recipe) });
-	if (deployer.simulated) {
+	const operatorSignerMode = process.env.SYMMIO_SIGNER_MODE;
+	let localNodeDeployer = null;
+	if (chain.key === "localhost" && recipeContext?.recipe.network.mode === "local" && (!deployerSecret || operatorSignerMode === "local-node")) {
+		try {
+			const localAccounts = await makeProvider(networkName, env).send("eth_accounts", []);
+			if (isAddress(localAccounts?.[0])) {
+				localNodeDeployer = { source: "unlocked local Hardhat account", address: localAccounts[0], isDummy: false, remote: true };
+			}
+		} catch {}
+	}
+	let operatorDeployer = null;
+	if (operatorSignerMode === "hardhat-keystore") {
+		operatorDeployer = {
+			source: `Hardhat keystore (${process.env.KEYSTORE_DEPLOYER_KEY || "NEW_DEPLOYER"})`,
+			address: null,
+			isDummy: false,
+			keystore: true,
+		};
+	} else if (operatorSignerMode === "private-key") {
+		try {
+			operatorDeployer = {
+				source: "task-bound transient private key",
+				address: new Wallet(process.env.SYMMIO_EPHEMERAL_PRIVATE_KEY).address,
+				isDummy: false,
+			};
+		} catch {
+			operatorDeployer = { source: "task-bound transient private key", invalid: true };
+		}
+	} else if (operatorSignerMode === "ledger") {
+		const address = process.env.SYMMIO_LEDGER_ADDRESS;
+		operatorDeployer = isAddress(address || "")
+			? { source: "Ledger hardware wallet", address: getAddress(address), isDummy: false, hardware: true }
+			: { source: "Ledger hardware wallet", invalid: true };
+	} else if (operatorSignerMode === "safe-file" || operatorSignerMode === "safe-service") {
+		const address = process.env.SYMMIO_SAFE_ADDRESS;
+		operatorDeployer = isAddress(address || "")
+			? { source: "Safe governance action intent", address: getAddress(address), isDummy: false, safeOnly: true }
+			: { source: "Safe governance action intent", invalid: true, safeOnly: true };
+	} else if (operatorSignerMode === "local-node") {
+		operatorDeployer = localNodeDeployer || { source: "unlocked local-node account", missing: true, remote: true };
+	}
+	const deployer =
+		operatorDeployer ||
+		(chain.simulated
+			? { source: "Hardhat simulated account", address: null, simulated: true }
+			: localNodeDeployer
+				? localNodeDeployer
+				: deployerSecret?.provider === "hardhat-keystore"
+					? { source: "keystore", address: null, isDummy: false, keystore: true }
+					: resolveDeployer(env, { allowLocalDummy: allowsLocalDummyDeployer(chain, recipeContext?.recipe) }));
+	if (deployer.safeOnly && !deployer.invalid) {
+		r.ok("Safe action-only mode; this process will not broadcast an EOA transaction", deployer.address);
+	} else if (deployer.hardware && !deployer.invalid) {
+		r.ok("Ledger signer bound to the task", deployer.address);
+	} else if (deployer.simulated) {
 		r.ok("deployer is a pre-funded Hardhat simulation account");
 	} else if (deployer.keystore) {
 		r.warn(
@@ -387,6 +435,9 @@ export async function doctor(args, runtime = {}) {
 		r.fail(`${deployer.source} is set but is not a valid private key`);
 	} else if (deployer.missing) {
 		r.fail("no deployment signer is configured", "set NEW_DEPLOYER / TEAM_DEPLOYER, or use the Hardhat keystore");
+	} else if (deployer.remote) {
+		r.ok("using unlocked account from the persistent local Hardhat node", deployer.address);
+		r.info("local-only signer boundary", "no private key is stored in the recipe, task state, or raw log");
 	} else if (deployer.isDummy && chain.key === "localhost") {
 		r.warn("using the repository dummy deployer for localhost only", deployer.address);
 		r.info("local-only signer boundary", "Hardhat never configures this public key for live recipe targets");
@@ -452,7 +503,7 @@ export async function doctor(args, runtime = {}) {
 	}
 
 	// ── deployer balance ────────────────────────────────────────────────────────
-	if (provider && deployer.address && liveChainId === chain.chainId && !chain.simulated) {
+	if (provider && deployer.address && liveChainId === chain.chainId && !chain.simulated && !deployer.safeOnly) {
 		try {
 			const bal = await provider.getBalance(deployer.address);
 			const eth = Number(bal) / 1e18;
@@ -473,6 +524,8 @@ export async function doctor(args, runtime = {}) {
 		else r.warn("ADMIN_PUBLIC_KEY is not set", "defaults to the deployer");
 	} else if (!isNonZeroAddress(admin)) {
 		r.fail("ADMIN_PUBLIC_KEY is not a valid non-zero address", admin);
+	} else if (deployer.safeOnly && deployer.address && admin.toLowerCase() === deployer.address.toLowerCase()) {
+		r.ok("ADMIN_PUBLIC_KEY matches the selected Safe", admin);
 	} else if (deployer.address && admin.toLowerCase() === deployer.address.toLowerCase()) {
 		if (isMainnetAdminDeployer(admin, deployer.address, mainnet)) {
 			r.fail("ADMIN_PUBLIC_KEY is the deployer", "privileges cannot be handed over; use a distinct multisig");

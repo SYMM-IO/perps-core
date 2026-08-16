@@ -17,6 +17,12 @@ describe("vanity deployable contract registry", function () {
 		}
 	})
 
+	it("registers every manifest-driven core library", function () {
+		for (const name of ["LibQuoteFunding", "LibQuoteClose", "PartyBPositionActionsFacetImpl", "ClearingHouseFacetImpl"]) {
+			expect(Object.hasOwn(DEPLOYABLE_CONTRACTS, `core/${name}`), `core/${name} is not registered`).to.be.true
+		}
+	})
+
 	it("classifies every entry into a known group", function () {
 		for (const [key, group] of Object.entries(DEPLOYABLE_CONTRACTS)) {
 			expect(VANITY_GROUPS, `${key} has group ${group}`).to.include(group)

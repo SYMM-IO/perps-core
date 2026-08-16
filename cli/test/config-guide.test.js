@@ -23,13 +23,14 @@ test("configuration guide separates recipe inputs from generated deployment stat
 	assert.match(fork.checkpoint, /tasks\/data\/checkpoints\/checkpoint-42161-fork\.json$/);
 });
 
-test("help starts from a JSON recipe and uses checkout-local commands", () => {
+test("help starts from guided recipes and the menu-only checkout-local launcher", () => {
 	const help = configurationHelpLines().join("\n");
-	assert.match(help, /JSON recipe \(recommended\)/);
+	assert.match(help, /Guided recipe and durable evidence/);
 	assert.match(help, /deployment\/examples\/arbitrum\.v1\.example\.json/);
 	assert.match(help, /deployments\/<name>\.json/);
-	assert.match(help, /\.\/symmio recipe init --network arbitrum/);
-	assert.match(help, /\.\/symmio doctor --config deployments\/arbitrum\.json/);
+	assert.match(help, /^\s*\.\/symmio$/m);
+	assert.match(help, /Choose Deploy a contract/);
+	assert.doesNotMatch(help, /\.\/symmio[ \t]+\w+/);
 	assert.match(help, /npm link/);
 	assert.doesNotMatch(help, /\.env/);
 });
@@ -46,27 +47,28 @@ test("recipe diagnostics identify exact editable JSON fields", () => {
 	assert.match(rendered.detail, /deployments\/arbitrum\.json/);
 });
 
-test("doctor next steps edit and rerun the same recipe", () => {
+test("doctor next steps return operators to guided correction and review", () => {
 	const recipe = doctorNextStepLines({
 		networkName: "arbitrum",
 		recipePath: "/repo/deployments/prod.json",
 		blockingFields: ["governance.admin", "partyB.signer"],
 	}).join("\n");
-	assert.match(recipe, /Edit \/repo\/deployments\/prod\.json \(governance\.admin, partyB\.signer\)/);
-	assert.match(recipe, /doctor --config \/repo\/deployments\/prod\.json/);
-	assert.match(recipe, /deploy --config \/repo\/deployments\/prod\.json --plan/);
+	assert.match(recipe, /guided form for \/repo\/deployments\/prod\.json \(governance\.admin, partyB\.signer\)/);
+	assert.match(recipe, /Correct the highlighted values/);
+	assert.match(recipe, /Review the grouped intent/);
 
 	const component = doctorNextStepLines({
 		networkName: "arbitrum",
 		recipePath: "/repo/deployments/arbitrum-partyB.json",
 		only: "partyB",
 	}).join("\n");
-	assert.match(component, /doctor --config \/repo\/deployments\/arbitrum-partyB\.json --only partyB/);
-	assert.match(component, /deploy --config \/repo\/deployments\/arbitrum-partyB\.json --only partyB --plan/);
+	assert.match(component, /guided form for \/repo\/deployments\/arbitrum-partyB\.json/);
+	assert.match(component, /operator task for partyB/);
 
 	const legacy = doctorNextStepLines({ networkName: "arbitrum", legacy: true }).join("\n");
-	assert.match(legacy, /compatibility-only/);
-	assert.match(legacy, /recipe init --network arbitrum/);
+	assert.match(legacy, /Launch \.\/symmio\. Choose Deploy a contract/);
+	assert.match(legacy, /arbitrum/);
+	assert.doesNotMatch(legacy, /\.\/symmio[ \t]+\w+/);
 	assert.doesNotMatch(legacy, /\.env/);
 });
 

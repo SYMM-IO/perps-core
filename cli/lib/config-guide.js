@@ -67,22 +67,20 @@ export function configurationLocations({
 export function configurationHelpLines() {
 	const locations = configurationLocations();
 	return [
-		"JSON recipe (recommended)",
+		"Guided recipe and durable evidence",
 		`  reviewed example   ${displayPath(locations.recipeExample)}`,
 		`  your configuration ${displayPath(locations.recipe)}`,
 		`  generated report   ${displayPath(locations.deploymentReport)}  (output; do not edit)`,
 		`  component report   ${displayPath(locations.componentReport)}  (output; do not edit)`,
 		`  resume checkpoint  ${displayPath(locations.checkpoint)}  (managed automatically)`,
 		"",
-		"Create and use it from this checkout",
-		"  ./symmio recipe init --network arbitrum",
-		"  ./symmio doctor --config deployments/arbitrum.json",
-		"  ./symmio deploy --config deployments/arbitrum.json --plan",
-		"  ./symmio recipe init --network arbitrum --only partyB",
-		"  ./symmio doctor --config deployments/arbitrum-partyB.json --only partyB",
+		"Use it from this checkout",
+		"  ./symmio",
+		"  Choose Deploy a contract, then follow the typed form and grouped review.",
+		"  Preflight, compilation, rehearsal, execution and health run in one task.",
 		"",
 		"Optional global command",
-		"  npm link  # after this, `symmio ...` is available in your shell",
+		"  npm link  # after this, `symmio` launches the same menu",
 	];
 }
 
@@ -100,7 +98,7 @@ export function recipeDiagnostic(message, detail, recipePath, { includeEditHint 
 	const fields = referencedRecipeFields(`${message} ${detail ?? ""}`);
 	if (fields.length === 0) return { message, detail, fields };
 	const replace = value => String(value).replace(/\b[A-Z][A-Z0-9_]+\b/g, name => recipeFieldForRuntimeKey(name) || name);
-	const editHint = includeEditHint ? `edit ${fields.join(", ")} in ${displayPath(recipePath)}` : "";
+	const editHint = includeEditHint ? `correct ${fields.join(", ")} in the guided form for ${displayPath(recipePath)}` : "";
 	return {
 		message: replace(message),
 		detail: detail ? [replace(detail), editHint].filter(Boolean).join("; ") : editHint || undefined,
@@ -110,21 +108,19 @@ export function recipeDiagnostic(message, detail, recipePath, { includeEditHint 
 
 export function doctorNextStepLines({ networkName, recipePath, blockingFields = [], only, legacy = false }) {
 	const target = recipePath ? displayPath(recipePath) : `deployments/${networkName}.json`;
-	const onlyFlag = only ? ` --only ${only}` : "";
 	if (legacy) {
 		return [
 			"Next steps",
-			"  --network is compatibility-only. Put deployment intent in one reviewed JSON recipe:",
-			`  ./symmio recipe init --network ${networkName}`,
-			`  ./symmio doctor --config ${target}`,
+			"  Launch ./symmio. Choose Deploy a contract.",
+			`  Select ${only || "the deployment"} and ${networkName}; the guided form creates and validates the recipe.`,
 		];
 	}
 	const fields = blockingFields.length ? ` (${blockingFields.join(", ")})` : "";
 	return [
 		"Next steps",
-		`  1. Edit ${target}${fields}`,
-		`  2. Rerun: ./symmio doctor --config ${target}${onlyFlag}`,
-		`  3. Preview: ./symmio deploy --config ${target}${onlyFlag} --plan`,
+		`  1. Return to the guided form for ${target}${fields}.`,
+		`  2. Correct the highlighted value${blockingFields.length === 1 ? "" : "s"}; validation runs immediately.`,
+		`  3. Review the grouped intent, then continue the same operator task${only ? ` for ${only}` : ""}.`,
 	];
 }
 

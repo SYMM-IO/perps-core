@@ -3,43 +3,56 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Every PartyA and PartyB allocated-balance mutation now emits an exact storage-backed delta. Dedicated reimbursement and liquidation settlement events preserve lifecycle context without corrupting the allocated ledger."
+		/>
 		<title>Allocated Balance Event Ledger &amp; Indexer Changelog - Symmio Core v0.8.6</title>
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Apply the saved preference before first paint.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
 		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
 		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
 	</head>
-	<body class="doc-page">
+	<body class="doc-page" data-version="0.8.6">
 		<a class="skip-link" href="#full-document">Skip to document</a>
 
-		<header class="doc-topbar">
-			<a class="brand" href="../index.html"
-				><span class="brand-mark">8.6</span><span><strong>v0.8.6 Changelog</strong></span></a
-			>
-			<nav class="top-actions" aria-label="Page actions">
-				<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
-			</nav>
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
 		</header>
 
 		<div class="reader-shell">
-			<aside class="doc-sidebar" aria-label="Documentation navigation" data-doc-nav></aside>
-			<aside class="toc-panel side-toc" aria-label="Page navigation">
-				<div class="toc-card">
-					<p class="toc-title">On this page</p>
-					<a class="toc-link level-2" href="#overview">Overview</a>
-					<a class="toc-link level-2" href="#reconstruction-contract">Reconstruction Contract</a>
-					<a class="toc-link level-2" href="#balance-change-types">Balance Change Types</a>
-					<a class="toc-link level-2" href="#partyb-allocation-keys">PartyB Allocation Keys</a>
-					<a class="toc-link level-2" href="#reimbursement-ledger">Reimbursement Ledger</a>
-					<a class="toc-link level-2" href="#liquidation-and-cva">Liquidation &amp; CVA</a>
-					<a class="toc-link level-2" href="#v086-liquidation-accounting">v0.8.6 Liquidation Accounting</a>
-					<a class="toc-link level-2" href="#event-field-corrections">Event Field Corrections</a>
-					<a class="toc-link level-2" href="#indexer-changelog">Indexer Changelog</a>
-				</div>
-			</aside>
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#overview">Overview</a>
+				<a class="toc-link level-2" href="#reconstruction-contract">Reconstruction Contract</a>
+				<a class="toc-link level-2" href="#balance-change-types">Balance Change Types</a>
+				<a class="toc-link level-2" href="#partyb-allocation-keys">PartyB Allocation Keys</a>
+				<a class="toc-link level-2" href="#reimbursement-ledger">Reimbursement Ledger</a>
+				<a class="toc-link level-2" href="#liquidation-and-cva">Liquidation &amp; CVA</a>
+				<a class="toc-link level-2" href="#v086-liquidation-accounting">v0.8.6 Liquidation Accounting</a>
+				<a class="toc-link level-2" href="#event-field-corrections">Event Field Corrections</a>
+				<a class="toc-link level-2" href="#indexer-changelog">Indexer Changelog</a>
+			</div>
 
 			<main class="reader-main">
 				<header class="reader-hero">
-					<nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">v0.8.6</a><span>/</span><strong>Feature</strong></nav>
 					<div class="reader-title-row">
 						<div>
 							<h1>Allocated Balance Event Ledger</h1>
@@ -561,7 +574,7 @@ partyALfCost(partyA)              = lockedValues.lf on the liquidated position</
 						start moves <code>allocated - (lockedCva + lockedLf) + upnl</code> into deferred balance; when <code>upnl</code> is positive
 						that sweep carries off part of the LF backing, leaving less allocated than the fee. Finalization then debits only what
 						remains, because emitting the full fee against a smaller bucket would break exact replay. So <code>LF_OUT</code> is the slice
-						of the cost that was still in allocated at that moment -- the rest already left PartyA, in the deferred sweep. Read the
+						of the cost that was still in allocated at that moment — the rest already left PartyA, in the deferred sweep. Read the
 						difference as <code>LF_IN - LF_OUT</code>; it is fully observable from the same receipt, and <code>LF_IN &gt; LF_OUT</code> is
 						the signal that the clamp fired.
 					</aside>
@@ -812,7 +825,6 @@ Final balances: PartyA 497.5, PartyB 358.5, starter 2.25 -- total tracked value 
 
 		<footer class="site-footer">
 			<span>Symmio Core v0.8.6 documentation.</span>
-			<span>Protocol, operations, and integration notes.</span>
 		</footer>
 	</body>
 </html>

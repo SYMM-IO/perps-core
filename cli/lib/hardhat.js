@@ -4,6 +4,7 @@
 // sees the exact command being run and can reproduce it by hand, and the CLI cannot
 // accidentally hold a stale in-process network connection across commands.
 import { PROJECT_ROOT, projectPath } from "./paths.js";
+import { taskOutputSink } from "./task-output.js";
 import { c, blank } from "./ui.js";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -28,6 +29,7 @@ export function hardhat(args, opts = {}) {
 		blank();
 	}
 	return new Promise(resolve => {
+		const sink = taskOutputSink();
 		let settled = false;
 		const finish = code => {
 			if (settled) return;
@@ -35,10 +37,43 @@ export function hardhat(args, opts = {}) {
 			resolve(code);
 		};
 		const child = spawn(HARDHAT_BIN, args, {
-			stdio: "inherit",
-			env: { ...process.env, ...env },
+			stdio: sink ? ["inherit", "pipe", "pipe", "pipe"] : "inherit",
+			env: { ...process.env, ...env, ...(sink ? { SYMMIO_TASK_EVENT_FD: "3" } : {}) },
 			cwd: PROJECT_ROOT,
 		});
+		sink?.child?.(child);
+		if (sink) {
+			const consume = (stream, name) => {
+				let buffer = "";
+				stream.setEncoding("utf8");
+				stream.on("data", chunk => {
+					buffer += chunk;
+					const lines = buffer.split(/\r?\n/);
+					buffer = lines.pop() || "";
+					for (const line of lines) if (line) sink.line(line, name);
+				});
+				stream.on("end", () => {
+					if (buffer) sink.line(buffer, name);
+				});
+			};
+			consume(child.stdout, "stdout");
+			consume(child.stderr, "stderr");
+			let eventBuffer = "";
+			child.stdio[3].setEncoding("utf8");
+			child.stdio[3].on("data", chunk => {
+				eventBuffer += chunk;
+				const lines = eventBuffer.split(/\r?\n/);
+				eventBuffer = lines.pop() || "";
+				for (const line of lines) {
+					try {
+						const event = JSON.parse(line);
+						sink.event(event.type || "task.detail", event.detail || event);
+					} catch {
+						sink.line(line, "event");
+					}
+				}
+			});
+		}
 		child.on("close", code => finish(code ?? 1));
 		child.on("error", err => {
 			console.error(`  ${c.red("Error")} failed to start local Hardhat: ${err.message}`);

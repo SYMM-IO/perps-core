@@ -8,6 +8,8 @@ import {
 	type ContractTransactionResponse,
 } from "ethers"
 
+import { emitTaskEvent } from "./logger.js"
+
 // Awaiting a contract call in ethers v6 resolves as soon as the transaction is
 // BROADCAST, not when it is mined. deploy:system wraps its setup calls in
 // checkpointedStep(), which marks a step complete the moment its action resolves — so
@@ -548,6 +550,7 @@ export async function send(
 		deployment: options.deployment,
 	}
 	transactionJournal.push(record)
+	emitTaskEvent("tx.submitted", { transaction: { ...record } })
 	const writeAhead = options.onSubmitted || transactionWriteAheadSink
 	if (writeAhead) {
 		try {
@@ -600,6 +603,7 @@ export async function send(
 		record.blockNumber = errorReceipt?.blockNumber
 		record.gasUsed = errorReceipt?.gasUsed?.toString()
 		record.error = message
+		emitTaskEvent("tx.failed", { transaction: { ...record } })
 		throw error
 	} finally {
 		clearTimeout(notice)
@@ -610,10 +614,12 @@ export async function send(
 		record.status = "unresolved"
 		record.durationMs = Date.now() - startedAt
 		record.error = message
+		emitTaskEvent("tx.failed", { transaction: { ...record } })
 		throw new Error(message)
 	}
 	if (receipt.status !== 1) {
 		applyReceipt(record, receipt, "failed", replacementHash, `Transaction reverted in block ${receipt.blockNumber}`)
+		emitTaskEvent("tx.failed", { transaction: { ...record } })
 		throw new Error(`${label}: transaction ${tx.hash} reverted in block ${receipt.blockNumber}`)
 	}
 
@@ -624,6 +630,7 @@ export async function send(
 	record.durationMs = durationMs
 	const displayedHash = replacementHash || tx.hash
 	console.log(`    ✓ ${label} — ${displayedHash} (block ${receipt.blockNumber}, gas ${receipt.gasUsed.toString()})${timing}`)
+	emitTaskEvent("tx.confirmed", { transaction: { ...record } })
 	return receipt
 }
 

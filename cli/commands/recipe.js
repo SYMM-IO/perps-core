@@ -7,6 +7,7 @@ import path from "node:path";
 const REVIEWED_PROFILES = Object.freeze({
 	arbitrum: { source: RECIPE_EXAMPLE, mode: "live", verify: true },
 	"fork-arbitrum": { source: RECIPE_EXAMPLE, mode: "fork", verify: false },
+	localhost: { source: RECIPE_EXAMPLE, mode: "local", chainId: 31337, verify: false },
 });
 
 function rewriteRelativeSchema(recipe, sourcePath, outputPath) {
@@ -30,8 +31,21 @@ export function buildInitialRecipe(networkName, sourceRecipe, { sourcePath = REC
 	}
 	const recipe = structuredClone(sourceRecipe);
 	recipe.name = `${networkName}-deployment`;
-	recipe.network = { ...recipe.network, name: networkName, mode: profile.mode };
+	recipe.network = { ...recipe.network, name: networkName, chainId: profile.chainId || recipe.network.chainId, mode: profile.mode };
 	recipe.execution = { ...recipe.execution, verify: profile.verify };
+	if (profile.mode === "local") {
+		recipe.secrets = {};
+		delete recipe.create2;
+		if (recipe.core) {
+			recipe.core.collateral = { mode: "deploy" };
+			recipe.core.muon = {
+				mode: "mock",
+				upnlValidTime: recipe.core.muon?.upnlValidTime || "60",
+				priceValidTime: recipe.core.muon?.priceValidTime || "60",
+			};
+			recipe.core.registerDummyAffiliate = false;
+		}
+	}
 	if (only) {
 		const standaloneTargets = ["partyB", "symbolManager", "expressProvider"];
 		if (!standaloneTargets.includes(only)) {
@@ -96,18 +110,16 @@ export async function recipe(args) {
 
 	title("Deployment recipe created");
 	ok(recipePath, `from ${displayPath(RECIPE_EXAMPLE)}`);
-	info("replace every REPLACE_WITH_* value in this one JSON file");
-	info("doctor reports the exact JSON field for anything still incomplete");
+	info("this internal adapter created a portable recipe skeleton");
+	info("operators should use the guided ./symmio form so values are typed, validated and reviewed");
 	blank();
 	log(`  ${c.grey("Store the three referenced secrets once:")}`);
 	log(`  ${c.cyan("./node_modules/.bin/hardhat keystore set NEW_DEPLOYER")}`);
 	log(`  ${c.cyan("./node_modules/.bin/hardhat keystore set RPC_ARBITRUM")}`);
 	log(`  ${c.cyan("./node_modules/.bin/hardhat keystore set ETHERSCAN_APIKEY")}`);
 	blank();
-	const onlyFlag = args.only ? ` --only ${args.only}` : "";
-	log(`  ${c.cyan(`./symmio doctor --config ${recipePath}${onlyFlag}`)}`);
-	log(`  ${c.cyan(`./symmio deploy --config ${recipePath}${onlyFlag} --plan`)}`);
-	log(`  ${c.cyan(`./symmio deploy --config ${recipePath}${onlyFlag}`)}`);
+	log(`  ${c.cyan("./symmio")}`);
+	log(`  Choose ${args.only ? `Deploy a contract → ${args.only}` : "Deploy a contract"} and complete the grouped review.`);
 	blank();
 	return 0;
 }

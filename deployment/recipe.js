@@ -635,8 +635,11 @@ export function validateDeploymentRecipe(value, source = "deployment recipe") {
 	if (network.mode === "live") {
 		if (!execution.verify) fail(source, "execution.verify", "must be true for live targets");
 		if (execution.logLevel === "silent") fail(source, "execution.logLevel", "must be minimal or verbose for live targets");
-		required(secrets, ["deployer", "rpc"], source, "secrets");
+		required(secrets, ["rpc"], source, "secrets");
 		required(secrets, ["explorer"], source, "secrets");
+		for (const key of ["deployer", "rpc", "explorer"]) {
+			if (secrets[key]?.startsWith("env://")) fail(source, `secrets.${key}`, "must use hardhat-keystore:// for live targets");
+		}
 	}
 
 	const governance = object(recipe.governance, source, "governance");
@@ -849,7 +852,7 @@ export function createDeploymentPlan(recipeValue, { only } = {}) {
 	}
 	if (only === "core") {
 		const error = new Error(
-			'TARGET_MODE_UNSUPPORTED: Core is a system bundle; set partyB.mode, symbolManager.mode, and expressProvider.mode to "skip", then run without --only',
+			"TARGET_MODE_UNSUPPORTED: Core is a system bundle; choose Core bundle in the operator menu instead of a primitive component target",
 		);
 		error.code = "TARGET_MODE_UNSUPPORTED";
 		throw error;

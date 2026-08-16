@@ -119,12 +119,12 @@ async function deployViaCreate2(
 			factoryAddress: plan.factoryAddress,
 			salt: mined.salt,
 			initCodeHash: ethers.keccak256(initCodeHex),
-			factoryCallDataHash: ethers.keccak256(create2Factory.interface.encodeFunctionData("deploy", [mined.salt, initCode])),
+			factoryCallDataHash: ethers.keccak256(create2Factory.interface.encodeFunctionData("deploy", [initCode, mined.salt])),
 			constructorArgs,
 		}
 
 		try {
-			const receipt = await send(create2Factory.deploy(mined.salt, initCode), `deploy ${label} via CREATE2`, DEFAULT_CONFIRMATIONS, {
+			const receipt = await send(create2Factory.deploy(initCode, mined.salt), `deploy ${label} via CREATE2`, DEFAULT_CONFIRMATIONS, {
 				deployment,
 				onSubmitted: checkpoint ? record => persistSubmittedTransaction(checkpoint, record) : undefined,
 			})

@@ -72,6 +72,11 @@
     },
     {
         "inputs": [],
+        "name": "ExternalCallSignerWasModified",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "HasActiveVirtualAccounts",
         "type": "error"
     },
@@ -145,6 +150,11 @@
     {
         "inputs": [],
         "name": "LegacyContractNotRegistered",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "MarginKeyMismatch",
         "type": "error"
     },
     {
@@ -1143,6 +1153,57 @@
         "inputs": [
             {
                 "indexed": true,
+                "internalType": "address",
+                "name": "pendingOwner",
+                "type": "address"
+            }
+        ],
+        "name": "OwnershipTransferCanceled",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "currentOwner",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "pendingOwner",
+                "type": "address"
+            }
+        ],
+        "name": "OwnershipTransferStarted",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "previousOwner",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "newOwner",
+                "type": "address"
+            }
+        ],
+        "name": "OwnershipTransferred",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
                 "internalType": "bytes32",
                 "name": "role",
                 "type": "bytes32"
@@ -1519,6 +1580,37 @@
         "inputs": [
             {
                 "internalType": "address",
+                "name": "signerOrZero",
+                "type": "address"
+            }
+        ],
+        "name": "setTransientSigner",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "signerOrZero",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "scope",
+                "type": "address"
+            }
+        ],
+        "name": "setTransientSignerScoped",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
                 "name": "core",
                 "type": "address"
             },
@@ -1836,6 +1928,45 @@
             }
         ],
         "name": "_call",
+        "outputs": [
+            {
+                "internalType": "bytes[]",
+                "name": "",
+                "type": "bytes[]"
+            }
+        ],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "internalType": "enum VirtualAccountIsolationType",
+                "name": "isolationType",
+                "type": "uint8"
+            },
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "marginAmount",
+                "type": "uint256"
+            },
+            {
+                "internalType": "bytes[]",
+                "name": "callDatas",
+                "type": "bytes[]"
+            }
+        ],
+        "name": "_callWithMargin",
         "outputs": [
             {
                 "internalType": "bytes[]",

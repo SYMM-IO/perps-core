@@ -142,6 +142,7 @@ interface SystemDeploymentReport {
 		targets: Array<{ label: string; address: string; owner: string; pendingOwner: string }>
 	}
 	manualActions?: string[]
+	safeActions?: SafeManualAction[]
 	timestamp: string
 	updatedAt: string
 }
@@ -1491,10 +1492,26 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 					? (checkpoint.progress!["pending.smOperatorRoles"] as string[])
 					: []
 				const manualActions = pendingOwnership.map(target => `${config.admin} calls acceptOwnership() on ${target.label} ${target.address}`)
+				const ownershipInterface = new ethers.Interface(["function acceptOwnership()"])
+				const roleInterface = new ethers.Interface(["function grantRole(bytes32 role,address account)"])
+				const safeActions: SafeManualAction[] = pendingOwnership.map(target => ({
+					to: target.address,
+					value: "0",
+					data: ownershipInterface.encodeFunctionData("acceptOwnership"),
+					description: `Accept ${target.label} ownership`,
+				}))
 				if (pendingSymbolManagerRoles.length > 0 && deployedContracts.symbolManager && config.symbolManagerOperator) {
 					manualActions.push(
 						`${config.admin} grants ${pendingSymbolManagerRoles.join(", ")} on SymbolManager ${deployedContracts.symbolManager} to ${config.symbolManagerOperator}`,
 					)
+					for (const role of pendingSymbolManagerRoles) {
+						safeActions.push({
+							to: deployedContracts.symbolManager,
+							value: "0",
+							data: roleInterface.encodeFunctionData("grantRole", [ethers.keccak256(ethers.toUtf8Bytes(role)), config.symbolManagerOperator]),
+							description: `Grant ${role} on SymbolManager to ${config.symbolManagerOperator}`,
+						})
+					}
 				}
 
 				// The ExpressProvider carries its own handover: core registration when the deployer
@@ -1502,6 +1519,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 				// run in pending_handover, or a provider that cannot advance would report complete.
 				for (const action of expressProviderResult?.manualActions || []) {
 					manualActions.push(`${config.admin} executes: ${action.description} (to ${action.to}, data ${action.data})`)
+					safeActions.push(action)
 				}
 				for (const check of expressProviderResult?.checks || []) {
 					if (check.status === "pending") manualActions.push(`ExpressProvider check still pending: ${check.check}`)
@@ -1544,6 +1562,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 					targets: ownershipStates,
 				}
 				report.manualActions = manualActions
+				report.safeActions = safeActions
 				// Persist a validating report before either gate runs. Any interruption now leaves
 				// an explicitly incomplete artifact rather than a durable false-green summary.
 				saveReport(report, deployedContracts)
@@ -1601,10 +1620,10 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 						logger.error(err instanceof Error ? err.message : String(err))
 						logger.error(
 							recipeRuntime
-								? `Retry with: ./symmio verify --config ${recipeRuntime.identityPath} --retry-failed`
+								? `Retry through ./symmio: choose Explorer verification retry for ${recipeRuntime.identityPath}`
 								: `Retry with: ./node_modules/.bin/hardhat verify:all --retry-failed --network ${network}`,
 						)
-						logger.error("Then rerun deploy:system; the checkpoint keeps verification mandatory until this gate passes.")
+						logger.error("Then continue the active operator task; its checkpoint keeps verification mandatory until this gate passes.")
 						throw err
 					}
 				} else if (verificationRequired) {
@@ -1683,7 +1702,9 @@ async function setupSystem(
 	const [deployer] = await ethers.getSigners()
 	const deployerAddress = deployer.address
 
-	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", deployedContracts.diamond!)
+	// IControlFacet is the compatibility ABI spanning ControlFacet and the
+	// size-isolated transient selectors in ExecutionContextFacet at the same diamond address.
+	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/IControlFacet.sol:IControlFacet", deployedContracts.diamond!)
 	const viewFacet = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", deployedContracts.diamond!)
 	const alControlFacet = await ethers.getContractAt(
 		"contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet",
@@ -1822,6 +1843,10 @@ async function setupSystem(
 	await checkpointedStep(checkpoint, "setup.ilRoleOnAL", "Granting SIGNER_SETTER_ROLE on AccountLayerDiamond", async () => {
 		await send(alControlFacet.connect(deployer).grantRole(deployedContracts.instantLayer!, roleHash("SIGNER_SETTER_ROLE")), "grantRole")
 	})
+
+	// No transient-context configuration step: the legacy setCallFromInstantLayer /
+	// setInstantOpenMode / setSigner selectors route into EIP-1153 state unconditionally,
+	// so deployed and newly deployed callers already share one mechanism.
 
 	// Whitelist Symmio Core
 	await checkpointedStep(checkpoint, "setup.alWhitelistSymmio", "Whitelisting Symmio Core on AccountLayerDiamond", async () => {

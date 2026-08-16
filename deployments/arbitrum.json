@@ -28,7 +28,9 @@
 		"softLiquidationPenaltyCollector": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94"
 	},
 	"create2": {
-		"factory": { "mode": "deploy" },
+		"factory": {
+			"mode": "deploy"
+		},
 		"groups": {
 			"diamonds": {
 				"prefix": "573310"
@@ -36,7 +38,8 @@
 			"facets": {
 				"suffix": "860"
 			}
-		}
+		},
+		"miningBudget": 100000000
 	},
 	"core": {
 		"mode": "deploy",

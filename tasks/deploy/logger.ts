@@ -1,5 +1,6 @@
 // Deployment logger utility. Human-readable output is intentionally the default for
 // operator runs; tests set DEPLOY_LOG_LEVEL=silent in their shared connection helper.
+import fs from "node:fs"
 
 export type LogLevel = "silent" | "minimal" | "verbose"
 
@@ -59,11 +60,26 @@ function formatContract(name: string): string {
 	return color(name, COLORS.bright)
 }
 
+/** Structured operator event channel. stdout remains human-readable for non-CLI callers. */
+export function emitTaskEvent(type: string, detail: Record<string, unknown> = {}): void {
+	const rawFd = process.env.SYMMIO_TASK_EVENT_FD
+	if (!rawFd || !/^\d+$/.test(rawFd)) return
+	try {
+		fs.writeSync(Number(rawFd), `${JSON.stringify({ type, detail })}\n`)
+	} catch {
+		// The event channel is presentation-only. Deployment receipts/checkpoints remain
+		// authoritative and must never fail because a parent renderer disappeared.
+	}
+}
+
 export const logger = {
 	// Errors and warnings remain visible even in silent mode. Silent suppresses routine
 	// progress, never evidence that a deployment is unsafe or incomplete.
 	error: (...args: any[]) => console.error(color("[ERROR]", COLORS.red), ...args),
-	warn: (...args: any[]) => console.warn(color("[WARN]", COLORS.yellow), ...args),
+	warn: (...args: any[]) => {
+		emitTaskEvent("warning", { message: args.map(value => String(value)).join(" ") })
+		console.warn(color("[WARN]", COLORS.yellow), ...args)
+	},
 
 	// Minimal and verbose lifecycle output.
 	info: (...args: any[]) => {
@@ -75,6 +91,7 @@ export const logger = {
 	},
 
 	section: (title: string) => {
+		emitTaskEvent("phase.started", { title })
 		if (currentLevel !== "verbose") return
 		console.log("")
 		console.log(separator())
@@ -83,10 +100,12 @@ export const logger = {
 	},
 
 	subsection: (title: string) => {
+		emitTaskEvent("step.detail", { title })
 		if (currentLevel === "verbose") console.log(`\n  ${color(`${SYMBOLS.arrow} ${title}`, COLORS.magenta)}`)
 	},
 
 	deployed: (contractName: string, address: string) => {
+		emitTaskEvent("contract.deployed", { contractName, address })
 		if (currentLevel === "silent") return
 		console.log(`  ${color(SYMBOLS.check, COLORS.green)} ${formatContract(contractName)} ${color("at", COLORS.dim)} ${formatAddress(address)}`)
 	},
@@ -111,6 +130,7 @@ export const logger = {
 	},
 
 	progress: (current: number, total: number, message: string) => {
+		emitTaskEvent("step.progress", { current, total, message })
 		if (currentLevel === "verbose") console.log(`  ${color(`[${current}/${total}]`, COLORS.dim)} ${message}`)
 	},
 }

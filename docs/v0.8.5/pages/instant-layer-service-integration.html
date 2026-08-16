@@ -1,0 +1,1005 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Three services share a common pattern: the user delegates specific permissions via the Instant Layer, and an off-chain service acts on the user&#x27;s behalf when conditions are met."
+		/>
+		<title>Instant Layer Service Integration Guide - Symmio Core v0.8.5</title>
+		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../../v0.8.6/assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../../v0.8.6/assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.5">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.5</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#doc-instant-layer-service-integration-architecture-overview">Architecture Overview</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-service-integration-key-concept-selector-based-delegation"
+					>Key Concept: Selector-Based Delegation</a
+				>
+				<a class="toc-link level-3" href="#doc-instant-layer-service-integration-selectors-used">Selectors Used</a>
+				<a class="toc-link level-2" href="#doc-instant-layer-service-integration-1-stoploss-takeprofit-tpsl-bot"
+					>1. StopLoss / TakeProfit (TPSL) Bot</a
+				>
+				<a class="toc-link level-3" href="#doc-instant-layer-service-integration-how-it-works">How It Works</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-service-integration-flow-diagram">Flow Diagram</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-service-integration-important-details">Important Details</a>
+				<a class="toc-link level-2" href="#doc-instant-layer-service-integration-2-trigger-market-orders">2. Trigger Market Orders</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-service-integration-how-it-works_1">How It Works</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-service-integration-flow-diagram_1">Flow Diagram</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-service-integration-important-details_1">Important Details</a>
+				<a class="toc-link level-2" href="#doc-instant-layer-service-integration-3-session-keys">3. Session Keys</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-service-integration-the-convention-selector-0x00000001"
+					>The Convention: Selector 0x00000001</a
+				>
+				<a class="toc-link level-3" href="#doc-instant-layer-service-integration-how-it-works_2">How It Works</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-service-integration-flow-diagram-desktop-session-key"
+					>Flow Diagram: Desktop Session Key</a
+				>
+				<a class="toc-link level-3" href="#doc-instant-layer-service-integration-flow-diagram-cross-device-via-qr-code"
+					>Flow Diagram: Cross-Device via QR Code</a
+				>
+				<a class="toc-link level-2" href="#doc-instant-layer-service-integration-putting-it-all-together">Putting It All Together</a>
+				<a class="toc-link level-2" href="#doc-instant-layer-service-integration-security-considerations">Security Considerations</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-service-integration-session-keys">Session Keys</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-service-integration-service-delegations">Service Delegations</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-service-integration-replay-protection">Replay Protection</a>
+				<a class="toc-link level-2" href="#doc-instant-layer-service-integration-implementation-reference">Implementation Reference</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-service-integration-common-configuration">Common Configuration</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-service-integration-tpsl-bot">TPSL Bot</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-service-integration-trigger-market-service">Trigger Market Service</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-service-integration-session-keys_1">Session Keys</a>
+				<a class="toc-link level-2" href="#doc-instant-layer-service-integration-related-documentation">Related Documentation</a>
+			</div>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Instant Layer Service Integration Guide</h1>
+							<p class="hero-copy">
+								This guide covers how third-party services integrate with Symmio through the Instant Layer to provide
+								<strong>StopLoss/TakeProfit (TPSL)</strong>, <strong>Trigger Market Orders</strong>, and
+								<strong>Session Key</strong> functionality. It is intended for both frontend developers implementing the user-facing
+								flows and backend developers building the services.
+							</p>
+						</div>
+					</div>
+				</header>
+				<article class="doc-article" id="full-document">
+					<hr />
+					<h2 id="doc-instant-layer-service-integration-architecture-overview">Architecture Overview</h2>
+					<p>
+						Three services share a common pattern: the user delegates specific permissions via the Instant Layer, and an off-chain service
+						acts on the user's behalf when conditions are met.
+					</p>
+					<pre><code class="language-mermaid">flowchart TB
+    subgraph Frontend
+        U[User Wallet]
+        SK[Session Key Manager]
+    end
+
+    subgraph Services["Off-Chain Services (OPERATOR_ROLE)"]
+        TPSL[TPSL Bot]
+        TM[Trigger Market Service]
+    end
+
+    subgraph OnChain["On-Chain"]
+        IL[Instant Layer]
+        AL[Account Layer]
+        SC[Symmio Core]
+    end
+
+    U --&gt;|"delegate requestToClosePosition"| IL
+    U --&gt;|"delegate addMarginToNextVA + sendQuoteWithAffiliateAndData"| IL
+    U --&gt;|"delegate selector 0x00000001 to session key"| IL
+
+    SK --&gt;|"sign operations with session key"| TPSL
+    SK --&gt;|"sign operations with session key"| TM
+
+    TPSL --&gt;|"executeBatch (requestToClosePosition)"| IL
+    TM --&gt;|"executeBatch (addMarginToNextVA + sendQuote)"| IL
+    IL --&gt;|"_call"| AL
+    AL --&gt;|"setSigner + forward"| SC
+</code></pre>
+					<h3 id="doc-instant-layer-service-integration-key-concept-selector-based-delegation">Key Concept: Selector-Based Delegation</h3>
+					<p>
+						All three services rely on the Instant Layer's <strong>delegation system</strong>. A delegation grants a specific address
+						permission to call specific functions on behalf of a user's trading account. Each delegation is scoped to one or more
+						<strong>function selectors</strong> (the first 4 bytes of a function signature).
+					</p>
+					<p>
+						The delegation flow is always the same: 1. The user (or their session key) calls <code>grantDelegation</code> on the Instant
+						Layer, specifying the delegate address, the allowed selectors, and an expiry timestamp 2. The delegated address can now sign
+						operations for that user, and submit them via <code>executeBatch</code> 3. InstantLayer verifies the delegation is active for
+						the specific function selector being called
+					</p>
+					<p>
+						Delegations have an <strong>expiry timestamp</strong> enforced on-chain and can be <strong>revoked</strong> through a two-step
+						cooldown process.
+					</p>
+					<h3 id="doc-instant-layer-service-integration-selectors-used">Selectors Used</h3>
+					<table>
+						<thead>
+							<tr>
+								<th>Function</th>
+								<th>Selector</th>
+								<th>Used By</th>
+								<th>Target Contract</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>requestToClosePosition</code></td>
+								<td><code>0xeaa31b19</code></td>
+								<td>TPSL Bot</td>
+								<td>Symmio Core</td>
+							</tr>
+							<tr>
+								<td><code>sendQuoteWithAffiliateAndData</code></td>
+								<td><code>0x1e5efc6c</code></td>
+								<td>Trigger Market Service</td>
+								<td>Symmio Core</td>
+							</tr>
+							<tr>
+								<td><code>addMarginToNextVA</code></td>
+								<td><code>0xa6d66852</code></td>
+								<td>Trigger Market Service</td>
+								<td>AccountLayer</td>
+							</tr>
+							<tr>
+								<td>Session Key Convention</td>
+								<td><code>0x00000001</code></td>
+								<td>All services (off-chain)</td>
+								<td>N/A</td>
+							</tr>
+						</tbody>
+					</table>
+					<hr />
+					<h2 id="doc-instant-layer-service-integration-1-stoploss-takeprofit-tpsl-bot">1. StopLoss / TakeProfit (TPSL) Bot</h2>
+					<p>The TPSL bot monitors price feeds and automatically closes user positions when stop-loss or take-profit thresholds are hit.</p>
+					<h3 id="doc-instant-layer-service-integration-how-it-works">How It Works</h3>
+					<p>
+						The user opens a position through the normal trading flow. Then, on the frontend, they configure TP/SL parameters for that
+						position. At this point:
+					</p>
+					<ol>
+						<li>
+							<strong>Frontend</strong> calls <code>grantDelegation</code> on the Instant Layer, granting
+							<code>requestToClosePosition</code> to the TPSL bot's signer address
+						</li>
+						<li><strong>Frontend</strong> sends the TP/SL parameters (quote ID, TP price, SL price, quantity) to the bot's API</li>
+						<li><strong>Bot</strong> stores the TP/SL config in its database</li>
+						<li>
+							<strong>Bot</strong> continuously monitors price feeds. When a threshold is hit, it constructs a
+							<code>requestToClosePosition</code> call, signs it with its own key, and submits it via <code>executeBatch</code>
+						</li>
+						<li>
+							InstantLayer verifies the bot has an active delegation for the <code>requestToClosePosition</code> selector on the user's
+							account, then executes the call
+						</li>
+					</ol>
+					<p>
+						The bot acts on the user's behalf but can <strong>only</strong> call <code>requestToClosePosition</code> — the delegation is
+						scoped to that single selector.
+					</p>
+					<h3 id="doc-instant-layer-service-integration-flow-diagram">Flow Diagram</h3>
+					<pre><code class="language-mermaid">sequenceDiagram
+    participant User as User (Frontend)
+    participant Bot as TPSL Bot
+    participant IL as Instant Layer
+    participant Symmio as Symmio Core
+
+    Note over User: User opens a position (quoteId: 42)
+
+    rect rgb(240, 248, 255)
+        Note over User, Bot: Setup Phase (once per session)
+        User-&gt;&gt;IL: grantDelegation(requestToClosePosition → bot)
+        IL--&gt;&gt;User: Delegation active
+        User-&gt;&gt;Bot: Send TP/SL params (quoteId, prices, qty)
+        Bot-&gt;&gt;Bot: Store {quoteId: 42, TP: 2100, SL: 1900}
+    end
+
+    rect rgb(255, 248, 240)
+        Note over Bot, Symmio: Trigger Phase (when price hits threshold)
+        Bot-&gt;&gt;Bot: Price feed shows ETH = 2100 (TP hit)
+        Bot-&gt;&gt;Bot: Build requestToClosePosition callData
+        Bot-&gt;&gt;IL: executeBatch([closeOp], [botSig])
+        IL-&gt;&gt;IL: Verify delegation for bot on selector
+        IL-&gt;&gt;Symmio: requestToClosePosition(42, ...)
+        Symmio--&gt;&gt;IL: Success
+        IL--&gt;&gt;Bot: Batch executed
+        Bot-&gt;&gt;Bot: Remove TP/SL entry from DB
+    end
+</code></pre>
+					<h3 id="doc-instant-layer-service-integration-important-details">Important Details</h3>
+					<ul>
+						<li>
+							The bot's signer address goes in the <code>signer</code> field of the operation. The user's trading account goes in
+							<code>signerAccount.addr</code>. InstantLayer checks that the bot has a delegation from the user's account for the
+							specific selector.
+						</li>
+						<li>
+							The bot uses <strong>salt-only mode</strong> (<code>nonce: 0</code>) with unique salts, since trigger timing is
+							non-deterministic.
+						</li>
+						<li>The delegation expiry should be aligned with the user's session or a reasonable window (e.g., 24 hours).</li>
+					</ul>
+					<hr />
+					<h2 id="doc-instant-layer-service-integration-2-trigger-market-orders">2. Trigger Market Orders</h2>
+					<p>
+						The Trigger Market service allows users to place conditional orders (e.g., "buy ETH-PERP if price drops to 1800") that execute
+						as market orders when the trigger price is reached.
+					</p>
+					<h3 id="doc-instant-layer-service-integration-how-it-works_1">How It Works</h3>
+					<p>
+						This frontend uses <strong>virtual accounts</strong> — each quote is sent from a dedicated virtual account. This means the
+						service needs to do two things when triggered: pre-fund the next virtual account address with margin, then send the quote
+						(which creates the VA and executes from it). Both happen in a single atomic batch.
+					</p>
+					<ol>
+						<li>
+							<strong>Frontend</strong> calls <code>grantDelegation</code> on the Instant Layer, granting
+							<strong>two selectors</strong> to the service: <code>addMarginToNextVA</code> (to pre-fund the next virtual account with
+							margin from the sub-account) and <code>sendQuoteWithAffiliateAndData</code> (to send the quote)
+						</li>
+						<li><strong>Frontend</strong> sends the trigger order parameters to the service's API</li>
+						<li><strong>Service</strong> stores the trigger order in its database</li>
+						<li>
+							<strong>Service</strong> monitors price feeds. When the trigger price is reached, it batches
+							<strong>two operations</strong> into a single <code>executeBatch</code> call: - <strong>Operation 1</strong>:
+							<code>addMarginToNextVA</code> on AccountLayer — transfers margin from the user's sub-account to the predicted next
+							virtual account address - <strong>Operation 2</strong>: <code>sendQuoteWithAffiliateAndData</code> on Symmio Core — sends
+							the quote from that virtual account
+						</li>
+						<li>
+							InstantLayer verifies the service has active delegations for <strong>both</strong> selectors, then executes both calls
+							atomically
+						</li>
+					</ol>
+					<blockquote>
+						<p>
+							<strong>Why two operations?</strong> <code>addMarginToNextVA</code> pre-funds the predicted next virtual account address
+							by transferring margin from the sub-account. The subsequent <code>sendQuoteWithAffiliateAndData</code> then triggers the
+							actual VA creation (based on the sub-account's isolation type) and sends the quote from it. Without the pre-funding step,
+							the newly created VA would have no margin to trade with.
+						</p>
+					</blockquote>
+					<h3 id="doc-instant-layer-service-integration-flow-diagram_1">Flow Diagram</h3>
+					<pre><code class="language-mermaid">sequenceDiagram
+    participant User as User (Frontend)
+    participant TM as Trigger Market Service
+    participant IL as Instant Layer
+    participant Symmio as Symmio Core
+
+    rect rgb(240, 248, 255)
+        Note over User, TM: Setup Phase
+        User-&gt;&gt;IL: grantDelegation(addMarginToNextVA +&lt;br/&gt;sendQuoteWithAffiliateAndData → service)
+        IL--&gt;&gt;User: Delegation active
+        User-&gt;&gt;TM: Send trigger order params
+        TM-&gt;&gt;TM: Store trigger order in DB
+    end
+
+    rect rgb(255, 248, 240)
+        Note over TM, Symmio: Trigger Phase
+        TM-&gt;&gt;TM: Price feed shows ETH = 1800 (trigger hit)
+        TM-&gt;&gt;TM: Build addMarginToNextVA +&lt;br/&gt;sendQuoteWithAffiliateAndData callData
+        TM-&gt;&gt;IL: executeBatch([marginOp, sendQuoteOp], [sig, sig])
+        IL-&gt;&gt;IL: Verify delegations for both selectors
+        IL-&gt;&gt;Symmio: addMarginToNextVA(...) → pre-funds next VA address
+        IL-&gt;&gt;Symmio: sendQuoteWithAffiliateAndData(...)
+        Symmio--&gt;&gt;IL: quoteId returned
+        IL--&gt;&gt;TM: Batch executed
+        TM-&gt;&gt;TM: Remove trigger order from DB
+    end
+</code></pre>
+					<h3 id="doc-instant-layer-service-integration-important-details_1">Important Details</h3>
+					<ul>
+						<li>
+							The two operations target <strong>different contracts</strong>: <code>addMarginToNextVA</code> targets the AccountLayer,
+							<code>sendQuoteWithAffiliateAndData</code> targets Symmio Core. Both are whitelisted targets.
+						</li>
+						<li>
+							The <code>signerAccount.addr</code> differs between the two operations: the margin operation uses the sub-account, the
+							send-quote operation uses the virtual account address.
+						</li>
+						<li>
+							The service needs to know the virtual account address in advance (it is deterministic — the "next VA" for a given
+							sub-account).
+						</li>
+						<li>
+							The service calculates margin values (cva, lf, partyAmm, partyBmm) based on the user's leverage, quantity, and symbol
+							configuration, and fetches the Muon UPNL signature at execution time.
+						</li>
+					</ul>
+					<hr />
+					<h2 id="doc-instant-layer-service-integration-3-session-keys">3. Session Keys</h2>
+					<p>
+						Session keys allow users to trade without signing every transaction with their main wallet. A temporary key pair is generated
+						in the browser, the user delegates access to it via a single wallet signature, and all subsequent operations are signed by the
+						session key — no wallet popups needed.
+					</p>
+					<h3 id="doc-instant-layer-service-integration-the-convention-selector-0x00000001">
+						The Convention: Selector <code>0x00000001</code>
+					</h3>
+					<p>
+						The Instant Layer's delegation system is selector-based — each delegation grants permission for specific function selectors.
+						Session keys exploit this by using a <strong>predefined non-functional selector</strong> as an opt-in signal:
+					</p>
+					<pre><code>SESSION_KEY_SELECTOR = 0x00000001
+</code></pre>
+					<p>
+						<strong>Why this works:</strong> - <code>0x00000001</code> does not correspond to any real function selector on Symmio or
+						AccountLayer - It cannot be used in an <code>executeBatch</code> call (no function has this selector) - It serves purely as an
+						<strong>off-chain convention</strong>: if a user has delegated <code>0x00000001</code> to an address, services treat that
+						address as an authorized session key - The delegation is fully on-chain and verifiable — anyone can call
+						<code>isDelegationActive(user, sessionKey, 0x00000001)</code> to confirm
+					</p>
+					<h3 id="doc-instant-layer-service-integration-how-it-works_2">How It Works</h3>
+					<p><strong>Session initialization (one wallet transaction):</strong></p>
+					<ol>
+						<li>Frontend generates an ephemeral key pair (the "session key") and stores it in browser memory</li>
+						<li>
+							User calls <code>grantDelegation</code> on the Instant Layer, granting the
+							<strong>trading selectors</strong> (<code>requestToClosePosition</code>, <code>addMarginToNextVA</code>,
+							<code>sendQuoteWithAffiliateAndData</code>) AND <code>0x00000001</code> to the session key address, with a time-bound
+							expiry (e.g., 24 hours)
+						</li>
+						<li>
+							User also grants delegations to the services they want to use (TPSL bot gets <code>requestToClosePosition</code>, Trigger
+							Market gets <code>addMarginToNextVA</code> + <code>sendQuoteWithAffiliateAndData</code>) — these are separate
+							<code>grantDelegation</code> calls from the wallet
+						</li>
+						<li>The wallet can now disconnect.</li>
+					</ol>
+					<p><strong>Direct trading (session key signs operations):</strong></p>
+					<ol start="5">
+						<li>
+							When the user wants to trade directly, the session key signs the operation (e.g.,
+							<code>sendQuoteWithAffiliateAndData</code>) and the frontend sends it to an operator for submission via
+							<code>executeBatch</code>. No wallet interaction needed.
+						</li>
+					</ol>
+					<p>
+						<strong>Authenticating with services (the <code>0x00000001</code> trick):</strong>
+					</p>
+					<ol start="6">
+						<li>
+							The TPSL bot and Trigger Market service already have their own delegations from step 3. But when a user submits a TP/SL or
+							trigger order to a service's API, the service needs to verify that the requester actually controls this account.
+						</li>
+						<li>
+							Instead of requiring a wallet signature for API authentication, the user signs the API request with their
+							<strong>session key</strong>.
+						</li>
+						<li>
+							The service checks <code>isDelegationActive(userAccount, sessionKeyAddress, 0x00000001)</code> on-chain. If active, the
+							session key is authorized for that account, and the request is accepted.
+						</li>
+						<li>
+							When the trigger condition is met, the service uses <strong>its own delegation</strong> (from step 3) to execute the
+							on-chain operation.
+						</li>
+					</ol>
+					<p>
+						<strong>What services check:</strong> When a service receives a request signed by address X for account Y: 1. Is X the account
+						owner? If yes, proceed. 2. If not, does Y have an active delegation of <code>0x00000001</code> to X? (session key check) 3. If
+						yes, X is an authorized session key for Y — accept the request.
+					</p>
+					<h3 id="doc-instant-layer-service-integration-flow-diagram-desktop-session-key">Flow Diagram: Desktop Session Key</h3>
+					<pre><code class="language-mermaid">sequenceDiagram
+    participant Wallet as User Wallet
+    participant FE as Frontend (Browser)
+    participant IL as Instant Layer
+    participant Service as TPSL / Trigger Service
+
+    rect rgb(240, 248, 255)
+        Note over Wallet, IL: Session Initialization (wallet needed)
+        FE-&gt;&gt;FE: Generate ephemeral key pair (sessionKey)
+        FE-&gt;&gt;FE: Store sessionKey in browser memory
+        Wallet-&gt;&gt;IL: grantDelegation(trading selectors +&lt;br/&gt;0x00000001 → sessionKey)
+        Wallet-&gt;&gt;IL: grantDelegation(requestToClosePosition → service)
+        IL--&gt;&gt;FE: Delegations active
+        Note over FE: Wallet can now disconnect
+    end
+
+    rect rgb(248, 255, 240)
+        Note over FE, Service: Service Interaction (no wallet needed)
+        FE-&gt;&gt;FE: User sets TP/SL on a position
+        FE-&gt;&gt;FE: Session key signs the API request
+        FE-&gt;&gt;Service: Send TP/SL params + session key signature
+        Service-&gt;&gt;IL: isDelegationActive(user, sessionKey, 0x00000001)?
+        IL--&gt;&gt;Service: true (session key is valid for this account)
+        Service-&gt;&gt;Service: Store TP/SL config in DB
+        Note over Service: Bot triggers when price hits threshold,&lt;br/&gt;uses its own delegation to execute
+    end
+</code></pre>
+					<h3 id="doc-instant-layer-service-integration-flow-diagram-cross-device-via-qr-code">Flow Diagram: Cross-Device via QR Code</h3>
+					<p>
+						A powerful use case is transferring a session to another device (e.g., desktop to mobile) without needing the wallet on the
+						second device.
+					</p>
+					<ol>
+						<li>Desktop generates a session key and activates it on-chain (as above)</li>
+						<li>Desktop encodes the session key's private key as a QR code</li>
+						<li>Mobile scans the QR code and imports the session key</li>
+						<li>Mobile can now trade using the session key — no wallet app needed on mobile</li>
+					</ol>
+					<pre><code class="language-mermaid">sequenceDiagram
+    participant DW as Desktop Wallet
+    participant Desktop as Desktop Browser
+    participant Mobile as Mobile Browser
+    participant IL as Instant Layer
+
+    rect rgb(240, 248, 255)
+        Note over DW, Desktop: Desktop Setup
+        Desktop-&gt;&gt;Desktop: Generate session key pair
+        Desktop-&gt;&gt;DW: Request tx: grantDelegation(trading selectors +&lt;br/&gt;0x00000001 → sessionKey)
+        DW-&gt;&gt;IL: grantDelegation(...)
+        IL--&gt;&gt;Desktop: Session key active
+        Desktop-&gt;&gt;Desktop: Encode sessionKey private key as QR code
+    end
+
+    rect rgb(255, 248, 240)
+        Note over Desktop, Mobile: Device Transfer
+        Desktop-&gt;&gt;Mobile: Display QR code on screen
+        Mobile-&gt;&gt;Mobile: Scan QR code
+        Mobile-&gt;&gt;Mobile: Import session key into browser
+    end
+
+    rect rgb(248, 255, 240)
+        Note over Mobile, IL: Mobile Trading
+        Mobile-&gt;&gt;Mobile: User trades using session key
+        Mobile-&gt;&gt;Mobile: Session key signs operations + API requests
+        Note over Mobile: No wallet needed on mobile --&lt;br/&gt;session key handles all signing
+    end
+</code></pre>
+					<hr />
+					<h2 id="doc-instant-layer-service-integration-putting-it-all-together">Putting It All Together</h2>
+					<p>A typical user session combines all three features. Here is the complete end-to-end flow:</p>
+					<pre><code class="language-mermaid">sequenceDiagram
+    participant W as Wallet
+    participant FE as Frontend
+    participant IL as Instant Layer
+    participant TPSL as TPSL Bot
+    participant TM as Trigger Market
+
+    Note over W, IL: 1. Session Start (wallet needed)
+
+    FE-&gt;&gt;FE: Generate session key
+    W-&gt;&gt;IL: grantDelegation(trading selectors + 0x00000001 → sessionKey)
+    W-&gt;&gt;IL: grantDelegation(requestToClosePosition → TPSL bot)
+    W-&gt;&gt;IL: grantDelegation(addMarginToNextVA + sendQuote → TM service)
+
+    Note over FE: Wallet disconnects.&lt;br/&gt;Session key handles everything from here.
+
+    Note over FE, TPSL: 2. User Sets TP/SL (no wallet)
+
+    FE-&gt;&gt;FE: Session key signs API request
+    FE-&gt;&gt;TPSL: TP/SL params + session key signature
+    TPSL-&gt;&gt;IL: Verify session key (0x00000001)
+    TPSL-&gt;&gt;TPSL: Store TP/SL in DB
+
+    Note over FE, TM: 3. User Places Trigger Order (no wallet)
+
+    FE-&gt;&gt;FE: Session key signs API request
+    FE-&gt;&gt;TM: Trigger order params + session key signature
+    TM-&gt;&gt;IL: Verify session key (0x00000001)
+    TM-&gt;&gt;TM: Store trigger order in DB
+
+    Note over TPSL, TM: 4. Services Execute When Triggered
+
+    TPSL-&gt;&gt;IL: executeBatch(requestToClosePosition)
+    IL-&gt;&gt;IL: Verify bot's delegation, execute
+    TM-&gt;&gt;IL: executeBatch(addMarginToNextVA + sendQuote)
+    IL-&gt;&gt;IL: Verify service's delegations, execute batch
+</code></pre>
+					<hr />
+					<h2 id="doc-instant-layer-service-integration-security-considerations">Security Considerations</h2>
+					<h3 id="doc-instant-layer-service-integration-session-keys">Session Keys</h3>
+					<ul>
+						<li>
+							<strong>Expiry</strong>: Always set a reasonable expiry on session key delegations (e.g., 24 hours). The delegation's
+							<code>expiryTimestamp</code> is enforced on-chain.
+						</li>
+						<li>
+							<strong>Storage</strong>: Prefer <code>sessionStorage</code> (cleared on tab close) over <code>localStorage</code> for
+							session keys. Never store in cookies.
+						</li>
+						<li><strong>Rotation</strong>: Generate a new session key each session. Do not reuse keys across sessions.</li>
+						<li>
+							<strong>QR transfer</strong>: The QR code contains the raw private key. Display it only briefly and warn users not to
+							screenshot it.
+						</li>
+						<li>
+							<strong>Revocation</strong>: If a session key is compromised, the user can revoke it via
+							<code>initiateRevokeDelegation</code> + <code>finalizeRevokeDelegation</code> (subject to the revocation cooldown period).
+						</li>
+					</ul>
+					<h3 id="doc-instant-layer-service-integration-service-delegations">Service Delegations</h3>
+					<ul>
+						<li>
+							<strong>Minimal selectors</strong>: Only delegate the exact selectors a service needs. The TPSL bot only needs
+							<code>requestToClosePosition</code>. The Trigger Market service needs <code>sendQuoteWithAffiliateAndData</code> +
+							<code>addMarginToNextVA</code>.
+						</li>
+						<li>
+							<strong>Expiry</strong>: Set reasonable expiry timestamps on service delegations. Services receive their delegations
+							directly from the user's wallet during session setup.
+						</li>
+						<li>
+							<strong>Operator trust</strong>: Services hold <code>OPERATOR_ROLE</code> and can submit batches. The delegation system
+							ensures they can only call functions they have been explicitly authorized for, but users should still only delegate to
+							trusted services.
+						</li>
+					</ul>
+					<h3 id="doc-instant-layer-service-integration-replay-protection">Replay Protection</h3>
+					<ul>
+						<li>
+							Services should always use salt-only mode (<code>nonce: 0</code>) with unique salts for triggered operations, since the
+							execution order is non-deterministic (depends on which price threshold is hit first).
+						</li>
+					</ul>
+					<hr />
+					<h2 id="doc-instant-layer-service-integration-implementation-reference">Implementation Reference</h2>
+					<p>This section contains the EIP-712 types, helper functions, and code examples needed to implement the flows described above.</p>
+					<h3 id="doc-instant-layer-service-integration-common-configuration">Common Configuration</h3>
+					<h4 id="doc-instant-layer-service-integration-eip-712-domain-and-operation-types">EIP-712 Domain and Operation Types</h4>
+					<p>These are needed for signing operations that services submit via <code>executeBatch</code>:</p>
+					<pre><code class="language-typescript">import { randomBytes } from "crypto"
+
+const domain = {
+  name: "SymmioInstantLayer",
+  version: "1",
+  chainId: chainId,
+  verifyingContract: instantLayerAddress,
+}
+
+const operationTypes = {
+  Account: [
+    { name: "addr", type: "address" },
+    { name: "isPartyB", type: "bool" },
+  ],
+  FlexField: [
+    { name: "offset", type: "uint256" },
+    { name: "length", type: "uint256" },
+    { name: "authorizedFlexFiller", type: "address" },
+  ],
+  ReplayAttackHeader: [
+    { name: "nonce", type: "uint256" },
+    { name: "deadline", type: "uint256" },
+    { name: "salt", type: "bytes32" },
+  ],
+  SignedOperation: [
+    { name: "signer", type: "address" },
+    { name: "target", type: "address" },
+    { name: "callData", type: "bytes" },
+    { name: "signerAccount", type: "Account" },
+    { name: "flexFields", type: "FlexField[]" },
+    { name: "maxUses", type: "uint256" },
+    { name: "replayAttackHeader", type: "ReplayAttackHeader" },
+  ],
+}
+
+function generateSalt(): string {
+  return "0x" + randomBytes(32).toString("hex")
+}
+</code></pre>
+					<h4 id="doc-instant-layer-service-integration-granting-delegation">Granting Delegation</h4>
+					<p>
+						<code>grantDelegation</code> is a direct transaction called by the account owner (or session key). No EIP-712 signing is
+						needed — the caller's identity is verified on-chain via <code>msg.sender</code>.
+					</p>
+					<pre><code class="language-typescript">async function grantDelegationTo(
+  signer: ethers.Signer,    // account owner or session key
+  userAccount: string,
+  delegateTo: string,
+  selectors: string[],
+  expiryTimestamp: number,
+) {
+  await instantLayer.connect(signer).grantDelegation({
+    account: { addr: userAccount, isPartyB: false },
+    delegatedSigner: delegateTo,
+    selectors: selectors,
+    expiryTimestamp: expiryTimestamp,
+  })
+}
+</code></pre>
+					<h3 id="doc-instant-layer-service-integration-tpsl-bot">TPSL Bot</h3>
+					<h4 id="doc-instant-layer-service-integration-frontend-delegate-and-submit-tpsl">Frontend: Delegate and Submit TP/SL</h4>
+					<pre><code class="language-typescript">const REQUEST_TO_CLOSE_SELECTOR = "0xeaa31b19"
+
+async function setupTPSL(
+  signer: ethers.Signer,      // user's wallet or session key
+  userAccount: string,
+  botSignerAddress: string,
+  expiryTimestamp: number,
+  quoteId: number,
+  takeProfitPrice: bigint | null,
+  stopLossPrice: bigint | null,
+  quantityToClose: bigint,
+) {
+  // 1. Grant delegation on-chain
+  await grantDelegationTo(
+    signer,
+    userAccount,
+    botSignerAddress,
+    [REQUEST_TO_CLOSE_SELECTOR],
+    expiryTimestamp,
+  )
+
+  // 2. Send TP/SL params to bot API
+  await fetch(`${TPSL_BOT_URL}/api/tpsl`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      quoteId,
+      userAccount,
+      takeProfitPrice: takeProfitPrice?.toString(),
+      stopLossPrice: stopLossPrice?.toString(),
+      quantityToClose: quantityToClose.toString(),
+    }),
+  })
+}
+</code></pre>
+					<h4 id="doc-instant-layer-service-integration-backend-trigger-close">Backend: Trigger Close</h4>
+					<pre><code class="language-typescript">async function triggerClose(entry: TPSLEntry, triggerPrice: bigint) {
+  const symmioInterface = new ethers.Interface([
+    "function requestToClosePosition(uint256 quoteId, uint256 closePrice, uint256 quantityToClose, uint8 orderType, uint256 deadline)",
+  ])
+
+  const deadline = Math.floor(Date.now() / 1000) + 300
+  const callData = symmioInterface.encodeFunctionData(
+    "requestToClosePosition",
+    [entry.quoteId, triggerPrice, entry.quantityToClose, 1, deadline], // 1 = MARKET
+  )
+
+  const operation = {
+    signer: botSignerAddress,
+    target: symmioCoreAddress,
+    callData: callData,
+    signerAccount: { addr: entry.userAccount, isPartyB: false },
+    flexFields: [],
+    maxUses: 1,
+    replayAttackHeader: {
+      nonce: 0n,
+      deadline: BigInt(deadline),
+      salt: generateSalt(),
+    },
+  }
+
+  const signature = await botSigner.signTypedData(
+    domain,
+    operationTypes,
+    operation,
+  )
+
+  await instantLayer.executeBatch(
+    [operation], [signature],
+    [{ values: [] }], [[]]
+  )
+}
+</code></pre>
+					<h3 id="doc-instant-layer-service-integration-trigger-market-service">Trigger Market Service</h3>
+					<h4 id="doc-instant-layer-service-integration-frontend-delegate-and-submit-trigger-order">
+						Frontend: Delegate and Submit Trigger Order
+					</h4>
+					<pre><code class="language-typescript">const SEND_QUOTE_SELECTOR = "0x1e5efc6c"
+const ADD_MARGIN_TO_NEXT_VA_SELECTOR = "0xa6d66852"
+
+async function setupTriggerOrder(
+  signer: ethers.Signer,      // user's wallet or session key
+  userAccount: string,
+  serviceSignerAddress: string,
+  expiryTimestamp: number,
+  symbolId: number,
+  positionType: number,       // 0 = LONG, 1 = SHORT
+  triggerPrice: bigint,
+  quantity: bigint,
+  leverage: number,
+  partyBsWhiteList: string[],
+  affiliate: string,
+) {
+  // 1. Grant delegation on-chain (both selectors in one call)
+  await grantDelegationTo(
+    signer,
+    userAccount,
+    serviceSignerAddress,
+    [SEND_QUOTE_SELECTOR, ADD_MARGIN_TO_NEXT_VA_SELECTOR],
+    expiryTimestamp,
+  )
+
+  // 2. Send trigger order params to service API
+  await fetch(`${TRIGGER_SERVICE_URL}/api/trigger-order`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      userAccount,
+      symbolId,
+      positionType,
+      triggerPrice: triggerPrice.toString(),
+      quantity: quantity.toString(),
+      leverage,
+      partyBsWhiteList,
+      affiliate,
+    }),
+  })
+}
+</code></pre>
+					<h4 id="doc-instant-layer-service-integration-backend-trigger-the-batched-quote">Backend: Trigger the Batched Quote</h4>
+					<pre><code class="language-typescript">async function triggerSendQuote(order: TriggerOrder) {
+  const accountLayerInterface = new ethers.Interface([
+    "function addMarginToNextVA(address subAccount, uint8 isolationType, uint256 symbolId, uint256 amount)",
+  ])
+
+  const symmioInterface = new ethers.Interface([
+    "function sendQuoteWithAffiliateAndData(address[],uint256,uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256,uint256,address,(bytes,uint256,int256,uint256),(bytes32,uint8,uint16,uint256[]))",
+  ])
+
+  const deadline = Math.floor(Date.now() / 1000) + 300
+
+  // --- Operation 1: Pre-fund next virtual account with margin ---
+  const marginCallData = accountLayerInterface.encodeFunctionData(
+    "addMarginToNextVA",
+    [
+      order.subAccount,           // user's sub-account
+      order.isolationType,        // VirtualAccountIsolationType (0=CROSS, 1=ISOLATED)
+      order.symbolId,
+      order.marginAmount,         // total margin to allocate
+    ],
+  )
+
+  const marginOp = {
+    signer: serviceSignerAddress,
+    target: accountLayerAddress,  // AccountLayer, not Symmio core
+    callData: marginCallData,
+    signerAccount: { addr: order.subAccount, isPartyB: false },
+    flexFields: [],
+    maxUses: 1,
+    replayAttackHeader: {
+      nonce: 0n,
+      deadline: BigInt(deadline),
+      salt: generateSalt(),
+    },
+  }
+
+  // --- Operation 2: Send quote from the new virtual account ---
+  const sendQuoteCallData = symmioInterface.encodeFunctionData(
+    "sendQuoteWithAffiliateAndData",
+    [
+      order.partyBsWhiteList,
+      order.symbolId,
+      order.positionType,
+      1,                          // OrderType.MARKET
+      order.triggerPrice,
+      order.quantity,
+      order.cva,                  // calculated by service
+      order.lf,                   // calculated by service
+      order.partyAmm,             // calculated by service
+      order.partyBmm,             // calculated by service
+      deadline,
+      order.affiliate,
+      order.upnlSig,              // Muon signature (fetched by service)
+      order.data,                 // custom quote data
+    ],
+  )
+
+  const sendQuoteOp = {
+    signer: serviceSignerAddress,
+    target: symmioCoreAddress,
+    callData: sendQuoteCallData,
+    signerAccount: { addr: order.virtualAccount, isPartyB: false },
+    flexFields: [],
+    maxUses: 1,
+    replayAttackHeader: {
+      nonce: 0n,
+      deadline: BigInt(deadline),
+      salt: generateSalt(),
+    },
+  }
+
+  // Sign both operations
+  const marginSig = await serviceSigner.signTypedData(
+    domain, operationTypes, marginOp,
+  )
+  const sendQuoteSig = await serviceSigner.signTypedData(
+    domain, operationTypes, sendQuoteOp,
+  )
+
+  // Execute as a batch -- addMarginToNextVA first, then sendQuote
+  await instantLayer.executeBatch(
+    [marginOp, sendQuoteOp],
+    [marginSig, sendQuoteSig],
+    [{ values: [] }, { values: [] }],
+    [[], []],
+  )
+}
+</code></pre>
+					<h3 id="doc-instant-layer-service-integration-session-keys_1">Session Keys</h3>
+					<h4 id="doc-instant-layer-service-integration-frontend-generate-activate-and-transfer">
+						Frontend: Generate, Activate, and Transfer
+					</h4>
+					<pre><code class="language-typescript">import { ethers } from "ethers"
+
+const SESSION_KEY_SELECTOR = "0x00000001"
+
+interface SessionKey {
+  address: string
+  privateKey: string
+  createdAt: number
+  expiresAt: number
+}
+
+// --- Generate ---
+
+function generateSessionKey(expiryHours: number = 24): SessionKey {
+  const wallet = ethers.Wallet.createRandom()
+  const now = Math.floor(Date.now() / 1000)
+  return {
+    address: wallet.address,
+    privateKey: wallet.privateKey,
+    createdAt: now,
+    expiresAt: now + expiryHours * 3600,
+  }
+}
+
+function storeSessionKey(sessionKey: SessionKey) {
+  sessionStorage.setItem("symmio_session_key", JSON.stringify(sessionKey))
+}
+
+function getSessionKey(): SessionKey | null {
+  const stored = sessionStorage.getItem("symmio_session_key")
+  if (!stored) return null
+  const key = JSON.parse(stored) as SessionKey
+  if (key.expiresAt &lt; Math.floor(Date.now() / 1000)) {
+    sessionStorage.removeItem("symmio_session_key")
+    return null
+  }
+  return key
+}
+
+// --- Activate on-chain (requires wallet tx) ---
+
+const REQUEST_TO_CLOSE_SELECTOR = "0xeaa31b19"
+const SEND_QUOTE_SELECTOR = "0x1e5efc6c"
+const ADD_MARGIN_TO_NEXT_VA_SELECTOR = "0xa6d66852"
+
+async function activateSessionKey(
+  userSigner: ethers.Signer,   // user's main wallet
+  userAccount: string,
+  sessionKey: SessionKey,
+) {
+  // Grant trading selectors + session key convention to the session key
+  await grantDelegationTo(
+    userSigner,
+    userAccount,
+    sessionKey.address,
+    [
+      SESSION_KEY_SELECTOR,              // 0x00000001 -- off-chain auth convention
+      REQUEST_TO_CLOSE_SELECTOR,         // for direct close operations
+      SEND_QUOTE_SELECTOR,               // for direct open operations
+      ADD_MARGIN_TO_NEXT_VA_SELECTOR,    // for pre-funding VAs
+    ],
+    sessionKey.expiresAt,
+  )
+}
+
+// --- Sign API requests with session key (for service authentication) ---
+
+async function signServiceRequest(
+  sessionKey: SessionKey,
+  payload: object,
+): Promise&lt;{ signature: string; signerAddress: string }&gt; {
+  const sessionSigner = new ethers.Wallet(sessionKey.privateKey)
+  const message = JSON.stringify(payload)
+  const signature = await sessionSigner.signMessage(message)
+  return { signature, signerAddress: sessionKey.address }
+}
+
+// --- QR code for cross-device transfer ---
+
+import QRCode from "qrcode"
+
+async function generateSessionQR(sessionKey: SessionKey): Promise&lt;string&gt; {
+  const payload = JSON.stringify({
+    pk: sessionKey.privateKey,
+    account: userAccount,
+    chain: chainId,
+    il: instantLayerAddress,
+    exp: sessionKey.expiresAt,
+  })
+  return await QRCode.toDataURL(payload)
+}
+
+function importSessionFromQR(scannedData: string): SessionKey {
+  const payload = JSON.parse(scannedData)
+  return {
+    address: new ethers.Wallet(payload.pk).address,
+    privateKey: payload.pk,
+    createdAt: Math.floor(Date.now() / 1000),
+    expiresAt: payload.exp,
+  }
+}
+</code></pre>
+					<h4 id="doc-instant-layer-service-integration-backend-verifying-session-keys">Backend: Verifying Session Keys</h4>
+					<pre><code class="language-typescript">async function isValidSessionKey(
+  userAccount: string,
+  sessionKeyAddress: string,
+): Promise&lt;boolean&gt; {
+  return await instantLayer.isDelegationActive(
+    userAccount,
+    sessionKeyAddress,
+    SESSION_KEY_SELECTOR,
+  )
+}
+
+async function authenticateRequest(
+  userAccount: string,
+  message: string,
+  signature: string,
+): Promise&lt;void&gt; {
+  // Recover the signer from the signed API request
+  const signerAddress = ethers.verifyMessage(message, signature)
+
+  // Check: is the signer the account owner?
+  const owner = await accountLayer.ownerOf(userAccount)
+  if (signerAddress === owner) return // authorized
+
+  // Check: is the signer a valid session key for this account?
+  const isSession = await isValidSessionKey(userAccount, signerAddress)
+  if (isSession) return // authorized via session key
+
+  throw new Error("Unauthorized: not account owner or valid session key")
+}
+
+async function handleTPSLRequest(req: Request) {
+  const { userAccount, message, signature, ...params } = req.body
+
+  // Verify the request came from the account owner or their session key
+  await authenticateRequest(userAccount, message, signature)
+
+  // Authenticated -- store TP/SL config in database.
+  // When triggered, the bot uses its own delegation to execute on-chain.
+}
+</code></pre>
+					<hr />
+					<h2 id="doc-instant-layer-service-integration-related-documentation">Related Documentation</h2>
+					<ul>
+						<li><a href="instant-layer-overview.html">Instant Layer Overview</a> — Core architecture and concepts</li>
+						<li>
+							<a href="instant-layer-partyb-integration.html">Instant Layer PartyB Integration</a> — PartyB-specific integration guide
+						</li>
+					</ul>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer"><span>Symmio Core v0.8.5 documentation.</span></footer>
+	</body>
+</html>

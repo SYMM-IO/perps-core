@@ -14,7 +14,7 @@ export interface ActiveDeploymentRecipe {
 export function assertExpectedRecipeDigest(actual: string, expected: string | undefined): void {
 	if (!expected) {
 		throw new Error(
-			"Deployment recipe digest is not pinned. Run through `./symmio deploy --config <recipe.json>` so the reviewed digest is carried across the Hardhat process boundary.",
+			"Deployment recipe digest is not pinned. Launch `./symmio` and start or continue the owning operator task so the reviewed digest crosses the Hardhat process boundary.",
 		)
 	}
 	if (!/^[0-9a-f]{64}$/.test(expected)) throw new Error(`Invalid SYMMIO_DEPLOYMENT_RECIPE_DIGEST ${JSON.stringify(expected)}`)
@@ -73,7 +73,7 @@ export const activeDeploymentRecipe = loadActiveRecipe()
 export function requireActiveDeploymentRecipe(recipePath?: string): ActiveDeploymentRecipe {
 	if (!activeDeploymentRecipe) {
 		throw new Error(
-			"Deployment recipe mode is not active. Run through `symmio deploy --config <recipe.json>` so SYMMIO_DEPLOYMENT_RECIPE is set before Hardhat loads its network configuration.",
+			"Deployment recipe mode is not active. Launch `./symmio` and start or continue the owning operator task so the recipe is bound before Hardhat loads its network configuration.",
 		)
 	}
 	if (recipePath) {

@@ -335,9 +335,9 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		if (afLayout.affiliates[affiliate].admin != msg.sender && !afLayout.operators[affiliate][selector][msg.sender]) revert Unauthorized();
 		if (!afLayout.affiliates[affiliate].symmioCores.contains(symmio)) revert SymmioCoreNotAllowed();
 
-		ISymmio(symmio).setSigner(affiliate);
+		bool usesTransientSigner = LibAccountLayerUtils.beginCoreSigner(symmio, affiliate);
 		(bool success, bytes memory returned) = symmio.call(callData);
-		ISymmio(symmio).setSigner(address(0));
+		LibAccountLayerUtils.endCoreSigner(symmio, usesTransientSigner);
 
 		if (!success) {
 			assembly {
@@ -414,7 +414,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 			return;
 		}
 
-		ISymmio(symmio).setSigner(afLayout.affiliates[affiliate].feeDetails.feeDistributor);
+		bool usesTransientSigner = LibAccountLayerUtils.beginCoreSigner(symmio, afLayout.affiliates[affiliate].feeDetails.feeDistributor);
 		ISymmio.WithdrawReceiverPart[] memory parts = new ISymmio.WithdrawReceiverPart[](1);
 		parts[0] = ISymmio.WithdrawReceiverPart({
 			id: 0,
@@ -426,7 +426,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		});
 		(uint256 requestId, ) = ISymmio(symmio).initiateWithdraw(parts, false, "0x");
 		ISymmio(symmio).finalizeWithdrawRequest(afLayout.affiliates[affiliate].feeDetails.feeDistributor, requestId);
-		ISymmio(symmio).setSigner(address(0));
+		LibAccountLayerUtils.endCoreSigner(symmio, usesTransientSigner);
 
 		for (uint256 i = 0; i < stakeholders.length; i++) {
 			uint256 share = (stakeholders[i].share * amount) / SHARE_PRECISION;

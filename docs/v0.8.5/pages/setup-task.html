@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="description" content="Configure the following variables in your .env file:" />
+		<title>System Deployment Guide - Symmio Core v0.8.5</title>
+		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../../v0.8.6/assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../../v0.8.6/assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.5">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.5</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#doc-setup-task-prerequisites">Prerequisites</a>
+				<a class="toc-link level-2" href="#doc-setup-task-environment-configuration">Environment Configuration</a>
+				<a class="toc-link level-2" href="#doc-setup-task-deployment">Deployment</a>
+				<a class="toc-link level-3" href="#doc-setup-task-local-anvil-deployment-recommended-for-partyb-testing"
+					>Local Anvil Deployment (Recommended for PartyB Testing)</a
+				>
+				<a class="toc-link level-3" href="#doc-setup-task-testnetmainnet-deployment">Testnet/Mainnet Deployment</a>
+				<a class="toc-link level-2" href="#doc-setup-task-checkpoint-system-resumable-deployments"
+					>Checkpoint System (Resumable Deployments)</a
+				>
+				<a class="toc-link level-3" href="#doc-setup-task-how-it-works">How It Works</a>
+				<a class="toc-link level-3" href="#doc-setup-task-commands">Commands</a>
+				<a class="toc-link level-3" href="#doc-setup-task-checkpoint-status-display">Checkpoint Status Display</a>
+				<a class="toc-link level-2" href="#doc-setup-task-what-gets-deployed">What Gets Deployed</a>
+				<a class="toc-link level-2" href="#doc-setup-task-roles-and-permissions-setup">Roles and Permissions Setup</a>
+				<a class="toc-link level-3" href="#doc-setup-task-diamond-roles-granted-to-admin">Diamond Roles (granted to admin)</a>
+				<a class="toc-link level-3" href="#doc-setup-task-contract-integrations">Contract Integrations</a>
+				<a class="toc-link level-3" href="#doc-setup-task-muon-signature-verifier-setup">Muon Signature Verifier Setup</a>
+				<a class="toc-link level-3" href="#doc-setup-task-muon-runtime-config-on-diamond">Muon Runtime Config on Diamond</a>
+				<a class="toc-link level-3" href="#doc-setup-task-muon-view-call-verification">Muon View-Call Verification</a>
+				<a class="toc-link level-3" href="#doc-setup-task-accountlayerdiamond-setup">AccountLayerDiamond Setup</a>
+				<a class="toc-link level-3" href="#doc-setup-task-instantlayer-setup">InstantLayer Setup</a>
+				<a class="toc-link level-3" href="#doc-setup-task-instantlayer-templates-if-setup_instant_layer_templatestrue"
+					>InstantLayer Templates (if SETUP_INSTANT_LAYER_TEMPLATES=true)</a
+				>
+				<a class="toc-link level-3" href="#doc-setup-task-partyb-setup-if-deployed">PartyB Setup (if deployed)</a>
+				<a class="toc-link level-2" href="#doc-setup-task-system-parameters">System Parameters</a>
+				<a class="toc-link level-2" href="#doc-setup-task-output">Output</a>
+				<a class="toc-link level-2" href="#doc-setup-task-task-options">Task Options</a>
+				<a class="toc-link level-2" href="#doc-setup-task-contract-verification">Contract Verification</a>
+				<a class="toc-link level-2" href="#doc-setup-task-troubleshooting">Troubleshooting</a>
+				<a class="toc-link level-3" href="#doc-setup-task-deployment-fails-mid-way">Deployment fails mid-way</a>
+				<a class="toc-link level-3" href="#doc-setup-task-checkpoint-appears-corrupted">Checkpoint appears corrupted</a>
+				<a class="toc-link level-3" href="#doc-setup-task-role-granting-fails">Role granting fails</a>
+				<a class="toc-link level-3" href="#doc-setup-task-muon-verifier-seeding-fails">Muon verifier seeding fails</a>
+				<a class="toc-link level-3" href="#doc-setup-task-muon-config-was-not-applied">Muon config was not applied</a>
+				<a class="toc-link level-3" href="#doc-setup-task-diamond-cut-verification-mismatch">Diamond cut verification mismatch</a>
+			</div>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>System Deployment Guide</h1>
+							<p class="hero-copy">
+								This guide explains how to deploy the complete Symmio system using the <code>deploy:system</code> task.
+							</p>
+						</div>
+					</div>
+				</header>
+				<article class="doc-article" id="full-document">
+					<h2 id="doc-setup-task-prerequisites">Prerequisites</h2>
+					<ol>
+						<li>Copy <code>.env.example</code> to <code>.env</code> and configure the required variables</li>
+						<li>Ensure you have sufficient funds in the deployer wallet</li>
+					</ol>
+					<h2 id="doc-setup-task-environment-configuration">Environment Configuration</h2>
+					<p>Configure the following variables in your <code>.env</code> file:</p>
+					<pre><code class="language-bash"># Required: Your deployer's private key
+PRIVATE_KEY="0x..."
+
+# Optional: Admin address for all contracts (defaults to deployer wallet)
+ADMIN_PUBLIC_KEY=""
+
+# Optional: Fee receiver address (defaults to admin)
+SYMMIO_FEE_RECEIVER=""
+
+# Optional: Existing collateral token address
+# If not set, a FakeStablecoin will be deployed (useful for local testing)
+COLLATERAL_ADDRESS=""
+
+# Deploy SymmioPartyB contract (default: true, set to "false" to skip)
+DEPLOY_PARTYB="true"
+
+# Optional: Signer address for SymmioPartyB (ERC-1271 signature verification)
+PARTYB_SIGNER=""
+
+# Register a dummy affiliate for testing (default: true, set to "false" to skip)
+REGISTER_DUMMY_AFFILIATE="true"
+
+# Setup InstantLayer templates for OpenPosition and ClosePosition flows
+# (default: true, set to "false" to skip)
+SETUP_INSTANT_LAYER_TEMPLATES="true"
+
+# Optional: existing MuonSignatureVerifier address
+# If empty, deploy:system deploys a new MuonSignatureVerifier
+MUON_SIGNATURE_VERIFIER_ADDRESS=""
+
+# Optional: Muon app/runtime config on Diamond
+# If set, deploy:system calls setMuonIds(muonAppId)
+MUON_APP_ID=""
+# If BOTH are set, deploy:system calls setMuonConfig(upnlValidTime, priceValidTime)
+MUON_UPNL_VALID_TIME=""
+MUON_PRICE_VALID_TIME=""
+
+# Optional: seed MuonSignatureVerifier keys/signers
+# addPublicKey is called only when BOTH are set
+MUON_PUBLIC_KEY_X=""
+MUON_PUBLIC_KEY_PARITY="" # 0 or 1
+# Comma-separated addresses, e.g. "0xabc...,0xdef..."
+MUON_GATEWAY_SIGNERS=""
+
+# Deployment log level: "silent" (default), "minimal", or "verbose"
+DEPLOY_LOG_LEVEL="minimal"
+</code></pre>
+					<h2 id="doc-setup-task-deployment">Deployment</h2>
+					<h3 id="doc-setup-task-local-anvil-deployment-recommended-for-partyb-testing">
+						Local Anvil Deployment (Recommended for PartyB Testing)
+					</h3>
+					<ol>
+						<li>Start a local Anvil node:</li>
+					</ol>
+					<pre><code class="language-bash">anvil #or "anvil --disable-code-size-limit" if you see the limit problem
+</code></pre>
+					<ol start="2">
+						<li>Configure <code>.env</code> for local testing (minimal config):</li>
+					</ol>
+					<pre><code class="language-bash"># Just the private key - everything else uses sensible defaults
+PRIVATE_KEY="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+</code></pre>
+					<ol start="3">
+						<li>Run the deployment:</li>
+					</ol>
+					<pre><code class="language-bash">npx hardhat deploy:system --network localhost
+</code></pre>
+					<h3 id="doc-setup-task-testnetmainnet-deployment">Testnet/Mainnet Deployment</h3>
+					<pre><code class="language-bash">npx hardhat deploy:system --network &lt;NETWORK_NAME&gt;
+</code></pre>
+					<h2 id="doc-setup-task-checkpoint-system-resumable-deployments">Checkpoint System (Resumable Deployments)</h2>
+					<p>
+						The deployment system supports <strong>checkpointing</strong> for resumable deployments. If a deployment is interrupted
+						(network error, out of gas, etc.), you can resume from where it left off.
+					</p>
+					<h3 id="doc-setup-task-how-it-works">How It Works</h3>
+					<ul>
+						<li>Checkpoint files are saved to <code>tasks/data/checkpoints/checkpoint-&lt;chainId&gt;.json</code></li>
+						<li>Each contract deployment and setup step is checkpointed immediately after completion</li>
+						<li>On resume, already-completed steps are skipped automatically</li>
+						<li>Diamond cuts are verified on-chain to handle edge cases where tx succeeded but checkpoint wasn't saved</li>
+					</ul>
+					<h3 id="doc-setup-task-commands">Commands</h3>
+					<pre><code class="language-bash"># Resume from existing checkpoint (default behavior)
+npx hardhat deploy:system --network &lt;NETWORK_NAME&gt;
+
+# Force fresh deployment, ignoring any existing checkpoint
+npx hardhat deploy:system --network &lt;NETWORK_NAME&gt; --fresh
+</code></pre>
+					<h3 id="doc-setup-task-checkpoint-status-display">Checkpoint Status Display</h3>
+					<p>When resuming, you'll see a status display showing:</p>
+					<ul>
+						<li>Network and chain ID</li>
+						<li>When the deployment started and was last updated</li>
+						<li>Which contracts are already deployed</li>
+						<li>Setup progress (roles granted, parameters set, etc.)</li>
+					</ul>
+					<h2 id="doc-setup-task-what-gets-deployed">What Gets Deployed</h2>
+					<p>The <code>deploy:system</code> task deploys and configures the following contracts:</p>
+					<ol>
+						<li><strong>Collateral</strong> - FakeStablecoin (or uses existing if <code>COLLATERAL_ADDRESS</code> is set)</li>
+						<li><strong>Diamond</strong> - Main protocol contract with 29 facets and 3 libraries</li>
+						<li>
+							<strong>MuonSignatureVerifier</strong> - External Muon verification contract (or uses
+							<code>MUON_SIGNATURE_VERIFIER_ADDRESS</code> if provided)
+						</li>
+						<li><strong>AccountLayerDiamond</strong> - Unified account/affiliate management with 6 facets</li>
+						<li><strong>InstantLayer</strong> - Instant settlement layer for batched operations</li>
+						<li><strong>SymmioPartyB</strong> - PartyB contract (optional, if <code>DEPLOY_PARTYB=true</code>)</li>
+						<li><strong>AccountManager</strong> - For dummy affiliate (optional, if <code>REGISTER_DUMMY_AFFILIATE=true</code>)</li>
+					</ol>
+					<h2 id="doc-setup-task-roles-and-permissions-setup">Roles and Permissions Setup</h2>
+					<p>The task automatically configures:</p>
+					<h3 id="doc-setup-task-diamond-roles-granted-to-admin">Diamond Roles (granted to admin)</h3>
+					<ul>
+						<li>SYMBOL_MANAGER_ROLE, PAUSER_ROLE, UNPAUSER_ROLE</li>
+						<li>PARTY_B_MANAGER_ROLE, SUSPENDER_ROLE, DISPUTE_ROLE</li>
+						<li>AFFILIATE_MANAGER_ROLE, MUON_SETTER_ROLE</li>
+						<li>LIQUIDATOR_ROLE, PARTYB_LIQUIDATOR_ROLE</li>
+						<li>DEALLOCATE_COOLDOWN_SETTER_ROLE, INSTANT_LAYER_ROLE</li>
+						<li>PROTOCOL_CONFIG_ROLE, FEE_ADMIN_ROLE, COOLDOWN_ADMIN_ROLE</li>
+						<li>PROVIDER_ADMIN_ROLE, INTEGRATION_ADMIN_ROLE, BRIDGE_MANAGER_ROLE</li>
+						<li>SIGNER_ADMIN_ROLE, EMERGENCY_ADMIN_ROLE, UNSUSPENDER_ROLE</li>
+						<li>MIGRATION_ROLE, SUSPENDED_FUNDS_WITHDRAWER_ROLE</li>
+						<li>FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE</li>
+					</ul>
+					<h3 id="doc-setup-task-contract-integrations">Contract Integrations</h3>
+					<ul>
+						<li>AccountLayerDiamond receives SIGNER_ADMIN_ROLE, AFFILIATE_MANAGER_ROLE, and BALANCE_SETTLER_ROLE on Diamond</li>
+						<li>InstantLayer receives INSTANT_LAYER_ROLE on Diamond</li>
+						<li>InstantLayer receives INSTANT_LAYER_ROLE on AccountLayerDiamond</li>
+						<li>Symmio Core (Diamond) is whitelisted on AccountLayerDiamond</li>
+						<li>AccountLayer is registered as the system hook on Diamond (<code>registerHook(address(0), accountLayerDiamond)</code>)</li>
+					</ul>
+					<h3 id="doc-setup-task-muon-signature-verifier-setup">Muon Signature Verifier Setup</h3>
+					<p>When <code>deploy:system</code> runs:</p>
+					<ul>
+						<li>If <code>MUON_SIGNATURE_VERIFIER_ADDRESS</code> is set, that verifier is used.</li>
+						<li>Otherwise, a new <code>MuonSignatureVerifier</code> is deployed.</li>
+						<li>Diamond is wired to verifier using <code>setSignatureVerifierAddress</code>.</li>
+						<li>
+							If deployer has admin on verifier, admin receives <code>DEFAULT_ADMIN_ROLE</code> and <code>SETTER_ROLE</code> on
+							verifier.
+						</li>
+						<li>
+							If <code>MUON_PUBLIC_KEY_X</code> and <code>MUON_PUBLIC_KEY_PARITY</code> are both set, <code>addPublicKey</code> is
+							called (idempotent check).
+						</li>
+						<li>
+							If <code>MUON_GATEWAY_SIGNERS</code> is set, each signer is added with <code>addGatewaySigner</code> (idempotent check).
+						</li>
+					</ul>
+					<h3 id="doc-setup-task-muon-runtime-config-on-diamond">Muon Runtime Config on Diamond</h3>
+					<ul>
+						<li>If <code>MUON_APP_ID</code> is set, <code>setMuonIds</code> is called.</li>
+						<li>
+							If both <code>MUON_UPNL_VALID_TIME</code> and <code>MUON_PRICE_VALID_TIME</code> are set, <code>setMuonConfig</code> is
+							called.
+						</li>
+						<li>If only one of those validity vars is set, <code>setMuonConfig</code> is skipped with a warning.</li>
+					</ul>
+					<h3 id="doc-setup-task-muon-view-call-verification">Muon View-Call Verification</h3>
+					<p>As part of setup, <code>deploy:system</code> verifies Muon config by reading:</p>
+					<ul>
+						<li><code>getSignatureVerifier()</code> against expected verifier address.</li>
+						<li><code>getMuonIds()</code> against <code>MUON_APP_ID</code> (if provided).</li>
+						<li>
+							<code>getMuonConfig()</code> against <code>MUON_UPNL_VALID_TIME</code> / <code>MUON_PRICE_VALID_TIME</code> (if both
+							provided).
+						</li>
+						<li>
+							<code>getAllPublicKeys()</code> / <code>getAllGatewaySigners()</code> on verifier (if those seed env vars are provided).
+						</li>
+					</ul>
+					<h3 id="doc-setup-task-accountlayerdiamond-setup">AccountLayerDiamond Setup</h3>
+					<ul>
+						<li>Admin receives DEFAULT_ADMIN_ROLE, SETTER_ROLE, APPROVER_ROLE, PAUSER_ROLE, UNPAUSER_ROLE</li>
+					</ul>
+					<h3 id="doc-setup-task-instantlayer-setup">InstantLayer Setup</h3>
+					<ul>
+						<li>Admin receives DEFAULT_ADMIN_ROLE and SETTER_ROLE on InstantLayer</li>
+						<li>Diamond (Symmio) is whitelisted on InstantLayer (setTargetWhitelist)</li>
+						<li>AccountLayerDiamond is whitelisted on InstantLayer (setTargetWhitelist)</li>
+						<li>AccountLayer is set on InstantLayer (setAccountLayer)</li>
+					</ul>
+					<h3 id="doc-setup-task-instantlayer-templates-if-setup_instant_layer_templatestrue">
+						InstantLayer Templates (if <code>SETUP_INSTANT_LAYER_TEMPLATES=true</code>)
+					</h3>
+					<p>Two templates are registered on InstantLayer to facilitate common trading flows:</p>
+					<h4 id="doc-setup-task-openposition-template-6-operations">OpenPosition Template (6 operations)</h4>
+					<table>
+						<thead>
+							<tr>
+								<th>Op</th>
+								<th>Function</th>
+								<th>Target</th>
+								<th>Dependencies</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td>0</td>
+								<td><code>predictNextVirtualAccountAddress</code></td>
+								<td>AccountLayerDiamond</td>
+								<td>None (returns virtualAccount)</td>
+							</tr>
+							<tr>
+								<td>1</td>
+								<td><code>addMargin</code></td>
+								<td>AccountLayerDiamond</td>
+								<td>virtualAccount from op 0 (param 1)</td>
+							</tr>
+							<tr>
+								<td>2</td>
+								<td><code>sendQuoteWithAffiliateAndData</code></td>
+								<td>Diamond</td>
+								<td>None (returns quoteId)</td>
+							</tr>
+							<tr>
+								<td>3</td>
+								<td><code>allocateForPartyB</code></td>
+								<td>Diamond</td>
+								<td>partyA from op 0 (param 2)</td>
+							</tr>
+							<tr>
+								<td>4</td>
+								<td><code>lockQuote</code></td>
+								<td>Diamond</td>
+								<td>quoteId from op 2 (param 1)</td>
+							</tr>
+							<tr>
+								<td>5</td>
+								<td><code>openPosition</code></td>
+								<td>Diamond</td>
+								<td>quoteId from op 2 (param 1)</td>
+							</tr>
+						</tbody>
+					</table>
+					<h4 id="doc-setup-task-closeposition-template-4-operations">ClosePosition Template (4 operations)</h4>
+					<table>
+						<thead>
+							<tr>
+								<th>Op</th>
+								<th>Function</th>
+								<th>Target</th>
+								<th>Dependencies</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td>0</td>
+								<td><code>predictNextVirtualAccountAddress</code></td>
+								<td>AccountLayerDiamond</td>
+								<td>None (returns virtualAccount)</td>
+							</tr>
+							<tr>
+								<td>1</td>
+								<td><code>requestToClosePosition</code></td>
+								<td>Diamond</td>
+								<td>None (quoteId provided by user)</td>
+							</tr>
+							<tr>
+								<td>2</td>
+								<td><code>fillCloseRequest</code></td>
+								<td>Diamond</td>
+								<td>None (quoteId provided by user)</td>
+							</tr>
+							<tr>
+								<td>3</td>
+								<td><code>deallocateForPartyB</code></td>
+								<td>Diamond</td>
+								<td>partyA from op 0 (param 2)</td>
+							</tr>
+						</tbody>
+					</table>
+					<h3 id="doc-setup-task-partyb-setup-if-deployed">PartyB Setup (if deployed)</h3>
+					<ul>
+						<li>SymmioPartyB is registered in Diamond</li>
+						<li>Admin receives DEFAULT_ADMIN_ROLE, MANAGER_ROLE, and SETTER_ROLE on SymmioPartyB</li>
+						<li>InstantLayer receives TRUSTED_ROLE on SymmioPartyB</li>
+						<li>InstantLayer is added to multicastWhitelist on SymmioPartyB</li>
+						<li>Signer is set on SymmioPartyB (if PARTYB_SIGNER is configured)</li>
+						<li>SymmioPartyB is registered on InstantLayer (registerPartyBs - also grants OPERATOR_ROLE)</li>
+					</ul>
+					<h2 id="doc-setup-task-system-parameters">System Parameters</h2>
+					<p>The following default parameters are configured (matching test environment):</p>
+					<table>
+						<thead>
+							<tr>
+								<th>Parameter</th>
+								<th>Value</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td>Balance Limit Per User</td>
+								<td>10,000</td>
+							</tr>
+							<tr>
+								<td>Deallocate Cooldown</td>
+								<td>120 seconds</td>
+							</tr>
+							<tr>
+								<td>Settlement Cooldown</td>
+								<td>300 seconds</td>
+							</tr>
+							<tr>
+								<td>Deallocate Debounce Time</td>
+								<td>120 seconds</td>
+							</tr>
+							<tr>
+								<td>Liquidator Share</td>
+								<td>10%</td>
+							</tr>
+							<tr>
+								<td>Liquidation Timeout</td>
+								<td>100 seconds</td>
+							</tr>
+							<tr>
+								<td>Force Close Cooldowns</td>
+								<td>300s, 120s</td>
+							</tr>
+							<tr>
+								<td>Force Cancel Cooldown</td>
+								<td>300 seconds</td>
+							</tr>
+							<tr>
+								<td>Force Cancel Close Cooldown</td>
+								<td>300 seconds</td>
+							</tr>
+							<tr>
+								<td>Pending Quotes Valid Length</td>
+								<td>10</td>
+							</tr>
+							<tr>
+								<td>Max PartyA Connection Limit</td>
+								<td>5</td>
+							</tr>
+						</tbody>
+					</table>
+					<h2 id="doc-setup-task-output">Output</h2>
+					<p>After deployment, you will receive:</p>
+					<ol>
+						<li><strong>Console output</strong> - Summary of all deployed contracts and their addresses</li>
+						<li><strong>Deployment report</strong> - JSON file saved to <code>data/deployment-report.json</code></li>
+						<li>
+							<strong>Verification files</strong> - Separate JSON files for contract verification:
+							<ul>
+								<li><code>data/stablecoin.json</code> - Collateral contract</li>
+								<li><code>data/deployed.json</code> - Core Diamond contracts/facets and MuonSignatureVerifier</li>
+								<li><code>data/accountlayer.json</code> - AccountLayerDiamond contracts and facets</li>
+								<li><code>data/instantlayer.json</code> - InstantLayer contract</li>
+								<li><code>data/partyb.json</code> - SymmioPartyB contracts (proxy, implementation, admin)</li>
+							</ul>
+						</li>
+					</ol>
+					<p>Example output:</p>
+					<pre><code>================================================================================
+DEPLOYMENT REPORT
+================================================================================
+
+DEPLOYMENT SUMMARY
+--------------------------------------------------------------------------------
+Total Contracts: 7
+Successful: 7
+Skipped (from checkpoint): 0
+Failed: 0
+
+DEPLOYED ADDRESSES
+--------------------------------------------------------------------------------
+Collateral:           0x5FbDB2315678afecb367f032d93F642f64180aa3
+Diamond:              0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512
+MuonSignatureVerifier: 0x8A791620dd6260079BF849Dc5567aDC3F2FdC318
+AccountLayerDiamond:  0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0
+InstantLayer:         0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9
+SymmioPartyB:         0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9
+AccountManager:       0x5FC8d32690cc91D4c39d9d3abcBD16989F875707
+</code></pre>
+					<p>
+						Note: total/success counts depend on optional flags (<code>DEPLOY_PARTYB</code>, <code>REGISTER_DUMMY_AFFILIATE</code>) and
+						whether contracts are reused from checkpoint.
+					</p>
+					<h2 id="doc-setup-task-task-options">Task Options</h2>
+					<pre><code class="language-bash">npx hardhat deploy:system [options]
+
+Options:
+  --verify      Verify contracts on block explorer (default: false)
+  --log-data    Write deployment addresses to data files (default: true)
+  --fresh       Ignore checkpoint and start fresh deployment (default: false)
+</code></pre>
+					<h2 id="doc-setup-task-contract-verification">Contract Verification</h2>
+					<p>After deployment, verify all contracts on the block explorer:</p>
+					<pre><code class="language-bash"># Verify all contracts from deployment logs
+npx hardhat verify:all --network &lt;NETWORK_NAME&gt;
+
+# Skip first N contracts (for resuming)
+npx hardhat verify:all --network &lt;NETWORK_NAME&gt; --skip 10
+</code></pre>
+					<p>The <code>verify:all</code> task reads from all deployment log files and verifies each contract.</p>
+					<h2 id="doc-setup-task-troubleshooting">Troubleshooting</h2>
+					<h3 id="doc-setup-task-deployment-fails-mid-way">Deployment fails mid-way</h3>
+					<p>The checkpoint system will save progress. Simply run the same command again to resume:</p>
+					<pre><code class="language-bash">npx hardhat deploy:system --network &lt;NETWORK_NAME&gt;
+</code></pre>
+					<h3 id="doc-setup-task-checkpoint-appears-corrupted">Checkpoint appears corrupted</h3>
+					<p>Force a fresh deployment:</p>
+					<pre><code class="language-bash">npx hardhat deploy:system --network &lt;NETWORK_NAME&gt; --fresh
+</code></pre>
+					<p>Or manually delete the checkpoint file:</p>
+					<pre><code class="language-bash">rm tasks/data/checkpoints/checkpoint-&lt;chainId&gt;.json
+</code></pre>
+					<h3 id="doc-setup-task-role-granting-fails">Role granting fails</h3>
+					<p>Ensure the deployer address matches the private key in <code>.env</code> and has admin privileges.</p>
+					<h3 id="doc-setup-task-muon-verifier-seeding-fails">Muon verifier seeding fails</h3>
+					<p>
+						If <code>MUON_PUBLIC_KEY_*</code> or <code>MUON_GATEWAY_SIGNERS</code> are set, deployer must have <code>SETTER_ROLE</code> on
+						the configured MuonSignatureVerifier. If using an existing verifier where deployer is not admin/setter, seed keys/signers with
+						a proper verifier admin account.
+					</p>
+					<h3 id="doc-setup-task-muon-config-was-not-applied">Muon config was not applied</h3>
+					<p>
+						<code>setMuonConfig</code> is called only when both <code>MUON_UPNL_VALID_TIME</code> and
+						<code>MUON_PRICE_VALID_TIME</code> are set. If only one is set, deployment logs a warning and skips that call.
+					</p>
+					<h3 id="doc-setup-task-diamond-cut-verification-mismatch">Diamond cut verification mismatch</h3>
+					<p>
+						If a diamond cut transaction succeeded but the checkpoint wasn't saved, the system will detect this on-chain and update the
+						checkpoint automatically.
+					</p>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer"><span>Symmio Core v0.8.5 documentation.</span></footer>
+	</body>
+</html>

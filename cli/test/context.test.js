@@ -101,7 +101,7 @@ test("direct process-env networks preserve their Hardhat-specific RPC behavior",
 });
 
 test("core facet count mirror matches the deploy task source", () => {
-	assert.equal(EXPECTED_CORE_FACETS, 32);
+	assert.equal(EXPECTED_CORE_FACETS, 33);
 	assert.deepEqual(checkFacetMirrorDrift().problems, []);
 });
 

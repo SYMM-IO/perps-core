@@ -4,8 +4,8 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { AccountStorage } from "../storages/AccountStorage.sol";
 import { IAccountLayerErrors } from "../interfaces/IAccountLayerErrors.sol";
+import { LibAccountLayerSigner } from "./LibAccountLayerSigner.sol";
 
 /// @title LibAccountLayerSafeCall
 /// @notice Library for safely calling external contracts with signer protection
@@ -16,17 +16,15 @@ library LibAccountLayerSafeCall {
 	/// @param target The target contract address
 	/// @param data The encoded function call data
 	function safeExternalCall(address target, bytes memory data) internal {
-		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		if (target == address(0)) revert IAccountLayerErrors.ZeroAddress();
 
 		// Save and clear signer before external call to prevent target from impersonating user
-		address previousSigner = ahLayout.globalSigner;
-		ahLayout.globalSigner = address(0);
+		(address previousSigner, bool wasTransientScoped) = LibAccountLayerSigner.clearSignerForExternalCall();
 
 		(bool success, bytes memory reason) = target.call(data);
 
 		// Restore signer after external call
-		ahLayout.globalSigner = previousSigner;
+		LibAccountLayerSigner.restoreSignerAfterExternalCall(previousSigner, wasTransientScoped);
 
 		// Revert with the original error if the call failed
 		if (!success) {

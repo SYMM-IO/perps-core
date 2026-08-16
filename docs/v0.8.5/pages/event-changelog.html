@@ -1,0 +1,1092 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content='v0.8.4 shipped duplicate event overloads marked "For backward compatibility, will be removed in future." These have all been removed in v0.8.5. If your indexer was listening to the simplified overload, switch to the full-parameter version listed below.'
+		/>
+		<title>Event Changelog: v0.8.4 to v0.8.5 - Symmio Core v0.8.5</title>
+		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../../v0.8.6/assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../../v0.8.6/assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.5">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.5</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#doc-event-changelog-quick-reference">Quick Reference</a>
+				<a class="toc-link level-2" href="#doc-event-changelog-1-removed-backward-compatible-overloads"
+					>1. Removed Backward-Compatible Overloads</a
+				>
+				<a class="toc-link level-3" href="#doc-event-changelog-11-liquidation-events">1.1 Liquidation Events</a>
+				<a class="toc-link level-3" href="#doc-event-changelog-12-account-events">1.2 Account Events</a>
+				<a class="toc-link level-3" href="#doc-event-changelog-13-trading-events">1.3 Trading Events</a>
+				<a class="toc-link level-3" href="#doc-event-changelog-14-partya-request-events">1.4 PartyA Request Events</a>
+				<a class="toc-link level-3" href="#doc-event-changelog-15-force-action-events">1.5 Force Action Events</a>
+				<a class="toc-link level-3" href="#doc-event-changelog-16-partyb-position-action-events">1.6 PartyB Position Action Events</a>
+				<a class="toc-link level-2" href="#doc-event-changelog-2-fully-removed-events">2. Fully Removed Events</a>
+				<a class="toc-link level-2" href="#doc-event-changelog-3-changed-event-signatures">3. Changed Event Signatures</a>
+				<a class="toc-link level-3" href="#doc-event-changelog-31-setmuonids">3.1 SetMuonIds</a>
+				<a class="toc-link level-3" href="#doc-event-changelog-32-registeraffiliate-deregisteraffiliate-typo-fix"
+					>3.2 RegisterAffiliate / DeregisterAffiliate (Typo Fix)</a
+				>
+				<a class="toc-link level-2" href="#doc-event-changelog-4-new-events-on-existing-facets">4. New Events on Existing Facets</a>
+				<a class="toc-link level-3" href="#doc-event-changelog-41-account-events-iaccountevents">4.1 Account Events (IAccountEvents)</a>
+				<a class="toc-link level-3" href="#doc-event-changelog-42-trading-events-ipartiesevents">4.2 Trading Events (IPartiesEvents)</a>
+				<a class="toc-link level-3" href="#doc-event-changelog-43-liquidation-events">4.3 Liquidation Events</a>
+				<a class="toc-link level-3" href="#doc-event-changelog-44-partyb-account-events-ipartybaccountevents-new-file"
+					>4.4 PartyB Account Events (IPartyBAccountEvents) — New File</a
+				>
+				<a class="toc-link level-3" href="#doc-event-changelog-45-force-action-events-forceactionsfacetevents"
+					>4.5 Force Action Events (ForceActionsFacetEvents)</a
+				>
+				<a class="toc-link level-3" href="#doc-event-changelog-46-funding-rate-events-ifundingrateevents"
+					>4.6 Funding Rate Events (IFundingRateEvents)</a
+				>
+				<a class="toc-link level-3" href="#doc-event-changelog-47-settlement-events-settlementfacetevents"
+					>4.7 Settlement Events (SettlementFacetEvents)</a
+				>
+				<a class="toc-link level-3" href="#doc-event-changelog-48-shared-library-events-sharedevents"
+					>4.8 Shared Library Events (SharedEvents)</a
+				>
+				<a class="toc-link level-3" href="#doc-event-changelog-49-library-events-libpartiesevents">4.9 Library Events (LibPartiesEvents)</a>
+				<a class="toc-link level-3" href="#doc-event-changelog-410-control-events-icontrolevents">4.10 Control Events (IControlEvents)</a>
+				<a class="toc-link level-3" href="#doc-event-changelog-411-migration-events-imigrationevents-new-facet"
+					>4.11 Migration Events (IMigrationEvents) — New Facet</a
+				>
+				<a class="toc-link level-3" href="#doc-event-changelog-412-diamond-ownership-events-libdiamond"
+					>4.12 Diamond Ownership Events (LibDiamond)</a
+				>
+				<a class="toc-link level-2" href="#doc-event-changelog-5-new-facets-with-events">5. New Facets with Events</a>
+				<a class="toc-link level-3" href="#doc-event-changelog-51-clearinghouse-facet-iclearinghousefacetevents"
+					>5.1 ClearingHouse Facet (IClearingHouseFacetEvents)</a
+				>
+				<a class="toc-link level-3" href="#doc-event-changelog-52-binding-facet-ibindingevents">5.2 Binding Facet (IBindingEvents)</a>
+				<a class="toc-link level-3" href="#doc-event-changelog-53-pledge-facet-ipledgeevents">5.3 Pledge Facet (IPledgeEvents)</a>
+				<a class="toc-link level-3" href="#doc-event-changelog-54-external-transfer-facet-iexternaltransferevents"
+					>5.4 External Transfer Facet (IExternalTransferEvents)</a
+				>
+				<a class="toc-link level-3" href="#doc-event-changelog-55-withdraw-facet-iwithdrawevents">5.5 Withdraw Facet (IWithdrawEvents)</a>
+				<a class="toc-link level-3" href="#doc-event-changelog-56-symboladjustmentfacet-events-new-facet"
+					>5.6 SymbolAdjustmentFacet Events (new facet)</a
+				>
+				<a class="toc-link level-2" href="#doc-event-changelog-6-new-accountlayer-diamond-events">6. New AccountLayer Diamond Events</a>
+				<a class="toc-link level-3" href="#doc-event-changelog-61-core-facet-icorefacet">6.1 Core Facet (ICoreFacet)</a>
+				<a class="toc-link level-3" href="#doc-event-changelog-62-margin-facet-imarginfacet">6.2 Margin Facet (IMarginFacet)</a>
+				<a class="toc-link level-3" href="#doc-event-changelog-63-affiliate-facet-iaffiliatefacet">6.3 Affiliate Facet (IAffiliateFacet)</a>
+				<a class="toc-link level-3" href="#doc-event-changelog-64-control-facet-icontrolfacet">6.4 Control Facet (IControlFacet)</a>
+				<a class="toc-link level-3" href="#doc-event-changelog-65-symmiohook-facet-isymmiohookfacet"
+					>6.5 SymmioHook Facet (ISymmioHookFacet)</a
+				>
+				<a class="toc-link level-2" href="#doc-event-changelog-7-structural-changes-summary">7. Structural Changes Summary</a>
+				<a class="toc-link level-3" href="#doc-event-changelog-71-file-reorganization">7.1 File Reorganization</a>
+				<a class="toc-link level-3" href="#doc-event-changelog-72-new-enums-in-sharedevents">7.2 New Enums in SharedEvents</a>
+				<a class="toc-link level-2" href="#doc-event-changelog-8-migration-checklist">8. Migration Checklist</a>
+				<a class="toc-link level-3" href="#doc-event-changelog-for-subgraph-event-indexer-developers"
+					>For Subgraph / Event Indexer Developers</a
+				>
+				<a class="toc-link level-3" href="#doc-event-changelog-for-hedger-partyb-integrators">For Hedger / PartyB Integrators</a>
+				<a class="toc-link level-3" href="#doc-event-changelog-for-frontend-developers">For Frontend Developers</a>
+			</div>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Event Changelog: v0.8.4 to v0.8.5</h1>
+							<p class="hero-copy">
+								This document details every event change between Symmio Core v0.8.4 and v0.8.5. It covers the core Symmio diamond (29
+								facets) and the new AccountLayer diamond (6 facets). Use it to update subgraphs, event indexers, frontend listeners,
+								and hedger/PartyB integrations.
+							</p>
+						</div>
+					</div>
+				</header>
+				<article class="doc-article" id="full-document">
+					<hr />
+					<h2 id="doc-event-changelog-quick-reference">Quick Reference</h2>
+					<table>
+						<thead>
+							<tr>
+								<th>Category</th>
+								<th>Count</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td>Removed backward-compatible overloads</td>
+								<td>21</td>
+							</tr>
+							<tr>
+								<td>Fully removed events</td>
+								<td>1</td>
+							</tr>
+							<tr>
+								<td>Changed event signatures</td>
+								<td>2</td>
+							</tr>
+							<tr>
+								<td>New events on existing facets/libraries</td>
+								<td>41</td>
+							</tr>
+							<tr>
+								<td>New facets with events</td>
+								<td>5 facets, 35 events</td>
+							</tr>
+							<tr>
+								<td>New AccountLayer diamond events</td>
+								<td>6 facets, 30 events</td>
+							</tr>
+						</tbody>
+					</table>
+					<hr />
+					<h2 id="doc-event-changelog-1-removed-backward-compatible-overloads">1. Removed Backward-Compatible Overloads</h2>
+					<p>
+						v0.8.4 shipped duplicate event overloads marked "For backward compatibility, will be removed in future." These have all been
+						removed in v0.8.5. If your indexer was listening to the simplified overload, switch to the full-parameter version listed
+						below.
+					</p>
+					<h3 id="doc-event-changelog-11-liquidation-events">1.1 Liquidation Events</h3>
+					<p><strong>PartyA Liquidation</strong> (was <code>ILiquidationEvents</code>, now <code>IPartyALiquidationEvents</code>)</p>
+					<table>
+						<thead>
+							<tr>
+								<th>Removed Overload</th>
+								<th>Use Instead</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td>
+									<code
+										>LiquidatePartyA(address liquidator, address partyA, uint256 allocatedBalance, int256 upnl, int256
+										totalUnrealizedLoss)</code
+									>
+								</td>
+								<td>
+									<code
+										>LiquidatePartyA(address liquidator, address partyA, uint256 allocatedBalance, int256 upnl, int256
+										totalUnrealizedLoss, bytes liquidationId)</code
+									>
+								</td>
+							</tr>
+							<tr>
+								<td><code>LiquidatePositionsPartyA(address liquidator, address partyA, uint256[] quoteIds)</code></td>
+								<td>
+									<code
+										>LiquidatePositionsPartyA(address liquidator, address partyA, uint256[] quoteIds, uint256[] liquidatedAmounts,
+										uint256[] closeIds, bytes liquidationId)</code
+									>
+								</td>
+							</tr>
+							<tr>
+								<td><code>LiquidatePendingPositionsPartyA(address liquidator, address partyA)</code></td>
+								<td>
+									<code
+										>LiquidatePendingPositionsPartyA(address liquidator, address partyA, uint256[] quoteIds, uint256[]
+										liquidatedAmounts, bytes liquidationId)</code
+									>
+								</td>
+							</tr>
+							<tr>
+								<td><code>SettlePartyALiquidation(address partyA, address[] partyBs, int256[] amounts)</code></td>
+								<td>
+									<code>SettlePartyALiquidation(address partyA, address[] partyBs, int256[] amounts, bytes liquidationId)</code>
+								</td>
+							</tr>
+							<tr>
+								<td><code>LiquidationDisputed(address partyA)</code></td>
+								<td><code>LiquidationDisputed(address partyA, bytes liquidationId)</code></td>
+							</tr>
+							<tr>
+								<td><code>ResolveLiquidationDispute(address partyA, address[] partyBs, int256[] amounts, bool disputed)</code></td>
+								<td>
+									<code
+										>ResolveLiquidationDispute(address partyA, address[] partyBs, int256[] amounts, bool disputed, bytes
+										liquidationId)</code
+									>
+								</td>
+							</tr>
+							<tr>
+								<td><code>FullyLiquidatedPartyA(address partyA)</code></td>
+								<td><code>FullyLiquidatedPartyA(address partyA, bytes liquidationId)</code></td>
+							</tr>
+							<tr>
+								<td><code>SetSymbolsPrices(address liquidator, address partyA, uint256[] symbolIds, uint256[] prices)</code></td>
+								<td>
+									<code
+										>SetSymbolsPrices(address liquidator, address partyA, uint256[] symbolIds, uint256[] prices, bytes
+										liquidationId)</code
+									>
+								</td>
+							</tr>
+						</tbody>
+					</table>
+					<p><strong>PartyB Liquidation</strong> (was in <code>ILiquidationEvents</code>, now <code>IPartyBLiquidationEvents</code>)</p>
+					<table>
+						<thead>
+							<tr>
+								<th>Removed Overload</th>
+								<th>Use Instead</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>LiquidatePositionsPartyB(address liquidator, address partyB, address partyA, uint256[] quoteIds)</code></td>
+								<td>
+									<code
+										>LiquidatePositionsPartyB(address liquidator, address partyB, address partyA, uint256[] quoteIds, uint256[]
+										liquidatedAmounts, uint256[] closeIds)</code
+									>
+								</td>
+							</tr>
+						</tbody>
+					</table>
+					<p>
+						<strong>Migration note:</strong> All liquidation events now always include <code>liquidationId</code>. Use this field to
+						correlate multi-step liquidation flows. The topic hash changes when parameters change, so your ABI must be updated for
+						decoding.
+					</p>
+					<h3 id="doc-event-changelog-12-account-events">1.2 Account Events</h3>
+					<table>
+						<thead>
+							<tr>
+								<th>Removed Overload</th>
+								<th>Use Instead</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>AllocatePartyA(address user, uint256 amount)</code></td>
+								<td><code>AllocatePartyA(address user, uint256 amount, uint256 newAllocatedBalance)</code></td>
+							</tr>
+							<tr>
+								<td><code>DeallocatePartyA(address user, uint256 amount)</code></td>
+								<td><code>DeallocatePartyA(address user, uint256 amount, uint256 newAllocatedBalance)</code></td>
+							</tr>
+							<tr>
+								<td><code>AllocateForPartyB(address partyB, address partyA, uint256 amount)</code></td>
+								<td><code>AllocateForPartyB(address partyB, address partyA, uint256 amount, uint256 newAllocatedBalance)</code></td>
+							</tr>
+							<tr>
+								<td><code>DeallocateForPartyB(address partyB, address partyA, uint256 amount)</code></td>
+								<td><code>DeallocateForPartyB(address partyB, address partyA, uint256 amount, uint256 newAllocatedBalance)</code></td>
+							</tr>
+							<tr>
+								<td><code>TransferAllocation(uint256 amount, address origin, address recipient)</code></td>
+								<td>
+									<code
+										>TransferAllocation(uint256 amount, address origin, uint256 originNewAllocatedBalance, address recipient,
+										uint256 recipientNewAllocatedBalance)</code
+									>
+								</td>
+							</tr>
+						</tbody>
+					</table>
+					<p>
+						<strong>Note:</strong> <code>AllocateForPartyB</code>, <code>DeallocateForPartyB</code>, <code>TransferAllocation</code>,
+						<code>DepositToReserveVault</code>, and <code>WithdrawFromReserveVault</code> have moved from <code>IAccountEvents</code> to
+						the new <code>IPartyBAccountEvents</code> interface. The event signatures and topic hashes are identical — only the source
+						file changed.
+					</p>
+					<h3 id="doc-event-changelog-13-trading-events">1.3 Trading Events</h3>
+					<table>
+						<thead>
+							<tr>
+								<th>Removed Overload</th>
+								<th>Use Instead</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>ExpireQuote(QuoteStatus quoteStatus, uint256 quoteId)</code></td>
+								<td>
+									<code>ExpireQuoteOpen(QuoteStatus, uint256 quoteId)</code> for pending quotes,
+									<code>ExpireQuoteClose(QuoteStatus, uint256 quoteId, uint256 closeId)</code> for close requests
+								</td>
+							</tr>
+							<tr>
+								<td>
+									<code
+										>FillCloseRequest(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 closedPrice,
+										QuoteStatus quoteStatus)</code
+									>
+								</td>
+								<td>
+									<code
+										>FillCloseRequest(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 closedPrice,
+										QuoteStatus quoteStatus, uint256 closeId)</code
+									>
+								</td>
+							</tr>
+						</tbody>
+					</table>
+					<h3 id="doc-event-changelog-14-partya-request-events">1.4 PartyA Request Events</h3>
+					<table>
+						<thead>
+							<tr>
+								<th>Removed Overload</th>
+								<th>Use Instead</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td>
+									<code
+										>RequestToClosePosition(address partyA, address partyB, uint256 quoteId, uint256 closePrice, uint256
+										quantityToClose, OrderType orderType, uint256 deadline, QuoteStatus quoteStatus)</code
+									>
+								</td>
+								<td><code>RequestToClosePosition(..., uint256 closeId)</code> — same params with <code>closeId</code> appended</td>
+							</tr>
+							<tr>
+								<td>
+									<code>RequestToCancelCloseRequest(address partyA, address partyB, uint256 quoteId, QuoteStatus quoteStatus)</code>
+								</td>
+								<td>
+									<code
+										>RequestToCancelCloseRequest(address partyA, address partyB, uint256 quoteId, QuoteStatus quoteStatus, uint256
+										closeId)</code
+									>
+								</td>
+							</tr>
+						</tbody>
+					</table>
+					<h3 id="doc-event-changelog-15-force-action-events">1.5 Force Action Events</h3>
+					<table>
+						<thead>
+							<tr>
+								<th>Removed Overload</th>
+								<th>Use Instead</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>ForceCancelCloseRequest(uint256 quoteId, QuoteStatus quoteStatus)</code></td>
+								<td><code>ForceCancelCloseRequest(uint256 quoteId, QuoteStatus quoteStatus, uint256 closeId)</code></td>
+							</tr>
+							<tr>
+								<td>
+									<code
+										>ForceClosePosition(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256
+										closedPrice, QuoteStatus quoteStatus)</code
+									>
+								</td>
+								<td>
+									<code
+										>ForceClosePosition(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256
+										closedPrice, QuoteStatus quoteStatus, uint256 closeId)</code
+									>
+								</td>
+							</tr>
+						</tbody>
+					</table>
+					<h3 id="doc-event-changelog-16-partyb-position-action-events">1.6 PartyB Position Action Events</h3>
+					<table>
+						<thead>
+							<tr>
+								<th>Removed Overload</th>
+								<th>Use Instead</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>AcceptCancelCloseRequest(uint256 quoteId, QuoteStatus quoteStatus)</code></td>
+								<td><code>AcceptCancelCloseRequest(uint256 quoteId, QuoteStatus quoteStatus, uint256 closeId)</code></td>
+							</tr>
+							<tr>
+								<td>
+									<code
+										>EmergencyClosePosition(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256
+										closedPrice, QuoteStatus quoteStatus)</code
+									>
+								</td>
+								<td>
+									<code
+										>EmergencyClosePosition(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256
+										closedPrice, QuoteStatus quoteStatus, uint256 closeId)</code
+									>
+								</td>
+							</tr>
+						</tbody>
+					</table>
+					<p>
+						<strong>Note:</strong> <code>EmergencyClosePosition</code> has moved from <code>IPartyBPositionActionsEvents</code> to the new
+						<code>IPartyBEmergencyActionsEvents</code> interface. The full-parameter event signature is identical.
+					</p>
+					<hr />
+					<h2 id="doc-event-changelog-2-fully-removed-events">2. Fully Removed Events</h2>
+					<table>
+						<thead>
+							<tr>
+								<th>Event</th>
+								<th>Reason</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>SetSymbolMaxSlippage(uint256 symbolId, uint256 oldMaxSlippage, uint256 maxSlippage)</code></td>
+								<td>
+									Max slippage configuration removed. Force close gap management now uses
+									<code>SetForceCloseGapRatio</code> exclusively.
+								</td>
+							</tr>
+						</tbody>
+					</table>
+					<p>
+						<strong>Migration:</strong> If you were indexing <code>SetSymbolMaxSlippage</code> for gap/slippage tracking, listen to
+						<code>SetForceCloseGapRatio(uint256 symbolId, uint256 oldForceCloseGapRatio, uint256 newForceCloseGapRatio)</code> instead.
+					</p>
+					<hr />
+					<h2 id="doc-event-changelog-3-changed-event-signatures">3. Changed Event Signatures</h2>
+					<h3 id="doc-event-changelog-31-setmuonids">3.1 SetMuonIds</h3>
+					<pre><code class="language-solidity">// v0.8.4
+event SetMuonIds(uint256 muonAppId, address gateway, uint256 x, uint8 parity);
+
+// v0.8.5
+event SetMuonIds(uint256 muonAppId);
+</code></pre>
+					<p>
+						<strong>What changed:</strong> Gateway address and public key parameters (<code>gateway</code>, <code>x</code>,
+						<code>parity</code>) have been removed. Muon signature verification is now handled by an external
+						<code>SymmioSignatureVerifier</code> contract, configured via the new <code>SetSignatureVerifierAddress</code> event.
+					</p>
+					<p>
+						<strong>Migration:</strong> Update your ABI. If you need public key/gateway info, listen to <code>PublicKeyAdded</code>,
+						<code>PublicKeyRemoved</code>, <code>GatewaySignerAdded</code>, and <code>GatewaySignerRemoved</code> events on the
+						<code>SymmioSignatureVerifier</code> contract instead.
+					</p>
+					<h3 id="doc-event-changelog-32-registeraffiliate-deregisteraffiliate-typo-fix">
+						3.2 RegisterAffiliate / DeregisterAffiliate (Typo Fix)
+					</h3>
+					<pre><code class="language-solidity">// v0.8.4
+event RegisterAffiliate(address affilate);   // typo
+event DeregisterAffiliate(address affilate); // typo
+
+// v0.8.5
+event RegisterAffiliate(address affiliate);   // fixed
+event DeregisterAffiliate(address affiliate); // fixed
+</code></pre>
+					<p>
+						<strong>What changed:</strong> The parameter name was corrected from <code>affilate</code> to <code>affiliate</code>. Since
+						Solidity event topic hashes are computed from <code>event Name(type1,type2,...)</code> (types only, no param names), the topic
+						hash is <strong>unchanged</strong>. Your ABI decoding will still work, but update your ABI JSON for correctness.
+					</p>
+					<hr />
+					<h2 id="doc-event-changelog-4-new-events-on-existing-facets">4. New Events on Existing Facets</h2>
+					<h3 id="doc-event-changelog-41-account-events-iaccountevents">4.1 Account Events (<code>IAccountEvents</code>)</h3>
+					<pre><code class="language-solidity">// New overload -- includes virtual deposit flag
+event Deposit(address sender, address user, uint256 amount, bool isVirtual);
+
+// Admin actions on suspended users
+event WithdrawSuspendedUser(address admin, address user, address recipient, uint256 amount);
+event DeallocateSuspendedUser(address admin, address user, uint256 amount, uint256 newAllocatedBalance);
+
+// Transfer to balance (not allocation)
+event InternalTransferToBalance(address sender, address user, uint256 userNewBalance, uint256 amount);
+
+// Virtual funds system
+event DepositVirtualFunds(address indexed provider, uint256 amount);
+</code></pre>
+					<p>
+						<strong>Note:</strong> The original <code>Deposit(address, address, uint256)</code> is kept as backward-compatible. The new
+						overload adds <code>isVirtual</code> to distinguish real collateral deposits from virtual fund deposits.
+					</p>
+					<h3 id="doc-event-changelog-42-trading-events-ipartiesevents">4.2 Trading Events (<code>IPartiesEvents</code>)</h3>
+					<pre><code class="language-solidity">// New SendQuote format with encoded params and affiliate + arbitrary data
+event SendQuote(address partyA, uint256 quoteId, address[] partyBsWhiteList, address affiliate, bytes paramsData, bytes data);
+
+// New OpenPosition overload with locked values breakdown
+event OpenPosition(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 openedPrice, LockedValues lockedValues);
+
+// New FillCloseRequest overload with locked values
+event FillCloseRequest(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 closedPrice, QuoteStatus quoteStatus, uint256 closeId, LockedValues lockedValues);
+</code></pre>
+					<p>
+						<strong>Note:</strong> The old <code>SendQuote</code> (with all individual params) and old <code>OpenPosition</code> (without
+						<code>LockedValues</code>) are still emitted for backward compatibility alongside the new versions. Both events fire on each
+						operation. The new <code>SendQuote</code> encodes params into <code>paramsData</code> bytes — decode with
+						<code
+							>abi.decode(paramsData, (uint256, uint8, uint8, uint256, uint256, uint256, uint256, uint256, uint256, uint256, uint256,
+							uint256))</code
+						>
+						for
+						<code
+							>(symbolId, positionType, orderType, price, marketPrice, quantity, cva, lf, partyAmm, partyBmm, tradingFee,
+							deadline)</code
+						>.
+					</p>
+					<h3 id="doc-event-changelog-43-liquidation-events">4.3 Liquidation Events</h3>
+					<p><strong>PartyA</strong> (<code>IPartyALiquidationEvents</code>):</p>
+					<pre><code class="language-solidity">// New overload with average closed prices for position liquidation
+event LiquidatePositionsPartyA(
+    address liquidator, address partyA, uint256[] quoteIds,
+    uint256[] liquidatedAmounts, uint256[] closeIds, uint256[] averageClosedPrices, bytes liquidationId
+);
+
+// Emitted when LATE/OVERDUE settlement moves pending fees to escrow (see liquidation-escrow.md)
+event LiquidationEscrowCreated(address indexed partyA, bytes liquidationId, uint256 amount);
+</code></pre>
+					<p><strong>PartyB</strong> (<code>IPartyBLiquidationEvents</code>):</p>
+					<pre><code class="language-solidity">// New overload with average closed prices
+event LiquidatePositionsPartyB(
+    address liquidator, address partyB, address partyA, uint256[] quoteIds,
+    uint256[] liquidatedAmounts, uint256[] closeIds, uint256[] averageClosedPrices
+);
+</code></pre>
+					<h3 id="doc-event-changelog-44-partyb-account-events-ipartybaccountevents-new-file">
+						4.4 PartyB Account Events (<code>IPartyBAccountEvents</code>) — New File
+					</h3>
+					<p>
+						Events moved from <code>IAccountEvents</code> to a dedicated <code>IPartyBAccountEvents</code> interface, plus one new event:
+					</p>
+					<pre><code class="language-solidity">// Moved (signatures unchanged):
+event AllocateForPartyB(address partyB, address partyA, uint256 amount, uint256 newAllocatedBalance);
+event DeallocateForPartyB(address partyB, address partyA, uint256 amount, uint256 newAllocatedBalance);
+event TransferAllocation(uint256 amount, address origin, uint256 originNewAllocatedBalance, address recipient, uint256 recipientNewAllocatedBalance);
+event DepositToReserveVault(address sender, address partyB, uint256 amount);
+event WithdrawFromReserveVault(address partyB, uint256 amount);
+
+// New:
+event ActivateCrossPartyB(address user);
+</code></pre>
+					<h3 id="doc-event-changelog-45-force-action-events-forceactionsfacetevents">
+						4.5 Force Action Events (<code>ForceActionsFacetEvents</code>)
+					</h3>
+					<pre><code class="language-solidity">// Two-step force close initialization
+event ForceCloseInitialized(
+    address indexed initiator, address indexed partyB, uint256 quoteId,
+    bytes highLowPriceSigId, uint256 closePrice, uint256 timestamp
+);
+
+// Emitted when cross-partyB force close completes with insolvent partyB
+event ForceClosePartyBInsolvent(
+    uint256 quoteId, address partyA, address partyB,
+    uint256 closedPrice, uint256 currentPrice, int256 upnlPartyB, int256 partyBAvailableAfterClose
+);
+
+// Force fetch allocated balances from partyB
+event ForceFetchAllocated(
+    address partyB, address[] partyAs, uint256[] FetchedAmount, uint256[] newPartyBsAllocatedBalances
+);
+</code></pre>
+					<h3 id="doc-event-changelog-46-funding-rate-events-ifundingrateevents">
+						4.6 Funding Rate Events (<code>IFundingRateEvents</code>)
+					</h3>
+					<pre><code class="language-solidity">// Accumulated funding system (replaces per-quote funding for supported modes)
+event SetLongFundingFee(uint256[] symbolIds, int256[] fees, int256[] marketPrices, address partyB);
+event SetShortFundingFee(uint256[] symbolIds, int256[] fees, int256[] marketPrices, address partyB);
+event SetEpochDuration(uint256[] symbolIds, uint256[] durations, address partyB);
+event UpdateAccumulatedFundingFee(uint256[] symbolIds, int256[] longRates, int256[] shortRates, int256[] marketPrices, address partyB);
+event ChargeAccumulatedFundingFee(address partyA, address partyB, uint256[] quoteIds, address sender);
+</code></pre>
+					<h3 id="doc-event-changelog-47-settlement-events-settlementfacetevents">
+						4.7 Settlement Events (<code>SettlementFacetEvents</code>)
+					</h3>
+					<pre><code class="language-solidity">// Unified settlement -- settles across multiple partyAs for a single partyB
+event SettleUpnlUnified(
+    bytes settlementId, UnifiedQuoteSettlementData[] settlementData, uint256[] updatedPrices,
+    address partyB, address[] partyAs, uint256[] newPartyAsAllocatedBalances, uint256 newPartyBAllocatedBalance
+);
+</code></pre>
+					<h3 id="doc-event-changelog-48-shared-library-events-sharedevents">4.8 Shared Library Events (<code>SharedEvents</code>)</h3>
+					<pre><code class="language-solidity">// New enums added:
+enum TradeVolumeType { OPEN, CLOSE, LIQUIDATE }
+enum TradingFeeType { OPEN, CLOSE }
+
+// New events:
+event TradeVolumeRecorded(
+    uint256 quoteId, uint256 amount, address partyA, address partyB,
+    uint256 symbolId, address affiliate, TradeVolumeType _type
+);
+event TradingFeeCharged(
+    uint256 quoteId, uint256 amount, address partyA, address partyB,
+    uint256 symbolId, address affiliate, TradingFeeType _type
+);
+</code></pre>
+					<h3 id="doc-event-changelog-49-library-events-libpartiesevents">4.9 Library Events (<code>LibPartiesEvents</code>)</h3>
+					<pre><code class="language-solidity">// ADL (Auto-Deleveraging) close event
+event ADLClose(uint256 quoteId, uint256 amount, uint256 price);
+</code></pre>
+					<h3 id="doc-event-changelog-410-control-events-icontrolevents">4.10 Control Events (<code>IControlEvents</code>)</h3>
+					<p>New configuration and pause/unpause events:</p>
+					<pre><code class="language-solidity">// Role administration
+event RoleAdminAdded(bytes32 role, address admin);
+event RoleAdminRemoved(bytes32 role, address admin);
+
+// Fee system
+event SetAffiliateFeeForUser(address affiliate, address user, uint256 symbolId, uint256 oldOpenFee, uint256 newOpenFee, uint256 oldCloseFee, uint256 newCloseFee);
+event SetAffiliateFee(address affiliate, uint256 symbolId, uint256 oldOpenFee, uint256 newOpenFee, uint256 oldCloseFee, uint256 newCloseFee);
+event SetMinAffiliateFee(uint256 oldMinAffiliateFee, uint256 newMinAffiliateFee);
+
+// Symbol configuration
+event SetSymbolType(uint256 symbolIds, uint256 symbolTypes);
+
+// Binding system
+event SetUnbindCooldown(uint256 oldUnbindCooldown, uint256 newUnbindCooldown);
+event SetPartyBBindable(address partyB, bool bindable);
+
+// Cross PartyB
+event SetCrossPartyBModeActivated(bool oldValue, bool newValue);
+event SetCrossPartyB(address indexed partyB, bool enabled);
+event SetLegacyDeallocateDeprecated(bool oldValue, bool newValue);
+
+// PartyB symbol management
+event WhitelistSymbolType(address partyB, uint256 symbolType);
+event WhitelistSymbols(address partyB, uint256[] symbolIds);
+event RemoveSymbolTypeFromWhitelist(address partyB, uint256 symbolType);
+event RemoveSymbolsFromWhitelist(address partyB, uint256[] symbolIds);
+event BlacklistSymbols(address indexed partyB, uint256[] symbolId);
+event RemoveSymbolsFromBlacklist(address indexed partyB, uint256[] symbolId);
+
+// Signature verification
+event SetSignatureVerifierAddress(address SignatureVerifier);
+
+// External transfer
+event AddRelayerForExternalTransferTarget(address target, address relayer);
+event RemoveRelayerForExternalTransferTarget(address target);
+
+// Hooks
+event RegisterHook(address affiliate, address hook);
+
+// ADL
+event SetADLEnabled(address partyB, bool enabled);
+
+// Entity metadata
+event SetEntityMetadata(address entity, EntityMetadata metadata);
+
+// PartyA connection limits
+event SetMaxPartyAConnectionLimit(uint256 maxLimit);
+
+// Withdraw system configuration
+event SetMaxWithdrawParts(uint256 maxWithdrawParts);
+event SetWithdrawCooldownPeriod(uint256 oldWithdrawCooldownPeriod, uint256 newWithdrawCooldownPeriod);
+event SetMinWithdrawCooldown(uint256 lastMinWithdrawCooldown, uint256 newMinWithdrawCooldown);
+event LegacyWithdrawalDeprecated();
+event SetSpeedUpUser(address user, bool speedUp);
+
+// Virtual funds
+event RegisterVirtualProvider(address provider);
+event UnregisterVirtualProvider(address provider);
+event SetPureVirtualCancelBlackout(uint256 oldBlackout, uint256 newBlackout);
+
+// Express deposit
+event RegisterExpressProvider(address provider);
+event UnregisterExpressProvider(address provider);
+
+// Liquidation insurance
+event SetLiquidationInsuranceVaultParams(address insuranceVault, uint256 maxLiquidationProfit);
+event SetSoftLiquidationPenaltyCollector(address softLiquidationPenaltyCollector);
+
+// Signer
+event SignerSet(address signer);
+
+// New pause/unpause granularity
+event PausePartyBOpenPositions();
+event UnpausePartyBOpenPositions();
+event PauseExternalTransfer();
+event UnpauseExternalTransfer();
+event PauseInstantLayer();
+event UnpauseInstantLayer();
+
+// Accumulated funding system
+event LegacyFundingDeprecated();
+event AccumulatedFundingActivated();
+</code></pre>
+					<h3 id="doc-event-changelog-411-migration-events-imigrationevents-new-facet">
+						4.11 Migration Events (<code>IMigrationEvents</code>) — New Facet
+					</h3>
+					<pre><code class="language-solidity">event QuotesMigrated(uint256 quotesProvided, uint256 quotesMigrated);
+event CrossLockedValuesMigrated(address indexed partyB, uint256 partyAsProcessed);
+</code></pre>
+					<h3 id="doc-event-changelog-412-diamond-ownership-events-libdiamond">4.12 Diamond Ownership Events (<code>LibDiamond</code>)</h3>
+					<pre><code class="language-solidity">// Two-step ownership transfer (replaces single-step)
+event OwnershipTransferStarted(address indexed currentOwner, address indexed pendingOwner);
+event OwnershipTransferCanceled(address indexed pendingOwner);
+</code></pre>
+					<hr />
+					<h2 id="doc-event-changelog-5-new-facets-with-events">5. New Facets with Events</h2>
+					<h3 id="doc-event-changelog-51-clearinghouse-facet-iclearinghousefacetevents">
+						5.1 ClearingHouse Facet (<code>IClearingHouseFacetEvents</code>)
+					</h3>
+					<p>
+						The clearing house enables a trusted operator to perform structured liquidation and settlement flows for cross PartyB and
+						PartyA takeover scenarios.
+					</p>
+					<pre><code class="language-solidity">// Liquidation initiation
+event LiquidateCrossPartyB(address indexed initiator, address indexed partyB, bytes liquidationId, int256 upnl, uint256 timestamp);
+event TakeoverPartyALiquidation(address indexed partyA, bytes liquidationId, uint256 timestamp);
+
+// Clearing house operations
+event DeallocateForClearingHouse(address indexed subject, address[] parties, address[] allocationKeys, uint256[] amounts);
+event DistributeForClearingHouse(address indexed subject, address[] receivers, address[] allocationKeys, uint256[] amounts);
+event LiquidatePendingPositionsForClearingHouse(address indexed subject, address[] counterparties, uint256[] liquidatedAmounts);
+event LiquidatePositionsForClearingHouse(address indexed subject, uint256[] quoteIds, uint256[] liquidatedAmounts, uint256[] closeIds, uint256[] prices);
+
+// Auto-takeover
+event AutoTakeoverPartyALiquidation(address indexed partyA, bytes liquidationId);
+
+// Settlement
+event SettlePartyATakeover(address indexed partyA, bytes liquidationId);
+event SettleCrossPartyBLiquidation(address indexed partyB);
+
+// Liquidation escrow (see liquidation-escrow.md)
+event LiquidationEscrowCreated(address indexed partyA, bytes liquidationId, uint256 amount);
+event DistributeFromLiquidationEscrow(address indexed partyA, address[] receivers, address[] allocationKeys, uint256[] amounts);
+
+// Soft liquidation
+event SoftPartyBLiquidation(address partyB, address partyA, uint256 penaltyFromAllocated, uint256 penaltyFromBalance);
+</code></pre>
+					<h3 id="doc-event-changelog-52-binding-facet-ibindingevents">5.2 Binding Facet (<code>IBindingEvents</code>)</h3>
+					<p>Enables PartyA to bind to a specific PartyB for instant action mode and dedicated execution.</p>
+					<pre><code class="language-solidity">event BindToPartyB(address partyA, address partyB);
+event RequestToUnbindFromPartyB(address partyA);
+event CancelUnbindRequest(address partyA);
+event CompleteUnbindRequest(address partyA, address partyB);
+
+// Instant action mode
+event ActivateInstantActionMode(address partyA, uint256 time);
+event ProposeToDeactivateInstantActionMode(address partyA, uint256 time);
+event DeactivateInstantActionMode(address partyA, uint256 time);
+</code></pre>
+					<h3 id="doc-event-changelog-53-pledge-facet-ipledgeevents">5.3 Pledge Facet (<code>IPledgeEvents</code>)</h3>
+					<p>Collateral pledging system for PartyB operators.</p>
+					<pre><code class="language-solidity">event PledgeCollateralDeposited(address indexed user, address indexed token, uint256 amount);
+event PledgeWithdrawRequested(address indexed user, address indexed token, uint256 amount, address recipient);
+event PledgeWithdrawApproved(address indexed user, address indexed token, uint256 amount);
+event PledgeWithdrawCancelled(address indexed user, address indexed token, uint256 amount);
+event UserSlashed(address indexed user, address indexed token, uint256 amount, address recipient);
+</code></pre>
+					<h3 id="doc-event-changelog-54-external-transfer-facet-iexternaltransferevents">
+						5.4 External Transfer Facet (<code>IExternalTransferEvents</code>)
+					</h3>
+					<p>Cross-contract fund transfers with virtual fund support.</p>
+					<pre><code class="language-solidity">event ExternalTransfer(address indexed sender, address indexed receiver, uint256 amount, address target);
+event InitiateVirtualExternalTransfer(uint256 id, address sender, address receiver, uint256 amount, address target, address provider);
+event AcceptVirtualExternalTransfer(uint256 id);
+event CancelVirtualExternalTransfer(uint256 id);
+</code></pre>
+					<h3 id="doc-event-changelog-55-withdraw-facet-iwithdrawevents">5.5 Withdraw Facet (<code>IWithdrawEvents</code>)</h3>
+					<p>Multi-step withdrawal system replacing the single-step <code>Withdraw</code> event from <code>IAccountEvents</code>.</p>
+					<pre><code class="language-solidity">event WithdrawInitiated(uint256 indexed requestId, address indexed user, WithdrawReceiverPart[] parts, bool speedUp, bytes providerData, uint256 cooldownEndTime);
+event WithdrawAccepted(uint256 indexed requestId, address indexed user);
+event WithdrawFinalized(uint256 indexed requestId, address indexed user);
+event WithdrawCancelRequested(uint256 indexed requestId, address indexed user);
+event WithdrawCancelled(uint256 indexed requestId, address indexed user);
+event Withdraw(address sender, address user, uint256 amount);
+event WithdrawSuspended(uint256 requestId, address user);
+event WithdrawRejected(uint256 requestId, address user);
+event WithdrawSpeedUpAccepted(uint256 requestId, address user, uint256 newCooldown);
+</code></pre>
+					<p>
+						<strong>Migration:</strong> The old single-step <code>Withdraw(address, address, uint256)</code> is still emitted (from
+						<code>WithdrawFacetImpl</code>) for backward compatibility. However, the full withdrawal lifecycle now flows through
+						<code>WithdrawInitiated</code> -&gt; <code>WithdrawAccepted</code> -&gt; <code>WithdrawFinalized</code>. Indexers tracking
+						withdrawal status should listen to all lifecycle events.
+					</p>
+					<h3 id="doc-event-changelog-56-symboladjustmentfacet-events-new-facet">5.6 SymbolAdjustmentFacet Events (new facet)</h3>
+					<p>
+						Handles corporate-action-style symbol adjustments (e.g. a CRWD-style 4:1 split): a registry lifecycle for scheduling a factor,
+						choosing confirmation or direct restatement after the effective-time freeze, gating quote-specific trading, funding,
+						liquidation-price, and settlement paths, and rescaling eligible open quotes while force-expiring pending quotes.
+					</p>
+					<table>
+						<thead>
+							<tr>
+								<th>New Event</th>
+								<th>Parameters</th>
+								<th>Notes</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>AdjustmentScheduled</code></td>
+								<td><code>(uint256 indexed symbolId, uint256 adjustmentIndex, uint256 factor, uint256 effectiveTimestamp)</code></td>
+								<td>Corporate action registered; symbol freezes at effectiveTimestamp</td>
+							</tr>
+							<tr>
+								<td><code>AdjustmentCancelled</code></td>
+								<td><code>(uint256 indexed symbolId, uint256 adjustmentIndex)</code></td>
+								<td>Scheduled adjustment cancelled; symbol unfreezes if it was frozen</td>
+							</tr>
+							<tr>
+								<td><code>PriceAdjustmentConfirmed</code></td>
+								<td><code>(uint256 indexed symbolId, uint256 adjustmentIndex, uint256 newCumulativeFactor)</code></td>
+								<td>Oracle factor live; symbol unfrozen</td>
+							</tr>
+							<tr>
+								<td><code>RestatementStarted</code></td>
+								<td><code>(uint256 indexed symbolId, uint256 epoch, uint256 restatementFactor)</code></td>
+								<td>Frozen window opened with the factor selected for quote rewrites</td>
+							</tr>
+							<tr>
+								<td><code>RestatementAborted</code></td>
+								<td><code>(uint256 indexed symbolId, uint256 epoch)</code></td>
+								<td>Mutation-free window closed; confirmed path unfreezes, direct path returns to the transition freeze</td>
+							</tr>
+							<tr>
+								<td><code>QuoteAdjusted</code></td>
+								<td>
+									<code
+										>(uint256 indexed quoteId, uint256 indexed symbolId, uint256 epoch, uint256 factor, uint256 oldQuantity,
+										uint256 newQuantity, uint256 oldOpenedPrice, uint256 newOpenedPrice)</code
+									>
+								</td>
+								<td>Position restated to new units</td>
+							</tr>
+							<tr>
+								<td><code>PendingQuoteCancelledByAdjustment</code></td>
+								<td><code>(uint256 indexed quoteId, uint256 indexed symbolId)</code></td>
+								<td>Pending quote force-expired during freeze</td>
+							</tr>
+							<tr>
+								<td><code>RestatementFinalized</code></td>
+								<td><code>(uint256 indexed symbolId, uint256 epoch)</code></td>
+								<td>Factor reset to 1e18; symbol unfrozen</td>
+							</tr>
+						</tbody>
+					</table>
+					<p>
+						<strong>Migration:</strong> Indexers and the Muon app must track all eight events. During the transition,
+						<code>getCumulativeFactor</code> returns only the active trading factor while
+						<code>getProspectiveCumulativeFactor</code> includes the SCHEDULED step. After effective time, operations may confirm that
+						prospective factor and reopen trading, or call <code>startRestatement</code> directly while frozen. Direct mode records the
+						prospective value in <code>restatementFactor</code> without activating it in <code>cumulativeFactor</code>;
+						<code>RestatementStarted</code> reports the factor selected for that epoch. <code>AdjustmentCancelled</code> and
+						<code>RestatementAborted</code> are distinct signals, but aborting direct mode returns to the effective SCHEDULED freeze
+						rather than reopening trading. <code>QuoteAdjusted</code> and <code>PendingQuoteCancelledByAdjustment</code> describe
+						processed work. Core does not accept off-chain inventory counts or prove completeness before
+						<code>RestatementFinalized</code>; the symbol manager and indexer must reconcile the full open and pending inventory before
+						finalization. The facet upgrade must remove the legacy <code>startRestatement(uint256,uint256,uint256)</code> selector and add
+						<code>startRestatement(uint256)</code>; the one-facet updater now removes selectors absent from the replacement facet ABI.
+					</p>
+					<hr />
+					<h2 id="doc-event-changelog-6-new-accountlayer-diamond-events">6. New AccountLayer Diamond Events</h2>
+					<p>
+						The AccountLayer is an entirely new diamond introduced in v0.8.5. It manages sub-accounts, virtual accounts, affiliate
+						registration, and margin operations. If you are integrating with the AccountLayer for the first time, index all events below.
+					</p>
+					<h3 id="doc-event-changelog-61-core-facet-icorefacet">6.1 Core Facet (<code>ICoreFacet</code>)</h3>
+					<pre><code class="language-solidity">event SubAccountCreated(address indexed account, address indexed owner, address indexed affiliate, string name);
+event SubAccountDeleted(address indexed account, address indexed owner, address indexed affiliate);
+event VirtualAccountCreated(address indexed account, address indexed parent);
+event VirtualAccountReused(address indexed account, address indexed parent);
+event VirtualAccountDeleted(address indexed account, address indexed parent);
+event SingleVAModeChanged(address indexed subAccount, bool enabled);
+event EditAccountName(address indexed account, string name);
+event Call(address indexed sender, address indexed account, bytes callData, bool success, bytes resultData);
+event HookActionExecuted(address indexed account, address indexed affiliate, bytes4 selector);
+event LegacyAccountImported(address indexed account, address indexed owner, address indexed legacyContract, address affiliate);
+</code></pre>
+					<h3 id="doc-event-changelog-62-margin-facet-imarginfacet">6.2 Margin Facet (<code>IMarginFacet</code>)</h3>
+					<pre><code class="language-solidity">event AddMargin(address indexed virtualAccount, address indexed subAccount, uint256 amount);
+event RemoveMargin(address indexed virtualAccount, address indexed subAccount, uint256 amount);
+event EmergencyMarginRecovered(address indexed virtualAccount, address indexed subAccount, uint256 amount);
+</code></pre>
+					<h3 id="doc-event-changelog-63-affiliate-facet-iaffiliatefacet">6.3 Affiliate Facet (<code>IAffiliateFacet</code>)</h3>
+					<pre><code class="language-solidity">event AffiliateRegistered(address indexed affiliate, string name);
+event AffiliateApproved(address indexed affiliate, address indexed feeDistributor);
+event AffiliateUpdated(address indexed affiliate, string name, string brandColor);
+event AffiliatePaused(address indexed affiliate);
+event AffiliateUnpaused(address indexed affiliate);
+event StakeholdersUpdateRequested(address indexed affiliate);
+event StakeholdersUpdated(address indexed affiliate);
+event RegistrationCancelled(address indexed affiliate);
+event RegistrationRejected(address indexed affiliate, address indexed admin);
+event AdminTransferProposed(address indexed affiliate, address indexed newAdmin);
+event AdminTransferCompleted(address indexed affiliate, address indexed oldAdmin, address indexed newAdmin);
+event AdminTransferCancelled(address indexed affiliate);
+event FeesDistributed(address indexed recipient, uint256 amount);
+event FeesClaimed(address indexed affiliate, address indexed symmio, uint256 amount);
+event FeeUpdateCancelled(address indexed affiliate);
+event HookSet(address indexed affiliate, bytes4 indexed selector, address hook);
+event HookRemoved(address indexed affiliate, bytes4 indexed selector);
+event OperatorSet(address indexed affiliate, bytes4 indexed selector, address indexed operator, bool status);
+event ExpressRateSet(address indexed affiliate, uint256 expressRate);
+event VirtualProviderSet(address indexed affiliate, address virtualProvider);
+</code></pre>
+					<h3 id="doc-event-changelog-64-control-facet-icontrolfacet">6.4 Control Facet (<code>IControlFacet</code>)</h3>
+					<pre><code class="language-solidity">event RoleGranted(bytes32 indexed role, address indexed account, address indexed sender);
+event RoleRevoked(bytes32 indexed role, address indexed account, address indexed sender);
+event RoleAdminSet(bytes32 indexed role, address indexed account, bool status, address indexed sender);
+event AccountManagerImplementationUpdated(bytes oldImplementation, bytes newImplementation);
+event SignerUpdated(address oldSigner, address newSigner);
+event SymmioFeeReceiverUpdated(address indexed oldReceiver, address indexed newReceiver);
+event WhitelistedSymmioCoreSet(address indexed core, bool status);
+event AccountManagerDeployed(address indexed affiliate, address indexed accountManager);
+event HookAllowedSelectorsSet(address indexed affiliate, bytes4[] selectors, bool allowed);
+event CallAllowedSelectorsSet(address indexed affiliate, bytes4[] selectors, bool allowed);
+event SymmioCoreAddedToAffiliate(address indexed affiliate, address indexed core);
+</code></pre>
+					<h3 id="doc-event-changelog-65-symmiohook-facet-isymmiohookfacet">6.5 SymmioHook Facet (<code>ISymmioHookFacet</code>)</h3>
+					<pre><code class="language-solidity">event VirtualAccountDeleted(address indexed account, address indexed parent);
+</code></pre>
+					<hr />
+					<h2 id="doc-event-changelog-7-structural-changes-summary">7. Structural Changes Summary</h2>
+					<h3 id="doc-event-changelog-71-file-reorganization">7.1 File Reorganization</h3>
+					<table>
+						<thead>
+							<tr>
+								<th>v0.8.4 Location</th>
+								<th>v0.8.5 Location</th>
+								<th>Notes</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>contracts/facets/</code></td>
+								<td><code>contracts/core/facets/</code></td>
+								<td>All core facets moved under <code>core/</code></td>
+							</tr>
+							<tr>
+								<td><code>contracts/interfaces/</code></td>
+								<td><code>contracts/core/interfaces/</code></td>
+								<td>Core interfaces moved under <code>core/</code></td>
+							</tr>
+							<tr>
+								<td><code>contracts/libraries/</code></td>
+								<td><code>contracts/core/libraries/</code></td>
+								<td>Core libraries moved under <code>core/</code></td>
+							</tr>
+							<tr>
+								<td><code>contracts/storages/</code></td>
+								<td><code>contracts/core/storages/</code></td>
+								<td>Storage contracts moved under <code>core/</code></td>
+							</tr>
+							<tr>
+								<td><code>contracts/facets/liquidation/ILiquidationEvents.sol</code></td>
+								<td>
+									Split into <code>PartyALiquidation/IPartyALiquidationEvents.sol</code> +
+									<code>PartyBLiquidation/IPartyBLiquidationEvents.sol</code>
+								</td>
+								<td>Liquidation events split by party</td>
+							</tr>
+							<tr>
+								<td><code>IAccountEvents.sol</code> (contained PartyB events)</td>
+								<td><code>IAccountEvents.sol</code> + <code>IPartyBAccountEvents.sol</code></td>
+								<td>PartyB account events extracted</td>
+							</tr>
+							<tr>
+								<td><code>IPartyBPositionActionsEvents.sol</code> (contained emergency close)</td>
+								<td><code>IPartyBPositionActionsEvents.sol</code> + <code>IPartyBEmergencyActionsEvents.sol</code></td>
+								<td>Emergency close extracted</td>
+							</tr>
+							<tr>
+								<td>N/A</td>
+								<td><code>contracts/accountLayer/</code></td>
+								<td>Entirely new AccountLayer diamond</td>
+							</tr>
+						</tbody>
+					</table>
+					<h3 id="doc-event-changelog-72-new-enums-in-sharedevents">7.2 New Enums in SharedEvents</h3>
+					<p>The <code>BalanceChangeType</code> enum has two new values appended (14 total, up from 12):</p>
+					<ul>
+						<li>
+							<code>DEFERRED_BALANCE_IN</code> (index 12): Emitted when deferred excess balance is returned to PartyA at settlement.
+						</li>
+						<li>
+							<code>DEFERRED_BALANCE_OUT</code> (index 13): Emitted when excess balance is moved to
+							<code>partyADeferredBalance</code> during deferred liquidation initiation.
+						</li>
+					</ul>
+					<p>See <a href="liquidation-escrow.html">Liquidation Escrow</a> for context on how these relate to the escrow mechanism.</p>
+					<p>Two new enums have also been added:</p>
+					<ul>
+						<li><code>TradeVolumeType</code>: <code>OPEN</code>, <code>CLOSE</code>, <code>LIQUIDATE</code></li>
+						<li><code>TradingFeeType</code>: <code>OPEN</code>, <code>CLOSE</code></li>
+					</ul>
+					<p>These are used by the new <code>TradeVolumeRecorded</code> and <code>TradingFeeCharged</code> events.</p>
+					<hr />
+					<h2 id="doc-event-changelog-8-migration-checklist">8. Migration Checklist</h2>
+					<h3 id="doc-event-changelog-for-subgraph-event-indexer-developers">For Subgraph / Event Indexer Developers</h3>
+					<ul>
+						<li>[ ] Update ABIs for all changed event signatures (especially <code>SetMuonIds</code>, <code>RegisterAffiliate</code>)</li>
+						<li>[ ] Remove handlers for all 21 deleted backward-compatible overloads</li>
+						<li>[ ] Add handlers for the replacement full-parameter events</li>
+						<li>
+							[ ] Add handlers for new <code>OpenPosition</code> and <code>FillCloseRequest</code> overloads with
+							<code>LockedValues</code>
+						</li>
+						<li>[ ] Add handlers for new <code>SendQuote</code> format with <code>paramsData</code> + <code>data</code></li>
+						<li>
+							[ ] Add <code>LiquidatePositionsPartyA</code> and <code>LiquidatePositionsPartyB</code> overloads with
+							<code>averageClosedPrices</code>
+						</li>
+						<li>
+							[ ] Index new withdraw lifecycle events (<code>WithdrawInitiated</code>, <code>WithdrawAccepted</code>,
+							<code>WithdrawFinalized</code>, etc.)
+						</li>
+						<li>[ ] Index ClearingHouse events if tracking cross PartyB liquidation flows</li>
+						<li>[ ] Index Binding events if tracking PartyA-PartyB binding state</li>
+						<li>[ ] Index <code>TradeVolumeRecorded</code> and <code>TradingFeeCharged</code> for fee/volume analytics</li>
+						<li>[ ] Index <code>LiquidationEscrowCreated</code> and <code>DistributeFromLiquidationEscrow</code> for escrow tracking</li>
+						<li>
+							[ ] Handle new <code>DEFERRED_BALANCE_IN</code> and <code>DEFERRED_BALANCE_OUT</code> values in
+							<code>BalanceChangeType</code> enum
+						</li>
+						<li>[ ] Index <code>ADLClose</code> for auto-deleveraging tracking</li>
+						<li>[ ] Add AccountLayer diamond address as a new data source if indexing sub-accounts/affiliates</li>
+					</ul>
+					<h3 id="doc-event-changelog-for-hedger-partyb-integrators">For Hedger / PartyB Integrators</h3>
+					<ul>
+						<li>[ ] Update event listeners for removed backward-compatible overloads</li>
+						<li>[ ] Handle new <code>ForceCloseInitialized</code> event for two-step force close flow</li>
+						<li>[ ] Handle <code>ForceClosePartyBInsolvent</code> for cross-partyB insolvency scenarios</li>
+						<li>[ ] Listen to <code>ForceFetchAllocated</code> for forced allocation fetches</li>
+						<li>
+							[ ] Handle accumulated funding events (<code>SetLongFundingFee</code>, <code>SetShortFundingFee</code>,
+							<code>ChargeAccumulatedFundingFee</code>)
+						</li>
+						<li>[ ] Handle <code>SoftPartyBLiquidation</code> events from the ClearingHouse</li>
+						<li>
+							[ ] Listen to new pause events (<code>PausePartyBOpenPositions</code>, <code>PauseExternalTransfer</code>,
+							<code>PauseInstantLayer</code>)
+						</li>
+						<li>[ ] Handle binding system events if supporting bound PartyA accounts</li>
+					</ul>
+					<h3 id="doc-event-changelog-for-frontend-developers">For Frontend Developers</h3>
+					<ul>
+						<li>
+							[ ] Update deposit event parsing to handle both <code>Deposit(address,address,uint256)</code> and
+							<code>Deposit(address,address,uint256,bool)</code>
+						</li>
+						<li>
+							[ ] Update withdrawal UI to track multi-step flow via <code>WithdrawInitiated</code> -&gt;
+							<code>WithdrawAccepted</code> -&gt; <code>WithdrawFinalized</code>
+						</li>
+						<li>[ ] Display <code>LockedValues</code> from new <code>OpenPosition</code> and <code>FillCloseRequest</code> events</li>
+						<li>[ ] Parse new <code>SendQuote</code> format (decode <code>paramsData</code> bytes)</li>
+						<li>[ ] Add UI for AccountLayer events if integrating sub-account management</li>
+					</ul>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer"><span>Symmio Core v0.8.5 documentation.</span></footer>
+	</body>
+</html>

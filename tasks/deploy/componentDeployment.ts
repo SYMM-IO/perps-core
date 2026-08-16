@@ -1322,6 +1322,7 @@ async function patchExpressProvider(
 	input: ComponentExecutionInput,
 	deployer: any,
 	priorReport: any,
+	safeActionsOnly = false,
 ): Promise<{
 	address: string
 	records: VerificationRecord[]
@@ -1398,9 +1399,9 @@ async function patchExpressProvider(
 	}
 
 	const canExecute: Record<ExpressPatchItem["authority"], boolean> = {
-		setter: deployerIsSetter,
-		owner: ownerIsDeployer,
-		providerAdmin: await coreView.hasRole(resolved.deployer, roleHash("PROVIDER_ADMIN_ROLE")),
+		setter: !safeActionsOnly && deployerIsSetter,
+		owner: !safeActionsOnly && ownerIsDeployer,
+		providerAdmin: !safeActionsOnly && (await coreView.hasRole(resolved.deployer, roleHash("PROVIDER_ADMIN_ROLE"))),
 	}
 	const coreControl = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", resolved.core)
 	const manualActions: SafeManualAction[] = []
@@ -1459,13 +1460,31 @@ export async function executeComponentDeployment(hre: any, input: ComponentExecu
 
 	const connection = await getConnection(hre)
 	const { ethers } = connection
-	const [deployer] = await ethers.getSigners()
+	const safeActionsOnlyValue = process.env.SYMMIO_SAFE_ACTIONS_ONLY
+	if (safeActionsOnlyValue !== undefined && safeActionsOnlyValue !== "true" && safeActionsOnlyValue !== "false") {
+		throw new Error(`SYMMIO_SAFE_ACTIONS_ONLY must be exactly true or false; received ${JSON.stringify(safeActionsOnlyValue)}`)
+	}
+	const safeActionsOnly = safeActionsOnlyValue === "true"
+	if (safeActionsOnly && !isPatch) {
+		throw new Error("Safe transaction intent mode cannot deploy contracts; use a keystore, private-key, Ledger, or local-node signer")
+	}
+	const [configuredSigner] = await ethers.getSigners()
+	let deployer: any = configuredSigner
+	if (safeActionsOnly) {
+		const safeAddress = process.env.SYMMIO_SAFE_ADDRESS
+		if (!safeAddress || !ethers.isAddress(safeAddress) || /^0x0{40}$/i.test(safeAddress)) {
+			throw new Error("Safe action-only patching requires a non-zero SYMMIO_SAFE_ADDRESS")
+		}
+		deployer = { address: ethers.getAddress(safeAddress) }
+	}
 	if (!deployer) throw new Error("No deployment signer is configured for deploy:component")
 	const chainId = Number((await ethers.provider.getNetwork()).chainId)
 	const network = connection.networkName || "unknown"
 	const simulated = connection.networkConfig?.type === "edr-simulated"
 	assertRecipeNetworkTarget(input.target, { network, chainId, simulated })
-	assertMainnetDeploymentIdentitySafe(chainId, deployer.address, input.componentConfig.admin || input.coreReport.config.admin, simulated)
+	if (!safeActionsOnly) {
+		assertMainnetDeploymentIdentitySafe(chainId, deployer.address, input.componentConfig.admin || input.coreReport.config.admin, simulated)
+	}
 	await assertDependencyAddressesHaveCode(input.coreReport, address => ethers.provider.getCode(address))
 	// Validate component-local inputs and every external authority before checkpoint
 	// mutation or contract creation. Later helpers normalize the same values again.
@@ -1477,6 +1496,9 @@ export async function executeComponentDeployment(hre: any, input: ComponentExecu
 	}
 	await assertComponentDeploymentAuthority(ethers, input.component, input.coreReport, deployer.address, input.componentConfig)
 	const componentAdmin = ethers.getAddress(input.componentConfig.admin || input.coreReport.config.admin)
+	if (safeActionsOnly && componentAdmin !== deployer.address) {
+		throw new Error(`Selected Safe ${deployer.address} does not match the patch admin ${componentAdmin}`)
+	}
 	let publicConfig: ComponentDeploymentReport["config"]
 	if (input.component === "partyB") {
 		publicConfig = {
@@ -1604,7 +1626,7 @@ export async function executeComponentDeployment(hre: any, input: ComponentExecu
 				: input.component === "symbolManager"
 					? await executeSymbolManager(hre, checkpoint, input, deployer)
 					: isPatch
-						? await patchExpressProvider(hre, checkpoint, input, deployer, priorComponentReport)
+						? await patchExpressProvider(hre, checkpoint, input, deployer, priorComponentReport, safeActionsOnly)
 						: await executeExpressProvider(hre, checkpoint, input, deployer)
 		report.address = result.address
 		report.implementation = (result as { implementation?: string }).implementation

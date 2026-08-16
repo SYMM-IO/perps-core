@@ -75,7 +75,7 @@ test("all recipe-backed status checks run without signer or explorer credentials
 	assert.deepEqual(statusHardhatEnvironment(null), {});
 });
 
-test("status refuses system/component recipe mismatches with an exact recovery command", () => {
+test("status refuses system/component recipe mismatches with a menu-only recovery path", () => {
 	const component = {
 		path: "/repo/deployments/add-partyb.json",
 		recipe: {
@@ -86,7 +86,7 @@ test("status refuses system/component recipe mismatches with an exact recovery c
 	};
 	assert.throws(
 		() => resolveStatusRecipeSelection(component, undefined, "deployments/add-partyb.json"),
-		/status --config deployments\/add-partyb\.json --only partyB/,
+		/component recipe.*partyB.*operator task.*deployments\/add-partyb\.json/,
 	);
 	assert.throws(
 		() =>
@@ -95,7 +95,7 @@ test("status refuses system/component recipe mismatches with an exact recovery c
 				"partyB",
 				"deployments/full.json",
 			),
-		/requires a component recipe with core.mode=reuse.*full-system deployment/,
+		/requires a component recipe with core.mode=reuse.*full deployment checklist/,
 	);
 });
 
