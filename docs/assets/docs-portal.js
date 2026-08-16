@@ -97,6 +97,7 @@
 			["express-deposit-removal", "AccountLayer", "Express Deposit Removal"],
 			["accountlayer-behavior-changes", "AccountLayer", "AccountLayer Behavior Changes"],
 			["lazy-accumulated-funding", "Funding", "Lazy Accumulated Funding"],
+			["force-close-request-binding", "Force Close", "Force-Close Request Binding"],
 		],
 	};
 

@@ -59,7 +59,7 @@
 					<input class="catalog-search" type="search" placeholder="Search chapters" data-catalog-search autocomplete="off" />
 					<kbd class="catalog-search-hint" aria-hidden="true" data-search-hint>⌘K</kbd>
 				</label>
-				<span class="catalog-count" data-catalog-count>24 chapters</span>
+				<span class="catalog-count" data-catalog-count>25 chapters</span>
 			</div>
 			<p class="catalog-empty" data-catalog-empty hidden>No chapters match that search.</p>
 			<div class="doc-browser">
@@ -208,7 +208,7 @@
 				</section>
 				<section class="version-catalog-group minor-improvements" aria-labelledby="other-changes-title" data-catalog-group>
 					<div class="section-heading">
-						<p class="eyebrow" data-catalog-group-count>12 chapters</p>
+						<p class="eyebrow" data-catalog-group-count>13 chapters</p>
 						<h2 id="other-changes-title">Other changes</h2>
 					</div>
 					<div class="minor-improvement-list">
@@ -312,6 +312,15 @@
 							<span
 								>Quote flows no longer roll the symbol/PartyB funding state; funding settles lazily from persisted state, which now
 								changes—and emits its final state—only on solver configuration.</span
+							>
+						</a>
+						<a class="minor-improvement-item" href="pages/force-close-request-binding.html" data-catalog-item>
+							<span class="doc-list-index">25</span>
+							<span class="category">Force Close</span>
+							<strong>Force-Close Request Binding</strong>
+							<span
+								>A multi-step force-close snapshot is now bound to the close request that initialized it, preventing a canceled or
+								expired request's price from being applied to a replacement request.</span
 							>
 						</a>
 					</div>
