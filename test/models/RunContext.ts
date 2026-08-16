@@ -1,7 +1,8 @@
 import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
 
-// Import core diamond's ControlFacet and ViewFacet from specific paths
-import type { ControlFacet } from "../../src/types/facets/Control/ControlFacet.js"
+// Import the core diamond's compatibility control ABI. Its implementation spans
+// ControlFacet and the transient selectors routed through ExecutionContextFacet.
+import type { IControlFacet } from "../../src/types/core/facets/Control/IControlFacet.sol/IControlFacet.js"
 import type { ViewFacet } from "../../src/types/facets/ViewFacet/ViewFacet.js"
 import type {
 	AccountFacet,
@@ -26,7 +27,7 @@ import type {
 	PartyAFacet,
 	PartyBBatchActionsFacet,
 	PartyBPositionActionsFacet,
-	PartyBSolverFeeActionsFacet,
+	PartyBExecutionFacet,
 	PartyBQuoteActionsFacet,
 	SettlementFacet,
 	ViewFacetSymbol,
@@ -64,7 +65,7 @@ export class RunContext {
 	partyBBatchActionsFacet!: PartyBBatchActionsFacet
 	partyBQuoteActionsFacet!: PartyBQuoteActionsFacet
 	partyBPositionActionsFacet!: PartyBPositionActionsFacet
-	partyBSolverFeeActionsFacet!: PartyBSolverFeeActionsFacet
+	partyBExecutionFacet!: PartyBExecutionFacet
 	bridgeFacet!: BridgeFacet
 	viewFacet!: ViewFacet
 	viewFacetSymbol!: ViewFacetSymbol
@@ -73,7 +74,7 @@ export class RunContext {
 	partyALiquidationFacet!: PartyALiquidationFacet
 	partyALiquidationSnapshotFacet!: PartyALiquidationSnapshotFacet
 	partyBLiquidationFacet!: PartyBLiquidationFacet
-	controlFacet!: ControlFacet
+	controlFacet!: IControlFacet
 	symbolControlFacet!: SymbolControlFacet
 	symbolAdjustmentFacet!: SymbolAdjustmentFacet
 	pauseControlFacet!: PauseControlFacet
@@ -151,7 +152,7 @@ export async function createRunContext(diamond: string, collateral: string, only
 	context.partyBBatchActionsFacet = await ethers.getContractAt("PartyBBatchActionsFacet", diamond)
 	context.partyBQuoteActionsFacet = await ethers.getContractAt("PartyBQuoteActionsFacet", diamond)
 	context.partyBPositionActionsFacet = await ethers.getContractAt("PartyBPositionActionsFacet", diamond)
-	context.partyBSolverFeeActionsFacet = await ethers.getContractAt("PartyBSolverFeeActionsFacet", diamond)
+	context.partyBExecutionFacet = await ethers.getContractAt("PartyBExecutionFacet", diamond)
 	context.bridgeFacet = await ethers.getContractAt("BridgeFacet", diamond)
 	context.viewFacet = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", diamond)
 	context.viewFacetSymbol = await ethers.getContractAt("ViewFacetSymbol", diamond)
@@ -160,7 +161,7 @@ export async function createRunContext(diamond: string, collateral: string, only
 	context.partyALiquidationFacet = await ethers.getContractAt("PartyALiquidationFacet", diamond)
 	context.partyALiquidationSnapshotFacet = await ethers.getContractAt("PartyALiquidationSnapshotFacet", diamond)
 	context.partyBLiquidationFacet = await ethers.getContractAt("PartyBLiquidationFacet", diamond)
-	context.controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", diamond)
+	context.controlFacet = await ethers.getContractAt("contracts/core/facets/Control/IControlFacet.sol:IControlFacet", diamond)
 	context.symbolControlFacet = await ethers.getContractAt("SymbolControlFacet", diamond)
 	context.symbolAdjustmentFacet = await ethers.getContractAt("SymbolAdjustmentFacet", diamond)
 	context.pauseControlFacet = await ethers.getContractAt("PauseControlFacet", diamond)

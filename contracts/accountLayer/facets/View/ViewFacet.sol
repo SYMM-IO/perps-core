@@ -25,6 +25,7 @@ import {
 	Stakeholder
 } from "../../storages/AffiliateStorage.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
+import { LibAccountLayerSigner } from "../../libraries/LibAccountLayerSigner.sol";
 import { LibAccountLayerAccessibility } from "../../libraries/LibAccountLayerAccessibility.sol";
 import { LibDiamond } from "../../../diamond/libraries/LibDiamond.sol";
 import { IMultiAccount } from "../../interfaces/IMultiAccount.sol";
@@ -310,7 +311,7 @@ contract ViewFacet is IViewFacet {
 	///      of a delegate, and always cleared with the signer, so this reads zero between transactions.
 	/// @return The canonical sub-account of the active scope, or address(0)
 	function getSignerScope() external view returns (address) {
-		return AccountStorage.layout().scopedAccount;
+		return LibAccountLayerSigner.effectiveScope();
 	}
 
 	/// @notice Returns the Symmio core address associated with an account

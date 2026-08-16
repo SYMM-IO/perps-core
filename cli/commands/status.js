@@ -61,8 +61,8 @@ export function resolveStatusRecipeSelection(recipeContext, only, configLabel = 
 	if (only) {
 		if (coreMode !== "reuse") {
 			throw new Error(
-				`--only ${only} requires a component recipe with core.mode=reuse; this recipe has core.mode=${coreMode}. ` +
-					`Run status without --only to inspect its full-system deployment.`,
+				`${only} requires a component recipe with core.mode=reuse; this recipe has core.mode=${coreMode}. ` +
+					`Use the full deployment checklist to inspect its system deployment.`,
 			);
 		}
 		const plan = createDeploymentPlan(recipeContext.recipe, { only });
@@ -77,11 +77,10 @@ export function resolveStatusRecipeSelection(recipeContext, only, configLabel = 
 					recipeContext.recipe.expressProvider?.mode === "reuse" &&
 					recipeContext.recipe.expressProvider?.address),
 		);
-		const selection =
-			enabled.length === 1 ? `--only ${enabled[0]}` : `--only ${["partyB", "symbolManager", "expressProvider"].join(" or --only ")}`;
+		const selection = enabled.length === 1 ? enabled[0] : ["partyB", "symbolManager", "expressProvider"].join(", ");
 		throw new Error(
-			`This is a component recipe because core.mode=reuse. Select its component explicitly: ` +
-				`./symmio status --config ${configLabel} ${selection}`,
+			`This is a component recipe because core.mode=reuse. Select its component explicitly (${selection}) in the ` +
+				`operator task that owns ${configLabel}.`,
 		);
 	}
 
@@ -242,20 +241,24 @@ export function validateCheckpointReportBinding(checkpoint, report) {
 }
 
 function componentExpectedConfig(recipeContext, component) {
-	return component === "partyB"
-		? {
-				admin: recipeContext.recipe.governance.admin,
-				signer: recipeContext.recipe.partyB.signer,
-				adlEnabled: recipeContext.recipe.partyB.adlEnabled,
-			}
-		: {
-				admin: recipeContext.recipe.governance.admin,
-				operator: recipeContext.recipe.symbolManager.operator,
-			};
+	if (component === "partyB") {
+		return {
+			admin: recipeContext.recipe.governance.admin,
+			signer: recipeContext.recipe.partyB.signer,
+			adlEnabled: recipeContext.recipe.partyB.adlEnabled,
+		};
+	}
+	if (component === "symbolManager") {
+		return {
+			admin: recipeContext.recipe.governance.admin,
+			operator: recipeContext.recipe.symbolManager.operator,
+		};
+	}
+	return { admin: recipeContext.recipe.governance.admin };
 }
 
 function componentRerunCommand(configLabel, component) {
-	return `./symmio deploy --config ${configLabel} --only ${component}`;
+	return `./symmio → Continue active task (${component}; ${configLabel})`;
 }
 
 function showComponentStatusReport(report, reportPath, checkpointPath, networkName) {
@@ -272,7 +275,9 @@ function showComponentStatusReport(report, reportPath, checkpointPath, networkNa
 					["signer", report.config.signer],
 					["ADL enabled", String(report.config.adlEnabled)],
 				]
-			: [["operator", report.config.operator]]),
+			: report.component === "symbolManager"
+				? [["operator", report.config.operator]]
+				: []),
 		["Core dependency", report.coreDependency.diamond],
 		["verification", `${report.verification.policy} / ${report.verification.status}`],
 		["recorded health", report.health.status],
@@ -294,8 +299,8 @@ function showComponentStatusReport(report, reportPath, checkpointPath, networkNa
 
 function showComponentRerun(configLabel, component, { safeActions = false } = {}) {
 	const detail = safeActions
-		? "after the Safe actions confirm, rerun this identical deploy command; it resumes without redeploying and refreshes the report/checkpoint"
-		: "rerun this identical deploy command to reconcile and refresh the component evidence";
+		? "after the Safe actions confirm, continue the active task; it resumes without redeploying and refreshes the report/checkpoint"
+		: "continue the active task to reconcile and refresh the component evidence";
 	info(detail);
 	log(`  ${c.cyan(componentRerunCommand(configLabel, component))}`);
 }

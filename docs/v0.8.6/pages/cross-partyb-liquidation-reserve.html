@@ -3,40 +3,53 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Pending cross-PartyB liquidation settlement reserves now reduce shared quote, solvency, and liquidation availability."
+		/>
 		<title>Cross-PartyB Liquidation Reserve Enforcement - Symmio Core v0.8.6</title>
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Apply the saved preference before first paint.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
 		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
 		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
 	</head>
-	<body class="doc-page">
+	<body class="doc-page" data-version="0.8.6">
 		<a class="skip-link" href="#full-document">Skip to document</a>
 
-		<header class="doc-topbar">
-			<a class="brand" href="../index.html"
-				><span class="brand-mark">8.6</span><span><strong>v0.8.6 Changelog</strong></span></a
-			>
-			<nav class="top-actions" aria-label="Page actions">
-				<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
-			</nav>
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
 		</header>
 
 		<div class="reader-shell">
-			<aside class="doc-sidebar" aria-label="Documentation navigation" data-doc-nav></aside>
-			<aside class="toc-panel side-toc" aria-label="Page navigation">
-				<div class="toc-card">
-					<p class="toc-title">On this page</p>
-					<a class="toc-link level-2" href="#summary">Summary</a>
-					<a class="toc-link level-2" href="#the-bug">The Bug</a>
-					<a class="toc-link level-2" href="#affected-paths">Affected Paths</a>
-					<a class="toc-link level-2" href="#fix">Fix</a>
-					<a class="toc-link level-2" href="#settlement-top-up-exception">Settlement Top-Up Exception</a>
-					<a class="toc-link level-2" href="#verification">Verification</a>
-				</div>
-			</aside>
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#summary">Summary</a>
+				<a class="toc-link level-2" href="#the-bug">The Bug</a>
+				<a class="toc-link level-2" href="#affected-paths">Affected Paths</a>
+				<a class="toc-link level-2" href="#fix">Fix</a>
+				<a class="toc-link level-2" href="#settlement-top-up-exception">Settlement Top-Up Exception</a>
+				<a class="toc-link level-2" href="#verification">Verification</a>
+			</div>
 
 			<main class="reader-main">
 				<header class="reader-hero">
-					<nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">v0.8.6</a><span>/</span><strong>Liquidation</strong></nav>
 					<div class="reader-title-row">
 						<div>
 							<h1>Cross-PartyB Liquidation Reserve Enforcement</h1>
@@ -148,7 +161,6 @@ require(
 
 		<footer class="site-footer">
 			<span>Symmio Core v0.8.6 documentation.</span>
-			<span>Protocol, operations, and integration notes.</span>
 		</footer>
 	</body>
 </html>

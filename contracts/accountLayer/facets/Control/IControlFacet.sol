@@ -82,7 +82,8 @@ interface IControlFacet is IControlFacetEvents, IAccountLayerErrors {
 	/// @param implementation The AccountManager proxy bytecode
 	function setAccountManagerImplementation(bytes memory implementation) external;
 
-	/// @notice Sets the global signer for protocol-level operations
+	/// @notice Sets the global signer for protocol-level operations.
+	/// @dev Configured legacy routers may have this selector adapted to transient storage.
 	/// @param _signer The new signer address
 	function setSigner(address _signer) external;
 
@@ -90,6 +91,18 @@ interface IControlFacet is IControlFacetEvents, IAccountLayerErrors {
 	/// @param _signer The new signer address
 	/// @param _scope Canonical sub-account to confine the session to (address(0) for unconfined)
 	function setSignerScoped(address _signer, address _scope) external;
+
+	/// @notice Installs the effective signer for this transaction, or clears it with zero.
+	/// @dev Runtime command, called around each InstantLayer operation. It is rejected while a
+	///      persistent signer is set, so the two mechanisms never overlap within a transaction.
+	/// @param signerOrZero The new signer address, or address(0) to end the signer scope
+	function setTransientSigner(address signerOrZero) external;
+
+	/// @notice Installs the effective signer for this transaction, confined to one account family.
+	/// @dev Transient counterpart of setSignerScoped, used when executing on behalf of a delegate.
+	/// @param signerOrZero The new signer address, or address(0) to end the signer scope
+	/// @param scope Canonical sub-account to confine the session to (address(0) for unconfined)
+	function setTransientSignerScoped(address signerOrZero, address scope) external;
 
 	// ==================== Affiliate Configuration ====================
 

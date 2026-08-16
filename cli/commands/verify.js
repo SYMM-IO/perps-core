@@ -20,8 +20,8 @@ export function validateVerifyRecipeReport(report, checkpoint, context, expected
 		const selected =
 			context.recipe.partyB.mode === "deploy" ? "partyB" : context.recipe.symbolManager.mode === "deploy" ? "symbolManager" : "component";
 		throw new Error(
-			`verify --config is for full-system recipes only. ${selected} verification is performed and recorded by ` +
-				`\`./symmio deploy --config ${context.path} --only ${selected}\`; rerun that identical command to retry or finalize it.`,
+			`Full-system verification cannot consume a component recipe. ${selected} verification is owned by its operator task; ` +
+				`launch ./symmio and continue that task to retry or finalize ${context.path}.`,
 		);
 	}
 	if (!report || typeof report !== "object") throw new Error("chain-scoped deployment report is missing");

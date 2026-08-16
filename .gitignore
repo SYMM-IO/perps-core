@@ -66,4 +66,6 @@ AGENTS.md
 /docs/superpowers/
 .DS_Store
 .diffstory
+.symmio/
 .fuzz-dashboard/
+.ledger-handover-cache.json

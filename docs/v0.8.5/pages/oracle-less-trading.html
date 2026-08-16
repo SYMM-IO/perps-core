@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="This change will increase the overall speed of the system as partyBs don&#x27;t have to wait for muon signatures before every transaction."
+		/>
+		<title>Oracle-Less Trading - Symmio Core v0.8.5</title>
+		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../../v0.8.6/assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../../v0.8.6/assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.5">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.5</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#doc-oracle-less-trading-binding-requirements">Binding Requirements</a>
+				<a class="toc-link level-2" href="#doc-oracle-less-trading-binding-flow">Binding Flow</a>
+				<a class="toc-link level-2" href="#doc-oracle-less-trading-security-consideration-fee-draining-via-fabricated-upnl"
+					>Security Consideration: Fee Draining via Fabricated UPNL</a
+				>
+			</div>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1><strong>Oracle-Less Trading</strong></h1>
+							<p class="hero-copy">
+								Whenever partyA is trading exclusively with a single partyB, there is no risk of one partyB doing something that could
+								harm another. In this case, we can remove the Muon signature checks. If partyA trusts partyB, they can bind themselves
+								to that specific partyB, and from that moment onward, the signatures previously required for trading will no longer be
+								checked. PartyB can then pass any value they choose to the contract method.
+							</p>
+						</div>
+					</div>
+				</header>
+				<article class="doc-article" id="full-document">
+					<p>
+						This change will increase the overall speed of the system as partyBs don't have to wait for muon signatures before every
+						transaction.
+					</p>
+					<h2 id="doc-oracle-less-trading-binding-requirements">Binding Requirements</h2>
+					<p>Before partyA can bind to a partyB, they must meet the following conditions:</p>
+					<ol>
+						<li>
+							<strong>No pending quotes</strong> - PartyA must have zero pending locked balance (no quotes in PENDING, LOCKED, or
+							CANCEL_PENDING status)
+						</li>
+						<li><strong>No open positions with other partyBs</strong> - All existing open positions must be with the target partyB</li>
+					</ol>
+					<p>This ensures a clean state before entering the bound relationship.</p>
+					<h2 id="doc-oracle-less-trading-binding-flow">Binding Flow</h2>
+					<p>
+						The <code>bindToPartyB</code> function lets a caller initiate a binding, ensuring the target address isn't zero, that they
+						have no pending quotes, no open positions with other partyBs, and that they're not already bound. Once bound, the caller can
+					</p>
+					<p>
+						later request to unbind using <code>requestToUnbindFromPartyB</code>, which doesn't immediately break the link but instead
+						moves the status into a <code>PENDING_UNBIND</code> state, recording the time of the request. If the caller changes their
+						mind, they can
+					</p>
+					<p>
+						reverse this step with <code>cancelUnbindRequest</code>, restoring the state back to <code>BOUND</code>. Finally,
+						<code>completeUnbindRequest</code> finalizes the unbinding process: either <code>partyB</code> can immediately complete it, or
+						anyone else (including <code>partyA</code> themselves) must wait until a cooldown period has passed. Once complete, the link
+						is severed, the status is reset to <code>NOT_BOUND</code>, and timestamps are updated for traceability.
+					</p>
+					<h2 id="doc-oracle-less-trading-security-consideration-fee-draining-via-fabricated-upnl">
+						Security Consideration: Fee Draining via Fabricated UPNL
+					</h2>
+					<p>
+						Because Muon signature verification is bypassed for bound PartyAs, a malicious PartyA can pass fabricated positive UPNL values
+						to <code>sendQuote</code>. This inflates their apparent available balance, allowing them to send more quotes than they could
+						otherwise afford. Each quote deducts a real trading fee from <code>allocatedBalances</code>, so the PartyA effectively drains
+						their balance into pending fees.
+					</p>
+					<p>
+						If the PartyA is then liquidated as <code>LATE</code> or <code>OVERDUE</code>, those pending quotes are cancelled and their
+						fees would normally be refunded to the PartyA at settlement — recovering the exact funds they drained. This is addressed by
+						the <a href="liquidation-escrow.html">liquidation escrow</a> mechanism, which redirects pending fee reimbursements to a
+						ClearingHouse-controlled escrow in <code>LATE</code>/<code>OVERDUE</code> liquidations instead of returning them to the
+						PartyA.
+					</p>
+					<p>
+						The vulnerability exists in non-bound mode as well, but the Muon oracle enforces accurate UPNL values during
+						<code>sendQuote</code>, which limits the amount of excess fee draining that is practically possible.
+					</p>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer"><span>Symmio Core v0.8.5 documentation.</span></footer>
+	</body>
+</html>

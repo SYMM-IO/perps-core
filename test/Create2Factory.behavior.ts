@@ -7,7 +7,7 @@ import { loadFixture } from "./helpers/network-helpers.js"
 async function deployCreate2FactoryFixture() {
 	const [deployer] = await ethers.getSigners()
 	const factory = await ethers.getContractFactory("Create2Factory")
-	const create2Factory = await factory.connect(deployer).deploy()
+	const create2Factory = await factory.connect(deployer).deploy(deployer.address, deployer.address)
 	await create2Factory.waitForDeployment()
 	return { create2Factory, deployer }
 }
@@ -23,11 +23,11 @@ export function shouldBehaveLikeCreate2Factory(): void {
 			const salt = ethers.zeroPadValue("0x01", 32)
 			const bytecodeHash = ethers.keccak256(bytecode)
 
-			const predictedAddress = await create2Factory.computeAddress(salt, bytecodeHash)
+			const predictedAddress = await create2Factory["getAddress(bytes,uint256)"](bytecode, salt)
 			const offchainPredicted = ethers.getCreate2Address(factoryAddress, salt, bytecodeHash)
 			expect(predictedAddress.toLowerCase()).to.equal(offchainPredicted.toLowerCase())
 
-			await create2Factory.deploy(salt, bytecode)
+			await create2Factory.deploy(bytecode, salt)
 
 			const code = await ethers.provider.getCode(predictedAddress)
 			expect(code).to.not.equal("0x")
@@ -56,7 +56,7 @@ export function shouldBehaveLikeCreate2Factory(): void {
 			expect(result.attempts).to.be.greaterThan(0)
 
 			// Deploy through factory
-			await create2Factory.deploy(result.salt, initCode)
+			await create2Factory.deploy(initCode, result.salt)
 
 			// Verify Diamond has code at predicted address
 			const code = await ethers.provider.getCode(result.address)
@@ -79,7 +79,7 @@ export function shouldBehaveLikeCreate2Factory(): void {
 			expect(result.address.toLowerCase().endsWith("ab")).to.be.true
 			expect(result.address).to.equal(ethers.getCreate2Address(factoryAddress, result.salt, ethers.keccak256(initCodeHex)))
 
-			await create2Factory.connect(deployer).deploy(result.salt, initCodeHex)
+			await create2Factory.connect(deployer).deploy(initCodeHex, result.salt)
 			expect(await ethers.provider.getCode(result.address)).to.not.equal("0x")
 		})
 
@@ -137,8 +137,18 @@ export function shouldBehaveLikeCreate2Factory(): void {
 			const bytecode = DiamondCutFactory.bytecode
 			const salt = ethers.zeroPadValue("0x42", 32)
 
-			await create2Factory.deploy(salt, bytecode)
-			await expect(create2Factory.deploy(salt, bytecode)).to.be.reverted
+			await create2Factory.deploy(bytecode, salt)
+			await expect(create2Factory.deploy(bytecode, salt)).to.be.reverted
+		})
+
+		it("allows only DEPLOYER_ROLE holders to deploy", async function () {
+			const { create2Factory } = await loadFixture(deployCreate2FactoryFixture)
+			const [, outsider] = await ethers.getSigners()
+			const DiamondCutFactory = await ethers.getContractFactory("DiamondCutFacet")
+
+			await expect(create2Factory.connect(outsider).deploy(DiamondCutFactory.bytecode, 7n)).to.be.revertedWith(
+				"AccessControl: account " + outsider.address.toLowerCase() + " is missing role " + (await create2Factory.DEPLOYER_ROLE()),
+			)
 		})
 	})
 }

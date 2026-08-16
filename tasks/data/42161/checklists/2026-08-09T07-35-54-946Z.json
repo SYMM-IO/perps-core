@@ -1,0 +1,81 @@
+{
+	"apiVersion": "operations.symm.io/checklist-v1",
+	"createdAt": "2026-08-09T07:35:54.946Z",
+	"recipe": {
+		"path": "deployments/arbitrum.json",
+		"digest": "a88e738ffa91564b8f2edb0d5626ec7a9433cb917681604cd013bf8c9b7ce3ad"
+	},
+	"deployment": {
+		"id": "d7742f4e-c7c5-4f7d-a93d-dfb3eb8dfcd5",
+		"lifecycle": "complete",
+		"reportDigest": "a88e738ffa91564b8f2edb0d5626ec7a9433cb917681604cd013bf8c9b7ce3ad"
+	},
+	"passed": false,
+	"results": [
+		{
+			"id": "check-01",
+			"title": "recipe-report binding",
+			"status": "passed"
+		},
+		{
+			"id": "check-02",
+			"title": "transaction receipts",
+			"status": "passed"
+		},
+		{
+			"id": "check-03",
+			"title": "bytecode and facet selectors",
+			"status": "failed"
+		},
+		{
+			"id": "check-04",
+			"title": "ownership and roles",
+			"status": "failed"
+		},
+		{
+			"id": "check-05",
+			"title": "deployer privilege removal",
+			"status": "failed"
+		},
+		{
+			"id": "check-06",
+			"title": "protocol configuration",
+			"status": "failed"
+		},
+		{
+			"id": "check-07",
+			"title": "InstantLayer templates",
+			"status": "failed"
+		},
+		{
+			"id": "check-08",
+			"title": "Muon permissions",
+			"status": "failed"
+		},
+		{
+			"id": "check-09",
+			"title": "component settings",
+			"status": "failed"
+		},
+		{
+			"id": "check-10",
+			"title": "ExpressProvider credit caps",
+			"status": "failed"
+		},
+		{
+			"id": "check-11",
+			"title": "explorer verification",
+			"status": "passed"
+		},
+		{
+			"id": "check-12",
+			"title": "handover",
+			"status": "passed"
+		},
+		{
+			"id": "check-13",
+			"title": "current health",
+			"status": "failed"
+		}
+	]
+}

@@ -2,6 +2,7 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
+import { ensureLibraries, getFacetSpec, getLinkedContractFactory, linkedLibrariesFor } from "../../utils/deploymentManifest.js"
 import { FacetCutAction, getSelectors } from "../utils/diamondCut.js"
 import { writeData } from "../utils/fs.js"
 import { deploymentOnlyArtifact } from "./artifacts.js"
@@ -12,35 +13,6 @@ import { assertStandaloneDeploymentTaskAllowed, getConnection } from "./helpers.
 import { logger } from "./logger.js"
 import { send } from "./tx.js"
 import { type VanityContext, create2Record, deployContract } from "./vanityDeploy.js"
-
-// Define which facets need which external libraries (based on compiled artifacts)
-const FacetLibraryDependencies: Record<string, string[]> = {
-	PartyAFacet: ["LibQuoteClose"],
-	PartyBPositionActionsFacet: ["LibQuoteClose", "LibQuoteFunding"],
-	PartyBBatchActionsFacet: ["LibQuoteClose", "LibQuoteFunding"],
-	PartyBEmergencyActionsFacet: ["LibQuoteClose"],
-	PartyBQuoteActionsFacet: ["LibQuoteClose"],
-	ForceActionsFacet: ["LibForceActions", "LibSettlement"],
-	ForceCloseStepsFacet: ["LibForceActions", "LibSettlement"],
-	ViewFacetQuote: ["LibQuoteFunding"],
-	FundingRateFacet: ["LibQuoteFunding"],
-	PartyALiquidationFacet: ["LibPartyALiquidationLegacySetup", "LibPartyALiquidationProcess"],
-	PartyALiquidationSnapshotFacet: ["LibPartyALiquidationSnapshotSetup", "LibPartyALiquidationProcess"],
-	ClearingHouseFacet: ["LibQuoteClose", "LibQuoteFunding"],
-	SettlementFacet: ["LibSettlement"],
-	SymbolAdjustmentFacet: ["LibQuoteFunding", "LibQuoteClose"],
-}
-
-const LibraryLinkReferences: Record<string, string> = {
-	LibQuoteFunding: "project/contracts/core/libraries/LibQuoteFunding.sol:LibQuoteFunding",
-	LibQuoteClose: "project/contracts/core/libraries/LibQuoteClose.sol:LibQuoteClose",
-	LibForceActions: "project/contracts/core/libraries/LibForceActions.sol:LibForceActions",
-	LibSettlement: "project/contracts/core/libraries/LibSettlement.sol:LibSettlement",
-	LibPartyALiquidationProcess: "project/contracts/core/libraries/liquidation/LibPartyALiquidationProcess.sol:LibPartyALiquidationProcess",
-	LibPartyALiquidationSnapshotSetup:
-		"project/contracts/core/libraries/liquidation/LibPartyALiquidationSnapshotSetup.sol:LibPartyALiquidationSnapshotSetup",
-	LibPartyALiquidationLegacySetup: "project/contracts/core/libraries/liquidation/LibPartyALiquidationLegacySetup.sol:LibPartyALiquidationLegacySetup",
-}
 
 type DeployDiamondArgs = {
 	genABI?: boolean
@@ -176,73 +148,42 @@ export async function deployDiamond(
 		}
 	}
 
-	// Deploy external libraries first
+	// Deploy external libraries first through the shared dependency graph.
 	logger.subsection("Libraries")
 	if (!diamondCheckpoint.libraries) {
 		diamondCheckpoint.libraries = {}
 	}
-
-	// Libraries differ only in name and how their factory is built, so the deploy, gas
-	// accounting, and checkpoint write are shared rather than repeated seven times.
-	const deployLibrary = async (name: string, buildFactory: () => Promise<any>): Promise<void> => {
-		if (libraryAddresses[name]) {
-			logger.info(`  ⏭ ${name} already deployed at ${libraryAddresses[name]}`)
-			return
-		}
-		const result = await deployContract(vanity, {
-			key: `core/${name}`,
-			component: `contracts.diamond.libraries.${name}`,
-			label: name,
-			factory: await buildFactory(),
-			checkpoint,
-		})
-		totalGasUsed += result.gasUsed
-		libraryAddresses[name] = result.address
-		logger.deployed(name, result.address)
-
-		if (checkpoint) {
-			diamondCheckpoint.libraries![name] = createDeployedContract(result.address, undefined, create2Record(result))
-			checkpoint.contracts.diamond = diamondCheckpoint
-			saveCheckpoint(checkpoint)
-		}
-	}
-
-	// LibQuoteFunding has no dependencies; each later library links against those above it.
-	await deployLibrary("LibQuoteFunding", () => ethers.getContractFactory("LibQuoteFunding"))
-
-	await deployLibrary("LibQuoteClose", () =>
-		ethers.getContractFactory("LibQuoteClose", {
-			libraries: {
-				[LibraryLinkReferences.LibQuoteFunding]: libraryAddresses["LibQuoteFunding"],
-			},
-		}),
-	)
-
-	await deployLibrary("LibForceActions", async () => {
-		// Ethers cannot parse the named enum/struct types emitted in this public
-		// library's 0.8.18 ABI. The factory is deployment-only, so avoid inventing a
-		// callable interface while keeping compiler bytecode/link references intact.
-		const artifact = await hre.artifacts.readArtifact("LibForceActions")
-		return ethers.getContractFactoryFromArtifact(deploymentOnlyArtifact(artifact), {
-			libraries: {
-				[LibraryLinkReferences.LibQuoteClose]: libraryAddresses["LibQuoteClose"],
-			},
-		})
+	const ensuredLibraries = await ensureLibraries({
+		ethers,
+		scope: "core",
+		existing: libraryAddresses,
+		onReused: (name, address) => logger.info(`  ⏭ ${name} already deployed at ${address}`),
+		getFactory: async (spec, addresses) => {
+			if (spec.name !== "LibForceActions") return getLinkedContractFactory(ethers, "core", spec, addresses)
+			const artifact = await hre.artifacts.readArtifact(spec.artifact)
+			return ethers.getContractFactoryFromArtifact(deploymentOnlyArtifact(artifact), {
+				libraries: linkedLibrariesFor("core", spec, addresses),
+			})
+		},
+		deploy: async (name, factory) => {
+			const result = await deployContract(vanity, {
+				key: `core/${name}`,
+				component: `contracts.diamond.libraries.${name}`,
+				label: name,
+				factory,
+				checkpoint,
+			})
+			totalGasUsed += result.gasUsed
+			logger.deployed(name, result.address)
+			if (checkpoint) {
+				diamondCheckpoint.libraries![name] = createDeployedContract(result.address, undefined, create2Record(result))
+				checkpoint.contracts.diamond = diamondCheckpoint
+				saveCheckpoint(checkpoint)
+			}
+			return { address: result.address }
+		},
 	})
-
-	await deployLibrary("LibSettlement", () => ethers.getContractFactory("LibSettlement"))
-
-	await deployLibrary("LibPartyALiquidationProcess", () =>
-		ethers.getContractFactory("LibPartyALiquidationProcess", {
-			libraries: {
-				[LibraryLinkReferences.LibQuoteFunding]: libraryAddresses["LibQuoteFunding"],
-			},
-		}),
-	)
-
-	await deployLibrary("LibPartyALiquidationSnapshotSetup", () => ethers.getContractFactory("LibPartyALiquidationSnapshotSetup"))
-
-	await deployLibrary("LibPartyALiquidationLegacySetup", () => ethers.getContractFactory("LibPartyALiquidationLegacySetup"))
+	Object.assign(libraryAddresses, ensuredLibraries)
 
 	// Deploy Facets
 	const cut: Array<{
@@ -272,19 +213,7 @@ export async function deployDiamond(
 			facetAddress = diamondCheckpoint.facets[shortName].address
 			logger.info(`  ⏭ [${i + 1}/${FacetNames.length}] ${shortName} already deployed at ${facetAddress}`)
 		} else {
-			// Check if this facet needs library linking
-			const requiredLibraries = FacetLibraryDependencies[shortName]
-			let FacetFactory
-
-			if (requiredLibraries && requiredLibraries.length > 0) {
-				const libraries: Record<string, string> = {}
-				for (const lib of requiredLibraries) {
-					libraries[LibraryLinkReferences[lib]] = libraryAddresses[lib]
-				}
-				FacetFactory = await ethers.getContractFactory(facetName, { libraries })
-			} else {
-				FacetFactory = await ethers.getContractFactory(facetName)
-			}
+			const FacetFactory = await getLinkedContractFactory(ethers, "core", getFacetSpec("core", shortName), libraryAddresses)
 
 			const result = await deployContract(vanity, {
 				key: `core/${shortName}`,
@@ -507,6 +436,16 @@ export async function deployDiamond(
 			{
 				name: "LibPartyALiquidationLegacySetup",
 				address: libraryAddresses["LibPartyALiquidationLegacySetup"],
+				constructorArguments: [],
+			},
+			{
+				name: "PartyBPositionActionsFacetImpl",
+				address: libraryAddresses["PartyBPositionActionsFacetImpl"],
+				constructorArguments: [],
+			},
+			{
+				name: "ClearingHouseFacetImpl",
+				address: libraryAddresses["ClearingHouseFacetImpl"],
 				constructorArguments: [],
 			},
 			...deployedFacets.map(facet => ({

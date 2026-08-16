@@ -1,4 +1,4 @@
-// `symmio deploy --network <n>` — the runbook, executed.
+// Internal deployment adapter owned by the menu task runner.
 //
 // Encodes the order that a correct deployment actually requires: preflight, an explicit
 // plan, confirmation proportional to the risk, the deploy itself, then verification and a
@@ -67,14 +67,20 @@ export function effectiveVerification({ recipe, noVerify = false, mainnet = fals
 	return !simulated && !noVerify;
 }
 
+/** Build the exact production artifacts deployment tasks consume, without unlocking credentials or loading dotenv. */
+export function deploymentBuildInvocation(recipeContext) {
+	return {
+		args: ["--build-profile", "production", "build"],
+		env: recipeContext ? recipeHardhatEnvironment(recipeContext, { SYMMIO_RECIPE_READ_ONLY: "true" }) : {},
+	};
+}
+
 export function deploymentTaskInvocation({ recipeContext, only, networkName, fresh = false, verify = false, logLevel = "verbose" }) {
 	if (recipeContext) {
 		const env = recipeHardhatEnvironment(recipeContext, { DEPLOY_LOG_LEVEL: logLevel });
 		if (only) {
 			if (only === "core") {
-				throw new Error(
-					'--only core is unavailable because Core is a system bundle; set partyB.mode, symbolManager.mode, and expressProvider.mode to "skip", then run without --only',
-				);
+				throw new Error("Core is a system bundle; choose Core bundle in the operator menu instead of a primitive component target");
 			}
 			return {
 				args: [
@@ -213,13 +219,22 @@ export function validateComponentReport(report, expected) {
 		}
 		verifiedAddresses.add(record.address.toLowerCase());
 	}
-	if (!verifiedAddresses.has(report.address.toLowerCase())) {
+	if (report.mode === "patch" && report.verification.records.length > 0) {
+		throw new Error("ExpressProvider patch verification records must be empty because a patch deploys no contract");
+	}
+	if (report.mode !== "patch" && !verifiedAddresses.has(report.address.toLowerCase())) {
 		throw new Error(`component verification records do not cover deployed ${expected.component} address ${report.address}`);
 	}
 	if (expected.component === "partyB" && !verifiedAddresses.has(report.implementation.toLowerCase())) {
 		throw new Error(`PartyB verification records do not cover implementation address ${report.implementation}`);
 	}
-	if (expected.live) {
+	if (report.mode === "patch") {
+		if (report.verification.policy !== "not_applicable" || report.verification.status !== "skipped") {
+			throw new Error(
+				`patch verification must be not_applicable/skipped because no contract was deployed, got ${JSON.stringify(report.verification.policy)}/${JSON.stringify(report.verification.status)}`,
+			);
+		}
+	} else if (expected.live) {
 		if (report.verification.policy !== "required" || report.verification.status !== "passed") {
 			throw new Error(
 				`live component verification is incomplete: ${JSON.stringify(report.verification.policy)}/${JSON.stringify(report.verification.status)}`,
@@ -281,7 +296,7 @@ export function readComponentReport(chainId, options) {
 	} catch (error) {
 		throw new Error(`component report ${reportPath} is unavailable: ${error.message || error}`);
 	}
-	return { report: validateComponentReport(report, options), path: reportPath };
+	return { report: validateComponentReport(report, { ...options, chainId: Number(chainId) }), path: reportPath };
 }
 
 function showComponentHandoff(report, reportPath, recipePath) {
@@ -296,7 +311,9 @@ function showComponentHandoff(report, reportPath, recipePath) {
 					["signer", report.config.signer],
 					["ADL enabled", String(report.config.adlEnabled)],
 				]
-			: [["operator", report.config.operator]]),
+			: report.component === "symbolManager"
+				? [["operator", report.config.operator]]
+				: []),
 		["verification", `${report.verification.policy} / ${report.verification.status}`],
 		["health", report.health.status],
 		["report", reportPath],
@@ -312,8 +329,8 @@ function showComponentHandoff(report, reportPath, recipePath) {
 	}
 	if (report.lifecycle === "pending_handover") {
 		blank();
-		info("after the Safe actions confirm, rerun the identical command; it resumes without redeploying and proves the final state");
-		log(`  ${c.cyan(`./symmio deploy --config ${recipePath} --only ${report.component}`)}`);
+		info("after the Safe actions confirm, choose Continue active task; it resumes without redeploying and proves the final state");
+		log(`  ${c.cyan(`./symmio → Continue active task (${report.component}; ${recipePath})`)}`);
 	}
 }
 
@@ -370,8 +387,27 @@ export function validateDeploymentHandoff(report, expectedChainId, { requireVeri
 	if (report.manualActions?.some(action => typeof action !== "string" || action.trim() === "")) {
 		throw new Error("deployment report manualActions must contain only non-empty strings");
 	}
+	if (report.safeActions !== undefined) {
+		if (!Array.isArray(report.safeActions)) throw new Error("deployment report safeActions must be an array");
+		for (const [index, action] of report.safeActions.entries()) {
+			if (!action || typeof action !== "object" || Array.isArray(action)) {
+				throw new Error(`deployment report safeActions[${index}] must be an object`);
+			}
+			if (!validAddress(action.to)) throw new Error(`deployment report safeActions[${index}].to is not a valid address`);
+			if (action.value !== "0") throw new Error(`deployment report safeActions[${index}].value must be "0"`);
+			if (typeof action.data !== "string" || !/^0x(?:[0-9a-fA-F]{2})*$/.test(action.data)) {
+				throw new Error(`deployment report safeActions[${index}].data must be hexadecimal calldata`);
+			}
+			if (typeof action.description !== "string" || action.description.trim() === "") {
+				throw new Error(`deployment report safeActions[${index}].description must be non-empty`);
+			}
+		}
+	}
 	if (report.lifecycle === "pending_handover" && (!report.manualActions || report.manualActions.length === 0)) {
 		throw new Error("deployment report says pending_handover but contains no manualActions");
+	}
+	if (report.lifecycle === "complete" && report.safeActions?.length > 0) {
+		throw new Error("complete deployment report contains pending Safe actions");
 	}
 	if (report.checks?.health !== "passed") throw new Error(`deployment health gate is not passed: ${JSON.stringify(report.checks?.health)}`);
 	if (requireVerification) {
@@ -389,9 +425,7 @@ export async function deploy(args) {
 	// Recipe and dependency validation happens before doctor opens an RPC connection.
 	const recipeContext = args.config ? loadRecipeContext(args.config, { only: args.only }) : null;
 	if (recipeContext && args.only === "core") {
-		throw new Error(
-			'--only core is unavailable because Core is a system bundle; set partyB.mode, symbolManager.mode, and expressProvider.mode to "skip", then run without --only',
-		);
+		throw new Error("Core is a system bundle; choose Core bundle in the operator menu instead of a primitive component target");
 	}
 	const networkName = recipeContext?.networkName || args.network;
 	if (!networkName) throw new Error("exactly one of --config or --network is required");
@@ -461,6 +495,17 @@ export async function deploy(args) {
 			return 1;
 		}
 		warn("preflight failed but --force was passed — continuing");
+	}
+
+	info("building the production contract artifacts used by deployment");
+	const buildInvocation = deploymentBuildInvocation(recipeContext);
+	const buildCode = await hardhat(buildInvocation.args, { env: buildInvocation.env });
+	if (buildCode !== 0) {
+		blank();
+		log(`  ${c.red(c.bold("Deployment build failed."))}`);
+		log(`  ${c.grey("No transaction was sent. Fix the compiler/source error, then re-run the same command.")}`);
+		blank();
+		return buildCode;
 	}
 	if (args.plan) {
 		info("read-only plan complete", "no transaction was sent");
@@ -593,8 +638,7 @@ export async function deploy(args) {
 		info("deploy:system reports no manual actions remaining");
 	}
 	blank();
-	const statusCommand = recipeContext ? `./symmio status --config ${args.config}` : `./symmio status --network ${networkName}`;
-	log(`  Then confirm the result: ${c.cyan(statusCommand)}`);
+	log(`  Then confirm the result through ${c.cyan("./symmio → Continue active task")} or the deployment checklist.`);
 	const resultCode = deploymentLifecycleExitCode(report, { simulated: chain.simulated });
 	if (resultCode !== 0) {
 		warn("deployment is not complete yet", "exit code 2 means the reported admin/Safe handover actions still need confirmation");

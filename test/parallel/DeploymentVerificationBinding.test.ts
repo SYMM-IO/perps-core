@@ -1,6 +1,12 @@
 import { expect } from "chai"
 
-import { assertVerificationRecordsCoverReport, assertVerificationRunBinding } from "../../tasks/deploy/verify.js"
+import { DEFAULT_PROTOCOL_CONFIG } from "../../tasks/deploy/protocolConfig.js"
+import {
+	assertVerificationRecordsCoverReport,
+	assertVerificationRunBinding,
+	loadAddressesFromReport,
+	resolveVerificationProtocolConfig,
+} from "../../tasks/deploy/verify.js"
 
 const addresses = {
 	diamond: "0x1000000000000000000000000000000000000001",
@@ -11,6 +17,49 @@ const addresses = {
 }
 
 describe("deployment verification binding", function () {
+	it("treats skipped optional component addresses as absent in core-only reports", function () {
+		const loaded = loadAddressesFromReport(
+			{
+				addresses: {
+					diamond: addresses.diamond,
+					accountLayerDiamond: addresses.accountLayerDiamond,
+					instantLayer: addresses.instantLayer,
+					collateral: addresses.diamond,
+					signatureVerifier: addresses.accountLayerDiamond,
+				},
+				config: {
+					admin: addresses.diamond,
+					symmioFeeReceiver: addresses.accountLayerDiamond,
+					symbolManagerMode: "skip",
+					symbolManagerOperator: "",
+				},
+			},
+			{ partyB: "", symbolManager: "", symbolManagerOperator: "", liquidator: "" },
+		)
+
+		expect(loaded.partyB).to.equal(undefined)
+		expect(loaded.symbolManager).to.equal(undefined)
+		expect(loaded.symbolManagerOperator).to.equal(undefined)
+		expect(loaded.liquidator).to.equal(undefined)
+	})
+
+	it("uses the reviewed inline protocol config for recipe-bound health checks", function () {
+		const protocol = structuredClone(DEFAULT_PROTOCOL_CONFIG)
+		protocol.description = "recipe-localhost-sentinel"
+		protocol.parameters.balanceLimitPerUser = "123456789"
+		const active: any = {
+			recipe: { name: "localhost-release", core: { mode: "deploy", protocol } },
+		}
+
+		expect(resolveVerificationProtocolConfig(31337, active)).to.equal(protocol)
+		expect(resolveVerificationProtocolConfig(31337, active).parameters.balanceLimitPerUser).to.equal("123456789")
+	})
+
+	it("refuses recipe-bound full-system health checks without an inline protocol", function () {
+		const active: any = { recipe: { name: "component-only", core: { mode: "reuse" } } }
+		expect(() => resolveVerificationProtocolConfig(31337, active)).to.throw("core.mode=deploy and core.protocol")
+	})
+
 	it("binds the scoped report to the expected deployment and active recipe", function () {
 		const active: any = {
 			digest: "a".repeat(64),

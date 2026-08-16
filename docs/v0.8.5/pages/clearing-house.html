@@ -1,0 +1,529 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Prevents PartyA from recovering pending trading fees through the reimbursement path when their liquidation is LATE or OVERDUE. Particularly important in [oracle-less trading](oracle-less-trading.md) mode, where a bound PartyA can submit fabricated UPNL to drain allocatedBalances into fees,…"
+		/>
+		<title>ClearingHouse - Symmio Core v0.8.5</title>
+		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../../v0.8.6/assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../../v0.8.6/assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.5">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.5</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#doc-clearing-house-why-the-clearinghouse-exists">Why the ClearingHouse Exists</a>
+				<a class="toc-link level-2" href="#doc-clearing-house-cross-mode-vs-isolated-mode-partyb">Cross-Mode vs Isolated-Mode PartyB</a>
+				<a class="toc-link level-2" href="#doc-clearing-house-flow-1-cross-partyb-liquidation">Flow 1: Cross PartyB Liquidation</a>
+				<a class="toc-link level-3" href="#doc-clearing-house-when-it-triggers">When It Triggers</a>
+				<a class="toc-link level-3" href="#doc-clearing-house-lifecycle">Lifecycle</a>
+				<a class="toc-link level-3" href="#doc-clearing-house-step-by-step">Step-by-Step</a>
+				<a class="toc-link level-2" href="#doc-clearing-house-flow-2-partya-takeover">Flow 2: PartyA Takeover</a>
+				<a class="toc-link level-3" href="#doc-clearing-house-when-it-triggers_1">When It Triggers</a>
+				<a class="toc-link level-3" href="#doc-clearing-house-lifecycle_1">Lifecycle</a>
+				<a class="toc-link level-3" href="#doc-clearing-house-what-takeover-does">What Takeover Does</a>
+				<a class="toc-link level-3" href="#doc-clearing-house-step-by-step_1">Step-by-Step</a>
+				<a class="toc-link level-2" href="#doc-clearing-house-flow-3-simultaneous-partya-cross-partyb-liquidation"
+					>Flow 3: Simultaneous PartyA + Cross PartyB Liquidation</a
+				>
+				<a class="toc-link level-3" href="#doc-clearing-house-the-problem">The Problem</a>
+				<a class="toc-link level-3" href="#doc-clearing-house-the-solution-auto-takeover">The Solution: Auto-Takeover</a>
+				<a class="toc-link level-3" href="#doc-clearing-house-how-auto-takeover-works">How Auto-Takeover Works</a>
+				<a class="toc-link level-3" href="#doc-clearing-house-settlement-guard">Settlement Guard</a>
+				<a class="toc-link level-3" href="#doc-clearing-house-end-to-end-simultaneous-flow">End-to-End Simultaneous Flow</a>
+				<a class="toc-link level-2" href="#doc-clearing-house-liquidation-escrow-distribution">Liquidation Escrow Distribution</a>
+			</div>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>ClearingHouse</h1>
+							<p class="hero-copy">
+								The ClearingHouse is a privileged operator within the SYMMIO protocol that manages liquidations that the normal
+								decentralized liquidator flow cannot handle. It covers two distinct scenarios:
+								<strong>Cross PartyB Liquidation</strong> (when a hedger operating in cross-margin mode becomes insolvent) and
+								<strong>PartyA Takeover</strong> (when a trader's liquidation gets stuck or disputed). It also handles a third
+								scenario where both happen simultaneously.
+							</p>
+						</div>
+					</div>
+				</header>
+				<article class="doc-article" id="full-document">
+					<h2 id="doc-clearing-house-why-the-clearinghouse-exists">Why the ClearingHouse Exists</h2>
+					<p>
+						SYMMIO's normal liquidation flow is decentralized — any address with the <code>LIQUIDATOR_ROLE</code> can liquidate insolvent
+						parties. This works well for isolated-mode partyBs and for partyAs in the common case, but two situations require centralized
+						intervention:
+					</p>
+					<ol>
+						<li>
+							<p>
+								<strong>Cross-mode PartyB insolvency.</strong> When a partyB operates in cross-margin mode, its funds are pooled in a
+								single bucket (<code>address(0)</code>) shared across all partyAs. A decentralized liquidator cannot safely unwind
+								this because it requires coordinated decisions about how to distribute a shared pool across multiple counterparties.
+								The ClearingHouse handles this as a multi-step process with explicit deallocate/distribute phases.
+							</p>
+						</li>
+						<li>
+							<p>
+								<strong>Stuck or irrecoverably disputed PartyA liquidation.</strong> A normal partyA liquidation can get stuck — the
+								liquidator may abandon it, or a dispute may arise where the accumulated UPNL doesn't match the Muon oracle's reported
+								UPNL. In the normal case, the dispute resolver (a multisig) handles disputes and corrects the liquidation state.
+								However, there are edge cases where the on-chain state is corrupted or inconsistent to the point that even the dispute
+								resolver cannot fix it through the normal dispute resolution flow. For these cases, the ClearingHouse can take over
+								the liquidation entirely, resetting the liquidation state and completing the process with its own price feeds.
+							</p>
+						</li>
+					</ol>
+					<p>All ClearingHouse functions require the <code>CLEARING_HOUSE_ROLE</code>, which is granted to a trusted operator address.</p>
+					<h2 id="doc-clearing-house-cross-mode-vs-isolated-mode-partyb">Cross-Mode vs Isolated-Mode PartyB</h2>
+					<p>Before understanding the liquidation flows, it helps to understand how partyB allocation modes work.</p>
+					<p>
+						<strong>Isolated mode</strong> (default): PartyB allocates funds separately per partyA. Balances are tracked under
+						<code>partyBAllocatedBalances[partyB][partyA]</code>. Each partyA relationship has its own margin pool, its own locked
+						balances, and its own liquidation status.
+					</p>
+					<p>
+						<strong>Cross mode</strong> (opt-in via migration): PartyB pools all funds into a single bucket tracked under
+						<code>partyBAllocatedBalances[partyB][address(0)]</code>. All positions across all partyAs draw from this shared pool. The
+						helper <code>LibAccount.partyBAllocationKey(partyB, partyA)</code> returns <code>address(0)</code> for cross-mode and
+						<code>partyA</code> for isolated-mode.
+					</p>
+					<hr />
+					<h2 id="doc-clearing-house-flow-1-cross-partyb-liquidation">Flow 1: Cross PartyB Liquidation</h2>
+					<p>
+						This flow handles the insolvency of a cross-mode partyB. Because funds are pooled, a single insolvency event affects all
+						partyAs that have positions with this partyB.
+					</p>
+					<h3 id="doc-clearing-house-when-it-triggers">When It Triggers</h3>
+					<p>
+						The ClearingHouse operator detects that a cross-mode partyB's available balance has gone negative. The on-chain contract
+						verifies <code>partyBAvailableBalanceForLiquidation(upnl, partyB, address(0)) &lt; 0</code> using the UPNL value provided
+						directly by the ClearingHouse (no Muon signature required — the ClearingHouse is trusted).
+					</p>
+					<h3 id="doc-clearing-house-lifecycle">Lifecycle</h3>
+					<pre><code class="language-mermaid">flowchart TD
+    A["liquidateCrossPartyB(partyB, liquidationId, upnl, timestamp)"] --&gt; B["deallocateForClearingHouse(partyB, ...)"]
+    B --&gt; C["liquidatePendingPositionsForClearingHouse(partyB, partyAs[])"]
+    C --&gt; D["liquidatePositionsForClearingHouse(partyB, quoteIds[], prices[])"]
+    D --&gt; E["distributeForClearingHouse(partyB, receivers[], ...)"]
+    E --&gt; F["settleCrossPartyBLiquidation(partyB)"]
+
+    style A fill:#e74c3c,color:#fff
+    style F fill:#27ae60,color:#fff
+</code></pre>
+					<p>
+						Steps 2–5 are repeatable and can be called in any order and multiple times. The settlement step (6) requires all positions
+						closed and the deallocated pool fully distributed.
+					</p>
+					<h3 id="doc-clearing-house-step-by-step">Step-by-Step</h3>
+					<p>
+						<strong>Step 1 — <code>liquidateCrossPartyB(partyB, liquidationId, upnl, timestamp)</code></strong>
+					</p>
+					<p>
+						Initiates the liquidation. The ClearingHouse provides the UPNL, liquidation ID, and timestamp directly (no Muon signature —
+						the ClearingHouse is trusted). The contract confirms the partyB is insolvent using the provided UPNL and creates a
+						<code>CrossLiquidationDetail</code> record with <code>inProgress = true</code>. This flag gates all subsequent operations and
+						prevents the partyB from operating normally until settlement.
+					</p>
+					<p>
+						<strong>Step 2 — <code>deallocateForClearingHouse(partyB, parties[], allocationKeys[], amounts[])</code></strong>
+					</p>
+					<p>
+						Pulls funds into a <code>deallocatedPool</code>. The ClearingHouse decides who to pull from and how much — the on-chain
+						contract trusts the ClearingHouse to make correct decisions. Funds can be pulled from the partyB's cross bucket, but also from
+						partyAs. For example, if the partyB has positive UPNL against a partyA (i.e., the partyA owes the partyB), the ClearingHouse
+						will pull funds from that partyA's allocated balance as well.
+					</p>
+					<pre><code>// Pull from partyB's cross bucket and from a partyA who owes partyB
+parties:        [hedgerAddress, userAddress]
+allocationKeys: [address(0),    address(0)]   // cross bucket, partyA allocation
+amounts:        [crossBalance,  amountOwed]
+</code></pre>
+					<p>Multiple calls can pull from different sources across multiple parties.</p>
+					<p>
+						<strong>Step 3 — <code>liquidatePendingPositionsForClearingHouse(partyB, partyAs[])</code></strong>
+					</p>
+					<p>
+						Cancels all pending quotes (LOCKED, CANCEL_PENDING) where the partyB matches. For each cancelled quote: - The opening trading
+						fee is returned to the partyA (to <code>allocatedBalances</code> if partyA is healthy, or <code>partyAReimbursement</code> if
+						partyA is also being liquidated). - The quote status becomes <code>LIQUIDATED_PENDING</code>. - PartyB's per-partyA pending
+						arrays are cleared.
+					</p>
+					<p>
+						<strong>Step 4 — <code>liquidatePositionsForClearingHouse(partyB, quoteIds[], prices[])</code></strong>
+					</p>
+					<p>
+						Closes open positions at ClearingHouse-specified prices (no Muon signature required — the ClearingHouse is trusted). For each
+						quote: - Validates the quote belongs to the subject partyB. - Sets status to <code>LIQUIDATED</code>. - Subtracts from both
+						partyA and partyB locked balances. - Removes from open positions tracking and decrements position counts. - Calls affiliate
+						and system hooks. - Cleans up connections when a partyA has no more positions with this partyB.
+					</p>
+					<p>
+						<strong>Step 5 — <code>distributeForClearingHouse(partyB, receivers[], allocationKeys[], amounts[])</code></strong>
+					</p>
+					<p>Distributes funds from the <code>deallocatedPool</code> to receivers. The routing depends on the receiver type:</p>
+					<table>
+						<thead>
+							<tr>
+								<th>Receiver</th>
+								<th>Where funds go</th>
+								<th>Event</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td>PartyB (any)</td>
+								<td><code>partyBAllocatedBalances[receiver][allocationKey]</code></td>
+								<td>BalanceChangePartyB</td>
+							</tr>
+							<tr>
+								<td>PartyA (healthy)</td>
+								<td><code>allocatedBalances[receiver]</code></td>
+								<td>BalanceChangePartyA</td>
+							</tr>
+							<tr>
+								<td>PartyA (liquidating)</td>
+								<td><code>partyAReimbursement[receiver]</code></td>
+								<td>None (escrow)</td>
+							</tr>
+						</tbody>
+					</table>
+					<p>
+						<strong>Step 6 — <code>settleCrossPartyBLiquidation(partyB)</code></strong>
+					</p>
+					<p>
+						Finalizes the liquidation. Requires: - All positions closed (<code>partyBPositionsCount[partyB][address(0)] == 0</code>) - All
+						funds distributed (<code>deallocatedPool == 0</code>)
+					</p>
+					<p>Sets <code>inProgress = false</code>, allowing the partyB to resume operations.</p>
+					<hr />
+					<h2 id="doc-clearing-house-flow-2-partya-takeover">Flow 2: PartyA Takeover</h2>
+					<p>
+						This flow handles partyA liquidations that are stuck or in a state that cannot be resolved through normal means. The dispute
+						resolver (multisig) handles normal disputes — correcting UPNL mismatches, adjusting settlement states, etc. But when the
+						on-chain state is corrupted or inconsistent beyond what the resolver can fix, the ClearingHouse takes over as a last resort,
+						resetting the liquidation and completing it with its own price feeds.
+					</p>
+					<h3 id="doc-clearing-house-when-it-triggers_1">When It Triggers</h3>
+					<p>
+						A partyA is already in the liquidation state (<code>liquidationStatus[partyA] == true</code>) but the process cannot be
+						completed through normal channels. This typically means the liquidation is either abandoned (liquidator stopped processing) or
+						disputed with state corruption that the dispute resolver multisig cannot rectify. The ClearingHouse operator decides to
+						intervene as a last resort.
+					</p>
+					<h3 id="doc-clearing-house-lifecycle_1">Lifecycle</h3>
+					<pre><code class="language-mermaid">flowchart TD
+    A["takeoverPartyALiquidation(partyA)"] --&gt; B["deallocateForClearingHouse(partyA, ...)"]
+    B --&gt; C["liquidatePendingPositionsForClearingHouse(partyA, [])"]
+    C --&gt; D["liquidatePositionsForClearingHouse(partyA, quoteIds[], prices[])"]
+    D --&gt; E["distributeForClearingHouse(partyA, receivers[], ...)"]
+    E --&gt; F["settlePartyATakeover(partyA, settledPartyBs[])"]
+
+    style A fill:#e74c3c,color:#fff
+    style F fill:#27ae60,color:#fff
+</code></pre>
+					<h3 id="doc-clearing-house-what-takeover-does">What Takeover Does</h3>
+					<p>
+						When <code>takeoverPartyALiquidation</code> is called, it: 1. <strong>Clears the disputed flag</strong> — the ClearingHouse
+						will resolve the state directly. 2. <strong>Clears the liquidation fee</strong> — original liquidators get nothing (they
+						abandoned). 3. <strong>Deletes the liquidators array</strong> — fresh start. 4.
+						<strong>Sets <code>partyATakeoverDetails[partyA].inProgress = true</code></strong> — blocks all normal liquidation functions
+						for this partyA.
+					</p>
+					<p>
+						After takeover, the normal liquidation functions (<code>liquidatePositionsPartyA</code>, <code>settlePartyALiquidation</code>,
+						etc.) are blocked by a <code>require(!partyATakeoverDetails[partyA].inProgress)</code> check. Only ClearingHouse functions can
+						proceed.
+					</p>
+					<h3 id="doc-clearing-house-step-by-step_1">Step-by-Step</h3>
+					<p>
+						<strong>Step 1 — <code>takeoverPartyALiquidation(partyA)</code></strong>
+					</p>
+					<p>Takes control from the normal liquidation flow. See above for what it clears.</p>
+					<p>
+						<strong>Step 2 — <code>deallocateForClearingHouse(partyA, parties[], allocationKeys[], amounts[])</code></strong>
+					</p>
+					<p>Pulls funds into the takeover's <code>deallocatedPool</code>. Three source types are supported:</p>
+					<table>
+						<thead>
+							<tr>
+								<th>Source</th>
+								<th>Party</th>
+								<th>Allocation Key</th>
+								<th>Pulls From</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td>PartyA allocation</td>
+								<td>partyA</td>
+								<td><code>address(0)</code></td>
+								<td><code>allocatedBalances[partyA]</code></td>
+							</tr>
+							<tr>
+								<td>PartyA reimbursement</td>
+								<td>partyA</td>
+								<td><code>address(1)</code></td>
+								<td><code>partyAReimbursement[partyA]</code></td>
+							</tr>
+							<tr>
+								<td>PartyB allocation</td>
+								<td>partyB</td>
+								<td>partyA address</td>
+								<td><code>partyBAllocatedBalances[partyB][partyA]</code></td>
+							</tr>
+						</tbody>
+					</table>
+					<p>
+						The <code>address(1)</code> key (<code>REIMBURSEMENT_KEY</code>) is special — it accesses the escrow where fees and other
+						credits accumulate during liquidation.
+					</p>
+					<p>
+						<strong>Step 3 — <code>liquidatePendingPositionsForClearingHouse(partyA, [])</code></strong>
+					</p>
+					<p>
+						The counterparties parameter is ignored for takeover — all of partyA's pending quotes are processed regardless of which partyB
+						they belong to. Fees go to <code>partyAReimbursement</code> (escrow).
+					</p>
+					<p>
+						<strong>Step 4 — <code>liquidatePositionsForClearingHouse(partyA, quoteIds[], prices[])</code></strong>
+					</p>
+					<p>
+						Closes positions at ClearingHouse-specified prices. An additional check prevents liquidating positions where the counterparty
+						partyB is itself being liquidated (either via normal isolated liquidation or cross liquidation).
+					</p>
+					<p>
+						<strong>Step 5 — <code>distributeForClearingHouse(partyA, receivers[], ...)</code></strong>
+					</p>
+					<p>Same routing logic as the cross partyB flow.</p>
+					<p>
+						<strong>Step 6 — <code>settlePartyATakeover(partyA, settledPartyBs[])</code></strong>
+					</p>
+					<p>
+						Finalizes the takeover. The <code>settledPartyBs</code> parameter is important: if the normal liquidation flow had already
+						processed some partyBs before the takeover (creating settlement states), those states need to be cleaned up explicitly since
+						the connections may already be removed.
+					</p>
+					<p>
+						Settlement: - Releases both <code>partyAReimbursement</code> and <code>partyADeferredBalance</code> back to
+						<code>allocatedBalances[partyA]</code>. The reimbursement contains pending fee refunds and credits from the liquidation
+						process; the deferred balance contains excess funds from deferred liquidation (see
+						<a href="liquidation-escrow.html">Liquidation Escrow</a>). In the takeover flow, both are returned to the PartyA because the
+						ClearingHouse already has full control over distribution via <code>deallocateForClearingHouse</code> and
+						<code>distributeForClearingHouse</code>. - Zeros out locked balances. - Increments partyA nonce. - Sets
+						<code>liquidationStatus[partyA] = false</code>. - Deletes both <code>liquidationDetails</code> and
+						<code>partyATakeoverDetails</code>.
+					</p>
+					<p>After settlement, the partyA can deposit funds and trade again.</p>
+					<hr />
+					<h2 id="doc-clearing-house-flow-3-simultaneous-partya-cross-partyb-liquidation">
+						Flow 3: Simultaneous PartyA + Cross PartyB Liquidation
+					</h2>
+					<p>
+						This is the most complex scenario. A cross-mode partyB becomes insolvent, AND one or more of its counterparty partyAs are also
+						being liquidated at the same time.
+					</p>
+					<h3 id="doc-clearing-house-the-problem">The Problem</h3>
+					<p>
+						When the ClearingHouse processes a cross partyB liquidation, it encounters partyAs that are already mid-liquidation by regular
+						liquidators. Two independent liquidation flows now compete over the same positions:
+					</p>
+					<ul>
+						<li>
+							The <strong>normal partyA liquidation</strong> wants to close positions via <code>liquidatePositionsPartyA</code> and
+							settle via <code>settlePartyALiquidation</code>.
+						</li>
+						<li>
+							The <strong>cross partyB liquidation</strong> wants to close the same positions via
+							<code>liquidatePositionsForClearingHouse</code>.
+						</li>
+					</ul>
+					<p>
+						Without coordination, this creates accounting conflicts — both flows would try to subtract from locked balances, track
+						settlement states, and finalize independently.
+					</p>
+					<h3 id="doc-clearing-house-the-solution-auto-takeover">The Solution: Auto-Takeover</h3>
+					<p>
+						Rather than bridging the two accounting systems, the ClearingHouse automatically takes over any partyA liquidation it
+						encounters during cross partyB processing. This collapses two concurrent flows into one coordinated flow.
+					</p>
+					<pre><code class="language-mermaid">flowchart TD
+    subgraph "Normal PartyA Liquidation (blocked)"
+        N1["liquidatePartyA"] --&gt; N2["setSymbolsPrice"]
+        N2 --&gt; N3["liquidatePositionsPartyA"]
+        N3 --&gt; N4["settlePartyALiquidation"]
+    end
+
+    subgraph "Cross PartyB Liquidation"
+        C1["liquidateCrossPartyB"]
+        C1 --&gt; C2["liquidatePendingPositionsForClearingHouse"]
+        C1 --&gt; C3["liquidatePositionsForClearingHouse"]
+        C2 -- "detects partyA is liquidated" --&gt; AT["Auto-Takeover"]
+        C3 -- "detects partyA is liquidated" --&gt; AT
+    end
+
+    AT -- "blocks" --&gt; N3
+    AT -- "blocks" --&gt; N4
+
+    subgraph "PartyA Takeover (after cross partyB settles)"
+        T1["deallocateForClearingHouse(partyA)"]
+        T1 --&gt; T2["liquidatePendingPositionsForClearingHouse(partyA)"]
+        T2 --&gt; T3["distributeForClearingHouse(partyA)"]
+        T3 --&gt; T4["settlePartyATakeover(partyA)"]
+    end
+
+    AT --&gt; T1
+
+    style AT fill:#f39c12,color:#fff
+    style N3 fill:#95a5a6,color:#fff
+    style N4 fill:#95a5a6,color:#fff
+</code></pre>
+					<h3 id="doc-clearing-house-how-auto-takeover-works">How Auto-Takeover Works</h3>
+					<p>
+						The <code>_autoTakeoverPartyALiquidation(partyA)</code> function is called at two catch points during cross partyB processing:
+					</p>
+					<ol>
+						<li>
+							<p>
+								<strong><code>liquidatePositionsForClearingHouse</code></strong> — for each quote in the CROSS_PARTY_B branch, after
+								validating <code>partyB == subject</code>, the function calls <code>_autoTakeoverPartyALiquidation(partyA)</code>.
+								This is the common case.
+							</p>
+						</li>
+						<li>
+							<p>
+								<strong><code>liquidatePendingPositionsForClearingHouse</code></strong> — inside the counterparties loop for
+								CROSS_PARTY_B, before processing pending quotes for each partyA.
+							</p>
+						</li>
+					</ol>
+					<p>
+						The function is <strong>idempotent</strong> — safe to call multiple times for the same partyA: - If partyA is not being
+						liquidated → returns <code>false</code> (no-op). - If takeover already in progress → returns <code>false</code> (no-op). -
+						Otherwise → executes the takeover and emits <code>AutoTakeoverPartyALiquidation</code>, returns <code>true</code>.
+					</p>
+					<p>
+						Both <code>takeoverPartyALiquidation</code> (manual) and <code>_autoTakeoverPartyALiquidation</code> (automatic) use the same
+						internal <code>_executeTakeover</code> helper, which clears the disputed flag, liquidation fee, and liquidators array, then
+						sets the takeover state.
+					</p>
+					<h3 id="doc-clearing-house-settlement-guard">Settlement Guard</h3>
+					<p>
+						There is an additional guard in <code>settlePartyALiquidation</code> (the normal partyA settlement function) that prevents
+						settling with a partyB that is in cross liquidation:
+					</p>
+					<pre><code class="language-solidity">require(
+    !ClearingHouseStorage.layout().crossLiquidationDetails[partyB].inProgress,
+    "LiquidationFacet: PartyB is in cross liquidation"
+);
+</code></pre>
+					<p>
+						This catches an edge case where the normal liquidator has already closed all of a partyA's positions (with non-cross partyBs)
+						before the cross partyB liquidation starts. In this case, auto-takeover wouldn't trigger (no positions left to process), but
+						settlement must still be blocked because the cross-liquidated partyB's settlement state cannot be finalized through the normal
+						flow.
+					</p>
+					<h3 id="doc-clearing-house-end-to-end-simultaneous-flow">End-to-End Simultaneous Flow</h3>
+					<p>Here is the full sequence when both partyA and cross partyB are liquidated at the same time:</p>
+					<pre><code class="language-mermaid">sequenceDiagram
+    participant L as Normal Liquidator
+    participant CH as ClearingHouse
+    participant PA as PartyA State
+    participant PB as Cross PartyB State
+
+    L-&gt;&gt;PA: liquidatePartyA(partyA, sig)
+    L-&gt;&gt;PA: setSymbolsPrice(partyA, sig)
+    Note over PA: partyA now in liquidation
+
+    CH-&gt;&gt;PB: liquidateCrossPartyB(partyB, liquidationId, upnl, timestamp)
+    Note over PB: cross partyB now in liquidation
+
+    CH-&gt;&gt;PB: deallocateForClearingHouse(partyB, ...)
+    Note over PB: funds pulled into deallocatedPool
+
+    CH-&gt;&gt;PB: liquidatePendingPositionsForClearingHouse(partyB, [partyA])
+    Note over PA: Auto-takeover triggered!&lt;br/&gt;Normal liq functions blocked
+
+    CH-&gt;&gt;PB: liquidatePositionsForClearingHouse(partyB, quoteIds, prices)
+    Note over PB: positions closed, connections cleaned
+
+    CH-&gt;&gt;PB: distributeForClearingHouse(partyB, [partyA], ...)
+    Note over PA: funds → partyAReimbursement (escrow)
+
+    CH-&gt;&gt;PB: settleCrossPartyBLiquidation(partyB)
+    Note over PB: cross partyB liquidation complete
+
+    CH-&gt;&gt;PA: liquidatePendingPositionsForClearingHouse(partyA, [])
+    Note over PA: remaining pending quotes cleared
+
+    CH-&gt;&gt;PA: deallocateForClearingHouse(partyA, ...)
+    CH-&gt;&gt;PA: distributeForClearingHouse(partyA, ...)
+
+    CH-&gt;&gt;PA: settlePartyATakeover(partyA, [])
+    Note over PA: partyA liquidation complete,&lt;br/&gt;can trade again
+</code></pre>
+					<p>
+						Key observations: - The cross partyB flow runs first and triggers auto-takeover when it encounters the liquidated partyA. -
+						Funds distributed to the liquidated partyA during cross partyB processing go to <code>partyAReimbursement</code> (escrow), not
+						<code>allocatedBalances</code>. - After cross partyB settles, the ClearingHouse completes the partyA takeover separately. -
+						The partyA may have remaining pending quotes (SENT status, no partyB assigned) that weren't handled by the cross partyB flow —
+						these are processed via the takeover's <code>liquidatePendingPositionsForClearingHouse(partyA, [])</code>.
+					</p>
+					<hr />
+					<h2 id="doc-clearing-house-liquidation-escrow-distribution">Liquidation Escrow Distribution</h2>
+					<p>
+						After a normal (non-takeover) PartyA liquidation settles as <code>LATE</code> or <code>OVERDUE</code>, the pending fee
+						reimbursement is not returned to the PartyA. Instead, it is held in <code>liquidationEscrow[partyA]</code> for the
+						ClearingHouse to distribute. See <a href="liquidation-escrow.html">Liquidation Escrow</a> for the full motivation and
+						mechanics.
+					</p>
+					<p>The ClearingHouse distributes escrowed funds via:</p>
+					<pre><code class="language-solidity">function distributeFromLiquidationEscrow(
+    address partyA,
+    address[] memory receivers,
+    address[] memory allocationKeys,
+    uint256[] memory amounts
+) external onlyRole(CLEARING_HOUSE_ROLE)
+</code></pre>
+					<p>
+						This function is independent of the takeover and cross partyB liquidation flows — it operates on the escrow pool that was
+						created during <code>settlePartyALiquidation</code>, not during a ClearingHouse lifecycle. The ClearingHouse operator calls it
+						after the normal liquidation has fully settled to compensate PartyBs for haircut losses or return funds to the PartyA if the
+						fees were legitimate.
+					</p>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer"><span>Symmio Core v0.8.5 documentation.</span></footer>
+	</body>
+</html>

@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="description" content="ADL must be explicitly enabled for each PartyB by an admin with PARTY_B_MANAGER_ROLE:" />
+		<title>ADL Close (Auto-Deleveraging) - Symmio Core v0.8.5</title>
+		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../../v0.8.6/assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../../v0.8.6/assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.5">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.5</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#doc-adl-close-key-characteristics">Key Characteristics</a>
+				<a class="toc-link level-2" href="#doc-adl-close-enabling-adl-for-a-partyb">Enabling ADL for a PartyB</a>
+				<a class="toc-link level-2" href="#doc-adl-close-pledge-collateral">Pledge Collateral</a>
+				<a class="toc-link level-2" href="#doc-adl-close-event-emissions-for-off-chain-compatibility"
+					>Event Emissions for Off-Chain Compatibility</a
+				>
+				<a class="toc-link level-3" href="#doc-adl-close-event-sequence-for-adl-close-on-opened-position"
+					>Event Sequence for ADL Close on OPENED Position</a
+				>
+				<a class="toc-link level-3" href="#doc-adl-close-event-sequence-for-adl-close-on-close_pending-position"
+					>Event Sequence for ADL Close on CLOSE_PENDING Position</a
+				>
+				<a class="toc-link level-3" href="#doc-adl-close-event-sequence-for-adl-close-on-cancel_close_pending-position"
+					>Event Sequence for ADL Close on CANCEL_CLOSE_PENDING Position</a
+				>
+				<a class="toc-link level-3" href="#doc-adl-close-why-mock-events">Why Mock Events?</a>
+				<a class="toc-link level-2" href="#doc-adl-close-usage">Usage</a>
+				<a class="toc-link level-3" href="#doc-adl-close-single-adl-close-direct-call">Single ADL Close (Direct Call)</a>
+				<a class="toc-link level-3" href="#doc-adl-close-batched-adl-close-via-symmiopartyb-contract"
+					>Batched ADL Close (via SymmioPartyB Contract)</a
+				>
+				<a class="toc-link level-3" href="#doc-adl-close-key-features">Key Features</a>
+				<a class="toc-link level-3" href="#doc-adl-close-adlskip-event">ADLSkip Event</a>
+			</div>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>ADL Close (Auto-Deleveraging)</h1>
+							<p class="hero-copy">
+								ADL (Auto-Deleveraging) is a mechanism that allows PartyB (hedger) to forcibly close positions to reduce their risk
+								exposure. Unlike emergency close, ADL does not require emergency mode activation, PartyB emergency status, or delisted
+								symbols. It provides PartyB with a controlled way to reduce positions when needed.
+							</p>
+						</div>
+					</div>
+				</header>
+				<article class="doc-article" id="full-document">
+					<h2 id="doc-adl-close-key-characteristics">Key Characteristics</h2>
+					<ul>
+						<li>
+							<strong>No solvency checks</strong>: Unlike <code>fillCloseRequest</code>, ADL close does not verify that PartyB has
+							sufficient available balance. This allows PartyB to close positions even when they might otherwise be blocked.
+						</li>
+						<li>
+							<strong>Preserves pending close requests</strong>: If the position has a pending close request from PartyA (<code
+								>CLOSE_PENDING</code
+							>
+							or <code>CANCEL_CLOSE_PENDING</code>), ADL will temporarily cancel it, execute the ADL close, and then restore the
+							original close request with adjusted quantity if the position remains open.
+						</li>
+						<li><strong>PartyB-initiated</strong>: Only the PartyB of the quote can call ADL close on their positions.</li>
+					</ul>
+					<h2 id="doc-adl-close-enabling-adl-for-a-partyb">Enabling ADL for a PartyB</h2>
+					<p>ADL must be explicitly enabled for each PartyB by an admin with <code>PARTY_B_MANAGER_ROLE</code>:</p>
+					<pre><code class="language-solidity">// Enable ADL for a PartyB
+controlFacet.setADLEnabled(partyBAddress, true);
+
+// Disable ADL for a PartyB
+controlFacet.setADLEnabled(partyBAddress, false);
+
+// Check if ADL is enabled
+bool enabled = viewFacet.isADLEnabled(partyBAddress);
+</code></pre>
+					<h2 id="doc-adl-close-pledge-collateral">Pledge Collateral</h2>
+					<p>
+						ADL requires PartyBs to have deposited <a href="pledge.html">pledge collateral</a> — a separate collateral pool that acts as a
+						guarantee of good behavior. If a PartyB misuses ADL (e.g., closes positions at unfair prices harming PartyA), their pledge can
+						be slashed by an admin. See the <a href="pledge.html">Pledge Collateral</a> page for full details on depositing, withdrawing,
+						and slashing.
+					</p>
+					<h2 id="doc-adl-close-event-emissions-for-off-chain-compatibility">Event Emissions for Off-Chain Compatibility</h2>
+					<p>
+						ADL close emits events that mirror the normal close flow, ensuring off-chain applications (indexers, UIs, analytics) continue
+						to work without modification.
+					</p>
+					<h3 id="doc-adl-close-event-sequence-for-adl-close-on-opened-position">Event Sequence for ADL Close on OPENED Position</h3>
+					<pre><code>1. RequestToClosePosition (orderType: MARKET, closeId: adlCloseId)
+2. FillCloseRequest (closeId: adlCloseId)
+</code></pre>
+					<h3 id="doc-adl-close-event-sequence-for-adl-close-on-close_pending-position">
+						Event Sequence for ADL Close on CLOSE_PENDING Position
+					</h3>
+					<p>When ADL interrupts an existing close request:</p>
+					<pre><code>1. RequestToCancelCloseRequest (closeId: previousCloseId)  // Mock: PartyA requested cancel
+2. AcceptCancelCloseRequest (closeId: previousCloseId)     // Mock: PartyB accepted cancel
+3. RequestToClosePosition (orderType: MARKET, closeId: adlCloseId)  // ADL close request
+4. FillCloseRequest (closeId: adlCloseId)                  // ADL fill
+
+// If position still has remaining open amount:
+5. RequestToClosePosition (closeId: newCloseId)            // Restore original close request
+</code></pre>
+					<h3 id="doc-adl-close-event-sequence-for-adl-close-on-cancel_close_pending-position">
+						Event Sequence for ADL Close on CANCEL_CLOSE_PENDING Position
+					</h3>
+					<pre><code>1. AcceptCancelCloseRequest (closeId: previousCloseId)     // Mock: accept the pending cancel
+2. RequestToClosePosition (orderType: MARKET, closeId: adlCloseId)
+3. FillCloseRequest (closeId: adlCloseId)
+
+// If position still has remaining open amount:
+4. RequestToClosePosition (closeId: newCloseId)            // Restore original close request
+5. RequestToCancelCloseRequest (closeId: newCloseId)       // Restore cancel-pending status
+</code></pre>
+					<h3 id="doc-adl-close-why-mock-events">Why Mock Events?</h3>
+					<p>
+						Off-chain applications track position state through events. By emitting the same event sequence as a normal close flow, ADL
+						ensures:
+					</p>
+					<ul>
+						<li><strong>Indexers</strong> correctly update position state without special ADL handling</li>
+						<li><strong>UIs</strong> show consistent state transitions</li>
+						<li><strong>Analytics</strong> accurately track close volumes and prices</li>
+						<li><strong>CloseId tracking</strong> remains consistent (each close request gets a unique ID)</li>
+					</ul>
+					<h2 id="doc-adl-close-usage">Usage</h2>
+					<h3 id="doc-adl-close-single-adl-close-direct-call">Single ADL Close (Direct Call)</h3>
+					<pre><code class="language-solidity">// PartyB calls ADL close directly on the diamond
+partyBEmergencyActionsFacet.adlClose(
+    quoteId,      // Quote ID to close
+    amount,       // Amount to close (must be &lt;= open amount)
+    price         // Execution price
+);
+</code></pre>
+					<h3 id="doc-adl-close-batched-adl-close-via-symmiopartyb-contract">Batched ADL Close (via SymmioPartyB Contract)</h3>
+					<p>
+						The <code>SymmioPartyB</code> helper contract provides a batched ADL close method that processes multiple quotes in a single
+						transaction. Unlike the direct call, this method <strong>does not revert</strong> when individual ADL closes fail - it skips
+						failed quotes and continues processing.
+					</p>
+					<pre><code class="language-solidity">// Batch ADL close multiple quotes
+symmioPartyB.adlClose(
+    quoteIds,     // Array of quote IDs to close
+    amounts,      // Array of amounts to close (one per quote)
+    prices        // Array of execution prices (one per quote)
+);
+</code></pre>
+					<h3 id="doc-adl-close-key-features">Key Features</h3>
+					<ul>
+						<li>
+							<strong>Best-effort execution</strong>: If one quote fails to ADL close (e.g., invalid amount, already liquidated), it
+							emits an <code>ADLSkip</code> event and continues with the remaining quotes.
+						</li>
+						<li>
+							<strong>No transaction revert on individual failures</strong>: Only reverts on precondition failures (access control,
+							array mismatch, invalid Symmio address).
+						</li>
+						<li><strong>Detailed error reporting</strong>: The <code>ADLSkip</code> event includes the raw revert data for debugging.</li>
+					</ul>
+					<h3 id="doc-adl-close-adlskip-event">ADLSkip Event</h3>
+					<pre><code class="language-solidity">event ADLSkip(
+    uint256 quoteId,      // Quote that failed to ADL close
+    uint256 amount,       // Requested close amount
+    uint256 price,        // Requested execution price
+    bytes revertData      // Raw revert data (ABI-encoded error)
+);
+</code></pre>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer"><span>Symmio Core v0.8.5 documentation.</span></footer>
+	</body>
+</html>

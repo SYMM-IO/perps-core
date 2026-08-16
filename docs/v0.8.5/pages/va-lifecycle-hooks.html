@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="description" content="The SymmioHookFacet on the AccountLayer diamond implements these hooks:" />
+		<title>Virtual Account Lifecycle Hooks - Symmio Core v0.8.5</title>
+		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../../v0.8.6/assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../../v0.8.6/assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.5">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.5</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#doc-va-lifecycle-hooks-hook-entry-points">Hook Entry Points</a>
+				<a class="toc-link level-2" href="#doc-va-lifecycle-hooks-core-logic">Core Logic</a>
+				<a class="toc-link level-3" href="#doc-va-lifecycle-hooks-partial-close-detection">Partial Close Detection</a>
+				<a class="toc-link level-3" href="#doc-va-lifecycle-hooks-deletion-deferral">Deletion Deferral</a>
+				<a class="toc-link level-2" href="#doc-va-lifecycle-hooks-normal-flows">Normal Flows</a>
+				<a class="toc-link level-3" href="#doc-va-lifecycle-hooks-full-close-fillcloserequest">Full Close (fillCloseRequest)</a>
+				<a class="toc-link level-3" href="#doc-va-lifecycle-hooks-partial-close-fillcloserequest-with-partial-fill"
+					>Partial Close (fillCloseRequest with partial fill)</a
+				>
+				<a class="toc-link level-3" href="#doc-va-lifecycle-hooks-cancel-quote-requesttocancelquote-acceptcancelrequest-expirequote"
+					>Cancel Quote (requestToCancelQuote, acceptCancelRequest, expireQuote)</a
+				>
+				<a class="toc-link level-3" href="#doc-va-lifecycle-hooks-force-cancel-quote-forcecancelquote"
+					>Force Cancel Quote (forceCancelQuote)</a
+				>
+				<a class="toc-link level-3" href="#doc-va-lifecycle-hooks-force-close-finalizeforceclose">Force Close (finalizeForceClose)</a>
+				<a class="toc-link level-2" href="#doc-va-lifecycle-hooks-liquidation-flows">Liquidation Flows</a>
+				<a class="toc-link level-3" href="#doc-va-lifecycle-hooks-partya-normal-liquidation">PartyA Normal Liquidation</a>
+				<a class="toc-link level-3" href="#doc-va-lifecycle-hooks-clearinghouse-partya-takeover">ClearingHouse PartyA Takeover</a>
+				<a class="toc-link level-3" href="#doc-va-lifecycle-hooks-clearinghouse-cross-partyb-liquidation"
+					>ClearingHouse Cross PartyB Liquidation</a
+				>
+				<a class="toc-link level-3" href="#doc-va-lifecycle-hooks-isolated-partyb-liquidation">Isolated PartyB Liquidation</a>
+				<a class="toc-link level-2" href="#doc-va-lifecycle-hooks-hook-firing-order">Hook Firing Order</a>
+			</div>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Virtual Account Lifecycle Hooks</h1>
+							<p class="hero-copy">
+								Virtual Accounts (VAs) are deterministic addresses managed by the AccountLayer that act as <code>partyA</code> on
+								Symmio Core. When the AccountLayer is registered as a
+								<strong>system hook</strong> (<code>affiliateHooks[address(0)]</code>) on Symmio Core, it receives callbacks on
+								position lifecycle events to automatically clean up VAs when their quotes are fully resolved.
+							</p>
+						</div>
+					</div>
+				</header>
+				<article class="doc-article" id="full-document">
+					<h2 id="doc-va-lifecycle-hooks-hook-entry-points">Hook Entry Points</h2>
+					<p>The <code>SymmioHookFacet</code> on the AccountLayer diamond implements these hooks:</p>
+					<table>
+						<thead>
+							<tr>
+								<th>Hook</th>
+								<th>Fired When</th>
+								<th>Action</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>onOpenPosition</code></td>
+								<td>Position opened</td>
+								<td>No-op</td>
+							</tr>
+							<tr>
+								<td><code>onClosePosition</code></td>
+								<td>Position closed (full or partial)</td>
+								<td>Remove quoteId from VA if full close; attempt deletion</td>
+							</tr>
+							<tr>
+								<td><code>onCancelQuote</code></td>
+								<td>Quote cancelled/expired/liquidated</td>
+								<td>Remove quoteId from VA; attempt deletion</td>
+							</tr>
+							<tr>
+								<td><code>onFeeCharged</code></td>
+								<td>Fee charged</td>
+								<td>No-op</td>
+							</tr>
+							<tr>
+								<td><code>onLiquidationSettled</code></td>
+								<td>Liquidation fully settled</td>
+								<td>Attempt deferred VA deletion</td>
+							</tr>
+						</tbody>
+					</table>
+					<h2 id="doc-va-lifecycle-hooks-core-logic">Core Logic</h2>
+					<h3 id="doc-va-lifecycle-hooks-partial-close-detection">Partial Close Detection</h3>
+					<p><code>_removeQuoteFromAccount(quoteId, partyA, partyB)</code> compares core state with VA tracked state:</p>
+					<pre><code>coreTotal = partyAPositionsCount(partyA) + getPartyAPendingQuotes(partyA).length
+</code></pre>
+					<ul>
+						<li>
+							If <code>coreTotal &lt; vData.quoteIds.length()</code> — a quote was fully resolved (closed/cancelled/liquidated), so the
+							quoteId is removed from the VA's tracking set.
+						</li>
+						<li>
+							If <code>coreTotal &gt;= vData.quoteIds.length()</code> — this is a partial close; the position is still open, so the
+							quoteId is kept.
+						</li>
+					</ul>
+					<h3 id="doc-va-lifecycle-hooks-deletion-deferral">Deletion Deferral</h3>
+					<p><code>_tryDeleteVirtualAccount(partyA, partyB)</code> gates deletion with three checks:</p>
+					<table>
+						<thead>
+							<tr>
+								<th>Check</th>
+								<th>Protects Against</th>
+								<th>Cleared By</th>
+								<th>Recovery Hook</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>isPartyALiquidated(partyA)</code></td>
+								<td>Premature deletion during partyA liquidation (reimbursement not yet credited)</td>
+								<td><code>settlePartyALiquidation</code> clears <code>liquidationStatus</code></td>
+								<td><code>onLiquidationSettled</code></td>
+							</tr>
+							<tr>
+								<td><code>isPartyATakeoverInProgress(partyA)</code></td>
+								<td>Premature deletion during CH takeover (funds not yet distributed)</td>
+								<td><code>settlePartyATakeover</code> clears <code>inProgress</code></td>
+								<td><code>onLiquidationSettled</code></td>
+							</tr>
+							<tr>
+								<td><code>getPartyBCrossLiquidationStatus(partyB)</code></td>
+								<td>Premature deletion during cross partyB liq (funds not yet distributed)</td>
+								<td><code>settleCrossPartyBLiquidation</code> clears <code>inProgress</code></td>
+								<td><code>onLiquidationSettled</code> (passes <code>address(0)</code>, skipping this check)</td>
+							</tr>
+						</tbody>
+					</table>
+					<p>
+						The <code>partyB</code> parameter comes directly from the hook call (<code>onClosePosition</code> /
+						<code>onCancelQuote</code>). For <code>onLiquidationSettled</code>, <code>address(0)</code> is passed because settlement is
+						already complete — no cross partyB check is needed.
+					</p>
+					<h2 id="doc-va-lifecycle-hooks-normal-flows">Normal Flows</h2>
+					<h3 id="doc-va-lifecycle-hooks-full-close-fillcloserequest">Full Close (<code>fillCloseRequest</code>)</h3>
+					<ol>
+						<li>
+							<code>LibQuoteClose.closeQuote()</code> removes position from <code>partyAPositionsCount</code>
+							<strong>before</strong> firing hook
+						</li>
+						<li><code>onClosePosition</code> fires — <code>coreTotal &lt; quoteIds.length()</code> — quoteId removed</li>
+						<li>If last quoteId: <code>_tryDeleteVirtualAccount</code> — no liquidation active — <strong>VA deleted</strong></li>
+					</ol>
+					<h3 id="doc-va-lifecycle-hooks-partial-close-fillcloserequest-with-partial-fill">
+						Partial Close (<code>fillCloseRequest</code> with partial fill)
+					</h3>
+					<ol>
+						<li>Position stays open; <code>partyAPositionsCount</code> unchanged</li>
+						<li><code>onClosePosition</code> fires — <code>coreTotal &gt;= quoteIds.length()</code> — quoteId <strong>kept</strong></li>
+						<li>VA persists until full close</li>
+					</ol>
+					<h3 id="doc-va-lifecycle-hooks-cancel-quote-requesttocancelquote-acceptcancelrequest-expirequote">
+						Cancel Quote (<code>requestToCancelQuote</code>, <code>acceptCancelRequest</code>, <code>expireQuote</code>)
+					</h3>
+					<ol>
+						<li>Quote removed from <code>partyAPendingQuotes</code> <strong>before</strong> hook fires</li>
+						<li><code>onCancelQuote</code> fires — <code>coreTotal &lt; quoteIds.length()</code> — quoteId removed</li>
+						<li>If last quoteId: <strong>VA deleted</strong></li>
+					</ol>
+					<h3 id="doc-va-lifecycle-hooks-force-cancel-quote-forcecancelquote">Force Cancel Quote (<code>forceCancelQuote</code>)</h3>
+					<ol>
+						<li>Quote removed from pending via <code>removeFromPendingQuotes</code> <strong>before</strong> hook fires</li>
+						<li><code>onCancelQuote</code> fires — quoteId removed</li>
+						<li>If last quoteId: <strong>VA deleted</strong></li>
+					</ol>
+					<h3 id="doc-va-lifecycle-hooks-force-close-finalizeforceclose">Force Close (<code>finalizeForceClose</code>)</h3>
+					<p>Uses shared <code>LibQuoteClose.closeQuote()</code> path — same as full close above.</p>
+					<h2 id="doc-va-lifecycle-hooks-liquidation-flows">Liquidation Flows</h2>
+					<h3 id="doc-va-lifecycle-hooks-partya-normal-liquidation">PartyA Normal Liquidation</h3>
+					<p><strong>Trigger:</strong> VA becomes insolvent.</p>
+					<ol>
+						<li>
+							<strong><code>liquidatePartyA(partyA)</code></strong> — sets <code>liquidationStatus[partyA] = true</code>
+						</li>
+						<li>
+							<strong><code>setSymbolsPrice(partyA)</code></strong> — sets liquidation prices per symbol
+						</li>
+						<li>
+							<strong><code>liquidatePendingPositionsPartyA(partyA)</code></strong> — cancels all pending quotes - Collects quoteIds
+							during loop - <code>delete partyAPendingQuotes[partyA]</code> - Fires <code>onCancelQuote</code> per quote
+							<strong>after</strong> delete — quoteIds removed from VA - <code>_tryDeleteVirtualAccount</code> --
+							<code>isPartyALiquidated = true</code> — <strong>deferred</strong>
+						</li>
+						<li>
+							<strong><code>liquidatePositionsPartyA(partyA, quoteIds)</code></strong> — liquidates open positions (paginated) - Removes
+							from open positions, decrements <code>partyAPositionsCount</code> - Fires <code>onClosePosition</code> per quote
+							<strong>after</strong> state update — quoteIds removed from VA - <code>_tryDeleteVirtualAccount</code> --
+							<code>isPartyALiquidated = true</code> — <strong>deferred</strong>
+						</li>
+						<li>
+							<strong><code>settlePartyALiquidation(partyA, partyBs)</code></strong> — settles funds (paginated across partyBs) - When
+							fully settled: <code>liquidationStatus[partyA] = false</code> - Fires <code>onLiquidationSettled(partyA)</code> --
+							<code>isPartyALiquidated = false</code> — <strong>VA deleted</strong>
+						</li>
+					</ol>
+					<p>
+						<strong>Fund flow:</strong> Reimbursement credited to <code>allocatedBalances[VA]</code> during settlement.
+						<code>_deleteVirtualAccount</code> calls <code>zeroUpnlDeallocate</code> to sweep to parent.
+					</p>
+					<h3 id="doc-va-lifecycle-hooks-clearinghouse-partya-takeover">ClearingHouse PartyA Takeover</h3>
+					<p><strong>Trigger:</strong> ClearingHouse takes over a partyA's liquidation.</p>
+					<ol>
+						<li>
+							<strong><code>initiatePartyATakeover(partyA)</code></strong> — sets
+							<code>partyATakeoverDetails[partyA].inProgress = true</code>
+						</li>
+						<li>
+							<strong><code>liquidatePendingPositionsForClearingHouse(partyA, [])</code></strong> — takeover path - Collects quoteIds,
+							<code>delete partyAPendingQuotes[partyA]</code> - Fires <code>onCancelQuote</code> per quote <strong>after</strong> delete
+							-- quoteIds removed - <code>_tryDeleteVirtualAccount</code> — <code>isPartyATakeoverInProgress = true</code> --
+							<strong>deferred</strong>
+						</li>
+						<li>
+							<strong><code>liquidatePositionsForClearingHouse(partyA, quoteIds, prices)</code></strong> — takeover path - Fires
+							<code>onClosePosition</code> per quote after state update — quoteIds removed - <code>_tryDeleteVirtualAccount</code> --
+							<code>isPartyATakeoverInProgress = true</code> — <strong>deferred</strong>
+						</li>
+						<li>
+							<strong><code>distributeForClearingHouse(partyA, ...)</code></strong> — distributes funds - Credits
+							<code>allocatedBalances[VA]</code> with reimbursement
+						</li>
+						<li>
+							<strong><code>settlePartyATakeover(partyA, settledPartyBs)</code></strong> — clears takeover state -
+							<code>inProgress = false</code> - Fires <code>onLiquidationSettled(partyA)</code> — <strong>VA deleted</strong>
+						</li>
+					</ol>
+					<h3 id="doc-va-lifecycle-hooks-clearinghouse-cross-partyb-liquidation">ClearingHouse Cross PartyB Liquidation</h3>
+					<p><strong>Trigger:</strong> A cross partyB becomes insolvent across all its partyAs.</p>
+					<ol>
+						<li>
+							<strong><code>liquidateCrossPartyB(partyB)</code></strong> — sets
+							<code>crossLiquidationDetails[partyB].inProgress = true</code>
+						</li>
+						<li>
+							<strong><code>liquidatePendingPositionsForClearingHouse(partyB, [va1, va2, ...])</code></strong> — cross path - Per
+							partyA: swap-and-pop loop, fires <code>onCancelQuote</code> <strong>after</strong> pop — quoteIds removed -
+							<code>_tryDeleteVirtualAccount(partyA, partyB)</code> — <code>getPartyBCrossLiquidationStatus(partyB) = true</code> --
+							<strong>deferred</strong>
+						</li>
+						<li>
+							<strong><code>liquidatePositionsForClearingHouse(partyB, quoteIds, prices)</code></strong> — cross path - Fires
+							<code>onClosePosition</code> per quote after state update — quoteIds removed -
+							<code>_tryDeleteVirtualAccount(partyA, partyB)</code> — cross liq still active — <strong>deferred</strong>
+						</li>
+						<li>
+							<strong><code>distributeForClearingHouse(partyB, [va1, ...], ...)</code></strong> — distributes from
+							<code>deallocatedPool</code> - Credits <code>allocatedBalances[VA]</code> with reimbursement
+						</li>
+						<li>
+							<strong><code>settleCrossPartyBLiquidation(partyB, [va1], false)</code></strong> — partial settlement (pagination) - Fires
+							<code>onLiquidationSettled(va1)</code> with <code>address(0)</code> — skips cross check -- <strong>VA1 deleted</strong> -
+							<code>inProgress</code> still <code>true</code> (no finalize)
+						</li>
+						<li>
+							<strong><code>settleCrossPartyBLiquidation(partyB, [va2], true)</code></strong> — final batch - Fires
+							<code>onLiquidationSettled(va2)</code> — <strong>VA2 deleted</strong> - <code>inProgress = false</code> (finalize clears
+							it)
+						</li>
+					</ol>
+					<p>
+						<strong>Note:</strong> <code>onLiquidationSettled</code> passes <code>address(0)</code> as <code>partyB</code>, which skips
+						the cross check. This is correct because the hook only fires for partyAs that have already been distributed to — their funds
+						are safe.
+					</p>
+					<h3 id="doc-va-lifecycle-hooks-isolated-partyb-liquidation">Isolated PartyB Liquidation</h3>
+					<p><strong>Trigger:</strong> PartyB becomes insolvent against a specific partyA (VA).</p>
+					<ol>
+						<li>
+							<strong><code>liquidatePartyB(partyB, partyA)</code></strong> — <code>LibLiquidation.liquidatePartyB</code> - Cancels
+							pending quotes (swap-and-pop), collects quoteIds - Transfers partyB's allocated balance to partyA:
+							<code>allocatedBalances[VA] += value</code> - <code>delete partyBPendingQuotes</code>, zeroes partyB balances, increments
+							nonce - Fires <code>onCancelQuote</code> per quote <strong>after</strong> all state changes — quoteIds removed -
+							<code>_tryDeleteVirtualAccount(partyA, partyB)</code> — partyA NOT liquidated, partyB NOT cross — checks pass - If VA has
+							open positions: <code>quoteIds.length() != 0</code> — not deleted yet
+						</li>
+						<li>
+							<strong><code>liquidatePositionsPartyB(partyB, partyA, priceSig)</code></strong> — closes open positions - Per quote:
+							settles PnL, removes from open positions - Fires <code>onClosePosition</code> per quote after state update — quoteIds
+							removed - When last quoteId removed: <code>_tryDeleteVirtualAccount</code> — <strong>VA deleted immediately</strong>
+						</li>
+					</ol>
+					<p>
+						<strong>No deferral needed:</strong> PartyA is not liquidated. PartyB is not in cross mode. VA is deleted as soon as all
+						quotes are resolved.
+					</p>
+					<p>
+						<strong>No settlement hook needed:</strong> Funds are settled inline during <code>liquidatePartyB</code> (pending) and
+						<code>liquidatePositionsPartyB</code> (positions). No deferred distribution step exists.
+					</p>
+					<h2 id="doc-va-lifecycle-hooks-hook-firing-order">Hook Firing Order</h2>
+					<p>
+						All hooks must fire <strong>after</strong> core state changes are complete so that <code>_removeQuoteFromAccount</code> can
+						correctly compare <code>coreTotal</code> with <code>vData.quoteIds.length()</code>.
+					</p>
+					<p>
+						Places where this was specifically addressed: - <code>liquidatePendingPositionsPartyA</code> — hooks fire after
+						<code>delete partyAPendingQuotes</code> - <code>liquidatePendingPositionsForClearingHouse</code> (both paths) — hooks fire
+						after swap-pop loop / delete - <code>LibLiquidation.liquidatePartyB</code> — hooks fire after all balance updates and
+						<code>delete partyBPendingQuotes</code>
+					</p>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer"><span>Symmio Core v0.8.5 documentation.</span></footer>
+	</body>
+</html>

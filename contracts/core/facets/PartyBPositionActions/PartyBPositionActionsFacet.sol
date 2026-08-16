@@ -29,34 +29,38 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 		uint256 newId = PartyBPositionActionsFacetImpl.openPosition(quoteId, filledAmount, openedPrice, upnlSig);
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		LibPartiesEvents.emitOpenPosition(quote, quoteId, filledAmount, openedPrice);
-		if (newId != 0) {
-			Quote storage newQuote = QuoteStorage.layout().quotes[newId];
-			if (newQuote.quoteStatus == QuoteStatus.PENDING) {
-				LibSendQuoteEvents.emitSendQuoteEvents(
-					LibSendQuoteEvents.SendQuoteEventParams({
-						partyA: newQuote.partyA,
-						quoteId: newQuote.id,
-						partyBsWhiteList: newQuote.partyBsWhiteList,
-						symbolId: newQuote.symbolId,
-						positionType: newQuote.positionType,
-						orderType: newQuote.orderType,
-						price: newQuote.requestedOpenPrice,
-						marketPrice: newQuote.marketPrice,
-						quantity: newQuote.quantity,
-						cva: newQuote.lockedValues.cva,
-						lf: newQuote.lockedValues.lf,
-						partyAmm: newQuote.lockedValues.partyAmm,
-						partyBmm: newQuote.lockedValues.partyBmm,
-						tradingFee: newQuote.tradingFee,
-						deadline: newQuote.deadline,
-						affiliate: newQuote.affiliate,
-						solverFeeCaps: LibSolverFee.caps(QuoteStorage.layout().solverFeeStates[newId]),
-						data: newQuote.data
-					})
-				);
-			} else if (newQuote.quoteStatus == QuoteStatus.CANCELED) {
-				emit AcceptCancelRequest(newQuote.id, QuoteStatus.CANCELED);
-			}
+		if (newId != 0) _emitRemainderQuote(newId);
+	}
+
+	/// @dev A partial fill splits the original quote and leaves the unfilled remainder as a new
+	///      PENDING quote. Re-emitting SendQuote for it keeps indexers in sync, since nothing
+	///      else announces a quote created inside an open. Building the params field by field
+	///      (instead of one struct literal) keeps the IR pipeline within stack limits.
+	function _emitRemainderQuote(uint256 newId) private {
+		Quote storage newQuote = QuoteStorage.layout().quotes[newId];
+		if (newQuote.quoteStatus == QuoteStatus.PENDING) {
+			LibSendQuoteEvents.SendQuoteEventParams memory params;
+			params.partyA = newQuote.partyA;
+			params.quoteId = newQuote.id;
+			params.partyBsWhiteList = newQuote.partyBsWhiteList;
+			params.symbolId = newQuote.symbolId;
+			params.positionType = newQuote.positionType;
+			params.orderType = newQuote.orderType;
+			params.price = newQuote.requestedOpenPrice;
+			params.marketPrice = newQuote.marketPrice;
+			params.quantity = newQuote.quantity;
+			params.cva = newQuote.lockedValues.cva;
+			params.lf = newQuote.lockedValues.lf;
+			params.partyAmm = newQuote.lockedValues.partyAmm;
+			params.partyBmm = newQuote.lockedValues.partyBmm;
+			params.tradingFee = newQuote.tradingFee;
+			params.deadline = newQuote.deadline;
+			params.affiliate = newQuote.affiliate;
+			params.solverFeeCaps = LibSolverFee.caps(QuoteStorage.layout().solverFeeStates[newId]);
+			params.data = newQuote.data;
+			LibSendQuoteEvents.emitSendQuoteEvents(params);
+		} else if (newQuote.quoteStatus == QuoteStatus.CANCELED) {
+			emit AcceptCancelRequest(newQuote.id, QuoteStatus.CANCELED);
 		}
 	}
 
@@ -92,7 +96,7 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 	/// @dev IMPORTANT BACKWARD-COMPATIBILITY WARNING:
 	///      This legacy method accounts for the protocol closeFee only. It does NOT reserve balance for solver
 	///      fees charged through the solver-fee API. If a solver fee will be charged for this close, call
-	///      the fee-aware PartyBSolverFeeActionsFacet.fillCloseRequestToLiquidation overload instead.
+	///      the fee-aware PartyBExecutionFacet.fillCloseRequestToLiquidation overload instead.
 	/// @param quoteId The ID of the quote for which the close request is filled.
 	/// @param closedPrice The closed price for the close request.
 	/// @param upnlSig The Muon signature containing PairUpnlAndPriceSig data.

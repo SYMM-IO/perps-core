@@ -1,6 +1,11 @@
 import { expect } from "chai"
 
-import { recipeAccountsForNetwork, recipeAccountsForSimulatedNetwork, recipeCredentialPolicy } from "../../hardhat.config.js"
+import {
+	recipeAccountsForNetwork,
+	recipeAccountsForPersistentLocal,
+	recipeAccountsForSimulatedNetwork,
+	recipeCredentialPolicy,
+} from "../../hardhat.config.js"
 import { assertComponentDeploymentAuthority, summarizeComponentHealth } from "../../tasks/deploy/componentDeployment.js"
 import {
 	assertDependencyAddressesHaveCode,
@@ -38,6 +43,8 @@ describe("deployment recipe task validation", function () {
 		expect(recipeAccountsForNetwork("base", "arbitrum", "secret-key", false)).to.deep.equal([])
 		expect(recipeAccountsForSimulatedNetwork(true)).to.deep.equal([])
 		expect(recipeAccountsForSimulatedNetwork(false)).to.equal(undefined)
+		expect(recipeAccountsForPersistentLocal(true)).to.deep.equal([])
+		expect(recipeAccountsForPersistentLocal(false)).to.equal("remote")
 	})
 
 	it("binds a component dependency report to network, chain, health, and live verification", function () {
