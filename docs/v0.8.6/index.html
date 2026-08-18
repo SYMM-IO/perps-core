@@ -21,7 +21,7 @@
 		<script src="../assets/docs-portal.js" defer></script>
 	</head>
 	<body class="index-page version-catalog-page" data-version="0.8.6">
-		<a class="skip-link" href="#docs">Skip to docs</a>
+		<a class="skip-link" href="#docs">Skip to release notes</a>
 
 		<header class="docs-header">
 			<div class="doc-topbar">
@@ -56,12 +56,23 @@
 			<div class="catalog-toolbar" role="search">
 				<label class="catalog-search-wrap">
 					<span class="visually-hidden">Search v0.8.6 chapters</span>
-					<input class="catalog-search" type="search" placeholder="Search chapters" data-catalog-search autocomplete="off" />
+					<input
+						class="catalog-search"
+						type="search"
+						placeholder="Search chapters"
+						data-catalog-search
+						autocomplete="off"
+						aria-describedby="catalog-result-count"
+					/>
 					<kbd class="catalog-search-hint" aria-hidden="true" data-search-hint>⌘K</kbd>
 				</label>
-				<span class="catalog-count" data-catalog-count>26 chapters</span>
+				<span class="catalog-count" id="catalog-result-count" data-catalog-count>28 chapters</span>
 			</div>
-			<p class="catalog-empty" data-catalog-empty hidden>No chapters match that search.</p>
+			<div class="catalog-empty" data-catalog-empty hidden>
+				<strong>No chapters found</strong>
+				<span>Try another term or clear the current search.</span>
+				<button class="button" type="button" data-catalog-clear>Clear search</button>
+			</div>
 			<div class="doc-browser">
 				<section class="version-catalog-group" data-catalog-group aria-labelledby="docs-title">
 					<div class="section-heading">
@@ -208,24 +219,36 @@
 				</section>
 				<section class="version-catalog-group minor-improvements" aria-labelledby="other-changes-title" data-catalog-group>
 					<div class="section-heading">
-						<p class="eyebrow" data-catalog-group-count>14 chapters</p>
+						<p class="eyebrow" data-catalog-group-count>16 chapters</p>
 						<h2 id="other-changes-title">Other changes</h2>
 					</div>
 					<div class="minor-improvement-list">
-						<a class="minor-improvement-item" href="pages/partya-liquidation-fee-recipient.html" data-catalog-item>
+						<a class="minor-improvement-item" href="pages/explicit-clearing-house-settlements.html" data-catalog-item>
 							<span class="doc-list-index">13</span>
+							<span class="category">Clearing House</span>
+							<strong>Explicit Clearing House Settlements</strong>
+							<span>Declares final realized PnL, funding, and platform fees per account and market, with typed balance deltas.</span>
+						</a>
+						<a class="minor-improvement-item" href="pages/liquidation-funding-observability.html" data-catalog-item>
+							<span class="doc-list-index">14</span>
+							<span class="category">Liquidation</span>
+							<strong>Liquidation Funding Observability</strong>
+							<span>Adds quote-level funding and PnL events plus final aggregate settlement events for liquidation indexers.</span>
+						</a>
+						<a class="minor-improvement-item" href="pages/partya-liquidation-fee-recipient.html" data-catalog-item>
+							<span class="doc-list-index">15</span>
 							<span class="category">Liquidation</span>
 							<strong>PartyA Liquidation Fee Recipient Cleanup</strong>
 							<span>Records the liquidation starter as the unambiguous recipient for capped PartyA liquidation fees.</span>
 						</a>
 						<a class="minor-improvement-item" href="pages/partyb-allocation-suspension-gates.html" data-catalog-item>
-							<span class="doc-list-index">14</span>
+							<span class="doc-list-index">16</span>
 							<span class="category">PartyB</span>
 							<strong>PartyB Allocation Suspension Gates</strong>
 							<span>Suspended PartyBs can no longer allocate or transfer allocation between PartyA buckets.</span>
 						</a>
 						<a class="minor-improvement-item" href="pages/cross-partyb-liquidation-reserve.html" data-catalog-item>
-							<span class="doc-list-index">15</span>
+							<span class="doc-list-index">17</span>
 							<span class="category">Liquidation</span>
 							<strong>Cross-PartyB Liquidation Reserve Enforcement</strong>
 							<span
@@ -234,7 +257,7 @@
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/delegation-account-scope.html" data-catalog-item>
-							<span class="doc-list-index">16</span>
+							<span class="doc-list-index">18</span>
 							<span class="category">AccountLayer</span>
 							<strong>Delegation Account Scope</strong>
 							<span
@@ -243,7 +266,7 @@
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/instant-layer-authorization-scope.html" data-catalog-item>
-							<span class="doc-list-index">17</span>
+							<span class="doc-list-index">19</span>
 							<span class="category">InstantLayer</span>
 							<strong>InstantLayer Authorization Scope</strong>
 							<span
@@ -252,7 +275,7 @@
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/market-open-fee-execution-price.html" data-catalog-item>
-							<span class="doc-list-index">18</span>
+							<span class="doc-list-index">20</span>
 							<span class="category">Fees</span>
 							<strong>Market Open Fee on Execution Price</strong>
 							<span
@@ -261,7 +284,7 @@
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/partyb-funding-nonces.html" data-catalog-item>
-							<span class="doc-list-index">19</span>
+							<span class="doc-list-index">21</span>
 							<span class="category">PartyB</span>
 							<strong>PartyB Funding Update Nonces</strong>
 							<span
@@ -270,7 +293,7 @@
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/bound-mode-unified-settlement.html" data-catalog-item>
-							<span class="doc-list-index">20</span>
+							<span class="doc-list-index">22</span>
 							<span class="category">Settlement</span>
 							<strong>Bound-Mode Unified Settlement</strong>
 							<span
@@ -279,7 +302,7 @@
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/diamond-owner-getter.html" data-catalog-item>
-							<span class="doc-list-index">21</span>
+							<span class="doc-list-index">23</span>
 							<span class="category">Views</span>
 							<strong>Diamond Owner Getter</strong>
 							<span
@@ -288,7 +311,7 @@
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/express-deposit-removal.html" data-catalog-item>
-							<span class="doc-list-index">22</span>
+							<span class="doc-list-index">24</span>
 							<span class="category">AccountLayer</span>
 							<strong>Express Deposit Removal</strong>
 							<span
@@ -297,7 +320,7 @@
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/accountlayer-behavior-changes.html" data-catalog-item>
-							<span class="doc-list-index">23</span>
+							<span class="doc-list-index">25</span>
 							<span class="category">AccountLayer</span>
 							<strong>AccountLayer Behavior Changes</strong>
 							<span
@@ -306,7 +329,7 @@
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/position-isolation-partial-fill.html" data-catalog-item>
-							<span class="doc-list-index">24</span>
+							<span class="doc-list-index">26</span>
 							<span class="category">AccountLayer</span>
 							<strong>Position Isolation Partial Fill Remainder</strong>
 							<span
@@ -315,7 +338,7 @@
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/lazy-accumulated-funding.html" data-catalog-item>
-							<span class="doc-list-index">25</span>
+							<span class="doc-list-index">27</span>
 							<span class="category">Funding</span>
 							<strong>Lazy Accumulated Funding</strong>
 							<span
@@ -324,7 +347,7 @@
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/force-close-request-binding.html" data-catalog-item>
-							<span class="doc-list-index">26</span>
+							<span class="doc-list-index">28</span>
 							<span class="category">Force Close</span>
 							<strong>Force-Close Request Binding</strong>
 							<span

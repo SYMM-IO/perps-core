@@ -11,6 +11,7 @@ import { LibAggregateFunding } from "./LibAggregateFunding.sol";
 import { QuoteStorage, Quote, PositionType } from "../storages/QuoteStorage.sol";
 import { FundingStorage, FundingFee } from "../storages/FundingStorage.sol";
 import { LibAccount } from "./LibAccount.sol";
+import { IFundingRateEvents } from "../facets/FundingRate/IFundingRateEvents.sol";
 
 library LibQuoteFunding {
 	/// @notice Calculates the accumulated funding fee for a position
@@ -105,6 +106,8 @@ library LibQuoteFunding {
 			LibAccount.decreasePartyBAllocatedBalance(quote.partyB, partyBAllocationKey, feeInUint, SharedEvents.BalanceChangeType.FUNDING_FEE_OUT);
 			LibAccount.increasePartyAAllocatedBalance(quote.partyA, feeInUint, SharedEvents.BalanceChangeType.FUNDING_FEE_IN);
 		}
+
+		emit IFundingRateEvents.QuoteFundingSettled(quoteId, quote.symbolId, quote.partyB, quote.partyA, partyBAllocationKey, fee);
 	}
 
 	/// @notice Updates the accumulated paid funding for a quote

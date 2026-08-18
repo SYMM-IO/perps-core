@@ -26,4 +26,14 @@ interface IFundingRateEvents {
 		int256 snapshotShortFee
 	);
 	event ChargeAccumulatedFundingFee(address partyA, address partyB, uint256[] quoteIds, address sender);
+	/// @notice Exact funding realized for one quote by any normal charge path, including quote closing.
+	/// @dev `funding` is signed from PartyB's perspective: positive means PartyB receives and negative means PartyB pays.
+	event QuoteFundingSettled(
+		uint256 indexed quoteId,
+		uint256 indexed symbolId,
+		address indexed partyB,
+		address partyA,
+		address allocationKey,
+		int256 funding
+	);
 }

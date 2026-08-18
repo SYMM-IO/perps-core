@@ -18,7 +18,7 @@
 		<script src="../assets/docs-portal.js" defer></script>
 	</head>
 	<body class="index-page version-catalog-page" data-version="0.8.5">
-		<a class="skip-link" href="#docs">Skip to docs</a>
+		<a class="skip-link" href="#docs">Skip to release notes</a>
 		<header class="docs-header">
 			<div class="doc-topbar">
 				<nav class="docs-trail" aria-label="Breadcrumb">
@@ -52,12 +52,23 @@
 			<div class="catalog-toolbar" role="search">
 				<label class="catalog-search-wrap">
 					<span class="visually-hidden">Search v0.8.5 chapters</span>
-					<input class="catalog-search" type="search" placeholder="Search chapters" data-catalog-search autocomplete="off" />
+					<input
+						class="catalog-search"
+						type="search"
+						placeholder="Search chapters"
+						data-catalog-search
+						autocomplete="off"
+						aria-describedby="catalog-result-count"
+					/>
 					<kbd class="catalog-search-hint" aria-hidden="true" data-search-hint>⌘K</kbd>
 				</label>
-				<span class="catalog-count" data-catalog-count>32 chapters</span>
+				<span class="catalog-count" id="catalog-result-count" data-catalog-count>32 chapters</span>
 			</div>
-			<p class="catalog-empty" data-catalog-empty hidden>No chapters match that search.</p>
+			<div class="catalog-empty" data-catalog-empty hidden>
+				<strong>No chapters found</strong>
+				<span>Try another term or clear the current search.</span>
+				<button class="button" type="button" data-catalog-clear>Clear search</button>
+			</div>
 			<section class="version-catalog-group" data-catalog-group aria-labelledby="group-account-fund-management">
 				<div class="section-heading">
 					<p class="eyebrow" data-catalog-group-count>6 chapters</p>
