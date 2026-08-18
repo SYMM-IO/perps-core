@@ -72,7 +72,7 @@ for (const release of releases) {
 		.map(name => name.replace(/\.html$/, ""));
 
 	const companionBlock = new RegExp(`"${version}":\\s*\\{([\\s\\S]*?)\\n\\t\\t\\},`).exec(portal.slice(portal.indexOf("const COMPANIONS")));
-	const companions = companionBlock ? [...companionBlock[1].matchAll(/"([^"]+)":/g)].map(m => m[1]) : [];
+	const companions = companionBlock ? [...companionBlock[1].matchAll(/(?:^|\n)\s*(?:"([^"]+)"|([A-Za-z][\w-]*))\s*:/g)].map(m => m[1] || m[2]) : [];
 
 	const manifestSlugs = manifest.map(item => item.slug);
 	if (manifestSlugs.join("|") !== catalogOrder.join("|")) {
@@ -122,7 +122,9 @@ for (const release of releases) {
 	}
 
 	const portalIndex = read("index.html");
-	const label = new RegExp(`aria-label="Open the [^"]*${version.replace(/\./g, "\\.")} changelog, (\\d+) chapters"`).exec(portalIndex);
+	const label = new RegExp(`aria-label="Open the [^"]*${version.replace(/\./g, "\\.")} (?:changelog|release notes), (\\d+) chapters"`).exec(
+		portalIndex,
+	);
 	if (label && Number(label[1]) !== manifest.length) {
 		fail("index.html", `portal aria-label claims ${label[1]} chapters for ${version}, MANIFESTS has ${manifest.length}`);
 	}
@@ -194,6 +196,9 @@ const css = read("v0.8.6/assets/v086-docs.css") + read("assets/docs-portal.css")
 if (/@import\s+url\(\s*["']?https?:/.test(css)) fail("stylesheets", "remote @import — the site must not depend on a third-party origin");
 if (/cdn\.jsdelivr|unpkg\.com|fonts\.googleapis/.test(portal + read("v0.8.6/assets/v086-docs.js"))) {
 	fail("scripts", "third-party CDN reference — the site must not depend on a third-party origin");
+}
+if (/data-rail-tab|data-rail-search|Search chapters/.test(portal)) {
+	fail("assets/docs-portal.js", 'reader navigation must remain a single "On this page" outline');
 }
 
 /* --- report --------------------------------------------------------------- */

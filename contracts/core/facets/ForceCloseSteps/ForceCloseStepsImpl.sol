@@ -7,7 +7,7 @@ pragma solidity >=0.8.18;
 import { LibSettlement } from "../../libraries/LibSettlement.sol";
 import { LibForceActions } from "../../libraries/LibForceActions.sol";
 import { LibSymbolAdjustment } from "../../libraries/LibSymbolAdjustment.sol";
-import { QuoteStorage, Quote, LockedValues } from "../../storages/QuoteStorage.sol";
+import { QuoteStorage, Quote, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
 import { AccountStorage, ForceCloseDetail, PartyBForceCloseState } from "../../storages/AccountStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
@@ -37,7 +37,9 @@ library ForceCloseStepsImpl {
 
 		require(partyAAvailableBalance >= 0, "PartyAFacet: PartyA will be insolvent");
 
-		ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quoteId];
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[quoteId];
 		// Observability-only metadata: last Muon request id used for the stored snapshot.
 		detail.priceSigId = sig.reqId;
 		detail.quoteId = quoteId;
@@ -47,19 +49,20 @@ library ForceCloseStepsImpl {
 		detail.upnlPartyB = sig.upnlPartyB;
 		detail.currentPrice = sig.currentPrice;
 		detail.partyBState = PartyBForceCloseState.NONE;
-		detail.basisVersion = LibSymbolAdjustment.basisVersion(QuoteStorage.layout().quotes[quoteId].symbolId);
+		detail.basisVersion = LibSymbolAdjustment.basisVersion(quoteLayout.quotes[quoteId].symbolId);
+		detail.closeId = quoteLayout.closeIds[quoteId];
 		detail.inProgress = true;
 	}
 
 	/// @notice Refreshes the force-close uPNL/currentPrice snapshot using a fresh PairUpnlAndPriceSig.
 	/// @dev Does not modify the previously calculated closePrice. Re-validates partyA solvency; reverts if partyA would be insolvent.
 	function refreshForceCloseSnapshot(uint256 quoteId, PairUpnlAndPriceSig memory sig) internal {
+		requireCurrentForceClose(quoteId);
+
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[quoteId];
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote storage quote = quoteLayout.quotes[quoteId];
-
-		require(detail.inProgress, "ForceActionsFacet: Invalid state");
 
 		LibMuonPartyB.verifyPairUpnlAndPrice(sig, quote.partyB, quote.partyA, quote.symbolId, MuonFunction.ForceClose);
 
@@ -90,9 +93,10 @@ library ForceCloseStepsImpl {
 	function finalizeForceClose(
 		uint256 quoteId
 	) internal returns (bool isPartyBSolvent, int256 upnlPartyB, uint256 partyBAllocatedBalanceBeforeLiquidation) {
+		requireCurrentForceClose(quoteId);
+
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[quoteId];
-		require(detail.inProgress, "ForceActionsFacet: Invalid state");
 
 		Quote memory quote = QuoteStorage.layout().quotes[quoteId];
 		address partyB = quote.partyB;
@@ -139,6 +143,7 @@ library ForceCloseStepsImpl {
 		detail.upnlPartyB = 0;
 		detail.currentPrice = 0;
 		detail.basisVersion = 0;
+		detail.closeId = 0;
 	}
 
 	/// @notice Settles UPNL using unified settlement during the force close workflow and adjusts the stored partyB UPNL snapshot.
@@ -147,10 +152,10 @@ library ForceCloseStepsImpl {
 		UnifiedSettlementSig memory sig,
 		uint256[] memory updatedPrices
 	) internal returns (uint256[] memory newPartyAsAllocatedBalances) {
+		requireCurrentForceClose(quoteId);
+
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[quoteId];
-
-		require(detail.inProgress, "ForceActionsFacet: Invalid state");
 
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote storage forceCloseQuote = quoteLayout.quotes[quoteId];
@@ -195,5 +200,18 @@ library ForceCloseStepsImpl {
 
 		// Always advance workflow timestamp.
 		detail.timestamp = block.timestamp;
+	}
+
+	/// @dev A stored force-close snapshot is valid only for the close request that initialized it.
+	function requireCurrentForceClose(uint256 quoteId) private view {
+		ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quoteId];
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+
+		require(
+			detail.inProgress &&
+				quoteLayout.quotes[quoteId].quoteStatus == QuoteStatus.CLOSE_PENDING &&
+				detail.closeId == quoteLayout.closeIds[quoteId],
+			"ForceActionsFacet: Invalid state"
+		);
 	}
 }

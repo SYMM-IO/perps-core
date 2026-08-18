@@ -63,7 +63,7 @@
 					<p>
 						External transfers let users move funds to any trusted target contract with the help of a predefined relayer. The target can
 						be another Symmio diamond (e.g., a perps diamond and a future options diamond on the same chain), but it can also be any
-						external contract that Symmio has whitelisted. Symmio doesn't care what the target is -- it only requires that an admin has
+						external contract that Symmio has whitelisted. Symmio doesn't care what the target is — it only requires that an admin has
 						registered an authorized relayer for that target via <code>addRelayerForExternalTransferTarget</code>. The relayer receives
 						the funds and a callback, and it's responsible for depositing or handling them at the target.
 					</p>
@@ -84,7 +84,7 @@
 					</p>
 					<h2 id="doc-external-transfer-virtual-external-transfer">Virtual External Transfer</h2>
 					<p>
-						Virtual funds exist only as balance entries in storage -- no actual collateral token was transferred to the contract. So we
+						Virtual funds exist only as balance entries in storage — no actual collateral token was transferred to the contract. So we
 						can't send tokens from the source diamond to a relayer. Instead, we use a virtual provider as intermediary. The source diamond
 						deducts the user's virtual balance and notifies the virtual provider, which is expected to credit the receiver on the target
 						contract via <code>virtualDepositFor</code> or equivalent.

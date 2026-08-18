@@ -98,6 +98,7 @@
 			["accountlayer-behavior-changes", "AccountLayer", "AccountLayer Behavior Changes"],
 			["position-isolation-partial-fill", "AccountLayer", "Position Isolation Partial Fill Remainder"],
 			["lazy-accumulated-funding", "Funding", "Lazy Accumulated Funding"],
+			["force-close-request-binding", "Force Close", "Force-Close Request Binding"],
 		],
 	};
 
@@ -105,7 +106,8 @@
 	   They get the same shell and rail, but no chapter number and no pager. */
 	const COMPANIONS = {
 		"0.8.6": {
-			"express-bot-operations-checklist": ["Express Withdrawal", "Bot Operations Checklist"],
+			overview: ["Release", "Symmio Core v0.8.6 Overview"],
+			"express-bot-operations-checklist": ["Express Withdrawal", "Express Provider Bot Operations Checklist"],
 		},
 	};
 
@@ -120,142 +122,34 @@
 	const currentSlug = decodeURIComponent((location.pathname.split("/").pop() || "").replace(/\.html?$/i, ""));
 
 	/* --- Rail ---------------------------------------------------------------
-	   One navigation surface for every reading page. A single-panel rail uses a
-	   plain heading; multi-panel references retain accessible tabs. */
-	const buildRail = ({ id, label, tabs, active }) => {
+	   A reader only needs its local outline here. Release-wide navigation lives
+	   in the catalog and the previous/next pager, so the rail remains one clear
+	   "On this page" region instead of introducing a competing tab model. */
+	const buildRail = ({ id, label, title }) => {
 		const rail = document.createElement("aside");
-		rail.className = "chapter-rail";
+		rail.className = "chapter-rail is-single-panel";
 		rail.id = id;
 		rail.setAttribute("aria-label", label);
-		const singlePanel = tabs.length === 1;
-		if (singlePanel) rail.classList.add("is-single-panel");
-
-		const tabRow = singlePanel
-			? `<p class="rail-title" id="${id}-title">${escapeHtml(tabs[0].label)}</p>`
-			: tabs
-					.map(
-						tab =>
-							`<button type="button" class="rail-tab" role="tab" id="${id}-tab-${tab.key}" aria-controls="${id}-panel-${tab.key}"` +
-							` aria-selected="false" data-rail-tab="${tab.key}">${escapeHtml(tab.label)}</button>`,
-					)
-					.join("");
-		const panelRow = tabs
-			.map(
-				tab =>
-					`<div class="rail-panel" role="${singlePanel ? "region" : "tabpanel"}" id="${id}-panel-${tab.key}"` +
-					` aria-labelledby="${singlePanel ? `${id}-title` : `${id}-tab-${tab.key}`}" data-rail-panel="${tab.key}"${singlePanel ? "" : " hidden"}>` +
-					(tab.search
-						? `<label class="visually-hidden" for="${id}-search-${tab.key}">${escapeHtml(tab.search)}</label>` +
-							`<input class="rail-search" id="${id}-search-${tab.key}" type="search" placeholder="${escapeHtml(tab.search)}"` +
-							` autocomplete="off" data-rail-search="${tab.key}" />`
-						: "") +
-					`<div class="rail-list" data-rail-list="${tab.key}"></div>` +
-					"</div>",
-			)
-			.join("");
 
 		rail.innerHTML =
 			'<div class="rail-inner">' +
-			`<div class="rail-tabs"${singlePanel ? "" : ` role="tablist" aria-label="${escapeHtml(label)}"`}>${tabRow}` +
+			'<div class="rail-tabs">' +
+			`<p class="rail-title" id="${id}-title">${escapeHtml(title)}</p>` +
 			'<button type="button" class="rail-collapse" data-rail-collapse aria-controls="' +
 			id +
 			'" aria-label="Hide navigation" title="Hide navigation">' +
 			icons.rail +
 			"</button>" +
 			"</div>" +
-			panelRow +
+			`<div class="rail-panel" role="region" id="${id}-panel" aria-labelledby="${id}-title">` +
+			'<div class="rail-list" data-rail-list="sections"></div>' +
+			"</div>" +
 			"</div>";
-
-		const tabButtons = Array.from(rail.querySelectorAll("[data-rail-tab]"));
-		const panels = Array.from(rail.querySelectorAll("[data-rail-panel]"));
-		const setTab = key => {
-			if (singlePanel) {
-				panels[0].hidden = false;
-				return;
-			}
-			tabButtons.forEach(button => button.setAttribute("aria-selected", String(button.dataset.railTab === key)));
-			panels.forEach(panel => {
-				panel.hidden = panel.dataset.railPanel !== key;
-			});
-			store.set("docs-rail-tab", key);
-		};
-		tabButtons.forEach(button => {
-			button.addEventListener("click", () => setTab(button.dataset.railTab));
-		});
-		tabButtons.forEach((button, index) => {
-			button.addEventListener("keydown", event => {
-				const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
-				if (!step) return;
-				event.preventDefault();
-				const next = tabButtons[(index + step + tabButtons.length) % tabButtons.length];
-				next.focus();
-				setTab(next.dataset.railTab);
-			});
-		});
-
-		const stored = singlePanel ? null : store.get("docs-rail-tab");
-		setTab(!singlePanel && tabs.some(tab => tab.key === stored) ? stored : active || tabs[0].key);
 
 		return {
 			rail,
-			setTab,
-			list: key => rail.querySelector(`[data-rail-list="${key}"]`),
-			search: key => rail.querySelector(`[data-rail-search="${key}"]`),
+			list: rail.querySelector('[data-rail-list="sections"]'),
 		};
-	};
-
-	/* Search inside a rail panel. Groups vanish only when every link in them is
-	   filtered out, and an explicit empty state replaces a silent blank panel. */
-	const wireRailSearch = (input, listHost) => {
-		if (!input) return;
-		const empty = document.createElement("p");
-		empty.className = "rail-empty";
-		empty.textContent = "No chapters match that search.";
-		empty.hidden = true;
-		listHost.append(empty);
-		input.addEventListener("input", () => {
-			const query = normalize(input.value);
-			const links = Array.from(listHost.querySelectorAll(".rail-link"));
-			let shown = 0;
-			links.forEach(link => {
-				// The rail groups by category, so a category name has to be searchable
-				// even when it is not repeated in the chapter title.
-				const group = link.closest(".rail-group");
-				const haystack = normalize(`${link.textContent || ""} ${group?.querySelector(".rail-group-title")?.textContent || ""}`);
-				const match = !query || haystack.includes(query);
-				link.hidden = !match;
-				if (match) shown += 1;
-			});
-			listHost.querySelectorAll(".rail-group").forEach(group => {
-				group.hidden = !Array.from(group.querySelectorAll(".rail-link")).some(link => !link.hidden);
-			});
-			empty.hidden = shown !== 0;
-		});
-	};
-
-	/* Grouped, numbered chapter links. `hrefFor` decides whether the rail points
-	   at sibling pages or at anchors inside one long document. */
-	const renderChapterList = (listHost, entries, hrefFor, isCurrent) => {
-		const groups = new Map();
-		entries.forEach(entry => {
-			let group = groups.get(entry.category);
-			if (!group) {
-				group = document.createElement("section");
-				group.className = "rail-group";
-				group.innerHTML = `<h2 class="rail-group-title">${escapeHtml(entry.category)}</h2>`;
-				groups.set(entry.category, group);
-				listHost.append(group);
-			}
-			const link = document.createElement("a");
-			link.className = "rail-link";
-			link.href = hrefFor(entry);
-			link.innerHTML = `<span class="rail-index">${pad2(entry.number)}</span><span class="rail-label">${escapeHtml(entry.title)}</span>`;
-			if (isCurrent && isCurrent(entry)) {
-				link.classList.add("is-active");
-				link.setAttribute("aria-current", "page");
-			}
-			group.append(link);
-		});
 	};
 
 	/* Compact drawer + desktop collapse, shared by every rail. */
@@ -268,6 +162,11 @@
 		backdrop.className = "rail-backdrop";
 		backdrop.setAttribute("aria-label", "Close navigation");
 		body.append(backdrop);
+		const background = [
+			document.querySelector(".docs-header"),
+			...Array.from(rail.parentElement?.children || []).filter(element => element !== rail),
+			document.querySelector(".site-footer"),
+		].filter(Boolean);
 
 		let returnFocus = null;
 		let lockedScrollY = 0;
@@ -275,10 +174,12 @@
 			const shouldOpen = compact.matches && open;
 			const wasOpen = body.classList.contains("rail-is-open");
 			if (shouldOpen && !wasOpen) {
+				returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : trigger;
 				lockedScrollY = window.scrollY;
 				body.style.top = `-${lockedScrollY}px`;
 			}
 			body.classList.toggle("rail-is-open", shouldOpen);
+			background.forEach(element => element.toggleAttribute("inert", shouldOpen));
 			if (!shouldOpen && wasOpen) {
 				const restoreScrollY = lockedScrollY;
 				body.style.removeProperty("top");
@@ -289,9 +190,8 @@
 			if (trigger) trigger.setAttribute("aria-expanded", String(shouldOpen));
 			describeCollapse();
 			if (shouldOpen) {
-				returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : trigger;
 				window.requestAnimationFrame(() => {
-					const first = rail.querySelector("[data-rail-collapse], [data-rail-tab], .toc-link, .rail-link");
+					const first = rail.querySelector("[data-rail-collapse], .toc-link");
 					if (first) first.focus();
 				});
 			} else if (returnFocus && document.contains(returnFocus)) {
@@ -524,20 +424,12 @@
 		const entry = manifest.find(item => item.slug === currentSlug);
 		const companion = companions[currentSlug];
 
-		// Two panels: where you are inside this chapter, and where every other
-		// chapter is. Without the second one the only way to a sibling chapter is
-		// the pager or a round trip through the catalog.
-		const tabs = [{ key: "sections", label: "On this page" }];
-		if (manifest.length) tabs.push({ key: "chapters", label: "Chapters", search: "Search chapters" });
-
-		const { rail, list, search } = buildRail({
+		const { rail, list: sectionList } = buildRail({
 			id: "docs-rail",
-			label: "Documentation navigation",
-			tabs,
-			active: "sections",
+			label: "On this page",
+			title: "On this page",
 		});
 
-		const sectionList = list("sections");
 		if (authored) {
 			Array.from(authored.children).forEach(child => sectionList.append(child));
 			authored.remove();
@@ -546,19 +438,8 @@
 		if (!sectionList.querySelector(".toc-link")) {
 			const empty = document.createElement("p");
 			empty.className = "rail-empty";
-			empty.textContent = "This chapter has no subsections.";
+			empty.textContent = "This page has no subsections.";
 			sectionList.append(empty);
-		}
-
-		if (manifest.length) {
-			const chapterList = list("chapters");
-			renderChapterList(
-				chapterList,
-				manifest,
-				item => `${item.slug}.html`,
-				item => item.slug === currentSlug,
-			);
-			wireRailSearch(search("chapters"), chapterList);
 		}
 
 		shell.prepend(rail);
@@ -572,7 +453,7 @@
 			const kicker = document.createElement("p");
 			kicker.className = "topic-kicker";
 			if (entry) {
-				kicker.innerHTML = `<span>${escapeHtml(entry.category)}</span><span>Chapter ${pad2(entry.number)} of ${pad2(manifest.length)}</span>`;
+				kicker.innerHTML = `<span>${escapeHtml(entry.category)}</span><span>${pad2(entry.number)} of ${pad2(manifest.length)}</span>`;
 			} else if (companion) {
 				kicker.innerHTML = `<span>${escapeHtml(companion[0])}</span><span>Companion guide</span>`;
 			} else {
@@ -587,7 +468,7 @@
 			if (previous || next) {
 				const pager = document.createElement("nav");
 				pager.className = "chapter-pager";
-				pager.setAttribute("aria-label", "Adjacent chapters");
+				pager.setAttribute("aria-label", "Previous and next pages");
 				if (previous)
 					pager.innerHTML += `<a href="${previous.slug}.html"><small>Previous</small><span>${escapeHtml(previous.title)}</span></a>`;
 				if (next) pager.innerHTML += `<a href="${next.slug}.html"><small>Next</small><span>${escapeHtml(next.title)}</span></a>`;
@@ -636,6 +517,10 @@
 		const empty = document.querySelector("[data-catalog-empty]");
 		const groupCounts = new Map(groups.map(group => [group, group.querySelector("[data-catalog-group-count]")]));
 		const total = rows.length;
+		if (count) {
+			count.setAttribute("role", "status");
+			count.setAttribute("aria-live", "polite");
+		}
 
 		const describe = value => {
 			const unit = count?.dataset.catalogUnit || "chapter";
@@ -688,6 +573,10 @@
 		}
 		const count = document.querySelector("[data-version-count]");
 		const empty = document.querySelector("[data-version-empty]");
+		if (count) {
+			count.setAttribute("role", "status");
+			count.setAttribute("aria-live", "polite");
+		}
 		const describe = value => `${value} ${value === 1 ? "version" : "versions"}`;
 
 		const apply = () => {
@@ -723,7 +612,10 @@
 		if (!button.querySelector("svg")) button.innerHTML = icons.up;
 		const sync = () => button.classList.toggle("is-visible", window.scrollY > 900);
 		window.addEventListener("scroll", sync, { passive: true });
-		button.addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
+		button.addEventListener("click", () => {
+			const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+			window.scrollTo({ top: 0, behavior: reducedMotion ? "auto" : "smooth" });
+		});
 		sync();
 	};
 

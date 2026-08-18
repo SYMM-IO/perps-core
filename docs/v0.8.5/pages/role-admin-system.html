@@ -5,7 +5,7 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta
 			name="description"
-			content="v0.8.5 introduces role admins -- a delegation layer on top of SYMMIO&#x27;s existing role-based access control. Previously, the DEFAULT_ADMIN_ROLE holder was the only address that could grant and revoke roles, making it a bottleneck for every role change. Now, default admins can delegate management…"
+			content="v0.8.5 introduces role admins — a delegation layer on top of SYMMIO&#x27;s existing role-based access control. Previously, the DEFAULT_ADMIN_ROLE holder was the only address that could grant and revoke roles, making it a bottleneck for every role change. Now, default admins can delegate management…"
 		/>
 		<title>Role Admin System - Symmio Core v0.8.5</title>
 		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
@@ -57,7 +57,7 @@
 				<article class="doc-article" id="full-document">
 					<h2 id="doc-role-admin-system-overview">Overview</h2>
 					<p>
-						v0.8.5 introduces <strong>role admins</strong> -- a delegation layer on top of SYMMIO's existing role-based access control.
+						v0.8.5 introduces <strong>role admins</strong> — a delegation layer on top of SYMMIO's existing role-based access control.
 						Previously, the <code>DEFAULT_ADMIN_ROLE</code> holder was the only address that could grant and revoke roles, making it a
 						bottleneck for every role change. Now, default admins can delegate management of specific roles to dedicated addresses via
 						per-role admins. This allows operational teams to manage their domain (e.g., liquidator rotation, pause controls) without
@@ -67,7 +67,7 @@
 					<p>
 						In v0.8.4, the Diamond owner called <code>setAdmin(address)</code> to grant <code>DEFAULT_ADMIN_ROLE</code> to a single
 						wallet. That wallet could then grant and revoke any role via <code>grantRole</code> / <code>revokeRole</code>. There was no
-						way to delegate management of a specific role to someone else -- every role change had to go through the one
+						way to delegate management of a specific role to someone else — every role change had to go through the one
 						<code>DEFAULT_ADMIN_ROLE</code> holder.
 					</p>
 					<h2 id="doc-role-admin-system-what-changed">What Changed</h2>
@@ -117,7 +117,7 @@ mapping(bytes32 =&gt; mapping(address =&gt; bool)) roleAdmins;
 					<h2 id="doc-role-admin-system-security-notes">Security Notes</h2>
 					<ul>
 						<li>
-							<strong>Delegation is one level deep.</strong> Per-role admins cannot appoint other role admins -- only
+							<strong>Delegation is one level deep.</strong> Per-role admins cannot appoint other role admins — only
 							<code>DEFAULT_ADMIN_ROLE</code> holders can call <code>addRoleAdmin</code>.
 						</li>
 						<li>

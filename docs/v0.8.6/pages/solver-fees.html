@@ -10,7 +10,7 @@
 		<title>Solver Fees - Symmio Core v0.8.6</title>
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
 		<script>
-			// Applied before first paint so a saved light preference does not flash dark.
+			// Apply the saved preference before first paint.
 			try {
 				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
 			} catch (_error) {}
@@ -145,9 +145,9 @@ struct SolverFeeState {
 </code></pre>
 					<p>
 						The legacy <code>sendQuoteWithAffiliate</code> and <code>sendQuoteWithAffiliateAndData</code> methods remain available and
-						keep their selectors. The legacy no-affiliate <code>sendQuote</code> selector is removed in v0.8.6 -- integrations that used
-						it must migrate to one of the remaining methods. Legacy methods store zero solver fee caps, so PartyB cannot charge a solver
-						fee unless the user used the capped quote API.
+						keep their selectors. The legacy no-affiliate <code>sendQuote</code> selector is removed in v0.8.6 — integrations that used it
+						must migrate to one of the remaining methods. Legacy methods store zero solver fee caps, so PartyB cannot charge a solver fee
+						unless the user used the capped quote API.
 					</p>
 					<p>
 						The existing <code>SendQuote(address,uint256,address[],address,bytes,bytes)</code> event keeps its original
@@ -162,13 +162,13 @@ struct SolverFeeState {
 					<p>
 						Open and close solver fees are not exposed as standalone charge selectors; they are charged inside the matching execution
 						transaction so the fee and the solvency check stay atomic. Where the fee lands is configured separately via
-						<code>ControlFacet.setSolverFeeReceiver</code> -- see <a href="#fee-receiver">Fee Receiver</a>. The equivalent knob for
+						<code>ControlFacet.setSolverFeeReceiver</code> — see <a href="#fee-receiver">Fee Receiver</a>. The equivalent knob for
 						operational fees is <code>ControlFacet.setOperationalFeeReceiver</code>, described in
 						<a href="../pages/operational-fees.html">Operational Fees</a>.
 					</p>
 					<p>
 						For execution paths with solver fees, PartyB uses the fee-aware <code>PartyBSolverFeeActionsFacet</code> methods. These carry
-						only the per-quote rate <code>solverFee</code> -- they do not bundle an operational fee. The solver charges operational fees
+						only the per-quote rate <code>solverFee</code> — they do not bundle an operational fee. The solver charges operational fees
 						separately via <code>AccountFacet.chargeOperationalFee(address payer, uint256 amount)</code>, exactly like any other
 						registered charger (see <a href="../pages/operational-fees.html">Operational Fees</a>):
 					</p>
@@ -229,14 +229,14 @@ function fillCloseRequestToLiquidation(
 						capacity.
 					</p>
 					<p>
-						When a quote is partially opened, the solver fee rate caps are copied unchanged to the child pending quote -- each quote's
+						When a quote is partially opened, the solver fee rate caps are copied unchanged to the child pending quote — each quote's
 						notional is already smaller, so a rate cap scales with notional automatically.
 					</p>
 
 					<h2 id="fee-receiver">Fee Receiver</h2>
 					<p>
-						By default solver fees are credited to the solver PartyB itself. A PartyB can route them elsewhere -- a treasury or a
-						revenue-splitting account -- without changing anything about how quotes are priced or charged:
+						By default solver fees are credited to the solver PartyB itself. A PartyB can route them elsewhere — a treasury or a
+						revenue-splitting account — without changing anything about how quotes are priced or charged:
 					</p>
 					<pre><code class="language-solidity">function setSolverFeeReceiver(address partyB, address receiver) external;
 </code></pre>
@@ -246,7 +246,7 @@ function fillCloseRequestToLiquidation(
 						registered PartyB. <code>ViewFacet.getSolverFeeReceiver(partyB)</code> returns the effective receiver.
 					</p>
 					<p>
-						The receiver is resolved at charge time, so changing it only affects subsequent fees -- fees already collected stay where they
+						The receiver is resolved at charge time, so changing it only affects subsequent fees — fees already collected stay where they
 						landed. The receiver may not be the quote's PartyA: routing a fee back to the payer would move allocated balance into free
 						balance without setting <code>deallocateTimestamp</code>, sidestepping the withdraw cooldown. That charge reverts with
 						<code>"SolverFee: Receiver is partyA"</code>.
@@ -300,7 +300,7 @@ event BalanceChangePartyA(
 </code></pre>
 					<p>
 						Solver-fee debits emit <code>BalanceChangePartyA</code> with <code>OPEN_SOLVER_FEE_OUT</code> or
-						<code>CLOSE_SOLVER_FEE_OUT</code>. Operational-fee debits emit <code>OPERATIONAL_FEE_OUT</code> -- see
+						<code>CLOSE_SOLVER_FEE_OUT</code>. Operational-fee debits emit <code>OPERATIONAL_FEE_OUT</code> — see
 						<a href="../pages/operational-fees.html">Operational Fees</a>.
 					</p>
 
@@ -352,7 +352,7 @@ event BalanceChangePartyA(
 						</li>
 						<li>
 							When PartyA is bound to the quote's PartyB and that PartyB is bindable, the fee-aware overloads skip the PartyA post-fee
-							solvency check -- consistent with core bound-mode semantics, where the bound PartyB internalizes PartyA risk. Fee caps and
+							solvency check — consistent with core bound-mode semantics, where the bound PartyB internalizes PartyA risk. Fee caps and
 							the PartyA allocated-balance check still apply.
 						</li>
 						<li>

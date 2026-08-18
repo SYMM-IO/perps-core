@@ -206,7 +206,7 @@
 						</li>
 					</ol>
 					<p>
-						The bot acts on the user's behalf but can <strong>only</strong> call <code>requestToClosePosition</code> -- the delegation is
+						The bot acts on the user's behalf but can <strong>only</strong> call <code>requestToClosePosition</code> — the delegation is
 						scoped to that single selector.
 					</p>
 					<h3 id="doc-instant-layer-service-integration-flow-diagram">Flow Diagram</h3>
@@ -259,7 +259,7 @@
 					</p>
 					<h3 id="doc-instant-layer-service-integration-how-it-works_1">How It Works</h3>
 					<p>
-						This frontend uses <strong>virtual accounts</strong> -- each quote is sent from a dedicated virtual account. This means the
+						This frontend uses <strong>virtual accounts</strong> — each quote is sent from a dedicated virtual account. This means the
 						service needs to do two things when triggered: pre-fund the next virtual account address with margin, then send the quote
 						(which creates the VA and executes from it). Both happen in a single atomic batch.
 					</p>
@@ -274,8 +274,8 @@
 						<li>
 							<strong>Service</strong> monitors price feeds. When the trigger price is reached, it batches
 							<strong>two operations</strong> into a single <code>executeBatch</code> call: - <strong>Operation 1</strong>:
-							<code>addMarginToNextVA</code> on AccountLayer -- transfers margin from the user's sub-account to the predicted next
-							virtual account address - <strong>Operation 2</strong>: <code>sendQuoteWithAffiliateAndData</code> on Symmio Core -- sends
+							<code>addMarginToNextVA</code> on AccountLayer — transfers margin from the user's sub-account to the predicted next
+							virtual account address - <strong>Operation 2</strong>: <code>sendQuoteWithAffiliateAndData</code> on Symmio Core — sends
 							the quote from that virtual account
 						</li>
 						<li>
@@ -330,7 +330,7 @@
 							send-quote operation uses the virtual account address.
 						</li>
 						<li>
-							The service needs to know the virtual account address in advance (it is deterministic -- the "next VA" for a given
+							The service needs to know the virtual account address in advance (it is deterministic — the "next VA" for a given
 							sub-account).
 						</li>
 						<li>
@@ -343,13 +343,13 @@
 					<p>
 						Session keys allow users to trade without signing every transaction with their main wallet. A temporary key pair is generated
 						in the browser, the user delegates access to it via a single wallet signature, and all subsequent operations are signed by the
-						session key -- no wallet popups needed.
+						session key — no wallet popups needed.
 					</p>
 					<h3 id="doc-instant-layer-service-integration-the-convention-selector-0x00000001">
 						The Convention: Selector <code>0x00000001</code>
 					</h3>
 					<p>
-						The Instant Layer's delegation system is selector-based -- each delegation grants permission for specific function selectors.
+						The Instant Layer's delegation system is selector-based — each delegation grants permission for specific function selectors.
 						Session keys exploit this by using a <strong>predefined non-functional selector</strong> as an opt-in signal:
 					</p>
 					<pre><code>SESSION_KEY_SELECTOR = 0x00000001
@@ -358,7 +358,7 @@
 						<strong>Why this works:</strong> - <code>0x00000001</code> does not correspond to any real function selector on Symmio or
 						AccountLayer - It cannot be used in an <code>executeBatch</code> call (no function has this selector) - It serves purely as an
 						<strong>off-chain convention</strong>: if a user has delegated <code>0x00000001</code> to an address, services treat that
-						address as an authorized session key - The delegation is fully on-chain and verifiable -- anyone can call
+						address as an authorized session key - The delegation is fully on-chain and verifiable — anyone can call
 						<code>isDelegationActive(user, sessionKey, 0x00000001)</code> to confirm
 					</p>
 					<h3 id="doc-instant-layer-service-integration-how-it-works_2">How It Works</h3>
@@ -373,7 +373,7 @@
 						</li>
 						<li>
 							User also grants delegations to the services they want to use (TPSL bot gets <code>requestToClosePosition</code>, Trigger
-							Market gets <code>addMarginToNextVA</code> + <code>sendQuoteWithAffiliateAndData</code>) -- these are separate
+							Market gets <code>addMarginToNextVA</code> + <code>sendQuoteWithAffiliateAndData</code>) — these are separate
 							<code>grantDelegation</code> calls from the wallet
 						</li>
 						<li>The wallet can now disconnect.</li>
@@ -410,7 +410,7 @@
 					<p>
 						<strong>What services check:</strong> When a service receives a request signed by address X for account Y: 1. Is X the account
 						owner? If yes, proceed. 2. If not, does Y have an active delegation of <code>0x00000001</code> to X? (session key check) 3. If
-						yes, X is an authorized session key for Y -- accept the request.
+						yes, X is an authorized session key for Y — accept the request.
 					</p>
 					<h3 id="doc-instant-layer-service-integration-flow-diagram-desktop-session-key">Flow Diagram: Desktop Session Key</h3>
 					<pre><code class="language-mermaid">sequenceDiagram
@@ -449,7 +449,7 @@
 						<li>Desktop generates a session key and activates it on-chain (as above)</li>
 						<li>Desktop encodes the session key's private key as a QR code</li>
 						<li>Mobile scans the QR code and imports the session key</li>
-						<li>Mobile can now trade using the session key -- no wallet app needed on mobile</li>
+						<li>Mobile can now trade using the session key — no wallet app needed on mobile</li>
 					</ol>
 					<pre><code class="language-mermaid">sequenceDiagram
     participant DW as Desktop Wallet
@@ -614,7 +614,7 @@ function generateSalt(): string {
 					<h4 id="doc-instant-layer-service-integration-granting-delegation">Granting Delegation</h4>
 					<p>
 						<code>grantDelegation</code> is a direct transaction called by the account owner (or session key). No EIP-712 signing is
-						needed -- the caller's identity is verified on-chain via <code>msg.sender</code>.
+						needed — the caller's identity is verified on-chain via <code>msg.sender</code>.
 					</p>
 					<pre><code class="language-typescript">async function grantDelegationTo(
   signer: ethers.Signer,    // account owner or session key
@@ -991,9 +991,9 @@ async function handleTPSLRequest(req: Request) {
 					<hr />
 					<h2 id="doc-instant-layer-service-integration-related-documentation">Related Documentation</h2>
 					<ul>
-						<li><a href="instant-layer-overview.html">Instant Layer Overview</a> -- Core architecture and concepts</li>
+						<li><a href="instant-layer-overview.html">Instant Layer Overview</a> — Core architecture and concepts</li>
 						<li>
-							<a href="instant-layer-partyb-integration.html">Instant Layer PartyB Integration</a> -- PartyB-specific integration guide
+							<a href="instant-layer-partyb-integration.html">Instant Layer PartyB Integration</a> — PartyB-specific integration guide
 						</li>
 					</ul>
 				</article>

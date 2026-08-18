@@ -72,7 +72,7 @@
 						submit fabricated UPNL values to bypass the available balance check in <code>sendQuote</code>. By sending many quotes with
 						inflated UPNL, the PartyA drains their <code>allocatedBalances</code> into trading fees while keeping positions open. When
 						liquidated as <code>LATE</code> or <code>OVERDUE</code>, the pending quotes are cancelled and their fees are refunded. Without
-						the escrow, these refunded fees would go straight back to the PartyA at settlement -- the exact funds they drained to worsen
+						the escrow, these refunded fees would go straight back to the PartyA at settlement — the exact funds they drained to worsen
 						the liquidation severity.
 					</p>
 					<p>
@@ -82,18 +82,17 @@
 					<h2 id="doc-liquidation-escrow-how-it-works">How It Works</h2>
 					<p>During PartyA liquidation, two types of funds accumulate before settlement:</p>
 					<p>
-						<strong>Pending fee reimbursement</strong> (<code>partyAReimbursement</code>) -- When
+						<strong>Pending fee reimbursement</strong> (<code>partyAReimbursement</code>) — When
 						<code>liquidatePendingPositionsPartyA</code> cancels pending quotes (SENT, LOCKED, CANCEL_PENDING), each quote's trading fee
-						is refunded to <code>partyAReimbursement</code>. This is the attack vector -- these fees were deducted from
+						is refunded to <code>partyAReimbursement</code>. This is the attack vector — these fees were deducted from
 						<code>allocatedBalances</code> when the quote was created, and the attacker wants them back.
 					</p>
 					<p>
-						<strong>Deferred excess balance</strong> (<code>partyADeferredBalance</code>) -- In
+						<strong>Deferred excess balance</strong> (<code>partyADeferredBalance</code>) — In
 						<a href="clearing-house.html">deferred liquidation</a>, where the Muon oracle proves historical insolvency, the PartyA may
 						have deposited additional funds since the insolvency point. The difference between the current
 						<code>allocatedBalances</code> and the historical <code>liquidationAllocatedBalance</code> is the excess. This excess is
-						legitimate -- it's funds the PartyA added after the fact -- and is always returned to the PartyA regardless of liquidation
-						type.
+						legitimate — it's funds the PartyA added after the fact — and is always returned to the PartyA regardless of liquidation type.
 					</p>
 					<p>At settlement (<code>settlePartyALiquidation</code>), the routing depends on the liquidation type:</p>
 					<table>
@@ -128,7 +127,7 @@
 					</p>
 					<p>
 						In <code>LATE</code> and <code>OVERDUE</code> liquidation, the deficit exceeds the locked LF and eats into CVA. PartyBs absorb
-						losses (haircuts). Returning fees to the PartyA in this case would be unfair -- the ClearingHouse needs these funds to
+						losses (haircuts). Returning fees to the PartyA in this case would be unfair — the ClearingHouse needs these funds to
 						compensate affected PartyBs.
 					</p>
 					<h2 id="doc-liquidation-escrow-settlement-code">Settlement Code</h2>
@@ -160,7 +159,7 @@ accountLayout.partyAReimbursement[partyA] = 0;
 					<p>
 						After settlement, the escrowed funds sit in <code>liquidationEscrow[partyA]</code> until the ClearingHouse distributes them
 						via <code>distributeFromLiquidationEscrow</code>. This function follows the same routing pattern as
-						<code>distributeForClearingHouse</code> -- it supports distributing to both PartyA addresses (<code>allocatedBalances</code>)
+						<code>distributeForClearingHouse</code> — it supports distributing to both PartyA addresses (<code>allocatedBalances</code>)
 						and PartyBs (<code>partyBAllocatedBalances</code>):
 					</p>
 					<pre><code class="language-solidity">function distributeFromLiquidationEscrow(
@@ -173,7 +172,7 @@ accountLayout.partyAReimbursement[partyA] = 0;
 					<p>The ClearingHouse operator decides how to distribute the escrowed funds. Typical uses:</p>
 					<ul>
 						<li>
-							<strong>Compensate PartyBs</strong> -- Return funds to PartyBs who suffered CVA haircuts from the <code>LATE</code>/<code
+							<strong>Compensate PartyBs</strong> — Return funds to PartyBs who suffered CVA haircuts from the <code>LATE</code>/<code
 								>OVERDUE</code
 							>
 							liquidation.
@@ -210,7 +209,7 @@ accountLayout.partyAReimbursement[partyA] = 0;
 						In a deferred liquidation with excess balance, the deferred extraction always zeroes out the PartyA's available balance. This
 						means <code>determineLiquidationType</code> always classifies the result as <code>NORMAL</code> (since
 						<code>-availableBalance = 0 &lt; lockedLf</code>). Consequently, a deferred liquidation with positive excess never triggers
-						the escrow -- both the deferred balance and the pending fee reimbursement are returned to the PartyA.
+						the escrow — both the deferred balance and the pending fee reimbursement are returned to the PartyA.
 					</p>
 					<p>
 						The only way a deferred liquidation produces <code>LATE</code> or <code>OVERDUE</code> is when there is no excess (i.e., the

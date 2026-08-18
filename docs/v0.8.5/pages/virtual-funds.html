@@ -5,7 +5,7 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta
 			name="description"
-			content="Symmio operates across many chains, and users&#x27; funds are often fragmented between them. Bridging funds manually is slow and creates friction for users working with Symmio frontends. The Virtual Fund System solves this by introducing virtual deposits and virtual withdrawals -- mechanisms that let…"
+			content="Symmio operates across many chains, and users&#x27; funds are often fragmented between them. Bridging funds manually is slow and creates friction for users working with Symmio frontends. The Virtual Fund System solves this by introducing virtual deposits and virtual withdrawals — mechanisms that let…"
 		/>
 		<title>Virtual Fund System - Symmio Core v0.8.5</title>
 		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
@@ -75,7 +75,7 @@
 					<p>
 						Symmio operates across many chains, and users' funds are often fragmented between them. Bridging funds manually is slow and
 						creates friction for users working with Symmio frontends. The Virtual Fund System solves this by introducing
-						<strong>virtual deposits</strong> and <strong>virtual withdrawals</strong> -- mechanisms that let trusted providers credit or
+						<strong>virtual deposits</strong> and <strong>virtual withdrawals</strong> — mechanisms that let trusted providers credit or
 						debit a user's balance in a Symmio contract without requiring an immediate on-chain token transfer on that specific chain.
 					</p>
 					<p>
@@ -169,8 +169,8 @@ function virtualDepositFor(address user, uint256 amount) internal {
 					</p>
 					<h3 id="doc-virtual-funds-depositvirtualfunds"><code>depositVirtualFunds</code></h3>
 					<p>
-						When a virtual provider wants to reconcile -- transferring actual collateral tokens to the Symmio contract to back previously
-						virtual-deposited balances -- it calls this function:
+						When a virtual provider wants to reconcile — transferring actual collateral tokens to the Symmio contract to back previously
+						virtual-deposited balances — it calls this function:
 					</p>
 					<pre><code class="language-solidity">function depositVirtualFunds(uint256 amount) external whenNotAccountingPaused;
 </code></pre>

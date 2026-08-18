@@ -133,7 +133,7 @@
 										>
 										Allocated balances are <strong>not</strong> aggregated -- the cross bucket <code>[address(0)]</code> for
 										allocated balances is an independent pool that the solver funds explicitly after enabling cross mode. This
-										function is idempotent per partyB+partyA pair -- already-migrated pairs are skipped.
+										function is idempotent per partyB+partyA pair — already-migrated pairs are skipped.
 									</p>
 								</li>
 							</ul>
@@ -198,13 +198,13 @@
 					<ul>
 						<li>
 							<strong>Cross bucket deallocation</strong> (<code>partyA == address(0)</code>): Standard deallocation from the cross pool.
-							Requires <code>crossAvailableBalance &gt;= amount</code> -- the same solvency check as isolated mode.
+							Requires <code>crossAvailableBalance &gt;= amount</code> — the same solvency check as isolated mode.
 						</li>
 						<li>
 							<strong>Legacy per-PartyA drain</strong> (<code>partyA != address(0)</code>): Withdraws stranded funds from pre-cross
 							per-PartyA buckets. Only requires <code>crossAvailableBalance &gt;= 0</code> (cross solvency), not
 							<code>&gt;= amount</code>, because these funds are not backing any cross-pool positions. The Muon signature and solvency
-							check always use <code>address(0)</code> as the PartyA -- consistent with all other cross-mode signatures.
+							check always use <code>address(0)</code> as the PartyA — consistent with all other cross-mode signatures.
 						</li>
 					</ul>
 					<h3 id="doc-cross-party-b-settlement-reserve-during-partya-liquidation">Settlement Reserve During PartyA Liquidation</h3>
@@ -215,7 +215,7 @@
 						<code>settlePartyALiquidation</code> runs later.
 					</p>
 					<p>
-						This creates a window where a cross-mode PartyB's available balance is artificially inflated -- the locked balance reduction
+						This creates a window where a cross-mode PartyB's available balance is artificially inflated — the locked balance reduction
 						already happened, but the settlement debit hasn't been applied yet. Without protection, PartyB could deallocate funds it owes
 						to pending liquidation settlements.
 					</p>
@@ -246,7 +246,7 @@
 }
 </code></pre>
 					<p>
-						This allows PartyB to continue operating (opening/closing/settling positions) and even partially deallocate -- as long as it
+						This allows PartyB to continue operating (opening/closing/settling positions) and even partially deallocate — as long as it
 						keeps enough in the cross pool to cover the pending settlement. The reserve is intentionally conservative: it does not
 						subtract CVA (which is returned to PartyB at settlement time), so PartyB may have slightly less available balance than
 						strictly necessary until the settlement completes.
@@ -409,7 +409,7 @@ quotesSettlementsData[] — per-quote data with partyAIndex mapping each quote t
 					<p>The legacy <code>settleUpnl</code> is kept for backward compatibility with integrations that have not migrated.</p>
 					<h3 id="doc-cross-party-b-quote-subset-constraints">Quote Subset Constraints</h3>
 					<p>
-						Solvency is validated using aggregate UPNL -- which includes unrealized gains from positions not being settled -- but each
+						Solvency is validated using aggregate UPNL — which includes unrealized gains from positions not being settled — but each
 						party's <code>uint256</code> balance must independently absorb the realized settlement amount. If a party is solvent in
 						aggregate but the settlement loss from the chosen quote subset exceeds their raw allocated balance, the transaction will
 						revert.
@@ -426,7 +426,7 @@ quotesSettlementsData[] — per-quote data with partyAIndex mapping each quote t
 						</li>
 						<li>
 							<strong>Cross PartyB</strong>: The <strong>net</strong> settlement loss across all PartyAs must not exceed
-							<code>partyBAllocatedBalances[partyB][address(0)]</code>. The ordering of PartyAs in the signature does not matter -- the
+							<code>partyBAllocatedBalances[partyB][address(0)]</code>. The ordering of PartyAs in the signature does not matter — the
 							contract accumulates a signed delta and applies it once.
 						</li>
 					</ul>
