@@ -468,6 +468,10 @@ body.doc-page {
 	display: none;
 }
 
+body.doc-page.rail-is-collapsed {
+	--rail: 48px;
+}
+
 body.rail-is-collapsed .rail-tabs {
 	grid-template-columns: minmax(0, 1fr);
 	padding: 9px 5px;
@@ -604,6 +608,18 @@ body.doc-page .reader-main > .chapter-pager,
 body.doc-page .doc-article > :is(.code-frame, .table-wrap, .tool-panel, figure, table, pre) {
 	width: 100%;
 	max-width: none;
+}
+
+/* Full justification is reserved for editorial prose. Hyphenation keeps word
+   spacing even, while narrow screens retain the more readable ragged edge. */
+@media (min-width: 760px) {
+	body.doc-page .reader-hero .hero-copy,
+	body.doc-page .doc-article p {
+		-webkit-hyphens: auto;
+		hyphens: auto;
+		text-align: justify;
+		text-justify: inter-word;
+	}
 }
 
 .chapter-pager a {
