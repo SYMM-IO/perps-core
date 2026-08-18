@@ -311,6 +311,47 @@ contract SymmioSymbolManager is AccessControlEnumerable, Pausable {
 		emit BatchOperationExecuted("acceptableValues", symbolIds);
 	}
 
+	/// @notice Sets default or symbol-specific minimum LF rates against notional.
+	/// @dev Uses the existing minimum-acceptable-values role and daily limit. Symbol 0 updates the live default;
+	///      nonzero symbols create explicit overrides.
+	function setSymbolMinAcceptableNotionalLFRatesBatch(
+		uint256[] memory symbolIds,
+		uint256[] memory minAcceptableNotionalLFRates
+	) external whenNotPaused onlyRole(SYMBOL_MIN_ACCEPTABLE_VALUES_MANAGER_ROLE) {
+		if (symbolIds.length != minAcceptableNotionalLFRates.length) revert InvalidArrayLengths();
+
+		dailyOperations.acceptableValues = checkAndUpdateDailyLimit(
+			"acceptableValues",
+			symbolIds.length,
+			dailyLimits.acceptableValues,
+			dailyOperations.acceptableValues
+		);
+
+		for (uint256 i = 0; i < symbolIds.length; i++) {
+			ISymmio(symmioAddress).setSymbolMinAcceptableNotionalLFRate(symbolIds[i], minAcceptableNotionalLFRates[i]);
+		}
+
+		emit BatchOperationExecuted("notionalLFRates", symbolIds);
+	}
+
+	/// @notice Clears symbol-specific notional LF rates so the symbols inherit the symbol-0 default.
+	function clearSymbolMinAcceptableNotionalLFRateOverrides(
+		uint256[] memory symbolIds
+	) external whenNotPaused onlyRole(SYMBOL_MIN_ACCEPTABLE_VALUES_MANAGER_ROLE) {
+		dailyOperations.acceptableValues = checkAndUpdateDailyLimit(
+			"acceptableValues",
+			symbolIds.length,
+			dailyLimits.acceptableValues,
+			dailyOperations.acceptableValues
+		);
+
+		for (uint256 i = 0; i < symbolIds.length; i++) {
+			ISymmio(symmioAddress).clearSymbolMinAcceptableNotionalLFRateOverride(symbolIds[i]);
+		}
+
+		emit BatchOperationExecuted("clearNotionalLFRateOverrides", symbolIds);
+	}
+
 	/// @notice Updates funding states for multiple symbols
 	/// @param symbolIds Array of symbol IDs to update
 	/// @param fundingRateEpochDurations Array of new funding rate epoch durations

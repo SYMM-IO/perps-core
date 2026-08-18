@@ -54,6 +54,48 @@ export function shouldBehaveLikeSendQuote(): void {
 		).to.be.revertedWith("PartyAFacet: LF is not enough")
 	})
 
+	it("Should enforce the effective minimum LF rate against quote notional", async function () {
+		const fourPercent = decimal(4n, 16)
+		await context.symbolControlFacet.connect(context.signers.admin).setSymbolMinAcceptableNotionalLFRate(0, fourPercent)
+
+		await expect(
+			user.sendQuote(
+				limitQuoteRequestBuilder()
+					.lf(decimal(4n) - 1n)
+					.build(),
+			),
+		).to.be.revertedWith("PartyAFacet: Notional LF is not enough")
+		await expect(user.sendQuote(limitQuoteRequestBuilder().lf(decimal(4n)).build())).to.not.be.reverted
+
+		await context.symbolControlFacet.connect(context.signers.admin).setSymbolMinAcceptableNotionalLFRate(1, decimal(3n, 16))
+		await expect(user.sendQuote(limitQuoteRequestBuilder().lf(decimal(3n)).build())).to.not.be.reverted
+
+		const dustPrice = decimal(1n) + 1n
+		const dustQuantity = decimal(100n) + 2n
+		await context.symbolControlFacet.connect(context.signers.admin).setSymbolMinAcceptableNotionalLFRate(0, decimal(5n, 17))
+		await context.symbolControlFacet.connect(context.signers.admin).clearSymbolMinAcceptableNotionalLFRateOverride(1)
+		await expect(
+			user.sendQuote(
+				limitQuoteRequestBuilder()
+					.price(dustPrice)
+					.quantity(dustQuantity)
+					.lf(decimal(50n) + 51n)
+					.upnlSig(getDummySingleUpnlAndPriceSig(dustPrice))
+					.build(),
+			),
+		).to.be.revertedWith("PartyAFacet: Notional LF is not enough")
+		await expect(
+			user.sendQuote(
+				limitQuoteRequestBuilder()
+					.price(dustPrice)
+					.quantity(dustQuantity)
+					.lf(decimal(50n) + 52n)
+					.upnlSig(getDummySingleUpnlAndPriceSig(dustPrice))
+					.build(),
+			),
+		).to.not.be.reverted
+	})
+
 	it("Should fail on quote value lower than minAcceptableQuoteValue", async function () {
 		await expect(
 			user.sendQuote(limitQuoteRequestBuilder().quantity(decimal(50n)).cva(decimal(1n)).partyAmm(decimal(1n)).lf(decimal(1n)).build()),

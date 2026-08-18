@@ -4551,6 +4551,37 @@
         "anonymous": false,
         "inputs": [
             {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "oldMinAcceptableNotionalLFRate",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "newMinAcceptableNotionalLFRate",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "bool",
+                "name": "hasOverride",
+                "type": "bool"
+            }
+        ],
+        "name": "SetSymbolMinAcceptableNotionalLFRate",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
                 "indexed": false,
                 "internalType": "uint256",
                 "name": "symbolId",
@@ -4980,6 +5011,19 @@
     {
         "inputs": [
             {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            }
+        ],
+        "name": "clearSymbolMinAcceptableNotionalLFRateOverride",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
                 "internalType": "address",
                 "name": "partyB",
                 "type": "address"
@@ -5091,6 +5135,24 @@
             }
         ],
         "name": "setSymbolMaxLeverage",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "minAcceptableNotionalLFRate",
+                "type": "uint256"
+            }
+        ],
+        "name": "setSymbolMinAcceptableNotionalLFRate",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -6722,6 +6784,30 @@
                 "internalType": "struct Symbol",
                 "name": "",
                 "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            }
+        ],
+        "name": "getSymbolMinAcceptableNotionalLFRate",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "rate",
+                "type": "uint256"
+            },
+            {
+                "internalType": "bool",
+                "name": "hasOverride",
+                "type": "bool"
             }
         ],
         "stateMutability": "view",
