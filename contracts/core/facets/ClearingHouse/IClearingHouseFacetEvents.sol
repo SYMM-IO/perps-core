@@ -4,7 +4,9 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-interface IClearingHouseFacetEvents {
+import { IPartiesEvents } from "../../interfaces/IPartiesEvents.sol";
+
+interface IClearingHouseFacetEvents is IPartiesEvents {
 	// Cross PartyB liquidation init event
 	event LiquidateCrossPartyB(address indexed initiator, address indexed partyB, bytes liquidationId, int256 upnl, uint256 timestamp);
 
@@ -14,6 +16,23 @@ interface IClearingHouseFacetEvents {
 	// Unified clearing house events (work for both cross PartyB and PartyA takeover)
 	event DeallocateForClearingHouse(address indexed subject, address[] parties, address[] allocationKeys, uint256[] amounts);
 	event DistributeForClearingHouse(address indexed subject, address[] receivers, address[] allocationKeys, uint256[] amounts);
+	/// @notice Exact net of all typed balance movements applied for one account/allocation group.
+	/// @dev Positive means the account receives; negative means it pays. Component events for this group sum to `amount`.
+	event ClearingHouseAccountSettlement(address indexed subject, address indexed account, address indexed allocationKey, int256 amount);
+	/// @notice One explicit market or platform-fee contribution supplied by the Clearing House.
+	/// @dev Positive values mean `account` receives; negative values mean it pays. Every value is final and already
+	///      adjusted. Corrections use the original economic field with the opposite sign. Account/allocation totals
+	///      use their matching funding, realized-PnL, or platform-fee balance-change reason; symbolId zero denotes
+	///      a platform fee without market attribution.
+	event ClearingHouseSettlementComponent(
+		address indexed subject,
+		address indexed account,
+		uint256 indexed symbolId,
+		address allocationKey,
+		int256 realizedPnl,
+		int256 funding,
+		int256 platformFee
+	);
 	event LiquidatePendingPositionsForClearingHouse(address indexed subject, address[] counterparties, uint256[] liquidatedAmounts);
 	event LiquidatePositionsForClearingHouse(
 		address indexed subject,

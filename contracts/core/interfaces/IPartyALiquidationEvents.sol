@@ -49,6 +49,37 @@ interface IPartyALiquidationEvents {
 	event LiquidationDisputed(address partyA, bytes liquidationId);
 	event ResolveLiquidationDispute(address partyA, address[] partyBs, int256[] amounts, bool disputed, bytes liquidationId);
 	event FullyLiquidatedPartyA(address partyA, bytes liquidationId);
+	/// @notice Raw funding and price PnL calculated while one quote is liquidated.
+	/// @dev Both values are signed from PartyB's perspective: positive means PartyB receives, negative means PartyB pays.
+	///      Observers combine these records with `LiquidationFundingSettled` for the same PartyA, PartyB, and liquidationId.
+	event QuoteLiquidationFundingCalculated(
+		address indexed partyA,
+		address indexed partyB,
+		uint256 indexed quoteId,
+		uint256 symbolId,
+		int256 rawFunding,
+		int256 rawPnl,
+		bytes liquidationId
+	);
+	/// @notice Raw and final aggregate funding and price PnL for one PartyA/PartyB liquidation settlement.
+	/// @dev All four amounts are signed from PartyB's perspective. `settledFunding` and `settledPnl` are the exact typed
+	///      components applied to PartyB's balance, and their sum equals PartyB's final net settlement balance delta.
+	///      `scaleNumerator / scaleDenominator` is the exact factor used to derive `settledFunding` from `rawFunding`;
+	///      `settledPnl` is the residual price-PnL component and is not independently scaled. The denominator is never zero.
+	event LiquidationFundingSettled(
+		address indexed partyA,
+		address indexed partyB,
+		address indexed allocationKey,
+		int256 rawFunding,
+		int256 settledFunding,
+		int256 rawPnl,
+		int256 settledPnl,
+		uint256 scaleNumerator,
+		uint256 scaleDenominator,
+		bytes liquidationId
+	);
+	/// @notice Marks quote-level normal-liquidation funding as superseded by Clearing House settlement components.
+	event LiquidationFundingSettlementAbandoned(address indexed partyA, address indexed partyB, int256 rawFunding, bytes liquidationId);
 	event SetSymbolsPrices(address liquidator, address partyA, uint256[] symbolIds, uint256[] prices, bytes liquidationId);
 	event SetPartyALiquidationSnapshot(
 		address liquidator,

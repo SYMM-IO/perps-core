@@ -113,7 +113,7 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 
 		// If this partyB is currently in cross liquidation, record it so _tryDeleteVirtualAccount
 		// can defer even when a later hook fires with a different partyB. This prevents fund stranding
-		// when a VA has positions with multiple partyBs and the cross-liq distributeForClearingHouse
+		// when a VA has positions with multiple partyBs and the cross-liq applyClearingHouseSettlement
 		// has not yet credited the VA's share.
 		if (partyB != address(0) && ISymmio(core).getPartyBCrossLiquidationStatus(partyB)) {
 			ahLayout.vaPendingCrossLiqPartyBs[partyA].add(partyB);

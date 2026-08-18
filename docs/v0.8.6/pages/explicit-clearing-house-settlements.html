@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Clearing House settlement now declares final realized PnL, funding, and platform fees per account and market, with typed balance deltas that reconcile to each signed component."
+		/>
+		<title>Explicit Clearing House Settlements - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.6">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#summary">Summary</a>
+				<a class="toc-link level-2" href="#settlement-input">Settlement Input</a>
+				<a class="toc-link level-2" href="#events-and-reconciliation">Events &amp; Reconciliation</a>
+				<a class="toc-link level-2" href="#validation-and-execution">Validation &amp; Execution</a>
+				<a class="toc-link level-2" href="#fees-and-corrections">Fees &amp; Corrections</a>
+				<a class="toc-link level-2" href="#observer-contract">Observer Contract</a>
+			</div>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Explicit Clearing House Settlements</h1>
+							<p class="hero-copy">
+								Clearing House liquidation settlement now declares what each balance movement represents and which market it belongs
+								to, instead of exposing only an unclassified transfer.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="summary">Summary</h2>
+					<p>
+						The old Clearing House debit and credit entrypoints moved collateral but did not state whether a movement was realized PnL,
+						funding, or a fee. They also carried no market identifier. An indexer could reproduce the net balance change, but could not
+						truthfully attribute it to an economic class or symbol.
+					</p>
+					<p>
+						v0.8.6 replaces that unclassified path with <code>applyClearingHouseSettlement</code>. The Clearing House supplies final
+						signed components, and the contract emits both the component detail and the exact typed balance changes used to apply it. The
+						same interface serves PartyA takeovers and cross-margin PartyB liquidations.
+					</p>
+					<aside class="callout callout-invariant">
+						<strong>Sign convention.</strong> Every component is from <code>account</code>'s perspective: positive means the account
+						receives value; negative means the account pays value.
+					</aside>
+
+					<h2 id="settlement-input">Settlement Input</h2>
+					<pre><code class="language-solidity">struct ClearingHouseSettlement {
+    address account;
+    address allocationKey;
+    uint256 symbolId;
+    int256 realizedPnl;
+    int256 funding;
+    int256 platformFee;
+}</code></pre>
+					<ul>
+						<li><code>realizedPnl</code> is final close or liquidation PnL for the market.</li>
+						<li><code>funding</code> is final funding received or paid for the market.</li>
+						<li><code>platformFee</code> is a normal platform-fee movement.</li>
+						<li>
+							<code>symbolId</code> must identify an existing market whenever realized PnL or funding is non-zero. A platform fee that
+							is not market-attributed may use <code>symbolId == 0</code>.
+						</li>
+						<li>
+							Values are already final after any Clearing House deficit, haircut, dispute decision, or settlement cap. The core does not
+							infer or reclassify those policies.
+						</li>
+					</ul>
+					<p>
+						There is deliberately no generic adjustment field. A correction is submitted in the economic field being corrected with the
+						opposite sign. This keeps reversals attributable to realized PnL, funding, or platform fees.
+					</p>
+
+					<h2 id="events-and-reconciliation">Events &amp; Reconciliation</h2>
+					<pre><code class="language-solidity">event ClearingHouseSettlementComponent(
+    address indexed subject,
+    address indexed account,
+    uint256 indexed symbolId,
+    address allocationKey,
+    int256 realizedPnl,
+    int256 funding,
+    int256 platformFee
+);
+
+event ClearingHouseAccountSettlement(
+    address indexed subject,
+    address indexed account,
+    address indexed allocationKey,
+    int256 amount
+);</code></pre>
+					<p>
+						One component event is emitted for every submitted row. Rows sharing an <code>(account, allocationKey)</code> are accumulated
+						by economic class, then applied using the matching balance-change reason: <code>REALIZED_PNL_IN/OUT</code>,
+						<code>FUNDING_FEE_IN/OUT</code>, or <code>PLATFORM_FEE_IN/OUT</code>.
+					</p>
+					<pre><code>account amount = sum(realizedPnl + funding + platformFee)
+market funding = sum(component.funding grouped by symbolId)
+market PnL     = sum(component.realizedPnl grouped by symbolId)</code></pre>
+					<p>
+						The component sum for an account/allocation group equals <code>ClearingHouseAccountSettlement.amount</code>. The typed balance
+						or reimbursement events show the physical ledger movements. They may net several market rows of the same economic class, while
+						the component events preserve the per-market split.
+					</p>
+
+					<h2 id="validation-and-execution">Validation &amp; Execution</h2>
+					<p>
+						The array must be strictly ordered by <code>account</code>, then <code>allocationKey</code>, then <code>symbolId</code>.
+						Duplicate market rows for the same account/allocation group, zero accounts, empty components, and invalid symbols revert. This
+						canonical order lets the contract validate, emit, and settle in one linear pass.
+					</p>
+					<p>
+						Within each group, positive class totals are credited before negative class totals are debited. The liquidation pool is
+						checked after the batch, and any insufficient account or pool balance reverts the entire transaction, including its logs.
+					</p>
+					<aside class="callout callout-note">
+						<strong>Ledger routing.</strong> PartyB movements use the supplied allocation key. PartyA normally uses
+						<code>address(0)</code>; an active PartyA takeover can also debit its designated reimbursement bucket. Credits to a
+						liquidating PartyA enter reimbursement so they remain inside the liquidation lifecycle.
+					</aside>
+
+					<h2 id="fees-and-corrections">Fees &amp; Corrections</h2>
+					<p>
+						Platform fees belong in <code>platformFee</code>. Solver close fees are different: they remain quote-level, user-approved
+						inputs to <code>liquidatePositionsForClearingHouse</code> and use the existing close-solver-fee charging path and
+						<code>CLOSE_SOLVER_FEE_OUT</code> balance reason. They must not be folded into a settlement component.
+					</p>
+					<p>
+						The legacy <code>deallocateForClearingHouse</code> and <code>distributeForClearingHouse</code> selectors remain present only
+						so an upgrade can disable the old ABI surface; calls now revert with <code>ClearingHouseFacet: Use explicit settlement</code>.
+						The old unclassified reimbursement enum ordinals are retained as <code>CLEARING_HOUSE_IN_DEPRECATED</code> and
+						<code>CLEARING_HOUSE_OUT_DEPRECATED</code> for historical log decoding.
+					</p>
+
+					<h2 id="observer-contract">Observer Contract</h2>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Question</th>
+									<th>Canonical source</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>What did this account receive or pay?</td>
+									<td><code>ClearingHouseAccountSettlement.amount</code></td>
+								</tr>
+								<tr>
+									<td>How much was funding for one market?</td>
+									<td>Sum signed component <code>funding</code> by <code>symbolId</code></td>
+								</tr>
+								<tr>
+									<td>How much was realized PnL for one market?</td>
+									<td>Sum signed component <code>realizedPnl</code> by <code>symbolId</code></td>
+								</tr>
+								<tr>
+									<td>Which ledger actually changed?</td>
+									<td>Typed PartyA, PartyB, or reimbursement balance-change events</td>
+								</tr>
+								<tr>
+									<td>What is the total for the liquidation?</td>
+									<td>Sum account settlement amounts for the same <code>subject</code></td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						An event-only indexer can therefore recover the final funding, PnL, and platform-fee attribution per market and in total.
+						Transaction calldata or traces are not required for those settled amounts when the complete event stream is available.
+					</p>
+				</article>
+			</main>
+		</div>
+	</body>
+</html>

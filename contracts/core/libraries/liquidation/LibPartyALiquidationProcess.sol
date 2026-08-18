@@ -26,6 +26,7 @@ import {
 import { ClearingHouseStorage } from "../../storages/ClearingHouseStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
 import { LockedValues, Quote, QuoteStatus, QuoteStorage } from "../../storages/QuoteStorage.sol";
+import { IPartyALiquidationEvents } from "../../interfaces/IPartyALiquidationEvents.sol";
 
 library LibPartyALiquidationProcess {
 	using LockedValuesOps for LockedValues;
@@ -132,8 +133,19 @@ library LibPartyALiquidationProcess {
 			(bool hasMadeProfit, uint256 amount) = LibQuote.getValueOfQuoteForPartyA(liquidationPrice, LibQuote.quoteOpenAmount(quote), quote);
 
 			LiquidationSettlementState storage settlementState = accountLayout.settlementStates[partyA][quote.partyB];
-			int256 pnlWithFunding = (hasMadeProfit ? int256(amount) : -int256(amount)) - accumulatedFundingFee;
+			int256 partyAPnl = hasMadeProfit ? int256(amount) : -int256(amount);
+			int256 partyBPnl = -partyAPnl;
+			int256 pnlWithFunding = partyAPnl - accumulatedFundingFee;
 			accountLayout.partyALiquidationSettlementFundingFees[partyA][quote.partyB] += accumulatedFundingFee;
+			emit IPartyALiquidationEvents.QuoteLiquidationFundingCalculated(
+				partyA,
+				quote.partyB,
+				quote.id,
+				quote.symbolId,
+				accumulatedFundingFee,
+				partyBPnl,
+				liquidationId
+			);
 
 			// Open or update the pending settlement bucket for this PartyB.
 			if (!settlementState.pending) {
@@ -322,8 +334,24 @@ library LibPartyALiquidationProcess {
 					settleAmounts[i] = int256(partyBAllocatedBalance);
 				}
 			}
-			fundingFee = _scaleFundingFeeForSettlement(fundingFee, settlementState.expectedAmount, settleAmounts[i]);
-			_applyPartyBSettlementBalanceChanges(partyB, allocKey, settleAmounts[i], fundingFee);
+			int256 rawFundingFee = fundingFee;
+			(uint256 scaleNumerator, uint256 scaleDenominator) = _getFundingSettlementScale(settlementState.expectedAmount, settleAmounts[i]);
+			fundingFee = _scaleFundingFee(fundingFee, scaleNumerator, scaleDenominator);
+			int256 rawPnl = -(settlementState.expectedAmount + rawFundingFee);
+			int256 settledPnl = -(settleAmounts[i] + fundingFee);
+			_applyPartyBSettlementBalanceChanges(partyB, allocKey, fundingFee, settledPnl);
+			emit IPartyALiquidationEvents.LiquidationFundingSettled(
+				partyA,
+				partyB,
+				allocKey,
+				rawFundingFee,
+				fundingFee,
+				rawPnl,
+				settledPnl,
+				scaleNumerator,
+				scaleDenominator,
+				liquidationId
+			);
 
 			LibAccount.syncPartyBLiquidationSettlementReserve(accountLayout, partyA, partyB, 0);
 			delete accountLayout.settlementStates[partyA][partyB];
@@ -337,45 +365,41 @@ library LibPartyALiquidationProcess {
 		}
 	}
 
-	/// @dev Scales funding when a haircut, dispute override, or isolated payout cap reduces the final settlement.
-	///      If an override changes direction or settles nothing, its funding component cannot be inferred and is classified as zero.
-	function _scaleFundingFeeForSettlement(int256 fundingFee, int256 expectedAmount, int256 settledAmount) private pure returns (int256) {
-		if (fundingFee == 0 || expectedAmount == settledAmount) return fundingFee;
-		if (expectedAmount == 0 || settledAmount == 0 || (expectedAmount > 0) != (settledAmount > 0)) return 0;
+	/// @dev Returns the exact factor used when a haircut, dispute override, or isolated payout cap
+	///      reduces the final settlement. Direction-changing or zero overrides classify funding as zero.
+	function _getFundingSettlementScale(int256 expectedAmount, int256 settledAmount) private pure returns (uint256 numerator, uint256 denominator) {
+		if (expectedAmount == settledAmount) return (1, 1);
+		if (expectedAmount == 0 || settledAmount == 0 || (expectedAmount > 0) != (settledAmount > 0)) return (0, 1);
 
 		uint256 expectedAbs = SignedMath.abs(expectedAmount);
 		uint256 settledAbs = SignedMath.abs(settledAmount);
-		if (settledAbs >= expectedAbs) return fundingFee;
+		if (settledAbs >= expectedAbs) return (1, 1);
+		return (settledAbs, expectedAbs);
+	}
 
-		uint256 scaledFundingAbs = Math.mulDiv(SignedMath.abs(fundingFee), settledAbs, expectedAbs);
+	function _scaleFundingFee(int256 fundingFee, uint256 numerator, uint256 denominator) private pure returns (int256) {
+		if (fundingFee == 0 || numerator == 0) return 0;
+		uint256 scaledFundingAbs = Math.mulDiv(SignedMath.abs(fundingFee), numerator, denominator);
 		return fundingFee > 0 ? int256(scaledFundingAbs) : -int256(scaledFundingAbs);
 	}
 
 	/// @dev Applies the final net PartyB settlement to its allocation bucket, split into funding and
-	///      realized-PnL classifications so each carries its own balance-change type.
-	///      `partyAReceivableFromPartyB` is positive when PartyB pays PartyA, while `fundingFee`
-	///      is positive when PartyA pays PartyB. Their residual is the realized price PnL.
+	///      realized-PnL classifications so each carries its own balance-change type. Both amounts
+	///      are signed from PartyB's perspective: positive means PartyB receives, negative means PartyB pays.
 	/// @dev Credits are applied before debits so a mixed-direction split never drives the bucket
-	///      temporarily negative; the net movement equals -partyAReceivableFromPartyB either way.
-	function _applyPartyBSettlementBalanceChanges(
-		address partyB,
-		address allocationKey,
-		int256 partyAReceivableFromPartyB,
-		int256 fundingFee
-	) private {
-		int256 realizedPnl = partyAReceivableFromPartyB + fundingFee;
-
+	///      temporarily negative.
+	function _applyPartyBSettlementBalanceChanges(address partyB, address allocationKey, int256 fundingFee, int256 settledPnl) private {
 		if (fundingFee > 0) {
 			LibAccount.increasePartyBAllocatedBalance(partyB, allocationKey, uint256(fundingFee), SharedEvents.BalanceChangeType.FUNDING_FEE_IN);
 		}
-		if (realizedPnl < 0) {
-			LibAccount.increasePartyBAllocatedBalance(partyB, allocationKey, uint256(-realizedPnl), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+		if (settledPnl > 0) {
+			LibAccount.increasePartyBAllocatedBalance(partyB, allocationKey, uint256(settledPnl), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 		}
 		if (fundingFee < 0) {
 			LibAccount.decreasePartyBAllocatedBalance(partyB, allocationKey, uint256(-fundingFee), SharedEvents.BalanceChangeType.FUNDING_FEE_OUT);
 		}
-		if (realizedPnl > 0) {
-			LibAccount.decreasePartyBAllocatedBalance(partyB, allocationKey, uint256(realizedPnl), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
+		if (settledPnl < 0) {
+			LibAccount.decreasePartyBAllocatedBalance(partyB, allocationKey, uint256(-settledPnl), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
 		}
 	}
 

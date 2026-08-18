@@ -112,7 +112,7 @@ contract ControlFacet is Accessibility, Ownable, IControlEvents {
 	/// @param index The index of the Party B in the partyBList array (used for gas-efficient removal).
 	/// @dev WARNING: Use with extreme caution. This should almost never be called in production.
 	///      Setting partyBStatus to false has serious side effects:
-	///      - distributeFromLiquidationEscrow and distributeForClearingHouse will misroute funds
+	///      - distributeFromLiquidationEscrow and applyClearingHouseSettlement will misroute funds
 	///        to allocatedBalances instead of partyBAllocatedBalances
 	///      - deallocateForPartyB becomes inaccessible (onlyPartyB modifier fails), locking funds
 	///      Only use this if a PartyB address was registered by mistake and needs immediate removal

@@ -85,6 +85,8 @@
 			["symbol-adjustment", "Symbols", "Symbol Corporate-Action Adjustment"],
 			["strict-deallocation", "Accounts", "Strict Deallocation"],
 			["instant-open-gas-optimization", "Performance", "InstantOpen Gas Optimization"],
+			["explicit-clearing-house-settlements", "Clearing House", "Explicit Clearing House Settlements"],
+			["liquidation-funding-observability", "Liquidation", "Liquidation Funding Observability"],
 			["partya-liquidation-fee-recipient", "Liquidation", "PartyA Liquidation Fee Recipient Cleanup"],
 			["partyb-allocation-suspension-gates", "PartyB", "PartyB Allocation Suspension Gates"],
 			["cross-partyb-liquidation-reserve", "Liquidation", "Cross-PartyB Liquidation Reserve Enforcement"],

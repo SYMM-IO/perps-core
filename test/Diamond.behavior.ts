@@ -61,6 +61,16 @@ export function shouldBehaveLikeDiamond(): void {
 		expect(snapshotStateField).to.be.greaterThan(lastExistingLayoutField)
 	})
 
+	it("keeps liquidation funding attribution event-only", async function () {
+		const context: RunContext = this.context
+		const source = readFileSync("contracts/core/storages/AccountStorage.sol", "utf8")
+		const processorSelector = ethers.id("processPartyALiquidationFunding(address,address,bytes,uint256)").slice(0, 10)
+
+		expect(source).not.to.include("LiquidationFundingBySymbol")
+		expect(source).not.to.include("partyALiquidationSettlementFundingBySymbol")
+		expect(await context.diamondLoupeFacet.facetAddress(processorSelector)).to.equal(ethers.ZeroAddress)
+	})
+
 	it("keeps PartyA liquidation facets comfortably below the bytecode limit", async function () {
 		const partyALiquidationSize = deployedBytecodeSize(
 			"artifacts/contracts/core/facets/PartyALiquidation/PartyALiquidationFacet.sol/PartyALiquidationFacet.json",
