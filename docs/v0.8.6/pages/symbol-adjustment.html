@@ -458,19 +458,20 @@ prospectivePrice  = rawVenuePrice * prospectiveFactor / 1e18</code></pre>
 					<p>
 						The freeze alone does not close this. <code>requireNotFrozen</code> blocks execution <em>while</em> the window is open; the
 						exposure is a signature that straddles the window entirely and lands after the symbol is unfrozen again, when nothing looks
-						unusual. Core therefore records <code>restatementStartedAt</code> when the window opens and refuses to finalize until at least
-						one full UPNL validity period has elapsed since that instant:
+						unusual. Core therefore records when the symbol actually became continuously frozen and refuses to finalize until every
+						old-basis signature is strictly expired:
 					</p>
 					<pre><code class="language-solidity">require(
-    block.timestamp &gt;= adjustment.restatementStartedAt + LibMuon.maxUpnlValidTime(),
+    block.timestamp &gt; adjustment.restatementStartedAt + LibMuon.maxUpnlValidTime(),
     "SymbolAdjustmentFacet: Restatement window too short"
 );</code></pre>
 					<p>
 						Because the symbol stayed frozen for that whole period, every signature minted against the old basis is guaranteed expired
-						before the basis moves. <code>maxUpnlValidTime()</code> takes the maximum of the global <code>upnlValidTime</code> and every
-						per-function override, so a longer override configured through <code>setMuonFunctionUpnlValidTime</code> cannot undercut the
-						guarantee. On the direct route the symbol was already frozen from <code>effectiveTimestamp</code>, so that earlier instant is
-						credited rather than restarting the clock.
+						under the validity configuration in force at finalization. <code>maxUpnlValidTime()</code> takes the maximum of the global
+						<code>upnlValidTime</code> and every per-function override, so a longer override configured through
+						<code>setMuonFunctionUpnlValidTime</code> cannot undercut the guarantee. On the direct route, the freeze starts at the later
+						of <code>effectiveTimestamp</code> and the on-chain scheduling time. This preserves the earlier freeze for a future schedule
+						without backdating a past-effective emergency freeze.
 					</p>
 					<aside class="callout callout-important">
 						<strong>This is why Muon payloads carry no basis version.</strong> The same guarantee could have been obtained by binding the
@@ -537,6 +538,7 @@ function getQuotesInVenueUnits(uint256[] calldata quoteIds)
 					<pre><code class="language-solidity">struct Layout {
     mapping(uint256 symbolId => SymbolAdjustment) adjustments;
     mapping(uint256 quoteId => uint256 epoch) quoteRestatedEpoch;
+    mapping(uint256 symbolId => uint256 timestamp) adjustmentScheduledAt;
 }</code></pre>
 					<aside class="callout callout-important">
 						<strong>Read raw storage and effective state differently.</strong> <code>getSymbolAdjustment</code> returns the stored struct

@@ -1009,6 +1009,53 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			await context.controlFacet.connect(context.signers.admin).setMuonConfig(upnlValidTime, priceValidTime)
 		})
 
+		it("starts the expiry window when a past-effective adjustment is actually scheduled", async function () {
+			const [upnlValidTime, priceValidTime] = await context.viewFacet.getMuonConfig()
+			await context.controlFacet.connect(context.signers.admin).setMuonConfig(1000n, priceValidTime)
+
+			const now = await getBlockTimestamp()
+			const scheduleTx = await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now - 10_000n)
+			const scheduleReceipt = await scheduleTx.wait()
+			const scheduleBlock = await ethers.provider.getBlock(scheduleReceipt!.blockNumber)
+
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			const adjustment = await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)
+			expect(adjustment.restatementStartedAt).to.equal(BigInt(scheduleBlock!.timestamp))
+			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(SYMBOL_ID)).to.be.revertedWith(
+				"SymbolAdjustmentFacet: Restatement window too short",
+			)
+
+			await time.setNextBlockTimestamp(Number(adjustment.restatementStartedAt + 1001n))
+			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(SYMBOL_ID)).to.emit(
+				context.symbolAdjustmentFacet,
+				"RestatementFinalized",
+			)
+			await context.controlFacet.connect(context.signers.admin).setMuonConfig(upnlValidTime, priceValidTime)
+		})
+
+		it("keeps the symbol frozen at the exact signature-expiry boundary", async function () {
+			const [upnlValidTime, priceValidTime] = await context.viewFacet.getMuonConfig()
+			await context.controlFacet.connect(context.signers.admin).setMuonConfig(1000n, priceValidTime)
+
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			const adjustment = await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)
+
+			await time.setNextBlockTimestamp(Number(adjustment.restatementStartedAt + 1000n))
+			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(SYMBOL_ID)).to.be.revertedWith(
+				"SymbolAdjustmentFacet: Restatement window too short",
+			)
+
+			await time.setNextBlockTimestamp(Number(adjustment.restatementStartedAt + 1001n))
+			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(SYMBOL_ID)).to.emit(
+				context.symbolAdjustmentFacet,
+				"RestatementFinalized",
+			)
+			await context.controlFacet.connect(context.signers.admin).setMuonConfig(upnlValidTime, priceValidTime)
+		})
+
 		it("takes the longest per-function UPNL validity override into account for the restatement window", async function () {
 			const [upnlValidTime, priceValidTime] = await context.viewFacet.getMuonConfig()
 			await context.controlFacet.connect(context.signers.admin).setMuonConfig(10n, priceValidTime)
