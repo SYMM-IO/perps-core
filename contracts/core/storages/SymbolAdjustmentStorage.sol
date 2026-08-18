@@ -57,10 +57,9 @@ struct SymbolAdjustment {
 	///      in finalizeRestatement (see `restatementStartedAt`).
 	uint256 basisVersion;
 	/// @notice Timestamp from which the symbol has been continuously frozen for the current restatement window.
-	/// @dev Set when the window opens. On the direct route the symbol was already frozen at `effectiveTimestamp`, so that earlier
-	///      point is used. finalizeRestatement refuses to advance `basisVersion` until at least one full Muon UPNL validity period
-	///      has elapsed since this instant, which guarantees every signature minted against the old basis has expired before quote
-	///      storage changes meaning. This is what replaces binding `basisVersion` into the signature payload.
+	/// @dev Set when the window opens. On the direct route, it is the later of the venue effective time and the on-chain scheduling
+	///      time. finalizeRestatement refuses to advance `basisVersion` until signatures minted under the current validity
+	///      configuration have expired.
 	uint256 restatementStartedAt;
 }
 
@@ -77,6 +76,9 @@ library SymbolAdjustmentStorage {
 		/// @notice Stores the last restatement epoch in which each quote was physically rewritten; 0 means never restated.
 		/// @dev Compared with the quote's symbol epoch before mutation to reject duplicate rewrites within the same restatement window.
 		mapping(uint256 => uint256) quoteRestatedEpoch;
+		/// @notice Block timestamp at which the latest adjustment was scheduled.
+		/// @dev For a past-effective emergency adjustment, this is when the symbol actually became frozen on-chain.
+		mapping(uint256 => uint256) adjustmentScheduledAt;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

@@ -35,7 +35,8 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		uint256 factor,
 		uint256 effectiveTimestamp
 	) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
-		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
+		SymbolAdjustmentStorage.Layout storage adjustmentLayout = SymbolAdjustmentStorage.layout();
+		SymbolAdjustment storage adjustment = adjustmentLayout.adjustments[symbolId];
 		require(symbolId >= 1 && symbolId <= SymbolStorage.layout().lastId, "SymbolAdjustmentFacet: Invalid symbolId");
 		require(factor >= MIN_FACTOR && factor <= MAX_FACTOR && factor != 1e18, "SymbolAdjustmentFacet: Invalid factor");
 		require(!adjustment.restating, "SymbolAdjustmentFacet: Restatement in progress");
@@ -44,6 +45,7 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		adjustment.effectiveTimestamp = effectiveTimestamp;
 		adjustment.state = AdjustmentState.SCHEDULED;
 		adjustment.scheduledCount += 1;
+		adjustmentLayout.adjustmentScheduledAt[symbolId] = block.timestamp;
 		emit AdjustmentScheduled(symbolId, adjustment.scheduledCount - 1, factor, effectiveTimestamp);
 	}
 
@@ -74,7 +76,8 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 	/// @notice Opens a frozen restatement window either directly from an effective SCHEDULED adjustment or from an already-active factor.
 	/// @dev Direct restatement avoids activating the scheduled factor in `cumulativeFactor`; Muon and normal trading never use that temporary basis.
 	function startRestatement(uint256 symbolId) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
-		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
+		SymbolAdjustmentStorage.Layout storage adjustmentLayout = SymbolAdjustmentStorage.layout();
+		SymbolAdjustment storage adjustment = adjustmentLayout.adjustments[symbolId];
 		require(!adjustment.restating, "SymbolAdjustmentFacet: Already restating");
 		uint256 factor;
 		if (adjustment.state == AdjustmentState.SCHEDULED) {
@@ -85,10 +88,14 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		}
 		require(factor != 0, "SymbolAdjustmentFacet: Cumulative factor underflow");
 		require(factor != 1e18, "SymbolAdjustmentFacet: No adjustment factor");
-		// Record when the symbol became continuously frozen, so finalizeRestatement can require that every
-		// signature minted against the old basis has expired. On the direct route the symbol has already been
-		// frozen since effectiveTimestamp, so credit that earlier instant rather than restarting the clock.
-		adjustment.restatementStartedAt = LibSymbolAdjustment.isFrozen(symbolId) ? adjustment.effectiveTimestamp : block.timestamp;
+		// Record when the symbol became continuously frozen. A future schedule freezes at its effective time,
+		// while a past-effective emergency schedule cannot freeze the symbol before it exists on-chain.
+		if (LibSymbolAdjustment.isFrozen(symbolId)) {
+			uint256 scheduledAt = adjustmentLayout.adjustmentScheduledAt[symbolId];
+			adjustment.restatementStartedAt = adjustment.effectiveTimestamp > scheduledAt ? adjustment.effectiveTimestamp : scheduledAt;
+		} else {
+			adjustment.restatementStartedAt = block.timestamp;
+		}
 		adjustment.restating = true;
 		adjustment.restatementMutated = false;
 		adjustment.restatementFactor = factor;
@@ -199,11 +206,9 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 	function finalizeRestatement(uint256 symbolId) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
 		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
 		require(adjustment.restating, "SymbolAdjustmentFacet: No restatement in progress");
-		// Finalization is the instant stored quotes change meaning. Muon signatures do not carry the basis version,
-		// so the symbol must have stayed frozen for at least one full UPNL validity period: any signature priced in
-		// the old basis is then guaranteed expired and cannot be executed against rewritten quotes.
+		// Finalization is the instant stored quotes change meaning. Wait until every old-basis signature is expired.
 		require(
-			block.timestamp >= adjustment.restatementStartedAt + LibMuon.maxUpnlValidTime(),
+			block.timestamp > adjustment.restatementStartedAt + LibMuon.maxUpnlValidTime(),
 			"SymbolAdjustmentFacet: Restatement window too short"
 		);
 		if (adjustment.state == AdjustmentState.PRICE_ADJUSTED || adjustment.state == AdjustmentState.SCHEDULED) {

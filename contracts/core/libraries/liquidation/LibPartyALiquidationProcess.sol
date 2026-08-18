@@ -465,7 +465,7 @@ library LibPartyALiquidationProcess {
 				quote.id,
 				snapshot.cumulativeLongFee,
 				snapshot.cumulativeShortFee,
-				liquidationDetail.timestamp
+				liquidationDetail.liquidationTimestamp
 			)
 		);
 	}
