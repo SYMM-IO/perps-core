@@ -11552,6 +11552,153 @@
         "anonymous": false,
         "inputs": [
             {
+                "indexed": true,
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "allocationKey",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "int256",
+                "name": "rawFunding",
+                "type": "int256"
+            },
+            {
+                "indexed": false,
+                "internalType": "int256",
+                "name": "settledFunding",
+                "type": "int256"
+            },
+            {
+                "indexed": false,
+                "internalType": "int256",
+                "name": "rawPnl",
+                "type": "int256"
+            },
+            {
+                "indexed": false,
+                "internalType": "int256",
+                "name": "settledPnl",
+                "type": "int256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "scaleNumerator",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "scaleDenominator",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "bytes",
+                "name": "liquidationId",
+                "type": "bytes"
+            }
+        ],
+        "name": "LiquidationFundingSettled",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "int256",
+                "name": "rawFunding",
+                "type": "int256"
+            },
+            {
+                "indexed": false,
+                "internalType": "bytes",
+                "name": "liquidationId",
+                "type": "bytes"
+            }
+        ],
+        "name": "LiquidationFundingSettlementAbandoned",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "int256",
+                "name": "rawFunding",
+                "type": "int256"
+            },
+            {
+                "indexed": false,
+                "internalType": "int256",
+                "name": "rawPnl",
+                "type": "int256"
+            },
+            {
+                "indexed": false,
+                "internalType": "bytes",
+                "name": "liquidationId",
+                "type": "bytes"
+            }
+        ],
+        "name": "QuoteLiquidationFundingCalculated",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
                 "indexed": false,
                 "internalType": "address",
                 "name": "partyA",
@@ -14311,6 +14458,49 @@
             }
         ],
         "name": "ChargeFundingRate",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "allocationKey",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "int256",
+                "name": "funding",
+                "type": "int256"
+            }
+        ],
+        "name": "QuoteFundingSettled",
         "type": "event"
     },
     {
@@ -18691,6 +18881,86 @@
             {
                 "indexed": true,
                 "internalType": "address",
+                "name": "subject",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "allocationKey",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "int256",
+                "name": "amount",
+                "type": "int256"
+            }
+        ],
+        "name": "ClearingHouseAccountSettlement",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "subject",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "allocationKey",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "int256",
+                "name": "realizedPnl",
+                "type": "int256"
+            },
+            {
+                "indexed": false,
+                "internalType": "int256",
+                "name": "funding",
+                "type": "int256"
+            },
+            {
+                "indexed": false,
+                "internalType": "int256",
+                "name": "platformFee",
+                "type": "int256"
+            }
+        ],
+        "name": "ClearingHouseSettlementComponent",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
                 "name": "affiliate",
                 "type": "address"
             },
@@ -18914,6 +19184,37 @@
             {
                 "indexed": true,
                 "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "newBalance",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "enum SharedEvents.ReimbursementChangeType",
+                "name": "_type",
+                "type": "uint8"
+            }
+        ],
+        "name": "PartyAReimbursementChange",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
                 "name": "partyB",
                 "type": "address"
             }
@@ -19000,6 +19301,56 @@
         "inputs": [
             {
                 "internalType": "address",
+                "name": "subject",
+                "type": "address"
+            },
+            {
+                "components": [
+                    {
+                        "internalType": "address",
+                        "name": "account",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "allocationKey",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "symbolId",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "realizedPnl",
+                        "type": "int256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "funding",
+                        "type": "int256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "platformFee",
+                        "type": "int256"
+                    }
+                ],
+                "internalType": "struct ClearingHouseSettlement[]",
+                "name": "settlements",
+                "type": "tuple[]"
+            }
+        ],
+        "name": "applyClearingHouseSettlement",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
                 "name": "affiliate",
                 "type": "address"
             },
@@ -19023,56 +19374,56 @@
         "inputs": [
             {
                 "internalType": "address",
-                "name": "subject",
+                "name": "",
                 "type": "address"
             },
             {
                 "internalType": "address[]",
-                "name": "parties",
+                "name": "",
                 "type": "address[]"
             },
             {
                 "internalType": "address[]",
-                "name": "allocationKeys",
+                "name": "",
                 "type": "address[]"
             },
             {
                 "internalType": "uint256[]",
-                "name": "amounts",
+                "name": "",
                 "type": "uint256[]"
             }
         ],
         "name": "deallocateForClearingHouse",
         "outputs": [],
-        "stateMutability": "nonpayable",
+        "stateMutability": "view",
         "type": "function"
     },
     {
         "inputs": [
             {
                 "internalType": "address",
-                "name": "subject",
+                "name": "",
                 "type": "address"
             },
             {
                 "internalType": "address[]",
-                "name": "receivers",
+                "name": "",
                 "type": "address[]"
             },
             {
                 "internalType": "address[]",
-                "name": "allocationKeys",
+                "name": "",
                 "type": "address[]"
             },
             {
                 "internalType": "uint256[]",
-                "name": "amounts",
+                "name": "",
                 "type": "uint256[]"
             }
         ],
         "name": "distributeForClearingHouse",
         "outputs": [],
-        "stateMutability": "nonpayable",
+        "stateMutability": "view",
         "type": "function"
     },
     {
@@ -19165,6 +19516,11 @@
                 "internalType": "uint256[]",
                 "name": "prices",
                 "type": "uint256[]"
+            },
+            {
+                "internalType": "uint256[]",
+                "name": "closeSolverFees",
+                "type": "uint256[]"
             }
         ],
         "name": "liquidatePositionsForClearingHouse",
@@ -19253,37 +19609,6 @@
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "partyA",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "newBalance",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "enum SharedEvents.ReimbursementChangeType",
-                "name": "_type",
-                "type": "uint8"
-            }
-        ],
-        "name": "PartyAReimbursementChange",
-        "type": "event"
     },
     {
         "anonymous": false,

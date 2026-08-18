@@ -6,6 +6,23 @@ pragma solidity >=0.8.18;
 
 import { IClearingHouseFacetEvents } from "./IClearingHouseFacetEvents.sol";
 
+/// @notice One signed economic contribution supplied by the Clearing House.
+/// @dev Values are from `account`'s perspective: positive means the account receives and negative means it pays.
+///      Every value is final after any Clearing House deficit, haircut, dispute, or cap. Funding and realized PnL
+///      require a real symbolId; platform fees may use symbolId zero when they are not market-attributed.
+///      Each field is applied with its matching balance-change reason, so corrections use the original economic
+///      class with the opposite sign instead of an unclassified adjustment. Close solver fees are
+///      quote-level inputs to liquidatePositionsForClearingHouse and use the normal close-fee accounting path.
+///      Entries must be strictly ordered by account, allocationKey, and symbolId.
+struct ClearingHouseSettlement {
+	address account;
+	address allocationKey;
+	uint256 symbolId;
+	int256 realizedPnl;
+	int256 funding;
+	int256 platformFee;
+}
+
 interface IClearingHouseFacet is IClearingHouseFacetEvents {
 	// Initialization functions (different for each flow)
 	function liquidateCrossPartyB(address partyB, bytes memory liquidationId, int256 upnl, uint256 timestamp) external;
@@ -27,9 +44,20 @@ interface IClearingHouseFacet is IClearingHouseFacetEvents {
 		uint256[] memory amounts
 	) external;
 
+	/// @notice Applies explicit signed market settlement components during a Clearing House liquidation.
+	/// @dev Components sharing an account and allocation key are netted once per economic class. Corrections use
+	///      the original field with the opposite sign. Their typed
+	///      balance changes sum to the account settlement event. The array must use the canonical order above.
+	function applyClearingHouseSettlement(address subject, ClearingHouseSettlement[] memory settlements) external;
+
 	function liquidatePendingPositionsForClearingHouse(address subject, address[] memory counterparties) external;
 
-	function liquidatePositionsForClearingHouse(address subject, uint256[] memory quoteIds, uint256[] memory prices) external;
+	function liquidatePositionsForClearingHouse(
+		address subject,
+		uint256[] memory quoteIds,
+		uint256[] memory prices,
+		uint256[] memory closeSolverFees
+	) external;
 
 	function closeAffiliatePositions(address affiliate, uint256[] memory quoteIds, uint256[] memory prices) external;
 

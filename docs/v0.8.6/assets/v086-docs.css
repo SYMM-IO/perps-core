@@ -41,11 +41,11 @@
 :root,
 [data-theme="dark"] {
 	color-scheme: dark;
-	--bg: hsl(0 33% 3%);
-	--bg-raised: hsl(0 20% 5%);
-	--surface: hsl(0 14% 6.5%);
-	--surface-soft: hsl(0 10% 10%);
-	--surface-tint: hsl(0 12% 8%);
+	--bg: hsl(0 0% 2%);
+	--bg-raised: hsl(0 0% 5%);
+	--surface: hsl(0 0% 6.5%);
+	--surface-soft: hsl(0 0% 10%);
+	--surface-tint: hsl(0 0% 8%);
 	--ink: hsl(0 20% 95%);
 	--ink-soft: hsl(0 8% 78%);
 	--muted: hsl(0 3% 58%);
@@ -63,13 +63,13 @@
 	--green: hsl(158 64% 52%);
 	--violet: hsl(258 90% 76%);
 
-	--code-bg: hsl(0 8% 9%);
+	--code-bg: hsl(0 0% 9%);
 	--code-ink: hsl(0 12% 92%);
 	--code-line: hsl(0 3% 50% / 0.24);
-	--code-toolbar-bg: hsl(0 16% 6%);
+	--code-toolbar-bg: hsl(0 0% 6%);
 	--code-toolbar-ink: hsl(0 3% 58%);
-	--code-button-bg: hsl(0 10% 10%);
-	--code-button-hover: hsl(0 10% 14%);
+	--code-button-bg: hsl(0 0% 10%);
+	--code-button-hover: hsl(0 0% 14%);
 	--code-keyword: hsl(5 100% 74%);
 	--code-type: hsl(199 89% 70%);
 	--code-symbol: hsl(43 92% 66%);
@@ -77,15 +77,15 @@
 	--code-number: hsl(258 90% 78%);
 	--code-comment: hsl(0 3% 54%);
 
-	--diagram-bg: hsl(0 24% 4%);
-	--diagram-card: hsl(0 16% 5.5%);
+	--diagram-bg: hsl(0 0% 4%);
+	--diagram-card: hsl(0 0% 5.5%);
 	--diagram-card-border: hsl(0 3% 50% / 0.24);
 	--diagram-grid: hsl(0 3% 62% / 0.07);
 	--diagram-edge: hsl(0 3% 56%);
-	--diagram-label-bg: hsl(0 14% 7%);
+	--diagram-label-bg: hsl(0 0% 7%);
 	--diagram-node: hsl(5 40% 10%);
 	--diagram-node-border: hsl(5 100% 72% / 0.55);
-	--diagram-cluster: hsl(0 10% 7%);
+	--diagram-cluster: hsl(0 0% 7%);
 	--diagram-shadow: transparent;
 
 	--radius: 4px;
@@ -155,6 +155,7 @@
 html {
 	scroll-behavior: smooth;
 	overflow-x: clip;
+	-moz-osx-font-smoothing: grayscale;
 }
 
 body {
@@ -173,6 +174,9 @@ body {
 a {
 	color: var(--link);
 	text-decoration: none;
+	text-decoration-skip-ink: auto;
+	text-decoration-thickness: from-font;
+	text-underline-position: from-font;
 	text-underline-offset: 0.18em;
 }
 
@@ -195,6 +199,7 @@ button {
 a,
 button {
 	-webkit-tap-highlight-color: transparent;
+	touch-action: manipulation;
 }
 
 ::selection {
@@ -412,6 +417,10 @@ code {
 
 .doc-article :not(pre) > code {
 	overflow-wrap: anywhere;
+}
+
+.doc-article :where(p, li) code {
+	padding-inline: 0.14em;
 }
 
 .tag {

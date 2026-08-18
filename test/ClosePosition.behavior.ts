@@ -1,4 +1,5 @@
 import { expect } from "chai"
+import { Interface } from "ethers"
 
 import type { QuoteStructOutput } from "../src/types/interfaces/ISymmio.js"
 import { initializeFixture } from "./Initialize.fixture.js"
@@ -25,9 +26,13 @@ import {
 	pausePartyBOpenPositions,
 	unDecimal,
 } from "./utils/Common.js"
+import { getDummyPairUpnlAndPriceSig } from "./utils/SignatureUtils.js"
 
 const WAD = 10n ** 18n
 const WAD_36 = 10n ** 36n
+const quoteFundingSettledInterface = new Interface([
+	"event QuoteFundingSettled(uint256 indexed quoteId, uint256 indexed symbolId, address indexed partyB, address partyA, address allocationKey, int256 funding)",
+])
 
 export function shouldBehaveLikeClosePosition(): void {
 	let user: User, hedger: Hedger, hedger2: Hedger
@@ -145,9 +150,32 @@ export function shouldBehaveLikeClosePosition(): void {
 
 		expect(partyAAllocatedBefore).to.be.gte(fundingFee)
 
-		await expect(
-			hedger.fillCloseRequest(quoteId, limitFillCloseRequestBuilder().filledAmount(filledAmount).closedPrice(closedPrice).price(closedPrice).build()),
-		).to.not.be.reverted
+		const fillRequest = limitFillCloseRequestBuilder().filledAmount(filledAmount).closedPrice(closedPrice).price(closedPrice).build()
+		const closeTx = await context.partyBPositionActionsFacet
+			.connect(hedger.signer)
+			.fillCloseRequest(
+				quoteId,
+				fillRequest.filledAmount,
+				fillRequest.closedPrice,
+				await getDummyPairUpnlAndPriceSig(BigInt(fillRequest.price), BigInt(fillRequest.upnlPartyA), BigInt(fillRequest.upnlPartyB)),
+			)
+		const closeReceipt = await closeTx.wait()
+		const fundingEvents = (closeReceipt?.logs ?? []).flatMap(log => {
+			try {
+				const parsed = quoteFundingSettledInterface.parseLog({ topics: [...log.topics], data: log.data })
+				if (parsed?.name !== "QuoteFundingSettled") return []
+				return [parsed.args]
+			} catch {
+				return []
+			}
+		})
+		expect(fundingEvents).to.have.length(1)
+		expect(fundingEvents[0].quoteId).to.equal(quoteId)
+		expect(fundingEvents[0].symbolId).to.equal(quote.symbolId)
+		expect(fundingEvents[0].partyB).to.equal(hedger.address)
+		expect(fundingEvents[0].partyA).to.equal(user.address)
+		expect(fundingEvents[0].allocationKey).to.equal(user.address)
+		expect(fundingEvents[0].funding).to.equal(fundingFee)
 
 		const partyAAllocatedAfter = (await user.getBalanceInfo()).allocatedBalances
 		const partyBAllocatedAfter = (await hedger.getBalanceInfo(await user.getAddress())).allocatedBalances
