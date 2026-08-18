@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Adds a configurable liquidation-fee minimum against position notional, with symbol 0 as the default and optional per-symbol overrides."
+		/>
+		<title>Notional Liquidation Fee Floor - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Apply the saved preference before first paint.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.6">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#summary">Summary</a>
+				<a class="toc-link level-2" href="#two-floors">How the Two Floors Work</a>
+				<a class="toc-link level-2" href="#symbol-configuration">Symbol Configuration</a>
+				<a class="toc-link level-2" href="#quote-and-open-checks">Quote and Open Checks</a>
+			</div>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Notional Liquidation Fee Floor</h1>
+							<p class="hero-copy">
+								v0.8.6 adds a second minimum liquidation fee based on position notional, preventing high leverage from reducing LF to
+								a very small share of market exposure.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="summary">Summary</h2>
+					<p>
+						The existing <code>minAcceptablePortionLF</code> protects LF relative to PartyA's locked collateral. The new
+						<code>minAcceptableNotionalLFRate</code> protects LF relative to the position's notional value. A quote must satisfy both
+						limits.
+					</p>
+
+					<h2 id="two-floors">How the Two Floors Work</h2>
+					<pre><code>collateralFloor = minAcceptablePortionLF × (CVA + partyAmm + LF)
+notional = quantity × price
+notionalFloor = minAcceptableNotionalLFRate × notional
+requiredLF = max(collateralFloor, notionalFloor)</code></pre>
+					<p>
+						Both rates use 1e18 precision. The notional and notional-floor calculations round upward, so integer division cannot leave LF
+						below the configured minimum.
+					</p>
+
+					<h2 id="symbol-configuration">Symbol Configuration</h2>
+					<ul>
+						<li><code>setSymbolMinAcceptableNotionalLFRate(0, rate)</code> sets the live default for all symbols without an override.</li>
+						<li>
+							<code>setSymbolMinAcceptableNotionalLFRate(symbolId, rate)</code> sets an explicit per-symbol override. Zero is a valid
+							override and disables the notional floor for that symbol.
+						</li>
+						<li><code>clearSymbolMinAcceptableNotionalLFRateOverride(symbolId)</code> restores inheritance from symbol 0.</li>
+						<li>
+							<code>getSymbolMinAcceptableNotionalLFRate(symbolId)</code> returns the effective rate and whether the symbol has an
+							override.
+						</li>
+					</ul>
+					<p>
+						Core configuration uses the existing <code>SYMBOL_MANAGER_ROLE</code>. The <code>SymmioSymbolManager</code> batch setters use
+						<code>SYMBOL_MIN_ACCEPTABLE_VALUES_MANAGER_ROLE</code> and the existing <code>acceptableValues</code> daily limit. The initial
+						default is zero, so the new floor becomes active only after governance configures symbol 0 or an override.
+					</p>
+
+					<h2 id="quote-and-open-checks">Quote and Open Checks</h2>
+					<ul>
+						<li>Quote creation checks the requested quantity and price against the current effective rate.</li>
+						<li>Position opening rechecks the filled quantity at the actual open price.</li>
+						<li>An uncancelled partial-fill remainder is rechecked at its requested price.</li>
+					</ul>
+					<p>
+						The open-time checks use the current configuration. Raising a default or override can therefore stop an existing locked quote
+						from opening when its LF no longer satisfies the new floor.
+					</p>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 documentation.</span>
+		</footer>
+	</body>
+</html>
