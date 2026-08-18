@@ -11212,6 +11212,11 @@
                         "internalType": "uint256",
                         "name": "basisVersion",
                         "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "closeId",
+                        "type": "uint256"
                     }
                 ],
                 "internalType": "struct ForceCloseDetail",

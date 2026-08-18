@@ -97,7 +97,7 @@
 						</li>
 						<li>
 							<p>
-								<strong>No function-level isolation.</strong> Every registered key could sign for every operation -- liquidations,
+								<strong>No function-level isolation.</strong> Every registered key could sign for every operation — liquidations,
 								quote locking, funding rate charges, and settlements all shared the same trust set. A compromised key authorized for
 								routine operations could also sign liquidation data.
 							</p>
@@ -139,7 +139,7 @@
 </code></pre>
 					<h2 id="doc-muon-keys-the-imuonsignatureverifier-interface">The IMuonSignatureVerifier Interface</h2>
 					<p>
-						The interface defines three categories of operations -- signature verification, key management, and per-category authorization
+						The interface defines three categories of operations — signature verification, key management, and per-category authorization
 						-- plus two data structures and an operation category enum:
 					</p>
 					<pre><code class="language-solidity">// contracts/core/interfaces/IMuonSignatureVerifier.sol
@@ -190,7 +190,7 @@ interface IMuonSignatureVerifier {
 					<p>
 						The <code>MuonFunction</code> enum is defined at file level (not inside the interface) so it can be imported independently.
 						Each enum value represents a category of related operations. The <code>verify</code> overload without
-						<code>MuonFunction</code> skips authorization checks -- it is used by the ViewFacet's
+						<code>MuonFunction</code> skips authorization checks — it is used by the ViewFacet's
 						<code>verifyMuonTSSAndGateway</code> which is a read-only utility that doesn't need permission gating.
 					</p>
 					<p>
@@ -233,7 +233,7 @@ contract MuonSignatureVerifier is IMuonSignatureVerifier, AccessControlEnumerabl
 </code></pre>
 					<p>
 						The <code>publicKeyPermissions</code> mapping uses <code>keccak256(abi.encodePacked(pubKey.x, pubKey.parity))</code> as the
-						key identifier. Permission state is independent of the key lifecycle -- permissions can be set before a key is added and
+						key identifier. Permission state is independent of the key lifecycle — permissions can be set before a key is added and
 						persist after removal.
 					</p>
 					<h3 id="doc-muon-keys-verification-logic">Verification Logic</h3>
@@ -268,7 +268,7 @@ contract MuonSignatureVerifier is IMuonSignatureVerifier, AccessControlEnumerabl
 </code></pre>
 					<p>
 						<strong>TSS check</strong>: iterates over all registered public keys and attempts Schnorr verification against each one. If
-						any key validates the signature, the check passes. This is what enables key rotation -- the old key and new key can coexist
+						any key validates the signature, the check passes. This is what enables key rotation — the old key and new key can coexist
 						during a transition period.
 					</p>
 					<p>
@@ -312,7 +312,7 @@ function removePublicKey(PublicKey memory pubKey) external onlyRole(SETTER_ROLE)
 					<p>
 						Key rotation procedure: 1. Call <code>addPublicKey</code> with the new TSS committee's public key. 2. Call
 						<code>setPublicKeyPermissions</code> to authorize the new key for the required functions. 3. Both old and new keys now
-						validate signatures -- no downtime. 4. Once all Muon nodes have switched to the new key, call <code>removePublicKey</code> on
+						validate signatures — no downtime. 4. Once all Muon nodes have switched to the new key, call <code>removePublicKey</code> on
 						the old key. 5. Same process applies independently for gateway signers.
 					</p>
 					<h2 id="doc-muon-keys-per-category-authorization">Per-Category Authorization</h2>
@@ -327,7 +327,7 @@ function removePublicKey(PublicKey memory pubKey) external onlyRole(SETTER_ROLE)
 						signatures until explicitly authorized.
 					</p>
 					<p>
-						The ViewFacet's <code>verifyMuonTSSAndGateway</code> is exempt from authorization -- it is a read-only utility that verifies
+						The ViewFacet's <code>verifyMuonTSSAndGateway</code> is exempt from authorization — it is a read-only utility that verifies
 						signatures without gating by category.
 					</p>
 					<h3 id="doc-muon-keys-the-muonfunction-enum">The MuonFunction Enum</h3>

@@ -5,7 +5,7 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta
 			name="description"
-			content="SYMMIO enforces a withdrawal cooldown (typically 12 hours from the user&#x27;s last deallocation) to protect against attack vectors. While essential for security, this creates real friction -- users who need timely access to funds have no option but to wait. Frontends can&#x27;t differentiate on…"
+			content="SYMMIO enforces a withdrawal cooldown (typically 12 hours from the user&#x27;s last deallocation) to protect against attack vectors. While essential for security, this creates real friction — users who need timely access to funds have no option but to wait. Frontends can&#x27;t differentiate on…"
 		/>
 		<title>Express Deposit &amp; Withdrawal System - Symmio Core v0.8.5</title>
 		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
@@ -63,7 +63,7 @@
 					<h2 id="doc-express-deposit-the-problem">The Problem</h2>
 					<p>
 						SYMMIO enforces a withdrawal cooldown (typically 12 hours from the user's last deallocation) to protect against attack
-						vectors. While essential for security, this creates real friction -- users who need timely access to funds have no option but
+						vectors. While essential for security, this creates real friction — users who need timely access to funds have no option but
 						to wait. Frontends can't differentiate on withdrawal speed, and failed withdrawals due to insufficient contract balance lead
 						to poor UX.
 					</p>
@@ -72,8 +72,8 @@
 						v0.8.5 adds express deposit hooks and virtual provider integration into the core protocol. When a user deposits through an
 						affiliate's frontend, the affiliate can configure a percentage (X%) of that deposit to be automatically routed to an external
 						provider contract via the <code>onExpressDeposit</code> callback. This is built on top of the
-						<a href="virtual-funds.html">Virtual Fund System</a> -- the provider contract is registered as a virtual provider in SYMMIO
-						and implements the <code>IVirtualProvider</code> lifecycle callbacks (<code>onExpressDeposit</code>,
+						<a href="virtual-funds.html">Virtual Fund System</a> — the provider contract is registered as a virtual provider in SYMMIO and
+						implements the <code>IVirtualProvider</code> lifecycle callbacks (<code>onExpressDeposit</code>,
 						<code>onWithdrawRequest</code>, <code>onWithdrawComplete</code>, etc.).
 					</p>
 					<p>
@@ -138,20 +138,20 @@
     G --&gt; I
 </code></pre>
 					<p>
-						<strong>Option A -- Instant (~20 seconds):</strong> If enough liquidity exists right now across the Express and Virtual pools,
+						<strong>Option A — Instant (~20 seconds):</strong> If enough liquidity exists right now across the Express and Virtual pools,
 						the user gets funds almost immediately. The Express Contract fronts the money, and after the 12-hour cooldown completes,
 						SYMMIO reimburses the provider.
 					</p>
 					<p>
-						<strong>Option A2 -- Earliest-Available (between now and 12 hours):</strong> When instant liquidity isn't sufficient but the
+						<strong>Option A2 — Earliest-Available (between now and 12 hours):</strong> When instant liquidity isn't sufficient but the
 						Express Contract can project when enough funds will become available (based on other pending withdrawals finalizing), it
 						offers the user a specific earlier payout time. A user might wait 2 hours instead of 12. The Express Contract uses a 12-bucket
 						ring buffer representing hourly time slots to track expected inflows and reservations, preventing the same future liquidity
 						from being promised twice.
 					</p>
 					<p>
-						<strong>Option B -- After Cooldown (12 hours):</strong> Always available as a guaranteed fallback. This is the standard SYMMIO
-						withdrawal -- no provider capital needed.
+						<strong>Option B — After Cooldown (12 hours):</strong> Always available as a guaranteed fallback. This is the standard SYMMIO
+						withdrawal — no provider capital needed.
 					</p>
 					<p>
 						The frontend shows the best available option. If instant is possible, show that. If not but earliest-available is, show that.
@@ -188,8 +188,8 @@
 </code></pre>
 					<h3 id="doc-express-deposit-components">Components</h3>
 					<p>
-						<strong>Express Contract</strong> (one per chain): The main coordinator. Manages two types of liquidity pools -- a general
-						pool available to all users, and per-frontend pools funded by frontend operators. Validates bot-signed withdrawal options,
+						<strong>Express Contract</strong> (one per chain): The main coordinator. Manages two types of liquidity pools — a general pool
+						available to all users, and per-frontend pools funded by frontend operators. Validates bot-signed withdrawal options,
 						locks/reserves funds, and handles the full withdrawal lifecycle. For earliest-available withdrawals, the bucket-based
 						scheduling ensures the same future liquidity can't be promised to multiple users.
 					</p>

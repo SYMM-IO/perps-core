@@ -61,7 +61,7 @@
 				<a class="toc-link level-3" href="#doc-event-changelog-42-trading-events-ipartiesevents">4.2 Trading Events (IPartiesEvents)</a>
 				<a class="toc-link level-3" href="#doc-event-changelog-43-liquidation-events">4.3 Liquidation Events</a>
 				<a class="toc-link level-3" href="#doc-event-changelog-44-partyb-account-events-ipartybaccountevents-new-file"
-					>4.4 PartyB Account Events (IPartyBAccountEvents) -- New File</a
+					>4.4 PartyB Account Events (IPartyBAccountEvents) — New File</a
 				>
 				<a class="toc-link level-3" href="#doc-event-changelog-45-force-action-events-forceactionsfacetevents"
 					>4.5 Force Action Events (ForceActionsFacetEvents)</a
@@ -78,7 +78,7 @@
 				<a class="toc-link level-3" href="#doc-event-changelog-49-library-events-libpartiesevents">4.9 Library Events (LibPartiesEvents)</a>
 				<a class="toc-link level-3" href="#doc-event-changelog-410-control-events-icontrolevents">4.10 Control Events (IControlEvents)</a>
 				<a class="toc-link level-3" href="#doc-event-changelog-411-migration-events-imigrationevents-new-facet"
-					>4.11 Migration Events (IMigrationEvents) -- New Facet</a
+					>4.11 Migration Events (IMigrationEvents) — New Facet</a
 				>
 				<a class="toc-link level-3" href="#doc-event-changelog-412-diamond-ownership-events-libdiamond"
 					>4.12 Diamond Ownership Events (LibDiamond)</a
@@ -311,7 +311,7 @@
 					<p>
 						<strong>Note:</strong> <code>AllocateForPartyB</code>, <code>DeallocateForPartyB</code>, <code>TransferAllocation</code>,
 						<code>DepositToReserveVault</code>, and <code>WithdrawFromReserveVault</code> have moved from <code>IAccountEvents</code> to
-						the new <code>IPartyBAccountEvents</code> interface. The event signatures and topic hashes are identical -- only the source
+						the new <code>IPartyBAccountEvents</code> interface. The event signatures and topic hashes are identical — only the source
 						file changed.
 					</p>
 					<h3 id="doc-event-changelog-13-trading-events">1.3 Trading Events</h3>
@@ -362,7 +362,7 @@
 										quantityToClose, OrderType orderType, uint256 deadline, QuoteStatus quoteStatus)</code
 									>
 								</td>
-								<td><code>RequestToClosePosition(..., uint256 closeId)</code> -- same params with <code>closeId</code> appended</td>
+								<td><code>RequestToClosePosition(..., uint256 closeId)</code> — same params with <code>closeId</code> appended</td>
 							</tr>
 							<tr>
 								<td>
@@ -530,7 +530,7 @@ event FillCloseRequest(uint256 quoteId, address partyA, address partyB, uint256 
 					<p>
 						<strong>Note:</strong> The old <code>SendQuote</code> (with all individual params) and old <code>OpenPosition</code> (without
 						<code>LockedValues</code>) are still emitted for backward compatibility alongside the new versions. Both events fire on each
-						operation. The new <code>SendQuote</code> encodes params into <code>paramsData</code> bytes -- decode with
+						operation. The new <code>SendQuote</code> encodes params into <code>paramsData</code> bytes — decode with
 						<code
 							>abi.decode(paramsData, (uint256, uint8, uint8, uint256, uint256, uint256, uint256, uint256, uint256, uint256, uint256,
 							uint256))</code
@@ -560,7 +560,7 @@ event LiquidatePositionsPartyB(
 );
 </code></pre>
 					<h3 id="doc-event-changelog-44-partyb-account-events-ipartybaccountevents-new-file">
-						4.4 PartyB Account Events (<code>IPartyBAccountEvents</code>) -- New File
+						4.4 PartyB Account Events (<code>IPartyBAccountEvents</code>) — New File
 					</h3>
 					<p>
 						Events moved from <code>IAccountEvents</code> to a dedicated <code>IPartyBAccountEvents</code> interface, plus one new event:
@@ -719,7 +719,7 @@ event LegacyFundingDeprecated();
 event AccumulatedFundingActivated();
 </code></pre>
 					<h3 id="doc-event-changelog-411-migration-events-imigrationevents-new-facet">
-						4.11 Migration Events (<code>IMigrationEvents</code>) -- New Facet
+						4.11 Migration Events (<code>IMigrationEvents</code>) — New Facet
 					</h3>
 					<pre><code class="language-solidity">event QuotesMigrated(uint256 quotesProvided, uint256 quotesMigrated);
 event CrossLockedValuesMigrated(address indexed partyB, uint256 partyAsProcessed);

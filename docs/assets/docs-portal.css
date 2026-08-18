@@ -6,6 +6,7 @@
 :root {
 	--header-h: 57px;
 	--rail: 304px;
+	--control-size: 36px;
 }
 
 /* Reader pages use the entire canvas left after the outline rail. The base
@@ -51,20 +52,26 @@ body.doc-page {
    a clickable logo. Each segment is a distinct destination — nothing duplicates. */
 .docs-trail {
 	display: flex;
-	gap: 7px;
+	gap: 8px;
 	align-items: center;
+	min-height: 28px;
 	min-width: 0;
 }
 
 .docs-trail .brand {
 	gap: 9px;
-	padding-right: 3px;
+	min-height: 28px;
+	padding-inline-end: 2px;
 }
 
 .docs-trail .brand-name {
+	display: inline-flex;
+	align-items: center;
+	min-height: 28px;
 	font-family: var(--display);
 	font-size: 13px;
 	font-weight: 640;
+	line-height: 1;
 	letter-spacing: -0.01em;
 	white-space: nowrap;
 }
@@ -76,28 +83,43 @@ body.doc-page {
 }
 
 .trail-sep {
-	display: inline-grid;
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
 	width: 14px;
-	height: 24px;
+	height: 28px;
 	flex: 0 0 14px;
-	place-items: center;
-	color: transparent;
+	color: var(--faint);
 	font-size: 0;
 }
 
-.trail-sep::before {
+.trail-sep::before,
+.trail-sep::after {
 	content: "";
-	width: 5px;
-	height: 5px;
-	border-top: 1px solid var(--faint);
-	border-right: 1px solid var(--faint);
+	position: absolute;
+	top: calc(50% - 0.5px);
+	inset-inline-start: 1px;
+	width: 6px;
+	height: 1px;
+	border-radius: 1px;
+	background: currentColor;
+	transform-origin: right center;
 	transform: rotate(45deg);
+}
+
+.trail-sep::after {
+	transform: rotate(-45deg);
 }
 
 .trail-link,
 .trail-current {
+	display: inline-flex;
+	align-items: center;
+	min-height: 28px;
 	font-family: var(--mono);
 	font-size: 11.5px;
+	line-height: 1;
 	letter-spacing: 0.03em;
 	white-space: nowrap;
 }
@@ -155,7 +177,7 @@ body.doc-page {
 }
 
 .docs-header .button {
-	min-height: 32px;
+	min-height: var(--control-size);
 	padding: 0 10px;
 	font-size: 12px;
 }
@@ -176,6 +198,7 @@ body.doc-page {
 	border-right: 1px solid var(--line);
 	background: var(--bg-raised);
 	overflow: hidden;
+	overscroll-behavior: contain;
 }
 
 .rail-inner {
@@ -186,14 +209,10 @@ body.doc-page {
 
 .rail-tabs {
 	display: grid;
-	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+	grid-template-columns: minmax(0, 1fr) auto;
 	gap: 3px;
 	padding: 9px 9px;
 	border-bottom: 1px solid var(--line);
-}
-
-.chapter-rail.is-single-panel .rail-tabs {
-	grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .rail-title {
@@ -210,7 +229,6 @@ body.doc-page {
 	text-transform: uppercase;
 }
 
-.rail-tab,
 .rail-collapse {
 	display: inline-flex;
 	gap: 6px;
@@ -233,16 +251,9 @@ body.doc-page {
 		border-color 140ms ease;
 }
 
-.rail-tab:hover,
 .rail-collapse:hover {
 	color: var(--ink);
 	background: var(--surface-soft);
-}
-
-.rail-tab[aria-selected="true"] {
-	border-color: var(--line);
-	background: var(--surface);
-	color: var(--ink);
 }
 
 .rail-collapse {
@@ -469,9 +480,106 @@ body.rail-is-collapsed .rail-tabs {
 }
 
 body.rail-is-collapsed .rail-title,
-body.rail-is-collapsed .rail-tab,
 body.rail-is-collapsed .rail-panel {
 	display: none;
+}
+
+/* --- Reading map --------------------------------------------------------- */
+
+/* Long reference pages can offer a handful of intentional entry points before
+   the article starts. Keep each destination as a distinct control instead of
+   allowing the inline link contents to collapse into one sentence. */
+.reader-map {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: 12px;
+	width: 100%;
+	max-width: 1160px;
+	margin: 0 0 40px;
+}
+
+.reader-map a {
+	display: grid;
+	grid-template-rows: auto auto 1fr;
+	gap: 7px;
+	min-width: 0;
+	padding: 17px 18px 18px;
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+	background: var(--surface);
+	color: var(--ink);
+	text-decoration: none;
+	transition:
+		border-color 140ms ease,
+		background-color 140ms ease;
+}
+
+.reader-map a:hover {
+	text-decoration: none;
+}
+
+@media (hover: hover) {
+	.reader-map a:hover {
+		border-color: var(--line-strong);
+		background: var(--surface-soft);
+	}
+}
+
+.reader-map a:active {
+	background: var(--surface-tint);
+}
+
+.reader-map a:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 3px;
+}
+
+.reader-map span {
+	color: var(--faint);
+	font-family: var(--mono);
+	font-size: 10px;
+	font-weight: 600;
+	line-height: 1.3;
+	letter-spacing: 0.11em;
+	text-transform: uppercase;
+}
+
+.reader-map strong {
+	color: var(--ink);
+	font-family: var(--display);
+	font-size: 15px;
+	font-weight: 640;
+	line-height: 1.3;
+	letter-spacing: -0.01em;
+	text-wrap: balance;
+}
+
+.reader-map small {
+	max-width: 34ch;
+	color: var(--muted);
+	font-size: 13px;
+	line-height: 1.5;
+	overflow-wrap: break-word;
+	text-wrap: pretty;
+}
+
+@media (max-width: 1280px) {
+	.reader-map {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+
+@media (max-width: 640px) {
+	.reader-map {
+		grid-template-columns: minmax(0, 1fr);
+		margin-bottom: 32px;
+	}
+}
+
+@media (forced-colors: active) {
+	.reader-map a:focus-visible {
+		outline-color: Highlight;
+	}
 }
 
 /* --- Chapter pager ------------------------------------------------------- */
@@ -555,8 +663,8 @@ body.doc-page .doc-article > :is(.code-frame, .table-wrap, .tool-panel, figure, 
 	z-index: 30;
 	display: grid;
 	place-items: center;
-	width: 36px;
-	height: 36px;
+	width: 40px;
+	height: 40px;
 	padding: 0;
 	border: 1px solid var(--line);
 	border-radius: 50%;
@@ -1040,11 +1148,12 @@ body.doc-page .doc-article > :is(.code-frame, .table-wrap, .tool-panel, figure, 
 	/* The rail becomes a drawer under the header, on every reading page. */
 	.chapter-rail {
 		position: fixed;
-		inset: var(--header-h) auto 0 0;
+		inset-block: var(--header-h) 0;
+		inset-inline-start: 0;
 		z-index: 35;
 		width: min(340px, calc(100vw - 42px));
 		height: auto;
-		border-right: 1px solid var(--line);
+		border-inline-end: 1px solid var(--line);
 		box-shadow: 18px 0 50px rgb(0 0 0 / 0.34);
 		transform: translateX(-105%);
 		transition: transform 180ms cubic-bezier(0.3, 0.8, 0.3, 1);
@@ -1087,6 +1196,41 @@ body.doc-page .doc-article > :is(.code-frame, .table-wrap, .tool-panel, figure, 
 	.rail-collapse .control-icon {
 		width: 16px;
 		height: 16px;
+	}
+}
+
+@media (max-width: 420px) {
+	.docs-header .docs-trail {
+		flex: 0 0 24px;
+		min-width: 24px;
+	}
+
+	.docs-header .docs-trail .brand {
+		width: 24px;
+		min-width: 24px;
+		padding: 0;
+	}
+
+	.docs-header .docs-trail .brand-name,
+	.docs-header .rail-trigger span {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		white-space: nowrap;
+		clip-path: inset(50%);
+		border: 0;
+	}
+
+	.docs-header .rail-trigger {
+		width: 40px;
+		padding-inline: 0;
+	}
+
+	.docs-header .top-actions {
+		margin-inline-start: auto;
 	}
 }
 
@@ -1216,12 +1360,230 @@ body.doc-page .doc-article > :is(.code-frame, .table-wrap, .tool-panel, figure, 
 @media (prefers-reduced-motion: reduce) {
 	.chapter-rail,
 	.rail-backdrop,
-	.rail-tab,
 	.rail-collapse,
 	.chapter-pager a,
 	.version-entry::after,
 	.version-entry-arrow,
 	.back-to-top {
 		transition: none;
+	}
+}
+
+/* --- Operator guide ------------------------------------------------------ */
+
+/* Operator-guide components. These remain namespaced, but live with the shared design system instead of inside the page. */
+.dep-lede {
+	font-size: 1.05rem;
+	line-height: 1.7;
+	color: var(--ink-soft);
+	max-width: 62ch;
+}
+
+/* Command rail — a reference, not a sequence, so it is deliberately unnumbered. */
+.dep-rail {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+	gap: 10px;
+	margin: 26px 0 30px;
+}
+.dep-cmd {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 14px 16px;
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+	background: var(--bg-raised);
+}
+.dep-cmd code {
+	font-family: var(--mono);
+	font-size: 0.86rem;
+	font-weight: 600;
+	color: var(--accent-strong);
+	background: none;
+	padding: 0;
+}
+.dep-cmd span {
+	font-size: 0.83rem;
+	line-height: 1.5;
+	color: var(--muted);
+}
+.dep-cmd b {
+	font-size: 0.68rem;
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--faint);
+}
+.dep-cmd[data-writes="yes"] {
+	border-inline-start: 3px solid var(--accent);
+}
+.dep-cmd[data-writes="no"] {
+	border-inline-start: 3px solid var(--green);
+}
+
+/* Step spine — numbered because deployment genuinely is ordered. */
+.dep-steps {
+	list-style: none;
+	margin: 24px 0 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 28px;
+}
+.dep-steps > li {
+	position: relative;
+	padding-inline-start: 46px;
+}
+.dep-steps > li::before {
+	content: attr(data-step);
+	position: absolute;
+	inset-inline-start: 0;
+	top: 0;
+	width: 30px;
+	height: 30px;
+	display: grid;
+	place-items: center;
+	border-radius: 50%;
+	background: var(--accent);
+	color: #fff;
+	font-family: var(--mono);
+	font-size: 0.8rem;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+}
+.dep-steps > li::after {
+	content: "";
+	position: absolute;
+	inset-inline-start: 15px;
+	top: 36px;
+	bottom: -28px;
+	width: 1px;
+	background: var(--line);
+}
+.dep-steps > li:last-child::after {
+	display: none;
+}
+.dep-steps h3 {
+	margin: 2px 0 8px;
+	font-size: 1.05rem;
+}
+
+/* Gotchas: things that silently cost hours. Severity is encoded in form, not just words. */
+.dep-gotchas {
+	display: grid;
+	gap: 12px;
+	margin: 22px 0;
+}
+.dep-gotcha {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	gap: 14px;
+	align-items: start;
+	padding: 15px 17px;
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+	background: var(--bg-raised);
+}
+.dep-gotcha kbd {
+	font-family: var(--mono);
+	font-size: 0.64rem;
+	font-weight: 700;
+	letter-spacing: 0.07em;
+	text-transform: uppercase;
+	padding: 4px 8px;
+	border-radius: 999px;
+	border: 0;
+	white-space: nowrap;
+	background: var(--surface-soft);
+	color: var(--muted);
+}
+.dep-gotcha[data-level="money"] kbd {
+	background: color-mix(in srgb, var(--rose) 15%, transparent);
+	color: var(--rose);
+}
+.dep-gotcha[data-level="blocks"] kbd {
+	background: color-mix(in srgb, var(--amber) 18%, transparent);
+	color: var(--amber);
+}
+.dep-gotcha[data-level="confuses"] kbd {
+	background: color-mix(in srgb, var(--blue) 15%, transparent);
+	color: var(--blue);
+}
+.dep-gotcha p {
+	margin: 0;
+	font-size: 0.9rem;
+	line-height: 1.6;
+}
+.dep-gotcha p + p {
+	margin-top: 6px;
+	color: var(--muted);
+}
+
+/* Exit codes: the single most misread signal in the whole workflow. */
+.dep-exits {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+	gap: 12px;
+	margin: 20px 0;
+}
+.dep-exit {
+	padding: 16px;
+	border-radius: var(--radius);
+	border: 1px solid var(--line);
+	background: var(--bg-raised);
+}
+.dep-exit strong {
+	display: block;
+	font-family: var(--mono);
+	font-size: 1.5rem;
+	font-variant-numeric: tabular-nums;
+	line-height: 1;
+	margin-bottom: 8px;
+}
+.dep-exit[data-code="0"] strong {
+	color: var(--green);
+}
+.dep-exit[data-code="2"] strong {
+	color: var(--amber);
+}
+.dep-exit[data-code="n"] strong {
+	color: var(--rose);
+}
+.dep-exit span {
+	font-size: 0.86rem;
+	line-height: 1.55;
+	color: var(--muted);
+}
+/* Direct child only: an inline <em> inside the description must stay inline. */
+.dep-exit > em {
+	display: block;
+	margin-top: 8px;
+	font-style: normal;
+	font-size: 0.8rem;
+	color: var(--faint);
+}
+
+.dep-field-note {
+	font-family: var(--mono);
+	font-size: 0.78rem;
+	color: var(--accent-strong);
+}
+
+@media (max-width: 640px) {
+	.dep-steps > li {
+		padding-inline-start: 38px;
+	}
+	.dep-steps > li::before {
+		width: 26px;
+		height: 26px;
+		font-size: 0.72rem;
+	}
+	.dep-steps > li::after {
+		inset-inline-start: 13px;
+	}
+	.dep-gotcha {
+		grid-template-columns: 1fr;
+		gap: 8px;
 	}
 }

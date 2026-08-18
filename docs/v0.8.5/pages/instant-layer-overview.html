@@ -384,13 +384,13 @@ const signature = await signer._signTypedData(domain, types, userOperation);
 </code></pre>
 					<p><strong>Parameters:</strong></p>
 					<ul>
-						<li><code>signedOps</code> / <code>signatures</code> -- operations and their EIP-712 signatures (as before)</li>
+						<li><code>signedOps</code> / <code>signatures</code> — operations and their EIP-712 signatures (as before)</li>
 						<li>
-							<code>fills</code> -- one <code>FlexFill</code> per operation. For standard operations (no flex fields), pass
+							<code>fills</code> — one <code>FlexFill</code> per operation. For standard operations (no flex fields), pass
 							<code>{ values: [] }</code>
 						</li>
 						<li>
-							<code>flexFillerSignatures</code> -- one <code>bytes[]</code> per operation, with one signature per flex field. Pass
+							<code>flexFillerSignatures</code> — one <code>bytes[]</code> per operation, with one signature per flex field. Pass
 							<code>[]</code> for standard operations or <code>"0x"</code> for fields where the flex filler is <code>msg.sender</code>
 						</li>
 					</ul>
@@ -521,7 +521,7 @@ function grantBatchDelegationBySig(SignedDelegation calldata signedDelegation, b
 					<h3 id="doc-instant-layer-overview-how-it-works">How It Works</h3>
 					<p>
 						The user signs a <code>SignedOperation</code> where certain calldata regions are marked as flex fields. Each flex field
-						specifies a byte offset, length, and an <code>authorizedFlexFiller</code> address -- the party allowed to fill in that region.
+						specifies a byte offset, length, and an <code>authorizedFlexFiller</code> address — the party allowed to fill in that region.
 						The user's EIP-712 signature covers the calldata as-is (the placeholder values in flex regions don't matter) plus the flex
 						field definitions, so the user explicitly commits to <strong>which</strong> parts are modifiable and <strong>who</strong> can
 						modify them.
@@ -569,13 +569,13 @@ struct FlexFillAuth {
 					<h3 id="doc-instant-layer-overview-multi-use-operations">Multi-Use Operations</h3>
 					<p>All operations use the <code>maxUses</code> field uniformly for replay protection:</p>
 					<ul>
-						<li><code>maxUses = 1</code> -- single-use (default for standard operations)</li>
-						<li><code>maxUses = N</code> (N &gt; 1) -- can be executed up to N times</li>
-						<li><code>maxUses = 0</code> -- unlimited executions until deadline expires</li>
+						<li><code>maxUses = 1</code> — single-use (default for standard operations)</li>
+						<li><code>maxUses = N</code> (N &gt; 1) — can be executed up to N times</li>
+						<li><code>maxUses = 0</code> — unlimited executions until deadline expires</li>
 					</ul>
 					<p>
 						Once signed, an operation is valid until its <code>maxUses</code> count is reached or the <code>deadline</code> passes. There
-						is no cancellation mechanism -- if you signed it, the flex filler can use it within the agreed bounds. This ensures trust: a
+						is no cancellation mechanism — if you signed it, the flex filler can use it within the agreed bounds. This ensures trust: a
 						flex filler (e.g., a solver) can rely on the authorization without risk of it being pulled out from under them.
 					</p>
 					<h3 id="doc-instant-layer-overview-example-tpsl-service-with-flex-fields">Example: TPSL Service with Flex Fields</h3>
@@ -592,7 +592,7 @@ struct FlexFillAuth {
     uint256 deadline            // offset 128
 )
 </code></pre>
-					<p>All parameters are static, so the ABI encoding is straightforward -- each is a 32-byte slot at a fixed offset.</p>
+					<p>All parameters are static, so the ABI encoding is straightforward — each is a 32-byte slot at a fixed offset.</p>
 					<pre><code class="language-javascript">// User signs: "close quote 42, but let the TPSL bot choose the amount"
 const closeCallData = symmio.interface.encodeFunctionData(
     "requestToClosePosition",
@@ -736,11 +736,11 @@ const operation = {
 					<p>For practical integration examples, see:</p>
 					<ul>
 						<li>
-							<a href="instant-layer-partyb-integration.html">InstantLayer PartyB Integration Guide</a> -- Detailed code examples for
+							<a href="instant-layer-partyb-integration.html">InstantLayer PartyB Integration Guide</a> — Detailed code examples for
 							PartyB integrators
 						</li>
 						<li>
-							<a href="instant-layer-service-integration.html">InstantLayer Service Integration Guide</a> -- TPSL, Trigger Market, and
+							<a href="instant-layer-service-integration.html">InstantLayer Service Integration Guide</a> — TPSL, Trigger Market, and
 							Session Key integration
 						</li>
 					</ul>
