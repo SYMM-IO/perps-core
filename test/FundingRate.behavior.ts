@@ -475,7 +475,7 @@ export function shouldBehaveLikeFundingRate(): void {
 				])
 			})
 
-			it("should net opposite funding debts before requiring either party to cover a gross batch leg", async () => {
+			it("should settle opposite funding debts sequentially instead of netting the batch", async () => {
 				const partyA = await context.signers.user.getAddress()
 				const partyB = await context.signers.hedger.getAddress()
 
@@ -488,15 +488,16 @@ export function shouldBehaveLikeFundingRate(): void {
 					.connect(context.signers.hedger)
 					.deallocateForPartyB(partyBBeforeDeallocation.allocatedBalances - retainedPartyBAllocation, partyA, await getDummySingleUpnlSig(0n))
 
-				const funding = await context.viewFacetQuote.getQuoteFundingDebts([2n, 1n])
-				expect(funding[0]).to.be.lessThan(-retainedPartyBAllocation)
-				expect(funding[0] + funding[1]).to.equal(0n)
+				const fundingBefore = await context.viewFacetQuote.getQuoteFundingDebts([2n, 1n])
+				expect(fundingBefore[0]).to.be.lessThan(-retainedPartyBAllocation)
+				expect(fundingBefore[0] + fundingBefore[1]).to.equal(0n)
 
 				await expect(
 					context.fundingRateFacet.connect(context.signers.hedger).chargeAccumulatedFundingFee(partyA, partyB, [2n, 1n], await getDummyPairUpnlSig()),
-				).not.to.be.reverted
+				).to.be.reverted
 
 				expect((await hedger.getBalanceInfo(partyA)).allocatedBalances).to.equal(retainedPartyBAllocation)
+				expect(await context.viewFacetQuote.getQuoteFundingDebts([2n, 1n])).to.deep.equal(fundingBefore)
 			})
 
 			it("should failed when quote has invalid party A", async () => {

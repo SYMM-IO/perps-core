@@ -2,16 +2,14 @@
 pragma solidity ^0.8.18;
 
 import { ISymmioHook } from "../interfaces/ISymmioHook.sol";
-import { IViewFacet } from "../facets/ViewFacet/IViewFacet.sol";
 import { IViewFacetQuote } from "../facets/ViewFacetQuote/IViewFacetQuote.sol";
 import { Quote, QuoteStatus } from "../storages/QuoteStorage.sol";
 
 contract MockBatchCloseObserverHook is ISymmioHook {
 	address public immutable SYMMIO;
 	uint256[] public monitoredQuoteIds;
-	bool public firstCloseSawFinalizedBatch;
-	uint256 public firstClosePartyAAllocated;
-	uint256 public firstClosePartyBAllocated;
+	bool public firstCloseSawOnlyCurrentQuoteFinalized;
+	uint256 public firstCloseQuoteId;
 	uint256 public closeCallCount;
 	uint256 public closeFeeCallCount;
 
@@ -22,16 +20,17 @@ contract MockBatchCloseObserverHook is ISymmioHook {
 
 	function onOpenPosition(uint256, uint256, uint256, address, address) external pure override {}
 
-	function onClosePosition(uint256, uint256, uint256, address partyA, address partyB) external override {
+	function onClosePosition(uint256 quoteId, uint256, uint256, address, address) external override {
 		if (closeCallCount == 0) {
-			bool finalized = true;
+			Quote memory currentQuote = IViewFacetQuote(SYMMIO).getQuote(quoteId);
+			bool onlyCurrentFinalized = currentQuote.quoteStatus == QuoteStatus.CLOSED && currentQuote.closedAmount == currentQuote.quantity;
 			for (uint256 i = 0; i < monitoredQuoteIds.length; i++) {
+				if (monitoredQuoteIds[i] == quoteId) continue;
 				Quote memory quote = IViewFacetQuote(SYMMIO).getQuote(monitoredQuoteIds[i]);
-				if (quote.quoteStatus != QuoteStatus.CLOSED || quote.closedAmount != quote.quantity) finalized = false;
+				if (quote.quoteStatus == QuoteStatus.CLOSED || quote.closedAmount == quote.quantity) onlyCurrentFinalized = false;
 			}
-			firstCloseSawFinalizedBatch = finalized;
-			firstClosePartyAAllocated = IViewFacet(SYMMIO).allocatedBalanceOfPartyA(partyA);
-			(firstClosePartyBAllocated, , , , , , , , ) = IViewFacet(SYMMIO).balanceInfoOfPartyB(partyB, partyA);
+			firstCloseSawOnlyCurrentQuoteFinalized = onlyCurrentFinalized;
+			firstCloseQuoteId = quoteId;
 		}
 		closeCallCount++;
 	}
