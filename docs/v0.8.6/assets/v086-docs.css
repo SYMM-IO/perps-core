@@ -1145,7 +1145,8 @@ code {
 }
 
 .reader-hero .hero-copy {
-	max-width: 68ch;
+	width: 100%;
+	max-width: none;
 	margin-top: 18px;
 	font-size: 16px;
 	line-height: 1.6;

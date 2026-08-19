@@ -51,7 +51,7 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 		uint256 /* closedPrice */,
 		address partyA,
 		address partyB
-	) external onlySymmio nonReentrant whenNotPaused {
+	) external onlySymmio nonReentrantCallback whenNotPaused {
 		_removeQuoteFromAccount(quoteId, partyA, partyB);
 	}
 
@@ -59,7 +59,7 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 	/// @param quoteId The cancelled quote identifier
 	/// @param partyA The trader address (may be a virtual account)
 	/// @param partyB The counterparty address
-	function onCancelQuote(uint256 quoteId, address partyA, address partyB) external onlySymmio whenNotPaused {
+	function onCancelQuote(uint256 quoteId, address partyA, address partyB) external onlySymmio nonReentrantCallback whenNotPaused {
 		_removeQuoteFromAccount(quoteId, partyA, partyB);
 	}
 
@@ -83,7 +83,7 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 	/// @notice Called by Symmio core after a partyA's liquidation is fully settled
 	/// @dev Attempts deferred VA cleanup now that liquidation state has been cleared
 	/// @param partyA The trader address whose liquidation was settled
-	function onLiquidationSettled(address partyA) external onlySymmio nonReentrant whenNotPaused {
+	function onLiquidationSettled(address partyA) external onlySymmio nonReentrantCallback whenNotPaused {
 		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		// Settlement means this VA's share has been credited — clear pending cross-liq deferrals
 		// so _tryDeleteVirtualAccount can proceed regardless of overall cross-liq status.
