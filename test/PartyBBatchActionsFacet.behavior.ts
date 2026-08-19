@@ -322,7 +322,7 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 			).to.be.revertedWith("PartyBFacet: Invalid length")
 		})
 
-		it("Should reject duplicate quote IDs before mutating quote or global locks", async function () {
+		it("Should process repeated quote IDs sequentially without stranding locks", async function () {
 			const quoteId = 1n
 			const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)
 			const partyABefore = await user.getBalanceInfo()
@@ -332,24 +332,26 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 			const closedPrice = quoteBefore.openedPrice
 			const upnlSig = await getDummyPairUpnlAndPricesSig([closedPrice, closedPrice], [1n, 1n])
 
-			await expect(
-				context.partyBBatchActionsFacet
-					.connect(context.signers.hedger)
-					.fillCloseRequests([quoteId, quoteId], [firstFill, secondFill], [closedPrice, closedPrice], upnlSig),
-			).to.be.revertedWith("LibQuoteClose: Duplicate quoteId")
+			await context.partyBBatchActionsFacet
+				.connect(context.signers.hedger)
+				.fillCloseRequests([quoteId, quoteId], [firstFill, secondFill], [closedPrice, closedPrice], upnlSig)
 
 			const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
 			const partyAAfter = await user.getBalanceInfo()
 			const partyBAfter = await hedger.getBalanceInfo(await user.getAddress())
 
-			expect(quoteAfter.closedAmount).to.equal(quoteBefore.closedAmount)
-			expect(quoteAfter.quoteStatus).to.equal(quoteBefore.quoteStatus)
-			expect(quoteAfter.lockedValues.cva).to.equal(quoteBefore.lockedValues.cva)
-			expect(quoteAfter.lockedValues.lf).to.equal(quoteBefore.lockedValues.lf)
-			expect(quoteAfter.lockedValues.partyAmm).to.equal(quoteBefore.lockedValues.partyAmm)
-			expect(quoteAfter.lockedValues.partyBmm).to.equal(quoteBefore.lockedValues.partyBmm)
-			expect(partyAAfter.totalLockedPartyA).to.equal(partyABefore.totalLockedPartyA)
-			expect(partyBAfter.totalLockedPartyB).to.equal(partyBBefore.totalLockedPartyB)
+			expect(quoteAfter.closedAmount).to.equal(quoteBefore.quantity)
+			expect(quoteAfter.quoteStatus).to.equal(BigInt(QuoteStatus.CLOSED))
+			expect(quoteAfter.lockedValues.cva).to.equal(0n)
+			expect(quoteAfter.lockedValues.lf).to.equal(0n)
+			expect(quoteAfter.lockedValues.partyAmm).to.equal(0n)
+			expect(quoteAfter.lockedValues.partyBmm).to.equal(0n)
+			expect(partyABefore.totalLockedPartyA - partyAAfter.totalLockedPartyA).to.equal(
+				quoteBefore.lockedValues.cva + quoteBefore.lockedValues.lf + quoteBefore.lockedValues.partyAmm,
+			)
+			expect(partyBBefore.totalLockedPartyB - partyBAfter.totalLockedPartyB).to.equal(
+				quoteBefore.lockedValues.cva + quoteBefore.lockedValues.lf + quoteBefore.lockedValues.partyBmm,
+			)
 		})
 
 		it("Should fail when quotes belong to different partyAs", async function () {
@@ -386,7 +388,7 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 			expect(quote2.quoteStatus).to.equal(BigInt(QuoteStatus.CLOSE_PENDING))
 		})
 
-		it("Should expose a fully finalized batch to the first close hook", async function () {
+		it("Should call each close hook immediately after finalizing its quote", async function () {
 			const quoteIds = [1n, 2n]
 			const quotes = await Promise.all(quoteIds.map(quoteId => context.viewFacetQuote.getQuote(quoteId)))
 			const filledAmounts = quotes.map(quote => quote.quantity)
@@ -397,16 +399,13 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 			await context.controlFacet.connect(context.signers.admin).registerHook(ethers.ZeroAddress, await observer.getAddress())
 			await context.partyBBatchActionsFacet.connect(context.signers.hedger).fillCloseRequests(quoteIds, filledAmounts, closedPrices, upnlSig)
 
-			const partyAFinal = await user.getBalanceInfo()
-			const partyBFinal = await hedger.getBalanceInfo(await user.getAddress())
-			expect(await observer.firstCloseSawFinalizedBatch()).to.equal(true)
-			expect(await observer.firstClosePartyAAllocated()).to.equal(partyAFinal.allocatedBalances)
-			expect(await observer.firstClosePartyBAllocated()).to.equal(partyBFinal.allocatedBalances)
+			expect(await observer.firstCloseQuoteId()).to.equal(quoteIds[0])
+			expect(await observer.firstCloseSawOnlyCurrentQuoteFinalized()).to.equal(true)
 			expect(await observer.closeCallCount()).to.equal(quoteIds.length)
 			expect(await observer.closeFeeCallCount()).to.equal(quoteIds.length)
 		})
 
-		it("Should net opposite realized PnL across the full close batch", async function () {
+		it("Should not fund an earlier quote with a later quote's realized PnL", async function () {
 			await user.requestToCancelCloseRequest(1n)
 			await hedger.acceptCancelCloseRequest(1n)
 			await user.requestToCancelCloseRequest(2n)
@@ -427,16 +426,18 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 			const filledAmounts = [decimal(100n), decimal(100n)]
 			const closedPrices = [closePrice, closePrice]
 			const upnlSig = await getDummyPairUpnlAndPricesSig(closedPrices, [1n, 1n])
+			const partyBBefore = await hedger.getBalanceInfo(partyA)
 
-			await expect(context.partyBBatchActionsFacet.connect(context.signers.hedger).fillCloseRequests(quoteIds, filledAmounts, closedPrices, upnlSig))
-				.not.to.be.reverted
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).fillCloseRequests(quoteIds, filledAmounts, closedPrices, upnlSig),
+			).to.be.revertedWith("LibQuote: PartyA should first exit its positions that are incurring losses")
 
-			expect((await hedger.getBalanceInfo(partyA)).allocatedBalances).to.equal(retainedPartyBAllocation)
-			expect((await context.viewFacetQuote.getQuote(1n)).quoteStatus).to.equal(BigInt(QuoteStatus.CLOSED))
-			expect((await context.viewFacetQuote.getQuote(2n)).quoteStatus).to.equal(BigInt(QuoteStatus.CLOSED))
+			expect((await hedger.getBalanceInfo(partyA)).allocatedBalances).to.equal(partyBBefore.allocatedBalances)
+			expect((await context.viewFacetQuote.getQuote(1n)).quoteStatus).to.equal(BigInt(QuoteStatus.CLOSE_PENDING))
+			expect((await context.viewFacetQuote.getQuote(2n)).quoteStatus).to.equal(BigInt(QuoteStatus.CLOSE_PENDING))
 		})
 
-		it("Should conserve balances, fees, locks, and events across combined funding and PnL", async function () {
+		it("Should conserve balances, fees, locks, and events across sequential per-quote settlement", async function () {
 			await user.requestToCancelCloseRequest(1n)
 			await hedger.acceptCancelCloseRequest(1n)
 			await user.requestToCancelCloseRequest(2n)
@@ -520,17 +521,17 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 			const partyAEvents = events.filter(event => event.name === "BalanceChangePartyA")
 			expect(partyAEvents.map(event => [event.args.amount, event.args._type])).to.deep.equal([
 				[pnl[0], 4n],
-				[-funding[1], 10n],
 				[funding[0], 11n],
-				[-pnl[1], 5n],
 				[fees[0], 3n],
+				[-funding[1], 10n],
+				[-pnl[1], 5n],
 				[fees[1], 3n],
 			])
 			const partyBEvents = events.filter(event => event.name === "BalanceChangePartyB")
 			expect(partyBEvents.map(event => [event.args.amount, event.args._type])).to.deep.equal([
 				[funding[0], 10n],
-				[-pnl[1], 4n],
 				[pnl[0], 5n],
+				[-pnl[1], 4n],
 				[-funding[1], 11n],
 			])
 
