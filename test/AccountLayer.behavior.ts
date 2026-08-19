@@ -3944,21 +3944,27 @@ export function shouldBehaveLikeAccountLayer(): void {
 					expect(await context.viewFacet.balanceOf(customSubAccount)).to.equal(subAccountBalanceBefore + BALANCES.TRANSFER_AMOUNT)
 				})
 
-				it("should enforce the scaled locked balance floor from core", async () => {
+				it("should enforce the scaled locked balance and funding debt floor from core", async () => {
 					const scaledLockedBalance = BALANCES.TRANSFER_AMOUNT / 2n
-					const removable = BALANCES.TRANSFER_AMOUNT - scaledLockedBalance
+					const fundingDebt = BALANCES.TRANSFER_AMOUNT / 10n
+					const requiredAllocation = scaledLockedBalance + fundingDebt
+					const removable = BALANCES.TRANSFER_AMOUNT - requiredAllocation
 
 					await expect(
 						context.alMarginFacet
 							.connect(context.signers.user)
-							.safeRemoveMargin(virtualAccount, removable + 1n, await getDummySingleUpnlWithPendingBalanceSig(0n, 0n, scaledLockedBalance)),
-					).to.be.revertedWith("AccountFacet: Locked balance must remain allocated")
+							.safeRemoveMargin(
+								virtualAccount,
+								removable + 1n,
+								await getDummySingleUpnlWithPendingBalanceSig(0n, 0n, scaledLockedBalance, fundingDebt),
+							),
+					).to.be.revertedWith("AccountFacet: Locked balance and funding debt must remain allocated")
 
 					await context.alMarginFacet
 						.connect(context.signers.user)
-						.safeRemoveMargin(virtualAccount, removable, await getDummySingleUpnlWithPendingBalanceSig(0n, 0n, scaledLockedBalance))
+						.safeRemoveMargin(virtualAccount, removable, await getDummySingleUpnlWithPendingBalanceSig(0n, 0n, scaledLockedBalance, fundingDebt))
 
-					expect(await context.viewFacet.allocatedBalanceOfPartyA(virtualAccount)).to.equal(scaledLockedBalance)
+					expect(await context.viewFacet.allocatedBalanceOfPartyA(virtualAccount)).to.equal(requiredAllocation)
 				})
 
 				it("should revert when transferring zero amount", async () => {

@@ -72,10 +72,10 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 
 	/// @notice Deallocates via core safeDeallocate and transfers margin from a virtual account back to its parent sub-account
 	/// @dev Same routing as removeMargin, but forwards to core safeDeallocate, which reserves the Muon-attested
-	/// pendingBalance and enforces the scaled retention floor (max of stored CVA + LF and scaledLockedBalance)
+	/// pendingBalance and enforces the scaled retention floor plus gross funding debt
 	/// @param virtualAccount The virtual account to remove margin from
 	/// @param amount The amount to deallocate and transfer
-	/// @param upnlSig The Muon signature carrying the account's upnl, pendingBalance, and scaledLockedBalance
+	/// @param upnlSig The Muon signature carrying UPNL, funding debt, pending balance, and scaledLockedBalance
 	function safeRemoveMargin(
 		address virtualAccount,
 		uint256 amount,
