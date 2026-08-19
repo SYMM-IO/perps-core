@@ -8,7 +8,7 @@ import { SharedEvents } from "./SharedEvents.sol";
 import { LibQuote } from "./LibQuote.sol";
 import { LibQuoteFunding } from "./LibQuoteFunding.sol";
 import { LibConnections } from "./LibConnections.sol";
-import { QuoteStorage, Quote, LockedValues, PositionType, OrderType, QuoteStatus } from "../storages/QuoteStorage.sol";
+import { QuoteStorage, Quote, LockedValues, QuoteStatus } from "../storages/QuoteStorage.sol";
 import { AccountStorage } from "../storages/AccountStorage.sol";
 import { AffiliateStorage } from "../storages/AffiliateStorage.sol";
 import { SymbolStorage } from "../storages/SymbolStorage.sol";
@@ -19,8 +19,6 @@ import { LibAccount } from "./LibAccount.sol";
 import { LibPartyBState } from "./extensions/LibPartyBState.sol";
 import { LockedValuesOps } from "./LibLockedValues.sol";
 import { LibHook } from "./LibHook.sol";
-import { LibSymbolAdjustment } from "./LibSymbolAdjustment.sol";
-import { LibSigner } from "./LibSigner.sol";
 
 library LibQuoteClose {
 	using LockedValuesOps for LockedValues;
@@ -47,91 +45,6 @@ library LibQuoteClose {
 		_applySettlementDebit(quote, settlement);
 		uint256 fee = _finalizeCloseQuote(quoteId, filledAmount, closedPrice, settlement);
 		_callCloseQuoteHooks(quoteId, filledAmount, closedPrice, fee);
-	}
-
-	/// @notice Closes a batch of quotes after netting every bilateral funding and PnL component.
-	/// @dev Duplicate quote IDs are rejected before any state mutation. No external hook is called until every quote has been finalized.
-	function closeQuotes(
-		uint256[] memory quoteIds,
-		uint256[] memory filledAmounts,
-		uint256[] memory closedPrices
-	) public returns (QuoteStatus[] memory quoteStatuses, uint256[] memory closeIds) {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		Quote storage firstQuote = quoteLayout.quotes[quoteIds[0]];
-		address partyA = firstQuote.partyA;
-		address partyB = firstQuote.partyB;
-
-		_requireUniqueQuoteIds(quoteIds);
-		require(!MAStorage.layout().liquidationStatus[partyA], "PartyBFacet: PartyA isn't solvent");
-		partyB.requireNotLiquidating(partyA);
-		LibAccount.increaseBothUpnlCounters(partyB, partyA);
-
-		CloseSettlement[] memory settlements = new CloseSettlement[](quoteIds.length);
-		uint256 partyAReceives;
-		uint256 partyAPays;
-
-		for (uint256 i = 0; i < quoteIds.length; i++) {
-			Quote storage quote = quoteLayout.quotes[quoteIds[i]];
-			require(quote.partyB == partyB, "PartyBBatchActionsFacet: All positions must have same partyB");
-			require(quote.partyA == partyA, "PartyBBatchActionsFacet: All positions must have same partyA");
-			require(quote.partyB == LibSigner.getSigner(), "PartyBFacet: Sender should be the partyB");
-			_validateFillCloseRequest(quoteIds[i], filledAmounts[i], closedPrices[i]);
-			settlements[i] = _prepareCloseQuote(quoteIds[i], filledAmounts[i], closedPrices[i]);
-			(uint256 quoteReceives, uint256 quotePays) = _partyASettlementAmounts(settlements[i]);
-			partyAReceives += quoteReceives;
-			partyAPays += quotePays;
-		}
-
-		_requireSettlementBalance(firstQuote, settlements[0].allocationKey, partyAReceives, partyAPays);
-
-		for (uint256 i = 0; i < quoteIds.length; i++) {
-			_applySettlementCredit(QuoteStorage.layout().quotes[quoteIds[i]], settlements[i]);
-		}
-		for (uint256 i = 0; i < quoteIds.length; i++) {
-			_applySettlementDebit(QuoteStorage.layout().quotes[quoteIds[i]], settlements[i]);
-		}
-		uint256[] memory fees = new uint256[](quoteIds.length);
-		for (uint256 i = 0; i < quoteIds.length; i++) {
-			fees[i] = _finalizeCloseQuote(quoteIds[i], filledAmounts[i], closedPrices[i], settlements[i]);
-		}
-		for (uint256 i = 0; i < quoteIds.length; i++) {
-			_callCloseQuoteHooks(quoteIds[i], filledAmounts[i], closedPrices[i], fees[i]);
-		}
-
-		quoteStatuses = new QuoteStatus[](quoteIds.length);
-		closeIds = new uint256[](quoteIds.length);
-		for (uint256 i = 0; i < quoteIds.length; i++) {
-			quoteStatuses[i] = quoteLayout.quotes[quoteIds[i]].quoteStatus;
-			closeIds[i] = quoteLayout.closeIds[quoteIds[i]];
-		}
-	}
-
-	function _requireUniqueQuoteIds(uint256[] memory quoteIds) private pure {
-		for (uint256 i = 0; i < quoteIds.length; i++) {
-			for (uint256 j = i + 1; j < quoteIds.length; j++) {
-				require(quoteIds[i] != quoteIds[j], "LibQuoteClose: Duplicate quoteId");
-			}
-		}
-	}
-
-	function _validateFillCloseRequest(uint256 quoteId, uint256 filledAmount, uint256 closedPrice) private view {
-		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-		LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
-		require(
-			quote.quoteStatus == QuoteStatus.CLOSE_PENDING || quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING,
-			"PartyBFacet: Invalid state"
-		);
-		require(block.timestamp <= quote.deadline, "PartyBFacet: Quote is expired");
-		if (quote.positionType == PositionType.LONG) {
-			require(closedPrice >= quote.requestedClosePrice, "PartyBFacet: Closed price isn't valid");
-		} else {
-			require(closedPrice <= quote.requestedClosePrice, "PartyBFacet: Closed price isn't valid");
-		}
-		if (quote.orderType == OrderType.LIMIT) {
-			require(quote.quantityToClose >= filledAmount, "PartyBFacet: Invalid filledAmount");
-		} else {
-			require(quote.quantityToClose == filledAmount, "PartyBFacet: Invalid filledAmount");
-		}
 	}
 
 	function _prepareCloseQuote(uint256 quoteId, uint256 filledAmount, uint256 closedPrice) private returns (CloseSettlement memory settlement) {
