@@ -292,6 +292,7 @@ library FundingRateFacetImpl {
 		// funding debt at the signature timestamp, so retain that exact amount for the
 		// post-charge solvency check even if execution crosses an epoch boundary.
 		int256 signedFundingFee;
+		int256[] memory executionFundingFees = new int256[](quoteIds.length);
 		for (uint256 i = 0; i < quoteIds.length; i++) {
 			Quote storage quote = QuoteStorage.layout().quotes[quoteIds[i]];
 			LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
@@ -305,7 +306,21 @@ library FundingRateFacetImpl {
 
 			// Delegate to library function that handles the actual fee calculation
 			signedFundingFee += LibQuoteFunding.getAccumulatedFundingFeeAt(quoteIds[i], upnlSig.timestamp);
-			LibQuoteFunding.chargeAccumulatedFundingFee(quoteIds[i]);
+			executionFundingFees[i] = LibQuoteFunding.recordAccumulatedFundingFee(quoteIds[i]);
+		}
+
+		// Credits precede debits across the whole batch so offsetting quote-level funding
+		// debts settle against the actual net obligation, independent of input order.
+		for (uint256 i = 0; i < quoteIds.length; i++) {
+			Quote storage quote = QuoteStorage.layout().quotes[quoteIds[i]];
+			address allocationKey = LibAccount.partyBAllocationKey(quote.partyB, quote.partyA);
+			LibQuoteFunding.creditFundingFee(quote, allocationKey, executionFundingFees[i]);
+		}
+		for (uint256 i = 0; i < quoteIds.length; i++) {
+			Quote storage quote = QuoteStorage.layout().quotes[quoteIds[i]];
+			address allocationKey = LibAccount.partyBAllocationKey(quote.partyB, quote.partyA);
+			LibQuoteFunding.debitFundingFee(quote, allocationKey, executionFundingFees[i]);
+			LibQuoteFunding.emitQuoteFundingSettled(quoteIds[i], allocationKey, executionFundingFees[i]);
 		}
 
 		// Realization removes the signed funding debt from UPNL and transfers the

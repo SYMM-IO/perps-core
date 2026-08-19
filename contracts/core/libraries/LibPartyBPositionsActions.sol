@@ -26,6 +26,12 @@ library LibPartyBPositionsActions {
 
 	/// @notice Validates and fills a close request by checking state, expiry, price, and amount constraints.
 	function fillCloseRequest(uint256 quoteId, uint256 filledAmount, uint256 closedPrice) internal {
+		validateFillCloseRequest(quoteId, filledAmount, closedPrice);
+		LibQuoteClose.closeQuote(quoteId, filledAmount, closedPrice);
+	}
+
+	/// @notice Validates a close request without applying its settlement.
+	function validateFillCloseRequest(uint256 quoteId, uint256 filledAmount, uint256 closedPrice) internal view {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
 		require(
@@ -43,7 +49,6 @@ library LibPartyBPositionsActions {
 		} else {
 			require(quote.quantityToClose == filledAmount, "PartyBFacet: Invalid filledAmount");
 		}
-		LibQuoteClose.closeQuote(quote.id, filledAmount, closedPrice);
 	}
 
 	/// @notice Opens a position by filling a locked quote, handling partial fills and fee collection.

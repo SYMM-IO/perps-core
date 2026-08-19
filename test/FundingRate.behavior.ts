@@ -475,6 +475,30 @@ export function shouldBehaveLikeFundingRate(): void {
 				])
 			})
 
+			it("should net opposite funding debts before requiring either party to cover a gross batch leg", async () => {
+				const partyA = await context.signers.user.getAddress()
+				const partyB = await context.signers.hedger.getAddress()
+
+				await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(2n)], [-decimal(2n)], [decimal(1n)])
+				await time.increase(EightHourInSec)
+
+				const partyBBeforeDeallocation = await hedger.getBalanceInfo(partyA)
+				const retainedPartyBAllocation = partyBBeforeDeallocation.totalLockedPartyB
+				await context.partyBAccountFacet
+					.connect(context.signers.hedger)
+					.deallocateForPartyB(partyBBeforeDeallocation.allocatedBalances - retainedPartyBAllocation, partyA, await getDummySingleUpnlSig(0n))
+
+				const funding = await context.viewFacetQuote.getQuoteFundingDebts([2n, 1n])
+				expect(funding[0]).to.be.lessThan(-retainedPartyBAllocation)
+				expect(funding[0] + funding[1]).to.equal(0n)
+
+				await expect(
+					context.fundingRateFacet.connect(context.signers.hedger).chargeAccumulatedFundingFee(partyA, partyB, [2n, 1n], await getDummyPairUpnlSig()),
+				).not.to.be.reverted
+
+				expect((await hedger.getBalanceInfo(partyA)).allocatedBalances).to.equal(retainedPartyBAllocation)
+			})
+
 			it("should failed when quote has invalid party A", async () => {
 				await expect(
 					context.fundingRateFacet
