@@ -162,7 +162,7 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	/// @notice Allows Party A to deallocate a specified amount of collateral with pending balance check.
 	/// @dev This function considers off-chain pending operations (like solver orders) that need reserved funds.
 	/// @param amount The precise amount of collateral to be deallocated, specified in 18 decimals.
-	/// @param upnlSig The Muon signature for SingleUpnlWithPendingBalanceSig containing upnl and pendingBalance.
+	/// @param upnlSig The Muon signature containing UPNL, funding debt, pending balance, and the scaled locked balance.
 	function safeDeallocate(
 		uint256 amount,
 		SingleUpnlWithPendingBalanceSig memory upnlSig

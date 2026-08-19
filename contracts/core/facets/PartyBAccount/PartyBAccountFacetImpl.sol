@@ -70,7 +70,7 @@ library PartyBAccountFacetImpl {
 	/// for off-chain pending operations and enforcing the scaled retention floor.
 	/// @dev Mirrors deallocateForPartyB, with two additions: the availability check reserves the Muon-attested
 	/// pendingBalance, and (when strict deallocation is enabled for the partyB) the retention floor is the
-	/// stricter of the stored CVA + LF requirement and the Muon-attested scaledLockedBalance.
+	/// stricter of the stored CVA + LF requirement and the Muon-attested scaledLockedBalance, plus gross funding debt.
 	function safeDeallocateForPartyB(uint256 amount, address partyA, SingleUpnlWithPendingBalanceSig memory upnlSig) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
@@ -93,11 +93,15 @@ library PartyBAccountFacetImpl {
 				"AccountFacet: Insufficient balance considering pending allocations"
 			);
 			if (MAStorage.layout().strictDeallocationEnabledForPartyB[signer]) {
-				uint256 retention = LibAccount.partyBDeallocateCvaLfRequirement(signer, verifyPartyA);
-				if (upnlSig.scaledLockedBalance > retention) retention = upnlSig.scaledLockedBalance;
+				uint256 retention = LibAccount.partyBSafeDeallocateRequirement(
+					signer,
+					verifyPartyA,
+					upnlSig.scaledLockedBalance,
+					upnlSig.fundingDebt
+				);
 				require(
 					accountLayout.partyBAllocatedBalances[signer][partyA] - amount >= retention,
-					"AccountFacet: Locked balance must remain allocated"
+					"AccountFacet: Locked balance and funding debt must remain allocated"
 				);
 			}
 		}
