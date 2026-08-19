@@ -1104,6 +1104,9 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			const { parts, requestId, partsHash } = await acceptStandard(fixture)
 			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(user.address)
 			await context.withdrawFacet.connect(context.signers.admin).suspendWithdrawRequest(user.address, requestId)
+			// Keep the request terminal while isolating the request-status check from
+			// the earlier global suspension guard.
+			await context.pauseControlFacet.connect(context.signers.admin).unsuspendedAddress(user.address)
 
 			const { offerData, creditDataRaw } = await buildAccelerateCall(fixture, {
 				user: user.address,
@@ -1117,6 +1120,37 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			await expect(
 				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw),
 			).to.be.revertedWithCustomError(expressProvider, "AccelerateOnlyFromStandardAccepted")
+		})
+
+		it("blocks globally suspended acceleration without consuming state and resumes after unsuspension", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, user, receiver, context, collateral, randomCaller } = fixture
+			const { parts, requestId, partsHash, withdrawAmount } = await acceptStandard(fixture)
+			const { offerData, creditDataRaw } = await buildAccelerateCall(fixture, {
+				user: user.address,
+				requestId,
+				parts,
+				nonce: 0n,
+				affiliateAmount: 0n,
+				creditAmount: 100n * 10n ** 18n,
+				partsHash,
+			})
+
+			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(user.address)
+			await expect(
+				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw),
+			).to.be.revertedWithCustomError(expressProvider, "UserSuspended")
+
+			const blockedInfo = await expressProvider.getWithdrawInfo(user.address, requestId)
+			expect(blockedInfo.status).to.equal(STATUS_ACCEPTED)
+			expect(blockedInfo.optionType).to.equal(OPT_STANDARD)
+			expect(await expressProvider.accelerateNonce(user.address, requestId)).to.equal(0n)
+			expect(await collateral.balanceOf(receiver.address)).to.equal(0n)
+
+			await context.pauseControlFacet.connect(context.signers.admin).unsuspendedAddress(user.address)
+			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw)
+			expect(await collateral.balanceOf(receiver.address)).to.equal(withdrawAmount - DEFAULT_ACCELERATION_FEE)
+			expect(await expressProvider.accelerateNonce(user.address, requestId)).to.equal(1n)
 		})
 
 		it("reverts FundingSplitExceedsExpress when affiliate + credit > expressAmount", async function () {
