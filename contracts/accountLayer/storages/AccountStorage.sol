@@ -142,7 +142,7 @@ library AccountStorage {
 		bytes32 initAccountManagerCodeHash;
 		/// @notice PartyBs that closed positions with a VA while in cross liquidation.
 		/// @dev Maps VA address => set of partyBs with pending cross liq distributions.
-		/// Used to defer VA deletion until distributeForClearingHouse has credited the VA's share,
+		/// Used to defer VA deletion until applyClearingHouseSettlement has credited the VA's share,
 		/// even when the final hook fires with a different partyB.
 		mapping(address => EnumerableSet.AddressSet) vaPendingCrossLiqPartyBs;
 		/// @notice Account family the current signer session is confined to, or zero when unconfined.

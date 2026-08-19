@@ -12,6 +12,7 @@ import { FundingStorage, FundingFee } from "../../storages/FundingStorage.sol";
 import { QuoteStorage } from "../../storages/QuoteStorage.sol";
 import { SymbolStorage, Symbol, SymbolWithType } from "../../storages/SymbolStorage.sol";
 import { IViewFacetSymbol, PartyBSymbolCount } from "./IViewFacetSymbol.sol";
+import { LibSymbol } from "../../libraries/LibSymbol.sol";
 
 contract ViewFacetSymbol is IViewFacetSymbol {
 	/// @notice Returns the details of a symbol by its ID.
@@ -92,6 +93,14 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 			}
 		}
 		return symbols;
+	}
+
+	/// @notice Returns the effective notional LF rate and whether it is a symbol-specific override.
+	/// @dev Symbol 0 returns the live default and always reports hasOverride as false.
+	function getSymbolMinAcceptableNotionalLFRate(uint256 symbolId) external view returns (uint256 rate, bool hasOverride) {
+		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
+		require(symbolId <= symbolLayout.lastId, "ViewFacetSymbol: Invalid id");
+		return (LibSymbol.minAcceptableNotionalLFRate(symbolId), LibSymbol.hasMinAcceptableNotionalLFRateOverride(symbolId));
 	}
 
 	/// @notice Returns the connected party Bs of Party A.

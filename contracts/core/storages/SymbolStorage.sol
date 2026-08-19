@@ -53,6 +53,12 @@ library SymbolStorage {
 		/// @dev Used with PartyB symbol type whitelisting to restrict which markets
 		///      each hedger want to have exposure too.
 		mapping(uint256 => uint256) symbolTypes;
+		/// @notice Minimum LF rate applied to position notional, in 1e18 precision.
+		/// @dev Symbol 0 stores the live default. A nonzero symbol uses its own value only
+		///      when hasMinAcceptableNotionalLFRateOverride[symbolId] is true.
+		mapping(uint256 => uint256) minAcceptableNotionalLFRates;
+		/// @notice Whether a nonzero symbol overrides the symbol-0 notional LF rate.
+		mapping(uint256 => bool) hasMinAcceptableNotionalLFRateOverride;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

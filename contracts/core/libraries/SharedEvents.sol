@@ -40,12 +40,18 @@ library SharedEvents {
 	}
 
 	/// @notice Reasons for exact changes to `AccountStorage.partyAReimbursement`.
+	/// @dev The deprecated entries remain in their original ordinal positions for historical log decoding.
 	enum ReimbursementChangeType {
-		CLEARING_HOUSE_IN,
+		CLEARING_HOUSE_IN_DEPRECATED,
 		PLATFORM_FEE_IN,
-		CLEARING_HOUSE_OUT,
+		CLEARING_HOUSE_OUT_DEPRECATED,
 		RELEASE_TO_ALLOCATED,
-		MOVE_TO_LIQUIDATION_ESCROW
+		MOVE_TO_LIQUIDATION_ESCROW,
+		REALIZED_PNL_IN,
+		REALIZED_PNL_OUT,
+		FUNDING_FEE_IN,
+		FUNDING_FEE_OUT,
+		PLATFORM_FEE_OUT
 	}
 
 	/// @notice Emitted only when `AccountStorage.allocatedBalances[partyA]` changes.

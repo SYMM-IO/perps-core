@@ -47,6 +47,28 @@ body.doc-page {
 	border-bottom: 0;
 }
 
+.reading-progress {
+	--reading-progress: 0;
+	position: absolute;
+	inset: auto 0 -1px;
+	height: 2px;
+	overflow: hidden;
+	pointer-events: none;
+}
+
+.reading-progress span {
+	display: block;
+	width: 100%;
+	height: 100%;
+	background: var(--accent);
+	transform: scaleX(var(--reading-progress));
+	transform-origin: left center;
+}
+
+[dir="rtl"] .reading-progress span {
+	transform-origin: right center;
+}
+
 /* Header trail. The wordmark is the home link on every page and the segments
    after it name the level you are on, so "up" is labelled rather than implied by
    a clickable logo. Each segment is a distinct destination — nothing duplicates. */
@@ -373,6 +395,7 @@ body.doc-page {
    and one shared spine for each run of nested subsections. */
 .rail-list[data-rail-list="sections"] {
 	display: grid;
+	grid-template-columns: minmax(0, 1fr);
 	gap: 2px;
 }
 
@@ -417,26 +440,30 @@ body.doc-page {
 
 .toc-section-label {
 	min-width: 0;
+	overflow-wrap: anywhere;
 }
 
 .toc-sublist {
 	position: relative;
 	display: grid;
-	margin: 3px 0 8px 40px;
-	padding-left: 16px;
+	min-width: 0;
+	margin: 3px 0 8px;
+	margin-inline-start: 20px;
+	padding-inline-start: 12px;
 }
 
 .toc-sublist::before {
 	position: absolute;
 	top: 1px;
 	bottom: 1px;
-	left: 0;
+	inset-inline-start: 0;
 	width: 1px;
 	background: var(--line);
 	content: "";
 }
 
 .toc-sublist .toc-link.level-3 {
+	min-width: 0;
 	margin: 0;
 	padding: 7px 10px;
 	border-left: 0;
@@ -444,6 +471,8 @@ body.doc-page {
 	color: var(--muted);
 	font-size: 12.5px;
 	line-height: 1.35;
+	overflow-wrap: anywhere;
+	white-space: normal;
 }
 
 .toc-sublist .toc-link.level-3:hover,
@@ -466,6 +495,10 @@ body.doc-page {
 
 .rail-backdrop {
 	display: none;
+}
+
+body.doc-page.rail-is-collapsed {
+	--rail: 48px;
 }
 
 body.rail-is-collapsed .rail-tabs {
@@ -604,6 +637,19 @@ body.doc-page .reader-main > .chapter-pager,
 body.doc-page .doc-article > :is(.code-frame, .table-wrap, .tool-panel, figure, table, pre) {
 	width: 100%;
 	max-width: none;
+}
+
+body.doc-page .reader-hero .hero-copy,
+body.doc-page .doc-article > :is(p, ul, ol, blockquote, .callout, h1, h2, h3, h4, h5, h6) {
+	width: 100%;
+	max-width: none;
+	text-align: start;
+}
+
+body.doc-page .doc-article p {
+	-webkit-hyphens: auto;
+	hyphens: auto;
+	text-wrap: wrap;
 }
 
 .chapter-pager a {
@@ -1047,13 +1093,18 @@ body.doc-page .doc-article > :is(.code-frame, .table-wrap, .tool-panel, figure, 
 }
 
 .catalog-toolbar {
+	position: sticky;
+	top: var(--header-h);
+	z-index: 15;
 	display: grid;
 	grid-template-columns: minmax(220px, 400px) 1fr;
 	gap: 16px;
 	align-items: center;
 	margin-bottom: 48px;
-	padding: 20px 0;
+	padding: 16px 0;
 	border-bottom: 1px solid var(--line);
+	background: color-mix(in srgb, var(--bg) 94%, transparent);
+	backdrop-filter: blur(14px);
 }
 
 .catalog-search-wrap {
@@ -1101,10 +1152,34 @@ body.doc-page .doc-article > :is(.code-frame, .table-wrap, .tool-panel, figure, 
 }
 
 .catalog-empty {
-	padding: 48px 20px;
+	display: grid;
+	justify-items: center;
+	gap: 8px;
+	padding: 56px 20px;
 	border-block: 1px solid var(--line);
 	color: var(--muted);
 	text-align: center;
+}
+
+.catalog-empty[hidden] {
+	display: none;
+}
+
+.catalog-empty strong {
+	color: var(--ink);
+	font-family: var(--display);
+	font-size: 18px;
+	font-weight: 640;
+	letter-spacing: -0.015em;
+}
+
+.catalog-empty span {
+	max-width: 42ch;
+	line-height: 1.5;
+}
+
+.catalog-empty .button {
+	margin-top: 8px;
 }
 
 .topic-kicker {
@@ -1117,6 +1192,18 @@ body.doc-page .doc-article > :is(.code-frame, .table-wrap, .tool-panel, figure, 
 	font-size: 9.5px;
 	letter-spacing: 0.11em;
 	text-transform: uppercase;
+	font-variant-numeric: tabular-nums;
+}
+
+.topic-kicker [data-reading-time] {
+	color: var(--muted);
+}
+
+.heading-anchor {
+	width: 28px;
+	height: 28px;
+	margin-inline-start: 6px;
+	margin-left: 0;
 }
 
 .topic-kicker span:first-child {
@@ -1142,7 +1229,17 @@ body.doc-page .doc-article > :is(.code-frame, .table-wrap, .tool-panel, figure, 
 	}
 
 	.docs-header .button {
+		min-height: 44px;
+	}
+
+	.rail-collapse {
+		min-width: 40px;
 		min-height: 40px;
+	}
+
+	.heading-anchor {
+		width: 36px;
+		height: 36px;
 	}
 
 	/* The rail becomes a drawer under the header, on every reading page. */
@@ -1307,6 +1404,7 @@ body.doc-page .doc-article > :is(.code-frame, .table-wrap, .tool-panel, figure, 
 		grid-template-columns: minmax(0, 1fr);
 		gap: 12px;
 		margin-bottom: 36px;
+		padding-block: 12px;
 	}
 
 	.catalog-search,
@@ -1345,6 +1443,13 @@ body.doc-page .doc-article > :is(.code-frame, .table-wrap, .tool-panel, figure, 
 		grid-column: 1;
 		text-align: left;
 	}
+
+	.back-to-top {
+		width: 44px;
+		height: 44px;
+		inset-inline-end: 16px;
+		bottom: calc(16px + env(safe-area-inset-bottom));
+	}
 }
 
 @media print {
@@ -1353,6 +1458,10 @@ body.doc-page .doc-article > :is(.code-frame, .table-wrap, .tool-panel, figure, 
 	.rail-backdrop,
 	.back-to-top,
 	.chapter-pager {
+		display: none !important;
+	}
+
+	.reading-progress {
 		display: none !important;
 	}
 }

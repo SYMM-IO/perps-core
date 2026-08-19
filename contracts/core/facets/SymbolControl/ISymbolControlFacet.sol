@@ -30,6 +30,10 @@ interface ISymbolControlFacet is IControlEvents {
 
 	function setSymbolAcceptableValues(uint256 symbolId, uint256 minAcceptableQuoteValue, uint256 minAcceptablePortionLF) external;
 
+	function setSymbolMinAcceptableNotionalLFRate(uint256 symbolId, uint256 minAcceptableNotionalLFRate) external;
+
+	function clearSymbolMinAcceptableNotionalLFRateOverride(uint256 symbolId) external;
+
 	function setSymbolTradingFee(uint256 symbolId, uint256 tradingFee) external;
 
 	function setSymbolTypes(uint256[] calldata symbolIds, uint256[] calldata symbolTypes) external;

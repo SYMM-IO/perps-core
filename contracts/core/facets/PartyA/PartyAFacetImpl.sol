@@ -25,6 +25,7 @@ import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { SingleUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
 import { LibHook } from "../../libraries/LibHook.sol";
 import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
+import { LibSymbol } from "../../libraries/LibSymbol.sol";
 
 library PartyAFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -68,6 +69,7 @@ library PartyAFacetImpl {
 			lockedValues.lf >= (symbolLayout.symbols[symbolId].minAcceptablePortionLF * lockedValues.totalForPartyA()) / 1e18,
 			"PartyAFacet: LF is not enough"
 		);
+		require(lockedValues.lf >= LibSymbol.requiredNotionalLF(symbolId, quantity, price), "PartyAFacet: Notional LF is not enough");
 
 		require(lockedValues.totalForPartyA() >= symbolLayout.symbols[symbolId].minAcceptableQuoteValue, "PartyAFacet: Quote value is low");
 		for (uint8 i = 0; i < partyBsWhiteList.length; i++) {
