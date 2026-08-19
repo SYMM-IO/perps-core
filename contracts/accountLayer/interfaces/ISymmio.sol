@@ -41,12 +41,13 @@ interface ISymmio {
 		SchnorrSign sigs;
 	}
 
-	/// @notice Muon signature proving a single account's unrealized PnL, pending balance,
-	/// and locked balance re-marked to live notional (scaledLockedBalance)
+	/// @notice Muon signature proving a single account's unrealized PnL, gross accrued funding liability,
+	/// pending balance, and locked balance re-marked to live notional (scaledLockedBalance)
 	struct SingleUpnlWithPendingBalanceSig {
 		bytes reqId;
 		uint256 timestamp;
 		int256 upnl;
+		uint256 fundingDebt;
 		uint256 pendingBalance;
 		uint256 scaledLockedBalance;
 		bytes gatewaySignature;
@@ -234,7 +235,7 @@ interface ISymmio {
 
 	/// @notice Deallocates collateral while reserving pending balance and enforcing the scaled retention floor
 	/// @param amount The amount to deallocate
-	/// @param upnlSig The Muon signature carrying upnl, pendingBalance, and scaledLockedBalance
+	/// @param upnlSig The Muon signature carrying UPNL, funding debt, pending balance, and scaledLockedBalance
 	function safeDeallocate(uint256 amount, ISymmio.SingleUpnlWithPendingBalanceSig memory upnlSig) external;
 
 	/// @notice Initiates a withdraw request with receiver parts
