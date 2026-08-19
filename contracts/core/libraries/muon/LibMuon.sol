@@ -96,7 +96,7 @@ library LibMuon {
 		verifyTSSAndGateway(hash, upnlSig.sigs, upnlSig.gatewaySignature, func);
 	}
 
-	/// @notice Verifies Party B UPNL signature that also carries pendingBalance and scaledLockedBalance.
+	/// @notice Verifies Party B UPNL signature that also carries gross funding debt, pendingBalance, and scaledLockedBalance.
 	function verifyPartyBUpnlWithPendingBalance(
 		SingleUpnlWithPendingBalanceSig memory upnlSig,
 		address partyB,
@@ -117,6 +117,7 @@ library LibMuon {
 				partyA,
 				LibAccount.getPartyBSignatureUpnlCounter(partyB, partyA, useCrossCounter),
 				upnlSig.upnl,
+				upnlSig.fundingDebt,
 				upnlSig.pendingBalance,
 				upnlSig.scaledLockedBalance,
 				upnlSig.timestamp,

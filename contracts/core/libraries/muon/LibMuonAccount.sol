@@ -45,6 +45,7 @@ library LibMuonAccount {
 				partyA,
 				AccountStorage.layout().partyAUpnlCounters[partyA],
 				upnlSig.upnl,
+				upnlSig.fundingDebt,
 				upnlSig.pendingBalance,
 				upnlSig.scaledLockedBalance,
 				upnlSig.timestamp,
