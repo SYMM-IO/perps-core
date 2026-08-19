@@ -71,6 +71,12 @@ for (const release of releases) {
 	}
 
 	const index = read(`${release}/index.html`);
+	if (/data-catalog-search/.test(index)) {
+		if (!/data-catalog-clear/.test(index)) fail(`${release}/index.html`, "chapter search has no clear-search recovery action");
+		if (!/id="catalog-result-count"/.test(index) || !/aria-describedby="catalog-result-count"/.test(index)) {
+			fail(`${release}/index.html`, "chapter search is not associated with its result count");
+		}
+	}
 	const catalogOrder = [...index.matchAll(/href="pages\/([^"#]+)\.html"/g)].map(m => m[1]);
 	const pageFiles = readdirSync(join(DOCS, release, "pages"))
 		.filter(name => name.endsWith(".html"))
@@ -127,7 +133,9 @@ for (const release of releases) {
 	}
 
 	const portalIndex = read("index.html");
-	const label = new RegExp(`aria-label="Open the [^"]*${version.replace(/\./g, "\\.")} changelog, (\\d+) chapters"`).exec(portalIndex);
+	const label = new RegExp(`aria-label="Open the [^"]*${version.replace(/\./g, "\\.")} (?:changelog|release notes), (\\d+) chapters"`).exec(
+		portalIndex,
+	);
 	if (label && Number(label[1]) !== manifest.length) {
 		fail("index.html", `portal aria-label claims ${label[1]} chapters for ${version}, MANIFESTS has ${manifest.length}`);
 	}

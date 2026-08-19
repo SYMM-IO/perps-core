@@ -14,7 +14,7 @@ enum MuonFunction {
 	Funding, // ChargeFundingRate, ChargeAccumulatedFundingFee
 	LiquidationPartyA, // LiquidatePartyA, SetSymbolsPrice, DeferredLiquidatePartyA, DeferredSetSymbolsPrice
 	LiquidationPartyB, // LiquidatePartyB, LiquidatePositionsPartyB
-	RemoveMargin // SafeDeallocate, SafeDeallocateForPartyB — margin removal with scaledLockedBalance; configure a tight validity window
+	RemoveMargin // SafeDeallocate, SafeDeallocateForPartyB — signatures include scaledLockedBalance and gross funding debt; configure a tight validity window
 }
 
 /// @notice Interface for the Muon oracle signature verification contract

@@ -48,9 +48,9 @@ enum BalanceChangeType {
 }
 
 enum ReimbursementChangeType {
-	CLEARING_HOUSE_IN,
+	CLEARING_HOUSE_IN_DEPRECATED,
 	PLATFORM_FEE_IN,
-	CLEARING_HOUSE_OUT,
+	CLEARING_HOUSE_OUT_DEPRECATED,
 	RELEASE_TO_ALLOCATED,
 	MOVE_TO_LIQUIDATION_ESCROW,
 }
@@ -67,6 +67,12 @@ const reimbursementChangeInterface = new ethers.Interface([
 const partyALiquidationSettlementInterface = new ethers.Interface([
 	"event SettlePartyALiquidation(address partyA, address[] partyBs, int256[] amounts, bytes liquidationId)",
 	"event SettlePartyALiquidation(address partyA, address[] partyBs, address[] allocationKeys, int256[] amounts, uint256[] cvaAmounts, bytes liquidationId)",
+])
+
+const liquidationFundingInterface = new ethers.Interface([
+	"event QuoteLiquidationFundingCalculated(address indexed partyA, address indexed partyB, uint256 indexed quoteId, uint256 symbolId, int256 rawFunding, int256 rawPnl, bytes liquidationId)",
+	"event LiquidationFundingSettled(address indexed partyA, address indexed partyB, address indexed allocationKey, int256 rawFunding, int256 settledFunding, int256 rawPnl, int256 settledPnl, uint256 scaleNumerator, uint256 scaleDenominator, bytes liquidationId)",
+	"event LiquidationFundingSettlementAbandoned(address indexed partyA, address indexed partyB, int256 rawFunding, bytes liquidationId)",
 ])
 
 type EvmLog = { topics: readonly string[]; data: string }
@@ -164,6 +170,102 @@ function parsePartyALiquidationSettlementLogs(logs: readonly EvmLog[]) {
 			return []
 		}
 	})
+}
+
+function parseQuoteLiquidationFundingLogs(logs: readonly EvmLog[]) {
+	return logs.flatMap(log => {
+		try {
+			const parsed = liquidationFundingInterface.parseLog({ topics: log.topics as string[], data: log.data })
+			if (parsed?.name !== "QuoteLiquidationFundingCalculated") return []
+			return [
+				{
+					partyA: parsed.args.partyA as string,
+					partyB: parsed.args.partyB as string,
+					quoteId: parsed.args.quoteId as bigint,
+					symbolId: parsed.args.symbolId as bigint,
+					rawFunding: parsed.args.rawFunding as bigint,
+					rawPnl: parsed.args.rawPnl as bigint,
+					liquidationId: parsed.args.liquidationId as string,
+				},
+			]
+		} catch {
+			return []
+		}
+	})
+}
+
+function parseLiquidationFundingSettlementLogs(logs: readonly EvmLog[]) {
+	return logs.flatMap(log => {
+		try {
+			const parsed = liquidationFundingInterface.parseLog({ topics: log.topics as string[], data: log.data })
+			if (parsed?.name !== "LiquidationFundingSettled") return []
+			return [
+				{
+					partyA: parsed.args.partyA as string,
+					partyB: parsed.args.partyB as string,
+					allocationKey: parsed.args.allocationKey as string,
+					rawFunding: parsed.args.rawFunding as bigint,
+					settledFunding: parsed.args.settledFunding as bigint,
+					rawPnl: parsed.args.rawPnl as bigint,
+					settledPnl: parsed.args.settledPnl as bigint,
+					scaleNumerator: parsed.args.scaleNumerator as bigint,
+					scaleDenominator: parsed.args.scaleDenominator as bigint,
+					liquidationId: parsed.args.liquidationId as string,
+				},
+			]
+		} catch {
+			return []
+		}
+	})
+}
+
+function parseLiquidationFundingAbandonmentLogs(logs: readonly EvmLog[]) {
+	return logs.flatMap(log => {
+		try {
+			const parsed = liquidationFundingInterface.parseLog({ topics: log.topics as string[], data: log.data })
+			if (parsed?.name !== "LiquidationFundingSettlementAbandoned") return []
+			return [
+				{
+					partyA: parsed.args.partyA as string,
+					partyB: parsed.args.partyB as string,
+					rawFunding: parsed.args.rawFunding as bigint,
+					liquidationId: parsed.args.liquidationId as string,
+				},
+			]
+		} catch {
+			return []
+		}
+	})
+}
+
+function scaleSigned(value: bigint, numerator: bigint, denominator: bigint): bigint {
+	if (value === 0n || numerator === 0n) return 0n
+	const magnitude = ((value < 0n ? -value : value) * numerator) / denominator
+	return value < 0n ? -magnitude : magnitude
+}
+
+/** Canonical event-only attribution: scale signed quote-funding prefixes in ascending quote-id order. */
+function reconstructLiquidationQuoteFunding(
+	quoteEvents: ReturnType<typeof parseQuoteLiquidationFundingLogs>,
+	settlement: ReturnType<typeof parseLiquidationFundingSettlementLogs>[number],
+) {
+	let rawPrefix = 0n
+	let settledPrefix = 0n
+	return [...quoteEvents]
+		.sort((left, right) => (left.quoteId < right.quoteId ? -1 : left.quoteId > right.quoteId ? 1 : 0))
+		.map(event => {
+			rawPrefix += event.rawFunding
+			const nextSettledPrefix = scaleSigned(rawPrefix, settlement.scaleNumerator, settlement.scaleDenominator)
+			const settledFunding = nextSettledPrefix - settledPrefix
+			settledPrefix = nextSettledPrefix
+			return { ...event, settledFunding }
+		})
+}
+
+function fundingBySymbol(reconstructed: ReturnType<typeof reconstructLiquidationQuoteFunding>) {
+	const totals = new Map<bigint, bigint>()
+	for (const event of reconstructed) totals.set(event.symbolId, (totals.get(event.symbolId) ?? 0n) + event.settledFunding)
+	return [...totals.entries()].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
 }
 
 /**
@@ -427,6 +529,32 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 				.setSymbolsPriceWithSnapshot(user.address, buildLiquidationSnapshotSig(liquidationSig, states, overrides))
 		}
 		return liquidationSig
+	}
+
+	const openOppositeFundingMarket = async (secondQuantity = decimal(100n)) => {
+		await context.symbolControlFacet
+			.connect(context.signers.admin)
+			.addSymbol("SECOND_MARKET", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+		await context.symbolControlFacet.connect(context.signers.admin).setSymbolTypes([2], [1])
+		await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([2], [500])
+		await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([2], [0], [-decimal(1n, 16)], [decimal(1n)])
+		await context.accountFacet.connect(context.signers.user).allocate(decimal(200n))
+
+		const secondQuoteId = await user.sendQuote(
+			limitQuoteRequestBuilder().symbolId(2).positionType(PositionType.SHORT).quantity(secondQuantity).build(),
+		)
+		await hedger.lockQuote(secondQuoteId)
+		await hedger.openPosition(secondQuoteId, limitOpenRequestBuilder().filledAmount(secondQuantity).build())
+
+		const epochDuration = 500n
+		const currentTimestamp = BigInt(await time.latest())
+		const nextEpochTimestamp = (currentTimestamp / epochDuration + 1n) * epochDuration
+		await time.setNextBlockTimestamp(Number(nextEpochTimestamp))
+		await context.controlFacet.setMuonConfig(1000n, 1000n)
+
+		const rawFunding = await context.viewFacetQuote.getQuoteFundingDebts([1n, secondQuoteId])
+		expect(rawFunding).to.deep.equal([decimal(2n), -((secondQuantity * decimal(1n, 16)) / decimal(1n))])
+		return { secondQuoteId, rawFunding }
 	}
 
 	describe("Liquidate PartyA", async function () {
@@ -735,11 +863,324 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			expect(hasPartyBEvent(realizedPnl + fundingFee, BalanceChangeType.REALIZED_PNL_IN)).to.equal(false)
 		})
 
+		it("Should expose the exact final funding attributed to a liquidated market", async function () {
+			await context.fundingRateFacet.connect(context.signers.hedger).setShortFundingFee([1], [-decimal(1n, 16)], [decimal(1n)])
+			await time.increase(1000)
+
+			const fundingFee = await getFundingFee()
+			expect(fundingFee).to.equal(-decimal(1n))
+
+			const price = decimal(594n, 16)
+			await user.liquidateAndSetSymbolPrices([1n], [price], [1n])
+			const liquidationId = (await user.getLiquidatedStateOfPartyA()).liquidationId
+			await user.liquidatePendingPositions()
+			const liquidateTx = await context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePositionsPartyA(user.address, [1n])
+			const liquidateReceipt = await liquidateTx.wait()
+
+			const settleTx = await context.partyALiquidationFacet
+				.connect(context.signers.liquidator)
+				.settlePartyALiquidation(user.address, [context.signers.hedger.address])
+			const settleReceipt = await settleTx.wait()
+			const rawPnl = unDecimal((price - decimal(1n)) * decimal(100n))
+
+			const quoteEvents = parseQuoteLiquidationFundingLogs(liquidateReceipt?.logs ?? [])
+			expect(quoteEvents).to.deep.equal([
+				{
+					partyA: user.address,
+					partyB: context.signers.hedger.address,
+					quoteId: 1n,
+					symbolId: 1n,
+					rawFunding: fundingFee,
+					rawPnl,
+					liquidationId,
+				},
+			])
+
+			const settlementEvents = parseLiquidationFundingSettlementLogs(settleReceipt?.logs ?? [])
+			expect(settlementEvents).to.deep.equal([
+				{
+					partyA: user.address,
+					partyB: context.signers.hedger.address,
+					allocationKey: user.address,
+					rawFunding: fundingFee,
+					settledFunding: fundingFee,
+					rawPnl,
+					settledPnl: rawPnl,
+					scaleNumerator: 1n,
+					scaleDenominator: 1n,
+					liquidationId,
+				},
+			])
+			expect(reconstructLiquidationQuoteFunding(quoteEvents, settlementEvents[0]).map(event => [event.symbolId, event.settledFunding])).to.deep.equal(
+				[[1n, fundingFee]],
+			)
+		})
+
+		it("Should reconstruct multiple liquidated quotes into one exact market total", async function () {
+			await context.accountFacet.connect(context.signers.user).allocate(decimal(200n))
+			const secondQuoteId = await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build())
+			await hedger.lockQuote(secondQuoteId)
+			await hedger.openPosition(secondQuoteId)
+			await time.increase(500)
+
+			const quoteFunding = await context.viewFacetQuote.getQuoteFundingDebts([1n, secondQuoteId])
+			expect(quoteFunding).to.deep.equal([decimal(2n), decimal(1n)])
+
+			const liquidationPrice = decimal(6n)
+			await user.liquidateAndSetSymbolPrices([1n], [liquidationPrice], [1n, secondQuoteId])
+			const liquidationId = (await user.getLiquidatedStateOfPartyA()).liquidationId
+			await user.liquidatePendingPositions()
+			const liquidateTx = await context.partyALiquidationFacet
+				.connect(context.signers.liquidator)
+				.liquidatePositionsPartyA(user.address, [1n, secondQuoteId])
+			const liquidateReceipt = await liquidateTx.wait()
+
+			const settleTx = await context.partyALiquidationFacet
+				.connect(context.signers.liquidator)
+				.settlePartyALiquidation(user.address, [context.signers.hedger.address])
+			const receipt = await settleTx.wait()
+			const quoteEvents = parseQuoteLiquidationFundingLogs(liquidateReceipt?.logs ?? [])
+			expect(quoteEvents.map(event => [event.quoteId, event.symbolId, event.rawFunding])).to.deep.equal([
+				[1n, 1n, decimal(2n)],
+				[secondQuoteId, 1n, decimal(1n)],
+			])
+			const [settlementEvent] = parseLiquidationFundingSettlementLogs(receipt?.logs ?? [])
+			expect(settlementEvent).to.include({ rawFunding: decimal(3n), liquidationId })
+			expect(fundingBySymbol(reconstructLiquidationQuoteFunding(quoteEvents, settlementEvent))).to.deep.equal([[1n, settlementEvent.settledFunding]])
+
+			const [fundingBalanceEvent] = parsePartyBBalanceChangeEvents(receipt?.logs ?? []).filter(event =>
+				[BigInt(BalanceChangeType.FUNDING_FEE_IN), BigInt(BalanceChangeType.FUNDING_FEE_OUT)].includes(event.changeType),
+			)
+			expect(fundingBalanceEvent.changeType).to.equal(BigInt(BalanceChangeType.FUNDING_FEE_IN))
+			expect(settlementEvent.settledFunding).to.equal(fundingBalanceEvent.amount)
+		})
+
+		it("Should reconstruct opposite market contributions through a deficit haircut", async function () {
+			const { secondQuoteId } = await openOppositeFundingMarket()
+
+			const liquidationPrice = decimal(6n)
+			await user.liquidateAndSetSymbolPrices([1n, 2n], [liquidationPrice, liquidationPrice], [1n, secondQuoteId])
+			const liquidationId = (await user.getLiquidatedStateOfPartyA()).liquidationId
+			await user.liquidatePendingPositions()
+			const liquidateTx = await context.partyALiquidationFacet
+				.connect(context.signers.liquidator)
+				.liquidatePositionsPartyA(user.address, [1n, secondQuoteId])
+			const liquidateReceipt = await liquidateTx.wait()
+
+			const [settlementState] = await context.viewFacet.getSettlementStates(user.address, [context.signers.hedger.address])
+			expect(settlementState.expectedAmount % 2n).to.equal(0n)
+			const disputedAmount = settlementState.expectedAmount / 2n
+			await context.partyALiquidationFacet
+				.connect(context.signers.admin)
+				.resolveLiquidationDispute(user.address, [context.signers.hedger.address], [disputedAmount], false)
+
+			const settleTx = await context.partyALiquidationFacet
+				.connect(context.signers.liquidator)
+				.settlePartyALiquidation(user.address, [context.signers.hedger.address])
+			const receipt = await settleTx.wait()
+			const quoteEvents = parseQuoteLiquidationFundingLogs(liquidateReceipt?.logs ?? [])
+			const [settlementEvent] = parseLiquidationFundingSettlementLogs(receipt?.logs ?? [])
+			expect(settlementEvent.rawFunding).to.equal(decimal(1n))
+			expect(settlementEvent.scaleNumerator * 2n).to.equal(settlementEvent.scaleDenominator)
+			const reconstructed = reconstructLiquidationQuoteFunding(quoteEvents, settlementEvent)
+			expect(fundingBySymbol(reconstructed)).to.deep.equal([
+				[1n, decimal(1n)],
+				[2n, -decimal(5n, 17)],
+			])
+
+			const finalMarketFunding = reconstructed.reduce((sum, event) => sum + event.settledFunding, 0n)
+			expect(finalMarketFunding).to.equal(decimal(5n, 17))
+			expect(finalMarketFunding).to.equal(settlementEvent.settledFunding)
+			const fundingBalanceEvents = parsePartyBBalanceChangeEvents(receipt?.logs ?? []).filter(event =>
+				[BigInt(BalanceChangeType.FUNDING_FEE_IN), BigInt(BalanceChangeType.FUNDING_FEE_OUT)].includes(event.changeType),
+			)
+			expect(fundingBalanceEvents).to.deep.equal([
+				{
+					partyB: context.signers.hedger.address,
+					partyA: user.address,
+					amount: finalMarketFunding,
+					changeType: BigInt(BalanceChangeType.FUNDING_FEE_IN),
+				},
+			])
+		})
+
+		it("Should reconstruct negative net market funding through a deficit haircut", async function () {
+			const { secondQuoteId } = await openOppositeFundingMarket(decimal(300n))
+			const liquidationPrice = decimal(6n)
+			await user.liquidateAndSetSymbolPrices([1n, 2n], [liquidationPrice, liquidationPrice], [1n, secondQuoteId])
+			const liquidationId = (await user.getLiquidatedStateOfPartyA()).liquidationId
+			await user.liquidatePendingPositions()
+			const liquidateTx = await context.partyALiquidationFacet
+				.connect(context.signers.liquidator)
+				.liquidatePositionsPartyA(user.address, [1n, secondQuoteId])
+			const liquidateReceipt = await liquidateTx.wait()
+
+			const [settlementState] = await context.viewFacet.getSettlementStates(user.address, [context.signers.hedger.address])
+			expect(settlementState.expectedAmount % 2n).to.equal(0n)
+			await context.partyALiquidationFacet
+				.connect(context.signers.admin)
+				.resolveLiquidationDispute(user.address, [context.signers.hedger.address], [settlementState.expectedAmount / 2n], false)
+
+			const settleTx = await context.partyALiquidationFacet
+				.connect(context.signers.liquidator)
+				.settlePartyALiquidation(user.address, [context.signers.hedger.address])
+			const receipt = await settleTx.wait()
+			const quoteEvents = parseQuoteLiquidationFundingLogs(liquidateReceipt?.logs ?? [])
+			const [settlementEvent] = parseLiquidationFundingSettlementLogs(receipt?.logs ?? [])
+			expect(settlementEvent).to.include({ rawFunding: -decimal(1n), settledFunding: -decimal(5n, 17), liquidationId })
+			expect(settlementEvent.scaleNumerator * 2n).to.equal(settlementEvent.scaleDenominator)
+			expect(fundingBySymbol(reconstructLiquidationQuoteFunding(quoteEvents, settlementEvent))).to.deep.equal([
+				[1n, decimal(1n)],
+				[2n, -decimal(15n, 17)],
+			])
+
+			const fundingBalanceEvents = parsePartyBBalanceChangeEvents(receipt?.logs ?? []).filter(event =>
+				[BigInt(BalanceChangeType.FUNDING_FEE_IN), BigInt(BalanceChangeType.FUNDING_FEE_OUT)].includes(event.changeType),
+			)
+			expect(fundingBalanceEvents).to.deep.equal([
+				{
+					partyB: context.signers.hedger.address,
+					partyA: user.address,
+					amount: decimal(5n, 17),
+					changeType: BigInt(BalanceChangeType.FUNDING_FEE_OUT),
+				},
+			])
+		})
+
+		it("Should reconstruct rounding dust to the exact aggregate funding delta", async function () {
+			const { secondQuoteId } = await openOppositeFundingMarket()
+			const liquidationPrice = decimal(6n)
+			await user.liquidateAndSetSymbolPrices([1n, 2n], [liquidationPrice, liquidationPrice], [1n, secondQuoteId])
+			const liquidationId = (await user.getLiquidatedStateOfPartyA()).liquidationId
+			await user.liquidatePendingPositions()
+			const liquidateTx = await context.partyALiquidationFacet
+				.connect(context.signers.liquidator)
+				.liquidatePositionsPartyA(user.address, [1n, secondQuoteId])
+			const liquidateReceipt = await liquidateTx.wait()
+
+			const [settlementState] = await context.viewFacet.getSettlementStates(user.address, [context.signers.hedger.address])
+			const expectedAbs = settlementState.expectedAmount < 0n ? -settlementState.expectedAmount : settlementState.expectedAmount
+			expect(expectedAbs).to.be.greaterThan(decimal(2n))
+			const disputedAmount = settlementState.expectedAmount > 0n ? settlementState.expectedAmount - 1n : settlementState.expectedAmount + 1n
+			await context.partyALiquidationFacet
+				.connect(context.signers.admin)
+				.resolveLiquidationDispute(user.address, [context.signers.hedger.address], [disputedAmount], false)
+
+			const settleTx = await context.partyALiquidationFacet
+				.connect(context.signers.liquidator)
+				.settlePartyALiquidation(user.address, [context.signers.hedger.address])
+			const receipt = await settleTx.wait()
+			const quoteEvents = parseQuoteLiquidationFundingLogs(liquidateReceipt?.logs ?? [])
+			const [settlementEvent] = parseLiquidationFundingSettlementLogs(receipt?.logs ?? [])
+			const reconstructed = reconstructLiquidationQuoteFunding(quoteEvents, settlementEvent)
+			const fundingUnit = decimal(1n)
+
+			expect(reconstructed.map(event => [event.symbolId, event.rawFunding, event.settledFunding])).to.deep.equal([
+				[1n, 2n * fundingUnit, 2n * fundingUnit - 1n],
+				[2n, -fundingUnit, -fundingUnit],
+			])
+			expect(reconstructed.every(event => event.liquidationId === liquidationId)).to.equal(true)
+
+			const exactAggregateFunding = fundingUnit - 1n
+			expect(reconstructed.reduce((sum, event) => sum + event.settledFunding, 0n)).to.equal(exactAggregateFunding)
+			expect(settlementEvent.settledFunding).to.equal(exactAggregateFunding)
+			const fundingBalanceEvents = parsePartyBBalanceChangeEvents(receipt?.logs ?? []).filter(event =>
+				[BigInt(BalanceChangeType.FUNDING_FEE_IN), BigInt(BalanceChangeType.FUNDING_FEE_OUT)].includes(event.changeType),
+			)
+			expect(fundingBalanceEvents).to.deep.equal([
+				{
+					partyB: context.signers.hedger.address,
+					partyA: user.address,
+					amount: exactAggregateFunding,
+					changeType: BigInt(BalanceChangeType.FUNDING_FEE_IN),
+				},
+			])
+		})
+
+		it("Should expose complete funding observability in the existing liquidation transactions", async function () {
+			const { secondQuoteId } = await openOppositeFundingMarket()
+			const liquidationPrice = decimal(6n)
+			await user.liquidateAndSetSymbolPrices([1n, 2n], [liquidationPrice, liquidationPrice], [1n, secondQuoteId])
+			const liquidationId = (await user.getLiquidatedStateOfPartyA()).liquidationId
+			await user.liquidatePendingPositions()
+			const liquidateTx = await context.partyALiquidationFacet
+				.connect(context.signers.liquidator)
+				.liquidatePositionsPartyA(user.address, [secondQuoteId, 1n])
+			const liquidateReceipt = await liquidateTx.wait()
+
+			const [settlementState] = await context.viewFacet.getSettlementStates(user.address, [context.signers.hedger.address])
+			const disputedAmount = settlementState.expectedAmount / 2n
+			await context.partyALiquidationFacet
+				.connect(context.signers.admin)
+				.resolveLiquidationDispute(user.address, [context.signers.hedger.address], [disputedAmount], false)
+
+			const settleTx = await context.partyALiquidationFacet
+				.connect(context.signers.liquidator)
+				.settlePartyALiquidation(user.address, [context.signers.hedger.address])
+			const settleReceipt = await settleTx.wait()
+			expect(await context.viewFacet.isPartyALiquidated(user.address)).to.equal(false)
+			const quoteEvents = parseQuoteLiquidationFundingLogs(liquidateReceipt?.logs ?? [])
+			expect(quoteEvents.map(event => event.quoteId)).to.deep.equal([secondQuoteId, 1n])
+			const [settlementEvent] = parseLiquidationFundingSettlementLogs(settleReceipt?.logs ?? [])
+			expect(quoteEvents.reduce((sum, event) => sum + event.rawFunding, 0n)).to.equal(settlementEvent.rawFunding)
+			expect(quoteEvents.reduce((sum, event) => sum + event.rawPnl, 0n)).to.equal(settlementEvent.rawPnl)
+			expect(settlementEvent.rawFunding + settlementEvent.rawPnl).to.equal(-settlementState.expectedAmount)
+			expect(settlementEvent.settledFunding + settlementEvent.settledPnl).to.equal(-disputedAmount)
+			const reconstructed = reconstructLiquidationQuoteFunding(quoteEvents, settlementEvent)
+			expect(reconstructed.map(event => event.quoteId)).to.deep.equal([1n, secondQuoteId])
+			expect(fundingBySymbol(reconstructed)).to.deep.equal([
+				[1n, decimal(1n)],
+				[2n, -decimal(5n, 17)],
+			])
+			const fundingBalanceEvents = parsePartyBBalanceChangeEvents(settleReceipt?.logs ?? []).filter(event =>
+				[BigInt(BalanceChangeType.FUNDING_FEE_IN), BigInt(BalanceChangeType.FUNDING_FEE_OUT)].includes(event.changeType),
+			)
+			const pnlBalanceEvents = parsePartyBBalanceChangeEvents(settleReceipt?.logs ?? []).filter(event =>
+				[BigInt(BalanceChangeType.REALIZED_PNL_IN), BigInt(BalanceChangeType.REALIZED_PNL_OUT)].includes(event.changeType),
+			)
+			expect(fundingBalanceEvents).to.have.length(1)
+			expect(reconstructed.reduce((sum, event) => sum + event.settledFunding, 0n)).to.equal(fundingBalanceEvents[0].amount)
+			expect(pnlBalanceEvents.reduce((sum, event) => sum + signedAllocatedDelta(event.changeType, event.amount), 0n)).to.equal(
+				settlementEvent.settledPnl,
+			)
+			expect(settlementEvent.liquidationId).to.equal(liquidationId)
+		})
+
+		it("Should mark normal funding as abandoned when Clearing House takes over", async function () {
+			await user.liquidateAndSetSymbolPrices([1n], [decimal(25n)], [1n])
+			const liquidationId = (await user.getLiquidatedStateOfPartyA()).liquidationId
+			const liquidateTx = await context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePositionsPartyA(user.address, [1n])
+			const liquidateReceipt = await liquidateTx.wait()
+			const [quoteEvent] = parseQuoteLiquidationFundingLogs(liquidateReceipt?.logs ?? [])
+
+			await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.liquidator.address, ethers.id("CLEARING_HOUSE_ROLE"))
+			await context.clearingHouseFacet.connect(context.signers.liquidator).takeoverPartyALiquidation(user.address)
+			await context.clearingHouseFacet.connect(context.signers.liquidator).liquidatePendingPositionsForClearingHouse(user.address, [])
+			const settleTx = await context.clearingHouseFacet
+				.connect(context.signers.liquidator)
+				.settlePartyATakeover(user.address, [context.signers.hedger.address])
+			const settleReceipt = await settleTx.wait()
+
+			expect(parseLiquidationFundingAbandonmentLogs(settleReceipt?.logs ?? [])).to.deep.equal([
+				{
+					partyA: user.address,
+					partyB: context.signers.hedger.address,
+					rawFunding: quoteEvent.rawFunding,
+					liquidationId,
+				},
+			])
+			expect(parseLiquidationFundingSettlementLogs(settleReceipt?.logs ?? [])).to.be.empty
+		})
+
 		it("Should not emit funding or realized PnL when a dispute resolves the PartyB settlement to zero", async function () {
+			const rawFunding = await getFundingFee()
+			expect(rawFunding).to.not.equal(0n)
 			const price = decimal(572n, 16)
 			await user.liquidateAndSetSymbolPrices([1n], [price], [1n])
+			const liquidationId = (await user.getLiquidatedStateOfPartyA()).liquidationId
 			await user.liquidatePendingPositions()
-			await user.liquidatePositions([1])
+			const liquidateTx = await context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePositionsPartyA(user.address, [1n])
+			const liquidateReceipt = await liquidateTx.wait()
 
 			await context.partyALiquidationFacet
 				.connect(context.signers.admin)
@@ -762,6 +1203,20 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			)
 
 			expect(settlementEvents).to.be.empty
+			const [fundingSettlement] = parseLiquidationFundingSettlementLogs(receipt?.logs ?? [])
+			const quoteEvents = parseQuoteLiquidationFundingLogs(liquidateReceipt?.logs ?? [])
+			expect(fundingSettlement).to.include({
+				rawFunding,
+				settledFunding: 0n,
+				rawPnl: quoteEvents.reduce((sum, event) => sum + event.rawPnl, 0n),
+				settledPnl: 0n,
+				scaleNumerator: 0n,
+				scaleDenominator: 1n,
+				liquidationId,
+			})
+			expect(reconstructLiquidationQuoteFunding(quoteEvents, fundingSettlement).map(event => [event.symbolId, event.settledFunding])).to.deep.equal([
+				[1n, 0n],
+			])
 		})
 
 		it("Should emit offsetting funding and realized PnL when the expected PartyB settlement is naturally zero", async function () {
@@ -783,8 +1238,12 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			expect(fundingFee).to.equal(realizedPnl)
 
 			await user.liquidateAndSetSymbolPrices([1n, 2n], [offsetPrice, lossPrice], [1n, lossQuoteId])
+			const liquidationId = (await user.getLiquidatedStateOfPartyA()).liquidationId
 			await user.liquidatePendingPositions()
-			await user.liquidatePositions([1n, lossQuoteId])
+			const liquidateTx = await context.partyALiquidationFacet
+				.connect(context.signers.liquidator)
+				.liquidatePositionsPartyA(user.address, [1n, lossQuoteId])
+			const liquidateReceipt = await liquidateTx.wait()
 
 			const [settlementState] = await context.viewFacet.getSettlementStates(user.address, [context.signers.hedger.address])
 			expect(settlementState.expectedAmount).to.equal(0n)
@@ -806,6 +1265,21 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 
 			expect(hasPartyBEvent(fundingFee, BalanceChangeType.FUNDING_FEE_IN)).to.equal(true)
 			expect(hasPartyBEvent(realizedPnl, BalanceChangeType.REALIZED_PNL_OUT)).to.equal(true)
+			const [fundingSettlement] = parseLiquidationFundingSettlementLogs(receipt?.logs ?? [])
+			expect(fundingSettlement).to.include({
+				rawFunding: fundingFee,
+				settledFunding: fundingFee,
+				rawPnl: -realizedPnl,
+				settledPnl: -realizedPnl,
+				scaleNumerator: 1n,
+				scaleDenominator: 1n,
+				liquidationId,
+			})
+			const quoteEvents = parseQuoteLiquidationFundingLogs(liquidateReceipt?.logs ?? []).filter(
+				event => event.partyB.toLowerCase() === context.signers.hedger.address.toLowerCase(),
+			)
+			expect(quoteEvents.reduce((sum, event) => sum + event.rawPnl, 0n)).to.equal(-realizedPnl)
+			expect(fundingBySymbol(reconstructLiquidationQuoteFunding(quoteEvents, fundingSettlement))).to.deep.equal([[1n, fundingFee]])
 		})
 
 		it("Should use signed funding state when PartyB rolls funding after the liquidation snapshot", async function () {

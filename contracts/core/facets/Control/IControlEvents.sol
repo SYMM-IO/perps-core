@@ -53,6 +53,12 @@ interface IControlEvents is IExecutionContextEvents {
 		uint256 minAcceptableQuoteValue,
 		uint256 minAcceptablePortionLF
 	);
+	event SetSymbolMinAcceptableNotionalLFRate(
+		uint256 indexed symbolId,
+		uint256 oldMinAcceptableNotionalLFRate,
+		uint256 newMinAcceptableNotionalLFRate,
+		bool hasOverride
+	);
 	event SetSymbolTradingFee(uint256 symbolId, uint256 oldTradingFee, uint256 tradingFee);
 	event SetSymbolMaxLeverage(uint256 symbolId, uint256 oldMaxLeverage, uint256 maxLeverage);
 	event SetDeallocateCooldown(uint256 oldDeallocateCooldown, uint256 newDeallocateCooldown);

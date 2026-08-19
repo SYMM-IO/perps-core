@@ -203,11 +203,11 @@ contract ViewFacet is IViewFacet {
 		return LibAccount.partyAMaxDeallocatable(upnl, partyA, 0);
 	}
 
-	/// @notice Returns the maximum amount Party A can safe-deallocate for the supplied uPnL and off-chain pending balance.
+	/// @notice Returns the maximum amount Party A can safe-deallocate for the supplied uPnL, pending balance, and funding debt.
 	/// @dev pendingBalance is the value carried by SingleUpnlWithPendingBalanceSig, not pending locked quote collateral.
 	///      Excludes operational gates such as pause state, cooldowns, and signature validity.
-	function maxSafeDeallocatableForPartyA(address partyA, int256 upnl, uint256 pendingBalance) external view returns (uint256) {
-		return LibAccount.partyAMaxDeallocatable(upnl, partyA, pendingBalance);
+	function maxSafeDeallocatableForPartyA(address partyA, int256 upnl, uint256 pendingBalance, uint256 fundingDebt) external view returns (uint256) {
+		return LibAccount.partyAMaxRemovableMargin(upnl, partyA, pendingBalance, 0, fundingDebt);
 	}
 
 	/// @notice Returns the maximum amount Party B can deallocate from the requested allocation bucket for the supplied uPnL.
@@ -218,28 +218,30 @@ contract ViewFacet is IViewFacet {
 	}
 
 	/// @notice Returns the maximum amount Party A can remove via safeDeallocate for the supplied Muon-attested values.
-	/// @dev pendingBalance and scaledLockedBalance are the values carried by SingleUpnlWithPendingBalanceSig.
+	/// @dev pendingBalance, scaledLockedBalance, and fundingDebt are the values carried by SingleUpnlWithPendingBalanceSig.
 	///      Excludes operational gates such as pause state, cooldowns, and signature validity.
 	function maxRemovableMarginForPartyA(
 		address partyA,
 		int256 upnl,
 		uint256 pendingBalance,
-		uint256 scaledLockedBalance
+		uint256 scaledLockedBalance,
+		uint256 fundingDebt
 	) external view returns (uint256) {
-		return LibAccount.partyAMaxRemovableMargin(upnl, partyA, pendingBalance, scaledLockedBalance);
+		return LibAccount.partyAMaxRemovableMargin(upnl, partyA, pendingBalance, scaledLockedBalance, fundingDebt);
 	}
 
 	/// @notice Returns the maximum amount Party B can remove via safeDeallocateForPartyB for the supplied Muon-attested values.
-	/// @dev Use partyA = address(0) for the active cross-mode bucket. The scaled retention floor applies only when
+	/// @dev Use partyA = address(0) for the active cross-mode bucket. The scaled-plus-funding-debt retention floor applies only when
 	///      strict deallocation is enabled for the partyB. Excludes operational gates such as pause state and signature validity.
 	function maxRemovableMarginForPartyB(
 		address partyB,
 		address partyA,
 		int256 upnl,
 		uint256 pendingBalance,
-		uint256 scaledLockedBalance
+		uint256 scaledLockedBalance,
+		uint256 fundingDebt
 	) external view returns (uint256) {
-		return LibAccount.partyBMaxRemovableMargin(upnl, partyB, partyA, pendingBalance, scaledLockedBalance);
+		return LibAccount.partyBMaxRemovableMargin(upnl, partyB, partyA, pendingBalance, scaledLockedBalance, fundingDebt);
 	}
 
 	/// @notice Returns the effective account that receives a charger's operational fees.

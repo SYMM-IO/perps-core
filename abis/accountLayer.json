@@ -3291,6 +3291,11 @@
                     },
                     {
                         "internalType": "uint256",
+                        "name": "fundingDebt",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
                         "name": "pendingBalance",
                         "type": "uint256"
                     },
