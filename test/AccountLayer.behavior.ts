@@ -22,8 +22,10 @@ import {
 	getDummyLiquidationSig,
 	getDummyPairUpnlAndPriceSig,
 	getDummyPriceSig,
+	getDummySettlementSig,
 	getDummySingleUpnlSig,
 	getDummySingleUpnlWithPendingBalanceSig,
+	getDummyUnifiedSettlementSig,
 } from "./utils/SignatureUtils.js"
 
 // SubAccountCreationData struct type for AccountLayer
@@ -4471,6 +4473,40 @@ export function shouldBehaveLikeAccountLayer(): void {
 					)
 			}
 
+			async function prepareRoutedForceClose() {
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+				const [quoteId] = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+
+				await openPositionForQuote(quoteId)
+
+				const now = await getBlockTimestamp()
+				const requestToCloseCallData = context.partyAFacet.interface.encodeFunctionData("requestToClosePosition", [
+					quoteId,
+					decimal(1n),
+					decimal(100n),
+					0,
+					now + 10000n,
+				])
+				await context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [requestToCloseCallData])
+				await time.increase(450n)
+
+				const afterTime = await getBlockTimestamp()
+				const highLowSig = await getDummyHighLowPriceSig(
+					afterTime - 149n,
+					afterTime - 121n,
+					decimal(1n),
+					decimal(1n),
+					decimal(1n),
+					decimal(1n),
+					1n,
+					0n,
+					0n,
+				)
+
+				return { virtualAccountAddress, quoteId, highLowSig }
+			}
+
 			it("Partial close should NOT delete the virtual account", async () => {
 				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
 				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
@@ -4548,7 +4584,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 				expect(parentBalance).to.be.gt(0n)
 			})
 
-			it("PartyA liquidation defers VA deletion, settlement triggers cleanup", async () => {
+			it("Routed settlePartyALiquidation triggers deferred VA cleanup", async () => {
 				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.SHORT).build()
 				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
 
@@ -4580,10 +4616,12 @@ export function shouldBehaveLikeAccountLayer(): void {
 				let virtualAccountData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
 				expect(virtualAccountData.isExists).to.be.true // Deferred!
 
-				// Settle the liquidation — this calls callLiquidationSettledHooks → onLiquidationSettled
-				await context.partyALiquidationFacet
-					.connect(context.signers.liquidator)
-					.settlePartyALiquidation(virtualAccountAddress, [context.signers.hedger.address])
+				// Route final settlement through AccountLayer; core synchronously calls onLiquidationSettled.
+				const settleCallData = context.partyALiquidationFacet.interface.encodeFunctionData("settlePartyALiquidation", [
+					virtualAccountAddress,
+					[context.signers.hedger.address],
+				])
+				await context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [settleCallData])
 
 				// Liquidation should be fully settled
 				expect(await context.viewFacet.isPartyALiquidated(virtualAccountAddress)).to.be.false
@@ -4591,6 +4629,62 @@ export function shouldBehaveLikeAccountLayer(): void {
 				// VA should now be deleted (cleanup happened in onLiquidationSettled)
 				virtualAccountData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
 				expect(virtualAccountData.isExists).to.be.false
+			})
+
+			it("Routed settlePartyALiquidationWithSnapshot triggers deferred VA cleanup", async () => {
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.SHORT).build()
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+				const [quoteId] = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				await openPositionForQuote(quoteId)
+
+				const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(virtualAccountAddress)
+				const liquidationPrice = decimal(8n)
+				const liquidationSig = await getDummyLiquidationSig("0x10", decimal(-700n), [1n], [liquidationPrice], decimal(-700n), allocatedBalance)
+				const buildSnapshotSig = (states: any[]) => ({
+					reqId: liquidationSig.reqId,
+					timestamp: liquidationSig.timestamp,
+					liquidationId: liquidationSig.liquidationId,
+					upnl: liquidationSig.upnl,
+					totalUnrealizedLoss: liquidationSig.totalUnrealizedLoss,
+					states,
+					liquidationBlockNumber: liquidationSig.liquidationBlockNumber,
+					liquidationTimestamp: liquidationSig.liquidationTimestamp,
+					liquidationAllocatedBalance: liquidationSig.liquidationAllocatedBalance,
+					gatewaySignature: liquidationSig.gatewaySignature,
+					sigs: liquidationSig.sigs,
+				})
+
+				await context.partyALiquidationSnapshotFacet
+					.connect(context.signers.liquidator)
+					.liquidatePartyAWithSnapshot(virtualAccountAddress, buildSnapshotSig([]))
+				await context.partyALiquidationSnapshotFacet.connect(context.signers.liquidator).setSymbolsPriceWithSnapshot(
+					virtualAccountAddress,
+					buildSnapshotSig([
+						{
+							partyB: context.signers.hedger.address,
+							symbolId: 1n,
+							price: liquidationPrice,
+							cumulativeLongFee: 0n,
+							cumulativeShortFee: 0n,
+						},
+					]),
+				)
+				await context.partyALiquidationSnapshotFacet
+					.connect(context.signers.liquidator)
+					.liquidatePendingPositionsPartyAWithSnapshot(virtualAccountAddress)
+				await context.partyALiquidationSnapshotFacet
+					.connect(context.signers.liquidator)
+					.liquidatePositionsPartyAWithSnapshot(virtualAccountAddress, [quoteId])
+
+				expect((await context.alViewFacet.getVirtualAccount(virtualAccountAddress)).isExists).to.be.true
+
+				const settleCallData = context.partyALiquidationSnapshotFacet.interface.encodeFunctionData("settlePartyALiquidationWithSnapshot", [
+					virtualAccountAddress,
+					[context.signers.hedger.address],
+				])
+				await context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [settleCallData])
+
+				expect((await context.alViewFacet.getVirtualAccount(virtualAccountAddress)).isExists).to.be.false
 			})
 
 			it("ClearingHouse takeover defers VA deletion, settlement triggers cleanup", async () => {
@@ -5456,7 +5550,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 				expect(vaData.isExists).to.be.false
 			})
 
-			it("Force close position fires onClosePosition hook and deletes VA", async () => {
+			it("Routed forceClosePosition fires onClosePosition hook and deletes VA", async () => {
 				// Open a LONG position on a POSITION-isolation VA
 				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
 				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
@@ -5503,8 +5597,9 @@ export function shouldBehaveLikeAccountLayer(): void {
 					0n, // upnlPartyA
 				)
 
-				// Force close — anyone can call this (no onlyPartyA modifier)
-				await context.forceActionsFacet.connect(context.signers.user).forceClosePosition(quoteId, highLowSig)
+				// Route the force close through AccountLayer, matching the production gateway path.
+				const forceCloseCallData = context.forceActionsFacet.interface.encodeFunctionData("forceClosePosition", [quoteId, highLowSig])
+				await context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [forceCloseCallData])
 
 				// VA should be deleted — force close fires onClosePosition hook
 				const vaData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
@@ -5513,6 +5608,59 @@ export function shouldBehaveLikeAccountLayer(): void {
 				// Funds returned to parent
 				const parentBalance = await context.viewFacet.balanceOf(positionSubAccountAddress)
 				expect(parentBalance).to.be.gt(0n)
+			})
+
+			it("Routed settleAndForceClosePosition fires onClosePosition hook and deletes VA", async () => {
+				const { virtualAccountAddress, quoteId, highLowSig } = await prepareRoutedForceClose()
+				const settlementSig = await getDummySettlementSig(
+					0n,
+					[0n],
+					[
+						{
+							quoteId,
+							currentPrice: decimal(2n),
+							partyBUpnlIndex: 0n,
+						} as any,
+					],
+				)
+				const callData = context.forceActionsFacet.interface.encodeFunctionData("settleAndForceClosePosition", [
+					quoteId,
+					highLowSig,
+					settlementSig,
+					[decimal(2n)],
+				])
+
+				await context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [callData])
+
+				expect((await context.alViewFacet.getVirtualAccount(virtualAccountAddress)).isExists).to.be.false
+			})
+
+			it("Routed finalizeForceClose fires onClosePosition hook and deletes VA", async () => {
+				const { virtualAccountAddress, quoteId, highLowSig } = await prepareRoutedForceClose()
+				const initializeCallData = context.forceCloseStepsFacet.interface.encodeFunctionData("initializeForceClose", [quoteId, highLowSig])
+				await context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [initializeCallData])
+
+				const finalizeCallData = context.forceCloseStepsFacet.interface.encodeFunctionData("finalizeForceClose", [
+					quoteId,
+					await getDummyPairUpnlAndPriceSig(decimal(1n), 0n, 0n),
+				])
+				await context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [finalizeCallData])
+
+				expect((await context.alViewFacet.getVirtualAccount(virtualAccountAddress)).isExists).to.be.false
+			})
+
+			it("Routed forceCloseAndSettlePositionsUnified fires onClosePosition hook and deletes VA", async () => {
+				const { virtualAccountAddress, quoteId, highLowSig } = await prepareRoutedForceClose()
+				const callData = context.forceCloseStepsFacet.interface.encodeFunctionData("forceCloseAndSettlePositionsUnified", [
+					quoteId,
+					highLowSig,
+					await getDummyUnifiedSettlementSig(),
+					[],
+				])
+
+				await context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [callData])
+
+				expect((await context.alViewFacet.getVirtualAccount(virtualAccountAddress)).isExists).to.be.false
 			})
 
 			it("Multi-partyB VA: positions with cross-liq partyB defers deletion until cross settlement", async () => {

@@ -20,6 +20,7 @@ import {
 } from "../../storages/AffiliateStorage.sol";
 import { LibAccountLayerAccessibility } from "../../libraries/LibAccountLayerAccessibility.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
+import { LibAccountLayerSigner } from "../../libraries/LibAccountLayerSigner.sol";
 import { LibAccountLayerSafeERC20 } from "../../libraries/LibAccountLayerSafeERC20.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
 
@@ -335,17 +336,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		if (afLayout.affiliates[affiliate].admin != msg.sender && !afLayout.operators[affiliate][selector][msg.sender]) revert Unauthorized();
 		if (!afLayout.affiliates[affiliate].symmioCores.contains(symmio)) revert SymmioCoreNotAllowed();
 
-		bool usesTransientSigner = LibAccountLayerUtils.beginCoreSigner(symmio, affiliate);
-		(bool success, bytes memory returned) = symmio.call(callData);
-		LibAccountLayerUtils.endCoreSigner(symmio, usesTransientSigner);
-
-		if (!success) {
-			assembly {
-				revert(add(returned, 32), mload(returned))
-			}
-		}
-
-		return returned;
+		return LibAccountLayerUtils.executeWithSignerOnCore(symmio, affiliate, callData);
 	}
 
 	// ==================== Internal Functions ====================
@@ -415,6 +406,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		}
 
 		bool usesTransientSigner = LibAccountLayerUtils.beginCoreSigner(symmio, afLayout.affiliates[affiliate].feeDetails.feeDistributor);
+		address previousCallbackCore = LibAccountLayerSigner.pushExpectedCallbackCore(symmio);
 		ISymmio.WithdrawReceiverPart[] memory parts = new ISymmio.WithdrawReceiverPart[](1);
 		parts[0] = ISymmio.WithdrawReceiverPart({
 			id: 0,
@@ -426,6 +418,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		});
 		(uint256 requestId, ) = ISymmio(symmio).initiateWithdraw(parts, false, "0x");
 		ISymmio(symmio).finalizeWithdrawRequest(afLayout.affiliates[affiliate].feeDetails.feeDistributor, requestId);
+		LibAccountLayerSigner.restoreExpectedCallbackCore(previousCallbackCore);
 		LibAccountLayerUtils.endCoreSigner(symmio, usesTransientSigner);
 
 		for (uint256 i = 0; i < stakeholders.length; i++) {

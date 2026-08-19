@@ -5,6 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { IAccountLayerErrors } from "../interfaces/IAccountLayerErrors.sol";
+import { LibAccountLayerSigner } from "../libraries/LibAccountLayerSigner.sol";
 
 /// @notice Reentrancy protection for the AccountLayer diamond using a dedicated storage slot
 abstract contract AccountLayerReentrancyGuard is IAccountLayerErrors {
@@ -34,5 +35,21 @@ abstract contract AccountLayerReentrancyGuard is IAccountLayerErrors {
 		_setReentrancyStatus(_ENTERED);
 		_;
 		_setReentrancyStatus(_NOT_ENTERED);
+	}
+
+	/// @notice Protects core-originated callbacks while permitting one expected callback through an active forwarding boundary.
+	/// @dev Direct callbacks acquire the ordinary guard. During a guarded AccountLayer-to-core call, only the exact core marked
+	///      by that call boundary may enter, and callback nesting remains forbidden. Ordinary nonReentrant functions stay locked
+	///      for the entire outer call and callback cleanup.
+	modifier nonReentrantCallback() {
+		bool outerGuardActive = _getReentrancyStatus() == _ENTERED;
+		if (outerGuardActive && LibAccountLayerSigner.expectedCallbackCore() != msg.sender) revert ReentrancyGuardReentrantCall();
+		if (LibAccountLayerSigner.isCallbackActive()) revert ReentrancyGuardReentrantCall();
+
+		if (!outerGuardActive) _setReentrancyStatus(_ENTERED);
+		LibAccountLayerSigner.setCallbackActive(true);
+		_;
+		LibAccountLayerSigner.setCallbackActive(false);
+		if (!outerGuardActive) _setReentrancyStatus(_NOT_ENTERED);
 	}
 }

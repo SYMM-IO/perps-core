@@ -98,6 +98,7 @@
 			["accountlayer-behavior-changes", "AccountLayer", "AccountLayer Behavior Changes"],
 			["lazy-accumulated-funding", "Funding", "Lazy Accumulated Funding"],
 			["force-close-request-binding", "Force Close", "Force-Close Request Binding"],
+			["accountlayer-callback-liveness", "AccountLayer", "AccountLayer Force-Close and Liquidation Fix"],
 		],
 	};
 

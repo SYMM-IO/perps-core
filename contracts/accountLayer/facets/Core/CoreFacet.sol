@@ -389,7 +389,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 
 		// Execute on symmioCore on behalf of account
 		bool usesTransientSigner = LibAccountLayerUtils.beginCoreSigner(ctx.symmioCore, ctx.account);
-		(bool success, bytes memory result) = ctx.symmioCore.call(callData);
+		(bool success, bytes memory result) = LibAccountLayerUtils.callCore(ctx.symmioCore, callData);
 		LibAccountLayerUtils.endCoreSigner(ctx.symmioCore, usesTransientSigner);
 		if (!success) revert HookActionFailed(result);
 

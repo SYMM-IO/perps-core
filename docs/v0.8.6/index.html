@@ -59,7 +59,7 @@
 					<input class="catalog-search" type="search" placeholder="Search chapters" data-catalog-search autocomplete="off" />
 					<kbd class="catalog-search-hint" aria-hidden="true" data-search-hint>⌘K</kbd>
 				</label>
-				<span class="catalog-count" data-catalog-count>25 chapters</span>
+				<span class="catalog-count" data-catalog-count>26 chapters</span>
 			</div>
 			<p class="catalog-empty" data-catalog-empty hidden>No chapters match that search.</p>
 			<div class="doc-browser">
@@ -208,7 +208,7 @@
 				</section>
 				<section class="version-catalog-group minor-improvements" aria-labelledby="other-changes-title" data-catalog-group>
 					<div class="section-heading">
-						<p class="eyebrow" data-catalog-group-count>13 chapters</p>
+						<p class="eyebrow" data-catalog-group-count>14 chapters</p>
 						<h2 id="other-changes-title">Other changes</h2>
 					</div>
 					<div class="minor-improvement-list">
@@ -321,6 +321,15 @@
 							<span
 								>A multi-step force-close snapshot is now bound to the close request that initialized it, preventing a canceled or
 								expired request's price from being applied to a replacement request.</span
+							>
+						</a>
+						<a class="minor-improvement-item" href="pages/accountlayer-callback-liveness.html" data-catalog-item>
+							<span class="doc-list-index">26</span>
+							<span class="category">AccountLayer</span>
+							<strong>AccountLayer Force-Close and Liquidation Fix</strong>
+							<span
+								>Force-closing a position or finishing a PartyA liquidation through AccountLayer no longer fails when core calls back
+								to clean up the account.</span
 							>
 						</a>
 					</div>

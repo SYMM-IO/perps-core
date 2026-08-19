@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Force-closing a position or finishing a PartyA liquidation through AccountLayer no longer fails when Symmio core calls back to clean up the account."
+		/>
+		<title>AccountLayer Force-Close and Liquidation Fix - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Apply the saved preference before first paint.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.6">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#problem">What Was Broken</a>
+				<a class="toc-link level-2" href="#failure">How the Failure Happened</a>
+				<a class="toc-link level-2" href="#fix">What Changed</a>
+				<a class="toc-link level-2" href="#fixed-operations">Fixed Operations</a>
+				<a class="toc-link level-2" href="#security">What Stays Protected</a>
+				<a class="toc-link level-2" href="#upgrade">Upgrade Notes</a>
+			</div>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>AccountLayer Force-Close and Liquidation Fix</h1>
+							<p class="hero-copy">
+								Force-closing a position or finishing a PartyA liquidation through AccountLayer no longer fails during account
+								cleanup.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="problem">What Was Broken</h2>
+					<p>
+						Some force-close and PartyA liquidation-settlement transactions worked when called directly on Symmio core but reverted when
+						sent through AccountLayer. The close or settlement reached its final cleanup step, then the entire transaction failed.
+					</p>
+					<p>
+						The failed step was a callback: after core finishes an operation, it calls AccountLayer to update quote tracking and try to
+						delete an empty Virtual Account. AccountLayer was already locked while waiting for core to return, so it treated this expected
+						cleanup call as reentrancy and rejected it.
+					</p>
+					<aside class="callout callout-important">
+						<strong>Only AccountLayer-routed operations were affected.</strong> Direct position-close and liquidation flows on Symmio core
+						were already working and are unchanged.
+					</aside>
+
+					<h2 id="failure">How the Failure Happened</h2>
+					<p>Consider a force-close sent through <code>AccountLayer._call</code>:</p>
+					<ol>
+						<li>AccountLayer locks its protected entry points and forwards the force-close to Symmio core.</li>
+						<li>Core closes the position.</li>
+						<li>
+							Before returning, core calls <code>onClosePosition</code> so AccountLayer can remove the quote and clean up the account.
+						</li>
+						<li>The old guard sees that AccountLayer is already locked and rejects the callback.</li>
+					</ol>
+					<pre><code class="language-mermaid">sequenceDiagram
+    actor Caller
+    participant AL as AccountLayer
+    participant Core as Symmio core
+
+    Caller->>AL: Route force-close
+    AL->>Core: Close the position
+    Core->>AL: Clean up the closed position
+    AL--xCore: Old guard rejects the callback
+    Core--xCaller: Whole transaction reverts</code></pre>
+					<p>
+						The callback reverted with <code>ReentrancyGuardReentrantCall</code>. Core reported that callback failure as
+						<code>HookReverted</code>, which caused the original force-close or liquidation settlement to revert as well.
+					</p>
+
+					<h2 id="fix">What Changed</h2>
+					<p>
+						AccountLayer now remembers the address of the core it is calling. Until that core call returns, the same core may call back to
+						run account cleanup. No other address receives this exception, and the main AccountLayer lock remains active throughout the
+						operation.
+					</p>
+					<p>The new flow is:</p>
+					<ol>
+						<li>Record the exact core address before calling it.</li>
+						<li>Allow a cleanup callback only from that core and only when another callback is not already running.</li>
+						<li>Restore the previous core address as soon as the outbound call returns.</li>
+					</ol>
+					<p>
+						The shared <code>callCore</code> helper opens and closes this narrow callback window. The cleanup functions
+						<code>onClosePosition</code>, <code>onCancelQuote</code>, and <code>onLiquidationSettled</code> now use
+						<code>nonReentrantCallback</code> to apply the rule.
+					</p>
+					<p>
+						Quote cancellation already worked because <code>onCancelQuote</code> previously had no reentrancy guard. It now uses the same
+						callback-aware guard, so cancellation stays live while nested callbacks are also blocked.
+					</p>
+
+					<h2 id="fixed-operations">Fixed Operations</h2>
+					<p>Regression tests cover every known AccountLayer-routed operation that reaches the affected cleanup callbacks:</p>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th scope="col">Flow</th>
+									<th scope="col">Covered operations</th>
+									<th scope="col">Cleanup callback</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Force-close</td>
+									<td>
+										<code>forceClosePosition</code><br />
+										<code>settleAndForceClosePosition</code> (deprecated)<br />
+										<code>finalizeForceClose</code><br />
+										<code>forceCloseAndSettlePositionsUnified</code>
+									</td>
+									<td><code>onClosePosition</code></td>
+								</tr>
+								<tr>
+									<td>Final PartyA liquidation settlement</td>
+									<td>
+										<code>settlePartyALiquidation</code><br />
+										<code>settlePartyALiquidationWithSnapshot</code>
+									</td>
+									<td><code>onLiquidationSettled</code></td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						The same boundary is used by <code>_call</code>, <code>_callWithMargin</code>, hook-driven <code>executeForAccount</code>,
+						allowed <code>callAsAffiliate</code> operations, and the affiliate fee-withdrawal path.
+					</p>
+
+					<h2 id="security">What Stays Protected</h2>
+					<p>
+						This is not a general exception to AccountLayer's reentrancy guard. It allows only the cleanup call needed to finish the core
+						operation:
+					</p>
+					<ul>
+						<li><code>onlySymmio</code> still rejects callers that are not whitelisted core contracts.</li>
+						<li>During a routed operation, the callback must come from the exact core AccountLayer called.</li>
+						<li>A callback cannot open another protected callback while it is running.</li>
+						<li>Ordinary <code>nonReentrant</code> AccountLayer functions remain locked until the outer operation finishes.</li>
+						<li>The same core may make another callback only after the previous callback has returned.</li>
+					</ul>
+					<p>
+						The recorded core address and callback-active marker use EIP-1153 transient storage, so they last only for the current
+						transaction. If cleanup makes another outbound call to an allowed core, push-and-restore handling temporarily records that
+						core and restores the previous core address afterward. The active-callback marker still blocks a second protected callback
+						until the first one returns.
+					</p>
+
+					<h2 id="upgrade">Upgrade Notes</h2>
+					<ul>
+						<li>
+							No caller changes are required. Bots and integrations keep the same AccountLayer gateway, core selector, calldata, and
+							return decoding.
+						</li>
+						<li>There is no external ABI, event, or persistent storage-layout change, and no state migration is required.</li>
+						<li>
+							Rebuild and replace <code>CoreFacet</code>, <code>AffiliateFacet</code>, <code>MarginFacet</code>, and
+							<code>SymmioHookFacet</code> atomically. <code>LibAccountLayerUtils</code> and <code>LibAccountLayerSigner</code> are
+							internal libraries whose changed code is inlined into those facet artifacts; they are not separately deployed. New
+							callback code paired with old forwarding cannot identify an allowed core. New forwarding paired with old callback code
+							still hits the original reentrancy failure.
+						</li>
+					</ul>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 documentation.</span>
+		</footer>
+	</body>
+</html>

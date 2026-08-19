@@ -30,6 +30,11 @@ const stripTags = value =>
 		.replace(/&ldquo;|&rdquo;/g, '"')
 		.replace(/\s+/g, " ")
 		.trim();
+const decodeHtmlEntities = value =>
+	value
+		.replace(/&#x([0-9a-f]+);/gi, (_match, hex) => String.fromCodePoint(Number.parseInt(hex, 16)))
+		.replace(/&#(\d+);/g, (_match, decimal) => String.fromCodePoint(Number.parseInt(decimal, 10)))
+		.replace(/&(amp|lt|gt|quot|apos);/g, entity => ({ "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&apos;": "'" })[entity]);
 
 const htmlFiles = (function walk(dir) {
 	return readdirSync(join(DOCS, dir), { withFileTypes: true }).flatMap(item => {
@@ -177,6 +182,24 @@ for (const file of htmlFiles) {
 	if (!/name="description"/.test(html) && !/name="robots"/.test(html)) {
 		fail(file, 'no <meta name="description"> (and not marked noindex)');
 	}
+
+	/* Mermaid treats semicolons as statement delimiters, including semicolons
+	   embedded in sequence message and note labels. The runtime otherwise renders
+	   an error SVG that looks like a valid diagram node to the page shell. */
+	const mermaidBlocks = [...html.matchAll(/<pre><code[^>]*class="[^"]*\blanguage-mermaid\b[^"]*"[^>]*>([\s\S]*?)<\/code><\/pre>/g)];
+	mermaidBlocks.forEach((block, diagramIndex) => {
+		const source = decodeHtmlEntities(block[1]);
+		if (!/^\s*sequenceDiagram\b/.test(source)) return;
+
+		source.split("\n").forEach((line, lineIndex) => {
+			const labelStart = line.indexOf(":");
+			if (labelStart === -1 || !line.slice(labelStart + 1).includes(";")) return;
+			fail(
+				file,
+				`Mermaid sequence diagram ${diagramIndex + 1}, line ${lineIndex + 1} has a semicolon in label text; use punctuation that Mermaid 10.9.3 does not parse as a statement delimiter`,
+			);
+		});
+	});
 }
 
 /* --- 6. Assets the pages depend on actually ship --------------------------- */
