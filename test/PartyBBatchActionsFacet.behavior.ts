@@ -10,7 +10,17 @@ import { User } from "./models/User.js"
 import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
 import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { decimal, getBlockTimestamp, getOpenTradingFeeForQuoteWithFilledAmount, getQuoteOpenTradingFeeAtPrice, pausePartyB } from "./utils/Common.js"
-import { getDummyPairUpnlAndPricesSig, getDummySingleUpnlAndPriceSig } from "./utils/SignatureUtils.js"
+import { getDummyPairUpnlAndPricesSig, getDummySingleUpnlAndPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
+
+const WAD = 10n ** 18n
+const WAD_36 = 10n ** 36n
+const batchCloseEventsInterface = new ethers.Interface([
+	"event QuoteFundingSettled(uint256 indexed quoteId, uint256 indexed symbolId, address indexed partyB, address partyA, address allocationKey, int256 funding)",
+	"event BalanceChangePartyA(address indexed partyA, uint256 amount, uint8 _type)",
+	"event BalanceChangePartyB(address indexed partyB, address indexed partyA, uint256 amount, uint8 _type)",
+	"event TradingFeeCharged(uint256 quoteId, uint256 amount, address partyA, address partyB, uint256 symbolId, address affiliate, uint8 _type)",
+	"event TradeVolumeRecorded(uint256 quoteId, uint256 amount, address partyA, address partyB, uint256 symbolId, address affiliate, uint8 _type)",
+])
 
 export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 	let context: RunContext, user: User, user2: User, hedger: Hedger, hedger2: Hedger
@@ -312,6 +322,36 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 			).to.be.revertedWith("PartyBFacet: Invalid length")
 		})
 
+		it("Should reject duplicate quote IDs before mutating quote or global locks", async function () {
+			const quoteId = 1n
+			const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)
+			const partyABefore = await user.getBalanceInfo()
+			const partyBBefore = await hedger.getBalanceInfo(await user.getAddress())
+			const firstFill = (quoteBefore.quantity * 40n) / 100n
+			const secondFill = quoteBefore.quantity - firstFill
+			const closedPrice = quoteBefore.openedPrice
+			const upnlSig = await getDummyPairUpnlAndPricesSig([closedPrice, closedPrice], [1n, 1n])
+
+			await expect(
+				context.partyBBatchActionsFacet
+					.connect(context.signers.hedger)
+					.fillCloseRequests([quoteId, quoteId], [firstFill, secondFill], [closedPrice, closedPrice], upnlSig),
+			).to.be.revertedWith("LibQuoteClose: Duplicate quoteId")
+
+			const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
+			const partyAAfter = await user.getBalanceInfo()
+			const partyBAfter = await hedger.getBalanceInfo(await user.getAddress())
+
+			expect(quoteAfter.closedAmount).to.equal(quoteBefore.closedAmount)
+			expect(quoteAfter.quoteStatus).to.equal(quoteBefore.quoteStatus)
+			expect(quoteAfter.lockedValues.cva).to.equal(quoteBefore.lockedValues.cva)
+			expect(quoteAfter.lockedValues.lf).to.equal(quoteBefore.lockedValues.lf)
+			expect(quoteAfter.lockedValues.partyAmm).to.equal(quoteBefore.lockedValues.partyAmm)
+			expect(quoteAfter.lockedValues.partyBmm).to.equal(quoteBefore.lockedValues.partyBmm)
+			expect(partyAAfter.totalLockedPartyA).to.equal(partyABefore.totalLockedPartyA)
+			expect(partyBAfter.totalLockedPartyB).to.equal(partyBBefore.totalLockedPartyB)
+		})
+
 		it("Should fail when quotes belong to different partyAs", async function () {
 			await user2.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).build())
 			await hedger.lockQuote(3)
@@ -344,6 +384,166 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 			// Partial close leaves quotes in CLOSE_PENDING since original close request is still active
 			expect(quote1.quoteStatus).to.equal(BigInt(QuoteStatus.CLOSE_PENDING))
 			expect(quote2.quoteStatus).to.equal(BigInt(QuoteStatus.CLOSE_PENDING))
+		})
+
+		it("Should expose a fully finalized batch to the first close hook", async function () {
+			const quoteIds = [1n, 2n]
+			const quotes = await Promise.all(quoteIds.map(quoteId => context.viewFacetQuote.getQuote(quoteId)))
+			const filledAmounts = quotes.map(quote => quote.quantity)
+			const closedPrices = quotes.map(quote => quote.requestedClosePrice)
+			const upnlSig = await getDummyPairUpnlAndPricesSig(closedPrices, [1n, 1n])
+			const observer = await (await ethers.getContractFactory("MockBatchCloseObserverHook")).deploy(await context.viewFacet.getAddress(), quoteIds)
+
+			await context.controlFacet.connect(context.signers.admin).registerHook(ethers.ZeroAddress, await observer.getAddress())
+			await context.partyBBatchActionsFacet.connect(context.signers.hedger).fillCloseRequests(quoteIds, filledAmounts, closedPrices, upnlSig)
+
+			const partyAFinal = await user.getBalanceInfo()
+			const partyBFinal = await hedger.getBalanceInfo(await user.getAddress())
+			expect(await observer.firstCloseSawFinalizedBatch()).to.equal(true)
+			expect(await observer.firstClosePartyAAllocated()).to.equal(partyAFinal.allocatedBalances)
+			expect(await observer.firstClosePartyBAllocated()).to.equal(partyBFinal.allocatedBalances)
+			expect(await observer.closeCallCount()).to.equal(quoteIds.length)
+			expect(await observer.closeFeeCallCount()).to.equal(quoteIds.length)
+		})
+
+		it("Should net opposite realized PnL across the full close batch", async function () {
+			await user.requestToCancelCloseRequest(1n)
+			await hedger.acceptCancelCloseRequest(1n)
+			await user.requestToCancelCloseRequest(2n)
+			await hedger.acceptCancelCloseRequest(2n)
+
+			const closePrice = decimal(4n)
+			await user.requestToClosePosition(1n, limitCloseRequestBuilder().closePrice(closePrice).build())
+			await user.requestToClosePosition(2n, limitCloseRequestBuilder().closePrice(closePrice).build())
+
+			const partyA = await user.getAddress()
+			const partyBBeforeDeallocation = await hedger.getBalanceInfo(partyA)
+			const retainedPartyBAllocation = partyBBeforeDeallocation.totalLockedPartyB
+			await context.partyBAccountFacet
+				.connect(context.signers.hedger)
+				.deallocateForPartyB(partyBBeforeDeallocation.allocatedBalances - retainedPartyBAllocation, partyA, await getDummySingleUpnlSig(0n))
+
+			const quoteIds = [1n, 2n]
+			const filledAmounts = [decimal(100n), decimal(100n)]
+			const closedPrices = [closePrice, closePrice]
+			const upnlSig = await getDummyPairUpnlAndPricesSig(closedPrices, [1n, 1n])
+
+			await expect(context.partyBBatchActionsFacet.connect(context.signers.hedger).fillCloseRequests(quoteIds, filledAmounts, closedPrices, upnlSig))
+				.not.to.be.reverted
+
+			expect((await hedger.getBalanceInfo(partyA)).allocatedBalances).to.equal(retainedPartyBAllocation)
+			expect((await context.viewFacetQuote.getQuote(1n)).quoteStatus).to.equal(BigInt(QuoteStatus.CLOSED))
+			expect((await context.viewFacetQuote.getQuote(2n)).quoteStatus).to.equal(BigInt(QuoteStatus.CLOSED))
+		})
+
+		it("Should conserve balances, fees, locks, and events across combined funding and PnL", async function () {
+			await user.requestToCancelCloseRequest(1n)
+			await hedger.acceptCancelCloseRequest(1n)
+			await user.requestToCancelCloseRequest(2n)
+			await hedger.acceptCancelCloseRequest(2n)
+
+			await context.pauseControlFacet.connect(context.signers.admin).activateAccumulatedFunding()
+			const epochDuration = 3600
+			const latest = BigInt(await time.latest())
+			const aligned = (latest / BigInt(epochDuration) + 1n) * BigInt(epochDuration)
+			await time.setNextBlockTimestamp(Number(aligned))
+			await context.fundingRateFacet.connect(hedger.signer).setEpochDurations([1], [epochDuration])
+			await context.fundingRateFacet.connect(hedger.signer).setFundingFee([1], [decimal(8n, 15)], [-decimal(4n, 15)], [decimal(1n)])
+			await time.increase(epochDuration)
+
+			const quoteIds = [1n, 2n]
+			const closedPrices = [decimal(5n), decimal(2n)]
+			await user.requestToClosePosition(quoteIds[0], limitCloseRequestBuilder().closePrice(closedPrices[0]).build())
+			await user.requestToClosePosition(quoteIds[1], limitCloseRequestBuilder().closePrice(closedPrices[1]).build())
+
+			const quotes = await Promise.all(quoteIds.map(quoteId => context.viewFacetQuote.getQuote(quoteId)))
+			const filledAmounts = quotes.map(quote => quote.quantity - quote.closedAmount)
+			const funding = await context.viewFacetQuote.getQuoteFundingDebts(quoteIds)
+			const pnl = [
+				((closedPrices[0] - quotes[0].openedPrice) * filledAmounts[0]) / WAD,
+				((quotes[1].openedPrice - closedPrices[1]) * filledAmounts[1]) / WAD,
+			]
+			const fees = quotes.map((quote, i) => (filledAmounts[i] * closedPrices[i] * quote.closeFee) / WAD_36)
+			const partyA = await user.getAddress()
+			const partyB = await hedger.getAddress()
+			const feeCollector = await context.viewFacet.getFeeCollector(quotes[0].affiliate)
+			const partyABefore = await user.getBalanceInfo()
+			const partyBBefore = await hedger.getBalanceInfo(partyA)
+			const feeCollectorBefore = await context.viewFacet.balanceOf(feeCollector)
+
+			expect(funding[0]).to.be.greaterThan(0n)
+			expect(funding[1]).to.be.lessThan(0n)
+			expect(pnl[0]).to.be.greaterThan(0n)
+			expect(pnl[1]).to.be.lessThan(0n)
+
+			const tx = await context.partyBBatchActionsFacet
+				.connect(context.signers.hedger)
+				.fillCloseRequests(quoteIds, filledAmounts, closedPrices, await getDummyPairUpnlAndPricesSig(closedPrices, [1n, 1n]))
+			const receipt = await tx.wait()
+			const events = (receipt?.logs ?? []).flatMap(log => {
+				try {
+					const parsed = batchCloseEventsInterface.parseLog({ topics: [...log.topics], data: log.data })
+					return parsed ? [parsed] : []
+				} catch {
+					return []
+				}
+			})
+
+			const partyANet = pnl[0] + pnl[1] - funding[0] - funding[1]
+			const totalFees = fees[0] + fees[1]
+			const partyAAfter = await user.getBalanceInfo()
+			const partyBAfter = await hedger.getBalanceInfo(partyA)
+			expect(partyAAfter.allocatedBalances).to.equal(partyABefore.allocatedBalances + partyANet - totalFees)
+			expect(partyBAfter.allocatedBalances).to.equal(partyBBefore.allocatedBalances - partyANet)
+			expect(await context.viewFacet.balanceOf(feeCollector)).to.equal(feeCollectorBefore + totalFees)
+			expect(partyAAfter.totalLockedPartyA).to.equal(0n)
+			expect(partyBAfter.totalLockedPartyB).to.equal(0n)
+
+			for (const quoteId of quoteIds) {
+				const quote = await context.viewFacetQuote.getQuote(quoteId)
+				expect(quote.quoteStatus).to.equal(BigInt(QuoteStatus.CLOSED))
+				expect(quote.lockedValues.cva).to.equal(0n)
+				expect(quote.lockedValues.lf).to.equal(0n)
+				expect(quote.lockedValues.partyAmm).to.equal(0n)
+				expect(quote.lockedValues.partyBmm).to.equal(0n)
+			}
+
+			const fundingEvents = events.filter(event => event.name === "QuoteFundingSettled")
+			expect(fundingEvents.map(event => [event.args.quoteId, event.args.funding])).to.deep.equal([
+				[quoteIds[0], funding[0]],
+				[quoteIds[1], funding[1]],
+			])
+			expect(
+				fundingEvents.every(event => event.args.partyA === partyA && event.args.partyB === partyB && event.args.allocationKey === partyA),
+			).to.equal(true)
+
+			const partyAEvents = events.filter(event => event.name === "BalanceChangePartyA")
+			expect(partyAEvents.map(event => [event.args.amount, event.args._type])).to.deep.equal([
+				[pnl[0], 4n],
+				[-funding[1], 10n],
+				[funding[0], 11n],
+				[-pnl[1], 5n],
+				[fees[0], 3n],
+				[fees[1], 3n],
+			])
+			const partyBEvents = events.filter(event => event.name === "BalanceChangePartyB")
+			expect(partyBEvents.map(event => [event.args.amount, event.args._type])).to.deep.equal([
+				[funding[0], 10n],
+				[-pnl[1], 4n],
+				[pnl[0], 5n],
+				[-funding[1], 11n],
+			])
+
+			const feeEvents = events.filter(event => event.name === "TradingFeeCharged")
+			expect(feeEvents.map(event => [event.args.quoteId, event.args.amount, event.args._type])).to.deep.equal([
+				[quoteIds[0], fees[0], 1n],
+				[quoteIds[1], fees[1], 1n],
+			])
+			const volumeEvents = events.filter(event => event.name === "TradeVolumeRecorded")
+			expect(volumeEvents.map(event => [event.args.quoteId, event.args.amount, event.args._type])).to.deep.equal([
+				[quoteIds[0], (filledAmounts[0] * closedPrices[0]) / WAD, 1n],
+				[quoteIds[1], (filledAmounts[1] * closedPrices[1]) / WAD, 1n],
+			])
 		})
 
 		it("Should update nonces correctly", async function () {

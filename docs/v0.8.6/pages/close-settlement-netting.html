@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Close settlement now nets accumulated funding with realized PnL before balance admission, rejects repeated quote IDs before mutation, and finalizes the full batch before hooks run."
+		/>
+		<title>Close Settlement Netting - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.6">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#summary">Summary</a>
+				<a class="toc-link level-2" href="#before">Before: Gross-Leg Admission</a>
+				<a class="toc-link level-2" href="#model">Settlement Model</a>
+				<a class="toc-link level-2" href="#single-close">Single-Quote Close</a>
+				<a class="toc-link level-2" href="#batch-close">Batch Close</a>
+				<a class="toc-link level-2" href="#duplicates">Duplicate Quote IDs</a>
+				<a class="toc-link level-2" href="#hooks">Hook Compatibility</a>
+				<a class="toc-link level-2" href="#events">Event Order</a>
+				<a class="toc-link level-2" href="#invariants">Invariants and Boundaries</a>
+				<a class="toc-link level-2" href="#verification">Regression Coverage</a>
+			</div>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Close Settlement Netting</h1>
+							<p class="hero-copy">
+								v0.8.6 admits a close against the final bilateral difference between accumulated funding and realized PnL, instead of
+								requiring each gross leg to be independently funded in execution order. Batch closes also reject repeated quote IDs
+								before mutation and finalize every quote before the first hook runs.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="summary">Summary</h2>
+					<p>
+						A quote close can contain two bilateral obligations: accumulated funding and realized PnL. Either component can make PartyA
+						pay PartyB or PartyB pay PartyA. Previously, the close transferred funding first and PnL second. Each transfer checked the
+						payer's balance in isolation, so a party could fail the first gross debit even when the second component would immediately
+						credit more than enough to cover it.
+					</p>
+					<p>
+						The close path now records both obligations before moving allocated balances, calculates the final PartyA-to-PartyB
+						difference, checks only that difference, credits receivers, and then debits payers. Funding and PnL remain separate in the
+						event ledger; only admission is netted.
+					</p>
+					<aside class="callout callout-invariant">
+						<strong>Core rule.</strong> A party must cover what it owes after funding and realized PnL offset each other, not the largest
+						temporary debit created by contract execution order.
+					</aside>
+
+					<h2 id="before">Before: gross-leg admission</h2>
+					<p>The previous close body interleaved calculation, transfer, state finalization, and external observation:</p>
+					<pre><code class="language-text">1. Calculate and immediately transfer accumulated funding
+2. Calculate and immediately transfer realized PnL
+3. Charge PartyA's platform close fee
+4. Update closed amount, locks, aggregate positions, and quote status
+5. Call close hooks</code></pre>
+					<p>
+						Changing the order to PnL-first would only reverse which sign combination could fail. The defect was not that funding came
+						first; it was that balance admission happened independently for components of one atomic bilateral settlement.
+					</p>
+
+					<h3>The 70 / 80 / 90 failure</h3>
+					<p>Consider a full close where:</p>
+					<ul>
+						<li>PartyB starts with <code>70</code> allocated.</li>
+						<li>Funding is <code>-80</code>, so PartyB owes PartyA <code>80</code>.</li>
+						<li>PartyA realizes a <code>90</code> loss, so PartyA owes PartyB <code>90</code>.</li>
+					</ul>
+					<div class="table-wrap">
+						<table>
+							<caption>
+								The close is net-negative for PartyA even though its funding component is positive.
+							</caption>
+							<thead>
+								<tr>
+									<th scope="col">PartyA perspective</th>
+									<th scope="col">Amount</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Receives funding</td>
+									<td><code>+80</code></td>
+								</tr>
+								<tr>
+									<td>Pays realized loss</td>
+									<td><code>-90</code></td>
+								</tr>
+								<tr>
+									<td><strong>Final bilateral result</strong></td>
+									<td>
+										<strong>PartyA pays <code>10</code></strong>
+									</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						The old path tried to debit <code>80</code> from PartyB while PartyB held only <code>70</code>, then reverted before the
+						<code>90</code> PnL credit. The valid final PartyB balance is <code>70 + 90 - 80 = 80</code>. Only PartyA needs to cover the
+						net <code>10</code>, plus its separately charged close fee.
+					</p>
+
+					<h2 id="model">Settlement model</h2>
+					<div class="table-wrap">
+						<table>
+							<caption>
+								Funding and PnL are converted into unsigned PartyA-side receive and pay totals.
+							</caption>
+							<thead>
+								<tr>
+									<th scope="col">Input</th>
+									<th scope="col">Meaning</th>
+									<th scope="col">Bucket</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td><code>fundingFee &gt; 0</code></td>
+									<td>PartyA pays PartyB</td>
+									<td><code>partyAPays</code></td>
+								</tr>
+								<tr>
+									<td><code>fundingFee &lt; 0</code></td>
+									<td>PartyA receives from PartyB</td>
+									<td><code>partyAReceives</code></td>
+								</tr>
+								<tr>
+									<td>PartyA profit</td>
+									<td>PartyB pays realized PnL</td>
+									<td><code>partyAReceives</code></td>
+								</tr>
+								<tr>
+									<td>PartyA loss</td>
+									<td>PartyA pays realized PnL</td>
+									<td><code>partyAPays</code></td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<pre><code class="language-text">partyAReceives =
+    (PartyA made profit ? pnl : 0)
+  + (fundingFee &lt; 0 ? abs(fundingFee) : 0)
+
+partyAPays =
+    (PartyA made loss ? pnl : 0)
+  + (fundingFee &gt; 0 ? fundingFee : 0)
+
+netToPartyA = partyAReceives - partyAPays</code></pre>
+					<ul>
+						<li>If <code>netToPartyA &gt; 0</code>, PartyB must cover that difference.</li>
+						<li>If <code>netToPartyA &lt; 0</code>, PartyA must cover its absolute value.</li>
+						<li>If it is zero, neither party needs a temporary bilateral settlement buffer.</li>
+					</ul>
+					<p>
+						For a batch, both buckets are summed across every quote before either party's allocated balance is checked. The PartyB side
+						uses the PartyA-specific allocation key shared by all quotes in that batch.
+					</p>
+
+					<h2 id="single-close">Single-quote close</h2>
+					<ol>
+						<li>
+							<strong>Prepare.</strong> Validate proportional lock-release floors, reduce quote and global locks, record accumulated
+							funding without transferring it, calculate PnL, and return the complete settlement obligations.
+						</li>
+						<li>
+							<strong>Net-check.</strong> Derive <code>partyAReceives</code> and <code>partyAPays</code>, then require only the final
+							debtor to cover the difference.
+						</li>
+						<li><strong>Credit.</strong> Credit the funding receiver and the realized-PnL receiver.</li>
+						<li><strong>Debit.</strong> Debit the funding payer and the realized-PnL payer.</li>
+						<li>
+							<strong>Finalize.</strong> Emit funding attribution, charge PartyA's close fee, credit the fee collector, update average
+							closed price, closed amount, aggregate positions, requested quantity, status, and connections.
+						</li>
+						<li><strong>Publish.</strong> Invoke close and fee hooks from final quote state, then emit trade volume.</li>
+					</ol>
+					<aside class="callout callout-note">
+						<strong>Why credits may come first.</strong> The net check has already proved that the party with the final debit can cover
+						the difference. Any later debit, fee, finalization, or hook failure reverts the complete transaction, including the earlier
+						credits, lock release, and funding checkpoint.
+					</aside>
+
+					<h2 id="batch-close">Batch close</h2>
+					<p>
+						The PartyB batch entry retains its length checks, Muon verification, and signed post-close solvency boundary. It then hands
+						the complete batch to <code>LibQuoteClose.closeQuotes</code>, which runs one coordinated pipeline:
+					</p>
+					<ol>
+						<li>Reject duplicate quote IDs before counters, funding checkpoints, or locks mutate.</li>
+						<li>Apply existing liquidation gates and increment both parties' UPNL counters.</li>
+						<li>Validate each fill and enforce one PartyA, PartyB, signer, and allocation relationship.</li>
+						<li>Prepare every quote and aggregate every funding and realized-PnL obligation.</li>
+						<li>Check the single batch-wide bilateral difference.</li>
+						<li>Credit every receiver across the batch.</li>
+						<li>Debit every payer across the batch.</li>
+						<li>Finalize every quote and retain each calculated close fee.</li>
+						<li>Call hooks for every quote.</li>
+						<li>Return final statuses and close IDs to the external facet.</li>
+					</ol>
+					<p>
+						This makes offsetting funding and PnL independent of quote input order. The standalone accumulated-funding batch uses the same
+						posting discipline: record each execution-time fee, credit every receiver, debit every payer, emit funding settlement events,
+						then run the existing signed-time solvency calculations.
+					</p>
+					<aside class="callout callout-note">
+						<strong>Signed time and execution time remain distinct.</strong> The Muon UPNL already contains funding debt at the signature
+						timestamp. Solvency removes that signed amount, while allocated balances receive the amount calculated when the transaction
+						executes.
+					</aside>
+
+					<h2 id="duplicates">Why duplicate quote IDs are rejected</h2>
+					<p>
+						Batch preparation runs before <code>closedAmount</code> is finalized. Repeating one quote would make later entries read a
+						stale open amount while shrinking locks that an earlier entry already reduced.
+					</p>
+					<p>
+						For the default quote, a repeated <code>[quoteId, quoteId]</code> batch with <code>40%</code> and <code>60%</code> fills would
+						produce this sequence:
+					</p>
+					<div class="table-wrap">
+						<table>
+							<caption>
+								The stale second denominator closes the quote while leaving real collateral locked.
+							</caption>
+							<thead>
+								<tr>
+									<th scope="col">Lock</th>
+									<th scope="col">Start</th>
+									<th scope="col">After correct 40%</th>
+									<th scope="col">Incorrect residue after 60%</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>CVA</td>
+									<td><code>22</code></td>
+									<td><code>13.2</code></td>
+									<td><code>5.28</code></td>
+								</tr>
+								<tr>
+									<td>LF</td>
+									<td><code>3</code></td>
+									<td><code>1.8</code></td>
+									<td><code>0.72</code></td>
+								</tr>
+								<tr>
+									<td>PartyA MM</td>
+									<td><code>75</code></td>
+									<td><code>45</code></td>
+									<td><code>18</code></td>
+								</tr>
+								<tr>
+									<td>PartyB MM</td>
+									<td><code>40</code></td>
+									<td><code>24</code></td>
+									<td><code>9.6</code></td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						The quote could reach <code>closedAmount == quantity</code> and <code>CLOSED</code> while those amounts remained in the quote
+						and both parties' global locked totals. v0.8.6 therefore rejects duplicate quote IDs with
+						<code>LibQuoteClose: Duplicate quoteId</code> before any mutation. Multiple sequential fills of one quote require separate
+						transactions.
+					</p>
+					<p>
+						The uniqueness preflight is an in-memory <code>O(n²)</code> scan. It avoids storage and preserves the no-mutation failure
+						boundary. Correctness is covered, but a maximum-batch gas benchmark has not been added.
+					</p>
+
+					<h2 id="hooks">Hook compatibility contract</h2>
+					<p>Custom hooks can query quote and account state, so callback timing is an external compatibility surface.</p>
+					<div class="table-wrap">
+						<table>
+							<caption>
+								The final design rejects the intermediate mixed snapshot in favor of one coherent batch state.
+							</caption>
+							<thead>
+								<tr>
+									<th scope="col">Behavior</th>
+									<th scope="col">State visible to the first close hook</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Original sequential batch</td>
+									<td>Quote 1 was final; quote 2 had not been settled or finalized.</td>
+								</tr>
+								<tr>
+									<td>Rejected intermediate design</td>
+									<td>All balances and funding were posted, but later quotes still had old closed amount and status.</td>
+								</tr>
+								<tr>
+									<td><strong>v0.8.6 contract</strong></td>
+									<td><strong>Every balance, fee, lock, closed amount, aggregate, and status in the batch is final.</strong></td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>Per quote, callbacks retain this order:</p>
+					<ol>
+						<li>Affiliate <code>onClosePosition</code>.</li>
+						<li>Affiliate <code>onFeeCharged(CLOSE)</code>.</li>
+						<li>System <code>onClosePosition</code>.</li>
+						<li>System <code>onFeeCharged(CLOSE)</code>.</li>
+						<li><code>TradeVolumeRecorded(CLOSE)</code>.</li>
+					</ol>
+					<p>
+						<code>LibHook.safeCall</code> clears signer and InstantLayer privileges before each external call and restores them afterward.
+						Hook failure is not swallowed: it raises <code>HookReverted</code> and atomically reverts the complete close.
+					</p>
+					<aside class="callout callout-important">
+						<strong>Compatibility decision.</strong> Custom hooks that relied on quote-by-quote intermediate batch state must adapt. The
+						first callback now observes one fully finalized batch, including both parties' final allocated balances.
+					</aside>
+
+					<h2 id="events">Observable event order</h2>
+					<p>
+						Admission is netted, but accounting attribution remains gross. Consumers continue to receive distinct funding-in, funding-out,
+						realized-PnL-in, and realized-PnL-out balance changes.
+					</p>
+					<ol>
+						<li>
+							<strong>Credit loop:</strong> all receiver-side funding and realized-PnL <code>BalanceChange</code> events, in quote input
+							order.
+						</li>
+						<li>
+							<strong>Debit loop:</strong> all payer-side funding and realized-PnL <code>BalanceChange</code> events, in quote input
+							order.
+						</li>
+						<li>
+							<strong>Finalize loop:</strong> <code>QuoteFundingSettled</code>, PartyA's <code>PLATFORM_FEE_OUT</code> balance change,
+							<code>TradingFeeCharged(CLOSE)</code>, then quote state finalization.
+						</li>
+						<li>
+							<strong>Hook loop:</strong> affiliate callbacks, system callbacks, then <code>TradeVolumeRecorded(CLOSE)</code> per quote.
+						</li>
+						<li>
+							<strong>External facet loop:</strong> both <code>FillCloseRequest</code> overloads per quote, using final status, close
+							ID, and locked values.
+						</li>
+					</ol>
+					<p>
+						This is intentionally different from the original cross-quote order, where settlement, fees, hooks, and fill events for quote
+						1 all preceded settlement of quote 2.
+					</p>
+
+					<h2 id="invariants">Invariants and boundaries</h2>
+					<ul>
+						<li><strong>Net admission:</strong> collateral admission uses the combined funding-plus-PnL difference.</li>
+						<li><strong>Gross attribution:</strong> funding and PnL retain separate balance reasons and events.</li>
+						<li><strong>Credit before debit:</strong> every applicable receiver credit precedes payer debits.</li>
+						<li><strong>Atomicity:</strong> any later failure rolls back funding checkpoints, locks, balances, state, and logs.</li>
+						<li><strong>Unique IDs:</strong> a close batch rejects repeated quote IDs before mutation.</li>
+						<li><strong>Common relationship:</strong> every batch quote belongs to the same PartyA and PartyB.</li>
+						<li><strong>Final hook snapshot:</strong> no close hook runs until all batch quotes are finalized.</li>
+						<li><strong>Lock conservation:</strong> a full close clears quote and global locks for both parties.</li>
+					</ul>
+					<h3>Close-fee boundary</h3>
+					<p>
+						The bilateral net check covers only accumulated funding and realized PnL between PartyA and PartyB. PartyA's platform close
+						fee is calculated and charged during finalization, after bilateral posting. It is not included in
+						<code>partyAPays</code>. If PartyA cannot pay it, the complete transaction reverts.
+					</p>
+					<aside class="callout callout-note">
+						<strong>Passing the net check is not a complete success guarantee.</strong> Price validation, signed solvency gates, close-fee
+						capacity, finalization, and hooks can still revert and roll back the operation.
+					</aside>
+					<h3>Non-goals and known limits</h3>
+					<ul>
+						<li>Funding-rate formulas, Muon verification, signed UPNL formulas, price validation, and fee formulas are unchanged.</li>
+						<li>Sequential same-quote fills inside one batch are not simulated; duplicates are rejected.</li>
+						<li>The duplicate scan has no maximum-size gas benchmark.</li>
+						<li>The dedicated hook observer covers two full closes, not a mixed partial/full batch.</li>
+						<li>Hook failures intentionally revert the parent transaction.</li>
+					</ul>
+
+					<h2 id="verification">Regression coverage</h2>
+					<div class="table-wrap">
+						<table>
+							<caption>
+								Each policy is pinned by an executable regression.
+							</caption>
+							<thead>
+								<tr>
+									<th scope="col">Scenario</th>
+									<th scope="col">What it proves</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td><code>70 / 80 / 90</code> single close</td>
+									<td>PartyB may settle when it covers the net result but not the gross funding leg.</td>
+								</tr>
+								<tr>
+									<td>Repeated ID with 40% and 60% fills</td>
+									<td>Rejection occurs before quote locks or either party's global locks mutate.</td>
+								</tr>
+								<tr>
+									<td>Two-quote observer hook</td>
+									<td>The first callback sees both quotes and both allocated balances finalized.</td>
+								</tr>
+								<tr>
+									<td>Opposite realized PnL</td>
+									<td>Cross-quote PnL offsets before either party must fund a gross leg.</td>
+								</tr>
+								<tr>
+									<td>Combined funding, PnL, fees, locks, and events</td>
+									<td>Both ledgers, the fee collector, terminal states, zero locks, and event attribution reconcile together.</td>
+								</tr>
+								<tr>
+									<td>Hostile standalone funding order</td>
+									<td>Opposite funding debts settle independently of quote input order.</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<pre><code class="language-bash">npx hardhat test mocha \
+  test/parallel/PartyBBatchActionsFacet.test.ts \
+  test/parallel/ClosePosition.test.ts \
+  test/parallel/FundingRate.test.ts \
+  test/parallel/Hooks.test.ts</code></pre>
+					<p>
+						The focused verification snapshot for this implementation is <strong>169 passing</strong>, with clean Solidity lint for the
+						changed contracts and a clean whitespace diff check.
+					</p>
+					<h3>Implementation map</h3>
+					<ul>
+						<li><code>contracts/core/libraries/LibQuoteClose.sol</code> — phase ownership and net accounting.</li>
+						<li><code>contracts/core/libraries/LibQuoteFunding.sol</code> — record, credit, debit, and settlement-event primitives.</li>
+						<li>
+							<code>contracts/core/facets/PartyBBatchActions/PartyBBatchActionsFacetImpl.sol</code> — Muon boundary and batch handoff.
+						</li>
+						<li><code>contracts/core/facets/FundingRate/FundingRateFacetImpl.sol</code> — standalone funding batch ordering.</li>
+						<li><code>contracts/core/libraries/LibHook.sol</code> — protected, reverting external-call boundary.</li>
+					</ul>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 documentation.</span>
+		</footer>
+	</body>
+</html>

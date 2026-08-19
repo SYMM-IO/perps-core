@@ -77,36 +77,56 @@ library LibQuoteFunding {
 	/// @dev Transfers funds between parties based on calculated fee
 	/// @param quoteId The position ID to charge funding for
 	function chargeAccumulatedFundingFee(uint256 quoteId) public {
-		// Load the position
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		int256 fee = recordAccumulatedFundingFee(quoteId);
+		address partyBAllocationKey = LibAccount.partyBAllocationKey(quote.partyB, quote.partyA);
+		creditFundingFee(quote, partyBAllocationKey, fee);
+		debitFundingFee(quote, partyBAllocationKey, fee);
+		emitQuoteFundingSettled(quoteId, partyBAllocationKey, fee);
+	}
 
-		// Calculate the unpaid funding fee
-		int256 fee = getAccumulatedFundingFee(quoteId);
+	/// @notice Posts only the receiver side of a funding settlement.
+	function creditFundingFee(Quote storage quote, address partyBAllocationKey, int256 fee) internal {
+		if (fee > 0) {
+			LibAccount.increasePartyBAllocatedBalance(quote.partyB, partyBAllocationKey, uint256(fee), SharedEvents.BalanceChangeType.FUNDING_FEE_IN);
+		} else if (fee < 0) {
+			LibAccount.increasePartyAAllocatedBalance(quote.partyA, uint256(-fee), SharedEvents.BalanceChangeType.FUNDING_FEE_IN);
+		}
+	}
 
-		// Store old value for aggregate funding update
+	/// @notice Posts only the payer side of a funding settlement.
+	function debitFundingFee(Quote storage quote, address partyBAllocationKey, int256 fee) internal {
+		if (fee > 0) {
+			LibAccount.decreasePartyAAllocatedBalance(quote.partyA, uint256(fee), SharedEvents.BalanceChangeType.FUNDING_FEE_OUT);
+		} else if (fee < 0) {
+			LibAccount.decreasePartyBAllocatedBalance(
+				quote.partyB,
+				partyBAllocationKey,
+				uint256(-fee),
+				SharedEvents.BalanceChangeType.FUNDING_FEE_OUT
+			);
+		}
+	}
+
+	/// @notice Records accumulated funding as paid without moving allocated balances.
+	/// @dev Close settlement uses this to post funding and realized PnL atomically while preserving their distinct ledger events.
+	function recordAccumulatedFundingFee(uint256 quoteId) public returns (int256 fee) {
+		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		fee = getAccumulatedFundingFee(quoteId);
+
 		int256 oldAccumulatedPaidFunding = quote.accumulatedPaidFunding;
 		uint256 openAmount = LibQuote.quoteOpenAmount(quote);
 
 		quote.lastFundingPaymentTimestamp = block.timestamp;
 		updateAccumulatedPaidFunding(quoteId);
 
-		// Update aggregate funding tracking for nonce-free Muon verification
-		// This must be called after updateAccumulatedPaidFunding updates quote.accumulatedPaidFunding
+		// This must run after updateAccumulatedPaidFunding updates quote.accumulatedPaidFunding.
 		LibAggregateFunding.updatePartiesAggregateFunding(quote, oldAccumulatedPaidFunding, openAmount);
+	}
 
-		address partyBAllocationKey = LibAccount.partyBAllocationKey(quote.partyB, quote.partyA);
-		if (fee > 0) {
-			// Positive fee: Trader (PartyA) pays Market Maker (PartyB)
-			uint256 feeInUint = uint256(fee);
-			LibAccount.decreasePartyAAllocatedBalance(quote.partyA, feeInUint, SharedEvents.BalanceChangeType.FUNDING_FEE_OUT);
-			LibAccount.increasePartyBAllocatedBalance(quote.partyB, partyBAllocationKey, feeInUint, SharedEvents.BalanceChangeType.FUNDING_FEE_IN);
-		} else if (fee < 0) {
-			// Negative fee: Market Maker (PartyB) pays Trader (PartyA)
-			uint256 feeInUint = uint256(-fee);
-			LibAccount.decreasePartyBAllocatedBalance(quote.partyB, partyBAllocationKey, feeInUint, SharedEvents.BalanceChangeType.FUNDING_FEE_OUT);
-			LibAccount.increasePartyAAllocatedBalance(quote.partyA, feeInUint, SharedEvents.BalanceChangeType.FUNDING_FEE_IN);
-		}
-
+	/// @notice Emits the per-quote funding settlement attribution event.
+	function emitQuoteFundingSettled(uint256 quoteId, address partyBAllocationKey, int256 fee) public {
+		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		emit IFundingRateEvents.QuoteFundingSettled(quoteId, quote.symbolId, quote.partyB, quote.partyA, partyBAllocationKey, fee);
 	}
 

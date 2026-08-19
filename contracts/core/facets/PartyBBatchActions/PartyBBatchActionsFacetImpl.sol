@@ -19,6 +19,7 @@ import { PairUpnlAndPricesSig } from "../../storages/MuonStorage.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
+import { LibQuoteClose } from "../../libraries/LibQuoteClose.sol";
 
 import { LibPartiesEvents } from "../../libraries/LibPartiesEvents.sol";
 import { LibSendQuoteEvents } from "../../libraries/LibSendQuoteEvents.sol";
@@ -147,7 +148,6 @@ library PartyBBatchActionsFacetImpl {
 		uint256[] memory closedPrices,
 		PairUpnlAndPricesSig memory upnlSig
 	) internal returns (QuoteStatus[] memory quoteStatuses, uint256[] memory closeIds) {
-		MAStorage.Layout storage maLayout = MAStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 
 		require(
@@ -176,25 +176,6 @@ library PartyBBatchActionsFacetImpl {
 			);
 		}
 
-		// Solvency checks
-		require(!maLayout.liquidationStatus[firstQuotePartyA], "PartyBFacet: PartyA isn't solvent");
-		firstQuotePartyB.requireNotLiquidating(firstQuotePartyA);
-
-		LibAccount.increaseBothUpnlCounters(firstQuotePartyB, firstQuotePartyA);
-
-		quoteStatuses = new QuoteStatus[](quoteIds.length);
-		closeIds = new uint256[](quoteIds.length);
-
-		for (uint256 i = 0; i < quoteIds.length; i++) {
-			uint256 quoteId = quoteIds[i];
-			Quote storage quote = quoteLayout.quotes[quoteId];
-
-			require(quote.partyB == firstQuotePartyB, "PartyBBatchActionsFacet: All positions must have same partyB");
-			require(quote.partyA == firstQuotePartyA, "PartyBBatchActionsFacet: All positions must have same partyA");
-			require(quote.partyB == LibSigner.getSigner(), "PartyBFacet: Sender should be the partyB");
-			LibPartyBPositionsActions.fillCloseRequest(quoteId, filledAmounts[i], closedPrices[i]);
-			quoteStatuses[i] = quote.quoteStatus;
-			closeIds[i] = quoteLayout.closeIds[quoteId];
-		}
+		(quoteStatuses, closeIds) = LibQuoteClose.closeQuotes(quoteIds, filledAmounts, closedPrices);
 	}
 }

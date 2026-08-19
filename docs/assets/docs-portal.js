@@ -102,6 +102,7 @@
 			["lazy-accumulated-funding", "Funding", "Lazy Accumulated Funding"],
 			["force-close-request-binding", "Force Close", "Force-Close Request Binding"],
 			["notional-liquidation-fee-floor", "Liquidation", "Notional Liquidation Fee Floor"],
+			["close-settlement-netting", "Settlement", "Close Settlement Netting"],
 		],
 	};
 
