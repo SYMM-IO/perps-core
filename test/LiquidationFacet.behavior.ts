@@ -1669,6 +1669,52 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			).to.not.be.reverted
 		})
 
+		it("Should use the historical liquidation time when funding is paid before a fresh snapshot is signed", async function () {
+			const price = decimal(572n, 16)
+			const quoteIds = [1n]
+
+			// Establish a historical insolvency point with no unpaid funding.
+			await context.fundingRateFacet
+				.connect(context.signers.hedger)
+				.chargeAccumulatedFundingFee(user.address, context.signers.hedger.address, quoteIds, await getDummyPairUpnlSig())
+			const historicalFundingDebt = await context.viewFacetQuote.getSumQuoteFundingDebts(quoteIds)
+			expect(historicalFundingDebt).to.equal(0n)
+			const historicalUpnl = await user.getUpnl(getPriceFetcher([1n], [price]))
+			const historicalTotalUnrealizedLoss = await user.getTotalUnrealisedLoss(getPriceFetcher([1n], [price]))
+			const historicalAllocatedBalance = (await user.getBalanceInfo()).allocatedBalances
+			const historicalTimestamp = BigInt(await time.latest())
+			const historicalBlockNumber = BigInt(await ethers.provider.getBlockNumber())
+			const historicalState = await getSignedLiquidationSnapshotState(context.signers.hedger.address, 1n, price)
+
+			// Pay newly accrued funding, then create a fresh signature for the historical insolvency point.
+			await time.increase(500)
+			await context.fundingRateFacet
+				.connect(context.signers.hedger)
+				.chargeAccumulatedFundingFee(user.address, context.signers.hedger.address, quoteIds, await getDummyPairUpnlSig())
+			await context.accountFacet.connect(context.signers.user).allocate(decimal(100n))
+
+			const freshHistoricalSig = await getDummyLiquidationSig(
+				"0x12",
+				historicalUpnl,
+				[1n],
+				[price],
+				historicalTotalUnrealizedLoss,
+				historicalAllocatedBalance,
+			)
+			await expect(
+				context.partyALiquidationSnapshotFacet.connect(context.signers.liquidator).singleStepLiquidatePartyAWithSnapshot(
+					user.address,
+					buildLiquidationSnapshotSig(freshHistoricalSig, [historicalState], {
+						liquidationTimestamp: historicalTimestamp,
+						liquidationBlockNumber: historicalBlockNumber,
+						liquidationAllocatedBalance: historicalAllocatedBalance,
+					}),
+					quoteIds,
+					[context.signers.hedger.address],
+				),
+			).to.not.be.reverted
+		})
+
 		it("Should revert single-step liquidation when quoteIds do not fully finish the liquidation", async function () {
 			await context.accountFacet.connect(context.signers.user).allocate(decimal(200n))
 
