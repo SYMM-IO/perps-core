@@ -70,7 +70,27 @@
 						operational needs are different. For example, deallocation can reasonably require a very fresh signature such as
 						<code>10</code> seconds, while PartyA liquidation may need a larger submission window such as <code>120</code> seconds.
 					</p>
-					<p>Each <code>MuonFunction</code> can now override the global UPNL validity window.</p>
+					<p>
+						Each <code>MuonFunction</code> can now override the global UPNL validity window. A <code>MuonFunction</code> is the operation
+						category that selects the authorized Muon key and gateway signer. The available categories are:
+					</p>
+					<pre><code class="language-solidity">enum MuonFunction {
+    Trading,
+    AccountManagement,
+    Settlement,
+    ForceClose,
+    Funding,
+    LiquidationPartyA,
+    LiquidationPartyB,
+    RemoveMargin
+}
+</code></pre>
+					<p>
+						Before setting an override, match the affected method to its category in
+						<a href="#muonfunction-categories">MuonFunction categories</a>. Some methods use the category only for signer authorization
+						and enforce a different lifecycle-based timestamp rule, so the method table also identifies where this freshness override
+						actually applies.
+					</p>
 					<pre><code class="language-solidity">setMuonFunctionUpnlValidTime(func, upnlValidTime)
 </code></pre>
 					<p>
@@ -146,19 +166,8 @@
 					<h2 id="muonfunction-categories">MuonFunction categories</h2>
 					<p>
 						The categories are the same <code>MuonFunction</code> enum used by the signature verifier's key and gateway authorization
-						system:
+						system. The enum is shown in the summary above; this table maps its values to the affected methods.
 					</p>
-					<pre><code class="language-solidity">enum MuonFunction {
-    Trading,
-    AccountManagement,
-    Settlement,
-    ForceClose,
-    Funding,
-    LiquidationPartyA,
-    LiquidationPartyB,
-    RemoveMargin
-}
-</code></pre>
 					<p>The intended method grouping is:</p>
 					<div class="table-wrap">
 						<table>

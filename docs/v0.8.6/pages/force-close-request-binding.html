@@ -61,9 +61,10 @@
 				<article class="doc-article" id="full-document">
 					<h2 id="summary">Summary</h2>
 					<p>
-						The multi-step force-close flow stores a derived close price and a uPNL/current-price snapshot during
-						<code>initializeForceClose</code>, then consumes that state during settlement and finalization. Previously, the stored state
-						was keyed only by <code>quoteId</code>. It did not record which close request created it.
+						The multi-step force-close flow begins with <code>initializeForceClose</code>, which stores a derived close price and a
+						uPNL/current-price snapshot. <code>settleUpnlForForceClose</code> can then realize uPNL while the workflow is open, and
+						<code>finalizeForceClose</code> refreshes the snapshot before closing the position. Previously, this stored state was keyed
+						only by <code>quoteId</code>. It did not record which close request created it.
 					</p>
 					<p>
 						If that close request was canceled or expired, its stored detail could remain marked <code>inProgress</code>. A new close
@@ -140,20 +141,20 @@
 							unchanged because return values are not part of selector derivation.
 						</li>
 						<li>
-							An uninitialized or pre-upgrade detail has <code>closeId = 0</code> and cannot pass the continuation guard. Finish,
-							cancel, or restart any active multi-step workflow across the upgrade boundary; do not expect historical in-progress state
-							to continue.
+							An uninitialized or pre-upgrade detail has <code>closeId = 0</code> and cannot pass the continuation guard. Finish active
+							multi-step workflows before upgrading. After the upgrade, an old workflow cannot continue. Cancel the old close request
+							through the normal cancellation flow, or wait past its deadline and call <code>expireQuote([quoteId])</code>; a
+							post-deadline cancellation may invoke the same expiry path. Confirm the quote has returned to <code>OPENED</code>, then
+							create a replacement request and initialize a new workflow.
 						</li>
-						<li>
-							If the original close request is canceled or expired, create the intended replacement request and initialize it normally.
-							Historical state is never accepted as a wildcard.
-						</li>
+						<li>The replacement request receives a new <code>closeId</code>. Historical state is never accepted as a wildcard.</li>
 						<li>
 							Cancellation or expiry can leave historical detail with <code>inProgress = true</code>. Off-chain systems must not treat
 							that flag alone as proof that the workflow can continue; quote status and request identity are also required.
 						</li>
 						<li>
-							The atomic initialize-and-finalize path remains valid because it binds and consumes the same request in one transaction.
+							<code>forceCloseAndSettlePositionsUnified</code>, the one-transaction path, remains valid because it initializes and
+							consumes the same close request atomically.
 						</li>
 					</ul>
 				</article>

@@ -44,8 +44,8 @@ library LibAccountLayerMargin {
 	}
 
 	/// @notice Validates that a sendQuote routes to the same virtual-account key the margin was sent to.
-	/// @dev The routing in CoreFacet picks the VA from (isolation type, quote symbol, and — for
-	///      MARKET_DIRECTION — the quote's position type). A quote whose key differs from the margin
+	/// @dev The routing in CoreFacet picks the VA from the isolation type and quote symbol. For
+	///      MARKET_DIRECTION, it also uses the quote's position type. A quote whose key differs from the margin
 	///      key would leave the margin on a VA the quote never uses, so reject the mismatch up front.
 	function validateQuoteMatchesMarginKey(QuoteParams memory p, VirtualAccountIsolationType isolationType, uint256 symbolId) internal pure {
 		if (p.symbolId != symbolId) revert IAccountLayerErrors.MarginKeyMismatch();

@@ -56,15 +56,18 @@
 
 				<article class="doc-article" id="full-document">
 					<h2 id="summary">Summary</h2>
-					<p>PartyA LF now has one receiver: <code>liquidators[partyA][0]</code>, the address that started the PartyA liquidation.</p>
+					<p>
+						The PartyA liquidation fee (LF) now has one receiver: <code>liquidators[partyA][0]</code>, the address that started the PartyA
+						liquidation.
+					</p>
 					<p>
 						Before v0.8.6, PartyA LF was split between two receivers: the caller that started liquidation and the caller recorded when the
 						liquidation type was first determined during price submission. The release makes the first liquidation call the only paid
 						step.
 					</p>
 					<p>
-						v0.8.6 removes the second receiver and pays the capped LF only to the starter at final settlement. The later liquidation calls
-						remain role-gated; this change only selects the fee recipient.
+						v0.8.6 removes the second receiver and pays the LF only to the starter at final settlement. The later liquidation calls remain
+						role-gated; this change only selects the fee recipient.
 					</p>
 
 					<h2 id="what-changed">What changed</h2>
@@ -89,8 +92,8 @@
 					<h2 id="final-settlement-accounting">Final settlement accounting</h2>
 					<p>
 						The LF is handled during PartyA liquidation finalization. The liquidated PartyA's <code>LF_OUT</code> amount is capped at the
-						portion funded by its previous allocated balance; the rest of that previous allocation is reported as realized-PnL outflow.
-						The starter receives the full capped LF as a direct allocated credit.
+						portion funded by its allocated balance immediately before finalization. The rest of that starting allocation is reported as
+						realized-PnL outflow. The starter receives the full capped LF as a direct allocated credit.
 					</p>
 					<pre><code class="language-solidity">// Pay capped LF to the liquidation starter.
 uint256 lf = accountLayout.liquidationDetails[partyA].liquidationFee;

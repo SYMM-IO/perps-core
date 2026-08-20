@@ -6,7 +6,7 @@ import { IMultiAccount } from "../interfaces/IMultiAccount.sol";
 /**
  * @title MockMultiAccount
  * @notice Mock implementation of MultiAccount for testing AccountLayer legacy account support
- * @dev Implements the full IMultiAccount interface for comprehensive testing
+ * @dev Implements the full IMultiAccount interface for AccountLayer tests.
  */
 contract MockMultiAccount is IMultiAccount {
 	// ==================== State Variables ====================

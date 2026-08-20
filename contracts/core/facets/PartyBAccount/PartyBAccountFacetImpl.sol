@@ -33,7 +33,7 @@ library PartyBAccountFacetImpl {
 	/// @notice Moves collateral from Party B's allocated balance back to free balance after solvency check.
 	/// In cross mode, the signature and solvency check always use the cross bucket (address(0)).
 	/// For legacy per-partyA drains (cross mode + partyA != address(0)), only cross solvency (>= 0)
-	/// is required — these funds are stranded and don't back cross-pool positions.
+	/// is required because these funds are stranded and do not back cross-pool positions.
 	function deallocateForPartyB(uint256 amount, address partyA, SingleUpnlSig memory upnlSig) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();

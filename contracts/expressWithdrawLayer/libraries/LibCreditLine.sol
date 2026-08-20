@@ -19,7 +19,8 @@ import { PoolStorage } from "../storages/PoolStorage.sol";
 
 /// @title LibCreditLine
 /// @notice Shared credit line helpers used by SymmioHookFacet and OperatorFacet.
-///         All debt operations work directly on diamond storage — no external contract calls.
+/// @dev Debt accounting uses diamond storage. Reservation calls the configured Muon verifier,
+///      and activation calls `advanceWithdraw` on the Symmio core.
 library LibCreditLine {
 	// ═══════════════════════════════════════════════════════════════════
 	//                              ERRORS

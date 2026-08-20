@@ -49,8 +49,9 @@
 							allocated-balance events, and tighter operational controls.
 						</p>
 						<p class="hero-copy">
-							Start with the role-based overview. Express operators should then use the bot operations runbook alongside the numbered
-							design chapter.
+							Start with the <a href="./pages/overview.html">role-based overview</a>. Express operators should then use the
+							<a href="./pages/express-bot-operations-checklist.html">bot operations runbook</a> alongside the numbered
+							<a href="./pages/express-withdrawal-system-design.html">design chapter</a>.
 						</p>
 					</div>
 				</div>
@@ -167,8 +168,8 @@
 								<span class="category">Fees</span>
 								<strong>Operational Fees</strong>
 								<span
-									>A unified per-operation fee mechanism shared by solvers and registered relayers, backed by a standing per-(payer,
-									charger) allowance with timelocked reductions and an off-chain priority-multiplier signal.</span
+									>Payers approve separate budgets for flat fees charged by solvers or registered relayers. Budget increases are
+									immediate, reductions are delayed, and an optional multiplier can guide off-chain scheduling.</span
 								>
 							</span>
 						</a>
@@ -202,9 +203,8 @@
 								<span class="category">Accounts</span>
 								<strong>Strict Deallocation</strong>
 								<span
-									>PartyA and opted-in PartyBs preserve raw liquidation collateral during deallocation, with public views for the
-									maximum safe amount. The safe paths also retain a Muon-attested floor re-marked to live notional plus gross
-									funding debt.</span
+									>PartyA and opted-in PartyBs cannot deallocate collateral that still protects their positions. Safe APIs enforce
+									the Muon-attested protected amount, and public views expose the maximum removable amount.</span
 								>
 							</span>
 						</a>

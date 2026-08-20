@@ -7,7 +7,7 @@ pragma solidity >=0.8.18;
 import { IPartiesEvents } from "../../interfaces/IPartiesEvents.sol";
 import { SingleUpnlSig, PairUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
 
-/// @notice The fee-aware solver execution surface: every trade action a solver performs, with the
+/// @notice The fee-aware solver execution interface: every trade action a solver performs, with the
 ///         solver rate fee charged atomically. Pass solverFee = 0 for fee-less execution.
 interface IPartyBExecutionFacet is IPartiesEvents {
 	function openPosition(uint256 quoteId, uint256 filledAmount, uint256 openedPrice, PairUpnlAndPriceSig memory upnlSig, uint256 solverFee) external;

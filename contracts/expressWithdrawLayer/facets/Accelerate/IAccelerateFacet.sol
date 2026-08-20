@@ -21,7 +21,7 @@ interface IAccelerateEvents {
 
 interface IAccelerateFacet is IAccelerateEvents {
 	/// @notice Promote an ACCEPTED STANDARD withdrawal into WINDOWED-style processing.
-	///         Permissionless — any caller with a valid bot-signed offer may invoke.
+	///         Any caller with a valid bot-signed offer may invoke this permissionless function.
 	/// @dev Reverts atomically on cap breach, leaving the STANDARD state intact so the bot
 	///      or the frontend can retry later with the same signature once capacity frees up.
 	///      When the affiliate's effective minValidatorSignatures > 0, `validatorData` must

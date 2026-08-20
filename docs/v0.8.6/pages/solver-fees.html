@@ -97,8 +97,17 @@
 
 					<h2 id="fee-model">Fee model</h2>
 					<p>
-						The solver rate fee is a rate cap applied against quote notional. It is the only fee tracked on the quote struct from v0.8.6
-						onward. Each fee-aware execution call is valid as long as the cumulative charged amount stays inside the rate cap:
+						The solver rate fee is a rate cap applied against quote notional. Its caps and cumulative charges are stored per quote in
+						<code>solverFeeStates</code>; operational fees remain separate from quote state. Each fee-aware execution call is valid as
+						long as the cumulative charged amount stays inside the rate cap:
+					</p>
+					<p>
+						Here, <code>openNotional</code> is the quote quantity valued at its initial opened price. <code>closeNotional</code> is the
+						cumulative quantity closed so far, including the current fill, valued at the corresponding close prices.
+						<code>openFeeCharged</code> and <code>closeFeeCharged</code> are the cumulative fees already collected on their respective
+						sides; <code>newOpenSolverFee</code> and <code>newCloseSolverFee</code> are the absolute fees requested by the current
+						execution. Both rate caps are 18-decimal ratios, which is why the cap calculation divides by <code>1e18</code>.
+						<a href="#notional-and-rate-caps">Notional and rate caps</a> gives the exact stored-state formulas.
 					</p>
 					<pre><code class="language-text">openFeeCharged  + newOpenSolverFee  &lt;= openNotional  * openRateCap  / 1e18
 closeFeeCharged + newCloseSolverFee &lt;= closeNotional * closeRateCap / 1e18

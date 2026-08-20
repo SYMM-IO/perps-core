@@ -64,9 +64,9 @@
 				<article class="doc-article" id="full-document">
 					<h2 id="summary">Summary</h2>
 					<p>
-						When a PartyA is liquidated against a cross-mode PartyB, the liquidation path can release the PartyB's locked overlay before
-						the PartyB's positive PnL owed to the liquidated PartyA is actually paid. The owed amount is tracked as a pending settlement
-						state and accumulated in <code>partyBLiquidationSettlementReserve[partyB]</code>.
+						In cross mode, one shared PartyB allocation backs positions against multiple PartyAs. When one of those PartyAs is liquidated,
+						the liquidation path can release balances locked for its positions before that PartyA's positive PnL owed by the PartyB is
+						actually paid. Core records the unpaid amount in <code>partyBLiquidationSettlementReserve[partyB]</code>.
 					</p>
 					<p>
 						That reserve must behave like unavailable capital until <code>settlePartyALiquidation</code> consumes it or the Clearing House
@@ -92,12 +92,16 @@
 					<ul>
 						<li><code>lockQuote</code>, through <code>partyBAvailableForQuote</code>.</li>
 						<li><code>deallocateForPartyB</code> in cross mode, through the same quote-availability helper.</li>
+						<li><code>safeDeallocateForPartyB</code> in cross mode, through that same helper before its additional safe-path floors.</li>
 						<li>Open/close/funding/settlement solvency checks, through <code>partyBAvailableBalanceForLiquidation</code>.</li>
 						<li><code>liquidateCrossPartyB</code> eligibility, so a PartyB can be liquidatable once reserved debt is counted.</li>
 					</ul>
 					<p>
-						For isolated PartyBs, the helper returns a zero reserve. The reserve is only subtracted while the PartyB is currently in
-						cross-mode accounting.
+						Core tracks each PartyA liquidation's positive pending contribution in every PartyB margin mode. The availability helper
+						returns zero for an isolated PartyB, but if that PartyB switches to cross mode before settlement completes, the recorded
+						contribution becomes unavailable in the shared bucket. <code>resolveLiquidationDispute</code> resynchronizes the contribution
+						when it overrides a pending amount. Normal PartyA settlement consumes it, and Clearing House takeover clears it. The aggregate
+						reserve is subtracted only while the PartyB is currently in cross-mode accounting.
 					</p>
 
 					<h2 id="fix">Fix</h2>

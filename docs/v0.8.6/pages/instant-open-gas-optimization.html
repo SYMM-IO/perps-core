@@ -91,6 +91,11 @@
 						The original flow separates two user actions from two solver actions. Each action travels through its own signed InstantLayer
 						operation even though the actions in each pair always belong to the same atomic trade.
 					</p>
+					<p>
+						For the user actions, AccountLayer derives the next virtual account from the parent SubAccount, the requested isolation type,
+						and the symbol. Market-direction isolation also includes LONG or SHORT. Both the margin deposit and the following quote must
+						resolve to that same key.
+					</p>
 
 					<h3 id="old-flow">The existing four-operation template</h3>
 					<p>
@@ -135,8 +140,9 @@
 					<p>
 						Event order remains <code>LockQuote</code>, the internal open events, then <code>OpenPosition</code>.
 						<code>InstantOpenCompact</code> requires <code>filledAmount == quote.quantity</code>, so the compact template never creates a
-						remainder quote. When the entrypoint is used outside InstantOpen mode, partial fills retain the existing child-quote and
-						<code>SendQuote</code> behavior.
+						remainder quote. InstantOpen mode is the batch context that activates InstantOpen-specific accounting and compact-template
+						restrictions; the <a href="#context-word">execution-context section</a> defines it in detail. When the entrypoint is used
+						outside that mode, partial fills retain the existing child-quote and <code>SendQuote</code> behavior.
 					</p>
 					<p>
 						A non-zero <code>solverFee</code> is charged after the open, subject to the quote's user-approved open-rate cap. The combined
@@ -165,6 +171,12 @@
 						Both steps share one owner authorization and one reentrancy guard. The margin-to-next-VA logic lives in
 						<code>LibAccountLayerMargin</code>, shared by <code>MarginFacet.addMarginToNextVA</code> and this function, so address
 						prediction and isolation validation still have one implementation.
+					</p>
+					<p>
+						The compact path supports the standard SubAccount-to-VA mappings only: <code>POSITION</code> uses a <code>POSITION</code> VA,
+						<code>MARKET</code> uses a <code>MARKET</code> VA, and <code>MARKET_DIRECTION</code> uses <code>MARKET_LONG</code> or
+						<code>MARKET_SHORT</code> according to the quote direction. A <code>CUSTOM</code> SubAccount is not supported by
+						<code>_callWithMargin</code>; use the separately registered <code>InstantOpenWithCustomVA</code> template instead.
 					</p>
 					<p>
 						In <code>InstantOpenCompact</code>, <code>callDatas</code> contains exactly one supported <code>sendQuote</code> call.
@@ -329,7 +341,9 @@
 					</p>
 					<p>
 						This full suspension is specific to hook boundaries. ERC-20 and generic external-call wrappers clear the signer only; they do
-						not suspend the core execution context. The figure follows the full hook boundary from suspension to restoration:
+						not suspend the core execution context. The signer is the acting identity, so clearing it prevents the external target from
+						inheriting the user. The remaining routing and mode bits install no identity by themselves, and entrypoint role, caller, and
+						reentrancy checks still apply. The figure follows the full hook boundary from suspension to restoration:
 					</p>
 
 					<figure class="scope-timeline" aria-labelledby="scope-timeline-title">
@@ -527,10 +541,10 @@
 						</li>
 					</ul>
 					<p>
-						Translation applies to every authorized caller rather than a configured allowlist. <code>AffiliateFacet</code> grants
-						<code>SIGNER_SETTER_ROLE</code> to each AccountManager it deploys, so the caller set grows at runtime. The
-						<code>hasRole</code> mapping is not enumerable, which makes a complete per-address migration impossible. Unconditional
-						translation keeps all authorized callers on the same storage mechanism.
+						Translation applies to every authorized caller rather than a configured allowlist. An AccountManager is the AccountLayer
+						router deployed for an affiliate. <code>AffiliateFacet</code> grants <code>SIGNER_SETTER_ROLE</code> to each one it deploys,
+						so the caller set grows at runtime. The <code>hasRole</code> mapping is not enumerable, which makes a complete per-address
+						migration impossible. Unconditional translation keeps all authorized callers on the same storage mechanism.
 					</p>
 					<p>
 						Translation grants no new privilege. Existing role gates remain unchanged, and both storage mechanisms fail closed when state

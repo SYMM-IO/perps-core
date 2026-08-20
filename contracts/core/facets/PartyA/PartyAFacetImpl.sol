@@ -114,7 +114,7 @@ library PartyAFacetImpl {
 				"PartyAFacet: insufficient available balance"
 			);
 		}
-		// lock funds the in middle of way — skip in instantOpenMode (will be written directly to lockedBalances)
+		// Add funds to pendingLockedBalances unless instantOpenMode writes them directly to lockedBalances.
 		bool _instantOpenMode = LibExecutionContext.isInstantOpenMode();
 		if (!_instantOpenMode) {
 			accountLayout.pendingLockedBalances[signer].add(lockedValues);

@@ -478,7 +478,7 @@ contract ViewFacet is IViewFacet {
 
 		address[] memory legacyContracts = afLayout.legacyMultiAccounts.values();
 
-		// Count total accounts across all legacy contracts (number of legacy contracts is very limited)
+		// Count accounts across all registered legacy contracts.
 		uint256 totalCount = 0;
 		for (uint256 i = 0; i < legacyContracts.length; i++) {
 			totalCount += IMultiAccount(legacyContracts[i]).getAccountsLength(owner);

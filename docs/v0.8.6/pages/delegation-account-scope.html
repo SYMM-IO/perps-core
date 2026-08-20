@@ -70,8 +70,9 @@
 						same owner. Approving a bot to trade one account effectively approved it across every account that user held.
 					</p>
 					<p>
-						v0.8.6 confines a delegated operation to the account family the delegation was granted over. Anything else is rejected with
-						<code>AccountOutOfScope</code> and the whole operation reverts, so no balance or ownership change lands.
+						An account family is one named SubAccount together with its Virtual Accounts. v0.8.6 confines a delegated operation to the
+						family the delegation was granted over. Anything else is rejected with <code>AccountOutOfScope</code> and the whole operation
+						reverts, so no balance or ownership change lands.
 					</p>
 
 					<h2 id="what-changed">What changed</h2>
@@ -114,6 +115,13 @@ allowed(target) = owner(target) == signer AND canonical(target) == scope</code><
 						InstantLayer is the only caller that opens a confined session. When it executes an operation whose signer is not the account
 						owner, it resolves the delegation key for the named account and installs it alongside the owner.
 					</p>
+					<p>
+						An owner-signed operation needs no confinement and uses a zero scope. A delegated operation resolves the named account to its
+						canonical SubAccount family. The administrator-controlled <code>transientContextEnabled</code> flag selects either the native
+						begin/end selector protocol and <code>setTransientSignerScoped</code>, or the historical setter-compatible protocol and
+						<code>setSignerScoped</code>. This is a configured protocol choice, not automatic capability detection. Both routes require
+						the upgraded AccountLayer scoped-signer methods and install the same owner and scope for this transaction.
+					</p>
 					<pre><code class="language-solidity">address scope = signedOp.signer == owner
     ? address(0)
     : _canonicalDelegator(signedOp.signerAccount.addr);
@@ -124,15 +132,14 @@ if (usesNativeContextSelectors) {
     IAccountLayerDiamond(accountLayer).setSignerScoped(owner, scope);
 }</code></pre>
 					<p>
-						An owner-signed operation passes <code>address(0)</code> and runs unconfined, exactly as before. Both selector paths install
-						the signer and scope in the same transaction-scoped AccountLayer context; the legacy selector is retained for deployed
-						routers. The scope applies to both routes InstantLayer uses: operations targeting Symmio, which are wrapped through
+						The scope applies to both routes InstantLayer uses: operations targeting Symmio, which are wrapped through
 						<code>_call</code>, and direct AccountLayer calls such as <code>addMargin</code> or <code>transferSubAccountOwnership</code>.
 					</p>
 					<p>
 						The session is cleared with the signer when the operation finishes. Both <code>setSigner</code> and
 						<code>setTransientSigner</code> install a zero scope, so either matching clear path removes the confinement before the next
-						operation. AccountManager, direct users, and protocol operations never open a scoped session and are unaffected.
+						operation. Callers that do not execute through an InstantLayer delegation never open a scoped session and are unaffected. This
+						includes AccountManager, direct users, and protocol operations.
 					</p>
 					<p>
 						<code>ViewFacet.getSignerScope</code> reports the active scope, or <code>address(0)</code> when the session is unconfined.

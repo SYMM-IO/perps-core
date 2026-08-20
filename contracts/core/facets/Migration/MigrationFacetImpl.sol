@@ -28,7 +28,7 @@ library MigrationFacetImpl {
 	///      - partyBPositionsCount[partyB][address(0)] total positions counter
 	///      - connectedPartyBs / isConnectedPartyB via LibConnections.addConnection (bounded by maxPartyAConnectionLimit)
 	/// @param quoteIds Array of quote IDs to migrate
-	/// @return quotesMigrated Number of quotes actually migrated (excluding already migrated or invalid quotes)
+	/// @return quotesMigrated Number of migrated quotes, excluding previously migrated or invalid quotes
 	function migrateQuotes(uint256[] calldata quoteIds) internal returns (uint256 quotesMigrated) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		MigrationStorage.Layout storage migrationLayout = MigrationStorage.layout();
@@ -117,12 +117,12 @@ library MigrationFacetImpl {
 	/// @notice Migrates partyB locked/pending locked values to the cross bucket (address(0))
 	/// @dev This aggregates per-partyA locked and pending locked balances into the cross bucket.
 	///      Should be called during the v0.8.4 -> v0.8.5 upgrade while the system is paused.
-	///      Allocated balances are NOT aggregated — the cross bucket is an independent pool.
+	///      Allocated balances are not aggregated because the cross bucket is an independent pool.
 	///      This function is idempotent - already migrated partyA pairs are skipped.
 	///      Can be called in multiple batches if the partyAs array is too large for a single transaction.
 	/// @param partyB The partyB to migrate
 	/// @param partyAs Array of partyA addresses that have balances with this partyB
-	/// @return partyAsProcessed Number of partyAs actually processed (excluding already migrated)
+	/// @return partyAsProcessed Number of PartyA entries processed, excluding previously migrated pairs
 	function migrateCrossLockedValues(address partyB, address[] calldata partyAs) internal returns (uint256 partyAsProcessed) {
 		MigrationStorage.Layout storage migrationLayout = MigrationStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();

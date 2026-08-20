@@ -6,33 +6,27 @@ pragma solidity >=0.8.18;
 
 /// @title  InstantLayer
 /// @author Symmetry Labs
-/// @notice Advanced operation orchestration layer for the Symmio protocol enabling batched,
-///         templated, and delegated operations with comprehensive signature verification.
-///
-/// @dev    This contract serves as an intermediary layer between users and the Symmio protocol,
-///         providing sophisticated operation management capabilities:
+/// @notice Executes signed Symmio operations through batches, templates, and delegated calls.
+/// @dev PartyB operations route through registered PartyB contracts. PartyA operations route
+///      through the configured AccountLayer. Signed operations may target whitelisted contracts.
 ///
 ///         ┌─────────────────────────────────────────────────────────────┐
 ///         │                     CORE FEATURES                           │
 ///         ├─────────────────────────────────────────────────────────────┤
-///         │ • Delegation System: Users can authorize delegates to       │
-///         │   execute specific operations on their behalf               │
-///         │ • Template Operations: Pre-defined operation sequences      │
-///         │   with automatic result chaining between steps              │
-///         │ • Flexible Nonce Management: Choose between salt-only       │
-///         │   (nonce=0) or ordered execution (nonce>0)                  │
-///         │ • Multi-Account Support: Works with both PartyB and         │
-///         │   AccountLayer contracts                                      │
-///         │ • EIP-712 Signatures: Type-safe signature verification      │
-///         │ • Batch Processing: Execute multiple operations atomically  │
+///         │ • Delegation authorizes selectors for another signer.       │
+///         │ • Templates run ordered calls and can inject prior results. │
+///         │ • Nonce 0 uses salt replay protection.                      │
+///         │   Nonzero nonces also enforce execution order.              │
+///         │ • PartyB and AccountLayer accounts use separate routes.     │
+///         │ • EIP-712 signs operations, delegations, and flex fields.   │
+///         │ • Batches execute independent operations atomically.        │
 ///         └─────────────────────────────────────────────────────────────┘
 ///
 ///         SECURITY CONSIDERATIONS:
-///         - All contracts must be registered before interaction
-///         - Comprehensive replay protection via salt and optional nonce
-///         - Deadline enforcement for time-sensitive operations
-///         - Role-based access control for administrative functions
-///         - Reentrancy protection on all execution functions
+///         - PartyB contracts must be registered, and operation targets must be whitelisted.
+///         - Salt, optional ordered nonces, usage limits, and deadlines restrict replay and expiry.
+///         - Roles control configuration, template execution, and delegation revocation.
+///         - The execution entry points use a reentrancy guard.
 
 import { AccessControlEnumerable } from "@openzeppelin/contracts/access/AccessControlEnumerable.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
@@ -54,7 +48,7 @@ interface ISymmioPartyB {
 }
 
 /// @notice Interface for the core Symmio contract.
-/// @dev    Used to toggle instant layer mode for optimized execution.
+/// @dev Used to toggle InstantLayer routing in core.
 interface ISymmio {
 	/// @notice Enable or disable instant layer mode
 	/// @param _callFromInstantLayer True to enable instant layer mode
@@ -728,7 +722,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		}
 	}
 
-	/// @notice Finalize after cooldown; actually deletes the delegation.
+	/// @notice Finalizes a scheduled revocation after cooldown by deleting the delegation.
 	/// @dev    Anyone may call once ETA has passed.
 	function finalizeRevokeDelegation(Account calldata account, address delegate, bytes4[] calldata selectors) external {
 		address delegator = _canonicalDelegator(account.addr);
@@ -884,7 +878,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 	/* ═════════════════════════ INTERNAL HELPERS ═════════════════════════ */
 
-	/// @dev Comprehensive verification of operation signatures and parameters.
+	/// @dev Verifies operation signatures and parameters.
 	///
 	/// Verification Steps:
 	/// 1. Check deadline hasn't expired

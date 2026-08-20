@@ -118,7 +118,8 @@ library BridgeFacetImpl {
 		bridgeTransaction.status = BridgeTransactionStatus.SUSPENDED;
 	}
 
-	/// @notice Restores a suspended bridge transaction to RECEIVED status with a reduced valid amount, crediting the invalid portion to the pool's internal balance.
+	/// @notice Restores a suspended bridge transaction to RECEIVED status with a reduced valid amount,
+	///         crediting the invalid portion to the pool's internal balance.
 	function restoreBridgeTransaction(uint256 transactionId, uint256 validAmount) internal {
 		BridgeStorage.Layout storage bridgeLayout = BridgeStorage.layout();
 		BridgeTransaction storage bridgeTransaction = bridgeLayout.bridgeTransactions[transactionId];

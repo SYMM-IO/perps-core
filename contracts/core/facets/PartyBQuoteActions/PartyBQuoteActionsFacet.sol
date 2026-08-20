@@ -15,7 +15,9 @@ import { LibSigner } from "../../libraries/LibSigner.sol";
 contract PartyBQuoteActionsFacet is Accessibility, Pausable, IPartyBQuoteActionsFacet {
 	using LockedValuesOps for LockedValues;
 
-	/// @notice Once a user issues a quote, any whitelisted PartyB (or any PartyB if no whitelist is set) can secure it by providing sufficient funds, based on their estimated profit and loss from opening the position.
+	/// @notice Once a user issues a quote, any whitelisted PartyB, or any PartyB when no whitelist is set,
+	///         can secure it by providing sufficient funds based on that PartyB's estimated profit and loss
+	///         from opening the position.
 	/// @param quoteId The ID of the quote to be locked.
 	/// @param upnlSig The Muon signature containing the upnl value used to lock the quote.
 	function lockQuote(uint256 quoteId, SingleUpnlSig memory upnlSig) external whenNotPartyBOpenPositionsPaused onlyPartyB notLiquidated(quoteId) {

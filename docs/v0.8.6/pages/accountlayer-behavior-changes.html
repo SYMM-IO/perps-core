@@ -80,13 +80,16 @@ function getAffiliateSelectorConfigs(address affiliate, bytes4[] calldata select
     external view returns (AffiliateSelectorConfig[] memory);</code></pre>
 					<p>
 						<code>AffiliateDetail</code> mirrors the stored <code>AffiliateData</code> with the fee details flattened, and adds the
-						affiliate's own address and its <code>pendingFeeUpdate</code>, which previously had no aggregate reader. An unregistered
-						affiliate reads back as an empty struct with state <code>NONE</code> rather than reverting.
+						affiliate's own address and its <code>pendingFeeUpdate</code>. That field reports a requested fee split waiting for approval,
+						including whether it exists, its timestamp, the proposed Symmio share, and proposed stakeholders. It previously had no
+						aggregate reader. An unregistered affiliate reads back as an empty struct with state <code>NONE</code> rather than reverting.
 					</p>
 					<p>
 						Per-selector data is not included, because hooks and both allow-lists live in mappings and cannot be enumerated from on-chain
 						state. <code>getAffiliateSelectorConfigs</code> takes the selectors you care about and returns the hook address,
-						<code>hookAllowed</code>, and <code>callAllowed</code> for each, in the order requested.
+						<code>hookAllowed</code>, and <code>callAllowed</code> for each, in the order requested. <code>hookAllowed</code> says whether
+						the selector may trigger the configured affiliate hook. <code>callAllowed</code> says whether the affiliate may submit that
+						selector through <code>callAsAffiliate</code>.
 					</p>
 					<aside class="callout callout-note">
 						<strong>The individual getters are unchanged.</strong> The aggregate reads are additive. Existing readers do not need to
@@ -131,10 +134,11 @@ function getAffiliateSelectorConfigs(address affiliate, bytes4[] calldata select
 						</table>
 					</div>
 					<p>
-						The old order could not report anything useful. An open position or a pending quote keeps its CVA and LF locked in allocated
-						balance, and core forbids deallocating below that floor, so such an account can never be emptied first. Checking balances
-						ahead of trading state therefore always returned <code>SubAccountNotEmpty</code> and pointed the caller at a withdrawal that
-						could not succeed, instead of naming the position or quote they actually had to close.
+						The old order could not report anything useful. An open position or a pending quote keeps its credit valuation adjustment
+						(CVA) and liquidation fee (LF) locked as liquidation collateral in allocated balance, and core forbids deallocating below that
+						floor, so such an account can never be emptied first. Checking balances ahead of trading state therefore always returned
+						<code>SubAccountNotEmpty</code> and pointed the caller at a withdrawal that could not succeed, instead of naming the position
+						or quote they actually had to close.
 					</p>
 					<p>
 						Callers now receive <code>OpenPositionsExist</code> or <code>PendingQuotesExist</code> in those cases.
@@ -150,9 +154,10 @@ function getAffiliateSelectorConfigs(address affiliate, bytes4[] calldata select
 					<p>
 						When a quote is partially filled, core opens the filled portion and creates a <em>child</em> quote carrying the remainder.
 						That child was never registered against the virtual account, so a virtual account's <code>quoteIds</code> set silently lost
-						track of the leftover inventory. The hook now reads the newest quote and checks that it is the pending child of the quote just
-						opened and belongs to the same PartyA. MARKET and direction-isolated virtual accounts add the child to the set.
-						POSITION-isolated virtual accounts cancel it immediately so the same account cannot later open a second position.
+						track of the leftover inventory. MARKET and direction-isolated virtual accounts may track multiple compatible quotes, while a
+						POSITION-isolated virtual account permits only one position. The hook now reads the newest quote and checks that it is the
+						pending child of the quote just opened and belongs to the same PartyA. MARKET and direction-isolated accounts add the child to
+						the set. POSITION-isolated accounts cancel it immediately so the same account cannot later open a second position.
 					</p>
 					<p>
 						The AccountLayer's view of core changed with the hook. <code>getNextQuoteId</code> became a <code>view</code> function so it

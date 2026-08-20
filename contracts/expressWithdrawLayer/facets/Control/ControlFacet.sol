@@ -164,7 +164,7 @@ contract ControlFacet is IControlFacet, Pausable, ReentrancyGuard {
 		AffiliateCredit storage ac,
 		address affiliate
 	) internal returns (uint256 feePaid) {
-		// If quota is unconfigured (windowDuration == 0), treat all increases as free — feature dormant.
+		// If quota is unconfigured (windowDuration == 0), treat all increases as free because the feature is dormant.
 		if (cl.capChangeWindowDuration == 0) {
 			return 0;
 		}
@@ -340,7 +340,7 @@ contract ControlFacet is IControlFacet, Pausable, ReentrancyGuard {
 	}
 
 	/// @notice Repays accrued bad debt for an affiliate. Pulls `amount` collateral from the
-	///         caller, decrements `badDebt`, and credits the affiliate pool. Permissionless —
+	///         caller, decrements `badDebt`, and credits the affiliate pool. The function is permissionless;
 	///         anyone willing to pay can restore the affiliate's credit capacity.
 	function repayCreditBadDebt(address affiliate, uint256 amount) external nonReentrant whenNotPaused {
 		AffiliateCredit storage ac = CreditLineStorage.layout().affiliates[affiliate];

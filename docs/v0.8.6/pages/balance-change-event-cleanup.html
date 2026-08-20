@@ -97,6 +97,11 @@ event BalanceChangePartyB(
     uint256 amount,
     BalanceChangeType _type
 );</code></pre>
+					<p>
+						Despite its retained ABI name, <code>BalanceChangePartyB.partyA</code> is the exact second key of
+						<code>partyBAllocatedBalances</code>. Treat it as <code>allocationKey</code>: it is the PartyA address for an isolated PartyB
+						bucket and <code>address(0)</code> for the shared cross-margin bucket.
+					</p>
 					<h3>Mutation ownership</h3>
 					<p>
 						The storage write and its event cannot drift apart: all direct writes to the two allocated-balance mappings are confined to

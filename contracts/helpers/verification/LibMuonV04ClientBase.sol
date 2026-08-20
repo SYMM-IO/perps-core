@@ -41,9 +41,8 @@ library LibMuonV04ClientBase {
 	///         of the keccak hash of the concatenated affine coordinates of k*g,
 	///         as 32-byte big-endians. (For instance, you could pass k to
 	///         ethereumjs-utils's privateToAddress to compute this, though that
-	///         should be strictly a development convenience, not for handling
-	///         live secrets, unless you've locked your javascript environment
-	///         down very carefully.) Call this address
+	///         should be used only as a development convenience in an environment
+	///         that does not handle live secret keys.) Call this address
 	///         nonceTimesGeneratorAddress.
 	///
 	/// @dev 5. Compute e=uint256(keccak256(PKx as a 32-byte big-endian

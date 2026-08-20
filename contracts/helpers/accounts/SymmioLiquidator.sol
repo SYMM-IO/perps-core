@@ -30,7 +30,7 @@ contract SymmioLiquidator is Initializable, PausableUpgradeable, AccessControlUp
 	address public symmioAddress;
 
 	/// @notice Selectors on the Symmio core that operators are allowed to invoke.
-	///         Admin-controlled allowlist — operators cannot call anything not listed here.
+	///         Operators cannot call selectors outside this admin-controlled allowlist.
 	mapping(bytes4 => bool) public allowedSelectors;
 
 	event SetSymmioAddress(address oldSymmioAddress, address newSymmioAddress);
@@ -134,8 +134,8 @@ contract SymmioLiquidator is Initializable, PausableUpgradeable, AccessControlUp
 	/* ─────────────────────────── Manager calls ─────────────────────────── */
 
 	/// @notice Manager-only passthrough to the Symmio core, bypassing the operator allowlist.
-	///         Intended for treasury operations needed to collect liquidation fees — e.g.
-	///         `deallocate` and `withdraw` on core — which operators must not be able to invoke.
+	///         Intended for treasury operations needed to collect liquidation fees, such as
+	///         `deallocate` and `withdraw` on core. Operators cannot invoke these functions.
 	///         Calls are made as this contract, so deallocate/withdraw act on fees credited here.
 	function managerCall(bytes[] calldata callDatas) external onlyRole(MANAGER_ROLE) {
 		address target = symmioAddress;
@@ -156,7 +156,7 @@ contract SymmioLiquidator is Initializable, PausableUpgradeable, AccessControlUp
 	/* ─────────────────────────── Fee withdrawal ─────────────────────────── */
 
 	/// @notice Withdraws accumulated liquidation fees (ERC20) to `to`.
-	///         Only MANAGER_ROLE — operators explicitly cannot call this.
+	///         Only MANAGER_ROLE may call this; operators cannot.
 	function withdrawERC20(address token, address to, uint256 amount) external onlyRole(MANAGER_ROLE) {
 		if (to == address(0)) revert ZeroAddress();
 		IERC20Upgradeable(token).safeTransfer(to, amount);

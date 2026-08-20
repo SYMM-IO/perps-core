@@ -61,7 +61,7 @@ contract AccelerateFacet is IAccelerateFacet, IOperatorEvents, Pausable, Reentra
 
 		_verifyOfferSignature(user, requestId, offer, info.partsHash);
 
-		// Affiliates with a validator quorum policy get it enforced on accelerate too — the STANDARD
+		// Affiliates with a validator quorum policy also enforce it on acceleration. The STANDARD
 		// accept path skips validators, so this is the first and only vetting this withdrawal gets,
 		// and it guards the advance itself. Same last-balance-credit freshness rule as the accept path.
 		address affiliate = info.affiliate;
@@ -83,7 +83,7 @@ contract AccelerateFacet is IAccelerateFacet, IOperatorEvents, Pausable, Reentra
 		// ── Effects ──
 		g.accelerateNonces[user][requestId]++;
 
-		// Reserve credit — atomic retry gate. If the affiliate cap is still full this
+		// Reserve credit as an atomic retry gate. If the affiliate cap is still full, this
 		// reverts the entire tx (including the nonce bump), leaving STANDARD intact.
 		if (offer.creditAmount > 0) {
 			LibCreditLine.reserveDebt(affiliate, user, requestId, offer.creditAmount, abi.decode(creditDataRaw, (CreditData)));

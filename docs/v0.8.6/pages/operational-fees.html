@@ -42,6 +42,7 @@
 			<div class="rail-sections-source" data-rail-sections hidden>
 				<a class="toc-link level-2" href="#summary">Summary</a>
 				<a class="toc-link level-2" href="#why-unified">Why operational fees exist</a>
+				<a class="toc-link level-2" href="#setup-api">Setup API</a>
 				<a class="toc-link level-2" href="#trust-model">Trust model</a>
 				<a class="toc-link level-2" href="#fee-source">Fee source in perps-core</a>
 				<a class="toc-link level-2" href="#solvency">Solvency</a>
@@ -68,8 +69,8 @@
 						registered relayer. Each charge draws from the named payer's Symmio collateral balance and counts against that allowance.
 					</p>
 					<p>
-						The same allowance can carry a simple priority multiplier. <code>10000</code> means normal priority; a higher value tells
-						relayers and solvers that this payer is willing to pay above the normal fee when capacity is tight.
+						The same allowance can carry a simple priority multiplier. <code>10000</code> means normal priority; a higher value is an
+						off-chain scheduling signal that relayers and solvers may use when capacity is tight. It does not change the submitted fee.
 					</p>
 					<p>
 						The debit draws the payer's <strong>free balance first</strong>, then <strong>allocated margin as fallback</strong>. Fees land
@@ -86,6 +87,56 @@
 						Some service costs are flat per-operation charges rather than notional-based trading fees. Operational fees give those costs a
 						dedicated path, outside open and close price semantics.
 					</p>
+
+					<h2 id="setup-api">Setup API</h2>
+					<p>
+						A registered PartyB is already an eligible charger. Governance must register any other service, such as a relayer, before a
+						payer can grant it an allowance:
+					</p>
+					<pre><code class="language-solidity">// FEE_ADMIN_ROLE; needed only for a non-PartyB service
+function registerOperationalFeeCharger(address charger) external;
+
+// The payer sets absolute allowance values for one or more chargers.
+function approveOperationalFee(address[] calldata chargers, uint256[] calldata amounts) external;
+
+// The payer may set the allowances and off-chain priority signals together.
+function approveOperationalFeeWithMultiplier(
+    address[] calldata chargers,
+    uint256[] calldata amounts,
+    uint256[] calldata feeMultipliers
+) external;
+</code></pre>
+					<p>
+						Both approval methods are batch setters: each <code>amounts[i]</code> replaces the payer's absolute allowance for
+						<code>chargers[i]</code>; it is not an increment. An increase applies immediately, while a reduction follows the delay
+						explained under <a href="#timelocked-reductions">Timelocked reductions</a>.
+					</p>
+					<p>Integrations can inspect eligibility and the payer's effective budget before charging:</p>
+					<pre><code class="language-solidity">function isOperationalFeeCharger(address charger) external view returns (bool);
+
+function getOperationalFeeAllowance(address payer, address charger)
+    external
+    view
+    returns (
+        uint256 allowance,
+        uint256 charged,
+        uint256 remaining,
+        uint256 pendingAllowance,
+        uint256 reductionReadyAt,
+        uint256 feeMultiplier
+    );
+</code></pre>
+					<ul>
+						<li><code>allowance</code> is the effective absolute budget.</li>
+						<li><code>charged</code> is the cumulative amount the charger has already drawn from that budget.</li>
+						<li><code>remaining</code> is <code>max(allowance - charged, 0)</code>.</li>
+						<li>
+							<code>pendingAllowance</code> and <code>reductionReadyAt</code> describe a requested lower budget that is still waiting
+							for the timelock. Once the reduction is ready, the view reports it as <code>allowance</code> and returns zero for both
+							pending fields.
+						</li>
+						<li><code>feeMultiplier</code> is the effective off-chain priority signal; the default is <code>10000</code>.</li>
+					</ul>
 					<h2 id="trust-model">Trust model</h2>
 					<p>
 						The allowance grant is the consent. Core does not require the payer to sign each specific operation or quote; it only checks

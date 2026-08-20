@@ -95,7 +95,7 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 	/// @param partyA The trader address whose liquidation was settled
 	function onLiquidationSettled(address partyA) external onlySymmio nonReentrantCallback whenNotPaused {
 		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
-		// Settlement means this VA's share has been credited — clear pending cross-liq deferrals
+		// Settlement means this VA's share has been credited. Clear pending cross-liquidation deferrals
 		// so _tryDeleteVirtualAccount can proceed regardless of overall cross-liq status.
 		EnumerableSet.AddressSet storage crossPartyBs = ahLayout.vaPendingCrossLiqPartyBs[partyA];
 		address[] memory pending = crossPartyBs.values();
@@ -119,7 +119,7 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 		if (coreTotal < vData.quoteIds.length()) {
 			vData.quoteIds.remove(quoteId); // full close/cancel/liquidation
 		}
-		// else: partial close — keep tracking
+		// A partial close remains tracked.
 
 		// If this partyB is currently in cross liquidation, record it so _tryDeleteVirtualAccount
 		// can defer even when a later hook fires with a different partyB. This prevents fund stranding
@@ -155,9 +155,9 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 		address[] memory pending = crossPartyBs.values();
 		for (uint256 i = 0; i < pending.length; i++) {
 			if (ISymmio(core).getPartyBCrossLiquidationStatus(pending[i])) {
-				return; // still in cross liq — defer
+				return; // Defer while cross-liquidation remains active.
 			}
-			crossPartyBs.remove(pending[i]); // cross liq done — clean up
+			crossPartyBs.remove(pending[i]); // Remove completed cross-liquidation tracking.
 		}
 
 		_deleteVirtualAccount(partyA);

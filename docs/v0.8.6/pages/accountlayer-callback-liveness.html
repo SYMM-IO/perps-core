@@ -158,8 +158,10 @@
 						</table>
 					</div>
 					<p>
-						The same boundary is used by <code>_call</code>, <code>_callWithMargin</code>, hook-driven <code>executeForAccount</code>,
-						allowed <code>callAsAffiliate</code> operations, and the affiliate fee-withdrawal path.
+						The same boundary covers every AccountLayer route that calls core and can receive one of these cleanup callbacks. That
+						includes ordinary routed calls through <code>_call</code>, margin-prefunded calls through <code>_callWithMargin</code>,
+						hook-requested core calls through <code>executeForAccount</code>, affiliate-authorized calls through
+						<code>callAsAffiliate</code>, and affiliate fee withdrawal.
 					</p>
 
 					<h2 id="security">What stays protected</h2>

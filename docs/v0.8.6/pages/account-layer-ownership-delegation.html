@@ -85,6 +85,10 @@
 						SubAccounts are owned by the supplied <code>owner</code>, not by the caller.
 					</p>
 					<p>
+						The supplied affiliate must already be active. Delegated creation uses the same affiliate validation and
+						<code>onAccountCreation</code> hook behavior as self-service creation.
+					</p>
+					<p>
 						The same release also adds direct ownership transfer for existing SubAccounts. Instead of treating transfer like an
 						empty-account migration, <code>transferSubAccountOwnership(subAccount, newOwner)</code> moves the stored owner and owner
 						indexes while keeping the same SubAccount, Virtual Accounts, balances, positions, and affiliate state attached to the same
@@ -132,6 +136,11 @@
 						<li>The existing <code>onAccountCreation(owner, subAccount, metadata)</code> affiliate hook is called if registered.</li>
 					</ul>
 					<h3 id="corefacet-transfersubaccountownership"><code>CoreFacet.transferSubAccountOwnership</code></h3>
+					<p>
+						AccountLayer distinguishes the raw caller, <code>msg.sender</code>, from the effective signer whose authority it applies. A
+						trusted router may install the owner as that signer for one transaction, together with the account-family scope granted to a
+						delegate. See <a href="delegation-account-scope.html">Delegation Account Scope</a>.
+					</p>
 					<pre><code class="language-solidity">function transferSubAccountOwnership(address subAccount, address newOwner) external;
 </code></pre>
 					<p>Access control:</p>
@@ -278,10 +287,13 @@ mapping(address =&gt; EnumerableSet.AddressSet) userToSubAccounts;
 					</p>
 					<p>
 						Operationally, transferring a SubAccount with active InstantLayer delegations should be treated as transferring an account
-						with outstanding approvals that intentionally move with the account. The new owner or migration process should enumerate known
-						delegates/selectors and initiate revocation for anything that should not survive the transfer. Revocation is two-step: the
-						configured cooldown must pass before <code>finalizeRevokeDelegation</code> removes the grant. Do not read "old owner loses
-						direct access" as "all previously granted delegated access is removed."
+						with outstanding approvals that intentionally move with the account. Reconstruct the candidate delegate and selector list from
+						<code>DelegationGranted</code> events or the integration's own records, then confirm active entries with
+						<code>getActiveDelegations</code>. For anything that should not survive the transfer, call
+						<code>initiateRevokeDelegation</code>. After the configured cooldown, <code>finalizeRevokeDelegation</code> removes the grant.
+						The grant remains active during that cooldown. A safe handoff must wait for the cooldown and confirm the grant is inactive,
+						preferably by finalizing the revocation, before transferring ownership. Do not read "old owner loses direct access" as "all
+						previously granted delegated access is removed."
 					</p>
 					<h3 id="affiliate-hook-liveness">Affiliate hook liveness</h3>
 					<p>

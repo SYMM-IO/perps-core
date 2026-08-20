@@ -166,7 +166,7 @@ library AccountStorage {
 		/// @notice Version counter of PartyA's upnl inputs, embedded in Muon signatures
 		/// @dev Incremented by every action that changes the inputs to PartyA's upnl (position fills,
 		///      funding charges, settlement, liquidation) so outstanding signatures no longer verify.
-		///      It is NOT consumed per signature use — a signature stays valid for its full validity
+		///      It is not consumed per signature use. A signature stays valid for its full validity
 		///      window until upnl-relevant state changes. Exposed externally as nonceOfPartyA.
 		mapping(address => uint256) partyAUpnlCounters;
 		/// @notice Version counter of PartyB's upnl inputs per PartyA, embedded in Muon signatures
