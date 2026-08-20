@@ -5,7 +5,7 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta
 			name="description"
-			content="The helper contracts accepted a global “inside an InstantLayer batch” flag in place of an authorization check. v0.8.6 checks the direct caller instead."
+			content="The helper contracts accepted a global “inside an InstantLayer batch” flag in place of authorization. v0.8.6 removes MultiAccount's bypass and makes SymmioPartyB check the direct caller's role."
 		/>
 		<title>InstantLayer Authorization Scope - Symmio Core v0.8.6</title>
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
@@ -51,8 +51,8 @@
 						<div>
 							<h1>InstantLayer Authorization Scope</h1>
 							<p class="hero-copy">
-								The helper contracts accepted a global &ldquo;inside an InstantLayer batch&rdquo; flag in place of an authorization
-								check. v0.8.6 checks the direct caller instead.
+								The helper contracts accepted a global &ldquo;inside an InstantLayer batch&rdquo; flag in place of authorization.
+								v0.8.6 removes MultiAccount's bypass and makes SymmioPartyB check the direct caller's role.
 							</p>
 						</div>
 					</div>
@@ -63,7 +63,7 @@
 					<p>
 						The <code>MultiAccount</code> and <code>SymmioPartyB</code> helper contracts accepted an ambient signal in place of a real
 						authorization check: a global flag on the core diamond saying the protocol was currently inside an InstantLayer batch. v0.8.6
-						replaces that with a check on the direct caller.
+						deletes that alternative from MultiAccount and replaces it with a direct-caller role check in SymmioPartyB.
 					</p>
 
 					<h2 id="what-changed">What Changed</h2>
@@ -83,11 +83,11 @@
 					<p>
 						That flag answers <em>&ldquo;is the protocol currently inside an InstantLayer batch?&rdquo;</em> It says nothing about who is
 						calling <code>MultiAccount</code>. While it is true, <code>_call</code> accepts any <code>msg.sender</code>, for any account,
-						for any selector, and the delegation map is skipped entirely. Batches execute user-signed operations against arbitrary
-						targets, so any contract that gains execution inside one &mdash; a hook, a callback, a token transfer landing on a receiver it
-						controls &mdash; runs in a window where the delegation check is off for every MultiAccount sub-account at once. The storage
-						comment names the shape of the risk itself: the flag is persistent state, not automatically reset, and its lifecycle is the
-						caller's responsibility.
+						for any selector, and the delegation map is skipped entirely. A v0.8.5 batch could call a target admitted by
+						<code>whitelistedTargets</code>; any code reached while that call was executing observed the same core-wide flag. During that
+						window the delegation check was therefore off for every MultiAccount sub-account at once. The v0.8.5 storage comment names the
+						shape of the risk itself: the flag was persistent state, not automatically reset, and its lifecycle was the caller's
+						responsibility.
 					</p>
 					<div class="table-wrap">
 						<table>
@@ -120,10 +120,10 @@
 						core. That is specific and unforgeable, where the flag was an ambient mode anything executing in the window could ride.
 					</p>
 					<aside class="callout callout-important">
-						<strong>The flag itself is not removed.</strong> <code>callFromInstantLayer</code> and the
-						<code>isCallFromInstantLayer()</code> view still exist on core, and <code>Accessibility</code> still reads the flag so bound
-						PartyAs can act while instant-actions mode is on. What changed is that the helper contracts no longer treat it as
-						authorization.
+						<strong>The legacy storage flag itself is not removed.</strong> <code>callFromInstantLayer</code> remains in core storage and
+						the <code>isCallFromInstantLayer()</code> view still exists. New InstantLayer execution uses the transaction-scoped execution
+						context, while the view falls back to the legacy flag when no transient context is active. Bound-PartyA accessibility checks
+						still use that effective context. What changed here is that the helper contracts no longer treat it as authorization.
 					</aside>
 
 					<h2 id="effect-on-callers">Effect on Callers</h2>
@@ -133,8 +133,9 @@
 						grant for the account and selector, which is what the delegation map was always for.
 					</p>
 					<p>
-						MultiAccount is legacy surface &mdash; affiliates track theirs under <code>legacyMultiAccounts</code> &mdash; but it is still
-						live for existing users, so this affects real integrations rather than only new ones.
+						MultiAccount is a legacy surface: AccountLayer registers deployed instances under <code>legacyMultiAccounts</code>, resolves
+						ownership through them, and exposes legacy-account discovery views. Existing MultiAccount integrations must therefore use
+						explicit <code>delegateAccess</code> entries rather than relying on an InstantLayer batch window.
 					</p>
 				</article>
 			</main>

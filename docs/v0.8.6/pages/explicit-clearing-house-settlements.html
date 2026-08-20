@@ -158,9 +158,9 @@ market PnL     = sum(component.realizedPnl grouped by symbolId)</code></pre>
 						<code>CLOSE_SOLVER_FEE_OUT</code> balance reason. They must not be folded into a settlement component.
 					</p>
 					<p>
-						Solver close fees are not a new v0.8.6 economic charge. They existed before this interface change. v0.8.6 makes the per-quote
-						fee amount explicit in Clearing House liquidation calldata; the core then applies the existing user-approved cap and
-						solver-fee receiver logic through the canonical charging path.
+						The explicit settlement interface does not introduce solver close fees. They are a separate v0.8.6 quote-level feature;
+						Clearing House liquidation calldata now carries the per-quote amount so the core can apply the user-approved cap and
+						solver-fee receiver logic through the same canonical charging path.
 					</p>
 					<p>
 						The legacy <code>deallocateForClearingHouse</code> and <code>distributeForClearingHouse</code> selectors remain present only

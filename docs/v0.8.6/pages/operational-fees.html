@@ -206,8 +206,8 @@
 
 					<h2 id="timelocked-reductions">Timelocked Reductions</h2>
 					<p>
-						Operational-fee allowance is a standing budget from a payer to a charger. Increasing that budget is immediate, so a user can
-						top up a solver or relayer whenever more operational-fee room is needed.
+						Operational-fee allowance is a standing budget from a payer to a charger. Increasing the current live allowance is immediate,
+						so a user can top up a solver or relayer whenever more operational-fee room is needed.
 					</p>
 					<p>
 						Reducing or revoking the budget is delayed. During that delay, the previous allowance remains active. This prevents a payer
@@ -229,7 +229,8 @@
 					</p>
 					<p>
 						The multiplier does not replace the allowance. The allowance is still the hard spend budget, and the charger can never draw
-						more than the payer approved.
+						more than the payer approved. Core stores and reports the multiplier but does not multiply a submitted charge or enforce a
+						pricing formula; interpreting the signal is an off-chain charger policy.
 					</p>
 
 					<h2 id="gasless-grant">Gasless Grant</h2>
@@ -238,14 +239,17 @@
 						<code>SignedOperation</code> targeting the approval call.
 					</p>
 					<p>
-						A relayer can include the allowance or multiplier increase first, then charge its operational fee in the same transaction, so
-						the setup itself can be gasless.
+						The approval itself can therefore be gasless. This does not make the off-chain relayer the charger:
+						<code>chargeOperationalFee</code> identifies the charger from raw <code>msg.sender</code>, while a core call routed through
+						InstantLayer arrives from AccountLayer. Core does not provide a bundled approve-charge-execute entrypoint.
 					</p>
 
 					<h2 id="charging-while-relaying">Charging While Relaying</h2>
 					<p>
-						When a relayer pays gas for a user's signed operation, it can collect the operational fee in that same transaction. The
-						transaction charges the selected payer, then executes the signed operation. If execution reverts, the charge reverts with it.
+						An EOA relayer can call <code>chargeOperationalFee</code> directly as a registered charger, then submit the signed operation,
+						but those are separate transactions and do not share atomic rollback. To collect and execute atomically, an integration needs
+						a bundling contract that is itself the registered and approved charger and that makes both calls in one transaction. In that
+						wrapper design, a later execution revert also reverts the earlier charge.
 					</p>
 				</article>
 			</main>

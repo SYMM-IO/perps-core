@@ -57,8 +57,8 @@
 				<a class="toc-link level-3" href="#no-symmio-core-balance-movement">No Symmio core balance movement</a>
 				<a class="toc-link level-2" href="#events">Events</a>
 				<a class="toc-link level-3" href="#subaccountownershiptransferred">`SubAccountOwnershipTransferred`</a>
-				<a class="toc-link level-2" href="#review-checklist">Review Checklist</a>
-				<a class="toc-link level-2" href="#test-coverage">Test Coverage</a>
+				<a class="toc-link level-2" href="#implementation-review-checklist">Implementation Review Checklist</a>
+				<a class="toc-link level-2" href="#tested-behaviors">Tested Behaviors</a>
 			</div>
 			<main class="reader-main">
 				<header class="reader-hero">
@@ -136,11 +136,11 @@
 </code></pre>
 					<p>Access control:</p>
 					<ul>
-						<li>Caller must be the current owner of <code>subAccount</code>.</li>
 						<li>
-							Ownership is checked through the existing AccountLayer signer resolution path, so calls through AccountManager
-							compatibility flows keep the same authentication model.
+							The effective AccountLayer signer must be the current owner of <code>subAccount</code>; the raw caller may be that owner
+							or a trusted router acting under a valid scoped signer session.
 						</li>
+						<li>Ownership and delegated account scope are checked through the existing <code>onlyAccountOwner</code> path.</li>
 					</ul>
 					<p>Validation:</p>
 					<ul>
@@ -233,9 +233,10 @@ mapping(address =&gt; EnumerableSet.AddressSet) userToSubAccounts;
 						Solidity transaction atomicity means any hook revert rolls back the storage mutation and event emission.
 					</p>
 					<p>
-						The existing hook signer-clearing protection still applies. <code>LibAccountLayerUtils.callHook</code> clears
-						<code>globalSigner</code> before external hook execution and restores it afterward, preventing the hook from re-entering
-						AccountLayer while inheriting the transferring user's signer context.
+						The existing hook context protection still applies. <code>LibAccountLayerUtils.callHook</code> clears whichever AccountLayer
+						signer mechanism is active (persistent or transient) before external hook execution and restores it afterward. When an
+						InstantLayer core context is active, it suspends and later restores that context as well. The hook therefore cannot inherit
+						the transferring user's authorization.
 					</p>
 					<hr />
 					<h2 id="security-considerations">Security Considerations</h2>
@@ -257,6 +258,12 @@ mapping(address =&gt; EnumerableSet.AddressSet) userToSubAccounts;
 						The function does not require the SubAccount to be empty. A user can transfer an account with balances, allocated margin,
 						pending quotes, open positions, and active Virtual Accounts. Treat this as intentional behavior.
 					</p>
+					<aside class="callout callout-important">
+						<strong>The transfer selector itself is delegable.</strong>
+						If the owner grants an InstantLayer delegate the <code>transferSubAccountOwnership</code> selector for this account family,
+						that delegate can choose <code>newOwner</code> and perform the transfer. Delegation scope prevents it from transferring a
+						sibling SubAccount, but it does not add recipient acceptance or restrict the destination.
+					</aside>
 					<h3 id="existing-instantlayer-delegations">Existing InstantLayer delegations</h3>
 					<p>
 						Ownership transfer intentionally does not clear InstantLayer delegations for the SubAccount or for Virtual Accounts that
@@ -272,8 +279,9 @@ mapping(address =&gt; EnumerableSet.AddressSet) userToSubAccounts;
 					<p>
 						Operationally, transferring a SubAccount with active InstantLayer delegations should be treated as transferring an account
 						with outstanding approvals that intentionally move with the account. The new owner or migration process should enumerate known
-						delegates/selectors and revoke anything that should not survive the transfer. Do not read "old owner loses direct access" as
-						"all previously granted delegated access is removed."
+						delegates/selectors and initiate revocation for anything that should not survive the transfer. Revocation is two-step: the
+						configured cooldown must pass before <code>finalizeRevokeDelegation</code> removes the grant. Do not read "old owner loses
+						direct access" as "all previously granted delegated access is removed."
 					</p>
 					<h3 id="affiliate-hook-liveness">Affiliate hook liveness</h3>
 					<p>
@@ -306,7 +314,7 @@ mapping(address =&gt; EnumerableSet.AddressSet) userToSubAccounts;
 						creation, the <code>owner</code> argument is the supplied target owner.
 					</p>
 					<hr />
-					<h2 id="review-checklist">Review Checklist</h2>
+					<h2 id="implementation-review-checklist">Implementation Review Checklist</h2>
 					<ul>
 						<li>
 							Verify <code>createSubAccounts</code> remains self-service and still uses <code>LibAccountLayerUtils.getSigner()</code>.
@@ -329,7 +337,7 @@ mapping(address =&gt; EnumerableSet.AddressSet) userToSubAccounts;
 						<li>Verify signer clearing still applies during the new hook callback.</li>
 					</ul>
 					<hr />
-					<h2 id="test-coverage">Test Coverage</h2>
+					<h2 id="tested-behaviors">Tested Behaviors</h2>
 					<p>The AccountLayer behavior tests cover:</p>
 					<ul>
 						<li>Successful delegated creation by an <code>ACCOUNT_CREATOR_ROLE</code> holder.</li>

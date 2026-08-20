@@ -5,7 +5,7 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta
 			name="description"
-			content="Changelog for Symmio Core v0.8.6: express withdrawals, delegated AccountLayer ownership, liquidation snapshot settlement, allocated-balance event ledger, solver and operational fees."
+			content="Complete Symmio Core v0.8.6 release notes: 31 scoped changes covering Express Withdrawal, AccountLayer, liquidation, settlement, fees, funding, events, and operations."
 		/>
 		<title>Symmio Core v0.8.6 release notes</title>
 		<link rel="icon" type="image/svg+xml" href="assets/symmio-mark.svg" />
@@ -48,6 +48,10 @@
 							A technical guide to the release: faster withdrawals, delegated AccountLayer ownership, safer liquidation settlement,
 							reconstructible allocated-balance events, and tighter operational controls.
 						</p>
+						<p class="hero-copy">
+							Start with the role-based overview. Express operators should then use the bot operations runbook alongside the numbered
+							design chapter.
+						</p>
 					</div>
 				</div>
 			</div>
@@ -86,8 +90,8 @@
 								<span class="category">Express Withdrawal</span>
 								<strong>Express Withdrawal System Design</strong>
 								<span
-									>SYMMIO's 12-hour cooldown protects withdrawals but slows exits. ExpressProvider fronts pool and credit-backed
-									funds, then reconciles when the normal withdrawal finalizes.</span
+									>SYMMIO's configurable cooldown protects withdrawals but slows exits. ExpressProvider fronts pool and
+									credit-backed funds, then reconciles when the underlying withdrawal finalizes.</span
 								>
 							</span>
 						</a>
@@ -164,7 +168,7 @@
 								<strong>Operational Fees</strong>
 								<span
 									>A unified per-op fee primitive shared by solvers and registered relayers, backed by a standing per-(payer,
-									charger) allowance with timelocked reductions and a priority multiplier.</span
+									charger) allowance with timelocked reductions and an off-chain priority-multiplier signal.</span
 								>
 							</span>
 						</a>
@@ -199,8 +203,8 @@
 								<strong>Strict Deallocation</strong>
 								<span
 									>PartyA and opted-in PartyBs preserve raw liquidation collateral during deallocation, with public views for the
-									maximum safe amount. The safe paths additionally retain a Muon-attested floor re-marked to live notional, closing
-									profit-financed collateral stripping.</span
+									maximum safe amount. The safe paths additionally retain a Muon-attested floor re-marked to live notional plus
+									gross funding debt.</span
 								>
 							</span>
 						</a>
@@ -270,8 +274,8 @@
 							<span class="category">InstantLayer</span>
 							<strong>InstantLayer Authorization Scope</strong>
 							<span
-								>The helper contracts accepted a global &ldquo;inside an InstantLayer batch&rdquo; flag in place of an authorization
-								check. v0.8.6 checks the direct caller instead.</span
+								>The helpers treated a global &ldquo;inside an InstantLayer batch&rdquo; flag as authorization. v0.8.6 removes
+								MultiAccount's bypass and makes SymmioPartyB check the direct caller's role.</span
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/market-open-fee-execution-price.html" data-catalog-item>
@@ -279,8 +283,8 @@
 							<span class="category">Fees</span>
 							<strong>Market Open Fee on Execution Price</strong>
 							<span
-								>Market open fees are charged on the price the position opened at, not the market price PartyA signed. A bound PartyA
-								could previously sign a zero market price and open the position for no fee.</span
+								>Market open fees are charged on the executed open price, not the request-time market price. A bound PartyA could
+								previously supply zero for that unverified input and open the position for no fee.</span
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/partyb-funding-nonces.html" data-catalog-item>

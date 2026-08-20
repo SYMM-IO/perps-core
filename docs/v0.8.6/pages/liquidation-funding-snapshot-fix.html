@@ -102,8 +102,8 @@
 					<p>Actual outcomes:</p>
 					<ul>
 						<li>
-							Most affected liquidations disputed because <code>partyAAccumulatedUpnl</code> no longer matched the signed liquidation
-							UPNL.
+							When the changed funding made <code>partyAAccumulatedUpnl</code> differ from the signed liquidation UPNL, the liquidation
+							was marked disputed by the existing equality check.
 						</li>
 						<li>
 							In rare cases, wrong funding debts across positions or PartyBs could cancel out so PartyA's total UPNL stayed unchanged,
@@ -165,8 +165,8 @@ mapping(address =&gt; mapping(bytes =&gt; mapping(address =&gt; mapping(uint256 
 					<p>
 						<code>liquidationUsesPartyBSymbolSnapshots</code> is needed because the same open-position liquidation code supports both
 						paths. For a normal price-only liquidation, it reads <code>symbolsPrices</code> and reconstructs funding with
-						<code>getAccumulatedFundingFeeAt</code>. For a snapshot-backed liquidation, it must read signed PartyB-symbol data instead.
-						The marker tells the liquidation code which source is allowed.
+						<code>getAccumulatedFundingFee</code> from the live funding state when positions are processed. For a snapshot-backed
+						liquidation, it must read signed PartyB-symbol data instead. The marker tells the liquidation code which source is allowed.
 					</p>
 					<p><code>liquidationPartyBSymbolSnapshots</code> stores the signed data for:</p>
 					<pre><code class="language-text">partyA -&gt; liquidationId -&gt; partyB -&gt; symbolId
@@ -222,7 +222,7 @@ mapping(address =&gt; mapping(bytes =&gt; mapping(address =&gt; mapping(uint256 
 									</td>
 									<td>
 										Prices came from <code>setSymbolsPrice</code>. Funding was reconstructed later from
-										<code>getAccumulatedFundingFeeAt</code>.
+										<code>getAccumulatedFundingFee</code> using the then-live funding state.
 									</td>
 								</tr>
 								<tr>
@@ -238,7 +238,7 @@ mapping(address =&gt; mapping(bytes =&gt; mapping(address =&gt; mapping(uint256 
 									</td>
 									<td>
 										Prices came from <code>deferredSetSymbolsPrice</code>. Funding was still reconstructed later from
-										<code>getAccumulatedFundingFeeAt</code>.
+										<code>getAccumulatedFundingFee</code> using the then-live funding state.
 									</td>
 								</tr>
 								<tr>
@@ -283,14 +283,16 @@ mapping(address =&gt; mapping(bytes =&gt; mapping(address =&gt; mapping(uint256 
 					<ul>
 						<li>the non-snapshot path remains unchanged;</li>
 						<li>price comes from <code>setSymbolsPrice</code>; and</li>
-						<li>funding is calculated with <code>getAccumulatedFundingFeeAt(quote.id, liquidationDetail.timestamp)</code>.</li>
+						<li>funding is calculated with <code>getAccumulatedFundingFee(quote.id)</code> when the position is processed.</li>
 					</ul>
 					<p>
 						Snapshot-backed pricing is all-or-nothing for an active liquidation. Once the snapshot marker is set, the liquidation cannot
 						silently mix signed funding for some quotes with live-storage funding for others.
 					</p>
 					<h2 id="price-only-deprecation-flag">Price-Only Deprecation Flag</h2>
-					<p>Admins can require the new snapshot flow by calling:</p>
+					<p>
+						An address with <code>PROTOCOL_CONFIG_ROLE</code> can require the new snapshot flow for future liquidation starts by calling:
+					</p>
 					<pre><code class="language-solidity">setLegacyPartyALiquidationDeprecated(true)
 </code></pre>
 					<p>
@@ -301,6 +303,10 @@ mapping(address =&gt; mapping(bytes =&gt; mapping(address =&gt; mapping(uint256 
 						<li><code>liquidatePartyA</code></li>
 						<li><code>deferredLiquidatePartyA</code></li>
 					</ul>
+					<p>
+						The flag does not abort a legacy liquidation that was already started: its later price, position-processing, and settlement
+						steps remain available so the in-flight liquidation can finish.
+					</p>
 				</article>
 			</main>
 		</div>
