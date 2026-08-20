@@ -132,8 +132,8 @@ quoteNetToPartyA = partyAReceives - partyAPays</code></pre>
 						<li><strong>Check the quote net.</strong> Require only the remaining bilateral funding-plus-PnL obligation.</li>
 						<li><strong>Post settlement.</strong> Apply that quote's funding and PnL credits, followed by its funding and PnL debits.</li>
 						<li>
-							<strong>Finalize.</strong> Emit funding attribution, charge the close fee, update average price and closed amount, reduce
-							aggregate positions, release connections when appropriate, and set the resulting quote status.
+							<strong>Finalize.</strong> Emit funding attribution, update the average close price, charge the close fee, update the
+							closed amount, reduce aggregate positions, release connections when appropriate, and set the resulting quote status.
 						</li>
 						<li><strong>Notify.</strong> Call that quote's affiliate and system hooks and record its trade volume.</li>
 					</ol>
@@ -174,8 +174,12 @@ quoteNetToPartyA = partyAReceives - partyAPays</code></pre>
 						<li><code>QuoteFundingSettled</code> when accumulated funding is enabled.</li>
 						<li>Any close-fee balance change and <code>TradingFeeCharged(CLOSE)</code>.</li>
 						<li>Affiliate close and fee hooks, then system close and fee hooks.</li>
-						<li><code>TradeVolumeRecorded(CLOSE)</code> and the batch facet's fill-result events.</li>
+						<li><code>TradeVolumeRecorded(CLOSE)</code>.</li>
 					</ol>
+					<p>
+						For <code>fillCloseRequests</code>, the two overloaded <code>FillCloseRequest</code> result events are different: the
+						implementation finishes every quote first, then the external facet emits those result events in input order.
+					</p>
 					<aside class="callout callout-important">
 						<strong>Hooks keep gradual batch visibility.</strong> The first quote's hook sees that quote finalized while later quotes
 						retain their pre-fill state. The next quote is settled only after the first quote's hooks return. Signer and InstantLayer
@@ -191,9 +195,9 @@ quoteNetToPartyA = partyAReceives - partyAPays</code></pre>
 					</p>
 					<h3>What stays the same</h3>
 					<p>
-						Muon verification, signed UPNL solvency checks, accumulated-funding bookkeeping, partial-close rules, lock calculations, quote
-						statuses, connection cleanup, hook selectors, and fee formulas are unchanged. The dedicated accumulated-funding batch function
-						also continues to settle its quote IDs sequentially.
+						This per-quote netting change does not alter Muon verification, signed UPNL solvency checks, the funding amount recorded for a
+						close, partial-close rules, lock calculations, quote statuses, connection cleanup, hook selectors, or fee formulas. The
+						dedicated accumulated-funding batch function also continues to settle its quote IDs sequentially.
 					</p>
 				</article>
 			</main>

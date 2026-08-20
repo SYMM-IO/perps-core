@@ -68,23 +68,22 @@
 						The parameters shadowed the getter and produced compiler warnings. Renaming it makes the name unambiguous on both diamonds.
 					</p>
 					<p>
-						Diamond cuts derive selectors from the compiled ABI, so no cut list needed updating. Hand-written ABI fragments are not type
-						checked, however, and would have failed silently at runtime &mdash; which is the failure mode to look for in your own tooling.
+						ABI-derived facet cuts pick up the new selector from the compiled interface. Hand-written ABI fragments are not type checked,
+						however, so a stale <code>owner()</code> fragment fails only when the call reaches the upgraded diamond.
 					</p>
 
 					<h2 id="effect-on-callers">Effect on Callers</h2>
 					<aside class="callout callout-risk">
 						<strong><code>owner()</code> is the ERC-173 signature explorers use to detect ownership.</strong> Neither diamond registers
-						ERC-173 through <code>supportsInterface</code>, so there is no on-chain compliance break &mdash; but block explorers, admin
-						dashboards, and monitoring that read <code>owner()</code> to display or verify the owner get nothing back after the cut.
-						Nothing reverts on-chain, which is why this one tends to be noticed late.
+						ERC-173 through <code>supportsInterface</code>, so the rename does not break a declared interface. A call to the old selector,
+						however, no longer reaches a facet and reverts through the Diamond fallback. Block explorers, admin dashboards, and monitoring
+						must handle that revert and move to <code>getOwner()</code>.
 					</aside>
 					<p>
-						Callers that only ever talk to a fresh deployment call <code>getOwner()</code> directly. Callers that also run against chains
-						whose diamonds predate the rename need to try <code>getOwner()</code> and fall back to <code>owner()</code>. The upgrade and
-						inspection scripts in this repository do that through a shared <code>readDiamondOwner</code> helper &mdash; notably
-						<code>pauseSystem()</code>, which reads the owner before the cut that installs the new facet. Tooling that only snapshots
-						pre-upgrade deployments, such as <code>snapshotCoreFunds.ts</code>, keeps <code>owner()</code>.
+						Current repository scripts call <code>getOwner()</code> for the core and AccountLayer diamonds; the separately deployed
+						ExpressProvider still exposes <code>owner()</code>. External tooling that must support both pre-rename and post-rename core or
+						AccountLayer deployments can try <code>getOwner()</code> first and explicitly fall back to <code>owner()</code> only for the
+						older ABI.
 					</p>
 					<div class="table-wrap">
 						<table>

@@ -42,6 +42,8 @@
 			<div class="rail-sections-source" data-rail-sections hidden>
 				<a class="toc-link level-2" href="#summary">Summary</a>
 				<a class="toc-link level-2" href="#api">API</a>
+				<a class="toc-link level-2" href="#when-to-use">When to Use It</a>
+				<a class="toc-link level-2" href="#atomicity">Atomic Completion</a>
 			</div>
 
 			<main class="reader-main">
@@ -89,6 +91,23 @@
 						<li><code>quoteIds</code>: open positions to close in this transaction.</li>
 						<li><code>partyBs</code>: PartyB settlement buckets to settle in this transaction.</li>
 					</ul>
+					<h2 id="when-to-use">When to Use It</h2>
+					<p>
+						Use the wrapper when the caller can supply every open <code>quoteId</code> and every involved PartyB, and the complete
+						liquidation fits within one transaction's gas limit. Use the multi-step snapshot flow for larger accounts or when work must be
+						divided across transactions.
+					</p>
+					<h2 id="atomicity">Atomic Completion</h2>
+					<p>
+						The wrapper starts the snapshot liquidation, stores the signed symbol state, removes pending quotes, liquidates the supplied
+						positions, and settles the supplied PartyBs. It then requires that no open or pending quotes remain, no PartyB settlement
+						bucket remains, and the PartyA liquidation status has cleared.
+					</p>
+					<aside class="callout callout-important">
+						<strong>All or nothing</strong> Omitting a required quote or PartyB causes the transaction to revert with
+						<code>LiquidationFacet: Incomplete single-step liquidation</code>. The account is not left in a partially completed
+						single-step state; retry with complete arrays or switch to the multi-step flow.
+					</aside>
 				</article>
 			</main>
 		</div>

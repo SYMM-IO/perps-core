@@ -5,7 +5,7 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta
 			name="description"
-			content="Market open fees are charged on the price the position opened at, not the market price PartyA signed. A bound PartyA could previously sign a zero market price and open the position for no fee."
+			content="Market open fees are charged on the executed open price, not the request-time market price. A bound PartyA could previously supply zero for that unverified input and open for no fee."
 		/>
 		<title>Market Open Fee on Execution Price - Symmio Core v0.8.6</title>
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
@@ -53,8 +53,8 @@
 						<div>
 							<h1>Market Open Fee on Execution Price</h1>
 							<p class="hero-copy">
-								Market open trading fees were charged on the market price PartyA signed at request time. They are now charged on the
-								price PartyB actually opened at, which no party can set unilaterally.
+								Market open trading fees were charged on the market price supplied at request time. They are now charged on the price
+								PartyB actually supplied for the fill.
 							</p>
 						</div>
 					</div>
@@ -62,7 +62,7 @@
 
 				<article class="doc-article" id="full-document">
 					<p>
-						A market quote carries two prices. <code>marketPrice</code> is the spot price PartyA signed when the quote was requested, and
+						A market quote carries two prices. <code>marketPrice</code> is the request-time spot price in PartyA's UPNL payload, and
 						<code>openedPrice</code> is the price PartyB filled at. Until this change the open trading fee was computed from
 						<code>marketPrice</code>. Close fees already used the executed <code>closedPrice</code>, so open fees were the only trading
 						fee in the protocol still priced off a request-time input.
@@ -70,15 +70,15 @@
 
 					<h2 id="the-gap">The Unpoliced Price</h2>
 					<p>
-						<code>marketPrice</code> reaches storage from PartyA's signed uPnL payload. On the normal path a Muon signature covers that
-						payload, so the value is attested. When PartyA is bound to a PartyB, <code>sendQuote</code> skips Muon verification entirely
-						&mdash; that is the point of binding &mdash; and the signed price is accepted as supplied.
+						<code>marketPrice</code> reaches storage from the uPnL payload submitted with PartyA's request. On the normal path a Muon
+						signature covers that payload, so the value is attested. When PartyA is bound to a PartyB, <code>sendQuote</code> skips Muon
+						verification entirely &mdash; that is the point of binding &mdash; and the request-time price is accepted as supplied.
 					</p>
 					<p>
 						A bound PartyA could therefore submit a market quote with <code>marketPrice</code> set to zero. The quote was otherwise valid:
 						<code>requestedOpenPrice</code>, quantity, and locked values were all normal, and every price guard on the open path compares
 						<code>openedPrice</code> against <code>requestedOpenPrice</code>, never against <code>marketPrice</code>. Only the fee read
-						the signed value.
+						the request-time value.
 					</p>
 					<pre><code>openFee = quantity * marketPrice * tradingFee / 1e36
         = quantity * 0            * tradingFee / 1e36
@@ -88,14 +88,16 @@
 						on the open path had a reason to look at <code>marketPrice</code>.
 					</p>
 					<aside class="callout callout-note">
-						<strong>The solver had no incentive to check.</strong>
-						PartyB chooses whether to fill, but the open fee is revenue for the fee collector, not for PartyB. A solver that filled a
-						zero-fee quote lost nothing and gained a trade, so leaving the check to solver diligence left it undone.
+						<strong>The protocol did not validate the fee basis at fill.</strong>
+						PartyB chooses whether to fill, but the open path validated <code>openedPrice</code> against <code>requestedOpenPrice</code>;
+						it did not compare or reconcile <code>marketPrice</code>. The fee collector therefore received the amount produced by PartyA's
+						stored request-time input.
 					</aside>
 					<p>
-						Charging on <code>openedPrice</code> removes the input from PartyA's control. That price is supplied by PartyB at fill time
-						and is already bounded by <code>requestedOpenPrice</code> in the direction that matters &mdash; at or below it for a long, at
-						or above it for a short &mdash; so neither side can drive the fee to zero without also giving up the trade.
+						Charging on <code>openedPrice</code> removes PartyA's request-time <code>marketPrice</code> from the executed fee calculation.
+						PartyB supplies <code>openedPrice</code> at fill time, and the protocol bounds it against <code>requestedOpenPrice</code> in
+						the required direction &mdash; at or below it for a long, at or above it for a short. The collector's fee therefore follows
+						the price recorded for the opened position.
 					</p>
 
 					<h2 id="two-bases">Reserved and Executed</h2>
@@ -169,12 +171,12 @@
 						</li>
 						<li>
 							A market open can revert on the fee where it previously could not, when the executed price is high enough that PartyA
-							cannot cover the shortfall. Solvers should size fills against the executed price rather than the signed one.
+							cannot cover the shortfall. Solvers should size fills against the executed price rather than the request-time one.
 						</li>
 					</ol>
 					<aside class="callout callout-note">
-						<strong>The reservation is still sized from the signed price.</strong>
-						A bound PartyA that signs a low market price reserves less than the trade will cost, so the shortfall is collected at open
+						<strong>The reservation is still sized from the request-time price.</strong>
+						A bound PartyA that supplies a low market price reserves less than the trade will cost, so the shortfall is collected at open
 						instead. The fee is charged either way, but the open can fail late if the account cannot cover it by then.
 					</aside>
 				</article>

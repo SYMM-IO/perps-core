@@ -102,9 +102,10 @@ if (childQuote.parentId == quoteId &amp;&amp; childQuote.partyA == partyA &amp;&
 					</ul>
 					<p>
 						The nested cancel triggers the <code>onCancelQuote</code> hook back into the AccountLayer while <code>onOpenPosition</code> is
-						still executing. That re-entry is harmless -- the child was never added to the virtual account's tracked quote ids, and the
-						account still holds the opened position, so no deletion is attempted -- but it is why <code>onCancelQuote</code> must not
-						carry the <code>nonReentrant</code> modifier.
+						still executing. The child was never added to the virtual account's tracked quote IDs, and the account still holds the opened
+						position, so no deletion is attempted. <code>onCancelQuote</code> uses the callback-aware reentrancy guard: it admits this
+						expected callback from the exact core that AccountLayer is already calling while still rejecting unrelated or nested protected
+						callbacks.
 					</p>
 
 					<h2 id="order-semantics">Order Semantics</h2>
@@ -127,9 +128,11 @@ if (childQuote.parentId == quoteId &amp;&amp; childQuote.partyA == partyA &amp;&
 					<h2 id="integration-notes">Integration Notes</h2>
 					<p>
 						Indexers and frontends should expect a <code>RequestToCancelQuote(partyA, address(0), CANCELED, childQuoteId)</code> event
-						emitted from inside the solver's <code>openPosition</code> transaction, immediately after the partial fill's own events. The
-						cancelled quote id is <code>parentId</code>-linked to the filled quote, which is how clients distinguish a remainder cancel
-						from a user-initiated one.
+						emitted by the nested cancel inside the solver's <code>openPosition</code> transaction. It occurs during the
+						<code>onOpenPosition</code> hook, before the outer facet emits its open-position events. After the hook returns, the outer
+						facet also emits <code>AcceptCancelRequest(childQuoteId, CANCELED)</code> for the already-cancelled remainder. The child
+						quote's <code>parentId</code> points to the filled quote, which is how clients distinguish this pair from a user-initiated
+						cancel.
 					</p>
 					<p>Two operational couplings follow from routing the cancel through the normal PartyA path:</p>
 					<ul>

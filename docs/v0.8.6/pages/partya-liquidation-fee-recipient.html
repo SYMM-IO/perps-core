@@ -58,13 +58,13 @@
 					<h2 id="summary">Summary</h2>
 					<p>PartyA LF now has one receiver: <code>liquidators[partyA][0]</code>, the address that started the PartyA liquidation.</p>
 					<p>
-						Before v0.8.6, PartyA LF was split between two receivers: the caller that started liquidation and the first caller that set
-						liquidation prices. In practice, a single liquidator now performs all liquidation steps almost every time. Competition is at
-						the first liquidation call, not at each later step.
+						Before v0.8.6, PartyA LF was split between two receivers: the caller that started liquidation and the caller recorded when the
+						liquidation type was first determined during price submission. The release makes the first liquidation call the only paid
+						step.
 					</p>
 					<p>
-						v0.8.6 removes the second receiver and pays the capped LF only to the starter at final settlement. The protocol monitors
-						liquidator performance and suspends or removes bad actors when needed.
+						v0.8.6 removes the second receiver and pays the capped LF only to the starter at final settlement. The later liquidation calls
+						remain role-gated; this change only selects the fee recipient.
 					</p>
 
 					<h2 id="what-changed">What Changed</h2>
@@ -81,7 +81,7 @@
 						competitive step. Price setters do not receive PartyA LF.
 					</p>
 					<p>
-						P.S. The cap logic did not change. PartyA LF is still limited by
+						The cap logic did not change. PartyA LF is still limited by
 						<code>maxLiquidationProfitPerPosition * partyAPositionsCount[partyA]</code>, and any amount above the cap goes to the
 						liquidation insurance vault.
 					</p>

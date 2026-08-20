@@ -118,16 +118,21 @@ allowed(target) = owner(target) == signer AND canonical(target) == scope</code><
     ? address(0)
     : _canonicalDelegator(signedOp.signerAccount.addr);
 
-IAccountLayerDiamond(accountLayer).setSignerScoped(owner, scope);</code></pre>
+if (usesNativeContextSelectors) {
+    IAccountLayerDiamond(accountLayer).setTransientSignerScoped(owner, scope);
+} else {
+    IAccountLayerDiamond(accountLayer).setSignerScoped(owner, scope);
+}</code></pre>
 					<p>
-						An owner-signed operation passes <code>address(0)</code> and runs unconfined, exactly as before. The scope applies to both
-						routes InstantLayer uses: operations targeting Symmio, which are wrapped through <code>_call</code>, and direct AccountLayer
-						calls such as <code>addMargin</code> or <code>transferSubAccountOwnership</code>.
+						An owner-signed operation passes <code>address(0)</code> and runs unconfined, exactly as before. Both selector paths install
+						the signer and scope in the same transaction-scoped AccountLayer context; the legacy selector is retained for deployed
+						routers. The scope applies to both routes InstantLayer uses: operations targeting Symmio, which are wrapped through
+						<code>_call</code>, and direct AccountLayer calls such as <code>addMargin</code> or <code>transferSubAccountOwnership</code>.
 					</p>
 					<p>
-						The session is cleared with the signer when the operation finishes. <code>setSigner</code> always writes a zero scope, so a
-						caller that clears through the original entry point can never leave a confinement behind for the next one, and callers that
-						never open a scoped session — AccountManager, direct users, protocol operations — are unaffected.
+						The session is cleared with the signer when the operation finishes. Both <code>setSigner</code> and
+						<code>setTransientSigner</code> install a zero scope, so either matching clear path removes the confinement before the next
+						operation. Callers that never open a scoped session — AccountManager, direct users, protocol operations — are unaffected.
 					</p>
 					<p>
 						<code>ViewFacet.getSignerScope</code> reports the active scope, or <code>address(0)</code> when the session is unconfined.

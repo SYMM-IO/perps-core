@@ -61,18 +61,8 @@
 				</header>
 
 				<article class="doc-article" id="full-document">
-					<p>
-						Before v0.8.6, every UPNL-bearing Muon signature shared the same global freshness window from <code>setMuonConfig</code>. That
-						forced fast account-management operations and slower liquidation flows to use one timeout, even though they have different
-						operational needs.
-					</p>
-					<p>
-						v0.8.6 keeps the global value as the fallback, but lets operators override the UPNL validity window per
-						<code>MuonFunction</code> category.
-					</p>
-					<hr />
 					<h2 id="summary">Summary</h2>
-					<p>Before this change, every UPNL-based Muon signature used the same global validity window:</p>
+					<p>Before v0.8.6, every UPNL-based Muon signature used the same global validity window:</p>
 					<pre><code class="language-solidity">setMuonConfig(upnlValidTime, priceValidTime)
 </code></pre>
 					<p>
@@ -184,7 +174,7 @@
 									<td>
 										<code>sendQuote</code>, <code>lockQuote</code>, <code>openPosition</code>, <code>fillCloseRequest</code>,
 										<code>fillCloseRequestToLiquidation</code>, <code>emergencyClosePosition</code>, <code>openPositions</code>,
-										<code>closePositions</code>
+										<code>fillCloseRequests</code>
 									</td>
 								</tr>
 								<tr>
@@ -209,8 +199,9 @@
 								<tr>
 									<td><code>ForceClose</code></td>
 									<td>
-										<code>requestToClosePosition</code>, <code>forceClosePosition</code>, force-close settlement, legacy
-										force-close settlement, final force-close steps
+										<code>forceClosePosition</code>, deprecated <code>settleAndForceClosePosition</code>,
+										<code>initializeForceClose</code>, <code>settleUpnlForForceClose</code>, <code>finalizeForceClose</code>, and
+										<code>forceCloseAndSettlePositionsUnified</code>
 									</td>
 								</tr>
 								<tr>
@@ -222,19 +213,26 @@
 									<td>
 										<code>liquidatePartyA</code>, <code>setSymbolsPrice</code>, <code>deferredLiquidatePartyA</code>,
 										<code>deferredSetSymbolsPrice</code>, <code>liquidatePartyAWithSnapshot</code>,
-										<code>singleStepLiquidatePartyAWithSnapshot</code>
+										<code>setSymbolsPriceWithSnapshot</code>, <code>singleStepLiquidatePartyAWithSnapshot</code>. Only the legacy
+										<code>liquidatePartyA</code> freshness check consults this UPNL-validity override; the other calls use the
+										category for signer authorization and apply their own historical or liquidation-lifecycle timestamp rules.
 									</td>
 								</tr>
 								<tr>
 									<td><code>LiquidationPartyB</code></td>
-									<td><code>liquidatePartyB</code>, <code>liquidatePositionsPartyB</code></td>
+									<td>
+										<code>liquidatePartyB</code> consults this freshness override. <code>liquidatePositionsPartyB</code> uses the
+										same category for signer authorization, but bounds its price timestamp against the stored liquidation start
+										and <code>liquidationTimeout</code> instead.
+									</td>
 								</tr>
 							</tbody>
 						</table>
 					</div>
 					<p>
-						Treat this table as the operation-level policy surface. It controls the freshness window for timestamp checks, while the same
-						enum also controls which Muon public keys and gateway signers are authorized to sign each category.
+						Treat this table as the operation-level authorization surface. The enum controls which Muon public keys and gateway signers
+						may sign each category. It controls this configurable freshness window only for the calls identified above that compare a
+						signature timestamp with <code>block.timestamp</code> through the UPNL-validity resolver.
 					</p>
 					<p>
 						Important distinction: the category is passed to the signature verifier for key and gateway authorization on all grouped
@@ -269,8 +267,9 @@ LibMuonUnifiedSettlement
 LibMuon
 </code></pre>
 					<p>
-						PartyA liquidation also uses <code>LibMuon.getUpnlValidTime(MuonFunction.LiquidationPartyA)</code> for its explicit
-						liquidation signature freshness check, so it no longer reads the global <code>upnlValidTime</code> directly.
+						The legacy <code>liquidatePartyA</code> start path also uses
+						<code>LibMuon.getUpnlValidTime(MuonFunction.LiquidationPartyA)</code> for its explicit signature freshness check, so that
+						check no longer reads the global <code>upnlValidTime</code> directly.
 					</p>
 				</article>
 			</main>

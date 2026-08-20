@@ -53,7 +53,7 @@
 						<div>
 							<h1>Affiliate Shutdown Flow</h1>
 							<p class="hero-copy">
-								Affiliate shutdown gives a frontend a clean wind-down path: new opens stop immediately, normal closes continue, and
+								Affiliate shutdown gives an affiliate a clean wind-down path: new opens stop immediately, normal closes continue, and
 								Clearing House can finish unresolved positions after the chosen date.
 							</p>
 						</div>
@@ -61,38 +61,36 @@
 				</header>
 
 				<article class="doc-article" id="full-document">
-					<p>Version: v0.8.6.</p>
-					<p>This flow gives frontends a cleaner way to shut down without leaving open positions unmanaged.</p>
 					<p>
-						Before this change, a frontend could be deregistered, but deregistration only stopped new affiliate relationships. It did not
-						give the frontend a clear shutdown process for its existing positions. The protocol now supports an explicit shutdown
-						schedule: once a frontend announces a shutdown date, new positions through that frontend stop immediately, solvers get a
+						Before this change, an affiliate could be deregistered, but deregistration only stopped new affiliate relationships. It did
+						not give the affiliate a clear shutdown process for its existing positions. The protocol now supports an explicit shutdown
+						schedule: once an affiliate announces a shutdown date, new positions through that affiliate stop immediately, solvers get a
 						window to close the existing positions, and the Clearing House can close anything that remains after the selected date.
 					</p>
 					<h2 id="why-we-added-this">Why We Added This</h2>
-					<p>A frontend shutdown has two competing needs:</p>
+					<p>An affiliate shutdown has two competing needs:</p>
 					<ul>
-						<li>Users should not keep opening fresh positions through a frontend that is leaving.</li>
+						<li>Users should not keep opening fresh positions through an affiliate that is leaving.</li>
 						<li>Existing positions should not be forced closed immediately if solvers can close them normally first.</li>
 					</ul>
 					<p>
-						The shutdown flow separates those concerns. Scheduling a shutdown makes the frontend close-only right away, but it still
+						The shutdown flow separates those concerns. Scheduling a shutdown makes the affiliate close-only right away, but it still
 						leaves time for normal close flows and solver-driven emergency closes before the Clearing House steps in.
 					</p>
 					<p>
-						This gives the frontend a predictable exit path, gives solvers a clear deadline, and gives the protocol a final mechanism if
+						This gives the affiliate a predictable exit path, gives solvers a clear deadline, and gives the protocol a final mechanism if
 						positions are still open when the deadline arrives.
 					</p>
 					<h2 id="flow">Flow</h2>
-					<pre><code class="language-text">1. Frontend / affiliate chooses a shutdown timestamp.
+					<pre><code class="language-text">1. Affiliate chooses a shutdown timestamp.
 2. Affiliate or AFFILIATE_MANAGER_ROLE schedules that timestamp on-chain.
-3. The frontend becomes close-only immediately.
+3. The affiliate becomes close-only immediately.
 4. Users and solvers can keep closing existing positions.
 5. PartyB can use emergencyClosePosition for quotes of that affiliate.
 6. After the shutdown timestamp, Clearing House can close any remaining affiliate positions.
 </code></pre>
 					<p>
-						The protocol does not decide the notice period. The frontend chooses the timestamp, and the contract only requires it to be
+						The protocol does not decide the notice period. The affiliate chooses the timestamp, and the contract only requires it to be
 						nonzero.
 					</p>
 					<p>
@@ -118,7 +116,7 @@ function getAffiliateShutdownTime(address affiliate) external view returns (uint
 						<li>batch open rejects quotes for that affiliate</li>
 					</ul>
 					<p>
-						Closing remains available. The goal is not to freeze the frontend's users; it is to prevent new exposure while existing
+						Closing remains available. The goal is not to freeze the affiliate's users; it is to prevent new exposure while existing
 						exposure is wound down.
 					</p>
 					<h2 id="solver-window">Solver Window</h2>

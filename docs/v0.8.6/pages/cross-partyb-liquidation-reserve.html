@@ -45,7 +45,7 @@
 				<a class="toc-link level-2" href="#affected-paths">Affected Paths</a>
 				<a class="toc-link level-2" href="#fix">Fix</a>
 				<a class="toc-link level-2" href="#settlement-top-up-exception">Settlement Top-Up Exception</a>
-				<a class="toc-link level-2" href="#verification">Verification</a>
+				<a class="toc-link level-2" href="#invariant">Resulting Invariant</a>
 			</div>
 
 			<main class="reader-main">
@@ -91,7 +91,7 @@
 					<p>The reserve now applies to the shared cross-mode PartyB availability used by:</p>
 					<ul>
 						<li><code>lockQuote</code>, through <code>partyBAvailableForQuote</code>.</li>
-						<li><code>deallocateForPartyB</code> and <code>transferAllocation</code>, through the same quote-availability helper.</li>
+						<li><code>deallocateForPartyB</code> in cross mode, through the same quote-availability helper.</li>
 						<li>Open/close/funding/settlement solvency checks, through <code>partyBAvailableBalanceForLiquidation</code>.</li>
 						<li><code>liquidateCrossPartyB</code> eligibility, so a PartyB can be liquidatable once reserved debt is counted.</li>
 					</ul>
@@ -135,25 +135,20 @@ function partyBAvailableBalanceForLiquidation(
 						to be non-decreasing.
 					</p>
 					<pre><code class="language-solidity">uint256 partyBBalanceBefore = accountLayout.partyBAllocatedBalances[sig.partyB][address(0)];
-LibSettlement.settleUpnlUnified(sig, updatedPrices, true, false);
+LibSettlement.settleUpnlUnified(sig, updatedPrices, true, false, false);
 require(
     accountLayout.partyBAllocatedBalances[sig.partyB][address(0)] &gt;= partyBBalanceBefore,
     "SettlementFacet: PartyB balance decreased"
 );
 </code></pre>
 
-					<h2 id="verification">Verification</h2>
+					<h2 id="invariant">Resulting Invariant</h2>
 					<ul>
-						<li>Reserve-aware quote locking is covered by both failing and passing boundary tests.</li>
+						<li>Quote locking uses reserve-adjusted cross allocation, including the exact pass/fail boundary.</li>
 						<li>
-							Cross-PartyB liquidation eligibility is covered where raw availability is solvent but reserve-adjusted availability is
-							insolvent.
+							Cross-PartyB liquidation eligibility counts pending settlement debt even when raw allocation alone still appears solvent.
 						</li>
-						<li>
-							The liquidation top-up path is covered by <code>SettlePartyBUpnlForLiquidation</code>, including the shortfall case that
-							needs the reserve bypass.
-						</li>
-						<li>The full parallel suite passes with 49 suites and 2202 tests.</li>
+						<li>The liquidation top-up path alone bypasses the reserve, and it may not reduce the PartyB cross-allocation bucket.</li>
 					</ul>
 				</article>
 			</main>

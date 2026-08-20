@@ -81,8 +81,9 @@
 					</p>
 					<ol>
 						<li>
-							<strong>Required transition freeze.</strong> Operations schedules the change and Core freezes the symbol at the effective
-							time before any new-basis price can be used.
+							<strong>Required transition freeze.</strong> Operations schedules the change and Core freezes guarded symbol-specific
+							paths at the effective time. Muon must separately withhold account-level signatures whose payload does not identify
+							symbols.
 						</li>
 						<li>
 							<strong>Active-factor route.</strong> For a large book or when trading must resume quickly, Muon moves to the adjusted
@@ -264,7 +265,8 @@
 						If the open and pending inventory is small, operations may call <code>startRestatement</code> directly from the effective
 						<code>SCHEDULED</code> state. Core fixes the prospective factor into <code>restatementFactor</code>, leaves
 						<code>cumulativeFactor</code> unchanged, and keeps the symbol frozen. After every declared quote is handled, finalization
-						marks the adjustment <code>APPLIED</code>, clears both factor paths, and resumes trading in raw venue units.
+						marks the adjustment <code>APPLIED</code>, clears both factor paths, and resumes trading in raw venue units. Coverage of the
+						declared inventory is an operations check; Core does not prove it at finalization.
 					</p>
 					<h3>5. Restate later when desired</h3>
 					<p>
@@ -435,10 +437,10 @@ prospectivePrice  = rawVenuePrice * prospectiveFactor / 1e18</code></pre>
 					<h2 id="safety">Safety Boundaries</h2>
 					<h3>Funding must cross the unit boundary once</h3>
 					<p>
-						Accumulated funding rates are price-denominated per unit. Before restatement, the current long and short rates for every
-						affected PartyB must be zero. <code>applyAdjustment</code> then charges the remaining old-unit funding before conversion. Rate
-						setters and epoch-duration changes stay frozen until finalization. New rates are set afterward using the raw post-restatement
-						price.
+						Accumulated funding rates are price-denominated per unit. For an active funding schedule, the current long and short rates for
+						the affected symbol and PartyB must both be zero; the guard also permits <code>epochDuration == 0</code> because funding is
+						inactive. <code>applyAdjustment</code> then charges any remaining old-unit accumulated funding before conversion. Rate setters
+						and epoch-duration changes stay frozen until finalization. New rates are set afterward using the raw post-restatement price.
 					</p>
 					<h3>Unsafe rounding is rejected before mutation</h3>
 					<p>
@@ -446,7 +448,7 @@ prospectivePrice  = rawVenuePrice * prospectiveFactor / 1e18</code></pre>
 						becomes zero, a nonzero closed amount that becomes zero, a remaining open amount that becomes zero, or a nonzero close request
 						that becomes zero. Operations must resolve such quotes before opening a restatement window.
 					</p>
-					<h3>Old-basis signatures must expire before quotes are rewritten</h3>
+					<h3>Age out old-basis signatures before quotes are rewritten</h3>
 					<p>
 						Restatement changes what the numbers in storage mean. A quote of <code>quantity 10</code> at
 						<code>openedPrice 400</code> becomes <code>quantity 40</code> at <code>openedPrice 100</code> across a 4:1 split. Muon
@@ -458,24 +460,33 @@ prospectivePrice  = rawVenuePrice * prospectiveFactor / 1e18</code></pre>
 					<p>
 						The freeze alone does not close this. <code>requireNotFrozen</code> blocks execution <em>while</em> the window is open; the
 						exposure is a signature that straddles the window entirely and lands after the symbol is unfrozen again, when nothing looks
-						unusual. Core therefore records <code>restatementStartedAt</code> when the window opens and refuses to finalize until at least
-						one full UPNL validity period has elapsed since that instant:
+						unusual. Core therefore records <code>restatementStartedAt</code> when the window opens and refuses to finalize before the
+						configured maximum UPNL-validity duration has elapsed:
 					</p>
 					<pre><code class="language-solidity">require(
     block.timestamp &gt;= adjustment.restatementStartedAt + LibMuon.maxUpnlValidTime(),
     "SymbolAdjustmentFacet: Restatement window too short"
 );</code></pre>
 					<p>
-						Because the symbol stayed frozen for that whole period, every signature minted against the old basis is guaranteed expired
-						before the basis moves. <code>maxUpnlValidTime()</code> takes the maximum of the global <code>upnlValidTime</code> and every
-						per-function override, so a longer override configured through <code>setMuonFunctionUpnlValidTime</code> cannot undercut the
-						guarantee. On the direct route the symbol was already frozen from <code>effectiveTimestamp</code>, so that earlier instant is
-						credited rather than restarting the clock.
+						<code>maxUpnlValidTime()</code> takes the maximum of the global <code>upnlValidTime</code> and every per-function override, so
+						a longer override configured through <code>setMuonFunctionUpnlValidTime</code> cannot shorten the enforced duration. On the
+						direct route, the contract stores <code>effectiveTimestamp</code> rather than the <code>startRestatement</code> block time.
 					</p>
+					<aside class="callout callout-risk">
+						<strong>Use the actual continuous-freeze start and wait past equality.</strong> Finalization accepts
+						<code>block.timestamp == restatementStartedAt + maxUpnlValidTime()</code>, while timestamp verification accepts a signature
+						through <code>block.timestamp == signature.timestamp + validTime</code>. A signature timestamped exactly when the freeze began
+						can therefore still be valid at the contract's equality boundary. Also, a past <code>effectiveTimestamp</code> predates the
+						transaction that scheduled—and therefore actually froze—the symbol, even though Core stores that older value in
+						<code>restatementStartedAt</code>. For direct mode, operations must derive
+						<code>continuousFreezeStart = max(effectiveTimestamp, AdjustmentScheduled block timestamp)</code> and require
+						<code>block.timestamp &gt; continuousFreezeStart + maxUpnlValidTime()</code> before finalizing. For later restatement, use the
+						<code>RestatementStarted</code> block timestamp.
+					</aside>
 					<aside class="callout callout-important">
-						<strong>This is why Muon payloads carry no basis version.</strong> The same guarantee could have been obtained by binding the
-						symbol's basis version into every price-bearing signature hash, but that would break every existing Muon signature at the
-						upgrade. Enforcing the window on-chain keeps the hash preimages byte-identical to v0.8.5 and leaves the property intact. The
+						<strong>Muon payloads carry no basis version.</strong> Binding the symbol's basis version into every price-bearing signature
+						hash would break every existing Muon signature at the upgrade. Enforcing the window on-chain keeps the hash preimages
+						byte-identical to v0.8.5; the strict operational wait above closes the inclusive-expiry and past-timestamp edges. The
 						practical consequence is a coupling operations must plan for:
 						<strong>a restatement can never be finalized faster than the configured UPNL validity window</strong>, so raising
 						<code>upnlValidTime</code> lengthens every future restatement.
@@ -484,9 +495,9 @@ prospectivePrice  = rawVenuePrice * prospectiveFactor / 1e18</code></pre>
 					<p>
 						Core can freeze paths that receive a symbol ID or operate on a known quote. It cannot determine which symbols are represented
 						inside an account-level UPNL signature. Muon must therefore withhold fresh account-level signatures for every account exposed
-						to a frozen symbol. A still-valid signature issued before the freeze is not invalidated on-chain — during a restatement the
-						minimum-window guard above ensures such a signature has expired by the time the basis changes, but for the plain transition
-						freeze, withholding remains an off-chain responsibility.
+						to a frozen symbol. A still-valid signature issued before the freeze is not invalidated on-chain. During restatement, the
+						contract enforces the minimum duration and operations must wait past its equality boundary before changing the basis. For the
+						plain transition freeze, withholding remains an off-chain responsibility.
 					</p>
 					<aside class="callout callout-risk">
 						<strong>Finalization is a trusted operational boundary.</strong> Core verifies per-quote idempotency and prevents abort after
@@ -527,11 +538,11 @@ function getQuotesInVenueUnits(uint256[] calldata quoteIds)
 						events. The second mapping stores the last restatement window that physically rewrote each quote.
 					</p>
 					<p>
-						Two fields on <code>SymbolAdjustment</code> exist purely to keep old-basis values from executing against rewritten storage.
-						<code>basisVersion</code> increments on every <code>finalizeRestatement</code> and is bound into multi-transaction workflows
-						that could otherwise straddle a window — the 3-step force close stamps it at <code>initializeForceClose</code> and rejects
-						finalization with <code>ForceActionsFacet: Symbol basis changed</code> if it moved. <code>restatementStartedAt</code> records
-						when the symbol became continuously frozen and enforces the minimum window described under
+						Two fields on <code>SymbolAdjustment</code> exist to keep old-basis values from executing against rewritten storage.
+						<code>basisVersion</code> increments on every <code>finalizeRestatement</code>; the 3-step force-close workflow stamps it at
+						<code>initializeForceClose</code> and rejects finalization with <code>ForceActionsFacet: Symbol basis changed</code> if it
+						moved. <code>restatementStartedAt</code> records Core's window origin—<code>effectiveTimestamp</code> in direct mode, even
+						when that timestamp predates scheduling—and enforces the contract threshold described under
 						<a href="#safety">Safety Boundaries</a>. Neither field appears in any Muon signature payload.
 					</p>
 					<pre><code class="language-solidity">struct Layout {
@@ -824,10 +835,11 @@ quoteRestatedEpoch[411]     = 6</code></pre>
 					<h3><code>QuoteAdjustmentPreview</code> fields</h3>
 					<p>
 						<code>previewQuoteAdjustment</code> applies the exact physical-restatement arithmetic without mutating storage. It returns the
-						active <code>factor</code> and the post-conversion values for <code>quantity</code>, <code>openedPrice</code>,
-						<code>initialOpenedPrice</code>, <code>requestedOpenPrice</code>, <code>marketPrice</code>, <code>closedAmount</code>,
-						<code>avgClosedPrice</code>, <code>quantityToClose</code>, and <code>requestedClosePrice</code>. A revert here predicts the
-						same rounding or underflow rejection in <code>applyAdjustment</code>.
+						selected <code>factor</code>—open-window, scheduled prospective, or confirmed active—and the post-conversion values for
+						<code>quantity</code>, <code>openedPrice</code>, <code>initialOpenedPrice</code>, <code>requestedOpenPrice</code>,
+						<code>marketPrice</code>, <code>closedAmount</code>, <code>avgClosedPrice</code>, <code>quantityToClose</code>, and
+						<code>requestedClosePrice</code>. A revert here predicts the same rounding or underflow rejection in
+						<code>applyAdjustment</code>.
 					</p>
 
 					<h3><code>VenueQuoteView</code> fields</h3>
@@ -843,14 +855,16 @@ quoteRestatedEpoch[411]     = 6</code></pre>
 							<tbody>
 								<tr>
 									<td><code>quote</code></td>
-									<td>A memory copy normalized to the current confirmed venue-unit basis.</td>
+									<td>
+										A memory copy normalized to the venue-unit basis selected by the active factor or current restatement window.
+									</td>
 									<td>Use for valuation, display, and external hedging, not as raw Core execution input.</td>
 								</tr>
 								<tr>
 									<td><code>factorApplied</code></td>
 									<td>
-										Factor used for virtual conversion. It is <code>1e18</code> when storage is already in the confirmed venue
-										basis, including a quote processed in the current restatement window.
+										Factor used for virtual conversion. It is <code>1e18</code> when storage already uses the selected venue
+										basis, including a quote processed in the current direct or later restatement window.
 									</td>
 									<td>Do not assume it equals the symbol's active factor for every quote during a mixed window.</td>
 								</tr>
@@ -862,7 +876,7 @@ quoteRestatedEpoch[411]     = 6</code></pre>
 								<tr>
 									<td><code>storedInVenueUnits</code></td>
 									<td>Derived as <code>factorApplied == 1e18</code>.</td>
-									<td>Describes the current confirmed basis, not whether the quote was ever physically restated.</td>
+									<td>Describes the currently selected integration basis, not whether the quote was ever physically restated.</td>
 								</tr>
 								<tr>
 									<td><code>symbolFrozen</code></td>
@@ -922,9 +936,11 @@ QuoteAdjusted
 PendingQuoteCancelledByAdjustment
 RestatementFinalized</code></pre>
 					<p>
-						Consumers must track all eight events. <code>AdjustmentCancelled</code> and <code>RestatementAborted</code> are explicit
-						unfreeze signals. <code>RestatementStarted</code> includes the epoch and factor fixed for that window.
-						<code>QuoteAdjusted</code> includes the old and new quantity and opened price so indexers can verify notional preservation.
+						Consumers must track all eight events. <code>AdjustmentCancelled</code> removes the scheduled-step freeze.
+						<code>RestatementAborted</code> removes only the restatement overlay: an aborted direct window remains frozen by its effective
+						<code>SCHEDULED</code> state, while an aborted active-factor window reopens trading. <code>RestatementStarted</code> includes
+						the epoch and factor fixed for that window. <code>QuoteAdjusted</code> includes old/new quantity and opened price so indexers
+						can verify the conversion and its documented integer rounding.
 					</p>
 
 					<h2 id="integration">Integration Requirements</h2>
@@ -944,8 +960,8 @@ RestatementFinalized</code></pre>
 						<li>Detect an unscheduled price discontinuity and alert operations before signing it.</li>
 						<li>
 							No payload change is required for this feature. Signature hash preimages are unchanged from v0.8.5; the symbol's basis
-							version is deliberately not part of any hash. Core guarantees old-basis signatures have expired by enforcing a minimum
-							frozen window before finalization.
+							version is deliberately not part of any hash. Core applies its guard from stored <code>restatementStartedAt</code>;
+							operations must use the later actual freeze-start time and wait past the inclusive equality boundary before finalization.
 						</li>
 					</ul>
 					<h3>Solvers</h3>
@@ -1005,9 +1021,11 @@ RestatementFinalized</code></pre>
 						<li>For every open quote, verify <code>getQuoteRestatedEpoch(quoteId)</code> equals the current epoch.</li>
 						<li>Re-scan the open and pending inventory and verify no old-basis quote was omitted.</li>
 						<li>
-							Confirm at least one full UPNL validity period has elapsed since the symbol became frozen. Finalizing earlier reverts with
-							<code>SymbolAdjustmentFacet: Restatement window too short</code>. On a fast book this is the step that gates the window,
-							not the batches — budget for it rather than treating the revert as a fault.
+							For direct mode, derive <code>continuousFreezeStart</code> as the later of <code>effectiveTimestamp</code> and the
+							<code>AdjustmentScheduled</code> block timestamp; for later restatement, use the <code>RestatementStarted</code> block
+							timestamp. Confirm <code>block.timestamp &gt; continuousFreezeStart + maxUpnlValidTime()</code>. Core rejects values below
+							its stored threshold but accepts equality and can use an older past effective timestamp, so the stricter operations check
+							is required.
 						</li>
 						<li>
 							Finalize, confirm the factor is <code>1e18</code>, restart funding in the raw price basis, then resume Muon signatures.

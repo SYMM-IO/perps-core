@@ -151,7 +151,10 @@
 									<td>enforced</td>
 								</tr>
 								<tr>
-									<td>Updated price strictly between opened price and current price</td>
+									<td>
+										Updated price away from the opened price and no farther than the current price (opened exclusive, current
+										inclusive)
+									</td>
 									<td>both</td>
 									<td>enforced</td>
 								</tr>
@@ -197,8 +200,8 @@
 							with. Full Muon verification plus the settlement cooldown, exactly as before.
 						</li>
 						<li>
-							<strong><code>settlePartyBUpnlForLiquidation</code></strong> &mdash; called by liquidators during PartyA liquidation.
-							Always verified; the caller is never the bound solver.
+							<strong><code>settlePartyBUpnlForLiquidation</code></strong> &mdash; called by liquidators during PartyA liquidation. Its
+							implementation verifies the unified settlement signature unconditionally, regardless of caller or binding state.
 						</li>
 						<li>
 							<strong>Force-close settlement</strong> &mdash; the force-close workflow verifies its own

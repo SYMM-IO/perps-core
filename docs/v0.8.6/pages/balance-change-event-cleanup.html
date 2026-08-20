@@ -159,8 +159,9 @@ event BalanceChangePartyB(
 
 					<h2 id="balance-change-types">Balance Change Types</h2>
 					<p>
-						The existing <code>BalanceChangeType</code> enum and both existing event signatures remain unchanged. The table below is the
-						v0.8.6 direction contract. “Inbound” adds <code>amount</code>; “outbound” subtracts it.
+						Both existing event signatures remain unchanged. <code>BalanceChangeType</code> preserves ordinals 0&ndash;13 and appends six
+						new reasons at 14&ndash;19. The table below is the v0.8.6 direction contract. “Inbound” adds <code>amount</code>; “outbound”
+						subtracts it.
 					</p>
 					<div class="table-wrap">
 						<table class="enum-table">
@@ -189,13 +190,19 @@ event BalanceChangePartyB(
 									<td>2</td>
 									<td><code>PLATFORM_FEE_IN</code></td>
 									<td>Inbound</td>
-									<td>A reserved open fee is refunded directly into PartyA allocation.</td>
+									<td>
+										A reserved open fee refund or positive explicit Clearing House platform-fee component enters PartyA
+										allocation.
+									</td>
 								</tr>
 								<tr>
 									<td>3</td>
 									<td><code>PLATFORM_FEE_OUT</code></td>
 									<td>Outbound</td>
-									<td>PartyA allocation pays or reserves a platform trading fee.</td>
+									<td>
+										PartyA allocation pays or reserves a trading fee, or pays a negative explicit Clearing House platform-fee
+										component.
+									</td>
 								</tr>
 								<tr>
 									<td>4</td>
@@ -375,21 +382,21 @@ event BalanceChangePartyB(
 							<tbody>
 								<tr>
 									<td>0</td>
-									<td><code>CLEARING_HOUSE_IN</code></td>
-									<td>Inbound</td>
-									<td>Clearing House distribution enters reimbursement.</td>
+									<td><code>CLEARING_HOUSE_IN_DEPRECATED</code></td>
+									<td>Not emitted</td>
+									<td>Reserved at its historical ordinal; explicit Clearing House credits use the typed ordinals below.</td>
 								</tr>
 								<tr>
 									<td>1</td>
 									<td><code>PLATFORM_FEE_IN</code></td>
 									<td>Inbound</td>
-									<td>A released pending-open fee enters reimbursement.</td>
+									<td>A released pending-open fee or explicit positive platform-fee component enters reimbursement.</td>
 								</tr>
 								<tr>
 									<td>2</td>
-									<td><code>CLEARING_HOUSE_OUT</code></td>
-									<td>Outbound</td>
-									<td>Clearing House deallocation removes reimbursement.</td>
+									<td><code>CLEARING_HOUSE_OUT_DEPRECATED</code></td>
+									<td>Not emitted</td>
+									<td>Reserved at its historical ordinal; explicit Clearing House debits use the typed ordinals below.</td>
 								</tr>
 								<tr>
 									<td>3</td>
@@ -402,6 +409,36 @@ event BalanceChangePartyB(
 									<td><code>MOVE_TO_LIQUIDATION_ESCROW</code></td>
 									<td>Outbound</td>
 									<td>Late or overdue reimbursement moves into liquidation escrow.</td>
+								</tr>
+								<tr>
+									<td>5</td>
+									<td><code>REALIZED_PNL_IN</code></td>
+									<td>Inbound</td>
+									<td>An explicit positive Clearing House realized-PnL component enters reimbursement.</td>
+								</tr>
+								<tr>
+									<td>6</td>
+									<td><code>REALIZED_PNL_OUT</code></td>
+									<td>Outbound</td>
+									<td>An explicit negative Clearing House realized-PnL component leaves reimbursement.</td>
+								</tr>
+								<tr>
+									<td>7</td>
+									<td><code>FUNDING_FEE_IN</code></td>
+									<td>Inbound</td>
+									<td>An explicit positive Clearing House funding component enters reimbursement.</td>
+								</tr>
+								<tr>
+									<td>8</td>
+									<td><code>FUNDING_FEE_OUT</code></td>
+									<td>Outbound</td>
+									<td>An explicit negative Clearing House funding component leaves reimbursement.</td>
+								</tr>
+								<tr>
+									<td>9</td>
+									<td><code>PLATFORM_FEE_OUT</code></td>
+									<td>Outbound</td>
+									<td>An explicit negative Clearing House platform-fee component leaves reimbursement.</td>
 								</tr>
 							</tbody>
 						</table>
@@ -511,7 +548,8 @@ event SettlePartyALiquidation(
 									<td>LF funded from the liquidated PartyA's allocation</td>
 									<td>
 										Use <code>BalanceChangePartyA(partyA, amount, LF_OUT)</code> in that same final receipt. This is only the part
-										of the fee the live allocation could cover, not PartyA's total economic LF payment.
+										of the starter fee the live allocation could cover, not the original locked LF or liquidation-start fee
+										calculation.
 									</td>
 									<td>
 										The event amount is the exact debit from the liquidated user's allocated balance. Treat an absent
@@ -519,10 +557,11 @@ event SettlePartyALiquidation(
 									</td>
 								</tr>
 								<tr>
-									<td>LF the live allocation could no longer cover</td>
+									<td>Starter-credit / live-debit gap</td>
 									<td>
-										Derive it as <code>LF_IN - LF_OUT</code> within the final receipt. This part of the fee left PartyA earlier in
-										the liquidation, swept into deferred balance by the start-of-liquidation available-balance move.
+										Derive it as <code>LF_IN - LF_OUT</code> within the final receipt. It is the portion of the starter credit not
+										represented by a PartyA allocated-balance debit in that receipt. No event identifies that gap as a separate
+										transfer.
 									</td>
 									<td>
 										No allocated-balance event carries this component, because no allocated balance moves for it in this receipt.
@@ -530,14 +569,15 @@ event SettlePartyALiquidation(
 									</td>
 								</tr>
 								<tr>
-									<td>What the liquidation actually cost PartyA in LF</td>
+									<td>Original locked LF and liquidation-start disposition</td>
 									<td>
-										The whole locked LF, from <code>lockedValues.lf</code> on the position — not <code>LF_OUT</code>, and not
-										<code>LF_IN</code> either. It splits into the fee the starter earns and the shortfall the protocol absorbs.
+										In a normal liquidation, <code>rawRemainingLf = lockedLf - availableBalanceShortfall</code>. The starter fee
+										is capped at <code>maxLiquidationProfitPerPosition * positionsCount</code>; any excess is credited to the
+										liquidation insurance vault.
 									</td>
 									<td>
-										Not derivable from the balance-change ledger alone. Read it from the position's locked values; the ledger only
-										shows the slice that was still in allocated when the fee was debited.
+										The allocated-balance ledger does not carry <code>lockedLf</code>, the signed-snapshot shortfall, or the
+										insurance-vault credit. Do not infer any of them from <code>LF_OUT</code> or <code>LF_IN</code> alone.
 									</td>
 								</tr>
 							</tbody>
@@ -550,18 +590,16 @@ partyBReceivedCva(liquidationId, partyB) = sum(cvaAmounts[i] where partyBs[i] ==
 // A component with no event is zero, not unknown.
 totalLf(liquidationId)            = LF_IN credited to the liquidation starter
 lfFromPartyAAllocation(partyA)    = LF_OUT debited from partyA          // clamped to the live allocation
-lfFromRestOfLiquidation(partyA)   = totalLf - lfFromPartyAAllocation    // >= 0, no allocated-balance event
+lfCreditDebitGap(partyA)          = totalLf - lfFromPartyAAllocation    // >= 0, no allocated-balance event
 partyAAllocationBeforeFinalize    = LF_OUT + REALIZED_PNL_OUT on partyA // the allocation liquidation consumed
 clampFired(partyA)                = totalLf &gt; lfFromPartyAAllocation
 
-// What the liquidation COST PartyA in LF is the whole locked LF, and it is not any single event:
-//   lockedLf = totalLf + shortfall
-//              |         `- absorbed covering the deficit, earned by nobody
-//              `- earned by the liquidation starter
-// LF_OUT is only the slice of that cost still sitting in allocated at finalization; the rest left
-// PartyA earlier, swept into deferred balance at liquidation start. Three different quantities:
-//   LF_OUT &lt;= totalLf (LF_IN) &lt;= lockedLf
-partyALfCost(partyA)              = lockedValues.lf on the liquidated position</code></pre>
+// Liquidation-start classification, before the per-position profit cap:
+rawRemainingLf                    = lockedLf - availableBalanceShortfall
+totalLf                           = min(rawRemainingLf, maxLiquidationProfitPerPosition * positionsCount)
+insuranceVaultCredit              = rawRemainingLf - totalLf
+// LF_OUT is only the slice of totalLf still present in PartyA allocation at finalization.
+// The allocated-balance events do not encode lockedLf or availableBalanceShortfall.</code></pre>
 					<p>
 						A settlement call emits its balance changes before the legacy and extended <code>SettlePartyALiquidation</code> events. Buffer
 						the complete receipt, process it in <code>logIndex</code> order, and then attach the later extended event's
@@ -569,14 +607,14 @@ partyALfCost(partyA)              = lockedValues.lf on the liquidated position</
 						extended event per processed batch; aggregate all batches sharing the liquidation ID.
 					</p>
 					<aside class="callout callout-note">
-						<strong><code>LF_OUT</code> is not what the liquidation cost PartyA.</strong> The fee is sized against <em>locked</em> LF, but
-						debited from <em>allocated</em> balance, and those two can hold different amounts by the time finalization runs. Liquidation
+						<strong><code>LF_OUT</code> is not the liquidation-start fee calculation.</strong> The fee is sized from locked LF and the
+						signed-snapshot shortfall, but debited from live allocated balance; those quantities can differ by finalization. Liquidation
 						start moves <code>allocated - (lockedCva + lockedLf) + upnl</code> into deferred balance; when <code>upnl</code> is positive
 						that sweep carries off part of the LF backing, leaving less allocated than the fee. Finalization then debits only what
 						remains, because emitting the full fee against a smaller bucket would break exact replay. So <code>LF_OUT</code> is the slice
-						of the cost that was still in allocated at that moment — the rest already left PartyA, in the deferred sweep. Read the
-						difference as <code>LF_IN - LF_OUT</code>; it is fully observable from the same receipt, and <code>LF_IN &gt; LF_OUT</code> is
-						the signal that the clamp fired.
+						of the starter fee still present in allocation at that moment. Read the receipt-local credit/debit gap as
+						<code>LF_IN - LF_OUT</code>; <code>LF_IN &gt; LF_OUT</code> is the signal that the clamp fired. The gap is not itself a
+						transfer event and should not be assigned to a destination.
 					</aside>
 					<aside class="callout callout-note">
 						<strong>Worked example.</strong> A PartyA holding 496 allocated, CVA 22, locked LF 3, unrealized profit 23.5, insolvent at the
@@ -584,20 +622,21 @@ partyALfCost(partyA)              = lockedValues.lf on the liquidated position</
 						<code>lockedLf - shortfall</code> = 2.25, but only 1.5 is left to debit:
 						<pre><code>LF_OUT  1.50   debited from PartyA's remaining allocation
 LF_IN   2.25   credited to the liquidation starter
-gap     0.75   left PartyA earlier, in the 494.5 deferred sweep
+gap     0.75   starter credit not matched by an allocated debit in this receipt
 
-PartyA's actual LF cost = lockedLf = 3.00 = 2.25 to the starter + 0.75 absorbed
-Final balances: PartyA 497.5, PartyB 358.5, starter 2.25 -- total tracked value falls by 0.75.</code></pre>
-						None of the three numbers is interchangeable: 1.50 is the allocated debit, 2.25 is what the starter earned, 3.00 is what
-						PartyA paid. Total protocol value never rises across the receipt.
+lockedLf = 3.00; signed-snapshot shortfall = 0.75; rawRemainingLf = 2.25
+high cap in this example means starter fee = 2.25 and insurance-vault credit = 0</code></pre>
+						None of the quantities is interchangeable: 1.50 is the allocated debit, 2.25 is what the starter earned, 0.75 is the
+						signed-snapshot shortfall and also the receipt-local credit/debit gap in this particular setup, and 3.00 is the original
+						locked LF. The balance-change ledger alone does not encode the locked amount or shortfall.
 					</aside>
 					<aside class="callout callout-warning">
 						<strong>Per-account replay stays exact; cross-account conservation does not.</strong> When the clamp fires, the starter is
 						credited the full fee while PartyA is debited less, so allocated balance in that receipt is not conserved across accounts.
 						Each individual account still reconstructs exactly from its own events, which is the guarantee this page makes. An indexer
-						that also runs a global “credits equal debits” check must exempt the finalization receipt, or reconcile it using
-						<code>lfFromRestOfLiquidation</code> above — the value left PartyA earlier in the liquidation, as
-						<code>DEFERRED_BALANCE_OUT</code> at start and as PartyB settlement deltas, and both of those are already in the ledger.
+						that also runs a global “credits equal debits” check must not apply it to this finalization receipt in isolation. Reconcile
+						economic value over the full liquidation lifecycle, including deferred, reimbursement, PartyB settlement, insurance-vault, and
+						signed-snapshot shortfall state; the allocated-balance events alone promise per-key replay, not global conservation.
 					</aside>
 
 					<h3>PartyB liquidation</h3>
@@ -668,7 +707,7 @@ Final balances: PartyA 497.5, PartyB 358.5, starter 2.25 -- total tracked value 
     uint256[] newPartyBsAllocatedBalances
 );</code></pre>
 					<p>
-						<code>ForceActionsFacet.settleAndForceClose</code> passed <code>msg.sender</code> into the parameter declared as
+						<code>ForceActionsFacet.settleAndForceClosePosition</code> passed <code>msg.sender</code> into the parameter declared as
 						<code>partyA</code>. On that path the field held the keeper or liquidator who submitted the force close, not the PartyA being
 						settled. <code>SettlementFacet</code> always passed the real PartyA, so one event signature meant two different things
 						depending on which facet emitted it. v0.8.6 passes the quote's PartyA on both paths.
@@ -748,8 +787,9 @@ Final balances: PartyA 497.5, PartyB 358.5, starter 2.25 -- total tracked value 
 									<td>Reimbursement reductions had no exact event stream.</td>
 									<td>Every reduction emits amount, reason, and post-balance.</td>
 									<td>
-										Apply <code>CLEARING_HOUSE_OUT</code>, <code>RELEASE_TO_ALLOCATED</code>, or
-										<code>MOVE_TO_LIQUIDATION_ESCROW</code>.
+										Apply the typed <code>REALIZED_PNL_OUT</code>, <code>FUNDING_FEE_OUT</code>, or
+										<code>PLATFORM_FEE_OUT</code> reason, or <code>RELEASE_TO_ALLOCATED</code> /
+										<code>MOVE_TO_LIQUIDATION_ESCROW</code> as emitted.
 									</td>
 								</tr>
 								<tr>
@@ -775,10 +815,10 @@ Final balances: PartyA 497.5, PartyB 358.5, starter 2.25 -- total tracked value 
 										<code>LF_IN</code>, or absent entirely.
 									</td>
 									<td>
-										Report received LF from <code>LF_IN</code>, the allocated debit from <code>LF_OUT</code>, and the remainder as
-										<code>LF_IN - LF_OUT</code>. For what the liquidation cost PartyA, use the position's locked LF, which the
-										balance-change ledger does not carry. Exempt the finalization receipt from any cross-account conservation
-										check.
+										Report received LF from <code>LF_IN</code>, the allocated debit from <code>LF_OUT</code>, and the
+										receipt-local gap as <code>LF_IN - LF_OUT</code>. Obtain original locked LF, signed-snapshot shortfall, and
+										any insurance-vault credit from their own state or events; the balance-change ledger does not carry them.
+										Exempt the finalization receipt from any cross-account conservation check.
 									</td>
 								</tr>
 								<tr>
@@ -812,9 +852,15 @@ Final balances: PartyA 497.5, PartyB 358.5, starter 2.25 -- total tracked value 
 									</td>
 								</tr>
 								<tr>
-									<td>Force-close result payloads could omit or misidentify balance context.</td>
-									<td>Legacy and atomic force-close summaries carry the corrected PartyA and PartyB balance values.</td>
-									<td>Update decoders, but continue using balance-change events as the delta source.</td>
+									<td>
+										Force-close-related settlement and liquidation events could misidentify PartyA or report a post-liquidation
+										PartyB balance.
+									</td>
+									<td>
+										<code>SettleUpnl</code> carries the settled PartyA and returned PartyB balances;
+										<code>LiquidatePartyB</code> carries the pre-debit balance.
+									</td>
+									<td>Adopt the corrected field semantics, but continue using balance-change events as the delta source.</td>
 								</tr>
 							</tbody>
 						</table>

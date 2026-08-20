@@ -208,7 +208,7 @@
 					</p>
 
 					<h3 id="authority">The Authority Carried by a Batch</h3>
-					<p>The active execution context has two pieces:</p>
+					<p>The core authority used by these batches has two pieces:</p>
 					<ol>
 						<li><strong>The live context word:</strong> the routing and InstantOpen accounting flags currently in effect.</li>
 						<li><strong>The effective signer:</strong> the already-authorized acting identity currently installed in that diamond.</li>
@@ -216,7 +216,9 @@
 					<p>
 						The live word and signer slots reside in the transient-storage context of the diamond using them, so every facet reached
 						through <code>delegatecall</code> sees the same values. Core's <code>LibExecutionContext</code> owns the word and core signer;
-						<code>LibAccountLayerSigner</code> applies the same signer model to the AccountLayer diamond.
+						<code>LibAccountLayerSigner</code> applies the same signer model to the AccountLayer diamond. AccountLayer also keeps a
+						separate transient account-family scope when a delegate, rather than the owner, drives the operation; that scope constrains
+						the installed signer and is documented in <a href="../pages/delegation-account-scope.html">Delegation Account Scope</a>.
 					</p>
 
 					<h3 id="context-word">The Core Live Context Word</h3>
@@ -291,9 +293,10 @@
 						value is installed. Guards that distinguish an installed signer from a direct caller read <code>configuredSigner()</code>.
 					</p>
 					<p>
-						For PartyA operations, InstantLayer installs the canonical owner in AccountLayer; AccountLayer then installs the routed
-						sub-account or virtual account in core. For PartyB operations, InstantLayer calls the registered PartyB contract, and core
-						resolves that contract through the <code>msg.sender</code> fallback. InstantLayer does not install a separate PartyB signer.
+						For PartyA operations, InstantLayer installs the canonical owner in AccountLayer and, for delegated execution, the canonical
+						account-family scope; AccountLayer then installs the routed sub-account or virtual account in core. For PartyB operations,
+						InstantLayer calls the registered PartyB contract, and core resolves that contract through the <code>msg.sender</code>
+						fallback. InstantLayer does not install a separate PartyB signer.
 					</p>
 					<p>
 						A transient signer needs two slots. The first holds the signer address. The second holds a simple yes-or-no flag called the
@@ -546,10 +549,11 @@
 
 					<h3>What a Pre-Cancun Build Requires</h3>
 					<p>
-						The current source compiles with solc 0.8.34 for the Cancun EVM and cannot execute on a pre-Cancun chain. No production entry
-						path initiates persistent mode authority, although suspension and restoration still protect pre-existing compatibility values.
-						Core's legacy <code>setSigner</code> also continues to write the persistent core signer when no transient execution scope is
-						active.
+						The current source compiles with solc 0.8.34 for the Cancun EVM and cannot execute on a pre-Cancun chain. Current InstantLayer
+						batch paths initiate transient authority. Authorized direct callers can still set the persistent
+						<code>instantOpenMode</code> by calling the legacy selector outside a transient scope, and suspension/restoration continues to
+						protect that compatibility state. Core's legacy <code>setSigner</code> likewise writes the persistent core signer when no
+						transient execution scope is active.
 					</p>
 					<p>
 						A pre-Cancun deployment therefore needs a separate build targeting <code>evmVersion "paris"</code>. Its

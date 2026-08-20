@@ -142,9 +142,10 @@
 						are gone, so a configured rate simply stops being consulted.
 					</p>
 					<p>
-						Virtual provider implementations can drop <code>onExpressDeposit</code>. The other seven
-						<code>IVirtualProvider</code> callbacks &mdash; the withdraw and external-transfer lifecycle &mdash; are unaffected, so the
-						interface is narrowed rather than retired.
+						Virtual provider implementations can drop <code>onExpressDeposit</code>. The current <code>IVirtualProvider</code> retains
+						seven withdraw and external-transfer lifecycle callbacks. A separate legacy callback, <code>onForceWithdrawCancel</code>, was
+						also removed between v0.8.5 and v0.8.6, so implementers comparing ABIs must remove both obsolete selectors. The interface is
+						narrowed rather than retired.
 					</p>
 				</article>
 			</main>

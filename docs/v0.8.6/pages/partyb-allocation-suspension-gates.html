@@ -39,6 +39,7 @@
 			<div class="rail-sections-source" data-rail-sections hidden>
 				<a class="toc-link level-2" href="#summary">Summary</a>
 				<a class="toc-link level-2" href="#what-changed">What Changed</a>
+				<a class="toc-link level-2" href="#effect-on-callers">Effect on Callers</a>
 			</div>
 
 			<main class="reader-main">
@@ -69,6 +70,15 @@
 					<p>
 						This is a consistency hardening change: suspended PartyBs should not be able to move allocation between PartyA buckets after
 						the protocol has frozen their account.
+					</p>
+					<h2 id="effect-on-callers">Effect on Callers</h2>
+					<p>
+						Bots and AccountLayer adapters should read <code>isSuspended(partyB)</code> before submitting either action. A suspended
+						signer reverts with <code>Accessibility: Sender is Suspended</code> before allocation state changes or events are emitted.
+					</p>
+					<p>
+						The gate follows the effective signer returned by <code>LibSigner.getSigner()</code>, so relayed and AccountLayer calls are
+						checked against the PartyB they represent rather than the transport address.
 					</p>
 				</article>
 			</main>

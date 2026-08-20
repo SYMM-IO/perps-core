@@ -54,7 +54,7 @@
 							<p class="hero-copy">
 								v0.8.6 stops quote-driven flows from rolling the shared symbol/PartyB accumulated funding state. Per-quote funding is
 								settled lazily from the persisted state, which now changes only when the solver reconfigures rates or epoch duration
-								-- and emits its final state at every such change.
+								and emits its final state at every such change.
 							</p>
 						</div>
 					</div>
@@ -111,13 +111,14 @@ cumulativeFee = snapshotFee
 							of rolling state.
 						</li>
 						<li>
-							<code>LibFundingRate.updateAccumulatedRatesAndEmit</code> was removed; the fold-then-emit pattern only survives inside the
-							solver configuration paths (<code>setEpochDurations</code>, <code>updateAccumulatedFundingFee</code> and the
-							<code>setFundingFee</code> variants).
+							There is no quote-flow fold-and-emit wrapper. The fold followed by
+							<code>emitAccumulatedFundingStateUpdated</code> now occurs only inside solver configuration paths
+							(<code>setEpochDurations</code>, <code>updateAccumulatedFundingFee</code>, and the <code>setFundingFee</code> variants).
 						</li>
 						<li>
-							Quote flows no longer pay for symbol-state storage writes or the state log. Settlement amounts are unchanged: the lazy
-							baseline equals the rolled baseline, minus the rounding the roll itself introduced.
+							Quote flows no longer pay for symbol-state storage writes or the state log. The cumulative funding formula is unchanged,
+							but exact integer results can differ from v0.8.5 because the lazy path avoids the weighted-average division that each roll
+							introduced.
 						</li>
 					</ul>
 

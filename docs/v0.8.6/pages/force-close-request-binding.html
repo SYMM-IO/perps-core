@@ -140,8 +140,9 @@
 							unchanged because return values are not part of selector derivation.
 						</li>
 						<li>
-							No state migration is required for deployed workflows because the three-step force-close flow has not been used in current
-							deployments. An uninitialized detail has <code>closeId = 0</code> and cannot pass the continuation guard.
+							An uninitialized or pre-upgrade detail has <code>closeId = 0</code> and cannot pass the continuation guard. Finish,
+							cancel, or restart any active multi-step workflow across the upgrade boundary; do not expect historical in-progress state
+							to continue.
 						</li>
 						<li>
 							If the original close request is canceled or expired, create the intended replacement request and initialize it normally.
