@@ -40,12 +40,12 @@
 		<div class="reader-shell">
 			<div class="rail-sections-source" data-rail-sections hidden>
 				<a class="toc-link level-2" href="#summary">Summary</a>
-				<a class="toc-link level-2" href="#api-changes">API Changes</a>
+				<a class="toc-link level-2" href="#api-changes">API changes</a>
 				<a class="toc-link level-3" href="#set-or-clear-a-per-function-override">Set or clear a per-function override</a>
 				<a class="toc-link level-3" href="#read-the-effective-validity">Read the effective validity</a>
-				<a class="toc-link level-2" href="#storage-model">Storage Model</a>
-				<a class="toc-link level-2" href="#muonfunction-categories">MuonFunction Categories</a>
-				<a class="toc-link level-2" href="#effective-validity-resolution">Effective Validity Resolution</a>
+				<a class="toc-link level-2" href="#storage-model">Storage model</a>
+				<a class="toc-link level-2" href="#muonfunction-categories">MuonFunction categories</a>
+				<a class="toc-link level-2" href="#effective-validity-resolution">Effective validity resolution</a>
 			</div>
 			<main class="reader-main">
 				<header class="reader-hero">
@@ -70,7 +70,7 @@
 						operational needs are different. For example, deallocation can reasonably require a very fresh signature such as
 						<code>10</code> seconds, while PartyA liquidation may need a larger submission window such as <code>120</code> seconds.
 					</p>
-					<p>The fix is intentionally small: each <code>MuonFunction</code> can optionally override the global UPNL validity window.</p>
+					<p>Each <code>MuonFunction</code> can now override the global UPNL validity window.</p>
 					<pre><code class="language-solidity">setMuonFunctionUpnlValidTime(func, upnlValidTime)
 </code></pre>
 					<p>
@@ -82,7 +82,7 @@
 						mapping, <code>0</code> is the unset value.
 					</p>
 					<hr />
-					<h2 id="api-changes">API Changes</h2>
+					<h2 id="api-changes">API changes</h2>
 					<h3 id="set-or-clear-a-per-function-override">Set or clear a per-function override</h3>
 					<pre><code class="language-solidity">function setMuonFunctionUpnlValidTime(
     MuonFunction func,
@@ -127,7 +127,7 @@
 					</ul>
 					<p>This view returns the effective value used by verification, not the raw mapping slot.</p>
 					<hr />
-					<h2 id="storage-model">Storage Model</h2>
+					<h2 id="storage-model">Storage model</h2>
 					<p>The new storage field is:</p>
 					<pre><code class="language-solidity">mapping(MuonFunction =&gt; uint256) upnlValidTimeByFunction;
 </code></pre>
@@ -139,11 +139,11 @@
     : upnlValidTimeByFunction[func]
 </code></pre>
 					<p>
-						Operational note: <code>0</code> is reserved as "unset" for per-function overrides. Do not use <code>0</code> as an
-						intentional validity window. Operators should keep the global <code>upnlValidTime</code> configured to a nonzero value.
+						<code>0</code> means "unset" for per-function overrides. Do not use <code>0</code> as an intentional validity window.
+						Operators should keep the global <code>upnlValidTime</code> configured to a nonzero value.
 					</p>
 					<hr />
-					<h2 id="muonfunction-categories">MuonFunction Categories</h2>
+					<h2 id="muonfunction-categories">MuonFunction categories</h2>
 					<p>
 						The categories are the same <code>MuonFunction</code> enum used by the signature verifier's key and gateway authorization
 						system:
@@ -186,10 +186,9 @@
 								<tr>
 									<td><code>RemoveMargin</code></td>
 									<td>
-										<code>safeDeallocate</code>, <code>safeDeallocateForPartyB</code> — the paths carrying the Muon-attested
-										<code>scaledLockedBalance</code>. Configure a deliberately tight window here: margin removal is the one flow
-										where a stale signature is worth money. See
-										<a href="../pages/strict-deallocation.html">Strict Deallocation</a>.
+										<code>safeDeallocate</code> and <code>safeDeallocateForPartyB</code>, the paths carrying the Muon-attested
+										<code>scaledLockedBalance</code>. Configure a tight window here. Margin removal is the one flow where a stale
+										signature is worth money. See <a href="../pages/strict-deallocation.html">Strict Deallocation</a>.
 									</td>
 								</tr>
 								<tr>
@@ -230,21 +229,18 @@
 						</table>
 					</div>
 					<p>
-						Treat this table as the operation-level authorization surface. The enum controls which Muon public keys and gateway signers
-						may sign each category. It controls this configurable freshness window only for the calls identified above that compare a
-						signature timestamp with <code>block.timestamp</code> through the UPNL-validity resolver.
+						This table maps operation-level authorization. The enum controls which Muon public keys and gateway signers may sign each
+						category. It controls this configurable freshness window only for the calls identified above that compare a signature
+						timestamp with <code>block.timestamp</code> through the UPNL-validity resolver.
 					</p>
 					<p>
-						Important distinction: the category is passed to the signature verifier for key and gateway authorization on all grouped
-						calls, but the per-function validity window only applies where the on-chain code checks signature freshness against
+						The category is passed to the signature verifier for key and gateway authorization on all grouped calls, but the per-function
+						validity window only applies where the on-chain code checks signature freshness against
 						<code>block.timestamp</code>.
 					</p>
 					<hr />
-					<h2 id="effective-validity-resolution">Effective Validity Resolution</h2>
-					<p>
-						Adding the configuration alone was not enough; every UPNL freshness check needed to resolve the correct window for its
-						operation category.
-					</p>
+					<h2 id="effective-validity-resolution">Effective validity resolution</h2>
+					<p>Every UPNL freshness check now resolves the window for its operation category.</p>
 					<p>v0.8.6 routes those checks through:</p>
 					<pre><code class="language-solidity">LibMuon.verifyUpnlTimestamp(timestamp, func)
 </code></pre>

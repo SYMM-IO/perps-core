@@ -41,17 +41,17 @@
 		<div class="reader-shell">
 			<div class="rail-sections-source" data-rail-sections hidden>
 				<a class="toc-link level-2" href="#summary">Summary</a>
-				<a class="toc-link level-2" href="#scope">Scope and Terms</a>
-				<a class="toc-link level-2" href="#responsibilities">Who Does What</a>
+				<a class="toc-link level-2" href="#scope">Scope and terms</a>
+				<a class="toc-link level-2" href="#responsibilities">Who does what</a>
 				<a class="toc-link level-2" href="#lifecycle">Lifecycle</a>
-				<a class="toc-link level-2" href="#freeze">Freeze Boundary</a>
-				<a class="toc-link level-2" href="#factor">Price Basis</a>
-				<a class="toc-link level-2" href="#restatement">Optional Restatement</a>
-				<a class="toc-link level-2" href="#safety">Safety Boundaries</a>
-				<a class="toc-link level-2" href="#interface">Contract Reference</a>
-				<a class="toc-link level-2" href="#integration">Integration Requirements</a>
-				<a class="toc-link level-2" href="#runbook">Operations Runbook</a>
-				<a class="toc-link level-2" href="#example">Worked Example</a>
+				<a class="toc-link level-2" href="#freeze">Freeze boundary</a>
+				<a class="toc-link level-2" href="#factor">Price basis</a>
+				<a class="toc-link level-2" href="#restatement">Optional restatement</a>
+				<a class="toc-link level-2" href="#safety">Safety boundaries</a>
+				<a class="toc-link level-2" href="#interface">Contract reference</a>
+				<a class="toc-link level-2" href="#integration">Integration requirements</a>
+				<a class="toc-link level-2" href="#runbook">Operations runbook</a>
+				<a class="toc-link level-2" href="#example">Worked example</a>
 			</div>
 
 			<main class="reader-main">
@@ -60,8 +60,8 @@
 						<div>
 							<h1>Symbol Corporate-Action Adjustment</h1>
 							<p class="hero-copy">
-								A safe way to move a symbol through a stock split, reverse split, or rebase without creating false PNL from a change
-								of units.
+								This flow moves a symbol through a stock split, reverse split, or rebase without creating false PNL from a change of
+								units.
 							</p>
 						</div>
 					</div>
@@ -101,7 +101,7 @@
 						while remaining frozen; finalization then resumes trading directly in raw venue units.
 					</aside>
 
-					<h2 id="scope">Scope and Terms</h2>
+					<h2 id="scope">Scope and terms</h2>
 					<div class="table-wrap">
 						<table>
 							<thead>
@@ -144,9 +144,9 @@
 						</table>
 					</div>
 					<p>
-						This feature is intended for unit-changing events such as stock splits, reverse splits, and rebases. It does not model cash
-						dividends, spin-offs, mergers, ticker migrations, or ordinary FX price movement. Those events require different accounting or
-						migration flows.
+						Use this flow for unit-changing events such as stock splits, reverse splits, and rebases. It does not model cash dividends,
+						spin-offs, mergers, ticker migrations, or ordinary FX price movement. Those events require different accounting or migration
+						flows.
 					</p>
 					<p>
 						Each scheduled factor must be between <code>0.01e18</code> and <code>100e18</code>. A factor of exactly <code>1e18</code> is
@@ -154,7 +154,7 @@
 						down to zero is rejected.
 					</p>
 
-					<h2 id="responsibilities">Who Does What</h2>
+					<h2 id="responsibilities">Who does what</h2>
 					<p>The protocol process crosses several systems. Core never calls Muon, and the venue never calls Core.</p>
 					<div class="table-wrap">
 						<table>
@@ -273,7 +273,7 @@
 						The active-factor route may remain live indefinitely or later open a second freeze and perform the same restatement process.
 					</p>
 
-					<h2 id="freeze">Freeze Boundary</h2>
+					<h2 id="freeze">Freeze boundary</h2>
 					<p>A symbol is frozen when either condition is true:</p>
 					<ul>
 						<li>the latest step is <code>SCHEDULED</code> and its effective timestamp has been reached; or</li>
@@ -314,7 +314,7 @@
 						compatible prices before the freeze may continue through later non-price steps.
 					</p>
 
-					<h2 id="factor">Price Basis</h2>
+					<h2 id="factor">Price basis</h2>
 					<p>While quotes remain in old units, Muon calculates the active price as:</p>
 					<pre><code class="language-text">activePrice = rawVenuePrice * getCumulativeFactor(symbolId) / 1e18</code></pre>
 					<p>
@@ -434,7 +434,7 @@ prospectivePrice  = rawVenuePrice * prospectiveFactor / 1e18</code></pre>
 						restatement move the latest state to <code>APPLIED</code>.
 					</p>
 
-					<h2 id="safety">Safety Boundaries</h2>
+					<h2 id="safety">Safety boundaries</h2>
 					<h3>Funding must cross the unit boundary once</h3>
 					<p>
 						Accumulated funding rates are price-denominated per unit. For an active funding schedule, the current long and short rates for
@@ -454,7 +454,7 @@ prospectivePrice  = rawVenuePrice * prospectiveFactor / 1e18</code></pre>
 						<code>openedPrice 400</code> becomes <code>quantity 40</code> at <code>openedPrice 100</code> across a 4:1 split. Muon
 						signatures are minted off-chain and stay valid for a validity window, which opens a race: a signature priced in the old basis,
 						minted before the window opened, could still be inside its validity window after <code>finalizeRestatement</code> has
-						rewritten the book. Executing it would apply an old-basis price against new-basis quote storage — a mispricing the signature
+						rewritten the book. Executing it would apply an old-basis price against new-basis quote storage, a mispricing the signature
 						itself vouches for.
 					</p>
 					<p>
@@ -477,7 +477,7 @@ prospectivePrice  = rawVenuePrice * prospectiveFactor / 1e18</code></pre>
 						<code>block.timestamp == restatementStartedAt + maxUpnlValidTime()</code>, while timestamp verification accepts a signature
 						through <code>block.timestamp == signature.timestamp + validTime</code>. A signature timestamped exactly when the freeze began
 						can therefore still be valid at the contract's equality boundary. Also, a past <code>effectiveTimestamp</code> predates the
-						transaction that scheduled—and therefore actually froze—the symbol, even though Core stores that older value in
+						transaction that scheduled and therefore froze the symbol, even though Core stores that older value in
 						<code>restatementStartedAt</code>. For direct mode, operations must derive
 						<code>continuousFreezeStart = max(effectiveTimestamp, AdjustmentScheduled block timestamp)</code> and require
 						<code>block.timestamp &gt; continuousFreezeStart + maxUpnlValidTime()</code> before finalizing. For later restatement, use the
@@ -506,7 +506,7 @@ prospectivePrice  = rawVenuePrice * prospectiveFactor / 1e18</code></pre>
 						requires verifying Muon's price basis.
 					</aside>
 
-					<h2 id="interface">Contract Reference</h2>
+					<h2 id="interface">Contract reference</h2>
 					<h3>Lifecycle and cleanup functions</h3>
 					<pre><code class="language-solidity">function scheduleAdjustment(uint256 symbolId, uint256 factor, uint256 effectiveTimestamp) external;
 function cancelAdjustment(uint256 symbolId) external;
@@ -541,8 +541,8 @@ function getQuotesInVenueUnits(uint256[] calldata quoteIds)
 						Two fields on <code>SymbolAdjustment</code> exist to keep old-basis values from executing against rewritten storage.
 						<code>basisVersion</code> increments on every <code>finalizeRestatement</code>; the 3-step force-close workflow stamps it at
 						<code>initializeForceClose</code> and rejects finalization with <code>ForceActionsFacet: Symbol basis changed</code> if it
-						moved. <code>restatementStartedAt</code> records Core's window origin—<code>effectiveTimestamp</code> in direct mode, even
-						when that timestamp predates scheduling—and enforces the contract threshold described under
+						moved. <code>restatementStartedAt</code> records Core's window origin. In direct mode this is <code>effectiveTimestamp</code>,
+						even when that timestamp predates scheduling. The field enforces the contract threshold described under
 						<a href="#safety">Safety Boundaries</a>. Neither field appears in any Muon signature payload.
 					</p>
 					<pre><code class="language-solidity">struct Layout {
@@ -835,8 +835,8 @@ quoteRestatedEpoch[411]     = 6</code></pre>
 					<h3><code>QuoteAdjustmentPreview</code> fields</h3>
 					<p>
 						<code>previewQuoteAdjustment</code> applies the exact physical-restatement arithmetic without mutating storage. It returns the
-						selected <code>factor</code>—open-window, scheduled prospective, or confirmed active—and the post-conversion values for
-						<code>quantity</code>, <code>openedPrice</code>, <code>initialOpenedPrice</code>, <code>requestedOpenPrice</code>,
+						selected <code>factor</code>, whether open-window, scheduled prospective, or confirmed active, and the post-conversion values
+						for <code>quantity</code>, <code>openedPrice</code>, <code>initialOpenedPrice</code>, <code>requestedOpenPrice</code>,
 						<code>marketPrice</code>, <code>closedAmount</code>, <code>avgClosedPrice</code>, <code>quantityToClose</code>, and
 						<code>requestedClosePrice</code>. A revert here predicts the same rounding or underflow rejection in
 						<code>applyAdjustment</code>.
@@ -943,7 +943,7 @@ RestatementFinalized</code></pre>
 						can verify the conversion and its documented integer rounding.
 					</p>
 
-					<h2 id="integration">Integration Requirements</h2>
+					<h2 id="integration">Integration requirements</h2>
 					<h3>Muon</h3>
 					<ul>
 						<li>Read the latest adjustment, active factor, prospective factor, and freeze state for every supported symbol.</li>
@@ -959,9 +959,9 @@ RestatementFinalized</code></pre>
 						</li>
 						<li>Detect an unscheduled price discontinuity and alert operations before signing it.</li>
 						<li>
-							No payload change is required for this feature. Signature hash preimages are unchanged from v0.8.5; the symbol's basis
-							version is deliberately not part of any hash. Core applies its guard from stored <code>restatementStartedAt</code>;
-							operations must use the later actual freeze-start time and wait past the inclusive equality boundary before finalization.
+							Muon does not require a payload change. Signature hash preimages are unchanged from v0.8.5; the symbol's basis version is
+							deliberately not part of any hash. Core applies its guard from stored <code>restatementStartedAt</code>; operations must
+							use the later actual freeze-start time and wait past the inclusive equality boundary before finalization.
 						</li>
 					</ul>
 					<h3>Solvers</h3>
@@ -990,7 +990,7 @@ RestatementFinalized</code></pre>
 						</li>
 					</ul>
 
-					<h2 id="runbook">Operations Runbook</h2>
+					<h2 id="runbook">Operations runbook</h2>
 					<h3>Common transition and route choice</h3>
 					<ol>
 						<li>Verify the symbol ID, factor direction, effective time, and source-feed change.</li>
@@ -1038,7 +1038,7 @@ RestatementFinalized</code></pre>
 						trading.
 					</aside>
 
-					<h2 id="example">Worked Example: 4:1 Split</h2>
+					<h2 id="example">Worked example: 4:1 split</h2>
 					<p>An open quote starts with:</p>
 					<pre><code class="language-text">quantity      = 1
 openedPrice   = 400

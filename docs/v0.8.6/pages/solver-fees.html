@@ -41,14 +41,14 @@
 		<div class="reader-shell">
 			<div class="rail-sections-source" data-rail-sections hidden>
 				<a class="toc-link level-2" href="#summary">Summary</a>
-				<a class="toc-link level-2" href="#why-we-added-this">Why We Added This</a>
-				<a class="toc-link level-2" href="#fee-model">Fee Model</a>
-				<a class="toc-link level-2" href="#api-surface">API Surface</a>
-				<a class="toc-link level-2" href="#notional-and-rate-caps">Notional and Rate Caps</a>
-				<a class="toc-link level-2" href="#fee-receiver">Fee Receiver</a>
+				<a class="toc-link level-2" href="#why-we-added-this">Why fees are explicit</a>
+				<a class="toc-link level-2" href="#fee-model">Fee model</a>
+				<a class="toc-link level-2" href="#api-surface">API</a>
+				<a class="toc-link level-2" href="#notional-and-rate-caps">Notional and rate caps</a>
+				<a class="toc-link level-2" href="#fee-receiver">Fee receiver</a>
 				<a class="toc-link level-2" href="#accounting">Accounting</a>
-				<a class="toc-link level-2" href="#integration-flow">Integration Flow</a>
-				<a class="toc-link level-2" href="#edge-cases">Edge Cases</a>
+				<a class="toc-link level-2" href="#integration-flow">Integration flow</a>
+				<a class="toc-link level-2" href="#edge-cases">Edge cases</a>
 			</div>
 
 			<main class="reader-main">
@@ -59,7 +59,7 @@
 							<p class="hero-copy">
 								v0.8.6 adds explicit solver rate fees, charged from PartyA allocated balance instead of being hidden inside a worse
 								execution price. Operational fees, which are flat per-operation charges shared with registered relayers, are a
-								separate primitive. See
+								separate mechanism. See
 								<a href="../pages/operational-fees.html">Operational Fees</a>.
 							</p>
 						</div>
@@ -79,11 +79,12 @@
 						observable on-chain.
 					</p>
 					<p>
-						Flat operational fees (charged by solvers or registered relayers per operation, not per notional) are a separate primitive
-						with their own standing per-(payer, charger) allowance. See <a href="../pages/operational-fees.html">Operational Fees</a>.
+						Flat operational fees, charged by solvers or registered relayers per operation rather than per notional, use a separate
+						mechanism with their own standing per-(payer, charger) allowance. See
+						<a href="../pages/operational-fees.html">Operational Fees</a>.
 					</p>
 
-					<h2 id="why-we-added-this">Why We Added This</h2>
+					<h2 id="why-we-added-this">Why fees are explicit</h2>
 					<p>
 						The old solver compensation path was implicit: the solver could make the open or close price worse for the user and keep the
 						difference as spread. That can produce confusing execution prices, especially in markets where a small absolute fee looks like
@@ -94,7 +95,7 @@
 						execution, while the fee is tracked as a separate debit from PartyA allocated balance.
 					</p>
 
-					<h2 id="fee-model">Fee Model</h2>
+					<h2 id="fee-model">Fee model</h2>
 					<p>
 						The solver rate fee is a rate cap applied against quote notional. It is the only fee tracked on the quote struct from v0.8.6
 						onward. Each fee-aware execution call is valid as long as the cumulative charged amount stays inside the rate cap:
@@ -103,7 +104,7 @@
 closeFeeCharged + newCloseSolverFee &lt;= closeNotional * closeRateCap / 1e18
 </code></pre>
 
-					<h2 id="api-surface">API Surface</h2>
+					<h2 id="api-surface">API</h2>
 					<p>
 						Solver fee rate caps are stored directly for the open and close sides. Operational fees are separate from the quote state. See
 						<a href="../pages/operational-fees.html">Operational Fees</a>.
@@ -144,7 +145,7 @@ struct SolverFeeState {
 </code></pre>
 					<p>
 						The legacy <code>sendQuoteWithAffiliate</code> and <code>sendQuoteWithAffiliateAndData</code> methods remain available and
-						keep their selectors. The legacy no-affiliate <code>sendQuote</code> selector is removed in v0.8.6 — integrations that used it
+						keep their selectors. The legacy no-affiliate <code>sendQuote</code> selector is removed in v0.8.6. Integrations that used it
 						must migrate to one of the remaining methods. Legacy methods store zero solver fee caps, so PartyB cannot charge a solver fee
 						unless the user used the capped quote API.
 					</p>
@@ -161,13 +162,13 @@ struct SolverFeeState {
 					<p>
 						Open and close solver fees are not exposed as standalone charge selectors; they are charged inside the matching execution
 						transaction so the fee and the solvency check stay atomic. Where the fee lands is configured separately via
-						<code>ControlFacet.setSolverFeeReceiver</code> — see <a href="#fee-receiver">Fee Receiver</a>. The equivalent knob for
-						operational fees is <code>ControlFacet.setOperationalFeeReceiver</code>, described in
+						<code>ControlFacet.setSolverFeeReceiver</code>, as described under <a href="#fee-receiver">Fee receiver</a>. The equivalent
+						setting for operational fees is <code>ControlFacet.setOperationalFeeReceiver</code>, described in
 						<a href="../pages/operational-fees.html">Operational Fees</a>.
 					</p>
 					<p>
 						For execution paths with solver fees, PartyB uses the fee-aware <code>PartyBExecutionFacet</code> methods. These carry only
-						the per-quote rate <code>solverFee</code> — they do not bundle an operational fee. The solver charges operational fees
+						the per-quote rate <code>solverFee</code>. They do not bundle an operational fee. The solver charges operational fees
 						separately via <code>AccountFacet.chargeOperationalFee(address payer, uint256 amount)</code>, exactly like any other
 						registered charger (see <a href="../pages/operational-fees.html">Operational Fees</a>):
 					</p>
@@ -223,7 +224,7 @@ function fillCloseRequestToLiquidation(
 ) external view returns (uint256 maxCloseAmount, bool canCloseAll);
 </code></pre>
 
-					<h2 id="notional-and-rate-caps">Notional and Rate Caps</h2>
+					<h2 id="notional-and-rate-caps">Notional and rate caps</h2>
 					<p>Open solver fee rate caps use the opened quote notional:</p>
 					<pre><code class="language-solidity">openNotional = quote.quantity * quote.initialOpenedPrice / 1e18;
 </code></pre>
@@ -237,14 +238,14 @@ function fillCloseRequestToLiquidation(
 						position closes later, the cumulative closed notional grows and can unlock more solver-fee capacity.
 					</p>
 					<p>
-						When a quote is partially opened, the solver fee rate caps are copied unchanged to the child pending quote — each quote's
+						When a quote is partially opened, the solver fee rate caps are copied unchanged to the child pending quote. Each quote's
 						notional is already smaller, so a rate cap scales with notional automatically.
 					</p>
 
-					<h2 id="fee-receiver">Fee Receiver</h2>
+					<h2 id="fee-receiver">Fee receiver</h2>
 					<p>
-						By default solver fees are credited to the solver PartyB itself. A PartyB can route them elsewhere — a treasury or a
-						revenue-splitting account — without changing anything about how quotes are priced or charged:
+						By default, solver fees are credited to the solver PartyB. A PartyB can route them to a treasury or revenue-splitting account
+						without changing how quotes are priced or charged:
 					</p>
 					<pre><code class="language-solidity">function setSolverFeeReceiver(address partyB, address receiver) external;
 </code></pre>
@@ -254,7 +255,7 @@ function fillCloseRequestToLiquidation(
 						registered PartyB. <code>ViewFacet.getSolverFeeReceiver(partyB)</code> returns the effective receiver.
 					</p>
 					<p>
-						The receiver is resolved at charge time, so changing it only affects subsequent fees — fees already collected stay where they
+						The receiver is resolved at charge time, so changing it only affects subsequent fees. Fees already collected stay where they
 						landed. The receiver may not be the quote's PartyA: routing a fee back to the payer would move allocated balance into free
 						balance without setting <code>deallocateTimestamp</code>, sidestepping the withdraw cooldown. That charge reverts with
 						<code>"SolverFee: Receiver is partyA"</code>.
@@ -308,11 +309,11 @@ event BalanceChangePartyA(
 </code></pre>
 					<p>
 						Solver-fee debits emit <code>BalanceChangePartyA</code> with <code>OPEN_SOLVER_FEE_OUT</code> or
-						<code>CLOSE_SOLVER_FEE_OUT</code>. Operational-fee debits emit <code>OPERATIONAL_FEE_OUT</code> — see
+						<code>CLOSE_SOLVER_FEE_OUT</code>. Operational-fee debits emit <code>OPERATIONAL_FEE_OUT</code>, as described in
 						<a href="../pages/operational-fees.html">Operational Fees</a>.
 					</p>
 
-					<h2 id="integration-flow">Integration Flow</h2>
+					<h2 id="integration-flow">Integration flow</h2>
 					<ol>
 						<li>PartyA sends a quote with open-side and close-side solver fee rate caps.</li>
 						<li>
@@ -339,7 +340,7 @@ event BalanceChangePartyA(
 						than an overload.
 					</p>
 
-					<h2 id="edge-cases">Edge Cases</h2>
+					<h2 id="edge-cases">Edge cases</h2>
 					<ul>
 						<li>
 							Fee-aware open and close calls require the quote's PartyB. Before a pending quote has a PartyB, an eligible registered
@@ -366,8 +367,8 @@ event BalanceChangePartyA(
 						</li>
 						<li>
 							When PartyA is bound to the quote's PartyB and that PartyB is bindable, the fee-aware overloads skip the PartyA post-fee
-							solvency check — consistent with core bound-mode semantics, where the bound PartyB internalizes PartyA risk. Fee caps and
-							the PartyA allocated-balance check still apply.
+							solvency check. This matches core bound-mode semantics, where the bound PartyB internalizes PartyA risk. Fee caps and the
+							PartyA allocated-balance check still apply.
 						</li>
 						<li>
 							<code>fillCloseRequestToLiquidation</code> is kept only for backward compatibility and does not account for solver fees.

@@ -5,7 +5,7 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta
 			name="description"
-			content="Quote flows no longer roll the symbol/PartyB funding state; funding settles lazily from persisted state, which now changes — and emits its final state — only on solver configuration."
+			content="Quote flows no longer roll the symbol/PartyB funding state. Funding settles lazily from persisted state, which changes and emits its final state only on solver configuration."
 		/>
 		<title>Lazy Accumulated Funding - Symmio Core v0.8.6</title>
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
@@ -41,9 +41,9 @@
 		<div class="reader-shell">
 			<div class="rail-sections-source" data-rail-sections hidden>
 				<a class="toc-link level-2" href="#summary">Summary</a>
-				<a class="toc-link level-2" href="#lazy-evaluation">Lazy Evaluation Model</a>
-				<a class="toc-link level-2" href="#what-changed">What Changed On-Chain</a>
-				<a class="toc-link level-2" href="#state-event">State Event</a>
+				<a class="toc-link level-2" href="#lazy-evaluation">Lazy evaluation model</a>
+				<a class="toc-link level-2" href="#what-changed">What changed on-chain</a>
+				<a class="toc-link level-2" href="#state-event">State event</a>
 			</div>
 
 			<main class="reader-main">
@@ -63,17 +63,16 @@
 				<article class="doc-article" id="full-document">
 					<h2 id="summary">Summary</h2>
 					<p>
-						The accumulated funding system keeps mutable funding state per <code>(symbolId, partyB)</code>: a weighted-average rate over
-						completed history plus the rate currently in force. In earlier versions, every quote-driven flow — position open, close,
-						accumulated funding charge, liquidation sync, migration initialization — first <em>rolled</em> this shared state forward
-						(re-folding the weighted average and advancing <code>lastUpdatedEpoch</code>) so that a simplified two-term formula could
-						write the quote's <code>accumulatedPaidFunding</code> baseline.
+						The accumulated funding system keeps mutable funding state per <code>(symbolId, partyB)</code>. It stores a weighted-average
+						rate over completed history plus the rate currently in force. In earlier versions, position open, close, accumulated funding
+						charge, liquidation sync, and migration initialization first <em>rolled</em> this shared state forward (re-folding the
+						weighted average and advancing <code>lastUpdatedEpoch</code>) so that a simplified two-term formula could write the quote's
+						<code>accumulatedPaidFunding</code> baseline.
 					</p>
 					<p>
-						The roll was never required for correctness: the cumulative fee is fully determined by the persisted state at any time (see
-						<a href="#lazy-evaluation">Lazy Evaluation Model</a>). It only existed to feed that two-term shortcut, and it made the shared
-						state churn at unpredictable points, forced storage writes and logs onto every hot-path quote operation, and added one
-						integer-division rounding per roll.
+						The roll was never required for correctness. The persisted state fully determines the cumulative fee at any time, as described
+						under <a href="#lazy-evaluation">Lazy evaluation model</a>. The roll fed the two-term shortcut, changed shared state during
+						quote operations, forced storage writes and logs onto those operations, and added one integer-division rounding per roll.
 					</p>
 					<p>
 						v0.8.6 removes the roll. Quote-driven flows now compute the quote's baseline with the same lazy formula every read path
@@ -82,11 +81,11 @@
 						persisted funding state is byte-stable.
 					</p>
 
-					<h2 id="lazy-evaluation">Lazy Evaluation Model</h2>
+					<h2 id="lazy-evaluation">Lazy evaluation model</h2>
 					<p>
 						The persisted state stores the weighted-average rate over completed history (<code>accumulatedRate</code>, valid through
 						<code>lastUpdatedEpoch</code>) and the rate in force since then (<code>currentRate</code>). The cumulative fee per unit of
-						position at any epoch is therefore fully determined without rolling storage:
+						position at any epoch is fully determined without rolling storage:
 					</p>
 					<pre><code>currentEpoch  = floor(block.timestamp / epochDuration)
 cumulativeFee = snapshotFee
@@ -94,13 +93,13 @@ cumulativeFee = snapshotFee
               + currentRate     * (currentEpoch - lastUpdatedEpoch)
 </code></pre>
 					<p>
-						Every consumer of the state uses this formula: funding charges, the per-quote
-						<code>accumulatedPaidFunding</code> baseline written at open/close/charge/liquidation/migration, and the aggregate funding
-						debt views. Because the fee charged and the baseline written now come from the same expression, the amount a quote pays equals
-						the change in its recorded baseline exactly, with no re-rounding of the weighted average in between.
+						Funding charges, aggregate funding debt views, and the per-quote <code>accumulatedPaidFunding</code> baseline written at open,
+						close, charge, liquidation, or migration all use this formula. Because the fee charged and the baseline written now come from
+						the same expression, the amount a quote pays equals the change in its recorded baseline exactly, with no re-rounding of the
+						weighted average in between.
 					</p>
 
-					<h2 id="what-changed">What Changed On-Chain</h2>
+					<h2 id="what-changed">What changed on-chain</h2>
 					<ul>
 						<li>
 							<code>LibQuoteFunding.updateAccumulatedPaidFunding</code> no longer calls the accumulated-rate updater. It writes the
@@ -122,7 +121,7 @@ cumulativeFee = snapshotFee
 						</li>
 					</ul>
 
-					<h2 id="state-event">State Event</h2>
+					<h2 id="state-event">State event</h2>
 					<pre><code class="language-solidity">event AccumulatedFundingStateUpdated(
     uint256 indexed symbolId,
     address indexed partyB,
@@ -140,8 +139,8 @@ cumulativeFee = snapshotFee
 );
 </code></pre>
 					<p>
-						The payload mirrors the persisted <code>FundingFee</code> struct after the state transition has completed. It is emitted after
-						final storage writes in the solver configuration paths — the only paths that mutate the symbol/PartyB funding state:
+						The payload mirrors the persisted <code>FundingFee</code> struct after the state transition completes. The contract emits it
+						after final storage writes in the only paths that mutate the symbol/PartyB funding state:
 					</p>
 					<ul>
 						<li><code>setEpochDurations</code></li>

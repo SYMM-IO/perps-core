@@ -41,21 +41,21 @@
 		<div class="reader-shell">
 			<div class="rail-sections-source" data-rail-sections hidden>
 				<a class="toc-link level-2" href="#summary">Summary</a>
-				<a class="toc-link level-2" href="#operation-compression">Two Operations Instead of Four</a>
-				<a class="toc-link level-3" href="#old-flow">The Existing Four-Operation Template</a>
-				<a class="toc-link level-3" href="#lock-and-open">Combined Core Entry</a>
-				<a class="toc-link level-3" href="#call-with-margin">Combined AccountLayer Entry</a>
-				<a class="toc-link level-3" href="#two-op-template">The Compact Template</a>
-				<a class="toc-link level-2" href="#transient">Transient Execution Context</a>
-				<a class="toc-link level-3" href="#authority">The Authority Carried by a Batch</a>
-				<a class="toc-link level-3" href="#context-word">The Core Live Context Word</a>
-				<a class="toc-link level-3" href="#fallback">The Fallback Rule</a>
-				<a class="toc-link level-3" href="#signer">Why the Transient Signer Uses Two Slots</a>
-				<a class="toc-link level-2" href="#suspend-overview">Suspending Authority Around Hooks</a>
-				<a class="toc-link level-3" href="#signer-restoration">How Alice Is Restored After a Hook</a>
-				<a class="toc-link level-3" href="#snapshot">How the Snapshot Is Encoded</a>
-				<a class="toc-link level-3" href="#lifecycle">Closing the Batch Scope</a>
-				<a class="toc-link level-2" href="#compat">Compatibility and Pre-Cancun Porting</a>
+				<a class="toc-link level-2" href="#operation-compression">Two operations instead of four</a>
+				<a class="toc-link level-3" href="#old-flow">The existing four-operation template</a>
+				<a class="toc-link level-3" href="#lock-and-open">Combined core entry</a>
+				<a class="toc-link level-3" href="#call-with-margin">Combined AccountLayer entry</a>
+				<a class="toc-link level-3" href="#two-op-template">The compact template</a>
+				<a class="toc-link level-2" href="#transient">Transient execution context</a>
+				<a class="toc-link level-3" href="#authority">The authority carried by a batch</a>
+				<a class="toc-link level-3" href="#context-word">The core live context word</a>
+				<a class="toc-link level-3" href="#fallback">The fallback rule</a>
+				<a class="toc-link level-3" href="#signer">Why the transient signer uses two slots</a>
+				<a class="toc-link level-2" href="#suspend-overview">Suspending authority around hooks</a>
+				<a class="toc-link level-3" href="#signer-restoration">How Alice is restored after a hook</a>
+				<a class="toc-link level-3" href="#snapshot">How the snapshot is encoded</a>
+				<a class="toc-link level-3" href="#lifecycle">Closing the batch scope</a>
+				<a class="toc-link level-2" href="#compat">Compatibility and pre-Cancun porting</a>
 			</div>
 
 			<main class="reader-main">
@@ -86,13 +86,13 @@
 						written to persistent fields around every batch. The trading flow stays the same while its execution overhead falls.
 					</p>
 
-					<h2 id="operation-compression">Two Operations Instead of Four</h2>
+					<h2 id="operation-compression">Two operations instead of four</h2>
 					<p>
 						The original flow separates two user actions from two solver actions. Each action travels through its own signed InstantLayer
 						operation even though the actions in each pair always belong to the same atomic trade.
 					</p>
 
-					<h3 id="old-flow">The Existing Four-Operation Template</h3>
+					<h3 id="old-flow">The existing four-operation template</h3>
 					<p>
 						The existing <code>InstantOpen</code> template executed by <code>InstantLayer.executeTemplate</code> carries four signed
 						operations:
@@ -118,7 +118,7 @@
 						preserve the work performed inside each pair.
 					</p>
 
-					<h3 id="lock-and-open">Combined Core Entry: lockAndOpenPosition</h3>
+					<h3 id="lock-and-open">Combined core entry: <code>lockAndOpenPosition</code></h3>
 					<p>
 						The solver's compact operation first runs the existing <code>lockQuote</code> path. If the lock succeeds, it continues
 						directly into <code>openPosition</code>. Both paths are reached through self-delegatecall, so their guards, hooks, post-hook
@@ -148,7 +148,7 @@
 						two operations are compressed in the same way on the AccountLayer side.
 					</p>
 
-					<h3 id="call-with-margin">Combined AccountLayer Entry: _callWithMargin</h3>
+					<h3 id="call-with-margin">Combined AccountLayer entry: <code>_callWithMargin</code></h3>
 					<p>
 						The user's compact operation enters AccountLayer once. It resolves the next virtual account from the supplied isolation type
 						and symbol, transfers margin to that account, and then continues through the existing <code>_call</code> path. The combined
@@ -173,7 +173,7 @@
 						calldata arrays, so this routing guarantee applies specifically to supported <code>sendQuote</code> payloads.
 					</p>
 
-					<h3 id="two-op-template">The Compact Two-Operation Template</h3>
+					<h3 id="two-op-template">The compact two-operation template</h3>
 					<p>The separately registered <code>InstantOpenCompact</code> template uses two operations:</p>
 					<ol>
 						<li><code>_callWithMargin(subAccount, isolationType, symbolId, margin, [sendQuote])</code>, signed by the user.</li>
@@ -192,7 +192,7 @@
 						that value with <code>sourceOffsets: [128]</code> and injects it into the solver's combined lock-and-open call.
 					</p>
 
-					<h2 id="transient">Transient Execution Context</h2>
+					<h2 id="transient">Transient execution context</h2>
 					<p>
 						Compression removes two signed operation envelopes, but the operations that remain still need temporary authority. Core must
 						know that a call is routed by InstantLayer, whether InstantOpen accounting is active, and which signer is acting. That
@@ -207,11 +207,11 @@
 						following sections track it from batch entry through final cleanup. This build therefore requires a Cancun-compatible chain.
 					</p>
 
-					<h3 id="authority">The Authority Carried by a Batch</h3>
+					<h3 id="authority">The authority carried by a batch</h3>
 					<p>The core authority used by these batches has two pieces:</p>
 					<ol>
-						<li><strong>The live context word:</strong> the routing and InstantOpen accounting flags currently in effect.</li>
-						<li><strong>The effective signer:</strong> the already-authorized acting identity currently installed in that diamond.</li>
+						<li><strong>The live context word.</strong> The routing and InstantOpen accounting flags currently in effect.</li>
+						<li><strong>The effective signer.</strong> The already-authorized acting identity currently installed in that diamond.</li>
 					</ol>
 					<p>
 						The live word and signer slots reside in the transient-storage context of the diamond using them, so every facet reached
@@ -221,8 +221,10 @@
 						the installed signer and is documented in <a href="../pages/delegation-account-scope.html">Delegation Account Scope</a>.
 					</p>
 
-					<h3 id="context-word">The Core Live Context Word</h3>
-					<p>The core live word uses its lowest three bits: one source marker and two authority flags. Bits 3&ndash;255 remain zero.</p>
+					<h3 id="context-word">The core live context word</h3>
+					<p>
+						The core live word uses its lowest three bits for one source marker and two authority flags. Bits 3 through 255 remain zero.
+					</p>
 					<div class="table-wrap">
 						<table>
 							<caption>
@@ -260,7 +262,7 @@
 						on entry and two more on exit.
 					</p>
 
-					<h3 id="fallback">The Fallback Rule</h3>
+					<h3 id="fallback">The fallback rule</h3>
 					<p>
 						The two core mode readers, <code>isCallFromInstantLayer()</code> and <code>isInstantOpenMode()</code>, consult the live
 						transient word first and read their persistent fields only when no transient scope is active:
@@ -285,7 +287,7 @@
 
 					<section class="tool-panel" data-word-reader-tool="live" aria-label="Interactive live context word reader"></section>
 
-					<h3 id="signer">Why the Transient Signer Uses Two Slots</h3>
+					<h3 id="signer">Why the transient signer uses two slots</h3>
 					<p>
 						Each diamond resolves an already-authorized acting identity. The installed value is not a signature cache and is not
 						necessarily the EIP-712 signer. <code>configuredSigner()</code> returns that raw installed value and may return
@@ -305,8 +307,8 @@
 					</p>
 					<p>
 						Suppose the transient signer is Alice. During the operation, the value slot contains Alice and the marker is set. Before a
-						hook runs, <code>clearSignerForExternalCall()</code> saves Alice and clears only the value slot. The state is now “marker set,
-						value empty.” Readers continue to use the transient slot, but find no signer there, so Alice's authority is hidden instead of
+						hook runs, <code>clearSignerForExternalCall()</code> saves Alice and clears only the value slot. The state is now "marker set,
+						value empty." Readers continue to use the transient slot, but find no signer there, so Alice's authority is hidden instead of
 						falling through to the persistent signer field.
 					</p>
 					<p>
@@ -314,7 +316,7 @@
 						address so it knows where to restore her after the hook returns.
 					</p>
 
-					<h2 id="suspend-overview">Suspending Authority Around Hooks</h2>
+					<h2 id="suspend-overview">Suspending authority around hooks</h2>
 					<p>
 						At a protected hook boundary, the surrounding batch scope may span the external call, but its authority must not. Core's
 						<code>LibHook</code> clears the effective signer and suspends the core routing and InstantOpen context before the hook runs.
@@ -388,23 +390,23 @@
 						operations have completed and the per-operation signer has been cleared.
 					</p>
 
-					<h3 id="signer-restoration">How Alice Is Restored After a Hook</h3>
+					<h3 id="signer-restoration">How Alice is restored after a hook</h3>
 					<p>Assume Alice is the transient signer. Her journey across the hook has three stages.</p>
 
-					<h4>Before the hook: Alice is active</h4>
+					<h4>Before the hook, Alice is active</h4>
 					<p>
 						The transient value contains Alice and the marker is set. This tells <code>configuredSigner()</code> to return Alice from
 						transient storage. In short: <code>marker = 1</code> and <code>value = Alice</code>.
 					</p>
 
-					<h4>While the hook runs: Alice is hidden</h4>
+					<h4>While the hook runs, Alice is hidden</h4>
 					<p>
 						Before calling the hook, the protocol saves Alice and remembers that she came from transient storage. It then clears the value
-						but leaves the marker set. The saved information is now “Alice, from transient storage,” while the live state is
+						but leaves the marker set. The saved information is now "Alice, from transient storage," while the live state is
 						<code>marker = 1</code> and <code>value = empty</code>. Because the transient value is empty, the hook cannot act as Alice.
 					</p>
 
-					<h4>After the hook returns: Alice is restored</h4>
+					<h4>After the hook returns, Alice is restored</h4>
 					<p>
 						The protocol first checks that the hook left no signer in either the transient value or the persistent field. If both are
 						empty, it writes Alice back and sets the marker. The state returns to <code>marker = 1</code> and <code>value = Alice</code>.
@@ -418,19 +420,19 @@
 					<h4>Example: a nested trusted call uses Bob</h4>
 					<p>
 						While Alice is hidden, trusted protocol code may temporarily install Bob as its own transient signer. When that inner call
-						finishes, it clears Bob and the shared marker. This does not erase the outer boundary's saved note: “Alice, from transient
-						storage.” After confirming that both signer addresses are empty, the boundary sets the marker again and restores Alice.
+						finishes, it clears Bob and the shared marker. This does not erase the outer boundary's saved note, "Alice, from transient
+						storage." After confirming that both signer addresses are empty, the boundary sets the marker again and restores Alice.
 					</p>
 
 					<h4>Example: Alice came from persistent storage</h4>
 					<p>
-						In this older path, the boundary saves the note “Alice, from persistent storage,” then clears the persistent field before the
+						In this older path, the boundary saves the note "Alice, from persistent storage," then clears the persistent field before the
 						hook runs. Because no transient signer existed at the start, the marker must still be clear when the hook returns. A set
 						marker means the hook path opened a transient scope and left it open, so restoration reverts. If the marker and both signer
 						addresses are empty, Alice is written back to the persistent field.
 					</p>
 
-					<h3 id="snapshot">How the Snapshot Is Encoded</h3>
+					<h3 id="snapshot">How the snapshot is encoded</h3>
 					<p>
 						When core suspends an execution context, it copies the routing and InstantOpen values into a separate 256-bit snapshot. The
 						snapshot remains in trusted caller memory or in a caller-specific transient slot. It is never written into the live context
@@ -446,7 +448,7 @@
 						from the two compatibility fields and leaves bit 0 clear. Restoration chooses the destination from bit 254, so bit 0 remains
 						part of the saved live word rather than acting as the source discriminator. A suspended transient InstantOpen scope therefore
 						prints as <code>0xc000…0007</code>: the high <code>c</code> contains bits 255 and 254, while the low <code>7</code> contains
-						bits 0&ndash;2.
+						bits 0 through 2.
 					</p>
 					<p>
 						To restore a transient snapshot, the library needs only the original live-word bits. <code>INSTANT_CONTEXT_FLAGS</code>
@@ -454,8 +456,8 @@
 					</p>
 					<pre><code>INSTANT_CONTEXT_ACTIVE | CALL_FROM_INSTANT_LAYER | INSTANT_OPEN_MODE</code></pre>
 					<p>
-						The resulting mask has bits 0&ndash;2 set. <code>snapshot &amp; INSTANT_CONTEXT_FLAGS</code> removes the snapshot markers in
-						bits 254&ndash;255 and leaves the original live word.
+						The resulting mask has bits 0 through 2 set. <code>snapshot &amp; INSTANT_CONTEXT_FLAGS</code> removes the snapshot markers in
+						bits 254 through 255 and leaves the original live word.
 					</p>
 					<pre><code>if (snapshot &amp; EXTERNAL_CONTEXT_SNAPSHOT_TRANSIENT != 0) {
 	_setInstantLayerContext(snapshot &amp; INSTANT_CONTEXT_FLAGS);
@@ -483,7 +485,7 @@
 
 					<section class="tool-panel" data-slot-address-tool aria-label="Caller-scoped snapshot slots"></section>
 
-					<h3 id="lifecycle">Closing the Batch Scope</h3>
+					<h3 id="lifecycle">Closing the batch scope</h3>
 					<p>
 						A batch opens one transient scope. <code>beginInstantLayerExecution</code> rejects a second live scope with
 						<code>TransientContextAlreadyActive</code>, preventing two batches from sharing one grant of authority.
@@ -507,20 +509,20 @@
 
 					<section class="tool-panel" data-context-lifecycle-tool aria-label="Execution context lifecycle walkthrough"></section>
 
-					<h2 id="compat">Compatibility and Pre-Cancun Porting</h2>
-					<h3>Keeping Existing Deployments Compatible</h3>
+					<h2 id="compat">Compatibility and pre-Cancun porting</h2>
+					<h3>Keeping existing deployments compatible</h3>
 					<p>
 						Existing deployments preserve their InstantLayer address because it is the EIP-712 verifying contract. Their historical
 						selector calldata remains valid because both diamonds translate those calls internally to transient state:
 					</p>
 					<ul>
 						<li>
-							Core: <code>setCallFromInstantLayer(bool)</code> opens and closes the same EIP-1153 scope that
+							<strong>Core.</strong> <code>setCallFromInstantLayer(bool)</code> opens and closes the same EIP-1153 scope that
 							<code>beginInstantLayerExecution</code> and <code>endInstantLayerExecution</code> use, and
 							<code>setInstantOpenMode(bool)</code> writes the same bit as the native toggle.
 						</li>
 						<li>
-							AccountLayer: <code>setSigner(address)</code> installs and clears the same transient signer scope that
+							<strong>AccountLayer.</strong> <code>setSigner(address)</code> installs and clears the same transient signer scope that
 							<code>setTransientSigner</code> uses.
 						</li>
 					</ul>
@@ -537,7 +539,7 @@
 						signer value.
 					</p>
 
-					<h3>What the Runtime Switch Changes</h3>
+					<h3>What the runtime switch changes</h3>
 					<p>
 						InstantLayer contracts deployed from the current source expose <code>setTransientContextEnabled(bool)</code>, gated by
 						<code>SETTER_ROLE</code> and enabled by default. The flag changes only which selectors InstantLayer invokes: enabled uses the
@@ -547,7 +549,7 @@
 						compatibility. Templates and signatures remain unchanged.
 					</p>
 
-					<h3>What a Pre-Cancun Build Requires</h3>
+					<h3>What a pre-Cancun build requires</h3>
 					<p>
 						The current source compiles with solc 0.8.34 for the Cancun EVM and cannot execute on a pre-Cancun chain. Current InstantLayer
 						batch paths initiate transient authority. Authorized direct callers can still set the persistent

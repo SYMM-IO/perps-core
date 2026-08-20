@@ -41,9 +41,9 @@
 		<div class="reader-shell">
 			<div class="rail-sections-source" data-rail-sections hidden>
 				<a class="toc-link level-2" href="#summary">Summary</a>
-				<a class="toc-link level-2" href="#what-changed">What Changed</a>
-				<a class="toc-link level-2" href="#what-a-delegation-covers">What a Delegation Covers</a>
-				<a class="toc-link level-2" href="#how-the-scope-is-set">How the Scope Is Set</a>
+				<a class="toc-link level-2" href="#what-changed">What changed</a>
+				<a class="toc-link level-2" href="#what-a-delegation-covers">What a delegation covers</a>
+				<a class="toc-link level-2" href="#how-the-scope-is-set">How the scope is set</a>
 			</div>
 
 			<main class="reader-main">
@@ -74,14 +74,14 @@
 						<code>AccountOutOfScope</code> and the whole operation reverts, so no balance or ownership change lands.
 					</p>
 
-					<h2 id="what-changed">What Changed</h2>
+					<h2 id="what-changed">What changed</h2>
 					<p>
-						Before v0.8.6: InstantLayer executed a delegated operation as the account <em>owner</em>. The AccountLayer then checked
+						Before v0.8.6, InstantLayer executed a delegated operation as the account <em>owner</em>. The AccountLayer then checked
 						ownership of whichever account the call named, and an owner owns all of their SubAccounts, so that check passed for every one
 						of them. The delegation was checked against <code>A</code> while the call was allowed against <code>B</code>.
 					</p>
 					<p>
-						After v0.8.6: the session carries the delegated account family alongside the signer. Ownership is checked as before, and a
+						After v0.8.6, the session carries the delegated account family alongside the signer. Ownership is checked as before, and a
 						second check rejects any account outside that family.
 					</p>
 					<p>
@@ -89,7 +89,7 @@
 						account they already named.
 					</p>
 
-					<h2 id="what-a-delegation-covers">What a Delegation Covers</h2>
+					<h2 id="what-a-delegation-covers">What a delegation covers</h2>
 					<p>The grant covers the named SubAccount together with its Virtual Accounts.</p>
 					<pre><code>scope = virtualAccount.isExists ? virtualAccount.parentAccount : account
 
@@ -109,7 +109,7 @@ allowed(target) = owner(target) == signer AND canonical(target) == scope</code><
 						two.
 					</p>
 
-					<h2 id="how-the-scope-is-set">How the Scope Is Set</h2>
+					<h2 id="how-the-scope-is-set">How the scope is set</h2>
 					<p>
 						InstantLayer is the only caller that opens a confined session. When it executes an operation whose signer is not the account
 						owner, it resolves the delegation key for the named account and installs it alongside the owner.
@@ -132,7 +132,7 @@ if (usesNativeContextSelectors) {
 					<p>
 						The session is cleared with the signer when the operation finishes. Both <code>setSigner</code> and
 						<code>setTransientSigner</code> install a zero scope, so either matching clear path removes the confinement before the next
-						operation. Callers that never open a scoped session — AccountManager, direct users, protocol operations — are unaffected.
+						operation. AccountManager, direct users, and protocol operations never open a scoped session and are unaffected.
 					</p>
 					<p>
 						<code>ViewFacet.getSignerScope</code> reports the active scope, or <code>address(0)</code> when the session is unconfined.

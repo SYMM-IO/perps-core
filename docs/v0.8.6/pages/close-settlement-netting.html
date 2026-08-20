@@ -41,12 +41,12 @@
 		<div class="reader-shell">
 			<div class="rail-sections-source" data-rail-sections hidden>
 				<a class="toc-link level-2" href="#before">Before v0.8.6</a>
-				<a class="toc-link level-2" href="#problem">The Problem</a>
-				<a class="toc-link level-2" href="#fix">How v0.8.6 Fixes It</a>
-				<a class="toc-link level-2" href="#settlement-pipeline">How a Close Is Processed</a>
-				<a class="toc-link level-2" href="#batch-behavior">Batch Behavior</a>
-				<a class="toc-link level-2" href="#observability">Events and Hooks</a>
-				<a class="toc-link level-2" href="#boundaries">Fees and Unchanged Behavior</a>
+				<a class="toc-link level-2" href="#problem">The problem</a>
+				<a class="toc-link level-2" href="#fix">How v0.8.6 fixes it</a>
+				<a class="toc-link level-2" href="#settlement-pipeline">How a close is processed</a>
+				<a class="toc-link level-2" href="#batch-behavior">Batch behavior</a>
+				<a class="toc-link level-2" href="#observability">Events and hooks</a>
+				<a class="toc-link level-2" href="#boundaries">Fees and unchanged behavior</a>
 			</div>
 
 			<main class="reader-main">
@@ -99,7 +99,7 @@ net to PartyA      -10</code></pre>
 					<h2 id="fix">How v0.8.6 fixes it</h2>
 					<p>
 						The contract now prepares both settlement components for one quote before checking either payer. The check uses that quote's
-						bilateral difference—not funding or PnL in isolation.
+						bilateral difference rather than funding or PnL in isolation.
 					</p>
 					<p>
 						The signs below are written from PartyA's point of view. Positive funding means PartyA pays; negative funding means PartyA

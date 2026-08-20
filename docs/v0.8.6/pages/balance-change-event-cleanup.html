@@ -41,14 +41,14 @@
 		<div class="reader-shell">
 			<div class="rail-sections-source" data-rail-sections hidden>
 				<a class="toc-link level-2" href="#overview">Overview</a>
-				<a class="toc-link level-2" href="#reconstruction-contract">Reconstruction Contract</a>
-				<a class="toc-link level-2" href="#balance-change-types">Balance Change Types</a>
-				<a class="toc-link level-2" href="#partyb-allocation-keys">PartyB Allocation Keys</a>
-				<a class="toc-link level-2" href="#reimbursement-ledger">Reimbursement Ledger</a>
-				<a class="toc-link level-2" href="#liquidation-and-cva">Liquidation &amp; CVA</a>
-				<a class="toc-link level-2" href="#v086-liquidation-accounting">v0.8.6 Liquidation Accounting</a>
-				<a class="toc-link level-2" href="#event-field-corrections">Event Field Corrections</a>
-				<a class="toc-link level-2" href="#indexer-changelog">Indexer Changelog</a>
+				<a class="toc-link level-2" href="#reconstruction-contract">Reconstruction contract</a>
+				<a class="toc-link level-2" href="#balance-change-types">Balance-change types</a>
+				<a class="toc-link level-2" href="#partyb-allocation-keys">PartyB allocation keys</a>
+				<a class="toc-link level-2" href="#reimbursement-ledger">Reimbursement ledger</a>
+				<a class="toc-link level-2" href="#liquidation-and-cva">Liquidation and CVA</a>
+				<a class="toc-link level-2" href="#v086-liquidation-accounting">v0.8.6 liquidation accounting</a>
+				<a class="toc-link level-2" href="#event-field-corrections">Event field corrections</a>
+				<a class="toc-link level-2" href="#indexer-changelog">Indexer changelog</a>
 			</div>
 
 			<main class="reader-main">
@@ -67,8 +67,8 @@
 				<article class="doc-article" id="full-document">
 					<h2 id="overview">Overview</h2>
 					<p>
-						This feature turns <code>BalanceChangePartyA</code> and <code>BalanceChangePartyB</code> into a deterministic delta ledger for
-						the core Diamond's allocated-balance mappings. Every non-zero PartyA or PartyB allocated-balance mutation goes through a
+						<code>BalanceChangePartyA</code> and <code>BalanceChangePartyB</code> now form a deterministic delta ledger for the core
+						Diamond's allocated-balance mappings. Every non-zero PartyA or PartyB allocated-balance mutation goes through a
 						<code>LibAccount</code> increase or decrease method. That method writes storage and emits the matching event with the caller's
 						reason as one operation.
 					</p>
@@ -79,12 +79,12 @@
 						as a second allocated-balance delta.
 					</aside>
 					<p>
-						The scope is deliberately exact. Allocated balance is not free balance, reserved open fees, locked or pending collateral,
-						deferred balance, reimbursement, or liquidation escrow. v0.8.6 keeps those movements observable without placing false entries
-						in the allocated ledger.
+						The ledger covers allocated balance only. It excludes free balance, reserved open fees, locked or pending collateral, deferred
+						balance, reimbursement, and liquidation escrow. v0.8.6 keeps those movements observable without placing false entries in the
+						allocated ledger.
 					</p>
 
-					<h2 id="reconstruction-contract">Reconstruction Contract</h2>
+					<h2 id="reconstruction-contract">Reconstruction contract</h2>
 					<pre><code class="language-solidity">event BalanceChangePartyA(
     address indexed partyA,
     uint256 amount,
@@ -157,11 +157,11 @@ event BalanceChangePartyB(
 						the checkpoint block hash so normal reorg handling cannot silently move the baseline.
 					</aside>
 
-					<h2 id="balance-change-types">Balance Change Types</h2>
+					<h2 id="balance-change-types">Balance-change types</h2>
 					<p>
-						Both existing event signatures remain unchanged. <code>BalanceChangeType</code> preserves ordinals 0&ndash;13 and appends six
-						new reasons at 14&ndash;19. The table below is the v0.8.6 direction contract. “Inbound” adds <code>amount</code>; “outbound”
-						subtracts it.
+						Both existing event signatures remain unchanged. <code>BalanceChangeType</code> preserves ordinals 0 through 13 and appends
+						six new reasons at 14 through 19. The table below is the v0.8.6 direction contract. "Inbound" adds <code>amount</code>.
+						"Outbound" subtracts it.
 					</p>
 					<div class="table-wrap">
 						<table class="enum-table">
@@ -314,7 +314,7 @@ event BalanceChangePartyB(
 						types, so direction belongs in versioned indexer configuration rather than a suffix-only parser.
 					</p>
 
-					<h2 id="partyb-allocation-keys">PartyB Allocation Keys</h2>
+					<h2 id="partyb-allocation-keys">PartyB allocation keys</h2>
 					<p>
 						For <code>BalanceChangePartyB</code>, the indexed field named <code>partyA</code> is the exact second key of
 						<code>partyBAllocatedBalances[partyB][allocationKey]</code>. Treat the event's accounting key as:
@@ -344,8 +344,8 @@ event BalanceChangePartyB(
 						</table>
 					</div>
 					<aside class="callout callout-note">
-						<strong>The field name is historical.</strong> In <code>BalanceChangePartyB</code>, <code>partyA</code> means “PartyB
-						allocation key.” It is a trader address for an isolated PartyB and <code>address(0)</code> for a cross-mode PartyB. Always
+						<strong>The field name is historical.</strong> In <code>BalanceChangePartyB</code>, <code>partyA</code> means "PartyB
+						allocation key." It is a trader address for an isolated PartyB and <code>address(0)</code> for a cross-mode PartyB. Always
 						index the balance under <code>(event.partyB, event.partyA)</code> exactly as emitted.
 					</aside>
 					<h3>Why unified cross settlement writes credits before debits</h3>
@@ -358,7 +358,7 @@ event BalanceChangePartyB(
 						replace the zero-address ledger key.
 					</p>
 
-					<h2 id="reimbursement-ledger">Reimbursement Ledger</h2>
+					<h2 id="reimbursement-ledger">Reimbursement ledger</h2>
 					<p>
 						While PartyA is liquidating, Clearing House distributions and returned pending-open fees can enter
 						<code>partyAReimbursement</code>. That bucket has a separate exact event because it is not allocated balance.
@@ -450,7 +450,7 @@ event BalanceChangePartyB(
 						allocated credit.
 					</p>
 
-					<h2 id="liquidation-and-cva">Liquidation &amp; CVA</h2>
+					<h2 id="liquidation-and-cva">Liquidation and CVA</h2>
 					<p>PartyA liquidation settlement keeps the original event and emits an overloaded enrichment for the same call:</p>
 					<pre><code class="language-solidity">event SettlePartyALiquidation(
     address partyA,
@@ -492,7 +492,7 @@ event SettlePartyALiquidation(
 						before/after PartyA allocated-balance delta.
 					</p>
 
-					<h2 id="v086-liquidation-accounting">v0.8.6 Liquidation Accounting</h2>
+					<h2 id="v086-liquidation-accounting">v0.8.6 liquidation accounting</h2>
 					<p>
 						v0.8.6 exposes the exact amount on both sides whenever the protocol records CVA or LF as its own liquidation component. Keep
 						economic attribution separate from allocated-balance replay: settlement events identify who paid and received, while
@@ -633,9 +633,9 @@ high cap in this example means starter fee = 2.25 and insurance-vault credit = 0
 					<aside class="callout callout-warning">
 						<strong>Per-account replay stays exact; cross-account conservation does not.</strong> When the clamp fires, the starter is
 						credited the full fee while PartyA is debited less, so allocated balance in that receipt is not conserved across accounts.
-						Each individual account still reconstructs exactly from its own events, which is the guarantee this page makes. An indexer
-						that also runs a global “credits equal debits” check must not apply it to this finalization receipt in isolation. Reconcile
-						economic value over the full liquidation lifecycle, including deferred, reimbursement, PartyB settlement, insurance-vault, and
+						Each individual account still reconstructs exactly from its own events. This is the documented guarantee. An indexer that also
+						runs a global "credits equal debits" check must not apply it to this finalization receipt in isolation. Reconcile economic
+						value over the full liquidation lifecycle, including deferred, reimbursement, PartyB settlement, insurance-vault, and
 						signed-snapshot shortfall state; the allocated-balance events alone promise per-key replay, not global conservation.
 					</aside>
 
@@ -683,7 +683,7 @@ high cap in this example means starter fee = 2.25 and insurance-vault credit = 0
 					<aside class="callout callout-note">
 						<strong>PartyB LF can contain distribution dust.</strong> <code>LF_OUT</code> records the full
 						<code>remainingLf</code> removed from the solver bucket. Recipient <code>LF_IN</code> values use the configured liquidator
-						split and a per-position integer division. Sum the actual <code>LF_IN</code> credits for “received LF”; do not force that sum
+						split and a per-position integer division. Sum the actual <code>LF_IN</code> credits for "received LF". Do not force that sum
 						to equal <code>LF_OUT</code>.
 					</aside>
 					<aside class="callout callout-warning">
@@ -693,10 +693,10 @@ high cap in this example means starter fee = 2.25 and insurance-vault credit = 0
 						<code>LF_IN</code> payments.
 					</aside>
 
-					<h2 id="event-field-corrections">Event Field Corrections</h2>
+					<h2 id="event-field-corrections">Event field corrections</h2>
 					<p>
 						Two events carried a wrong or path-dependent value in a single field. Both are corrected in v0.8.6 without any signature
-						change, so an indexer that decodes them will keep decoding them &mdash; and will silently start reading a different value.
+						change, so an indexer will keep decoding them while silently starting to read a different value.
 					</p>
 					<h3><code>SettleUpnl</code> reported the caller instead of PartyA</h3>
 					<pre><code class="language-solidity">event SettleUpnl(
@@ -721,21 +721,20 @@ high cap in this example means starter fee = 2.25 and insurance-vault credit = 0
 					<p>
 						<code>PartyBLiquidationFacet.liquidatePartyB</code> emits before it starts the liquidation, so its
 						<code>partyBAllocatedBalance</code> is the value immediately <em>before</em> liquidation touches it. The force-close paths
-						read the same field after liquidation had already run, and starting a PartyB liquidation debits that bucket twice &mdash; once
-						for the realized settlement transfer and once for the remaining liquidation fee. The field therefore reported a smaller,
-						post-payout number on those paths.
+						read the same field after liquidation had already run. Starting a PartyB liquidation debits that bucket twice, once for the
+						realized settlement transfer and once for the remaining liquidation fee. The field therefore reported a smaller, post-payout
+						number on those paths.
 					</p>
 					<p>
 						v0.8.6 captures the balance before liquidation on the force-close paths as well, so both entry points now report the
 						pre-liquidation balance.
 					</p>
 					<aside class="callout callout-important">
-						<strong>Neither correction changes an event signature.</strong> There is no new topic and no ABI change to adopt, which is
-						exactly why these are easy to miss: the same decoder keeps working and starts returning different values at the block of the
-						upgrade.
+						<strong>Neither correction changes an event signature.</strong> There is no new topic and no ABI change to adopt. The same
+						decoder keeps working and starts returning different values at the upgrade block.
 					</aside>
 
-					<h2 id="indexer-changelog">Indexer Changelog</h2>
+					<h2 id="indexer-changelog">Indexer changelog</h2>
 					<div class="table-wrap">
 						<table>
 							<thead>
