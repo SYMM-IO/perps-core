@@ -239,7 +239,7 @@ library LibQuoteClose {
 		result = forceExpireQuote(quoteId);
 	}
 
-	/// @notice expireQuote without the deadline gate — only exposed via privileged facet paths
+	/// @notice Runs expireQuote without the deadline gate and is exposed only through privileged facet paths.
 	function forceExpireQuote(uint256 quoteId) public returns (QuoteStatus result) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();

@@ -324,6 +324,18 @@
 						</table>
 					</div>
 					<h3 id="state-transition-diagrams">State transition diagrams</h3>
+					<p>Use the following role and timing labels when reading the diagrams:</p>
+					<ul>
+						<li><code>OPERATOR_ROLE</code> runs routine processing when a request reaches its configured processing time.</li>
+						<li><code>LOCKER_ROLE</code> can hold an accepted request for review by moving it to <code>LOCKED</code>.</li>
+						<li><code>UNLOCK_ROLE</code> can release a reviewed locked request and process it in one call.</li>
+						<li>
+							<code>securityWindow</code> is the wait after WINDOWED acceptance. <code>tolerancePeriod</code> is the additional wait
+							before callers without <code>OPERATOR_ROLE</code> may use the permissionless processing fallback. See
+							<a href="#3-2-security-window-tolerance-period">Section 3.2</a> for the full timing rules and
+							<a href="#12-2-role-separation-critical-design">Section 12.2</a> for role separation.
+						</li>
+					</ul>
 					<h4 id="same-tx-state-machine">SAME_TX state machine</h4>
 					<pre><code class="language-mermaid">stateDiagram-v2
     [*] --&gt; NONE
@@ -942,6 +954,15 @@ What-if: same withdrawal as WINDOWED instead of STANDARD?
 					<hr />
 					<h2 id="4-options-api">4. Options API</h2>
 					<h3 id="4-1-decision-tree">4.1 Decision tree</h3>
+					<p>
+						The bot is choosing one or more withdrawal offers here. Each offer contains <code>parts</code>, the
+						<code>WithdrawReceiverPart[]</code> entries that route and fund the payout, and <code>providerData</code>, the encoded signed
+						offer plus any required validator approvals and credit attestation. Their exact construction appears in
+						<a href="#4-3-parts-construction">Section 4.3</a> and <a href="#4-4-providerdata-encoding">Section 4.4</a>. The decision also
+						depends on the validator gate in <a href="#9-2-when-validators-are-required">Section 9.2</a>, the complete credit-cap check in
+						<a href="#10-5-bot-decision-logic-for-credit">Section 10.5</a>, and the optional STANDARD acceleration path in
+						<a href="#10-6-cap-aware-accelerate-polling-standard-windowed">Section 10.6</a>.
+					</p>
 					<pre><code class="language-mermaid">flowchart TD
     A[User requests withdrawal options] --&gt; B[Read on-chain state]
     B --&gt; B1[&quot;nonces(user)&quot;]
@@ -980,7 +1001,8 @@ What-if: same withdrawal as WINDOWED instead of STANDARD?
 						<li>[ ] Set <code>maxUserFee &gt;= fee + operatorFee</code></li>
 						<li>
 							[ ] If signing STANDARD as an accelerate candidate, compute <code>maxAccelerationFee</code> as the user's upper bound for
-							a later acceleration premium
+							a later acceleration premium; follow the eligibility and retry rules in
+							<a href="#10-6-cap-aware-accelerate-polling-standard-windowed">Section 10.6</a>
 						</li>
 						<li>[ ] Check <code>fee + operatorFee &lt;= expressAmount</code> (else reverts <code>FeesExceedExpressAmount</code>)</li>
 						<li>[ ] Check available general pool: <code>generalBalance - lockedGeneralBalance &gt;= generalAmount</code></li>
@@ -989,8 +1011,9 @@ What-if: same withdrawal as WINDOWED instead of STANDARD?
 							<code>affiliateBalances[affiliate] - lockedAffiliateBalances[affiliate] &gt;= affiliateAmount</code>
 						</li>
 						<li>
-							[ ] Check credit line capacity:
-							<code>expressProvider.creditLineTotalDebt(affiliate) + expressProvider.creditLineBadDebt(affiliate)</code> if using credit
+							[ ] If <code>creditAmount &gt; 0</code>, verify the affiliate is neither paused nor the user blacklisted, then check that
+							<code>creditLineTotalDebt + creditLineBadDebt + creditAmount</code> fits both effective cap axes: the absolute-debt cap
+							and the Muon <code>eligibleBase</code> percentage cap. See <a href="#10-5-bot-decision-logic-for-credit">Section 10.5</a>.
 						</li>
 						<li>
 							[ ] For SAME_TX: verify <code>minValidatorSignatures(affiliate) &gt; 0</code> (falls back to
@@ -998,7 +1021,8 @@ What-if: same withdrawal as WINDOWED instead of STANDARD?
 						</li>
 						<li>
 							[ ] If validators required: gather &gt;= <code>minValidatorSignatures(affiliate)</code> attestations from validators
-							registered for this affiliate (or <code>address(0)</code> default)
+							registered for this affiliate (or <code>address(0)</code> default); follow the exact option-type rules in
+							<a href="#9-2-when-validators-are-required">Section 9.2</a>
 						</li>
 						<li>[ ] Construct <code>WithdrawReceiverPart[]</code> array</li>
 						<li>[ ] Compute <code>partsHash = keccak256(abi.encode(parts))</code></li>

@@ -107,7 +107,7 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		emit RestatementAborted(symbolId, adjustment.restatementEpoch);
 	}
 
-	/// @notice Restates quotes to post-adjustment units. The factor comes from the registry — callers only
+	/// @notice Restates quotes to post-adjustment units. The factor comes from the registry; callers only
 	///         choose which quotes; a PartyB may restate its own quotes, SYMBOL_MANAGER_ROLE may restate any.
 	function applyAdjustment(uint256 symbolId, uint256[] calldata quoteIds) external {
 		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
@@ -146,7 +146,7 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		);
 		LibQuoteFunding.chargeAccumulatedFundingFee(quoteId);
 
-		// 2) Remove aggregates computed from the OLD amount and OLD openedPrice — must run before any mutation.
+		// 2) Remove aggregates computed from the old amount and openedPrice before any mutation.
 		uint256 oldOpenAmount = LibQuote.quoteOpenAmount(quote);
 		LibQuote.subFromPartiesAggregatedPositions(quote, oldOpenAmount);
 		LibAggregateFunding.subFromPartiesAggregateFunding(quote, oldOpenAmount);

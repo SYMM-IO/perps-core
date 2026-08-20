@@ -76,10 +76,15 @@
 						raw-allocation floor protects the collateral represented by locked and pending positions.
 					</p>
 					<p>
-						The floor itself comes in two strengths. The <strong>raw floor</strong> is the stored CVA and liquidation fee for locked and
-						pending quotes. The <strong>safe floor</strong> extends only the safe deallocation paths with a Muon-attested value re-marked
-						to live notional and the gross funding debt owed by the signed party. Normal deallocation keeps its existing signature format
-						and does not consume either additional safe-path field, but it now enforces the stored raw floor.
+						The floor itself comes in two strengths. The <strong>raw floor</strong> is the stored credit valuation adjustment (CVA) and
+						liquidation fee (LF) for locked and pending quotes. The <strong>safe floor</strong> extends only the safe deallocation paths
+						with a Muon-attested value re-marked to live notional and the gross funding debt owed by the signed party. Normal deallocation
+						keeps its existing signature format and does not consume either additional safe-path field, but it now enforces the stored raw
+						floor.
+					</p>
+					<p>
+						The scope differs by party. PartyA always uses the raw floor. PartyB uses the new floors only after governance enables its
+						per-solver strict-deallocation flag. Safe paths add the Muon-attested fields described below.
 					</p>
 
 					<h2 id="the-two-limits">The two deallocation limits</h2>
@@ -98,6 +103,10 @@
 					<pre><code>protectedFloor = lockedCva + lockedLf + pendingLockedCva + pendingLockedLf
 
 remainingRawAllocation &gt;= protectedFloor</code></pre>
+					<p>
+						The four field names are the locked and pending forms of the same two components: <code>Cva</code> is credit valuation
+						adjustment and <code>Lf</code> is liquidation fee.
+					</p>
 					<p>
 						Maintenance margin is intentionally not part of this new floor. It remains part of the existing availability calculation. The
 						floor is limited to values that later liquidation accounting takes directly from raw allocated balance.
@@ -175,8 +184,9 @@ remainingRawAllocation &gt;= retention</code></pre>
 						distinct oracle-attested liability, so Muon must report the full gross amount owed. Neither field enters the liquidation
 						trigger, so an overstated value can block removal but cannot force liquidation. The denial of service is also bounded:
 						<code>zeroUpnlDeallocate</code> requires no signature once an account has no open or pending positions. It is restricted to
-						<code>BALANCE_SETTLER_ROLE</code> (including an allowed proxy), so it provides a signature-free exit only through an
-						authorized settler; an ordinary PartyA cannot invoke it directly without that role.
+						<code>BALANCE_SETTLER_ROLE</code>, including a forwarding proxy that itself holds that role. The proxy-aware modifier
+						intentionally authorizes calls routed through such a proxy. This provides a signature-free exit only through an authorized
+						settler; an ordinary PartyA cannot invoke it directly without that route.
 					</aside>
 
 					<h2 id="signature-changes">Signature and verification changes</h2>
@@ -251,6 +261,11 @@ isPartyBStrictDeallocationEnabled(address partyB) returns (bool)</code></pre>
 
 					<h2 id="cross-mode">Cross-mode buckets</h2>
 					<p>
+						An isolated PartyB uses the named PartyA's allocation bucket. An active cross-mode PartyB instead backs all current positions
+						from the shared <code>address(0)</code> bucket. A nonzero PartyA bucket left behind after enabling cross mode is a legacy
+						migration bucket, not part of the active cross pool.
+					</p>
+					<p>
 						For a cross-mode PartyB, positions are backed by the aggregate <code>address(0)</code> allocation bucket. Strict deallocation
 						therefore measures both raw allocation and locked requirements against that aggregate bucket. Frontends should also use
 						<code>address(0)</code> when previewing a normal cross-bucket deallocation.
@@ -282,6 +297,13 @@ isPartyBStrictDeallocationEnabled(address partyB) returns (bool)</code></pre>
 					</aside>
 
 					<h2 id="view-functions">New view functions</h2>
+					<p>Choose the preview that matches the transaction:</p>
+					<ul>
+						<li>Normal PartyA <code>deallocate</code>: <code>maxDeallocatableForPartyA</code>.</li>
+						<li>Current PartyA <code>safeDeallocate</code>: <code>maxRemovableMarginForPartyA</code> with every signed field.</li>
+						<li>Normal PartyB <code>deallocateForPartyB</code>: <code>maxDeallocatableForPartyB</code>.</li>
+						<li>PartyB <code>safeDeallocateForPartyB</code>: <code>maxRemovableMarginForPartyB</code>.</li>
+					</ul>
 					<p>Three view functions were added with the raw floor:</p>
 					<pre><code class="language-solidity">maxDeallocatableForPartyA(address partyA, int256 upnl)
 
@@ -321,9 +343,16 @@ maxRemovableMarginForPartyB(
 						retention apply only when strict deallocation is enabled. For cross mode, use <code>address(0)</code> for the active bucket or
 						the original PartyA address for a legacy bucket.
 					</p>
+					<p>
+						<code>maxSafeDeallocatableForPartyA</code> is the compatibility preview for the earlier safe payload shape. It assumes
+						<code>scaledLockedBalance = 0</code>. Current safe clients should use <code>maxRemovableMarginForPartyA</code> so the preview
+						includes the exact scaled floor carried by the signature.
+					</p>
+
 					<aside class="callout callout-note">
-						<strong>The view does not verify its inputs.</strong>
-						The deallocation transaction remains authoritative and still requires a valid Muon signature.
+						<strong>A preview is not transaction eligibility.</strong> The view does not verify its inputs and omits operational gates
+						such as pause state, cooldown or debounce timing, caller authorization, and signature validity. The deallocation transaction
+						remains authoritative.
 					</aside>
 
 					<h2 id="integration-flow">Integration flow</h2>
@@ -365,9 +394,16 @@ maxRemovableMarginForPartyB(
 						</li>
 						<li>
 							<strong>PartyB enforcement.</strong> Flip <code>strictDeallocationEnabledForPartyB</code> per solver after monitoring its
-							debt attestations, and only then <code>legacyDeallocateDeprecated</code> to retire paths without a scaled position floor.
+							debt attestations. This enables the documented PartyB floors but does not disable normal
+							<code>deallocateForPartyB</code> or <code>transferAllocation</code>; those paths remain available with the stored raw
+							floor.
+						</li>
+						<li>
+							<strong>PartyA legacy retirement.</strong> After PartyA clients have moved to the safe path, enable
+							<code>legacyDeallocateDeprecated</code>. It disables core PartyA <code>deallocate</code>, which also makes AccountLayer
+							<code>removeMargin</code> revert; clients must use <code>safeDeallocate</code> or <code>safeRemoveMargin</code> instead.
 							<code>zeroUpnlDeallocate</code> remains unaffected because it requires no open or pending positions and remains restricted
-							to <code>BALANCE_SETTLER_ROLE</code> (or an allowed proxy).
+							to <code>BALANCE_SETTLER_ROLE</code> or an authorized forwarding proxy.
 						</li>
 					</ol>
 

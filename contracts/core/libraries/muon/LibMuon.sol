@@ -20,13 +20,9 @@ library LibMuon {
 		}
 	}
 
-	// CONTEXT for commented out lines
-	// We're utilizing muon signatures for asset pricing and user uPNLs calculations.
-	// Even though these signatures are necessary for full testing of the system, particularly when invoking various methods.
-	// The process of creating automated functional signature for tests has proven to be either impractical or excessively time-consuming. therefore, we've established commenting out the necessary code as a workaround specifically for testing.
-	// Essentially, during testing, we temporarily disable the code sections responsible for validating these signatures. The sections I'm referring to are located within the LibMuon file. Specifically, the body of the 'verifyTSSAndGateway' method is a prime candidate for temporary disablement. In addition, several 'require' statements within other functions of this file, which examine the signatures' expiration status, also need to be temporarily disabled.
-	// However, it is crucial to note that these lines should not be disabled in the production deployed version.
-	// We emphasize this because they are only disabled for testing purposes.
+	// Muon signatures authorize price and UPNL inputs. The SignatureCheck markers below are read by
+	// utils/update_sig_checks.py, which can comment out marked verification calls for tests that do
+	// not exercise Muon verification. Production builds must keep every marked check enabled.
 	/// @notice Verifies the TSS signature and gateway signature through the MuonSignatureVerifier with per-category authorization.
 	function verifyTSSAndGateway(
 		bytes32 hash,

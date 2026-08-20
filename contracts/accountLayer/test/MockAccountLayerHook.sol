@@ -280,7 +280,7 @@ contract MockAccountLayerHook {
 	/**
 	 * @notice Enables or disables call recording
 	 * @param _recordCalls Whether to record calls
-	 * @dev Disable for gas optimization in certain tests
+	 * @dev Disable call recording to reduce gas use in tests that do not inspect recorded calls.
 	 */
 	function setRecordCalls(bool _recordCalls) external {
 		recordCalls = _recordCalls;

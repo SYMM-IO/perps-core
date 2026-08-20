@@ -51,8 +51,8 @@
 						<div>
 							<h1>InstantLayer Authorization Scope</h1>
 							<p class="hero-copy">
-								The helper contracts accepted a global &quot;inside an InstantLayer batch&quot; flag in place of authorization. v0.8.6
-								removes MultiAccount's bypass and makes SymmioPartyB check the direct caller's role.
+								MultiAccount routes legacy user sub-account calls, while SymmioPartyB routes solver calls. Both accepted a global
+								&quot;inside an InstantLayer batch&quot; flag in place of authorization. v0.8.6 removes that shortcut.
 							</p>
 						</div>
 					</div>
@@ -61,7 +61,8 @@
 				<article class="doc-article" id="full-document">
 					<h2 id="summary">Summary</h2>
 					<p>
-						The <code>MultiAccount</code> and <code>SymmioPartyB</code> helper contracts accepted an ambient signal in place of a real
+						<code>MultiAccount</code> manages legacy PartyA sub-accounts and routes calls for their owners.
+						<code>SymmioPartyB</code> routes PartyB and solver calls. Both helper contracts accepted an ambient signal in place of a real
 						authorization check: a global flag on the core diamond saying the protocol was currently inside an InstantLayer batch. v0.8.6
 						deletes that alternative from MultiAccount and replaces it with a direct-caller role check in SymmioPartyB.
 					</p>
@@ -83,11 +84,11 @@
 					<p>
 						That flag answers <em>&quot;is the protocol currently inside an InstantLayer batch?&quot;</em> It says nothing about who is
 						calling <code>MultiAccount</code>. While it is true, <code>_call</code> accepts any <code>msg.sender</code>, for any account,
-						for any selector, and the delegation map is skipped entirely. A v0.8.5 batch could call a target admitted by
-						<code>whitelistedTargets</code>; any code reached while that call was executing observed the same core-wide flag. During that
-						window the delegation check was therefore off for every MultiAccount sub-account at once. The v0.8.5 storage comment names the
-						shape of the risk itself: the flag was persistent state, not automatically reset, and its lifecycle was the caller's
-						responsibility.
+						for any selector, and the delegation map is skipped entirely. InstantLayer's <code>whitelistedTargets</code> map identifies
+						the external contracts a batch is allowed to call. A v0.8.5 batch could call one of those targets; any code reached while that
+						call was executing observed the same core-wide flag. During that window the delegation check was therefore off for every
+						MultiAccount sub-account at once. The v0.8.5 storage comment names the shape of the risk itself: the flag was persistent
+						state, not automatically reset, and its lifecycle was the caller's responsibility.
 					</p>
 					<div class="table-wrap">
 						<table>
@@ -108,29 +109,46 @@
 									<td>delegation entry only</td>
 								</tr>
 								<tr>
-									<td><code>SymmioPartyB._call</code> / <code>adlClose</code></td>
+									<td>
+										<code>SymmioPartyB._call</code>, <code>_multicastCall</code>, <code>adlClose</code>, and
+										<code>setFundingFee</code>
+									</td>
 									<td><code>isCallFromInstantLayer()</code></td>
-									<td><code>ISymmio.hasRole(msg.sender, INSTANT_LAYER_ROLE)</code></td>
+									<td>
+										<code>adlClose</code> and <code>setFundingFee</code> accept <code>MANAGER_ROLE</code>,
+										<code>TRUSTED_ROLE</code>, or core <code>INSTANT_LAYER_ROLE</code>. Routed calls apply per-leg gates:
+										restricted core selectors require <code>MANAGER_ROLE</code>; other core selectors accept manager, trusted, or
+										core InstantLayer role; non-core destinations must be whitelisted and require <code>TRUSTED_ROLE</code>.
+									</td>
 								</tr>
 							</tbody>
 						</table>
 					</div>
 					<p>
-						The <code>SymmioPartyB</code> replacement checks whether the <em>direct caller</em> holds the InstantLayer role on core. The
-						check binds authorization to <code>msg.sender</code> instead of a core-wide execution flag.
+						Where core <code>INSTANT_LAYER_ROLE</code> is accepted, <code>SymmioPartyB</code> checks that role on the
+						<em>direct caller</em>. This binds authorization to <code>msg.sender</code> instead of a core-wide execution flag. The role
+						does not bypass the stricter manager-only selector gate or the trusted-plus-whitelist gate for non-core destinations.
 					</p>
 					<aside class="callout callout-important">
 						<strong>The legacy storage flag itself is not removed.</strong> <code>callFromInstantLayer</code> remains in core storage and
-						the <code>isCallFromInstantLayer()</code> view still exists. New InstantLayer execution uses the transaction-scoped execution
-						context, while the view falls back to the legacy flag when no transient context is active. Bound-PartyA accessibility checks
-						still use that effective context. What changed here is that the helper contracts no longer treat it as authorization.
+						the <code>isCallFromInstantLayer()</code> view still exists. New InstantLayer calls store their routing state in EIP-1153
+						transient storage, which lasts only for the current transaction. When no transient state is active, the view falls back to the
+						legacy field for older callers. PartyAs using instant-actions mode still require this effective routing state before they may
+						call guarded actions, but the helper contracts no longer treat the state as permission by itself.
 					</aside>
 
 					<h2 id="effect-on-callers">Effect on callers</h2>
 					<p>
 						Anything that reached a MultiAccount sub-account during an InstantLayer batch without holding a delegation entry now reverts
-						with <code>MultiAccount: Unauthorized access</code>. The resolution is an explicit <code>delegateAccess</code>
-						grant for the account and selector, which is what the delegation map was always for.
+						with <code>MultiAccount: Unauthorized access</code>. The resolution is an explicit <code>delegateAccess</code> grant for the
+						account and selector, which is what the delegation map was always for. The account owner creates that entry by calling
+						<code>delegateAccess(account, target, selector)</code>, or <code>delegateAccesses</code> for several selectors.
+					</p>
+					<p>
+						Here, <code>target</code> is the contract that will call MultiAccount directly, normally the deployed InstantLayer, not the
+						inner Symmio or AccountLayer destination. For SymmioPartyB, granting that deployed InstantLayer core
+						<code>INSTANT_LAYER_ROLE</code> authorizes only the direct entrypoints and non-restricted core calls that accept the role. It
+						does not authorize restricted core selectors or non-core multicast destinations.
 					</p>
 					<p>
 						MultiAccount is a legacy contract. AccountLayer registers deployed instances under <code>legacyMultiAccounts</code>, resolves

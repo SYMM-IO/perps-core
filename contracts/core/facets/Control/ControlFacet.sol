@@ -493,7 +493,8 @@ contract ControlFacet is Accessibility, Ownable, IControlEvents {
 		SymbolStorage.layout().forceCloseGapRatio[symbolId] = forceCloseGapRatio;
 	}
 
-	/// @notice Sets the minimum time between UPNL settlements. Prevents excessive settlement frequency by third-party signers (Party B is exempt from this cooldown).
+	/// @notice Sets the minimum time between UPNL settlements by third-party signers.
+	/// @dev PartyB is exempt from this cooldown.
 	/// @param settlementCooldown The minimum time in seconds between consecutive UPNL settlements.
 	function setSettlementCooldown(uint256 settlementCooldown) external onlyRole(LibAccessibility.COOLDOWN_ADMIN_ROLE) {
 		emit SetSettlementCooldown(MAStorage.layout().settlementCooldown, settlementCooldown);
@@ -596,7 +597,8 @@ contract ControlFacet is Accessibility, Ownable, IControlEvents {
 		emit SetSignatureVerifierAddress(signatureVerifier);
 	}
 
-	/// @notice Authorizes a relayer to facilitate external transfers to a specific target (another Symmio diamond or any trusted contract).
+	/// @notice Authorizes a relayer to perform external transfers to a specific target.
+	/// @dev The target may be another Symmio diamond or any trusted contract.
 	/// @param target The external transfer destination address. Symmio trusts this target and its relayer to handle funds correctly.
 	/// @param relayer The address authorized to relay transfers to the target.
 	function addRelayerForExternalTransferTarget(address target, address relayer) external onlyRole(LibAccessibility.INTEGRATION_ADMIN_ROLE) {
@@ -662,7 +664,7 @@ contract ControlFacet is Accessibility, Ownable, IControlEvents {
 		maLayout.withdrawCooldownPeriod = newValue;
 	}
 
-	/// @notice Registers a virtual provider that can facilitate virtual deposits/withdrawals without actual token transfers.
+	/// @notice Registers a virtual provider for virtual deposits and withdrawals without token transfers.
 	/// @param provider The address to authorize as a virtual provider.
 	function registerVirtualProvider(address provider) external onlyRole(LibAccessibility.PROVIDER_ADMIN_ROLE) {
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
@@ -679,7 +681,7 @@ contract ControlFacet is Accessibility, Ownable, IControlEvents {
 		emit UnregisterVirtualProvider(provider);
 	}
 
-	/// @notice Registers an express provider that can facilitate expedited withdrawals with reduced cooldown periods.
+	/// @notice Registers an express provider for expedited withdrawals with reduced cooldown periods.
 	/// @param provider The address to authorize as an express provider.
 	function registerExpressProvider(address provider) external onlyRole(LibAccessibility.PROVIDER_ADMIN_ROLE) {
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();

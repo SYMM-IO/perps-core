@@ -115,7 +115,20 @@
 						<li><code>scaleNumerator</code> and <code>scaleDenominator</code> expose the adjustment applied to funding.</li>
 						<li><code>allocationKey</code> identifies the PartyB balance bucket that changed.</li>
 					</ul>
-					<p><code>settledPnl</code> is the final residual price-PnL component; it is not independently scaled by the funding ratio.</p>
+					<p>
+						The event's scale operands come from the settlement state. The <strong>expected amount</strong> is the full PartyA-perspective
+						funding-plus-PnL total accumulated while processing quotes. The <strong>final amount</strong> is the PartyA-perspective amount
+						the bucket will actually settle after any deficit or dispute adjustment and any isolated-mode balance cap. These are internal
+						operands; the event reports their ratio and the resulting PartyB-perspective components.
+					</p>
+					<p>
+						Normally the final amount matches the expected amount and the scale is <code>1 / 1</code>. A haircut, dispute override, or
+						isolated-mode payout cap can reduce the final amount. When it reduces the amount without changing its direction, the scale is
+						<code>abs(final amount) / abs(expected amount)</code>; a zero or direction-changing override reduces funding to zero. The
+						contract applies that scale to <code>rawFunding</code>, then assigns the rest of the final bucket movement to
+						<code>settledPnl</code>. Thus <code>settledFunding + settledPnl</code> equals the final PartyB-perspective balance change;
+						<code>settledPnl</code> is not independently scaled.
+					</p>
 					<p>
 						Non-zero settled components are accompanied by the corresponding typed <code>FUNDING_FEE_IN/OUT</code> and
 						<code>REALIZED_PNL_IN/OUT</code> PartyB balance-change events.
@@ -130,7 +143,10 @@
 );</code></pre>
 					<p>
 						If the Clearing House takes over before a pending normal settlement is completed, this event marks the normal funding
-						settlement as abandoned. Observers can then use the explicit Clearing House settlement component events for the takeover flow
+						settlement as abandoned. Observers should then reconcile the takeover through
+						<a href="explicit-clearing-house-settlements.html"
+							><code>ClearingHouseSettlementComponent</code> and <code>ClearingHouseAccountSettlement</code></a
+						>
 						instead of treating the earlier raw quote calculations as a completed normal settlement.
 					</p>
 

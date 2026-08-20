@@ -62,8 +62,9 @@
 				<article class="doc-article" id="full-document">
 					<h2 id="summary">Summary</h2>
 					<p>
-						Snapshot liquidation uses signed historical funding for settlement, but the standard flow still takes multiple calls. Those
-						calls start liquidation, submit snapshot state, handle pending quotes, liquidate open positions, and settle PartyBs.
+						PartyA snapshot liquidation has two execution paths. The standard path spreads the work across several transactions. It starts
+						liquidation, submits the Muon-signed historical funding state, handles pending quotes, liquidates open positions, and settles
+						PartyBs.
 					</p>
 					<p>
 						The AccountLayer changes in v0.8.5 made the wrapper useful for more accounts. Many accounts now carry positions in a single
@@ -89,13 +90,15 @@
 						<li><code>partyA</code>: the account being liquidated.</li>
 						<li><code>liquidationSnapshotSig</code>: the Muon-signed historical insolvency and PartyB-symbol snapshot payload.</li>
 						<li><code>quoteIds</code>: open positions to close in this transaction.</li>
-						<li><code>partyBs</code>: PartyB settlement buckets to settle in this transaction.</li>
+						<li><code>partyBs</code>: the PartyB addresses whose liquidation settlement buckets must be cleared in this transaction.</li>
 					</ul>
 					<h2 id="when-to-use">When to use it</h2>
 					<p>
-						Use the wrapper when the caller can supply every open <code>quoteId</code> and every involved PartyB, and the complete
-						liquidation fits within one transaction's gas limit. Use the multi-step snapshot flow for larger accounts or when work must be
-						divided across transactions.
+						This is an alternative start-to-finish entrypoint, not a resume function. Liquidation must be unpaused, the caller must hold
+						<code>LIQUIDATOR_ROLE</code>, and PartyA must not already be in liquidation. Use the wrapper when those prerequisites hold,
+						the caller can supply every open <code>quoteId</code> and every involved PartyB, and the complete liquidation fits within one
+						transaction's gas limit. Use the multi-step snapshot flow for larger accounts or when work must be divided across
+						transactions.
 					</p>
 					<h2 id="atomicity">Atomic completion</h2>
 					<p>

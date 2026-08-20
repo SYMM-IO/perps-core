@@ -217,7 +217,7 @@ contract ViewFacet is IViewFacet {
 		epochStart = ac.capChangeEpochStart;
 		uint256 windowDuration = cl.capChangeWindowDuration;
 		uint256 maxFree = cl.capChangeMaxFreePerWindow;
-		// If the window has elapsed, the next call resets the counter — so logically there is a full quota available.
+		// If the window has elapsed, the next call resets the counter, so the full quota is available.
 		bool epochElapsed = windowDuration == 0 || block.timestamp >= epochStart + windowDuration;
 		if (epochElapsed) {
 			remainingFree = maxFree;

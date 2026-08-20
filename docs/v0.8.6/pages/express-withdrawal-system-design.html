@@ -139,7 +139,7 @@
 						<strong>Then read the risk gates</strong>
 						<small>Validator checks, security windows, locks, cancellation, and suspension.</small>
 					</a>
-					<a href="#12-contract-interfaces">
+					<a href="#7-the-signature-scheme-eip-712">
 						<span>Integration path</span>
 						<strong>Finish with implementation surfaces</strong>
 						<small>EIP-712 payloads, fees, bot duties, roles, and contract interfaces.</small>
@@ -206,6 +206,12 @@
 						All three options go through the ExpressProvider, giving the bot one orchestration surface for signing, monitoring, early
 						processing, and finalization. On-chain fallbacks remain permissionless at their documented times. The configurable flat
 						operator fee can price per-request operating cost, including the cost of handling small withdrawals.
+					</p>
+					<p>
+						In the sequence below, <code>parts</code> is the <code>WithdrawReceiverPart[]</code> array that fixes each receiver and
+						provider route; <a href="#7-4-parts-hash">Section 7.4</a> defines its signed hash. <code>providerData</code> is the nested
+						encoded payload containing the signed offer, validator approvals when required, and credit data when used;
+						<a href="#7-7-provider-data-encoding">Section 7.7</a> gives the exact encoding.
 					</p>
 					<pre><code class="language-mermaid">sequenceDiagram
     participant User

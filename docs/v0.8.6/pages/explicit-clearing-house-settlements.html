@@ -78,6 +78,23 @@
 					</aside>
 
 					<h2 id="settlement-input">Settlement input</h2>
+					<p>The call identifies the liquidation and the ledger destination separately:</p>
+					<ul>
+						<li>
+							<code>subject</code>, passed to <code>applyClearingHouseSettlement</code>, is the cross-margin PartyB liquidation or
+							PartyA takeover currently in progress.
+						</li>
+						<li><code>account</code> is the PartyA or PartyB whose balance receives or pays the submitted component.</li>
+						<li>
+							<code>allocationKey</code> selects that account's ledger bucket. PartyB rows use the relevant isolated PartyA key or
+							<code>address(0)</code> for cross margin. PartyA rows normally use <code>address(0)</code>; a PartyA takeover may use the
+							designated reimbursement key, <code>address(1)</code>, only when debiting reimbursement.
+						</li>
+						<li>
+							The active <code>subject</code>'s deallocated pool receives account debits and funds account credits. The entire batch
+							reverts if that pool cannot cover the credits after all debits are included.
+						</li>
+					</ul>
 					<pre><code class="language-solidity">struct ClearingHouseSettlement {
     address account;
     address allocationKey;

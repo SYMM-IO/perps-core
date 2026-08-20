@@ -62,12 +62,16 @@
 				<article class="doc-article" id="full-document">
 					<h2 id="summary">Summary</h2>
 					<p>
-						The existing <code>minAcceptablePortionLF</code> protects LF relative to PartyA's locked collateral. The new
-						<code>minAcceptableNotionalLFRate</code> protects LF relative to the position's notional value. A quote must satisfy both
-						limits.
+						The existing <code>minAcceptablePortionLF</code> protects the liquidation fee (LF) relative to PartyA's locked collateral. The
+						new <code>minAcceptableNotionalLFRate</code> protects the same fee relative to the position's notional value. A quote must
+						satisfy both limits.
 					</p>
 
 					<h2 id="two-floors">How the two floors work</h2>
+					<p>
+						For this calculation, CVA is the credit valuation adjustment and <code>partyAmm</code> is PartyA maintenance margin. Those two
+						amounts and LF make up the PartyA collateral locked for the quote.
+					</p>
 					<pre><code>collateralFloor = minAcceptablePortionLF × (CVA + partyAmm + LF)
 notional = quantity × price
 notionalFloor = minAcceptableNotionalLFRate × notional
@@ -92,8 +96,9 @@ requiredLF = max(collateralFloor, notionalFloor)</code></pre>
 					</ul>
 					<p>
 						Core configuration uses the existing <code>SYMBOL_MANAGER_ROLE</code>. The <code>SymmioSymbolManager</code> batch setters use
-						<code>SYMBOL_MIN_ACCEPTABLE_VALUES_MANAGER_ROLE</code> and the existing <code>acceptableValues</code> daily limit. The initial
-						default is zero, so the new floor becomes active only after governance configures symbol 0 or an override.
+						<code>SYMBOL_MIN_ACCEPTABLE_VALUES_MANAGER_ROLE</code>. They also count each updated symbol against the existing
+						<code>acceptableValues</code> limit for that 24-hour period. The initial default is zero, so the new floor becomes active only
+						after governance configures symbol 0 or an override.
 					</p>
 
 					<h2 id="quote-and-open-checks">Quote and open checks</h2>

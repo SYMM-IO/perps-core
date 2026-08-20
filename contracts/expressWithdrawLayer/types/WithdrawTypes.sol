@@ -24,8 +24,8 @@ enum Status {
 	LOCKED, // A LOCKER_ROLE account placed a temporary hold; STANDARD can be unlocked and processed after SYMMIO finalization.
 	PROCESSED, // Funds were transferred to the user. For STANDARD this is the post-FINALIZED user payout state.
 	FINALIZED, // WINDOWED/SAME_TX terminal success; for STANDARD, tokens arrived and are awaiting processWithdraw.
-	CANCELLED, // Terminal — the request was cancelled (only possible from ACCEPTED before processing).
-	SUSPENDED // Terminal hold — the request was suspended (possible from ACCEPTED, LOCKED, or PROCESSED; PROCESSED triggers a rollback).
+	CANCELLED, // Terminal. The request was cancelled (only possible from ACCEPTED before processing).
+	SUSPENDED // Terminal hold. The request was suspended (possible from ACCEPTED, LOCKED, or PROCESSED; PROCESSED triggers a rollback).
 }
 
 /// @notice Withdrawal option tier -- determines when payout is processed.

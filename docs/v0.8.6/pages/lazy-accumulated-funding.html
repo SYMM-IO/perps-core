@@ -87,6 +87,13 @@
 						<code>lastUpdatedEpoch</code>) and the rate in force since then (<code>currentRate</code>). The cumulative fee per unit of
 						position at any epoch is fully determined without rolling storage:
 					</p>
+					<p>
+						Choose the long or short fields according to the quote's <code>positionType</code>. In the formula,
+						<code>snapshotFee</code> means <code>snapshotLongFee</code> or <code>snapshotShortFee</code>, the cumulative per-unit fee
+						preserved when a duration change rebases the epoch schedule. <code>startEpoch</code> is the first epoch of the current funding
+						history, while <code>lastUpdatedEpoch</code> is the last epoch already represented by <code>accumulatedRate</code>.
+						<code>epochDuration</code> is the configured number of seconds in one funding epoch.
+					</p>
 					<pre><code>currentEpoch  = floor(block.timestamp / epochDuration)
 cumulativeFee = snapshotFee
               + accumulatedRate * (lastUpdatedEpoch - startEpoch)
