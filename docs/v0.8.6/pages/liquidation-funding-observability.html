@@ -40,10 +40,10 @@
 		<div class="reader-shell">
 			<div class="rail-sections-source" data-rail-sections hidden>
 				<a class="toc-link level-2" href="#summary">Summary</a>
-				<a class="toc-link level-2" href="#quote-funding-event">Quote Funding Event</a>
-				<a class="toc-link level-2" href="#aggregate-settlement-event">Aggregate Settlement Event</a>
-				<a class="toc-link level-2" href="#clearing-house-boundary">Clearing House Boundary</a>
-				<a class="toc-link level-2" href="#observer-scope">Observer Scope</a>
+				<a class="toc-link level-2" href="#quote-funding-event">Quote funding event</a>
+				<a class="toc-link level-2" href="#aggregate-settlement-event">Aggregate settlement event</a>
+				<a class="toc-link level-2" href="#clearing-house-boundary">Clearing House boundary</a>
+				<a class="toc-link level-2" href="#observer-scope">What indexers can reconstruct</a>
 			</div>
 
 			<main class="reader-main">
@@ -71,7 +71,7 @@
 						a per-quote settlement ledger, or different liquidation economics.
 					</aside>
 
-					<h2 id="quote-funding-event">Quote Funding and PnL Event</h2>
+					<h2 id="quote-funding-event">Quote funding and PnL event</h2>
 					<pre><code class="language-solidity">event QuoteLiquidationFundingCalculated(
     address indexed partyA,
     address indexed partyB,
@@ -90,7 +90,7 @@
 						that component, and a negative value means PartyB pays it.
 					</p>
 
-					<h2 id="aggregate-settlement-event">Aggregate Settlement Event</h2>
+					<h2 id="aggregate-settlement-event">Aggregate settlement event</h2>
 					<pre><code class="language-solidity">event LiquidationFundingSettled(
     address indexed partyA,
     address indexed partyB,
@@ -121,7 +121,7 @@
 						<code>REALIZED_PNL_IN/OUT</code> PartyB balance-change events.
 					</p>
 
-					<h2 id="clearing-house-boundary">Clearing House Boundary</h2>
+					<h2 id="clearing-house-boundary">Clearing House boundary</h2>
 					<pre><code class="language-solidity">event LiquidationFundingSettlementAbandoned(
     address indexed partyA,
     address indexed partyB,
@@ -134,8 +134,8 @@
 						instead of treating the earlier raw quote calculations as a completed normal settlement.
 					</p>
 
-					<h2 id="observer-scope">Observer Scope</h2>
-					<p>The added events expose:</p>
+					<h2 id="observer-scope">What indexers can reconstruct</h2>
+					<p>The events expose:</p>
 					<ul>
 						<li>Raw liquidation funding and price PnL per quote and symbol.</li>
 						<li>Raw and final aggregate funding and price PnL per PartyA/PartyB settlement bucket.</li>
@@ -144,8 +144,8 @@
 						<li>An explicit boundary when normal settlement is superseded by a Clearing House takeover.</li>
 					</ul>
 					<p>
-						Together with the typed PartyB balance-change events, these records give indexers more complete liquidation accounting and
-						reconciliation data without requiring an additional on-chain publication step.
+						Together with the typed PartyB balance-change events, these records provide more complete liquidation accounting and
+						reconciliation data without an additional on-chain publication step.
 					</p>
 				</article>
 			</main>

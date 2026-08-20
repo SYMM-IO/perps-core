@@ -39,7 +39,7 @@
 			<div class="rail-sections-source" data-rail-sections hidden>
 				<a class="toc-link level-2" href="#summary">Summary</a>
 				<a class="toc-link level-2" href="#why">Why</a>
-				<a class="toc-link level-2" href="#effect-on-callers">Effect on Callers</a>
+				<a class="toc-link level-2" href="#effect-on-callers">Effect on callers</a>
 			</div>
 
 			<main class="reader-main">
@@ -72,7 +72,7 @@
 						however, so a stale <code>owner()</code> fragment fails only when the call reaches the upgraded diamond.
 					</p>
 
-					<h2 id="effect-on-callers">Effect on Callers</h2>
+					<h2 id="effect-on-callers">Effect on callers</h2>
 					<aside class="callout callout-risk">
 						<strong><code>owner()</code> is the ERC-173 signature explorers use to detect ownership.</strong> Neither diamond registers
 						ERC-173 through <code>supportsInterface</code>, so the rename does not break a declared interface. A call to the old selector,

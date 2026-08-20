@@ -41,9 +41,9 @@
 		<div class="reader-shell">
 			<div class="rail-sections-source" data-rail-sections hidden>
 				<a class="toc-link level-2" href="#summary">Summary</a>
-				<a class="toc-link level-2" href="#partial-fill-flow">Partial Fill Flow</a>
-				<a class="toc-link level-2" href="#order-semantics">Order Semantics</a>
-				<a class="toc-link level-2" href="#integration-notes">Integration Notes</a>
+				<a class="toc-link level-2" href="#partial-fill-flow">Partial-fill flow</a>
+				<a class="toc-link level-2" href="#order-semantics">Order semantics</a>
+				<a class="toc-link level-2" href="#integration-notes">Integration notes</a>
 			</div>
 
 			<main class="reader-main">
@@ -77,7 +77,7 @@
 						and direction as its parent, so tracking it on the same account preserves those isolation contracts.
 					</p>
 
-					<h2 id="partial-fill-flow">Partial Fill Flow</h2>
+					<h2 id="partial-fill-flow">Partial-fill flow</h2>
 					<p>
 						Core fires lifecycle hooks after all <code>openPosition</code> state is final, which is what makes the nested cancel safe: the
 						filled part of the quote is already OPENED and the remainder is a fully-formed PENDING quote.
@@ -108,7 +108,7 @@ if (childQuote.parentId == quoteId &amp;&amp; childQuote.partyA == partyA &amp;&
 						callbacks.
 					</p>
 
-					<h2 id="order-semantics">Order Semantics</h2>
+					<h2 id="order-semantics">Order semantics</h2>
 					<p>
 						On POSITION-isolated accounts, a LIMIT order is effectively partial-fill-and-kill: the solver keeps whatever it filled, and
 						the unfilled remainder does not rest on the book. MARKET orders are unaffected because the core requires them to fill
@@ -125,7 +125,7 @@ if (childQuote.parentId == quoteId &amp;&amp; childQuote.partyA == partyA &amp;&
 						its own margin.
 					</p>
 
-					<h2 id="integration-notes">Integration Notes</h2>
+					<h2 id="integration-notes">Integration notes</h2>
 					<p>
 						Indexers and frontends should expect a <code>RequestToCancelQuote(partyA, address(0), CANCELED, childQuoteId)</code> event
 						emitted by the nested cancel inside the solver's <code>openPosition</code> transaction. It occurs during the

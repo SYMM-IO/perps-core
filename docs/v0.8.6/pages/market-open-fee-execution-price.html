@@ -40,11 +40,11 @@
 
 		<div class="reader-shell">
 			<div class="rail-sections-source" data-rail-sections hidden>
-				<a class="toc-link level-2" href="#the-gap">The Unpoliced Price</a>
-				<a class="toc-link level-2" href="#two-bases">Reserved and Executed</a>
-				<a class="toc-link level-2" href="#lifecycle">Fee Lifecycle</a>
-				<a class="toc-link level-2" href="#unchanged">What Did Not Change</a>
-				<a class="toc-link level-2" href="#integration">Integration Notes</a>
+				<a class="toc-link level-2" href="#the-gap">The unpoliced price</a>
+				<a class="toc-link level-2" href="#two-bases">Reserved and executed fees</a>
+				<a class="toc-link level-2" href="#lifecycle">Fee lifecycle</a>
+				<a class="toc-link level-2" href="#unchanged">What did not change</a>
+				<a class="toc-link level-2" href="#integration">Integration notes</a>
 			</div>
 
 			<main class="reader-main">
@@ -68,11 +68,11 @@
 						fee in the protocol still priced off a request-time input.
 					</p>
 
-					<h2 id="the-gap">The Unpoliced Price</h2>
+					<h2 id="the-gap">The unpoliced price</h2>
 					<p>
 						<code>marketPrice</code> reaches storage from the uPnL payload submitted with PartyA's request. On the normal path a Muon
 						signature covers that payload, so the value is attested. When PartyA is bound to a PartyB, <code>sendQuote</code> skips Muon
-						verification entirely &mdash; that is the point of binding &mdash; and the request-time price is accepted as supplied.
+						verification because binding is the oracle-less path. The request-time price is accepted as supplied.
 					</p>
 					<p>
 						A bound PartyA could therefore submit a market quote with <code>marketPrice</code> set to zero. The quote was otherwise valid:
@@ -96,11 +96,11 @@
 					<p>
 						Charging on <code>openedPrice</code> removes PartyA's request-time <code>marketPrice</code> from the executed fee calculation.
 						PartyB supplies <code>openedPrice</code> at fill time, and the protocol bounds it against <code>requestedOpenPrice</code> in
-						the required direction &mdash; at or below it for a long, at or above it for a short. The collector's fee therefore follows
-						the price recorded for the opened position.
+						the required direction. It must be at or below the requested price for a long and at or above it for a short. The collector's
+						fee follows the price recorded for the opened position.
 					</p>
 
-					<h2 id="two-bases">Reserved and Executed</h2>
+					<h2 id="two-bases">Reserved and executed fees</h2>
 					<p>The fee is now expressed as two bases over the same formula, differing only in which price they read.</p>
 					<ol>
 						<li>
@@ -118,7 +118,7 @@
 						is only observable for market orders.
 					</p>
 
-					<h2 id="lifecycle">Fee Lifecycle</h2>
+					<h2 id="lifecycle">Fee lifecycle</h2>
 					<p>
 						An unopened quote has no execution price, so the reserved basis is the only one that exists for a pending or locked quote. The
 						reservation stays on that basis for its whole life, and the difference is settled once, at open.
@@ -137,7 +137,7 @@
 						is applied before the caller verifies solvency, so a shortfall PartyA cannot afford reverts the entire open rather than
 						leaving the account short.
 					</p>
-					<h2 id="unchanged">What Did Not Change</h2>
+					<h2 id="unchanged">What did not change</h2>
 					<p>
 						Every path that hands an open fee back operates on a quote that never opened, so all of them keep using the reserved basis and
 						return exactly what <code>sendQuote</code> took:
@@ -154,7 +154,7 @@
 						never takes the partial-fill path.
 					</p>
 
-					<h2 id="integration">Integration Notes</h2>
+					<h2 id="integration">Integration notes</h2>
 					<ol>
 						<li>
 							<code>TradingFeeCharged</code> with <code>TradingFeeType.OPEN</code> now carries the executed fee. Indexers that

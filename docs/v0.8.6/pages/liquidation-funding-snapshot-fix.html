@@ -40,13 +40,13 @@
 		<div class="reader-shell">
 			<div class="rail-sections-source" data-rail-sections hidden>
 				<a class="toc-link level-2" href="#summary">Summary</a>
-				<a class="toc-link level-2" href="#affected-scenario">Affected Scenario</a>
+				<a class="toc-link level-2" href="#affected-scenario">Affected scenario</a>
 				<a class="toc-link level-2" href="#impact">Impact</a>
-				<a class="toc-link level-2" href="#new-muon-payload">New Muon Payload</a>
-				<a class="toc-link level-2" href="#snapshot-storage-model">Snapshot Storage Model</a>
-				<a class="toc-link level-2" href="#method-order-before-and-now">Method Order Before And Now</a>
-				<a class="toc-link level-2" href="#new-settlement-behavior">New Settlement Behavior</a>
-				<a class="toc-link level-2" href="#price-only-deprecation-flag">Price-Only Deprecation Flag</a>
+				<a class="toc-link level-2" href="#new-muon-payload">New Muon payload</a>
+				<a class="toc-link level-2" href="#snapshot-storage-model">Snapshot storage model</a>
+				<a class="toc-link level-2" href="#method-order-before-and-now">Method order before and now</a>
+				<a class="toc-link level-2" href="#new-settlement-behavior">New settlement behavior</a>
+				<a class="toc-link level-2" href="#price-only-deprecation-flag">Price-only deprecation flag</a>
 			</div>
 			<main class="reader-main">
 				<header class="reader-hero">
@@ -77,7 +77,7 @@
 						v0.8.6 adds a Muon-signed snapshot liquidation path. Muon now signs PartyA historical insolvency data plus the price and
 						cumulative funding values needed for each <code>(PartyB, symbolId)</code> pair.
 					</p>
-					<h2 id="affected-scenario">Affected Scenario</h2>
+					<h2 id="affected-scenario">Affected scenario</h2>
 					<p>The risky flow was:</p>
 					<ol>
 						<li>PartyA becomes liquidatable.</li>
@@ -110,7 +110,7 @@
 							allowing liquidation to pass with wrong settlement accounting.
 						</li>
 					</ul>
-					<h2 id="new-muon-payload">New Muon Payload</h2>
+					<h2 id="new-muon-payload">New Muon payload</h2>
 					<p>The snapshot path uses <code>LiquidationSnapshotSig</code>:</p>
 					<pre><code class="language-solidity">struct LiquidationPartyBSymbolState {
     address partyB;
@@ -157,7 +157,7 @@ struct LiquidationSnapshotSig {
 						<code>setSymbolsPriceWithSnapshot</code> call submits those states for the same liquidation and stores the signed prices and
 						funding values.
 					</p>
-					<h2 id="snapshot-storage-model">Snapshot Storage Model</h2>
+					<h2 id="snapshot-storage-model">Snapshot storage model</h2>
 					<p>The snapshot path adds two storage concepts to <code>AccountStorage</code>:</p>
 					<pre><code class="language-solidity">mapping(address =&gt; mapping(bytes =&gt; bool)) liquidationUsesPartyBSymbolSnapshots;
 mapping(address =&gt; mapping(bytes =&gt; mapping(address =&gt; mapping(uint256 =&gt; LiquidationPartyBSymbolSnapshot)))) liquidationPartyBSymbolSnapshots;
@@ -197,7 +197,7 @@ mapping(address =&gt; mapping(bytes =&gt; mapping(address =&gt; mapping(uint256 
 						<code>prices</code>, and cumulative funding arrays. It also emits the existing <code>SetSymbolsPrices</code> event for
 						compatibility with existing liquidation indexers.
 					</p>
-					<h2 id="method-order-before-and-now">Method Order Before And Now</h2>
+					<h2 id="method-order-before-and-now">Method order before and now</h2>
 					<p>The liquidation phases stay the same. What changes in v0.8.6 is the setup and price/funding source.</p>
 					<div class="table-wrap">
 						<table>
@@ -266,7 +266,7 @@ mapping(address =&gt; mapping(bytes =&gt; mapping(address =&gt; mapping(uint256 
 							</tbody>
 						</table>
 					</div>
-					<h2 id="new-settlement-behavior">New Settlement Behavior</h2>
+					<h2 id="new-settlement-behavior">New settlement behavior</h2>
 					<p>
 						When <code>liquidatePositionsPartyA</code> processes a quote, it reads
 						<code>liquidationUsesPartyBSymbolSnapshots[partyA][liquidationId]</code> to decide which accounting path to use.
@@ -289,7 +289,7 @@ mapping(address =&gt; mapping(bytes =&gt; mapping(address =&gt; mapping(uint256 
 						Snapshot-backed pricing is all-or-nothing for an active liquidation. Once the snapshot marker is set, the liquidation cannot
 						silently mix signed funding for some quotes with live-storage funding for others.
 					</p>
-					<h2 id="price-only-deprecation-flag">Price-Only Deprecation Flag</h2>
+					<h2 id="price-only-deprecation-flag">Price-only deprecation flag</h2>
 					<p>
 						An address with <code>PROTOCOL_CONFIG_ROLE</code> can require the new snapshot flow for future liquidation starts by calling:
 					</p>

@@ -5,7 +5,7 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta
 			name="description"
-			content="The helper contracts accepted a global “inside an InstantLayer batch” flag in place of authorization. v0.8.6 removes MultiAccount's bypass and makes SymmioPartyB check the direct caller's role."
+			content="The helper contracts accepted a global &quot;inside an InstantLayer batch&quot; flag in place of authorization. v0.8.6 removes MultiAccount's bypass and makes SymmioPartyB check the direct caller's role."
 		/>
 		<title>InstantLayer Authorization Scope - Symmio Core v0.8.6</title>
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
@@ -41,8 +41,8 @@
 		<div class="reader-shell">
 			<div class="rail-sections-source" data-rail-sections hidden>
 				<a class="toc-link level-2" href="#summary">Summary</a>
-				<a class="toc-link level-2" href="#what-changed">What Changed</a>
-				<a class="toc-link level-2" href="#effect-on-callers">Effect on Callers</a>
+				<a class="toc-link level-2" href="#what-changed">What changed</a>
+				<a class="toc-link level-2" href="#effect-on-callers">Effect on callers</a>
 			</div>
 
 			<main class="reader-main">
@@ -51,8 +51,8 @@
 						<div>
 							<h1>InstantLayer Authorization Scope</h1>
 							<p class="hero-copy">
-								The helper contracts accepted a global &ldquo;inside an InstantLayer batch&rdquo; flag in place of authorization.
-								v0.8.6 removes MultiAccount's bypass and makes SymmioPartyB check the direct caller's role.
+								The helper contracts accepted a global &quot;inside an InstantLayer batch&quot; flag in place of authorization. v0.8.6
+								removes MultiAccount's bypass and makes SymmioPartyB check the direct caller's role.
 							</p>
 						</div>
 					</div>
@@ -66,7 +66,7 @@
 						deletes that alternative from MultiAccount and replaces it with a direct-caller role check in SymmioPartyB.
 					</p>
 
-					<h2 id="what-changed">What Changed</h2>
+					<h2 id="what-changed">What changed</h2>
 					<p>
 						<code>MultiAccount._call</code> gates non-owner callers on a per-account, per-selector delegation map, and it accepted an
 						alternative:
@@ -81,7 +81,7 @@
 						afterwards.
 					</p>
 					<p>
-						That flag answers <em>&ldquo;is the protocol currently inside an InstantLayer batch?&rdquo;</em> It says nothing about who is
+						That flag answers <em>&quot;is the protocol currently inside an InstantLayer batch?&quot;</em> It says nothing about who is
 						calling <code>MultiAccount</code>. While it is true, <code>_call</code> accepts any <code>msg.sender</code>, for any account,
 						for any selector, and the delegation map is skipped entirely. A v0.8.5 batch could call a target admitted by
 						<code>whitelistedTargets</code>; any code reached while that call was executing observed the same core-wide flag. During that
@@ -116,8 +116,8 @@
 						</table>
 					</div>
 					<p>
-						The <code>SymmioPartyB</code> replacement asks whether the <em>direct caller</em> actually holds the InstantLayer role on
-						core. That is specific and unforgeable, where the flag was an ambient mode anything executing in the window could ride.
+						The <code>SymmioPartyB</code> replacement checks whether the <em>direct caller</em> holds the InstantLayer role on core. The
+						check binds authorization to <code>msg.sender</code> instead of a core-wide execution flag.
 					</p>
 					<aside class="callout callout-important">
 						<strong>The legacy storage flag itself is not removed.</strong> <code>callFromInstantLayer</code> remains in core storage and
@@ -126,14 +126,14 @@
 						still use that effective context. What changed here is that the helper contracts no longer treat it as authorization.
 					</aside>
 
-					<h2 id="effect-on-callers">Effect on Callers</h2>
+					<h2 id="effect-on-callers">Effect on callers</h2>
 					<p>
 						Anything that reached a MultiAccount sub-account during an InstantLayer batch without holding a delegation entry now reverts
 						with <code>MultiAccount: Unauthorized access</code>. The resolution is an explicit <code>delegateAccess</code>
 						grant for the account and selector, which is what the delegation map was always for.
 					</p>
 					<p>
-						MultiAccount is a legacy surface: AccountLayer registers deployed instances under <code>legacyMultiAccounts</code>, resolves
+						MultiAccount is a legacy contract. AccountLayer registers deployed instances under <code>legacyMultiAccounts</code>, resolves
 						ownership through them, and exposes legacy-account discovery views. Existing MultiAccount integrations must therefore use
 						explicit <code>delegateAccess</code> entries rather than relying on an InstantLayer batch window.
 					</p>

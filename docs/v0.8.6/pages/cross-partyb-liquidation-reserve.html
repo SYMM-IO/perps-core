@@ -41,11 +41,11 @@
 		<div class="reader-shell">
 			<div class="rail-sections-source" data-rail-sections hidden>
 				<a class="toc-link level-2" href="#summary">Summary</a>
-				<a class="toc-link level-2" href="#the-bug">The Bug</a>
-				<a class="toc-link level-2" href="#affected-paths">Affected Paths</a>
+				<a class="toc-link level-2" href="#the-bug">The bug</a>
+				<a class="toc-link level-2" href="#affected-paths">Affected paths</a>
 				<a class="toc-link level-2" href="#fix">Fix</a>
-				<a class="toc-link level-2" href="#settlement-top-up-exception">Settlement Top-Up Exception</a>
-				<a class="toc-link level-2" href="#invariant">Resulting Invariant</a>
+				<a class="toc-link level-2" href="#settlement-top-up-exception">Settlement top-up exception</a>
+				<a class="toc-link level-2" href="#invariant">Resulting invariant</a>
 			</div>
 
 			<main class="reader-main">
@@ -74,7 +74,7 @@
 						consistently across cross-bucket operations.
 					</p>
 
-					<h2 id="the-bug">The Bug</h2>
+					<h2 id="the-bug">The bug</h2>
 					<aside class="callout callout-note">
 						<strong>Cross-PartyB liquidation settlement reserve was only enforced during deallocation.</strong>
 						The reserve was subtracted in <code>deallocateForPartyB</code>, but not in the shared helpers used by <code>lockQuote</code>,
@@ -87,7 +87,7 @@
 						<code>partyBAllocatedBalances[partyB][address(0)]</code> had not yet been debited for the pending settlement.
 					</p>
 
-					<h2 id="affected-paths">Affected Paths</h2>
+					<h2 id="affected-paths">Affected paths</h2>
 					<p>The reserve now applies to the shared cross-mode PartyB availability used by:</p>
 					<ul>
 						<li><code>lockQuote</code>, through <code>partyBAvailableForQuote</code>.</li>
@@ -121,7 +121,7 @@ function partyBAvailableBalanceForLiquidation(
 						one rule.
 					</p>
 
-					<h2 id="settlement-top-up-exception">Settlement Top-Up Exception</h2>
+					<h2 id="settlement-top-up-exception">Settlement top-up exception</h2>
 					<p>
 						One path intentionally bypasses the reserve check: <code>settlePartyBUpnlForLiquidation</code>. That function exists so a
 						liquidator can realize a cross PartyB's positive uPNL from other solvent PartyAs before paying the pending liquidation
@@ -142,7 +142,7 @@ require(
 );
 </code></pre>
 
-					<h2 id="invariant">Resulting Invariant</h2>
+					<h2 id="invariant">Resulting invariant</h2>
 					<ul>
 						<li>Quote locking uses reserve-adjusted cross allocation, including the exact pass/fail boundary.</li>
 						<li>

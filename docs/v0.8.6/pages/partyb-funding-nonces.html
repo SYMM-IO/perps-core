@@ -42,11 +42,11 @@
 			<div class="rail-sections-source" data-rail-sections hidden>
 				<a class="toc-link level-2" href="#summary">Summary</a>
 				<a class="toc-link level-2" href="#interface">Interface</a>
-				<a class="toc-link level-2" href="#acceptance">Accepted, Skipped, Forwarded</a>
+				<a class="toc-link level-2" href="#acceptance">What is accepted, skipped, and forwarded</a>
 				<a class="toc-link level-2" href="#event">Reporting</a>
-				<a class="toc-link level-2" href="#batching">Batched Calls</a>
+				<a class="toc-link level-2" href="#batching">Batched calls</a>
 				<a class="toc-link level-2" href="#storage">Storage</a>
-				<a class="toc-link level-2" href="#integration">Integration Requirements</a>
+				<a class="toc-link level-2" href="#integration">Integration requirements</a>
 			</div>
 
 			<main class="reader-main">
@@ -102,8 +102,8 @@
 					<div class="table-wrap">
 						<table>
 							<caption>
-								Three outcomes: every symbol stale means nothing is forwarded, no symbol stale means everything is forwarded, and a
-								mixed batch is partitioned so the fresh symbols still land.
+								If every symbol is stale, nothing is forwarded. If none are stale, everything is forwarded. A mixed batch is
+								partitioned so the fresh symbols still land.
 							</caption>
 							<thead>
 								<tr>
@@ -138,8 +138,8 @@
 					</div>
 					<p>
 						A symbol is stale when its supplied nonce is strictly lower than the stored one. An <strong>equal</strong> nonce is accepted,
-						which is deliberate: it lets the engine replace or retry the latest update for a symbol without inventing a new nonce and
-						without breaking the surrounding template.
+						which lets the engine replace or retry the latest update for a symbol without inventing a new nonce and without breaking the
+						surrounding template.
 					</p>
 					<p>
 						Accepted symbols write their nonce before the forward. This ordering does not make the nonce single-use: because an equal
@@ -155,8 +155,8 @@
 					</p>
 					<aside class="callout callout-important">
 						<strong>A skip is a normal outcome, not a failure.</strong> The transaction succeeds. Monitoring that treats a successful
-						<code>setFundingFee</code> as proof the rates landed will be wrong for skipped symbols &mdash; check for this event, and
-						reconcile against the funding state rather than against transaction status.
+						<code>setFundingFee</code> as proof the rates landed will be wrong for skipped symbols. Check for this event and reconcile
+						against the funding state rather than against transaction status.
 					</aside>
 
 					<h2 id="batching">Batched calls are routed back through the gate</h2>

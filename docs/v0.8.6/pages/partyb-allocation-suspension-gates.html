@@ -38,8 +38,8 @@
 		<div class="reader-shell">
 			<div class="rail-sections-source" data-rail-sections hidden>
 				<a class="toc-link level-2" href="#summary">Summary</a>
-				<a class="toc-link level-2" href="#what-changed">What Changed</a>
-				<a class="toc-link level-2" href="#effect-on-callers">Effect on Callers</a>
+				<a class="toc-link level-2" href="#what-changed">What changed</a>
+				<a class="toc-link level-2" href="#effect-on-callers">Effect on callers</a>
 			</div>
 
 			<main class="reader-main">
@@ -61,17 +61,14 @@
 						<code>allocateForPartyB</code> or <code>transferAllocation</code>.
 					</p>
 
-					<h2 id="what-changed">What Changed</h2>
+					<h2 id="what-changed">What changed</h2>
 					<ul>
 						<li><code>allocateForPartyB</code> now checks that the PartyB signer is not suspended.</li>
 						<li><code>transferAllocation</code> now checks that the PartyB signer is not suspended.</li>
 						<li><code>transferAllocation</code> is also explicitly restricted to registered PartyBs.</li>
 					</ul>
-					<p>
-						This is a consistency hardening change: suspended PartyBs should not be able to move allocation between PartyA buckets after
-						the protocol has frozen their account.
-					</p>
-					<h2 id="effect-on-callers">Effect on Callers</h2>
+					<p>A suspended PartyB can no longer move allocation between PartyA buckets after the protocol freezes its account.</p>
+					<h2 id="effect-on-callers">Effect on callers</h2>
 					<p>
 						Bots and AccountLayer adapters should read <code>isSuspended(partyB)</code> before submitting either action. A suspended
 						signer reverts with <code>Accessibility: Sender is Suspended</code> before allocation state changes or events are emitted.

@@ -40,16 +40,16 @@
 		<div class="reader-shell">
 			<div class="rail-sections-source" data-rail-sections hidden>
 				<a class="toc-link level-2" href="#summary">Summary</a>
-				<a class="toc-link level-2" href="#changed-interfaces">Changed Interfaces</a>
+				<a class="toc-link level-2" href="#changed-interfaces">Changed interfaces</a>
 				<a class="toc-link level-3" href="#corefacet-createsubaccountsfor">`CoreFacet.createSubAccountsFor`</a>
 				<a class="toc-link level-3" href="#corefacet-transfersubaccountownership">`CoreFacet.transferSubAccountOwnership`</a>
 				<a class="toc-link level-3" href="#iaccountlayerhook-onsubaccountownershiptransfer"
 					>`IAccountLayerHook.onSubAccountOwnershipTransfer`</a
 				>
-				<a class="toc-link level-2" href="#storage-impact">Storage Impact</a>
-				<a class="toc-link level-2" href="#ownership-resolution">Ownership Resolution</a>
-				<a class="toc-link level-2" href="#hook-ordering-revert-semantics">Hook Ordering &amp; Revert Semantics</a>
-				<a class="toc-link level-2" href="#security-considerations">Security Considerations</a>
+				<a class="toc-link level-2" href="#storage-impact">Storage impact</a>
+				<a class="toc-link level-2" href="#ownership-resolution">Ownership resolution</a>
+				<a class="toc-link level-2" href="#hook-ordering-revert-semantics">Hook ordering and revert semantics</a>
+				<a class="toc-link level-2" href="#security-considerations">Security considerations</a>
 				<a class="toc-link level-3" href="#role-granted-account-creation">Role-granted account creation</a>
 				<a class="toc-link level-3" href="#direct-ownership-transfer">Direct ownership transfer</a>
 				<a class="toc-link level-3" href="#existing-instantlayer-delegations">Existing InstantLayer delegations</a>
@@ -57,8 +57,8 @@
 				<a class="toc-link level-3" href="#no-symmio-core-balance-movement">No Symmio core balance movement</a>
 				<a class="toc-link level-2" href="#events">Events</a>
 				<a class="toc-link level-3" href="#subaccountownershiptransferred">`SubAccountOwnershipTransferred`</a>
-				<a class="toc-link level-2" href="#implementation-review-checklist">Implementation Review Checklist</a>
-				<a class="toc-link level-2" href="#tested-behaviors">Tested Behaviors</a>
+				<a class="toc-link level-2" href="#implementation-review-checklist">Implementation review checklist</a>
+				<a class="toc-link level-2" href="#tested-behaviors">Tested behaviors</a>
 			</div>
 			<main class="reader-main">
 				<header class="reader-hero">
@@ -75,7 +75,7 @@
 
 				<article class="doc-article" id="full-document">
 					<p>
-						Before v0.8.6, SubAccount creation was mostly self-service: the signer created accounts for itself. That was limiting for
+						Before v0.8.6, SubAccount creation was mostly self-service. The signer created accounts for itself. That was limiting for
 						protocol-run onboarding, migration, or automation flows that need to prepare accounts for a target owner without becoming that
 						owner.
 					</p>
@@ -91,8 +91,8 @@
 						addresses.
 					</p>
 					<p>
-						The changes are intentionally narrow. They do not change the existing self-service SubAccount creation path, virtual account
-						address derivation, Symmio core balance accounting, or virtual account lifecycle logic.
+						The existing self-service SubAccount creation path, virtual account address derivation, Symmio core balance accounting, and
+						virtual account lifecycle logic do not change.
 					</p>
 					<hr />
 					<h2 id="summary">Summary</h2>
@@ -109,7 +109,7 @@
 						<code>onSubAccountOwnershipTransfer(subAccount, oldOwner, newOwner)</code>.
 					</p>
 					<hr />
-					<h2 id="changed-interfaces">Changed Interfaces</h2>
+					<h2 id="changed-interfaces">Changed interfaces</h2>
 					<h3 id="corefacet-createsubaccountsfor"><code>CoreFacet.createSubAccountsFor</code></h3>
 					<pre><code class="language-solidity">function createSubAccountsFor(
     address owner,
@@ -172,7 +172,7 @@
 						lifecycle hook behavior for SubAccount creation and deletion.
 					</p>
 					<hr />
-					<h2 id="storage-impact">Storage Impact</h2>
+					<h2 id="storage-impact">Storage impact</h2>
 					<p>
 						The change does not add a second ownership model. AccountLayer already stores SubAccount ownership and owner indexes, so
 						delegated creation and transfer reuse those fields.
@@ -189,7 +189,7 @@ mapping(address =&gt; EnumerableSet.AddressSet) userToSubAccounts;
 					<pre><code class="language-solidity">mapping(address =&gt; mapping(bytes32 =&gt; bool)) hasRole;
 </code></pre>
 					<hr />
-					<h2 id="ownership-resolution">Ownership Resolution</h2>
+					<h2 id="ownership-resolution">Ownership resolution</h2>
 					<p>SubAccounts store their owner directly:</p>
 					<pre><code class="language-solidity">SubAccountData.owner
 </code></pre>
@@ -198,8 +198,8 @@ mapping(address =&gt; EnumerableSet.AddressSet) userToSubAccounts;
 						<code>LibAccountLayerUtils.resolveAccountOwner(account)</code>.
 					</p>
 					<p>
-						That design is what makes transfer small and predictable: changing the SubAccount owner also changes effective control of all
-						current, inactive, and future Virtual Accounts under that SubAccount, without rewriting VA storage.
+						Because Virtual Accounts resolve ownership through the parent, changing the SubAccount owner also changes effective control of
+						all current, inactive, and future Virtual Accounts under that SubAccount, without rewriting VA storage.
 					</p>
 					<p>
 						Balances, allocations, pending quotes, open positions, and reusable VA pools stay attached to the same SubAccount and VA
@@ -212,9 +212,9 @@ mapping(address =&gt; EnumerableSet.AddressSet) userToSubAccounts;
 						<li>Owner-gated Virtual Account actions follow the parent SubAccount owner after transfer.</li>
 						<li>Existing InstantLayer delegations intentionally remain active after the transfer. See the security note below.</li>
 					</ul>
-					<p>The transfer is a true ownership transfer, not an empty-account-only migration.</p>
+					<p>This is an ownership transfer, and it does not require an empty account.</p>
 					<hr />
-					<h2 id="hook-ordering-revert-semantics">Hook Ordering &amp; Revert Semantics</h2>
+					<h2 id="hook-ordering-revert-semantics">Hook ordering and revert semantics</h2>
 					<p>The transfer sequence is:</p>
 					<ol>
 						<li>Validate caller and <code>newOwner</code>.</li>
@@ -239,7 +239,7 @@ mapping(address =&gt; EnumerableSet.AddressSet) userToSubAccounts;
 						the transferring user's authorization.
 					</p>
 					<hr />
-					<h2 id="security-considerations">Security Considerations</h2>
+					<h2 id="security-considerations">Security considerations</h2>
 					<h3 id="role-granted-account-creation">Role-granted account creation</h3>
 					<p>
 						<code>ACCOUNT_CREATOR_ROLE</code> can create SubAccounts for arbitrary non-zero owners under active affiliates. This role
@@ -314,7 +314,7 @@ mapping(address =&gt; EnumerableSet.AddressSet) userToSubAccounts;
 						creation, the <code>owner</code> argument is the supplied target owner.
 					</p>
 					<hr />
-					<h2 id="implementation-review-checklist">Implementation Review Checklist</h2>
+					<h2 id="implementation-review-checklist">Implementation review checklist</h2>
 					<ul>
 						<li>
 							Verify <code>createSubAccounts</code> remains self-service and still uses <code>LibAccountLayerUtils.getSigner()</code>.
@@ -337,7 +337,7 @@ mapping(address =&gt; EnumerableSet.AddressSet) userToSubAccounts;
 						<li>Verify signer clearing still applies during the new hook callback.</li>
 					</ul>
 					<hr />
-					<h2 id="tested-behaviors">Tested Behaviors</h2>
+					<h2 id="tested-behaviors">Tested behaviors</h2>
 					<p>The AccountLayer behavior tests cover:</p>
 					<ul>
 						<li>Successful delegated creation by an <code>ACCOUNT_CREATOR_ROLE</code> holder.</li>

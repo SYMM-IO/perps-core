@@ -5,7 +5,7 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta
 			name="description"
-			content="A unified per-op fee primitive shared by solvers and registered relayers, backed by a standing per-(payer, charger) allowance with timelocked reductions and a priority multiplier."
+			content="A unified per-operation fee mechanism shared by solvers and registered relayers, backed by a standing per-(payer, charger) allowance with timelocked reductions and a priority multiplier."
 		/>
 		<title>Operational Fees - Symmio Core v0.8.6</title>
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
@@ -41,14 +41,14 @@
 		<div class="reader-shell">
 			<div class="rail-sections-source" data-rail-sections hidden>
 				<a class="toc-link level-2" href="#summary">Summary</a>
-				<a class="toc-link level-2" href="#why-unified">Why This Exists</a>
-				<a class="toc-link level-2" href="#trust-model">Trust Model</a>
-				<a class="toc-link level-2" href="#fee-source">Fee Source (Perps-Core Payer + Free-First)</a>
+				<a class="toc-link level-2" href="#why-unified">Why operational fees exist</a>
+				<a class="toc-link level-2" href="#trust-model">Trust model</a>
+				<a class="toc-link level-2" href="#fee-source">Fee source in perps-core</a>
 				<a class="toc-link level-2" href="#solvency">Solvency</a>
-				<a class="toc-link level-2" href="#timelocked-reductions">Timelocked Reductions</a>
-				<a class="toc-link level-2" href="#priority-multiplier">Priority Multiplier</a>
-				<a class="toc-link level-2" href="#gasless-grant">Gasless Grant</a>
-				<a class="toc-link level-2" href="#charging-while-relaying">Charging While Relaying</a>
+				<a class="toc-link level-2" href="#timelocked-reductions">Timelocked reductions</a>
+				<a class="toc-link level-2" href="#priority-multiplier">Priority multiplier</a>
+				<a class="toc-link level-2" href="#gasless-grant">Gasless grant</a>
+				<a class="toc-link level-2" href="#charging-while-relaying">Charging while relaying</a>
 			</div>
 
 			<main class="reader-main">
@@ -56,7 +56,7 @@
 					<div class="reader-title-row">
 						<div>
 							<h1>Operational Fees</h1>
-							<p class="hero-copy">A fee primitive for per-operation work that should not be embedded in quote pricing.</p>
+							<p class="hero-copy">A fee mechanism for per-operation work that should not be embedded in quote pricing.</p>
 						</div>
 					</div>
 				</header>
@@ -81,12 +81,12 @@
 						<code>SolverFeeCaps</code>.
 					</p>
 
-					<h2 id="why-unified">Why This Exists</h2>
+					<h2 id="why-unified">Why operational fees exist</h2>
 					<p>
 						Some service costs are flat per-operation charges rather than notional-based trading fees. Operational fees give those costs a
 						dedicated path, outside open and close price semantics.
 					</p>
-					<h2 id="trust-model">Trust Model</h2>
+					<h2 id="trust-model">Trust model</h2>
 					<p>
 						The allowance grant is the consent. Core does not require the payer to sign each specific operation or quote; it only checks
 						<code>charged + amount &lt;= allowance[payer][charger]</code> before collecting the fee.
@@ -106,12 +106,12 @@
 							disable an explicitly registered service charger via <code>unregisterOperationalFeeCharger</code>.
 						</li>
 						<li>
-							<strong>Guards</strong>: the charge path has no external-call surface, and the payer must not be suspended or under active
+							<strong>Guards.</strong> The charge path makes no external calls, and the payer must not be suspended or under active
 							PartyA liquidation.
 						</li>
 					</ol>
 
-					<h2 id="fee-source">Fee Source (Perps-Core Payer + Free-First)</h2>
+					<h2 id="fee-source">Fee source in perps-core</h2>
 					<p>
 						In perps-core, the fee source is simply the <code>payer</code> address passed to
 						<code>chargeOperationalFee(payer, amount)</code>. Core does not derive the payer from a quote, the signer, the relayed
@@ -126,7 +126,7 @@
 					<pre><code class="language-solidity">function setOperationalFeeReceiver(address charger, address receiver) external;
 </code></pre>
 					<p>
-						The caller must be either the charger itself or an address holding <code>FEE_ADMIN_ROLE</code> — the same role that registers
+						The caller must be either the charger itself or an address holding <code>FEE_ADMIN_ROLE</code>, the same role that registers
 						chargers in the first place. Passing <code>address(0)</code> resets the receiver back to the charger. The receiver is resolved
 						at charge time, so a change only affects subsequent fees. <code>ViewFacet.getOperationalFeeReceiver(charger)</code> returns
 						the effective receiver.
@@ -138,13 +138,13 @@
 					</p>
 
 					<p>
-						<strong>AccountLayer accounts:</strong> users operating through SubAccounts or virtual accounts may want operational fees to
+						<strong>AccountLayer accounts.</strong> Users operating through SubAccounts or virtual accounts may want operational fees to
 						come from a parent SubAccount instead of the VA that appears in the signed operation. Perps-core will not resolve that
 						relationship. The solver or relayer should determine the intended payer before calling core, whether in service code or an
 						on-chain relayer contract, and pass that address to <code>chargeOperationalFee</code>.
 					</p>
 
-					<h3>Example: AccountLayer VA charged to parent SubAccount</h3>
+					<h3>Example: AccountLayer VA charged to a parent SubAccount</h3>
 					<p>
 						A user has a SubAccount <code>SA</code> and a virtual account <code>VA-BTC-Long</code>. The signed operation acts on the VA,
 						but the integration wants the fee to come from the parent SubAccount.
@@ -204,7 +204,7 @@
 						<code>_requireSolventAfterSolverFee</code> liquidatability check (see <a href="../pages/solver-fees.html">Solver Fees</a>).
 					</p>
 
-					<h2 id="timelocked-reductions">Timelocked Reductions</h2>
+					<h2 id="timelocked-reductions">Timelocked reductions</h2>
 					<p>
 						Operational-fee allowance is a standing budget from a payer to a charger. Increasing the current live allowance is immediate,
 						so a user can top up a solver or relayer whenever more operational-fee room is needed.
@@ -221,7 +221,7 @@
 						raises the budget again.
 					</p>
 
-					<h2 id="priority-multiplier">Priority Multiplier</h2>
+					<h2 id="priority-multiplier">Priority multiplier</h2>
 					<p>
 						Each payer can attach a fee multiplier to a charger's allowance. The default is <code>10000</code>, or 1x. A higher value is a
 						priority signal for trusted chargers: if a relayer or solver cannot handle every request, it can prefer work from payers who
@@ -233,7 +233,7 @@
 						pricing formula; interpreting the signal is an off-chain charger policy.
 					</p>
 
-					<h2 id="gasless-grant">Gasless Grant</h2>
+					<h2 id="gasless-grant">Gasless grant</h2>
 					<p>
 						Operational-fee approval is a normal core call. To grant an allowance without gas, the user signs an InstantLayer
 						<code>SignedOperation</code> targeting the approval call.
@@ -244,7 +244,7 @@
 						InstantLayer arrives from AccountLayer. Core does not provide a bundled approve-charge-execute entrypoint.
 					</p>
 
-					<h2 id="charging-while-relaying">Charging While Relaying</h2>
+					<h2 id="charging-while-relaying">Charging while relaying</h2>
 					<p>
 						An EOA relayer can call <code>chargeOperationalFee</code> directly as a registered charger, then submit the signed operation,
 						but those are separate transactions and do not share atomic rollback. To collect and execute atomically, an integration needs

@@ -38,8 +38,8 @@
 		<div class="reader-shell">
 			<div class="rail-sections-source" data-rail-sections hidden>
 				<a class="toc-link level-2" href="#summary">Summary</a>
-				<a class="toc-link level-2" href="#what-changed">What Changed</a>
-				<a class="toc-link level-2" href="#final-settlement-accounting">Final Settlement Accounting</a>
+				<a class="toc-link level-2" href="#what-changed">What changed</a>
+				<a class="toc-link level-2" href="#final-settlement-accounting">Final settlement accounting</a>
 			</div>
 
 			<main class="reader-main">
@@ -67,7 +67,7 @@
 						remain role-gated; this change only selects the fee recipient.
 					</p>
 
-					<h2 id="what-changed">What Changed</h2>
+					<h2 id="what-changed">What changed</h2>
 					<p>
 						Before v0.8.6: PartyA LF was split 50/50 between <code>liquidators[partyA][0]</code> and <code>liquidators[partyA][1]</code>.
 					</p>
@@ -77,8 +77,8 @@
 						<code>deferredSetSymbolsPrice</code>; later price-setting calls did not add more LF receivers.
 					</p>
 					<p>
-						After v0.8.6: one PartyA LF receiver. The final capped LF goes to <code>liquidators[partyA][0]</code> because that is the
-						competitive step. Price setters do not receive PartyA LF.
+						After v0.8.6, PartyA LF has one receiver. The final capped LF goes to <code>liquidators[partyA][0]</code>, the caller that
+						starts liquidation. Price setters do not receive PartyA LF.
 					</p>
 					<p>
 						The cap logic did not change. PartyA LF is still limited by
@@ -86,7 +86,7 @@
 						liquidation insurance vault.
 					</p>
 
-					<h2 id="final-settlement-accounting">Final Settlement Accounting</h2>
+					<h2 id="final-settlement-accounting">Final settlement accounting</h2>
 					<p>
 						The LF is handled during PartyA liquidation finalization. The liquidated PartyA's <code>LF_OUT</code> amount is capped at the
 						portion funded by its previous allocated balance; the rest of that previous allocation is reported as realized-PnL outflow.

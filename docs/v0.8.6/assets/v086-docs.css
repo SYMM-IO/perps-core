@@ -33,7 +33,7 @@
 }
 
 /* ==========================================================================
-   Symmio Explorer — v0.8.6 documentation
+   Symmio Explorer: v0.8.6 documentation
    Dark is canonical. Flat console chrome: hairlines, no blur, no shadow.
    Accent (coral #FF7C70) is reserved for links, active state, and one marker.
    ========================================================================== */
@@ -1410,7 +1410,7 @@ code {
 	color: var(--accent);
 }
 
-/* Callouts: no box — a single left rule carries the status. */
+/* Callouts: no box. A single left rule carries the status. */
 .callout {
 	margin: 24px 0;
 	padding: 2px 0 2px 18px;
@@ -1443,7 +1443,7 @@ code {
 }
 
 /* Tables */
-/* Tables: open — header rule and row rules only, no frame. */
+/* Tables: open, with a header rule and row rules but no frame. */
 .table-wrap {
 	width: 100%;
 	margin: 26px 0;
@@ -1531,7 +1531,7 @@ td code {
 	color: var(--code-ink);
 }
 
-/* Code: a recessed slab, no frame lines — the surface itself does the separating. */
+/* Code: a recessed slab with no frame lines; the background separates it. */
 .code-frame {
 	position: relative;
 	margin: 28px 0;

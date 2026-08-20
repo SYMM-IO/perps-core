@@ -5,7 +5,7 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta
 			name="description"
-			content="Complete Symmio Core v0.8.6 release notes: 31 scoped changes covering Express Withdrawal, AccountLayer, liquidation, settlement, fees, funding, events, and operations."
+			content="Complete Symmio Core v0.8.6 release notes with 31 scoped changes covering Express Withdrawal, AccountLayer, liquidation, settlement, fees, funding, events, and operations."
 		/>
 		<title>Symmio Core v0.8.6 release notes</title>
 		<link rel="icon" type="image/svg+xml" href="assets/symmio-mark.svg" />
@@ -45,8 +45,8 @@
 						<p class="eyebrow">Core release</p>
 						<h1>Symmio Core <span>v0.8.6</span></h1>
 						<p class="hero-copy">
-							A technical guide to the release: faster withdrawals, delegated AccountLayer ownership, safer liquidation settlement,
-							reconstructible allocated-balance events, and tighter operational controls.
+							A technical guide to faster withdrawals, delegated AccountLayer ownership, safer liquidation settlement, reconstructible
+							allocated-balance events, and tighter operational controls.
 						</p>
 						<p class="hero-copy">
 							Start with the role-based overview. Express operators should then use the bot operations runbook alongside the numbered
@@ -167,7 +167,7 @@
 								<span class="category">Fees</span>
 								<strong>Operational Fees</strong>
 								<span
-									>A unified per-op fee primitive shared by solvers and registered relayers, backed by a standing per-(payer,
+									>A unified per-operation fee mechanism shared by solvers and registered relayers, backed by a standing per-(payer,
 									charger) allowance with timelocked reductions and an off-chain priority-multiplier signal.</span
 								>
 							</span>
@@ -203,8 +203,8 @@
 								<strong>Strict Deallocation</strong>
 								<span
 									>PartyA and opted-in PartyBs preserve raw liquidation collateral during deallocation, with public views for the
-									maximum safe amount. The safe paths additionally retain a Muon-attested floor re-marked to live notional plus
-									gross funding debt.</span
+									maximum safe amount. The safe paths also retain a Muon-attested floor re-marked to live notional plus gross
+									funding debt.</span
 								>
 							</span>
 						</a>
@@ -265,7 +265,7 @@
 							<span class="category">AccountLayer</span>
 							<strong>Delegation Account Scope</strong>
 							<span
-								>A delegation was enforced against the account owner, so it reached every SubAccount that owner held; it is now
+								>A delegation was enforced against the account owner, so it reached every SubAccount that owner held. It is now
 								confined to the account family it was granted over.</span
 							>
 						</a>
@@ -274,7 +274,7 @@
 							<span class="category">InstantLayer</span>
 							<strong>InstantLayer Authorization Scope</strong>
 							<span
-								>The helpers treated a global &ldquo;inside an InstantLayer batch&rdquo; flag as authorization. v0.8.6 removes
+								>The helpers treated a global &quot;inside an InstantLayer batch&quot; flag as authorization. v0.8.6 removes
 								MultiAccount's bypass and makes SymmioPartyB check the direct caller's role.</span
 							>
 						</a>
@@ -346,8 +346,8 @@
 							<span class="category">Funding</span>
 							<strong>Lazy Accumulated Funding</strong>
 							<span
-								>Quote flows no longer roll the symbol/PartyB funding state; funding settles lazily from persisted state, which now
-								changes—and emits its final state—only on solver configuration.</span
+								>Quote flows no longer roll the symbol/PartyB funding state. Funding settles lazily from persisted state, which now
+								changes and emits its final state only on solver configuration.</span
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/force-close-request-binding.html" data-catalog-item>
