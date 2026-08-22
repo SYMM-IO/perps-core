@@ -43,9 +43,9 @@
 				<a class="toc-link level-2" href="#problem">The unit-basis problem</a>
 				<a class="toc-link level-2" href="#vocabulary">Basis and factor vocabulary</a>
 				<a class="toc-link level-2" href="#example">One split, two route outcomes</a>
-				<a class="toc-link level-2" href="#lifecycle">Lifecycle and routes</a>
-				<a class="toc-link level-3" href="#active-route">Resume on adjusted prices</a>
-				<a class="toc-link level-3" href="#physical-route">Restate stored quotes</a>
+				<a class="toc-link level-2" href="#lifecycle">What happens after scheduling</a>
+				<a class="toc-link level-3" href="#active-route">Adjusted-price route without quote rewrites</a>
+				<a class="toc-link level-3" href="#physical-route">Physical route with quote restatement</a>
 				<a class="toc-link level-2" href="#rewrite">What physical restatement changes</a>
 				<a class="toc-link level-2" href="#funding">Funding across the window</a>
 				<a class="toc-link level-2" href="#boundaries">Enforced and operational boundaries</a>
@@ -191,7 +191,7 @@ funding amount = 1 * 8 = 8</code></pre>
 						<code>4 * 2 = 8</code> funding. After finalization, Muon can use the raw <code>100</code> price without conversion.
 					</p>
 
-					<h2 id="lifecycle">Lifecycle and routes</h2>
+					<h2 id="lifecycle">What happens after scheduling</h2>
 					<p>
 						A manager schedules a step with <code>scheduleAdjustment(symbolId, factor, effectiveTimestamp)</code>. The symbol stays live
 						before a future effective time. It freezes automatically at equality, without a keeper transaction. Core accepts a past
@@ -204,12 +204,25 @@ funding amount = 1 * 8 = 8</code></pre>
 						scheduled after <code>PRICE_ADJUSTED</code>, <code>APPLIED</code>, or <code>CANCELLED</code>. Existing active factors survive
 						the new schedule.
 					</p>
-					<div class="adjustment-timelines" aria-label="Symbol-adjustment lifecycle routes">
+					<p>
+						Scheduling does not choose a route. Once the venue outcome is known, Operations either cancels a called-off event or handles
+						an event that happened through one of two routes.
+					</p>
+
+					<h3>If the venue event is called off</h3>
+					<p>
+						Call <code>cancelAdjustment</code>. This is an exit from the lifecycle, not a third adjustment route, because there is no unit
+						change to handle.
+					</p>
+					<div class="adjustment-timelines" aria-label="Called-off venue event exit">
 						<section class="adjustment-sequence" style="--timeline-step-count: 2">
 							<header class="adjustment-sequence-header">
-								<span>Exit path</span>
-								<h4>Cancel before committing to the event</h4>
-								<p>Use this when the venue event will not happen. No restatement window is opened.</p>
+								<span>Event called off · exit</span>
+								<h4>Cancel the scheduled adjustment</h4>
+								<p>
+									Cancellation is valid before or after the effective time if no restatement window is open. No new conversion or
+									quote restatement is needed for the called-off event. Any older active factor remains in use.
+								</p>
 							</header>
 							<ol class="adjustment-track">
 								<li class="adjustment-tick">
@@ -228,12 +241,20 @@ funding amount = 1 * 8 = 8</code></pre>
 								</li>
 							</ol>
 						</section>
+					</div>
 
+					<h3>If the venue event happens, choose one of two routes</h3>
+					<p class="adjustment-timeline-intro">
+						The adjusted-price route keeps stored quotes on the old unit basis and converts external prices to match them. The physical
+						route rewrites stored quotes to the venue's new unit basis. <code>abortRestatement</code> is not another route. It only backs
+						out while no quote has been rewritten and no quote has been removed from PartyA's pending inventory.
+					</p>
+					<div class="adjustment-timelines" aria-label="Two routes for a venue event that happened">
 						<section class="adjustment-sequence" style="--timeline-step-count: 3">
 							<header class="adjustment-sequence-header">
 								<span>Route 01 · adjusted price</span>
-								<h4>Resume trading without rewriting quotes</h4>
-								<p>Confirm that the oracle is publishing adjusted prices. Physical restatement can happen later.</p>
+								<h4>Keep stored quotes and convert external prices</h4>
+								<p>Confirm that Muon is publishing prices on the stored quote basis. Physical restatement can happen later.</p>
 							</header>
 							<ol class="adjustment-track">
 								<li class="adjustment-tick">
@@ -270,7 +291,7 @@ funding amount = 1 * 8 = 8</code></pre>
 										<div class="adjustment-rail" aria-hidden="true"></div>
 										<div class="adjustment-interval">
 											<div><code>PRICE_ADJUSTED + restating</code><span class="adjustment-status">Frozen</span></div>
-											<p>Abort can return here only before inventory changes.</p>
+											<p>Abort is available only before a quote rewrite or PartyA pending removal.</p>
 										</div>
 									</li>
 									<li class="adjustment-tick is-frozen">
@@ -294,7 +315,7 @@ funding amount = 1 * 8 = 8</code></pre>
 						<section class="adjustment-sequence" style="--timeline-step-count: 4">
 							<header class="adjustment-sequence-header">
 								<span>Route 02 · direct restatement</span>
-								<h4>Rewrite quotes while the symbol stays frozen</h4>
+								<h4>Rewrite stored quotes to the venue basis</h4>
 								<p>Skip the adjusted-price trading phase and move stored inventory directly to the venue basis.</p>
 							</header>
 							<ol class="adjustment-track">
@@ -317,7 +338,10 @@ funding amount = 1 * 8 = 8</code></pre>
 									<div class="adjustment-rail" aria-hidden="true"></div>
 									<div class="adjustment-interval">
 										<div><code>SCHEDULED + restating</code><span class="adjustment-status">Frozen</span></div>
-										<p>Cancel pending inventory, then rewrite quotes in batches. Abort only before the first inventory change.</p>
+										<p>
+											Cancel pending inventory, then rewrite quotes in batches. Abort only before the first pending removal or
+											quote rewrite.
+										</p>
 									</div>
 								</li>
 								<li class="adjustment-tick is-terminal">
@@ -330,23 +354,44 @@ funding amount = 1 * 8 = 8</code></pre>
 							</ol>
 						</section>
 					</div>
+
+					<h3>Cancel and abort do different jobs</h3>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Action</th>
+									<th>When it is available</th>
+									<th>Result</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td><code>cancelAdjustment</code></td>
+									<td>The state is <code>SCHEDULED</code> and no restatement window is open.</td>
+									<td>
+										Marks the latest schedule <code>CANCELLED</code>. The symbol stays live or becomes live again. Any older
+										active factor remains in use.
+									</td>
+								</tr>
+								<tr>
+									<td><code>abortRestatement</code></td>
+									<td>A restatement window is open, but no quote has been rewritten or removed from PartyA's pending inventory.</td>
+									<td>Closes the window, restores paused funding rates, and returns to the state that opened the window.</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
 					<p>
-						<code>cancelAdjustment</code> and <code>abortRestatement</code> solve different problems. Cancellation applies only to
-						<code>SCHEDULED</code> with no open window. It changes state to <code>CANCELLED</code> and is valid before or after the
-						effective time. It does not clear the latest factor, timestamps, or an older active cumulative factor.
-					</p>
-					<p>
-						<code>abortRestatement</code> can close an open restatement window only before any quote inventory has changed. Specifically,
-						no quote may have been restated and no pending quote may have been removed. Opening the window and pausing funding do not
-						count as inventory changes; abort reverses those setup actions and restores the original funding rates. Once inventory
-						changes, abort is rejected because it could reopen trading with a partially restated, mixed-basis book. Abort does not change
-						the lifecycle state: a direct-route abort therefore remains in effective <code>SCHEDULED</code> and frozen, while an
-						active-factor abort preserves whichever state opened the window. The common <code>PRICE_ADJUSTED</code> case becomes live in
-						<code>PRICE_ADJUSTED</code>; a window opened from <code>CANCELLED</code> becomes live in <code>CANCELLED</code>. The epoch
-						consumed by the aborted window is not reused.
+						After a direct-route abort, the state is still effective <code>SCHEDULED</code>, so the symbol remains frozen. Operations must
+						restart restatement, switch to the adjusted-price route with <code>confirmPriceAdjusted</code>, or cancel if the event was
+						called off. An abort from a later window normally returns to live <code>PRICE_ADJUSTED</code>. Core rejects abort once a quote
+						rewrite or PartyA pending removal sets <code>restatementMutated</code>. Other quote-state changes do not always set this flag,
+						and abort neither detects nor reverses them. Operations must reconcile the book before aborting. An aborted window's epoch is
+						not reused.
 					</p>
 
-					<h3 id="active-route">Resume on adjusted prices</h3>
+					<h3 id="active-route">Adjusted-price route without quote rewrites</h3>
 					<p>
 						This route minimizes the initial maintenance period. Muon first changes the external price basis while quote storage stays
 						unchanged. At or after the effective time and before confirmation, the feed factor is the prospective factor. After
@@ -377,7 +422,7 @@ venue open amount       = venue quantity - venue closed amount</code></pre>
 						<code>startRestatement</code>. The window selects the active cumulative factor, not merely the latest scheduled step.
 					</p>
 
-					<h3 id="physical-route">Restate stored quotes</h3>
+					<h3 id="physical-route">Physical route with quote restatement</h3>
 					<p>
 						Physical restatement can start directly from an effective <code>SCHEDULED</code> step or later while a non-1x active factor
 						exists. The direct route selects the prospective factor but does not activate it in <code>cumulativeFactor</code>. The later
