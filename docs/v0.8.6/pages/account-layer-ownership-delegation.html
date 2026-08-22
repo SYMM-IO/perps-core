@@ -75,9 +75,8 @@
 
 				<article class="doc-article" id="full-document">
 					<p>
-						Before v0.8.6, SubAccount creation was mostly self-service. The signer created accounts for itself. That was limiting for
-						protocol-run onboarding, migration, or automation flows that need to prepare accounts for a target owner without becoming that
-						owner.
+						Before v0.8.6, SubAccount creation was mostly self-service: the signer created accounts for itself. Protocol-run onboarding,
+						migration, or automation services could not prepare an account for a target owner without acting as that owner.
 					</p>
 					<p>
 						v0.8.6 keeps the existing self-service path unchanged and adds a narrow delegated path. A caller with
@@ -261,7 +260,7 @@ mapping(address =&gt; EnumerableSet.AddressSet) userToSubAccounts;
 					<h3 id="direct-ownership-transfer">Direct ownership transfer</h3>
 					<p>
 						Ownership transfer is immediate and does not require recipient acceptance. A typo in <code>newOwner</code> transfers control
-						to that address atomically. This is a product decision that trades two-step safety for simple user-controlled transfer.
+						to that address atomically; there is no second transaction in which the recipient confirms the transfer.
 					</p>
 					<p>
 						The function does not require the SubAccount to be empty. A user can transfer an account with balances, allocated margin,
@@ -286,8 +285,8 @@ mapping(address =&gt; EnumerableSet.AddressSet) userToSubAccounts;
 						expired.
 					</p>
 					<p>
-						Operationally, transferring a SubAccount with active InstantLayer delegations should be treated as transferring an account
-						with outstanding approvals that intentionally move with the account. Reconstruct the candidate delegate and selector list from
+						A SubAccount transfer also carries its active InstantLayer delegations as outstanding approvals. Reconstruct the candidate
+						delegate and selector list from
 						<code>DelegationGranted</code> events or the integration's own records, then confirm active entries with
 						<code>getActiveDelegations</code>. For anything that should not survive the transfer, call
 						<code>initiateRevokeDelegation</code>. After the configured cooldown, <code>finalizeRevokeDelegation</code> removes the grant.

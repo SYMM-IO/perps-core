@@ -109,7 +109,7 @@
 				<a class="toc-link level-3" href="#11-4-partshash-integrity">11.4 partsHash integrity</a>
 				<a class="toc-link level-2" href="#12-risk-lock-unlock">12. Risk lock / unlock</a>
 				<a class="toc-link level-3" href="#12-1-lock-resolution-paths">12.1 Lock resolution paths</a>
-				<a class="toc-link level-3" href="#12-2-role-separation-critical-design">12.2 Role separation (critical design)</a>
+				<a class="toc-link level-3" href="#12-2-role-separation-critical-design">12.2 Role separation</a>
 				<a class="toc-link level-3" href="#12-3-bot-checklist-for-risk">12.3 Bot checklist for risk</a>
 				<a class="toc-link level-2" href="#part-iv-safety-risk-continued">Part IV: safety &amp; risk (continued)</a>
 				<a class="toc-link level-2" href="#13-cancellation-suspension">13. Cancellation &amp; suspension</a>
@@ -207,8 +207,8 @@
 					<h2 id="how-to-use-this-runbook">How to use this runbook</h2>
 					<p>
 						Read the <a href="express-withdrawal-system-design.html">Express Withdrawal System Design</a> first for the capital and trust
-						model. This companion is the implementation contract for the operator: use the page outline to jump from a live event or
-						revert to the action, timer, invariant, or recovery path that governs it.
+						model. This companion is the operator's implementation reference: use the page outline to jump from a live event or revert to
+						the action, timer, invariant, or recovery path that governs it.
 					</p>
 					<ul>
 						<li>Sign offers only from fresh on-chain fee, liquidity, credit, validator, nonce, and timing state.</li>
@@ -227,10 +227,9 @@
 					</aside>
 					<h2 id="1-overview">1. Overview</h2>
 					<p>
-						The Express Provider bot operates as the automated backend for the ExpressProvider smart contract system, managing withdrawal
-						options for users by reading on-chain state, computing fees and liquidity, signing EIP-712 withdrawal options, processing
-						withdrawals after security windows, and scheduling finalization calls on SYMMIO to replenish pools. It supports three option
-						types that trade off speed against capital requirements and risk.
+						The Express Provider bot reads on-chain state, computes fee and liquidity inputs, signs EIP-712 withdrawal options, processes
+						withdrawals after their security windows, and schedules SYMMIO finalization so pools are replenished. It supports three option
+						types with different timing, capital, and validator requirements.
 					</p>
 					<h3 id="option-types">Option types</h3>
 					<div class="table-wrap">
@@ -248,7 +247,7 @@
 								<tr>
 									<td>SAME_TX</td>
 									<td>0</td>
-									<td>Same-transaction transfer. Fastest possible.</td>
+									<td>Transfer inside the initiation transaction.</td>
 									<td>Yes (same-tx)</td>
 									<td>No</td>
 								</tr>
@@ -624,7 +623,7 @@ Result:
 					<h3 id="3-1-processableat-lookup-table">3.1 processableAt lookup table</h3>
 					<p>
 						The <code>processableAt</code> timestamp determines when <code>processWithdraw</code> can be called. It varies by option type,
-						status, and caller role. This table is the definitive reference.
+						status, and caller role. The table maps each combination to its earliest allowed timestamp.
 					</p>
 					<div class="table-wrap">
 						<table>
@@ -1412,7 +1411,7 @@ Step 4: Bot sees: cooldownEndTime reached
 					<hr />
 					<h2 id="5-withdrawal-flows">5. Withdrawal flows</h2>
 					<h3 id="5-1-same-tx-optiontype-0">5.1 SAME_TX (optionType = 0)</h3>
-					<p><strong>User experience:</strong> Same-transaction transfer. Fastest possible.</p>
+					<p><strong>User experience:</strong> Transfer inside the initiation transaction.</p>
 					<pre><code class="language-mermaid">sequenceDiagram
     participant U as User
     participant S as SYMMIO
@@ -3287,7 +3286,7 @@ Step 4c: Post-payout rollback (suspend after PROCESSED, rare):
 							</p>
 						</li>
 					</ol>
-					<p><strong>Failure modes (none require manual intervention):</strong></p>
+					<p><strong>Failure modes:</strong></p>
 					<div class="table-wrap">
 						<table>
 							<thead>
@@ -3365,8 +3364,7 @@ Step 4c: Post-payout rollback (suspend after PROCESSED, rare):
 					<p>
 						<strong>Decreases are always free.</strong> When a frontend needs to tighten risk (e.g., an anomaly spike, a pool running low,
 						a governance decision), it should call <code>setMyCreditLineConfig</code> with lower values right away. The on-chain
-						classifier treats "neither dimension loosened" as a decrease: no fee, no counter bump, no delay. Tightening is the protocol's
-						preferred risk response.
+						classifier treats "neither dimension loosened" as a decrease: no fee, no counter bump, no delay.
 					</p>
 					<p>
 						<strong>Increases are throttled and can cost fees.</strong> Each affiliate gets <code>maxFreePerWindow</code> free increases
@@ -3653,7 +3651,7 @@ Step 7: Bot processes after security window:
 						<code>onForceWithdrawCancel</code> are not part of the current interface; SYMMIO uses <code>onWithdrawSuspend</code> for any
 						forced rollback.
 					</aside>
-					<h3 id="12-2-role-separation-critical-design">12.2 Role separation (critical design)</h3>
+					<h3 id="12-2-role-separation-critical-design">12.2 Role separation</h3>
 					<pre><code class="language-mermaid">flowchart LR
     subgraph &quot;Role Isolation&quot;
         OP[&quot;OPERATOR_ROLE\n(Bot)&quot;] --&gt;|&quot;processWithdraw&quot;| PROC[&quot;Process\nWithdrawals&quot;]
@@ -4772,10 +4770,7 @@ Correct strategy:
 						</table>
 					</div>
 					<h3 id="15-7-admin-configuration-change-scenarios">15.7 Admin / configuration change scenarios</h3>
-					<p>
-						These scenarios cover race conditions and operational impacts when admin configuration changes occur while the bot has
-						in-flight withdrawals, pending options, or scheduled actions.
-					</p>
+					<p>Configuration changes can overlap with in-flight withdrawals, pending options, and scheduled bot actions.</p>
 					<h4 id="scenario-1-fee-config-change-race-condition">Scenario 1: fee config change race condition</h4>
 					<pre><code>Scenario: Admin changes affiliate fee rate while bot's signed option is in the mempool
 
@@ -5725,14 +5720,13 @@ What-if: SYMMIO core pauses withdraw advances?
 					<h2 id="part-vi-reference">Part VI: reference</h2>
 					<h2 id="19-complete-state-x-option-type-decision-matrix">19. Complete state x option type decision matrix</h2>
 					<p>
-						This section provides a definitive lookup table for every combination of <strong>ExpressProvider Status</strong> (7 values:
-						NONE, ACCEPTED, LOCKED, PROCESSED, FINALIZED, CANCELLED, SUSPENDED) and <strong>OptionType</strong> (3 values: SAME_TX,
-						WINDOWED, STANDARD). That is 21 cells total.
+						This section covers every combination of <strong>ExpressProvider Status</strong> (7 values: NONE, ACCEPTED, LOCKED, PROCESSED,
+						FINALIZED, CANCELLED, SUSPENDED) and <strong>OptionType</strong> (3 values: SAME_TX, WINDOWED, STANDARD), for 21 combinations
+						in total.
 					</p>
 					<p>
-						Each cell tells the bot exactly what to do, what to watch for, what actions are available (and to whom), what will revert, and
-						what timers should be running. Impossible combinations: those that can never occur due to the state machine design: are marked
-						as such with an explanation.
+						Each cell lists the bot action, events, available callers, expected reverts, and timers. Combinations that the state machine
+						cannot reach are marked as impossible and include an explanation.
 					</p>
 					<p><strong>Default contract parameters used in numeric scenarios:</strong></p>
 					<ul>
@@ -5919,7 +5913,7 @@ Result: status -&gt; FINALIZED, generalBalance += generalAmount, affiliateBalanc
 					</p>
 					<p><strong>Bot should:</strong></p>
 					<ol>
-						<li>Risk check is running</li>
+						<li>Run the risk check</li>
 						<li>Timer set: <code>processWithdraw</code> at <code>acceptedAt + securityWindow</code></li>
 						<li>Monitoring for: <code>WithdrawLocked</code>, <code>WithdrawCancelled</code>, <code>WithdrawSuspended</code></li>
 					</ol>
@@ -6152,8 +6146,8 @@ Result: status -&gt; FINALIZED
 					<ol>
 						<li>Timer set: call <code>finalizeWithdrawRequest(user, reqId)</code> on SYMMIO at <code>cooldownEndTime</code></li>
 						<li>
-							Risk check is running. <code>LOCKER_ROLE</code> can lock whenever the request remains ACCEPTED; the intended risk window
-							is before <code>cooldownEndTime</code>, but the contract imposes no timestamp limit.
+							Run the risk check. <code>LOCKER_ROLE</code> can lock whenever the request remains ACCEPTED; the intended risk window is
+							before <code>cooldownEndTime</code>, but the contract imposes no timestamp limit.
 						</li>
 						<li>
 							Monitoring for: <code>WithdrawLocked</code>, <code>WithdrawCancelled</code>, <code>WithdrawSuspended</code>,
@@ -6323,7 +6317,7 @@ Scenario B: locked-after-cooldown path:
 						<li>
 							For STANDARD, <code>processableAt = finalizedAt</code> (operator) or <code>finalizedAt + tolerancePeriod</code> (anyone)
 						</li>
-						<li>Since finalization just happened, the operator can typically process in the same block or next block</li>
+						<li>No additional delay applies to OPERATOR_ROLE after finalizedAt is set</li>
 					</ol>
 					<p><strong>Available actions:</strong></p>
 					<ul>

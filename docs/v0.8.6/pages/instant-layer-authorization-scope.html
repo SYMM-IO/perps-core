@@ -87,8 +87,8 @@
 						for any selector, and the delegation map is skipped entirely. InstantLayer's <code>whitelistedTargets</code> map identifies
 						the external contracts a batch is allowed to call. A v0.8.5 batch could call one of those targets; any code reached while that
 						call was executing observed the same core-wide flag. During that window the delegation check was therefore off for every
-						MultiAccount sub-account at once. The v0.8.5 storage comment names the shape of the risk itself: the flag was persistent
-						state, not automatically reset, and its lifecycle was the caller's responsibility.
+						MultiAccount sub-account at once. The v0.8.5 flag was persistent state, not automatically reset, and its lifecycle was the
+						caller's responsibility.
 					</p>
 					<div class="table-wrap">
 						<table>
@@ -141,8 +141,8 @@
 					<p>
 						Anything that reached a MultiAccount sub-account during an InstantLayer batch without holding a delegation entry now reverts
 						with <code>MultiAccount: Unauthorized access</code>. The resolution is an explicit <code>delegateAccess</code> grant for the
-						account and selector, which is what the delegation map was always for. The account owner creates that entry by calling
-						<code>delegateAccess(account, target, selector)</code>, or <code>delegateAccesses</code> for several selectors.
+						account and selector. The account owner creates that entry by calling <code>delegateAccess(account, target, selector)</code>,
+						or <code>delegateAccesses</code> for several selectors.
 					</p>
 					<p>
 						Here, <code>target</code> is the contract that will call MultiAccount directly, normally the deployed InstantLayer, not the

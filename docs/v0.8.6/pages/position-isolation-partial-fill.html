@@ -64,7 +64,7 @@
 					<p>
 						When a solver partially fills a LIMIT quote, the core creates a new PENDING quote for the unfilled remainder under the same
 						<code>partyA</code>. On a POSITION-isolated virtual account that remainder would be a path to a second position on an account
-						whose isolation contract is exactly one position, sharing margin and liquidating together with the first.
+						whose isolation rule permits exactly one position, sharing margin and liquidating together with the first.
 					</p>
 					<p>
 						The AccountLayer therefore cancels the remainder during the solver's <code>openPosition</code> transaction. The
@@ -120,9 +120,8 @@ if (childQuote.parentId == quoteId &amp;&amp; childQuote.partyA == partyA &amp;&
 						deallocation, or the automatic sweep to the parent SubAccount when the position closes and the virtual account is deleted.
 					</p>
 					<p>
-						A client that wants the remainder to keep working the book re-quotes it through the SubAccount. The routing rules do the rest:
-						because the existing virtual account already holds a quote, the new quote is assigned to a fresh virtual account, which needs
-						its own margin.
+						A client that wants the remainder to keep working the book re-quotes it through the SubAccount. Because the existing virtual
+						account already holds a quote, routing assigns the new quote to a fresh virtual account, which needs its own margin.
 					</p>
 
 					<h2 id="integration-notes">Integration notes</h2>

@@ -105,7 +105,7 @@
 					<h2 id="fix">What changed</h2>
 					<p>
 						AccountLayer now remembers the address of the core it is calling. Until that core call returns, the same core may call back to
-						run account cleanup. No other address receives this exception, and the main AccountLayer lock remains active throughout the
+						run account cleanup. No other caller passes this callback check, and the main AccountLayer lock remains active throughout the
 						operation.
 					</p>
 					<p>The new flow is:</p>

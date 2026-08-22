@@ -39,8 +39,8 @@
 		</header>
 		<div class="reader-shell">
 			<div class="rail-sections-source" data-rail-sections hidden>
-				<a class="toc-link level-2" href="#1-the-problem">1. The problem</a>
-				<a class="toc-link level-2" href="#2-the-solution">2. The solution</a>
+				<a class="toc-link level-2" href="#1-the-problem">1. Withdrawal timing</a>
+				<a class="toc-link level-2" href="#2-the-solution">2. ExpressProvider's role</a>
 				<a class="toc-link level-2" href="#3-how-it-works-high-level">3. How it works (high level)</a>
 				<a class="toc-link level-2" href="#4-where-the-money-comes-from">4. Where the money comes from</a>
 				<a class="toc-link level-3" href="#4-1-balance-pools">4.1 Balance pools</a>
@@ -152,21 +152,21 @@
 						<code>cooldownEndTime</code> with the withdrawal request from the current <code>withdrawCooldownPeriod</code> and the user's
 						last deallocation time. Any 12-hour values below are worked examples, not a protocol constant.
 					</aside>
-					<h2 id="1-the-problem">1. The problem</h2>
+					<h2 id="1-the-problem">1. Withdrawal timing</h2>
 					<p>
 						SYMMIO delays withdrawal finalization until the request's <code>cooldownEndTime</code>. That safety window can make a user
-						wait for funds even after the balance is ready to withdraw. Express Withdrawal lets SAME_TX or WINDOWED requests receive
-						provider funds earlier, then reconciles the provider when SYMMIO releases the underlying withdrawal.
+						wait for funds after the balance is ready to withdraw. SAME_TX and WINDOWED use provider funds for an earlier payout, then
+						reconcile the provider when SYMMIO releases the underlying withdrawal.
 					</p>
 					<aside class="callout callout-note">
 						<strong>Operator guide</strong> The detailed bot runbook is kept separately as the
 						<a href="express-bot-operations-checklist.html">Express Provider Bot Operations Checklist</a>. It is an integration guide, not
 						a standalone changelog item.
 					</aside>
-					<h2 id="2-the-solution">2. The solution</h2>
+					<h2 id="2-the-solution">2. ExpressProvider's role</h2>
 					<p>
-						An ExpressProvider fronts funds from liquidity pools and credit lines so users can receive them before
-						<code>cooldownEndTime</code>, then reconciles when SYMMIO finalizes the withdrawal.
+						ExpressProvider validates the signed offer, fronts the selected pool and credit-line funds before
+						<code>cooldownEndTime</code>, and handles the callbacks that reconcile the payout when SYMMIO finalizes the withdrawal.
 					</p>
 					<h2 id="3-how-it-works-high-level">3. How it works (high level)</h2>
 					<p>The system offers three withdrawal speeds, all routed through the same ExpressProvider contract:</p>
@@ -203,9 +203,9 @@
 						</table>
 					</div>
 					<p>
-						All three options go through the ExpressProvider, giving the bot one orchestration surface for signing, monitoring, early
-						processing, and finalization. On-chain fallbacks remain permissionless at their documented times. The configurable flat
-						operator fee can price per-request operating cost, including the cost of handling small withdrawals.
+						All three options go through the ExpressProvider, so the bot signs, monitors, processes, and finalizes them through one
+						orchestration surface. On-chain fallbacks remain permissionless at their documented times. The configurable flat operator fee
+						can price per-request operating costs, including small withdrawals.
 					</p>
 					<p>
 						In the sequence below, <code>parts</code> is the <code>WithdrawReceiverPart[]</code> array that fixes each receiver and
@@ -392,10 +392,11 @@
 					<h2 id="5-the-withdrawal-flows">5. The withdrawal flows</h2>
 					<h3 id="5-1-standard-standard-withdrawal-core-cooldown">5.1 STANDARD: standard withdrawal (core cooldown)</h3>
 					<p>
-						STANDARD is the simplest flow. Express does <strong>not front any capital</strong> and
-						<strong>does not support credit lines</strong> (<code>CreditNotSupportedForStandard</code> error). ExpressProvider acts as an
-						intermediary so one service can orchestrate the flow; core finalization and the delayed Express payout fallback are
-						permissionless.
+						STANDARD <strong>does not front any capital</strong> and <strong>does not support credit lines</strong> (<code
+							>CreditNotSupportedForStandard</code
+						>
+						error). ExpressProvider acts as an intermediary so one service can orchestrate the flow; core finalization and the delayed
+						Express payout fallback are permissionless.
 					</p>
 					<pre><code class="language-mermaid">sequenceDiagram
     participant User
@@ -541,9 +542,9 @@
 					<p>
 						When an affiliate's credit cap is full, the bot can sign a STANDARD offer off-chain to avoid Express pool-liquidity and
 						credit-cap rejection; all other initiation and acceptance checks still apply. The UI tells the user they may wait until
-						<code>cooldownEndTime</code>. The user's request is ACCEPTED as STANDARD: no pool lock, no credit. But the request isn't dead:
-						if capacity frees up before the configured cooldown expires, <strong>any caller</strong> can promote that STANDARD into
-						WINDOWED-style processing and pay the user without waiting for cooldown.
+						<code>cooldownEndTime</code>. The user's request is ACCEPTED as STANDARD: no pool lock, no credit. The request remains
+						eligible for acceleration: if capacity frees up before the configured cooldown expires, <strong>any caller</strong> can
+						promote it into WINDOWED-style processing and pay the user without waiting for cooldown.
 					</p>
 					<p>
 						The bot polls every 30 minutes; the frontend can also trigger a retry on demand (for example, right after raising
@@ -671,10 +672,9 @@
 					</ul>
 					<h3 id="5-5-affiliate-cap-self-service-fee-model">5.5 Affiliate cap self-service &amp; fee model</h3>
 					<p>
-						Caps are now an active operational lever: raising them promotes deferred STANDARD withdrawals into WINDOWED via the accelerate
-						path. To prevent churn (a frontend ping-ponging the cap up and down all day), self-service cap adjustments go through a quota
-						+ fee throttle. A <code>SETTER_ROLE</code> holder still has a direct bypass via <code>setCreditLineAffiliateConfig</code> for
-						emergency support.
+						Raising a cap can make queued STANDARD withdrawals eligible for WINDOWED acceleration. To limit repeated self-service
+						increases, cap adjustments use a quota and fee throttle. A <code>SETTER_ROLE</code> holder still has a direct bypass via
+						<code>setCreditLineAffiliateConfig</code> for emergency support.
 					</p>
 					<p><strong>Self-service entrypoint:</strong></p>
 					<pre><code class="language-solidity">ControlFacet.setMyCreditLineConfig(uint256 maxDebt, uint256 maxDebtBps)
@@ -781,8 +781,8 @@ setCapChangeQuotaConfig(uint256 maxFreePerWindow, uint256 windowDuration)
 </code></pre>
 					<p>
 						All five parameters are individually mutable at any time. Mid-window changes take effect on the next
-						<code>setMyCreditLineConfig</code> call. The fee token is an arbitrary ERC20: the protocol does not assume SYMM, USDC, or any
-						particular token. The admin picks.
+						<code>setMyCreditLineConfig</code> call. The fee token is an arbitrary ERC20 selected by the admin; the protocol does not
+						assume SYMM, USDC, or any particular token.
 					</p>
 					<p>
 						<strong>Emergency bypass:</strong> the existing
@@ -896,7 +896,7 @@ capChangeAffiliateState(address affiliate) returns (uint256 count, uint256 epoch
 						<li>
 							When SYMMIO finalizes, <code>onWithdrawComplete</code> preserves the LOCKED status: tokens arrive but can't be forwarded
 						</li>
-						<li>No post-finalization risk check needed: the configured cooldown itself is the security window</li>
+						<li>No risk check is required after finalization because the configured cooldown has already supplied the security window</li>
 						<li>
 							Before finalization, admin may still suspend via SYMMIO. After cooldown, <code>processWithdraw</code> can resolve the lock
 							(operator immediately, any caller after <code>tolerancePeriod</code>); <code>unlockAndProcess</code> remains the
@@ -925,7 +925,7 @@ capChangeAffiliateState(address affiliate) returns (uint256 count, uint256 epoch
 					</p>
 					<h3 id="6-4-suspension">6.4 Suspension</h3>
 					<p>
-						An operator with <code>SUSPENDER_ROLE</code> on SYMMIO can suspend a user's withdrawal (e.g., for compliance). SYMMIO calls
+						An operator with <code>SUSPENDER_ROLE</code> on SYMMIO can suspend a user's withdrawal. SYMMIO calls
 						<code>onWithdrawSuspend</code> on the ExpressProvider, which:
 					</p>
 					<ol>
@@ -1194,12 +1194,12 @@ verifyingContract: &lt;ExpressProvider proxy address&gt;
 						protocol-generated PnL).
 					</p>
 					<p>
-						The timestamp is the right anchor because it tracks the withdrawable balance itself rather than trading activity. Under the
-						AccountLayer the withdrawing address is a sub-account: it holds funds but never trades, so no position, settlement, or
-						liquidation touches its own PartyA nonce: all of that happens on its virtual accounts. What <em>does</em> move when realized
-						PnL becomes withdrawable is <code>deallocateTimestamp</code>, stamped on the receiving sub-account by
-						<code>internalTransferToBalance</code>. Binding to it invalidates an approval exactly when new funds enter the balance the
-						withdrawal draws from, and leaves it valid when unrelated trading occurs.
+						The timestamp tracks the withdrawable balance itself rather than trading activity. Under the AccountLayer the withdrawing
+						address is a sub-account: it holds funds but never trades, so no position, settlement, or liquidation touches its own PartyA
+						nonce: all of that happens on its virtual accounts. What <em>does</em> move when realized PnL becomes withdrawable is
+						<code>deallocateTimestamp</code>, stamped on the receiving sub-account by <code>internalTransferToBalance</code>. Binding to
+						it invalidates an approval exactly when new funds enter the balance the withdrawal draws from, and leaves it valid when
+						unrelated trading occurs.
 					</p>
 					<p>
 						<strong>On-chain validation (in <code>onWithdrawRequest</code>):</strong>
@@ -1254,9 +1254,9 @@ verifyingContract: &lt;ExpressProvider proxy address&gt;
 </code></pre>
 					<p>
 						The <strong>same last-balance-credit freshness rule applies</strong>: each <code>timestamp</code> must satisfy
-						<code>timestamp &gt; ISymmio(symmio).withdrawCooldownOf(user)</code>, else <code>StaleValidatorApproval</code>. It is
-						load-bearing here. STANDARD acceptance skips validators entirely, so the accelerate approval is the first and only attestation
-						the withdrawal ever receives, and it gates the exact moment credit is advanced and pools are drained. Because
+						<code>timestamp &gt; ISymmio(symmio).withdrawCooldownOf(user)</code>, else <code>StaleValidatorApproval</code>. This check is
+						required here because STANDARD acceptance skips validators entirely, so the accelerate approval is the first and only
+						attestation the withdrawal ever receives, and it gates the exact moment credit is advanced and pools are drained. Because
 						<code>accelerateWithdraw</code> is permissionless, without it a user could front-run their own acceleration with a deallocate
 						and have funds advanced against a state no validator inspected: the <code>validatorApprovalTimeout</code> window alone does
 						not close that gap.
@@ -1345,8 +1345,7 @@ if (offer.operatorFee != affiliateConfigs[offer.affiliate].operatorFee) revert O
 if (offer.fee + offer.operatorFee &gt; feeBasis) revert FeesExceedExpressAmount();
 </code></pre>
 					<p>
-						This ensures the bot cannot overcharge or undercharge: the contract is the source of truth for fee calculation. A malicious or
-						buggy bot signing incorrect fees will have its transaction reverted. The bot must use the exact <code>feeRate</code> and
+						Because the contract recalculates the fee, a signed mismatch reverts. The bot must use the exact <code>feeRate</code> and
 						<code>operatorFee</code> from the affiliate's on-chain config.
 					</p>
 					<h3 id="8-4-standard-acceleration-fee">8.4 STANDARD acceleration fee</h3>
@@ -2410,8 +2409,8 @@ expressProvider.depositToAffiliate(affiliateAddress, amount)
 					<h3 id="15-3-liquidity-fragmentation">15.3 Liquidity fragmentation</h3>
 					<p>
 						Affiliate pools are isolated. An affiliate user cannot access another affiliate's pool. The General Pool is the
-						cross-affiliate fallback. This is intentional: affiliate-specific pools let affiliates guarantee service levels at their own
-						capital risk.
+						cross-affiliate fallback. Affiliate-specific pools reserve each affiliate's capital for its own users and leave that affiliate
+						with the corresponding capital risk.
 					</p>
 					<h3 id="15-4-bot-failure">15.4 Bot failure</h3>
 					<p>

@@ -57,7 +57,10 @@
 					<div class="reader-title-row">
 						<div>
 							<h1>Operational Fees</h1>
-							<p class="hero-copy">A fee mechanism for per-operation work that should not be embedded in quote pricing.</p>
+							<p class="hero-copy">
+								Operational fees charge per-operation work through standing payer-to-charger allowances, separately from quote
+								pricing.
+							</p>
 						</div>
 					</div>
 				</header>
@@ -164,9 +167,8 @@ function getOperationalFeeAllowance(address payer, address charger)
 
 					<h2 id="fee-source">Fee source in perps-core</h2>
 					<p>
-						In perps-core, the fee source is simply the <code>payer</code> address passed to
-						<code>chargeOperationalFee(payer, amount)</code>. Core does not derive the payer from a quote, the signer, the relayed
-						operation, or any account hierarchy.
+						In perps-core, the fee source is the <code>payer</code> address passed to <code>chargeOperationalFee(payer, amount)</code>.
+						Core does not derive the payer from a quote, the signer, the relayed operation, or any account hierarchy.
 					</p>
 					<p>
 						For that named payer, core checks <code>allowance[payer][charger]</code>, debits <code>balances[payer]</code> first, then
@@ -268,8 +270,8 @@ function getOperationalFeeAllowance(address payer, address charger)
 					<p>
 						Once the delay has passed, the reduction is handled through lazy evaluation. View calls report the lower effective allowance
 						automatically, and the next state-changing use of that allowance folds the pending value into storage before continuing. The
-						user does not need a second transaction. If the new allowance is already consumed, future charges simply stop until the payer
-						raises the budget again.
+						user does not need a second transaction. If the new allowance is already consumed, future charges stop until the payer raises
+						the budget again.
 					</p>
 
 					<h2 id="priority-multiplier">Priority multiplier</h2>

@@ -78,14 +78,14 @@
 						<code>400</code>, comparing it with the venue's new-unit price of <code>100</code> produces a false loss. The same mismatch
 						would affect notional, funding per unit, liquidation prices, and any signature that carries a price or UPNL.
 					</p>
-					<p>The system is designed around one invariant:</p>
+					<p>Core maintains one invariant:</p>
 					<pre><code class="language-text">Every quantity and every price or per-unit rate used with it must use the same unit basis.</code></pre>
 					<p>
-						The system maintains that invariant in either of two ways. On the adjusted-price route, Core leaves quote storage alone and
-						only stores and exposes the factor. Muon and PartyB integrations must convert external prices and funding inputs back to the
-						stored quote basis. On the physical route, Core freezes execution and converts eligible quote storage to the venue's new
-						basis. The mechanism covers splits, reverse splits, and quantity rebases. It does not model cash dividends, spin-offs,
-						mergers, ticker migrations, or normal price moves.
+						Two routes maintain that invariant. On the adjusted-price route, Core leaves quote storage alone and only stores and exposes
+						the factor. Muon and PartyB integrations must convert external prices and funding inputs back to the stored quote basis. On
+						the physical route, Core freezes execution and converts eligible quote storage to the venue's new basis. The mechanism covers
+						splits, reverse splits, and quantity rebases. It does not model cash dividends, spin-offs, mergers, ticker migrations, or
+						normal price moves.
 					</p>
 
 					<h2 id="vocabulary">Basis and factor vocabulary</h2>
@@ -393,7 +393,7 @@ funding amount = 1 * 8 = 8</code></pre>
 
 					<h3 id="active-route">Adjusted-price route without quote rewrites</h3>
 					<p>
-						This route minimizes the initial maintenance period. Muon first changes the external price basis while quote storage stays
+						This route resumes trading without rewriting quotes. Muon first changes the external price basis while quote storage stays
 						unchanged. At or after the effective time and before confirmation, the feed factor is the prospective factor. After
 						confirmation, it is the active factor:
 					</p>

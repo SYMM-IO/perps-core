@@ -52,7 +52,7 @@
 				<a class="toc-link level-3" href="#fallback">The fallback rule</a>
 				<a class="toc-link level-3" href="#signer">Why the transient signer uses two slots</a>
 				<a class="toc-link level-2" href="#suspend-overview">Suspending authority around hooks</a>
-				<a class="toc-link level-3" href="#signer-restoration">How Alice is restored after a hook</a>
+				<a class="toc-link level-3" href="#signer-restoration">How a transient signer is restored after a hook</a>
 				<a class="toc-link level-3" href="#snapshot">How the snapshot is encoded</a>
 				<a class="toc-link level-3" href="#lifecycle">Closing the batch scope</a>
 				<a class="toc-link level-2" href="#compat">Compatibility and pre-Cancun porting</a>
@@ -120,7 +120,7 @@
 					</ul>
 					<p>
 						The compact template removes one user operation envelope and one solver operation envelope. The two combined entrypoints
-						preserve the work performed inside each pair.
+						preserve the behavior of each pair.
 					</p>
 
 					<h3 id="lock-and-open">Combined core entry: <code>lockAndOpenPosition</code></h3>
@@ -295,7 +295,7 @@
 						bit 0 only. <code>ControlFacet.setSigner</code> uses that narrower reader to avoid selecting transient signer storage when no
 						transient scope exists to own it.
 					</p>
-					<p>The live-word panel follows the same source rule across the no-scope, routing-only, and InstantOpen states.</p>
+					<p>The live-word panel applies the same source rule across the no-scope, routing-only, and InstantOpen states.</p>
 
 					<section class="tool-panel" data-word-reader-tool="live" aria-label="Interactive live context word reader"></section>
 
@@ -395,7 +395,7 @@
 					</figure>
 
 					<p>
-						When the hook returns, <code>LibHook</code> restores the execution context first and then turns to the saved signer. Each
+						When the hook returns, <code>LibHook</code> restores the execution context first and then restores the saved signer. Each
 						restoration validates the boundary state before writing the saved authority back. A failed validation reverts the entire
 						parent operation.
 					</p>
@@ -404,13 +404,13 @@
 						operations have completed and the per-operation signer has been cleared.
 					</p>
 
-					<h3 id="signer-restoration">How Alice is restored after a hook</h3>
-					<p>Assume Alice is the transient signer. Her journey across the hook has three stages.</p>
+					<h3 id="signer-restoration">How a transient signer is restored after a hook</h3>
+					<p>The following example uses Alice as the transient signer and follows three stages.</p>
 
 					<h4>Before the hook, Alice is active</h4>
 					<p>
 						The transient value contains Alice and the marker is set. This tells <code>configuredSigner()</code> to return Alice from
-						transient storage. In short: <code>marker = 1</code> and <code>value = Alice</code>.
+						transient storage: <code>marker = 1</code> and <code>value = Alice</code>.
 					</p>
 
 					<h4>While the hook runs, Alice is hidden</h4>
@@ -511,9 +511,9 @@
 						signer would otherwise remain readable for the rest of the transaction with no active scope responsible for it.
 					</p>
 					<p>
-						The lifecycle panel follows the clean path from scope creation through signer cleanup and final close. At the hook boundary,
-						the live word becomes <code>0</code> while the trusted boundary holds the snapshot. A clean return restores the context and
-						signer; a callback path that leaves either kind of authority behind stops at the corresponding restoration error.
+						The lifecycle panel shows the successful path from scope creation through signer cleanup and final close. At the hook
+						boundary, the live word becomes <code>0</code> while the trusted boundary holds the snapshot. A clean return restores the
+						context and signer; a callback path that leaves either kind of authority behind stops at the corresponding restoration error.
 					</p>
 					<p>
 						The historical persistent-field path begins from pre-existing <code>GlobalAppStorage</code> values and applies the same

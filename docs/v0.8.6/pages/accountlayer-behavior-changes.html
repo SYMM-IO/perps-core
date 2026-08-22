@@ -134,11 +134,11 @@ function getAffiliateSelectorConfigs(address affiliate, bytes4[] calldata select
 						</table>
 					</div>
 					<p>
-						The old order could not report anything useful. An open position or a pending quote keeps its credit valuation adjustment
-						(CVA) and liquidation fee (LF) locked as liquidation collateral in allocated balance, and core forbids deallocating below that
-						floor, so such an account can never be emptied first. Checking balances ahead of trading state therefore always returned
-						<code>SubAccountNotEmpty</code> and pointed the caller at a withdrawal that could not succeed, instead of naming the position
-						or quote they actually had to close.
+						With an open position or pending quote, the old order returned <code>SubAccountNotEmpty</code> before reaching the specific
+						trading-state check. Each position or quote keeps its credit valuation adjustment (CVA) and liquidation fee (LF) locked as
+						liquidation collateral in allocated balance, and core forbids deallocating below that floor, so such an account can never be
+						emptied first. The error pointed the caller at a withdrawal that could not succeed instead of naming the position or quote
+						that had to be closed.
 					</p>
 					<p>
 						Callers now receive <code>OpenPositionsExist</code> or <code>PendingQuotesExist</code> in those cases.
@@ -160,9 +160,9 @@ function getAffiliateSelectorConfigs(address affiliate, bytes4[] calldata select
 						the set. POSITION-isolated accounts cancel it immediately so the same account cannot later open a second position.
 					</p>
 					<p>
-						The AccountLayer's view of core changed with the hook. <code>getNextQuoteId</code> became a <code>view</code> function so it
-						can be called from a hook, <code>getQuote</code> was added so the candidate child can be inspected before it is trusted, and
-						<code>requestToCancelQuote</code> lets the POSITION path cancel the verified child as the virtual account.
+						Supporting the hook required three core interface changes. <code>getNextQuoteId</code> became a <code>view</code> function so
+						it can be called from a hook, <code>getQuote</code> was added so the candidate child can be inspected before it is trusted,
+						and <code>requestToCancelQuote</code> lets the POSITION path cancel the verified child as the virtual account.
 					</p>
 					<aside class="callout callout-important">
 						<strong>Compatible virtual account quote sets contain more entries than before.</strong> Position accounting, UIs, and

@@ -57,9 +57,9 @@
 						<div>
 							<h1>Solver Fees</h1>
 							<p class="hero-copy">
-								v0.8.6 adds explicit solver rate fees, charged from PartyA allocated balance instead of being hidden inside a worse
-								execution price. Operational fees, which are flat per-operation charges shared with registered relayers, are a
-								separate mechanism. See
+								v0.8.6 adds explicit solver rate fees, charged from PartyA allocated balance instead of relying on execution-price
+								spread. Operational fees, which are flat per-operation charges shared with registered relayers, are a separate
+								mechanism. See
 								<a href="../pages/operational-fees.html">Operational Fees</a>.
 							</p>
 						</div>
@@ -75,8 +75,8 @@
 					</p>
 					<p>
 						The charged amount is deducted from <code>allocatedBalances[partyA]</code> and credited to the PartyB's solver fee receiver,
-						which defaults to <code>balances[partyB]</code> itself. This keeps open and close prices cleaner while making solver revenue
-						observable on-chain.
+						which defaults to <code>balances[partyB]</code> itself. This separates solver revenue from open and close prices and records
+						it on-chain.
 					</p>
 					<p>
 						Flat operational fees, charged by solvers or registered relayers per operation rather than per notional, use a separate
@@ -242,9 +242,9 @@ function fillCloseRequestToLiquidation(
 </code></pre>
 					<p>
 						Because the fee is charged before the close updates quote state, the live check adds
-						<code>fillAmount * fillPrice</code> to the existing <code>closedAmount * avgClosedPrice</code>. This makes partial closes work
-						naturally. If only half of a position has been closed, the close solver fee rate cap is based on that half. If the rest of the
-						position closes later, the cumulative closed notional grows and can unlock more solver-fee capacity.
+						<code>fillAmount * fillPrice</code> to the existing <code>closedAmount * avgClosedPrice</code>. This cumulative formula
+						supports partial closes. If only half of a position has been closed, the close solver fee rate cap is based on that half. If
+						the rest of the position closes later, the cumulative closed notional grows and can unlock more solver-fee capacity.
 					</p>
 					<p>
 						When a quote is partially opened, the solver fee rate caps are copied unchanged to the child pending quote. Each quote's

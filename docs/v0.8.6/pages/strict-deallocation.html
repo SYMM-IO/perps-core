@@ -137,16 +137,15 @@ remainingRawAllocation &gt;= protectedFloor</code></pre>
 					</p>
 					<p>
 						<strong>Profit-financed collateral stripping.</strong> Positive uPnL raises the availability limit, so an account holding
-						large unrealized profit can deallocate real collateral down to exactly the stored floor. The position is then cushioned by
-						paper alone: the liquidation trigger for PartyA is <code>allocated &minus; (cva + lf) + upnl &lt; 0</code>, so the first
-						adverse tick makes the account liquidatable with zero real buffer. Realistic liquidator latency pushes such accounts into late
-						liquidation, where the counterparty absorbs a haircut.
+						large unrealized profit can deallocate real collateral down to exactly the stored floor. The position then has no raw buffer
+						above that floor: the liquidation trigger for PartyA is <code>allocated &minus; (cva + lf) + upnl &lt; 0</code>, so the first
+						adverse tick makes the account liquidatable. With realistic liquidator latency, the account reaches late liquidation, where
+						the counterparty absorbs a haircut.
 					</p>
 					<p>
 						<strong>Notional drift.</strong> After a large price move, a guarantee sized at open covers a much larger live exposure. A
-						position opened at 2,000 with 40 of CVA and LF still has 40 of guarantee behind 6,000 of notional after a threefold move.
-						Centralized venues avoid this by re-marking margin continuously with the mark price; the core diamond has no continuous price
-						feed, so the stored values simply decay relative to live risk.
+						position opened at 2,000 with 40 of CVA and LF still has 40 of guarantee behind 6,000 of notional after a threefold move. The
+						core diamond has no continuous price feed, so the stored guarantee does not rise with live notional.
 					</p>
 
 					<h2 id="scaled-floor">The scaled locked-balance floor</h2>
@@ -182,11 +181,10 @@ remainingRawAllocation &gt;= retention</code></pre>
 						Because the contract takes the maximum of the stored and attested position floors, a low
 						<code>scaledLockedBalance</code> can never reduce retention below stored CVA and LF. <code>fundingDebt</code>, however, is a
 						distinct oracle-attested liability, so Muon must report the full gross amount owed. Neither field enters the liquidation
-						trigger, so an overstated value can block removal but cannot force liquidation. The denial of service is also bounded:
-						<code>zeroUpnlDeallocate</code> requires no signature once an account has no open or pending positions. It is restricted to
-						<code>BALANCE_SETTLER_ROLE</code>, including a forwarding proxy that itself holds that role. The proxy-aware modifier
-						intentionally authorizes calls routed through such a proxy. This provides a signature-free exit only through an authorized
-						settler; an ordinary PartyA cannot invoke it directly without that route.
+						trigger, so an overstated value can block removal but cannot force liquidation. <code>zeroUpnlDeallocate</code> provides a
+						signature-free exit once an account has no open or pending positions. It is restricted to <code>BALANCE_SETTLER_ROLE</code>,
+						including a forwarding proxy that itself holds that role. The proxy-aware modifier intentionally authorizes calls routed
+						through such a proxy. An ordinary PartyA cannot invoke this path directly.
 					</aside>
 
 					<h2 id="signature-changes">Signature and verification changes</h2>
@@ -206,9 +204,9 @@ remainingRawAllocation &gt;= retention</code></pre>
 					</aside>
 					<p>
 						Both safe paths verify under a new <code>MuonFunction.RemoveMargin</code> category, appended to the enum so existing ordinals
-						are preserved. Margin removal is the one flow where a stale signature is worth money. A signature is a bearer instrument for
-						its whole validity window, and one maximal use extracts everything it authorizes. The freshness window, not any per-use
-						consumption, is the real bound on staleness. Operators should configure a tight window for <code>RemoveMargin</code> via
+						are preserved. Because margin removal transfers value, a stale signature can still extract collateral. A signature is a bearer
+						instrument for its whole validity window, and one maximal use extracts everything it authorizes. The freshness window, rather
+						than per-use consumption, bounds staleness. Operators should configure a tight window for <code>RemoveMargin</code> via
 						<code>setMuonFunctionUpnlValidTime</code>; until one is set, verification falls back to the global window. See
 						<a href="../pages/muon-upnl-validity-overrides.html">Muon UPNL Validity Overrides</a>.
 					</p>
