@@ -402,8 +402,10 @@ venue quantity          = floor(stored quantity * feed factor / 1e18)
 venue closed amount     = floor(stored closed amount * feed factor / 1e18)
 venue open amount       = venue quantity - venue closed amount</code></pre>
 					<p>
-						Core scales total and closed amounts separately. Their difference can be one amount wei away from
-						<code>floor(stored open amount * feed factor / 1e18)</code>.
+						The <code>getQuoteInVenueUnits</code> view, and its batch form, return normalized copies by scaling stored total and closed
+						amounts separately. Their difference can be one amount wei away from
+						<code>floor(stored open amount * feed factor / 1e18)</code>. This view conversion does not modify quote storage. Normal Core
+						execution still expects the stored old-unit values on this route.
 					</p>
 					<ol>
 						<li>At the effective time, confirm that <code>isSymbolFrozen(symbolId)</code> is true.</li>
@@ -411,6 +413,13 @@ venue open amount       = venue quantity - venue closed amount</code></pre>
 						<li>Operations verifies the feed basis independently.</li>
 						<li>Operations calls <code>confirmPriceAdjusted</code>.</li>
 					</ol>
+					<aside class="callout callout-important">
+						<strong>Readiness is coordinated off-chain.</strong>
+						Core has no on-chain readiness flow for Muon or PartyB. An Operations bot can perform those checks off-chain and call
+						<code>confirmPriceAdjusted</code> after Muon is producing old-unit adjusted prices and PartyB systems are prepared to
+						translate between venue units and Core's stored units. The call activates the factor and removes the scheduled freeze
+						immediately.
+					</aside>
 					<p>
 						Confirmation changes state to <code>PRICE_ADJUSTED</code>, writes the prospective value to <code>cumulativeFactor</code>, and
 						removes the scheduled freeze. Stored quotes do not change. Muon and PartyBs must continue using old-unit adjusted prices while
@@ -430,38 +439,92 @@ venue open amount       = venue quantity - venue closed amount</code></pre>
 						saves <code>restatementFactor</code>, and pauses eligible funding rates.
 					</p>
 					<p>
-						The implementation does not restrict a later start specifically to <code>PRICE_ADJUSTED</code>. Outside
-						<code>SCHEDULED</code>, <code>startRestatement</code> succeeds whenever the normalized active factor is nonzero and not
-						<code>1e18</code>. One practical case is <code>CANCELLED</code> after a newer scheduled step was cancelled on top of an older
-						active factor.
+						<code>startRestatement</code> can also be called from <code>CANCELLED</code> when an older non-1x factor is still active. For
+						example, Operations may confirm one adjustment, schedule a newer adjustment, and then cancel only the newer step. Cancellation
+						changes the state to <code>CANCELLED</code> but does not clear the earlier <code>cumulativeFactor</code>, so
+						<code>startRestatement</code> can still open a physical-restatement window using that older factor.
+					</p>
+					<h4>Operations sequence for physical restatement</h4>
+					<p>
+						The paragraphs above explain when physical restatement can start and which factor it uses. Once Operations chooses this route,
+						it follows the sequence below. Some steps are off-chain checks; the named functions are on-chain transactions.
 					</p>
 					<ol>
-						<li>Establish and record the old-basis Muon issuance cutoff, then open the window with <code>startRestatement</code>.</li>
-						<li>Re-scan the frozen book before any mutation. Abort if any quote cannot be handled.</li>
-						<li>Force-expire eligible pending quotes and rewrite eligible open quotes in batches.</li>
-						<li>Reconcile every quote and funding pair. Core does not do this inventory check.</li>
-						<li>Wait strictly past both the on-chain time gate and the proven old-basis signature-expiry deadline, then finalize.</li>
+						<li>
+							<strong>Open the restatement window.</strong> Operations calls <code>startRestatement</code>. Core freezes the symbol,
+							records the factor for this window, emits <code>RestatementStarted</code>, and pauses eligible registered PartyB funding
+							rates.
+						</li>
+						<li>
+							<strong>Muon stops old-basis signatures.</strong> Muon observes <code>RestatementStarted</code> or reads the open
+							restatement state, then stops issuing affected signatures in the old unit basis.
+						</li>
+						<li>
+							<strong>Check the frozen book.</strong> Before changing any quote, Operations reads every pending and open quote for the
+							symbol. If any quote cannot be expired or rewritten, Operations calls <code>abortRestatement</code> while abort is still
+							available.
+						</li>
+						<li>
+							<strong>Convert the book.</strong> Operations calls <code>cancelPendingQuotes</code> for pending inventory and
+							<code>applyAdjustment</code> in batches for eligible open quotes.
+						</li>
+						<li>
+							<strong>Verify coverage.</strong> Operations reads the book again and confirms that every affected quote was either
+							expired or rewritten. Core does not enforce this full-book coverage.
+						</li>
+						<li>
+							<strong>Finalize after old signatures expire.</strong> After the last possible old-basis Muon signature has expired and
+							the contract's time gate has passed, Operations calls <code>finalizeRestatement</code>. Core rebases the checkpointed
+							funding rates, advances <code>basisVersion</code>, and unfreezes the symbol on the new stored basis.
+						</li>
 					</ol>
+					<aside class="callout callout-risk">
+						<strong>Do not finalize while an old-basis Muon signature may still be valid.</strong>
+						Core knows when the restatement window started, but it cannot verify when Muon observed the window and stopped signing. The
+						Operations bot must track that off-chain. For example, if Muon could issue its last old-basis signature at 12:00 and the
+						signature remains valid for 60 seconds, do not call <code>finalizeRestatement</code> until after 12:01. If Muon stopped after
+						<code>restatementStartedAt</code>, Operations must wait longer than the contract's minimum timer.
+					</aside>
 					<p>
 						Finalization rebases checkpointed funding, writes state <code>APPLIED</code> only when the prior state was
 						<code>SCHEDULED</code> or <code>PRICE_ADJUSTED</code>, sets <code>cumulativeFactor</code> to an explicit <code>1e18</code>,
 						closes the window, clears <code>restatementFactor</code> and <code>restatementStartedAt</code>, and increments
 						<code>basisVersion</code>. It retains the latest per-step <code>factor</code> and <code>effectiveTimestamp</code>.
 					</p>
-					<aside class="callout callout-important">
-						<strong>Finalization does not prove full-book coverage.</strong> It does not require a quote count, a pending-quote count, or
-						even one mutation. A manager can finalize after the time gate with eligible old-basis quotes still present, and
-						<code>basisVersion</code> will still increment. Complete coverage is an operational obligation.
-					</aside>
-
 					<h2 id="rewrite">What physical restatement changes</h2>
 					<h3>Eligibility, authorization, and batch behavior</h3>
 					<p>
 						<code>applyAdjustment(symbolId, quoteIds)</code> requires an open window. A manager may process any quote. A PartyB may
 						process only its own quote, and authorization is checked separately for every ID. Each quote must match the symbol, have an
 						epoch older than the current window, and have status <code>OPENED</code>, <code>CLOSE_PENDING</code>, or
-						<code>CANCEL_CLOSE_PENDING</code>. PartyA must not be liquidating, and PartyB must not be liquidating against that PartyA.
+						<code>CANCEL_CLOSE_PENDING</code>. The call reverts if PartyA is being liquidated, or if PartyB is in isolated liquidation
+						against that PartyA or in cross liquidation.
 					</p>
+					<aside class="callout callout-risk">
+						<strong>Clear every liquidation before the first restatement mutation.</strong>
+						Operations must check the PartyA liquidation flag, the PartyB-against-PartyA liquidation flag, and the PartyB
+						cross-liquidation flag before the effective time and again before the first batch.
+						<ul>
+							<li>
+								<strong>PartyA liquidation:</strong> let the normal liquidation finish. Its position-processing step can run while the
+								symbol is frozen only if the required liquidation prices or snapshots were stored before the freeze. If the
+								liquidation is disputed, an account with <code>DISPUTE_ROLE</code> must resolve the settlement amounts before
+								settlement can clear the liquidation flag. The Clearing House can take over a stuck PartyA liquidation, but its
+								position-close path rejects a frozen symbol. Do not start a takeover while an affected open position remains on the
+								frozen symbol.
+							</li>
+							<li>
+								<strong>PartyB liquidation:</strong> finish isolated and cross PartyB liquidations before the effective freeze. Their
+								position-close paths reject a frozen symbol. If the freeze is already active, use the adjusted-price route to unfreeze
+								only after Muon and PartyB are ready, finish the liquidation, and then reconsider physical restatement. If a
+								mutation-free restatement window is open, abort it first. An abort from effective <code>SCHEDULED</code> remains
+								frozen until Operations confirms the adjusted-price route.
+							</li>
+						</ul>
+						Once a quote rewrite or pending removal has set <code>restatementMutated</code>, Core cannot abort or roll back the window. If
+						a liquidation blocker is found at that point, stop and escalate the incident. Do not finalize an improvised partial
+						conversion.
+					</aside>
 					<p>
 						The call is atomic. Any invalid ID, failed funding charge, arithmetic failure, aggregate overflow, or downstream revert rolls
 						back every earlier quote in the batch. A duplicate epoch reverts with <code>Already restated</code>. Repeating a completed ID
@@ -667,9 +730,9 @@ new price  = floor(old amount * old price / new amount) otherwise</code></pre>
 					</p>
 					<p>
 						Other non-price cleanup can remain callable. A function that neither receives a symbol nor resolves one from a quote cannot
-						apply the freeze check. The freeze does not cancel an existing liquidation state. Already-liquidating accounts make affected
-						quotes ineligible for <code>applyAdjustment</code>. The tests cover many freeze gates, but they do not prove a complete
-						liquidation-state recovery matrix for physical restatement.
+						apply the freeze check. The freeze also does not cancel an existing liquidation. Normal PartyA position processing has no
+						symbol-freeze check, but its price and snapshot setup does. PartyB liquidation closes and Clearing House liquidation closes do
+						check the freeze. This is why Operations must clear liquidation blockers before the first restatement mutation.
 					</p>
 
 					<h3>Signature expiry and account-level payloads</h3>
@@ -804,7 +867,11 @@ new price  = floor(old amount * old price / new amount) otherwise</code></pre>
 							<code>0 &lt; floor(activeFactor * intendedFactor / 1e18) &lt;= type(uint256).max</code>. After scheduling, confirm that
 							the prospective getter reports the same value without reverting. Do not infer the new basis from only the latest step.
 						</li>
-						<li>Build one open and pending quote manifest across all PartyB account models. Snapshot liquidation and funding state.</li>
+						<li>
+							Build one open and pending quote manifest across all PartyB account models. For every pair, require PartyA liquidation,
+							PartyB-against-PartyA liquidation, and PartyB cross-liquidation status to be clear. Resolve any active liquidation before
+							the effective time.
+						</li>
 						<li>
 							Run <code>previewQuoteAdjustment</code> for every eligible open quote. Treat this as an arithmetic preview, not an
 							eligibility or funding-settlement proof.
