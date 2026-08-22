@@ -1951,8 +1951,12 @@ body.doc-page .doc-article .adjustment-continuation-header p {
 
 .adjustment-tick {
 	display: grid;
-	grid-template-rows: minmax(66px, auto) 19px auto;
+	grid-template-rows: 66px 19px auto;
 	min-width: 0;
+}
+
+.adjustment-track > .adjustment-tick {
+	margin-top: 0;
 }
 
 .adjustment-event {
@@ -2095,7 +2099,7 @@ body.doc-page .doc-article .adjustment-interval p {
 	hyphens: none;
 }
 
-@container adjustment-sequence (max-width: 980px) {
+@container adjustment-sequence (max-width: 700px) {
 	.adjustment-continuation-header {
 		grid-template-columns: minmax(0, 1fr);
 		gap: 2px;
