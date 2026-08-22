@@ -41,7 +41,7 @@
 		<div class="reader-shell">
 			<div class="rail-sections-source" data-rail-sections hidden>
 				<a class="toc-link level-2" href="#before">Before v0.8.6</a>
-				<a class="toc-link level-2" href="#problem">The problem</a>
+				<a class="toc-link level-2" href="#problem">Why gross ordering failed</a>
 				<a class="toc-link level-2" href="#fix">How v0.8.6 fixes it</a>
 				<a class="toc-link level-2" href="#settlement-pipeline">How a close is processed</a>
 				<a class="toc-link level-2" href="#batch-behavior">Batch behavior</a>
@@ -76,7 +76,7 @@
 					</ol>
 					<p>The economic result could be solvent even though the first gross transfer was not.</p>
 
-					<h2 id="problem">The problem</h2>
+					<h2 id="problem">Why gross ordering failed</h2>
 					<p>
 						Funding and PnL from the same quote can move in opposite directions. Whichever component moved first could demand liquidity
 						that the opposite component would immediately return.
@@ -92,8 +92,8 @@ realized PnL       -90
 net to PartyA      -10</code></pre>
 					<p>
 						The old funding-first flow tried to debit <code>80</code> from PartyB's <code>70</code> and reverted. The correct final
-						movement is PartyA paying PartyB <code>10</code>, leaving PartyB with <code>80</code>. Simply reversing funding and PnL would
-						make the opposite-direction case fail instead.
+						movement is PartyA paying PartyB <code>10</code>, leaving PartyB with <code>80</code>. Reversing funding and PnL would make
+						the opposite-direction case fail instead.
 					</p>
 
 					<h2 id="fix">How v0.8.6 fixes it</h2>

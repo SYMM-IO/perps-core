@@ -179,7 +179,7 @@ mapping(address =&gt; mapping(bytes =&gt; mapping(address =&gt; mapping(uint256 
     int256 cumulativeShortFee;
 }
 </code></pre>
-					<p>The key is the signed <code>liquidationId</code> stored for the active PartyA liquidation.</p>
+					<p>The active PartyA liquidation's signed <code>liquidationId</code> is the storage key.</p>
 					<p>In the multi-step path, these fields are populated in two calls:</p>
 					<ul>
 						<li>

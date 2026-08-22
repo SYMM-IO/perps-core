@@ -180,17 +180,17 @@
 						without an oracle, and realizing PnL on an open position applies the same authority applied to a position that already exists.
 					</p>
 					<p>
-						There is one second-order effect worth knowing about, pinned by a test rather than left to reasoning.
+						A regression test pins one second-order effect.
 						<code>partyBAvailableForQuote</code> takes <code>max(-upnl, mm)</code> on the negative-uPNL branch rather than stacking the
 						realized loss on top of the modelled one because the two represent the same risk. A consequence is that a solver settling away
 						from the market can draw down its own margin buffer once: it converts up to its maintenance margin into withdrawable
 						collateral and lands exactly on the liquidation boundary, not over it.
 					</p>
 					<p>
-						The test pins the bounds. The draw is capped at <code>min(settled amount, mm)</code>, one wei more is refused, it does not
-						compound across further settlements, and the solver stays able to pay its bound partyA in full. So the solver can choose to
-						run itself at minimum margin without a market move. It draws down its own buffer, and nothing about the counterparty's claim
-						or the protocol's solvency changes.
+						The draw is capped at <code>min(settled amount, mm)</code>, one wei more is refused, it does not compound across further
+						settlements, and the solver stays able to pay its bound partyA in full. So the solver can choose to run itself at minimum
+						margin without a market move. It draws down its own buffer, and nothing about the counterparty's claim or the protocol's
+						solvency changes.
 					</p>
 					<h2 id="unchanged">Flows that keep full verification</h2>
 					<ul>

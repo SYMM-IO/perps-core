@@ -68,7 +68,7 @@
 						window to close the existing positions, and the Clearing House can close anything that remains after the selected date.
 					</p>
 					<h2 id="why-we-added-this">Why shutdown is staged</h2>
-					<p>An affiliate shutdown has two competing needs.</p>
+					<p>Scheduling must stop new exposure without forcing every existing position to close immediately.</p>
 					<ul>
 						<li>Users should not keep opening fresh positions through an affiliate that is leaving.</li>
 						<li>Existing positions should not be forced closed immediately if solvers can close them normally first.</li>
@@ -112,10 +112,7 @@ function getAffiliateShutdownTime(address affiliate) external view returns (uint
 						<li>PartyB cannot open locked quotes for that affiliate.</li>
 						<li>Batch open rejects quotes for that affiliate.</li>
 					</ul>
-					<p>
-						Closing remains available. The goal is not to freeze the affiliate's users; it is to prevent new exposure while existing
-						exposure is wound down.
-					</p>
+					<p>Closing remains available so users and solvers can wind down existing exposure.</p>
 					<h2 id="solver-window">Solver window</h2>
 					<p>
 						During the shutdown window, the existing <code>emergencyClosePosition</code> path can be used for quotes that belong to the

@@ -147,7 +147,7 @@
 							post-deadline cancellation may invoke the same expiry path. Confirm the quote has returned to <code>OPENED</code>, then
 							create a replacement request and initialize a new workflow.
 						</li>
-						<li>The replacement request receives a new <code>closeId</code>. Historical state is never accepted as a wildcard.</li>
+						<li>A replacement request receives a new <code>closeId</code>, so the old detail cannot pass its request-identity check.</li>
 						<li>
 							Cancellation or expiry can leave historical detail with <code>inProgress = true</code>. Off-chain systems must not treat
 							that flag alone as proof that the workflow can continue; quote status and request identity are also required.
