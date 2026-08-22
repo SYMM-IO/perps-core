@@ -44,7 +44,7 @@ interface ISymbolAdjustmentFacet {
 
 	function confirmPriceAdjusted(uint256 symbolId) external;
 
-	/// @notice Starts a frozen restatement from either an effective scheduled adjustment or an already-confirmed active factor.
+	/// @notice Starts a frozen restatement and pauses active current funding rates for the registered PartyBs.
 	function startRestatement(uint256 symbolId) external;
 
 	function abortRestatement(uint256 symbolId) external;

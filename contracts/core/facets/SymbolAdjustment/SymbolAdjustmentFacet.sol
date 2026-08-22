@@ -9,10 +9,10 @@ import { Accessibility } from "../../utils/Accessibility.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { SymbolAdjustmentStorage, SymbolAdjustment, AdjustmentState } from "../../storages/SymbolAdjustmentStorage.sol";
 import { QuoteStorage, Quote, QuoteStatus } from "../../storages/QuoteStorage.sol";
-import { FundingStorage, FundingFee } from "../../storages/FundingStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
 import { LibSymbolAdjustment } from "../../libraries/LibSymbolAdjustment.sol";
+import { LibSymbolAdjustmentFunding } from "../../libraries/LibSymbolAdjustmentFunding.sol";
 import { LibMuon } from "../../libraries/muon/LibMuon.sol";
 import { LibQuote } from "../../libraries/LibQuote.sol";
 import { LibQuoteFunding } from "../../libraries/LibQuoteFunding.sol";
@@ -75,6 +75,7 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 
 	/// @notice Opens a frozen restatement window either directly from an effective SCHEDULED adjustment or from an already-active factor.
 	/// @dev Direct restatement avoids activating the scheduled factor in `cumulativeFactor`; Muon and normal trading never use that temporary basis.
+	///      Active current funding rates are rolled forward, checkpointed, and paused for the window.
 	function startRestatement(uint256 symbolId) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
 		SymbolAdjustmentStorage.Layout storage adjustmentLayout = SymbolAdjustmentStorage.layout();
 		SymbolAdjustment storage adjustment = adjustmentLayout.adjustments[symbolId];
@@ -101,13 +102,15 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		adjustment.restatementFactor = factor;
 		adjustment.restatementEpoch += 1;
 		emit RestatementStarted(symbolId, adjustment.restatementEpoch, factor);
+		LibSymbolAdjustmentFunding.prepareFundingRatesForRestatement(symbolId, adjustment.restatementEpoch);
 	}
 
-	/// @notice Aborts only a mutation-free window, returning to the prior active-factor state or the scheduled transition freeze.
+	/// @notice Aborts only a mutation-free window, restores paused funding rates, and returns to the prior adjustment state.
 	function abortRestatement(uint256 symbolId) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
 		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
 		require(adjustment.restating, "SymbolAdjustmentFacet: No restatement in progress");
 		require(!adjustment.restatementMutated, "SymbolAdjustmentFacet: Restatement already mutated");
+		LibSymbolAdjustmentFunding.restoreAfterAbort(symbolId, adjustment.restatementEpoch);
 		adjustment.restating = false;
 		adjustment.restatementFactor = 0;
 		adjustment.restatementStartedAt = 0;
@@ -143,14 +146,10 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		require(!MAStorage.layout().liquidationStatus[quote.partyA], "SymbolAdjustmentFacet: PartyA in liquidation");
 		quote.partyB.requireNotLiquidating(quote.partyA);
 
-		// 1) Require the current accumulated-funding rates to be zero, then settle all old-unit funding.
-		//    Funding mutations are frozen for the full restatement window, so converted quotes cannot
-		//    accrue an old-unit current rate while later batches are still pending.
-		FundingFee storage fundingFee = FundingStorage.layout().fundingFees[symbolId][quote.partyB];
-		require(
-			fundingFee.epochDuration == 0 || (fundingFee.currentLongRate == 0 && fundingFee.currentShortRate == 0),
-			"SymbolAdjustmentFacet: Funding rate not zero"
-		);
+		// 1) Ensure this PartyB shares the window's zero-rate cutoff, then settle the quote's old-unit funding.
+		//    Registered PartyBs are paused when the window opens; this fallback covers a legacy deregistered PartyB
+		//    that still has an open quote.
+		LibSymbolAdjustmentFunding.preparePartyBFundingRatesForRestatement(symbolId, quote.partyB, epoch);
 		LibQuoteFunding.chargeAccumulatedFundingFee(quoteId);
 
 		// 2) Remove aggregates computed from the old amount and openedPrice before any mutation.
@@ -202,7 +201,7 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		}
 	}
 
-	/// @notice Closes the manager-controlled window, marks a direct/confirmed adjustment applied, clears factors, and unfreezes the symbol.
+	/// @notice Rebases paused funding rates, closes the window, marks the adjustment applied, clears factors, and unfreezes the symbol.
 	function finalizeRestatement(uint256 symbolId) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
 		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
 		require(adjustment.restating, "SymbolAdjustmentFacet: No restatement in progress");
@@ -211,6 +210,7 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 			block.timestamp > adjustment.restatementStartedAt + LibMuon.maxUpnlValidTime(),
 			"SymbolAdjustmentFacet: Restatement window too short"
 		);
+		LibSymbolAdjustmentFunding.restoreAfterFinalization(symbolId, adjustment.restatementEpoch, adjustment.restatementFactor);
 		if (adjustment.state == AdjustmentState.PRICE_ADJUSTED || adjustment.state == AdjustmentState.SCHEDULED) {
 			adjustment.state = AdjustmentState.APPLIED;
 		}

@@ -5,7 +5,7 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta
 			name="description"
-			content="Quote flows no longer roll the symbol/PartyB funding state. Funding settles lazily from persisted state, which changes and emits its final state only on solver configuration."
+			content="Quote flows no longer roll the symbol/PartyB funding state. Funding settles lazily, with explicit state transitions for solver configuration and symbol restatement."
 		/>
 		<title>Lazy Accumulated Funding - Symmio Core v0.8.6</title>
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
@@ -52,9 +52,9 @@
 						<div>
 							<h1>Lazy Accumulated Funding</h1>
 							<p class="hero-copy">
-								v0.8.6 stops quote-driven flows from rolling the shared symbol/PartyB accumulated funding state. Per-quote funding is
-								settled lazily from the persisted state, which now changes only when the solver reconfigures rates or epoch duration
-								and emits its final state at every such change.
+								v0.8.6 stops ordinary quote-driven flows from rolling the shared symbol/PartyB accumulated funding state. Per-quote
+								funding is settled lazily from persisted state. That shared state changes only during explicit funding configuration
+								or the automatic pause and rebase around symbol restatement.
 							</p>
 						</div>
 					</div>
@@ -72,13 +72,14 @@
 					<p>
 						The roll was never required for correctness. The persisted state fully determines the cumulative fee at any time, as described
 						under <a href="#lazy-evaluation">Lazy evaluation model</a>. The roll fed the two-term shortcut, changed shared state during
-						quote operations, forced storage writes and logs onto those operations, and added one integer-division rounding per roll.
+						ordinary quote operations, forced storage writes and logs onto those operations, and added one integer-division rounding per
+						roll.
 					</p>
 					<p>
-						v0.8.6 removes the roll. Quote-driven flows now compute the quote's baseline with the same lazy formula every read path
-						already used, and never mutate the symbol/PartyB state. The weighted average is re-folded only in the solver configuration
-						paths, which emit the <a href="#state-event">state event</a> after their final storage writes. Between solver updates the
-						persisted funding state is byte-stable.
+						v0.8.6 removes that roll from ordinary quote processing. Quote-driven flows now compute the quote's baseline with the same
+						lazy formula every read path already used, and do not mutate the symbol/PartyB state. The weighted average is re-folded during
+						solver configuration and at symbol-restatement boundaries. Both emit the <a href="#state-event">state event</a> after their
+						final storage writes. Between those explicit transitions the persisted funding state is byte-stable.
 					</p>
 
 					<h2 id="lazy-evaluation">Lazy evaluation model</h2>
@@ -117,9 +118,9 @@ cumulativeFee = snapshotFee
 							of rolling state.
 						</li>
 						<li>
-							There is no quote-flow fold-and-emit wrapper. The fold followed by
-							<code>emitAccumulatedFundingStateUpdated</code> now occurs only inside solver configuration paths
-							(<code>setEpochDurations</code>, <code>updateAccumulatedFundingFee</code>, and the <code>setFundingFee</code> variants).
+							There is no ordinary quote-flow fold-and-emit wrapper. The fold followed by
+							<code>emitAccumulatedFundingStateUpdated</code> occurs inside solver configuration paths and when Core pauses or resumes
+							funding for a symbol restatement.
 						</li>
 						<li>
 							Quote flows no longer pay for symbol-state storage writes or the state log. The cumulative funding formula is unchanged,
@@ -147,12 +148,13 @@ cumulativeFee = snapshotFee
 </code></pre>
 					<p>
 						The payload mirrors the persisted <code>FundingFee</code> struct after the state transition completes. The contract emits it
-						after final storage writes in the only paths that mutate the symbol/PartyB funding state:
+						after final storage writes in these paths:
 					</p>
 					<ul>
 						<li><code>setEpochDurations</code></li>
 						<li><code>updateAccumulatedFundingFee</code></li>
 						<li><code>setFundingFee</code>, <code>setLongFundingFee</code>, and <code>setShortFundingFee</code></li>
+						<li>the funding pause, abort restore, and final rate rebase around symbol restatement</li>
 					</ul>
 				</article>
 			</main>

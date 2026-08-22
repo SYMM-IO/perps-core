@@ -63,6 +63,15 @@ struct SymbolAdjustment {
 	uint256 restatementStartedAt;
 }
 
+/// @notice Funding rates saved while a symbol is physically restated.
+/// @dev Rates are shared by all quotes for one symbol/PartyB pair. Core pauses them once per
+///      restatement window, then restores them on abort or rebases them on finalization.
+struct FundingRateCheckpoint {
+	int256 currentLongRate;
+	int256 currentShortRate;
+	uint256 restatementEpoch;
+}
+
 /// @title SymbolAdjustmentStorage
 /// @notice Corporate-action adjustment registry, cumulative price factor, and restatement bookkeeping
 /// @dev Uses diamond storage pattern with a unique slot to avoid collisions.
@@ -79,6 +88,12 @@ library SymbolAdjustmentStorage {
 		/// @notice Block timestamp at which the latest adjustment was scheduled.
 		/// @dev For a past-effective emergency adjustment, this is when the symbol actually became frozen on-chain.
 		mapping(uint256 => uint256) adjustmentScheduledAt;
+		/// @notice PartyBs whose nonzero current funding rates Core paused for the open restatement window.
+		/// @dev The list bounds finalization work to PartyBs that need restoration and is cleared when the window closes.
+		mapping(uint256 => address[]) restatementFundingPartyBs;
+		/// @notice Saved current funding rates keyed by symbol and PartyB.
+		/// @dev `restatementEpoch` makes stale checkpoints from earlier windows distinguishable even though mapping slots are reused.
+		mapping(uint256 => mapping(address => FundingRateCheckpoint)) fundingRateCheckpoints;
 	}
 
 	function layout() internal pure returns (Layout storage l) {
