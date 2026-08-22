@@ -204,40 +204,146 @@ funding amount = 1 * 8 = 8</code></pre>
 						scheduled after <code>PRICE_ADJUSTED</code>, <code>APPLIED</code>, or <code>CANCELLED</code>. Existing active factors survive
 						the new schedule.
 					</p>
-					<pre><code class="language-text">NONE, PRICE_ADJUSTED, APPLIED, or CANCELLED
-    |
-    | scheduleAdjustment
-    v
-SCHEDULED, live before effectiveTimestamp and frozen at or after it
-    |                                      |
-    | cancelAdjustment                     | event occurred
-    v                                      +------------------------------+
-CANCELLED                                                                 |
-                                             adjusted price ready          | direct physical restatement
-                                             |                             |
-                                             | confirmPriceAdjusted        | startRestatement
-                                             v                             v
-                                        PRICE_ADJUSTED              SCHEDULED + restating
-                                             |                             |
-                                             | optional later              | apply/cancel inventory
-                                             | startRestatement             | wait, finalize
-                                             v                             v
-                                      PRICE_ADJUSTED + restating          APPLIED
-                                             |
-                                             | apply/cancel inventory, wait, finalize
-                                             v
-                                           APPLIED</code></pre>
+					<div class="adjustment-timelines" aria-label="Symbol-adjustment lifecycle routes">
+						<section class="adjustment-sequence" style="--timeline-step-count: 2">
+							<header class="adjustment-sequence-header">
+								<span>Exit path</span>
+								<h4>Cancel before committing to the event</h4>
+								<p>Use this when the venue event will not happen. No restatement window is opened.</p>
+							</header>
+							<ol class="adjustment-track">
+								<li class="adjustment-tick">
+									<div class="adjustment-event"><span>Register</span><code>scheduleAdjustment</code></div>
+									<div class="adjustment-rail" aria-hidden="true"></div>
+									<div class="adjustment-interval">
+										<div><code>SCHEDULED</code><span class="adjustment-status">Live until effective</span></div>
+									</div>
+								</li>
+								<li class="adjustment-tick is-terminal">
+									<div class="adjustment-event"><span>Exit</span><code>cancelAdjustment</code></div>
+									<div class="adjustment-rail" aria-hidden="true"></div>
+									<div class="adjustment-interval">
+										<div><code>CANCELLED</code><span class="adjustment-status">Live</span></div>
+									</div>
+								</li>
+							</ol>
+						</section>
+
+						<section class="adjustment-sequence" style="--timeline-step-count: 3">
+							<header class="adjustment-sequence-header">
+								<span>Route 01 · adjusted price</span>
+								<h4>Resume trading without rewriting quotes</h4>
+								<p>Confirm that the oracle is publishing adjusted prices. Physical restatement can happen later.</p>
+							</header>
+							<ol class="adjustment-track">
+								<li class="adjustment-tick">
+									<div class="adjustment-event"><span>Register</span><code>scheduleAdjustment</code></div>
+									<div class="adjustment-rail" aria-hidden="true"></div>
+									<div class="adjustment-interval">
+										<div><code>SCHEDULED</code><span class="adjustment-status">Live until effective</span></div>
+									</div>
+								</li>
+								<li class="adjustment-tick is-automatic is-frozen">
+									<div class="adjustment-event"><span>Automatic</span><strong>effectiveTimestamp</strong></div>
+									<div class="adjustment-rail" aria-hidden="true"></div>
+									<div class="adjustment-interval">
+										<div><code>SCHEDULED</code><span class="adjustment-status">Frozen</span></div>
+									</div>
+								</li>
+								<li class="adjustment-tick is-terminal">
+									<div class="adjustment-event"><span>Resume</span><code>confirmPriceAdjusted</code></div>
+									<div class="adjustment-rail" aria-hidden="true"></div>
+									<div class="adjustment-interval">
+										<div><code>PRICE_ADJUSTED</code><span class="adjustment-status">Live</span></div>
+										<p>Muon and funding inputs remain on the adjusted old-unit basis.</p>
+									</div>
+								</li>
+							</ol>
+							<div class="adjustment-continuation">
+								<header class="adjustment-continuation-header">
+									<h5>Optional later conversion</h5>
+									<p>Freeze again when Operations is ready to rewrite stored quotes.</p>
+								</header>
+								<ol class="adjustment-track" style="--timeline-step-count: 3">
+									<li class="adjustment-tick is-frozen">
+										<div class="adjustment-event"><span>Open window</span><code>startRestatement</code></div>
+										<div class="adjustment-rail" aria-hidden="true"></div>
+										<div class="adjustment-interval">
+											<div><code>PRICE_ADJUSTED + restating</code><span class="adjustment-status">Frozen</span></div>
+											<p>Abort can return here only before inventory changes.</p>
+										</div>
+									</li>
+									<li class="adjustment-tick is-frozen">
+										<div class="adjustment-event"><span>Rewrite batches</span><code>applyAdjustment</code></div>
+										<div class="adjustment-rail" aria-hidden="true"></div>
+										<div class="adjustment-interval">
+											<div><code>restating</code><span class="adjustment-status">Frozen</span></div>
+										</div>
+									</li>
+									<li class="adjustment-tick is-terminal">
+										<div class="adjustment-event"><span>Commit</span><code>finalizeRestatement</code></div>
+										<div class="adjustment-rail" aria-hidden="true"></div>
+										<div class="adjustment-interval">
+											<div><code>APPLIED</code><span class="adjustment-status">Live on venue basis</span></div>
+										</div>
+									</li>
+								</ol>
+							</div>
+						</section>
+
+						<section class="adjustment-sequence" style="--timeline-step-count: 4">
+							<header class="adjustment-sequence-header">
+								<span>Route 02 · direct restatement</span>
+								<h4>Rewrite quotes while the symbol stays frozen</h4>
+								<p>Skip the adjusted-price trading phase and move stored inventory directly to the venue basis.</p>
+							</header>
+							<ol class="adjustment-track">
+								<li class="adjustment-tick">
+									<div class="adjustment-event"><span>Register</span><code>scheduleAdjustment</code></div>
+									<div class="adjustment-rail" aria-hidden="true"></div>
+									<div class="adjustment-interval">
+										<div><code>SCHEDULED</code><span class="adjustment-status">Live until effective</span></div>
+									</div>
+								</li>
+								<li class="adjustment-tick is-automatic is-frozen">
+									<div class="adjustment-event"><span>Automatic</span><strong>effectiveTimestamp</strong></div>
+									<div class="adjustment-rail" aria-hidden="true"></div>
+									<div class="adjustment-interval">
+										<div><code>SCHEDULED</code><span class="adjustment-status">Frozen</span></div>
+									</div>
+								</li>
+								<li class="adjustment-tick is-frozen">
+									<div class="adjustment-event"><span>Open window</span><code>startRestatement</code></div>
+									<div class="adjustment-rail" aria-hidden="true"></div>
+									<div class="adjustment-interval">
+										<div><code>SCHEDULED + restating</code><span class="adjustment-status">Frozen</span></div>
+										<p>Cancel pending inventory, then rewrite quotes in batches. Abort only before the first inventory change.</p>
+									</div>
+								</li>
+								<li class="adjustment-tick is-terminal">
+									<div class="adjustment-event"><span>Commit</span><code>finalizeRestatement</code></div>
+									<div class="adjustment-rail" aria-hidden="true"></div>
+									<div class="adjustment-interval">
+										<div><code>APPLIED</code><span class="adjustment-status">Live on venue basis</span></div>
+									</div>
+								</li>
+							</ol>
+						</section>
+					</div>
 					<p>
 						<code>cancelAdjustment</code> and <code>abortRestatement</code> solve different problems. Cancellation applies only to
 						<code>SCHEDULED</code> with no open window. It changes state to <code>CANCELLED</code> and is valid before or after the
 						effective time. It does not clear the latest factor, timestamps, or an older active cumulative factor.
 					</p>
 					<p>
-						Abort applies only to an open, mutation-free window. It restores funding and closes the window without changing the lifecycle
-						state. A direct-route abort therefore remains in effective <code>SCHEDULED</code> and frozen. An active-factor abort preserves
-						whichever state opened the window. The common <code>PRICE_ADJUSTED</code> case becomes live in <code>PRICE_ADJUSTED</code>; a
-						window opened from <code>CANCELLED</code> becomes live in <code>CANCELLED</code>. The epoch consumed by the aborted window is
-						not reused.
+						<code>abortRestatement</code> can close an open restatement window only before any quote inventory has changed. Specifically,
+						no quote may have been restated and no pending quote may have been removed. Opening the window and pausing funding do not
+						count as inventory changes; abort reverses those setup actions and restores the original funding rates. Once inventory
+						changes, abort is rejected because it could reopen trading with a partially restated, mixed-basis book. Abort does not change
+						the lifecycle state: a direct-route abort therefore remains in effective <code>SCHEDULED</code> and frozen, while an
+						active-factor abort preserves whichever state opened the window. The common <code>PRICE_ADJUSTED</code> case becomes live in
+						<code>PRICE_ADJUSTED</code>; a window opened from <code>CANCELLED</code> becomes live in <code>CANCELLED</code>. The epoch
+						consumed by the aborted window is not reused.
 					</p>
 
 					<h3 id="active-route">Resume on adjusted prices</h3>
