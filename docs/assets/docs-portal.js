@@ -21,6 +21,13 @@
 				// File URLs and embedded browsers can deny storage; controls still work for this page load.
 			}
 		},
+		remove(key) {
+			try {
+				if (window.localStorage) localStorage.removeItem(key);
+			} catch (_error) {
+				// File URLs and embedded browsers can deny storage; controls still work for this page load.
+			}
+		},
 	};
 
 	const icons = {
@@ -161,6 +168,99 @@
 	const wireRailChrome = (rail, { trigger }) => {
 		const compact = window.matchMedia("(max-width: 980px)");
 		const collapse = rail.querySelector("[data-rail-collapse]");
+		const resizer = document.createElement("div");
+		resizer.className = "rail-resizer";
+		resizer.tabIndex = 0;
+		resizer.setAttribute("role", "separator");
+		resizer.setAttribute("aria-orientation", "vertical");
+		resizer.setAttribute("aria-label", "Resize page navigation");
+		resizer.setAttribute("aria-keyshortcuts", "ArrowLeft ArrowRight Home End Enter");
+		resizer.setAttribute("title", "Drag or use arrow keys to resize. Double-click or press Enter to reset.");
+		rail.append(resizer);
+
+		const railWidthKey = "docs-rail-width";
+		const minimumRailWidth = 180;
+		const minimumReaderWidth = 320;
+		const defaultRailWidth = () => (window.innerWidth <= 1180 ? 280 : 304);
+		const maximumRailWidth = () => Math.max(minimumRailWidth, window.innerWidth - minimumReaderWidth);
+		const savedRailWidth = Number.parseFloat(store.get(railWidthKey) || "");
+		let preferredRailWidth = Number.isFinite(savedRailWidth) ? savedRailWidth : null;
+
+		const applyRailWidth = width => {
+			const maximum = maximumRailWidth();
+			const next = Math.round(Math.min(maximum, Math.max(minimumRailWidth, width)));
+			body.style.setProperty("--rail-expanded", `${next}px`);
+			resizer.setAttribute("aria-valuemin", String(minimumRailWidth));
+			resizer.setAttribute("aria-valuemax", String(maximum));
+			resizer.setAttribute("aria-valuenow", String(next));
+			resizer.setAttribute("aria-valuetext", `${next} pixels wide`);
+			return next;
+		};
+
+		const applyPreferredRailWidth = () => applyRailWidth(preferredRailWidth ?? defaultRailWidth());
+		const resetRailWidth = () => {
+			preferredRailWidth = null;
+			store.remove(railWidthKey);
+			applyPreferredRailWidth();
+		};
+		applyPreferredRailWidth();
+
+		resizer.addEventListener("pointerdown", event => {
+			if (compact.matches || event.button !== 0) return;
+			event.preventDefault();
+			body.classList.add("rail-is-resizing");
+			resizer.setPointerCapture(event.pointerId);
+
+			const updateFromPointer = pointerEvent => {
+				const rightToLeft = getComputedStyle(body).direction === "rtl";
+				preferredRailWidth = applyRailWidth(rightToLeft ? window.innerWidth - pointerEvent.clientX : pointerEvent.clientX);
+			};
+			const finishResize = pointerEvent => {
+				if (pointerEvent.type === "pointerup") updateFromPointer(pointerEvent);
+				body.classList.remove("rail-is-resizing");
+				if (resizer.hasPointerCapture(pointerEvent.pointerId)) resizer.releasePointerCapture(pointerEvent.pointerId);
+				if (preferredRailWidth !== null) store.set(railWidthKey, String(preferredRailWidth));
+				resizer.removeEventListener("pointermove", updateFromPointer);
+				resizer.removeEventListener("pointerup", finishResize);
+				resizer.removeEventListener("pointercancel", finishResize);
+			};
+
+			resizer.addEventListener("pointermove", updateFromPointer);
+			resizer.addEventListener("pointerup", finishResize);
+			resizer.addEventListener("pointercancel", finishResize);
+		});
+
+		resizer.addEventListener("keydown", event => {
+			if (compact.matches) return;
+			if (event.key === "Enter") {
+				event.preventDefault();
+				resetRailWidth();
+				return;
+			}
+			const rightToLeft = getComputedStyle(body).direction === "rtl";
+			const current = Number.parseFloat(resizer.getAttribute("aria-valuenow") || "") || defaultRailWidth();
+			const step = event.shiftKey ? 48 : 16;
+			let next = null;
+			if (event.key === "Home") next = minimumRailWidth;
+			else if (event.key === "End") next = maximumRailWidth();
+			else if (event.key === "ArrowLeft") next = current + (rightToLeft ? step : -step);
+			else if (event.key === "ArrowRight") next = current + (rightToLeft ? -step : step);
+			if (next === null) return;
+			event.preventDefault();
+			preferredRailWidth = applyRailWidth(next);
+			store.set(railWidthKey, String(preferredRailWidth));
+		});
+
+		resizer.addEventListener("dblclick", resetRailWidth);
+
+		let resizeFrame = 0;
+		window.addEventListener("resize", () => {
+			if (resizeFrame) return;
+			resizeFrame = window.requestAnimationFrame(() => {
+				resizeFrame = 0;
+				applyPreferredRailWidth();
+			});
+		});
 		const focusableSelector = "a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex='-1'])";
 		const backdrop = document.createElement("button");
 		backdrop.type = "button";
@@ -271,7 +371,10 @@
 		compact.addEventListener("change", () => {
 			setOpen(false, true);
 			if (compact.matches) body.classList.remove("rail-is-collapsed");
-			else setCollapsed(store.get("docs-rail-collapsed") === "true", false);
+			else {
+				applyPreferredRailWidth();
+				setCollapsed(store.get("docs-rail-collapsed") === "true", false);
+			}
 		});
 		setOpen(false);
 		setCollapsed(store.get("docs-rail-collapsed") === "true", false);
