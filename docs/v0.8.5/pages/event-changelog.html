@@ -813,7 +813,7 @@ event WithdrawSpeedUpAccepted(uint256 requestId, address user, uint256 newCooldo
 					<p>
 						Handles corporate-action-style symbol adjustments (e.g. a CRWD-style 4:1 split): a registry lifecycle for scheduling a factor,
 						choosing confirmation or direct restatement after the effective-time freeze, gating quote-specific trading, funding,
-						liquidation-price, and settlement paths, and rescaling eligible open quotes while force-expiring pending quotes.
+						liquidation-price, and settlement paths, and rescaling eligible open quotes while cancelling pending quotes.
 					</p>
 					<table>
 						<thead>
@@ -862,7 +862,7 @@ event WithdrawSpeedUpAccepted(uint256 requestId, address user, uint256 newCooldo
 							<tr>
 								<td><code>PendingQuoteCancelledByAdjustment</code></td>
 								<td><code>(uint256 indexed quoteId, uint256 indexed symbolId)</code></td>
-								<td>Pending quote force-expired during freeze</td>
+								<td>Pending quote cancelled by the adjustment manager during freeze</td>
 							</tr>
 							<tr>
 								<td><code>RestatementFinalized</code></td>

@@ -242,38 +242,18 @@ library LibQuoteClose {
 	/// @notice Runs expireQuote without the deadline gate and is exposed only through privileged facet paths.
 	function forceExpireQuote(uint256 quoteId) public returns (QuoteStatus result) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-
 		Quote storage quote = quoteLayout.quotes[quoteId];
 		require(
-			quote.quoteStatus == QuoteStatus.PENDING ||
-				quote.quoteStatus == QuoteStatus.CANCEL_PENDING ||
-				quote.quoteStatus == QuoteStatus.LOCKED ||
+			_isPendingQuoteStatus(quote.quoteStatus) ||
 				quote.quoteStatus == QuoteStatus.CLOSE_PENDING ||
 				quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING,
 			"LibQuote: Invalid state"
 		);
-		require(!MAStorage.layout().liquidationStatus[quote.partyA], "LibQuote: PartyA isn't solvent");
-		quote.partyB.requireNotLiquidating(quote.partyA);
+		_requireNotLiquidating(quote);
 
-		if (quote.quoteStatus == QuoteStatus.PENDING || quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING) {
-			quote.statusModifyTimestamp = block.timestamp;
-			accountLayout.pendingLockedBalances[quote.partyA].subQuote(quote);
-
-			// send trading Fee back to partyA
-			LibAccount.refundOpenTradingFee(quote.id, quote.partyA);
-
-			LibQuote.removeFromPartyAPendingQuotes(quote);
-			if (quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING) {
-				LibAccount.subFromPartyBPendingLockedBalances(quote);
-				LibQuote.removeFromPartyBPendingQuotes(quote);
-				LibConnections.removeConnectionIfNoPositions(quote.partyA, quote.partyB);
-			}
-
-			quote.quoteStatus = QuoteStatus.EXPIRED;
+		if (_isPendingQuoteStatus(quote.quoteStatus)) {
+			_removePendingQuote(quote, QuoteStatus.EXPIRED);
 			result = QuoteStatus.EXPIRED;
-
-			LibHook.callCancelQuoteHooks(quoteId, quote.partyA, quote.partyB, quote.affiliate);
 		} else if (quote.quoteStatus == QuoteStatus.CLOSE_PENDING || quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING) {
 			quote.statusModifyTimestamp = block.timestamp;
 			quote.requestedClosePrice = 0;
@@ -282,5 +262,44 @@ library LibQuoteClose {
 			result = QuoteStatus.OPENED;
 			LibHook.callCloseExpiredHooks(quoteId, quote.partyA, quote.partyB, quote.affiliate);
 		}
+	}
+
+	/// @notice Cancels pending inventory without a deadline gate and is exposed only through the symbol-adjustment manager path.
+	function forceCancelPendingQuote(uint256 quoteId) public returns (QuoteStatus result) {
+		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		require(_isPendingQuoteStatus(quote.quoteStatus), "LibQuote: Invalid state");
+		_requireNotLiquidating(quote);
+		_removePendingQuote(quote, QuoteStatus.CANCELED);
+		result = QuoteStatus.CANCELED;
+	}
+
+	function _removePendingQuote(Quote storage quote, QuoteStatus terminalStatus) private {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		bool hasPartyBLock = quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING;
+
+		quote.statusModifyTimestamp = block.timestamp;
+		accountLayout.pendingLockedBalances[quote.partyA].subQuote(quote);
+
+		// send trading Fee back to partyA
+		LibAccount.refundOpenTradingFee(quote.id, quote.partyA);
+
+		LibQuote.removeFromPartyAPendingQuotes(quote);
+		if (hasPartyBLock) {
+			LibAccount.subFromPartyBPendingLockedBalances(quote);
+			LibQuote.removeFromPartyBPendingQuotes(quote);
+			LibConnections.removeConnectionIfNoPositions(quote.partyA, quote.partyB);
+		}
+
+		quote.quoteStatus = terminalStatus;
+		LibHook.callCancelQuoteHooks(quote.id, quote.partyA, quote.partyB, quote.affiliate);
+	}
+
+	function _isPendingQuoteStatus(QuoteStatus quoteStatus) private pure returns (bool) {
+		return quoteStatus == QuoteStatus.PENDING || quoteStatus == QuoteStatus.CANCEL_PENDING || quoteStatus == QuoteStatus.LOCKED;
+	}
+
+	function _requireNotLiquidating(Quote storage quote) private view {
+		require(!MAStorage.layout().liquidationStatus[quote.partyA], "LibQuote: PartyA isn't solvent");
+		quote.partyB.requireNotLiquidating(quote.partyA);
 	}
 }

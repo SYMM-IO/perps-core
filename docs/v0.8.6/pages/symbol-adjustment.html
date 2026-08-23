@@ -710,10 +710,11 @@ dust            = 30 - 28 = 2</code></pre>
 					<h3 id="rewrite-pending">Pending inventory</h3>
 					<p>
 						<code>cancelPendingQuotes</code> is manager-only. It does not require an open restatement window, but every quote's symbol
-						must be frozen. It accepts <code>PENDING</code>, <code>LOCKED</code>, and <code>CANCEL_PENDING</code>. Core force-expires each
-						quote without the normal deadline check, while retaining both liquidation guards. It refunds the open trading fee, releases
-						pending locks and PartyB connections where applicable, removes pending indexes, sets the quote to <code>EXPIRED</code>, and
-						calls cancellation hooks. A hook revert rolls back the batch. An empty quote array is accepted and changes nothing.
+						must be frozen. It accepts <code>PENDING</code>, <code>LOCKED</code>, and <code>CANCEL_PENDING</code>. The cancellation path
+						does not check quote deadlines. It still rejects the call if PartyA is liquidating or PartyB is liquidating against that
+						PartyA. Core refunds the open trading fee, releases pending locks and PartyB connections where applicable, removes pending
+						indexes, and sets the quote to <code>CANCELED</code>. It then calls cancellation hooks. A hook revert rolls back the batch. An
+						empty quote array is accepted and changes nothing.
 					</p>
 					<p>
 						Removing a quote from PartyA's pending index records a mutation if a restatement window is open. This applies to
@@ -1042,9 +1043,8 @@ dust            = 30 - 28 = 2</code></pre>
 							can also return live in <code>CANCELLED</code>.
 						</li>
 						<li>
-							Force-expire all eligible pending inventory. Monitor normal pending cancellation and close-request creation, cancellation,
-							and expiry throughout the window. Reconcile each resulting status and price-bearing close field before processing the
-							quote.
+							Cancel all eligible pending inventory. Monitor normal pending cancellation and close-request creation, cancellation, and
+							expiry throughout the window. Reconcile each resulting status and price-bearing close field before processing the quote.
 						</li>
 						<li>
 							Before submitting each bounded batch, have the Operations bot simulate the exact
@@ -1243,7 +1243,7 @@ dust            = 30 - 28 = 2</code></pre>
 								</tr>
 								<tr>
 									<td><code>cancelPendingQuotes</code></td>
-									<td>Manager-only. Force-expire eligible pending inventory whenever its symbol is frozen.</td>
+									<td>Manager-only. Cancel eligible pending inventory whenever its symbol is frozen.</td>
 								</tr>
 								<tr>
 									<td><code>emergencyClosePosition</code></td>

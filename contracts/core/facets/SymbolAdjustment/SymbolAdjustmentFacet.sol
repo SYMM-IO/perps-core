@@ -183,8 +183,8 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		emit QuoteAdjusted(quoteId, symbolId, epoch, factor, oldQuantity, preview.quantity, oldOpenedPrice, quote.openedPrice);
 	}
 
-	/// @notice Force-expires PENDING/LOCKED/CANCEL_PENDING quotes on a frozen symbol (they are priced in
-	///         pre-adjustment units). Uses expireQuote semantics: trading fee refunded, pending locks released.
+	/// @notice Cancels PENDING/LOCKED/CANCEL_PENDING quotes on a frozen symbol because they are priced in
+	///         pre-adjustment units. The trading fee is refunded and pending locks are released.
 	function cancelPendingQuotes(uint256[] calldata quoteIds) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
 		for (uint256 i = 0; i < quoteIds.length; i++) {
 			Quote storage quote = QuoteStorage.layout().quotes[quoteIds[i]];
@@ -196,7 +196,7 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 					quote.quoteStatus == QuoteStatus.CANCEL_PENDING,
 				"SymbolAdjustmentFacet: Invalid quote state"
 			);
-			LibQuoteClose.forceExpireQuote(quoteIds[i]);
+			LibQuoteClose.forceCancelPendingQuote(quoteIds[i]);
 			emit PendingQuoteCancelledByAdjustment(quoteIds[i], symbolId);
 		}
 	}

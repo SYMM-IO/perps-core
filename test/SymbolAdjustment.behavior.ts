@@ -303,15 +303,40 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 		})
 
 		describe("cancelPendingQuotes", function () {
-			it("should force-expire a pending quote on a frozen symbol and refund the trading fee", async function () {
+			it("should cancel a still-valid pending quote on a frozen symbol and refund the trading fee", async function () {
 				const quoteId = await user.sendQuote(limitQuoteRequestBuilder().build())
+				const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)
+				expect(quoteBefore.deadline).to.be.gt(await getBlockTimestamp())
 				const balanceBefore = (await user.getBalanceInfo()).allocatedBalances
 				await freezeSymbol()
 				await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).cancelPendingQuotes([quoteId]))
 					.to.emit(context.symbolAdjustmentFacet, "PendingQuoteCancelledByAdjustment")
 					.withArgs(quoteId, SYMBOL_ID)
-				expect((await context.viewFacetQuote.getQuote(quoteId)).quoteStatus).to.equal(9) // EXPIRED
+				expect((await context.viewFacetQuote.getQuote(quoteId)).quoteStatus).to.equal(QuoteStatus.CANCELED)
 				expect((await user.getBalanceInfo()).allocatedBalances).to.be.gt(balanceBefore) // fee refunded + locks released
+			})
+
+			it("should cancel locked and cancel-pending quotes and release PartyB inventory", async function () {
+				const lockedId = await user.sendQuote(limitQuoteRequestBuilder().build())
+				await hedger.lockQuote(lockedId)
+				const cancelPendingId = await user.sendQuote(limitQuoteRequestBuilder().build())
+				await hedger.lockQuote(cancelPendingId)
+				await user.requestToCancelQuote(cancelPendingId)
+
+				await freezeSymbol()
+				await context.symbolAdjustmentFacet.connect(context.signers.admin).cancelPendingQuotes([lockedId, cancelPendingId])
+
+				expect((await context.viewFacetQuote.getQuote(lockedId)).quoteStatus).to.equal(QuoteStatus.CANCELED)
+				expect((await context.viewFacetQuote.getQuote(cancelPendingId)).quoteStatus).to.equal(QuoteStatus.CANCELED)
+				expect(await context.viewFacetQuote.getPartyBPendingQuotes(context.signers.hedger.address, context.signers.user.address)).to.deep.equal([])
+			})
+
+			it("should keep ordinary deadline expiry as EXPIRED", async function () {
+				const deadline = (await getBlockTimestamp()) + 10n
+				const quoteId = await user.sendQuote(limitQuoteRequestBuilder().deadline(deadline).build())
+				await time.increase(11)
+				await context.partyAFacet.connect(context.signers.user).expireQuote([quoteId])
+				expect((await context.viewFacetQuote.getQuote(quoteId)).quoteStatus).to.equal(QuoteStatus.EXPIRED)
 			})
 
 			it("should refuse on an unfrozen symbol and on OPENED quotes", async function () {
