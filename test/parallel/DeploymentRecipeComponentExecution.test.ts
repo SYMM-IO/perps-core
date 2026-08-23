@@ -9,7 +9,7 @@ import {
 	inspectComponentStatus,
 } from "../../tasks/deploy/checkComponent.js"
 import { getCheckpointPath, setCheckpointSimulated } from "../../tasks/deploy/checkpoint.js"
-import { executeComponentDeployment } from "../../tasks/deploy/componentDeployment.js"
+import { executeComponentDeployment, resolveExpressProviderConfig } from "../../tasks/deploy/componentDeployment.js"
 import { componentCheckpointScope, type CoreDependencyReport } from "../../tasks/deploy/deploymentRecipe.js"
 import { initializeFixture } from "../Initialize.fixture.js"
 import { ethers, hre } from "../helpers/hardhat-connection.js"
@@ -183,6 +183,31 @@ describe("deployment recipe standalone component execution", function () {
 		const resumed = await executeComponentDeployment(hre, input)
 		expect(resumed.report.address).to.equal(express.report.address)
 		expect(resumed.report.health.status).to.equal("passed")
+	})
+
+	it("rejects an Express credit verifier compiled without the ExpressCredit category", async function () {
+		const context = await loadFixture(initializeFixture)
+		const [admin] = await ethers.getSigners()
+
+		try {
+			await resolveExpressProviderConfig(
+				ethers,
+				{
+					admin: admin.address,
+					creditLine: {
+						// A contract with no ExpressCredit-compatible authorization ABI models a legacy verifier.
+						signatureVerifier: await context.collateral.getAddress(),
+						muonAppId: "1",
+						muonFreshnessWindow: 60,
+					},
+				},
+				{ core: context.diamond, admin: admin.address },
+				admin.address,
+			)
+			expect.fail("Expected the legacy verifier compatibility probe to reject")
+		} catch (error) {
+			expect((error as Error).message).to.include("does not support MuonFunction.ExpressCredit (index 8)")
+		}
 	})
 
 	it("deploys an ExpressProvider with every setup section deferred, writing none of them on-chain", async function () {

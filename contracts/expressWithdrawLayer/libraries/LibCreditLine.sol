@@ -6,7 +6,7 @@ pragma solidity >=0.8.18;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-import { IMuonSignatureVerifier } from "../../core/interfaces/IMuonSignatureVerifier.sol";
+import { IMuonSignatureVerifier, MuonFunction } from "../../core/interfaces/IMuonSignatureVerifier.sol";
 
 import { AffiliateCredit, CreditData } from "../types/CreditTypes.sol";
 import { WithdrawInfo } from "../types/WithdrawTypes.sol";
@@ -18,7 +18,7 @@ import { GlobalStorage } from "../storages/GlobalStorage.sol";
 import { PoolStorage } from "../storages/PoolStorage.sol";
 
 /// @title LibCreditLine
-/// @notice Shared credit line helpers used by SymmioHookFacet and OperatorFacet.
+/// @notice Shared credit line helpers used by SymmioHookFacet, AccelerateFacet, and OperatorFacet.
 /// @dev Debt accounting uses diamond storage. Reservation calls the configured Muon verifier,
 ///      and activation calls `advanceWithdraw` on the Symmio core.
 library LibCreditLine {
@@ -65,14 +65,14 @@ library LibCreditLine {
 		if (data.timestamp > block.timestamp) revert MuonSignatureExpired();
 		if (block.timestamp > data.timestamp + cl.muonFreshnessWindow) revert MuonSignatureExpired();
 
-		// Verify Muon signature via the shared verifier.
+		// Verify Muon signature and require Express-credit authorization from both signers.
 		// NOTE: Includes express provider (address(this)) and symmio addresses to prevent cross-deployment replay.
 		//       The Muon oracle app must sign over both contract addresses.
 		address symmio = GlobalStorage.layout().symmio;
 		bytes32 hash = keccak256(
 			abi.encodePacked(cl.muonAppId, data.reqId, affiliate, data.eligibleBase, data.timestamp, block.chainid, address(this), symmio)
 		);
-		IMuonSignatureVerifier(cl.signatureVerifier).verify(hash, data.sigs, data.gatewaySignature);
+		IMuonSignatureVerifier(cl.signatureVerifier).verify(hash, data.sigs, data.gatewaySignature, MuonFunction.ExpressCredit);
 
 		// Check caps
 		uint256 newTotalDebt = ac.reservedDebt + ac.activeDebt + ac.badDebt + creditAmount;
