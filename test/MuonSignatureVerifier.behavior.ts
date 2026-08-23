@@ -14,6 +14,8 @@ const MuonFunction = {
 	Funding: 4,
 	LiquidationPartyA: 5,
 	LiquidationPartyB: 6,
+	RemoveMargin: 7,
+	ExpressCredit: 8,
 } as const
 
 export function shouldBehaveLikeMuonSignatureVerifier(): void {
@@ -56,6 +58,8 @@ export function shouldBehaveLikeMuonSignatureVerifier(): void {
 				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.Settlement)).to.equal(false)
 				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.LiquidationPartyA)).to.equal(false)
 				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.LiquidationPartyB)).to.equal(false)
+				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.RemoveMargin)).to.equal(false)
+				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.ExpressCredit)).to.equal(false)
 			})
 
 			it("should authorize a key for specific categories", async function () {
