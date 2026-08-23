@@ -1968,6 +1968,10 @@ Final accounting:
 							[ ] Credit line is configured: <code>creditLineSignatureVerifier()</code> is nonzero and the intended Muon app ID and
 							freshness window have been set
 						</li>
+						<li>
+							[ ] The configured verifier supports <code>MuonFunction.ExpressCredit</code> (enum value <code>8</code>), and the intended
+							registered TSS key and gateway signer are both authorized for it
+						</li>
 						<li>[ ] Credit line is not paused: <code>expressProvider.creditLinePaused(affiliate) == false</code></li>
 						<li>[ ] User is not blacklisted: <code>expressProvider.creditLineBlacklisted(affiliate, user) == false</code></li>
 						<li>
@@ -2856,7 +2860,7 @@ coverLoss:           affiliateBalances[affiliate] -= covered amount, badDebt += 
 					<h3 id="10-3-bot-monitoring-for-credit-lines">10.3 Bot monitoring for credit lines</h3>
 					<p>
 						All credit line logic lives inside the ExpressProvider diamond via <code>LibCreditLine</code> and is invoked from
-						<code>SymmioHookFacet</code> / <code>OperatorFacet</code>. Credit line state is stored in
+						<code>SymmioHookFacet</code>, <code>AccelerateFacet</code>, and <code>OperatorFacet</code>. Credit line state is stored in
 						<code>CreditLineStorage</code> (diamond storage, per-affiliate via mappings). There is no separate deployment per affiliate;
 						all config is done on the diamond with affiliate-keyed functions.
 					</p>
@@ -5492,7 +5496,8 @@ Step 3: Bot sees: WithdrawFinalized event for W1 (pools replenished)
 					<p>
 						Internal credit line operations (<code>reserveDebt</code>, <code>activate</code>, <code>settle</code>,
 						<code>releaseReservation</code>, <code>coverLoss</code>) are called internally by the diamond's facets (e.g.,
-						<code>SymmioHookFacet</code>, <code>OperatorFacet</code>) via <code>LibCreditLine</code>: they are not externally callable.
+						<code>SymmioHookFacet</code>, <code>AccelerateFacet</code>, and <code>OperatorFacet</code>) via <code>LibCreditLine</code>:
+						they are not externally callable.
 					</p>
 					<h3 id="17-4-symmio-gated-functions-no-role-msg-sender-symmio">
 						17.4 SYMMIO-gated functions (no role, <code>msg.sender == symmio</code>)

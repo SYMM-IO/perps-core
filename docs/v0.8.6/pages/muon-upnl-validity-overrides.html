@@ -71,7 +71,7 @@
 						<code>10</code> seconds, while PartyA liquidation may need a larger submission window such as <code>120</code> seconds.
 					</p>
 					<p>
-						Each <code>MuonFunction</code> can now override the global UPNL validity window. A <code>MuonFunction</code> is the operation
+						Core UPNL categories can now override the global UPNL validity window. A <code>MuonFunction</code> is also the operation
 						category that selects the authorized Muon key and gateway signer. The available categories are:
 					</p>
 					<pre><code class="language-solidity">enum MuonFunction {
@@ -82,9 +82,14 @@
     Funding,
     LiquidationPartyA,
     LiquidationPartyB,
-    RemoveMargin
+    RemoveMargin,
+    ExpressCredit
 }
 </code></pre>
+					<p>
+						<code>ExpressCredit</code> is authorization-only here. Express credit validates freshness with the Express Provider's
+						<code>muonFreshnessWindow</code>, so it cannot be configured through the Core UPNL-override setting.
+					</p>
 					<p>
 						Before setting an override, match the affected method to its category in
 						<a href="#muonfunction-categories">MuonFunction categories</a>. Some methods use the category only for signer authorization
@@ -234,6 +239,14 @@
 										and <code>liquidationTimeout</code> instead.
 									</td>
 								</tr>
+								<tr>
+									<td><code>ExpressCredit</code></td>
+									<td>
+										Express withdrawal <code>reserveDebt</code> during initial acceptance and acceleration. This category
+										authorizes the Muon key and gateway only; freshness uses the Express Provider's
+										<code>muonFreshnessWindow</code>.
+									</td>
+								</tr>
 							</tbody>
 						</table>
 					</div>
@@ -244,8 +257,8 @@
 					</p>
 					<p>
 						The category is passed to the signature verifier for key and gateway authorization on all grouped calls, but the per-function
-						validity window only applies where the on-chain code checks signature freshness against
-						<code>block.timestamp</code>.
+						validity window only applies where Core checks signature freshness against <code>block.timestamp</code> through its UPNL
+						resolver. <code>ExpressCredit</code> deliberately does not use that resolver.
 					</p>
 					<hr />
 					<h2 id="effective-validity-resolution">Effective validity resolution</h2>

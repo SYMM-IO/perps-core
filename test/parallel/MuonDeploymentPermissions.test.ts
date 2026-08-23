@@ -61,8 +61,9 @@ describe("Muon deployment permissions", function () {
 			"LiquidationPartyA",
 			"LiquidationPartyB",
 			"RemoveMargin",
+			"ExpressCredit",
 		])
-		expect(MUON_FUNCTION_INDICES).to.deep.equal([0, 1, 2, 3, 4, 5, 6, 7])
+		expect(MUON_FUNCTION_INDICES).to.deep.equal([0, 1, 2, 3, 4, 5, 6, 7, 8])
 		expect(MUON_FUNCTIONS.map(({ name, index }) => [name, index])).to.deep.equal(MUON_FUNCTION_NAMES.map((name, index) => [name, index]))
 	})
 
@@ -100,20 +101,21 @@ describe("Muon deployment permissions", function () {
 		expect(() => parseMuonFunctionUpnlValidTimes("=30")).to.throw("must use the form MuonFunction=seconds")
 		expect(() => parseMuonFunctionUpnlValidTimes("Trading=30,,Funding=60")).to.throw("empty entry at position 2")
 		expect(() => parseMuonFunctionUpnlValidTimes("Trading=30,Trading=60")).to.throw("Duplicate MuonFunction")
-		expect(() => parseMuonFunctionUpnlValidTimes("RemoveFunds=30")).to.throw("Unknown MuonFunction")
+		expect(() => parseMuonFunctionUpnlValidTimes("RemoveFunds=30")).to.throw("Unknown UPNL MuonFunction")
+		expect(() => parseMuonFunctionUpnlValidTimes("ExpressCredit=30")).to.throw("Unknown UPNL MuonFunction")
 		expect(() => parseMuonFunctionUpnlValidTimes("Trading=abc")).to.throw("canonical unsigned base-10 integer")
 		expect(() => parseMuonFunctionUpnlValidTimes("Trading=030")).to.throw("canonical unsigned base-10 integer")
 		// Zero is the on-chain unset sentinel; omitting the entry is the only way to say "no override".
 		expect(() => parseMuonFunctionUpnlValidTimes("Trading=0")).to.throw("omit the entry")
 	})
 
-	it("requires all eight permissions for a general production deployment and returns canonical order", function () {
+	it("requires all nine permissions for a general production deployment and returns canonical order", function () {
 		const shuffled = [...MUON_FUNCTION_NAMES].reverse()
 		const resolved = assertGeneralDeploymentMuonPermissions(shuffled)
 		expect(resolved).to.deep.equal(MUON_FUNCTIONS)
 
-		expect(() => assertGeneralDeploymentMuonPermissions(MUON_FUNCTION_NAMES.filter(name => name !== "RemoveMargin"))).to.throw(
-			"missing: RemoveMargin",
+		expect(() => assertGeneralDeploymentMuonPermissions(MUON_FUNCTION_NAMES.filter(name => name !== "ExpressCredit"))).to.throw(
+			"missing: ExpressCredit",
 		)
 	})
 
