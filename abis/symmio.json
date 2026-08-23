@@ -9386,16 +9386,6 @@
             },
             {
                 "internalType": "uint256",
-                "name": "charged",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "remaining",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
                 "name": "pendingAllowance",
                 "type": "uint256"
             },

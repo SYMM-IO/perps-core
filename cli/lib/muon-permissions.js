@@ -12,6 +12,7 @@ export const MUON_FUNCTIONS = [
 	{ name: "LiquidationPartyA", index: 5 },
 	{ name: "LiquidationPartyB", index: 6 },
 	{ name: "RemoveMargin", index: 7 },
+	{ name: "ExpressCredit", index: 8 },
 ];
 
 export const MUON_FUNCTION_NAMES = MUON_FUNCTIONS.map(({ name }) => name);
