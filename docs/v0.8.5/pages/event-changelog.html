@@ -842,7 +842,39 @@ event WithdrawSpeedUpAccepted(uint256 requestId, address user, uint256 newCooldo
 							<tr>
 								<td><code>RestatementStarted</code></td>
 								<td><code>(uint256 indexed symbolId, uint256 epoch, uint256 restatementFactor)</code></td>
-								<td>Frozen window opened with the factor selected for quote rewrites</td>
+								<td>Frozen window opened and bounded funding preparation initialized</td>
+							</tr>
+							<tr>
+								<td><code>RestatementFundingPreparationProgress</code></td>
+								<td>
+									<code
+										>(uint256 indexed symbolId, uint256 indexed epoch, uint256 submittedPartyBs, uint256 checkpointedPartyBs,
+										uint256 pendingPartyBs)</code
+									>
+								</td>
+								<td>An operator-supplied PartyB batch completed; submitted, new checkpoint, and total pending counts are reported</td>
+							</tr>
+							<tr>
+								<td><code>RestatementFundingPreparationCompleted</code></td>
+								<td><code>(uint256 indexed symbolId, uint256 indexed epoch, uint256 pendingPartyBs)</code></td>
+								<td>Operations attested that it supplied the intended PartyB set; quote processing is enabled</td>
+							</tr>
+							<tr>
+								<td><code>RestatementFundingRestorationStarted</code></td>
+								<td>
+									<code>(uint256 indexed symbolId, uint256 indexed epoch, bool finalizing, uint256 pendingPartyBs)</code>
+								</td>
+								<td>Batched restoration opened; <code>finalizing=false</code> identifies abort restoration</td>
+							</tr>
+							<tr>
+								<td><code>RestatementFundingRestorationProgress</code></td>
+								<td>
+									<code
+										>(uint256 indexed symbolId, uint256 indexed epoch, bool finalizing, uint256 processedPartyBs, uint256
+										remainingPartyBs)</code
+									>
+								</td>
+								<td>One supplied restoration batch completed; zero remaining means the same transaction emits the terminal event</td>
 							</tr>
 							<tr>
 								<td><code>RestatementAborted</code></td>
@@ -872,18 +904,24 @@ event WithdrawSpeedUpAccepted(uint256 requestId, address user, uint256 newCooldo
 						</tbody>
 					</table>
 					<p>
-						<strong>Migration:</strong> Indexers and the Muon app must track all eight events. During the transition,
+						<strong>Migration:</strong> Indexers and the Muon app must track all twelve events. During the transition,
 						<code>getCumulativeFactor</code> returns only the active trading factor while
 						<code>getProspectiveCumulativeFactor</code> includes the SCHEDULED step. After effective time, operations may confirm that
 						prospective factor and reopen trading, or call <code>startRestatement</code> directly while frozen. Direct mode records the
 						prospective value in <code>restatementFactor</code> without activating it in <code>cumulativeFactor</code>;
-						<code>RestatementStarted</code> reports the factor selected for that epoch. <code>AdjustmentCancelled</code> and
-						<code>RestatementAborted</code> are distinct signals, but aborting direct mode returns to the effective SCHEDULED freeze
-						rather than reopening trading. <code>QuoteAdjusted</code> and <code>PendingQuoteCancelledByAdjustment</code> describe
-						processed work. Core does not accept off-chain inventory counts or prove completeness before
-						<code>RestatementFinalized</code>; the symbol manager and indexer must reconcile the full open and pending inventory before
-						finalization. The facet upgrade must remove the legacy <code>startRestatement(uint256,uint256,uint256)</code> selector and add
-						<code>startRestatement(uint256)</code>; the one-facet updater now removes selectors absent from the replacement facet ABI.
+						<code>RestatementStarted</code> reports the factor selected for that epoch but does not mean funding preparation is complete.
+						Indexers should follow operator-supplied preparation batches and <code>RestatementFundingPreparationCompleted</code>, then
+						follow restoration until zero remaining. When checkpoints exist, <code>RestatementAborted</code> or
+						<code>RestatementFinalized</code> is emitted by the last <code>processRestatementFunding</code> transaction, not by the
+						transaction that begins restoration. <code>AdjustmentCancelled</code> and <code>RestatementAborted</code> are distinct
+						signals, but aborting direct mode returns to the effective SCHEDULED freeze rather than reopening trading.
+						<code>QuoteAdjusted</code> and <code>PendingQuoteCancelledByAdjustment</code> describe processed work. Core does not accept
+						off-chain inventory counts or prove completeness before <code>RestatementFinalized</code>; the symbol manager and indexer must
+						reconcile the full open and pending inventory before finalization. The facet upgrade must remove the legacy
+						<code>startRestatement(uint256,uint256,uint256)</code> selector and add <code>startRestatement(uint256)</code>,
+						<code>processRestatementFunding(uint256,address[])</code>, <code>completeRestatementFundingPreparation(uint256)</code>, and
+						<code>getRestatementFundingProgress(uint256)</code>; the one-facet updater now removes selectors absent from the replacement
+						facet ABI.
 					</p>
 					<hr />
 					<h2 id="doc-event-changelog-6-new-accountlayer-diamond-events">6. New AccountLayer Diamond Events</h2>
