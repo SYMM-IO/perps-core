@@ -7549,6 +7549,136 @@
                 "type": "uint256"
             },
             {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "epoch",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "pendingPartyBs",
+                "type": "uint256"
+            }
+        ],
+        "name": "RestatementFundingPreparationCompleted",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "epoch",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "submittedPartyBs",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "checkpointedPartyBs",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "pendingPartyBs",
+                "type": "uint256"
+            }
+        ],
+        "name": "RestatementFundingPreparationProgress",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "epoch",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "bool",
+                "name": "finalizing",
+                "type": "bool"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "processedPartyBs",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "remainingPartyBs",
+                "type": "uint256"
+            }
+        ],
+        "name": "RestatementFundingRestorationProgress",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "epoch",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "bool",
+                "name": "finalizing",
+                "type": "bool"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "pendingPartyBs",
+                "type": "uint256"
+            }
+        ],
+        "name": "RestatementFundingRestorationStarted",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
                 "indexed": false,
                 "internalType": "uint256",
                 "name": "epoch",
@@ -7617,6 +7747,19 @@
             }
         ],
         "name": "cancelPendingQuotes",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            }
+        ],
+        "name": "completeRestatementFundingPreparation",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -7698,6 +7841,40 @@
             {
                 "internalType": "uint256",
                 "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            }
+        ],
+        "name": "getRestatementFundingProgress",
+        "outputs": [
+            {
+                "internalType": "enum RestatementPhase",
+                "name": "phase",
+                "type": "uint8"
+            },
+            {
+                "internalType": "uint256",
+                "name": "pendingPartyBCount",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "fundingCutoffTimestamp",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "fundingRestorationTimestamp",
                 "type": "uint256"
             }
         ],
@@ -7794,11 +7971,55 @@
                         "internalType": "uint256",
                         "name": "restatementStartedAt",
                         "type": "uint256"
+                    },
+                    {
+                        "internalType": "enum RestatementPhase",
+                        "name": "restatementPhase",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "fundingCutoffTimestamp",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "pendingFundingPartyBCount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "fundingRestorationTimestamp",
+                        "type": "uint256"
                     }
                 ],
                 "internalType": "struct SymbolAdjustment",
                 "name": "",
                 "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            }
+        ],
+        "name": "isRestatementFundingCheckpointed",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
             }
         ],
         "stateMutability": "view",
@@ -7897,6 +8118,24 @@
             }
         ],
         "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "address[]",
+                "name": "partyBs",
+                "type": "address[]"
+            }
+        ],
+        "name": "processRestatementFunding",
+        "outputs": [],
+        "stateMutability": "nonpayable",
         "type": "function"
     },
     {

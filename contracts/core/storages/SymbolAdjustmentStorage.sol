@@ -13,11 +13,20 @@ enum AdjustmentState {
 	CANCELLED
 }
 
+/// @notice Funding-work phase inside an open physical-restatement window.
+enum RestatementPhase {
+	NONE,
+	FUNDING_PREPARATION,
+	QUOTE_PROCESSING,
+	ABORT_FUNDING_RESTORATION,
+	FINALIZATION_FUNDING_RESTORATION
+}
+
 /// @notice A symbol's corporate-action adjustment state. Only the latest adjustment is stored;
 ///         full history is reconstructed from events (AdjustmentScheduled / AdjustmentCancelled /
-///         PriceAdjustmentConfirmed / RestatementStarted / RestatementAborted / QuoteAdjusted /
-///         PendingQuoteCancelledByAdjustment / RestatementFinalized), matching how accumulated-funding
-///         history lives in events rather than storage.
+///         PriceAdjustmentConfirmed / RestatementStarted / funding progress / RestatementAborted /
+///         QuoteAdjusted / PendingQuoteCancelledByAdjustment / RestatementFinalized), matching how
+///         accumulated-funding history lives in events rather than storage.
 struct SymbolAdjustment {
 	/// @notice Latest scheduled adjustment's 1e18-scaled units multiplier: 4:1 split -> 4e18, 1:10 reverse split -> 0.1e18.
 	/// @dev Used to calculate the prospective cumulative factor for either direct restatement or activation after Muon's adjusted price is confirmed.
@@ -61,6 +70,18 @@ struct SymbolAdjustment {
 	///      time. finalizeRestatement refuses to advance `basisVersion` until signatures minted under the current validity
 	///      configuration have expired.
 	uint256 restatementStartedAt;
+	/// @notice Current funding-work phase for the open restatement window.
+	/// @dev Quote mutation is allowed only in QUOTE_PROCESSING. Abort and finalization stay frozen until saved rates are restored.
+	RestatementPhase restatementPhase;
+	/// @notice Shared funding cutoff selected when the restatement window opens.
+	/// @dev Every operator-supplied PartyB batch rolls its rates to this timestamp, regardless of the batch transaction time.
+	uint256 fundingCutoffTimestamp;
+	/// @notice Number of PartyB funding checkpoints that still need restoration for this window.
+	/// @dev Incremented only for nonzero pairs explicitly supplied by Operations or encountered through quote processing.
+	uint256 pendingFundingPartyBCount;
+	/// @notice Shared rate-resumption timestamp selected when finalization begins.
+	/// @dev Batched restoration uses this timestamp so every PartyB resumes funding at one economic boundary.
+	uint256 fundingRestorationTimestamp;
 }
 
 /// @notice Funding rates saved while a symbol is physically restated.
@@ -89,7 +110,7 @@ library SymbolAdjustmentStorage {
 		/// @dev For a past-effective emergency adjustment, this is when the symbol actually became frozen on-chain.
 		mapping(uint256 => uint256) adjustmentScheduledAt;
 		/// @notice PartyBs whose nonzero current funding rates Core paused for the open restatement window.
-		/// @dev The list bounds finalization work to PartyBs that need restoration and is cleared when the window closes.
+		/// @dev Retained for storage-layout compatibility. Explicit operator batches use fundingRateCheckpoints and the per-window pending count.
 		mapping(uint256 => address[]) restatementFundingPartyBs;
 		/// @notice Saved current funding rates keyed by symbol and PartyB.
 		/// @dev `restatementEpoch` makes stale checkpoints from earlier windows distinguishable even though mapping slots are reused.

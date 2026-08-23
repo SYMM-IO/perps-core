@@ -7,8 +7,7 @@ pragma solidity >=0.8.18;
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { SignedMath } from "@openzeppelin/contracts/utils/math/SignedMath.sol";
 import { FundingStorage, FundingFee } from "../storages/FundingStorage.sol";
-import { MAStorage } from "../storages/MAStorage.sol";
-import { SymbolAdjustmentStorage, FundingRateCheckpoint } from "../storages/SymbolAdjustmentStorage.sol";
+import { SymbolAdjustmentStorage, SymbolAdjustment, FundingRateCheckpoint } from "../storages/SymbolAdjustmentStorage.sol";
 import { LibFundingRate } from "./LibFundingRate.sol";
 
 /// @title LibSymbolAdjustmentFunding
@@ -16,68 +15,84 @@ import { LibFundingRate } from "./LibFundingRate.sol";
 library LibSymbolAdjustmentFunding {
 	uint256 internal constant ONE = 1e18;
 
-	/// @notice Prepares every registered PartyB's funding rates for one shared restatement boundary.
-	function prepareFundingRatesForRestatement(uint256 symbolId, uint256 restatementEpoch) internal {
-		address[] storage partyBs = MAStorage.layout().partyBList;
+	/// @notice Prepares only the PartyBs explicitly supplied by Operations at a shared funding cutoff.
+	function prepareFundingRatesForRestatement(
+		uint256 symbolId,
+		uint256 restatementEpoch,
+		uint256 fundingCutoffTimestamp,
+		address[] calldata partyBs
+	) internal returns (uint256 checkpointedPartyBs) {
 		for (uint256 i = 0; i < partyBs.length; i++) {
-			preparePartyBFundingRatesForRestatement(symbolId, partyBs[i], restatementEpoch);
+			if (preparePartyBFundingRatesForRestatement(symbolId, partyBs[i], restatementEpoch, fundingCutoffTimestamp)) {
+				checkpointedPartyBs += 1;
+			}
 		}
 	}
 
 	/// @notice Prepares one symbol/PartyB funding pair once. The quote path uses this for legacy deregistered PartyBs.
-	function preparePartyBFundingRatesForRestatement(uint256 symbolId, address partyB, uint256 restatementEpoch) internal {
+	function preparePartyBFundingRatesForRestatement(
+		uint256 symbolId,
+		address partyB,
+		uint256 restatementEpoch,
+		uint256 fundingCutoffTimestamp
+	) internal returns (bool checkpointed) {
 		SymbolAdjustmentStorage.Layout storage adjustmentLayout = SymbolAdjustmentStorage.layout();
 		FundingRateCheckpoint storage checkpoint = adjustmentLayout.fundingRateCheckpoints[symbolId][partyB];
-		if (checkpoint.restatementEpoch == restatementEpoch) return;
+		if (checkpoint.restatementEpoch == restatementEpoch) return false;
 
 		FundingFee storage fundingFee = FundingStorage.layout().fundingFees[symbolId][partyB];
-		if (fundingFee.epochDuration == 0 || (fundingFee.currentLongRate == 0 && fundingFee.currentShortRate == 0)) return;
+		if (fundingFee.epochDuration == 0 || (fundingFee.currentLongRate == 0 && fundingFee.currentShortRate == 0)) return false;
 
 		// Preserve all funding earned on the old quote basis before opening the zero-rate interval.
-		LibFundingRate.updateAccumulatedRates(fundingFee);
+		LibFundingRate.updateAccumulatedRatesAt(fundingFee, fundingCutoffTimestamp);
 		checkpoint.currentLongRate = fundingFee.currentLongRate;
 		checkpoint.currentShortRate = fundingFee.currentShortRate;
 		checkpoint.restatementEpoch = restatementEpoch;
-		adjustmentLayout.restatementFundingPartyBs[symbolId].push(partyB);
+		adjustmentLayout.adjustments[symbolId].pendingFundingPartyBCount += 1;
 
 		fundingFee.currentLongRate = 0;
 		fundingFee.currentShortRate = 0;
 		LibFundingRate.emitAccumulatedFundingStateUpdated(symbolId, partyB, fundingFee);
+		return true;
 	}
 
-	/// @notice Restores the old rates after a mutation-free abort.
-	/// @dev Not rolling the zero interval makes the original rates apply continuously, as if the aborted window had never paused them.
-	function restoreAfterAbort(uint256 symbolId, uint256 restatementEpoch) internal {
-		_restore(symbolId, restatementEpoch, ONE, false);
-	}
-
-	/// @notice Ends the zero-rate interval and restores rates on the new quote basis.
-	function restoreAfterFinalization(uint256 symbolId, uint256 restatementEpoch, uint256 factor) internal {
-		_restore(symbolId, restatementEpoch, factor, true);
-	}
-
-	function _restore(uint256 symbolId, uint256 restatementEpoch, uint256 factor, bool settlePausedInterval) private {
+	/// @notice Restores checkpoints only for the PartyBs explicitly supplied by Operations.
+	/// @dev Abort does not roll the zero interval, so the original rates apply continuously. Finalization rolls every pair to one shared timestamp.
+	function restoreFundingRates(
+		uint256 symbolId,
+		uint256 restatementEpoch,
+		uint256 factor,
+		bool settlePausedInterval,
+		uint256 fundingRestorationTimestamp,
+		address[] calldata partyBs
+	) internal returns (uint256 processedPartyBs, uint256 remainingPartyBs) {
 		SymbolAdjustmentStorage.Layout storage adjustmentLayout = SymbolAdjustmentStorage.layout();
-		address[] storage partyBs = adjustmentLayout.restatementFundingPartyBs[symbolId];
+		SymbolAdjustment storage adjustment = adjustmentLayout.adjustments[symbolId];
 
 		for (uint256 i = 0; i < partyBs.length; i++) {
 			address partyB = partyBs[i];
 			FundingRateCheckpoint storage checkpoint = adjustmentLayout.fundingRateCheckpoints[symbolId][partyB];
-			require(checkpoint.restatementEpoch == restatementEpoch, "LibSymbolAdjustmentFunding: Invalid checkpoint");
+			if (checkpoint.restatementEpoch != restatementEpoch) continue;
 
 			FundingFee storage fundingFee = FundingStorage.layout().fundingFees[symbolId][partyB];
 			if (settlePausedInterval && fundingFee.epochDuration > 0) {
 				// Roll the zero-rate maintenance interval into the cumulative state before resuming accrual.
-				LibFundingRate.updateAccumulatedRates(fundingFee);
+				LibFundingRate.updateAccumulatedRatesAt(fundingFee, fundingRestorationTimestamp);
 			}
 
 			fundingFee.currentLongRate = settlePausedInterval ? _rebaseRate(checkpoint.currentLongRate, factor) : checkpoint.currentLongRate;
 			fundingFee.currentShortRate = settlePausedInterval ? _rebaseRate(checkpoint.currentShortRate, factor) : checkpoint.currentShortRate;
 			LibFundingRate.emitAccumulatedFundingStateUpdated(symbolId, partyB, fundingFee);
 			delete adjustmentLayout.fundingRateCheckpoints[symbolId][partyB];
+			adjustment.pendingFundingPartyBCount -= 1;
+			processedPartyBs += 1;
 		}
 
-		delete adjustmentLayout.restatementFundingPartyBs[symbolId];
+		remainingPartyBs = adjustment.pendingFundingPartyBCount;
+	}
+
+	function pendingFundingPartyBs(uint256 symbolId) internal view returns (uint256) {
+		return SymbolAdjustmentStorage.layout().adjustments[symbolId].pendingFundingPartyBCount;
 	}
 
 	/// @dev A quote's open amount is multiplied by `factor`, so its price-adjusted per-unit funding rate is divided by the same factor.
