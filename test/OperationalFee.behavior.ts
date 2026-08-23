@@ -85,6 +85,23 @@ export function shouldBehaveLikeOperationalFee(): void {
 			await (context.controlFacet.connect(admin) as any).registerOperationalFeeCharger(charger)
 		})
 
+		it("ignores allowance state stored in the deprecated mapping slot", async function () {
+			const payer = await user.getAddress()
+			const diamond = context.diamond
+			const coder = ethers.AbiCoder.defaultAbiCoder()
+			const layoutSlot = BigInt(ethers.keccak256(ethers.toUtf8Bytes("diamond.standard.storage.operationalfee")))
+			const payerMappingSlot = ethers.keccak256(coder.encode(["address", "uint256"], [payer, layoutSlot]))
+			const legacyAllowanceSlot = ethers.keccak256(coder.encode(["address", "bytes32"], [charger, payerMappingSlot]))
+			const legacyAllowance = decimal(123n)
+
+			await hreEthers.provider.send("hardhat_setStorageAt", [diamond, legacyAllowanceSlot, ethers.zeroPadValue(ethers.toBeHex(legacyAllowance), 32)])
+
+			expect((await (context.viewFacet as any).getOperationalFeeAllowance(payer, charger)).allowance).to.equal(0n)
+			await (context.accountFacet.connect(user.signer) as any).approveOperationalFee([charger], [decimal(7n)])
+			expect((await (context.viewFacet as any).getOperationalFeeAllowance(payer, charger)).allowance).to.equal(decimal(7n))
+			expect(BigInt(await hreEthers.provider.getStorage(diamond, legacyAllowanceSlot))).to.equal(legacyAllowance)
+		})
+
 		it("defaults the fee multiplier to 1x", async function () {
 			const payerAddress = await user.getAddress()
 
@@ -102,8 +119,6 @@ export function shouldBehaveLikeOperationalFee(): void {
 
 			let view = await (context.viewFacet as any).getOperationalFeeAllowance(payerAddress, charger)
 			expect(view.allowance).to.equal(decimal(100n))
-			expect(view.charged).to.equal(0n)
-			expect(view.remaining).to.equal(decimal(100n))
 
 			// raising is instant: new allowance > current -> immediate, no pending reduction
 			await facet.connect(user.signer).approveOperationalFee([charger], [decimal(250n)])
@@ -144,7 +159,7 @@ export function shouldBehaveLikeOperationalFee(): void {
 			)
 		})
 
-		it("draws free balance first and credits the charger, bumping charged", async function () {
+		it("draws free balance first, credits the charger, and consumes allowance", async function () {
 			const payer = await user.getAddress()
 			await (context.accountFacet.connect(user.signer) as any).approveOperationalFee([charger], [decimal(100n)])
 
@@ -174,8 +189,20 @@ export function shouldBehaveLikeOperationalFee(): void {
 			expect(await context.viewFacet.balanceOf(charger)).to.equal(chargerBalanceBefore + decimal(2n))
 
 			const view = await (context.viewFacet as any).getOperationalFeeAllowance(payer, charger)
-			expect(view.charged).to.equal(decimal(2n))
-			expect(view.remaining).to.equal(decimal(98n))
+			expect(view.allowance).to.equal(decimal(98n))
+		})
+
+		it("sets a fresh remaining allowance after prior charges", async function () {
+			const payer = await user.getAddress()
+			const facet = context.accountFacet as any
+
+			await facet.connect(user.signer).approveOperationalFee([charger], [decimal(100n)])
+			await facet.connect(chargerSigner).chargeOperationalFee(payer, decimal(60n))
+			expect((await (context.viewFacet as any).getOperationalFeeAllowance(payer, charger)).allowance).to.equal(decimal(40n))
+
+			// Like ERC20 approve, the absolute setter replaces the remaining spend authority.
+			await facet.connect(user.signer).approveOperationalFee([charger], [decimal(100n)])
+			expect((await (context.viewFacet as any).getOperationalFeeAllowance(payer, charger)).allowance).to.equal(decimal(100n))
 		})
 
 		it("spills into allocated when free is insufficient, then reverts past total balance", async function () {
@@ -388,9 +415,25 @@ export function shouldBehaveLikeOperationalFee(): void {
 
 			const view = await (context.viewFacet as any).getOperationalFeeAllowance(payer, charger)
 			expect(view.allowance).to.equal(decimal(10n))
-			expect(view.remaining).to.equal(decimal(10n))
 			expect(view.pendingAllowance).to.equal(0n)
 			expect(view.reductionReadyAt).to.equal(0n)
+		})
+
+		it("does not replenish allowance consumed while a reduction is pending", async function () {
+			const facet = context.accountFacet as any
+			const payer = await user.getAddress()
+
+			await facet.connect(user.signer).approveOperationalFee([charger], [decimal(20n)])
+			await facet.connect(chargerSigner).chargeOperationalFee(payer, decimal(90n))
+			expect((await (context.viewFacet as any).getOperationalFeeAllowance(payer, charger)).allowance).to.equal(decimal(10n))
+
+			await time.increase(DELAY + 1)
+
+			const view = await (context.viewFacet as any).getOperationalFeeAllowance(payer, charger)
+			expect(view.allowance).to.equal(decimal(10n))
+			expect(view.pendingAllowance).to.equal(0n)
+			expect(view.reductionReadyAt).to.equal(0n)
+			await expect(facet.connect(chargerSigner).chargeOperationalFee(payer, decimal(11n))).to.be.revertedWith("OperationalFee: Allowance exceeded")
 		})
 
 		it("cancels a pending reduction when raised back above the current live allowance", async function () {
@@ -480,9 +523,9 @@ export function shouldBehaveLikeOperationalFee(): void {
 			const hedgerBalanceAfter = await context.viewFacet.balanceOf(hedgerAddr)
 			expect(hedgerBalanceAfter - hedgerBalanceBefore).to.equal(operationalFee)
 
-			// allowance[thirdPartyPayer][hedger].charged reflects the debit
+			// The charge consumes the payer's remaining allowance for this solver.
 			const view = await (context.viewFacet as any).getOperationalFeeAllowance(thirdPartyPayerAddress, hedgerAddr)
-			expect(view.charged).to.equal(operationalFee)
+			expect(view.allowance).to.equal(decimal(10n) - operationalFee)
 		})
 
 		it("blocks a solver from charging a suspended third-party payer", async function () {

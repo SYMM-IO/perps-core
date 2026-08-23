@@ -259,16 +259,11 @@ contract ViewFacet is IViewFacet {
 	function getOperationalFeeAllowance(
 		address payer,
 		address charger
-	)
-		external
-		view
-		returns (uint256 allowance, uint256 charged, uint256 remaining, uint256 pendingAllowance, uint256 reductionReadyAt, uint256 feeMultiplier)
-	{
+	) external view returns (uint256 allowance, uint256 pendingAllowance, uint256 reductionReadyAt, uint256 feeMultiplier) {
 		AllowanceState storage s = OperationalFeeStorage.layout().allowances[payer][charger];
-		charged = s.charged;
 		feeMultiplier = LibOperationalFee.effectiveFeeMultiplier(s);
 		if (s.reductionReadyAt != 0 && block.timestamp >= s.reductionReadyAt) {
-			allowance = s.pendingAllowance;
+			allowance = LibOperationalFee.effectiveAllowance(s);
 			pendingAllowance = 0;
 			reductionReadyAt = 0;
 		} else {
@@ -276,7 +271,6 @@ contract ViewFacet is IViewFacet {
 			pendingAllowance = s.pendingAllowance;
 			reductionReadyAt = s.reductionReadyAt;
 		}
-		remaining = allowance > charged ? allowance - charged : 0;
 	}
 
 	function isOperationalFeeCharger(address charger) external view returns (bool) {

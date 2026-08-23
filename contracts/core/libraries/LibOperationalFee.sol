@@ -20,7 +20,9 @@ library LibOperationalFee {
 
 	function _applyReadyReduction(AllowanceState storage s) private {
 		if (s.reductionReadyAt != 0 && block.timestamp >= s.reductionReadyAt) {
-			s.allowance = s.pendingAllowance;
+			// Charges during the delay already consume allowance. Applying the delayed reduction must
+			// never replenish that consumed amount.
+			if (s.pendingAllowance < s.allowance) s.allowance = s.pendingAllowance;
 			s.pendingAllowance = 0;
 			s.reductionReadyAt = 0;
 		}
@@ -28,7 +30,7 @@ library LibOperationalFee {
 
 	/// @notice Effective allowance for views (accounts for a ready-but-unapplied reduction).
 	function effectiveAllowance(AllowanceState storage s) internal view returns (uint256) {
-		if (s.reductionReadyAt != 0 && block.timestamp >= s.reductionReadyAt) return s.pendingAllowance;
+		if (s.reductionReadyAt != 0 && block.timestamp >= s.reductionReadyAt && s.pendingAllowance < s.allowance) return s.pendingAllowance;
 		return s.allowance;
 	}
 
@@ -65,19 +67,17 @@ library LibOperationalFee {
 
 		AllowanceState storage s = OperationalFeeStorage.layout().allowances[payer][charger];
 		_applyReadyReduction(s);
-		require(s.charged + amount <= s.allowance, "OperationalFee: Allowance exceeded");
+		require(amount <= s.allowance, "OperationalFee: Allowance exceeded");
 
 		address feeReceiver = LibAccount.getOperationalFeeReceiver(charger);
 		require(feeReceiver != payer, "OperationalFee: Receiver is payer");
+		s.allowance -= amount;
 		(freeUsed, allocatedUsed) = _collectOperationalFee(payer, feeReceiver, amount);
-		s.charged += amount;
 		emit SharedEvents.OperationalFeeCharged(payer, charger, feeReceiver, amount);
 	}
 
 	/// @notice Set/raise instantly; reductions schedule a timelocked pending change.
-	/// @dev Setting `newAllowance` below the already-`charged` amount intentionally blocks all further charges
-	///      from that charger until the payer raises the allowance back above `charged` (the `charged + amount <= allowance`
-	///      check in `charge` then fails). This is intended: the payer can effectively freeze a charger via a low allowance.
+	/// @dev `newAllowance` is the absolute remaining amount the charger may draw, matching ERC20 allowance semantics.
 	function setAllowance(address payer, address charger, uint256 newAllowance) internal {
 		AllowanceState storage s = OperationalFeeStorage.layout().allowances[payer][charger];
 		_applyReadyReduction(s);

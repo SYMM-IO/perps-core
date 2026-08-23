@@ -235,7 +235,7 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		}
 	}
 
-	/// @notice ERC20-approve-style: set the caller's operational-fee allowance to each charger (absolute amount).
+	/// @notice ERC20-approve-style: set each charger's remaining operational-fee allowance to an absolute amount.
 	/// @dev Batch so a payer can approve multiple chargers (e.g. a solver and a relayer) in one tx.
 	///      Per charger: a raise (or equal) applies instantly; a reduction is timelocked (see LibOperationalFee).
 	function approveOperationalFee(address[] calldata chargers, uint256[] calldata amounts) external {
