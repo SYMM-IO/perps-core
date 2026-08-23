@@ -114,10 +114,7 @@ interface IViewFacet {
 	function getOperationalFeeAllowance(
 		address payer,
 		address charger
-	)
-		external
-		view
-		returns (uint256 allowance, uint256 charged, uint256 remaining, uint256 pendingAllowance, uint256 reductionReadyAt, uint256 feeMultiplier);
+	) external view returns (uint256 allowance, uint256 pendingAllowance, uint256 reductionReadyAt, uint256 feeMultiplier);
 
 	function isOperationalFeeCharger(address charger) external view returns (bool);
 

@@ -5,7 +5,7 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta
 			name="description"
-			content="A unified per-operation fee mechanism shared by solvers and registered relayers, backed by a standing per-(payer, charger) allowance with timelocked reductions and a priority multiplier."
+			content="A unified per-operation fee mechanism shared by solvers and registered relayers, backed by a consumable per-(payer, charger) allowance with timelocked reductions and a priority multiplier."
 		/>
 		<title>Operational Fees - Symmio Core v0.8.6</title>
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
@@ -69,7 +69,12 @@
 					<h2 id="summary">Summary</h2>
 					<p>
 						v0.8.6 introduces a standing per-(payer, charger) operational-fee allowance. A charger can be a solver (PartyB) or a
-						registered relayer. Each charge draws from the named payer's Symmio collateral balance and counts against that allowance.
+						registered relayer. Each charge draws from the named payer's Symmio collateral balance and decrements that allowance.
+					</p>
+					<p>
+						The allowance is remaining spend authority, like an ERC20 allowance. Approving <code>100</code> and charging
+						<code>30</code> leaves an allowance of <code>70</code>; approving <code>100</code> again replaces that remaining value with
+						<code>100</code>.
 					</p>
 					<p>
 						The same allowance can carry a simple priority multiplier. <code>10000</code> means normal priority; a higher value is an
@@ -83,6 +88,10 @@
 					<p>
 						This is separate from the v0.8.6 solver <strong>rate</strong> fee, which is notional-based, per-quote, and stored in
 						<code>SolverFeeCaps</code>.
+					</p>
+					<p>
+						<strong>Upgrade note:</strong> the consumable allowance mapping uses the next storage-layout slot. Allowances written by the
+						previous cumulative-budget implementation are intentionally ignored, so payers must approve chargers again after the upgrade.
 					</p>
 
 					<h2 id="why-unified">Why operational fees exist</h2>
@@ -99,7 +108,7 @@
 					<pre><code class="language-solidity">// FEE_ADMIN_ROLE; needed only for a non-PartyB service
 function registerOperationalFeeCharger(address charger) external;
 
-// The payer sets absolute allowance values for one or more chargers.
+// The payer sets each charger's absolute remaining allowance.
 function approveOperationalFee(address[] calldata chargers, uint256[] calldata amounts) external;
 
 // The payer may set the allowances and off-chain priority signals together.
@@ -110,11 +119,11 @@ function approveOperationalFeeWithMultiplier(
 ) external;
 </code></pre>
 					<p>
-						Both approval methods are batch setters: each <code>amounts[i]</code> replaces the payer's absolute allowance for
-						<code>chargers[i]</code>; it is not an increment. An increase applies immediately, while a reduction follows the delay
-						explained under <a href="#timelocked-reductions">Timelocked reductions</a>.
+						Both approval methods are batch setters: each <code>amounts[i]</code> replaces the payer's remaining allowance for
+						<code>chargers[i]</code>; it is not an increment. Charges decrement this value. An increase applies immediately, while a
+						reduction follows the delay explained under <a href="#timelocked-reductions">Timelocked reductions</a>.
 					</p>
-					<p>Integrations can inspect eligibility and the payer's effective budget before charging:</p>
+					<p>Integrations can inspect eligibility and the payer's effective remaining allowance before charging:</p>
 					<pre><code class="language-solidity">function isOperationalFeeCharger(address charger) external view returns (bool);
 
 function getOperationalFeeAllowance(address payer, address charger)
@@ -122,28 +131,33 @@ function getOperationalFeeAllowance(address payer, address charger)
     view
     returns (
         uint256 allowance,
-        uint256 charged,
-        uint256 remaining,
         uint256 pendingAllowance,
         uint256 reductionReadyAt,
         uint256 feeMultiplier
     );
 </code></pre>
 					<ul>
-						<li><code>allowance</code> is the effective absolute budget.</li>
-						<li><code>charged</code> is the cumulative amount the charger has already drawn from that budget.</li>
-						<li><code>remaining</code> is <code>max(allowance - charged, 0)</code>.</li>
+						<li><code>allowance</code> is the effective remaining amount the charger may draw.</li>
 						<li>
-							<code>pendingAllowance</code> and <code>reductionReadyAt</code> describe a requested lower budget that is still waiting
-							for the timelock. Once the reduction is ready, the view reports it as <code>allowance</code> and returns zero for both
-							pending fields.
+							<code>pendingAllowance</code> and <code>reductionReadyAt</code> describe a requested lower remaining allowance that is
+							still waiting for the timelock. Once ready, the view reports <code>min(allowance, pendingAllowance)</code> as the
+							effective <code>allowance</code> and returns zero for both pending fields.
 						</li>
 						<li><code>feeMultiplier</code> is the effective off-chain priority signal; the default is <code>10000</code>.</li>
 					</ul>
+					<p>There is no cumulative <code>charged</code> field. Integrations that need charge history should index the emitted event:</p>
+					<pre><code class="language-solidity">event OperationalFeeCharged(
+    address indexed payer,
+    address indexed charger,
+    address receiver,
+    uint256 amount
+);
+</code></pre>
 					<h2 id="trust-model">Trust model</h2>
 					<p>
 						The allowance grant is the consent. Core does not require the payer to sign each specific operation or quote; it only checks
-						<code>charged + amount &lt;= allowance[payer][charger]</code> before collecting the fee.
+						<code>amount &lt;= allowance[payer][charger]</code> before collecting the fee, then decrements the allowance by
+						<code>amount</code>.
 					</p>
 					<p>The authority is bounded by four controls:</p>
 					<ol>
@@ -152,8 +166,8 @@ function getOperationalFeeAllowance(address payer, address charger)
 							registered by governance (<code>FEE_ADMIN_ROLE</code>) before they can charge.
 						</li>
 						<li>
-							<strong>Allowance budget</strong>: each payer grants an independent budget to each charger, so one charger cannot spend
-							another charger's allowance.
+							<strong>Remaining allowance</strong>: each payer grants independent spend authority to each charger, so one charger cannot
+							spend another charger's allowance.
 						</li>
 						<li>
 							<strong>Timelocked reductions + governance unregister</strong>: a payer can walk away after the delay; governance can
@@ -171,9 +185,9 @@ function getOperationalFeeAllowance(address payer, address charger)
 						Core does not derive the payer from a quote, the signer, the relayed operation, or any account hierarchy.
 					</p>
 					<p>
-						For that named payer, core checks <code>allowance[payer][charger]</code>, debits <code>balances[payer]</code> first, then
-						falls back to <code>allocatedBalances[payer]</code> if free balance is not enough. The charged amount is credited to the
-						charger's configured receiver.
+						For that named payer, core checks and consumes <code>allowance[payer][charger]</code>, debits
+						<code>balances[payer]</code> first, then falls back to <code>allocatedBalances[payer]</code> if free balance is not enough.
+						The charged amount is credited to the charger's configured receiver.
 					</p>
 					<p>That receiver is configured with:</p>
 					<pre><code class="language-solidity">function setOperationalFeeReceiver(address charger, address receiver) external;
@@ -222,8 +236,8 @@ function getOperationalFeeAllowance(address payer, address charger)
 					<p>
 						This relaxed check is intentional for operational fees. Solvers and relayers are trusted charging parties (registered PartyBs
 						or governance-registered services), these fees are expected to be small per-operation amounts, and the payer's allowance caps
-						the total spend. Core therefore checks that any allocated remainder exists, but does not require a full liquidatability
-						signature for this path.
+						future spend until the payer explicitly refreshes it. Core therefore checks that any allocated remainder exists, but does not
+						require a full liquidatability signature for this path.
 					</p>
 					<div class="table-wrap">
 						<table>
@@ -259,19 +273,24 @@ function getOperationalFeeAllowance(address payer, address charger)
 
 					<h2 id="timelocked-reductions">Timelocked reductions</h2>
 					<p>
-						Operational-fee allowance is a standing budget from a payer to a charger. Increasing the current live allowance is immediate,
-						so a user can top up a solver or relayer whenever more operational-fee room is needed.
+						Operational-fee allowance is the charger's remaining spend authority from a payer. Increasing the current live allowance is
+						immediate, so a user can top up a solver or relayer whenever more operational-fee room is needed.
 					</p>
 					<p>
-						Reducing or revoking the budget is delayed. During that delay, the previous allowance remains active. This prevents a payer
-						from approving an operation, letting a trusted charger take on the work, and then revoking the budget before the small
-						operational fee can be collected.
+						Reducing or revoking the allowance is delayed. During that delay, the requested lower target is not yet effective: the live
+						allowance remains spendable and every charge continues to decrement it. This prevents a payer from approving an operation,
+						letting a trusted charger take on the work, and then revoking the allowance before the small operational fee can be collected.
 					</p>
 					<p>
 						Once the delay has passed, the reduction is handled through lazy evaluation. View calls report the lower effective allowance
-						automatically, and the next state-changing use of that allowance folds the pending value into storage before continuing. The
-						user does not need a second transaction. If the new allowance is already consumed, future charges stop until the payer raises
-						the budget again.
+						automatically, and the next state-changing use of that allowance folds the pending value into storage before continuing.
+						Charges made during the delay continue to decrement the live allowance; applying the pending reduction uses the lower of the
+						live and pending values, so it can never replenish allowance already consumed. The user does not need a second transaction.
+					</p>
+					<p>
+						For example, suppose the live allowance is <code>100</code> and the payer schedules a reduction to <code>20</code>. If the
+						charger consumes <code>90</code> during the delay, the live allowance is <code>10</code>. At maturity the effective allowance
+						remains <code>min(10, 20) = 10</code>; the pending reduction never restores consumed allowance.
 					</p>
 
 					<h2 id="priority-multiplier">Priority multiplier</h2>
@@ -281,9 +300,9 @@ function getOperationalFeeAllowance(address payer, address charger)
 						accepted a higher multiplier.
 					</p>
 					<p>
-						The multiplier does not replace the allowance. The allowance is still the hard spend budget, and the charger can never draw
-						more than the payer approved. Core stores and reports the multiplier but does not multiply a submitted charge or enforce a
-						pricing formula; interpreting the signal is an off-chain charger policy.
+						The multiplier does not replace the allowance. The allowance remains the hard limit on future spend, and the charger can never
+						draw more than the remaining approved amount. Core stores and reports the multiplier but does not multiply a submitted charge
+						or enforce a pricing formula; interpreting the signal is an off-chain charger policy.
 					</p>
 
 					<h2 id="gasless-grant">Gasless grant</h2>

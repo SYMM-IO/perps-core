@@ -5,13 +5,12 @@
 pragma solidity >=0.8.18;
 
 /// @notice Standing operational-fee allowance state for a (payer, charger) pair.
-/// @dev `allowance` is the total approved budget; `charged` is the amount already drawn. A reduction is
-///      timelocked: `pendingAllowance`/`reductionReadyAt` hold a requested lower allowance that takes
-///      effect only at/after `reductionReadyAt` (lazily applied on the next charge; views report it as effective once ready).
+/// @dev `allowance` is the remaining amount the charger may draw. A reduction is timelocked:
+///      `pendingAllowance`/`reductionReadyAt` hold a requested lower remaining allowance that takes effect
+///      only at/after `reductionReadyAt` (lazily applied on the next charge; views report it as effective once ready).
 ///      `feeMultiplier` is a priority signal for chargers; 0 means the default 1x multiplier.
 struct AllowanceState {
 	uint256 allowance;
-	uint256 charged;
 	uint256 pendingAllowance;
 	/// @dev 0 means no reduction is pending.
 	uint256 reductionReadyAt;
@@ -24,6 +23,9 @@ library OperationalFeeStorage {
 	bytes32 internal constant OPERATIONAL_FEE_STORAGE_SLOT = keccak256("diamond.standard.storage.operationalfee");
 
 	struct Layout {
+		/// @dev Reserved for the deprecated allowances mapping that used layout slot 0. Keeping this slot
+		///      unused moves the new mapping to slot 1 so existing on-chain allowance state is ignored.
+		bytes32 deprecatedAllowancesSlot;
 		/// @notice payer => charger => allowance state
 		mapping(address => mapping(address => AllowanceState)) allowances;
 	}
