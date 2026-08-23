@@ -3,12 +3,14 @@ import { expect } from "chai"
 import { initializeFixture } from "./Initialize.fixture.js"
 import { ethers } from "./helpers/hardhat-connection.js"
 import { loadFixture, time } from "./helpers/network-helpers.js"
+import { QuoteStatus } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
 import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
 import { emergencyCloseRequestBuilder } from "./models/requestModels/EmergencyCloseRequest.js"
 import { limitFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest.js"
+import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
 import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { decimal, getBlockTimestamp } from "./utils/Common.js"
 import { migratePartyBToCross } from "./utils/CrossPartyB.js"
@@ -170,6 +172,16 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			return quoteId
 		}
 
+		async function openPositionWithRawQuantity(quantity: bigint): Promise<{ quoteId: bigint; price: bigint }> {
+			const price = (decimal(99n) * decimal(1n)) / quantity
+			const quoteId = await user.sendQuote(
+				limitQuoteRequestBuilder().quantity(quantity).price(price).upnlSig(getDummySingleUpnlAndPriceSig(price)).build(),
+			)
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(quoteId, limitOpenRequestBuilder().filledAmount(quantity).openPrice(price).price(price).build())
+			return { quoteId, price }
+		}
+
 		it("should allow sendQuote between scheduling and effective time, blocking only while frozen", async function () {
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now + 1000n)
@@ -203,6 +215,83 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			await expect(hedger.emergencyClosePosition(quoteId, emergencyCloseRequestBuilder().build())).to.be.revertedWith(
 				"LibSymbolAdjustment: Symbol is frozen",
 			)
+		})
+
+		it("should let PartyB fully close an unrestatable dust position while frozen", async function () {
+			const { quoteId, price } = await openPositionWithRawQuantity(99n)
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(1n, 16), now)
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+
+			await expect(context.symbolAdjustmentFacet.previewQuoteAdjustment(SYMBOL_ID, quoteId)).to.be.revertedWith(
+				"SymbolAdjustmentFacet: Quantity underflow",
+			)
+			await hedger.emergencyClosePosition(quoteId, emergencyCloseRequestBuilder().price(price).build())
+
+			const closedQuote = await context.viewFacetQuote.getQuote(quoteId)
+			expect(closedQuote.quoteStatus).to.equal(QuoteStatus.CLOSED)
+			expect(closedQuote.closedAmount).to.equal(closedQuote.quantity)
+			expect(await context.symbolAdjustmentFacet.isSymbolFrozen(SYMBOL_ID)).to.be.true
+		})
+
+		it("should not grant the dust exception before the scheduled freeze", async function () {
+			const { quoteId, price } = await openPositionWithRawQuantity(99n)
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(1n, 16), now + 1000n)
+
+			await expect(hedger.emergencyClosePosition(quoteId, emergencyCloseRequestBuilder().price(price).build())).to.be.revertedWith(
+				"PartyBFacet: Operation not allowed. Either emergency mode must be active, party B must be in emergency status, or the symbol must be delisted",
+			)
+		})
+
+		it("should let PartyB fully close a quote whose pending close amount cannot be restated", async function () {
+			const quoteId = await openPositionForUser()
+			await user.requestToClosePosition(quoteId, limitCloseRequestBuilder().quantityToClose(1n).build())
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(1n, 16), now)
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+
+			await expect(context.symbolAdjustmentFacet.previewQuoteAdjustment(SYMBOL_ID, quoteId)).to.be.revertedWith(
+				"SymbolAdjustmentFacet: Close amount underflow",
+			)
+			await hedger.emergencyClosePosition(quoteId, emergencyCloseRequestBuilder().build())
+
+			const closedQuote = await context.viewFacetQuote.getQuote(quoteId)
+			expect(closedQuote.quoteStatus).to.equal(QuoteStatus.CLOSED)
+			expect(closedQuote.closedAmount).to.equal(closedQuote.quantity)
+		})
+
+		it("should let PartyB close adjustment dust while close cancellation is pending", async function () {
+			const { quoteId, price } = await openPositionWithRawQuantity(99n)
+			await user.requestToClosePosition(quoteId, limitCloseRequestBuilder().quantityToClose(99n).build())
+			await user.requestToCancelCloseRequest(quoteId)
+			expect((await context.viewFacetQuote.getQuote(quoteId)).quoteStatus).to.equal(QuoteStatus.CANCEL_CLOSE_PENDING)
+
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(1n, 16), now)
+			await hedger.emergencyClosePosition(quoteId, emergencyCloseRequestBuilder().price(price).build())
+
+			const closedQuote = await context.viewFacetQuote.getQuote(quoteId)
+			expect(closedQuote.quoteStatus).to.equal(QuoteStatus.CLOSED)
+			expect(closedQuote.closedAmount).to.equal(closedQuote.quantity)
+		})
+
+		it("should not classify an already-restated quote by applying the window factor twice", async function () {
+			const { quoteId, price } = await openPositionWithRawQuantity(9900n)
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(1n, 16), now)
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [quoteId])
+
+			expect((await context.viewFacetQuote.getQuote(quoteId)).quantity).to.equal(99n)
+			await expect(
+				hedger.emergencyClosePosition(
+					quoteId,
+					emergencyCloseRequestBuilder()
+						.price(price * 100n)
+						.build(),
+				),
+			).to.be.revertedWith("LibSymbolAdjustment: Symbol is frozen")
 		})
 
 		it("should unfreeze after confirmPriceAdjusted and allow close fill again", async function () {

@@ -47,6 +47,11 @@
 				<a class="toc-link level-3" href="#active-route">Adjusted-price route without quote rewrites</a>
 				<a class="toc-link level-3" href="#physical-route">Physical route with quote restatement</a>
 				<a class="toc-link level-2" href="#rewrite">What physical restatement changes</a>
+				<a class="toc-link level-3" href="#rewrite-eligibility">Eligibility, authorization, and batch behavior</a>
+				<a class="toc-link level-3" href="#rewrite-conversion">Conversion arithmetic and fields</a>
+				<a class="toc-link level-3" href="#rewrite-funding">Funding settlement and aggregate updates</a>
+				<a class="toc-link level-3" href="#rewrite-pending">Pending inventory</a>
+				<a class="toc-link level-3" href="#rewrite-reads">Mixed-book reads</a>
 				<a class="toc-link level-2" href="#funding">Funding across the window</a>
 				<a class="toc-link level-2" href="#boundaries">Enforced and operational boundaries</a>
 				<a class="toc-link level-2" href="#actors">Actor responsibilities</a>
@@ -451,18 +456,38 @@ venue open amount       = venue quantity - venue closed amount</code></pre>
 					</p>
 					<ol>
 						<li>
+							<strong>Find quotes that cannot survive the conversion.</strong> Operations runs
+							<code>previewQuoteAdjustment</code> against every eligible open quote. When amount rounding makes a quote unrestatable,
+							Operations marks it for PartyB cleanup once the symbol is frozen.
+						</li>
+						<li>
 							<strong>Open the restatement window.</strong> Operations calls <code>startRestatement</code>. Core freezes the symbol,
 							records the factor for this window, emits <code>RestatementStarted</code>, and pauses eligible registered PartyB funding
 							rates.
 						</li>
 						<li>
-							<strong>Muon stops old-basis signatures.</strong> Muon observes <code>RestatementStarted</code> or reads the open
-							restatement state, then stops issuing affected signatures in the old unit basis.
+							<strong>Close every marked quote.</strong> Muon supplies a stored-basis close signature, the Operations bot simulates the
+							exact transaction, and that quote's PartyB calls <code>emergencyClosePosition</code>. The dust exception does not require
+							PartyA to act.
+						</li>
+						<li>
+							<strong>Establish the old-basis signature cutoff.</strong> After the cleanup signatures are issued, Muon observes
+							<code>RestatementStarted</code> or reads the open restatement state and stops issuing affected old-basis signatures.
+							Operations records the latest possible timestamp among the cleanup signatures and every other affected payload.
 						</li>
 						<li>
 							<strong>Check the frozen book.</strong> Before changing any quote, Operations reads every pending and open quote for the
-							symbol. If any quote cannot be expired or rewritten, Operations calls <code>abortRestatement</code> while abort is still
-							available.
+							symbol. If amount dust appeared after the earlier scan, repeat the PartyB cleanup and establish a new cutoff that includes
+							the later close signature. If any other quote cannot be expired or rewritten, Operations calls
+							<code>abortRestatement</code> while abort is still available.
+						</li>
+						<li>
+							<strong>Simulate every rewrite batch.</strong> From the address that will submit the transaction, the Operations bot uses
+							<code>eth_call</code> to simulate each exact <code>applyAdjustment(symbolId, quoteIds)</code> batch. This runs
+							authorization, quote-status, epoch, liquidation, funding-settlement, conversion, and aggregate-accounting checks without
+							saving any changes. If a batch reverts, Operations resolves the cause or aborts before the first mutation. Simulation does
+							not reserve state, so the bot repeats it immediately before submitting the batch and whenever the caller, IDs, or chain
+							state changes.
 						</li>
 						<li>
 							<strong>Convert the book.</strong> Operations calls <code>cancelPendingQuotes</code> for pending inventory and
@@ -492,7 +517,7 @@ venue open amount       = venue quantity - venue closed amount</code></pre>
 						<code>basisVersion</code>. It retains the latest per-step <code>factor</code> and <code>effectiveTimestamp</code>.
 					</p>
 					<h2 id="rewrite">What physical restatement changes</h2>
-					<h3>Eligibility, authorization, and batch behavior</h3>
+					<h3 id="rewrite-eligibility">Eligibility, authorization, and batch behavior</h3>
 					<p>
 						<code>applyAdjustment(symbolId, quoteIds)</code> requires an open window. A manager may process any quote. A PartyB may
 						process only its own quote, and authorization is checked separately for every ID. Each quote must match the symbol, have an
@@ -531,38 +556,57 @@ venue open amount       = venue quantity - venue closed amount</code></pre>
 						reverts, so retries must omit completed IDs. An empty array is accepted and changes nothing.
 					</p>
 
-					<h3>Conversion arithmetic and fields</h3>
+					<h3 id="rewrite-conversion">Conversion arithmetic and fields</h3>
 					<p>
-						<code>previewQuoteAdjustment</code> uses the same arithmetic and underflow checks as the write path. It checks the symbol, but
-						it does not check quote status, liquidation state, authorization, or whether funding settlement will succeed.
+						<code>previewQuoteAdjustment(symbolId, quoteId)</code> is a read-only preflight helper. It selects the applicable adjustment
+						factor and returns the converted quote fields that <code>applyAdjustment</code> would write. It uses the same arithmetic and
+						underflow checks as the write path, but it does not check quote status, liquidation state, authorization, or whether funding
+						settlement will succeed.
 					</p>
-					<p>Factors and unit-bearing quote values use 18 decimals. <code>Math.mulDiv</code> floors each result.</p>
-					<pre><code class="language-text">new amount = floor(old amount * factor / 1e18)
-new price  = 0                                           when old price is 0
-new price  = floor(old amount * old price / new amount) otherwise</code></pre>
+					<p>
+						Core converts each amount-and-price pair in two steps. It first scales the amount, then derives the new price from the old
+						notional. This keeps <code>amount * price</code> as close as integer rounding permits. For example, a 4x factor converts 5
+						units at a price of 20 into 20 units at a price of 5. The notional remains 100.
+					</p>
+					<pre><code class="language-text">adjustedAmount = floor(originalAmount * factor / 1e18)
+
+if originalPrice == 0:
+    adjustedPrice = 0
+else:
+    adjustedPrice = floor(originalAmount * originalPrice / adjustedAmount)</code></pre>
+					<p>
+						Factors and all amount and price fields use 18 decimals. <code>Math.mulDiv</code> performs each calculation and rounds down.
+					</p>
 					<div class="table-wrap">
 						<table>
 							<thead>
 								<tr>
-									<th>Amount basis</th>
-									<th>Fields rewritten</th>
+									<th>Part of the quote</th>
+									<th>What Core changes</th>
 								</tr>
 							</thead>
 							<tbody>
 								<tr>
-									<td>Old and new total <code>quantity</code></td>
+									<td>Entire position</td>
 									<td>
-										<code>quantity</code>, <code>openedPrice</code>, <code>initialOpenedPrice</code>,
-										<code>requestedOpenPrice</code>, and <code>marketPrice</code>
+										Scales <code>quantity</code>. Recalculates <code>openedPrice</code>, <code>initialOpenedPrice</code>,
+										<code>requestedOpenPrice</code>, and <code>marketPrice</code> against the new quantity so each recorded
+										amount-and-price value stays as close as possible to its previous notional.
 									</td>
 								</tr>
 								<tr>
-									<td>Old and new <code>closedAmount</code></td>
-									<td><code>closedAmount</code> and <code>avgClosedPrice</code></td>
+									<td>Already-closed portion</td>
+									<td>
+										When <code>closedAmount</code> is nonzero, scales it and recalculates <code>avgClosedPrice</code> to preserve
+										the recorded closed notional as closely as rounding permits.
+									</td>
 								</tr>
 								<tr>
-									<td>Old and new <code>quantityToClose</code></td>
-									<td><code>quantityToClose</code> and <code>requestedClosePrice</code></td>
+									<td>Outstanding close request</td>
+									<td>
+										When <code>quantityToClose</code> is nonzero, scales it and recalculates <code>requestedClosePrice</code> to
+										preserve the requested close notional as closely as rounding permits.
+									</td>
 								</tr>
 							</tbody>
 						</table>
@@ -575,17 +619,71 @@ new price  = floor(old amount * old price / new amount) otherwise</code></pre>
 						effects, not part of the nine-field unit conversion.
 					</p>
 					<p>
-						The arithmetic rejects a new total quantity of zero, a nonzero closed amount that becomes zero, a new quantity less than or
-						equal to the new closed amount, and a nonzero requested close amount that becomes zero. For a valid price conversion, the
-						exact dust bound is:
+						A reverse split can make a very small raw amount disappear when multiplication is rounded down. The examples below use a
+						<code>0.01x</code> factor. The numbers are raw 18-decimal amount integers, so one unit in these examples means one amount wei.
 					</p>
-					<pre><code class="language-text">0 &lt;= oldAmount * oldPrice - newAmount * newPrice &lt; newAmount</code></pre>
+					<ul>
+						<li>
+							<strong>The entire position would disappear.</strong> A quantity of <code>99</code> becomes
+							<code>floor(99 * 0.01) = 0</code>. Core rejects the conversion instead of storing a zero-quantity position.
+						</li>
+						<li>
+							<strong>Recorded closed quantity would disappear.</strong> A nonzero <code>closedAmount</code> of <code>1</code> becomes
+							<code>floor(1 * 0.01) = 0</code>. Core rejects the conversion instead of erasing the closed history.
+						</li>
+						<li>
+							<strong>The remaining open quantity would disappear.</strong> A quote with <code>quantity = 101</code> and
+							<code>closedAmount = 100</code> has one amount wei still open. After conversion, both values become <code>1</code>,
+							leaving no open amount. Core requires the new quantity to remain greater than the new closed amount.
+						</li>
+						<li>
+							<strong>A pending close request would disappear.</strong> A nonzero <code>quantityToClose</code> of <code>1</code> becomes
+							<code>0</code>. Core rejects the conversion instead of retaining a close request for zero quantity.
+						</li>
+					</ul>
+					<aside class="callout callout-risk">
+						<strong>PartyB closes an unrestatable quote; Operations does not wait for PartyA.</strong>
+						<p>
+							When the applicable factor would erase total quantity, recorded closed quantity, remaining open quantity, or a pending
+							close amount, <code>emergencyClosePosition</code> permits the quote's own PartyB to close the entire remaining position.
+							The exception works during the scheduled freeze and during an open restatement window. It does not apply while a future
+							schedule is still live. Core does not round or rewrite the quote. A successful close removes it from the live book and
+							leaves the closed quote in its old stored basis as history.
+						</p>
+						<ol>
+							<li>
+								Muon supplies the closing price and both UPNLs in the quote's current stored basis. Core does not apply the adjustment
+								factor to those signature values.
+							</li>
+							<li>
+								From that quote's PartyB address, the Operations bot simulates the exact
+								<code>emergencyClosePosition</code> call with <code>eth_call</code>, then submits the same call if the simulation
+								succeeds.
+							</li>
+							<li>Operations verifies that the quote is <code>CLOSED</code> and removes it from the physical-restatement manifest.</li>
+						</ol>
+						<p>
+							A close signature issued after <code>RestatementStarted</code> is a new old-basis signature. Operations must move the
+							recorded old-basis cutoff forward to include its timestamp and delay finalization until it expires. The ordinary
+							liquidation, solvency, funding, pause, signature, and hook checks still run. A non-dust quote remains blocked while the
+							symbol is frozen. After the symbol unfreezes, that quote still needs one of the normal emergency-close conditions.
+						</p>
+					</aside>
 					<p>
-						This means the total raw notional dust is less than the new amount, equivalent to less than one price wei per new unit on
-						average. It does not mean total notional dust is less than one wei.
+						Price rounding is different: it does not reject every remainder. Core divides the old notional by the adjusted amount and
+						rounds the price down. The discarded remainder is the notional dust. For example:
+					</p>
+					<pre><code class="language-text">old notional   = 3 * 10 = 30
+adjusted amount = 4
+adjusted price  = floor(30 / 4) = 7
+new notional    = 4 * 7 = 28
+dust            = 30 - 28 = 2</code></pre>
+					<p>
+						The dust is simply the remainder from integer division: <code>oldNotional % adjustedAmount</code>. It is always zero or
+						positive and always smaller than <code>adjustedAmount</code>.
 					</p>
 
-					<h3>Funding settlement and aggregate updates</h3>
+					<h3 id="rewrite-funding">Funding settlement and aggregate updates</h3>
 					<p>For each quote, the facet currently executes this order:</p>
 					<ol>
 						<li>Prepare the quote's PartyB funding pair if the window did not checkpoint it.</li>
@@ -609,7 +707,7 @@ new price  = floor(old amount * old price / new amount) otherwise</code></pre>
 						account for this implementation defect before it is used on funded quotes.
 					</aside>
 
-					<h3>Pending inventory</h3>
+					<h3 id="rewrite-pending">Pending inventory</h3>
 					<p>
 						<code>cancelPendingQuotes</code> is manager-only. It does not require an open restatement window, but every quote's symbol
 						must be frozen. It accepts <code>PENDING</code>, <code>LOCKED</code>, and <code>CANCEL_PENDING</code>. Core force-expires each
@@ -625,7 +723,7 @@ new price  = floor(old amount * old price / new amount) otherwise</code></pre>
 						the quote inventory during the window, but those paths do not set the restatement mutation flag.
 					</p>
 
-					<h3>Mixed-book reads</h3>
+					<h3 id="rewrite-reads">Mixed-book reads</h3>
 					<p>
 						Raw storage is mixed while batches run. <code>getQuote</code> returns that storage unchanged.
 						<code>getQuoteInVenueUnits</code> and <code>getQuotesInVenueUnits</code> return converted memory copies that can support
@@ -716,11 +814,17 @@ new price  = floor(old amount * old price / new amount) otherwise</code></pre>
 						<li>quote creation, PartyB open and close execution, batch wrappers, and solver-fee wrappers;</li>
 						<li>legacy and unified settlement;</li>
 						<li>
-							force actions, three-step force-close finalization, emergency PartyB actions, clearing-house closes, and ADL-style closes;
+							force actions, three-step force-close finalization, non-dust emergency PartyB actions, clearing-house closes, and
+							ADL-style closes;
 						</li>
 						<li>PartyA liquidation price snapshot setup in new and legacy paths, and PartyB position liquidation;</li>
 						<li>funding charge, rate setting, epoch-duration changes, and accumulated-funding paths.</li>
 					</ul>
+					<p>
+						<code>emergencyClosePosition</code> has one narrow freeze exception. If the applicable physical factor would make an
+						unrestated quote fail an amount-underflow check, the quote's PartyB may fully close it with a stored-basis Muon signature.
+						Core does not treat a quote already rewritten in the current epoch as dust by applying the factor a second time.
+					</p>
 					<p>
 						The freeze leaves several quote mutations callable. PartyA can call <code>requestToClosePosition</code>, which changes an open
 						quote to <code>CLOSE_PENDING</code> and writes the requested close price, close quantity, order type, deadline, and
@@ -798,6 +902,10 @@ new price  = floor(old amount * old price / new amount) otherwise</code></pre>
 							Apply rejects authorization, symbol, epoch, status, and liquidation failures, plus funding, arithmetic, or aggregate
 							failures reached downstream.
 						</li>
+						<li>
+							The dust emergency-close exception requires an unrestated quote that fails an amount conversion. PartyB ownership,
+							liquidation, pause, status, signature, solvency, settlement, and hook checks still apply.
+						</li>
 						<li>Pending cancellation rejects an unfrozen symbol, an ineligible status, liquidation guards, or a reverting hook.</li>
 						<li>
 							Finalize rejects no window and the exact or earlier signature-expiry boundary. Funding checkpoint mismatch,
@@ -836,7 +944,8 @@ new price  = floor(old amount * old price / new amount) otherwise</code></pre>
 									<td>PartyBs</td>
 									<td>
 										Hedge in the current basis, submit old-unit adjusted <code>marketPrices</code> while a factor is active, and
-										call <code>applyAdjustment</code> only for owned quotes unless granted the manager role.
+										call <code>applyAdjustment</code> only for owned quotes unless granted the manager role. Fully close owned
+										adjustment-dust quotes when Operations requests it, using Muon values in each quote's stored basis.
 									</td>
 								</tr>
 								<tr>
@@ -864,24 +973,26 @@ new price  = floor(old amount * old price / new amount) otherwise</code></pre>
 						<li>Verify the venue notice, symbol ID, factor direction, effective time, and allowed factor range.</li>
 						<li>
 							Read the active factor and compute the intended prospective product before scheduling. Require
-							<code>0 &lt; floor(activeFactor * intendedFactor / 1e18) &lt;= type(uint256).max</code>. After scheduling, confirm that
-							the prospective getter reports the same value without reverting. Do not infer the new basis from only the latest step.
+							<code>0 &lt; floor(activeFactor * intendedFactor / 1e18) &lt;= type(uint256).max</code>. Do not infer the new basis from
+							only the latest step.
 						</li>
 						<li>
 							Build one open and pending quote manifest across all PartyB account models. For every pair, require PartyA liquidation,
 							PartyB-against-PartyA liquidation, and PartyB cross-liquidation status to be clear. Resolve any active liquidation before
 							the effective time.
 						</li>
-						<li>
-							Run <code>previewQuoteAdjustment</code> for every eligible open quote. Treat this as an arithmetic preview, not an
-							eligibility or funding-settlement proof.
-						</li>
 						<li>Measure the current registered PartyB list and checkpoint candidates. Fork-rehearse both unbatched funding loops.</li>
 						<li>Resolve the duplicate weighted-funding subtraction risk before approving any physical route on funded inventory.</li>
 						<li>Verify the deployed ABI uses <code>startRestatement(uint256)</code>. The old three-argument selector is not exposed.</li>
 						<li>
 							Call <code>scheduleAdjustment</code>. Record the transaction block time, adjustment index, factor, effective time,
-							prospective factor, and current maximum Muon validity.
+							prospective factor, and current maximum Muon validity. Confirm that <code>getProspectiveCumulativeFactor</code> returns
+							the intended product without reverting.
+						</li>
+						<li>
+							Run <code>previewQuoteAdjustment</code> for every eligible open quote now that the schedule supplies the prospective
+							factor. Treat this as an arithmetic preview, not an eligibility or funding-settlement proof. Mark every amount-underflow
+							failure for PartyB cleanup when the symbol reaches its effective freeze.
 						</li>
 					</ol>
 
@@ -889,15 +1000,14 @@ new price  = floor(old amount * old price / new amount) otherwise</code></pre>
 					<ol>
 						<li>Refresh the manifest before the effective time. Trading is still live for a future schedule.</li>
 						<li>
-							For a future schedule, stop every affected old-basis account-, pair-, and quote-level Muon payload before the effective
-							time. For a past-effective emergency, stop issuance before submitting the schedule transaction. Record the latest observed
-							signed timestamp and compute an upper bound that includes the issuance cutoff plus allowed signer clock skew. Prove that
-							no later old-basis timestamp can be issued.
+							For a future schedule, stop ordinary old-basis account-, pair-, and quote-level issuance before the effective time. For a
+							past-effective emergency, stop ordinary issuance before submitting the schedule transaction. Do not establish the final
+							old-basis cutoff yet: dust cleanup may require dedicated close signatures after the symbol freezes.
 						</li>
 						<li>At equality or later, verify <code>isSymbolFrozen</code> and the raw venue feed basis.</li>
 						<li>
 							If the event did not occur, call <code>cancelAdjustment</code>. Verify the symbol unfreezes and the older active factor
-							remains unchanged.
+							remains unchanged. End this runbook here; do not run dust cleanup for a called-off event.
 						</li>
 					</ol>
 
@@ -912,12 +1022,19 @@ new price  = floor(old amount * old price / new amount) otherwise</code></pre>
 					<h3>Use either physical-restatement route</h3>
 					<ol>
 						<li>
-							Keep affected signatures stopped. Call <code>startRestatement(symbolId)</code> and record epoch, factor, start time, gas,
-							checkpoint events, and zeroed current rates.
+							Keep ordinary affected signatures stopped. Call <code>startRestatement(symbolId)</code> and record epoch, factor, start
+							time, gas, checkpoint events, and zeroed current rates.
 						</li>
 						<li>
 							Re-scan the now-frozen book before the first mutation. Recheck statuses, every liquidation mode, previews, funding
-							settlement, hooks, and all deregistered PartyBs with open quotes.
+							settlement, hooks, and all deregistered PartyBs with open quotes. For every marked or newly discovered amount-underflow
+							quote, have PartyB obtain a stored-basis Muon signature. Simulate the exact <code>emergencyClosePosition</code> call from
+							the PartyB address, submit it, and verify the quote is <code>CLOSED</code>. PartyA does not participate.
+						</li>
+						<li>
+							After cleanup, record the latest possible timestamp across every old-basis payload, including the dedicated close
+							signatures. Add allowed signer clock skew and prove that Muon cannot issue a later old-basis timestamp. This is the cutoff
+							used for finalization.
 						</li>
 						<li>
 							If any item cannot be processed, abort before a quote rewrite or pending removal. Direct abort stays frozen in
@@ -930,8 +1047,10 @@ new price  = floor(old amount * old price / new amount) otherwise</code></pre>
 							quote.
 						</li>
 						<li>
-							Apply open quotes in bounded batches. Remove successful IDs before retrying. Track <code>QuoteAdjusted</code> and verify
-							each quote's epoch.
+							Before submitting each bounded batch, have the Operations bot simulate the exact
+							<code>applyAdjustment(symbolId, quoteIds)</code> call through <code>eth_call</code> from the intended transaction sender.
+							Submit only a successful simulation, then track <code>QuoteAdjusted</code> and verify each quote's epoch. Remove
+							successful IDs before retrying. Re-simulate whenever the batch or relevant state changes.
 						</li>
 						<li>
 							Use venue-unit views for convertible records during the open window, but compare raw storage and epoch data to prove
@@ -1125,6 +1244,14 @@ new price  = floor(old amount * old price / new amount) otherwise</code></pre>
 								<tr>
 									<td><code>cancelPendingQuotes</code></td>
 									<td>Manager-only. Force-expire eligible pending inventory whenever its symbol is frozen.</td>
+								</tr>
+								<tr>
+									<td><code>emergencyClosePosition</code></td>
+									<td>
+										Own PartyB only. While the symbol is frozen, fully close an unrestatable amount-dust quote without PartyA;
+										Muon price and UPNLs must already use the stored quote basis. Non-dust quotes keep the ordinary emergency
+										conditions and the freeze gate.
+									</td>
 								</tr>
 								<tr>
 									<td><code>finalizeRestatement</code></td>

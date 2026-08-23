@@ -25,21 +25,30 @@ library PartyBEmergencyActionsFacetImpl {
 	using LibPartyBState for address;
 	using LibQuoteState for Quote;
 
-	/// @notice Closes a position fully during emergency mode, symbol delisting, or partyB emergency status
+	/// @notice Closes a position fully during a configured emergency or when adjustment rounding makes the quote unrestatable.
+	/// @dev The adjustment-dust exception applies only while the symbol is frozen. Muon must sign price and UPNLs in the quote's current stored basis;
+	///      Core does not scale the signature values.
 	function emergencyClosePosition(uint256 quoteId, PairUpnlAndPriceSig memory upnlSig) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		Symbol memory symbol = SymbolStorage.layout().symbols[quote.symbolId];
-		LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
+		bool isAdjustmentDust = LibSymbolAdjustment.isFrozen(quote.symbolId) && LibSymbolAdjustment.isUnrestatableDueToAmountRounding(quote);
+		if (!isAdjustmentDust) LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
 		bool affiliateShutdownScheduled = quote.affiliate != address(0) && GlobalAppStorage.layout().affiliateShutdownTime[quote.affiliate] != 0;
 		require(
 			GlobalAppStorage.layout().emergencyMode ||
 				GlobalAppStorage.layout().partyBEmergencyStatus[quote.partyB] ||
 				affiliateShutdownScheduled ||
-				!symbol.isValid,
+				!symbol.isValid ||
+				isAdjustmentDust,
 			"PartyBFacet: Operation not allowed. Either emergency mode must be active, party B must be in emergency status, or the symbol must be delisted"
 		);
-		require(quote.quoteStatus == QuoteStatus.OPENED || quote.quoteStatus == QuoteStatus.CLOSE_PENDING, "PartyBFacet: Invalid state");
+		require(
+			quote.quoteStatus == QuoteStatus.OPENED ||
+				quote.quoteStatus == QuoteStatus.CLOSE_PENDING ||
+				(isAdjustmentDust && quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING),
+			"PartyBFacet: Invalid state"
+		);
 		LibMuonPartyB.verifyPairUpnlAndPrice(upnlSig, quote.partyB, quote.partyA, quote.symbolId, MuonFunction.Trading);
 		uint256 filledAmount = LibQuote.quoteOpenAmount(quote);
 		quote.quantityToClose = filledAmount;
