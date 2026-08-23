@@ -15,6 +15,8 @@ export type MuonFunctionName =
 	| "LiquidationPartyA"
 	| "LiquidationPartyB"
 	| "RemoveMargin"
+	| "ExpressCredit"
+export type MuonUpnlFunctionName = Exclude<MuonFunctionName, "ExpressCredit">
 
 export interface DeploymentRecipe {
 	$schema?: string
@@ -56,10 +58,10 @@ export interface DeploymentRecipe {
 			upnlValidTime: string
 			priceValidTime: string
 			/** Per-MuonFunction UPNL validity overrides in seconds; omit a function to use the global value. */
-			upnlValidTimeByFunction?: Partial<Record<MuonFunctionName, string>>
+			upnlValidTimeByFunction?: Partial<Record<MuonUpnlFunctionName, string>>
 			publicKey?: { x: string; parity: 0 | 1 }
 			gatewaySigners?: string[]
-			permissions?: string[]
+			permissions?: MuonFunctionName[]
 		}
 		protocol?: {
 			description?: string

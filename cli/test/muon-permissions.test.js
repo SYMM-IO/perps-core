@@ -14,7 +14,7 @@ test("Muon permission names and indices mirror the Solidity enum", () => {
 	assert.deepEqual(checkMuonFunctionMirrorDrift().problems, []);
 });
 
-test("Muon permission parser requires the exact complete eight-category profile", () => {
+test("Muon permission parser requires the exact complete nine-category profile", () => {
 	assert.deepEqual(
 		parseMuonFunctionPermissions(completeProfile).map(({ name, index }) => [name, index]),
 		MUON_FUNCTION_NAMES.map((name, index) => [name, index]),
@@ -43,7 +43,7 @@ test("Muon authorization inspection probes every configured key and gateway cate
 		gatewaySigners: ["0x0000000000000000000000000000000000000001"],
 	});
 
-	assert.equal(calls.length, 16);
+	assert.equal(calls.length, 18);
 	assert.deepEqual(missing, ["public key x=123, parity=1: RemoveMargin", "gateway signer 0x0000000000000000000000000000000000000001: ForceClose"]);
 	assert.equal(muonAuthorizationVerdict(missing, false), "blocked");
 	assert.equal(muonAuthorizationVerdict(missing, true), "repairable");
