@@ -1862,7 +1862,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			// must still succeed end-to-end.
 			const freezeStart = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(1, decimal(4n), freezeStart - 1n)
-			expect(await context.symbolAdjustmentFacet.isSymbolFrozen(1)).to.be.true
+			expect(await context.viewFacetSymbol.isSymbolFrozen(1)).to.be.true
 
 			const price = decimal(572n, 16) // 5.72e18 - triggers NORMAL liquidation
 			const quoteIds = [1n]
@@ -1875,7 +1875,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			liquidationSig.liquidationTimestamp = freezeStart
 
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).cancelAdjustment(1)
-			expect(await context.symbolAdjustmentFacet.isSymbolFrozen(1)).to.be.false
+			expect(await context.viewFacetSymbol.isSymbolFrozen(1)).to.be.false
 
 			await context.partyALiquidationFacet.connect(context.signers.liquidator).deferredLiquidatePartyA(user.address, liquidationSig)
 			await expect(context.partyALiquidationFacet.connect(context.signers.liquidator).deferredSetSymbolsPrice(user.address, liquidationSig)).to.not.be

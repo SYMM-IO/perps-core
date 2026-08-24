@@ -20,11 +20,33 @@ describe("upgrade facet deployment", function () {
 		try {
 			const firstCore = await deployFacets(coreFile, "core")
 			const coreOutput = JSON.parse(fs.readFileSync(coreFile, "utf-8")) as DeploymentOutput
-			for (const library of ["LibQuoteFunding", "LibQuoteClose", "PartyBPositionActionsFacetImpl", "ClearingHouseFacetImpl"]) {
+			for (const library of [
+				"LibQuoteFunding",
+				"LibQuoteClose",
+				"LibForceActions",
+				"LibPartyALiquidationProcess",
+				"PartyBPositionActionsFacetImpl",
+				"ClearingHouseFacetImpl",
+			]) {
 				expect(ethers.isAddress(coreOutput.libraries[library]), library).to.equal(true)
 			}
-			expect(firstCore.facets.PartyBPositionActionsFacet.selectors.length).to.be.greaterThan(0)
-			expect(firstCore.facets.ClearingHouseFacet.selectors.length).to.be.greaterThan(0)
+			for (const facet of [
+				"PartyAFacet",
+				"PartyBPositionActionsFacet",
+				"PartyBBatchActionsFacet",
+				"PartyBEmergencyActionsFacet",
+				"PartyBQuoteActionsFacet",
+				"ForceActionsFacet",
+				"ForceCloseStepsFacet",
+				"PartyALiquidationFacet",
+				"PartyALiquidationSnapshotFacet",
+				"PartyBLiquidationFacet",
+				"ClearingHouseFacet",
+				"SymbolAdjustmentFacet",
+				"ViewFacetSymbol",
+			]) {
+				expect(firstCore.facets[facet].selectors.length, facet).to.be.greaterThan(0)
+			}
 
 			const resumedCore = await deployFacets(coreFile, "core")
 			expect(resumedCore.facets.PartyBPositionActionsFacet.address).to.equal(firstCore.facets.PartyBPositionActionsFacet.address)

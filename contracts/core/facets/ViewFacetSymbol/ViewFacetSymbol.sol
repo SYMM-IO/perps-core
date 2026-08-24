@@ -4,15 +4,27 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { LibConnections } from "../../libraries/LibConnections.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { AggregatedDataStorage } from "../../storages/AggregatedDataStorage.sol";
 import { PartyBControlStorage } from "../../storages/PartyBControlStorage.sol";
 import { FundingStorage, FundingFee } from "../../storages/FundingStorage.sol";
-import { QuoteStorage } from "../../storages/QuoteStorage.sol";
+import { QuoteStorage, Quote } from "../../storages/QuoteStorage.sol";
 import { SymbolStorage, Symbol, SymbolWithType } from "../../storages/SymbolStorage.sol";
+import {
+	SymbolAdjustmentStorage,
+	SymbolAdjustment,
+	AdjustmentState,
+	RestatementPhase,
+	RestatementInventoryCheckpoint,
+	RestatementInventoryTotals
+} from "../../storages/SymbolAdjustmentStorage.sol";
 import { IViewFacetSymbol, PartyBSymbolCount } from "./IViewFacetSymbol.sol";
+import { ISymbolAdjustmentFacet } from "../SymbolAdjustment/ISymbolAdjustmentFacet.sol";
 import { LibSymbol } from "../../libraries/LibSymbol.sol";
+import { LibSymbolAdjustment } from "../../libraries/LibSymbolAdjustment.sol";
+import { LibQuoteAdjustment, QuoteAdjustmentData } from "../../libraries/LibQuoteAdjustment.sol";
 
 contract ViewFacetSymbol is IViewFacetSymbol {
 	/// @notice Returns the details of a symbol by its ID.
@@ -242,5 +254,128 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 		}
 
 		return result;
+	}
+
+	function getSymbolAdjustment(uint256 symbolId) external view returns (SymbolAdjustment memory) {
+		return SymbolAdjustmentStorage.layout().adjustments[symbolId];
+	}
+
+	function getCumulativeFactor(uint256 symbolId) external view returns (uint256) {
+		return LibSymbolAdjustment.activeCumulativeFactor(symbolId);
+	}
+
+	/// @notice Returns the factor that confirmation would activate or direct restatement would select for the current scheduled adjustment.
+	/// @dev Muon uses this value only for the active-factor route; getCumulativeFactor intentionally returns only confirmed trading state.
+	function getProspectiveCumulativeFactor(uint256 symbolId) external view returns (uint256) {
+		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
+		return _prospectiveCumulativeFactor(symbolId, adjustment);
+	}
+
+	/// @notice Previews every quote field using the open window, scheduled prospective, or confirmed active factor and reverts on unsafe rounding.
+	function previewQuoteAdjustment(
+		uint256 symbolId,
+		uint256 quoteId
+	) external view returns (ISymbolAdjustmentFacet.QuoteAdjustmentPreview memory preview) {
+		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		require(quote.symbolId == symbolId, "ViewFacetSymbol: Wrong symbol");
+		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
+		uint256 factor =
+			adjustment.restating
+				? adjustment.restatementFactor
+				: adjustment.state == AdjustmentState.SCHEDULED
+					? _prospectiveCumulativeFactor(symbolId, adjustment)
+					: LibSymbolAdjustment.activeCumulativeFactor(symbolId);
+		require(factor != 0, "ViewFacetSymbol: Cumulative factor underflow");
+		require(factor != 1e18, "ViewFacetSymbol: No adjustment factor");
+		return _previewQuote(quote, factor);
+	}
+
+	function isSymbolFrozen(uint256 symbolId) external view returns (bool) {
+		return LibSymbolAdjustment.isFrozen(symbolId);
+	}
+
+	function getRestatementState(uint256 symbolId) external view returns (bool restating, uint256 epoch) {
+		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
+		return (adjustment.restating, adjustment.restatementEpoch);
+	}
+
+	function getRestatementFundingProgress(
+		uint256 symbolId
+	)
+		external
+		view
+		returns (RestatementPhase phase, uint256 pendingPartyBCount, uint256 fundingCutoffTimestamp, uint256 fundingRestorationTimestamp)
+	{
+		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
+		return (
+			adjustment.restatementPhase,
+			adjustment.pendingFundingPartyBCount,
+			adjustment.fundingCutoffTimestamp,
+			adjustment.fundingRestorationTimestamp
+		);
+	}
+
+	function isRestatementFundingCheckpointed(uint256 symbolId, address partyB) external view returns (bool) {
+		SymbolAdjustmentStorage.Layout storage adjustmentLayout = SymbolAdjustmentStorage.layout();
+		SymbolAdjustment storage adjustment = adjustmentLayout.adjustments[symbolId];
+		return adjustment.restating && adjustmentLayout.fundingRateCheckpoints[symbolId][partyB].restatementEpoch == adjustment.restatementEpoch;
+	}
+
+	function getQuoteRestatedEpoch(uint256 quoteId) external view returns (uint256) {
+		return SymbolAdjustmentStorage.layout().quoteRestatedEpoch[quoteId];
+	}
+
+	/// @notice Returns the current restatement inventory for one PartyB and the symbol-wide remaining quantities.
+	function getRestatementInventoryProgress(
+		uint256 symbolId,
+		address partyB
+	)
+		external
+		view
+		returns (
+			uint256 epoch,
+			bool prepared,
+			uint256 partyBRemainingLong,
+			uint256 partyBRemainingShort,
+			uint256 totalRemainingLong,
+			uint256 totalRemainingShort
+		)
+	{
+		SymbolAdjustmentStorage.Layout storage adjustmentLayout = SymbolAdjustmentStorage.layout();
+		SymbolAdjustment storage adjustment = adjustmentLayout.adjustments[symbolId];
+		RestatementInventoryCheckpoint storage checkpoint = adjustmentLayout.restatementInventoryCheckpoints[symbolId][partyB];
+		RestatementInventoryTotals storage totals = adjustmentLayout.restatementInventoryTotals[symbolId];
+		epoch = adjustment.restatementEpoch;
+		prepared = adjustment.restating && checkpoint.restatementEpoch == epoch;
+		if (prepared) {
+			partyBRemainingLong = checkpoint.remainingLong;
+			partyBRemainingShort = checkpoint.remainingShort;
+		}
+		totalRemainingLong = totals.remainingLong;
+		totalRemainingShort = totals.remainingShort;
+	}
+
+	function _prospectiveCumulativeFactor(uint256 symbolId, SymbolAdjustment storage adjustment) internal view returns (uint256) {
+		uint256 activeFactor = LibSymbolAdjustment.activeCumulativeFactor(symbolId);
+		if (adjustment.state != AdjustmentState.SCHEDULED) return activeFactor;
+		return Math.mulDiv(activeFactor, adjustment.factor, 1e18);
+	}
+
+	function _previewQuote(Quote storage quote, uint256 factor) internal pure returns (ISymbolAdjustmentFacet.QuoteAdjustmentPreview memory preview) {
+		Quote memory quoteSnapshot = quote;
+		QuoteAdjustmentData memory result = LibQuoteAdjustment.preview(quoteSnapshot, factor);
+		return
+			ISymbolAdjustmentFacet.QuoteAdjustmentPreview({
+				factor: result.factor,
+				quantity: result.quantity,
+				openedPrice: result.openedPrice,
+				initialOpenedPrice: result.initialOpenedPrice,
+				requestedOpenPrice: result.requestedOpenPrice,
+				marketPrice: result.marketPrice,
+				closedAmount: result.closedAmount,
+				avgClosedPrice: result.avgClosedPrice,
+				quantityToClose: result.quantityToClose,
+				requestedClosePrice: result.requestedClosePrice
+			});
 	}
 }
