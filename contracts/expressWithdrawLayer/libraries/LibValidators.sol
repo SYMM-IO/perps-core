@@ -60,14 +60,14 @@ library LibValidators {
 	}
 
 	/// @notice Verifies the validator quorum for accelerating a STANDARD withdrawal. Approvals bind
-	///         the frozen request (user, requestId, partsHash) — the payout amount cannot change,
+	///         the frozen request (user, requestId, partsHash). The payout amount cannot change,
 	///         since requestWithdraw already debited the balance and pinned the parts.
 	/// @dev    The same last-balance-credit freshness rule as the accept path applies here, and it
 	///         matters more, not less: STANDARD acceptance skips validators entirely, so this is the
 	///         first and only attestation this withdrawal ever gets, and it gates the moment credit
 	///         is advanced and pools are drained. Acceleration is permissionless, so without this a
 	///         user could front-run their own accelerate tx with a dirty deallocate and have funds
-	///         advanced against a state no validator ever saw — the approval timeout alone does not
+	///         advanced against a state no validator ever saw. The approval timeout alone does not
 	///         close that window.
 	function validateAccelerateApprovals(
 		address affiliate,

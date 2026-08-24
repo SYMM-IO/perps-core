@@ -127,7 +127,7 @@ library GlobalAppStorage {
 		///      Unlike deregisterPartyB, this keeps partyBStatus=true so the PartyB can still:
 		///      - Close existing positions (fillCloseRequest, emergencyClosePosition)
 		///      - Deallocate funds (deallocateForPartyB)
-		///      - Receive correct routing in distributeFromLiquidationEscrow / distributeForClearingHouse
+		///      - Receive correct routing in distributeFromLiquidationEscrow / applyClearingHouseSettlement
 		///      Use this instead of deregisterPartyB when winding down a PartyB.
 		mapping(address => bool) partyBOpenPositionsPausedPerPartyB;
 		/// @notice Per-affiliate shutdown timestamp.

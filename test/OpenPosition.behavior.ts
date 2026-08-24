@@ -65,6 +65,11 @@ export function shouldBehaveLikeOpenPosition(): void {
 			await expect(hedger.openPosition(2)).to.be.revertedWith("Accessibility: Should be partyB of quote")
 		})
 
+		it("Should recheck the current notional LF requirement when opening a locked quote", async function () {
+			await context.symbolControlFacet.connect(context.signers.admin).setSymbolMinAcceptableNotionalLFRate(0, decimal(4n, 16))
+			await expect(hedger.openPosition(1)).to.be.revertedWith("PartyBFacet: Notional LF is not enough")
+		})
+
 		it("Should fail on paused partyB", async function () {
 			await pausePartyB(context)
 			await expect(hedger.openPosition(1)).to.be.revertedWith("Pausable: PartyB actions paused")

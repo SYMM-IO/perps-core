@@ -165,7 +165,7 @@ library FundingRateFacetImpl {
 				// Update weighted averages before changing epoch duration
 				LibFundingRate.updateAccumulatedRates(fundingFee);
 
-				// Snapshot the exact cumulative fee — no re-division of old timestamps
+				// Preserve the cumulative fee under the old epoch duration before scaling the current rates.
 				uint256 oldEpochCount = fundingFee.lastUpdatedEpoch - fundingFee.startEpoch;
 				fundingFee.snapshotLongFee += fundingFee.accumulatedLongRate * int256(oldEpochCount);
 				fundingFee.snapshotShortFee += fundingFee.accumulatedShortRate * int256(oldEpochCount);

@@ -16,12 +16,12 @@ contract MockLiquidatorTarget {
 		callCount += 1;
 	}
 
-	/// @notice Reverts with a custom error — used to assert revert bubbling.
+	/// @notice Reverts with a custom error to test revert bubbling.
 	function revertMe() external pure {
 		revert MockRevert(42);
 	}
 
-	/// @notice Reverts with no data — used to assert the generic fallback message.
+	/// @notice Reverts with no data to test the generic fallback message.
 	function silentRevert() external pure {
 		assembly {
 			revert(0, 0)

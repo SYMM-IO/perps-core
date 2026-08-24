@@ -168,6 +168,8 @@ def main():
         ("instantLayer/InstantLayer.sol", "InstantLayer", "instantLayer"),
         ("accountLayer/AccountManager.sol", "AccountManager", "accountManager"),
         ("helpers/accounts/MultiAccount.sol", "MultiAccount", "multiAccount"),
+        ("gaslessLayer/GaslessLayer.sol", "GaslessLayer", "gaslessLayer"),
+        ("gaslessLayer/GaslessWallet.sol", "GaslessWallet", "gaslessLayerWallet"),
     ]
 
     for contract_path, contract_name, output_name in standalone_contracts:

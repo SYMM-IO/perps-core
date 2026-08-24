@@ -38,11 +38,12 @@ contract ViewFacetQuote is IViewFacetQuote {
 		SymbolAdjustmentStorage.Layout storage adjustmentLayout = SymbolAdjustmentStorage.layout();
 		SymbolAdjustment storage adjustment = adjustmentLayout.adjustments[quote.symbolId];
 		bool restatedInCurrentWindow = adjustment.restating && adjustmentLayout.quoteRestatedEpoch[quoteId] == adjustment.restatementEpoch;
-		uint256 factor = restatedInCurrentWindow
-			? 1e18
-			: adjustment.restating
-				? adjustment.restatementFactor
-				: LibSymbolAdjustment.activeCumulativeFactor(quote.symbolId);
+		uint256 factor =
+			restatedInCurrentWindow
+				? 1e18
+				: adjustment.restating
+					? adjustment.restatementFactor
+					: LibSymbolAdjustment.activeCumulativeFactor(quote.symbolId);
 
 		result.quote = LibQuoteAdjustment.toVenueUnits(quote, factor);
 		result.factorApplied = factor;
@@ -58,7 +59,8 @@ contract ViewFacetQuote is IViewFacetQuote {
 		return QuoteStorage.layout().solverFeeStates[quoteId];
 	}
 
-	/// @notice Returns an array of quotes following the parentId chain (each quote's parentId points to the child/remainder quote created from a partial fill).
+	/// @notice Returns quotes by following the parentId chain.
+	/// @dev Each quote's parentId points to the child or remainder quote created from a partial fill.
 	/// @param quoteId The starting quote ID.
 	/// @param size The maximum number of quotes to return.
 	/// @return An array of quotes.
@@ -89,7 +91,7 @@ contract ViewFacetQuote is IViewFacetQuote {
 		}
 		uint256[] memory quoteIds = new uint256[](size);
 		uint256 end = start + size;
-		for (uint256 i = start; i < end; ) {
+		for (uint256 i = start; i < end;) {
 			quoteIds[i - start] = quoteLayout.quoteIdsOf[partyA][i];
 			unchecked {
 				++i;
@@ -110,7 +112,7 @@ contract ViewFacetQuote is IViewFacetQuote {
 		}
 		Quote[] memory quotes = new Quote[](size);
 		uint256 end = start + size;
-		for (uint256 i = start; i < end; ) {
+		for (uint256 i = start; i < end;) {
 			quotes[i - start] = quoteLayout.quotes[quoteLayout.quoteIdsOf[partyA][i]];
 			unchecked {
 				++i;
@@ -146,7 +148,7 @@ contract ViewFacetQuote is IViewFacetQuote {
 
 		Quote[] memory quotes = new Quote[](size);
 		uint256 end = start + size;
-		for (uint256 i = start; i < end; ) {
+		for (uint256 i = start; i < end;) {
 			quotes[i - start] = quoteLayout.quotes[partyAOpenPositions[i]];
 			unchecked {
 				++i;
@@ -177,7 +179,7 @@ contract ViewFacetQuote is IViewFacetQuote {
 
 		Quote[] memory quotes = new Quote[](size);
 		uint256 end = start + size;
-		for (uint256 i = start; i < end; ) {
+		for (uint256 i = start; i < end;) {
 			quotes[i - start] = quoteLayout.quotes[partyBOpenPositions[i]];
 			unchecked {
 				++i;
@@ -206,7 +208,7 @@ contract ViewFacetQuote is IViewFacetQuote {
 		Quote[] memory quotes = new Quote[](size);
 		uint j = 0;
 		uint256 end = start + size;
-		for (uint256 i = start; i < end; ) {
+		for (uint256 i = start; i < end;) {
 			Quote memory quote = quoteLayout.quotes[i];
 			if (quote.partyB == partyB) {
 				quotes[j] = quote;
@@ -229,7 +231,7 @@ contract ViewFacetQuote is IViewFacetQuote {
 		Quote[] memory quotes = new Quote[](size);
 		uint j = 0;
 		uint256 end = start + size;
-		for (uint256 i = start; i < end; ) {
+		for (uint256 i = start; i < end;) {
 			Quote memory quote = quoteLayout.quotes[i];
 			if (
 				quote.partyB == partyB &&
@@ -257,7 +259,7 @@ contract ViewFacetQuote is IViewFacetQuote {
 		Quote[] memory quotes = new Quote[](size);
 		uint j = 0;
 		uint256 end = start + size;
-		for (uint256 i = start; i < end; ) {
+		for (uint256 i = start; i < end;) {
 			Quote memory quote = quoteLayout.quotes[i];
 			if (
 				quote.partyB == partyB &&
@@ -307,8 +309,9 @@ contract ViewFacetQuote is IViewFacetQuote {
 	}
 
 	/// @notice Retrieves a filtered list of quotes based on a bitmap. The method returns quotes only if sufficient gas remains.
-	/// @param bitmap A structured data type representing a bitmap, used to indicate which quotes to retrieve based on their positions. The bitmap consists of multiple elements, each with an offset and a 256-bit integer representing selectable quotes.
-	/// @param gasNeededForReturn The minimum gas required to complete the function execution and return the data. This ensures the function doesn't start a retrieval that it can't complete.
+	/// @param bitmap Selects quotes by position. Each element contains an offset and a 256-bit selection map.
+	/// @param gasNeededForReturn Gas reserved to complete execution and return the data. Retrieval stops before
+	///                           consuming this reserve.
 	/// @return quotes An array of `Quote` structures, each corresponding to a quote identified by the bitmap.
 	function getQuotesWithBitmap(Bitmap calldata bitmap, uint256 gasNeededForReturn) external view returns (Quote[] memory quotes) {
 		QuoteStorage.Layout storage qL = QuoteStorage.layout();

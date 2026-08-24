@@ -4,6 +4,7 @@ import { deployExpressProvider } from "../tasks/deploy/expressWithdrawLayerDiamo
 import { initializeFixture } from "./Initialize.fixture.js"
 import connection, { ethers, hre } from "./helpers/hardhat-connection.js"
 import { RunContext } from "./models/RunContext.js"
+import { buildSignedExpressCreditData, deterministicMuonKey, EXPRESS_CREDIT_MUON_FUNCTION } from "./utils/MuonSignature.js"
 
 const OPERATOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("OPERATOR_ROLE"))
 const SIGNER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("SIGNER_ROLE"))
@@ -429,6 +430,61 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 	// ═══════════════════════════════════════════════════════════════════
 
 	describe("Happy Path", function () {
+		it("requires ExpressCredit signer permissions when accelerating with credit", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, user, affiliate, randomCaller, deployer, context } = fixture
+			const gatewaySigner = (await ethers.getSigners())[12]
+			const realVerifier = await ethers.deployContract("MuonSignatureVerifier", [deployer.address])
+			const muonKey = deterministicMuonKey()
+
+			await realVerifier.addPublicKey(muonKey.publicKey)
+			await realVerifier.addGatewaySigner(gatewaySigner.address)
+			await realVerifier.setPublicKeyPermissions(muonKey.publicKey, [0], true)
+			await realVerifier.setGatewaySignerPermissions(gatewaySigner.address, [EXPRESS_CREDIT_MUON_FUNCTION], true)
+			await expressProvider.setCreditLineMuonConfig(await realVerifier.getAddress(), 1n, 60n)
+
+			const withdrawAmount = 500n * 10n ** 18n
+			const creditAmount = 200n * 10n ** 18n
+			const { parts, requestId, partsHash } = await acceptStandard(fixture, { withdrawAmount })
+			const { offerData } = await buildAccelerateCall(fixture, {
+				user: user.address,
+				requestId,
+				parts,
+				nonce: 0n,
+				affiliateAmount: 0n,
+				creditAmount,
+				partsHash,
+			})
+			const timestamp = BigInt((await ethers.provider.getBlock("latest"))!.timestamp)
+			const { encoded: creditDataRaw } = await buildSignedExpressCreditData({
+				appId: 1n,
+				affiliate,
+				eligibleBase: 10_000n * 10n ** 18n,
+				timestamp,
+				chainId: (await ethers.provider.getNetwork()).chainId,
+				expressProvider: await expressProvider.getAddress(),
+				symmio: context.diamond,
+				muonKey,
+				gatewaySigner,
+			})
+
+			await expect(
+				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw),
+			).to.be.revertedWith("MuonSignatureVerifier: Key not authorized for function")
+
+			await realVerifier.setPublicKeyPermissions(muonKey.publicKey, [EXPRESS_CREDIT_MUON_FUNCTION], true)
+			await realVerifier.setGatewaySignerPermissions(gatewaySigner.address, [EXPRESS_CREDIT_MUON_FUNCTION], false)
+			await realVerifier.setGatewaySignerPermissions(gatewaySigner.address, [0], true)
+			await expect(
+				expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw),
+			).to.be.revertedWith("MuonSignatureVerifier: Gateway not authorized for function")
+
+			await realVerifier.setGatewaySignerPermissions(gatewaySigner.address, [EXPRESS_CREDIT_MUON_FUNCTION], true)
+			await expressProvider.connect(randomCaller).accelerateWithdraw(user.address, requestId, parts, offerData, "0x", creditDataRaw)
+			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).status).to.equal(STATUS_PROCESSED)
+			expect(await expressProvider.creditLineActiveDebt(affiliate)).to.equal(creditAmount)
+		})
+
 		it("accelerates STANDARD → WINDOWED: random caller submits bot-signed offer, user paid", async function () {
 			const fixture = await deployFixture()
 			const { expressProvider, user, affiliate, randomCaller, receiver, collateral } = fixture

@@ -1,7 +1,21 @@
 import { ethers as ethersLib } from "ethers"
+import type { TypedDataDomain, TypedDataField } from "ethers"
 import { task } from "hardhat/config"
+import { createRequire } from "node:module"
 
 import { getConnection } from "./helpers.js"
+
+const require = createRequire(import.meta.url)
+const HYPEREVM_MAINNET_CHAIN_ID = 999
+const HYPEREVM_TESTNET_CHAIN_ID = 998
+
+type BigBlockSigner = {
+	address?: string
+	getAddress?: () => Promise<string>
+	signTypedData: (domain: TypedDataDomain, types: Record<string, TypedDataField[]>, value: Record<string, unknown>) => Promise<string>
+	__ledgerTransport?: unknown
+	__ledgerPath?: string
+}
 
 /**
  * Minimal msgpack encoder for simple flat objects (string keys, string/boolean values).
@@ -49,13 +63,25 @@ const HYPERCORE_DOMAIN = {
 	version: "1",
 	chainId: 1337,
 	verifyingContract: "0x0000000000000000000000000000000000000000",
-}
+} satisfies TypedDataDomain
 
 const PHANTOM_AGENT_TYPES = {
 	Agent: [
 		{ name: "source", type: "string" },
 		{ name: "connectionId", type: "bytes32" },
 	],
+} satisfies Record<string, TypedDataField[]>
+
+export function isHyperEVMChainId(chainId: bigint | number): boolean {
+	const normalized = Number(chainId)
+	return normalized === HYPEREVM_MAINNET_CHAIN_ID || normalized === HYPEREVM_TESTNET_CHAIN_ID
+}
+
+function getHyperCoreParams(chainId: bigint | number): { apiUrl: string; source: string } {
+	const normalized = Number(chainId)
+	if (normalized === HYPEREVM_MAINNET_CHAIN_ID) return { apiUrl: "https://api.hyperliquid.xyz/exchange", source: "a" }
+	if (normalized === HYPEREVM_TESTNET_CHAIN_ID) return { apiUrl: "https://api.hyperliquid-testnet.xyz/exchange", source: "b" }
+	throw new Error(`Not a HyperEVM chain (chainId: ${chainId}). Expected 999 (mainnet) or 998 (testnet).`)
 }
 
 function apiTimeoutMs(): number {
@@ -93,6 +119,65 @@ function constructConnectionId(action: Record<string, string | boolean>, nonce: 
 	return ethersLib.keccak256(combined)
 }
 
+async function getSignerAddress(signer: BigBlockSigner): Promise<string> {
+	const address = signer.address ?? (await signer.getAddress?.())
+	if (!address) throw new Error("Big-block signer does not expose an address or getAddress().")
+	return ethersLib.getAddress(address)
+}
+
+function prefixedHex(value: string): string {
+	return value.startsWith("0x") ? value : `0x${value}`
+}
+
+function ledgerVToNumber(value: string | number): number {
+	if (typeof value === "number") return value
+	return Number.parseInt(value.startsWith("0x") ? value.slice(2) : value, 16)
+}
+
+function normalizeTypedDataSignatureForSigner(
+	signature: string,
+	domain: TypedDataDomain,
+	types: Record<string, TypedDataField[]>,
+	value: Record<string, unknown>,
+	signerAddress: string,
+): string {
+	const recovered = ethersLib.verifyTypedData(domain, types, value, signature)
+	if (recovered.toLowerCase() === signerAddress.toLowerCase()) return signature
+
+	const parsed = ethersLib.Signature.from(signature)
+	const flipped = ethersLib.Signature.from({ r: parsed.r, s: parsed.s, yParity: (parsed.yParity ^ 1) as 0 | 1 }).serialized
+	const flippedRecovered = ethersLib.verifyTypedData(domain, types, value, flipped)
+	if (flippedRecovered.toLowerCase() === signerAddress.toLowerCase()) {
+		console.warn("Ledger EIP-712 signature recovered with alternate y-parity; using normalized signature.")
+		return flipped
+	}
+
+	throw new Error(`EIP-712 signature mismatch: expected ${signerAddress}, recovered ${recovered}, alternate parity recovered ${flippedRecovered}`)
+}
+
+async function signTypedDataForHyperCore(
+	signer: BigBlockSigner,
+	domain: TypedDataDomain,
+	types: Record<string, TypedDataField[]>,
+	value: Record<string, unknown>,
+	signerAddress: string,
+): Promise<string> {
+	if (signer.__ledgerTransport && signer.__ledgerPath !== undefined) {
+		const { default: Eth } = require("@ledgerhq/hw-app-eth")
+		const domainHash = ethersLib.TypedDataEncoder.hashDomain(domain)
+		const valueHash = ethersLib.TypedDataEncoder.from(types).hash(value)
+		const signed = await new Eth(signer.__ledgerTransport).signEIP712HashedMessage(signer.__ledgerPath, domainHash.slice(2), valueHash.slice(2))
+		const signature = ethersLib.Signature.from({
+			r: prefixedHex(signed.r),
+			s: prefixedHex(signed.s),
+			v: ledgerVToNumber(signed.v),
+		}).serialized
+		return normalizeTypedDataSignatureForSigner(signature, domain, types, value, signerAddress)
+	}
+
+	return normalizeTypedDataSignatureForSigner(await signer.signTypedData(domain, types, value), domain, types, value, signerAddress)
+}
+
 /**
  * Call the HyperCore L1 exchange API to enable or disable big blocks for the signer's address.
  *
@@ -106,47 +191,15 @@ function constructConnectionId(action: Record<string, string | boolean>, nonce: 
  * Prerequisites:
  * - The signer address must exist on HyperCore L1 (must have deposited USDC via Hyperliquid bridge)
  */
-export async function setHyperEVMBigBlocks(hre: any, enable: boolean): Promise<void> {
-	const { ethers } = await getConnection(hre)
-	const [signer] = await ethers.getSigners()
-	const chainId = Number((await ethers.provider.getNetwork()).chainId)
-
-	// Determine source and API URL based on chain
-	let source: string
-	let apiUrl: string
-	if (chainId === 999) {
-		source = "a" // mainnet
-		apiUrl = "https://api.hyperliquid.xyz/exchange"
-	} else if (chainId === 998) {
-		source = "b" // testnet
-		apiUrl = "https://api.hyperliquid-testnet.xyz/exchange"
-	} else {
-		throw new Error(`Not a HyperEVM chain (chainId: ${chainId}). Expected 999 (mainnet) or 998 (testnet).`)
-	}
-
+export async function setHyperEVMBigBlocksForSigner(signer: BigBlockSigner, chainId: bigint | number, enable: boolean): Promise<void> {
+	const signerAddress = await getSignerAddress(signer)
+	const { source, apiUrl } = getHyperCoreParams(chainId)
 	const action: Record<string, string | boolean> = { type: "evmUserModify", usingBigBlocks: enable }
 	const nonce = BigInt(Date.now())
 	const connectionId = constructConnectionId(action, nonce)
-
 	const phantomAgent = { source, connectionId }
-
-	// Sign with EIP-712 phantom agent
-	const signature = await signer.signTypedData(HYPERCORE_DOMAIN, PHANTOM_AGENT_TYPES, phantomAgent)
-
-	// Verify locally to catch signing issues early
-	const recovered = ethersLib.verifyTypedData(HYPERCORE_DOMAIN, PHANTOM_AGENT_TYPES, phantomAgent, signature)
-	if (recovered.toLowerCase() !== signer.address.toLowerCase()) {
-		console.error("EIP-712 signature verification FAILED locally!")
-		console.error(`  Expected signer:    ${signer.address}`)
-		console.error(`  Recovered address:  ${recovered}`)
-		console.error(`  connectionId:       ${connectionId}`)
-		console.error(`  msgpack(action):    ${ethersLib.hexlify(msgpackEncode(action))}`)
-		console.error("This indicates a bug in the Hardhat signer's signTypedData implementation.")
-		throw new Error("EIP-712 signature mismatch: recovered address does not match signer")
-	}
-
+	const signature = await signTypedDataForHyperCore(signer, HYPERCORE_DOMAIN, PHANTOM_AGENT_TYPES, phantomAgent, signerAddress)
 	const { r, s, v } = ethersLib.Signature.from(signature)
-
 	const payload = {
 		action,
 		nonce: Number(nonce),
@@ -155,7 +208,7 @@ export async function setHyperEVMBigBlocks(hre: any, enable: boolean): Promise<v
 	}
 
 	console.log(`${enable ? "Enabling" : "Disabling"} big blocks on HyperEVM (chain ${chainId})...`)
-	console.log(`Signer: ${signer.address}`)
+	console.log(`Signer: ${signerAddress}`)
 
 	let response: Response
 	const timeoutMs = apiTimeoutMs()
@@ -202,6 +255,13 @@ export async function setHyperEVMBigBlocks(hre: any, enable: boolean): Promise<v
 		}
 		throw new Error(`Failed to ${enable ? "enable" : "disable"} big blocks`)
 	}
+}
+
+export async function setHyperEVMBigBlocks(hre: any, enable: boolean): Promise<void> {
+	const { ethers } = await getConnection(hre)
+	const [signer] = await ethers.getSigners()
+	const chainId = (await ethers.provider.getNetwork()).chainId
+	await setHyperEVMBigBlocksForSigner(signer, chainId, enable)
 }
 
 export const enableBigBlocksTask = task("hyperevm:enable-big-blocks", "Enable big blocks on HyperEVM (required before deploying large contracts)")

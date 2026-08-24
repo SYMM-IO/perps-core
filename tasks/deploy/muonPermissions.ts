@@ -11,6 +11,7 @@ export const MUON_FUNCTIONS = [
 	{ name: "LiquidationPartyA", index: 5 },
 	{ name: "LiquidationPartyB", index: 6 },
 	{ name: "RemoveMargin", index: 7 },
+	{ name: "ExpressCredit", index: 8 },
 ] as const
 
 export type MuonFunctionDefinition = (typeof MUON_FUNCTIONS)[number]
@@ -21,6 +22,12 @@ export const MUON_FUNCTION_NAMES: readonly MuonFunctionName[] = MUON_FUNCTIONS.m
 export const MUON_FUNCTION_INDICES: readonly MuonFunctionIndex[] = MUON_FUNCTIONS.map(({ index }) => index)
 
 const MUON_FUNCTION_BY_NAME = new Map<string, MuonFunctionDefinition>(MUON_FUNCTIONS.map(definition => [definition.name, definition]))
+
+// Express credit uses its own freshness window in the Express Provider. It is a
+// verifier authorization category, not a Core UPNL-validity category.
+const MUON_UPNL_FUNCTIONS = MUON_FUNCTIONS.filter(({ name }) => name !== "ExpressCredit")
+const MUON_UPNL_FUNCTION_NAMES = MUON_UPNL_FUNCTIONS.map(({ name }) => name)
+const MUON_UPNL_FUNCTION_BY_NAME = new Map<string, MuonFunctionDefinition>(MUON_UPNL_FUNCTIONS.map(definition => [definition.name, definition]))
 
 export type MuonPublicKey = {
 	x: string | bigint
@@ -137,9 +144,9 @@ export function resolveMuonFunctionUpnlValidTimes(
 	const resolved = new Map<MuonFunctionName, MuonFunctionUpnlValidTime>()
 
 	for (const [rawName, rawValue] of Object.entries(entries)) {
-		const definition = MUON_FUNCTION_BY_NAME.get(rawName)
+		const definition = MUON_UPNL_FUNCTION_BY_NAME.get(rawName)
 		if (!definition) {
-			throw new Error(`Unknown MuonFunction in ${label}: ${rawName}. Valid values: ${MUON_FUNCTION_NAMES.join(", ")}`)
+			throw new Error(`Unknown UPNL MuonFunction in ${label}: ${rawName}. Valid values: ${MUON_UPNL_FUNCTION_NAMES.join(", ")}`)
 		}
 		if (resolved.has(definition.name)) throw new Error(`Duplicate MuonFunction in ${label}: ${definition.name}`)
 
@@ -156,7 +163,7 @@ export function resolveMuonFunctionUpnlValidTimes(
 	}
 
 	// Canonical enum order keeps the write sequence and the report deterministic.
-	return MUON_FUNCTIONS.filter(({ name }) => resolved.has(name)).map(({ name }) => resolved.get(name)!)
+	return MUON_UPNL_FUNCTIONS.filter(({ name }) => resolved.has(name)).map(({ name }) => resolved.get(name)!)
 }
 
 /** Parse a `Name=seconds,Name=seconds` environment/CLI value into validated overrides. */

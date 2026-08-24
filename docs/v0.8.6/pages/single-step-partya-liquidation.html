@@ -42,6 +42,8 @@
 			<div class="rail-sections-source" data-rail-sections hidden>
 				<a class="toc-link level-2" href="#summary">Summary</a>
 				<a class="toc-link level-2" href="#api">API</a>
+				<a class="toc-link level-2" href="#when-to-use">When to use it</a>
+				<a class="toc-link level-2" href="#atomicity">Atomic completion</a>
 			</div>
 
 			<main class="reader-main">
@@ -60,13 +62,14 @@
 				<article class="doc-article" id="full-document">
 					<h2 id="summary">Summary</h2>
 					<p>
-						Snapshot liquidation makes settlement use signed historical funding, but it does not by itself make liquidation shorter to
-						run. Without the single-step wrapper, liquidation still has multiple calls for start, snapshot state submission, pending quote
-						handling, open-position liquidation, and PartyB settlement.
+						PartyA snapshot liquidation has two execution paths. The standard path spreads the work across several transactions. It starts
+						liquidation, submits the Muon-signed historical funding state, handles pending quotes, liquidates open positions, and settles
+						PartyBs.
 					</p>
 					<p>
-						The wrapper became more useful after the AccountLayer changes in v0.8.5. Many accounts now carry positions in a single market,
-						and some hold only one open position. For those accounts, the full snapshot liquidation can often fit in one transaction.
+						The AccountLayer changes in v0.8.5 made the wrapper useful for more accounts. Many accounts now carry positions in a single
+						market, and some hold only one open position. For those accounts, the full snapshot liquidation can often fit in one
+						transaction.
 					</p>
 					<p>
 						<code>singleStepLiquidatePartyAWithSnapshot</code> is the compact path for accounts where all of that work fits in one
@@ -87,8 +90,27 @@
 						<li><code>partyA</code>: the account being liquidated.</li>
 						<li><code>liquidationSnapshotSig</code>: the Muon-signed historical insolvency and PartyB-symbol snapshot payload.</li>
 						<li><code>quoteIds</code>: open positions to close in this transaction.</li>
-						<li><code>partyBs</code>: PartyB settlement buckets to settle in this transaction.</li>
+						<li><code>partyBs</code>: the PartyB addresses whose liquidation settlement buckets must be cleared in this transaction.</li>
 					</ul>
+					<h2 id="when-to-use">When to use it</h2>
+					<p>
+						This is an alternative start-to-finish entrypoint, not a resume function. Liquidation must be unpaused, the caller must hold
+						<code>LIQUIDATOR_ROLE</code>, and PartyA must not already be in liquidation. Use the wrapper when those prerequisites hold,
+						the caller can supply every open <code>quoteId</code> and every involved PartyB, and the complete liquidation fits within one
+						transaction's gas limit. Use the multi-step snapshot flow for larger accounts or when work must be divided across
+						transactions.
+					</p>
+					<h2 id="atomicity">Atomic completion</h2>
+					<p>
+						The wrapper starts the snapshot liquidation, stores the signed symbol state, removes pending quotes, liquidates the supplied
+						positions, and settles the supplied PartyBs. It then requires that no open or pending quotes remain, no PartyB settlement
+						bucket remains, and the PartyA liquidation status has cleared.
+					</p>
+					<aside class="callout callout-important">
+						<strong>All or nothing.</strong> Omitting a required quote or PartyB causes the transaction to revert with
+						<code>LiquidationFacet: Incomplete single-step liquidation</code>. The account is not left in a partially completed
+						single-step state; retry with complete arrays or switch to the multi-step flow.
+					</aside>
 				</article>
 			</main>
 		</div>

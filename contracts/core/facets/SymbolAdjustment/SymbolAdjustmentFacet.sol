@@ -7,13 +7,15 @@ pragma solidity >=0.8.18;
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { Accessibility } from "../../utils/Accessibility.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
-import { SymbolAdjustmentStorage, SymbolAdjustment, AdjustmentState } from "../../storages/SymbolAdjustmentStorage.sol";
+import { SymbolAdjustmentStorage, SymbolAdjustment, AdjustmentState, RestatementPhase } from "../../storages/SymbolAdjustmentStorage.sol";
 import { QuoteStorage, Quote, QuoteStatus } from "../../storages/QuoteStorage.sol";
-import { FundingStorage, FundingFee } from "../../storages/FundingStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
+import { FundingStorage } from "../../storages/FundingStorage.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
 import { LibSymbolAdjustment } from "../../libraries/LibSymbolAdjustment.sol";
+import { LibSymbolAdjustmentFunding } from "../../libraries/LibSymbolAdjustmentFunding.sol";
 import { LibMuon } from "../../libraries/muon/LibMuon.sol";
+import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibQuote } from "../../libraries/LibQuote.sol";
 import { LibQuoteFunding } from "../../libraries/LibQuoteFunding.sol";
 import { LibQuoteClose } from "../../libraries/LibQuoteClose.sol";
@@ -35,7 +37,8 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		uint256 factor,
 		uint256 effectiveTimestamp
 	) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
-		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
+		SymbolAdjustmentStorage.Layout storage adjustmentLayout = SymbolAdjustmentStorage.layout();
+		SymbolAdjustment storage adjustment = adjustmentLayout.adjustments[symbolId];
 		require(symbolId >= 1 && symbolId <= SymbolStorage.layout().lastId, "SymbolAdjustmentFacet: Invalid symbolId");
 		require(factor >= MIN_FACTOR && factor <= MAX_FACTOR && factor != 1e18, "SymbolAdjustmentFacet: Invalid factor");
 		require(!adjustment.restating, "SymbolAdjustmentFacet: Restatement in progress");
@@ -44,6 +47,7 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		adjustment.effectiveTimestamp = effectiveTimestamp;
 		adjustment.state = AdjustmentState.SCHEDULED;
 		adjustment.scheduledCount += 1;
+		adjustmentLayout.adjustmentScheduledAt[symbolId] = block.timestamp;
 		emit AdjustmentScheduled(symbolId, adjustment.scheduledCount - 1, factor, effectiveTimestamp);
 	}
 
@@ -73,8 +77,10 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 
 	/// @notice Opens a frozen restatement window either directly from an effective SCHEDULED adjustment or from an already-active factor.
 	/// @dev Direct restatement avoids activating the scheduled factor in `cumulativeFactor`; Muon and normal trading never use that temporary basis.
+	///      The operator must supply the relevant PartyBs and complete funding preparation before quote mutation can begin.
 	function startRestatement(uint256 symbolId) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
-		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
+		SymbolAdjustmentStorage.Layout storage adjustmentLayout = SymbolAdjustmentStorage.layout();
+		SymbolAdjustment storage adjustment = adjustmentLayout.adjustments[symbolId];
 		require(!adjustment.restating, "SymbolAdjustmentFacet: Already restating");
 		uint256 factor;
 		if (adjustment.state == AdjustmentState.SCHEDULED) {
@@ -85,33 +91,99 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		}
 		require(factor != 0, "SymbolAdjustmentFacet: Cumulative factor underflow");
 		require(factor != 1e18, "SymbolAdjustmentFacet: No adjustment factor");
-		// Record when the symbol became continuously frozen, so finalizeRestatement can require that every
-		// signature minted against the old basis has expired. On the direct route the symbol has already been
-		// frozen since effectiveTimestamp, so credit that earlier instant rather than restarting the clock.
-		adjustment.restatementStartedAt = LibSymbolAdjustment.isFrozen(symbolId) ? adjustment.effectiveTimestamp : block.timestamp;
+		// Record when the symbol became continuously frozen. A future schedule freezes at its effective time,
+		// while a past-effective emergency schedule cannot freeze the symbol before it exists on-chain.
+		if (LibSymbolAdjustment.isFrozen(symbolId)) {
+			uint256 scheduledAt = adjustmentLayout.adjustmentScheduledAt[symbolId];
+			adjustment.restatementStartedAt = adjustment.effectiveTimestamp > scheduledAt ? adjustment.effectiveTimestamp : scheduledAt;
+		} else {
+			adjustment.restatementStartedAt = block.timestamp;
+		}
 		adjustment.restating = true;
 		adjustment.restatementMutated = false;
 		adjustment.restatementFactor = factor;
 		adjustment.restatementEpoch += 1;
+		adjustment.fundingCutoffTimestamp = block.timestamp;
+		bool fundingActive = FundingStorage.layout().accumulatedFundingActivated;
+		adjustment.pendingFundingPartyBCount = 0;
+		adjustment.fundingRestorationTimestamp = 0;
+		adjustment.restatementPhase = fundingActive ? RestatementPhase.FUNDING_PREPARATION : RestatementPhase.QUOTE_PROCESSING;
 		emit RestatementStarted(symbolId, adjustment.restatementEpoch, factor);
 	}
 
-	/// @notice Aborts only a mutation-free window, returning to the prior active-factor state or the scheduled transition freeze.
+	/// @notice Processes only the operator-supplied PartyBs for preparation, abort restoration, or finalization restoration.
+	function processRestatementFunding(uint256 symbolId, address[] calldata partyBs) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
+		require(partyBs.length > 0, "SymbolAdjustmentFacet: Empty PartyB batch");
+		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
+		require(adjustment.restating, "SymbolAdjustmentFacet: No restatement in progress");
+
+		if (adjustment.restatementPhase == RestatementPhase.FUNDING_PREPARATION || adjustment.restatementPhase == RestatementPhase.QUOTE_PROCESSING) {
+			uint256 checkpointedPartyBs = LibSymbolAdjustmentFunding.prepareFundingRatesForRestatement(
+				symbolId,
+				adjustment.restatementEpoch,
+				adjustment.fundingCutoffTimestamp,
+				partyBs
+			);
+			emit RestatementFundingPreparationProgress(
+				symbolId,
+				adjustment.restatementEpoch,
+				partyBs.length,
+				checkpointedPartyBs,
+				adjustment.pendingFundingPartyBCount
+			);
+			return;
+		}
+
+		bool finalizing = adjustment.restatementPhase == RestatementPhase.FINALIZATION_FUNDING_RESTORATION;
+		require(
+			finalizing || adjustment.restatementPhase == RestatementPhase.ABORT_FUNDING_RESTORATION,
+			"SymbolAdjustmentFacet: Invalid funding phase"
+		);
+		(uint256 processedPartyBs, uint256 remainingPartyBs) = LibSymbolAdjustmentFunding.restoreFundingRates(
+			symbolId,
+			adjustment.restatementEpoch,
+			finalizing ? adjustment.restatementFactor : 1e18,
+			finalizing,
+			adjustment.fundingRestorationTimestamp,
+			partyBs
+		);
+		emit RestatementFundingRestorationProgress(symbolId, adjustment.restatementEpoch, finalizing, processedPartyBs, remainingPartyBs);
+		if (remainingPartyBs == 0) {
+			if (finalizing) _completeFinalization(symbolId, adjustment);
+			else _completeAbort(symbolId, adjustment);
+		}
+	}
+
+	/// @notice Records Operations' preparation-completeness attestation and enables quote processing.
+	function completeRestatementFundingPreparation(uint256 symbolId) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
+		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
+		require(adjustment.restating, "SymbolAdjustmentFacet: No restatement in progress");
+		require(adjustment.restatementPhase == RestatementPhase.FUNDING_PREPARATION, "SymbolAdjustmentFacet: Invalid funding phase");
+		adjustment.restatementPhase = RestatementPhase.QUOTE_PROCESSING;
+		emit RestatementFundingPreparationCompleted(symbolId, adjustment.restatementEpoch, adjustment.pendingFundingPartyBCount);
+	}
+
+	/// @notice Starts an abort for a mutation-free window and completes immediately when no rates were checkpointed.
 	function abortRestatement(uint256 symbolId) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
 		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
 		require(adjustment.restating, "SymbolAdjustmentFacet: No restatement in progress");
 		require(!adjustment.restatementMutated, "SymbolAdjustmentFacet: Restatement already mutated");
-		adjustment.restating = false;
-		adjustment.restatementFactor = 0;
-		adjustment.restatementStartedAt = 0;
-		emit RestatementAborted(symbolId, adjustment.restatementEpoch);
+		require(
+			adjustment.restatementPhase == RestatementPhase.FUNDING_PREPARATION || adjustment.restatementPhase == RestatementPhase.QUOTE_PROCESSING,
+			"SymbolAdjustmentFacet: Invalid funding phase"
+		);
+		adjustment.restatementPhase = RestatementPhase.ABORT_FUNDING_RESTORATION;
+		uint256 pendingPartyBs = LibSymbolAdjustmentFunding.pendingFundingPartyBs(symbolId);
+		emit RestatementFundingRestorationStarted(symbolId, adjustment.restatementEpoch, false, pendingPartyBs);
+		if (pendingPartyBs == 0) _completeAbort(symbolId, adjustment);
 	}
 
-	/// @notice Restates quotes to post-adjustment units. The factor comes from the registry — callers only
+	/// @notice Restates quotes to post-adjustment units. The factor comes from the registry; callers only
 	///         choose which quotes; a PartyB may restate its own quotes, SYMBOL_MANAGER_ROLE may restate any.
 	function applyAdjustment(uint256 symbolId, uint256[] calldata quoteIds) external {
 		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
 		require(adjustment.restating, "SymbolAdjustmentFacet: No restatement in progress");
+		_requireFundingPreparationComplete(adjustment);
 		uint256 epoch = adjustment.restatementEpoch;
 		uint256 factor = adjustment.restatementFactor;
 		bool isManager = LibAccessibility.hasRole(msg.sender, LibAccessibility.SYMBOL_MANAGER_ROLE);
@@ -136,20 +208,20 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		require(!MAStorage.layout().liquidationStatus[quote.partyA], "SymbolAdjustmentFacet: PartyA in liquidation");
 		quote.partyB.requireNotLiquidating(quote.partyA);
 
-		// 1) Require the current accumulated-funding rates to be zero, then settle all old-unit funding.
-		//    Funding mutations are frozen for the full restatement window, so converted quotes cannot
-		//    accrue an old-unit current rate while later batches are still pending.
-		FundingFee storage fundingFee = FundingStorage.layout().fundingFees[symbolId][quote.partyB];
-		require(
-			fundingFee.epochDuration == 0 || (fundingFee.currentLongRate == 0 && fundingFee.currentShortRate == 0),
-			"SymbolAdjustmentFacet: Funding rate not zero"
+		// 1) Ensure this PartyB shares the window's zero-rate cutoff, then settle the quote's old-unit funding.
+		//    Operations supplies PartyBs during preparation; this fallback covers a PartyB that was missed but still has an open quote.
+		LibSymbolAdjustmentFunding.preparePartyBFundingRatesForRestatement(
+			symbolId,
+			quote.partyB,
+			epoch,
+			layout.adjustments[symbolId].fundingCutoffTimestamp
 		);
 		LibQuoteFunding.chargeAccumulatedFundingFee(quoteId);
+		LibAccount.increaseBothUpnlCounters(quote.partyB, quote.partyA);
 
-		// 2) Remove aggregates computed from the OLD amount and OLD openedPrice — must run before any mutation.
+		// 2) Remove aggregates computed from the old amount and openedPrice before any mutation.
 		uint256 oldOpenAmount = LibQuote.quoteOpenAmount(quote);
 		LibQuote.subFromPartiesAggregatedPositions(quote, oldOpenAmount);
-		LibAggregateFunding.subFromPartiesAggregateFunding(quote, oldOpenAmount);
 
 		// 3) Scale amounts by the factor; recompute prices from notional so rounding dust lands in price, not value.
 		uint256 oldQuantity = quote.quantity;
@@ -177,8 +249,8 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		emit QuoteAdjusted(quoteId, symbolId, epoch, factor, oldQuantity, preview.quantity, oldOpenedPrice, quote.openedPrice);
 	}
 
-	/// @notice Force-expires PENDING/LOCKED/CANCEL_PENDING quotes on a frozen symbol (they are priced in
-	///         pre-adjustment units). Uses expireQuote semantics: trading fee refunded, pending locks released.
+	/// @notice Cancels PENDING/LOCKED/CANCEL_PENDING quotes on a frozen symbol because they are priced in
+	///         pre-adjustment units. The trading fee is refunded and pending locks are released.
 	function cancelPendingQuotes(uint256[] calldata quoteIds) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
 		for (uint256 i = 0; i < quoteIds.length; i++) {
 			Quote storage quote = QuoteStorage.layout().quotes[quoteIds[i]];
@@ -190,22 +262,29 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 					quote.quoteStatus == QuoteStatus.CANCEL_PENDING,
 				"SymbolAdjustmentFacet: Invalid quote state"
 			);
-			LibQuoteClose.forceExpireQuote(quoteIds[i]);
+			LibQuoteClose.forceCancelPendingQuote(quoteIds[i]);
 			emit PendingQuoteCancelledByAdjustment(quoteIds[i], symbolId);
 		}
 	}
 
-	/// @notice Closes the manager-controlled window, marks a direct/confirmed adjustment applied, clears factors, and unfreezes the symbol.
+	/// @notice Starts funding restoration for finalization and completes immediately when no rates were checkpointed.
 	function finalizeRestatement(uint256 symbolId) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
 		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
 		require(adjustment.restating, "SymbolAdjustmentFacet: No restatement in progress");
-		// Finalization is the instant stored quotes change meaning. Muon signatures do not carry the basis version,
-		// so the symbol must have stayed frozen for at least one full UPNL validity period: any signature priced in
-		// the old basis is then guaranteed expired and cannot be executed against rewritten quotes.
+		_requireFundingPreparationComplete(adjustment);
+		// Finalization is the instant stored quotes change meaning. Wait until every old-basis signature is expired.
 		require(
-			block.timestamp >= adjustment.restatementStartedAt + LibMuon.maxUpnlValidTime(),
+			block.timestamp > adjustment.restatementStartedAt + LibMuon.maxUpnlValidTime(),
 			"SymbolAdjustmentFacet: Restatement window too short"
 		);
+		adjustment.restatementPhase = RestatementPhase.FINALIZATION_FUNDING_RESTORATION;
+		adjustment.fundingRestorationTimestamp = block.timestamp;
+		uint256 pendingPartyBs = LibSymbolAdjustmentFunding.pendingFundingPartyBs(symbolId);
+		emit RestatementFundingRestorationStarted(symbolId, adjustment.restatementEpoch, true, pendingPartyBs);
+		if (pendingPartyBs == 0) _completeFinalization(symbolId, adjustment);
+	}
+
+	function _completeFinalization(uint256 symbolId, SymbolAdjustment storage adjustment) private {
 		if (adjustment.state == AdjustmentState.PRICE_ADJUSTED || adjustment.state == AdjustmentState.SCHEDULED) {
 			adjustment.state = AdjustmentState.APPLIED;
 		}
@@ -214,7 +293,27 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		adjustment.restatementFactor = 0;
 		adjustment.restatementStartedAt = 0;
 		adjustment.basisVersion += 1;
+		_clearFundingProgress(adjustment);
 		emit RestatementFinalized(symbolId, adjustment.restatementEpoch);
+	}
+
+	function _completeAbort(uint256 symbolId, SymbolAdjustment storage adjustment) private {
+		adjustment.restating = false;
+		adjustment.restatementFactor = 0;
+		adjustment.restatementStartedAt = 0;
+		_clearFundingProgress(adjustment);
+		emit RestatementAborted(symbolId, adjustment.restatementEpoch);
+	}
+
+	function _clearFundingProgress(SymbolAdjustment storage adjustment) private {
+		adjustment.restatementPhase = RestatementPhase.NONE;
+		adjustment.fundingCutoffTimestamp = 0;
+		adjustment.pendingFundingPartyBCount = 0;
+		adjustment.fundingRestorationTimestamp = 0;
+	}
+
+	function _requireFundingPreparationComplete(SymbolAdjustment storage adjustment) private view {
+		require(adjustment.restatementPhase == RestatementPhase.QUOTE_PROCESSING, "SymbolAdjustmentFacet: Funding preparation incomplete");
 	}
 
 	// ---- Views ----
@@ -239,11 +338,12 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		require(quote.symbolId == symbolId, "SymbolAdjustmentFacet: Wrong symbol");
 		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
-		uint256 factor = adjustment.restating
-			? adjustment.restatementFactor
-			: adjustment.state == AdjustmentState.SCHEDULED
-				? _prospectiveCumulativeFactor(symbolId, adjustment)
-				: LibSymbolAdjustment.activeCumulativeFactor(symbolId);
+		uint256 factor =
+			adjustment.restating
+				? adjustment.restatementFactor
+				: adjustment.state == AdjustmentState.SCHEDULED
+					? _prospectiveCumulativeFactor(symbolId, adjustment)
+					: LibSymbolAdjustment.activeCumulativeFactor(symbolId);
 		require(factor != 0, "SymbolAdjustmentFacet: Cumulative factor underflow");
 		require(factor != 1e18, "SymbolAdjustmentFacet: No adjustment factor");
 		return _previewQuote(quote, factor);
@@ -256,6 +356,28 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 	function getRestatementState(uint256 symbolId) external view returns (bool restating, uint256 epoch) {
 		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
 		return (adjustment.restating, adjustment.restatementEpoch);
+	}
+
+	function getRestatementFundingProgress(
+		uint256 symbolId
+	)
+		external
+		view
+		returns (RestatementPhase phase, uint256 pendingPartyBCount, uint256 fundingCutoffTimestamp, uint256 fundingRestorationTimestamp)
+	{
+		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
+		return (
+			adjustment.restatementPhase,
+			adjustment.pendingFundingPartyBCount,
+			adjustment.fundingCutoffTimestamp,
+			adjustment.fundingRestorationTimestamp
+		);
+	}
+
+	function isRestatementFundingCheckpointed(uint256 symbolId, address partyB) external view returns (bool) {
+		SymbolAdjustmentStorage.Layout storage adjustmentLayout = SymbolAdjustmentStorage.layout();
+		SymbolAdjustment storage adjustment = adjustmentLayout.adjustments[symbolId];
+		return adjustment.restating && adjustmentLayout.fundingRateCheckpoints[symbolId][partyB].restatementEpoch == adjustment.restatementEpoch;
 	}
 
 	function getQuoteRestatedEpoch(uint256 quoteId) external view returns (uint256) {

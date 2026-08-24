@@ -42,7 +42,7 @@ interface IMarginFacet is IMarginFacetEvents, IAccountLayerErrors {
 	/// and transfers margin from a virtual account back to its parent
 	/// @param virtualAccount The virtual account to remove margin from
 	/// @param amount The amount to deallocate and transfer
-	/// @param upnlSig The Muon signature carrying the account's upnl, pendingBalance, and scaledLockedBalance
+	/// @param upnlSig The Muon signature carrying UPNL, funding debt, pending balance, and scaledLockedBalance
 	function safeRemoveMargin(address virtualAccount, uint256 amount, ISymmio.SingleUpnlWithPendingBalanceSig memory upnlSig) external;
 
 	/// @notice Recovers funds from a lost virtual account address back to its parent

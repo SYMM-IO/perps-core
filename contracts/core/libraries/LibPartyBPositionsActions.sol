@@ -19,6 +19,7 @@ import { LockedValuesOps } from "./LibLockedValues.sol";
 import { LibHook } from "./LibHook.sol";
 import { LibSymbolAdjustment } from "./LibSymbolAdjustment.sol";
 import { ISymmioHook } from "../interfaces/ISymmioHook.sol";
+import { LibSymbol } from "./LibSymbol.sol";
 
 library LibPartyBPositionsActions {
 	using LockedValuesOps for LockedValues;
@@ -188,9 +189,19 @@ library LibPartyBPositionsActions {
 
 			newQuote.lockedValues = quote.lockedValues.sub(filledLockedValues);
 			newQuote.initialLockedValues = newQuote.lockedValues;
+			if (newStatus != QuoteStatus.CANCELED) {
+				require(
+					newQuote.lockedValues.lf >= LibSymbol.requiredNotionalLF(newQuote.symbolId, newQuote.quantity, newQuote.requestedOpenPrice),
+					"PartyBFacet: Notional LF is not enough"
+				);
+			}
 			quote.quantity = filledAmount;
 			quote.lockedValues = appliedFilledLockedValues;
 		}
+		require(
+			quote.lockedValues.lf >= LibSymbol.requiredNotionalLF(quote.symbolId, quote.quantity, quote.openedPrice),
+			"PartyBFacet: Notional LF is not enough"
+		);
 		// lock with amount of filledAmount
 		accountLayout.lockedBalances[quote.partyA].addQuote(quote);
 		LibAccount.addToPartyBLockedBalances(quote);

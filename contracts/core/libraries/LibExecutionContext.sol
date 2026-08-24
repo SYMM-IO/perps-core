@@ -171,7 +171,7 @@ library LibExecutionContext {
 		return _instantLayerContext() & INSTANT_CONTEXT_ACTIVE != 0;
 	}
 
-	/// @notice Returns whether the effective context is the optimized atomic-open mode.
+	/// @notice Returns whether the effective context uses atomic-open mode to skip pending balance tracking.
 	function isInstantOpenMode() internal view returns (bool) {
 		uint256 context = _instantLayerContext();
 		if (context & INSTANT_CONTEXT_ACTIVE != 0) return context & INSTANT_OPEN_MODE != 0;
@@ -302,7 +302,7 @@ library LibExecutionContext {
 
 	/// @notice Suspends the current execution context and binds its exact snapshot to msg.sender.
 	/// @dev The cross-contract variant. An external router cannot hold the snapshot in memory
-	///      across its own call, so core parks it — keyed by caller, so the router can neither
+	///      across its own call, so core parks it under the caller's key. The router can neither
 	///      choose what it restores nor reach another router's snapshot.
 	///      The occupancy check rejects a second suspend by the same caller: without it the
 	///      second call would overwrite the first snapshot and the outer restore would

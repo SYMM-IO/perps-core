@@ -1253,7 +1253,7 @@ async function verifyMuonSignatureVerifier(
 			check: "Complete function permission profile",
 			status: "fail",
 			message: error instanceof Error ? error.message : String(error),
-			hint: "Deploy with all eight exact MUON_FUNCTION_PERMISSIONS categories",
+			hint: "Deploy with all nine exact MUON_FUNCTION_PERMISSIONS categories",
 		})
 		return
 	}

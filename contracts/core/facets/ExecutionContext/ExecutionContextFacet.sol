@@ -11,7 +11,7 @@ import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
 import { LibExecutionContext } from "../../libraries/LibExecutionContext.sol";
 
 /// @notice Owns the core Diamond's transient InstantLayer and signer authority.
-/// @dev Hosts the legacy setCallFromInstantLayer/setInstantOpenMode selectors too — they adapt
+/// @dev Also hosts the legacy setCallFromInstantLayer/setInstantOpenMode selectors. They adapt
 ///      into the same LibExecutionContext state, and living here keeps ControlFacet inside the
 ///      release size budget. The legacy setSigner selector remains in ControlFacet and adapts
 ///      into the same state.
@@ -36,8 +36,8 @@ contract ExecutionContextFacet is Accessibility, IExecutionContextFacet {
 	}
 
 	/// @notice Sets the flag to skip pending balance tracking in atomic open flows.
-	/// @dev Inside an active transient scope — the deployed InstantLayer sequence, which always calls
-	///      setCallFromInstantLayer(true) first in the same transaction — this updates the scope.
+	/// @dev Inside an active transient scope, the deployed InstantLayer sequence always calls
+	///      setCallFromInstantLayer(true) first in the same transaction, so this updates the scope.
 	///      Outside one it keeps the v0.8.6 persistent behavior, so a solver driving core directly
 	///      can still hold instant-open mode across transactions. Mirrors setSigner's
 	///      context-dependent routing.

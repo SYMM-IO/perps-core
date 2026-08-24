@@ -5,7 +5,7 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta
 			name="description"
-			content="Venue stock splits and rebases change the price unit while on-chain positions keep the old one. v0.8.6 adds an adjustment registry that freezes the symbol through the transition and a value-neutral restatement that rebases open positions."
+			content="How Symmio v0.8.6 keeps venue prices, stored quotes, unrealized profit and loss, and funding on one unit basis during symbol adjustments."
 		/>
 		<title>Symbol Corporate-Action Adjustment - Symmio Core v0.8.6</title>
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
@@ -40,18 +40,27 @@
 
 		<div class="reader-shell">
 			<div class="rail-sections-source" data-rail-sections hidden>
-				<a class="toc-link level-2" href="#summary">Summary</a>
-				<a class="toc-link level-2" href="#scope">Scope and Terms</a>
-				<a class="toc-link level-2" href="#responsibilities">Who Does What</a>
-				<a class="toc-link level-2" href="#lifecycle">Lifecycle</a>
-				<a class="toc-link level-2" href="#freeze">Freeze Boundary</a>
-				<a class="toc-link level-2" href="#factor">Price Basis</a>
-				<a class="toc-link level-2" href="#restatement">Optional Restatement</a>
-				<a class="toc-link level-2" href="#safety">Safety Boundaries</a>
-				<a class="toc-link level-2" href="#interface">Contract Reference</a>
-				<a class="toc-link level-2" href="#integration">Integration Requirements</a>
-				<a class="toc-link level-2" href="#runbook">Operations Runbook</a>
-				<a class="toc-link level-2" href="#example">Worked Example</a>
+				<a class="toc-link level-2" href="#problem">The unit-basis problem</a>
+				<a class="toc-link level-2" href="#vocabulary">Basis and factor vocabulary</a>
+				<a class="toc-link level-2" href="#example">One split, two route outcomes</a>
+				<a class="toc-link level-2" href="#lifecycle">What happens after scheduling</a>
+				<a class="toc-link level-3" href="#active-route">Adjusted-price route without quote rewrites</a>
+				<a class="toc-link level-3" href="#physical-route">Physical route with quote restatement</a>
+				<a class="toc-link level-2" href="#rewrite">What physical restatement changes</a>
+				<a class="toc-link level-3" href="#rewrite-eligibility">Eligibility, authorization, and batch behavior</a>
+				<a class="toc-link level-3" href="#rewrite-conversion">Conversion arithmetic and fields</a>
+				<a class="toc-link level-3" href="#rewrite-funding">Funding settlement and aggregate updates</a>
+				<a class="toc-link level-3" href="#rewrite-pending">Pending inventory</a>
+				<a class="toc-link level-3" href="#rewrite-reads">Mixed-book reads</a>
+				<a class="toc-link level-2" href="#funding">Funding across the window</a>
+				<a class="toc-link level-3" href="#funding-open">When the window opens</a>
+				<a class="toc-link level-3" href="#funding-prepare">Prepare PartyB funding pairs</a>
+				<a class="toc-link level-3" href="#funding-quotes">While quotes are being rewritten</a>
+				<a class="toc-link level-3" href="#funding-restore">Restore rates before closing the window</a>
+				<a class="toc-link level-2" href="#boundaries">Enforced and operational boundaries</a>
+				<a class="toc-link level-2" href="#actors">Actor responsibilities</a>
+				<a class="toc-link level-2" href="#runbook">Operations runbook</a>
+				<a class="toc-link level-2" href="#reference">Compact contract reference</a>
 			</div>
 
 			<main class="reader-main">
@@ -60,47 +69,40 @@
 						<div>
 							<h1>Symbol Corporate-Action Adjustment</h1>
 							<p class="hero-copy">
-								A safe way to move a symbol through a stock split, reverse split, or rebase without creating false PNL from a change
-								of units.
+								A symbol adjustment keeps venue prices, stored quotes, unrealized profit and loss (UPNL), and funding on one unit
+								basis when a split, reverse split, or rebase changes the number of units.
 							</p>
 						</div>
 					</div>
 				</header>
 
 				<article class="doc-article" id="full-document">
-					<h2 id="summary">Summary</h2>
+					<h2 id="problem">The unit-basis problem</h2>
 					<p>
-						A corporate action can change both the price unit and the quantity unit of a market while leaving its economic value
-						unchanged. In a 4:1 split, one old unit becomes four new units and the venue price becomes roughly one quarter of its previous
-						value.
+						A unit-changing venue event changes quantity and price together. A 4:1 split turns one old unit into four new units, while the
+						venue price becomes about one quarter of its old value. The economic position has not changed.
 					</p>
 					<p>
-						An open Symmio quote still contains its old quantity and old opened price. If an oracle compares that quote with the venue's
-						new raw price, the units no longer match and the resulting UPNL is wrong. The Symbol Adjustment feature prevents that mismatch
-						with one mandatory freeze and two operational routes:
+						Core does not automatically rewrite an open quote when the venue changes. If a quote still stores one unit opened at
+						<code>400</code>, comparing it with the venue's new-unit price of <code>100</code> produces a false loss. The same mismatch
+						would affect notional, funding per unit, liquidation prices, and any signature that carries a price or UPNL.
 					</p>
-					<ol>
-						<li>
-							<strong>Required transition freeze.</strong> Operations schedules the change and Core freezes the symbol at the effective
-							time before any new-basis price can be used.
-						</li>
-						<li>
-							<strong>Active-factor route.</strong> For a large book or when trading must resume quickly, Muon moves to the adjusted
-							price basis, operations confirms the factor, and trading resumes before optional later restatement.
-						</li>
-						<li>
-							<strong>Direct-restatement route.</strong> For a small book, operations keeps the symbol frozen and starts restatement
-							directly from the effective scheduled adjustment. Quotes move to venue units before trading resumes, so the scheduled
-							factor never becomes an active Muon or trading factor.
-						</li>
-					</ol>
-					<aside class="callout callout-important">
-						<strong>Confirmation is optional when restatement is immediate.</strong> <code>confirmPriceAdjusted</code> activates a factor
-						and unfreezes without rewriting positions. <code>startRestatement</code> may instead consume an effective scheduled factor
-						while remaining frozen; finalization then resumes trading directly in raw venue units.
-					</aside>
+					<p>Core maintains one invariant:</p>
+					<pre><code class="language-text">Every quantity and every price or per-unit rate used with it must use the same unit basis.</code></pre>
+					<p>
+						Two routes maintain that invariant. On the adjusted-price route, Core leaves quote storage alone and only stores and exposes
+						the factor. Muon and PartyB integrations must convert external prices and funding inputs back to the stored quote basis. On
+						the physical route, Core freezes execution and converts eligible quote storage to the venue's new basis. The mechanism covers
+						splits, reverse splits, and quantity rebases. It does not model cash dividends, spin-offs, mergers, ticker migrations, or
+						normal price moves.
+					</p>
 
-					<h2 id="scope">Scope and Terms</h2>
+					<h2 id="vocabulary">Basis and factor vocabulary</h2>
+					<p>
+						The venue feed reports a price in the units currently traded by the venue. This page calls that the <em>raw venue basis</em>.
+						A quote's fields use the units currently held in Core storage. This is the <em>stored quote basis</em>. They are the same
+						before an adjustment and after a complete physical restatement. They differ while an adjustment factor is active.
+					</p>
 					<div class="table-wrap">
 						<table>
 							<thead>
@@ -111,944 +113,1421 @@
 							</thead>
 							<tbody>
 								<tr>
-									<td>Factor</td>
+									<td><code>factor</code></td>
 									<td>
-										New units received for one old unit, scaled by 1e18. A 4:1 split is <code>4e18</code>; a 1:10 reverse split is
-										<code>0.1e18</code>.
+										The latest scheduled new-units-per-old-unit multiplier, scaled by <code>1e18</code>. A 4:1 split is
+										<code>4e18</code>; a 1:10 reverse split is <code>0.1e18</code>.
 									</td>
 								</tr>
 								<tr>
 									<td>Active factor</td>
-									<td>The product of confirmed adjustments that have not yet been folded into quotes.</td>
+									<td>
+										<code>getCumulativeFactor</code>. It is the product of confirmed factors that external prices must apply
+										because quote storage has not absorbed them. Raw zero storage means unset and this view returns
+										<code>1e18</code>.
+									</td>
 								</tr>
 								<tr>
 									<td>Prospective factor</td>
 									<td>
-										The active factor multiplied by the currently scheduled factor. It can be confirmed for trading or selected
-										for direct restatement.
+										<code>getProspectiveCumulativeFactor</code>. While a step is <code>SCHEDULED</code>, it is the active factor
+										compounded with the scheduled <code>factor</code>. Otherwise it equals the active factor.
 									</td>
 								</tr>
 								<tr>
-									<td>Restatement factor</td>
+									<td><code>restatementFactor</code></td>
 									<td>
-										The factor fixed for one frozen restatement window. Direct mode stores it separately without changing the
-										active factor.
+										The factor selected when a physical restatement window opens. Direct restatement selects the prospective
+										factor. A later restatement selects the active factor.
 									</td>
 								</tr>
 								<tr>
-									<td>Restatement</td>
-									<td>Rewriting stored quote quantities and per-unit prices so the quote itself carries the new unit basis.</td>
+									<td>Freeze</td>
+									<td>
+										A computed condition, not a lifecycle state. The symbol is frozen while <code>restating</code> is true, or
+										while state is <code>SCHEDULED</code> and <code>block.timestamp &gt;= effectiveTimestamp</code>.
+									</td>
+								</tr>
+								<tr>
+									<td>Physical restatement</td>
+									<td>
+										A maintenance window in which eligible stored quotes are rewritten to the raw venue basis, current funding
+										rates are paused and rebased, and <code>basisVersion</code> advances on finalization.
+									</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>Factors compound with floor rounding:</p>
+					<pre><code class="language-text">prospectiveFactor = floor(activeFactor * scheduledFactor / 1e18)</code></pre>
+					<p>
+						For example, a confirmed <code>2e18</code> factor followed by a scheduled <code>3e18</code> step gives a prospective factor of
+						<code>6e18</code>. Direct restatement uses <code>6e18</code> while the active factor remains <code>2e18</code>. Confirmation
+						would instead make <code>6e18</code> active. Scheduling does not calculate the prospective product. It can therefore accept a
+						step whose product later floors to zero or whose quotient exceeds <code>uint256</code>. The prospective getter reports zero,
+						but it reverts on overflow. Confirmation, direct start, and preview reject zero and also propagate an overflow revert. Tests
+						reach one wei after nine successive <code>0.01x</code> confirmations, schedule the tenth step, and reject its confirmation.
+					</p>
+
+					<p>
+						Muon is the off-chain oracle and signature service. PartyA is the trader, and PartyB is the solver or hedger. An address with
+						<code>SYMBOL_MANAGER_ROLE</code> makes the lifecycle calls. This page uses <em>Operations</em> for the people and systems
+						coordinating that role, Muon, and the off-chain inventory checks.
+					</p>
+
+					<h2 id="example">One split, two route outcomes</h2>
+					<p>
+						Use one 4:1 split to compare the two routes. Before the event, an open long has one unit opened at <code>400</code>. Its
+						stored current funding rate is <code>8</code> per old unit. At the event, the venue changes to four units priced at
+						<code>100</code> each.
+					</p>
+					<pre><code class="language-text">Before the event                     Raw venue basis after the event
+quantity       = 1                   quantity equivalent = 4
+openedPrice    = 400                 raw venue price      = 100
+notional       = 1 * 400 = 400       notional             = 4 * 100 = 400
+funding amount = 1 * 8 = 8</code></pre>
+					<p>
+						If Core used the raw price <code>100</code> with the old stored quantity and opened price, the long's price UPNL would be
+						<code>1 * (100 - 400) = -300</code>. The correct UPNL at the unchanged economic price is zero.
+					</p>
+					<p>
+						On the adjusted-price route, Muon multiplies the raw venue price by the active factor. Core sees an old-unit mark of
+						<code>100 * 4 = 400</code>, matching the unchanged quote. Quantity, notional, UPNL, and funding all remain on the old basis.
+					</p>
+					<p>
+						On the physical route, Core rewrites the quote to four units opened at <code>100</code>. The current funding rate is restored
+						as <code>8 / 4 = 2</code> per new unit. The products remain <code>4 * 100 = 400</code> notional and
+						<code>4 * 2 = 8</code> funding. After finalization, Muon can use the raw <code>100</code> price without conversion.
+					</p>
+
+					<h2 id="lifecycle">What happens after scheduling</h2>
+					<p>
+						A manager schedules a step with <code>scheduleAdjustment(symbolId, factor, effectiveTimestamp)</code>. The symbol stays live
+						before a future effective time. It freezes automatically at equality, without a keeper transaction. Core accepts a past
+						effective time, so an emergency schedule can freeze in the scheduling transaction. Core records that transaction time
+						separately in <code>adjustmentScheduledAt</code>.
+					</p>
+					<p>
+						The factor must be between <code>1e16</code> and <code>100e18</code>, inclusive, and cannot equal <code>1e18</code>. Only one
+						<code>SCHEDULED</code> step may be in flight, and no schedule may be added during a restatement window. A new step can be
+						scheduled after <code>PRICE_ADJUSTED</code>, <code>APPLIED</code>, or <code>CANCELLED</code>. Existing active factors survive
+						the new schedule.
+					</p>
+					<p>
+						Scheduling does not choose a route. Once the venue outcome is known, Operations either cancels a called-off event or handles
+						an event that happened through one of two routes.
+					</p>
+
+					<h3>If the venue event is called off</h3>
+					<p>
+						Call <code>cancelAdjustment</code>. This is an exit from the lifecycle, not a third adjustment route, because there is no unit
+						change to handle.
+					</p>
+					<div class="adjustment-timelines" aria-label="Called-off venue event exit">
+						<section class="adjustment-sequence" style="--timeline-step-count: 2">
+							<header class="adjustment-sequence-header">
+								<span>Event called off · exit</span>
+								<h4>Cancel the scheduled adjustment</h4>
+								<p>
+									Cancellation is valid before or after the effective time if no restatement window is open. No new conversion or
+									quote restatement is needed for the called-off event. Any older active factor remains in use.
+								</p>
+							</header>
+							<ol class="adjustment-track">
+								<li class="adjustment-tick">
+									<div class="adjustment-event"><span>Register</span><code>scheduleAdjustment</code></div>
+									<div class="adjustment-rail" aria-hidden="true"></div>
+									<div class="adjustment-interval">
+										<div><code>SCHEDULED</code><span class="adjustment-status">Live until effective</span></div>
+									</div>
+								</li>
+								<li class="adjustment-tick is-terminal">
+									<div class="adjustment-event"><span>Exit</span><code>cancelAdjustment</code></div>
+									<div class="adjustment-rail" aria-hidden="true"></div>
+									<div class="adjustment-interval">
+										<div><code>CANCELLED</code><span class="adjustment-status">Live</span></div>
+									</div>
+								</li>
+							</ol>
+						</section>
+					</div>
+
+					<h3>If the venue event happens, choose one of two routes</h3>
+					<p class="adjustment-timeline-intro">
+						The adjusted-price route keeps stored quotes on the old unit basis and converts external prices to match them. The physical
+						route rewrites stored quotes to the venue's new unit basis. <code>abortRestatement</code> is not another route. It only backs
+						out while no quote has been rewritten and no quote has been removed from PartyA's pending inventory.
+					</p>
+					<div class="adjustment-timelines" aria-label="Two routes for a venue event that happened">
+						<section class="adjustment-sequence" style="--timeline-step-count: 3">
+							<header class="adjustment-sequence-header">
+								<span>Route 01 · adjusted price</span>
+								<h4>Keep stored quotes and convert external prices</h4>
+								<p>Confirm that Muon is publishing prices on the stored quote basis. Physical restatement can happen later.</p>
+							</header>
+							<ol class="adjustment-track">
+								<li class="adjustment-tick">
+									<div class="adjustment-event"><span>Register</span><code>scheduleAdjustment</code></div>
+									<div class="adjustment-rail" aria-hidden="true"></div>
+									<div class="adjustment-interval">
+										<div><code>SCHEDULED</code><span class="adjustment-status">Live until effective</span></div>
+									</div>
+								</li>
+								<li class="adjustment-tick is-automatic is-frozen">
+									<div class="adjustment-event"><span>Automatic</span><strong>effectiveTimestamp</strong></div>
+									<div class="adjustment-rail" aria-hidden="true"></div>
+									<div class="adjustment-interval">
+										<div><code>SCHEDULED</code><span class="adjustment-status">Frozen</span></div>
+									</div>
+								</li>
+								<li class="adjustment-tick is-terminal">
+									<div class="adjustment-event"><span>Resume</span><code>confirmPriceAdjusted</code></div>
+									<div class="adjustment-rail" aria-hidden="true"></div>
+									<div class="adjustment-interval">
+										<div><code>PRICE_ADJUSTED</code><span class="adjustment-status">Live</span></div>
+										<p>Muon and funding inputs remain on the adjusted old-unit basis.</p>
+									</div>
+								</li>
+							</ol>
+							<div class="adjustment-continuation">
+								<header class="adjustment-continuation-header">
+									<h5>Optional later conversion</h5>
+									<p>Freeze again when Operations is ready to rewrite stored quotes.</p>
+								</header>
+								<ol class="adjustment-track" style="--timeline-step-count: 5">
+									<li class="adjustment-tick is-frozen">
+										<div class="adjustment-event"><span>Open window</span><code>startRestatement</code></div>
+										<div class="adjustment-rail" aria-hidden="true"></div>
+										<div class="adjustment-interval">
+											<div><code>PRICE_ADJUSTED + restating</code><span class="adjustment-status">Frozen</span></div>
+											<p>Abort is available only before a quote rewrite or PartyA pending removal.</p>
+										</div>
+									</li>
+									<li class="adjustment-tick is-frozen">
+										<div class="adjustment-event"><span>Prepare funding</span><code>processRestatementFunding</code></div>
+										<div class="adjustment-rail" aria-hidden="true"></div>
+										<div class="adjustment-interval">
+											<div><code>FUNDING_PREPARATION</code><span class="adjustment-status">Frozen</span></div>
+											<p>Submit PartyB address batches, then attest that preparation is complete.</p>
+										</div>
+									</li>
+									<li class="adjustment-tick is-frozen">
+										<div class="adjustment-event"><span>Rewrite batches</span><code>applyAdjustment</code></div>
+										<div class="adjustment-rail" aria-hidden="true"></div>
+										<div class="adjustment-interval">
+											<div><code>restating</code><span class="adjustment-status">Frozen</span></div>
+										</div>
+									</li>
+									<li class="adjustment-tick is-frozen">
+										<div class="adjustment-event"><span>Begin commit</span><code>finalizeRestatement</code></div>
+										<div class="adjustment-rail" aria-hidden="true"></div>
+										<div class="adjustment-interval">
+											<div><code>FINALIZATION_FUNDING_RESTORATION</code><span class="adjustment-status">Frozen</span></div>
+											<p>If no funding pair was checkpointed, this call completes the window immediately.</p>
+										</div>
+									</li>
+									<li class="adjustment-tick is-terminal">
+										<div class="adjustment-event"><span>Finish funding</span><code>processRestatementFunding</code></div>
+										<div class="adjustment-rail" aria-hidden="true"></div>
+										<div class="adjustment-interval">
+											<div><code>APPLIED</code><span class="adjustment-status">Live after the last batch</span></div>
+										</div>
+									</li>
+								</ol>
+							</div>
+						</section>
+
+						<section class="adjustment-sequence" style="--timeline-step-count: 7">
+							<header class="adjustment-sequence-header">
+								<span>Route 02 · direct restatement</span>
+								<h4>Rewrite stored quotes to the venue basis</h4>
+								<p>Skip the adjusted-price trading phase and move stored inventory directly to the venue basis.</p>
+							</header>
+							<ol class="adjustment-track">
+								<li class="adjustment-tick">
+									<div class="adjustment-event"><span>Register</span><code>scheduleAdjustment</code></div>
+									<div class="adjustment-rail" aria-hidden="true"></div>
+									<div class="adjustment-interval">
+										<div><code>SCHEDULED</code><span class="adjustment-status">Live until effective</span></div>
+									</div>
+								</li>
+								<li class="adjustment-tick is-automatic is-frozen">
+									<div class="adjustment-event"><span>Automatic</span><strong>effectiveTimestamp</strong></div>
+									<div class="adjustment-rail" aria-hidden="true"></div>
+									<div class="adjustment-interval">
+										<div><code>SCHEDULED</code><span class="adjustment-status">Frozen</span></div>
+									</div>
+								</li>
+								<li class="adjustment-tick is-frozen">
+									<div class="adjustment-event"><span>Open window</span><code>startRestatement</code></div>
+									<div class="adjustment-rail" aria-hidden="true"></div>
+									<div class="adjustment-interval">
+										<div><code>SCHEDULED + restating</code><span class="adjustment-status">Frozen</span></div>
+										<p>
+											The opening call only records the window. Prepare funding before quote rewrites; abort remains available
+											only before the first pending removal or rewrite.
+										</p>
+									</div>
+								</li>
+								<li class="adjustment-tick is-frozen">
+									<div class="adjustment-event"><span>Prepare funding</span><code>processRestatementFunding</code></div>
+									<div class="adjustment-rail" aria-hidden="true"></div>
+									<div class="adjustment-interval">
+										<div><code>FUNDING_PREPARATION</code><span class="adjustment-status">Frozen</span></div>
+										<p>Submit PartyB address batches, then attest that preparation is complete.</p>
+									</div>
+								</li>
+								<li class="adjustment-tick is-frozen">
+									<div class="adjustment-event"><span>Rewrite batches</span><code>applyAdjustment</code></div>
+									<div class="adjustment-rail" aria-hidden="true"></div>
+									<div class="adjustment-interval">
+										<div><code>QUOTE_PROCESSING</code><span class="adjustment-status">Frozen</span></div>
+										<p>Cancel pending inventory and rewrite eligible open quotes.</p>
+									</div>
+								</li>
+								<li class="adjustment-tick is-frozen">
+									<div class="adjustment-event"><span>Begin commit</span><code>finalizeRestatement</code></div>
+									<div class="adjustment-rail" aria-hidden="true"></div>
+									<div class="adjustment-interval">
+										<div><code>FINALIZATION_FUNDING_RESTORATION</code><span class="adjustment-status">Frozen</span></div>
+										<p>If no funding pair was checkpointed, this call completes the window immediately.</p>
+									</div>
+								</li>
+								<li class="adjustment-tick is-terminal">
+									<div class="adjustment-event"><span>Finish funding</span><code>processRestatementFunding</code></div>
+									<div class="adjustment-rail" aria-hidden="true"></div>
+									<div class="adjustment-interval">
+										<div><code>APPLIED</code><span class="adjustment-status">Live after the last batch</span></div>
+									</div>
+								</li>
+							</ol>
+						</section>
+					</div>
+
+					<h3>Cancel and abort do different jobs</h3>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Action</th>
+									<th>When it is available</th>
+									<th>Result</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td><code>cancelAdjustment</code></td>
+									<td>The state is <code>SCHEDULED</code> and no restatement window is open.</td>
+									<td>
+										Marks the latest schedule <code>CANCELLED</code>. The symbol stays live or becomes live again. Any older
+										active factor remains in use.
+									</td>
+								</tr>
+								<tr>
+									<td><code>abortRestatement</code></td>
+									<td>A restatement window is open, but no quote has been rewritten or removed from PartyA's pending inventory.</td>
+									<td>
+										Starts funding restoration. If checkpoints exist, Operations supplies their PartyB addresses to
+										<code>processRestatementFunding</code>; the last batch closes the window and emits
+										<code>RestatementAborted</code>.
+									</td>
 								</tr>
 							</tbody>
 						</table>
 					</div>
 					<p>
-						This feature is intended for unit-changing events such as stock splits, reverse splits, and rebases. It does not model cash
-						dividends, spin-offs, mergers, ticker migrations, or ordinary FX price movement. Those events require different accounting or
-						migration flows.
-					</p>
-					<p>
-						Each scheduled factor must be between <code>0.01e18</code> and <code>100e18</code>. A factor of exactly <code>1e18</code> is
-						rejected because it changes no units. Confirmed factors compound with full-precision arithmetic, and a product that rounds
-						down to zero is rejected.
+						After a direct-route abort, the state is still effective <code>SCHEDULED</code>, so the symbol remains frozen. Operations must
+						restart restatement, switch to the adjusted-price route with <code>confirmPriceAdjusted</code>, or cancel if the event was
+						called off. An abort from a later window normally returns to live <code>PRICE_ADJUSTED</code>. Core rejects abort once a quote
+						rewrite or PartyA pending removal sets <code>restatementMutated</code>. Other quote-state changes do not always set this flag,
+						and abort neither detects nor reverses them. Operations must reconcile the book before aborting. An aborted window's epoch is
+						not reused.
 					</p>
 
-					<h2 id="responsibilities">Who Does What</h2>
-					<p>The protocol process crosses several systems. Core never calls Muon, and the venue never calls Core.</p>
+					<h3 id="active-route">Adjusted-price route without quote rewrites</h3>
+					<p>
+						This route resumes trading without rewriting quotes. Muon first changes the external price basis while quote storage stays
+						unchanged. At or after the effective time and before confirmation, the feed factor is the prospective factor. After
+						confirmation, it is the active factor:
+					</p>
+					<pre><code class="language-text">adjusted old-unit price = floor(raw venue price * feed factor / 1e18)
+venue quantity          = floor(stored quantity * feed factor / 1e18)
+venue closed amount     = floor(stored closed amount * feed factor / 1e18)
+venue open amount       = venue quantity - venue closed amount</code></pre>
+					<p>
+						The <code>getQuoteInVenueUnits</code> view, and its batch form, return normalized copies by scaling stored total and closed
+						amounts separately. Their difference can be one amount wei away from
+						<code>floor(stored open amount * feed factor / 1e18)</code>. This view conversion does not modify quote storage. Normal Core
+						execution still expects the stored old-unit values on this route.
+					</p>
+					<ol>
+						<li>At the effective time, confirm that <code>isSymbolFrozen(symbolId)</code> is true.</li>
+						<li>Muon reads <code>getProspectiveCumulativeFactor</code> and starts producing old-unit adjusted prices.</li>
+						<li>Operations verifies the feed basis independently.</li>
+						<li>Operations calls <code>confirmPriceAdjusted</code>.</li>
+					</ol>
+					<aside class="callout callout-important">
+						<strong>Readiness is coordinated off-chain.</strong>
+						Core has no on-chain readiness flow for Muon or PartyB. An Operations bot can perform those checks off-chain and call
+						<code>confirmPriceAdjusted</code> after Muon is producing old-unit adjusted prices and PartyB systems are prepared to
+						translate between venue units and Core's stored units. The call activates the factor and removes the scheduled freeze
+						immediately.
+					</aside>
+					<p>
+						Confirmation changes state to <code>PRICE_ADJUSTED</code>, writes the prospective value to <code>cumulativeFactor</code>, and
+						removes the scheduled freeze. Stored quotes do not change. Muon and PartyBs must continue using old-unit adjusted prices while
+						that factor is active. This includes the <code>marketPrices</code> input used for funding updates. Core does not apply the
+						factor to that input or validate its basis.
+					</p>
+					<p>
+						The active factor may remain in use. If Operations later chooses physical restatement, it opens a new frozen window with
+						<code>startRestatement</code>. The window selects the active cumulative factor, not merely the latest scheduled step.
+					</p>
+
+					<h3 id="physical-route">Physical route with quote restatement</h3>
+					<p>
+						Physical restatement can start directly from an effective <code>SCHEDULED</code> step or later while a non-1x active factor
+						exists. The direct route selects the prospective factor but does not activate it in <code>cumulativeFactor</code>. The later
+						route selects the active factor. In both cases, <code>startRestatement</code> increments <code>restatementEpoch</code>, sets
+						<code>restating</code>, saves <code>restatementFactor</code>, and records one funding cutoff. It does not scan the PartyB
+						registry. If accumulated funding is active, it opens <code>FUNDING_PREPARATION</code>. Operations supplies the relevant PartyB
+						addresses in bounded batches and then attests that preparation is complete. If accumulated funding is inactive, quote
+						processing is available immediately.
+					</p>
+					<p>
+						<code>startRestatement</code> can also be called from <code>CANCELLED</code> when an older non-1x factor is still active. For
+						example, Operations may confirm one adjustment, schedule a newer adjustment, and then cancel only the newer step. Cancellation
+						changes the state to <code>CANCELLED</code> but does not clear the earlier <code>cumulativeFactor</code>, so
+						<code>startRestatement</code> can still open a physical-restatement window using that older factor.
+					</p>
+					<h4>Operations sequence for physical restatement</h4>
+					<p>
+						The paragraphs above explain when physical restatement can start and which factor it uses. Once Operations chooses this route,
+						it follows the sequence below. Some steps are off-chain checks; the named functions are on-chain transactions.
+					</p>
+					<ol>
+						<li>
+							<strong>Find quotes that cannot survive the conversion.</strong> Operations runs
+							<code>previewQuoteAdjustment</code> against every eligible open quote. When amount rounding makes a quote unrestatable,
+							Operations marks it for PartyB cleanup once the symbol is frozen.
+						</li>
+						<li>
+							<strong>Open the restatement window.</strong> Operations calls <code>startRestatement</code>. Core freezes the symbol,
+							records the factor and funding cutoff for this window, and emits <code>RestatementStarted</code>. This transaction does
+							not iterate over registered PartyBs.
+						</li>
+						<li>
+							<strong>Prepare funding for the supplied PartyBs.</strong> Operations builds the relevant PartyB set off-chain from its
+							book and funding records. The bot simulates and submits <code>processRestatementFunding(symbolId, partyBs)</code> in
+							gas-bounded address batches. Core visits only those addresses. After supplying the full intended set, Operations calls
+							<code>completeRestatementFundingPreparation</code> to move to <code>QUOTE_PROCESSING</code>.
+						</li>
+						<li>
+							<strong>Close every marked quote.</strong> Muon supplies a stored-basis close signature, the Operations bot simulates the
+							exact transaction, and that quote's PartyB calls <code>emergencyClosePosition</code>. The dust exception does not require
+							PartyA to act.
+						</li>
+						<li>
+							<strong>Establish the old-basis signature cutoff.</strong> After the cleanup signatures are issued, Muon observes
+							<code>RestatementStarted</code> or reads the open restatement state and stops issuing affected old-basis signatures.
+							Operations records the latest possible timestamp among the cleanup signatures and every other affected payload.
+						</li>
+						<li>
+							<strong>Check the frozen book.</strong> Before changing any quote, Operations reads every pending and open quote for the
+							symbol. If amount dust appeared after the earlier scan, repeat the PartyB cleanup and establish a new cutoff that includes
+							the later close signature. If any other quote cannot be cancelled, closed, or rewritten, Operations calls
+							<code>abortRestatement</code> while abort is still available. If funding checkpoints exist, the bot then calls
+							<code>processRestatementFunding</code> with the checkpointed PartyB addresses until <code>RestatementAborted</code> is
+							emitted.
+						</li>
+						<li>
+							<strong>Simulate every rewrite batch.</strong> From the address that will submit the transaction, the Operations bot uses
+							<code>eth_call</code> to simulate each exact <code>applyAdjustment(symbolId, quoteIds)</code> batch. This runs
+							authorization, quote-status, epoch, liquidation, funding-settlement, conversion, and aggregate-accounting checks without
+							saving any changes. If a batch reverts, Operations resolves the cause or aborts before the first mutation. Simulation does
+							not reserve state, so the bot repeats it immediately before submitting the batch and whenever the caller, IDs, or chain
+							state changes.
+						</li>
+						<li>
+							<strong>Convert the book.</strong> Operations calls <code>cancelPendingQuotes</code> for pending inventory and
+							<code>applyAdjustment</code> in batches for eligible open quotes.
+						</li>
+						<li>
+							<strong>Verify coverage.</strong> Operations reads the book again and confirms that every affected quote was cancelled,
+							closed, or rewritten.
+						</li>
+						<li>
+							<strong>Finalize, then restore funding in batches.</strong> After the last possible old-basis Muon signature has expired
+							and the contract's time gate has passed, Operations calls <code>finalizeRestatement</code>. If checkpoints exist, this
+							begins <code>FINALIZATION_FUNDING_RESTORATION</code>; it does not yet unfreeze the symbol. The bot simulates and submits
+							<code>processRestatementFunding</code> with the checkpointed PartyB addresses until <code>RestatementFinalized</code> is
+							emitted. Only that terminal batch advances <code>basisVersion</code> and unfreezes the symbol. With no checkpoints,
+							<code>finalizeRestatement</code> completes those terminal changes itself.
+						</li>
+					</ol>
+					<aside class="callout callout-risk">
+						<strong>Do not finalize while an old-basis Muon signature may still be valid.</strong>
+						Core knows when the restatement window started, but it cannot verify when Muon observed the window and stopped signing. The
+						Operations bot must track that off-chain. For example, if Muon could issue its last old-basis signature at 12:00 and the
+						signature remains valid for 60 seconds, do not call <code>finalizeRestatement</code> until after 12:01. If Muon stopped after
+						<code>restatementStartedAt</code>, Operations must wait longer than the contract's minimum timer.
+					</aside>
+					<p>
+						<code>finalizeRestatement</code> records one funding-resumption timestamp. Every restoration batch uses that same timestamp.
+						The terminal transaction writes state <code>APPLIED</code> only when the prior state was <code>SCHEDULED</code> or
+						<code>PRICE_ADJUSTED</code>, sets <code>cumulativeFactor</code> to an explicit <code>1e18</code>, closes the window, clears
+						the temporary funding fields, and increments <code>basisVersion</code>. It retains the latest per-step <code>factor</code> and
+						<code>effectiveTimestamp</code>.
+					</p>
+					<h2 id="rewrite">What physical restatement changes</h2>
+					<h3 id="rewrite-eligibility">Eligibility, authorization, and batch behavior</h3>
+					<p>
+						<code>applyAdjustment(symbolId, quoteIds)</code> requires an open window. A manager may process any quote. A PartyB may
+						process only its own quote, and authorization is checked separately for every ID. Each quote must match the symbol, have an
+						epoch older than the current window, and have status <code>OPENED</code>, <code>CLOSE_PENDING</code>, or
+						<code>CANCEL_CLOSE_PENDING</code>. The call reverts if PartyA is being liquidated, or if PartyB is in isolated liquidation
+						against that PartyA or in cross liquidation.
+					</p>
+					<aside class="callout callout-risk">
+						<strong>Clear every liquidation before the first restatement mutation.</strong>
+						Operations must check the PartyA liquidation flag, the PartyB-against-PartyA liquidation flag, and the PartyB
+						cross-liquidation flag before the effective time and again before the first batch.
+						<ul>
+							<li>
+								<strong>PartyA liquidation:</strong> let the normal liquidation finish. Its position-processing step can run while the
+								symbol is frozen only if the required liquidation prices or snapshots were stored before the freeze. If the
+								liquidation is disputed, an account with <code>DISPUTE_ROLE</code> must resolve the settlement amounts before
+								settlement can clear the liquidation flag. The Clearing House can take over a stuck PartyA liquidation, but its
+								position-close path rejects a frozen symbol. Do not start a takeover while an affected open position remains on the
+								frozen symbol.
+							</li>
+							<li>
+								<strong>PartyB liquidation:</strong> finish isolated and cross PartyB liquidations before the effective freeze. Their
+								position-close paths reject a frozen symbol. If the freeze is already active, use the adjusted-price route to unfreeze
+								only after Muon and PartyB are ready, finish the liquidation, and then reconsider physical restatement. If a
+								mutation-free restatement window is open, abort it first. An abort from effective <code>SCHEDULED</code> remains
+								frozen until Operations confirms the adjusted-price route.
+							</li>
+						</ul>
+						Once a quote rewrite or pending removal has set <code>restatementMutated</code>, Core cannot abort or roll back the window. If
+						a liquidation blocker is found at that point, stop and escalate the incident. Do not finalize an improvised partial
+						conversion.
+					</aside>
+					<p>
+						The call is atomic. Any invalid ID, failed funding charge, arithmetic failure, aggregate overflow, or downstream revert rolls
+						back every earlier quote in the batch. A duplicate epoch reverts with <code>Already restated</code>. Repeating a completed ID
+						reverts, so retries must omit completed IDs. An empty array is accepted and changes nothing.
+					</p>
+
+					<h3 id="rewrite-conversion">Conversion arithmetic and fields</h3>
+					<p>
+						<code>previewQuoteAdjustment(symbolId, quoteId)</code> is a read-only preflight helper. It selects the applicable adjustment
+						factor and returns the converted quote fields that <code>applyAdjustment</code> would write. It uses the same arithmetic and
+						underflow checks as the write path, but it does not check quote status, liquidation state, authorization, or whether funding
+						settlement will succeed.
+					</p>
+					<p>
+						Core converts each amount-and-price pair in two steps. It first scales the amount, then derives the new price from the old
+						notional. This keeps <code>amount * price</code> as close as integer rounding permits. For example, a 4x factor converts 5
+						units at a price of 20 into 20 units at a price of 5. The notional remains 100.
+					</p>
+					<pre><code class="language-text">adjustedAmount = floor(originalAmount * factor / 1e18)
+
+if originalPrice == 0:
+    adjustedPrice = 0
+else:
+    adjustedPrice = floor(originalAmount * originalPrice / adjustedAmount)</code></pre>
+					<p>
+						Factors and all amount and price fields use 18 decimals. <code>Math.mulDiv</code> performs each calculation and rounds down.
+					</p>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Part of the quote</th>
+									<th>What Core changes</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Entire position</td>
+									<td>
+										Scales <code>quantity</code>. Recalculates <code>openedPrice</code>, <code>initialOpenedPrice</code>,
+										<code>requestedOpenPrice</code>, and <code>marketPrice</code> against the new quantity so each recorded
+										amount-and-price value stays as close as possible to its previous notional.
+									</td>
+								</tr>
+								<tr>
+									<td>Already-closed portion</td>
+									<td>
+										When <code>closedAmount</code> is nonzero, scales it and recalculates <code>avgClosedPrice</code> to preserve
+										the recorded closed notional as closely as rounding permits.
+									</td>
+								</tr>
+								<tr>
+									<td>Outstanding close request</td>
+									<td>
+										When <code>quantityToClose</code> is nonzero, scales it and recalculates <code>requestedClosePrice</code> to
+										preserve the requested close notional as closely as rounding permits.
+									</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						The conversion assigns exactly those nine fields. It does not assign IDs, parties, symbol, position or order type, whitelists,
+						statuses, deadlines, parent links, locked values, fee fields, affiliate, funding limit, close fee, or data. Funding settlement
+						runs before conversion on every successful <code>applyAdjustment</code>. It sets <code>lastFundingPaymentTimestamp</code> to
+						the current block time and may change <code>accumulatedPaidFunding</code> and party balances. These are settlement side
+						effects, not part of the nine-field unit conversion.
+					</p>
+					<p>
+						A reverse split can make a very small raw amount disappear when multiplication is rounded down. The examples below use a
+						<code>0.01x</code> factor. The numbers are raw 18-decimal amount integers, so one unit in these examples means one amount wei.
+					</p>
+					<ul>
+						<li>
+							<strong>The entire position would disappear.</strong> A quantity of <code>99</code> becomes
+							<code>floor(99 * 0.01) = 0</code>. Core rejects the conversion instead of storing a zero-quantity position.
+						</li>
+						<li>
+							<strong>Recorded closed quantity would disappear.</strong> A nonzero <code>closedAmount</code> of <code>1</code> becomes
+							<code>floor(1 * 0.01) = 0</code>. Core rejects the conversion instead of erasing the closed history.
+						</li>
+						<li>
+							<strong>The remaining open quantity would disappear.</strong> A quote with <code>quantity = 101</code> and
+							<code>closedAmount = 100</code> has one amount wei still open. After conversion, both values become <code>1</code>,
+							leaving no open amount. Core requires the new quantity to remain greater than the new closed amount.
+						</li>
+						<li>
+							<strong>A pending close request would disappear.</strong> A nonzero <code>quantityToClose</code> of <code>1</code> becomes
+							<code>0</code>. Core rejects the conversion instead of retaining a close request for zero quantity.
+						</li>
+					</ul>
+					<aside class="callout callout-risk">
+						<strong>PartyB closes an unrestatable quote; Operations does not wait for PartyA.</strong>
+						<p>
+							When the applicable factor would erase total quantity, recorded closed quantity, remaining open quantity, or a pending
+							close amount, <code>emergencyClosePosition</code> permits the quote's own PartyB to close the entire remaining position.
+							The exception works during the scheduled freeze and during an open restatement window. It does not apply while a future
+							schedule is still live. Core does not round or rewrite the quote. A successful close removes it from the live book and
+							leaves the closed quote in its old stored basis as history.
+						</p>
+						<ol>
+							<li>
+								Muon supplies the closing price and both UPNLs in the quote's current stored basis. Core does not apply the adjustment
+								factor to those signature values.
+							</li>
+							<li>
+								From that quote's PartyB address, the Operations bot simulates the exact
+								<code>emergencyClosePosition</code> call with <code>eth_call</code>, then submits the same call if the simulation
+								succeeds.
+							</li>
+							<li>Operations verifies that the quote is <code>CLOSED</code> and removes it from the physical-restatement manifest.</li>
+						</ol>
+						<p>
+							A close signature issued after <code>RestatementStarted</code> is a new old-basis signature. Operations must move the
+							recorded old-basis cutoff forward to include its timestamp and delay finalization until it expires. The ordinary
+							liquidation, solvency, funding, pause, signature, and hook checks still run. A non-dust quote remains blocked while the
+							symbol is frozen. After the symbol unfreezes, that quote still needs one of the normal emergency-close conditions.
+						</p>
+					</aside>
+					<p>
+						Price rounding is different: it does not reject every remainder. Core divides the old notional by the adjusted amount and
+						rounds the price down. The discarded remainder is the notional dust. For example:
+					</p>
+					<pre><code class="language-text">old notional   = 3 * 10 = 30
+adjusted amount = 4
+adjusted price  = floor(30 / 4) = 7
+new notional    = 4 * 7 = 28
+dust            = 30 - 28 = 2</code></pre>
+					<p>
+						The dust is simply the remainder from integer division: <code>oldNotional % adjustedAmount</code>. It is always zero or
+						positive and always smaller than <code>adjustedAmount</code>.
+					</p>
+
+					<h3 id="rewrite-funding">Funding settlement and aggregate updates</h3>
+					<p>For each quote, the facet currently executes this order:</p>
+					<ol>
+						<li>Prepare the quote's PartyB funding pair if the window did not checkpoint it.</li>
+						<li>Charge the quote's accumulated funding on the old basis.</li>
+						<li>
+							Remove old open amount and opened-price notional from PartyB global, PartyB per-PartyA, and PartyA per-PartyB position
+							aggregates. The helper also subtracts the old weighted-funding contribution.
+						</li>
+						<li>Subtract the old weighted-funding contribution a second time in the facet, as described below.</li>
+						<li>Rewrite the nine unit-bearing quote fields.</li>
+						<li>Add the new position aggregates and one new weighted-funding contribution.</li>
+						<li>Stamp <code>quoteRestatedEpoch</code>, set the mutation flag, and emit <code>QuoteAdjusted</code>.</li>
+					</ol>
+					<aside class="callout callout-risk">
+						<strong>The v0.8.6 write path subtracts weighted funding twice.</strong>
+						<code>LibQuote.subFromPartiesAggregatedPositions</code> already calls
+						<code>LibAggregateFunding.subFromPartiesAggregateFunding</code>. <code>_restateQuote</code> then calls the same subtraction
+						explicitly before adding the new contribution once. For an old contribution <code>C</code> and new contribution
+						<code>C'</code>, the stored result changes by <code>-2C + C'</code>, not <code>-C + C'</code>. Do not claim weighted aggregate
+						funding preservation from the current source or existing position-aggregate tests. A physical-restatement procedure must
+						account for this implementation defect before it is used on funded quotes.
+					</aside>
+
+					<h3 id="rewrite-pending">Pending inventory</h3>
+					<p>
+						<code>cancelPendingQuotes</code> is manager-only. It does not require an open restatement window, but every quote's symbol
+						must be frozen. It accepts <code>PENDING</code>, <code>LOCKED</code>, and <code>CANCEL_PENDING</code>. The cancellation path
+						does not check quote deadlines. It still rejects the call if PartyA is liquidating or PartyB is liquidating against that
+						PartyA. Core refunds the open trading fee, releases pending locks and PartyB connections where applicable, removes pending
+						indexes, and sets the quote to <code>CANCELED</code>. It then calls cancellation hooks. A hook revert rolls back the batch. An
+						empty quote array is accepted and changes nothing.
+					</p>
+					<p>
+						Removing a quote from PartyA's pending index records a mutation if a restatement window is open. This applies to
+						<code>cancelPendingQuotes</code> and to normal user-driven pending removal. A cancellation while the symbol is merely frozen,
+						before a window opens, does not mark a future window. Operations must monitor normal cancellation events during a window
+						because the first such removal also makes abort unavailable. Close-request creation, cancellation, and expiry can also change
+						the quote inventory during the window, but those paths do not set the restatement mutation flag.
+					</p>
+
+					<h3 id="rewrite-reads">Mixed-book reads</h3>
+					<p>
+						Raw storage is mixed while batches run. <code>getQuote</code> returns that storage unchanged.
+						<code>getQuoteInVenueUnits</code> and <code>getQuotesInVenueUnits</code> return converted memory copies that can support
+						display, valuation, reconciliation, and hedging when the selected factor represents the intended venue basis. They must not be
+						sent back into Core execution.
+					</p>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Quote condition</th>
+									<th><code>factorApplied</code> in venue-unit view</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Restated in the current open epoch</td>
+									<td><code>1e18</code></td>
+								</tr>
+								<tr>
+									<td>Not yet restated in the current open epoch</td>
+									<td><code>restatementFactor</code></td>
+								</tr>
+								<tr>
+									<td>No open window</td>
+									<td>Active cumulative factor</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						During the gap after a scheduled adjustment becomes effective but before confirmation or <code>startRestatement</code>, no
+						window is open and these views still apply only the active factor. They ignore the scheduled prospective factor. Their result
+						is therefore not normalized to the post-event venue basis during this gap. To normalize it, convert raw
+						<code>getQuote</code> storage once with <code>getProspectiveCumulativeFactor</code>. Do not apply the full prospective factor
+						to a venue-unit view that already includes an older active factor. Otherwise, suppress affected output until Operations
+						confirms a route transition.
+					</p>
+					<p>
+						The views do not filter by quote status. When the selected factor is not <code>1e18</code>, they use the same conversion and
+						underflow checks as preview. A fully closed quote reverts because its converted quantity is not greater than its converted
+						closed amount; amount-rounding underflows can also revert. The array getter is atomic, so one non-convertible ID reverts the
+						entire batch. Use bounded batches with a single-ID fallback, and use raw <code>getQuote</code> for closed history or any
+						record that cannot be converted.
+					</p>
+					<p>
+						The venue-unit view also returns the current epoch, freeze status, and <code>storedInVenueUnits</code>. That last flag means
+						only that this view applied <code>1e18</code>. It is not independent proof of a quote's provenance or coverage.
+					</p>
+
+					<h2 id="funding">Funding across the window</h2>
+					<p>
+						A physical restatement changes quote quantities. Current funding rates are per-unit values, so the same rate cannot be used
+						with old-unit and new-unit quantities. Operations first supplies the known PartyBs so Core can save and pause their current
+						rates. During quote processing, Core has a fallback for a missed PartyB before it rewrites one of that PartyB's quotes. Before
+						the window closes, Core restores every saved rate. It rebases rates only when the restatement is finalized.
+					</p>
+					<pre><code class="language-text">open window → prepare PartyB funding → rewrite quotes → restore PartyB funding → close window</code></pre>
+
+					<h3 id="funding-open">When the window opens</h3>
+					<p>
+						<code>startRestatement</code> records one <code>fundingCutoffTimestamp</code>. It does not read or loop over
+						<code>MAStorage.partyBList</code>, and it does not change any PartyB's rates. If accumulated funding is inactive, Core moves
+						directly to <code>QUOTE_PROCESSING</code>. If accumulated funding is active, Core enters <code>FUNDING_PREPARATION</code> and
+						waits for the manager to submit PartyB addresses.
+					</p>
+
+					<h3 id="funding-prepare">Prepare PartyB funding pairs</h3>
+					<p>
+						The manager calls <code>processRestatementFunding(symbolId, partyBs)</code> with a gas-bounded address array. Core examines
+						only those addresses. It does not know whether the array covers every PartyB that Operations intended to prepare.
+					</p>
+					<p>For each supplied PartyB, Core does one of the following:</p>
+					<ul>
+						<li>skips a checkpoint already created for the current restatement epoch;</li>
+						<li>skips a symbol pair whose <code>epochDuration</code> is zero;</li>
+						<li>skips a pair whose current long and short rates are both zero; or</li>
+						<li>
+							rolls accumulated funding to <code>fundingCutoffTimestamp</code>, saves both current rates, increments
+							<code>pendingFundingPartyBCount</code>, and sets both current rates to zero.
+						</li>
+					</ul>
+					<p>
+						A pair with one zero rate and one nonzero rate is checkpointed. Repeated addresses are harmless. Current registry membership
+						is not checked, so Operations may submit registered or deregistered PartyBs. Registering or deregistering a PartyB during the
+						window does not change funding progress.
+					</p>
+					<aside class="callout callout-important">
+						<strong>Keep the PartyB address list.</strong> Core saves each funding checkpoint under its PartyB address. It can report how
+						many checkpoints remain, but it cannot return their addresses. Operations must therefore save every PartyB submitted during
+						preparation and add any PartyB checkpointed later during quote processing. When aborting or finalizing, submit those addresses
+						again through <code>processRestatementFunding</code> until the pending count reaches zero. Core safely skips unknown or
+						already-restored addresses. If Operations loses the address of a live checkpoint, Core cannot restore that rate and the symbol
+						remains frozen. Before sending a batch, simulate the exact call from the manager address.
+					</aside>
+					<p>
+						After Operations has submitted and checked the intended set, the manager calls
+						<code>completeRestatementFundingPreparation</code>. This call is an operational attestation. It is not an on-chain inventory
+						check. Core then enters <code>QUOTE_PROCESSING</code>. If Operations finds another PartyB before restoration starts, the
+						manager may still submit that address during <code>QUOTE_PROCESSING</code>. Add any new checkpoint to the saved manifest.
+					</p>
+
+					<h3 id="funding-quotes">While quotes are being rewritten</h3>
+					<p>
+						A checkpointed pair keeps its current long and short rates at zero. Funding accumulated before the window remains recorded at
+						the fixed cutoff. Later batches use that same cutoff even if they run in later blocks.
+					</p>
+					<p>
+						If <code>applyAdjustment</code> reaches a quote whose PartyB has no checkpoint, Core runs the same preparation check at
+						<code>fundingCutoffTimestamp</code> before it settles that quote's funding. An active funding pair gets a checkpoint. A pair
+						with no epoch duration or with both current rates at zero still has nothing to save. This fallback protects the quote being
+						rewritten. It does not discover PartyBs with no quote in the batch, and it does not prove that Operations prepared the full
+						set. The bot must add any checkpoint created by this fallback to its saved manifest.
+					</p>
+
+					<h3 id="funding-restore">Restore rates before closing the window</h3>
+					<p>
+						<code>abortRestatement</code> and <code>finalizeRestatement</code> stop quote processing and start a restoration phase. They
+						report the pending checkpoint count. If the count is zero, the initiating transaction closes the window immediately.
+						Otherwise, Operations submits the saved PartyB manifest through <code>processRestatementFunding</code> in gas-bounded batches.
+					</p>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>How the window ends</th>
+									<th>Zero-rate interval</th>
+									<th>Current rate after restoration</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Abort</td>
+									<td>Not rolled into accumulated funding. Accounting resumes as if the saved rates had remained active.</td>
+									<td>The saved long and short rates are restored unchanged.</td>
+								</tr>
+								<tr>
+									<td>Finalization</td>
+									<td>Rolled to one shared <code>fundingRestorationTimestamp</code> with current rates still at zero.</td>
+									<td>Each saved rate is divided by <code>restatementFactor</code>.</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<pre><code class="language-text">newRate = sign(oldRate) * floor(abs(oldRate) * 1e18 / restatementFactor)</code></pre>
+					<p>
+						Flooring may reduce the restored magnitude. Core rejects a magnitude that cannot fit in <code>int256</code>. Each restoration
+						batch ignores unknown or repeated addresses, deletes every matching current-epoch checkpoint, and decrements
+						<code>pendingFundingPartyBCount</code>. The transaction that reduces the count to zero closes the window and emits
+						<code>RestatementAborted</code> or <code>RestatementFinalized</code>.
+					</p>
+
+					<h2 id="boundaries">Enforced and operational boundaries</h2>
+					<h3>What the freeze enforces</h3>
+					<p>
+						The freeze is not a global symbol pause. Internal <code>requireNotFrozen</code> checks block paths that resolve the affected
+						symbol. In v0.8.6 those checks cover:
+					</p>
+					<ul>
+						<li>quote creation, PartyB open and close execution, batch wrappers, and solver-fee wrappers;</li>
+						<li>legacy and unified settlement;</li>
+						<li>
+							force actions, three-step force-close finalization, non-dust emergency PartyB actions, clearing-house closes, and
+							ADL-style closes;
+						</li>
+						<li>PartyA liquidation price snapshot setup in new and legacy paths, and PartyB position liquidation;</li>
+						<li>funding charge, rate setting, epoch-duration changes, and accumulated-funding paths.</li>
+					</ul>
+					<p>
+						<code>emergencyClosePosition</code> has one narrow freeze exception. If the applicable physical factor would make an
+						unrestated quote fail an amount-underflow check, the quote's PartyB may fully close it with a stored-basis Muon signature.
+						Core does not treat a quote already rewritten in the current epoch as dust by applying the factor a second time.
+					</p>
+					<p>
+						The freeze leaves several quote mutations callable. PartyA can call <code>requestToClosePosition</code>, which changes an open
+						quote to <code>CLOSE_PENDING</code> and writes the requested close price, close quantity, order type, deadline, and
+						modification timestamp. PartyA can cancel a close request, and anyone can pass an expired close request to
+						<code>expireQuote</code>; neither path checks the symbol freeze. The frozen manifest is therefore not static. Operations must
+						monitor and reconcile close-request creation, cancellation, and expiry throughout batching.
+					</p>
+					<p>
+						Other non-price cleanup can remain callable. A function that neither receives a symbol nor resolves one from a quote cannot
+						apply the freeze check. The freeze also does not cancel an existing liquidation. Normal PartyA position processing has no
+						symbol-freeze check, but its price and snapshot setup does. PartyB liquidation closes and Clearing House liquidation closes do
+						check the freeze. This is why Operations must clear liquidation blockers before the first restatement mutation.
+					</p>
+
+					<h3>Signature expiry and account-level payloads</h3>
+					<p>
+						Muon payloads do not carry <code>basisVersion</code>. Core uses a time gate, rather than a payload version, to separate old
+						and new bases. Finalization requires:
+					</p>
+					<pre><code class="language-solidity">block.timestamp &gt; restatementStartedAt + LibMuon.maxUpnlValidTime()</code></pre>
+					<p>
+						Signature verification accepts the exact expiry boundary and rejects only after it. Finalization uses the strict greater-than
+						check, so equality still fails. A zero per-function validity override falls back to the global validity.
+						<code>maxUpnlValidTime()</code> takes the maximum of the global setting and every enum override, using the live configuration
+						when finalization runs.
+					</p>
+					<p>
+						For direct restatement, <code>restatementStartedAt</code> is the later of <code>effectiveTimestamp</code> and
+						<code>adjustmentScheduledAt</code>. This prevents a past-effective emergency schedule from backdating the wait before its
+						scheduling transaction, but it does not prove that off-chain issuance stopped then. For a later restatement opened while the
+						symbol is live, <code>restatementStartedAt</code> is the block time of <code>startRestatement</code>.
+					</p>
+					<p>
+						Account-level UPNL payloads do not list every symbol in the account. Core cannot infer that such a payload includes exposure
+						to the frozen symbol, so Muon must stop issuing affected account-level signatures off-chain. The cutoff must cover every
+						affected account-, pair-, and quote-level payload. Record the latest old-basis signature timestamp, or prove an upper bound
+						from the issuance cutoff and allowed signer clock skew. Core checks each signature's timestamp and does not reject a future
+						timestamp.
+					</p>
+					<p>
+						The on-chain finalization deadline is sufficient only when the proven latest old-basis timestamp is no later than
+						<code>restatementStartedAt</code>. Otherwise Operations must wait until the block time is strictly greater than the latest
+						old-basis timestamp bound plus the maximum applicable validity, even if <code>finalizeRestatement</code> would already
+						succeed. A delayed cutoff is not detected by successful finalization.
+					</p>
+					<p>
+						Governance and Operations must also prevent a later validity increase from reviving an old-basis signature. Before applying a
+						new global or per-function validity, require the current block time to be strictly greater than the latest timestamp bound for
+						the affected old-basis signatures plus the proposed applicable validity. The recorded freeze start is a safe substitute only
+						when the cutoff proof shows that no old-basis timestamp can be later than that start.
+					</p>
+
+					<h3><code>basisVersion</code> and deferred force close</h3>
+					<p>
+						Finalization increments <code>basisVersion</code>, even if no quote was processed. The three-step force-close flow records
+						this value at initialization. Its refresh step validates a fresh signature but deliberately does not replace the stored close
+						price or basis version. Finalization of that force close requires the symbol to be unfrozen and the stored version to match,
+						so an old-basis workflow must be initialized again. This protection is specific to that three-step flow. It is not a generic
+						field in Muon signatures or every deferred workflow.
+					</p>
+
+					<h3>Revert-worthy boundaries</h3>
+					<ul>
+						<li>
+							Schedule rejects an unknown symbol, a factor outside <code>[1e16, 100e18]</code>, factor <code>1e18</code>, an open
+							window, or another <code>SCHEDULED</code> step.
+						</li>
+						<li>
+							Any call that computes a prospective factor can revert if the quotient exceeds <code>uint256</code>. Confirm and direct
+							start also reject a call before <code>effectiveTimestamp</code> and reject a prospective factor of zero.
+						</li>
+						<li>Start rejects an existing window and normalized factor <code>1e18</code>.</li>
+						<li>Abort rejects no window or any window whose mutation flag is true.</li>
+						<li>
+							Apply rejects authorization, symbol, epoch, status, and liquidation failures, plus funding, arithmetic, or aggregate
+							failures reached downstream.
+						</li>
+						<li>
+							The dust emergency-close exception requires an unrestated quote that fails an amount conversion. PartyB ownership,
+							liquidation, pause, status, signature, solvency, settlement, and hook checks still apply.
+						</li>
+						<li>Pending cancellation rejects an unfrozen symbol, an ineligible status, liquidation guards, or a reverting hook.</li>
+						<li>
+							Finalize rejects no window, missing preparation attestation, and the exact or earlier signature-expiry boundary. A funding
+							batch rejects an empty PartyB array, no open window, an invalid phase, or signed-rate overflow. Unknown, repeated, and
+							already processed addresses are skipped.
+						</li>
+					</ul>
+
+					<h2 id="actors">Actor responsibilities</h2>
 					<div class="table-wrap">
 						<table>
 							<thead>
 								<tr>
 									<th>Actor</th>
-									<th>Responsibility</th>
-									<th>Interaction with Core</th>
+									<th>Responsibility outside Core's guarantees</th>
 								</tr>
 							</thead>
 							<tbody>
 								<tr>
-									<td>Venue or issuer</td>
-									<td>Announces the event and changes the external market's quantity and price units.</td>
-									<td>None. This is an external notice and market change.</td>
-								</tr>
-								<tr>
-									<td>Operations</td>
+									<td>Symbol manager and Operations</td>
 									<td>
-										Verifies the event, schedules the factor, then chooses active-factor trading or direct frozen restatement
-										based on inventory size and operational needs.
+										Verify the venue event and factor direction, choose the route, control Muon timing, maintain a complete PartyB
+										manifest, choose and simulate safe address batches, restore every checkpointed address, stop before an unsafe
+										mutation, enforce expiry, and decide whether finalization is safe.
 									</td>
-									<td>Calls manager-gated Symbol Adjustment functions.</td>
 								</tr>
 								<tr>
-									<td>Symmio Core</td>
-									<td>Stores per-symbol state, computes the freeze, gates unsafe paths, and rewrites quotes during restatement.</td>
-									<td>Exposes state and enforces rules when another actor calls it.</td>
-								</tr>
-								<tr>
-									<td>Muon</td>
+									<td>Muon and integrators</td>
 									<td>
-										Reads Core state and venue prices off-chain, then produces prices and UPNL signatures in the correct unit
-										basis.
+										After the venue event becomes effective and before confirmation, use the prospective factor. After
+										confirmation, use the active factor. Publish old-unit adjusted prices while a factor is active, stop every
+										affected account-, pair-, and quote-level payload before the cutoff, and resume raw prices only after
+										reconciled finalization.
 									</td>
-									<td>Reads the registry. Core does not send a transaction to Muon.</td>
 								</tr>
 								<tr>
-									<td>Solvers</td>
-									<td>Quote and hedge using the active factor. During restatement, each PartyB may rewrite its own quotes.</td>
-									<td>Reads factor state and may call <code>applyAdjustment</code>.</td>
-								</tr>
-								<tr>
-									<td>Indexers and frontends</td>
+									<td>PartyBs</td>
 									<td>
-										Track the lifecycle, display maintenance state, convert live values, and build the quote inventory for
+										Hedge in the current basis, submit old-unit adjusted <code>marketPrices</code> while a factor is active, and
+										call <code>applyAdjustment</code> only for owned quotes unless granted the manager role. Fully close owned
+										adjustment-dust quotes when Operations requests it, using Muon values in each quote's stored basis.
+									</td>
+								</tr>
+								<tr>
+									<td>Indexers</td>
+									<td>
+										Build one manifest across ordinary, isolated, and cross PartyB account models. Include every open and pending
+										status, track epochs and mutation events, and reconstruct history from events because storage keeps only the
+										latest schedule.
+									</td>
+								</tr>
+								<tr>
+									<td>Auditors and governance</td>
+									<td>
+										Review role grants, selector compatibility, validity changes, complete-book evidence, PartyB manifests and
+										batch-size limits, and the current duplicate weighted-funding subtraction before approving physical
 										restatement.
 									</td>
-									<td>Read views and events.</td>
 								</tr>
 							</tbody>
 						</table>
 					</div>
 
-					<h2 id="lifecycle">Lifecycle</h2>
-					<p>
-						After the effective-time freeze, operations chooses whether to reopen on an active factor or finish restatement before
-						reopening.
-					</p>
-					<pre><code class="language-mermaid">flowchart TD
-	A["Venue announces a unit change"] --> B["Operations schedules factor and effective time"]
-	B --> C{"Effective time reached"}
-	C -->|No| D["Trading continues in old units"]
-	D --> C
-	C -->|Yes| E["Core freezes the symbol automatically"]
-	E --> F{"Operations chooses route"}
-	F -->|Event cancelled or postponed| G["Cancel adjustment and unfreeze"]
-	F -->|Large book or trading must resume| H["Muon verifies prospective basis"]
-	H --> I["Confirm factor and unfreeze"]
-	I --> J["Trade on active factor"]
-	J -->|Optional later cleanup| K["Open frozen restatement window"]
-	F -->|Small book| L["Start direct restatement while still frozen"]
-	K --> M["Restate all declared quotes"]
-	L --> M
-	M --> N["Finalize, clear factors, and resume raw venue price"]
-					</code></pre>
-					<h3>1. Schedule</h3>
-					<p>
-						Operations calls <code>scheduleAdjustment(symbolId, factor, effectiveTimestamp)</code>. Core records the latest step and
-						increments <code>scheduledCount</code>. Trading continues normally until the effective timestamp. Only one scheduled step may
-						be in flight per symbol.
-					</p>
-					<h3>2. Transition freeze</h3>
-					<p>
-						At the effective timestamp, <code>isSymbolFrozen</code> becomes true automatically. There is no freeze transaction and no
-						keeper race. The scheduled factor is not active yet. Muon reads <code>getProspectiveCumulativeFactor</code>, waits for the
-						source feed to change units, and calculates prices in the old on-chain basis. It must withhold affected account-level
-						signatures during this handoff.
-					</p>
-					<h3>3. Choose the route</h3>
-					<p>
-						If the venue cancels or postpones the event, operations calls <code>cancelAdjustment</code>. The symbol unfreezes and the
-						scheduled factor is never used. Otherwise operations chooses between confirmation and direct restatement. Direct restatement
-						is available only after the effective timestamp and keeps the symbol frozen for the complete rewrite.
-					</p>
-					<h3>4A. Confirm and trade on the active factor</h3>
-					<p>
-						Operations first verifies Muon's prospective price basis, then calls <code>confirmPriceAdjusted</code>. Core compounds the
-						factor, moves the latest state to <code>PRICE_ADJUSTED</code>, and unfreezes the symbol.
-					</p>
-					<p>
-						Open quotes still use their old quantity and price units. Muon publishes an adjusted price in the same old basis, solvers
-						hedge the corresponding number of venue units, and frontends convert values for display. This state may remain active
-						indefinitely. Additional confirmed adjustments compound into the same cumulative factor.
-					</p>
-					<h3>4B. Restate directly while frozen</h3>
-					<p>
-						If the open and pending inventory is small, operations may call <code>startRestatement</code> directly from the effective
-						<code>SCHEDULED</code> state. Core fixes the prospective factor into <code>restatementFactor</code>, leaves
-						<code>cumulativeFactor</code> unchanged, and keeps the symbol frozen. After every declared quote is handled, finalization
-						marks the adjustment <code>APPLIED</code>, clears both factor paths, and resumes trading in raw venue units.
-					</p>
-					<h3>5. Restate later when desired</h3>
-					<p>
-						The active-factor route may remain live indefinitely or later open a second freeze and perform the same restatement process.
-					</p>
+					<h2 id="runbook">Operations runbook</h2>
+					<h3>Prepare and schedule</h3>
+					<ol>
+						<li>Verify the venue notice, symbol ID, factor direction, effective time, and allowed factor range.</li>
+						<li>
+							Read the active factor and compute the intended prospective product before scheduling. Require
+							<code>0 &lt; floor(activeFactor * intendedFactor / 1e18) &lt;= type(uint256).max</code>. Do not infer the new basis from
+							only the latest step.
+						</li>
+						<li>
+							Build one open and pending quote manifest across all PartyB account models. For every pair, require PartyA liquidation,
+							PartyB-against-PartyA liquidation, and PartyB cross-liquidation status to be clear. Resolve any active liquidation before
+							the effective time.
+						</li>
+						<li>
+							Build the PartyB funding manifest from the affected book and Operations' funding records. Fork-rehearse preparation and
+							restoration with the intended address batches. Choose a batch size with comfortable gas headroom and test bot restart from
+							the saved manifest.
+						</li>
+						<li>Resolve the duplicate weighted-funding subtraction risk before approving any physical route on funded inventory.</li>
+						<li>
+							Verify the deployed ABI exposes <code>startRestatement(uint256)</code>,
+							<code>processRestatementFunding(uint256,address[])</code>, <code>completeRestatementFundingPreparation(uint256)</code>,
+							and <code>getRestatementFundingProgress(uint256)</code>. The old three-argument start selector is not exposed.
+						</li>
+						<li>
+							Call <code>scheduleAdjustment</code>. Record the transaction block time, adjustment index, factor, effective time,
+							prospective factor, and current maximum Muon validity. Confirm that <code>getProspectiveCumulativeFactor</code> returns
+							the intended product without reverting.
+						</li>
+						<li>
+							Run <code>previewQuoteAdjustment</code> for every eligible open quote now that the schedule supplies the prospective
+							factor. Treat this as an arithmetic preview, not an eligibility or funding-settlement proof. Mark every amount-underflow
+							failure for PartyB cleanup when the symbol reaches its effective freeze.
+						</li>
+					</ol>
 
-					<h2 id="freeze">Freeze Boundary</h2>
-					<p>A symbol is frozen when either condition is true:</p>
-					<ul>
-						<li>the latest step is <code>SCHEDULED</code> and its effective timestamp has been reached; or</li>
-						<li>a restatement window is open.</li>
-					</ul>
-					<p>The same library guard is applied across price-sensitive execution:</p>
+					<h3>Reach the effective boundary</h3>
+					<ol>
+						<li>Refresh the manifest before the effective time. Trading is still live for a future schedule.</li>
+						<li>
+							For a future schedule, stop ordinary old-basis account-, pair-, and quote-level issuance before the effective time. For a
+							past-effective emergency, stop ordinary issuance before submitting the schedule transaction. Do not establish the final
+							old-basis cutoff yet: dust cleanup may require dedicated close signatures after the symbol freezes.
+						</li>
+						<li>At equality or later, verify <code>isSymbolFrozen</code> and the raw venue feed basis.</li>
+						<li>
+							If the event did not occur, call <code>cancelAdjustment</code>. Verify the symbol unfreezes and the older active factor
+							remains unchanged. End this runbook here; do not run dust cleanup for a called-off event.
+						</li>
+					</ol>
+
+					<h3>Use the adjusted-price route</h3>
+					<ol>
+						<li>Have Muon compute old-unit prices from <code>getProspectiveCumulativeFactor</code>.</li>
+						<li>Compare independent calculations with the feed and running notional and UPNL checks.</li>
+						<li>Call <code>confirmPriceAdjusted</code>. Verify <code>PRICE_ADJUSTED</code>, the expected active factor, and unfreeze.</li>
+						<li>Resume Muon signatures and PartyB funding inputs in the adjusted old-unit basis.</li>
+					</ol>
+
+					<h3>Use either physical-restatement route</h3>
+					<ol>
+						<li>
+							Keep ordinary affected signatures stopped. Call <code>startRestatement(symbolId)</code> and record epoch, factor, start
+							time, funding cutoff, phase, and pending checkpoint count. Do not expect this call to emit checkpoint events, inspect the
+							PartyB registry, or zero any rates.
+						</li>
+						<li>
+							While progress reports <code>FUNDING_PREPARATION</code>, simulate and submit
+							<code>processRestatementFunding(symbolId, partyBs)</code> from the manager address for each bounded manifest batch. Verify
+							checkpoint creation with events, the pending count, or <code>isRestatementFundingCheckpointed</code>. After the full
+							intended set has been supplied, call <code>completeRestatementFundingPreparation</code>. Do not submit quote rewrites
+							before progress reports <code>QUOTE_PROCESSING</code>.
+						</li>
+						<li>
+							Re-scan the now-frozen book before the first mutation. Recheck statuses, every liquidation mode, previews, funding
+							settlement, hooks, and all deregistered PartyBs with open quotes. For every marked or newly discovered amount-underflow
+							quote, have PartyB obtain a stored-basis Muon signature. Simulate the exact <code>emergencyClosePosition</code> call from
+							the PartyB address, submit it, and verify the quote is <code>CLOSED</code>. PartyA does not participate.
+						</li>
+						<li>
+							After cleanup, record the latest possible timestamp across every old-basis payload, including the dedicated close
+							signatures. Add allowed signer clock skew and prove that Muon cannot issue a later old-basis timestamp. This is the cutoff
+							used for finalization.
+						</li>
+						<li>
+							If any item cannot be processed, abort before a quote rewrite or pending removal. Direct abort stays frozen in
+							<code>SCHEDULED</code>. Active-factor abort preserves the prior state, normally live <code>PRICE_ADJUSTED</code>, but it
+							can also return live in <code>CANCELLED</code>. After <code>abortRestatement</code>, submit the checkpointed PartyB
+							manifest through <code>processRestatementFunding</code> until <code>RestatementAborted</code> if progress reports
+							<code>ABORT_FUNDING_RESTORATION</code>.
+						</li>
+						<li>
+							Cancel all eligible pending inventory. Monitor normal pending cancellation and close-request creation, cancellation, and
+							expiry throughout the window. Reconcile each resulting status and price-bearing close field before processing the quote.
+						</li>
+						<li>
+							Before submitting each bounded batch, have the Operations bot simulate the exact
+							<code>applyAdjustment(symbolId, quoteIds)</code> call through <code>eth_call</code> from the intended transaction sender.
+							Submit only a successful simulation, then track <code>QuoteAdjusted</code> and verify each quote's epoch. Remove
+							successful IDs before retrying. Re-simulate whenever the batch or relevant state changes.
+						</li>
+						<li>
+							Use venue-unit views for convertible records during the open window, but compare raw storage and epoch data to prove
+							physical coverage. Keep batches bounded, retry failed batches one ID at a time, and use raw <code>getQuote</code> for
+							closed or non-convertible history.
+						</li>
+						<li>
+							Re-scan the complete manifest. Confirm no eligible old-epoch quote or unresolved pending quote remains. Reconcile position
+							aggregates, funding checkpoints, and weighted aggregate funding explicitly.
+						</li>
+						<li>
+							Lock Muon validity configuration. Prove that the old-basis timestamp upper bound is no later than
+							<code>restatementStartedAt</code>. If it is later, extend the operational deadline to that upper bound plus the maximum
+							applicable validity. Wait strictly past both that deadline and the on-chain
+							<code>restatementStartedAt + maxUpnlValidTime()</code> deadline.
+						</li>
+						<li>
+							Call <code>finalizeRestatement</code>. If progress reports <code>FINALIZATION_FUNDING_RESTORATION</code>, simulate and
+							submit the checkpointed PartyB manifest in bounded <code>processRestatementFunding</code> batches until
+							<code>RestatementFinalized</code>. Do not treat the initial transaction's success as lifecycle completion,
+							signature-expiry proof, or coverage proof.
+						</li>
+						<li>
+							Verify the expected lifecycle state, explicit <code>1e18</code> cumulative factor, closed window, incremented
+							<code>basisVersion</code>, phase <code>NONE</code>, zero pending checkpoint count, deleted checkpoints, rebased rates, and
+							unfreeze.
+						</li>
+						<li>
+							Resume Muon with raw venue prices. Reinitialize stale three-step force closes and retain the old-basis timestamp cutoff
+							proof. Before any later validity increase, wait strictly past that timestamp bound plus the proposed applicable validity.
+						</li>
+					</ol>
+
+					<h2 id="reference">Compact contract reference</h2>
+					<h3>State and transition lookup</h3>
 					<div class="table-wrap">
 						<table>
 							<thead>
 								<tr>
-									<th>Blocked while frozen</th>
-									<th>Why</th>
+									<th>Stored state</th>
+									<th>Meaning and next actions</th>
 								</tr>
 							</thead>
 							<tbody>
 								<tr>
-									<td>New quotes, open fills, close fills, batch wrappers, and solver-fee wrappers</td>
-									<td>They would create or settle exposure against an uncertain price basis.</td>
+									<td><code>NONE = 0</code></td>
+									<td>No schedule has been stored. A manager may schedule.</td>
 								</tr>
 								<tr>
-									<td>Emergency close, ADL close, and force-close price steps</td>
-									<td>They store or consume symbol prices.</td>
+									<td><code>SCHEDULED = 1</code></td>
+									<td>
+										Live before effectiveness, frozen at or after it. Manager may cancel, confirm when effective, or start direct
+										restatement when effective.
+									</td>
 								</tr>
 								<tr>
-									<td>Classic and accumulated funding charges, rate setters, and epoch-duration changes</td>
-									<td>Funding rates are per-unit values and must not cross unit systems.</td>
+									<td><code>PRICE_ADJUSTED = 2</code></td>
+									<td>
+										Active factor is confirmed and symbol is live unless a restatement window is open. A manager may schedule
+										another step or start later restatement.
+									</td>
 								</tr>
 								<tr>
-									<td>Liquidation price storage, UPNL settlement, and Clearing House close paths</td>
-									<td>These paths depend on symbol-specific prices.</td>
+									<td><code>APPLIED = 3</code></td>
+									<td>
+										A physical window finalized from scheduled or price-adjusted state. This label does not prove quote coverage.
+									</td>
+								</tr>
+								<tr>
+									<td><code>CANCELLED = 4</code></td>
+									<td>The latest scheduled step was cancelled. Older active factors and latest schedule metadata remain stored.</td>
 								</tr>
 							</tbody>
 						</table>
 					</div>
-					<p>
-						Non-price state management can remain available. Users and solvers may cancel, unlock, or expire pending requests through
-						normal paths. Operations may also call <code>cancelPendingQuotes</code> in either frozen window. A liquidation that stored
-						compatible prices before the freeze may continue through later non-price steps.
-					</p>
 
-					<h2 id="factor">Price Basis</h2>
-					<p>While quotes remain in old units, Muon calculates the active price as:</p>
-					<pre><code class="language-text">activePrice = rawVenuePrice * getCumulativeFactor(symbolId) / 1e18</code></pre>
-					<p>
-						During the transition freeze, <code>getCumulativeFactor</code> intentionally returns only confirmed factors. Muon reads the
-						factor that would become active after confirmation from:
-					</p>
-					<pre><code class="language-text">prospectiveFactor = getProspectiveCumulativeFactor(symbolId)
-prospectivePrice  = rawVenuePrice * prospectiveFactor / 1e18</code></pre>
-					<aside class="callout callout-important">
-						<strong>A factor is not a source-feed signal.</strong> The prospective getter provides arithmetic only. Muon must
-						independently verify that the venue source has changed to the new unit basis before using it, and operations must verify
-						Muon's output before confirming. Direct restatement does not ask Muon to activate the prospective factor because the symbol
-						remains frozen until quotes are stored in the venue basis.
-					</aside>
-					<p>
-						While a factor is active, solvers hedge <code>onChainQuantity * factor / 1e18</code> venue units. Frontends use the same
-						quantity conversion and display <code>onChainPrice * 1e18 / factor</code> as the venue-native price. During restatement, the
-						book temporarily contains mixed units, so consumers must show maintenance state instead of applying one global display
-						conversion.
-					</p>
-					<h3>Normalized quote reads</h3>
-					<p>
-						<code>getQuoteInVenueUnits</code> and <code>getQuotesInVenueUnits</code> return quote copies normalized to the selected venue
-						basis. Outside restatement they use the confirmed active factor. During either restatement route, they leave quotes already
-						processed in the current epoch unchanged and virtually convert remaining quotes with <code>restatementFactor</code>. The batch
-						getter evaluates every quote in one on-chain snapshot, allowing operators, solvers, and frontends to inspect a consistent
-						mixed book even when <code>cumulativeFactor</code> was never activated.
-					</p>
-					<p>
-						Each result includes the applied factor, restatement epoch, stored-unit status, and symbol freeze status. These normalized
-						quotes are for valuation, display, and external hedging. Core execution calls still require the raw stored values returned by
-						<code>getQuote</code>.
-					</p>
-
-					<h2 id="restatement">Restatement</h2>
-					<p>
-						Restatement folds the factor selected for the window into stored quotes. It may start directly from an effective scheduled
-						adjustment or later from an active confirmed factor. It is optional only when active-factor trading is acceptable; once a
-						window has processed any quote, that window must be completed.
-					</p>
-					<h3>Preflight and manifest</h3>
-					<p>
-						Core cannot enumerate the complete quote inventory. An indexer or operations service must build a manifest containing every
-						eligible open quote and every unresolved pending quote. Operations previews every open quote, then calls:
-					</p>
-					<pre><code class="language-solidity">startRestatement(symbolId)</code></pre>
-					<p>
-						This opens a new epoch, stores the selected <code>restatementFactor</code>, resets <code>restatementMutated</code>, and
-						freezes the symbol. From <code>SCHEDULED</code>, the selected value is the prospective factor and the active
-						<code>cumulativeFactor</code> is not changed. From a confirmed state, the selected value is the active factor. Core does not
-						accept or trust off-chain inventory counts. The symbol manager remains responsible for reconciling the complete manifest
-						before finalization.
-					</p>
-					<h3>Open quotes</h3>
-					<p>
-						A PartyB may call <code>applyAdjustment</code> for its own quotes. A symbol manager may process any quote. Eligible states are
-						<code>OPENED</code>, <code>CLOSE_PENDING</code>, and <code>CANCEL_CLOSE_PENDING</code>. Every batch is atomic.
-					</p>
-					<pre><code class="language-text">1. Require zero current accumulated-funding rates for the symbol and PartyB.
-2. Charge all accumulated funding still denominated in the old unit.
-3. Remove the quote from aggregated position and funding state.
-4. Convert every stored quantity and per-unit price field.
-5. Re-add the quote to aggregate state in the new unit.
-6. Stamp the quote with the current epoch and mark the window as mutated.</code></pre>
-					<p>The conversion covers all unit-sensitive quote fields:</p>
+					<h3>Restatement funding phase lookup</h3>
 					<div class="table-wrap">
 						<table>
 							<thead>
 								<tr>
-									<th>Quantity fields</th>
-									<th>Matching price fields</th>
+									<th>Phase</th>
+									<th>Meaning and operator action</th>
 								</tr>
 							</thead>
 							<tbody>
 								<tr>
-									<td><code>quantity</code></td>
+									<td><code>NONE = 0</code></td>
+									<td>No funding work is pending. Outside a window, this is the terminal phase.</td>
+								</tr>
+								<tr>
+									<td><code>FUNDING_PREPARATION = 1</code></td>
 									<td>
-										<code>openedPrice</code>, <code>initialOpenedPrice</code>, <code>requestedOpenPrice</code>,
-										<code>marketPrice</code>
+										Supply PartyB address batches with <code>processRestatementFunding</code>, then call
+										<code>completeRestatementFundingPreparation</code>. Quote rewrites and finalization are disabled.
 									</td>
 								</tr>
 								<tr>
-									<td><code>closedAmount</code></td>
-									<td><code>avgClosedPrice</code></td>
+									<td><code>QUOTE_PROCESSING = 2</code></td>
+									<td>Operations attested that preparation is complete. Rewrites and finalization are available.</td>
 								</tr>
 								<tr>
-									<td><code>quantityToClose</code></td>
-									<td><code>requestedClosePrice</code></td>
+									<td><code>ABORT_FUNDING_RESTORATION = 3</code></td>
+									<td>
+										Supply checkpointed PartyB addresses until <code>RestatementAborted</code>; the symbol stays frozen until that
+										terminal transaction, and may remain frozen afterward on the direct <code>SCHEDULED</code> route.
+									</td>
+								</tr>
+								<tr>
+									<td><code>FINALIZATION_FUNDING_RESTORATION = 4</code></td>
+									<td>
+										Supply checkpointed PartyB addresses until <code>RestatementFinalized</code>; only the terminal transaction
+										increments <code>basisVersion</code> and unfreezes.
+									</td>
 								</tr>
 							</tbody>
 						</table>
 					</div>
-					<p>
-						Prices are calculated from the old notional and the converted quantity. Clean factors preserve notional exactly. Other factors
-						may round down by less than one wei of price per converted unit. Collateral locks, fee configuration, and already charged fee
-						totals are not rescaled.
-					</p>
-					<h3>Pending quotes</h3>
-					<p>
-						Pending quotes have no open position to restate. Operations may force-expire <code>PENDING</code>, <code>LOCKED</code>, and
-						<code>CANCEL_PENDING</code> quotes with <code>cancelPendingQuotes</code>. Normal user cancellation, PartyB cancellation, force
-						cancellation, manager expiry, and pending liquidation cleanup also mark the window as mutated when they remove a quote from
-						PartyA's pending inventory.
-					</p>
-					<h3>Abort or finalize</h3>
-					<p>
-						<code>abortRestatement</code> is available only while <code>restatementMutated</code> is false. It closes an unused window and
-						clears <code>restatementFactor</code>. A confirmed-factor window returns to active-factor trading. A direct window returns to
-						the effective <code>SCHEDULED</code> state, so the transition freeze remains until operations confirms, cancels, or retries. A
-						successful quote rewrite or pending-inventory removal sets the flag and disables abort, preventing a partially converted book
-						from reopening.
-					</p>
-					<p>
-						<code>finalizeRestatement</code> is a symbol-manager decision. Core does not claim that every quote was processed.
-						Finalization resets <code>cumulativeFactor</code> to <code>1e18</code>, clears <code>restatementFactor</code>, closes the
-						window, and unfreezes the symbol. Both <code>SCHEDULED</code> direct restatement and <code>PRICE_ADJUSTED</code> later
-						restatement move the latest state to <code>APPLIED</code>.
-					</p>
 
-					<h2 id="safety">Safety Boundaries</h2>
-					<h3>Funding must cross the unit boundary once</h3>
-					<p>
-						Accumulated funding rates are price-denominated per unit. Before restatement, the current long and short rates for every
-						affected PartyB must be zero. <code>applyAdjustment</code> then charges the remaining old-unit funding before conversion. Rate
-						setters and epoch-duration changes stay frozen until finalization. New rates are set afterward using the raw post-restatement
-						price.
-					</p>
-					<h3>Unsafe rounding is rejected before mutation</h3>
-					<p>
-						<code>previewQuoteAdjustment</code> uses the exact write-path arithmetic. It rejects output overflow, a total quantity that
-						becomes zero, a nonzero closed amount that becomes zero, a remaining open amount that becomes zero, or a nonzero close request
-						that becomes zero. Operations must resolve such quotes before opening a restatement window.
-					</p>
-					<h3>Old-basis signatures must expire before quotes are rewritten</h3>
-					<p>
-						Restatement changes what the numbers in storage mean. A quote of <code>quantity 10</code> at
-						<code>openedPrice 400</code> becomes <code>quantity 40</code> at <code>openedPrice 100</code> across a 4:1 split. Muon
-						signatures are minted off-chain and stay valid for a validity window, which opens a race: a signature priced in the old basis,
-						minted before the window opened, could still be inside its validity window after <code>finalizeRestatement</code> has
-						rewritten the book. Executing it would apply an old-basis price against new-basis quote storage — a mispricing the signature
-						itself vouches for.
-					</p>
-					<p>
-						The freeze alone does not close this. <code>requireNotFrozen</code> blocks execution <em>while</em> the window is open; the
-						exposure is a signature that straddles the window entirely and lands after the symbol is unfrozen again, when nothing looks
-						unusual. Core therefore records <code>restatementStartedAt</code> when the window opens and refuses to finalize until at least
-						one full UPNL validity period has elapsed since that instant:
-					</p>
-					<pre><code class="language-solidity">require(
-    block.timestamp &gt;= adjustment.restatementStartedAt + LibMuon.maxUpnlValidTime(),
-    "SymbolAdjustmentFacet: Restatement window too short"
-);</code></pre>
-					<p>
-						Because the symbol stayed frozen for that whole period, every signature minted against the old basis is guaranteed expired
-						before the basis moves. <code>maxUpnlValidTime()</code> takes the maximum of the global <code>upnlValidTime</code> and every
-						per-function override, so a longer override configured through <code>setMuonFunctionUpnlValidTime</code> cannot undercut the
-						guarantee. On the direct route the symbol was already frozen from <code>effectiveTimestamp</code>, so that earlier instant is
-						credited rather than restarting the clock.
-					</p>
-					<aside class="callout callout-important">
-						<strong>This is why Muon payloads carry no basis version.</strong> The same guarantee could have been obtained by binding the
-						symbol's basis version into every price-bearing signature hash, but that would break every existing Muon signature at the
-						upgrade. Enforcing the window on-chain keeps the hash preimages byte-identical to v0.8.5 and leaves the property intact. The
-						practical consequence is a coupling operations must plan for:
-						<strong>a restatement can never be finalized faster than the configured UPNL validity window</strong>, so raising
-						<code>upnlValidTime</code> lengthens every future restatement.
-					</aside>
-					<h3>Account-level signatures remain an off-chain boundary</h3>
-					<p>
-						Core can freeze paths that receive a symbol ID or operate on a known quote. It cannot determine which symbols are represented
-						inside an account-level UPNL signature. Muon must therefore withhold fresh account-level signatures for every account exposed
-						to a frozen symbol. A still-valid signature issued before the freeze is not invalidated on-chain — during a restatement the
-						minimum-window guard above ensures such a signature has expired by the time the basis changes, but for the plain transition
-						freeze, withholding remains an off-chain responsibility.
-					</p>
-					<aside class="callout callout-risk">
-						<strong>Finalization is a trusted operational boundary.</strong> Core verifies per-quote idempotency and prevents abort after
-						a partial mutation, but it cannot prove complete quote coverage. Before finalizing, operations must independently verify every
-						eligible quote, the venue source-unit change, and the factor selected for the window. On the active-factor route, this also
-						requires verifying Muon's price basis.
-					</aside>
-
-					<h2 id="interface">Contract Reference</h2>
-					<h3>Lifecycle and cleanup functions</h3>
-					<pre><code class="language-solidity">function scheduleAdjustment(uint256 symbolId, uint256 factor, uint256 effectiveTimestamp) external;
-function cancelAdjustment(uint256 symbolId) external;
-function confirmPriceAdjusted(uint256 symbolId) external;
-
-function startRestatement(uint256 symbolId) external;
-function abortRestatement(uint256 symbolId) external;
-function applyAdjustment(uint256 symbolId, uint256[] calldata quoteIds) external;
-function cancelPendingQuotes(uint256[] calldata quoteIds) external;
-function finalizeRestatement(uint256 symbolId) external;</code></pre>
-					<h3>Views</h3>
-					<pre><code class="language-solidity">function getSymbolAdjustment(uint256 symbolId) external view returns (SymbolAdjustment memory);
-function getCumulativeFactor(uint256 symbolId) external view returns (uint256);
-function getProspectiveCumulativeFactor(uint256 symbolId) external view returns (uint256);
-function previewQuoteAdjustment(uint256 symbolId, uint256 quoteId)
-    external view returns (QuoteAdjustmentPreview memory);
-function isSymbolFrozen(uint256 symbolId) external view returns (bool);
-function getRestatementState(uint256 symbolId) external view returns (bool restating, uint256 epoch);
-function getQuoteRestatedEpoch(uint256 quoteId) external view returns (uint256);
-
-// ViewFacetQuote
-function getQuoteInVenueUnits(uint256 quoteId) external view returns (VenueQuoteView memory);
-function getQuotesInVenueUnits(uint256[] calldata quoteIds)
-    external view returns (VenueQuoteView[] memory);</code></pre>
-					<h3>Storage layout and scope</h3>
-					<p>
-						Adjustment state is isolated per symbol. The <code>adjustments</code> mapping stores one <code>SymbolAdjustment</code> record
-						for each <code>symbolId</code>; it does not store a history of earlier scheduled steps. Indexers reconstruct that history from
-						events. The second mapping stores the last restatement window that physically rewrote each quote.
-					</p>
-					<p>
-						Two fields on <code>SymbolAdjustment</code> exist purely to keep old-basis values from executing against rewritten storage.
-						<code>basisVersion</code> increments on every <code>finalizeRestatement</code> and is bound into multi-transaction workflows
-						that could otherwise straddle a window — the 3-step force close stamps it at <code>initializeForceClose</code> and rejects
-						finalization with <code>ForceActionsFacet: Symbol basis changed</code> if it moved. <code>restatementStartedAt</code> records
-						when the symbol became continuously frozen and enforces the minimum window described under
-						<a href="#safety">Safety Boundaries</a>. Neither field appears in any Muon signature payload.
-					</p>
-					<pre><code class="language-solidity">struct Layout {
-    mapping(uint256 symbolId => SymbolAdjustment) adjustments;
-    mapping(uint256 quoteId => uint256 epoch) quoteRestatedEpoch;
-}</code></pre>
-					<aside class="callout callout-important">
-						<strong>Read raw storage and effective state differently.</strong> <code>getSymbolAdjustment</code> returns the stored struct
-						exactly. Before any factor is activated, its raw <code>cumulativeFactor</code> is <code>0</code>. Operational integrations
-						should normally use <code>getCumulativeFactor</code>, which translates raw <code>0</code> to the effective identity factor
-						<code>1e18</code>.
-					</aside>
-
-					<h3><code>AdjustmentState</code></h3>
-					<p>
-						The enum describes the latest scheduled adjustment step. It does not by itself describe whether a restatement window is open.
-						Always interpret it together with <code>restating</code>, <code>cumulativeFactor</code>, and <code>isSymbolFrozen</code>.
-					</p>
+					<h3>Per-symbol record, grouped by purpose</h3>
 					<div class="table-wrap">
 						<table>
 							<thead>
 								<tr>
-									<th>Value</th>
-									<th>Meaning</th>
-									<th>Factor behavior</th>
-									<th>Freeze behavior</th>
-									<th>Normal next action</th>
+									<th>Purpose</th>
+									<th>Fields and persistence</th>
 								</tr>
 							</thead>
 							<tbody>
 								<tr>
-									<td><code>NONE (0)</code></td>
-									<td>No adjustment has ever been scheduled for this symbol.</td>
-									<td>Effective factor is <code>1e18</code>; raw storage may still be <code>0</code>.</td>
-									<td>Not frozen by adjustment state.</td>
-									<td><code>scheduleAdjustment</code></td>
-								</tr>
-								<tr>
-									<td><code>SCHEDULED (1)</code></td>
-									<td>The latest factor and effective time are registered but not confirmed.</td>
+									<td>Latest schedule</td>
 									<td>
-										The scheduled factor appears in <code>getProspectiveCumulativeFactor</code> and may be copied into
-										<code>restatementFactor</code>.
-									</td>
-									<td>Unfrozen before the effective time; frozen at and after it.</td>
-									<td>
-										After effective time: <code>confirmPriceAdjusted</code>, <code>startRestatement</code>, or
-										<code>cancelAdjustment</code>.
+										<code>factor</code> and <code>effectiveTimestamp</code> describe the latest step. Both are zero before the
+										first schedule and survive cancellation and finalization. <code>state</code> defaults to <code>NONE</code>.
+										<code>scheduledCount</code> is a lifetime count. Events use zero-based index <code>scheduledCount - 1</code>.
 									</td>
 								</tr>
 								<tr>
-									<td><code>PRICE_ADJUSTED (2)</code></td>
-									<td>Operations confirmed that Muon is using the adjusted price basis.</td>
-									<td>The latest factor is compounded into <code>cumulativeFactor</code>.</td>
-									<td>Not frozen by the enum; trading is active unless <code>restating</code> is true.</td>
-									<td>Keep trading, schedule another step, or optionally start restatement.</td>
+									<td>Unabsorbed trading basis</td>
+									<td>
+										<code>cumulativeFactor</code> is the product of confirmed factors not yet absorbed into quote storage. Raw
+										zero means unset and reads as <code>1e18</code>. Finalization writes explicit <code>1e18</code>.
+									</td>
 								</tr>
 								<tr>
-									<td><code>APPLIED (3)</code></td>
-									<td>The symbol manager finalized after operational quote-inventory reconciliation.</td>
-									<td><code>cumulativeFactor</code> was reset to <code>1e18</code>.</td>
-									<td>Unfrozen after finalization.</td>
-									<td>Trade in the raw basis or schedule a later adjustment.</td>
+									<td>Window identity and safety</td>
+									<td>
+										<code>restatementEpoch</code> increments on every successful start and survives abort and finalization.
+										<code>restating</code> is the open-window flag. <code>restatementMutated</code> resets to false at start,
+										becomes true on a rewrite or pending removal, and is not cleared by finalization.
+										<code>restatementFactor</code> and <code>restatementStartedAt</code> are zero outside a window.
+									</td>
 								</tr>
 								<tr>
-									<td><code>CANCELLED (4)</code></td>
-									<td>The latest scheduled step was cancelled without activating its own factor.</td>
-									<td>An older confirmed <code>cumulativeFactor</code> may still remain active.</td>
-									<td>Not frozen by the cancelled step.</td>
-									<td>Schedule another step, or restate an older active factor if one remains.</td>
+									<td>Funding batches</td>
+									<td>
+										<code>restatementPhase</code>, <code>fundingCutoffTimestamp</code>, <code>pendingFundingPartyBCount</code>,
+										and <code>fundingRestorationTimestamp</code> coordinate operator-supplied preparation and restoration batches.
+										The terminal abort or finalization clears all four fields.
+									</td>
+								</tr>
+								<tr>
+									<td>Physical basis generation</td>
+									<td><code>basisVersion</code> starts at zero and increments only on finalization.</td>
 								</tr>
 							</tbody>
 						</table>
 					</div>
 
-					<h3><code>SymbolAdjustment</code> fields</h3>
+					<h3>Checkpoint and layout lookup</h3>
 					<div class="table-wrap">
 						<table>
 							<thead>
 								<tr>
 									<th>Field</th>
-									<th>Type and units</th>
-									<th>Written or reset by</th>
-									<th>Operational interpretation</th>
-								</tr>
-							</thead>
-							<tbody>
-								<tr>
-									<td><code>factor</code></td>
-									<td><code>uint256</code>, 1e18-scaled units multiplier</td>
-									<td>Overwritten by every successful <code>scheduleAdjustment</code>.</td>
-									<td>
-										Describes only the latest scheduled step: a 4:1 split is <code>4e18</code>; a 1:10 reverse split is
-										<code>0.1e18</code>. Allowed range is <code>0.01e18</code> through <code>100e18</code>, excluding
-										<code>1e18</code>. Cancellation and finalization do not clear this field, so it must not be read as the active
-										factor.
-									</td>
-								</tr>
-								<tr>
-									<td><code>effectiveTimestamp</code></td>
-									<td><code>uint256</code>, Unix timestamp in seconds</td>
-									<td>Overwritten by <code>scheduleAdjustment</code>.</td>
-									<td>
-										While state is <code>SCHEDULED</code>, the symbol freezes when
-										<code>block.timestamp &gt;= effectiveTimestamp</code>. A past timestamp is valid and freezes immediately. The
-										timestamp remains stored after confirm, cancel, or finalize but no longer controls freezing unless state is
-										<code>SCHEDULED</code>.
-									</td>
-								</tr>
-								<tr>
-									<td><code>state</code></td>
-									<td><code>AdjustmentState</code>, numeric values 0 through 4</td>
-									<td>Set by schedule, cancel, confirm, and finalization of either restatement route.</td>
-									<td>
-										Describes the latest scheduled step, not the entire symbol condition. <code>startRestatement</code> does not
-										change it; the separate <code>restating</code> flag supplies that overlay.
-									</td>
-								</tr>
-								<tr>
-									<td><code>scheduledCount</code></td>
-									<td><code>uint256</code>, monotonically increasing count</td>
-									<td>Incremented once by every successful <code>scheduleAdjustment</code>; never reset.</td>
-									<td>
-										When the count is nonzero, the latest adjustment event index is <code>scheduledCount - 1</code>. Cancellation
-										and confirmation do not increment it.
-									</td>
-								</tr>
-								<tr>
-									<td><code>cumulativeFactor</code></td>
-									<td><code>uint256</code>, 1e18-scaled cumulative multiplier</td>
-									<td>
-										Compounded by <code>confirmPriceAdjusted</code>; reset to <code>1e18</code> by
-										<code>finalizeRestatement</code>.
-									</td>
-									<td>
-										Product of all confirmed factors not yet folded into quote storage. Raw <code>0</code> means uninitialized and
-										is treated as <code>1e18</code> by <code>getCumulativeFactor</code>. Compounding uses
-										<code>Math.mulDiv</code> with downward integer rounding and rejects a result of zero. It can remain active
-										indefinitely without restatement. Direct restatement does not activate the scheduled factor here.
-									</td>
-								</tr>
-								<tr>
-									<td><code>restatementEpoch</code></td>
-									<td><code>uint256</code>, monotonically increasing window ID</td>
-									<td>Incremented at the start of every <code>startRestatement</code>, including a window later aborted.</td>
-									<td>
-										Identifies a restatement attempt. It is not a factor, timestamp, or permanent quote-unit version, and it is
-										never decremented.
-									</td>
-								</tr>
-								<tr>
-									<td><code>restating</code></td>
-									<td><code>bool</code></td>
-									<td>
-										Set to <code>true</code> by <code>startRestatement</code>; set to <code>false</code> by a permitted abort or
-										successful finalization.
-									</td>
-									<td>
-										When true, the symbol is frozen regardless of <code>state</code>. Finalization remains an explicit
-										<code>SYMBOL_MANAGER_ROLE</code> decision.
-									</td>
-								</tr>
-								<tr>
-									<td><code>restatementMutated</code></td>
-									<td><code>bool</code></td>
-									<td>
-										Reset to false by <code>startRestatement</code>; set true by a quote rewrite or pending-inventory removal.
-									</td>
-									<td>
-										Authoritative abort-safety flag. Once true, <code>abortRestatement</code> must revert because the book may
-										contain mixed stored units. It is not a progress counter and does not prove complete quote coverage.
-									</td>
-								</tr>
-								<tr>
-									<td><code>restatementFactor</code></td>
-									<td><code>uint256</code>, 1e18-scaled window multiplier</td>
-									<td>Set by <code>startRestatement</code>; cleared to <code>0</code> by abort or finalization.</td>
-									<td>
-										Factor used by <code>applyAdjustment</code>, previews, and normalized mixed-book views. From
-										<code>SCHEDULED</code> it equals the prospective factor, allowing direct restatement without changing Muon's
-										active <code>cumulativeFactor</code>. A raw <code>0</code> means no window is open.
-									</td>
-								</tr>
-							</tbody>
-						</table>
-					</div>
-
-					<h3>Mapping fields</h3>
-					<div class="table-wrap">
-						<table>
-							<thead>
-								<tr>
-									<th>Mapping</th>
-									<th>Key and default</th>
-									<th>Meaning and limitations</th>
+									<th>Meaning</th>
 								</tr>
 							</thead>
 							<tbody>
 								<tr>
 									<td><code>adjustments[symbolId]</code></td>
-									<td>One record per symbol; an unknown or untouched key reads as an all-zero struct.</td>
-									<td>
-										Stores only the latest scheduled step plus the active cumulative and last restatement bookkeeping. Use the
-										event stream for full history.
-									</td>
+									<td>The latest 15-field <code>SymbolAdjustment</code> record, not history.</td>
 								</tr>
 								<tr>
 									<td><code>quoteRestatedEpoch[quoteId]</code></td>
-									<td>One value per quote; default <code>0</code> means never physically restated.</td>
+									<td>Last physical rewrite epoch. Zero means never rewritten. First window epoch is one.</td>
+								</tr>
+								<tr>
+									<td><code>adjustmentScheduledAt[symbolId]</code></td>
+									<td>Block time of the latest schedule. Zero before any schedule.</td>
+								</tr>
+								<tr>
+									<td><code>restatementFundingPartyBs[symbolId]</code></td>
+									<td>Retained for storage-layout compatibility. The current workflow does not append to or read this array.</td>
+								</tr>
+								<tr>
+									<td><code>fundingRateCheckpoints[symbolId][partyB]</code></td>
 									<td>
-										Set to the symbol's current <code>restatementEpoch</code> after a successful rewrite. It prevents the same
-										quote from being processed twice in one window and lets normalized views distinguish processed from
-										unprocessed quotes during that window. It does not store the factor and is not a permanent proof of the
-										quote's current basis.
+										<code>currentLongRate</code>, <code>currentShortRate</code>, and <code>restatementEpoch</code>. No checkpoint
+										is created for zero epoch duration or two zero current rates. Epoch matching rejects stale data. Each entry is
+										deleted by the restoration batch that processes that PartyB.
 									</td>
 								</tr>
 							</tbody>
 						</table>
 					</div>
 
-					<h3>Reading a restatement snapshot</h3>
-					<pre><code class="language-text">state                       = PRICE_ADJUSTED
-restating                   = true
-restatementEpoch            = 7
-restatementMutated          = true
-cumulativeFactor            = 4e18
-restatementFactor           = 4e18
-quoteRestatedEpoch[410]     = 7
-quoteRestatedEpoch[411]     = 6</code></pre>
-					<p>
-						This means the symbol is frozen in restatement window 7 and at least one on-chain mutation has occurred. Quote 410 was
-						physically converted in this window; quote 411 was not. Abort must revert because <code>restatementMutated</code> is true.
-						Core does not know how many additional quotes remain, so the symbol manager must reconcile the off-chain inventory before
-						finalizing and resetting the active <code>4e18</code> factor.
-					</p>
-					<p>
-						In a direct window, <code>state</code> remains <code>SCHEDULED</code>, <code>cumulativeFactor</code> may remain raw
-						<code>0</code> (effective identity), and <code>restatementFactor</code> carries <code>4e18</code>. That distinction proves the
-						scheduled factor was selected for maintenance but never activated for trading.
-					</p>
-
-					<h3>Derived views</h3>
+					<h3>Function lookup</h3>
 					<div class="table-wrap">
 						<table>
 							<thead>
 								<tr>
-									<th>View</th>
-									<th>What it returns</th>
-									<th>When to use it</th>
+									<th>Function</th>
+									<th>Authorization and effect</th>
 								</tr>
 							</thead>
 							<tbody>
 								<tr>
-									<td><code>getSymbolAdjustment(symbolId)</code></td>
-									<td>The raw stored <code>SymbolAdjustment</code> struct, including zero defaults and mutation state.</td>
-									<td>Auditing lifecycle, active factor, and abort availability.</td>
+									<td><code>scheduleAdjustment</code></td>
+									<td>Manager-only. Store the latest step, increment count, and record schedule block time.</td>
 								</tr>
 								<tr>
-									<td><code>getCumulativeFactor(symbolId)</code></td>
-									<td>The confirmed active factor, normalizing stored <code>0</code> to <code>1e18</code>.</td>
-									<td>Muon's active price basis, solver hedging, and normal display conversion.</td>
-								</tr>
-								<tr>
-									<td><code>getProspectiveCumulativeFactor(symbolId)</code></td>
-									<td>Active confirmed factor compounded with the latest factor only while state is <code>SCHEDULED</code>.</td>
-									<td>Transition preparation after independently verifying the venue source-unit change.</td>
-								</tr>
-								<tr>
-									<td><code>isSymbolFrozen(symbolId)</code></td>
+									<td><code>cancelAdjustment</code></td>
 									<td>
-										True when <code>restating</code> is true, or when state is <code>SCHEDULED</code> and the effective time has
-										arrived.
+										Manager-only. Change effective or future <code>SCHEDULED</code> to <code>CANCELLED</code> when no window is
+										open.
 									</td>
-									<td>Authoritative integration gate for symbol-specific price-sensitive actions.</td>
 								</tr>
 								<tr>
-									<td><code>getRestatementState(symbolId)</code></td>
-									<td>Only <code>(restating, restatementEpoch)</code>.</td>
-									<td>Lightweight polling when the mutation flag and full adjustment state are not required.</td>
+									<td><code>confirmPriceAdjusted</code></td>
+									<td>Manager-only. At or after effectiveness, activate the prospective factor and unfreeze.</td>
 								</tr>
 								<tr>
-									<td><code>getQuoteRestatedEpoch(quoteId)</code></td>
-									<td>The quote's last successful physical restatement window, or zero.</td>
-									<td>Per-quote idempotency and current-window manifest reconciliation.</td>
+									<td><code>startRestatement</code></td>
+									<td>
+										Manager-only. Select the factor, open an epoch, freeze, and initialize funding progress without scanning
+										PartyBs.
+									</td>
+								</tr>
+								<tr>
+									<td><code>processRestatementFunding</code></td>
+									<td>
+										Manager-only. Process only the supplied PartyB addresses in the current preparation or restoration phase. The
+										batch that reduces the pending count to zero completes abort or finalization.
+									</td>
+								</tr>
+								<tr>
+									<td><code>completeRestatementFundingPreparation</code></td>
+									<td>Manager-only. Attest that the intended PartyB set has been supplied and enable quote processing.</td>
+								</tr>
+								<tr>
+									<td><code>abortRestatement</code></td>
+									<td>
+										Manager-only. Begin original-rate restoration for a mutation-free window; complete immediately only when no
+										checkpoint exists.
+									</td>
+								</tr>
+								<tr>
+									<td><code>applyAdjustment</code></td>
+									<td>
+										Manager for any quote or own PartyB per quote. Rewrite eligible open inventory only in a current
+										<code>QUOTE_PROCESSING</code> phase.
+									</td>
+								</tr>
+								<tr>
+									<td><code>cancelPendingQuotes</code></td>
+									<td>Manager-only. Cancel eligible pending inventory whenever its symbol is frozen.</td>
+								</tr>
+								<tr>
+									<td><code>emergencyClosePosition</code></td>
+									<td>
+										Own PartyB only. While the symbol is frozen, fully close an unrestatable amount-dust quote without PartyA;
+										Muon price and UPNLs must already use the stored quote basis. Non-dust quotes keep the ordinary emergency
+										conditions and the freeze gate.
+									</td>
+								</tr>
+								<tr>
+									<td><code>finalizeRestatement</code></td>
+									<td>
+										Manager-only. After strict expiry, begin rebased-rate restoration; complete immediately only when no
+										checkpoint exists.
+									</td>
 								</tr>
 							</tbody>
 						</table>
 					</div>
-
-					<h3><code>QuoteAdjustmentPreview</code> fields</h3>
 					<p>
-						<code>previewQuoteAdjustment</code> applies the exact physical-restatement arithmetic without mutating storage. It returns the
-						active <code>factor</code> and the post-conversion values for <code>quantity</code>, <code>openedPrice</code>,
-						<code>initialOpenedPrice</code>, <code>requestedOpenPrice</code>, <code>marketPrice</code>, <code>closedAmount</code>,
-						<code>avgClosedPrice</code>, <code>quantityToClose</code>, and <code>requestedClosePrice</code>. A revert here predicts the
-						same rounding or underflow rejection in <code>applyAdjustment</code>.
+						The read functions are unrestricted. <code>getSymbolAdjustment</code> returns raw record values.
+						<code>getCumulativeFactor</code> normalizes unset zero. <code>getProspectiveCumulativeFactor</code> includes a scheduled step
+						only in <code>SCHEDULED</code>. <code>isSymbolFrozen</code> evaluates the live predicate.
+						<code>getRestatementState</code> returns the window flag and epoch. <code>getRestatementFundingProgress</code> returns the
+						phase, pending checkpoint count, funding cutoff, and funding restoration timestamp.
+						<code>isRestatementFundingCheckpointed</code> reports whether one PartyB has a checkpoint for the open epoch.
+						<code>getQuoteRestatedEpoch</code> returns a quote's last physical epoch. <code>previewQuoteAdjustment</code>
+						selects the open-window, prospective, or active factor and returns the exact nine converted fields.
 					</p>
 
-					<h3><code>VenueQuoteView</code> fields</h3>
-					<div class="table-wrap">
-						<table>
-							<thead>
-								<tr>
-									<th>Field</th>
-									<th>Meaning</th>
-									<th>Integration warning</th>
-								</tr>
-							</thead>
-							<tbody>
-								<tr>
-									<td><code>quote</code></td>
-									<td>A memory copy normalized to the current confirmed venue-unit basis.</td>
-									<td>Use for valuation, display, and external hedging, not as raw Core execution input.</td>
-								</tr>
-								<tr>
-									<td><code>factorApplied</code></td>
-									<td>
-										Factor used for virtual conversion. It is <code>1e18</code> when storage is already in the confirmed venue
-										basis, including a quote processed in the current restatement window.
-									</td>
-									<td>Do not assume it equals the symbol's active factor for every quote during a mixed window.</td>
-								</tr>
-								<tr>
-									<td><code>restatementEpoch</code></td>
-									<td>The symbol's current/latest restatement window counter.</td>
-									<td>This is not the quote's own epoch; query <code>getQuoteRestatedEpoch</code> for that value.</td>
-								</tr>
-								<tr>
-									<td><code>storedInVenueUnits</code></td>
-									<td>Derived as <code>factorApplied == 1e18</code>.</td>
-									<td>Describes the current confirmed basis, not whether the quote was ever physically restated.</td>
-								</tr>
-								<tr>
-									<td><code>symbolFrozen</code></td>
-									<td>The same derived result as <code>isSymbolFrozen(quote.symbolId)</code>.</td>
-									<td>A normalized read does not make execution available while this flag is true.</td>
-								</tr>
-							</tbody>
-						</table>
-					</div>
-
-					<aside class="callout callout-risk">
-						<strong>Do not infer more than the fields prove.</strong>
-						<ul>
-							<li><code>state == PRICE_ADJUSTED</code> does not mean restatement is running; check <code>restating</code>.</li>
-							<li><code>restating == false</code> does not mean there is no active factor; check <code>getCumulativeFactor</code>.</li>
-							<li>Finalization proves manager authorization, not that every eligible quote was processed.</li>
-							<li>
-								<code>quoteRestatedEpoch</code> prevents duplicate work in a window; it does not store historical conversion factors.
-							</li>
-							<li><code>getQuote</code> remains the raw execution view; venue-unit views are integration representations.</li>
-						</ul>
-					</aside>
-					<h3>Roles</h3>
-					<div class="table-wrap">
-						<table>
-							<thead>
-								<tr>
-									<th>Caller</th>
-									<th>Allowed operations</th>
-								</tr>
-							</thead>
-							<tbody>
-								<tr>
-									<td><code>SYMBOL_MANAGER_ROLE</code></td>
-									<td>
-										Schedule, cancel, confirm, start, abort, process any eligible open quote, cancel pending quotes, and finalize.
-									</td>
-								</tr>
-								<tr>
-									<td>Quote's PartyB</td>
-									<td>Call <code>applyAdjustment</code> for its own eligible quotes.</td>
-								</tr>
-								<tr>
-									<td>Anyone</td>
-									<td>Read all views and previews.</td>
-								</tr>
-							</tbody>
-						</table>
-					</div>
-					<h3>Events</h3>
-					<pre><code class="language-solidity">AdjustmentScheduled
-AdjustmentCancelled
-PriceAdjustmentConfirmed
-RestatementStarted
-RestatementAborted
-QuoteAdjusted
-PendingQuoteCancelledByAdjustment
-RestatementFinalized</code></pre>
+					<h3>Event lookup</h3>
+					<pre><code class="language-solidity">AdjustmentScheduled(uint256 indexed symbolId, uint256 adjustmentIndex, uint256 factor, uint256 effectiveTimestamp)
+AdjustmentCancelled(uint256 indexed symbolId, uint256 adjustmentIndex)
+PriceAdjustmentConfirmed(uint256 indexed symbolId, uint256 adjustmentIndex, uint256 newCumulativeFactor)
+RestatementStarted(uint256 indexed symbolId, uint256 epoch, uint256 restatementFactor)
+RestatementFundingPreparationProgress(uint256 indexed symbolId, uint256 indexed epoch, uint256 submittedPartyBs,
+                                      uint256 checkpointedPartyBs, uint256 pendingPartyBs)
+RestatementFundingPreparationCompleted(uint256 indexed symbolId, uint256 indexed epoch, uint256 pendingPartyBs)
+RestatementFundingRestorationStarted(uint256 indexed symbolId, uint256 indexed epoch, bool finalizing,
+                                     uint256 pendingPartyBs)
+RestatementFundingRestorationProgress(uint256 indexed symbolId, uint256 indexed epoch, bool finalizing,
+                                      uint256 processedPartyBs, uint256 remainingPartyBs)
+RestatementAborted(uint256 indexed symbolId, uint256 epoch)
+QuoteAdjusted(uint256 indexed quoteId, uint256 indexed symbolId, uint256 epoch, uint256 factor,
+              uint256 oldQuantity, uint256 newQuantity, uint256 oldOpenedPrice, uint256 newOpenedPrice)
+PendingQuoteCancelledByAdjustment(uint256 indexed quoteId, uint256 indexed symbolId)
+RestatementFinalized(uint256 indexed symbolId, uint256 epoch)</code></pre>
 					<p>
-						Consumers must track all eight events. <code>AdjustmentCancelled</code> and <code>RestatementAborted</code> are explicit
-						unfreeze signals. <code>RestatementStarted</code> includes the epoch and factor fixed for that window.
-						<code>QuoteAdjusted</code> includes the old and new quantity and opened price so indexers can verify notional preservation.
-					</p>
-
-					<h2 id="integration">Integration Requirements</h2>
-					<h3>Muon</h3>
-					<ul>
-						<li>Read the latest adjustment, active factor, prospective factor, and freeze state for every supported symbol.</li>
-						<li>
-							Use the prospective factor for signatures only when operations chooses the active-factor route and the source feed has
-							changed units.
-						</li>
-						<li>Withhold symbol-specific and account-level signatures during both frozen windows.</li>
-						<li>Resume after confirmation only when the active factor matches the verified price basis.</li>
-						<li>
-							For direct restatement, do not activate the scheduled factor; resume after finalization when quotes and funding use raw
-							venue units.
-						</li>
-						<li>Detect an unscheduled price discontinuity and alert operations before signing it.</li>
-						<li>
-							No payload change is required for this feature. Signature hash preimages are unchanged from v0.8.5; the symbol's basis
-							version is deliberately not part of any hash. Core guarantees old-basis signatures have expired by enforcing a minimum
-							frozen window before finalization.
-						</li>
-					</ul>
-					<h3>Solvers</h3>
-					<ul>
-						<li>Prepare for the effective timestamp when <code>AdjustmentScheduled</code> is emitted.</li>
-						<li>While a factor is active, hedge and submit prices in the old on-chain basis.</li>
-						<li>Before restatement, roll accumulated funding and set the current long and short rates to zero.</li>
-						<li>During restatement, process owned quotes and reconcile every emitted epoch.</li>
-						<li>After finalization, restart accumulated funding using the raw post-restatement price.</li>
-					</ul>
-					<h3>Frontends</h3>
-					<ul>
-						<li>Show the scheduled event and effective time before the freeze.</li>
-						<li>Distinguish active-factor trading, direct restatement during the transition freeze, and optional later restatement.</li>
-						<li>Use the active factor for venue-native display while positions remain in old units.</li>
-						<li>Do not apply one global conversion during restatement, when quote units are mixed.</li>
-					</ul>
-					<h3>Indexers and monitoring</h3>
-					<ul>
-						<li>Reconstruct adjustment history from events and keep current state per symbol.</li>
-						<li>Build the complete open and pending quote manifest before restatement.</li>
-						<li>Reconcile every eligible quote ID against the current epoch before authorizing finalization.</li>
-						<li>
-							Alert on an effective scheduled step that remains unconfirmed, an aborted window, a stalled batch, or a factor that does
-							not reset.
-						</li>
-					</ul>
-
-					<h2 id="runbook">Operations Runbook</h2>
-					<h3>Common transition and route choice</h3>
-					<ol>
-						<li>Verify the symbol ID, factor direction, effective time, and source-feed change.</li>
-						<li>Read the current and prospective factors and sanity-check representative prices.</li>
-						<li>Call <code>scheduleAdjustment</code> and record the adjustment index.</li>
-						<li>At the effective time, confirm the symbol is frozen and stop fresh signatures for exposed accounts.</li>
-						<li>
-							Call <code>cancelAdjustment</code> if the event did not occur. Otherwise choose direct restatement when the inventory is
-							small enough to finish while frozen, or active-factor confirmation when trading must resume first.
-						</li>
-					</ol>
-					<h3>Active-factor route</h3>
-					<ol>
-						<li>Have Muon calculate on the prospective basis and independently compare it with the raw source.</li>
-						<li>Call <code>confirmPriceAdjusted</code> after the new basis is verified.</li>
-						<li>Verify the emitted cumulative factor and the unfreeze before reopening integrations.</li>
-					</ol>
-					<h3>Direct or later restatement</h3>
-					<ol>
-						<li>Snapshot the complete open and pending quote inventory from the indexer.</li>
-						<li>Preview every open quote and resolve rounding, overflow, liquidation, and funding-settlement failures.</li>
-						<li>Roll accumulated funding, set current long and short rates to zero, and read them back.</li>
-						<li>
-							Call <code>startRestatement(symbolId)</code> and verify the emitted epoch and factor. For direct mode, also verify state
-							remains <code>SCHEDULED</code> and <code>getCumulativeFactor</code> did not activate the new factor.
-						</li>
-						<li>Resolve pending quotes and process open quotes in retryable batches.</li>
-						<li>For every open quote, verify <code>getQuoteRestatedEpoch(quoteId)</code> equals the current epoch.</li>
-						<li>Re-scan the open and pending inventory and verify no old-basis quote was omitted.</li>
-						<li>
-							Confirm at least one full UPNL validity period has elapsed since the symbol became frozen. Finalizing earlier reverts with
-							<code>SymbolAdjustmentFacet: Restatement window too short</code>. On a fast book this is the step that gates the window,
-							not the batches — budget for it rather than treating the revert as a fault.
-						</li>
-						<li>
-							Finalize, confirm the factor is <code>1e18</code>, restart funding in the raw price basis, then resume Muon signatures.
-						</li>
-					</ol>
-					<aside class="callout callout-important">
-						<strong>Abort before the first mutation.</strong> If the operation is cancelled while <code>restatementMutated</code> is
-						false, abort the window and retry later. After the first successful rewrite or pending removal, finish the inventory
-						reconciliation and finalize instead. Aborting direct mode returns to the effective scheduled freeze; it does not reopen
-						trading.
-					</aside>
-
-					<h2 id="example">Worked Example: 4:1 Split</h2>
-					<p>An open quote starts with:</p>
-					<pre><code class="language-text">quantity      = 1
-openedPrice   = 400
-notional      = 400</code></pre>
-					<p>
-						The venue performs a 4:1 split and reopens near <code>100</code>. Using that raw price against the old quote would create a
-						false price move from <code>400</code> to <code>100</code>. During the active-factor stage, the quote remains unchanged and
-						Muon reports:
-					</p>
-					<pre><code class="language-text">raw venue price = 100
-active factor   = 4
-adjusted price  = 100 * 4 = 400</code></pre>
-					<p>
-						UPNL remains continuous because the quote and oracle price are both in old units. If operations later restates the quote, Core
-						writes:
-					</p>
-					<pre><code class="language-text">new quantity    = 1 * 4 = 4
-new openedPrice = 1 * 400 / 4 = 100
-new notional    = 4 * 100 = 400</code></pre>
-					<p>
-						The economic value never changes. Only the accounting unit changes. After finalization, the factor returns to
-						<code>1e18</code> and Muon can use the venue's raw <code>100</code> price directly.
-					</p>
-					<p>
-						With only a few quotes, operations can skip the active-factor stage: keep the symbol frozen, start direct restatement with
-						<code>restatementFactor = 4e18</code>, write the same <code>4</code>/<code>100</code> quote values, and finalize. Muon never
-						needs to publish the temporary <code>400</code> adjusted price because no trading or price-sensitive execution occurs during
-						the window.
+						Storage retains only the latest schedule, so indexers need these events for complete adjustment history. The four funding
+						events report submitted and checkpointed address counts, the preparation attestation, restoration mode, and remaining work.
+						Per-pair preparation and restoration also emit the existing <code>AccumulatedFundingStateUpdated</code>. When checkpoints
+						exist, <code>RestatementAborted</code> or <code>RestatementFinalized</code> is emitted by the last funding batch rather than
+						the transaction that starts restoration. Every successful <code>applyAdjustment</code> emits
+						<code>QuoteFundingSettled</code> before <code>QuoteAdjusted</code>, including when the settled funding amount is zero.
+						Indexers need both events to attribute the settlement side effects and the later unit conversion.
 					</p>
 				</article>
 			</main>

@@ -16,7 +16,11 @@ const MUON_PERMISSIONS = [
 	"LiquidationPartyA",
 	"LiquidationPartyB",
 	"RemoveMargin",
+	"ExpressCredit",
 ];
+// Express credit has its own freshness window in the ExpressProvider and is not
+// a Core UPNL-validity category.
+const MUON_UPNL_FUNCTIONS = MUON_PERMISSIONS.filter(name => name !== "ExpressCredit");
 /**
  * Exact, case-sensitive role names from LibAccessControl. An unknown or misspelled name is
  * rejected rather than silently granting nothing.
@@ -211,7 +215,7 @@ function validateProtocol(value, source, field) {
 function validateMuonUpnlValidTimeByFunction(value, source, field) {
 	if (value === undefined) return;
 	const overrides = object(value, source, field);
-	onlyKeys(overrides, MUON_PERMISSIONS, source, field);
+	onlyKeys(overrides, MUON_UPNL_FUNCTIONS, source, field);
 	for (const [name, seconds] of Object.entries(overrides)) {
 		uintString(seconds, source, `${field}.${name}`, BigInt(1));
 	}

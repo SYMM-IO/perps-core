@@ -44,6 +44,12 @@ interface ISymmio {
 
 	function setSymbolAcceptableValues(uint256 symbolId, uint256 minAcceptableQuoteValue, uint256 minAcceptablePortionLF) external;
 
+	function setSymbolMinAcceptableNotionalLFRate(uint256 symbolId, uint256 minAcceptableNotionalLFRate) external;
+
+	function clearSymbolMinAcceptableNotionalLFRateOverride(uint256 symbolId) external;
+
+	function getSymbolMinAcceptableNotionalLFRate(uint256 symbolId) external view returns (uint256 rate, bool hasOverride);
+
 	function setSymbolFundingState(uint256 symbolId, uint256 fundingRateEpochDuration, uint256 fundingRateWindowTime) external;
 
 	function setForceCloseGapRatio(uint256 symbolId, uint256 _forceCloseGapRatio) external;

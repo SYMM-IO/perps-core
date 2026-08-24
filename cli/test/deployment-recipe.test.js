@@ -243,6 +243,7 @@ test("secret references are metadata only and live recipes require infrastructur
 			"LiquidationPartyA",
 			"LiquidationPartyB",
 			"RemoveMargin",
+			"ExpressCredit",
 		],
 	};
 	assert.throws(() => validateDeploymentRecipe(live), /secrets\.rpc is required/);

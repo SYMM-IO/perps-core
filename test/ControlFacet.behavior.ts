@@ -1,6 +1,6 @@
 import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
 import { expect } from "chai"
-import { ZeroAddress } from "ethers"
+import { parseEther, ZeroAddress } from "ethers"
 import { toUtf8Bytes } from "ethers"
 import sha3 from "js-sha3"
 
@@ -305,6 +305,53 @@ export function shouldBehaveLikeControlFacet(): void {
 			await expect(
 				context.symbolControlFacet.connect(owner).setSymbolAcceptableValues(4, BigInt("200000000000000000000"), BigInt("300000000000000000000")),
 			).to.be.revertedWith("SymbolControlFacet: Invalid id")
+		})
+	})
+
+	describe("setSymbolMinAcceptableNotionalLFRate", () => {
+		it("Should use symbol 0 as the default and allow explicit per-symbol overrides", async function () {
+			const defaultRate = parseEther("0.0002")
+			const overrideRate = parseEther("0.0003")
+
+			expect(await context.viewFacetSymbol.getSymbolMinAcceptableNotionalLFRate(0)).to.deep.equal([0n, false])
+			expect(await context.viewFacetSymbol.getSymbolMinAcceptableNotionalLFRate(1)).to.deep.equal([0n, false])
+
+			await expect(context.symbolControlFacet.connect(owner).setSymbolMinAcceptableNotionalLFRate(0, defaultRate))
+				.to.emit(context.symbolControlFacet, "SetSymbolMinAcceptableNotionalLFRate")
+				.withArgs(0, 0, defaultRate, false)
+			expect(await context.viewFacetSymbol.getSymbolMinAcceptableNotionalLFRate(1)).to.deep.equal([defaultRate, false])
+
+			await expect(context.symbolControlFacet.connect(owner).setSymbolMinAcceptableNotionalLFRate(1, overrideRate))
+				.to.emit(context.symbolControlFacet, "SetSymbolMinAcceptableNotionalLFRate")
+				.withArgs(1, defaultRate, overrideRate, true)
+			expect(await context.viewFacetSymbol.getSymbolMinAcceptableNotionalLFRate(1)).to.deep.equal([overrideRate, true])
+
+			const updatedDefaultRate = parseEther("0.0004")
+			await context.symbolControlFacet.connect(owner).setSymbolMinAcceptableNotionalLFRate(0, updatedDefaultRate)
+			expect(await context.viewFacetSymbol.getSymbolMinAcceptableNotionalLFRate(1)).to.deep.equal([overrideRate, true])
+
+			await context.symbolControlFacet.connect(owner).setSymbolMinAcceptableNotionalLFRate(1, 0)
+			expect(await context.viewFacetSymbol.getSymbolMinAcceptableNotionalLFRate(1)).to.deep.equal([0n, true])
+
+			await expect(context.symbolControlFacet.connect(owner).clearSymbolMinAcceptableNotionalLFRateOverride(1))
+				.to.emit(context.symbolControlFacet, "SetSymbolMinAcceptableNotionalLFRate")
+				.withArgs(1, 0, updatedDefaultRate, false)
+			expect(await context.viewFacetSymbol.getSymbolMinAcceptableNotionalLFRate(1)).to.deep.equal([updatedDefaultRate, false])
+		})
+
+		it("Should reject invalid symbols and callers without the symbol manager role", async function () {
+			await expect(context.symbolControlFacet.connect(owner).setSymbolMinAcceptableNotionalLFRate(2, 1)).to.be.revertedWith(
+				"SymbolControlFacet: Invalid id",
+			)
+			await expect(context.symbolControlFacet.connect(owner).clearSymbolMinAcceptableNotionalLFRateOverride(0)).to.be.revertedWith(
+				"SymbolControlFacet: Invalid id",
+			)
+			await expect(context.symbolControlFacet.connect(owner).clearSymbolMinAcceptableNotionalLFRateOverride(2)).to.be.revertedWith(
+				"SymbolControlFacet: Invalid id",
+			)
+			await expect(context.symbolControlFacet.connect(user2).setSymbolMinAcceptableNotionalLFRate(0, 1)).to.be.revertedWith(
+				"Accessibility: Must have role",
+			)
 		})
 	})
 

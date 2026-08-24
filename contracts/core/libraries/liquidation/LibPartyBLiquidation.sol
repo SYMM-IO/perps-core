@@ -61,7 +61,7 @@ library LibPartyBLiquidation {
 		uint256[] memory liquidatedPendingIds = new uint256[](pendingQuotes.length);
 		uint256 liquidatedCount = 0;
 
-		for (uint256 index = 0; index < pendingQuotes.length; ) {
+		for (uint256 index = 0; index < pendingQuotes.length;) {
 			Quote storage quote = quoteLayout.quotes[pendingQuotes[index]];
 
 			if (quote.partyB == partyB && (quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING)) {

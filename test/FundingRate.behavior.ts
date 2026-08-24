@@ -13,6 +13,30 @@ import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js
 import { decimal, getBlockTimestamp, getQuoteQuantity, unDecimal } from "./utils/Common.js"
 import { getDummyHighLowPriceSig, getDummyPairUpnlAndPriceSig, getDummyPairUpnlSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
 
+const quoteFundingSettledInterface = new ethers.Interface([
+	"event QuoteFundingSettled(uint256 indexed quoteId, uint256 indexed symbolId, address indexed partyB, address partyA, address allocationKey, int256 funding)",
+])
+
+const parseQuoteFundingSettledLogs = (logs: readonly { topics: readonly string[]; data: string }[]) =>
+	logs.flatMap(log => {
+		try {
+			const parsed = quoteFundingSettledInterface.parseLog({ topics: [...log.topics], data: log.data })
+			if (parsed?.name !== "QuoteFundingSettled") return []
+			return [
+				{
+					quoteId: parsed.args.quoteId as bigint,
+					symbolId: parsed.args.symbolId as bigint,
+					partyB: parsed.args.partyB as string,
+					partyA: parsed.args.partyA as string,
+					allocationKey: parsed.args.allocationKey as string,
+					funding: parsed.args.funding as bigint,
+				},
+			]
+		} catch {
+			return []
+		}
+	})
+
 export function shouldBehaveLikeFundingRate(): void {
 	let context: RunContext, user: User, hedger: Hedger, hedger2: Hedger
 
@@ -418,6 +442,63 @@ export function shouldBehaveLikeFundingRate(): void {
 			})
 
 			// TODO ::: test notLiquidatedPartyB(partyB, partyA) modifier
+
+			it("should expose each quote's exact signed funding and market", async () => {
+				const partyA = await context.signers.user.getAddress()
+				const partyB = await context.signers.hedger.getAddress()
+				const funding = await context.viewFacetQuote.getQuoteFundingDebts([1n, 2n])
+				expect(funding[0]).to.be.greaterThan(0n)
+				expect(funding[1]).to.be.lessThan(0n)
+
+				const tx = await context.fundingRateFacet
+					.connect(context.signers.hedger)
+					.chargeAccumulatedFundingFee(partyA, partyB, [1n, 2n], await getDummyPairUpnlSig())
+				const receipt = await tx.wait()
+
+				expect(parseQuoteFundingSettledLogs(receipt?.logs ?? [])).to.deep.equal([
+					{
+						quoteId: 1n,
+						symbolId: 1n,
+						partyB,
+						partyA,
+						allocationKey: partyA,
+						funding: funding[0],
+					},
+					{
+						quoteId: 2n,
+						symbolId: 1n,
+						partyB,
+						partyA,
+						allocationKey: partyA,
+						funding: funding[1],
+					},
+				])
+			})
+
+			it("should settle opposite funding debts sequentially instead of netting the batch", async () => {
+				const partyA = await context.signers.user.getAddress()
+				const partyB = await context.signers.hedger.getAddress()
+
+				await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(2n)], [-decimal(2n)], [decimal(1n)])
+				await time.increase(EightHourInSec)
+
+				const partyBBeforeDeallocation = await hedger.getBalanceInfo(partyA)
+				const retainedPartyBAllocation = partyBBeforeDeallocation.totalLockedPartyB
+				await context.partyBAccountFacet
+					.connect(context.signers.hedger)
+					.deallocateForPartyB(partyBBeforeDeallocation.allocatedBalances - retainedPartyBAllocation, partyA, await getDummySingleUpnlSig(0n))
+
+				const fundingBefore = await context.viewFacetQuote.getQuoteFundingDebts([2n, 1n])
+				expect(fundingBefore[0]).to.be.lessThan(-retainedPartyBAllocation)
+				expect(fundingBefore[0] + fundingBefore[1]).to.equal(0n)
+
+				await expect(
+					context.fundingRateFacet.connect(context.signers.hedger).chargeAccumulatedFundingFee(partyA, partyB, [2n, 1n], await getDummyPairUpnlSig()),
+				).to.be.reverted
+
+				expect((await hedger.getBalanceInfo(partyA)).allocatedBalances).to.equal(retainedPartyBAllocation)
+				expect(await context.viewFacetQuote.getQuoteFundingDebts([2n, 1n])).to.deep.equal(fundingBefore)
+			})
 
 			it("should failed when quote has invalid party A", async () => {
 				await expect(

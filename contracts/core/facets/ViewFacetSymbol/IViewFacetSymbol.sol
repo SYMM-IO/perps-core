@@ -21,6 +21,8 @@ interface IViewFacetSymbol {
 
 	function getSymbolsWithType(uint256 start, uint256 size) external view returns (SymbolWithType[] memory);
 
+	function getSymbolMinAcceptableNotionalLFRate(uint256 symbolId) external view returns (uint256 rate, bool hasOverride);
+
 	function getConnectedPartyBs(address partyA) external view returns (address[] memory);
 
 	function isConnectedPartyB(address partyA, address partyB) external view returns (bool);

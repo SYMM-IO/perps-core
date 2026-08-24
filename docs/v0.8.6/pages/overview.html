@@ -3,7 +3,7 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<meta name="description" content="Overview of the Symmio Core v0.8.6 release and its main protocol changes." />
+		<meta name="description" content="Role-based reading paths and a complete map of all 31 Symmio Core v0.8.6 release chapters." />
 		<title>Symmio Core v0.8.6 Overview</title>
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
 		<script>
@@ -37,8 +37,9 @@
 
 		<div class="reader-shell">
 			<div class="rail-sections-source" data-rail-sections hidden>
-				<a class="toc-link level-2" href="#review-order">Suggested Review Order</a>
-				<a class="toc-link level-2" href="#documentation-map">Documentation Map</a>
+				<a class="toc-link level-2" href="#how-to-use">How to use these notes</a>
+				<a class="toc-link level-2" href="#reader-paths">Reader paths</a>
+				<a class="toc-link level-2" href="#change-map">Complete change map</a>
 			</div>
 
 			<main class="reader-main">
@@ -47,8 +48,8 @@
 						<div>
 							<h1>Symmio Core v0.8.6 Overview</h1>
 							<p class="hero-copy">
-								Start here to read v0.8.6 as a set of targeted fixes: faster exits without removing withdrawal cooldown protections,
-								cleaner AccountLayer and affiliate operations, and safer liquidation/freshness handling.
+								Start here for a role-based route through all 31 release chapters, from protocol safety and settlement to
+								AccountLayer, Express Withdrawal, integrations, and operations.
 							</p>
 						</div>
 					</div>
@@ -56,60 +57,115 @@
 
 				<article class="doc-article" id="full-document">
 					<p>
-						Use this page as the release-delta map. The release addresses faster withdrawals without bypassing the 12-hour safety model,
-						clearer account and affiliate lifecycle controls, safer liquidation accounting, and a reconstructible allocated-balance event
-						ledger for indexers.
+						The v0.8.6 release notes cover 31 changes and two companion guides. Each numbered chapter explains one behavior change, its
+						limits, and the integrations that must respond. This overview and the detailed Express operator runbook are unnumbered
+						companions.
 					</p>
 
-					<h2 id="review-order">Suggested Review Order</h2>
-					<h3 id="protocol-review">Protocol review</h3>
+					<h2 id="how-to-use">How to use these notes</h2>
 					<ol>
-						<li><a href="liquidation-funding-snapshot-fix.html">PartyA Liquidation Snapshot Flow</a></li>
-						<li><a href="cross-partyb-liquidation-reserve.html">Cross-PartyB Liquidation Reserve Enforcement</a></li>
-						<li><a href="strict-deallocation.html">Strict Deallocation</a></li>
-						<li><a href="market-open-fee-execution-price.html">Market Open Fee on Execution Price</a></li>
-						<li><a href="single-step-partya-liquidation.html">Single-Step PartyA Liquidation</a></li>
-						<li><a href="partya-liquidation-fee-recipient.html">PartyA Liquidation Fee Recipient Cleanup</a></li>
-						<li><a href="balance-change-event-cleanup.html">Allocated Balance Event Ledger</a></li>
-						<li><a href="lazy-accumulated-funding.html">Lazy Accumulated Funding</a></li>
-						<li><a href="muon-upnl-validity-overrides.html">Muon UPNL Validity Overrides</a></li>
-						<li><a href="account-layer-ownership-delegation.html">AccountLayer Delegated Creation &amp; Ownership Transfer</a></li>
-						<li><a href="affiliate-shutdown-flow.html">Affiliate Shutdown Flow</a></li>
-						<li><a href="express-withdrawal-system-design.html">Express Withdrawal System Design</a></li>
-						<li><a href="express-bot-operations-checklist.html">Express Provider Bot Operations Checklist</a></li>
+						<li>Use the <a href="../index.html">release index</a> to search all numbered chapters and follow their release order.</li>
+						<li>Choose a reader path below when you need the smallest useful subset for a review or integration.</li>
+						<li>Read linked pages together when one defines a safety or observability constraint used by another.</li>
+						<li>
+							For Express Withdrawal implementation, read the
+							<a href="express-withdrawal-system-design.html">system design</a> before the
+							<a href="express-bot-operations-checklist.html">operator runbook</a>.
+						</li>
 					</ol>
 
-					<h3 id="bot-and-operations-teams">Bot and operations teams</h3>
-					<ol>
-						<li><a href="express-withdrawal-system-design.html">Express Withdrawal System Design</a></li>
-						<li><a href="express-bot-operations-checklist.html">Express Provider Bot Operations Checklist</a></li>
-						<li><a href="affiliate-shutdown-flow.html">Affiliate Shutdown Flow</a></li>
-						<li><a href="muon-upnl-validity-overrides.html">Muon UPNL Validity Overrides</a></li>
-						<li><a href="liquidation-funding-snapshot-fix.html">PartyA Liquidation Snapshot Flow</a></li>
-						<li><a href="cross-partyb-liquidation-reserve.html">Cross-PartyB Liquidation Reserve Enforcement</a></li>
-						<li><a href="strict-deallocation.html">Strict Deallocation</a></li>
-						<li><a href="single-step-partya-liquidation.html">Single-Step PartyA Liquidation</a></li>
-						<li><a href="partya-liquidation-fee-recipient.html">PartyA Liquidation Fee Recipient Cleanup</a></li>
-						<li><a href="balance-change-event-cleanup.html">Allocated Balance Event Ledger</a></li>
-						<li><a href="lazy-accumulated-funding.html">Lazy Accumulated Funding</a></li>
-						<li><a href="account-layer-ownership-delegation.html">AccountLayer Delegated Creation &amp; Ownership Transfer</a></li>
-					</ol>
+					<h2 id="reader-paths">Reader paths</h2>
+					<h3 id="protocol-reviewers">Protocol reviewers</h3>
+					<p>
+						Start with <a href="strict-deallocation.html">Strict Deallocation</a>,
+						<a href="liquidation-funding-snapshot-fix.html">PartyA Liquidation Snapshot Flow</a>,
+						<a href="cross-partyb-liquidation-reserve.html">Cross-PartyB Liquidation Reserve Enforcement</a>, and
+						<a href="close-settlement-netting.html">Per-Quote Close Settlement Netting</a>. Then review
+						<a href="force-close-request-binding.html">Force-Close Request Binding</a>,
+						<a href="bound-mode-unified-settlement.html">Bound-Mode Unified Settlement</a>, and the
+						<a href="accountlayer-callback-liveness.html">AccountLayer callback fix</a> for lifecycle boundaries.
+					</p>
 
-					<h2 id="documentation-map">Documentation Map</h2>
-					<ul>
-						<li><a href="account-layer-ownership-delegation.html">AccountLayer Delegated Creation &amp; Ownership Transfer</a></li>
-						<li><a href="express-withdrawal-system-design.html">Express Withdrawal System Design</a></li>
-						<li><a href="express-bot-operations-checklist.html">Express Provider Bot Operations Checklist</a></li>
-						<li><a href="affiliate-shutdown-flow.html">Affiliate Shutdown Flow</a></li>
-						<li><a href="muon-upnl-validity-overrides.html">Muon UPNL Validity Overrides</a></li>
-						<li><a href="liquidation-funding-snapshot-fix.html">PartyA Liquidation Snapshot Flow</a></li>
-						<li><a href="cross-partyb-liquidation-reserve.html">Cross-PartyB Liquidation Reserve Enforcement</a></li>
-						<li><a href="strict-deallocation.html">Strict Deallocation</a></li>
-						<li><a href="single-step-partya-liquidation.html">Single-Step PartyA Liquidation</a></li>
-						<li><a href="partya-liquidation-fee-recipient.html">PartyA Liquidation Fee Recipient Cleanup</a></li>
-						<li><a href="balance-change-event-cleanup.html">Allocated Balance Event Ledger</a></li>
-						<li><a href="lazy-accumulated-funding.html">Lazy Accumulated Funding</a></li>
-					</ul>
+					<h3 id="integrators-and-indexers">Integrators and indexers</h3>
+					<p>
+						Read <a href="balance-change-event-cleanup.html">Allocated Balance Event Ledger</a> before consuming the new settlement and
+						liquidation events. Continue with <a href="explicit-clearing-house-settlements.html">Explicit Clearing House Settlements</a>,
+						<a href="liquidation-funding-observability.html">Liquidation Funding Observability</a>,
+						<a href="solver-fees.html">Solver Fees</a>, <a href="operational-fees.html">Operational Fees</a>, and
+						<a href="symbol-adjustment.html">Symbol Corporate-Action Adjustment</a>. ABI consumers should also check
+						<a href="diamond-owner-getter.html">Diamond Owner Getter</a> and each page's integration notes.
+					</p>
+
+					<h3 id="operators-and-solvers">Operators and solvers</h3>
+					<p>
+						Follow the Express design and runbook pair, then review <a href="affiliate-shutdown-flow.html">Affiliate Shutdown Flow</a>,
+						<a href="muon-upnl-validity-overrides.html">Muon UPNL Validity Overrides</a>,
+						<a href="partyb-funding-nonces.html">PartyB Funding Update Nonces</a>, and
+						<a href="symbol-adjustment.html#runbook">the symbol-adjustment runbook</a>.
+					</p>
+
+					<h3 id="accountlayer-builders">AccountLayer builders</h3>
+					<p>
+						Read <a href="account-layer-ownership-delegation.html">delegated creation and ownership transfer</a>,
+						<a href="delegation-account-scope.html">delegation scope</a>,
+						<a href="accountlayer-behavior-changes.html">observable behavior changes</a>,
+						<a href="position-isolation-partial-fill.html">partial-fill remainder handling</a>, and the
+						<a href="accountlayer-callback-liveness.html">callback-liveness fix</a>. The
+						<a href="express-deposit-removal.html">Express Deposit Removal</a> chapter identifies the removed v0.8.5 entry points.
+					</p>
+
+					<h2 id="change-map">Complete change map</h2>
+					<h3 id="express-withdrawal">Express Withdrawal</h3>
+					<p>
+						<a href="express-withdrawal-system-design.html">Express Withdrawal System Design</a> defines the provider, funding, risk, and
+						settlement model. <a href="express-deposit-removal.html">Express Deposit Removal</a> removes the unrelated v0.8.5 AccountLayer
+						deposit split. The <a href="express-bot-operations-checklist.html">operator runbook</a> is the companion implementation
+						reference.
+					</p>
+
+					<h3 id="accounts-and-authorization">Accounts and authorization</h3>
+					<p>
+						This group covers <a href="account-layer-ownership-delegation.html">AccountLayer ownership</a>,
+						<a href="delegation-account-scope.html">delegated account scope</a>,
+						<a href="instant-layer-authorization-scope.html">InstantLayer authorization scope</a>,
+						<a href="accountlayer-behavior-changes.html">AccountLayer behavior changes</a>,
+						<a href="position-isolation-partial-fill.html">POSITION partial fills</a>,
+						<a href="accountlayer-callback-liveness.html">callback liveness</a>,
+						<a href="diamond-owner-getter.html">the owner getter rename</a>, and
+						<a href="instant-open-gas-optimization.html">InstantOpen execution changes</a>.
+					</p>
+
+					<h3 id="liquidation-and-margin-safety">Liquidation and margin safety</h3>
+					<p>
+						The release adds <a href="liquidation-funding-snapshot-fix.html">snapshot-backed PartyA liquidation</a>, its
+						<a href="single-step-partya-liquidation.html">single-step wrapper</a>,
+						<a href="strict-deallocation.html">stricter deallocation floors</a>,
+						<a href="partya-liquidation-fee-recipient.html">one PartyA liquidation-fee recipient</a>,
+						<a href="partyb-allocation-suspension-gates.html">PartyB suspension gates</a>,
+						<a href="cross-partyb-liquidation-reserve.html">cross-PartyB reserve enforcement</a>,
+						<a href="force-close-request-binding.html">force-close request binding</a>,
+						<a href="notional-liquidation-fee-floor.html">a notional LF floor</a>, and
+						<a href="affiliate-shutdown-flow.html">an Affiliate shutdown backstop</a>.
+					</p>
+
+					<h3 id="fees-and-settlement">Fees and settlement</h3>
+					<p>
+						This group covers <a href="solver-fees.html">solver rate fees</a>, <a href="operational-fees.html">operational fees</a>,
+						<a href="market-open-fee-execution-price.html">market-open fee pricing</a>,
+						<a href="explicit-clearing-house-settlements.html">typed Clearing House settlement</a>,
+						<a href="bound-mode-unified-settlement.html">bound-mode unified settlement</a>, and
+						<a href="close-settlement-netting.html">per-quote close netting</a>.
+					</p>
+
+					<h3 id="funding-observability-and-symbols">Funding, observability, and symbols</h3>
+					<p>
+						The remaining chapters document <a href="muon-upnl-validity-overrides.html">per-function UPNL validity windows</a>, the
+						<a href="balance-change-event-cleanup.html">allocated-balance event ledger</a>,
+						<a href="symbol-adjustment.html">corporate-action adjustment</a>,
+						<a href="liquidation-funding-observability.html">liquidation funding events</a>,
+						<a href="partyb-funding-nonces.html">PartyB funding-update nonces</a>, and
+						<a href="lazy-accumulated-funding.html">lazy accumulated funding</a>.
+					</p>
 				</article>
 			</main>
 		</div>

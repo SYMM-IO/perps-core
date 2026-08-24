@@ -808,6 +808,16 @@ export async function resolveExpressProviderConfig(
 		if ((await ethers.provider.getCode(signatureVerifier)) === "0x") {
 			throw new Error(`expressProvider.creditLine.signatureVerifier has no contract code at ${signatureVerifier}`)
 		}
+		const verifier = await ethers.getContractAt("contracts/core/interfaces/IMuonSignatureVerifier.sol:IMuonSignatureVerifier", signatureVerifier)
+		try {
+			// Appending ExpressCredit at enum index 8 preserves the existing indices, but a verifier
+			// compiled against the old 0..7 enum rejects index 8 during ABI decoding.
+			await verifier.isGatewaySignerAuthorized(ethers.ZeroAddress, 8)
+		} catch {
+			throw new Error(
+				`expressProvider.creditLine.signatureVerifier at ${signatureVerifier} does not support MuonFunction.ExpressCredit (index 8); deploy a compatible verifier before configuring Express credit`,
+			)
+		}
 	}
 
 	const roles: Record<string, string[]> = {}

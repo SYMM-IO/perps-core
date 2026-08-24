@@ -151,7 +151,9 @@ enum MuonFunction {
     ForceClose,        // ForceClose, InitializeForceClose, SettleUpnlForForceClose, etc.
     Funding,           // ChargeFundingRate, ChargeAccumulatedFundingFee
     LiquidationPartyA, // LiquidatePartyA, SetSymbolsPrice, DeferredLiquidatePartyA, DeferredSetSymbolsPrice
-    LiquidationPartyB  // LiquidatePartyB, LiquidatePositionsPartyB
+    LiquidationPartyB, // LiquidatePartyB, LiquidatePositionsPartyB
+    RemoveMargin,      // SafeDeallocate, SafeDeallocateForPartyB
+    ExpressCredit      // Express withdrawal credit reservation
 }
 
 interface IMuonSignatureVerifier {
@@ -190,8 +192,8 @@ interface IMuonSignatureVerifier {
 					<p>
 						The <code>MuonFunction</code> enum is defined at file level (not inside the interface) so it can be imported independently.
 						Each enum value represents a category of related operations. The <code>verify</code> overload without
-						<code>MuonFunction</code> skips authorization checks — it is used by the ViewFacet's
-						<code>verifyMuonTSSAndGateway</code> which is a read-only utility that doesn't need permission gating.
+						<code>MuonFunction</code> skips authorization checks — it is used by the ViewFacet's <code>verifyMuonTSSAndGateway</code>, a
+						read-only utility. State-changing flows, including Express credit reservation, must use the category-aware overload.
 					</p>
 					<p>
 						<strong>PublicKey</strong> represents a compressed secp256k1 public key. The <code>x</code> coordinate must be less than
@@ -285,7 +287,7 @@ contract MuonSignatureVerifier is IMuonSignatureVerifier, AccessControlEnumerabl
 					</p>
 					<p>
 						A second <code>verify</code> overload without the <code>MuonFunction</code> parameter performs only TSS and gateway checks
-						without authorization. This is used by the ViewFacet's <code>verifyMuonTSSAndGateway</code> which is a read-only utility.
+						without authorization. This is reserved for the ViewFacet's read-only <code>verifyMuonTSSAndGateway</code> utility.
 					</p>
 					<h3 id="doc-muon-keys-key-management-functions">Key Management Functions</h3>
 					<p>All management functions require <code>SETTER_ROLE</code>:</p>
@@ -381,6 +383,14 @@ function removePublicKey(PublicKey memory pubKey) external onlyRole(SETTER_ROLE)
 								<td><code>LiquidationPartyB</code></td>
 								<td><code>liquidatePartyB</code>, <code>liquidatePositionsPartyB</code></td>
 							</tr>
+							<tr>
+								<td><code>RemoveMargin</code></td>
+								<td><code>safeDeallocate</code>, <code>safeDeallocateForPartyB</code></td>
+							</tr>
+							<tr>
+								<td><code>ExpressCredit</code></td>
+								<td>Express withdrawal <code>reserveDebt</code> during initial acceptance or acceleration</td>
+							</tr>
 						</tbody>
 					</table>
 					<h3 id="doc-muon-keys-permission-management">Permission Management</h3>
@@ -432,7 +442,7 @@ function isGatewaySignerAuthorized(address signer, MuonFunction func) external v
 								verifier.setGatewaySignerPermissions(signerAddress, cats, true);</code
 							>
 						</li>
-						<li>To grant all permissions (e.g. for a fully trusted key), pass all 7 enum values.</li>
+						<li>To grant all permissions (e.g. for a fully trusted key), pass all 9 enum values.</li>
 					</ol>
 				</article>
 			</main>

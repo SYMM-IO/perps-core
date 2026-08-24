@@ -133,7 +133,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		// CVA and LF locked in allocated balance, and core forbids deallocating below that floor, so an account
 		// with either can never be emptied first. Checking balances ahead of them would always report
 		// SubAccountNotEmpty and point the caller at a withdrawal that cannot succeed, instead of naming the
-		// position or quote they actually have to close.
+		// position or quote that must be closed.
 
 		// Check no open positions
 		if (symmio.partyAPositionsCount(subAccount) > 0) revert OpenPositionsExist();
@@ -283,7 +283,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 	/// @notice Pre-funds the next virtual account and executes Symmio core calls in a single transaction
 	/// @dev Equivalent to addMarginToNextVA followed by _call, but with one authorization and one
 	///      reentrancy guard. The margin lands on the predicted next VA and the sendQuote routing in
-	///      the calls then creates or reuses that same VA — both computed atomically in this call.
+	///      the calls then creates or reuses that same VA. Both are computed atomically in this call.
 	///      Every sendQuote in callDatas is validated against the margin key, so the margin cannot be
 	///      routed to a different VA than the quote opens under.
 	/// @param account The sub-account to fund and execute calls for
@@ -389,7 +389,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 
 		// Execute on symmioCore on behalf of account
 		bool usesTransientSigner = LibAccountLayerUtils.beginCoreSigner(ctx.symmioCore, ctx.account);
-		(bool success, bytes memory result) = ctx.symmioCore.call(callData);
+		(bool success, bytes memory result) = LibAccountLayerUtils.callCore(ctx.symmioCore, callData);
 		LibAccountLayerUtils.endCoreSigner(ctx.symmioCore, usesTransientSigner);
 		if (!success) revert HookActionFailed(result);
 

@@ -348,32 +348,51 @@ export default defineConfig({
 	solidity: {
 		profiles: {
 			default: {
-				version: "0.8.34",
-				settings: {
-					evmVersion: "cancun",
-					metadata: {
-						bytecodeHash: "none",
+				compilers: [
+					{
+						version: "0.8.34",
+						settings: {
+							evmVersion: "cancun",
+							metadata: { bytecodeHash: "none" },
+							optimizer: { enabled: true, runs: 200 },
+							viaIR: true,
+						},
 					},
-					optimizer: {
-						enabled: true,
-						runs: 200,
+					// GaslessWallet CREATE2 addresses pin the 0.8.18 initcode hash. Every
+					// gaslessLayer source uses an exact 0.8.18 pragma so Hardhat selects this
+					// compiler without changing the rest of the protocol build.
+					{
+						version: "0.8.18",
+						settings: {
+							metadata: { bytecodeHash: "none" },
+							optimizer: { enabled: true, runs: 200 },
+							viaIR: true,
+							outputSelection: { "*": { "*": ["storageLayout"] } },
+						},
 					},
-					viaIR: true,
-				},
+				],
 			},
 			production: {
-				version: "0.8.34",
-				settings: {
-					evmVersion: "cancun",
-					metadata: {
-						bytecodeHash: "none",
+				compilers: [
+					{
+						version: "0.8.34",
+						settings: {
+							evmVersion: "cancun",
+							metadata: { bytecodeHash: "none" },
+							optimizer: { enabled: true, runs: 200 },
+							viaIR: true,
+						},
 					},
-					optimizer: {
-						enabled: true,
-						runs: 200,
+					{
+						version: "0.8.18",
+						settings: {
+							metadata: { bytecodeHash: "none" },
+							optimizer: { enabled: true, runs: 200 },
+							viaIR: true,
+							outputSelection: { "*": { "*": ["storageLayout"] } },
+						},
 					},
-					viaIR: true,
-				},
+				],
 			},
 		},
 	},

@@ -22,7 +22,8 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 		emit ForceCancelQuote(quoteId, QuoteStatus.CANCELED);
 	}
 
-	/// @notice Forces the cancellation of the close request associated with the specified quote when partyB is not responsive for a certain amount of time (ForceCancelCloseCooldown).
+	/// @notice Forces cancellation of a quote's close request when PartyB does not respond before
+	///         ForceCancelCloseCooldown elapses.
 	/// @param quoteId The ID of the quote for which the close request should be canceled.
 	function forceCancelCloseRequest(uint256 quoteId) external notLiquidated(quoteId) whenNotPartyAActionsPaused {
 		ForceActionsFacetImpl.forceCancelCloseRequest(quoteId);
