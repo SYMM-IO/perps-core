@@ -185,9 +185,11 @@ describe("deployment recipe standalone component execution", function () {
 		expect(resumed.report.health.status).to.equal("passed")
 	})
 
-	it("rejects an Express credit verifier compiled without the ExpressCredit category", async function () {
+	it("rejects an Express credit verifier without the forward-compatible capability API", async function () {
 		const context = await loadFixture(initializeFixture)
 		const [admin] = await ethers.getSigners()
+		const legacyVerifier = await ethers.deployContract("LegacyMuonSignatureVerifier")
+		await legacyVerifier.waitForDeployment()
 
 		try {
 			await resolveExpressProviderConfig(
@@ -195,8 +197,8 @@ describe("deployment recipe standalone component execution", function () {
 				{
 					admin: admin.address,
 					creditLine: {
-						// A contract with no ExpressCredit-compatible authorization ABI models a legacy verifier.
-						signatureVerifier: await context.collateral.getAddress(),
+						// It predates the explicit capability API, so support cannot be proven.
+						signatureVerifier: await legacyVerifier.getAddress(),
 						muonAppId: "1",
 						muonFreshnessWindow: 60,
 					},
@@ -208,6 +210,76 @@ describe("deployment recipe standalone component execution", function () {
 		} catch (error) {
 			expect((error as Error).message).to.include("does not support MuonFunction.ExpressCredit (index 8)")
 		}
+	})
+
+	it("rejects an incompatible verifier before an Express patch and accepts a forward-compatible verifier", async function () {
+		const context = await loadFixture(initializeFixture)
+		const [admin] = await ethers.getSigners()
+		const networkName = (await hre.network.getOrCreate()).networkName || "default"
+		const coreReport: CoreDependencyReport = {
+			deploymentId: "fixture-core-express-verifier-patch",
+			deployerAddress: admin.address,
+			network: networkName,
+			chainId: 31337,
+			lifecycle: "complete",
+			checks: { health: "passed", verification: "skipped", verificationPolicy: "not_applicable" },
+			config: { admin: admin.address },
+			addresses: { diamond: context.diamond, instantLayer: await context.instantLayer.getAddress() },
+		}
+		const shared = {
+			recipeName,
+			recipePath: "/tmp/component-engine-test.json",
+			target: { name: networkName, chainId: 31337, mode: "local" as const },
+			component: "expressProvider" as const,
+			coreReport,
+			coreReportPath: "/tmp/core-report.json",
+			fresh: false,
+			verify: false,
+		}
+
+		const deployed = await executeComponentDeployment(hre, {
+			...shared,
+			recipeDigest: "express-verifier-patch-deploy",
+			componentConfig: { mode: "deploy", admin: admin.address },
+		})
+		const address = deployed.report.address!
+		const view = await ethers.getContractAt("contracts/expressWithdrawLayer/facets/View/ViewFacet.sol:ViewFacet", address)
+
+		const legacyVerifier = await ethers.deployContract("LegacyMuonSignatureVerifier")
+		await legacyVerifier.waitForDeployment()
+		let failure: Error | undefined
+		try {
+			await executeComponentDeployment(hre, {
+				...shared,
+				recipeDigest: "express-incompatible-verifier-patch",
+				componentConfig: {
+					mode: "reuse",
+					address,
+					admin: admin.address,
+					creditLine: { signatureVerifier: await legacyVerifier.getAddress(), muonAppId: "1", muonFreshnessWindow: 60 },
+				},
+			})
+		} catch (error) {
+			failure = error as Error
+		}
+		expect(failure?.message).to.include("does not support MuonFunction.ExpressCredit (index 8)")
+		// Resolution fails before a setter transaction or Safe action can alter the provider.
+		expect(await view.creditLineSignatureVerifier()).to.equal(ethers.ZeroAddress)
+
+		const compatibleVerifier = await ethers.deployContract("MockMuonSignatureVerifier")
+		await compatibleVerifier.waitForDeployment()
+		const patched = await executeComponentDeployment(hre, {
+			...shared,
+			recipeDigest: "express-compatible-verifier-patch",
+			componentConfig: {
+				mode: "reuse",
+				address,
+				admin: admin.address,
+				creditLine: { signatureVerifier: await compatibleVerifier.getAddress(), muonAppId: "1", muonFreshnessWindow: 60 },
+			},
+		})
+		expect(patched.report.lifecycle).to.equal("complete")
+		expect(await view.creditLineSignatureVerifier()).to.equal(await compatibleVerifier.getAddress())
 	})
 
 	it("deploys an ExpressProvider with every setup section deferred, writing none of them on-chain", async function () {

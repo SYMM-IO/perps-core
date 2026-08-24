@@ -33,6 +33,7 @@ import {
 } from "./expressWithdrawLayerDiamond.js"
 import { getConnection } from "./helpers.js"
 import { logger } from "./logger.js"
+import { assertMuonFunctionSupported, EXPRESS_CREDIT_MUON_FUNCTION } from "./muonPermissions.js"
 import { createSymmioPartyBVerificationRecords, deploySymmioPartyB, SymmioPartyBVerificationRecord } from "./partyB.js"
 import { activeDeploymentRecipe } from "./recipeRuntime.js"
 import { assertMainnetDeploymentIdentitySafe } from "./safety.js"
@@ -391,6 +392,18 @@ export async function inspectExpressProviderPostState(ethers: any, input: Expres
 			input.signatureVerifier,
 			verifier,
 		)
+		let compatibilityError: string | undefined
+		try {
+			await assertExpressCreditVerifierCompatible(ethers, verifier, "configured ExpressProvider credit-line signature verifier")
+		} catch (error) {
+			compatibilityError = error instanceof Error ? error.message : String(error)
+		}
+		check(
+			"credit line verifier supports ExpressCredit",
+			compatibilityError === undefined,
+			"MuonFunction.ExpressCredit (index 8)",
+			compatibilityError,
+		)
 		check("credit line muon app id", appId.toString() === input.muonAppId, input.muonAppId, appId.toString())
 		check(
 			"credit line muon freshness window",
@@ -519,6 +532,15 @@ async function requireAddress(ethers: any, value: unknown, label: string): Promi
 		throw new Error(`${label} must be a valid non-zero address; received ${JSON.stringify(value)}`)
 	}
 	return ethers.getAddress(value)
+}
+
+/** Reject verifiers that do not explicitly support ExpressCredit. */
+export async function assertExpressCreditVerifierCompatible(
+	ethers: any,
+	signatureVerifier: string,
+	label = "expressProvider.creditLine.signatureVerifier",
+): Promise<string> {
+	return assertMuonFunctionSupported(ethers, signatureVerifier, EXPRESS_CREDIT_MUON_FUNCTION, label)
 }
 
 /**
@@ -801,23 +823,11 @@ export async function resolveExpressProviderConfig(
 	const declared = componentConfig.creditLine?.signatureVerifier
 	let signatureVerifier: string | undefined
 	if (declared !== undefined) {
-		signatureVerifier =
+		const candidate =
 			declared === "fromCore"
 				? ethers.getAddress(await coreView.getSignatureVerifier())
 				: await requireAddress(ethers, declared, "expressProvider.creditLine.signatureVerifier")
-		if ((await ethers.provider.getCode(signatureVerifier)) === "0x") {
-			throw new Error(`expressProvider.creditLine.signatureVerifier has no contract code at ${signatureVerifier}`)
-		}
-		const verifier = await ethers.getContractAt("contracts/core/interfaces/IMuonSignatureVerifier.sol:IMuonSignatureVerifier", signatureVerifier)
-		try {
-			// Appending ExpressCredit at enum index 8 preserves the existing indices, but a verifier
-			// compiled against the old 0..7 enum rejects index 8 during ABI decoding.
-			await verifier.isGatewaySignerAuthorized(ethers.ZeroAddress, 8)
-		} catch {
-			throw new Error(
-				`expressProvider.creditLine.signatureVerifier at ${signatureVerifier} does not support MuonFunction.ExpressCredit (index 8); deploy a compatible verifier before configuring Express credit`,
-			)
-		}
+		signatureVerifier = await assertExpressCreditVerifierCompatible(ethers, candidate)
 	}
 
 	const roles: Record<string, string[]> = {}
@@ -1091,6 +1101,9 @@ export async function resolveExpressPatchConfig(
 	const admin = await requireAddress(ethers, componentConfig.admin || target.admin, "expressProvider.admin")
 	const address = await requireAddress(ethers, componentConfig.address, "expressProvider.address")
 	const resolved: ExpressPatchConfig = { address, admin, deployer: ethers.getAddress(deployerAddress), core }
+	if ((await ethers.provider.getCode(address)) === "0x") {
+		throw new Error(`expressProvider.address has no contract code on this chain: ${address}`)
+	}
 
 	if (componentConfig.creditLine !== undefined) {
 		const declared = componentConfig.creditLine.signatureVerifier
@@ -1100,12 +1113,17 @@ export async function resolveExpressPatchConfig(
 						await (await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", core)).getSignatureVerifier(),
 					)
 				: await requireAddress(ethers, declared, "expressProvider.creditLine.signatureVerifier")
-		if ((await ethers.provider.getCode(signatureVerifier)) === "0x") {
-			throw new Error(`expressProvider.creditLine.signatureVerifier has no contract code at ${signatureVerifier}`)
-		}
-		resolved.signatureVerifier = signatureVerifier
+		resolved.signatureVerifier = await assertExpressCreditVerifierCompatible(ethers, signatureVerifier)
 		resolved.muonAppId = componentConfig.creditLine.muonAppId
 		resolved.muonFreshnessWindow = componentConfig.creditLine.muonFreshnessWindow
+	} else {
+		// Reusing or patching an existing provider must not silently bless an incompatible
+		// nonzero verifier. Zero is allowed because it represents a deliberately disabled line.
+		const view = await ethers.getContractAt(EXPRESS_FACETS.ViewFacet, address)
+		const configuredVerifier = ethers.getAddress(await view.creditLineSignatureVerifier())
+		if (configuredVerifier !== ethers.ZeroAddress) {
+			await assertExpressCreditVerifierCompatible(ethers, configuredVerifier, "configured ExpressProvider credit-line signature verifier")
+		}
 	}
 	if (componentConfig.securityWindow !== undefined) resolved.securityWindow = componentConfig.securityWindow
 	if (componentConfig.tolerancePeriod !== undefined) resolved.tolerancePeriod = componentConfig.tolerancePeriod
@@ -1175,6 +1193,7 @@ export async function computeExpressPatchDrift(
 		items.push({ id, description, to: address, data: control.interface.encodeFunctionData(method, args), method, args, authority: "setter" })
 
 	if (desired.signatureVerifier !== undefined) {
+		await assertExpressCreditVerifierCompatible(ethers, desired.signatureVerifier)
 		const [verifier, appId, freshness] = await Promise.all([
 			view.creditLineSignatureVerifier(),
 			view.creditLineMuonAppId(),
