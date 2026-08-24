@@ -53,6 +53,10 @@
 				<a class="toc-link level-3" href="#rewrite-pending">Pending inventory</a>
 				<a class="toc-link level-3" href="#rewrite-reads">Mixed-book reads</a>
 				<a class="toc-link level-2" href="#funding">Funding across the window</a>
+				<a class="toc-link level-3" href="#funding-open">When the window opens</a>
+				<a class="toc-link level-3" href="#funding-prepare">Prepare PartyB funding pairs</a>
+				<a class="toc-link level-3" href="#funding-quotes">While quotes are being rewritten</a>
+				<a class="toc-link level-3" href="#funding-restore">Restore rates before closing the window</a>
 				<a class="toc-link level-2" href="#boundaries">Enforced and operational boundaries</a>
 				<a class="toc-link level-2" href="#actors">Actor responsibilities</a>
 				<a class="toc-link level-2" href="#runbook">Operations runbook</a>
@@ -836,60 +840,105 @@ dust            = 30 - 28 = 2</code></pre>
 
 					<h2 id="funding">Funding across the window</h2>
 					<p>
-						<code>startRestatement</code> does not read or loop over <code>MAStorage.partyBList</code>. It records one
-						<code>fundingCutoffTimestamp</code>. If accumulated funding is inactive, the phase moves directly to
-						<code>QUOTE_PROCESSING</code>. If accumulated funding is active, it starts at <code>FUNDING_PREPARATION</code> and waits for
-						Operations to supply PartyB addresses.
+						A physical restatement changes quote quantities. Current funding rates are per-unit values, so the same rate cannot be used
+						with old-unit and new-unit quantities. Operations first supplies the known PartyBs so Core can save and pause their current
+						rates. During quote processing, Core has a fallback for a missed PartyB before it rewrites one of that PartyB's quotes. Before
+						the window closes, Core restores every saved rate. It rebases rates only when the restatement is finalized.
 					</p>
+					<pre><code class="language-text">open window → prepare PartyB funding → rewrite quotes → restore PartyB funding → close window</code></pre>
+
+					<h3 id="funding-open">When the window opens</h3>
 					<p>
-						The manager calls <code>processRestatementFunding(symbolId, partyBs)</code> with an explicit address array. Core visits only
-						that array. For each address, Core skips the symbol pair when <code>epochDuration</code> is zero or both current rates are
-						zero. Otherwise it rolls accumulated rates to the window's fixed cutoff, saves the current long and short rates with the
-						window epoch, increments the pending checkpoint count, and writes both current rates to zero. The transaction time of a later
-						batch does not move the economic cutoff. A saved pair may have one zero side and one nonzero side.
+						<code>startRestatement</code> records one <code>fundingCutoffTimestamp</code>. It does not read or loop over
+						<code>MAStorage.partyBList</code>, and it does not change any PartyB's rates. If accumulated funding is inactive, Core moves
+						directly to <code>QUOTE_PROCESSING</code>. If accumulated funding is active, Core enters <code>FUNDING_PREPARATION</code> and
+						waits for the manager to submit PartyB addresses.
 					</p>
+
+					<h3 id="funding-prepare">Prepare PartyB funding pairs</h3>
 					<p>
-						Repeated addresses and pairs already checkpointed in this epoch are skipped. Registry membership is irrelevant: Operations may
-						supply a registered or deregistered PartyB. Registration and deregistration remain available throughout the window and do not
-						change funding progress.
+						The manager calls <code>processRestatementFunding(symbolId, partyBs)</code> with a gas-bounded address array. Core examines
+						only those addresses. It does not know whether the array covers every PartyB that Operations intended to prepare.
 					</p>
+					<p>For each supplied PartyB, Core does one of the following:</p>
+					<ul>
+						<li>skips a checkpoint already created for the current restatement epoch;</li>
+						<li>skips a symbol pair whose <code>epochDuration</code> is zero;</li>
+						<li>skips a pair whose current long and short rates are both zero; or</li>
+						<li>
+							rolls accumulated funding to <code>fundingCutoffTimestamp</code>, saves both current rates, increments
+							<code>pendingFundingPartyBCount</code>, and sets both current rates to zero.
+						</li>
+					</ul>
 					<p>
-						After Operations has supplied every intended PartyB, the manager calls
-						<code>completeRestatementFundingPreparation</code>. This is an operational attestation, not an on-chain inventory check. Core
-						does not know the complete PartyB set and cannot prove that the submitted arrays cover it. Quote processing and finalization
-						stay disabled until this call. If Operations later discovers another PartyB before restoration starts, it may still submit
-						that address while the phase is <code>QUOTE_PROCESSING</code>.
-					</p>
-					<p>
-						If a quote reaches <code>applyAdjustment</code> without a checkpoint for its PartyB, the quote path creates one at the same
-						fixed cutoff before settling the quote's funding. This protects the quote being rewritten, but it does not discover PartyBs
-						for Operations.
-					</p>
-					<p>
-						<code>abortRestatement</code> and <code>finalizeRestatement</code> start a restoration phase and report the pending checkpoint
-						count. Operations calls <code>processRestatementFunding</code> again with the addresses it checkpointed. Each call restores
-						only matching current-epoch checkpoints in the supplied array. Unknown and repeated addresses are skipped. If no checkpoint is
-						pending, the initiating call completes immediately.
-					</p>
-					<p>
-						Abort restores checkpointed rates without rolling the zero-rate interval. In cumulative accounting, the restored rates
-						therefore count as if they had remained active throughout the aborted window. Finalization records one shared resumption
-						timestamp, rolls every restored pair's zero-rate interval to that timestamp, and then rebases each saved rate:
-					</p>
-					<pre><code class="language-text">newRate = sign(oldRate) * floor(abs(oldRate) * 1e18 / restatementFactor)</code></pre>
-					<p>
-						Flooring can reduce the restored magnitude. Core rejects a magnitude that does not fit in <code>int256</code>. Each batch
-						deletes the checkpoints it restores and decrements the pending count. The transaction that reduces the count to zero completes
-						the abort or finalization and emits the terminal event.
+						A pair with one zero rate and one nonzero rate is checkpointed. Repeated addresses are harmless. Current registry membership
+						is not checked, so Operations may submit registered or deregistered PartyBs. Registering or deregistering a PartyB during the
+						window does not change funding progress.
 					</p>
 					<aside class="callout callout-important">
-						<strong>Operations must own the PartyB manifest.</strong> Core does not scan the global PartyB registry and does not know
-						which PartyBs Operations intended to prepare. Keep the exact checkpointed address set. After <code>abortRestatement</code> or
-						<code>finalizeRestatement</code>, submit that set again in gas-bounded batches until the pending count is zero and the
-						terminal event is emitted. Losing an address with a live checkpoint leaves the symbol frozen. Use
-						<code>isRestatementFundingCheckpointed</code> to verify individual addresses. Simulate each exact batch from the manager
-						address before sending it.
+						<strong>Keep the PartyB address list.</strong> Core saves each funding checkpoint under its PartyB address. It can report how
+						many checkpoints remain, but it cannot return their addresses. Operations must therefore save every PartyB submitted during
+						preparation and add any PartyB checkpointed later during quote processing. When aborting or finalizing, submit those addresses
+						again through <code>processRestatementFunding</code> until the pending count reaches zero. Core safely skips unknown or
+						already-restored addresses. If Operations loses the address of a live checkpoint, Core cannot restore that rate and the symbol
+						remains frozen. Before sending a batch, simulate the exact call from the manager address.
 					</aside>
+					<p>
+						After Operations has submitted and checked the intended set, the manager calls
+						<code>completeRestatementFundingPreparation</code>. This call is an operational attestation. It is not an on-chain inventory
+						check. Core then enters <code>QUOTE_PROCESSING</code>. If Operations finds another PartyB before restoration starts, the
+						manager may still submit that address during <code>QUOTE_PROCESSING</code>. Add any new checkpoint to the saved manifest.
+					</p>
+
+					<h3 id="funding-quotes">While quotes are being rewritten</h3>
+					<p>
+						A checkpointed pair keeps its current long and short rates at zero. Funding accumulated before the window remains recorded at
+						the fixed cutoff. Later batches use that same cutoff even if they run in later blocks.
+					</p>
+					<p>
+						If <code>applyAdjustment</code> reaches a quote whose PartyB has no checkpoint, Core runs the same preparation check at
+						<code>fundingCutoffTimestamp</code> before it settles that quote's funding. An active funding pair gets a checkpoint. A pair
+						with no epoch duration or with both current rates at zero still has nothing to save. This fallback protects the quote being
+						rewritten. It does not discover PartyBs with no quote in the batch, and it does not prove that Operations prepared the full
+						set. The bot must add any checkpoint created by this fallback to its saved manifest.
+					</p>
+
+					<h3 id="funding-restore">Restore rates before closing the window</h3>
+					<p>
+						<code>abortRestatement</code> and <code>finalizeRestatement</code> stop quote processing and start a restoration phase. They
+						report the pending checkpoint count. If the count is zero, the initiating transaction closes the window immediately.
+						Otherwise, Operations submits the saved PartyB manifest through <code>processRestatementFunding</code> in gas-bounded batches.
+					</p>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>How the window ends</th>
+									<th>Zero-rate interval</th>
+									<th>Current rate after restoration</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Abort</td>
+									<td>Not rolled into accumulated funding. Accounting resumes as if the saved rates had remained active.</td>
+									<td>The saved long and short rates are restored unchanged.</td>
+								</tr>
+								<tr>
+									<td>Finalization</td>
+									<td>Rolled to one shared <code>fundingRestorationTimestamp</code> with current rates still at zero.</td>
+									<td>Each saved rate is divided by <code>restatementFactor</code>.</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<pre><code class="language-text">newRate = sign(oldRate) * floor(abs(oldRate) * 1e18 / restatementFactor)</code></pre>
+					<p>
+						Flooring may reduce the restored magnitude. Core rejects a magnitude that cannot fit in <code>int256</code>. Each restoration
+						batch ignores unknown or repeated addresses, deletes every matching current-epoch checkpoint, and decrements
+						<code>pendingFundingPartyBCount</code>. The transaction that reduces the count to zero closes the window and emits
+						<code>RestatementAborted</code> or <code>RestatementFinalized</code>.
+					</p>
 
 					<h2 id="boundaries">Enforced and operational boundaries</h2>
 					<h3>What the freeze enforces</h3>
