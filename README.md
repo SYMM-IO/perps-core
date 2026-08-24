@@ -1,225 +1,114 @@
-# SYMMIO: Decentralized Derivatives Protocol
+# SYMMIO Perps Core
 
-SYMMIO is a trustless hybrid clearing house (combining on-chain and off-chain components) acting as a communication,
-settlement, and clearing layer for permissionless derivatives. At its core, SYMMIO is an intent-centric,
-meta-derivatives engine, with its first use case being a new type of hyper-efficient perpetuals trading technology.
+Smart contracts for SYMMIO's intent-based perpetual derivatives protocol.
 
-## Code Architecture
+[Website](https://www.symm.io/) · [Protocol docs](https://docs.symm.io/) · [Technical docs](https://docs.symm.io/protocol-architecture/technical-documentation) · [Deployments](https://docs.symm.io/api-endpoints-and-deployments/symmio-perps-deployments) · [Explorer](https://symmscan.com/)
 
-This project utilizes the Diamond Proxy pattern ([EIP-2535](https://eips.ethereum.org/EIPS/eip-2535)) for upgradability
-and modularity. Currently, we have 29 facets:
+## What is SYMMIO?
 
-1. **DiamondCutFacet** - Diamond upgrade operations (EIP-2535)
-2. **DiamondLoupeFacet** - Diamond introspection (EIP-2535)
-3. **AccountFacet** - Account management operations
-4. **PledgeFacet** - Pledge collateral management
-5. **BindingFacet** - PartyA-PartyB binding operations
-6. **BridgeFacet** - Fast withdrawals
-7. **ClearingHouseFacet** - Clearing house functionality
-8. **ControlFacet** - Protocol control and configuration
-9. **ExternalTransferFacet** - External transfer operations
-10. **ForceActionsFacet** - Atomic force close and cancel operations
-11. **ForceCloseStepsFacet** - 3-step force close flow (init, settle, finalize)
-12. **FundingRateFacet** - Funding rate calculations
-13. **MigrationFacet** - Cross partyB migration functionality
-14. **PartyAFacet** - PartyA (trader) operations
-15. **PartyALiquidationFacet** - PartyA liquidation logic
-16. **PartyBAccountFacet** - PartyB account management
-17. **PartyBBatchActionsFacet** - Batch operations for PartyB
-18. **PartyBEmergencyActionsFacet** - Emergency close and ADL operations
-19. **PartyBLiquidationFacet** - PartyB liquidation logic
-20. **PartyBPositionActionsFacet** - PartyB position operations
-21. **PartyBQuoteActionsFacet** - PartyB quote operations
-22. **PauseControlFacet** - Emergency pause controls
-23. **SettlementFacet** - Trade settlement logic
-24. **SymbolControlFacet** - Trading symbol management
-25. **ViewFacet** - General read-only queries
-26. **ViewFacetAggregate** - Aggregated position and funding queries
-27. **ViewFacetQuote** - Quote-related queries
-28. **ViewFacetSymbol** - Symbol-related queries
-29. **WithdrawFacet** - Withdrawal operations
+SYMMIO is shared infrastructure for permissionless derivatives markets. Traders submit intents through independent exchanges built on SYMMIO, and solvers compete to take the other side of each trade. Solvers lock collateral, while the protocol enforces positions, funding, liquidations, and settlement on-chain.
 
-### AccountLayer Diamond
+This hybrid design keeps quoting and trade discovery off-chain for speed, while collateral and settlement remain verifiable on-chain. It does not depend on a shared AMM liquidity pool or a central order book.
 
-The AccountLayer is a separate Diamond contract that manages account abstraction and affiliate functionality. It has 6 facets:
+SYMMIO itself does not operate a trading frontend. Traders access the protocol through [independent frontend builders](https://www.symm.io/frontends); exchanges and market makers integrate with the protocol as infrastructure.
 
-1. **ControlFacet** - Role management, pause control, and protocol configuration
-2. **CoreFacet** - Sub-account and virtual account management, call execution
-3. **MarginFacet** - Margin addition and removal operations
-4. **AffiliateFacet** - Affiliate registration, management, fee distribution, and hook configuration
-5. **ViewFacet** - Read-only queries for accounts, affiliates, and system state
-6. **SymmioHookFacet** - Callback hooks for position close and quote cancel events from Symmio core
+## What is in this repository?
 
-### Additional Contracts
+`perps-core` contains the Solidity contracts and operator tooling for SYMMIO's perpetuals system:
 
-There are also some additional second-layer contracts required by hedgers and frontends:
+- **Core protocol** — collateral, bilateral positions, funding, settlement, liquidations, and withdrawals.
+- **AccountLayer** — sub-accounts, delegated access, affiliates, and account-level margin.
+- **InstantLayer** — authorized batched execution for low-latency trading flows.
+- **Express Withdrawal Layer** — independently deployed, credit-backed fast withdrawals.
+- **gaslessLayer** contains the upgradeable Gasless Layer, deterministic GaslessWallet contracts, fee routing, and relay tooling.
+- **Deployment application** — reviewed deployment, upgrade, verification, and handover workflows.
 
-1. **InstantLayer**:
-   This contract enables instant trade execution and settlement features.
-2. **SymmioPartyB**:
-   This contract enables hedgers to have multiple private keys behind their bots.
+The contracts use the [EIP-2535 Diamond standard](https://eips.ethereum.org/EIPS/eip-2535). Detailed contract and module documentation belongs in the technical docs and release notes, not in this overview.
 
-## Getting Started
+## Versions
 
-This project uses [Hardhat](https://hardhat.org/) and npm. Install dependencies, then compile:
+| Version                | Status                | Code and release notes                                                                                                       |
+| ---------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| **v0.8.6**             | Current release line  | [`version_0.8.6`](https://github.com/SYMM-IO/perps-core/tree/version_0.8.6) · [v0.8.6 release notes](docs/v0.8.6/index.html) |
+| **v0.8.5**             | Previous release line | [`version_0.8.5`](https://github.com/SYMM-IO/perps-core/tree/version_0.8.5) · [v0.8.5 release notes](docs/v0.8.5/index.html) |
+| **v0.8.4 and earlier** | Historical releases   | [Git tags](https://github.com/SYMM-IO/perps-core/tags)                                                                       |
+
+`main` tracks production releases, `develop` is the integration branch, and `version_*` branches hold release-specific work. A branch or tag identifies source code; it does **not** prove which version is deployed on a network. Use the [deployment registry](https://docs.symm.io/api-endpoints-and-deployments/symmio-perps-deployments) for live contract addresses.
+
+## Documentation
+
+| If you want to…                            | Start here                                                                                                                |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| Understand SYMMIO from first principles    | [What is SYMMIO?](https://docs.symm.io/protocol-architecture/protocol-introduction)                                       |
+| Understand the protocol and contract flows | [Technical documentation](https://docs.symm.io/protocol-architecture/technical-documentation)                             |
+| Build an exchange on SYMMIO                | [Frontend builder documentation](https://docs.symm.io/exchange-builder-documentation/frontend-builder-technical-guidance) |
+| Integrate as a solver or market maker      | [Liquidity provider documentation](https://docs.symm.io/liquidity-provider-documentation)                                 |
+| Review changes between contract versions   | [Versioned release notes](docs/index.html)                                                                                |
+| Find deployed contracts and API endpoints  | [Deployments](https://docs.symm.io/api-endpoints-and-deployments/symmio-perps-deployments)                                |
+| Deploy or operate the contracts            | [Deployment runbook](docs/deployment.md)                                                                                  |
+
+To browse the versioned documentation site locally:
 
 ```bash
-npm install
-npx hardhat compile
+npm run docs
 ```
 
-Use `npm ci` instead of `npm install` for a deployment checkout — it installs exactly the
-locked tree and never updates `package-lock.json`.
+## Development
 
-## Deployment
+The project uses Node.js, npm, Hardhat, Solidity, TypeScript, Mocha, and Chai.
 
-Deployments are driven by the interactive `symmio` operator application:
+```bash
+# Install the locked dependency tree
+npm ci
+
+# Compile contracts and check contract sizes
+npm run compile
+
+# Run the test suite in parallel
+npm test
+```
+
+Useful focused commands:
+
+```bash
+# Run tests sequentially
+npx hardhat test mocha
+
+# Run tests matching a name
+npx hardhat test mocha --grep "Test name"
+
+# Run lint checks
+npm run lint
+
+# Validate the in-repository documentation
+npm run docs:check
+```
+
+Tests use `MockMuonSignatureVerifier`, which accepts test signatures without performing real Muon verification.
+
+## Deployment and operations
+
+Deployment is handled through the interactive operator application:
 
 ```bash
 ./symmio
 ```
 
-The menu guides full and standalone deployments, ExpressProvider patching, deployment
-checklists, and reviewed maintenance. Recipes remain the portable source of public intent.
-Each mutating task separately binds a named Hardhat keystore wallet, a memory-only private
-key wallet, a Safe JSON/direct proposal, a Ledger address, or a localhost account as its
-compatible signer role; secrets never enter task state or logs. Every live deployment automatically runs preflight, a matching fork
-rehearsal, typed chain confirmation, transaction reconciliation, verification, health, and
-handover. Low-level Hardhat tasks are internal adapters rather than operator entrypoints.
+Do not treat low-level Hardhat deployment tasks as the public operator interface. The application runs the required preflight, rehearsal, transaction reconciliation, verification, health, and handover steps. Read the [deployment runbook](docs/deployment.md) before operating against any live network.
 
-- **[docs/deployment.md](docs/deployment.md)** — the full deployment runbook: configuration,
-  fork rehearsal, resuming a failed run, slow chains, and the manual steps the deployer
-  cannot perform
-- **[cli/README.md](cli/README.md)** — operator UI and task-definition standard
-- **[SCRIPTS_AUDIT.md](SCRIPTS_AUDIT.md)** — the audit behind the deploy-path safeguards,
-  and what remains open
+## Repository map
 
-### Running Tests
-
-Run the test suite with:
-
-```bash
-npx hardhat test mocha
+```text
+contracts/core/                   Core protocol diamond
+contracts/accountLayer/           Account and affiliate system
+contracts/instantLayer/           Batched execution layer
+contracts/expressWithdrawLayer/   Express withdrawal provider
+contracts/gaslessLayer/          Gas-sponsored operations layer
+cli/                              Interactive operator application
+test/                             Contract and deployment tests
+docs/                             Release notes and operator guides
 ```
-
-Tests use a `MockMuonSignatureVerifier` contract deployed during test initialization, which accepts all signatures without verification. This allows tests to run without needing real Muon signatures.
-
-#### Test Commands
-
-```bash
-# Run all tests sequentially
-npx hardhat test mocha
-
-# Run with coverage
-npx hardhat test mocha --coverage
-
-# Run specific tests
-npx hardhat test mocha --grep "MyTest"
-
-# Bring up three users and two hedgers; run until Ctrl+C
-npm run test:fuzz
-
-# Run the bounded deterministic CI/replay form
-npm run test:fuzz:ci
-
-# Replay a reported fuzz failure for exactly 50 root actions
-FUZZ_SEED=reported-seed FUZZ_ROOT_ACTIONS=50 npm run test:fuzz:ci
-```
-
-The live fuzz runner deploys its own local Hardhat fixture, brings up three roaming users and two hedgers, and continuously selects a seeded-random user/hedger pair for each new quote. Open positions can remain alive between roots and a world tick revisits one existing position, so the run maintains concurrent exposure instead of draining every quote immediately. A seeded shuffled campaign also executes real funding, settlement, modern force-close, targeted emergency-close, quote-expiry, PartyA-liquidation, and PartyB-liquidation workflows. PartyA liquidation uses a one-shot sacrificial account; the other workflows keep cycling. To keep a long soak responsive, the default profile validates 20% of ordinary transitions and runs one corner workflow every two roots. The first Ctrl+C stops new work, finishes the active action, drains the queue, and prints a `STOPPED` summary; a second Ctrl+C forces an immediate exit.
-
-`npm run test:fuzz:ci` uses the same Hardhat runner and actor model, enables validation for every selected ordinary transition, runs a corner workflow on every root, and stops after `FUZZ_ROOT_ACTIONS` (default 10). The default bounded run therefore covers the complete seven-operation corner bag, including quote expiry and pending-quote liquidation. Failure and stopped-run output includes a bounded CI replay command, so an observed live sequence can be rerun deterministically. Explicit `VALIDATION_PROBABILITY`, `FUZZ_PROGRESS_EVERY`, and `FUZZ_CORNER_EVERY` values override either profile and are included in replay commands.
-
-`npm run test:fuzz:dashboard` runs the same continuous Hardhat world while serving a dependency-free visual report on loopback. The terminal remains available for immediate health checks; the browser adds live throughput and latency charts, quote-stock history, all 11 lifecycle states, queue pressure, action and validator coverage, the seven rare paths, partial execution, recent activity, and the exact replay command. The dashboard persists one bounded atomic snapshot to `.fuzz-dashboard/report.json` and archives the completed run under `.fuzz-dashboard/runs/`. The first Ctrl+C drains and finalizes the fuzz world while leaving its report available; press Ctrl+C again when finished reviewing it. `FUZZ_DASHBOARD_PORT`, `FUZZ_DASHBOARD_FILE`, and `FUZZ_DASHBOARD_ARCHIVE_DIR` customize presentation only and do not alter the seeded trace or replay fingerprint.
-
-Fuzz output is run-scoped and replay-oriented:
-
-- `FUZZ_LOG_LEVEL=summary` prints the effective run plan and final result.
-- `FUZZ_LOG_LEVEL=progress` is the default. In a real terminal, a fixed live dashboard shows throughput, queue health, the current protocol action, and the complete quote inventory without growing the scrollback. Redirected output and bounded CI use permanent checkpoints instead.
-- `FUZZ_LOG_LEVEL=trace` prints every queued action, selected user/hedger decision, state dispatch, and terminal outcome.
-- `FUZZ_LOG_FORMAT=json` emits one bigint-safe JSON object per line for CI ingestion.
-- `FUZZ_LOG_COLOR=auto|always|never` controls only the human-readable format and honors `NO_COLOR`.
-
-The quote inventory keeps all 11 lifecycle states visible, including zero counts, and separately reports LONG/SHORT direction, opening LIMIT/MARKET mode, active close-request mode, and partial execution. `LIQUIDATED_PENDING` is shown as `liquidated before open`, an ended outcome: liquidation consumed a still-pending quote, so it is not counted as live exposure. A `split open` is detected from the parent/remainder relationship created by a partial fill. `Active split positions` counts opened legs anywhere in that lineage, while `waiting remainders` counts only child quotes still in PENDING, LOCKED, or CANCEL_PENDING, so the two counters do not overlap. `Partial close request` means the requested close quantity is smaller than the remaining open amount; `partially closed` means `0 < closedAmount < quantity`. A separate `CORNERS` row reports attempted/succeeded/skipped/failed totals for funding, settlement, force close, emergency close, quote expiry, and both liquidation sides. These counters reuse semantic events from the transactions under test; the dashboard does not poll per refresh.
-
-The live dashboard changes from `RUNNING` to `DRAINING` as soon as Ctrl+C is received, then clears itself before printing the permanent result. Every PASS, STOPPED, and FAIL report preserves the final quote breakdown, deterministic trace fingerprint, and one shell-safe bounded replay command with the behavior-affecting probabilities and timeouts. Failures are classified as setup, execution, drain, or verification errors and include a bounded tail of recent actions even when the selected log level is `quiet`.
-
-The fuzz reporter bypasses the legacy model logger by default. Set `FUZZ_LEGACY_LOG_LEVEL` only when the older validator/debug stream is also needed. File logging is opt-in through `DETAILED_LOG_FILE`; normal test runs no longer append to `detailedDebug.log`.
-
-#### Parallel Test Execution
-
-For faster execution, use the parallel test runner which runs tests across multiple workers:
-
-```bash
-# Run all tests in parallel (default: 8 workers)
-./utils/runTestsInParallel.sh
-
-# Customize number of parallel workers
-PARALLEL_JOBS=4 ./utils/runTestsInParallel.sh
-```
-
-The parallel runner displays live progress and aggregated results with colorful output.
-
-#### Environment Configuration
-
-- **`.env` file**: Legacy scripts may source it. Recipe-driven deployment deliberately does not.
-- **`PARALLEL_JOBS`**: Number of parallel test workers (default: 8)
-- **`FUZZ_SEED`**: Optional seed for replaying a model-based fuzz run
-- **`FUZZ_RUN_MODE`**: Continuous soak execution or bounded CI/replay execution
-- **`FUZZ_USER_COUNT`**: Active user controllers (default: 3, maximum: 3)
-- **`FUZZ_HEDGER_COUNT`**: Active hedger controllers (default: 2, maximum: 2)
-- **`FUZZ_ROOT_ACTIONS`**: Root quote actions in bounded CI mode (default: 10)
-- **`FUZZ_PROGRESS_EVERY`**: Continuous-mode root progress interval (default: 1; explicit values override the profile)
-- **`FUZZ_CORNER_EVERY`**: Roots between deliberate corner workflows (default: `2` continuous, `1` bounded; `0` disables them)
-- **`VALIDATION_PROBABILITY`**: Probability of running the expensive transition validator (default: `0.2` continuous, `1` bounded)
-- **`FUZZ_RETHINK_DELAY_MS`**: Delay before a controller reconsiders a no-op quote state (default: 100)
-- **`FUZZ_RUN_TIMEOUT_MS`**: Maximum time for each root action cascade to reach idle (default: 30000)
-- **`FUZZ_LOG_LEVEL`**: Fuzz reporter detail (`quiet`, `summary`, `progress`, or `trace`)
-- **`FUZZ_LOG_FORMAT`**: Human-readable `pretty` output or newline-delimited `json`
-
-### Log Levels
-
-Recipe-driven deployments set `execution.logLevel`; tests and legacy direct tasks can still
-set `DEPLOY_LOG_LEVEL`:
-
-| Level     | Description                                                              |
-| --------- | ------------------------------------------------------------------------ |
-| `silent`  | Suppress routine component logs; transactions/errors remain (tests only) |
-| `minimal` | Summary output only                                                      |
-| `verbose` | Full deployment details with formatted output and separators             |
-
-Examples:
-
-```bash
-# Run tests with silent logs (default)
-npx hardhat test mocha
-
-# Run tests with verbose deployment logs
-DEPLOY_LOG_LEVEL=verbose npx hardhat test mocha
-
-# Run parallel tests with minimal logs
-DEPLOY_LOG_LEVEL=minimal ./utils/runTestsInParallel.sh
-```
-
-### Exporting deployed contract ABIs
-
-Use the read-only live exporter to assemble ABIs and selector-provenance reports for every named Diamond,
-proxy, or standard contract in a chain config:
-
-```bash
-npm run abi:diamond -- --chain hyperevm
-```
-
-See [scripts/docs/export-diamond-abi.md](scripts/docs/export-diamond-abi.md) for per-chain configuration, provenance rules, and output details.
-
-## Documentation
-
-For detailed technical documentation, visit:
-
-[https://docs.symm.io/protocol-architecture/technical-documentation](https://docs.symm.io/protocol-architecture/technical-documentation)
 
 ## License
 
-SYMM-Core-Business-Source-License-1.1
-
-For more information, see https://docs.symm.io/legal-disclaimer/license
+The contracts are licensed under the [SYMM Core Business Source License 1.1](License). Review the [license documentation](https://docs.symm.io/legal-disclaimer/license) before production use.

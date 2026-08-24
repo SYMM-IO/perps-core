@@ -21,6 +21,13 @@
 				// File URLs and embedded browsers can deny storage; controls still work for this page load.
 			}
 		},
+		remove(key) {
+			try {
+				if (window.localStorage) localStorage.removeItem(key);
+			} catch (_error) {
+				// File URLs and embedded browsers can deny storage; controls still work for this page load.
+			}
+		},
 	};
 
 	const icons = {
@@ -85,6 +92,8 @@
 			["symbol-adjustment", "Symbols", "Symbol Corporate-Action Adjustment"],
 			["strict-deallocation", "Accounts", "Strict Deallocation"],
 			["instant-open-gas-optimization", "Performance", "InstantOpen Gas Optimization"],
+			["explicit-clearing-house-settlements", "Clearing House", "Explicit Clearing House Settlements"],
+			["liquidation-funding-observability", "Liquidation", "Liquidation Funding Observability"],
 			["partya-liquidation-fee-recipient", "Liquidation", "PartyA Liquidation Fee Recipient Cleanup"],
 			["partyb-allocation-suspension-gates", "PartyB", "PartyB Allocation Suspension Gates"],
 			["cross-partyb-liquidation-reserve", "Liquidation", "Cross-PartyB Liquidation Reserve Enforcement"],
@@ -96,7 +105,12 @@
 			["diamond-owner-getter", "Views", "Diamond Owner Getter"],
 			["express-deposit-removal", "AccountLayer", "Express Deposit Removal"],
 			["accountlayer-behavior-changes", "AccountLayer", "AccountLayer Behavior Changes"],
+			["position-isolation-partial-fill", "AccountLayer", "Position Isolation Partial Fill Remainder"],
 			["lazy-accumulated-funding", "Funding", "Lazy Accumulated Funding"],
+			["force-close-request-binding", "Force Close", "Force-Close Request Binding"],
+			["notional-liquidation-fee-floor", "Liquidation", "Notional Liquidation Fee Floor"],
+			["close-settlement-netting", "Settlement", "Per-Quote Close Settlement Netting"],
+			["accountlayer-callback-liveness", "AccountLayer", "AccountLayer Force-Close and Liquidation Fix"],
 		],
 	};
 
@@ -154,6 +168,99 @@
 	const wireRailChrome = (rail, { trigger }) => {
 		const compact = window.matchMedia("(max-width: 980px)");
 		const collapse = rail.querySelector("[data-rail-collapse]");
+		const resizer = document.createElement("div");
+		resizer.className = "rail-resizer";
+		resizer.tabIndex = 0;
+		resizer.setAttribute("role", "separator");
+		resizer.setAttribute("aria-orientation", "vertical");
+		resizer.setAttribute("aria-label", "Resize page navigation");
+		resizer.setAttribute("aria-keyshortcuts", "ArrowLeft ArrowRight Home End Enter");
+		resizer.setAttribute("title", "Drag or use arrow keys to resize. Double-click or press Enter to reset.");
+		rail.append(resizer);
+
+		const railWidthKey = "docs-rail-width";
+		const minimumRailWidth = 180;
+		const minimumReaderWidth = 320;
+		const defaultRailWidth = () => (window.innerWidth <= 1180 ? 280 : 304);
+		const maximumRailWidth = () => Math.max(minimumRailWidth, window.innerWidth - minimumReaderWidth);
+		const savedRailWidth = Number.parseFloat(store.get(railWidthKey) || "");
+		let preferredRailWidth = Number.isFinite(savedRailWidth) ? savedRailWidth : null;
+
+		const applyRailWidth = width => {
+			const maximum = maximumRailWidth();
+			const next = Math.round(Math.min(maximum, Math.max(minimumRailWidth, width)));
+			body.style.setProperty("--rail-expanded", `${next}px`);
+			resizer.setAttribute("aria-valuemin", String(minimumRailWidth));
+			resizer.setAttribute("aria-valuemax", String(maximum));
+			resizer.setAttribute("aria-valuenow", String(next));
+			resizer.setAttribute("aria-valuetext", `${next} pixels wide`);
+			return next;
+		};
+
+		const applyPreferredRailWidth = () => applyRailWidth(preferredRailWidth ?? defaultRailWidth());
+		const resetRailWidth = () => {
+			preferredRailWidth = null;
+			store.remove(railWidthKey);
+			applyPreferredRailWidth();
+		};
+		applyPreferredRailWidth();
+
+		resizer.addEventListener("pointerdown", event => {
+			if (compact.matches || event.button !== 0) return;
+			event.preventDefault();
+			body.classList.add("rail-is-resizing");
+			resizer.setPointerCapture(event.pointerId);
+
+			const updateFromPointer = pointerEvent => {
+				const rightToLeft = getComputedStyle(body).direction === "rtl";
+				preferredRailWidth = applyRailWidth(rightToLeft ? window.innerWidth - pointerEvent.clientX : pointerEvent.clientX);
+			};
+			const finishResize = pointerEvent => {
+				if (pointerEvent.type === "pointerup") updateFromPointer(pointerEvent);
+				body.classList.remove("rail-is-resizing");
+				if (resizer.hasPointerCapture(pointerEvent.pointerId)) resizer.releasePointerCapture(pointerEvent.pointerId);
+				if (preferredRailWidth !== null) store.set(railWidthKey, String(preferredRailWidth));
+				resizer.removeEventListener("pointermove", updateFromPointer);
+				resizer.removeEventListener("pointerup", finishResize);
+				resizer.removeEventListener("pointercancel", finishResize);
+			};
+
+			resizer.addEventListener("pointermove", updateFromPointer);
+			resizer.addEventListener("pointerup", finishResize);
+			resizer.addEventListener("pointercancel", finishResize);
+		});
+
+		resizer.addEventListener("keydown", event => {
+			if (compact.matches) return;
+			if (event.key === "Enter") {
+				event.preventDefault();
+				resetRailWidth();
+				return;
+			}
+			const rightToLeft = getComputedStyle(body).direction === "rtl";
+			const current = Number.parseFloat(resizer.getAttribute("aria-valuenow") || "") || defaultRailWidth();
+			const step = event.shiftKey ? 48 : 16;
+			let next = null;
+			if (event.key === "Home") next = minimumRailWidth;
+			else if (event.key === "End") next = maximumRailWidth();
+			else if (event.key === "ArrowLeft") next = current + (rightToLeft ? step : -step);
+			else if (event.key === "ArrowRight") next = current + (rightToLeft ? -step : step);
+			if (next === null) return;
+			event.preventDefault();
+			preferredRailWidth = applyRailWidth(next);
+			store.set(railWidthKey, String(preferredRailWidth));
+		});
+
+		resizer.addEventListener("dblclick", resetRailWidth);
+
+		let resizeFrame = 0;
+		window.addEventListener("resize", () => {
+			if (resizeFrame) return;
+			resizeFrame = window.requestAnimationFrame(() => {
+				resizeFrame = 0;
+				applyPreferredRailWidth();
+			});
+		});
 		const focusableSelector = "a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex='-1'])";
 		const backdrop = document.createElement("button");
 		backdrop.type = "button";
@@ -264,7 +371,10 @@
 		compact.addEventListener("change", () => {
 			setOpen(false, true);
 			if (compact.matches) body.classList.remove("rail-is-collapsed");
-			else setCollapsed(store.get("docs-rail-collapsed") === "true", false);
+			else {
+				applyPreferredRailWidth();
+				setCollapsed(store.get("docs-rail-collapsed") === "true", false);
+			}
 		});
 		setOpen(false);
 		setCollapsed(store.get("docs-rail-collapsed") === "true", false);
@@ -409,6 +519,48 @@
 		return header ? Math.ceil(header.getBoundingClientRect().height) : 0;
 	};
 
+	const readingMinutes = article => {
+		const words = (article.textContent || "").trim().split(/\s+/).filter(Boolean).length;
+		return Math.max(1, Math.round(words / 220));
+	};
+
+	const installReadingProgress = () => {
+		const header = document.querySelector(".docs-header");
+		if (!header || header.querySelector("[data-reading-progress]")) return;
+
+		const progress = document.createElement("div");
+		progress.className = "reading-progress";
+		progress.dataset.readingProgress = "true";
+		progress.setAttribute("role", "progressbar");
+		progress.setAttribute("aria-label", "Reading progress");
+		progress.setAttribute("aria-valuemin", "0");
+		progress.setAttribute("aria-valuemax", "100");
+		progress.setAttribute("aria-valuenow", "0");
+		progress.innerHTML = '<span aria-hidden="true"></span>';
+		header.append(progress);
+
+		let frame = 0;
+		let previousValue = -1;
+		const update = () => {
+			frame = 0;
+			const scrollable = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+			const ratio = Math.min(1, Math.max(0, window.scrollY / scrollable));
+			const value = Math.round(ratio * 100);
+			progress.style.setProperty("--reading-progress", String(ratio));
+			if (value !== previousValue) {
+				progress.setAttribute("aria-valuenow", String(value));
+				previousValue = value;
+			}
+		};
+		const schedule = () => {
+			if (!frame) frame = window.requestAnimationFrame(update);
+		};
+		window.addEventListener("scroll", schedule, { passive: true });
+		window.addEventListener("resize", schedule);
+		window.addEventListener("load", schedule, { once: true });
+		update();
+	};
+
 	/* --- Chapter pages ------------------------------------------------------ */
 	const installReaderShell = () => {
 		if (!body.classList.contains("doc-page")) return;
@@ -447,8 +599,9 @@
 		// One kicker replaces the old breadcrumb, whose last crumb named the
 		// category rather than the page the reader was on. A page that authors
 		// its own kicker keeps it.
-		if (!hero.querySelector(".topic-kicker")) {
-			const kicker = document.createElement("p");
+		let kicker = hero.querySelector(".topic-kicker");
+		if (!kicker) {
+			kicker = document.createElement("p");
 			kicker.className = "topic-kicker";
 			if (entry) {
 				kicker.innerHTML = `<span>${escapeHtml(entry.category)}</span><span>${pad2(entry.number)} of ${pad2(manifest.length)}</span>`;
@@ -458,6 +611,13 @@
 				kicker.innerHTML = "<span>Reference</span>";
 			}
 			hero.prepend(kicker);
+		}
+		if (!kicker.querySelector("[data-reading-time]")) {
+			const minutes = readingMinutes(article);
+			const readingTime = document.createElement("span");
+			readingTime.dataset.readingTime = "true";
+			readingTime.textContent = `${minutes} min read`;
+			kicker.append(readingTime);
 		}
 
 		if (entry) {
@@ -475,6 +635,7 @@
 		}
 
 		trackSections(sectionList, Array.from(article.querySelectorAll("h2[id], h3[id], h4[id]")));
+		installReadingProgress();
 	};
 
 	/* Both search fields answer to the same keys, so the shortcut a reader learns on
@@ -513,11 +674,15 @@
 		const groups = Array.from(document.querySelectorAll("[data-catalog-group]"));
 		const count = document.querySelector("[data-catalog-count]");
 		const empty = document.querySelector("[data-catalog-empty]");
+		const clear = document.querySelector("[data-catalog-clear]");
 		const groupCounts = new Map(groups.map(group => [group, group.querySelector("[data-catalog-group-count]")]));
 		const total = rows.length;
 		if (count) {
+			if (!count.id) count.id = "catalog-result-count";
 			count.setAttribute("role", "status");
 			count.setAttribute("aria-live", "polite");
+			count.setAttribute("aria-atomic", "true");
+			input.setAttribute("aria-describedby", count.id);
 		}
 
 		const describe = value => {
@@ -550,6 +715,11 @@
 		});
 		if (count) count.textContent = describe(total);
 		input.addEventListener("input", apply);
+		clear?.addEventListener("click", () => {
+			input.value = "";
+			apply();
+			input.focus();
+		});
 		wireSearchShortcuts(input, apply);
 	};
 

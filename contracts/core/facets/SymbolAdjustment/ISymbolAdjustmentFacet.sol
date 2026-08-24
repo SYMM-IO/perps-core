@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { SymbolAdjustment } from "../../storages/SymbolAdjustmentStorage.sol";
+import { SymbolAdjustment, RestatementPhase } from "../../storages/SymbolAdjustmentStorage.sol";
 
 interface ISymbolAdjustmentFacet {
 	struct QuoteAdjustmentPreview {
@@ -24,6 +24,22 @@ interface ISymbolAdjustmentFacet {
 	event AdjustmentCancelled(uint256 indexed symbolId, uint256 adjustmentIndex);
 	event PriceAdjustmentConfirmed(uint256 indexed symbolId, uint256 adjustmentIndex, uint256 newCumulativeFactor);
 	event RestatementStarted(uint256 indexed symbolId, uint256 epoch, uint256 restatementFactor);
+	event RestatementFundingPreparationProgress(
+		uint256 indexed symbolId,
+		uint256 indexed epoch,
+		uint256 submittedPartyBs,
+		uint256 checkpointedPartyBs,
+		uint256 pendingPartyBs
+	);
+	event RestatementFundingPreparationCompleted(uint256 indexed symbolId, uint256 indexed epoch, uint256 pendingPartyBs);
+	event RestatementFundingRestorationStarted(uint256 indexed symbolId, uint256 indexed epoch, bool finalizing, uint256 pendingPartyBs);
+	event RestatementFundingRestorationProgress(
+		uint256 indexed symbolId,
+		uint256 indexed epoch,
+		bool finalizing,
+		uint256 processedPartyBs,
+		uint256 remainingPartyBs
+	);
 	event RestatementAborted(uint256 indexed symbolId, uint256 epoch);
 	event QuoteAdjusted(
 		uint256 indexed quoteId,
@@ -44,8 +60,14 @@ interface ISymbolAdjustmentFacet {
 
 	function confirmPriceAdjusted(uint256 symbolId) external;
 
-	/// @notice Starts a frozen restatement from either an effective scheduled adjustment or an already-confirmed active factor.
+	/// @notice Starts a frozen restatement and initializes bounded funding preparation.
 	function startRestatement(uint256 symbolId) external;
+
+	/// @notice Processes only the operator-supplied PartyBs for funding preparation or restoration.
+	function processRestatementFunding(uint256 symbolId, address[] calldata partyBs) external;
+
+	/// @notice Attests that Operations has supplied every PartyB required for preparation and enables quote processing.
+	function completeRestatementFundingPreparation(uint256 symbolId) external;
 
 	function abortRestatement(uint256 symbolId) external;
 
@@ -66,6 +88,12 @@ interface ISymbolAdjustmentFacet {
 	function isSymbolFrozen(uint256 symbolId) external view returns (bool);
 
 	function getRestatementState(uint256 symbolId) external view returns (bool restating, uint256 epoch);
+
+	function getRestatementFundingProgress(
+		uint256 symbolId
+	) external view returns (RestatementPhase phase, uint256 pendingPartyBCount, uint256 fundingCutoffTimestamp, uint256 fundingRestorationTimestamp);
+
+	function isRestatementFundingCheckpointed(uint256 symbolId, address partyB) external view returns (bool);
 
 	function getQuoteRestatedEpoch(uint256 quoteId) external view returns (uint256);
 }

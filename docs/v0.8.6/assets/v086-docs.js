@@ -498,7 +498,7 @@
 						.replace(/^\d+(\.\d+)*\.?\s*/, "")
 						.trim();
 					// An unrecognised grammar adds nothing to the caption, so drop the qualifier.
-					if (title) return { type, text: type === "diagram" ? title : `${title} — ${typeLabel.toLowerCase()}` };
+					if (title) return { type, text: type === "diagram" ? title : `${title}: ${typeLabel.toLowerCase()}` };
 				}
 				sibling = sibling.previousElementSibling;
 			}
@@ -574,7 +574,7 @@
 				root.dataset.theme === "dark"
 					? {
 							fontFamily: "Manrope, ui-sans-serif, system-ui, sans-serif",
-							background: "#0a0505",
+							background: "#050505",
 							mainBkg: "#1c100e",
 							primaryColor: "#1c100e",
 							primaryBorderColor: "#ff7c70",

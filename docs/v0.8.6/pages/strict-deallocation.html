@@ -5,7 +5,7 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta
 			name="description"
-			content="PartyA and opted-in PartyBs preserve raw liquidation collateral during deallocation, with public views for the maximum safe amount. The safe paths additionally retain a Muon-attested floor re-marked to live notional, closing profit-financed collateral stripping."
+			content="PartyA and opted-in PartyBs preserve raw liquidation collateral during deallocation. Safe paths also retain Muon-attested locked value at live notional plus gross funding debt."
 		/>
 		<title>Strict Deallocation - Symmio Core v0.8.6</title>
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
@@ -40,19 +40,19 @@
 
 		<div class="reader-shell">
 			<div class="rail-sections-source" data-rail-sections hidden>
-				<a class="toc-link level-2" href="#the-two-limits">The Two Deallocation Limits</a>
-				<a class="toc-link level-2" href="#why-the-floor-exists">Why the Raw Floor Exists</a>
-				<a class="toc-link level-2" href="#the-remaining-gap">The Gap the Raw Floor Leaves</a>
-				<a class="toc-link level-2" href="#scaled-floor">The Scaled Locked Balance Floor</a>
-				<a class="toc-link level-2" href="#signature-changes">Signature and Verification Changes</a>
-				<a class="toc-link level-2" href="#partya-policy">PartyA Policy</a>
-				<a class="toc-link level-2" href="#partyb-policy">PartyB Policy</a>
-				<a class="toc-link level-2" href="#cross-mode">Cross-Mode Buckets</a>
-				<a class="toc-link level-2" href="#accountlayer-routing">AccountLayer Routing</a>
-				<a class="toc-link level-2" href="#view-functions">New View Functions</a>
-				<a class="toc-link level-2" href="#integration-flow">Integration Flow</a>
-				<a class="toc-link level-2" href="#rollout-order">Rollout Order</a>
-				<a class="toc-link level-2" href="#upnl-counters">uPnL Counters, Formerly Nonces</a>
+				<a class="toc-link level-2" href="#the-two-limits">The two deallocation limits</a>
+				<a class="toc-link level-2" href="#why-the-floor-exists">Why the raw floor exists</a>
+				<a class="toc-link level-2" href="#the-remaining-gap">The gap the raw floor leaves</a>
+				<a class="toc-link level-2" href="#scaled-floor">The scaled locked-balance floor</a>
+				<a class="toc-link level-2" href="#signature-changes">Signature and verification changes</a>
+				<a class="toc-link level-2" href="#partya-policy">PartyA policy</a>
+				<a class="toc-link level-2" href="#partyb-policy">PartyB policy</a>
+				<a class="toc-link level-2" href="#cross-mode">Cross-mode buckets</a>
+				<a class="toc-link level-2" href="#accountlayer-routing">AccountLayer routing</a>
+				<a class="toc-link level-2" href="#view-functions">New view functions</a>
+				<a class="toc-link level-2" href="#integration-flow">Integration flow</a>
+				<a class="toc-link level-2" href="#rollout-order">Rollout order</a>
+				<a class="toc-link level-2" href="#upnl-counters">uPnL counters, formerly nonces</a>
 			</div>
 
 			<main class="reader-main">
@@ -61,9 +61,9 @@
 						<div>
 							<h1>Strict Deallocation</h1>
 							<p class="hero-copy">
-								Deallocation now preserves raw collateral that later liquidation accounting may consume, even when positive uPnL makes
-								the account appear highly solvent. The safe paths additionally retain a Muon-attested floor re-marked to live
-								notional, so the protected collateral tracks current exposure instead of open-time position size.
+								Deallocation preserves raw collateral for locked positions even when positive uPnL makes the account appear highly
+								solvent. The safe paths also retain a Muon-attested floor re-marked to live notional plus gross accrued funding debt,
+								so those liabilities cannot be masked by favorable price PnL.
 							</p>
 						</div>
 					</div>
@@ -76,13 +76,18 @@
 						raw-allocation floor protects the collateral represented by locked and pending positions.
 					</p>
 					<p>
-						The floor itself comes in two strengths. The <strong>raw floor</strong> described first is the stored CVA and liquidation fee,
-						fixed when each quote opened. The <strong>scaled floor</strong> described afterward extends the safe deallocation paths with a
-						Muon-attested value re-marked to live notional, closing the remaining ways an account could reduce its real collateral to a
-						stale minimum.
+						The floor itself comes in two strengths. The <strong>raw floor</strong> is the stored credit valuation adjustment (CVA) and
+						liquidation fee (LF) for locked and pending quotes. The <strong>safe floor</strong> extends only the safe deallocation paths
+						with a Muon-attested value re-marked to live notional and the gross funding debt owed by the signed party. Normal deallocation
+						keeps its existing signature format and does not consume either additional safe-path field, but it now enforces the stored raw
+						floor.
+					</p>
+					<p>
+						The scope differs by party. PartyA always uses the raw floor. PartyB uses the new floors only after governance enables its
+						per-solver strict-deallocation flag. Safe paths add the Muon-attested fields described below.
 					</p>
 
-					<h2 id="the-two-limits">The Two Deallocation Limits</h2>
+					<h2 id="the-two-limits">The two deallocation limits</h2>
 					<p>Every protected deallocation is bounded by two independent amounts:</p>
 					<ol>
 						<li>
@@ -99,11 +104,15 @@
 
 remainingRawAllocation &gt;= protectedFloor</code></pre>
 					<p>
+						The four field names are the locked and pending forms of the same two components: <code>Cva</code> is credit valuation
+						adjustment and <code>Lf</code> is liquidation fee.
+					</p>
+					<p>
 						Maintenance margin is intentionally not part of this new floor. It remains part of the existing availability calculation. The
 						floor is limited to values that later liquidation accounting takes directly from raw allocated balance.
 					</p>
 
-					<h2 id="why-the-floor-exists">Why the Raw Floor Exists</h2>
+					<h2 id="why-the-floor-exists">Why the raw floor exists</h2>
 					<p>
 						Consider a PartyB with a large positive uPnL. The availability calculation may allow nearly all raw collateral to be
 						deallocated because the unrealized profit keeps the account solvent. If the market then reverses, PartyB liquidation computes
@@ -120,34 +129,41 @@ remainingRawAllocation &gt;= protectedFloor</code></pre>
 						liquidation subtraction.
 					</aside>
 
-					<h2 id="the-remaining-gap">The Gap the Raw Floor Leaves</h2>
+					<h2 id="the-remaining-gap">The gap the raw floor leaves</h2>
 					<p>
-						The raw floor is denominated in open-time notional. CVA and liquidation fee are recorded when a quote opens, scaled once to
-						the fill price, and never re-marked afterward. That leaves two related problems that the raw floor alone does not address.
+						The raw floor uses the CVA and liquidation-fee amounts currently stored for locked and pending quotes. An opened quote's
+						values are scaled to its fill and are not subsequently re-marked to live prices. That leaves two related problems that the raw
+						floor alone does not address.
 					</p>
 					<p>
 						<strong>Profit-financed collateral stripping.</strong> Positive uPnL raises the availability limit, so an account holding
-						large unrealized profit can deallocate real collateral down to exactly the stored floor. The position is then cushioned by
-						paper alone: the liquidation trigger for PartyA is <code>allocated &minus; (cva + lf) + upnl &lt; 0</code>, so the first
-						adverse tick makes the account liquidatable with zero real buffer. Realistic liquidator latency pushes such accounts into late
-						liquidation, where the counterparty absorbs a haircut.
+						large unrealized profit can deallocate real collateral down to exactly the stored floor. The position then has no raw buffer
+						above that floor: the liquidation trigger for PartyA is <code>allocated &minus; (cva + lf) + upnl &lt; 0</code>, so the first
+						adverse tick makes the account liquidatable. With realistic liquidator latency, the account reaches late liquidation, where
+						the counterparty absorbs a haircut.
 					</p>
 					<p>
 						<strong>Notional drift.</strong> After a large price move, a guarantee sized at open covers a much larger live exposure. A
-						position opened at 2,000 with 40 of CVA and LF still has 40 of guarantee behind 6,000 of notional after a threefold move.
-						Centralized venues avoid this by re-marking margin continuously with the mark price; the core diamond has no continuous price
-						feed, so the stored values simply decay relative to live risk.
+						position opened at 2,000 with 40 of CVA and LF still has 40 of guarantee behind 6,000 of notional after a threefold move. The
+						core diamond has no continuous price feed, so the stored guarantee does not rise with live notional.
 					</p>
 
-					<h2 id="scaled-floor">The Scaled Locked Balance Floor</h2>
+					<h2 id="scaled-floor">The scaled locked-balance floor</h2>
 					<p>
 						The safe deallocation paths close both gaps with one additional signed value. The Muon app attests a
-						<code>scaledLockedBalance</code> — the account's locked requirement re-marked to live notional — inside the same signature
-						that carries uPnL. On-chain, the retained amount becomes the stricter of the stored floor and the attested one:
+						<code>scaledLockedBalance</code>, the account's locked requirement re-marked to live notional, inside the same signature that
+						carries uPnL and gross funding debt. On-chain, the position requirement is the stricter of the stored and attested floors, and
+						the funding debt is then added:
 					</p>
-					<pre><code>retention = max(protectedFloor, scaledLockedBalance)
+					<pre><code>retention = max(protectedFloor, scaledLockedBalance) + fundingDebt
 
 remainingRawAllocation &gt;= retention</code></pre>
+					<p>
+						<code>fundingDebt</code> is a <code>uint256</code> gross liability inside the Muon-signed payload: it is the accrued funding
+						amount owed by the party whose account is being safe-deallocated. Funding receivables are excluded. Net uPnL continues to
+						include funding exactly as before; the debt is not subtracted from uPnL a second time. It is separately retained in raw
+						collateral so favorable price PnL cannot mask it.
+					</p>
 					<p>
 						The Muon app derives the attested value from state the chain already stores. Per open quote, the locked values are scaled by
 						the ratio of the live mark price to <code>initialOpenedPrice</code>, and each quote contributes the larger of its stored and
@@ -161,35 +177,45 @@ remainingRawAllocation &gt;= retention</code></pre>
 						rewritten. Partial closes need no special handling: locked values and open quantity shrink proportionally together.
 					</p>
 					<aside class="callout callout-note">
-						<strong>The oracle can tighten, never loosen.</strong>
-						Because the contract takes the maximum of the stored and attested floors, a lagging, buggy, or compromised signature can only
-						block margin removal — it can never lower the retained amount below the stored floor, and it never enters the liquidation
-						trigger, so it cannot force a liquidation. The worst-case denial of service is also bounded:
-						<code>zeroUpnlDeallocate</code> requires no signature at all once an account has no open or pending positions, so closing
-						positions always restores a signature-free exit.
+						<strong>The scaled position floor can tighten, never loosen.</strong>
+						Because the contract takes the maximum of the stored and attested position floors, a low
+						<code>scaledLockedBalance</code> can never reduce retention below stored CVA and LF. <code>fundingDebt</code>, however, is a
+						distinct oracle-attested liability, so Muon must report the full gross amount owed. Neither field enters the liquidation
+						trigger, so an overstated value can block removal but cannot force liquidation. <code>zeroUpnlDeallocate</code> provides a
+						signature-free exit once an account has no open or pending positions. It is restricted to <code>BALANCE_SETTLER_ROLE</code>,
+						including a forwarding proxy that itself holds that role. The proxy-aware modifier intentionally authorizes calls routed
+						through such a proxy. An ordinary PartyA cannot invoke this path directly.
 					</aside>
 
-					<h2 id="signature-changes">Signature and Verification Changes</h2>
+					<h2 id="signature-changes">Signature and verification changes</h2>
 					<p>
-						<code>SingleUpnlWithPendingBalanceSig</code> gains the <code>scaledLockedBalance</code> field, packed into the signed preimage
-						between <code>pendingBalance</code> and <code>timestamp</code> for both the PartyA and PartyB verifiers. Carrying the floor
-						and the uPnL in one signature is deliberate: two separate attestations would let a caller pair a fresh profit figure with a
-						stale floor. This is a breaking change to the struct's wire format, made while <code>safeDeallocate</code>
-						had no integrations.
+						The safe-path <code>SingleUpnlWithPendingBalanceSig</code> expands from its v0.8.5 uPnL-and-pending-balance form with both
+						<code>fundingDebt</code> and <code>scaledLockedBalance</code>. PartyA and PartyB safe verifiers pack the fields in this order:
+						uPnL, funding debt, pending balance, then scaled locked balance. Carrying every safe-removal input in one signature is
+						deliberate: separate attestations would let a caller pair a fresh profit figure with stale debt or a stale locked-balance
+						floor. Normal <code>SingleUpnlSig</code> is unchanged.
 					</p>
+					<aside class="callout callout-warning">
+						<strong>Safe selectors and wire format change.</strong>
+						The expanded tuple changes the existing core <code>safeDeallocate</code> selector. The new
+						<code>safeDeallocateForPartyB</code> and AccountLayer <code>safeRemoveMargin</code> methods use the same tuple, and the safe
+						maximum views accept its numeric values. Normal deallocation, PartyB transfer, and normal margin-removal selectors remain
+						unchanged. Muon, safe-path clients, the core diamond, and the AccountLayer must coordinate the safe cutover.
+					</aside>
 					<p>
 						Both safe paths verify under a new <code>MuonFunction.RemoveMargin</code> category, appended to the enum so existing ordinals
-						are preserved. Margin removal is the one flow where a stale signature is worth money — a signature is a bearer instrument for
-						its whole validity window, and one maximal use extracts everything it authorizes — so the freshness window, not any per-use
-						consumption, is the real bound on staleness. Operators should configure a tight window for <code>RemoveMargin</code> via
+						are preserved. Because margin removal transfers value, a stale signature can still extract collateral. A signature is a bearer
+						instrument for its whole validity window, and one maximal use extracts everything it authorizes. The freshness window, rather
+						than per-use consumption, bounds staleness. Operators should configure a tight window for <code>RemoveMargin</code> via
 						<code>setMuonFunctionUpnlValidTime</code>; until one is set, verification falls back to the global window. See
 						<a href="../pages/muon-upnl-validity-overrides.html">Muon UPNL Validity Overrides</a>.
 					</p>
 
-					<h2 id="partya-policy">PartyA Policy</h2>
+					<h2 id="partya-policy">PartyA policy</h2>
 					<p>
 						The raw floor is always enabled for PartyA. Both <code>deallocate</code> and <code>safeDeallocate</code> require the remaining
-						allocation to cover locked and pending CVA plus liquidation fee. There is no user-level toggle.
+						allocation to cover locked and pending CVA plus liquidation fee. Only <code>safeDeallocate</code> also applies the signed
+						scaled locked-balance floor and retains the signed gross funding debt. There is no user-level toggle.
 					</p>
 					<p>
 						<code>safeDeallocate</code> also retains its separate Muon <code>pendingBalance</code> reservation for operations that are
@@ -198,14 +224,14 @@ remainingRawAllocation &gt;= retention</code></pre>
 						under <code>MuonFunction.RemoveMargin</code>:
 					</p>
 					<pre><code>availableBalance &gt;= pendingBalance + amount
-remainingRawAllocation &gt;= max(protectedFloor, scaledLockedBalance)</code></pre>
+remainingRawAllocation &gt;= max(protectedFloor, scaledLockedBalance) + fundingDebt</code></pre>
 					<p>
-						Legacy <code>deallocate</code> keeps the stored floor only — it carries no attested value — and remains gated by the existing
-						<code>legacyDeallocateDeprecated</code> switch, which is the eventual retirement path for every deallocation that does not
-						carry the scaled floor.
+						Normal <code>deallocate</code> keeps its existing <code>SingleUpnlSig</code> wire format and retains only the stored position
+						floor. It is gated by <code>legacyDeallocateDeprecated</code>, the eventual retirement path for deallocation that does not
+						carry the scaled position floor or funding debt.
 					</p>
 
-					<h2 id="partyb-policy">PartyB Policy</h2>
+					<h2 id="partyb-policy">PartyB policy</h2>
 					<p>
 						PartyB protection is configured per solver and is disabled by default for backward compatibility. A PartyB manager can enable
 						or disable it for a registered solver:
@@ -215,7 +241,8 @@ isPartyBStrictDeallocationEnabled(address partyB) returns (bool)</code></pre>
 					<p>
 						When enabled, the floor applies to <code>deallocateForPartyB</code> and to the origin bucket of
 						<code>transferAllocation</code>. Covering the transfer path matters because otherwise protected collateral could be moved to
-						an empty allocation bucket and deallocated from there.
+						an empty allocation bucket and deallocated from there. These normal paths remain unchanged and retain the stored CVA and LF
+						position floor only.
 					</p>
 					<p>
 						When disabled, PartyB retains the existing uPnL-aware deallocation behavior. Integrators should query the flag rather than
@@ -223,15 +250,19 @@ isPartyBStrictDeallocationEnabled(address partyB) returns (bool)</code></pre>
 					</p>
 					<p>
 						Solvers get their own safe path, <code>safeDeallocateForPartyB(amount, partyA, sig)</code>. It mirrors
-						<code>deallocateForPartyB</code> — same modifiers, same <code>DeallocateForPartyB</code> event, same bucket rules — with two
-						additions: availability must cover the attested <code>pendingBalance</code> plus the requested amount, and when the strict
-						flag is enabled the retention floor becomes <code>max(protectedFloor, scaledLockedBalance)</code>. Keeping the scaled floor
-						inside the strict-flag branch is what makes the rollout per-solver: a solver that has not been switched on behaves exactly as
-						before, so enforcement can begin off-chain and move on-chain one solver at a time. The legacy method stays callable
-						throughout.
+						<code>deallocateForPartyB</code> with the same modifiers, <code>DeallocateForPartyB</code> event, and bucket rules.
+						Availability must cover the attested <code>pendingBalance</code> plus the requested amount, and when the strict flag is
+						enabled the retention floor becomes <code>max(protectedFloor, scaledLockedBalance) + fundingDebt</code>. Keeping this floor
+						inside the strict-flag branch is what makes enforcement per-solver: a solver that has not been switched on can use the safe
+						payload without the new raw floor being enforced on-chain yet. Enforcement can move one solver at a time.
 					</p>
 
-					<h2 id="cross-mode">Cross-Mode Buckets</h2>
+					<h2 id="cross-mode">Cross-mode buckets</h2>
+					<p>
+						An isolated PartyB uses the named PartyA's allocation bucket. An active cross-mode PartyB instead backs all current positions
+						from the shared <code>address(0)</code> bucket. A nonzero PartyA bucket left behind after enabling cross mode is a legacy
+						migration bucket, not part of the active cross pool.
+					</p>
 					<p>
 						For a cross-mode PartyB, positions are backed by the aggregate <code>address(0)</code> allocation bucket. Strict deallocation
 						therefore measures both raw allocation and locked requirements against that aggregate bucket. Frontends should also use
@@ -242,34 +273,43 @@ isPartyBStrictDeallocationEnabled(address partyB) returns (bool)</code></pre>
 						that legacy bucket keeps its historical rule: the active cross pool must be solvent, but the requested amount is not capped by
 						cross availability and the strict raw floor is not applied to the legacy bucket. This allows stranded allocation to be drained
 						after migration. <code>safeDeallocateForPartyB</code> follows these same bucket rules, including the legacy-drain exemption;
-						only the normal isolated and cross-bucket paths apply the pending reservation and the scaled floor.
+						only isolated and active cross-bucket safe paths apply the pending reservation and strict scaled-plus-funding-debt floor.
 					</p>
 
-					<h2 id="accountlayer-routing">AccountLayer Routing</h2>
+					<h2 id="accountlayer-routing">AccountLayer routing</h2>
 					<p>
 						Virtual accounts reach the core diamond through the AccountLayer, so its MarginFacet gains
 						<code>safeRemoveMargin(virtualAccount, amount, sig)</code> as the sibling of the existing <code>removeMargin</code>. The layer
-						performs only its account-tree checks — ownership and a non-zero amount — then executes core <code>safeDeallocate</code> as
-						the virtual account and sweeps the freed balance to the parent sub-account, emitting the same <code>RemoveMargin</code> event
-						as the legacy router. All solvency judgment deliberately stays in core: a check added at the layer would be bypassed by anyone
-						calling core directly, whereas the core-side floor covers virtual accounts automatically because core sees each one as an
-						ordinary PartyA. Core revert reasons bubble through the router unchanged.
+						checks the account owner, non-zero amount, virtual account existence, pause state, and reentrancy. It then executes core
+						<code>safeDeallocate</code> as the virtual account and sweeps the freed balance to the parent sub-account, emitting the same
+						<code>RemoveMargin</code> event as the legacy router. All solvency judgment deliberately stays in core: a check added at the
+						layer would be bypassed by anyone calling core directly, whereas the core-side floor covers virtual accounts automatically
+						because core sees each one as an ordinary PartyA. Core revert reasons bubble through the router unchanged.
 					</p>
 					<aside class="callout callout-note">
 						<strong>Upgrade ordering constraint.</strong>
-						The legacy <code>removeMargin</code> forwards to legacy <code>deallocate</code>, the exact method
-						<code>legacyDeallocateDeprecated</code> disables. Flipping that switch before the MarginFacet upgrade would break margin
-						removal for every sub-account in one transaction. Upgrade the layer first; flip the switch last.
+						<code>safeRemoveMargin</code> is a new AccountLayer route, while the existing core <code>safeDeallocate</code> selector
+						changes because its tuple expands. The normal <code>removeMargin</code> and core <code>deallocate</code> selectors remain
+						compatible. Upgrade the core before enabling the new AccountLayer safe route and cut safe clients over with it; the normal
+						route remains available until <code>legacyDeallocateDeprecated</code> is enabled.
 					</aside>
 
-					<h2 id="view-functions">New View Functions</h2>
+					<h2 id="view-functions">New view functions</h2>
+					<p>Choose the preview that matches the transaction:</p>
+					<ul>
+						<li>Normal PartyA <code>deallocate</code>: <code>maxDeallocatableForPartyA</code>.</li>
+						<li>Current PartyA <code>safeDeallocate</code>: <code>maxRemovableMarginForPartyA</code> with every signed field.</li>
+						<li>Normal PartyB <code>deallocateForPartyB</code>: <code>maxDeallocatableForPartyB</code>.</li>
+						<li>PartyB <code>safeDeallocateForPartyB</code>: <code>maxRemovableMarginForPartyB</code>.</li>
+					</ul>
 					<p>Three view functions were added with the raw floor:</p>
 					<pre><code class="language-solidity">maxDeallocatableForPartyA(address partyA, int256 upnl)
 
 maxSafeDeallocatableForPartyA(
     address partyA,
     int256 upnl,
-    uint256 pendingBalance
+    uint256 pendingBalance,
+    uint256 fundingDebt
 )
 
 maxDeallocatableForPartyB(
@@ -282,7 +322,8 @@ maxDeallocatableForPartyB(
     address partyA,
     int256 upnl,
     uint256 pendingBalance,
-    uint256 scaledLockedBalance
+    uint256 scaledLockedBalance,
+    uint256 fundingDebt
 )
 
 maxRemovableMarginForPartyB(
@@ -290,66 +331,88 @@ maxRemovableMarginForPartyB(
     address partyA,
     int256 upnl,
     uint256 pendingBalance,
-    uint256 scaledLockedBalance
+    uint256 scaledLockedBalance,
+    uint256 fundingDebt
 )</code></pre>
 					<p>
-						The older views delegate to the same implementation with a zero floor, so they keep returning exactly what they returned
-						before. For PartyB the scaled floor is applied only when strict deallocation is enabled for that solver, so the view tells the
-						truth in both rollout states. For a cross-mode PartyB, use <code>address(0)</code> for the active cross bucket or the original
-						PartyA address for a legacy bucket.
+						All five views are v0.8.6 additions. Only <code>maxSafeDeallocatableForPartyA</code> and the two
+						<code>maxRemovableMarginFor&hellip;</code> views accept funding debt; only the two
+						<code>maxRemovableMarginFor&hellip;</code> views also accept scaled locked balance. For PartyB, scaled balance and debt
+						retention apply only when strict deallocation is enabled. For cross mode, use <code>address(0)</code> for the active bucket or
+						the original PartyA address for a legacy bucket.
 					</p>
+					<p>
+						<code>maxSafeDeallocatableForPartyA</code> is the compatibility preview for the earlier safe payload shape. It assumes
+						<code>scaledLockedBalance = 0</code>. Current safe clients should use <code>maxRemovableMarginForPartyA</code> so the preview
+						includes the exact scaled floor carried by the signature.
+					</p>
+
 					<aside class="callout callout-note">
-						<strong>The view does not verify its inputs.</strong>
-						The deallocation transaction remains authoritative and still requires a valid Muon signature.
+						<strong>A preview is not transaction eligibility.</strong> The view does not verify its inputs and omits operational gates
+						such as pause state, cooldown or debounce timing, caller authorization, and signature validity. The deallocation transaction
+						remains authoritative.
 					</aside>
 
-					<h2 id="integration-flow">Integration Flow</h2>
+					<h2 id="integration-flow">Integration flow</h2>
 					<ol>
 						<li>
-							Obtain the fresh signed values from Muon: uPnL and, for the safe paths, the pending balance and
-							<code>scaledLockedBalance</code>. All three come from one signature over one price and state snapshot.
+							For a safe removal, obtain fresh signed net uPnL, gross <code>fundingDebt</code>, pending balance, and
+							<code>scaledLockedBalance</code> from Muon. They come from one signature over one price and state snapshot. Normal paths
+							continue to use <code>SingleUpnlSig</code>.
 						</li>
 						<li>
-							Call the matching maximum view — <code>maxRemovableMarginFor&hellip;</code> for the safe paths — passing exactly the
-							signed values. For PartyB, pass the PartyA address in isolated mode, <code>address(0)</code> for the active cross bucket,
-							or the original PartyA address when draining a legacy bucket.
+							Call the matching maximum view, <code>maxRemovableMarginFor&hellip;</code> for the safe paths, and pass exactly the signed
+							values. For PartyB, pass the PartyA address in isolated mode, <code>address(0)</code> for the active cross bucket, or the
+							original PartyA address when draining a legacy bucket.
 						</li>
 						<li>Clamp the requested amount to the returned maximum and construct the corresponding deallocation transaction.</li>
 						<li>
 							Treat a later transaction revert as authoritative: account state, policy, upnl counter, or signed values may have changed
 							after the preview. The floor check reverts with
-							<code>AccountFacet: Locked balance must remain allocated</code>.
+							<code>AccountFacet: Locked balance and funding debt must remain allocated</code>.
 						</li>
 					</ol>
 
-					<h2 id="rollout-order">Rollout Order</h2>
-					<p>The pieces have to land in a specific order. Each step is safe with everything after it still pending:</p>
+					<h2 id="rollout-order">Rollout order</h2>
+					<p>The safe Muon payload and safe selectors require a coordinated cutover:</p>
 					<ol>
 						<li>
-							<strong>Core diamond cut.</strong> Adds the scaled floor, <code>safeDeallocateForPartyB</code>, and the new views. With
-							clients still sending a zero <code>scaledLockedBalance</code>, every path behaves exactly as before.
+							<strong>Prepare Muon and safe clients.</strong> Extend <code>SingleUpnlWithPendingBalanceSig</code> and the safe view
+							arguments behind a deployment flag. Muon must return net uPnL and gross funding debt from the same snapshot; configure a
+							tight <code>RemoveMargin</code> validity window at the same time.
 						</li>
 						<li>
-							<strong>Muon app update.</strong> The app method returns uPnL, pending balance, and the scaled floor from one snapshot.
-							Configure a tight <code>RemoveMargin</code> validity window at the same time.
+							<strong>Coordinated safe-selector upgrade.</strong> Cut the core Account, PartyBAccount, and View facets and the
+							AccountLayer MarginFacet in one maintenance window. The facet updater removes the superseded safe selectors; normal
+							selectors are unchanged.
 						</li>
-						<li><strong>AccountLayer MarginFacet upgrade.</strong> Adds the <code>safeRemoveMargin</code> router.</li>
-						<li><strong>Client migration.</strong> Frontends and solvers move to the safe paths and the new views.</li>
 						<li>
-							<strong>Enforcement.</strong> Flip <code>strictDeallocationEnabledForPartyB</code> per solver as each is ready, and only
-							then <code>legacyDeallocateDeprecated</code> to retire the floor-less paths. <code>zeroUpnlDeallocate</code> is unaffected
-							throughout.
+							<strong>Safe-client cutover.</strong> Enable the prepared Muon and safe payloads as soon as the new safe selectors are
+							live.
+						</li>
+						<li>
+							<strong>PartyB enforcement.</strong> Flip <code>strictDeallocationEnabledForPartyB</code> per solver after monitoring its
+							debt attestations. This enables the documented PartyB floors but does not disable normal
+							<code>deallocateForPartyB</code> or <code>transferAllocation</code>; those paths remain available with the stored raw
+							floor.
+						</li>
+						<li>
+							<strong>PartyA legacy retirement.</strong> After PartyA clients have moved to the safe path, enable
+							<code>legacyDeallocateDeprecated</code>. It disables core PartyA <code>deallocate</code>, which also makes AccountLayer
+							<code>removeMargin</code> revert; clients must use <code>safeDeallocate</code> or <code>safeRemoveMargin</code> instead.
+							<code>zeroUpnlDeallocate</code> remains unaffected because it requires no open or pending positions and remains restricted
+							to <code>BALANCE_SETTLER_ROLE</code> or an authorized forwarding proxy.
 						</li>
 					</ol>
 
-					<h2 id="upnl-counters">uPnL Counters, Formerly Nonces</h2>
+					<h2 id="upnl-counters">uPnL counters, formerly nonces</h2>
 					<p>
 						The per-party value that Muon signatures embed was historically named <code>partyANonces</code> / <code>partyBNonces</code>.
 						The name was wrong in a way that misleads design work: a nonce implies per-use consumption, but this value is a
-						<strong>version counter of the inputs to uPnL</strong>. It is bumped by every operation that changes position or PnL state —
-						fills, funding charges, settlement, liquidation, force actions — and it is <em>not</em> consumed when a signature is used. A
-						signature therefore stays valid for its whole validity window until uPnL-relevant state changes, which is exactly why the
-						<code>RemoveMargin</code> freshness window, not the counter, is the binding control on stale signatures.
+						<strong>version counter of the inputs to uPnL</strong>. Fills, funding charges, settlement, liquidation, and force actions
+						bump it whenever position or PnL state changes. A signature does <em>not</em> consume it. A signature therefore stays valid
+						for its whole validity window until uPnL-relevant state changes, which is exactly why the <code>RemoveMargin</code> freshness
+						window, not the counter, is the binding control on stale signatures.
 					</p>
 					<p>
 						Deallocation deliberately does not bump the counter: it changes no uPnL input, every deallocation re-reads current balances

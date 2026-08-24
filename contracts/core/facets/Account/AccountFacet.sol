@@ -77,7 +77,7 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		emit Withdraw(signer, signer, amount);
 	}
 
-	/// @notice Allows either Party A or Party B to withdraw a specified amount of collateral and transfer it to another user, provided that the withdrawal cooldown period has elapsed.
+	/// @notice Allows PartyA or PartyB to withdraw collateral to another user after the withdrawal cooldown elapses.
 	/// @param user The recipient address for the withdrawal.
 	/// @param amount The precise amount of collateral to be withdrawn, specified in collateral decimals.
 	function withdrawTo(address user, uint256 amount) external whenNotAccountingPaused notSuspended(LibSigner.getSigner()) {
@@ -85,7 +85,8 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		emit Withdraw(LibSigner.getSigner(), user, amount);
 	}
 
-	/// @notice Allows the SUSPENDED_FUNDS_WITHDRAWER_ROLE to transfer the internal balance of a suspended user to a recipient address (no token transfer occurs).
+	/// @notice Allows SUSPENDED_FUNDS_WITHDRAWER_ROLE to transfer a suspended user's internal balance
+	///         to a recipient without transferring tokens.
 	/// @param user The suspended user whose funds will be moved.
 	/// @param recipient The destination address that will receive the funds.
 	/// @param amount The amount to withdraw, specified in collateral decimals.
@@ -111,7 +112,7 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		emit DeallocateSuspendedUser(msg.sender, user, amount, newAllocatedBalance);
 	}
 
-	/// @notice Allows Party A to allocate a specified amount of collateral. Allocated amounts are which user can actually trade on.
+	/// @notice Allows PartyA to allocate collateral. The allocated balance is available for trading.
 	/// @param amount The precise amount of collateral to be allocated, specified in 18 decimals.
 	function allocate(
 		uint256 amount
@@ -162,7 +163,7 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	/// @notice Allows Party A to deallocate a specified amount of collateral with pending balance check.
 	/// @dev This function considers off-chain pending operations (like solver orders) that need reserved funds.
 	/// @param amount The precise amount of collateral to be deallocated, specified in 18 decimals.
-	/// @param upnlSig The Muon signature for SingleUpnlWithPendingBalanceSig containing upnl and pendingBalance.
+	/// @param upnlSig The Muon signature containing UPNL, funding debt, pending balance, and the scaled locked balance.
 	function safeDeallocate(
 		uint256 amount,
 		SingleUpnlWithPendingBalanceSig memory upnlSig
@@ -234,7 +235,7 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		}
 	}
 
-	/// @notice ERC20-approve-style: set the caller's operational-fee allowance to each charger (absolute amount).
+	/// @notice ERC20-approve-style: set each charger's remaining operational-fee allowance to an absolute amount.
 	/// @dev Batch so a payer can approve multiple chargers (e.g. a solver and a relayer) in one tx.
 	///      Per charger: a raise (or equal) applies instantly; a reduction is timelocked (see LibOperationalFee).
 	function approveOperationalFee(address[] calldata chargers, uint256[] calldata amounts) external {

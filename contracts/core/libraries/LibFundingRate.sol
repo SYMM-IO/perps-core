@@ -70,7 +70,15 @@ library LibFundingRate {
 	function updateAccumulatedRates(
 		FundingFee storage fundingFee
 	) internal returns (int256 accumulatedLongRate, int256 accumulatedShortRate, bool stateUpdated) {
-		uint256 newEpochs = getEpochsSinceLastUpdate(fundingFee);
+		return updateAccumulatedRatesAt(fundingFee, block.timestamp);
+	}
+
+	/// @notice Updates accumulated funding rates at a fixed timestamp shared by a batched operation.
+	function updateAccumulatedRatesAt(
+		FundingFee storage fundingFee,
+		uint256 timestamp
+	) internal returns (int256 accumulatedLongRate, int256 accumulatedShortRate, bool stateUpdated) {
+		uint256 newEpochs = getEpochsSinceLastUpdateAt(fundingFee, timestamp);
 		uint256 previousEpochs = fundingFee.lastUpdatedEpoch - fundingFee.startEpoch;
 
 		if (previousEpochs == 0 && newEpochs == 0) {
@@ -87,8 +95,8 @@ library LibFundingRate {
 		fundingFee.accumulatedShortRate =
 			(fundingFee.accumulatedShortRate * int256(previousEpochs) + fundingFee.currentShortRate * int256(newEpochs)) / int256(totalEpochs);
 
-		fundingFee.lastUpdatedEpoch = getEpochOfTimestamp(block.timestamp, fundingFee.epochDuration);
-		fundingFee.lastUpdatedTimeStamp = block.timestamp;
+		fundingFee.lastUpdatedEpoch = getEpochOfTimestamp(timestamp, fundingFee.epochDuration);
+		fundingFee.lastUpdatedTimeStamp = timestamp;
 
 		return (fundingFee.accumulatedLongRate, fundingFee.accumulatedShortRate, true);
 	}

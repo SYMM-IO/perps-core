@@ -10,6 +10,7 @@ import { PartyBControlStorage } from "../../storages/PartyBControlStorage.sol";
 import { ISymbolControlFacet } from "./ISymbolControlFacet.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
+import { LibSymbol } from "../../libraries/LibSymbol.sol";
 
 contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 	/// @notice Adds a new trading symbol (e.g., BTC/USD, ETH/USD) to the protocol with its trading parameters.
@@ -149,6 +150,40 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 		symbolLayout.symbols[symbolId].minAcceptablePortionLF = minAcceptablePortionLF;
 	}
 
+	/// @notice Sets the minimum LF rate against notional for the default or a specific symbol.
+	/// @dev Symbol 0 stores the live default. Setting a nonzero symbol creates an explicit override,
+	///      including when minAcceptableNotionalLFRate is zero.
+	/// @param symbolId Zero for the default, or an existing symbol ID for an override.
+	/// @param minAcceptableNotionalLFRate The minimum LF rate against notional, in 1e18 precision.
+	function setSymbolMinAcceptableNotionalLFRate(
+		uint256 symbolId,
+		uint256 minAcceptableNotionalLFRate
+	) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
+		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
+		require(symbolId <= symbolLayout.lastId, "SymbolControlFacet: Invalid id");
+
+		uint256 oldRate = LibSymbol.minAcceptableNotionalLFRate(symbolId);
+		symbolLayout.minAcceptableNotionalLFRates[symbolId] = minAcceptableNotionalLFRate;
+		if (symbolId != 0) {
+			symbolLayout.hasMinAcceptableNotionalLFRateOverride[symbolId] = true;
+		}
+
+		emit SetSymbolMinAcceptableNotionalLFRate(symbolId, oldRate, minAcceptableNotionalLFRate, symbolId != 0);
+	}
+
+	/// @notice Clears a symbol-specific notional LF rate so the symbol inherits the symbol-0 default again.
+	/// @param symbolId The existing nonzero symbol ID whose override will be cleared.
+	function clearSymbolMinAcceptableNotionalLFRateOverride(uint256 symbolId) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
+		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
+		require(symbolId >= 1 && symbolId <= symbolLayout.lastId, "SymbolControlFacet: Invalid id");
+
+		uint256 oldRate = LibSymbol.minAcceptableNotionalLFRate(symbolId);
+		delete symbolLayout.minAcceptableNotionalLFRates[symbolId];
+		delete symbolLayout.hasMinAcceptableNotionalLFRateOverride[symbolId];
+
+		emit SetSymbolMinAcceptableNotionalLFRate(symbolId, oldRate, LibSymbol.minAcceptableNotionalLFRate(symbolId), false);
+	}
+
 	/// @notice Updates the base trading fee for a specific symbol. This fee applies when no affiliate-specific fee exists.
 	/// @param symbolId The unique identifier of the symbol to update.
 	/// @param tradingFee The new base trading fee percentage (in 1e18 precision).
@@ -194,7 +229,7 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 	function whitelistSymbols(address partyB, uint256[] calldata symbolIds) external {
 		symbolListingAuthorizationCheck(LibSigner.getSigner(), partyB);
 		PartyBControlStorage.Layout storage partyBControlLayout = PartyBControlStorage.layout();
-		for (uint256 i; i < symbolIds.length; ) {
+		for (uint256 i; i < symbolIds.length;) {
 			uint256 id = symbolIds[i];
 			require(!partyBControlLayout.partyBBlacklistedSymbols[partyB][id], "SymbolControlFacet: Blacklist conflict");
 			partyBControlLayout.partyBWhitelistedSymbols[partyB][symbolIds[i]] = true;
@@ -220,7 +255,7 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 	function removeSymbolsFromWhitelist(address partyB, uint256[] calldata symbolIds) external {
 		symbolListingAuthorizationCheck(LibSigner.getSigner(), partyB);
 		PartyBControlStorage.Layout storage partyBControlLayout = PartyBControlStorage.layout();
-		for (uint256 i; i < symbolIds.length; ) {
+		for (uint256 i; i < symbolIds.length;) {
 			partyBControlLayout.partyBWhitelistedSymbols[partyB][symbolIds[i]] = false;
 			unchecked {
 				++i;
@@ -235,7 +270,7 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 	function blacklistSymbols(address partyB, uint256[] calldata symbolIds) external {
 		symbolListingAuthorizationCheck(LibSigner.getSigner(), partyB);
 		PartyBControlStorage.Layout storage partyBControlLayout = PartyBControlStorage.layout();
-		for (uint256 i; i < symbolIds.length; ) {
+		for (uint256 i; i < symbolIds.length;) {
 			uint256 id = symbolIds[i];
 			require(!partyBControlLayout.partyBWhitelistedSymbols[partyB][id], "SymbolControlFacet: Whitelist conflict");
 			partyBControlLayout.partyBBlacklistedSymbols[partyB][symbolIds[i]] = true;
@@ -252,7 +287,7 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 	function removeSymbolsFromBlacklist(address partyB, uint256[] calldata symbolIds) external {
 		symbolListingAuthorizationCheck(LibSigner.getSigner(), partyB);
 		PartyBControlStorage.Layout storage partyBControlLayout = PartyBControlStorage.layout();
-		for (uint256 i; i < symbolIds.length; ) {
+		for (uint256 i; i < symbolIds.length;) {
 			partyBControlLayout.partyBBlacklistedSymbols[partyB][symbolIds[i]] = false;
 			unchecked {
 				++i;

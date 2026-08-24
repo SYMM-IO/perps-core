@@ -110,26 +110,34 @@ library LibAccount {
 			accountLayout.pendingLockedBalances[partyA].lf;
 	}
 
+	/// @notice Returns Party A's hard raw-allocation floor for safe deallocation.
+	/// @dev Net UPNL already includes funding; gross funding debt is added only as a raw collateral-retention requirement.
+	function partyASafeDeallocateRequirement(address partyA, uint256 scaledLockedBalance, uint256 fundingDebt) internal view returns (uint256) {
+		uint256 requirement = partyADeallocateCvaLfRequirement(partyA);
+		if (scaledLockedBalance > requirement) requirement = scaledLockedBalance;
+		return requirement + fundingDebt;
+	}
+
 	/// @notice Returns the maximum Party A amount permitted by solvency, pending-balance, and raw CVA + LF deallocation checks.
 	function partyAMaxDeallocatable(int256 upnl, address partyA, uint256 pendingBalance) internal view returns (uint256) {
-		return partyAMaxRemovableMargin(upnl, partyA, pendingBalance, 0);
+		return partyAMaxRemovableMargin(upnl, partyA, pendingBalance, 0, 0);
 	}
 
 	/// @notice Returns the maximum Party A amount permitted by solvency, pending-balance, and retention checks,
-	/// where the retention floor is the stricter of the stored CVA + LF requirement and the Muon-attested scaledLockedBalance.
+	/// where the retention floor is the stricter of the stored CVA + LF requirement and the Muon-attested scaledLockedBalance, plus funding debt.
 	function partyAMaxRemovableMargin(
 		int256 upnl,
 		address partyA,
 		uint256 pendingBalance,
-		uint256 scaledLockedBalance
+		uint256 scaledLockedBalance,
+		uint256 fundingDebt
 	) internal view returns (uint256) {
 		int256 availableBalance = partyAAvailableForQuote(upnl, partyA);
 		if (availableBalance <= 0 || uint256(availableBalance) <= pendingBalance) return 0;
 
 		uint256 availableAfterPending = uint256(availableBalance) - pendingBalance;
 		uint256 allocatedBalance = AccountStorage.layout().allocatedBalances[partyA];
-		uint256 requirement = partyADeallocateCvaLfRequirement(partyA);
-		if (scaledLockedBalance > requirement) requirement = scaledLockedBalance;
+		uint256 requirement = partyASafeDeallocateRequirement(partyA, scaledLockedBalance, fundingDebt);
 		uint256 allocationAboveRequirement = allocatedBalance > requirement ? allocatedBalance - requirement : 0;
 
 		return availableAfterPending < allocationAboveRequirement ? availableAfterPending : allocationAboveRequirement;
@@ -158,19 +166,33 @@ library LibAccount {
 			accountLayout.partyBPendingLockedBalances[partyB][allocationKey].lf;
 	}
 
+	/// @notice Returns Party B's hard raw-allocation floor for a strict safe-deallocation bucket.
+	/// @dev Net UPNL already includes funding; gross funding debt is added only as a raw collateral-retention requirement.
+	function partyBSafeDeallocateRequirement(
+		address partyB,
+		address partyA,
+		uint256 scaledLockedBalance,
+		uint256 fundingDebt
+	) internal view returns (uint256) {
+		uint256 requirement = partyBDeallocateCvaLfRequirement(partyB, partyA);
+		if (scaledLockedBalance > requirement) requirement = scaledLockedBalance;
+		return requirement + fundingDebt;
+	}
+
 	/// @notice Returns the maximum Party B amount permitted by the current margin mode, solvency, and strict-deallocation policy.
 	function partyBMaxDeallocatable(int256 upnl, address partyB, address partyA) internal view returns (uint256) {
-		return partyBMaxRemovableMargin(upnl, partyB, partyA, 0, 0);
+		return partyBMaxRemovableMargin(upnl, partyB, partyA, 0, 0, 0);
 	}
 
 	/// @notice Returns the maximum Party B amount permitted by margin mode, solvency, pending-balance, and retention checks,
-	/// where the strict retention floor is the stricter of the stored CVA + LF requirement and the Muon-attested scaledLockedBalance.
+	/// where the strict retention floor is the stricter of the stored CVA + LF requirement and the Muon-attested scaledLockedBalance, plus funding debt.
 	function partyBMaxRemovableMargin(
 		int256 upnl,
 		address partyB,
 		address partyA,
 		uint256 pendingBalance,
-		uint256 scaledLockedBalance
+		uint256 scaledLockedBalance,
+		uint256 fundingDebt
 	) internal view returns (uint256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
@@ -186,8 +208,7 @@ library LibAccount {
 		uint256 maxDeallocatable = availableAfterPending < allocatedBalance ? availableAfterPending : allocatedBalance;
 		if (!maLayout.strictDeallocationEnabledForPartyB[partyB]) return maxDeallocatable;
 
-		uint256 requirement = partyBDeallocateCvaLfRequirement(partyB, allocationKey);
-		if (scaledLockedBalance > requirement) requirement = scaledLockedBalance;
+		uint256 requirement = partyBSafeDeallocateRequirement(partyB, allocationKey, scaledLockedBalance, fundingDebt);
 		uint256 allocationAboveRequirement = allocatedBalance > requirement ? allocatedBalance - requirement : 0;
 		return maxDeallocatable < allocationAboveRequirement ? maxDeallocatable : allocationAboveRequirement;
 	}
@@ -324,9 +345,10 @@ library LibAccount {
 	) internal view returns (int256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address allocationKey = partyBAllocationKey(partyB, partyA);
-		int256 a = int256(accountLayout.partyBAllocatedBalances[partyB][allocationKey]) -
-			int256(accountLayout.partyBLockedBalances[partyB][allocationKey].cva + accountLayout.partyBLockedBalances[partyB][allocationKey].lf) -
-			int256(applyLiquidationSettlementReserve ? partyBLiquidationSettlementReserve(accountLayout, partyB) : 0);
+		int256 a =
+			int256(accountLayout.partyBAllocatedBalances[partyB][allocationKey]) -
+				int256(accountLayout.partyBLockedBalances[partyB][allocationKey].cva + accountLayout.partyBLockedBalances[partyB][allocationKey].lf) -
+				int256(applyLiquidationSettlementReserve ? partyBLiquidationSettlementReserve(accountLayout, partyB) : 0);
 		return a + upnl;
 	}
 

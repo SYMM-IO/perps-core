@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Adds quote-level funding and PnL events, final aggregate settlement events, and an explicit Clearing House takeover boundary for PartyA liquidation observability."
+		/>
+		<title>Liquidation Funding Observability - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.6">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#summary">Summary</a>
+				<a class="toc-link level-2" href="#quote-funding-event">Quote funding event</a>
+				<a class="toc-link level-2" href="#aggregate-settlement-event">Aggregate settlement event</a>
+				<a class="toc-link level-2" href="#clearing-house-boundary">Clearing House boundary</a>
+				<a class="toc-link level-2" href="#observer-scope">What indexers can reconstruct</a>
+			</div>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Liquidation Funding Observability</h1>
+							<p class="hero-copy">
+								v0.8.6 adds dedicated events for observing quote-level funding and price PnL calculations and their final aggregate
+								settlement during PartyA liquidation.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="summary">Summary</h2>
+					<p>
+						PartyA liquidation calculates funding and price PnL while processing individual quotes, then settles them through an aggregate
+						PartyA/PartyB bucket. v0.8.6 adds events at both points so indexers can observe the quote calculations and reconcile them with
+						the final aggregate balance movement.
+					</p>
+					<aside class="callout callout-note">
+						<strong>Accounting behavior is unchanged.</strong> These events improve observability. They do not add a new settlement step,
+						a per-quote settlement ledger, or different liquidation economics.
+					</aside>
+
+					<h2 id="quote-funding-event">Quote funding and PnL event</h2>
+					<pre><code class="language-solidity">event QuoteLiquidationFundingCalculated(
+    address indexed partyA,
+    address indexed partyB,
+    uint256 indexed quoteId,
+    uint256 symbolId,
+    int256 rawFunding,
+    int256 rawPnl,
+    bytes liquidationId
+);</code></pre>
+					<p>
+						The contract emits this event when one open quote is processed during PartyA liquidation. It identifies the quote, market,
+						counterparties, liquidation, raw funding, and raw price PnL calculated from the liquidation snapshot.
+					</p>
+					<p>
+						<code>rawFunding</code> and <code>rawPnl</code> are signed from PartyB's perspective: a positive value means PartyB receives
+						that component, and a negative value means PartyB pays it.
+					</p>
+
+					<h2 id="aggregate-settlement-event">Aggregate settlement event</h2>
+					<pre><code class="language-solidity">event LiquidationFundingSettled(
+    address indexed partyA,
+    address indexed partyB,
+    address indexed allocationKey,
+    int256 rawFunding,
+    int256 settledFunding,
+    int256 rawPnl,
+    int256 settledPnl,
+    uint256 scaleNumerator,
+    uint256 scaleDenominator,
+    bytes liquidationId
+);</code></pre>
+					<p>
+						The contract emits this event when the PartyA/PartyB settlement bucket is finalized. It reports the raw and final aggregate
+						funding and price PnL applied to PartyB's allocation bucket.
+					</p>
+					<ul>
+						<li><code>rawFunding</code> is the signed funding total before the final settlement adjustment.</li>
+						<li><code>settledFunding</code> is the signed aggregate funding actually credited or debited.</li>
+						<li><code>rawPnl</code> is the signed sum of the quote-level raw price PnL values.</li>
+						<li><code>settledPnl</code> is the signed aggregate price PnL actually credited or debited.</li>
+						<li><code>scaleNumerator</code> and <code>scaleDenominator</code> expose the adjustment applied to funding.</li>
+						<li><code>allocationKey</code> identifies the PartyB balance bucket that changed.</li>
+					</ul>
+					<p>
+						The event's scale operands come from the settlement state. The <strong>expected amount</strong> is the full PartyA-perspective
+						funding-plus-PnL total accumulated while processing quotes. The <strong>final amount</strong> is the PartyA-perspective amount
+						the bucket will actually settle after any deficit or dispute adjustment and any isolated-mode balance cap. These are internal
+						operands; the event reports their ratio and the resulting PartyB-perspective components.
+					</p>
+					<p>
+						Normally the final amount matches the expected amount and the scale is <code>1 / 1</code>. A haircut, dispute override, or
+						isolated-mode payout cap can reduce the final amount. When it reduces the amount without changing its direction, the scale is
+						<code>abs(final amount) / abs(expected amount)</code>; a zero or direction-changing override reduces funding to zero. The
+						contract applies that scale to <code>rawFunding</code>, then assigns the rest of the final bucket movement to
+						<code>settledPnl</code>. Thus <code>settledFunding + settledPnl</code> equals the final PartyB-perspective balance change;
+						<code>settledPnl</code> is not independently scaled.
+					</p>
+					<p>
+						Non-zero settled components are accompanied by the corresponding typed <code>FUNDING_FEE_IN/OUT</code> and
+						<code>REALIZED_PNL_IN/OUT</code> PartyB balance-change events.
+					</p>
+
+					<h2 id="clearing-house-boundary">Clearing House boundary</h2>
+					<pre><code class="language-solidity">event LiquidationFundingSettlementAbandoned(
+    address indexed partyA,
+    address indexed partyB,
+    int256 rawFunding,
+    bytes liquidationId
+);</code></pre>
+					<p>
+						If the Clearing House takes over before a pending normal settlement is completed, this event marks the normal funding
+						settlement as abandoned. Observers should then reconcile the takeover through
+						<a href="explicit-clearing-house-settlements.html"
+							><code>ClearingHouseSettlementComponent</code> and <code>ClearingHouseAccountSettlement</code></a
+						>
+						instead of treating the earlier raw quote calculations as a completed normal settlement.
+					</p>
+
+					<h2 id="observer-scope">What indexers can reconstruct</h2>
+					<p>The events expose:</p>
+					<ul>
+						<li>Raw liquidation funding and price PnL per quote and symbol.</li>
+						<li>Raw and final aggregate funding and price PnL per PartyA/PartyB settlement bucket.</li>
+						<li>The PartyB allocation key affected by the final settlement.</li>
+						<li>The adjustment ratio used for the aggregate settlement.</li>
+						<li>An explicit boundary when normal settlement is superseded by a Clearing House takeover.</li>
+					</ul>
+					<p>
+						The typed PartyB balance-change events supply the corresponding storage deltas, so indexers can reconcile these records
+						without an additional on-chain publication step.
+					</p>
+				</article>
+			</main>
+		</div>
+	</body>
+</html>

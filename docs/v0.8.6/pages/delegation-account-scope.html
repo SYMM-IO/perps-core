@@ -41,9 +41,9 @@
 		<div class="reader-shell">
 			<div class="rail-sections-source" data-rail-sections hidden>
 				<a class="toc-link level-2" href="#summary">Summary</a>
-				<a class="toc-link level-2" href="#what-changed">What Changed</a>
-				<a class="toc-link level-2" href="#what-a-delegation-covers">What a Delegation Covers</a>
-				<a class="toc-link level-2" href="#how-the-scope-is-set">How the Scope Is Set</a>
+				<a class="toc-link level-2" href="#what-changed">What changed</a>
+				<a class="toc-link level-2" href="#what-a-delegation-covers">What a delegation covers</a>
+				<a class="toc-link level-2" href="#how-the-scope-is-set">How the scope is set</a>
 			</div>
 
 			<main class="reader-main">
@@ -70,18 +70,19 @@
 						same owner. Approving a bot to trade one account effectively approved it across every account that user held.
 					</p>
 					<p>
-						v0.8.6 confines a delegated operation to the account family the delegation was granted over. Anything else is rejected with
-						<code>AccountOutOfScope</code> and the whole operation reverts, so no balance or ownership change lands.
+						An account family is one named SubAccount together with its Virtual Accounts. v0.8.6 confines a delegated operation to the
+						family the delegation was granted over. Anything else is rejected with <code>AccountOutOfScope</code> and the whole operation
+						reverts, so no balance or ownership change lands.
 					</p>
 
-					<h2 id="what-changed">What Changed</h2>
+					<h2 id="what-changed">What changed</h2>
 					<p>
-						Before v0.8.6: InstantLayer executed a delegated operation as the account <em>owner</em>. The AccountLayer then checked
+						Before v0.8.6, InstantLayer executed a delegated operation as the account <em>owner</em>. The AccountLayer then checked
 						ownership of whichever account the call named, and an owner owns all of their SubAccounts, so that check passed for every one
 						of them. The delegation was checked against <code>A</code> while the call was allowed against <code>B</code>.
 					</p>
 					<p>
-						After v0.8.6: the session carries the delegated account family alongside the signer. Ownership is checked as before, and a
+						After v0.8.6, the session carries the delegated account family alongside the signer. Ownership is checked as before, and a
 						second check rejects any account outside that family.
 					</p>
 					<p>
@@ -89,7 +90,7 @@
 						account they already named.
 					</p>
 
-					<h2 id="what-a-delegation-covers">What a Delegation Covers</h2>
+					<h2 id="what-a-delegation-covers">What a delegation covers</h2>
 					<p>The grant covers the named SubAccount together with its Virtual Accounts.</p>
 					<pre><code>scope = virtualAccount.isExists ? virtualAccount.parentAccount : account
 
@@ -109,25 +110,36 @@ allowed(target) = owner(target) == signer AND canonical(target) == scope</code><
 						two.
 					</p>
 
-					<h2 id="how-the-scope-is-set">How the Scope Is Set</h2>
+					<h2 id="how-the-scope-is-set">How the scope is set</h2>
 					<p>
 						InstantLayer is the only caller that opens a confined session. When it executes an operation whose signer is not the account
 						owner, it resolves the delegation key for the named account and installs it alongside the owner.
+					</p>
+					<p>
+						An owner-signed operation needs no confinement and uses a zero scope. A delegated operation resolves the named account to its
+						canonical SubAccount family. The administrator-controlled <code>transientContextEnabled</code> flag selects either the native
+						begin/end selector protocol and <code>setTransientSignerScoped</code>, or the historical setter-compatible protocol and
+						<code>setSignerScoped</code>. This is a configured protocol choice, not automatic capability detection. Both routes require
+						the upgraded AccountLayer scoped-signer methods and install the same owner and scope for this transaction.
 					</p>
 					<pre><code class="language-solidity">address scope = signedOp.signer == owner
     ? address(0)
     : _canonicalDelegator(signedOp.signerAccount.addr);
 
-IAccountLayerDiamond(accountLayer).setSignerScoped(owner, scope);</code></pre>
+if (usesNativeContextSelectors) {
+    IAccountLayerDiamond(accountLayer).setTransientSignerScoped(owner, scope);
+} else {
+    IAccountLayerDiamond(accountLayer).setSignerScoped(owner, scope);
+}</code></pre>
 					<p>
-						An owner-signed operation passes <code>address(0)</code> and runs unconfined, exactly as before. The scope applies to both
-						routes InstantLayer uses: operations targeting Symmio, which are wrapped through <code>_call</code>, and direct AccountLayer
-						calls such as <code>addMargin</code> or <code>transferSubAccountOwnership</code>.
+						The scope applies to both routes InstantLayer uses: operations targeting Symmio, which are wrapped through
+						<code>_call</code>, and direct AccountLayer calls such as <code>addMargin</code> or <code>transferSubAccountOwnership</code>.
 					</p>
 					<p>
-						The session is cleared with the signer when the operation finishes. <code>setSigner</code> always writes a zero scope, so a
-						caller that clears through the original entry point can never leave a confinement behind for the next one, and callers that
-						never open a scoped session — AccountManager, direct users, protocol operations — are unaffected.
+						The session is cleared with the signer when the operation finishes. Both <code>setSigner</code> and
+						<code>setTransientSigner</code> install a zero scope, so either matching clear path removes the confinement before the next
+						operation. Callers that do not execute through an InstantLayer delegation never open a scoped session and are unaffected. This
+						includes AccountManager, direct users, and protocol operations.
 					</p>
 					<p>
 						<code>ViewFacet.getSignerScope</code> reports the active scope, or <code>address(0)</code> when the session is unconfined.
@@ -140,9 +152,9 @@ IAccountLayerDiamond(accountLayer).setSignerScoped(owner, scope);</code></pre>
 						revert.
 					</p>
 					<aside class="callout callout-note">
-						<strong>The scope narrows; it never widens.</strong>
-						Ownership is still checked first and is still required. A confined session can only reach a subset of what the owner could
-						reach, so no delegation gains reach it did not already have.
+						<strong>Scope does not replace ownership.</strong>
+						Ownership is checked first and remains required. A confined session can reach only a subset of the accounts available to the
+						owner.
 					</aside>
 				</article>
 			</main>

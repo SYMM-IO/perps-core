@@ -69,3 +69,4 @@ AGENTS.md
 .symmio/
 .fuzz-dashboard/
 .ledger-handover-cache.json
+.gasless-layer-ledger-upgrade-cache.json

@@ -5,7 +5,7 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta
 			name="description"
-			content="Changelog for Symmio Core v0.8.6: express withdrawals, delegated AccountLayer ownership, liquidation snapshot settlement, allocated-balance event ledger, solver and operational fees."
+			content="Complete Symmio Core v0.8.6 release notes with 31 scoped changes covering Express Withdrawal, AccountLayer, liquidation, settlement, fees, funding, events, and operations."
 		/>
 		<title>Symmio Core v0.8.6 release notes</title>
 		<link rel="icon" type="image/svg+xml" href="assets/symmio-mark.svg" />
@@ -21,7 +21,7 @@
 		<script src="../assets/docs-portal.js" defer></script>
 	</head>
 	<body class="index-page version-catalog-page" data-version="0.8.6">
-		<a class="skip-link" href="#docs">Skip to docs</a>
+		<a class="skip-link" href="#docs">Skip to release notes</a>
 
 		<header class="docs-header">
 			<div class="doc-topbar">
@@ -45,8 +45,13 @@
 						<p class="eyebrow">Core release</p>
 						<h1>Symmio Core <span>v0.8.6</span></h1>
 						<p class="hero-copy">
-							A technical guide to the release: faster withdrawals, delegated AccountLayer ownership, safer liquidation settlement,
-							reconstructible allocated-balance events, and tighter operational controls.
+							A technical guide to faster withdrawals, delegated AccountLayer ownership, safer liquidation settlement, reconstructible
+							allocated-balance events, and tighter operational controls.
+						</p>
+						<p class="hero-copy">
+							Start with the <a href="./pages/overview.html">role-based overview</a>. Express operators should then use the
+							<a href="./pages/express-bot-operations-checklist.html">bot operations runbook</a> alongside the numbered
+							<a href="./pages/express-withdrawal-system-design.html">design chapter</a>.
 						</p>
 					</div>
 				</div>
@@ -56,12 +61,23 @@
 			<div class="catalog-toolbar" role="search">
 				<label class="catalog-search-wrap">
 					<span class="visually-hidden">Search v0.8.6 chapters</span>
-					<input class="catalog-search" type="search" placeholder="Search chapters" data-catalog-search autocomplete="off" />
+					<input
+						class="catalog-search"
+						type="search"
+						placeholder="Search chapters"
+						data-catalog-search
+						autocomplete="off"
+						aria-describedby="catalog-result-count"
+					/>
 					<kbd class="catalog-search-hint" aria-hidden="true" data-search-hint>⌘K</kbd>
 				</label>
-				<span class="catalog-count" data-catalog-count>24 chapters</span>
+				<span class="catalog-count" id="catalog-result-count" data-catalog-count>31 chapters</span>
 			</div>
-			<p class="catalog-empty" data-catalog-empty hidden>No chapters match that search.</p>
+			<div class="catalog-empty" data-catalog-empty hidden>
+				<strong>No chapters found</strong>
+				<span>Try another term or clear the current search.</span>
+				<button class="button" type="button" data-catalog-clear>Clear search</button>
+			</div>
 			<div class="doc-browser">
 				<section class="version-catalog-group" data-catalog-group aria-labelledby="docs-title">
 					<div class="section-heading">
@@ -75,8 +91,8 @@
 								<span class="category">Express Withdrawal</span>
 								<strong>Express Withdrawal System Design</strong>
 								<span
-									>SYMMIO's 12-hour cooldown protects withdrawals but slows exits. ExpressProvider fronts pool and credit-backed
-									funds, then reconciles when the normal withdrawal finalizes.</span
+									>SYMMIO's configurable cooldown protects withdrawals but slows exits. ExpressProvider fronts pool and
+									credit-backed funds, then reconciles when the underlying withdrawal finalizes.</span
 								>
 							</span>
 						</a>
@@ -152,8 +168,8 @@
 								<span class="category">Fees</span>
 								<strong>Operational Fees</strong>
 								<span
-									>A unified per-op fee primitive shared by solvers and registered relayers, backed by a standing per-(payer,
-									charger) allowance with timelocked reductions and a priority multiplier.</span
+									>Payers approve separate budgets for flat fees charged by solvers or registered relayers. Budget increases are
+									immediate, reductions are delayed, and an optional multiplier can guide off-chain scheduling.</span
 								>
 							</span>
 						</a>
@@ -187,9 +203,8 @@
 								<span class="category">Accounts</span>
 								<strong>Strict Deallocation</strong>
 								<span
-									>PartyA and opted-in PartyBs preserve raw liquidation collateral during deallocation, with public views for the
-									maximum safe amount. The safe paths additionally retain a Muon-attested floor re-marked to live notional, closing
-									profit-financed collateral stripping.</span
+									>PartyA and opted-in PartyBs cannot deallocate collateral that still protects their positions. Safe APIs enforce
+									the Muon-attested protected amount, and public views expose the maximum removable amount.</span
 								>
 							</span>
 						</a>
@@ -208,24 +223,36 @@
 				</section>
 				<section class="version-catalog-group minor-improvements" aria-labelledby="other-changes-title" data-catalog-group>
 					<div class="section-heading">
-						<p class="eyebrow" data-catalog-group-count>12 chapters</p>
+						<p class="eyebrow" data-catalog-group-count>19 chapters</p>
 						<h2 id="other-changes-title">Other changes</h2>
 					</div>
 					<div class="minor-improvement-list">
-						<a class="minor-improvement-item" href="pages/partya-liquidation-fee-recipient.html" data-catalog-item>
+						<a class="minor-improvement-item" href="pages/explicit-clearing-house-settlements.html" data-catalog-item>
 							<span class="doc-list-index">13</span>
+							<span class="category">Clearing House</span>
+							<strong>Explicit Clearing House Settlements</strong>
+							<span>Declares final realized PnL, funding, and platform fees per account and market, with typed balance deltas.</span>
+						</a>
+						<a class="minor-improvement-item" href="pages/liquidation-funding-observability.html" data-catalog-item>
+							<span class="doc-list-index">14</span>
+							<span class="category">Liquidation</span>
+							<strong>Liquidation Funding Observability</strong>
+							<span>Adds quote-level funding and PnL events plus final aggregate settlement events for liquidation indexers.</span>
+						</a>
+						<a class="minor-improvement-item" href="pages/partya-liquidation-fee-recipient.html" data-catalog-item>
+							<span class="doc-list-index">15</span>
 							<span class="category">Liquidation</span>
 							<strong>PartyA Liquidation Fee Recipient Cleanup</strong>
 							<span>Records the liquidation starter as the unambiguous recipient for capped PartyA liquidation fees.</span>
 						</a>
 						<a class="minor-improvement-item" href="pages/partyb-allocation-suspension-gates.html" data-catalog-item>
-							<span class="doc-list-index">14</span>
+							<span class="doc-list-index">16</span>
 							<span class="category">PartyB</span>
 							<strong>PartyB Allocation Suspension Gates</strong>
 							<span>Suspended PartyBs can no longer allocate or transfer allocation between PartyA buckets.</span>
 						</a>
 						<a class="minor-improvement-item" href="pages/cross-partyb-liquidation-reserve.html" data-catalog-item>
-							<span class="doc-list-index">15</span>
+							<span class="doc-list-index">17</span>
 							<span class="category">Liquidation</span>
 							<strong>Cross-PartyB Liquidation Reserve Enforcement</strong>
 							<span
@@ -234,34 +261,34 @@
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/delegation-account-scope.html" data-catalog-item>
-							<span class="doc-list-index">16</span>
+							<span class="doc-list-index">18</span>
 							<span class="category">AccountLayer</span>
 							<strong>Delegation Account Scope</strong>
 							<span
-								>A delegation was enforced against the account owner, so it reached every SubAccount that owner held; it is now
+								>A delegation was enforced against the account owner, so it reached every SubAccount that owner held. It is now
 								confined to the account family it was granted over.</span
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/instant-layer-authorization-scope.html" data-catalog-item>
-							<span class="doc-list-index">17</span>
+							<span class="doc-list-index">19</span>
 							<span class="category">InstantLayer</span>
 							<strong>InstantLayer Authorization Scope</strong>
 							<span
-								>The helper contracts accepted a global &ldquo;inside an InstantLayer batch&rdquo; flag in place of an authorization
-								check. v0.8.6 checks the direct caller instead.</span
+								>The helpers treated a global &quot;inside an InstantLayer batch&quot; flag as authorization. v0.8.6 removes
+								MultiAccount's bypass and makes SymmioPartyB check the direct caller's role.</span
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/market-open-fee-execution-price.html" data-catalog-item>
-							<span class="doc-list-index">18</span>
+							<span class="doc-list-index">20</span>
 							<span class="category">Fees</span>
 							<strong>Market Open Fee on Execution Price</strong>
 							<span
-								>Market open fees are charged on the price the position opened at, not the market price PartyA signed. A bound PartyA
-								could previously sign a zero market price and open the position for no fee.</span
+								>Market open fees are charged on the executed open price, not the request-time market price. A bound PartyA could
+								previously supply zero for that unverified input and open the position for no fee.</span
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/partyb-funding-nonces.html" data-catalog-item>
-							<span class="doc-list-index">19</span>
+							<span class="doc-list-index">21</span>
 							<span class="category">PartyB</span>
 							<strong>PartyB Funding Update Nonces</strong>
 							<span
@@ -270,7 +297,7 @@
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/bound-mode-unified-settlement.html" data-catalog-item>
-							<span class="doc-list-index">20</span>
+							<span class="doc-list-index">22</span>
 							<span class="category">Settlement</span>
 							<strong>Bound-Mode Unified Settlement</strong>
 							<span
@@ -279,7 +306,7 @@
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/diamond-owner-getter.html" data-catalog-item>
-							<span class="doc-list-index">21</span>
+							<span class="doc-list-index">23</span>
 							<span class="category">Views</span>
 							<strong>Diamond Owner Getter</strong>
 							<span
@@ -288,7 +315,7 @@
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/express-deposit-removal.html" data-catalog-item>
-							<span class="doc-list-index">22</span>
+							<span class="doc-list-index">24</span>
 							<span class="category">AccountLayer</span>
 							<strong>Express Deposit Removal</strong>
 							<span
@@ -297,21 +324,66 @@
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/accountlayer-behavior-changes.html" data-catalog-item>
-							<span class="doc-list-index">23</span>
+							<span class="doc-list-index">25</span>
 							<span class="category">AccountLayer</span>
 							<strong>AccountLayer Behavior Changes</strong>
 							<span
 								>A new aggregate affiliate read API, a reordered sub-account emptiness check that changes which error callers see, and
-								an open-position hook that now tracks partial-fill child quotes.</span
+								an open-position hook that handles partial-fill child quotes according to account isolation.</span
+							>
+						</a>
+						<a class="minor-improvement-item" href="pages/position-isolation-partial-fill.html" data-catalog-item>
+							<span class="doc-list-index">26</span>
+							<span class="category">AccountLayer</span>
+							<strong>Position Isolation Partial Fill Remainder</strong>
+							<span
+								>A POSITION-isolated virtual account holds exactly one position, so the remainder quote of a partial fill is cancelled
+								in the same transaction and its reserves are refunded to the account.</span
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/lazy-accumulated-funding.html" data-catalog-item>
-							<span class="doc-list-index">24</span>
+							<span class="doc-list-index">27</span>
 							<span class="category">Funding</span>
 							<strong>Lazy Accumulated Funding</strong>
 							<span
-								>Quote flows no longer roll the symbol/PartyB funding state; funding settles lazily from persisted state, which now
-								changes—and emits its final state—only on solver configuration.</span
+								>Quote flows no longer roll the symbol/PartyB funding state. Funding settles lazily from persisted state, which now
+								changes only during explicit configuration or a symbol-restatement funding transition.</span
+							>
+						</a>
+						<a class="minor-improvement-item" href="pages/force-close-request-binding.html" data-catalog-item>
+							<span class="doc-list-index">28</span>
+							<span class="category">Force Close</span>
+							<strong>Force-Close Request Binding</strong>
+							<span
+								>A multi-step force-close snapshot is now bound to the close request that initialized it, preventing a canceled or
+								expired request's price from being applied to a replacement request.</span
+							>
+						</a>
+						<a class="minor-improvement-item" href="pages/notional-liquidation-fee-floor.html" data-catalog-item>
+							<span class="doc-list-index">29</span>
+							<span class="category">Liquidation</span>
+							<strong>Notional Liquidation Fee Floor</strong>
+							<span
+								>Adds a configurable LF minimum against position notional, with symbol 0 as the default and optional per-symbol
+								overrides.</span
+							>
+						</a>
+						<a class="minor-improvement-item" href="pages/close-settlement-netting.html" data-catalog-item>
+							<span class="doc-list-index">30</span>
+							<span class="category">Settlement</span>
+							<strong>Per-Quote Close Settlement Netting</strong>
+							<span
+								>Funding and realized PnL now settle against each quote's bilateral difference while batch closes preserve sequential
+								fills, repeated IDs, and gradual hook visibility.</span
+							>
+						</a>
+						<a class="minor-improvement-item" href="pages/accountlayer-callback-liveness.html" data-catalog-item>
+							<span class="doc-list-index">31</span>
+							<span class="category">AccountLayer</span>
+							<strong>AccountLayer Force-Close and Liquidation Fix</strong>
+							<span
+								>Force-closing a position or finishing a PartyA liquidation through AccountLayer no longer fails when core calls back
+								to clean up the account.</span
 							>
 						</a>
 					</div>

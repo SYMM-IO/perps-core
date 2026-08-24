@@ -173,7 +173,7 @@ describe("deploy:system input parsing", function () {
 		)
 	})
 
-	it("requires and accepts the complete eight-category real-verifier profile on every chain", async function () {
+	it("requires and accepts the complete nine-category real-verifier profile on every chain", async function () {
 		const incomplete = deploymentConfig()
 		incomplete.deployMockVerifier = false
 		incomplete.muonAppId = "1"
@@ -181,7 +181,7 @@ describe("deploy:system input parsing", function () {
 		incomplete.muonPublicKeyParity = "0"
 		incomplete.muonGatewaySigners = [`0x${"9".repeat(40)}`]
 		incomplete.muonFunctionPermissions = MUON_FUNCTION_NAMES.slice(0, -1)
-		await expectRejection(validateDeploymentConfig(fakeEthers, 31337, incomplete, structuredClone(DEFAULT_PROTOCOL_CONFIG)), "missing: RemoveMargin")
+		await expectRejection(validateDeploymentConfig(fakeEthers, 31337, incomplete, structuredClone(DEFAULT_PROTOCOL_CONFIG)), "missing: ExpressCredit")
 
 		const complete = deploymentConfig()
 		complete.deployMockVerifier = false

@@ -539,6 +539,7 @@ async function editCore(ui, recipe) {
 			"LiquidationPartyA",
 			"LiquidationPartyB",
 			"RemoveMargin",
+			"ExpressCredit",
 		];
 		if (muonMode === "reuse") {
 			const address = await askAddress(ui, "Existing Muon verifier address", recipe.core.muon?.address);

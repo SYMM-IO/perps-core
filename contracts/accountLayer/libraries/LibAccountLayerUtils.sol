@@ -55,7 +55,7 @@ library LibAccountLayerUtils {
 	///         as the current AccountLayer execution context.
 	function executeWithSignerOnCore(address core, address signer, bytes memory callData) internal returns (bytes memory) {
 		bool usesTransientSigner = beginCoreSigner(core, signer);
-		(bool success, bytes memory result) = core.call(callData);
+		(bool success, bytes memory result) = callCore(core, callData);
 		endCoreSigner(core, usesTransientSigner);
 
 		if (!success) {
@@ -65,6 +65,15 @@ library LibAccountLayerUtils {
 		}
 
 		return result;
+	}
+
+	/// @notice Calls a core while admitting one synchronous system callback from that exact core.
+	/// @dev The callback window is transaction-scoped transient state and restores the previous core so callback cleanup
+	///      can safely make nested core calls without widening the outer boundary.
+	function callCore(address core, bytes memory callData) internal returns (bool success, bytes memory result) {
+		address previousCore = LibAccountLayerSigner.pushExpectedCallbackCore(core);
+		(success, result) = core.call(callData);
+		LibAccountLayerSigner.restoreExpectedCallbackCore(previousCore);
 	}
 
 	/// @notice Begins a core signer scope and reports which mechanism must clear it.

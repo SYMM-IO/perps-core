@@ -23,29 +23,45 @@ struct QuoteAdjustmentData {
 /// @title LibQuoteAdjustment
 /// @notice Shared quote-unit conversion used by physical restatement and normalized views
 library LibQuoteAdjustment {
+	struct ScaledAmounts {
+		uint256 quantity;
+		uint256 closedAmount;
+		uint256 quantityToClose;
+	}
+
+	/// @notice Returns true when physical restatement would erase a nonzero amount or leave no open amount.
+	/// @dev Uses the same scaled amounts and validity conditions as `preview` without attempting any price division.
+	function hasAmountUnderflow(Quote memory quote, uint256 factor) internal pure returns (bool) {
+		ScaledAmounts memory amounts = _scaleAmounts(quote, factor);
+		return
+			amounts.quantity == 0 ||
+			(quote.closedAmount > 0 && amounts.closedAmount == 0) ||
+			amounts.quantity <= amounts.closedAmount ||
+			(quote.quantityToClose > 0 && amounts.quantityToClose == 0);
+	}
+
 	function preview(Quote memory quote, uint256 factor) internal pure returns (QuoteAdjustmentData memory result) {
 		uint256 oldQuantity = quote.quantity;
+		ScaledAmounts memory amounts = _scaleAmounts(quote, factor);
 		result.factor = factor;
-		result.quantity = Math.mulDiv(oldQuantity, factor, 1e18);
+		result.quantity = amounts.quantity;
 		require(result.quantity > 0, "SymbolAdjustmentFacet: Quantity underflow");
 		result.openedPrice = _scalePrice(oldQuantity, quote.openedPrice, result.quantity);
 		result.initialOpenedPrice = _scalePrice(oldQuantity, quote.initialOpenedPrice, result.quantity);
 		result.requestedOpenPrice = _scalePrice(oldQuantity, quote.requestedOpenPrice, result.quantity);
 		result.marketPrice = _scalePrice(oldQuantity, quote.marketPrice, result.quantity);
 
-		result.closedAmount = quote.closedAmount;
+		result.closedAmount = amounts.closedAmount;
 		result.avgClosedPrice = quote.avgClosedPrice;
 		if (quote.closedAmount > 0) {
-			result.closedAmount = Math.mulDiv(quote.closedAmount, factor, 1e18);
 			require(result.closedAmount > 0, "SymbolAdjustmentFacet: Closed amount underflow");
 			result.avgClosedPrice = _scalePrice(quote.closedAmount, quote.avgClosedPrice, result.closedAmount);
 		}
 		require(result.quantity > result.closedAmount, "SymbolAdjustmentFacet: Open amount underflow");
 
-		result.quantityToClose = quote.quantityToClose;
+		result.quantityToClose = amounts.quantityToClose;
 		result.requestedClosePrice = quote.requestedClosePrice;
 		if (quote.quantityToClose > 0) {
-			result.quantityToClose = Math.mulDiv(quote.quantityToClose, factor, 1e18);
 			require(result.quantityToClose > 0, "SymbolAdjustmentFacet: Close amount underflow");
 			result.requestedClosePrice = _scalePrice(quote.quantityToClose, quote.requestedClosePrice, result.quantityToClose);
 		}
@@ -69,5 +85,11 @@ library LibQuoteAdjustment {
 	function _scalePrice(uint256 oldQuantity, uint256 oldPrice, uint256 newQuantity) private pure returns (uint256) {
 		if (oldPrice == 0) return 0;
 		return Math.mulDiv(oldQuantity, oldPrice, newQuantity);
+	}
+
+	function _scaleAmounts(Quote memory quote, uint256 factor) private pure returns (ScaledAmounts memory amounts) {
+		amounts.quantity = Math.mulDiv(quote.quantity, factor, 1e18);
+		amounts.closedAmount = Math.mulDiv(quote.closedAmount, factor, 1e18);
+		amounts.quantityToClose = Math.mulDiv(quote.quantityToClose, factor, 1e18);
 	}
 }

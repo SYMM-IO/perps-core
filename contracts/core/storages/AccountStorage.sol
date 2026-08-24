@@ -52,9 +52,9 @@ struct LiquidationSettlementState {
 /// @notice Complete state tracking for a force close operation on a position
 /// @dev Force close is a multi-step process that lets PartyA close positions when PartyB
 ///      isn't responding. This struct tracks the workflow snapshot (uPNL/currentPrice),
-///      the derived closePrice, and PartyB's resulting solvency. Note: inProgress is set during init but
-///      does NOT prevent re-initialization - it only gates progression to subsequent steps.
-///      The quote's status (CLOSE_PENDING) is the primary guard against invalid force closes.
+///      the derived closePrice, and PartyB's resulting solvency. inProgress is set during init but
+///      does NOT prevent re-initialization. Progression also requires the quote to remain CLOSE_PENDING
+///      and this detail's closeId to match the quote's current closeId.
 struct ForceCloseDetail {
 	/// @notice The latest Muon request id used to fill/refresh the force-close snapshot.
 	/// @dev Observability-only metadata for off-chain correlation; NOT used in protocol logic.
@@ -79,6 +79,9 @@ struct ForceCloseDetail {
 	/// @notice Symbol price/quantity basis version when the close price was calculated.
 	/// @dev Finalization rejects the workflow if a physical restatement advanced this version.
 	uint256 basisVersion;
+	/// @notice Close request id that initialized this force-close snapshot.
+	/// @dev Appended so the request binding and snapshot share one lifecycle. A zero value means no request is bound.
+	uint256 closeId;
 }
 
 /// @notice Complete liquidation state for a PartyA being liquidated
@@ -163,7 +166,7 @@ library AccountStorage {
 		/// @notice Version counter of PartyA's upnl inputs, embedded in Muon signatures
 		/// @dev Incremented by every action that changes the inputs to PartyA's upnl (position fills,
 		///      funding charges, settlement, liquidation) so outstanding signatures no longer verify.
-		///      It is NOT consumed per signature use — a signature stays valid for its full validity
+		///      It is not consumed per signature use. A signature stays valid for its full validity
 		///      window until upnl-relevant state changes. Exposed externally as nonceOfPartyA.
 		mapping(address => uint256) partyAUpnlCounters;
 		/// @notice Version counter of PartyB's upnl inputs per PartyA, embedded in Muon signatures
@@ -218,8 +221,8 @@ library AccountStorage {
 		/// @notice State of force close operations per quote
 		/// @dev Force close lets PartyA close positions when PartyB isn't responding.
 		///      Tracks the multi-step process: settlement state, allocated balance state,
-		///      PartyB solvency result. The inProgress flag gates step progression but does
-		///      NOT prevent re-initialization - quote status is the primary guard.
+		///      PartyB solvency result. The inProgress flag does not prevent re-initialization;
+		///      progression is also guarded by quote status and the closeId stored in each detail.
 		mapping(uint256 => ForceCloseDetail) forceCloseDetails;
 		/// @notice Open trading fees reserved from PartyA allocated balance for pending or locked quotes
 		mapping(address => uint256) partyAReservedOpenFees;

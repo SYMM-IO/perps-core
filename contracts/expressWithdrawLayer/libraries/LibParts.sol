@@ -15,7 +15,7 @@ import { LibErrors } from "./LibErrors.sol";
 import { GlobalStorage } from "../storages/GlobalStorage.sol";
 
 /// @title LibParts
-/// @notice Withdrawal parts iteration logic — computes amounts and transfers.
+/// @notice Withdrawal parts iteration logic that computes amounts and transfers.
 /// @dev Accesses storage directly via GlobalStorage.layout().
 library LibParts {
 	using SafeERC20 for IERC20;

@@ -41,9 +41,9 @@
 		<div class="reader-shell">
 			<div class="rail-sections-source" data-rail-sections hidden>
 				<a class="toc-link level-2" href="#summary">Summary</a>
-				<a class="toc-link level-2" href="#what-was-removed">What Was Removed</a>
-				<a class="toc-link level-2" href="#storage">The Storage Slots Stay</a>
-				<a class="toc-link level-2" href="#effect-on-callers">Effect on Callers</a>
+				<a class="toc-link level-2" href="#what-was-removed">What was removed</a>
+				<a class="toc-link level-2" href="#storage">Why the storage slots remain</a>
+				<a class="toc-link level-2" href="#effect-on-callers">Effect on callers</a>
 			</div>
 
 			<main class="reader-main">
@@ -64,7 +64,7 @@
 					<p>
 						Express deposit shipped in v0.8.5. An affiliate could configure a percentage of each deposit made through its frontend to be
 						split off and routed to an external provider contract, which credited the user with matching virtual balance inside core.
-						v0.8.6 removes the entire chain.
+						v0.8.6 removes that deposit path.
 					</p>
 					<aside class="callout callout-important">
 						<strong>This is not the Express Withdrawal system.</strong> v0.8.6 introduces Express Withdrawal, a separate
@@ -72,7 +72,7 @@
 						not affect it.
 					</aside>
 
-					<h2 id="what-was-removed">What Was Removed</h2>
+					<h2 id="what-was-removed">What was removed</h2>
 					<div class="table-wrap">
 						<table>
 							<caption>
@@ -124,7 +124,7 @@
 						</table>
 					</div>
 
-					<h2 id="storage">The Storage Slots Stay</h2>
+					<h2 id="storage">Why the storage slots remain</h2>
 					<p>
 						<code>AffiliateData.expressRate</code> and <code>AffiliateData.virtualProvider</code> are retained as dead fields so every
 						later field in the struct keeps its current offset. Nothing reads or writes them any more.
@@ -134,17 +134,18 @@
 						Treat a non-zero <code>expressRate</code> as stale data, not as configuration.
 					</p>
 
-					<h2 id="effect-on-callers">Effect on Callers</h2>
+					<h2 id="effect-on-callers">Effect on callers</h2>
 					<p>
 						The ordinary deposit path is unchanged. Callers of the two express entry points move to
 						<code>depositForAccount</code> and <code>depositAndAllocateForAccount</code>, which take the same
-						<code>(account, amount)</code> arguments and deposit the full amount. There is no on-chain cleanup for affiliates: the setters
-						are gone, so a configured rate simply stops being consulted.
+						<code>(account, amount)</code> arguments and deposit the full amount. There is no on-chain cleanup for affiliates. The setters
+						are gone, so the deposit path no longer reads a configured rate.
 					</p>
 					<p>
-						Virtual provider implementations can drop <code>onExpressDeposit</code>. The other seven
-						<code>IVirtualProvider</code> callbacks &mdash; the withdraw and external-transfer lifecycle &mdash; are unaffected, so the
-						interface is narrowed rather than retired.
+						Virtual provider implementations can drop <code>onExpressDeposit</code>. The current <code>IVirtualProvider</code> retains
+						seven withdraw and external-transfer lifecycle callbacks. A separate legacy callback, <code>onForceWithdrawCancel</code>, was
+						also removed between v0.8.5 and v0.8.6, so implementers comparing ABIs must remove both obsolete selectors. The interface is
+						narrowed rather than retired.
 					</p>
 				</article>
 			</main>

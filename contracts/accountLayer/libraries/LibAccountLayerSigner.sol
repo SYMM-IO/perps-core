@@ -14,7 +14,7 @@ import { AccountStorage } from "../storages/AccountStorage.sol";
 ///      while still remembering that the outer scope must be restored from EIP-1153 state.
 ///
 ///      PRE-CANCUN PORT
-///      This is the AccountLayer half of the transient surface; core's half is
+///      This is the AccountLayer half of the transient implementation; core's half is
 ///      LibExecutionContext, whose header carries the full porting checklist. Between
 ///      them they are the only production files emitting tload/tstore.
 ///      For a pre-Cancun build, reimplement _transientLoad/_transientStore at the bottom of
@@ -24,6 +24,8 @@ library LibAccountLayerSigner {
 	bytes32 private constant TRANSIENT_SIGNER_SLOT = keccak256("symmio.account-layer.transient.signer");
 	bytes32 private constant TRANSIENT_SIGNER_ACTIVE_SLOT = keccak256("symmio.account-layer.transient.signer.active");
 	bytes32 private constant TRANSIENT_SIGNER_SCOPE_SLOT = keccak256("symmio.account-layer.transient.signer.scope");
+	bytes32 private constant TRANSIENT_EXPECTED_CALLBACK_CORE_SLOT = keccak256("symmio.account-layer.transient.expected-callback-core");
+	bytes32 private constant TRANSIENT_CALLBACK_ACTIVE_SLOT = keccak256("symmio.account-layer.transient.callback-active");
 	uint256 private constant TRANSIENT_SIGNER_INACTIVE = 0;
 	uint256 private constant TRANSIENT_SIGNER_ACTIVE = 1;
 
@@ -56,7 +58,7 @@ library LibAccountLayerSigner {
 	/// @notice Installs or clears the effective signer for the current transaction.
 	/// @dev Passing zero ends the transient signer scope. The role-gated external command
 	///      prevents this scope from starting over a persistent signer. Always opens an
-	///      unconfined session — mirroring setSigner on the persistent side — so this path
+	///      unconfined session, mirroring setSigner on the persistent side, so this path
 	///      can never leave a stale account scope behind for the next caller.
 	function setTransientSigner(address signerOrZero) internal {
 		setTransientSignerScoped(signerOrZero, address(0));
@@ -124,6 +126,34 @@ library LibAccountLayerSigner {
 	///      effective signer use signer() or configuredSigner().
 	function transientSigner() internal view returns (address) {
 		return address(uint160(_transientLoad(TRANSIENT_SIGNER_SLOT)));
+	}
+
+	/// @notice Marks the core currently allowed to synchronously callback into guarded AccountLayer hooks.
+	/// @dev The previous value is returned so nested core calls made during callback cleanup can restore
+	///      the outer boundary exactly.
+	function pushExpectedCallbackCore(address core) internal returns (address previousCore) {
+		previousCore = expectedCallbackCore();
+		_transientStore(TRANSIENT_EXPECTED_CALLBACK_CORE_SLOT, uint256(uint160(core)));
+	}
+
+	/// @notice Restores the callback core that was active before pushExpectedCallbackCore.
+	function restoreExpectedCallbackCore(address previousCore) internal {
+		_transientStore(TRANSIENT_EXPECTED_CALLBACK_CORE_SLOT, uint256(uint160(previousCore)));
+	}
+
+	/// @notice Returns the only core allowed to enter a callback while the ordinary guard is active.
+	function expectedCallbackCore() internal view returns (address) {
+		return address(uint160(_transientLoad(TRANSIENT_EXPECTED_CALLBACK_CORE_SLOT)));
+	}
+
+	/// @notice Whether a guarded system callback is already executing in this transaction.
+	function isCallbackActive() internal view returns (bool) {
+		return _transientLoad(TRANSIENT_CALLBACK_ACTIVE_SLOT) != 0;
+	}
+
+	/// @notice Opens or closes the single permitted callback frame.
+	function setCallbackActive(bool active) internal {
+		_transientStore(TRANSIENT_CALLBACK_ACTIVE_SLOT, active ? 1 : 0);
 	}
 
 	/// @dev Writes the signer value while leaving the active marker untouched, which is how a

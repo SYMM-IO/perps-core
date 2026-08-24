@@ -33,7 +33,7 @@
 }
 
 /* ==========================================================================
-   Symmio Explorer — v0.8.6 documentation
+   Symmio Explorer: v0.8.6 documentation
    Dark is canonical. Flat console chrome: hairlines, no blur, no shadow.
    Accent (coral #FF7C70) is reserved for links, active state, and one marker.
    ========================================================================== */
@@ -41,11 +41,11 @@
 :root,
 [data-theme="dark"] {
 	color-scheme: dark;
-	--bg: hsl(0 33% 3%);
-	--bg-raised: hsl(0 20% 5%);
-	--surface: hsl(0 14% 6.5%);
-	--surface-soft: hsl(0 10% 10%);
-	--surface-tint: hsl(0 12% 8%);
+	--bg: hsl(0 0% 2%);
+	--bg-raised: hsl(0 0% 5%);
+	--surface: hsl(0 0% 6.5%);
+	--surface-soft: hsl(0 0% 10%);
+	--surface-tint: hsl(0 0% 8%);
 	--ink: hsl(0 20% 95%);
 	--ink-soft: hsl(0 8% 78%);
 	--muted: hsl(0 3% 58%);
@@ -63,13 +63,13 @@
 	--green: hsl(158 64% 52%);
 	--violet: hsl(258 90% 76%);
 
-	--code-bg: hsl(0 8% 9%);
+	--code-bg: hsl(0 0% 9%);
 	--code-ink: hsl(0 12% 92%);
 	--code-line: hsl(0 3% 50% / 0.24);
-	--code-toolbar-bg: hsl(0 16% 6%);
+	--code-toolbar-bg: hsl(0 0% 6%);
 	--code-toolbar-ink: hsl(0 3% 58%);
-	--code-button-bg: hsl(0 10% 10%);
-	--code-button-hover: hsl(0 10% 14%);
+	--code-button-bg: hsl(0 0% 10%);
+	--code-button-hover: hsl(0 0% 14%);
 	--code-keyword: hsl(5 100% 74%);
 	--code-type: hsl(199 89% 70%);
 	--code-symbol: hsl(43 92% 66%);
@@ -77,15 +77,15 @@
 	--code-number: hsl(258 90% 78%);
 	--code-comment: hsl(0 3% 54%);
 
-	--diagram-bg: hsl(0 24% 4%);
-	--diagram-card: hsl(0 16% 5.5%);
+	--diagram-bg: hsl(0 0% 4%);
+	--diagram-card: hsl(0 0% 5.5%);
 	--diagram-card-border: hsl(0 3% 50% / 0.24);
 	--diagram-grid: hsl(0 3% 62% / 0.07);
 	--diagram-edge: hsl(0 3% 56%);
-	--diagram-label-bg: hsl(0 14% 7%);
+	--diagram-label-bg: hsl(0 0% 7%);
 	--diagram-node: hsl(5 40% 10%);
 	--diagram-node-border: hsl(5 100% 72% / 0.55);
-	--diagram-cluster: hsl(0 10% 7%);
+	--diagram-cluster: hsl(0 0% 7%);
 	--diagram-shadow: transparent;
 
 	--radius: 4px;
@@ -155,6 +155,7 @@
 html {
 	scroll-behavior: smooth;
 	overflow-x: clip;
+	-moz-osx-font-smoothing: grayscale;
 }
 
 body {
@@ -173,6 +174,9 @@ body {
 a {
 	color: var(--link);
 	text-decoration: none;
+	text-decoration-skip-ink: auto;
+	text-decoration-thickness: from-font;
+	text-underline-position: from-font;
 	text-underline-offset: 0.18em;
 }
 
@@ -195,6 +199,7 @@ button {
 a,
 button {
 	-webkit-tap-highlight-color: transparent;
+	touch-action: manipulation;
 }
 
 ::selection {
@@ -412,6 +417,10 @@ code {
 
 .doc-article :not(pre) > code {
 	overflow-wrap: anywhere;
+}
+
+.doc-article :where(p, li) code {
+	padding-inline: 0.14em;
 }
 
 .tag {
@@ -1145,7 +1154,8 @@ code {
 }
 
 .reader-hero .hero-copy {
-	max-width: 68ch;
+	width: 100%;
+	max-width: none;
 	margin-top: 18px;
 	font-size: 16px;
 	line-height: 1.6;
@@ -1400,7 +1410,7 @@ code {
 	color: var(--accent);
 }
 
-/* Callouts: no box — a single left rule carries the status. */
+/* Callouts: no box. A single left rule carries the status. */
 .callout {
 	margin: 24px 0;
 	padding: 2px 0 2px 18px;
@@ -1433,7 +1443,7 @@ code {
 }
 
 /* Tables */
-/* Tables: open — header rule and row rules only, no frame. */
+/* Tables: open, with a header rule and row rules but no frame. */
 .table-wrap {
 	width: 100%;
 	margin: 26px 0;
@@ -1488,8 +1498,23 @@ tbody tr:hover td {
 	color: var(--ink);
 }
 
-tr:last-child td {
+tbody tr:last-child > th,
+tbody tr:last-child > td {
 	border-bottom: 0;
+}
+
+.comparison-table {
+	min-width: 780px;
+	table-layout: fixed;
+}
+
+.comparison-table col:first-child {
+	width: 20%;
+}
+
+.comparison-table col:nth-child(2),
+.comparison-table col:nth-child(3) {
+	width: 40%;
 }
 
 th code,
@@ -1521,7 +1546,7 @@ td code {
 	color: var(--code-ink);
 }
 
-/* Code: a recessed slab, no frame lines — the surface itself does the separating. */
+/* Code: a recessed slab with no frame lines; the background separates it. */
 .code-frame {
 	position: relative;
 	margin: 28px 0;
@@ -1815,6 +1840,320 @@ a code {
 	line-height: 1.4;
 	text-transform: none;
 	letter-spacing: 0;
+}
+
+/* Symbol-adjustment method timelines. Calls are the ticks; the state and
+   operational condition beneath each segment apply until the next tick. */
+body.doc-page .doc-article > p.adjustment-timeline-intro {
+	-webkit-hyphens: none;
+	hyphens: none;
+}
+
+.adjustment-timelines {
+	display: grid;
+	gap: 12px;
+	margin: 18px 0 30px;
+}
+
+.adjustment-sequence {
+	container: adjustment-sequence / inline-size;
+	overflow: hidden;
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+	background: color-mix(in srgb, var(--surface) 78%, transparent);
+	break-inside: avoid;
+}
+
+.adjustment-sequence-header {
+	padding: 15px 18px 13px;
+	border-bottom: 1px solid var(--line);
+}
+
+.adjustment-sequence-header > span {
+	display: block;
+	color: var(--faint);
+	font-family: var(--mono);
+	font-size: 11.5px;
+	font-weight: 600;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+}
+
+.adjustment-sequence-header > span code {
+	color: inherit;
+	font-size: inherit;
+}
+
+.adjustment-sequence-header h4 {
+	margin: 4px 0 2px;
+	color: var(--ink);
+	font-family: var(--display);
+	font-size: clamp(19px, 2vw, 22px);
+	font-weight: 700;
+	line-height: 1.15;
+	letter-spacing: -0.02em;
+	text-wrap: balance;
+}
+
+body.doc-page .doc-article .adjustment-sequence-header p {
+	margin: 0;
+	color: var(--muted);
+	font-size: 14px;
+	line-height: 1.5;
+	text-wrap: pretty;
+	-webkit-hyphens: none;
+	hyphens: none;
+}
+
+.adjustment-continuation {
+	border-top: 1px solid var(--line);
+}
+
+.adjustment-continuation-header {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	gap: 6px 12px;
+	align-items: baseline;
+	padding: 12px 18px 0;
+}
+
+.adjustment-continuation-header h5 {
+	margin: 0;
+	color: var(--ink);
+	font-family: var(--display);
+	font-size: 16px;
+	font-weight: 650;
+	line-height: 1.2;
+	letter-spacing: -0.01em;
+}
+
+body.doc-page .doc-article .adjustment-continuation-header p {
+	margin: 0;
+	color: var(--muted);
+	font-size: 13px;
+	line-height: 1.5;
+	text-wrap: pretty;
+	-webkit-hyphens: none;
+	hyphens: none;
+}
+
+.adjustment-continuation .adjustment-track {
+	padding-top: 14px;
+}
+
+.adjustment-track {
+	display: grid;
+	grid-template-columns: repeat(var(--timeline-step-count), minmax(0, 1fr));
+	margin: 0;
+	padding: 20px 18px 17px;
+	list-style: none;
+}
+
+.adjustment-tick {
+	display: grid;
+	grid-template-rows: 66px 19px auto;
+	min-width: 0;
+}
+
+.adjustment-track > .adjustment-tick {
+	margin-top: 0;
+}
+
+.adjustment-event {
+	display: grid;
+	gap: 2px;
+	align-content: end;
+	min-width: 0;
+	padding: 0 18px 7px 0;
+}
+
+.adjustment-event > span {
+	color: var(--faint);
+	font-family: var(--mono);
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.09em;
+	text-transform: uppercase;
+}
+
+.adjustment-event > code,
+.adjustment-event > strong {
+	display: block;
+	min-width: 0;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: var(--ink);
+	font-family: var(--mono);
+	font-size: 13px;
+	font-weight: 600;
+	line-height: 1.4;
+	overflow-wrap: normal;
+}
+
+.adjustment-event > code *,
+.adjustment-event > strong * {
+	color: inherit;
+}
+
+.adjustment-event > code + code {
+	margin-top: 1px;
+}
+
+body.doc-page .doc-article .adjustment-event > code {
+	overflow-wrap: normal;
+}
+
+.adjustment-rail {
+	position: relative;
+	height: 1px;
+	margin-top: 9px;
+	background: var(--line-strong);
+}
+
+.adjustment-rail::before {
+	content: "";
+	position: absolute;
+	top: -5px;
+	left: 0;
+	z-index: 1;
+	width: 11px;
+	height: 11px;
+	border: 2px solid var(--ink-soft);
+	border-radius: 999px;
+	background: var(--surface);
+}
+
+.adjustment-tick.is-automatic .adjustment-rail::before {
+	border-radius: 2px;
+	transform: rotate(45deg);
+}
+
+.adjustment-tick.is-terminal .adjustment-rail {
+	background: var(--line-strong);
+}
+
+.adjustment-tick.is-terminal .adjustment-event,
+.adjustment-tick.is-terminal .adjustment-interval {
+	padding-right: 0;
+}
+
+.adjustment-interval {
+	min-width: 0;
+	padding: 9px 18px 0 0;
+}
+
+.adjustment-interval > div {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 5px 8px;
+	align-items: center;
+}
+
+.adjustment-interval code {
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: var(--ink-soft);
+	font-size: 12px;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+}
+
+.adjustment-status,
+.adjustment-window {
+	display: inline-flex;
+	gap: 5px;
+	align-items: center;
+	color: var(--muted);
+	font-family: var(--mono);
+	font-size: 12px;
+	letter-spacing: 0.01em;
+}
+
+.adjustment-status::before {
+	content: "";
+	width: 5px;
+	height: 5px;
+	flex: 0 0 5px;
+	border-radius: 999px;
+	background: var(--faint);
+}
+
+.adjustment-window {
+	color: var(--muted);
+}
+
+.adjustment-tick.is-frozen .adjustment-status::before {
+	background: color-mix(in srgb, var(--amber) 72%, var(--faint));
+}
+
+body.doc-page .doc-article .adjustment-interval p {
+	margin: 7px 0 0;
+	color: var(--muted);
+	font-size: 13px;
+	line-height: 1.5;
+	text-wrap: pretty;
+	-webkit-hyphens: none;
+	hyphens: none;
+}
+
+@container adjustment-sequence (max-width: 700px) {
+	.adjustment-continuation-header {
+		grid-template-columns: minmax(0, 1fr);
+		gap: 2px;
+	}
+
+	.adjustment-track {
+		grid-template-columns: minmax(0, 1fr);
+		padding: 18px 18px 4px;
+	}
+
+	.adjustment-tick {
+		position: relative;
+		display: grid;
+		grid-template-columns: 20px minmax(0, 1fr);
+		grid-template-rows: auto auto;
+		gap: 0 10px;
+		padding-bottom: 18px;
+	}
+
+	.adjustment-event,
+	.adjustment-interval {
+		grid-column: 2;
+		padding-right: 0;
+	}
+
+	.adjustment-event {
+		grid-row: 1;
+		padding-bottom: 6px;
+	}
+
+	.adjustment-interval {
+		grid-row: 2;
+		padding-top: 2px;
+	}
+
+	.adjustment-rail {
+		position: absolute;
+		top: 4px;
+		bottom: 0;
+		left: 5px;
+		width: 1px;
+		height: auto;
+		margin: 0;
+		background: var(--line-strong);
+	}
+
+	.adjustment-rail::before {
+		top: 0;
+		left: -5px;
+	}
+
+	.adjustment-tick.is-terminal .adjustment-rail {
+		background: linear-gradient(180deg, var(--line-strong) 0 28px, transparent 28px);
+	}
 }
 
 .option-card-grid {
@@ -2639,6 +2978,10 @@ a code {
 	.table-wrap {
 		overflow: visible;
 		border: 1pt solid #d8d8d8;
+	}
+
+	.comparison-table {
+		min-width: 0;
 	}
 
 	table {

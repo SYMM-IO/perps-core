@@ -114,8 +114,8 @@ library AccountFacetImpl {
 
 	/// @notice Deallocates funds while also reserving enough balance for off-chain pending operations.
 	/// @dev The retention floor is the stricter of the stored CVA + LF requirement and the Muon-attested
-	/// scaledLockedBalance (locked values re-marked to live notional), so collateral retained behind open
-	/// positions tracks current exposure rather than open-time notional.
+	/// scaledLockedBalance (locked values re-marked to live notional), plus gross funding debt. Net UPNL
+	/// still includes funding; the separate debt field prevents price profit from masking that liability.
 	function safeDeallocate(uint256 amount, SingleUpnlWithPendingBalanceSig memory upnlSig) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
@@ -128,9 +128,8 @@ library AccountFacetImpl {
 		int256 availableBalance = LibAccount.partyAAvailableForQuote(upnlSig.upnl, signer);
 		require(availableBalance >= 0, "AccountFacet: Available balance is lower than zero");
 		require(uint256(availableBalance) >= upnlSig.pendingBalance + amount, "AccountFacet: Insufficient balance considering pending allocations");
-		uint256 retention = LibAccount.partyADeallocateCvaLfRequirement(signer);
-		if (upnlSig.scaledLockedBalance > retention) retention = upnlSig.scaledLockedBalance;
-		require(accountLayout.allocatedBalances[signer] - amount >= retention, "AccountFacet: Locked balance must remain allocated");
+		uint256 retention = LibAccount.partyASafeDeallocateRequirement(signer, upnlSig.scaledLockedBalance, upnlSig.fundingDebt);
+		require(accountLayout.allocatedBalances[signer] - amount >= retention, "AccountFacet: Locked balance and funding debt must remain allocated");
 
 		_executeDeallocate(signer, amount);
 	}

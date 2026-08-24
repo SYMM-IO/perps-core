@@ -5,7 +5,7 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta
 			name="description"
-			content="A new aggregate affiliate read API, a reordered sub-account emptiness check that changes which error callers see, and an open-position hook that now tracks partial-fill child quotes."
+			content="A new aggregate affiliate read API, a reordered sub-account emptiness check that changes which error callers see, and an open-position hook that handles partial-fill children according to account isolation."
 		/>
 		<title>AccountLayer Behavior Changes - Symmio Core v0.8.6</title>
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
@@ -41,9 +41,9 @@
 		<div class="reader-shell">
 			<div class="rail-sections-source" data-rail-sections hidden>
 				<a class="toc-link level-2" href="#summary">Summary</a>
-				<a class="toc-link level-2" href="#affiliate-views">Aggregate Affiliate Views</a>
-				<a class="toc-link level-2" href="#delete-subaccount">Sub-account Deletion Errors</a>
-				<a class="toc-link level-2" href="#open-position-hook">Open-Position Hook</a>
+				<a class="toc-link level-2" href="#affiliate-views">Aggregate affiliate views</a>
+				<a class="toc-link level-2" href="#delete-subaccount">Sub-account deletion errors</a>
+				<a class="toc-link level-2" href="#open-position-hook">Open-position hook</a>
 			</div>
 
 			<main class="reader-main">
@@ -53,7 +53,7 @@
 							<h1>AccountLayer Behavior Changes</h1>
 							<p class="hero-copy">
 								A new aggregate affiliate read API, a reordered sub-account emptiness check that changes which error callers see, and
-								an open-position hook that now tracks partial-fill child quotes.
+								an open-position hook that handles partial-fill children according to account isolation.
 							</p>
 						</div>
 					</div>
@@ -62,16 +62,16 @@
 				<article class="doc-article" id="full-document">
 					<h2 id="summary">Summary</h2>
 					<p>
-						Three smaller AccountLayer changes that alter what a caller observes. None of them removes surface, but each one changes data
-						or errors that integrations already read: a new aggregate read API, a reordered emptiness check that changes which error you
-						get, and a hook that stopped being a no-op.
+						Three AccountLayer behaviors now produce different caller-visible results. Existing entry points remain, but integrations may
+						see a new aggregate read API, a different deletion error when a sub-account has multiple blockers, and partial-fill child
+						handling in the open-position hook.
 					</p>
 
 					<h2 id="affiliate-views">Aggregate affiliate views</h2>
 					<p>
 						Reading an affiliate's configuration previously meant stitching together <code>getAffiliateState</code>,
 						<code>getAffiliateAdmin</code>, <code>getAffiliateFeeDistributor</code>, <code>getAffiliateSymmioCores</code>,
-						<code>getAffiliateStakeholders</code>, and <code>getAffiliateSymmioShare</code> &mdash; six calls that could observe different
+						<code>getAffiliateStakeholders</code>, and <code>getAffiliateSymmioShare</code>. Those six calls could observe different
 						states if anything changed between them. v0.8.6 adds two aggregate reads.
 					</p>
 					<pre><code class="language-solidity">function getAffiliate(address affiliate) external view returns (AffiliateDetail memory);
@@ -80,16 +80,20 @@ function getAffiliateSelectorConfigs(address affiliate, bytes4[] calldata select
     external view returns (AffiliateSelectorConfig[] memory);</code></pre>
 					<p>
 						<code>AffiliateDetail</code> mirrors the stored <code>AffiliateData</code> with the fee details flattened, and adds the
-						affiliate's own address and its <code>pendingFeeUpdate</code> &mdash; which previously had no aggregate reader at all. An
-						unregistered affiliate reads back as an empty struct with state <code>NONE</code> rather than reverting.
+						affiliate's own address and its <code>pendingFeeUpdate</code>. That field reports a requested fee split waiting for approval,
+						including whether it exists, its timestamp, the proposed Symmio share, and proposed stakeholders. It previously had no
+						aggregate reader. An unregistered affiliate reads back as an empty struct with state <code>NONE</code> rather than reverting.
 					</p>
 					<p>
 						Per-selector data is not included, because hooks and both allow-lists live in mappings and cannot be enumerated from on-chain
 						state. <code>getAffiliateSelectorConfigs</code> takes the selectors you care about and returns the hook address,
-						<code>hookAllowed</code>, and <code>callAllowed</code> for each, in the order requested.
+						<code>hookAllowed</code>, and <code>callAllowed</code> for each, in the order requested. <code>hookAllowed</code> says whether
+						the selector may trigger the configured affiliate hook. <code>callAllowed</code> says whether the affiliate may submit that
+						selector through <code>callAsAffiliate</code>.
 					</p>
 					<aside class="callout callout-note">
-						<strong>The individual getters are unchanged.</strong> These are additive; nothing that reads affiliates today needs to move.
+						<strong>The individual getters are unchanged.</strong> The aggregate reads are additive. Existing readers do not need to
+						migrate.
 					</aside>
 
 					<h2 id="delete-subaccount">Sub-account deletion reports the real blocker</h2>
@@ -130,10 +134,11 @@ function getAffiliateSelectorConfigs(address affiliate, bytes4[] calldata select
 						</table>
 					</div>
 					<p>
-						The old order could not report anything useful. An open position or a pending quote keeps its CVA and LF locked in allocated
-						balance, and core forbids deallocating below that floor, so such an account can never be emptied first. Checking balances
-						ahead of trading state therefore always returned <code>SubAccountNotEmpty</code> and pointed the caller at a withdrawal that
-						could not succeed, instead of naming the position or quote they actually had to close.
+						With an open position or pending quote, the old order returned <code>SubAccountNotEmpty</code> before reaching the specific
+						trading-state check. Each position or quote keeps its credit valuation adjustment (CVA) and liquidation fee (LF) locked as
+						liquidation collateral in allocated balance, and core forbids deallocating below that floor, so such an account can never be
+						emptied first. The error pointed the caller at a withdrawal that could not succeed instead of naming the position or quote
+						that had to be closed.
 					</p>
 					<p>
 						Callers now receive <code>OpenPositionsExist</code> or <code>PendingQuotesExist</code> in those cases.
@@ -141,28 +146,33 @@ function getAffiliateSelectorConfigs(address affiliate, bytes4[] calldata select
 						handling that branches on <code>SubAccountNotEmpty</code> to prompt a withdrawal needs to handle the other two.
 					</p>
 
-					<h2 id="open-position-hook">The open-position hook now tracks partial-fill children</h2>
+					<h2 id="open-position-hook">The open-position hook now handles partial-fill children</h2>
 					<p>
-						<code>SymmioHookFacet.onOpenPosition</code> was a deliberate no-op &mdash; it existed only so core would not revert when
-						calling a hook that had nothing to do. It now does work for virtual accounts.
+						<code>SymmioHookFacet.onOpenPosition</code> was a deliberate no-op. It existed so core would not revert when calling the hook.
+						It now updates virtual accounts.
 					</p>
 					<p>
 						When a quote is partially filled, core opens the filled portion and creates a <em>child</em> quote carrying the remainder.
 						That child was never registered against the virtual account, so a virtual account's <code>quoteIds</code> set silently lost
-						track of the leftover inventory. The hook now reads the newest quote, checks that it is the pending child of the quote just
-						opened and belongs to the same PartyA, and adds it to the set.
+						track of the leftover inventory. MARKET and direction-isolated virtual accounts may track multiple compatible quotes, while a
+						POSITION-isolated virtual account permits only one position. The hook now reads the newest quote and checks that it is the
+						pending child of the quote just opened and belongs to the same PartyA. MARKET and direction-isolated accounts add the child to
+						the set. POSITION-isolated accounts cancel it immediately so the same account cannot later open a second position.
 					</p>
 					<p>
-						This is why the AccountLayer's view of core gained two things: <code>getNextQuoteId</code> became a <code>view</code> function
-						so it can be called from a hook, and <code>getQuote</code> was added so the candidate child can be inspected before it is
-						trusted.
+						Supporting the hook required three core interface changes. <code>getNextQuoteId</code> became a <code>view</code> function so
+						it can be called from a hook, <code>getQuote</code> was added so the candidate child can be inspected before it is trusted,
+						and <code>requestToCancelQuote</code> lets the POSITION path cancel the verified child as the virtual account.
 					</p>
 					<aside class="callout callout-important">
-						<strong>Virtual account quote sets contain more entries than before.</strong> Anything that reads a virtual account's
-						<code>quoteIds</code> &mdash; position accounting, UI, reconciliation &mdash; now sees partial-fill children that were
-						previously missing. The set is more complete, not differently shaped, but a consumer that assumed one quote per position will
-						now see two for a partially filled order.
+						<strong>Compatible virtual account quote sets contain more entries than before.</strong> Position accounting, UIs, and
+						reconciliation code that read a MARKET or direction-isolated virtual account's <code>quoteIds</code> now see partial-fill
+						children that were previously missing. POSITION-isolated accounts instead emit an immediate child cancellation.
 					</aside>
+					<p>
+						See <a href="position-isolation-partial-fill.html">Position Isolation Partial Fill Remainder</a> for the POSITION path,
+						including its pause and instant-actions-mode behavior.
+					</p>
 					<p>
 						The hook returns early for anything that is not an existing virtual account, so sub-accounts and legacy accounts are
 						unaffected.

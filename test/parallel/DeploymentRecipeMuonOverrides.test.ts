@@ -44,6 +44,7 @@ function recipe(): any {
 					"LiquidationPartyA",
 					"LiquidationPartyB",
 					"RemoveMargin",
+					"ExpressCredit",
 				],
 			},
 			protocol: {
@@ -101,6 +102,7 @@ describe("recipe Muon UPNL validity overrides", function () {
 	it("rejects unknown functions, non-canonical integers, and the zero sentinel", function () {
 		for (const [label, value] of [
 			["unknown function", { RemoveFunds: "30" }],
+			["ExpressCredit is not a Core UPNL function", { ExpressCredit: "30" }],
 			["zero", { Trading: "0" }],
 			["number instead of string", { Trading: 30 }],
 			["leading zero", { Trading: "030" }],

@@ -5,6 +5,7 @@ import { initializeFixture } from "./Initialize.fixture.js"
 import connection, { ethers, hre } from "./helpers/hardhat-connection.js"
 import { WithdrawStatus } from "./models/Enums.js"
 import { RunContext } from "./models/RunContext.js"
+import { buildSignedExpressCreditData, deterministicMuonKey, EXPRESS_CREDIT_MUON_FUNCTION } from "./utils/MuonSignature.js"
 
 const OPERATOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("OPERATOR_ROLE"))
 const SIGNER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("SIGNER_ROLE"))
@@ -2318,6 +2319,93 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 	// ═══════════════════════════════════════════════════════════════════
 
 	describe("Credit Line Integration", function () {
+		it("requires ExpressCredit permission from both registered Muon signers", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, botSigner, user, receiver, context, affiliate, deployer } = fixture
+			const gatewaySigner = (await ethers.getSigners())[12]
+			const expressAddr = await expressProvider.getAddress()
+			const realVerifier = await ethers.deployContract("MuonSignatureVerifier", [deployer.address])
+			const muonKey = deterministicMuonKey()
+
+			await realVerifier.addPublicKey(muonKey.publicKey)
+			await realVerifier.addGatewaySigner(gatewaySigner.address)
+			await realVerifier.setPublicKeyPermissions(muonKey.publicKey, [0], true)
+			await realVerifier.setGatewaySignerPermissions(gatewaySigner.address, [EXPRESS_CREDIT_MUON_FUNCTION], true)
+			await expressProvider.setCreditLineMuonConfig(await realVerifier.getAddress(), 1n, 60n)
+
+			const withdrawAmount = 500n * 10n ** 18n
+			const creditAmount = 200n * 10n ** 18n
+			const eligibleBase = 10_000n * 10n ** 18n
+			const parts = [
+				{
+					id: 0n,
+					amount: withdrawAmount,
+					chainId: 31337n,
+					receiver: receiver.address,
+					virtualProvider: ethers.ZeroAddress,
+					expressProvider: expressAddr,
+				},
+			]
+			const partsHash = computePartsHash(parts)
+			const latestTimestamp = BigInt((await ethers.provider.getBlock("latest"))!.timestamp)
+			const deadline = Number(latestTimestamp) + 3600
+			const signature = await signWithdrawOption(expressProvider, botSigner, {
+				user: user.address,
+				nonce: 0n,
+				optionType: 1,
+				availableAt: 0,
+				affiliate,
+				affiliateAmount: 0n,
+				creditAmount,
+				fee: 0n,
+				operatorFee: 0n,
+				partsHash,
+				deadline,
+			})
+			const { encoded: creditDataRaw } = await buildSignedExpressCreditData({
+				appId: 1n,
+				affiliate,
+				eligibleBase,
+				timestamp: latestTimestamp,
+				chainId: (await ethers.provider.getNetwork()).chainId,
+				expressProvider: expressAddr,
+				symmio: context.diamond,
+				muonKey,
+				gatewaySigner,
+			})
+			const providerData = encodeProviderData(
+				0n,
+				1,
+				0,
+				affiliate,
+				0n,
+				creditAmount,
+				0n,
+				0n,
+				deadline,
+				signature,
+				undefined,
+				undefined,
+				undefined,
+				creditDataRaw,
+			)
+
+			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)).to.be.revertedWith(
+				"MuonSignatureVerifier: Key not authorized for function",
+			)
+
+			await realVerifier.setPublicKeyPermissions(muonKey.publicKey, [EXPRESS_CREDIT_MUON_FUNCTION], true)
+			await realVerifier.setGatewaySignerPermissions(gatewaySigner.address, [EXPRESS_CREDIT_MUON_FUNCTION], false)
+			await realVerifier.setGatewaySignerPermissions(gatewaySigner.address, [0], true)
+			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)).to.be.revertedWith(
+				"MuonSignatureVerifier: Gateway not authorized for function",
+			)
+
+			await realVerifier.setGatewaySignerPermissions(gatewaySigner.address, [EXPRESS_CREDIT_MUON_FUNCTION], true)
+			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
+			expect(await expressProvider.creditLineReservedDebt(affiliate)).to.equal(creditAmount)
+		})
+
 		it("should reserve credit on WINDOWED acceptance", async function () {
 			const fixture = await deployFixture()
 			const { expressProvider, botSigner, user, receiver, context, affiliate } = fixture

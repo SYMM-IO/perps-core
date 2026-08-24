@@ -8,6 +8,8 @@ import { IPartyBEmergencyActionsEvents } from "./IPartyBEmergencyActionsEvents.s
 import { PairUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
 
 interface IPartyBEmergencyActionsFacet is IPartyBEmergencyActionsEvents {
+	/// @notice Fully closes a quote during a configured emergency or when adjustment rounding makes it unrestatable.
+	/// @dev The adjustment-dust exception applies only while frozen; Muon must provide price and UPNLs in the quote's current stored basis.
 	function emergencyClosePosition(uint256 quoteId, PairUpnlAndPriceSig memory upnlSig) external;
 
 	function adlClose(uint256 quoteId, uint256 amount, uint256 price) external;

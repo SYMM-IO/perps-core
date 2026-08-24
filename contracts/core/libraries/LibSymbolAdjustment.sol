@@ -4,7 +4,10 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { SymbolAdjustmentStorage, SymbolAdjustment, AdjustmentState } from "../storages/SymbolAdjustmentStorage.sol";
+import { Quote } from "../storages/QuoteStorage.sol";
+import { LibQuoteAdjustment } from "./LibQuoteAdjustment.sol";
 
 /// @title LibSymbolAdjustment
 /// @notice Freeze checks and factor helpers for the corporate-action adjustment system
@@ -34,6 +37,27 @@ library LibSymbolAdjustment {
 	/// @notice Current physical price/quantity basis version for a symbol.
 	function basisVersion(uint256 symbolId) internal view returns (uint256) {
 		return SymbolAdjustmentStorage.layout().adjustments[symbolId].basisVersion;
+	}
+
+	/// @notice True when the applicable physical-restatement factor cannot preserve every nonzero amount on an unrestated quote.
+	/// @dev An already-restated quote never qualifies: applying the window factor to it again would test the wrong stored basis.
+	function isUnrestatableDueToAmountRounding(Quote storage quote) internal view returns (bool) {
+		SymbolAdjustmentStorage.Layout storage layout = SymbolAdjustmentStorage.layout();
+		SymbolAdjustment storage adjustment = layout.adjustments[quote.symbolId];
+		uint256 factor;
+
+		if (adjustment.restating) {
+			if (layout.quoteRestatedEpoch[quote.id] >= adjustment.restatementEpoch) return false;
+			factor = adjustment.restatementFactor;
+		} else if (adjustment.state == AdjustmentState.SCHEDULED) {
+			factor = Math.mulDiv(activeCumulativeFactor(quote.symbolId), adjustment.factor, 1e18);
+		} else {
+			factor = activeCumulativeFactor(quote.symbolId);
+		}
+
+		if (factor == 0 || factor == 1e18) return false;
+		Quote memory quoteSnapshot = quote;
+		return LibQuoteAdjustment.hasAmountUnderflow(quoteSnapshot, factor);
 	}
 
 	/// @notice Marks that a quote mutation occurred during the current restatement window.

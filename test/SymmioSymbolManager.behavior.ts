@@ -235,6 +235,26 @@ export function shouldBehaveLikeSymmioSymbolManager(): void {
 					.withArgs("acceptableValues", symbolIds)
 			})
 
+			it("sets and clears default and symbol-specific notional LF rates", async function () {
+				const defaultRate = parseEther("0.0002")
+				const overrideRate = parseEther("0.0003")
+
+				await expect(symbolManager.connect(modifier).setSymbolMinAcceptableNotionalLFRatesBatch([0, 1], [defaultRate, overrideRate]))
+					.to.emit(symbolManager, "BatchOperationExecuted")
+					.withArgs("notionalLFRates", [0, 1])
+
+				expect(await mockSymmio.getSymbolMinAcceptableNotionalLFRate(0)).to.deep.equal([defaultRate, false])
+				expect(await mockSymmio.getSymbolMinAcceptableNotionalLFRate(1)).to.deep.equal([overrideRate, true])
+
+				await expect(symbolManager.connect(modifier).clearSymbolMinAcceptableNotionalLFRateOverrides([1]))
+					.to.emit(symbolManager, "BatchOperationExecuted")
+					.withArgs("clearNotionalLFRateOverrides", [1])
+
+				expect(await mockSymmio.getSymbolMinAcceptableNotionalLFRate(1)).to.deep.equal([defaultRate, false])
+				const dailyOps = await symbolManager.getDailyOperations()
+				expect(dailyOps.acceptableValues).to.equal(3)
+			})
+
 			it("sets funding state in batch", async function () {
 				const epochDurations = [72000, 86400]
 				const windowTimes = [3000, 3600]
@@ -267,6 +287,9 @@ export function shouldBehaveLikeSymmioSymbolManager(): void {
 					symbolManager,
 					"InvalidArrayLengths",
 				)
+				await expect(
+					symbolManager.connect(modifier).setSymbolMinAcceptableNotionalLFRatesBatch(symbolIds, singleValue),
+				).to.be.revertedWithCustomError(symbolManager, "InvalidArrayLengths")
 			})
 		})
 
@@ -310,6 +333,11 @@ export function shouldBehaveLikeSymmioSymbolManager(): void {
 
 			it("rejects unauthorized callers from restricted ops", async function () {
 				await expect(symbolManager.connect(otherAccount).setDailyLimits(defaultDailyLimits)).to.be.reverted
+			})
+
+			it("rejects notional LF changes without the minimum acceptable values manager role", async function () {
+				await expect(symbolManager.connect(otherAccount).setSymbolMinAcceptableNotionalLFRatesBatch([0], [parseEther("0.0002")])).to.be.reverted
+				await expect(symbolManager.connect(otherAccount).clearSymbolMinAcceptableNotionalLFRateOverrides([1])).to.be.reverted
 			})
 		})
 

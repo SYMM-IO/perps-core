@@ -667,7 +667,7 @@ export async function doctor(args, runtime = {}) {
 		let muonFunctionPermissions = [];
 		try {
 			muonFunctionPermissions = parseMuonFunctionPermissions(env.MUON_FUNCTION_PERMISSIONS);
-			r.ok("all eight Muon function permissions configured", muonFunctionPermissions.map(({ name }) => name).join(", "));
+			r.ok("all nine Muon function permissions configured", muonFunctionPermissions.map(({ name }) => name).join(", "));
 		} catch (error) {
 			r.fail("MUON_FUNCTION_PERMISSIONS is invalid", error.message || String(error));
 		}
@@ -763,7 +763,7 @@ export async function doctor(args, runtime = {}) {
 						);
 					}
 
-					if (muonFunctionPermissions.length === 8 && targetPublicKeys.length > 0 && targetGatewaySigners.length > 0) {
+					if (muonFunctionPermissions.length === 9 && targetPublicKeys.length > 0 && targetGatewaySigners.length > 0) {
 						const missingAuthorizations = await inspectMuonFunctionAuthorizations(verifier, {
 							publicKeys: targetPublicKeys,
 							gatewaySigners: targetGatewaySigners,
@@ -803,7 +803,7 @@ export async function doctor(args, runtime = {}) {
 		} else if (verifierAddress && isNonZeroAddress(verifierAddress) && !provider) {
 			r.warn(
 				"existing Muon verifier probes deferred with encrypted RPC",
-				"deploy:system validates code, registrations, all eight permissions, and unlocked-signer SETTER_ROLE before any transaction",
+				"deploy:system validates code, registrations, all nine permissions, and unlocked-signer SETTER_ROLE before any transaction",
 			);
 		}
 		r.info("Muon validity", `${env.MUON_UPNL_VALID_TIME || 300}/${env.MUON_PRICE_VALID_TIME || 300}s`);

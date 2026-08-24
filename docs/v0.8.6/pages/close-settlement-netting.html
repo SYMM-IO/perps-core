@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="How v0.8.6 nets funding and realized PnL within each closing quote while preserving sequential batch processing and hook visibility."
+		/>
+		<title>Per-Quote Close Settlement Netting - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.6">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#before">Before v0.8.6</a>
+				<a class="toc-link level-2" href="#problem">Why gross ordering failed</a>
+				<a class="toc-link level-2" href="#fix">How v0.8.6 fixes it</a>
+				<a class="toc-link level-2" href="#settlement-pipeline">How a close is processed</a>
+				<a class="toc-link level-2" href="#batch-behavior">Batch behavior</a>
+				<a class="toc-link level-2" href="#observability">Events and hooks</a>
+				<a class="toc-link level-2" href="#boundaries">Fees and unchanged behavior</a>
+			</div>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Per-Quote Close Settlement Netting</h1>
+							<p class="hero-copy">
+								Before v0.8.6, a close moved funding and realized PnL one after the other. That could reject a valid close. The new
+								flow nets those two components inside each quote, then finalizes and reports that quote before processing the next
+								one.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="before">Before v0.8.6</h2>
+					<p>
+						A quote close settled accumulated funding first and realized PnL second. Each transfer independently checked whether its payer
+						had enough allocated balance at that moment.
+					</p>
+					<ol>
+						<li>Calculate and transfer accumulated funding.</li>
+						<li>Calculate and transfer realized PnL.</li>
+						<li>Charge the close fee, finalize the quote, and call its hooks.</li>
+					</ol>
+					<p>The economic result could be solvent even though the first gross transfer was not.</p>
+
+					<h2 id="problem">Why gross ordering failed</h2>
+					<p>
+						Funding and PnL from the same quote can move in opposite directions. Whichever component moved first could demand liquidity
+						that the opposite component would immediately return.
+					</p>
+					<h3>The 70 / 80 / 90 case</h3>
+					<p>
+						PartyB begins with <code>70</code> allocated, owes PartyA <code>80</code> in funding, and receives <code>90</code> because
+						PartyA realizes a loss on that same quote:
+					</p>
+					<pre><code class="language-text">funding receipt    +80
+realized PnL       -90
+----------------------
+net to PartyA      -10</code></pre>
+					<p>
+						The old funding-first flow tried to debit <code>80</code> from PartyB's <code>70</code> and reverted. The correct final
+						movement is PartyA paying PartyB <code>10</code>, leaving PartyB with <code>80</code>. Reversing funding and PnL would make
+						the opposite-direction case fail instead.
+					</p>
+
+					<h2 id="fix">How v0.8.6 fixes it</h2>
+					<p>
+						The contract now prepares both settlement components for one quote before checking either payer. The check uses that quote's
+						bilateral difference rather than funding or PnL in isolation.
+					</p>
+					<p>
+						The signs below are written from PartyA's point of view. Positive funding means PartyA pays; negative funding means PartyA
+						receives.
+					</p>
+					<pre><code class="language-text">partyAReceives =
+    (PartyA profit ? pnl : 0)
+  + (fundingFee &lt; 0 ? abs(fundingFee) : 0)
+
+partyAPays =
+    (PartyA loss ? pnl : 0)
+  + (fundingFee &gt; 0 ? fundingFee : 0)
+
+quoteNetToPartyA = partyAReceives - partyAPays</code></pre>
+					<ul>
+						<li>If the quote net is positive, PartyB must cover only that difference.</li>
+						<li>If the quote net is negative, PartyA must cover only its absolute value.</li>
+						<li>If the two totals match, neither party needs additional balance for funding and PnL.</li>
+					</ul>
+					<p>
+						After validating the difference, the contract posts that quote's receiver-side funding and PnL entries before its payer-side
+						entries. Funding and PnL remain separately attributed in events even though solvency uses their combined result.
+					</p>
+
+					<h2 id="settlement-pipeline">How a close is processed</h2>
+					<p>Each quote completes the following pipeline before the next batch entry begins:</p>
+					<ol>
+						<li><strong>Validate.</strong> Check quote state, deadline, fill amount, close price, and symbol restrictions.</li>
+						<li><strong>Prepare.</strong> Release the filled share of locks, record accumulated funding, and calculate realized PnL.</li>
+						<li><strong>Check the quote net.</strong> Require only the remaining bilateral funding-plus-PnL obligation.</li>
+						<li><strong>Post settlement.</strong> Apply that quote's funding and PnL credits, followed by its funding and PnL debits.</li>
+						<li>
+							<strong>Finalize.</strong> Emit funding attribution, update the average close price, charge the close fee, update the
+							closed amount, reduce aggregate positions, release connections when appropriate, and set the resulting quote status.
+						</li>
+						<li><strong>Notify.</strong> Call that quote's affiliate and system hooks and record its trade volume.</li>
+					</ol>
+					<aside class="callout callout-note">
+						<strong>Transaction atomicity remains unchanged.</strong> If any later quote, fee, or hook fails, the EVM reverts every
+						earlier quote and callback change made by the batch transaction.
+					</aside>
+
+					<h2 id="batch-behavior">Batch behavior</h2>
+					<h3>Quotes do not share settlement liquidity</h3>
+					<p>
+						A later quote cannot fund an earlier quote's obligation. For example, if quote one requires PartyB to pay <code>80</code> and
+						quote two would later pay PartyB <code>90</code>, PartyB must still cover quote one's own net when quote one executes.
+					</p>
+					<p>
+						This boundary is deliberate. Cross-quote netting would require preparing and finalizing the entire batch before callbacks,
+						changing what existing hooks observe and requiring a separate batch-context protocol. The v0.8.6 fix stays scoped to the
+						funding and PnL generated by one quote.
+					</p>
+					<h3>Repeated quote IDs remain sequential</h3>
+					<p>
+						The same quote ID may appear more than once when each entry is valid against the state produced by the previous entry. A
+						<code>40%</code> fill followed by the remaining <code>60%</code> therefore recalculates the open amount and lock share after
+						the first fill. A complete close releases the quote's remaining CVA, LF, PartyA MM, and PartyB MM without residue.
+					</p>
+					<h3>Input order is observable</h3>
+					<p>
+						Because quotes execute sequentially, order can affect whether an intermediate quote has enough allocated balance. It also
+						determines quote finalization, event, and hook order. Every quote in the batch must still belong to the same PartyA and
+						PartyB.
+					</p>
+
+					<h2 id="observability">Events and hooks</h2>
+					<p>For each quote, observable settlement follows its own pipeline:</p>
+					<ol>
+						<li>Non-zero <code>FUNDING_FEE_IN</code> and <code>REALIZED_PNL_IN</code> balance changes.</li>
+						<li>Non-zero <code>FUNDING_FEE_OUT</code> and <code>REALIZED_PNL_OUT</code> balance changes.</li>
+						<li><code>QuoteFundingSettled</code> when accumulated funding is enabled.</li>
+						<li>Any close-fee balance change and <code>TradingFeeCharged(CLOSE)</code>.</li>
+						<li>Affiliate close and fee hooks, then system close and fee hooks.</li>
+						<li><code>TradeVolumeRecorded(CLOSE)</code>.</li>
+					</ol>
+					<p>
+						For <code>fillCloseRequests</code>, the two overloaded <code>FillCloseRequest</code> result events are different: the
+						implementation finishes every quote first, then the external facet emits those result events in input order.
+					</p>
+					<aside class="callout callout-important">
+						<strong>Hooks keep gradual batch visibility.</strong> The first quote's hook sees that quote finalized while later quotes
+						retain their pre-fill state. The next quote is settled only after the first quote's hooks return. Signer and InstantLayer
+						privileges are cleared around every external hook call, and a hook failure reverts the whole transaction.
+					</aside>
+
+					<h2 id="boundaries">Fees and unchanged behavior</h2>
+					<h3>The platform close fee is separate</h3>
+					<p>
+						The per-quote net check covers accumulated funding and realized PnL. It does not include PartyA's platform close fee. The fee
+						remains <code>filledAmount * closedPrice * closeFee / 1e36</code> and is charged after settlement. If PartyA cannot pay it,
+						the transaction reverts.
+					</p>
+					<h3>What stays the same</h3>
+					<p>
+						This per-quote netting change does not alter Muon verification, signed UPNL solvency checks, the funding amount recorded for a
+						close, partial-close rules, lock calculations, quote statuses, connection cleanup, hook selectors, or fee formulas. The
+						dedicated accumulated-funding batch function also continues to settle its quote IDs sequentially.
+					</p>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 documentation.</span>
+		</footer>
+	</body>
+</html>

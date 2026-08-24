@@ -42,7 +42,7 @@ interface IViewFacet {
 
 	function maxDeallocatableForPartyA(address partyA, int256 upnl) external view returns (uint256);
 
-	function maxSafeDeallocatableForPartyA(address partyA, int256 upnl, uint256 pendingBalance) external view returns (uint256);
+	function maxSafeDeallocatableForPartyA(address partyA, int256 upnl, uint256 pendingBalance, uint256 fundingDebt) external view returns (uint256);
 
 	function maxDeallocatableForPartyB(address partyB, address partyA, int256 upnl) external view returns (uint256);
 
@@ -50,7 +50,8 @@ interface IViewFacet {
 		address partyA,
 		int256 upnl,
 		uint256 pendingBalance,
-		uint256 scaledLockedBalance
+		uint256 scaledLockedBalance,
+		uint256 fundingDebt
 	) external view returns (uint256);
 
 	function maxRemovableMarginForPartyB(
@@ -58,7 +59,8 @@ interface IViewFacet {
 		address partyA,
 		int256 upnl,
 		uint256 pendingBalance,
-		uint256 scaledLockedBalance
+		uint256 scaledLockedBalance,
+		uint256 fundingDebt
 	) external view returns (uint256);
 
 	function isCrossPartyB(address partyB) external view returns (bool);
@@ -112,10 +114,7 @@ interface IViewFacet {
 	function getOperationalFeeAllowance(
 		address payer,
 		address charger
-	)
-		external
-		view
-		returns (uint256 allowance, uint256 charged, uint256 remaining, uint256 pendingAllowance, uint256 reductionReadyAt, uint256 feeMultiplier);
+	) external view returns (uint256 allowance, uint256 pendingAllowance, uint256 reductionReadyAt, uint256 feeMultiplier);
 
 	function isOperationalFeeCharger(address charger) external view returns (bool);
 

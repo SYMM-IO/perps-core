@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Multi-step force-close state is now bound to the close request that initialized it, preventing stale prices from crossing cancellation, expiry, or replacement boundaries."
+		/>
+		<title>Force-Close Request Binding - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Apply the saved preference before first paint.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.6">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#summary">Summary</a>
+				<a class="toc-link level-2" href="#failure-sequence">The failure sequence</a>
+				<a class="toc-link level-2" href="#fix">The fix</a>
+				<a class="toc-link level-2" href="#upgrade-notes">ABI and operations notes</a>
+			</div>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Force-Close Request Binding</h1>
+							<p class="hero-copy">
+								A multi-step force-close snapshot can now be used only by the same close request that initialized it.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="summary">Summary</h2>
+					<p>
+						The multi-step force-close flow begins with <code>initializeForceClose</code>, which stores a derived close price and a
+						uPNL/current-price snapshot. <code>settleUpnlForForceClose</code> can then realize uPNL while the workflow is open, and
+						<code>finalizeForceClose</code> refreshes the snapshot before closing the position. Previously, this stored state was keyed
+						only by <code>quoteId</code>. It did not record which close request created it.
+					</p>
+					<p>
+						If that close request was canceled or expired, its stored detail could remain marked <code>inProgress</code>. A new close
+						request for the same quote received a new <code>closeId</code>, price, and quantity, but the old force-close state still
+						passed the continuation checks. Finalization could therefore combine the old derived price with the replacement request's
+						current quantity, changing realized PnL, fees, balances, and the reported execution.
+					</p>
+					<aside class="callout callout-important">
+						<strong>Accounting impact.</strong> This affected accounting in both normal and cross-PartyB modes, not only events or
+						indexing mismatch. The stale price reached the quote-closing logic.
+					</aside>
+
+					<h2 id="failure-sequence">The failure sequence</h2>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th scope="col">Step</th>
+									<th scope="col">Quote state</th>
+									<th scope="col">Stored force-close state</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Initialize request A</td>
+									<td><code>closeId A</code>, price A, quantity A</td>
+									<td>Derived price A and snapshot A; <code>inProgress = true</code></td>
+								</tr>
+								<tr>
+									<td>Cancel or expire A</td>
+									<td>Returns to <code>OPENED</code></td>
+									<td>The historical detail can remain present</td>
+								</tr>
+								<tr>
+									<td>Create request B</td>
+									<td><code>closeId B</code>, price B, quantity B</td>
+									<td>Still contains price and snapshot A</td>
+								</tr>
+								<tr>
+									<td>Continue without re-initializing</td>
+									<td>Request B is current</td>
+									<td>Previously consumed price A with quantity B</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+
+					<h2 id="fix">The fix</h2>
+					<p>
+						Initialization now stores the quote's current <code>closeId</code> as the operation binding. Every later force-close step uses
+						one shared guard and proceeds only when all three conditions hold:
+					</p>
+					<ul>
+						<li>the stored force-close detail is still marked <code>inProgress</code>;</li>
+						<li>the quote is still in <code>CLOSE_PENDING</code>; and</li>
+						<li>the stored close ID equals the quote's current <code>closeId</code>.</li>
+					</ul>
+					<p>
+						The guard runs before snapshot refresh, force-close settlement, and finalization. A cancellation request therefore stops
+						progression immediately even though it retains the same close ID, while an accepted cancellation, expiry, or replacement
+						request cannot inherit the prior snapshot. Successful finalization clears the binding.
+					</p>
+					<p>
+						The binding is the final field of <code>ForceCloseDetail</code>, so the snapshot and the request that created it share one
+						lifecycle. Appending the field preserves every existing struct member's storage offset and does not shift later fields in
+						<code>AccountStorage.Layout</code>.
+					</p>
+
+					<h2 id="upgrade-notes">ABI and operations notes</h2>
+					<ul>
+						<li>
+							The <code>forceCloseDetails(uint256)</code> return tuple now includes <code>closeId</code> as its final field. ABI
+							artifacts, generated types, and consumers of this view should be regenerated for v0.8.6. The function selector is
+							unchanged because return values are not part of selector derivation.
+						</li>
+						<li>
+							An uninitialized or pre-upgrade detail has <code>closeId = 0</code> and cannot pass the continuation guard. Finish active
+							multi-step workflows before upgrading. After the upgrade, an old workflow cannot continue. Cancel the old close request
+							through the normal cancellation flow, or wait past its deadline and call <code>expireQuote([quoteId])</code>; a
+							post-deadline cancellation may invoke the same expiry path. Confirm the quote has returned to <code>OPENED</code>, then
+							create a replacement request and initialize a new workflow.
+						</li>
+						<li>A replacement request receives a new <code>closeId</code>, so the old detail cannot pass its request-identity check.</li>
+						<li>
+							Cancellation or expiry can leave historical detail with <code>inProgress = true</code>. Off-chain systems must not treat
+							that flag alone as proof that the workflow can continue; quote status and request identity are also required.
+						</li>
+						<li>
+							<code>forceCloseAndSettlePositionsUnified</code>, the one-transaction path, remains valid because it initializes and
+							consumes the same close request atomically.
+						</li>
+					</ul>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 documentation.</span>
+		</footer>
+	</body>
+</html>

@@ -28,9 +28,9 @@ struct AffiliateCredit {
 	/// @dev Whether a request's debt has moved from reserved to active. Key = keccak256(user, requestId).
 	mapping(bytes32 => bool) requestActivated;
 	// ── State ──
-	/// @dev Affiliate-level kill switch — blocks all new credit reservations when true.
+	/// @dev Affiliate-level kill switch. When true, it blocks all new credit reservations.
 	bool paused;
-	/// @dev Per-user exclusion list — blocked addresses cannot reserve credit with this affiliate.
+	/// @dev Per-user exclusion list. Blocked addresses cannot reserve credit with this affiliate.
 	mapping(address => bool) blacklisted;
 	// ── Cap-change throttle state ──
 	/// @dev Number of non-free cap changes performed within the current window.

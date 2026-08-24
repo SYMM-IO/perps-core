@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="POSITION-isolated virtual accounts cancel partial-fill remainder quotes in the opening transaction so one virtual account cannot later open a second position."
+		/>
+		<title>Position Isolation Partial Fill Remainder - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.6">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#summary">Summary</a>
+				<a class="toc-link level-2" href="#partial-fill-flow">Partial-fill flow</a>
+				<a class="toc-link level-2" href="#order-semantics">Order semantics</a>
+				<a class="toc-link level-2" href="#integration-notes">Integration notes</a>
+			</div>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Position Isolation Partial Fill Remainder</h1>
+							<p class="hero-copy">
+								A POSITION-isolated virtual account holds exactly one position, so the remainder quote of a partial fill is cancelled
+								inside the same transaction and its reserves are refunded to the account.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="summary">Summary</h2>
+					<p>
+						When a solver partially fills a LIMIT quote, the core creates a new PENDING quote for the unfilled remainder under the same
+						<code>partyA</code>. On a POSITION-isolated virtual account that remainder would be a path to a second position on an account
+						whose isolation rule permits exactly one position, sharing margin and liquidating together with the first.
+					</p>
+					<p>
+						The AccountLayer therefore cancels the remainder during the solver's <code>openPosition</code> transaction. The
+						<code>onOpenPosition</code> hook detects the child quote and calls <code>requestToCancelQuote</code> on it as the virtual
+						account. Because the child is still PENDING with no PartyB, the cancel is immediate: the reserved open trading fee is refunded
+						and the pending locked balance is released back to the virtual account in the same transaction.
+					</p>
+					<p>
+						Virtual accounts with MARKET, MARKET_LONG, or MARKET_SHORT isolation keep the remainder: the child quote has the same symbol
+						and direction as its parent, so tracking it on the same account preserves those isolation contracts.
+					</p>
+
+					<h2 id="partial-fill-flow">Partial-fill flow</h2>
+					<p>
+						Core fires lifecycle hooks after all <code>openPosition</code> state is final, which is what makes the nested cancel safe: the
+						filled part of the quote is already OPENED and the remainder is a fully-formed PENDING quote.
+					</p>
+					<pre><code class="language-solidity">// SymmioHookFacet.onOpenPosition
+uint256 childQuoteId = symmio.getNextQuoteId();
+ISymmio.Quote memory childQuote = symmio.getQuote(childQuoteId);
+if (childQuote.parentId == quoteId &amp;&amp; childQuote.partyA == partyA &amp;&amp; childQuote.quoteStatus == ISymmio.QuoteStatus.PENDING) {
+	if (vData.isolationType == VirtualAccountIsolationType.POSITION) {
+		LibAccountLayerUtils.executeWithSigner(partyA, abi.encodeWithSelector(ISymmio.requestToCancelQuote.selector, childQuoteId));
+	} else {
+		vData.quoteIds.add(childQuoteId);
+	}
+}
+</code></pre>
+					<p>The cancel path inside the core does four things atomically:</p>
+					<ul>
+						<li>Sets the child quote's status to <code>CANCELED</code>.</li>
+						<li>Refunds the child's reserved open trading fee to the virtual account.</li>
+						<li>Releases the child's <code>pendingLockedBalances</code> reservation.</li>
+						<li>Removes the child from the account's pending quote list.</li>
+					</ul>
+					<p>
+						The nested cancel triggers the <code>onCancelQuote</code> hook back into the AccountLayer while <code>onOpenPosition</code> is
+						still executing. The child was never added to the virtual account's tracked quote IDs, and the account still holds the opened
+						position, so no deletion is attempted. <code>onCancelQuote</code> uses the callback-aware reentrancy guard: it admits this
+						expected callback from the exact core that AccountLayer is already calling while still rejecting unrelated or nested protected
+						callbacks.
+					</p>
+
+					<h2 id="order-semantics">Order semantics</h2>
+					<p>
+						On POSITION-isolated accounts, a LIMIT order is effectively partial-fill-and-kill: the solver keeps whatever it filled, and
+						the unfilled remainder does not rest on the book. MARKET orders are unaffected because the core requires them to fill
+						completely, and instant opens are unaffected for the same reason.
+					</p>
+					<p>
+						The refunded fee and released reservation stay on the virtual account as free allocated margin, where they buffer the position
+						that just opened. Moving them off the account follows the normal rules for an account with an open position: a Muon-attested
+						deallocation, or the automatic sweep to the parent SubAccount when the position closes and the virtual account is deleted.
+					</p>
+					<p>
+						A client that wants the remainder to keep working the book re-quotes it through the SubAccount. Because the existing virtual
+						account already holds a quote, routing assigns the new quote to a fresh virtual account, which needs its own margin.
+					</p>
+
+					<h2 id="integration-notes">Integration notes</h2>
+					<p>
+						Indexers and frontends should expect a <code>RequestToCancelQuote(partyA, address(0), CANCELED, childQuoteId)</code> event
+						emitted by the nested cancel inside the solver's <code>openPosition</code> transaction. It occurs during the
+						<code>onOpenPosition</code> hook, before the outer facet emits its open-position events. After the hook returns, the outer
+						facet also emits <code>AcceptCancelRequest(childQuoteId, CANCELED)</code> for the already-cancelled remainder. The child
+						quote's <code>parentId</code> points to the filled quote, which is how clients distinguish this pair from a user-initiated
+						cancel.
+					</p>
+					<p>Two operational couplings follow from routing the cancel through the normal PartyA path:</p>
+					<ul>
+						<li>
+							While PartyA actions are paused, the nested cancel reverts, so a partial fill on a POSITION-isolated account reverts with
+							it. Solvers can still fill such quotes completely.
+						</li>
+						<li>
+							If an account has activated instant actions mode, <code>requestToCancelQuote</code> is blocked outside the InstantLayer,
+							so a partial fill of a resting quote on such an account reverts. Quotes routed through the InstantLayer are unaffected
+							because instant opens always fill completely.
+						</li>
+					</ul>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 documentation.</span>
+		</footer>
+	</body>
+</html>

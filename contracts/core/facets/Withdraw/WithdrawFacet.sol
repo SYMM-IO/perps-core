@@ -27,7 +27,7 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	///      1. Only **one express provider** may appear in the request.
 	///      2. Only **one virtual provider** may appear among virtual-only parts.
 	///      3. Express+virtual parts may contain multiple virtual providers (express is master).
-	/// - This function debits the user’s internal balance immediately.
+	/// - This function debits the user's internal balance immediately.
 	/// - Providers (if referenced) receive on-chain callbacks through their contracts.
 	/// @param parts Array of withdrawal instructions. Each part may target a different chain/provider.
 	/// @param speedUp Whether to request a speed-up for this withdrawal.

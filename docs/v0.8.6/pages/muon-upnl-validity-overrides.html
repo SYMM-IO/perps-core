@@ -40,12 +40,12 @@
 		<div class="reader-shell">
 			<div class="rail-sections-source" data-rail-sections hidden>
 				<a class="toc-link level-2" href="#summary">Summary</a>
-				<a class="toc-link level-2" href="#api-changes">API Changes</a>
+				<a class="toc-link level-2" href="#api-changes">API changes</a>
 				<a class="toc-link level-3" href="#set-or-clear-a-per-function-override">Set or clear a per-function override</a>
 				<a class="toc-link level-3" href="#read-the-effective-validity">Read the effective validity</a>
-				<a class="toc-link level-2" href="#storage-model">Storage Model</a>
-				<a class="toc-link level-2" href="#muonfunction-categories">MuonFunction Categories</a>
-				<a class="toc-link level-2" href="#effective-validity-resolution">Effective Validity Resolution</a>
+				<a class="toc-link level-2" href="#storage-model">Storage model</a>
+				<a class="toc-link level-2" href="#muonfunction-categories">MuonFunction categories</a>
+				<a class="toc-link level-2" href="#effective-validity-resolution">Effective validity resolution</a>
 			</div>
 			<main class="reader-main">
 				<header class="reader-hero">
@@ -61,18 +61,8 @@
 				</header>
 
 				<article class="doc-article" id="full-document">
-					<p>
-						Before v0.8.6, every UPNL-bearing Muon signature shared the same global freshness window from <code>setMuonConfig</code>. That
-						forced fast account-management operations and slower liquidation flows to use one timeout, even though they have different
-						operational needs.
-					</p>
-					<p>
-						v0.8.6 keeps the global value as the fallback, but lets operators override the UPNL validity window per
-						<code>MuonFunction</code> category.
-					</p>
-					<hr />
 					<h2 id="summary">Summary</h2>
-					<p>Before this change, every UPNL-based Muon signature used the same global validity window:</p>
+					<p>Before v0.8.6, every UPNL-based Muon signature used the same global validity window:</p>
 					<pre><code class="language-solidity">setMuonConfig(upnlValidTime, priceValidTime)
 </code></pre>
 					<p>
@@ -80,7 +70,32 @@
 						operational needs are different. For example, deallocation can reasonably require a very fresh signature such as
 						<code>10</code> seconds, while PartyA liquidation may need a larger submission window such as <code>120</code> seconds.
 					</p>
-					<p>The fix is intentionally small: each <code>MuonFunction</code> can optionally override the global UPNL validity window.</p>
+					<p>
+						Core UPNL categories can now override the global UPNL validity window. A <code>MuonFunction</code> is also the operation
+						category that selects the authorized Muon key and gateway signer. The available categories are:
+					</p>
+					<pre><code class="language-solidity">enum MuonFunction {
+    Trading,
+    AccountManagement,
+    Settlement,
+    ForceClose,
+    Funding,
+    LiquidationPartyA,
+    LiquidationPartyB,
+    RemoveMargin,
+    ExpressCredit
+}
+</code></pre>
+					<p>
+						<code>ExpressCredit</code> is authorization-only here. Express credit validates freshness with the Express Provider's
+						<code>muonFreshnessWindow</code>, so it cannot be configured through the Core UPNL-override setting.
+					</p>
+					<p>
+						Before setting an override, match the affected method to its category in
+						<a href="#muonfunction-categories">MuonFunction categories</a>. Some methods use the category only for signer authorization
+						and enforce a different lifecycle-based timestamp rule, so the method table also identifies where this freshness override
+						actually applies.
+					</p>
 					<pre><code class="language-solidity">setMuonFunctionUpnlValidTime(func, upnlValidTime)
 </code></pre>
 					<p>
@@ -92,7 +107,7 @@
 						mapping, <code>0</code> is the unset value.
 					</p>
 					<hr />
-					<h2 id="api-changes">API Changes</h2>
+					<h2 id="api-changes">API changes</h2>
 					<h3 id="set-or-clear-a-per-function-override">Set or clear a per-function override</h3>
 					<pre><code class="language-solidity">function setMuonFunctionUpnlValidTime(
     MuonFunction func,
@@ -137,7 +152,7 @@
 					</ul>
 					<p>This view returns the effective value used by verification, not the raw mapping slot.</p>
 					<hr />
-					<h2 id="storage-model">Storage Model</h2>
+					<h2 id="storage-model">Storage model</h2>
 					<p>The new storage field is:</p>
 					<pre><code class="language-solidity">mapping(MuonFunction =&gt; uint256) upnlValidTimeByFunction;
 </code></pre>
@@ -149,26 +164,15 @@
     : upnlValidTimeByFunction[func]
 </code></pre>
 					<p>
-						Operational note: <code>0</code> is reserved as "unset" for per-function overrides. Do not use <code>0</code> as an
-						intentional validity window. Operators should keep the global <code>upnlValidTime</code> configured to a nonzero value.
+						<code>0</code> means "unset" for per-function overrides. Do not use <code>0</code> as an intentional validity window.
+						Operators should keep the global <code>upnlValidTime</code> configured to a nonzero value.
 					</p>
 					<hr />
-					<h2 id="muonfunction-categories">MuonFunction Categories</h2>
+					<h2 id="muonfunction-categories">MuonFunction categories</h2>
 					<p>
 						The categories are the same <code>MuonFunction</code> enum used by the signature verifier's key and gateway authorization
-						system:
+						system. The enum is shown in the summary above; this table maps its values to the affected methods.
 					</p>
-					<pre><code class="language-solidity">enum MuonFunction {
-    Trading,
-    AccountManagement,
-    Settlement,
-    ForceClose,
-    Funding,
-    LiquidationPartyA,
-    LiquidationPartyB,
-    RemoveMargin
-}
-</code></pre>
 					<p>The intended method grouping is:</p>
 					<div class="table-wrap">
 						<table>
@@ -184,7 +188,7 @@
 									<td>
 										<code>sendQuote</code>, <code>lockQuote</code>, <code>openPosition</code>, <code>fillCloseRequest</code>,
 										<code>fillCloseRequestToLiquidation</code>, <code>emergencyClosePosition</code>, <code>openPositions</code>,
-										<code>closePositions</code>
+										<code>fillCloseRequests</code>
 									</td>
 								</tr>
 								<tr>
@@ -196,10 +200,9 @@
 								<tr>
 									<td><code>RemoveMargin</code></td>
 									<td>
-										<code>safeDeallocate</code>, <code>safeDeallocateForPartyB</code> — the paths carrying the Muon-attested
-										<code>scaledLockedBalance</code>. Configure a deliberately tight window here: margin removal is the one flow
-										where a stale signature is worth money. See
-										<a href="../pages/strict-deallocation.html">Strict Deallocation</a>.
+										<code>safeDeallocate</code> and <code>safeDeallocateForPartyB</code>, the paths carrying the Muon-attested
+										<code>scaledLockedBalance</code>. Configure a tight window here. Margin removal is the one flow where a stale
+										signature is worth money. See <a href="../pages/strict-deallocation.html">Strict Deallocation</a>.
 									</td>
 								</tr>
 								<tr>
@@ -209,8 +212,9 @@
 								<tr>
 									<td><code>ForceClose</code></td>
 									<td>
-										<code>requestToClosePosition</code>, <code>forceClosePosition</code>, force-close settlement, legacy
-										force-close settlement, final force-close steps
+										<code>forceClosePosition</code>, deprecated <code>settleAndForceClosePosition</code>,
+										<code>initializeForceClose</code>, <code>settleUpnlForForceClose</code>, <code>finalizeForceClose</code>, and
+										<code>forceCloseAndSettlePositionsUnified</code>
 									</td>
 								</tr>
 								<tr>
@@ -222,31 +226,43 @@
 									<td>
 										<code>liquidatePartyA</code>, <code>setSymbolsPrice</code>, <code>deferredLiquidatePartyA</code>,
 										<code>deferredSetSymbolsPrice</code>, <code>liquidatePartyAWithSnapshot</code>,
-										<code>singleStepLiquidatePartyAWithSnapshot</code>
+										<code>setSymbolsPriceWithSnapshot</code>, <code>singleStepLiquidatePartyAWithSnapshot</code>. Only the legacy
+										<code>liquidatePartyA</code> freshness check consults this UPNL-validity override; the other calls use the
+										category for signer authorization and apply their own historical or liquidation-lifecycle timestamp rules.
 									</td>
 								</tr>
 								<tr>
 									<td><code>LiquidationPartyB</code></td>
-									<td><code>liquidatePartyB</code>, <code>liquidatePositionsPartyB</code></td>
+									<td>
+										<code>liquidatePartyB</code> consults this freshness override. <code>liquidatePositionsPartyB</code> uses the
+										same category for signer authorization, but bounds its price timestamp against the stored liquidation start
+										and <code>liquidationTimeout</code> instead.
+									</td>
+								</tr>
+								<tr>
+									<td><code>ExpressCredit</code></td>
+									<td>
+										Express withdrawal <code>reserveDebt</code> during initial acceptance and acceleration. This category
+										authorizes the Muon key and gateway only; freshness uses the Express Provider's
+										<code>muonFreshnessWindow</code>.
+									</td>
 								</tr>
 							</tbody>
 						</table>
 					</div>
 					<p>
-						Treat this table as the operation-level policy surface. It controls the freshness window for timestamp checks, while the same
-						enum also controls which Muon public keys and gateway signers are authorized to sign each category.
+						This table maps operation-level authorization. The enum controls which Muon public keys and gateway signers may sign each
+						category. It controls this configurable freshness window only for the calls identified above that compare a signature
+						timestamp with <code>block.timestamp</code> through the UPNL-validity resolver.
 					</p>
 					<p>
-						Important distinction: the category is passed to the signature verifier for key and gateway authorization on all grouped
-						calls, but the per-function validity window only applies where the on-chain code checks signature freshness against
-						<code>block.timestamp</code>.
+						The category is passed to the signature verifier for key and gateway authorization on all grouped calls, but the per-function
+						validity window only applies where Core checks signature freshness against <code>block.timestamp</code> through its UPNL
+						resolver. <code>ExpressCredit</code> deliberately does not use that resolver.
 					</p>
 					<hr />
-					<h2 id="effective-validity-resolution">Effective Validity Resolution</h2>
-					<p>
-						Adding the configuration alone was not enough; every UPNL freshness check needed to resolve the correct window for its
-						operation category.
-					</p>
+					<h2 id="effective-validity-resolution">Effective validity resolution</h2>
+					<p>Every UPNL freshness check now resolves the window for its operation category.</p>
 					<p>v0.8.6 routes those checks through:</p>
 					<pre><code class="language-solidity">LibMuon.verifyUpnlTimestamp(timestamp, func)
 </code></pre>
@@ -269,8 +285,9 @@ LibMuonUnifiedSettlement
 LibMuon
 </code></pre>
 					<p>
-						PartyA liquidation also uses <code>LibMuon.getUpnlValidTime(MuonFunction.LiquidationPartyA)</code> for its explicit
-						liquidation signature freshness check, so it no longer reads the global <code>upnlValidTime</code> directly.
+						The legacy <code>liquidatePartyA</code> start path also uses
+						<code>LibMuon.getUpnlValidTime(MuonFunction.LiquidationPartyA)</code> for its explicit signature freshness check, so that
+						check no longer reads the global <code>upnlValidTime</code> directly.
 					</p>
 				</article>
 			</main>

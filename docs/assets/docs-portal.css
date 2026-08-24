@@ -5,8 +5,7 @@
 
 :root {
 	--header-h: 57px;
-	--rail: 304px;
-	--content-measure: 72ch;
+	--rail-expanded: 304px;
 	--control-size: 36px;
 }
 
@@ -15,6 +14,7 @@
    container on wide or zoomed-out screens. Cap that gutter here so v0.8.5 and
    v0.8.6 share one genuinely full-width reading surface. */
 body.doc-page {
+	--rail: var(--rail-expanded);
 	--gutter: clamp(20px, 3vw, 48px);
 }
 
@@ -46,6 +46,28 @@ body.doc-page {
 	min-height: var(--header-h);
 	padding: 0 var(--gutter);
 	border-bottom: 0;
+}
+
+.reading-progress {
+	--reading-progress: 0;
+	position: absolute;
+	inset: auto 0 -1px;
+	height: 2px;
+	overflow: hidden;
+	pointer-events: none;
+}
+
+.reading-progress span {
+	display: block;
+	width: 100%;
+	height: 100%;
+	background: var(--accent);
+	transform: scaleX(var(--reading-progress));
+	transform-origin: left center;
+}
+
+[dir="rtl"] .reading-progress span {
+	transform-origin: right center;
 }
 
 /* Header trail. The wordmark is the home link on every page and the segments
@@ -198,8 +220,45 @@ body.doc-page {
 	height: calc(100vh - var(--header-h));
 	border-right: 1px solid var(--line);
 	background: var(--bg-raised);
-	overflow: hidden;
+	overflow: visible;
 	overscroll-behavior: contain;
+}
+
+.rail-resizer {
+	position: absolute;
+	inset-block: 0;
+	inset-inline-end: -12px;
+	z-index: 2;
+	width: 12px;
+	border: 0;
+	background: transparent;
+	cursor: col-resize;
+	touch-action: none;
+}
+
+.rail-resizer::after {
+	position: absolute;
+	inset-block: 0;
+	inset-inline-start: 0;
+	width: 2px;
+	background: var(--accent);
+	content: "";
+	opacity: 0;
+}
+
+.rail-resizer:hover::after,
+.rail-resizer:focus-visible::after,
+body.rail-is-resizing .rail-resizer::after {
+	opacity: 1;
+}
+
+.rail-resizer:focus-visible {
+	outline: 0;
+}
+
+body.rail-is-resizing {
+	cursor: col-resize;
+	user-select: none;
 }
 
 .rail-inner {
@@ -374,6 +433,7 @@ body.doc-page {
    and one shared spine for each run of nested subsections. */
 .rail-list[data-rail-list="sections"] {
 	display: grid;
+	grid-template-columns: minmax(0, 1fr);
 	gap: 2px;
 }
 
@@ -418,26 +478,30 @@ body.doc-page {
 
 .toc-section-label {
 	min-width: 0;
+	overflow-wrap: anywhere;
 }
 
 .toc-sublist {
 	position: relative;
 	display: grid;
-	margin: 3px 0 8px 40px;
-	padding-left: 16px;
+	min-width: 0;
+	margin: 3px 0 8px;
+	margin-inline-start: 20px;
+	padding-inline-start: 12px;
 }
 
 .toc-sublist::before {
 	position: absolute;
 	top: 1px;
 	bottom: 1px;
-	left: 0;
+	inset-inline-start: 0;
 	width: 1px;
 	background: var(--line);
 	content: "";
 }
 
 .toc-sublist .toc-link.level-3 {
+	min-width: 0;
 	margin: 0;
 	padding: 7px 10px;
 	border-left: 0;
@@ -445,6 +509,8 @@ body.doc-page {
 	color: var(--muted);
 	font-size: 12.5px;
 	line-height: 1.35;
+	overflow-wrap: anywhere;
+	white-space: normal;
 }
 
 .toc-sublist .toc-link.level-3:hover,
@@ -469,6 +535,14 @@ body.doc-page {
 	display: none;
 }
 
+body.doc-page.rail-is-collapsed {
+	--rail: 48px;
+}
+
+body.rail-is-collapsed .rail-resizer {
+	display: none;
+}
+
 body.rail-is-collapsed .rail-tabs {
 	grid-template-columns: minmax(0, 1fr);
 	padding: 9px 5px;
@@ -476,7 +550,7 @@ body.rail-is-collapsed .rail-tabs {
 
 @media (max-width: 1180px) and (min-width: 981px) {
 	:root {
-		--rail: 280px;
+		--rail-expanded: 280px;
 	}
 }
 
@@ -607,12 +681,17 @@ body.doc-page .doc-article > :is(.code-frame, .table-wrap, .tool-panel, figure, 
 	max-width: none;
 }
 
-/* Reading text stays in a comfortable measure while code, diagrams and tables
-   can use the full reader canvas. This is the single content-width rule for
-   both release families and standalone guides. */
-body.doc-page .doc-article > :is(p, ul, ol, blockquote, h2, h3, h4, h5, h6),
-body.doc-page .doc-article > section > :is(p, ul, ol, blockquote, h2, h3, h4, h5, h6) {
-	max-width: var(--content-measure);
+body.doc-page .reader-hero .hero-copy,
+body.doc-page .doc-article > :is(p, ul, ol, blockquote, .callout, h1, h2, h3, h4, h5, h6) {
+	width: 100%;
+	max-width: none;
+	text-align: start;
+}
+
+body.doc-page .doc-article p {
+	-webkit-hyphens: auto;
+	hyphens: auto;
+	text-wrap: wrap;
 }
 
 .chapter-pager a {
@@ -1039,15 +1118,18 @@ body.doc-page .doc-article > section > :is(p, ul, ol, blockquote, h2, h3, h4, h5
 }
 
 .version-catalog-page .hero-intro {
-	max-width: 880px;
+	width: 100%;
+	max-width: none;
 }
 
 .version-catalog-page .hero-intro h1 {
-	max-width: 14ch;
+	width: 100%;
+	max-width: none;
 }
 
 .version-catalog-page .hero-copy {
-	max-width: 72ch;
+	width: 100%;
+	max-width: none;
 }
 
 .version-catalog-shell {
@@ -1056,13 +1138,18 @@ body.doc-page .doc-article > section > :is(p, ul, ol, blockquote, h2, h3, h4, h5
 }
 
 .catalog-toolbar {
+	position: sticky;
+	top: var(--header-h);
+	z-index: 15;
 	display: grid;
 	grid-template-columns: minmax(220px, 400px) 1fr;
 	gap: 16px;
 	align-items: center;
 	margin-bottom: 48px;
-	padding: 20px 0;
+	padding: 16px 0;
 	border-bottom: 1px solid var(--line);
+	background: color-mix(in srgb, var(--bg) 94%, transparent);
+	backdrop-filter: blur(14px);
 }
 
 .catalog-search-wrap {
@@ -1110,10 +1197,34 @@ body.doc-page .doc-article > section > :is(p, ul, ol, blockquote, h2, h3, h4, h5
 }
 
 .catalog-empty {
-	padding: 48px 20px;
+	display: grid;
+	justify-items: center;
+	gap: 8px;
+	padding: 56px 20px;
 	border-block: 1px solid var(--line);
 	color: var(--muted);
 	text-align: center;
+}
+
+.catalog-empty[hidden] {
+	display: none;
+}
+
+.catalog-empty strong {
+	color: var(--ink);
+	font-family: var(--display);
+	font-size: 18px;
+	font-weight: 640;
+	letter-spacing: -0.015em;
+}
+
+.catalog-empty span {
+	max-width: 42ch;
+	line-height: 1.5;
+}
+
+.catalog-empty .button {
+	margin-top: 8px;
 }
 
 .topic-kicker {
@@ -1126,6 +1237,18 @@ body.doc-page .doc-article > section > :is(p, ul, ol, blockquote, h2, h3, h4, h5
 	font-size: 9.5px;
 	letter-spacing: 0.11em;
 	text-transform: uppercase;
+	font-variant-numeric: tabular-nums;
+}
+
+.topic-kicker [data-reading-time] {
+	color: var(--muted);
+}
+
+.heading-anchor {
+	width: 28px;
+	height: 28px;
+	margin-inline-start: 6px;
+	margin-left: 0;
 }
 
 .topic-kicker span:first-child {
@@ -1151,7 +1274,17 @@ body.doc-page .doc-article > section > :is(p, ul, ol, blockquote, h2, h3, h4, h5
 	}
 
 	.docs-header .button {
+		min-height: 44px;
+	}
+
+	.rail-collapse {
+		min-width: 40px;
 		min-height: 40px;
+	}
+
+	.heading-anchor {
+		width: 36px;
+		height: 36px;
 	}
 
 	/* The rail becomes a drawer under the header, on every reading page. */
@@ -1166,6 +1299,10 @@ body.doc-page .doc-article > section > :is(p, ul, ol, blockquote, h2, h3, h4, h5
 		box-shadow: 18px 0 50px rgb(0 0 0 / 0.34);
 		transform: translateX(-105%);
 		transition: transform 180ms cubic-bezier(0.3, 0.8, 0.3, 1);
+	}
+
+	.rail-resizer {
+		display: none;
 	}
 
 	body.rail-is-open {
@@ -1316,6 +1453,7 @@ body.doc-page .doc-article > section > :is(p, ul, ol, blockquote, h2, h3, h4, h5
 		grid-template-columns: minmax(0, 1fr);
 		gap: 12px;
 		margin-bottom: 36px;
+		padding-block: 12px;
 	}
 
 	.catalog-search,
@@ -1354,14 +1492,26 @@ body.doc-page .doc-article > section > :is(p, ul, ol, blockquote, h2, h3, h4, h5
 		grid-column: 1;
 		text-align: left;
 	}
+
+	.back-to-top {
+		width: 44px;
+		height: 44px;
+		inset-inline-end: 16px;
+		bottom: calc(16px + env(safe-area-inset-bottom));
+	}
 }
 
 @media print {
 	.docs-header,
 	.chapter-rail,
 	.rail-backdrop,
+	.rail-resizer,
 	.back-to-top,
 	.chapter-pager {
+		display: none !important;
+	}
+
+	.reading-progress {
 		display: none !important;
 	}
 }

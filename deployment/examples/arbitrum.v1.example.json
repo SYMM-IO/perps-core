@@ -63,7 +63,8 @@
 				"Funding",
 				"LiquidationPartyA",
 				"LiquidationPartyB",
-				"RemoveMargin"
+				"RemoveMargin",
+				"ExpressCredit"
 			]
 		},
 		"protocol": {
