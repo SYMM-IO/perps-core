@@ -8,7 +8,7 @@ pragma solidity >=0.8.18;
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { AccessControlEnumerable } from "@openzeppelin/contracts/access/AccessControlEnumerable.sol";
 import { LibMuonV04ClientBase } from "./LibMuonV04ClientBase.sol";
-import { IMuonSignatureVerifier, MuonFunction } from "../../core/interfaces/IMuonSignatureVerifier.sol";
+import { IMuonSignatureVerifier } from "../../core/interfaces/IMuonSignatureVerifier.sol";
 
 /// @notice Verifies Muon TSS signatures and gateway signatures for oracle data
 contract MuonSignatureVerifier is IMuonSignatureVerifier, AccessControlEnumerable {
@@ -25,17 +25,17 @@ contract MuonSignatureVerifier is IMuonSignatureVerifier, AccessControlEnumerabl
 	/// @notice Emitted when a gateway signer is removed
 	event GatewaySignerRemoved(address signer);
 	/// @notice Emitted when TSS public key function permissions are updated
-	event PublicKeyPermissionsUpdated(uint256 x, uint8 parity, MuonFunction[] functions, bool allowed);
+	event PublicKeyPermissionsUpdated(uint256 x, uint8 parity, uint8[] functionIds, bool allowed);
 	/// @notice Emitted when gateway signer function permissions are updated
-	event GatewaySignerPermissionsUpdated(address signer, MuonFunction[] functions, bool allowed);
+	event GatewaySignerPermissionsUpdated(address signer, uint8[] functionIds, bool allowed);
 
 	PublicKey[] public publicKeys;
 	address[] public gatewaySigners;
 
-	/// @notice Per-function authorization for TSS public keys: keccak256(x, parity) => MuonFunction => allowed
-	mapping(bytes32 => mapping(MuonFunction => bool)) public publicKeyPermissions;
-	/// @notice Per-function authorization for gateway signers: address => MuonFunction => allowed
-	mapping(address => mapping(MuonFunction => bool)) public gatewaySignerPermissions;
+	/// @notice Per-function authorization for TSS public keys: keccak256(x, parity) => function ID => allowed
+	mapping(bytes32 => mapping(uint8 => bool)) public publicKeyPermissions;
+	/// @notice Per-function authorization for gateway signers: address => function ID => allowed
+	mapping(address => mapping(uint8 => bool)) public gatewaySignerPermissions;
 
 	/// @notice Initializes the verifier with an admin address
 	/// @param _admin The address that receives DEFAULT_ADMIN_ROLE and SETTER_ROLE
@@ -54,13 +54,13 @@ contract MuonSignatureVerifier is IMuonSignatureVerifier, AccessControlEnumerabl
 	/// @param hash The hash of the signed data
 	/// @param sign The Schnorr signature to verify against registered public keys
 	/// @param gatewaySignature The ECDSA gateway signature to verify
-	/// @param func The operation category requesting verification
-	function verify(bytes32 hash, SchnorrSign memory sign, bytes memory gatewaySignature, MuonFunction func) external view {
+	/// @param functionId The operation category requesting verification
+	function verify(bytes32 hash, SchnorrSign memory sign, bytes memory gatewaySignature, uint8 functionId) external view {
 		// Verify TSS via Muon
 		bool verifiedTSS = false;
 		for (uint256 i = 0; i < publicKeys.length; i++) {
 			if (LibMuonV04ClientBase.muonVerify(uint256(hash), sign, publicKeys[i])) {
-				require(publicKeyPermissions[_publicKeyId(publicKeys[i])][func], "MuonSignatureVerifier: Key not authorized for function");
+				require(publicKeyPermissions[_publicKeyId(publicKeys[i])][functionId], "MuonSignatureVerifier: Key not authorized for function");
 				verifiedTSS = true;
 				break;
 			}
@@ -72,7 +72,7 @@ contract MuonSignatureVerifier is IMuonSignatureVerifier, AccessControlEnumerabl
 		bool gatewayVerified = false;
 		for (uint256 i = 0; i < gatewaySigners.length; i++) {
 			if (signer == gatewaySigners[i]) {
-				require(gatewaySignerPermissions[signer][func], "MuonSignatureVerifier: Gateway not authorized for function");
+				require(gatewaySignerPermissions[signer][functionId], "MuonSignatureVerifier: Gateway not authorized for function");
 				gatewayVerified = true;
 				break;
 			}
@@ -165,40 +165,47 @@ contract MuonSignatureVerifier is IMuonSignatureVerifier, AccessControlEnumerabl
 
 	/// @notice Sets function-level permissions for a TSS public key
 	/// @param pubKey The public key to configure
-	/// @param functions The list of functions to set permissions for
+	/// @param functionIds The list of function category IDs to set permissions for
 	/// @param allowed Whether the key is authorized for these functions
-	function setPublicKeyPermissions(PublicKey memory pubKey, MuonFunction[] calldata functions, bool allowed) external onlyRole(SETTER_ROLE) {
+	function setPublicKeyPermissions(PublicKey memory pubKey, uint8[] calldata functionIds, bool allowed) external onlyRole(SETTER_ROLE) {
 		bytes32 keyId = _publicKeyId(pubKey);
-		for (uint256 i = 0; i < functions.length; i++) {
-			publicKeyPermissions[keyId][functions[i]] = allowed;
+		for (uint256 i = 0; i < functionIds.length; i++) {
+			publicKeyPermissions[keyId][functionIds[i]] = allowed;
 		}
-		emit PublicKeyPermissionsUpdated(pubKey.x, pubKey.parity, functions, allowed);
+		emit PublicKeyPermissionsUpdated(pubKey.x, pubKey.parity, functionIds, allowed);
 	}
 
 	/// @notice Sets function-level permissions for a gateway signer
 	/// @param signer The gateway signer address to configure
-	/// @param functions The list of functions to set permissions for
+	/// @param functionIds The list of function category IDs to set permissions for
 	/// @param allowed Whether the signer is authorized for these functions
-	function setGatewaySignerPermissions(address signer, MuonFunction[] calldata functions, bool allowed) external onlyRole(SETTER_ROLE) {
-		for (uint256 i = 0; i < functions.length; i++) {
-			gatewaySignerPermissions[signer][functions[i]] = allowed;
+	function setGatewaySignerPermissions(address signer, uint8[] calldata functionIds, bool allowed) external onlyRole(SETTER_ROLE) {
+		for (uint256 i = 0; i < functionIds.length; i++) {
+			gatewaySignerPermissions[signer][functionIds[i]] = allowed;
 		}
-		emit GatewaySignerPermissionsUpdated(signer, functions, allowed);
+		emit GatewaySignerPermissionsUpdated(signer, functionIds, allowed);
 	}
 
 	/// @notice Checks if a TSS public key is authorized for a specific function
 	/// @param pubKey The public key to check
-	/// @param func The function to check authorization for
+	/// @param functionId The function category ID to check authorization for
 	/// @return True if the key is authorized
-	function isPublicKeyAuthorized(PublicKey memory pubKey, MuonFunction func) external view returns (bool) {
-		return publicKeyPermissions[_publicKeyId(pubKey)][func];
+	function isPublicKeyAuthorized(PublicKey memory pubKey, uint8 functionId) external view returns (bool) {
+		return publicKeyPermissions[_publicKeyId(pubKey)][functionId];
 	}
 
 	/// @notice Checks if a gateway signer is authorized for a specific function
 	/// @param signer The gateway signer address to check
-	/// @param func The function to check authorization for
+	/// @param functionId The function category ID to check authorization for
 	/// @return True if the signer is authorized
-	function isGatewaySignerAuthorized(address signer, MuonFunction func) external view returns (bool) {
-		return gatewaySignerPermissions[signer][func];
+	function isGatewaySignerAuthorized(address signer, uint8 functionId) external view returns (bool) {
+		return gatewaySignerPermissions[signer][functionId];
+	}
+
+	/// @inheritdoc IMuonSignatureVerifier
+	/// @dev All uint8 IDs use the same permission and verification path. New IDs default
+	///      to unauthorized until SETTER_ROLE explicitly grants both signer permissions.
+	function supportsMuonFunction(uint8) external pure returns (bool) {
+		return true;
 	}
 }

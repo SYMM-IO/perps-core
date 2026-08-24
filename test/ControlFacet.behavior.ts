@@ -371,6 +371,28 @@ export function shouldBehaveLikeControlFacet(): void {
 		})
 	})
 
+	describe("setSignatureVerifierAddress", () => {
+		it("should require explicit RemoveMargin support", async function () {
+			const currentVerifier = await context.viewFacet.getSignatureVerifier()
+			const legacyVerifier = await ethers.deployContract("LegacyMuonSignatureVerifier")
+
+			await expect(context.controlFacet.connect(owner).setSignatureVerifierAddress(await legacyVerifier.getAddress())).to.be.revertedWithCustomError(
+				context.controlFacet,
+				"IncompatibleSignatureVerifier",
+			)
+			expect(await context.viewFacet.getSignatureVerifier()).to.equal(currentVerifier)
+		})
+
+		it("should accept a forward-compatible verifier and allow zero to disable it", async function () {
+			const verifier = await ethers.deployContract("MockMuonSignatureVerifier")
+			await expect(context.controlFacet.connect(owner).setSignatureVerifierAddress(await verifier.getAddress())).to.not.be.reverted
+			expect(await context.viewFacet.getSignatureVerifier()).to.equal(await verifier.getAddress())
+
+			await expect(context.controlFacet.connect(owner).setSignatureVerifierAddress(ZeroAddress)).to.not.be.reverted
+			expect(await context.viewFacet.getSignatureVerifier()).to.equal(ZeroAddress)
+		})
+	})
+
 	describe("setForceCancelCooldown", () => {
 		it("Should setForceCancelCooldown successfully", async function () {
 			await expect(context.controlFacet.connect(owner).setForceCancelCooldown(BigInt("1708784117"))).to.not.be.reverted
