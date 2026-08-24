@@ -169,7 +169,7 @@ interface IMuonSignatureVerifier {
     }
 
     // === Signature Verification ===
-    function verify(bytes32 hash, SchnorrSign memory sign, bytes calldata gatewaySignature, MuonFunction func) external view;
+    function verify(bytes32 hash, SchnorrSign memory sign, bytes calldata gatewaySignature, uint8 functionId) external view;
     function verify(bytes32 hash, SchnorrSign memory sign, bytes calldata gatewaySignature) external view; // no authorization check
 
     // === Public Key Management ===
@@ -183,17 +183,28 @@ interface IMuonSignatureVerifier {
     function getAllGatewaySigners() external view returns (address[] memory);
 
     // === Per-Function Authorization ===
-    function setPublicKeyPermissions(PublicKey memory pubKey, MuonFunction[] calldata functions, bool allowed) external;
-    function setGatewaySignerPermissions(address signer, MuonFunction[] calldata functions, bool allowed) external;
-    function isPublicKeyAuthorized(PublicKey memory pubKey, MuonFunction func) external view returns (bool);
-    function isGatewaySignerAuthorized(address signer, MuonFunction func) external view returns (bool);
+    function setPublicKeyPermissions(PublicKey memory pubKey, uint8[] calldata functionIds, bool allowed) external;
+    function setGatewaySignerPermissions(address signer, uint8[] calldata functionIds, bool allowed) external;
+    function isPublicKeyAuthorized(PublicKey memory pubKey, uint8 functionId) external view returns (bool);
+    function isGatewaySignerAuthorized(address signer, uint8 functionId) external view returns (bool);
+
+    // === Capability Discovery ===
+    function supportsMuonFunction(uint8 functionId) external view returns (bool);
 }
 </code></pre>
 					<p>
 						The <code>MuonFunction</code> enum is defined at file level (not inside the interface) so it can be imported independently.
-						Each enum value represents a category of related operations. The <code>verify</code> overload without
+						Each enum value represents a category of related operations and its numeric value is cast to <code>uint8</code> at the verifier
+						boundary. Enum values are append-only. Using an opaque <code>uint8</code> boundary lets the verifier accept future category IDs
+						without redeployment. The <code>verify</code> overload without
 						<code>MuonFunction</code> skips authorization checks — it is used by the ViewFacet's <code>verifyMuonTSSAndGateway</code>, a
 						read-only utility. State-changing flows, including Express credit reservation, must use the category-aware overload.
+					</p>
+					<p>
+						<code>supportsMuonFunction(functionId)</code> is a capability check, not an authorization check. The current
+						<code>MuonSignatureVerifier</code> returns <code>true</code> for every <code>uint8</code> ID because all IDs share the same
+						verification and permission path. A new or unknown ID still starts unauthorized for every key and gateway until
+						<code>SETTER_ROLE</code> explicitly grants it.
 					</p>
 					<p>
 						<strong>PublicKey</strong> represents a compressed secp256k1 public key. The <code>x</code> coordinate must be less than
@@ -222,8 +233,8 @@ contract MuonSignatureVerifier is IMuonSignatureVerifier, AccessControlEnumerabl
     address[] public gatewaySigners;
 
     // Per-function authorization
-    mapping(bytes32 =&gt; mapping(MuonFunction =&gt; bool)) public publicKeyPermissions;
-    mapping(address =&gt; mapping(MuonFunction =&gt; bool)) public gatewaySignerPermissions;
+    mapping(bytes32 =&gt; mapping(uint8 =&gt; bool)) public publicKeyPermissions;
+    mapping(address =&gt; mapping(uint8 =&gt; bool)) public gatewaySignerPermissions;
 
     constructor(address _admin) {
         _setupRole(DEFAULT_ADMIN_ROLE, _admin);
@@ -240,13 +251,13 @@ contract MuonSignatureVerifier is IMuonSignatureVerifier, AccessControlEnumerabl
 					</p>
 					<h3 id="doc-muon-keys-verification-logic">Verification Logic</h3>
 					<p>The <code>verify</code> function performs three checks. All must pass or the call reverts:</p>
-					<pre><code class="language-solidity">function verify(bytes32 hash, SchnorrSign memory sign, bytes memory gatewaySignature, MuonFunction func) external view {
+					<pre><code class="language-solidity">function verify(bytes32 hash, SchnorrSign memory sign, bytes memory gatewaySignature, uint8 functionId) external view {
     // 1. Verify TSS (Threshold Signature Scheme) via Schnorr
     bool verifiedTSS = false;
     for (uint256 i = 0; i &lt; publicKeys.length; i++) {
         if (LibMuonV04ClientBase.muonVerify(uint256(hash), sign, publicKeys[i])) {
             // 2. Check per-function authorization for this key
-            require(publicKeyPermissions[_publicKeyId(publicKeys[i])][func],
+            require(publicKeyPermissions[_publicKeyId(publicKeys[i])][functionId],
                 "MuonSignatureVerifier: Key not authorized for function");
             verifiedTSS = true;
             break;
@@ -259,7 +270,7 @@ contract MuonSignatureVerifier is IMuonSignatureVerifier, AccessControlEnumerabl
     bool gatewayVerified = false;
     for (uint256 i = 0; i &lt; gatewaySigners.length; i++) {
         if (signer == gatewaySigners[i]) {
-            require(gatewaySignerPermissions[signer][func],
+            require(gatewaySignerPermissions[signer][functionId],
                 "MuonSignatureVerifier: Gateway not authorized for function");
             gatewayVerified = true;
             break;
@@ -398,24 +409,26 @@ function removePublicKey(PublicKey memory pubKey) external onlyRole(SETTER_ROLE)
 					<pre><code class="language-solidity">// Grant or revoke permissions for a TSS public key
 function setPublicKeyPermissions(
     PublicKey memory pubKey,
-    MuonFunction[] calldata functions,
+    uint8[] calldata functionIds,
     bool allowed
 ) external onlyRole(SETTER_ROLE);
 
 // Grant or revoke permissions for a gateway signer
 function setGatewaySignerPermissions(
     address signer,
-    MuonFunction[] calldata functions,
+    uint8[] calldata functionIds,
     bool allowed
 ) external onlyRole(SETTER_ROLE);
 </code></pre>
 					<p>
-						Both functions accept an array of <code>MuonFunction</code> values to set in a single transaction. Setting
+						Both functions accept an array of <code>uint8</code> category IDs to set in a single transaction. Current enum values can be
+						passed by casting them with <code>uint8(MuonFunction.X)</code>. Setting
 						<code>allowed = true</code> grants permission; <code>allowed = false</code> revokes it.
 					</p>
 					<p>Query functions are available for off-chain verification:</p>
-					<pre><code class="language-solidity">function isPublicKeyAuthorized(PublicKey memory pubKey, MuonFunction func) external view returns (bool);
-function isGatewaySignerAuthorized(address signer, MuonFunction func) external view returns (bool);
+					<pre><code class="language-solidity">function isPublicKeyAuthorized(PublicKey memory pubKey, uint8 functionId) external view returns (bool);
+function isGatewaySignerAuthorized(address signer, uint8 functionId) external view returns (bool);
+function supportsMuonFunction(uint8 functionId) external view returns (bool);
 </code></pre>
 					<h3 id="doc-muon-keys-call-chain">Call Chain</h3>
 					<p>
@@ -425,7 +438,7 @@ function isGatewaySignerAuthorized(address signer, MuonFunction func) external v
 					<pre><code>FacetImpl (e.g. PartyBQuoteActionsFacetImpl.lockQuote)
   → LibMuonPartyB.verifyPartyBUpnl(..., MuonFunction.Trading)
     → LibMuon.verifyTSSAndGateway(..., MuonFunction.Trading)
-      → IMuonSignatureVerifier.verify(..., MuonFunction.Trading)
+      → IMuonSignatureVerifier.verify(..., uint8(MuonFunction.Trading))
         → publicKeyPermissions[keyId][Trading] must be true
         → gatewaySignerPermissions[signer][Trading] must be true
 </code></pre>
@@ -437,9 +450,9 @@ function isGatewaySignerAuthorized(address signer, MuonFunction func) external v
 						<li>
 							Grant permissions for the required categories:
 							<code
-								>solidity MuonFunction[] memory cats = new MuonFunction[](2); cats[0] = MuonFunction.Trading; cats[1] =
-								MuonFunction.AccountManagement; verifier.setPublicKeyPermissions(pubKey, cats, true);
-								verifier.setGatewaySignerPermissions(signerAddress, cats, true);</code
+								>solidity uint8[] memory functionIds = new uint8[](2); functionIds[0] = uint8(MuonFunction.Trading); functionIds[1] =
+								uint8(MuonFunction.AccountManagement); verifier.setPublicKeyPermissions(pubKey, functionIds, true);
+								verifier.setGatewaySignerPermissions(signerAddress, functionIds, true);</code
 							>
 						</li>
 						<li>To grant all permissions (e.g. for a fully trusted key), pass all 9 enum values.</li>
