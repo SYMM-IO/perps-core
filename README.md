@@ -20,6 +20,7 @@ SYMMIO itself does not operate a trading frontend. Traders access the protocol t
 - **AccountLayer** — sub-accounts, delegated access, affiliates, and account-level margin.
 - **InstantLayer** — authorized batched execution for low-latency trading flows.
 - **Express Withdrawal Layer** — independently deployed, credit-backed fast withdrawals.
+- **gaslessLayer** contains the upgradeable Gasless Layer, deterministic GaslessWallet contracts, fee routing, and relay tooling.
 - **Deployment application** — reviewed deployment, upgrade, verification, and handover workflows.
 
 The contracts use the [EIP-2535 Diamond standard](https://eips.ethereum.org/EIPS/eip-2535). Detailed contract and module documentation belongs in the technical docs and release notes, not in this overview.
@@ -102,6 +103,7 @@ contracts/core/                   Core protocol diamond
 contracts/accountLayer/           Account and affiliate system
 contracts/instantLayer/           Batched execution layer
 contracts/expressWithdrawLayer/   Express withdrawal provider
+contracts/gaslessLayer/          Gas-sponsored operations layer
 cli/                              Interactive operator application
 test/                             Contract and deployment tests
 docs/                             Release notes and operator guides

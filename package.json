@@ -8,6 +8,7 @@
 		"url": "https://github.com/SYMM-IO/symmio-core"
 	},
 	"devDependencies": {
+		"@ethers-ext/signer-ledger": "^6.0.0-beta.1",
 		"@nomicfoundation/hardhat-ethers": "^4.0.3",
 		"@nomicfoundation/hardhat-ethers-chai-matchers": "^3.0.10",
 		"@nomicfoundation/hardhat-ignition": "^3.1.7",
@@ -87,6 +88,10 @@
 		"docs": "node scripts/serve-docs.mjs",
 		"docs:dev": "sirv docs --dev --host 127.0.0.1 --port 4173",
 		"docs:check": "node docs/check-docs.mjs",
+		"abi": "python3 ./utils/make_abi.py",
+		"deploy:gasless-layer": "hardhat run scripts/gaslessLayer/deploy.ts",
+		"upgrade:gasless-layer:hyperevm": "hardhat run scripts/gaslessLayer/upgrade-gasless-layer.ts --network hyperevm",
+		"storage:gasless-layer:snapshot": "hardhat run scripts/gaslessLayer/write-storage-snapshot.ts",
 		"typechain": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat typechain",
 		"solhint": "./node_modules/.bin/solhint -f table contracts/**/*.sol",
 		"prettier:contracts": "prettier --write \"contracts/**/*.sol\"",
