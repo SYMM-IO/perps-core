@@ -969,6 +969,79 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			await expect(context.partyBAccountFacet.connect(context.signers.hedger).deallocateForPartyB(1n, partyA, freshSig)).not.to.be.reverted
 		})
 
+		it("should preserve every aggregate funding ledger when restatement realizes funding", async function () {
+			const quoteId = await openPositionForUser()
+			const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)
+			const partyA = quoteBefore.partyA
+			const partyB = quoteBefore.partyB
+
+			await context.pauseControlFacet.connect(context.signers.admin).activateAccumulatedFunding()
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([SYMBOL_ID], [1])
+			await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([SYMBOL_ID], [decimal(1n, 16)], [0], [decimal(1n)])
+			await time.increase(2)
+			await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([SYMBOL_ID], [0], [0], [decimal(1n)])
+
+			const fundingDebtBefore = (await context.viewFacetQuote.getQuoteFundingDebts([quoteId]))[0]
+			expect(fundingDebtBefore).to.be.gt(0n)
+
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await completeFundingPreparation(SYMBOL_ID, [partyB])
+			await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [quoteId])
+
+			const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
+			const openAmountAfter = quoteAfter.quantity - quoteAfter.closedAmount
+			const expectedWeightedPaidFunding = (openAmountAfter * quoteAfter.accumulatedPaidFunding) / decimal(1n)
+			expect(expectedWeightedPaidFunding).to.not.equal(0n)
+
+			expect(await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(partyA, partyB, SYMBOL_ID, quoteAfter.positionType)).to.equal(
+				expectedWeightedPaidFunding,
+			)
+			expect(await context.viewFacetAggregate.getPartyBAggregatedFundingPerPartyA(partyB, partyA, SYMBOL_ID, quoteAfter.positionType)).to.equal(
+				expectedWeightedPaidFunding,
+			)
+			expect(await context.viewFacetAggregate.getPartyBAggregatedFunding(partyB, SYMBOL_ID, quoteAfter.positionType)).to.equal(
+				expectedWeightedPaidFunding,
+			)
+
+			const quoteFundingDebtAfter = (await context.viewFacetQuote.getQuoteFundingDebts([quoteId]))[0]
+			expect(quoteFundingDebtAfter).to.equal(0n)
+			expect(await context.viewFacetAggregate.getPartyAAggregateFundingDebt(partyA, partyB, SYMBOL_ID, quoteAfter.positionType)).to.equal(
+				quoteFundingDebtAfter,
+			)
+
+			await finalizeRestatementAfterWindow(SYMBOL_ID, [partyB])
+			await user.requestToClosePosition(
+				quoteId,
+				limitCloseRequestBuilder().quantityToClose(quoteAfter.quantity).closePrice(quoteAfter.openedPrice).build(),
+			)
+			await hedger.fillCloseRequest(
+				quoteId,
+				limitFillCloseRequestBuilder().filledAmount(quoteAfter.quantity).closedPrice(quoteAfter.openedPrice).build(),
+			)
+
+			expect(await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(partyA, partyB, SYMBOL_ID, quoteAfter.positionType)).to.equal(0n)
+			expect(await context.viewFacetAggregate.getPartyBAggregatedFundingPerPartyA(partyB, partyA, SYMBOL_ID, quoteAfter.positionType)).to.equal(0n)
+			expect(await context.viewFacetAggregate.getPartyBAggregatedFunding(partyB, SYMBOL_ID, quoteAfter.positionType)).to.equal(0n)
+
+			const reopenedQuoteId = await openPositionForUser()
+			const reopenedQuote = await context.viewFacetQuote.getQuote(reopenedQuoteId)
+			const reopenedOpenAmount = reopenedQuote.quantity - reopenedQuote.closedAmount
+			const reopenedExpectedWeightedPaidFunding = (reopenedOpenAmount * reopenedQuote.accumulatedPaidFunding) / decimal(1n)
+			expect(reopenedExpectedWeightedPaidFunding).to.not.equal(0n)
+
+			expect(await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(partyA, partyB, SYMBOL_ID, reopenedQuote.positionType)).to.equal(
+				reopenedExpectedWeightedPaidFunding,
+			)
+			expect(await context.viewFacetAggregate.getPartyBAggregatedFundingPerPartyA(partyB, partyA, SYMBOL_ID, reopenedQuote.positionType)).to.equal(
+				reopenedExpectedWeightedPaidFunding,
+			)
+			expect(await context.viewFacetAggregate.getPartyBAggregatedFunding(partyB, SYMBOL_ID, reopenedQuote.positionType)).to.equal(
+				reopenedExpectedWeightedPaidFunding,
+			)
+		})
+
 		it("should mark a pending-inventory removal and prevent abort", async function () {
 			const pendingId = await user.sendQuote(limitQuoteRequestBuilder().build())
 			await activateFactorAndStartRestatement()

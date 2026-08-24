@@ -222,7 +222,6 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		// 2) Remove aggregates computed from the old amount and openedPrice before any mutation.
 		uint256 oldOpenAmount = LibQuote.quoteOpenAmount(quote);
 		LibQuote.subFromPartiesAggregatedPositions(quote, oldOpenAmount);
-		LibAggregateFunding.subFromPartiesAggregateFunding(quote, oldOpenAmount);
 
 		// 3) Scale amounts by the factor; recompute prices from notional so rounding dust lands in price, not value.
 		uint256 oldQuantity = quote.quantity;
