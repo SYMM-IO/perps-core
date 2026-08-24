@@ -103,6 +103,52 @@ export function shouldBehaveLikeDiamond(): void {
 		expect(await context.diamondLoupeFacet.facetAddress(currentSelector)).to.not.equal(ethers.ZeroAddress)
 	})
 
+	it("routes every Symbol Adjustment read through ViewFacetSymbol", async function () {
+		const context: RunContext = this.context
+		const symbolViewAddress = await context.diamondLoupeFacet.facetAddress(ethers.id("getSymbol(uint256)").slice(0, 10))
+		const symbolAdjustmentAddress = await context.diamondLoupeFacet.facetAddress(ethers.id("startRestatement(uint256)").slice(0, 10))
+		const readSignatures = [
+			"getSymbolAdjustment(uint256)",
+			"getCumulativeFactor(uint256)",
+			"getProspectiveCumulativeFactor(uint256)",
+			"previewQuoteAdjustment(uint256,uint256)",
+			"isSymbolFrozen(uint256)",
+			"getRestatementState(uint256)",
+			"getRestatementFundingProgress(uint256)",
+			"isRestatementFundingCheckpointed(uint256,address)",
+			"getQuoteRestatedEpoch(uint256)",
+			"getRestatementInventoryProgress(uint256,address)",
+		]
+
+		for (const signature of readSignatures) {
+			const owner = await context.diamondLoupeFacet.facetAddress(ethers.id(signature).slice(0, 10))
+			expect(owner, signature).to.equal(symbolViewAddress)
+			expect(owner, signature).to.not.equal(symbolAdjustmentAddress)
+		}
+
+		const symbolAdjustmentArtifact = JSON.parse(
+			readFileSync("artifacts/contracts/core/facets/SymbolAdjustment/SymbolAdjustmentFacet.sol/SymbolAdjustmentFacet.json", "utf8"),
+		)
+		const exposedReads = symbolAdjustmentArtifact.abi.filter(
+			(entry: { type?: string; stateMutability?: string }) =>
+				entry.type === "function" && (entry.stateMutability === "view" || entry.stateMutability === "pure"),
+		)
+		expect(exposedReads).to.deep.equal([])
+	})
+
+	it("appends restatement inventory checkpoints after the existing SymbolAdjustment layout", function () {
+		const source = readFileSync("contracts/core/storages/SymbolAdjustmentStorage.sol", "utf8")
+		const existingFinalField = source.indexOf("mapping(uint256 => mapping(address => FundingRateCheckpoint)) fundingRateCheckpoints")
+		const inventoryCheckpoints = source.indexOf(
+			"mapping(uint256 => mapping(address => RestatementInventoryCheckpoint)) restatementInventoryCheckpoints",
+		)
+		const inventoryTotals = source.indexOf("mapping(uint256 => RestatementInventoryTotals) restatementInventoryTotals")
+
+		expect(existingFinalField).to.be.greaterThan(-1)
+		expect(inventoryCheckpoints).to.be.greaterThan(existingFinalField)
+		expect(inventoryTotals).to.be.greaterThan(inventoryCheckpoints)
+	})
+
 	it("facets should have the right function selectors -- call to facetFunctionSelectors function", async function () {
 		const context: RunContext = this.context
 		// DiamondLoupeFacet

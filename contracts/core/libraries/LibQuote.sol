@@ -9,6 +9,7 @@ import { AggregatedDataStorage, PartiesAggregatedPositions } from "../storages/A
 import { LockedValuesOps } from "./LibLockedValues.sol";
 import { LibAggregateFunding } from "./LibAggregateFunding.sol";
 import { LibSymbolAdjustment } from "./LibSymbolAdjustment.sol";
+import { LibSymbolAdjustmentInventory } from "./LibSymbolAdjustmentInventory.sol";
 import { LibUtils } from "./LibUtils.sol";
 
 library LibQuote {
@@ -52,10 +53,13 @@ library LibQuote {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 		uint256 notional = amount * quote.openedPrice;
 
-		// Check if partyB had any position in this symbol BEFORE adding (for global active symbols)
-		bool hadPositionGlobal = partyBHasPositionInSymbol(quote.partyB, quote.symbolId);
-		// Check if partyB had any position in this symbol with this partyA BEFORE adding
-		bool hadPositionPerPartyA = partyBHasPositionInSymbolPerPartyA(quote.partyB, quote.partyA, quote.symbolId);
+		// Update active-symbol membership before mutating the aggregates used by the membership checks.
+		if (!partyBHasPositionInSymbol(quote.partyB, quote.symbolId)) {
+			addToPartyBActiveSymbols(quote.partyB, quote.symbolId);
+		}
+		if (!partyBHasPositionInSymbolPerPartyA(quote.partyB, quote.partyA, quote.symbolId)) {
+			addToPartyBActiveSymbolsPerPartyA(quote.partyB, quote.partyA, quote.symbolId);
+		}
 
 		// Update global partyB aggregated positions (for cross partyB mode UPNL)
 		PartiesAggregatedPositions storage partyBGlobalInfo = aggregatedLayout.partyBAggregatedPositions[quote.partyB][quote.symbolId][
@@ -70,15 +74,6 @@ library LibQuote {
 		][quote.positionType];
 		partyBPerPartyAInfo.aggregatedAmount += amount;
 		partyBPerPartyAInfo.aggregatedNotional += notional;
-
-		// Add to global active symbols if this is the first position in this symbol
-		if (!hadPositionGlobal) {
-			addToPartyBActiveSymbols(quote.partyB, quote.symbolId);
-		}
-		// Add to per-partyA active symbols if this is the first position with this partyA in this symbol
-		if (!hadPositionPerPartyA) {
-			addToPartyBActiveSymbolsPerPartyA(quote.partyB, quote.partyA, quote.symbolId);
-		}
 	}
 
 	/// @notice Adds to Party A aggregated positions when a position opens.
@@ -305,6 +300,7 @@ library LibQuote {
 	/// @param quote The quote being updated.
 	/// @param amount The amount to subtract.
 	function subFromPartiesAggregatedPositions(Quote storage quote, uint256 amount) internal {
+		LibSymbolAdjustmentInventory.consumeOldBasisAmount(quote, amount);
 		subFromPartyBAggregatedPositions(quote, amount);
 		subFromPartyAAggregatedPositions(quote, amount);
 

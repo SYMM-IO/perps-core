@@ -6,6 +6,8 @@ pragma solidity >=0.8.18;
 
 import { Symbol, SymbolWithType } from "../../storages/SymbolStorage.sol";
 import { FundingFee } from "../../storages/FundingStorage.sol";
+import { SymbolAdjustment, RestatementPhase } from "../../storages/SymbolAdjustmentStorage.sol";
+import { ISymbolAdjustmentFacet } from "../SymbolAdjustment/ISymbolAdjustmentFacet.sol";
 
 struct PartyBSymbolCount {
 	address partyB;
@@ -44,4 +46,42 @@ interface IViewFacetSymbol {
 	function getFundingFeesOfPartyB(uint256 symbolId, address partyB) external view returns (FundingFee memory);
 
 	function getConnectedPartyBsWithSymbolCounts(address partyA) external view returns (PartyBSymbolCount[] memory);
+
+	function getSymbolAdjustment(uint256 symbolId) external view returns (SymbolAdjustment memory);
+
+	function getCumulativeFactor(uint256 symbolId) external view returns (uint256);
+
+	function getProspectiveCumulativeFactor(uint256 symbolId) external view returns (uint256);
+
+	function previewQuoteAdjustment(
+		uint256 symbolId,
+		uint256 quoteId
+	) external view returns (ISymbolAdjustmentFacet.QuoteAdjustmentPreview memory preview);
+
+	function isSymbolFrozen(uint256 symbolId) external view returns (bool);
+
+	function getRestatementState(uint256 symbolId) external view returns (bool restating, uint256 epoch);
+
+	function getRestatementFundingProgress(
+		uint256 symbolId
+	) external view returns (RestatementPhase phase, uint256 pendingPartyBCount, uint256 fundingCutoffTimestamp, uint256 fundingRestorationTimestamp);
+
+	function isRestatementFundingCheckpointed(uint256 symbolId, address partyB) external view returns (bool);
+
+	function getQuoteRestatedEpoch(uint256 quoteId) external view returns (uint256);
+
+	function getRestatementInventoryProgress(
+		uint256 symbolId,
+		address partyB
+	)
+		external
+		view
+		returns (
+			uint256 epoch,
+			bool prepared,
+			uint256 partyBRemainingLong,
+			uint256 partyBRemainingShort,
+			uint256 totalRemainingLong,
+			uint256 totalRemainingShort
+		);
 }
