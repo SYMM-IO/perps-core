@@ -231,9 +231,16 @@ npx hardhat deploy:system --network &lt;NETWORK_NAME&gt; --fresh
 					<h3 id="doc-setup-task-muon-signature-verifier-setup">Muon Signature Verifier Setup</h3>
 					<p>When <code>deploy:system</code> runs:</p>
 					<ul>
-						<li>If <code>MUON_SIGNATURE_VERIFIER_ADDRESS</code> is set, that verifier is used.</li>
+						<li>
+							If <code>MUON_SIGNATURE_VERIFIER_ADDRESS</code> is set, deployment first requires contract code and
+							<code>supportsMuonFunction(uint8(MuonFunction.RemoveMargin)) == true</code>. A legacy verifier without the capability API
+							is rejected before any setup transaction.
+						</li>
 						<li>Otherwise, a new <code>MuonSignatureVerifier</code> is deployed.</li>
-						<li>Diamond is wired to verifier using <code>setSignatureVerifierAddress</code>.</li>
+						<li>
+							Diamond is wired to the verifier using <code>setSignatureVerifierAddress</code>. The on-chain setter repeats the
+							<code>RemoveMargin</code> capability check; the zero address remains available to disable verification configuration.
+						</li>
 						<li>
 							If deployer has admin on verifier, admin receives <code>DEFAULT_ADMIN_ROLE</code> and <code>SETTER_ROLE</code> on
 							verifier.
@@ -512,6 +519,11 @@ npx hardhat verify:all --network &lt;NETWORK_NAME&gt; --skip 10
 						If <code>MUON_PUBLIC_KEY_*</code> or <code>MUON_GATEWAY_SIGNERS</code> are set, deployer must have <code>SETTER_ROLE</code> on
 						the configured MuonSignatureVerifier. If using an existing verifier where deployer is not admin/setter, seed keys/signers with
 						a proper verifier admin account.
+					</p>
+					<p>
+						If an existing verifier fails with <code>does not support MuonFunction.RemoveMargin</code>, deploy the current
+						forward-compatible <code>MuonSignatureVerifier</code>. Its verifier ABI uses <code>uint8</code> category IDs and exposes
+						<code>supportsMuonFunction(uint8)</code>; older verifiers without that explicit capability cannot be reused.
 					</p>
 					<h3 id="doc-setup-task-muon-config-was-not-applied">Muon config was not applied</h3>
 					<p>

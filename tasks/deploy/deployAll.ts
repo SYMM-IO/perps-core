@@ -46,9 +46,11 @@ import { logger } from "./logger.js"
 import {
 	assertConfiguredMuonPermissionsAuthorized,
 	assertGeneralDeploymentMuonPermissions,
+	assertMuonFunctionSupported,
 	inspectConfiguredMuonPermissions,
 	parseMuonFunctionPermissions,
 	parseMuonFunctionUpnlValidTimes,
+	REMOVE_MARGIN_MUON_FUNCTION,
 } from "./muonPermissions.js"
 import { deploySymmioPartyB } from "./partyB.js"
 import {
@@ -473,10 +475,7 @@ export async function validateDeploymentConfig(
 		}
 	}
 	if (config.signatureVerifierAddress) {
-		const code = await ethers.provider.getCode(config.signatureVerifierAddress)
-		if (code === "0x") {
-			throw new Error(`MUON_SIGNATURE_VERIFIER_ADDRESS has no contract code on chainId ${Number(chainId)}: ${config.signatureVerifierAddress}`)
-		}
+		await assertMuonFunctionSupported(ethers, config.signatureVerifierAddress, REMOVE_MARGIN_MUON_FUNCTION, "MUON_SIGNATURE_VERIFIER_ADDRESS")
 	}
 
 	// A real verifier is unusable unless every normal protocol operation has both a

@@ -170,8 +170,9 @@
 					<hr />
 					<h2 id="muonfunction-categories">MuonFunction categories</h2>
 					<p>
-						The categories are the same <code>MuonFunction</code> enum used by the signature verifier's key and gateway authorization
-						system. The enum is shown in the summary above; this table maps its values to the affected methods.
+						The categories originate from the <code>MuonFunction</code> enum shown above. Core validity-window storage remains enum-keyed,
+						while the signature verifier receives the corresponding numeric ID through its forward-compatible <code>uint8</code> boundary.
+						This table maps the current IDs to the affected methods.
 					</p>
 					<p>The intended method grouping is:</p>
 					<div class="table-wrap">
