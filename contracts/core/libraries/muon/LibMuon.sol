@@ -31,7 +31,7 @@ library LibMuon {
 		MuonFunction func
 	) internal view {
 		// == SignatureCheck( ==
-		IMuonSignatureVerifier(GlobalAppStorage.layout().signatureVerifier).verify(hash, sign, gatewaySignature, func);
+		IMuonSignatureVerifier(GlobalAppStorage.layout().signatureVerifier).verify(hash, sign, gatewaySignature, uint8(func));
 		// == ) ==
 	}
 

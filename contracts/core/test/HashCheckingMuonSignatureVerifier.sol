@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { IMuonSignatureVerifier, MuonFunction } from "../interfaces/IMuonSignatureVerifier.sol";
+import { IMuonSignatureVerifier } from "../interfaces/IMuonSignatureVerifier.sol";
 
 /// @dev Test-only verifier that accepts exactly one expected Muon payload hash.
 contract HashCheckingMuonSignatureVerifier is IMuonSignatureVerifier {
@@ -14,7 +14,7 @@ contract HashCheckingMuonSignatureVerifier is IMuonSignatureVerifier {
 		expectedHash = hash;
 	}
 
-	function verify(bytes32 hash, SchnorrSign memory, bytes calldata, MuonFunction) external view override {
+	function verify(bytes32 hash, SchnorrSign memory, bytes calldata, uint8) external view override {
 		require(hash == expectedHash, "HashCheckingMuonSignatureVerifier: unexpected hash");
 	}
 
@@ -34,15 +34,19 @@ contract HashCheckingMuonSignatureVerifier is IMuonSignatureVerifier {
 
 	function getAllGatewaySigners() external pure override returns (address[] memory gatewaySigners) {}
 
-	function setPublicKeyPermissions(PublicKey memory, MuonFunction[] calldata, bool) external override {}
+	function setPublicKeyPermissions(PublicKey memory, uint8[] calldata, bool) external override {}
 
-	function setGatewaySignerPermissions(address, MuonFunction[] calldata, bool) external override {}
+	function setGatewaySignerPermissions(address, uint8[] calldata, bool) external override {}
 
-	function isPublicKeyAuthorized(PublicKey memory, MuonFunction) external pure override returns (bool) {
+	function isPublicKeyAuthorized(PublicKey memory, uint8) external pure override returns (bool) {
 		return true;
 	}
 
-	function isGatewaySignerAuthorized(address, MuonFunction) external pure override returns (bool) {
+	function isGatewaySignerAuthorized(address, uint8) external pure override returns (bool) {
+		return true;
+	}
+
+	function supportsMuonFunction(uint8) external pure override returns (bool) {
 		return true;
 	}
 }

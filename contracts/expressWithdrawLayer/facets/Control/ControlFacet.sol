@@ -74,6 +74,7 @@ contract ControlFacet is IControlFacet, Pausable, ReentrancyGuard {
 
 	function setCreditLineMuonConfig(address signatureVerifier, uint256 muonAppId, uint256 muonFreshnessWindow) external {
 		LibAccessControl.enforceRole(LibAccessControl.SETTER_ROLE);
+		LibCreditLine.requireExpressCreditVerifierCompatibility(signatureVerifier);
 		CreditLineStorage.Layout storage cl = CreditLineStorage.layout();
 		cl.signatureVerifier = signatureVerifier;
 		cl.muonAppId = muonAppId;
