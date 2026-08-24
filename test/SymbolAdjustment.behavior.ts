@@ -19,6 +19,7 @@ import {
 	getDummyPairUpnlAndPriceSig,
 	getDummyPairUpnlSig,
 	getDummySettlementSig,
+	getDummySingleUpnlSig,
 	getDummySingleUpnlAndPriceSig,
 	getDummyUnifiedSettlementSig,
 } from "./utils/SignatureUtils.js"
@@ -889,6 +890,83 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			await finalizeRestatementAfterWindow(SYMBOL_ID, [partyB])
 			const fundingAfter = await context.viewFacetSymbol.getFundingFeesOfPartyB(SYMBOL_ID, partyB)
 			expect(fundingAfter.currentLongRate).to.equal(fundingBefore.currentLongRate / 4n)
+		})
+
+		it("should invalidate UPNL signatures when restatement realizes funding", async function () {
+			const quoteId = await openPositionForUser()
+			const quote = await context.viewFacetQuote.getQuote(quoteId)
+			const partyA = quote.partyA
+			const partyB = quote.partyB
+
+			await context.pauseControlFacet.connect(context.signers.admin).activateAccumulatedFunding()
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([SYMBOL_ID], [1])
+			await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([SYMBOL_ID], [decimal(1n, 16)], [0], [decimal(1n)])
+			await time.increase(2)
+			await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([SYMBOL_ID], [0], [0], [decimal(1n)])
+
+			const fundingDebt = (await context.viewFacetQuote.getQuoteFundingDebts([quoteId]))[0]
+			expect(fundingDebt).to.be.gt(0n)
+			const partyAAllocatedBefore = await context.viewFacet.allocatedBalanceOfPartyA(partyA)
+			const partyBAllocatedBefore = await context.viewFacet.allocatedBalanceOfPartyB(partyB, partyA)
+			const partyACounterBefore = await context.viewFacet.nonceOfPartyA(partyA)
+			const partyBPairCounterBefore = await context.viewFacet.nonceOfPartyB(partyB, partyA)
+			const partyBCrossCounterBefore = await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)
+
+			const staleSig = await getDummySingleUpnlSig(fundingDebt)
+			const network = await ethers.provider.getNetwork()
+			const staleHash = ethers.solidityPackedKeccak256(
+				["uint256", "bytes", "address", "address", "address", "uint256", "int256", "uint256", "uint256"],
+				[
+					await context.viewFacet.getMuonIds(),
+					staleSig.reqId,
+					context.diamond,
+					partyB,
+					partyA,
+					partyBPairCounterBefore,
+					staleSig.upnl,
+					staleSig.timestamp,
+					network.chainId,
+				],
+			)
+
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await completeFundingPreparation(SYMBOL_ID, [partyB])
+			await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [quoteId])
+
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(partyA)).to.equal(partyAAllocatedBefore - fundingDebt)
+			expect(await context.viewFacet.allocatedBalanceOfPartyB(partyB, partyA)).to.equal(partyBAllocatedBefore + fundingDebt)
+			expect((await context.viewFacetQuote.getQuoteFundingDebts([quoteId]))[0]).to.equal(0n)
+			expect(await context.viewFacet.nonceOfPartyA(partyA)).to.equal(partyACounterBefore + 1n)
+			expect(await context.viewFacet.nonceOfPartyB(partyB, partyA)).to.equal(partyBPairCounterBefore + 1n)
+			expect(await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)).to.equal(partyBCrossCounterBefore + 1n)
+
+			const verifierFactory = await ethers.getContractFactory("HashCheckingMuonSignatureVerifier")
+			const verifier = await verifierFactory.deploy()
+			await context.controlFacet.connect(context.signers.admin).setSignatureVerifierAddress(await verifier.getAddress())
+			await verifier.setExpectedHash(staleHash)
+			await expect(context.partyBAccountFacet.connect(context.signers.hedger).deallocateForPartyB(1n, partyA, staleSig)).to.be.revertedWith(
+				"HashCheckingMuonSignatureVerifier: unexpected hash",
+			)
+
+			const freshSig = await getDummySingleUpnlSig(0n)
+			const freshHash = ethers.solidityPackedKeccak256(
+				["uint256", "bytes", "address", "address", "address", "uint256", "int256", "uint256", "uint256"],
+				[
+					await context.viewFacet.getMuonIds(),
+					freshSig.reqId,
+					context.diamond,
+					partyB,
+					partyA,
+					await context.viewFacet.nonceOfPartyB(partyB, partyA),
+					freshSig.upnl,
+					freshSig.timestamp,
+					network.chainId,
+				],
+			)
+			await verifier.setExpectedHash(freshHash)
+			await expect(context.partyBAccountFacet.connect(context.signers.hedger).deallocateForPartyB(1n, partyA, freshSig)).not.to.be.reverted
 		})
 
 		it("should mark a pending-inventory removal and prevent abort", async function () {

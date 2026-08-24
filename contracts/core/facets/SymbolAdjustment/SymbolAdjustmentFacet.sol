@@ -15,6 +15,7 @@ import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
 import { LibSymbolAdjustment } from "../../libraries/LibSymbolAdjustment.sol";
 import { LibSymbolAdjustmentFunding } from "../../libraries/LibSymbolAdjustmentFunding.sol";
 import { LibMuon } from "../../libraries/muon/LibMuon.sol";
+import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibQuote } from "../../libraries/LibQuote.sol";
 import { LibQuoteFunding } from "../../libraries/LibQuoteFunding.sol";
 import { LibQuoteClose } from "../../libraries/LibQuoteClose.sol";
@@ -216,6 +217,7 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 			layout.adjustments[symbolId].fundingCutoffTimestamp
 		);
 		LibQuoteFunding.chargeAccumulatedFundingFee(quoteId);
+		LibAccount.increaseBothUpnlCounters(quote.partyB, quote.partyA);
 
 		// 2) Remove aggregates computed from the old amount and openedPrice before any mutation.
 		uint256 oldOpenAmount = LibQuote.quoteOpenAmount(quote);
