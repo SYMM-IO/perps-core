@@ -27,12 +27,20 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		const unlocker = allSigners[18]
 
 		const collateral = context.collateral
+		const affiliate = affiliateOwner.address
+		const accountLayer = await ethers.deployContract("MockExpressAccountLayer")
+		await accountLayer.setAccounts(
+			allSigners.map(signer => signer.address),
+			affiliate,
+			true,
+		)
 
 		// Deploy ExpressProvider diamond on top of real Symmio
 		const expressProvider = await deployExpressProvider(hre, connection, {
 			admin: deployer.address,
 			symmio: context.diamond,
 			collateral: await collateral.getAddress(),
+			accountLayer: await accountLayer.getAddress(),
 		})
 
 		// Deploy MockMuonSignatureVerifier for credit line
@@ -53,8 +61,6 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		await expressProvider.grantRole(OPERATOR_ROLE, operator.address)
 		await expressProvider.grantRole(LOCKER_ROLE, locker.address)
 		await expressProvider.grantRole(UNLOCK_ROLE, unlocker.address)
-		const affiliate = affiliateOwner.address
-
 		// Configure credit line on diamond
 		await expressProvider.setCreditLineMuonConfig(await muonVerifier.getAddress(), 1n, 60n)
 
@@ -88,6 +94,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			unlocker,
 			affiliate,
 			collateral,
+			accountLayer,
 			expressProvider,
 			muonVerifier,
 			generalFunding,
@@ -3253,6 +3260,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			})
 			const creditDataB = buildCreditData(100_000n * 10n ** 18n, now)
 			const pdB = encodeProviderData(1n, 1, 0, affiliateB, 0n, creditB, 0n, 0n, deadline, sigB, undefined, undefined, undefined, creditDataB)
+			await fixture.accountLayer.setAccount(user.address, affiliateB, true)
 			await context.withdrawFacet.connect(user).initiateWithdraw(partsB, false, pdB)
 
 			expect(await expressProvider.creditLineReservedDebt(affiliateA)).to.equal(creditA)

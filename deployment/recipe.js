@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 export const RECIPE_API_VERSION = "deployment.symm.io/v1";
-export const DEPLOYMENT_COMPONENTS = Object.freeze(["core", "partyB", "symbolManager", "expressProvider"]);
+export const DEPLOYMENT_COMPONENTS = Object.freeze(["core", "partyB", "symbolManager", "expressProvider", "gaslessLayer"]);
 
 const COMPONENT_MODES = ["deploy", "reuse", "skip"];
 const MUON_PERMISSIONS = [
@@ -529,6 +529,77 @@ function validateExpressProvider(value, source, name = "expressProvider") {
 	}
 }
 
+function validateGaslessLayer(value, source, name = "gaslessLayer") {
+	const component = object(value, source, name);
+	const configFields = [
+		"admin",
+		"treasury",
+		"depositFee",
+		"minimumDeposit",
+		"defaultSelectorFee",
+		"dailyFreeOpsLimit",
+		"revertWhenFreeQuotaExhausted",
+		"dailySponsoredNativeLimit",
+		"revertWhenNativeSponsorLimitExhausted",
+		"maxNativeGasTopUpAmount",
+		"nativeGasTopUpFeeBps",
+		"relayers",
+		"selectorFees",
+	];
+	onlyKeys(component, ["mode", ...configFields], source, name);
+	required(component, ["mode"], source, name);
+	enumValue(component.mode, COMPONENT_MODES, source, `${name}.mode`);
+
+	if (component.mode === "skip") {
+		for (const field of configFields) {
+			if (component[field] !== undefined) fail(source, `${name}.${field}`, "must be omitted when mode is skip");
+		}
+		return;
+	}
+	if (component.mode === "reuse") fail(source, `${name}.mode`, "reuse is not supported; use deploy or skip");
+
+	const requiredConfig = configFields.filter(field => field !== "admin");
+	required(component, requiredConfig, source, name);
+	if (component.admin !== undefined) address(component.admin, source, `${name}.admin`);
+	address(component.treasury, source, `${name}.treasury`);
+	for (const field of [
+		"depositFee",
+		"minimumDeposit",
+		"defaultSelectorFee",
+		"dailyFreeOpsLimit",
+		"dailySponsoredNativeLimit",
+		"maxNativeGasTopUpAmount",
+	]) {
+		uintString(component[field], source, `${name}.${field}`);
+	}
+	if (BigInt(component.minimumDeposit) <= BigInt(component.depositFee)) {
+		fail(source, `${name}.minimumDeposit`, "must be greater than depositFee");
+	}
+	boolean(component.revertWhenFreeQuotaExhausted, source, `${name}.revertWhenFreeQuotaExhausted`);
+	boolean(component.revertWhenNativeSponsorLimitExhausted, source, `${name}.revertWhenNativeSponsorLimitExhausted`);
+	integer(component.nativeGasTopUpFeeBps, source, `${name}.nativeGasTopUpFeeBps`, 0);
+	if (component.nativeGasTopUpFeeBps > BPS_DENOMINATOR) {
+		fail(source, `${name}.nativeGasTopUpFeeBps`, `must be <= ${BPS_DENOMINATOR}`);
+	}
+	uniqueAddresses(component.relayers, source, `${name}.relayers`);
+	if (!Array.isArray(component.selectorFees)) fail(source, `${name}.selectorFees`, "must be an array");
+	const selectors = new Set();
+	for (const [index, raw] of component.selectorFees.entries()) {
+		const field = `${name}.selectorFees[${index}]`;
+		const entry = object(raw, source, field);
+		onlyKeys(entry, ["selector", "configured", "amount"], source, field);
+		required(entry, ["selector", "configured", "amount"], source, field);
+		if (typeof entry.selector !== "string" || !/^0x[0-9a-fA-F]{8}$/.test(entry.selector)) {
+			fail(source, `${field}.selector`, "must be a 4-byte hexadecimal selector");
+		}
+		const selector = entry.selector.toLowerCase();
+		if (selectors.has(selector)) fail(source, `${field}.selector`, "duplicates an earlier selector");
+		selectors.add(selector);
+		boolean(entry.configured, source, `${field}.configured`);
+		uintString(entry.amount, source, `${field}.amount`);
+	}
+}
+
 function validateAddon(value, source, name, extraField, requireExtraForDeploy) {
 	const component = object(value, source, name);
 	const allowed = ["mode", "address", ...(extraField ? [extraField] : []), ...(name === "partyB" ? ["adlEnabled"] : [])];
@@ -580,6 +651,7 @@ export function validateDeploymentRecipe(value, source = "deployment recipe") {
 		"partyB",
 		"symbolManager",
 		"expressProvider",
+		"gaslessLayer",
 	];
 	onlyKeys(recipe, rootKeys, source, "recipe");
 	required(
@@ -673,6 +745,7 @@ export function validateDeploymentRecipe(value, source = "deployment recipe") {
 	validateAddon(recipe.partyB, source, "partyB", "signer", true);
 	validateAddon(recipe.symbolManager, source, "symbolManager", "operator", true);
 	validateExpressProvider(recipe.expressProvider, source, "expressProvider");
+	validateGaslessLayer(recipe.gaslessLayer, source, "gaslessLayer");
 
 	return JSON.parse(JSON.stringify(recipe));
 }

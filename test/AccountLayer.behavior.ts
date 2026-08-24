@@ -3004,6 +3004,34 @@ export function shouldBehaveLikeAccountLayer(): void {
 				})
 			})
 
+			describe("getAffiliateForAccount", async () => {
+				it("returns the canonical affiliate for a live sub-account", async function () {
+					const [affiliate, exists] = await context.alViewFacet.getAffiliateForAccount(subAccountAddress)
+
+					expect(affiliate).to.equal(await context.accountManager.getAddress())
+					expect(exists).to.be.true
+				})
+
+				it("inherits the parent affiliate for a live virtual account", async function () {
+					const virtualAccounts = await sendQuoteAndGetVirtualAccount(subAccountAddress)
+					const [affiliate, exists] = await context.alViewFacet.getAffiliateForAccount(virtualAccounts[0])
+
+					expect(affiliate).to.equal(await context.accountManager.getAddress())
+					expect(exists).to.be.true
+				})
+
+				it("returns exists=false for an unknown or deleted account", async function () {
+					const unknown = await context.alViewFacet.getAffiliateForAccount(context.signers.others[0].address)
+					expect(unknown).to.deep.equal([ZeroAddress, false])
+
+					const emptyAccount = await createSubAccount(context.signers.user, [createSubAccountData("DELETED_GETTER_ACCOUNT", 0)])
+					await context.alCoreFacet.connect(context.signers.user).deleteSubAccount(emptyAccount)
+
+					const deleted = await context.alViewFacet.getAffiliateForAccount(emptyAccount)
+					expect(deleted).to.deep.equal([ZeroAddress, false])
+				})
+			})
+
 			describe("getUserSubAccountsAddresses", async () => {
 				it("should return empty array for user with no sub-accounts", async function () {
 					const addresses = await context.alViewFacet.getUserSubAccountsAddresses(context.signers.user2.address, 0, 100)

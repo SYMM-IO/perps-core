@@ -30,6 +30,8 @@ const LABELS = Object.freeze({
 	"expressProvider.roles.SIGNER_ROLE.0": "ExpressProvider quote signer",
 	"expressProvider.affiliates.0.address": "ExpressProvider affiliate",
 	"expressProvider.affiliates.0.maxDebt": "ExpressProvider maximum debt in collateral decimals",
+	"gaslessLayer.treasury": "GaslessLayer treasury",
+	"gaslessLayer.relayers.0": "GaslessLayer relayer",
 });
 
 const EXPRESS_ROLES = Object.freeze([
@@ -232,6 +234,10 @@ function applyLocalAccountDefaults(recipe, accounts) {
 			},
 		];
 	}
+	if (recipe.gaslessLayer.mode === "deploy") {
+		recipe.gaslessLayer.treasury = account(1);
+		recipe.gaslessLayer.relayers = [account(4)];
+	}
 	return recipe;
 }
 
@@ -250,7 +256,9 @@ function recipeReviewText(recipe, { identityPath, digest, only } = {}) {
 	const secretSummary = Object.entries(recipe.secrets)
 		.map(([purpose, reference]) => `${purpose}: ${reference}`)
 		.join("\n");
-	const componentSummary = ["core", "partyB", "symbolManager", "expressProvider"].map(name => `${name}: ${recipe[name].mode}`).join("\n");
+	const componentSummary = ["core", "partyB", "symbolManager", "expressProvider", "gaslessLayer"]
+		.map(name => `${name}: ${recipe[name].mode}`)
+		.join("\n");
 	const warnings = [];
 	for (const affiliate of recipe.expressProvider.affiliates || []) {
 		if (affiliate.maxDebt === "0" && affiliate.maxDebtBps === 0)
@@ -282,6 +290,15 @@ function recipeReviewText(recipe, { identityPath, digest, only } = {}) {
 					`Express timing: ${recipe.expressProvider.securityWindow === undefined ? "unchanged" : `${recipe.expressProvider.securityWindow}s`} security • ${recipe.expressProvider.tolerancePeriod === undefined ? "unchanged" : `${recipe.expressProvider.tolerancePeriod}s`} tolerance`,
 					`Express roles: ${roleSummary || "none declared"}`,
 					affiliateSummary || "Express affiliates: none declared",
+				]
+			: []),
+		...(recipe.gaslessLayer.mode !== "skip"
+			? [
+					`Gasless treasury: ${recipe.gaslessLayer.treasury}`,
+					`Gasless relayers: ${recipe.gaslessLayer.relayers?.length || 0}`,
+					`Gasless fees: deposit ${recipe.gaslessLayer.depositFee} • minimum ${recipe.gaslessLayer.minimumDeposit} • default selector ${recipe.gaslessLayer.defaultSelectorFee}`,
+					`Gasless quotas: ${recipe.gaslessLayer.dailyFreeOpsLimit} free operations • ${recipe.gaslessLayer.dailySponsoredNativeLimit} sponsored native units`,
+					`Gasless selector overrides: ${recipe.gaslessLayer.selectorFees?.length || 0}`,
 				]
 			: []),
 		...(warnings.length ? ["", "WARNINGS", ...warnings] : []),
@@ -712,6 +729,94 @@ async function editExpressSections(ui, recipe, sections) {
 	return true;
 }
 
+export async function editGaslessLayer(ui, recipe) {
+	const gasless = recipe.gaslessLayer;
+	const treasury = await askAddress(ui, "GaslessLayer treasury", gasless.treasury);
+	const depositFee = await askUintString(ui, "GaslessLayer deposit fee", gasless.depositFee);
+	const minimumDeposit = await askUintString(ui, "GaslessLayer minimum deposit", gasless.minimumDeposit);
+	const defaultSelectorFee = await askUintString(ui, "Default operational fee per selector", gasless.defaultSelectorFee);
+	const dailyFreeOpsLimit = await askUintString(ui, "Daily free operations per account", gasless.dailyFreeOpsLimit);
+	const revertWhenFreeQuotaExhausted = await ui.confirm({
+		message: "Revert instead of charging after the free-operation quota is exhausted?",
+		initialValue: gasless.revertWhenFreeQuotaExhausted === true,
+	});
+	const dailySponsoredNativeLimit = await askUintString(ui, "Daily sponsored native-gas limit per payer", gasless.dailySponsoredNativeLimit);
+	const revertWhenNativeSponsorLimitExhausted = await ui.confirm({
+		message: "Revert instead of charging after native-gas sponsorship is exhausted?",
+		initialValue: gasless.revertWhenNativeSponsorLimitExhausted === true,
+	});
+	const maxNativeGasTopUpAmount = await askUintString(ui, "Maximum native amount per gas top-up", gasless.maxNativeGasTopUpAmount);
+	const nativeGasTopUpFeeBps = await askInteger(ui, "Paid native gas top-up fee in basis points", gasless.nativeGasTopUpFeeBps, {
+		minimum: 0,
+		maximum: 10_000,
+	});
+	const relayers = await askAddressList(ui, "GaslessLayer relayers", gasless.relayers || [], { allowEmpty: false });
+	const selectorFeeCount = await askInteger(ui, "Selector fee override count", gasless.selectorFees?.length || 0, {
+		minimum: 0,
+		maximum: 256,
+	});
+	if (
+		[
+			treasury,
+			depositFee,
+			minimumDeposit,
+			defaultSelectorFee,
+			dailyFreeOpsLimit,
+			revertWhenFreeQuotaExhausted,
+			dailySponsoredNativeLimit,
+			revertWhenNativeSponsorLimitExhausted,
+			maxNativeGasTopUpAmount,
+			nativeGasTopUpFeeBps,
+			relayers,
+			selectorFeeCount,
+		].some(value => value === null)
+	)
+		return false;
+	if (BigInt(minimumDeposit) <= BigInt(depositFee)) {
+		ui.note("Minimum deposit must be strictly greater than the deposit fee.", "GaslessLayer values not applied");
+		return false;
+	}
+	const selectorFees = [];
+	const seenSelectors = new Set();
+	for (let index = 0; index < selectorFeeCount; index++) {
+		const current = gasless.selectorFees?.[index] || {};
+		const selector = await ui.text({
+			message: `Selector override #${index + 1}`,
+			initialValue: current.selector,
+			placeholder: "0x12345678",
+			validate: value => (!/^0x[0-9a-fA-F]{8}$/.test(String(value || "")) ? "Enter a 4-byte hexadecimal selector" : undefined),
+		});
+		const configured = await ui.confirm({
+			message: `Enable selector override #${index + 1}?`,
+			initialValue: current.configured !== false,
+		});
+		const amount = await askUintString(ui, `Selector fee amount #${index + 1}`, current.amount ?? "0");
+		if (selector === null || configured === null || amount === null) return false;
+		const normalizedSelector = selector.toLowerCase();
+		if (seenSelectors.has(normalizedSelector)) {
+			ui.note(`Selector ${normalizedSelector} is listed more than once.`, "GaslessLayer values not applied");
+			return false;
+		}
+		seenSelectors.add(normalizedSelector);
+		selectorFees.push({ selector: normalizedSelector, configured, amount });
+	}
+	Object.assign(gasless, {
+		treasury,
+		depositFee,
+		minimumDeposit,
+		defaultSelectorFee,
+		dailyFreeOpsLimit,
+		revertWhenFreeQuotaExhausted,
+		dailySponsoredNativeLimit,
+		revertWhenNativeSponsorLimitExhausted,
+		maxNativeGasTopUpAmount,
+		nativeGasTopUpFeeBps,
+		relayers,
+		selectorFees,
+	});
+	return true;
+}
+
 async function customizeRecipe(ui, recipe, { only, forceSelection = false } = {}) {
 	const options = [
 		{ value: "execution", label: "Execution and receipt policy", hint: "confirmations, timeouts, log detail" },
@@ -723,8 +828,9 @@ async function customizeRecipe(ui, recipe, { only, forceSelection = false } = {}
 					{ value: "protocol", label: "Protocol parameter overrides", hint: "reviewed defaults are recommended" },
 				]
 			: []),
-		...(only === "expressProvider" ? [] : [{ value: "components", label: "PartyB and SymbolManager assignments" }]),
+		...(only === "expressProvider" || only === "gaslessLayer" ? [] : [{ value: "components", label: "PartyB and SymbolManager assignments" }]),
 		...(recipe.expressProvider.mode !== "skip" ? [{ value: "express", label: "ExpressProvider configuration" }] : []),
+		...(recipe.gaslessLayer.mode !== "skip" ? [{ value: "gasless", label: "GaslessLayer configuration" }] : []),
 	];
 	const selection = await ui.multiselect({
 		message: forceSelection ? "Which sections do you want to edit?" : "Anything you want to override before the final review?",
@@ -744,6 +850,7 @@ async function customizeRecipe(ui, recipe, { only, forceSelection = false } = {}
 		!(await editExpressSections(ui, recipe, new Set(["timing", "creditLine", "roles", "affiliates", "registerOnCore"])))
 	)
 		return false;
+	if (selected.has("gasless") && !(await editGaslessLayer(ui, recipe))) return false;
 	return true;
 }
 
@@ -805,6 +912,7 @@ export async function prepareDeploymentRecipe({ root = PROJECT_ROOT, ui, only, c
 			recipe.partyB = { mode: "skip", adlEnabled: false };
 			recipe.symbolManager = { mode: "skip" };
 			recipe.expressProvider = { mode: "skip" };
+			recipe.gaslessLayer = { mode: "skip" };
 		}
 		if (network === "localhost") {
 			const accounts = await discoverAccounts();
@@ -943,6 +1051,7 @@ export async function prepareExpressPatch({ root = PROJECT_ROOT, ui, readReport 
 	recipe.core = { mode: "reuse", fromReport: relativeReference(outputPath, selected.reportPath) };
 	recipe.partyB = { mode: "skip", adlEnabled: false };
 	recipe.symbolManager = { mode: "skip" };
+	recipe.gaslessLayer = { mode: "skip" };
 	const source = base.recipe.expressProvider;
 	recipe.expressProvider = { mode: "reuse", address: report.addresses.expressProvider };
 	for (const section of sections) {

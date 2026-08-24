@@ -27,15 +27,18 @@ import {
 } from "./checkpoint.js"
 import {
 	deployAndConfigureExpressProvider,
+	deployAndConfigureGaslessLayer,
 	resolveExpressProviderConfig,
+	resolveGaslessLayerConfig,
 	type ComponentHealthCheck,
 	type ExpressProviderResolvedConfig,
 } from "./componentDeployment.js"
-import { EXPRESSPROVIDER_DEPLOYMENT_FILE } from "./constants.js"
+import { EXPRESSPROVIDER_DEPLOYMENT_FILE, GASLESSLAYER_DEPLOYMENT_FILE } from "./constants.js"
 import { ensureCreate2Factory, formatFactoryPinHint } from "./create2Factory.js"
 import { assertExpressProviderDeployable, assertRecipeNetworkTarget, type SafeManualAction } from "./deploymentRecipe.js"
 import { checkpointDeployment, persistSubmittedTransaction, recoverCheckpointContractDeployments } from "./deploymentRecovery.js"
 import { deployDiamond } from "./diamond.js"
+import type { GaslessLayerResolvedConfig } from "./gaslessLayer.js"
 import { getConnection } from "./helpers.js"
 import { setHyperEVMBigBlocks } from "./hyperevm.js"
 import { deployInstantLayer } from "./instantLayer.js"
@@ -92,7 +95,13 @@ interface SystemDeploymentReport {
 		name: string
 		path: string
 		digest: string
-		components: { core: ComponentMode; partyB: ComponentMode; symbolManager: ComponentMode; expressProvider: ComponentMode }
+		components: {
+			core: ComponentMode
+			partyB: ComponentMode
+			symbolManager: ComponentMode
+			expressProvider: ComponentMode
+			gaslessLayer: ComponentMode
+		}
 	}
 	lifecycle: "validating" | "pending_handover" | "complete" | "failed"
 	checks: {
@@ -130,6 +139,8 @@ interface SystemDeploymentReport {
 		partyBMode?: ComponentMode
 		symbolManagerMode?: ComponentMode
 		expressProviderMode?: ComponentMode
+		gaslessLayerMode?: ComponentMode
+		gaslessLayer?: Omit<GaslessLayerResolvedConfig, "address" | "implementation">
 	}
 	summary: {
 		totalDeploymentGroups: number
@@ -193,11 +204,21 @@ interface DeployedContracts {
 	accountManager?: string
 	symbolManager?: string
 	expressProvider?: string
+	gaslessLayer?: string
+	gaslessLayerImplementation?: string
 }
 
 type ExpressProviderStepResult = {
 	address: string
 	records: Array<{ name: string; address: string; constructorArguments: unknown[] }>
+	manualActions: SafeManualAction[]
+	checks: ComponentHealthCheck[]
+}
+
+type GaslessLayerStepResult = {
+	address: string
+	implementation: string
+	records: Array<{ name: string; address: string; constructorArguments: unknown[]; libraries?: Record<string, string> }>
 	manualActions: SafeManualAction[]
 	checks: ComponentHealthCheck[]
 }
@@ -304,6 +325,8 @@ export function deploymentConfigFromSource(source: Record<string, string | undef
 		partyBMode: recipe?.partyB.mode,
 		symbolManagerMode: recipe?.symbolManager.mode,
 		expressProviderMode: recipe?.expressProvider.mode,
+		gaslessLayerMode: recipe?.gaslessLayer.mode,
+		gaslessLayer: undefined as Omit<GaslessLayerResolvedConfig, "address" | "implementation"> | undefined,
 	}
 }
 
@@ -787,6 +810,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 								partyB: recipeRuntime.recipe.partyB.mode,
 								symbolManager: recipeRuntime.recipe.symbolManager.mode,
 								expressProvider: recipeRuntime.recipe.expressProvider.mode,
+								gaslessLayer: recipeRuntime.recipe.gaslessLayer.mode,
 							},
 						}
 					: undefined,
@@ -922,6 +946,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			// The factory is bound above, before any component deploys, so it is safe to read here.
 			const deployedContracts: DeployedContracts = vanityPlan ? { create2Factory: vanityPlan.factoryAddress } : {}
 			let expressProviderResult: ExpressProviderStepResult | undefined
+			let gaslessLayerResult: GaslessLayerStepResult | undefined
 
 			// HyperEVM (chainId 999 mainnet, 998 testnet) requires big blocks for facet deployment
 			const isHyperEVM = !isSimulatedNetwork && (Number(chainId) === 999 || Number(chainId) === 998)
@@ -1354,7 +1379,11 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 								const resolved = await resolveExpressProviderConfig(
 									ethers,
 									recipe.expressProvider,
-									{ core: deployedContracts.diamond!, admin: config.admin },
+									{
+										core: deployedContracts.diamond!,
+										accountLayer: deployedContracts.accountLayerDiamond!,
+										admin: config.admin,
+									},
 									deployerAddress,
 								)
 								const result = await deployAndConfigureExpressProvider(hre, checkpoint, resolved, deployer, vanity)
@@ -1377,6 +1406,58 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 								logger.error(`Failed to deploy ExpressProvider: ${err.message}`)
 								deploymentResults.push({
 									contract: "ExpressProvider",
+									address: "N/A",
+									status: "failed",
+									error: err.message,
+									timestamp: new Date().toISOString(),
+								})
+								throw err
+							}
+							logger.info()
+						},
+					})
+				}
+
+				if (recipe?.gaslessLayer.mode === "deploy") {
+					await runDeploymentStep(checkpoint, {
+						id: "gaslessLayer",
+						title: "Deploying GaslessLayer",
+						order: ++deploymentStepOrder,
+						run: async () => {
+							try {
+								const wasAlreadyDeployed = !!checkpoint.contracts.gaslessLayer?.proxy
+								const resolved = await resolveGaslessLayerConfig(
+									ethers,
+									recipe.gaslessLayer,
+									{
+										core: deployedContracts.diamond!,
+										accountLayer: deployedContracts.accountLayerDiamond!,
+										instantLayer: deployedContracts.instantLayer!,
+										admin: config.admin,
+									},
+									deployerAddress,
+								)
+								config.gaslessLayer = resolved
+								const result = await deployAndConfigureGaslessLayer(hre, checkpoint, resolved, deployer, vanity)
+								deployedContracts.gaslessLayer = result.address
+								deployedContracts.gaslessLayerImplementation = result.implementation
+								gaslessLayerResult = result
+								if (logData) writeData(GASLESSLAYER_DEPLOYMENT_FILE, result.records)
+								logger.info(`GaslessLayer deployed at: ${result.address}`)
+								const failed = result.checks.filter(check => check.status === "failed")
+								if (failed.length > 0) {
+									throw new Error(`GaslessLayer post-state health failed: ${failed.map(check => check.check).join(", ")}`)
+								}
+								deploymentResults.push({
+									contract: "GaslessLayer",
+									address: result.address,
+									status: wasAlreadyDeployed ? "skipped" : "success",
+									timestamp: new Date().toISOString(),
+								})
+							} catch (err: any) {
+								logger.error(`Failed to deploy GaslessLayer: ${err.message}`)
+								deploymentResults.push({
+									contract: "GaslessLayer",
 									address: "N/A",
 									status: "failed",
 									error: err.message,
@@ -1524,6 +1605,13 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 				for (const check of expressProviderResult?.checks || []) {
 					if (check.status === "pending") manualActions.push(`ExpressProvider check still pending: ${check.check}`)
 				}
+				for (const action of gaslessLayerResult?.manualActions || []) {
+					manualActions.push(`${config.admin} executes: ${action.description} (to ${action.to}, data ${action.data})`)
+					safeActions.push(action)
+				}
+				for (const check of gaslessLayerResult?.checks || []) {
+					if (check.status === "pending") manualActions.push(`GaslessLayer check still pending: ${check.check}`)
+				}
 
 				const handoverPending = manualActions.length > 0
 				checkpoint.step = handoverPending ? "pending_handover" : "complete"
@@ -1553,6 +1641,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 									partyB: recipeRuntime.recipe.partyB.mode,
 									symbolManager: recipeRuntime.recipe.symbolManager.mode,
 									expressProvider: recipeRuntime.recipe.expressProvider.mode,
+									gaslessLayer: recipeRuntime.recipe.gaslessLayer.mode,
 								},
 							}
 						: undefined,
@@ -2741,6 +2830,8 @@ function generateReport(
 			partyBMode: config.partyBMode,
 			symbolManagerMode: config.symbolManagerMode,
 			expressProviderMode: config.expressProviderMode,
+			gaslessLayerMode: config.gaslessLayerMode,
+			gaslessLayer: config.gaslessLayer,
 		},
 		summary: {
 			totalDeploymentGroups: deployments.length,
@@ -2779,6 +2870,9 @@ function displayReport(report: SystemDeploymentReport, deployedContracts: Deploy
 	if (deployedContracts.symmioPartyB) logger.info(`SymmioPartyB:         ${deployedContracts.symmioPartyB}`)
 	if (deployedContracts.symbolManager) logger.info(`SymbolManager:        ${deployedContracts.symbolManager}`)
 	if (deployedContracts.accountManager) logger.info(`AccountManager:       ${deployedContracts.accountManager}`)
+	if (deployedContracts.expressProvider) logger.info(`ExpressProvider:      ${deployedContracts.expressProvider}`)
+	if (deployedContracts.gaslessLayer) logger.info(`GaslessLayer:         ${deployedContracts.gaslessLayer}`)
+	if (deployedContracts.gaslessLayerImplementation) logger.info(`GaslessLayer Impl:    ${deployedContracts.gaslessLayerImplementation}`)
 	logger.info()
 
 	logger.info("CONFIGURATION")

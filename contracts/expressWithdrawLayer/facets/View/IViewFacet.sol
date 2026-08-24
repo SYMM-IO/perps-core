@@ -14,6 +14,8 @@ interface IViewFacet {
 
 	function collateral() external view returns (address);
 
+	function accountLayer() external view returns (address);
+
 	// ── Pool balances ──
 
 	function generalBalance() external view returns (uint256);

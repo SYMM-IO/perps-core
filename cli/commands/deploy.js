@@ -174,8 +174,8 @@ export function validateComponentReport(report, expected) {
 	if (report.implementation !== undefined && !validAddress(report.implementation)) {
 		throw new Error("component report implementation is not a valid non-zero address");
 	}
-	if (expected.component === "partyB" && !validAddress(report.implementation)) {
-		throw new Error("PartyB component report is missing its implementation address");
+	if ((expected.component === "partyB" || expected.component === "gaslessLayer") && !validAddress(report.implementation)) {
+		throw new Error(`${expected.component} component report is missing its implementation address`);
 	}
 	if (!report.config || typeof report.config !== "object" || Array.isArray(report.config)) {
 		throw new Error("component report is missing its public config evidence");
@@ -200,6 +200,10 @@ export function validateComponentReport(report, expected) {
 		throw new Error(
 			`component report config.operator is ${JSON.stringify(report.config.operator)}, expected ${JSON.stringify(expected.config.operator)}`,
 		);
+	} else if (expected.component === "expressProvider" && (!report.config.expressProvider || typeof report.config.expressProvider !== "object")) {
+		throw new Error("ExpressProvider component report is missing its resolved configuration");
+	} else if (expected.component === "gaslessLayer" && (!report.config.gaslessLayer || typeof report.config.gaslessLayer !== "object")) {
+		throw new Error("GaslessLayer component report is missing its resolved configuration");
 	}
 	if (!report.verification || typeof report.verification !== "object") throw new Error("component report is missing verification evidence");
 	if (!Array.isArray(report.verification.records)) throw new Error("component report verification.records must be an array");
@@ -225,8 +229,8 @@ export function validateComponentReport(report, expected) {
 	if (report.mode !== "patch" && !verifiedAddresses.has(report.address.toLowerCase())) {
 		throw new Error(`component verification records do not cover deployed ${expected.component} address ${report.address}`);
 	}
-	if (expected.component === "partyB" && !verifiedAddresses.has(report.implementation.toLowerCase())) {
-		throw new Error(`PartyB verification records do not cover implementation address ${report.implementation}`);
+	if ((expected.component === "partyB" || expected.component === "gaslessLayer") && !verifiedAddresses.has(report.implementation.toLowerCase())) {
+		throw new Error(`${expected.component} verification records do not cover implementation address ${report.implementation}`);
 	}
 	if (report.mode === "patch") {
 		if (report.verification.policy !== "not_applicable" || report.verification.status !== "skipped") {
@@ -574,10 +578,14 @@ export async function deploy(args) {
 								signer: recipeContext.recipe.partyB.signer,
 								adlEnabled: recipeContext.recipe.partyB.adlEnabled,
 							}
-						: {
-								admin: recipeContext.recipe.governance.admin,
-								operator: recipeContext.recipe.symbolManager.operator,
-							},
+						: args.only === "symbolManager"
+							? {
+									admin: recipeContext.recipe.governance.admin,
+									operator: recipeContext.recipe.symbolManager.operator,
+								}
+							: {
+									admin: recipeContext.recipe[args.only].admin || recipeContext.recipe.governance.admin,
+								},
 			});
 		} catch (error) {
 			log(`  ${c.red(c.bold("Component deployment evidence is incomplete."))}`);
@@ -628,6 +636,8 @@ export async function deploy(args) {
 		["AccountLayer Diamond", report.addresses.accountLayerDiamond],
 		["InstantLayer", report.addresses.instantLayer],
 		["SymbolManager", report.addresses.symbolManager || c.grey("not deployed")],
+		["ExpressProvider", report.addresses.expressProvider || c.grey("not deployed")],
+		["GaslessLayer", report.addresses.gaslessLayer || c.grey("not deployed")],
 	]);
 	if (report.manualActions?.length) {
 		blank();

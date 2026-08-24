@@ -43,7 +43,9 @@ export async function completeLocalHandover(hre: any, recipePath?: string): Prom
 	const adminSigner = await ethers.getSigner(admin)
 
 	if (active.recipe.core.mode !== "deploy") {
-		const components = (["partyB", "symbolManager", "expressProvider"] as const).filter(component => active.recipe[component].mode !== "skip")
+		const components = (["partyB", "symbolManager", "expressProvider", "gaslessLayer"] as const).filter(
+			component => active.recipe[component].mode !== "skip",
+		)
 		if (active.recipe.core.mode !== "reuse" || components.length !== 1) {
 			throw new Error("Local component handover requires core.mode=reuse and exactly one selected component")
 		}

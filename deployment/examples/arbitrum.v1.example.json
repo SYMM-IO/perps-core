@@ -156,5 +156,20 @@
 				"maxDebtBps": 5000
 			}
 		]
+	},
+	"gaslessLayer": {
+		"mode": "deploy",
+		"treasury": "REPLACE_WITH_GASLESS_TREASURY_ADDRESS",
+		"depositFee": "2000000",
+		"minimumDeposit": "5000000",
+		"defaultSelectorFee": "0",
+		"dailyFreeOpsLimit": "0",
+		"revertWhenFreeQuotaExhausted": false,
+		"dailySponsoredNativeLimit": "0",
+		"revertWhenNativeSponsorLimitExhausted": true,
+		"maxNativeGasTopUpAmount": "1000000000000000",
+		"nativeGasTopUpFeeBps": 0,
+		"relayers": ["REPLACE_WITH_GASLESS_RELAYER_ADDRESS"],
+		"selectorFees": []
 	}
 }

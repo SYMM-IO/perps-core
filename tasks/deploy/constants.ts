@@ -42,6 +42,7 @@ export const LIQUIDATOR_DEPLOYMENT_FILE = "liquidator.json"
 export const STABLECOIN_DEPLOYMENT_FILE = "stablecoin.json"
 export const SYMBOLMANAGER_DEPLOYMENT_FILE = "symbolmanager.json"
 export const EXPRESSPROVIDER_DEPLOYMENT_FILE = "expressprovider.json"
+export const GASLESSLAYER_DEPLOYMENT_FILE = "gaslesslayer.json"
 export const CREATE2FACTORY_DEPLOYMENT_FILE = "create2factory.json"
 
 // Failed verifications — written by verify:all, consumed by verify:all --retry-failed

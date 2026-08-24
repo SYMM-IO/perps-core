@@ -22,7 +22,7 @@ import { ValidatorStorage } from "./storages/ValidatorStorage.sol";
 /// @notice Initialization contract for the ExpressProvider diamond.
 /// @dev Executed via delegatecall during the diamond cut to set up initial state.
 contract Init {
-	function init(address admin, address _symmio, address _collateral) external {
+	function init(address admin, address _symmio, address _collateral, address _accountLayer) external {
 		GlobalStorage.Layout storage s = GlobalStorage.layout();
 		if (s.initialized) revert LibErrors.AlreadyInitialized();
 		s.initialized = true;
@@ -32,8 +32,10 @@ contract Init {
 		ds.supportedInterfaces[type(IDiamondLoupe).interfaceId] = true;
 
 		if (ISymmio(_symmio).getCollateral() != _collateral) revert LibErrors.InvalidCollateral();
+		if (_accountLayer.code.length == 0) revert LibErrors.InvalidAccountLayer();
 		s.symmio = _symmio;
 		s.collateral = IERC20(_collateral);
+		s.accountLayer = _accountLayer;
 		s.securityWindow = 20;
 		s.tolerancePeriod = 60;
 		ValidatorStorage.layout().validatorApprovalTimeout[address(0)] = 30;

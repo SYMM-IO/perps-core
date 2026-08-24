@@ -153,9 +153,15 @@ const jobs = Number(jobsRaw);
 const extraArgs = args.slice(1);
 
 const parallelTestDir = path.join(process.cwd(), "test/parallel");
+// This suite intentionally writes the canonical chain-scoped PartyB verification file.
+// Component deployment tests write the same production artifact, so running the two files
+// concurrently makes either process able to replace the other's evidence between write/read.
+// Keep the record-integrity test serialized after all parallel deployment workers finish.
+const serializedParallelTests = new Set(["PartyBDeploymentRecords.test.ts"]);
 const parallelTestFiles = readdirSync(parallelTestDir)
-	.filter(f => f.endsWith(".test.ts"))
+	.filter(f => f.endsWith(".test.ts") && !serializedParallelTests.has(f))
 	.map(f => path.join(parallelTestDir, f));
+const serializedParallelTestFiles = [...serializedParallelTests].map(f => path.join(parallelTestDir, f));
 // Only *.test.ts wrappers run here. test/sequential/Main.ts is the entrypoint for
 // `npx hardhat test mocha` (see paths.tests in hardhat.config.ts) and re-registers
 // every behavior the parallel wrappers already cover, so including it would run the
@@ -164,7 +170,8 @@ const sequentialTestDir = path.join(process.cwd(), "test/sequential");
 const sequentialTestFiles = readdirSync(sequentialTestDir)
 	.filter(f => f.endsWith(".test.ts"))
 	.map(f => path.join(sequentialTestDir, f));
-const totalTestFiles = parallelTestFiles.length + sequentialTestFiles.length;
+const serializedTestFiles = [...serializedParallelTestFiles, ...sequentialTestFiles];
+const totalTestFiles = parallelTestFiles.length + serializedTestFiles.length;
 
 const results = {
 	passed: 0,
@@ -474,7 +481,7 @@ async function main() {
 	printBanner();
 
 	console.log(style("gray", `  → Test files: ${style("white", parallelTestFiles.length)}`));
-	if (sequentialTestFiles.length > 0) console.log(style("gray", `  → Sequential test files: ${style("white", sequentialTestFiles.length)}`));
+	if (serializedTestFiles.length > 0) console.log(style("gray", `  → Serialized test files: ${style("white", serializedTestFiles.length)}`));
 	console.log(style("gray", `  → Workers: ${style("white", jobs)}`));
 	console.log();
 
@@ -520,7 +527,7 @@ async function main() {
 
 		// Sequential suites intentionally run only after every parallel worker has
 		// finished, so stateful/fuzz orchestration cannot overlap another suite.
-		for (const file of sequentialTestFiles) {
+		for (const file of serializedTestFiles) {
 			const result = await runTest(file);
 			completed++;
 			recordResult(result);

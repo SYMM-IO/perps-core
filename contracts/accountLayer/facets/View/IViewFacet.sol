@@ -106,6 +106,10 @@ interface IViewFacet {
 	/// @param account The account address
 	function ownerOf(address account) external view returns (address);
 
+	/// @notice Returns the affiliate for a live sub-account or virtual account
+	/// @param account The AccountLayer account address
+	function getAffiliateForAccount(address account) external view returns (address affiliate, bool exists);
+
 	/// @notice Returns the global nonce used for sub-account address generation
 	function globalNonce() external view returns (uint256);
 

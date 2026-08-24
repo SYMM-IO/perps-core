@@ -14,7 +14,7 @@ export const reconcileTransactionsTask = task(
 )
 	.addOption({
 		name: "component",
-		description: "Optional component checkpoint: partyB, symbolManager, or expressProvider",
+		description: "Optional component checkpoint: partyB, symbolManager, expressProvider, or gaslessLayer",
 		type: ArgumentType.STRING_WITHOUT_DEFAULT,
 		defaultValue: undefined,
 	})
@@ -33,7 +33,7 @@ export const reconcileTransactionsTask = task(
 			setCheckpointSimulated(simulated)
 			let scope: string | undefined
 			if (rawComponent) {
-				if (!(["partyB", "symbolManager", "expressProvider"] as string[]).includes(rawComponent)) {
+				if (!(["partyB", "symbolManager", "expressProvider", "gaslessLayer"] as string[]).includes(rawComponent)) {
 					throw new Error(`Unknown component checkpoint ${JSON.stringify(rawComponent)}`)
 				}
 				scope = componentCheckpointScope(active.recipe.name, rawComponent as DeploymentComponentName)
