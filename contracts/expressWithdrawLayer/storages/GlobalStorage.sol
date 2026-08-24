@@ -37,6 +37,9 @@ library GlobalStorage {
 		/// @dev When true, all user-facing mutations revert. Core callbacks that must succeed
 		///      (`onWithdrawComplete`, `onWithdrawSuspend`, `onWithdrawCancelRequest`) remain open.
 		bool paused;
+		// ── Account identity ──
+		/// @dev Appended to preserve the storage layout of existing ExpressProvider diamonds.
+		address accountLayer;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

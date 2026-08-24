@@ -15,6 +15,7 @@ import {
 import { ensureCreate2Factory } from "./create2Factory.js"
 import {
 	assertDependencyAddressesHaveCode,
+	assertGaslessLayerDependenciesHaveCode,
 	assertRecipeNetworkTarget,
 	componentCheckpointScope,
 	componentReportRelativePath,
@@ -31,6 +32,7 @@ import {
 	EXPRESS_CONTROL_FACET,
 	EXPRESS_FACETS,
 } from "./expressWithdrawLayerDiamond.js"
+import { deployGaslessLayer, type GaslessLayerResolvedConfig } from "./gaslessLayer.js"
 import { getConnection } from "./helpers.js"
 import { logger } from "./logger.js"
 import { createSymmioPartyBVerificationRecords, deploySymmioPartyB, SymmioPartyBVerificationRecord } from "./partyB.js"
@@ -49,7 +51,7 @@ import {
 import { type VanityContext, createVanityContext } from "./vanityDeploy.js"
 import { buildVanityPlan } from "./vanityPlan.js"
 
-type VerificationRecord = { name: string; address: string; constructorArguments: unknown[] }
+type VerificationRecord = { name: string; address: string; constructorArguments: unknown[]; libraries?: Record<string, string> }
 type ComponentLifecycle = "validating" | "pending_handover" | "complete" | "failed"
 
 export interface ComponentExecutionInput {
@@ -97,8 +99,9 @@ export interface ComponentDeploymentReport {
 		 * merged with every section it declared — the next patch computes removals from it.
 		 */
 		expressProvider?: ExpressStoredConfig
+		gaslessLayer?: Omit<GaslessLayerResolvedConfig, "address" | "implementation">
 	}
-	coreDependency: { reportPath: string; deploymentId: string; diamond: string; instantLayer: string }
+	coreDependency: { reportPath: string; deploymentId: string; diamond: string; accountLayer?: string; instantLayer: string }
 	address?: string
 	implementation?: string
 	constructorArguments?: unknown[]
@@ -328,6 +331,7 @@ export interface ExpressProviderResolvedConfig {
 	deployer: string
 	core: string
 	collateral: string
+	accountLayer: string
 	/** Absent together when the recipe defers the creditLine section; nothing is written on-chain. */
 	signatureVerifier?: string
 	muonAppId?: string
@@ -360,20 +364,33 @@ export async function inspectExpressProviderPostState(ethers: any, input: Expres
 	const coreControl = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", core)
 	const roleHash = (name: string) => ethers.keccak256(ethers.toUtf8Bytes(name))
 
-	const [runtimeCode, boundSymmio, boundCollateral, verifier, appId, freshness, securityWindow, tolerancePeriod, owner, pendingOwner, registered] =
-		await Promise.all([
-			ethers.provider.getCode(address),
-			view.symmio(),
-			view.collateral(),
-			view.creditLineSignatureVerifier(),
-			view.creditLineMuonAppId(),
-			view.creditLineMuonFreshnessWindow(),
-			view.securityWindow(),
-			view.tolerancePeriod(),
-			control.owner(),
-			control.pendingOwner(),
-			coreView.isExpressProviderRegistered(address),
-		])
+	const [
+		runtimeCode,
+		boundSymmio,
+		boundCollateral,
+		boundAccountLayer,
+		verifier,
+		appId,
+		freshness,
+		securityWindow,
+		tolerancePeriod,
+		owner,
+		pendingOwner,
+		registered,
+	] = await Promise.all([
+		ethers.provider.getCode(address),
+		view.symmio(),
+		view.collateral(),
+		view.accountLayer(),
+		view.creditLineSignatureVerifier(),
+		view.creditLineMuonAppId(),
+		view.creditLineMuonFreshnessWindow(),
+		view.securityWindow(),
+		view.tolerancePeriod(),
+		control.owner(),
+		control.pendingOwner(),
+		coreView.isExpressProviderRegistered(address),
+	])
 
 	const checks: ComponentHealthCheck[] = []
 	const check = (name: string, pass: boolean, expected?: string, actual?: string, pending = false) =>
@@ -382,6 +399,7 @@ export async function inspectExpressProviderPostState(ethers: any, input: Expres
 	check("runtime bytecode", runtimeCode !== "0x", "deployed bytecode", runtimeCode === "0x" ? "0x" : undefined)
 	check("core binding", ethers.getAddress(boundSymmio) === core, core, boundSymmio)
 	check("collateral binding", ethers.getAddress(boundCollateral) === ethers.getAddress(input.collateral), input.collateral, boundCollateral)
+	check("AccountLayer binding", ethers.getAddress(boundAccountLayer) === ethers.getAddress(input.accountLayer), input.accountLayer, boundAccountLayer)
 	// A deferred creditLine section has nothing to prove: no verifier was written, and reserveDebt
 	// stays closed until a later patch supplies one.
 	if (input.signatureVerifier !== undefined) {
@@ -493,6 +511,194 @@ export async function inspectExpressProviderPostState(ethers: any, input: Expres
 	return { checks, manualActions }
 }
 
+export async function resolveGaslessLayerConfig(
+	ethers: any,
+	componentConfig: Record<string, any>,
+	target: { core: string; accountLayer: string; instantLayer: string; admin: string },
+	deployerAddress: string,
+): Promise<Omit<GaslessLayerResolvedConfig, "address" | "implementation">> {
+	const core = await requireAddress(ethers, target.core, "gaslessLayer.core")
+	const accountLayer = await requireAddress(ethers, target.accountLayer, "gaslessLayer.accountLayer")
+	const instantLayer = await requireAddress(ethers, target.instantLayer, "gaslessLayer.instantLayer")
+	const admin = await requireAddress(ethers, componentConfig.admin || target.admin, "gaslessLayer.admin")
+	const treasury = await requireAddress(ethers, componentConfig.treasury, "gaslessLayer.treasury")
+	const deployer = await requireAddress(ethers, deployerAddress, "gaslessLayer.deployer")
+	const coreView = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", core)
+	const collateral = ethers.getAddress(await coreView.getCollateral())
+	const relayers = await Promise.all(
+		(componentConfig.relayers as string[]).map((relayer, index) => requireAddress(ethers, relayer, `gaslessLayer.relayers[${index}]`)),
+	)
+	return {
+		admin,
+		deployer,
+		core,
+		accountLayer,
+		instantLayer,
+		collateral,
+		treasury,
+		depositFee: String(componentConfig.depositFee),
+		minimumDeposit: String(componentConfig.minimumDeposit),
+		defaultSelectorFee: String(componentConfig.defaultSelectorFee),
+		dailyFreeOpsLimit: String(componentConfig.dailyFreeOpsLimit),
+		revertWhenFreeQuotaExhausted: componentConfig.revertWhenFreeQuotaExhausted === true,
+		dailySponsoredNativeLimit: String(componentConfig.dailySponsoredNativeLimit),
+		revertWhenNativeSponsorLimitExhausted: componentConfig.revertWhenNativeSponsorLimitExhausted === true,
+		maxNativeGasTopUpAmount: String(componentConfig.maxNativeGasTopUpAmount),
+		nativeGasTopUpFeeBps: Number(componentConfig.nativeGasTopUpFeeBps),
+		relayers,
+		selectorFees: (componentConfig.selectorFees as Array<Record<string, any>>).map(entry => ({
+			selector: entry.selector.toLowerCase(),
+			configured: entry.configured === true,
+			amount: String(entry.amount),
+		})),
+	}
+}
+
+export async function inspectGaslessLayerPostState(ethers: any, input: GaslessLayerResolvedConfig): Promise<ComponentPostStateInspection> {
+	const address = ethers.getAddress(input.address)
+	const implementation = ethers.getAddress(input.implementation)
+	const contract = await ethers.getContractAt("GaslessLayer", address)
+	const coreView = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", input.core)
+	const coreControl = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", input.core)
+	const instantLayer = await ethers.getContractAt("InstantLayer", input.instantLayer)
+	const [defaultAdminRole, configAdminRole, relayerRole, instantOperatorRole] = await Promise.all([
+		contract.DEFAULT_ADMIN_ROLE(),
+		contract.CONFIG_ADMIN_ROLE(),
+		contract.RELAYER_ROLE(),
+		instantLayer.OPERATOR_ROLE(),
+	])
+	const [
+		runtimeCode,
+		implementationCode,
+		implementationStorage,
+		core,
+		accountLayer,
+		boundInstantLayer,
+		collateral,
+		treasury,
+		depositFee,
+		minimumDeposit,
+		defaultSelectorFee,
+		dailyFreeOpsLimit,
+		revertWhenFreeQuotaExhausted,
+		dailySponsoredNativeLimit,
+		revertWhenNativeSponsorLimitExhausted,
+		maxNativeGasTopUpAmount,
+		nativeGasTopUpFeeBps,
+		coreRegistered,
+		instantOperator,
+		adminDefault,
+		adminConfig,
+	] = await Promise.all([
+		ethers.provider.getCode(address),
+		ethers.provider.getCode(implementation),
+		ethers.provider.getStorage(address, ERC1967_IMPLEMENTATION_SLOT),
+		contract.core(),
+		contract.accountLayer(),
+		contract.instantLayer(),
+		contract.collateralToken(),
+		contract.treasury(),
+		contract.depositFee(),
+		contract.minimumDeposit(),
+		contract.defaultSelectorFee(),
+		contract.dailyFreeOpsLimit(),
+		contract.revertWhenFreeQuotaExhausted(),
+		contract.dailySponsoredNativeLimit(),
+		contract.revertWhenNativeSponsorLimitExhausted(),
+		contract.maxNativeGasTopUpAmount(),
+		contract.nativeGasTopUpFeeBps(),
+		coreView.isOperationalFeeCharger(address),
+		instantLayer.hasRole(instantOperatorRole, address),
+		contract.hasRole(defaultAdminRole, input.admin),
+		contract.hasRole(configAdminRole, input.admin),
+	])
+	const relayerStates = await Promise.all(input.relayers.map(relayer => contract.hasRole(relayerRole, relayer)))
+	const selectorStates = await Promise.all(input.selectorFees.map(entry => contract.selectorFeeConfigs(entry.selector)))
+	const manualActions: SafeManualAction[] = []
+	if (!coreRegistered) {
+		manualActions.push(
+			safeAction(
+				input.core,
+				coreControl.interface.encodeFunctionData("registerOperationalFeeCharger", [address]),
+				`Register GaslessLayer ${address} as an operational fee charger on core`,
+			),
+		)
+	}
+	if (!instantOperator) {
+		manualActions.push(
+			safeAction(
+				input.instantLayer,
+				instantLayer.interface.encodeFunctionData("grantRole", [instantOperatorRole, address]),
+				`Grant InstantLayer OPERATOR_ROLE to GaslessLayer ${address}`,
+			),
+		)
+	}
+
+	const checks: ComponentHealthCheck[] = []
+	const check = (name: string, pass: boolean, expected?: string, actual?: string, pending = false) =>
+		checks.push({ check: name, status: pass ? "passed" : pending ? "pending" : "failed", expected, actual })
+	const storedImplementation = ethers.getAddress(`0x${implementationStorage.slice(-40)}`)
+	check("runtime bytecode", runtimeCode !== "0x", "deployed bytecode", runtimeCode === "0x" ? "0x" : undefined)
+	check("implementation bytecode", implementationCode !== "0x", "deployed bytecode", implementationCode === "0x" ? "0x" : undefined)
+	check("ERC1967 implementation binding", storedImplementation === implementation, implementation, storedImplementation)
+	for (const [name, actual, expected] of [
+		["core binding", core, input.core],
+		["AccountLayer binding", accountLayer, input.accountLayer],
+		["InstantLayer binding", boundInstantLayer, input.instantLayer],
+		["collateral binding", collateral, input.collateral],
+		["treasury", treasury, input.treasury],
+	] as const) {
+		check(name, ethers.getAddress(actual) === ethers.getAddress(expected), expected, actual)
+	}
+	for (const [name, actual, expected] of [
+		["deposit fee", depositFee, input.depositFee],
+		["minimum deposit", minimumDeposit, input.minimumDeposit],
+		["default selector fee", defaultSelectorFee, input.defaultSelectorFee],
+		["daily free ops limit", dailyFreeOpsLimit, input.dailyFreeOpsLimit],
+		["daily sponsored native limit", dailySponsoredNativeLimit, input.dailySponsoredNativeLimit],
+		["max native gas top-up", maxNativeGasTopUpAmount, input.maxNativeGasTopUpAmount],
+		["native gas top-up fee bps", nativeGasTopUpFeeBps, String(input.nativeGasTopUpFeeBps)],
+	] as const) {
+		check(name, actual.toString() === expected, expected, actual.toString())
+	}
+	check(
+		"free quota exhaustion policy",
+		revertWhenFreeQuotaExhausted === input.revertWhenFreeQuotaExhausted,
+		String(input.revertWhenFreeQuotaExhausted),
+		String(revertWhenFreeQuotaExhausted),
+	)
+	check(
+		"native sponsor exhaustion policy",
+		revertWhenNativeSponsorLimitExhausted === input.revertWhenNativeSponsorLimitExhausted,
+		String(input.revertWhenNativeSponsorLimitExhausted),
+		String(revertWhenNativeSponsorLimitExhausted),
+	)
+	check("final admin DEFAULT_ADMIN_ROLE", adminDefault, "true", String(adminDefault))
+	check("final admin CONFIG_ADMIN_ROLE", adminConfig, "true", String(adminConfig))
+	for (const [index, relayer] of input.relayers.entries())
+		check(`RELAYER_ROLE for ${relayer}`, relayerStates[index], "true", String(relayerStates[index]))
+	for (const [index, entry] of input.selectorFees.entries()) {
+		const state = selectorStates[index]
+		check(`selector ${entry.selector} configured`, state[0] === entry.configured, String(entry.configured), String(state[0]))
+		check(`selector ${entry.selector} fee`, state[1].toString() === entry.amount, entry.amount, state[1].toString())
+	}
+	if (input.admin !== input.deployer) {
+		const [deployerDefault, deployerConfig] = await Promise.all([
+			contract.hasRole(defaultAdminRole, input.deployer),
+			contract.hasRole(configAdminRole, input.deployer),
+		])
+		check("deployer DEFAULT_ADMIN_ROLE revoked", !deployerDefault, "false", String(deployerDefault))
+		check("deployer CONFIG_ADMIN_ROLE revoked", !deployerConfig, "false", String(deployerConfig))
+	}
+	if (!input.relayers.some(relayer => relayer === input.deployer)) {
+		const deployerRelayer = await contract.hasRole(relayerRole, input.deployer)
+		check("undeclared deployer RELAYER_ROLE revoked", !deployerRelayer, "false", String(deployerRelayer))
+	}
+	check("core operational fee charger registration", coreRegistered, "true", String(coreRegistered), !coreRegistered)
+	check("InstantLayer OPERATOR_ROLE", instantOperator, "true", String(instantOperator), !instantOperator)
+	return { checks, manualActions }
+}
+
 async function verifyRecords(hre: any, chainId: number, records: VerificationRecord[]): Promise<void> {
 	const provider = verificationProviderForChain(chainId)
 	for (const record of records) {
@@ -502,6 +708,7 @@ async function verifyRecords(hre: any, chainId: number, records: VerificationRec
 					address: record.address,
 					constructorArgs: record.constructorArguments,
 					contract: record.name.includes(":") ? record.name : undefined,
+					libraries: record.libraries,
 					provider,
 				},
 				hre,
@@ -519,6 +726,177 @@ async function requireAddress(ethers: any, value: unknown, label: string): Promi
 		throw new Error(`${label} must be a valid non-zero address; received ${JSON.stringify(value)}`)
 	}
 	return ethers.getAddress(value)
+}
+
+export async function deployAndConfigureGaslessLayer(
+	hre: any,
+	checkpoint: DeploymentCheckpoint,
+	resolved: Omit<GaslessLayerResolvedConfig, "address" | "implementation">,
+	deployer: any,
+	vanity: VanityContext | null = null,
+): Promise<{
+	address: string
+	implementation: string
+	records: VerificationRecord[]
+	manualActions: SafeManualAction[]
+	checks: ComponentHealthCheck[]
+}> {
+	const { ethers } = await getConnection(hre)
+	const deployment = await deployGaslessLayer(hre, {
+		admin: resolved.deployer,
+		core: resolved.core,
+		accountLayer: resolved.accountLayer,
+		instantLayer: resolved.instantLayer,
+		treasury: resolved.treasury,
+		depositFee: resolved.depositFee,
+		minimumDeposit: resolved.minimumDeposit,
+		checkpoint,
+		vanity,
+	})
+	const { contract, address, implementation, records } = deployment
+	const connected = contract.connect(deployer)
+	const [defaultAdminRole, configAdminRole, relayerRole] = await Promise.all([
+		contract.DEFAULT_ADMIN_ROLE(),
+		contract.CONFIG_ADMIN_ROLE(),
+		contract.RELAYER_ROLE(),
+	])
+
+	if ((await contract.defaultSelectorFee()).toString() !== resolved.defaultSelectorFee) {
+		await send(connected.setDefaultSelectorFee(resolved.defaultSelectorFee), "set GaslessLayer default selector fee")
+	}
+	if ((await contract.dailyFreeOpsLimit()).toString() !== resolved.dailyFreeOpsLimit) {
+		await send(connected.setDailyFreeOpsLimit(resolved.dailyFreeOpsLimit), "set GaslessLayer daily free ops limit")
+	}
+	if ((await contract.revertWhenFreeQuotaExhausted()) !== resolved.revertWhenFreeQuotaExhausted) {
+		await send(connected.setRevertWhenFreeQuotaExhausted(resolved.revertWhenFreeQuotaExhausted), "set GaslessLayer free quota exhaustion policy")
+	}
+	if (
+		(await contract.dailySponsoredNativeLimit()).toString() !== resolved.dailySponsoredNativeLimit ||
+		(await contract.revertWhenNativeSponsorLimitExhausted()) !== resolved.revertWhenNativeSponsorLimitExhausted
+	) {
+		await send(
+			connected.setNativeGasTopUpConfig(resolved.dailySponsoredNativeLimit, resolved.revertWhenNativeSponsorLimitExhausted),
+			"set GaslessLayer native sponsorship policy",
+		)
+	}
+	if ((await contract.maxNativeGasTopUpAmount()).toString() !== resolved.maxNativeGasTopUpAmount) {
+		await send(connected.setMaxNativeGasTopUpAmount(resolved.maxNativeGasTopUpAmount), "set GaslessLayer max native gas top-up")
+	}
+	if (Number(await contract.nativeGasTopUpFeeBps()) !== resolved.nativeGasTopUpFeeBps) {
+		await send(connected.setNativeGasTopUpFeeBps(resolved.nativeGasTopUpFeeBps), "set GaslessLayer native gas top-up fee")
+	}
+	for (const entry of resolved.selectorFees) {
+		const current = await contract.selectorFeeConfigs(entry.selector)
+		if (current[0] === entry.configured && current[1].toString() === entry.amount) continue
+		await send(connected.setSelectorFeeConfig(entry.selector, entry.configured, entry.amount), `set GaslessLayer selector fee ${entry.selector}`)
+	}
+	for (const relayer of resolved.relayers) {
+		if (!(await contract.hasRole(relayerRole, relayer))) {
+			await send(connected.grantRole(relayerRole, relayer), `grant GaslessLayer RELAYER_ROLE to ${relayer}`)
+		}
+	}
+	for (const [name, role] of [
+		["DEFAULT_ADMIN_ROLE", defaultAdminRole],
+		["CONFIG_ADMIN_ROLE", configAdminRole],
+	] as const) {
+		if (!(await contract.hasRole(role, resolved.admin))) {
+			await send(connected.grantRole(role, resolved.admin), `grant GaslessLayer ${name} to final admin`)
+		}
+	}
+
+	const coreView = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", resolved.core)
+	const coreControl = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", resolved.core)
+	const instantLayer = await ethers.getContractAt("InstantLayer", resolved.instantLayer)
+	const roleHash = (name: string) => ethers.keccak256(ethers.toUtf8Bytes(name))
+	const manualActions: SafeManualAction[] = []
+	if (!(await coreView.isOperationalFeeCharger(address))) {
+		const feeAdminRole = roleHash("FEE_ADMIN_ROLE")
+		if (await coreView.hasRole(deployer.address, feeAdminRole)) {
+			await send(coreControl.connect(deployer).registerOperationalFeeCharger(address), "register GaslessLayer operational fee charger on core")
+		} else {
+			manualActions.push(
+				safeAction(
+					resolved.core,
+					coreControl.interface.encodeFunctionData("registerOperationalFeeCharger", [address]),
+					`Register GaslessLayer ${address} as an operational fee charger on core`,
+				),
+			)
+		}
+	}
+	const operatorRole = await instantLayer.OPERATOR_ROLE()
+	if (!(await instantLayer.hasRole(operatorRole, address))) {
+		const instantAdminRole = await instantLayer.DEFAULT_ADMIN_ROLE()
+		if (await instantLayer.hasRole(instantAdminRole, deployer.address)) {
+			await send(instantLayer.connect(deployer).grantRole(operatorRole, address), "grant InstantLayer OPERATOR_ROLE to GaslessLayer")
+		} else {
+			manualActions.push(
+				safeAction(
+					resolved.instantLayer,
+					instantLayer.interface.encodeFunctionData("grantRole", [operatorRole, address]),
+					`Grant InstantLayer OPERATOR_ROLE to GaslessLayer ${address}`,
+				),
+			)
+		}
+	}
+
+	if (!resolved.relayers.some(relayer => relayer === resolved.deployer) && (await contract.hasRole(relayerRole, resolved.deployer))) {
+		await send(connected.renounceRole(relayerRole, resolved.deployer), "renounce undeclared deployer GaslessLayer RELAYER_ROLE")
+	}
+	if (resolved.admin !== resolved.deployer) {
+		for (const [name, role] of [
+			["CONFIG_ADMIN_ROLE", configAdminRole],
+			["DEFAULT_ADMIN_ROLE", defaultAdminRole],
+		] as const) {
+			if (!(await contract.hasRole(role, resolved.admin))) {
+				throw new Error(`Refusing to renounce deployer GaslessLayer ${name}: final admin ${resolved.admin} does not hold it`)
+			}
+			if (await contract.hasRole(role, resolved.deployer)) {
+				await send(connected.renounceRole(role, resolved.deployer), `renounce deployer GaslessLayer ${name}`)
+			}
+		}
+	}
+
+	const inspection = await inspectGaslessLayerPostState(ethers, { ...resolved, address, implementation })
+	assertManualActionsEqual(manualActions, inspection.manualActions, "gaslessLayer")
+	return { address, implementation, records, manualActions, checks: inspection.checks }
+}
+
+async function executeGaslessLayer(
+	hre: any,
+	checkpoint: DeploymentCheckpoint,
+	input: ComponentExecutionInput,
+	deployer: any,
+): Promise<{
+	address: string
+	implementation: string
+	records: VerificationRecord[]
+	manualActions: SafeManualAction[]
+	checks: ComponentHealthCheck[]
+}> {
+	const { ethers } = await getConnection(hre)
+	const accountLayer = input.coreReport.addresses.accountLayerDiamond
+	if (!accountLayer) throw new Error("DEPENDENCY_UNAVAILABLE: core report has no AccountLayer address required by GaslessLayer")
+	const resolved = await resolveGaslessLayerConfig(
+		ethers,
+		input.componentConfig,
+		{
+			core: input.coreReport.addresses.diamond,
+			accountLayer,
+			instantLayer: input.coreReport.addresses.instantLayer,
+			admin: input.coreReport.config.admin,
+		},
+		deployer.address,
+	)
+	const vanityPlan = buildVanityPlan(activeDeploymentRecipe?.recipe.create2)
+	if (vanityPlan) {
+		await ensureCreate2Factory(hre, vanityPlan, {
+			checkpoint,
+			isLive: activeDeploymentRecipe?.recipe.network.mode === "live",
+			allowNewFactory: false,
+			logData: false,
+		})
+	}
+	return deployAndConfigureGaslessLayer(hre, checkpoint, resolved, deployer, createVanityContext(ethers, vanityPlan))
 }
 
 /**
@@ -578,6 +956,23 @@ export async function assertComponentDeploymentAuthority(
 		])
 		if (!deployerCanRegister && !adminCanRegister) {
 			throw new Error(`AUTHORITY_MISSING: neither deployer ${deployer} nor dependency-report admin ${admin} holds core PROVIDER_ADMIN_ROLE`)
+		}
+	}
+
+	if (component === "gaslessLayer") {
+		const feeAdminRole = roleHash("FEE_ADMIN_ROLE")
+		const [deployerCanRegister, adminCanRegister] = await Promise.all([view.hasRole(deployer, feeAdminRole), view.hasRole(admin, feeAdminRole)])
+		if (!deployerCanRegister && !adminCanRegister) {
+			throw new Error(`AUTHORITY_MISSING: neither deployer ${deployer} nor dependency-report admin ${admin} holds core FEE_ADMIN_ROLE`)
+		}
+		const instantLayer = await ethers.getContractAt("InstantLayer", coreReport.addresses.instantLayer)
+		const instantAdminRole = await instantLayer.DEFAULT_ADMIN_ROLE()
+		const [deployerCanGrant, adminCanGrant] = await Promise.all([
+			instantLayer.hasRole(instantAdminRole, deployer),
+			instantLayer.hasRole(instantAdminRole, admin),
+		])
+		if (!deployerCanGrant && !adminCanGrant) {
+			throw new Error(`AUTHORITY_MISSING: neither deployer ${deployer} nor dependency-report admin ${admin} holds InstantLayer DEFAULT_ADMIN_ROLE`)
 		}
 	}
 }
@@ -789,10 +1184,14 @@ async function executeSymbolManager(
 export async function resolveExpressProviderConfig(
 	ethers: any,
 	componentConfig: Record<string, any>,
-	target: { core: string; admin: string },
+	target: { core: string; accountLayer: string; admin: string },
 	deployerAddress: string,
 ): Promise<Omit<ExpressProviderResolvedConfig, "address">> {
 	const core = ethers.getAddress(target.core)
+	const accountLayer = await requireAddress(ethers, target.accountLayer, "expressProvider.accountLayer")
+	if ((await ethers.provider.getCode(accountLayer)) === "0x") {
+		throw new Error(`expressProvider.accountLayer has no contract code at ${accountLayer}`)
+	}
 	const admin = await requireAddress(ethers, componentConfig.admin || target.admin, "expressProvider.admin")
 	const coreView = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", core)
 	const collateral = ethers.getAddress(await coreView.getCollateral())
@@ -844,6 +1243,7 @@ export async function resolveExpressProviderConfig(
 		deployer: ethers.getAddress(deployerAddress),
 		core,
 		collateral,
+		accountLayer,
 		signatureVerifier,
 		muonAppId: componentConfig.creditLine?.muonAppId,
 		muonFreshnessWindow: componentConfig.creditLine?.muonFreshnessWindow,
@@ -876,6 +1276,7 @@ export async function deployAndConfigureExpressProvider(
 		initAdmin: resolved.deployer,
 		symmio: resolved.core,
 		collateral: resolved.collateral,
+		accountLayer: resolved.accountLayer,
 		checkpoint,
 		vanity,
 	})
@@ -1044,7 +1445,11 @@ async function executeExpressProvider(
 	const resolved = await resolveExpressProviderConfig(
 		ethers,
 		input.componentConfig,
-		{ core: input.coreReport.addresses.diamond, admin: input.coreReport.config.admin },
+		{
+			core: input.coreReport.addresses.diamond,
+			accountLayer: input.coreReport.addresses.accountLayerDiamond!,
+			admin: input.coreReport.config.admin,
+		},
 		deployer.address,
 	)
 	// A standalone `--only expressProvider` run has no outer deployment to inherit from, so it
@@ -1072,10 +1477,11 @@ async function executeExpressProvider(
 // authority for becomes a Safe-ready manual action, exactly like the deploy handover.
 
 /** What a report stores as applied intent: full for a deploy, per-declared-section for a patch. */
-export type ExpressStoredConfig = Partial<Omit<ExpressProviderResolvedConfig, "address" | "admin" | "deployer" | "core">> & {
+export type ExpressStoredConfig = Partial<Omit<ExpressProviderResolvedConfig, "address" | "admin" | "deployer" | "core" | "accountLayer">> & {
 	admin: string
 	deployer: string
 	core: string
+	accountLayer: string
 }
 
 export type ExpressPatchConfig = ExpressStoredConfig & { address: string }
@@ -1084,13 +1490,14 @@ export type ExpressPatchConfig = ExpressStoredConfig & { address: string }
 export async function resolveExpressPatchConfig(
 	ethers: any,
 	componentConfig: Record<string, any>,
-	target: { core: string; admin: string },
+	target: { core: string; accountLayer: string; admin: string },
 	deployerAddress: string,
 ): Promise<ExpressPatchConfig> {
 	const core = ethers.getAddress(target.core)
+	const accountLayer = await requireAddress(ethers, target.accountLayer, "expressProvider.accountLayer")
 	const admin = await requireAddress(ethers, componentConfig.admin || target.admin, "expressProvider.admin")
 	const address = await requireAddress(ethers, componentConfig.address, "expressProvider.address")
-	const resolved: ExpressPatchConfig = { address, admin, deployer: ethers.getAddress(deployerAddress), core }
+	const resolved: ExpressPatchConfig = { address, admin, deployer: ethers.getAddress(deployerAddress), core, accountLayer }
 
 	if (componentConfig.creditLine !== undefined) {
 		const declared = componentConfig.creditLine.signatureVerifier
@@ -1344,7 +1751,11 @@ async function patchExpressProvider(
 	const resolved = await resolveExpressPatchConfig(
 		ethers,
 		input.componentConfig,
-		{ core: input.coreReport.addresses.diamond, admin: input.coreReport.config.admin },
+		{
+			core: input.coreReport.addresses.diamond,
+			accountLayer: input.coreReport.addresses.accountLayerDiamond!,
+			admin: input.coreReport.config.admin,
+		},
 		deployer.address,
 	)
 	const address = resolved.address
@@ -1356,6 +1767,10 @@ async function patchExpressProvider(
 	const boundCore = ethers.getAddress(await view.symmio())
 	if (boundCore !== resolved.core) {
 		throw new Error(`DEPENDENCY_UNAVAILABLE: provider ${address} is bound to core ${boundCore}, not the recipe's core ${resolved.core}`)
+	}
+	const boundAccountLayer = ethers.getAddress(await view.accountLayer())
+	if (boundAccountLayer !== resolved.accountLayer) {
+		throw new Error(`DEPENDENCY_UNAVAILABLE: provider ${address} is bound to AccountLayer ${boundAccountLayer}, not ${resolved.accountLayer}`)
 	}
 
 	// The baseline is the last applied config this recipe recorded for this exact provider,
@@ -1433,6 +1848,7 @@ async function patchExpressProvider(
 		checks.push({ check: name, status: pass ? "passed" : pending ? "pending" : "failed" })
 	check("runtime bytecode", true)
 	checks.push({ check: "bound to the recipe's core", status: "passed", expected: resolved.core, actual: boundCore })
+	checks.push({ check: "bound to the recipe's AccountLayer", status: "passed", expected: resolved.accountLayer, actual: boundAccountLayer })
 	if (drift.items.length === 0) check("provider already matches the recipe — nothing to change", true)
 	for (const item of drift.items) {
 		if (!remainingIds.has(item.id)) check(item.description, true)
@@ -1441,7 +1857,13 @@ async function patchExpressProvider(
 	}
 
 	// The next patch's baseline: previous applied state overlaid with every declared section.
-	const appliedConfig: ExpressStoredConfig = { ...(baseline ?? {}), admin: resolved.admin, deployer: resolved.deployer, core: resolved.core }
+	const appliedConfig: ExpressStoredConfig = {
+		...(baseline ?? {}),
+		admin: resolved.admin,
+		deployer: resolved.deployer,
+		core: resolved.core,
+		accountLayer: resolved.accountLayer,
+	}
 	for (const key of [
 		"signatureVerifier",
 		"muonAppId",
@@ -1460,7 +1882,12 @@ async function patchExpressProvider(
 
 /** Execute one safely resumable product component against a previously proven core. */
 export async function executeComponentDeployment(hre: any, input: ComponentExecutionInput) {
-	if (input.component !== "partyB" && input.component !== "symbolManager" && input.component !== "expressProvider") {
+	if (
+		input.component !== "partyB" &&
+		input.component !== "symbolManager" &&
+		input.component !== "expressProvider" &&
+		input.component !== "gaslessLayer"
+	) {
 		throw new Error(`LIVE_TARGET_UNSUPPORTED: component ${input.component} has no complete safe deployment workflow`)
 	}
 	const isPatch = input.component === "expressProvider" && input.componentConfig.mode === "reuse"
@@ -1496,6 +1923,9 @@ export async function executeComponentDeployment(hre: any, input: ComponentExecu
 		assertMainnetDeploymentIdentitySafe(chainId, deployer.address, input.componentConfig.admin || input.coreReport.config.admin, simulated)
 	}
 	await assertDependencyAddressesHaveCode(input.coreReport, address => ethers.provider.getCode(address))
+	if (input.component === "gaslessLayer") {
+		await assertGaslessLayerDependenciesHaveCode(input.coreReport, address => ethers.provider.getCode(address))
+	}
 	// Validate component-local inputs and every external authority before checkpoint
 	// mutation or contract creation. Later helpers normalize the same values again.
 	await requireAddress(ethers, input.componentConfig.admin || input.coreReport.config.admin, `${input.component}.admin`)
@@ -1518,11 +1948,29 @@ export async function executeComponentDeployment(hre: any, input: ComponentExecu
 		}
 	} else if (input.component === "symbolManager") {
 		publicConfig = { admin: componentAdmin, operator: ethers.getAddress(input.componentConfig.operator) }
+	} else if (input.component === "gaslessLayer") {
+		const accountLayer = input.coreReport.addresses.accountLayerDiamond!
+		const resolved = await resolveGaslessLayerConfig(
+			ethers,
+			input.componentConfig,
+			{
+				core: input.coreReport.addresses.diamond,
+				accountLayer,
+				instantLayer: input.coreReport.addresses.instantLayer,
+				admin: input.coreReport.config.admin,
+			},
+			deployer.address,
+		)
+		publicConfig = { admin: componentAdmin, gaslessLayer: resolved }
 	} else if (isPatch) {
 		const resolved = await resolveExpressPatchConfig(
 			ethers,
 			input.componentConfig,
-			{ core: input.coreReport.addresses.diamond, admin: input.coreReport.config.admin },
+			{
+				core: input.coreReport.addresses.diamond,
+				accountLayer: input.coreReport.addresses.accountLayerDiamond!,
+				admin: input.coreReport.config.admin,
+			},
 			deployer.address,
 		)
 		publicConfig = { admin: componentAdmin, expressProvider: resolved }
@@ -1530,7 +1978,11 @@ export async function executeComponentDeployment(hre: any, input: ComponentExecu
 		const resolved = await resolveExpressProviderConfig(
 			ethers,
 			input.componentConfig,
-			{ core: input.coreReport.addresses.diamond, admin: input.coreReport.config.admin },
+			{
+				core: input.coreReport.addresses.diamond,
+				accountLayer: input.coreReport.addresses.accountLayerDiamond!,
+				admin: input.coreReport.config.admin,
+			},
 			deployer.address,
 		)
 		publicConfig = { admin: componentAdmin, expressProvider: resolved }
@@ -1560,6 +2012,7 @@ export async function executeComponentDeployment(hre: any, input: ComponentExecu
 		coreDependency: {
 			deploymentId: input.coreReport.deploymentId,
 			diamond: input.coreReport.addresses.diamond,
+			accountLayer: input.coreReport.addresses.accountLayerDiamond,
 			instantLayer: input.coreReport.addresses.instantLayer,
 		},
 		deployer: deployer.address,
@@ -1611,6 +2064,7 @@ export async function executeComponentDeployment(hre: any, input: ComponentExecu
 			reportPath: input.coreReportPath,
 			deploymentId: input.coreReport.deploymentId,
 			diamond: input.coreReport.addresses.diamond,
+			accountLayer: input.coreReport.addresses.accountLayerDiamond,
 			instantLayer: input.coreReport.addresses.instantLayer,
 		},
 		// A patch creates no contracts, so there is nothing for an explorer to verify.
@@ -1635,9 +2089,11 @@ export async function executeComponentDeployment(hre: any, input: ComponentExecu
 				? await executePartyB(hre, checkpoint, input, deployer)
 				: input.component === "symbolManager"
 					? await executeSymbolManager(hre, checkpoint, input, deployer)
-					: isPatch
-						? await patchExpressProvider(hre, checkpoint, input, deployer, priorComponentReport, safeActionsOnly)
-						: await executeExpressProvider(hre, checkpoint, input, deployer)
+					: input.component === "gaslessLayer"
+						? await executeGaslessLayer(hre, checkpoint, input, deployer)
+						: isPatch
+							? await patchExpressProvider(hre, checkpoint, input, deployer, priorComponentReport, safeActionsOnly)
+							: await executeExpressProvider(hre, checkpoint, input, deployer)
 		report.address = result.address
 		report.implementation = (result as { implementation?: string }).implementation
 		report.constructorArguments = result.records[result.records.length - 1]?.constructorArguments

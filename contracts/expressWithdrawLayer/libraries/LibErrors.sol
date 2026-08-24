@@ -10,6 +10,9 @@ library LibErrors {
 	error OnlySymmio();
 	error InvalidProvider();
 	error InvalidCollateral();
+	error InvalidAccountLayer();
+	error UnsupportedAccount();
+	error InvalidAffiliate();
 	error FeeRateExceeds100Percent();
 	error NoFeesToClaim();
 	error NoOperatorFeesToClaim();

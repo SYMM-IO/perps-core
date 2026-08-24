@@ -4,7 +4,7 @@ import { normalizeCheckpointScope } from "./checkpoint.js"
 export { loadCoreDependencyReport, parseCoreDependencyReport, type CoreDependencyReport } from "../../deployment/recipe.js"
 
 export type DeploymentTargetMode = "live" | "fork" | "local"
-export type DeploymentComponentName = "partyB" | "symbolManager" | "expressProvider"
+export type DeploymentComponentName = "partyB" | "symbolManager" | "expressProvider" | "gaslessLayer"
 
 export interface RecipeNetworkTarget {
 	name: string
@@ -65,6 +65,21 @@ export async function assertDependencyAddressesHaveCode(report: CoreDependencyRe
 		}
 		if (!code || code === "0x") dependencyError(`${label} ${address} has no code on the connected chain`)
 	}
+}
+
+export async function assertGaslessLayerDependenciesHaveCode(
+	report: CoreDependencyReport,
+	getCode: (address: string) => Promise<string>,
+): Promise<void> {
+	const accountLayer = report.addresses.accountLayerDiamond
+	if (!accountLayer) dependencyError("core deployment report does not include addresses.accountLayerDiamond required by GaslessLayer")
+	let code: string
+	try {
+		code = await getCode(accountLayer)
+	} catch (error) {
+		dependencyError(`failed to read AccountLayer ${accountLayer}: ${error instanceof Error ? error.message : String(error)}`)
+	}
+	if (!code || code === "0x") dependencyError(`AccountLayer ${accountLayer} has no code on the connected chain`)
 }
 
 /**

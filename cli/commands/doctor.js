@@ -167,7 +167,7 @@ export function assertDoctorSelectionSupported(only) {
 }
 
 export function isPartialAddonPreflight(recipeContext, only) {
-	return Boolean(recipeContext && (only === "partyB" || only === "symbolManager" || only === "expressProvider"));
+	return Boolean(recipeContext && (only === "partyB" || only === "symbolManager" || only === "expressProvider" || only === "gaslessLayer"));
 }
 
 export function doctorCheckpointScope(recipeContext, only) {
@@ -193,6 +193,9 @@ export function deploymentComponentProblemsForSelection(env, only) {
 			problems.push(["SYMBOL_MANAGER_OPERATOR is not a valid non-zero address", env.SYMBOL_MANAGER_OPERATOR]);
 		}
 		return { deployPartyB: false, deploySymbolManager: true, problems };
+	}
+	if (only === "expressProvider" || only === "gaslessLayer") {
+		return { deployPartyB: false, deploySymbolManager: false, problems };
 	}
 	return deploymentComponentProblems(env);
 }
@@ -653,6 +656,19 @@ export async function doctor(args, runtime = {}) {
 		}
 	} else if (expressProvider) {
 		r.info(`ExpressProvider deployment ${expressProvider.mode === "skip" ? "disabled" : expressProvider.mode}`);
+	}
+
+	const gaslessLayer = recipeContext?.recipe?.gaslessLayer;
+	if (gaslessLayer?.mode === "deploy") {
+		r.ok(`GaslessLayer relayers configured (${gaslessLayer.relayers.length})`, gaslessLayer.relayers.join(", "));
+		r.ok("GaslessLayer treasury configured", gaslessLayer.treasury);
+		r.ok("GaslessLayer deposit bounds configured", `depositFee=${gaslessLayer.depositFee}, minimumDeposit=${gaslessLayer.minimumDeposit}`);
+		r.ok(
+			`GaslessLayer selector overrides configured (${gaslessLayer.selectorFees.length})`,
+			gaslessLayer.selectorFees.map(entry => entry.selector).join(", ") || "default selector fee only",
+		);
+	} else if (gaslessLayer) {
+		r.info(`GaslessLayer deployment ${gaslessLayer.mode === "skip" ? "disabled" : gaslessLayer.mode}`);
 	}
 
 	// Muon is a Core deployment concern. Component-only runs trust the validated,

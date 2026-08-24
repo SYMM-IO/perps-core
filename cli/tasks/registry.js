@@ -144,7 +144,7 @@ function readPendingSafeActions(input) {
 			recipeDigest: recipe.digest,
 			live: recipe.recipe.network.mode === "live",
 			config: {
-				admin: recipe.recipe.governance.admin,
+				admin: component.admin || recipe.recipe.governance.admin,
 				...(input.only === "partyB" ? { signer: component.signer, adlEnabled: component.adlEnabled } : {}),
 				...(input.only === "symbolManager" ? { operator: component.operator } : {}),
 			},
@@ -219,7 +219,9 @@ async function prepareExistingRecipe({ root, ui }, { only, fullOnly = false } = 
 			if (!fullOnly) return true;
 			try {
 				const recipe = JSON.parse(fs.readFileSync(file, "utf8"));
-				return [recipe.core, recipe.partyB, recipe.symbolManager, recipe.expressProvider].every(component => component?.mode !== "skip");
+				return [recipe.core, recipe.partyB, recipe.symbolManager, recipe.expressProvider, recipe.gaslessLayer].every(
+					component => component?.mode !== "skip",
+				);
 			} catch {
 				return false;
 			}
@@ -477,7 +479,7 @@ const DEPLOY_TASKS = [
 	deployDefinition({
 		id: "deploy.full",
 		title: "Full SYMMIO system",
-		description: "Deploy Core, AccountLayer, InstantLayer, PartyB, SymbolManager and ExpressProvider with every safety gate.",
+		description: "Deploy Core, AccountLayer, InstantLayer, PartyB, SymbolManager, ExpressProvider and GaslessLayer with every safety gate.",
 	}),
 	deployDefinition({
 		id: "deploy.core",
@@ -502,6 +504,12 @@ const DEPLOY_TASKS = [
 		title: "ExpressProvider",
 		description: "Deploy and configure ExpressProvider against a completed Core deployment.",
 		only: "expressProvider",
+	}),
+	deployDefinition({
+		id: "deploy.gasless-layer",
+		title: "GaslessLayer",
+		description: "Deploy, configure and wire GaslessLayer against a completed Core deployment.",
+		only: "gaslessLayer",
 	}),
 ];
 

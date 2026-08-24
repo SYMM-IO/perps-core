@@ -12,6 +12,7 @@ import { WithdrawReceiverPart, WithdrawRequest } from "../../../core/storages/Wi
 import { WithdrawInfo, Status, OptionType } from "../../types/WithdrawTypes.sol";
 
 import { ISymmio } from "../../interfaces/ISymmio.sol";
+import { IAccountLayer } from "../../interfaces/IAccountLayer.sol";
 import { ISymmioHookFacet } from "./ISymmioHookFacet.sol";
 
 import { LibAccessControl } from "../../libraries/LibAccessControl.sol";
@@ -46,33 +47,37 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 		WithdrawOffer memory offer = _decodeAndVerifyOffer(withdrawRequest, offerData);
 		if (offer.optionType > uint8(OptionType.STANDARD)) revert LibErrors.InvalidOptionType();
 
+		(address affiliate, bool accountExists) = IAccountLayer(g.accountLayer).getAffiliateForAccount(withdrawRequest.user);
+		if (!accountExists) revert LibErrors.UnsupportedAccount();
+		if (offer.affiliate != affiliate) revert LibErrors.InvalidAffiliate();
+
 		OptionType optType = OptionType(offer.optionType);
 		if (optType == OptionType.STANDARD && offer.creditAmount > 0) revert LibErrors.CreditNotSupportedForStandard();
 
 		ComputedAmounts memory amounts = LibParts.computeAmounts(withdrawRequest.parts, offer.affiliateAmount, offer.creditAmount);
 
-		uint256 minSigs = LibValidators.getMinValidatorSignatures(offer.affiliate);
+		uint256 minSigs = LibValidators.getMinValidatorSignatures(affiliate);
 		if (optType == OptionType.SAME_TX && minSigs == 0) {
 			revert LibErrors.ValidatorsRequiredForSameTx();
 		}
 
 		uint256 feeBasis = amounts.expressAmount;
-		if (offer.fee != (feeBasis * f.affiliateConfigs[offer.affiliate].feeRate) / 10000) revert LibErrors.FeeMismatch();
-		if (offer.operatorFee != f.affiliateConfigs[offer.affiliate].operatorFee) revert LibErrors.OperatorFeeMismatch();
+		if (offer.fee != (feeBasis * f.affiliateConfigs[affiliate].feeRate) / 10000) revert LibErrors.FeeMismatch();
+		if (offer.operatorFee != f.affiliateConfigs[affiliate].operatorFee) revert LibErrors.OperatorFeeMismatch();
 		if (offer.fee > feeBasis || offer.operatorFee > feeBasis - offer.fee) revert LibErrors.FeesExceedExpressAmount();
 		uint256 baseFees = offer.fee + offer.operatorFee;
 
 		if (optType != OptionType.STANDARD && minSigs > 0) {
-			LibValidators.validateWithdrawApprovals(offer.affiliate, withdrawRequest.user, offer.nonce, withdrawRequest.totalAmount, validatorData);
+			LibValidators.validateWithdrawApprovals(affiliate, withdrawRequest.user, offer.nonce, withdrawRequest.totalAmount, validatorData);
 		}
 
 		if (optType != OptionType.STANDARD) {
-			_lockFunds(offer, amounts);
+			_lockFunds(affiliate, offer, amounts);
 		}
 
 		if (offer.creditAmount > 0) {
 			LibCreditLine.reserveDebt(
-				offer.affiliate,
+				affiliate,
 				withdrawRequest.user,
 				withdrawRequest.id,
 				offer.creditAmount,
@@ -88,7 +93,7 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 		info.generalAmount = amounts.generalAmount;
 		info.affiliateAmount = offer.affiliateAmount;
 		info.creditAmount = offer.creditAmount;
-		info.affiliate = offer.affiliate;
+		info.affiliate = affiliate;
 		info.acceptedAt = block.timestamp;
 		info.cooldownEndTime = withdrawRequest.cooldownEndTime;
 		info.partsHash = keccak256(abi.encode(withdrawRequest.parts));
@@ -267,16 +272,16 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 	//                     INTERNAL: FUND LOCKING
 	// ═══════════════════════════════════════════════════════════════════
 
-	function _lockFunds(WithdrawOffer memory offer, ComputedAmounts memory amounts) internal {
+	function _lockFunds(address affiliate, WithdrawOffer memory offer, ComputedAmounts memory amounts) internal {
 		PoolStorage.Layout storage p = PoolStorage.layout();
 
 		if (p.generalBalance - p.lockedGeneralBalance < amounts.generalAmount) revert LibErrors.InsufficientGeneralBalance();
-		if (p.affiliateBalances[offer.affiliate] - p.lockedAffiliateBalances[offer.affiliate] < offer.affiliateAmount) {
+		if (p.affiliateBalances[affiliate] - p.lockedAffiliateBalances[affiliate] < offer.affiliateAmount) {
 			revert LibErrors.InsufficientAffiliateBalance();
 		}
 
 		p.lockedGeneralBalance += amounts.generalAmount;
-		p.lockedAffiliateBalances[offer.affiliate] += offer.affiliateAmount;
+		p.lockedAffiliateBalances[affiliate] += offer.affiliateAmount;
 	}
 
 	// ═══════════════════════════════════════════════════════════════════

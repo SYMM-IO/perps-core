@@ -67,6 +67,7 @@ test("catalog is explicit, complete, and hides deployment primitives", () => {
 			"PartyB",
 			"SymbolManager",
 			"ExpressProvider",
+			"GaslessLayer",
 			"SymmioLiquidator",
 			"FeeDistributor",
 			"MultiAccount",

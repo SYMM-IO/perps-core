@@ -1,5 +1,5 @@
 export const RECIPE_API_VERSION: "deployment.symm.io/v1"
-export const DEPLOYMENT_COMPONENTS: readonly ["core", "partyB", "symbolManager", "expressProvider"]
+export const DEPLOYMENT_COMPONENTS: readonly ["core", "partyB", "symbolManager", "expressProvider", "gaslessLayer"]
 
 export type ComponentMode = "deploy" | "reuse" | "skip"
 export type SecretRef = `hardhat-keystore://${string}` | `env://${string}`
@@ -91,6 +91,24 @@ export interface DeploymentRecipe {
 	partyB: { mode: ComponentMode; address?: string; signer?: string; adlEnabled: boolean }
 	symbolManager: { mode: ComponentMode; address?: string; operator?: string }
 	expressProvider: ExpressProviderRecipe
+	gaslessLayer: GaslessLayerRecipe
+}
+
+export interface GaslessLayerRecipe {
+	mode: ComponentMode
+	admin?: string
+	treasury?: string
+	depositFee?: string
+	minimumDeposit?: string
+	defaultSelectorFee?: string
+	dailyFreeOpsLimit?: string
+	revertWhenFreeQuotaExhausted?: boolean
+	dailySponsoredNativeLimit?: string
+	revertWhenNativeSponsorLimitExhausted?: boolean
+	maxNativeGasTopUpAmount?: string
+	nativeGasTopUpFeeBps?: number
+	relayers?: string[]
+	selectorFees?: Array<{ selector: string; configured: boolean; amount: string }>
 }
 
 export type ExpressRoleName =

@@ -24,12 +24,20 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 		const affiliateOwner = allSigners[16]
 		const locker = allSigners[17]
 		const unlocker = allSigners[18]
+		const affiliate = affiliateOwner.address
+		const accountLayer = await ethers.deployContract("MockExpressAccountLayer")
+		await accountLayer.setAccounts(
+			allSigners.map(signer => signer.address),
+			affiliate,
+			true,
+		)
 
 		// Deploy ExpressProvider on top of the real Symmio diamond
 		const expressProvider = await deployExpressProvider(hre, connection, {
 			admin: deployer.address,
 			symmio: context.diamond,
 			collateral: await context.collateral.getAddress(),
+			accountLayer: await accountLayer.getAddress(),
 		})
 
 		// Register ExpressProvider on real Symmio
@@ -47,8 +55,6 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 		await expressProvider.grantRole(OPERATOR_ROLE, operator.address)
 		await expressProvider.grantRole(LOCKER_ROLE, locker.address)
 		await expressProvider.grantRole(UNLOCK_ROLE, unlocker.address)
-		const affiliate = affiliateOwner.address
-
 		// Deploy MockMuonSignatureVerifier for credit line
 		const muonVerifier = await ethers.deployContract("MockMuonSignatureVerifier")
 
@@ -85,6 +91,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			unlocker,
 			affiliate,
 			collateral: context.collateral,
+			accountLayer,
 			expressProvider,
 			muonVerifier,
 			generalFunding,
@@ -245,11 +252,13 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			creditAmount?: bigint
 			fee?: bigint
 			operatorFee?: bigint
+			affiliate?: string
 			validatorSignatures?: string[]
 			validatorTimestamps?: number[]
 		},
 	) {
-		const { botSigner, user, receiver, expressProvider, context, affiliate } = fixture
+		const { botSigner, user, receiver, expressProvider, context, affiliate: canonicalAffiliate } = fixture
+		const affiliate = opts?.affiliate ?? canonicalAffiliate
 		const withdrawAmount = opts?.withdrawAmount ?? 500n * 10n ** 18n
 		const affiliateAmount = opts?.affiliateAmount ?? 0n
 		const creditAmount = opts?.creditAmount ?? 0n
@@ -303,6 +312,39 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 
 		return { parts, providerData, withdrawAmount, partsHash, deadline }
 	}
+
+	describe("AccountLayer affiliate binding", function () {
+		it("accepts the AccountLayer affiliate and stores it for later lifecycle steps", async function () {
+			const fixture = await deployFixture()
+			const { parts, providerData } = await initiateWindowedWithdraw(fixture)
+
+			await fixture.context.withdrawFacet.connect(fixture.user).initiateWithdraw(parts, false, providerData)
+
+			const info = await fixture.expressProvider.getWithdrawInfo(fixture.user.address, 1n)
+			expect(info.affiliate).to.equal(fixture.affiliate)
+		})
+
+		it("rejects a signed zero affiliate when AccountLayer assigns another affiliate", async function () {
+			const fixture = await deployFixture()
+			const { parts, providerData } = await initiateWindowedWithdraw(fixture, { affiliate: ethers.ZeroAddress })
+
+			await expect(fixture.context.withdrawFacet.connect(fixture.user).initiateWithdraw(parts, false, providerData)).to.be.revertedWithCustomError(
+				fixture.expressProvider,
+				"InvalidAffiliate",
+			)
+		})
+
+		it("rejects users that the configured AccountLayer does not recognize", async function () {
+			const fixture = await deployFixture()
+			const { parts, providerData } = await initiateWindowedWithdraw(fixture)
+			await fixture.accountLayer.setAccount(fixture.user.address, fixture.affiliate, false)
+
+			await expect(fixture.context.withdrawFacet.connect(fixture.user).initiateWithdraw(parts, false, providerData)).to.be.revertedWithCustomError(
+				fixture.expressProvider,
+				"UnsupportedAccount",
+			)
+		})
+	})
 
 	// ═══════════════════════════════════════════════════════════════════════
 	//                       VALIDATOR SIGNATURES
@@ -2180,9 +2222,18 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			const init = await ethers.deployContract("contracts/expressWithdrawLayer/Init.sol:Init")
 			await init.waitForDeployment()
 
-			await expect(init.init(deployer.address, context.diamond, await wrongCollateral.getAddress())).to.be.revertedWithCustomError(
+			await expect(
+				init.init(deployer.address, context.diamond, await wrongCollateral.getAddress(), context.accountLayerDiamond),
+			).to.be.revertedWithCustomError(init, "InvalidCollateral")
+		})
+
+		it("Init.init rejects an address without AccountLayer contract code", async function () {
+			const { context, deployer, collateral } = await deployFixture()
+			const init = await ethers.deployContract("contracts/expressWithdrawLayer/Init.sol:Init")
+
+			await expect(init.init(deployer.address, context.diamond, await collateral.getAddress(), ethers.ZeroAddress)).to.be.revertedWithCustomError(
 				init,
-				"InvalidCollateral",
+				"InvalidAccountLayer",
 			)
 		})
 
@@ -2214,7 +2265,12 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 
 			const diamondCut = await ethers.getContractAt("DiamondCutFacet", expressAddr)
 			const initContract = await (await ethers.getContractFactory("contracts/expressWithdrawLayer/Init.sol:Init")).deploy()
-			const initCalldata = initContract.interface.encodeFunctionData("init", [deployer.address, context.diamond, await collateral.getAddress()])
+			const initCalldata = initContract.interface.encodeFunctionData("init", [
+				deployer.address,
+				context.diamond,
+				await collateral.getAddress(),
+				context.accountLayerDiamond,
+			])
 
 			try {
 				await diamondCut.diamondCut([], await initContract.getAddress(), initCalldata)

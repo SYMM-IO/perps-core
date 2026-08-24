@@ -1,6 +1,12 @@
 import { validateDeploymentRecipe } from "../../deployment/recipe.js";
 import { buildInitialRecipe } from "../commands/recipe.js";
-import { applyLocalAccountDefaults, prepareDeploymentRecipe, prepareExpressPatch, recipeReviewText } from "../tasks/guided-recipe.js";
+import {
+	applyLocalAccountDefaults,
+	editGaslessLayer,
+	prepareDeploymentRecipe,
+	prepareExpressPatch,
+	recipeReviewText,
+} from "../tasks/guided-recipe.js";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -85,6 +91,8 @@ test("persistent local preparation discovers unlocked accounts and needs no JSON
 	assert.equal(recipe.partyB.signer, ACCOUNTS[2]);
 	assert.equal(recipe.symbolManager.operator, ACCOUNTS[3]);
 	assert.equal(recipe.expressProvider.roles.OPERATOR_ROLE[0], ACCOUNTS[4]);
+	assert.equal(recipe.gaslessLayer.treasury, ACCOUNTS[1]);
+	assert.deepEqual(recipe.gaslessLayer.relayers, [ACCOUNTS[4]]);
 	assert.ok(!JSON.stringify(recipe).includes("REPLACE_WITH_"));
 	assert.equal(
 		ui.prompts.some(prompt => prompt.message === "Store RPC and explorer credentials in the Hardhat keystore?"),
@@ -101,7 +109,28 @@ test("local defaults remain fully reviewable without exposing a secret", () => {
 	assert.match(review, /no secret reference is stored/i);
 	assert.match(review, /OWNERSHIP/);
 	assert.match(review, /Express roles:/);
+	assert.match(review, /Gasless treasury:/);
+	assert.match(review, /Gasless relayers:/);
+	assert.match(review, /Gasless selector overrides:/);
 	assert.doesNotMatch(review, /private key|password/i);
+});
+
+test("GaslessLayer guided editing covers selector-specific fee overrides", async () => {
+	const source = JSON.parse(fs.readFileSync(path.resolve("deployment/examples/arbitrum.v1.example.json"), "utf8"));
+	const recipe = applyLocalAccountDefaults(buildInitialRecipe("localhost", source), ACCOUNTS);
+	const ui = {
+		text: async options => {
+			if (options.message === "Selector fee override count") return "1";
+			if (options.message === "Selector override #1") return "0x12345678";
+			if (options.message === "Selector fee amount #1") return "11";
+			return String(options.initialValue ?? "0");
+		},
+		confirm: async options => options.initialValue,
+		note: () => {},
+	};
+	assert.equal(await editGaslessLayer(ui, recipe), true);
+	assert.deepEqual(recipe.gaslessLayer.selectorFees, [{ selector: "0x12345678", configured: true, amount: "11" }]);
+	assert.doesNotThrow(() => validateDeploymentRecipe(recipe));
 });
 
 test("ExpressProvider patch sections are edited interactively and can declare role revocations", async () => {
