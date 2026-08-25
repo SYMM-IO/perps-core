@@ -1026,16 +1026,6 @@ const SETTLEMENT_TEMPLATE_REPAIR_TASK = common({
 
 const MAINTENANCE_TASKS = [
 	SETTLEMENT_TEMPLATE_REPAIR_TASK,
-	oneStepMaintenance({
-		id: "maintenance.rpc-health",
-		version: 1,
-		risk: "read-only",
-		title: "RPC health check",
-		description: "Check the encrypted Arbitrum RPC endpoint without exposing its URL.",
-		supportedNetworks: ["arbitrum"],
-		prepare: async () => ({}),
-		execute: ctx => ctx.runProcess("./utils/checkArbitrumRpc.sh"),
-	}),
 	...["show", "diff", "export"].map(operation =>
 		oneStepMaintenance({
 			id: `maintenance.config-${operation}`,
@@ -1092,28 +1082,6 @@ const MAINTENANCE_TASKS = [
 			ctx
 				.runCallable("explorer verification retry", () => verify({ config: input.config, "retry-failed": true, _: [] }))
 				.then(code => requireZero(code, "Explorer verification")),
-		reconcile: mutationReconcile,
-	}),
-	oneStepMaintenance({
-		id: "maintenance.arbitrum-ledger-handover",
-		version: 1,
-		risk: "transaction",
-		title: "Arbitrum Ledger handover completion",
-		description: "Discover the expected Ledger signer, complete pending handover transactions and recheck ownership.",
-		supportedNetworks: ["arbitrum"],
-		inputs: ["expected Ledger address", "device confirmation"],
-		prepare: async ({ ui }) => {
-			const address = await inputText(ui, "Expected Ledger address", { address: true });
-			if (address === null) return null;
-			if (!(await ui.confirm({ message: "Ledger is connected and the Ethereum app is open?", initialValue: true }))) return null;
-			return {
-				address,
-				network: "arbitrum",
-				chainId: 42161,
-				signer: { mode: SIGNER_MODES.LEDGER, address, derivation: "ledger-live" },
-			};
-		},
-		execute: (ctx, input) => ctx.runProcess("./utils/completeArbitrumHandoverWithLedger.sh", [input.address]),
 		reconcile: mutationReconcile,
 	}),
 	...["enable", "disable"].map(action =>

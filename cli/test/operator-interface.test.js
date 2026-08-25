@@ -76,10 +76,13 @@ test("catalog is explicit, complete, and hides deployment primitives", () => {
 	);
 	assert.equal(entries.filter(item => item.category === "patch").length, 1);
 	assert.equal(entries.filter(item => item.category === "checklist").length, 1);
-	assert.equal(entries.filter(item => item.category === "maintenance").length, 11);
+	assert.equal(entries.filter(item => item.category === "maintenance").length, 9);
 	const settlementRepair = entries.find(item => item.id === "maintenance.recreate-settlement-templates");
 	assert.equal(settlementRepair.title, "Recreate settleUpnl InstantLayer templates");
 	assert.deepEqual(settlementRepair.supportedNetworks, ["localhost", "fork-arbitrum", "arbitrum"]);
+	for (const removed of ["maintenance.rpc-health", "maintenance.arbitrum-ledger-handover"]) {
+		assert.ok(!entries.some(entry => entry.id === removed));
+	}
 	for (const hidden of ["Create2Factory", "FakeStablecoin", "Diamond", "AccountLayer", "InstantLayer", "MuonSignatureVerifier"]) {
 		assert.ok(!entries.some(entry => entry.title === hidden));
 	}
