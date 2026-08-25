@@ -1,7 +1,7 @@
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
-import { createDeploymentPlan, DEPLOYMENT_COMPONENTS } from "../../deployment/recipe.js"
+import { createDeploymentPlan, DEPLOYMENT_COMPONENTS } from "../../deployment-tooling/recipe.js"
 import { executeComponentDeployment } from "./componentDeployment.js"
 import {
 	assertExpressProviderDeployable,

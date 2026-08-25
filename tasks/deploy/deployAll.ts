@@ -2,7 +2,7 @@ import type { ContractTransactionResponse } from "ethers"
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
-import { createDeploymentPlan, type ComponentMode, type DeploymentRecipe } from "../../deployment/recipe.js"
+import { createDeploymentPlan, type ComponentMode, type DeploymentRecipe } from "../../deployment-tooling/recipe.js"
 import { ControlFacet } from "../../src/types/index.js"
 import { getDataDir, setDataScope, writeData } from "../utils/fs.js"
 import { deployAccountLayerDiamond } from "./accountLayerDiamond.js"

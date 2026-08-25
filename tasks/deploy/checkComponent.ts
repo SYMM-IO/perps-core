@@ -3,7 +3,7 @@ import { ArgumentType } from "hardhat/types/arguments"
 import fs from "node:fs"
 import path from "node:path"
 
-import { createDeploymentPlan } from "../../deployment/recipe.js"
+import { createDeploymentPlan } from "../../deployment-tooling/recipe.js"
 import { getDataDir } from "../utils/fs.js"
 import { getCheckpointPath, setCheckpointSimulated, type DeploymentCheckpoint } from "./checkpoint.js"
 import {

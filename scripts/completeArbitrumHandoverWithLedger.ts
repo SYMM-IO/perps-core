@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process"
 import fs from "node:fs"
 import { fileURLToPath } from "node:url"
 
-import { loadDeploymentRecipe } from "../deployment/recipe.js"
+import { loadDeploymentRecipe } from "../deployment-tooling/recipe.js"
 import { ledgerAddressFromOutput, ledgerArguments, ledgerCandidatePaths, receiptHash } from "./utils/ledgerHandover.js"
 import { resolveHttpRpcUrl } from "./utils/resolveHttpRpcUrl.js"
 
@@ -12,7 +12,7 @@ const CHAIN_ID = 42161n
 const MAX_BLOCK_AGE_SECONDS = 300
 const ADMIN_ACTION_CONFIRMATION = "EXECUTE ARBITRUM HANDOVER"
 const PROJECT_ROOT = fileURLToPath(new URL("../", import.meta.url))
-const RECIPE_PATH = fileURLToPath(new URL("../deployments/arbitrum.json", import.meta.url))
+const RECIPE_PATH = fileURLToPath(new URL("../deployment-recipes/arbitrum.json", import.meta.url))
 const REPORT_PATH = fileURLToPath(new URL("../tasks/data/42161/deployment-report.json", import.meta.url))
 const CHECKPOINT_PATH = fileURLToPath(new URL("../tasks/data/checkpoints/checkpoint-42161.json", import.meta.url))
 const LEDGER_CACHE_PATH = fileURLToPath(new URL("../.ledger-handover-cache.json", import.meta.url))
@@ -106,11 +106,11 @@ function loadAndValidateDeployment(expectedLedgerAddress: string): DeploymentCon
 	const checkpoint = fs.existsSync(CHECKPOINT_PATH) ? readJson<DeploymentCheckpoint>(CHECKPOINT_PATH, "Arbitrum deployment checkpoint") : null
 
 	if (loaded.recipe.network.name !== "arbitrum" || loaded.recipe.network.chainId !== Number(CHAIN_ID) || loaded.recipe.network.mode !== "live") {
-		fail("deployments/arbitrum.json is not bound to live Arbitrum One (chainId 42161)")
+		fail("deployment-recipes/arbitrum.json is not bound to live Arbitrum One (chainId 42161)")
 	}
 	if (report.chainId !== Number(CHAIN_ID) || report.network !== "arbitrum") fail("deployment report is not for Arbitrum One")
 	if (report.recipe?.name !== loaded.recipe.name || report.recipe?.digest !== loaded.digest) {
-		fail("deployment report is not bound to the current deployments/arbitrum.json digest")
+		fail("deployment report is not bound to the current deployment-recipes/arbitrum.json digest")
 	}
 	if (report.lifecycle === "complete") {
 		if (checkpoint) fail("deployment report is complete but an active Arbitrum checkpoint still exists")
@@ -502,9 +502,9 @@ async function main(): Promise<void> {
 	console.log("\nAll handover actions are confirmed on Arbitrum:")
 	for (const hash of receipts) console.log(`  ${hash}`)
 	console.log("\nResume the authoritative deployment gate now:")
-	console.log("  ./symmio deploy --config deployments/arbitrum.json")
+	console.log("  ./symmio deploy --config deployment-recipes/arbitrum.json")
 	console.log("Then run the independent read-only status check:")
-	console.log("  ./symmio status --config deployments/arbitrum.json")
+	console.log("  ./symmio status --config deployment-recipes/arbitrum.json")
 }
 
 try {

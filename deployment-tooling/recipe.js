@@ -346,7 +346,7 @@ function validateCreate2(value, source) {
 function validateCore(value, source, networkMode) {
 	const core = object(value, source, "core");
 	if (core.create2 !== undefined) {
-		fail(source, "core.create2", 'has moved to the top-level "create2" block; see deployment/examples/arbitrum.v1.example.json');
+		fail(source, "core.create2", 'has moved to the top-level "create2" block; see deployment-tooling/examples/arbitrum.v1.example.json');
 	}
 	const keys = ["mode", "fromReport", "collateral", "muon", "protocol", "setupInstantLayerTemplates", "registerDummyAffiliate"];
 	onlyKeys(core, keys, source, "core");

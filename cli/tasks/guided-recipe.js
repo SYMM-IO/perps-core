@@ -1,5 +1,5 @@
-import { DEPLOYABLE_CONTRACTS } from "../../deployment/deployableContracts.js";
-import { recipeDigest, validateDeploymentRecipe } from "../../deployment/recipe.js";
+import { DEPLOYABLE_CONTRACTS } from "../../deployment-tooling/deployableContracts.js";
+import { recipeDigest, validateDeploymentRecipe } from "../../deployment-tooling/recipe.js";
 import { buildInitialRecipe } from "../commands/recipe.js";
 import { RECIPE_EXAMPLE } from "../lib/config-guide.js";
 import { readCheckpoint, readDeploymentReport, resolveNetwork } from "../lib/context.js";
@@ -878,7 +878,7 @@ export async function prepareDeploymentRecipe({ root = PROJECT_ROOT, ui, only, c
 		chainId: chain.chainId,
 	});
 	if (!signer) return null;
-	const defaultFile = path.join(root, "deployments", `${network}${only ? `-${only}` : coreBundle ? "-core" : ""}.json`);
+	const defaultFile = path.join(root, "deployment-recipes", `${network}${only ? `-${only}` : coreBundle ? "-core" : ""}.json`);
 	const outputPath = defaultFile;
 	let recipe;
 	let replacing = fs.existsSync(defaultFile);
@@ -1003,7 +1003,7 @@ export async function prepareExpressPatch({ root = PROJECT_ROOT, ui, readReport 
 		{ network: "arbitrum", chainId: 42161, mode: "live" },
 	]
 		.map(candidate => {
-			const recipePath = path.join(root, "deployments", `${candidate.network}.json`);
+			const recipePath = path.join(root, "deployment-recipes", `${candidate.network}.json`);
 			const reportPath = path.join(
 				root,
 				"tasks",
@@ -1047,7 +1047,7 @@ export async function prepareExpressPatch({ root = PROJECT_ROOT, ui, readReport 
 	const recipe = structuredClone(base.recipe);
 	recipe.name = `${selected.network}-expressProvider-patch`;
 	recipe.governance = { admin: base.recipe.governance.admin };
-	const outputPath = path.join(root, "deployments", `${selected.network}-expressProvider-patch.json`);
+	const outputPath = path.join(root, "deployment-recipes", `${selected.network}-expressProvider-patch.json`);
 	recipe.core = { mode: "reuse", fromReport: relativeReference(outputPath, selected.reportPath) };
 	recipe.partyB = { mode: "skip", adlEnabled: false };
 	recipe.symbolManager = { mode: "skip" };

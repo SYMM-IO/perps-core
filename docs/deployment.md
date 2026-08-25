@@ -169,7 +169,7 @@ active slot.
 
 | Path                                          | Evidence                                    |
 | --------------------------------------------- | ------------------------------------------- |
-| `deployments/<name>.json`                     | Portable reviewed recipe                    |
+| `deployment-recipes/<name>.json`              | Portable reviewed recipe                    |
 | `.symmio/tasks/active.json`                   | One transient active task                   |
 | `.symmio/tasks/runs/`                         | Local NDJSON events and redacted raw logs   |
 | `.symmio/tasks/history/`                      | Indefinite local terminal outcomes          |

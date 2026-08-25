@@ -1,4 +1,4 @@
-import { DEPLOYABLE_CONTRACTS } from "../../deployment/deployableContracts.js";
+import { DEPLOYABLE_CONTRACTS } from "../../deployment-tooling/deployableContracts.js";
 import { config as runConfig } from "../commands/config.js";
 import { deploy, readComponentReport, validateDeploymentHandoff } from "../commands/deploy.js";
 import { doctor } from "../commands/doctor.js";
@@ -209,8 +209,8 @@ async function configureRequiredKeystoreKeys(ui, signer, keys) {
 }
 
 async function prepareExistingRecipe({ root, ui }, { only, fullOnly = false } = {}) {
-	const directory = path.join(root, "deployments");
-	if (!fs.existsSync(directory)) throw new Error("No deployments/ directory exists in this checkout");
+	const directory = path.join(root, "deployment-recipes");
+	if (!fs.existsSync(directory)) throw new Error("No deployment-recipes/ directory exists in this checkout");
 	const files = fs
 		.readdirSync(directory)
 		.filter(file => file.endsWith(".json"))
@@ -226,7 +226,7 @@ async function prepareExistingRecipe({ root, ui }, { only, fullOnly = false } = 
 				return false;
 			}
 		});
-	if (files.length === 0) throw new Error("No deployment recipe exists under deployments/");
+	if (files.length === 0) throw new Error("No deployment recipe exists under deployment-recipes/");
 	const selected = await ui.select({
 		message: "Which reviewed deployment recipe?",
 		options: files.map(file => ({ value: file, label: path.basename(file), hint: path.relative(root, file) })),

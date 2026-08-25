@@ -1,6 +1,6 @@
 import { keccak256 } from "ethers"
 
-import { DEPLOYABLE_CONTRACTS } from "../../deployment/deployableContracts.js"
+import { DEPLOYABLE_CONTRACTS } from "../../deployment-tooling/deployableContracts.js"
 import { type VanityPattern, describePattern, expectedAttempts, patternLength } from "../utils/create2Mining.js"
 
 export const DEFAULT_MINING_BUDGET = 50_000_000

@@ -1,6 +1,6 @@
 import { expect } from "chai"
 
-import { DEPLOYABLE_CONTRACTS, VANITY_GROUPS, deployableGroup } from "../../deployment/deployableContracts.js"
+import { DEPLOYABLE_CONTRACTS, VANITY_GROUPS, deployableGroup } from "../../deployment-tooling/deployableContracts.js"
 import { FacetNames } from "../../tasks/deploy/constants.js"
 
 const shortName = (name: string) => (name.includes(":") ? name.split(":").pop()! : name)

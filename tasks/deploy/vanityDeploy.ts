@@ -1,4 +1,4 @@
-import { DEPLOYABLE_CONTRACTS } from "../../deployment/deployableContracts.js"
+import { DEPLOYABLE_CONTRACTS } from "../../deployment-tooling/deployableContracts.js"
 import { MiningBudgetExceeded, type VanityPattern, describePattern, expectedAttempts, mineCreate2Salt } from "../utils/create2Mining.js"
 import { DeploymentCheckpoint } from "./checkpoint.js"
 import { checkpointDeployment, persistSubmittedTransaction } from "./deploymentRecovery.js"
@@ -48,7 +48,7 @@ export function create2Record(result: DeployResult): { salt: string; factoryAddr
 export async function deployContract(ctx: VanityContext | null, spec: DeploySpec): Promise<DeployResult> {
 	const { key, component, label, factory, constructorArgs = [], checkpoint } = spec
 	if (DEPLOYABLE_CONTRACTS[key] === undefined) {
-		throw new Error(`${label}: ${key} is not registered in deployment/deployableContracts.js; register it before deploying`)
+		throw new Error(`${label}: ${key} is not registered in deployment-tooling/deployableContracts.js; register it before deploying`)
 	}
 
 	const pattern = ctx?.plan.patternFor(key)

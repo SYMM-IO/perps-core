@@ -1,6 +1,6 @@
 import { expect } from "chai"
 
-import type { DeploymentRecipe } from "../../deployment/recipe.js"
+import type { DeploymentRecipe } from "../../deployment-tooling/recipe.js"
 import { deploymentConfigFromSource, resolveDeploymentProtocolConfig } from "../../tasks/deploy/deployAll.js"
 import { DEFAULT_PROTOCOL_CONFIG } from "../../tasks/deploy/protocolConfig.js"
 import { assertExpectedRecipeDigest } from "../../tasks/deploy/recipeRuntime.js"

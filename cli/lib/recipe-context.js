@@ -4,7 +4,7 @@ import {
 	loadCoreDependencyReport,
 	loadDeploymentRecipe,
 	recipeEnvironment,
-} from "../../deployment/recipe.js";
+} from "../../deployment-tooling/recipe.js";
 import { PROJECT_ROOT } from "./paths.js";
 
 const SECRET_RUNTIME_KEYS = Object.freeze({
