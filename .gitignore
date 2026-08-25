@@ -63,3 +63,6 @@ AGENTS.md
 .fuzz-dashboard/
 .ledger-handover-cache.json
 .gasless-layer-ledger-upgrade-cache.json
+
+# Guided-deployment recipe backups written next to the recipe on every re-review.
+deployments/*.backup-*

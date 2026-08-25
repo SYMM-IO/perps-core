@@ -3,7 +3,7 @@ import { MiningBudgetExceeded, type VanityPattern, describePattern, expectedAtte
 import { DeploymentCheckpoint } from "./checkpoint.js"
 import { checkpointDeployment, persistSubmittedTransaction } from "./deploymentRecovery.js"
 import { logger } from "./logger.js"
-import { DEFAULT_CONFIRMATIONS, confirmDeploymentWithReceipt, getDeploymentTransactionJournal, recoverConfirmedDeployment, send } from "./tx.js"
+import { defaultConfirmations, confirmDeploymentWithReceipt, getDeploymentTransactionJournal, recoverConfirmedDeployment, send } from "./tx.js"
 import { MiningLedger, type VanityPlan } from "./vanityPlan.js"
 
 /** A misconfigured factory should fail fast rather than walking the salt space forever. */
@@ -124,7 +124,7 @@ async function deployViaCreate2(
 		}
 
 		try {
-			const receipt = await send(create2Factory.deploy(initCode, mined.salt), `deploy ${label} via CREATE2`, DEFAULT_CONFIRMATIONS, {
+			const receipt = await send(create2Factory.deploy(initCode, mined.salt), `deploy ${label} via CREATE2`, defaultConfirmations(), {
 				deployment,
 				onSubmitted: checkpoint ? record => persistSubmittedTransaction(checkpoint, record) : undefined,
 			})

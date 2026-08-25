@@ -50,7 +50,7 @@ export async function deployAccountLayerDiamond(
 	let diamondCutFacetAddress: string
 	if (alCheckpoint.diamondCutFacet) {
 		diamondCutFacetAddress = alCheckpoint.diamondCutFacet.address
-		logger.info(`  ⏭ DiamondCutFacet already deployed at ${diamondCutFacetAddress}`)
+		logger.reused("DiamondCutFacet", diamondCutFacetAddress)
 	} else {
 		const DiamondCutFacetFactory = await ethers.getContractFactory("DiamondCutFacet")
 		const result = await deployContract(vanity, {
@@ -76,7 +76,7 @@ export async function deployAccountLayerDiamond(
 	let diamondAddress: string
 	if (alCheckpoint.diamond) {
 		diamondAddress = alCheckpoint.diamond.address
-		logger.info(`  ⏭ AccountLayerDiamond already deployed at ${diamondAddress}`)
+		logger.reused("AccountLayerDiamond", diamondAddress)
 	} else {
 		const DiamondFactory = await ethers.getContractFactory("Diamond")
 		const result = await deployContract(vanity, {
@@ -103,7 +103,7 @@ export async function deployAccountLayerDiamond(
 	let initAddress: string
 	if (alCheckpoint.init) {
 		initAddress = alCheckpoint.init.address
-		logger.info(`  ⏭ Init already deployed at ${initAddress}`)
+		logger.reused("Init", initAddress)
 	} else {
 		const InitFactory = await ethers.getContractFactory("contracts/accountLayer/Init.sol:Init")
 		const result = await deployContract(vanity, {
@@ -134,7 +134,7 @@ export async function deployAccountLayerDiamond(
 		ethers,
 		scope: "accountLayer",
 		existing: libraryAddresses,
-		onReused: (name, address) => logger.info(`  ⏭ ${name} already deployed at ${address}`),
+		onReused: (name, address) => logger.reused(name, address),
 		getFactory: async spec => {
 			const artifact = await hre.artifacts.readArtifact(spec.artifact)
 			return ethers.getContractFactoryFromArtifact(deploymentOnlyArtifact(artifact))
@@ -188,7 +188,7 @@ export async function deployAccountLayerDiamond(
 		// Check if already deployed
 		if (alCheckpoint.facets[facetName]) {
 			facetAddress = alCheckpoint.facets[facetName].address
-			logger.info(`  ⏭ [${i + 1}/${AccountLayerFacetNames.length}] ${facetName} already deployed at ${facetAddress}`)
+			logger.reused(`[${i + 1}/${AccountLayerFacetNames.length}] ${facetName}`, facetAddress)
 		} else {
 			const FacetFactory = await getLinkedContractFactory(ethers, "accountLayer", getFacetSpec("accountLayer", facetName), libraryAddresses)
 

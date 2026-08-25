@@ -56,7 +56,7 @@ export async function deploySymbolManager(
 	if (checkpoint?.contracts.symbolManager) {
 		const address = checkpoint.contracts.symbolManager.address
 		const [recordedSymmio = symmioAddress, recordedAdmin = admin] = checkpoint.contracts.symbolManager.constructorArgs || []
-		logger.info(`  ⏭ SymmioSymbolManager already deployed at ${address}`)
+		logger.reused("SymmioSymbolManager", address)
 		if (logData) writeSymbolManagerRecord(address, String(recordedSymmio), String(recordedAdmin))
 		return ethers.getContractAt("SymmioSymbolManager", address)
 	}

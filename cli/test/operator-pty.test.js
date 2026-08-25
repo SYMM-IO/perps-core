@@ -202,3 +202,24 @@ test("a second Ctrl+C exits immediately after atomically preserving resumable st
 	assert.match(active.lastError, /Forced exit while pausing/);
 	assert.equal(active.transactions[0].status, "confirmed");
 });
+
+test("arrow keys navigate without toggling the receipts pane", { timeout: 25_000 }, async () => {
+	const child = spawn(
+		"python3",
+		[path.resolve("cli/test/fixtures/pty-arrow-keys.py"), process.cwd(), process.execPath, path.resolve("cli/test/fixtures/progress-app.js")],
+		// Hold the live panel open long enough to press the arrows and then the real hotkey.
+		{ cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, SYMMIO_PTY_HOLD_MS: "6000" } },
+	);
+	let output = "";
+	child.stdout.on("data", chunk => (output += chunk.toString()));
+	child.stderr.on("data", chunk => (output += chunk.toString()));
+	const code = await new Promise((resolve, reject) => {
+		child.on("error", reject);
+		child.on("close", resolve);
+	});
+	const plain = output.replace(ANSI, "").replace(/\r/g, "");
+	// The fixture fails loudly if ←/→/↑/↓ opened the pane; "d" must still open it afterwards.
+	assert.equal(code, 0, plain);
+	assert.match(plain, /gas 42000/);
+	assert.match(plain, /Operator session closed/);
+});

@@ -2073,7 +2073,15 @@ export async function executeComponentDeployment(hre: any, input: ComponentExecu
 		chainId,
 		mode: isPatch ? "patch" : "deploy",
 		lifecycle: "validating",
-		config: publicConfig,
+		// A patch declares only the sections it intends to change. Writing that as the applied
+		// config before the run succeeds would destroy the removal baseline the NEXT patch needs:
+		// a failed or interrupted patch would leave "no roles declared" on disk, and the next run
+		// would compute no revocations at all. Keep the prior baseline until the merged
+		// appliedConfig replaces it below.
+		config:
+			isPatch && priorComponentReport?.config?.expressProvider && input.component === "expressProvider"
+				? { ...publicConfig, expressProvider: priorComponentReport.config.expressProvider }
+				: publicConfig,
 		coreDependency: {
 			reportPath: input.coreReportPath,
 			deploymentId: input.coreReport.deploymentId,

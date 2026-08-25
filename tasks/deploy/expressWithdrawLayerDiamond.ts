@@ -84,7 +84,7 @@ export async function deployExpressProviderDiamond(
 	let diamondCutFacetAddress: string
 	if (epCheckpoint.diamondCutFacet) {
 		diamondCutFacetAddress = epCheckpoint.diamondCutFacet.address
-		logger.info(`  ⏭ DiamondCutFacet already deployed at ${diamondCutFacetAddress}`)
+		logger.reused("DiamondCutFacet", diamondCutFacetAddress)
 	} else {
 		const result = await deployContract(vanity, {
 			key: "expressProvider/DiamondCutFacet",
@@ -102,7 +102,7 @@ export async function deployExpressProviderDiamond(
 	let diamondAddress: string
 	if (epCheckpoint.diamond) {
 		diamondAddress = epCheckpoint.diamond.address
-		logger.info(`  ⏭ ExpressProvider Diamond already deployed at ${diamondAddress}`)
+		logger.reused("ExpressProvider Diamond", diamondAddress)
 	} else {
 		const result = await deployContract(vanity, {
 			key: "expressProvider/Diamond",
@@ -121,7 +121,7 @@ export async function deployExpressProviderDiamond(
 	let initAddress: string
 	if (epCheckpoint.init) {
 		initAddress = epCheckpoint.init.address
-		logger.info(`  ⏭ Init already deployed at ${initAddress}`)
+		logger.reused("Init", initAddress)
 	} else {
 		const result = await deployContract(vanity, {
 			key: "expressProvider/Init",
@@ -147,7 +147,7 @@ export async function deployExpressProviderDiamond(
 		let facetAddress: string
 		if (epCheckpoint.facets[name]) {
 			facetAddress = epCheckpoint.facets[name].address
-			logger.info(`  ⏭ [${index + 1}/${facetNames.length}] ${name} already deployed at ${facetAddress}`)
+			logger.reused(`[${index + 1}/${facetNames.length}] ${name}`, facetAddress)
 		} else {
 			const result = await deployContract(vanity, {
 				key: `expressProvider/${name}`,
