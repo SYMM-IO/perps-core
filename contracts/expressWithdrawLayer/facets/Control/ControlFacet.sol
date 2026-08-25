@@ -212,7 +212,7 @@ contract ControlFacet is IControlFacet, Pausable, ReentrancyGuard {
 		if (amount == 0) revert LibErrors.NoFeesToClaim();
 		f.collectedFees[affiliate] = 0;
 		g.collateral.safeTransfer(to, amount);
-		emit FeesClaimed(affiliate, amount);
+		emit FeesClaimed(affiliate, to, amount);
 	}
 
 	function claimOperatorFees(address affiliate, address to) external nonReentrant whenNotPaused {
@@ -223,7 +223,7 @@ contract ControlFacet is IControlFacet, Pausable, ReentrancyGuard {
 		if (amount == 0) revert LibErrors.NoOperatorFeesToClaim();
 		f.collectedOperatorFees[affiliate] = 0;
 		g.collateral.safeTransfer(to, amount);
-		emit OperatorFeesClaimed(affiliate, amount);
+		emit OperatorFeesClaimed(affiliate, to, amount);
 	}
 
 	// ── General pool ──
@@ -233,7 +233,7 @@ contract ControlFacet is IControlFacet, Pausable, ReentrancyGuard {
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
 		g.collateral.safeTransferFrom(msg.sender, address(this), amount);
 		p.generalBalance += amount;
-		emit GeneralDeposit(amount);
+		emit GeneralDeposit(msg.sender, amount);
 	}
 
 	function withdrawFromGeneral(uint256 amount) external nonReentrant whenNotPaused {
@@ -244,7 +244,7 @@ contract ControlFacet is IControlFacet, Pausable, ReentrancyGuard {
 		if (available < amount) revert LibErrors.InsufficientUnlockedGeneralBalance();
 		p.generalBalance -= amount;
 		g.collateral.safeTransfer(msg.sender, amount);
-		emit GeneralWithdraw(amount);
+		emit GeneralWithdraw(msg.sender, amount);
 	}
 
 	// ── Affiliate pool ──
@@ -254,7 +254,7 @@ contract ControlFacet is IControlFacet, Pausable, ReentrancyGuard {
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
 		g.collateral.safeTransferFrom(msg.sender, address(this), amount);
 		p.affiliateBalances[affiliate] += amount;
-		emit AffiliateDeposit(affiliate, amount);
+		emit AffiliateDeposit(affiliate, msg.sender, amount);
 	}
 
 	function withdrawFromAffiliate(address affiliate, uint256 amount) external nonReentrant whenNotPaused {
@@ -267,7 +267,7 @@ contract ControlFacet is IControlFacet, Pausable, ReentrancyGuard {
 		if (available < amount) revert LibErrors.InsufficientUnlockedAffiliateBalance();
 		p.affiliateBalances[affiliate] -= amount;
 		g.collateral.safeTransfer(msg.sender, amount);
-		emit AffiliateWithdraw(affiliate, amount);
+		emit AffiliateWithdraw(affiliate, msg.sender, amount);
 	}
 
 	// ── Role management (owner only) ──

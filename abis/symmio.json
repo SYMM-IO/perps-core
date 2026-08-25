@@ -4198,12 +4198,6 @@
             },
             {
                 "indexed": false,
-                "internalType": "bool",
-                "name": "enabled",
-                "type": "bool"
-            },
-            {
-                "indexed": false,
                 "internalType": "uint256",
                 "name": "upnlValidTime",
                 "type": "uint256"
