@@ -12,6 +12,7 @@ function recipe(): DeploymentRecipe {
 		partyB: { mode: "deploy" },
 		symbolManager: { mode: "skip" },
 		expressProvider: { mode: "skip" },
+		gaslessLayer: { mode: "skip" },
 	} as unknown as DeploymentRecipe
 }
 

@@ -18,6 +18,9 @@ export type MuonFunctionDefinition = (typeof MUON_FUNCTIONS)[number]
 export type MuonFunctionName = MuonFunctionDefinition["name"]
 export type MuonFunctionIndex = MuonFunctionDefinition["index"]
 
+export const REMOVE_MARGIN_MUON_FUNCTION = MUON_FUNCTIONS[7]
+export const EXPRESS_CREDIT_MUON_FUNCTION = MUON_FUNCTIONS[8]
+
 export const MUON_FUNCTION_NAMES: readonly MuonFunctionName[] = MUON_FUNCTIONS.map(({ name }) => name)
 export const MUON_FUNCTION_INDICES: readonly MuonFunctionIndex[] = MUON_FUNCTIONS.map(({ index }) => index)
 
@@ -67,6 +70,38 @@ export type MuonPermissionInspection = {
 
 function describeError(error: unknown): string {
 	return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * Require a verifier to explicitly advertise that it can process a category ID.
+ * Authorization is intentionally checked elsewhere: a supported category can still
+ * have no authorized keys or gateways until governance configures it.
+ */
+export async function assertMuonFunctionSupported(
+	ethers: any,
+	signatureVerifier: string,
+	required: MuonFunctionDefinition,
+	label = "Muon signature verifier",
+): Promise<string> {
+	const address = ethers.getAddress(signatureVerifier)
+	if ((await ethers.provider.getCode(address)) === "0x") {
+		throw new Error(`${label} has no contract code at ${address}`)
+	}
+
+	const verifier = await ethers.getContractAt("contracts/core/interfaces/IMuonSignatureVerifier.sol:IMuonSignatureVerifier", address)
+	let supported: boolean
+	try {
+		supported = Boolean(await verifier.supportsMuonFunction(required.index))
+	} catch {
+		supported = false
+	}
+	if (!supported) {
+		throw new Error(
+			`${label} at ${address} does not support MuonFunction.${required.name} (index ${required.index}); ` +
+				"deploy a forward-compatible verifier before configuring it",
+		)
+	}
+	return address
 }
 
 /**

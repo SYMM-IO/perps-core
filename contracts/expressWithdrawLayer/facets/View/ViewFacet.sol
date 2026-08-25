@@ -31,6 +31,10 @@ contract ViewFacet is IViewFacet {
 		return address(GlobalStorage.layout().collateral);
 	}
 
+	function accountLayer() external view returns (address) {
+		return GlobalStorage.layout().accountLayer;
+	}
+
 	// ── Pool balances ──
 
 	function generalBalance() external view returns (uint256) {

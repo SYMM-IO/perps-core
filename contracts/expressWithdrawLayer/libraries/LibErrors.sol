@@ -10,6 +10,9 @@ library LibErrors {
 	error OnlySymmio();
 	error InvalidProvider();
 	error InvalidCollateral();
+	error InvalidAccountLayer();
+	error UnsupportedAccount();
+	error InvalidAffiliate();
 	error FeeRateExceeds100Percent();
 	error NoFeesToClaim();
 	error NoOperatorFeesToClaim();
@@ -50,6 +53,7 @@ library LibErrors {
 	error VirtualProviderMustBeZero();
 	error Reentrancy();
 	error Paused();
+	error UserSuspended();
 	// ── Accelerate flow ──
 	error AccelerateOnlyFromStandardAccepted();
 	error AccelerateOfferExpired();

@@ -70,6 +70,7 @@ function recipe(): any {
 		partyB: { mode: "skip", adlEnabled: false },
 		symbolManager: { mode: "skip" },
 		expressProvider: { mode: "skip" },
+		gaslessLayer: { mode: "skip" },
 	}
 }
 

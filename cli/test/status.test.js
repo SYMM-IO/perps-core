@@ -202,6 +202,71 @@ test("component status checkpoint must be the exact scoped attempt and lifecycle
 	assert.throws(() => validateComponentStatusCheckpoint(null, componentReport, expected), /checkpoint is missing/);
 });
 
+test("GaslessLayer component status binds the AccountLayer, proxy, and implementation", () => {
+	const gaslessReport = {
+		...componentReport,
+		recipe: { name: "add-gasless", digest: "gasless-digest", path: "/repo/deployments/add-gasless.json" },
+		component: "gaslessLayer",
+		config: {
+			admin: "0x4000000000000000000000000000000000000004",
+			gaslessLayer: { relayers: ["0x7000000000000000000000000000000000000007"] },
+		},
+		coreDependency: {
+			...componentReport.coreDependency,
+			accountLayer: "0x7000000000000000000000000000000000000007",
+		},
+	};
+	const gaslessExpected = {
+		...componentExpected,
+		component: "gaslessLayer",
+		recipeName: "add-gasless",
+		recipeDigest: "gasless-digest",
+		recipePath: "/repo/deployments/add-gasless.json",
+		config: { admin: "0x4000000000000000000000000000000000000004" },
+		coreReport: {
+			...componentExpected.coreReport,
+			addresses: {
+				...componentExpected.coreReport.addresses,
+				accountLayerDiamond: "0x7000000000000000000000000000000000000007",
+			},
+		},
+	};
+	assert.equal(validateComponentStatusReport(gaslessReport, gaslessExpected), gaslessReport);
+	assert.throws(
+		() =>
+			validateComponentStatusReport(
+				{ ...gaslessReport, coreDependency: { ...gaslessReport.coreDependency, accountLayer: "0x8000000000000000000000000000000000000008" } },
+				gaslessExpected,
+			),
+		/AccountLayer|accountLayer/,
+	);
+
+	const checkpoint = {
+		deploymentId: gaslessReport.deploymentId,
+		scope: "component-add-gasless-gaslessLayer",
+		network: "arbitrum",
+		chainId: 42161,
+		step: "complete",
+		manifest: { deploymentId: gaslessReport.deploymentId },
+		contracts: {
+			gaslessLayer: {
+				proxy: { address: gaslessReport.address },
+				implementation: { address: gaslessReport.implementation },
+			},
+		},
+	};
+	assert.equal(
+		validateComponentStatusCheckpoint(checkpoint, gaslessReport, {
+			component: "gaslessLayer",
+			scope: checkpoint.scope,
+			networkName: "arbitrum",
+			chainId: 42161,
+			path: "/repo/checkpoint.json",
+		}),
+		checkpoint,
+	);
+});
+
 test("status rejects incomplete, wrong-chain and unknown-lifecycle reports", () => {
 	assert.equal(validateStatusReport(report, 42161, { requireVerification: true }), report);
 	assert.throws(() => validateStatusReport({ ...report, chainId: 8453 }, 42161), /chainId mismatch/);
@@ -233,6 +298,7 @@ test("config-based status refuses a chain-scoped report from another recipe", ()
 			partyB: { mode: "skip" },
 			symbolManager: { mode: "skip" },
 			expressProvider: { mode: "skip" },
+			gaslessLayer: { mode: "skip" },
 		},
 	};
 	const bound = {
@@ -241,7 +307,7 @@ test("config-based status refuses a chain-scoped report from another recipe", ()
 			name: "current",
 			path: "/repo/deployments/current.json",
 			digest: "current-digest",
-			components: { core: "deploy", partyB: "skip", symbolManager: "skip", expressProvider: "skip" },
+			components: { core: "deploy", partyB: "skip", symbolManager: "skip", expressProvider: "skip", gaslessLayer: "skip" },
 		},
 	};
 	assert.equal(validateStatusReport(bound, 42161, { recipeContext }), bound);

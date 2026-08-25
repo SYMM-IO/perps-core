@@ -38,7 +38,7 @@ export async function deploySymmioLiquidator(
 	// Resume from checkpoint if already deployed
 	if (checkpoint?.contracts.symmioLiquidator) {
 		const address = checkpoint.contracts.symmioLiquidator.address
-		logger.info(`  ⏭ SymmioLiquidator already deployed at ${address}`)
+		logger.reused("SymmioLiquidator", address)
 		return await ethers.getContractAt("SymmioLiquidator", address)
 	}
 

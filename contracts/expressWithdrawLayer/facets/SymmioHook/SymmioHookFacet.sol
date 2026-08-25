@@ -12,6 +12,7 @@ import { WithdrawReceiverPart, WithdrawRequest } from "../../../core/storages/Wi
 import { WithdrawInfo, Status, OptionType } from "../../types/WithdrawTypes.sol";
 
 import { ISymmio } from "../../interfaces/ISymmio.sol";
+import { IAccountLayer } from "../../interfaces/IAccountLayer.sol";
 import { ISymmioHookFacet } from "./ISymmioHookFacet.sol";
 
 import { LibAccessControl } from "../../libraries/LibAccessControl.sol";
@@ -45,6 +46,10 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 
 		WithdrawOffer memory offer = _decodeAndVerifyOffer(withdrawRequest, offerData);
 		if (offer.optionType > uint8(OptionType.STANDARD)) revert LibErrors.InvalidOptionType();
+
+		(address accountAffiliate, bool accountExists) = IAccountLayer(g.accountLayer).getAffiliateForAccount(withdrawRequest.user);
+		if (!accountExists) revert LibErrors.UnsupportedAccount();
+		if (offer.affiliate != accountAffiliate) revert LibErrors.InvalidAffiliate();
 
 		OptionType optType = OptionType(offer.optionType);
 		if (optType == OptionType.STANDARD && offer.creditAmount > 0) revert LibErrors.CreditNotSupportedForStandard();

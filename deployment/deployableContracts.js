@@ -73,6 +73,11 @@ function entries() {
 	map["accountLayer/Init"] = "peripherals";
 	map["expressProvider/Diamond"] = "diamonds";
 	map["expressProvider/Init"] = "peripherals";
+	map["gaslessLayer/GaslessLayer"] = "peripherals";
+	map["gaslessLayer/GaslessNativeGasTopUpLib"] = "libraries";
+	map["gaslessLayer/GaslessOperationalFeeLib"] = "libraries";
+	map["gaslessLayer/GaslessWalletDeployerLib"] = "libraries";
+	map["gaslessLayer/GaslessWalletExecutionLib"] = "libraries";
 	for (const name of CORE_FACETS) map[`core/${name}`] = "facets";
 	for (const name of CORE_LIBRARIES) map[`core/${name}`] = "libraries";
 	for (const name of ACCOUNT_LAYER_FACETS) map[`accountLayer/${name}`] = "facets";

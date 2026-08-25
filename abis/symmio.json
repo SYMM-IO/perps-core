@@ -1,5 +1,10 @@
 [
     {
+        "inputs": [],
+        "name": "ExternalCallSignerWasModified",
+        "type": "error"
+    },
+    {
         "anonymous": false,
         "inputs": [
             {
@@ -22,6 +27,31 @@
             }
         ],
         "name": "AllocatePartyA",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "enum SharedEvents.BalanceChangeType",
+                "name": "_type",
+                "type": "uint8"
+            }
+        ],
+        "name": "BalanceChangePartyA",
         "type": "event"
     },
     {
@@ -271,6 +301,37 @@
             }
         ],
         "name": "OperationalFeeAllowanceSet",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "payer",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "charger",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "receiver",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "OperationalFeeCharged",
         "type": "event"
     },
     {
@@ -707,6 +768,24 @@
                 "type": "uint256"
             }
         ],
+        "name": "virtualDepositAndAllocateFor",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
         "name": "virtualDepositFor",
         "outputs": [],
         "stateMutability": "nonpayable",
@@ -775,85 +854,6 @@
             }
         ],
         "name": "zeroUpnlDeallocate",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "ExternalCallSignerWasModified",
-        "type": "error"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "partyA",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "enum SharedEvents.BalanceChangeType",
-                "name": "_type",
-                "type": "uint8"
-            }
-        ],
-        "name": "BalanceChangePartyA",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "payer",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "charger",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "receiver",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            }
-        ],
-        "name": "OperationalFeeCharged",
-        "type": "event"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "user",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            }
-        ],
-        "name": "virtualDepositAndAllocateFor",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -1205,6 +1205,42 @@
         "type": "function"
     },
     {
+        "inputs": [],
+        "name": "ExternalCallContextNotSuspended",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "ExternalCallContextWasModified",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "hook",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes4",
+                "name": "selector",
+                "type": "bytes4"
+            },
+            {
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "bytes",
+                "name": "reason",
+                "type": "bytes"
+            }
+        ],
+        "name": "HookReverted",
+        "type": "error"
+    },
+    {
         "anonymous": false,
         "inputs": [
             {
@@ -1240,6 +1276,37 @@
             }
         ],
         "name": "AutoTakeoverPartyALiquidation",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "enum SharedEvents.BalanceChangeType",
+                "name": "_type",
+                "type": "uint8"
+            }
+        ],
+        "name": "BalanceChangePartyB",
         "type": "event"
     },
     {
@@ -1969,6 +2036,37 @@
         "anonymous": false,
         "inputs": [
             {
+                "indexed": true,
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "newBalance",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "enum SharedEvents.ReimbursementChangeType",
+                "name": "_type",
+                "type": "uint8"
+            }
+        ],
+        "name": "PartyAReimbursementChange",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
                 "indexed": false,
                 "internalType": "address",
                 "name": "partyA",
@@ -2301,56 +2399,56 @@
         "inputs": [
             {
                 "internalType": "address",
-                "name": "subject",
+                "name": "",
                 "type": "address"
             },
             {
                 "internalType": "address[]",
-                "name": "parties",
+                "name": "",
                 "type": "address[]"
             },
             {
                 "internalType": "address[]",
-                "name": "allocationKeys",
+                "name": "",
                 "type": "address[]"
             },
             {
                 "internalType": "uint256[]",
-                "name": "amounts",
+                "name": "",
                 "type": "uint256[]"
             }
         ],
         "name": "deallocateForClearingHouse",
         "outputs": [],
-        "stateMutability": "nonpayable",
+        "stateMutability": "view",
         "type": "function"
     },
     {
         "inputs": [
             {
                 "internalType": "address",
-                "name": "subject",
+                "name": "",
                 "type": "address"
             },
             {
                 "internalType": "address[]",
-                "name": "receivers",
+                "name": "",
                 "type": "address[]"
             },
             {
                 "internalType": "address[]",
-                "name": "allocationKeys",
+                "name": "",
                 "type": "address[]"
             },
             {
                 "internalType": "uint256[]",
-                "name": "amounts",
+                "name": "",
                 "type": "uint256[]"
             }
         ],
         "name": "distributeForClearingHouse",
         "outputs": [],
-        "stateMutability": "nonpayable",
+        "stateMutability": "view",
         "type": "function"
     },
     {
@@ -2538,104 +2636,6 @@
         "type": "function"
     },
     {
-        "inputs": [],
-        "name": "ExternalCallContextNotSuspended",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "ExternalCallContextWasModified",
-        "type": "error"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "hook",
-                "type": "address"
-            },
-            {
-                "internalType": "bytes4",
-                "name": "selector",
-                "type": "bytes4"
-            },
-            {
-                "internalType": "uint256",
-                "name": "quoteId",
-                "type": "uint256"
-            },
-            {
-                "internalType": "bytes",
-                "name": "reason",
-                "type": "bytes"
-            }
-        ],
-        "name": "HookReverted",
-        "type": "error"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "partyA",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "enum SharedEvents.BalanceChangeType",
-                "name": "_type",
-                "type": "uint8"
-            }
-        ],
-        "name": "BalanceChangePartyB",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "partyA",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "newBalance",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "enum SharedEvents.ReimbursementChangeType",
-                "name": "_type",
-                "type": "uint8"
-            }
-        ],
-        "name": "PartyAReimbursementChange",
-        "type": "event"
-    },
-    {
         "anonymous": false,
         "inputs": [
             {
@@ -2664,6 +2664,49 @@
             }
         ],
         "name": "LiquidationFundingSettlementAbandoned",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "epoch",
+                "type": "uint256"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "enum PositionType",
+                "name": "positionType",
+                "type": "uint8"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "consumedAmount",
+                "type": "uint256"
+            }
+        ],
+        "name": "RestatementInventoryConsumed",
         "type": "event"
     },
     {
@@ -2714,6 +2757,11 @@
         ],
         "name": "TradeVolumeRecorded",
         "type": "event"
+    },
+    {
+        "inputs": [],
+        "name": "IncompatibleSignatureVerifier",
+        "type": "error"
     },
     {
         "anonymous": false,
@@ -2939,6 +2987,57 @@
             }
         ],
         "name": "OperationalFeeReductionDelaySet",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "pendingOwner",
+                "type": "address"
+            }
+        ],
+        "name": "OwnershipTransferCanceled",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "currentOwner",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "pendingOwner",
+                "type": "address"
+            }
+        ],
+        "name": "OwnershipTransferStarted",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "previousOwner",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "newOwner",
+                "type": "address"
+            }
+        ],
+        "name": "OwnershipTransferred",
         "type": "event"
     },
     {
@@ -4585,19 +4684,6 @@
     {
         "inputs": [
             {
-                "internalType": "bool",
-                "name": "instantOpenMode",
-                "type": "bool"
-            }
-        ],
-        "name": "beginInstantLayerExecution",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
                 "internalType": "address",
                 "name": "affiliate",
                 "type": "address"
@@ -4642,13 +4728,6 @@
             }
         ],
         "name": "deregisterPartyB",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "endInstantLayerExecution",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -4794,13 +4873,6 @@
             }
         ],
         "name": "removeRoleAdmin",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "restoreExecutionContextAfterExternalCall",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -4984,19 +5056,6 @@
     {
         "inputs": [
             {
-                "internalType": "bool",
-                "name": "callFromInstantLayer",
-                "type": "bool"
-            }
-        ],
-        "name": "setCallFromInstantLayer",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
                 "internalType": "address",
                 "name": "collateral",
                 "type": "address"
@@ -5034,6 +5093,19 @@
             }
         ],
         "name": "setCrossPartyBModeActivated",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "cooldown",
+                "type": "uint256"
+            }
+        ],
+        "name": "setDeactiveInstantActionModeCooldown",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -5179,19 +5251,6 @@
             }
         ],
         "name": "setForceClosePricePenalty",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "bool",
-                "name": "instantOpenMode",
-                "type": "bool"
-            }
-        ],
-        "name": "setInstantOpenMode",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -5599,19 +5658,6 @@
     {
         "inputs": [
             {
-                "internalType": "address",
-                "name": "signer",
-                "type": "address"
-            }
-        ],
-        "name": "setTransientSigner",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
                 "internalType": "uint256",
                 "name": "unbindCooldown",
                 "type": "uint256"
@@ -5632,19 +5678,6 @@
         ],
         "name": "setWithdrawCooldownPeriod",
         "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "suspendExecutionContextForExternalCall",
-        "outputs": [
-            {
-                "internalType": "bool",
-                "name": "suspended",
-                "type": "bool"
-            }
-        ],
         "stateMutability": "nonpayable",
         "type": "function"
     },
@@ -5701,66 +5734,81 @@
         "type": "function"
     },
     {
-        "anonymous": false,
         "inputs": [
             {
-                "indexed": true,
-                "internalType": "address",
-                "name": "pendingOwner",
-                "type": "address"
+                "internalType": "bool",
+                "name": "instantOpenMode",
+                "type": "bool"
             }
         ],
-        "name": "OwnershipTransferCanceled",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "currentOwner",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "pendingOwner",
-                "type": "address"
-            }
-        ],
-        "name": "OwnershipTransferStarted",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "previousOwner",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "newOwner",
-                "type": "address"
-            }
-        ],
-        "name": "OwnershipTransferred",
-        "type": "event"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "uint256",
-                "name": "cooldown",
-                "type": "uint256"
-            }
-        ],
-        "name": "setDeactiveInstantActionModeCooldown",
+        "name": "beginInstantLayerExecution",
         "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "endInstantLayerExecution",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "restoreExecutionContextAfterExternalCall",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "bool",
+                "name": "callFromInstantLayer",
+                "type": "bool"
+            }
+        ],
+        "name": "setCallFromInstantLayer",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "bool",
+                "name": "instantOpenMode",
+                "type": "bool"
+            }
+        ],
+        "name": "setInstantOpenMode",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "signer",
+                "type": "address"
+            }
+        ],
+        "name": "setTransientSigner",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "suspendExecutionContextForExternalCall",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "suspended",
+                "type": "bool"
+            }
+        ],
         "stateMutability": "nonpayable",
         "type": "function"
     },
@@ -6158,6 +6206,198 @@
         "type": "event"
     },
     {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "liquidatedPartyA",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "bytes",
+                "name": "settlementId",
+                "type": "bytes"
+            },
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "quoteId",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "currentPrice",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint8",
+                        "name": "partyAIndex",
+                        "type": "uint8"
+                    }
+                ],
+                "indexed": false,
+                "internalType": "struct UnifiedQuoteSettlementData[]",
+                "name": "settlementData",
+                "type": "tuple[]"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256[]",
+                "name": "updatedPrices",
+                "type": "uint256[]"
+            },
+            {
+                "indexed": false,
+                "internalType": "address[]",
+                "name": "partyAs",
+                "type": "address[]"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256[]",
+                "name": "newPartyAsAllocatedBalances",
+                "type": "uint256[]"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "newPartyBAllocatedBalance",
+                "type": "uint256"
+            }
+        ],
+        "name": "SettlePartyBUpnlForLiquidation",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "quoteId",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "currentPrice",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint8",
+                        "name": "partyBUpnlIndex",
+                        "type": "uint8"
+                    }
+                ],
+                "indexed": false,
+                "internalType": "struct QuoteSettlementData[]",
+                "name": "settlementData",
+                "type": "tuple[]"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256[]",
+                "name": "updatedPrices",
+                "type": "uint256[]"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "newPartyAAllocatedBalance",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256[]",
+                "name": "newPartyBsAllocatedBalances",
+                "type": "uint256[]"
+            }
+        ],
+        "name": "SettleUpnl",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
+                "internalType": "bytes",
+                "name": "settlementId",
+                "type": "bytes"
+            },
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "quoteId",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "currentPrice",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint8",
+                        "name": "partyAIndex",
+                        "type": "uint8"
+                    }
+                ],
+                "indexed": false,
+                "internalType": "struct UnifiedQuoteSettlementData[]",
+                "name": "settlementData",
+                "type": "tuple[]"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256[]",
+                "name": "updatedPrices",
+                "type": "uint256[]"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "address[]",
+                "name": "partyAs",
+                "type": "address[]"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256[]",
+                "name": "newPartyAsAllocatedBalances",
+                "type": "uint256[]"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "newPartyBAllocatedBalance",
+                "type": "uint256"
+            }
+        ],
+        "name": "SettleUpnlUnified",
+        "type": "event"
+    },
+    {
         "inputs": [
             {
                 "internalType": "uint256",
@@ -6467,198 +6707,6 @@
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "liquidatedPartyA",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "bytes",
-                "name": "settlementId",
-                "type": "bytes"
-            },
-            {
-                "components": [
-                    {
-                        "internalType": "uint256",
-                        "name": "quoteId",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "currentPrice",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint8",
-                        "name": "partyAIndex",
-                        "type": "uint8"
-                    }
-                ],
-                "indexed": false,
-                "internalType": "struct UnifiedQuoteSettlementData[]",
-                "name": "settlementData",
-                "type": "tuple[]"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256[]",
-                "name": "updatedPrices",
-                "type": "uint256[]"
-            },
-            {
-                "indexed": false,
-                "internalType": "address[]",
-                "name": "partyAs",
-                "type": "address[]"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256[]",
-                "name": "newPartyAsAllocatedBalances",
-                "type": "uint256[]"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "newPartyBAllocatedBalance",
-                "type": "uint256"
-            }
-        ],
-        "name": "SettlePartyBUpnlForLiquidation",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "components": [
-                    {
-                        "internalType": "uint256",
-                        "name": "quoteId",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "currentPrice",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint8",
-                        "name": "partyBUpnlIndex",
-                        "type": "uint8"
-                    }
-                ],
-                "indexed": false,
-                "internalType": "struct QuoteSettlementData[]",
-                "name": "settlementData",
-                "type": "tuple[]"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256[]",
-                "name": "updatedPrices",
-                "type": "uint256[]"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "partyA",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "newPartyAAllocatedBalance",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256[]",
-                "name": "newPartyBsAllocatedBalances",
-                "type": "uint256[]"
-            }
-        ],
-        "name": "SettleUpnl",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": false,
-                "internalType": "bytes",
-                "name": "settlementId",
-                "type": "bytes"
-            },
-            {
-                "components": [
-                    {
-                        "internalType": "uint256",
-                        "name": "quoteId",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "currentPrice",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint8",
-                        "name": "partyAIndex",
-                        "type": "uint8"
-                    }
-                ],
-                "indexed": false,
-                "internalType": "struct UnifiedQuoteSettlementData[]",
-                "name": "settlementData",
-                "type": "tuple[]"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256[]",
-                "name": "updatedPrices",
-                "type": "uint256[]"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "address[]",
-                "name": "partyAs",
-                "type": "address[]"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256[]",
-                "name": "newPartyAsAllocatedBalances",
-                "type": "uint256[]"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "newPartyBAllocatedBalance",
-                "type": "uint256"
-            }
-        ],
-        "name": "SettleUpnlUnified",
-        "type": "event"
     },
     {
         "inputs": [
@@ -19885,6 +19933,25 @@
                 "internalType": "uint256",
                 "name": "symbolId",
                 "type": "uint256"
+            }
+        ],
+        "name": "getCumulativeFactor",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
             },
             {
                 "internalType": "address",
@@ -19968,6 +20035,151 @@
                 "type": "uint256"
             }
         ],
+        "name": "getProspectiveCumulativeFactor",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            }
+        ],
+        "name": "getQuoteRestatedEpoch",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            }
+        ],
+        "name": "getRestatementFundingProgress",
+        "outputs": [
+            {
+                "internalType": "enum RestatementPhase",
+                "name": "phase",
+                "type": "uint8"
+            },
+            {
+                "internalType": "uint256",
+                "name": "pendingPartyBCount",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "fundingCutoffTimestamp",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "fundingRestorationTimestamp",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            }
+        ],
+        "name": "getRestatementInventoryProgress",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "epoch",
+                "type": "uint256"
+            },
+            {
+                "internalType": "bool",
+                "name": "prepared",
+                "type": "bool"
+            },
+            {
+                "internalType": "uint256",
+                "name": "partyBRemainingLong",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "partyBRemainingShort",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "totalRemainingLong",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "totalRemainingShort",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            }
+        ],
+        "name": "getRestatementState",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "restating",
+                "type": "bool"
+            },
+            {
+                "internalType": "uint256",
+                "name": "epoch",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            }
+        ],
         "name": "getSymbol",
         "outputs": [
             {
@@ -20019,6 +20231,102 @@
                     }
                 ],
                 "internalType": "struct Symbol",
+                "name": "",
+                "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            }
+        ],
+        "name": "getSymbolAdjustment",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "factor",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "effectiveTimestamp",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "enum AdjustmentState",
+                        "name": "state",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "scheduledCount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "cumulativeFactor",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "restatementEpoch",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "restating",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "restatementMutated",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "restatementFactor",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "basisVersion",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "restatementStartedAt",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "enum RestatementPhase",
+                        "name": "restatementPhase",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "fundingCutoffTimestamp",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "pendingFundingPartyBCount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "fundingRestorationTimestamp",
+                        "type": "uint256"
+                    }
+                ],
+                "internalType": "struct SymbolAdjustment",
                 "name": "",
                 "type": "tuple"
             }
@@ -20295,6 +20603,49 @@
     {
         "inputs": [
             {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            }
+        ],
+        "name": "isRestatementFundingCheckpointed",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            }
+        ],
+        "name": "isSymbolFrozen",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
                 "internalType": "address",
                 "name": "partyB",
                 "type": "address"
@@ -20311,6 +20662,82 @@
                 "internalType": "bool",
                 "name": "",
                 "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            }
+        ],
+        "name": "previewQuoteAdjustment",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "factor",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "quantity",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "openedPrice",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "initialOpenedPrice",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "requestedOpenPrice",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "marketPrice",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "closedAmount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "avgClosedPrice",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "quantityToClose",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "requestedClosePrice",
+                        "type": "uint256"
+                    }
+                ],
+                "internalType": "struct ISymbolAdjustmentFacet.QuoteAdjustmentPreview",
+                "name": "preview",
+                "type": "tuple"
             }
         ],
         "stateMutability": "view",
@@ -21078,68 +21505,6 @@
             },
             {
                 "indexed": false,
-                "internalType": "uint256",
-                "name": "pendingPartyBs",
-                "type": "uint256"
-            }
-        ],
-        "name": "RestatementFundingPreparationCompleted",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "uint256",
-                "name": "symbolId",
-                "type": "uint256"
-            },
-            {
-                "indexed": true,
-                "internalType": "uint256",
-                "name": "epoch",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "submittedPartyBs",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "checkpointedPartyBs",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "pendingPartyBs",
-                "type": "uint256"
-            }
-        ],
-        "name": "RestatementFundingPreparationProgress",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "uint256",
-                "name": "symbolId",
-                "type": "uint256"
-            },
-            {
-                "indexed": true,
-                "internalType": "uint256",
-                "name": "epoch",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
                 "internalType": "bool",
                 "name": "finalizing",
                 "type": "bool"
@@ -21189,6 +21554,147 @@
             }
         ],
         "name": "RestatementFundingRestorationStarted",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "epoch",
+                "type": "uint256"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "partyBRemainingLongAmount",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "partyBRemainingShortAmount",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "totalRemainingLongAmount",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "totalRemainingShortAmount",
+                "type": "uint256"
+            }
+        ],
+        "name": "RestatementInventoryPrepared",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "epoch",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "totalRemainingLongAmount",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "totalRemainingShortAmount",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "pendingFundingPartyBCount",
+                "type": "uint256"
+            }
+        ],
+        "name": "RestatementPreparationCompleted",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "epoch",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "submittedPartyBCount",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "newlyPreparedPartyBCount",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "fundingCheckpointedPartyBCount",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "totalRemainingLongAmount",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "totalRemainingShortAmount",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "pendingFundingPartyBCount",
+                "type": "uint256"
+            }
+        ],
+        "name": "RestatementPreparationProgress",
         "type": "event"
     },
     {
@@ -21310,336 +21816,6 @@
         "name": "finalizeRestatement",
         "outputs": [],
         "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "uint256",
-                "name": "symbolId",
-                "type": "uint256"
-            }
-        ],
-        "name": "getCumulativeFactor",
-        "outputs": [
-            {
-                "internalType": "uint256",
-                "name": "",
-                "type": "uint256"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "uint256",
-                "name": "symbolId",
-                "type": "uint256"
-            }
-        ],
-        "name": "getProspectiveCumulativeFactor",
-        "outputs": [
-            {
-                "internalType": "uint256",
-                "name": "",
-                "type": "uint256"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "uint256",
-                "name": "quoteId",
-                "type": "uint256"
-            }
-        ],
-        "name": "getQuoteRestatedEpoch",
-        "outputs": [
-            {
-                "internalType": "uint256",
-                "name": "",
-                "type": "uint256"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "uint256",
-                "name": "symbolId",
-                "type": "uint256"
-            }
-        ],
-        "name": "getRestatementFundingProgress",
-        "outputs": [
-            {
-                "internalType": "enum RestatementPhase",
-                "name": "phase",
-                "type": "uint8"
-            },
-            {
-                "internalType": "uint256",
-                "name": "pendingPartyBCount",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "fundingCutoffTimestamp",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "fundingRestorationTimestamp",
-                "type": "uint256"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "uint256",
-                "name": "symbolId",
-                "type": "uint256"
-            }
-        ],
-        "name": "getRestatementState",
-        "outputs": [
-            {
-                "internalType": "bool",
-                "name": "restating",
-                "type": "bool"
-            },
-            {
-                "internalType": "uint256",
-                "name": "epoch",
-                "type": "uint256"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "uint256",
-                "name": "symbolId",
-                "type": "uint256"
-            }
-        ],
-        "name": "getSymbolAdjustment",
-        "outputs": [
-            {
-                "components": [
-                    {
-                        "internalType": "uint256",
-                        "name": "factor",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "effectiveTimestamp",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "enum AdjustmentState",
-                        "name": "state",
-                        "type": "uint8"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "scheduledCount",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "cumulativeFactor",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "restatementEpoch",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "bool",
-                        "name": "restating",
-                        "type": "bool"
-                    },
-                    {
-                        "internalType": "bool",
-                        "name": "restatementMutated",
-                        "type": "bool"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "restatementFactor",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "basisVersion",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "restatementStartedAt",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "enum RestatementPhase",
-                        "name": "restatementPhase",
-                        "type": "uint8"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "fundingCutoffTimestamp",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "pendingFundingPartyBCount",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "fundingRestorationTimestamp",
-                        "type": "uint256"
-                    }
-                ],
-                "internalType": "struct SymbolAdjustment",
-                "name": "",
-                "type": "tuple"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "uint256",
-                "name": "symbolId",
-                "type": "uint256"
-            },
-            {
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            }
-        ],
-        "name": "isRestatementFundingCheckpointed",
-        "outputs": [
-            {
-                "internalType": "bool",
-                "name": "",
-                "type": "bool"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "uint256",
-                "name": "symbolId",
-                "type": "uint256"
-            }
-        ],
-        "name": "isSymbolFrozen",
-        "outputs": [
-            {
-                "internalType": "bool",
-                "name": "",
-                "type": "bool"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "uint256",
-                "name": "symbolId",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "quoteId",
-                "type": "uint256"
-            }
-        ],
-        "name": "previewQuoteAdjustment",
-        "outputs": [
-            {
-                "components": [
-                    {
-                        "internalType": "uint256",
-                        "name": "factor",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "quantity",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "openedPrice",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "initialOpenedPrice",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "requestedOpenPrice",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "marketPrice",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "closedAmount",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "avgClosedPrice",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "quantityToClose",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "requestedClosePrice",
-                        "type": "uint256"
-                    }
-                ],
-                "internalType": "struct ISymbolAdjustmentFacet.QuoteAdjustmentPreview",
-                "name": "preview",
-                "type": "tuple"
-            }
-        ],
-        "stateMutability": "view",
         "type": "function"
     },
     {

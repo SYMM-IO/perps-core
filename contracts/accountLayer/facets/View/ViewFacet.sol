@@ -328,6 +328,23 @@ contract ViewFacet is IViewFacet {
 		return LibAccountLayerUtils.resolveAccountOwner(account);
 	}
 
+	/// @notice Returns the canonical affiliate for a live AccountLayer account
+	/// @param account The sub-account or virtual account address
+	/// @return affiliate The affiliate inherited from the sub-account
+	/// @return exists Whether the account and its parent sub-account are live
+	function getAffiliateForAccount(address account) external view returns (address affiliate, bool exists) {
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
+		SubAccountData storage subAccount = ahLayout.subAccounts[account];
+		if (subAccount.isExists) return (subAccount.affiliate, true);
+
+		VirtualAccountData storage virtualAccount = ahLayout.virtualAccounts[account];
+		if (!virtualAccount.isExists) return (address(0), false);
+
+		SubAccountData storage parentAccount = ahLayout.subAccounts[virtualAccount.parentAccount];
+		if (!parentAccount.isExists) return (address(0), false);
+		return (parentAccount.affiliate, true);
+	}
+
 	/// @notice Returns the global nonce used for sub-account address generation
 	/// @return The current global nonce
 	function globalNonce() external view returns (uint256) {

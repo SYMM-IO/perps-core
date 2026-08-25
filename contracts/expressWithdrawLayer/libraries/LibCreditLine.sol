@@ -7,6 +7,7 @@ pragma solidity >=0.8.18;
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import { IMuonSignatureVerifier, MuonFunction } from "../../core/interfaces/IMuonSignatureVerifier.sol";
+import { LibMuonVerifier } from "../../helpers/verification/LibMuonVerifier.sol";
 
 import { AffiliateCredit, CreditData } from "../types/CreditTypes.sol";
 import { WithdrawInfo } from "../types/WithdrawTypes.sol";
@@ -37,6 +38,7 @@ library LibCreditLine {
 	error DebtNotActivated();
 	error AffiliateLimitExceedsProtocol();
 	error CreditLineNotConfigured();
+	error IncompatibleSignatureVerifier();
 
 	// ═══════════════════════════════════════════════════════════════════
 	//                              EVENTS
@@ -47,6 +49,20 @@ library LibCreditLine {
 	event DebtSettled(address indexed affiliate, address indexed user, uint256 indexed requestId, uint256 amount);
 	event DebtCancelled(address indexed affiliate, address indexed user, uint256 indexed requestId, uint256 amount);
 	event BadDebtAccrued(address indexed affiliate, address indexed user, uint256 indexed requestId, uint256 amount);
+
+	// ═══════════════════════════════════════════════════════════════════
+	//                       CONFIGURATION VALIDATION
+	// ═══════════════════════════════════════════════════════════════════
+
+	/// @dev Requires the verifier to explicitly advertise support for ExpressCredit (ID 8).
+	///      This is separate from signer authorization, which may still be false.
+	///      A zero verifier remains valid because it explicitly disables CreditLine reservations.
+	function requireExpressCreditVerifierCompatibility(address signatureVerifier) internal view {
+		if (signatureVerifier == address(0)) return;
+		if (!LibMuonVerifier.supportsMuonFunction(signatureVerifier, uint8(MuonFunction.ExpressCredit))) {
+			revert IncompatibleSignatureVerifier();
+		}
+	}
 
 	// ═══════════════════════════════════════════════════════════════════
 	//                         DEBT OPERATIONS
@@ -72,7 +88,7 @@ library LibCreditLine {
 		bytes32 hash = keccak256(
 			abi.encodePacked(cl.muonAppId, data.reqId, affiliate, data.eligibleBase, data.timestamp, block.chainid, address(this), symmio)
 		);
-		IMuonSignatureVerifier(cl.signatureVerifier).verify(hash, data.sigs, data.gatewaySignature, MuonFunction.ExpressCredit);
+		IMuonSignatureVerifier(cl.signatureVerifier).verify(hash, data.sigs, data.gatewaySignature, uint8(MuonFunction.ExpressCredit));
 
 		// Check caps
 		uint256 newTotalDebt = ac.reservedDebt + ac.activeDebt + ac.badDebt + creditAmount;

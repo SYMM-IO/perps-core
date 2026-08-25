@@ -17,11 +17,13 @@ export function shouldBehaveLikeExpressLayerCapChangeFee(): void {
 		const affiliateB = allSigners[14]
 		const feeReceiver = allSigners[15]
 		const nonAffiliate = allSigners[16]
+		const accountLayer = await ethers.deployContract("MockExpressAccountLayer")
 
 		const expressProvider = await deployExpressProvider(hre, connection, {
 			admin: deployer.address,
 			symmio: context.diamond,
 			collateral: await context.collateral.getAddress(),
+			accountLayer: await accountLayer.getAddress(),
 		})
 
 		// Deploy a separate ERC20 as the cap-change fee token (distinct from collateral).

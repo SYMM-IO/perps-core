@@ -919,9 +919,10 @@ event WithdrawSpeedUpAccepted(uint256 requestId, address user, uint256 newCooldo
 						off-chain inventory counts or prove completeness before <code>RestatementFinalized</code>; the symbol manager and indexer must
 						reconcile the full open and pending inventory before finalization. The facet upgrade must remove the legacy
 						<code>startRestatement(uint256,uint256,uint256)</code> selector and add <code>startRestatement(uint256)</code>,
-						<code>processRestatementFunding(uint256,address[])</code>, <code>completeRestatementFundingPreparation(uint256)</code>, and
-						<code>getRestatementFundingProgress(uint256)</code>; the one-facet updater now removes selectors absent from the replacement
-						facet ABI.
+						<code>processRestatementFunding(uint256,address[])</code>, and <code>completeRestatementFundingPreparation(uint256)</code>.
+						Every Symbol Adjustment read selector, including <code>getRestatementFundingProgress(uint256)</code>, now routes through
+						<code>ViewFacetSymbol</code>. Upgrade both facets from the complete target selector map in one Diamond cut; do not use the
+						one-facet updater for this selector migration.
 					</p>
 					<hr />
 					<h2 id="doc-event-changelog-6-new-accountlayer-diamond-events">6. New AccountLayer Diamond Events</h2>

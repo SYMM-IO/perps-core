@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { SymbolAdjustment, RestatementPhase } from "../../storages/SymbolAdjustmentStorage.sol";
+import { PositionType } from "../../storages/QuoteStorage.sol";
 
 interface ISymbolAdjustmentFacet {
 	struct QuoteAdjustmentPreview {
@@ -24,14 +24,40 @@ interface ISymbolAdjustmentFacet {
 	event AdjustmentCancelled(uint256 indexed symbolId, uint256 adjustmentIndex);
 	event PriceAdjustmentConfirmed(uint256 indexed symbolId, uint256 adjustmentIndex, uint256 newCumulativeFactor);
 	event RestatementStarted(uint256 indexed symbolId, uint256 epoch, uint256 restatementFactor);
-	event RestatementFundingPreparationProgress(
+	event RestatementPreparationProgress(
 		uint256 indexed symbolId,
 		uint256 indexed epoch,
-		uint256 submittedPartyBs,
-		uint256 checkpointedPartyBs,
-		uint256 pendingPartyBs
+		uint256 submittedPartyBCount,
+		uint256 newlyPreparedPartyBCount,
+		uint256 fundingCheckpointedPartyBCount,
+		uint256 totalRemainingLongAmount,
+		uint256 totalRemainingShortAmount,
+		uint256 pendingFundingPartyBCount
 	);
-	event RestatementFundingPreparationCompleted(uint256 indexed symbolId, uint256 indexed epoch, uint256 pendingPartyBs);
+	event RestatementPreparationCompleted(
+		uint256 indexed symbolId,
+		uint256 indexed epoch,
+		uint256 totalRemainingLongAmount,
+		uint256 totalRemainingShortAmount,
+		uint256 pendingFundingPartyBCount
+	);
+	event RestatementInventoryPrepared(
+		uint256 indexed symbolId,
+		uint256 indexed epoch,
+		address indexed partyB,
+		uint256 partyBRemainingLongAmount,
+		uint256 partyBRemainingShortAmount,
+		uint256 totalRemainingLongAmount,
+		uint256 totalRemainingShortAmount
+	);
+	event RestatementInventoryConsumed(
+		uint256 indexed symbolId,
+		uint256 indexed epoch,
+		uint256 indexed quoteId,
+		address partyB,
+		PositionType positionType,
+		uint256 consumedAmount
+	);
 	event RestatementFundingRestorationStarted(uint256 indexed symbolId, uint256 indexed epoch, bool finalizing, uint256 pendingPartyBs);
 	event RestatementFundingRestorationProgress(
 		uint256 indexed symbolId,
@@ -76,24 +102,4 @@ interface ISymbolAdjustmentFacet {
 	function cancelPendingQuotes(uint256[] calldata quoteIds) external;
 
 	function finalizeRestatement(uint256 symbolId) external;
-
-	function getSymbolAdjustment(uint256 symbolId) external view returns (SymbolAdjustment memory);
-
-	function getCumulativeFactor(uint256 symbolId) external view returns (uint256);
-
-	function getProspectiveCumulativeFactor(uint256 symbolId) external view returns (uint256);
-
-	function previewQuoteAdjustment(uint256 symbolId, uint256 quoteId) external view returns (QuoteAdjustmentPreview memory preview);
-
-	function isSymbolFrozen(uint256 symbolId) external view returns (bool);
-
-	function getRestatementState(uint256 symbolId) external view returns (bool restating, uint256 epoch);
-
-	function getRestatementFundingProgress(
-		uint256 symbolId
-	) external view returns (RestatementPhase phase, uint256 pendingPartyBCount, uint256 fundingCutoffTimestamp, uint256 fundingRestorationTimestamp);
-
-	function isRestatementFundingCheckpointed(uint256 symbolId, address partyB) external view returns (bool);
-
-	function getQuoteRestatedEpoch(uint256 quoteId) external view returns (uint256);
 }

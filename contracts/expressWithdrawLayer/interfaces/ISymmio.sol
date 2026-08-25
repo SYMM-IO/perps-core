@@ -12,6 +12,7 @@ interface ISymmio {
 	function acceptWithdrawCancelRequest(address user, uint256 requestId) external;
 	function finalizeWithdrawRequest(address user, uint256 requestId) external;
 	function advanceWithdraw(address user, uint256 requestId, uint256 amount) external;
+	function isSuspended(address user) external view returns (bool);
 	function getCollateral() external view returns (address);
 	function withdrawCooldownOf(address user) external view returns (uint256);
 }
