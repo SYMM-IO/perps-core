@@ -5,13 +5,13 @@
 pragma solidity >=0.8.18;
 
 interface IControlEvents {
-	event GeneralDeposit(uint256 amount);
-	event GeneralWithdraw(uint256 amount);
-	event AffiliateDeposit(address indexed affiliate, uint256 amount);
-	event AffiliateWithdraw(address indexed affiliate, uint256 amount);
+	event GeneralDeposit(address indexed depositor, uint256 amount);
+	event GeneralWithdraw(address indexed recipient, uint256 amount);
+	event AffiliateDeposit(address indexed affiliate, address indexed depositor, uint256 amount);
+	event AffiliateWithdraw(address indexed affiliate, address indexed recipient, uint256 amount);
 	event AffiliateConfigUpdated(address indexed affiliate, uint256 feeRate, uint256 operatorFee);
-	event FeesClaimed(address indexed affiliate, uint256 amount);
-	event OperatorFeesClaimed(address indexed affiliate, uint256 amount);
+	event FeesClaimed(address indexed affiliate, address indexed recipient, uint256 amount);
+	event OperatorFeesClaimed(address indexed affiliate, address indexed recipient, uint256 amount);
 	event MinValidatorSignaturesUpdated(address indexed affiliate, uint256 minValidatorSignatures);
 	event ValidatorApprovalTimeoutUpdated(address indexed affiliate, uint256 timeout);
 	event ValidatorUpdated(address indexed affiliate, address indexed validator, bool enabled);
