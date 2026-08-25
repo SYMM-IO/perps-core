@@ -66,3 +66,6 @@ AGENTS.md
 
 # Guided-deployment recipe backups written next to the recipe on every re-review.
 deployments/*.backup-*
+
+# Cross-process deployment locks (pid-scoped, reclaimed when stale).
+tasks/data/checkpoints/*.lock

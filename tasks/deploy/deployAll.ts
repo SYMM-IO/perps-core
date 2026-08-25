@@ -24,6 +24,7 @@ import {
 	createDeploymentManifest,
 	assertCheckpointManifest,
 	assertCheckpointContractsHaveCode,
+	acquireCheckpointLock,
 } from "./checkpoint.js"
 import {
 	deployAndConfigureExpressProvider,
@@ -62,7 +63,7 @@ import {
 	validateProtocolConfig,
 } from "./protocolConfig.js"
 import { activeDeploymentRecipe } from "./recipeRuntime.js"
-import { assertMainnetSafe, isKnownMainnet } from "./safety.js"
+import { assertMainnetSafe, requiresProductionSafety } from "./safety.js"
 import { deploySignatureVerifier } from "./signatureVerifier.js"
 import { deployStablecoin } from "./stablecoin.js"
 import { deploySymbolManager, grantSymbolManagerDiamondRoles, grantSymbolManagerOperatorRoles } from "./symbolManager.js"
@@ -372,7 +373,7 @@ export async function validateDeploymentConfig(
 	// makes non-zero soft liquidations revert. Known-mainnet deployments and their fork
 	// rehearsals must therefore supply reviewed values explicitly. Local/test networks use
 	// the admin and the cross-chain reviewed 100e18 cap as convenient fixture defaults.
-	if (isKnownMainnet(chainId)) {
+	if (requiresProductionSafety(chainId)) {
 		if (!config.liquidationInsuranceVault) throw new Error("LIQUIDATION_INSURANCE_VAULT is required for known-mainnet deployments and rehearsals")
 		if (!config.maxLiquidationProfitPerPosition) {
 			throw new Error("MAX_LIQUIDATION_PROFIT_PER_POSITION is required for known-mainnet deployments and rehearsals")
@@ -772,10 +773,16 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			setCheckpointSimulated(isSimulatedNetwork)
 			assertDeploymentRecordPolicy(chainId, isSimulatedNetwork, logData)
 
+			// One deployment per chain at a time. Without this, two runs interleave last-wins
+			// checkpoint writes while both broadcast, and neither can be reconciled afterwards.
+			const checkpointLock = acquireCheckpointLock(Number(chainId))
+			const releaseCheckpointLock = () => checkpointLock.release()
+			process.once("exit", releaseCheckpointLock)
+
 			// A production chain must have an explicit, reviewed config. Built-in defaults are
 			// retained only for local development: silently applying them to a live chain is not
 			// a safe deployment mode. Fork rehearsals enforce the same requirement.
-			if (!recipe && isKnownMainnet(chainId) && !hasChainProtocolConfig(chainId)) {
+			if (!recipe && requiresProductionSafety(chainId) && !hasChainProtocolConfig(chainId)) {
 				throw new Error(
 					`Missing required protocol config tasks/config/protocol-${Number(chainId)}.json for mainnet chainId ${Number(chainId)}. ` +
 						"Create and review the chain-specific parameters and InstantLayer templates before deploying or rehearsing.",
@@ -957,6 +964,27 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			// HyperEVM (chainId 999 mainnet, 998 testnet) requires big blocks for facet deployment
 			const isHyperEVM = !isSimulatedNetwork && (Number(chainId) === 999 || Number(chainId) === 998)
 			let bigBlocksEnabled = false
+			/**
+			 * Contract creation on HyperEVM needs the big-block gas limit. Steps that create
+			 * contracts after the main deployment phase (ExpressProvider, GaslessLayer) must
+			 * re-enter it, otherwise their diamond/proxy creations can exceed the small-block
+			 * limit and fail mid-run. Toggling is idempotent and skipped off HyperEVM.
+			 */
+			const withHyperEVMBigBlocks = async <T>(label: string, action: () => Promise<T>): Promise<T> => {
+				if (!isHyperEVM || bigBlocksEnabled) return action()
+				logger.info(`Re-enabling HyperEVM big blocks for ${label} contract creation...`)
+				bigBlocksEnabled = true
+				await setHyperEVMBigBlocks(hre, true)
+				try {
+					return await action()
+				} finally {
+					if (bigBlocksEnabled) {
+						await setHyperEVMBigBlocks(hre, false)
+						bigBlocksEnabled = false
+						logger.info(`Disabled HyperEVM big blocks after ${label}.`)
+					}
+				}
+			}
 			let deploymentError: unknown
 			let deploymentStepOrder = 0
 			bindDeploymentTransactionWriteAhead(record => persistSubmittedTransaction(checkpoint, record))
@@ -1287,7 +1315,9 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 					})
 				}
 
-				// All contracts are deployed — switch back to fast blocks for setup/config calls
+				// Core contract deployment is done — switch back to fast blocks for the setup and
+				// configuration calls that follow. ExpressProvider and GaslessLayer still create
+				// contracts further down, so they re-enter big blocks around their own steps.
 				if (bigBlocksEnabled) {
 					logger.info("Contract deployment complete — disabling big blocks for setup phase...")
 					await setHyperEVMBigBlocks(hre, false)
@@ -1392,7 +1422,9 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 									},
 									deployerAddress,
 								)
-								const result = await deployAndConfigureExpressProvider(hre, checkpoint, resolved, deployer, vanity)
+								const result = await withHyperEVMBigBlocks("ExpressProvider", () =>
+									deployAndConfigureExpressProvider(hre, checkpoint, resolved, deployer, vanity),
+								)
 								deployedContracts.expressProvider = result.address
 								expressProviderResult = result
 								// verify:all reads this file, so write it before the health gate can throw.
@@ -1444,7 +1476,9 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 									deployerAddress,
 								)
 								config.gaslessLayer = resolved
-								const result = await deployAndConfigureGaslessLayer(hre, checkpoint, resolved, deployer, vanity)
+								const result = await withHyperEVMBigBlocks("GaslessLayer", () =>
+									deployAndConfigureGaslessLayer(hre, checkpoint, resolved, deployer, vanity),
+								)
 								deployedContracts.gaslessLayer = result.address
 								deployedContracts.gaslessLayerImplementation = result.implementation
 								gaslessLayerResult = result
@@ -1768,6 +1802,8 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 				throw error
 			} finally {
 				clearDeploymentTransactionWriteAhead()
+				process.removeListener("exit", releaseCheckpointLock)
+				releaseCheckpointLock()
 				if (bigBlocksEnabled) {
 					try {
 						logger.info("Cleaning up HyperEVM big-block mode after an interrupted deployment...")

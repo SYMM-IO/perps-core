@@ -11,6 +11,7 @@ import {
 	loadCheckpoint,
 	saveCheckpoint,
 	setCheckpointSimulated,
+	acquireCheckpointLock,
 } from "./checkpoint.js"
 import { ensureCreate2Factory } from "./create2Factory.js"
 import {
@@ -2009,6 +2010,10 @@ export async function executeComponentDeployment(hre: any, input: ComponentExecu
 	setDataScope(chainId, { simulated })
 	setCheckpointSimulated(simulated)
 	const scope = componentCheckpointScope(input.recipeName, input.component)
+	// Same one-run-per-target rule as deploy:system, scoped to this component's checkpoint.
+	const checkpointLock = acquireCheckpointLock(chainId, scope)
+	const releaseCheckpointLock = () => checkpointLock.release()
+	process.once("exit", releaseCheckpointLock)
 	// Capture the last applied config BEFORE this run writes anything: a patch computes its
 	// removals against it, and the initial report write below would otherwise destroy it.
 	const priorComponentReport = isPatch ? readDataIfExists(componentReportRelativePath(input.recipeName, input.component)) : null
@@ -2149,5 +2154,7 @@ export async function executeComponentDeployment(hre: any, input: ComponentExecu
 		report.transactions = checkpoint.transactions || []
 		saveCheckpoint(checkpoint)
 		writeComponentReport(report)
+		process.removeListener("exit", releaseCheckpointLock)
+		releaseCheckpointLock()
 	}
 }

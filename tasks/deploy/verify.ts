@@ -184,6 +184,11 @@ export function assertVerificationRecordsCoverReport(contracts: ContractToVerify
 		required.push(["GaslessLayer", report.addresses?.gaslessLayer])
 		required.push(["GaslessLayer implementation", report.addresses?.gaslessLayerImplementation])
 	}
+	if (report.config?.expressProviderMode === "deploy") {
+		// Without this, a stale expressprovider.json from an earlier deployment satisfied the
+		// file requirement while describing contracts from a different run.
+		required.push(["ExpressProvider", report.addresses?.expressProvider])
+	}
 	if (report.config?.collateralAddress === "") required.push(["deployed collateral", report.addresses?.collateral])
 	for (const [label, address] of required) {
 		if (typeof address !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(address)) {
@@ -320,6 +325,9 @@ export const verifyAllTask = task("verify:all", "Verifies all deployed contracts
 					const filePath = `${getDataDir()}/${file}`
 					if (!fs.existsSync(filePath)) {
 						if (required) throw new Error(`Missing required ${name} at ${filePath}`)
+						// Optional records used to vanish without a word, so a run that verified
+						// core but skipped PartyB still printed a fully green summary.
+						console.log(`Skipping ${name}: ${filePath} not found`)
 						continue
 					}
 					const loaded = readVerificationRecords(filePath, name, ethers)
@@ -336,7 +344,7 @@ export const verifyAllTask = task("verify:all", "Verifies all deployed contracts
 				throw new Error(
 					`No contracts to verify on ${network} (chainId ${chainId}). ` +
 						`Expected deployment logs under ${getDataDir()}. ` +
-						`so the records may exist only on the machine that ran the deployment.`,
+						"Deployment records are not committed to git, so they may exist only on the machine that ran the deployment.",
 				)
 			}
 
@@ -1361,6 +1369,41 @@ async function verifyMuonSignatureVerifier(
 			pushAndLog(results, { category, check: "Registered gateway signers", status: "pass", actual: String(targetGatewaySigners.length) })
 		}
 
+		// The checks above only prove the configured identities are a SUBSET of what is
+		// registered. A leftover test key or an added gateway signer can sign price and UPNL
+		// attestations, so anything registered beyond the reviewed configuration is reported
+		// rather than passing silently. Extras are legitimate mid-rotation, so this warns.
+		if (hasConfiguredKey) {
+			const targetKeyIds = new Set(targetKeys.map((key: { x: string; parity: number }) => `${key.x}:${key.parity}`))
+			const unexpectedKeys = registeredKeys.filter((key: { x: string; parity: number }) => !targetKeyIds.has(`${key.x}:${key.parity}`))
+			if (unexpectedKeys.length > 0) {
+				pushAndLog(results, {
+					category,
+					check: "Unexpected public keys",
+					status: "warn",
+					message: unexpectedKeys.map((key: { x: string; parity: number }) => `x=${key.x}, parity=${key.parity}`).join("; "),
+					hint: "Confirm each extra key is an intentional rotation, or revoke it with an account holding SETTER_ROLE",
+				})
+			} else {
+				pushAndLog(results, { category, check: "Unexpected public keys", status: "pass", actual: "none" })
+			}
+		}
+		if (configuredGatewaySigners.length > 0) {
+			const targetGatewayIds = new Set(targetGatewaySigners.map((signer: string) => signer.toLowerCase()))
+			const unexpectedGateways = registeredGatewaySigners.filter((signer: string) => !targetGatewayIds.has(signer.toLowerCase()))
+			if (unexpectedGateways.length > 0) {
+				pushAndLog(results, {
+					category,
+					check: "Unexpected gateway signers",
+					status: "warn",
+					message: unexpectedGateways.join(", "),
+					hint: "Confirm each extra gateway signer is intentional, or revoke it with an account holding SETTER_ROLE",
+				})
+			} else {
+				pushAndLog(results, { category, check: "Unexpected gateway signers", status: "pass", actual: "none" })
+			}
+		}
+
 		const inspection = await inspectConfiguredMuonPermissions(verifier, {
 			publicKeys: targetKeys,
 			gatewaySigners: targetGatewaySigners,
@@ -1602,7 +1645,12 @@ async function verifyAccountLayerFull(
 	try {
 		const impl = await alView.accountManagerImplementation()
 		if (impl && impl !== "0x") {
-			pushAndLog(results, { category: cat, check: "Account manager implementation", status: "pass", actual: `${impl.length} bytes` })
+			pushAndLog(results, {
+				category: cat,
+				check: "Account manager implementation",
+				status: "pass",
+				actual: `${Math.floor(impl.replace(/^0x/u, "").length / 2)} bytes`,
+			})
 		} else {
 			pushAndLog(results, {
 				category: cat,
@@ -1731,7 +1779,18 @@ async function verifyInstantLayerFull(
 		}
 
 		for (const [templateId, expectedTemplate] of protocolConfig.instantLayerTemplates.entries()) {
-			if (templateId >= templateCount) continue
+			if (templateId >= templateCount) {
+				// Dropping these silently shrank the totals, so a short registry looked like
+				// fewer checks rather than missing ones.
+				pushAndLog(results, {
+					category: cat,
+					check: `InstantLayer template ${templateId}`,
+					status: "fail",
+					message: `Template ${templateId} is declared in the protocol config but the registry only holds ${templateCount}`,
+					hint: templateHint,
+				})
+				continue
+			}
 			const template = await instantLayer.getTemplate(templateId)
 			let instantOpenMode: boolean | undefined
 			try {
@@ -2183,6 +2242,12 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 		defaultValue: "",
 	})
 	.addOption({
+		name: "signatureVerifier",
+		description: "MuonSignatureVerifier address (defaults to the one recorded by --fromReport/--fromCheckpoint)",
+		type: ArgumentType.STRING,
+		defaultValue: "",
+	})
+	.addOption({
 		name: "deployer",
 		description: "Original deployer address whose privileges must be gone (required unless --fromReport/--fromCheckpoint supplies it)",
 		type: ArgumentType.STRING,
@@ -2252,7 +2317,7 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 				gaslessLayerImplementation: undefined,
 				liquidator: args.liquidator || undefined,
 				collateral: args.collateral || undefined,
-				signatureVerifier: undefined,
+				signatureVerifier: args.signatureVerifier || undefined,
 				admin: args.admin || undefined,
 				symmioFeeReceiver: undefined,
 				symbolManagerOperator: args.symbolManagerOperator || undefined,
@@ -2575,6 +2640,17 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 			// The core merely stores a verifier address. A healthy deployment must also
 			// prove the verifier's role handoff, registered identities, and all category
 			// authorizations recorded in the scoped deployment report.
+			if (!addresses.signatureVerifier) {
+				// Silently omitting this section removed it from the totals too, so a run against
+				// a mock verifier could print "all checks passed" without ever inspecting it.
+				pushAndLog(results, {
+					category: "MuonSignatureVerifier",
+					check: "Verifier inspection",
+					status: "fail",
+					message: "No MuonSignatureVerifier address is available, so its roles, identities and permissions were not verified",
+					hint: "Use --fromReport/--fromCheckpoint, or pass --signatureVerifier <address>",
+				})
+			}
 			if (addresses.signatureVerifier) {
 				await verifyMuonSignatureVerifier(
 					ethers,

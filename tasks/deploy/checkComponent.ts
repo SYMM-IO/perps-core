@@ -477,7 +477,7 @@ export const checkComponentTask = task("check:component", "Read-only canonical h
 	})
 	.addOption({
 		name: "component",
-		description: "Component to inspect: partyB or symbolManager",
+		description: "Component to inspect: partyB, symbolManager, expressProvider or gaslessLayer",
 		type: ArgumentType.STRING_WITHOUT_DEFAULT,
 		defaultValue: undefined,
 	})
