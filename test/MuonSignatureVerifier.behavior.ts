@@ -216,6 +216,21 @@ export function shouldBehaveLikeMuonSignatureVerifier(): void {
 			})
 		})
 
+		it("should support future uint8 categories without predefining enum members", async function () {
+			const futureFunctionId = 255
+			const gatewaySigner = (await ethers.getSigners())[4].address
+
+			expect(await verifier.supportsMuonFunction(futureFunctionId)).to.equal(true)
+			expect(await verifier.isPublicKeyAuthorized(dummyPubKey, futureFunctionId)).to.equal(false)
+			expect(await verifier.isGatewaySignerAuthorized(gatewaySigner, futureFunctionId)).to.equal(false)
+
+			await verifier.connect(setter).setPublicKeyPermissions(dummyPubKey, [futureFunctionId], true)
+			await verifier.connect(setter).setGatewaySignerPermissions(gatewaySigner, [futureFunctionId], true)
+
+			expect(await verifier.isPublicKeyAuthorized(dummyPubKey, futureFunctionId)).to.equal(true)
+			expect(await verifier.isGatewaySignerAuthorized(gatewaySigner, futureFunctionId)).to.equal(true)
+		})
+
 		describe("Access Control", function () {
 			it("should grant SETTER_ROLE to admin on deployment", async function () {
 				const SETTER_ROLE = await verifier.SETTER_ROLE()

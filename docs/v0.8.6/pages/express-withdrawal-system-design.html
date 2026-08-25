@@ -1515,8 +1515,8 @@ function claimOperatorFees(address affiliate, address to) external onlyRole(FEE_
 								symmio))</code
 							>
 							is verified with the four-argument <code>IMuonSignatureVerifier.verify</code> overload and
-							<code>MuonFunction.ExpressCredit</code> (enum value <code>8</code>). Both the registered TSS key and registered gateway
-							must be explicitly authorized for this category. The hash uses the <strong>affiliate address</strong> to scope
+							<code>uint8(MuonFunction.ExpressCredit)</code> (category ID <code>8</code>). Both the registered TSS key and registered
+							gateway must be explicitly authorized for this category. The hash uses the <strong>affiliate address</strong> to scope
 							attestations per affiliate, and binds both <code>address(this)</code> (the express provider diamond) and
 							<code>symmio</code> (the SYMMIO core address) so an attestation signed for one deployment cannot be replayed against
 							another.
@@ -1527,11 +1527,14 @@ function claimOperatorFees(address affiliate, address to) external onlyRole(FEE_
 						</li>
 					</ol>
 					<p>
-						<strong>Upgrade order:</strong> keep Express credit paused; deploy a verifier compiled with the appended
-						<code>ExpressCredit</code> category; register and authorize the intended TSS keys and gateways for category <code>8</code>;
-						point Express at that verifier; replace <code>SymmioHookFacet</code> and <code>AccelerateFacet</code>; test approved and
-						retired signers; then unpause. Existing enum values <code>0</code>–<code>7</code> are unchanged and no Express storage
-						migration is required. A verifier compiled against the old enum must not be used for this call.
+						<strong>Upgrade order:</strong> keep Express credit paused; deploy the forward-compatible verifier whose category boundary is
+						<code>uint8</code> and whose <code>supportsMuonFunction(8)</code> call returns <code>true</code>; register and authorize the
+						intended TSS keys and gateways for category <code>8</code>; point Express at that verifier; replace
+						<code>SymmioHookFacet</code> and <code>AccelerateFacet</code>; test approved and retired signers; then unpause. Existing enum
+						values <code>0</code>–<code>7</code> are unchanged and no Express storage migration is required. Fresh deployment, patch/reuse
+						resolution, post-state validation, and <code>setCreditLineMuonConfig</code> all reject a nonzero verifier that does not
+						explicitly advertise ExpressCredit support. The capability result is separate from signer authorization: both the intended TSS
+						key and gateway still require permission for ID <code>8</code>.
 					</p>
 					<h3 id="9-3-debt-lifecycle-detailed">9.3 Debt lifecycle (detailed)</h3>
 					<div class="table-wrap">
