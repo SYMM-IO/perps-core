@@ -26,7 +26,9 @@ import { getConnection } from "./helpers.js"
 import {
 	assertConfiguredMuonPermissionsAuthorized,
 	assertGeneralDeploymentMuonPermissions,
+	assertMuonFunctionSupported,
 	inspectConfiguredMuonPermissions,
+	REMOVE_MARGIN_MUON_FUNCTION,
 } from "./muonPermissions.js"
 import { ProtocolConfig, loadProtocolConfig, templateConfigMismatches, validateProtocolConfig } from "./protocolConfig.js"
 import { activeDeploymentRecipe } from "./recipeRuntime.js"
@@ -1252,6 +1254,20 @@ async function verifyMuonSignatureVerifier(
 			check: "Verifier mode",
 			status: "pass",
 			actual: "Mock verifier (local/test deployment)",
+		})
+		return
+	}
+
+	try {
+		await assertMuonFunctionSupported(ethers, verifierAddress, REMOVE_MARGIN_MUON_FUNCTION, category)
+		pushAndLog(results, { category, check: "Supports RemoveMargin", status: "pass", actual: "MuonFunction index 7" })
+	} catch (error) {
+		pushAndLog(results, {
+			category,
+			check: "Supports RemoveMargin",
+			status: "fail",
+			message: error instanceof Error ? error.message : String(error),
+			hint: "Deploy and configure a forward-compatible MuonSignatureVerifier",
 		})
 		return
 	}

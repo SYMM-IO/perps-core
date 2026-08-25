@@ -23,6 +23,7 @@ const fakeEthers = {
 		balanceOf: async () => BigInt(0),
 		getAllPublicKeys: async () => [{ x: BigInt(1), parity: BigInt(0) }],
 		getAllGatewaySigners: async () => [`0x${"9".repeat(40)}`],
+		supportsMuonFunction: async () => true,
 	}),
 }
 
@@ -208,6 +209,7 @@ describe("deploy:system input parsing", function () {
 			},
 			isPublicKeyAuthorized: async () => false,
 			isGatewaySignerAuthorized: async () => false,
+			supportsMuonFunction: async () => true,
 		})
 		const ethersWithVerifier = (deployerCanRepair: boolean) => ({
 			...fakeEthers,
@@ -225,6 +227,21 @@ describe("deploy:system input parsing", function () {
 			"lacks SETTER_ROLE",
 		)
 		await validateDeploymentConfig(ethersWithVerifier(true), 31337, structuredClone(config), structuredClone(DEFAULT_PROTOCOL_CONFIG))
+	})
+
+	it("rejects an existing verifier that does not advertise RemoveMargin support", async function () {
+		const config = deploymentConfig()
+		config.deployMockVerifier = false
+		config.signatureVerifierAddress = `0x${"8".repeat(40)}`
+
+		const ethersWithIncompatibleVerifier = {
+			...fakeEthers,
+			getContractAt: async () => ({ supportsMuonFunction: async () => false }),
+		}
+		await expectRejection(
+			validateDeploymentConfig(ethersWithIncompatibleVerifier, 31337, config, structuredClone(DEFAULT_PROTOCOL_CONFIG)),
+			"does not support MuonFunction.RemoveMargin (index 7)",
+		)
 	})
 
 	it("requires an explicit operator for every SymbolManager deployment", async function () {

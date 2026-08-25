@@ -26,11 +26,14 @@ import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 import { Fee } from "../../storages/QuoteStorage.sol";
 import { LibOperationalFee } from "../../libraries/LibOperationalFee.sol";
 import { LibExecutionContext } from "../../libraries/LibExecutionContext.sol";
+import { LibMuonVerifier } from "../../../helpers/verification/LibMuonVerifier.sol";
 
 /// @dev Native transient execution administration lives in ExecutionContextFacet.
 ///      This facet retains the legacy selector adapters without exceeding EIP-170, while
 ///      the Diamond continues to expose the same composite IControlFacet ABI.
 contract ControlFacet is Accessibility, Ownable, IControlEvents {
+	error IncompatibleSignatureVerifier();
+
 	/// @notice Initiates a two-step ownership transfer to a new address. The new owner must call acceptOwnership() to complete the transfer.
 	/// @param owner The address of the pending new owner.
 	function transferOwnership(address owner) external onlyOwner {
@@ -593,6 +596,8 @@ contract ControlFacet is Accessibility, Ownable, IControlEvents {
 	/// @notice Sets the contract address responsible for verifying muon cryptographic signatures in the protocol.
 	/// @param signatureVerifier The address of the signature verifier contract.
 	function setSignatureVerifierAddress(address signatureVerifier) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
+		if (signatureVerifier != address(0) && !LibMuonVerifier.supportsMuonFunction(signatureVerifier, uint8(MuonFunction.RemoveMargin)))
+			revert IncompatibleSignatureVerifier();
 		GlobalAppStorage.layout().signatureVerifier = signatureVerifier;
 		emit SetSignatureVerifierAddress(signatureVerifier);
 	}

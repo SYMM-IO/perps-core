@@ -2252,6 +2252,20 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			expect(await expressProvider.creditLineMuonFreshnessWindow()).to.equal(60n)
 		})
 
+		it("should reject a credit line verifier without the forward-compatible capability API", async function () {
+			const { expressProvider, muonVerifier } = await deployFixture()
+			const legacyVerifier = await ethers.deployContract("LegacyMuonSignatureVerifier")
+			await legacyVerifier.waitForDeployment()
+
+			await expect(expressProvider.setCreditLineMuonConfig(await legacyVerifier.getAddress(), 2n, 120n)).to.be.revertedWithCustomError(
+				expressProvider,
+				"IncompatibleSignatureVerifier",
+			)
+			expect(await expressProvider.creditLineSignatureVerifier()).to.equal(await muonVerifier.getAddress())
+			expect(await expressProvider.creditLineMuonAppId()).to.equal(1n)
+			expect(await expressProvider.creditLineMuonFreshnessWindow()).to.equal(60n)
+		})
+
 		it("should reject setting credit line config by non-setter", async function () {
 			const fixture = await deployFixture()
 			const { expressProvider, user } = fixture

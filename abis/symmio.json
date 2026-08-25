@@ -21133,6 +21133,11 @@
     },
     {
         "inputs": [],
+        "name": "IncompatibleSignatureVerifier",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "acceptOwnership",
         "outputs": [],
         "stateMutability": "nonpayable",
