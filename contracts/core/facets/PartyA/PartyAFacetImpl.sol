@@ -55,6 +55,7 @@ library PartyAFacetImpl {
 		AffiliateStorage.Layout storage affiliateLayout = AffiliateStorage.layout();
 		address signer = LibSigner.getSigner();
 
+		require(orderType != OrderType.MARKET_BEST_EFFORT, "PartyAFacet: MARKET_BEST_EFFORT is close-only");
 		require(!LibAccessibility.hasRole(signer, LibAccessibility.LIQUIDATOR_ROLE), "PartyAFacet: Liquidator can't be partyA");
 		require(
 			quoteLayout.partyAPendingQuotes[signer].length < maLayout.pendingQuotesValidLength,

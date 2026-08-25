@@ -7,11 +7,11 @@ import type { MockAccountLayerHook } from "../src/types/index.js"
 import { initializeFixture } from "./Initialize.fixture.js"
 import { ethers } from "./helpers/hardhat-connection.js"
 import { loadFixture, time } from "./helpers/network-helpers.js"
-import { PositionType, QuoteStatus } from "./models/Enums.js"
+import { OrderType, PositionType, QuoteStatus } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
-import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
+import { limitCloseRequestBuilder, marketBestEffortCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
 import { limitFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest.js"
 import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
@@ -965,6 +965,17 @@ export function shouldBehaveLikeAccountLayer(): void {
 
 				const quoteIds = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccounts[0], 0, 10)
 				expect(quoteIds.length).to.equal(1)
+			})
+
+			it("rejects MARKET_BEST_EFFORT when AccountLayer routes an opening quote", async () => {
+				const subAccountData = [createSubAccountData("BEST_EFFORT_OPEN", 1, "MARKET")]
+				const subAccount = await createSubAccountAndDeposit(context.signers.user, subAccountData, BALANCES.DEPOSIT_AMOUNT)
+				const quoteRequest = limitQuoteRequestBuilder().orderType(OrderType.MARKET_BEST_EFFORT).build()
+				await context.alMarginFacet.connect(context.signers.user).addMarginToNextVA(subAccount, 1, quoteRequest.symbolId, decimal(500n))
+
+				await expect(
+					context.alCoreFacet.connect(context.signers.user)._call(subAccount, [await createSendQuoteCallData(quoteRequest)]),
+				).to.be.revertedWith("PartyAFacet: MARKET_BEST_EFFORT is close-only")
 			})
 		})
 
@@ -4686,6 +4697,35 @@ export function shouldBehaveLikeAccountLayer(): void {
 				// Position should still be open on core
 				const posCount = await context.viewFacetQuote.partyAPositionsCount(virtualAccountAddress)
 				expect(posCount).to.equal(1)
+			})
+
+			it("keeps a liquidation-limited best-effort position tracked after decoding order type 2", async () => {
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress))[0]
+				const [quoteId] = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				await openPositionForQuote(quoteId)
+
+				const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)
+				const closeRequest = marketBestEffortCloseRequestBuilder().quantityToClose(quoteBefore.quantity).closePrice(decimal(1n)).build()
+				const requestToCloseCallData = context.partyAFacet.interface.encodeFunctionData("requestToClosePosition", [
+					quoteId,
+					closeRequest.closePrice,
+					closeRequest.quantityToClose,
+					closeRequest.orderType,
+					await closeRequest.deadline,
+				])
+				await context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [requestToCloseCallData])
+
+				await context.partyBPositionActionsFacet
+					.connect(context.signers.hedger)
+					.fillCloseRequestToLiquidation(quoteId, decimal(1n), await getDummyPairUpnlAndPriceSig(decimal(2n), decimal(-450n), 0n))
+
+				const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
+				expect(quoteAfter.orderType).to.equal(OrderType.MARKET_BEST_EFFORT)
+				expect(quoteAfter.quoteStatus).to.equal(QuoteStatus.OPENED)
+				expect(quoteAfter.closedAmount).to.be.greaterThan(0n)
+				expect(quoteAfter.closedAmount).to.be.lessThan(quoteBefore.quantity)
+				expect((await context.alViewFacet.getVirtualAccount(virtualAccountAddress)).isExists).to.be.true
+				expect(await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)).to.deep.equal([quoteId])
 			})
 
 			it("Multiple partial closes then full close should delete VA only at end", async () => {
