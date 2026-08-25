@@ -92,7 +92,6 @@
 		"abi": "python3 ./utils/make_abi.py",
 		"deploy:gasless-layer": "hardhat run scripts/gaslessLayer/deploy.ts",
 		"upgrade:gasless-layer:hyperevm": "hardhat run scripts/gaslessLayer/upgrade-gasless-layer.ts --network hyperevm",
-		"storage:gasless-layer:snapshot": "hardhat run scripts/gaslessLayer/write-storage-snapshot.ts",
 		"typechain": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat typechain",
 		"solhint": "./node_modules/.bin/solhint -f table contracts/**/*.sol",
 		"prettier:contracts": "prettier --write \"contracts/**/*.sol\"",

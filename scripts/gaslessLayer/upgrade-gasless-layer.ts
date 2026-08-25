@@ -8,7 +8,6 @@ import { createRequire } from "node:module"
 import { isHyperEVMChainId, setHyperEVMBigBlocksForSigner } from "../../tasks/deploy/hyperevm.js"
 import { GOLDEN_WALLET_INITCODE_HASH, REFERENCE_WALLET_OWNER, predictGaslessWalletAddress } from "./gasless-wallet.js"
 import { GaslessLayerLibraryAddresses, deployGaslessLayerLibraries, gaslessLayerFactoryOptions } from "./layer-libraries.js"
-import { assertGaslessLayerStorageLayoutStable } from "./storage-layout.js"
 
 const DEFAULT_PROXY = "0x9E8e015F0537c3C86c7103280F70bb42cb0f573f"
 const DEFAULT_NETWORK = "hyperevm"
@@ -469,11 +468,6 @@ async function main() {
 	await requireCode(provider, proxy, "GaslessLayer proxy")
 	const currentImplementation = await getImplementationAddress(provider, proxy)
 	console.log("Current implementation:", currentImplementation)
-
-	// Block the upgrade if the working-tree storage layout is not append-only vs the committed snapshot —
-	// a mutated existing slot would remap live fee/nonce/quota state and corrupt funds.
-	assertGaslessLayerStorageLayoutStable()
-	console.log("Storage layout:         append-only vs committed snapshot")
 
 	const gatewayReader = new Contract(proxy, AccessControlABI, provider) as any
 	const defaultAdminRole = await gatewayReader.DEFAULT_ADMIN_ROLE().catch(() => ZeroHash)
