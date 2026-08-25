@@ -156,6 +156,8 @@ export async function deployGaslessLayer(
 		contract = await deployProxyWithFallback(hre, factory, [...initializerArgs], {
 			initializer: "initialize",
 			label: "GaslessLayer",
+			vanity: input.vanity || null,
+			proxyKey: "gaslessLayer/GaslessLayer",
 			checkpoint,
 			implementationComponent: "deployments.gaslessLayer.implementation",
 			proxyComponent: "contracts.gaslessLayer.proxy",

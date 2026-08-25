@@ -1014,11 +1014,23 @@ async function executePartyB(
 	const instantLayerAddress = input.coreReport.addresses.instantLayer
 	const adlEnabled = input.componentConfig.adlEnabled === true
 
+	// A standalone component deployment honours the same reviewed vanity intent as
+	// deploy:system; without the factory the pattern could not be applied at all.
+	const vanityPlan = buildVanityPlan(activeDeploymentRecipe?.recipe.create2)
+	if (vanityPlan) {
+		await ensureCreate2Factory(hre, vanityPlan, {
+			checkpoint,
+			isLive: activeDeploymentRecipe?.recipe.network.mode === "live",
+			allowNewFactory: false,
+			logData: false,
+		})
+	}
 	const contract = await deploySymmioPartyB(hre, {
 		symmioAddress: core,
 		admin: deployer.address,
 		logData: false,
 		checkpoint,
+		vanity: createVanityContext(ethers, vanityPlan),
 	})
 	const address = await contract.getAddress()
 	const implementation = checkpoint.contracts.symmioPartyB?.implementation

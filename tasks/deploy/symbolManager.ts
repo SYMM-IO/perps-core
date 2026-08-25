@@ -9,6 +9,7 @@ import { assertStandaloneDeploymentTaskAllowed, checksumAddress, getConnection }
 import { setHyperEVMBigBlocks } from "./hyperevm.js"
 import { logger } from "./logger.js"
 import { confirmDeployment, send } from "./tx.js"
+import { deployContract, type VanityContext } from "./vanityDeploy.js"
 
 // Role hashes for the Symmio core Diamond that the SymbolManager needs in order
 // to proxy symbol CRUD + force-close-gap-ratio calls. Kept here as plain strings
@@ -30,6 +31,8 @@ function requireArg(value: string | undefined, flag: string): string {
 }
 
 type DeploySymbolManagerArgs = {
+	/** Present when the owning deployment mines CREATE2 addresses; null for standalone runs. */
+	vanity?: VanityContext | null
 	symmioAddress: string
 	admin?: string
 	logData?: boolean
@@ -38,7 +41,7 @@ type DeploySymbolManagerArgs = {
 
 export async function deploySymbolManager(
 	hre: any,
-	{ symmioAddress: rawSymmio, admin: rawAdmin, logData = true, checkpoint }: DeploySymbolManagerArgs,
+	{ symmioAddress: rawSymmio, admin: rawAdmin, logData = true, checkpoint, vanity }: DeploySymbolManagerArgs,
 ) {
 	const { ethers } = await getConnection(hre)
 	await recoverCheckpointContractDeployments(checkpoint, ethers.provider, "contracts.symbolManager")
@@ -62,12 +65,14 @@ export async function deploySymbolManager(
 	}
 
 	const factory = await ethers.getContractFactory("SymmioSymbolManager")
-	const contract = await factory.connect(deployer).deploy(symmioAddress, admin)
-	const address = await confirmDeployment(
-		contract,
-		"SymmioSymbolManager",
-		checkpointDeployment(checkpoint, "contracts.symbolManager", [symmioAddress, admin]),
-	)
+	const { address } = await deployContract(vanity || null, {
+		key: "peripherals/SymbolManager",
+		component: "contracts.symbolManager",
+		label: "SymmioSymbolManager",
+		factory: factory.connect(deployer),
+		constructorArgs: [symmioAddress, admin],
+		checkpoint,
+	})
 	logger.deployed("SymmioSymbolManager", address)
 
 	if (checkpoint) {
@@ -80,7 +85,7 @@ export async function deploySymbolManager(
 		logger.debug("Deployed addresses written to JSON file")
 	}
 
-	return contract
+	return ethers.getContractAt("SymmioSymbolManager", address)
 }
 
 function writeSymbolManagerRecord(address: string, symmioAddress: string, admin: string): void {

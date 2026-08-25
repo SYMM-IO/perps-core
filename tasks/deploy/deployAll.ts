@@ -1141,6 +1141,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 									admin: deployerAddress,
 									logData,
 									checkpoint,
+									vanity,
 								})
 								deployedContracts.signatureVerifier = await signatureVerifier.getAddress()
 								logger.info(`MuonSignatureVerifier deployed at: ${deployedContracts.signatureVerifier}`)
@@ -1215,6 +1216,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 								admin: deployerAddress,
 								logData,
 								checkpoint,
+								vanity,
 							})
 							deployedContracts.instantLayer = await instantLayer.getAddress()
 							logger.info(`InstantLayer deployed at: ${deployedContracts.instantLayer}`)
@@ -1252,6 +1254,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 									admin: deployerAddress,
 									logData,
 									checkpoint,
+									vanity,
 								})
 								deployedContracts.symmioPartyB = await symmioPartyB.getAddress()
 								logger.info(`SymmioPartyB deployed at: ${deployedContracts.symmioPartyB}`)
@@ -1290,6 +1293,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 									admin: config.admin,
 									logData,
 									checkpoint,
+									vanity,
 								})
 								deployedContracts.symbolManager = await symbolManager.getAddress()
 								logger.info(`SymmioSymbolManager deployed at: ${deployedContracts.symbolManager}`)
