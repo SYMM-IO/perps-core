@@ -53,6 +53,7 @@ library LibErrors {
 	error VirtualProviderMustBeZero();
 	error Reentrancy();
 	error Paused();
+	error UserSuspended();
 	// ── Accelerate flow ──
 	error AccelerateOnlyFromStandardAccepted();
 	error AccelerateOfferExpired();
