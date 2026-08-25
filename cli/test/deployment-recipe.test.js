@@ -7,7 +7,7 @@ import {
 	recipeDigest,
 	recipeEnvironment,
 	validateDeploymentRecipe,
-} from "../../deployment/recipe.js";
+} from "../../deployment-tooling/recipe.js";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -628,7 +628,7 @@ test("environment projection contains public values and unresolved secret metada
 });
 
 test("distributed example is JSON-parseable but intentionally fails until placeholders are replaced", () => {
-	const examplePath = path.resolve("deployment/examples/arbitrum.v1.example.json");
+	const examplePath = path.resolve("deployment-tooling/examples/arbitrum.v1.example.json");
 	const example = JSON.parse(fs.readFileSync(examplePath, "utf8"));
 	assert.equal(example.apiVersion, "deployment.symm.io/v1");
 	assert.throws(() => validateDeploymentRecipe(example, examplePath), /REPLACE|20-byte hexadecimal address/);

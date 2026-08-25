@@ -5,7 +5,7 @@
 // protocol values/templates, both diamonds, integrations, roles, ownership and optional
 // components. Delegating to it means an unreadable/unknown probe is a failed check rather
 // than a warning followed by a false-green "looks healthy" verdict.
-import { createDeploymentPlan } from "../../deployment/recipe.js";
+import { createDeploymentPlan } from "../../deployment-tooling/recipe.js";
 import { deploymentCheckpointPath, explorerAddressUrl, isLiveMainnet, readCheckpoint, readDeploymentReport, resolveNetwork } from "../lib/context.js";
 import { hardhat } from "../lib/hardhat.js";
 import {

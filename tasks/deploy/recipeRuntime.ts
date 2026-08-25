@@ -1,4 +1,4 @@
-import { loadDeploymentRecipe, recipeEnvironment, type DeploymentRecipe, type SecretMetadata } from "../../deployment/recipe.js"
+import { loadDeploymentRecipe, recipeEnvironment, type DeploymentRecipe, type SecretMetadata } from "../../deployment-tooling/recipe.js"
 
 export interface ActiveDeploymentRecipe {
 	recipe: DeploymentRecipe

@@ -1,7 +1,7 @@
 import { PROJECT_ROOT, projectPath } from "./paths.js";
 import path from "node:path";
 
-export const RECIPE_EXAMPLE = projectPath("deployment", "examples", "arbitrum.v1.example.json");
+export const RECIPE_EXAMPLE = projectPath("deployment-tooling", "examples", "arbitrum.v1.example.json");
 
 export const RECIPE_FIELD_BY_RUNTIME_KEY = Object.freeze({
 	ADMIN_PUBLIC_KEY: "governance.admin",
@@ -47,7 +47,7 @@ export function displayPath(target) {
 export function configurationLocations({
 	chainId = "<chainId>",
 	simulated = false,
-	recipePath = "deployments/<name>.json",
+	recipePath = "deployment-recipes/<name>.json",
 	recipeName = "<recipe-name>",
 	component = "<component>",
 } = {}) {
@@ -107,7 +107,7 @@ export function recipeDiagnostic(message, detail, recipePath, { includeEditHint 
 }
 
 export function doctorNextStepLines({ networkName, recipePath, blockingFields = [], only, legacy = false }) {
-	const target = recipePath ? displayPath(recipePath) : `deployments/${networkName}.json`;
+	const target = recipePath ? displayPath(recipePath) : `deployment-recipes/${networkName}.json`;
 	if (legacy) {
 		return [
 			"Next steps",
@@ -128,7 +128,7 @@ export function runtimeConfigurationRows({ chainId, simulated, recipePath, recip
 	const locations = configurationLocations({
 		chainId,
 		simulated,
-		recipePath: recipePath || "deployments/<name>.json",
+		recipePath: recipePath || "deployment-recipes/<name>.json",
 		recipeName,
 		component,
 	});

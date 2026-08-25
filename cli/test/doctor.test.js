@@ -106,10 +106,10 @@ test("doctor always requests a deployment plan, including full recipe preflight"
 		received = { configPath, options };
 		return context;
 	};
-	assert.equal(resolveDoctorRecipeContext({ config: "deployments/release.json" }, {}, loader), context);
-	assert.deepEqual(received, { configPath: "deployments/release.json", options: { only: undefined } });
+	assert.equal(resolveDoctorRecipeContext({ config: "deployment-recipes/release.json" }, {}, loader), context);
+	assert.deepEqual(received, { configPath: "deployment-recipes/release.json", options: { only: undefined } });
 	assert.throws(
-		() => resolveDoctorRecipeContext({ config: "deployments/release.json" }, {}, () => ({ plan: null })),
+		() => resolveDoctorRecipeContext({ config: "deployment-recipes/release.json" }, {}, () => ({ plan: null })),
 		/requires a validated deployment plan/,
 	);
 });

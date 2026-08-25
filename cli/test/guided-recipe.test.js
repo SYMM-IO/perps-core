@@ -1,4 +1,4 @@
-import { validateDeploymentRecipe } from "../../deployment/recipe.js";
+import { validateDeploymentRecipe } from "../../deployment-tooling/recipe.js";
 import { buildInitialRecipe } from "../commands/recipe.js";
 import {
 	applyLocalAccountDefaults,
@@ -102,9 +102,9 @@ test("persistent local preparation discovers unlocked accounts and needs no JSON
 });
 
 test("local defaults remain fully reviewable without exposing a secret", () => {
-	const source = JSON.parse(fs.readFileSync(path.resolve("deployment/examples/arbitrum.v1.example.json"), "utf8"));
+	const source = JSON.parse(fs.readFileSync(path.resolve("deployment-tooling/examples/arbitrum.v1.example.json"), "utf8"));
 	const recipe = applyLocalAccountDefaults(buildInitialRecipe("localhost", source), ACCOUNTS);
-	const review = recipeReviewText(recipe, { identityPath: "deployments/localhost.json", only: "full system" });
+	const review = recipeReviewText(recipe, { identityPath: "deployment-recipes/localhost.json", only: "full system" });
 	assert.match(review, /TARGET\nlocalhost • chain 31337 • local/);
 	assert.match(review, /no secret reference is stored/i);
 	assert.match(review, /OWNERSHIP/);
@@ -116,7 +116,7 @@ test("local defaults remain fully reviewable without exposing a secret", () => {
 });
 
 test("GaslessLayer guided editing covers selector-specific fee overrides", async () => {
-	const source = JSON.parse(fs.readFileSync(path.resolve("deployment/examples/arbitrum.v1.example.json"), "utf8"));
+	const source = JSON.parse(fs.readFileSync(path.resolve("deployment-tooling/examples/arbitrum.v1.example.json"), "utf8"));
 	const recipe = applyLocalAccountDefaults(buildInitialRecipe("localhost", source), ACCOUNTS);
 	const ui = {
 		text: async options => {
@@ -135,8 +135,8 @@ test("GaslessLayer guided editing covers selector-specific fee overrides", async
 
 test("ExpressProvider patch sections are edited interactively and can declare role revocations", async () => {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "symmio-guided-patch-"));
-	const source = JSON.parse(fs.readFileSync(path.resolve("deployment/examples/arbitrum.v1.example.json"), "utf8"));
-	const recipePath = path.join(root, "deployments", "localhost.json");
+	const source = JSON.parse(fs.readFileSync(path.resolve("deployment-tooling/examples/arbitrum.v1.example.json"), "utf8"));
+	const recipePath = path.join(root, "deployment-recipes", "localhost.json");
 	const recipe = applyLocalAccountDefaults(buildInitialRecipe("localhost", source, { outputPath: recipePath }), ACCOUNTS);
 	fs.mkdirSync(path.dirname(recipePath), { recursive: true });
 	fs.writeFileSync(recipePath, `${JSON.stringify(recipe, null, 2)}\n`);

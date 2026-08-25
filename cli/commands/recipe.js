@@ -51,7 +51,7 @@ export function buildInitialRecipe(networkName, sourceRecipe, { sourcePath = REC
 		if (!standaloneTargets.includes(only)) {
 			throw new Error(`standalone recipe target must be one of ${standaloneTargets.join(", ")}, got ${only}`);
 		}
-		const targetOutput = outputPath || path.resolve(PROJECT_ROOT, "deployments", `${networkName}-${only}.json`);
+		const targetOutput = outputPath || path.resolve(PROJECT_ROOT, "deployment-recipes", `${networkName}-${only}.json`);
 		const reportScope = `${recipe.network.chainId}${profile.mode === "fork" ? "-fork" : ""}`;
 		const reportPath = path.resolve(PROJECT_ROOT, "tasks", "data", reportScope, "deployment-report.json");
 		recipe.name = `${networkName}-${only}`;
@@ -97,7 +97,7 @@ export function initializeRecipe({ network, only, out, force = false }) {
 	} catch (error) {
 		throw new Error(`reviewed recipe example is not valid JSON: ${error.message || error}`);
 	}
-	const outputPath = path.resolve(PROJECT_ROOT, out || path.join("deployments", `${network}${only ? `-${only}` : ""}.json`));
+	const outputPath = path.resolve(PROJECT_ROOT, out || path.join("deployment-recipes", `${network}${only ? `-${only}` : ""}.json`));
 	const recipe = buildInitialRecipe(network, sourceRecipe, { sourcePath: profile.source, outputPath, only });
 	writeJsonAtomically(outputPath, recipe, { force });
 	return { outputPath, recipe };

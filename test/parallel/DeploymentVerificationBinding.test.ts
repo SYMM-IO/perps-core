@@ -79,7 +79,7 @@ describe("deployment verification binding", function () {
 			checks: { health: "passed" },
 			recipe: {
 				name: "arbitrum-release",
-				path: "deployments/arbitrum.json",
+				path: "deployment-recipes/arbitrum.json",
 				digest: active.digest,
 				components: { core: "deploy", partyB: "deploy", symbolManager: "skip", expressProvider: "skip", gaslessLayer: "skip" },
 			},

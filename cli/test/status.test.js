@@ -53,10 +53,10 @@ test("status delegates to the canonical chain-scoped health check", () => {
 });
 
 test("component status delegates to the exact read-only recipe checker", () => {
-	assert.deepEqual(buildComponentStatusTaskArgs("arbitrum", "/repo/deployments/add-partyb.json", "partyB"), [
+	assert.deepEqual(buildComponentStatusTaskArgs("arbitrum", "/repo/deployment-recipes/add-partyb.json", "partyB"), [
 		"check:component",
 		"--recipe",
-		"/repo/deployments/add-partyb.json",
+		"/repo/deployment-recipes/add-partyb.json",
 		"--component",
 		"partyB",
 		"--network",
@@ -66,8 +66,8 @@ test("component status delegates to the exact read-only recipe checker", () => {
 });
 
 test("all recipe-backed status checks run without signer or explorer credentials", () => {
-	assert.deepEqual(statusHardhatEnvironment({ path: "/repo/deployments/full.json", digest: "digest-1" }), {
-		SYMMIO_DEPLOYMENT_RECIPE: "/repo/deployments/full.json",
+	assert.deepEqual(statusHardhatEnvironment({ path: "/repo/deployment-recipes/full.json", digest: "digest-1" }), {
+		SYMMIO_DEPLOYMENT_RECIPE: "/repo/deployment-recipes/full.json",
 		SYMMIO_DEPLOYMENT_RECIPE_DIGEST: "digest-1",
 		DOTENV_CONFIG_PATH: "/dev/null",
 		SYMMIO_RECIPE_READ_ONLY: "true",
@@ -77,7 +77,7 @@ test("all recipe-backed status checks run without signer or explorer credentials
 
 test("status refuses system/component recipe mismatches with a menu-only recovery path", () => {
 	const component = {
-		path: "/repo/deployments/add-partyb.json",
+		path: "/repo/deployment-recipes/add-partyb.json",
 		recipe: {
 			core: { mode: "reuse" },
 			partyB: { mode: "deploy" },
@@ -85,15 +85,15 @@ test("status refuses system/component recipe mismatches with a menu-only recover
 		},
 	};
 	assert.throws(
-		() => resolveStatusRecipeSelection(component, undefined, "deployments/add-partyb.json"),
-		/component recipe.*partyB.*operator task.*deployments\/add-partyb\.json/,
+		() => resolveStatusRecipeSelection(component, undefined, "deployment-recipes/add-partyb.json"),
+		/component recipe.*partyB.*operator task.*deployment-recipes\/add-partyb\.json/,
 	);
 	assert.throws(
 		() =>
 			resolveStatusRecipeSelection(
-				{ path: "/repo/deployments/full.json", recipe: { core: { mode: "deploy" } } },
+				{ path: "/repo/deployment-recipes/full.json", recipe: { core: { mode: "deploy" } } },
 				"partyB",
-				"deployments/full.json",
+				"deployment-recipes/full.json",
 			),
 		/requires a component recipe with core.mode=reuse.*full deployment checklist/,
 	);
@@ -102,7 +102,7 @@ test("status refuses system/component recipe mismatches with a menu-only recover
 const componentReport = {
 	schemaVersion: 1,
 	deploymentId: "component-1",
-	recipe: { name: "add-partyb", digest: "digest-1", path: "/repo/deployments/add-partyb.json" },
+	recipe: { name: "add-partyb", digest: "digest-1", path: "/repo/deployment-recipes/add-partyb.json" },
 	component: "partyB",
 	network: "arbitrum",
 	chainId: 42161,
@@ -139,7 +139,7 @@ const componentExpected = {
 	chainId: 42161,
 	recipeName: "add-partyb",
 	recipeDigest: "digest-1",
-	recipePath: "/repo/deployments/add-partyb.json",
+	recipePath: "/repo/deployment-recipes/add-partyb.json",
 	live: false,
 	config: {
 		admin: "0x4000000000000000000000000000000000000004",
@@ -169,7 +169,7 @@ test("component status report is bound to its recipe and reused Core report", ()
 	assert.throws(
 		() =>
 			validateComponentStatusReport(
-				{ ...componentReport, recipe: { ...componentReport.recipe, path: "/repo/deployments/other.json" } },
+				{ ...componentReport, recipe: { ...componentReport.recipe, path: "/repo/deployment-recipes/other.json" } },
 				componentExpected,
 			),
 		/recipe path/,
@@ -205,7 +205,7 @@ test("component status checkpoint must be the exact scoped attempt and lifecycle
 test("GaslessLayer component status binds the AccountLayer, proxy, and implementation", () => {
 	const gaslessReport = {
 		...componentReport,
-		recipe: { name: "add-gasless", digest: "gasless-digest", path: "/repo/deployments/add-gasless.json" },
+		recipe: { name: "add-gasless", digest: "gasless-digest", path: "/repo/deployment-recipes/add-gasless.json" },
 		component: "gaslessLayer",
 		config: {
 			admin: "0x4000000000000000000000000000000000000004",
@@ -221,7 +221,7 @@ test("GaslessLayer component status binds the AccountLayer, proxy, and implement
 		component: "gaslessLayer",
 		recipeName: "add-gasless",
 		recipeDigest: "gasless-digest",
-		recipePath: "/repo/deployments/add-gasless.json",
+		recipePath: "/repo/deployment-recipes/add-gasless.json",
 		config: { admin: "0x4000000000000000000000000000000000000004" },
 		coreReport: {
 			...componentExpected.coreReport,
@@ -290,7 +290,7 @@ test("status rejects incomplete, wrong-chain and unknown-lifecycle reports", () 
 
 test("config-based status refuses a chain-scoped report from another recipe", () => {
 	const recipeContext = {
-		path: "/repo/deployments/current.json",
+		path: "/repo/deployment-recipes/current.json",
 		digest: "current-digest",
 		recipe: {
 			name: "current",
@@ -305,7 +305,7 @@ test("config-based status refuses a chain-scoped report from another recipe", ()
 		...report,
 		recipe: {
 			name: "current",
-			path: "/repo/deployments/current.json",
+			path: "/repo/deployment-recipes/current.json",
 			digest: "current-digest",
 			components: { core: "deploy", partyB: "skip", symbolManager: "skip", expressProvider: "skip", gaslessLayer: "skip" },
 		},

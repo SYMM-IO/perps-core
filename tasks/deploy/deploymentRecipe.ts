@@ -1,7 +1,7 @@
-import type { CoreDependencyReport } from "../../deployment/recipe.js"
+import type { CoreDependencyReport } from "../../deployment-tooling/recipe.js"
 import { normalizeCheckpointScope } from "./checkpoint.js"
 
-export { loadCoreDependencyReport, parseCoreDependencyReport, type CoreDependencyReport } from "../../deployment/recipe.js"
+export { loadCoreDependencyReport, parseCoreDependencyReport, type CoreDependencyReport } from "../../deployment-tooling/recipe.js"
 
 export type DeploymentTargetMode = "live" | "fork" | "local"
 export type DeploymentComponentName = "partyB" | "symbolManager" | "expressProvider" | "gaslessLayer"

@@ -1,5 +1,5 @@
 {
-	"$schema": "../deployment/deployment-recipe.schema.json",
+	"$schema": "../deployment-tooling/deployment-recipe.schema.json",
 	"apiVersion": "deployment.symm.io/v1",
 	"kind": "DeploymentRecipe",
 	"name": "arbitrum-deployment",

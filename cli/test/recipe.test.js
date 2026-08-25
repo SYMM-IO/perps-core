@@ -46,7 +46,7 @@ test("recipe init writes the requested path, preserves editor schema resolution,
 		const written = JSON.parse(fs.readFileSync(outputPath, "utf8"));
 		assert.equal(written.network.name, "arbitrum");
 		assert.equal(written.execution.verify, true);
-		assert.equal(path.resolve(path.dirname(outputPath), written.$schema), path.resolve("deployment/deployment-recipe.schema.json"));
+		assert.equal(path.resolve(path.dirname(outputPath), written.$schema), path.resolve("deployment-tooling/deployment-recipe.schema.json"));
 		assert.throws(() => initializeRecipe({ network: "arbitrum", out: outputPath }), /already exists/);
 		assert.doesNotThrow(() => initializeRecipe({ network: "arbitrum", out: outputPath, force: true }));
 	} finally {
@@ -57,7 +57,7 @@ test("recipe init writes the requested path, preserves editor schema resolution,
 test("recipe init creates a minimal standalone component recipe with a portable Core report reference", () => {
 	const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "symmio-component-recipe-cli-"));
 	try {
-		const outputPath = path.join(temporary, "deployments", "add-partyb.json");
+		const outputPath = path.join(temporary, "deployment-recipes", "add-partyb.json");
 		const created = initializeRecipe({ network: "arbitrum", only: "partyB", out: outputPath });
 		assert.equal(created.recipe.name, "arbitrum-partyB");
 		assert.deepEqual(created.recipe.governance, { admin: "REPLACE_WITH_ADMIN_ADDRESS" });
@@ -75,7 +75,7 @@ test("recipe init creates a minimal standalone component recipe with a portable 
 test("recipe init creates a standalone GaslessLayer recipe with the full reviewed configuration", () => {
 	const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "symmio-gasless-recipe-cli-"));
 	try {
-		const outputPath = path.join(temporary, "deployments", "add-gasless-layer.json");
+		const outputPath = path.join(temporary, "deployment-recipes", "add-gasless-layer.json");
 		const created = initializeRecipe({ network: "arbitrum", only: "gaslessLayer", out: outputPath });
 		assert.equal(created.recipe.name, "arbitrum-gaslessLayer");
 		assert.equal(created.recipe.core.mode, "reuse");
@@ -148,7 +148,7 @@ test("recipe network mode is bound to the selected Hardhat network before RPC", 
 
 test("full deployment evidence is digest-bound and remains portable across checkout paths", () => {
 	const context = {
-		path: "/repo/deployments/arbitrum.json",
+		path: "/repo/deployment-recipes/arbitrum.json",
 		digest: "digest-1",
 		recipe: {
 			name: "arbitrum-release",
@@ -162,7 +162,7 @@ test("full deployment evidence is digest-bound and remains portable across check
 	const report = {
 		recipe: {
 			name: "arbitrum-release",
-			path: "/old-clone/deployments/arbitrum.json",
+			path: "/old-clone/deployment-recipes/arbitrum.json",
 			digest: "digest-1",
 			components: { core: "deploy", partyB: "deploy", symbolManager: "skip", expressProvider: "skip", gaslessLayer: "skip" },
 		},
@@ -196,7 +196,7 @@ test("verify task arguments preserve retry intent", () => {
 
 test("recipe verification is bound to one full-system deployment attempt", () => {
 	const context = {
-		path: "/repo/deployments/arbitrum.json",
+		path: "/repo/deployment-recipes/arbitrum.json",
 		digest: "digest-1",
 		recipe: {
 			name: "arbitrum-release",
@@ -213,7 +213,7 @@ test("recipe verification is bound to one full-system deployment attempt", () =>
 		checks: { health: "passed", verificationPolicy: "required", verification: "failed" },
 		recipe: {
 			name: "arbitrum-release",
-			path: "deployments/arbitrum.json",
+			path: "deployment-recipes/arbitrum.json",
 			digest: "digest-1",
 			components: { core: "deploy", partyB: "skip", symbolManager: "skip", expressProvider: "skip", gaslessLayer: "skip" },
 		},
