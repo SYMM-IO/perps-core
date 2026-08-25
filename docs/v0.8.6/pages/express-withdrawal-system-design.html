@@ -276,6 +276,15 @@
 						<strong>Affiliate Pool</strong>: Per-affiliate, available only to that affiliate's users. Any address can fund it via
 						<code>depositToAffiliate(affiliate, amount)</code>.
 					</p>
+					<pre><code class="language-solidity">event GeneralDeposit(address indexed depositor, uint256 amount);
+event GeneralWithdraw(address indexed recipient, uint256 amount);
+event AffiliateDeposit(address indexed affiliate, address indexed depositor, uint256 amount);
+event AffiliateWithdraw(address indexed affiliate, address indexed recipient, uint256 amount);
+</code></pre>
+					<p>
+						Pool logs include the funding address or withdrawal recipient, so accounting systems do not need to infer the participant
+						from collateral-token transfer logs.
+					</p>
 					<p>
 						When the ExpressProvider fronts a SAME_TX or WINDOWED withdrawal, it deducts from these pools. Pools are replenished when
 						SYMMIO releases the actual tokens after cooldown.
@@ -1437,11 +1446,15 @@ mapping(address =&gt; mapping(uint256 =&gt; uint256)) public pendingOperatorFees
 					</p>
 					<pre><code class="language-solidity">function claimFees(address affiliate, address to) external onlyRole(FEE_CLAIMER_ROLE);
 function claimOperatorFees(address affiliate, address to) external onlyRole(FEE_CLAIMER_ROLE);
+
+event FeesClaimed(address indexed affiliate, address indexed recipient, uint256 amount);
+event OperatorFeesClaimed(address indexed affiliate, address indexed recipient, uint256 amount);
 </code></pre>
 					<p>
 						<code>claimFees</code> transfers the full <code>collectedFees[affiliate]</code> balance to the specified
 						<code>to</code> address and resets the mapping to zero. <code>claimOperatorFees</code> transfers the full
-						<code>collectedOperatorFees[affiliate]</code> balance to the specified <code>to</code> address and resets it to zero.
+						<code>collectedOperatorFees[affiliate]</code> balance to the specified <code>to</code> address and resets it to zero. Both
+						events include that actual recipient for direct payout reconciliation.
 					</p>
 					<h3 id="8-7-fee-flow">8.7 Fee flow</h3>
 					<pre><code class="language-mermaid">sequenceDiagram
