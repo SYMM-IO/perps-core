@@ -14,7 +14,7 @@ interface IControlEvents is IExecutionContextEvents {
 	event RoleAdminAdded(bytes32 role, address admin);
 	event RoleAdminRemoved(bytes32 role, address admin);
 	event SetMuonConfig(uint256 upnlValidTime, uint256 priceValidTime);
-	event SetMuonFunctionUpnlValidTime(MuonFunction indexed func, bool enabled, uint256 upnlValidTime);
+	event SetMuonFunctionUpnlValidTime(MuonFunction indexed func, uint256 upnlValidTime);
 	event SetMuonIds(uint256 muonAppId);
 	event SetCollateral(address collateral);
 	event AddSymbol(
