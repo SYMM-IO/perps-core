@@ -1832,7 +1832,10 @@ Step 5: Bot sees: block.timestamp &gt;= cooldownEndTime (~T0 + 12h).
 						<li>[ ] Schedule <code>finalizeWithdrawRequest</code> on SYMMIO at <code>cooldownEndTime</code></li>
 						<li>[ ] After <code>onWithdrawComplete</code>, call <code>processWithdraw</code></li>
 						<li>[ ] Cancellable while ACCEPTED (before finalization)</li>
-						<li>[ ] Once finalized: cannot cancel or suspend (tokens already on ExpressProvider)</li>
+						<li>
+							[ ] Once finalized: the request cannot be cancelled or suspended, but a globally suspended user remains blocked from
+							<code>processWithdraw</code> until the user is unsuspended
+						</li>
 						<li>
 							[ ] LOCKED + finalized STANDARD: <code>unlockAndProcess</code> may resolve it, or <code>processWithdraw</code> may process
 							at cooldown end (operator immediately, any caller after <code>tolerancePeriod</code>)
@@ -1969,8 +1972,9 @@ Final accounting:
 							freshness window have been set
 						</li>
 						<li>
-							[ ] The configured verifier supports <code>MuonFunction.ExpressCredit</code> (enum value <code>8</code>), and the intended
-							registered TSS key and gateway signer are both authorized for it
+							[ ] <code>supportsMuonFunction(8)</code> returns <code>true</code> for the configured verifier, and the intended
+							registered TSS key and gateway signer are both authorized for <code>MuonFunction.ExpressCredit</code>. Capability and
+							authorization are separate checks
 						</li>
 						<li>[ ] Credit line is not paused: <code>expressProvider.creditLinePaused(affiliate) == false</code></li>
 						<li>[ ] User is not blacklisted: <code>expressProvider.creditLineBlacklisted(affiliate, user) == false</code></li>
@@ -3857,7 +3861,10 @@ Step 2D: Bot sees: WithdrawFinalized(user, reqId) at T+43200
 									<td>FINALIZED</td>
 									<td>revert</td>
 									<td>revert (<code>InvalidStatusForSuspend</code>)</td>
-									<td>No cancel/suspend action; STANDARD can still be forwarded via <code>processWithdraw</code></td>
+									<td>
+										No request cancel/suspend action; STANDARD can be forwarded via <code>processWithdraw</code> only while the
+										user is not globally suspended
+									</td>
 								</tr>
 								<tr>
 									<td>CANCELLED</td>
@@ -4130,6 +4137,14 @@ Step 2D: Bot sees: WithdrawFinalized(user, reqId) at T+43200
 								</tr>
 							</thead>
 							<tbody>
+								<tr>
+									<td><code>UserSuspended</code></td>
+									<td>
+										<code>accelerateWithdraw</code>, <code>processWithdraw</code>, or <code>unlockAndProcess</code> while the user
+										is globally suspended in SYMMIO
+									</td>
+									<td>Do not retry until the user is globally unsuspended; the withdrawal state and payout remain unchanged</td>
+								</tr>
 								<tr>
 									<td><code>NotAccepted</code></td>
 									<td>

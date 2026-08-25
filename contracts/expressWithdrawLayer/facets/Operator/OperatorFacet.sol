@@ -27,6 +27,7 @@ import { ReentrancyGuard } from "../../utils/ReentrancyGuard.sol";
 contract OperatorFacet is IOperatorFacet, Pausable, ReentrancyGuard {
 	function processWithdraw(address user, uint256 requestId, WithdrawReceiverPart[] calldata parts) external nonReentrant whenNotPaused {
 		GlobalStorage.Layout storage s = GlobalStorage.layout();
+		if (ISymmio(s.symmio).isSuspended(user)) revert LibErrors.UserSuspended();
 		WithdrawInfo storage info = s.withdrawInfos[user][requestId];
 
 		bool isLockedAfterCooldown = info.status == Status.LOCKED && block.timestamp >= info.cooldownEndTime;
@@ -80,6 +81,7 @@ contract OperatorFacet is IOperatorFacet, Pausable, ReentrancyGuard {
 	function unlockAndProcess(address user, uint256 requestId, WithdrawReceiverPart[] calldata parts) external nonReentrant whenNotPaused {
 		LibAccessControl.enforceRole(LibAccessControl.UNLOCK_ROLE);
 		GlobalStorage.Layout storage s = GlobalStorage.layout();
+		if (ISymmio(s.symmio).isSuspended(user)) revert LibErrors.UserSuspended();
 		WithdrawInfo storage info = s.withdrawInfos[user][requestId];
 
 		if (info.status != Status.LOCKED) revert LibErrors.NotLocked();

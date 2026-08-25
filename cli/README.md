@@ -33,7 +33,8 @@ edit them by hand.
 
 For the recommended first rehearsal, run a persistent local node in one terminal with
 `npx hardhat node`, then launch `./symmio` in another and select **Persistent local Hardhat
-node**. The form discovers unlocked accounts, assigns clearly separated deployer/admin/bot
+node**. `npm run test:cli:e2e` drives that identical menu-only path unattended — it starts
+its own node, completes a full local deployment, and asserts the completion screen. The form discovers unlocked accounts, assigns clearly separated deployer/admin/bot
 roles, deploys fake collateral and a mock Muon verifier, and stores no signer secret. A full
 local run also completes the ownership, Core registration, and SymbolManager handover with
 the unlocked local admin before rerunning strict health. That convenience is hard-disabled
@@ -111,6 +112,25 @@ Ordinary failures pause a mutating task. Cancellation never sends compensating
 transactions: it stops new work, reconciles every submitted hash, records confirmed
 irreversible effects and recovery guidance, then archives the task. Unknown outcomes keep
 the task in `cancel_pending`.
+
+### Clearing `cancel_pending`
+
+A task stays in `cancel_pending` while any submitted hash has an unknown outcome, and an
+active task blocks every other mutating action. The panel names the blocking hashes. In
+order:
+
+1. Choose **Cancel active task** again. Each attempt re-runs reconciliation, which is all
+   that is needed once the RPC can see the transaction or its replacement.
+2. If the transaction was repriced, restart `./symmio` with
+   `DEPLOY_TX_REPLACEMENTS=originalHash=replacementHash` (comma-separate multiple pairs) so
+   reconciliation can bind the original hash to the transaction that actually landed.
+3. Only after proving a hash is absent from the chain _and_ its nonce is reusable, restart
+   with `CONFIRM_DROPPED_TX_HASHES=hash`. This asserts operator knowledge that the
+   transaction can never land; reconciliation still re-checks the nonce before accepting it.
+
+The same variables unblock a paused deployment whose resume is refused for unresolved
+broadcasts. They are read at reconciliation time, so they must be present in the environment
+that launches `./symmio`.
 
 ## Task definition standard
 

@@ -65,6 +65,26 @@ test("recipe init creates a minimal standalone component recipe with a portable 
 		assert.equal(created.recipe.partyB.mode, "deploy");
 		assert.deepEqual(created.recipe.symbolManager, { mode: "skip" });
 		assert.deepEqual(created.recipe.expressProvider, { mode: "skip" });
+		assert.deepEqual(created.recipe.gaslessLayer, { mode: "skip" });
+		assert.equal(path.resolve(path.dirname(outputPath), created.recipe.core.fromReport), path.resolve("tasks/data/42161/deployment-report.json"));
+	} finally {
+		fs.rmSync(temporary, { recursive: true, force: true });
+	}
+});
+
+test("recipe init creates a standalone GaslessLayer recipe with the full reviewed configuration", () => {
+	const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "symmio-gasless-recipe-cli-"));
+	try {
+		const outputPath = path.join(temporary, "deployments", "add-gasless-layer.json");
+		const created = initializeRecipe({ network: "arbitrum", only: "gaslessLayer", out: outputPath });
+		assert.equal(created.recipe.name, "arbitrum-gaslessLayer");
+		assert.equal(created.recipe.core.mode, "reuse");
+		assert.equal(created.recipe.gaslessLayer.mode, "deploy");
+		assert.equal(created.recipe.gaslessLayer.treasury, "REPLACE_WITH_GASLESS_TREASURY_ADDRESS");
+		assert.deepEqual(created.recipe.gaslessLayer.relayers, ["REPLACE_WITH_GASLESS_RELAYER_ADDRESS"]);
+		assert.deepEqual(created.recipe.partyB, { mode: "skip", adlEnabled: false });
+		assert.deepEqual(created.recipe.symbolManager, { mode: "skip" });
+		assert.deepEqual(created.recipe.expressProvider, { mode: "skip" });
 		assert.equal(path.resolve(path.dirname(outputPath), created.recipe.core.fromReport), path.resolve("tasks/data/42161/deployment-report.json"));
 	} finally {
 		fs.rmSync(temporary, { recursive: true, force: true });
@@ -136,6 +156,7 @@ test("full deployment evidence is digest-bound and remains portable across check
 			partyB: { mode: "deploy" },
 			symbolManager: { mode: "skip" },
 			expressProvider: { mode: "skip" },
+			gaslessLayer: { mode: "skip" },
 		},
 	};
 	const report = {
@@ -143,7 +164,7 @@ test("full deployment evidence is digest-bound and remains portable across check
 			name: "arbitrum-release",
 			path: "/old-clone/deployments/arbitrum.json",
 			digest: "digest-1",
-			components: { core: "deploy", partyB: "deploy", symbolManager: "skip", expressProvider: "skip" },
+			components: { core: "deploy", partyB: "deploy", symbolManager: "skip", expressProvider: "skip", gaslessLayer: "skip" },
 		},
 	};
 	assert.equal(assertDeploymentReportRecipeBinding(report, context), report.recipe);
@@ -183,6 +204,7 @@ test("recipe verification is bound to one full-system deployment attempt", () =>
 			partyB: { mode: "skip" },
 			symbolManager: { mode: "skip" },
 			expressProvider: { mode: "skip" },
+			gaslessLayer: { mode: "skip" },
 		},
 	};
 	const report = {
@@ -193,7 +215,7 @@ test("recipe verification is bound to one full-system deployment attempt", () =>
 			name: "arbitrum-release",
 			path: "deployments/arbitrum.json",
 			digest: "digest-1",
-			components: { core: "deploy", partyB: "skip", symbolManager: "skip", expressProvider: "skip" },
+			components: { core: "deploy", partyB: "skip", symbolManager: "skip", expressProvider: "skip", gaslessLayer: "skip" },
 		},
 	};
 	assert.equal(validateVerifyRecipeReport(report, { deploymentId: "deploy-1" }, context, 42161), report);

@@ -69,6 +69,7 @@ describe("deployment verification binding", function () {
 				partyB: { mode: "deploy" },
 				symbolManager: { mode: "skip" },
 				expressProvider: { mode: "skip" },
+				gaslessLayer: { mode: "skip" },
 			},
 		}
 		const report = {
@@ -80,7 +81,7 @@ describe("deployment verification binding", function () {
 				name: "arbitrum-release",
 				path: "deployments/arbitrum.json",
 				digest: active.digest,
-				components: { core: "deploy", partyB: "deploy", symbolManager: "skip", expressProvider: "skip" },
+				components: { core: "deploy", partyB: "deploy", symbolManager: "skip", expressProvider: "skip", gaslessLayer: "skip" },
 			},
 		}
 		expect(

@@ -510,3 +510,45 @@ test("a reconciliation error keeps uncertain cancellation resumable", async () =
 	assert.deepEqual(pending.cancelBlockedBy, [hash]);
 	assert.match(pending.lastError, /unresolved transaction/);
 });
+
+test("contract events advance batch progress for the running step and never cross stages", async () => {
+	const task = mutating({
+		plan: async () => [
+			{ id: "rehearse", phase: "rehearsal", title: "Rehearse", items: ["fork.contract-001.a", "fork.contract-002.b"] },
+			{ id: "run", phase: "test", title: "Run", items: ["live.contract-001.a", "live.contract-002.b"] },
+		],
+		run: async ctx => {
+			await ctx.step("rehearse", "Rehearse", async () => {
+				ctx.emit("contract.deployed", { contractName: "A", address: "0xa" });
+				ctx.emit("contract.deployed", { contractName: "A", address: "0xa" });
+				ctx.emit("contract.reused", { contractName: "B", address: "0xb" });
+			});
+			await ctx.step("run", "Run", async () => {
+				ctx.emit("contract.deployed", { contractName: "A", address: "0xa" });
+			});
+		},
+	});
+	const { runner } = runnerFor(task);
+	const state = await runner.start(task.id);
+	// Repeated events for one contract count once, and each stage keeps its own tally.
+	assert.deepEqual(state.batchProgress.rehearse, ["A", "B"]);
+	assert.deepEqual(state.batchProgress.run, ["A"]);
+});
+
+test("a blocked cancellation names the hashes and the exact recovery path", async () => {
+	const task = mutating({
+		run: async ctx =>
+			ctx.step("run", "Run", async () => {
+				ctx.emit("tx.submitted", { transaction: { hash: `0x${"c".repeat(64)}`, label: "write", nonce: 1, status: "unresolved" } });
+				throw new Error("stopped before the receipt was observed");
+			}),
+	});
+	const { runner } = runnerFor(task);
+	await runner.start(task.id);
+	const cancelled = await runner.cancelActive();
+	assert.equal(cancelled.status, "cancel_pending");
+	assert.match(cancelled.lastError, /0xcccc/);
+	assert.match(cancelled.lastError, /Cancel active task again/);
+	assert.match(cancelled.lastError, /DEPLOY_TX_REPLACEMENTS/);
+	assert.match(cancelled.lastError, /CONFIRM_DROPPED_TX_HASHES/);
+});

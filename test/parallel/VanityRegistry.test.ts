@@ -31,7 +31,9 @@ describe("vanity deployable contract registry", function () {
 
 	it("uses qualified keys only", function () {
 		for (const key of Object.keys(DEPLOYABLE_CONTRACTS)) {
-			expect(key, `${key} must be qualified as component/Contract`).to.match(/^(core|accountLayer|expressProvider|peripherals)\/[A-Za-z0-9]+$/)
+			expect(key, `${key} must be qualified as component/Contract`).to.match(
+				/^(core|accountLayer|expressProvider|gaslessLayer|peripherals)\/[A-Za-z0-9]+$/,
+			)
 		}
 	})
 

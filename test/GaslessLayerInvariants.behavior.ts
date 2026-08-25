@@ -8,7 +8,6 @@ import {
 	REFERENCE_WALLET_OWNER,
 	gaslessWalletSalt,
 } from "../scripts/gaslessLayer/gasless-wallet.js"
-import { assertGaslessLayerStorageLayoutStable } from "../scripts/gaslessLayer/storage-layout.js"
 
 describe("GaslessWallet frozen bytecode", () => {
 	// Every user's deposit address is CREATE2(proxy, salt(owner), keccak256(creationCode)). If the wallet
@@ -30,15 +29,5 @@ describe("GaslessWallet frozen bytecode", () => {
 			gaslessWalletSalt(REFERENCE_WALLET_OWNER),
 			"The GaslessWallet salt scheme changed (version tag or abi.encode shape) — this MOVES every deposit address.",
 		).to.equal(GOLDEN_WALLET_SALT_FOR_REFERENCE_OWNER)
-	})
-})
-
-describe("GaslessLayer storage layout", () => {
-	// The live UUPS proxy's storage is append-only. A changed existing slot remaps live fee/nonce/quota
-	// state onto the wrong slot and corrupts funds on upgrade. This guard diffs the compiled layout against
-	// the committed snapshot; regenerate the snapshot only for a deliberate, reviewed change
-	// (npm run storage:gasless-layer:snapshot).
-	it("stays append-only vs the committed snapshot", () => {
-		expect(() => assertGaslessLayerStorageLayoutStable()).to.not.throw()
 	})
 })

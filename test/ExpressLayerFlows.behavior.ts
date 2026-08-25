@@ -27,12 +27,20 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		const unlocker = allSigners[18]
 
 		const collateral = context.collateral
+		const affiliate = affiliateOwner.address
+		const accountLayer = await ethers.deployContract("MockExpressAccountLayer")
+		await accountLayer.setAccounts(
+			allSigners.map(signer => signer.address),
+			affiliate,
+			true,
+		)
 
 		// Deploy ExpressProvider diamond on top of real Symmio
 		const expressProvider = await deployExpressProvider(hre, connection, {
 			admin: deployer.address,
 			symmio: context.diamond,
 			collateral: await collateral.getAddress(),
+			accountLayer: await accountLayer.getAddress(),
 		})
 
 		// Deploy MockMuonSignatureVerifier for credit line
@@ -53,8 +61,6 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		await expressProvider.grantRole(OPERATOR_ROLE, operator.address)
 		await expressProvider.grantRole(LOCKER_ROLE, locker.address)
 		await expressProvider.grantRole(UNLOCK_ROLE, unlocker.address)
-		const affiliate = affiliateOwner.address
-
 		// Configure credit line on diamond
 		await expressProvider.setCreditLineMuonConfig(await muonVerifier.getAddress(), 1n, 60n)
 
@@ -88,6 +94,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			unlocker,
 			affiliate,
 			collateral,
+			accountLayer,
 			expressProvider,
 			muonVerifier,
 			generalFunding,
@@ -931,6 +938,35 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			expect(await collateral.balanceOf(receiver.address)).to.equal(withdrawAmount)
 		})
 
+		it("STANDARD: blocks payout when globally suspended after finalization and resumes after unsuspension", async function () {
+			const fixture = await deployFixture()
+			const { operator, user, receiver, expressProvider, collateral, context } = fixture
+			const { parts, requestId, withdrawAmount } = await acceptStandard(fixture)
+
+			await finalizeStandard(fixture, requestId, withdrawAmount)
+			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(user.address)
+
+			await expect(expressProvider.connect(operator).processWithdraw(user.address, requestId, parts)).to.be.revertedWithCustomError(
+				expressProvider,
+				"UserSuspended",
+			)
+			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).status).to.equal(4n)
+			expect(await collateral.balanceOf(receiver.address)).to.equal(0n)
+
+			await ethers.provider.send("evm_increaseTime", [61])
+			await ethers.provider.send("evm_mine", [])
+			await expect(expressProvider.connect(user).processWithdraw(user.address, requestId, parts)).to.be.revertedWithCustomError(
+				expressProvider,
+				"UserSuspended",
+			)
+			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).status).to.equal(4n)
+			expect(await collateral.balanceOf(receiver.address)).to.equal(0n)
+
+			await context.pauseControlFacet.connect(context.signers.admin).unsuspendedAddress(user.address)
+			await expressProvider.connect(operator).processWithdraw(user.address, requestId, parts)
+			expect(await collateral.balanceOf(receiver.address)).to.equal(withdrawAmount)
+		})
+
 		it("STANDARD: permissionless after finalization + tolerancePeriod", async function () {
 			const fixture = await deployFixture()
 			const { user, receiver, expressProvider, collateral } = fixture
@@ -1034,6 +1070,9 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 
 			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(user.address)
 			await context.withdrawFacet.connect(context.signers.admin).suspendWithdrawRequest(user.address, requestId)
+			// Preserve the request-level SUSPENDED state while allowing the status
+			// precondition, rather than the global suspension guard, to be asserted.
+			await context.pauseControlFacet.connect(context.signers.admin).unsuspendedAddress(user.address)
 
 			await ethers.provider.send("evm_increaseTime", [21])
 			await ethers.provider.send("evm_mine", [])
@@ -1042,6 +1081,27 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 				expressProvider,
 				"NotAccepted",
 			)
+		})
+
+		it("blocks a globally suspended user before processWithdraw payout and resumes after unsuspension", async function () {
+			const fixture = await deployFixture()
+			const { operator, user, receiver, expressProvider, context, collateral } = fixture
+			const { parts, requestId, withdrawAmount } = await acceptWindowed(fixture)
+
+			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(user.address)
+			await ethers.provider.send("evm_increaseTime", [21])
+			await ethers.provider.send("evm_mine", [])
+
+			await expect(expressProvider.connect(operator).processWithdraw(user.address, requestId, parts)).to.be.revertedWithCustomError(
+				expressProvider,
+				"UserSuspended",
+			)
+			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).status).to.equal(1n)
+			expect(await collateral.balanceOf(receiver.address)).to.equal(0n)
+
+			await context.pauseControlFacet.connect(context.signers.admin).unsuspendedAddress(user.address)
+			await expressProvider.connect(operator).processWithdraw(user.address, requestId, parts)
+			expect(await collateral.balanceOf(receiver.address)).to.equal(withdrawAmount)
 		})
 
 		it("should revert InvalidAddressBytesLength when receiver is 19 bytes", async function () {
@@ -2164,11 +2224,32 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			await expressProvider.connect(locker).lockWithdraw(user.address, requestId)
 			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(user.address)
 			await context.withdrawFacet.connect(context.signers.admin).suspendWithdrawRequest(user.address, requestId)
+			await context.pauseControlFacet.connect(context.signers.admin).unsuspendedAddress(user.address)
 
 			await expect(expressProvider.connect(unlocker).unlockAndProcess(user.address, requestId, parts)).to.be.revertedWithCustomError(
 				expressProvider,
 				"NotLocked",
 			)
+		})
+
+		it("blocks a globally suspended user before unlockAndProcess payout and resumes after unsuspension", async function () {
+			const fixture = await deployFixture()
+			const { user, receiver, expressProvider, locker, unlocker, context, collateral } = fixture
+			const { parts, requestId, withdrawAmount } = await acceptWindowed(fixture)
+
+			await expressProvider.connect(locker).lockWithdraw(user.address, requestId)
+			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(user.address)
+
+			await expect(expressProvider.connect(unlocker).unlockAndProcess(user.address, requestId, parts)).to.be.revertedWithCustomError(
+				expressProvider,
+				"UserSuspended",
+			)
+			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).status).to.equal(2n)
+			expect(await collateral.balanceOf(receiver.address)).to.equal(0n)
+
+			await context.pauseControlFacet.connect(context.signers.admin).unsuspendedAddress(user.address)
+			await expressProvider.connect(unlocker).unlockAndProcess(user.address, requestId, parts)
+			expect(await collateral.balanceOf(receiver.address)).to.equal(withdrawAmount)
 		})
 
 		it("should reject unlockAndProcess on FINALIZED WINDOWED", async function () {
@@ -3253,6 +3334,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			})
 			const creditDataB = buildCreditData(100_000n * 10n ** 18n, now)
 			const pdB = encodeProviderData(1n, 1, 0, affiliateB, 0n, creditB, 0n, 0n, deadline, sigB, undefined, undefined, undefined, creditDataB)
+			await fixture.accountLayer.setAccount(user.address, affiliateB, true)
 			await context.withdrawFacet.connect(user).initiateWithdraw(partsB, false, pdB)
 
 			expect(await expressProvider.creditLineReservedDebt(affiliateA)).to.equal(creditA)

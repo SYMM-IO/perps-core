@@ -4,7 +4,20 @@
 	"title": "SYMMIO Deployment Recipe v1",
 	"type": "object",
 	"additionalProperties": false,
-	"required": ["apiVersion", "kind", "name", "network", "secrets", "execution", "governance", "core", "partyB", "symbolManager", "expressProvider"],
+	"required": [
+		"apiVersion",
+		"kind",
+		"name",
+		"network",
+		"secrets",
+		"execution",
+		"governance",
+		"core",
+		"partyB",
+		"symbolManager",
+		"expressProvider",
+		"gaslessLayer"
+	],
 	"properties": {
 		"$schema": { "type": "string", "minLength": 1 },
 		"apiVersion": { "const": "deployment.symm.io/v1" },
@@ -18,7 +31,8 @@
 		"core": { "$ref": "#/$defs/core" },
 		"partyB": { "$ref": "#/$defs/partyB" },
 		"symbolManager": { "$ref": "#/$defs/symbolManager" },
-		"expressProvider": { "$ref": "#/$defs/expressProvider" }
+		"expressProvider": { "$ref": "#/$defs/expressProvider" },
+		"gaslessLayer": { "$ref": "#/$defs/gaslessLayer" }
 	},
 	"allOf": [
 		{
@@ -505,6 +519,82 @@
 				"validatorApprovalTimeout": { "type": "integer", "minimum": 1 },
 				"validators": { "$ref": "#/$defs/expressRole" }
 			}
+		},
+		"gaslessSelectorFee": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["selector", "configured", "amount"],
+			"properties": {
+				"selector": { "type": "string", "pattern": "^0x[0-9a-fA-F]{8}$" },
+				"configured": { "type": "boolean" },
+				"amount": { "$ref": "#/$defs/uintString" }
+			}
+		},
+		"gaslessLayer": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["mode"],
+			"properties": {
+				"mode": { "$ref": "#/$defs/componentMode" },
+				"admin": { "$ref": "#/$defs/address" },
+				"treasury": { "$ref": "#/$defs/address" },
+				"depositFee": { "$ref": "#/$defs/uintString" },
+				"minimumDeposit": { "$ref": "#/$defs/uintString" },
+				"defaultSelectorFee": { "$ref": "#/$defs/uintString" },
+				"dailyFreeOpsLimit": { "$ref": "#/$defs/uintString" },
+				"revertWhenFreeQuotaExhausted": { "type": "boolean" },
+				"dailySponsoredNativeLimit": { "$ref": "#/$defs/uintString" },
+				"revertWhenNativeSponsorLimitExhausted": { "type": "boolean" },
+				"maxNativeGasTopUpAmount": { "$ref": "#/$defs/uintString" },
+				"nativeGasTopUpFeeBps": { "type": "integer", "minimum": 0, "maximum": 10000 },
+				"relayers": { "$ref": "#/$defs/expressRole" },
+				"selectorFees": { "type": "array", "items": { "$ref": "#/$defs/gaslessSelectorFee" } }
+			},
+			"allOf": [
+				{
+					"if": { "type": "object", "properties": { "mode": { "const": "deploy" } }, "required": ["mode"] },
+					"then": {
+						"type": "object",
+						"required": [
+							"treasury",
+							"depositFee",
+							"minimumDeposit",
+							"defaultSelectorFee",
+							"dailyFreeOpsLimit",
+							"revertWhenFreeQuotaExhausted",
+							"dailySponsoredNativeLimit",
+							"revertWhenNativeSponsorLimitExhausted",
+							"maxNativeGasTopUpAmount",
+							"nativeGasTopUpFeeBps",
+							"relayers",
+							"selectorFees"
+						]
+					}
+				},
+				{
+					"if": { "type": "object", "properties": { "mode": { "enum": ["skip", "reuse"] } }, "required": ["mode"] },
+					"then": {
+						"type": "object",
+						"not": {
+							"anyOf": [
+								{ "required": ["admin"] },
+								{ "required": ["treasury"] },
+								{ "required": ["depositFee"] },
+								{ "required": ["minimumDeposit"] },
+								{ "required": ["defaultSelectorFee"] },
+								{ "required": ["dailyFreeOpsLimit"] },
+								{ "required": ["revertWhenFreeQuotaExhausted"] },
+								{ "required": ["dailySponsoredNativeLimit"] },
+								{ "required": ["revertWhenNativeSponsorLimitExhausted"] },
+								{ "required": ["maxNativeGasTopUpAmount"] },
+								{ "required": ["nativeGasTopUpFeeBps"] },
+								{ "required": ["relayers"] },
+								{ "required": ["selectorFees"] }
+							]
+						}
+					}
+				}
+			]
 		},
 		"expressProvider": {
 			"type": "object",

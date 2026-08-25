@@ -11,6 +11,8 @@ import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 /// @notice Compatibility control ABI spanning the core diamond's control-compatible facets.
 interface IControlFacet is IControlEvents, IExecutionContextFacet {
+	error IncompatibleSignatureVerifier();
+
 	function transferOwnership(address owner) external;
 
 	function cancelOwnershipTransfer() external;

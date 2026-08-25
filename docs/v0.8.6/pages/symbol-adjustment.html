@@ -490,9 +490,9 @@ venue open amount       = venue quantity - venue closed amount</code></pre>
 						exists. The direct route selects the prospective factor but does not activate it in <code>cumulativeFactor</code>. The later
 						route selects the active factor. In both cases, <code>startRestatement</code> increments <code>restatementEpoch</code>, sets
 						<code>restating</code>, saves <code>restatementFactor</code>, and records one funding cutoff. It does not scan the PartyB
-						registry. If accumulated funding is active, it opens <code>FUNDING_PREPARATION</code>. Operations supplies the relevant PartyB
-						addresses in bounded batches and then attests that preparation is complete. If accumulated funding is inactive, quote
-						processing is available immediately.
+						registry. It always opens <code>FUNDING_PREPARATION</code>. Operations supplies every involved PartyB in bounded batches so
+						Core can snapshot open-position totals and, when accumulated funding is active, checkpoint funding rates. Operations then
+						seals the submitted manifest before quote processing becomes available.
 					</p>
 					<p>
 						<code>startRestatement</code> can also be called from <code>CANCELLED</code> when an older non-1x factor is still active. For
@@ -517,10 +517,11 @@ venue open amount       = venue quantity - venue closed amount</code></pre>
 							not iterate over registered PartyBs.
 						</li>
 						<li>
-							<strong>Prepare funding for the supplied PartyBs.</strong> Operations builds the relevant PartyB set off-chain from its
-							book and funding records. The bot simulates and submits <code>processRestatementFunding(symbolId, partyBs)</code> in
-							gas-bounded address batches. Core visits only those addresses. After supplying the full intended set, Operations calls
-							<code>completeRestatementFundingPreparation</code> to move to <code>QUOTE_PROCESSING</code>.
+							<strong>Prepare every involved PartyB.</strong> Operations builds the complete PartyB set off-chain from its open book and
+							funding records. The bot simulates and submits <code>processRestatementFunding(symbolId, partyBs)</code> in gas-bounded
+							address batches. Core snapshots LONG and SHORT totals for only those addresses and checkpoints funding when active. After
+							reconciling the complete set, Operations calls <code>completeRestatementFundingPreparation</code> to seal it and move to
+							<code>QUOTE_PROCESSING</code>.
 						</li>
 						<li>
 							<strong>Close every marked quote.</strong> Muon supplies a stored-basis close signature, the Operations bot simulates the
@@ -841,24 +842,28 @@ dust            = 30 - 28 = 2</code></pre>
 					<h2 id="funding">Funding across the window</h2>
 					<p>
 						A physical restatement changes quote quantities. Current funding rates are per-unit values, so the same rate cannot be used
-						with old-unit and new-unit quantities. Operations first supplies the known PartyBs so Core can save and pause their current
-						rates. During quote processing, Core has a fallback for a missed PartyB before it rewrites one of that PartyB's quotes. Before
-						the window closes, Core restores every saved rate. It rebases rates only when the restatement is finalized.
+						with old-unit and new-unit quantities. Operations first supplies every involved PartyB. Core snapshots that PartyB's total
+						LONG and SHORT open quantities and, when accumulated funding is active, saves and pauses its current rates. Preparation is
+						then sealed: quote processing cannot introduce a previously omitted PartyB. Before the window closes, Core requires every
+						snapshotted old-basis quantity to be consumed and restores every saved rate. It rebases rates only when the restatement is
+						finalized.
 					</p>
-					<pre><code class="language-text">open window → prepare PartyB funding → rewrite quotes → restore PartyB funding → close window</code></pre>
+					<pre><code class="language-text">open window → snapshot PartyB inventory and funding → seal manifest → resolve old-basis quantities → restore funding → close window</code></pre>
 
 					<h3 id="funding-open">When the window opens</h3>
 					<p>
 						<code>startRestatement</code> records one <code>fundingCutoffTimestamp</code>. It does not read or loop over
-						<code>MAStorage.partyBList</code>, and it does not change any PartyB's rates. If accumulated funding is inactive, Core moves
-						directly to <code>QUOTE_PROCESSING</code>. If accumulated funding is active, Core enters <code>FUNDING_PREPARATION</code> and
-						waits for the manager to submit PartyB addresses.
+						<code>MAStorage.partyBList</code>, and it does not change any PartyB's rates. Core always enters
+						<code>FUNDING_PREPARATION</code> so Operations can submit the complete involved-PartyB manifest. When accumulated funding is
+						inactive, funding checkpoint creation is skipped, but the open-position inventory snapshots are still required.
 					</p>
 
 					<h3 id="funding-prepare">Prepare PartyB funding pairs</h3>
 					<p>
 						The manager calls <code>processRestatementFunding(symbolId, partyBs)</code> with a gas-bounded address array. Core examines
-						only those addresses. It does not know whether the array covers every PartyB that Operations intended to prepare.
+						only those addresses. For every new address in the epoch, it snapshots the PartyB's current total LONG and SHORT open quantity
+						for the symbol. Repeated addresses are idempotent. Core does not enumerate the global PartyB registry, so the manager remains
+						responsible for supplying every involved PartyB before sealing preparation.
 					</p>
 					<p>For each supplied PartyB, Core does one of the following:</p>
 					<ul>
@@ -876,18 +881,19 @@ dust            = 30 - 28 = 2</code></pre>
 						window does not change funding progress.
 					</p>
 					<aside class="callout callout-important">
-						<strong>Keep the PartyB address list.</strong> Core saves each funding checkpoint under its PartyB address. It can report how
-						many checkpoints remain, but it cannot return their addresses. Operations must therefore save every PartyB submitted during
-						preparation and add any PartyB checkpointed later during quote processing. When aborting or finalizing, submit those addresses
-						again through <code>processRestatementFunding</code> until the pending count reaches zero. Core safely skips unknown or
+						<strong>Keep and seal the PartyB address list.</strong> Core saves inventory and funding checkpoints under each submitted
+						PartyB address. It can report counts and per-PartyB inventory progress, but it cannot return all addresses or prove that an
+						entire PartyB was omitted. Operations must therefore save and independently reconcile the complete submitted manifest. When
+						aborting or finalizing, submit every PartyB with a funding checkpoint again through
+						<code>processRestatementFunding</code> until the funding pending count reaches zero. Core safely skips unknown or
 						already-restored addresses. If Operations loses the address of a live checkpoint, Core cannot restore that rate and the symbol
 						remains frozen. Before sending a batch, simulate the exact call from the manager address.
 					</aside>
 					<p>
 						After Operations has submitted and checked the intended set, the manager calls
-						<code>completeRestatementFundingPreparation</code>. This call is an operational attestation. It is not an on-chain inventory
-						check. Core then enters <code>QUOTE_PROCESSING</code>. If Operations finds another PartyB before restoration starts, the
-						manager may still submit that address during <code>QUOTE_PROCESSING</code>. Add any new checkpoint to the saved manifest.
+						<code>completeRestatementFundingPreparation</code>. Core then enters <code>QUOTE_PROCESSING</code> and rejects later PartyB
+						preparation. The seal is an attestation that the submitted address set is complete. Within that set, completeness is enforced
+						on-chain: finalization requires every snapshotted LONG and SHORT quantity to reach zero.
 					</p>
 
 					<h3 id="funding-quotes">While quotes are being rewritten</h3>
@@ -896,11 +902,10 @@ dust            = 30 - 28 = 2</code></pre>
 						the fixed cutoff. Later batches use that same cutoff even if they run in later blocks.
 					</p>
 					<p>
-						If <code>applyAdjustment</code> reaches a quote whose PartyB has no checkpoint, Core runs the same preparation check at
-						<code>fundingCutoffTimestamp</code> before it settles that quote's funding. An active funding pair gets a checkpoint. A pair
-						with no epoch duration or with both current rates at zero still has nothing to save. This fallback protects the quote being
-						rewritten. It does not discover PartyBs with no quote in the batch, and it does not prove that Operations prepared the full
-						set. The bot must add any checkpoint created by this fallback to its saved manifest.
+						Each successful rewrite subtracts the quote's old quantity from the matching PartyB LONG or SHORT inventory checkpoint.
+						Ordinary and emergency full closes use the same accounting hook, so removing an old-basis position also consumes its
+						checkpoint quantity. A quote belonging to a PartyB that was not prepared before the seal is rejected. Pending quotes are not
+						part of this open-position completeness counter; their cancellation remains a separate operational workflow.
 					</p>
 
 					<h3 id="funding-restore">Restore rates before closing the window</h3>
@@ -1106,6 +1111,19 @@ dust            = 30 - 28 = 2</code></pre>
 					</div>
 
 					<h2 id="runbook">Operations runbook</h2>
+					<aside class="callout callout-important">
+						<strong>Upgrade the close-accounting graph atomically.</strong> The inventory-consumption hook is compiled into
+						<code>LibQuoteClose</code>, <code>ClearingHouseFacetImpl</code>, <code>LibPartyALiquidationProcess</code>,
+						<code>PartyBLiquidationFacet</code>, and <code>SymbolAdjustmentFacet</code>. Deploy the complete linked core graph from a
+						fresh upgrade state, then replace every facet linked to those new libraries in one Diamond cut. This includes the PartyA,
+						PartyB position/quote/batch/emergency, force-action/force-close, PartyA liquidation/snapshot, PartyB liquidation,
+						ClearingHouse, Symbol Adjustment, and <code>ViewFacetSymbol</code> facets. The view facet receives every Symbol Adjustment
+						read selector in the same cut. Replacing only <code>SymbolAdjustmentFacet</code> leaves close paths that do not consume the
+						new inventory counter and can freeze finalization. Do not run the one-facet updater for either facet: selector ownership moves
+						across both ABIs and must be reconciled from the complete target selector map. Before the cut, verify that no symbol has an
+						open restatement window: a window started under the older implementation has no inventory snapshots to migrate. Do not open a
+						new window until the selector and runtime code-hash checks for the full cut are complete.
+					</aside>
 					<h3>Prepare and schedule</h3>
 					<ol>
 						<li>Verify the venue notice, symbol ID, factor direction, effective time, and allowed factor range.</li>
@@ -1120,15 +1138,17 @@ dust            = 30 - 28 = 2</code></pre>
 							the effective time.
 						</li>
 						<li>
-							Build the PartyB funding manifest from the affected book and Operations' funding records. Fork-rehearse preparation and
-							restoration with the intended address batches. Choose a batch size with comfortable gas headroom and test bot restart from
-							the saved manifest.
+							Build the complete involved-PartyB manifest from the affected open book and Operations' funding records. Fork-rehearse
+							inventory and funding preparation, quote processing, and restoration with the intended address batches. Choose a batch
+							size with comfortable gas headroom and test bot restart from the saved manifest.
 						</li>
 						<li>Resolve the duplicate weighted-funding subtraction risk before approving any physical route on funded inventory.</li>
 						<li>
 							Verify the deployed ABI exposes <code>startRestatement(uint256)</code>,
 							<code>processRestatementFunding(uint256,address[])</code>, <code>completeRestatementFundingPreparation(uint256)</code>,
-							and <code>getRestatementFundingProgress(uint256)</code>. The old three-argument start selector is not exposed.
+							<code>getRestatementFundingProgress(uint256)</code>, and <code>getRestatementInventoryProgress(uint256,address)</code>.
+							All Symbol Adjustment read selectors are routed through <code>ViewFacetSymbol</code>;
+							<code>SymbolAdjustmentFacet</code> exposes mutation selectors only. The old three-argument start selector is not exposed.
 						</li>
 						<li>
 							Call <code>scheduleAdjustment</code>. Record the transaction block time, adjustment index, factor, effective time,
@@ -1169,15 +1189,17 @@ dust            = 30 - 28 = 2</code></pre>
 					<ol>
 						<li>
 							Keep ordinary affected signatures stopped. Call <code>startRestatement(symbolId)</code> and record epoch, factor, start
-							time, funding cutoff, phase, and pending checkpoint count. Do not expect this call to emit checkpoint events, inspect the
-							PartyB registry, or zero any rates.
+							time, funding cutoff, phase, pending funding count, and the zeroed symbol-wide LONG and SHORT inventory totals. Do not
+							expect this call to emit checkpoint events, inspect the PartyB registry, snapshot quantities, or zero any rates.
 						</li>
 						<li>
 							While progress reports <code>FUNDING_PREPARATION</code>, simulate and submit
 							<code>processRestatementFunding(symbolId, partyBs)</code> from the manager address for each bounded manifest batch. Verify
-							checkpoint creation with events, the pending count, or <code>isRestatementFundingCheckpointed</code>. After the full
-							intended set has been supplied, call <code>completeRestatementFundingPreparation</code>. Do not submit quote rewrites
-							before progress reports <code>QUOTE_PROCESSING</code>.
+							inventory snapshots with events and <code>getRestatementInventoryProgress</code>; when funding is active, also verify
+							funding checkpoint creation with events, the pending count, or <code>isRestatementFundingCheckpointed</code>. After the
+							complete involved-PartyB set has been supplied and reconciled, call <code>completeRestatementFundingPreparation</code>.
+							The manifest is sealed at that transition; do not submit quote rewrites before progress reports
+							<code>QUOTE_PROCESSING</code>.
 						</li>
 						<li>
 							Re-scan the now-frozen book before the first mutation. Recheck statuses, every liquidation mode, previews, funding
@@ -1198,8 +1220,9 @@ dust            = 30 - 28 = 2</code></pre>
 							<code>ABORT_FUNDING_RESTORATION</code>.
 						</li>
 						<li>
-							Cancel all eligible pending inventory. Monitor normal pending cancellation and close-request creation, cancellation, and
-							expiry throughout the window. Reconcile each resulting status and price-bearing close field before processing the quote.
+							Cancel pending quotes as the operational workflow requires. Pending quotes are not included in the open-position inventory
+							counter. Monitor normal pending cancellation and close-request creation, cancellation, and expiry throughout the window,
+							and reconcile each resulting status and price-bearing close field before processing the quote.
 						</li>
 						<li>
 							Before submitting each bounded batch, have the Operations bot simulate the exact
@@ -1213,8 +1236,10 @@ dust            = 30 - 28 = 2</code></pre>
 							closed or non-convertible history.
 						</li>
 						<li>
-							Re-scan the complete manifest. Confirm no eligible old-epoch quote or unresolved pending quote remains. Reconcile position
-							aggregates, funding checkpoints, and weighted aggregate funding explicitly.
+							Re-scan the complete manifest. For every submitted PartyB, confirm
+							<code>getRestatementInventoryProgress</code> reports zero remaining LONG and SHORT quantity for that PartyB, and confirm
+							both symbol-wide remaining quantity totals are zero. Independently verify that no involved PartyB was omitted. Reconcile
+							position aggregates, funding checkpoints, and weighted aggregate funding explicitly.
 						</li>
 						<li>
 							Lock Muon validity configuration. Prove that the old-basis timestamp upper bound is no later than
@@ -1225,8 +1250,9 @@ dust            = 30 - 28 = 2</code></pre>
 						<li>
 							Call <code>finalizeRestatement</code>. If progress reports <code>FINALIZATION_FUNDING_RESTORATION</code>, simulate and
 							submit the checkpointed PartyB manifest in bounded <code>processRestatementFunding</code> batches until
-							<code>RestatementFinalized</code>. Do not treat the initial transaction's success as lifecycle completion,
-							signature-expiry proof, or coverage proof.
+							<code>RestatementFinalized</code>. A nonzero inventory pending count makes the initial finalization call revert. Do not
+							treat the initial transaction's success as lifecycle completion, signature-expiry proof, or proof that no PartyB was
+							omitted.
 						</li>
 						<li>
 							Verify the expected lifecycle state, explicit <code>1e18</code> cumulative factor, closed window, incremented
@@ -1299,13 +1325,17 @@ dust            = 30 - 28 = 2</code></pre>
 								<tr>
 									<td><code>FUNDING_PREPARATION = 1</code></td>
 									<td>
-										Supply PartyB address batches with <code>processRestatementFunding</code>, then call
-										<code>completeRestatementFundingPreparation</code>. Quote rewrites and finalization are disabled.
+										Supply the complete involved-PartyB manifest with <code>processRestatementFunding</code> to snapshot open
+										inventory and, when active, funding. Then call <code>completeRestatementFundingPreparation</code>. Quote
+										rewrites and finalization are disabled.
 									</td>
 								</tr>
 								<tr>
 									<td><code>QUOTE_PROCESSING = 2</code></td>
-									<td>Operations attested that preparation is complete. Rewrites and finalization are available.</td>
+									<td>
+										The PartyB manifest is sealed. Rewrites are available, but finalization requires every prepared LONG and SHORT
+										inventory counter to reach zero.
+									</td>
 								</tr>
 								<tr>
 									<td><code>ABORT_FUNDING_RESTORATION = 3</code></td>
@@ -1360,11 +1390,13 @@ dust            = 30 - 28 = 2</code></pre>
 									</td>
 								</tr>
 								<tr>
-									<td>Funding batches</td>
+									<td>Preparation and funding batches</td>
 									<td>
 										<code>restatementPhase</code>, <code>fundingCutoffTimestamp</code>, <code>pendingFundingPartyBCount</code>,
-										and <code>fundingRestorationTimestamp</code> coordinate operator-supplied preparation and restoration batches.
-										The terminal abort or finalization clears all four fields.
+										and <code>fundingRestorationTimestamp</code> coordinate operator-supplied preparation and funding restoration
+										batches. <code>restatementInventoryTotals[symbolId]</code> separately records the exact prepared old-basis
+										LONG and SHORT quantities still unresolved. The terminal abort or finalization clears the live progress
+										fields.
 									</td>
 								</tr>
 								<tr>
@@ -1409,6 +1441,20 @@ dust            = 30 - 28 = 2</code></pre>
 										deleted by the restoration batch that processes that PartyB.
 									</td>
 								</tr>
+								<tr>
+									<td><code>restatementInventoryCheckpoints[symbolId][partyB]</code></td>
+									<td>
+										Current epoch plus remaining LONG and SHORT old-basis open quantities captured when Operations submits the
+										PartyB. Quote restatement and full close paths subtract from the corresponding side. Stale epochs are inert.
+									</td>
+								</tr>
+								<tr>
+									<td><code>restatementInventoryTotals[symbolId]</code></td>
+									<td>
+										Exact current-epoch LONG and SHORT quantities summed across prepared PartyBs. Finalization requires both to be
+										zero.
+									</td>
+								</tr>
 							</tbody>
 						</table>
 					</div>
@@ -1441,7 +1487,7 @@ dust            = 30 - 28 = 2</code></pre>
 								<tr>
 									<td><code>startRestatement</code></td>
 									<td>
-										Manager-only. Select the factor, open an epoch, freeze, and initialize funding progress without scanning
+										Manager-only. Select the factor, open an epoch, freeze, and initialize preparation progress without scanning
 										PartyBs.
 									</td>
 								</tr>
@@ -1454,7 +1500,7 @@ dust            = 30 - 28 = 2</code></pre>
 								</tr>
 								<tr>
 									<td><code>completeRestatementFundingPreparation</code></td>
-									<td>Manager-only. Attest that the intended PartyB set has been supplied and enable quote processing.</td>
+									<td>Manager-only. Seal the submitted PartyB manifest and enable quote processing.</td>
 								</tr>
 								<tr>
 									<td><code>abortRestatement</code></td>
@@ -1485,19 +1531,22 @@ dust            = 30 - 28 = 2</code></pre>
 								<tr>
 									<td><code>finalizeRestatement</code></td>
 									<td>
-										Manager-only. After strict expiry, begin rebased-rate restoration; complete immediately only when no
-										checkpoint exists.
+										Manager-only. Require zero unresolved prepared inventory and, after strict expiry, begin rebased-rate
+										restoration; complete immediately only when no funding checkpoint exists.
 									</td>
 								</tr>
 							</tbody>
 						</table>
 					</div>
 					<p>
-						The read functions are unrestricted. <code>getSymbolAdjustment</code> returns raw record values.
-						<code>getCumulativeFactor</code> normalizes unset zero. <code>getProspectiveCumulativeFactor</code> includes a scheduled step
-						only in <code>SCHEDULED</code>. <code>isSymbolFrozen</code> evaluates the live predicate.
+						All read functions are unrestricted and routed through <code>ViewFacetSymbol</code>;
+						<code>SymbolAdjustmentFacet</code> contains no external read selectors. <code>getSymbolAdjustment</code> returns raw record
+						values. <code>getCumulativeFactor</code> normalizes unset zero. <code>getProspectiveCumulativeFactor</code> includes a
+						scheduled step only in <code>SCHEDULED</code>. <code>isSymbolFrozen</code> evaluates the live predicate.
 						<code>getRestatementState</code> returns the window flag and epoch. <code>getRestatementFundingProgress</code> returns the
 						phase, pending checkpoint count, funding cutoff, and funding restoration timestamp.
+						<code>getRestatementInventoryProgress</code> returns the current epoch, whether one PartyB was prepared, that PartyB's
+						remaining LONG and SHORT quantities, and the exact symbol-wide remaining LONG and SHORT quantities.
 						<code>isRestatementFundingCheckpointed</code> reports whether one PartyB has a checkpoint for the open epoch.
 						<code>getQuoteRestatedEpoch</code> returns a quote's last physical epoch. <code>previewQuoteAdjustment</code>
 						selects the open-window, prospective, or active factor and returns the exact nine converted fields.
@@ -1508,9 +1557,18 @@ dust            = 30 - 28 = 2</code></pre>
 AdjustmentCancelled(uint256 indexed symbolId, uint256 adjustmentIndex)
 PriceAdjustmentConfirmed(uint256 indexed symbolId, uint256 adjustmentIndex, uint256 newCumulativeFactor)
 RestatementStarted(uint256 indexed symbolId, uint256 epoch, uint256 restatementFactor)
-RestatementFundingPreparationProgress(uint256 indexed symbolId, uint256 indexed epoch, uint256 submittedPartyBs,
-                                      uint256 checkpointedPartyBs, uint256 pendingPartyBs)
-RestatementFundingPreparationCompleted(uint256 indexed symbolId, uint256 indexed epoch, uint256 pendingPartyBs)
+RestatementPreparationProgress(uint256 indexed symbolId, uint256 indexed epoch, uint256 submittedPartyBCount,
+                               uint256 newlyPreparedPartyBCount, uint256 fundingCheckpointedPartyBCount,
+                               uint256 totalRemainingLongAmount, uint256 totalRemainingShortAmount,
+                               uint256 pendingFundingPartyBCount)
+RestatementPreparationCompleted(uint256 indexed symbolId, uint256 indexed epoch,
+                                uint256 totalRemainingLongAmount, uint256 totalRemainingShortAmount,
+                                uint256 pendingFundingPartyBCount)
+RestatementInventoryPrepared(uint256 indexed symbolId, uint256 indexed epoch, address indexed partyB,
+                             uint256 partyBRemainingLongAmount, uint256 partyBRemainingShortAmount,
+                             uint256 totalRemainingLongAmount, uint256 totalRemainingShortAmount)
+RestatementInventoryConsumed(uint256 indexed symbolId, uint256 indexed epoch, uint256 indexed quoteId,
+                             address partyB, PositionType positionType, uint256 consumedAmount)
 RestatementFundingRestorationStarted(uint256 indexed symbolId, uint256 indexed epoch, bool finalizing,
                                      uint256 pendingPartyBs)
 RestatementFundingRestorationProgress(uint256 indexed symbolId, uint256 indexed epoch, bool finalizing,
@@ -1521,13 +1579,17 @@ QuoteAdjusted(uint256 indexed quoteId, uint256 indexed symbolId, uint256 epoch, 
 PendingQuoteCancelledByAdjustment(uint256 indexed quoteId, uint256 indexed symbolId)
 RestatementFinalized(uint256 indexed symbolId, uint256 epoch)</code></pre>
 					<p>
-						Storage retains only the latest schedule, so indexers need these events for complete adjustment history. The four funding
-						events report submitted and checkpointed address counts, the preparation attestation, restoration mode, and remaining work.
-						Per-pair preparation and restoration also emit the existing <code>AccumulatedFundingStateUpdated</code>. When checkpoints
-						exist, <code>RestatementAborted</code> or <code>RestatementFinalized</code> is emitted by the last funding batch rather than
-						the transaction that starts restoration. Every successful <code>applyAdjustment</code> emits
-						<code>QuoteFundingSettled</code> before <code>QuoteAdjusted</code>, including when the settled funding amount is zero.
-						Indexers need both events to attribute the settlement side effects and the later unit conversion.
+						Storage retains only the latest schedule, so indexers need these events for complete adjustment history. Preparation events
+						distinguish PartyB address counts from LONG and SHORT position quantities, report each fresh inventory snapshot, summarize
+						every batch, and record the exact quantities sealed for quote processing. Each inventory-consumption event identifies the
+						quote, side, and old-basis quantity consumed. Starting from the per-PartyB snapshots, indexers subtract these side-specific
+						deltas to reconstruct the same exact PartyB and symbol remainders enforced on-chain, without a second completion log.
+						Funding-restoration events report restoration mode and remaining PartyB work. Per-pair preparation and restoration also emit
+						the existing <code>AccumulatedFundingStateUpdated</code>. When checkpoints exist, <code>RestatementAborted</code> or
+						<code>RestatementFinalized</code> is emitted by the last funding batch rather than the transaction that starts restoration.
+						Every successful <code>applyAdjustment</code> emits <code>QuoteFundingSettled</code> before <code>QuoteAdjusted</code>,
+						including when the settled funding amount is zero. Indexers need both events to attribute the settlement side effects and the
+						later unit conversion.
 					</p>
 				</article>
 			</main>

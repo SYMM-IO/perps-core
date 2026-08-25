@@ -67,6 +67,7 @@ test("catalog is explicit, complete, and hides deployment primitives", () => {
 			"PartyB",
 			"SymbolManager",
 			"ExpressProvider",
+			"GaslessLayer",
 			"SymmioLiquidator",
 			"FeeDistributor",
 			"MultiAccount",
@@ -129,4 +130,43 @@ test("progress summary is compact at 80 columns and details expose hashes, recei
 	assert.match(detailed, /0xaaaa/);
 	assert.match(detailed, /gas 42000/);
 	assert.match(detailed, /receipt stored/);
+});
+
+test("batch progress counts planned contracts, not transactions", () => {
+	const plan = [
+		{ id: "preflight", phase: "prepare" },
+		{ id: "fork-rehearsal", phase: "rehearsal", items: ["fork.contract-001.a", "fork.contract-002.b"] },
+		{ id: "execute", phase: "execution", items: ["live.contract-001.a", "live.contract-002.b"] },
+	];
+	// A deployment sends many more transactions than it creates contracts; transactions must
+	// never move the batch portion of the bar.
+	const chatty = {
+		completedSteps: ["preflight"],
+		plan,
+		batchProgress: { "fork-rehearsal": ["A"] },
+		transactions: Array.from({ length: 40 }, (_, index) => ({ hash: `0x${index}`, status: "confirmed" })),
+	};
+	const current = { phase: "rehearsal", stepId: "fork-rehearsal", title: "Execute the matching fork rehearsal" };
+	const activity = { at: Date.now(), text: "working", processRunning: true };
+	assert.match(taskSummary(chatty, current, Date.now(), false, [], activity), /2\/7 completed/);
+
+	// The rehearsal cannot consume the live stage's budget, and extra contract events cap.
+	const rehearsed = { ...chatty, batchProgress: { "fork-rehearsal": ["A", "B", "C"] } };
+	assert.match(taskSummary(rehearsed, current, Date.now(), false, [], activity), /3\/7 completed/);
+
+	// A completed step counts all of its items, so a resume that reuses contracts still finishes.
+	const finished = {
+		...chatty,
+		completedSteps: ["preflight", "fork-rehearsal", "execute"],
+		batchProgress: { "fork-rehearsal": ["A"] },
+	};
+	assert.match(taskSummary(finished, current, Date.now(), false, [], activity), /7\/7 completed/);
+});
+
+test("a deployment section is shown beside the phase instead of replacing the step title", () => {
+	const state = { completedSteps: [], plan: [{ id: "execute", phase: "execution" }], transactions: [], warnings: [] };
+	const current = { phase: "execution", stepId: "execute", title: "Execute and reconcile deployment", section: "Diamond Deployment" };
+	const summary = taskSummary(state, current, Date.now(), false, [], { at: Date.now(), text: "working" });
+	assert.match(summary, /Phase\s+execution › Diamond Deployment/);
+	assert.match(summary, /Current\s+Execute and reconcile deployment/);
 });

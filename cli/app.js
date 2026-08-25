@@ -86,7 +86,16 @@ function createDetailController(input, output, render, view) {
 	let active = false;
 	let detail = false;
 	const onData = chunk => {
-		for (const byte of chunk) {
+		// Skip escape sequences: CSI 'D' (left arrow) ends in the same byte as the "D" hotkey.
+		const bytes = Buffer.from(chunk);
+		for (let index = 0; index < bytes.length; index++) {
+			const byte = bytes[index];
+			if (byte === 0x1b) {
+				const rest = bytes.subarray(index);
+				const match = /^\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\)|.)/su.exec(rest.toString("latin1"));
+				index += (match ? match[0].length : 1) - 1;
+				continue;
+			}
 			if (byte === 3) process.kill(process.pid, "SIGINT");
 			if (byte === 100 || byte === 68) {
 				detail = !detail;
@@ -150,19 +159,30 @@ function createUi({ input, output, controllerRef }) {
 
 function taskSummary(state, current, startedAt, detail, rawLines, activity = {}) {
 	const counts = transactionCounts(state?.transactions);
-	const batchItems = (state?.plan || []).flatMap(step => step.items || []);
-	const complete = (state?.completedSteps?.length || 0) + Math.min(counts.confirmed, batchItems.length);
-	const total = (state?.plan?.length || 0) + batchItems.length;
+	const completedSteps = state?.completedSteps || [];
+	// Batch items are planned contracts. Counting confirmed transactions against them pins the
+	// bar early (a full deployment sends ~3x more transactions than it creates contracts) and
+	// lets a fork rehearsal consume the live stage's budget, so count contract events per step.
+	const batchTotal = (state?.plan || []).reduce((sum, step) => sum + (step.items?.length || 0), 0);
+	const batchDone = (state?.plan || []).reduce((sum, step) => {
+		const items = step.items?.length || 0;
+		if (!items) return sum;
+		if (completedSteps.includes(step.id)) return sum + items;
+		return sum + Math.min((state?.batchProgress?.[step.id] || []).length, items);
+	}, 0);
+	const complete = completedSteps.length + batchDone;
+	const total = (state?.plan?.length || 0) + batchTotal;
 	const activeIndex = (state?.plan || []).findIndex(step => step.id === current.stepId);
 	const activeStep = activeIndex >= 0 ? state.plan[activeIndex] : null;
 	const phase = current.phase || state?.lastEvent?.phase || activeStep?.phase || "prepare";
-	const running = activeStep && !(state?.completedSteps || []).includes(activeStep.id);
+	const section = current.section ? ` \u203a ${current.section}` : "";
+	const running = activeStep && !completedSteps.includes(activeStep.id);
 	const progressDetail = running ? ` • step ${activeIndex + 1} running` : "";
 	const age = activity.at ? Math.max(0, Math.floor((Date.now() - activity.at) / 1000)) : 0;
 	const status = state?.status === "waiting_external" ? "Waiting for external action" : activity.processRunning ? "Process running" : "Working";
 	const pulse = ["◒", "◐", "◓", "◑"][Math.floor((Date.now() - startedAt) / 500) % 4];
 	const lines = [
-		`Phase        ${phase}`,
+		`Phase        ${phase}${section}`,
 		`Progress     ${complete}/${total} completed${progressDetail}`,
 		`Current      ${current.title || state?.waitingFor || "Preparing task"}`,
 		`Status       ${pulse} ${status} • activity ${age === 0 ? "now" : `${age}s ago`}`,
@@ -254,6 +274,7 @@ async function runWithProgress(action, { ui, runner, input, output, controllerRe
 	let pendingKeystoreInput = [];
 	let titleBeforePassword = "";
 	let stopPasswordInput = null;
+	const channelsServedFromCache = new WeakSet();
 	let latestState = null;
 	let rendered = "";
 	const render = (force = false) => {
@@ -282,13 +303,40 @@ async function runWithProgress(action, { ui, runner, input, output, controllerRe
 			latestState = state;
 			if (event.phase) current.phase = event.phase;
 			if (event.stepId) current.stepId = event.stepId;
-			if (event.title) current.title = event.title;
+			// A deployment section is not a task phase: show it beside the phase instead of
+			// letting it overwrite the running step's title.
+			if (event.type === "phase.started") {
+				current.section = event.title || null;
+				markActivity(event.title ? `Started ${event.title}` : "Started a deployment section", activity.processRunning);
+			} else if (event.title) current.title = event.title;
+			if (event.type === "step.started" || event.type === "step.completed") current.section = null;
+			if (event.type === "contract.deployed")
+				markActivity(`Deployed ${event.contractName || "contract"}${event.address ? ` at ${event.address}` : ""}`, activity.processRunning);
+			if (event.type === "contract.reused")
+				markActivity(`Reusing ${event.contractName || "contract"}${event.address ? ` at ${event.address}` : ""}`, activity.processRunning);
+			if (event.type === "step.progress") {
+				current.title = event.message || current.title;
+				markActivity(`[${event.current}/${event.total}] ${event.message || "working"}`, activity.processRunning);
+			}
 			if (event.type === "task.started") markActivity(`Plan ready • ${state.plan?.length || 0} steps`, false);
 			if (event.type === "step.started") markActivity(event.title || "Step started", false);
 			if (event.type === "step.completed") markActivity(`Completed ${event.title || "step"}`, false);
 			if (event.type === "process.started") markActivity("Subprocess started; output is being captured", true);
+			if (event.type === "process.completed" && event.code !== 0 && cachedKeystoreInput) {
+				// The password may be exactly why this failed; asking again beats replaying a
+				// rejected secret into every later subprocess of the run.
+				cachedKeystoreInput.fill(0);
+				cachedKeystoreInput = null;
+			}
 			if (event.type === "process.completed")
-				markActivity(event.code === 0 ? "Subprocess completed" : `Subprocess exited with code ${event.code}`, false);
+				markActivity(
+					event.code === 0
+						? "Subprocess completed"
+						: event.code === 2
+							? "Subprocess completed with governance/handover actions still pending"
+							: `Subprocess exited with code ${event.code}`,
+					false,
+				);
 			if (event.type === "task.pause_requested") {
 				current.title = "Pausing safely";
 				markActivity(event.message || "Pause requested; preserving resumable task state", false);
@@ -333,7 +381,11 @@ async function runWithProgress(action, { ui, runner, input, output, controllerRe
 			titleBeforePassword = current.title;
 			current.title = "Unlock Hardhat keystore";
 			controllerRef.current.stop();
-			if (cachedKeystoreInput) {
+			// Reuse the unlock only for a channel that has not already consumed it. A child that
+			// prompts twice (unlock, then "confirm your password", or a retry after a wrong
+			// password) must reach the operator instead of silently receiving the same bytes.
+			if (cachedKeystoreInput && !channelsServedFromCache.has(channel)) {
+				channelsServedFromCache.add(channel);
 				passwordSubmitted = true;
 				markActivity("Reusing in-memory keystore unlock for this task", true);
 				channel.write(cachedKeystoreInput);

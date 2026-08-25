@@ -71,6 +71,7 @@ function localRecipe() {
 		partyB: { mode: "skip", adlEnabled: false },
 		symbolManager: { mode: "skip" },
 		expressProvider: { mode: "skip" },
+		gaslessLayer: { mode: "skip" },
 	};
 }
 
@@ -271,6 +272,7 @@ test("planner supports one-go and component-only runs without silently deploying
 		{ name: "partyB", mode: "deploy", dependsOn: ["core"] },
 		{ name: "symbolManager", mode: "deploy", dependsOn: ["core"] },
 		{ name: "expressProvider", mode: "skip", dependsOn: ["core"] },
+		{ name: "gaslessLayer", mode: "skip", dependsOn: ["core"] },
 	]);
 	const onlyRecipe = structuredClone(recipe);
 	onlyRecipe.core.mode = "reuse";
@@ -317,6 +319,83 @@ test("planner supports one-go and component-only runs without silently deploying
 		() => createDeploymentPlan(reusedExpress),
 		error => error.code === "TARGET_MODE_UNSUPPORTED" && /expressProvider/.test(error.message),
 	);
+});
+
+function gaslessLayerDeploy(overrides = {}) {
+	return {
+		mode: "deploy",
+		treasury: C,
+		depositFee: "2",
+		minimumDeposit: "5",
+		defaultSelectorFee: "1",
+		dailyFreeOpsLimit: "3",
+		revertWhenFreeQuotaExhausted: false,
+		dailySponsoredNativeLimit: "10000000000000000",
+		revertWhenNativeSponsorLimitExhausted: false,
+		maxNativeGasTopUpAmount: "1000000000000000",
+		nativeGasTopUpFeeBps: 250,
+		relayers: [B],
+		selectorFees: [{ selector: "0x12345678", configured: true, amount: "4" }],
+		...overrides,
+	};
+}
+
+test("GaslessLayer is a first-class full and standalone deployment component", () => {
+	const full = localRecipe();
+	full.gaslessLayer = gaslessLayerDeploy();
+	assert.deepEqual(createDeploymentPlan(full).components.at(-1), { name: "gaslessLayer", mode: "deploy", dependsOn: ["core"] });
+
+	const standalone = localRecipe();
+	standalone.core = { mode: "reuse", fromReport: "reports/core.json" };
+	standalone.gaslessLayer = gaslessLayerDeploy();
+	assert.deepEqual(createDeploymentPlan(standalone, { only: "gaslessLayer" }).components, [
+		{ name: "core", mode: "reuse", dependsOn: [] },
+		{ name: "gaslessLayer", mode: "deploy", dependsOn: ["core"] },
+	]);
+});
+
+test("GaslessLayer rejects incomplete or unsafe operating policy", () => {
+	for (const field of [
+		"treasury",
+		"depositFee",
+		"minimumDeposit",
+		"defaultSelectorFee",
+		"dailyFreeOpsLimit",
+		"revertWhenFreeQuotaExhausted",
+		"dailySponsoredNativeLimit",
+		"revertWhenNativeSponsorLimitExhausted",
+		"maxNativeGasTopUpAmount",
+		"nativeGasTopUpFeeBps",
+		"relayers",
+		"selectorFees",
+	]) {
+		const recipe = localRecipe();
+		const component = gaslessLayerDeploy();
+		delete component[field];
+		recipe.gaslessLayer = component;
+		assert.throws(() => createDeploymentPlan(recipe), new RegExp(`gaslessLayer\\.${field} is required`));
+	}
+
+	const feeOrder = localRecipe();
+	feeOrder.gaslessLayer = gaslessLayerDeploy({ depositFee: "5", minimumDeposit: "5" });
+	assert.throws(() => createDeploymentPlan(feeOrder), /minimumDeposit must be greater than depositFee/);
+
+	const bps = localRecipe();
+	bps.gaslessLayer = gaslessLayerDeploy({ nativeGasTopUpFeeBps: 10001 });
+	assert.throws(() => createDeploymentPlan(bps), /nativeGasTopUpFeeBps must be <= 10000/);
+
+	const noRelayers = localRecipe();
+	noRelayers.gaslessLayer = gaslessLayerDeploy({ relayers: [] });
+	assert.throws(() => createDeploymentPlan(noRelayers), /relayers must be a non-empty array/);
+
+	const duplicateSelector = localRecipe();
+	duplicateSelector.gaslessLayer = gaslessLayerDeploy({
+		selectorFees: [
+			{ selector: "0x12345678", configured: true, amount: "1" },
+			{ selector: "0x12345678", configured: false, amount: "0" },
+		],
+	});
+	assert.throws(() => createDeploymentPlan(duplicateSelector), /duplicates an earlier selector/);
 });
 
 test("recipe digest is stable across JSON object key order", () => {

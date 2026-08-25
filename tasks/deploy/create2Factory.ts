@@ -137,7 +137,7 @@ export async function ensureCreate2Factory(
 		if ((await ethers.provider.getCode(address)) === "0x") {
 			throw new Error(`Checkpoint records a Create2Factory at ${address} but it has no code on this network`)
 		}
-		logger.info(`  ⏭ Create2Factory already deployed at ${address}`)
+		logger.reused("Create2Factory", address)
 		await assertCreate2FactoryDeployer(ethers, address)
 		plan.bindFactory(address)
 		return { address, deployed: false }

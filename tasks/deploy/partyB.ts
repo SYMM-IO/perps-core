@@ -80,7 +80,7 @@ export async function deploySymmioPartyB(
 	let symmioPartyB: any
 	if (checkpoint?.contracts.symmioPartyB) {
 		const address = checkpoint.contracts.symmioPartyB.address
-		logger.info(`  ⏭ SymmioPartyB already deployed at ${address}`)
+		logger.reused("SymmioPartyB", address)
 		symmioPartyB = await ethers.getContractAt("SymmioPartyB", address)
 	} else {
 		// Deploy SymmioPartyB as upgradeable. This repository does not install the

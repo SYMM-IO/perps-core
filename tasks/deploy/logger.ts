@@ -5,7 +5,9 @@ import fs from "node:fs"
 export type LogLevel = "silent" | "minimal" | "verbose"
 
 const LOG_LEVELS = new Set<LogLevel>(["silent", "minimal", "verbose"])
-const colorsEnabled = process.env.NO_COLOR === undefined && process.env.TERM !== "dumb" && Boolean(process.stdout.isTTY)
+// NO_COLOR disables colour when present and non-empty (no-color.org); an empty value is
+// ignored, which is also how the operator CLI reads it.
+const colorsEnabled = !process.env.NO_COLOR && process.env.TERM !== "dumb" && Boolean(process.stdout.isTTY)
 
 const COLORS = {
 	reset: "\x1b[0m",
@@ -38,14 +40,25 @@ function parseLogLevel(value: unknown): LogLevel {
 	return candidate as LogLevel
 }
 
-let currentLevel = parseLogLevel(process.env.DEPLOY_LOG_LEVEL)
+// Resolved on first use, not at import: hardhat.config.ts loads .env in its body, which ESM
+// runs *after* every imported task module. Reading at import time silently ignored a
+// DEPLOY_LOG_LEVEL set in .env.
+let explicitLevel: LogLevel | null = null
+let envLevelCache: { raw: string | undefined; level: LogLevel } | null = null
+
+function resolveLevel(): LogLevel {
+	if (explicitLevel !== null) return explicitLevel
+	const raw = process.env.DEPLOY_LOG_LEVEL
+	if (envLevelCache === null || envLevelCache.raw !== raw) envLevelCache = { raw, level: parseLogLevel(raw) }
+	return envLevelCache.level
+}
 
 export function setLogLevel(level: LogLevel): void {
-	currentLevel = parseLogLevel(level)
+	explicitLevel = parseLogLevel(level)
 }
 
 export function getLogLevel(): LogLevel {
-	return currentLevel
+	return resolveLevel()
 }
 
 function separator(char = SYMBOLS.line, length = 60): string {
@@ -83,16 +96,16 @@ export const logger = {
 
 	// Minimal and verbose lifecycle output.
 	info: (...args: any[]) => {
-		if (currentLevel !== "silent") console.log(...args)
+		if (resolveLevel() !== "silent") console.log(...args)
 	},
 
 	debug: (...args: any[]) => {
-		if (currentLevel === "verbose") console.log(`  ${color(SYMBOLS.bullet, COLORS.dim)}`, ...args)
+		if (resolveLevel() === "verbose") console.log(`  ${color(SYMBOLS.bullet, COLORS.dim)}`, ...args)
 	},
 
 	section: (title: string) => {
 		emitTaskEvent("phase.started", { title })
-		if (currentLevel !== "verbose") return
+		if (resolveLevel() !== "verbose") return
 		console.log("")
 		console.log(separator())
 		console.log(color(`  ${title}`, `${COLORS.bright}${COLORS.blue}`))
@@ -101,18 +114,28 @@ export const logger = {
 
 	subsection: (title: string) => {
 		emitTaskEvent("step.detail", { title })
-		if (currentLevel === "verbose") console.log(`\n  ${color(`${SYMBOLS.arrow} ${title}`, COLORS.magenta)}`)
+		if (resolveLevel() === "verbose") console.log(`\n  ${color(`${SYMBOLS.arrow} ${title}`, COLORS.magenta)}`)
 	},
 
 	deployed: (contractName: string, address: string) => {
 		emitTaskEvent("contract.deployed", { contractName, address })
-		if (currentLevel === "silent") return
+		if (resolveLevel() === "silent") return
 		console.log(`  ${color(SYMBOLS.check, COLORS.green)} ${formatContract(contractName)} ${color("at", COLORS.dim)} ${formatAddress(address)}`)
 	},
 
+	/** A contract recovered from the checkpoint. Same operator meaning as `deployed` for
+	 *  progress purposes, so it travels on the structured channel too. */
+	reused: (contractName: string, address: string) => {
+		emitTaskEvent("contract.reused", { contractName, address })
+		if (resolveLevel() === "silent") return
+		console.log(
+			`  ${color("\u23ed", COLORS.dim)} ${formatContract(contractName)} ${color("already deployed at", COLORS.dim)} ${formatAddress(address)}`,
+		)
+	},
+
 	complete: (title: string, contracts: Array<{ name: string; address: string }>) => {
-		if (currentLevel === "silent") return
-		if (currentLevel === "minimal") {
+		if (resolveLevel() === "silent") return
+		if (resolveLevel() === "minimal") {
 			console.log(`  ${color(SYMBOLS.check, COLORS.green)} ${title} complete`)
 			for (const { name, address } of contracts) console.log(`    ${name}: ${address}`)
 			return
@@ -131,6 +154,6 @@ export const logger = {
 
 	progress: (current: number, total: number, message: string) => {
 		emitTaskEvent("step.progress", { current, total, message })
-		if (currentLevel === "verbose") console.log(`  ${color(`[${current}/${total}]`, COLORS.dim)} ${message}`)
+		if (resolveLevel() === "verbose") console.log(`  ${color(`[${current}/${total}]`, COLORS.dim)} ${message}`)
 	},
 }

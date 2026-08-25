@@ -47,7 +47,7 @@ export function buildInitialRecipe(networkName, sourceRecipe, { sourcePath = REC
 		}
 	}
 	if (only) {
-		const standaloneTargets = ["partyB", "symbolManager", "expressProvider"];
+		const standaloneTargets = ["partyB", "symbolManager", "expressProvider", "gaslessLayer"];
 		if (!standaloneTargets.includes(only)) {
 			throw new Error(`standalone recipe target must be one of ${standaloneTargets.join(", ")}, got ${only}`);
 		}
@@ -60,6 +60,7 @@ export function buildInitialRecipe(networkName, sourceRecipe, { sourcePath = REC
 		recipe.partyB = only === "partyB" ? recipe.partyB : { mode: "skip", adlEnabled: false };
 		recipe.symbolManager = only === "symbolManager" ? recipe.symbolManager : { mode: "skip" };
 		recipe.expressProvider = only === "expressProvider" ? recipe.expressProvider : { mode: "skip" };
+		recipe.gaslessLayer = only === "gaslessLayer" ? recipe.gaslessLayer : { mode: "skip" };
 	}
 	if (outputPath) rewriteRelativeSchema(recipe, sourcePath, outputPath);
 	return recipe;

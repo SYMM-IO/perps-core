@@ -271,7 +271,7 @@ test("component handoff evidence is bound to the recipe, target, lifecycle, and 
 		...completeSymbolManager,
 		component: "expressProvider",
 		mode: "patch",
-		config: { admin: "0x4000000000000000000000000000000000000004" },
+		config: { admin: "0x4000000000000000000000000000000000000004", expressProvider: {} },
 		verification: { policy: "not_applicable", status: "skipped", records: [] },
 		health: { status: "passed", checks: [{ check: "provider already matches the recipe", status: "passed" }] },
 	};
@@ -299,6 +299,41 @@ test("component handoff evidence is bound to the recipe, target, lifecycle, and 
 				},
 			),
 		/patch verification records must be empty/,
+	);
+
+	const completeGaslessLayer = {
+		...completeSymbolManager,
+		component: "gaslessLayer",
+		implementation: "0x2000000000000000000000000000000000000002",
+		config: { admin: "0x4000000000000000000000000000000000000004", gaslessLayer: { relayers: [] } },
+		verification: {
+			policy: "not_applicable",
+			status: "skipped",
+			records: [
+				{
+					name: "contracts/gaslessLayer/GaslessLayer.sol:GaslessLayer",
+					address: "0x2000000000000000000000000000000000000002",
+					constructorArguments: [],
+				},
+				{
+					name: "contracts/helpers/utils/LocalERC1967Proxy.sol:LocalERC1967Proxy",
+					address: "0x1000000000000000000000000000000000000001",
+					constructorArguments: [],
+				},
+			],
+		},
+	};
+	const gaslessExpected = {
+		...expected,
+		component: "gaslessLayer",
+		live: false,
+		config: { admin: "0x4000000000000000000000000000000000000004" },
+	};
+	assert.equal(validateComponentReport(completeGaslessLayer, gaslessExpected), completeGaslessLayer);
+	assert.throws(() => validateComponentReport({ ...completeGaslessLayer, implementation: undefined }, gaslessExpected), /implementation address/);
+	assert.throws(
+		() => validateComponentReport({ ...completeGaslessLayer, config: { admin: completeGaslessLayer.config.admin } }, gaslessExpected),
+		/missing its resolved configuration/,
 	);
 	assert.match(
 		componentReportPath(42161, { simulated: true, recipeName: "add-partyb", component: "partyB" }),
@@ -371,6 +406,7 @@ test("deployment handoff requires both diamonds and the real SymbolManager addre
 			partyB: { mode: "deploy" },
 			symbolManager: { mode: "deploy" },
 			expressProvider: { mode: "skip" },
+			gaslessLayer: { mode: "skip" },
 		},
 	};
 	const boundReport = {
@@ -379,7 +415,7 @@ test("deployment handoff requires both diamonds and the real SymbolManager addre
 			name: "release",
 			path: "/repo/deployments/release.json",
 			digest: "digest-1",
-			components: { core: "deploy", partyB: "deploy", symbolManager: "deploy", expressProvider: "skip" },
+			components: { core: "deploy", partyB: "deploy", symbolManager: "deploy", expressProvider: "skip", gaslessLayer: "skip" },
 		},
 	};
 	assert.equal(validateDeploymentHandoff(boundReport, 42161, { recipeContext }), boundReport);

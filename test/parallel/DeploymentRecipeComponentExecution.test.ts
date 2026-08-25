@@ -18,9 +18,11 @@ import { loadFixture } from "../helpers/network-helpers.js"
 describe("deployment recipe standalone component execution", function () {
 	const recipeName = "component-engine-test"
 	const reportDir = path.resolve(`tasks/data/31337-fork/components/${recipeName}`)
-	const checkpointFiles = ["partyB", "symbolManager", "expressProvider"].map(component => {
+	const checkpointFiles = ["partyB", "symbolManager", "expressProvider", "gaslessLayer"].map(component => {
 		setCheckpointSimulated(true)
-		return path.resolve(getCheckpointPath(31337, componentCheckpointScope(recipeName, component as "partyB" | "symbolManager" | "expressProvider")))
+		return path.resolve(
+			getCheckpointPath(31337, componentCheckpointScope(recipeName, component as "partyB" | "symbolManager" | "expressProvider" | "gaslessLayer")),
+		)
 	})
 
 	afterEach(function () {
@@ -112,7 +114,11 @@ describe("deployment recipe standalone component execution", function () {
 			lifecycle: "complete",
 			checks: { health: "passed", verification: "skipped", verificationPolicy: "not_applicable" },
 			config: { admin: admin.address },
-			addresses: { diamond: context.diamond, instantLayer: await context.instantLayer.getAddress() },
+			addresses: {
+				diamond: context.diamond,
+				accountLayerDiamond: context.accountLayerDiamond,
+				instantLayer: await context.instantLayer.getAddress(),
+			},
 		}
 		const input = {
 			recipeName,
@@ -158,6 +164,7 @@ describe("deployment recipe standalone component execution", function () {
 		const roleHash = (name: string) => ethers.keccak256(ethers.toUtf8Bytes(name))
 
 		expect(await view.symmio()).to.equal(context.diamond)
+		expect(await view.accountLayer()).to.equal(context.accountLayerDiamond)
 		expect(await view.creditLineSignatureVerifier()).to.equal(await context.viewFacet.getSignatureVerifier())
 		expect(await view.creditLineMuonAppId()).to.equal(42n)
 		expect(await view.creditLineMuonFreshnessWindow()).to.equal(300n)
@@ -185,9 +192,81 @@ describe("deployment recipe standalone component execution", function () {
 		expect(resumed.report.health.status).to.equal("passed")
 	})
 
-	it("rejects an Express credit verifier compiled without the ExpressCredit category", async function () {
+	it("deploys, configures, wires, verifies, and resumes GaslessLayer as a standalone component", async function () {
+		const context = await loadFixture(initializeFixture)
+		const [admin, relayer, treasury] = await ethers.getSigners()
+		const networkName = (await hre.network.getOrCreate()).networkName || "default"
+		const input = {
+			recipeName,
+			recipePath: "/tmp/component-engine-test.json",
+			recipeDigest: "gasless-digest",
+			target: { name: networkName, chainId: 31337, mode: "local" as const },
+			component: "gaslessLayer",
+			componentConfig: {
+				mode: "deploy",
+				admin: admin.address,
+				treasury: treasury.address,
+				depositFee: "2",
+				minimumDeposit: "5",
+				defaultSelectorFee: "7",
+				dailyFreeOpsLimit: "3",
+				revertWhenFreeQuotaExhausted: false,
+				dailySponsoredNativeLimit: "10000000000000000",
+				revertWhenNativeSponsorLimitExhausted: true,
+				maxNativeGasTopUpAmount: "1000000000000000",
+				nativeGasTopUpFeeBps: 250,
+				relayers: [relayer.address],
+				selectorFees: [{ selector: "0x12345678", configured: true, amount: "11" }],
+			},
+			coreReport: {
+				deploymentId: "fixture-core-gasless",
+				deployerAddress: admin.address,
+				network: networkName,
+				chainId: 31337,
+				lifecycle: "complete",
+				checks: { health: "passed", verification: "skipped", verificationPolicy: "not_applicable" },
+				config: { admin: admin.address },
+				addresses: {
+					diamond: context.diamond,
+					accountLayerDiamond: context.accountLayerDiamond,
+					instantLayer: await context.instantLayer.getAddress(),
+				},
+			} as CoreDependencyReport,
+			coreReportPath: "/tmp/core-report.json",
+			fresh: false,
+			verify: false,
+		} as const
+
+		const deployed = await executeComponentDeployment(hre, input)
+		expect(deployed.report.lifecycle).to.equal("complete")
+		expect(deployed.report.health.status).to.equal("passed")
+		expect(deployed.report.verification.records).to.have.length(6)
+		expect(deployed.report.implementation).to.properAddress
+
+		const layer = await ethers.getContractAt("GaslessLayer", deployed.report.address!)
+		expect(await layer.core()).to.equal(context.diamond)
+		expect(await layer.accountLayer()).to.equal(context.accountLayerDiamond)
+		expect(await layer.instantLayer()).to.equal(await context.instantLayer.getAddress())
+		expect(await layer.treasury()).to.equal(treasury.address)
+		expect(await layer.defaultSelectorFee()).to.equal(7n)
+		expect(await layer.dailyFreeOpsLimit()).to.equal(3n)
+		expect(await layer.revertWhenNativeSponsorLimitExhausted()).to.equal(true)
+		expect(await layer.nativeGasTopUpFeeBps()).to.equal(250n)
+		expect(await layer.hasRole(await layer.RELAYER_ROLE(), relayer.address)).to.equal(true)
+		expect(await context.viewFacet.isOperationalFeeCharger(deployed.report.address)).to.equal(true)
+		expect(await context.instantLayer.hasRole(await context.instantLayer.OPERATOR_ROLE(), deployed.report.address)).to.equal(true)
+		expect(await layer.selectorFeeConfigs("0x12345678")).to.deep.equal([true, 11n])
+
+		const resumed = await executeComponentDeployment(hre, input)
+		expect(resumed.report.address).to.equal(deployed.report.address)
+		expect(resumed.report.implementation).to.equal(deployed.report.implementation)
+	})
+
+	it("rejects an Express credit verifier without the forward-compatible capability API", async function () {
 		const context = await loadFixture(initializeFixture)
 		const [admin] = await ethers.getSigners()
+		const legacyVerifier = await ethers.deployContract("LegacyMuonSignatureVerifier")
+		await legacyVerifier.waitForDeployment()
 
 		try {
 			await resolveExpressProviderConfig(
@@ -195,19 +274,93 @@ describe("deployment recipe standalone component execution", function () {
 				{
 					admin: admin.address,
 					creditLine: {
-						// A contract with no ExpressCredit-compatible authorization ABI models a legacy verifier.
-						signatureVerifier: await context.collateral.getAddress(),
+						// It predates the explicit capability API, so support cannot be proven.
+						signatureVerifier: await legacyVerifier.getAddress(),
 						muonAppId: "1",
 						muonFreshnessWindow: 60,
 					},
 				},
-				{ core: context.diamond, admin: admin.address },
+				{ core: context.diamond, accountLayer: context.accountLayerDiamond, admin: admin.address },
 				admin.address,
 			)
 			expect.fail("Expected the legacy verifier compatibility probe to reject")
 		} catch (error) {
 			expect((error as Error).message).to.include("does not support MuonFunction.ExpressCredit (index 8)")
 		}
+	})
+
+	it("rejects an incompatible verifier before an Express patch and accepts a forward-compatible verifier", async function () {
+		const context = await loadFixture(initializeFixture)
+		const [admin] = await ethers.getSigners()
+		const networkName = (await hre.network.getOrCreate()).networkName || "default"
+		const coreReport: CoreDependencyReport = {
+			deploymentId: "fixture-core-express-verifier-patch",
+			deployerAddress: admin.address,
+			network: networkName,
+			chainId: 31337,
+			lifecycle: "complete",
+			checks: { health: "passed", verification: "skipped", verificationPolicy: "not_applicable" },
+			config: { admin: admin.address },
+			addresses: {
+				diamond: context.diamond,
+				accountLayerDiamond: context.accountLayerDiamond,
+				instantLayer: await context.instantLayer.getAddress(),
+			},
+		}
+		const shared = {
+			recipeName,
+			recipePath: "/tmp/component-engine-test.json",
+			target: { name: networkName, chainId: 31337, mode: "local" as const },
+			component: "expressProvider" as const,
+			coreReport,
+			coreReportPath: "/tmp/core-report.json",
+			fresh: false,
+			verify: false,
+		}
+
+		const deployed = await executeComponentDeployment(hre, {
+			...shared,
+			recipeDigest: "express-verifier-patch-deploy",
+			componentConfig: { mode: "deploy", admin: admin.address },
+		})
+		const address = deployed.report.address!
+		const view = await ethers.getContractAt("contracts/expressWithdrawLayer/facets/View/ViewFacet.sol:ViewFacet", address)
+
+		const legacyVerifier = await ethers.deployContract("LegacyMuonSignatureVerifier")
+		await legacyVerifier.waitForDeployment()
+		let failure: Error | undefined
+		try {
+			await executeComponentDeployment(hre, {
+				...shared,
+				recipeDigest: "express-incompatible-verifier-patch",
+				componentConfig: {
+					mode: "reuse",
+					address,
+					admin: admin.address,
+					creditLine: { signatureVerifier: await legacyVerifier.getAddress(), muonAppId: "1", muonFreshnessWindow: 60 },
+				},
+			})
+		} catch (error) {
+			failure = error as Error
+		}
+		expect(failure?.message).to.include("does not support MuonFunction.ExpressCredit (index 8)")
+		// Resolution fails before a setter transaction or Safe action can alter the provider.
+		expect(await view.creditLineSignatureVerifier()).to.equal(ethers.ZeroAddress)
+
+		const compatibleVerifier = await ethers.deployContract("MockMuonSignatureVerifier")
+		await compatibleVerifier.waitForDeployment()
+		const patched = await executeComponentDeployment(hre, {
+			...shared,
+			recipeDigest: "express-compatible-verifier-patch",
+			componentConfig: {
+				mode: "reuse",
+				address,
+				admin: admin.address,
+				creditLine: { signatureVerifier: await compatibleVerifier.getAddress(), muonAppId: "1", muonFreshnessWindow: 60 },
+			},
+		})
+		expect(patched.report.lifecycle).to.equal("complete")
+		expect(await view.creditLineSignatureVerifier()).to.equal(await compatibleVerifier.getAddress())
 	})
 
 	it("deploys an ExpressProvider with every setup section deferred, writing none of them on-chain", async function () {
@@ -231,7 +384,11 @@ describe("deployment recipe standalone component execution", function () {
 				lifecycle: "complete",
 				checks: { health: "passed", verification: "skipped", verificationPolicy: "not_applicable" },
 				config: { admin: admin.address },
-				addresses: { diamond: context.diamond, instantLayer: await context.instantLayer.getAddress() },
+				addresses: {
+					diamond: context.diamond,
+					accountLayerDiamond: context.accountLayerDiamond,
+					instantLayer: await context.instantLayer.getAddress(),
+				},
 			} as CoreDependencyReport,
 			coreReportPath: "/tmp/core-report.json",
 			fresh: false,
@@ -268,7 +425,11 @@ describe("deployment recipe standalone component execution", function () {
 			lifecycle: "complete",
 			checks: { health: "passed", verification: "skipped", verificationPolicy: "not_applicable" },
 			config: { admin: deployer.address },
-			addresses: { diamond: context.diamond, instantLayer: await context.instantLayer.getAddress() },
+			addresses: {
+				diamond: context.diamond,
+				accountLayerDiamond: context.accountLayerDiamond,
+				instantLayer: await context.instantLayer.getAddress(),
+			},
 		}
 		const express = await executeComponentDeployment(hre, {
 			recipeName,
@@ -318,7 +479,11 @@ describe("deployment recipe standalone component execution", function () {
 			lifecycle: "complete",
 			checks: { health: "passed", verification: "skipped", verificationPolicy: "not_applicable" },
 			config: { admin: admin.address },
-			addresses: { diamond: context.diamond, instantLayer: await context.instantLayer.getAddress() },
+			addresses: {
+				diamond: context.diamond,
+				accountLayerDiamond: context.accountLayerDiamond,
+				instantLayer: await context.instantLayer.getAddress(),
+			},
 		}
 		const target = { name: networkName, chainId: 31337, mode: "local" as const }
 		const shared = { recipeName, recipePath: "/tmp/component-engine-test.json", target, coreReport, coreReportPath: "/tmp/core-report.json" }
@@ -418,7 +583,11 @@ describe("deployment recipe standalone component execution", function () {
 			lifecycle: "complete",
 			checks: { health: "passed", verification: "skipped", verificationPolicy: "not_applicable" },
 			config: { admin: deployer.address },
-			addresses: { diamond: context.diamond, instantLayer: await context.instantLayer.getAddress() },
+			addresses: {
+				diamond: context.diamond,
+				accountLayerDiamond: context.accountLayerDiamond,
+				instantLayer: await context.instantLayer.getAddress(),
+			},
 		}
 		const target = { name: networkName, chainId: 31337, mode: "local" as const }
 		const shared = { recipeName, recipePath: "/tmp/component-engine-test.json", target, coreReport, coreReportPath: "/tmp/core-report.json" }

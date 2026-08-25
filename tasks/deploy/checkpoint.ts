@@ -45,6 +45,12 @@ export interface ExpressProviderCheckpoint {
 	diamondCutComplete?: boolean
 }
 
+export interface GaslessLayerCheckpoint {
+	proxy?: DeployedContract
+	implementation?: DeployedContract
+	libraries?: Record<string, DeployedContract>
+}
+
 export interface DeploymentCheckpoint {
 	deploymentId?: string
 	/** Optional caller-owned namespace. Component deployments must never share the system checkpoint. */
@@ -68,6 +74,7 @@ export interface DeploymentCheckpoint {
 		accountManager?: DeployedContract
 		symbolManager?: DeployedContract
 		expressProvider?: ExpressProviderCheckpoint
+		gaslessLayer?: GaslessLayerCheckpoint
 	}
 	setupComplete?: {
 		systemRoles?: boolean

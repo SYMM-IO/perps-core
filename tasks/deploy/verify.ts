@@ -6,10 +6,12 @@ import path from "path"
 
 import { getSelectors } from "../utils/diamondCut.js"
 import { getDataDir, setDataScope, writeData } from "../utils/fs.js"
+import { inspectGaslessLayerPostState } from "./componentDeployment.js"
 import {
 	ACCOUNTLAYER_DEPLOYMENT_FILE,
 	CREATE2FACTORY_DEPLOYMENT_FILE,
 	EXPRESSPROVIDER_DEPLOYMENT_FILE,
+	GASLESSLAYER_DEPLOYMENT_FILE,
 	FacetNames,
 	DEPLOYMENT_LOG_FILE,
 	INSTANTLAYER_DEPLOYMENT_FILE,
@@ -24,7 +26,9 @@ import { getConnection } from "./helpers.js"
 import {
 	assertConfiguredMuonPermissionsAuthorized,
 	assertGeneralDeploymentMuonPermissions,
+	assertMuonFunctionSupported,
 	inspectConfiguredMuonPermissions,
+	REMOVE_MARGIN_MUON_FUNCTION,
 } from "./muonPermissions.js"
 import { ProtocolConfig, loadProtocolConfig, templateConfigMismatches, validateProtocolConfig } from "./protocolConfig.js"
 import { activeDeploymentRecipe } from "./recipeRuntime.js"
@@ -37,6 +41,7 @@ interface ContractToVerify {
 	name: string
 	address: string
 	constructorArguments: any[]
+	libraries?: Record<string, string>
 }
 
 function parseVerificationRecords(parsed: unknown, label: string, ethers: any): ContractToVerify[] {
@@ -54,6 +59,7 @@ function parseVerificationRecords(parsed: unknown, label: string, ethers: any): 
 			name: entry.name,
 			address: ethers.getAddress(entry.address),
 			constructorArguments: entry.constructorArguments || [],
+			libraries: entry.libraries,
 		}
 	})
 }
@@ -109,7 +115,7 @@ export function assertVerificationRunBinding(
 		) {
 			throw new Error("Chain-scoped deployment report is not bound to the active JSON recipe")
 		}
-		for (const component of ["core", "partyB", "symbolManager", "expressProvider"] as const) {
+		for (const component of ["core", "partyB", "symbolManager", "expressProvider", "gaslessLayer"] as const) {
 			if (report.recipe?.components?.[component] !== active.recipe[component].mode) {
 				throw new Error(`Deployment report component mode ${component} is not bound to the active JSON recipe`)
 			}
@@ -173,6 +179,10 @@ export function assertVerificationRecordsCoverReport(contracts: ContractToVerify
 	}
 	if ((report.config?.symbolManagerMode || (report.config?.deploySymbolManager ? "deploy" : "skip")) === "deploy") {
 		required.push(["SymbolManager", report.addresses?.symbolManager])
+	}
+	if (report.config?.gaslessLayerMode === "deploy") {
+		required.push(["GaslessLayer", report.addresses?.gaslessLayer])
+		required.push(["GaslessLayer implementation", report.addresses?.gaslessLayerImplementation])
 	}
 	if (report.config?.collateralAddress === "") required.push(["deployed collateral", report.addresses?.collateral])
 	for (const [label, address] of required) {
@@ -254,6 +264,7 @@ export const verifyAllTask = task("verify:all", "Verifies all deployed contracts
 					: true
 				// Unlike the others this has no legacy env fallback: it only ever ships via a recipe.
 				const deploysExpressProvider = report ? report.config?.expressProviderMode === "deploy" : false
+				const deploysGaslessLayer = report ? report.config?.gaslessLayerMode === "deploy" : false
 				const logFiles: Array<{ file: string; name: string; required: boolean; include: boolean }> = [
 					{ file: DEPLOYMENT_LOG_FILE, name: "Core Diamond deployment records", required: true, include: true },
 					{ file: ACCOUNTLAYER_DEPLOYMENT_FILE, name: "AccountLayer deployment records", required: true, include: true },
@@ -289,6 +300,12 @@ export const verifyAllTask = task("verify:all", "Verifies all deployed contracts
 						name: "ExpressProvider deployment records",
 						required: Boolean(report && deploysExpressProvider),
 						include: deploysExpressProvider,
+					},
+					{
+						file: GASLESSLAYER_DEPLOYMENT_FILE,
+						name: "GaslessLayer deployment records",
+						required: Boolean(report && deploysGaslessLayer),
+						include: deploysGaslessLayer,
 					},
 					{
 						file: LIQUIDATOR_DEPLOYMENT_FILE,
@@ -364,6 +381,7 @@ export const verifyAllTask = task("verify:all", "Verifies all deployed contracts
 								address: contract.address,
 								constructorArgs: contract.constructorArguments,
 								contract: contract.name.includes(":") ? contract.name : undefined,
+								libraries: contract.libraries,
 								provider: verificationProvider,
 							},
 							hre,
@@ -1240,6 +1258,20 @@ async function verifyMuonSignatureVerifier(
 		return
 	}
 
+	try {
+		await assertMuonFunctionSupported(ethers, verifierAddress, REMOVE_MARGIN_MUON_FUNCTION, category)
+		pushAndLog(results, { category, check: "Supports RemoveMargin", status: "pass", actual: "MuonFunction index 7" })
+	} catch (error) {
+		pushAndLog(results, {
+			category,
+			check: "Supports RemoveMargin",
+			status: "fail",
+			message: error instanceof Error ? error.message : String(error),
+			hint: "Deploy and configure a forward-compatible MuonSignatureVerifier",
+		})
+		return
+	}
+
 	let permissionNames: string[]
 	try {
 		permissionNames = assertGeneralDeploymentMuonPermissions(
@@ -2056,6 +2088,8 @@ function loadAddressesFromCheckpoint(checkpoint: any, existing: any) {
 		instantLayer: existing.instantLayer || checkpoint.contracts?.instantLayer?.address,
 		partyB: existing.partyB || checkpoint.contracts?.symmioPartyB?.address,
 		symbolManager: existing.symbolManager || checkpoint.contracts?.symbolManager?.address,
+		gaslessLayer: existing.gaslessLayer || checkpoint.contracts?.gaslessLayer?.proxy?.address,
+		gaslessLayerImplementation: existing.gaslessLayerImplementation || checkpoint.contracts?.gaslessLayer?.implementation?.address,
 		liquidator: existing.liquidator || checkpoint.contracts?.symmioLiquidator?.address,
 		collateral: existing.collateral || checkpoint.contracts?.collateral?.address,
 		signatureVerifier: existing.signatureVerifier || checkpoint.contracts?.signatureVerifier?.address,
@@ -2072,6 +2106,8 @@ export function loadAddressesFromReport(report: any, existing: any) {
 		instantLayer: existing.instantLayer || report.addresses?.instantLayer || undefined,
 		partyB: existing.partyB || report.addresses?.symmioPartyB || undefined,
 		symbolManager: existing.symbolManager || report.addresses?.symbolManager || undefined,
+		gaslessLayer: existing.gaslessLayer || report.addresses?.gaslessLayer || undefined,
+		gaslessLayerImplementation: existing.gaslessLayerImplementation || report.addresses?.gaslessLayerImplementation || undefined,
 		liquidator: existing.liquidator || report.addresses?.symmioLiquidator || undefined,
 		collateral: existing.collateral || report.addresses?.collateral || undefined,
 		signatureVerifier: existing.signatureVerifier || report.addresses?.signatureVerifier || undefined,
@@ -2147,6 +2183,12 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 		defaultValue: "",
 	})
 	.addOption({
+		name: "deployer",
+		description: "Original deployer address whose privileges must be gone (required unless --fromReport/--fromCheckpoint supplies it)",
+		type: ArgumentType.STRING,
+		defaultValue: "",
+	})
+	.addOption({
 		name: "fromCheckpoint",
 		description: "Load addresses from latest checkpoint",
 		type: ArgumentType.BOOLEAN,
@@ -2179,8 +2221,11 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 			setDataScope(chainId, { simulated: isSimulatedNetwork })
 			const network = connection.networkName || "unknown"
 			const protocolConfig = resolveVerificationProtocolConfig(chainId)
-			const [deployer] = await ethers.getSigners()
-			let deployerAddress: string | undefined = deployer?.address
+			// The privilege-removal checks only mean something against the address that actually
+			// deployed. Seeding this from the currently configured signer made every
+			// "role absent" check pass vacuously whenever an ops key ran the audit, so it must be
+			// supplied explicitly by --deployer, a report, or a checkpoint.
+			let deployerAddress: string | undefined = args.deployer ? String(args.deployer).trim() || undefined : undefined
 
 			// Convert empty strings to undefined for cleaner handling
 			let addresses: {
@@ -2189,6 +2234,8 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 				instantLayer?: string
 				partyB?: string
 				symbolManager?: string
+				gaslessLayer?: string
+				gaslessLayerImplementation?: string
 				liquidator?: string
 				collateral?: string
 				signatureVerifier?: string
@@ -2201,6 +2248,8 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 				instantLayer: args.instantLayer || undefined,
 				partyB: args.partyB || undefined,
 				symbolManager: args.symbolManager || undefined,
+				gaslessLayer: undefined,
+				gaslessLayerImplementation: undefined,
 				liquidator: args.liquidator || undefined,
 				collateral: args.collateral || undefined,
 				signatureVerifier: undefined,
@@ -2298,7 +2347,7 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 
 			if (!deployerAddress || !ethers.isAddress(deployerAddress)) {
 				throw new Error(
-					"Original deployer address is unavailable. Use --from-report with a current deployment report, or configure the original signer for a legacy record.",
+					"Original deployer address is unavailable. Use --fromReport with a current deployment report, --fromCheckpoint with a checkpoint that records it, or pass --deployer <address> for a legacy record.",
 				)
 			}
 			const originalDeployerAddress = ethers.getAddress(deployerAddress)
@@ -2327,6 +2376,12 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 					!addresses.symbolManager
 				) {
 					throw new Error("symbolManager address is missing from a report that declares deploySymbolManager=true")
+				}
+				if (args.fromReport && reportConfig?.gaslessLayerMode === "deploy") {
+					if (!addresses.gaslessLayer) throw new Error("gaslessLayer address is missing from a report that declares gaslessLayerMode=deploy")
+					if (!addresses.gaslessLayerImplementation) {
+						throw new Error("gaslessLayer implementation is missing from a report that declares gaslessLayerMode=deploy")
+					}
 				}
 			}
 			for (const [field, value] of Object.entries(addresses)) {
@@ -2360,6 +2415,7 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 			console.log(`${c.dim}  AccountLayer   ${c.reset}${addresses.accountLayer || `${c.dim}(not set)${c.reset}`}`)
 			console.log(`${c.dim}  InstantLayer   ${c.reset}${addresses.instantLayer || `${c.dim}(not set)${c.reset}`}`)
 			console.log(`${c.dim}  SymbolManager ${c.reset}${addresses.symbolManager || `${c.dim}(not set)${c.reset}`}`)
+			console.log(`${c.dim}  GaslessLayer  ${c.reset}${addresses.gaslessLayer || `${c.dim}(not set)${c.reset}`}`)
 			if (addresses.symbolManager) {
 				console.log(`${c.dim}  SM Operator   ${c.reset}${addresses.symbolManagerOperator || `${c.dim}(not set)${c.reset}`}`)
 			}
@@ -2631,7 +2687,38 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 			}
 
 			// ========================================
-			// 6. SymmioLiquidator Verification
+			// 6. GaslessLayer Verification
+			// ========================================
+			if (addresses.gaslessLayer) {
+				console.log(`${c.bold}GaslessLayer${c.reset}  ${c.dim}${addresses.gaslessLayer}${c.reset}`)
+				if (!addresses.gaslessLayerImplementation || !reportConfig?.gaslessLayer) {
+					pushAndLog(results, {
+						category: "GaslessLayer",
+						check: "Resolved deployment evidence",
+						status: "fail",
+						message: "Deployment report is missing implementation or resolved GaslessLayer config",
+					})
+				} else {
+					const inspection = await inspectGaslessLayerPostState(ethers, {
+						...reportConfig.gaslessLayer,
+						address: addresses.gaslessLayer,
+						implementation: addresses.gaslessLayerImplementation,
+					})
+					for (const check of inspection.checks) {
+						pushAndLog(results, {
+							category: "GaslessLayer",
+							check: check.check,
+							status: check.status === "passed" ? "pass" : check.status === "pending" ? "warn" : "fail",
+							expected: check.expected,
+							actual: check.actual,
+						})
+					}
+				}
+				console.log("")
+			}
+
+			// ========================================
+			// 7. SymmioLiquidator Verification
 			// ========================================
 			if (addresses.liquidator) {
 				console.log(`${c.bold}SymmioLiquidator${c.reset}  ${c.dim}${addresses.liquidator}${c.reset}`)

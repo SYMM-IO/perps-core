@@ -111,7 +111,7 @@ export const deployComponentTask = task(
 				recipeDigest: active.digest,
 				target: active.recipe.network,
 				component,
-				// Only expressProvider carries its own admin override; the others always use governance.admin.
+				// ExpressProvider and GaslessLayer may carry component-local admin overrides.
 				componentConfig: {
 					...active.recipe[component],
 					admin: (active.recipe[component] as { admin?: string }).admin || active.recipe.governance.admin,

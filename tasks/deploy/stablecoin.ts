@@ -22,7 +22,7 @@ export async function deployStablecoin(hre: any, { logData = true, checkpoint }:
 	// Check if already deployed from checkpoint
 	if (checkpoint?.contracts.collateral) {
 		const address = checkpoint.contracts.collateral.address
-		logger.info(`  ⏭ FakeStablecoin already deployed at ${address}`)
+		logger.reused("FakeStablecoin", address)
 		if (logData) writeStablecoinRecord(address)
 		const stablecoin = await ethers.getContractAt("FakeStablecoin", address)
 		return stablecoin

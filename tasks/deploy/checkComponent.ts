@@ -10,6 +10,7 @@ import {
 	inspectPartyBPostState,
 	computeExpressPatchDrift,
 	inspectExpressProviderPostState,
+	inspectGaslessLayerPostState,
 	inspectSymbolManagerPostState,
 	summarizeComponentHealth,
 	type ComponentDeploymentReport,
@@ -26,7 +27,7 @@ import {
 import { getConnection } from "./helpers.js"
 import { requireActiveDeploymentRecipe } from "./recipeRuntime.js"
 
-type SupportedComponent = "partyB" | "symbolManager" | "expressProvider"
+type SupportedComponent = "partyB" | "symbolManager" | "expressProvider" | "gaslessLayer"
 
 export interface ComponentStatusBinding {
 	component: SupportedComponent
@@ -114,7 +115,9 @@ export function assertComponentStatusReportBinding(reportValue: unknown, expecte
 	if (report.recipe.digest !== expected.recipeDigest) throw new Error("component report recipe digest does not match the active recipe")
 	if (!samePath(report.recipe.path, expected.recipePath)) throw new Error("component report recipe path does not match the active recipe")
 	address(report.address, "component report address")
-	if (expected.component === "partyB") address(report.implementation, "PartyB component report implementation")
+	if (expected.component === "partyB" || expected.component === "gaslessLayer") {
+		address(report.implementation, `${expected.component} component report implementation`)
+	}
 
 	if (!isRecord(report.config)) throw new Error("component report is missing public config evidence")
 	if (!sameAddress(report.config.admin, expected.config.admin)) throw new Error("component report admin does not match recipe governance.admin")
@@ -126,6 +129,8 @@ export function assertComponentStatusReportBinding(reportValue: unknown, expecte
 		throw new Error("component report operator does not match recipe symbolManager.operator")
 	} else if (expected.component === "expressProvider" && !isRecord(report.config.expressProvider)) {
 		throw new Error("ExpressProvider component report is missing its resolved configuration")
+	} else if (expected.component === "gaslessLayer" && !isRecord(report.config.gaslessLayer)) {
+		throw new Error("GaslessLayer component report is missing its resolved configuration")
 	}
 
 	if (!isRecord(report.coreDependency)) throw new Error("component report is missing its reused-Core binding")
@@ -140,6 +145,9 @@ export function assertComponentStatusReportBinding(reportValue: unknown, expecte
 	}
 	if (!sameAddress(report.coreDependency.instantLayer, expected.coreReport.addresses.instantLayer)) {
 		throw new Error("component report InstantLayer does not match the pinned Core report")
+	}
+	if (expected.component === "gaslessLayer" && !sameAddress(report.coreDependency.accountLayer, expected.coreReport.addresses.accountLayerDiamond)) {
+		throw new Error("component report AccountLayer does not match the pinned Core report")
 	}
 
 	if (!isRecord(report.verification) || !Array.isArray(report.verification.records)) {
@@ -164,16 +172,22 @@ export function assertComponentStatusReportBinding(reportValue: unknown, expecte
 		}
 	} else if (expected.live) {
 		if (!verified.has(address(report.address, "component report address"))) throw new Error("verification records do not cover the component address")
-		if (expected.component === "partyB" && !verified.has(address(report.implementation, "PartyB implementation"))) {
-			throw new Error("verification records do not cover the PartyB implementation")
+		if (
+			(expected.component === "partyB" || expected.component === "gaslessLayer") &&
+			!verified.has(address(report.implementation, `${expected.component} implementation`))
+		) {
+			throw new Error(`verification records do not cover the ${expected.component} implementation`)
 		}
 		if (report.verification.policy !== "required" || report.verification.status !== "passed") {
 			throw new Error(`live component verification is incomplete: ${report.verification.policy}/${report.verification.status}`)
 		}
 	} else {
 		if (!verified.has(address(report.address, "component report address"))) throw new Error("verification records do not cover the component address")
-		if (expected.component === "partyB" && !verified.has(address(report.implementation, "PartyB implementation"))) {
-			throw new Error("verification records do not cover the PartyB implementation")
+		if (
+			(expected.component === "partyB" || expected.component === "gaslessLayer") &&
+			!verified.has(address(report.implementation, `${expected.component} implementation`))
+		) {
+			throw new Error(`verification records do not cover the ${expected.component} implementation`)
 		}
 		if (report.verification.policy !== "not_applicable" || report.verification.status !== "skipped") {
 			throw new Error(`non-live component verification must be not_applicable/skipped`)
@@ -244,6 +258,13 @@ export function assertComponentStatusCheckpointBinding(
 		throw new Error("ExpressProvider checkpoint address does not match the report")
 	} else if (expected.component === "expressProvider" && report.mode === "patch" && checkpoint.contracts?.expressProvider !== undefined) {
 		throw new Error("ExpressProvider patch checkpoint unexpectedly contains a deployment")
+	} else if (expected.component === "gaslessLayer") {
+		if (!sameAddress(checkpoint.contracts?.gaslessLayer?.proxy?.address, report.address)) {
+			throw new Error("GaslessLayer checkpoint address does not match the report")
+		}
+		if (!sameAddress(checkpoint.contracts?.gaslessLayer?.implementation?.address, report.implementation)) {
+			throw new Error("GaslessLayer checkpoint implementation does not match the report")
+		}
 	}
 	if (checkpoint.step !== report.lifecycle) {
 		throw new Error(
@@ -297,6 +318,11 @@ export async function inspectComponentStatus(
 			core: coreReport.addresses.diamond,
 		})
 	}
+	if (component === "gaslessLayer") {
+		const config = report.config.gaslessLayer
+		if (!config) throw new Error("GaslessLayer report is missing its resolved config; cannot re-prove the deployed state")
+		return inspectGaslessLayerPostState(ethers, { ...config, address: report.address!, implementation: report.implementation! })
+	}
 	const expressConfig = report.config.expressProvider
 	if (!expressConfig) throw new Error("ExpressProvider report is missing its resolved config; cannot re-prove the deployed state")
 
@@ -321,8 +347,8 @@ export async function inspectComponentStatus(
 
 	const full = expressConfig as Omit<import("./componentDeployment.js").ExpressProviderResolvedConfig, "address">
 	// The credit-line trio is absent whenever the recipe deferred that section, so it is not
-	// required here; roles and affiliates are always recorded, even if empty.
-	for (const key of ["roles", "affiliates"] as const) {
+	// required here; AccountLayer, roles, and affiliates are always recorded.
+	for (const key of ["accountLayer", "roles", "affiliates"] as const) {
 		if (full[key] === undefined) throw new Error(`ExpressProvider deploy report config is missing ${key}; cannot re-prove the deployed state`)
 	}
 	return inspectExpressProviderPostState(ethers, { ...full, address: report.address! })
@@ -363,8 +389,8 @@ function displayInspection(
 }
 
 async function checkComponent(hre: any, recipePath: string, rawComponent: string): Promise<void> {
-	if (rawComponent !== "partyB" && rawComponent !== "symbolManager" && rawComponent !== "expressProvider") {
-		throw new Error(`check:component supports only partyB, symbolManager, or expressProvider; received ${JSON.stringify(rawComponent)}`)
+	if (rawComponent !== "partyB" && rawComponent !== "symbolManager" && rawComponent !== "expressProvider" && rawComponent !== "gaslessLayer") {
+		throw new Error(`check:component supports only partyB, symbolManager, expressProvider, or gaslessLayer; received ${JSON.stringify(rawComponent)}`)
 	}
 	const component: SupportedComponent = rawComponent
 	const active = requireActiveDeploymentRecipe(recipePath)
@@ -399,7 +425,11 @@ async function checkComponent(hre: any, recipePath: string, rawComponent: string
 					signer: active.recipe.partyB.signer,
 					adlEnabled: active.recipe.partyB.adlEnabled,
 				}
-			: { admin: active.recipe.governance.admin, operator: active.recipe.symbolManager.operator }
+			: component === "symbolManager"
+				? { admin: active.recipe.governance.admin, operator: active.recipe.symbolManager.operator }
+				: {
+						admin: (active.recipe[component] as { admin?: string }).admin || active.recipe.governance.admin,
+					}
 	const report = assertComponentStatusReportBinding(readJsonExact(reportPath, "component report"), {
 		component,
 		recipeName: active.recipe.name,

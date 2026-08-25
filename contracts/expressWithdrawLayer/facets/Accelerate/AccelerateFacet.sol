@@ -14,6 +14,8 @@ import { WithdrawReceiverPart } from "../../../core/storages/WithdrawStorage.sol
 import { IAccelerateFacet } from "./IAccelerateFacet.sol";
 import { IOperatorEvents } from "../Operator/IOperatorFacet.sol";
 
+import { ISymmio } from "../../interfaces/ISymmio.sol";
+
 import { LibAccessControl } from "../../libraries/LibAccessControl.sol";
 import { LibCreditLine } from "../../libraries/LibCreditLine.sol";
 import { LibErrors } from "../../libraries/LibErrors.sol";
@@ -45,6 +47,7 @@ contract AccelerateFacet is IAccelerateFacet, IOperatorEvents, Pausable, Reentra
 		bytes calldata creditDataRaw
 	) external nonReentrant whenNotPaused {
 		GlobalStorage.Layout storage g = GlobalStorage.layout();
+		if (ISymmio(g.symmio).isSuspended(user)) revert LibErrors.UserSuspended();
 		WithdrawInfo storage info = g.withdrawInfos[user][requestId];
 
 		// ── Preconditions ──

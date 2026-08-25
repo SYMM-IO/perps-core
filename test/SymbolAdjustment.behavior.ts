@@ -3,7 +3,7 @@ import { expect } from "chai"
 import { initializeFixture } from "./Initialize.fixture.js"
 import { ethers } from "./helpers/hardhat-connection.js"
 import { loadFixture, time } from "./helpers/network-helpers.js"
-import { QuoteStatus } from "./models/Enums.js"
+import { PositionType, QuoteStatus } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
@@ -40,23 +40,23 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 	})
 
 	async function completeFundingPreparation(symbolId: number, partyBs: string[] = []): Promise<void> {
-		let progress = await context.symbolAdjustmentFacet.getRestatementFundingProgress(symbolId)
+		let progress = await context.viewFacetSymbol.getRestatementFundingProgress(symbolId)
 		if (progress.phase === RESTATEMENT_PHASE.FUNDING_PREPARATION) {
 			if (partyBs.length > 0) {
 				await context.symbolAdjustmentFacet.connect(context.signers.admin).processRestatementFunding(symbolId, partyBs)
 			}
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).completeRestatementFundingPreparation(symbolId)
-			progress = await context.symbolAdjustmentFacet.getRestatementFundingProgress(symbolId)
+			progress = await context.viewFacetSymbol.getRestatementFundingProgress(symbolId)
 		}
 		expect(progress.phase).to.equal(RESTATEMENT_PHASE.QUOTE_PROCESSING)
 	}
 
 	async function completeFundingRestoration(symbolId: number, partyBs: string[] = []): Promise<void> {
-		let progress = await context.symbolAdjustmentFacet.getRestatementFundingProgress(symbolId)
+		let progress = await context.viewFacetSymbol.getRestatementFundingProgress(symbolId)
 		if (progress.phase === RESTATEMENT_PHASE.ABORT_FUNDING_RESTORATION || progress.phase === RESTATEMENT_PHASE.FINALIZATION_FUNDING_RESTORATION) {
 			expect(partyBs.length).to.be.greaterThan(0)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).processRestatementFunding(symbolId, partyBs)
-			progress = await context.symbolAdjustmentFacet.getRestatementFundingProgress(symbolId)
+			progress = await context.viewFacetSymbol.getRestatementFundingProgress(symbolId)
 		}
 		expect(progress.phase).to.equal(RESTATEMENT_PHASE.NONE)
 	}
@@ -81,27 +81,27 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now + 1000n))
 				.to.emit(context.symbolAdjustmentFacet, "AdjustmentScheduled")
 				.withArgs(SYMBOL_ID, 0, decimal(4n), now + 1000n)
-			expect(await context.symbolAdjustmentFacet.isSymbolFrozen(SYMBOL_ID)).to.be.false
+			expect(await context.viewFacetSymbol.isSymbolFrozen(SYMBOL_ID)).to.be.false
 			await time.increase(1001)
-			expect(await context.symbolAdjustmentFacet.isSymbolFrozen(SYMBOL_ID)).to.be.true
+			expect(await context.viewFacetSymbol.isSymbolFrozen(SYMBOL_ID)).to.be.true
 		})
 
 		it("should freeze immediately for a past effective time", async function () {
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now - 10n)
-			expect(await context.symbolAdjustmentFacet.isSymbolFrozen(SYMBOL_ID)).to.be.true
+			expect(await context.viewFacetSymbol.isSymbolFrozen(SYMBOL_ID)).to.be.true
 		})
 
 		it("should confirm price adjustment, activate factor, and unfreeze", async function () {
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
-			expect(await context.symbolAdjustmentFacet.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(1n))
-			expect(await context.symbolAdjustmentFacet.getProspectiveCumulativeFactor(SYMBOL_ID)).to.equal(decimal(4n))
+			expect(await context.viewFacetSymbol.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(1n))
+			expect(await context.viewFacetSymbol.getProspectiveCumulativeFactor(SYMBOL_ID)).to.equal(decimal(4n))
 			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID))
 				.to.emit(context.symbolAdjustmentFacet, "PriceAdjustmentConfirmed")
 				.withArgs(SYMBOL_ID, 0, decimal(4n))
-			expect(await context.symbolAdjustmentFacet.isSymbolFrozen(SYMBOL_ID)).to.be.false
-			expect(await context.symbolAdjustmentFacet.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(4n))
+			expect(await context.viewFacetSymbol.isSymbolFrozen(SYMBOL_ID)).to.be.false
+			expect(await context.viewFacetSymbol.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(4n))
 		})
 
 		it("should compound cumulative factor across steps", async function () {
@@ -110,16 +110,16 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(11n, 17), now)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)
-			expect(await context.symbolAdjustmentFacet.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(44n, 17))
+			expect(await context.viewFacetSymbol.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(44n, 17))
 		})
 
 		it("should cancel a scheduled step even after effective time (unfreezes)", async function () {
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now - 10n)
-			expect(await context.symbolAdjustmentFacet.isSymbolFrozen(SYMBOL_ID)).to.be.true
+			expect(await context.viewFacetSymbol.isSymbolFrozen(SYMBOL_ID)).to.be.true
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).cancelAdjustment(SYMBOL_ID)
-			expect(await context.symbolAdjustmentFacet.isSymbolFrozen(SYMBOL_ID)).to.be.false
-			expect(await context.symbolAdjustmentFacet.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(1n))
+			expect(await context.viewFacetSymbol.isSymbolFrozen(SYMBOL_ID)).to.be.false
+			expect(await context.viewFacetSymbol.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(1n))
 		})
 
 		it("should reject a second in-flight step", async function () {
@@ -166,7 +166,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 				await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(1n, 16), now)
 				await context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)
 			}
-			expect(await context.symbolAdjustmentFacet.getCumulativeFactor(SYMBOL_ID)).to.equal(1n)
+			expect(await context.viewFacetSymbol.getCumulativeFactor(SYMBOL_ID)).to.equal(1n)
 
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(1n, 16), now)
@@ -254,16 +254,24 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(1n, 16), now)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).processRestatementFunding(SYMBOL_ID, [context.signers.hedger.address])
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).completeRestatementFundingPreparation(SYMBOL_ID)
+			const inventoryBefore = await context.viewFacetSymbol.getRestatementInventoryProgress(SYMBOL_ID, context.signers.hedger.address)
+			expect(inventoryBefore.partyBRemainingLong + inventoryBefore.partyBRemainingShort).to.equal(99n)
+			expect(inventoryBefore.totalRemainingLong + inventoryBefore.totalRemainingShort).to.equal(99n)
 
-			await expect(context.symbolAdjustmentFacet.previewQuoteAdjustment(SYMBOL_ID, quoteId)).to.be.revertedWith(
-				"SymbolAdjustmentFacet: Quantity underflow",
-			)
+			await expect(context.viewFacetSymbol.previewQuoteAdjustment(SYMBOL_ID, quoteId)).to.be.revertedWith("SymbolAdjustmentFacet: Quantity underflow")
 			await hedger.emergencyClosePosition(quoteId, emergencyCloseRequestBuilder().price(price).build())
 
 			const closedQuote = await context.viewFacetQuote.getQuote(quoteId)
 			expect(closedQuote.quoteStatus).to.equal(QuoteStatus.CLOSED)
 			expect(closedQuote.closedAmount).to.equal(closedQuote.quantity)
-			expect(await context.symbolAdjustmentFacet.isSymbolFrozen(SYMBOL_ID)).to.be.true
+			const inventoryAfter = await context.viewFacetSymbol.getRestatementInventoryProgress(SYMBOL_ID, context.signers.hedger.address)
+			expect(inventoryAfter.partyBRemainingLong).to.equal(0n)
+			expect(inventoryAfter.partyBRemainingShort).to.equal(0n)
+			expect(inventoryAfter.totalRemainingLong).to.equal(0n)
+			expect(inventoryAfter.totalRemainingShort).to.equal(0n)
+			expect(await context.viewFacetSymbol.isSymbolFrozen(SYMBOL_ID)).to.be.true
 		})
 
 		it("should not grant the dust exception before the scheduled freeze", async function () {
@@ -283,7 +291,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(1n, 16), now)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
 
-			await expect(context.symbolAdjustmentFacet.previewQuoteAdjustment(SYMBOL_ID, quoteId)).to.be.revertedWith(
+			await expect(context.viewFacetSymbol.previewQuoteAdjustment(SYMBOL_ID, quoteId)).to.be.revertedWith(
 				"SymbolAdjustmentFacet: Close amount underflow",
 			)
 			await hedger.emergencyClosePosition(quoteId, emergencyCloseRequestBuilder().build())
@@ -313,6 +321,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(1n, 16), now)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await completeFundingPreparation(SYMBOL_ID, [context.signers.hedger.address])
 			await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [quoteId])
 
 			expect((await context.viewFacetQuote.getQuote(quoteId)).quantity).to.equal(99n)
@@ -413,12 +422,12 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 				.to.emit(context.symbolAdjustmentFacet, "RestatementStarted")
 				.withArgs(SYMBOL_ID, 1, decimal(4n))
 
-			const adjustment = await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)
+			const adjustment = await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)
 			expect(adjustment.state).to.equal(1) // SCHEDULED: the Muon trading factor was never confirmed
 			expect(adjustment.restatementFactor).to.equal(decimal(4n))
-			expect(await context.symbolAdjustmentFacet.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(1n))
-			expect(await context.symbolAdjustmentFacet.getProspectiveCumulativeFactor(SYMBOL_ID)).to.equal(decimal(4n))
-			expect(await context.symbolAdjustmentFacet.isSymbolFrozen(SYMBOL_ID)).to.be.true
+			expect(await context.viewFacetSymbol.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(1n))
+			expect(await context.viewFacetSymbol.getProspectiveCumulativeFactor(SYMBOL_ID)).to.equal(decimal(4n))
+			expect(await context.viewFacetSymbol.isSymbolFrozen(SYMBOL_ID)).to.be.true
 
 			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)).to.be.revertedWith(
 				"SymbolAdjustmentFacet: Restatement in progress",
@@ -428,11 +437,11 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			)
 
 			await finalizeRestatementAfterWindow(SYMBOL_ID)
-			const finalized = await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)
+			const finalized = await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)
 			expect(finalized.state).to.equal(3) // APPLIED
 			expect(finalized.restatementFactor).to.equal(0n)
-			expect(await context.symbolAdjustmentFacet.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(1n))
-			expect(await context.symbolAdjustmentFacet.isSymbolFrozen(SYMBOL_ID)).to.be.false
+			expect(await context.viewFacetSymbol.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(1n))
+			expect(await context.viewFacetSymbol.isSymbolFrozen(SYMBOL_ID)).to.be.false
 		})
 
 		it("should not start direct restatement before the scheduled adjustment is effective", async function () {
@@ -450,10 +459,10 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(3n), now)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
 
-			const adjustment = await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)
+			const adjustment = await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)
 			expect(adjustment.restatementFactor).to.equal(decimal(6n))
-			expect(await context.symbolAdjustmentFacet.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(2n))
-			expect(await context.symbolAdjustmentFacet.getProspectiveCumulativeFactor(SYMBOL_ID)).to.equal(decimal(6n))
+			expect(await context.viewFacetSymbol.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(2n))
+			expect(await context.viewFacetSymbol.getProspectiveCumulativeFactor(SYMBOL_ID)).to.equal(decimal(6n))
 		})
 
 		it("should abort a mutation-free direct window back to the scheduled freeze", async function () {
@@ -462,16 +471,16 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).abortRestatement(SYMBOL_ID)
 
-			const adjustment = await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)
+			const adjustment = await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)
 			expect(adjustment.state).to.equal(1) // SCHEDULED
 			expect(adjustment.restating).to.be.false
 			expect(adjustment.restatementFactor).to.equal(0n)
-			expect(await context.symbolAdjustmentFacet.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(1n))
-			expect(await context.symbolAdjustmentFacet.isSymbolFrozen(SYMBOL_ID)).to.be.true
+			expect(await context.viewFacetSymbol.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(1n))
+			expect(await context.viewFacetSymbol.isSymbolFrozen(SYMBOL_ID)).to.be.true
 
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)
-			expect(await context.symbolAdjustmentFacet.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(4n))
-			expect(await context.symbolAdjustmentFacet.isSymbolFrozen(SYMBOL_ID)).to.be.false
+			expect(await context.viewFacetSymbol.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(4n))
+			expect(await context.viewFacetSymbol.isSymbolFrozen(SYMBOL_ID)).to.be.false
 		})
 
 		it("should open and close a restatement window", async function () {
@@ -481,11 +490,11 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID))
 				.to.emit(context.symbolAdjustmentFacet, "RestatementStarted")
 				.withArgs(SYMBOL_ID, 1, decimal(4n))
-			expect(await context.symbolAdjustmentFacet.isSymbolFrozen(SYMBOL_ID)).to.be.true
+			expect(await context.viewFacetSymbol.isSymbolFrozen(SYMBOL_ID)).to.be.true
 			await finalizeRestatementAfterWindow(SYMBOL_ID)
-			expect(await context.symbolAdjustmentFacet.isSymbolFrozen(SYMBOL_ID)).to.be.false
-			expect(await context.symbolAdjustmentFacet.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(1n))
-			const adjustment = await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)
+			expect(await context.viewFacetSymbol.isSymbolFrozen(SYMBOL_ID)).to.be.false
+			expect(await context.viewFacetSymbol.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(1n))
+			const adjustment = await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)
 			expect(adjustment.state).to.equal(3) // APPLIED
 			expect(adjustment.scheduledCount).to.equal(1)
 		})
@@ -507,7 +516,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
 			await completeFundingPreparation(SYMBOL_ID, [context.signers.hedger.address])
 			expect((await context.viewFacetSymbol.getFundingFeesOfPartyB(SYMBOL_ID, context.signers.hedger.address)).currentLongRate).to.equal(0n)
-			expect((await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)).restatementMutated).to.be.false
+			expect((await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)).restatementMutated).to.be.false
 			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).abortRestatement(SYMBOL_ID))
 				.to.emit(context.symbolAdjustmentFacet, "RestatementFundingRestorationStarted")
 				.withArgs(SYMBOL_ID, 1, false, 1)
@@ -516,8 +525,8 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			)
 				.to.emit(context.symbolAdjustmentFacet, "RestatementAborted")
 				.withArgs(SYMBOL_ID, 1)
-			expect(await context.symbolAdjustmentFacet.isSymbolFrozen(SYMBOL_ID)).to.be.false
-			expect(await context.symbolAdjustmentFacet.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(4n))
+			expect(await context.viewFacetSymbol.isSymbolFrozen(SYMBOL_ID)).to.be.false
+			expect(await context.viewFacetSymbol.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(4n))
 			expect((await context.viewFacetSymbol.getFundingFeesOfPartyB(SYMBOL_ID, context.signers.hedger.address)).currentLongRate).to.equal(
 				fundingBefore.currentLongRate,
 			)
@@ -562,7 +571,124 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, factor, now)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await completeFundingPreparation(SYMBOL_ID, [context.signers.hedger.address])
 		}
+
+		it("should block finalization until every PartyB's snapshotted LONG and SHORT quantity is resolved", async function () {
+			await user.setBalances(undefined, undefined, decimal(500n))
+			const longQuoteId = await openPositionForUser()
+			const shortQuoteId = await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).quantity(decimal(40n)).build())
+			await hedger.lockQuote(shortQuoteId)
+			await hedger.openPosition(shortQuoteId, limitOpenRequestBuilder().filledAmount(decimal(40n)).build())
+			const hedger2 = new Hedger(context, context.signers.hedger2)
+			await hedger2.setup()
+			await hedger2.setBalances(decimal(4000n), decimal(4000n))
+			const secondLongQuoteId = await user.sendQuote(
+				limitQuoteRequestBuilder().partyBWhiteList([context.signers.hedger2.address]).quantity(decimal(80n)).build(),
+			)
+			await hedger2.lockQuote(secondLongQuoteId)
+			await hedger2.openPosition(secondLongQuoteId, limitOpenRequestBuilder().filledAmount(decimal(80n)).build())
+			const longQuote = await context.viewFacetQuote.getQuote(longQuoteId)
+			const shortQuote = await context.viewFacetQuote.getQuote(shortQuoteId)
+			const secondLongQuote = await context.viewFacetQuote.getQuote(secondLongQuoteId)
+			const longRemaining = longQuote.quantity - longQuote.closedAmount
+			const shortRemaining = shortQuote.quantity - shortQuote.closedAmount
+			const secondLongRemaining = secondLongQuote.quantity - secondLongQuote.closedAmount
+
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			const preparation = context.symbolAdjustmentFacet
+				.connect(context.signers.admin)
+				.processRestatementFunding(SYMBOL_ID, [context.signers.hedger.address, context.signers.hedger2.address, context.signers.hedger.address])
+			await expect(preparation)
+				.to.emit(context.symbolAdjustmentFacet, "RestatementPreparationProgress")
+				.withArgs(SYMBOL_ID, 1, 3, 2, 0, longRemaining + secondLongRemaining, shortRemaining, 0)
+
+			let inventory = await context.viewFacetSymbol.getRestatementInventoryProgress(SYMBOL_ID, context.signers.hedger.address)
+			expect(inventory.prepared).to.be.true
+			expect(inventory.partyBRemainingLong).to.equal(longRemaining)
+			expect(inventory.partyBRemainingShort).to.equal(shortRemaining)
+			expect(inventory.totalRemainingLong).to.equal(longRemaining + secondLongRemaining)
+			expect(inventory.totalRemainingShort).to.equal(shortRemaining)
+			const secondInventory = await context.viewFacetSymbol.getRestatementInventoryProgress(SYMBOL_ID, context.signers.hedger2.address)
+			expect(secondInventory.partyBRemainingLong).to.equal(secondLongRemaining)
+			expect(secondInventory.partyBRemainingShort).to.equal(0n)
+			expect(secondInventory.totalRemainingLong).to.equal(longRemaining + secondLongRemaining)
+			expect(secondInventory.totalRemainingShort).to.equal(shortRemaining)
+
+			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).completeRestatementFundingPreparation(SYMBOL_ID))
+				.to.emit(context.symbolAdjustmentFacet, "RestatementPreparationCompleted")
+				.withArgs(SYMBOL_ID, 1, longRemaining + secondLongRemaining, shortRemaining, 0)
+			await expect(context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [longQuoteId]))
+				.to.emit(context.symbolAdjustmentFacet, "RestatementInventoryConsumed")
+				.withArgs(SYMBOL_ID, 1, longQuoteId, context.signers.hedger.address, PositionType.LONG, longRemaining)
+			inventory = await context.viewFacetSymbol.getRestatementInventoryProgress(SYMBOL_ID, context.signers.hedger.address)
+			expect(inventory.partyBRemainingLong).to.equal(0n)
+			expect(inventory.partyBRemainingShort).to.equal(shortRemaining)
+			expect(inventory.totalRemainingLong).to.equal(secondLongRemaining)
+			expect(inventory.totalRemainingShort).to.equal(shortRemaining)
+
+			const [upnlValidTime, priceValidTime] = await context.viewFacet.getMuonConfig()
+			await context.controlFacet.connect(context.signers.admin).setMuonConfig(1n, priceValidTime)
+			await time.increase(2)
+			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(SYMBOL_ID)).to.be.revertedWith(
+				"SymbolAdjustmentFacet: Open-position restatement incomplete",
+			)
+
+			await expect(context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [shortQuoteId]))
+				.to.emit(context.symbolAdjustmentFacet, "RestatementInventoryConsumed")
+				.withArgs(SYMBOL_ID, 1, shortQuoteId, context.signers.hedger.address, PositionType.SHORT, shortRemaining)
+			inventory = await context.viewFacetSymbol.getRestatementInventoryProgress(SYMBOL_ID, context.signers.hedger.address)
+			expect(inventory.partyBRemainingLong).to.equal(0n)
+			expect(inventory.partyBRemainingShort).to.equal(0n)
+			expect(inventory.totalRemainingLong).to.equal(secondLongRemaining)
+			expect(inventory.totalRemainingShort).to.equal(0n)
+			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(SYMBOL_ID)).to.be.revertedWith(
+				"SymbolAdjustmentFacet: Open-position restatement incomplete",
+			)
+
+			await expect(context.symbolAdjustmentFacet.connect(context.signers.hedger2).applyAdjustment(SYMBOL_ID, [secondLongQuoteId]))
+				.to.emit(context.symbolAdjustmentFacet, "RestatementInventoryConsumed")
+				.withArgs(SYMBOL_ID, 1, secondLongQuoteId, context.signers.hedger2.address, PositionType.LONG, secondLongRemaining)
+			inventory = await context.viewFacetSymbol.getRestatementInventoryProgress(SYMBOL_ID, context.signers.hedger2.address)
+			expect(inventory.partyBRemainingLong).to.equal(0n)
+			expect(inventory.partyBRemainingShort).to.equal(0n)
+			expect(inventory.totalRemainingLong).to.equal(0n)
+			expect(inventory.totalRemainingShort).to.equal(0n)
+			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(SYMBOL_ID)).to.emit(
+				context.symbolAdjustmentFacet,
+				"RestatementFinalized",
+			)
+			await context.controlFacet.connect(context.signers.admin).setMuonConfig(upnlValidTime, priceValidTime)
+		})
+
+		it("should seal the PartyB inventory manifest before quote processing", async function () {
+			const quoteId = await openPositionForUser()
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).completeRestatementFundingPreparation(SYMBOL_ID)
+
+			await expect(context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [quoteId])).to.be.revertedWith(
+				"LibSymbolAdjustmentInventory: PartyB inventory not prepared",
+			)
+			await expect(
+				context.symbolAdjustmentFacet.connect(context.signers.admin).processRestatementFunding(SYMBOL_ID, [context.signers.hedger.address]),
+			).to.be.revertedWith("SymbolAdjustmentFacet: Invalid funding phase")
+		})
+
+		it("should exclude pending quotes from restatement inventory", async function () {
+			await user.sendQuote(limitQuoteRequestBuilder().build())
+			await activateFactorAndStartRestatement()
+			const inventory = await context.viewFacetSymbol.getRestatementInventoryProgress(SYMBOL_ID, context.signers.hedger.address)
+			expect(inventory.prepared).to.be.true
+			expect(inventory.partyBRemainingLong).to.equal(0n)
+			expect(inventory.partyBRemainingShort).to.equal(0n)
+			expect(inventory.totalRemainingLong).to.equal(0n)
+			expect(inventory.totalRemainingShort).to.equal(0n)
+			await finalizeRestatementAfterWindow(SYMBOL_ID)
+		})
 
 		it("should return venue-unit quotes without changing raw stored values", async function () {
 			const quoteId = await openPositionForUser()
@@ -622,9 +748,10 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
 
-			expect(await context.symbolAdjustmentFacet.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(1n))
-			expect((await context.symbolAdjustmentFacet.previewQuoteAdjustment(SYMBOL_ID, restatedId)).factor).to.equal(decimal(4n))
+			expect(await context.viewFacetSymbol.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(1n))
+			expect((await context.viewFacetSymbol.previewQuoteAdjustment(SYMBOL_ID, restatedId)).factor).to.equal(decimal(4n))
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await completeFundingPreparation(SYMBOL_ID, [context.signers.hedger.address])
 			await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [restatedId])
 
 			const venueViews = await context.viewFacetQuote.getQuotesInVenueUnits([restatedId, unrestatedId])
@@ -641,8 +768,8 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 
 			await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [unrestatedId])
 			await finalizeRestatementAfterWindow(SYMBOL_ID)
-			expect(await context.symbolAdjustmentFacet.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(1n))
-			expect(await context.symbolAdjustmentFacet.isSymbolFrozen(SYMBOL_ID)).to.be.false
+			expect(await context.viewFacetSymbol.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(1n))
+			expect(await context.viewFacetSymbol.isSymbolFrozen(SYMBOL_ID)).to.be.false
 		})
 
 		it("should scale quantity x4 and openedPrice /4 preserving notional and locked values", async function () {
@@ -651,13 +778,14 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)
-			const preview = await context.symbolAdjustmentFacet.previewQuoteAdjustment(SYMBOL_ID, quoteId)
+			const preview = await context.viewFacetSymbol.previewQuoteAdjustment(SYMBOL_ID, quoteId)
 			expect(preview.quantity).to.equal(before.quantity * 4n)
 			expect(preview.openedPrice).to.equal(before.openedPrice / 4n)
 			expect(preview.initialOpenedPrice).to.equal(before.initialOpenedPrice / 4n)
 			expect(preview.requestedOpenPrice).to.equal(before.requestedOpenPrice / 4n)
 			expect(preview.marketPrice).to.equal(before.marketPrice / 4n)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await completeFundingPreparation(SYMBOL_ID, [context.signers.hedger.address])
 			await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [quoteId])
 			const after = await context.viewFacetQuote.getQuote(quoteId)
 			expect(after.quantity).to.equal(before.quantity * 4n)
@@ -701,10 +829,11 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(1n, 16), now)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)
 
-			await expect(context.symbolAdjustmentFacet.previewQuoteAdjustment(SYMBOL_ID, quoteId)).to.be.revertedWith(
+			await expect(context.viewFacetSymbol.previewQuoteAdjustment(SYMBOL_ID, quoteId)).to.be.revertedWith(
 				"SymbolAdjustmentFacet: Close amount underflow",
 			)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await completeFundingPreparation(SYMBOL_ID, [context.signers.hedger.address])
 			await expect(context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [quoteId])).to.be.revertedWith(
 				"SymbolAdjustmentFacet: Close amount underflow",
 			)
@@ -738,7 +867,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			expect(fundingWhileFactorActive.currentShortRate).to.equal(fundingBefore.currentShortRate)
 
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
-			let progress = await context.symbolAdjustmentFacet.getRestatementFundingProgress(SYMBOL_ID)
+			let progress = await context.viewFacetSymbol.getRestatementFundingProgress(SYMBOL_ID)
 			expect(progress.phase).to.equal(RESTATEMENT_PHASE.FUNDING_PREPARATION)
 			expect(progress.pendingPartyBCount).to.equal(0n)
 			expect((await context.viewFacetSymbol.getFundingFeesOfPartyB(SYMBOL_ID, partyB)).currentLongRate).to.equal(fundingBefore.currentLongRate)
@@ -759,33 +888,33 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			)
 
 			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).processRestatementFunding(SYMBOL_ID, [partyB]))
-				.to.emit(context.symbolAdjustmentFacet, "RestatementFundingPreparationProgress")
-				.withArgs(SYMBOL_ID, 1, 1, 1, 1)
-			progress = await context.symbolAdjustmentFacet.getRestatementFundingProgress(SYMBOL_ID)
+				.to.emit(context.symbolAdjustmentFacet, "RestatementPreparationProgress")
+				.withArgs(SYMBOL_ID, 1, 1, 1, 1, oldOpenAmount, 0, 1)
+			progress = await context.viewFacetSymbol.getRestatementFundingProgress(SYMBOL_ID)
 			expect(progress.phase).to.equal(RESTATEMENT_PHASE.FUNDING_PREPARATION)
 			expect(progress.pendingPartyBCount).to.equal(1n)
-			expect(await context.symbolAdjustmentFacet.isRestatementFundingCheckpointed(SYMBOL_ID, partyB)).to.be.true
-			expect(await context.symbolAdjustmentFacet.isRestatementFundingCheckpointed(SYMBOL_ID, partyBWithoutPosition)).to.be.false
+			expect(await context.viewFacetSymbol.isRestatementFundingCheckpointed(SYMBOL_ID, partyB)).to.be.true
+			expect(await context.viewFacetSymbol.isRestatementFundingCheckpointed(SYMBOL_ID, partyBWithoutPosition)).to.be.false
 			expect((await context.viewFacetSymbol.getFundingFeesOfPartyB(SYMBOL_ID, partyB)).currentLongRate).to.equal(0n)
 			expect((await context.viewFacetSymbol.getFundingFeesOfPartyB(SYMBOL_ID, partyBWithoutPosition)).currentLongRate).to.equal(
 				unusedFundingBefore.currentLongRate,
 			)
 
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).processRestatementFunding(SYMBOL_ID, [partyBWithoutPosition])
-			progress = await context.symbolAdjustmentFacet.getRestatementFundingProgress(SYMBOL_ID)
+			progress = await context.viewFacetSymbol.getRestatementFundingProgress(SYMBOL_ID)
 			expect(progress.phase).to.equal(RESTATEMENT_PHASE.FUNDING_PREPARATION)
 			expect(progress.pendingPartyBCount).to.equal(2n)
 			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).completeRestatementFundingPreparation(SYMBOL_ID))
-				.to.emit(context.symbolAdjustmentFacet, "RestatementFundingPreparationCompleted")
-				.withArgs(SYMBOL_ID, 1, 2)
-			progress = await context.symbolAdjustmentFacet.getRestatementFundingProgress(SYMBOL_ID)
+				.to.emit(context.symbolAdjustmentFacet, "RestatementPreparationCompleted")
+				.withArgs(SYMBOL_ID, 1, oldOpenAmount, 0, 2)
+			progress = await context.viewFacetSymbol.getRestatementFundingProgress(SYMBOL_ID)
 			expect(progress.phase).to.equal(RESTATEMENT_PHASE.QUOTE_PROCESSING)
 			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).completeRestatementFundingPreparation(SYMBOL_ID)).to.be.revertedWith(
 				"SymbolAdjustmentFacet: Invalid funding phase",
 			)
-			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).processRestatementFunding(SYMBOL_ID, [partyB]))
-				.to.emit(context.symbolAdjustmentFacet, "RestatementFundingPreparationProgress")
-				.withArgs(SYMBOL_ID, 1, 1, 0, 2)
+			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).processRestatementFunding(SYMBOL_ID, [partyB])).to.be.revertedWith(
+				"SymbolAdjustmentFacet: Invalid funding phase",
+			)
 			const unusedFundingAtPreparationEnd = await context.viewFacetSymbol.getFundingFeesOfPartyB(SYMBOL_ID, partyBWithoutPosition)
 			expect(unusedFundingAtPreparationEnd.currentLongRate).to.equal(0n)
 			expect(unusedFundingAtPreparationEnd.currentShortRate).to.equal(0n)
@@ -802,19 +931,19 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			await context.controlFacet.connect(context.signers.admin).setMuonConfig(1n, priceValidTime)
 			await time.increase(2)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(SYMBOL_ID)
-			progress = await context.symbolAdjustmentFacet.getRestatementFundingProgress(SYMBOL_ID)
+			progress = await context.viewFacetSymbol.getRestatementFundingProgress(SYMBOL_ID)
 			expect(progress.phase).to.equal(RESTATEMENT_PHASE.FINALIZATION_FUNDING_RESTORATION)
 			expect(progress.pendingPartyBCount).to.equal(2n)
-			const finalizingAdjustment = await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)
+			const finalizingAdjustment = await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)
 			expect(finalizingAdjustment.basisVersion).to.equal(0n)
 			const fundingRestorationTimestamp = finalizingAdjustment.fundingRestorationTimestamp
 			await expect(context.controlFacet.connect(context.signers.admin).registerPartyB(context.signers.others[0].address)).to.not.be.reverted
 
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).processRestatementFunding(SYMBOL_ID, [partyBWithoutPosition])
-			progress = await context.symbolAdjustmentFacet.getRestatementFundingProgress(SYMBOL_ID)
+			progress = await context.viewFacetSymbol.getRestatementFundingProgress(SYMBOL_ID)
 			expect(progress.phase).to.equal(RESTATEMENT_PHASE.FINALIZATION_FUNDING_RESTORATION)
 			expect(progress.pendingPartyBCount).to.equal(1n)
-			expect(await context.symbolAdjustmentFacet.isSymbolFrozen(SYMBOL_ID)).to.be.true
+			expect(await context.viewFacetSymbol.isSymbolFrozen(SYMBOL_ID)).to.be.true
 			await time.increase(28800)
 
 			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).processRestatementFunding(SYMBOL_ID, [partyB]))
@@ -846,18 +975,19 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).processRestatementFunding(SYMBOL_ID, [partyB])
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).processRestatementFunding(SYMBOL_ID, [partyB, otherPartyB])
 			expect((await context.viewFacetSymbol.getFundingFeesOfPartyB(SYMBOL_ID, partyB)).currentLongRate).to.equal(0n)
-			expect((await context.viewFacetSymbol.getFundingFeesOfPartyB(SYMBOL_ID, otherPartyB)).currentLongRate).to.not.equal(0n)
-			expect((await context.symbolAdjustmentFacet.getRestatementFundingProgress(SYMBOL_ID)).pendingPartyBCount).to.equal(1n)
+			expect((await context.viewFacetSymbol.getFundingFeesOfPartyB(SYMBOL_ID, otherPartyB)).currentLongRate).to.equal(0n)
+			expect((await context.viewFacetSymbol.getRestatementFundingProgress(SYMBOL_ID)).pendingPartyBCount).to.equal(2n)
 
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).completeRestatementFundingPreparation(SYMBOL_ID)
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).processRestatementFunding(SYMBOL_ID, [otherPartyB])
-			expect((await context.symbolAdjustmentFacet.getRestatementFundingProgress(SYMBOL_ID)).pendingPartyBCount).to.equal(2n)
+			await expect(
+				context.symbolAdjustmentFacet.connect(context.signers.admin).processRestatementFunding(SYMBOL_ID, [otherPartyB]),
+			).to.be.revertedWith("SymbolAdjustmentFacet: Invalid funding phase")
 
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).abortRestatement(SYMBOL_ID)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).processRestatementFunding(SYMBOL_ID, [ethers.ZeroAddress, partyB])
-			expect((await context.symbolAdjustmentFacet.getRestatementFundingProgress(SYMBOL_ID)).pendingPartyBCount).to.equal(1n)
+			expect((await context.viewFacetSymbol.getRestatementFundingProgress(SYMBOL_ID)).pendingPartyBCount).to.equal(1n)
 			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).processRestatementFunding(SYMBOL_ID, [otherPartyB]))
 				.to.emit(context.symbolAdjustmentFacet, "RestatementAborted")
 				.withArgs(SYMBOL_ID, 1)
@@ -1045,9 +1175,9 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 		it("should mark a pending-inventory removal and prevent abort", async function () {
 			const pendingId = await user.sendQuote(limitQuoteRequestBuilder().build())
 			await activateFactorAndStartRestatement()
-			expect((await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)).restatementMutated).to.be.false
+			expect((await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)).restatementMutated).to.be.false
 			await user.requestToCancelQuote(pendingId)
-			expect((await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)).restatementMutated).to.be.true
+			expect((await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)).restatementMutated).to.be.true
 			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).abortRestatement(SYMBOL_ID)).to.be.revertedWith(
 				"SymbolAdjustmentFacet: Restatement already mutated",
 			)
@@ -1150,17 +1280,18 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 
 			// 3) ops confirms oracle factor -> unfrozen, factor 4e18
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)
-			expect(await context.symbolAdjustmentFacet.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(4n))
+			expect(await context.viewFacetSymbol.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(4n))
 
 			// 4) later: restatement window
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await completeFundingPreparation(SYMBOL_ID, [context.signers.hedger.address])
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).cancelPendingQuotes([pendingId, pendingId2])
 			const beforeOpened = await context.viewFacetQuote.getQuote(openedId)
 			await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [openedId, closePendingId])
 			await finalizeRestatementAfterWindow(SYMBOL_ID)
 
 			// 5) invariants: factor reset, quantities x4, notional preserved, trading works again
-			expect(await context.symbolAdjustmentFacet.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(1n))
+			expect(await context.viewFacetSymbol.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(1n))
 			const afterOpened = await context.viewFacetQuote.getQuote(openedId)
 			expect(afterOpened.quantity).to.equal(beforeOpened.quantity * 4n)
 			expect(afterOpened.quantity * afterOpened.openedPrice).to.equal(beforeOpened.quantity * beforeOpened.openedPrice)
@@ -1195,17 +1326,18 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 
 			// 3) ops confirms oracle factor -> unfrozen, factor 4e18
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)
-			expect(await context.symbolAdjustmentFacet.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(4n))
+			expect(await context.viewFacetSymbol.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(4n))
 
 			// 4) later: restatement window
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await completeFundingPreparation(SYMBOL_ID, [context.signers.hedger.address])
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).cancelPendingQuotes([pendingId, pendingId2])
 			const beforeOpened = await context.viewFacetQuote.getQuote(openedId)
 			await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [openedId, closePendingId])
 			await finalizeRestatementAfterWindow(SYMBOL_ID)
 
 			// 5) invariants: factor reset, quantities x4, notional preserved, trading (and aggregate bookkeeping) works again
-			expect(await context.symbolAdjustmentFacet.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(1n))
+			expect(await context.viewFacetSymbol.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(1n))
 			const afterOpened = await context.viewFacetQuote.getQuote(openedId)
 			expect(afterOpened.quantity).to.equal(beforeOpened.quantity * 4n)
 			expect(afterOpened.quantity * afterOpened.openedPrice).to.equal(beforeOpened.quantity * beforeOpened.openedPrice)
@@ -1264,6 +1396,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await completeFundingPreparation(SYMBOL_ID, [context.signers.hedger.address])
 			await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [quoteId])
 			await finalizeRestatementAfterWindow(SYMBOL_ID)
 		}
@@ -1439,10 +1572,10 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 
 		it("keeps the high/low signature payload independent of the symbol basis", async function () {
 			const quoteId = await createClosePendingPosition()
-			const oldBasisVersion = (await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)).basisVersion
+			const oldBasisVersion = (await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)).basisVersion
 
 			await restateQuote(quoteId)
-			const newBasisVersion = (await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)).basisVersion
+			const newBasisVersion = (await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)).basisVersion
 			expect(newBasisVersion).to.equal(oldBasisVersion + 1n)
 
 			// The hash must not depend on basisVersion: a Muon app built against the pre-0.8.6 payload keeps
@@ -1464,6 +1597,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await completeFundingPreparation(SYMBOL_ID, [context.signers.hedger.address])
 			await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [quoteId])
 
 			// Quotes are rewritten, but the symbol has not been frozen long enough for in-flight signatures to expire.
@@ -1489,7 +1623,8 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			const scheduleBlock = await ethers.provider.getBlock(scheduleReceipt!.blockNumber)
 
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
-			const adjustment = await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)
+			await completeFundingPreparation(SYMBOL_ID)
+			const adjustment = await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)
 			expect(adjustment.restatementStartedAt).to.equal(BigInt(scheduleBlock!.timestamp))
 			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(SYMBOL_ID)).to.be.revertedWith(
 				"SymbolAdjustmentFacet: Restatement window too short",
@@ -1511,7 +1646,8 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
-			const adjustment = await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)
+			await completeFundingPreparation(SYMBOL_ID)
+			const adjustment = await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)
 
 			await time.setNextBlockTimestamp(Number(adjustment.restatementStartedAt + 1000n))
 			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(SYMBOL_ID)).to.be.revertedWith(
@@ -1535,6 +1671,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await completeFundingPreparation(SYMBOL_ID)
 
 			await time.increase(100)
 			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(SYMBOL_ID)).to.be.revertedWith(
@@ -1552,7 +1689,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 
 		it("keeps the PartyA uPNL and price signature payload independent of the symbol basis", async function () {
 			const quoteId = await createClosePendingPosition()
-			const oldBasisVersion = (await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)).basisVersion
+			const oldBasisVersion = (await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)).basisVersion
 			const partyA = await context.signers.user.getAddress()
 
 			const verifierFactory = await ethers.getContractFactory("HashCheckingMuonSignatureVerifier")
@@ -1561,7 +1698,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 
 			await restateQuote(quoteId)
 			const restatedQuote = await context.viewFacetQuote.getQuote(quoteId)
-			const newBasisVersion = (await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)).basisVersion
+			const newBasisVersion = (await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)).basisVersion
 			expect(newBasisVersion).to.equal(oldBasisVersion + 1n)
 
 			const freshSig = await getDummySingleUpnlAndPriceSig(restatedQuote.openedPrice, 0n)
@@ -1575,7 +1712,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 		it("keeps a high/low signature valid when an unmutated restatement is aborted and cancelled", async function () {
 			const quoteId = await createClosePendingPosition()
 			const sig = await createHighLowSig(quoteId)
-			const basisVersion = (await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)).basisVersion
+			const basisVersion = (await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)).basisVersion
 
 			const verifierFactory = await ethers.getContractFactory("HashCheckingMuonSignatureVerifier")
 			const verifier = await verifierFactory.deploy()
@@ -1588,7 +1725,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).abortRestatement(SYMBOL_ID)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).cancelAdjustment(SYMBOL_ID)
 
-			expect((await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)).basisVersion).to.equal(basisVersion)
+			expect((await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)).basisVersion).to.equal(basisVersion)
 			await expect(user.forceClosePosition(quoteId, sig)).not.to.be.reverted
 		})
 
@@ -1615,7 +1752,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			const freshSig = await createHighLowSig(quoteId)
 			await context.forceCloseStepsFacet.initializeForceClose(quoteId, freshSig)
 			expect((await context.viewFacet.forceCloseDetails(quoteId)).basisVersion).to.equal(
-				(await context.symbolAdjustmentFacet.getSymbolAdjustment(SYMBOL_ID)).basisVersion,
+				(await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)).basisVersion,
 			)
 			await context.forceCloseStepsFacet.finalizeForceClose(quoteId, await getDummyPairUpnlAndPriceSig(restatedQuote.openedPrice, 0n, 0n))
 

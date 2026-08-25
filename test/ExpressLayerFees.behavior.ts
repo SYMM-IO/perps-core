@@ -27,12 +27,20 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		const receiver2 = context.signers.others[0]
 
 		const collateral = context.collateral
+		const affiliate = affiliateOwner.address
+		const accountLayer = await ethers.deployContract("MockExpressAccountLayer")
+		await accountLayer.setAccounts(
+			allSigners.map(signer => signer.address),
+			affiliate,
+			true,
+		)
 
 		// Deploy ExpressProvider diamond
 		const expressProvider = await deployExpressProvider(hre, connection, {
 			admin: deployer.address,
 			symmio: context.diamond,
 			collateral: await collateral.getAddress(),
+			accountLayer: await accountLayer.getAddress(),
 		})
 
 		// Register ExpressProvider on real Symmio
@@ -47,8 +55,6 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		await expressProvider.grantRole(OPERATOR_ROLE, operator.address)
 		await expressProvider.grantRole(LOCKER_ROLE, locker.address)
 		await expressProvider.grantRole(UNLOCK_ROLE, unlocker.address)
-		const affiliate = affiliateOwner.address
-
 		// Deploy MockMuonSignatureVerifier for credit line
 		const muonVerifier = await ethers.deployContract("MockMuonSignatureVerifier")
 
@@ -93,6 +99,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 			unlocker,
 			collateral,
 			context,
+			accountLayer,
 			expressProvider,
 			muonVerifier,
 			generalFunding,
@@ -1374,7 +1381,8 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		})
 
 		it("should isolate fees per affiliate (affiliate A vs B)", async function () {
-			const { botSigner, operator, deployer, user, receiver, expressProvider, context, affiliate, collateral, user2 } = await deployFixture()
+			const { botSigner, operator, deployer, user, receiver, expressProvider, context, affiliate, collateral, user2, accountLayer } =
+				await deployFixture()
 
 			const fee = 5n * 10n ** 18n
 
@@ -1399,6 +1407,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 
 			// Frontend B (use user2's address as a different affiliate)
 			const frontendB = user2.address
+			await accountLayer.setAccount(user2.address, frontendB, true)
 			// feeRate for frontendB = 10 * 10000 / 500 = 200 (2%)
 			await expressProvider.setAffiliateConfig(frontendB, 200, 0)
 			// Fund general pool more for the second withdraw
@@ -1406,7 +1415,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				expressProvider,
 				botSigner,
 				operator,
-				user,
+				user: user2,
 				receiver,
 				context,
 				affiliate: frontendB,
@@ -1414,7 +1423,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				withdrawAmount: 500n * 10n ** 18n,
 				fee: fee * 2n,
 				operatorFee: 0n,
-				nonce: 1n,
+				nonce: 0n,
 			})
 
 			expect(await expressProvider.collectedFees(affiliate)).to.equal(fee)

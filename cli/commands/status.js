@@ -70,14 +70,15 @@ export function resolveStatusRecipeSelection(recipeContext, only, configLabel = 
 	}
 
 	if (coreMode === "reuse") {
-		const enabled = ["partyB", "symbolManager", "expressProvider"].filter(
+		const componentNames = ["partyB", "symbolManager", "expressProvider", "gaslessLayer"];
+		const enabled = componentNames.filter(
 			component =>
 				recipeContext.recipe[component]?.mode === "deploy" ||
 				(component === "expressProvider" &&
 					recipeContext.recipe.expressProvider?.mode === "reuse" &&
 					recipeContext.recipe.expressProvider?.address),
 		);
-		const selection = enabled.length === 1 ? enabled[0] : ["partyB", "symbolManager", "expressProvider"].join(", ");
+		const selection = enabled.length === 1 ? enabled[0] : componentNames.join(", ");
 		throw new Error(
 			`This is a component recipe because core.mode=reuse. Select its component explicitly (${selection}) in the ` +
 				`operator task that owns ${configLabel}.`,
@@ -122,6 +123,14 @@ export function validateComponentStatusReport(report, expected) {
 			);
 		}
 	}
+	if (
+		expected.component === "gaslessLayer" &&
+		!sameAddress(report.coreDependency.accountLayer, expected.coreReport.addresses.accountLayerDiamond)
+	) {
+		throw new Error(
+			`component report Core accountLayer is ${JSON.stringify(report.coreDependency.accountLayer)}, expected ${expected.coreReport.addresses.accountLayerDiamond}`,
+		);
+	}
 	return report;
 }
 
@@ -151,7 +160,9 @@ export function validateComponentStatusCheckpoint(checkpoint, report, expected) 
 			? checkpoint.contracts?.symmioPartyB
 			: expected.component === "symbolManager"
 				? checkpoint.contracts?.symbolManager
-				: checkpoint.contracts?.expressProvider?.diamond;
+				: expected.component === "gaslessLayer"
+					? checkpoint.contracts?.gaslessLayer?.proxy
+					: checkpoint.contracts?.expressProvider?.diamond;
 	// A patch reconciles an existing provider; it creates no contract, so there is no
 	// checkpointed creation to bind the address against.
 	if (report.mode !== "patch" && !sameAddress(checkpointContract?.address, report.address)) {
@@ -160,6 +171,11 @@ export function validateComponentStatusCheckpoint(checkpoint, report, expected) 
 	if (expected.component === "partyB" && !sameAddress(checkpointContract?.implementation, report.implementation)) {
 		throw new Error(
 			`PartyB checkpoint implementation is ${JSON.stringify(checkpointContract?.implementation)}, but the report records ${report.implementation}`,
+		);
+	}
+	if (expected.component === "gaslessLayer" && !sameAddress(checkpoint.contracts?.gaslessLayer?.implementation?.address, report.implementation)) {
+		throw new Error(
+			`GaslessLayer checkpoint implementation is ${JSON.stringify(checkpoint.contracts?.gaslessLayer?.implementation?.address)}, but the report records ${report.implementation}`,
 		);
 	}
 	if (checkpoint.step !== report.lifecycle) {
@@ -241,20 +257,21 @@ export function validateCheckpointReportBinding(checkpoint, report) {
 }
 
 function componentExpectedConfig(recipeContext, component) {
+	const admin = recipeContext.recipe[component]?.admin || recipeContext.recipe.governance.admin;
 	if (component === "partyB") {
 		return {
-			admin: recipeContext.recipe.governance.admin,
+			admin,
 			signer: recipeContext.recipe.partyB.signer,
 			adlEnabled: recipeContext.recipe.partyB.adlEnabled,
 		};
 	}
 	if (component === "symbolManager") {
 		return {
-			admin: recipeContext.recipe.governance.admin,
+			admin,
 			operator: recipeContext.recipe.symbolManager.operator,
 		};
 	}
-	return { admin: recipeContext.recipe.governance.admin };
+	return { admin };
 }
 
 function componentRerunCommand(configLabel, component) {
@@ -449,6 +466,8 @@ export async function status(args) {
 		["AccountLayer Diamond", report.addresses.accountLayerDiamond],
 		["InstantLayer", report.addresses.instantLayer],
 		["SymbolManager", report.addresses.symbolManager || c.grey("not deployed")],
+		["ExpressProvider", report.addresses.expressProvider || c.grey("not deployed")],
+		["GaslessLayer", report.addresses.gaslessLayer || c.grey("not deployed")],
 	]);
 	log(`  ${c.grey("explorer")} ${explorerAddressUrl(networkName, report.addresses.diamond)}`);
 

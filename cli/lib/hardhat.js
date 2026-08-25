@@ -3,6 +3,7 @@
 // Shelling out rather than importing hardhat programmatically is deliberate: the operator
 // sees the exact command being run and can reproduce it by hand, and the CLI cannot
 // accidentally hold a stale in-process network connection across commands.
+import { createChildOutputReader, createStdinChannel } from "./child-output.js";
 import { PROJECT_ROOT, projectPath } from "./paths.js";
 import { taskOutputSink } from "./task-output.js";
 import { c, blank } from "./ui.js";
@@ -37,25 +38,21 @@ export function hardhat(args, opts = {}) {
 			resolve(code);
 		};
 		const child = spawn(HARDHAT_BIN, args, {
-			stdio: sink ? ["inherit", "pipe", "pipe", "pipe"] : "inherit",
+			// Under a task sink stdin is piped, never inherited: the renderer holds the terminal
+			// in raw mode, so an inherited stdin would let parent and child race for the operator's
+			// keystrokes while the child's password prompt sat unflushed in a pipe.
+			stdio: sink ? ["pipe", "pipe", "pipe", "pipe"] : "inherit",
 			env: { ...process.env, ...env, ...(sink ? { SYMMIO_TASK_EVENT_FD: "3" } : {}) },
 			cwd: PROJECT_ROOT,
 		});
 		sink?.child?.(child);
 		if (sink) {
-			const consume = (stream, name) => {
-				let buffer = "";
-				stream.setEncoding("utf8");
-				stream.on("data", chunk => {
-					buffer += chunk;
-					const lines = buffer.split(/\r?\n/);
-					buffer = lines.pop() || "";
-					for (const line of lines) if (line) sink.line(line, name);
-				});
-				stream.on("end", () => {
-					if (buffer) sink.line(buffer, name);
-				});
-			};
+			const { consume } = createChildOutputReader({
+				onLine: (line, name) => sink.line(line, name),
+				onPrompt: sink.prompt ? (promptText, promptChannel) => sink.prompt(promptText, promptChannel) : undefined,
+				onPromptResolved: sink.promptResolved ? () => sink.promptResolved() : undefined,
+				channel: createStdinChannel(child, error => sink.line(`keystore input channel error: ${error?.message || error}`, "stderr")),
+			});
 			consume(child.stdout, "stdout");
 			consume(child.stderr, "stderr");
 			let eventBuffer = "";

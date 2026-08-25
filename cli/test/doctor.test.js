@@ -119,6 +119,8 @@ test("component-only doctor uses the exact component checkpoint scope", () => {
 	assert.equal(isPartialAddonPreflight(context, "partyB"), true);
 	assert.equal(doctorCheckpointScope(context, "partyB"), "component-release-1-partyB");
 	assert.equal(doctorCheckpointScope(context, "symbolManager"), "component-release-1-symbolManager");
+	assert.equal(doctorCheckpointScope(context, "expressProvider"), "component-release-1-expressProvider");
+	assert.equal(doctorCheckpointScope(context, "gaslessLayer"), "component-release-1-gaslessLayer");
 	assert.equal(doctorCheckpointScope(context, undefined), undefined);
 });
 
@@ -127,6 +129,8 @@ test("component-only doctor validates only the selected add-on inputs", () => {
 	const operator = "0x0000000000000000000000000000000000000002";
 	assert.deepEqual(deploymentComponentProblemsForSelection({ PARTYB_SIGNER: signer }, "partyB").problems, []);
 	assert.deepEqual(deploymentComponentProblemsForSelection({ SYMBOL_MANAGER_OPERATOR: operator }, "symbolManager").problems, []);
+	assert.deepEqual(deploymentComponentProblemsForSelection({}, "expressProvider").problems, []);
+	assert.deepEqual(deploymentComponentProblemsForSelection({}, "gaslessLayer").problems, []);
 	assert.ok(
 		deploymentComponentProblemsForSelection({ SYMBOL_MANAGER_OPERATOR: operator }, "partyB").problems.some(([message]) =>
 			message.includes("PARTYB_SIGNER is required"),

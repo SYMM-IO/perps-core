@@ -41,6 +41,7 @@ export interface DeployExpressDiamondArgs {
 	initAdmin?: string
 	symmio: string
 	collateral: string
+	accountLayer: string
 	checkpoint?: DeploymentCheckpoint
 	vanity?: VanityContext | null
 }
@@ -55,7 +56,7 @@ export interface DeployExpressDiamondArgs {
  */
 export async function deployExpressProviderDiamond(
 	hre: HardhatRuntimeEnvironment,
-	{ owner, initAdmin, symmio, collateral, checkpoint, vanity = null }: DeployExpressDiamondArgs,
+	{ owner, initAdmin, symmio, collateral, accountLayer, checkpoint, vanity = null }: DeployExpressDiamondArgs,
 ): Promise<ExpressDiamondDeployment> {
 	const { ethers } = await getConnection(hre)
 	const roleRecipient = initAdmin || owner
@@ -75,12 +76,15 @@ export async function deployExpressProviderDiamond(
 	if (coreCollateral !== ethers.getAddress(collateral)) {
 		throw new Error(`ExpressProvider collateral ${collateral} does not match core ${symmio} collateral ${coreCollateral}`)
 	}
+	if ((await ethers.provider.getCode(accountLayer)) === "0x") {
+		throw new Error(`ExpressProvider accountLayer has no contract code at ${accountLayer}`)
+	}
 
 	logger.subsection("Core Contracts")
 	let diamondCutFacetAddress: string
 	if (epCheckpoint.diamondCutFacet) {
 		diamondCutFacetAddress = epCheckpoint.diamondCutFacet.address
-		logger.info(`  ⏭ DiamondCutFacet already deployed at ${diamondCutFacetAddress}`)
+		logger.reused("DiamondCutFacet", diamondCutFacetAddress)
 	} else {
 		const result = await deployContract(vanity, {
 			key: "expressProvider/DiamondCutFacet",
@@ -98,7 +102,7 @@ export async function deployExpressProviderDiamond(
 	let diamondAddress: string
 	if (epCheckpoint.diamond) {
 		diamondAddress = epCheckpoint.diamond.address
-		logger.info(`  ⏭ ExpressProvider Diamond already deployed at ${diamondAddress}`)
+		logger.reused("ExpressProvider Diamond", diamondAddress)
 	} else {
 		const result = await deployContract(vanity, {
 			key: "expressProvider/Diamond",
@@ -117,7 +121,7 @@ export async function deployExpressProviderDiamond(
 	let initAddress: string
 	if (epCheckpoint.init) {
 		initAddress = epCheckpoint.init.address
-		logger.info(`  ⏭ Init already deployed at ${initAddress}`)
+		logger.reused("Init", initAddress)
 	} else {
 		const result = await deployContract(vanity, {
 			key: "expressProvider/Init",
@@ -143,7 +147,7 @@ export async function deployExpressProviderDiamond(
 		let facetAddress: string
 		if (epCheckpoint.facets[name]) {
 			facetAddress = epCheckpoint.facets[name].address
-			logger.info(`  ⏭ [${index + 1}/${facetNames.length}] ${name} already deployed at ${facetAddress}`)
+			logger.reused(`[${index + 1}/${facetNames.length}] ${name}`, facetAddress)
 		} else {
 			const result = await deployContract(vanity, {
 				key: `expressProvider/${name}`,
@@ -196,7 +200,7 @@ export async function deployExpressProviderDiamond(
 		}
 		const diamondCut = await ethers.getContractAt("IDiamondCut", diamondAddress)
 		const init = await ethers.getContractAt(EXPRESS_INIT, initAddress)
-		const call = init.interface.encodeFunctionData("init", [roleRecipient, symmio, collateral])
+		const call = init.interface.encodeFunctionData("init", [roleRecipient, symmio, collateral, accountLayer])
 		// Init reverts with AlreadyInitialized on a second run, so attach it only when no
 		// expected selector is installed yet.
 		const initAlreadyRan = installedExpectedSelectors > 0
@@ -275,6 +279,7 @@ export interface DeployExpressOptions {
 	admin: string
 	symmio: string
 	collateral: string
+	accountLayer: string
 }
 
 /**
@@ -299,7 +304,7 @@ export async function deployExpressProvider(hre: HardhatRuntimeEnvironment, conn
 		if (!ethers.isAddress(address) || address === ethers.ZeroAddress) throw new Error(`ExpressProvider ${label} must be a non-zero address`)
 	}
 	const finalAdmin = ethers.getAddress(opts.admin)
-	for (const [label, address] of Object.entries({ symmio: opts.symmio, collateral: opts.collateral })) {
+	for (const [label, address] of Object.entries({ symmio: opts.symmio, collateral: opts.collateral, accountLayer: opts.accountLayer })) {
 		if ((await ethers.provider.getCode(address)) === "0x") throw new Error(`ExpressProvider ${label} has no contract code at ${address}`)
 	}
 
@@ -310,6 +315,7 @@ export async function deployExpressProvider(hre: HardhatRuntimeEnvironment, conn
 		initAdmin: finalAdmin,
 		symmio: ethers.getAddress(opts.symmio),
 		collateral: ethers.getAddress(opts.collateral),
+		accountLayer: ethers.getAddress(opts.accountLayer),
 	})
 
 	if (finalAdmin !== deployerAddress) {

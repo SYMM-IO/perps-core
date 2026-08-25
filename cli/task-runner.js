@@ -3,6 +3,7 @@
 // The terminal UI deliberately knows only this interface: catalog(), start(),
 // resumeActive(), cancelActive(), and getActive(). Task definitions own prompts and
 // implementation details; the runner owns lifecycle, locking, evidence and recovery.
+import { createChildOutputReader, createStdinChannel, HARDHAT_KEYSTORE_PROMPT } from "./lib/child-output.js";
 import { PROJECT_ROOT } from "./lib/paths.js";
 import { withTaskOutputSink } from "./lib/task-output.js";
 import { redactSignerSecrets, validateSignerSelection, withSignerEnvironment } from "./signer/index.js";
@@ -18,7 +19,6 @@ const RISK_LEVELS = new Set(["read-only", "local-write", "transaction"]);
 const CATEGORIES = new Set(["deploy", "patch", "checklist", "maintenance"]);
 const UNCERTAIN_TX_STATUSES = new Set(["submitted", "unresolved", "timed_out"]);
 const STABLE_ID = /^[a-z0-9][a-z0-9.-]*$/;
-const HARDHAT_KEYSTORE_PROMPT = /\[hardhat-keystore\]\s*(?:Enter the password|Please confirm your password):\s*$/u;
 const TERMINAL_CONTROL = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))/gu;
 
 function usefulProcessError(lines) {
@@ -359,6 +359,7 @@ export function createTaskRunner(options = {}) {
 			plan,
 			planHash: digest(plan),
 			completedSteps: [],
+			batchProgress: {},
 			transactions: [],
 			warnings: [],
 			lastError: null,
@@ -372,6 +373,7 @@ export function createTaskRunner(options = {}) {
 		let pauseRequested = false;
 		let pauseReason = null;
 		let interruptCount = 0;
+		let activeStepId = null;
 		const activeChildren = new Set();
 
 		const emit = (type, detail = {}) => {
@@ -392,6 +394,21 @@ export function createTaskRunner(options = {}) {
 			if (type === "tx.confirmed" || type === "tx.failed") {
 				const tx = state.transactions.find(item => item.hash === detail.transaction?.hash || item.hash === detail.transaction?.originalHash);
 				if (tx) Object.assign(tx, detail.transaction);
+			}
+			// Batch progress counts contracts, not transactions: a deployment sends far more
+			// transactions than it creates contracts, and a reused contract still completes its
+			// planned item. Attributing to the running step keeps a fork rehearsal from
+			// consuming the live stage's budget.
+			if (type === "contract.deployed" || type === "contract.reused") {
+				const identity = String(detail.contractName || detail.address || "");
+				// Only steps that declare contract items have a bar to fill; recording anywhere
+				// else would grow durable state for nothing (a handover re-report, for example).
+				const stepDeclaresItems = Boolean(state.plan?.find(step => step.id === activeStepId)?.items?.length);
+				if (activeStepId && identity && stepDeclaresItems) {
+					state.batchProgress ||= {};
+					const seen = (state.batchProgress[activeStepId] ||= []);
+					if (!seen.includes(identity)) seen.push(identity);
+				}
 			}
 			if (definition.risk !== "read-only") saveActive(state);
 			runtime.onEvent?.(event, state);
@@ -418,6 +435,13 @@ export function createTaskRunner(options = {}) {
 				state.lastError = "Forced exit while pausing; reconcile submitted transactions before continuing";
 				if (definition.risk === "read-only") archive(state, "failed");
 				else saveActive(state);
+				// Durable state says "not running", so nothing may still be broadcasting once this
+				// process is gone. A child that ignored the first SIGINT is killed outright.
+				for (const child of activeChildren) {
+					try {
+						child.kill("SIGKILL");
+					} catch {}
+				}
 				process.exit(130);
 			}
 		};
@@ -486,8 +510,14 @@ export function createTaskRunner(options = {}) {
 					return undefined;
 				}
 				if (pauseRequested) throw new TaskPauseError();
+				activeStepId = id;
 				emit("step.started", { stepId: id, title, phase: resolvedPhase });
-				const result = await action();
+				let result;
+				try {
+					result = await action();
+				} finally {
+					activeStepId = null;
+				}
 				state.completedSteps.push(id);
 				if (definition.risk !== "read-only") saveActive(state);
 				emit("step.completed", { stepId: id, title, phase: resolvedPhase });
@@ -510,6 +540,10 @@ export function createTaskRunner(options = {}) {
 								activeChildren.add(child);
 								child.once("close", () => activeChildren.delete(child));
 							},
+							// Legacy adapters spawn Hardhat themselves; without these the keystore
+							// prompt would be invisible and would fight the renderer for stdin.
+							prompt: (promptText, promptChannel) => runtime.onPrompt?.(redact(promptText), state, promptChannel),
+							promptResolved: () => runtime.onPromptResolved?.(state),
 						},
 						action,
 					);
@@ -533,47 +567,14 @@ export function createTaskRunner(options = {}) {
 						recentOutput[stream].push(line);
 						if (recentOutput[stream].length > 50) recentOutput[stream].shift();
 					};
-					let passwordPromptActive = false;
-					const resolvePasswordPrompt = () => {
-						if (!passwordPromptActive) return;
-						passwordPromptActive = false;
-						runtime.onPromptResolved?.(state);
-					};
-					const consume = (stream, name) => {
-						let buffer = "";
-						stream.setEncoding("utf8");
-						stream.on("data", chunk => {
-							const wasPasswordPromptActive = passwordPromptActive;
-							if (wasPasswordPromptActive && /^[*\s]*$/u.test(chunk.replace(TERMINAL_CONTROL, ""))) return;
-							resolvePasswordPrompt();
-							buffer += chunk;
-							const lines = buffer.split(/\r?\n/);
-							buffer = lines.pop() || "";
-							for (const line of lines) {
-								if (line && !(wasPasswordPromptActive && /^\*+$/u.test(line.replace(TERMINAL_CONTROL, "")))) {
-									const safe = captureLine(line, name);
-									rememberOutput(safe, name);
-								}
-							}
-							const plainBuffer = buffer.replace(TERMINAL_CONTROL, "");
-							if (HARDHAT_KEYSTORE_PROMPT.test(plainBuffer)) {
-								const prompt = redact(plainBuffer.trim());
-								buffer = "";
-								passwordPromptActive = true;
-								runtime.onPrompt?.(prompt, state, {
-									write: value => child.stdin.write(value),
-									end: () => child.stdin.end(),
-								});
-								captureLine(prompt, name);
-							}
-						});
-						stream.on("end", () => {
-							if (buffer) {
-								const safe = captureLine(buffer, name);
-								rememberOutput(safe, name);
-							}
-						});
-					};
+					const { consume, resolvePasswordPrompt } = createChildOutputReader({
+						onLine: (line, name) => rememberOutput(captureLine(line, name), name),
+						onPrompt: (prompt, promptChannel) => runtime.onPrompt?.(redact(prompt), state, promptChannel),
+						onPromptResolved: () => runtime.onPromptResolved?.(state),
+						channel: createStdinChannel(child, error =>
+							captureLine(`keystore input channel error: ${error?.message || error}`, "stderr"),
+						),
+					});
 					consume(child.stdout, "stdout");
 					consume(child.stderr, "stderr");
 					let eventBuffer = "";
@@ -812,7 +813,15 @@ export function createTaskRunner(options = {}) {
 			const unresolved = [...(reconciliation.unresolved || []), ...journalUnresolved.map(transaction => transaction.hash)];
 			if (unresolved.length > 0) {
 				state.cancelBlockedBy = [...new Set(unresolved)];
-				state.lastError = `Cancellation is waiting for ${state.cancelBlockedBy.length} unresolved transaction outcome(s)`;
+				// The operator cannot act on a bare count. Name the hashes and the exact recovery
+				// path, otherwise cancel_pending reads as a dead end: every other menu action is
+				// refused while a task is active, and the escape hatches are environment-only.
+				state.lastError = [
+					`Cancellation is waiting for ${state.cancelBlockedBy.length} unresolved transaction outcome(s): ${state.cancelBlockedBy.join(", ")}`,
+					"Choose Cancel active task again to re-reconcile once the RPC can see them.",
+					"If a hash is permanently absent, restart with DEPLOY_TX_REPLACEMENTS=originalHash=replacementHash,",
+					"or, only after proving the hash absent and its nonce reusable, CONFIRM_DROPPED_TX_HASHES=hash.",
+				].join("\n");
 				saveActive(state);
 				return state;
 			}

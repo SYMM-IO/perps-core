@@ -13,7 +13,7 @@ enum AdjustmentState {
 	CANCELLED
 }
 
-/// @notice Funding-work phase inside an open physical-restatement window.
+/// @notice Preparation, quote-processing, and funding-restoration phase inside an open physical-restatement window.
 enum RestatementPhase {
 	NONE,
 	FUNDING_PREPARATION,
@@ -53,7 +53,7 @@ struct SymbolAdjustment {
 	bool restating;
 	/// @notice Whether any quote rewrite or pending-quote removal occurred in the current restatement window.
 	/// @dev Used only by `abortRestatement`: once true, abort is forbidden because reopening trading would expose partially restated inventory.
-	///      This is a mutation-safety flag, not a completeness check; finalization remains a SYMBOL_MANAGER_ROLE decision.
+	///      This is a mutation-safety flag, not the open-position completeness check enforced by the inventory checkpoints below.
 	bool restatementMutated;
 	/// @notice 1e18-scaled factor selected for the current restatement window; 0 when no window is open.
 	/// @dev Lets operations restate directly from SCHEDULED without activating `cumulativeFactor` for Muon or normal trading. Quote rewrites and
@@ -70,8 +70,9 @@ struct SymbolAdjustment {
 	///      time. finalizeRestatement refuses to advance `basisVersion` until signatures minted under the current validity
 	///      configuration have expired.
 	uint256 restatementStartedAt;
-	/// @notice Current funding-work phase for the open restatement window.
-	/// @dev Quote mutation is allowed only in QUOTE_PROCESSING. Abort and finalization stay frozen until saved rates are restored.
+	/// @notice Current preparation and funding-restoration phase for the open restatement window.
+	/// @dev Inventory and funding preparation share the first phase. Quote mutation is allowed only in QUOTE_PROCESSING.
+	///      Abort and finalization stay frozen until saved rates are restored.
 	RestatementPhase restatementPhase;
 	/// @notice Shared funding cutoff selected when the restatement window opens.
 	/// @dev Every operator-supplied PartyB batch rolls its rates to this timestamp, regardless of the batch transaction time.
@@ -91,6 +92,21 @@ struct FundingRateCheckpoint {
 	int256 currentLongRate;
 	int256 currentShortRate;
 	uint256 restatementEpoch;
+}
+
+/// @notice Old-basis open quantity that still has to be restated or removed for one symbol/PartyB pair.
+/// @dev LONG and SHORT are tracked independently so opposite exposures cannot cancel each other.
+struct RestatementInventoryCheckpoint {
+	uint256 restatementEpoch;
+	uint256 remainingLong;
+	uint256 remainingShort;
+}
+
+/// @notice Symbol-wide old-basis open quantity that still has to be restated or removed.
+/// @dev LONG and SHORT totals equal the sum of the current epoch's prepared PartyB checkpoints.
+struct RestatementInventoryTotals {
+	uint256 remainingLong;
+	uint256 remainingShort;
 }
 
 /// @title SymbolAdjustmentStorage
@@ -115,6 +131,12 @@ library SymbolAdjustmentStorage {
 		/// @notice Saved current funding rates keyed by symbol and PartyB.
 		/// @dev `restatementEpoch` makes stale checkpoints from earlier windows distinguishable even though mapping slots are reused.
 		mapping(uint256 => mapping(address => FundingRateCheckpoint)) fundingRateCheckpoints;
+		/// @notice Remaining old-basis open quantities keyed by symbol and operator-supplied PartyB.
+		/// @dev Appended for storage compatibility. Epoch versioning makes stale checkpoints inert without an unbounded cleanup loop.
+		mapping(uint256 => mapping(address => RestatementInventoryCheckpoint)) restatementInventoryCheckpoints;
+		/// @notice Symbol-wide LONG and SHORT old-basis quantities remaining in the prepared PartyB manifest.
+		/// @dev Finalization is blocked until both exact quantity totals reach zero for the current restatement epoch.
+		mapping(uint256 => RestatementInventoryTotals) restatementInventoryTotals;
 	}
 
 	function layout() internal pure returns (Layout storage l) {
