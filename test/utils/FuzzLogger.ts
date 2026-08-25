@@ -1393,13 +1393,18 @@ export class FuzzRunLogger {
 			},
 			{
 				label: "opening",
-				segments: [`${formatCount(inventory.byOpeningOrderType.LIMIT)} limit`, `${formatCount(inventory.byOpeningOrderType.MARKET)} market`],
+				segments: [
+					`${formatCount(inventory.byOpeningOrderType.LIMIT)} limit`,
+					`${formatCount(inventory.byOpeningOrderType.MARKET)} market`,
+					`${formatCount(inventory.byOpeningOrderType.MARKET_BEST_EFFORT)} best effort`,
+				],
 			},
 			{
 				label: "closing",
 				segments: [
 					`${formatCount(inventory.byCloseOrderType.LIMIT)} limit`,
 					`${formatCount(inventory.byCloseOrderType.MARKET)} market`,
+					`${formatCount(inventory.byCloseOrderType.MARKET_BEST_EFFORT)} best effort`,
 					"live close requests",
 				],
 			},

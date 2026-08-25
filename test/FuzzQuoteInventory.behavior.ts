@@ -34,7 +34,7 @@ export function shouldBehaveLikeFuzzQuoteInventory(): void {
 
 		FUZZ_QUOTE_STATUS_NAMES.forEach((quoteStatus, index) => {
 			const positionType: FuzzPositionType = index % 2 === 0 ? "LONG" : "SHORT"
-			const orderType: FuzzOrderType = index % 2 === 0 ? "LIMIT" : "MARKET"
+			const orderType: FuzzOrderType = (["LIMIT", "MARKET", "MARKET_BEST_EFFORT"] as const)[index % 3]
 			tracker.observe(state(BigInt(index + 1), quoteStatus, { positionType, orderType }))
 		})
 
@@ -56,8 +56,8 @@ export function shouldBehaveLikeFuzzQuoteInventory(): void {
 			LIQUIDATED_PENDING: 1,
 		})
 		expect(inventory.byPositionType).to.deep.equal({ LONG: 6, SHORT: 5 })
-		expect(inventory.byOpeningOrderType).to.deep.equal({ LIMIT: 6, MARKET: 5 })
-		expect(inventory.byCloseOrderType).to.deep.equal({ LIMIT: 1, MARKET: 1 })
+		expect(inventory.byOpeningOrderType).to.deep.equal({ LIMIT: 4, MARKET: 4, MARKET_BEST_EFFORT: 3 })
+		expect(inventory.byCloseOrderType).to.deep.equal({ LIMIT: 1, MARKET: 0, MARKET_BEST_EFFORT: 1 })
 	})
 
 	it("starts with all counters present and zero", function () {
@@ -81,8 +81,8 @@ export function shouldBehaveLikeFuzzQuoteInventory(): void {
 				LIQUIDATED_PENDING: 0,
 			},
 			byPositionType: { LONG: 0, SHORT: 0 },
-			byOpeningOrderType: { LIMIT: 0, MARKET: 0 },
-			byCloseOrderType: { LIMIT: 0, MARKET: 0 },
+			byOpeningOrderType: { LIMIT: 0, MARKET: 0, MARKET_BEST_EFFORT: 0 },
+			byCloseOrderType: { LIMIT: 0, MARKET: 0, MARKET_BEST_EFFORT: 0 },
 			partialOpen: { splits: 0, activePositions: 0, waitingRemainders: 0 },
 			partialCloseRequested: 0,
 			partiallyClosed: 0,
@@ -108,13 +108,13 @@ export function shouldBehaveLikeFuzzQuoteInventory(): void {
 		const tracker = new FuzzQuoteInventoryTracker()
 		tracker.observe(state(1n, "PENDING", { orderType: "LIMIT" }))
 
-		const closing = tracker.observe(state(1n, "CLOSE_PENDING", { orderType: "MARKET", quantityToClose: 100n }))
-		expect(closing.byOpeningOrderType).to.deep.equal({ LIMIT: 1, MARKET: 0 })
-		expect(closing.byCloseOrderType).to.deep.equal({ LIMIT: 0, MARKET: 1 })
+		const closing = tracker.observe(state(1n, "CLOSE_PENDING", { orderType: "MARKET_BEST_EFFORT", quantityToClose: 100n }))
+		expect(closing.byOpeningOrderType).to.deep.equal({ LIMIT: 1, MARKET: 0, MARKET_BEST_EFFORT: 0 })
+		expect(closing.byCloseOrderType).to.deep.equal({ LIMIT: 0, MARKET: 0, MARKET_BEST_EFFORT: 1 })
 
-		const canceledClose = tracker.observe(state(1n, "OPENED", { orderType: "MARKET" }))
-		expect(canceledClose.byOpeningOrderType).to.deep.equal({ LIMIT: 1, MARKET: 0 })
-		expect(canceledClose.byCloseOrderType).to.deep.equal({ LIMIT: 0, MARKET: 0 })
+		const canceledClose = tracker.observe(state(1n, "OPENED", { orderType: "MARKET_BEST_EFFORT" }))
+		expect(canceledClose.byOpeningOrderType).to.deep.equal({ LIMIT: 1, MARKET: 0, MARKET_BEST_EFFORT: 0 })
+		expect(canceledClose.byCloseOrderType).to.deep.equal({ LIMIT: 0, MARKET: 0, MARKET_BEST_EFFORT: 0 })
 	})
 
 	it("keeps active split positions disjoint from waiting pre-open remainders", function () {
@@ -158,6 +158,6 @@ export function shouldBehaveLikeFuzzQuoteInventory(): void {
 		const inventory = tracker.snapshot()
 		expect(inventory.partialCloseRequested).to.equal(1)
 		expect(inventory.partiallyClosed).to.equal(4)
-		expect(inventory.byCloseOrderType).to.deep.equal({ LIMIT: 4, MARKET: 0 })
+		expect(inventory.byCloseOrderType).to.deep.equal({ LIMIT: 4, MARKET: 0, MARKET_BEST_EFFORT: 0 })
 	})
 }

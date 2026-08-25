@@ -94,11 +94,12 @@ contract PartyBExecutionFacet is Accessibility, Pausable, IPartyBExecutionFacet 
 	///      LibPartyBPositionsActions. The rate fee is charged before the close executes (see fillCloseRequest).
 	///      Pass `type(uint256).max` as `maxQuantity` for an uncapped close-to-liquidation.
 	/// @param quoteId The ID of the quote for which the close request is filled.
-	/// @param maxQuantity The maximum quantity PartyB is willing to close in this transaction; caps the fill.
+	/// @param maxQuantity The maximum quantity PartyB is willing to close in this transaction; caps LIMIT fills.
+	///        For MARKET_BEST_EFFORT it must be at least the full requested quantity and cannot cause an underfill.
 	/// @param closedPrice The closed price for the close request.
 	/// @param upnlSig The Muon signature containing PairUpnlAndPriceSig data.
-	/// @param solverFee Absolute solver fee sized for the liquidation-limited close; pro-rated down to the amount
-	///        actually closed when `maxQuantity` caps the fill. Charged against the quote's close solver fee rate cap.
+	/// @param solverFee Absolute solver fee sized for the liquidation-limited close; pro-rated down when `maxQuantity`
+	///        caps a LIMIT fill. MARKET_BEST_EFFORT never prorates this fee. Charged against the close solver fee rate cap.
 	/// @return filledAmount The actual amount that was filled.
 	function fillCloseRequestToLiquidation(
 		uint256 quoteId,
@@ -132,7 +133,8 @@ contract PartyBExecutionFacet is Accessibility, Pausable, IPartyBExecutionFacet 
 	///      `maxQuantity` caps the fill below that amount, the fee is pro-rated to what is actually closed
 	///      (`solverFee * filledAmount / uncappedAmount`) so the effective fee rate -- and therefore the close-rate
 	///      cap check in LibSolverFee -- stays consistent regardless of the cap. The amount math still reserves room
-	///      for the full `solverFee`, which only ever over-reserves and so keeps PartyA solvent.
+	///      for the full `solverFee`, which only ever over-reserves and so keeps PartyA solvent. MARKET_BEST_EFFORT
+	///      rejects a binding maxQuantity, so its charged fee remains the supplied absolute amount.
 	function _fillCloseRequestToLiquidation(
 		uint256 quoteId,
 		uint256 maxQuantity,
@@ -156,6 +158,7 @@ contract PartyBExecutionFacet is Accessibility, Pausable, IPartyBExecutionFacet 
 			Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 			emit CloseSolverFeeCharged(quoteId, quote.partyA, quote.partyB, receiver, quote.symbolId, chargedFee);
 		}
+		LibPartyBPositionsActions.prepareCloseToLiquidationFill(quoteId, filledAmount);
 		_callFacet(abi.encodeCall(IPartyBPositionActionsFacet.fillCloseRequest, (quoteId, filledAmount, closedPrice, upnlSig)));
 	}
 

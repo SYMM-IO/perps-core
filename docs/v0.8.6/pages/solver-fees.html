@@ -43,6 +43,7 @@
 				<a class="toc-link level-2" href="#summary">Summary</a>
 				<a class="toc-link level-2" href="#why-we-added-this">Why fees are explicit</a>
 				<a class="toc-link level-2" href="#fee-model">Fee model</a>
+				<a class="toc-link level-2" href="#close-order-modes">MARKET_BEST_EFFORT close fees</a>
 				<a class="toc-link level-2" href="#api-surface">API</a>
 				<a class="toc-link level-2" href="#notional-and-rate-caps">Notional and rate caps</a>
 				<a class="toc-link level-2" href="#fee-receiver">Fee receiver</a>
@@ -112,6 +113,15 @@
 					<pre><code class="language-text">openFeeCharged  + newOpenSolverFee  &lt;= openNotional  * openRateCap  / 1e18
 closeFeeCharged + newCloseSolverFee &lt;= closeNotional * closeRateCap / 1e18
 </code></pre>
+
+					<h2 id="close-order-modes"><code>MARKET_BEST_EFFORT</code> close fees</h2>
+					<p>
+						The fee-aware close-to-liquidation path accepts <code>MARKET_BEST_EFFORT</code>, but its <code>maxQuantity</code> cannot cause
+						the underfill: it must be at least the request's full <code>quantityToClose</code>. The supplied solver fee therefore remains
+						absolute instead of entering LIMIT's quantity-cap proration branch. For the order lifecycle, full and partial fills,
+						cancellation race, guardrails, integration routes, events, and bot retry rules, see
+						<a href="./market-best-effort.html"><code>MARKET_BEST_EFFORT</code> Close Orders</a>.
+					</p>
 
 					<h2 id="api-surface">API</h2>
 					<p>
@@ -199,7 +209,7 @@ function fillCloseRequest(
 
 function fillCloseRequestToLiquidation(
     uint256 quoteId,
-	uint256 maxQuantity,
+    uint256 maxQuantity,
     uint256 closedPrice,
     PairUpnlAndPriceSig memory upnlSig,
     uint256 solverFee
@@ -209,7 +219,9 @@ function fillCloseRequestToLiquidation(
 						<code>PartyBExecutionFacet.lockAndOpenPosition</code> also combines the ordinary lock and open legs with an optional open
 						solver fee. In the close-to-liquidation method, pass <code>type(uint256).max</code> for <code>maxQuantity</code> when no
 						additional quantity cap is wanted. If <code>maxQuantity</code> constrains the fill below its liquidation-limited amount, the
-						contract prorates the supplied absolute <code>solverFee</code> by the fraction actually closed.
+						contract prorates the supplied absolute <code>solverFee</code> by the fraction actually closed. For
+						<code>MARKET_BEST_EFFORT</code>, <code>maxQuantity</code> must be at least the full requested quantity. The cap therefore
+						cannot cause an underfill, and the supplied solver fee remains absolute rather than prorated.
 					</p>
 					<p>
 						The legacy <code>fillCloseRequestToLiquidation</code> method remains available for backward compatibility, but it reserves
@@ -367,7 +379,8 @@ event BalanceChangePartyA(
 						</li>
 						<li>
 							The fee-aware <code>fillCloseRequestToLiquidation</code> subtracts the planned solver fee before calculating the maximum
-							close amount, caps that amount by <code>maxQuantity</code>, and prorates the charged fee when the quantity cap binds.
+							close amount, caps that amount by <code>maxQuantity</code>, and prorates the charged fee when the quantity cap binds for
+							<code>LIMIT</code>. A best-effort request rejects a <code>maxQuantity</code> below its requested quantity.
 						</li>
 						<li>
 							Close fees are charged immediately before the close executes, with the rate cap evaluated against the cumulative closed
@@ -382,6 +395,7 @@ event BalanceChangePartyA(
 						<li>
 							<code>fillCloseRequestToLiquidation</code> is kept only for backward compatibility and does not account for solver fees.
 						</li>
+						<li>Force close remains restricted to <code>LIMIT</code> close requests.</li>
 					</ul>
 				</article>
 			</main>

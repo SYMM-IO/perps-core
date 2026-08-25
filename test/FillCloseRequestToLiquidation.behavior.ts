@@ -1,16 +1,17 @@
+import { anyValue } from "@nomicfoundation/hardhat-ethers-chai-matchers/withArgs"
 import { expect } from "chai"
 
 import type { QuoteStructOutput } from "../src/types/interfaces/ISymmio.js"
 import { initializeFixture } from "./Initialize.fixture.js"
-import { loadFixture } from "./helpers/network-helpers.js"
-import { PositionType, QuoteStatus } from "./models/Enums.js"
+import { loadFixture, time } from "./helpers/network-helpers.js"
+import { OrderType, PositionType, QuoteStatus } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
-import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
+import { limitCloseRequestBuilder, marketBestEffortCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
 import { limitFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
-import { decimal, getQuoteQuantity, getTotalLockedValuesForQuoteIds, getTradingFeeForQuotes, unDecimal } from "./utils/Common.js"
+import { decimal, getBlockTimestamp, getQuoteQuantity, getTotalLockedValuesForQuoteIds, getTradingFeeForQuotes, unDecimal } from "./utils/Common.js"
 
 const WAD = 10n ** 18n
 const WAD_36 = 10n ** 36n
@@ -123,7 +124,7 @@ export function shouldBehaveLikeFillCloseRequestToLiquidation(): void {
 			expect(quoteAfter.avgClosedPrice).to.be.gt(0n)
 		})
 
-		it("Should only work with LIMIT orders", async function () {
+		it("Should reject ordinary MARKET orders", async function () {
 			// Create a new position and request market close
 			const quoteId = await user.sendQuote()
 			await hedger.lockQuote(quoteId)
@@ -144,7 +145,66 @@ export function shouldBehaveLikeFillCloseRequestToLiquidation(): void {
 					quoteId,
 					limitFillCloseRequestBuilder().closedPrice(decimal(1n)).upnlPartyA(0n).price(decimal(1n)).build(),
 				),
-			).to.be.revertedWith("PartyBFacet: Only LIMIT orders supported")
+			).to.be.revertedWith("PartyBFacet: Only LIMIT or MARKET_BEST_EFFORT orders supported")
+		})
+
+		it("Should fully fill a solvent best-effort close", async function () {
+			const quoteId = await user.sendQuote()
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(quoteId)
+
+			const quantity = await getQuoteQuantity(context, quoteId)
+			await user.requestToClosePosition(quoteId, marketBestEffortCloseRequestBuilder().quantityToClose(quantity).closePrice(decimal(1n)).build())
+
+			const filledAmount = await hedger.fillCloseRequestToLiquidation(
+				quoteId,
+				limitFillCloseRequestBuilder().filledAmount(quantity).closedPrice(decimal(1n)).price(decimal(1n)).build(),
+			)
+			const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
+
+			expect(filledAmount).to.equal(quantity)
+			expect(quoteAfter.quoteStatus).to.equal(QuoteStatus.CLOSED)
+			expect(quoteAfter.closedAmount).to.equal(quantity)
+		})
+
+		it("Should fully fill a solvent best-effort SHORT close", async function () {
+			const quoteId = await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build())
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(quoteId)
+
+			const quantity = await getQuoteQuantity(context, quoteId)
+			await user.requestToClosePosition(quoteId, marketBestEffortCloseRequestBuilder().quantityToClose(quantity).closePrice(decimal(1n)).build())
+
+			const filledAmount = await hedger.fillCloseRequestToLiquidation(
+				quoteId,
+				limitFillCloseRequestBuilder().closedPrice(decimal(1n)).upnlPartyA(0n).price(decimal(1n)).build(),
+			)
+			const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
+
+			expect(filledAmount).to.equal(quantity)
+			expect(quoteAfter.quoteStatus).to.equal(QuoteStatus.CLOSED)
+			expect(quoteAfter.closedAmount).to.equal(quantity)
+			expect(quoteAfter.quantityToClose).to.equal(0n)
+		})
+
+		it("Should completely fill a best-effort request through ordinary fillCloseRequest", async function () {
+			const quoteId = await user.sendQuote()
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(quoteId)
+
+			const quantity = await getQuoteQuantity(context, quoteId)
+			await user.requestToClosePosition(quoteId, marketBestEffortCloseRequestBuilder().quantityToClose(quantity).closePrice(decimal(1n)).build())
+
+			await hedger.fillCloseRequest(
+				quoteId,
+				limitFillCloseRequestBuilder().filledAmount(quantity).closedPrice(decimal(1n)).upnlPartyA(0n).price(decimal(1n)).build(),
+			)
+			const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
+
+			expect(quoteAfter.quoteStatus).to.equal(QuoteStatus.CLOSED)
+			expect(quoteAfter.closedAmount).to.equal(quantity)
+			expect(quoteAfter.quantityToClose).to.equal(0n)
+			expect(quoteAfter.requestedClosePrice).to.equal(0n)
 		})
 
 		it("Should check PartyB solvency after close", async function () {
@@ -219,6 +279,56 @@ export function shouldBehaveLikeFillCloseRequestToLiquidation(): void {
 			expect(quoteAfter.closedAmount).to.equal(quote.closedAmount + filledAmount)
 			// avgClosedPrice should be set
 			expect(quoteAfter.avgClosedPrice).to.be.gt(0n)
+		})
+
+		it("Should atomically cancel the remainder of a liquidation-limited best-effort close", async function () {
+			const quantity = await getQuoteQuantity(context, 1n)
+			await user.requestToClosePosition(1, marketBestEffortCloseRequestBuilder().quantityToClose(quantity).closePrice(decimal(1n)).build())
+
+			const quoteBefore = await context.viewFacetQuote.getQuote(1n)
+			const closePrice = decimal(1n)
+			const marketPrice = decimal(2n)
+			const upnlPartyA = decimal(-450n)
+
+			const filledAmount = await hedger.fillCloseRequestToLiquidation(
+				1,
+				limitFillCloseRequestBuilder().closedPrice(closePrice).upnlPartyA(upnlPartyA).price(marketPrice).build(),
+			)
+
+			expect(filledAmount).to.be.greaterThan(0n)
+			expect(filledAmount).to.be.lessThan(quoteBefore.quantityToClose)
+
+			const quoteAfter = await context.viewFacetQuote.getQuote(1n)
+			expect(quoteAfter.closedAmount).to.equal(quoteBefore.closedAmount + filledAmount)
+			expect(quoteAfter.quoteStatus).to.equal(QuoteStatus.OPENED)
+			expect(quoteAfter.quantityToClose).to.equal(0n)
+			expect(quoteAfter.requestedClosePrice).to.equal(0n)
+
+			await expect(
+				hedger.fillCloseRequest(
+					1,
+					limitFillCloseRequestBuilder().filledAmount(1n).closedPrice(closePrice).upnlPartyA(upnlPartyA).price(marketPrice).build(),
+				),
+			).to.be.revertedWith("PartyBFacet: Invalid state")
+
+			const remainingAmount = quoteAfter.quantity - quoteAfter.closedAmount
+			await expect(
+				context.partyAFacet
+					.connect(user.signer)
+					.requestToClosePosition(1, closePrice, remainingAmount, OrderType.MARKET_BEST_EFFORT, await getBlockTimestamp(500n)),
+			)
+				.to.emit(context.partyAFacet, "RequestToClosePosition")
+				.withArgs(
+					await user.getAddress(),
+					await hedger.getAddress(),
+					1n,
+					closePrice,
+					remainingAmount,
+					OrderType.MARKET_BEST_EFFORT,
+					anyValue,
+					QuoteStatus.CLOSE_PENDING,
+					2n,
+				)
 		})
 
 		it("Should return 0 when PartyA is already insolvent and closing is harmful", async function () {
@@ -313,6 +423,102 @@ export function shouldBehaveLikeFillCloseRequestToLiquidation(): void {
 			const quoteAfter = await context.viewFacetQuote.getQuote(quoteShortId)
 			expect(quoteAfter.closedAmount).to.equal(quote.closedAmount + filledAmount)
 			expect(quoteAfter.avgClosedPrice).to.be.gt(0n)
+		})
+
+		it("Should cancel the remainder of a liquidation-limited best-effort SHORT close", async function () {
+			const quoteId = await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build())
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(quoteId)
+
+			const quantity = await getQuoteQuantity(context, quoteId)
+			await user.requestToClosePosition(quoteId, marketBestEffortCloseRequestBuilder().quantityToClose(quantity).closePrice(decimal(1n)).build())
+			const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)
+			const filledAmount = await hedger.fillCloseRequestToLiquidation(
+				quoteId,
+				limitFillCloseRequestBuilder().closedPrice(decimal(1n)).upnlPartyA(decimal(-440n)).price(decimal(5n, 17)).build(),
+			)
+			const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
+
+			expect(filledAmount).to.be.greaterThan(0n)
+			expect(filledAmount).to.be.lessThan(quoteBefore.quantityToClose)
+			expect(quoteAfter.closedAmount).to.equal(filledAmount)
+			expect(quoteAfter.quoteStatus).to.equal(QuoteStatus.OPENED)
+			expect(quoteAfter.quantityToClose).to.equal(0n)
+			expect(quoteAfter.requestedClosePrice).to.equal(0n)
+		})
+	})
+
+	describe("MARKET_BEST_EFFORT guardrails", function () {
+		async function requestBestEffort(deadline?: bigint) {
+			const quantity = await getQuoteQuantity(context, 1n)
+			const builder = marketBestEffortCloseRequestBuilder().quantityToClose(quantity).closePrice(decimal(1n))
+			if (deadline !== undefined) builder.deadline(deadline)
+			await user.requestToClosePosition(1, builder.build())
+			return context.viewFacetQuote.getQuote(1n)
+		}
+
+		it("Should reject a zero closeable amount without changing the request", async function () {
+			const quoteBefore = await requestBestEffort()
+			await expect(
+				hedger.fillCloseRequestToLiquidation(
+					1,
+					limitFillCloseRequestBuilder().closedPrice(decimal(1n)).upnlPartyA(decimal(-500n)).price(decimal(2n)).build(),
+				),
+			).to.be.revertedWith("PartyBFacet: Cannot close any amount")
+
+			const quoteAfter = await context.viewFacetQuote.getQuote(1n)
+			expect(quoteAfter.quoteStatus).to.equal(QuoteStatus.CLOSE_PENDING)
+			expect(quoteAfter.quantityToClose).to.equal(quoteBefore.quantityToClose)
+			expect(quoteAfter.closedAmount).to.equal(quoteBefore.closedAmount)
+		})
+
+		it("Should preserve the remaining-position dust guard", async function () {
+			const quoteBefore = await requestBestEffort()
+			const symbol = await context.viewFacetSymbol.getSymbol(quoteBefore.symbolId)
+			await context.symbolControlFacet
+				.connect(context.signers.admin)
+				.setSymbolAcceptableValues(quoteBefore.symbolId, decimal(80n), symbol.minAcceptablePortionLF)
+
+			await expect(
+				hedger.fillCloseRequestToLiquidation(
+					1,
+					limitFillCloseRequestBuilder().closedPrice(decimal(1n)).upnlPartyA(decimal(-450n)).price(decimal(2n)).build(),
+				),
+			).to.be.revertedWith("PartyBFacet: Remaining quote value is low")
+		})
+
+		it("Should preserve locked-value slice guards and roll back the prepared cancellation state", async function () {
+			const quoteBefore = await requestBestEffort()
+			const balanceInfo = await user.getBalanceInfo()
+			const baseAvailable = balanceInfo.allocatedBalances - balanceInfo.lockedCva - balanceInfo.lockedLf
+
+			await expect(
+				hedger.fillCloseRequestToLiquidation(
+					1,
+					limitFillCloseRequestBuilder()
+						.closedPrice(decimal(1n))
+						.upnlPartyA(-baseAvailable + 1n)
+						.price(decimal(2n))
+						.build(),
+				),
+			).to.be.revertedWith("LibQuote: Low filled amount")
+
+			const quoteAfter = await context.viewFacetQuote.getQuote(1n)
+			expect(quoteAfter.quoteStatus).to.equal(QuoteStatus.CLOSE_PENDING)
+			expect(quoteAfter.quantityToClose).to.equal(quoteBefore.quantityToClose)
+			expect(quoteAfter.closedAmount).to.equal(quoteBefore.closedAmount)
+		})
+
+		it("Should preserve price and expiry validation", async function () {
+			await requestBestEffort((await getBlockTimestamp()) + 2n)
+			await expect(
+				hedger.fillCloseRequestToLiquidation(1, limitFillCloseRequestBuilder().closedPrice(decimal(9n, 17)).price(decimal(2n)).build()),
+			).to.be.revertedWith("PartyBFacet: Closed price isn't valid")
+
+			await time.increase(3n)
+			await expect(
+				hedger.fillCloseRequestToLiquidation(1, limitFillCloseRequestBuilder().closedPrice(decimal(1n)).price(decimal(2n)).build()),
+			).to.be.revertedWith("PartyBFacet: Quote is expired")
 		})
 	})
 }

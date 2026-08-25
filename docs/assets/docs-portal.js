@@ -119,6 +119,7 @@
 	const COMPANIONS = {
 		"0.8.6": {
 			overview: ["Release", "Symmio Core v0.8.6 Overview"],
+			"market-best-effort": ["Trading Execution", "MARKET_BEST_EFFORT Close Orders"],
 			"express-bot-operations-checklist": ["Express Withdrawal", "Express Provider Bot Operations Checklist"],
 		},
 	};
