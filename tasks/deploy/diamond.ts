@@ -70,7 +70,7 @@ export async function deployDiamond(
 	let diamondCutFacetAddress: string
 	if (diamondCheckpoint.diamondCutFacet) {
 		diamondCutFacetAddress = diamondCheckpoint.diamondCutFacet.address
-		logger.info(`  ⏭ DiamondCutFacet already deployed at ${diamondCutFacetAddress}`)
+		logger.reused("DiamondCutFacet", diamondCutFacetAddress)
 	} else {
 		const DiamondCutFacetFactory = await ethers.getContractFactory("DiamondCutFacet")
 		const result = await deployContract(vanity, {
@@ -98,7 +98,7 @@ export async function deployDiamond(
 	if (diamondCheckpoint.diamond) {
 		diamondAddress = diamondCheckpoint.diamond.address
 		diamond = await ethers.getContractAt("Diamond", diamondAddress)
-		logger.info(`  ⏭ Diamond already deployed at ${diamondAddress}`)
+		logger.reused("Diamond", diamondAddress)
 	} else {
 		const DiamondFactory = await ethers.getContractFactory("Diamond")
 		const result = await deployContract(vanity, {
@@ -126,7 +126,7 @@ export async function deployDiamond(
 	let initAddress: string
 	if (diamondCheckpoint.init) {
 		initAddress = diamondCheckpoint.init.address
-		logger.info(`  ⏭ Init already deployed at ${initAddress}`)
+		logger.reused("Init", initAddress)
 	} else {
 		const InitFactory = await ethers.getContractFactory("contracts/core/Init.sol:Init")
 		const result = await deployContract(vanity, {
@@ -157,7 +157,7 @@ export async function deployDiamond(
 		ethers,
 		scope: "core",
 		existing: libraryAddresses,
-		onReused: (name, address) => logger.info(`  ⏭ ${name} already deployed at ${address}`),
+		onReused: (name, address) => logger.reused(name, address),
 		getFactory: async (spec, addresses) => {
 			if (spec.name !== "LibForceActions") return getLinkedContractFactory(ethers, "core", spec, addresses)
 			const artifact = await hre.artifacts.readArtifact(spec.artifact)
@@ -211,7 +211,7 @@ export async function deployDiamond(
 		// Check if already deployed
 		if (diamondCheckpoint.facets[shortName]) {
 			facetAddress = diamondCheckpoint.facets[shortName].address
-			logger.info(`  ⏭ [${i + 1}/${FacetNames.length}] ${shortName} already deployed at ${facetAddress}`)
+			logger.reused(`[${i + 1}/${FacetNames.length}] ${shortName}`, facetAddress)
 		} else {
 			const FacetFactory = await getLinkedContractFactory(ethers, "core", getFacetSpec("core", shortName), libraryAddresses)
 

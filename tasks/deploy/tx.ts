@@ -499,10 +499,20 @@ export function deploymentTimeoutRecoveryHint(writeAheadPersisted: boolean): str
 	return "No durable standalone checkpoint was written. Do not broadcast this action again until the explorer and sender nonce prove whether this hash landed or was replaced."
 }
 
-const defaultSettings = getDeploymentTransactionSettings()
+// Resolved per call, not at import: ESM evaluates this module before hardhat.config.ts runs
+// dotenv, so reading at import time silently ignored DEPLOY_* values set in .env.
+let settingsCache: { raw: string; settings: ReturnType<typeof getDeploymentTransactionSettings> } | null = null
+
+function currentSettings(): ReturnType<typeof getDeploymentTransactionSettings> {
+	const raw = `${process.env.DEPLOY_CONFIRMATIONS ?? ""}|${process.env.DEPLOY_TX_TIMEOUT ?? ""}|${process.env.DEPLOY_SLOW_TX_NOTICE ?? ""}`
+	if (settingsCache === null || settingsCache.raw !== raw) settingsCache = { raw, settings: getDeploymentTransactionSettings() }
+	return settingsCache.settings
+}
 
 /** Confirmations to wait for. Raise on chains where reorgs are a real concern. */
-export const DEFAULT_CONFIRMATIONS = defaultSettings.confirmations
+export function defaultConfirmations(): number {
+	return currentSettings().confirmations
+}
 
 /**
  * How long to wait for a single transaction before giving up, in seconds.
@@ -516,10 +526,14 @@ export const DEFAULT_CONFIRMATIONS = defaultSettings.confirmations
  * The default is generous because block times vary enormously (Arbitrum ~0.25s, Ethereum
  * ~12s, some L2s far slower under load). Raise it on a slow or congested chain.
  */
-export const TX_TIMEOUT_SECONDS = defaultSettings.timeoutSeconds
+export function txTimeoutSeconds(): number {
+	return currentSettings().timeoutSeconds
+}
 
 /** Log a still-waiting notice if a transaction takes longer than this, in seconds. */
-const SLOW_TX_NOTICE_SECONDS = defaultSettings.slowNoticeSeconds
+function slowNoticeSeconds(): number {
+	return currentSettings().slowNoticeSeconds
+}
 
 /**
  * Send a contract transaction, wait for it to be mined, and fail loudly if it did not
@@ -532,7 +546,7 @@ const SLOW_TX_NOTICE_SECONDS = defaultSettings.slowNoticeSeconds
 export async function send(
 	txPromise: Promise<ContractTransactionResponse>,
 	label: string,
-	confirmations: number = DEFAULT_CONFIRMATIONS,
+	confirmations: number = defaultConfirmations(),
 	options: SendOptions = {},
 ): Promise<ContractTransactionReceipt> {
 	const tx = await txPromise
@@ -565,16 +579,17 @@ export async function send(
 	// On a slow or congested chain a single wait can take minutes. Say something, so the
 	// operator can tell "still mining" apart from "hung", and include the hash so they can
 	// follow it on an explorer while they wait.
+	const notifyAfterSeconds = slowNoticeSeconds()
 	const notice = setTimeout(() => {
-		console.log(`      … still waiting on ${label} (${tx.hash}) after ${SLOW_TX_NOTICE_SECONDS}s`)
-	}, SLOW_TX_NOTICE_SECONDS * 1000)
+		console.log(`      … still waiting on ${label} (${tx.hash}) after ${notifyAfterSeconds}s`)
+	}, notifyAfterSeconds * 1000)
 
 	let receipt: ContractTransactionReceipt | null
 	let replacementHash: string | undefined
 	let replaced = false
 	try {
 		try {
-			receipt = await withTimeout(tx.wait(confirmations), TX_TIMEOUT_SECONDS, label, tx.hash, Boolean(writeAhead))
+			receipt = await withTimeout(tx.wait(confirmations), txTimeoutSeconds(), label, tx.hash, Boolean(writeAhead))
 		} catch (error: any) {
 			// ethers reports repriced/replaced transactions with the successful replacement
 			// receipt attached. Treat a non-cancelled successful replacement as confirmation,
@@ -672,7 +687,7 @@ export async function confirmDeploymentWithReceipt(
 		assertCreationBindingShape(deployment)
 	}
 
-	const receipt = await send(Promise.resolve(tx), `deploy ${label}`, DEFAULT_CONFIRMATIONS, {
+	const receipt = await send(Promise.resolve(tx), `deploy ${label}`, defaultConfirmations(), {
 		deployment,
 		onSubmitted: options?.onSubmitted,
 	})

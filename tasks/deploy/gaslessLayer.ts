@@ -59,7 +59,7 @@ async function deployLibrary(
 	checkpoint.contracts.gaslessLayer.libraries ||= {}
 	const existing = checkpoint.contracts.gaslessLayer.libraries[name]
 	if (existing) {
-		logger.info(`  ⏭ ${name} already deployed at ${existing.address}`)
+		logger.reused(name, existing.address)
 		return existing.address
 	}
 	const { ethers } = await getConnection(hre)
@@ -151,7 +151,7 @@ export async function deployGaslessLayer(
 	let contract: any
 	if (checkpoint.contracts.gaslessLayer?.proxy) {
 		contract = factory.attach(checkpoint.contracts.gaslessLayer.proxy.address)
-		logger.info(`  ⏭ GaslessLayer already deployed at ${checkpoint.contracts.gaslessLayer.proxy.address}`)
+		logger.reused("GaslessLayer", checkpoint.contracts.gaslessLayer.proxy.address)
 	} else {
 		contract = await deployProxyWithFallback(hre, factory, [...initializerArgs], {
 			initializer: "initialize",

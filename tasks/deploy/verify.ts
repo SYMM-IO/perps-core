@@ -2183,6 +2183,12 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 		defaultValue: "",
 	})
 	.addOption({
+		name: "deployer",
+		description: "Original deployer address whose privileges must be gone (required unless --fromReport/--fromCheckpoint supplies it)",
+		type: ArgumentType.STRING,
+		defaultValue: "",
+	})
+	.addOption({
 		name: "fromCheckpoint",
 		description: "Load addresses from latest checkpoint",
 		type: ArgumentType.BOOLEAN,
@@ -2215,8 +2221,11 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 			setDataScope(chainId, { simulated: isSimulatedNetwork })
 			const network = connection.networkName || "unknown"
 			const protocolConfig = resolveVerificationProtocolConfig(chainId)
-			const [deployer] = await ethers.getSigners()
-			let deployerAddress: string | undefined = deployer?.address
+			// The privilege-removal checks only mean something against the address that actually
+			// deployed. Seeding this from the currently configured signer made every
+			// "role absent" check pass vacuously whenever an ops key ran the audit, so it must be
+			// supplied explicitly by --deployer, a report, or a checkpoint.
+			let deployerAddress: string | undefined = args.deployer ? String(args.deployer).trim() || undefined : undefined
 
 			// Convert empty strings to undefined for cleaner handling
 			let addresses: {
@@ -2338,7 +2347,7 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 
 			if (!deployerAddress || !ethers.isAddress(deployerAddress)) {
 				throw new Error(
-					"Original deployer address is unavailable. Use --from-report with a current deployment report, or configure the original signer for a legacy record.",
+					"Original deployer address is unavailable. Use --fromReport with a current deployment report, --fromCheckpoint with a checkpoint that records it, or pass --deployer <address> for a legacy record.",
 				)
 			}
 			const originalDeployerAddress = ethers.getAddress(deployerAddress)

@@ -37,7 +37,7 @@ export async function deploySignatureVerifier(
 	if (checkpoint?.contracts.signatureVerifier) {
 		const address = checkpoint.contracts.signatureVerifier.address
 		const constructorAdmin = String(checkpoint.contracts.signatureVerifier.constructorArgs?.[0] || resolvedAdmin)
-		logger.info(`  ⏭ MuonSignatureVerifier already deployed at ${address}`)
+		logger.reused("MuonSignatureVerifier", address)
 		if (logData) writeSignatureVerifierRecord(address, constructorAdmin)
 		if (updateUpgradeConfig) updateUpgradeConfigFile(address)
 		return ethers.getContractAt("MuonSignatureVerifier", address)

@@ -39,7 +39,7 @@ export async function deployInstantLayer(hre: any, { symmioaddress, admin, logDa
 	if (checkpoint?.contracts.instantLayer) {
 		const address = checkpoint.contracts.instantLayer.address
 		const [recordedSymmio = symmioaddress, recordedAdmin = admin] = checkpoint.contracts.instantLayer.constructorArgs || []
-		logger.info(`  ⏭ InstantLayer already deployed at ${address}`)
+		logger.reused("InstantLayer", address)
 		if (logData) await logDeploymentData(address, String(recordedSymmio), String(recordedAdmin))
 		const instantLayer = await ethers.getContractAt("InstantLayer", address)
 		return instantLayer

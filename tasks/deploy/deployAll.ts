@@ -850,23 +850,16 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 
 			// Resolve vanity intent before any component deploys. assertWithinBudget reads pattern
 			// lengths only, never the address, so an unaffordable plan still stops the run while
-			// nothing has been broadcast. ensureCreate2Factory is the only step here that can send
-			// a transaction, and it runs with the checkpoint so its creation is journalled.
+			// nothing has been broadcast. The factory itself is deployed further down, after the
+			// manifest and reconciliation gates: it is the first step here that can broadcast,
+			// and a resume must never send a transaction before those gates have run.
 			const vanityPlan = buildVanityPlan(recipe?.create2)
 			let create2FactoryDeployed = false
 			if (vanityPlan) {
 				const hashRate = calibrateHashRate()
 				assertWithinBudget(vanityPlan, hashRate)
 				logger.info(formatVanityPlan(vanityPlan, hashRate))
-				const factory = await ensureCreate2Factory(hre, vanityPlan, {
-					checkpoint,
-					isLive: recipe?.network.mode === "live",
-					allowNewFactory: allowNewCreate2Factory,
-					logData,
-				})
-				create2FactoryDeployed = factory.deployed
 			}
-			const vanity = createVanityContext(ethers, vanityPlan)
 
 			const currentManifest = createDeploymentManifest(manifestIntent, {
 				deploymentId: checkpoint.deploymentId || checkpoint.manifest?.deploymentId,
@@ -902,6 +895,20 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			await assertCheckpointContractsHaveCode(checkpoint, address => ethers.provider.getCode(address))
 			resetDeploymentTransactionJournal()
 			saveCheckpoint(checkpoint)
+
+			// Only now may anything broadcast: changed intent has been refused and every earlier
+			// unresolved broadcast has been reconciled, so a timed-out factory creation cannot be
+			// silently sent a second time.
+			if (vanityPlan) {
+				const factory = await ensureCreate2Factory(hre, vanityPlan, {
+					checkpoint,
+					isLive: recipe?.network.mode === "live",
+					allowNewFactory: allowNewCreate2Factory,
+					logData,
+				})
+				create2FactoryDeployed = factory.deployed
+			}
+			const vanity = createVanityContext(ethers, vanityPlan)
 
 			logger.info("=".repeat(80))
 			logger.info("SYSTEM DEPLOYMENT STARTED")
