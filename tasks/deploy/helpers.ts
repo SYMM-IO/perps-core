@@ -6,6 +6,7 @@ import { checkpointDeployment, recoverCheckpointDeployment } from "./deploymentR
 import { logger } from "./logger.js"
 import { assertStandaloneDeploymentTaskAllowed as assertStandaloneDeploymentNetworkAllowed } from "./safety.js"
 import { confirmDeployment } from "./tx.js"
+import { deployContract, type VanityContext } from "./vanityDeploy.js"
 
 type NetworkConnection = {
 	ethers: any
@@ -86,6 +87,14 @@ export async function deployProxyWithFallback(
 		checkpoint?: DeploymentCheckpoint
 		implementationComponent?: string
 		proxyComponent?: string
+		/** Vanity context from the owning deployment, when one is mining CREATE2 addresses. */
+		vanity?: VanityContext | null
+		/**
+		 * Registered key whose vanity pattern applies to the PROXY. The proxy is the address
+		 * users and integrations hold, so it is the one worth mining; the implementation stays
+		 * an ordinary CREATE deployment and is reachable through the proxy's ERC1967 slot.
+		 */
+		proxyKey?: string
 	},
 ): Promise<any> {
 	const { ethers, upgrades } = await getConnection(hre)
@@ -95,8 +104,13 @@ export async function deployProxyWithFallback(
 		checkpoint,
 		implementationComponent = `deployments.${label}.implementation`,
 		proxyComponent = `deployments.${label}.proxy`,
+		vanity,
+		proxyKey,
 		...upgradeOptions
 	} = options || {}
+	// A declared pattern is an instruction, not a preference: never let an upgrades-plugin
+	// path silently produce an ordinary address when the recipe asked for a mined one.
+	const proxyPattern = proxyKey && vanity ? vanity.plan.patternFor(proxyKey) : undefined
 
 	const recoveredProxy = await recoverCheckpointDeployment(checkpoint, ethers.provider, proxyComponent)
 	if (recoveredProxy) {
@@ -104,7 +118,7 @@ export async function deployProxyWithFallback(
 		return factory.attach(recoveredProxy)
 	}
 
-	if (upgrades?.deployProxy) {
+	if (upgrades?.deployProxy && !proxyPattern) {
 		const proxy = await upgrades.deployProxy(factory, args, upgradeOptions)
 		await confirmDeployment(proxy, `${label} proxy`, checkpointDeployment(checkpoint, proxyComponent))
 		return proxy
@@ -133,6 +147,22 @@ export async function deployProxyWithFallback(
 	// Encode the initializer function call data
 	const initData = factory.interface.encodeFunctionData(initializer, args)
 
+	// The proxy constructor delegatecalls initData, so a CREATE2 deployment runs it with the
+	// factory as msg.sender. Every contract deployed through here initialises from an explicit
+	// admin argument, so the factory gains no authority; keep it that way when adding callers.
+	if (proxyKey) {
+		const proxyDeployment = await deployContract(vanity ?? null, {
+			key: proxyKey,
+			component: proxyComponent,
+			label: `${label} proxy`,
+			factory: proxyFactory,
+			constructorArgs: [implAddress, initData],
+			checkpoint,
+		})
+		return factory.attach(proxyDeployment.address)
+	}
+
+	// Callers that declare no registered key keep the ordinary CREATE path.
 	const proxy = await proxyFactory.deploy(implAddress, initData)
 	await confirmDeployment(proxy, `${label} proxy`, checkpointDeployment(checkpoint, proxyComponent, [implAddress, initData]))
 

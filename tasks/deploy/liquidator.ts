@@ -46,6 +46,7 @@ export async function deploySymmioLiquidator(
 	const symmioLiquidator = await deployProxyWithFallback(hre, Factory, [admin, symmioAddress], {
 		initializer: "initialize",
 		label: "SymmioLiquidator",
+		proxyKey: "peripherals/SymmioLiquidator",
 		checkpoint,
 		implementationComponent: "deployments.symmioLiquidator.implementation",
 		proxyComponent: "contracts.symmioLiquidator",

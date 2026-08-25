@@ -63,7 +63,7 @@ const ACCOUNT_LAYER_FACETS = [
 
 const EXPRESS_FACETS = ["DiamondCutFacet", "DiamondLoupeFacet", "ControlFacet", "SymmioHookFacet", "OperatorFacet", "AccelerateFacet", "ViewFacet"];
 
-const PERIPHERALS = ["MultiAccount", "SymmioPartyB", "InstantLayer", "SymbolManager", "FeeDistributor", "MuonSignatureVerifier"];
+const PERIPHERALS = ["MultiAccount", "SymmioPartyB", "InstantLayer", "SymbolManager", "FeeDistributor", "MuonSignatureVerifier", "SymmioLiquidator"];
 
 function entries() {
 	const map = {};
