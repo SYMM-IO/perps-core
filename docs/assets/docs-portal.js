@@ -92,6 +92,7 @@
 			["symbol-adjustment", "Symbols", "Symbol Corporate-Action Adjustment"],
 			["strict-deallocation", "Accounts", "Strict Deallocation"],
 			["instant-open-gas-optimization", "Performance", "InstantOpen Gas Optimization"],
+			["market-best-effort", "Trading Execution", "MARKET_BEST_EFFORT Close Orders"],
 			["explicit-clearing-house-settlements", "Clearing House", "Explicit Clearing House Settlements"],
 			["liquidation-funding-observability", "Liquidation", "Liquidation Funding Observability"],
 			["partya-liquidation-fee-recipient", "Liquidation", "PartyA Liquidation Fee Recipient Cleanup"],
@@ -119,7 +120,6 @@
 	const COMPANIONS = {
 		"0.8.6": {
 			overview: ["Release", "Symmio Core v0.8.6 Overview"],
-			"market-best-effort": ["Trading Execution", "MARKET_BEST_EFFORT Close Orders"],
 			"express-bot-operations-checklist": ["Express Withdrawal", "Express Provider Bot Operations Checklist"],
 		},
 	};
