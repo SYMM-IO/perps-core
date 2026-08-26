@@ -188,8 +188,8 @@ export function shouldBehaveLikeFuzzLogger(): void {
 			"│ positions  0 opened · 0 close pending · 0 cancel close",
 			"│ outcomes   0 canceled · 0 closed · 0 liquidated · 0 expired · 0 liquidated before open",
 			"│ direction  0 long · 0 short · all quotes",
-			"│ opening    0 limit · 0 market",
-			"│ closing    0 limit · 0 market · live close requests",
+			"│ opening    0 limit · 0 market · 0 best effort",
+			"│ closing    0 limit · 0 market · 0 best effort · live close requests",
 			"│ partial    0 split opens · 0 active split positions · 0 waiting remainders · 0 partial close requests",
 			"│            0 partially closed",
 			"├─ ASSURANCE",
@@ -286,8 +286,8 @@ export function shouldBehaveLikeFuzzLogger(): void {
 			"│ positions  0 opened · 0 close pending · 0 cancel close",
 			"│ outcomes   0 canceled · 0 closed · 0 liquidated · 0 expired · 0 liquidated before open",
 			"│ direction  0 long · 0 short · all quotes",
-			"│ opening    0 limit · 0 market",
-			"│ closing    0 limit · 0 market · live close requests",
+			"│ opening    0 limit · 0 market · 0 best effort",
+			"│ closing    0 limit · 0 market · 0 best effort · live close requests",
 			"│ partial    0 split opens · 0 active split positions · 0 waiting remainders",
 			"│            0 partial close requests · 0 partially closed",
 			"├─ ASSURANCE",
@@ -506,8 +506,8 @@ export function shouldBehaveLikeFuzzLogger(): void {
 		expect(frame).to.include("│ positions  1 opened · 1 close pending · 1 cancel close")
 		expect(frame).to.include("│ outcomes   1 canceled · 1 closed · 1 liquidated · 1 expired · 1 liquidated before open")
 		expect(frame).to.include("│ direction  6 long · 5 short · all quotes")
-		expect(frame).to.include("│ opening    7 limit · 4 market")
-		expect(frame).to.include("│ closing    1 limit · 1 market · live close requests")
+		expect(frame).to.include("│ opening    7 limit · 4 market · 0 best effort")
+		expect(frame).to.include("│ closing    1 limit · 1 market · 0 best effort · live close requests")
 		expect(frame).to.include(
 			"│ partial    1 split opens · 1 active split positions · 0 waiting remainders · 1 partial close requests · 1 partially closed",
 		)
@@ -519,8 +519,8 @@ export function shouldBehaveLikeFuzzLogger(): void {
 		expect(lines).to.include("│ positions  1 opened · 1 close pending · 1 cancel close")
 		expect(lines).to.include("│ outcomes   1 canceled · 1 closed · 1 liquidated · 1 expired · 1 liquidated before open")
 		expect(lines).to.include("│ direction  6 long · 5 short · all quotes")
-		expect(lines).to.include("│ opening    7 limit · 4 market")
-		expect(lines).to.include("│ closing    1 limit · 1 market · live close requests")
+		expect(lines).to.include("│ opening    7 limit · 4 market · 0 best effort")
+		expect(lines).to.include("│ closing    1 limit · 1 market · 0 best effort · live close requests")
 		expect(lines).to.include(
 			"│ partial    1 split opens · 1 active split positions · 0 waiting remainders · 1 partial close requests · 1 partially closed",
 		)

@@ -8,7 +8,7 @@ import { OrderType, PositionType, QuoteStatus } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
-import { limitCloseRequestBuilder, marketCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
+import { limitCloseRequestBuilder, marketBestEffortCloseRequestBuilder, marketCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
 import { limitFillCloseRequestBuilder, marketFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { AcceptCancelCloseRequestValidator } from "./models/validators/AcceptCancelCloseRequestValidator.js"
@@ -427,6 +427,35 @@ export function shouldBehaveLikeClosePosition(): void {
 			quantityToClose: quantityToClose,
 			beforeOutput: beforeOut,
 		})
+	})
+
+	it("Should request market best effort successfully", async function () {
+		const quantityToClose = await getQuoteQuantity(context, 1n)
+		await user.requestToClosePosition(1, marketBestEffortCloseRequestBuilder().quantityToClose(quantityToClose).closePrice(decimal(1n, 17)).build())
+
+		const quote = await context.viewFacetQuote.getQuote(1n)
+		expect(quote.quoteStatus).to.equal(QuoteStatus.CLOSE_PENDING)
+		expect(quote.orderType).to.equal(OrderType.MARKET_BEST_EFFORT)
+		expect(quote.quantityToClose).to.equal(quantityToClose)
+	})
+
+	it("Should require a full ordinary best-effort fill until PartyA requests cancellation", async function () {
+		const quantityToClose = await getQuoteQuantity(context, 1n)
+		const partialAmount = quantityToClose / 2n
+		await user.requestToClosePosition(1, marketBestEffortCloseRequestBuilder().quantityToClose(quantityToClose).closePrice(decimal(1n)).build())
+
+		await expect(
+			hedger.fillCloseRequest(1, limitFillCloseRequestBuilder().filledAmount(partialAmount).closedPrice(decimal(1n)).build()),
+		).to.be.revertedWith("PartyBFacet: Invalid filledAmount")
+
+		await user.requestToCancelCloseRequest(1)
+		await hedger.fillCloseRequest(1, limitFillCloseRequestBuilder().filledAmount(partialAmount).closedPrice(decimal(1n)).build())
+
+		const quote = await context.viewFacetQuote.getQuote(1n)
+		expect(quote.quoteStatus).to.equal(QuoteStatus.OPENED)
+		expect(quote.closedAmount).to.equal(partialAmount)
+		expect(quote.quantityToClose).to.equal(0n)
+		expect(quote.requestedClosePrice).to.equal(0n)
 	})
 
 	it("Should expire close request", async function () {

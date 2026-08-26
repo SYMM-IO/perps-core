@@ -116,6 +116,7 @@ library PartyBPositionActionsFacetImpl {
 			0
 		);
 
+		LibPartyBPositionsActions.prepareCloseToLiquidationFill(quoteId, filledAmount);
 		_fillCloseRequest(quoteId, filledAmount, closedPrice, upnlSig);
 
 		return filledAmount;

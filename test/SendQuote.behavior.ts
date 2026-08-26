@@ -4,7 +4,7 @@ import { toUtf8Bytes } from "ethers"
 
 import { initializeFixture } from "./Initialize.fixture.js"
 import { loadFixture, time } from "./helpers/network-helpers.js"
-import { QuoteStatus } from "./models/Enums.js"
+import { OrderType, QuoteStatus } from "./models/Enums.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
 import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
@@ -177,6 +177,15 @@ export function shouldBehaveLikeSendQuote(): void {
 		const before = await validator.before(context, { user: user })
 		let qId = await user.sendQuote(marketQuoteRequestBuilder().build())
 		await validator.after(context, { user: user, quoteId: qId, beforeOutput: before })
+	})
+
+	it("Should reject MARKET_BEST_EFFORT when opening a quote", async function () {
+		expect(OrderType.LIMIT).to.equal(0)
+		expect(OrderType.MARKET).to.equal(1)
+		expect(OrderType.MARKET_BEST_EFFORT).to.equal(2)
+		await expect(user.sendQuote(limitQuoteRequestBuilder().orderType(OrderType.MARKET_BEST_EFFORT).build())).to.be.revertedWith(
+			"PartyAFacet: MARKET_BEST_EFFORT is close-only",
+		)
 	})
 
 	it("Should fail on more sent quotes than the allowed range", async function () {

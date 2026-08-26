@@ -7,7 +7,7 @@ import { OrderType, PositionType, QuoteStatus } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
-import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
+import { limitCloseRequestBuilder, marketBestEffortCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
 import { limitFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest.js"
 import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
@@ -118,14 +118,10 @@ export function shouldBehaveLikeSolverFee(): void {
 		)
 	}
 
-	async function requestClose(quoteId: bigint) {
+	async function requestClose(quoteId: bigint, orderType: OrderType = OrderType.LIMIT) {
 		const quote = await context.viewFacetQuote.getQuote(quoteId)
-		await user.requestToClosePosition(
-			quoteId,
-			limitCloseRequestBuilder()
-				.quantityToClose(quote.quantity - quote.closedAmount)
-				.build(),
-		)
+		const closeRequestBuilder = orderType === OrderType.MARKET_BEST_EFFORT ? marketBestEffortCloseRequestBuilder() : limitCloseRequestBuilder()
+		await user.requestToClosePosition(quoteId, closeRequestBuilder.quantityToClose(quote.quantity - quote.closedAmount).build())
 	}
 
 	async function fillClose(quoteId: bigint, amount?: bigint, closedPrice: bigint = decimal(1n)) {
@@ -753,6 +749,113 @@ export function shouldBehaveLikeSolverFee(): void {
 		expect(finalQuote.quantityToClose).to.equal(quote.quantityToClose - maxQuantity)
 		expect(expectedFee).to.be.lessThan(solverFee)
 		expect(state.closeFeeCharged).to.equal(expectedFee)
+	})
+
+	it("rejects a binding maxQuantity for fee-aware best-effort closes without charging a fee", async function () {
+		const quoteId = await sendQuoteWithSolverFeeCaps(NO_SOLVER_FEE, "best-effort-binding-cap", undefined, decimal(100n))
+		await openQuote(quoteId)
+		await requestClose(quoteId, OrderType.MARKET_BEST_EFFORT)
+
+		const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)
+		const fillToLiquidationWithMaxAndFee = (context.partyBExecutionFacet.connect(hedger.signer) as any)[
+			FILL_CLOSE_TO_LIQUIDATION_WITH_MAX_AND_SOLVER_FEE
+		]
+		await expect(
+			fillToLiquidationWithMaxAndFee(
+				quoteId,
+				quoteBefore.quantityToClose - 1n,
+				decimal(1n),
+				await getDummyPairUpnlAndPriceSig(decimal(1n), 0n, 0n),
+				decimal(1n),
+			),
+		).to.be.revertedWith("PartyBFacet: maxQuantity cannot limit MARKET_BEST_EFFORT")
+
+		const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
+		const state = await getSolverFeeState(quoteId)
+		expect(quoteAfter.quoteStatus).to.equal(QuoteStatus.CLOSE_PENDING)
+		expect(quoteAfter.quantityToClose).to.equal(quoteBefore.quantityToClose)
+		expect(state.closeFeeCharged).to.equal(0n)
+	})
+
+	it("charges the absolute fee on a liquidation-limited best-effort close and clears the remainder", async function () {
+		const quoteId = await sendQuoteWithSolverFeeCaps(NO_SOLVER_FEE, "best-effort-absolute-fee", undefined, decimal(100n))
+		await openQuote(quoteId)
+		await requestClose(quoteId, OrderType.MARKET_BEST_EFFORT)
+
+		const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)
+		const closePrice = decimal(1n)
+		const marketPrice = decimal(2n)
+		const solverFee = decimal(1n)
+		const targetAvailable = decimal(5n)
+		const balanceInfo = await user.getBalanceInfo()
+		const upnlPartyA = targetAvailable - (balanceInfo.allocatedBalances - balanceInfo.lockedCva - balanceInfo.lockedLf)
+		const [expectedFill, canCloseAll] = await (context.viewFacet as any).getMaxCloseAmountToLiquidation(
+			quoteId,
+			closePrice,
+			marketPrice,
+			upnlPartyA,
+			solverFee,
+		)
+		expect(canCloseAll).to.equal(false)
+		expect(expectedFill).to.be.greaterThan(0n)
+		expect(expectedFill).to.be.lessThan(quoteBefore.quantityToClose)
+
+		const fillToLiquidationWithMaxAndFee = (context.partyBExecutionFacet.connect(hedger.signer) as any)[
+			FILL_CLOSE_TO_LIQUIDATION_WITH_MAX_AND_SOLVER_FEE
+		]
+		await expect(
+			fillToLiquidationWithMaxAndFee(
+				quoteId,
+				quoteBefore.quantityToClose,
+				closePrice,
+				await getDummyPairUpnlAndPriceSig(marketPrice, upnlPartyA, 0n),
+				solverFee,
+			),
+		)
+			.to.emit(context.partyBQuoteActionsFacet, "CloseSolverFeeCharged")
+			.withArgs(quoteId, await user.getAddress(), await hedger.getAddress(), await hedger.getAddress(), 1n, solverFee)
+
+		const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
+		const state = await getSolverFeeState(quoteId)
+		expect(quoteAfter.quoteStatus).to.equal(QuoteStatus.OPENED)
+		expect(quoteAfter.closedAmount).to.equal(expectedFill)
+		expect(quoteAfter.quantityToClose).to.equal(0n)
+		expect(quoteAfter.requestedClosePrice).to.equal(0n)
+		expect(state.closeFeeCharged).to.equal(solverFee)
+	})
+
+	it("rolls back the best-effort fee and cancellation state when the shared fill fails", async function () {
+		const quoteId = await sendQuoteWithSolverFeeCaps(NO_SOLVER_FEE, "best-effort-rollback", undefined, decimal(100n))
+		await openQuote(quoteId)
+		await requestClose(quoteId, OrderType.MARKET_BEST_EFFORT)
+
+		const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)
+		const closePrice = decimal(1n)
+		const marketPrice = decimal(2n)
+		const solverFee = decimal(1n)
+		const targetAvailable = decimal(5n)
+		const balanceInfo = await user.getBalanceInfo()
+		const upnlPartyA = targetAvailable - (balanceInfo.allocatedBalances - balanceInfo.lockedCva - balanceInfo.lockedLf)
+		const fillToLiquidationWithMaxAndFee = (context.partyBExecutionFacet.connect(hedger.signer) as any)[
+			FILL_CLOSE_TO_LIQUIDATION_WITH_MAX_AND_SOLVER_FEE
+		]
+
+		await expect(
+			fillToLiquidationWithMaxAndFee(
+				quoteId,
+				quoteBefore.quantityToClose,
+				closePrice,
+				await getDummyPairUpnlAndPriceSig(marketPrice, upnlPartyA, decimal(-4000n)),
+				solverFee,
+			),
+		).to.be.revertedWith("LibSolvency: Available balance is lower than zero")
+
+		const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
+		const state = await getSolverFeeState(quoteId)
+		expect(quoteAfter.quoteStatus).to.equal(QuoteStatus.CLOSE_PENDING)
+		expect(quoteAfter.closedAmount).to.equal(quoteBefore.closedAmount)
+		expect(quoteAfter.quantityToClose).to.equal(quoteBefore.quantityToClose)
+		expect(state.closeFeeCharged).to.equal(0n)
 	})
 
 	it("rejects fee-aware close-to-liquidation when the solver fee consumes the entire closeable balance", async function () {
