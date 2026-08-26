@@ -99,8 +99,8 @@
 					<pre><code class="language-solidity">setMuonFunctionUpnlValidTime(func, upnlValidTime)
 </code></pre>
 					<p>
-						A nonzero value sets the category-specific window. Passing <code>0</code> clears that category and makes it inherit the global
-						<code>upnlValidTime</code> again.
+						A nonzero value sets the category-specific window. Passing <code>0</code> stores the unset sentinel, so that category inherits
+						the global <code>upnlValidTime</code> again.
 					</p>
 					<p>
 						There is no separate <code>clear</code> method and no separate <code>hasOverride</code> storage flag. In the per-function
@@ -120,22 +120,24 @@
 					</ul>
 					<p>Behavior:</p>
 					<ul>
-						<li>If <code>upnlValidTime &gt; 0</code>, the value is stored in <code>MuonStorage.upnlValidTimeByFunction[func]</code>.</li>
-						<li>If <code>upnlValidTime == 0</code>, the stored override is deleted.</li>
-						<li>After deletion, the function category inherits the global <code>upnlValidTime</code>.</li>
+						<li>The supplied value is written directly to <code>MuonStorage.upnlValidTimeByFunction[func]</code>.</li>
+						<li>If <code>upnlValidTime &gt; 0</code>, that value is the category-specific override.</li>
+						<li>If <code>upnlValidTime == 0</code>, zero means unset and the category inherits the global <code>upnlValidTime</code>.</li>
 					</ul>
+					<pre><code class="language-solidity">// Zero is the unset sentinel; the resolver then uses the global value.
+upnlValidTimeByFunction[func] = upnlValidTime;
+</code></pre>
 					<p>The setter emits:</p>
 					<pre><code class="language-solidity">event SetMuonFunctionUpnlValidTime(
     MuonFunction indexed func,
-    bool enabled,
     uint256 upnlValidTime
 );
 </code></pre>
 					<p>Event semantics:</p>
 					<ul>
-						<li><code>enabled == true</code>: a nonzero override was set.</li>
-						<li><code>enabled == false</code>: the override was cleared.</li>
-						<li>When clearing, <code>upnlValidTime</code> is emitted as <code>0</code>.</li>
+						<li><code>upnlValidTime &gt; 0</code>: a category-specific override was set.</li>
+						<li><code>upnlValidTime == 0</code>: the override is unset and the global value applies.</li>
+						<li>No separate <code>enabled</code> field is needed because it is exactly equivalent to <code>upnlValidTime != 0</code>.</li>
 					</ul>
 					<h3 id="read-the-effective-validity">Read the effective validity</h3>
 					<pre><code class="language-solidity">function getMuonFunctionUpnlValidTime(

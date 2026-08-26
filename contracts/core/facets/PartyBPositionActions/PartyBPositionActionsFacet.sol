@@ -92,6 +92,7 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 	/// @notice Fills a close request up to the maximum amount that keeps PartyA at the edge of liquidation.
 	///         Use this when the standard fillCloseRequest would revert due to PartyA insolvency.
 	///         This calculates and closes only the amount that brings PartyA to approximately 0 available balance.
+	///         LIMIT requests retain any unfilled request; MARKET_BEST_EFFORT requests cancel it atomically.
 	///         Reverts if even a full close keeps PartyA insolvent.
 	/// @dev IMPORTANT BACKWARD-COMPATIBILITY WARNING:
 	///      This legacy method accounts for the protocol closeFee only. It does NOT reserve balance for solver

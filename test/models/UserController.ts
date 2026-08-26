@@ -248,7 +248,7 @@ export class UserController {
 						}
 					}
 
-					const orderType = pick([OrderType.LIMIT, OrderType.MARKET])
+					const orderType = pick([OrderType.LIMIT, OrderType.MARKET, OrderType.MARKET_BEST_EFFORT])
 					const price = await getPrice()
 					const hedger = this.manager.getHedger(quote.partyB)
 

@@ -301,7 +301,7 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 	/// @param quoteId The ID of the quote associated with the position to be closed.
 	/// @param closePrice The closing price for the position. For limit orders, the exact price; for market orders, a price threshold.
 	/// @param quantityToClose The quantity of the position to be closed.
-	/// @param orderType Can be LIMIT or MARKET with the same logic as in sendQuote
+	/// @param orderType LIMIT, MARKET, or the close-only MARKET_BEST_EFFORT mode
 	/// @param deadline Expiration timestamp for the close request
 	function requestToClosePosition(
 		uint256 quoteId,

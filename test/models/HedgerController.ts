@@ -333,22 +333,25 @@ export class HedgerController {
 							quoteId: quote.id,
 						})
 					}
-					await this.hedger.fillCloseRequest(
-						quote.id,
-						Builder<FillCloseRequest>()
-							.filledAmount(fillAmount)
-							.closedPrice(closePrice)
-							.upnlPartyA(partyAUpnl)
-							.upnlPartyB(partyBUpnl)
-							.price(price)
-							.build(),
-					)
+					const fillRequest = Builder<FillCloseRequest>()
+						.filledAmount(fillAmount)
+						.closedPrice(closePrice)
+						.upnlPartyA(partyAUpnl)
+						.upnlPartyB(partyBUpnl)
+						.price(price)
+						.build()
+					let actualFillAmount = fillAmount
+					if (quote.orderType === BigInt(OrderType.MARKET_BEST_EFFORT)) {
+						actualFillAmount = await this.hedger.fillCloseRequestToLiquidation(quote.id, fillRequest)
+					} else {
+						await this.hedger.fillCloseRequest(quote.id, fillRequest)
+					}
 					if (validate) {
 						await (validator as FillCloseRequestValidator).after(this.context, {
 							user: user,
 							hedger: this.hedger,
 							quoteId: quote.id,
-							fillAmount: fillAmount,
+							fillAmount: actualFillAmount,
 							closePrice: closePrice,
 							beforeOutput: before!,
 						})

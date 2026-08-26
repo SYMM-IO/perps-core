@@ -30,5 +30,15 @@ const buildMarketDefaultCloseRequest = (): CloseRequest => ({
 	deadline: getBlockTimestamp(500n) as Promise<bigint>,
 })
 
+const buildMarketBestEffortDefaultCloseRequest = (): CloseRequest => ({
+	quantityToClose: decimal(100n),
+	closePrice: decimal(1n),
+	price: decimal(1n),
+	upnl: 0n,
+	orderType: OrderType.MARKET_BEST_EFFORT,
+	deadline: getBlockTimestamp(500n) as Promise<bigint>,
+})
+
 export const limitCloseRequestBuilder = () => Builder(buildLimitDefaultCloseRequest())
 export const marketCloseRequestBuilder = () => Builder(buildMarketDefaultCloseRequest())
+export const marketBestEffortCloseRequestBuilder = () => Builder(buildMarketBestEffortDefaultCloseRequest())
