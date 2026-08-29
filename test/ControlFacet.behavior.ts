@@ -725,6 +725,52 @@ export function shouldBehaveLikeControlFacet(): void {
 		})
 	})
 
+	describe("PartyB liquidation cushion rates", () => {
+		const FIVE_BPS = 5n * 10n ** 14n
+
+		it("inherits the PartyB default, supports an explicit zero override, and clears back to inheritance", async function () {
+			const partyB = await hedger.getAddress()
+
+			await expect(context.symbolControlFacet.connect(owner).setPartyBLiquidationCushionRate(partyB, 0n, FIVE_BPS))
+				.to.emit(context.symbolControlFacet, "SetPartyBLiquidationCushionRate")
+				.withArgs(partyB, 0n, 0n, FIVE_BPS, false)
+			expect(await context.viewFacetSymbol.getPartyBLiquidationCushionRate(partyB, 0n)).to.deep.equal([FIVE_BPS, false])
+			expect(await context.viewFacetSymbol.getPartyBLiquidationCushionRate(partyB, 1n)).to.deep.equal([FIVE_BPS, false])
+
+			await expect(context.symbolControlFacet.connect(owner).setPartyBLiquidationCushionRate(partyB, 1n, 0n))
+				.to.emit(context.symbolControlFacet, "SetPartyBLiquidationCushionRate")
+				.withArgs(partyB, 1n, FIVE_BPS, 0n, true)
+			expect(await context.viewFacetSymbol.getPartyBLiquidationCushionRate(partyB, 1n)).to.deep.equal([0n, true])
+
+			await expect(context.symbolControlFacet.connect(owner).clearPartyBLiquidationCushionRateOverride(partyB, 1n))
+				.to.emit(context.symbolControlFacet, "SetPartyBLiquidationCushionRate")
+				.withArgs(partyB, 1n, 0n, FIVE_BPS, false)
+			expect(await context.viewFacetSymbol.getPartyBLiquidationCushionRate(partyB, 1n)).to.deep.equal([FIVE_BPS, false])
+		})
+
+		it("defaults unconfigured PartyBs to zero and accepts uncapped manager-selected rates", async function () {
+			expect(await context.viewFacetSymbol.getPartyBLiquidationCushionRate(await hedger2.getAddress(), 1n)).to.deep.equal([0n, false])
+
+			await context.symbolControlFacet.connect(owner).setPartyBLiquidationCushionRate(await hedger.getAddress(), 1n, ethers.MaxUint256)
+			expect(await context.viewFacetSymbol.getPartyBLiquidationCushionRate(await hedger.getAddress(), 1n)).to.deep.equal([ethers.MaxUint256, true])
+		})
+
+		it("requires PartyB manager authority, a registered PartyB, and symbol zero or an existing symbol", async function () {
+			await expect(
+				context.symbolControlFacet.connect(user2).setPartyBLiquidationCushionRate(await hedger.getAddress(), 0n, FIVE_BPS),
+			).to.be.revertedWith("Accessibility: Must have role")
+			await expect(
+				context.symbolControlFacet.connect(owner).setPartyBLiquidationCushionRate(await user2.getAddress(), 0n, FIVE_BPS),
+			).to.be.revertedWith("SymbolControlFacet: Address is not PartyB")
+			await expect(
+				context.symbolControlFacet.connect(owner).setPartyBLiquidationCushionRate(await hedger.getAddress(), 2n, FIVE_BPS),
+			).to.be.revertedWith("SymbolControlFacet: Invalid id")
+			await expect(
+				context.symbolControlFacet.connect(owner).clearPartyBLiquidationCushionRateOverride(await hedger.getAddress(), 0n),
+			).to.be.revertedWith("SymbolControlFacet: Invalid id")
+		})
+	})
+
 	describe("addSymbolsWithType", () => {
 		it("Should addSymbolsWithType successfully", async function () {
 			const symbolsWithType = [

@@ -6,7 +6,6 @@ pragma solidity >=0.8.18;
 
 import { LibDiamond } from "../../../diamond/libraries/LibDiamond.sol";
 import { LibMuon } from "../../libraries/muon/LibMuon.sol";
-import { LibSolvency } from "../../libraries/LibSolvency.sol";
 import { AccountStorage, LiquidationDetail, LiquidationSettlementState, ForceCloseDetail } from "../../storages/AccountStorage.sol";
 import { ClearingHouseStorage, CrossLiquidationDetail, PartyATakeoverDetail } from "../../storages/ClearingHouseStorage.sol";
 import { TradingModeStorage, BindState } from "../../storages/TradingModeStorage.sol";
@@ -1055,27 +1054,5 @@ contract ViewFacet is IViewFacet {
 	/// @return The last external transfer ID.
 	function getLastExternalTransferId() external view returns (uint256) {
 		return ExternalTransferStorage.layout().lastExternalTransferId;
-	}
-
-	/// @notice Calculates the maximum close amount that keeps PartyA at the liquidation threshold.
-	/// @dev Use this to preview the result of `fillCloseRequestToLiquidation` before calling it.
-	///      This helps frontends determine if a partial close is possible and what amount will be filled.
-	///      For solver-fee-aware close-to-liquidation flows, `solverFeeAmount` should be the total
-	///      operational plus solver fee that will be charged with the close; pass 0 for fee-less flows.
-	/// @param quoteId The ID of the quote with a pending close request.
-	/// @param closedPrice The price at which the position would be closed.
-	/// @param marketPrice The current market price.
-	/// @param upnlPartyA The unrealized PnL of PartyA.
-	/// @param solverFeeAmount The total extra solver-side fee that will be deducted from PartyA allocated balance (0 for fee-less flows).
-	/// @return maxCloseAmount The maximum amount that can be closed while keeping PartyA solvent after the solver fee.
-	/// @return canCloseAll True if the full quantityToClose can be closed without making PartyA insolvent after the solver fee.
-	function getMaxCloseAmountToLiquidation(
-		uint256 quoteId,
-		uint256 closedPrice,
-		uint256 marketPrice,
-		int256 upnlPartyA,
-		uint256 solverFeeAmount
-	) external view returns (uint256 maxCloseAmount, bool canCloseAll) {
-		return LibSolvency.calculateMaxCloseAmountToLiquidation(quoteId, closedPrice, marketPrice, upnlPartyA, solverFeeAmount);
 	}
 }

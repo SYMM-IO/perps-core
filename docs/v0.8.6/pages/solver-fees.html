@@ -199,17 +199,20 @@ function fillCloseRequest(
 
 function fillCloseRequestToLiquidation(
     uint256 quoteId,
-	uint256 maxQuantity,
+    uint256 maxFillAmount,
     uint256 closedPrice,
     PairUpnlAndPriceSig memory upnlSig,
-    uint256 solverFee
+    uint256 maxSolverFee
 ) external returns (uint256 filledAmount);
 </code></pre>
 					<p>
 						<code>PartyBExecutionFacet.lockAndOpenPosition</code> also combines the ordinary lock and open legs with an optional open
-						solver fee. In the close-to-liquidation method, pass <code>type(uint256).max</code> for <code>maxQuantity</code> when no
-						additional quantity cap is wanted. If <code>maxQuantity</code> constrains the fill below its liquidation-limited amount, the
-						contract prorates the supplied absolute <code>solverFee</code> by the fraction actually closed.
+						solver fee. For close-to-liquidation, <code>maxSolverFee</code> is the fee quoted for the solver-provided
+						<code>maxFillAmount</code> and the most that can be charged. If the liquidation boundary or remaining-value fallback produces
+						a smaller fill, the contract both plans and charges <code>maxSolverFee * filledAmount / maxFillAmount</code>. A fee-bearing
+						call must therefore pass a concrete quantity as its fee basis: an effectively unbounded <code>maxFillAmount</code> such as
+						<code>type(uint256).max</code> makes the prorated fee round down to zero, so nothing is charged. Use the quote's remaining
+						close quantity when no tighter cap is wanted.
 					</p>
 					<p>
 						The legacy <code>fillCloseRequestToLiquidation</code> method remains available for backward compatibility, but it reserves
@@ -220,16 +223,17 @@ function fillCloseRequestToLiquidation(
 					<pre><code class="language-solidity">function getSolverFeeState(uint256 quoteId) external view returns (SolverFeeState memory);
 </code></pre>
 					<p>
-						Bots can also preview the uncapped close-to-liquidation sizing before submitting the transaction. Pass the absolute
-						<code>solverFee</code> as <code>solverFeeAmount</code>, or 0 for a fee-less close. The view does not take
-						<code>maxQuantity</code>; apply any additional bot-side quantity cap to its result:
+						Bots can also preview the uncapped close-to-liquidation sizing before submitting the transaction. Because this existing view
+						does not take <code>maxFillAmount</code>, <code>maxSolverFee</code> is the fee quoted for the quote's full pending
+						<code>quantityToClose</code>, or 0 for a fee-less close. The preview uses that per-quantity rate for every candidate. At
+						execution, quote the same rate against the chosen <code>maxFillAmount</code> and apply that cap to the preview result:
 					</p>
 					<pre><code class="language-solidity">function getMaxCloseAmountToLiquidation(
     uint256 quoteId,
     uint256 closedPrice,
     uint256 marketPrice,
     int256 upnlPartyA,
-    uint256 solverFeeAmount
+    uint256 maxSolverFee
 ) external view returns (uint256 maxCloseAmount, bool canCloseAll);
 </code></pre>
 
@@ -366,8 +370,9 @@ event BalanceChangePartyA(
 							post-action available balance to cover the requested solver fee.
 						</li>
 						<li>
-							The fee-aware <code>fillCloseRequestToLiquidation</code> subtracts the planned solver fee before calculating the maximum
-							close amount, caps that amount by <code>maxQuantity</code>, and prorates the charged fee when the quantity cap binds.
+							The fee-aware <code>fillCloseRequestToLiquidation</code> uses the fee quoted for <code>maxFillAmount</code> as a
+							per-quantity rate while calculating the maximum close. The selected fill and the final transfer therefore use identical
+							fee math.
 						</li>
 						<li>
 							Close fees are charged immediately before the close executes, with the rate cap evaluated against the cumulative closed

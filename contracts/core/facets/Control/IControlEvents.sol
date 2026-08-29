@@ -59,6 +59,7 @@ interface IControlEvents is IExecutionContextEvents {
 		uint256 newMinAcceptableNotionalLFRate,
 		bool hasOverride
 	);
+	event SetPartyBLiquidationCushionRate(address indexed partyB, uint256 indexed symbolId, uint256 oldRate, uint256 newRate, bool hasOverride);
 	event SetSymbolTradingFee(uint256 symbolId, uint256 oldTradingFee, uint256 tradingFee);
 	event SetSymbolMaxLeverage(uint256 symbolId, uint256 oldMaxLeverage, uint256 maxLeverage);
 	event SetDeallocateCooldown(uint256 oldDeallocateCooldown, uint256 newDeallocateCooldown);
