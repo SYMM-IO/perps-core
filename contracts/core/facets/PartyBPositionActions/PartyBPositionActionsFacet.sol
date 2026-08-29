@@ -92,8 +92,8 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 
 	/// @notice Fills a close request up to PartyB's configured close-to-liquidation boundary.
 	///         Use this when the standard fillCloseRequest would revert due to PartyA insolvency.
-	///         With the default zero cushion this brings PartyA to approximately zero available balance.
-	///         A nonzero manager-configured cushion may leave PartyA below zero by the calculated allowance.
+	///         With the default zero overshoot this brings PartyA to approximately zero available balance.
+	///         A nonzero manager-configured overshoot may leave PartyA below zero by the calculated allowance.
 	///         The existing non-harmful/full-close insolvency behavior is preserved when the allowance cannot cover it.
 	///         LIMIT requests retain any unfilled request; MARKET_BEST_EFFORT requests cancel it atomically.
 	/// @dev IMPORTANT BACKWARD-COMPATIBILITY WARNING:
@@ -114,7 +114,7 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 		(LibPartyBPositionsActions.CloseToLiquidationPlan memory plan, uint256 actualShortfall) = PartyBPositionActionsFacetImpl
 			.fillCloseRequestToLiquidation(quoteId, closedPrice, upnlSig);
 		filledAmount = plan.filledAmount;
-		LibPartiesEvents.emitPartyALiquidationCushionUsedIfAny(quote, quoteId, plan.effectiveRate, plan.allowedShortfall, actualShortfall);
+		LibPartiesEvents.emitPartyALiquidationOvershootUsedIfAny(quote, quoteId, plan.effectiveRate, plan.allowedShortfall, actualShortfall);
 		LibPartiesEvents.emitFillCloseRequest(quoteLayout, quote, quoteId, filledAmount, closedPrice);
 	}
 }

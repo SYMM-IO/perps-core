@@ -25,7 +25,7 @@ import { ISymbolAdjustmentFacet } from "../SymbolAdjustment/ISymbolAdjustmentFac
 import { LibSymbol } from "../../libraries/LibSymbol.sol";
 import { LibSymbolAdjustment } from "../../libraries/LibSymbolAdjustment.sol";
 import { LibQuoteAdjustment, QuoteAdjustmentData } from "../../libraries/LibQuoteAdjustment.sol";
-import { LibLiquidationCushion } from "../../libraries/LibLiquidationCushion.sol";
+import { LibLiquidationOvershoot } from "../../libraries/LibLiquidationOvershoot.sol";
 
 contract ViewFacetSymbol is IViewFacetSymbol {
 	/// @notice Returns the details of a symbol by its ID.
@@ -116,11 +116,11 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 		return (LibSymbol.minAcceptableNotionalLFRate(symbolId), LibSymbol.hasMinAcceptableNotionalLFRateOverride(symbolId));
 	}
 
-	/// @notice Returns a PartyB's effective close-to-liquidation cushion rate and override state.
-	function getPartyBLiquidationCushionRate(address partyB, uint256 symbolId) external view returns (uint256 rate, bool hasOverride) {
+	/// @notice Returns a PartyB's effective close-to-liquidation overshoot rate and override state.
+	function getPartyBLiquidationOvershootRate(address partyB, uint256 symbolId) external view returns (uint256 rate, bool hasOverride) {
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
 		require(symbolId <= symbolLayout.lastId, "ViewFacetSymbol: Invalid id");
-		return (LibLiquidationCushion.rate(partyB, symbolId), LibLiquidationCushion.hasOverride(partyB, symbolId));
+		return (LibLiquidationOvershoot.rate(partyB, symbolId), LibLiquidationOvershoot.hasOverride(partyB, symbolId));
 	}
 
 	/// @notice Returns the connected party Bs of Party A.

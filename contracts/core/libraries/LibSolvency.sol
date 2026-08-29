@@ -8,7 +8,7 @@ import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { QuoteStorage, Quote, LockedValues, PositionType } from "../storages/QuoteStorage.sol";
 import { AccountStorage } from "../storages/AccountStorage.sol";
 import { LibAccount } from "./LibAccount.sol";
-import { LibLiquidationCushion } from "./LibLiquidationCushion.sol";
+import { LibLiquidationOvershoot } from "./LibLiquidationOvershoot.sol";
 import { LibQuote } from "./LibQuote.sol";
 import { LockedValuesOps } from "./LibLockedValues.sol";
 
@@ -24,7 +24,7 @@ library LibSolvency {
 		/// @dev The caller's close ceiling. It bounds the boundary search and is the quantity `maxSolverFee` is quoted for.
 		///      Fee-less callers with no cap pass `type(uint256).max`; `quantityToClose` still bounds the search.
 		uint256 maxFillAmount;
-		uint256 cushionRate;
+		uint256 overshootRate;
 	}
 
 	/// @notice Reverts unless both parties (Party A and Party B) remain solvent after opening positions for given quotes.
@@ -243,22 +243,22 @@ library LibSolvency {
 	/// @dev For a candidate amount `x`, the exact acceptance rule is:
 	///      `postCloseBalance(x) >= -allowedShortfall(x)`, where
 	///      `postCloseBalance = currentBalance + releasedCVA + releasedLF + PnL - closeFee - proratedSolverFee`
-	///      and `allowedShortfall = postCloseAccountLockedCVAAndLF * cushionRate / 1e18`.
+	///      and `allowedShortfall = postCloseAccountLockedCVAAndLF * overshootRate / 1e18`.
 	///
 	///      The allowance shrinks as this quote releases CVA and LF. The charged solver fee also changes with `x` because execution
 	///      charges `floor(maxSolverFee * x / maxFillAmount)`. Before integer rounding, all of those changes are proportional
-	///      to `x`, so the cushioned boundary is solved directly from the headroom at zero and the deficit at the upper bound.
+	///      to `x`, so the overshoot boundary is solved directly from the headroom at zero and the deficit at the upper bound.
 	///      The resulting amount is then checked with execution's exact component-wise rounding and reduced algebraically if necessary.
 	///      Therefore, it is exact for the proportional model and proven executable after rounding; separate floor operations can make it
 	///      conservatively lower by a few smallest quantity units rather than allowing a shortfall above the configured allowance.
-	///      The zero-cushion, fee-less path keeps the legacy closed-form estimate and the same exact-rounding correction.
+	///      The zero-overshoot, fee-less path keeps the legacy closed-form estimate and the same exact-rounding correction.
 	///
 	///      The search runs over `[0, min(maxFillAmount, quantityToClose)]`, so a caller cap that fits the allowance returns
 	///      immediately without solving for the protocol boundary above it.
-	///      A close of the whole bounded amount is accepted when it fits the allowance. With a nonzero cushion, this can leave
+	///      A close of the whole bounded amount is accepted when it fits the allowance. With a nonzero overshoot, this can leave
 	///      PartyA below zero.
 	/// @param quoteId Quote whose pending close amount, together with `inputs.maxFillAmount`, bounds the calculation.
-	/// @param inputs Price snapshot, PartyA uPnL, solver-fee terms, the caller's close ceiling, and the cushion rate.
+	/// @param inputs Price snapshot, PartyA uPnL, solver-fee terms, the caller's close ceiling, and the overshoot rate.
 	/// @return maxCloseAmount Calculated boundary amount within the bound, before the planner's remaining-value fallback.
 	/// @return canCloseAll Whether the whole bounded amount fits the allowance, not whether PartyA remains nonnegative.
 	function calculateMaxCloseAmountToLiquidation(
@@ -295,13 +295,13 @@ library LibSolvency {
 		// Preserve the existing policy for a shortfall that existed before a harmful close: do not deepen it through this helper.
 		if (currentBalance <= 0) return (0, false);
 
-		uint256 upperBoundAllowance = LibLiquidationCushion.allowedShortfallAfterClose(quote, upperBound, inputs.cushionRate);
+		uint256 upperBoundAllowance = LibLiquidationOvershoot.allowedShortfallAfterClose(quote, upperBound, inputs.overshootRate);
 		if (_isWithinPartyAShortfall(balanceAtUpperBound, upperBoundAllowance)) return (upperBound, true);
 
 		uint256 harmfulRate = uint256(-totalRate);
 		// The unrounded balance-plus-allowance model is linear in the close amount. Solve its boundary directly, then enforce exact rounding.
-		if (inputs.cushionRate > 0 || inputs.maxSolverFee > 0) {
-			return (_calculateCushionedCloseAmount(quote, upperBound, currentBalance, balanceAtUpperBound, upperBoundAllowance, inputs), false);
+		if (inputs.overshootRate > 0 || inputs.maxSolverFee > 0) {
+			return (_calculateOvershootCloseAmount(quote, upperBound, currentBalance, balanceAtUpperBound, upperBoundAllowance, inputs), false);
 		}
 
 		// Retain the legacy zero-rate, fee-less estimate. The exact check below repairs any component-rounding difference.
@@ -325,7 +325,7 @@ library LibSolvency {
 	///      Integer floors can put the first candidate just beyond the executable boundary, so an invalid candidate is fed back into the
 	///      same equation over the smaller `[0, candidate]` interval. This preserves execution rounding without assuming that every larger
 	///      integer quantity must also be invalid.
-	function _calculateCushionedCloseAmount(
+	function _calculateOvershootCloseAmount(
 		Quote storage quote,
 		uint256 upperBound,
 		int256 currentBalance,
@@ -333,7 +333,7 @@ library LibSolvency {
 		uint256 upperBoundAllowance,
 		CloseToLiquidationInputs memory inputs
 	) private view returns (uint256 candidateAmount) {
-		uint256 startingAllowance = LibLiquidationCushion.allowedShortfallAfterClose(quote, 0, inputs.cushionRate);
+		uint256 startingAllowance = LibLiquidationOvershoot.allowedShortfallAfterClose(quote, 0, inputs.overshootRate);
 		uint256 startingHeadroom = uint256(currentBalance) + startingAllowance;
 		uint256 upperBoundDeficit = _partyAShortfallBeyondAllowance(balanceAtUpperBound, upperBoundAllowance);
 
@@ -341,7 +341,7 @@ library LibSolvency {
 		candidateAmount = _proportionalBoundary(upperBound, startingHeadroom, upperBoundDeficit);
 		while (true) {
 			int256 candidateBalance = _simulatePartyAAvailableBalanceAfterClose(quote, candidateAmount, currentBalance, inputs);
-			uint256 candidateAllowance = LibLiquidationCushion.allowedShortfallAfterClose(quote, candidateAmount, inputs.cushionRate);
+			uint256 candidateAllowance = LibLiquidationOvershoot.allowedShortfallAfterClose(quote, candidateAmount, inputs.overshootRate);
 			uint256 candidateDeficit = _partyAShortfallBeyondAllowance(candidateBalance, candidateAllowance);
 			if (candidateDeficit == 0) return candidateAmount;
 

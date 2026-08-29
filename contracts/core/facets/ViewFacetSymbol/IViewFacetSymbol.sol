@@ -25,7 +25,7 @@ interface IViewFacetSymbol {
 
 	function getSymbolMinAcceptableNotionalLFRate(uint256 symbolId) external view returns (uint256 rate, bool hasOverride);
 
-	function getPartyBLiquidationCushionRate(address partyB, uint256 symbolId) external view returns (uint256 rate, bool hasOverride);
+	function getPartyBLiquidationOvershootRate(address partyB, uint256 symbolId) external view returns (uint256 rate, bool hasOverride);
 
 	function getConnectedPartyBs(address partyA) external view returns (address[] memory);
 

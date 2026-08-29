@@ -13,7 +13,7 @@ import { LibSymbolAdjustment } from "../../libraries/LibSymbolAdjustment.sol";
 import { LibPartyBPositionsActions } from "../../libraries/LibPartyBPositionsActions.sol";
 
 contract ViewFacetQuote is IViewFacetQuote {
-	/// @notice Calculates the maximum executable close amount under PartyB's configured liquidation cushion.
+	/// @notice Calculates the maximum executable close amount under PartyB's configured liquidation overshoot.
 	/// @dev For fee-aware preview, `maxSolverFee` is the fee quoted for the full pending `quantityToClose`.
 	///      Execution uses the same fee rate against the solver-provided maxFillAmount.
 	/// @return maxCloseAmount The uncapped executable amount after applying any remaining-value fallback.

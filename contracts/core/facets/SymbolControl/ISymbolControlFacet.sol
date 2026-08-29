@@ -34,9 +34,9 @@ interface ISymbolControlFacet is IControlEvents {
 
 	function clearSymbolMinAcceptableNotionalLFRateOverride(uint256 symbolId) external;
 
-	function setPartyBLiquidationCushionRate(address partyB, uint256 symbolId, uint256 rate) external;
+	function setPartyBLiquidationOvershootRate(address partyB, uint256 symbolId, uint256 rate) external;
 
-	function clearPartyBLiquidationCushionRateOverride(address partyB, uint256 symbolId) external;
+	function clearPartyBLiquidationOvershootRateOverride(address partyB, uint256 symbolId) external;
 
 	function setSymbolTradingFee(uint256 symbolId, uint256 tradingFee) external;
 

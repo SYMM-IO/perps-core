@@ -4,13 +4,13 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-/// @title LiquidationCushionStorage
-/// @notice Per-PartyB close-to-liquidation cushion configuration.
-library LiquidationCushionStorage {
-	bytes32 internal constant LIQUIDATION_CUSHION_STORAGE_SLOT = keccak256("diamond.standard.storage.liquidationcushion");
+/// @title LiquidationOvershootStorage
+/// @notice Per-PartyB close-to-liquidation overshoot configuration.
+library LiquidationOvershootStorage {
+	bytes32 internal constant LIQUIDATION_OVERSHOOT_STORAGE_SLOT = keccak256("diamond.standard.storage.liquidationovershoot");
 
 	struct Layout {
-		/// @notice Cushion rate in 1e18 precision, keyed by PartyB and symbol.
+		/// @notice Overshoot rate in 1e18 precision, keyed by PartyB and symbol.
 		/// @dev Symbol 0 stores the PartyB default.
 		mapping(address => mapping(uint256 => uint256)) rates;
 		/// @notice Whether a nonzero symbol has an explicit override, including an override of zero.
@@ -18,7 +18,7 @@ library LiquidationCushionStorage {
 	}
 
 	function layout() internal pure returns (Layout storage l) {
-		bytes32 slot = LIQUIDATION_CUSHION_STORAGE_SLOT;
+		bytes32 slot = LIQUIDATION_OVERSHOOT_STORAGE_SLOT;
 		assembly {
 			l.slot := slot
 		}

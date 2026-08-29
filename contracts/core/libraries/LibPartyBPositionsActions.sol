@@ -18,7 +18,7 @@ import { LibAccount } from "./LibAccount.sol";
 import { LibSolvency } from "./LibSolvency.sol";
 import { LockedValuesOps } from "./LibLockedValues.sol";
 import { LibHook } from "./LibHook.sol";
-import { LibLiquidationCushion } from "./LibLiquidationCushion.sol";
+import { LibLiquidationOvershoot } from "./LibLiquidationOvershoot.sol";
 import { LibSymbolAdjustment } from "./LibSymbolAdjustment.sol";
 import { ISymmioHook } from "../interfaces/ISymmioHook.sol";
 import { LibSymbol } from "./LibSymbol.sol";
@@ -344,14 +344,14 @@ library LibPartyBPositionsActions {
 			require(maxFillAmount >= quote.quantityToClose, "PartyBFacet: maxFillAmount cannot limit MARKET_BEST_EFFORT");
 		}
 
-		plan.effectiveRate = LibLiquidationCushion.rate(quote.partyB, quote.symbolId);
+		plan.effectiveRate = LibLiquidationOvershoot.rate(quote.partyB, quote.symbolId);
 		LibSolvency.CloseToLiquidationInputs memory inputs = LibSolvency.CloseToLiquidationInputs({
 			closedPrice: closedPrice,
 			marketPrice: marketPrice,
 			upnlPartyA: upnlPartyA,
 			maxSolverFee: maxSolverFee,
 			maxFillAmount: maxFillAmount,
-			cushionRate: plan.effectiveRate
+			overshootRate: plan.effectiveRate
 		});
 		// A caller cap smaller than the boundary may leave PartyA solvent; the fill is simply the tighter of the two limits.
 		(plan.filledAmount, plan.canCloseAll) = LibSolvency.calculateMaxCloseAmountToLiquidation(quoteId, inputs);
@@ -363,7 +363,7 @@ library LibPartyBPositionsActions {
 		if (!_remainingQuoteValueIsValid(quote, plan.filledAmount)) {
 			// The zero-rate amount is only needed when the configured-rate amount enters the invalid remainder band.
 			if (plan.effectiveRate != 0) {
-				inputs.cushionRate = 0;
+				inputs.overshootRate = 0;
 				(plan.zeroRateAmount, ) = LibSolvency.calculateMaxCloseAmountToLiquidation(quoteId, inputs);
 			}
 			if (plan.filledAmount > plan.zeroRateAmount && _remainingQuoteValueIsValid(quote, plan.zeroRateAmount)) {
@@ -373,7 +373,7 @@ library LibPartyBPositionsActions {
 			}
 		}
 
-		plan.allowedShortfall = LibLiquidationCushion.allowedShortfallAfterClose(quote, plan.filledAmount, plan.effectiveRate);
+		plan.allowedShortfall = LibLiquidationOvershoot.allowedShortfallAfterClose(quote, plan.filledAmount, plan.effectiveRate);
 	}
 
 	/// @notice Matches the remaining-position check performed by LibQuoteClose for partial close-request fills.
