@@ -197,6 +197,7 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
 		require(MAStorage.layout().partyBStatus[partyB], "SymbolControlFacet: Address is not PartyB");
 		require(symbolId <= symbolLayout.lastId, "SymbolControlFacet: Invalid id");
+		require(rate <= 1e18, "SymbolControlFacet: High cushion rate");
 
 		LiquidationCushionStorage.Layout storage cushionLayout = LiquidationCushionStorage.layout();
 		uint256 oldRate = LibLiquidationCushion.rate(partyB, symbolId);

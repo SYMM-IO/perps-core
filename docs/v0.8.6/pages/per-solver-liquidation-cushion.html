@@ -103,8 +103,8 @@ allowedShortfall   = floor(postCloseThreshold * effectiveRate / 1e18)</code></pr
 					</ul>
 					<p>
 						Only <code>PARTY_B_MANAGER_ROLE</code> can set or clear rates. The target must be a registered PartyB, and the symbol must be
-						0 or an existing symbol. Rates use 1e18 precision and have no configured ceiling. Extremely large products saturate at signed
-						accounting capacity instead of overflowing.
+						0 or an existing symbol. Rates use 1e18 precision and are capped at <code>1e18</code>, so the allowance never exceeds the
+						post-close threshold itself.
 					</p>
 
 					<h2 id="execution">Execution behavior</h2>
@@ -152,9 +152,10 @@ allowedShortfall   = floor(postCloseThreshold * effectiveRate / 1e18)</code></pr
 
 					<h2 id="risk">Risk boundary</h2>
 					<p>
-						The allowance is not capped by remaining LF. A manager who configures a large rate can intentionally allow a
-						<code>LATE</code> or <code>OVERDUE</code> liquidation, changing who absorbs the deficit. Use large values only as an explicit
-						risk decision.
+						The allowance is not capped by remaining LF, only by the full post-close CVA + LF at the maximum <code>1e18</code> rate. A
+						manager who configures a large rate can therefore intentionally allow a <code>LATE</code> liquidation, changing who absorbs
+						the deficit; a further adverse market move before liquidation can still push it to <code>OVERDUE</code>. Use large values only
+						as an explicit risk decision.
 					</p>
 					<p>
 						The cushioned close and PartyA liquidation are separate transactions. The close makes PartyA eligible under its signed

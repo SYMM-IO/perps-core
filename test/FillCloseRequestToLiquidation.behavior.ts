@@ -528,15 +528,13 @@ export function shouldBehaveLikeFillCloseRequestToLiquidation(): void {
 			expect(filledAmount).to.equal(quantity)
 		})
 
-		it("handles an extreme uncapped rate and a tiny post-close threshold without overflow", async function () {
+		it("handles the maximum 1e18 rate and a tiny post-close threshold", async function () {
 			const quoteId = 1n
 			const quantity = await getQuoteQuantity(context, quoteId)
 			await user.requestToClosePosition(quoteId, limitCloseRequestBuilder().quantityToClose(quantity).closePrice(decimal(1n)).build())
 			const symbol = await context.viewFacetSymbol.getSymbol(1n)
 			await context.symbolControlFacet.connect(context.signers.admin).setSymbolAcceptableValues(1n, 0n, symbol.minAcceptablePortionLF)
-			await context.symbolControlFacet
-				.connect(context.signers.admin)
-				.setPartyBLiquidationCushionRate(await hedger.getAddress(), 0n, ethers.MaxUint256)
+			await context.symbolControlFacet.connect(context.signers.admin).setPartyBLiquidationCushionRate(await hedger.getAddress(), 0n, 10n ** 18n)
 
 			const closePrice = decimal(1n)
 			const marketPrice = decimal(2n)
@@ -549,7 +547,8 @@ export function shouldBehaveLikeFillCloseRequestToLiquidation(): void {
 				0n,
 			)
 			expect(canCloseAll).to.equal(false)
-			expect(previewAmount).to.equal(quantity - 1n)
+			// With the maximum rate, the boundary sits where the shortfall equals the remaining account CVA+LF.
+			expect(previewAmount).to.equal(69900990099009900990n)
 
 			const filledAmount = await hedger.fillCloseRequestToLiquidation(
 				quoteId,
@@ -629,7 +628,7 @@ export function shouldBehaveLikeFillCloseRequestToLiquidation(): void {
 			await expect(user.liquidateAndSetSymbolPrices([1n], [marketPrice], [quoteId])).to.not.be.reverted
 		})
 
-		it("can intentionally produce an OVERDUE liquidation when the configured rate is extreme", async function () {
+		it("can intentionally produce an OVERDUE liquidation with the maximum rate and a further adverse move", async function () {
 			const quoteId = 1n
 			const remainingQuoteId = await user.sendQuote()
 			await hedger.lockQuote(remainingQuoteId)
@@ -637,26 +636,28 @@ export function shouldBehaveLikeFillCloseRequestToLiquidation(): void {
 			const quantity = await getQuoteQuantity(context, quoteId)
 			const closePrice = decimal(2n, 17)
 			const marketPrice = decimal(8n, 17)
-			const targetAllocatedBalance = decimal(905n, 17)
+			// The 1e18 rate cap bounds the shortfall by the post-close CVA+LF, so leave just enough available
+			// balance that the full close fits inside that allowance.
+			const targetAllocatedBalance = decimal(1005n, 17)
 			const balanceBeforeDeallocation = await user.getBalanceInfo()
 			await context.accountFacet
 				.connect(user.signer)
 				.deallocate(balanceBeforeDeallocation.allocatedBalances - targetAllocatedBalance, await getDummySingleUpnlSig(decimal(200n)))
 			await user.requestToClosePosition(quoteId, limitCloseRequestBuilder().quantityToClose(quantity).closePrice(closePrice).build())
-			await context.symbolControlFacet
-				.connect(context.signers.admin)
-				.setPartyBLiquidationCushionRate(await hedger.getAddress(), 0n, ethers.MaxUint256)
+			await context.symbolControlFacet.connect(context.signers.admin).setPartyBLiquidationCushionRate(await hedger.getAddress(), 0n, 10n ** 18n)
 
 			const upnlPartyA = await user.getUpnl(async () => marketPrice)
 			const balanceBefore = await user.getBalanceInfo()
-			expect(balanceBefore.allocatedBalances - balanceBefore.lockedCva - balanceBefore.lockedLf + upnlPartyA).to.equal(decimal(5n, 17))
+			expect(balanceBefore.allocatedBalances - balanceBefore.lockedCva - balanceBefore.lockedLf + upnlPartyA).to.equal(decimal(105n, 17))
 			const filledAmount = await hedger.fillCloseRequestToLiquidation(
 				quoteId,
 				limitFillCloseRequestBuilder().closedPrice(closePrice).upnlPartyA(upnlPartyA).price(marketPrice).build(),
 			)
 			expect(filledAmount).to.equal(quantity)
 
-			await user.liquidateAndSetSymbolPrices([1n], [marketPrice], [remainingQuoteId])
+			// The capped shortfall alone stays within CVA+LF; the market moving further against the remaining
+			// position is what pushes the liquidation past the LATE band into OVERDUE.
+			await user.liquidateAndSetSymbolPrices([1n], [decimal(7n, 17)], [remainingQuoteId])
 			const liquidationState = await user.getLiquidatedStateOfPartyA()
 			expect(liquidationState.liquidationType).to.equal(3n) // LiquidationType.OVERDUE
 		})
