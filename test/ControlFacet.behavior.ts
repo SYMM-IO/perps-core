@@ -748,11 +748,14 @@ export function shouldBehaveLikeControlFacet(): void {
 			expect(await context.viewFacetSymbol.getPartyBLiquidationCushionRate(partyB, 1n)).to.deep.equal([FIVE_BPS, false])
 		})
 
-		it("defaults unconfigured PartyBs to zero and accepts uncapped manager-selected rates", async function () {
+		it("defaults unconfigured PartyBs to zero and caps manager-selected rates at 1e18", async function () {
 			expect(await context.viewFacetSymbol.getPartyBLiquidationCushionRate(await hedger2.getAddress(), 1n)).to.deep.equal([0n, false])
 
-			await context.symbolControlFacet.connect(owner).setPartyBLiquidationCushionRate(await hedger.getAddress(), 1n, ethers.MaxUint256)
-			expect(await context.viewFacetSymbol.getPartyBLiquidationCushionRate(await hedger.getAddress(), 1n)).to.deep.equal([ethers.MaxUint256, true])
+			await expect(
+				context.symbolControlFacet.connect(owner).setPartyBLiquidationCushionRate(await hedger.getAddress(), 1n, 10n ** 18n + 1n),
+			).to.be.revertedWith("SymbolControlFacet: High cushion rate")
+			await context.symbolControlFacet.connect(owner).setPartyBLiquidationCushionRate(await hedger.getAddress(), 1n, 10n ** 18n)
+			expect(await context.viewFacetSymbol.getPartyBLiquidationCushionRate(await hedger.getAddress(), 1n)).to.deep.equal([10n ** 18n, true])
 		})
 
 		it("requires PartyB manager authority, a registered PartyB, and symbol zero or an existing symbol", async function () {

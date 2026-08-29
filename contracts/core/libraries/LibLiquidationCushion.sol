@@ -13,9 +13,6 @@ import { LibQuote } from "./LibQuote.sol";
 /// @title LibLiquidationCushion
 /// @notice Resolves inherited cushion rates and computes account-level post-close allowances.
 library LibLiquidationCushion {
-	uint256 internal constant WAD = 1e18;
-	uint256 internal constant MAX_SIGNED_BALANCE = uint256(type(int256).max);
-
 	/// @notice Returns the effective cushion rate for a PartyB and symbol.
 	function rate(address partyB, uint256 symbolId) internal view returns (uint256) {
 		LiquidationCushionStorage.Layout storage cushionLayout = LiquidationCushionStorage.layout();
@@ -42,19 +39,9 @@ library LibLiquidationCushion {
 	}
 
 	/// @notice Computes the maximum PartyA shortfall for a threshold and 1e18 rate.
-	/// @dev The stored rate has no ceiling. Results above signed accounting capacity saturate at int256.max.
+	/// @dev SymbolControlFacet caps stored rates at 1e18, so the result never exceeds the threshold.
 	function allowedShortfall(uint256 threshold, uint256 cushionRate) internal pure returns (uint256) {
-		if (threshold == 0 || cushionRate == 0) return 0;
-
-		// At or below half a WAD, even uint256.max as the rate cannot produce more than int256.max.
-		if (threshold <= WAD / 2) {
-			return Math.mulDiv(threshold, cushionRate, WAD);
-		}
-
-		// threshold > WAD / 2 guarantees this full-precision quotient fits in uint256.
-		uint256 maxRateWithoutSaturation = Math.mulDiv(MAX_SIGNED_BALANCE, WAD, threshold);
-		if (cushionRate > maxRateWithoutSaturation) return MAX_SIGNED_BALANCE;
-		return Math.mulDiv(threshold, cushionRate, WAD);
+		return Math.mulDiv(threshold, cushionRate, 1e18);
 	}
 
 	/// @notice Returns the allowance after a candidate close using the effective PartyB-symbol rate.
