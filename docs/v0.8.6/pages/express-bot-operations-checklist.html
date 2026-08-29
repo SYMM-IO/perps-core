@@ -2272,24 +2272,34 @@ Step 2: Bot checks: When does exclusivity end?
 									</td>
 								</tr>
 								<tr>
-									<td><code>GeneralDeposit(amount)</code></td>
+									<td><code>GeneralDeposit(depositor, amount)</code></td>
 									<td>ExpressProvider</td>
-									<td>Update available liquidity tracking</td>
+									<td>Update available liquidity tracking and attribute the funding address</td>
 								</tr>
 								<tr>
-									<td><code>GeneralWithdraw(amount)</code></td>
+									<td><code>GeneralWithdraw(recipient, amount)</code></td>
 									<td>ExpressProvider</td>
-									<td>Update available liquidity tracking</td>
+									<td>Update available liquidity tracking and reconcile the payout recipient</td>
 								</tr>
 								<tr>
-									<td><code>AffiliateDeposit(affiliate, amount)</code></td>
+									<td><code>AffiliateDeposit(affiliate, depositor, amount)</code></td>
 									<td>ExpressProvider</td>
-									<td>Update per-affiliate liquidity tracking</td>
+									<td>Update per-affiliate liquidity tracking and attribute the funding address</td>
 								</tr>
 								<tr>
-									<td><code>AffiliateWithdraw(affiliate, amount)</code></td>
+									<td><code>AffiliateWithdraw(affiliate, recipient, amount)</code></td>
 									<td>ExpressProvider</td>
-									<td>Update per-affiliate liquidity tracking</td>
+									<td>Update per-affiliate liquidity tracking and reconcile the payout recipient</td>
+								</tr>
+								<tr>
+									<td><code>FeesClaimed(affiliate, recipient, amount)</code></td>
+									<td>ExpressProvider</td>
+									<td>Reconcile the affiliate-fee payout with its actual recipient</td>
+								</tr>
+								<tr>
+									<td><code>OperatorFeesClaimed(affiliate, recipient, amount)</code></td>
+									<td>ExpressProvider</td>
+									<td>Reconcile the operator-fee payout with its actual recipient</td>
 								</tr>
 							</tbody>
 						</table>

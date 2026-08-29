@@ -127,6 +127,7 @@ library PartyBPositionActionsFacetImpl {
 		);
 		require(plan.filledAmount > 0, "PartyBFacet: Cannot close any amount");
 
+		LibPartyBPositionsActions.prepareCloseToLiquidationFill(quoteId, plan.filledAmount);
 		actualShortfall = _fillCloseRequest(quoteId, plan.filledAmount, closedPrice, upnlSig, plan.allowedShortfall);
 	}
 

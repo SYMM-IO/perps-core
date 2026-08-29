@@ -255,18 +255,14 @@ contract ControlFacet is Accessibility, Ownable, IControlEvents {
 	}
 
 	/// @notice Sets or clears a UPNL signature validity override for one Muon function category.
-	/// @dev Nonzero values override the global UPNL validity. Passing zero clears the override and falls back to setMuonConfig.
+	/// @dev A zero value means the override is unset, so verification uses the global UPNL validity from setMuonConfig.
 	/// @param func The Muon function category to configure.
 	/// @param upnlValidTime Override duration in seconds, or zero to clear the override.
 	function setMuonFunctionUpnlValidTime(MuonFunction func, uint256 upnlValidTime) external onlyRole(LibAccessibility.MUON_SETTER_ROLE) {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
-		if (upnlValidTime == 0) {
-			delete muonLayout.upnlValidTimeByFunction[func];
-			emit SetMuonFunctionUpnlValidTime(func, false, 0);
-			return;
-		}
+		// Zero is the unset sentinel; the validity resolver then falls back to the global value.
 		muonLayout.upnlValidTimeByFunction[func] = upnlValidTime;
-		emit SetMuonFunctionUpnlValidTime(func, true, upnlValidTime);
+		emit SetMuonFunctionUpnlValidTime(func, upnlValidTime);
 	}
 
 	/// @notice Sets the Muon application ID used to identify this protocol in the Muon oracle network.

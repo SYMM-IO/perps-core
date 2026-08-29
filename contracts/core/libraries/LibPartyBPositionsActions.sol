@@ -48,12 +48,40 @@ library LibPartyBPositionsActions {
 		} else {
 			require(closedPrice <= quote.requestedClosePrice, "PartyBFacet: Closed price isn't valid");
 		}
-		if (quote.orderType == OrderType.LIMIT) {
+		if (
+			quote.orderType == OrderType.LIMIT ||
+			(quote.orderType == OrderType.MARKET_BEST_EFFORT && quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING)
+		) {
 			require(quote.quantityToClose >= filledAmount, "PartyBFacet: Invalid filledAmount");
 		} else {
 			require(quote.quantityToClose == filledAmount, "PartyBFacet: Invalid filledAmount");
 		}
 		LibQuoteClose.closeQuote(quote.id, filledAmount, closedPrice);
+	}
+
+	/// @notice Prepares a close-to-liquidation fill without duplicating its state transition across execution paths.
+	/// @dev A partial MARKET_BEST_EFFORT fill is finalized through the existing cancellation path, which atomically
+	///      clears the unfilled request after the calculated amount is closed.
+	function prepareCloseToLiquidationFill(uint256 quoteId, uint256 filledAmount) internal {
+		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		require(
+			quote.quoteStatus == QuoteStatus.CLOSE_PENDING || quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING,
+			"PartyBFacet: Invalid state"
+		);
+		_requireCloseToLiquidationOrderType(quote.orderType);
+		require(filledAmount > 0 && filledAmount <= quote.quantityToClose, "PartyBFacet: Invalid filledAmount");
+
+		if (quote.orderType == OrderType.MARKET_BEST_EFFORT && filledAmount < quote.quantityToClose) {
+			quote.quoteStatus = QuoteStatus.CANCEL_CLOSE_PENDING;
+		}
+	}
+
+	/// @notice Reverts unless the order type supports close-to-liquidation execution.
+	function _requireCloseToLiquidationOrderType(OrderType orderType) private pure {
+		require(
+			orderType == OrderType.LIMIT || orderType == OrderType.MARKET_BEST_EFFORT,
+			"PartyBFacet: Only LIMIT or MARKET_BEST_EFFORT orders supported"
+		);
 	}
 
 	/// @notice Opens a position by filling a locked quote, handling partial fills and fee collection.
@@ -285,7 +313,8 @@ library LibPartyBPositionsActions {
 	/// @notice Validates a close-to-liquidation request and builds the shared execution plan.
 	/// @dev Does NOT verify the Muon signature or any party's solvency; callers remain responsible for that.
 	///      The boundary search is bounded by `min(maxFillAmount, quantityToClose)` inside LibSolvency, so `filledAmount`
-	///      already respects the caller's ceiling before the remaining-value fallback runs.
+	///      already respects the caller's ceiling before the remaining-value fallback runs. For MARKET_BEST_EFFORT,
+	///      `maxFillAmount` must be at least the full requested quantity, so it never caps the result.
 	function calculateCloseToLiquidationPlan(
 		uint256 quoteId,
 		uint256 maxFillAmount,
@@ -309,8 +338,11 @@ library LibPartyBPositionsActions {
 			require(closedPrice <= quote.requestedClosePrice, "PartyBFacet: Closed price isn't valid");
 		}
 
-		// Only applicable for LIMIT orders - MARKET orders must be filled completely
-		require(quote.orderType == OrderType.LIMIT, "PartyBFacet: Only LIMIT orders supported");
+		// Ordinary MARKET orders must be filled completely and are not supported by this path.
+		_requireCloseToLiquidationOrderType(quote.orderType);
+		if (quote.orderType == OrderType.MARKET_BEST_EFFORT) {
+			require(maxFillAmount >= quote.quantityToClose, "PartyBFacet: maxFillAmount cannot limit MARKET_BEST_EFFORT");
+		}
 
 		plan.effectiveRate = LibLiquidationCushion.rate(quote.partyB, quote.symbolId);
 		LibSolvency.CloseToLiquidationInputs memory inputs = LibSolvency.CloseToLiquidationInputs({

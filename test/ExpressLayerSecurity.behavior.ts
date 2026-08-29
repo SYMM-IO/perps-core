@@ -2100,34 +2100,38 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 		})
 
 		it("should deposit zero amount (no-op)", async function () {
-			const { deployer, expressProvider, collateral, generalFunding } = await deployFixture()
+			const { deployer, expressProvider, collateral, generalFunding, affiliate, affiliateFunding } = await deployFixture()
 
 			// Deposit zero to general
 			await collateral.connect(deployer).approve(await expressProvider.getAddress(), 0n)
-			await expressProvider.depositToGeneral(0n)
+			await expect(expressProvider.depositToGeneral(0n)).to.emit(expressProvider, "GeneralDeposit").withArgs(deployer.address, 0n)
 			expect(await expressProvider.generalBalance()).to.equal(generalFunding)
 
 			// Deposit zero to affiliate
-			const { affiliate, affiliateFunding } = await deployFixture()
-			// Note: fresh fixture for isolation; let's check on the original fixture instead
+			await expect(expressProvider.depositToAffiliate(affiliate, 0n))
+				.to.emit(expressProvider, "AffiliateDeposit")
+				.withArgs(affiliate, deployer.address, 0n)
+			expect(await expressProvider.affiliateBalances(affiliate)).to.equal(affiliateFunding)
 		})
 
-		it("should accept withdrawFromGeneral(0) as a no-op emitting GeneralWithdraw(0)", async function () {
-			const { expressProvider, generalFunding, collateral } = await deployFixture()
+		it("should accept withdrawFromGeneral(0) as a no-op emitting its recipient", async function () {
+			const { deployer, expressProvider, generalFunding, collateral } = await deployFixture()
 			const expressAddr = await expressProvider.getAddress()
 			const held = await collateral.balanceOf(expressAddr)
 
-			await expect(expressProvider.withdrawFromGeneral(0n)).to.emit(expressProvider, "GeneralWithdraw").withArgs(0n)
+			await expect(expressProvider.withdrawFromGeneral(0n)).to.emit(expressProvider, "GeneralWithdraw").withArgs(deployer.address, 0n)
 			expect(await expressProvider.generalBalance()).to.equal(generalFunding)
 			expect(await collateral.balanceOf(expressAddr)).to.equal(held)
 		})
 
-		it("should accept withdrawFromAffiliate(0) as a no-op emitting AffiliateWithdraw(0)", async function () {
-			const { expressProvider, affiliate, affiliateFunding, collateral } = await deployFixture()
+		it("should accept withdrawFromAffiliate(0) as a no-op emitting its recipient", async function () {
+			const { deployer, expressProvider, affiliate, affiliateFunding, collateral } = await deployFixture()
 			const expressAddr = await expressProvider.getAddress()
 			const held = await collateral.balanceOf(expressAddr)
 
-			await expect(expressProvider.withdrawFromAffiliate(affiliate, 0n)).to.emit(expressProvider, "AffiliateWithdraw").withArgs(affiliate, 0n)
+			await expect(expressProvider.withdrawFromAffiliate(affiliate, 0n))
+				.to.emit(expressProvider, "AffiliateWithdraw")
+				.withArgs(affiliate, deployer.address, 0n)
 			expect(await expressProvider.affiliateBalances(affiliate)).to.equal(affiliateFunding)
 			expect(await collateral.balanceOf(expressAddr)).to.equal(held)
 		})

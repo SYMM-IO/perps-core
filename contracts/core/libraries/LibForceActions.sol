@@ -110,7 +110,7 @@ library LibForceActions {
 		int256 sigUpnlPartyB,
 		uint256 closePrice
 	) public view returns (int256 partyBAvailableBalance, int256 partyAAvailableBalance) {
-		Quote memory quote = QuoteStorage.layout().quotes[quoteId];
+		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 
 		uint256[] memory quoteIds = new uint256[](1);
 		uint256[] memory filledAmounts = new uint256[](1);
