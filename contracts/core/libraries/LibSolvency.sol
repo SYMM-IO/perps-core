@@ -291,7 +291,7 @@ library LibSolvency {
 		if (balanceAtUpperBound >= 0) return (upperBound, true);
 
 		// If closing is non-harmful but the bounded close is still insolvent, reducing the amount cannot restore solvency.
-		if (totalRate >= 0) revert("LibSolvency: Full close keeps PartyA insolvent");
+		require(totalRate < 0, "LibSolvency: Full close keeps PartyA insolvent");
 		// Preserve the existing policy for a shortfall that existed before a harmful close: do not deepen it through this helper.
 		if (currentBalance <= 0) return (0, false);
 
