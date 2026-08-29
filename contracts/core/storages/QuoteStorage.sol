@@ -13,7 +13,8 @@ enum PositionType {
 /// @notice Type of order execution
 enum OrderType {
 	LIMIT,
-	MARKET
+	MARKET,
+	MARKET_BEST_EFFORT
 }
 
 /// @notice Lifecycle status of a quote from creation through settlement

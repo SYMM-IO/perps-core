@@ -92,6 +92,7 @@
 			["symbol-adjustment", "Symbols", "Symbol Corporate-Action Adjustment"],
 			["strict-deallocation", "Accounts", "Strict Deallocation"],
 			["instant-open-gas-optimization", "Performance", "InstantOpen Gas Optimization"],
+			["market-best-effort", "Trading Execution", "MARKET_BEST_EFFORT Close Orders"],
 			["explicit-clearing-house-settlements", "Clearing House", "Explicit Clearing House Settlements"],
 			["liquidation-funding-observability", "Liquidation", "Liquidation Funding Observability"],
 			["partya-liquidation-fee-recipient", "Liquidation", "PartyA Liquidation Fee Recipient Cleanup"],

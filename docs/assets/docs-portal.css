@@ -1188,6 +1188,7 @@ body.doc-page .doc-article p {
 	margin-top: 56px;
 }
 
+[data-catalog-item][hidden],
 .version-catalog-group[hidden] {
 	display: none;
 }

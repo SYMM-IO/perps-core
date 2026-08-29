@@ -7,7 +7,7 @@ import { initializeFixture } from "./Initialize.fixture.js"
 import { ethers } from "./helpers/hardhat-connection.js"
 import { cloneTypes, DELEGATE_TYPES, FLEX_FILLER_AUTH_TYPES } from "./helpers/instantLayerEIP712Types.js"
 import { loadFixture, time } from "./helpers/network-helpers.js"
-import { QuoteStatus } from "./models/Enums.js"
+import { OrderType, QuoteStatus } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
@@ -779,6 +779,41 @@ export function shouldBehaveLikeInstantLayer(): void {
 					ctx.context.instantLayer,
 					"ArrayLengthMismatch",
 				)
+			})
+
+			it("rejects MARKET_BEST_EFFORT when InstantLayer forwards an opening quote", async function () {
+				const request = execCtx.requestSendQuote
+				const callData = execCtx.context.partyAFacet.interface.encodeFunctionData("sendQuoteWithAffiliate", [
+					request.partyBWhiteList,
+					request.symbolId,
+					request.positionType,
+					OrderType.MARKET_BEST_EFFORT,
+					request.price,
+					request.quantity,
+					request.cva,
+					request.lf,
+					request.partyAmm,
+					request.partyBmm,
+					request.maxFundingRate,
+					await request.deadline,
+					request.affiliate,
+					await request.upnlSig,
+				])
+				const op = createSignedOperation(
+					execCtx.context.signers.admin.address,
+					execCtx.symmioAddress,
+					callData,
+					{ addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					1n,
+					execCtx.deadline,
+				)
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+				const revertMessage = "PartyAFacet: MARKET_BEST_EFFORT is close-only"
+				const revertData = "0x08c379a0" + ethers.AbiCoder.defaultAbiCoder().encode(["string"], [revertMessage]).slice(2)
+
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]]))
+					.to.be.revertedWithCustomError(ctx.context.instantLayer, "OperationFailed")
+					.withArgs(0n, revertData)
 			})
 		})
 
@@ -2465,7 +2500,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 		})
 
 		describe("TPSL scenario (requestToClosePosition)", function () {
-			it("should allow TPSL bot to fill quantityToClose via flex field on an open position", async function () {
+			it("should forward MARKET_BEST_EFFORT value 2 through the unchanged close selector", async function () {
 				// Step 1: Open a position via template (sendQuote → lockQuote → openPosition)
 				const lockQuoteCallDataTemplate = ctx.context.partyBQuoteActionsFacet.interface.encodeFunctionData("lockQuote", [
 					0,
@@ -2529,7 +2564,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 					1, // quoteId
 					execCtx.requestOpenQuote.openPrice, // closePrice
 					0, // quantityToClose placeholder — flex filler will provide
-					1, // OrderType.MARKET
+					OrderType.MARKET_BEST_EFFORT,
 					closeDeadline,
 				])
 
@@ -2555,6 +2590,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				const quoteAfter = await ctx.context.viewFacetQuote.getQuote(1)
 				expect(quoteAfter.quoteStatus).to.equal(QuoteStatus.CLOSE_PENDING)
 				expect(quoteAfter.quantityToClose).to.equal(quote.quantity)
+				expect(quoteAfter.orderType).to.equal(OrderType.MARKET_BEST_EFFORT)
 			})
 		})
 

@@ -164,8 +164,8 @@ const UINT256_MAX = (BigInt(1) << BigInt(256)) - BigInt(1)
 /**
  * Resolve per-function UPNL validity overrides into canonical Solidity enum order.
  *
- * On-chain, zero is the unset value: setMuonFunctionUpnlValidTime(func, 0) deletes the
- * override and falls back to the global window. A recipe therefore expresses "no override"
+ * On-chain, zero is the unset value: setMuonFunctionUpnlValidTime(func, 0) stores the
+ * sentinel and falls back to the global window. A recipe therefore expresses "no override"
  * by omitting the function, and a zero value is rejected as ambiguous.
  */
 export function resolveMuonFunctionUpnlValidTimes(

@@ -20,7 +20,7 @@ export const FUZZ_POSITION_TYPES = ["LONG", "SHORT"] as const
 
 export type FuzzPositionType = (typeof FUZZ_POSITION_TYPES)[number]
 
-export const FUZZ_ORDER_TYPES = ["LIMIT", "MARKET"] as const
+export const FUZZ_ORDER_TYPES = ["LIMIT", "MARKET", "MARKET_BEST_EFFORT"] as const
 
 export type FuzzOrderType = (typeof FUZZ_ORDER_TYPES)[number]
 

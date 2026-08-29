@@ -20,6 +20,7 @@ export enum PositionType {
 export enum OrderType {
 	LIMIT,
 	MARKET,
+	MARKET_BEST_EFFORT,
 }
 
 export enum BindStatus {

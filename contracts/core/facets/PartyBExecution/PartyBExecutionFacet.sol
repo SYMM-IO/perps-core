@@ -97,6 +97,7 @@ contract PartyBExecutionFacet is Accessibility, Pausable, IPartyBExecutionFacet 
 	///      `maxSolverFee` is quoted for `maxFillAmount`; if the protocol closes less, the fee is pro-rated to the executed quantity.
 	/// @param quoteId The ID of the quote for which the close request is filled.
 	/// @param maxFillAmount The maximum amount PartyB is willing to close in this transaction; a smaller cap may leave PartyA solvent.
+	///        For MARKET_BEST_EFFORT it must be at least the full requested quantity and never caps the fill.
 	/// @param closedPrice The closed price for the close request.
 	/// @param upnlSig The Muon signature containing PairUpnlAndPriceSig data.
 	/// @param maxSolverFee Solver fee quoted for `maxFillAmount` and the most that can be charged; pro-rated down when the
@@ -133,6 +134,8 @@ contract PartyBExecutionFacet is Accessibility, Pausable, IPartyBExecutionFacet 
 	/// @dev The caller passes `maxSolverFee` as an absolute amount quoted for `maxFillAmount`. If the liquidation
 	///      boundary or remaining-value fallback reduces the fill, the fee is pro-rated to what is actually closed
 	///      (`maxSolverFee * filledAmount / maxFillAmount`). The planner uses that same prorated fee for every candidate amount.
+	///      This applies uniformly to LIMIT and MARKET_BEST_EFFORT; MARKET_BEST_EFFORT only forbids a `maxFillAmount`
+	///      below the full requested quantity (enforced by the planner), not the proration itself.
 	function _fillCloseRequestToLiquidation(
 		uint256 quoteId,
 		uint256 maxFillAmount,
@@ -159,6 +162,7 @@ contract PartyBExecutionFacet is Accessibility, Pausable, IPartyBExecutionFacet 
 			emit CloseSolverFeeCharged(quoteId, quote.partyA, quote.partyB, receiver, quote.symbolId, chargedFee);
 		}
 
+		LibPartyBPositionsActions.prepareCloseToLiquidationFill(quoteId, filledAmount);
 		uint256 actualShortfall = PartyBPositionActionsFacetImpl.fillCloseRequestWithAllowedShortfall(
 			quoteId,
 			filledAmount,
