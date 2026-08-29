@@ -31,9 +31,9 @@ interface IPartyBExecutionFacet is IPartiesEvents {
 
 	function fillCloseRequestToLiquidation(
 		uint256 quoteId,
-		uint256 maxQuantity,
+		uint256 maxFillAmount,
 		uint256 closedPrice,
 		PairUpnlAndPriceSig memory upnlSig,
-		uint256 solverFee
+		uint256 maxSolverFee
 	) external returns (uint256 filledAmount);
 }

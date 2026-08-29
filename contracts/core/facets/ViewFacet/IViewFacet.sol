@@ -258,14 +258,6 @@ interface IViewFacet {
 
 	function isAccumulatedFundingActivated() external view returns (bool);
 
-	function getMaxCloseAmountToLiquidation(
-		uint256 quoteId,
-		uint256 closedPrice,
-		uint256 marketPrice,
-		int256 upnlPartyA,
-		uint256 solverFeeAmount
-	) external view returns (uint256 maxCloseAmount, bool canCloseAll);
-
 	function partyAReimbursement(address partyA) external view returns (uint256);
 
 	function getPartyADeferredBalance(address partyA) external view returns (uint256);

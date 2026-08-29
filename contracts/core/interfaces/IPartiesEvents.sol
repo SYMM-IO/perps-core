@@ -94,4 +94,15 @@ interface IPartiesEvents {
 		uint256 symbolId,
 		uint256 amount
 	);
+
+	/// @notice Emitted when a configured close-to-liquidation overshoot permits PartyA to finish below zero.
+	event PartyALiquidationOvershootUsed(
+		uint256 indexed quoteId,
+		address indexed partyA,
+		address indexed partyB,
+		uint256 symbolId,
+		uint256 rate,
+		uint256 allowedShortfall,
+		uint256 actualShortfall
+	);
 }
