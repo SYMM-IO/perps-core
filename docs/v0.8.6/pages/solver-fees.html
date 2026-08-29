@@ -120,7 +120,7 @@ closeFeeCharged + newCloseSolverFee &lt;= closeNotional * closeRateCap / 1e18
 						the underfill: it must be at least the request's full <code>quantityToClose</code>. The supplied solver fee therefore remains
 						absolute instead of entering LIMIT's quantity-cap proration branch. For the order lifecycle, full and partial fills,
 						cancellation race, guardrails, integration routes, events, and bot retry rules, see
-						<a href="./market-best-effort.html"><code>MARKET_BEST_EFFORT</code> Close Orders</a>.
+						<a href="./close-to-liquidation.html#market-best-effort">Close-to-Liquidation Execution</a>.
 					</p>
 
 					<h2 id="api-surface">API</h2>
@@ -222,9 +222,9 @@ function fillCloseRequestToLiquidation(
 						a smaller fill, the contract both plans and charges <code>maxSolverFee * filledAmount / maxFillAmount</code>. A fee-bearing
 						call must therefore pass a concrete quantity as its fee basis: an effectively unbounded <code>maxFillAmount</code> such as
 						<code>type(uint256).max</code> makes the prorated fee round down to zero, so nothing is charged. Use the quote's remaining
-						close quantity when no tighter cap is wanted. For <code>MARKET_BEST_EFFORT</code>, <code>maxFillAmount</code> must be at
-						least the full requested quantity, so it never caps the fill; the same proration still applies when the liquidation boundary
-						closes less than <code>maxFillAmount</code>.
+						close quantity when no tighter cap is wanted. For <code>MARKET_BEST_EFFORT</code>, <code>maxFillAmount</code> must be at least
+						the full requested quantity, so it never caps the fill; the same proration still applies when the liquidation boundary closes
+						less than <code>maxFillAmount</code>.
 					</p>
 					<p>
 						The legacy <code>fillCloseRequestToLiquidation</code> method remains available for backward compatibility, but it reserves

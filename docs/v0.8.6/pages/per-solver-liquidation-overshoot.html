@@ -3,25 +3,17 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<meta
-			name="description"
-			content="Adds a manager-configured per-solver and per-symbol overshoot that lets close-to-liquidation finish slightly below PartyA's liquidation boundary."
-		/>
+		<meta name="robots" content="noindex" />
+		<meta name="description" content="The liquidation overshoot documentation has moved to the close-to-liquidation execution chapter." />
+		<meta http-equiv="refresh" content="0; url=./close-to-liquidation.html#overshoot" />
 		<title>Per-Solver Liquidation Overshoot - Symmio Core v0.8.6</title>
+		<link rel="canonical" href="./close-to-liquidation.html" />
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
-		<script>
-			try {
-				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
-			} catch (_error) {}
-		</script>
 		<link rel="stylesheet" href="../assets/v086-docs.css" />
 		<link rel="stylesheet" href="../../assets/docs-portal.css" />
-		<script src="../assets/v086-docs.js" defer></script>
-		<script src="../../assets/docs-portal.js" defer></script>
 	</head>
 	<body class="doc-page" data-version="0.8.6">
 		<a class="skip-link" href="#full-document">Skip to document</a>
-
 		<header class="docs-header">
 			<div class="doc-topbar">
 				<nav class="docs-trail" aria-label="Breadcrumb">
@@ -31,143 +23,27 @@
 					<span class="trail-sep" aria-hidden="true">/</span>
 					<a class="trail-link" href="../index.html">v0.8.6</a>
 				</nav>
-				<nav class="top-actions" aria-label="Page actions">
-					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
-				</nav>
 			</div>
 		</header>
-
 		<div class="reader-shell">
-			<div class="rail-sections-source" data-rail-sections hidden>
-				<a class="toc-link level-2" href="#summary">Summary</a>
-				<a class="toc-link level-2" href="#allowance">Allowance calculation</a>
-				<a class="toc-link level-2" href="#configuration">Configuration</a>
-				<a class="toc-link level-2" href="#execution">Execution behavior</a>
-				<a class="toc-link level-2" href="#fallback">Remaining-value fallback</a>
-				<a class="toc-link level-2" href="#integration">Integration and events</a>
-				<a class="toc-link level-2" href="#risk">Risk boundary</a>
-			</div>
-
 			<main class="reader-main">
 				<header class="reader-hero">
 					<div class="reader-title-row">
 						<div>
 							<h1>Per-Solver Liquidation Overshoot</h1>
-							<p class="hero-copy">
-								A manager can let a selected solver close PartyA a small distance below the liquidation boundary, reducing the chance
-								that a tiny favorable market move makes the account solvent again before liquidation starts.
-							</p>
+							<p class="hero-copy">This material now belongs to the unified close-to-liquidation execution chapter.</p>
 						</div>
 					</div>
 				</header>
-
 				<article class="doc-article" id="full-document">
-					<h2 id="summary">Summary</h2>
+					<h2 id="moved">This chapter moved</h2>
 					<p>
-						Normal close fills still require PartyA and PartyB to finish solvent. The two
-						<code>fillCloseRequestToLiquidation</code> paths may use a PartyB- and symbol-specific overshoot. PartyB must remain solvent,
-						while PartyA may finish below zero by no more than the calculated allowance.
-					</p>
-					<p>
-						The default rate for every PartyB is zero, so the overshoot stays inactive until a manager opts a solver in. The external
-						close selectors are unchanged, and the allowance is never supplied by PartyB. Independently of the overshoot, the fee-aware
-						method quotes its solver fee for <code>maxFillAmount</code>; see Execution behavior for what that requires of callers.
-					</p>
-
-					<h2 id="allowance">Allowance calculation</h2>
-					<pre><code class="language-text">postCloseThreshold = remaining account locked CVA + remaining account locked LF
-allowedShortfall   = floor(postCloseThreshold * effectiveRate / 1e18)</code></pre>
-					<p>
-						The threshold is account-level: it includes CVA and LF belonging to other open positions. The closing quote's CVA and LF are
-						released separately with the same integer rounding used by settlement. The selected quantity is then checked against the exact
-						post-close balance before state changes are accepted.
-					</p>
-					<p>
-						For example, suppose the zero-rate close would leave a $10 threshold. A 5 bps rate is stored as <code>5e14</code> and permits
-						at most <code>$10 * 0.0005 = $0.005</code> of PartyA shortfall. Operations can opt a PartyB into this default with
-						<code>setPartyBLiquidationOvershootRate(partyB, 0, 5e14)</code>.
-					</p>
-					<p>
-						The allowance applies only when closing is harmful to PartyA and PartyA's available balance starts above zero. When closing is
-						beneficial or neutral and a full close still leaves PartyA insolvent, the call reverts, and a PartyA already at or below zero
-						cannot close anything through this path; the overshoot does not extend either rule.
-					</p>
-
-					<h2 id="configuration">Configuration</h2>
-					<ul>
-						<li><code>setPartyBLiquidationOvershootRate(partyB, 0, rate)</code> sets that PartyB's default.</li>
-						<li>A nonzero symbol inherits symbol 0 unless it has an explicit override.</li>
-						<li>Setting a symbol-specific rate to zero explicitly disables a nonzero PartyB default for that symbol.</li>
-						<li><code>clearPartyBLiquidationOvershootRateOverride</code> restores inheritance from symbol 0.</li>
-						<li><code>getPartyBLiquidationOvershootRate</code> returns the effective rate and the override state.</li>
-					</ul>
-					<p>
-						Only <code>PARTY_B_MANAGER_ROLE</code> can set or clear rates. The target must be a registered PartyB, and the symbol must be
-						0 or an existing symbol. Rates use 1e18 precision and are capped at <code>1e18</code>, so the allowance never exceeds the
-						post-close threshold itself.
-					</p>
-
-					<h2 id="execution">Execution behavior</h2>
-					<p>
-						The legacy and fee-aware methods share the normal internal close pipeline: Muon verification, bound-mode handling, solvency,
-						UPNL counters, settlement, hooks, and fill events remain in one execution path. A normal
-						<code>fillCloseRequest</code> always passes an allowance of zero.
-					</p>
-					<p>
-						The solver quotes its fee for <code>maxFillAmount</code>. For every candidate amount, the fee-aware planner uses
-						<code>maxSolverFee * candidateAmount / maxFillAmount</code>; the final transfer uses the same formula with
-						<code>filledAmount</code>. An undersized <code>maxFillAmount</code> remains a best-effort ceiling and may leave PartyA
-						solvent. Because <code>maxFillAmount</code> is the fee basis, a fee-bearing call must pass a concrete quantity: an effectively
-						unbounded value such as <code>type(uint256).max</code> makes the prorated fee round down to zero, so nothing is charged. Use
-						the quote's remaining close quantity when no tighter cap is wanted.
-					</p>
-
-					<h2 id="fallback">Remaining-value fallback</h2>
-					<p>
-						An overshoot can increase the fill enough to leave a nonzero remainder below <code>minAcceptableQuoteValue</code>. In that
-						case, the planner falls back to the capped zero-rate amount and validates the remainder again. If that amount is also invalid,
-						the call keeps the existing <code>Remaining quote value is low</code> revert. A full close is valid because its remaining
-						value is zero.
-					</p>
-					<p>
-						<code>getMaxCloseAmountToLiquidation</code> uses the same fallback. Its <code>canCloseAll</code> result means the full close
-						fits within the configured allowance; it does not mean PartyA necessarily remains solvent.
-					</p>
-
-					<h2 id="integration">Integration and events</h2>
-					<ul>
-						<li>
-							<code>SetPartyBLiquidationOvershootRate</code> records the PartyB, symbol, old and new effective rates, and override
-							state.
-						</li>
-						<li>
-							<code>PartyALiquidationOvershootUsed</code> is emitted only when the calculated final PartyA balance is negative. It
-							reports the effective rate, allowed shortfall, and actual shortfall.
-						</li>
-						<li>
-							The <code>getMaxCloseAmountToLiquidation</code> selector is served by <code>ViewFacetQuote</code>, so an upgrade must move
-							it in the diamond cut. The view validates the pending close request (status, deadline, price, LIMIT order) before
-							computing and reverts for a request execution would reject.
-						</li>
-					</ul>
-
-					<h2 id="risk">Risk boundary</h2>
-					<p>
-						The allowance is not capped by remaining LF, only by the full post-close CVA + LF at the maximum <code>1e18</code> rate. A
-						manager who configures a large rate can therefore intentionally allow a <code>LATE</code> liquidation, changing who absorbs
-						the deficit; a further adverse market move before liquidation can still push it to <code>OVERDUE</code>. Use large values only
-						as an explicit risk decision.
-					</p>
-					<p>
-						The overshoot close and PartyA liquidation are separate transactions. The close makes PartyA eligible under its signed
-						accounting snapshot, but it cannot guarantee eligibility after a favorable market move larger than the overshoot.
+						Read <a href="./close-to-liquidation.html#overshoot">Close-to-Liquidation Execution</a> for the overshoot problem, allowance
+						calculation, configuration, and risk boundary.
 					</p>
 				</article>
 			</main>
 		</div>
-
-		<footer class="site-footer">
-			<span>Symmio Core v0.8.6 documentation.</span>
-		</footer>
+		<footer class="site-footer"><span>Symmio Core v0.8.6 documentation.</span></footer>
 	</body>
 </html>

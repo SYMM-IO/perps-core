@@ -92,7 +92,7 @@
 			["symbol-adjustment", "Symbols", "Symbol Corporate-Action Adjustment"],
 			["strict-deallocation", "Accounts", "Strict Deallocation"],
 			["instant-open-gas-optimization", "Performance", "InstantOpen Gas Optimization"],
-			["market-best-effort", "Trading Execution", "MARKET_BEST_EFFORT Close Orders"],
+			["close-to-liquidation", "Trading & Liquidation", "Close-to-Liquidation Execution"],
 			["explicit-clearing-house-settlements", "Clearing House", "Explicit Clearing House Settlements"],
 			["liquidation-funding-observability", "Liquidation", "Liquidation Funding Observability"],
 			["partya-liquidation-fee-recipient", "Liquidation", "PartyA Liquidation Fee Recipient Cleanup"],
@@ -112,7 +112,6 @@
 			["notional-liquidation-fee-floor", "Liquidation", "Notional Liquidation Fee Floor"],
 			["close-settlement-netting", "Settlement", "Per-Quote Close Settlement Netting"],
 			["accountlayer-callback-liveness", "AccountLayer", "AccountLayer Force-Close and Liquidation Fix"],
-			["per-solver-liquidation-overshoot", "Liquidation", "Per-Solver Liquidation Overshoot"],
 		],
 	};
 
@@ -122,6 +121,8 @@
 		"0.8.6": {
 			overview: ["Release", "Symmio Core v0.8.6 Overview"],
 			"express-bot-operations-checklist": ["Express Withdrawal", "Express Provider Bot Operations Checklist"],
+			"market-best-effort": ["Compatibility", "MARKET_BEST_EFFORT Close Orders"],
+			"per-solver-liquidation-overshoot": ["Compatibility", "Per-Solver Liquidation Overshoot"],
 		},
 	};
 
