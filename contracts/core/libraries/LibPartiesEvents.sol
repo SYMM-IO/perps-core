@@ -70,7 +70,7 @@ library LibPartiesEvents {
 	event ADLClose(uint256 quoteId, uint256 amount, uint256 price);
 
 	// Mirrors IPartiesEvents, including its indexed layout, so facets share one emit helper.
-	event PartyALiquidationCushionUsed(
+	event PartyALiquidationOvershootUsed(
 		uint256 indexed quoteId,
 		address indexed partyA,
 		address indexed partyB,
@@ -97,8 +97,8 @@ library LibPartiesEvents {
 		emit FillCloseRequest(quoteId, quote.partyA, quote.partyB, filledAmount, closedPrice, quote.quoteStatus, closeId, quote.lockedValues);
 	}
 
-	/// @notice Emits PartyALiquidationCushionUsed when a cushioned close left PartyA below zero; no-op for a zero shortfall.
-	function emitPartyALiquidationCushionUsedIfAny(
+	/// @notice Emits PartyALiquidationOvershootUsed when an overshoot close left PartyA below zero; no-op for a zero shortfall.
+	function emitPartyALiquidationOvershootUsedIfAny(
 		Quote storage quote,
 		uint256 quoteId,
 		uint256 rate,
@@ -106,6 +106,6 @@ library LibPartiesEvents {
 		uint256 actualShortfall
 	) internal {
 		if (actualShortfall == 0) return;
-		emit PartyALiquidationCushionUsed(quoteId, quote.partyA, quote.partyB, quote.symbolId, rate, allowedShortfall, actualShortfall);
+		emit PartyALiquidationOvershootUsed(quoteId, quote.partyA, quote.partyB, quote.symbolId, rate, allowedShortfall, actualShortfall);
 	}
 }

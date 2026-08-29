@@ -897,7 +897,7 @@ export function shouldBehaveLikeSolverFee(): void {
 		expect(state.closeFeeCharged).to.equal(0n)
 	})
 
-	it("treats maxQuantity as a best-effort ceiling even when it is too small to reach the cushion", async function () {
+	it("treats maxQuantity as a best-effort ceiling even when it is too small to reach the overshoot", async function () {
 		const quoteId = await sendQuoteWithSolverFeeCaps(decimal(100n))
 		await openQuote(quoteId)
 		await requestClose(quoteId)
@@ -907,7 +907,7 @@ export function shouldBehaveLikeSolverFee(): void {
 		const marketPrice = decimal(2n)
 		const balanceInfo = await user.getBalanceInfo()
 		const upnlPartyA = decimal(456n, 17) - (balanceInfo.allocatedBalances - balanceInfo.lockedCva - balanceInfo.lockedLf)
-		await context.symbolControlFacet.connect(context.signers.admin).setPartyBLiquidationCushionRate(await hedger.getAddress(), 0n, 5n * 10n ** 14n)
+		await context.symbolControlFacet.connect(context.signers.admin).setPartyBLiquidationOvershootRate(await hedger.getAddress(), 0n, 5n * 10n ** 14n)
 		const [plannedAmount] = await context.viewFacetQuote.getMaxCloseAmountToLiquidation(quoteId, closePrice, marketPrice, upnlPartyA, 0n)
 		const maxQuantity = plannedAmount / 2n
 		const nonceABefore = await context.viewFacet.nonceOfPartyA(await user.getAddress())
@@ -942,31 +942,31 @@ export function shouldBehaveLikeSolverFee(): void {
 			solverFee,
 		)
 
-		await context.symbolControlFacet.connect(context.signers.admin).setPartyBLiquidationCushionRate(await hedger.getAddress(), 0n, 10n ** 18n)
-		const [previewCushionedAmount] = await context.viewFacetQuote.getMaxCloseAmountToLiquidation(
+		await context.symbolControlFacet.connect(context.signers.admin).setPartyBLiquidationOvershootRate(await hedger.getAddress(), 0n, 10n ** 18n)
+		const [previewOvershootAmount] = await context.viewFacetQuote.getMaxCloseAmountToLiquidation(
 			quoteId,
 			closePrice,
 			marketPrice,
 			upnlPartyA,
 			solverFee,
 		)
-		expect(previewCushionedAmount).to.be.greaterThan(previewZeroRateAmount)
-		const maxQuantity = (previewZeroRateAmount + previewCushionedAmount) / 2n
+		expect(previewOvershootAmount).to.be.greaterThan(previewZeroRateAmount)
+		const maxQuantity = (previewZeroRateAmount + previewOvershootAmount) / 2n
 		const fill = (context.partyBExecutionFacet.connect(hedger.signer) as any)[FILL_CLOSE_TO_LIQUIDATION_WITH_MAX_AND_SOLVER_FEE]
 		const sig = await getDummyPairUpnlAndPriceSig(marketPrice, upnlPartyA, 0n)
 
-		await context.symbolControlFacet.connect(context.signers.admin).setPartyBLiquidationCushionRate(await hedger.getAddress(), 0n, 0n)
+		await context.symbolControlFacet.connect(context.signers.admin).setPartyBLiquidationOvershootRate(await hedger.getAddress(), 0n, 0n)
 		const zeroRateAmount = await fill.staticCall(quoteId, maxQuantity, closePrice, sig, solverFee)
-		await context.symbolControlFacet.connect(context.signers.admin).setPartyBLiquidationCushionRate(await hedger.getAddress(), 0n, 10n ** 18n)
-		const cappedCushionedAmount = await fill.staticCall(quoteId, maxQuantity, closePrice, sig, solverFee)
-		expect(cappedCushionedAmount).to.be.greaterThan(zeroRateAmount)
+		await context.symbolControlFacet.connect(context.signers.admin).setPartyBLiquidationOvershootRate(await hedger.getAddress(), 0n, 10n ** 18n)
+		const cappedOvershootAmount = await fill.staticCall(quoteId, maxQuantity, closePrice, sig, solverFee)
+		expect(cappedOvershootAmount).to.be.greaterThan(zeroRateAmount)
 
 		const zeroRateRemainder = remainingLockedValue(quote, zeroRateAmount)
-		const cappedCushionedRemainder = remainingLockedValue(quote, cappedCushionedAmount)
+		const cappedOvershootRemainder = remainingLockedValue(quote, cappedOvershootAmount)
 		const symbol = await context.viewFacetSymbol.getSymbol(quote.symbolId)
 		await context.symbolControlFacet
 			.connect(context.signers.admin)
-			.setSymbolAcceptableValues(quote.symbolId, (zeroRateRemainder + cappedCushionedRemainder) / 2n, symbol.minAcceptablePortionLF)
+			.setSymbolAcceptableValues(quote.symbolId, (zeroRateRemainder + cappedOvershootRemainder) / 2n, symbol.minAcceptablePortionLF)
 
 		const expectedFee = (solverFee * zeroRateAmount) / maxQuantity
 		await expect(fill(quoteId, maxQuantity, closePrice, sig, solverFee))
@@ -979,18 +979,18 @@ export function shouldBehaveLikeSolverFee(): void {
 		expect(state.closeFeeCharged).to.equal(expectedFee)
 	})
 
-	it("preserves fee, cushion, and fill event order while incrementing both uPnL counters once", async function () {
+	it("preserves fee, overshoot, and fill event order while incrementing both uPnL counters once", async function () {
 		const quoteId = await sendQuoteWithSolverFeeCaps(decimal(100n))
 		await openQuote(quoteId)
 		await requestClose(quoteId)
 
 		const closePrice = decimal(1n)
 		const marketPrice = decimal(2n)
-		// Keep the fee smaller than the 5 bps cushion so maxQuantity-based proration still leaves PartyA below zero.
+		// Keep the fee smaller than the 5 bps overshoot so maxQuantity-based proration still leaves PartyA below zero.
 		const solverFee = decimal(1n, 15)
 		const balanceInfo = await user.getBalanceInfo()
 		const upnlPartyA = decimal(456n, 17) + solverFee - (balanceInfo.allocatedBalances - balanceInfo.lockedCva - balanceInfo.lockedLf)
-		await context.symbolControlFacet.connect(context.signers.admin).setPartyBLiquidationCushionRate(await hedger.getAddress(), 0n, 5n * 10n ** 14n)
+		await context.symbolControlFacet.connect(context.signers.admin).setPartyBLiquidationOvershootRate(await hedger.getAddress(), 0n, 5n * 10n ** 14n)
 		const quote = await context.viewFacetQuote.getQuote(quoteId)
 
 		const partyA = await user.getAddress()
@@ -1010,11 +1010,11 @@ export function shouldBehaveLikeSolverFee(): void {
 			} catch {}
 		}
 		const feeIndex = eventNames.indexOf("CloseSolverFeeCharged")
-		const cushionIndex = eventNames.indexOf("PartyALiquidationCushionUsed")
+		const overshootIndex = eventNames.indexOf("PartyALiquidationOvershootUsed")
 		const fillIndex = eventNames.indexOf("FillCloseRequest")
 		expect(feeIndex).to.be.greaterThan(-1)
-		expect(cushionIndex).to.be.greaterThan(feeIndex)
-		expect(fillIndex).to.be.greaterThan(cushionIndex)
+		expect(overshootIndex).to.be.greaterThan(feeIndex)
+		expect(fillIndex).to.be.greaterThan(overshootIndex)
 		expect(eventNames.filter(name => name === "FillCloseRequest")).to.have.length(2)
 		expect(await context.viewFacet.nonceOfPartyA(partyA)).to.equal(nonceABefore + 1n)
 		expect(await context.viewFacet.nonceOfPartyB(partyB, partyA)).to.equal(nonceBBefore + 1n)

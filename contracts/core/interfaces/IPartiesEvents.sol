@@ -95,8 +95,8 @@ interface IPartiesEvents {
 		uint256 amount
 	);
 
-	/// @notice Emitted when a configured close-to-liquidation cushion permits PartyA to finish below zero.
-	event PartyALiquidationCushionUsed(
+	/// @notice Emitted when a configured close-to-liquidation overshoot permits PartyA to finish below zero.
+	event PartyALiquidationOvershootUsed(
 		uint256 indexed quoteId,
 		address indexed partyA,
 		address indexed partyB,

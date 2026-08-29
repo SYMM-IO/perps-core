@@ -73,7 +73,7 @@ interface IViewFacetQuote {
 
 	function getSumQuoteFundingDebts(uint256[] memory quoteIds) external view returns (int256 sum);
 
-	/// @notice Previews the uncapped close-to-liquidation plan, including configured cushion and remaining-value fallback.
+	/// @notice Previews the uncapped close-to-liquidation plan, including configured overshoot and remaining-value fallback.
 	/// @dev `maxSolverFee` is the fee quoted for the full pending `quantityToClose`; execution applies the same rate to maxFillAmount.
 	/// @return maxCloseAmount The executable uncapped amount after any zero-rate remaining-value fallback.
 	/// @return canCloseAll True when the full requested close fits inside the configured allowance; PartyA need not remain solvent.

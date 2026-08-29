@@ -5,9 +5,9 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta
 			name="description"
-			content="Adds a manager-configured per-solver and per-symbol cushion that lets close-to-liquidation finish slightly below PartyA's liquidation boundary."
+			content="Adds a manager-configured per-solver and per-symbol overshoot that lets close-to-liquidation finish slightly below PartyA's liquidation boundary."
 		/>
-		<title>Per-Solver Liquidation Cushion - Symmio Core v0.8.6</title>
+		<title>Per-Solver Liquidation Overshoot - Symmio Core v0.8.6</title>
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
 		<script>
 			try {
@@ -52,7 +52,7 @@
 				<header class="reader-hero">
 					<div class="reader-title-row">
 						<div>
-							<h1>Per-Solver Liquidation Cushion</h1>
+							<h1>Per-Solver Liquidation Overshoot</h1>
 							<p class="hero-copy">
 								A manager can let a selected solver close PartyA a small distance below the liquidation boundary, reducing the chance
 								that a tiny favorable market move makes the account solvent again before liquidation starts.
@@ -65,13 +65,13 @@
 					<h2 id="summary">Summary</h2>
 					<p>
 						Normal close fills still require PartyA and PartyB to finish solvent. The two
-						<code>fillCloseRequestToLiquidation</code> paths may use a PartyB- and symbol-specific cushion. PartyB must remain solvent,
+						<code>fillCloseRequestToLiquidation</code> paths may use a PartyB- and symbol-specific overshoot. PartyB must remain solvent,
 						while PartyA may finish below zero by no more than the calculated allowance.
 					</p>
 					<p>
-						The default rate for every PartyB is zero, so the cushion stays inactive until a manager opts a solver in. The external close
-						selectors are unchanged, and the allowance is never supplied by PartyB. Independently of the cushion, the fee-aware method
-						quotes its solver fee for <code>maxFillAmount</code>; see Execution behavior for what that requires of callers.
+						The default rate for every PartyB is zero, so the overshoot stays inactive until a manager opts a solver in. The external
+						close selectors are unchanged, and the allowance is never supplied by PartyB. Independently of the overshoot, the fee-aware
+						method quotes its solver fee for <code>maxFillAmount</code>; see Execution behavior for what that requires of callers.
 					</p>
 
 					<h2 id="allowance">Allowance calculation</h2>
@@ -85,21 +85,21 @@ allowedShortfall   = floor(postCloseThreshold * effectiveRate / 1e18)</code></pr
 					<p>
 						For example, suppose the zero-rate close would leave a $10 threshold. A 5 bps rate is stored as <code>5e14</code> and permits
 						at most <code>$10 * 0.0005 = $0.005</code> of PartyA shortfall. Operations can opt a PartyB into this default with
-						<code>setPartyBLiquidationCushionRate(partyB, 0, 5e14)</code>.
+						<code>setPartyBLiquidationOvershootRate(partyB, 0, 5e14)</code>.
 					</p>
 					<p>
 						The allowance applies only when closing is harmful to PartyA and PartyA's available balance starts above zero. When closing is
 						beneficial or neutral and a full close still leaves PartyA insolvent, the call reverts, and a PartyA already at or below zero
-						cannot close anything through this path; the cushion does not extend either rule.
+						cannot close anything through this path; the overshoot does not extend either rule.
 					</p>
 
 					<h2 id="configuration">Configuration</h2>
 					<ul>
-						<li><code>setPartyBLiquidationCushionRate(partyB, 0, rate)</code> sets that PartyB's default.</li>
+						<li><code>setPartyBLiquidationOvershootRate(partyB, 0, rate)</code> sets that PartyB's default.</li>
 						<li>A nonzero symbol inherits symbol 0 unless it has an explicit override.</li>
 						<li>Setting a symbol-specific rate to zero explicitly disables a nonzero PartyB default for that symbol.</li>
-						<li><code>clearPartyBLiquidationCushionRateOverride</code> restores inheritance from symbol 0.</li>
-						<li><code>getPartyBLiquidationCushionRate</code> returns the effective rate and the override state.</li>
+						<li><code>clearPartyBLiquidationOvershootRateOverride</code> restores inheritance from symbol 0.</li>
+						<li><code>getPartyBLiquidationOvershootRate</code> returns the effective rate and the override state.</li>
 					</ul>
 					<p>
 						Only <code>PARTY_B_MANAGER_ROLE</code> can set or clear rates. The target must be a registered PartyB, and the symbol must be
@@ -124,10 +124,10 @@ allowedShortfall   = floor(postCloseThreshold * effectiveRate / 1e18)</code></pr
 
 					<h2 id="fallback">Remaining-value fallback</h2>
 					<p>
-						A cushion can increase the fill enough to leave a nonzero remainder below <code>minAcceptableQuoteValue</code>. In that case,
-						the planner falls back to the capped zero-rate amount and validates the remainder again. If that amount is also invalid, the
-						call keeps the existing <code>Remaining quote value is low</code> revert. A full close is valid because its remaining value is
-						zero.
+						An overshoot can increase the fill enough to leave a nonzero remainder below <code>minAcceptableQuoteValue</code>. In that
+						case, the planner falls back to the capped zero-rate amount and validates the remainder again. If that amount is also invalid,
+						the call keeps the existing <code>Remaining quote value is low</code> revert. A full close is valid because its remaining
+						value is zero.
 					</p>
 					<p>
 						<code>getMaxCloseAmountToLiquidation</code> uses the same fallback. Its <code>canCloseAll</code> result means the full close
@@ -137,11 +137,12 @@ allowedShortfall   = floor(postCloseThreshold * effectiveRate / 1e18)</code></pr
 					<h2 id="integration">Integration and events</h2>
 					<ul>
 						<li>
-							<code>SetPartyBLiquidationCushionRate</code> records the PartyB, symbol, old and new effective rates, and override state.
+							<code>SetPartyBLiquidationOvershootRate</code> records the PartyB, symbol, old and new effective rates, and override
+							state.
 						</li>
 						<li>
-							<code>PartyALiquidationCushionUsed</code> is emitted only when the calculated final PartyA balance is negative. It reports
-							the effective rate, allowed shortfall, and actual shortfall.
+							<code>PartyALiquidationOvershootUsed</code> is emitted only when the calculated final PartyA balance is negative. It
+							reports the effective rate, allowed shortfall, and actual shortfall.
 						</li>
 						<li>
 							The <code>getMaxCloseAmountToLiquidation</code> selector is served by <code>ViewFacetQuote</code>, so an upgrade must move
@@ -158,8 +159,8 @@ allowedShortfall   = floor(postCloseThreshold * effectiveRate / 1e18)</code></pr
 						as an explicit risk decision.
 					</p>
 					<p>
-						The cushioned close and PartyA liquidation are separate transactions. The close makes PartyA eligible under its signed
-						accounting snapshot, but it cannot guarantee eligibility after a favorable market move larger than the cushion.
+						The overshoot close and PartyA liquidation are separate transactions. The close makes PartyA eligible under its signed
+						accounting snapshot, but it cannot guarantee eligibility after a favorable market move larger than the overshoot.
 					</p>
 				</article>
 			</main>

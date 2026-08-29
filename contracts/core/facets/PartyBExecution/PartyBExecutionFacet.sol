@@ -170,7 +170,7 @@ contract PartyBExecutionFacet is Accessibility, Pausable, IPartyBExecutionFacet 
 			upnlSig,
 			plan.allowedShortfall
 		);
-		LibPartiesEvents.emitPartyALiquidationCushionUsedIfAny(quote, quoteId, plan.effectiveRate, plan.allowedShortfall, actualShortfall);
+		LibPartiesEvents.emitPartyALiquidationOvershootUsedIfAny(quote, quoteId, plan.effectiveRate, plan.allowedShortfall, actualShortfall);
 		LibPartiesEvents.emitFillCloseRequest(quoteLayout, quote, quoteId, filledAmount, closedPrice);
 	}
 

@@ -6,25 +6,25 @@ pragma solidity >=0.8.18;
 
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { AccountStorage } from "../storages/AccountStorage.sol";
-import { LiquidationCushionStorage } from "../storages/LiquidationCushionStorage.sol";
+import { LiquidationOvershootStorage } from "../storages/LiquidationOvershootStorage.sol";
 import { Quote } from "../storages/QuoteStorage.sol";
 import { LibQuote } from "./LibQuote.sol";
 
-/// @title LibLiquidationCushion
-/// @notice Resolves inherited cushion rates and computes account-level post-close allowances.
-library LibLiquidationCushion {
-	/// @notice Returns the effective cushion rate for a PartyB and symbol.
+/// @title LibLiquidationOvershoot
+/// @notice Resolves inherited overshoot rates and computes account-level post-close allowances.
+library LibLiquidationOvershoot {
+	/// @notice Returns the effective overshoot rate for a PartyB and symbol.
 	function rate(address partyB, uint256 symbolId) internal view returns (uint256) {
-		LiquidationCushionStorage.Layout storage cushionLayout = LiquidationCushionStorage.layout();
-		if (symbolId != 0 && cushionLayout.hasOverride[partyB][symbolId]) {
-			return cushionLayout.rates[partyB][symbolId];
+		LiquidationOvershootStorage.Layout storage overshootLayout = LiquidationOvershootStorage.layout();
+		if (symbolId != 0 && overshootLayout.hasOverride[partyB][symbolId]) {
+			return overshootLayout.rates[partyB][symbolId];
 		}
-		return cushionLayout.rates[partyB][0];
+		return overshootLayout.rates[partyB][0];
 	}
 
 	/// @notice Returns whether a nonzero symbol has an explicit override for a PartyB.
 	function hasOverride(address partyB, uint256 symbolId) internal view returns (bool) {
-		return symbolId != 0 && LiquidationCushionStorage.layout().hasOverride[partyB][symbolId];
+		return symbolId != 0 && LiquidationOvershootStorage.layout().hasOverride[partyB][symbolId];
 	}
 
 	/// @notice Returns PartyA's remaining account-level CVA + LF after closing part of one quote.
@@ -40,12 +40,12 @@ library LibLiquidationCushion {
 
 	/// @notice Computes the maximum PartyA shortfall for a threshold and 1e18 rate.
 	/// @dev SymbolControlFacet caps stored rates at 1e18, so the result never exceeds the threshold.
-	function allowedShortfall(uint256 threshold, uint256 cushionRate) internal pure returns (uint256) {
-		return Math.mulDiv(threshold, cushionRate, 1e18);
+	function allowedShortfall(uint256 threshold, uint256 overshootRate) internal pure returns (uint256) {
+		return Math.mulDiv(threshold, overshootRate, 1e18);
 	}
 
 	/// @notice Returns the allowance after a candidate close using the effective PartyB-symbol rate.
-	function allowedShortfallAfterClose(Quote storage quote, uint256 filledAmount, uint256 cushionRate) internal view returns (uint256) {
-		return allowedShortfall(postCloseThreshold(quote, filledAmount), cushionRate);
+	function allowedShortfallAfterClose(Quote storage quote, uint256 filledAmount, uint256 overshootRate) internal view returns (uint256) {
+		return allowedShortfall(postCloseThreshold(quote, filledAmount), overshootRate);
 	}
 }
