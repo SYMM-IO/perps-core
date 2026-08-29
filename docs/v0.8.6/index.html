@@ -81,7 +81,7 @@
 			<div class="doc-browser">
 				<section class="version-catalog-group" data-catalog-group aria-labelledby="docs-title">
 					<div class="section-heading">
-						<p class="eyebrow" data-catalog-group-count>12 chapters</p>
+						<p class="eyebrow" data-catalog-group-count>13 chapters</p>
 						<h2 id="docs-title">Main changes</h2>
 					</div>
 					<div class="doc-list">
@@ -219,23 +219,26 @@
 								>
 							</span>
 						</a>
+						<a class="doc-list-item" href="pages/close-to-liquidation.html" data-catalog-item>
+							<span class="doc-list-index">13</span>
+							<span class="doc-list-main">
+								<span class="category">Trading &amp; Liquidation</span>
+								<strong>Close-to-Liquidation Execution</strong>
+								<span
+									>Explains why a close can make PartyA insolvent, how the protocol sizes a boundary fill, why
+									<code>MARKET_BEST_EFFORT</code> cancels the remainder, and how overshoot makes the later liquidation handoff less
+									sensitive to a small favorable market move.</span
+								>
+							</span>
+						</a>
 					</div>
 				</section>
 				<section class="version-catalog-group minor-improvements" aria-labelledby="other-changes-title" data-catalog-group>
 					<div class="section-heading">
-						<p class="eyebrow" data-catalog-group-count>20 chapters</p>
+						<p class="eyebrow" data-catalog-group-count>19 chapters</p>
 						<h2 id="other-changes-title">Other changes</h2>
 					</div>
 					<div class="minor-improvement-list">
-						<a class="minor-improvement-item" href="pages/market-best-effort.html" data-catalog-item>
-							<span class="doc-list-index">13</span>
-							<span class="category">Trading Execution</span>
-							<strong>MARKET_BEST_EFFORT Close Orders</strong>
-							<span
-								>Closes the requested quantity when solvent. If a full close would liquidate PartyA, one liquidation-limited fill
-								executes and the remaining request is cancelled atomically.</span
-							>
-						</a>
 						<a class="minor-improvement-item" href="pages/explicit-clearing-house-settlements.html" data-catalog-item>
 							<span class="doc-list-index">14</span>
 							<span class="category">Clearing House</span>
@@ -393,15 +396,6 @@
 							<span
 								>Force-closing a position or finishing a PartyA liquidation through AccountLayer no longer fails when core calls back
 								to clean up the account.</span
-							>
-						</a>
-						<a class="minor-improvement-item" href="pages/per-solver-liquidation-overshoot.html" data-catalog-item>
-							<span class="doc-list-index">32</span>
-							<span class="category">Liquidation</span>
-							<strong>Per-Solver Liquidation Overshoot</strong>
-							<span
-								>Lets managers opt individual solvers into a small, symbol-aware shortfall when closing PartyA to liquidation, with a
-								zero-rate fallback for invalid position remainders.</span
 							>
 						</a>
 					</div>

@@ -689,9 +689,16 @@ body.doc-page .doc-article > :is(p, ul, ol, blockquote, .callout, h1, h2, h3, h4
 }
 
 body.doc-page .doc-article p {
-	-webkit-hyphens: auto;
-	hyphens: auto;
+	-webkit-hyphens: none;
+	hyphens: none;
 	text-wrap: wrap;
+}
+
+@media (min-width: 641px) {
+	body.doc-page .reader-main > .doc-article > p {
+		text-align: justify;
+		text-align-last: start;
+	}
 }
 
 .chapter-pager a {

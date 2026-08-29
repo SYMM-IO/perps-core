@@ -3,26 +3,17 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<meta
-			name="description"
-			content="How the v0.8.6 MARKET_BEST_EFFORT close order fills a solvent request completely or executes one liquidation-limited fill and atomically cancels the remainder."
-		/>
+		<meta name="robots" content="noindex" />
+		<meta name="description" content="The MARKET_BEST_EFFORT documentation has moved to the close-to-liquidation execution chapter." />
+		<meta http-equiv="refresh" content="0; url=./close-to-liquidation.html#market-best-effort" />
 		<title>MARKET_BEST_EFFORT Close Orders - Symmio Core v0.8.6</title>
+		<link rel="canonical" href="./close-to-liquidation.html" />
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
-		<script>
-			// Apply the saved preference before first paint.
-			try {
-				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
-			} catch (_error) {}
-		</script>
 		<link rel="stylesheet" href="../assets/v086-docs.css" />
 		<link rel="stylesheet" href="../../assets/docs-portal.css" />
-		<script src="../assets/v086-docs.js" defer></script>
-		<script src="../../assets/docs-portal.js" defer></script>
 	</head>
 	<body class="doc-page" data-version="0.8.6">
 		<a class="skip-link" href="#full-document">Skip to document</a>
-
 		<header class="docs-header">
 			<div class="doc-topbar">
 				<nav class="docs-trail" aria-label="Breadcrumb">
@@ -32,227 +23,27 @@
 					<span class="trail-sep" aria-hidden="true">/</span>
 					<a class="trail-link" href="../index.html">v0.8.6</a>
 				</nav>
-				<nav class="top-actions" aria-label="Page actions">
-					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
-				</nav>
 			</div>
 		</header>
-
 		<div class="reader-shell">
-			<div class="rail-sections-source" data-rail-sections hidden>
-				<a class="toc-link level-2" href="#summary">Summary</a>
-				<a class="toc-link level-2" href="#choose-a-mode">Choose a close mode</a>
-				<a class="toc-link level-2" href="#execution">Execution lifecycle</a>
-				<a class="toc-link level-2" href="#example">Worked example</a>
-				<a class="toc-link level-2" href="#cancellation">Manual cancellation</a>
-				<a class="toc-link level-2" href="#guardrails">Guardrails and rollback</a>
-				<a class="toc-link level-2" href="#solver-fees">Solver fees</a>
-				<a class="toc-link level-2" href="#integration">Integration routes</a>
-				<a class="toc-link level-2" href="#events-and-bots">Events and bot behavior</a>
-				<a class="toc-link level-2" href="#unchanged">What stays unchanged</a>
-			</div>
-
 			<main class="reader-main">
 				<header class="reader-hero">
 					<div class="reader-title-row">
 						<div>
 							<h1><code>MARKET_BEST_EFFORT</code> Close Orders</h1>
-							<p class="hero-copy">
-								A one-shot close mode that fills the requested quantity when it is solvent, or fills the current liquidation-limited
-								amount and atomically cancels the remainder.
-							</p>
+							<p class="hero-copy">This material now belongs to the unified close-to-liquidation execution chapter.</p>
 						</div>
 					</div>
 				</header>
-
 				<article class="doc-article" id="full-document">
-					<h2 id="summary">Summary</h2>
+					<h2 id="moved">This chapter moved</h2>
 					<p>
-						v0.8.6 appends <code>MARKET_BEST_EFFORT</code> as <code>OrderType</code> value <code>2</code>. It is valid only for close
-						requests. <code>LIMIT</code> remains value <code>0</code>, and <code>MARKET</code> remains value <code>1</code>. Opening a
-						quote with value <code>2</code> reverts, including openings routed through AccountLayer or InstantLayer.
+						Read <a href="./close-to-liquidation.html#market-best-effort">Close-to-Liquidation Execution</a> for the reason
+						<code>MARKET_BEST_EFFORT</code> exists, its remainder behavior, and its relationship to liquidation overshoot.
 					</p>
-					<p>
-						PartyA submits the existing <code>requestToClosePosition</code> call with the requested quantity, price, deadline, and order
-						type. No selector, storage field, event, or user-defined minimum-fill parameter was added.
-					</p>
-
-					<h2 id="choose-a-mode">Choose a close mode</h2>
-					<div class="table-wrap">
-						<table>
-							<thead>
-								<tr>
-									<th scope="col">Mode</th>
-									<th scope="col">Ordinary fill</th>
-									<th scope="col">Close-to-liquidation</th>
-									<th scope="col">Unfilled request</th>
-								</tr>
-							</thead>
-							<tbody>
-								<tr>
-									<td><code>LIMIT</code> (<code>0</code>)</td>
-									<td>Full or partial</td>
-									<td>Supported</td>
-									<td>Remains live</td>
-								</tr>
-								<tr>
-									<td><code>MARKET</code> (<code>1</code>)</td>
-									<td>Full only</td>
-									<td>Rejected</td>
-									<td>None after the full fill</td>
-								</tr>
-								<tr>
-									<td><code>MARKET_BEST_EFFORT</code> (<code>2</code>)</td>
-									<td>Full only while live</td>
-									<td>Supported</td>
-									<td>Cancelled after a partial liquidation-limited fill</td>
-								</tr>
-							</tbody>
-						</table>
-					</div>
-					<p>
-						Use <code>LIMIT</code> when the remainder should stay available for later fills. Use <code>MARKET</code> when PartyB must fill
-						the live request completely through the ordinary fill path. Use <code>MARKET_BEST_EFFORT</code> when PartyA wants one
-						execution attempt and accepts the protocol's current solvency-limited quantity.
-					</p>
-
-					<h2 id="execution">Execution lifecycle</h2>
-					<ol>
-						<li>PartyA creates a value-<code>2</code> close request. The quote enters <code>CLOSE_PENDING</code>.</li>
-						<li>
-							PartyB submits either the legacy or fee-aware <code>fillCloseRequestToLiquidation</code> transaction. The contract
-							validates the request and calculates the maximum amount that can close at the liquidation edge.
-						</li>
-						<li>
-							If the full requested amount is executable, the contract fills it. The quote becomes <code>CLOSED</code> only when no
-							position remains; otherwise it returns to <code>OPENED</code> with the close request cleared.
-						</li>
-						<li>
-							If only part of the request is executable, the contract moves the quote to <code>CANCEL_CLOSE_PENDING</code>
-							immediately before filling. The existing close finalizer fills that amount once, clears
-							<code>quantityToClose</code> and <code>requestedClosePrice</code>, and returns the quote to <code>OPENED</code>.
-						</li>
-					</ol>
-					<aside class="callout callout-note">
-						<strong>Ordinary full fills remain available.</strong> While the request is in <code>CLOSE_PENDING</code>, PartyB can call
-						<code>fillCloseRequest</code> only with the complete <code>quantityToClose</code>. A PartyB-selected partial amount reverts.
-					</aside>
-
-					<h2 id="example">Worked example: a 100-unit position</h2>
-					<p>Assume PartyA requests a best-effort close for the entire remaining position of <code>100</code> units.</p>
-					<pre><code class="language-text">Fully solvent
-requested              100
-liquidation limit      100 or more
-actual fill            100
-cancelled remainder      0
-final quote status     CLOSED
-
-Liquidation-limited
-requested              100
-liquidation limit       62
-actual fill             62
-cancelled remainder     38
-final quote status     OPENED</code></pre>
-					<p>
-						The second transaction does not leave a live 38-unit close request. PartyA still owns the remaining 38-unit position, but must
-						create a fresh close request before PartyB can try again.
-					</p>
-
-					<h2 id="cancellation">Manual cancellation</h2>
-					<p>
-						PartyA can call <code>requestToCancelCloseRequest</code> before PartyB executes the request. This moves the quote to
-						<code>CANCEL_CLOSE_PENDING</code>. While cancellation is pending, PartyB may use the ordinary
-						<code>fillCloseRequest</code> method with a smaller amount. The fill succeeds and the existing cancellation finalizer clears
-						the remainder.
-					</p>
-					<p>
-						This preserves the existing cancellation race: PartyA has already asked to stop the request, so the remainder is cancelled
-						even when PartyB fills only part of it. The full-only ordinary-fill rule applies while the request remains in
-						<code>CLOSE_PENDING</code>.
-					</p>
-
-					<h2 id="guardrails">Guardrails and rollback</h2>
-					<p>
-						Best effort has no user-configured minimum fill, but “best effort” does not mean every nonzero calculated amount succeeds. The
-						existing protocol checks still apply:
-					</p>
-					<ul>
-						<li>the calculated executable amount must be greater than zero;</li>
-						<li>the remaining position must satisfy the symbol's minimum acceptable quote value;</li>
-						<li>each proportional locked-value slice used by the fill must remain nonzero;</li>
-						<li>the close price, deadline, Muon signature, and request state must be valid;</li>
-						<li>PartyA and PartyB must pass the existing post-close solvency checks; and</li>
-						<li>fee-aware execution must remain within the quote's close solver-fee rate cap.</li>
-					</ul>
-					<p>
-						A failure reverts the entire transaction. No partial position update, cancellation-state transition, or solver-fee charge
-						remains after the revert.
-					</p>
-
-					<h2 id="solver-fees">Solver fees</h2>
-					<p>
-						The fee-aware close-to-liquidation method accepts <code>maxFillAmount</code> and <code>maxSolverFee</code>. For
-						<code>MARKET_BEST_EFFORT</code>, <code>maxFillAmount</code> must be at least the full requested quantity. PartyB cannot use
-						the cap to choose a smaller fill; only the liquidation calculation may reduce the amount.
-					</p>
-					<p>
-						The fee follows the same rate model as LIMIT: <code>maxSolverFee</code> is quoted for <code>maxFillAmount</code>, and a
-						liquidation-limited fill is charged <code>maxSolverFee * filledAmount / maxFillAmount</code>, still checked against the
-						quote's close solver-fee rate cap. See <a href="./solver-fees.html#close-order-modes">Solver Fees</a> for the complete fee
-						model.
-					</p>
-
-					<h2 id="integration">Integration routes</h2>
-					<ul>
-						<li>
-							<strong>Core.</strong> Encode <code>OrderType</code> value <code>2</code> in the existing
-							<code>requestToClosePosition</code> call. Do not use value <code>2</code> in any quote-opening call.
-						</li>
-						<li>
-							<strong>AccountLayer.</strong> The enum mirror decodes value <code>2</code>. A liquidation-limited partial close leaves
-							the position open, so the virtual account continues tracking the quote.
-						</li>
-						<li>
-							<strong>InstantLayer.</strong> Existing signed close operations can forward value <code>2</code> without a selector or
-							template change. Opening operations still reject it.
-						</li>
-						<li>
-							<strong>External clients.</strong> Append value <code>2</code> to local enum mirrors. Preserve the deployed meanings of
-							values <code>0</code> and <code>1</code>.
-						</li>
-					</ul>
-
-					<h2 id="events-and-bots">Events and bot behavior</h2>
-					<ul>
-						<li>
-							Treat frontend previews and <code>getMaxCloseAmountToLiquidation</code> as estimates. The signed values and on-chain state
-							can change before execution.
-						</li>
-						<li>
-							Read the actual fill amount, final quote status, and <code>closeId</code> from the transaction's
-							<code>FillCloseRequest</code> event.
-						</li>
-						<li>
-							After a partial best-effort fill returns the quote to <code>OPENED</code>, stop retrying the completed request. Another
-							fill against that request reverts.
-						</li>
-						<li>If PartyA still wants to close the remaining position, create a new request and track its new <code>closeId</code>.</li>
-					</ul>
-
-					<h2 id="unchanged">What stays unchanged</h2>
-					<ul>
-						<li><code>LIMIT</code> retains persistent partial-fill behavior.</li>
-						<li><code>MARKET</code> remains full-fill-only and is still rejected by close-to-liquidation execution.</li>
-						<li>Force close remains restricted to <code>LIMIT</code> requests.</li>
-						<li>No new external selector, storage field, or event was added.</li>
-						<li>Historical v0.8.5 documentation is unchanged.</li>
-					</ul>
 				</article>
 			</main>
 		</div>
-
-		<footer class="site-footer">
-			<span>Symmio Core v0.8.6 documentation.</span>
-		</footer>
+		<footer class="site-footer"><span>Symmio Core v0.8.6 documentation.</span></footer>
 	</body>
 </html>
