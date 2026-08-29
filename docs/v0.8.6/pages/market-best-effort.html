@@ -191,14 +191,15 @@ final quote status     OPENED</code></pre>
 
 					<h2 id="solver-fees">Solver fees</h2>
 					<p>
-						The fee-aware close-to-liquidation method accepts <code>maxQuantity</code> and an absolute <code>solverFee</code>. For
-						<code>MARKET_BEST_EFFORT</code>, <code>maxQuantity</code> must be at least the full requested quantity. PartyB cannot use the
-						cap to choose a smaller fill; only the liquidation calculation may reduce the amount.
+						The fee-aware close-to-liquidation method accepts <code>maxFillAmount</code> and <code>maxSolverFee</code>. For
+						<code>MARKET_BEST_EFFORT</code>, <code>maxFillAmount</code> must be at least the full requested quantity. PartyB cannot use
+						the cap to choose a smaller fill; only the liquidation calculation may reduce the amount.
 					</p>
 					<p>
-						Because the cap cannot bind, LIMIT's <code>filledAmount / uncappedAmount</code> fee-proration branch does not apply. The
-						supplied solver fee remains absolute against the liquidation-limited amount and is still checked against the quote's close
-						solver-fee rate cap. See <a href="./solver-fees.html#close-order-modes">Solver Fees</a> for the complete fee model.
+						The fee follows the same rate model as LIMIT: <code>maxSolverFee</code> is quoted for <code>maxFillAmount</code>, and a
+						liquidation-limited fill is charged <code>maxSolverFee * filledAmount / maxFillAmount</code>, still checked against the
+						quote's close solver-fee rate cap. See <a href="./solver-fees.html#close-order-modes">Solver Fees</a> for the complete fee
+						model.
 					</p>
 
 					<h2 id="integration">Integration routes</h2>

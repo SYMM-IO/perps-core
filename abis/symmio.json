@@ -1554,6 +1554,55 @@
         "anonymous": false,
         "inputs": [
             {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "rate",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "allowedShortfall",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "actualShortfall",
+                "type": "uint256"
+            }
+        ],
+        "name": "PartyALiquidationOvershootUsed",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
                 "indexed": false,
                 "internalType": "address",
                 "name": "partyA",
@@ -4286,6 +4335,43 @@
                 "type": "address"
             },
             {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "oldRate",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "newRate",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "bool",
+                "name": "hasOverride",
+                "type": "bool"
+            }
+        ],
+        "name": "SetPartyBLiquidationOvershootRate",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
                 "indexed": false,
                 "internalType": "bool",
                 "name": "status",
@@ -5005,6 +5091,24 @@
     {
         "inputs": [
             {
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            }
+        ],
+        "name": "clearPartyBLiquidationOvershootRateOverride",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
                 "internalType": "uint256",
                 "name": "symbolId",
                 "type": "uint256"
@@ -5065,6 +5169,29 @@
             }
         ],
         "name": "removeSymbolsFromWhitelist",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "rate",
+                "type": "uint256"
+            }
+        ],
+        "name": "setPartyBLiquidationOvershootRate",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -5644,7 +5771,7 @@
             },
             {
                 "internalType": "uint256",
-                "name": "maxQuantity",
+                "name": "maxFillAmount",
                 "type": "uint256"
             },
             {
@@ -5713,7 +5840,7 @@
             },
             {
                 "internalType": "uint256",
-                "name": "solverFee",
+                "name": "maxSolverFee",
                 "type": "uint256"
             }
         ],
@@ -6736,6 +6863,35 @@
                 "internalType": "struct FundingFee",
                 "name": "",
                 "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            }
+        ],
+        "name": "getPartyBLiquidationOvershootRate",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "rate",
+                "type": "uint256"
+            },
+            {
+                "internalType": "bool",
+                "name": "hasOverride",
+                "type": "bool"
             }
         ],
         "stateMutability": "view",
@@ -9588,50 +9744,6 @@
                 "internalType": "uint256",
                 "name": "",
                 "type": "uint256"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "uint256",
-                "name": "quoteId",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "closedPrice",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "marketPrice",
-                "type": "uint256"
-            },
-            {
-                "internalType": "int256",
-                "name": "upnlPartyA",
-                "type": "int256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "solverFeeAmount",
-                "type": "uint256"
-            }
-        ],
-        "name": "getMaxCloseAmountToLiquidation",
-        "outputs": [
-            {
-                "internalType": "uint256",
-                "name": "maxCloseAmount",
-                "type": "uint256"
-            },
-            {
-                "internalType": "bool",
-                "name": "canCloseAll",
-                "type": "bool"
             }
         ],
         "stateMutability": "view",
@@ -15621,6 +15733,50 @@
                 "internalType": "struct Quote[]",
                 "name": "",
                 "type": "tuple[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "closedPrice",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "marketPrice",
+                "type": "uint256"
+            },
+            {
+                "internalType": "int256",
+                "name": "upnlPartyA",
+                "type": "int256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "maxSolverFee",
+                "type": "uint256"
+            }
+        ],
+        "name": "getMaxCloseAmountToLiquidation",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "maxCloseAmount",
+                "type": "uint256"
+            },
+            {
+                "internalType": "bool",
+                "name": "canCloseAll",
+                "type": "bool"
             }
         ],
         "stateMutability": "view",

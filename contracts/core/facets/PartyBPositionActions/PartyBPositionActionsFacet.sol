@@ -13,6 +13,7 @@ import { PairUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
 import { LibSendQuoteEvents } from "../../libraries/LibSendQuoteEvents.sol";
 import { LibSolverFee } from "../../libraries/LibSolverFee.sol";
 import { LibPartiesEvents } from "../../libraries/LibPartiesEvents.sol";
+import { LibPartyBPositionsActions } from "../../libraries/LibPartyBPositionsActions.sol";
 
 contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionActionsFacet {
 	/// @notice Opens a position for the specified quote. The opened position's size can't be excessively small or large.
@@ -89,11 +90,12 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 		emit AcceptCancelCloseRequest(quoteId, QuoteStatus.OPENED, QuoteStorage.layout().closeIds[quoteId]);
 	}
 
-	/// @notice Fills a close request up to the maximum amount that keeps PartyA at the edge of liquidation.
+	/// @notice Fills a close request up to PartyB's configured close-to-liquidation boundary.
 	///         Use this when the standard fillCloseRequest would revert due to PartyA insolvency.
-	///         This calculates and closes only the amount that brings PartyA to approximately 0 available balance.
+	///         With the default zero overshoot this brings PartyA to approximately zero available balance.
+	///         A nonzero manager-configured overshoot may leave PartyA below zero by the calculated allowance.
+	///         The existing non-harmful/full-close insolvency behavior is preserved when the allowance cannot cover it.
 	///         LIMIT requests retain any unfilled request; MARKET_BEST_EFFORT requests cancel it atomically.
-	///         Reverts if even a full close keeps PartyA insolvent.
 	/// @dev IMPORTANT BACKWARD-COMPATIBILITY WARNING:
 	///      This legacy method accounts for the protocol closeFee only. It does NOT reserve balance for solver
 	///      fees charged through the solver-fee API. If a solver fee will be charged for this close, call
@@ -109,7 +111,10 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 	) external whenNotPartyBActionsPaused onlyPartyBOfQuote(quoteId) notLiquidated(quoteId) returns (uint256 filledAmount) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote storage quote = quoteLayout.quotes[quoteId];
-		filledAmount = PartyBPositionActionsFacetImpl.fillCloseRequestToLiquidation(quoteId, closedPrice, upnlSig);
+		(LibPartyBPositionsActions.CloseToLiquidationPlan memory plan, uint256 actualShortfall) = PartyBPositionActionsFacetImpl
+			.fillCloseRequestToLiquidation(quoteId, closedPrice, upnlSig);
+		filledAmount = plan.filledAmount;
+		LibPartiesEvents.emitPartyALiquidationOvershootUsedIfAny(quote, quoteId, plan.effectiveRate, plan.allowedShortfall, actualShortfall);
 		LibPartiesEvents.emitFillCloseRequest(quoteLayout, quote, quoteId, filledAmount, closedPrice);
 	}
 }

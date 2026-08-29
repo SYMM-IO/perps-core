@@ -5,10 +5,13 @@
 pragma solidity >=0.8.18;
 
 import { Accessibility } from "../../utils/Accessibility.sol";
+import { LiquidationOvershootStorage } from "../../storages/LiquidationOvershootStorage.sol";
+import { MAStorage } from "../../storages/MAStorage.sol";
 import { SymbolStorage, Symbol, SymbolWithType } from "../../storages/SymbolStorage.sol";
 import { PartyBControlStorage } from "../../storages/PartyBControlStorage.sol";
 import { ISymbolControlFacet } from "./ISymbolControlFacet.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
+import { LibLiquidationOvershoot } from "../../libraries/LibLiquidationOvershoot.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { LibSymbol } from "../../libraries/LibSymbol.sol";
 
@@ -182,6 +185,40 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 		delete symbolLayout.hasMinAcceptableNotionalLFRateOverride[symbolId];
 
 		emit SetSymbolMinAcceptableNotionalLFRate(symbolId, oldRate, LibSymbol.minAcceptableNotionalLFRate(symbolId), false);
+	}
+
+	/// @notice Sets a PartyB's default or symbol-specific close-to-liquidation overshoot rate.
+	/// @dev Symbol 0 stores the PartyB default. Setting a nonzero symbol creates an explicit override, including zero.
+	function setPartyBLiquidationOvershootRate(
+		address partyB,
+		uint256 symbolId,
+		uint256 rate
+	) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
+		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
+		require(MAStorage.layout().partyBStatus[partyB], "SymbolControlFacet: Address is not PartyB");
+		require(symbolId <= symbolLayout.lastId, "SymbolControlFacet: Invalid id");
+		require(rate <= 1e18, "SymbolControlFacet: High overshoot rate");
+
+		LiquidationOvershootStorage.Layout storage overshootLayout = LiquidationOvershootStorage.layout();
+		uint256 oldRate = LibLiquidationOvershoot.rate(partyB, symbolId);
+		overshootLayout.rates[partyB][symbolId] = rate;
+		if (symbolId != 0) overshootLayout.hasOverride[partyB][symbolId] = true;
+
+		emit SetPartyBLiquidationOvershootRate(partyB, symbolId, oldRate, rate, symbolId != 0);
+	}
+
+	/// @notice Clears a PartyB's symbol-specific overshoot so it inherits the PartyB's symbol-0 default.
+	function clearPartyBLiquidationOvershootRateOverride(address partyB, uint256 symbolId) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
+		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
+		require(MAStorage.layout().partyBStatus[partyB], "SymbolControlFacet: Address is not PartyB");
+		require(symbolId >= 1 && symbolId <= symbolLayout.lastId, "SymbolControlFacet: Invalid id");
+
+		LiquidationOvershootStorage.Layout storage overshootLayout = LiquidationOvershootStorage.layout();
+		uint256 oldRate = LibLiquidationOvershoot.rate(partyB, symbolId);
+		delete overshootLayout.rates[partyB][symbolId];
+		delete overshootLayout.hasOverride[partyB][symbolId];
+
+		emit SetPartyBLiquidationOvershootRate(partyB, symbolId, oldRate, LibLiquidationOvershoot.rate(partyB, symbolId), false);
 	}
 
 	/// @notice Updates the base trading fee for a specific symbol. This fee applies when no affiliate-specific fee exists.
