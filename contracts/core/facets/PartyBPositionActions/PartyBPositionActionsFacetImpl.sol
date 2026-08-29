@@ -81,7 +81,18 @@ library PartyBPositionActionsFacetImpl {
 
 	/// @notice Verifies solvency and fills a close request for a single quote
 	function fillCloseRequest(uint256 quoteId, uint256 filledAmount, uint256 closedPrice, PairUpnlAndPriceSig memory upnlSig) internal {
-		_fillCloseRequest(quoteId, filledAmount, closedPrice, upnlSig);
+		_fillCloseRequest(quoteId, filledAmount, closedPrice, upnlSig, 0);
+	}
+
+	/// @notice Executes the shared close pipeline with an internally calculated PartyA shortfall allowance.
+	function fillCloseRequestWithAllowedShortfall(
+		uint256 quoteId,
+		uint256 filledAmount,
+		uint256 closedPrice,
+		PairUpnlAndPriceSig memory upnlSig,
+		uint256 allowedShortfall
+	) internal returns (uint256 actualShortfall) {
+		return _fillCloseRequest(quoteId, filledAmount, closedPrice, upnlSig, allowedShortfall);
 	}
 
 	/// @notice Accepts a cancel close request, returning the quote to OPENED status
@@ -96,7 +107,7 @@ library PartyBPositionActionsFacetImpl {
 		quote.quantityToClose = 0;
 	}
 
-	/// @notice Fills a close request up to the maximum amount that keeps PartyA at the edge of liquidation.
+	/// @notice Plans and fills a close request up to PartyB's configured close-to-liquidation boundary.
 	/// @dev IMPORTANT BACKWARD-COMPATIBILITY WARNING:
 	///      This legacy method reserves room for protocol closeFee only. It does NOT reserve room for solver fees
 	///      charged through LibSolverFee, so a solver fee charged after this call can still make PartyA liquidatable.
@@ -105,9 +116,8 @@ library PartyBPositionActionsFacetImpl {
 		uint256 quoteId,
 		uint256 closedPrice,
 		PairUpnlAndPriceSig memory upnlSig
-	) internal returns (uint256 filledAmount) {
-		// Validate the request and calculate the max close amount that keeps PartyA at liquidation threshold
-		(filledAmount, ) = LibPartyBPositionsActions.calculateCloseToLiquidationAmount(
+	) internal returns (LibPartyBPositionsActions.CloseToLiquidationPlan memory plan, uint256 actualShortfall) {
+		plan = LibPartyBPositionsActions.calculateCloseToLiquidationPlan(
 			quoteId,
 			type(uint256).max,
 			closedPrice,
@@ -115,13 +125,18 @@ library PartyBPositionActionsFacetImpl {
 			upnlSig.upnlPartyA,
 			0
 		);
+		require(plan.filledAmount > 0, "PartyBFacet: Cannot close any amount");
 
-		_fillCloseRequest(quoteId, filledAmount, closedPrice, upnlSig);
-
-		return filledAmount;
+		actualShortfall = _fillCloseRequest(quoteId, plan.filledAmount, closedPrice, upnlSig, plan.allowedShortfall);
 	}
 
-	function _fillCloseRequest(uint256 quoteId, uint256 filledAmount, uint256 closedPrice, PairUpnlAndPriceSig memory upnlSig) private {
+	function _fillCloseRequest(
+		uint256 quoteId,
+		uint256 filledAmount,
+		uint256 closedPrice,
+		PairUpnlAndPriceSig memory upnlSig,
+		uint256 allowedShortfall
+	) private returns (uint256 actualShortfall) {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		TradingModeStorage.Layout storage tradingModeLayout = TradingModeStorage.layout();
 		address signer = LibSigner.getSigner();
@@ -137,7 +152,7 @@ library PartyBPositionActionsFacetImpl {
 			closedPrices[0] = closedPrice;
 			marketPrices[0] = upnlSig.price;
 
-			LibSolvency.requireSolventAfterClosePosition(
+			int256 partyAAvailableBalance = LibSolvency.requireSolventAfterClosePosition(
 				quoteIds,
 				filledAmounts,
 				closedPrices,
@@ -145,8 +160,10 @@ library PartyBPositionActionsFacetImpl {
 				upnlSig.upnlPartyB,
 				upnlSig.upnlPartyA,
 				quote.partyB,
-				quote.partyA
+				quote.partyA,
+				allowedShortfall
 			);
+			if (partyAAvailableBalance < 0) actualShortfall = LibSolvency.negativeMagnitude(partyAAvailableBalance);
 		}
 
 		LibAccount.increaseBothUpnlCounters(quote.partyB, quote.partyA);

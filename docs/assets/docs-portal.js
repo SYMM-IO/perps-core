@@ -111,6 +111,7 @@
 			["notional-liquidation-fee-floor", "Liquidation", "Notional Liquidation Fee Floor"],
 			["close-settlement-netting", "Settlement", "Per-Quote Close Settlement Netting"],
 			["accountlayer-callback-liveness", "AccountLayer", "AccountLayer Force-Close and Liquidation Fix"],
+			["per-solver-liquidation-cushion", "Liquidation", "Per-Solver Liquidation Cushion"],
 		],
 	};
 
