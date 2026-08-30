@@ -230,6 +230,11 @@ event SetSolverFeeReceiverForTag(
 						charge may leave PartyA liquidatable. Integrators must not treat a successful fee charge as proof that PartyA remains solvent.
 					</p>
 					<p>
+						A suspended PartyA cannot be charged an OPEN or CLOSE solver fee. CLOSE charging also requires the close request deadline to
+						remain valid, using the same inclusive <code>block.timestamp &lt;= deadline</code> boundary as close execution. Once the
+						deadline has passed, PartyB cannot collect a fee even if nobody has explicitly expired the request yet.
+					</p>
+					<p>
 						The call also does not prove that an off-chain service associated with a tag occurred. PartyA's consent is the per-quote rate
 						cap; PartyB controls when to charge, which tag to attach, and where each tag routes. Indexers should use <code>quoteId</code>,
 						<code>feeType</code>, and the raw <code>tag</code> from the event for attribution without interpreting the tag as extra

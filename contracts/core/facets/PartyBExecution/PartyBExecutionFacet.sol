@@ -32,10 +32,10 @@ contract PartyBExecutionFacet is Accessibility, Pausable, IPartyBExecutionFacet 
 	}
 
 	/// @notice Charges a fixed solver fee from PartyA's allocated balance against the quote's selected rate cap.
-	/// @dev This call performs no Muon or post-fee solvency check. It only enforces lifecycle, caller ownership,
-	///      the cumulative quote-time cap, sufficient allocated balance, and safe receiver routing. A successful
-	///      charge may make PartyA liquidatable. OPEN fees are charged after opening; CLOSE fees are charged
-	///      against the live close request before its fill executes.
+	/// @dev This call performs no Muon or post-fee solvency check. It enforces an unsuspended PartyA, lifecycle,
+	///      caller ownership, the cumulative quote-time cap, sufficient allocated balance, and safe receiver routing.
+	///      A successful charge may make PartyA liquidatable. OPEN fees are charged after opening; CLOSE fees are
+	///      charged against an unexpired close request before its fill executes.
 	function chargeSolverFee(
 		uint256 quoteId,
 		SolverFeeType feeType,

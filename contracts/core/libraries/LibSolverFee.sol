@@ -16,12 +16,14 @@ library LibSolverFee {
 	}
 
 	/// @notice Charges a standalone solver fee against the quote's open or close notional cap.
-	/// @dev CLOSE uses only the live close request notional and must be charged before that request is filled.
+	/// @dev Suspended Party A accounts cannot be charged. CLOSE uses only a live, unexpired close request
+	///      and must be charged before that request is filled.
 	function chargeSolverFee(uint256 quoteId, SolverFeeType feeType, uint256 amount, bytes32 tagHash) internal returns (address receiver) {
 		require(amount > 0, "SolverFee: Zero amount");
 
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote storage quote = quoteLayout.quotes[quoteId];
+		require(!AccountStorage.layout().suspendedAddresses[quote.partyA], "SolverFee: Payer suspended");
 		SolverFeeState storage feeState = quoteLayout.solverFeeStates[quoteId];
 		SharedEvents.BalanceChangeType changeType;
 
@@ -36,6 +38,7 @@ library LibSolverFee {
 				quote.quoteStatus == QuoteStatus.CLOSE_PENDING || quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING,
 				"SolverFee: No pending close request"
 			);
+			require(block.timestamp <= quote.deadline, "SolverFee: Close request expired");
 			uint256 closeNotional = Math.mulDiv(quote.quantityToClose, quote.requestedClosePrice, 1e18);
 			uint256 closeId = quoteLayout.closeIds[quoteId];
 			uint256 requestFeeCharged = quoteLayout.closeRequestSolverFeeCharged[closeId] + amount;
