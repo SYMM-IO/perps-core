@@ -4,6 +4,7 @@ import { HELP_TEXT, runCli } from "../symmio.js";
 import { catalog } from "../task-runner.js";
 import { TASK_DEFINITIONS, checklistExplorerVerification } from "../tasks/registry.js";
 import assert from "node:assert/strict";
+import path from "node:path";
 import test from "node:test";
 
 function stream({ tty = false } = {}) {
@@ -109,6 +110,12 @@ test("full deployment plans give every contract batch entry a unique stable id",
 		assert.equal(new Set(items).size, items.length);
 		for (const item of items) assert.match(item, /^[a-z0-9][a-z0-9.-]*$/);
 	}
+	const productionPlan = await definition.plan({}, { mode: "live", config: path.resolve("deployment-recipes/arbitrum-vibe-production.json") });
+	const liveItems = productionPlan.find(step => step.id === "execute").items;
+	assert.ok(liveItems.includes("live.liquidator.deploy-proxy"));
+	assert.ok(liveItems.some(item => item.startsWith("live.liquidator.grant-operator-")));
+	assert.ok(liveItems.includes("live.liquidator.grant-core-liquidator-role"));
+	assert.ok(liveItems.includes("live.liquidator.grant-core-partyb-liquidator-role"));
 });
 
 test("progress summary is compact at 80 columns and details expose hashes, receipts and gas", () => {

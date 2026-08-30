@@ -754,7 +754,27 @@ export function validateDeploymentRecipe(value, source = "deployment recipe") {
 	// SymmioLiquidator is a standalone UUPS proxy over the core diamond rather than a
 	// component target, so it is optional at the root and its admin defaults to
 	// governance.admin when the section omits one.
-	if (recipe.liquidator !== undefined) validateAddon(recipe.liquidator, source, "liquidator", "admin", false);
+	if (recipe.liquidator !== undefined) {
+		const liquidator = object(recipe.liquidator, source, "liquidator");
+		onlyKeys(liquidator, ["mode", "address", "admin", "operators"], source, "liquidator");
+		required(liquidator, ["mode"], source, "liquidator");
+		enumValue(liquidator.mode, COMPONENT_MODES, source, "liquidator.mode");
+		if (liquidator.mode === "deploy") {
+			if (liquidator.address !== undefined) fail(source, "liquidator.address", "must be omitted when mode is deploy");
+			if (liquidator.admin !== undefined) address(liquidator.admin, source, "liquidator.admin");
+			uniqueAddresses(liquidator.operators, source, "liquidator.operators");
+		} else if (liquidator.mode === "reuse") {
+			required(liquidator, ["address"], source, "liquidator");
+			address(liquidator.address, source, "liquidator.address");
+			for (const field of ["admin", "operators"]) {
+				if (liquidator[field] !== undefined) fail(source, `liquidator.${field}`, "must be omitted when mode is reuse");
+			}
+		} else {
+			for (const field of ["address", "admin", "operators"]) {
+				if (liquidator[field] !== undefined) fail(source, `liquidator.${field}`, "must be omitted when mode is skip");
+			}
+		}
+	}
 
 	return JSON.parse(JSON.stringify(recipe));
 }
@@ -981,7 +1001,22 @@ export function createDeploymentPlan(recipeValue, { only } = {}) {
 	// The liquidator is an optional add-on outside DEPLOYMENT_COMPONENTS, but a declared one executes
 	// a real deployment transaction in full runs — the plan must not omit it.
 	if (!only && recipe.liquidator !== undefined) {
-		components.push({ name: "liquidator", mode: recipe.liquidator.mode, dependsOn: ["core"] });
+		const actions =
+			recipe.liquidator.mode === "deploy"
+				? [
+						{ id: "deploy-proxy", target: "SymmioLiquidator", operation: "deploy" },
+						...recipe.liquidator.operators.map(operator => ({
+							id: `grant-operator-${operator.toLowerCase()}`,
+							target: "SymmioLiquidator",
+							operation: "grantRole",
+							role: "OPERATOR_ROLE",
+							account: operator,
+						})),
+						{ id: "grant-core-liquidator-role", target: "core", operation: "grantRole", role: "LIQUIDATOR_ROLE" },
+						{ id: "grant-core-partyb-liquidator-role", target: "core", operation: "grantRole", role: "PARTYB_LIQUIDATOR_ROLE" },
+					]
+				: [];
+		components.push({ name: "liquidator", mode: recipe.liquidator.mode, dependsOn: ["core"], actions });
 	}
 
 	return {

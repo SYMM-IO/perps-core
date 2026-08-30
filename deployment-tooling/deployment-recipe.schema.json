@@ -508,16 +508,21 @@
 			"properties": {
 				"mode": { "$ref": "#/$defs/componentMode" },
 				"address": { "$ref": "#/$defs/address" },
-				"admin": { "$ref": "#/$defs/address", "description": "Defaults to governance.admin when omitted" }
+				"admin": { "$ref": "#/$defs/address", "description": "Defaults to governance.admin when omitted" },
+				"operators": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/address" } }
 			},
 			"allOf": [
 				{
 					"if": { "type": "object", "properties": { "mode": { "const": "deploy" } }, "required": ["mode"] },
-					"then": { "type": "object", "not": { "type": "object", "required": ["address"] } }
+					"then": { "type": "object", "required": ["operators"], "not": { "type": "object", "required": ["address"] } }
 				},
 				{
 					"if": { "type": "object", "properties": { "mode": { "const": "reuse" } }, "required": ["mode"] },
-					"then": { "type": "object", "required": ["address"], "not": { "type": "object", "required": ["admin"] } }
+					"then": {
+						"type": "object",
+						"required": ["address"],
+						"not": { "anyOf": [{ "required": ["admin"] }, { "required": ["operators"] }] }
+					}
 				},
 				{
 					"if": { "type": "object", "properties": { "mode": { "const": "skip" } }, "required": ["mode"] },
@@ -526,7 +531,8 @@
 						"not": {
 							"anyOf": [
 								{ "type": "object", "required": ["address"] },
-								{ "type": "object", "required": ["admin"] }
+								{ "type": "object", "required": ["admin"] },
+								{ "type": "object", "required": ["operators"] }
 							]
 						}
 					}

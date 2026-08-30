@@ -238,6 +238,7 @@ function applyLocalAccountDefaults(recipe, accounts) {
 		recipe.gaslessLayer.treasury = account(1);
 		recipe.gaslessLayer.relayers = [account(4)];
 	}
+	if (recipe.liquidator?.mode === "deploy") recipe.liquidator.operators = [account(4)];
 	return recipe;
 }
 
@@ -256,7 +257,7 @@ function recipeReviewText(recipe, { identityPath, digest, only } = {}) {
 	const secretSummary = Object.entries(recipe.secrets)
 		.map(([purpose, reference]) => `${purpose}: ${reference}`)
 		.join("\n");
-	const componentSummary = ["core", "partyB", "symbolManager", "expressProvider", "gaslessLayer"]
+	const componentSummary = ["core", "partyB", "symbolManager", "expressProvider", "gaslessLayer", ...(recipe.liquidator ? ["liquidator"] : [])]
 		.map(name => `${name}: ${recipe[name].mode}`)
 		.join("\n");
 	const warnings = [];
@@ -285,6 +286,12 @@ function recipeReviewText(recipe, { identityPath, digest, only } = {}) {
 		componentSummary,
 		...(recipe.partyB.signer ? [`PartyB signer: ${recipe.partyB.signer}`] : []),
 		...(recipe.symbolManager.operator ? [`SymbolManager operator: ${recipe.symbolManager.operator}`] : []),
+		...(recipe.liquidator?.mode === "deploy"
+			? [
+					`Liquidator admin: ${recipe.liquidator.admin || recipe.governance.admin}`,
+					`Liquidator operators: ${recipe.liquidator.operators.join(", ")}`,
+				]
+			: []),
 		...(recipe.expressProvider.mode !== "skip"
 			? [
 					`Express timing: ${recipe.expressProvider.securityWindow === undefined ? "unchanged" : `${recipe.expressProvider.securityWindow}s`} security • ${recipe.expressProvider.tolerancePeriod === undefined ? "unchanged" : `${recipe.expressProvider.tolerancePeriod}s`} tolerance`,
@@ -637,6 +644,13 @@ async function editComponents(ui, recipe) {
 		if (operator === null) return false;
 		recipe.symbolManager.operator = operator;
 	}
+	if (recipe.liquidator?.mode === "deploy") {
+		const admin = await askAddress(ui, "SymmioLiquidator admin", recipe.liquidator.admin || recipe.governance.admin);
+		const operators = await askAddressList(ui, "SymmioLiquidator operators", recipe.liquidator.operators || [], { allowEmpty: false });
+		if (admin === null || operators === null) return false;
+		recipe.liquidator.admin = admin;
+		recipe.liquidator.operators = operators;
+	}
 	return true;
 }
 
@@ -828,7 +842,9 @@ async function customizeRecipe(ui, recipe, { only, forceSelection = false } = {}
 					{ value: "protocol", label: "Protocol parameter overrides", hint: "reviewed defaults are recommended" },
 				]
 			: []),
-		...(only === "expressProvider" || only === "gaslessLayer" ? [] : [{ value: "components", label: "PartyB and SymbolManager assignments" }]),
+		...(only === "expressProvider" || only === "gaslessLayer"
+			? []
+			: [{ value: "components", label: "PartyB, SymbolManager, and Liquidator assignments" }]),
 		...(recipe.expressProvider.mode !== "skip" ? [{ value: "express", label: "ExpressProvider configuration" }] : []),
 		...(recipe.gaslessLayer.mode !== "skip" ? [{ value: "gasless", label: "GaslessLayer configuration" }] : []),
 	];

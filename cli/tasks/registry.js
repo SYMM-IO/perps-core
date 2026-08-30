@@ -245,14 +245,21 @@ async function prepareExistingRecipe({ root, ui }, { only, fullOnly = false } = 
 function deploymentPlan(input, scope) {
 	const live = input.mode === "live";
 	const contracts = scope === "full" || scope === "core" ? Object.keys(DEPLOYABLE_CONTRACTS).sort() : [];
-	const batchItems = stage =>
-		contracts.map((key, index) => {
+	let liquidatorActions = [];
+	if (scope === "full" && input.config) {
+		const context = loadRecipeContext(input.config);
+		liquidatorActions = context.plan.components.find(component => component.name === "liquidator")?.actions || [];
+	}
+	const batchItems = stage => [
+		...contracts.map((key, index) => {
 			const slug = key
 				.replace(/([a-z0-9])([A-Z])/g, "$1-$2")
 				.replace(/[^A-Za-z0-9]+/g, "-")
 				.toLowerCase();
 			return `${stage}.contract-${String(index + 1).padStart(3, "0")}.${slug}`;
-		});
+		}),
+		...liquidatorActions.map(action => `${stage}.liquidator.${action.id}`),
+	];
 	return [
 		{ id: "preflight", phase: "prepare", title: "Validate recipe, RPC, signer, permissions and deployment plan" },
 		{ id: "compile", phase: "prepare", title: "Compile the exact production source" },

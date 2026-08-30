@@ -215,6 +215,7 @@
 		"selectorFees": []
 	},
 	"liquidator": {
-		"mode": "deploy"
+		"mode": "deploy",
+		"operators": ["0x77A955776Ee1dd3E9C800c3214ed489441d74b94"]
 	}
 }
