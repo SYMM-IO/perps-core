@@ -102,6 +102,8 @@ export interface LiquidatorRecipe {
 	address?: string
 	/** Defaults to governance.admin when omitted on a deploy. */
 	admin?: string
+	/** Accounts allowed to execute liquidation calls; required and non-empty on deploy. */
+	operators?: string[]
 }
 
 export interface GaslessLayerRecipe {
@@ -214,7 +216,12 @@ export function createDeploymentPlan(
 	network: DeploymentRecipe["network"]
 	only: (typeof DEPLOYMENT_COMPONENTS)[number] | null
 	// "liquidator" is an optional add-on outside DEPLOYMENT_COMPONENTS; full-run plans include it when declared.
-	components: Array<{ name: (typeof DEPLOYMENT_COMPONENTS)[number] | "liquidator"; mode: ComponentMode; dependsOn: Array<"core"> }>
+	components: Array<{
+		name: (typeof DEPLOYMENT_COMPONENTS)[number] | "liquidator"
+		mode: ComponentMode
+		dependsOn: Array<"core">
+		actions?: Array<{ id: string; target: string; operation: string; role?: string; account?: string }>
+	}>
 }
 export function recipeEnvironment(recipe: DeploymentRecipe): {
 	env: Record<string, string>

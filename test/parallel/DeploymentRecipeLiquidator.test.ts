@@ -75,26 +75,50 @@ function recipe(): any {
 }
 
 describe("recipe liquidator add-on", function () {
-	it("accepts a deploy-mode liquidator with a valid admin", function () {
+	const operator = "0x7000000000000000000000000000000000000007"
+
+	it("accepts a deploy-mode liquidator with a valid admin and operator", function () {
 		const source = recipe()
-		source.liquidator = { mode: "deploy", admin: "0x6000000000000000000000000000000000000006" }
+		source.liquidator = { mode: "deploy", admin: "0x6000000000000000000000000000000000000006", operators: [operator] }
 		expect(() => validateDeploymentRecipe(source)).to.not.throw()
 	})
 
 	it("rejects a malformed liquidator.admin before any transaction can run", function () {
 		const source = recipe()
-		source.liquidator = { mode: "deploy", admin: "not-an-address" }
+		source.liquidator = { mode: "deploy", admin: "not-an-address", operators: [operator] }
 		expect(() => validateDeploymentRecipe(source)).to.throw("liquidator.admin")
+	})
+
+	it("requires at least one unique liquidator operator before deployment", function () {
+		const missing = recipe()
+		missing.liquidator = { mode: "deploy" }
+		expect(() => validateDeploymentRecipe(missing)).to.throw("liquidator.operators")
+
+		const duplicate = recipe()
+		duplicate.liquidator = { mode: "deploy", operators: [operator, operator.toLowerCase()] }
+		expect(() => validateDeploymentRecipe(duplicate)).to.throw("duplicates")
 	})
 
 	it("includes a declared liquidator in the full-run deployment plan", function () {
 		const source = recipe()
-		source.liquidator = { mode: "deploy" }
+		source.liquidator = { mode: "deploy", operators: [operator] }
 		const plan = createDeploymentPlan(source)
 		const component = plan.components.find((entry: any) => entry.name === "liquidator")
 		expect(component, "liquidator missing from plan components").to.not.equal(undefined)
 		expect(component!.mode).to.equal("deploy")
 		expect(component!.dependsOn).to.deep.equal(["core"])
+		expect(component!.actions).to.deep.equal([
+			{ id: "deploy-proxy", target: "SymmioLiquidator", operation: "deploy" },
+			{
+				id: `grant-operator-${operator.toLowerCase()}`,
+				target: "SymmioLiquidator",
+				operation: "grantRole",
+				role: "OPERATOR_ROLE",
+				account: operator,
+			},
+			{ id: "grant-core-liquidator-role", target: "core", operation: "grantRole", role: "LIQUIDATOR_ROLE" },
+			{ id: "grant-core-partyb-liquidator-role", target: "core", operation: "grantRole", role: "PARTYB_LIQUIDATOR_ROLE" },
+		])
 	})
 
 	it("omits the liquidator from the plan when the recipe does not declare one", function () {
@@ -104,7 +128,7 @@ describe("recipe liquidator add-on", function () {
 
 	it("rejects liquidator reuse in a full run, matching the other add-ons", function () {
 		const source = recipe()
-		source.liquidator = { mode: "reuse", address: "0x7000000000000000000000000000000000000007" }
+		source.liquidator = { mode: "reuse", address: operator }
 		expect(() => createDeploymentPlan(source)).to.throw("TARGET_MODE_UNSUPPORTED")
 	})
 })

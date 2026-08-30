@@ -105,6 +105,7 @@ interface SystemDeploymentReport {
 			symbolManager: ComponentMode
 			expressProvider: ComponentMode
 			gaslessLayer: ComponentMode
+			liquidator?: ComponentMode
 		}
 	}
 	lifecycle: "validating" | "pending_handover" | "complete" | "failed"
@@ -145,6 +146,9 @@ interface SystemDeploymentReport {
 		expressProviderMode?: ComponentMode
 		gaslessLayerMode?: ComponentMode
 		gaslessLayer?: Omit<GaslessLayerResolvedConfig, "address" | "implementation">
+		liquidatorMode?: ComponentMode
+		liquidatorAdmin?: string
+		liquidatorOperators?: string[]
 	}
 	summary: {
 		totalDeploymentGroups: number
@@ -211,6 +215,7 @@ interface DeployedContracts {
 	gaslessLayer?: string
 	gaslessLayerImplementation?: string
 	symmioLiquidator?: string
+	symmioLiquidatorImplementation?: string
 }
 
 type ExpressProviderStepResult = {
@@ -224,6 +229,13 @@ type GaslessLayerStepResult = {
 	address: string
 	implementation: string
 	records: Array<{ name: string; address: string; constructorArguments: unknown[]; libraries?: Record<string, string> }>
+	manualActions: SafeManualAction[]
+	checks: ComponentHealthCheck[]
+}
+
+type LiquidatorStepResult = {
+	address: string
+	implementation?: string
 	manualActions: SafeManualAction[]
 	checks: ComponentHealthCheck[]
 }
@@ -719,7 +731,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 				}
 				if (recipe.liquidator?.mode === "reuse") {
 					throw new Error(
-						"LIVE_TARGET_UNSUPPORTED: deploy:system cannot reuse a SymmioLiquidator while deploying a brand-new core — the reused proxy is bound to a pre-existing core. Use mode=deploy/skip, or wire it separately with scripts/deployLiquidator.ts.",
+						"LIVE_TARGET_UNSUPPORTED: deploy:system cannot reuse a SymmioLiquidator while deploying a brand-new core — the reused proxy is bound to a pre-existing core. Use mode=deploy/skip, or use ./symmio and choose the guarded SymmioLiquidator task.",
 					)
 				}
 				verify = recipe.execution.verify
@@ -824,6 +836,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 								symbolManager: recipeRuntime.recipe.symbolManager.mode,
 								expressProvider: recipeRuntime.recipe.expressProvider.mode,
 								gaslessLayer: recipeRuntime.recipe.gaslessLayer.mode,
+								liquidator: recipeRuntime.recipe.liquidator?.mode,
 							},
 						}
 					: undefined,
@@ -967,6 +980,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			const deployedContracts: DeployedContracts = vanityPlan ? { create2Factory: vanityPlan.factoryAddress } : {}
 			let expressProviderResult: ExpressProviderStepResult | undefined
 			let gaslessLayerResult: GaslessLayerStepResult | undefined
+			let liquidatorResult: LiquidatorStepResult | undefined
 
 			// HyperEVM (chainId 999 mainnet, 998 testnet) requires big blocks for facet deployment
 			const isHyperEVM = !isSimulatedNetwork && (Number(chainId) === 999 || Number(chainId) === 998)
@@ -1529,24 +1543,89 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 						run: async () => {
 							try {
 								const wasAlreadyDeployed = !!checkpoint.contracts.symmioLiquidator
-								// The liquidator proxy holds no funds and only forwards liquidation
-								// calls, so it follows governance.admin unless the recipe names another.
 								const liquidatorAdmin = recipe.liquidator!.admin ?? config.admin
+								const operators = recipe.liquidator!.operators!
+								// A fresh proxy starts under the deployment signer so its complete role setup can
+								// be journaled before control is handed to governance. On a legacy checkpoint the
+								// helper reuses the existing proxy and this initializer argument is ignored.
 								const liquidator = await withHyperEVMBigBlocks("SymmioLiquidator", () =>
 									deploySymmioLiquidator(hre, {
 										symmioAddress: deployedContracts.diamond!,
-										admin: liquidatorAdmin,
+										admin: wasAlreadyDeployed ? liquidatorAdmin : deployerAddress,
 										logData,
 										checkpoint,
 									}),
 								)
 								const address = await liquidator.getAddress()
 								deployedContracts.symmioLiquidator = address
+								deployedContracts.symmioLiquidatorImplementation = checkpoint.contracts.symmioLiquidator?.implementation
 								logger.info(`SymmioLiquidator deployed at: ${address}`)
 
-								// Wire the core liquidation roles — without them the proxy cannot execute a single
-								// liquidation and its health checks fail deterministically. Operator registration on
-								// the liquidator itself is the liquidator admin's post-deploy concern.
+								const manualActions: SafeManualAction[] = []
+								const checks: ComponentHealthCheck[] = []
+								const defaultAdminRole = await liquidator.DEFAULT_ADMIN_ROLE()
+								const managerRole = await liquidator.MANAGER_ROLE()
+								const operatorRole = await liquidator.OPERATOR_ROLE()
+								const deployerCanAdmin = await liquidator.hasRole(defaultAdminRole, deployerAddress)
+								if (deployerCanAdmin) {
+									for (const [roleName, role, account] of [
+										["DEFAULT_ADMIN_ROLE", defaultAdminRole, liquidatorAdmin],
+										["MANAGER_ROLE", managerRole, liquidatorAdmin],
+										...operators.map(operator => ["OPERATOR_ROLE", operatorRole, operator]),
+									] as Array<[string, string, string]>) {
+										if (!(await liquidator.hasRole(role, account))) {
+											await liquidator.connect(deployer).grantRole.staticCall(role, account)
+											await send(liquidator.connect(deployer).grantRole(role, account), `grant SymmioLiquidator ${roleName} to ${account}`)
+										}
+									}
+									if (deployerAddress.toLowerCase() !== liquidatorAdmin.toLowerCase()) {
+										for (const [roleName, role] of [
+											["MANAGER_ROLE", managerRole],
+											["DEFAULT_ADMIN_ROLE", defaultAdminRole],
+										] as Array<[string, string]>) {
+											if (await liquidator.hasRole(role, deployerAddress)) {
+												await send(
+													liquidator.connect(deployer).renounceRole(role, deployerAddress),
+													`renounce SymmioLiquidator ${roleName} from deployer`,
+												)
+											}
+										}
+									}
+								} else {
+									if (!(await liquidator.hasRole(defaultAdminRole, liquidatorAdmin))) {
+										throw new Error(`SymmioLiquidator has neither deployer nor configured admin ${liquidatorAdmin} as DEFAULT_ADMIN_ROLE`)
+									}
+									for (const [roleName, role, account] of [
+										["MANAGER_ROLE", managerRole, liquidatorAdmin],
+										...operators.map(operator => ["OPERATOR_ROLE", operatorRole, operator]),
+									] as Array<[string, string, string]>) {
+										if (!(await liquidator.hasRole(role, account))) {
+											manualActions.push({
+												to: address,
+												value: "0",
+												data: liquidator.interface.encodeFunctionData("grantRole", [role, account]),
+												description: `Grant ${roleName} on SymmioLiquidator to ${account}`,
+											})
+										}
+									}
+									if (manualActions.length > 0 && liquidatorAdmin.toLowerCase() !== config.admin.toLowerCase()) {
+										throw new Error(
+											`Legacy SymmioLiquidator repair requires its configured admin ${liquidatorAdmin}; the deployment Safe is ${config.admin}. ` +
+												"Use ./symmio with the liquidator admin authority, then resume this deployment.",
+										)
+									}
+								}
+								if (deployerAddress.toLowerCase() !== liquidatorAdmin.toLowerCase()) {
+									for (const [roleName, role] of [
+										["DEFAULT_ADMIN_ROLE", defaultAdminRole],
+										["MANAGER_ROLE", managerRole],
+									] as Array<[string, string]>) {
+										if (await liquidator.hasRole(role, deployerAddress)) {
+											throw new Error(`Deployer still holds SymmioLiquidator ${roleName} after role handover`)
+										}
+									}
+								}
+
 								const liquidatorCoreView = await ethers.getContractAt(
 									"contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet",
 									deployedContracts.diamond!,
@@ -1558,13 +1637,32 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 								for (const roleName of ["LIQUIDATOR_ROLE", "PARTYB_LIQUIDATOR_ROLE"]) {
 									const role = ethers.id(roleName)
 									if (!(await liquidatorCoreView.hasRole(address, role))) {
-										const tx = await liquidatorCoreControl.connect(deployer).grantRole(address, role)
-										await tx.wait()
+										await liquidatorCoreControl.connect(deployer).grantRole.staticCall(address, role)
+										await send(liquidatorCoreControl.connect(deployer).grantRole(address, role), `grant core ${roleName} to SymmioLiquidator`)
 										logger.info(`Granted core ${roleName} to SymmioLiquidator`)
 									}
 									if (!(await liquidatorCoreView.hasRole(address, role))) {
 										throw new Error(`Core ${roleName} grant post-check failed for SymmioLiquidator ${address}`)
 									}
+									checks.push({ check: `Core ${roleName}`, status: "passed", expected: address, actual: address })
+								}
+
+								for (const [label, role, account] of [
+									["configured admin DEFAULT_ADMIN_ROLE", defaultAdminRole, liquidatorAdmin],
+									["configured admin MANAGER_ROLE", managerRole, liquidatorAdmin],
+									...operators.map(operator => [`operator ${operator}`, operatorRole, operator]),
+								] as Array<[string, string, string]>) {
+									checks.push({
+										check: `SymmioLiquidator ${label}`,
+										status: (await liquidator.hasRole(role, account)) ? "passed" : "pending",
+										expected: account,
+									})
+								}
+								liquidatorResult = {
+									address,
+									implementation: deployedContracts.symmioLiquidatorImplementation,
+									manualActions,
+									checks,
 								}
 
 								deploymentResults.push({
@@ -1731,6 +1829,13 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 				for (const check of gaslessLayerResult?.checks || []) {
 					if (check.status === "pending") manualActions.push(`GaslessLayer check still pending: ${check.check}`)
 				}
+				for (const action of liquidatorResult?.manualActions || []) {
+					manualActions.push(`${config.admin} executes: ${action.description} (to ${action.to}, data ${action.data})`)
+					safeActions.push(action)
+				}
+				for (const check of liquidatorResult?.checks || []) {
+					if (check.status === "pending") manualActions.push(`SymmioLiquidator check still pending: ${check.check}`)
+				}
 
 				const handoverPending = manualActions.length > 0
 				checkpoint.step = handoverPending ? "pending_handover" : "complete"
@@ -1761,6 +1866,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 									symbolManager: recipeRuntime.recipe.symbolManager.mode,
 									expressProvider: recipeRuntime.recipe.expressProvider.mode,
 									gaslessLayer: recipeRuntime.recipe.gaslessLayer.mode,
+									liquidator: recipeRuntime.recipe.liquidator?.mode,
 								},
 							}
 						: undefined,
@@ -1785,6 +1891,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 						fromReport: true,
 						allowPendingOwnership: pendingOwnership.length > 0,
 						allowPendingAdminActions: pendingSymbolManagerRoles.length > 0,
+						allowPendingLiquidatorActions: (liquidatorResult?.manualActions.length || 0) > 0,
 					})
 					report.checks.health = "passed"
 					report.updatedAt = new Date().toISOString()
@@ -2953,6 +3060,9 @@ function generateReport(
 			expressProviderMode: config.expressProviderMode,
 			gaslessLayerMode: config.gaslessLayerMode,
 			gaslessLayer: config.gaslessLayer,
+			liquidatorMode: activeDeploymentRecipe?.recipe.liquidator?.mode ?? "skip",
+			liquidatorAdmin: activeDeploymentRecipe?.recipe.liquidator?.admin ?? config.admin,
+			liquidatorOperators: activeDeploymentRecipe?.recipe.liquidator?.operators ?? [],
 		},
 		summary: {
 			totalDeploymentGroups: deployments.length,

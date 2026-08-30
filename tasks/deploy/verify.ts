@@ -120,6 +120,9 @@ export function assertVerificationRunBinding(
 				throw new Error(`Deployment report component mode ${component} is not bound to the active JSON recipe`)
 			}
 		}
+		if (active.recipe.liquidator && report.recipe?.components?.liquidator !== active.recipe.liquidator.mode) {
+			throw new Error("Deployment report component mode liquidator is not bound to the active JSON recipe")
+		}
 	}
 	if (report.checks?.health !== "passed") {
 		throw new Error(`Deployment health must pass before explorer verification; got ${JSON.stringify(report.checks?.health)}`)
@@ -188,6 +191,10 @@ export function assertVerificationRecordsCoverReport(contracts: ContractToVerify
 		// Without this, a stale expressprovider.json from an earlier deployment satisfied the
 		// file requirement while describing contracts from a different run.
 		required.push(["ExpressProvider", report.addresses?.expressProvider])
+	}
+	if (report.config?.liquidatorMode === "deploy") {
+		required.push(["SymmioLiquidator", report.addresses?.symmioLiquidator])
+		required.push(["SymmioLiquidator implementation", report.addresses?.symmioLiquidatorImplementation])
 	}
 	if (report.config?.collateralAddress === "") required.push(["deployed collateral", report.addresses?.collateral])
 	for (const [label, address] of required) {
@@ -270,6 +277,7 @@ export const verifyAllTask = task("verify:all", "Verifies all deployed contracts
 				// Unlike the others this has no legacy env fallback: it only ever ships via a recipe.
 				const deploysExpressProvider = report ? report.config?.expressProviderMode === "deploy" : false
 				const deploysGaslessLayer = report ? report.config?.gaslessLayerMode === "deploy" : false
+				const deploysLiquidator = report ? report.config?.liquidatorMode === "deploy" : false
 				const logFiles: Array<{ file: string; name: string; required: boolean; include: boolean }> = [
 					{ file: DEPLOYMENT_LOG_FILE, name: "Core Diamond deployment records", required: true, include: true },
 					{ file: ACCOUNTLAYER_DEPLOYMENT_FILE, name: "AccountLayer deployment records", required: true, include: true },
@@ -315,8 +323,8 @@ export const verifyAllTask = task("verify:all", "Verifies all deployed contracts
 					{
 						file: LIQUIDATOR_DEPLOYMENT_FILE,
 						name: "SymmioLiquidator deployment records",
-						required: false,
-						include: !report,
+						required: Boolean(report && deploysLiquidator),
+						include: report ? deploysLiquidator : true,
 					},
 				]
 
@@ -2030,6 +2038,8 @@ async function verifyLiquidatorFull(
 	liquidatorAddress: string,
 	addresses: { diamond?: string; admin?: string; operators?: string[] },
 	results: VerificationResult[],
+	allowPendingAdminActions = false,
+	deployerAddress?: string,
 ) {
 	const cat = "Liquidator"
 	const liquidator = await ethers.getContractAt("SymmioLiquidator", liquidatorAddress)
@@ -2073,8 +2083,12 @@ async function verifyLiquidatorFull(
 	console.log("")
 	console.log(`   ${c.dim}-- Roles on SymmioLiquidator --${c.reset}`)
 	if (addresses.admin) {
-		await checkOzDefaultAdminRole(results, cat, liquidator, addresses.admin, "fail", "SymmioLiquidator")
-		await checkRole(results, cat, liquidator, addresses.admin, "MANAGER_ROLE", ethers, { ozStyle: true, contractLabel: "SymmioLiquidator" })
+		await checkOzDefaultAdminRole(results, cat, liquidator, addresses.admin, allowPendingAdminActions ? "warn" : "fail", "SymmioLiquidator")
+		await checkRole(results, cat, liquidator, addresses.admin, "MANAGER_ROLE", ethers, {
+			ozStyle: true,
+			contractLabel: "SymmioLiquidator",
+			failStatus: allowPendingAdminActions ? "warn" : "fail",
+		})
 	} else {
 		pushAndLog(results, {
 			category: cat,
@@ -2087,8 +2101,22 @@ async function verifyLiquidatorFull(
 
 	if (addresses.operators && addresses.operators.length > 0) {
 		for (const op of addresses.operators) {
-			await checkRole(results, cat, liquidator, op, "OPERATOR_ROLE", ethers, { ozStyle: true, contractLabel: "SymmioLiquidator" })
+			await checkRole(results, cat, liquidator, op, "OPERATOR_ROLE", ethers, {
+				ozStyle: true,
+				contractLabel: "SymmioLiquidator",
+				failStatus: allowPendingAdminActions ? "warn" : "fail",
+			})
 		}
+	}
+	if (deployerAddress && (!addresses.admin || deployerAddress.toLowerCase() !== addresses.admin.toLowerCase())) {
+		await checkRoleAbsent(results, cat, liquidator, deployerAddress, "DEFAULT_ADMIN_ROLE", ethers, {
+			ozStyle: true,
+			contractLabel: "SymmioLiquidator",
+		})
+		await checkRoleAbsent(results, cat, liquidator, deployerAddress, "MANAGER_ROLE", ethers, {
+			ozStyle: true,
+			contractLabel: "SymmioLiquidator",
+		})
 	}
 
 	// LIQUIDATOR_ROLE + PARTYB_LIQUIDATOR_ROLE on core
@@ -2150,6 +2178,7 @@ function loadAddressesFromCheckpoint(checkpoint: any, existing: any) {
 		gaslessLayer: existing.gaslessLayer || checkpoint.contracts?.gaslessLayer?.proxy?.address,
 		gaslessLayerImplementation: existing.gaslessLayerImplementation || checkpoint.contracts?.gaslessLayer?.implementation?.address,
 		liquidator: existing.liquidator || checkpoint.contracts?.symmioLiquidator?.address,
+		liquidatorImplementation: existing.liquidatorImplementation || checkpoint.contracts?.symmioLiquidator?.implementation,
 		collateral: existing.collateral || checkpoint.contracts?.collateral?.address,
 		signatureVerifier: existing.signatureVerifier || checkpoint.contracts?.signatureVerifier?.address,
 		admin: existing.admin,
@@ -2168,6 +2197,9 @@ export function loadAddressesFromReport(report: any, existing: any) {
 		gaslessLayer: existing.gaslessLayer || report.addresses?.gaslessLayer || undefined,
 		gaslessLayerImplementation: existing.gaslessLayerImplementation || report.addresses?.gaslessLayerImplementation || undefined,
 		liquidator: existing.liquidator || report.addresses?.symmioLiquidator || undefined,
+		liquidatorImplementation: existing.liquidatorImplementation || report.addresses?.symmioLiquidatorImplementation || undefined,
+		liquidatorAdmin: existing.liquidatorAdmin || report.config?.liquidatorAdmin || undefined,
+		liquidatorOperators: existing.liquidatorOperators || report.config?.liquidatorOperators || undefined,
 		collateral: existing.collateral || report.addresses?.collateral || undefined,
 		signatureVerifier: existing.signatureVerifier || report.addresses?.signatureVerifier || undefined,
 		admin: existing.admin || report.config?.admin || undefined,
@@ -2277,6 +2309,12 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 		type: ArgumentType.BOOLEAN,
 		defaultValue: false,
 	})
+	.addOption({
+		name: "allowPendingLiquidatorActions",
+		description: "Allow only report-declared SymmioLiquidator admin and operator grants to remain pending for governance execution",
+		type: ArgumentType.BOOLEAN,
+		defaultValue: false,
+	})
 	.setAction(async () => ({
 		default: async (args: any, hre: any) => {
 			const connection = await getConnection(hre)
@@ -2302,6 +2340,9 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 				gaslessLayer?: string
 				gaslessLayerImplementation?: string
 				liquidator?: string
+				liquidatorImplementation?: string
+				liquidatorAdmin?: string
+				liquidatorOperators?: string[]
 				collateral?: string
 				signatureVerifier?: string
 				admin?: string
@@ -2316,6 +2357,9 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 				gaslessLayer: undefined,
 				gaslessLayerImplementation: undefined,
 				liquidator: args.liquidator || undefined,
+				liquidatorImplementation: undefined,
+				liquidatorAdmin: undefined,
+				liquidatorOperators: undefined,
 				collateral: args.collateral || undefined,
 				signatureVerifier: args.signatureVerifier || undefined,
 				admin: args.admin || undefined,
@@ -2448,9 +2492,28 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 						throw new Error("gaslessLayer implementation is missing from a report that declares gaslessLayerMode=deploy")
 					}
 				}
+				if (args.fromReport && reportConfig?.liquidatorMode === "deploy") {
+					if (!addresses.liquidator) throw new Error("liquidator address is missing from a report that declares liquidatorMode=deploy")
+					if (!addresses.liquidatorImplementation) {
+						throw new Error("liquidator implementation is missing from a report that declares liquidatorMode=deploy")
+					}
+					if (!addresses.liquidatorAdmin) throw new Error("liquidator admin is missing from a report that declares liquidatorMode=deploy")
+					if (!Array.isArray(addresses.liquidatorOperators) || addresses.liquidatorOperators.length === 0) {
+						throw new Error("liquidator operators are missing from a report that declares liquidatorMode=deploy")
+					}
+				}
 			}
 			for (const [field, value] of Object.entries(addresses)) {
 				if (value === undefined) continue
+				if (field === "liquidatorOperators") {
+					if (
+						!Array.isArray(value) ||
+						value.some(operator => typeof operator !== "string" || !ethers.isAddress(operator) || operator === ethers.ZeroAddress)
+					) {
+						throw new Error("liquidatorOperators must contain valid non-zero addresses")
+					}
+					continue
+				}
 				if (field === "partyB") continue
 				if (typeof value !== "string" || !ethers.isAddress(value) || value === ethers.ZeroAddress) {
 					throw new Error(`${field} must be a valid non-zero address; received ${JSON.stringify(value)}`)
@@ -2806,11 +2869,22 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 						check: "Contract exists",
 						status: "fail",
 						message: "No contract at address",
-						hint: "Verify the SymmioLiquidator address is correct, or run scripts/deployLiquidator.ts",
+						hint: "Verify the SymmioLiquidator address is correct, or use ./symmio and choose the guarded SymmioLiquidator task",
 					})
 				} else {
 					pushAndLog(results, { category: "Liquidator", check: "Contract exists", status: "pass" })
-					await verifyLiquidatorFull(ethers, addresses.liquidator, { ...addresses, operators }, results)
+					await verifyLiquidatorFull(
+						ethers,
+						addresses.liquidator,
+						{
+							diamond: addresses.diamond,
+							admin: addresses.liquidatorAdmin || addresses.admin,
+							operators: operators.length > 0 ? operators : addresses.liquidatorOperators,
+						},
+						results,
+						args.allowPendingLiquidatorActions,
+						originalDeployerAddress,
+					)
 				}
 				console.log("")
 			}
