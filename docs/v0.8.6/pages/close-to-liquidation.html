@@ -48,7 +48,7 @@
 				<a class="toc-link level-2" href="#overshoot">Liquidation overshoot</a>
 				<a class="toc-link level-2" href="#configuration">Configuration</a>
 				<a class="toc-link level-2" href="#fallback">Remaining-value fallback</a>
-				<a class="toc-link level-2" href="#entrypoints">Entrypoints and fees</a>
+				<a class="toc-link level-2" href="#entrypoints">Entrypoint and preview</a>
 				<a class="toc-link level-2" href="#integration">Integration and events</a>
 				<a class="toc-link level-2" href="#risk">Risk boundary</a>
 			</div>
@@ -75,10 +75,10 @@
 					</p>
 					<p>
 						Closing a position does more than reduce its quantity. The close releases part of the quote's locked CVA and LF, realizes PnL
-						at the actual fill price, and charges the protocol close fee. A fee-aware fill can also charge a solver fee. The actual fill
-						price can differ from the signed market price used in the solvency snapshot. A large close may execute away from that market
-						reference because of price impact, especially in thin, lower-cap markets. The combined balance change can therefore be
-						negative even though PartyA, the trader, was solvent before the close.
+						at the actual fill price, and charges the protocol close fee. Solver fees use a separate entrypoint and do not participate in
+						this calculation. The actual fill price can differ from the signed market price used in the solvency snapshot. A large close
+						may execute away from that market reference because of price impact, especially in thin, lower-cap markets. The combined
+						balance change can therefore be negative even though PartyA, the trader, was solvent before the close.
 					</p>
 					<p>
 						This becomes dangerous when PartyA is close to liquidation. An unfavorable fill and the fees can consume more balance than the
@@ -95,8 +95,8 @@
 					<p>
 						<code>fillCloseRequestToLiquidation</code> exists for the case where PartyA is solvent now but the requested close is too
 						large to execute safely. For Muon-verified execution, PartyB, the quote's solver, supplies the close price and a price and
-						uPnL snapshot. The protocol first simulates the requested amount, including released collateral, realized PnL, protocol fees,
-						and any quoted solver fee.
+						uPnL snapshot. The protocol first simulates the requested amount, including released collateral, realized PnL, and protocol
+						fees.
 					</p>
 					<p>
 						If the whole bounded amount leaves PartyA nonnegative, the method fills it. A harmful close that starts from a positive
@@ -116,10 +116,7 @@
     H --&gt; I{Positive amount and valid remainder?}
     I --&gt;|No| F
     I --&gt;|Yes| J[Execute the normal close pipeline]</code></pre>
-					<p>
-						With no solver cap, the bounded amount is the pending <code>quantityToClose</code>. The fee-aware method can apply a smaller
-						<code>maxFillAmount</code> to a <code>LIMIT</code> request. The calculation never fills more than either bound.
-					</p>
+					<p>The bounded amount is the pending <code>quantityToClose</code>. The calculation never fills more than that request.</p>
 
 					<h2 id="scenarios">When the helper fills, partially fills, or reverts</h2>
 					<div class="table-wrap">
@@ -182,13 +179,12 @@ PartyA balance after that partial fill      approximately 0</code></pre>
 							applies.
 						</li>
 						<li>The order type must be <code>LIMIT</code> or <code>MARKET_BEST_EFFORT</code>.</li>
-						<li>The calculated amount must be positive and cannot exceed the request or the caller's permitted cap.</li>
+						<li>The calculated amount must be positive and cannot exceed the pending request.</li>
 						<li>A partial fill must preserve the minimum remaining quote value and nonzero proportional locked-value slices.</li>
-						<li>Fee-aware execution must stay within PartyA's close solver-fee rate cap.</li>
 					</ul>
 					<p>
-						Any failed check reverts the whole transaction. No partial close, cancellation-state change, fee charge, or hook result
-						remains after the revert.
+						Any failed check reverts the whole transaction. No partial close, cancellation-state change, or hook result remains after the
+						revert.
 					</p>
 
 					<h2 id="market-best-effort">Why <code>MARKET_BEST_EFFORT</code> was added</h2>
@@ -325,46 +321,30 @@ accepted when postCloseBalance &gt;= -allowedShortfall</code></pre>
 						configured allowance. With a nonzero overshoot, it does not mean PartyA remains solvent after that close.
 					</p>
 
-					<h2 id="entrypoints">Entrypoints, previews, and solver fees</h2>
-					<p>The legacy entrypoint preserves the v0.8.5 selector:</p>
+					<h2 id="entrypoints">Entrypoint and preview</h2>
+					<p>The execution entrypoint preserves the v0.8.5 selector:</p>
 					<pre><code class="language-solidity">function fillCloseRequestToLiquidation(
     uint256 quoteId,
     uint256 closedPrice,
     PairUpnlAndPriceSig memory upnlSig
 ) external returns (uint256 filledAmount);</code></pre>
 					<p>
-						It accounts for the protocol close fee but does not reserve balance for a solver fee. Use the fee-aware
-						<code>PartyBExecutionFacet</code> overload whenever execution charges one:
-					</p>
-					<pre><code class="language-solidity">function fillCloseRequestToLiquidation(
-    uint256 quoteId,
-    uint256 maxFillAmount,
-    uint256 closedPrice,
-    PairUpnlAndPriceSig memory upnlSig,
-    uint256 maxSolverFee
-) external returns (uint256 filledAmount);</code></pre>
-					<p>
-						<code>maxSolverFee</code> is quoted for <code>maxFillAmount</code>. If the boundary permits less, execution charges
-						<code>maxSolverFee * filledAmount / maxFillAmount</code>. A fee-bearing call should use a concrete quantity. Passing an
-						effectively unbounded <code>maxFillAmount</code> can make the prorated fee round down to zero.
-					</p>
-					<p>
-						For <code>LIMIT</code>, <code>maxFillAmount</code> may cap the transaction below the protocol boundary and leave PartyA
-						solvent. For <code>MARKET_BEST_EFFORT</code>, it must be at least the full pending <code>quantityToClose</code>. PartyB cannot
-						use that argument to choose a smaller best-effort fill. See <a href="./solver-fees.html#close-order-modes">Solver Fees</a>
-						for the complete solver-fee model.
+						Solver fees are not an execution argument. When a CLOSE fee is due, PartyB calls
+						<code>chargeSolverFee(quoteId, CLOSE, amount, tag)</code> separately before the close fill. Only the live
+						<code>quantityToClose</code> at <code>requestedClosePrice</code> creates fee capacity; already closed quantity does not. The
+						charge is not included in boundary sizing and is not prorated or reserved by this execution path. See
+						<a href="./solver-fees.html#integration">Solver Fees</a>.
 					</p>
 					<p>Integrators can preview the uncapped plan with:</p>
 					<pre><code class="language-solidity">function getMaxCloseAmountToLiquidation(
     uint256 quoteId,
     uint256 closedPrice,
     uint256 marketPrice,
-    int256 upnlPartyA,
-    uint256 maxSolverFee
+    int256 upnlPartyA
 ) external view returns (uint256 maxCloseAmount, bool canCloseAll);</code></pre>
 					<p>
-						The preview uses the full pending close quantity as its bound and fee basis. Treat it as an estimate. The signed values and
-						on-chain state can change before execution.
+						The preview uses the full pending close quantity as its bound. Treat it as an estimate. The signed values and on-chain state
+						can change before execution.
 					</p>
 
 					<h2 id="integration">Integration and events</h2>
@@ -401,9 +381,9 @@ accepted when postCloseBalance &gt;= -allowedShortfall</code></pre>
 						completed request. PartyA must create a new close request and a new <code>closeId</code> for the remaining position.
 					</p>
 					<p>
-						On the fee-aware path, <code>CloseSolverFeeCharged</code> precedes <code>PartyALiquidationOvershootUsed</code> when an
-						overshoot is used, and <code>FillCloseRequest</code> follows both. Indexers should still read the final quote status and
-						actual filled amount instead of inferring them from the preview.
+						A standalone <code>SolverFeeCharged</code> event belongs to its own transaction or batch operation; it has no guaranteed
+						ordering relative to <code>PartyALiquidationOvershootUsed</code> or <code>FillCloseRequest</code>. Indexers should read the
+						final quote status and actual filled amount instead of inferring them from the preview or fee event.
 					</p>
 
 					<h2 id="risk">Risk boundary</h2>

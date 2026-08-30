@@ -111,6 +111,8 @@ interface IViewFacet {
 
 	function getSolverFeeReceiver(address partyB) external view returns (address);
 
+	function getSolverFeeReceiverForTag(address partyB, bytes calldata tag) external view returns (address);
+
 	function getOperationalFeeAllowance(
 		address payer,
 		address charger

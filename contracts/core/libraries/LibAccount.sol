@@ -488,6 +488,13 @@ library LibAccount {
 		return receiver == address(0) ? partyB : receiver;
 	}
 
+	/// @notice Resolves the solver fee receiver for a Party B and tag hash.
+	/// @dev A tag override takes precedence over the Party B's default solver fee receiver.
+	function getSolverFeeReceiver(address partyB, bytes32 tagHash) internal view returns (address) {
+		address receiver = MAStorage.layout().solverFeeReceiversByTag[partyB][tagHash];
+		return receiver == address(0) ? getSolverFeeReceiver(partyB) : receiver;
+	}
+
 	/// @notice Returns PartyA's effective allocated balance used for balance limit checks.
 	/// @dev Includes reserved open fees from pending/locked quotes
 	function effectiveAllocatedBalance(address partyA) internal view returns (uint256) {

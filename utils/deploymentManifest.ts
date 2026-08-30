@@ -92,7 +92,7 @@ const ACCOUNT_LAYER_LIBRARY_SPECS: Record<string, DeploymentSpec> = {
 
 const CORE_FACET_LIBRARIES: Record<string, string[]> = {
 	PartyAFacet: ["LibQuoteClose"],
-	PartyBExecutionFacet: ["LibQuoteClose"],
+	PartyBExecutionFacet: [],
 	PartyBPositionActionsFacet: ["PartyBPositionActionsFacetImpl", "LibQuoteClose"],
 	PartyBBatchActionsFacet: ["LibQuoteClose", "LibQuoteFunding"],
 	PartyBEmergencyActionsFacet: ["LibQuoteClose"],

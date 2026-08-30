@@ -96,10 +96,7 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 	///         A nonzero manager-configured overshoot may leave PartyA below zero by the calculated allowance.
 	///         The existing non-harmful/full-close insolvency behavior is preserved when the allowance cannot cover it.
 	///         LIMIT requests retain any unfilled request; MARKET_BEST_EFFORT requests cancel it atomically.
-	/// @dev IMPORTANT BACKWARD-COMPATIBILITY WARNING:
-	///      This legacy method accounts for the protocol closeFee only. It does NOT reserve balance for solver
-	///      fees charged through the solver-fee API. If a solver fee will be charged for this close, call
-	///      the fee-aware PartyBExecutionFacet.fillCloseRequestToLiquidation overload instead.
+	/// @dev Solver fees are separate draws and are not included in this close sizing calculation.
 	/// @param quoteId The ID of the quote for which the close request is filled.
 	/// @param closedPrice The closed price for the close request.
 	/// @param upnlSig The Muon signature containing PairUpnlAndPriceSig data.

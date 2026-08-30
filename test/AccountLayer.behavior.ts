@@ -66,7 +66,10 @@ export function shouldBehaveLikeAccountLayer(): void {
 		])
 	}
 
-	const createSolverFeeSendQuoteCallData = async (quoteRequest = limitQuoteRequestBuilder().build()) => {
+	const createSolverFeeSendQuoteCallData = async (
+		quoteRequest = limitQuoteRequestBuilder().build(),
+		solverFeeCaps = { openRateCap: 0n, closeRateCap: 0n },
+	) => {
 		return context.partyAFacet.interface.encodeFunctionData(SEND_QUOTE_WITH_SOLVER_FEE_CAPS_SIGNATURE, [
 			quoteRequest.partyBWhiteList,
 			quoteRequest.symbolId,
@@ -82,7 +85,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 			ZeroAddress,
 			await quoteRequest.upnlSig,
 			"0x",
-			{ openRateCap: 0, closeRateCap: 0 },
+			solverFeeCaps,
 		])
 	}
 
@@ -4612,6 +4615,64 @@ export function shouldBehaveLikeAccountLayer(): void {
 				)
 			})
 
+			it("charges a tagged close solver fee before final POSITION virtual-account cleanup", async () => {
+				const quoteRequest = limitQuoteRequestBuilder().partyBWhiteList([context.signers.hedger.address]).build()
+				await preFundVirtualAccount(positionSubAccountAddress, quoteRequest)
+				await context.alCoreFacet
+					.connect(context.signers.user)
+					._call(positionSubAccountAddress, [
+						await createSolverFeeSendQuoteCallData(quoteRequest, { openRateCap: 0n, closeRateCap: decimal(2n, 16) }),
+					])
+
+				const [virtualAccountAddress] = await context.alViewFacet.getVirtualAccountsAddressesOfSubAccount(positionSubAccountAddress, 0, 10)
+				const [quoteId] = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				await openPositionForQuote(quoteId)
+
+				const closeRequest = limitCloseRequestBuilder().build()
+				const requestToCloseCallData = context.partyAFacet.interface.encodeFunctionData("requestToClosePosition", [
+					quoteId,
+					closeRequest.closePrice,
+					closeRequest.quantityToClose,
+					closeRequest.orderType,
+					await closeRequest.deadline,
+				])
+				await context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [requestToCloseCallData])
+
+				const tag = ethers.hexlify(toUtf8Bytes("account-layer/final-close"))
+				const solverFee = decimal(1n)
+				const receiverBalanceBefore = await context.viewFacet.balanceOf(context.signers.hedger.address)
+				await expect((context.partyBExecutionFacet.connect(context.signers.hedger) as any).chargeSolverFee(quoteId, 1, solverFee, tag))
+					.to.emit(context.partyBExecutionFacet, "SolverFeeCharged")
+					.withArgs(
+						quoteId,
+						virtualAccountAddress,
+						context.signers.hedger.address,
+						context.signers.hedger.address,
+						quoteRequest.symbolId,
+						1,
+						solverFee,
+						tag,
+					)
+				expect(await context.viewFacet.balanceOf(context.signers.hedger.address)).to.equal(receiverBalanceBefore + solverFee)
+
+				const fillCloseRequest = limitFillCloseRequestBuilder().build()
+				await context.partyBPositionActionsFacet
+					.connect(context.signers.hedger)
+					.fillCloseRequest(
+						quoteId,
+						fillCloseRequest.filledAmount,
+						fillCloseRequest.closedPrice,
+						await getDummyPairUpnlAndPriceSig(
+							BigInt(fillCloseRequest.price),
+							BigInt(fillCloseRequest.upnlPartyA),
+							BigInt(fillCloseRequest.upnlPartyB),
+						),
+					)
+
+				expect((await context.alViewFacet.getVirtualAccount(virtualAccountAddress)).isExists).to.be.false
+				expect((await context.viewFacetQuote.getSolverFeeState(quoteId)).closeFeeCharged).to.equal(solverFee)
+			})
+
 			async function partialClosePositionForQuote(partyA: HardhatEthersSigner, quoteId: bigint, virtualAccount: string, quantityToClose: bigint) {
 				const closeRequest = limitCloseRequestBuilder().quantityToClose(quantityToClose).build()
 				const requestToCloseCallData = context.partyAFacet.interface.encodeFunctionData("requestToClosePosition", [
@@ -4911,7 +4972,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 				await context.clearingHouseFacet.connect(context.signers.liquidator).liquidatePendingPositionsForClearingHouse(virtualAccountAddress, [])
 				await context.clearingHouseFacet
 					.connect(context.signers.liquidator)
-					.liquidatePositionsForClearingHouse(virtualAccountAddress, [quoteId], [decimal(8n)], [0n])
+					.liquidatePositionsForClearingHouse(virtualAccountAddress, [quoteId], [decimal(8n)])
 
 				// VA quoteIds should be empty but VA still exists (deferred due to takeover)
 				const quotesAfterLiq = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
@@ -4966,7 +5027,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 				// VA is not bound, so it gets deleted immediately (no deferral needed)
 				await context.clearingHouseFacet
 					.connect(context.signers.liquidator)
-					.liquidatePositionsForClearingHouse(context.signers.hedger.address, [quoteId], [decimal(1n)], [0n])
+					.liquidatePositionsForClearingHouse(context.signers.hedger.address, [quoteId], [decimal(1n)])
 
 				// VA quoteIds should be empty after onClosePosition
 				const quotesAfterLiq = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
@@ -5266,7 +5327,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 				// Liquidate open positions — fires onClosePosition hook
 				await context.clearingHouseFacet
 					.connect(context.signers.liquidator)
-					.liquidatePositionsForClearingHouse(context.signers.hedger.address, [quoteId], [decimal(1n)], [0n])
+					.liquidatePositionsForClearingHouse(context.signers.hedger.address, [quoteId], [decimal(1n)])
 
 				// VA should be deferred — bound partyB is in cross liquidation
 				let vaData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
@@ -5369,7 +5430,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 				// Liquidate open positions for both
 				await context.clearingHouseFacet
 					.connect(context.signers.liquidator)
-					.liquidatePositionsForClearingHouse(context.signers.hedger.address, [va1QuoteIds[0], va2QuoteIds[0]], [decimal(1n), decimal(1n)], [0n, 0n])
+					.liquidatePositionsForClearingHouse(context.signers.hedger.address, [va1QuoteIds[0], va2QuoteIds[0]], [decimal(1n), decimal(1n)])
 
 				// Both VAs should be deferred
 				expect((await context.alViewFacet.getVirtualAccount(va1)).isExists).to.be.true
@@ -5595,7 +5656,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 				// Liquidate open positions via CH — fires onClosePosition
 				await context.clearingHouseFacet
 					.connect(context.signers.liquidator)
-					.liquidatePositionsForClearingHouse(vaAddress, [quoteIds1[0]], [decimal(8n)], [0n])
+					.liquidatePositionsForClearingHouse(vaAddress, [quoteIds1[0]], [decimal(8n)])
 
 				const quotesAfterOpen = await context.alViewFacet.getVirtualAccountQuoteIds(vaAddress, 0, 10)
 				expect(quotesAfterOpen.length).to.equal(0)
@@ -5657,7 +5718,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 				// Liquidate open positions — fires onClosePosition
 				await context.clearingHouseFacet
 					.connect(context.signers.liquidator)
-					.liquidatePositionsForClearingHouse(context.signers.hedger.address, [quoteIds1[0]], [decimal(1n)], [0n])
+					.liquidatePositionsForClearingHouse(context.signers.hedger.address, [quoteIds1[0]], [decimal(1n)])
 
 				const quotesAfterOpen = await context.alViewFacet.getVirtualAccountQuoteIds(vaAddress, 0, 10)
 				expect(quotesAfterOpen.length).to.equal(0)
@@ -5918,7 +5979,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 				// records hedger in vaPendingCrossLiqPartyBs[vaAddress]
 				await context.clearingHouseFacet
 					.connect(context.signers.liquidator)
-					.liquidatePositionsForClearingHouse(context.signers.hedger.address, [va1QuoteIds[0]], [decimal(1n)], [0n])
+					.liquidatePositionsForClearingHouse(context.signers.hedger.address, [va1QuoteIds[0]], [decimal(1n)])
 
 				// VA still has quote2 (partyB_Y's position)
 				expect((await context.alViewFacet.getVirtualAccountQuoteIds(vaAddress, 0, 10)).length).to.equal(1)
@@ -6090,7 +6151,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 					.liquidatePendingPositionsForClearingHouse(context.signers.hedger.address, [virtualAccountAddress])
 				await context.clearingHouseFacet
 					.connect(context.signers.liquidator)
-					.liquidatePositionsForClearingHouse(context.signers.hedger.address, [quoteId], [decimal(1n)], [0n])
+					.liquidatePositionsForClearingHouse(context.signers.hedger.address, [quoteId], [decimal(1n)])
 
 				// Call settle with finalize=false — hooks fire but inProgress should remain true
 				await context.clearingHouseFacet
@@ -6151,7 +6212,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 				// Liquidate the open position
 				await context.clearingHouseFacet
 					.connect(context.signers.liquidator)
-					.liquidatePositionsForClearingHouse(context.signers.hedger.address, [quoteId], [decimal(8n)], [0n])
+					.liquidatePositionsForClearingHouse(context.signers.hedger.address, [quoteId], [decimal(8n)])
 
 				// VA quoteIds empty but still exists (deferred — both takeover and cross liq active)
 				expect((await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)).length).to.equal(0)

@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { QuoteStatus, PositionType, OrderType, LockedValues } from "../storages/QuoteStorage.sol";
+import { QuoteStatus, PositionType, OrderType, LockedValues, SolverFeeType } from "../storages/QuoteStorage.sol";
 
 /// @notice Events emitted by PartyA and PartyB trading actions
 interface IPartiesEvents {
@@ -73,26 +73,16 @@ interface IPartiesEvents {
 	/// @notice Emitted when a PartyB is liquidated against a specific PartyA
 	event LiquidatePartyB(address liquidator, address partyB, address partyA, uint256 partyBAllocatedBalance, int256 upnl);
 
-	/// @notice Emitted when PartyB charges a user-approved open solver fee from PartyA allocated balance.
-	/// @dev `receiver` is the account actually credited: the PartyB itself unless it configured a solver fee receiver.
-	event OpenSolverFeeCharged(
+	/// @notice Emitted when a user-approved solver fee moves from PartyA allocated balance to the resolved tagged receiver.
+	event SolverFeeCharged(
 		uint256 indexed quoteId,
-		address indexed partyA,
+		address partyA,
 		address indexed partyB,
 		address receiver,
 		uint256 symbolId,
-		uint256 amount
-	);
-
-	/// @notice Emitted when PartyB charges a user-approved close solver fee from PartyA allocated balance.
-	/// @dev `receiver` is the account actually credited: the PartyB itself unless it configured a solver fee receiver.
-	event CloseSolverFeeCharged(
-		uint256 indexed quoteId,
-		address indexed partyA,
-		address indexed partyB,
-		address receiver,
-		uint256 symbolId,
-		uint256 amount
+		SolverFeeType feeType,
+		uint256 amount,
+		bytes tag
 	);
 
 	/// @notice Emitted when a configured close-to-liquidation overshoot permits PartyA to finish below zero.

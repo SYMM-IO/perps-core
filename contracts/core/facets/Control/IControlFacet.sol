@@ -43,6 +43,8 @@ interface IControlFacet is IControlEvents, IExecutionContextFacet {
 
 	function setSolverFeeReceiver(address partyB, address receiver) external;
 
+	function setSolverFeeReceiverForTag(address partyB, bytes calldata tag, address receiver) external;
+
 	function registerAffiliate(address affiliate) external;
 
 	function deregisterAffiliate(address affiliate) external;

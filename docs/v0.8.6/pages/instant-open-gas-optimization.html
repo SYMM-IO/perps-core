@@ -134,8 +134,7 @@
     uint256 filledAmount,
     uint256 openedPrice,
     SingleUpnlSig memory lockSig,
-    PairUpnlAndPriceSig memory upnlSig,
-    uint256 solverFee
+    PairUpnlAndPriceSig memory upnlSig
 ) external whenNotPartyBOpenPositionsPaused onlyPartyB notLiquidated(quoteId)</code></pre>
 					<p>
 						Event order remains <code>LockQuote</code>, the internal open events, then <code>OpenPosition</code>.
@@ -145,9 +144,10 @@
 						outside that mode, partial fills retain the existing child-quote and <code>SendQuote</code> behavior.
 					</p>
 					<p>
-						A non-zero <code>solverFee</code> is charged after the open, subject to the quote's user-approved open-rate cap. The combined
-						path uses the same solvency guard and emits the same <code>OpenSolverFeeCharged</code> event as fee-aware
-						<code>openPosition</code>. A zero <code>solverFee</code> leaves the open fee-free.
+						The combined path does not charge a solver fee. If an OPEN fee is due, PartyB uses the standalone
+						<code>chargeSolverFee(quoteId, OPEN, amount, tag)</code> entrypoint after the position opens. A solver contract may batch that
+						separate call with <code>lockAndOpenPosition</code>, but it is not part of the fixed two-operation
+						<code>InstantOpenCompact</code> template.
 					</p>
 					<p>
 						Joining lock and open removes the solver's second signed operation and the extra SymmioPartyB routing round trip. The user's
@@ -189,9 +189,7 @@
 					<p>The separately registered <code>InstantOpenCompact</code> template uses two operations:</p>
 					<ol>
 						<li><code>_callWithMargin(subAccount, isolationType, symbolId, margin, [sendQuote])</code>, signed by the user.</li>
-						<li>
-							<code>lockAndOpenPosition(quoteId, filledAmount, openedPrice, lockSig, upnlSig, solverFee)</code>, signed by the solver.
-						</li>
+						<li><code>lockAndOpenPosition(quoteId, filledAmount, openedPrice, lockSig, upnlSig)</code>, signed by the solver.</li>
 					</ol>
 					<p>
 						One user-signed operation and one solver-signed operation, instead of two each. The quote id still flows from the first

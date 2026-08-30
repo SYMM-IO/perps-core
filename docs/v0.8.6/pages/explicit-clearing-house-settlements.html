@@ -170,14 +170,9 @@ market PnL     = sum(component.realizedPnl grouped by symbolId)</code></pre>
 
 					<h2 id="fees-and-corrections">Fees and corrections</h2>
 					<p>
-						Platform fees belong in <code>platformFee</code>. Solver close fees are different: they remain quote-level, user-approved
-						inputs to <code>liquidatePositionsForClearingHouse</code> and use the existing close-solver-fee charging path and
-						<code>CLOSE_SOLVER_FEE_OUT</code> balance reason. They must not be folded into a settlement component.
-					</p>
-					<p>
-						The explicit settlement interface does not introduce solver close fees. They are a separate v0.8.6 quote-level feature;
-						Clearing House liquidation calldata now carries the per-quote amount so the core can apply the user-approved cap and
-						solver-fee receiver logic through the same canonical charging path.
+						Platform fees belong in <code>platformFee</code>. Solver fees are not Clearing House settlement components and
+						<code>liquidatePositionsForClearingHouse</code> has no solver-fee input. PartyA liquidation does not pay PartyB a solver fee,
+						and the Clearing House cannot create one while liquidating positions.
 					</p>
 					<p>
 						The legacy <code>deallocateForClearingHouse</code> and <code>distributeForClearingHouse</code> selectors remain present only

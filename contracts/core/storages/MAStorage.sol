@@ -164,6 +164,10 @@ library MAStorage {
 		///      but kept separate so a solver can route trading revenue and operational costs to different accounts.
 		///      Set by the Party B itself or by PARTY_B_MANAGER_ROLE.
 		mapping(address => address) solverFeeReceivers;
+		/// @notice Optional solver fee receiver overrides keyed by Party B and arbitrary tag hash.
+		/// @dev A zero receiver clears the override and falls back to `solverFeeReceivers`, then to the Party B itself.
+		///      The raw tag is supplied by callers and hashed with keccak256 before lookup.
+		mapping(address => mapping(bytes32 => address)) solverFeeReceiversByTag;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

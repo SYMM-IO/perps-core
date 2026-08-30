@@ -12,10 +12,8 @@ interface IPartyBPositionActionsFacet is IPartyBPositionActionsEvents {
 
 	function fillCloseRequest(uint256 quoteId, uint256 filledAmount, uint256 closedPrice, PairUpnlAndPriceSig memory upnlSig) external;
 
-	/// @notice Backward-compatible close-to-liquidation helper.
-	/// @dev IMPORTANT: This legacy method reserves room only for the protocol closeFee. It does not reserve room
-	///      for solver fees charged through the solver-fee API. If a solver fee will be charged for the close,
-	///      use the fee-aware PartyBExecutionFacet.fillCloseRequestToLiquidation overload instead. Supports LIMIT
+	/// @notice Close-to-liquidation helper.
+	/// @dev Solver fees are separate draws and are not included in this close sizing calculation. Supports LIMIT
 	///      and MARKET_BEST_EFFORT close requests; ordinary MARKET requests remain full-fill-only.
 	function fillCloseRequestToLiquidation(
 		uint256 quoteId,
