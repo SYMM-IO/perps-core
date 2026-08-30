@@ -32,7 +32,8 @@
 		"partyB": { "$ref": "#/$defs/partyB" },
 		"symbolManager": { "$ref": "#/$defs/symbolManager" },
 		"expressProvider": { "$ref": "#/$defs/expressProvider" },
-		"gaslessLayer": { "$ref": "#/$defs/gaslessLayer" }
+		"gaslessLayer": { "$ref": "#/$defs/gaslessLayer" },
+		"liquidator": { "$ref": "#/$defs/liquidator" }
 	},
 	"allOf": [
 		{
@@ -493,6 +494,39 @@
 							"anyOf": [
 								{ "type": "object", "required": ["address"] },
 								{ "type": "object", "required": ["operator"] }
+							]
+						}
+					}
+				}
+			]
+		},
+		"liquidator": {
+			"description": "SymmioLiquidator UUPS proxy over the core diamond. Optional at the root; omitting the section is equivalent to skip.",
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["mode"],
+			"properties": {
+				"mode": { "$ref": "#/$defs/componentMode" },
+				"address": { "$ref": "#/$defs/address" },
+				"admin": { "$ref": "#/$defs/address", "description": "Defaults to governance.admin when omitted" }
+			},
+			"allOf": [
+				{
+					"if": { "type": "object", "properties": { "mode": { "const": "deploy" } }, "required": ["mode"] },
+					"then": { "type": "object", "not": { "type": "object", "required": ["address"] } }
+				},
+				{
+					"if": { "type": "object", "properties": { "mode": { "const": "reuse" } }, "required": ["mode"] },
+					"then": { "type": "object", "required": ["address"], "not": { "type": "object", "required": ["admin"] } }
+				},
+				{
+					"if": { "type": "object", "properties": { "mode": { "const": "skip" } }, "required": ["mode"] },
+					"then": {
+						"type": "object",
+						"not": {
+							"anyOf": [
+								{ "type": "object", "required": ["address"] },
+								{ "type": "object", "required": ["admin"] }
 							]
 						}
 					}

@@ -92,6 +92,16 @@ export interface DeploymentRecipe {
 	symbolManager: { mode: ComponentMode; address?: string; operator?: string }
 	expressProvider: ExpressProviderRecipe
 	gaslessLayer: GaslessLayerRecipe
+	/** Optional; absent means the SymmioLiquidator proxy is not part of the run. */
+	liquidator?: LiquidatorRecipe
+}
+
+export interface LiquidatorRecipe {
+	mode: ComponentMode
+	/** Existing proxy address; required when mode is reuse, forbidden otherwise. */
+	address?: string
+	/** Defaults to governance.admin when omitted on a deploy. */
+	admin?: string
 }
 
 export interface GaslessLayerRecipe {
@@ -203,7 +213,8 @@ export function createDeploymentPlan(
 ): {
 	network: DeploymentRecipe["network"]
 	only: (typeof DEPLOYMENT_COMPONENTS)[number] | null
-	components: Array<{ name: (typeof DEPLOYMENT_COMPONENTS)[number]; mode: ComponentMode; dependsOn: Array<"core"> }>
+	// "liquidator" is an optional add-on outside DEPLOYMENT_COMPONENTS; full-run plans include it when declared.
+	components: Array<{ name: (typeof DEPLOYMENT_COMPONENTS)[number] | "liquidator"; mode: ComponentMode; dependsOn: Array<"core"> }>
 }
 export function recipeEnvironment(recipe: DeploymentRecipe): {
 	env: Record<string, string>

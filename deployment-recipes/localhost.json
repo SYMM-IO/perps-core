@@ -1,0 +1,189 @@
+{
+	"$schema": "../deployment-tooling/deployment-recipe.schema.json",
+	"apiVersion": "deployment.symm.io/v1",
+	"kind": "DeploymentRecipe",
+	"name": "localhost-deployment",
+	"network": {
+		"name": "localhost",
+		"chainId": 31337,
+		"mode": "local"
+	},
+	"secrets": {},
+	"execution": {
+		"logLevel": "verbose",
+		"verify": false,
+		"confirmations": 1,
+		"txTimeoutSeconds": 300,
+		"slowNoticeSeconds": 30
+	},
+	"governance": {
+		"admin": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+		"feeReceiver": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+		"liquidationInsuranceVault": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+		"maxLiquidationProfitPerPosition": "100000000000000000000",
+		"softLiquidationPenaltyCollector": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8"
+	},
+	"core": {
+		"mode": "deploy",
+		"collateral": {
+			"mode": "deploy"
+		},
+		"muon": {
+			"mode": "mock",
+			"upnlValidTime": "60",
+			"priceValidTime": "60"
+		},
+		"protocol": {
+			"description": "Arbitrum One - mirrors the reviewed HyperEVM v0.8.5 deployment parameters and template ordering.",
+			"parameters": {
+				"balanceLimitPerUser": "1000000000000000000000000",
+				"maxWithdrawParts": 10,
+				"deallocateCooldown": 259200,
+				"settlementCooldown": 300,
+				"deallocateDebounceTime": 0,
+				"liquidatorShare": "100000000000000000",
+				"liquidationTimeout": 100,
+				"forceCloseCooldowns": [300, 120],
+				"forceCancelCooldown": 300,
+				"forceCancelCloseCooldown": 300,
+				"pendingQuotesValidLength": 10,
+				"maxPartyAConnectionLimit": 5
+			},
+			"instantLayerTemplates": [
+				{
+					"name": "InstantOpen",
+					"instantOpenMode": true,
+					"operations": [
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [0],
+							"sourceIndices": [1],
+							"sourceOffsets": [0]
+						},
+						{
+							"insertionPoints": [0],
+							"sourceIndices": [1],
+							"sourceOffsets": [0]
+						}
+					]
+				},
+				{
+					"name": "InstantClose",
+					"operations": [
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						}
+					]
+				},
+				{
+					"name": "InstantCloseWithAllocation",
+					"operations": [
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						}
+					]
+				},
+				{
+					"name": "INSTANT_OPEN_NO_MARGIN_TEMPLATE",
+					"operations": [
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [0],
+							"sourceIndices": [0],
+							"sourceOffsets": [0]
+						},
+						{
+							"insertionPoints": [0],
+							"sourceIndices": [0],
+							"sourceOffsets": [0]
+						}
+					]
+				}
+			]
+		},
+		"setupInstantLayerTemplates": true,
+		"registerDummyAffiliate": false
+	},
+	"partyB": {
+		"mode": "deploy",
+		"signer": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+		"adlEnabled": false
+	},
+	"symbolManager": {
+		"mode": "deploy",
+		"operator": "0x90f79bf6eb2c4f870365e785982e1f101e93b906"
+	},
+	"expressProvider": {
+		"mode": "deploy",
+		"registerOnCore": true,
+		"securityWindow": 20,
+		"tolerancePeriod": 60,
+		"creditLine": {
+			"signatureVerifier": "fromCore",
+			"muonAppId": "1",
+			"muonFreshnessWindow": 300
+		},
+		"roles": {
+			"OPERATOR_ROLE": ["0x15d34aaf54267db7d7c367839aaf71a00a2c6a65"],
+			"LOCKER_ROLE": ["0x15d34aaf54267db7d7c367839aaf71a00a2c6a65"],
+			"UNLOCK_ROLE": ["0x15d34aaf54267db7d7c367839aaf71a00a2c6a65"],
+			"SIGNER_ROLE": ["0x9965507d1a55bcc2695c58ba16fb37d819b0a4dc"]
+		},
+		"affiliates": [
+			{
+				"address": "0x976ea74026e726554db657fa54763abd0c3a0aa9",
+				"feeRate": "0",
+				"operatorFee": "0",
+				"maxDebt": "1000000000000000000000000",
+				"maxDebtBps": 5000
+			}
+		]
+	},
+	"gaslessLayer": {
+		"mode": "deploy",
+		"treasury": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+		"depositFee": "2000000",
+		"minimumDeposit": "5000000",
+		"defaultSelectorFee": "0",
+		"dailyFreeOpsLimit": "0",
+		"revertWhenFreeQuotaExhausted": false,
+		"dailySponsoredNativeLimit": "0",
+		"revertWhenNativeSponsorLimitExhausted": true,
+		"maxNativeGasTopUpAmount": "1000000000000000",
+		"nativeGasTopUpFeeBps": 0,
+		"relayers": ["0x15d34aaf54267db7d7c367839aaf71a00a2c6a65"],
+		"selectorFees": []
+	}
+}
