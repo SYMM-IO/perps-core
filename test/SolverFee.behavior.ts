@@ -2,7 +2,7 @@ import { expect } from "chai"
 import { ethers } from "ethers"
 
 import { initializeFixture } from "./Initialize.fixture.js"
-import { loadFixture } from "./helpers/network-helpers.js"
+import { loadFixture, time } from "./helpers/network-helpers.js"
 import { QuoteStatus } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
@@ -304,6 +304,60 @@ export function shouldBehaveLikeSolverFee(): void {
 		const allocated = (await user.getBalanceInfo()).allocatedBalances
 		await expect(chargeSolverFee(quoteId, SolverFeeType.OPEN, allocated + 1n, "0x")).to.be.revertedWith("SolverFee: Insufficient allocated balance")
 		await expect(chargeSolverFee(quoteId, SolverFeeType.CLOSE, 1n, "0x")).to.be.revertedWith("SolverFee: No pending close request")
+	})
+
+	it("rejects OPEN and CLOSE fees while PartyA is suspended", async function () {
+		const quoteId = await sendQuoteWithSolverFeeCaps(decimal(2n, 16))
+		await openQuote(quoteId)
+		await requestClose(quoteId)
+		await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(await user.getAddress())
+
+		const partyAAllocatedBefore = (await user.getBalanceInfo()).allocatedBalances
+		const partyBBalanceBefore = await context.viewFacet.balanceOf(await hedger.getAddress())
+		await expect(chargeSolverFee(quoteId, SolverFeeType.OPEN, decimal(1n), "0x01")).to.be.revertedWith("SolverFee: Payer suspended")
+		await expect(chargeSolverFee(quoteId, SolverFeeType.CLOSE, decimal(1n), "0x02")).to.be.revertedWith("SolverFee: Payer suspended")
+
+		const state = await getSolverFeeState(quoteId)
+		expect(state.openFeeCharged).to.equal(0n)
+		expect(state.closeFeeCharged).to.equal(0n)
+		expect((await user.getBalanceInfo()).allocatedBalances).to.equal(partyAAllocatedBefore)
+		expect(await context.viewFacet.balanceOf(await hedger.getAddress())).to.equal(partyBBalanceBefore)
+	})
+
+	it("rejects a CLOSE fee after the close request deadline", async function () {
+		const quoteId = await sendQuoteWithSolverFeeCaps(0n, "expiring-close", undefined, decimal(2n, 16))
+		await openQuote(quoteId)
+		const quote = await context.viewFacetQuote.getQuote(quoteId)
+		const deadline = BigInt(await time.latest()) + 2n
+		await user.requestToClosePosition(
+			quoteId,
+			limitCloseRequestBuilder().quantityToClose(quote.quantity).closePrice(decimal(1n)).deadline(deadline).build(),
+		)
+		await time.increase(3n)
+
+		const partyAAllocatedBefore = (await user.getBalanceInfo()).allocatedBalances
+		const partyBBalanceBefore = await context.viewFacet.balanceOf(await hedger.getAddress())
+		await expect(chargeSolverFee(quoteId, SolverFeeType.CLOSE, decimal(1n), "0x01")).to.be.revertedWith("SolverFee: Close request expired")
+		await expect(fillClose(quoteId)).to.be.revertedWith("PartyBFacet: Quote is expired")
+
+		expect((await getSolverFeeState(quoteId)).closeFeeCharged).to.equal(0n)
+		expect((await user.getBalanceInfo()).allocatedBalances).to.equal(partyAAllocatedBefore)
+		expect(await context.viewFacet.balanceOf(await hedger.getAddress())).to.equal(partyBBalanceBefore)
+	})
+
+	it("allows a CLOSE fee at the exact close request deadline", async function () {
+		const quoteId = await sendQuoteWithSolverFeeCaps(0n, "deadline-boundary", undefined, decimal(2n, 16))
+		await openQuote(quoteId)
+		const quote = await context.viewFacetQuote.getQuote(quoteId)
+		const deadline = BigInt(await time.latest()) + 2n
+		await user.requestToClosePosition(
+			quoteId,
+			limitCloseRequestBuilder().quantityToClose(quote.quantity).closePrice(decimal(1n)).deadline(deadline).build(),
+		)
+		await time.setNextBlockTimestamp(deadline)
+
+		await expect(chargeSolverFee(quoteId, SolverFeeType.CLOSE, decimal(1n), "0x01")).to.not.be.reverted
+		expect((await getSolverFeeState(quoteId)).closeFeeCharged).to.equal(decimal(1n))
 	})
 
 	it("ignores the open-position pause but respects the general PartyB-actions pause", async function () {
