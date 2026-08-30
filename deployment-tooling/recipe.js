@@ -617,6 +617,10 @@ function validateAddon(value, source, name, extraField, requireExtraForDeploy) {
 		if (component.address !== undefined) fail(source, `${name}.address`, "must be omitted when mode is deploy");
 		if (extraField && requireExtraForDeploy) {
 			required(component, [extraField], source, name);
+		}
+		// An optional extra field must still be a valid address when present — a malformed value
+		// would otherwise only surface at the live deployment step, after earlier transactions ran.
+		if (extraField && component[extraField] !== undefined) {
 			address(component[extraField], source, `${name}.${extraField}`);
 		}
 	} else {
@@ -652,11 +656,12 @@ export function validateDeploymentRecipe(value, source = "deployment recipe") {
 		"symbolManager",
 		"expressProvider",
 		"gaslessLayer",
+		"liquidator",
 	];
 	onlyKeys(recipe, rootKeys, source, "recipe");
 	required(
 		recipe,
-		rootKeys.filter(key => key !== "$schema" && key !== "create2"),
+		rootKeys.filter(key => key !== "$schema" && key !== "create2" && key !== "liquidator"),
 		source,
 		"recipe",
 	);
@@ -746,6 +751,10 @@ export function validateDeploymentRecipe(value, source = "deployment recipe") {
 	validateAddon(recipe.symbolManager, source, "symbolManager", "operator", true);
 	validateExpressProvider(recipe.expressProvider, source, "expressProvider");
 	validateGaslessLayer(recipe.gaslessLayer, source, "gaslessLayer");
+	// SymmioLiquidator is a standalone UUPS proxy over the core diamond rather than a
+	// component target, so it is optional at the root and its admin defaults to
+	// governance.admin when the section omits one.
+	if (recipe.liquidator !== undefined) validateAddon(recipe.liquidator, source, "liquidator", "admin", false);
 
 	return JSON.parse(JSON.stringify(recipe));
 }
@@ -963,12 +972,22 @@ export function createDeploymentPlan(recipeValue, { only } = {}) {
 		for (const name of DEPLOYMENT_COMPONENTS.slice(1)) {
 			if (recipe[name].mode === "reuse") unsupportedMode(name, "deploy or skip");
 		}
+		// A reused liquidator is bound to a pre-existing core, which a full run cannot prove against
+		// the brand-new core it deploys — the same rule the required add-ons follow above.
+		if (recipe.liquidator?.mode === "reuse") unsupportedMode("liquidator", "deploy or skip");
+	}
+
+	const components = selectedNames.map(name => ({ name, mode: recipe[name].mode, dependsOn: name === "core" ? [] : ["core"] }));
+	// The liquidator is an optional add-on outside DEPLOYMENT_COMPONENTS, but a declared one executes
+	// a real deployment transaction in full runs — the plan must not omit it.
+	if (!only && recipe.liquidator !== undefined) {
+		components.push({ name: "liquidator", mode: recipe.liquidator.mode, dependsOn: ["core"] });
 	}
 
 	return {
 		network: { ...recipe.network },
 		only: only ?? null,
-		components: selectedNames.map(name => ({ name, mode: recipe[name].mode, dependsOn: name === "core" ? [] : ["core"] })),
+		components,
 	};
 }
 

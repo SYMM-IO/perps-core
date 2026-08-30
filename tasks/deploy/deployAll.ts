@@ -43,6 +43,7 @@ import type { GaslessLayerResolvedConfig } from "./gaslessLayer.js"
 import { getConnection } from "./helpers.js"
 import { setHyperEVMBigBlocks } from "./hyperevm.js"
 import { deployInstantLayer } from "./instantLayer.js"
+import { deploySymmioLiquidator } from "./liquidator.js"
 import { logger } from "./logger.js"
 import {
 	assertConfiguredMuonPermissionsAuthorized,
@@ -209,6 +210,7 @@ interface DeployedContracts {
 	expressProvider?: string
 	gaslessLayer?: string
 	gaslessLayerImplementation?: string
+	symmioLiquidator?: string
 }
 
 type ExpressProviderStepResult = {
@@ -713,6 +715,11 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 				if (recipe.partyB.mode === "reuse" || recipe.symbolManager.mode === "reuse") {
 					throw new Error(
 						"LIVE_TARGET_UNSUPPORTED: deploy:system cannot safely reuse PartyB or SymbolManager while deploying a brand-new core, because their core binding cannot be proven before the new core address exists. Use mode=deploy/skip, or deploy the add-on separately against core.fromReport.",
+					)
+				}
+				if (recipe.liquidator?.mode === "reuse") {
+					throw new Error(
+						"LIVE_TARGET_UNSUPPORTED: deploy:system cannot reuse a SymmioLiquidator while deploying a brand-new core — the reused proxy is bound to a pre-existing core. Use mode=deploy/skip, or wire it separately with scripts/deployLiquidator.ts.",
 					)
 				}
 				verify = recipe.execution.verify
@@ -1502,6 +1509,74 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 								logger.error(`Failed to deploy GaslessLayer: ${err.message}`)
 								deploymentResults.push({
 									contract: "GaslessLayer",
+									address: "N/A",
+									status: "failed",
+									error: err.message,
+									timestamp: new Date().toISOString(),
+								})
+								throw err
+							}
+							logger.info()
+						},
+					})
+				}
+
+				if (recipe?.liquidator?.mode === "deploy") {
+					await runDeploymentStep(checkpoint, {
+						id: "symmioLiquidator",
+						title: "Deploying SymmioLiquidator",
+						order: ++deploymentStepOrder,
+						run: async () => {
+							try {
+								const wasAlreadyDeployed = !!checkpoint.contracts.symmioLiquidator
+								// The liquidator proxy holds no funds and only forwards liquidation
+								// calls, so it follows governance.admin unless the recipe names another.
+								const liquidatorAdmin = recipe.liquidator!.admin ?? config.admin
+								const liquidator = await withHyperEVMBigBlocks("SymmioLiquidator", () =>
+									deploySymmioLiquidator(hre, {
+										symmioAddress: deployedContracts.diamond!,
+										admin: liquidatorAdmin,
+										logData,
+										checkpoint,
+									}),
+								)
+								const address = await liquidator.getAddress()
+								deployedContracts.symmioLiquidator = address
+								logger.info(`SymmioLiquidator deployed at: ${address}`)
+
+								// Wire the core liquidation roles — without them the proxy cannot execute a single
+								// liquidation and its health checks fail deterministically. Operator registration on
+								// the liquidator itself is the liquidator admin's post-deploy concern.
+								const liquidatorCoreView = await ethers.getContractAt(
+									"contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet",
+									deployedContracts.diamond!,
+								)
+								const liquidatorCoreControl = await ethers.getContractAt(
+									"contracts/core/facets/Control/ControlFacet.sol:ControlFacet",
+									deployedContracts.diamond!,
+								)
+								for (const roleName of ["LIQUIDATOR_ROLE", "PARTYB_LIQUIDATOR_ROLE"]) {
+									const role = ethers.id(roleName)
+									if (!(await liquidatorCoreView.hasRole(address, role))) {
+										const tx = await liquidatorCoreControl.connect(deployer).grantRole(address, role)
+										await tx.wait()
+										logger.info(`Granted core ${roleName} to SymmioLiquidator`)
+									}
+									if (!(await liquidatorCoreView.hasRole(address, role))) {
+										throw new Error(`Core ${roleName} grant post-check failed for SymmioLiquidator ${address}`)
+									}
+								}
+
+								deploymentResults.push({
+									contract: "SymmioLiquidator",
+									address,
+									status: wasAlreadyDeployed ? "skipped" : "success",
+									timestamp: new Date().toISOString(),
+								})
+							} catch (err: any) {
+								logger.error(`Failed to deploy SymmioLiquidator: ${err.message}`)
+								deploymentResults.push({
+									contract: "SymmioLiquidator",
 									address: "N/A",
 									status: "failed",
 									error: err.message,
@@ -2919,6 +2994,7 @@ function displayReport(report: SystemDeploymentReport, deployedContracts: Deploy
 	if (deployedContracts.expressProvider) logger.info(`ExpressProvider:      ${deployedContracts.expressProvider}`)
 	if (deployedContracts.gaslessLayer) logger.info(`GaslessLayer:         ${deployedContracts.gaslessLayer}`)
 	if (deployedContracts.gaslessLayerImplementation) logger.info(`GaslessLayer Impl:    ${deployedContracts.gaslessLayerImplementation}`)
+	if (deployedContracts.symmioLiquidator) logger.info(`SymmioLiquidator:     ${deployedContracts.symmioLiquidator}`)
 	logger.info()
 
 	logger.info("CONFIGURATION")

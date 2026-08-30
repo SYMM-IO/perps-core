@@ -595,6 +595,7 @@ export async function inspectGaslessLayerPostState(ethers: any, input: GaslessLa
 		maxNativeGasTopUpAmount,
 		nativeGasTopUpFeeBps,
 		coreRegistered,
+		coreFeeReceiver,
 		instantOperator,
 		adminDefault,
 		adminConfig,
@@ -617,6 +618,7 @@ export async function inspectGaslessLayerPostState(ethers: any, input: GaslessLa
 		contract.maxNativeGasTopUpAmount(),
 		contract.nativeGasTopUpFeeBps(),
 		coreView.isOperationalFeeCharger(address),
+		coreView.getOperationalFeeReceiver(address),
 		instantLayer.hasRole(instantOperatorRole, address),
 		contract.hasRole(defaultAdminRole, input.admin),
 		contract.hasRole(configAdminRole, input.admin),
@@ -630,6 +632,17 @@ export async function inspectGaslessLayerPostState(ethers: any, input: GaslessLa
 				input.core,
 				coreControl.interface.encodeFunctionData("registerOperationalFeeCharger", [address]),
 				`Register GaslessLayer ${address} as an operational fee charger on core`,
+			),
+		)
+	}
+	// The core defaults a charger's fee receiver to the charger itself; the GaslessLayer proxy has no
+	// core-withdrawal path, so fees must be routed to the treasury instead.
+	if (ethers.getAddress(coreFeeReceiver) !== ethers.getAddress(input.treasury)) {
+		manualActions.push(
+			safeAction(
+				input.core,
+				coreControl.interface.encodeFunctionData("setOperationalFeeReceiver", [address, input.treasury]),
+				`Route GaslessLayer operational fees to treasury ${input.treasury}`,
 			),
 		)
 	}
@@ -704,6 +717,8 @@ export async function inspectGaslessLayerPostState(ethers: any, input: GaslessLa
 		check("undeclared deployer RELAYER_ROLE revoked", !deployerRelayer, "false", String(deployerRelayer))
 	}
 	check("core operational fee charger registration", coreRegistered, "true", String(coreRegistered), !coreRegistered)
+	const feeReceiverRouted = ethers.getAddress(coreFeeReceiver) === ethers.getAddress(input.treasury)
+	check("core operational fee receiver", feeReceiverRouted, input.treasury, coreFeeReceiver, !feeReceiverRouted)
 	check("InstantLayer OPERATOR_ROLE", instantOperator, "true", String(instantOperator), !instantOperator)
 	return { checks, manualActions }
 }
@@ -831,6 +846,36 @@ export async function deployAndConfigureGaslessLayer(
 				),
 			)
 		}
+	}
+	// Route operational fees to the treasury: the core defaults a charger's receiver to the charger
+	// itself, and the GaslessLayer proxy has no core-withdrawal path. Requires the charger to be
+	// registered first, so this stays behind the registration block above.
+	if (
+		(await coreView.isOperationalFeeCharger(address)) &&
+		ethers.getAddress(await coreView.getOperationalFeeReceiver(address)) !== ethers.getAddress(resolved.treasury)
+	) {
+		if (await coreView.hasRole(deployer.address, roleHash("FEE_ADMIN_ROLE"))) {
+			await send(
+				coreControl.connect(deployer).setOperationalFeeReceiver(address, resolved.treasury),
+				"route GaslessLayer operational fees to treasury",
+			)
+		} else {
+			manualActions.push(
+				safeAction(
+					resolved.core,
+					coreControl.interface.encodeFunctionData("setOperationalFeeReceiver", [address, resolved.treasury]),
+					`Route GaslessLayer operational fees to treasury ${resolved.treasury}`,
+				),
+			)
+		}
+	} else if (!(await coreView.isOperationalFeeCharger(address))) {
+		manualActions.push(
+			safeAction(
+				resolved.core,
+				coreControl.interface.encodeFunctionData("setOperationalFeeReceiver", [address, resolved.treasury]),
+				`Route GaslessLayer operational fees to treasury ${resolved.treasury} (after charger registration)`,
+			),
+		)
 	}
 	const operatorRole = await instantLayer.OPERATOR_ROLE()
 	if (!(await instantLayer.hasRole(operatorRole, address))) {
