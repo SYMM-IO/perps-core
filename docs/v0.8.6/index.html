@@ -5,7 +5,7 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta
 			name="description"
-			content="Complete Symmio Core v0.8.6 release notes with 32 scoped changes covering Express Withdrawal, AccountLayer, trading execution, liquidation, settlement, fees, funding, events, and operations."
+			content="Complete Symmio Core v0.8.6 release notes with 33 scoped changes covering Express Withdrawal, AccountLayer, trading execution, liquidation, settlement, fees, funding, events, and operations."
 		/>
 		<title>Symmio Core v0.8.6 release notes</title>
 		<link rel="icon" type="image/svg+xml" href="assets/symmio-mark.svg" />
@@ -71,7 +71,7 @@
 					/>
 					<kbd class="catalog-search-hint" aria-hidden="true" data-search-hint>⌘K</kbd>
 				</label>
-				<span class="catalog-count" id="catalog-result-count" data-catalog-count>32 chapters</span>
+				<span class="catalog-count" id="catalog-result-count" data-catalog-count>33 chapters</span>
 			</div>
 			<div class="catalog-empty" data-catalog-empty hidden>
 				<strong>No chapters found</strong>
@@ -235,7 +235,7 @@
 				</section>
 				<section class="version-catalog-group minor-improvements" aria-labelledby="other-changes-title" data-catalog-group>
 					<div class="section-heading">
-						<p class="eyebrow" data-catalog-group-count>19 chapters</p>
+						<p class="eyebrow" data-catalog-group-count>20 chapters</p>
 						<h2 id="other-changes-title">Other changes</h2>
 					</div>
 					<div class="minor-improvement-list">
@@ -396,6 +396,15 @@
 							<span
 								>Force-closing a position or finishing a PartyA liquidation through AccountLayer no longer fails when core calls back
 								to clean up the account.</span
+							>
+						</a>
+						<a class="minor-improvement-item" href="pages/instant-layer-batch-delegation-grant.html" data-catalog-item>
+							<span class="doc-list-index">33</span>
+							<span class="category">InstantLayer</span>
+							<strong>Batch Delegation Grant Operations</strong>
+							<span
+								>A delegation grant can travel as a regular signed operation inside executeBatch or executeTemplate, so one owner
+								signature bootstraps a session key that signs the rest of the batch.</span
 							>
 						</a>
 					</div>
