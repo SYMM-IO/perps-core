@@ -207,10 +207,11 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 	}
 
 	/// @notice Relay a user-signed InstantLayer delegation setup and settle one operational fee/free usage.
-	/// @dev Delegation grants are not SignedOperation executions, so they use the InstantLayer's dedicated
-	///      grantBatchDelegationBySig surface. The payer is the delegation account resolved through the
-	///      same VA→parent billing rule as normal instant operations. One relay call consumes one free
-	///      daily usage, regardless of how many selectors are granted inside the delegation.
+	/// @dev Delegation grants can also ride relayInstantBatch as owner-signed grant operations; this
+	///      dedicated surface relays the InstantLayer's standalone grantBatchDelegationBySig form. The
+	///      payer is the delegation account resolved through the same VA→parent billing rule as normal
+	///      instant operations. One relay call consumes one free daily usage, regardless of how many
+	///      selectors are granted inside the delegation.
 	function relayGrantBatchDelegationBySig(
 		IInstantLayer.SignedDelegation calldata signedDelegation,
 		bytes calldata signature
