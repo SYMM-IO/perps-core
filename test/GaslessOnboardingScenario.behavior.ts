@@ -168,7 +168,7 @@ describe("GaslessLayer onboarding scenario", function () {
 		const [allowance] = await context.viewFacet.getOperationalFeeAllowance(subAccount, gatewayAddr)
 		expect(allowance).to.equal(FEE_ALLOWANCE - totalFee)
 		expect(await context.viewFacet.balanceOf(subAccount)).to.equal(BRIDGED_AMOUNT - DEPOSIT_FEE - totalFee)
-		await expect(tx).to.emit(gateway, "InstantBatchRelayed").withArgs(relayer.address, 3, 1, totalFee)
+		await expect(tx).to.emit(gateway, "InstantBatchRelayed").withArgs(relayer.address, 3, totalFee)
 
 		// Replay of the batch is refused (single-use operations)
 		await expect(

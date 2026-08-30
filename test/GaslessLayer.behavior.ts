@@ -498,7 +498,7 @@ describe("GaslessLayer", () => {
 
 		const tx = await gateway.connect(relayer).relayInstantBatch([approvalOp], ["0x"], [[]], [[]])
 		await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(user.address, user.address, u("2"))
-		await expect(tx).to.emit(gateway, "InstantBatchRelayed").withArgs(relayer.address, 1, 1, u("2"))
+		await expect(tx).to.emit(gateway, "InstantBatchRelayed").withArgs(relayer.address, 1, u("2"))
 
 		const allowance = await core.getOperationalFeeAllowance(user.address, gatewayAddr)
 		expect(allowance.allowance).to.equal(u("8"))
@@ -528,7 +528,7 @@ describe("GaslessLayer", () => {
 		expect(allowanceBefore.allowance).to.equal(0)
 
 		const tx = await gateway.connect(relayer).relayInstantBatch(...batchArgs([approvalOp, followUpOp]))
-		await expect(tx).to.emit(gateway, "InstantBatchRelayed").withArgs(relayer.address, 2, 1, u("4"))
+		await expect(tx).to.emit(gateway, "InstantBatchRelayed").withArgs(relayer.address, 2, u("4"))
 
 		const allowanceAfter = await core.getOperationalFeeAllowance(user.address, gatewayAddr)
 		expect(allowanceAfter.allowance).to.equal(u("6"))
@@ -1266,15 +1266,19 @@ describe("GaslessLayer", () => {
 		expect(await core.operationalFeesCharged(user.address)).to.equal(u("0.05"))
 	})
 
-	it("sums per-operation fees across a batch", async () => {
+	it("sums per-operation fees across a batch and emits one routing event per operation", async () => {
 		const SEL_A = "0xaaaaaaaa"
 		const SEL_B = "0xbbbbbbbb"
 		await gateway.connect(admin).setSelectorFeeConfig(SEL_A, true, u("0.01"))
 		await gateway.connect(admin).setSelectorFeeConfig(SEL_B, true, u("0.02"))
 		const ops = [makeSignedOp(user.address, SEL_A), makeSignedOp(user.address, SEL_B)]
-		await gateway.connect(relayer).relayInstantBatch(ops, ["0x", "0x"], [[], []], [[], []])
+		const tx = await gateway.connect(relayer).relayInstantBatch(ops, ["0x", "0x"], [[], []], [[], []])
 		expect(await core.operationalFeesCharged(user.address)).to.equal(u("0.03"))
+		expect(await core.operationalFeeChargeCount(user.address)).to.equal(1) // still one consolidated charge
 		expect(await instant.lastOperationCount()).to.equal(2)
+		await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(user.address, user.address, u("0.01"))
+		await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(user.address, user.address, u("0.02"))
+		await expect(tx).to.emit(gateway, "InstantBatchRelayed").withArgs(relayer.address, 2, u("0.03"))
 	})
 
 	it("multi-account batch charges each signer for its own ops", async () => {
@@ -1301,12 +1305,12 @@ describe("GaslessLayer", () => {
 		expect(await core.operationalFeesCharged(solver)).to.equal(0) // solver's single op free
 	})
 
-	it("emits InstantBatchRelayed with op and account counts", async () => {
+	it("emits InstantBatchRelayed with the op count and total fee", async () => {
 		const solver = ethers.Wallet.createRandom().address
 		const ops = [makeSignedOp(user.address), makeSignedOp(user.address), makeSignedOp(solver)]
 		const tx = await gateway.connect(relayer).relayInstantBatch(ops, ["0x", "0x", "0x"], [[], [], []], [[], [], []])
-		// no fees configured → totalFee 0; 3 ops across 2 accounts
-		await expect(tx).to.emit(gateway, "InstantBatchRelayed").withArgs(relayer.address, 3, 2, 0)
+		// no fees configured → totalFee 0 across 3 ops; payers are read from the per-op routing events
+		await expect(tx).to.emit(gateway, "InstantBatchRelayed").withArgs(relayer.address, 3, 0)
 	})
 
 	// ──────────────── Type 1: account-aware fee routing ────────────────
@@ -1323,7 +1327,7 @@ describe("GaslessLayer", () => {
 			expect(await core.operationalFeesCharged(subAccount)).to.equal(u("1"))
 			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(0)
 			await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(virtualAccount, subAccount, u("1"))
-			await expect(tx).to.emit(gateway, "InstantBatchRelayed").withArgs(relayer.address, 1, 1, u("1"))
+			await expect(tx).to.emit(gateway, "InstantBatchRelayed").withArgs(relayer.address, 1, u("1"))
 		})
 
 		it("collapses sibling virtual accounts under one payer and shared quota", async () => {
@@ -1347,7 +1351,7 @@ describe("GaslessLayer", () => {
 			expect(await gateway.dailyFreeOpsRemaining(longVA)).to.equal(0)
 			await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(longVA, subAccount, 0)
 			await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(shortVA, subAccount, u("1"))
-			await expect(tx).to.emit(gateway, "InstantBatchRelayed").withArgs(relayer.address, 2, 1, u("1"))
+			await expect(tx).to.emit(gateway, "InstantBatchRelayed").withArgs(relayer.address, 2, u("1"))
 		})
 
 		it("shared parent quota blocks sibling virtual-account ops in block mode", async () => {
@@ -1392,7 +1396,7 @@ describe("GaslessLayer", () => {
 			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(0)
 			await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(virtualAccount, subAccount, u("1"))
 			await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(solver, solver, u("1"))
-			await expect(tx).to.emit(gateway, "InstantBatchRelayed").withArgs(relayer.address, 2, 2, u("2"))
+			await expect(tx).to.emit(gateway, "InstantBatchRelayed").withArgs(relayer.address, 2, u("2"))
 		})
 
 		it("get helpers resolve virtual accounts to the parent payer", async () => {
@@ -1414,6 +1418,275 @@ describe("GaslessLayer", () => {
 			expect(actual.wouldBlockOnQuota).to.equal(false)
 			expect(actual.amountDue).to.equal(parent.amountDue)
 			expect(actual.freeOpsApplied).to.equal(parent.freeOpsApplied)
+		})
+	})
+
+	// ──────────────── Type 1: signer-VA fallback billing ────────────────
+
+	describe("signer-VA fallback billing", () => {
+		it("charges the signer VA when the parent cannot cover the fee and the VA has allowance and balance", async () => {
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+			// parent has no free or allocated balance; the VA holds margin that can fund the fee
+			await core.setCoreBalances(virtualAccount, u("10"), 0)
+
+			const tx = await gateway.connect(relayer).relayInstantBatch(...batchArgs([makeSignedOp(virtualAccount)]))
+
+			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(u("1"))
+			expect(await core.operationalFeesCharged(subAccount)).to.equal(0)
+			await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(virtualAccount, virtualAccount, u("1"))
+			await expect(tx).to.emit(gateway, "InstantBatchRelayed").withArgs(relayer.address, 1, u("1"))
+		})
+
+		it("splits a batch greedily: parent pays while its balance lasts, overflow ops fall to the VA", async () => {
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+			await core.setCoreBalances(subAccount, u("1"), 0) // covers exactly one op
+			await core.setCoreBalances(virtualAccount, u("10"), 0)
+
+			const ops = [makeSignedOp(virtualAccount), makeSignedOp(virtualAccount)]
+			const tx = await gateway.connect(relayer).relayInstantBatch(...batchArgs(ops))
+
+			expect(await core.operationalFeesCharged(subAccount)).to.equal(u("1"))
+			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(u("1"))
+			await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(virtualAccount, subAccount, u("1"))
+			await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(virtualAccount, virtualAccount, u("1"))
+			await expect(tx).to.emit(gateway, "InstantBatchRelayed").withArgs(relayer.address, 2, u("2"))
+		})
+
+		it("counts the parent's allocated margin toward its capacity", async () => {
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+			await core.setCoreBalances(subAccount, 0, u("1")) // free 0, allocated covers the fee
+			await core.setCoreBalances(virtualAccount, u("10"), 0)
+
+			await gateway.connect(relayer).relayInstantBatch(...batchArgs([makeSignedOp(virtualAccount)]))
+
+			expect(await core.operationalFeesCharged(subAccount)).to.equal(u("1"))
+			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(0)
+		})
+
+		it("reverts the relay when the VA has balance but no allowance (fee stays on the empty parent)", async () => {
+			await core.setEnforceOperationalFeeAllowance(true)
+			await core.setEnforceBalances(true)
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+			await core.setOperationalFeeAllowanceDirect(subAccount, gatewayAddr, u("100"))
+			// parent has allowance but no balance; VA has balance but no allowance → no fallback,
+			// so the charge targets the empty parent and the whole relay reverts, as on the real core.
+			await core.setCoreBalances(virtualAccount, u("10"), 0)
+
+			await expect(gateway.connect(relayer).relayInstantBatch(...batchArgs([makeSignedOp(virtualAccount)]))).to.be.revertedWith(
+				"MockCore: insufficient balance",
+			)
+			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(0)
+		})
+
+		it("reverts the relay when the VA balance cannot cover it (fee stays on the empty parent)", async () => {
+			await core.setEnforceBalances(true)
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+			await core.setCoreBalances(virtualAccount, u("0.5"), 0) // below the fee
+
+			await expect(gateway.connect(relayer).relayInstantBatch(...batchArgs([makeSignedOp(virtualAccount)]))).to.be.revertedWith(
+				"MockCore: insufficient balance",
+			)
+			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(0)
+		})
+
+		it("balance enforcement debits the VA's ledgers when it pays", async () => {
+			await core.setEnforceBalances(true)
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+			await core.setCoreBalances(virtualAccount, u("0.4"), u("10")) // free below the fee, margin covers the rest
+
+			await gateway.connect(relayer).relayInstantBatch(...batchArgs([makeSignedOp(virtualAccount)]))
+
+			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(u("1"))
+			expect(await core.freeBalances(virtualAccount)).to.equal(0) // free-first
+			expect(await core.allocatedBalances(virtualAccount)).to.equal(u("9.4")) // then allocated
+		})
+
+		it("exhausted parent allowance falls back to the VA even when the parent balance is fine", async () => {
+			await core.setEnforceOperationalFeeAllowance(true)
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+			await core.setCoreBalances(subAccount, u("100"), 0)
+			await core.setCoreBalances(virtualAccount, u("10"), 0)
+			await core.setOperationalFeeAllowanceDirect(subAccount, gatewayAddr, u("1")) // one op only
+			await core.setOperationalFeeAllowanceDirect(virtualAccount, gatewayAddr, u("100"))
+
+			const ops = [makeSignedOp(virtualAccount), makeSignedOp(virtualAccount)]
+			await gateway.connect(relayer).relayInstantBatch(...batchArgs(ops))
+
+			expect(await core.operationalFeesCharged(subAccount)).to.equal(u("1"))
+			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(u("1"))
+		})
+
+		it("prices a VA-paid fee with the VA's own core multiplier", async () => {
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+			await core.setCoreBalances(virtualAccount, u("10"), 0)
+			await core.setOperationalFeeMultiplier(subAccount, gatewayAddr, 5000)
+			await core.setOperationalFeeMultiplier(virtualAccount, gatewayAddr, 20000)
+
+			await gateway.connect(relayer).relayInstantBatch(...batchArgs([makeSignedOp(virtualAccount)]))
+
+			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(u("2"))
+			expect(await core.operationalFeesCharged(subAccount)).to.equal(0)
+		})
+
+		it("consumes the parent's daily free quota even when the overflow op is VA-paid", async () => {
+			await gateway.connect(admin).setDailyFreeOpsLimit(1)
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+			await core.setCoreBalances(virtualAccount, u("10"), 0)
+
+			const ops = [makeSignedOp(virtualAccount), makeSignedOp(virtualAccount)]
+			const tx = await gateway.connect(relayer).relayInstantBatch(...batchArgs(ops))
+
+			await expect(tx).to.emit(gateway, "DailyFreeOpsUsed").withArgs(subAccount, 1, 1, 1)
+			expect(await gateway.dailyFreeOpsRemaining(subAccount)).to.equal(0)
+			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(u("1"))
+			expect(await core.operationalFeesCharged(subAccount)).to.equal(0)
+		})
+
+		it("bills the parent of a VA deleted during the batch (parentAccount survives on the record)", async () => {
+			await instant.setTargetExecution(true, await core.getAddress())
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+			await core.setCoreBalances(subAccount, u("10"), 0)
+
+			// The op itself deletes its VA mid-batch (the account layer does this on a full close).
+			const deleteOp = {
+				...makeSignedOp(virtualAccount),
+				target: await accountLayer.getAddress(),
+				callData: accountLayer.interface.encodeFunctionData("clearVirtualAccount", [virtualAccount]),
+			}
+			const tx = await gateway.connect(relayer).relayInstantBatch(...batchArgs([deleteOp]))
+
+			expect(await core.operationalFeesCharged(subAccount)).to.equal(u("1"))
+			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(0)
+			await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(virtualAccount, subAccount, u("1"))
+		})
+
+		it("charges the parent with funds the batch itself returned (empty parent before removeMargin)", async () => {
+			await instant.setTargetExecution(true, await core.getAddress())
+			await core.setInstantLayer(await instant.getAddress())
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+			// parent is empty before the batch; the op itself moves margin back to the parent
+			const removeMarginOp = {
+				...makeSignedOp(virtualAccount),
+				target: await core.getAddress(),
+				callData: core.interface.encodeFunctionData("setCoreBalances", [subAccount, u("10"), 0]),
+			}
+
+			const tx = await gateway.connect(relayer).relayInstantBatch(...batchArgs([removeMarginOp]))
+
+			expect(await core.operationalFeesCharged(subAccount)).to.equal(u("1"))
+			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(0)
+			await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(virtualAccount, subAccount, u("1"))
+		})
+
+		it("bills the parent of a VA that is only created during the batch", async () => {
+			await instant.setTargetExecution(true, await core.getAddress())
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await core.setCoreBalances(subAccount, u("10"), 0)
+			// The VA does not exist when the batch is submitted; the op itself registers it
+			// (the account layer creates or reuses VAs lazily while opening positions).
+			const createOp = {
+				...makeSignedOp(virtualAccount),
+				target: await accountLayer.getAddress(),
+				callData: accountLayer.interface.encodeFunctionData("setVirtualAccount", [virtualAccount, subAccount]),
+			}
+
+			const tx = await gateway.connect(relayer).relayInstantBatch(...batchArgs([createOp]))
+
+			expect(await core.operationalFeesCharged(subAccount)).to.equal(u("1"))
+			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(0)
+			await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(virtualAccount, subAccount, u("1"))
+		})
+
+		it("getAccountOperationalFee quote matches the charge when the fallback engages", async () => {
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+			await core.setCoreBalances(subAccount, u("1"), 0)
+			await core.setCoreBalances(virtualAccount, u("10"), 0)
+			await core.setOperationalFeeMultiplier(virtualAccount, gatewayAddr, 20000)
+
+			const ops = [makeSignedOp(virtualAccount), makeSignedOp(virtualAccount)]
+			const quote = await gateway.getAccountOperationalFee(virtualAccount, ops)
+			expect(quote.amountDue).to.equal(u("3")) // 1 on the parent + 2 on the VA (2x multiplier)
+
+			const tx = await gateway.connect(relayer).relayInstantBatch(...batchArgs(ops))
+			await expect(tx).to.emit(gateway, "InstantBatchRelayed").withArgs(relayer.address, 2, u("3"))
+			expect(await core.operationalFeesCharged(subAccount)).to.equal(u("1"))
+			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(u("2"))
+		})
+
+		it("a deleted VA signer does not resolve to the parent's wallet for wallet-operation authorization", async () => {
+			await gateway.connect(admin).setDefaultSelectorFee(0)
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await accountLayer.setAccountOwner(subAccount, user.address)
+			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+			await accountLayer.clearVirtualAccount(virtualAccount)
+
+			// Billing may roll a deleted VA up to its parent, but authorization must not: an op signed
+			// as the dead VA targeting the parent owner's GaslessWallet is a plain instant op, not a
+			// wallet operation.
+			const op = {
+				...makeSignedOp(virtualAccount),
+				target: await gateway.getGaslessWalletAddress(user.address),
+			}
+			await gateway.connect(relayer).relayInstantBatch(...batchArgs([op]))
+
+			expect(await instant.lastOperationCount()).to.equal(1) // routed through the instant layer, not wallet execution
+		})
+
+		it("relayGrantBatchDelegationBySig falls back to the VA delegator when the parent cannot pay", async () => {
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+			await core.setCoreBalances(virtualAccount, u("10"), 0)
+			const signedDelegation = makeSignedDelegation(virtualAccount, stranger.address)
+
+			const tx = await gateway.connect(relayer).relayGrantBatchDelegationBySig(signedDelegation, "0x1234")
+
+			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(u("1"))
+			expect(await core.operationalFeesCharged(subAccount)).to.equal(0)
+			await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(virtualAccount, virtualAccount, u("1"))
+			await expect(tx)
+				.to.emit(gateway, "DelegationBySigRelayed")
+				.withArgs(relayer.address, virtualAccount, virtualAccount, stranger.address, 1, u("1"))
 		})
 	})
 
@@ -1646,15 +1919,6 @@ describe("GaslessLayer", () => {
 			expect(await core.operationalFeesCharged(user.address)).to.equal(u("0.5"))
 		})
 
-		it("reads the multiplier from the current core's six-word allowance view", async () => {
-			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
-			await core.setLegacyAllowanceView(true)
-			await core.setOperationalFeeMultiplier(user.address, gatewayAddr, 12500)
-
-			const quote = await gateway.getAccountOperationalFee(user.address, [makeSignedOp(user.address)])
-			expect(quote.amountDue).to.equal(u("1.25"))
-		})
-
 		it("does not expose a gateway-local fee multiplier setter", async () => {
 			expect(gateway.setAccountFeeMultiplier).to.equal(undefined)
 		})
@@ -1745,7 +2009,7 @@ describe("GaslessLayer", () => {
 			expect(await instant.lastOperationCount()).to.equal(3)
 			expect(await core.operationalFeesCharged(user.address)).to.equal(u("0.01")) // sendQuote
 			expect(await core.operationalFeesCharged(solver)).to.equal(u("0.05")) // lock + open
-			await expect(tx).to.emit(gateway, "InstantTemplateRelayed").withArgs(relayer.address, 7, 3, 2, u("0.06"))
+			await expect(tx).to.emit(gateway, "InstantTemplateRelayed").withArgs(relayer.address, 7, 3, u("0.06"))
 		})
 
 		it("relayInstantTemplate rolls back fees when execution fails (atomicity)", async () => {
