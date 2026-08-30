@@ -199,9 +199,10 @@ function getOperationalFeeAllowance(address payer, address charger)
 						the effective receiver.
 					</p>
 					<p>
-						Solver <strong>rate</strong> fees have a parallel but independent setting, <code>ControlFacet.setSolverFeeReceiver</code>,
-						gated by <code>PARTY_B_MANAGER_ROLE</code> instead. Keeping the two separate lets a solver route flat operational costs and
-						per-notional trading revenue to different accounts. See <a href="../pages/solver-fees.html">Solver Fees</a>.
+						Solver <strong>rate</strong> fees have parallel but independent default and per-tag settings:
+						<code>ControlFacet.setSolverFeeReceiver</code> and <code>setSolverFeeReceiverForTag</code>, gated by
+						<code>PARTY_B_MANAGER_ROLE</code> instead. Keeping the two mechanisms separate lets a solver route flat operational costs and
+						tagged per-notional trading revenue to different accounts. See <a href="../pages/solver-fees.html">Solver Fees</a>.
 					</p>
 
 					<p>
@@ -266,9 +267,10 @@ function getOperationalFeeAllowance(address payer, address charger)
 						</table>
 					</div>
 					<p>
-						This is the same treatment for every charger, including the solver. The solver's separate per-quote rate
-						<code>solverFee</code>, charged inside the fee-aware trading methods, is the only fee that folds into the Muon
-						<code>_requireSolventAfterSolverFee</code> liquidatability check (see <a href="../pages/solver-fees.html">Solver Fees</a>).
+						This is the same treatment for every operational-fee charger, including a registered solver. The solver's separate per-quote
+						rate fee also uses a standalone, signature-free charge path: it checks the quote cap and available allocated balance, but does
+						not run a Muon or post-fee solvency check. See
+						<a href="../pages/solver-fees.html#safety-boundary">Solver Fees</a>.
 					</p>
 
 					<h2 id="timelocked-reductions">Timelocked reductions</h2>

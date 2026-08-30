@@ -271,7 +271,6 @@ async function buildOps(
 		requestOpenQuote.openPrice,
 		await getDummySingleUpnlSig(0n),
 		await getDummyPairUpnlAndPriceSig(decimal(1n), 0n, 0n),
-		0,
 	])
 
 	const userAccount: InstantLayer.AccountStruct = { addr: subAccount, isPartyB: false }

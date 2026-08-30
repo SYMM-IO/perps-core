@@ -108,23 +108,13 @@ library PartyBPositionActionsFacetImpl {
 	}
 
 	/// @notice Plans and fills a close request up to PartyB's configured close-to-liquidation boundary.
-	/// @dev IMPORTANT BACKWARD-COMPATIBILITY WARNING:
-	///      This legacy method reserves room for protocol closeFee only. It does NOT reserve room for solver fees
-	///      charged through LibSolverFee, so a solver fee charged after this call can still make PartyA liquidatable.
-	///      Use the fee-aware PartyBExecutionFacet.fillCloseRequestToLiquidation overload when the close will include solver fees.
+	/// @dev Solver fees are independent draws and are not included in this close sizing calculation.
 	function fillCloseRequestToLiquidation(
 		uint256 quoteId,
 		uint256 closedPrice,
 		PairUpnlAndPriceSig memory upnlSig
 	) internal returns (LibPartyBPositionsActions.CloseToLiquidationPlan memory plan, uint256 actualShortfall) {
-		plan = LibPartyBPositionsActions.calculateCloseToLiquidationPlan(
-			quoteId,
-			type(uint256).max,
-			closedPrice,
-			upnlSig.price,
-			upnlSig.upnlPartyA,
-			0
-		);
+		plan = LibPartyBPositionsActions.calculateCloseToLiquidationPlan(quoteId, type(uint256).max, closedPrice, upnlSig.price, upnlSig.upnlPartyA);
 		require(plan.filledAmount > 0, "PartyBFacet: Cannot close any amount");
 
 		LibPartyBPositionsActions.prepareCloseToLiquidationFill(quoteId, plan.filledAmount);

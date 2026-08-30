@@ -342,18 +342,15 @@ contract ClearingHouseFacet is Pausable, Accessibility, IClearingHouseFacet {
 	/// @param subject The party being liquidated (partyB for cross, partyA for takeover).
 	/// @param quoteIds The quote IDs to liquidate.
 	/// @param prices The prices to use for liquidation.
-	/// @param closeSolverFees User-approved close solver fees supplied by the Clearing House for each quote.
 	function liquidatePositionsForClearingHouse(
 		address subject,
 		uint256[] memory quoteIds,
-		uint256[] memory prices,
-		uint256[] memory closeSolverFees
+		uint256[] memory prices
 	) external whenNotLiquidationPaused onlyRole(LibAccessibility.CLEARING_HOUSE_ROLE) {
 		(uint256[] memory liquidatedAmounts, uint256[] memory closeIds) = ClearingHouseFacetImpl.liquidatePositionsForClearingHouse(
 			subject,
 			quoteIds,
-			prices,
-			closeSolverFees
+			prices
 		);
 		emit LiquidatePositionsForClearingHouse(subject, quoteIds, liquidatedAmounts, closeIds, prices);
 	}

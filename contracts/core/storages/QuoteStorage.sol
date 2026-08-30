@@ -32,6 +32,12 @@ enum QuoteStatus {
 	LIQUIDATED_PENDING //10
 }
 
+/// @notice The quote-side notional cap used for a solver fee charge
+enum SolverFeeType {
+	OPEN,
+	CLOSE
+}
+
 /// @notice Margin components locked for a position (CVA, liquidation fee, maintenance margins)
 struct LockedValues {
 	uint256 cva;
@@ -152,6 +158,9 @@ library QuoteStorage {
 		mapping(uint256 => uint256) closeIds;
 		/// @notice Solver fee caps and cumulative charges keyed by quote ID.
 		mapping(uint256 => SolverFeeState) solverFeeStates;
+		/// @notice Standalone CLOSE solver fees charged against each unique close request ID.
+		/// @dev Separates the current request's cap usage from the quote's lifetime closeFeeCharged total.
+		mapping(uint256 => uint256) closeRequestSolverFeeCharged;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

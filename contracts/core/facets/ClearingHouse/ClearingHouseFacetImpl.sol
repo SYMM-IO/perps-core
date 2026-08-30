@@ -16,14 +16,12 @@ import { LibQuote } from "../../libraries/LibQuote.sol";
 import { LibQuoteState } from "../../libraries/extensions/LibQuoteState.sol";
 import { LibQuoteClose } from "../../libraries/LibQuoteClose.sol";
 import { LibQuoteFunding } from "../../libraries/LibQuoteFunding.sol";
-import { LibSolverFee } from "../../libraries/LibSolverFee.sol";
 import { LibConnections } from "../../libraries/LibConnections.sol";
 import { LibSymbolAdjustment } from "../../libraries/LibSymbolAdjustment.sol";
 import { LibPartyBState } from "../../libraries/extensions/LibPartyBState.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibHook } from "../../libraries/LibHook.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
-import { IPartiesEvents } from "../../interfaces/IPartiesEvents.sol";
 import { IPartyALiquidationEvents } from "../../interfaces/IPartyALiquidationEvents.sol";
 
 library ClearingHouseFacetImpl {
@@ -181,17 +179,15 @@ library ClearingHouseFacetImpl {
 	/// @param subject The party being liquidated (partyB for cross, partyA for takeover)
 	/// @param quoteIds The quote IDs to liquidate
 	/// @param prices The prices to use for liquidation
-	/// @param closeSolverFees User-approved close solver fees supplied by the Clearing House for each quote
 	function liquidatePositionsForClearingHouse(
 		address subject,
 		uint256[] memory quoteIds,
-		uint256[] memory prices,
-		uint256[] memory closeSolverFees
+		uint256[] memory prices
 	) public returns (uint256[] memory liquidatedAmounts, uint256[] memory closeIds) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 
-		require(quoteIds.length == prices.length && quoteIds.length == closeSolverFees.length, "ClearingHouseFacet: Invalid length");
+		require(quoteIds.length == prices.length, "ClearingHouseFacet: Invalid length");
 
 		LiquidationType liqType = getLiquidationType(subject);
 		require(liqType != LiquidationType.NONE, "ClearingHouseFacet: No active liquidation");
@@ -222,11 +218,6 @@ library ClearingHouseFacetImpl {
 
 			uint256 liquidationPrice = prices[i];
 			uint256 openAmount = LibQuote.quoteOpenAmount(quote);
-			uint256 closeSolverFee = closeSolverFees[i];
-			if (closeSolverFee > 0) {
-				address receiver = LibSolverFee.chargeCloseFeeIfAny(quote.id, closeSolverFee, openAmount, liquidationPrice);
-				emit IPartiesEvents.CloseSolverFeeCharged(quote.id, partyA, partyB, receiver, quote.symbolId, closeSolverFee);
-			}
 
 			closeIds[i] = quoteLayout.closeIds[quote.id];
 			quote.quoteStatus = QuoteStatus.LIQUIDATED;

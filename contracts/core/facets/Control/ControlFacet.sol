@@ -185,6 +185,18 @@ contract ControlFacet is Accessibility, Ownable, IControlEvents {
 		emit SetSolverFeeReceiver(partyB, receiver);
 	}
 
+	/// @notice Sets the receiver of a Party B's solver fees for one arbitrary tag.
+	/// @dev The raw tag is hashed for storage. A zero receiver clears the tag override, after which the
+	///      Party B's default solver fee receiver applies. Authorization matches setSolverFeeReceiver.
+	function setSolverFeeReceiverForTag(address partyB, bytes calldata tag, address receiver) external {
+		address sender = LibSigner.getSigner();
+		require(LibAccessibility.hasRole(sender, LibAccessibility.PARTY_B_MANAGER_ROLE) || sender == partyB, "ControlFacet: Not authorized");
+		require(MAStorage.layout().partyBStatus[partyB], "ControlFacet: Address is not registered");
+		bytes32 tagHash = keccak256(tag);
+		MAStorage.layout().solverFeeReceiversByTag[partyB][tagHash] = receiver;
+		emit SetSolverFeeReceiverForTag(partyB, receiver, tag);
+	}
+
 	/// @notice Sets the metadata for a Party B, including display name and other identifying information.
 	/// @param partyB The address of the Party B to set metadata for.
 	/// @param metadata The EntityMetadata struct containing the Party B's metadata.

@@ -255,6 +255,12 @@ contract ViewFacet is IViewFacet {
 		return LibAccount.getSolverFeeReceiver(partyB);
 	}
 
+	/// @notice Returns the effective account that receives a Party B's solver fees for one tag.
+	/// @dev A tag without an override falls back to the default solver fee receiver.
+	function getSolverFeeReceiverForTag(address partyB, bytes calldata tag) external view returns (address) {
+		return LibAccount.getSolverFeeReceiver(partyB, keccak256(tag));
+	}
+
 	function getOperationalFeeAllowance(
 		address payer,
 		address charger
