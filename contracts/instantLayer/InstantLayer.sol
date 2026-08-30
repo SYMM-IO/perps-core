@@ -14,6 +14,7 @@ pragma solidity >=0.8.18;
 ///         │                     CORE FEATURES                           │
 ///         ├─────────────────────────────────────────────────────────────┤
 ///         │ • Delegation authorizes selectors for another signer.       │
+///         │ • A batch op can grant delegation for use by later ops.     │
 ///         │ • Templates run ordered calls and can inject prior results. │
 ///         │ • Nonce 0 uses salt replay protection.                      │
 ///         │   Nonzero nonces also enforce execution order.              │
@@ -410,6 +411,10 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @notice Cannot delegate to oneself
 	error SelfDelegation();
 
+	/// @notice Self-targeted operation is not a valid delegation grant
+	///         (wrong selector, flex fields present, or maxUses != 1)
+	error InvalidGrantOperation();
+
 	/// @notice Source index for result injection is out of bounds
 	/// @param sourceIndex The invalid source index
 	error InvalidSourceIndex(uint256 sourceIndex);
@@ -508,6 +513,10 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @notice Grant batch delegation permissions using a signature.
 	/// @dev    Allows account owners to delegate multiple function selectors to another address
 	///         via an off-chain signature. This enables gasless delegation setup.
+	/// @custom:deprecated Kept for backward compatibility only. Sign a `grantDelegation` call as a
+	///         regular SignedOperation targeting this contract instead — that form composes with
+	///         other operations in `executeBatch`/`executeTemplate` (e.g. grant a session key and
+	///         use it in the same batch) and shares the operation replay machinery.
 	/// @param signedDelegation Delegation details including permissions and anti-replay parameters
 	/// @param signature        EIP-712 signature from the account owner
 	function grantBatchDelegationBySig(SignedDelegation calldata signedDelegation, bytes calldata signature) external {
@@ -518,13 +527,10 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 		address delegator = _canonicalDelegator(info.account.addr);
 		address owner = _getAccountOwner(delegator);
-		address delegate = info.delegatedSigner;
-		uint256 expiry = info.expiryTimestamp;
-		bytes4[] calldata selectors = info.selectors;
 
 		// Validate delegation parameters
-		if (delegate == owner) revert SelfDelegation();
-		if (expiry <= block.timestamp) revert DelegationExpired(expiry);
+		if (info.delegatedSigner == owner) revert SelfDelegation();
+		if (info.expiryTimestamp <= block.timestamp) revert DelegationExpired(info.expiryTimestamp);
 		if (rh.deadline != 0 && block.timestamp > rh.deadline) revert DeadlineExpired(rh.deadline);
 		if (info.selectors.length == 0) revert InvalidDelegation();
 
@@ -546,37 +552,38 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		if (usedDelegationHashes[hash]) revert DelegationAlreadyExecuted(hash);
 		usedDelegationHashes[hash] = true;
 
-		// Update delegation mappings
-		mapping(bytes4 => uint256) storage slot = delegations[delegator][delegate];
-
-		for (uint256 i = 0; i < selectors.length;) {
-			bytes4 selector = selectors[i];
-			slot[selector] = expiry;
-			delete pendingRevocationEta[delegator][delegate][selector];
-			emit DelegationGranted(delegator, delegate, selector, expiry);
-
-			unchecked {
-				++i;
-			}
-		}
+		_applyGrant(info, owner);
 	}
 
 	/// @notice Grant delegation permissions directly (no signature required).
-	/// @dev    Account owners can directly grant delegation without signatures.
+	/// @dev    Account owners can directly grant delegation without signatures. The same call,
+	///         signed as a SignedOperation targeting this contract, grants delegation inside
+	///         `executeBatch`/`executeTemplate` so later operations in the batch can use it.
 	/// @param info Delegation information including delegate address and permissions
 	function grantDelegation(DelegationInfo calldata info) external onlyOwner(info.account) {
 		if (info.account.isPartyB) revert InvalidDelegation();
-		if (info.delegatedSigner == msg.sender) revert SelfDelegation();
-		if (info.expiryTimestamp <= block.timestamp) revert DelegationExpired(info.expiryTimestamp);
+		_applyGrant(info, msg.sender);
+	}
+
+	/// @dev Shared grant application for the direct, by-sig, and signed-operation grant paths.
+	///      Validates the delegation parameters against `owner`, normalizes the delegator to the
+	///      canonical account, writes the selector permissions, and clears pending revocations.
+	function _applyGrant(DelegationInfo memory info, address owner) private {
+		address delegate = info.delegatedSigner;
+		uint256 expiry = info.expiryTimestamp;
+
+		if (delegate == owner) revert SelfDelegation();
+		if (expiry <= block.timestamp) revert DelegationExpired(expiry);
+		if (info.selectors.length == 0) revert InvalidDelegation();
 
 		address delegator = _canonicalDelegator(info.account.addr);
-		address delegate = info.delegatedSigner;
+		mapping(bytes4 => uint256) storage slot = delegations[delegator][delegate];
 
-		// Grant each selector permission
-		for (uint256 j = 0; j < info.selectors.length; j++) {
-			delegations[delegator][delegate][info.selectors[j]] = info.expiryTimestamp;
-			delete pendingRevocationEta[delegator][delegate][info.selectors[j]];
-			emit DelegationGranted(delegator, delegate, info.selectors[j], info.expiryTimestamp);
+		for (uint256 i = 0; i < info.selectors.length; i++) {
+			bytes4 selector = info.selectors[i];
+			slot[selector] = expiry;
+			delete pendingRevocationEta[delegator][delegate][selector];
+			emit DelegationGranted(delegator, delegate, selector, expiry);
 		}
 	}
 
@@ -899,7 +906,12 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		// Validate calldata has at least selector
 		if (signedOp.callData.length < 4) revert CallDataLengthMismatch();
 
-		if (!whitelistedTargets[signedOp.target]) revert TargetNotWhitelisted(signedOp.target);
+		if (signedOp.target == address(this)) {
+			// Self-targeted operations are only valid as delegation grants
+			_verifyGrantOperation(signedOp);
+		} else if (!whitelistedTargets[signedOp.target]) {
+			revert TargetNotWhitelisted(signedOp.target);
+		}
 
 		bytes32 hash = getOperationHash(signedOp);
 		address signer = signedOp.signer;
@@ -967,6 +979,11 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		bytes memory callData,
 		bool usesNativeContextSelectors
 	) private returns (bool success, bytes memory result) {
+		if (signedOp.target == address(this)) {
+			// Delegation grant carried as a signed operation; validated in _verifyGrantOperation
+			return _executeGrantOperation(signedOp);
+		}
+
 		bytes[] memory callDatas = new bytes[](1);
 		callDatas[0] = callData;
 
@@ -1070,6 +1087,36 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		}
 
 		return modifiedCallData;
+	}
+
+	/// @dev Validates the shape of a self-targeted delegation-grant operation.
+	///
+	/// Grant Operation Rules:
+	/// - Only the `grantDelegation` selector may target this contract.
+	/// - The signer must be the account owner — a delegate can never mint further delegations.
+	/// - maxUses must be 1: re-granting clears pending revocations, so a replayable grant
+	///   could silently cancel a scheduled revocation.
+	/// - Flex fields are forbidden so no third party can modify the grant after signing.
+	function _verifyGrantOperation(SignedOperation calldata signedOp) private view {
+		bytes calldata callData = signedOp.callData;
+		bytes4 selector;
+		assembly ("memory-safe") {
+			selector := calldataload(callData.offset)
+		}
+		if (selector != this.grantDelegation.selector) revert InvalidGrantOperation();
+		if (signedOp.signerAccount.isPartyB) revert InvalidDelegation();
+		if (signedOp.flexFields.length != 0 || signedOp.maxUses != 1) revert InvalidGrantOperation();
+		if (_getAccountOwner(signedOp.signerAccount.addr) != signedOp.signer) revert InvalidDelegation();
+	}
+
+	/// @dev Applies a delegation grant carried as a signed operation.
+	///      Decodes from the original signed calldata — never the fill/injection-modified copy —
+	///      so neither flex fills nor template result-injection can alter the grant parameters.
+	function _executeGrantOperation(SignedOperation calldata signedOp) private returns (bool success, bytes memory result) {
+		DelegationInfo memory info = abi.decode(signedOp.callData[4:], (DelegationInfo));
+		if (info.account.addr != signedOp.signerAccount.addr || info.account.isPartyB) revert InvalidDelegation();
+		_applyGrant(info, signedOp.signer);
+		return (true, result);
 	}
 
 	/* ══════════════════════════ VIEW FUNCTIONS ══════════════════════════ */

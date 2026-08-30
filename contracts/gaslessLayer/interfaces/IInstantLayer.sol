@@ -72,6 +72,13 @@ interface IInstantLayer {
 	///      EIP-712 payload and updates delegation nonce/storage directly.
 	function grantBatchDelegationBySig(SignedDelegation calldata signedDelegation, bytes calldata signature) external;
 
+	/// @notice Grant delegation permissions for `info.account` to `info.delegatedSigner`.
+	/// @dev Never called by the gateway directly. Declared so integrators can encode this call as the
+	///      callData of an owner-signed SignedOperation targeting the InstantLayer itself — the
+	///      InstantLayer applies such grant operations inside executeBatch/executeTemplate, letting
+	///      later operations in the same batch use the fresh delegation.
+	function grantDelegation(DelegationInfo calldata info) external;
+
 	/// @notice Return whether a delegate currently has permission for a delegator/selector pair.
 	function isDelegationActive(address delegator, address delegate, bytes4 selector) external view returns (bool);
 }

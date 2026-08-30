@@ -90,6 +90,26 @@ describe("GaslessLayer", () => {
 		replayAttackHeader: { nonce: 1, deadline: 0, salt: ZERO_HASH },
 	})
 
+	// A delegation grant expressed the way the real InstantLayer consumes it: an owner-signed
+	// operation targeting the InstantLayer itself with grantDelegation calldata. The gateway treats
+	// it as a normal instant op (billed by its grantDelegation selector).
+	const makeGrantOp = async (delegator: string, delegate: string, selectors: string[] = [FEE_SELECTOR]) => ({
+		signer: delegator,
+		target: await instant.getAddress(),
+		callData: instant.interface.encodeFunctionData("grantDelegation", [
+			{
+				account: { addr: delegator, isPartyB: false },
+				delegatedSigner: delegate,
+				selectors,
+				expiryTimestamp: 9999999999n,
+			},
+		]),
+		signerAccount: { addr: delegator, isPartyB: false },
+		flexFields: [],
+		maxUses: 1,
+		replayAttackHeader: { nonce: 0, deadline: 0, salt: ZERO_HASH },
+	})
+
 	// Full SubAccountCreationData for settleDepositToNewAccount; the gateway overrides symmioCore to its own core.
 	const subAccountData = (name: string) => ({
 		name,
@@ -769,6 +789,36 @@ describe("GaslessLayer", () => {
 		expect(await ethers.provider.getCode(walletAddr)).to.not.equal("0x")
 	})
 
+	it("delegated wallet execution can reuse selectors granted through a grant op in the same relayed batch", async () => {
+		await instant.setTargetExecution(true, await core.getAddress())
+		const target = await deployWalletTarget()
+		const targetAddr = await target.getAddress()
+		const walletAddr = await gateway.getGaslessWalletAddress(user.address)
+
+		const wallet = await ethers.getContractAt("GaslessWallet", walletAddr)
+		const marker = ethers.id("delegation relay wallet execution")
+		const calls = [{ target: targetAddr, value: 0n, data: target.interface.encodeFunctionData("record", [marker]) }]
+		const op = {
+			signer: relayer.address,
+			target: walletAddr,
+			callData: walletExecuteData(wallet.interface, calls),
+			signerAccount: { addr: user.address, isPartyB: false },
+			flexFields: [],
+			maxUses: 1,
+			replayAttackHeader: { nonce: 1n, deadline: 9999999999n, salt: ethers.id("relay granted wallet execution") },
+		}
+		const grantOp = await makeGrantOp(user.address, relayer.address, [
+			WALLET_EXECUTION_SENTINEL_SELECTOR,
+			target.interface.getFunction("record").selector,
+		])
+
+		// One relayed batch: the grant lands first, then the wallet op runs under the fresh delegation
+		await gateway.connect(relayer).relayInstantBatch([grantOp, op], ["0x", await signWalletOperation(relayer, op)], [[], []], [[], []])
+
+		expect(await target.lastMarker()).to.equal(marker)
+		expect(await ethers.provider.getCode(walletAddr)).to.not.equal("0x")
+	})
+
 	it("mixed instant plus wallet batch rolls back instant fees and state when the wallet call reverts", async () => {
 		await gateway.connect(admin).setDefaultSelectorFee(u("1"))
 		const target = await deployWalletTarget()
@@ -907,6 +957,35 @@ describe("GaslessLayer", () => {
 			instant,
 			"ForcedDelegationFailure",
 		)
+
+		expect(await core.totalOperationalFeesCharged()).to.equal(0)
+		expect(await gateway.dailyFreeOpsRemaining(user.address)).to.equal(1)
+	})
+
+	it("bills a delegation-grant operation by its grantDelegation selector and forwards it to the InstantLayer", async () => {
+		await instant.setTargetExecution(true, await core.getAddress())
+		const grantOp = await makeGrantOp(user.address, stranger.address, [FEE_SELECTOR, OTHER_SELECTOR])
+		const grantSelector = instant.interface.getFunction("grantDelegation")!.selector
+		await gateway.connect(admin).setSelectorFeeConfig(grantSelector, true, u("0.25"))
+
+		const tx = await gateway.connect(relayer).relayInstantBatch([grantOp], ["0x"], [[]], [[]])
+
+		await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(user.address, user.address, u("0.25"))
+		expect(await core.operationalFeesCharged(user.address)).to.equal(u("0.25"))
+		expect(await instant.lastDelegationAccount()).to.equal(user.address)
+		expect(await instant.lastDelegationDelegate()).to.equal(stranger.address)
+		expect(await instant.lastDelegationSelectorCount()).to.equal(2)
+		expect(await instant.lastDelegationFirstSelector()).to.equal(FEE_SELECTOR)
+	})
+
+	it("rolls back a grant operation's fee and free usage when the InstantLayer reverts", async () => {
+		await instant.setTargetExecution(true, await core.getAddress())
+		await gateway.connect(admin).setDailyFreeOpsLimit(1)
+		await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+		await instant.setForceDelegationFailure(true)
+		const grantOp = await makeGrantOp(user.address, stranger.address)
+
+		await expect(gateway.connect(relayer).relayInstantBatch([grantOp], ["0x"], [[]], [[]])).to.be.revert(ethers)
 
 		expect(await core.totalOperationalFeesCharged()).to.equal(0)
 		expect(await gateway.dailyFreeOpsRemaining(user.address)).to.equal(1)
