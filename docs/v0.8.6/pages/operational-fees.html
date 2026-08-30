@@ -209,7 +209,9 @@ function getOperationalFeeAllowance(address payer, address charger)
 						<strong>AccountLayer accounts.</strong> Users operating through SubAccounts or virtual accounts may want operational fees to
 						come from a parent SubAccount instead of the VA that appears in the signed operation. Perps-core will not resolve that
 						relationship. The solver or relayer should determine the intended payer before calling core, whether in service code or an
-						on-chain relayer contract, and pass that address to <code>chargeOperationalFee</code>.
+						on-chain relayer contract, and pass that address to <code>chargeOperationalFee</code>. The SYMMIO-operated gasless relayer
+						bills the parent SubAccount first; when the parent's balance or allowance cannot cover an op's fee, that op is charged to its
+						own signer VA instead, provided the VA still exists and holds its own allowance and balance for the relayer.
 					</p>
 
 					<h3>Example: AccountLayer VA charged to a parent SubAccount</h3>

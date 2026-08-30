@@ -663,12 +663,6 @@
             {
                 "indexed": false,
                 "internalType": "uint256",
-                "name": "payerCount",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
                 "name": "totalFee",
                 "type": "uint256"
             }
@@ -695,12 +689,6 @@
                 "indexed": false,
                 "internalType": "uint256",
                 "name": "operationCount",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "payerCount",
                 "type": "uint256"
             },
             {
