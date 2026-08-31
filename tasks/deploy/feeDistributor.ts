@@ -1,6 +1,8 @@
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
+import { upsertDeploymentRecords } from "../utils/fs.js"
+import { DEPLOYMENT_LOG_FILE } from "./constants.js"
 import {
 	assertStandaloneDeploymentTaskAllowed,
 	checksumAddress,
@@ -60,6 +62,17 @@ export const feeDistributorTask = task("deploy:feeDistributor", "Deploys the Sym
 			if (addresses.admin) {
 				logger.deployed("SymmioFeeDistributor (Admin)", addresses.admin)
 			}
+			upsertDeploymentRecords(DEPLOYMENT_LOG_FILE, [
+				{
+					name: "SymmioFeeDistributorProxy",
+					address: addresses.proxy,
+					constructorArguments: [admin, symmioAddress, symmioShareReceiver, symmioShare],
+				},
+				...(addresses.implementation
+					? [{ name: "SymmioFeeDistributorImplementation", address: addresses.implementation, constructorArguments: [] }]
+					: []),
+				...(addresses.admin ? [{ name: "SymmioFeeDistributorAdmin", address: addresses.admin, constructorArguments: [] }] : []),
+			])
 
 			return contract
 		},

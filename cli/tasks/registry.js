@@ -552,20 +552,42 @@ async function prepareSimpleDeployment({ ui }, kind) {
 
 function simpleDeployDefinition(kind, title, taskName, extraArgs = input => []) {
 	const extraInputs = kind === "feeDistributor" ? ["receiver", "share"] : [];
+	const checkArgs = (input, phase) => [
+		"check:standalone-deployment",
+		"--kind",
+		kind,
+		"--phase",
+		phase,
+		...(kind === "multicall" ? [] : ["--symmio-address", input.symmio, "--admin", input.admin]),
+		...(kind === "feeDistributor" ? ["--symmio-share-receiver", input.receiver, "--symmio-share", input.share] : []),
+		"--network",
+		input.network,
+	];
 	return common({
 		id: `deploy.${kind.replace(/[A-Z]/g, value => `-${value.toLowerCase()}`)}`,
+		version: 3,
 		category: "deploy",
 		risk: "transaction",
 		title,
 		description: `${title} deployment restricted to local and simulated fork networks until its live workflow meets the full safety contract.`,
 		supportedNetworks: ["localhost", "fork-arbitrum", "fork-hyperevm"],
 		inputs: ["network", ...(kind === "multicall" ? [] : ["symmio", "admin"]), ...extraInputs],
-		artifacts: ["transaction journal", "deployment records"],
+		artifacts: ["transaction journal", "deployment records", "post-state verification"],
 		prepare: context => prepareSimpleDeployment(context, kind),
-		plan: () => [{ id: "deploy", phase: "execution", title: `Deploy ${title}` }],
+		plan: () => [
+			{ id: "inspect", phase: "prepare", title: `Inspect ${title} deployment inputs` },
+			{ id: "deploy", phase: "execution", title: `Deploy ${title}` },
+			{ id: "verify", phase: "verification", title: `Verify ${title} post-state` },
+		],
 		run: async (ctx, input) => {
+			await ctx.step("inspect", `Inspect ${title} deployment inputs`, () =>
+				ctx.runProcess("./node_modules/.bin/hardhat", checkArgs(input, "preflight")),
+			);
 			await ctx.step("deploy", `Deploy ${title}`, () =>
 				ctx.runProcess("./node_modules/.bin/hardhat", [taskName, ...extraArgs(input), "--network", input.network]),
+			);
+			await ctx.step("verify", `Verify ${title} post-state`, () =>
+				ctx.runProcess("./node_modules/.bin/hardhat", checkArgs(input, "poststate")),
 			);
 		},
 		reconcile: mutationReconcile,
