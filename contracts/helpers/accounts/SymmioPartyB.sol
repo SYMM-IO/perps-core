@@ -45,7 +45,6 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 	mapping(bytes4 => bool) public restrictedSelectors;
 	mapping(address => bool) public multicastWhitelist;
 	address public signer;
-	uint256 private deprecatedFundingNonce;
 	mapping(uint256 => uint256) public fundingNonce; // symbolId => last accepted funding update nonce
 
 	/// @custom:oz-upgrades-unsafe-allow constructor

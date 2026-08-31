@@ -37,10 +37,10 @@
 				"prefix": "573310"
 			},
 			"facets": {
-				"suffix": "860"
+				"suffix": "861"
 			}
 		},
-		"miningBudget": 100000000
+		"miningBudget": 200000000
 	},
 	"core": {
 		"mode": "deploy",
@@ -181,7 +181,12 @@
 	},
 	"partyB": {
 		"mode": "deploy",
-		"operators": ["0xb60ABeFda283865Dee94A78948F94A9750e9033B", "0xE73e6C598CC0233E28C5aa6154796de3B04c4E92", "0xE9AD8c77112C31b8CA91C9e4c8775A6263e73c91", "0x59356179e0466e4ccB5617e0cF69576B7d1CD7FC"],
+		"operators": [
+			"0xb60ABeFda283865Dee94A78948F94A9750e9033B",
+			"0xE73e6C598CC0233E28C5aa6154796de3B04c4E92",
+			"0xE9AD8c77112C31b8CA91C9e4c8775A6263e73c91",
+			"0x59356179e0466e4ccB5617e0cF69576B7d1CD7FC"
+		],
 		"adlEnabled": true
 	},
 	"symbolManager": {
@@ -211,11 +216,11 @@
 		"revertWhenNativeSponsorLimitExhausted": true,
 		"maxNativeGasTopUpAmount": "1000000000000000",
 		"nativeGasTopUpFeeBps": 0,
-		"relayers": ["0x77A955776Ee1dd3E9C800c3214ed489441d74b94"],
+		"relayers": ["0x999DA1bB819b50cc85de02D088E449351FDa8B78", "0x66e632490F0544D92E673f5F624537589BbC0C28"],
 		"selectorFees": []
 	},
 	"liquidator": {
 		"mode": "deploy",
-		"operators": ["0x77A955776Ee1dd3E9C800c3214ed489441d74b94"]
+		"operators": ["0xC72C972ee28c17343ebc891520b09a8E35599283", "0x313132469d487A63DfeD39D3437a331A41304645"]
 	}
 }

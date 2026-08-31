@@ -1,7 +1,7 @@
 /**
  * Build a deployment-only artifact without parsing callable ABI fragments.
  *
- * Solidity 0.8.18 can emit named enum/struct types for public library ABI
+ * Solidity 0.8.36 can emit named enum/struct types for public library ABI
  * entries that Ethers 6 cannot parse. A deployment factory only needs bytecode
  * and link references here: the affected libraries have no constructor args.
  * Keeping the compiler artifact intact preserves verification and selectors.
