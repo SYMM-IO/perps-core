@@ -83,3 +83,4 @@ tasks/data/checkpoints/*.lock
 /scripts/upgrade/config/
 /tasks/data/
 /deployments/
+/deployment-recipes/
