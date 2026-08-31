@@ -73,21 +73,3 @@ AGENTS.md
 
 # Guided-deployment recipe backups written next to the recipe on every re-review.
 deployments/*.backup-*
-
-# Local operator artifacts and generated backups.
-/scripts/upgrade/output/
-/scripts/liquidator/output/
-/scripts/upgrade/config/symbolManagerOperators-hyperevm.json
-/deployments/*.json.*.bak
-
-# Legacy unscoped deployment artifacts left by local runs. Chain-scoped
-# deployment evidence under tasks/data/<chainId>/ remains trackable.
-/tasks/data/accountlayer.json
-/tasks/data/deployed.json
-/tasks/data/deployment-report.json
-/tasks/data/liquidator.json
-/tasks/data/my-template-dry-run.json
-/tasks/data/stablecoin.json
-/tasks/data/symbolmanager.json
-/tasks/data/checkpoints/completed/checkpoint-8453-base-2026-03-27T07-18-07-591Z.json
-/tasks/data/checkpoints/completed/checkpoint-8453-base-2026-03-27T07-42-26-903Z.json
