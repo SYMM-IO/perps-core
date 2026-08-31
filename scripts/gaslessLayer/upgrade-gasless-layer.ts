@@ -33,7 +33,7 @@ const AccessControlABI = [
 	"function DEFAULT_ADMIN_ROLE() view returns (bytes32)",
 ]
 
-const UUPSABI = ["function upgradeTo(address newImplementation)", "function proxiableUUID() view returns (bytes32)"]
+const UUPSABI = ["function upgradeToAndCall(address newImplementation, bytes data) payable", "function proxiableUUID() view returns (bytes32)"]
 
 const WalletDerivationABI = ["function getGaslessWalletAddress(address ownerWallet) view returns (address)"]
 
@@ -314,7 +314,7 @@ function implementationSlotOverride(implementation: string): string {
  * Guard the frozen deposit-address invariant across an upgrade. Every user's deposit address is
  * CREATE2(proxy, salt(owner), keccak256(GaslessWallet.creationCode)); a mis-linked
  * GaslessWalletDeployerLib or a changed salt/initcode in the new implementation would deploy fine yet
- * MOVE every address. This fails BEFORE upgradeTo.
+ * MOVE every address. This fails BEFORE upgradeToAndCall.
  */
 async function assertWalletDerivationStable(provider: JsonRpcProvider, proxy: string, newImplementation: string): Promise<void> {
 	const expected = predictGaslessWalletAddress(proxy, REFERENCE_WALLET_OWNER, GOLDEN_WALLET_INITCODE_HASH)
@@ -356,7 +356,7 @@ async function assertWalletDerivationStable(provider: JsonRpcProvider, proxy: st
 		if (!sameAddress(derived, expected)) {
 			throw new Error(
 				`New implementation derives ${derived} for the reference owner, expected ${expected}. A mis-linked ` +
-					`GaslessWalletDeployerLib or changed salt/initcode would MOVE every deposit address. Aborting before upgradeTo.`,
+					`GaslessWalletDeployerLib or changed salt/initcode would MOVE every deposit address. Aborting before upgradeToAndCall.`,
 			)
 		}
 		console.log("Wallet-derivation pre-flight (state override): OK", derived)
@@ -460,6 +460,12 @@ async function main() {
 	if (chainId !== HYPEREVM_CHAIN_ID) {
 		throw new Error(`Refusing to upgrade on chain ${chainId}; expected HyperEVM chain ${HYPEREVM_CHAIN_ID}`)
 	}
+	if (sameAddress(proxy, DEFAULT_PROXY)) {
+		throw new Error(
+			`Refusing to upgrade legacy GaslessLayer proxy ${proxy}: it was deployed with OpenZeppelin 4 and is not storage-compatible with ` +
+				"the OpenZeppelin 5 implementation. Deploy a fresh proxy with scripts/gaslessLayer/deploy.ts instead.",
+		)
+	}
 
 	if (!dryRun && !boolEnv("SKIP_VERIFY")) {
 		assertVerificationConfigured(verifyProvider)
@@ -482,15 +488,15 @@ async function main() {
 
 	const suppliedImplementation = env("NEW_IMPLEMENTATION")
 	if (dryRun) {
-		console.log("Dry run only. Set CONFIRM_UPGRADE=true to deploy and send upgradeTo.")
+		console.log("Dry run only. Set CONFIRM_UPGRADE=true to deploy and send upgradeToAndCall.")
 		if (suppliedImplementation) {
 			const implementation = normalizeAddress(suppliedImplementation, "NEW_IMPLEMENTATION")
 			await requireCode(provider, implementation, "NEW_IMPLEMENTATION")
 			await verifyUUPSImplementation(provider, implementation)
 			await assertWalletDerivationStable(provider, proxy, implementation)
 			const gateway = new Contract(proxy, UUPSABI, signer) as any
-			const tx = await gateway.upgradeTo.populateTransaction(implementation)
-			console.log("Prepared upgradeTo calldata:", tx.data)
+			const tx = await gateway.upgradeToAndCall.populateTransaction(implementation, "0x")
+			console.log("Prepared upgradeToAndCall calldata:", tx.data)
 		}
 		return
 	}
@@ -533,7 +539,7 @@ async function main() {
 		} finally {
 			if (shouldToggleBigBlocks) {
 				console.log("")
-				console.log("Library and implementation deployment complete - restoring HyperEVM fast blocks before upgradeTo...")
+				console.log("Library and implementation deployment complete - restoring HyperEVM fast blocks before upgradeToAndCall...")
 				try {
 					await setHyperEVMBigBlocksForSigner(signer, chainId, false)
 				} catch (err: any) {
@@ -550,10 +556,10 @@ async function main() {
 	await assertWalletDerivationStable(provider, proxy, newImplementation)
 
 	const gateway = new Contract(proxy, UUPSABI, signer) as any
-	const estimatedGas = await gateway.upgradeTo.estimateGas(newImplementation).catch(() => undefined)
-	if (estimatedGas !== undefined) console.log("upgradeTo gas estimate:", estimatedGas.toString())
+	const estimatedGas = await gateway.upgradeToAndCall.estimateGas(newImplementation, "0x").catch(() => undefined)
+	if (estimatedGas !== undefined) console.log("upgradeToAndCall gas estimate:", estimatedGas.toString())
 
-	const upgradeTx = await gateway.upgradeTo(newImplementation)
+	const upgradeTx = await gateway.upgradeToAndCall(newImplementation, "0x")
 	console.log("Upgrade tx:           ", upgradeTx.hash)
 	const receipt = await upgradeTx.wait()
 	if (receipt.status !== 1) throw new Error(`Upgrade transaction reverted: ${upgradeTx.hash}`)

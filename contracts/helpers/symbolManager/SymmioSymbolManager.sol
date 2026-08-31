@@ -6,8 +6,8 @@
 pragma solidity >=0.8.18;
 
 import { ISymmio } from "./interfaces/ISymmio.sol";
-import { AccessControlEnumerable } from "@openzeppelin/contracts/access/AccessControlEnumerable.sol";
-import { Pausable } from "@openzeppelin/contracts/security/Pausable.sol";
+import { AccessControlEnumerable } from "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
+import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
 
 /// @title SymmioSymbolManager
 /// @notice Manages symbols and their properties for the Symmio protocol

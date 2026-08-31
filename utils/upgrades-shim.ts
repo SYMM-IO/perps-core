@@ -1,5 +1,4 @@
 import ERC1967ProxyArtifact from "@openzeppelin/contracts/build/contracts/ERC1967Proxy.json" with { type: "json" }
-import ProxyAdminArtifact from "@openzeppelin/contracts/build/contracts/ProxyAdmin.json" with { type: "json" }
 import TransparentUpgradeableProxyArtifact from "@openzeppelin/contracts/build/contracts/TransparentUpgradeableProxy.json" with { type: "json" }
 import { ethers } from "ethers"
 import type { ContractFactory } from "ethers"
@@ -53,16 +52,9 @@ export async function deployProxy(hre: HardhatRuntimeEnvironment, factory: Contr
 		const ProxyFactory = new hre.ethers.ContractFactory(abi, bytecode, defaultSigner)
 		proxy = await ProxyFactory.deploy(await implementation.getAddress(), initData)
 	} else {
-		const { abi, bytecode } = ProxyAdminArtifact as any
-		const ProxyAdminFactory = new hre.ethers.ContractFactory(abi, bytecode, defaultSigner)
-		const proxyAdmin = await ProxyAdminFactory.deploy()
-		if (admin && admin !== defaultSigner.address) {
-			await (await proxyAdmin.transferOwnership(admin)).wait()
-		}
-
 		const { abi: transpAbi, bytecode: transpBytecode } = TransparentUpgradeableProxyArtifact as any
 		const ProxyFactory = new hre.ethers.ContractFactory(transpAbi, transpBytecode, defaultSigner)
-		proxy = await ProxyFactory.deploy(await implementation.getAddress(), await proxyAdmin.getAddress(), initData)
+		proxy = await ProxyFactory.deploy(await implementation.getAddress(), admin, initData)
 	}
 
 	await proxy.waitForDeployment()

@@ -20,7 +20,7 @@ describe("GaslessWallet frozen bytecode", () => {
 		const artifact = JSON.parse(readFileSync("artifacts/contracts/gaslessLayer/GaslessWallet.sol/GaslessWallet.json", "utf8"))
 		expect(
 			keccak256(artifact.bytecode),
-			"GaslessWallet bytecode drifted — this MOVES every deposit address. Check solc 0.8.18 / viaIR / runs=200 / no metadata, and any edit to GaslessWallet.sol.",
+			"GaslessWallet bytecode drifted — this MOVES every deposit address. Check solc 0.8.36 / Cancun / viaIR / runs=200 / no metadata, and any edit to GaslessWallet.sol.",
 		).to.equal(GOLDEN_WALLET_INITCODE_HASH)
 	})
 

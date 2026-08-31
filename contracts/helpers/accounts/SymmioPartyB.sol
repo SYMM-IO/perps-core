@@ -4,11 +4,11 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
+import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import { IERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/interfaces/IERC20Upgradeable.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SignatureChecker } from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import { IERC1271 } from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 
@@ -38,13 +38,15 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 	uint8 private constant FUNDING_SKIP_STALE_NONCE = 0;
 	uint8 private constant FUNDING_SKIP_EXPIRED_DEADLINE = 1;
 
-	// Storage layout matches v0.8.4 SymmioPartyB for upgrade compatibility
-	address public symmioAddress; // slot N+0
-	mapping(bytes4 => bool) public restrictedSelectors; // slot N+1
-	mapping(address => bool) public multicastWhitelist; // slot N+2
-	address public signer; // slot N+3 (was _guardCounter in v0.8.4, always 0 after tx)
-	uint256 private deprecatedFundingNonce; // slot N+4: deprecated global funding nonce
-	mapping(uint256 => uint256) public fundingNonce; // slot N+5: symbolId => last accepted funding update nonce
+	/// @dev OpenZeppelin 5 inherited modules use ERC-7201 namespaces and therefore do not consume PartyB's linear storage slots.
+	///      For fresh proxies, the fields below establish PartyB's initial storage layout. This implementation is not compatible with
+	///      PartyB proxies deployed using OpenZeppelin 4. After deployment, preserve these fields and append new state only.
+	address public symmioAddress;
+	mapping(bytes4 => bool) public restrictedSelectors;
+	mapping(address => bool) public multicastWhitelist;
+	address public signer;
+	uint256 private deprecatedFundingNonce;
+	mapping(uint256 => uint256) public fundingNonce; // symbolId => last accepted funding update nonce
 
 	/// @custom:oz-upgrades-unsafe-allow constructor
 	constructor() {
@@ -57,7 +59,6 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 	function initialize(address admin, address symmioAddress_) public initializer {
 		__Pausable_init();
 		__AccessControl_init();
-		__UUPSUpgradeable_init();
 
 		_grantRole(DEFAULT_ADMIN_ROLE, admin);
 		_grantRole(TRUSTED_ROLE, admin);
@@ -115,7 +116,7 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 	/// @param token The address of the ERC20 token
 	/// @param amount The amount of tokens to approve
 	function _approve(address token, uint256 amount) external onlyRole(TRUSTED_ROLE) whenNotPaused {
-		require(IERC20Upgradeable(token).approve(symmioAddress, amount), "SymmioPartyB: Not approved");
+		require(IERC20(token).approve(symmioAddress, amount), "SymmioPartyB: Not approved");
 	}
 
 	/* ──────────────────────────────── ADL ──────────────────────────────── */
@@ -308,7 +309,7 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 	/// @param token The address of the ERC20 token
 	/// @param amount The amount of tokens to withdraw
 	function withdrawERC20(address token, uint256 amount) external onlyRole(MANAGER_ROLE) {
-		require(IERC20Upgradeable(token).transfer(msg.sender, amount), "SymmioPartyB: Not transferred");
+		require(IERC20(token).transfer(msg.sender, amount), "SymmioPartyB: Not transferred");
 	}
 
 	/// @notice Pauses the contract

@@ -9,7 +9,7 @@ import { Accessibility } from "../../utils/Accessibility.sol";
 import { Pausable } from "../../utils/Pausable.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
-import { ReentrancyGuard } from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import { IWithdrawFacet } from "./IWithdrawFacet.sol";
 import { WithdrawFacetImpl } from "./WithdrawFacetImpl.sol";
 import { WithdrawReceiverPart } from "../../storages/WithdrawStorage.sol";

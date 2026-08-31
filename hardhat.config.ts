@@ -338,7 +338,7 @@ export default defineConfig({
 	},
 	// evmVersion "cancun" is load-bearing, not incidental. LibExecutionContext and
 	// LibAccountLayerSigner emit EIP-1153 tload/tstore, and solc rejects those below cancun
-	// with a hard error and no bytecode (verified on 0.8.34, 2026-07) rather than silently
+	// with a hard error and no bytecode (verified on 0.8.36, 2026-08) rather than silently
 	// producing something that reverts on chain.
 	// Every chain we target supports Cancun except COTI (chain 2632500), which is pre-Shanghai
 	// and rejects PUSH0 too -- so it is broken by these settings independently of the transient
@@ -350,20 +350,9 @@ export default defineConfig({
 			default: {
 				compilers: [
 					{
-						version: "0.8.34",
+						version: "0.8.36",
 						settings: {
 							evmVersion: "cancun",
-							metadata: { bytecodeHash: "none" },
-							optimizer: { enabled: true, runs: 200 },
-							viaIR: true,
-						},
-					},
-					// GaslessWallet CREATE2 addresses pin the 0.8.18 initcode hash. Every
-					// gaslessLayer source uses an exact 0.8.18 pragma so Hardhat selects this
-					// compiler without changing the rest of the protocol build.
-					{
-						version: "0.8.18",
-						settings: {
 							metadata: { bytecodeHash: "none" },
 							optimizer: { enabled: true, runs: 200 },
 							viaIR: true,
@@ -374,17 +363,9 @@ export default defineConfig({
 			production: {
 				compilers: [
 					{
-						version: "0.8.34",
+						version: "0.8.36",
 						settings: {
 							evmVersion: "cancun",
-							metadata: { bytecodeHash: "none" },
-							optimizer: { enabled: true, runs: 200 },
-							viaIR: true,
-						},
-					},
-					{
-						version: "0.8.18",
-						settings: {
 							metadata: { bytecodeHash: "none" },
 							optimizer: { enabled: true, runs: 200 },
 							viaIR: true,
@@ -523,7 +504,7 @@ export default defineConfig({
 	},
 	typechain: {
 		outDir: resolve(process.cwd(), "src/types"),
-		// Solidity 0.8.34 can emit identical inherited event entries more than once.
+		// Solidity 0.8.36 can emit identical inherited event entries more than once.
 		// TypeChain preserves those entries, so skip checking generated declarations
 		// while continuing to type-check all handwritten operational code.
 		tsNocheck: true,

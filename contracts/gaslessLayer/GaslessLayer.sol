@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.18;
+pragma solidity 0.8.36;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 import { GaslessWallet } from "./GaslessWallet.sol";
 import { IGaslessLayer } from "./interfaces/IGaslessLayer.sol";
@@ -34,8 +34,8 @@ import { GaslessWalletExecutionLib } from "./libraries/GaslessWalletExecutionLib
 ///      deposit/wallet addresses survive logic upgrades. The core and account-layer hooks are kept
 ///      behind narrow interfaces (see ISymmioCore.chargeOperationalFee and ISymmioAccountLayer.createSubAccountFor).
 ///      Linked libraries hold the largest self-contained execution paths so the implementation remains
-///      deployable under EIP-170 without changing the proxy storage layout or external API.
-contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable, ReentrancyGuardUpgradeable, UUPSUpgradeable {
+///      deployable under EIP-170 without moving application state into libraries or changing the external API.
+contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable, ReentrancyGuard, UUPSUpgradeable {
 	using SafeERC20 for IERC20;
 
 	// ───────────────────────── Constants ──────────────────────────
@@ -118,8 +118,6 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 		if (minimumDeposit_ <= depositFee_) revert MinimumDepositNotAboveFee(minimumDeposit_, depositFee_);
 
 		__AccessControl_init();
-		__ReentrancyGuard_init();
-		__UUPSUpgradeable_init();
 
 		_grantRole(DEFAULT_ADMIN_ROLE, admin);
 		_grantRole(CONFIG_ADMIN_ROLE, admin);
