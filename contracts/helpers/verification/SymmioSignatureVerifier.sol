@@ -6,13 +6,15 @@
 pragma solidity >=0.8.18;
 
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import { AccessControlEnumerable } from "@openzeppelin/contracts/access/AccessControlEnumerable.sol";
+import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import { AccessControlEnumerable } from "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
 import { LibMuonV04ClientBase } from "./LibMuonV04ClientBase.sol";
 import { IMuonSignatureVerifier } from "../../core/interfaces/IMuonSignatureVerifier.sol";
 
 /// @notice Verifies Muon TSS signatures and gateway signatures for oracle data
 contract MuonSignatureVerifier is IMuonSignatureVerifier, AccessControlEnumerable {
 	using ECDSA for bytes32;
+	using MessageHashUtils for bytes32;
 
 	bytes32 public constant SETTER_ROLE = keccak256("SETTER_ROLE");
 
@@ -40,8 +42,8 @@ contract MuonSignatureVerifier is IMuonSignatureVerifier, AccessControlEnumerabl
 	/// @notice Initializes the verifier with an admin address
 	/// @param _admin The address that receives DEFAULT_ADMIN_ROLE and SETTER_ROLE
 	constructor(address _admin) {
-		_setupRole(DEFAULT_ADMIN_ROLE, _admin);
-		_setupRole(SETTER_ROLE, _admin);
+		_grantRole(DEFAULT_ADMIN_ROLE, _admin);
+		_grantRole(SETTER_ROLE, _admin);
 	}
 
 	/// @notice Computes a unique identifier for a public key

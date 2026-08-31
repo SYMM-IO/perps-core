@@ -272,7 +272,7 @@ library LibSolvency {
 		);
 		int256 pnlRate = _partyAPnlRate(quote.positionType, inputs.closedPrice, inputs.marketPrice);
 		uint256 unlockRate = Math.mulDiv(quote.lockedValues.cva + quote.lockedValues.lf, 1e18, openAmount);
-		uint256 feeRate = Math.mulDiv(inputs.closedPrice, quote.closeFee, 1e18, Math.Rounding.Up);
+		uint256 feeRate = Math.mulDiv(inputs.closedPrice, quote.closeFee, 1e18, Math.Rounding.Ceil);
 		// This rate classifies the close and supports the legacy formula. Candidate acceptance always uses the exact balance simulation.
 		int256 totalRate = int256(unlockRate) + pnlRate - int256(feeRate);
 
@@ -306,7 +306,7 @@ library LibSolvency {
 		if (candidateBalance < 0) {
 			// Settlement floors CVA and LF releases separately, while `unlockRate` is combined. Back off enough to clear that difference.
 			uint256 shortfall = negativeMagnitude(candidateBalance);
-			uint256 reduction = Math.mulDiv(shortfall, 1e18, harmfulRate, Math.Rounding.Up);
+			uint256 reduction = Math.mulDiv(shortfall, 1e18, harmfulRate, Math.Rounding.Ceil);
 			maxCloseAmount = reduction >= maxCloseAmount ? 0 : maxCloseAmount - reduction;
 			if (!_isWithinPartyAShortfall(_simulatePartyAAvailableBalanceAfterClose(quote, maxCloseAmount, currentBalance, inputs), 0))
 				return (0, false);

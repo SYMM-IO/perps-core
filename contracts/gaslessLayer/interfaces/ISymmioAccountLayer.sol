@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.18;
+pragma solidity 0.8.36;
 
 /// @notice Mirrors perps-core `SubAccountIsolationType`
 ///         (contracts/accountLayer/storages/AccountStorage.sol).

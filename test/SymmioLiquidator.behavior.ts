@@ -398,7 +398,7 @@ export function shouldBehaveLikeSymmioLiquidator(): void {
 				const newImpl = await Factory.deploy()
 				await newImpl.waitForDeployment()
 
-				await liquidator.connect(admin).upgradeTo(await newImpl.getAddress())
+				await liquidator.connect(admin).upgradeToAndCall(await newImpl.getAddress(), "0x")
 
 				const after = await getImplementation(proxy)
 				expect(after).to.not.equal(before)
@@ -410,8 +410,8 @@ export function shouldBehaveLikeSymmioLiquidator(): void {
 				const newImpl = await Factory.deploy()
 				await newImpl.waitForDeployment()
 
-				await expect(liquidator.connect(manager).upgradeTo(await newImpl.getAddress())).to.be.reverted
-				await expect(liquidator.connect(operator).upgradeTo(await newImpl.getAddress())).to.be.reverted
+				await expect(liquidator.connect(manager).upgradeToAndCall(await newImpl.getAddress(), "0x")).to.be.reverted
+				await expect(liquidator.connect(operator).upgradeToAndCall(await newImpl.getAddress(), "0x")).to.be.reverted
 			})
 
 			it("state persists after upgrade", async function () {
@@ -421,7 +421,7 @@ export function shouldBehaveLikeSymmioLiquidator(): void {
 				const newImpl = await Factory.deploy()
 				await newImpl.waitForDeployment()
 
-				await liquidator.connect(admin).upgradeTo(await newImpl.getAddress())
+				await liquidator.connect(admin).upgradeToAndCall(await newImpl.getAddress(), "0x")
 
 				expect(await liquidator.symmioAddress()).to.equal(symmioBefore)
 				expect(await liquidator.hasRole(OPERATOR_ROLE, operator.address)).to.equal(true)

@@ -146,9 +146,9 @@ export function shouldBehaveLikeCreate2Factory(): void {
 			const [, outsider] = await ethers.getSigners()
 			const DiamondCutFactory = await ethers.getContractFactory("DiamondCutFacet")
 
-			await expect(create2Factory.connect(outsider).deploy(DiamondCutFactory.bytecode, 7n)).to.be.revertedWith(
-				"AccessControl: account " + outsider.address.toLowerCase() + " is missing role " + (await create2Factory.DEPLOYER_ROLE()),
-			)
+			await expect(create2Factory.connect(outsider).deploy(DiamondCutFactory.bytecode, 7n))
+				.to.be.revertedWithCustomError(create2Factory, "AccessControlUnauthorizedAccount")
+				.withArgs(outsider.address, await create2Factory.DEPLOYER_ROLE())
 		})
 	})
 }

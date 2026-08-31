@@ -17,6 +17,27 @@
     },
     {
         "inputs": [],
+        "name": "AccessControlBadConfirmation",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes32",
+                "name": "neededRole",
+                "type": "bytes32"
+            }
+        ],
+        "name": "AccessControlUnauthorizedAccount",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "AccountLayerNotSet",
         "type": "error"
     },
@@ -336,6 +357,11 @@
             }
         ],
         "name": "PartyBNotRegistered",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "ReentrancyGuardReentrantCall",
         "type": "error"
     },
     {
@@ -1676,6 +1702,25 @@
     {
         "inputs": [
             {
+                "internalType": "bytes32",
+                "name": "role",
+                "type": "bytes32"
+            }
+        ],
+        "name": "getRoleMembers",
+        "outputs": [
+            {
+                "internalType": "address[]",
+                "name": "",
+                "type": "address[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
                 "internalType": "uint256",
                 "name": "templateId",
                 "type": "uint256"
@@ -2194,7 +2239,7 @@
             },
             {
                 "internalType": "address",
-                "name": "account",
+                "name": "callerConfirmation",
                 "type": "address"
             }
         ],
