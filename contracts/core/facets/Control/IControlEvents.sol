@@ -33,7 +33,7 @@ interface IControlEvents is IExecutionContextEvents {
 	event OperationalFeeReductionDelaySet(uint256 oldDelay, uint256 newDelay);
 	event SetOperationalFeeReceiver(address indexed charger, address indexed receiver);
 	event SetSolverFeeReceiver(address indexed partyB, address indexed receiver);
-	event SetSolverFeeReceiverForTag(address indexed partyB, address indexed receiver, bytes tag);
+	event SetSolverFeeReceiverForTag(address indexed partyB, address indexed receiver, bytes32 indexed tag);
 	event SetAffiliateFeeForUser(
 		address affiliate,
 		address user,

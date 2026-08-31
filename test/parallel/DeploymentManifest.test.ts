@@ -76,7 +76,7 @@ describe("deployment manifest", function () {
 	}
 
 	it("captures the release-critical transitive dependency graphs", function () {
-		expect(FacetSpecs.core.PartyBExecutionFacet.libraries).to.deep.equal([])
+		expect(FacetSpecs.core.PartyBExecutionFacet.libraries).to.deep.equal(["LibQuoteClose"])
 		expect(FacetSpecs.core.PartyBPositionActionsFacet.libraries).to.deep.equal(["PartyBPositionActionsFacetImpl", "LibQuoteClose"])
 		expect(LibrarySpecs.core.PartyBPositionActionsFacetImpl.libraries).to.deep.equal(["LibQuoteFunding"])
 		expect(FacetSpecs.core.ClearingHouseFacet.libraries).to.deep.equal(["ClearingHouseFacetImpl"])

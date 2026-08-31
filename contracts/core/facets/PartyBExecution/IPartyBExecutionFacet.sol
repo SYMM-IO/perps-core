@@ -5,18 +5,41 @@
 pragma solidity >=0.8.18;
 
 import { IPartiesEvents } from "../../interfaces/IPartiesEvents.sol";
-import { SolverFeeType } from "../../storages/QuoteStorage.sol";
+import { SolverFeeEntry } from "../../storages/QuoteStorage.sol";
 import { SingleUpnlSig, PairUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
 
-/// @notice Party B convenience execution and standalone solver fee charging.
+/// @notice Party B execution with atomic, tagged solver fee charging. An empty fee list means no fee.
 interface IPartyBExecutionFacet is IPartiesEvents {
+	function openPosition(
+		uint256 quoteId,
+		uint256 filledAmount,
+		uint256 openedPrice,
+		PairUpnlAndPriceSig memory upnlSig,
+		SolverFeeEntry[] calldata solverFees
+	) external;
+
 	function lockAndOpenPosition(
 		uint256 quoteId,
 		uint256 filledAmount,
 		uint256 openedPrice,
 		SingleUpnlSig memory lockSig,
-		PairUpnlAndPriceSig memory upnlSig
+		PairUpnlAndPriceSig memory upnlSig,
+		SolverFeeEntry[] calldata solverFees
 	) external;
 
-	function chargeSolverFee(uint256 quoteId, SolverFeeType feeType, uint256 amount, bytes calldata tag) external;
+	function fillCloseRequest(
+		uint256 quoteId,
+		uint256 filledAmount,
+		uint256 closedPrice,
+		PairUpnlAndPriceSig memory upnlSig,
+		SolverFeeEntry[] calldata solverFees
+	) external;
+
+	function fillCloseRequestToLiquidation(
+		uint256 quoteId,
+		uint256 maxFillAmount,
+		uint256 closedPrice,
+		PairUpnlAndPriceSig memory upnlSig,
+		SolverFeeEntry[] calldata maxSolverFees
+	) external returns (uint256 filledAmount);
 }

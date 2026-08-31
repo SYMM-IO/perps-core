@@ -2613,7 +2613,7 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 				}
 				await checkExactFacetSelectors(ethers, addresses.diamond, FacetNames, "Core Diamond", results)
 
-				// Check standalone solver-fee selectors are installed and the legacy no-affiliate sendQuote is removed (v0.8.6)
+				// Check fee-aware execution selectors are installed and the legacy no-affiliate sendQuote is removed (v0.8.6)
 				try {
 					const loupe = await ethers.getContractAt("IDiamondLoupe", addresses.diamond)
 					const solverFeeInterface = (await ethers.getContractAt("IPartyBExecutionFacet", ethers.ZeroAddress)).interface
@@ -2626,11 +2626,11 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 						}
 					}
 					if (missing.length === 0) {
-						pushAndLog(results, { category: "Core Diamond", check: "Standalone solver-fee selectors", status: "pass" })
+						pushAndLog(results, { category: "Core Diamond", check: "Fee-aware execution selectors", status: "pass" })
 					} else {
 						pushAndLog(results, {
 							category: "Core Diamond",
-							check: "Standalone solver-fee selectors",
+							check: "Fee-aware execution selectors",
 							status: "fail",
 							message: `Missing PartyB execution selectors: ${missing.join(", ")}`,
 							hint: "Run deploy:diamond to add PartyBExecutionFacet via diamondCut",

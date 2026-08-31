@@ -82,7 +82,7 @@ interface IPartiesEvents {
 		uint256 symbolId,
 		SolverFeeType feeType,
 		uint256 amount,
-		bytes tag
+		bytes32 indexed tag
 	);
 
 	/// @notice Emitted when a configured close-to-liquidation overshoot permits PartyA to finish below zero.
